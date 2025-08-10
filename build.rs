@@ -62,7 +62,7 @@ fn main() -> Result<()> {
 
         let out = cmd
             .output()
-            .with_context(|| format!("failed running slangc for {:?}", path))?;
+            .with_context(|| format!("failed running slangc for {path:?}"))?;
 
         if !out.stdout.is_empty() {
             for line in String::from_utf8_lossy(&out.stdout).lines() {
@@ -83,8 +83,8 @@ fn main() -> Result<()> {
             ));
         }
 
-        println!("cargo:warning=Slang compiled {:?} -> {:?}", path, spv_out);
-        println!("cargo:warning=Reflection JSON -> {:?}", refl_out);
+        println!("cargo:warning=Slang compiled {path:?} -> {spv_out:?}");
+        println!("cargo:warning=Reflection JSON -> {refl_out:?}");
     }
 
     Ok(())
@@ -103,13 +103,11 @@ fn find_slangc() -> Result<PathBuf> {
     if let Ok(ld) = env::var("LD_LIBRARY_PATH") {
         for comp in ld.split(':') {
             let p = Path::new(comp);
-            if p.ends_with("lib") {
-                if let Some(c) = p.parent().map(|x| x.join("bin").join("slangc")) {
-                    if c.is_file() {
+            if p.ends_with("lib")
+                && let Some(c) = p.parent().map(|x| x.join("bin").join("slangc"))
+                    && c.is_file() {
                         return Ok(c);
                     }
-                }
-            }
         }
     }
     Err(anyhow!("`slangc` not found"))

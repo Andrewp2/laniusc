@@ -1,13 +1,12 @@
 // src/lexer/gpu.rs (imports)
 use crate::lexer::tables::{INVALID_TOKEN, TokenKind, build_tables};
 use crate::reflection::{
-    EntryPointReflection, ProgramLayoutReflection, SlangReflection, parse_reflection_from_bytes,
+    EntryPointReflection, SlangReflection, parse_reflection_from_bytes,
     slang_category_and_type_to_wgpu,
 };
 use anyhow::{Result, anyhow};
 
 use encase::{ShaderType, UniformBuffer};
-use std::collections::BTreeMap;
 use wgpu::util::DeviceExt;
 
 #[derive(Debug, Clone)]
@@ -200,7 +199,7 @@ pub async fn lex_on_gpu(input: &str) -> Result<Vec<Token>> {
     });
 
     // Dispatch
-    let groups = ((n + 127) / 128) as u32;
+    let groups = n.div_ceil(128);
     let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("lex-enc"),
     });
@@ -352,7 +351,7 @@ fn build_reflected_bindings<'a>(
                 let bgl_entry = wgpu::BindGroupLayoutEntry {
                     binding: index,
                     visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: binding_type.clone(),
+                    ty: binding_type,
                     count: None,
                 };
 

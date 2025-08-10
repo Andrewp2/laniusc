@@ -94,7 +94,7 @@ fn is_alpha(b: u8) -> bool {
     matches!(b, b'a'..=b'z' | b'A'..=b'Z' | b'_')
 }
 fn is_digit(b: u8) -> bool {
-    matches!(b, b'0'..=b'9')
+    b.is_ascii_digit()
 }
 fn is_alnum(b: u8) -> bool {
     is_alpha(b) || is_digit(b)
@@ -203,7 +203,7 @@ impl StreamingDfa {
         }
 
         // ---------- Whitespace ----------
-        for &b in &[b' ', b'\t', b'\r', b'\n'] {
+        for &b in b" \t\r\n" {
             next[S::White.idx()][b as usize] = Next {
                 state: S::White.idx() as u16,
                 emit: false,
@@ -214,24 +214,24 @@ impl StreamingDfa {
         // On '/'  => line comment
         // On '*'  => block comment
         // Else    => (no explicit edge) -> streaming copy will create an emitting edge, giving bare SLASH
-        set(&mut next, S::MaybeSlash, &[b'/'], S::LineComment);
-        set(&mut next, S::MaybeSlash, &[b'*'], S::BlockComment);
+        set(&mut next, S::MaybeSlash, b"/", S::LineComment);
+        set(&mut next, S::MaybeSlash, b"*", S::BlockComment);
 
         // ---------- LineComment ----------
         // Consume until '\n' (we don't include '\n' in the comment token)
-        set_all_except(&mut next, S::LineComment, &[b'\n'], S::LineComment);
+        set_all_except(&mut next, S::LineComment, b"\n", S::LineComment);
         // No explicit edge on '\n' (streaming copy will create an emitting edge into Start's '\n' target)
 
         // ---------- BlockComment ----------
         // Consume everything; only watch for '*' to possibly end.
         set_all_except(&mut next, S::BlockComment, &[], S::BlockComment);
-        set(&mut next, S::BlockComment, &[b'*'], S::BlockStar);
+        set(&mut next, S::BlockComment, b"*", S::BlockStar);
 
         // ---------- BlockStar ----------
         // '*' can repeat; '/' ends the comment; otherwise back to BlockComment.
-        set(&mut next, S::BlockStar, &[b'*'], S::BlockStar);
-        set(&mut next, S::BlockStar, &[b'/'], S::BlockDone);
-        set_all_except(&mut next, S::BlockStar, &[b'*', b'/'], S::BlockComment);
+        set(&mut next, S::BlockStar, b"*", S::BlockStar);
+        set(&mut next, S::BlockStar, b"/", S::BlockDone);
+        set_all_except(&mut next, S::BlockStar, b"*/", S::BlockComment);
 
         // ---------- Single-char acceptors have no explicit edges (streaming copy handles them) ----------
 

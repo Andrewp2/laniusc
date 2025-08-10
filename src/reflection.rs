@@ -115,15 +115,15 @@ pub fn parse_reflection_from_file(path: impl AsRef<Path>) -> Result<SlangReflect
     let path_ref = path.as_ref();
     log::debug!("Parsing reflection from: {}", path_ref.display());
     let file_content = fs::read_to_string(path_ref)
-        .map_err(|e| format!("Failed to read reflection file {:?}: {}", path_ref, e))?;
+        .map_err(|e| format!("Failed to read reflection file {path_ref:?}: {e}"))?;
     serde_json::from_str(&file_content)
-        .map_err(|e| format!("Failed to parse reflection JSON {:?}: {}", path_ref, e))
+        .map_err(|e| format!("Failed to parse reflection JSON {path_ref:?}: {e}"))
 }
 
 pub fn parse_reflection_from_bytes(data: &[u8]) -> Result<SlangReflection, String> {
     log::debug!("Parsing reflection from embedded bytes");
     serde_json::from_slice(data)
-        .map_err(|e| format!("Failed to parse reflection JSON from bytes: {}", e))
+        .map_err(|e| format!("Failed to parse reflection JSON from bytes: {e}"))
 }
 
 pub fn slang_category_and_type_to_wgpu(
@@ -333,8 +333,7 @@ fn slang_shape_to_wgpu_dimension(shape: &str, array: bool) -> Option<wgpu::Textu
         }
         _ => {
             log::warn!(
-                "Unknown texture shape for view dimension mapping: {}",
-                shape
+                "Unknown texture shape for view dimension mapping: {shape}"
             );
             None
         }
@@ -370,8 +369,7 @@ fn slang_format_to_wgpu(format_str: &str) -> Option<wgpu::TextureFormat> {
         "unknown" | "" => None,
         _ => {
             log::warn!(
-                "Unknown or unhandled Slang texture format string: '{}'",
-                format_str
+                "Unknown or unhandled Slang texture format string: '{format_str}'"
             );
             None
         }
