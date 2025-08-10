@@ -1,0 +1,11 @@
+# .cargo/config.toml
+[env]
+# 🤖 Ensure build.rs can dlopen libslang.so at runtime
+LD_LIBRARY_PATH = { value = "/home/andrew-peterson/Downloads/slang-2025.10.4-linux-x86_64/lib", force = true }
+
+[build]
+# 🤖 Embed an rpath so the final binary can run without LD_LIBRARY_PATH
+rustflags = [
+  "-C",
+  "link-args=-Wl,-rpath,/home/andrew-peterson/Downloads/slang-2025.10.4-linux-x86_64/lib",
+]
