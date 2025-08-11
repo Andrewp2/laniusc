@@ -1,2 +1,5 @@
 {
+  "rust-analyzer.cargo.features": [
+    "has_prebuilt_tables"
+  ],
 }

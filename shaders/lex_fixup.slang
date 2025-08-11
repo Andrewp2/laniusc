@@ -1,42 +1,97 @@
 // shaders/lex_fixup.slang
-// Pass 2c: apply block carries to in-block prefixes → global prefix (f_final).
+// Re-run the in-block prefix with the block carry (inclusive prefix of prior blocks).
 
-struct LexParams
+#define WORKGROUP_SIZE 128
+#define N_STATES 32
+
+struct Params
 {
     uint n;
-    uint m;
-    uint identity_id;
+    uint n_states;
+    uint start_state;
 };
-ConstantBuffer<LexParams> gParams;
+ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> merge_table;  // m*m
-StructuredBuffer<uint> f_inblock;    // length n
-StructuredBuffer<uint> block_prefix; // inclusive scan of summaries, length NB
+StructuredBuffer<uint> in_bytes;
+StructuredBuffer<uint> next_state;   // 256 * N_STATES
+StructuredBuffer<uint> block_prefix; // nb * N_STATES (inclusive)
 
-RWStructuredBuffer<uint> f_final; // length n
+RWStructuredBuffer<uint> f_final; // final state per element (global)
 
-static const uint BLOCK = 128u;
+groupshared uint func[WORKGROUP_SIZE][N_STATES];
 
-uint merge_ids(uint left_id, uint right_id)
+[numthreads(WORKGROUP_SIZE, 1, 1)]
+void fixup_prefix(uint3 tid: SV_GroupThreadID,
+                  uint3 gid: SV_DispatchThreadID,
+                  uint3 ggrp: SV_GroupID)
 {
-    // right ∘ left
-    return merge_table[left_id * gParams.m + right_id];
-}
+    const uint block = ggrp.x;
+    const uint base = block * WORKGROUP_SIZE;
+    const uint i = base + tid.x;
 
-[shader("compute")]
-[numthreads(128, 1, 1)]
-void fixup_prefix(uint3 tid: SV_DispatchThreadID)
-{
-    uint i = tid.x;
-    if (i >= gParams.n)
-        return;
+    // Carry is inclusive prefix of previous block:
+    // carry = identity for block==0, else block_prefix[block-1]
+    uint carry_state0 = gParams.start_state;
+    if (block > 0)
+    {
+        uint prevBase = (block - 1) * N_STATES;
+        carry_state0 = block_prefix[prevBase + carry_state0];
+    }
 
-    uint block_id = i / BLOCK;
+    // Load functions for this block
+    uint b = 0;
+    if (i < gParams.n)
+    {
+        b = in_bytes[i] & 0xFFu;
+        [unroll]
+        for (uint s = 0; s < N_STATES; ++s)
+        {
+            func[tid.x][s] = next_state[b * N_STATES + s];
+        }
+    }
+    else
+    {
+        [unroll]
+        for (uint s = 0; s < N_STATES; ++s)
+        {
+            func[tid.x][s] = s;
+        }
+    }
+    GroupMemoryBarrierWithGroupSync();
 
-    // exclusive carry: identity for block 0; else prefix[block_id-1]
-    uint carry = (block_id == 0u) ? gParams.identity_id
-                                  : block_prefix[block_id - 1u];
+    // Inclusive scan of functions within the block
+    for (uint offset = 1; offset < WORKGROUP_SIZE; offset <<= 1)
+    {
+        uint tmp[N_STATES];
+        if (tid.x >= offset)
+        {
+            [unroll]
+            for (uint s = 0; s < N_STATES; ++s)
+            {
+                uint a = func[tid.x - offset][s];
+                tmp[s] = func[tid.x][a];
+            }
+        }
+        else
+        {
+            [unroll]
+            for (uint s = 0; s < N_STATES; ++s)
+            {
+                tmp[s] = func[tid.x][s];
+            }
+        }
+        GroupMemoryBarrierWithGroupSync();
+        [unroll]
+        for (uint s = 0; s < N_STATES; ++s)
+        {
+            func[tid.x][s] = tmp[s];
+        }
+        GroupMemoryBarrierWithGroupSync();
+    }
 
-    uint global = merge_ids(carry, f_inblock[i]);
-    f_final[i] = global;
+    // Apply in-block prefix function to carry(start)
+    if (i < gParams.n)
+    {
+        f_final[i] = func[tid.x][carry_state0];
+    }
 }

@@ -2,6 +2,7 @@
 name = "laniusc"
 version = "0.1.0"
 edition = "2024"
+default-run = "laniusc"
 
 [dependencies]
 wgpu = { version = "26.0.1", features = ["spirv"] }

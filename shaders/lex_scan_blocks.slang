@@ -1,61 +1,61 @@
 // shaders/lex_scan_blocks.slang
-// Pass 2b: scan block summaries (small array), using merge table.
+// Multi-round inclusive scan over per-block function vectors.
+// Result after last round is inclusive prefix for each block.
 
-struct LexParams
+#define N_STATES 32
+
+struct Params
 {
     uint n;
-    uint m;
-    uint identity_id;
+    uint n_states;
+    uint start_state;
 };
-ConstantBuffer<LexParams> gParams;
+ConstantBuffer<Params> gParams;
 
-struct ScanParams
+struct Scan
 {
     uint stride;
     uint use_ping_as_src;
 };
-ConstantBuffer<ScanParams> gScan;
+ConstantBuffer<Scan> gScan;
 
-StructuredBuffer<uint> merge_table; // m*m
+RWStructuredBuffer<uint> block_ping; // nb * N_STATES
+RWStructuredBuffer<uint> block_pong; // nb * N_STATES
 
-RWStructuredBuffer<uint> block_ping; // length NB = ceil(n/BLOCK)
-RWStructuredBuffer<uint> block_pong; // length NB
-
-static const uint BLOCK = 128u; // must match block size used in block_scan
-
-uint merge_ids(uint left_id, uint right_id)
-{
-    // right ∘ left
-    return merge_table[left_id * gParams.m + right_id];
-}
-
-[shader("compute")]
-[numthreads(128, 1, 1)]
+[numthreads(1, 1, 1)]
 void scan_blocks_step(uint3 tid: SV_DispatchThreadID)
 {
-    uint NB = (gParams.n + BLOCK - 1u) / BLOCK;
-    uint i = tid.x;
-    if (i >= NB)
+    const uint nb = (gParams.n + 127u) / 128u;
+    const uint i = tid.x;
+    if (i >= nb)
         return;
 
-    if (gScan.use_ping_as_src != 0u)
+    RWStructuredBuffer<uint> src = gScan.use_ping_as_src != 0 ? block_ping : block_pong;
+    RWStructuredBuffer<uint> dst = gScan.use_ping_as_src != 0 ? block_pong : block_ping;
+
+    if (i >= gScan.stride)
     {
-        uint val = block_ping[i];
-        if (i >= gScan.stride)
+        // compose: dst[i] = src[i] ∘ src[i - stride]
+        const uint aBase = (i - gScan.stride) * N_STATES;
+        const uint bBase = i * N_STATES;
+        const uint dBase = i * N_STATES;
+
+        [unroll]
+        for (uint s = 0; s < N_STATES; ++s)
         {
-            uint left = block_ping[i - gScan.stride];
-            val = merge_ids(left, val);
+            const uint a = src[aBase + s];
+            dst[dBase + s] = src[bBase + a];
         }
-        block_pong[i] = val;
     }
     else
     {
-        uint val = block_pong[i];
-        if (i >= gScan.stride)
+        // copy through
+        const uint bBase = i * N_STATES;
+        const uint dBase = i * N_STATES;
+        [unroll]
+        for (uint s = 0; s < N_STATES; ++s)
         {
-            uint left = block_pong[i - gScan.stride];
-            val = merge_ids(left, val);
+            dst[dBase + s] = src[bBase + s];
         }
-        block_ping[i] = val;
     }
 }

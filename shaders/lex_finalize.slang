@@ -1,25 +1,30 @@
 // shaders/lex_finalize.slang
-// Stage 3: compute end_flags, token types; seed sum-scan source.
+// Compute boundaries and token types from final prefix states + emit mask.
+// Seeds s_ping for the sum-scan.
 
-struct LexParams
+#define N_STATES 32
+static const uint TK_White = 3u;
+static const uint TK_LineComment = 10u;
+static const uint TK_BlockComment = 11u;
+
+struct Params
 {
     uint n;
-    uint m;
-    uint identity_id;
+    uint n_states;
+    uint start_state;
 };
-ConstantBuffer<LexParams> gParams;
+ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> emit_on_start; // m → {0,1}
-StructuredBuffer<uint> token_of;      // m → token kind or 0xFFFF_FFFF
+StructuredBuffer<uint> in_bytes;
+StructuredBuffer<uint> emit_mask; // 256, bit per DFA state
+StructuredBuffer<uint> token_map; // N_STATES
+StructuredBuffer<uint> f_final;   // state after prefix i
 
-StructuredBuffer<uint> f_final; // length n
+RWStructuredBuffer<uint> end_flags;
+RWStructuredBuffer<uint> tok_types;
+RWStructuredBuffer<uint> filtered_flags;
+RWStructuredBuffer<uint> s_ping;
 
-RWStructuredBuffer<uint> end_flags;      // length n
-RWStructuredBuffer<uint> tok_types;      // length n
-RWStructuredBuffer<uint> filtered_flags; // length n
-RWStructuredBuffer<uint> s_ping;         // length n (sum-scan source)
-
-[shader("compute")]
 [numthreads(128, 1, 1)]
 void finalize_and_post(uint3 tid: SV_DispatchThreadID)
 {
@@ -27,32 +32,20 @@ void finalize_and_post(uint3 tid: SV_DispatchThreadID)
     if (i >= gParams.n)
         return;
 
-    uint f_i = f_final[i];
+    uint b = in_bytes[i] & 0xFFu;
 
-    // Boundary from current prefix
-    uint end_flag = emit_on_start[f_i];
+    // previous state: start for i==0, else f_final[i-1]
+    uint prev_state = (i == 0) ? gParams.start_state : f_final[i - 1];
 
-    // Ensure final token: force end if accepting
-    if (i + 1u == gParams.n)
-    {
-        uint tok_end = token_of[f_i];
-        if (tok_end != 0xFFFFffffu)
-        {
-            end_flag = 1u;
-        }
-    }
+    uint end = (emit_mask[b] >> prev_state) & 1u;
+    uint tk = token_map[prev_state];
 
-    // Type from previous prefix (identity at start)
-    uint f_prev = (i == 0u) ? gParams.identity_id : f_final[i - 1u];
-    uint ty = token_of[f_prev];
+    end_flags[i] = end;
+    tok_types[i] = tk;
 
-    end_flags[i] = end_flag;
-    tok_types[i] = ty;
-
-    // Filter out invalid kinds
-    uint filtered = (end_flag != 0u && ty != 0xFFFFffffu) ? 1u : 0u;
-    filtered_flags[i] = filtered;
-
-    // Seed sum-scan source here
-    s_ping[i] = filtered;
+    // filter whitespace/comments here; keep as "valid end" only if not filtered
+    uint keep = (tk == TK_White || tk == TK_LineComment || tk == TK_BlockComment) ? 0u : 1u;
+    uint valid = end * keep;
+    filtered_flags[i] = valid;
+    s_ping[i] = valid; // seed for sum-scan
 }

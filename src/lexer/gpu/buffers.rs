@@ -1,25 +1,25 @@
 // src/lexer/gpu/buffers.rs
 use super::LexParams;
-use crate::lexer::tables::Tables;
+use crate::lexer::tables::dfa::N_STATES;
 use encase::UniformBuffer;
 use wgpu::util::DeviceExt;
 
 pub struct GpuBuffers {
     // inputs/tables
     pub in_bytes: wgpu::Buffer,
-    pub char_to_func: wgpu::Buffer,
-    pub merge: wgpu::Buffer,
-    pub emit_on_start: wgpu::Buffer,
-    pub token_of: wgpu::Buffer,
+    pub char_to_func: wgpu::Buffer, // identity map: b -> b
+    pub next_state: wgpu::Buffer,   // 256 * N_STATES
+    pub emit_mask: wgpu::Buffer,    // 256
+    pub token_map: wgpu::Buffer,    // N_STATES
 
-    // function-id mapping + two-pass prefix
-    pub f_ping: wgpu::Buffer,          // map output
-    pub f_inblock: wgpu::Buffer,       // per-element in-block prefix
-    pub block_summaries: wgpu::Buffer, // per-block summary
-    pub block_ping: wgpu::Buffer,      // block-scan ping
-    pub block_pong: wgpu::Buffer,      // block-scan pong
-    pub block_prefix: wgpu::Buffer,    // final inclusive per-block prefix
-    pub f_final: wgpu::Buffer,         // global prefix ids
+    // function-id mapping (now: bytes) + two-pass prefix
+    pub f_ping: wgpu::Buffer,          // map output (bytes)
+    pub f_inblock: wgpu::Buffer, // optional scratch (states per element) — kept for compatibility
+    pub block_summaries: wgpu::Buffer, // per-block function vector (N_STATES each)
+    pub block_ping: wgpu::Buffer, // scan ping (N_STATES per block)
+    pub block_pong: wgpu::Buffer, // scan pong (N_STATES per block)
+    pub block_prefix: wgpu::Buffer, // inclusive per-block prefix (N_STATES each)
+    pub f_final: wgpu::Buffer,   // global DFA state per element (u32)
 
     // boundary/type streams
     pub end_flags: wgpu::Buffer,
@@ -41,10 +41,18 @@ pub struct GpuBuffers {
 }
 
 impl GpuBuffers {
-    pub fn new(device: &wgpu::Device, tbl: &Tables, bytes_u32: &[u32]) -> (Self, wgpu::Buffer) {
-        let n = bytes_u32.len() as u32;
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        device: &wgpu::Device,
+        n: u32,
+        start_state: u32,
+        bytes_u32: &[u32],
+        char_to_func: &[u32; 256],
+        next_state: &[u32],
+        emit_mask: &[u32],
+        token_map: &[u32],
+    ) -> (Self, wgpu::Buffer) {
         let nb = n.div_ceil(128); // workgroup/block size is 128
-
         let make_ro = |label: &str, bytes: &[u8]| {
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some(label),
@@ -64,17 +72,20 @@ impl GpuBuffers {
         };
 
         let in_bytes = make_ro("in_bytes", bytemuck::cast_slice(bytes_u32));
-        let char_to_func = make_ro("char_to_func", bytemuck::cast_slice(&tbl.char_to_func));
-        let merge = make_ro("merge", bytemuck::cast_slice(&tbl.merge));
-        let emit_on_start = make_ro("emit_on_start", bytemuck::cast_slice(&tbl.emit_on_start));
-        let token_of = make_ro("token_of", bytemuck::cast_slice(&tbl.token_of));
+        let char_to_func_buf = make_ro("char_to_func", bytemuck::cast_slice(char_to_func));
+        let next_state_buf = make_ro("next_state", bytemuck::cast_slice(next_state));
+        let emit_mask_buf = make_ro("emit_mask", bytemuck::cast_slice(emit_mask));
+        let token_map_buf = make_ro("token_map", bytemuck::cast_slice(token_map));
 
         let f_ping = make_rw("f_ping", (n as usize) * 4);
         let f_inblock = make_rw("f_inblock", (n as usize) * 4);
-        let block_summaries = make_rw("block_summaries", (nb as usize) * 4);
-        let block_ping = make_rw("block_ping", (nb as usize) * 4);
-        let block_pong = make_rw("block_pong", (nb as usize) * 4);
-        let block_prefix = make_rw("block_prefix", (nb as usize) * 4);
+
+        let per_block_vec_bytes = (N_STATES * 4) as usize;
+        let block_summaries = make_rw("block_summaries", (nb as usize) * per_block_vec_bytes);
+        let block_ping = make_rw("block_ping", (nb as usize) * per_block_vec_bytes);
+        let block_pong = make_rw("block_pong", (nb as usize) * per_block_vec_bytes);
+        let block_prefix = make_rw("block_prefix", (nb as usize) * per_block_vec_bytes);
+
         let f_final = make_rw("f_final", (n as usize) * 4);
 
         let end_flags = make_rw("end_flags", (n as usize) * 4);
@@ -98,8 +109,8 @@ impl GpuBuffers {
         let mut ub = UniformBuffer::new(Vec::new());
         ub.write(&LexParams {
             n,
-            m: tbl.m,
-            identity_id: tbl.identity,
+            m: N_STATES as u32,
+            identity_id: start_state,
         })
         .unwrap();
         let params_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -111,10 +122,10 @@ impl GpuBuffers {
         (
             Self {
                 in_bytes,
-                char_to_func,
-                merge,
-                emit_on_start,
-                token_of,
+                char_to_func: char_to_func_buf,
+                next_state: next_state_buf,
+                emit_mask: emit_mask_buf,
+                token_map: token_map_buf,
                 f_ping,
                 f_inblock,
                 block_summaries,
@@ -146,15 +157,18 @@ impl GpuBuffers {
             "gParams" => wgpu::BindingResource::Buffer(params_buf.as_entire_buffer_binding()),
             "in_bytes" => self.in_bytes.as_entire_binding(),
             "char_to_func" => self.char_to_func.as_entire_binding(),
-            "merge_table" => self.merge.as_entire_binding(),
-            "emit_on_start" => self.emit_on_start.as_entire_binding(),
-            "token_of" => self.token_of.as_entire_binding(),
+
+            "next_state" => self.next_state.as_entire_binding(),
+            "emit_mask" => self.emit_mask.as_entire_binding(),
+            "token_map" => self.token_map.as_entire_binding(),
 
             "f_ping" => self.f_ping.as_entire_binding(),
             "f_src" => self.f_ping.as_entire_binding(),
             "f_inblock" => self.f_inblock.as_entire_binding(),
+
             "block_summaries" => self.block_summaries.as_entire_binding(),
             "block_prefix" => self.block_prefix.as_entire_binding(),
+
             "f_final" => self.f_final.as_entire_binding(),
 
             "end_flags" => self.end_flags.as_entire_binding(),
@@ -184,10 +198,6 @@ impl GpuBuffers {
             "gParams" => wgpu::BindingResource::Buffer(params_buf.as_entire_buffer_binding()),
             "gScan" => wgpu::BindingResource::Buffer(scan_params_buf.as_entire_buffer_binding()),
 
-            // element-wise scan aliases (kept for compatibility)
-            "f_ping" => self.f_ping.as_entire_binding(),
-            "f_pong" => self.f_inblock.as_entire_binding(), // not used anymore but kept to avoid surprises
-
             // sum-scan
             "s_ping" => self.s_ping.as_entire_binding(),
             "s_pong" => self.s_pong.as_entire_binding(),
@@ -196,7 +206,7 @@ impl GpuBuffers {
             "block_ping" => self.block_ping.as_entire_binding(),
             "block_pong" => self.block_pong.as_entire_binding(),
 
-            "merge_table" => self.merge.as_entire_binding(),
+            // fall back to regular resolver
             _ => return self.resolve(name, params_buf),
         })
     }
