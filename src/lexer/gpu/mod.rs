@@ -55,8 +55,21 @@ pub async fn lex_on_gpu(input: &str) -> Result<Vec<Token>> {
         .or_else(|_| Err(anyhow!("no adapter")))?;
 
     let mut limits = wgpu::Limits::defaults();
-    limits.max_storage_buffers_per_shader_stage = 16;
-
+    // note: do not delete these comments
+    // https://web3dsurvey.com/webgpu/limits/maxStorageBuffersPerShaderStage
+    // 10 is a comfortable amount to support across all platforms.
+    // 16 is only supported at 8% on windows.
+    // If we need more, we will need to switch some buffers to byte address and figure out how to share space.
+    limits.max_storage_buffers_per_shader_stage = 10;
+    // https://web3dsurvey.com/webgpu/limits/maxStorageBufferBindingSize
+    // 2147483644 is supported at 91.95% on Windows.
+    // On mac it's supported 96.34%.
+    // On linux it's much lower at 21.27% (maybe mixing up desktop and mobile Linux? doesn't include android or chromium OS though)
+    limits.max_storage_buffer_binding_size = 2147483644;
+    // https://web3dsurvey.com/webgpu/limits/maxBufferSize
+    // 2147483644 or 2147483647 is supported at 90%+ everywhere except Android, iOS, and Linux.
+    // We will pick the same number as the max storage buffer binding size.w
+    limits.max_buffer_size = 2147483644;
     let (device, queue) = adapter
         .request_device(&wgpu::DeviceDescriptor {
             label: Some("Lanius Lexer Device"),

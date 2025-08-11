@@ -12,10 +12,14 @@ pub struct GpuBuffers {
     pub emit_on_start: wgpu::Buffer,
     pub token_of: wgpu::Buffer,
 
-    // function-id prefix
-    pub f_ping: wgpu::Buffer,
-    pub f_pong: wgpu::Buffer,
-    pub f_final: wgpu::Buffer,
+    // function-id mapping + two-pass prefix
+    pub f_ping: wgpu::Buffer,          // map output
+    pub f_inblock: wgpu::Buffer,       // per-element in-block prefix
+    pub block_summaries: wgpu::Buffer, // per-block summary
+    pub block_ping: wgpu::Buffer,      // block-scan ping
+    pub block_pong: wgpu::Buffer,      // block-scan pong
+    pub block_prefix: wgpu::Buffer,    // final inclusive per-block prefix
+    pub f_final: wgpu::Buffer,         // global prefix ids
 
     // boundary/type streams
     pub end_flags: wgpu::Buffer,
@@ -39,6 +43,7 @@ pub struct GpuBuffers {
 impl GpuBuffers {
     pub fn new(device: &wgpu::Device, tbl: &Tables, bytes_u32: &[u32]) -> (Self, wgpu::Buffer) {
         let n = bytes_u32.len() as u32;
+        let nb = n.div_ceil(128); // workgroup/block size is 128
 
         let make_ro = |label: &str, bytes: &[u8]| {
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -65,7 +70,11 @@ impl GpuBuffers {
         let token_of = make_ro("token_of", bytemuck::cast_slice(&tbl.token_of));
 
         let f_ping = make_rw("f_ping", (n as usize) * 4);
-        let f_pong = make_rw("f_pong", (n as usize) * 4);
+        let f_inblock = make_rw("f_inblock", (n as usize) * 4);
+        let block_summaries = make_rw("block_summaries", (nb as usize) * 4);
+        let block_ping = make_rw("block_ping", (nb as usize) * 4);
+        let block_pong = make_rw("block_pong", (nb as usize) * 4);
+        let block_prefix = make_rw("block_prefix", (nb as usize) * 4);
         let f_final = make_rw("f_final", (n as usize) * 4);
 
         let end_flags = make_rw("end_flags", (n as usize) * 4);
@@ -107,7 +116,11 @@ impl GpuBuffers {
                 emit_on_start,
                 token_of,
                 f_ping,
-                f_pong,
+                f_inblock,
+                block_summaries,
+                block_ping,
+                block_pong,
+                block_prefix,
                 f_final,
                 end_flags,
                 tok_types,
@@ -136,20 +149,27 @@ impl GpuBuffers {
             "merge_table" => self.merge.as_entire_binding(),
             "emit_on_start" => self.emit_on_start.as_entire_binding(),
             "token_of" => self.token_of.as_entire_binding(),
+
             "f_ping" => self.f_ping.as_entire_binding(),
-            "f_pong" => self.f_pong.as_entire_binding(),
+            "f_src" => self.f_ping.as_entire_binding(),
+            "f_inblock" => self.f_inblock.as_entire_binding(),
+            "block_summaries" => self.block_summaries.as_entire_binding(),
+            "block_prefix" => self.block_prefix.as_entire_binding(),
             "f_final" => self.f_final.as_entire_binding(),
+
             "end_flags" => self.end_flags.as_entire_binding(),
             "tok_types" => self.tok_types.as_entire_binding(),
             "filtered_flags" => self.filtered_flags.as_entire_binding(),
+
             "s_ping" => self.s_ping.as_entire_binding(),
             "s_pong" => self.s_pong.as_entire_binding(),
             "s_final" => self.s_final.as_entire_binding(),
+
             "end_positions" => self.end_positions.as_entire_binding(),
             "types_compact" => self.types_compact.as_entire_binding(),
             "token_count" => self.token_count.as_entire_binding(),
             "tokens_out" => self.tokens_out.as_entire_binding(),
-            "gScan" => return None, // handled by resolve_scan where we pass a per-round UBO
+
             _ => return None,
         })
     }
@@ -163,11 +183,20 @@ impl GpuBuffers {
         Some(match name {
             "gParams" => wgpu::BindingResource::Buffer(params_buf.as_entire_buffer_binding()),
             "gScan" => wgpu::BindingResource::Buffer(scan_params_buf.as_entire_buffer_binding()),
-            "merge_table" => self.merge.as_entire_binding(),
+
+            // element-wise scan aliases (kept for compatibility)
             "f_ping" => self.f_ping.as_entire_binding(),
-            "f_pong" => self.f_pong.as_entire_binding(),
+            "f_pong" => self.f_inblock.as_entire_binding(), // not used anymore but kept to avoid surprises
+
+            // sum-scan
             "s_ping" => self.s_ping.as_entire_binding(),
             "s_pong" => self.s_pong.as_entire_binding(),
+
+            // block scan
+            "block_ping" => self.block_ping.as_entire_binding(),
+            "block_pong" => self.block_pong.as_entire_binding(),
+
+            "merge_table" => self.merge.as_entire_binding(),
             _ => return self.resolve(name, params_buf),
         })
     }
