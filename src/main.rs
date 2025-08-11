@@ -1,8 +1,5 @@
 // src/main.rs
-mod lexer;
-mod reflection;
-
-use lexer::gpu::lex_on_gpu;
+use laniusc::lexer::gpu::lex_on_gpu;
 
 fn main() {
     pollster::block_on(async {
