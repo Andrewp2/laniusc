@@ -68,25 +68,33 @@ pub async fn lex_on_gpu(input: &str) -> Result<Vec<Token>> {
         .await?;
 
     #[cfg(has_prebuilt_tables)]
+    const LEX_TBL_EXT: &str = env!("LEXER_TABLES_EXT");
+
+    #[cfg(has_prebuilt_tables)]
     let prebuilt_bytes: Option<&[u8]> = Some(include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/lexer_tables.json"
+        "/lexer_tables",
+        env!("LEXER_TABLES_EXT")
     )));
     #[cfg(not(has_prebuilt_tables))]
     let prebuilt_bytes: Option<&[u8]> = None;
 
     let tbl = if let Some(bytes) = prebuilt_bytes {
-        crate::lexer::tables::load_tables_json_bytes(bytes)
-            .expect("Failed to load embedded lexer tables JSON")
+        let res = if LEX_TBL_EXT == ".bin" {
+            crate::lexer::tables::load_tables_bin_bytes(bytes)
+        } else {
+            crate::lexer::tables::load_tables_json_bytes(bytes)
+        };
+        res.expect("Failed to load embedded lexer tables")
     } else {
         let t = build_tables_for_bytes(input.as_bytes());
         if std::env::var("LANIUS_DUMP_TABLES").ok().as_deref() == Some("1") {
-            let path = std::path::Path::new("tables/lexer_tables.json");
             let _ = std::fs::create_dir_all("tables");
-            if let Err(e) = crate::lexer::tables::save_tables_json(path, &t) {
-                eprintln!("warning: failed to write {}: {e}", path.display());
+            let bin = std::path::Path::new("tables/lexer_tables.bin");
+            if let Err(e) = crate::lexer::tables::save_tables_bin(bin, &t) {
+                eprintln!("warning: failed to write {}: {e}", bin.display());
             } else {
-                eprintln!("wrote lexer tables JSON to {}", path.display());
+                eprintln!("wrote {}", bin.display());
             }
         }
         t

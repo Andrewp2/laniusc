@@ -572,3 +572,150 @@ pub fn load_tables_json_bytes(data: &[u8]) -> Result<Tables, String> {
         .map(|d| d.into_tables())
         .map_err(|e| format!("Failed to parse tables JSON: {e}"))
 }
+
+// ---------------------------------------------
+// Compact binary (de)serialization (u16 packing)
+// ---------------------------------------------
+use std::io::{Read, Write};
+
+const BIN_MAGIC: &[u8; 8] = b"LXTBLE01";
+const INVALID_TOKEN_U16: u16 = 0xFFFF;
+
+pub fn save_tables_bin(path: &std::path::Path, t: &Tables) -> std::io::Result<()> {
+    // Safety guard: we pack ids into u16
+    if t.m > u16::MAX as u32 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("m={} exceeds u16::MAX; cannot pack to u16", t.m),
+        ));
+    }
+
+    let mut f = std::fs::File::create(path)?;
+    // Header: magic + m + identity
+    f.write_all(BIN_MAGIC)?;
+    f.write_all(&(t.m as u32).to_le_bytes())?;
+    f.write_all(&(t.identity as u32).to_le_bytes())?;
+
+    // char_to_func: 256 x u16
+    for &id in &t.char_to_func {
+        let v = u16::try_from(id).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "char_to_func id > u16::MAX",
+            )
+        })?;
+        f.write_all(&v.to_le_bytes())?;
+    }
+
+    // merge: m*m x u16
+    for &id in &t.merge {
+        let v = u16::try_from(id).map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "merge id > u16::MAX")
+        })?;
+        f.write_all(&v.to_le_bytes())?;
+    }
+
+    // token_of: m x u16 (INVALID_TOKEN -> 0xFFFF)
+    for &tk in &t.token_of {
+        let v = if tk == INVALID_TOKEN {
+            INVALID_TOKEN_U16
+        } else {
+            u16::try_from(tk).map_err(|_| {
+                std::io::Error::new(std::io::ErrorKind::InvalidData, "token_of value > u16::MAX")
+            })?
+        };
+        f.write_all(&v.to_le_bytes())?;
+    }
+
+    // emit_on_start: m bits packed into bytes
+    let m = t.m as usize;
+    let mut bits = vec![0u8; (m + 7) / 8];
+    for (i, &b) in t.emit_on_start.iter().enumerate() {
+        if b != 0 {
+            bits[i / 8] |= 1 << (i % 8);
+        }
+    }
+    f.write_all(&bits)?;
+    Ok(())
+}
+
+pub fn load_tables_bin_bytes(mut data: &[u8]) -> Result<Tables, String> {
+    // Header
+    if data.len() < 8 + 4 + 4 {
+        return Err("bin too short".into());
+    }
+    let mut magic = [0u8; 8];
+    magic.copy_from_slice(&data[..8]);
+    if &magic != BIN_MAGIC {
+        return Err("bad magic in tables .bin".into());
+    }
+    data = &data[8..];
+
+    let mut read_u32 = |buf: &mut &[u8]| -> Result<u32, String> {
+        if buf.len() < 4 {
+            return Err("truncated u32".into());
+        }
+        let mut le = [0u8; 4];
+        le.copy_from_slice(&buf[..4]);
+        *buf = &buf[4..];
+        Ok(u32::from_le_bytes(le))
+    };
+    let mut read_u16 = |buf: &mut &[u8]| -> Result<u16, String> {
+        if buf.len() < 2 {
+            return Err("truncated u16".into());
+        }
+        let mut le = [0u8; 2];
+        le.copy_from_slice(&buf[..2]);
+        *buf = &buf[2..];
+        Ok(u16::from_le_bytes(le))
+    };
+
+    let m = read_u32(&mut data)? as usize;
+    let identity = read_u32(&mut data)?;
+
+    // char_to_func
+    let mut char_to_func = [0u32; 256];
+    for i in 0..256 {
+        char_to_func[i] = read_u16(&mut data)? as u32;
+    }
+
+    // merge m*m
+    let mm = m.checked_mul(m).ok_or("m*m overflow")?;
+    let mut merge = Vec::with_capacity(mm);
+    for _ in 0..mm {
+        merge.push(read_u16(&mut data)? as u32);
+    }
+
+    // token_of m
+    let mut token_of = Vec::with_capacity(m);
+    for _ in 0..m {
+        let v = read_u16(&mut data)?;
+        token_of.push(if v == INVALID_TOKEN_U16 {
+            INVALID_TOKEN
+        } else {
+            v as u32
+        });
+    }
+
+    // emit_on_start m bits
+    let bytes = (m + 7) / 8;
+    if data.len() < bytes {
+        return Err("truncated emit_on_start bits".into());
+    }
+    let (bit_slice, rest) = data.split_at(bytes);
+    data = rest;
+    let mut emit_on_start = vec![0u32; m];
+    for i in 0..m {
+        let b = bit_slice[i / 8] >> (i % 8) & 1;
+        emit_on_start[i] = b as u32;
+    }
+
+    Ok(Tables {
+        char_to_func,
+        merge,
+        token_of,
+        emit_on_start,
+        m: m as u32,
+        identity,
+    })
+}

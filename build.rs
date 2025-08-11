@@ -83,26 +83,34 @@ fn main() -> Result<()> {
         println!("cargo:warning=Reflection JSON -> {refl_out:?}");
     }
 
-    // Optionally bundle a prebuilt grammar-based tables file.
-    let prebuilt = PathBuf::from("tables/lexer_tables.json");
-    if prebuilt.exists() {
-        let dest = out_dir.join("lexer_tables.json");
-        fs::copy(&prebuilt, &dest).with_context(|| {
+    // Prefer a compact .bin; fall back to .json
+    let bin_prebuilt = PathBuf::from("tables/lexer_tables.bin");
+    let json_prebuilt = PathBuf::from("tables/lexer_tables.json");
+
+    if bin_prebuilt.exists() || json_prebuilt.exists() {
+        let (src, ext) = if bin_prebuilt.exists() {
+            (bin_prebuilt, ".bin")
+        } else {
+            (json_prebuilt, ".json")
+        };
+        let dest = out_dir.join(format!("lexer_tables{ext}"));
+        fs::copy(&src, &dest).with_context(|| {
             format!(
                 "copy prebuilt tables from {} to {}",
-                prebuilt.display(),
+                src.display(),
                 dest.display()
             )
         })?;
-        println!("cargo:rerun-if-changed={}", prebuilt.display());
+        println!("cargo:rerun-if-changed={}", src.display());
         println!("cargo:rustc-cfg=has_prebuilt_tables");
+        println!("cargo:rustc-env=LEXER_TABLES_EXT={ext}");
         println!(
             "cargo:warning=Using prebuilt lexer tables: {}",
-            prebuilt.display()
+            src.display()
         );
     } else {
         println!(
-            "cargo:warning=No prebuilt lexer tables found (tables/lexer_tables.json). Will build at runtime."
+            "cargo:warning=No prebuilt lexer tables found (tables/lexer_tables.bin|.json). Will build at runtime."
         );
     }
 
