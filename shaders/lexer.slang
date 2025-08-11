@@ -46,7 +46,6 @@ void map_chars(uint3 tid: SV_DispatchThreadID)
 
 // -------------------------------------
 // Stage 2: inclusive scan (Hillis–Steele)
-// We can’t alias resources into locals, so branch.
 // -------------------------------------
 struct ScanParams
 {
@@ -87,7 +86,10 @@ void scan_step(uint3 tid: SV_DispatchThreadID)
 
 // -------------------------------------
 // Stage 3: compute End[i] and Type[i]
-// Host copies the “winning” buffer to f_final just before this.
+//
+// End[i] = emit_on_start[F[i]]  (the transition you just took)
+// Special-case i==n-1: also end if TokenOf[F[i]] != INVALID
+// Type[i] = token_of[F[i-1]]    (state *before* the boundary after i)
 // -------------------------------------
 [shader("compute")]
 [numthreads(128, 1, 1)]
@@ -97,12 +99,24 @@ void finalize_and_post(uint3 tid: SV_DispatchThreadID)
     if (i >= gParams.n)
         return;
 
-    uint fid = f_final[i];
+    uint f_i = f_final[i];
 
-    // End-of-token decision comes from "emit flag of the last edge in the prefix"
-    end_flags[i] = emit_on_start[fid];
+    // Default boundary test from the current prefix
+    uint end_flag = emit_on_start[f_i];
 
-    // Token type at boundary uses the state BEFORE the boundary (off-by-one rule)
-    uint prev = (i == 0) ? gParams.identity_id : f_final[i - 1];
-    tok_types[i] = token_of[prev];
+    // At end-of-input, force an emit if current prefix is accepting
+    if (i + 1u == gParams.n)
+    {
+        uint tok_end = token_of[f_i];
+        if (tok_end != 0xFFFFffffu)
+        {
+            end_flag = 1u;
+        }
+    }
+
+    // Token type comes from the *previous* prefix (identity at start)
+    uint f_prev = (i == 0u) ? gParams.identity_id : f_final[i - 1u];
+
+    end_flags[i] = end_flag;
+    tok_types[i] = token_of[f_prev];
 }

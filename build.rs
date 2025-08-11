@@ -1,4 +1,4 @@
-// build.rs — compile .slang with slangc, emit SPIR-V + reflection JSON, print diagnostics.
+// build.rs — compile Slang and (optionally) bundle prebuilt lexer tables.
 
 use anyhow::{Context, Result, anyhow};
 use std::{
@@ -8,6 +8,7 @@ use std::{
 };
 
 fn main() -> Result<()> {
+    println!("cargo:rustc-check-cfg=cfg(has_prebuilt_tables)");
     println!("cargo:rerun-if-changed=shaders");
     if let Ok(rd) = fs::read_dir("shaders") {
         for e in rd.flatten() {
@@ -38,12 +39,9 @@ fn main() -> Result<()> {
         let spv_out = shader_out_dir.join(format!("{file_stem}.spv"));
         let refl_out = shader_out_dir.join(format!("{file_stem}.reflect.json"));
 
-        // Optional extra flags via env (e.g. "-O")
         let extra = env::var("SLANGC_EXTRA_FLAGS").unwrap_or_default();
         let extra_args: Vec<&str> = extra.split_whitespace().filter(|s| !s.is_empty()).collect();
 
-        // We *don’t* pass -entry or -stage; Slang will discover [shader("compute")] entry points.
-        // We *do* keep entrypoint names in SPIR-V.
         let mut cmd = Command::new(&slangc);
         cmd.arg(&path)
             .arg("-target")
@@ -63,7 +61,6 @@ fn main() -> Result<()> {
         let out = cmd
             .output()
             .with_context(|| format!("failed running slangc for {path:?}"))?;
-
         if !out.stdout.is_empty() {
             for line in String::from_utf8_lossy(&out.stdout).lines() {
                 println!("cargo:warning=slangc STDOUT: {line}");
@@ -74,7 +71,6 @@ fn main() -> Result<()> {
                 eprintln!("slangc: {line}");
             }
         }
-
         if !out.status.success() {
             return Err(anyhow!(
                 "slangc failed on {:?} (exit: {:?}). See diagnostics above.",
@@ -85,6 +81,29 @@ fn main() -> Result<()> {
 
         println!("cargo:warning=Slang compiled {path:?} -> {spv_out:?}");
         println!("cargo:warning=Reflection JSON -> {refl_out:?}");
+    }
+
+    // Optionally bundle a prebuilt grammar-based tables file.
+    let prebuilt = PathBuf::from("tables/lexer_tables.json");
+    if prebuilt.exists() {
+        let dest = out_dir.join("lexer_tables.json");
+        fs::copy(&prebuilt, &dest).with_context(|| {
+            format!(
+                "copy prebuilt tables from {} to {}",
+                prebuilt.display(),
+                dest.display()
+            )
+        })?;
+        println!("cargo:rerun-if-changed={}", prebuilt.display());
+        println!("cargo:rustc-cfg=has_prebuilt_tables");
+        println!(
+            "cargo:warning=Using prebuilt lexer tables: {}",
+            prebuilt.display()
+        );
+    } else {
+        println!(
+            "cargo:warning=No prebuilt lexer tables found (tables/lexer_tables.json). Will build at runtime."
+        );
     }
 
     Ok(())
@@ -105,9 +124,10 @@ fn find_slangc() -> Result<PathBuf> {
             let p = Path::new(comp);
             if p.ends_with("lib")
                 && let Some(c) = p.parent().map(|x| x.join("bin").join("slangc"))
-                    && c.is_file() {
-                        return Ok(c);
-                    }
+                && c.is_file()
+            {
+                return Ok(c);
+            }
         }
     }
     Err(anyhow!("`slangc` not found"))

@@ -332,9 +332,7 @@ fn slang_shape_to_wgpu_dimension(shape: &str, array: bool) -> Option<wgpu::Textu
             Some(wgpu::TextureViewDimension::D1)
         }
         _ => {
-            log::warn!(
-                "Unknown texture shape for view dimension mapping: {shape}"
-            );
+            log::warn!("Unknown texture shape for view dimension mapping: {shape}");
             None
         }
     }
@@ -368,9 +366,7 @@ fn slang_format_to_wgpu(format_str: &str) -> Option<wgpu::TextureFormat> {
 
         "unknown" | "" => None,
         _ => {
-            log::warn!(
-                "Unknown or unhandled Slang texture format string: '{format_str}'"
-            );
+            log::warn!("Unknown or unhandled Slang texture format string: '{format_str}'");
             None
         }
     }

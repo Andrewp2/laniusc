@@ -1,5 +1,7 @@
 // src/lexer/tables.rs
 use hashbrown::HashMap;
+use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 
 /// Token kinds for the MVP grammar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -384,4 +386,189 @@ fn compose(a: &UFunc, b: &UFunc) -> UFunc {
         out.push(Next { state, emit }); // emit flag of the LAST transition (from b)
     }
     UFunc { trans: out }
+}
+
+// ---------------------------------------------
+// Input-specialized tables to keep m manageable
+// ---------------------------------------------
+use std::time::Instant;
+
+/// Build tables only for the bytes that actually appear in `bytes`.
+/// All other bytes map to the identity function (they won't be used anyway).
+pub fn build_tables_for_bytes(bytes: &[u8]) -> Tables {
+    let t0 = Instant::now();
+
+    // Mark which bytes occur
+    let mut present = [false; 256];
+    let mut distinct = 0usize;
+    for &b in bytes {
+        let was = present[b as usize];
+        if !was {
+            present[b as usize] = true;
+            distinct += 1;
+        }
+    }
+
+    // Construct the streaming DFA once
+    let dfa = StreamingDfa::new();
+    let n_states = dfa.next.len();
+
+    // Identity function id 0
+    let identity = UFunc {
+        trans: (0..n_states)
+            .map(|s| Next {
+                state: s as u16,
+                emit: false,
+            })
+            .collect(),
+    };
+
+    // Interner: transitions -> id
+    let mut funcs: Vec<UFunc> = vec![identity.clone()];
+    let mut map: HashMap<Vec<Next>, u32> = HashMap::new();
+    map.insert(identity.trans.clone(), 0);
+
+    let mut char_to_func = [0u32; 256];
+
+    // 1) Build δ_c only for bytes that occur; others map to identity (0).
+    for b in 0u8..=255 {
+        if !present[b as usize] {
+            char_to_func[b as usize] = 0;
+            continue;
+        }
+        let mut trans = Vec::with_capacity(n_states);
+        for s in 0..n_states {
+            trans.push(dfa.next[s][b as usize]);
+        }
+        let id = *map.entry(trans.clone()).or_insert_with(|| {
+            let id = funcs.len() as u32;
+            funcs.push(UFunc {
+                trans: trans.clone(),
+            });
+            id
+        });
+        char_to_func[b as usize] = id;
+    }
+
+    let t1 = Instant::now();
+    println!(
+        "[tables] generators: {} distinct bytes -> {} functions (took {:?})",
+        distinct,
+        funcs.len(),
+        t1.duration_since(t0)
+    );
+
+    // 2) Closure of compositions (only over what we have)
+    //    This can still grow, but usually stays small for real inputs.
+    let mut changed = true;
+    let mut round = 0usize;
+    while changed {
+        changed = false;
+        round += 1;
+        let current_len = funcs.len();
+        for a in 0..current_len {
+            for b in 0..current_len {
+                let trans = compose(&funcs[a], &funcs[b]).trans;
+                if !map.contains_key(&trans) {
+                    let id = funcs.len() as u32;
+                    map.insert(trans.clone(), id);
+                    funcs.push(UFunc { trans });
+                    changed = true;
+                }
+            }
+        }
+        println!("[tables] closure round {round}: size now {}", funcs.len());
+
+        // Optional safety cap if you want to avoid pathologies:
+        // if funcs.len() > 16384 { println!("[tables] cap hit; stopping growth"); break; }
+    }
+
+    // 3) Build merge[m*m], token_of[m], emit_on_start[m]
+    let m = funcs.len() as u32;
+    let mut merge = vec![0u32; (m * m) as usize];
+    for a in 0..m {
+        for b in 0..m {
+            let trans = compose(&funcs[a as usize], &funcs[b as usize]).trans;
+            let id = *map.get(&trans).unwrap();
+            merge[(a * m + b) as usize] = id;
+        }
+    }
+
+    let start = dfa.start as usize;
+    let mut token_of = vec![INVALID_TOKEN; m as usize];
+    let mut emit_on_start = vec![0u32; m as usize];
+    for (id, f) in funcs.iter().enumerate() {
+        let Next { state, emit } = f.trans[start];
+        token_of[id] = dfa.token_map[state as usize];
+        emit_on_start[id] = if emit { 1 } else { 0 };
+    }
+
+    let t2 = Instant::now();
+    let bytes_merge = (m as u64) * (m as u64) * 4;
+    println!(
+        "[tables] finalized: m={}  merge={} bytes (~{} KiB)  total {:?}",
+        m,
+        bytes_merge,
+        bytes_merge / 1024,
+        t2.duration_since(t0)
+    );
+
+    Tables {
+        char_to_func,
+        merge,
+        token_of,
+        emit_on_start,
+        m,
+        identity: 0,
+    }
+}
+
+// ---------------------------------------------
+// JSON (de)serialization for prebuilt tables
+// ---------------------------------------------
+#[serde_as]
+#[derive(Serialize, Deserialize)]
+struct TablesDisk {
+    #[serde_as(as = "[_; 256]")]
+    char_to_func: [u32; 256],
+    merge: Vec<u32>,
+    token_of: Vec<u32>,
+    emit_on_start: Vec<u32>,
+    m: u32,
+    identity: u32,
+}
+impl From<&Tables> for TablesDisk {
+    fn from(t: &Tables) -> Self {
+        Self {
+            char_to_func: t.char_to_func,
+            merge: t.merge.clone(),
+            token_of: t.token_of.clone(),
+            emit_on_start: t.emit_on_start.clone(),
+            m: t.m,
+            identity: t.identity,
+        }
+    }
+}
+impl TablesDisk {
+    fn into_tables(self) -> Tables {
+        Tables {
+            char_to_func: self.char_to_func,
+            merge: self.merge,
+            token_of: self.token_of,
+            emit_on_start: self.emit_on_start,
+            m: self.m,
+            identity: self.identity,
+        }
+    }
+}
+
+pub fn save_tables_json(path: &std::path::Path, t: &Tables) -> std::io::Result<()> {
+    let disk: TablesDisk = t.into();
+    let s = serde_json::to_string(&disk).unwrap();
+    std::fs::write(path, s)
+}
+pub fn load_tables_json_bytes(data: &[u8]) -> Result<Tables, String> {
+    serde_json::from_slice::<TablesDisk>(data)
+        .map(|d| d.into_tables())
+        .map_err(|e| format!("Failed to parse tables JSON: {e}"))
 }
