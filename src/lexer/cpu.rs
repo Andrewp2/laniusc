@@ -13,6 +13,36 @@ pub struct CpuToken {
     pub len: usize,
 }
 
+fn ends_primary(k: TokenKind) -> bool {
+    use TokenKind::*;
+    matches!(k, Ident | Int | String | RParen | RBracket | RBrace)
+}
+
+pub fn retag_calls_and_arrays_in_place(kinds: &mut [TokenKind]) {
+    use TokenKind::*;
+    let mut prev_sig: Option<TokenKind> = None; // after filtering, all are significant
+
+    for k in kinds.iter_mut() {
+        let prev_ends = prev_sig.map(ends_primary).unwrap_or(false);
+
+        match *k {
+            LParen => {
+                *k = if prev_ends { CallLParen } else { GroupLParen };
+            }
+            LBracket => {
+                *k = if prev_ends {
+                    IndexLBracket
+                } else {
+                    ArrayLBracket
+                };
+            }
+            _ => {}
+        }
+
+        prev_sig = Some(*k);
+    }
+}
+
 #[inline]
 fn keep_kind(k: TokenKind) -> bool {
     use TokenKind::*;
@@ -97,6 +127,13 @@ pub fn lex_on_cpu(input: &str) -> Result<Vec<CpuToken>, String> {
                 start: tok_start,
                 len: n - tok_start,
             });
+        }
+        {
+            let mut kinds: Vec<TokenKind> = out.iter().map(|t| t.kind).collect();
+            retag_calls_and_arrays_in_place(&mut kinds);
+            for (tok, k) in out.iter_mut().zip(kinds.into_iter()) {
+                tok.kind = k;
+            }
         }
         return Ok(out);
     }

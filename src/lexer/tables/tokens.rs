@@ -45,6 +45,7 @@ pub enum TokenKind {
     GroupLParen,
     IndexLBracket,
     ArrayLBracket,
+    String,
 }
 
 // used on GPU side too

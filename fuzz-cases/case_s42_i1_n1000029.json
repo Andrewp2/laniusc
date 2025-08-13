@@ -1,8 +1,0 @@
-{
-  "unix_ts": 1754960583,
-  "seed": 42,
-  "iter": 1,
-  "requested_len": null,
-  "actual_bytes": 1000029,
-  "note": "Replay with: FUZZ_INPUT=<this file> cargo run --bin fuzz_lex"
-}

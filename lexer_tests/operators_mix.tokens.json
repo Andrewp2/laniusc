@@ -1,7 +1,7 @@
 {
   "tokens": [
     {
-      "kind": "LParen",
+      "kind": "GroupLParen",
       "text": "("
     },
     {
@@ -37,7 +37,7 @@
       "text": "!"
     },
     {
-      "kind": "LParen",
+      "kind": "GroupLParen",
       "text": "("
     },
     {
@@ -65,7 +65,7 @@
       "text": "a"
     },
     {
-      "kind": "LBracket",
+      "kind": "IndexLBracket",
       "text": "["
     },
     {

@@ -5,7 +5,8 @@ use anyhow::{Result, anyhow};
 use encase::ShaderType;
 
 use crate::lexer::tables::{
-    dfa::{N_STATES, StreamingDfa},
+    compact::load_compact_tables_from_bytes,
+    dfa::N_STATES,
     tokens::TokenKind,
 };
 
@@ -104,6 +105,8 @@ impl GpuLexer {
             .or_else(|_| Err(anyhow!("no adapter")))?;
 
         let mut limits = wgpu::Limits::defaults();
+        // ... why are my comments missing here...
+        // they were explaining why we chose these values from the web3d survey...
         limits.max_storage_buffers_per_shader_stage = 10;
         limits.max_storage_buffer_binding_size = 2_147_483_644;
         limits.max_buffer_size = 2_147_483_644;
@@ -161,33 +164,31 @@ impl GpuLexer {
     }
 
     pub async fn lex(&self, input: &str) -> Result<Vec<Token>> {
-        let dfa = StreamingDfa::new();
+        // ---- load compact DFA tables that were committed in the repo
+        const COMPACT_BIN: &[u8] = include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tables/lexer_tables.bin"
+        ));
 
-        // PACKED next/emit
-        // Old (u32 per entry) -> New: pack two u16 entries per u32 word.
-        let total = 256 * N_STATES;
-        let mut next_emit_u16: Vec<u16> = vec![0; total];
-        for b in 0u32..=255 {
-            for s in 0usize..N_STATES {
-                let nx = dfa.next[s][b as usize];
-                let next = nx.state as u16 & 0x7FFF;
-                let emit = if nx.emit { 1u16 } else { 0u16 };
-                let packed16 = (emit << 15) | next;
-                next_emit_u16[(b as usize) * N_STATES + s] = packed16;
-            }
-        }
-        // Pack two u16s per u32 word
-        let mut next_emit_words: Vec<u32> = vec![0; (total + 1) / 2];
-        for i in 0..total {
-            let w = i >> 1;
-            if (i & 1) == 0 {
-                next_emit_words[w] |= next_emit_u16[i] as u32;
-            } else {
-                next_emit_words[w] |= (next_emit_u16[i] as u32) << 16;
-            }
+        let (n_states_from_file, next_emit_words, token_map) =
+            load_compact_tables_from_bytes(COMPACT_BIN)
+                .map_err(|e| anyhow!("failed to parse compact lexer_tables.bin: {e}"))?;
+
+        // sanity: shader kernels are compiled with a fixed N_STATES
+        if n_states_from_file != N_STATES {
+            return Err(anyhow!(
+                "compact table has n_states={} but shaders expect N_STATES={}",
+                n_states_from_file,
+                N_STATES
+            ));
         }
 
-        let token_map: Vec<u32> = dfa.token_map.into();
+        // start state is 0 in our enum layout
+        let start_state = 0u32;
+
+        // -------- prepare per-input buffers
+        let bytes_u32: Vec<u32> = input.bytes().map(|b| b as u32).collect();
+        let n = bytes_u32.len() as u32;
 
         let skip_kinds = [
             TokenKind::White as u32,
@@ -196,16 +197,13 @@ impl GpuLexer {
             u32::MAX,
         ];
 
-        let bytes_u32: Vec<u32> = input.bytes().map(|b| b as u32).collect();
-        let n = bytes_u32.len() as u32;
-
         let bufs = GpuBuffers::new(
             &self.device,
             n,
-            dfa.start as u32,
+            start_state,
             &bytes_u32,
-            &next_emit_words, // <— pass packed u32 words
-            &token_map,
+            &next_emit_words, // <— from the compact file
+            &token_map,       // <— from the compact file
             skip_kinds,
         );
 

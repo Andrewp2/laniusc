@@ -1,5 +1,6 @@
 // src/lexer/tables/mod.rs
 pub mod build;
+pub mod compact;
 pub mod dfa;
 pub mod io;
 pub mod tokens;

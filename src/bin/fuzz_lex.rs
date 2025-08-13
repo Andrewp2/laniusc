@@ -61,6 +61,10 @@ fn kind_from_str(s: &str) -> Option<TokenKind> {
         "RBracket" => RBracket,
         "LBrace" => LBrace,
         "RBrace" => RBrace,
+        "GroupLParen" => GroupLParen,     // <- no extra Some()
+        "CallLParen" => CallLParen,       // <- no extra Some()
+        "IndexLBracket" => IndexLBracket, // <- no extra Some()
+        "ArrayLBracket" => ArrayLBracket, // <- no extra Some()
         "AngleGeneric" => AngleGeneric,
         "Ampersand" => Ampersand,
         "Pipe" => Pipe,

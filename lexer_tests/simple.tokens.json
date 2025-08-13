@@ -21,7 +21,7 @@
       "text": "bar"
     },
     {
-      "kind": "LParen",
+      "kind": "CallLParen",
       "text": "("
     },
     {
