@@ -1,64 +1,84 @@
 // src/bin/gen_tables.rs
-// Build full-grammar lexer tables once and write them to disk.
-// Usage:
-//   cargo run --bin gen_tables                # writes tables/lexer_tables.bin
-//   cargo run --bin gen_tables -- json       # also writes tables/lexer_tables.json
-//   cargo run --bin gen_tables -- /path/out.bin
+// Generates a tiny DFA table file with only what the GPU runtime actually uses:
+// - next_emit: for each byte and state, pack (emit<<15 | next_state_low15)
+// - token_map: token kind per DFA state (0xFFFF = invalid)
+// Format:
+//   magic: 8 bytes = "LXDFA001"
+//   u32:   n_states
+//   u32:   reserved (0)
+//   u16[256 * n_states]: next_emit
+//   u16[n_states]:       token_map (INVALID=0xFFFF)
 
-use std::{env, fs, path::Path};
+use std::{
+    fs,
+    io::{BufWriter, Write},
+    path::Path,
+};
 
-use laniusc::lexer::tables::{INVALID_TOKEN, build_tables, save_tables_bin, save_tables_json};
+use laniusc::lexer::tables::{
+    dfa::{N_STATES, StreamingDfa},
+    tokens::INVALID_TOKEN,
+};
 
-fn main() {
-    let mut args = env::args().skip(1).collect::<Vec<_>>();
-    let write_json = args.iter().any(|a| a == "json");
+const MAGIC: &[u8; 8] = b"LXDFA001";
 
-    // pick output
-    let out = args
-        .iter()
-        .find(|a| a.as_str().ends_with(".bin"))
-        .cloned()
-        .unwrap_or_else(|| "tables/lexer_tables.bin".to_string());
-    let out_path = Path::new(&out);
+fn main() -> std::io::Result<()> {
+    println!("[gen_tables] building compact DFA tables (no merge)...");
+    let dfa = StreamingDfa::new();
+    let n_states = N_STATES as u32;
 
-    if let Some(parent) = out_path.parent() {
-        if let Err(e) = fs::create_dir_all(parent) {
-            eprintln!("error: failed to create {}: {e}", parent.display());
-            std::process::exit(1);
+    // Build next_emit (u16) : 256 * N_STATES
+    let total = 256 * N_STATES;
+    let mut next_emit_u16: Vec<u16> = Vec::with_capacity(total);
+    for b in 0u32..=255 {
+        for s in 0..N_STATES {
+            let nx = dfa.next[s][b as usize];
+            let next = (nx.state & 0x7FFF) as u16;
+            let emit = if nx.emit { 1u16 } else { 0u16 };
+            next_emit_u16.push((emit << 15) | next);
         }
     }
 
-    println!("[gen_tables] building full grammar tables…");
-    let t = build_tables();
-
-    let m = t.m as u64;
-    let merge_bytes_u32 = m * m * 4;
-    let token_kinds = t.token_of.iter().filter(|&&k| k != INVALID_TOKEN).count();
-    println!(
-        "[gen_tables] m = {} funcs, merge (u32) = {} bytes (~{} MiB), token_kinds seen = {}",
-        m,
-        merge_bytes_u32,
-        merge_bytes_u32 / (1024 * 1024),
-        token_kinds
-    );
-
-    if let Err(e) = save_tables_bin(out_path, &t) {
-        eprintln!("error: failed to write {}: {e}", out_path.display());
-        std::process::exit(1);
-    }
-    println!("[gen_tables] wrote {}", out_path.display());
-
-    if write_json {
-        let json_path = out_path.with_extension("json");
-        if let Err(e) = save_tables_json(&json_path, &t) {
-            eprintln!(
-                "warning: failed to also write JSON {}: {e}",
-                json_path.display()
-            );
+    // token_map (u16) : N_STATES (INVALID_TOKEN -> 0xFFFF)
+    let mut token_u16: Vec<u16> = Vec::with_capacity(N_STATES);
+    for &tk in &dfa.token_map {
+        if tk == INVALID_TOKEN {
+            token_u16.push(0xFFFF);
         } else {
-            println!("[gen_tables] also wrote {}", json_path.display());
+            token_u16.push(u16::try_from(tk).unwrap_or(0xFFFF));
         }
     }
 
-    println!("tip: commit the .bin and `cargo build` — build.rs will embed it.");
+    // Ensure output dir
+    let out_path = Path::new("tables/lexer_tables.bin");
+    if let Some(dir) = out_path.parent() {
+        fs::create_dir_all(dir)?;
+    }
+
+    let f = fs::File::create(out_path)?;
+    let mut w = BufWriter::new(f);
+
+    // header
+    w.write_all(MAGIC)?;
+    w.write_all(&n_states.to_le_bytes())?;
+    w.write_all(&0u32.to_le_bytes())?;
+
+    // body
+    for v in &next_emit_u16 {
+        w.write_all(&v.to_le_bytes())?;
+    }
+    for v in &token_u16 {
+        w.write_all(&v.to_le_bytes())?;
+    }
+    w.flush()?;
+
+    let bytes = 8 + 4 + 4 + (next_emit_u16.len() * 2) + (token_u16.len() * 2);
+    println!(
+        "[gen_tables] wrote {} bytes (~{:.1} KiB) to {}",
+        bytes,
+        bytes as f64 / 1024.0,
+        out_path.display()
+    );
+    println!("[gen_tables] done. You can commit this file safely.");
+    Ok(())
 }
