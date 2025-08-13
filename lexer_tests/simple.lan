@@ -1,0 +1,3 @@
+foo = 12 + bar/* cmt */(7) // hello
+baz=3/*multi
+line*/+qux

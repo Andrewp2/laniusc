@@ -5,7 +5,7 @@ pub mod io;
 pub mod tokens;
 
 // Re-exports to keep the external API unchanged.
-pub use build::{build_tables, build_tables_for_bytes};
+pub use build::build_tables;
 pub use io::{load_tables_bin_bytes, load_tables_json_bytes, save_tables_bin, save_tables_json};
 pub use tokens::{INVALID_TOKEN, TokenKind};
 

@@ -1,11 +1,13 @@
 // src/lexer/tables/io.rs
+use std::{
+    io::{BufWriter, Write},
+    time::Instant,
+};
+
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use std::io::{BufWriter, Write};
-use std::time::Instant;
 
-use super::Tables;
-use super::tokens::INVALID_TOKEN;
+use super::{Tables, tokens::INVALID_TOKEN};
 
 // -------------------- JSON (de)serialization --------------------
 
@@ -74,7 +76,7 @@ pub fn save_tables_bin(path: &std::path::Path, t: &Tables) -> std::io::Result<()
     }
 
     // Pre-size file to reduce fragmentation and speed up contiguous writes.
-    let mut f = std::fs::File::create(path)?;
+    let f = std::fs::File::create(path)?;
 
     // Compute total size:
     // header (8 + 4 + 4) + char_to_func (256*2) + merge (m*m*2) + token_of (m*2) + emit bits ((m+7)/8)
@@ -184,7 +186,7 @@ pub fn load_tables_bin_bytes(mut data: &[u8]) -> Result<Tables, String> {
     }
     data = &data[8..];
 
-    let mut read_u32 = |buf: &mut &[u8]| -> Result<u32, String> {
+    let read_u32 = |buf: &mut &[u8]| -> Result<u32, String> {
         if buf.len() < 4 {
             return Err("truncated u32".into());
         }
@@ -193,7 +195,7 @@ pub fn load_tables_bin_bytes(mut data: &[u8]) -> Result<Tables, String> {
         *buf = &buf[4..];
         Ok(u32::from_le_bytes(le))
     };
-    let mut read_u16 = |buf: &mut &[u8]| -> Result<u16, String> {
+    let read_u16 = |buf: &mut &[u8]| -> Result<u16, String> {
         if buf.len() < 2 {
             return Err("truncated u16".into());
         }
@@ -235,8 +237,7 @@ pub fn load_tables_bin_bytes(mut data: &[u8]) -> Result<Tables, String> {
     if data.len() < bytes {
         return Err("truncated emit_on_start bits".into());
     }
-    let (bit_slice, rest) = data.split_at(bytes);
-    data = rest;
+    let (bit_slice, _rest) = data.split_at(bytes);
     let mut emit_on_start = vec![0u32; m];
     for i in 0..m {
         let b = bit_slice[i / 8] >> (i % 8) & 1;

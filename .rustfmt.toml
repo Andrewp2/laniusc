@@ -1,0 +1,14 @@
+# .rustfmt.toml
+# --- import organization ---
+reorder_imports = true
+
+# Merge paths so you get one `use` per crate/module instead of many lines.
+# Choices: "Crate" | "Module" | "Item" | "Preserve"
+imports_granularity = "Crate"
+
+# Split imports into blocks (blank line between): std | external | local.
+# If your rustfmt is old and complains, upgrade Rust or remove this line.
+group_imports = "StdExternalCrate"
+
+# Optional: how multi-line `use` trees are laid out.
+imports_layout = "HorizontalVertical"

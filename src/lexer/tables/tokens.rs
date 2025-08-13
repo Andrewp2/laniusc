@@ -36,6 +36,9 @@ pub enum TokenKind {
     // optional singles so lone '&' or '|' aren't errors
     Ampersand,
     Pipe,
+
+    // new single-char minus
+    Minus,
 }
 
 // used on GPU side too

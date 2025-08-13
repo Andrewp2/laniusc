@@ -1,43 +1,92 @@
-// src/lexer/gpu/buffers.rs
-use super::LexParams;
-use crate::lexer::tables::dfa::N_STATES;
+use std::ops::Deref;
+
 use encase::UniformBuffer;
 use wgpu::util::DeviceExt;
 
+use super::LexParams;
+use crate::lexer::tables::dfa::N_STATES;
+
+pub struct LaniusBuffer<T> {
+    pub buffer: wgpu::Buffer,
+    pub byte_size: usize,
+    #[allow(dead_code)]
+    pub count: usize,
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<T> LaniusBuffer<T> {
+    pub fn new((buffer, byte_size): (wgpu::Buffer, u64), count: usize) -> Self {
+        Self {
+            buffer,
+            byte_size: byte_size as usize,
+            count,
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<T> Deref for LaniusBuffer<T> {
+    type Target = wgpu::Buffer;
+    fn deref(&self) -> &Self::Target {
+        &self.buffer
+    }
+}
+
 pub struct GpuBuffers {
+    pub n: u32,
+    pub nb: u32,
+
+    /// Uniform params buffer (LexParams) — lives here now.
+    pub params: wgpu::Buffer,
+
     // inputs/tables
-    pub in_bytes: wgpu::Buffer,
-    pub char_to_func: wgpu::Buffer, // identity map: b -> b
-    pub next_state: wgpu::Buffer,   // 256 * N_STATES
-    pub emit_mask: wgpu::Buffer,    // 256
-    pub token_map: wgpu::Buffer,    // N_STATES
+    pub in_bytes: LaniusBuffer<u32>,
+    pub next_emit: LaniusBuffer<u32>, // 256 * N_STATES, low15=next, high1=emit
+    pub token_map: LaniusBuffer<u32>, // N_STATES
 
-    // function-id mapping (now: bytes) + two-pass prefix
-    pub f_ping: wgpu::Buffer,          // map output (bytes)
-    pub f_inblock: wgpu::Buffer, // optional scratch (states per element) — kept for compatibility
-    pub block_summaries: wgpu::Buffer, // per-block function vector (N_STATES each)
-    pub block_ping: wgpu::Buffer, // scan ping (N_STATES per block)
-    pub block_pong: wgpu::Buffer, // scan pong (N_STATES per block)
-    pub block_prefix: wgpu::Buffer, // inclusive per-block prefix (N_STATES each)
-    pub f_final: wgpu::Buffer,   // global DFA state per element (u32)
+    // function-id mapping + two-pass prefix for DFA states
+    pub f_ping: LaniusBuffer<u32>,          // scan ping
+    pub f_inblock: LaniusBuffer<u32>,       // optional scratch (state per element)
+    pub block_summaries: LaniusBuffer<u32>, // per-block function vector (N_STATES each)
+    pub block_ping: LaniusBuffer<u32>,      // block scan ping
+    pub block_pong: LaniusBuffer<u32>,      // block scan pong
+    pub block_prefix: LaniusBuffer<u32>,    // inclusive per-block prefix (N_STATES each)
+    pub f_final: LaniusBuffer<u32>,         // global DFA state per element (u32)
 
-    // boundary/type streams
-    pub end_flags: wgpu::Buffer,
-    pub tok_types: wgpu::Buffer,
-    pub filtered_flags: wgpu::Buffer,
+    // finalize outputs
+    pub end_flags: LaniusBuffer<u32>,      // all ends (0/1)
+    pub tok_types: LaniusBuffer<u32>,      // type at boundary after i (packed)
+    pub filtered_flags: LaniusBuffer<u32>, // kept ends (0/1 compat)
+    pub end_excl_by_i: LaniusBuffer<u32>,  // exact exclusive end index per boundary i
 
-    // sum-scan scratch
-    pub s_ping: wgpu::Buffer,
-    pub s_pong: wgpu::Buffer,
-    pub s_final: wgpu::Buffer,
+    // seeds (produced by finalize) for BOTH streams
+    pub s_all_seed: LaniusBuffer<u32>,  // size n
+    pub s_keep_seed: LaniusBuffer<u32>, // size n
 
-    // compaction outputs
-    pub end_positions: wgpu::Buffer,
-    pub types_compact: wgpu::Buffer,
-    pub token_count: wgpu::Buffer,
+    // ---------- NEW: hierarchical sum scratch/finals for BOTH streams ----------
+    // in-block prefix (uint2 per element)
+    pub s_pair_inblock: LaniusBuffer<u32>, // byte_size = n * 8
 
-    // final tokens
-    pub tokens_out: wgpu::Buffer,
+    // per-block totals / scan ping-pong / final block prefix (uint2 per block)
+    pub block_totals_pair: LaniusBuffer<u32>, // nb * 8
+    pub block_pair_ping: LaniusBuffer<u32>,   // nb * 8
+    pub block_pair_pong: LaniusBuffer<u32>,   // nb * 8
+    pub block_prefix_pair: LaniusBuffer<u32>, // nb * 8
+
+    // final sums (scalar per element, like before)
+    pub s_all_final: LaniusBuffer<u32>,  // size n
+    pub s_keep_final: LaniusBuffer<u32>, // size n
+
+    // compaction outputs (ALL and KEPT)
+    pub end_positions: LaniusBuffer<u32>,     // kept
+    pub end_positions_all: LaniusBuffer<u32>, // all
+    pub types_compact: LaniusBuffer<u32>,     // kept
+    pub all_index_compact: LaniusBuffer<u32>, // kept
+    pub token_count: LaniusBuffer<u32>,       // kept
+    pub token_count_all: LaniusBuffer<u32>,   // all (debug/optional)
+
+    // final tokens (kept)
+    pub tokens_out: LaniusBuffer<super::GpuToken>,
 }
 
 impl GpuBuffers {
@@ -47,167 +96,221 @@ impl GpuBuffers {
         n: u32,
         start_state: u32,
         bytes_u32: &[u32],
-        char_to_func: &[u32; 256],
-        next_state: &[u32],
-        emit_mask: &[u32],
+        next_emit_packed: &[u32],
         token_map: &[u32],
-    ) -> (Self, wgpu::Buffer) {
-        let nb = n.div_ceil(128); // workgroup/block size is 128
-        let make_ro = |label: &str, bytes: &[u8]| {
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        // NEW: host-provided skip kinds (exactly four scalars; last may be sentinel)
+        skip_kinds: [u32; 4],
+    ) -> Self {
+        fn u32s_to_le_bytes(slice: &[u32]) -> Vec<u8> {
+            let mut out = Vec::with_capacity(slice.len() * 4);
+            for &v in slice {
+                out.extend_from_slice(&v.to_le_bytes());
+            }
+            out
+        }
+
+        fn make_ro<T>(
+            device: &wgpu::Device,
+            label: &str,
+            bytes: &[u8],
+            count: usize,
+        ) -> LaniusBuffer<T> {
+            let raw_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some(label),
                 contents: bytes,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            })
-        };
-        let make_rw = |label: &str, size: usize| {
-            device.create_buffer(&wgpu::BufferDescriptor {
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+            });
+            LaniusBuffer::new((raw_buffer, bytes.len() as u64), count)
+        }
+
+        fn make_rw<T>(
+            device: &wgpu::Device,
+            label: &str,
+            size: usize,
+            count: usize,
+        ) -> LaniusBuffer<T> {
+            let raw_buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some(label),
                 size: size as u64,
                 usage: wgpu::BufferUsages::STORAGE
                     | wgpu::BufferUsages::COPY_SRC
                     | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
-            })
-        };
+            });
+            LaniusBuffer::new((raw_buffer, size as u64), count)
+        }
 
-        let in_bytes = make_ro("in_bytes", bytemuck::cast_slice(bytes_u32));
-        let char_to_func_buf = make_ro("char_to_func", bytemuck::cast_slice(char_to_func));
-        let next_state_buf = make_ro("next_state", bytemuck::cast_slice(next_state));
-        let emit_mask_buf = make_ro("emit_mask", bytemuck::cast_slice(emit_mask));
-        let token_map_buf = make_ro("token_map", bytemuck::cast_slice(token_map));
+        let nb = n.div_ceil(256);
 
-        let f_ping = make_rw("f_ping", (n as usize) * 4);
-        let f_inblock = make_rw("f_inblock", (n as usize) * 4);
-
-        let per_block_vec_bytes = (N_STATES * 4) as usize;
-        let block_summaries = make_rw("block_summaries", (nb as usize) * per_block_vec_bytes);
-        let block_ping = make_rw("block_ping", (nb as usize) * per_block_vec_bytes);
-        let block_pong = make_rw("block_pong", (nb as usize) * per_block_vec_bytes);
-        let block_prefix = make_rw("block_prefix", (nb as usize) * per_block_vec_bytes);
-
-        let f_final = make_rw("f_final", (n as usize) * 4);
-
-        let end_flags = make_rw("end_flags", (n as usize) * 4);
-        let tok_types = make_rw("tok_types", (n as usize) * 4);
-        let filtered_flags = make_rw("filtered_flags", (n as usize) * 4);
-
-        let s_ping = make_rw("s_ping", (n as usize) * 4);
-        let s_pong = make_rw("s_pong", (n as usize) * 4);
-        let s_final = make_rw("s_final", (n as usize) * 4);
-
-        let end_positions = make_rw("end_positions", (n as usize) * 4);
-        let types_compact = make_rw("types_compact", (n as usize) * 4);
-        let token_count = make_rw("token_count", 4);
-
-        let tokens_out = make_rw(
-            "tokens_out",
-            (n as usize) * std::mem::size_of::<super::GpuToken>(),
+        // ---- inputs/tables
+        let in_bytes: LaniusBuffer<u32> =
+            make_ro::<u32>(device, "in_bytes", &u32s_to_le_bytes(bytes_u32), n as usize);
+        let token_map_buf: LaniusBuffer<u32> = make_ro::<u32>(
+            device,
+            "token_map",
+            &u32s_to_le_bytes(token_map),
+            N_STATES as usize,
         );
 
-        // LexParams UBO
+        // ---- mapping + block/prefix structures (DFA state path)
+        let f_ping: LaniusBuffer<u32> =
+            make_rw::<u32>(device, "f_ping", (n as usize) * 4, n as usize);
+        let f_inblock: LaniusBuffer<u32> =
+            make_rw::<u32>(device, "f_inblock", (n as usize) * 4, n as usize);
+
+        let per_block_vec_bytes = (N_STATES * 4) as usize;
+        let block_summaries: LaniusBuffer<u32> = make_rw::<u32>(
+            device,
+            "block_summaries",
+            (nb as usize) * per_block_vec_bytes,
+            nb as usize,
+        );
+        let block_ping: LaniusBuffer<u32> = make_rw::<u32>(
+            device,
+            "block_ping",
+            (nb as usize) * per_block_vec_bytes,
+            nb as usize,
+        );
+        let block_pong: LaniusBuffer<u32> = make_rw::<u32>(
+            device,
+            "block_pong",
+            (nb as usize) * per_block_vec_bytes,
+            nb as usize,
+        );
+        let block_prefix: LaniusBuffer<u32> = make_rw::<u32>(
+            device,
+            "block_prefix",
+            (nb as usize) * per_block_vec_bytes,
+            nb as usize,
+        );
+
+        let f_final: LaniusBuffer<u32> =
+            make_rw::<u32>(device, "f_final", (n as usize) * 4, n as usize);
+
+        // ---- finalize outputs
+        let end_flags: LaniusBuffer<u32> =
+            make_rw::<u32>(device, "end_flags", (n as usize) * 4, n as usize);
+        let tok_types: LaniusBuffer<u32> =
+            make_rw::<u32>(device, "tok_types", (n as usize) * 4, n as usize);
+        let filtered_flags: LaniusBuffer<u32> =
+            make_rw::<u32>(device, "filtered_flags", (n as usize) * 4, n as usize);
+        let end_excl_by_i: LaniusBuffer<u32> =
+            make_rw::<u32>(device, "end_excl_by_i", (n as usize) * 4, n as usize);
+
+        // ---- seeds for both streams
+        let s_all_seed: LaniusBuffer<u32> =
+            make_rw::<u32>(device, "s_all_seed", (n as usize) * 4, n as usize);
+        let s_keep_seed: LaniusBuffer<u32> =
+            make_rw::<u32>(device, "s_keep_seed", (n as usize) * 4, n as usize);
+
+        // ---- NEW: hierarchical sum scratch (uint2)
+        let s_pair_inblock: LaniusBuffer<u32> =
+            make_rw::<u32>(device, "s_pair_inblock", (n as usize) * 8, n as usize);
+
+        let block_totals_pair: LaniusBuffer<u32> =
+            make_rw::<u32>(device, "block_totals_pair", (nb as usize) * 8, nb as usize);
+        let block_pair_ping: LaniusBuffer<u32> =
+            make_rw::<u32>(device, "block_pair_ping", (nb as usize) * 8, nb as usize);
+        let block_pair_pong: LaniusBuffer<u32> =
+            make_rw::<u32>(device, "block_pair_pong", (nb as usize) * 8, nb as usize);
+        let block_prefix_pair: LaniusBuffer<u32> =
+            make_rw::<u32>(device, "block_prefix_pair", (nb as usize) * 8, nb as usize);
+
+        // ---- final sums
+        let s_all_final: LaniusBuffer<u32> =
+            make_rw::<u32>(device, "s_all_final", (n as usize) * 4, n as usize);
+        let s_keep_final: LaniusBuffer<u32> =
+            make_rw::<u32>(device, "s_keep_final", (n as usize) * 4, n as usize);
+
+        // ---- compaction + outputs
+        let end_positions: LaniusBuffer<u32> =
+            make_rw::<u32>(device, "end_positions", (n as usize) * 4, n as usize);
+        let end_positions_all: LaniusBuffer<u32> =
+            make_rw::<u32>(device, "end_positions_all", (n as usize) * 4, n as usize);
+        let types_compact: LaniusBuffer<u32> =
+            make_rw::<u32>(device, "types_compact", (n as usize) * 4, n as usize);
+        let all_index_compact: LaniusBuffer<u32> =
+            make_rw::<u32>(device, "all_index_compact", (n as usize) * 4, n as usize);
+        let token_count: LaniusBuffer<u32> = make_rw::<u32>(device, "token_count", 4, 1);
+        let token_count_all: LaniusBuffer<u32> = make_rw::<u32>(device, "token_count_all", 4, 1);
+
+        let tokens_out: LaniusBuffer<super::GpuToken> = make_rw::<super::GpuToken>(
+            device,
+            "tokens_out",
+            (n as usize) * std::mem::size_of::<super::GpuToken>(),
+            n as usize,
+        );
+
+        // ---- uniform params (LexParams) with flattened skip kinds
         let mut ub = UniformBuffer::new(Vec::new());
         ub.write(&LexParams {
             n,
             m: N_STATES as u32,
             identity_id: start_state,
+            skip0: skip_kinds[0],
+            skip1: skip_kinds[1],
+            skip2: skip_kinds[2],
+            skip3: skip_kinds[3],
         })
         .unwrap();
-        let params_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("LexParams"),
             contents: ub.as_ref(),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        (
-            Self {
-                in_bytes,
-                char_to_func: char_to_func_buf,
-                next_state: next_state_buf,
-                emit_mask: emit_mask_buf,
-                token_map: token_map_buf,
-                f_ping,
-                f_inblock,
-                block_summaries,
-                block_ping,
-                block_pong,
-                block_prefix,
-                f_final,
-                end_flags,
-                tok_types,
-                filtered_flags,
-                s_ping,
-                s_pong,
-                s_final,
-                end_positions,
-                types_compact,
-                token_count,
-                tokens_out,
-            },
-            params_buf,
-        )
-    }
+        let next_emit_buf: LaniusBuffer<u32> = make_ro::<u32>(
+            device,
+            "next_emit",
+            &u32s_to_le_bytes(next_emit_packed),
+            N_STATES as usize,
+        );
 
-    pub fn resolve<'a>(
-        &'a self,
-        name: &str,
-        params_buf: &'a wgpu::Buffer,
-    ) -> Option<wgpu::BindingResource<'a>> {
-        Some(match name {
-            "gParams" => wgpu::BindingResource::Buffer(params_buf.as_entire_buffer_binding()),
-            "in_bytes" => self.in_bytes.as_entire_binding(),
-            "char_to_func" => self.char_to_func.as_entire_binding(),
+        Self {
+            n,
+            nb,
+            params,
 
-            "next_state" => self.next_state.as_entire_binding(),
-            "emit_mask" => self.emit_mask.as_entire_binding(),
-            "token_map" => self.token_map.as_entire_binding(),
+            in_bytes,
+            next_emit: next_emit_buf,
+            token_map: token_map_buf,
 
-            "f_ping" => self.f_ping.as_entire_binding(),
-            "f_src" => self.f_ping.as_entire_binding(),
-            "f_inblock" => self.f_inblock.as_entire_binding(),
+            f_ping,
+            f_inblock,
+            block_summaries,
+            block_ping,
+            block_pong,
+            block_prefix,
+            f_final,
 
-            "block_summaries" => self.block_summaries.as_entire_binding(),
-            "block_prefix" => self.block_prefix.as_entire_binding(),
+            end_flags,
+            tok_types,
+            filtered_flags,
+            end_excl_by_i,
 
-            "f_final" => self.f_final.as_entire_binding(),
+            s_all_seed,
+            s_keep_seed,
 
-            "end_flags" => self.end_flags.as_entire_binding(),
-            "tok_types" => self.tok_types.as_entire_binding(),
-            "filtered_flags" => self.filtered_flags.as_entire_binding(),
+            // NEW
+            s_pair_inblock,
+            block_totals_pair,
+            block_pair_ping,
+            block_pair_pong,
+            block_prefix_pair,
 
-            "s_ping" => self.s_ping.as_entire_binding(),
-            "s_pong" => self.s_pong.as_entire_binding(),
-            "s_final" => self.s_final.as_entire_binding(),
+            s_all_final,
+            s_keep_final,
 
-            "end_positions" => self.end_positions.as_entire_binding(),
-            "types_compact" => self.types_compact.as_entire_binding(),
-            "token_count" => self.token_count.as_entire_binding(),
-            "tokens_out" => self.tokens_out.as_entire_binding(),
+            end_positions,
+            end_positions_all,
+            types_compact,
+            all_index_compact,
+            token_count,
+            token_count_all,
 
-            _ => return None,
-        })
-    }
-
-    pub fn resolve_scan<'a>(
-        &'a self,
-        name: &str,
-        params_buf: &'a wgpu::Buffer,
-        scan_params_buf: &'a wgpu::Buffer,
-    ) -> Option<wgpu::BindingResource<'a>> {
-        Some(match name {
-            "gParams" => wgpu::BindingResource::Buffer(params_buf.as_entire_buffer_binding()),
-            "gScan" => wgpu::BindingResource::Buffer(scan_params_buf.as_entire_buffer_binding()),
-
-            // sum-scan
-            "s_ping" => self.s_ping.as_entire_binding(),
-            "s_pong" => self.s_pong.as_entire_binding(),
-
-            // block scan
-            "block_ping" => self.block_ping.as_entire_binding(),
-            "block_pong" => self.block_pong.as_entire_binding(),
-
-            // fall back to regular resolver
-            _ => return self.resolve(name, params_buf),
-        })
+            tokens_out,
+        }
     }
 }

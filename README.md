@@ -1,6 +1,6 @@
 # The Lanius Programming Language
 
-Lanius is a programming language that compiles faster than light. It accomplishes this by performing all compilation tasks on the GPU: Lexing, parsing, typechecking, and code generation. Lanius is parallel on the character level, as opposed to just being parallel on the translation unit level, enabling Lanius to compile gigantic files at the same speed as tiny ones.
+Lanius is a programming language that compiles "faster than light". It accomplishes this by performing all compilation tasks on the GPU: Lexing, parsing, typechecking, and code generation.
 
 ## Lanius Values
 
@@ -33,6 +33,10 @@ Performance is essential, but Lanius is not looking to be the fastest possible l
 ## Stability
 
 Lanius is in an early alpha. Expect bugs, glitches, and nasal demons.
+
+## Benchmarks
+
+TBA
 
 ## Future
 

@@ -1,20 +1,22 @@
-// src/lexer/gpu/mod.rs
-use crate::lexer::tables::dfa::{N_STATES, StreamingDfa};
-use crate::lexer::tables::tokens::TokenKind;
-use anyhow::{Result, anyhow};
-use bytemuck::{Pod, Zeroable};
-use encase::ShaderType;
-use wgpu::util::DeviceExt;
+use std::sync::OnceLock;
 
+// src/lexer/gpu/mod.rs
+use anyhow::{Result, anyhow};
+use encase::ShaderType;
+
+use crate::lexer::tables::{
+    dfa::{N_STATES, StreamingDfa},
+    tokens::TokenKind,
+};
+
+// New-style pass imports (trait + concrete passes)
 mod buffers;
 use buffers::GpuBuffers;
 
+mod debug;
+
 mod passes;
-use passes::{
-    PassCtx, encode_rounds, encode_simple, make_block_scan_stage, make_build_tokens_stage,
-    make_finalize_stage, make_fixup_stage, make_map_stage, make_scan_blocks_stage,
-    make_scan_sum_stage, make_scatter_stage,
-};
+use passes::Pass;
 
 #[derive(Debug, Clone)]
 pub struct Token {
@@ -24,234 +26,315 @@ pub struct Token {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
+#[derive(Clone, Copy, ShaderType)]
+pub(super) struct LexParams {
+    pub n: u32,
+    pub m: u32,           // (= n_states)
+    pub identity_id: u32, // (= start_state)
+    // Avoid uniform arrays (encase requires 16B array stride). Use 4 scalars.
+    pub skip0: u32,
+    pub skip1: u32,
+    pub skip2: u32,
+    pub skip3: u32,
+}
+
+fn u32_from_first_4(bytes: &[u8]) -> u32 {
+    let mut le = [0u8; 4];
+    le.copy_from_slice(&bytes[..4]);
+    u32::from_le_bytes(le)
+}
+
+fn read_tokens_from_mapped(bytes: &[u8], count: usize) -> Vec<Token> {
+    let mut out = Vec::with_capacity(count);
+    for chunk in bytes
+        .chunks_exact(std::mem::size_of::<GpuToken>())
+        .take(count)
+    {
+        let (k, rest) = chunk.split_at(4);
+        let (s, l) = rest.split_at(4);
+        let kind_u32 = u32_from_first_4(k);
+        let start = u32_from_first_4(s) as usize;
+        let len = u32_from_first_4(l) as usize;
+        let kind = unsafe { std::mem::transmute::<u32, TokenKind>(kind_u32) };
+        out.push(Token { kind, start, len });
+    }
+    out
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
 struct GpuToken {
     kind: u32,
     start: u32,
     len: u32,
 }
 
-#[derive(Clone, Copy, ShaderType)]
-pub(super) struct LexParams {
-    pub n: u32,           // input length
-    pub m: u32,           // N_STATES (fixed 32)
-    pub identity_id: u32, // start state index
+pub struct GpuLexer {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+
+    // Prebuilt passes (pipelines + reflected layouts)
+    p_scan_inblock: passes::scan_inblock_inclusive_pass::ScanInblockInclusivePass,
+    p_scan_blocks: passes::scan_block_summaries_inclusive::ScanBlockSummariesInclusivePass,
+    p_apply_prefix: passes::apply_block_prefix_downsweep::ApplyBlockPrefixDownsweepPass,
+    p_finalize: passes::finalize_boundaries_and_seed::FinalizeBoundariesAndSeedPass,
+
+    // REPLACED: hierarchical sum for BOTH streams (ALL & KEPT) over uint2
+    p_sum_inblock: passes::sum_inblock_pairs::SumInblockPairsPass,
+    p_sum_blocks: passes::sum_scan_block_totals_inclusive::SumScanBlockTotalsInclusivePass,
+    p_sum_apply:
+        passes::sum_apply_block_prefix_downsweep_pairs::SumApplyBlockPrefixDownsweepPairsPass,
+
+    p_compact_all: passes::compact_boundaries_all::CompactBoundariesAllPass,
+    p_compact_kept: passes::compact_boundaries_kept::CompactBoundariesKeptPass,
+    p_build: passes::build_tokens::BuildTokensPass,
 }
 
-pub async fn lex_on_gpu(input: &str) -> Result<Vec<Token>> {
-    // --- WGPU bootstrap ---
-    let instance = wgpu::Instance::default();
-    let adapter = instance
-        .request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            compatible_surface: None,
-            force_fallback_adapter: false,
+impl GpuLexer {
+    pub async fn new() -> Result<Self> {
+        let instance = wgpu::Instance::default();
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                compatible_surface: None,
+                force_fallback_adapter: false,
+            })
+            .await
+            .or_else(|_| Err(anyhow!("no adapter")))?;
+
+        let mut limits = wgpu::Limits::defaults();
+        limits.max_storage_buffers_per_shader_stage = 10;
+        limits.max_storage_buffer_binding_size = 2_147_483_644;
+        limits.max_buffer_size = 2_147_483_644;
+
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("Lanius Lexer Device"),
+                required_features: wgpu::Features::empty(),
+                required_limits: limits,
+                memory_hints: wgpu::MemoryHints::default(),
+                trace: wgpu::Trace::default(),
+            })
+            .await?;
+
+        // Build once, reuse every call
+        let p_scan_inblock =
+            passes::scan_inblock_inclusive_pass::ScanInblockInclusivePass::new(&device)?;
+        let p_scan_blocks =
+            passes::scan_block_summaries_inclusive::ScanBlockSummariesInclusivePass::new(&device)?;
+        let p_apply_prefix =
+            passes::apply_block_prefix_downsweep::ApplyBlockPrefixDownsweepPass::new(&device)?;
+        let p_finalize =
+            passes::finalize_boundaries_and_seed::FinalizeBoundariesAndSeedPass::new(&device)?;
+
+        // NEW hierarchical sum passes
+        let p_sum_inblock = passes::sum_inblock_pairs::SumInblockPairsPass::new(&device)?;
+        let p_sum_blocks =
+            passes::sum_scan_block_totals_inclusive::SumScanBlockTotalsInclusivePass::new(&device)?;
+        let p_sum_apply =
+            passes::sum_apply_block_prefix_downsweep_pairs::SumApplyBlockPrefixDownsweepPairsPass::new(
+                &device,
+            )?;
+
+        let p_compact_all = passes::compact_boundaries_all::CompactBoundariesAllPass::new(&device)?;
+        let p_compact_kept =
+            passes::compact_boundaries_kept::CompactBoundariesKeptPass::new(&device)?;
+        let p_build = passes::build_tokens::BuildTokensPass::new(&device)?;
+
+        Ok(Self {
+            device,
+            queue,
+            p_scan_inblock,
+            p_scan_blocks,
+            p_apply_prefix,
+            p_finalize,
+            p_sum_inblock,
+            p_sum_blocks,
+            p_sum_apply,
+            p_compact_all,
+            p_compact_kept,
+            p_build,
         })
-        .await
-        .or_else(|_| Err(anyhow!("no adapter")))?;
+    }
 
-    let mut limits = wgpu::Limits::defaults();
-    limits.max_storage_buffers_per_shader_stage = 10;
-    limits.max_storage_buffer_binding_size = 2_147_483_644;
-    limits.max_buffer_size = 2_147_483_644;
+    pub async fn lex(&self, input: &str) -> Result<Vec<Token>> {
+        let dfa = StreamingDfa::new();
 
-    let (device, queue) = adapter
-        .request_device(&wgpu::DeviceDescriptor {
-            label: Some("Lanius Lexer Device"),
-            required_features: wgpu::Features::empty(),
-            required_limits: limits,
-            memory_hints: wgpu::MemoryHints::default(),
-            trace: wgpu::Trace::default(),
-        })
-        .await?;
-
-    // --- Tiny DFA tables (no m×m) ---
-    let dfa = StreamingDfa::new();
-
-    // next_state[byte * N_STATES + state]
-    let mut next_state: Vec<u32> = vec![0; 256 * N_STATES];
-    let mut emit_mask: Vec<u32> = vec![0; 256];
-    for b in 0u32..256 {
-        let mut mask = 0u32;
-        for s in 0usize..N_STATES {
-            let nx = dfa.next[s][b as usize];
-            next_state[(b as usize) * N_STATES + s] = nx.state as u32;
-            if nx.emit {
-                mask |= 1u32 << s;
+        // PACKED next/emit
+        // Old (u32 per entry) -> New: pack two u16 entries per u32 word.
+        let total = 256 * N_STATES;
+        let mut next_emit_u16: Vec<u16> = vec![0; total];
+        for b in 0u32..=255 {
+            for s in 0usize..N_STATES {
+                let nx = dfa.next[s][b as usize];
+                let next = nx.state as u16 & 0x7FFF;
+                let emit = if nx.emit { 1u16 } else { 0u16 };
+                let packed16 = (emit << 15) | next;
+                next_emit_u16[(b as usize) * N_STATES + s] = packed16;
             }
         }
-        emit_mask[b as usize] = mask;
-    }
-    let token_map: Vec<u32> = dfa.token_map.into();
-
-    // identity char_to_func so lex_map writes raw bytes to f_ping
-    let mut char_to_func = [0u32; 256];
-    for b in 0..256 {
-        char_to_func[b] = b as u32;
-    }
-
-    // Input bytes as u32
-    let bytes_u32: Vec<u32> = input.bytes().map(|b| b as u32).collect();
-    let n = bytes_u32.len() as u32;
-
-    // --- Buffers ---
-    let (bufs, params_buf) = GpuBuffers::new(
-        &device,
-        n,
-        dfa.start as u32,
-        &bytes_u32,
-        &char_to_func,
-        &next_state,
-        &emit_mask,
-        &token_map,
-    );
-
-    // --- Build passes ---
-    let ctx = PassCtx {
-        device: &device,
-        bufs: &bufs,
-        params_buf: &params_buf,
-    };
-
-    let st_map = make_map_stage(&ctx)?;
-    let tgs_x = st_map.thread_group_size[0].max(1);
-    let groups = (n + tgs_x - 1) / tgs_x;
-    let nblocks = groups;
-
-    let st_block_scan = make_block_scan_stage(&ctx)?;
-    let rounds_blocks = {
-        let mut r = 0u32;
-        let mut s = 1u32;
-        while s < nblocks {
-            r += 1;
-            s <<= 1;
+        // Pack two u16s per u32 word
+        let mut next_emit_words: Vec<u32> = vec![0; (total + 1) / 2];
+        for i in 0..total {
+            let w = i >> 1;
+            if (i & 1) == 0 {
+                next_emit_words[w] |= next_emit_u16[i] as u32;
+            } else {
+                next_emit_words[w] |= (next_emit_u16[i] as u32) << 16;
+            }
         }
-        r
-    };
-    let st_scan_blocks = make_scan_blocks_stage(&ctx, rounds_blocks)?;
 
-    let st_fixup = make_fixup_stage(&ctx)?;
-    let st_finalize = make_finalize_stage(&ctx)?;
+        let token_map: Vec<u32> = dfa.token_map.into();
 
-    let rounds_sum = {
-        let mut r = 0u32;
-        let mut s = 1u32;
-        while s < n {
-            r += 1;
-            s <<= 1;
-        }
-        r
-    };
-    let st_scan_sum = make_scan_sum_stage(&ctx, rounds_sum)?;
+        let skip_kinds = [
+            TokenKind::White as u32,
+            TokenKind::LineComment as u32,
+            TokenKind::BlockComment as u32,
+            u32::MAX,
+        ];
 
-    let st_scatter = make_scatter_stage(&ctx)?;
-    let st_build = make_build_tokens_stage(&ctx)?;
+        let bytes_u32: Vec<u32> = input.bytes().map(|b| b as u32).collect();
+        let n = bytes_u32.len() as u32;
 
-    // --- Encode ---
-    let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-        label: Some("lex-enc"),
-    });
-
-    // 1) map (bytes -> f_ping = bytes via identity table)
-    encode_simple(&mut enc, "map", &st_map, (groups, 1, 1));
-
-    // 2a) per-block scan (summarize each block as a 32-entry function vector)
-    encode_simple(&mut enc, "block_scan", &st_block_scan, (nblocks, 1, 1));
-
-    // Seed block_ping from block_summaries
-    enc.copy_buffer_to_buffer(
-        &bufs.block_summaries,
-        0,
-        &bufs.block_ping,
-        0,
-        (nblocks as u64) * (N_STATES as u64) * 4,
-    );
-
-    // 2b) scan block summaries (inclusive)
-    encode_rounds(&mut enc, "scan_blocks", &st_scan_blocks, (nblocks, 1, 1));
-
-    // Copy block prefix into dedicated buffer
-    if st_scan_blocks.last_write_pong {
-        enc.copy_buffer_to_buffer(
-            &bufs.block_pong,
-            0,
-            &bufs.block_prefix,
-            0,
-            (nblocks as u64) * (N_STATES as u64) * 4,
+        let bufs = GpuBuffers::new(
+            &self.device,
+            n,
+            dfa.start as u32,
+            &bytes_u32,
+            &next_emit_words, // <— pass packed u32 words
+            &token_map,
+            skip_kinds,
         );
-    } else {
-        enc.copy_buffer_to_buffer(
-            &bufs.block_ping,
-            0,
-            &bufs.block_prefix,
-            0,
-            (nblocks as u64) * (N_STATES as u64) * 4,
+
+        // Encode passes (no Map pass)
+        let mut enc = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("lex-enc"),
+            });
+
+        // DFA state prefix (unchanged)
+        self.p_scan_inblock.record_pass(
+            &self.device,
+            &mut enc,
+            &bufs,
+            &mut debug::DebugOutput::default(),
+            passes::InputElements::Elements1D(bufs.nb),
         );
-    }
+        self.p_scan_blocks.record_pass(
+            &self.device,
+            &mut enc,
+            &bufs,
+            &mut debug::DebugOutput::default(),
+            passes::InputElements::Elements1D(bufs.nb),
+        );
+        self.p_apply_prefix.record_pass(
+            &self.device,
+            &mut enc,
+            &bufs,
+            &mut debug::DebugOutput::default(),
+            passes::InputElements::Elements1D(bufs.n),
+        );
 
-    // 2c) fixup: recompute final states per element using block carry
-    encode_simple(&mut enc, "fixup", &st_fixup, (groups, 1, 1));
+        // Boundary classification + seeds (unchanged)
+        self.p_finalize.record_pass(
+            &self.device,
+            &mut enc,
+            &bufs,
+            &mut debug::DebugOutput::default(),
+            passes::InputElements::Elements1D(bufs.n),
+        );
 
-    // 3) finalize: compute end flags/types + seed sum-scan
-    encode_simple(&mut enc, "finalize", &st_finalize, (groups, 1, 1));
+        // ---------- NEW: hierarchical sums for BOTH streams ----------
+        self.p_sum_inblock.record_pass(
+            &self.device,
+            &mut enc,
+            &bufs,
+            &mut debug::DebugOutput::default(),
+            passes::InputElements::Elements1D(bufs.nb),
+        );
+        self.p_sum_blocks.record_pass(
+            &self.device,
+            &mut enc,
+            &bufs,
+            &mut debug::DebugOutput::default(),
+            passes::InputElements::Elements1D(bufs.nb),
+        );
+        self.p_sum_apply.record_pass(
+            &self.device,
+            &mut enc,
+            &bufs,
+            &mut debug::DebugOutput::default(),
+            passes::InputElements::Elements1D(bufs.n),
+        );
 
-    // 4a) scan (sum of valid ends)
-    encode_rounds(&mut enc, "scan_sum", &st_scan_sum, (groups, 1, 1));
+        // Compaction + token build (unchanged)
+        self.p_compact_all.record_pass(
+            &self.device,
+            &mut enc,
+            &bufs,
+            &mut debug::DebugOutput::default(),
+            passes::InputElements::Elements1D(bufs.n),
+        );
+        self.p_compact_kept.record_pass(
+            &self.device,
+            &mut enc,
+            &bufs,
+            &mut debug::DebugOutput::default(),
+            passes::InputElements::Elements1D(bufs.n),
+        );
+        self.p_build.record_pass(
+            &self.device,
+            &mut enc,
+            &bufs,
+            &mut debug::DebugOutput::default(),
+            passes::InputElements::Elements1D(bufs.n),
+        );
 
-    // Copy sum scan result to s_final
-    if st_scan_sum.last_write_pong {
-        enc.copy_buffer_to_buffer(&bufs.s_pong, 0, &bufs.s_final, 0, (n as u64) * 4);
-    } else {
-        enc.copy_buffer_to_buffer(&bufs.s_ping, 0, &bufs.s_final, 0, (n as u64) * 4);
-    }
-
-    // 4b) scatter
-    encode_simple(&mut enc, "scatter", &st_scatter, (groups, 1, 1));
-
-    // 5) build tokens
-    encode_simple(&mut enc, "build_tokens", &st_build, (groups, 1, 1));
-
-    // 6) read back
-    let rb_count = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("rb_count"),
-        size: 4,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
-    let rb_tokens = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("rb_tokens"),
-        size: (n as u64) * (std::mem::size_of::<GpuToken>() as u64),
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
-    enc.copy_buffer_to_buffer(&bufs.token_count, 0, &rb_count, 0, 4);
-    enc.copy_buffer_to_buffer(
-        &bufs.tokens_out,
-        0,
-        &rb_tokens,
-        0,
-        (n as u64) * (std::mem::size_of::<GpuToken>() as u64),
-    );
-
-    queue.submit(Some(enc.finish()));
-
-    rb_count.slice(..).map_async(wgpu::MapMode::Read, |_| {});
-    rb_tokens.slice(..).map_async(wgpu::MapMode::Read, |_| {});
-    let _ = device.poll(wgpu::PollType::Wait);
-
-    let token_count_u32 =
-        bytemuck::cast_slice::<u8, u32>(&rb_count.slice(..).get_mapped_range())[0] as usize;
-    let mapped_range = rb_tokens.slice(..).get_mapped_range();
-    let toks_raw: &[GpuToken] = bytemuck::cast_slice(&mapped_range);
-
-    let mut out = Vec::with_capacity(token_count_u32);
-    for gt in &toks_raw[..token_count_u32.min(toks_raw.len())] {
-        let kind = unsafe { std::mem::transmute::<u32, TokenKind>(gt.kind) };
-        out.push(Token {
-            kind,
-            start: gt.start as usize,
-            len: gt.len as usize,
+        // --- step 1: read token_count only
+        let rb_count = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rb_count"),
+            size: 4,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
         });
+        enc.copy_buffer_to_buffer(&bufs.token_count, 0, &rb_count, 0, 4);
+        self.queue.submit(Some(enc.finish()));
+
+        rb_count.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+        let _ = self.device.poll(wgpu::PollType::Wait);
+        let count_bytes = rb_count.slice(..).get_mapped_range();
+        let token_count_u32 = u32_from_first_4(&count_bytes) as usize;
+        drop(count_bytes);
+
+        // --- step 2: copy only the produced tokens
+        let needed_bytes = (token_count_u32 as u64) * (std::mem::size_of::<GpuToken>() as u64);
+        let rb_tokens = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rb_tokens"),
+            size: needed_bytes.max(1), // zero-sized buffers are invalid
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        let mut enc2 = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("lex-enc-rb"),
+            });
+        enc2.copy_buffer_to_buffer(&bufs.tokens_out, 0, &rb_tokens, 0, needed_bytes);
+        self.queue.submit(Some(enc2.finish()));
+
+        rb_tokens.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+        let _ = self.device.poll(wgpu::PollType::Wait);
+        let mapped = rb_tokens.slice(..).get_mapped_range();
+        Ok(read_tokens_from_mapped(&mapped, token_count_u32))
     }
-    Ok(out)
+}
+
+// Optional convenience wrapper that reuses a global context:
+static GPU_LEXER: OnceLock<GpuLexer> = OnceLock::new();
+
+pub async fn lex_on_gpu(input: &str) -> Result<Vec<Token>> {
+    let lexer = GPU_LEXER.get_or_init(|| pollster::block_on(GpuLexer::new()).expect("GPU init"));
+    lexer.lex(input).await
 }

@@ -13,6 +13,7 @@ fn main() {
         match lex_on_gpu(src).await {
             Ok(tokens) => {
                 println!("TOKENS:");
+
                 for t in tokens {
                     let lexeme = &src.as_bytes()[t.start..t.start + t.len];
                     println!("{:?}  {:?}", t.kind, String::from_utf8_lossy(lexeme));

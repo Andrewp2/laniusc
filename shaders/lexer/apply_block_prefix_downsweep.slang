@@ -1,10 +1,9 @@
-// shaders/lex_block_scan.slang
-// Per-block inclusive scan over δ_b functions represented as 32-entry vectors.
-// Writes: block_summaries[block] = composed function for the whole block.
-// Optionally writes f_inblock[i] = state(start) after in-block prefix i.
+// Re-run the in-block prefix with the block carry (inclusive prefix of prior blocks).
 
-#define WORKGROUP_SIZE 128
+#define WORKGROUP_SIZE 256
 #define N_STATES 32
+
+import utils;
 
 struct Params
 {
@@ -15,36 +14,45 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> in_bytes;
-StructuredBuffer<uint> next_state;        // 256 * N_STATES, layout: b*N_STATES + s
-RWStructuredBuffer<uint> f_inblock;       // optional debug/scratch (state per element)
-RWStructuredBuffer<uint> block_summaries; // nb * N_STATES
+StructuredBuffer<uint> next_emit; // 2x u16 per uint
+StructuredBuffer<uint> block_prefix;
+RWStructuredBuffer<uint> f_final;
 
 groupshared uint func[WORKGROUP_SIZE][N_STATES];
 
+[shader("compute")]
 [numthreads(WORKGROUP_SIZE, 1, 1)]
-void block_scan(uint3 tid: SV_GroupThreadID,
-                uint3 gid: SV_DispatchThreadID,
-                uint3 ggrp: SV_GroupID)
+void apply_block_prefix_downsweep(uint3 tid: SV_GroupThreadID,
+                                  uint3 gid: SV_DispatchThreadID,
+                                  uint3 ggrp: SV_GroupID)
 {
     const uint block = ggrp.x;
     const uint base = block * WORKGROUP_SIZE;
     const uint i = base + tid.x;
 
-    // Load per-element δ_b into shared memory
+    // Carry is inclusive prefix of previous block:
+    // carry = identity for block==0, else block_prefix[block-1]
+    uint carry_state0 = gParams.start_state;
+    if (block > 0)
+    {
+        uint prevBase = (block - 1) * N_STATES;
+        carry_state0 = block_prefix[prevBase + carry_state0];
+    }
+
+    // Load functions for this block
     uint b = 0;
     if (i < gParams.n)
     {
         b = in_bytes[i] & 0xFFu;
-        // func[i][s] = next_state[b][s]
         [unroll]
         for (uint s = 0; s < N_STATES; ++s)
         {
-            func[tid.x][s] = next_state[b * N_STATES + s];
+            uint packed = load_u16_packed(next_emit, b * N_STATES + s);
+            func[tid.x][s] = packed & 0x7FFFu;
         }
     }
     else
     {
-        // identity for out-of-range lanes
         [unroll]
         for (uint s = 0; s < N_STATES; ++s)
         {
@@ -53,7 +61,7 @@ void block_scan(uint3 tid: SV_GroupThreadID,
     }
     GroupMemoryBarrierWithGroupSync();
 
-    // Inclusive scan in shared memory with composition: C = B ∘ A ; C[s] = B[A[s]]
+    // Inclusive scan of functions within the block
     for (uint offset = 1; offset < WORKGROUP_SIZE; offset <<= 1)
     {
         uint tmp[N_STATES];
@@ -83,20 +91,9 @@ void block_scan(uint3 tid: SV_GroupThreadID,
         GroupMemoryBarrierWithGroupSync();
     }
 
-    // Optionally store in-block state result from start
+    // Apply in-block prefix function to carry(start)
     if (i < gParams.n)
     {
-        f_inblock[i] = func[tid.x][gParams.start_state];
-    }
-
-    // Thread lane last writes the block summary vector
-    if (tid.x == WORKGROUP_SIZE - 1)
-    {
-        uint dstBase = block * N_STATES;
-        [unroll]
-        for (uint s = 0; s < N_STATES; ++s)
-        {
-            block_summaries[dstBase + s] = func[tid.x][s];
-        }
+        f_final[i] = func[tid.x][carry_state0];
     }
 }

@@ -1,6 +1,5 @@
 // src/lexer/tables/dfa.rs
-use super::tokens::INVALID_TOKEN;
-use super::tokens::TokenKind;
+use super::tokens::{INVALID_TOKEN, TokenKind};
 
 // DFA states (small hand-built DFA).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -23,6 +22,7 @@ pub enum S {
     AfterPlus,
     AfterStar,
     AfterAssign,
+    AfterMinus, // <--- NEW
 
     // singles
     AfterBang,
@@ -75,6 +75,7 @@ const ALL_STATES: &[S] = &[
     S::AfterPlus,
     S::AfterStar,
     S::AfterAssign,
+    S::AfterMinus, // <--- NEW
     S::AfterBang,
     S::AfterLBracket,
     S::AfterRBracket,
@@ -138,6 +139,7 @@ pub(crate) fn token_of_state(s: S) -> Option<TokenKind> {
         AfterPlus => Some(TokenKind::Plus),
         AfterStar => Some(TokenKind::Star),
         AfterAssign => Some(TokenKind::Assign),
+        AfterMinus => Some(TokenKind::Minus), // <--- NEW
         LineComment => Some(TokenKind::LineComment),
 
         AfterBang => Some(TokenKind::Not),
@@ -206,6 +208,7 @@ impl StreamingDfa {
                     b'+' => S::AfterPlus,
                     b'*' => S::AfterStar,
                     b'=' => S::AfterAssign,
+                    b'-' => S::AfterMinus, // <--- NEW
                     b'/' => S::MaybeSlash,
                     b'!' => S::AfterBang,
                     b'[' => S::AfterLBracket,

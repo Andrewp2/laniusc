@@ -1,0 +1,100 @@
+{
+  "tokens": [
+    {
+      "kind": "LParen",
+      "text": "("
+    },
+    {
+      "kind": "Int",
+      "text": "1"
+    },
+    {
+      "kind": "Plus",
+      "text": "+"
+    },
+    {
+      "kind": "Int",
+      "text": "2"
+    },
+    {
+      "kind": "RParen",
+      "text": ")"
+    },
+    {
+      "kind": "EqEq",
+      "text": "=="
+    },
+    {
+      "kind": "Int",
+      "text": "3"
+    },
+    {
+      "kind": "AndAnd",
+      "text": "&&"
+    },
+    {
+      "kind": "Not",
+      "text": "!"
+    },
+    {
+      "kind": "LParen",
+      "text": "("
+    },
+    {
+      "kind": "Int",
+      "text": "4"
+    },
+    {
+      "kind": "Lt",
+      "text": "<"
+    },
+    {
+      "kind": "Int",
+      "text": "5"
+    },
+    {
+      "kind": "RParen",
+      "text": ")"
+    },
+    {
+      "kind": "OrOr",
+      "text": "||"
+    },
+    {
+      "kind": "Ident",
+      "text": "a"
+    },
+    {
+      "kind": "LBracket",
+      "text": "["
+    },
+    {
+      "kind": "Ident",
+      "text": "b"
+    },
+    {
+      "kind": "RBracket",
+      "text": "]"
+    },
+    {
+      "kind": "LBrace",
+      "text": "{"
+    },
+    {
+      "kind": "RBrace",
+      "text": "}"
+    },
+    {
+      "kind": "Lt",
+      "text": "<"
+    },
+    {
+      "kind": "Ident",
+      "text": "T"
+    },
+    {
+      "kind": "Gt",
+      "text": ">"
+    }
+  ]
+}

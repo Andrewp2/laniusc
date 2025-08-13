@@ -1,0 +1,24 @@
+{
+  "tokens": [
+    {
+      "kind": "Ident",
+      "text": "x"
+    },
+    {
+      "kind": "Assign",
+      "text": "="
+    },
+    {
+      "kind": "Int",
+      "text": "1"
+    },
+    {
+      "kind": "Plus",
+      "text": "+"
+    },
+    {
+      "kind": "Int",
+      "text": "2"
+    }
+  ]
+}

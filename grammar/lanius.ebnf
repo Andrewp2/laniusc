@@ -1,0 +1,98 @@
+(* -----------------------------------------------------------
+   Lanius Grammar (MVP: items, types, decls, strings, arrays)
+   - Calls use ()    - Arrays use []   - Indexing uses [] after Primary
+   - Generics allowed only in TYPEs for MVP (LLP(1,1)-friendly)
+   - Whitespace/comments filtered by lexer
+   - Keywords ("fn","struct","trait","pub","priv","let","var") can be
+     matched as IDENT lexemes or given dedicated tokens later.
+   ----------------------------------------------------------- *)
+
+File            = { Item } EOF ;
+
+Item            = [Vis] ( FnItem | StructItem | TraitItem )
+                | LetDecl
+                | VarDecl ;
+
+Vis             = "pub" | "priv" ;
+
+FnItem          = "fn" Ident "(" [ ParamList [ "," ] ] ")"
+                  [ "->" Type ]
+                  Block ;
+
+ParamList       = Param { "," Param } ;
+Param           = Ident ":" Type ;
+
+StructItem      = "struct" Ident "{"
+                    { [Vis] Field ";" }
+                  "}" ;
+Field           = Ident ":" Type ;
+
+TraitItem       = "trait" Ident "{"
+                    { TraitMember }
+                  "}" ;
+TraitMember     = [Vis] "fn" Ident "(" [ ParamList [ "," ] ] ")"
+                  [ "->" Type ] ";" ;
+
+LetDecl         = "let" Pattern [ ":" Type ] [ "=" Expr ] ";" ;
+VarDecl         = "var" Pattern [ ":" Type ] [ "=" Expr ] ";" ;
+Pattern         = Ident ;  (* MVP; extend later to tuples/destructuring *)
+
+(* ---------------- Statements & blocks --------------------- *)
+
+Block           = "{" { Stmt } "}" ;
+
+Stmt            = LetDecl
+                | VarDecl
+                | [Vis] ( FnItem | StructItem )     (* optional nested items *)
+                | ExprStmt ;
+
+ExprStmt        = Expr ";"
+                | Block ;
+
+(* ---------------- Expressions & precedence ---------------- *)
+
+Expr            = Assign ;
+Assign          = OrExpr ( "=" Assign )? ;                  (* right-assoc *)
+
+OrExpr          = AndExpr { "||" AndExpr } ;
+AndExpr         = Equality { "&&" Equality } ;
+Equality        = Compare { "==" Compare } ;
+Compare         = Add { ( "<=" | ">=" | "<" | ">" ) Add } ;
+Add             = Mul { ( "+" | "-" ) Mul } ;
+Mul             = Unary { ( "*" | "/" ) Unary } ;
+
+Unary           = ( "!" | "+" | "-" ) Unary
+                | Postfix ;
+
+Postfix         = Primary { Call | Index } ;
+
+Call            = "(" [ ArgList [ "," ] ] ")" ;
+ArgList         = Expr { "," Expr } ;
+
+Index           = "[" Expr "]" ;
+
+Primary         = Int
+                | String
+                | Ident                 (* MVP: NO TypeArgs here *)
+                | Group
+                | Block
+                | Array ;               (* array literal at expression start *)
+
+Group           = "(" Expr ")" ;
+
+Array           = "[" [ Expr { "," Expr } [ "," ] ] "]" ;
+
+(* ------------------------- Types -------------------------- *)
+
+Type            = PathType ;            (* extend later: tuples, arrays, refs *)
+PathType        = Ident [ TypeArgs ]    (* e.g., Foo, Foo<T, U> *) ;
+
+TypeArgs        = "<" Type { "," Type } ">" ;
+
+(* ------------------------ Tokens -------------------------- *)
+
+Int             = INT ;
+String          = STRING ;
+Ident           = IDENT ;
+
+EOF             = /* end of token stream */ ;

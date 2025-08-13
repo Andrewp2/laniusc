@@ -1,0 +1,56 @@
+{
+  "tokens": [
+    {
+      "kind": "Ident",
+      "text": "foo"
+    },
+    {
+      "kind": "Assign",
+      "text": "="
+    },
+    {
+      "kind": "Int",
+      "text": "12"
+    },
+    {
+      "kind": "Plus",
+      "text": "+"
+    },
+    {
+      "kind": "Ident",
+      "text": "bar"
+    },
+    {
+      "kind": "LParen",
+      "text": "("
+    },
+    {
+      "kind": "Int",
+      "text": "7"
+    },
+    {
+      "kind": "RParen",
+      "text": ")"
+    },
+    {
+      "kind": "Ident",
+      "text": "baz"
+    },
+    {
+      "kind": "Assign",
+      "text": "="
+    },
+    {
+      "kind": "Int",
+      "text": "3"
+    },
+    {
+      "kind": "Plus",
+      "text": "+"
+    },
+    {
+      "kind": "Ident",
+      "text": "qux"
+    }
+  ]
+}

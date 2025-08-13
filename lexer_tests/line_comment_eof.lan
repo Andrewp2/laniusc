@@ -1,0 +1,3 @@
+// ends at newline
+a = 1 // ends at newline
+b = 2

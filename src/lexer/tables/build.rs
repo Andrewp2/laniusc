@@ -1,10 +1,13 @@
 // src/lexer/tables/build.rs
-use hashbrown::{HashMap, HashSet};
-use rayon::prelude::*;
 use std::time::Instant;
 
-use super::Tables;
-use super::dfa::{N_STATES, Next, StreamingDfa};
+use hashbrown::{HashMap, HashSet};
+use rayon::prelude::*;
+
+use super::{
+    Tables,
+    dfa::{N_STATES, Next, StreamingDfa},
+};
 
 // Q -> (Q, emit)
 #[derive(Clone)]
@@ -180,94 +183,6 @@ pub fn build_tables() -> Tables {
     let (merge, token_of, emit_on_start) =
         build_merge_and_maps_parallel(&funcs, &map, dfa.start as usize, &dfa.token_map);
     println!("[tables] merge took {} ms", t2.elapsed().as_millis());
-
-    Tables {
-        char_to_func,
-        merge,
-        token_of,
-        emit_on_start,
-        m: funcs.len() as u32,
-        identity: 0,
-    }
-}
-
-pub fn build_tables_for_bytes(bytes: &[u8]) -> Tables {
-    let t0 = Instant::now();
-
-    // Mark which bytes occur
-    let mut present = [false; 256];
-    let mut distinct = 0usize;
-    for &b in bytes {
-        if !present[b as usize] {
-            present[b as usize] = true;
-            distinct += 1;
-        }
-    }
-
-    let dfa = StreamingDfa::new();
-    let n_states = dfa.next.len();
-
-    // Identity function id 0
-    let identity = UFunc {
-        trans: (0..n_states)
-            .map(|s| Next {
-                state: s as u16,
-                emit: false,
-            })
-            .collect(),
-    };
-
-    let mut funcs: Vec<UFunc> = vec![identity.clone()];
-    let mut map: HashMap<Vec<Next>, u32> = HashMap::new();
-    map.insert(identity.trans.clone(), 0);
-
-    let mut char_to_func = [0u32; 256];
-
-    // δ_c only for present bytes
-    for b in 0u8..=255 {
-        if !present[b as usize] {
-            char_to_func[b as usize] = 0;
-            continue;
-        }
-        let mut trans = Vec::with_capacity(n_states);
-        for s in 0..n_states {
-            trans.push(dfa.next[s][b as usize]);
-        }
-        let id = *map.entry(trans.clone()).or_insert_with(|| {
-            let id = funcs.len() as u32;
-            funcs.push(UFunc {
-                trans: trans.clone(),
-            });
-            id
-        });
-        char_to_func[b as usize] = id;
-    }
-
-    let t1 = Instant::now();
-    println!(
-        "[tables] generators: {} distinct bytes -> {} functions (took {:?})",
-        distinct,
-        funcs.len(),
-        t1.duration_since(t0)
-    );
-
-    // Parallel closure
-    closure_fixpoint_parallel(&mut funcs, &mut map);
-
-    // Merge + maps
-    let (merge, token_of, emit_on_start) =
-        build_merge_and_maps_parallel(&funcs, &map, dfa.start as usize, &dfa.token_map);
-
-    let t2 = Instant::now();
-    let m = funcs.len() as u64;
-    let bytes_merge = m * m * 4;
-    println!(
-        "[tables] finalized: m={}  merge={} bytes (~{} KiB)  total {:?}",
-        m,
-        bytes_merge,
-        bytes_merge / 1024,
-        t2.duration_since(t0)
-    );
 
     Tables {
         char_to_func,

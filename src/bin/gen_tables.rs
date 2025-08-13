@@ -5,8 +5,9 @@
 //   cargo run --bin gen_tables -- json       # also writes tables/lexer_tables.json
 //   cargo run --bin gen_tables -- /path/out.bin
 
-use laniusc::lexer::tables::{INVALID_TOKEN, build_tables, save_tables_bin, save_tables_json};
 use std::{env, fs, path::Path};
+
+use laniusc::lexer::tables::{INVALID_TOKEN, build_tables, save_tables_bin, save_tables_json};
 
 fn main() {
     let mut args = env::args().skip(1).collect::<Vec<_>>();
