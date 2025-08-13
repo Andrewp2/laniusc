@@ -103,7 +103,7 @@ fn build_merge_and_maps_parallel(
     map: &HashMap<Vec<Next>, u32>,
     start_state_idx: usize,
     token_map: &[u32; N_STATES],
-) -> (Vec<u32>, Vec<u32>, Vec<u32>) {
+) -> (Vec<u32>, Vec<u32>) {
     let m = funcs.len();
     let mut merge = vec![0u32; m * m];
 
@@ -122,14 +122,12 @@ fn build_merge_and_maps_parallel(
     });
 
     let mut token_of = vec![super::tokens::INVALID_TOKEN; m];
-    let mut emit_on_start = vec![0u32; m];
     for (id, f) in funcs.iter().enumerate() {
-        let Next { state, emit } = f.trans[start_state_idx];
+        let Next { state, .. } = f.trans[start_state_idx];
         token_of[id] = token_map[state as usize];
-        emit_on_start[id] = if emit { 1 } else { 0 };
     }
 
-    (merge, token_of, emit_on_start)
+    (merge, token_of)
 }
 
 pub fn build_tables() -> Tables {
@@ -179,8 +177,8 @@ pub fn build_tables() -> Tables {
     println!("[tables] closure took {} ms", t1.elapsed().as_millis());
 
     let t2 = Instant::now();
-    // Merge + maps
-    let (merge, token_of, emit_on_start) =
+    // Merge + maps (no more emit_on_start)
+    let (merge, token_of) =
         build_merge_and_maps_parallel(&funcs, &map, dfa.start as usize, &dfa.token_map);
     println!("[tables] merge took {} ms", t2.elapsed().as_millis());
 
@@ -188,7 +186,6 @@ pub fn build_tables() -> Tables {
         char_to_func,
         merge,
         token_of,
-        emit_on_start,
         m: funcs.len() as u32,
         identity: 0,
     }

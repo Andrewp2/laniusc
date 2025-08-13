@@ -18,7 +18,6 @@ struct TablesDisk {
     char_to_func: [u32; 256],
     merge: Vec<u32>,
     token_of: Vec<u32>,
-    emit_on_start: Vec<u32>,
     m: u32,
     identity: u32,
 }
@@ -28,7 +27,6 @@ impl From<&Tables> for TablesDisk {
             char_to_func: t.char_to_func,
             merge: t.merge.clone(),
             token_of: t.token_of.clone(),
-            emit_on_start: t.emit_on_start.clone(),
             m: t.m,
             identity: t.identity,
         }
@@ -40,7 +38,6 @@ impl TablesDisk {
             char_to_func: self.char_to_func,
             merge: self.merge,
             token_of: self.token_of,
-            emit_on_start: self.emit_on_start,
             m: self.m,
             identity: self.identity,
         }
@@ -63,7 +60,9 @@ pub fn load_tables_json_bytes(data: &[u8]) -> Result<Tables, String> {
 
 // -------------------- Compact binary (u16 packing) --------------------
 
-const BIN_MAGIC: &[u8; 8] = b"LXTBLE01";
+// Bump magic to reflect format change (emit bits removed).
+const BIN_MAGIC_V2: &[u8; 8] = b"LXTBLE02";
+const BIN_MAGIC_V1: &[u8; 8] = b"LXTBLE01"; // tolerated on load for backward-compat
 const INVALID_TOKEN_U16: u16 = 0xFFFF;
 
 pub fn save_tables_bin(path: &std::path::Path, t: &Tables) -> std::io::Result<()> {
@@ -75,11 +74,10 @@ pub fn save_tables_bin(path: &std::path::Path, t: &Tables) -> std::io::Result<()
         ));
     }
 
-    // Pre-size file to reduce fragmentation and speed up contiguous writes.
     let f = std::fs::File::create(path)?;
 
     // Compute total size:
-    // header (8 + 4 + 4) + char_to_func (256*2) + merge (m*m*2) + token_of (m*2) + emit bits ((m+7)/8)
+    // header (8 + 4 + 4) + char_to_func (256*2) + merge (m*m*2) + token_of (m*2)
     let m = t.m as usize;
     let header = 8 + 4 + 4;
     let size_char_to_func = 256 * 2;
@@ -88,8 +86,7 @@ pub fn save_tables_bin(path: &std::path::Path, t: &Tables) -> std::io::Result<()
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "m*m overflow"))?
         * 2;
     let size_token_of = m * 2;
-    let size_emit = (m + 7) / 8;
-    let total_len = header + size_char_to_func + size_merge + size_token_of + size_emit;
+    let total_len = header + size_char_to_func + size_merge + size_token_of;
 
     // Pre-allocate (best effort).
     let _ = f.set_len(total_len as u64);
@@ -97,11 +94,11 @@ pub fn save_tables_bin(path: &std::path::Path, t: &Tables) -> std::io::Result<()
     let mut w = BufWriter::new(f);
 
     // Header
-    w.write_all(BIN_MAGIC)?;
+    w.write_all(BIN_MAGIC_V2)?;
     w.write_all(&(t.m as u32).to_le_bytes())?;
     w.write_all(&(t.identity as u32).to_le_bytes())?;
 
-    // char_to_func: 256 x u16 (chunk is tiny)
+    // char_to_func: 256 x u16
     {
         let mut buf = [0u8; 256 * 2];
         for (i, &id) in t.char_to_func.iter().enumerate() {
@@ -117,12 +114,11 @@ pub fn save_tables_bin(path: &std::path::Path, t: &Tables) -> std::io::Result<()
         w.write_all(&buf)?;
     }
 
-    // merge: m*m x u16 — stream in reasonably large chunks to reduce syscalls
-    const CHUNK: usize = 1 << 20; // entries per chunk (tune if needed)
+    // merge: m*m x u16 — stream in chunks
+    const CHUNK: usize = 1 << 20;
     {
         let mut bytes = vec![0u8; CHUNK * 2];
         for chunk in t.merge.chunks(CHUNK) {
-            // resize buffer if final chunk is smaller
             if chunk.len() * 2 != bytes.len() {
                 bytes.resize(chunk.len() * 2, 0);
             }
@@ -154,17 +150,6 @@ pub fn save_tables_bin(path: &std::path::Path, t: &Tables) -> std::io::Result<()
         w.write_all(&bytes)?;
     }
 
-    // emit_on_start: m bits packed into bytes
-    {
-        let mut bits = vec![0u8; (m + 7) / 8];
-        for (i, &b) in t.emit_on_start.iter().enumerate() {
-            if b != 0 {
-                bits[i / 8] |= 1 << (i % 8);
-            }
-        }
-        w.write_all(&bits)?;
-    }
-
     let flush = w.flush();
     println!(
         "Saved tables to {} in {} ms",
@@ -181,7 +166,7 @@ pub fn load_tables_bin_bytes(mut data: &[u8]) -> Result<Tables, String> {
     }
     let mut magic = [0u8; 8];
     magic.copy_from_slice(&data[..8]);
-    if &magic != BIN_MAGIC {
+    if &magic != BIN_MAGIC_V2 && &magic != BIN_MAGIC_V1 {
         return Err("bad magic in tables .bin".into());
     }
     data = &data[8..];
@@ -232,23 +217,12 @@ pub fn load_tables_bin_bytes(mut data: &[u8]) -> Result<Tables, String> {
         });
     }
 
-    // emit_on_start m bits
-    let bytes = (m + 7) / 8;
-    if data.len() < bytes {
-        return Err("truncated emit_on_start bits".into());
-    }
-    let (bit_slice, _rest) = data.split_at(bytes);
-    let mut emit_on_start = vec![0u32; m];
-    for i in 0..m {
-        let b = bit_slice[i / 8] >> (i % 8) & 1;
-        emit_on_start[i] = b as u32;
-    }
+    // Any remaining bytes (old V1 emit bits) are ignored intentionally.
 
     Ok(Tables {
         char_to_func,
         merge,
         token_of,
-        emit_on_start,
         m: m as u32,
         identity,
     })
