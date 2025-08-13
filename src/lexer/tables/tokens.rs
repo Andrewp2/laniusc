@@ -39,6 +39,12 @@ pub enum TokenKind {
 
     // new single-char minus
     Minus,
+
+    // --------- NEW: retagged tokens (must match Slang constants) ---------
+    CallLParen,
+    GroupLParen,
+    IndexLBracket,
+    ArrayLBracket,
 }
 
 // used on GPU side too

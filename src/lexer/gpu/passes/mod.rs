@@ -12,6 +12,19 @@ use crate::reflection::{
     slang_category_and_type_to_wgpu,
 };
 
+// ---------- export concrete pass modules ----------
+pub mod apply_block_prefix_downsweep;
+pub mod build_tokens;
+pub mod compact_boundaries_all;
+pub mod compact_boundaries_kept;
+pub mod finalize_boundaries_and_seed;
+pub mod retag_calls_and_arrays;
+pub mod scan_block_summaries_inclusive;
+pub mod scan_inblock_inclusive_pass;
+pub mod sum_apply_block_prefix_downsweep_pairs;
+pub mod sum_inblock_pairs;
+pub mod sum_scan_block_totals_inclusive;
+
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
 pub(super) struct ScanParams {
@@ -302,20 +315,6 @@ pub trait Pass {
         (groups, 1, 1)
     }
 }
-
-// ---------- export concrete pass modules ----------
-pub mod apply_block_prefix_downsweep;
-pub mod build_tokens;
-pub mod compact_boundaries_all;
-pub mod compact_boundaries_kept;
-pub mod finalize_boundaries_and_seed;
-pub mod scan_block_summaries_inclusive;
-pub mod scan_inblock_inclusive_pass;
-
-// NEW hierarchical sum passes
-pub mod sum_apply_block_prefix_downsweep_pairs;
-pub mod sum_inblock_pairs;
-pub mod sum_scan_block_totals_inclusive;
 
 // ---------- debug helpers each pass uses ----------
 impl DebugBuffer {

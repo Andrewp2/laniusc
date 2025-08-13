@@ -87,6 +87,7 @@ pub struct GpuLexer {
 
     p_compact_all: passes::compact_boundaries_all::CompactBoundariesAllPass,
     p_compact_kept: passes::compact_boundaries_kept::CompactBoundariesKeptPass,
+    p_retag: passes::retag_calls_and_arrays::RetagCallsAndArraysPass,
     p_build: passes::build_tokens::BuildTokensPass,
 }
 
@@ -140,6 +141,7 @@ impl GpuLexer {
         let p_compact_kept =
             passes::compact_boundaries_kept::CompactBoundariesKeptPass::new(&device)?;
         let p_build = passes::build_tokens::BuildTokensPass::new(&device)?;
+        let p_retag = passes::retag_calls_and_arrays::RetagCallsAndArraysPass::new(&device)?;
 
         Ok(Self {
             device,
@@ -153,6 +155,7 @@ impl GpuLexer {
             p_sum_apply,
             p_compact_all,
             p_compact_kept,
+            p_retag,
             p_build,
         })
     }
@@ -277,6 +280,13 @@ impl GpuLexer {
             passes::InputElements::Elements1D(bufs.n),
         );
         self.p_compact_kept.record_pass(
+            &self.device,
+            &mut enc,
+            &bufs,
+            &mut debug::DebugOutput::default(),
+            passes::InputElements::Elements1D(bufs.n),
+        );
+        self.p_retag.record_pass(
             &self.device,
             &mut enc,
             &bufs,
