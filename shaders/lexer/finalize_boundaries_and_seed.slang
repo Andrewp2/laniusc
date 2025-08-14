@@ -30,6 +30,8 @@ StructuredBuffer<uint> token_map;
 StructuredBuffer<uint> f_final;
 StructuredBuffer<uint> next_emit; // 2x u16 per uint
 
+RWStructuredBuffer<uint> end_flags; // ALL 0/1 (any boundary)
+
 RWStructuredBuffer<uint> tok_types;      // PACKED per-i kinds for KEPT stream: (EOF<<16)|(EMIT)
 RWStructuredBuffer<uint> filtered_flags; // KEPT end flags (compat 0/1 only here)
 RWStructuredBuffer<uint> s_all_seed;     // seeds for ALL-end scan  (0/1/2 at final i)
@@ -83,6 +85,7 @@ void finalize_boundaries_and_seed(uint3 tid: SV_DispatchThreadID)
     uint ex_single =
         (at_eof != 0u && keep_eof != 0u && (keep_emit == 0u || emit_here == 0u)) ? gParams.n : i;
 
+    end_flags[i] = (end_any != 0u) ? 1u : 0u;
     filtered_flags[i] = (s_keep != 0u) ? 1u : 0u; // compatibility
     s_all_seed[i] = s_all;
     s_keep_seed[i] = s_keep;

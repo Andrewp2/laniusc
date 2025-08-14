@@ -94,6 +94,7 @@ impl Pass for FinalizeBoundariesAndSeedPass {
             "s_keep_seed".into(),
             buffers.s_keep_seed.as_entire_binding(),
         );
+        map.insert("end_flags".into(), buffers.end_flags.as_entire_binding());
 
         map
     }

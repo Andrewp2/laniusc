@@ -56,6 +56,7 @@ pub struct GpuBuffers {
     pub tok_types: LaniusBuffer<u32>, // type at boundary after i (packed)
     pub filtered_flags: LaniusBuffer<u32>, // kept ends (0/1 compat)
     pub end_excl_by_i: LaniusBuffer<u32>, // exact exclusive end index per boundary i
+    pub end_flags: LaniusBuffer<u32>,
 
     // seeds (produced by finalize) for BOTH streams
     pub s_all_seed: LaniusBuffer<u32>,  // size n
@@ -190,6 +191,8 @@ impl GpuBuffers {
             make_rw::<u32>(device, "filtered_flags", (n as usize) * 4, n as usize);
         let end_excl_by_i: LaniusBuffer<u32> =
             make_rw::<u32>(device, "end_excl_by_i", (n as usize) * 4, n as usize);
+        let end_flags: LaniusBuffer<u32> =
+            make_rw::<u32>(device, "end_flags", (n as usize) * 4, n as usize);
 
         // ---- seeds for both streams
         let s_all_seed: LaniusBuffer<u32> =
@@ -280,6 +283,7 @@ impl GpuBuffers {
             tok_types,
             filtered_flags,
             end_excl_by_i,
+            end_flags,
 
             s_all_seed,
             s_keep_seed,

@@ -48,6 +48,7 @@ impl Pass for CompactBoundariesAllPass {
             ),
             ("s_final".into(), b.s_all_final.as_entire_binding()),
             ("s_final_all".into(), b.s_all_final.as_entire_binding()),
+            // ⬇️ ALL stream must use end_flags (0/1 when ANY boundary happens)
             ("filtered_flags".into(), b.end_flags.as_entire_binding()),
             ("tok_types".into(), b.tok_types.as_entire_binding()),
             ("end_excl_by_i".into(), b.end_excl_by_i.as_entire_binding()),
@@ -55,11 +56,11 @@ impl Pass for CompactBoundariesAllPass {
                 "end_positions".into(),
                 b.end_positions_all.as_entire_binding(),
             ),
-            ("types_compact".into(), b.types_compact.as_entire_binding()), // unused here
+            ("types_compact".into(), b.types_compact.as_entire_binding()),
             (
                 "all_index_compact".into(),
                 b.all_index_compact.as_entire_binding(),
-            ), // unused here
+            ),
             ("token_count".into(), b.token_count_all.as_entire_binding()),
         ])
     }
