@@ -25,7 +25,7 @@ fn main() -> std::io::Result<()> {
     for b in 0u32..=255 {
         for s in 0..N_STATES {
             let nx = dfa.next[s][b as usize];
-            let next = (nx.state & 0x7FFF);
+            let next = nx.state & 0x7FFF;
             let emit = if nx.emit { 1u16 } else { 0u16 };
             next_emit_u16.push((emit << 15) | next);
         }

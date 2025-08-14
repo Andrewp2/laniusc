@@ -140,7 +140,7 @@ impl GpuBuffers {
             N_STATES,
         );
 
-        let per_block_vec_bytes = (N_STATES * 4);
+        let per_block_vec_bytes = N_STATES * 4;
         let block_summaries: LaniusBuffer<u32> = make_rw::<u32>(
             device,
             "block_summaries",
