@@ -68,7 +68,7 @@ fn main() -> Result<()> {
 
         let out = cmd
             .output()
-            .with_context(|| format!("failed running slangc for {:?}", ep))?;
+            .with_context(|| format!("failed running slangc for {ep:?}"))?;
         if !out.stdout.is_empty() {
             for line in String::from_utf8_lossy(&out.stdout).lines() {
                 println!("cargo:warning=slangc STDOUT: {line}");

@@ -137,10 +137,10 @@ impl GpuBuffers {
             device,
             "token_map",
             &u32s_to_le_bytes(token_map),
-            N_STATES as usize,
+            N_STATES,
         );
 
-        let per_block_vec_bytes = (N_STATES * 4) as usize;
+        let per_block_vec_bytes = (N_STATES * 4);
         let block_summaries: LaniusBuffer<u32> = make_rw::<u32>(
             device,
             "block_summaries",
@@ -239,7 +239,7 @@ impl GpuBuffers {
             device,
             "next_emit",
             &u32s_to_le_bytes(next_emit_packed),
-            N_STATES as usize,
+            N_STATES,
         );
 
         Self {

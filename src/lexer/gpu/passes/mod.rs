@@ -317,7 +317,7 @@ pub trait Pass {
     /// Default: ceil_div(input, tgs_x)
     fn get_dispatch_size_1d(&self, n_elements: u32) -> (u32, u32, u32) {
         let tgs = self.data().thread_group_size[0].max(1);
-        let groups = (n_elements + tgs - 1) / tgs;
+        let groups = n_elements.div_ceil(tgs);
         (groups, 1, 1)
     }
 }

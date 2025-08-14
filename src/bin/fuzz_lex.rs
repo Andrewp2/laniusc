@@ -130,7 +130,7 @@ fn check_against_golden(
 
 fn dump_kind_text_diff(got: &[(TokenKind, String)], exp: &[GoldenTok], from: usize) {
     let hi = (from + 8).min(got.len().max(exp.len()));
-    eprintln!("--- golden context [{}..{}) ---", from, hi);
+    eprintln!("--- golden context [{from}..{hi}) ---");
     for i in from..hi {
         eprintln!(
             "#{:06} got={:?} want={:?}",
@@ -143,7 +143,7 @@ fn dump_kind_text_diff(got: &[(TokenKind, String)], exp: &[GoldenTok], from: usi
 
 fn main() {
     if let Ok(path) = std::env::var("FUZZ_INPUT") {
-        eprintln!("[replay] reading {}", path);
+        eprintln!("[replay] reading {path}");
         let s = fs::read_to_string(&path).expect("failed to read FUZZ_INPUT");
         pollster::block_on(run_once(&s, None, None, None, None));
         return;
@@ -186,12 +186,11 @@ fn main() {
     eprintln!("[fuzz] len={len} iters={iters} seed={seed}");
     let mut rng = StdRng::seed_from_u64(seed);
 
-    if save_cases {
-        if let Err(e) = fs::create_dir_all(&out_dir) {
-            eprintln!("error: failed to create {}: {e}", out_dir);
+    if save_cases
+        && let Err(e) = fs::create_dir_all(&out_dir) {
+            eprintln!("error: failed to create {out_dir}: {e}");
             std::process::exit(1);
         }
-    }
 
     pollster::block_on(async move {
         for i in 0..iters {
@@ -224,8 +223,8 @@ async fn run_once(
     let cpu = match lex_on_cpu(src) {
         Ok(toks) => toks,
         Err(e) => {
-            eprintln!("\n[CPU] {}", e);
-            let tail = src.as_bytes().len().saturating_sub(64);
+            eprintln!("\n[CPU] {e}");
+            let tail = src.len().saturating_sub(64);
             eprintln!(
                 "[tail] {:?}",
                 String::from_utf8_lossy(&src.as_bytes()[tail..])
@@ -289,7 +288,7 @@ async fn run_once(
 fn collect_examples() -> Vec<PathBuf> {
     if let Ok(list) = std::env::var("FUZZ_EX") {
         let mut out = Vec::new();
-        for part in list.split(|c| c == ',' || c == ':') {
+        for part in list.split([',', ':']) {
             let p = PathBuf::from(part.trim());
             if !p.as_os_str().is_empty() && p.exists() {
                 out.push(p);
@@ -488,7 +487,7 @@ fn compare_streams(src: &str, cpu: &[CpuToken], gpu: &[laniusc::lexer::gpu::Toke
         let min_len = cpu.len().min(gpu.len());
         if i == min_len {
             if cpu.len() > gpu.len() {
-                eprintln!("--- extra CPU tokens starting at {} ---", min_len);
+                eprintln!("--- extra CPU tokens starting at {min_len} ---");
                 for j in min_len..(min_len + 6).min(cpu.len()) {
                     let t = &cpu[j];
                     let text = &src.as_bytes()[t.start..t.start + t.len];
@@ -502,7 +501,7 @@ fn compare_streams(src: &str, cpu: &[CpuToken], gpu: &[laniusc::lexer::gpu::Toke
                     );
                 }
             } else {
-                eprintln!("--- extra GPU tokens starting at {} ---", min_len);
+                eprintln!("--- extra GPU tokens starting at {min_len} ---");
                 for j in min_len..(min_len + 6).min(gpu.len()) {
                     let t = &gpu[j];
                     let text = &src.as_bytes()[t.start..t.start + t.len];
@@ -573,23 +572,22 @@ fn dump_src_window(src: &str, start: usize, len: usize, who: &str, idx: usize) {
     let snippet = String::from_utf8_lossy(&src.as_bytes()[lo..hi]);
 
     eprintln!(
-        "[src:{who} idx={idx}] token @{}+{} (line {}, col {})  window [{}..{}]",
-        start, len, line, col, lo, hi
+        "[src:{who} idx={idx}] token @{start}+{len} (line {line}, col {col})  window [{lo}..{hi}]"
     );
-    eprintln!("    {:?}", snippet);
+    eprintln!("    {snippet:?}");
 
     let caret_pos = start.saturating_sub(lo);
     let caret_len = len.max(1).min(80);
     let mut underline = String::new();
     underline.push_str(&" ".repeat(caret_pos));
     underline.push_str(&"^".repeat(caret_len));
-    eprintln!("    {}", underline);
+    eprintln!("    {underline}");
 }
 
 fn dump_near(src: &str, cpu: &[CpuToken], gpu: &[laniusc::lexer::gpu::Token], from_idx: usize) {
     let lo = from_idx;
     let hi = (from_idx + 6).min(cpu.len().max(gpu.len()));
-    eprintln!("--- context tokens [{}..{}) ---", lo, hi);
+    eprintln!("--- context tokens [{lo}..{hi}) ---");
     for i in lo..hi {
         let cpu_s = cpu
             .get(i)

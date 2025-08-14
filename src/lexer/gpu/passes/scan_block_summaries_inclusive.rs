@@ -69,7 +69,7 @@ impl Pass for ScanBlockSummariesInclusivePass {
             r
         };
 
-        let byte_len = (nblocks as usize) * (crate::lexer::tables::dfa::N_STATES * 4) as usize;
+        let byte_len = (nblocks as usize) * (crate::lexer::tables::dfa::N_STATES * 4);
         encoder.copy_buffer_to_buffer(&b.block_summaries, 0, &b.block_ping, 0, byte_len as u64);
 
         let layout0 = &self.data().bind_group_layouts[0];

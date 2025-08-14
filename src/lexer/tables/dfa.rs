@@ -163,6 +163,12 @@ pub(crate) fn token_of_state(s: S) -> Option<TokenKind> {
     }
 }
 
+impl Default for StreamingDfa {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StreamingDfa {
     pub fn new() -> Self {
         let mut next = [[Next {

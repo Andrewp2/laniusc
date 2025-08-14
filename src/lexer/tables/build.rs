@@ -108,7 +108,7 @@ fn build_merge_and_maps_parallel(
     let mut merge = vec![0u32; m * m];
 
     // Fill rows in parallel.
-    let m_us = m as usize;
+    let m_us = m;
     merge.par_chunks_mut(m_us).enumerate().for_each(|(a, row)| {
         let at = &funcs[a].trans;
         for b in 0..m_us {

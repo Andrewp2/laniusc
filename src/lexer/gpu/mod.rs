@@ -121,8 +121,7 @@ impl GpuLexer {
                 compatible_surface: None,
                 force_fallback_adapter: false,
             })
-            .await
-            .or_else(|_| Err(anyhow!("no adapter")))?;
+            .await.map_err(|_| anyhow!("no adapter"))?;
 
         let mut limits = wgpu::Limits::defaults();
         // ... why are my comments missing here...
@@ -133,7 +132,7 @@ impl GpuLexer {
 
         let adapter_features = adapter.features();
         let want_timers = std::env::var("LANIUS_GPU_TIMING")
-            .map(|v| v != "0" && v.to_ascii_lowercase() != "false")
+            .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
             .unwrap_or(false);
 
         let timers_supported =
@@ -254,7 +253,7 @@ impl GpuLexer {
 
         let timers_on = self.timers_supported
             && std::env::var("LANIUS_GPU_TIMING")
-                .map(|v| v != "0" && v.to_ascii_lowercase() != "false")
+                .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
                 .unwrap_or(false);
 
         let mut maybe_timer = if timers_on {
@@ -431,7 +430,7 @@ impl GpuLexer {
             self.device.stop_graphics_debugger_capture()
         };
 
-        return Ok(tokens);
+        Ok(tokens)
     }
 }
 

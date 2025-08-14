@@ -95,8 +95,8 @@ pub fn save_tables_bin(path: &std::path::Path, t: &Tables) -> std::io::Result<()
 
     // Header
     w.write_all(BIN_MAGIC_V2)?;
-    w.write_all(&(t.m as u32).to_le_bytes())?;
-    w.write_all(&(t.identity as u32).to_le_bytes())?;
+    w.write_all(&t.m.to_le_bytes())?;
+    w.write_all(&t.identity.to_le_bytes())?;
 
     // char_to_func: 256 x u16
     {

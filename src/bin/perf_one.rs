@@ -173,7 +173,7 @@ fn main() {
                 fmt_mib(bytes),
                 bytes
             );
-            println!("Load:  {:.3} ms", load_ms);
+            println!("Load:  {load_ms:.3} ms");
             (src, "file".to_string())
         } else {
             let target_len = parse_target_len();
@@ -189,7 +189,7 @@ fn main() {
                 fmt_mib(bytes),
                 seed
             );
-            println!("Gen:   {:.3} ms", gen_ms);
+            println!("Gen:   {gen_ms:.3} ms");
             (src, "generated".to_string())
         };
 
@@ -233,7 +233,7 @@ fn main() {
         };
         let gpu_lex_ms = gpu_lex_t0.elapsed().as_secs_f64() * 1e3;
 
-        println!("GPU:  init={:.3} ms", gpu_init_ms);
+        println!("GPU:  init={gpu_init_ms:.3} ms");
         println!(
             "GPU:  lex ={:.3} ms | tokens={} | throughput={:.1} MiB/s",
             gpu_lex_ms,

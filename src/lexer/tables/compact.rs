@@ -59,7 +59,7 @@ pub fn load_compact_tables_from_bytes(
         next_emit_u16.push(take_u16(&mut data)?);
     }
 
-    let mut next_emit_words: Vec<u32> = vec![0; (ne_len + 1) / 2];
+    let mut next_emit_words: Vec<u32> = vec![0; ne_len.div_ceil(2)];
     for (i, &v) in next_emit_u16.iter().enumerate() {
         let w = i >> 1;
         if (i & 1) == 0 {
