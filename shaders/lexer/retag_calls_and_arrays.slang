@@ -48,7 +48,7 @@ struct Params
 {
     uint n;
     uint m;
-    uint identity_id;
+    uint start_state;
     uint skip0;
     uint skip1;
     uint skip2;

@@ -29,7 +29,7 @@ pub struct Token {
 pub(super) struct LexParams {
     pub n: u32,
     pub m: u32,           // (= n_states)
-    pub identity_id: u32, // (= start_state)
+    pub start_state: u32, // (= start_state)
     // Avoid uniform arrays (encase requires 16B array stride). Use 4 scalars.
     pub skip0: u32,
     pub skip1: u32,
@@ -251,7 +251,6 @@ impl GpuLexer {
             &token_map,       // <— from the compact file
             skip_kinds,
         );
-        let ms_setup = wall_setup.elapsed().as_millis();
 
         let timers_on = self.timers_supported
             && std::env::var("LANIUS_GPU_TIMING")
@@ -270,7 +269,6 @@ impl GpuLexer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("lex-enc"),
             });
-        let ms_encode = wall_encode.elapsed().as_millis();
 
         if let Some(t) = maybe_timer.as_mut() {
             t.reset();
@@ -374,16 +372,7 @@ impl GpuLexer {
             maybe_timer.as_mut(),
         );
 
-        // ----- READBACK STRATEGY -----
-        // Heuristic: if the maximum token payload is big, prefer the 2-submit partial-copy path.
-        // You can override with LANIUS_COPY_PARTIAL=1 to force the partial path.
-        let force_partial = std::env::var("LANIUS_COPY_PARTIAL")
-            .map(|v| v != "0" && v.to_ascii_lowercase() != "false")
-            .unwrap_or(false);
-        let max_token_bytes = (n as usize) * std::mem::size_of::<GpuToken>();
-        let want_partial = force_partial || max_token_bytes >= 8 * 1024 * 1024;
-
-        // Small readback buffer for the count (used by both paths)
+        // ----- READBACK (always partial) -----
         let rb_count = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rb_count"),
             size: 4,
@@ -391,212 +380,58 @@ impl GpuLexer {
             mapped_at_creation: false,
         });
 
-        let wall_submit_wait = Instant::now();
-
-        if !want_partial {
-            // -------- SINGLE-SUBMIT / FULL-COPY PATH --------
-            // Copy count and ENTIRE tokens buffer once, stamp around copies, then resolve+submit.
-            let rb_tokens_full = self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("rb_tokens_full"),
-                size: bufs.tokens_out.byte_size as u64,
-                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-                mapped_at_creation: false,
-            });
-
-            if let Some(t) = maybe_timer.as_mut() {
-                t.stamp(&mut enc, "BEFORE_COPY_COUNT");
-            }
-            enc.copy_buffer_to_buffer(&bufs.token_count, 0, &rb_count, 0, 4);
-            if let Some(t) = maybe_timer.as_mut() {
-                t.stamp(&mut enc, "AFTER_COPY_COUNT");
-                t.stamp(&mut enc, "BEFORE_COPY_TOKENS");
-            }
-            enc.copy_buffer_to_buffer(
-                &bufs.tokens_out,
-                0,
-                &rb_tokens_full,
-                0,
-                bufs.tokens_out.byte_size as u64,
-            );
-            if let Some(t) = maybe_timer.as_mut() {
-                t.stamp(&mut enc, "AFTER_COPY_TOKENS");
-                t.resolve(&mut enc); // resolve AFTER the last stamp
-            }
-
-            // Submit once
-            self.queue.submit(Some(enc.finish()));
-
-            // Map count
-            rb_count.slice(..).map_async(wgpu::MapMode::Read, |_| {});
-            let _ = self.device.poll(wgpu::PollType::Wait);
-            let count_bytes = rb_count.slice(..).get_mapped_range();
-            let token_count_u32 = u32_from_first_4(&count_bytes) as usize;
-            drop(count_bytes);
-            rb_count.unmap();
-
-            // Map only the bytes we care about from the full copy
-            let need_bytes = (token_count_u32 * std::mem::size_of::<GpuToken>()) as u64;
-            rb_tokens_full
-                .slice(0..need_bytes)
-                .map_async(wgpu::MapMode::Read, |_| {});
-            let _ = self.device.poll(wgpu::PollType::Wait);
-
-            let ms_submit_wait = wall_submit_wait.elapsed().as_millis();
-
-            let wall_decode = Instant::now();
-            let mapped = rb_tokens_full.slice(0..need_bytes).get_mapped_range();
-            let tokens = read_tokens_from_mapped(&mapped, token_count_u32);
-            drop(mapped);
-            rb_tokens_full.unmap();
-            let ms_decode = wall_decode.elapsed().as_secs_f64() * 1e3;
-
-            if std::env::var("LANIUS_GPU_TIMING")
-                .map(|v| v != "0" && v.to_ascii_lowercase() != "false")
-                .unwrap_or(false)
-            {
-                let ms_total = wall_all.elapsed().as_millis();
-                println!("[host] setup(buffers+uploads): {:.3} ms", ms_setup);
-                println!("[host] encode(cmd build):      {:.3} ms", ms_encode);
-                println!("[host] submit+wait+map:       {:.3} ms", ms_submit_wait);
-                println!("[host] decode(tokens):        {:.3} ms", ms_decode);
-                println!("[host] END-TO-END:            {:.3} ms", ms_total);
-            }
-
-            // Print GPU per-pass timings (unchanged)
-            if let Some(t) = maybe_timer.as_ref() {
-                if let Some(ticks) = t.try_read(&self.device) {
-                    let ns = t.period_ns() as f64;
-                    let labels = &t.stamp_labels;
-                    let mut spans: Vec<(String, f64)> = Vec::new();
-                    for (labels_window, ts) in labels.windows(2).zip(ticks.windows(2)) {
-                        let l_now = labels_window[1].clone();
-                        let dt_ns = (ts[1] - ts[0]) as f64 * ns;
-                        spans.push((l_now, dt_ns));
-                    }
-                    let total_ns: f64 = spans.iter().map(|(_, dt)| *dt).sum();
-                    let threshold_ns = if total_ns > 0.0 { total_ns * 0.01 } else { 0.0 };
-                    let mut elided = 0usize;
-                    for (label, dt_ns) in spans {
-                        if dt_ns > threshold_ns {
-                            println!("[gpu] {}: {:.3} ms", label, dt_ns / 1.0e6);
-                        } else {
-                            elided += 1;
-                        }
-                    }
-                    if elided > 0 {
-                        println!("[gpu] ({} passes <1% hidden)", elided);
-                    }
-                    println!("[gpu] TOTAL: {:.3} ms", total_ns / 1.0e6);
-                }
-            }
-
-            #[cfg(feature = "graphics_debugger")]
-            unsafe {
-                self.device.stop_graphics_debugger_capture()
-            };
-
-            return Ok(tokens);
-        } else {
-            // -------- TWO-SUBMIT / PARTIAL-COPY PATH --------
-            // First submit: copy ONLY the count, stamp around it, resolve, submit.
-            if let Some(t) = maybe_timer.as_mut() {
-                t.stamp(&mut enc, "BEFORE_COPY_COUNT");
-            }
-            enc.copy_buffer_to_buffer(&bufs.token_count, 0, &rb_count, 0, 4);
-            if let Some(t) = maybe_timer.as_mut() {
-                t.stamp(&mut enc, "AFTER_COPY_COUNT");
-                t.resolve(&mut enc);
-            }
-
-            self.queue.submit(Some(enc.finish()));
-
-            // Map count
-            rb_count.slice(..).map_async(wgpu::MapMode::Read, |_| {});
-            let _ = self.device.poll(wgpu::PollType::Wait);
-            let count_bytes = rb_count.slice(..).get_mapped_range();
-            let token_count_u32 = u32_from_first_4(&count_bytes) as usize;
-            drop(count_bytes);
-            rb_count.unmap();
-
-            let need_bytes = (token_count_u32 * std::mem::size_of::<GpuToken>()) as u64;
-
-            // Second submit: copy only the used token bytes into a *right-sized* readback buffer.
-            let rb_tokens = self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("rb_tokens_partial"),
-                size: need_bytes,
-                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-                mapped_at_creation: false,
-            });
-            let mut enc2 = self
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("lex-enc-readback-tokens"),
-                });
-            // (No stamps here; these happen after the previous resolve.)
-            enc2.copy_buffer_to_buffer(&bufs.tokens_out, 0, &rb_tokens, 0, need_bytes);
-            self.queue.submit(Some(enc2.finish()));
-
-            // Map the partial range and decode
-            rb_tokens
-                .slice(0..need_bytes)
-                .map_async(wgpu::MapMode::Read, |_| {});
-            let _ = self.device.poll(wgpu::PollType::Wait);
-            let ms_submit_wait = wall_submit_wait.elapsed().as_millis();
-
-            let wall_decode = Instant::now();
-            let mapped = rb_tokens.slice(0..need_bytes).get_mapped_range();
-            let tokens = read_tokens_from_mapped(&mapped, token_count_u32);
-            drop(mapped);
-            rb_tokens.unmap();
-            let ms_decode = wall_decode.elapsed().as_secs_f64() * 1e3;
-
-            if std::env::var("LANIUS_GPU_TIMING")
-                .map(|v| v != "0" && v.to_ascii_lowercase() != "false")
-                .unwrap_or(false)
-            {
-                let ms_total = wall_all.elapsed().as_millis();
-                println!("[host] setup(buffers+uploads): {:.3} ms", ms_setup);
-                println!("[host] encode(cmd build):      {:.3} ms", ms_encode);
-                println!("[host] submit+wait+map:       {:.3} ms", ms_submit_wait);
-                println!("[host] decode(tokens):        {:.3} ms", ms_decode);
-                println!("[host] END-TO-END:            {:.3} ms", ms_total);
-            }
-
-            // Try to print GPU stamps if available (these include copy-count, not the second copy)
-            if let Some(t) = maybe_timer.as_ref() {
-                if let Some(ticks) = t.try_read(&self.device) {
-                    let ns = t.period_ns() as f64;
-                    let labels = &t.stamp_labels;
-                    let mut spans: Vec<(String, f64)> = Vec::new();
-                    for (labels_window, ts) in labels.windows(2).zip(ticks.windows(2)) {
-                        let l_now = labels_window[1].clone();
-                        let dt_ns = (ts[1] - ts[0]) as f64 * ns;
-                        spans.push((l_now, dt_ns));
-                    }
-                    let total_ns: f64 = spans.iter().map(|(_, dt)| *dt).sum();
-                    let threshold_ns = if total_ns > 0.0 { total_ns * 0.01 } else { 0.0 };
-                    let mut elided = 0usize;
-                    for (label, dt_ns) in spans {
-                        if dt_ns > threshold_ns {
-                            println!("[gpu] {}: {:.3} ms", label, dt_ns / 1.0e6);
-                        } else {
-                            elided += 1;
-                        }
-                    }
-                    if elided > 0 {
-                        println!("[gpu] ({} passes <1% hidden)", elided);
-                    }
-                    println!("[gpu] TOTAL: {:.3} ms", total_ns / 1.0e6);
-                }
-            }
-
-            #[cfg(feature = "graphics_debugger")]
-            unsafe {
-                self.device.stop_graphics_debugger_capture()
-            };
-
-            return Ok(tokens);
+        // 1) Copy just the count and submit
+        if let Some(t) = maybe_timer.as_mut() {
+            t.stamp(&mut enc, "BEFORE_COPY_COUNT");
         }
+        enc.copy_buffer_to_buffer(&bufs.token_count, 0, &rb_count, 0, 4);
+        if let Some(t) = maybe_timer.as_mut() {
+            t.stamp(&mut enc, "AFTER_COPY_COUNT");
+            t.resolve(&mut enc);
+        }
+        self.queue.submit(Some(enc.finish()));
+
+        // 2) Map count on CPU, compute needed bytes
+        rb_count.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+        let _ = self.device.poll(wgpu::PollType::Wait);
+        let count_bytes = rb_count.slice(..).get_mapped_range();
+        let token_count_u32 = u32_from_first_4(&count_bytes) as usize;
+        drop(count_bytes);
+        rb_count.unmap();
+
+        let need_bytes = (token_count_u32 * std::mem::size_of::<GpuToken>()) as u64;
+
+        // 3) Copy exactly the used range of tokens, submit, map, decode
+        let rb_tokens = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rb_tokens_partial"),
+            size: need_bytes,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut enc2 = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("lex-enc-readback-tokens"),
+            });
+        enc2.copy_buffer_to_buffer(&bufs.tokens_out, 0, &rb_tokens, 0, need_bytes);
+        self.queue.submit(Some(enc2.finish()));
+
+        rb_tokens
+            .slice(0..need_bytes)
+            .map_async(wgpu::MapMode::Read, |_| {});
+        let _ = self.device.poll(wgpu::PollType::Wait);
+
+        let mapped = rb_tokens.slice(0..need_bytes).get_mapped_range();
+        let tokens = read_tokens_from_mapped(&mapped, token_count_u32);
+        drop(mapped);
+        rb_tokens.unmap();
+
+        #[cfg(feature = "graphics_debugger")]
+        unsafe {
+            self.device.stop_graphics_debugger_capture()
+        };
+
+        return Ok(tokens);
     }
 }
 

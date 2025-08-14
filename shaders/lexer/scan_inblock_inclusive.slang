@@ -1,6 +1,5 @@
 // Per-block inclusive scan over δ_b functions represented as 32-entry vectors.
 // Writes: block_summaries[block] = composed function for the whole block.
-// Optionally writes f_inblock[i] = state(start) after in-block prefix i.
 
 #define WORKGROUP_SIZE 256
 #define N_STATES 32
@@ -17,7 +16,6 @@ ConstantBuffer<Params> gParams;
 
 ByteAddressBuffer in_bytes;       // byte-addressable input
 StructuredBuffer<uint> next_emit; // 2x u16 per uint (low15=next, high1=emit)
-RWStructuredBuffer<uint> f_inblock;
 RWStructuredBuffer<uint> block_summaries;
 
 groupshared uint func[WORKGROUP_SIZE][N_STATES];

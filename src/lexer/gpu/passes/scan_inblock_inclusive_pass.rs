@@ -47,7 +47,6 @@ impl Pass for ScanInblockInclusivePass {
             ),
             ("in_bytes".into(), b.in_bytes.as_entire_binding()),
             ("next_emit".into(), b.next_emit.as_entire_binding()),
-            ("f_inblock".into(), b.f_inblock.as_entire_binding()),
             (
                 "block_summaries".into(),
                 b.block_summaries.as_entire_binding(),

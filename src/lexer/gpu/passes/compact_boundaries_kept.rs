@@ -14,8 +14,8 @@ impl CompactBoundariesKeptPass {
     pub fn new(device: &wgpu::Device) -> anyhow::Result<Self> {
         let data = super::make_pass_data(
             device,
-            "compact_boundaries",
-            "compact_boundaries",
+            "compact_boundaries_kept", // <-- label
+            "compact_boundaries_kept", // <-- entry point name in Slang
             include_bytes!(concat!(env!("OUT_DIR"), "/shaders/compact_boundaries.spv")),
             include_bytes!(concat!(
                 env!("OUT_DIR"),
@@ -48,10 +48,7 @@ impl Pass for CompactBoundariesKeptPass {
             ),
             ("s_final".into(), b.s_keep_final.as_entire_binding()),
             ("s_final_all".into(), b.s_all_final.as_entire_binding()),
-            (
-                "filtered_flags".into(),
-                b.filtered_flags.as_entire_binding(),
-            ),
+            ("flags_packed".into(), b.flags_packed.as_entire_binding()),
             ("tok_types".into(), b.tok_types.as_entire_binding()),
             ("end_excl_by_i".into(), b.end_excl_by_i.as_entire_binding()),
             ("end_positions".into(), b.end_positions.as_entire_binding()),

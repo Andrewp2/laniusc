@@ -34,23 +34,21 @@ impl Pass for SumInblockPairsPass {
 
     fn create_resource_map<'a>(
         &self,
-        b: &'a GpuBuffers,
-    ) -> HashMap<String, wgpu::BindingResource<'a>> {
-        use wgpu::BindingResource::*;
+        buffers: &'a GpuBuffers,
+    ) -> std::collections::HashMap<String, wgpu::BindingResource<'a>> {
         HashMap::from([
+            ("gParams".into(), buffers.params.as_entire_binding()),
             (
-                "gParams".into(),
-                Buffer(b.params.as_entire_buffer_binding()),
+                "flags_packed".into(),
+                buffers.flags_packed.as_entire_binding(),
             ),
-            ("s_all_seed".into(), b.s_all_seed.as_entire_binding()),
-            ("s_keep_seed".into(), b.s_keep_seed.as_entire_binding()),
             (
                 "s_pair_inblock".into(),
-                b.s_pair_inblock.as_entire_binding(),
+                buffers.s_pair_inblock.as_entire_binding(),
             ),
             (
                 "block_totals_pair".into(),
-                b.block_totals_pair.as_entire_binding(),
+                buffers.block_totals_pair.as_entire_binding(),
             ),
         ])
     }

@@ -1,7 +1,10 @@
+// shaders/lexer/sum_inblock_pairs.slang
 // Sum both seed streams (ALL, KEPT) inside each 256-wide block in shared memory.
 // Writes per-element in-block prefix and a single uint2 block total.
 
 #define WORKGROUP_SIZE 256
+
+import utils;
 
 struct Params
 {
@@ -11,8 +14,8 @@ struct Params
 };
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> s_all_seed;  // length n
-StructuredBuffer<uint> s_keep_seed; // length n
+// --------- CHANGED: read packed flags instead of two seed buffers ---------
+StructuredBuffer<uint> flags_packed; // length n
 
 RWStructuredBuffer<uint2> s_pair_inblock;    // length n (prefix within block)
 RWStructuredBuffer<uint2> block_totals_pair; // length nb (sum of this block)
@@ -33,7 +36,8 @@ void sum_inblock_pairs(uint3 tid: SV_GroupThreadID,
     uint2 v = uint2(0u, 0u);
     if (i < gParams.n)
     {
-        v = uint2(s_all_seed[i], s_keep_seed[i]);
+        uint f = flags_packed[i];
+        v = seeds_from_flags(f);
     }
     sh[tid.x] = v;
     GroupMemoryBarrierWithGroupSync();

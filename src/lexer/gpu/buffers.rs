@@ -1,3 +1,4 @@
+// src/lexer/gpu/buffers.rs
 use std::ops::Deref;
 
 use encase::UniformBuffer;
@@ -36,45 +37,33 @@ pub struct GpuBuffers {
     pub n: u32,
     pub nb: u32,
 
-    /// Uniform params buffer (LexParams) — lives here now.
+    /// Uniform params buffer (LexParams)
     pub params: LaniusBuffer<super::LexParams>,
 
     // inputs/tables
-    // pub in_bytes: LaniusBuffer<u32>,
     pub in_bytes: LaniusBuffer<u8>,
     pub next_emit: LaniusBuffer<u32>, // 256 * N_STATES, low15=next, high1=emit
     pub token_map: LaniusBuffer<u32>, // N_STATES
 
     // function-id mapping + two-pass prefix for DFA states
-    pub f_inblock: LaniusBuffer<u32>, // optional scratch (state per element)
     pub block_summaries: LaniusBuffer<u32>, // per-block function vector (N_STATES each)
-    pub block_ping: LaniusBuffer<u32>, // block scan ping
-    pub block_pong: LaniusBuffer<u32>, // block scan pong
-    pub block_prefix: LaniusBuffer<u32>, // inclusive per-block prefix (N_STATES each)
-    pub f_final: LaniusBuffer<u32>,   // global DFA state per element (u32)
+    pub block_ping: LaniusBuffer<u32>,
+    pub block_pong: LaniusBuffer<u32>,
+    pub block_prefix: LaniusBuffer<u32>,
+    pub f_final: LaniusBuffer<u32>,
 
     pub tok_types: LaniusBuffer<u32>, // type at boundary after i (packed)
-    pub filtered_flags: LaniusBuffer<u32>, // kept ends (0/1 compat)
+    pub flags_packed: LaniusBuffer<u32>, // NEW: packed flags per i
     pub end_excl_by_i: LaniusBuffer<u32>, // exact exclusive end index per boundary i
-    pub end_flags: LaniusBuffer<u32>,
 
-    // seeds (produced by finalize) for BOTH streams
-    pub s_all_seed: LaniusBuffer<u32>,  // size n
-    pub s_keep_seed: LaniusBuffer<u32>, // size n
-
-    // ---------- NEW: hierarchical sum scratch/finals for BOTH streams ----------
-    // in-block prefix (uint2 per element)
-    pub s_pair_inblock: LaniusBuffer<u32>, // byte_size = n * 8
-
-    // per-block totals / scan ping-pong / final block prefix (uint2 per block)
-    pub block_totals_pair: LaniusBuffer<u32>, // nb * 8
-    pub block_pair_ping: LaniusBuffer<u32>,   // nb * 8
-    pub block_pair_pong: LaniusBuffer<u32>,   // nb * 8
-    pub block_prefix_pair: LaniusBuffer<u32>, // nb * 8
-
-    // final sums (scalar per element, like before)
-    pub s_all_final: LaniusBuffer<u32>,  // size n
-    pub s_keep_final: LaniusBuffer<u32>, // size n
+    // seeds → hierarchical sum scratch/finals for BOTH streams
+    pub s_pair_inblock: LaniusBuffer<u32>, // byte_size = n * 8 (uint2)
+    pub block_totals_pair: LaniusBuffer<u32>,
+    pub block_pair_ping: LaniusBuffer<u32>,
+    pub block_pair_pong: LaniusBuffer<u32>,
+    pub block_prefix_pair: LaniusBuffer<u32>,
+    pub s_all_final: LaniusBuffer<u32>,
+    pub s_keep_final: LaniusBuffer<u32>,
 
     // compaction outputs (ALL and KEPT)
     pub end_positions: LaniusBuffer<u32>,     // kept
@@ -94,7 +83,6 @@ impl GpuBuffers {
         device: &wgpu::Device,
         n: u32,
         start_state: u32,
-        // bytes_u32: &[u32],
         input_bytes: &[u8],
         next_emit_packed: &[u32],
         token_map: &[u32],
@@ -152,10 +140,6 @@ impl GpuBuffers {
             N_STATES as usize,
         );
 
-        // ---- mapping + block/prefix structures (DFA state path)
-        let f_inblock: LaniusBuffer<u32> =
-            make_rw::<u32>(device, "f_inblock", (n as usize) * 4, n as usize);
-
         let per_block_vec_bytes = (N_STATES * 4) as usize;
         let block_summaries: LaniusBuffer<u32> = make_rw::<u32>(
             device,
@@ -187,20 +171,15 @@ impl GpuBuffers {
 
         let tok_types: LaniusBuffer<u32> =
             make_rw::<u32>(device, "tok_types", (n as usize) * 4, n as usize);
-        let filtered_flags: LaniusBuffer<u32> =
-            make_rw::<u32>(device, "filtered_flags", (n as usize) * 4, n as usize);
+
+        // -------- NEW: single packed flags buffer --------
+        let flags_packed: LaniusBuffer<u32> =
+            make_rw::<u32>(device, "flags_packed", (n as usize) * 4, n as usize);
+
         let end_excl_by_i: LaniusBuffer<u32> =
             make_rw::<u32>(device, "end_excl_by_i", (n as usize) * 4, n as usize);
-        let end_flags: LaniusBuffer<u32> =
-            make_rw::<u32>(device, "end_flags", (n as usize) * 4, n as usize);
 
-        // ---- seeds for both streams
-        let s_all_seed: LaniusBuffer<u32> =
-            make_rw::<u32>(device, "s_all_seed", (n as usize) * 4, n as usize);
-        let s_keep_seed: LaniusBuffer<u32> =
-            make_rw::<u32>(device, "s_keep_seed", (n as usize) * 4, n as usize);
-
-        // ---- NEW: hierarchical sum scratch (uint2)
+        // ---- hierarchical sum scratch (uint2)
         let s_pair_inblock: LaniusBuffer<u32> =
             make_rw::<u32>(device, "s_pair_inblock", (n as usize) * 8, n as usize);
 
@@ -241,13 +220,12 @@ impl GpuBuffers {
         let params_val = LexParams {
             n,
             m: N_STATES as u32,
-            identity_id: start_state,
+            start_state,
             skip0: skip_kinds[0],
             skip1: skip_kinds[1],
             skip2: skip_kinds[2],
             skip3: skip_kinds[3],
         };
-        // convenience: build a UNIFORM buffer and wrap as LaniusBuffer
         let mut ub = UniformBuffer::new(Vec::new());
         ub.write(&params_val).unwrap();
         let raw = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -273,7 +251,6 @@ impl GpuBuffers {
             next_emit: next_emit_buf,
             token_map: token_map_buf,
 
-            f_inblock,
             block_summaries,
             block_ping,
             block_pong,
@@ -281,14 +258,9 @@ impl GpuBuffers {
             f_final,
 
             tok_types,
-            filtered_flags,
+            flags_packed,
             end_excl_by_i,
-            end_flags,
 
-            s_all_seed,
-            s_keep_seed,
-
-            // NEW
             s_pair_inblock,
             block_totals_pair,
             block_pair_ping,

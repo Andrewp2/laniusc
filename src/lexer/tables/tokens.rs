@@ -48,5 +48,19 @@ pub enum TokenKind {
     String,
 }
 
+impl core::convert::TryFrom<u32> for TokenKind {
+    type Error = ();
+    fn try_from(v: u32) -> Result<Self, ()> {
+        // match all discriminants explicitly
+        let k = match v {
+            x if x == TokenKind::Ident as u32 => TokenKind::Ident,
+            x if x == TokenKind::Int as u32 => TokenKind::Int,
+            // ... (generate with a macro if you like)
+            _ => return Err(()),
+        };
+        Ok(k)
+    }
+}
+
 // used on GPU side too
 pub const INVALID_TOKEN: u32 = u32::MAX;

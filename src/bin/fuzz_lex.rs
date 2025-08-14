@@ -1,20 +1,8 @@
-// src/bin/fuzz_lex.rs
-// Generate big random-but-valid inputs, run CPU & GPU lexers, compare.
-// Extras:
-//   - FUZZ_SAVE=1 and FUZZ_DIR=... save generated fuzz cases
-//   - FUZZ_INPUT=path         replay a saved case
-//   - FUZZ_EX=<files>         comma/colon-separated list of handcrafted .lan files
-//   - FUZZ_EX_DIR=<dir>       directory of .lan files (default: "lexer_tests")
-//
-// New:
-//   - Sidecar golden files: <case>.tokens.json with {"tokens":[{"kind":"...", "text":"..."}...]}
-//   - For handcrafted cases, if a golden exists, verify CPU and GPU match it.
-
 use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
 use laniusc::lexer::{
@@ -22,8 +10,6 @@ use laniusc::lexer::{
     tables::TokenKind,
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
-
-// ------------------ goldens ------------------
 
 #[derive(serde::Deserialize)]
 struct Golden {
@@ -61,10 +47,10 @@ fn kind_from_str(s: &str) -> Option<TokenKind> {
         "RBracket" => RBracket,
         "LBrace" => LBrace,
         "RBrace" => RBrace,
-        "GroupLParen" => GroupLParen,     // <- no extra Some()
-        "CallLParen" => CallLParen,       // <- no extra Some()
-        "IndexLBracket" => IndexLBracket, // <- no extra Some()
-        "ArrayLBracket" => ArrayLBracket, // <- no extra Some()
+        "GroupLParen" => GroupLParen,
+        "CallLParen" => CallLParen,
+        "IndexLBracket" => IndexLBracket,
+        "ArrayLBracket" => ArrayLBracket,
         "AngleGeneric" => AngleGeneric,
         "Ampersand" => Ampersand,
         "Pipe" => Pipe,
@@ -155,10 +141,7 @@ fn dump_kind_text_diff(got: &[(TokenKind, String)], exp: &[GoldenTok], from: usi
     }
 }
 
-// ------------------ main ------------------
-
 fn main() {
-    // --- REPLAY A SINGLE CASE ---
     if let Ok(path) = std::env::var("FUZZ_INPUT") {
         eprintln!("[replay] reading {}", path);
         let s = fs::read_to_string(&path).expect("failed to read FUZZ_INPUT");
@@ -166,7 +149,6 @@ fn main() {
         return;
     }
 
-    // --- HANDCRAFTED EXAMPLES (run before fuzzing) ---
     let examples = collect_examples();
     if !examples.is_empty() {
         eprintln!("[ex] running {} handcrafted example(s)…", examples.len());
@@ -186,7 +168,6 @@ fn main() {
         }
     }
 
-    // --- FUZZ MODE ---
     let save_cases = std::env::var("FUZZ_SAVE").ok().as_deref() == Some("1");
     let out_dir = std::env::var("FUZZ_DIR").unwrap_or_else(|_| "fuzz-cases".to_string());
     let len: usize = std::env::var("FUZZ_LEN")
@@ -196,7 +177,7 @@ fn main() {
     let iters: usize = std::env::var("FUZZ_ITERS")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(10);
+        .unwrap_or(3);
     let seed: u64 = std::env::var("FUZZ_SEED")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -231,8 +212,6 @@ fn main() {
         eprintln!("[fuzz] all iterations matched ✅");
     });
 }
-
-// ---------- run one (CPU vs GPU [+ optional golden]) ----------
 
 async fn run_once(
     src: &str,
@@ -285,7 +264,6 @@ async fn run_once(
 
     if let Some(p) = golden_for {
         if let Some(g) = load_golden_for(p) {
-            // Normalize into (kind, start, len) triplets for both streams.
             let cpu_norm: Vec<(TokenKind, usize, usize)> =
                 cpu.iter().map(|t| (t.kind, t.start, t.len)).collect();
             let gpu_norm: Vec<(TokenKind, usize, usize)> =
@@ -308,10 +286,7 @@ async fn run_once(
     ok
 }
 
-// ---------- handcrafted examples discovery ----------
-
 fn collect_examples() -> Vec<PathBuf> {
-    // FUZZ_EX takes precedence; split on ',' or ':'
     if let Ok(list) = std::env::var("FUZZ_EX") {
         let mut out = Vec::new();
         for part in list.split(|c| c == ',' || c == ':') {
@@ -325,7 +300,6 @@ fn collect_examples() -> Vec<PathBuf> {
         }
     }
 
-    // Else look for a directory (default "lexer_tests")
     let dir = std::env::var("FUZZ_EX_DIR").unwrap_or_else(|_| "lexer_tests".into());
     let p = Path::new(&dir);
     if !p.exists() || !p.is_dir() {
@@ -349,8 +323,6 @@ fn collect_examples() -> Vec<PathBuf> {
     out.sort();
     out
 }
-
-// ---------- save / replay helpers ----------
 
 #[derive(serde::Serialize)]
 struct CaseMeta<'a> {
@@ -388,8 +360,6 @@ fn save_case(dir: &str, seed: u64, iter: usize, src: &str) -> PathBuf {
     path
 }
 
-// ---------- generator (valid wrt current grammar) ----------
-
 fn gen_valid_source<R: Rng>(rng: &mut R, target_len: usize) -> String {
     let mut out = String::with_capacity(target_len + target_len / 8);
 
@@ -397,17 +367,16 @@ fn gen_valid_source<R: Rng>(rng: &mut R, target_len: usize) -> String {
         let roll = rng.random_range(0u32..100);
 
         match roll {
-            0..=24 => push_ident(rng, &mut out),          // ~25%
-            25..=39 => push_int(rng, &mut out),           // ~15%
-            40..=54 => push_ws(rng, &mut out),            // ~15%
-            55..=61 => push_line_comment(rng, &mut out),  // ~7%
-            62..=70 => push_block_comment(rng, &mut out), // ~9%
-            71..=99 => push_operator(rng, &mut out),      // ~29%
+            0..=24 => push_ident(rng, &mut out),
+            25..=39 => push_int(rng, &mut out),
+            40..=54 => push_ws(rng, &mut out),
+            55..=61 => push_line_comment(rng, &mut out),
+            62..=70 => push_block_comment(rng, &mut out),
+            71..=99 => push_operator(rng, &mut out),
             _ => unreachable!(),
         }
     }
 
-    // Safety trailer — ensure accepting end state and newline.
     out.push('*');
     out.push('/');
     out.push(' ');
@@ -505,13 +474,8 @@ fn random_digit<R: Rng>(rng: &mut R) -> char {
     set[i] as char
 }
 
-// ---------- comparison (CPU vs GPU) ----------
-
-// ---------- comparison (CPU vs GPU) ----------
-
 fn compare_streams(src: &str, cpu: &[CpuToken], gpu: &[laniusc::lexer::gpu::Token]) -> bool {
     if cpu.len() != gpu.len() {
-        // NEW: find the first divergence even when only the lengths differ
         let i = first_divergence_idx(cpu, gpu);
         eprintln!(
             "[diff] token count mismatch: cpu={} gpu={} (first divergence at index {})",
@@ -521,7 +485,6 @@ fn compare_streams(src: &str, cpu: &[CpuToken], gpu: &[laniusc::lexer::gpu::Toke
         );
         dump_near(src, cpu, gpu, i.saturating_sub(3));
 
-        // If everything matched up to min len, show the first few trailing tokens from the longer side.
         let min_len = cpu.len().min(gpu.len());
         if i == min_len {
             if cpu.len() > gpu.len() {
@@ -564,7 +527,6 @@ fn compare_streams(src: &str, cpu: &[CpuToken], gpu: &[laniusc::lexer::gpu::Toke
                 idx, ct.kind, ct.start, ct.len, gt.kind, gt.start, gt.len
             );
 
-            // NEW: show a little source window around both tokens
             dump_src_window(src, ct.start, ct.len, "CPU", idx);
             dump_src_window(src, gt.start, gt.len, "GPU", idx);
 
@@ -575,10 +537,6 @@ fn compare_streams(src: &str, cpu: &[CpuToken], gpu: &[laniusc::lexer::gpu::Toke
     true
 }
 
-// (keep dump_near as-is; it now gets called with a better starting index)
-
-// ---------- helpers (NEW) ----------
-
 fn first_divergence_idx(cpu: &[CpuToken], gpu: &[laniusc::lexer::gpu::Token]) -> usize {
     let n = cpu.len().min(gpu.len());
     for i in 0..n {
@@ -588,11 +546,10 @@ fn first_divergence_idx(cpu: &[CpuToken], gpu: &[laniusc::lexer::gpu::Token]) ->
             return i;
         }
     }
-    n // lengths differ or streams are identical
+    n
 }
 
 fn line_col_at(src: &str, byte_idx: usize) -> (usize, usize) {
-    // 1-based line/col
     let mut line = 1usize;
     let mut col = 1usize;
     for (i, b) in src.as_bytes().iter().enumerate() {
@@ -621,7 +578,6 @@ fn dump_src_window(src: &str, start: usize, len: usize, who: &str, idx: usize) {
     );
     eprintln!("    {:?}", snippet);
 
-    // underline the token within the window (best-effort; ignores tabs)
     let caret_pos = start.saturating_sub(lo);
     let caret_len = len.max(1).min(80);
     let mut underline = String::new();

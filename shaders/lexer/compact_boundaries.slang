@@ -1,5 +1,10 @@
+// shaders/lexer/compact_boundaries.slang
 // Compact boundaries and write per-token data.
-// (matches earlier fix for last-byte double boundary mapping)
+// This file provides two entry points:
+//   - compact_boundaries_all   : uses ANY-end predicate (emit || eof)
+//   - compact_boundaries_kept  : uses KEPT-end predicate ((emit&keep_emit)||(eof&keep_eof))
+
+import utils;
 
 struct LexParams
 {
@@ -10,11 +15,11 @@ struct LexParams
 ConstantBuffer<LexParams> gParams;
 
 // Inputs
-StructuredBuffer<uint> s_final;        // inclusive sums of CURRENT stream (all or kept)
-StructuredBuffer<uint> s_final_all;    // inclusive sums of ALL boundaries
-StructuredBuffer<uint> filtered_flags; // 0/1 per i — which entries from CURRENT stream to keep (compat)
-StructuredBuffer<uint> tok_types;      // PACKED kinds per i for KEPT stream (EMIT|EOF)
-StructuredBuffer<uint> end_excl_by_i;  // exclusive end for single-kept boundary at i
+StructuredBuffer<uint> s_final;       // inclusive sums of CURRENT stream (all or kept)
+StructuredBuffer<uint> s_final_all;   // inclusive sums of ALL boundaries
+StructuredBuffer<uint> flags_packed;  // per-i packed flags (EMIT/EOF/KEEP_EMIT/KEEP_EOF)
+StructuredBuffer<uint> tok_types;     // PACKED kinds per i for KEPT stream (EMIT|EOF)
+StructuredBuffer<uint> end_excl_by_i; // exclusive end for single-kept boundary at i
 
 // Outputs
 RWStructuredBuffer<uint> end_positions;     // compacted exclusive ends (CURRENT stream)
@@ -22,9 +27,8 @@ RWStructuredBuffer<uint> types_compact;     // compacted kinds         (CURRENT 
 RWStructuredBuffer<uint> all_index_compact; // for each *kept* token: 1-based index in ALL stream
 RWStructuredBuffer<uint> token_count;       // [0] = total compacted (CURRENT)
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void compact_boundaries(uint3 tid: SV_DispatchThreadID)
+// -------- shared implementation (predicate parameterized) --------
+inline void compact_impl(bool use_kept_pred, uint3 tid)
 {
     uint i = tid.x;
     if (i >= gParams.n)
@@ -37,7 +41,9 @@ void compact_boundaries(uint3 tid: SV_DispatchThreadID)
         token_count[0] = pref;
     }
 
-    if (filtered_flags[i] == 0u)
+    uint f = flags_packed[i];
+    uint selected = use_kept_pred ? kept_any_from_flags(f) : any_end_from_flags(f);
+    if (selected == 0u)
         return;
 
     uint prev = (i == 0u) ? 0u : s_final[i - 1u];
@@ -90,4 +96,18 @@ void compact_boundaries(uint3 tid: SV_DispatchThreadID)
         all_idx_for_kept = (end_excl == i) ? (all_idx_1based - 1u) : all_idx_1based;
     }
     all_index_compact[k] = all_idx_for_kept;
+}
+
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void compact_boundaries_all(uint3 tid: SV_DispatchThreadID)
+{
+    compact_impl(false, tid);
+}
+
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void compact_boundaries_kept(uint3 tid: SV_DispatchThreadID)
+{
+    compact_impl(true, tid);
 }

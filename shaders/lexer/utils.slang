@@ -5,6 +5,10 @@ module utils;
 
 // Public constants / bit helpers
 public static const uint HIGH_BIT = 0x8000u; // top bit for our 16-bit packed values
+public static const uint PF_EMIT = 1u << 0;
+public static const uint PF_EOF = 1u << 1;
+public static const uint PF_KEEP_EMIT = 1u << 2;
+public static const uint PF_KEEP_EOF = 1u << 3;
 
 // Returns true if the highest (15th) bit is set in a 16-bit payload.
 public inline bool is_highest_bit_set(uint value)
@@ -33,4 +37,34 @@ public inline uint load_u16_packed(StructuredBuffer<uint> buf, uint idx)
 public inline bool is_last(uint i, uint n)
 {
     return (i + 1u == n);
+}
+
+// seeds_from_flags: returns (all_seed, kept_seed) as uint2
+public inline uint2 seeds_from_flags(uint f)
+{
+    uint emit = (f & PF_EMIT) != 0u ? 1u : 0u;
+    uint eof = (f & PF_EOF) != 0u ? 1u : 0u;
+
+    uint keep_emit = (f & PF_KEEP_EMIT) != 0u ? 1u : 0u;
+    uint keep_eof = (f & PF_KEEP_EOF) != 0u ? 1u : 0u;
+
+    uint all_seed = emit + eof;
+    uint keep_seed = emit * keep_emit + eof * keep_eof;
+    return uint2(all_seed, keep_seed);
+}
+
+// any_end_from_flags: 0/1 “any boundary at i”
+public inline uint any_end_from_flags(uint f)
+{
+    return ((f & (PF_EMIT | PF_EOF)) != 0u) ? 1u : 0u;
+}
+
+// kept_any_from_flags: 0/1 “any *kept* boundary at i”
+public inline uint kept_any_from_flags(uint f)
+{
+    const uint mask = (PF_EMIT | PF_KEEP_EMIT) | (PF_EOF | PF_KEEP_EOF);
+    // (EMIT & KEEP_EMIT) | (EOF & KEEP_EOF)
+    uint emit_kept = ((f & PF_EMIT) != 0u && (f & PF_KEEP_EMIT) != 0u) ? 1u : 0u;
+    uint eof_kept = ((f & PF_EOF) != 0u && (f & PF_KEEP_EOF) != 0u) ? 1u : 0u;
+    return (emit_kept | eof_kept);
 }

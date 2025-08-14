@@ -66,37 +66,23 @@ impl Pass for FinalizeBoundariesAndSeedPass {
     fn create_resource_map<'a>(
         &self,
         buffers: &'a GpuBuffers,
-    ) -> HashMap<String, wgpu::BindingResource<'a>> {
-        use wgpu::BindingResource::*;
-        let mut map = HashMap::new();
-
-        map.insert(
-            "gParams".into(),
-            Buffer(buffers.params.as_entire_buffer_binding()),
-        );
-
-        map.insert("in_bytes".into(), buffers.in_bytes.as_entire_binding());
-        map.insert("next_emit".into(), buffers.next_emit.as_entire_binding());
-        map.insert("token_map".into(), buffers.token_map.as_entire_binding());
-        map.insert("f_final".into(), buffers.f_final.as_entire_binding());
-
-        map.insert("tok_types".into(), buffers.tok_types.as_entire_binding());
-        map.insert(
-            "filtered_flags".into(),
-            buffers.filtered_flags.as_entire_binding(),
-        );
-        map.insert(
-            "end_excl_by_i".into(),
-            buffers.end_excl_by_i.as_entire_binding(),
-        );
-        map.insert("s_all_seed".into(), buffers.s_all_seed.as_entire_binding());
-        map.insert(
-            "s_keep_seed".into(),
-            buffers.s_keep_seed.as_entire_binding(),
-        );
-        map.insert("end_flags".into(), buffers.end_flags.as_entire_binding());
-
-        map
+    ) -> std::collections::HashMap<String, wgpu::BindingResource<'a>> {
+        HashMap::from([
+            ("gParams".into(), buffers.params.as_entire_binding()),
+            ("in_bytes".into(), buffers.in_bytes.as_entire_binding()),
+            ("token_map".into(), buffers.token_map.as_entire_binding()),
+            ("f_final".into(), buffers.f_final.as_entire_binding()),
+            ("next_emit".into(), buffers.next_emit.as_entire_binding()),
+            (
+                "flags_packed".into(),
+                buffers.flags_packed.as_entire_binding(),
+            ),
+            ("tok_types".into(), buffers.tok_types.as_entire_binding()),
+            (
+                "end_excl_by_i".into(),
+                buffers.end_excl_by_i.as_entire_binding(),
+            ),
+        ])
     }
 
     fn record_debug(
@@ -141,28 +127,10 @@ impl Pass for FinalizeBoundariesAndSeedPass {
             &mut g.tok_types,
         );
         copy_into(
-            &bufs.filtered_flags,
-            bufs.filtered_flags.byte_size,
-            "dbg.filtered_flags",
-            &mut g.filtered_flags,
-        );
-        copy_into(
             &bufs.end_excl_by_i,
             bufs.end_excl_by_i.byte_size,
             "dbg.end_excl_by_i",
             &mut g.end_excl_by_i,
-        );
-        copy_into(
-            &bufs.s_all_seed,
-            bufs.s_all_seed.byte_size,
-            "dbg.s_all_seed",
-            &mut g.s_all_seed,
-        );
-        copy_into(
-            &bufs.s_keep_seed,
-            bufs.s_keep_seed.byte_size,
-            "dbg.s_keep_seed",
-            &mut g.s_keep_seed,
         );
     }
 }

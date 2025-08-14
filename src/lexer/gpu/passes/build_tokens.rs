@@ -35,12 +35,7 @@ impl Pass for BuildTokensPass {
         &self,
         b: &'a GpuBuffers,
     ) -> HashMap<String, wgpu::BindingResource<'a>> {
-        use wgpu::BindingResource::*;
         HashMap::from([
-            (
-                "gParams".into(),
-                Buffer(b.params.as_entire_buffer_binding()),
-            ),
             ("token_count".into(), b.token_count.as_entire_binding()),
             ("end_positions".into(), b.end_positions.as_entire_binding()),
             ("types_compact".into(), b.types_compact.as_entire_binding()),
