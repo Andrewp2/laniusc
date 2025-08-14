@@ -12,6 +12,15 @@ public inline bool is_highest_bit_set(uint value)
     return (value & HIGH_BIT) != 0u;
 }
 
+// Load a single byte from a ByteAddressBuffer at index `i`.
+// NOTE: declare bindings per-kernel; this is just a helper.
+public inline uint load_byte_at(ByteAddressBuffer buf, uint i)
+{
+    uint word = buf.Load(i & ~3u); // 4-byte aligned address
+    uint shift = (i & 3u) * 8u;
+    return (word >> shift) & 0xFFu;
+}
+
 // Load a 16-bit lane from a packed uint buffer (2 * u16 per uint).
 public inline uint load_u16_packed(StructuredBuffer<uint> buf, uint idx)
 {
@@ -20,33 +29,8 @@ public inline uint load_u16_packed(StructuredBuffer<uint> buf, uint idx)
     return (w >> sh) & 0xFFFFu;
 }
 
-// Unpack helpers for our packed (low15 = state, high1 = emit) layout.
-public inline uint unpack_low15(uint v)
-{
-    return v & 0x7FFFu;
-}
-public inline uint unpack_high1(uint v)
-{
-    return (v >> 15u) & 1u;
-}
-
 // Convenience predicates / math
 public inline bool is_last(uint i, uint n)
 {
     return (i + 1u == n);
-}
-
-public inline uint saturating_sub(uint a, uint b)
-{
-    return (a >= b) ? (a - b) : 0u;
-}
-
-// Min/Max that are occasionally handy in kernels
-public inline uint umin_u(uint a, uint b)
-{
-    return (a < b) ? a : b;
-}
-public inline uint umax_u(uint a, uint b)
-{
-    return (a > b) ? a : b;
 }

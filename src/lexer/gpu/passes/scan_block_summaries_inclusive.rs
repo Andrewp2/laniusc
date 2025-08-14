@@ -4,7 +4,7 @@ use encase::UniformBuffer;
 use wgpu::util::DeviceExt;
 
 use super::{Pass, PassData, ScanParams};
-use crate::lexer::gpu::{buffers::GpuBuffers, debug::DebugOutput};
+use crate::lexer::gpu::{buffers::GpuBuffers, debug::DebugOutput, timer::GpuTimer};
 
 pub struct ScanBlockSummariesInclusivePass {
     data: PassData,
@@ -52,6 +52,7 @@ impl Pass for ScanBlockSummariesInclusivePass {
         b: &GpuBuffers,
         _dbg: &mut DebugOutput,
         input: super::InputElements,
+        maybe_timer: Option<&mut GpuTimer>,
     ) {
         let nblocks = match input {
             super::InputElements::Elements1D(n) => n,
@@ -96,6 +97,7 @@ impl Pass for ScanBlockSummariesInclusivePass {
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
 
+            // TODO: switch to using reflection instead of manual bindings
             let entries = &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -122,6 +124,7 @@ impl Pass for ScanBlockSummariesInclusivePass {
 
             pass.set_bind_group(0, &bg, &[]);
             pass.dispatch_workgroups(nblocks, 1, 1);
+            // TODO: time every round?
         }
         drop(pass);
 
@@ -130,6 +133,9 @@ impl Pass for ScanBlockSummariesInclusivePass {
             encoder.copy_buffer_to_buffer(&b.block_pong, 0, &b.block_prefix, 0, byte_len as u64);
         } else {
             encoder.copy_buffer_to_buffer(&b.block_ping, 0, &b.block_prefix, 0, byte_len as u64);
+        }
+        if let Some(t) = maybe_timer {
+            t.stamp(encoder, Self::NAME.to_string());
         }
     }
 

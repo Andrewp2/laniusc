@@ -39,14 +39,12 @@ impl DebugBuffer {
 pub struct DebugGpuBuffers {
     pub in_bytes: DebugBuffer,
 
-    pub f_ping: DebugBuffer,
     pub block_summaries: DebugBuffer,
     pub block_ping: DebugBuffer,
     pub block_pong: DebugBuffer,
     pub block_prefix: DebugBuffer,
     pub f_final: DebugBuffer,
 
-    pub end_flags: DebugBuffer,
     pub tok_types: DebugBuffer,
     pub filtered_flags: DebugBuffer,
     pub end_excl_by_i: DebugBuffer,
@@ -81,14 +79,12 @@ impl DebugOutput {
         let g = &mut self.gpu;
         map(&mut g.in_bytes, device);
 
-        map(&mut g.f_ping, device);
         map(&mut g.block_summaries, device);
         map(&mut g.block_ping, device);
         map(&mut g.block_pong, device);
         map(&mut g.block_prefix, device);
         map(&mut g.f_final, device);
 
-        map(&mut g.end_flags, device);
         map(&mut g.tok_types, device);
         map(&mut g.filtered_flags, device);
         map(&mut g.end_excl_by_i, device);
@@ -141,14 +137,6 @@ pub fn record_after_pass(
                 label: "in_bytes",
                 buffer: Some(b0),
                 byte_len: bufs.in_bytes.byte_size,
-            };
-
-            let b1 = make_staging(device, "dbg.f_ping", bufs.f_ping.byte_size);
-            encoder.copy_buffer_to_buffer(&bufs.f_ping, 0, &b1, 0, bufs.f_ping.byte_size as u64);
-            g.f_ping = DebugBuffer {
-                label: "f_ping",
-                buffer: Some(b1),
-                byte_len: bufs.f_ping.byte_size,
             };
         }
 
@@ -206,7 +194,6 @@ pub fn record_after_pass(
 
         "finalize" => {
             for (src, dst, lab) in [
-                (&bufs.end_flags, "dbg.end_flags", "end_flags"),
                 (&bufs.tok_types, "dbg.tok_types", "tok_types"),
                 (&bufs.filtered_flags, "dbg.filtered_flags", "filtered_flags"),
                 (&bufs.end_excl_by_i, "dbg.end_excl_by_i", "end_excl_by_i"),
@@ -221,7 +208,6 @@ pub fn record_after_pass(
                     byte_len: src.byte_size,
                 };
                 match lab {
-                    "end_flags" => g.end_flags = db,
                     "tok_types" => g.tok_types = db,
                     "filtered_flags" => g.filtered_flags = db,
                     "end_excl_by_i" => g.end_excl_by_i = db,

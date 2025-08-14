@@ -80,7 +80,6 @@ impl Pass for FinalizeBoundariesAndSeedPass {
         map.insert("token_map".into(), buffers.token_map.as_entire_binding());
         map.insert("f_final".into(), buffers.f_final.as_entire_binding());
 
-        map.insert("end_flags".into(), buffers.end_flags.as_entire_binding());
         map.insert("tok_types".into(), buffers.tok_types.as_entire_binding());
         map.insert(
             "filtered_flags".into(),
@@ -134,12 +133,6 @@ impl Pass for FinalizeBoundariesAndSeedPass {
 
         let g = &mut dbg.gpu;
 
-        copy_into(
-            &bufs.end_flags,
-            bufs.end_flags.byte_size,
-            "dbg.end_flags",
-            &mut g.end_flags,
-        );
         copy_into(
             &bufs.tok_types,
             bufs.tok_types.byte_size,

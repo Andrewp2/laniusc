@@ -25,3 +25,8 @@ which = "8.0.0"
 
 [features]
 gpu-debug = []
+graphics_debugger = []
+
+[profile.release]
+debug = 1   # keep useful line info without bloating too much
+lto = "off" # optional: improves at-a-glance attribution across crates

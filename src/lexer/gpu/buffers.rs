@@ -37,27 +37,25 @@ pub struct GpuBuffers {
     pub nb: u32,
 
     /// Uniform params buffer (LexParams) — lives here now.
-    pub params: wgpu::Buffer,
+    pub params: LaniusBuffer<super::LexParams>,
 
     // inputs/tables
-    pub in_bytes: LaniusBuffer<u32>,
+    // pub in_bytes: LaniusBuffer<u32>,
+    pub in_bytes: LaniusBuffer<u8>,
     pub next_emit: LaniusBuffer<u32>, // 256 * N_STATES, low15=next, high1=emit
     pub token_map: LaniusBuffer<u32>, // N_STATES
 
     // function-id mapping + two-pass prefix for DFA states
-    pub f_ping: LaniusBuffer<u32>,          // scan ping
-    pub f_inblock: LaniusBuffer<u32>,       // optional scratch (state per element)
+    pub f_inblock: LaniusBuffer<u32>, // optional scratch (state per element)
     pub block_summaries: LaniusBuffer<u32>, // per-block function vector (N_STATES each)
-    pub block_ping: LaniusBuffer<u32>,      // block scan ping
-    pub block_pong: LaniusBuffer<u32>,      // block scan pong
-    pub block_prefix: LaniusBuffer<u32>,    // inclusive per-block prefix (N_STATES each)
-    pub f_final: LaniusBuffer<u32>,         // global DFA state per element (u32)
+    pub block_ping: LaniusBuffer<u32>, // block scan ping
+    pub block_pong: LaniusBuffer<u32>, // block scan pong
+    pub block_prefix: LaniusBuffer<u32>, // inclusive per-block prefix (N_STATES each)
+    pub f_final: LaniusBuffer<u32>,   // global DFA state per element (u32)
 
-    // finalize outputs
-    pub end_flags: LaniusBuffer<u32>,      // all ends (0/1)
-    pub tok_types: LaniusBuffer<u32>,      // type at boundary after i (packed)
+    pub tok_types: LaniusBuffer<u32>, // type at boundary after i (packed)
     pub filtered_flags: LaniusBuffer<u32>, // kept ends (0/1 compat)
-    pub end_excl_by_i: LaniusBuffer<u32>,  // exact exclusive end index per boundary i
+    pub end_excl_by_i: LaniusBuffer<u32>, // exact exclusive end index per boundary i
 
     // seeds (produced by finalize) for BOTH streams
     pub s_all_seed: LaniusBuffer<u32>,  // size n
@@ -95,10 +93,10 @@ impl GpuBuffers {
         device: &wgpu::Device,
         n: u32,
         start_state: u32,
-        bytes_u32: &[u32],
+        // bytes_u32: &[u32],
+        input_bytes: &[u8],
         next_emit_packed: &[u32],
         token_map: &[u32],
-        // NEW: host-provided skip kinds (exactly four scalars; last may be sentinel)
         skip_kinds: [u32; 4],
     ) -> Self {
         fn u32s_to_le_bytes(slice: &[u32]) -> Vec<u8> {
@@ -108,7 +106,6 @@ impl GpuBuffers {
             }
             out
         }
-
         fn make_ro<T>(
             device: &wgpu::Device,
             label: &str,
@@ -145,8 +142,8 @@ impl GpuBuffers {
         let nb = n.div_ceil(256);
 
         // ---- inputs/tables
-        let in_bytes: LaniusBuffer<u32> =
-            make_ro::<u32>(device, "in_bytes", &u32s_to_le_bytes(bytes_u32), n as usize);
+        let in_bytes: LaniusBuffer<u8> = make_ro::<u8>(device, "in_bytes", input_bytes, n as usize);
+
         let token_map_buf: LaniusBuffer<u32> = make_ro::<u32>(
             device,
             "token_map",
@@ -155,8 +152,6 @@ impl GpuBuffers {
         );
 
         // ---- mapping + block/prefix structures (DFA state path)
-        let f_ping: LaniusBuffer<u32> =
-            make_rw::<u32>(device, "f_ping", (n as usize) * 4, n as usize);
         let f_inblock: LaniusBuffer<u32> =
             make_rw::<u32>(device, "f_inblock", (n as usize) * 4, n as usize);
 
@@ -189,9 +184,6 @@ impl GpuBuffers {
         let f_final: LaniusBuffer<u32> =
             make_rw::<u32>(device, "f_final", (n as usize) * 4, n as usize);
 
-        // ---- finalize outputs
-        let end_flags: LaniusBuffer<u32> =
-            make_rw::<u32>(device, "end_flags", (n as usize) * 4, n as usize);
         let tok_types: LaniusBuffer<u32> =
             make_rw::<u32>(device, "tok_types", (n as usize) * 4, n as usize);
         let filtered_flags: LaniusBuffer<u32> =
@@ -243,9 +235,7 @@ impl GpuBuffers {
             n as usize,
         );
 
-        // ---- uniform params (LexParams) with flattened skip kinds
-        let mut ub = UniformBuffer::new(Vec::new());
-        ub.write(&LexParams {
+        let params_val = LexParams {
             n,
             m: N_STATES as u32,
             identity_id: start_state,
@@ -253,13 +243,16 @@ impl GpuBuffers {
             skip1: skip_kinds[1],
             skip2: skip_kinds[2],
             skip3: skip_kinds[3],
-        })
-        .unwrap();
-        let params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        };
+        // convenience: build a UNIFORM buffer and wrap as LaniusBuffer
+        let mut ub = UniformBuffer::new(Vec::new());
+        ub.write(&params_val).unwrap();
+        let raw = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("LexParams"),
             contents: ub.as_ref(),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
+        let params = LaniusBuffer::<LexParams>::new((raw, ub.as_ref().len() as u64), 1);
 
         let next_emit_buf: LaniusBuffer<u32> = make_ro::<u32>(
             device,
@@ -277,7 +270,6 @@ impl GpuBuffers {
             next_emit: next_emit_buf,
             token_map: token_map_buf,
 
-            f_ping,
             f_inblock,
             block_summaries,
             block_ping,
@@ -285,7 +277,6 @@ impl GpuBuffers {
             block_prefix,
             f_final,
 
-            end_flags,
             tok_types,
             filtered_flags,
             end_excl_by_i,

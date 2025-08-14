@@ -4,12 +4,19 @@ use std::sync::Arc;
 use anyhow::{Result, anyhow};
 use encase::ShaderType;
 
-use crate::reflection::{
-    EntryPointReflection,
-    ParameterReflection,
-    SlangReflection,
-    parse_reflection_from_bytes,
-    slang_category_and_type_to_wgpu,
+use crate::{
+    lexer::gpu::{
+        buffers::GpuBuffers,
+        debug::{DebugBuffer, DebugOutput},
+        timer::GpuTimer,
+    },
+    reflection::{
+        EntryPointReflection,
+        ParameterReflection,
+        SlangReflection,
+        parse_reflection_from_bytes,
+        slang_category_and_type_to_wgpu,
+    },
 };
 
 // ---------- export concrete pass modules ----------
@@ -202,11 +209,6 @@ pub(crate) mod bind_group {
 
 // ---------------- core Pass trait ----------------
 
-use crate::lexer::gpu::{
-    buffers::GpuBuffers,
-    debug::{DebugBuffer, DebugOutput},
-};
-
 pub struct PassData {
     pub pipeline: Arc<wgpu::ComputePipeline>,
     /// One layout per descriptor set (set = index in this vec).
@@ -242,6 +244,7 @@ pub trait Pass {
     ) -> std::collections::HashMap<String, wgpu::BindingResource<'a>>;
 
     /// Default recording: bind **all** sets reflected by the shader, then dispatch.
+    /// If `timer` is provided, this stamps a GPU timestamp after the dispatch.
     fn record_pass(
         &self,
         device: &wgpu::Device,
@@ -249,6 +252,7 @@ pub trait Pass {
         buffers: &GpuBuffers,
         _debug_output: &mut DebugOutput,
         input: InputElements,
+        timer: Option<&mut GpuTimer>,
     ) {
         let dispatch = match (Self::DIM, input) {
             (DispatchDim::D1, InputElements::Elements1D(n)) => self.get_dispatch_size_1d(n),
@@ -289,7 +293,9 @@ pub trait Pass {
             }
             pass.dispatch_workgroups(dispatch.0, dispatch.1, dispatch.2);
         }
-
+        if let Some(t) = timer {
+            t.stamp(encoder, Self::NAME.to_string());
+        }
         #[cfg(feature = "gpu-debug")]
         {
             self.record_debug(device, encoder, buffers, _debug_output);
@@ -317,6 +323,7 @@ pub trait Pass {
 }
 
 // ---------- debug helpers each pass uses ----------
+#[allow(dead_code)]
 impl DebugBuffer {
     pub fn set_from_copy(
         &mut self,

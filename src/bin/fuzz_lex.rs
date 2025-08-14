@@ -14,7 +14,7 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
-    time::{Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use laniusc::lexer::{
@@ -196,7 +196,7 @@ fn main() {
     let iters: usize = std::env::var("FUZZ_ITERS")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(3);
+        .unwrap_or(10);
     let seed: u64 = std::env::var("FUZZ_SEED")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -214,6 +214,7 @@ fn main() {
 
     pollster::block_on(async move {
         for i in 0..iters {
+            eprintln!("[fuzz] iter {i} ----------------");
             let s = gen_valid_source(&mut rng, len);
             eprintln!("[fuzz] iter {i}: generated {} bytes", s.len());
 
@@ -254,30 +255,26 @@ async fn run_once(
         }
     };
     let t1 = Instant::now();
-    let t2 = Instant::now();
     let gpu = laniusc::lexer::gpu::lex_on_gpu(src)
         .await
         .expect("GPU lex failed");
-    let t3 = Instant::now();
+    let t2 = Instant::now();
 
     let eq = compare_streams(src, &cpu, &gpu);
     let cpu_ms = (t1 - t0).as_millis();
-    let gpu_init_ms = (t2 - t1).as_millis();
-    let gpu_ms = (t3 - t2).as_millis();
+    let gpu_ms = (t2 - t1).as_millis();
 
     match (seed, iter, len) {
         (Some(_seed), Some(i), Some(_l)) => eprintln!(
-            "[fuzz] iter {i}: CPU {} ms  |  GPU init {} ms  |  GPU lex {} ms  |  tokens kept = {}  -> {}",
+            "[fuzz] iter {i}: CPU {} ms   |  GPU lex {} ms  |  tokens kept = {}  -> {}",
             cpu_ms,
-            gpu_init_ms,
             gpu_ms,
             gpu.len(),
             if eq { "OK" } else { "MISMATCH!" }
         ),
         _ => eprintln!(
-            "[replay] CPU {} ms  |  GPU init {} ms  |  GPU lex {} ms  |  tokens kept = {}  -> {}",
+            "[replay] CPU {} ms  |  GPU lex {} ms  |  tokens kept = {}  -> {}",
             cpu_ms,
-            gpu_init_ms,
             gpu_ms,
             gpu.len(),
             if eq { "OK" } else { "MISMATCH!" }

@@ -13,7 +13,7 @@ struct Params
 };
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> in_bytes;
+ByteAddressBuffer in_bytes;       // byte-addressable input
 StructuredBuffer<uint> next_emit; // 2x u16 per uint
 StructuredBuffer<uint> block_prefix;
 RWStructuredBuffer<uint> f_final;
@@ -43,7 +43,7 @@ void apply_block_prefix_downsweep(uint3 tid: SV_GroupThreadID,
     uint b = 0;
     if (i < gParams.n)
     {
-        b = in_bytes[i] & 0xFFu;
+        b = load_byte_at(in_bytes, i);
         [unroll]
         for (uint s = 0; s < N_STATES; ++s)
         {

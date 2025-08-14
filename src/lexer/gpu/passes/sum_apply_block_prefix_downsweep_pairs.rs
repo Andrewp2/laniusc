@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use super::{Pass, PassData};
-use crate::lexer::gpu::{buffers::GpuBuffers, debug::DebugOutput};
+use crate::lexer::gpu::buffers::GpuBuffers;
 
 pub struct SumApplyBlockPrefixDownsweepPairsPass {
     data: PassData,

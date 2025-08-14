@@ -30,7 +30,7 @@ sleep well 😴 — here’s a punch-list I’d hit to make the GPU path competi
    Most of your large arrays are `u32` where `u16`/`u8`/bits will do:
 
    * DFA state indices fit in **u16** (`N_STATES = 32`). Make `f_final`, block vectors, etc., u16.
-   * `end_flags`, `filtered_flags`, `s_all_seed`, `s_keep_seed` are 0/1/2 ⇒ **u8** (or even bit-packed).
+   *  `filtered_flags`, `s_all_seed`, `s_keep_seed` are 0/1/2 ⇒ **u8** (or even bit-packed).
    * `tok_types` already packs two kinds in 32 bits; keep that or go to two u16s.
    * `next_emit` low-15/high-1 → **u16** storage.
      Less than half the bytes moved = a very noticeable speedup.

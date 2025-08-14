@@ -15,7 +15,7 @@ struct Params
 };
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> in_bytes;
+ByteAddressBuffer in_bytes;       // byte-addressable input
 StructuredBuffer<uint> next_emit; // 2x u16 per uint (low15=next, high1=emit)
 RWStructuredBuffer<uint> f_inblock;
 RWStructuredBuffer<uint> block_summaries;
@@ -36,7 +36,7 @@ void scan_inblock_inclusive(uint3 tid: SV_GroupThreadID,
     uint b = 0;
     if (i < gParams.n)
     {
-        b = in_bytes[i] & 0xFFu;
+        b = load_byte_at(in_bytes, i);
         [unroll]
         for (uint s = 0; s < N_STATES; ++s)
         {
@@ -84,12 +84,6 @@ void scan_inblock_inclusive(uint3 tid: SV_GroupThreadID,
         }
         GroupMemoryBarrierWithGroupSync();
     }
-
-    // Optionally store in-block state result from start
-    // if (i < gParams.n)
-    // {
-    //     f_inblock[i] = func[tid.x][gParams.start_state];
-    // }
 
     // Thread lane last writes the block summary vector
     if (tid.x == WORKGROUP_SIZE - 1)
