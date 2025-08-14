@@ -1,6 +1,6 @@
 // shaders/lexer/sum_inblock_pairs.slang
 // Sum both seed streams (ALL, KEPT) inside each 256-wide block in shared memory.
-// Writes per-element in-block prefix and a single uint2 block total.
+// Writes only the per-block uint2 total. (We no longer write per-element prefixes.)
 
 #define WORKGROUP_SIZE 256
 
@@ -14,10 +14,10 @@ struct Params
 };
 ConstantBuffer<Params> gParams;
 
-// --------- CHANGED: read packed flags instead of two seed buffers ---------
+// Read packed flags (1 element per byte of input)
 StructuredBuffer<uint> flags_packed; // length n
 
-RWStructuredBuffer<uint2> s_pair_inblock;    // length n (prefix within block)
+// Outputs
 RWStructuredBuffer<uint2> block_totals_pair; // length nb (sum of this block)
 
 groupshared uint2 sh[WORKGROUP_SIZE];
@@ -42,7 +42,7 @@ void sum_inblock_pairs(uint3 tid: SV_GroupThreadID,
     sh[tid.x] = v;
     GroupMemoryBarrierWithGroupSync();
 
-    // Standard Hillis–Steele inclusive scan in shared memory (add on uint2)
+    // Hillis–Steele inclusive scan (uint2 add)
     for (uint offset = 1u; offset < WORKGROUP_SIZE; offset <<= 1u)
     {
         uint2 tmp = sh[tid.x];
@@ -55,13 +55,7 @@ void sum_inblock_pairs(uint3 tid: SV_GroupThreadID,
         GroupMemoryBarrierWithGroupSync();
     }
 
-    // Store in-block prefix if in range
-    if (i < gParams.n)
-    {
-        s_pair_inblock[i] = sh[tid.x];
-    }
-
-    // One lane writes the block total = prefix of the last valid element
+    // One lane writes block total = prefix at the last valid element
     const uint remain = (gParams.n > base) ? (gParams.n - base) : 0u;
     const uint count = remain < WORKGROUP_SIZE ? remain : WORKGROUP_SIZE;
     if (count > 0u)

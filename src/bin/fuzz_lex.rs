@@ -142,6 +142,7 @@ fn dump_kind_text_diff(got: &[(TokenKind, String)], exp: &[GoldenTok], from: usi
 }
 
 fn main() {
+    let _ = pollster::block_on(laniusc::lexer::gpu::lex_on_gpu("warmup"));
     if let Ok(path) = std::env::var("FUZZ_INPUT") {
         eprintln!("[replay] reading {path}");
         let s = fs::read_to_string(&path).expect("failed to read FUZZ_INPUT");
@@ -186,11 +187,10 @@ fn main() {
     eprintln!("[fuzz] len={len} iters={iters} seed={seed}");
     let mut rng = StdRng::seed_from_u64(seed);
 
-    if save_cases
-        && let Err(e) = fs::create_dir_all(&out_dir) {
-            eprintln!("error: failed to create {out_dir}: {e}");
-            std::process::exit(1);
-        }
+    if save_cases && let Err(e) = fs::create_dir_all(&out_dir) {
+        eprintln!("error: failed to create {out_dir}: {e}");
+        std::process::exit(1);
+    }
 
     pollster::block_on(async move {
         for i in 0..iters {
@@ -244,16 +244,18 @@ async fn run_once(
 
     match (seed, iter, len) {
         (Some(_seed), Some(i), Some(_l)) => eprintln!(
-            "[fuzz] iter {i}: CPU {} ms   |  GPU lex {} ms  |  tokens kept = {}  -> {}",
+            "[fuzz] iter {i}: CPU/GPU {} ms/{} ms  |  CPU/GPU tokens kept = {}/{}  -> {}",
             cpu_ms,
             gpu_ms,
+            cpu.len(),
             gpu.len(),
             if eq { "OK" } else { "MISMATCH!" }
         ),
         _ => eprintln!(
-            "[replay] CPU {} ms  |  GPU lex {} ms  |  tokens kept = {}  -> {}",
+            "[replay] CPU/GPU {} ms/{} ms  |  CPU/GPU tokens kept = {}/{}  -> {}",
             cpu_ms,
             gpu_ms,
+            cpu.len(),
             gpu.len(),
             if eq { "OK" } else { "MISMATCH!" }
         ),
@@ -277,10 +279,6 @@ async fn run_once(
         } else {
             eprintln!("[golden] no sidecar found for {}", p.display());
         }
-    }
-
-    if !ok {
-        dump_near(src, &cpu, &gpu, 0);
     }
     ok
 }
@@ -482,7 +480,7 @@ fn compare_streams(src: &str, cpu: &[CpuToken], gpu: &[laniusc::lexer::gpu::Toke
             gpu.len(),
             i
         );
-        dump_near(src, cpu, gpu, i.saturating_sub(3));
+        dump_near(src, cpu, gpu, i.saturating_sub(1));
 
         let min_len = cpu.len().min(gpu.len());
         if i == min_len {
@@ -529,7 +527,7 @@ fn compare_streams(src: &str, cpu: &[CpuToken], gpu: &[laniusc::lexer::gpu::Toke
             dump_src_window(src, ct.start, ct.len, "CPU", idx);
             dump_src_window(src, gt.start, gt.len, "GPU", idx);
 
-            dump_near(src, cpu, gpu, idx.saturating_sub(3));
+            dump_near(src, cpu, gpu, idx.saturating_sub(1));
             return false;
         }
     }
@@ -565,18 +563,57 @@ fn line_col_at(src: &str, byte_idx: usize) -> (usize, usize) {
     (line, col)
 }
 
+// ---- logging limits + helper (ADD THIS) ----
+const MAX_SNIP_WINDOW: usize = 1024; // max bytes we’ll print in dump_src_window
+const TOK_HEAD_BYTES: usize = 10; // bytes from token head
+const TOK_TAIL_BYTES: usize = 10; // bytes from token tail
+
+fn preview_lossy(bytes: &[u8], head: usize, tail: usize) -> String {
+    if bytes.len() <= head + tail {
+        return String::from_utf8_lossy(bytes).into_owned();
+    }
+    let head_s = String::from_utf8_lossy(&bytes[..head]);
+    let tail_s = String::from_utf8_lossy(&bytes[bytes.len() - tail..]);
+    format!(
+        "{}…(+{} bytes)…{}",
+        head_s,
+        bytes.len() - head - tail,
+        tail_s
+    )
+}
+
 fn dump_src_window(src: &str, start: usize, len: usize, who: &str, idx: usize) {
-    let lo = start.saturating_sub(64);
-    let hi = (start + len + 64).min(src.len());
+    let bytes = src.as_bytes();
+    let full_lo = start.saturating_sub(64);
+    let full_hi = (start + len + 64).min(src.len());
+    let full_len = full_hi.saturating_sub(full_lo);
     let (line, col) = line_col_at(src, start);
-    let snippet = String::from_utf8_lossy(&src.as_bytes()[lo..hi]);
 
     eprintln!(
-        "[src:{who} idx={idx}] token @{start}+{len} (line {line}, col {col})  window [{lo}..{hi}]"
+        "[src:{who} idx={idx}] token @{start}+{len} (line {line}, col {col})  window [{full_lo}..{full_hi}]"
     );
-    eprintln!("    {snippet:?}");
 
-    let caret_pos = start.saturating_sub(lo);
+    if full_len <= MAX_SNIP_WINDOW {
+        let snippet = String::from_utf8_lossy(&bytes[full_lo..full_hi]);
+        eprintln!("    {:?}", snippet);
+    } else {
+        // Show: up to 64 bytes before, a head/tail preview of the token, and up to 64 bytes after
+        let before = &bytes[full_lo..start];
+        let token_end = (start + len).min(src.len());
+        let token = &bytes[start..token_end];
+        let after_end = (token_end + 64).min(src.len());
+        let after = &bytes[token_end..after_end];
+
+        let snippet = format!(
+            "{}{}{}",
+            String::from_utf8_lossy(&before[..before.len().min(64)]),
+            preview_lossy(token, TOK_HEAD_BYTES, TOK_TAIL_BYTES),
+            String::from_utf8_lossy(after)
+        );
+        eprintln!("    {:?}", snippet);
+    }
+
+    let caret_pos = start.saturating_sub(full_lo);
     let caret_len = len.max(1).min(80);
     let mut underline = String::new();
     underline.push_str(&" ".repeat(caret_pos));
@@ -586,30 +623,28 @@ fn dump_src_window(src: &str, start: usize, len: usize, who: &str, idx: usize) {
 
 fn dump_near(src: &str, cpu: &[CpuToken], gpu: &[laniusc::lexer::gpu::Token], from_idx: usize) {
     let lo = from_idx;
-    let hi = (from_idx + 6).min(cpu.len().max(gpu.len()));
+    let last_index = cpu.len().min(gpu.len());
+    let hi = (from_idx + 3).min(last_index);
+    eprintln!("gpu len {} cpu len {}", gpu.len(), cpu.len());
     eprintln!("--- context tokens [{lo}..{hi}) ---");
+    let bytes = src.as_bytes();
     for i in lo..hi {
-        let cpu_s = cpu
-            .get(i)
-            .map(|t| &src.as_bytes()[t.start..t.start + t.len]);
-        let gpu_s = gpu
-            .get(i)
-            .map(|t| &src.as_bytes()[t.start..t.start + t.len]);
-        eprintln!(
-            "#{:06} CPU={:?} GPU={:?}",
-            i,
-            cpu.get(i).map(|t| (
-                t.kind,
-                t.start,
-                t.len,
-                String::from_utf8_lossy(cpu_s.unwrap_or_default())
-            )),
-            gpu.get(i).map(|t| (
-                t.kind,
-                t.start,
-                t.len,
-                String::from_utf8_lossy(gpu_s.unwrap_or_default())
-            )),
-        );
+        // can't assume len is valid
+        let cpu_dbg = cpu.get(i).map(|t| {
+            let len = t.len.min(src.len() - t.start);
+            let s = &bytes[t.start..t.start + len];
+            (t.kind, t.start, len, preview_lossy(s, 10, 10))
+        });
+        let gpu_dbg = gpu.get(i).map(|t| {
+            let len = t.len.min(src.len() - t.start);
+            let s = &bytes[t.start..t.start + len];
+            (t.kind, t.start, len, preview_lossy(s, 10, 10))
+        });
+        let same = if cpu_dbg == gpu_dbg {
+            "\u{2705}"
+        } else {
+            "\u{274c}"
+        };
+        eprintln!("{same} #{i:06} CPU={cpu_dbg:?} GPU={gpu_dbg:?}");
     }
 }

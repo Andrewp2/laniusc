@@ -74,7 +74,7 @@ impl GpuTimer {
         );
     }
 
-    pub fn try_read(&self, device: &wgpu::Device) -> Option<Vec<u64>> {
+    pub fn try_read(&self, device: &wgpu::Device) -> Option<Vec<(String, u64)>> {
         let query_count = if self.next == 0 {
             self.capacity
         } else {
@@ -95,7 +95,11 @@ impl GpuTimer {
             }
             drop(data);
             self.readback_buffer.unmap();
-            Some(out)
+            let mut final_vals = Vec::with_capacity(query_count as usize);
+            for (i, val) in out.iter().enumerate() {
+                final_vals.push((self.stamp_labels[i].clone(), *val));
+            }
+            Some(final_vals)
         } else {
             None
         }

@@ -1,6 +1,5 @@
-use std::{sync::OnceLock, time::Instant};
+use std::sync::OnceLock;
 
-// src/lexer/gpu/mod.rs
 use anyhow::{Result, anyhow};
 use buffers::GpuBuffers;
 use encase::ShaderType;
@@ -30,7 +29,6 @@ pub(super) struct LexParams {
     pub n: u32,
     pub m: u32,           // (= n_states)
     pub start_state: u32, // (= start_state)
-    // Avoid uniform arrays (encase requires 16B array stride). Use 4 scalars.
     pub skip0: u32,
     pub skip1: u32,
     pub skip2: u32,
@@ -46,6 +44,7 @@ fn u32_from_first_4(bytes: &[u8]) -> u32 {
 fn read_tokens_from_mapped(bytes: &[u8], count: usize) -> Vec<Token> {
     use std::{mem::size_of, ptr::read_unaligned};
 
+    let instant = std::time::Instant::now();
     let mut out = Vec::with_capacity(count);
     let mut p = bytes.as_ptr();
     let stride = size_of::<u32>() * 3; // kind,start,len = 12 bytes
@@ -63,6 +62,11 @@ fn read_tokens_from_mapped(bytes: &[u8], count: usize) -> Vec<Token> {
         // advance
         p = unsafe { p.add(stride) };
     }
+    eprintln!(
+        "[read_tokens_from_mapped] {} tokens in {:.3} ms",
+        count,
+        instant.elapsed().as_nanos() as f64 / 1.0e6
+    );
     out
 }
 
@@ -121,7 +125,8 @@ impl GpuLexer {
                 compatible_surface: None,
                 force_fallback_adapter: false,
             })
-            .await.map_err(|_| anyhow!("no adapter"))?;
+            .await
+            .map_err(|_| anyhow!("no adapter"))?;
 
         let mut limits = wgpu::Limits::defaults();
         // ... why are my comments missing here...
@@ -200,7 +205,6 @@ impl GpuLexer {
     }
 
     pub async fn lex(&self, input: &str) -> Result<Vec<Token>> {
-        let wall_all = Instant::now();
         #[cfg(feature = "graphics_debugger")]
         unsafe {
             self.device.start_graphics_debugger_capture()
@@ -240,7 +244,6 @@ impl GpuLexer {
             u32::MAX,
         ];
 
-        let wall_setup = Instant::now();
         let bufs = GpuBuffers::new(
             &self.device,
             n,
@@ -262,7 +265,6 @@ impl GpuLexer {
             None
         };
 
-        let wall_encode = Instant::now();
         let mut enc = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -316,7 +318,7 @@ impl GpuLexer {
             &mut enc,
             &bufs,
             &mut debug::DebugOutput::default(),
-            passes::InputElements::Elements1D(bufs.nb),
+            passes::InputElements::Elements1D(bufs.n),
             maybe_timer.as_mut(),
         );
         self.p_sum_blocks.record_pass(
@@ -372,7 +374,7 @@ impl GpuLexer {
         );
 
         // ----- READBACK (always partial) -----
-        let rb_count = self.device.create_buffer(&wgpu::BufferDescriptor {
+        let readback_tokens_count = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rb_count"),
             size: 4,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
@@ -380,50 +382,80 @@ impl GpuLexer {
         });
 
         // 1) Copy just the count and submit
-        if let Some(t) = maybe_timer.as_mut() {
-            t.stamp(&mut enc, "BEFORE_COPY_COUNT");
+        if let Some(timer) = maybe_timer.as_mut() {
+            timer.stamp(&mut enc, "BEFORE_COPY_COUNT");
         }
-        enc.copy_buffer_to_buffer(&bufs.token_count, 0, &rb_count, 0, 4);
-        if let Some(t) = maybe_timer.as_mut() {
-            t.stamp(&mut enc, "AFTER_COPY_COUNT");
-            t.resolve(&mut enc);
+        enc.copy_buffer_to_buffer(&bufs.token_count, 0, &readback_tokens_count, 0, 4);
+        if let Some(timer) = maybe_timer.as_mut() {
+            timer.stamp(&mut enc, "AFTER_COPY_COUNT");
+            timer.resolve(&mut enc);
         }
         self.queue.submit(Some(enc.finish()));
 
         // 2) Map count on CPU, compute needed bytes
-        rb_count.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+        readback_tokens_count
+            .slice(..)
+            .map_async(wgpu::MapMode::Read, |_| {});
         let _ = self.device.poll(wgpu::PollType::Wait);
-        let count_bytes = rb_count.slice(..).get_mapped_range();
+        let count_bytes = readback_tokens_count.slice(..).get_mapped_range();
         let token_count_u32 = u32_from_first_4(&count_bytes) as usize;
         drop(count_bytes);
-        rb_count.unmap();
+        readback_tokens_count.unmap();
 
         let need_bytes = (token_count_u32 * std::mem::size_of::<GpuToken>()) as u64;
 
         // 3) Copy exactly the used range of tokens, submit, map, decode
-        let rb_tokens = self.device.create_buffer(&wgpu::BufferDescriptor {
+        let readback_tokens_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rb_tokens_partial"),
             size: need_bytes,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
-        let mut enc2 = self
+        let mut encoder_two = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("lex-enc-readback-tokens"),
             });
-        enc2.copy_buffer_to_buffer(&bufs.tokens_out, 0, &rb_tokens, 0, need_bytes);
-        self.queue.submit(Some(enc2.finish()));
+        encoder_two.copy_buffer_to_buffer(
+            &bufs.tokens_out,
+            0,
+            &readback_tokens_buffer,
+            0,
+            need_bytes,
+        );
+        self.queue.submit(Some(encoder_two.finish()));
 
-        rb_tokens
+        readback_tokens_buffer
             .slice(0..need_bytes)
             .map_async(wgpu::MapMode::Read, |_| {});
         let _ = self.device.poll(wgpu::PollType::Wait);
 
-        let mapped = rb_tokens.slice(0..need_bytes).get_mapped_range();
+        let mapped = readback_tokens_buffer
+            .slice(0..need_bytes)
+            .get_mapped_range();
         let tokens = read_tokens_from_mapped(&mapped, token_count_u32);
         drop(mapped);
-        rb_tokens.unmap();
+        readback_tokens_buffer.unmap();
+
+        if let Some(timer) = maybe_timer {
+            if let Some(vals) = timer.try_read(&self.device) {
+                if !vals.is_empty() {
+                    let period_ns = timer.period_ns() as f64;
+                    let t0 = vals[0].1;
+                    let mut prev = t0;
+                    // First line will show 0.000 ms since BEGIN is the reference
+                    for (label, t) in vals {
+                        let dt_ms = ((t - prev) as f64 * period_ns) / 1.0e6; // ns → ms
+                        let total_ms = ((t - t0) as f64 * period_ns) / 1.0e6; // ns → ms
+                        println!(
+                            "[gpu_timer] {label}: {:.3}ms (total {:.3}ms)",
+                            dt_ms, total_ms
+                        );
+                        prev = t;
+                    }
+                }
+            }
+        }
 
         #[cfg(feature = "graphics_debugger")]
         unsafe {

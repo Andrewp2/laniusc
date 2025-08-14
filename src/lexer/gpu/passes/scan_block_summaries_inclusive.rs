@@ -59,6 +59,7 @@ impl Pass for ScanBlockSummariesInclusivePass {
             _ => unreachable!(),
         };
 
+        // Rounds = ceil_log2(nblocks)
         let rounds = {
             let mut r = 0u32;
             let mut s = 1u32;
@@ -69,11 +70,13 @@ impl Pass for ScanBlockSummariesInclusivePass {
             r
         };
 
+        // Start with block_summaries -> block_ping
         let byte_len = (nblocks as usize) * (crate::lexer::tables::dfa::N_STATES * 4);
         encoder.copy_buffer_to_buffer(&b.block_summaries, 0, &b.block_ping, 0, byte_len as u64);
 
         let layout0 = &self.data().bind_group_layouts[0];
         let pipeline = &self.data().pipeline;
+        let reflection = &self.data().reflection;
 
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some(Self::NAME),
@@ -91,40 +94,42 @@ impl Pass for ScanBlockSummariesInclusivePass {
                 use_ping_as_src,
             })
             .unwrap();
+
             let scan_params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some(&format!("ScanParams[blocks][{r}]")),
                 contents: ub.as_ref(),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
 
-            // TODO: switch to using reflection instead of manual bindings
-            let entries = &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Buffer(b.params.as_entire_buffer_binding()),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Buffer(scan_params.as_entire_buffer_binding()),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: b.block_ping.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: b.block_pong.as_entire_binding(),
-                },
-            ];
-            let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some(&format!("scan_blocks_bg[{r}]")),
-                layout: layout0.as_ref(),
-                entries,
-            });
+            // >>> reflection-based bind group, not hard-coded indices
+            let mut res = HashMap::new();
+            res.insert(
+                "gParams".into(),
+                wgpu::BindingResource::Buffer(b.params.as_entire_buffer_binding()),
+            );
+            res.insert(
+                "scan_params".into(),
+                wgpu::BindingResource::Buffer(scan_params.as_entire_buffer_binding()),
+            );
+            res.insert(
+                "gScan".into(),
+                wgpu::BindingResource::Buffer(scan_params.as_entire_buffer_binding()),
+            );
+            res.insert("block_ping".into(), b.block_ping.as_entire_binding());
+            res.insert("block_pong".into(), b.block_pong.as_entire_binding());
+
+            let bg = super::bind_group::create_bind_group_from_reflection(
+                device,
+                Some(&format!("scan_blocks_bg[{r}]")),
+                layout0,
+                reflection,
+                0,
+                &res,
+            )
+            .expect("scan_blocks_bg: reflection binding failed");
 
             pass.set_bind_group(0, &bg, &[]);
             pass.dispatch_workgroups(nblocks, 1, 1);
-            // TODO: time every round?
         }
         drop(pass);
 

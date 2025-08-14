@@ -6,11 +6,12 @@ use crate::lexer::gpu::buffers::GpuBuffers;
 pub struct SumApplyBlockPrefixDownsweepPairsPass {
     data: PassData,
 }
+
 impl SumApplyBlockPrefixDownsweepPairsPass {
     pub fn new(device: &wgpu::Device) -> anyhow::Result<Self> {
         let data = super::make_pass_data(
             device,
-            "sum_apply_block_prefix_downsweep",
+            "sum_apply_block_prefix_downsweep_pairs",
             "sum_apply_block_prefix_downsweep",
             include_bytes!(concat!(
                 env!("OUT_DIR"),
@@ -45,10 +46,7 @@ impl Pass for SumApplyBlockPrefixDownsweepPairsPass {
                 "gParams".into(),
                 Buffer(b.params.as_entire_buffer_binding()),
             ),
-            (
-                "s_pair_inblock".into(),
-                b.s_pair_inblock.as_entire_binding(),
-            ),
+            ("flags_packed".into(), b.flags_packed.as_entire_binding()),
             (
                 "block_prefix_pair".into(),
                 b.block_prefix_pair.as_entire_binding(),

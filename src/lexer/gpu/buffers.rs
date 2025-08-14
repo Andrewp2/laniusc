@@ -9,6 +9,7 @@ use crate::lexer::tables::dfa::N_STATES;
 
 pub struct LaniusBuffer<T> {
     pub buffer: wgpu::Buffer,
+    #[allow(dead_code)]
     pub byte_size: usize,
     #[allow(dead_code)]
     pub count: usize,
@@ -57,7 +58,6 @@ pub struct GpuBuffers {
     pub end_excl_by_i: LaniusBuffer<u32>, // exact exclusive end index per boundary i
 
     // seeds → hierarchical sum scratch/finals for BOTH streams
-    pub s_pair_inblock: LaniusBuffer<u32>, // byte_size = n * 8 (uint2)
     pub block_totals_pair: LaniusBuffer<u32>,
     pub block_pair_ping: LaniusBuffer<u32>,
     pub block_pair_pong: LaniusBuffer<u32>,
@@ -133,12 +133,8 @@ impl GpuBuffers {
         // ---- inputs/tables
         let in_bytes: LaniusBuffer<u8> = make_ro::<u8>(device, "in_bytes", input_bytes, n as usize);
 
-        let token_map_buf: LaniusBuffer<u32> = make_ro::<u32>(
-            device,
-            "token_map",
-            &u32s_to_le_bytes(token_map),
-            N_STATES,
-        );
+        let token_map_buf: LaniusBuffer<u32> =
+            make_ro::<u32>(device, "token_map", &u32s_to_le_bytes(token_map), N_STATES);
 
         let per_block_vec_bytes = N_STATES * 4;
         let block_summaries: LaniusBuffer<u32> = make_rw::<u32>(
@@ -178,10 +174,6 @@ impl GpuBuffers {
 
         let end_excl_by_i: LaniusBuffer<u32> =
             make_rw::<u32>(device, "end_excl_by_i", (n as usize) * 4, n as usize);
-
-        // ---- hierarchical sum scratch (uint2)
-        let s_pair_inblock: LaniusBuffer<u32> =
-            make_rw::<u32>(device, "s_pair_inblock", (n as usize) * 8, n as usize);
 
         let block_totals_pair: LaniusBuffer<u32> =
             make_rw::<u32>(device, "block_totals_pair", (nb as usize) * 8, nb as usize);
@@ -261,7 +253,6 @@ impl GpuBuffers {
             flags_packed,
             end_excl_by_i,
 
-            s_pair_inblock,
             block_totals_pair,
             block_pair_ping,
             block_pair_pong,

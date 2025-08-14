@@ -1,7 +1,10 @@
-// Add the block-level inclusive prefix (carry from previous blocks) to each
-// thread's in-block prefix and write the final ALL/KEPT sums.
+// shaders/lexer/sum_apply_block_prefix_downsweep_pairs.slang
+// Add the block-level inclusive prefix (carry from previous blocks) to an
+// in-block inclusive scan we recompute from flags, then write final ALL/KEPT sums.
 
 #define WORKGROUP_SIZE 256
+
+import utils;
 
 struct Params
 {
@@ -11,11 +14,13 @@ struct Params
 };
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint2> s_pair_inblock;    // length n
+StructuredBuffer<uint> flags_packed;       // length n (packed flags per i)
 StructuredBuffer<uint2> block_prefix_pair; // length nb (inclusive per block)
 
 RWStructuredBuffer<uint> s_all_final;  // length n
 RWStructuredBuffer<uint> s_keep_final; // length n
+
+groupshared uint2 sh[WORKGROUP_SIZE];
 
 [shader("compute")]
 [numthreads(WORKGROUP_SIZE, 1, 1)]
@@ -27,6 +32,28 @@ void sum_apply_block_prefix_downsweep(uint3 tid: SV_GroupThreadID,
     const uint base = block * WORKGROUP_SIZE;
     const uint i = base + tid.x;
 
+    // Load per-thread (ALL, KEPT) seeds and do an in-block inclusive scan
+    uint2 v = uint2(0u, 0u);
+    if (i < gParams.n)
+    {
+        uint f = flags_packed[i];
+        v = seeds_from_flags(f);
+    }
+    sh[tid.x] = v;
+    GroupMemoryBarrierWithGroupSync();
+
+    for (uint offset = 1u; offset < WORKGROUP_SIZE; offset <<= 1u)
+    {
+        uint2 tmp = sh[tid.x];
+        if (tid.x >= offset)
+        {
+            tmp += sh[tid.x - offset];
+        }
+        GroupMemoryBarrierWithGroupSync();
+        sh[tid.x] = tmp;
+        GroupMemoryBarrierWithGroupSync();
+    }
+
     if (i >= gParams.n)
         return;
 
@@ -37,7 +64,7 @@ void sum_apply_block_prefix_downsweep(uint3 tid: SV_GroupThreadID,
         carry = block_prefix_pair[block - 1u];
     }
 
-    uint2 res = s_pair_inblock[i] + carry;
+    uint2 res = sh[tid.x] + carry;
     s_all_final[i] = res.x;
     s_keep_final[i] = res.y;
 }
