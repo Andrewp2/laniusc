@@ -444,9 +444,13 @@ impl GpuLexer {
                     let t0 = vals[0].1;
                     let mut prev = t0;
                     // First line will show 0.000 ms since BEGIN is the reference
+                    // if time is less than 0.1 ms skip it
                     for (label, t) in vals {
                         let dt_ms = ((t - prev) as f64 * period_ns) / 1.0e6; // ns → ms
                         let total_ms = ((t - t0) as f64 * period_ns) / 1.0e6; // ns → ms
+                        if dt_ms < 0.1 {
+                            continue;
+                        }
                         println!(
                             "[gpu_timer] {label}: {:.3}ms (total {:.3}ms)",
                             dt_ms, total_ms
