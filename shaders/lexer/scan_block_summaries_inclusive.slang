@@ -1,8 +1,8 @@
-// shaders/lexer/scan_block_summaries_inclusive.slang
 // Multi-round inclusive scan over per-block function vectors.
 // Result after last round is inclusive prefix for each block.
 
 #define N_STATES 32
+#define BLOCK_WIDTH 128u
 
 struct Params
 {
@@ -28,9 +28,11 @@ void scan_block_summaries_inclusive(uint3 local_id: SV_GroupThreadID,
                                     uint3 global_id: SV_DispatchThreadID,
                                     uint3 group_id: SV_GroupID)
 {
-    const uint nb = (gParams.n + 255u) / 256u;
-    const uint i = group_id.x; // block index
-    const uint s = local_id.x; // state lane [0..N_STATES)
+    const uint nb = (gParams.n + (BLOCK_WIDTH - 1u)) / BLOCK_WIDTH;
+    const uint groupsX = (nb < 65535u) ? nb : 65535u;
+    const uint i = group_id.y * groupsX + group_id.x; // linear block index
+    const uint s = local_id.x;                        // state lane [0..N_STATES)
+
     if (i >= nb || s >= N_STATES)
         return;
 

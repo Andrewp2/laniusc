@@ -1,8 +1,11 @@
 // src/lexer/gpu/passes/sum_inblock_pairs.rs
 use std::collections::HashMap;
 
-use super::{Pass, PassData};
-use crate::lexer::gpu::buffers::GpuBuffers;
+use super::PassData;
+use crate::{
+    gpu::passes_core::DispatchDim,
+    lexer::gpu::{buffers::GpuBuffers, debug::DebugOutput},
+};
 
 pub struct SumInblockPairsPass {
     data: PassData,
@@ -24,8 +27,9 @@ impl SumInblockPairsPass {
     }
 }
 
-impl Pass for SumInblockPairsPass {
+impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for SumInblockPairsPass {
     const NAME: &'static str = "sum_inblock_pairs";
+    const DIM: DispatchDim = DispatchDim::D2;
 
     fn from_data(data: PassData) -> Self {
         Self { data }
@@ -44,11 +48,10 @@ impl Pass for SumInblockPairsPass {
                 "gParams".into(),
                 Buffer(b.params.as_entire_buffer_binding()),
             ),
-            ("flags_packed".into(), b.flags_packed.as_entire_binding()),
-            (
-                "block_totals_pair".into(),
-                b.block_totals_pair.as_entire_binding(),
-            ),
+            ("in_bytes".into(), b.in_bytes.as_entire_binding()),
+            ("next_emit".into(), b.next_emit.as_entire_binding()),
+            ("block_prefix".into(), b.block_prefix.as_entire_binding()),
+            ("f_final".into(), b.f_final.as_entire_binding()),
         ])
     }
 }

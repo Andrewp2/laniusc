@@ -3,8 +3,11 @@ use std::collections::HashMap;
 use encase::UniformBuffer;
 use wgpu::util::DeviceExt;
 
-use super::{Pass, PassData, ScanParams};
-use crate::lexer::gpu::{buffers::GpuBuffers, debug::DebugOutput, timer::GpuTimer};
+use super::PassData;
+use crate::{
+    gpu::{passes_core::DispatchDim, timer::GpuTimer},
+    lexer::gpu::{buffers::GpuBuffers, debug::DebugOutput, passes::ScanParams},
+};
 
 pub struct ScanBlockSummariesInclusivePass {
     data: PassData,
@@ -28,8 +31,9 @@ impl ScanBlockSummariesInclusivePass {
     }
 }
 
-impl Pass for ScanBlockSummariesInclusivePass {
+impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for ScanBlockSummariesInclusivePass {
     const NAME: &'static str = "scan_block_summaries_inclusive";
+    const DIM: DispatchDim = DispatchDim::D1;
 
     fn from_data(data: PassData) -> Self {
         Self { data }
@@ -50,10 +54,10 @@ impl Pass for ScanBlockSummariesInclusivePass {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         b: &GpuBuffers,
-        _dbg: &mut DebugOutput,
         input: super::InputElements,
-        maybe_timer: Option<&mut GpuTimer>,
-    ) {
+        maybe_timer: &mut Option<&mut crate::gpu::timer::GpuTimer>,
+    ) -> Result<(), anyhow::Error> {
+        device.push_error_scope(wgpu::ErrorFilter::Validation);
         let nblocks = match input {
             super::InputElements::Elements1D(n) => n,
             _ => unreachable!(),
@@ -78,6 +82,15 @@ impl Pass for ScanBlockSummariesInclusivePass {
         let pipeline = &self.data().pipeline;
         let reflection = &self.data().reflection;
 
+        // 2D tiling to respect 65,535-per-dimension limit.
+        const MAX_PER_DIM: u32 = 65_535;
+        let gx = nblocks.min(MAX_PER_DIM);
+        let gy = if nblocks == 0 {
+            1
+        } else {
+            (nblocks + MAX_PER_DIM - 1) / MAX_PER_DIM
+        };
+
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some(Self::NAME),
             timestamp_writes: None,
@@ -93,7 +106,7 @@ impl Pass for ScanBlockSummariesInclusivePass {
                 stride,
                 use_ping_as_src,
             })
-            .unwrap();
+            .expect("failed to write scan params");
 
             let scan_params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some(&format!("ScanParams[blocks][{r}]")),
@@ -101,7 +114,7 @@ impl Pass for ScanBlockSummariesInclusivePass {
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
 
-            // >>> reflection-based bind group, not hard-coded indices
+            // reflection-based bind group, not hard-coded indices
             let mut res = HashMap::new();
             res.insert(
                 "gParams".into(),
@@ -129,7 +142,8 @@ impl Pass for ScanBlockSummariesInclusivePass {
             .expect("scan_blocks_bg: reflection binding failed");
 
             pass.set_bind_group(0, &bg, &[]);
-            pass.dispatch_workgroups(nblocks, 1, 1);
+            // Dispatch a tiled 2D grid; the Slang kernel linearizes (x,y).
+            pass.dispatch_workgroups(gx, gy, 1);
         }
         drop(pass);
 
@@ -142,6 +156,14 @@ impl Pass for ScanBlockSummariesInclusivePass {
         if let Some(t) = maybe_timer {
             t.stamp(encoder, Self::NAME.to_string());
         }
+        if let Some(err) = pollster::block_on(device.pop_error_scope()) {
+            return Err(anyhow::anyhow!(
+                "validation in pass {}: {:?}",
+                Self::NAME,
+                err
+            ));
+        }
+        Ok(())
     }
 
     fn record_debug(

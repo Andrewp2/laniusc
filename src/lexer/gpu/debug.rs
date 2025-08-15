@@ -1,37 +1,8 @@
 // src/lexer/gpu/debug.rs
 #![allow(dead_code)]
 
+use crate::gpu::debug::DebugBuffer;
 use wgpu::BufferUsages;
-
-/// CPU-side holder for a staged GPU buffer.
-#[derive(Clone, Default)]
-pub struct DebugBuffer {
-    pub label: &'static str,
-    pub buffer: Option<wgpu::Buffer>,
-    pub byte_len: usize,
-}
-
-impl DebugBuffer {
-    pub fn is_some(&self) -> bool {
-        self.buffer.is_some()
-    }
-
-    pub fn read_bytes(&self) -> Option<Vec<u8>> {
-        let buf = self.buffer.as_ref()?;
-        let view = buf.slice(..).get_mapped_range();
-        Some(view.to_vec())
-    }
-
-    pub fn read_u32s(&self) -> Option<Vec<u32>> {
-        self.read_bytes().map(|v| {
-            let mut out = Vec::with_capacity(v.len() / 4);
-            for chunk in v.chunks_exact(4) {
-                out.push(u32::from_le_bytes(chunk.try_into().unwrap()));
-            }
-            out
-        })
-    }
-}
 
 #[derive(Default)]
 pub struct DebugGpuBuffers {
@@ -66,7 +37,7 @@ pub struct DebugOutput {
     pub gpu: DebugGpuBuffers,
 }
 
-fn make_staging(device: &wgpu::Device, label: &'static str, byte_len: usize) -> wgpu::Buffer {
+pub(crate) fn make_staging(device: &wgpu::Device, label: &'static str, byte_len: usize) -> wgpu::Buffer {
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
         size: byte_len as u64,

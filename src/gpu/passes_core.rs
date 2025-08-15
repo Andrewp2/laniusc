@@ -1,41 +1,39 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
-use anyhow::Result;
-use encase::ShaderType;
+use anyhow::{Result, anyhow};
+use log::warn;
+use wgpu;
 
-use crate::{
-    gpu::passes_core::{DispatchDim, InputElements, PassData},
-    reflection::{
-        EntryPointReflection,
-        ParameterReflection,
-        SlangReflection,
-        parse_reflection_from_bytes,
-        slang_category_and_type_to_wgpu,
-    },
+use crate::reflection::{
+    EntryPointReflection,
+    ParameterReflection,
+    SlangReflection,
+    get_thread_group_size,
+    parse_reflection_from_bytes,
+    slang_category_and_type_to_wgpu,
 };
 
-// Export concrete pass modules
-pub mod apply_block_prefix_downsweep;
-pub mod build_tokens;
-pub mod compact_boundaries_all;
-pub mod compact_boundaries_kept;
-pub mod finalize_boundaries_and_seed;
-pub mod retag_calls_and_arrays;
-pub mod scan_block_summaries_inclusive;
-pub mod scan_inblock_inclusive_pass;
-pub mod sum_apply_block_prefix_downsweep_pairs;
-pub mod sum_inblock_pairs;
-pub mod sum_scan_block_totals_inclusive;
-
-#[derive(ShaderType, Debug, Clone, Copy)]
-pub(super) struct ScanParams {
-    pub stride: u32,
-    pub use_ping_as_src: u32,
+pub struct PassData {
+    pub pipeline: Arc<wgpu::ComputePipeline>,
+    pub bind_group_layouts: Vec<Arc<wgpu::BindGroupLayout>>,
+    pub shader_id: String,
+    pub thread_group_size: [u32; 3],
+    pub reflection: Arc<SlangReflection>,
 }
 
-// ---------------- reflection/bgl helpers ----------------
+#[derive(Copy, Clone, Debug)]
+pub enum DispatchDim {
+    D1,
+    D2,
+}
 
-fn bgls_from_reflection(
+#[derive(Copy, Clone, Debug)]
+pub enum InputElements {
+    Elements1D(u32),
+    Elements2D(u32, u32),
+}
+
+pub fn bgls_from_reflection(
     device: &wgpu::Device,
     reflection: &SlangReflection,
 ) -> Result<Vec<wgpu::BindGroupLayout>> {
@@ -43,7 +41,7 @@ fn bgls_from_reflection(
         .entry_points
         .iter()
         .find(|e| e.stage.as_deref() == Some("compute"))
-        .ok_or_else(|| anyhow::anyhow!("no compute entry point found in reflection"))?;
+        .ok_or_else(|| anyhow!("no compute entry point found in reflection"))?;
 
     if let Some(layout) = ep.program_layout.as_ref() {
         let mut out = Vec::with_capacity(layout.parameters.len());
@@ -95,7 +93,7 @@ fn bgls_from_reflection(
     )])
 }
 
-fn pipeline_from_spirv_and_bgls(
+pub fn pipeline_from_spirv_and_bgls(
     device: &wgpu::Device,
     label: &str,
     entry: &str,
@@ -121,8 +119,7 @@ fn pipeline_from_spirv_and_bgls(
     })
 }
 
-/// Build `PassData` (pipeline + all BGLs + reflection + TGS) for a compute shader.
-pub(crate) fn make_pass_data(
+pub fn make_pass_data(
     device: &wgpu::Device,
     label: &str,
     entry: &str,
@@ -131,14 +128,10 @@ pub(crate) fn make_pass_data(
 ) -> Result<PassData> {
     let reflection: SlangReflection =
         parse_reflection_from_bytes(reflection_json).map_err(anyhow::Error::msg)?;
-
-    // Own the BGLs so we can both create the pipeline and also store them.
     let owned_bgls = bgls_from_reflection(device, &reflection)?;
     let bgl_refs: Vec<&wgpu::BindGroupLayout> = owned_bgls.iter().collect();
-
     let pipeline = pipeline_from_spirv_and_bgls(device, label, entry, spirv, &bgl_refs);
-    let tgs = crate::reflection::get_thread_group_size(&reflection).unwrap_or([1, 1, 1]);
-
+    let tgs = get_thread_group_size(&reflection).unwrap_or([1, 1, 1]);
     Ok(PassData {
         pipeline: Arc::new(pipeline),
         bind_group_layouts: owned_bgls.into_iter().map(Arc::new).collect(),
@@ -148,15 +141,14 @@ pub(crate) fn make_pass_data(
     })
 }
 
-// ---------------- small bind-group utility (name→resource) ----------------
-
-pub(crate) mod bind_group {
+pub mod bind_group {
     use std::collections::HashMap;
+
+    use anyhow::anyhow;
+    use wgpu;
 
     use super::*;
 
-    /// Build a bind group for `set_index` using parameter names from reflection
-    /// and a name→BindingResource map provided by the pass.
     pub fn create_bind_group_from_reflection<'a>(
         device: &wgpu::Device,
         label: Option<&str>,
@@ -188,7 +180,7 @@ pub(crate) mod bind_group {
                         resource: res.clone(),
                     });
                 } else {
-                    return Err(anyhow::anyhow!("no resource provided for '{}'", p.name));
+                    return Err(anyhow!("no resource provided for '{}'", p.name));
                 }
             }
         }
@@ -198,5 +190,104 @@ pub(crate) mod bind_group {
             layout: bgl,
             entries: &entries,
         }))
+    }
+}
+
+pub trait Pass<Buffers, DebugOutput> {
+    const NAME: &'static str;
+
+    const DIM: DispatchDim;
+
+    fn from_data(data: PassData) -> Self
+    where
+        Self: Sized;
+
+    fn data(&self) -> &PassData;
+
+    fn create_resource_map<'a>(
+        &self,
+        buffers: &'a Buffers,
+    ) -> HashMap<String, wgpu::BindingResource<'a>>;
+
+    fn record_pass(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        buffers: &Buffers,
+        input: InputElements,
+        timer: &mut Option<&mut crate::gpu::timer::GpuTimer>,
+    ) -> Result<(), anyhow::Error> {
+        device.push_error_scope(wgpu::ErrorFilter::Validation);
+
+        let pd = self.data();
+        let mut bind_groups = Vec::new();
+        let resources = self.create_resource_map(buffers);
+        for (set_idx, bgl) in pd.bind_group_layouts.iter().enumerate() {
+            let bg = bind_group::create_bind_group_from_reflection(
+                device,
+                Some(Self::NAME),
+                bgl,
+                &pd.reflection,
+                set_idx,
+                &resources,
+            )?;
+            bind_groups.push(bg);
+        }
+
+        let [tgsx, tgsy, _tgsz] = pd.thread_group_size;
+        let (gx, gy, gz) = match (Self::DIM, input) {
+            (DispatchDim::D1, InputElements::Elements1D(n)) => {
+                (((n + tgsx - 1) / tgsx).max(1), 1, 1)
+            }
+            (DispatchDim::D2, InputElements::Elements2D(w, h)) => {
+                let wx = ((w + tgsx - 1) / tgsx).max(1);
+                let hy = ((h + tgsy - 1) / tgsy).max(1);
+                (wx, hy, 1)
+            }
+
+            (DispatchDim::D2, InputElements::Elements1D(n)) => {
+                const MAX_PER_DIM: u32 = 65_535;
+                let tiles_x = n.min(MAX_PER_DIM);
+                let tiles_y = if n == 0 {
+                    1
+                } else {
+                    (n + MAX_PER_DIM - 1) / MAX_PER_DIM
+                };
+                let wx = ((tiles_x + tgsx - 1) / tgsx).max(1);
+                let hy = ((tiles_y + tgsy - 1) / tgsy).max(1);
+                (wx, hy, 1)
+            }
+            _ => unreachable!("dimension/input mismatch"),
+        };
+
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some(Self::NAME),
+            timestamp_writes: None,
+        });
+        pass.set_pipeline(&pd.pipeline);
+        for (i, bg) in bind_groups.iter().enumerate() {
+            pass.set_bind_group(i as u32, bg, &[]);
+        }
+        pass.dispatch_workgroups(gx, gy, gz);
+        drop(pass);
+
+        if let Some(t) = timer {
+            t.stamp(encoder, Self::NAME.to_string());
+        }
+
+        if let Some(err) = pollster::block_on(device.pop_error_scope()) {
+            return Err(anyhow!("validation in pass {}: {err:?}", Self::NAME));
+        }
+        Ok(())
+    }
+
+    fn record_debug(
+        &self,
+        _device: &wgpu::Device,
+        _encoder: &mut wgpu::CommandEncoder,
+        _b: &Buffers,
+        _dbg: &mut DebugOutput,
+    ) {
+        warn!("debug output not implemented for pass {}", Self::NAME);
     }
 }

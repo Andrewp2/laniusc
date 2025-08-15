@@ -68,3 +68,33 @@ public inline uint kept_any_from_flags(uint f)
     uint eof_kept = ((f & PF_EOF) != 0u && (f & PF_KEEP_EOF) != 0u) ? 1u : 0u;
     return (emit_kept | eof_kept);
 }
+
+// --- 2D → 1D helpers -------------------------------------------------------
+// Row-major flattening: i = y * nx + x
+// NOTE: `nx` must be the total number of *global threads* in X
+//       (= dispatch_groups_x * numthreads_x).
+public inline uint linearize2D(uint x, uint y, uint nx)
+{
+    return y * nx + x;
+}
+
+// Variant using SV_DispatchThreadID directly.
+public inline uint linearize_dispatch_2d_to_1d(uint3 dispatchTid, uint nx)
+{
+    return dispatchTid.y * nx + dispatchTid.x;
+}
+
+// Variant when you only have group/local IDs. You must pass
+//   - groupsX : number of dispatched workgroups in X
+//   - tgsX/Y  : [numthreads(x, y, ...)] used by the kernel
+public inline uint linearize_group_2d_to_1d(
+    uint3 groupID, uint3 groupThreadID,
+    uint groupsX, uint tgsX, uint tgsY)
+{
+    const uint global_x = groupID.x * tgsX + groupThreadID.x;
+    const uint global_y = groupID.y * tgsY + groupThreadID.y;
+    const uint nx = groupsX * tgsX;
+    return global_y * nx + global_x;
+}
+// ---------------------------------------------------------------------------
+

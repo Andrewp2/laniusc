@@ -3,18 +3,17 @@ use std::sync::OnceLock;
 use anyhow::{Result, anyhow};
 use buffers::GpuBuffers;
 use encase::ShaderType;
-use passes::Pass;
 
-use crate::lexer::{
-    gpu::timer::GpuTimer,
-    tables::{compact::load_compact_tables_from_bytes, dfa::N_STATES, tokens::TokenKind},
+use crate::{
+    gpu::{passes_core::InputElements, timer::GpuTimer},
+    lexer::tables::{compact::load_compact_tables_from_bytes, dfa::N_STATES, tokens::TokenKind},
 };
 
-// New-style pass imports (trait + concrete passes)
 mod buffers;
 mod debug;
 mod passes;
-mod timer;
+
+pub use crate::gpu::{debug::DebugBuffer, passes_core::Pass};
 
 #[derive(Debug, Clone)]
 pub struct Token {
@@ -27,8 +26,8 @@ pub struct Token {
 #[derive(Clone, Copy, ShaderType)]
 pub(super) struct LexParams {
     pub n: u32,
-    pub m: u32,           // (= n_states)
-    pub start_state: u32, // (= start_state)
+    pub m: u32,
+    pub start_state: u32,
     pub skip0: u32,
     pub skip1: u32,
     pub skip2: u32,
@@ -41,17 +40,25 @@ fn u32_from_first_4(bytes: &[u8]) -> u32 {
     u32::from_le_bytes(le)
 }
 
+fn env_flag_true(var: &str, default: bool) -> bool {
+    std::env::var(var)
+        .map(|v| !(v == "0" || v.eq_ignore_ascii_case("false")))
+        .unwrap_or(default)
+}
+
+fn readback_enabled() -> bool {
+    env_flag_true("LANIUS_READBACK", true) && env_flag_true("PERF_ONE_READBACK", true)
+}
+
 fn read_tokens_from_mapped(bytes: &[u8], count: usize) -> Vec<Token> {
     use std::{mem::size_of, ptr::read_unaligned};
 
     let instant = std::time::Instant::now();
     let mut out = Vec::with_capacity(count);
     let mut p = bytes.as_ptr();
-    let stride = size_of::<u32>() * 3; // kind,start,len = 12 bytes
+    let stride = size_of::<u32>() * 3;
 
     for _ in 0..count {
-        // SAFETY: we ensured the mapped slice is at least count*stride bytes long.
-        // read_unaligned handles any alignment.
         let kind_u32 = unsafe { read_unaligned(p as *const u32) };
         let start = unsafe { read_unaligned(p.add(4) as *const u32) } as usize;
         let len = unsafe { read_unaligned(p.add(8) as *const u32) } as usize;
@@ -59,7 +66,6 @@ fn read_tokens_from_mapped(bytes: &[u8], count: usize) -> Vec<Token> {
         let kind = unsafe { std::mem::transmute::<u32, TokenKind>(kind_u32) };
         out.push(Token { kind, start, len });
 
-        // advance
         p = unsafe { p.add(stride) };
     }
     eprintln!(
@@ -80,17 +86,16 @@ struct GpuToken {
 
 pub struct GpuLexer {
     device: wgpu::Device,
+
     queue: wgpu::Queue,
 
     timers_supported: bool,
 
-    // Prebuilt passes (pipelines + reflected layouts)
     p_scan_inblock: passes::scan_inblock_inclusive_pass::ScanInblockInclusivePass,
     p_scan_blocks: passes::scan_block_summaries_inclusive::ScanBlockSummariesInclusivePass,
     p_apply_prefix: passes::apply_block_prefix_downsweep::ApplyBlockPrefixDownsweepPass,
     p_finalize: passes::finalize_boundaries_and_seed::FinalizeBoundariesAndSeedPass,
 
-    // REPLACED: hierarchical sum for BOTH streams (ALL & KEPT) over uint2
     p_sum_inblock: passes::sum_inblock_pairs::SumInblockPairsPass,
     p_sum_blocks: passes::sum_scan_block_totals_inclusive::SumScanBlockTotalsInclusivePass,
     p_sum_apply:
@@ -113,7 +118,7 @@ impl GpuLexer {
             "dx12" => wgpu::Backends::DX12,
             "metal" | "mtl" => wgpu::Backends::METAL,
             "gl" => wgpu::Backends::GL,
-            _ => wgpu::Backends::all(), // auto (default)
+            _ => wgpu::Backends::all(),
         };
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends,
@@ -134,6 +139,15 @@ impl GpuLexer {
         limits.max_storage_buffers_per_shader_stage = 10;
         limits.max_storage_buffer_binding_size = 2_147_483_644;
         limits.max_buffer_size = 2_147_483_644;
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("laniusc_lexer"),
+                required_features: wgpu::Features::TIMESTAMP_QUERY,
+                required_limits: limits,
+                memory_hints: wgpu::MemoryHints::default(),
+                trace: wgpu::Trace::default(),
+            })
+            .await?;
 
         let adapter_features = adapter.features();
         let want_timers = std::env::var("LANIUS_GPU_TIMING")
@@ -143,25 +157,6 @@ impl GpuLexer {
         let timers_supported =
             want_timers && adapter_features.contains(wgpu::Features::TIMESTAMP_QUERY);
 
-        let mut required_features =
-            wgpu::Features::empty() | wgpu::Features::SPIRV_SHADER_PASSTHROUGH;
-        if timers_supported {
-            required_features |= wgpu::Features::TIMESTAMP_QUERY
-                | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS
-                | wgpu::Features::TIMESTAMP_QUERY_INSIDE_PASSES;
-        }
-
-        let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor {
-                label: Some("Lanius Lexer Device"),
-                required_features,
-                required_limits: limits,
-                memory_hints: wgpu::MemoryHints::default(),
-                trace: wgpu::Trace::default(),
-            })
-            .await?;
-
-        // Build once, reuse every call
         let p_scan_inblock =
             passes::scan_inblock_inclusive_pass::ScanInblockInclusivePass::new(&device)?;
         let p_scan_blocks =
@@ -171,20 +166,16 @@ impl GpuLexer {
         let p_finalize =
             passes::finalize_boundaries_and_seed::FinalizeBoundariesAndSeedPass::new(&device)?;
 
-        // NEW hierarchical sum passes
         let p_sum_inblock = passes::sum_inblock_pairs::SumInblockPairsPass::new(&device)?;
         let p_sum_blocks =
             passes::sum_scan_block_totals_inclusive::SumScanBlockTotalsInclusivePass::new(&device)?;
-        let p_sum_apply =
-            passes::sum_apply_block_prefix_downsweep_pairs::SumApplyBlockPrefixDownsweepPairsPass::new(
-                &device,
-            )?;
+        let p_sum_apply = passes::sum_apply_block_prefix_downsweep_pairs::SumApplyBlockPrefixDownsweepPairsPass::new(&device)?;
 
         let p_compact_all = passes::compact_boundaries_all::CompactBoundariesAllPass::new(&device)?;
         let p_compact_kept =
             passes::compact_boundaries_kept::CompactBoundariesKeptPass::new(&device)?;
-        let p_build = passes::build_tokens::BuildTokensPass::new(&device)?;
         let p_retag = passes::retag_calls_and_arrays::RetagCallsAndArraysPass::new(&device)?;
+        let p_build = passes::build_tokens::BuildTokensPass::new(&device)?;
 
         Ok(Self {
             device,
@@ -209,7 +200,7 @@ impl GpuLexer {
         unsafe {
             self.device.start_graphics_debugger_capture()
         };
-        // ---- load compact DFA tables that were committed in the repo
+
         const COMPACT_BIN: &[u8] = include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/tables/lexer_tables.bin"
@@ -219,7 +210,6 @@ impl GpuLexer {
             load_compact_tables_from_bytes(COMPACT_BIN)
                 .map_err(|e| anyhow!("failed to parse compact lexer_tables.bin: {e}"))?;
 
-        // sanity: shader kernels are compiled with a fixed N_STATES
         if n_states_from_file != N_STATES {
             return Err(anyhow!(
                 "compact table has n_states={} but shaders expect N_STATES={}",
@@ -228,12 +218,8 @@ impl GpuLexer {
             ));
         }
 
-        // start state is 0 in our enum layout
         let start_state = 0u32;
 
-        // -------- prepare per-input buffers
-        // let bytes_u32: Vec<u32> = input.bytes().map(|b| b as u32).collect();
-        // let n = bytes_u32.len() as u32;
         let input_bytes: &[u8] = input.as_bytes();
         let n = input_bytes.len() as u32;
 
@@ -249,8 +235,8 @@ impl GpuLexer {
             n,
             start_state,
             input_bytes,
-            &next_emit_words, // <— from the compact file
-            &token_map,       // <— from the compact file
+            &next_emit_words,
+            &token_map,
             skip_kinds,
         );
 
@@ -276,104 +262,92 @@ impl GpuLexer {
             t.stamp(&mut enc, "BEGIN");
         }
 
-        // DFA state prefix (unchanged)
         self.p_scan_inblock.record_pass(
             &self.device,
             &mut enc,
             &bufs,
-            &mut debug::DebugOutput::default(),
-            passes::InputElements::Elements1D(bufs.nb),
-            maybe_timer.as_mut(),
-        );
+            InputElements::Elements1D(bufs.nb_dfa),
+            &mut maybe_timer.as_mut(),
+        )?;
         self.p_scan_blocks.record_pass(
             &self.device,
             &mut enc,
             &bufs,
-            &mut debug::DebugOutput::default(),
-            passes::InputElements::Elements1D(bufs.nb),
-            maybe_timer.as_mut(),
-        );
+            InputElements::Elements1D(bufs.nb_dfa),
+            &mut maybe_timer.as_mut(),
+        )?;
         self.p_apply_prefix.record_pass(
             &self.device,
             &mut enc,
             &bufs,
-            &mut debug::DebugOutput::default(),
-            passes::InputElements::Elements1D(bufs.n),
-            maybe_timer.as_mut(),
-        );
+            InputElements::Elements1D(bufs.n),
+            &mut maybe_timer.as_mut(),
+        )?;
 
-        // Boundary classification + seeds (unchanged)
         self.p_finalize.record_pass(
             &self.device,
             &mut enc,
             &bufs,
-            &mut debug::DebugOutput::default(),
-            passes::InputElements::Elements1D(bufs.n),
-            maybe_timer.as_mut(),
-        );
+            InputElements::Elements1D(bufs.n),
+            &mut maybe_timer.as_mut(),
+        )?;
 
-        // ---------- NEW: hierarchical sums for BOTH streams ----------
         self.p_sum_inblock.record_pass(
             &self.device,
             &mut enc,
             &bufs,
-            &mut debug::DebugOutput::default(),
-            passes::InputElements::Elements1D(bufs.n),
-            maybe_timer.as_mut(),
-        );
+            InputElements::Elements1D(bufs.n),
+            &mut maybe_timer.as_mut(),
+        )?;
         self.p_sum_blocks.record_pass(
             &self.device,
             &mut enc,
             &bufs,
-            &mut debug::DebugOutput::default(),
-            passes::InputElements::Elements1D(bufs.nb),
-            maybe_timer.as_mut(),
-        );
+            InputElements::Elements1D(bufs.nb_sum),
+            &mut maybe_timer.as_mut(),
+        )?;
         self.p_sum_apply.record_pass(
             &self.device,
             &mut enc,
             &bufs,
-            &mut debug::DebugOutput::default(),
-            passes::InputElements::Elements1D(bufs.n),
-            maybe_timer.as_mut(),
-        );
+            InputElements::Elements1D(bufs.n),
+            &mut maybe_timer.as_mut(),
+        )?;
 
-        // Compaction + token build (unchanged)
         self.p_compact_all.record_pass(
             &self.device,
             &mut enc,
             &bufs,
-            &mut debug::DebugOutput::default(),
-            passes::InputElements::Elements1D(bufs.n),
-            maybe_timer.as_mut(),
-        );
+            InputElements::Elements1D(bufs.n),
+            &mut maybe_timer.as_mut(),
+        )?;
         self.p_compact_kept.record_pass(
             &self.device,
             &mut enc,
             &bufs,
-            &mut debug::DebugOutput::default(),
-            passes::InputElements::Elements1D(bufs.n),
-            maybe_timer.as_mut(),
-        );
-        // Compaction + token build (unchanged)
+            InputElements::Elements1D(bufs.n),
+            &mut maybe_timer.as_mut(),
+        )?;
+
         self.p_retag.record_pass(
             &self.device,
             &mut enc,
             &bufs,
-            &mut debug::DebugOutput::default(),
-            passes::InputElements::Elements1D(bufs.n),
-            maybe_timer.as_mut(),
-        );
+            InputElements::Elements1D(bufs.n),
+            &mut maybe_timer.as_mut(),
+        )?;
         self.p_build.record_pass(
             &self.device,
             &mut enc,
             &bufs,
-            &mut debug::DebugOutput::default(),
-            passes::InputElements::Elements1D(bufs.n),
-            maybe_timer.as_mut(),
-        );
+            InputElements::Elements1D(bufs.n),
+            &mut maybe_timer.as_mut(),
+        )?;
 
-        // ----- READBACK (always partial) -----
+        if let Some(timer) = maybe_timer.as_mut() {
+            timer.stamp(&mut enc, "before copy count");
+        }
+
         let readback_tokens_count = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rb_count"),
             size: 4,
@@ -381,18 +355,19 @@ impl GpuLexer {
             mapped_at_creation: false,
         });
 
-        // 1) Copy just the count and submit
-        if let Some(timer) = maybe_timer.as_mut() {
-            timer.stamp(&mut enc, "BEFORE_COPY_COUNT");
-        }
         enc.copy_buffer_to_buffer(&bufs.token_count, 0, &readback_tokens_count, 0, 4);
+
         if let Some(timer) = maybe_timer.as_mut() {
-            timer.stamp(&mut enc, "AFTER_COPY_COUNT");
+            timer.stamp(&mut enc, "after copy count");
             timer.resolve(&mut enc);
         }
-        self.queue.submit(Some(enc.finish()));
 
-        // 2) Map count on CPU, compute needed bytes
+        self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        self.queue.submit(Some(enc.finish()));
+        if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
+            eprintln!("[wgpu submit] validation while submitting lex batch: {err:#?}");
+        }
+
         readback_tokens_count
             .slice(..)
             .map_async(wgpu::MapMode::Read, |_| {});
@@ -401,10 +376,45 @@ impl GpuLexer {
         let token_count_u32 = u32_from_first_4(&count_bytes) as usize;
         drop(count_bytes);
         readback_tokens_count.unmap();
+        if token_count_u32 == 0 {
+            return Ok(Vec::new());
+        }
+
+        if !readback_enabled() {
+            if let Some(timer) = maybe_timer {
+                if let Some(vals) = timer.try_read(&self.device) {
+                    if !vals.is_empty() {
+                        let period_ns = timer.period_ns() as f64;
+                        let t0 = vals[0].1;
+                        let mut prev = t0;
+                        for (label, t) in vals {
+                            let dt_ms = ((t - prev) as f64 * period_ns) / 1.0e6;
+                            let total_ms = ((t - t0) as f64 * period_ns) / 1.0e6;
+                            if dt_ms < 0.5 {
+                                continue;
+                            }
+                            println!(
+                                "[gpu_timer] {label}: {:.3}ms (total {:.3}ms)",
+                                dt_ms, total_ms
+                            );
+                            prev = t;
+                        }
+                    }
+                }
+            }
+
+            return Ok(vec![
+                Token {
+                    kind: TokenKind::White,
+                    start: 0,
+                    len: 0
+                };
+                token_count_u32
+            ]);
+        }
 
         let need_bytes = (token_count_u32 * std::mem::size_of::<GpuToken>()) as u64;
 
-        // 3) Copy exactly the used range of tokens, submit, map, decode
         let readback_tokens_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rb_tokens_partial"),
             size: need_bytes,
@@ -443,12 +453,11 @@ impl GpuLexer {
                     let period_ns = timer.period_ns() as f64;
                     let t0 = vals[0].1;
                     let mut prev = t0;
-                    // First line will show 0.000 ms since BEGIN is the reference
-                    // if time is less than 0.1 ms skip it
+
                     for (label, t) in vals {
-                        let dt_ms = ((t - prev) as f64 * period_ns) / 1.0e6; // ns → ms
-                        let total_ms = ((t - t0) as f64 * period_ns) / 1.0e6; // ns → ms
-                        if dt_ms < 0.1 {
+                        let dt_ms = ((t - prev) as f64 * period_ns) / 1.0e6;
+                        let total_ms = ((t - t0) as f64 * period_ns) / 1.0e6;
+                        if dt_ms < 0.5 {
                             continue;
                         }
                         println!(
@@ -470,7 +479,6 @@ impl GpuLexer {
     }
 }
 
-// Optional convenience wrapper that reuses a global context:
 static GPU_LEXER: OnceLock<GpuLexer> = OnceLock::new();
 
 pub async fn lex_on_gpu(input: &str) -> Result<Vec<Token>> {

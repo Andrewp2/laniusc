@@ -3,8 +3,11 @@ use std::collections::HashMap;
 use encase::UniformBuffer;
 use wgpu::util::DeviceExt;
 
-use super::{Pass, PassData, ScanParams};
-use crate::lexer::gpu::{buffers::GpuBuffers, debug::DebugOutput, timer::GpuTimer};
+use super::PassData;
+use crate::{
+    gpu::{passes_core::DispatchDim, timer::GpuTimer},
+    lexer::gpu::{buffers::GpuBuffers, debug::DebugOutput, passes::ScanParams},
+};
 
 pub struct SumScanBlockTotalsInclusivePass {
     data: PassData,
@@ -28,8 +31,9 @@ impl SumScanBlockTotalsInclusivePass {
     }
 }
 
-impl Pass for SumScanBlockTotalsInclusivePass {
+impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for SumScanBlockTotalsInclusivePass {
     const NAME: &'static str = "sum_scan_block_totals_inclusive";
+    const DIM: DispatchDim = DispatchDim::D1;
 
     fn from_data(data: PassData) -> Self {
         Self { data }
@@ -50,10 +54,10 @@ impl Pass for SumScanBlockTotalsInclusivePass {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         b: &GpuBuffers,
-        _dbg: &mut DebugOutput,
         input: super::InputElements,
-        maybe_timer: Option<&mut GpuTimer>,
-    ) {
+        maybe_timer: &mut Option<&mut GpuTimer>,
+    ) -> Result<(), anyhow::Error> {
+        device.push_error_scope(wgpu::ErrorFilter::Validation);
         let nblocks = match input {
             super::InputElements::Elements1D(n) => n,
             _ => unreachable!(),
@@ -98,7 +102,7 @@ impl Pass for SumScanBlockTotalsInclusivePass {
                 stride,
                 use_ping_as_src,
             })
-            .unwrap();
+            .expect("failed to write scan params");
             let scan_params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some(&format!("ScanParams[SUM-BLOCKS][{r}]")),
                 contents: ub.as_ref(),
@@ -161,5 +165,13 @@ impl Pass for SumScanBlockTotalsInclusivePass {
         if let Some(t) = maybe_timer {
             t.stamp(encoder, Self::NAME.to_string());
         }
+        if let Some(err) = pollster::block_on(device.pop_error_scope()) {
+            return Err(anyhow::anyhow!(
+                "validation in pass {}: {:?}",
+                Self::NAME,
+                err
+            ));
+        }
+        Ok(())
     }
 }

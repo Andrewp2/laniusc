@@ -1,7 +1,8 @@
 // src/lexer/gpu/passes/retag_calls_and_arrays.rs
 use std::collections::HashMap;
 
-use super::{Pass, PassData};
+use super::PassData;
+use crate::gpu::passes_core::DispatchDim;
 use crate::lexer::gpu::{buffers::GpuBuffers, debug::DebugOutput};
 
 pub struct RetagCallsAndArraysPass {
@@ -27,8 +28,9 @@ impl RetagCallsAndArraysPass {
     }
 }
 
-impl Pass for RetagCallsAndArraysPass {
+impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for RetagCallsAndArraysPass {
     const NAME: &'static str = "retag_calls_and_arrays";
+    const DIM: DispatchDim = DispatchDim::D1;
 
     fn from_data(data: PassData) -> Self {
         Self { data }

@@ -4,34 +4,7 @@ use std::{env, fs, path::PathBuf, time::Instant};
 use laniusc::lexer::{cpu::lex_on_cpu, gpu::GpuLexer};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
-fn fmt_mib(bytes: u64) -> String {
-    let mib = (bytes as f64) / (1024.0 * 1024.0);
-    format!("{mib:.2} MiB")
-}
-
-fn throughput_mibs(bytes: u64, ms: f64) -> f64 {
-    if ms <= 0.0 {
-        return 0.0;
-    }
-    (bytes as f64) / (1024.0 * 1024.0) / (ms / 1_000.0)
-}
-
 // ---------------- in-memory generator (borrowed from fuzz_lex style) ----------------
-
-fn parse_target_len() -> usize {
-    // Default: 10,000,000 characters
-    env::var("PERF_ONE_LEN")
-        .ok()
-        .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(10_000_000)
-}
-
-fn parse_seed() -> u64 {
-    env::var("PERF_ONE_SEED")
-        .ok()
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(42)
-}
 
 fn gen_valid_source<R: Rng>(rng: &mut R, target_len: usize) -> String {
     let mut out = String::with_capacity(target_len + target_len / 8);
@@ -148,6 +121,76 @@ fn random_digit<R: Rng>(rng: &mut R) -> char {
     set[i] as char
 }
 
+fn fmt_mib(bytes: u64) -> String {
+    let mib = (bytes as f64) / (1024.0 * 1024.0);
+    format!("{mib:.2} MiB")
+}
+
+fn throughput_mibs(bytes: u64, ms: f64) -> f64 {
+    if ms <= 0.0 {
+        return 0.0;
+    }
+    (bytes as f64) / (1024.0 * 1024.0) / (ms / 1_000.0)
+}
+
+// ---------------- in-memory generator (borrowed from fuzz_lex style) ----------------
+
+fn parse_target_len() -> usize {
+    // Default: 10,000,000 characters
+    env::var("PERF_ONE_LEN")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(10_000_000)
+}
+
+fn parse_seed() -> u64 {
+    env::var("PERF_ONE_SEED")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(42)
+}
+
+fn parse_warmup() -> usize {
+    env::var("PERF_ONE_WARMUP")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(1)
+}
+
+fn parse_reps() -> usize {
+    env::var("PERF_ONE_REPS")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(10)
+}
+
+fn percentile(sorted_ms: &[f64], p: f64) -> f64 {
+    if sorted_ms.is_empty() {
+        return 0.0;
+    }
+    let idx = ((p.clamp(0.0, 1.0)) * (sorted_ms.len() as f64 - 1.0)).round() as usize;
+    sorted_ms[idx]
+}
+
+fn print_stats(label: &str, ms_list: &[f64], bytes: u64) {
+    if ms_list.is_empty() {
+        println!("{label}: no samples");
+        return;
+    }
+    let mut s = ms_list.to_vec();
+    s.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let best = s[0];
+    let p50 = percentile(&s, 0.50);
+    let p95 = percentile(&s, 0.95);
+    println!(
+        "{label}: best={:.3} ms | p50={:.3} ms | p95={:.3} ms | throughput(best)={:.1} MiB/s",
+        best,
+        p50,
+        p95,
+        throughput_mibs(bytes, best)
+    );
+}
+
 // ------------------------------------------------------------------------------------
 
 fn main() {
@@ -194,23 +237,29 @@ fn main() {
         };
 
         let bytes = text.len() as u64;
+        let warmup = parse_warmup();
+        let reps = parse_reps();
 
         // ---------------- CPU ----------------
-        let cpu_t0 = Instant::now();
-        let cpu_tokens = match lex_on_cpu(&text) {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("CPU lex failed: {e}");
-                std::process::exit(1);
+        let mut cpu_runs = Vec::with_capacity(reps);
+        for i in 0..(warmup + reps) {
+            let t0 = Instant::now();
+            let cpu_tokens = match lex_on_cpu(&text) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("CPU lex failed: {e}");
+                    std::process::exit(1);
+                }
+            };
+            let ms = t0.elapsed().as_secs_f64() * 1e3;
+            if i >= warmup {
+                cpu_runs.push(ms);
             }
-        };
-        let cpu_ms = cpu_t0.elapsed().as_secs_f64() * 1e3;
-        println!(
-            "CPU:  {:.3} ms | tokens={} | throughput={:.1} MiB/s",
-            cpu_ms,
-            cpu_tokens.len(),
-            throughput_mibs(bytes, cpu_ms)
-        );
+            if i == warmup {
+                println!("CPU:  first={:.3} ms | tokens={}", ms, cpu_tokens.len());
+            }
+        }
+        print_stats("CPU", &cpu_runs, bytes);
 
         // ---------------- GPU (init separated) ----------------
         let gpu_init_t0 = Instant::now();
@@ -222,48 +271,63 @@ fn main() {
             }
         };
         let gpu_init_ms = gpu_init_t0.elapsed().as_secs_f64() * 1e3;
-
-        let gpu_lex_t0 = Instant::now();
-        let gpu_tokens = match gpu.lex(&text).await {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("GPU lex failed: {e:?}");
-                std::process::exit(1);
-            }
-        };
-        let gpu_lex_ms = gpu_lex_t0.elapsed().as_secs_f64() * 1e3;
-
         println!("GPU:  init={gpu_init_ms:.3} ms");
-        println!(
-            "GPU:  lex ={:.3} ms | tokens={} | throughput={:.1} MiB/s",
-            gpu_lex_ms,
-            gpu_tokens.len(),
-            throughput_mibs(bytes, gpu_lex_ms)
-        );
+
+        let mut gpu_runs = Vec::with_capacity(reps);
+        let mut first_tokens_len: Option<usize> = None;
+        for i in 0..(warmup + reps) {
+            let t0 = Instant::now();
+            let gpu_tokens = match gpu.lex(&text).await {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("GPU lex failed: {e:?}");
+                    std::process::exit(1);
+                }
+            };
+            let ms = t0.elapsed().as_secs_f64() * 1e3;
+            if i == warmup {
+                first_tokens_len = Some(gpu_tokens.len());
+                println!("GPU:  first-lex={:.3} ms | tokens={}", ms, gpu_tokens.len());
+            }
+            if i >= warmup {
+                gpu_runs.push(ms);
+            }
+        }
+        print_stats("GPU-lex", &gpu_runs, bytes);
 
         // Reference-only total (not used for speedup)
-        let gpu_total_ms = gpu_init_ms + gpu_lex_ms;
-        println!(
-            "GPU:  total={:.3} ms | (init+lex) | throughput={:.1} MiB/s",
-            gpu_total_ms,
-            throughput_mibs(bytes, gpu_total_ms)
-        );
-
-        // Optional quick sanity: token counts match?
-        if cpu_tokens.len() != gpu_tokens.len() {
-            eprintln!(
-                "NOTE: token count mismatch (cpu={} vs gpu={}) [{}]",
-                cpu_tokens.len(),
-                gpu_tokens.len(),
-                src_desc
+        if let Some(&best_gpu) = gpu_runs.iter().min_by(|a, b| a.partial_cmp(b).unwrap()) {
+            let best_total = gpu_init_ms + best_gpu;
+            println!(
+                "GPU:  total(best)={:.3} ms | throughput(total)={:.1} MiB/s",
+                best_total,
+                throughput_mibs(bytes, best_total)
             );
         }
 
-        if gpu_lex_ms > 0.0 {
-            println!(
-                "Speedup (CPU_time / GPU_lex_time): {:.2}×",
-                cpu_ms / gpu_lex_ms
-            );
+        // Optional quick sanity: token counts match?
+        // (Just compare the CPU's first run with GPU's first post-warmup run.)
+        if let Some(gpu_len) = first_tokens_len {
+            let cpu_first = {
+                // rerun a quick CPU pass to get its token count without timing noise
+                lex_on_cpu(&text).map(|v| v.len()).unwrap_or_default()
+            };
+            if cpu_first != gpu_len {
+                eprintln!(
+                    "NOTE: token count mismatch (cpu={} vs gpu={}) [{}]",
+                    cpu_first, gpu_len, src_desc
+                );
+            }
+        }
+
+        // Show a simple speedup using medians (more stable than single-shot)
+        if !cpu_runs.is_empty() && !gpu_runs.is_empty() {
+            let mut c = cpu_runs.clone();
+            c.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let mut g = gpu_runs.clone();
+            g.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let speedup = c[c.len() / 2] / g[g.len() / 2];
+            println!("Speedup (median CPU / median GPU_lex): {:.2}×", speedup);
         }
     });
 }

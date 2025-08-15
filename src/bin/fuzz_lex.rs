@@ -352,7 +352,11 @@ fn save_case(dir: &str, seed: u64, iter: usize, src: &str) -> PathBuf {
     };
     let meta_path = path.with_extension("json");
     let mut f = fs::File::create(&meta_path).expect("failed to write meta");
-    let _ = writeln!(f, "{}", serde_json::to_string_pretty(&meta).unwrap());
+    let _ = writeln!(
+        f,
+        "{}",
+        serde_json::to_string_pretty(&meta).expect("failed to serialize meta")
+    );
 
     path
 }

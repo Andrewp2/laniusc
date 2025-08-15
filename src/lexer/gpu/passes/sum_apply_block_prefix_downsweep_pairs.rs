@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
-use super::{Pass, PassData};
-use crate::lexer::gpu::buffers::GpuBuffers;
+use super::PassData;
+use crate::{
+    gpu::passes_core::DispatchDim,
+    lexer::gpu::{buffers::GpuBuffers, debug::DebugOutput},
+};
 
 pub struct SumApplyBlockPrefixDownsweepPairsPass {
     data: PassData,
@@ -26,8 +29,11 @@ impl SumApplyBlockPrefixDownsweepPairsPass {
     }
 }
 
-impl Pass for SumApplyBlockPrefixDownsweepPairsPass {
+impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput>
+    for SumApplyBlockPrefixDownsweepPairsPass
+{
     const NAME: &'static str = "sum_apply_block_prefix_downsweep_pairs";
+    const DIM: DispatchDim = DispatchDim::D2;
 
     fn from_data(data: PassData) -> Self {
         Self { data }
@@ -54,5 +60,15 @@ impl Pass for SumApplyBlockPrefixDownsweepPairsPass {
             ("s_all_final".into(), b.s_all_final.as_entire_binding()),
             ("s_keep_final".into(), b.s_keep_final.as_entire_binding()),
         ])
+    }
+
+    fn record_debug(
+        &self,
+        _device: &wgpu::Device,
+        _encoder: &mut wgpu::CommandEncoder,
+        _buffers: &GpuBuffers,
+        _debug: &mut DebugOutput,
+    ) {
+        // No debug output for this pass
     }
 }

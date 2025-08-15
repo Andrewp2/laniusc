@@ -1,11 +1,14 @@
 use std::collections::HashMap;
 
-use super::{Pass, PassData};
-use crate::lexer::gpu::{buffers::GpuBuffers, debug::DebugOutput};
+use crate::{
+    gpu::passes_core::{DispatchDim, PassData},
+    lexer::gpu::{buffers::GpuBuffers, debug::DebugOutput},
+};
 
 pub struct ScanInblockInclusivePass {
     data: PassData,
 }
+
 impl ScanInblockInclusivePass {
     pub fn new(device: &wgpu::Device) -> anyhow::Result<Self> {
         let data = super::make_pass_data(
@@ -25,20 +28,22 @@ impl ScanInblockInclusivePass {
     }
 }
 
-impl Pass for ScanInblockInclusivePass {
+impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for ScanInblockInclusivePass {
     const NAME: &'static str = "scan_inblock_inclusive";
+    const DIM: DispatchDim = DispatchDim::D2;
+
+    fn data(&self) -> &PassData {
+        &self.data
+    }
 
     fn from_data(data: PassData) -> Self {
         Self { data }
-    }
-    fn data(&self) -> &PassData {
-        &self.data
     }
 
     fn create_resource_map<'a>(
         &self,
         b: &'a GpuBuffers,
-    ) -> HashMap<String, wgpu::BindingResource<'a>> {
+    ) -> std::collections::HashMap<String, wgpu::BindingResource<'a>> {
         use wgpu::BindingResource::*;
         HashMap::from([
             (
@@ -52,10 +57,6 @@ impl Pass for ScanInblockInclusivePass {
                 b.block_summaries.as_entire_binding(),
             ),
         ])
-    }
-
-    fn get_dispatch_size_1d(&self, nblocks: u32) -> (u32, u32, u32) {
-        (nblocks, 1, 1)
     }
 
     fn record_debug(

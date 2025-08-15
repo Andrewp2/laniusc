@@ -58,15 +58,24 @@ inline void compact_impl(bool use_kept_pred, uint3 tid)
     {
         uint k0 = pref - 2u;
         end_positions[k0] = i;
-        uint kind0 = (emit_kind16 != 0xFFFFu) ? emit_kind16 : eof_kind16;
-        types_compact[k0] = kind0;
-        all_index_compact[k0] = all_idx_1based - 1u;
+
+        // ▼ Only KEPT stream writes kinds / ALL-index bookkeeping
+        if (use_kept_pred)
+        {
+            uint kind0 = (emit_kind16 != 0xFFFFu) ? emit_kind16 : eof_kind16;
+            types_compact[k0] = kind0;
+            all_index_compact[k0] = all_idx_1based - 1u;
+        }
 
         uint k1 = pref - 1u;
         end_positions[k1] = gParams.n;
-        uint kind1 = (eof_kind16 != 0xFFFFu) ? eof_kind16 : emit_kind16;
-        types_compact[k1] = kind1;
-        all_index_compact[k1] = all_idx_1based;
+
+        if (use_kept_pred)
+        {
+            uint kind1 = (eof_kind16 != 0xFFFFu) ? eof_kind16 : emit_kind16;
+            types_compact[k1] = kind1;
+            all_index_compact[k1] = all_idx_1based;
+        }
         return;
     }
 
@@ -76,26 +85,31 @@ inline void compact_impl(bool use_kept_pred, uint3 tid)
     end_positions[k] = end_excl;
 
     uint is_last = (i + 1u == gParams.n) ? 1u : 0u;
-    uint kind = 0u;
-    if (is_last != 0u)
-    {
-        kind = (eof_kind16 != 0xFFFFu) ? eof_kind16 : emit_kind16;
-    }
-    else
-    {
-        kind = (emit_kind16 != 0xFFFFu) ? emit_kind16 : eof_kind16;
-    }
-    types_compact[k] = kind;
 
-    uint prev_all = (i == 0u) ? 0u : s_final_all[i - 1u];
-    uint delta_all = all_idx_1based - prev_all;
-
-    uint all_idx_for_kept = all_idx_1based;
-    if (is_last != 0u && delta_all == 2u)
+    // ▼ Only KEPT stream needs token kinds
+    if (use_kept_pred)
     {
-        all_idx_for_kept = (end_excl == i) ? (all_idx_1based - 1u) : all_idx_1based;
+        uint kind = 0u;
+        if (is_last != 0u)
+        {
+            kind = (eof_kind16 != 0xFFFFu) ? eof_kind16 : emit_kind16;
+        }
+        else
+        {
+            kind = (emit_kind16 != 0xFFFFu) ? emit_kind16 : eof_kind16;
+        }
+        types_compact[k] = kind;
+
+        uint prev_all = (i == 0u) ? 0u : s_final_all[i - 1u];
+        uint delta_all = all_idx_1based - prev_all;
+
+        uint all_idx_for_kept = all_idx_1based;
+        if (is_last != 0u && delta_all == 2u)
+        {
+            all_idx_for_kept = (end_excl == i) ? (all_idx_1based - 1u) : all_idx_1based;
+        }
+        all_index_compact[k] = all_idx_for_kept;
     }
-    all_index_compact[k] = all_idx_for_kept;
 }
 
 [shader("compute")]

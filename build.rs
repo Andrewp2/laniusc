@@ -16,7 +16,7 @@ fn main() -> Result<()> {
 
     let slangc = find_slangc()
         .context("could not locate `slangc` binary. Set $SLANGC or add it to PATH.")?;
-    let out_dir = PathBuf::from(env::var_os("OUT_DIR").unwrap());
+    let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR not set"));
     let shader_out_dir = out_dir.join("shaders");
     fs::create_dir_all(&shader_out_dir).context("create OUT_DIR/shaders")?;
 
@@ -57,6 +57,10 @@ fn main() -> Result<()> {
             .arg("shaders")
             .arg("-I")
             .arg("shaders/lexer")
+            .arg("-I")
+            .arg("shaders/parser")
+            .arg("-I")
+            .arg("shaders/type_checker")
             .arg("-o")
             .arg(&spv_out)
             // Finally, the entrypoint source itself (no module/library sources added!)

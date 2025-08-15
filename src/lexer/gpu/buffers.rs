@@ -1,42 +1,24 @@
 // src/lexer/gpu/buffers.rs
-use std::ops::Deref;
-
 use encase::UniformBuffer;
 use wgpu::util::DeviceExt;
 
 use super::LexParams;
-use crate::lexer::tables::dfa::N_STATES;
-
-pub struct LaniusBuffer<T> {
-    pub buffer: wgpu::Buffer,
-    #[allow(dead_code)]
-    pub byte_size: usize,
-    #[allow(dead_code)]
-    pub count: usize,
-    _marker: std::marker::PhantomData<T>,
-}
-
-impl<T> LaniusBuffer<T> {
-    pub fn new((buffer, byte_size): (wgpu::Buffer, u64), count: usize) -> Self {
-        Self {
-            buffer,
-            byte_size: byte_size as usize,
-            count,
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<T> Deref for LaniusBuffer<T> {
-    type Target = wgpu::Buffer;
-    fn deref(&self) -> &Self::Target {
-        &self.buffer
-    }
-}
+use crate::{
+    gpu::buffers::{
+        LaniusBuffer,
+        storage_ro_from_bytes,
+        storage_ro_from_u32s,
+        storage_rw_for_array,
+        storage_rw_uninit_bytes,
+        uniform_from_val,
+    },
+    lexer::tables::dfa::N_STATES,
+};
 
 pub struct GpuBuffers {
     pub n: u32,
-    pub nb: u32,
+    pub nb_dfa: u32, // blocks for 128-wide DFA passes
+    pub nb_sum: u32, // blocks for 256-wide sum passes
 
     /// Uniform params buffer (LexParams)
     pub params: LaniusBuffer<super::LexParams>,
@@ -54,7 +36,7 @@ pub struct GpuBuffers {
     pub f_final: LaniusBuffer<u32>,
 
     pub tok_types: LaniusBuffer<u32>, // type at boundary after i (packed)
-    pub flags_packed: LaniusBuffer<u32>, // NEW: packed flags per i
+    pub flags_packed: LaniusBuffer<u32>, // packed flags per i
     pub end_excl_by_i: LaniusBuffer<u32>, // exact exclusive end index per boundary i
 
     // seeds → hierarchical sum scratch/finals for BOTH streams
@@ -88,127 +70,89 @@ impl GpuBuffers {
         token_map: &[u32],
         skip_kinds: [u32; 4],
     ) -> Self {
-        fn u32s_to_le_bytes(slice: &[u32]) -> Vec<u8> {
-            let mut out = Vec::with_capacity(slice.len() * 4);
-            for &v in slice {
-                out.extend_from_slice(&v.to_le_bytes());
-            }
-            out
-        }
-        fn make_ro<T>(
-            device: &wgpu::Device,
-            label: &str,
-            bytes: &[u8],
-            count: usize,
-        ) -> LaniusBuffer<T> {
-            let raw_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some(label),
-                contents: bytes,
-                usage: wgpu::BufferUsages::STORAGE
-                    | wgpu::BufferUsages::COPY_DST
-                    | wgpu::BufferUsages::COPY_SRC,
-            });
-            LaniusBuffer::new((raw_buffer, bytes.len() as u64), count)
-        }
+        const BLOCK_WIDTH_DFA: u32 = 128;
+        const BLOCK_WIDTH_SUM: u32 = 256;
 
-        fn make_rw<T>(
-            device: &wgpu::Device,
-            label: &str,
-            size: usize,
-            count: usize,
-        ) -> LaniusBuffer<T> {
-            let raw_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some(label),
-                size: size as u64,
-                usage: wgpu::BufferUsages::STORAGE
-                    | wgpu::BufferUsages::COPY_SRC
-                    | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-            LaniusBuffer::new((raw_buffer, size as u64), count)
-        }
-
-        let nb = n.div_ceil(256);
+        let nb_dfa = n.div_ceil(BLOCK_WIDTH_DFA);
+        let nb_sum = n.div_ceil(BLOCK_WIDTH_SUM);
 
         // ---- inputs/tables
-        let in_bytes: LaniusBuffer<u8> = make_ro::<u8>(device, "in_bytes", input_bytes, n as usize);
+        let in_bytes: LaniusBuffer<u8> =
+            storage_ro_from_bytes::<u8>(device, "in_bytes", input_bytes, n as usize);
 
-        let token_map_buf: LaniusBuffer<u32> =
-            make_ro::<u32>(device, "token_map", &u32s_to_le_bytes(token_map), N_STATES);
+        let token_map_buf: LaniusBuffer<u32> = storage_ro_from_u32s(device, "token_map", token_map);
 
-        let per_block_vec_bytes = N_STATES * 4;
-        let block_summaries: LaniusBuffer<u32> = make_rw::<u32>(
-            device,
-            "block_summaries",
-            (nb as usize) * per_block_vec_bytes,
-            nb as usize,
-        );
-        let block_ping: LaniusBuffer<u32> = make_rw::<u32>(
-            device,
-            "block_ping",
-            (nb as usize) * per_block_vec_bytes,
-            nb as usize,
-        );
-        let block_pong: LaniusBuffer<u32> = make_rw::<u32>(
-            device,
-            "block_pong",
-            (nb as usize) * per_block_vec_bytes,
-            nb as usize,
-        );
-        let block_prefix: LaniusBuffer<u32> = make_rw::<u32>(
-            device,
-            "block_prefix",
-            (nb as usize) * per_block_vec_bytes,
-            nb as usize,
-        );
+        let next_emit_buf: LaniusBuffer<u32> =
+            storage_ro_from_u32s(device, "next_emit", next_emit_packed);
 
-        let f_final: LaniusBuffer<u32> =
-            make_rw::<u32>(device, "f_final", (n as usize) * 4, n as usize);
+        // per-block function vectors (N_STATES u32s per block)
+        let per_block_count = (N_STATES as usize) * (nb_dfa as usize);
+        let block_summaries: LaniusBuffer<u32> =
+            storage_rw_for_array::<u32>(device, "block_summaries", per_block_count);
+        let block_ping: LaniusBuffer<u32> =
+            storage_rw_for_array::<u32>(device, "block_ping", per_block_count);
+        let block_pong: LaniusBuffer<u32> =
+            storage_rw_for_array::<u32>(device, "block_pong", per_block_count);
+        let block_prefix: LaniusBuffer<u32> =
+            storage_rw_for_array::<u32>(device, "block_prefix", per_block_count);
+
+        let f_final: LaniusBuffer<u32> = storage_rw_for_array::<u32>(device, "f_final", n as usize);
 
         let tok_types: LaniusBuffer<u32> =
-            make_rw::<u32>(device, "tok_types", (n as usize) * 4, n as usize);
+            storage_rw_for_array::<u32>(device, "tok_types", n as usize);
 
-        // -------- NEW: single packed flags buffer --------
         let flags_packed: LaniusBuffer<u32> =
-            make_rw::<u32>(device, "flags_packed", (n as usize) * 4, n as usize);
+            storage_rw_for_array::<u32>(device, "flags_packed", n as usize);
 
         let end_excl_by_i: LaniusBuffer<u32> =
-            make_rw::<u32>(device, "end_excl_by_i", (n as usize) * 4, n as usize);
+            storage_rw_for_array::<u32>(device, "end_excl_by_i", n as usize);
 
+        // pair sums: 2*u32 per block (we store counts for ALL/KEPT)
+        let pair_elems_per_block = 2usize;
+        let pair_total = (nb_sum as usize) * pair_elems_per_block;
         let block_totals_pair: LaniusBuffer<u32> =
-            make_rw::<u32>(device, "block_totals_pair", (nb as usize) * 8, nb as usize);
+            storage_rw_for_array::<u32>(device, "block_totals_pair", pair_total);
         let block_pair_ping: LaniusBuffer<u32> =
-            make_rw::<u32>(device, "block_pair_ping", (nb as usize) * 8, nb as usize);
+            storage_rw_for_array::<u32>(device, "block_pair_ping", pair_total);
         let block_pair_pong: LaniusBuffer<u32> =
-            make_rw::<u32>(device, "block_pair_pong", (nb as usize) * 8, nb as usize);
+            storage_rw_for_array::<u32>(device, "block_pair_pong", pair_total);
         let block_prefix_pair: LaniusBuffer<u32> =
-            make_rw::<u32>(device, "block_prefix_pair", (nb as usize) * 8, nb as usize);
+            storage_rw_for_array::<u32>(device, "block_prefix_pair", pair_total);
 
-        // ---- final sums
+        // final sums (per boundary)
         let s_all_final: LaniusBuffer<u32> =
-            make_rw::<u32>(device, "s_all_final", (n as usize) * 4, n as usize);
+            storage_rw_for_array::<u32>(device, "s_all_final", n as usize);
         let s_keep_final: LaniusBuffer<u32> =
-            make_rw::<u32>(device, "s_keep_final", (n as usize) * 4, n as usize);
+            storage_rw_for_array::<u32>(device, "s_keep_final", n as usize);
 
-        // ---- compaction + outputs
+        // compaction + outputs (per boundary)
         let end_positions: LaniusBuffer<u32> =
-            make_rw::<u32>(device, "end_positions", (n as usize) * 4, n as usize);
+            storage_rw_for_array::<u32>(device, "end_positions", n as usize);
         let end_positions_all: LaniusBuffer<u32> =
-            make_rw::<u32>(device, "end_positions_all", (n as usize) * 4, n as usize);
+            storage_rw_for_array::<u32>(device, "end_positions_all", n as usize);
         let types_compact: LaniusBuffer<u32> =
-            make_rw::<u32>(device, "types_compact", (n as usize) * 4, n as usize);
+            storage_rw_for_array::<u32>(device, "types_compact", n as usize);
         let all_index_compact: LaniusBuffer<u32> =
-            make_rw::<u32>(device, "all_index_compact", (n as usize) * 4, n as usize);
-        let token_count: LaniusBuffer<u32> = make_rw::<u32>(device, "token_count", 4, 1);
-        let token_count_all: LaniusBuffer<u32> = make_rw::<u32>(device, "token_count_all", 4, 1);
+            storage_rw_for_array::<u32>(device, "all_index_compact", n as usize);
 
-        let tokens_out: LaniusBuffer<super::GpuToken> = make_rw::<super::GpuToken>(
+        // single u32 counters
+        let token_count: LaniusBuffer<u32> = storage_rw_for_array::<u32>(device, "token_count", 1);
+        let token_count_all: LaniusBuffer<u32> =
+            storage_rw_for_array::<u32>(device, "token_count_all", 1);
+
+        // final tokens
+        // NOTE: If `GpuToken` is a WGSL struct consumed by shaders, it should derive `ShaderType`.
+        // If it doesn't yet, this uses Rust size; upgrade to `storage_rw_for_array::<GpuToken>`
+        // after you add `#[derive(ShaderType, Default)]` on `GpuToken`.
+        let tokens_out: LaniusBuffer<super::GpuToken> = storage_rw_uninit_bytes(
             device,
             "tokens_out",
             (n as usize) * std::mem::size_of::<super::GpuToken>(),
             n as usize,
-        );
+        )
+        .into();
 
+        // Params (uniform)
         let params_val = LexParams {
             n,
             m: N_STATES as u32,
@@ -218,25 +162,12 @@ impl GpuBuffers {
             skip2: skip_kinds[2],
             skip3: skip_kinds[3],
         };
-        let mut ub = UniformBuffer::new(Vec::new());
-        ub.write(&params_val).unwrap();
-        let raw = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("LexParams"),
-            contents: ub.as_ref(),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        let params = LaniusBuffer::<LexParams>::new((raw, ub.as_ref().len() as u64), 1);
-
-        let next_emit_buf: LaniusBuffer<u32> = make_ro::<u32>(
-            device,
-            "next_emit",
-            &u32s_to_le_bytes(next_emit_packed),
-            N_STATES,
-        );
+        let params = uniform_from_val(device, "LexParams", &params_val);
 
         Self {
             n,
-            nb,
+            nb_dfa,
+            nb_sum,
             params,
 
             in_bytes,
@@ -270,5 +201,12 @@ impl GpuBuffers {
 
             tokens_out,
         }
+    }
+}
+
+// small From to help the `tokens_out` construction above
+impl From<LaniusBuffer<u8>> for LaniusBuffer<super::GpuToken> {
+    fn from(b: LaniusBuffer<u8>) -> Self {
+        LaniusBuffer::new((b.buffer, b.byte_size as u64), b.count)
     }
 }

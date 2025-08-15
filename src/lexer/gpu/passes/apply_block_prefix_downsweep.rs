@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use super::{Pass, PassData};
-use crate::lexer::gpu::{buffers::GpuBuffers, debug::DebugOutput};
+use super::PassData;
+use crate::lexer::gpu::{buffers::GpuBuffers, debug::DebugOutput, passes::DispatchDim};
 
 pub struct ApplyBlockPrefixDownsweepPass {
     data: PassData,
@@ -25,8 +25,9 @@ impl ApplyBlockPrefixDownsweepPass {
     }
 }
 
-impl Pass for ApplyBlockPrefixDownsweepPass {
+impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for ApplyBlockPrefixDownsweepPass {
     const NAME: &'static str = "apply_block_prefix_downsweep";
+    const DIM: DispatchDim = DispatchDim::D2;
 
     fn from_data(data: PassData) -> Self {
         Self { data }
