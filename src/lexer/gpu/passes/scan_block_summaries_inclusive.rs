@@ -5,7 +5,7 @@ use wgpu::util::DeviceExt;
 
 use super::PassData;
 use crate::{
-    gpu::{passes_core::DispatchDim, timer::GpuTimer},
+    gpu::passes_core::DispatchDim,
     lexer::gpu::{buffers::GpuBuffers, debug::DebugOutput, passes::ScanParams},
 };
 
@@ -88,7 +88,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for ScanBlockSummari
         let gy = if nblocks == 0 {
             1
         } else {
-            (nblocks + MAX_PER_DIM - 1) / MAX_PER_DIM
+            nblocks.div_ceil(MAX_PER_DIM)
         };
 
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {

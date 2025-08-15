@@ -237,11 +237,11 @@ pub trait Pass<Buffers, DebugOutput> {
         let [tgsx, tgsy, _tgsz] = pd.thread_group_size;
         let (gx, gy, gz) = match (Self::DIM, input) {
             (DispatchDim::D1, InputElements::Elements1D(n)) => {
-                (((n + tgsx - 1) / tgsx).max(1), 1, 1)
+                (n.div_ceil(tgsx).max(1), 1, 1)
             }
             (DispatchDim::D2, InputElements::Elements2D(w, h)) => {
-                let wx = ((w + tgsx - 1) / tgsx).max(1);
-                let hy = ((h + tgsy - 1) / tgsy).max(1);
+                let wx = w.div_ceil(tgsx).max(1);
+                let hy = h.div_ceil(tgsy).max(1);
                 (wx, hy, 1)
             }
 
@@ -251,10 +251,10 @@ pub trait Pass<Buffers, DebugOutput> {
                 let tiles_y = if n == 0 {
                     1
                 } else {
-                    (n + MAX_PER_DIM - 1) / MAX_PER_DIM
+                    n.div_ceil(MAX_PER_DIM)
                 };
-                let wx = ((tiles_x + tgsx - 1) / tgsx).max(1);
-                let hy = ((tiles_y + tgsy - 1) / tgsy).max(1);
+                let wx = tiles_x.div_ceil(tgsx).max(1);
+                let hy = tiles_y.div_ceil(tgsy).max(1);
                 (wx, hy, 1)
             }
             _ => unreachable!("dimension/input mismatch"),

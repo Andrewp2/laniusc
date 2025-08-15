@@ -314,8 +314,7 @@ fn main() {
             };
             if cpu_first != gpu_len {
                 eprintln!(
-                    "NOTE: token count mismatch (cpu={} vs gpu={}) [{}]",
-                    cpu_first, gpu_len, src_desc
+                    "NOTE: token count mismatch (cpu={cpu_first} vs gpu={gpu_len}) [{src_desc}]"
                 );
             }
         }
@@ -327,7 +326,7 @@ fn main() {
             let mut g = gpu_runs.clone();
             g.sort_by(|a, b| a.partial_cmp(b).unwrap());
             let speedup = c[c.len() / 2] / g[g.len() / 2];
-            println!("Speedup (median CPU / median GPU_lex): {:.2}×", speedup);
+            println!("Speedup (median CPU / median GPU_lex): {speedup:.2}×");
         }
     });
 }

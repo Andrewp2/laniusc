@@ -1,4 +1,3 @@
-use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
 use wgpu;
@@ -7,9 +6,7 @@ use crate::gpu::passes_core::{
     DispatchDim,
     InputElements,
     PassData,
-    bgls_from_reflection,
     bind_group,
-    pipeline_from_spirv_and_bgls,
 };
 
 pub mod llp_pairs;
@@ -61,7 +58,7 @@ pub trait Pass {
         const MAX_PER_DIM: u32 = 65_535;
         if matches!(Self::DIM, DispatchDim::D2) && dispatch.0 > MAX_PER_DIM {
             let gx = MAX_PER_DIM;
-            let gy = (dispatch.0 + MAX_PER_DIM - 1) / MAX_PER_DIM;
+            let gy = dispatch.0.div_ceil(MAX_PER_DIM);
             if gy > MAX_PER_DIM {
                 return Err(anyhow!("dispatch too large for 2D"));
             }

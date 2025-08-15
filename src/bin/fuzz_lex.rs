@@ -599,7 +599,7 @@ fn dump_src_window(src: &str, start: usize, len: usize, who: &str, idx: usize) {
 
     if full_len <= MAX_SNIP_WINDOW {
         let snippet = String::from_utf8_lossy(&bytes[full_lo..full_hi]);
-        eprintln!("    {:?}", snippet);
+        eprintln!("    {snippet:?}");
     } else {
         // Show: up to 64 bytes before, a head/tail preview of the token, and up to 64 bytes after
         let before = &bytes[full_lo..start];
@@ -614,7 +614,7 @@ fn dump_src_window(src: &str, start: usize, len: usize, who: &str, idx: usize) {
             preview_lossy(token, TOK_HEAD_BYTES, TOK_TAIL_BYTES),
             String::from_utf8_lossy(after)
         );
-        eprintln!("    {:?}", snippet);
+        eprintln!("    {snippet:?}");
     }
 
     let caret_pos = start.saturating_sub(full_lo);

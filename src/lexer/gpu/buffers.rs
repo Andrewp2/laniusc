@@ -1,6 +1,4 @@
 // src/lexer/gpu/buffers.rs
-use encase::UniformBuffer;
-use wgpu::util::DeviceExt;
 
 use super::LexParams;
 use crate::{
@@ -86,7 +84,7 @@ impl GpuBuffers {
             storage_ro_from_u32s(device, "next_emit", next_emit_packed);
 
         // per-block function vectors (N_STATES u32s per block)
-        let per_block_count = (N_STATES as usize) * (nb_dfa as usize);
+        let per_block_count = N_STATES * (nb_dfa as usize);
         let block_summaries: LaniusBuffer<u32> =
             storage_rw_for_array::<u32>(device, "block_summaries", per_block_count);
         let block_ping: LaniusBuffer<u32> =

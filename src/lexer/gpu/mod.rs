@@ -381,9 +381,9 @@ impl GpuLexer {
         }
 
         if !readback_enabled() {
-            if let Some(timer) = maybe_timer {
-                if let Some(vals) = timer.try_read(&self.device) {
-                    if !vals.is_empty() {
+            if let Some(timer) = maybe_timer
+                && let Some(vals) = timer.try_read(&self.device)
+                    && !vals.is_empty() {
                         let period_ns = timer.period_ns() as f64;
                         let t0 = vals[0].1;
                         let mut prev = t0;
@@ -394,14 +394,11 @@ impl GpuLexer {
                                 continue;
                             }
                             println!(
-                                "[gpu_timer] {label}: {:.3}ms (total {:.3}ms)",
-                                dt_ms, total_ms
+                                "[gpu_timer] {label}: {dt_ms:.3}ms (total {total_ms:.3}ms)"
                             );
                             prev = t;
                         }
                     }
-                }
-            }
 
             return Ok(vec![
                 Token {
@@ -447,9 +444,9 @@ impl GpuLexer {
         drop(mapped);
         readback_tokens_buffer.unmap();
 
-        if let Some(timer) = maybe_timer {
-            if let Some(vals) = timer.try_read(&self.device) {
-                if !vals.is_empty() {
+        if let Some(timer) = maybe_timer
+            && let Some(vals) = timer.try_read(&self.device)
+                && !vals.is_empty() {
                     let period_ns = timer.period_ns() as f64;
                     let t0 = vals[0].1;
                     let mut prev = t0;
@@ -461,14 +458,11 @@ impl GpuLexer {
                             continue;
                         }
                         println!(
-                            "[gpu_timer] {label}: {:.3}ms (total {:.3}ms)",
-                            dt_ms, total_ms
+                            "[gpu_timer] {label}: {dt_ms:.3}ms (total {total_ms:.3}ms)"
                         );
                         prev = t;
                     }
                 }
-            }
-        }
 
         #[cfg(feature = "graphics_debugger")]
         unsafe {

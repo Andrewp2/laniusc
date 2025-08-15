@@ -1,5 +1,4 @@
 use encase::ShaderType;
-use wgpu::util::DeviceExt;
 
 use crate::gpu::buffers::{
     LaniusBuffer,
