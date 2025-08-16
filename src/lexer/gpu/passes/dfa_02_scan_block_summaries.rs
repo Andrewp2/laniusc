@@ -12,31 +12,31 @@ use crate::{
     },
 };
 
-pub struct ScanBlockSummariesInclusivePass {
+pub struct Dfa02ScanBlockSummariesPass {
     data: PassData,
 }
 
-impl ScanBlockSummariesInclusivePass {
+impl Dfa02ScanBlockSummariesPass {
     pub fn new(device: &wgpu::Device) -> anyhow::Result<Self> {
         let data = super::make_pass_data(
             device,
-            "scan_block_summaries_inclusive",
-            "scan_block_summaries_inclusive",
+            "dfa_02_scan_block_summaries",
+            "dfa_02_scan_block_summaries",
             include_bytes!(concat!(
                 env!("OUT_DIR"),
-                "/shaders/scan_block_summaries_inclusive.spv"
+                "/shaders/dfa_02_scan_block_summaries.spv"
             )),
             include_bytes!(concat!(
                 env!("OUT_DIR"),
-                "/shaders/scan_block_summaries_inclusive.reflect.json"
+                "/shaders/dfa_02_scan_block_summaries.reflect.json"
             )),
         )?;
         Ok(Self { data })
     }
 }
 
-impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for ScanBlockSummariesInclusivePass {
-    const NAME: &'static str = "scan_block_summaries_inclusive";
+impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSummariesPass {
+    const NAME: &'static str = "dfa_02_scan_block_summaries";
     const DIM: DispatchDim = DispatchDim::D1;
 
     fn from_data(data: PassData) -> Self {

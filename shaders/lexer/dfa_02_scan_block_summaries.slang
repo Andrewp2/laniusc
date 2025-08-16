@@ -24,9 +24,9 @@ RWStructuredBuffer<uint> block_pong; // nb * N_STATES
 
 [shader("compute")]
 [numthreads(N_STATES, 1, 1)]
-void scan_block_summaries_inclusive(uint3 local_id: SV_GroupThreadID,
-                                    uint3 global_id: SV_DispatchThreadID,
-                                    uint3 group_id: SV_GroupID)
+void dfa_02_scan_block_summaries(uint3 local_id: SV_GroupThreadID,
+                                 uint3 global_id: SV_DispatchThreadID,
+                                 uint3 group_id: SV_GroupID)
 {
     const uint nb = (gParams.n + (BLOCK_WIDTH - 1u)) / BLOCK_WIDTH;
     const uint groupsX = (nb < 65535u) ? nb : 65535u;

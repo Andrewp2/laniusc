@@ -24,9 +24,9 @@ groupshared uint2 sh[WORKGROUP_SIZE];
 
 [shader("compute")]
 [numthreads(WORKGROUP_SIZE, 1, 1)]
-void sum_inblock_pairs(uint3 tid: SV_GroupThreadID,
-                       uint3 gid: SV_DispatchThreadID,
-                       uint3 ggrp: SV_GroupID)
+void pair_01_sum_inblock(uint3 tid: SV_GroupThreadID,
+                         uint3 gid: SV_DispatchThreadID,
+                         uint3 ggrp: SV_GroupID)
 {
     const uint block = ggrp.x;
     const uint base = block * WORKGROUP_SIZE;

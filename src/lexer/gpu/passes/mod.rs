@@ -14,18 +14,22 @@ use crate::{
     },
 };
 
-// Export concrete pass modules
-pub mod apply_block_prefix_downsweep;
-pub mod build_tokens;
+// Export concrete pass modules (grouped + ordered)
+pub mod dfa_01_scan_inblock;
+pub mod dfa_02_scan_block_summaries;
+pub mod dfa_03_apply_block_prefix;
+
+pub mod boundary_finalize_and_seed;
+
+pub mod pair_01_sum_inblock;
+pub mod pair_02_scan_block_totals;
+pub mod pair_03_apply_block_prefix;
+
 pub mod compact_boundaries_all;
 pub mod compact_boundaries_kept;
-pub mod finalize_boundaries_and_seed;
+
 pub mod retag_calls_and_arrays;
-pub mod scan_block_summaries_inclusive;
-pub mod scan_inblock_inclusive_pass;
-pub mod sum_apply_block_prefix_downsweep_pairs;
-pub mod sum_inblock_pairs;
-pub mod sum_scan_block_totals_inclusive;
+pub mod tokens_build;
 
 #[derive(ShaderType, Debug, Clone, Copy)]
 pub(super) struct ScanParams {

@@ -7,28 +7,28 @@ use crate::{
     lexer::gpu::{buffers::GpuBuffers, debug::DebugOutput},
 };
 
-pub struct SumInblockPairsPass {
+pub struct Pair01SumInblockPass {
     data: PassData,
 }
 
-impl SumInblockPairsPass {
+impl Pair01SumInblockPass {
     pub fn new(device: &wgpu::Device) -> anyhow::Result<Self> {
         let data = super::make_pass_data(
             device,
-            "sum_inblock_pairs",
-            "sum_inblock_pairs",
-            include_bytes!(concat!(env!("OUT_DIR"), "/shaders/sum_inblock_pairs.spv")),
+            "pair_01_sum_inblock",
+            "pair_01_sum_inblock",
+            include_bytes!(concat!(env!("OUT_DIR"), "/shaders/pair_01_sum_inblock.spv")),
             include_bytes!(concat!(
                 env!("OUT_DIR"),
-                "/shaders/sum_inblock_pairs.reflect.json"
+                "/shaders/pair_01_sum_inblock.reflect.json"
             )),
         )?;
         Ok(Self { data })
     }
 }
 
-impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for SumInblockPairsPass {
-    const NAME: &'static str = "sum_inblock_pairs";
+impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair01SumInblockPass {
+    const NAME: &'static str = "pair_01_sum_inblock";
     const DIM: DispatchDim = DispatchDim::D1;
 
     fn from_data(data: PassData) -> Self {

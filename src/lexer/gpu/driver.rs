@@ -23,20 +23,19 @@ pub struct GpuLexer {
     queue: wgpu::Queue,
     timers_supported: bool,
 
-    p_scan_inblock: passes::scan_inblock_inclusive_pass::ScanInblockInclusivePass,
-    p_scan_blocks: passes::scan_block_summaries_inclusive::ScanBlockSummariesInclusivePass,
-    p_apply_prefix: passes::apply_block_prefix_downsweep::ApplyBlockPrefixDownsweepPass,
-    p_finalize: passes::finalize_boundaries_and_seed::FinalizeBoundariesAndSeedPass,
+    p_dfa_01_scan_inblock: passes::dfa_01_scan_inblock::Dfa01ScanInblockPass,
+    p_dfa_02_scan_block_summaries: passes::dfa_02_scan_block_summaries::Dfa02ScanBlockSummariesPass,
+    p_dfa_03_apply_block_prefix: passes::dfa_03_apply_block_prefix::Dfa03ApplyBlockPrefixPass,
+    p_boundary_finalize_and_seed: passes::boundary_finalize_and_seed::BoundaryFinalizeAndSeedPass,
 
-    p_sum_inblock: passes::sum_inblock_pairs::SumInblockPairsPass,
-    p_sum_blocks: passes::sum_scan_block_totals_inclusive::SumScanBlockTotalsInclusivePass,
-    p_sum_apply:
-        passes::sum_apply_block_prefix_downsweep_pairs::SumApplyBlockPrefixDownsweepPairsPass,
+    p_pair_01_sum_inblock: passes::pair_01_sum_inblock::Pair01SumInblockPass,
+    p_pair_02_scan_block_totals: passes::pair_02_scan_block_totals::Pair02ScanBlockTotalsPass,
+    p_pair_03_apply_block_prefix: passes::pair_03_apply_block_prefix::Pair03ApplyBlockPrefixPass,
 
-    p_compact_all: passes::compact_boundaries_all::CompactBoundariesAllPass,
-    p_compact_kept: passes::compact_boundaries_kept::CompactBoundariesKeptPass,
-    p_retag: passes::retag_calls_and_arrays::RetagCallsAndArraysPass,
-    p_build: passes::build_tokens::BuildTokensPass,
+    p_compact_boundaries_all: passes::compact_boundaries_all::CompactBoundariesAllPass,
+    p_compact_boundaries_kept: passes::compact_boundaries_kept::CompactBoundariesKeptPass,
+    p_retag_calls_and_arrays: passes::retag_calls_and_arrays::RetagCallsAndArraysPass,
+    p_tokens_build: passes::tokens_build::TokensBuildPass,
 }
 
 impl GpuLexer {
@@ -100,42 +99,42 @@ impl GpuLexer {
             eprintln!("[wgpu uncaptured] {e:?}");
         }));
 
-        let p_scan_inblock =
-            passes::scan_inblock_inclusive_pass::ScanInblockInclusivePass::new(&device)?;
-        let p_scan_blocks =
-            passes::scan_block_summaries_inclusive::ScanBlockSummariesInclusivePass::new(&device)?;
-        let p_apply_prefix =
-            passes::apply_block_prefix_downsweep::ApplyBlockPrefixDownsweepPass::new(&device)?;
-        let p_finalize =
-            passes::finalize_boundaries_and_seed::FinalizeBoundariesAndSeedPass::new(&device)?;
+        let p_dfa_01_scan_inblock =
+            passes::dfa_01_scan_inblock::Dfa01ScanInblockPass::new(&device)?;
+        let p_dfa_02_scan_block_summaries =
+            passes::dfa_02_scan_block_summaries::Dfa02ScanBlockSummariesPass::new(&device)?;
+        let p_dfa_03_apply_block_prefix =
+            passes::dfa_03_apply_block_prefix::Dfa03ApplyBlockPrefixPass::new(&device)?;
+        let p_boundary_finalize_and_seed =
+            passes::boundary_finalize_and_seed::BoundaryFinalizeAndSeedPass::new(&device)?;
 
-        let p_sum_inblock = passes::sum_inblock_pairs::SumInblockPairsPass::new(&device)?;
-        let p_sum_blocks =
-            passes::sum_scan_block_totals_inclusive::SumScanBlockTotalsInclusivePass::new(&device)?;
-        let p_sum_apply =
-            passes::sum_apply_block_prefix_downsweep_pairs::SumApplyBlockPrefixDownsweepPairsPass::new(&device)?;
+        let p_pair_01_sum_inblock = passes::pair_01_sum_inblock::Pair01SumInblockPass::new(&device)?;
+        let p_pair_02_scan_block_totals =
+            passes::pair_02_scan_block_totals::Pair02ScanBlockTotalsPass::new(&device)?;
+        let p_pair_03_apply_block_prefix =
+            passes::pair_03_apply_block_prefix::Pair03ApplyBlockPrefixPass::new(&device)?;
 
-        let p_compact_all = passes::compact_boundaries_all::CompactBoundariesAllPass::new(&device)?;
-        let p_compact_kept =
+        let p_compact_boundaries_all = passes::compact_boundaries_all::CompactBoundariesAllPass::new(&device)?;
+        let p_compact_boundaries_kept =
             passes::compact_boundaries_kept::CompactBoundariesKeptPass::new(&device)?;
-        let p_retag = passes::retag_calls_and_arrays::RetagCallsAndArraysPass::new(&device)?;
-        let p_build = passes::build_tokens::BuildTokensPass::new(&device)?;
+        let p_retag_calls_and_arrays = passes::retag_calls_and_arrays::RetagCallsAndArraysPass::new(&device)?;
+        let p_tokens_build = passes::tokens_build::TokensBuildPass::new(&device)?;
 
         Ok(Self {
             device,
             queue,
             timers_supported,
-            p_scan_inblock,
-            p_scan_blocks,
-            p_apply_prefix,
-            p_finalize,
-            p_sum_inblock,
-            p_sum_blocks,
-            p_sum_apply,
-            p_compact_all,
-            p_compact_kept,
-            p_retag,
-            p_build,
+            p_dfa_01_scan_inblock,
+            p_dfa_02_scan_block_summaries,
+            p_dfa_03_apply_block_prefix,
+            p_boundary_finalize_and_seed,
+            p_pair_01_sum_inblock,
+            p_pair_02_scan_block_totals,
+            p_pair_03_apply_block_prefix,
+            p_compact_boundaries_all,
+            p_compact_boundaries_kept,
+            p_retag_calls_and_arrays,
+            p_tokens_build,
         })
     }
 
@@ -228,7 +227,7 @@ impl GpuLexer {
             t.stamp(&mut enc, "BEGIN");
         }
 
-        self.p_scan_inblock.record_pass(
+        self.p_dfa_01_scan_inblock.record_pass(
             &self.device,
             &mut enc,
             &bufs,
@@ -236,7 +235,7 @@ impl GpuLexer {
             &mut maybe_timer.as_mut(),
             &mut maybe_dbg,
         )?;
-        self.p_scan_blocks.record_pass(
+        self.p_dfa_02_scan_block_summaries.record_pass(
             &self.device,
             &mut enc,
             &bufs,
@@ -244,7 +243,7 @@ impl GpuLexer {
             &mut maybe_timer.as_mut(),
             &mut maybe_dbg,
         )?;
-        self.p_apply_prefix.record_pass(
+        self.p_dfa_03_apply_block_prefix.record_pass(
             &self.device,
             &mut enc,
             &bufs,
@@ -252,7 +251,7 @@ impl GpuLexer {
             &mut maybe_timer.as_mut(),
             &mut maybe_dbg,
         )?;
-        self.p_finalize.record_pass(
+        self.p_boundary_finalize_and_seed.record_pass(
             &self.device,
             &mut enc,
             &bufs,
@@ -260,7 +259,7 @@ impl GpuLexer {
             &mut maybe_timer.as_mut(),
             &mut maybe_dbg,
         )?;
-        self.p_sum_inblock.record_pass(
+        self.p_pair_01_sum_inblock.record_pass(
             &self.device,
             &mut enc,
             &bufs,
@@ -268,7 +267,7 @@ impl GpuLexer {
             &mut maybe_timer.as_mut(),
             &mut maybe_dbg,
         )?;
-        self.p_sum_blocks.record_pass(
+        self.p_pair_02_scan_block_totals.record_pass(
             &self.device,
             &mut enc,
             &bufs,
@@ -276,7 +275,7 @@ impl GpuLexer {
             &mut maybe_timer.as_mut(),
             &mut maybe_dbg,
         )?;
-        self.p_sum_apply.record_pass(
+        self.p_pair_03_apply_block_prefix.record_pass(
             &self.device,
             &mut enc,
             &bufs,
@@ -285,7 +284,7 @@ impl GpuLexer {
             &mut maybe_dbg,
         )?;
 
-        self.p_compact_all.record_pass(
+        self.p_compact_boundaries_all.record_pass(
             &self.device,
             &mut enc,
             &bufs,
@@ -293,7 +292,7 @@ impl GpuLexer {
             &mut maybe_timer.as_mut(),
             &mut maybe_dbg,
         )?;
-        self.p_compact_kept.record_pass(
+        self.p_compact_boundaries_kept.record_pass(
             &self.device,
             &mut enc,
             &bufs,
@@ -302,7 +301,7 @@ impl GpuLexer {
             &mut maybe_dbg,
         )?;
 
-        self.p_retag.record_pass(
+        self.p_retag_calls_and_arrays.record_pass(
             &self.device,
             &mut enc,
             &bufs,
@@ -310,7 +309,7 @@ impl GpuLexer {
             &mut maybe_timer.as_mut(),
             &mut maybe_dbg,
         )?;
-        self.p_build.record_pass(
+        self.p_tokens_build.record_pass(
             &self.device,
             &mut enc,
             &bufs,

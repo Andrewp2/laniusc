@@ -6,23 +6,23 @@ use crate::{
     lexer::gpu::{buffers::GpuBuffers, debug::DebugOutput, util::compute_rounds},
 };
 
-pub struct SumApplyBlockPrefixDownsweepPairsPass {
+pub struct Pair03ApplyBlockPrefixPass {
     data: PassData,
 }
 
-impl SumApplyBlockPrefixDownsweepPairsPass {
+impl Pair03ApplyBlockPrefixPass {
     pub fn new(device: &wgpu::Device) -> anyhow::Result<Self> {
         let data = super::make_pass_data(
             device,
-            "sum_apply_block_prefix_downsweep_pairs",
-            "sum_apply_block_prefix_downsweep",
+            "pair_03_apply_block_prefix",
+            "pair_03_apply_block_prefix",
             include_bytes!(concat!(
                 env!("OUT_DIR"),
-                "/shaders/sum_apply_block_prefix_downsweep_pairs.spv"
+                "/shaders/pair_03_apply_block_prefix.spv"
             )),
             include_bytes!(concat!(
                 env!("OUT_DIR"),
-                "/shaders/sum_apply_block_prefix_downsweep_pairs.reflect.json"
+                "/shaders/pair_03_apply_block_prefix.reflect.json"
             )),
         )?;
         Ok(Self { data })
@@ -30,9 +30,9 @@ impl SumApplyBlockPrefixDownsweepPairsPass {
 }
 
 impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput>
-    for SumApplyBlockPrefixDownsweepPairsPass
+    for Pair03ApplyBlockPrefixPass
 {
-    const NAME: &'static str = "sum_apply_block_prefix_downsweep_pairs";
+    const NAME: &'static str = "pair_03_apply_block_prefix";
     const DIM: DispatchDim = DispatchDim::D1;
 
     fn from_data(data: PassData) -> Self {

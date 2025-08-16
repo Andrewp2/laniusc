@@ -42,7 +42,7 @@ bool is_skip(uint tk)
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
-void finalize_boundaries_and_seed(uint3 tid: SV_DispatchThreadID)
+void boundary_finalize_and_seed(uint3 tid: SV_DispatchThreadID)
 {
     uint i = tid.x;
     if (i >= gParams.n)

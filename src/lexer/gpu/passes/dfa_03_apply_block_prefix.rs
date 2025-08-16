@@ -8,30 +8,30 @@ use crate::lexer::gpu::{
     util::compute_rounds,
 };
 
-pub struct ApplyBlockPrefixDownsweepPass {
+pub struct Dfa03ApplyBlockPrefixPass {
     data: PassData,
 }
-impl ApplyBlockPrefixDownsweepPass {
+impl Dfa03ApplyBlockPrefixPass {
     pub fn new(device: &wgpu::Device) -> anyhow::Result<Self> {
         let data = super::make_pass_data(
             device,
-            "apply_block_prefix_downsweep",
-            "apply_block_prefix_downsweep",
+            "dfa_03_apply_block_prefix",
+            "dfa_03_apply_block_prefix",
             include_bytes!(concat!(
                 env!("OUT_DIR"),
-                "/shaders/apply_block_prefix_downsweep.spv"
+                "/shaders/dfa_03_apply_block_prefix.spv"
             )),
             include_bytes!(concat!(
                 env!("OUT_DIR"),
-                "/shaders/apply_block_prefix_downsweep.reflect.json"
+                "/shaders/dfa_03_apply_block_prefix.reflect.json"
             )),
         )?;
         Ok(Self { data })
     }
 }
 
-impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for ApplyBlockPrefixDownsweepPass {
-    const NAME: &'static str = "apply_block_prefix_downsweep";
+impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa03ApplyBlockPrefixPass {
+    const NAME: &'static str = "dfa_03_apply_block_prefix";
     const DIM: DispatchDim = DispatchDim::D2;
 
     fn from_data(data: PassData) -> Self {

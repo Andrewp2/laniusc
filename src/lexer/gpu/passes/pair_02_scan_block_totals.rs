@@ -15,31 +15,31 @@ use crate::{
     },
 };
 
-pub struct SumScanBlockTotalsInclusivePass {
+pub struct Pair02ScanBlockTotalsPass {
     data: PassData,
 }
 
-impl SumScanBlockTotalsInclusivePass {
+impl Pair02ScanBlockTotalsPass {
     pub fn new(device: &wgpu::Device) -> anyhow::Result<Self> {
         let data = super::make_pass_data(
             device,
-            "sum_scan_block_totals_inclusive",
-            "sum_scan_block_totals_inclusive",
+            "pair_02_scan_block_totals",
+            "pair_02_scan_block_totals",
             include_bytes!(concat!(
                 env!("OUT_DIR"),
-                "/shaders/sum_scan_block_totals_inclusive.spv"
+                "/shaders/pair_02_scan_block_totals.spv"
             )),
             include_bytes!(concat!(
                 env!("OUT_DIR"),
-                "/shaders/sum_scan_block_totals_inclusive.reflect.json"
+                "/shaders/pair_02_scan_block_totals.reflect.json"
             )),
         )?;
         Ok(Self { data })
     }
 }
 
-impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for SumScanBlockTotalsInclusivePass {
-    const NAME: &'static str = "sum_scan_block_totals_inclusive";
+impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockTotalsPass {
+    const NAME: &'static str = "pair_02_scan_block_totals";
     const DIM: DispatchDim = DispatchDim::D1;
 
     fn from_data(data: PassData) -> Self {

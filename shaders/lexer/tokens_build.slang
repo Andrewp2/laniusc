@@ -17,7 +17,7 @@ RWStructuredBuffer<TokenOut> tokens_out;
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
-void build_tokens(uint3 tid: SV_DispatchThreadID)
+void tokens_build(uint3 tid: SV_DispatchThreadID)
 {
     uint k = tid.x;
     uint total = token_count[0];

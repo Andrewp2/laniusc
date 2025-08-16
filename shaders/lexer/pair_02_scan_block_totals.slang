@@ -22,8 +22,8 @@ RWStructuredBuffer<uint2> block_pair_pong; // length nb
 
 [shader("compute")]
 [numthreads(1, 1, 1)]
-void sum_scan_block_totals_inclusive(uint3 tid: SV_DispatchThreadID,
-                                     uint3 gid: SV_GroupID)
+void pair_02_scan_block_totals(uint3 tid: SV_DispatchThreadID,
+                               uint3 gid: SV_GroupID)
 {
     const uint i = gid.x; // one thread per block element
 

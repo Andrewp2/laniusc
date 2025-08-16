@@ -1,16 +1,11 @@
-// Per-block inclusive scan over δ_b functions represented as N_STATES-entry vectors.
-// Writes: block_summaries[block] = composed function for the whole block.
-//
-// Chunked + packed version:
-// - Store two 16-bit next-states per 32-bit uint in groupshared.
-// - Perform each Hillis–Steele stride in 4 passes over the packed words to keep
-//   per-thread registers ~N_PACK/4 instead of ~N_PACK.
-// - Use row-level ping–pong (funcPing -> funcPong) each stride to avoid read/write hazards.
+// shaders/lexer/apply_block_prefix_downsweep.slang
+// Re-run the in-block prefix with the block carry (inclusive prefix of prior blocks).
+// Packed/chunked version using row-level ping–pong to avoid read/write hazards.
 
 #define WORKGROUP_SIZE 128
-#define N_STATES 32                 // OK to raise (e.g., 40)
-#define N_PACK ((N_STATES + 1) / 2) // # of uint words per row (2 x 16b per word)
-#define CHUNKS 1                    // number of passes per stride
+#define N_STATES 32
+#define N_PACK ((N_STATES + 1) / 2) // two 16-bit lanes per packed uint
+#define CHUNKS 1
 #define PACKS_PER_CHUNK ((N_PACK + CHUNKS - 1) / CHUNKS)
 #define N_PACK_STRIDE (N_PACK + 1)
 
@@ -24,9 +19,10 @@ struct Params
 };
 ConstantBuffer<Params> gParams;
 
-ByteAddressBuffer in_bytes;       // byte-addressable input
-StructuredBuffer<uint> next_emit; // 2x u16 per uint (low15=next, high1=emit)
-RWStructuredBuffer<uint> block_summaries;
+ByteAddressBuffer in_bytes;          // byte-addressable input
+StructuredBuffer<uint> next_emit;    // 2x u16 per uint (low15=next, high1=emit)
+StructuredBuffer<uint> block_prefix; // per-block inclusive prefix vector
+RWStructuredBuffer<uint> f_final;
 
 // --- new: identical interfaces, just padded backing arrays ---
 groupshared uint funcPing[WORKGROUP_SIZE][N_PACK_STRIDE];
@@ -37,7 +33,7 @@ inline uint pack_pair(uint lo16, uint hi16)
     return (lo16 & 0xFFFFu) | ((hi16 & 0xFFFFu) << 16);
 }
 
-// Read 16-bit lane from selected plane (ping as src if pingAsSrc!=0)
+// Read a 16-bit lane from the *source* plane (ping if pingAsSrc!=0)
 inline uint read16_from_src(uint pingAsSrc, uint row, uint idx)
 {
     const uint w = pingAsSrc != 0 ? funcPing[row][idx >> 1] : funcPong[row][idx >> 1];
@@ -50,7 +46,7 @@ inline uint read_pack_from_src(uint pingAsSrc, uint row, uint p)
     return (pingAsSrc != 0) ? funcPing[row][p] : funcPong[row][p];
 }
 
-// Write packed word to the *destination* plane (opposite of src)
+// Write a packed word into the *destination* plane (opposite of src)
 inline void write_pack_to_dst(uint pingAsSrc, uint row, uint p, uint packed)
 {
     if (pingAsSrc != 0)
@@ -65,19 +61,27 @@ inline void write_pack_to_dst(uint pingAsSrc, uint row, uint p, uint packed)
 
 [shader("compute")]
 [numthreads(WORKGROUP_SIZE, 1, 1)]
-void scan_inblock_inclusive(uint3 tid: SV_GroupThreadID,
-                            uint3 gid: SV_DispatchThreadID,
-                            uint3 ggrp: SV_GroupID)
+void dfa_03_apply_block_prefix(uint3 tid: SV_GroupThreadID,
+                               uint3 gid: SV_DispatchThreadID,
+                               uint3 ggrp: SV_GroupID)
 {
     // --- 2D dispatch linearization (tile by WORKGROUPS, not elements) ---
-    const uint nb = (gParams.n + (WORKGROUP_SIZE - 1u)) / WORKGROUP_SIZE; // workgroups needed
-    const uint groupsX = min(nb, 65535u);                                 // row length in workgroups
+    const uint nb = (gParams.n + (WORKGROUP_SIZE - 1u)) / WORKGROUP_SIZE; // number of workgroups
+    const uint groupsX = min(nb, 65535u);                                 // row length in workgroups (matches host tiler)
 
-    const uint block = ggrp.y * groupsX + ggrp.x; // linear block index
+    const uint block = ggrp.y * groupsX + ggrp.x;
     const uint base = block * WORKGROUP_SIZE;
     const uint i = base + tid.x;
 
-    // --- Load δ_b row into funcPing as packed pairs (one 32-bit fetch per pair) ---
+    // Carry is inclusive prefix of previous block:
+    uint carry_state0 = gParams.start_state;
+    if (block > 0u && block < nb)
+    {
+        const uint prevBase = (block - 1u) * N_STATES;
+        carry_state0 = block_prefix[prevBase + carry_state0];
+    }
+
+    // --- Load δ_b row into funcPing (packed pairs, one 32-bit fetch per pair) ---
     if (i < gParams.n)
     {
         const uint b = load_byte_at(in_bytes, i);
@@ -86,17 +90,15 @@ void scan_inblock_inclusive(uint3 tid: SV_GroupThreadID,
         {
             const uint s0 = (p << 1);
             const uint s1 = s0 + 1u;
-
-            const uint word = next_emit[(b * N_STATES + s0) >> 1]; // both lanes at once
+            const uint word = next_emit[(b * N_STATES + s0) >> 1];
             const uint lo = word & 0x7FFFu;
             const uint hi = (word >> 16) & 0x7FFFu;
-
             funcPing[tid.x][p] = pack_pair(lo, (s1 < N_STATES) ? hi : 0u);
         }
     }
     else
     {
-        // Identity for out-of-range lanes
+        // identity for out-of-range lanes
         [unroll]
         for (uint p = 0; p < N_PACK; ++p)
         {
@@ -107,14 +109,13 @@ void scan_inblock_inclusive(uint3 tid: SV_GroupThreadID,
     }
     GroupMemoryBarrierWithGroupSync();
 
-    // --- Inclusive scan over rows (functions): C = B ∘ A ---
-    uint pingAsSrc = 1u; // start reading from Ping, writing to Pong
+    // --- Inclusive scan of functions across rows: C = B ∘ A ---
+    uint pingAsSrc = 1u; // read from Ping, write to Pong
     for (uint offset = 1u; offset < WORKGROUP_SIZE; offset <<= 1u)
     {
         const bool active = (tid.x >= offset);
         const uint srcRow = tid.x - offset;
 
-        // Process the row in CHUNKS of packed words to keep register pressure low.
         [unroll]
         for (uint chunk = 0; chunk < CHUNKS; ++chunk)
         {
@@ -123,28 +124,31 @@ void scan_inblock_inclusive(uint3 tid: SV_GroupThreadID,
 
             if (active)
             {
-                // -------- newRow = B ∘ A (use one srcRow read per pack) --------
+                // -------- newRow = B ∘ A (one srcRow read per pack) --------
                 [unroll]
                 for (uint p = p_lo; p < p_hi; ++p)
                 {
                     const uint s0 = (p << 1);
                     const uint s1 = s0 + 1u;
 
-                    // One load for both lanes from srcRow:
                     const uint srcPacked = read_pack_from_src(pingAsSrc, srcRow, p);
                     const uint a0 = (srcPacked) & 0xFFFFu;
                     const uint a1 = (srcPacked >> 16) & 0xFFFFu;
 
-                    // Lookup on our own row at indices a0 / a1:
                     const uint r0 = read16_from_src(pingAsSrc, tid.x, a0);
-                    const uint r1 = (s1 < N_STATES) ? read16_from_src(pingAsSrc, tid.x, a1) : 0u;
+
+                    uint r1 = 0u;
+                    if (s1 < N_STATES)
+                    {
+                        r1 = read16_from_src(pingAsSrc, tid.x, a1);
+                    }
 
                     write_pack_to_dst(pingAsSrc, tid.x, p, pack_pair(r0, r1));
                 }
             }
             else
             {
-                // Rows below offset remain unchanged this round: copy through (one read).
+                // Copy-through for rows below the offset this round (one read).
                 [unroll]
                 for (uint p = p_lo; p < p_hi; ++p)
                 {
@@ -153,24 +157,15 @@ void scan_inblock_inclusive(uint3 tid: SV_GroupThreadID,
             }
         }
 
-        GroupMemoryBarrierWithGroupSync(); // ensure DST visible
-        pingAsSrc ^= 1u;                   // flip planes (no sync needed for the flip)
+        GroupMemoryBarrierWithGroupSync();
+        pingAsSrc ^= 1u; // local flip is enough
+        // (no second barrier needed)
     }
 
-    // --- Write block summary from the final SRC plane (after last flip) ---
-    if (tid.x == WORKGROUP_SIZE - 1u)
+    // --- Apply final in-block prefix to the carry(start) and write out ---
+    if (i < gParams.n)
     {
-        // Guard against over-dispatch rows (y) past the final nb:
-        if (block < nb)
-        {
-            const uint srcIsPing = pingAsSrc; // plane used as SRC holds the final data
-            const uint dstBase = block * N_STATES;
-            [unroll]
-            for (uint s = 0; s < N_STATES; ++s)
-            {
-                const uint val = read16_from_src(srcIsPing, tid.x, s);
-                block_summaries[dstBase + s] = val;
-            }
-        }
+        const uint srcIsPing = pingAsSrc; // plane currently holding final data
+        f_final[i] = read16_from_src(srcIsPing, tid.x, carry_state0);
     }
 }

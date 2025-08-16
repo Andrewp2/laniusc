@@ -14,23 +14,23 @@ use crate::{
     },
 };
 
-pub struct FinalizeBoundariesAndSeedPass {
+pub struct BoundaryFinalizeAndSeedPass {
     data: PassData,
 }
 
-impl FinalizeBoundariesAndSeedPass {
+impl BoundaryFinalizeAndSeedPass {
     pub fn new(device: &wgpu::Device) -> Result<Self> {
         let data = make_pass_data(
             device,
-            "finalize_boundaries_and_seed",
-            "finalize_boundaries_and_seed",
+            "boundary_finalize_and_seed",
+            "boundary_finalize_and_seed",
             include_bytes!(concat!(
                 env!("OUT_DIR"),
-                "/shaders/finalize_boundaries_and_seed.spv"
+                "/shaders/boundary_finalize_and_seed.spv"
             )),
             include_bytes!(concat!(
                 env!("OUT_DIR"),
-                "/shaders/finalize_boundaries_and_seed.reflect.json"
+                "/shaders/boundary_finalize_and_seed.reflect.json"
             )),
         )?;
 
@@ -38,8 +38,8 @@ impl FinalizeBoundariesAndSeedPass {
     }
 }
 
-impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for FinalizeBoundariesAndSeedPass {
-    const NAME: &'static str = "finalize_boundaries_and_seed";
+impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for BoundaryFinalizeAndSeedPass {
+    const NAME: &'static str = "boundary_finalize_and_seed";
     const DIM: DispatchDim = DispatchDim::D1;
 
     fn from_data(data: PassData) -> Self {

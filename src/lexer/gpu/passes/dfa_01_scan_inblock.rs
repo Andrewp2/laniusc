@@ -5,31 +5,31 @@ use crate::{
     lexer::gpu::{buffers::GpuBuffers, debug::DebugOutput},
 };
 
-pub struct ScanInblockInclusivePass {
+pub struct Dfa01ScanInblockPass {
     data: PassData,
 }
 
-impl ScanInblockInclusivePass {
+impl Dfa01ScanInblockPass {
     pub fn new(device: &wgpu::Device) -> anyhow::Result<Self> {
         let data = super::make_pass_data(
             device,
-            "scan_inblock_inclusive",
-            "scan_inblock_inclusive",
+            "dfa_01_scan_inblock",
+            "dfa_01_scan_inblock",
             include_bytes!(concat!(
                 env!("OUT_DIR"),
-                "/shaders/scan_inblock_inclusive.spv"
+                "/shaders/dfa_01_scan_inblock.spv"
             )),
             include_bytes!(concat!(
                 env!("OUT_DIR"),
-                "/shaders/scan_inblock_inclusive.reflect.json"
+                "/shaders/dfa_01_scan_inblock.reflect.json"
             )),
         )?;
         Ok(Self { data })
     }
 }
 
-impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for ScanInblockInclusivePass {
-    const NAME: &'static str = "scan_inblock_inclusive";
+impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa01ScanInblockPass {
+    const NAME: &'static str = "dfa_01_scan_inblock";
     const DIM: DispatchDim = DispatchDim::D2;
 
     fn data(&self) -> &PassData {

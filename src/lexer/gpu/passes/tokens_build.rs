@@ -6,27 +6,27 @@ use crate::{
     lexer::gpu::{buffers::GpuBuffers, debug::DebugOutput},
 };
 
-pub struct BuildTokensPass {
+pub struct TokensBuildPass {
     data: PassData,
 }
-impl BuildTokensPass {
+impl TokensBuildPass {
     pub fn new(device: &wgpu::Device) -> anyhow::Result<Self> {
         let data = super::make_pass_data(
             device,
-            "build_tokens",
-            "build_tokens",
-            include_bytes!(concat!(env!("OUT_DIR"), "/shaders/build_tokens.spv")),
+            "tokens_build",
+            "tokens_build",
+            include_bytes!(concat!(env!("OUT_DIR"), "/shaders/tokens_build.spv")),
             include_bytes!(concat!(
                 env!("OUT_DIR"),
-                "/shaders/build_tokens.reflect.json"
+                "/shaders/tokens_build.reflect.json"
             )),
         )?;
         Ok(Self { data })
     }
 }
 
-impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for BuildTokensPass {
-    const NAME: &'static str = "build_tokens";
+impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for TokensBuildPass {
+    const NAME: &'static str = "tokens_build";
     const DIM: DispatchDim = DispatchDim::D1;
 
     fn from_data(data: PassData) -> Self {
