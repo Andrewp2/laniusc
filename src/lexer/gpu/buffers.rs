@@ -7,7 +7,6 @@ use crate::{
         storage_ro_from_bytes,
         storage_ro_from_u32s,
         storage_rw_for_array,
-        storage_rw_uninit_bytes,
         uniform_from_val,
     },
     lexer::tables::dfa::N_STATES,
@@ -30,7 +29,6 @@ pub struct GpuBuffers {
     pub block_summaries: LaniusBuffer<u32>, // per-block function vector (N_STATES each)
     pub block_ping: LaniusBuffer<u32>,
     pub block_pong: LaniusBuffer<u32>,
-    pub block_prefix: LaniusBuffer<u32>,
     pub f_final: LaniusBuffer<u32>,
 
     pub tok_types: LaniusBuffer<u32>, // type at boundary after i (packed)
@@ -41,7 +39,6 @@ pub struct GpuBuffers {
     pub block_totals_pair: LaniusBuffer<u32>,
     pub block_pair_ping: LaniusBuffer<u32>,
     pub block_pair_pong: LaniusBuffer<u32>,
-    pub block_prefix_pair: LaniusBuffer<u32>,
     pub s_all_final: LaniusBuffer<u32>,
     pub s_keep_final: LaniusBuffer<u32>,
 
@@ -73,6 +70,20 @@ impl GpuBuffers {
 
         let nb_dfa = n.div_ceil(BLOCK_WIDTH_DFA);
         let nb_sum = n.div_ceil(BLOCK_WIDTH_SUM);
+        debug_assert!(BLOCK_WIDTH_DFA > 0 && BLOCK_WIDTH_SUM > 0);
+        let expected_words = ((256 * (N_STATES as usize)) + 1) / 2;
+        debug_assert_eq!(
+            next_emit_packed.len(),
+            expected_words,
+            "next_emit_packed size mismatch (got {}, expect {})",
+            next_emit_packed.len(),
+            expected_words
+        );
+        debug_assert_eq!(
+            token_map.len(),
+            N_STATES as usize,
+            "token_map must have N_STATES entries"
+        );
 
         // ---- inputs/tables
         let in_bytes: LaniusBuffer<u8> =
@@ -91,8 +102,6 @@ impl GpuBuffers {
             storage_rw_for_array::<u32>(device, "block_ping", per_block_count);
         let block_pong: LaniusBuffer<u32> =
             storage_rw_for_array::<u32>(device, "block_pong", per_block_count);
-        let block_prefix: LaniusBuffer<u32> =
-            storage_rw_for_array::<u32>(device, "block_prefix", per_block_count);
 
         let f_final: LaniusBuffer<u32> = storage_rw_for_array::<u32>(device, "f_final", n as usize);
 
@@ -114,8 +123,6 @@ impl GpuBuffers {
             storage_rw_for_array::<u32>(device, "block_pair_ping", pair_total);
         let block_pair_pong: LaniusBuffer<u32> =
             storage_rw_for_array::<u32>(device, "block_pair_pong", pair_total);
-        let block_prefix_pair: LaniusBuffer<u32> =
-            storage_rw_for_array::<u32>(device, "block_prefix_pair", pair_total);
 
         // final sums (per boundary)
         let s_all_final: LaniusBuffer<u32> =
@@ -139,16 +146,7 @@ impl GpuBuffers {
             storage_rw_for_array::<u32>(device, "token_count_all", 1);
 
         // final tokens
-        // NOTE: If `GpuToken` is a WGSL struct consumed by shaders, it should derive `ShaderType`.
-        // If it doesn't yet, this uses Rust size; upgrade to `storage_rw_for_array::<GpuToken>`
-        // after you add `#[derive(ShaderType, Default)]` on `GpuToken`.
-        let tokens_out: LaniusBuffer<super::GpuToken> = storage_rw_uninit_bytes(
-            device,
-            "tokens_out",
-            (n as usize) * std::mem::size_of::<super::GpuToken>(),
-            n as usize,
-        )
-        .into();
+        let tokens_out = storage_rw_for_array::<super::GpuToken>(device, "tokens_out", n as usize);
 
         // Params (uniform)
         let params_val = LexParams {
@@ -175,7 +173,6 @@ impl GpuBuffers {
             block_summaries,
             block_ping,
             block_pong,
-            block_prefix,
             f_final,
 
             tok_types,
@@ -185,7 +182,6 @@ impl GpuBuffers {
             block_totals_pair,
             block_pair_ping,
             block_pair_pong,
-            block_prefix_pair,
 
             s_all_final,
             s_keep_final,

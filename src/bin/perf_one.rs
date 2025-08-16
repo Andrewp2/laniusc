@@ -314,7 +314,7 @@ fn main() {
             };
             if cpu_first != gpu_len {
                 eprintln!(
-                    "NOTE: token count mismatch (cpu={cpu_first} vs gpu={gpu_len}) [{src_desc}]"
+                    "PANIC!!!: token count mismatch (cpu={cpu_first} vs gpu={gpu_len}) [{src_desc}]"
                 );
             }
         }

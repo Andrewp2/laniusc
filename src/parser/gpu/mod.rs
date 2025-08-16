@@ -79,7 +79,7 @@ impl GpuParser {
             let _ = tx.send(r);
         });
 
-        self.device.poll(wgpu::PollType::Wait);
+        let _ = self.device.poll(wgpu::PollType::Wait);
         let _ = rx.receive().await;
 
         let mapped = slice.get_mapped_range();

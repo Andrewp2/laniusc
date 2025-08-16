@@ -72,6 +72,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for FinalizeBoundari
         ])
     }
 
+    // src/lexer/gpu/passes/finalize_boundaries_and_seed.rs
     fn record_debug(
         &self,
         device: &wgpu::Device,
@@ -79,45 +80,28 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for FinalizeBoundari
         bufs: &GpuBuffers,
         dbg: &mut debug::DebugOutput,
     ) {
-        fn make_staging(
-            device: &wgpu::Device,
-            label: &'static str,
-            byte_len: usize,
-        ) -> wgpu::Buffer {
-            device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some(label),
-                size: byte_len as u64,
-                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-                mapped_at_creation: false,
-            })
-        }
-
-        let mut copy_into = |src: &wgpu::Buffer,
-                             byte_len: usize,
-                             dst_label: &'static str,
-                             out_slot: &mut DebugBuffer| {
-            let staging = make_staging(device, dst_label, byte_len);
-            encoder.copy_buffer_to_buffer(src, 0, &staging, 0, byte_len as u64);
-            *out_slot = DebugBuffer {
-                label: dst_label,
-                buffer: Some(staging),
-                byte_len,
-            };
-        };
-
         let g = &mut dbg.gpu;
 
-        copy_into(
+        g.tok_types.set_from_copy(
+            device,
+            encoder,
             &bufs.tok_types,
-            bufs.tok_types.byte_size,
             "dbg.tok_types",
-            &mut g.tok_types,
+            bufs.tok_types.byte_size,
         );
-        copy_into(
+        g.end_excl_by_i.set_from_copy(
+            device,
+            encoder,
             &bufs.end_excl_by_i,
-            bufs.end_excl_by_i.byte_size,
             "dbg.end_excl_by_i",
-            &mut g.end_excl_by_i,
+            bufs.end_excl_by_i.byte_size,
+        );
+        g.flags_packed.set_from_copy(
+            device,
+            encoder,
+            &bufs.flags_packed,
+            "dbg.flags_packed",
+            bufs.flags_packed.byte_size,
         );
     }
 }

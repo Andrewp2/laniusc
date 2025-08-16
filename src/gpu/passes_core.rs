@@ -132,6 +132,10 @@ pub fn make_pass_data(
     let bgl_refs: Vec<&wgpu::BindGroupLayout> = owned_bgls.iter().collect();
     let pipeline = pipeline_from_spirv_and_bgls(device, label, entry, spirv, &bgl_refs);
     let tgs = get_thread_group_size(&reflection).unwrap_or([1, 1, 1]);
+    debug_assert!(
+        tgs[0] > 0 && tgs[1] > 0 && tgs[2] > 0,
+        "thread_group_size must be non-zero"
+    );
     Ok(PassData {
         pipeline: Arc::new(pipeline),
         bind_group_layouts: owned_bgls.into_iter().map(Arc::new).collect(),
@@ -193,6 +197,48 @@ pub mod bind_group {
     }
 }
 
+pub const MAX_GROUPS_PER_DIM: u32 = 65_535;
+
+/// Compute (gx, gy, gz) for a pass, reusing the same rules everywhere.
+/// This is the *only* place that knows about the 65_535 limit and D1→D2 tiling.
+pub fn plan_workgroups(
+    dim: DispatchDim,
+    input: InputElements,
+    [tgsx, tgsy, _tgsz]: [u32; 3],
+) -> anyhow::Result<(u32, u32, u32)> {
+    use anyhow::anyhow;
+
+    match (dim, input) {
+        (DispatchDim::D1, InputElements::Elements1D(n)) => {
+            let nb = n.div_ceil(tgsx).max(1);
+            if nb <= MAX_GROUPS_PER_DIM {
+                Ok((nb, 1, 1))
+            } else {
+                // Tile across Y
+                let gx = MAX_GROUPS_PER_DIM;
+                let gy = nb.div_ceil(MAX_GROUPS_PER_DIM).max(1);
+                Ok((gx, gy, 1))
+            }
+        }
+        (DispatchDim::D2, InputElements::Elements2D(w, h)) => {
+            let gx = w.div_ceil(tgsx).max(1);
+            let gy = h.div_ceil(tgsy).max(1);
+            Ok((gx, gy, 1))
+        }
+        (DispatchDim::D2, InputElements::Elements1D(n)) => {
+            let nb = n.div_ceil(tgsx).max(1);
+            if nb <= MAX_GROUPS_PER_DIM {
+                Ok((nb, 1, 1))
+            } else {
+                let gx = MAX_GROUPS_PER_DIM;
+                let gy = nb.div_ceil(MAX_GROUPS_PER_DIM).max(1);
+                Ok((gx, gy, 1))
+            }
+        }
+        _ => Err(anyhow!("dimension/input mismatch")),
+    }
+}
+
 pub trait Pass<Buffers, DebugOutput> {
     const NAME: &'static str;
 
@@ -216,6 +262,7 @@ pub trait Pass<Buffers, DebugOutput> {
         buffers: &Buffers,
         input: InputElements,
         timer: &mut Option<&mut crate::gpu::timer::GpuTimer>,
+        dbg: &mut Option<&mut DebugOutput>,
     ) -> Result<(), anyhow::Error> {
         device.push_error_scope(wgpu::ErrorFilter::Validation);
 
@@ -235,30 +282,14 @@ pub trait Pass<Buffers, DebugOutput> {
         }
 
         let [tgsx, tgsy, _tgsz] = pd.thread_group_size;
-        let (gx, gy, gz) = match (Self::DIM, input) {
-            (DispatchDim::D1, InputElements::Elements1D(n)) => {
-                (n.div_ceil(tgsx).max(1), 1, 1)
-            }
-            (DispatchDim::D2, InputElements::Elements2D(w, h)) => {
-                let wx = w.div_ceil(tgsx).max(1);
-                let hy = h.div_ceil(tgsy).max(1);
-                (wx, hy, 1)
-            }
+        let (gx, gy, gz) = plan_workgroups(Self::DIM, input, [tgsx, tgsy, 1])?;
 
-            (DispatchDim::D2, InputElements::Elements1D(n)) => {
-                const MAX_PER_DIM: u32 = 65_535;
-                let tiles_x = n.min(MAX_PER_DIM);
-                let tiles_y = if n == 0 {
-                    1
-                } else {
-                    n.div_ceil(MAX_PER_DIM)
-                };
-                let wx = tiles_x.div_ceil(tgsx).max(1);
-                let hy = tiles_y.div_ceil(tgsy).max(1);
-                (wx, hy, 1)
-            }
-            _ => unreachable!("dimension/input mismatch"),
-        };
+        assert!(gx <= MAX_GROUPS_PER_DIM);
+        assert!(gy <= MAX_GROUPS_PER_DIM);
+        debug_assert!(
+            gx >= 1 && gy >= 1 && gz >= 1,
+            "dispatch must issue at least one group"
+        );
 
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some(Self::NAME),
@@ -277,6 +308,11 @@ pub trait Pass<Buffers, DebugOutput> {
 
         if let Some(err) = pollster::block_on(device.pop_error_scope()) {
             return Err(anyhow!("validation in pass {}: {err:?}", Self::NAME));
+        }
+
+        // Centralized debug snapshot (only runs if a DebugOutput was provided)
+        if let Some(d) = dbg.as_deref_mut() {
+            self.record_debug(device, encoder, buffers, d);
         }
         Ok(())
     }

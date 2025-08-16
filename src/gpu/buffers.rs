@@ -76,9 +76,15 @@ pub fn storage_ro_from_u32s(
     values: &[u32],
 ) -> LaniusBuffer<u32> {
     let mut bytes = Vec::with_capacity(values.len() * 4);
+
     for &v in values {
         bytes.extend_from_slice(&v.to_le_bytes());
     }
+    debug_assert_eq!(
+        bytes.len(),
+        values.len() * 4,
+        "storage_ro_from_u32s({label}): packing mismatch"
+    );
     storage_ro_from_bytes::<u32>(device, label, &bytes, values.len())
 }
 
@@ -93,6 +99,10 @@ where
     sb.write(&T::default())
         .expect("failed to write default element into StorageBuffer");
     let elem_padded_bytes = sb.as_ref().len(); // encase gives us the correct std430-padded size
+    debug_assert!(
+        elem_padded_bytes > 0,
+        "encase reported zero-sized element for {label}"
+    );
     let total = elem_padded_bytes
         .checked_mul(count)
         .expect("overflow sizing storage buffer");

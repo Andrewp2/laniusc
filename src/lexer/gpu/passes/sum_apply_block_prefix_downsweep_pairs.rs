@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use super::PassData;
 use crate::{
     gpu::passes_core::DispatchDim,
-    lexer::gpu::{buffers::GpuBuffers, debug::DebugOutput},
+    lexer::gpu::{buffers::GpuBuffers, debug::DebugOutput, util::compute_rounds},
 };
 
 pub struct SumApplyBlockPrefixDownsweepPairsPass {
@@ -33,7 +33,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput>
     for SumApplyBlockPrefixDownsweepPairsPass
 {
     const NAME: &'static str = "sum_apply_block_prefix_downsweep_pairs";
-    const DIM: DispatchDim = DispatchDim::D2;
+    const DIM: DispatchDim = DispatchDim::D1;
 
     fn from_data(data: PassData) -> Self {
         Self { data }
@@ -47,16 +47,36 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput>
         b: &'a GpuBuffers,
     ) -> HashMap<String, wgpu::BindingResource<'a>> {
         use wgpu::BindingResource::*;
+
+        // rounds over nb_sum pair blocks
+        let rounds = compute_rounds(b.nb_sum);
+
+        #[cfg(feature = "gpu-debug")]
+        {
+            // Same parity rule as above: seed in PING, toggle each round.
+            let plane = if (rounds % 2) == 1 { "PONG" } else { "PING" };
+            println!(
+                "[dbg] {}: rounds={} -> last-writer={}",
+                Self::NAME,
+                rounds,
+                plane
+            );
+        }
+
+        // Correct parity: choose PONG when rounds is odd, otherwise PING.
+        let block_prefix_pair_binding: wgpu::BindingResource<'a> = if (rounds % 2) == 1 {
+            b.block_pair_pong.as_entire_binding()
+        } else {
+            b.block_pair_ping.as_entire_binding()
+        };
+
         HashMap::from([
             (
                 "gParams".into(),
                 Buffer(b.params.as_entire_buffer_binding()),
             ),
             ("flags_packed".into(), b.flags_packed.as_entire_binding()),
-            (
-                "block_prefix_pair".into(),
-                b.block_prefix_pair.as_entire_binding(),
-            ),
+            ("block_prefix_pair".into(), block_prefix_pair_binding),
             ("s_all_final".into(), b.s_all_final.as_entire_binding()),
             ("s_keep_final".into(), b.s_keep_final.as_entire_binding()),
         ])
@@ -64,11 +84,39 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput>
 
     fn record_debug(
         &self,
-        _device: &wgpu::Device,
-        _encoder: &mut wgpu::CommandEncoder,
-        _buffers: &GpuBuffers,
-        _debug: &mut DebugOutput,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        b: &GpuBuffers,
+        dbg: &mut DebugOutput,
     ) {
-        // No debug output for this pass
+        dbg.gpu.s_all_final.set_from_copy(
+            device,
+            encoder,
+            &b.s_all_final,
+            "dbg.s_all_final",
+            b.s_all_final.byte_size,
+        );
+        dbg.gpu.s_keep_final.set_from_copy(
+            device,
+            encoder,
+            &b.s_keep_final,
+            "dbg.s_keep_final",
+            b.s_keep_final.byte_size,
+        );
+
+        // NEW: show the pair plane the apply pass bound.
+        let rounds = compute_rounds(b.nb_sum);
+        let last = if (rounds % 2) == 1 {
+            &b.block_pair_pong
+        } else {
+            &b.block_pair_ping
+        };
+        dbg.gpu.block_prefix_pair.set_from_copy(
+            device,
+            encoder,
+            last,
+            "dbg.block_prefix_pair.applied",
+            last.byte_size,
+        );
     }
 }

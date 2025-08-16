@@ -29,7 +29,7 @@ impl SumInblockPairsPass {
 
 impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for SumInblockPairsPass {
     const NAME: &'static str = "sum_inblock_pairs";
-    const DIM: DispatchDim = DispatchDim::D2;
+    const DIM: DispatchDim = DispatchDim::D1;
 
     fn from_data(data: PassData) -> Self {
         Self { data }
@@ -44,14 +44,33 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for SumInblockPairsP
     ) -> HashMap<String, wgpu::BindingResource<'a>> {
         use wgpu::BindingResource::*;
         HashMap::from([
+            // matches `ConstantBuffer<Params> gParams;`
             (
                 "gParams".into(),
                 Buffer(b.params.as_entire_buffer_binding()),
             ),
-            ("in_bytes".into(), b.in_bytes.as_entire_binding()),
-            ("next_emit".into(), b.next_emit.as_entire_binding()),
-            ("block_prefix".into(), b.block_prefix.as_entire_binding()),
-            ("f_final".into(), b.f_final.as_entire_binding()),
+            // matches `StructuredBuffer<uint> flags_packed;`
+            ("flags_packed".into(), b.flags_packed.as_entire_binding()),
+            // matches `RWStructuredBuffer<uint2> block_totals_pair;`
+            (
+                "block_totals_pair".into(),
+                b.block_totals_pair.as_entire_binding(),
+            ),
         ])
+    }
+    fn record_debug(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        b: &GpuBuffers,
+        dbg: &mut DebugOutput,
+    ) {
+        dbg.gpu.block_totals_pair.set_from_copy(
+            device,
+            encoder,
+            &b.block_totals_pair,
+            "dbg.block_totals_pair",
+            b.block_totals_pair.byte_size,
+        );
     }
 }

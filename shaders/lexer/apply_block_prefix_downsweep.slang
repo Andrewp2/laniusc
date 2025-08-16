@@ -1,3 +1,4 @@
+// shaders/lexer/apply_block_prefix_downsweep.slang
 // Re-run the in-block prefix with the block carry (inclusive prefix of prior blocks).
 // Packed/chunked version using row-level ping–pong to avoid read/write hazards.
 
@@ -64,9 +65,10 @@ void apply_block_prefix_downsweep(uint3 tid: SV_GroupThreadID,
                                   uint3 gid: SV_DispatchThreadID,
                                   uint3 ggrp: SV_GroupID)
 {
-    // --- 2D dispatch linearization ---
-    const uint nb = (gParams.n + (WORKGROUP_SIZE - 1u)) / WORKGROUP_SIZE;
-    const uint groupsX = (nb < 65535u) ? nb : 65535u;
+    // --- 2D dispatch linearization (tile by WORKGROUPS, not elements) ---
+    const uint nb = (gParams.n + (WORKGROUP_SIZE - 1u)) / WORKGROUP_SIZE; // number of workgroups
+    const uint groupsX = min(nb, 65535u);                                 // row length in workgroups (matches host tiler)
+
     const uint block = ggrp.y * groupsX + ggrp.x;
     const uint base = block * WORKGROUP_SIZE;
     const uint i = base + tid.x;

@@ -27,6 +27,9 @@ void sum_scan_block_totals_inclusive(uint3 tid: SV_DispatchThreadID,
 {
     const uint i = gid.x; // one thread per block element
 
+    // TODO: the shader should not be responsible for picking ping/pong
+    // instead that should happen in the binding
+    // because now we've added extra work to the shader
     if (gScan.use_ping_as_src != 0u)
     {
         uint2 val = block_pair_ping[i];

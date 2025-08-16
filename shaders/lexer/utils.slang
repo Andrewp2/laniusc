@@ -62,8 +62,8 @@ public inline uint any_end_from_flags(uint f)
 // kept_any_from_flags: 0/1 “any *kept* boundary at i”
 public inline uint kept_any_from_flags(uint f)
 {
-    const uint mask = (PF_EMIT | PF_KEEP_EMIT) | (PF_EOF | PF_KEEP_EOF);
-    // (EMIT & KEEP_EMIT) | (EOF & KEEP_EOF)
+    // const uint mask = (PF_EMIT | PF_KEEP_EMIT) | (PF_EOF | PF_KEEP_EOF);
+    //  (EMIT & KEEP_EMIT) | (EOF & KEEP_EOF)
     uint emit_kept = ((f & PF_EMIT) != 0u && (f & PF_KEEP_EMIT) != 0u) ? 1u : 0u;
     uint eof_kept = ((f & PF_EOF) != 0u && (f & PF_KEEP_EOF) != 0u) ? 1u : 0u;
     return (emit_kept | eof_kept);

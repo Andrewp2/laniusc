@@ -63,20 +63,23 @@ void finalize_boundaries_and_seed(uint3 tid: SV_DispatchThreadID)
     uint tk_emit = token_map[prev_state];
     uint tk_eof = token_map[state_i];
 
-    // Keepability via uniform skip set
-    uint keep_emit = is_skip(tk_emit) ? 0u : 1u;
-    uint keep_eof = is_skip(tk_eof) ? 0u : 1u;
+    // -------- VALIDITY + SKIP (fix): keep only if kind is valid AND not skipped --------
+    uint valid_emit = (tk_emit != INVALID32) ? 1u : 0u;
+    uint valid_eof = (tk_eof != INVALID32) ? 1u : 0u;
+
+    uint keep_emit = (valid_emit != 0u && !is_skip(tk_emit)) ? 1u : 0u;
+    uint keep_eof = (valid_eof != 0u && !is_skip(tk_eof)) ? 1u : 0u;
 
     // Pack both (low16 = emit-if-kept, high16 = eof-if-kept), 0xFFFF means "none"
-    uint emit16 = (keep_emit != 0u && tk_emit != INVALID32) ? (tk_emit & 0xFFFFu) : INVALID16;
-    uint eof16 = (keep_eof != 0u && tk_eof != INVALID32) ? (tk_eof & 0xFFFFu) : INVALID16;
+    uint emit16 = (keep_emit != 0u && valid_emit != 0u) ? (tk_emit & 0xFFFFu) : INVALID16;
+    uint eof16 = (keep_eof != 0u && valid_eof != 0u) ? (tk_eof & 0xFFFFu) : INVALID16;
     tok_types[i] = (eof16 << 16) | emit16;
 
     // For single-kept case, provide the exclusive end for that kept boundary
     uint ex_single =
         (at_eof != 0u && keep_eof != 0u && (keep_emit == 0u || emit_here == 0u)) ? gParams.n : i;
 
-    // --------- NEW: write packed flags (4 bits used) ---------
+    // -------- write packed flags (EMIT/EOF reflect events; KEEP_* reflect "would keep" with validity) --------
     uint f = 0u;
     f |= (emit_here != 0u) ? PF_EMIT : 0u;
     f |= (eof_accept != 0u) ? PF_EOF : 0u;

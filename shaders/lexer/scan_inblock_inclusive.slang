@@ -69,10 +69,11 @@ void scan_inblock_inclusive(uint3 tid: SV_GroupThreadID,
                             uint3 gid: SV_DispatchThreadID,
                             uint3 ggrp: SV_GroupID)
 {
-    // --- 2D dispatch linearization ---
-    const uint nb = (gParams.n + (WORKGROUP_SIZE - 1u)) / WORKGROUP_SIZE;
-    const uint groupsX = (nb < 65535u) ? nb : 65535u; // X groups actually dispatched
-    const uint block = ggrp.y * groupsX + ggrp.x;     // linear block index across (x,y)
+    // --- 2D dispatch linearization (tile by WORKGROUPS, not elements) ---
+    const uint nb = (gParams.n + (WORKGROUP_SIZE - 1u)) / WORKGROUP_SIZE; // workgroups needed
+    const uint groupsX = min(nb, 65535u);                                 // row length in workgroups
+
+    const uint block = ggrp.y * groupsX + ggrp.x; // linear block index
     const uint base = block * WORKGROUP_SIZE;
     const uint i = base + tid.x;
 
