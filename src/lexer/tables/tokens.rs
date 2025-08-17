@@ -64,3 +64,4 @@ impl core::convert::TryFrom<u32> for TokenKind {
 
 // used on GPU side too
 pub const INVALID_TOKEN: u32 = u32::MAX;
+pub const N_KINDS: u32 = TokenKind::String as u32 + 1;

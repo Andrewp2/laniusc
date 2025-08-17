@@ -49,8 +49,12 @@ impl GpuTimer {
 
     /// Records a timestamp with the given label.
     pub fn stamp(&mut self, enc: &mut wgpu::CommandEncoder, label: impl Into<String>) -> u32 {
-        let index = self.next % self.capacity;
-        self.next = (self.next + 1) % self.capacity;
+        // If we've filled the query set, ignore extra stamps gracefully.
+        if self.next >= self.capacity {
+            return self.capacity.saturating_sub(1);
+        }
+        let index = self.next;
+        self.next += 1;
         self.stamp_labels.push(label.into());
         enc.write_timestamp(&self.query_set, index);
         index
@@ -64,7 +68,10 @@ impl GpuTimer {
 
     /// Resolves the timestamp queries.
     pub fn resolve(&self, encoder: &mut wgpu::CommandEncoder) {
-        let query_count = if self.next == 0 { self.capacity } else { self.next };
+        let query_count = self.next.min(self.capacity);
+        if query_count == 0 {
+            return;
+        }
         encoder.resolve_query_set(&self.query_set, 0..query_count, &self.resolve_buffer, 0);
         encoder.copy_buffer_to_buffer(
             &self.resolve_buffer,
@@ -77,10 +84,15 @@ impl GpuTimer {
 
     /// Attempts to read the recorded timestamps.
     pub fn try_read(&self, device: &wgpu::Device) -> Option<Vec<(String, u64)>> {
-        let query_count = if self.next == 0 { self.capacity } else { self.next };
+        let query_count = self.next.min(self.capacity);
+        if query_count == 0 {
+            return None;
+        }
         let slice = self.readback_buffer.slice(..(query_count as u64) * 8);
         let (sender, receiver) = std::sync::mpsc::channel();
-        slice.map_async(wgpu::MapMode::Read, move |v| { sender.send(v).expect("mpsc send") });
+        slice.map_async(wgpu::MapMode::Read, move |v| {
+            sender.send(v).expect("mpsc send")
+        });
         let _ = device.poll(wgpu::PollType::Wait);
 
         if let Ok(Ok(())) = receiver.try_recv() {

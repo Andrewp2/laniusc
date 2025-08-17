@@ -145,6 +145,9 @@ fn dump_kind_text_diff(got: &[(TokenKind, String)], exp: &[GoldenTok], from: usi
 }
 
 fn main() {
+    if std::env::var("LANIUS_READBACK").ok().as_deref() == Some("0") {
+        panic!("LANIUS_READBACK=0 not supported (we can't fuzz output that we can't get)");
+    }
     let _ = pollster::block_on(laniusc::lexer::gpu::lex_on_gpu("warmup"));
     if let Ok(path) = std::env::var("FUZZ_INPUT") {
         eprintln!("[replay] reading {path}");

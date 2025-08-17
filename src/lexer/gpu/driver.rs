@@ -1,6 +1,6 @@
 //! GPU lexer driver (device init, pass orchestration, and readback).
 
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use anyhow::{Result, anyhow};
 
@@ -19,8 +19,8 @@ use crate::{
 };
 
 pub struct GpuLexer {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+    device: Arc<wgpu::Device>,
+    queue: Arc<wgpu::Queue>,
     timers_supported: bool,
 
     p_dfa_01_scan_inblock: passes::dfa_01_scan_inblock::Dfa01ScanInblockPass,
@@ -40,64 +40,10 @@ pub struct GpuLexer {
 
 impl GpuLexer {
     pub async fn new() -> Result<Self> {
-        let backends = match std::env::var("LANIUS_BACKEND")
-            .unwrap_or_else(|_| "auto".into())
-            .to_ascii_lowercase()
-            .as_str()
-        {
-            "vulkan" | "vk" => wgpu::Backends::VULKAN,
-            "dx12" => wgpu::Backends::DX12,
-            "metal" | "mtl" => wgpu::Backends::METAL,
-            "gl" => wgpu::Backends::GL,
-            _ => wgpu::Backends::all(),
-        };
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends,
-            ..Default::default()
-        });
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                compatible_surface: None,
-                force_fallback_adapter: false,
-            })
-            .await
-            .map_err(|_| anyhow!("no adapter"))?;
-
-        let mut limits = wgpu::Limits::defaults();
-        // ... why are my comments missing here...
-        // they were explaining why we chose these values from the web3d survey...
-        limits.max_storage_buffers_per_shader_stage = 10;
-        limits.max_storage_buffer_binding_size = 2_147_483_644;
-        limits.max_buffer_size = 2_147_483_644;
-
-        let adapter_features = adapter.features();
-        let want_timers = std::env::var("LANIUS_GPU_TIMING")
-            .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
-            .unwrap_or(false);
-
-        let timers_supported =
-            want_timers && adapter_features.contains(wgpu::Features::TIMESTAMP_QUERY);
-        let mut required_features =
-            wgpu::Features::empty() | wgpu::Features::SPIRV_SHADER_PASSTHROUGH;
-        if timers_supported {
-            required_features |= wgpu::Features::TIMESTAMP_QUERY
-                | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS
-                | wgpu::Features::TIMESTAMP_QUERY_INSIDE_PASSES;
-        }
-        let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor {
-                label: Some("laniusc_lexer"),
-                required_features,
-                required_limits: limits,
-                memory_hints: wgpu::MemoryHints::default(),
-                trace: wgpu::Trace::default(),
-            })
-            .await?;
-
-        device.on_uncaptured_error(Box::new(|e| {
-            eprintln!("[wgpu uncaptured] {e:?}");
-        }));
+        let ctx = crate::gpu::device::global();
+        let device = Arc::clone(&ctx.device);
+        let queue = Arc::clone(&ctx.queue);
+        let timers_supported = ctx.timers_supported;
 
         let p_dfa_01_scan_inblock =
             passes::dfa_01_scan_inblock::Dfa01ScanInblockPass::new(&device)?;
@@ -108,16 +54,19 @@ impl GpuLexer {
         let p_boundary_finalize_and_seed =
             passes::boundary_finalize_and_seed::BoundaryFinalizeAndSeedPass::new(&device)?;
 
-        let p_pair_01_sum_inblock = passes::pair_01_sum_inblock::Pair01SumInblockPass::new(&device)?;
+        let p_pair_01_sum_inblock =
+            passes::pair_01_sum_inblock::Pair01SumInblockPass::new(&device)?;
         let p_pair_02_scan_block_totals =
             passes::pair_02_scan_block_totals::Pair02ScanBlockTotalsPass::new(&device)?;
         let p_pair_03_apply_block_prefix =
             passes::pair_03_apply_block_prefix::Pair03ApplyBlockPrefixPass::new(&device)?;
 
-        let p_compact_boundaries_all = passes::compact_boundaries_all::CompactBoundariesAllPass::new(&device)?;
+        let p_compact_boundaries_all =
+            passes::compact_boundaries_all::CompactBoundariesAllPass::new(&device)?;
         let p_compact_boundaries_kept =
             passes::compact_boundaries_kept::CompactBoundariesKeptPass::new(&device)?;
-        let p_retag_calls_and_arrays = passes::retag_calls_and_arrays::RetagCallsAndArraysPass::new(&device)?;
+        let p_retag_calls_and_arrays =
+            passes::retag_calls_and_arrays::RetagCallsAndArraysPass::new(&device)?;
         let p_tokens_build = passes::tokens_build::TokensBuildPass::new(&device)?;
 
         Ok(Self {

@@ -43,44 +43,21 @@ void computeMain(uint3 dispatchThreadID : SV_DispatchThreadID)
 System-Value semantics
 The system-value semantics are translated to the following WGSL code.
 
-| SV semantic name          | WGSL code                        |
-| ------------------------- | -------------------------------- |
-| SV_Barycentrics           | Not supported                    |
-| SV_ClipDistance           | Not supported                    |
-| SV_CullDistance           | Not supported                    |
-| SV_Coverage               | @builtin(sample_mask)            |
-| SV_CullPrimitive          | Not supported                    |
-| SV_Depth                  | @builtin(frag_depth)             |
-| SV_DepthGreaterEqual      | Not supported                    |
-| SV_DepthLessEqual         | Not supported                    |
-| SV_DispatchThreadID       | @builtin(global_invocation_id)   |
-| SV_DomainLocation         | Not supported                    |
-| SV_GSInstanceID           | Not supported                    |
-| SV_GroupID                | @builtin(workgroup_id)           |
-| SV_GroupIndex             | @builtin(local_invocation_index) |
-| SV_GroupThreadID          | @builtin(local_invocation_id)    |
-| SV_InnerCoverage          | Not supported                    |
-| SV_InsideTessFactor       | Not supported                    |
-| SV_InstanceID             | @builtin(instance_index)         |
-| SV_IntersectionAttributes | Not supported                    |
-| SV_IsFrontFace            | @builtin(front_facing)           |
-| SV_OutputControlPointID   | Not supported                    |
-| SV_PointSize              | Not supported                    |
-| SV_Position               | @builtin(position)               |
-| SV_PrimitiveID            | Not supported                    |
-| SV_RenderTargetArrayIndex | Not supported                    |
-| SV_SampleIndex            | @builtin(sample_index)           |
-| SV_ShadingRate            | Not supported                    |
-| SV_StartVertexLocation    | Not supported                    |
-| SV_StartInstanceLocation  | Not supported                    |
-| SV_StencilRef             | Not supported                    |
-| SV_Target                 | Not supported                    |
-| SV_TessFactor             | Not supported                    |
-| SV_VertexID               | @builtin(vertex_index)           |
-| SV_ViewID                 | Not supported                    |
-| SV_ViewportArrayIndex     | Not supported                    |
+| SV semantic name    | WGSL code                        |
+| ------------------- | -------------------------------- |
+| SV_Coverage         | @builtin(sample_mask)            |
+| SV_Depth            | @builtin(frag_depth)             |
+| SV_DispatchThreadID | @builtin(global_invocation_id)   |
+| SV_GroupID          | @builtin(workgroup_id)           |
+| SV_GroupIndex       | @builtin(local_invocation_index) |
+| SV_GroupThreadID    | @builtin(local_invocation_id)    |
+| SV_InstanceID       | @builtin(instance_index)         |
+| SV_IsFrontFace      | @builtin(front_facing)           |
+| SV_Position         | @builtin(position)               |
+| SV_SampleIndex      | @builtin(sample_index)           |
+| SV_VertexID         | @builtin(vertex_index)           |
 
-11. Here is how you define a struct in slang.
+1.  Here is how you define a struct in slang.
 
 struct SurfaceGeometry {
   float3 position;

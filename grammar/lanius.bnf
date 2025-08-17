@@ -1,0 +1,73 @@
+# grammar/lanius.bnf
+# BNF-with-tags (no EBNF sugar). One production per line, ending with ';'
+# Nonterminals are bare identifiers. Terminals are token kind names in single quotes.
+# Optional production tag: LhsName [tag] -> ... ;
+
+# ----- Primary & postfix -----
+
+primary      [group]     -> 'GroupLParen' expr 'RParen';
+primary      [array_lit] -> 'ArrayLBracket' 'RBracket';
+primary      [ident]     -> 'Ident';
+primary      [int]       -> 'Int';
+primary      [string]    -> 'String';
+
+# postfix = primary { call | index }  (left-assoc, desugared)
+postfix      [call]      -> postfix 'CallLParen' 'RParen';
+postfix      [index]     -> postfix 'IndexLBracket' expr 'RBracket';
+postfix      [base]      -> primary;
+
+# ----- Unary -----
+
+unary        [pos]       -> 'Plus' unary;
+unary        [neg]       -> 'Minus' unary;
+unary        [not]       -> 'Not' unary;
+unary        [base]      -> postfix;
+
+# ----- Binary (left-assoc via tail recursion pattern) -----
+
+mul          [mul_l]     -> mul 'Star' unary;
+mul          [mul_r]     -> unary;
+
+add          [add_l]     -> add 'Plus' mul;
+add          [sub_l]     -> add 'Minus' mul;
+add          [add_r]     -> mul;
+
+compare      [lt]        -> compare 'Lt' add;
+compare      [gt]        -> compare 'Gt' add;
+compare      [le]        -> compare 'Le' add;
+compare      [ge]        -> compare 'Ge' add;
+compare      [base]      -> add;
+
+equality     [eq]        -> equality 'EqEq' compare;
+equality     [base]      -> compare;
+
+andexpr      [and]       -> andexpr 'AndAnd' equality;
+andexpr      [base]      -> equality;
+
+orexpr       [or]        -> orexpr 'OrOr' andexpr;
+orexpr       [base]      -> andexpr;
+
+# ----- Assignment (right-assoc) -----
+
+assign       [set]       -> orexpr 'Assign' assign;
+assign       [base]      -> orexpr;
+
+# ----- Top -----
+
+expr                     -> assign;
+
+# --- Optional arguments for calls (BNF, no EBNF sugar) ---
+
+postfix      [call]      -> postfix 'CallLParen' arg_list_opt 'RParen';
+arg_list_opt [none]      -> ;
+arg_list_opt [some]      -> expr arg_tail;
+arg_tail     [more]      -> 'Comma' expr arg_tail;
+arg_tail     [end]       -> ;
+
+# --- Array literals with elements ---
+
+primary      [array_lit] -> 'ArrayLBracket' array_elems_opt 'RBracket';
+array_elems_opt [none]   -> ;
+array_elems_opt [some]   -> expr array_elems_tail;
+array_elems_tail [more]  -> 'Comma' expr array_elems_tail;
+array_elems_tail [end]   -> ;

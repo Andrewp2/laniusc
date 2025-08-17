@@ -57,7 +57,7 @@ impl GpuBuffers {
         token_map: &[u32],
         skip_kinds: [u32; 4],
     ) -> Self {
-        const BLOCK_WIDTH_DFA: u32 = 128;
+        const BLOCK_WIDTH_DFA: u32 = 64;
         const BLOCK_WIDTH_SUM: u32 = 256;
 
         let nb_dfa = n.div_ceil(BLOCK_WIDTH_DFA);

@@ -88,6 +88,21 @@ pub fn storage_ro_from_u32s(
     storage_ro_from_bytes::<u32>(device, label, &bytes, values.len())
 }
 
+pub fn readback_bytes(
+    device: &wgpu::Device,
+    label: &str,
+    byte_size: usize,
+    count: usize,
+) -> LaniusBuffer<u8> {
+    let raw = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(label),
+        size: byte_size as u64,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    LaniusBuffer::new((raw, byte_size as u64), count)
+}
+
 /// Create a STORAGE buffer (read/write) sized for an array of `T` using WGSL/std430 size/stride.
 /// We compute the **padded element size** by encoding one `T::default()` with `encase::StorageBuffer`.
 /// Requires `T: Default` so we can synthesize one element just to measure its layout.

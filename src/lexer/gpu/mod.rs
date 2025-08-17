@@ -1,14 +1,14 @@
 //! GPU lexer module glue: just module wiring & re-exports.
 
-mod buffers;
-mod debug;
+pub mod buffers;
+pub mod debug;
 #[cfg(feature = "gpu-debug")]
-mod debug_checks;
+pub mod debug_checks;
 pub mod debug_host;
-mod driver;
-mod passes;
-mod types;
-mod util;
+pub mod driver;
+pub mod passes;
+pub mod types;
+pub mod util;
 
 // Public API
 pub use driver::{GpuLexer, lex_on_gpu};

@@ -1,8 +1,9 @@
+// shaders/lexer/dfa_02_scan_block_summaries.slang
 // Multi-round inclusive scan over per-block function vectors.
 // Result after last round is inclusive prefix for each block.
 
 #define N_STATES 32
-#define BLOCK_WIDTH 128u
+#define BLOCK_WIDTH 64u
 static const uint MAX_GROUPS_PER_DIM = 65535u;
 
 struct Params
@@ -41,32 +42,31 @@ void dfa_02_scan_block_summaries(uint3 local_id: SV_GroupThreadID,
     if (i >= nb || s >= N_STATES)
         return;
 
-    const uint aBase = (i - gScan.stride) * N_STATES;
-    const uint bBase = i * N_STATES;
-    const uint dBase = i * N_STATES;
+    const bool doCompose = (i >= gScan.stride);
+    const bool usePing = (gScan.use_ping_as_src != 0);
 
-    if (gScan.use_ping_as_src != 0)
+    const uint bBase = i * N_STATES;
+    const uint dBase = bBase;
+
+    uint result;
+    if (doCompose)
     {
-        if (i >= gScan.stride)
-        {
-            const uint a = block_ping[aBase + s];
-            block_pong[dBase + s] = block_ping[bBase + a];
-        }
-        else
-        {
-            block_pong[dBase + s] = block_ping[bBase + s];
-        }
+        const uint aBase = (i - gScan.stride) * N_STATES;
+        const uint a = usePing ? block_ping[aBase + s] : block_pong[aBase + s];
+        result = usePing ? block_ping[bBase + a] : block_pong[bBase + a];
     }
     else
     {
-        if (i >= gScan.stride)
-        {
-            const uint a = block_pong[aBase + s];
-            block_ping[dBase + s] = block_pong[bBase + a];
-        }
-        else
-        {
-            block_ping[dBase + s] = block_pong[bBase + s];
-        }
+        // Copy-through this round
+        result = usePing ? block_ping[bBase + s] : block_pong[bBase + s];
+    }
+
+    if (usePing)
+    {
+        block_pong[dBase + s] = result;
+    }
+    else
+    {
+        block_ping[dBase + s] = result;
     }
 }
