@@ -1,9 +1,10 @@
-// src/lexer/gpu/passes/retag_calls_and_arrays.rs
 use std::collections::HashMap;
 
 use super::PassData;
-use crate::gpu::passes_core::DispatchDim;
-use crate::lexer::gpu::{buffers::GpuBuffers, debug::DebugOutput};
+use crate::{
+    gpu::passes_core::DispatchDim,
+    lexer::gpu::{buffers::GpuBuffers, debug::DebugOutput},
+};
 
 pub struct RetagCallsAndArraysPass {
     data: PassData,
@@ -49,15 +50,11 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for RetagCallsAndArr
                 "gParams".into(),
                 Buffer(b.params.as_entire_buffer_binding()),
             ),
-            // Read how many KEPT tokens there are
             ("token_count".into(), b.token_count.as_entire_binding()),
-            // Rewrite kinds in-place before build_tokens runs
             ("types_compact".into(), b.types_compact.as_entire_binding()),
         ])
     }
 
-    // We can over-dispatch safely; the shader returns when k >= token_count[0].
-    // So just reuse the default group sizing.
     fn record_debug(
         &self,
         device: &wgpu::Device,
@@ -65,7 +62,6 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for RetagCallsAndArr
         b: &GpuBuffers,
         dbg: &mut DebugOutput,
     ) {
-        // Optional: snapshot the retagged kinds
         dbg.gpu.types_compact.set_from_copy(
             device,
             encoder,

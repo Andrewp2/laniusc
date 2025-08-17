@@ -1,9 +1,6 @@
 //! Small helpers for readback and env flags.
 
-use crate::lexer::{
-    gpu::types::{GpuToken, Token},
-    tables::tokens::TokenKind,
-};
+use crate::lexer::{gpu::types::Token, tables::tokens::TokenKind};
 
 /// Read a little-endian u32 from the first 4 bytes.
 pub fn u32_from_first_4(bytes: &[u8]) -> u32 {

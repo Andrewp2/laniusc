@@ -1,11 +1,10 @@
-// Single entry-point version: we dispatch the same kernel twice, once for ALL and once for KEPT.
-// This is the KEPT stream binding.
-
 use std::collections::HashMap;
 
 use super::PassData;
-use crate::gpu::passes_core::DispatchDim;
-use crate::lexer::gpu::{buffers::GpuBuffers, debug::DebugOutput};
+use crate::{
+    gpu::passes_core::DispatchDim,
+    lexer::gpu::{buffers::GpuBuffers, debug::DebugOutput},
+};
 
 pub struct CompactBoundariesKeptPass {
     data: PassData,
@@ -15,8 +14,8 @@ impl CompactBoundariesKeptPass {
     pub fn new(device: &wgpu::Device) -> anyhow::Result<Self> {
         let data = super::make_pass_data(
             device,
-            "compact_boundaries_kept", // <-- label
-            "compact_boundaries_kept", // <-- entry point name in Slang
+            "compact_boundaries_kept",
+            "compact_boundaries_kept",
             include_bytes!(concat!(env!("OUT_DIR"), "/shaders/compact_boundaries.spv")),
             include_bytes!(concat!(
                 env!("OUT_DIR"),

@@ -5,7 +5,7 @@ use wgpu::util::DeviceExt;
 
 use super::PassData;
 use crate::{
-    gpu::{debug::DebugBuffer, passes_core::DispatchDim, timer::GpuTimer},
+    gpu::{passes_core::DispatchDim, timer::GpuTimer},
     lexer::{
         gpu::{buffers::GpuBuffers, debug::DebugOutput, passes::ScanParams, util::compute_rounds},
         tables::dfa::N_STATES,
@@ -74,7 +74,8 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSu
 
         let per_round_bytes = (nblocks as usize) * N_STATES * std::mem::size_of::<u32>();
         let per_round_bytes_u64 = per_round_bytes as u64;
-        // TODO: why is there a copy_buffer_to_buffer
+
+        // Seed ping with raw per-block summaries
         encoder.copy_buffer_to_buffer(&b.block_summaries, 0, &b.block_ping, 0, per_round_bytes_u64);
 
         let rounds = compute_rounds(nblocks);
@@ -127,13 +128,13 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSu
             .expect("func_blocks_bg reflection");
 
             {
-                let [tgsx, tgsy, _] = self.data().thread_group_size;
+                // One workgroup per block. The group itself has N_STATES threads.
+                // Tell the planner each “element” already maps 1:1 to a group.
                 let (gx, gy, gz) = crate::gpu::passes_core::plan_workgroups(
-                    DispatchDim::D2,
-                    super::InputElements::Elements1D(nblocks),
-                    [tgsx, tgsy, 1],
+                    crate::gpu::passes_core::DispatchDim::D1,
+                    crate::gpu::passes_core::InputElements::Elements1D(nblocks),
+                    [1, 1, 1],
                 )?;
-
                 let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                     label: Some(Self::NAME),
                     timestamp_writes: None,
@@ -153,11 +154,13 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSu
                 };
                 let staging = make_staging(device, "dbg.func_scan_round", per_round_bytes);
                 encoder.copy_buffer_to_buffer(last_writer, 0, &staging, 0, per_round_bytes_u64);
-                dbg.gpu.func_scan_rounds.push(DebugBuffer {
-                    label: "dbg.func_scan_round",
-                    buffer: Some(staging),
-                    byte_len: per_round_bytes,
-                });
+                dbg.gpu
+                    .func_scan_rounds
+                    .push(crate::lexer::gpu::DebugBuffer {
+                        label: "dbg.func_scan_round",
+                        buffer: Some(staging),
+                        byte_len: per_round_bytes,
+                    });
             }
         }
 

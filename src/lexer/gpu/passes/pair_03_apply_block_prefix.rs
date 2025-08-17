@@ -29,9 +29,7 @@ impl Pair03ApplyBlockPrefixPass {
     }
 }
 
-impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput>
-    for Pair03ApplyBlockPrefixPass
-{
+impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair03ApplyBlockPrefixPass {
     const NAME: &'static str = "pair_03_apply_block_prefix";
     const DIM: DispatchDim = DispatchDim::D1;
 
@@ -48,12 +46,10 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput>
     ) -> HashMap<String, wgpu::BindingResource<'a>> {
         use wgpu::BindingResource::*;
 
-        // rounds over nb_sum pair blocks
         let rounds = compute_rounds(b.nb_sum);
 
         #[cfg(feature = "gpu-debug")]
         {
-            // Same parity rule as above: seed in PING, toggle each round.
             let plane = if (rounds % 2) == 1 { "PONG" } else { "PING" };
             println!(
                 "[dbg] {}: rounds={} -> last-writer={}",
@@ -63,7 +59,6 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput>
             );
         }
 
-        // Correct parity: choose PONG when rounds is odd, otherwise PING.
         let block_prefix_pair_binding: wgpu::BindingResource<'a> = if (rounds % 2) == 1 {
             b.block_pair_pong.as_entire_binding()
         } else {
@@ -104,7 +99,6 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput>
             b.s_keep_final.byte_size,
         );
 
-        // NEW: show the pair plane the apply pass bound.
         let rounds = compute_rounds(b.nb_sum);
         let last = if (rounds % 2) == 1 {
             &b.block_pair_pong

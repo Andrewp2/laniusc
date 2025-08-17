@@ -1,11 +1,10 @@
-// Single entry-point version: we dispatch the same kernel twice, once for ALL and once for KEPT.
-// This is the ALL stream binding.
-
 use std::collections::HashMap;
 
 use super::PassData;
-use crate::gpu::passes_core::DispatchDim;
-use crate::lexer::gpu::{buffers::GpuBuffers, debug::DebugOutput};
+use crate::{
+    gpu::passes_core::DispatchDim,
+    lexer::gpu::{buffers::GpuBuffers, debug::DebugOutput},
+};
 
 pub struct CompactBoundariesAllPass {
     data: PassData,
@@ -15,8 +14,8 @@ impl CompactBoundariesAllPass {
     pub fn new(device: &wgpu::Device) -> anyhow::Result<Self> {
         let data = super::make_pass_data(
             device,
-            "compact_boundaries_all", // <-- label
-            "compact_boundaries_all", // <-- entry point name in Slang
+            "compact_boundaries_all",
+            "compact_boundaries_all",
             include_bytes!(concat!(env!("OUT_DIR"), "/shaders/compact_boundaries.spv")),
             include_bytes!(concat!(
                 env!("OUT_DIR"),
@@ -55,7 +54,6 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for CompactBoundarie
                 "all_index_compact".into(),
                 b.all_index_compact.as_entire_binding(),
             ),
-            // ⬇️ ALL stream must use end_flags (0/1 when ANY boundary happens)
             ("flags_packed".into(), b.flags_packed.as_entire_binding()),
             ("tok_types".into(), b.tok_types.as_entire_binding()),
             ("end_excl_by_i".into(), b.end_excl_by_i.as_entire_binding()),

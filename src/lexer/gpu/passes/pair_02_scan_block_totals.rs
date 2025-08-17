@@ -1,4 +1,3 @@
-// src/lexer/gpu/passes/sum_scan_block_totals_inclusive.rs
 use std::collections::HashMap;
 
 use encase::UniformBuffer;
@@ -6,10 +5,10 @@ use wgpu::util::DeviceExt;
 
 use super::PassData;
 use crate::{
-    gpu::{debug::DebugBuffer, passes_core::DispatchDim, timer::GpuTimer},
+    gpu::{passes_core::DispatchDim, timer::GpuTimer},
     lexer::gpu::{
         buffers::GpuBuffers,
-        debug::{DebugOutput, make_staging},
+        debug::DebugOutput,
         passes::ScanParams,
         util::compute_rounds,
     },
@@ -74,8 +73,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
             _ => unreachable!(),
         };
 
-        // 1) Seed ping from per-block totals
-        let per_round_bytes_u64 = (nblocks as usize * 2 * std::mem::size_of::<u32>()) as u64; // uint2 per block
+        let per_round_bytes_u64 = (nblocks as usize * 2 * std::mem::size_of::<u32>()) as u64;
         encoder.copy_buffer_to_buffer(
             &b.block_totals_pair,
             0,
@@ -84,14 +82,12 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
             per_round_bytes_u64,
         );
 
-        // 2) Number of rounds
         let rounds = compute_rounds(nblocks);
 
         let layout0 = &self.data().bind_group_layouts[0];
         let pipeline = &self.data().pipeline;
         let reflection = &self.data().reflection;
 
-        // If we’re capturing debug, reset the per-round vector for this run.
         if let Some(dbg) = maybe_dbg.as_deref_mut() {
             dbg.gpu.pair_scan_rounds.clear();
         }
@@ -142,16 +138,21 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
             .expect("pair_blocks_bg reflection");
 
             {
+                // One workgroup per PAIR block; planner must not divide by tgsx.
+                let (gx, gy, gz) = crate::gpu::passes_core::plan_workgroups(
+                    crate::gpu::passes_core::DispatchDim::D1,
+                    crate::gpu::passes_core::InputElements::Elements1D(nblocks),
+                    [1, 1, 1],
+                )?;
                 let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                     label: Some(Self::NAME),
                     timestamp_writes: None,
                 });
                 pass.set_pipeline(pipeline);
                 pass.set_bind_group(0, &bg, &[]);
-                pass.dispatch_workgroups(nblocks, 1, 1);
+                pass.dispatch_workgroups(gx, gy, gz);
             }
 
-            // Per-round debug snapshots opt-in only.
             #[cfg(feature = "gpu-debug")]
             if let Some(dbg) = maybe_dbg.as_deref_mut() {
                 use crate::lexer::gpu::debug::make_staging;
@@ -163,11 +164,13 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
                 let staging =
                     make_staging(device, "dbg.pair_scan_round", per_round_bytes_u64 as usize);
                 encoder.copy_buffer_to_buffer(last_writer, 0, &staging, 0, per_round_bytes_u64);
-                dbg.gpu.pair_scan_rounds.push(DebugBuffer {
-                    label: "dbg.pair_scan_round",
-                    buffer: Some(staging),
-                    byte_len: per_round_bytes_u64 as usize,
-                });
+                dbg.gpu
+                    .pair_scan_rounds
+                    .push(crate::lexer::gpu::DebugBuffer {
+                        label: "dbg.pair_scan_round",
+                        buffer: Some(staging),
+                        byte_len: per_round_bytes_u64 as usize,
+                    });
             }
         }
 
@@ -183,7 +186,6 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
             ));
         }
 
-        // Keep the final planes as before.
         if let Some(d) = maybe_dbg.as_deref_mut() {
             self.record_debug(device, encoder, b, d);
         }
@@ -212,7 +214,6 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
             b.block_pair_pong.byte_size,
         );
 
-        // NEW: copy the last-writer plane as "block_prefix_pair".
         let rounds = compute_rounds(b.nb_sum);
         let last = if (rounds % 2) == 1 {
             &b.block_pair_pong

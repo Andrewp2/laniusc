@@ -57,6 +57,7 @@ inline void compact_impl(bool use_kept_pred, uint3 tid)
     if (delta == 2u)
     {
         uint k0 = pref - 2u;
+        // EMIT boundary at i closes the previous token: end_excl = i
         end_positions[k0] = i;
 
         // ▼ Only KEPT stream writes kinds / ALL-index bookkeeping
@@ -68,6 +69,7 @@ inline void compact_impl(bool use_kept_pred, uint3 tid)
         }
 
         uint k1 = pref - 1u;
+        // EOF boundary closes the final token: end_excl = n
         end_positions[k1] = gParams.n;
 
         if (use_kept_pred)
@@ -81,7 +83,18 @@ inline void compact_impl(bool use_kept_pred, uint3 tid)
 
     uint k = pref - 1u;
 
-    uint end_excl = end_excl_by_i[i];
+    uint end_excl;
+    if (use_kept_pred)
+    {
+        // Single *kept* boundary: use the per-i value computed earlier.
+        end_excl = end_excl_by_i[i];
+    }
+    else
+    {
+        // Single boundary in the ALL stream: derive directly from flags.
+        // EMIT at i => end_excl = i,  EOF at i => end_excl = n.
+        end_excl = ((f & PF_EOF) != 0u) ? gParams.n : i;
+    }
     end_positions[k] = end_excl;
 
     uint is_last = (i + 1u == gParams.n) ? 1u : 0u;
@@ -106,7 +119,10 @@ inline void compact_impl(bool use_kept_pred, uint3 tid)
         uint all_idx_for_kept = all_idx_1based;
         if (is_last != 0u && delta_all == 2u)
         {
-            all_idx_for_kept = (end_excl == i) ? (all_idx_1based - 1u) : all_idx_1based;
+            // If we kept the earlier (EMIT) end, start should be the previous ALL boundary (j-2),
+            // which corresponds to j-1 here. Otherwise (kept EOF) use j.
+            uint kept_emit = ((f & PF_KEEP_EMIT) != 0u) ? 1u : 0u;
+            all_idx_for_kept = (kept_emit != 0u) ? (all_idx_1based - 1u) : all_idx_1based;
         }
         all_index_compact[k] = all_idx_for_kept;
     }

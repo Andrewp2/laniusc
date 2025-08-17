@@ -51,9 +51,6 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa03ApplyBlockP
 
         #[cfg(feature = "gpu-debug")]
         {
-            // Seed was written to PING, then we toggle each round. Therefore:
-            //   - last writer = PONG when rounds is odd
-            //   - last writer = PING when rounds is even (including 0)
             let plane = if (rounds % 2) == 1 { "PONG" } else { "PING" };
             println!(
                 "[dbg] {}: rounds={} -> last-writer={}",
@@ -63,7 +60,6 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa03ApplyBlockP
             );
         }
 
-        // Correct parity: choose PONG when rounds is odd, otherwise PING.
         let block_prefix_binding: wgpu::BindingResource<'a> = if (rounds % 2) == 1 {
             b.block_pong.as_entire_binding()
         } else {
@@ -98,7 +94,6 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa03ApplyBlockP
             b.f_final.byte_size,
         );
 
-        // NEW: mirror the parity logic used to pick the bound plane for this pass.
         let rounds = compute_rounds(b.nb_dfa);
         let last = if (rounds % 2) == 1 {
             &b.block_pong

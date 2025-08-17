@@ -4,10 +4,7 @@ use anyhow::Result;
 
 use super::PassData;
 use crate::{
-    gpu::{
-        debug::DebugBuffer,
-        passes_core::{DispatchDim, make_pass_data},
-    },
+    gpu::passes_core::{DispatchDim, make_pass_data},
     lexer::gpu::{
         buffers::GpuBuffers,
         debug::{self, DebugOutput},
@@ -72,7 +69,6 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for BoundaryFinalize
         ])
     }
 
-    // src/lexer/gpu/passes/finalize_boundaries_and_seed.rs
     fn record_debug(
         &self,
         device: &wgpu::Device,

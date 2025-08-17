@@ -1,4 +1,3 @@
-// src/lexer/gpu/passes/sum_inblock_pairs.rs
 use std::collections::HashMap;
 
 use super::PassData;
@@ -44,14 +43,11 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair01SumInblock
     ) -> HashMap<String, wgpu::BindingResource<'a>> {
         use wgpu::BindingResource::*;
         HashMap::from([
-            // matches `ConstantBuffer<Params> gParams;`
             (
                 "gParams".into(),
                 Buffer(b.params.as_entire_buffer_binding()),
             ),
-            // matches `StructuredBuffer<uint> flags_packed;`
             ("flags_packed".into(), b.flags_packed.as_entire_binding()),
-            // matches `RWStructuredBuffer<uint2> block_totals_pair;`
             (
                 "block_totals_pair".into(),
                 b.block_totals_pair.as_entire_binding(),

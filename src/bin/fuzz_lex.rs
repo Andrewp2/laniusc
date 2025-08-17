@@ -5,11 +5,14 @@ use std::{
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
-use laniusc::lexer::{
-    cpu::{CpuToken, lex_on_cpu},
-    tables::TokenKind,
+use laniusc::{
+    dev::generator::gen_valid_source,
+    lexer::{
+        cpu::{CpuToken, lex_on_cpu},
+        tables::TokenKind,
+    },
 };
-use rand::{Rng, SeedableRng, rngs::StdRng};
+use rand::{SeedableRng, rngs::StdRng};
 
 #[derive(serde::Deserialize)]
 struct Golden {
@@ -361,120 +364,6 @@ fn save_case(dir: &str, seed: u64, iter: usize, src: &str) -> PathBuf {
     path
 }
 
-fn gen_valid_source<R: Rng>(rng: &mut R, target_len: usize) -> String {
-    let mut out = String::with_capacity(target_len + target_len / 8);
-
-    while out.len() < target_len {
-        let roll = rng.random_range(0u32..100);
-
-        match roll {
-            0..=24 => push_ident(rng, &mut out),
-            25..=39 => push_int(rng, &mut out),
-            40..=54 => push_ws(rng, &mut out),
-            55..=61 => push_line_comment(rng, &mut out),
-            62..=70 => push_block_comment(rng, &mut out),
-            71..=99 => push_operator(rng, &mut out),
-            _ => unreachable!(),
-        }
-    }
-
-    out.push('*');
-    out.push('/');
-    out.push(' ');
-    out.push('0');
-    out.push('\n');
-
-    out
-}
-
-fn push_ident<R: Rng>(rng: &mut R, out: &mut String) {
-    let len = rng.random_range(1..=12);
-    let mut s = String::new();
-    s.push(random_alpha(rng));
-    for _ in 1..len {
-        if rng.random_bool(0.6) {
-            s.push(random_alpha(rng));
-        } else {
-            s.push(random_digit(rng));
-        }
-    }
-    out.push_str(&s);
-}
-
-fn push_int<R: Rng>(rng: &mut R, out: &mut String) {
-    let len = rng.random_range(1..=8);
-    for _ in 0..len {
-        out.push(random_digit(rng));
-    }
-}
-
-fn push_ws<R: Rng>(rng: &mut R, out: &mut String) {
-    let opts: [char; 4] = [' ', '\t', '\r', '\n'];
-    let len = rng.random_range(1..=8);
-    for _ in 0..len {
-        let i = rng.random_range(0..opts.len());
-        out.push(opts[i]);
-    }
-}
-
-fn push_line_comment<R: Rng>(rng: &mut R, out: &mut String) {
-    out.push_str("//");
-    let len = rng.random_range(0..=40);
-    const ALPH: &str =
-        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 +-*/&|![]{}()<>=*";
-    let bytes = ALPH.as_bytes();
-    for _ in 0..len {
-        let i = rng.random_range(0..bytes.len());
-        out.push(bytes[i] as char);
-    }
-    out.push('\n');
-}
-
-fn push_block_comment<R: Rng>(rng: &mut R, out: &mut String) {
-    out.push_str("/*");
-    let chunks = rng.random_range(0..=15);
-    const BODY: &str =
-        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 +-![]{}()<>=&|";
-    let bytes = BODY.as_bytes();
-    for _ in 0..chunks {
-        let k = rng.random_range(1..=8);
-        for _ in 0..k {
-            let i = rng.random_range(0..bytes.len());
-            out.push(bytes[i] as char);
-        }
-        if rng.random_bool(0.2) {
-            out.push('*');
-        }
-        if rng.random_bool(0.2) {
-            out.push('\n');
-        }
-    }
-    out.push_str("*/");
-}
-
-fn push_operator<R: Rng>(rng: &mut R, out: &mut String) {
-    let ops = [
-        "(", ")", "+", "*", "=", "/", "!", "[", "]", "{", "}", "<", "<=", ">", ">=", "==", "&",
-        "&&", "|", "||",
-    ];
-    let i = rng.random_range(0..ops.len());
-    out.push_str(ops[i]);
-    if rng.random_bool(0.25) {
-        out.push(' ');
-    }
-}
-
-fn random_alpha<R: Rng>(rng: &mut R) -> char {
-    let set = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_";
-    let i = rng.random_range(0..set.len());
-    set[i] as char
-}
-fn random_digit<R: Rng>(rng: &mut R) -> char {
-    let set = b"0123456789";
-    let i = rng.random_range(0..set.len());
-    set[i] as char
-}
-
 fn compare_streams(src: &str, cpu: &[CpuToken], gpu: &[laniusc::lexer::gpu::Token]) -> bool {
     if cpu.len() != gpu.len() {
         let i = first_divergence_idx(cpu, gpu);
@@ -567,10 +456,9 @@ fn line_col_at(src: &str, byte_idx: usize) -> (usize, usize) {
     (line, col)
 }
 
-// ---- logging limits + helper (ADD THIS) ----
-const MAX_SNIP_WINDOW: usize = 1024; // max bytes we’ll print in dump_src_window
-const TOK_HEAD_BYTES: usize = 10; // bytes from token head
-const TOK_TAIL_BYTES: usize = 10; // bytes from token tail
+const MAX_SNIP_WINDOW: usize = 1024;
+const TOK_HEAD_BYTES: usize = 10;
+const TOK_TAIL_BYTES: usize = 10;
 
 fn preview_lossy(bytes: &[u8], head: usize, tail: usize) -> String {
     if bytes.len() <= head + tail {
@@ -601,7 +489,6 @@ fn dump_src_window(src: &str, start: usize, len: usize, who: &str, idx: usize) {
         let snippet = String::from_utf8_lossy(&bytes[full_lo..full_hi]);
         eprintln!("    {snippet:?}");
     } else {
-        // Show: up to 64 bytes before, a head/tail preview of the token, and up to 64 bytes after
         let before = &bytes[full_lo..start];
         let token_end = (start + len).min(src.len());
         let token = &bytes[start..token_end];
@@ -633,7 +520,6 @@ fn dump_near(src: &str, cpu: &[CpuToken], gpu: &[laniusc::lexer::gpu::Token], fr
     eprintln!("--- context tokens [{lo}..{hi}) ---");
     let bytes = src.as_bytes();
     for i in lo..hi {
-        // can't assume len is valid
         let cpu_dbg = cpu.get(i).map(|t| {
             let len = t.len.min(src.len() - t.start);
             let s = &bytes[t.start..t.start + len];

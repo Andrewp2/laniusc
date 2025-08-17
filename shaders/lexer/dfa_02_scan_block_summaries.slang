@@ -3,6 +3,7 @@
 
 #define N_STATES 32
 #define BLOCK_WIDTH 128u
+static const uint MAX_GROUPS_PER_DIM = 65535u;
 
 struct Params
 {
@@ -29,9 +30,13 @@ void dfa_02_scan_block_summaries(uint3 local_id: SV_GroupThreadID,
                                  uint3 group_id: SV_GroupID)
 {
     const uint nb = (gParams.n + (BLOCK_WIDTH - 1u)) / BLOCK_WIDTH;
-    const uint groupsX = (nb < 65535u) ? nb : 65535u;
-    const uint i = group_id.y * groupsX + group_id.x; // linear block index
-    const uint s = local_id.x;                        // state lane [0..N_STATES)
+
+    // 2D tiling support:
+    // (gx, gy) = (min(nb, 65535), ceil(nb / 65535)).
+    const uint groups_x = (nb < MAX_GROUPS_PER_DIM) ? nb : MAX_GROUPS_PER_DIM;
+
+    const uint i = group_id.y * groups_x + group_id.x; // 1 group per block
+    const uint s = local_id.x;                         // state lane [0..N_STATES)
 
     if (i >= nb || s >= N_STATES)
         return;

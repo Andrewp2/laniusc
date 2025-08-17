@@ -14,7 +14,6 @@ use crate::{
     },
 };
 
-// Export concrete pass modules (grouped + ordered)
 pub mod dfa_01_scan_inblock;
 pub mod dfa_02_scan_block_summaries;
 pub mod dfa_03_apply_block_prefix;
@@ -36,8 +35,6 @@ pub(super) struct ScanParams {
     pub stride: u32,
     pub use_ping_as_src: u32,
 }
-
-// ---------------- reflection/bgl helpers ----------------
 
 fn bgls_from_reflection(
     device: &wgpu::Device,
@@ -125,7 +122,6 @@ fn pipeline_from_spirv_and_bgls(
     })
 }
 
-/// Build `PassData` (pipeline + all BGLs + reflection + TGS) for a compute shader.
 pub(crate) fn make_pass_data(
     device: &wgpu::Device,
     label: &str,
@@ -136,7 +132,6 @@ pub(crate) fn make_pass_data(
     let reflection: SlangReflection =
         parse_reflection_from_bytes(reflection_json).map_err(anyhow::Error::msg)?;
 
-    // Own the BGLs so we can both create the pipeline and also store them.
     let owned_bgls = bgls_from_reflection(device, &reflection)?;
     let bgl_refs: Vec<&wgpu::BindGroupLayout> = owned_bgls.iter().collect();
 
@@ -152,15 +147,11 @@ pub(crate) fn make_pass_data(
     })
 }
 
-// ---------------- small bind-group utility (name→resource) ----------------
-
 pub(crate) mod bind_group {
     use std::collections::HashMap;
 
     use super::*;
 
-    /// Build a bind group for `set_index` using parameter names from reflection
-    /// and a name→BindingResource map provided by the pass.
     pub fn create_bind_group_from_reflection<'a>(
         device: &wgpu::Device,
         label: Option<&str>,

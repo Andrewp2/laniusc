@@ -1,8 +1,3 @@
-// shaders/lexer/finalize_boundaries_and_seed.slang
-// Compute boundaries and token types from final prefix states + emit mask.
-// Also compute the exact exclusive-end index for each boundary.
-//
-// Handles EOF correctly even if the last byte also caused an emitting edge.
 
 #define N_STATES 32
 
@@ -16,24 +11,20 @@ struct Params
     uint n;
     uint n_states;
     uint start_state;
-    // three token kinds to skip (e.g., White, LineComment, BlockComment) + 1 extra
     uint skip0;
     uint skip1;
     uint skip2;
     uint skip3;
 };
-ConstantBuffer<Params> gParams;
 
-ByteAddressBuffer in_bytes; // byte-addressable input
+ConstantBuffer<Params> gParams;
+ByteAddressBuffer in_bytes;
 StructuredBuffer<uint> token_map;
 StructuredBuffer<uint> f_final;
-StructuredBuffer<uint> next_emit; // 2x u16 per uint
-
-// --------- NEW SINGLE FLAGS BUFFER ---------
-RWStructuredBuffer<uint> flags_packed; // per-i packed bits: EMIT/EOF/KEEP_EMIT/KEEP_EOF
-
-RWStructuredBuffer<uint> tok_types;     // PACKED per-i kinds for KEPT stream: (EOF<<16)|(EMIT)
-RWStructuredBuffer<uint> end_excl_by_i; // KEPT exclusive end if single boundary at i
+StructuredBuffer<uint> next_emit;
+RWStructuredBuffer<uint> flags_packed;
+RWStructuredBuffer<uint> tok_types;
+RWStructuredBuffer<uint> end_excl_by_i;
 
 bool is_skip(uint tk)
 {
@@ -55,31 +46,26 @@ void boundary_finalize_and_seed(uint3 tid: SV_DispatchThreadID)
     uint packed = load_u16_packed(next_emit, b * N_STATES + prev_state);
     uint emit_here = is_highest_bit_set(packed) ? 1u : 0u;
 
-    // EOF acceptance
     uint at_eof = is_last(i, gParams.n) ? 1u : 0u;
     uint eof_accept = (at_eof != 0u && token_map[state_i] != INVALID32) ? 1u : 0u;
 
-    // Candidate kinds
     uint tk_emit = token_map[prev_state];
     uint tk_eof = token_map[state_i];
 
-    // -------- VALIDITY + SKIP (fix): keep only if kind is valid AND not skipped --------
     uint valid_emit = (tk_emit != INVALID32) ? 1u : 0u;
     uint valid_eof = (tk_eof != INVALID32) ? 1u : 0u;
 
     uint keep_emit = (valid_emit != 0u && !is_skip(tk_emit)) ? 1u : 0u;
     uint keep_eof = (valid_eof != 0u && !is_skip(tk_eof)) ? 1u : 0u;
 
-    // Pack both (low16 = emit-if-kept, high16 = eof-if-kept), 0xFFFF means "none"
     uint emit16 = (keep_emit != 0u && valid_emit != 0u) ? (tk_emit & 0xFFFFu) : INVALID16;
     uint eof16 = (keep_eof != 0u && valid_eof != 0u) ? (tk_eof & 0xFFFFu) : INVALID16;
     tok_types[i] = (eof16 << 16) | emit16;
 
-    // For single-kept case, provide the exclusive end for that kept boundary
-    uint ex_single =
-        (at_eof != 0u && keep_eof != 0u && (keep_emit == 0u || emit_here == 0u)) ? gParams.n : i;
+    uint kept_emit_here = (emit_here != 0u && keep_emit != 0u) ? 1u : 0u;
+    uint kept_eof_here = (eof_accept != 0u && keep_eof != 0u) ? 1u : 0u;
+    uint ex_single = (kept_eof_here != 0u) ? gParams.n : i;
 
-    // -------- write packed flags (EMIT/EOF reflect events; KEEP_* reflect "would keep" with validity) --------
     uint f = 0u;
     f |= (emit_here != 0u) ? PF_EMIT : 0u;
     f |= (eof_accept != 0u) ? PF_EOF : 0u;

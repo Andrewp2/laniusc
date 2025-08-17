@@ -15,10 +15,7 @@ impl Dfa01ScanInblockPass {
             device,
             "dfa_01_scan_inblock",
             "dfa_01_scan_inblock",
-            include_bytes!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/dfa_01_scan_inblock.spv"
-            )),
+            include_bytes!(concat!(env!("OUT_DIR"), "/shaders/dfa_01_scan_inblock.spv")),
             include_bytes!(concat!(
                 env!("OUT_DIR"),
                 "/shaders/dfa_01_scan_inblock.reflect.json"
