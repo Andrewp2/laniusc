@@ -13,7 +13,7 @@ pub struct Dfa03ApplyBlockPrefixPass {
 }
 impl Dfa03ApplyBlockPrefixPass {
     pub fn new(device: &wgpu::Device) -> anyhow::Result<Self> {
-        let data = super::make_pass_data(
+        let data = crate::gpu::passes_core::make_pass_data(
             device,
             "dfa_03_apply_block_prefix",
             "dfa_03_apply_block_prefix",

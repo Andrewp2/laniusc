@@ -12,7 +12,7 @@ pub struct CompactBoundariesKeptPass {
 
 impl CompactBoundariesKeptPass {
     pub fn new(device: &wgpu::Device) -> anyhow::Result<Self> {
-        let data = super::make_pass_data(
+        let data = crate::gpu::passes_core::make_pass_data(
             device,
             "compact_boundaries_kept",
             "compact_boundaries_kept",

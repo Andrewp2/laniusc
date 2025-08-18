@@ -12,7 +12,7 @@ pub struct Pair03ApplyBlockPrefixPass {
 
 impl Pair03ApplyBlockPrefixPass {
     pub fn new(device: &wgpu::Device) -> anyhow::Result<Self> {
-        let data = super::make_pass_data(
+        let data = crate::gpu::passes_core::make_pass_data(
             device,
             "pair_03_apply_block_prefix",
             "pair_03_apply_block_prefix",

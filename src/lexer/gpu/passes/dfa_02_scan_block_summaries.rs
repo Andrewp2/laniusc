@@ -5,7 +5,10 @@ use wgpu::util::DeviceExt;
 
 use super::PassData;
 use crate::{
-    gpu::{passes_core::DispatchDim, timer::GpuTimer},
+    gpu::{
+        passes_core::{DispatchDim, bind_group::create_bind_group_from_reflection},
+        timer::GpuTimer,
+    },
     lexer::{
         gpu::{buffers::GpuBuffers, debug::DebugOutput, passes::ScanParams, util::compute_rounds},
         tables::dfa::N_STATES,
@@ -18,7 +21,7 @@ pub struct Dfa02ScanBlockSummariesPass {
 
 impl Dfa02ScanBlockSummariesPass {
     pub fn new(device: &wgpu::Device) -> anyhow::Result<Self> {
-        let data = super::make_pass_data(
+        let data = crate::gpu::passes_core::make_pass_data(
             device,
             "dfa_02_scan_block_summaries",
             "dfa_02_scan_block_summaries",
@@ -117,7 +120,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSu
                 ("block_pong".into(), b.block_pong.as_entire_binding()),
             ]);
 
-            let bg = super::bind_group::create_bind_group_from_reflection(
+            let bg = create_bind_group_from_reflection(
                 device,
                 Some(&format!("func_blocks_bg[{r}]")),
                 layout0,

@@ -12,7 +12,7 @@ pub struct CompactBoundariesAllPass {
 
 impl CompactBoundariesAllPass {
     pub fn new(device: &wgpu::Device) -> anyhow::Result<Self> {
-        let data = super::make_pass_data(
+        let data = crate::gpu::passes_core::make_pass_data(
             device,
             "compact_boundaries_all",
             "compact_boundaries_all",

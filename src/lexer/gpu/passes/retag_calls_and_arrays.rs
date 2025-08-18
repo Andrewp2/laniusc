@@ -12,7 +12,7 @@ pub struct RetagCallsAndArraysPass {
 
 impl RetagCallsAndArraysPass {
     pub fn new(device: &wgpu::Device) -> anyhow::Result<Self> {
-        let data = super::make_pass_data(
+        let data = crate::gpu::passes_core::make_pass_data(
             device,
             "retag_calls_and_arrays",
             "retag_calls_and_arrays",

@@ -100,10 +100,19 @@ pub fn pipeline_from_spirv_and_bgls(
     spirv: &'static [u8],
     bgls: &[&wgpu::BindGroupLayout],
 ) -> wgpu::ComputePipeline {
-    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some(label),
-        source: wgpu::util::make_spirv(spirv),
-    });
+    // SAFETY: YOLO
+    let module = unsafe {
+        device.create_shader_module_passthrough(wgpu::ShaderModuleDescriptorPassthrough::SpirV(
+            wgpu::ShaderModuleDescriptorSpirV {
+                label: Some(label),
+                source: wgpu::util::make_spirv_raw(spirv),
+            },
+        ))
+    };
+    // let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+    //     label: Some(label),
+    //     source: wgpu::util::make_spirv(spirv),
+    // });
     let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some(&format!("pl_{label}")),
         bind_group_layouts: bgls,

@@ -259,15 +259,6 @@ fn compose_funcs(a: &[u32], b: &[u32]) -> Vec<u32> {
     h
 }
 
-// ---- helpers to rebuild compaction expectations from CPU arrays ----
-
-#[inline]
-fn kept_any_from_flags(f: u32) -> bool {
-    let emit_kept = (f & 1) != 0 && (f & 4) != 0;
-    let eof_kept = (f & 2) != 0 && (f & 8) != 0;
-    emit_kept || eof_kept
-}
-
 /// Expected ALL compaction (positions only), in order.
 /// Two entries (i, n) are emitted if both EMIT and EOF are counted at the same i.
 fn expected_all_compaction(flags: &[u32], s_all: &[u32], n: u32) -> Vec<u32> {
@@ -413,9 +404,6 @@ fn kind16_to_enum(x: u32) -> Option<TokenKind> {
     } else {
         Some(unsafe { std::mem::transmute::<u32, TokenKind>(x) })
     }
-}
-fn u32_to_kind(x: u32) -> TokenKind {
-    unsafe { std::mem::transmute::<u32, TokenKind>(x) }
 }
 
 // --------------------- per-shader checks ---------------------

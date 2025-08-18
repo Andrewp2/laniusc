@@ -5,7 +5,10 @@ use wgpu::util::DeviceExt;
 
 use super::PassData;
 use crate::{
-    gpu::{passes_core::DispatchDim, timer::GpuTimer},
+    gpu::{
+        passes_core::{DispatchDim, bind_group::create_bind_group_from_reflection},
+        timer::GpuTimer,
+    },
     lexer::gpu::{
         buffers::GpuBuffers,
         debug::DebugOutput,
@@ -20,7 +23,7 @@ pub struct Pair02ScanBlockTotalsPass {
 
 impl Pair02ScanBlockTotalsPass {
     pub fn new(device: &wgpu::Device) -> anyhow::Result<Self> {
-        let data = super::make_pass_data(
+        let data = crate::gpu::passes_core::make_pass_data(
             device,
             "pair_02_scan_block_totals",
             "pair_02_scan_block_totals",
@@ -127,7 +130,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
                 ),
             ]);
 
-            let bg = super::bind_group::create_bind_group_from_reflection(
+            let bg = create_bind_group_from_reflection(
                 device,
                 Some(&format!("pair_blocks_bg[{r}]")),
                 layout0,

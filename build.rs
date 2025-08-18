@@ -52,6 +52,8 @@ fn main() -> Result<()> {
             .arg("-fvk-use-entrypoint-name")
             .arg("-reflection-json")
             .arg(&refl_out)
+            .arg("-emit-spirv-directly")
+            .arg("-g3")
             // Let `import utils;` and other modules resolve from source by search path:
             .arg("-I")
             .arg("shaders")
