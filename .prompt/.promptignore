@@ -1,0 +1,18 @@
+# .promptignore
+# Lines starting with '#' are comments.
+# Globs match paths relative to the project root.
+
+# Common large or generated directories
+target/**
+.git/**
+node_modules/**
+out/**
+*.lock
+*.DS_Store
+fuzz-cases/**
+.VSCodeCounter/**
+
+# Temporary files
+*.tmp
+
+# Add your own patterns below

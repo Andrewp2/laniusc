@@ -1,0 +1,6 @@
+{
+  "commands": [
+    "cargo run --bin fuzz_lex"
+  ],
+  "max": 50
+}

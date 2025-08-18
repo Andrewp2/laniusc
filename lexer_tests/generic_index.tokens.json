@@ -1,0 +1,24 @@
+{
+  "tokens": [
+    {
+      "kind": "Ident",
+      "text": "foo"
+    },
+    {
+      "kind": "AngleGeneric",
+      "text": "<>"
+    },
+    {
+      "kind": "IndexLBracket",
+      "text": "["
+    },
+    {
+      "kind": "Int",
+      "text": "0"
+    },
+    {
+      "kind": "RBracket",
+      "text": "]"
+    }
+  ]
+}

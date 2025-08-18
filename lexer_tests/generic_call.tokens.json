@@ -1,0 +1,24 @@
+{
+  "tokens": [
+    {
+      "kind": "Ident",
+      "text": "foo"
+    },
+    {
+      "kind": "AngleGeneric",
+      "text": "<>"
+    },
+    {
+      "kind": "CallLParen",
+      "text": "("
+    },
+    {
+      "kind": "Ident",
+      "text": "x"
+    },
+    {
+      "kind": "RParen",
+      "text": ")"
+    }
+  ]
+}

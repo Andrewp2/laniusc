@@ -15,7 +15,10 @@ pub struct CpuToken {
 
 fn ends_primary(k: TokenKind) -> bool {
     use TokenKind::*;
-    matches!(k, Ident | Int | String | RParen | RBracket | RBrace)
+    matches!(
+        k,
+        Ident | Int | String | RParen | RBracket | RBrace | AngleGeneric
+    )
 }
 
 pub fn retag_calls_and_arrays_in_place(kinds: &mut [TokenKind]) {
