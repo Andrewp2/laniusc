@@ -9,7 +9,7 @@ use crate::{
         buffers::readback_bytes,
         device,
         passes_core::{InputElements, Pass},
-        timer::GpuTimer,
+        timer::{GpuTimer, MINIMUM_TIME_TO_NOT_ELIDE_MS},
     },
     parser::{
         gpu::{
@@ -309,7 +309,7 @@ impl GpuParser {
                         let dt_ms = ((t - prev) as f64 * period_ns) / 1.0e6;
                         let total_ms = ((t - t0) as f64 * period_ns) / 1.0e6;
                         // Keep the log tidy: skip tiny deltas
-                        if dt_ms >= 0.5 {
+                        if dt_ms >= MINIMUM_TIME_TO_NOT_ELIDE_MS {
                             println!("[gpu_timer] {label}: {dt_ms:.3}ms (total {total_ms:.3}ms)");
                         }
                         prev = t;

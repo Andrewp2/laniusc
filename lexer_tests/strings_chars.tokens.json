@@ -1,0 +1,19 @@
+{
+  "tokens": [
+    { "kind": "Ident", "text": "s" },
+    { "kind": "Assign", "text": "=" },
+    { "kind": "String", "text": "\"hello\"" },
+    { "kind": "Ident", "text": "c" },
+    { "kind": "Assign", "text": "=" },
+    { "kind": "Char", "text": "'a'" },
+    { "kind": "Ident", "text": "esc" },
+    { "kind": "Assign", "text": "=" },
+    { "kind": "String", "text": "\"\\n\"" },
+    { "kind": "Ident", "text": "squote" },
+    { "kind": "Assign", "text": "=" },
+    { "kind": "Char", "text": "'\\\''" },
+    { "kind": "Ident", "text": "dquote" },
+    { "kind": "Assign", "text": "=" },
+    { "kind": "String", "text": "\"\\\"\"" }
+  ]
+}

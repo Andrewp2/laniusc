@@ -63,7 +63,8 @@ impl GpuBuffers {
         let nb_dfa = n.div_ceil(BLOCK_WIDTH_DFA);
         let nb_sum = n.div_ceil(BLOCK_WIDTH_SUM);
         debug_assert!(BLOCK_WIDTH_DFA > 0 && BLOCK_WIDTH_SUM > 0);
-        let expected_words = ((256 * (N_STATES as usize)) + 1) / 2;
+        let n_states = token_map.len();
+        let expected_words = ((256 * n_states) + 1) / 2;
         debug_assert_eq!(
             next_emit_packed.len(),
             expected_words,
@@ -71,11 +72,7 @@ impl GpuBuffers {
             next_emit_packed.len(),
             expected_words
         );
-        debug_assert_eq!(
-            token_map.len(),
-            N_STATES as usize,
-            "token_map must have N_STATES entries"
-        );
+        debug_assert!(!token_map.is_empty(), "token_map must not be empty");
 
         let in_bytes: LaniusBuffer<u8> =
             storage_ro_from_bytes::<u8>(device, "in_bytes", input_bytes, n as usize);
@@ -135,7 +132,7 @@ impl GpuBuffers {
 
         let params_val = LexParams {
             n,
-            m: N_STATES as u32,
+            m: n_states as u32,
             start_state,
             skip0: skip_kinds[0],
             skip1: skip_kinds[1],

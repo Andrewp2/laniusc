@@ -2,7 +2,7 @@
 // Ping–pong version without chunking.
 
 #define WORKGROUP_SIZE 64
-#define N_STATES 32
+#define N_STATES 79
 #define N_PACK ((N_STATES + 1) / 2)
 #define N_PACK_STRIDE (N_PACK + 1)
 
@@ -83,10 +83,18 @@ void dfa_03_apply_block_prefix(uint3 tid: SV_GroupThreadID,
         {
             const uint s0 = (p << 1);
             const uint s1 = s0 + 1u;
-            const uint word = next_emit[(b * N_STATES + s0) >> 1];
-            const uint lo = word & 0x7FFFu;
-            const uint hi = (word >> 16) & 0x7FFFu;
-            funcPing[tid.x][p] = pack_pair(lo, (s1 < N_STATES) ? hi : 0u);
+            const uint ns = gParams.n_states;
+            if (s0 < ns)
+            {
+                const uint idx0 = b * ns + s0;
+                const uint lo = load_u16_packed(next_emit, idx0) & 0x7FFFu;
+                const uint hi = (s1 < ns) ? (load_u16_packed(next_emit, idx0 + 1u) & 0x7FFFu) : 0u;
+                funcPing[tid.x][p] = pack_pair(lo, (s1 < N_STATES) ? hi : 0u);
+            }
+            else
+            {
+                funcPing[tid.x][p] = pack_pair(s0, (s1 < N_STATES) ? s1 : 0u);
+            }
         }
     }
     else

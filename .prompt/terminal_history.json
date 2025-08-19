@@ -1,6 +1,7 @@
 {
   "commands": [
-    "cargo run --bin fuzz_lex"
+    "LANIUS_READBACK=0 LANIUS_GPU_TIMING=1 cargo run --bin perf_one",
+    "LANIUS_GPU_TIMING=1 cargo run --bin fuzz_lex"
   ],
   "max": 50
 }

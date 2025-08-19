@@ -26,14 +26,7 @@ pub fn recount_tables_host(input_bytes: &[u8]) -> Result<HostRecount> {
 
     let (n_states_from_file, next_emit_words, token_map) =
         load_compact_tables_from_bytes(COMPACT_BIN).map_err(anyhow::Error::msg)?;
-
-    if n_states_from_file != N_STATES {
-        bail!(
-            "compact table has n_states={} but code expects N_STATES={}",
-            n_states_from_file,
-            N_STATES
-        );
-    }
+    let n_states = n_states_from_file;
 
     let skip_kinds = [
         TokenKind::White as u32,
@@ -56,7 +49,7 @@ pub fn recount_tables_host(input_bytes: &[u8]) -> Result<HostRecount> {
     };
 
     for (i, &b) in input_bytes.iter().enumerate() {
-        let idx = (b as usize) * (N_STATES as usize) + (prev_state as usize);
+        let idx = (b as usize) * n_states + (prev_state as usize);
         let word = next_emit_words[idx >> 1];
         let lane16 = if (idx & 1) == 0 {
             word & 0xFFFF

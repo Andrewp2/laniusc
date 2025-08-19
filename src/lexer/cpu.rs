@@ -17,7 +17,7 @@ fn ends_primary(k: TokenKind) -> bool {
     use TokenKind::*;
     matches!(
         k,
-        Ident | Int | String | RParen | RBracket | RBrace | AngleGeneric
+        Ident | Int | Float | String | Char | RParen | RBracket | RBrace | AngleGeneric
     )
 }
 

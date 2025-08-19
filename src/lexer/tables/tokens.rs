@@ -46,6 +46,37 @@ pub enum TokenKind {
     IndexLBracket,
     ArrayLBracket,
     String,
+
+    // --------- NEW: literals, punctuation, and operators ---------
+    Float,
+    Char,
+
+    // punctuation
+    Dot,
+    Comma,
+    Semicolon,
+    Colon,
+    Question,
+
+    // operators
+    NotEqual,
+    Percent,
+    Caret,
+    Shl,
+    Shr,
+    Tilde,
+    PlusAssign,
+    MinusAssign,
+    StarAssign,
+    SlashAssign,
+    PercentAssign,
+    CaretAssign,
+    ShlAssign,
+    ShrAssign,
+    AmpAssign,
+    PipeAssign,
+    Inc,
+    Dec,
 }
 
 impl core::convert::TryFrom<u32> for TokenKind {
@@ -64,4 +95,4 @@ impl core::convert::TryFrom<u32> for TokenKind {
 
 // used on GPU side too
 pub const INVALID_TOKEN: u32 = u32::MAX;
-pub const N_KINDS: u32 = TokenKind::String as u32 + 1;
+pub const N_KINDS: u32 = TokenKind::Dec as u32 + 1;

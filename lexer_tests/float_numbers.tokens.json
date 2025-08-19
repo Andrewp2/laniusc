@@ -1,0 +1,19 @@
+{
+  "tokens": [
+    { "kind": "Ident", "text": "a" },
+    { "kind": "Assign", "text": "=" },
+    { "kind": "Float", "text": "1.0" },
+    { "kind": "Ident", "text": "b" },
+    { "kind": "Assign", "text": "=" },
+    { "kind": "Float", "text": ".5" },
+    { "kind": "Ident", "text": "c" },
+    { "kind": "Assign", "text": "=" },
+    { "kind": "Float", "text": "1." },
+    { "kind": "Ident", "text": "d" },
+    { "kind": "Assign", "text": "=" },
+    { "kind": "Float", "text": "1e-3" },
+    { "kind": "Ident", "text": "e" },
+    { "kind": "Assign", "text": "=" },
+    { "kind": "Float", "text": "1.2e+10" }
+  ]
+}

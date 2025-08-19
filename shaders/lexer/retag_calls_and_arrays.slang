@@ -43,6 +43,8 @@ static const uint TK_GROUP_LPAREN = 29;
 static const uint TK_INDEX_LBRACKET = 30;
 static const uint TK_ARRAY_LBRACKET = 31;
 static const uint TK_STRING = 32;
+static const uint TK_FLOAT = 33;
+static const uint TK_CHAR = 34;
 
 // ---------- Bindings ----------
 struct Params
@@ -75,16 +77,17 @@ void retag_calls_and_arrays(uint3 tid: SV_DispatchThreadID)
     uint kind = types_compact[k];
     uint prev = (k == 0) ? 0xFFFFu : types_compact[k - 1];
 
-    // ENDS_PRIMARY := { IDENT, INT, STRING?, RPAREN, RBRACKET, RBRACE, ANGLE_GENERIC }
-    // (STRING not in MVP token set yet; add when strings land)
+    // ENDS_PRIMARY := { IDENT, INT, FLOAT, STRING, CHAR, RPAREN, RBRACKET, RBRACE, ANGLE_GENERIC }
     bool ends_primary =
         (prev == TK_IDENT) ||
         (prev == TK_INT) ||
+        (prev == TK_FLOAT) ||
         (prev == TK_RPAREN) ||
         (prev == TK_RBRACKET) ||
         (prev == TK_RBRACE) ||
         (prev == TK_ANGLE_GENERIC) ||
-        (prev == TK_STRING);
+        (prev == TK_STRING) ||
+        (prev == TK_CHAR);
 
     if (kind == TK_LPAREN)
     {

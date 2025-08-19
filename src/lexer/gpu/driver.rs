@@ -6,7 +6,10 @@ use anyhow::{Result, anyhow};
 
 use super::passes;
 use crate::{
-    gpu::{passes_core::InputElements, timer::GpuTimer},
+    gpu::{
+        passes_core::InputElements,
+        timer::{GpuTimer, MINIMUM_TIME_TO_NOT_ELIDE_MS},
+    },
     lexer::{
         gpu::{
             Pass,
@@ -102,19 +105,13 @@ impl GpuLexer {
             load_compact_tables_from_bytes(COMPACT_BIN)
                 .map_err(|e| anyhow!("failed to parse compact lexer_tables.bin: {e}"))?;
 
-        if n_states_from_file != N_STATES {
-            return Err(anyhow!(
-                "compact table has n_states={} but shaders expect N_STATES={}",
-                n_states_from_file,
-                N_STATES
-            ));
-        }
+        // Use dynamic n_states from compact tables for data buffers.
         debug_assert_eq!(
             token_map.len(),
-            N_STATES as usize,
-            "token_map len != N_STATES"
+            n_states_from_file,
+            "token_map len != n_states"
         );
-        let expected_words = ((256 * (N_STATES as usize)) + 1) / 2;
+        let expected_words = ((256 * n_states_from_file) + 1) / 2;
         debug_assert_eq!(
             next_emit_words.len(),
             expected_words,
@@ -326,7 +323,7 @@ impl GpuLexer {
                 for (label, t) in vals {
                     let dt_ms = ((t - prev) as f64 * period_ns) / 1.0e6;
                     let total_ms = ((t - t0) as f64 * period_ns) / 1.0e6;
-                    if dt_ms < 0.5 {
+                    if dt_ms < MINIMUM_TIME_TO_NOT_ELIDE_MS {
                         continue;
                     }
                     println!("[gpu_timer] {label}: {dt_ms:.3}ms (total {total_ms:.3}ms)");
@@ -388,7 +385,7 @@ impl GpuLexer {
             for (label, t) in vals {
                 let dt_ms = ((t - prev) as f64 * period_ns) / 1.0e6;
                 let total_ms = ((t - t0) as f64 * period_ns) / 1.0e6;
-                if dt_ms < 0.5 {
+                if dt_ms < MINIMUM_TIME_TO_NOT_ELIDE_MS {
                     continue;
                 }
                 println!("[gpu_timer] {label}: {dt_ms:.3}ms (total {total_ms:.3}ms)");
