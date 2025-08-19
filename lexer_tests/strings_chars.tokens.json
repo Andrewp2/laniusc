@@ -11,7 +11,7 @@
     { "kind": "String", "text": "\"\\n\"" },
     { "kind": "Ident", "text": "squote" },
     { "kind": "Assign", "text": "=" },
-    { "kind": "Char", "text": "'\\\''" },
+    { "kind": "Char", "text": "'\\''" },
     { "kind": "Ident", "text": "dquote" },
     { "kind": "Assign", "text": "=" },
     { "kind": "String", "text": "\"\\\"\"" }

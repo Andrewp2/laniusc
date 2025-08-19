@@ -1,1 +1,1 @@
-s="hello" c='a' esc="\\n" squote='\'' dquote="\""
+s="hello" c='a' esc="\n" squote='\'' dquote="\""
