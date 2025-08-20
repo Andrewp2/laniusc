@@ -48,7 +48,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa01ScanInblock
                 Buffer(b.params.as_entire_buffer_binding()),
             ),
             ("in_bytes".into(), b.in_bytes.as_entire_binding()),
-            ("next_emit".into(), b.next_emit.as_entire_binding()),
+            ("next_u8".into(), b.next_u8.as_entire_binding()),
             (
                 "block_summaries".into(),
                 b.block_summaries.as_entire_binding(),

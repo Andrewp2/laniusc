@@ -73,7 +73,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa03ApplyBlockP
                 Buffer(b.params.as_entire_buffer_binding()),
             ),
             ("in_bytes".into(), b.in_bytes.as_entire_binding()),
-            ("next_emit".into(), b.next_emit.as_entire_binding()),
+            ("next_u8".into(), b.next_u8.as_entire_binding()),
             ("block_prefix".into(), block_prefix_binding),
             ("f_final".into(), b.f_final.as_entire_binding()),
         ])

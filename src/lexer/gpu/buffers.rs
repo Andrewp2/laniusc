@@ -19,6 +19,7 @@ pub struct GpuBuffers {
 
     pub in_bytes: LaniusBuffer<u8>,
     pub next_emit: LaniusBuffer<u32>,
+    pub next_u8: LaniusBuffer<u32>,
     pub token_map: LaniusBuffer<u32>,
 
     pub block_summaries: LaniusBuffer<u32>,
@@ -54,10 +55,11 @@ impl GpuBuffers {
         start_state: u32,
         input_bytes: &[u8],
         next_emit_packed: &[u32],
+        next_u8_packed: &[u32],
         token_map: &[u32],
         skip_kinds: [u32; 4],
     ) -> Self {
-        const BLOCK_WIDTH_DFA: u32 = 64;
+        const BLOCK_WIDTH_DFA: u32 = 256;
         const BLOCK_WIDTH_SUM: u32 = 256;
 
         let nb_dfa = n.div_ceil(BLOCK_WIDTH_DFA);
@@ -81,6 +83,9 @@ impl GpuBuffers {
 
         let next_emit_buf: LaniusBuffer<u32> =
             storage_ro_from_u32s(device, "next_emit", next_emit_packed);
+
+        let next_u8_buf: LaniusBuffer<u32> =
+            storage_ro_from_u32s(device, "next_u8", next_u8_packed);
 
         let per_block_count = N_STATES * (nb_dfa as usize);
         let block_summaries: LaniusBuffer<u32> =
@@ -149,6 +154,7 @@ impl GpuBuffers {
 
             in_bytes,
             next_emit: next_emit_buf,
+            next_u8: next_u8_buf,
             token_map: token_map_buf,
 
             block_summaries,

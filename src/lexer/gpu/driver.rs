@@ -141,12 +141,35 @@ impl GpuLexer {
             u32::MAX,
         ];
 
+        // Build packed-next (u8) table for DFA passes: layout [pack4][byte]
+        let n_states = n_states_from_file;
+        let n_pack4 = (n_states + 3) / 4;
+        let mut next_u8_packed: Vec<u32> = vec![0; 256 * n_pack4];
+        let read_u16 = |i: usize| -> u16 {
+            let w = next_emit_words[i >> 1];
+            if (i & 1) == 0 { (w & 0xFFFF) as u16 } else { (w >> 16) as u16 }
+        };
+        for b in 0..256usize {
+            for p in 0..n_pack4 {
+                let s0 = p * 4 + 0;
+                let s1 = p * 4 + 1;
+                let s2 = p * 4 + 2;
+                let s3 = p * 4 + 3;
+                let v0 = if s0 < n_states { (read_u16(b * n_states + s0) & 0x7FFF) as u32 } else { s0 as u32 };
+                let v1 = if s1 < n_states { (read_u16(b * n_states + s1) & 0x7FFF) as u32 } else { s1 as u32 };
+                let v2 = if s2 < n_states { (read_u16(b * n_states + s2) & 0x7FFF) as u32 } else { s2 as u32 };
+                let v3 = if s3 < n_states { (read_u16(b * n_states + s3) & 0x7FFF) as u32 } else { s3 as u32 };
+                next_u8_packed[p * 256 + b] = (v0 & 0xFF) | ((v1 & 0xFF) << 8) | ((v2 & 0xFF) << 16) | ((v3 & 0xFF) << 24);
+            }
+        }
+
         let bufs = GpuBuffers::new(
             &self.device,
             n,
             start_state,
             input_bytes,
             &next_emit_words,
+            &next_u8_packed,
             &token_map,
             skip_kinds,
         );
