@@ -1,13 +1,9 @@
 //! Host-side recount of EMIT/EOF using the same compact tables the GPU uses.
 //! Useful to compare against GPU flags without touching gpu/driver.rs.
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 
-use crate::lexer::tables::{
-    compact::load_compact_tables_from_bytes,
-    dfa::N_STATES,
-    tokens::TokenKind,
-};
+use crate::lexer::tables::{compact::load_compact_tables_from_bytes, tokens::TokenKind};
 
 #[derive(Debug, Clone, Copy)]
 pub struct HostRecount {

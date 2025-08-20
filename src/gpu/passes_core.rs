@@ -264,6 +264,9 @@ pub trait Pass<Buffers, DebugOutput> {
         buffers: &'a Buffers,
     ) -> HashMap<String, wgpu::BindingResource<'a>>;
 
+    // this can't mention lexer pass context must be generic so it works for parser too
+    fn record_pass_2(&self, ctx: &mut LexerPassContext)
+
     fn record_pass(
         &self,
         device: &wgpu::Device,

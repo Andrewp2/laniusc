@@ -17,7 +17,7 @@ use crate::{
             types::{GpuToken, Token},
             util::{read_tokens_from_mapped, readback_enabled, u32_from_first_4},
         },
-        tables::{compact::load_compact_tables_from_bytes, dfa::N_STATES, tokens::TokenKind},
+        tables::{compact::load_compact_tables_from_bytes, tokens::TokenKind},
     },
 };
 
@@ -173,6 +173,14 @@ impl GpuLexer {
             t.stamp(&mut enc, "BEGIN");
         }
 
+        let ctx = passes::LexerPassContext {
+            device: &self.device,
+            queue: &self.queue,
+            encoder: &mut enc,
+            maybe_timer: maybe_timer.as_mut(),
+            maybe_dbg,
+        };
+
         self.p_dfa_01_scan_inblock.record_pass(
             &self.device,
             &mut enc,
@@ -264,47 +272,65 @@ impl GpuLexer {
             &mut maybe_dbg,
         )?;
 
-        if let Some(timer) = maybe_timer.as_mut() {
-            timer.stamp(&mut enc, "before copy count");
-        }
+        let rb_enabled = readback_enabled();
 
-        let readback_tokens_count = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("rb_count"),
-            size: 4,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
+        // Submit work, optionally also copy back token count when readback is enabled.
+        let token_count_u32 = if rb_enabled {
+            if let Some(timer) = maybe_timer.as_mut() {
+                timer.stamp(&mut enc, "before copy count");
+            }
 
-        enc.copy_buffer_to_buffer(&bufs.token_count, 0, &readback_tokens_count, 0, 4);
+            let readback_tokens_count = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("rb_count"),
+                size: 4,
+                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                mapped_at_creation: false,
+            });
 
-        if let Some(timer) = maybe_timer.as_mut() {
-            timer.stamp(&mut enc, "after copy count");
-            timer.resolve(&mut enc);
-        }
+            enc.copy_buffer_to_buffer(&bufs.token_count, 0, &readback_tokens_count, 0, 4);
 
-        self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-        self.queue.submit(Some(enc.finish()));
-        if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
-            eprintln!("[wgpu submit] validation while submitting lex batch: {err:#?}");
-        }
+            if let Some(timer) = maybe_timer.as_mut() {
+                timer.stamp(&mut enc, "after copy count");
+                timer.resolve(&mut enc);
+            }
 
-        readback_tokens_count
-            .slice(..)
-            .map_async(wgpu::MapMode::Read, |_| {});
-        let _ = self.device.poll(wgpu::PollType::Wait);
-        let count_bytes = readback_tokens_count.slice(..).get_mapped_range();
-        let token_count_u32 = u32_from_first_4(&count_bytes) as usize;
-        drop(count_bytes);
-        readback_tokens_count.unmap();
-        debug_assert!(
-            n == 0 || token_count_u32 <= (n as usize),
-            "token_count unexpectedly exceeds n (count={}, n={})",
-            token_count_u32,
-            n
-        );
-        if token_count_u32 == 0 {
-            return Ok(Vec::new());
-        }
+            self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+            self.queue.submit(Some(enc.finish()));
+            if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
+                eprintln!("[wgpu submit] validation while submitting lex batch: {err:#?}");
+            }
+
+            readback_tokens_count
+                .slice(..)
+                .map_async(wgpu::MapMode::Read, |_| {});
+            let _ = self.device.poll(wgpu::PollType::Wait);
+            let count_bytes = readback_tokens_count.slice(..).get_mapped_range();
+            let token_count_u32 = u32_from_first_4(&count_bytes) as usize;
+            drop(count_bytes);
+            readback_tokens_count.unmap();
+            debug_assert!(
+                n == 0 || token_count_u32 <= (n as usize),
+                "token_count unexpectedly exceeds n (count={}, n={})",
+                token_count_u32,
+                n
+            );
+            if token_count_u32 == 0 {
+                return Ok(Vec::new());
+            }
+            token_count_u32
+        } else {
+            if let Some(timer) = maybe_timer.as_mut() {
+                // No count copy; still resolve timer queries for printing later.
+                timer.resolve(&mut enc);
+            }
+            self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+            self.queue.submit(Some(enc.finish()));
+            if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
+                eprintln!("[wgpu submit] validation while submitting lex batch: {err:#?}");
+            }
+            // We intentionally skip token-count readback when readback is disabled.
+            0usize
+        };
 
         // Optional debug sanity checks
         #[cfg(feature = "gpu-debug")]
@@ -312,7 +338,7 @@ impl GpuLexer {
             super::debug_checks::run_debug_sanity_checks(&self.device, input, &debug_output, n);
         }
 
-        if !readback_enabled() {
+        if !rb_enabled {
             if let Some(timer) = maybe_timer
                 && let Some(vals) = timer.try_read(&self.device)
                 && !vals.is_empty()
@@ -331,14 +357,8 @@ impl GpuLexer {
                 }
             }
 
-            return Ok(vec![
-                Token {
-                    kind: TokenKind::White,
-                    start: 0,
-                    len: 0
-                };
-                token_count_u32
-            ]);
+            // No token count; return empty vector to avoid any token readback.
+            return Ok(Vec::new());
         }
 
         let need_bytes = (token_count_u32 * std::mem::size_of::<GpuToken>()) as u64;
