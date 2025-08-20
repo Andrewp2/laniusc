@@ -5,10 +5,7 @@ use wgpu::util::DeviceExt;
 
 use super::PassData;
 use crate::{
-    gpu::{
-        passes_core::{DispatchDim, bind_group::create_bind_group_from_reflection},
-        timer::GpuTimer,
-    },
+    gpu::passes_core::{DispatchDim, bind_group::create_bind_group_from_reflection},
     lexer::{
         gpu::{buffers::GpuBuffers, debug::DebugOutput, passes::ScanParams, util::compute_rounds},
         tables::dfa::N_STATES,
@@ -59,33 +56,37 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSu
         );
     }
 
-    fn record_pass(
+    fn record_pass<'a>(
         &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        b: &GpuBuffers,
-        input: super::InputElements,
-        maybe_timer: &mut Option<&mut GpuTimer>,
-        maybe_dbg: &mut Option<&mut DebugOutput>,
-    ) -> Result<(), anyhow::Error> {
+        ctx: &mut crate::gpu::passes_core::PassContext<'a, GpuBuffers, DebugOutput>,
+        input: crate::gpu::passes_core::InputElements,
+    ) -> anyhow::Result<(), anyhow::Error> {
+        let device = ctx.device;
+        let encoder = &mut ctx.encoder;
+        let b = ctx.buffers;
+        let maybe_timer = &mut ctx.maybe_timer;
+        let maybe_dbg = &mut ctx.maybe_dbg;
+
         device.push_error_scope(wgpu::ErrorFilter::Validation);
 
-        let nblocks = match input {
+        let n = match input {
             super::InputElements::Elements1D(n) => n,
             _ => unreachable!(),
         };
 
-        let per_round_bytes = (nblocks as usize) * N_STATES * std::mem::size_of::<u32>();
+        let per_round_bytes = (n as usize) * N_STATES * std::mem::size_of::<u32>();
         let per_round_bytes_u64 = per_round_bytes as u64;
 
         // Seed ping with raw per-block summaries
         encoder.copy_buffer_to_buffer(&b.block_summaries, 0, &b.block_ping, 0, per_round_bytes_u64);
 
-        let rounds = compute_rounds(nblocks);
+        let rounds = compute_rounds(n);
 
-        let layout0 = &self.data().bind_group_layouts[0];
-        let pipeline = &self.data().pipeline;
-        let reflection = &self.data().reflection;
+        let pd = self.data();
+
+        let layout0 = &pd.bind_group_layouts[0];
+        let pipeline = &pd.pipeline;
+        let reflection = &pd.reflection;
 
         if let Some(dbg) = maybe_dbg.as_deref_mut() {
             dbg.gpu.func_scan_rounds.clear();
@@ -123,8 +124,8 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSu
             let bg = create_bind_group_from_reflection(
                 device,
                 Some(&format!("func_blocks_bg[{r}]")),
-                layout0,
-                reflection,
+                &layout0,
+                &reflection,
                 0,
                 &res,
             )
@@ -135,14 +136,14 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSu
                 // Tell the planner each “element” already maps 1:1 to a group.
                 let (gx, gy, gz) = crate::gpu::passes_core::plan_workgroups(
                     crate::gpu::passes_core::DispatchDim::D1,
-                    crate::gpu::passes_core::InputElements::Elements1D(nblocks),
+                    crate::gpu::passes_core::InputElements::Elements1D(n),
                     [1, 1, 1],
                 )?;
                 let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                     label: Some(Self::NAME),
                     timestamp_writes: None,
                 });
-                pass.set_pipeline(pipeline);
+                pass.set_pipeline(&pipeline);
                 pass.set_bind_group(0, &bg, &[]);
                 pass.dispatch_workgroups(gx, gy, gz);
             }
@@ -180,7 +181,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSu
         }
 
         if let Some(d) = maybe_dbg.as_deref_mut() {
-            self.record_debug(device, encoder, b, d);
+            (&self).record_debug(device, encoder, b, d);
         }
         Ok(())
     }

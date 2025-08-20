@@ -157,10 +157,9 @@ impl GpuLexer {
         #[cfg(feature = "gpu-debug")]
         let mut debug_output = crate::lexer::gpu::debug::DebugOutput::default();
         #[cfg(feature = "gpu-debug")]
-        let mut maybe_dbg: Option<&mut crate::lexer::gpu::debug::DebugOutput> =
-            Some(&mut debug_output);
+        let maybe_dbg: Option<&mut crate::lexer::gpu::debug::DebugOutput> = Some(&mut debug_output);
         #[cfg(not(feature = "gpu-debug"))]
-        let mut maybe_dbg: Option<&mut crate::lexer::gpu::debug::DebugOutput> = None;
+        let maybe_dbg: Option<&mut crate::lexer::gpu::debug::DebugOutput> = None;
 
         let mut enc = self
             .device
@@ -173,104 +172,41 @@ impl GpuLexer {
             t.stamp(&mut enc, "BEGIN");
         }
 
-        let ctx = passes::LexerPassContext {
+        // Build a single shared PassContext and run all passes with it.
+        let mut timer_ref = maybe_timer.as_mut();
+        let mut dbg_ref = maybe_dbg;
+        let mut ctx = crate::gpu::passes_core::PassContext {
             device: &self.device,
-            queue: &self.queue,
             encoder: &mut enc,
-            maybe_timer: maybe_timer.as_mut(),
-            maybe_dbg,
+            buffers: &bufs,
+            maybe_timer: &mut timer_ref,
+            maybe_dbg: &mut dbg_ref,
         };
 
-        self.p_dfa_01_scan_inblock.record_pass(
-            &self.device,
-            &mut enc,
-            &bufs,
-            InputElements::Elements1D(bufs.n),
-            &mut maybe_timer.as_mut(),
-            &mut maybe_dbg,
-        )?;
-        self.p_dfa_02_scan_block_summaries.record_pass(
-            &self.device,
-            &mut enc,
-            &bufs,
-            InputElements::Elements1D(bufs.nb_dfa),
-            &mut maybe_timer.as_mut(),
-            &mut maybe_dbg,
-        )?;
-        self.p_dfa_03_apply_block_prefix.record_pass(
-            &self.device,
-            &mut enc,
-            &bufs,
-            InputElements::Elements1D(bufs.n),
-            &mut maybe_timer.as_mut(),
-            &mut maybe_dbg,
-        )?;
-        self.p_boundary_finalize_and_seed.record_pass(
-            &self.device,
-            &mut enc,
-            &bufs,
-            InputElements::Elements1D(bufs.n),
-            &mut maybe_timer.as_mut(),
-            &mut maybe_dbg,
-        )?;
-        self.p_pair_01_sum_inblock.record_pass(
-            &self.device,
-            &mut enc,
-            &bufs,
-            InputElements::Elements1D(bufs.n),
-            &mut maybe_timer.as_mut(),
-            &mut maybe_dbg,
-        )?;
-        self.p_pair_02_scan_block_totals.record_pass(
-            &self.device,
-            &mut enc,
-            &bufs,
-            InputElements::Elements1D(bufs.nb_sum),
-            &mut maybe_timer.as_mut(),
-            &mut maybe_dbg,
-        )?;
-        self.p_pair_03_apply_block_prefix.record_pass(
-            &self.device,
-            &mut enc,
-            &bufs,
-            InputElements::Elements1D(bufs.n),
-            &mut maybe_timer.as_mut(),
-            &mut maybe_dbg,
-        )?;
+        self.p_dfa_01_scan_inblock
+            .record_pass(&mut ctx, InputElements::Elements1D(bufs.n))?;
+        self.p_dfa_02_scan_block_summaries
+            .record_pass(&mut ctx, InputElements::Elements1D(bufs.nb_dfa))?;
+        self.p_dfa_03_apply_block_prefix
+            .record_pass(&mut ctx, InputElements::Elements1D(bufs.n))?;
+        self.p_boundary_finalize_and_seed
+            .record_pass(&mut ctx, InputElements::Elements1D(bufs.n))?;
+        self.p_pair_01_sum_inblock
+            .record_pass(&mut ctx, InputElements::Elements1D(bufs.n))?;
+        self.p_pair_02_scan_block_totals
+            .record_pass(&mut ctx, InputElements::Elements1D(bufs.nb_sum))?;
+        self.p_pair_03_apply_block_prefix
+            .record_pass(&mut ctx, InputElements::Elements1D(bufs.n))?;
 
-        self.p_compact_boundaries_all.record_pass(
-            &self.device,
-            &mut enc,
-            &bufs,
-            InputElements::Elements1D(bufs.n),
-            &mut maybe_timer.as_mut(),
-            &mut maybe_dbg,
-        )?;
-        self.p_compact_boundaries_kept.record_pass(
-            &self.device,
-            &mut enc,
-            &bufs,
-            InputElements::Elements1D(bufs.n),
-            &mut maybe_timer.as_mut(),
-            &mut maybe_dbg,
-        )?;
+        self.p_compact_boundaries_all
+            .record_pass(&mut ctx, InputElements::Elements1D(bufs.n))?;
+        self.p_compact_boundaries_kept
+            .record_pass(&mut ctx, InputElements::Elements1D(bufs.n))?;
 
-        self.p_retag_calls_and_arrays.record_pass(
-            &self.device,
-            &mut enc,
-            &bufs,
-            InputElements::Elements1D(bufs.n),
-            &mut maybe_timer.as_mut(),
-            &mut maybe_dbg,
-        )?;
-        self.p_tokens_build.record_pass(
-            &self.device,
-            &mut enc,
-            &bufs,
-            InputElements::Elements1D(bufs.n),
-            &mut maybe_timer.as_mut(),
-            &mut maybe_dbg,
-        )?;
+        self.p_retag_calls_and_arrays
+            .record_pass(&mut ctx, InputElements::Elements1D(bufs.n))?;
+        self.p_tokens_build
+            .record_pass(&mut ctx, InputElements::Elements1D(bufs.n))?;
 
         let rb_enabled = readback_enabled();
 

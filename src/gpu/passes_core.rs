@@ -248,6 +248,16 @@ pub fn plan_workgroups(
     }
 }
 
+/// Generic per-dispatch context shared across passes (lexer, parser, etc.).
+/// `B` is the concrete buffers type for the pipeline; `D` is the debug output type.
+pub struct PassContext<'a, B, D> {
+    pub device: &'a wgpu::Device,
+    pub encoder: &'a mut wgpu::CommandEncoder,
+    pub buffers: &'a B,
+    pub maybe_timer: &'a mut Option<&'a mut crate::gpu::timer::GpuTimer>,
+    pub maybe_dbg: &'a mut Option<&'a mut D>,
+}
+
 pub trait Pass<Buffers, DebugOutput> {
     const NAME: &'static str;
 
@@ -264,26 +274,21 @@ pub trait Pass<Buffers, DebugOutput> {
         buffers: &'a Buffers,
     ) -> HashMap<String, wgpu::BindingResource<'a>>;
 
-    // this can't mention lexer pass context must be generic so it works for parser too
-    fn record_pass_2(&self, ctx: &mut LexerPassContext)
-
-    fn record_pass(
+    /// New, context-based API: pass fewer args via a shared struct.
+    /// Default implementation forwards to the same logic as `record_pass`.
+    fn record_pass<'a>(
         &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        buffers: &Buffers,
+        ctx: &mut PassContext<'a, Buffers, DebugOutput>,
         input: InputElements,
-        timer: &mut Option<&mut crate::gpu::timer::GpuTimer>,
-        dbg: &mut Option<&mut DebugOutput>,
     ) -> Result<(), anyhow::Error> {
-        device.push_error_scope(wgpu::ErrorFilter::Validation);
+        ctx.device.push_error_scope(wgpu::ErrorFilter::Validation);
 
         let pd = self.data();
         let mut bind_groups = Vec::new();
-        let resources = self.create_resource_map(buffers);
+        let resources = self.create_resource_map(ctx.buffers);
         for (set_idx, bgl) in pd.bind_group_layouts.iter().enumerate() {
             let bg = bind_group::create_bind_group_from_reflection(
-                device,
+                ctx.device,
                 Some(Self::NAME),
                 bgl,
                 &pd.reflection,
@@ -303,10 +308,12 @@ pub trait Pass<Buffers, DebugOutput> {
             "dispatch must issue at least one group"
         );
 
-        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some(Self::NAME),
-            timestamp_writes: None,
-        });
+        let mut pass = ctx
+            .encoder
+            .begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some(Self::NAME),
+                timestamp_writes: None,
+            });
         pass.set_pipeline(&pd.pipeline);
         for (i, bg) in bind_groups.iter().enumerate() {
             pass.set_bind_group(i as u32, bg, &[]);
@@ -314,17 +321,16 @@ pub trait Pass<Buffers, DebugOutput> {
         pass.dispatch_workgroups(gx, gy, gz);
         drop(pass);
 
-        if let Some(t) = timer {
-            t.stamp(encoder, Self::NAME.to_string());
+        if let Some(t) = ctx.maybe_timer.as_deref_mut() {
+            t.stamp(ctx.encoder, Self::NAME.to_string());
         }
 
-        if let Some(err) = pollster::block_on(device.pop_error_scope()) {
+        if let Some(err) = pollster::block_on(ctx.device.pop_error_scope()) {
             return Err(anyhow!("validation in pass {}: {err:?}", Self::NAME));
         }
 
-        // Centralized debug snapshot (only runs if a DebugOutput was provided)
-        if let Some(d) = dbg.as_deref_mut() {
-            self.record_debug(device, encoder, buffers, d);
+        if let Some(d) = ctx.maybe_dbg.as_deref_mut() {
+            self.record_debug(ctx.device, ctx.encoder, ctx.buffers, d);
         }
         Ok(())
     }

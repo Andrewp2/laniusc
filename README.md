@@ -1,7 +1,3 @@
-# NOTE
-
-I'm putting this project on-hold until I can figure out why it should exist. Compilers, even heavy compilers like gcc and rustc, are not too slow except when compiling many times to many different targets. Iterative builds take care of most of the issues of needing a fast compiler. Once you get below ~2 seconds, it starts being unclear if improving the compile time is actually valuable. Furthermore, many of the algorithms that one might want to spend compile time on are not GPU-friendly.
-
 # The Lanius Programming Language
 
 Lanius is a programming language that compiles "faster than light". It accomplishes this by performing all compilation tasks on the GPU: Lexing, parsing, typechecking, and code generation.

@@ -115,36 +115,31 @@ impl GpuParser {
             t.stamp(&mut encoder, "BEGIN");
         }
 
+        // Build shared context and invoke passes with it.
+        let mut timer_ref = maybe_timer.as_mut();
+        let mut ctx = crate::gpu::passes_core::PassContext {
+            device: &self.device,
+            encoder: &mut encoder,
+            buffers: &bufs,
+            maybe_timer: &mut timer_ref,
+            maybe_dbg: &mut dbg_opt,
+        };
+
         // 1) pair → headers
         self.pass_llp.record_pass(
-            &self.device,
-            &mut encoder,
-            &bufs,
+            &mut ctx,
             InputElements::Elements1D(bufs.n_tokens.saturating_sub(1)),
-            &mut maybe_timer.as_mut(),
-            &mut dbg_opt,
         )?;
 
         // 2) pack var-len streams (writes out_sc + out_emit)
         self.pass_pack.record_pass(
-            &self.device,
-            &mut encoder,
-            &bufs,
+            &mut ctx,
             InputElements::Elements1D(bufs.n_tokens.saturating_sub(1)),
-            &mut maybe_timer.as_mut(),
-            &mut dbg_opt,
         )?;
 
         // 3) bracket validation on the packed stack-change stream
-        self.pass_brackets.record_pass(
-            &self.device,
-            &mut encoder,
-            &bufs,
-            // Single-thread pass; dispatch 1 group to avoid redundant no-ops.
-            InputElements::Elements1D(1),
-            &mut maybe_timer.as_mut(),
-            &mut dbg_opt,
-        )?;
+        self.pass_brackets
+            .record_pass(&mut ctx, InputElements::Elements1D(1))?; // single-thread
 
         // Readbacks: headers, out_sc, out_emit, bracket outputs (match/depths/valid)
         let rb_headers = readback_bytes(

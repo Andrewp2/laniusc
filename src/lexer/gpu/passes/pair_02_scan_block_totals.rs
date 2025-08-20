@@ -5,10 +5,7 @@ use wgpu::util::DeviceExt;
 
 use super::PassData;
 use crate::{
-    gpu::{
-        passes_core::{DispatchDim, bind_group::create_bind_group_from_reflection},
-        timer::GpuTimer,
-    },
+    gpu::passes_core::{DispatchDim, bind_group::create_bind_group_from_reflection},
     lexer::gpu::{
         buffers::GpuBuffers,
         debug::DebugOutput,
@@ -60,15 +57,17 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
         );
     }
 
-    fn record_pass(
+    fn record_pass<'a>(
         &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        b: &GpuBuffers,
-        input: super::InputElements,
-        maybe_timer: &mut Option<&mut GpuTimer>,
-        maybe_dbg: &mut Option<&mut DebugOutput>,
-    ) -> Result<(), anyhow::Error> {
+        ctx: &mut crate::gpu::passes_core::PassContext<'a, GpuBuffers, DebugOutput>,
+        input: crate::gpu::passes_core::InputElements,
+    ) -> anyhow::Result<(), anyhow::Error> {
+        let device = ctx.device;
+        let encoder = &mut ctx.encoder;
+        let b = ctx.buffers;
+        let maybe_timer = &mut ctx.maybe_timer;
+        let maybe_dbg = &mut ctx.maybe_dbg;
+
         device.push_error_scope(wgpu::ErrorFilter::Validation);
 
         let nblocks = match input {
@@ -87,9 +86,11 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
 
         let rounds = compute_rounds(nblocks);
 
-        let layout0 = &self.data().bind_group_layouts[0];
-        let pipeline = &self.data().pipeline;
-        let reflection = &self.data().reflection;
+        let pd = self.data();
+
+        let layout0 = &pd.bind_group_layouts[0];
+        let pipeline = &pd.pipeline;
+        let reflection = &pd.reflection;
 
         if let Some(dbg) = maybe_dbg.as_deref_mut() {
             dbg.gpu.pair_scan_rounds.clear();
@@ -190,7 +191,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
         }
 
         if let Some(d) = maybe_dbg.as_deref_mut() {
-            self.record_debug(device, encoder, b, d);
+            (&self).record_debug(device, encoder, b, d);
         }
         Ok(())
     }

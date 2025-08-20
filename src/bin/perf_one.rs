@@ -4,7 +4,7 @@ use laniusc::{
     dev::generator::gen_valid_source,
     lexer::{
         cpu::lex_on_cpu,
-        gpu::{util::readback_enabled, GpuLexer},
+        gpu::{GpuLexer, util::readback_enabled},
     },
 };
 use rand::{SeedableRng, rngs::StdRng};
@@ -140,7 +140,6 @@ fn main() {
                 println!("CPU:  first={:.3} ms | tokens={}", ms, cpu_tokens.len());
             }
         }
-        print_stats("CPU", &cpu_runs, bytes);
 
         let gpu_init_t0 = Instant::now();
         let gpu = match GpuLexer::new().await {
@@ -178,7 +177,8 @@ fn main() {
                 gpu_runs.push(ms);
             }
         }
-        print_stats("GPU-lex", &gpu_runs, bytes);
+        print_stats("CPU", &cpu_runs, bytes);
+        print_stats("GPU", &gpu_runs, bytes);
 
         if let Some(&best_gpu) = gpu_runs.iter().min_by(|a, b| a.partial_cmp(b).unwrap()) {
             let best_total = gpu_init_ms + best_gpu;

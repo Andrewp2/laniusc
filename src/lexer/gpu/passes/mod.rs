@@ -1,9 +1,6 @@
 use encase::ShaderType;
 
-use crate::gpu::{
-    passes_core::{DispatchDim, InputElements, PassData},
-    timer::GpuTimer,
-};
+use crate::gpu::passes_core::{DispatchDim, InputElements, PassData};
 
 pub mod boundary_finalize_and_seed;
 pub mod compact_boundaries_all;
@@ -21,12 +18,4 @@ pub mod tokens_build;
 pub(super) struct ScanParams {
     pub stride: u32,
     pub use_ping_as_src: u32,
-}
-
-pub struct LexerPassContext<'a> {
-    pub device: &'a wgpu::Device,
-    pub queue: &'a wgpu::Queue,
-    pub encoder: &'a mut wgpu::CommandEncoder,
-    pub maybe_timer: Option<&'a mut GpuTimer>,
-    pub maybe_dbg: Option<&'a mut crate::lexer::gpu::debug::DebugOutput>,
 }
