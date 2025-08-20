@@ -43,7 +43,7 @@ void boundary_finalize_and_seed(uint3 tid: SV_DispatchThreadID)
     uint prev_state = (i == 0) ? gParams.start_state : f_final[i - 1];
     uint state_i = f_final[i];
 
-    uint packed = load_u16_packed(next_emit, b * gParams.n_states + prev_state);
+    uint packed = load_u16_packed(next_emit, b * N_STATES + prev_state);
     uint emit_here = is_highest_bit_set(packed) ? 1u : 0u;
 
     uint at_eof = is_last(i, gParams.n) ? 1u : 0u;

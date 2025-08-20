@@ -105,6 +105,15 @@ impl GpuLexer {
             load_compact_tables_from_bytes(COMPACT_BIN)
                 .map_err(|e| anyhow!("failed to parse compact lexer_tables.bin: {e}"))?;
 
+        // Ensure shader-compiled N_STATES matches table N_STATES.
+        debug_assert_eq!(
+            n_states_from_file,
+            crate::lexer::tables::dfa::N_STATES,
+            "shader N_STATES ({}) != tables n_states ({})",
+            crate::lexer::tables::dfa::N_STATES,
+            n_states_from_file
+        );
+
         // Use dynamic n_states from compact tables for data buffers.
         debug_assert_eq!(
             token_map.len(),

@@ -26,6 +26,27 @@ public inline uint load_u16_packed(StructuredBuffer<uint> buf, uint idx)
     return (w >> sh) & 0xFFFFu;
 }
 
+// Load two consecutive u16 values starting at idx (may cross u32 word boundary).
+// Returns: low16 = value at idx, high16 = value at idx+1.
+public inline uint load_u32_two_u16(StructuredBuffer<uint> buf, uint idx)
+{
+    const uint w0 = buf[idx >> 1];
+    const uint is_odd = idx & 1u;
+    if (is_odd == 0u)
+    {
+        // Both halves live in the same 32-bit word.
+        return w0;
+    }
+    else
+    {
+        // Crosses boundary: hi16 comes from next word's low16.
+        const uint w1 = buf[(idx >> 1) + 1u];
+        const uint lo = (w0 >> 16) & 0xFFFFu;
+        const uint hi = (w1 & 0xFFFFu) << 16;
+        return lo | hi;
+    }
+}
+
 public inline bool is_last(uint i, uint n)
 {
     return (i + 1u == n);
@@ -75,4 +96,3 @@ public inline uint linearize_group_2d_to_1d(
     const uint nx = groupsX * tgsX;
     return global_y * nx + global_x;
 }
-
