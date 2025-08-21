@@ -5,6 +5,7 @@ use crate::{
         storage_ro_from_bytes,
         storage_ro_from_u32s,
         storage_rw_for_array,
+        storage_rw_uninit_bytes,
         uniform_from_val,
     },
     lexer::tables::dfa::N_STATES,
@@ -76,8 +77,9 @@ impl GpuBuffers {
         );
         debug_assert!(!token_map.is_empty(), "token_map must not be empty");
 
+        // Allocate input buffer with capacity n; contents are filled by driver via queue.write_buffer
         let in_bytes: LaniusBuffer<u8> =
-            storage_ro_from_bytes::<u8>(device, "in_bytes", input_bytes, n as usize);
+            storage_rw_uninit_bytes(device, "in_bytes", n as usize, n as usize);
 
         let token_map_buf: LaniusBuffer<u32> = storage_ro_from_u32s(device, "token_map", token_map);
 

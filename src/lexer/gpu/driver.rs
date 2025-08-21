@@ -5,6 +5,7 @@ use std::sync::{Arc, OnceLock};
 use anyhow::{Result, anyhow};
 
 use super::passes;
+use super::buffers;
 use crate::{
     gpu::{
         passes_core::InputElements,
@@ -44,6 +45,9 @@ pub struct GpuLexer {
     p_compact_boundaries_kept: passes::compact_boundaries_kept::CompactBoundariesKeptPass,
     p_retag_calls_and_arrays: passes::retag_calls_and_arrays::RetagCallsAndArraysPass,
     p_tokens_build: passes::tokens_build::TokensBuildPass,
+
+    // Persistent buffers reused across lex() calls
+    buffers: std::sync::Mutex<Option<buffers::GpuBuffers>>,
 }
 
 impl GpuLexer {
@@ -172,6 +176,7 @@ impl GpuLexer {
             p_compact_boundaries_kept,
             p_retag_calls_and_arrays,
             p_tokens_build,
+            buffers: std::sync::Mutex::new(None),
         })
     }
 
@@ -185,6 +190,7 @@ impl GpuLexer {
 
         let input_bytes: &[u8] = input.as_bytes();
         let n = input_bytes.len() as u32;
+        let aligned_len_usize = ((n as usize + 3) / 4) * 4; // for in_bytes writes
 
         let skip_kinds = [
             TokenKind::White as u32,
@@ -193,16 +199,126 @@ impl GpuLexer {
             u32::MAX,
         ];
 
-        let bufs = GpuBuffers::new(
-            &self.device,
-            n,
-            start_state,
-            input_bytes,
-            &self.next_emit_words,
-            &self.next_u8_packed,
-            &self.token_map,
-            skip_kinds,
-        );
+        // Prepare or resize persistent buffers
+        const BLOCK_WIDTH_DFA: u32 = 256;
+        const BLOCK_WIDTH_SUM: u32 = 256;
+
+        let mut guard = self
+            .buffers
+            .lock()
+            .expect("GpuLexer.buffers mutex poisoned");
+
+        // Helper to (re)create buffers with at-least current n capacity
+        let mut recreate = |cap_n: u32| -> buffers::GpuBuffers {
+            GpuBuffers::new(
+                &self.device,
+                cap_n,
+                start_state,
+                input_bytes,
+                &self.next_emit_words,
+                &self.next_u8_packed,
+                &self.token_map,
+                skip_kinds,
+            )
+        };
+
+        // Ensure buffers exist and have enough capacity; otherwise reuse and just update content
+        let mut bufs = if guard.is_none() {
+            // First-time allocation: ensure input buffer can accept aligned writes
+            let init_cap = (aligned_len_usize as u32).max(1);
+            let b = recreate(init_cap);
+            *guard = Some(b);
+            guard.as_mut().unwrap()
+        } else {
+            guard.as_mut().unwrap()
+        };
+
+        // Compute dispatch sizes for current input
+        let nb_dfa_needed = n.div_ceil(BLOCK_WIDTH_DFA);
+        let nb_sum_needed = n.div_ceil(BLOCK_WIDTH_SUM);
+
+        // Current capacities
+        let cap_n = bufs.in_bytes.count as u32;
+        let cap_nb_dfa = (bufs.block_summaries.count / crate::lexer::tables::dfa::N_STATES) as u32;
+        let cap_nb_sum = (bufs.block_totals_pair.count / 2) as u32;
+
+        let needs_grow =
+            (aligned_len_usize as u32) > (bufs.in_bytes.byte_size as u32)
+                || nb_dfa_needed > cap_nb_dfa
+                || nb_sum_needed > cap_nb_sum
+                || n > cap_n;
+        if needs_grow {
+            // Recreate with a grown capacity; choose ≥ n
+            let new_cap = (aligned_len_usize as u32)
+                .max(cap_n.max(1).saturating_mul(2))
+                .max(1);
+            let mut new_bufs = recreate(new_cap);
+            // Adjust dynamic sizes and params to the actual input n
+            new_bufs.n = n;
+            new_bufs.nb_dfa = nb_dfa_needed;
+            new_bufs.nb_sum = nb_sum_needed;
+            let params_val = super::types::LexParams {
+                n,
+                m: self.token_map.len() as u32,
+                start_state,
+                skip0: skip_kinds[0],
+                skip1: skip_kinds[1],
+                skip2: skip_kinds[2],
+                skip3: skip_kinds[3],
+            };
+            let mut ub = encase::UniformBuffer::new(Vec::<u8>::new());
+            ub.write(&params_val)
+                .expect("failed to encode LexParams");
+            let bytes = ub.as_ref();
+            self.queue.write_buffer(&new_bufs.params, 0, bytes);
+            // Upload input bytes (padded to 4-byte alignment)
+            if n > 0 {
+                let aligned_len = ((n as usize + 3) / 4) * 4;
+                if aligned_len == input_bytes.len() {
+                    self.queue.write_buffer(&new_bufs.in_bytes, 0, input_bytes);
+                } else {
+                    let mut tmp = Vec::with_capacity(aligned_len);
+                    tmp.extend_from_slice(input_bytes);
+                    tmp.resize(aligned_len, 0u8);
+                    self.queue.write_buffer(&new_bufs.in_bytes, 0, &tmp);
+                }
+            }
+            *bufs = new_bufs;
+        } else {
+            // Reuse: update input bytes and params for current n/start/skip
+            if n > 0 {
+                // wgpu requires COPY_BUFFER-aligned sizes; pad to 4 bytes
+                let aligned_len = ((n as usize + 3) / 4) * 4;
+                if aligned_len == input_bytes.len() {
+                    self.queue.write_buffer(&bufs.in_bytes, 0, input_bytes);
+                } else {
+                    let mut tmp = Vec::with_capacity(aligned_len);
+                    tmp.extend_from_slice(input_bytes);
+                    tmp.resize(aligned_len, 0u8);
+                    self.queue.write_buffer(&bufs.in_bytes, 0, &tmp);
+                }
+            }
+            // Update params uniform with new values
+            let params_val = super::types::LexParams {
+                n,
+                m: self.token_map.len() as u32,
+                start_state,
+                skip0: skip_kinds[0],
+                skip1: skip_kinds[1],
+                skip2: skip_kinds[2],
+                skip3: skip_kinds[3],
+            };
+            let mut ub = encase::UniformBuffer::new(Vec::<u8>::new());
+            ub.write(&params_val)
+                .expect("failed to encode LexParams");
+            let bytes = ub.as_ref();
+            self.queue.write_buffer(&bufs.params, 0, bytes);
+
+            // Keep the dynamic sizes in the struct up to date for dispatch
+            bufs.n = n;
+            bufs.nb_dfa = nb_dfa_needed;
+            bufs.nb_sum = nb_sum_needed;
+        }
 
         let use_scopes = std::env::var("LANIUS_VALIDATION_SCOPES")
             .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
@@ -244,7 +360,7 @@ impl GpuLexer {
         let mut ctx = crate::gpu::passes_core::PassContext {
             device: &self.device,
             encoder: &mut enc,
-            buffers: &bufs,
+            buffers: &*bufs,
             maybe_timer: &mut timer_ref,
             maybe_dbg: &mut dbg_ref,
         };
