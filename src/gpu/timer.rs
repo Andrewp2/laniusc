@@ -2,7 +2,7 @@
 
 use wgpu;
 
-pub const MINIMUM_TIME_TO_NOT_ELIDE_MS: f64 = 0.1;
+pub const MINIMUM_TIME_TO_NOT_ELIDE_MS: f64 = 0.5;
 
 /// A timer for measuring GPU execution time.
 pub struct GpuTimer {

@@ -1,16 +1,15 @@
 // Per-block composition of δ_b functions (each row: N_STATES x u8).
 // Output: block_summaries[block] = δ_block for that 256-byte block.
 //
-// RTX 3090 (wave size 32) tuned variant:
-//   - Rows live in groupshared to keep registers low.
-//   - Half-warp reductions (d=1,2,4,8), then one final cross-half compose
-//     done only by lane 0. This removes the full-wave d=16 butterfly work.
-//   - Per-stage memory fence uses GroupMemoryBarrier() (no full group sync).
+// Wave-size fixed at 32 (RTX 3090).
+// Strategy:
+//   - Half-warp tree reduction uses a compact per-wave groupshared staging slab.
+//     Slots are DISJOINT per stage (z=0..3), so we need exactly ONE barrier per stage.
+//   - Cross-half compose: lane 16 spills its half-total row to a dedicated slot,
+//     then lane 0 composes (half1 ∘ half0). This avoids the high register pressure
+//     and extra wave reads from the previous row16[] broadcast path.
 //
-// Constraints:
-//   - Wave size fixed to 32.
-//   - Uses subgroup ops (WaveGetLaneIndex and lane math).
-//   - Only this file is edited.
+// Constraints: only this file is edited; must pass fuzz_lex.
 
 #define WORKGROUP_SIZE 256
 #define WAVE_SIZE 32u
@@ -33,8 +32,9 @@ ByteAddressBuffer in_bytes;
 StructuredBuffer<uint> next_u8; // layout: [pack][byte] -> uint(packed 4x u8)
 RWStructuredBuffer<uint> block_summaries;
 
-// funcArr[thread][pack] holds each lane's δ_b row in 4-state packs.
-groupshared uint funcArr[WORKGROUP_SIZE][N_PACK4_STRIDE];
+// Per-wave provider slab: per half we need 8+4+2+1 = 15 slots => 30 per wave.
+groupshared uint provRows[MAX_WAVES * 30][N_PACK4_STRIDE];
+
 groupshared uint sgTotals[MAX_WAVES][N_PACK4_STRIDE];
 groupshared uint sgCarries[MAX_WAVES][N_PACK4_STRIDE];
 
@@ -56,18 +56,29 @@ inline uint identity_pack(uint p)
         (s3 < N_STATES ? (s3 & 0xFFu) : 0u));
 }
 
-// Compose R ∘ L for one 4-state pack, reading R from groupshared (partnerTid).
-inline uint compose_pack_shared(uint LrowPack, uint partnerTid)
+// Stage bases per half so slots are disjoint across z=0..3.
+static const uint STAGE_BASE[4] = { 0u, 8u, 12u, 14u };
+
+// slots per half at stage z: 8 >> z   (8,4,2,1)
+inline uint provider_slot(uint waveId, uint halfId, uint inHalf, uint z)
+{
+    const uint slotInHalf = inHalf >> (z + 1u); // pair id within this stage
+    const uint halfBase = halfId * 15u + STAGE_BASE[z];
+    const uint waveBase = waveId * 30u;
+    return waveBase + halfBase + slotInHalf;
+}
+
+inline uint compose_pack_from_slot(uint LrowPack, uint slot)
 {
     const uint a0 = (LrowPack) & 0xFFu;
     const uint a1 = (LrowPack >> 8) & 0xFFu;
     const uint a2 = (LrowPack >> 16) & 0xFFu;
     const uint a3 = (LrowPack >> 24) & 0xFFu;
 
-    const uint w0 = funcArr[partnerTid][a0 >> 2];
-    const uint w1 = funcArr[partnerTid][a1 >> 2];
-    const uint w2 = funcArr[partnerTid][a2 >> 2];
-    const uint w3 = funcArr[partnerTid][a3 >> 2];
+    const uint w0 = provRows[slot][a0 >> 2];
+    const uint w1 = provRows[slot][a1 >> 2];
+    const uint w2 = provRows[slot][a2 >> 2];
+    const uint w3 = provRows[slot][a3 >> 2];
 
     const uint r0 = (w0 >> ((a0 & 3u) * 8u)) & 0xFFu;
     const uint r1 = (w1 >> ((a1 & 3u) * 8u)) & 0xFFu;
@@ -75,6 +86,15 @@ inline uint compose_pack_shared(uint LrowPack, uint partnerTid)
     const uint r3 = (w3 >> ((a3 & 3u) * 8u)) & 0xFFu;
 
     return pack_quads(r0, r1, r2, r3);
+}
+
+inline void spill_row(uint slot, uint row[N_PACK4])
+{
+    [unroll]
+    for (uint p = 0; p < N_PACK4; ++p)
+    {
+        provRows[slot][p] = row[p];
+    }
 }
 
 [shader("compute")]
@@ -94,14 +114,21 @@ void dfa_01_scan_inblock(uint3 tid: SV_GroupThreadID,
     if (block >= nb || block_len == 0u)
         return;
 
-    // Load δ_b row (or identity if past end).
+    // ---- Wave geometry (fixed wave=32) ----
+    const uint lane = WaveGetLaneIndex(); // 0..31
+    const uint waveId = tIdx / WAVE_SIZE;
+    const uint halfId = (lane >> 4); // 0 or 1
+    const uint inHalf = lane & 15u;
+
+    // ---- Load this lane's δ_b row into registers (or identity past end) ----
+    uint row[N_PACK4];
     if (tIdx < block_len)
     {
         const uint b = load_byte_at(in_bytes, i);
         [unroll]
         for (uint p = 0; p < N_PACK4; ++p)
         {
-            funcArr[tIdx][p] = next_u8[p * 256u + b];
+            row[p] = next_u8[p * 256u + b];
         }
     }
     else
@@ -109,120 +136,130 @@ void dfa_01_scan_inblock(uint3 tid: SV_GroupThreadID,
         [unroll]
         for (uint p = 0; p < N_PACK4; ++p)
         {
-            funcArr[tIdx][p] = identity_pack(p);
+            row[p] = identity_pack(p);
         }
     }
 
-    // Make initial rows visible. No full sync needed yet.
-    GroupMemoryBarrier();
-
-    // Wave layout / ids.
-    const uint lane = WaveGetLaneIndex();
-    const uint waveStart = (tIdx / WAVE_SIZE) * WAVE_SIZE;
-    const uint waveId = tIdx / WAVE_SIZE;
-
-    // ---------------- Half-warp tree (lanes 0..15 and 16..31 independently) ----------------
-    // Each stage: heads write back their new rows in-place.
-    // d = 1
+    // ---------------- Half-warp tree (z = 0,1,2,3  => d = 1,2,4,8) ----------------
+    // One barrier per stage: providers spill -> barrier -> heads read/compose.
     {
-        const uint d = 1u;
-        const uint halfBase = waveStart + ((lane >> 4) << 4); // 0 or 16
-        const uint inHalf = lane & 15u;
-        const bool head = ((inHalf & ((d << 1) - 1u)) == 0u);
-        const uint partner = halfBase + (inHalf ^ d);
+        // z = 0 (d=1)
+        const uint z0 = 0u;
+        const uint d0 = 1u;
+        const bool isProv0 = ((inHalf & ((d0 << 1) - 1u)) == d0);
+        const bool isHead0 = ((inHalf & ((d0 << 1) - 1u)) == 0u);
+        const uint slot0 = provider_slot(waveId, halfId, inHalf, z0);
 
-        if (head)
+        if (isProv0)
+        {
+            spill_row(slot0, row);
+        }
+        GroupMemoryBarrierWithGroupSync();
+        if (isHead0)
         {
             [unroll]
             for (uint p = 0; p < N_PACK4; ++p)
             {
-                const uint L = funcArr[tIdx][p];
-                funcArr[tIdx][p] = compose_pack_shared(L, partner); // right ∘ left
+                row[p] = compose_pack_from_slot(row[p], slot0);
             }
         }
-        GroupMemoryBarrier();
-    }
-    // d = 2
-    {
-        const uint d = 2u;
-        const uint halfBase = waveStart + ((lane >> 4) << 4);
-        const uint inHalf = lane & 15u;
-        const bool head = ((inHalf & ((d << 1) - 1u)) == 0u);
-        const uint partner = halfBase + (inHalf ^ d);
 
-        if (head)
+        // z = 1 (d=2)
+        const uint z1 = 1u;
+        const uint d1 = 2u;
+        const bool isProv1 = ((inHalf & ((d1 << 1) - 1u)) == d1);
+        const bool isHead1 = ((inHalf & ((d1 << 1) - 1u)) == 0u);
+        const uint slot1 = provider_slot(waveId, halfId, inHalf, z1);
+
+        if (isProv1)
+        {
+            spill_row(slot1, row);
+        }
+        GroupMemoryBarrierWithGroupSync();
+        if (isHead1)
         {
             [unroll]
             for (uint p = 0; p < N_PACK4; ++p)
             {
-                const uint L = funcArr[tIdx][p];
-                funcArr[tIdx][p] = compose_pack_shared(L, partner);
+                row[p] = compose_pack_from_slot(row[p], slot1);
             }
         }
-        GroupMemoryBarrier();
-    }
-    // d = 4
-    {
-        const uint d = 4u;
-        const uint halfBase = waveStart + ((lane >> 4) << 4);
-        const uint inHalf = lane & 15u;
-        const bool head = ((inHalf & ((d << 1) - 1u)) == 0u);
-        const uint partner = halfBase + (inHalf ^ d);
 
-        if (head)
+        // z = 2 (d=4)
+        const uint z2 = 2u;
+        const uint d2 = 4u;
+        const bool isProv2 = ((inHalf & ((d2 << 1) - 1u)) == d2);
+        const bool isHead2 = ((inHalf & ((d2 << 1) - 1u)) == 0u);
+        const uint slot2 = provider_slot(waveId, halfId, inHalf, z2);
+
+        if (isProv2)
+        {
+            spill_row(slot2, row);
+        }
+        GroupMemoryBarrierWithGroupSync();
+        if (isHead2)
         {
             [unroll]
             for (uint p = 0; p < N_PACK4; ++p)
             {
-                const uint L = funcArr[tIdx][p];
-                funcArr[tIdx][p] = compose_pack_shared(L, partner);
+                row[p] = compose_pack_from_slot(row[p], slot2);
             }
         }
-        GroupMemoryBarrier();
-    }
-    // d = 8
-    {
-        const uint d = 8u;
-        const uint halfBase = waveStart + ((lane >> 4) << 4);
-        const uint inHalf = lane & 15u;
-        const bool head = ((inHalf & ((d << 1) - 1u)) == 0u);
-        const uint partner = halfBase + (inHalf ^ d);
 
-        if (head)
+        // z = 3 (d=8)
+        const uint z3 = 3u;
+        const uint d3 = 8u;
+        const bool isProv3 = ((inHalf & ((d3 << 1) - 1u)) == d3);
+        const bool isHead3 = ((inHalf & ((d3 << 1) - 1u)) == 0u);
+        const uint slot3 = provider_slot(waveId, halfId, inHalf, z3);
+
+        if (isProv3)
+        {
+            spill_row(slot3, row);
+        }
+        GroupMemoryBarrierWithGroupSync();
+        if (isHead3)
         {
             [unroll]
             for (uint p = 0; p < N_PACK4; ++p)
             {
-                const uint L = funcArr[tIdx][p];
-                funcArr[tIdx][p] = compose_pack_shared(L, partner);
+                row[p] = compose_pack_from_slot(row[p], slot3);
             }
         }
-        GroupMemoryBarrier();
     }
 
-    // ---------------- Final cross-half compose (only lane 0 per wave) ----------------
-    // Compose total = (half1) ∘ (half0). Lane 16 contains half1; lane 0 writes the result.
-    if (lane == 0u)
+    // ---------------- Final cross-half compose (lane 16 spills, lane 0 composes) -------------
+    // Reserve the last per-wave slot (index 29) for cross-half staging.
+    const uint crossSlot = waveId * 30u + 29u;
+
+    if (lane == 16u)
     {
-        const uint partnerTid = waveStart + 16u; // safe even if block_len<17: identity row was loaded
-        [unroll]
-        for (uint p = 0; p < N_PACK4; ++p)
-        {
-            const uint L = funcArr[tIdx][p]; // half0 total currently in lane 0
-            funcArr[tIdx][p] = compose_pack_shared(L, partnerTid);
-        }
+        spill_row(crossSlot, row);
     }
+    GroupMemoryBarrierWithGroupSync();
 
-    // Lane 0 of each wave now holds the wave total.
     if (lane == 0u)
     {
         [unroll]
         for (uint p = 0; p < N_PACK4; ++p)
         {
-            sgTotals[waveId][p] = funcArr[tIdx][p];
+            row[p] = compose_pack_from_slot(row[p], crossSlot); // (half1 ∘ half0)
         }
     }
-    GroupMemoryBarrierWithGroupSync(); // between waves
+    GroupMemoryBarrierWithGroupSync();
+
+    // Lane 0 of each wave now holds the wave total in `row`.
+    if (lane == 0u)
+    {
+        [unroll]
+        for (uint p = 0; p < N_PACK4; ++p)
+        {
+            sgTotals[waveId][p] = row[p];
+        }
+    }
+
+    // Inter-wave sync (tid.x==0 will read sgTotals)
+    GroupMemoryBarrierWithGroupSync();
 
     // ---------------- Serial carry across active waves on tid.x==0, then write summary -----
     if (tIdx == 0u)
