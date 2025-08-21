@@ -8,7 +8,7 @@ pub struct LaniusBuffer<T> {
     pub buffer: wgpu::Buffer,
     /// total allocated size in bytes
     pub byte_size: usize,
-    /// number of logical T elements (for bookkeeping / asserts)
+    /// number of logical T elements
     pub count: usize,
     _marker: std::marker::PhantomData<T>,
 }
@@ -31,8 +31,6 @@ impl<T> Deref for LaniusBuffer<T> {
     }
 }
 
-/// ----------- Creation helpers (respecting WGSL layout via `encase`) -----------
-
 /// Create a UNIFORM buffer from a single ShaderType value (std140 layout in WGSL).
 pub fn uniform_from_val<T>(device: &wgpu::Device, label: &str, value: &T) -> LaniusBuffer<T>
 where
@@ -51,7 +49,6 @@ where
 }
 
 /// Create a STORAGE (read-only) buffer from a raw byte slice.
-/// Use this when you already have prepacked bytes (e.g., lookup tables).
 pub fn storage_ro_from_bytes<T>(
     device: &wgpu::Device,
     label: &str,
@@ -69,7 +66,6 @@ pub fn storage_ro_from_bytes<T>(
 }
 
 /// Create a STORAGE (read-only) buffer from `&[u32]`.
-/// Scalars are trivially laid out in WGSL (std430), so LE-bytes are fine.
 pub fn storage_ro_from_u32s(
     device: &wgpu::Device,
     label: &str,

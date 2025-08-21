@@ -5,7 +5,11 @@ use wgpu::util::DeviceExt;
 
 use super::PassData;
 use crate::{
-    gpu::passes_core::{DispatchDim, bind_group::create_bind_group_from_reflection},
+    gpu::passes_core::{
+        DispatchDim,
+        bind_group::create_bind_group_from_reflection,
+        validation_scopes_enabled,
+    },
     lexer::{
         gpu::{buffers::GpuBuffers, debug::DebugOutput, passes::ScanParams, util::compute_rounds},
         tables::dfa::N_STATES,
@@ -67,7 +71,11 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSu
         let maybe_timer = &mut ctx.maybe_timer;
         let maybe_dbg = &mut ctx.maybe_dbg;
 
-        device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let use_scopes = validation_scopes_enabled();
+
+        if use_scopes {
+            device.push_error_scope(wgpu::ErrorFilter::Validation);
+        }
 
         let n = match input {
             super::InputElements::Elements1D(n) => n,
@@ -172,12 +180,14 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSu
             t.stamp(encoder, Self::NAME.to_string());
         }
 
-        if let Some(err) = pollster::block_on(device.pop_error_scope()) {
-            return Err(anyhow::anyhow!(
-                "validation in pass {}: {:?}",
-                Self::NAME,
-                err
-            ));
+        if use_scopes {
+            if let Some(err) = pollster::block_on(device.pop_error_scope()) {
+                return Err(anyhow::anyhow!(
+                    "validation in pass {}: {:?}",
+                    Self::NAME,
+                    err
+                ));
+            }
         }
 
         if let Some(d) = maybe_dbg.as_deref_mut() {

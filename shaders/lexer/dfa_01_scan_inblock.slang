@@ -31,10 +31,14 @@ StructuredBuffer<uint> next_u8; // layout: [pack][byte] -> uint(packed 4x u8)
 RWStructuredBuffer<uint> block_summaries;
 
 // Per-wave totals and carries
+// 8 * 20 = 160
+// 160 * 4 = 640 bytes
 groupshared uint sgTotals[MAX_WAVES][N_PACK4];
 groupshared uint sgCarries[MAX_WAVES][N_PACK4];
 
-// Staging for the reduction: one row per thread, 20 packs per row (+1 pad to ease bank conflicts)
+// Staging for the reduction: one row per thread, 20 packs per row
+// 256 * 20 = 5120
+// 5120 * 4 = 20480 bytes
 groupshared uint gRows[WORKGROUP_SIZE][N_PACK4 + 1];
 
 inline uint pack_quads(uint q0, uint q1, uint q2, uint q3)
@@ -116,8 +120,9 @@ void dfa_01_scan_inblock(uint3 tid: SV_GroupThreadID,
         }
     }
 
-    // Optional: fence to keep writes ordered before the wave-local reads that follow (no sync).
-    GroupMemoryBarrier();
+    // You must write into workgroup memory before reading it, because it may be filled with junk from a previous pass.
+    // We need to synchronize the memory here in order to ensure that the writes are visible to the next pass.
+    GroupMemoryBarrierWithWaveSync();
 
     // ---------------- Half-warp tree reduction in SMEM (d = 1,2,4,8) ----------------
     // Waves execute in lockstep; no barriers required inside these stages.

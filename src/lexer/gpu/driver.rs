@@ -26,6 +26,11 @@ pub struct GpuLexer {
     queue: Arc<wgpu::Queue>,
     timers_supported: bool,
 
+    // Precomputed tables loaded once at device init
+    next_emit_words: Vec<u32>,
+    next_u8_packed: Vec<u32>,
+    token_map: Vec<u32>,
+
     p_dfa_01_scan_inblock: passes::dfa_01_scan_inblock::Dfa01ScanInblockPass,
     p_dfa_02_scan_block_summaries: passes::dfa_02_scan_block_summaries::Dfa02ScanBlockSummariesPass,
     p_dfa_03_apply_block_prefix: passes::dfa_03_apply_block_prefix::Dfa03ApplyBlockPrefixPass,
@@ -48,54 +53,7 @@ impl GpuLexer {
         let queue = Arc::clone(&ctx.queue);
         let timers_supported = ctx.timers_supported;
 
-        let p_dfa_01_scan_inblock =
-            passes::dfa_01_scan_inblock::Dfa01ScanInblockPass::new(&device)?;
-        let p_dfa_02_scan_block_summaries =
-            passes::dfa_02_scan_block_summaries::Dfa02ScanBlockSummariesPass::new(&device)?;
-        let p_dfa_03_apply_block_prefix =
-            passes::dfa_03_apply_block_prefix::Dfa03ApplyBlockPrefixPass::new(&device)?;
-        let p_boundary_finalize_and_seed =
-            passes::boundary_finalize_and_seed::BoundaryFinalizeAndSeedPass::new(&device)?;
-
-        let p_pair_01_sum_inblock =
-            passes::pair_01_sum_inblock::Pair01SumInblockPass::new(&device)?;
-        let p_pair_02_scan_block_totals =
-            passes::pair_02_scan_block_totals::Pair02ScanBlockTotalsPass::new(&device)?;
-        let p_pair_03_apply_block_prefix =
-            passes::pair_03_apply_block_prefix::Pair03ApplyBlockPrefixPass::new(&device)?;
-
-        let p_compact_boundaries_all =
-            passes::compact_boundaries_all::CompactBoundariesAllPass::new(&device)?;
-        let p_compact_boundaries_kept =
-            passes::compact_boundaries_kept::CompactBoundariesKeptPass::new(&device)?;
-        let p_retag_calls_and_arrays =
-            passes::retag_calls_and_arrays::RetagCallsAndArraysPass::new(&device)?;
-        let p_tokens_build = passes::tokens_build::TokensBuildPass::new(&device)?;
-
-        Ok(Self {
-            device,
-            queue,
-            timers_supported,
-            p_dfa_01_scan_inblock,
-            p_dfa_02_scan_block_summaries,
-            p_dfa_03_apply_block_prefix,
-            p_boundary_finalize_and_seed,
-            p_pair_01_sum_inblock,
-            p_pair_02_scan_block_totals,
-            p_pair_03_apply_block_prefix,
-            p_compact_boundaries_all,
-            p_compact_boundaries_kept,
-            p_retag_calls_and_arrays,
-            p_tokens_build,
-        })
-    }
-
-    pub async fn lex(&self, input: &str) -> Result<Vec<Token>> {
-        #[cfg(feature = "graphics_debugger")]
-        unsafe {
-            self.device.start_graphics_debugger_capture()
-        };
-
+        // Load compact DFA tables and build packed-next table once at init.
         const COMPACT_BIN: &[u8] = include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/tables/lexer_tables.bin"
@@ -129,6 +87,100 @@ impl GpuLexer {
             expected_words
         );
 
+        // Build packed-next (u8) table for DFA passes: layout [pack4][byte]
+        let n_states = n_states_from_file;
+        let n_pack4 = (n_states + 3) / 4;
+        let mut next_u8_packed: Vec<u32> = vec![0; 256 * n_pack4];
+        let read_u16 = |i: usize| -> u16 {
+            let w = next_emit_words[i >> 1];
+            if (i & 1) == 0 {
+                (w & 0xFFFF) as u16
+            } else {
+                (w >> 16) as u16
+            }
+        };
+        for b in 0..256usize {
+            for p in 0..n_pack4 {
+                let s0 = p * 4 + 0;
+                let s1 = p * 4 + 1;
+                let s2 = p * 4 + 2;
+                let s3 = p * 4 + 3;
+                let v0 = if s0 < n_states {
+                    (read_u16(b * n_states + s0) & 0x7FFF) as u32
+                } else {
+                    s0 as u32
+                };
+                let v1 = if s1 < n_states {
+                    (read_u16(b * n_states + s1) & 0x7FFF) as u32
+                } else {
+                    s1 as u32
+                };
+                let v2 = if s2 < n_states {
+                    (read_u16(b * n_states + s2) & 0x7FFF) as u32
+                } else {
+                    s2 as u32
+                };
+                let v3 = if s3 < n_states {
+                    (read_u16(b * n_states + s3) & 0x7FFF) as u32
+                } else {
+                    s3 as u32
+                };
+                next_u8_packed[p * 256 + b] =
+                    (v0 & 0xFF) | ((v1 & 0xFF) << 8) | ((v2 & 0xFF) << 16) | ((v3 & 0xFF) << 24);
+            }
+        }
+
+        let p_dfa_01_scan_inblock =
+            passes::dfa_01_scan_inblock::Dfa01ScanInblockPass::new(&device)?;
+        let p_dfa_02_scan_block_summaries =
+            passes::dfa_02_scan_block_summaries::Dfa02ScanBlockSummariesPass::new(&device)?;
+        let p_dfa_03_apply_block_prefix =
+            passes::dfa_03_apply_block_prefix::Dfa03ApplyBlockPrefixPass::new(&device)?;
+        let p_boundary_finalize_and_seed =
+            passes::boundary_finalize_and_seed::BoundaryFinalizeAndSeedPass::new(&device)?;
+
+        let p_pair_01_sum_inblock =
+            passes::pair_01_sum_inblock::Pair01SumInblockPass::new(&device)?;
+        let p_pair_02_scan_block_totals =
+            passes::pair_02_scan_block_totals::Pair02ScanBlockTotalsPass::new(&device)?;
+        let p_pair_03_apply_block_prefix =
+            passes::pair_03_apply_block_prefix::Pair03ApplyBlockPrefixPass::new(&device)?;
+
+        let p_compact_boundaries_all =
+            passes::compact_boundaries_all::CompactBoundariesAllPass::new(&device)?;
+        let p_compact_boundaries_kept =
+            passes::compact_boundaries_kept::CompactBoundariesKeptPass::new(&device)?;
+        let p_retag_calls_and_arrays =
+            passes::retag_calls_and_arrays::RetagCallsAndArraysPass::new(&device)?;
+        let p_tokens_build = passes::tokens_build::TokensBuildPass::new(&device)?;
+
+        Ok(Self {
+            device,
+            queue,
+            timers_supported,
+            next_emit_words,
+            next_u8_packed,
+            token_map,
+            p_dfa_01_scan_inblock,
+            p_dfa_02_scan_block_summaries,
+            p_dfa_03_apply_block_prefix,
+            p_boundary_finalize_and_seed,
+            p_pair_01_sum_inblock,
+            p_pair_02_scan_block_totals,
+            p_pair_03_apply_block_prefix,
+            p_compact_boundaries_all,
+            p_compact_boundaries_kept,
+            p_retag_calls_and_arrays,
+            p_tokens_build,
+        })
+    }
+
+    pub async fn lex(&self, input: &str) -> Result<Vec<Token>> {
+        #[cfg(feature = "graphics_debugger")]
+        unsafe {
+            self.device.start_graphics_debugger_capture()
+        };
+
         let start_state = 0u32;
 
         let input_bytes: &[u8] = input.as_bytes();
@@ -141,38 +193,20 @@ impl GpuLexer {
             u32::MAX,
         ];
 
-        // Build packed-next (u8) table for DFA passes: layout [pack4][byte]
-        let n_states = n_states_from_file;
-        let n_pack4 = (n_states + 3) / 4;
-        let mut next_u8_packed: Vec<u32> = vec![0; 256 * n_pack4];
-        let read_u16 = |i: usize| -> u16 {
-            let w = next_emit_words[i >> 1];
-            if (i & 1) == 0 { (w & 0xFFFF) as u16 } else { (w >> 16) as u16 }
-        };
-        for b in 0..256usize {
-            for p in 0..n_pack4 {
-                let s0 = p * 4 + 0;
-                let s1 = p * 4 + 1;
-                let s2 = p * 4 + 2;
-                let s3 = p * 4 + 3;
-                let v0 = if s0 < n_states { (read_u16(b * n_states + s0) & 0x7FFF) as u32 } else { s0 as u32 };
-                let v1 = if s1 < n_states { (read_u16(b * n_states + s1) & 0x7FFF) as u32 } else { s1 as u32 };
-                let v2 = if s2 < n_states { (read_u16(b * n_states + s2) & 0x7FFF) as u32 } else { s2 as u32 };
-                let v3 = if s3 < n_states { (read_u16(b * n_states + s3) & 0x7FFF) as u32 } else { s3 as u32 };
-                next_u8_packed[p * 256 + b] = (v0 & 0xFF) | ((v1 & 0xFF) << 8) | ((v2 & 0xFF) << 16) | ((v3 & 0xFF) << 24);
-            }
-        }
-
         let bufs = GpuBuffers::new(
             &self.device,
             n,
             start_state,
             input_bytes,
-            &next_emit_words,
-            &next_u8_packed,
-            &token_map,
+            &self.next_emit_words,
+            &self.next_u8_packed,
+            &self.token_map,
             skip_kinds,
         );
+
+        let use_scopes = std::env::var("LANIUS_VALIDATION_SCOPES")
+            .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
+            .unwrap_or(false); // 🤖
 
         let timers_on = self.timers_supported
             && std::env::var("LANIUS_GPU_TIMING")
@@ -262,10 +296,14 @@ impl GpuLexer {
                 timer.resolve(&mut enc);
             }
 
-            self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+            if use_scopes {
+                self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+            } // 🤖
             self.queue.submit(Some(enc.finish()));
-            if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
-                eprintln!("[wgpu submit] validation while submitting lex batch: {err:#?}");
+            if use_scopes {
+                if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
+                    eprintln!("[wgpu submit] validation while submitting lex batch: {err:#?}"); // 🤖
+                }
             }
 
             readback_tokens_count
@@ -291,10 +329,14 @@ impl GpuLexer {
                 // No count copy; still resolve timer queries for printing later.
                 timer.resolve(&mut enc);
             }
-            self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+            if use_scopes {
+                self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+            } // 🤖
             self.queue.submit(Some(enc.finish()));
-            if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
-                eprintln!("[wgpu submit] validation while submitting lex batch: {err:#?}");
+            if use_scopes {
+                if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
+                    eprintln!("[wgpu submit] validation while submitting lex batch: {err:#?}"); // 🤖
+                }
             }
             // We intentionally skip token-count readback when readback is disabled.
             0usize
@@ -342,6 +384,7 @@ impl GpuLexer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("lex-enc-readback-tokens"),
             });
+
         encoder_two.copy_buffer_to_buffer(
             &bufs.tokens_out,
             0,

@@ -1,7 +1,3 @@
-// src/bin/gen_tables.rs
-// Generates compact tables used by the GPU at runtime: no merge table, no closure.
-// Safe to commit (<20 KiB).
-
 use std::{
     fs,
     io::{BufWriter, Write},
@@ -19,7 +15,6 @@ fn main() -> std::io::Result<()> {
     println!("[gen_tables] building compact DFA tables (no merge)...");
     let dfa = StreamingDfa::new();
 
-    // next_emit[u16] = (emit<<15 | next_low15) for each [byte][state]
     let total = 256 * N_STATES;
     let mut next_emit_u16 = Vec::<u16>::with_capacity(total);
     for b in 0u32..=255 {
@@ -31,7 +26,6 @@ fn main() -> std::io::Result<()> {
         }
     }
 
-    // token_map[u16]
     let mut token_u16 = Vec::<u16>::with_capacity(N_STATES);
     for &tk in &dfa.token_map {
         token_u16.push(if tk == INVALID_TOKEN {
@@ -51,7 +45,7 @@ fn main() -> std::io::Result<()> {
 
     w.write_all(MAGIC)?;
     w.write_all(&(N_STATES as u32).to_le_bytes())?;
-    w.write_all(&0u32.to_le_bytes())?; // reserved
+    w.write_all(&0u32.to_le_bytes())?;
     for v in &next_emit_u16 {
         w.write_all(&v.to_le_bytes())?;
     }

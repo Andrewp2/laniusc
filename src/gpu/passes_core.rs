@@ -13,6 +13,12 @@ use crate::reflection::{
     slang_category_and_type_to_wgpu,
 };
 
+pub fn validation_scopes_enabled() -> bool {
+    std::env::var("LANIUS_VALIDATION_SCOPES")
+        .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
+        .unwrap_or(false)
+}
+
 pub struct PassData {
     pub pipeline: Arc<wgpu::ComputePipeline>,
     pub bind_group_layouts: Vec<Arc<wgpu::BindGroupLayout>>,
@@ -281,7 +287,11 @@ pub trait Pass<Buffers, DebugOutput> {
         ctx: &mut PassContext<'a, Buffers, DebugOutput>,
         input: InputElements,
     ) -> Result<(), anyhow::Error> {
-        ctx.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let use_scopes = validation_scopes_enabled(); // 🤖 enable per-pass validation only when asked
+
+        if use_scopes {
+            ctx.device.push_error_scope(wgpu::ErrorFilter::Validation); // 🤖
+        }
 
         let pd = self.data();
         let mut bind_groups = Vec::new();
@@ -325,8 +335,10 @@ pub trait Pass<Buffers, DebugOutput> {
             t.stamp(ctx.encoder, Self::NAME.to_string());
         }
 
-        if let Some(err) = pollster::block_on(ctx.device.pop_error_scope()) {
-            return Err(anyhow!("validation in pass {}: {err:?}", Self::NAME));
+        if use_scopes {
+            if let Some(err) = pollster::block_on(ctx.device.pop_error_scope()) {
+                return Err(anyhow!("validation in pass {}: {err:?}", Self::NAME)); // 🤖
+            }
         }
 
         if let Some(d) = ctx.maybe_dbg.as_deref_mut() {
