@@ -50,7 +50,8 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair01SumInblock
             ("flags_packed".into(), b.flags_packed.as_entire_binding()),
             (
                 "block_totals_pair".into(),
-                b.pair_02_ping.as_entire_binding(),
+                // Reuse DFA block ping as pair ping
+                b.dfa_02_ping.as_entire_binding(),
             ),
         ])
     }

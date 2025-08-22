@@ -51,7 +51,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for CompactBoundarie
             ("s_final_all".into(), b.s_all_final.as_entire_binding()),
             ("flags_packed".into(), b.flags_packed.as_entire_binding()),
             ("tok_types".into(), b.tok_types.as_entire_binding()),
-            ("end_excl_by_i".into(), b.end_excl_by_i.as_entire_binding()),
+            // Write kept end positions to dedicated buffer
             ("end_positions".into(), b.end_positions.as_entire_binding()),
             ("types_compact".into(), b.types_compact.as_entire_binding()),
             (

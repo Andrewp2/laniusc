@@ -194,11 +194,10 @@ impl GpuLexer {
         // Current capacities
         let cap_n = bufs.in_bytes.count as u32;
         let cap_nb_dfa = (bufs.dfa_02_ping.count / crate::lexer::tables::dfa::N_STATES) as u32;
-        let cap_nb_sum = (bufs.pair_02_ping.count / 2) as u32;
 
+        // Pair scans reuse DFA block buffers; ensuring DFA capacity is sufficient implies pair capacity
         let needs_grow = (aligned_len_usize as u32) > (bufs.in_bytes.byte_size as u32)
             || nb_dfa_needed > cap_nb_dfa
-            || nb_sum_needed > cap_nb_sum
             || n > cap_n;
         if needs_grow {
             println!("growing");

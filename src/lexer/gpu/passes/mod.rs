@@ -63,13 +63,12 @@ pub fn record_all_passes(
     p.dfa_01.record_pass(&mut ctx, E1(n))?;
     p.dfa_02.record_pass(&mut ctx, E1(nb_dfa))?;
     p.dfa_03.record_pass(&mut ctx, E1(n))?;
-    // p.boundary.record_pass(&mut ctx, E1(n))?;
     p.pair_01.record_pass(&mut ctx, E1(n))?;
     p.pair_02.record_pass(&mut ctx, E1(nb_sum))?;
     p.pair_03.record_pass(&mut ctx, E1(n))?;
-    p.compact_all.record_pass(&mut ctx, E1(n))?;
+    // Run KEPT compaction before ALL to enable buffer reuse
     p.compact_kept.record_pass(&mut ctx, E1(n))?;
-    // p.retag.record_pass(&mut ctx, E1(n))?;
+    p.compact_all.record_pass(&mut ctx, E1(n))?;
     p.tokens_build.record_pass(&mut ctx, E1(n))?;
     Ok(())
 }

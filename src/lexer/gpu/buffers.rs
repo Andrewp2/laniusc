@@ -26,19 +26,13 @@ pub struct GpuBuffers {
     pub dfa_02_pong: LaniusBuffer<u32>,
     pub tok_types: LaniusBuffer<u32>,
     pub flags_packed: LaniusBuffer<u32>,
-    pub end_excl_by_i: LaniusBuffer<u32>,
-
-    pub pair_02_ping: LaniusBuffer<u32>,
-    pub pair_02_pong: LaniusBuffer<u32>,
     pub s_all_final: LaniusBuffer<u32>,
     pub s_keep_final: LaniusBuffer<u32>,
 
     pub end_positions: LaniusBuffer<u32>,
-    pub end_positions_all: LaniusBuffer<u32>,
     pub types_compact: LaniusBuffer<u32>,
     pub all_index_compact: LaniusBuffer<u32>,
     pub token_count: LaniusBuffer<u32>,
-    pub token_count_all: LaniusBuffer<u32>,
 
     pub tokens_out: LaniusBuffer<super::GpuToken>,
 }
@@ -94,15 +88,7 @@ impl GpuBuffers {
         let flags_packed: LaniusBuffer<u32> =
             storage_rw_for_array::<u32>(device, "flags_packed", n as usize);
 
-        let end_excl_by_i: LaniusBuffer<u32> =
-            storage_rw_for_array::<u32>(device, "end_excl_by_i", n as usize);
-
-        let pair_elems_per_block = 2usize;
-        let pair_total = (nb_sum as usize) * pair_elems_per_block;
-        let pair_02_ping: LaniusBuffer<u32> =
-            storage_rw_for_array::<u32>(device, "block_pair_ping", pair_total);
-        let pair_02_pong: LaniusBuffer<u32> =
-            storage_rw_for_array::<u32>(device, "block_pair_pong", pair_total);
+        // end_excl_by_i eliminated (computed inline); pair scan reuses dfa_02 ping/pong
 
         let s_all_final: LaniusBuffer<u32> =
             storage_rw_for_array::<u32>(device, "s_all_final", n as usize);
@@ -111,16 +97,12 @@ impl GpuBuffers {
 
         let end_positions: LaniusBuffer<u32> =
             storage_rw_for_array::<u32>(device, "end_positions", n as usize);
-        let end_positions_all: LaniusBuffer<u32> =
-            storage_rw_for_array::<u32>(device, "end_positions_all", n as usize);
         let types_compact: LaniusBuffer<u32> =
             storage_rw_for_array::<u32>(device, "types_compact", n as usize);
         let all_index_compact: LaniusBuffer<u32> =
             storage_rw_for_array::<u32>(device, "all_index_compact", n as usize);
 
         let token_count: LaniusBuffer<u32> = storage_rw_for_array::<u32>(device, "token_count", 1);
-        let token_count_all: LaniusBuffer<u32> =
-            storage_rw_for_array::<u32>(device, "token_count_all", 1);
 
         let tokens_out = storage_rw_for_array::<super::GpuToken>(device, "tokens_out", n as usize);
 
@@ -150,20 +132,14 @@ impl GpuBuffers {
             dfa_02_pong,
             tok_types,
             flags_packed,
-            end_excl_by_i,
-
-            pair_02_ping,
-            pair_02_pong,
 
             s_all_final,
             s_keep_final,
 
             end_positions,
-            end_positions_all,
             types_compact,
             all_index_compact,
             token_count,
-            token_count_all,
 
             tokens_out,
         }

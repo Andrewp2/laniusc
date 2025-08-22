@@ -19,7 +19,6 @@ StructuredBuffer<uint> s_final;       // inclusive sums of CURRENT stream (all o
 StructuredBuffer<uint> s_final_all;   // inclusive sums of ALL boundaries
 StructuredBuffer<uint> flags_packed;  // per-i packed flags (EMIT/EOF/KEEP_EMIT/KEEP_EOF)
 StructuredBuffer<uint> tok_types;     // PACKED kinds per i for KEPT stream (EMIT|EOF)
-StructuredBuffer<uint> end_excl_by_i; // exclusive end for single-kept boundary at i
 
 // Outputs
 RWStructuredBuffer<uint> end_positions;     // compacted exclusive ends (CURRENT stream)
@@ -51,9 +50,6 @@ inline void compact_impl(bool use_kept_pred, uint3 tid)
 
     uint all_idx_1based = s_final_all[i];
 
-    uint emit_kind16 = (tok_types[i]) & 0xFFFFu;
-    uint eof_kind16 = (tok_types[i] >> 16) & 0xFFFFu;
-
     if (delta == 2u)
     {
         uint k0 = pref - 2u;
@@ -63,6 +59,8 @@ inline void compact_impl(bool use_kept_pred, uint3 tid)
         // ▼ Only KEPT stream writes kinds / ALL-index bookkeeping
         if (use_kept_pred)
         {
+            uint emit_kind16 = (tok_types[i]) & 0xFFFFu;
+            uint eof_kind16 = (tok_types[i] >> 16) & 0xFFFFu;
             uint kind0 = (emit_kind16 != 0xFFFFu) ? emit_kind16 : eof_kind16;
             types_compact[k0] = kind0;
             all_index_compact[k0] = all_idx_1based - 1u;
@@ -74,6 +72,8 @@ inline void compact_impl(bool use_kept_pred, uint3 tid)
 
         if (use_kept_pred)
         {
+            uint emit_kind16 = (tok_types[i]) & 0xFFFFu;
+            uint eof_kind16 = (tok_types[i] >> 16) & 0xFFFFu;
             uint kind1 = (eof_kind16 != 0xFFFFu) ? eof_kind16 : emit_kind16;
             types_compact[k1] = kind1;
             all_index_compact[k1] = all_idx_1based;
@@ -86,8 +86,10 @@ inline void compact_impl(bool use_kept_pred, uint3 tid)
     uint end_excl;
     if (use_kept_pred)
     {
-        // Single *kept* boundary: use the per-i value computed earlier.
-        end_excl = end_excl_by_i[i];
+        // Single *kept* boundary: n only when EOF is present AND kept
+        uint eof_present = ((f & PF_EOF) != 0u) ? 1u : 0u;
+        uint eof_kept    = ((f & PF_KEEP_EOF) != 0u) ? 1u : 0u;
+        end_excl = ((eof_present & eof_kept) != 0u) ? gParams.n : i;
     }
     else
     {
@@ -102,6 +104,8 @@ inline void compact_impl(bool use_kept_pred, uint3 tid)
     // ▼ Only KEPT stream needs token kinds
     if (use_kept_pred)
     {
+        uint emit_kind16 = (tok_types[i]) & 0xFFFFu;
+        uint eof_kind16 = (tok_types[i] >> 16) & 0xFFFFu;
         uint kind = 0u;
         if (is_last != 0u)
         {

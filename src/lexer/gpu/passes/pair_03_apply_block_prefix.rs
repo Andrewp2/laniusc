@@ -59,10 +59,11 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair03ApplyBlock
             );
         }
 
+        // Reuse DFA block ping/pong as the pair prefix source
         let block_prefix_pair_binding: wgpu::BindingResource<'a> = if (rounds % 2) == 1 {
-            b.pair_02_pong.as_entire_binding()
+            b.dfa_02_pong.as_entire_binding()
         } else {
-            b.pair_02_ping.as_entire_binding()
+            b.dfa_02_ping.as_entire_binding()
         };
 
         HashMap::from([
@@ -100,11 +101,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair03ApplyBlock
         );
 
         let rounds = compute_rounds(b.nb_sum);
-        let last = if (rounds % 2) == 1 {
-            &b.pair_02_pong
-        } else {
-            &b.pair_02_ping
-        };
+        let last = if (rounds % 2) == 1 { &b.dfa_02_pong } else { &b.dfa_02_ping };
         dbg.gpu.block_prefix_pair.set_from_copy(
             device,
             encoder,

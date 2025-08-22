@@ -1,6 +1,6 @@
 // 🤖 Fused DFA apply + boundary finalize + seed-kind packing
 // 🤖 Replaces the old dfa_03_apply_block_prefix and absorbs boundary_finalize_and_seed
-// 🤖 Writes: flags_packed, tok_types, end_excl_by_i directly (no f_final buffer)
+// 🤖 Writes: flags_packed and tok_types directly (no f_final buffer)
 
 #define WORKGROUP_SIZE 256
 #define WAVE_SIZE 32u
@@ -32,7 +32,6 @@ StructuredBuffer<uint> next_emit;    // 🤖 u16 packed: next_state (low 15) | H
 // 🤖 Outputs (replaces f_final usage)
 RWStructuredBuffer<uint> flags_packed;  // 🤖 PF_EMIT/PF_EOF/PF_KEEP_* per i
 RWStructuredBuffer<uint> tok_types;     // 🤖 pack (eof_kind<<16 | emit_kind) per i (0xFFFF for none)
-RWStructuredBuffer<uint> end_excl_by_i; // 🤖 per-i exclusive end if single *kept* boundary
 
 groupshared uint gB[WORKGROUP_SIZE];    // 🤖 block byte cache
 groupshared uint gPairCarry[MAX_PAIRS]; // 🤖 end-state after each owner-pair
@@ -153,7 +152,6 @@ void dfa_03_apply_block_prefix(uint3 tid: SV_GroupThreadID,
                 // 🤖 Write fused outputs
                 flags_packed[idx] = f;
                 tok_types[idx] = (eof16 << 16) | emit16;
-                end_excl_by_i[idx] = (eof_accept && keep_eof) ? gParams.n : idx;
 
                 s_prev = s_cur; // 🤖 advance DFA
             }
@@ -194,9 +192,8 @@ void dfa_03_apply_block_prefix(uint3 tid: SV_GroupThreadID,
                     f |= keep_emit ? PF_KEEP_EMIT : 0u;
                     f |= keep_eof ? PF_KEEP_EOF : 0u;
 
-                    flags_packed[idx] = f;                                           // 🤖 flags
-                    tok_types[idx] = (eof16 << 16) | emit16;                         // 🤖 kind pack
-                    end_excl_by_i[idx] = (eof_accept && keep_eof) ? gParams.n : idx; // 🤖 end
+                    flags_packed[idx] = f;               // 🤖 flags
+                    tok_types[idx] = (eof16 << 16) | emit16; // 🤖 kind pack
 
                     s_prev = s_cur; // 🤖 advance DFA
                 }

@@ -120,8 +120,9 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
                     "gScan".into(),
                     wgpu::BindingResource::Buffer(scan_params.as_entire_buffer_binding()),
                 ),
-                ("block_pair_ping".into(), b.pair_02_ping.as_entire_binding()),
-                ("block_pair_pong".into(), b.pair_02_pong.as_entire_binding()),
+                // Reuse DFA ping/pong for pair scan
+                ("block_pair_ping".into(), b.dfa_02_ping.as_entire_binding()),
+                ("block_pair_pong".into(), b.dfa_02_pong.as_entire_binding()),
             ]);
 
             let bg = create_bind_group_from_reflection(
@@ -154,11 +155,8 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
             if let Some(dbg) = maybe_dbg.as_deref_mut() {
                 use crate::lexer::gpu::debug::make_staging;
                 let per_round_bytes_u64 = (n as usize * 2 * std::mem::size_of::<u32>()) as u64;
-                let last_writer = if use_ping_as_src != 0 {
-                    &b.block_pair_pong
-                } else {
-                    &b.block_pair_ping
-                };
+                // Debug: snapshot reused DFA block ping/pong
+                let last_writer = if use_ping_as_src != 0 { &b.dfa_02_pong } else { &b.dfa_02_ping };
                 let staging =
                     make_staging(device, "dbg.pair_scan_round", per_round_bytes_u64 as usize);
                 encoder.copy_buffer_to_buffer(last_writer, 0, &staging, 0, per_round_bytes_u64);
@@ -202,24 +200,20 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
         dbg.gpu.block_pair_ping.set_from_copy(
             device,
             encoder,
-            &b.pair_02_ping,
+            &b.dfa_02_ping,
             "dbg.block_pair_ping",
-            b.pair_02_ping.byte_size,
+            b.dfa_02_ping.byte_size,
         );
         dbg.gpu.block_pair_pong.set_from_copy(
             device,
             encoder,
-            &b.pair_02_pong,
+            &b.dfa_02_pong,
             "dbg.block_pair_pong",
-            b.pair_02_pong.byte_size,
+            b.dfa_02_pong.byte_size,
         );
 
         let rounds = compute_rounds(b.nb_sum);
-        let last = if (rounds % 2) == 1 {
-            &b.pair_02_pong
-        } else {
-            &b.pair_02_ping
-        };
+        let last = if (rounds % 2) == 1 { &b.dfa_02_pong } else { &b.dfa_02_ping };
         dbg.gpu.block_prefix_pair.set_from_copy(
             device,
             encoder,

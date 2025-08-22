@@ -55,13 +55,12 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for CompactBoundarie
                 b.all_index_compact.as_entire_binding(),
             ),
             ("flags_packed".into(), b.flags_packed.as_entire_binding()),
-            ("tok_types".into(), b.tok_types.as_entire_binding()),
-            ("end_excl_by_i".into(), b.end_excl_by_i.as_entire_binding()),
-            (
-                "end_positions".into(),
-                b.end_positions_all.as_entire_binding(),
-            ),
-            ("token_count".into(), b.token_count_all.as_entire_binding()),
+            // For ALL: tok_types not used; bind a distinct buffer to avoid aliasing with end_positions
+            ("tok_types".into(), b.flags_packed.as_entire_binding()),
+            // Write ALL end_positions into the tok_types buffer to reuse memory
+            ("end_positions".into(), b.tok_types.as_entire_binding()),
+            // Sink ALL count into an unused buffer to preserve KEPT's token_count for tokens_build
+            ("token_count".into(), b.dfa_02_pong.as_entire_binding()),
         ])
     }
 
@@ -75,16 +74,18 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for CompactBoundarie
         dbg.gpu.end_positions_all.set_from_copy(
             device,
             encoder,
-            &b.end_positions_all,
+            // end_positions_all reuses tok_types buffer
+            &b.tok_types,
             "dbg.end_positions_all",
-            b.end_positions_all.byte_size,
+            b.tok_types.byte_size,
         );
+        // ⬇️ point to the sink buffer you bound for ALL token_count
         dbg.gpu.token_count_all.set_from_copy(
             device,
             encoder,
-            &b.token_count_all,
+            &b.dfa_02_pong,
             "dbg.token_count_all",
-            b.token_count_all.byte_size,
+            b.dfa_02_pong.byte_size,
         );
     }
 }
