@@ -4,17 +4,13 @@ use std::sync::{Arc, OnceLock};
 
 use anyhow::{Result, anyhow};
 
-use super::passes;
 use super::buffers;
 use crate::{
-    gpu::{
-        passes_core::InputElements,
-        timer::{GpuTimer, MINIMUM_TIME_TO_NOT_ELIDE_MS},
-    },
+    gpu::timer::{GpuTimer, MINIMUM_TIME_TO_NOT_ELIDE_MS},
     lexer::{
         gpu::{
-            Pass,
             buffers::GpuBuffers,
+            passes::{LexerPasses, record_all_passes},
             types::{GpuToken, Token},
             util::{read_tokens_from_mapped, readback_enabled, u32_from_first_4},
         },
@@ -32,22 +28,12 @@ pub struct GpuLexer {
     next_u8_packed: Vec<u32>,
     token_map: Vec<u32>,
 
-    p_dfa_01_scan_inblock: passes::dfa_01_scan_inblock::Dfa01ScanInblockPass,
-    p_dfa_02_scan_block_summaries: passes::dfa_02_scan_block_summaries::Dfa02ScanBlockSummariesPass,
-    p_dfa_03_apply_block_prefix: passes::dfa_03_apply_block_prefix::Dfa03ApplyBlockPrefixPass,
-    p_boundary_finalize_and_seed: passes::boundary_finalize_and_seed::BoundaryFinalizeAndSeedPass,
-
-    p_pair_01_sum_inblock: passes::pair_01_sum_inblock::Pair01SumInblockPass,
-    p_pair_02_scan_block_totals: passes::pair_02_scan_block_totals::Pair02ScanBlockTotalsPass,
-    p_pair_03_apply_block_prefix: passes::pair_03_apply_block_prefix::Pair03ApplyBlockPrefixPass,
-
-    p_compact_boundaries_all: passes::compact_boundaries_all::CompactBoundariesAllPass,
-    p_compact_boundaries_kept: passes::compact_boundaries_kept::CompactBoundariesKeptPass,
-    p_retag_calls_and_arrays: passes::retag_calls_and_arrays::RetagCallsAndArraysPass,
-    p_tokens_build: passes::tokens_build::TokensBuildPass,
+    passes: LexerPasses,
 
     // Persistent buffers reused across lex() calls
     buffers: std::sync::Mutex<Option<buffers::GpuBuffers>>,
+    // Bind group cache to avoid recreating them every dispatch
+    bg_cache: std::sync::Mutex<crate::gpu::passes_core::BindGroupCache>,
 }
 
 impl GpuLexer {
@@ -134,29 +120,7 @@ impl GpuLexer {
             }
         }
 
-        let p_dfa_01_scan_inblock =
-            passes::dfa_01_scan_inblock::Dfa01ScanInblockPass::new(&device)?;
-        let p_dfa_02_scan_block_summaries =
-            passes::dfa_02_scan_block_summaries::Dfa02ScanBlockSummariesPass::new(&device)?;
-        let p_dfa_03_apply_block_prefix =
-            passes::dfa_03_apply_block_prefix::Dfa03ApplyBlockPrefixPass::new(&device)?;
-        let p_boundary_finalize_and_seed =
-            passes::boundary_finalize_and_seed::BoundaryFinalizeAndSeedPass::new(&device)?;
-
-        let p_pair_01_sum_inblock =
-            passes::pair_01_sum_inblock::Pair01SumInblockPass::new(&device)?;
-        let p_pair_02_scan_block_totals =
-            passes::pair_02_scan_block_totals::Pair02ScanBlockTotalsPass::new(&device)?;
-        let p_pair_03_apply_block_prefix =
-            passes::pair_03_apply_block_prefix::Pair03ApplyBlockPrefixPass::new(&device)?;
-
-        let p_compact_boundaries_all =
-            passes::compact_boundaries_all::CompactBoundariesAllPass::new(&device)?;
-        let p_compact_boundaries_kept =
-            passes::compact_boundaries_kept::CompactBoundariesKeptPass::new(&device)?;
-        let p_retag_calls_and_arrays =
-            passes::retag_calls_and_arrays::RetagCallsAndArraysPass::new(&device)?;
-        let p_tokens_build = passes::tokens_build::TokensBuildPass::new(&device)?;
+        let passes = LexerPasses::new(&device)?;
 
         Ok(Self {
             device,
@@ -165,18 +129,9 @@ impl GpuLexer {
             next_emit_words,
             next_u8_packed,
             token_map,
-            p_dfa_01_scan_inblock,
-            p_dfa_02_scan_block_summaries,
-            p_dfa_03_apply_block_prefix,
-            p_boundary_finalize_and_seed,
-            p_pair_01_sum_inblock,
-            p_pair_02_scan_block_totals,
-            p_pair_03_apply_block_prefix,
-            p_compact_boundaries_all,
-            p_compact_boundaries_kept,
-            p_retag_calls_and_arrays,
-            p_tokens_build,
+            passes,
             buffers: std::sync::Mutex::new(None),
+            bg_cache: std::sync::Mutex::new(crate::gpu::passes_core::BindGroupCache::new()),
         })
     }
 
@@ -209,12 +164,11 @@ impl GpuLexer {
             .expect("GpuLexer.buffers mutex poisoned");
 
         // Helper to (re)create buffers with at-least current n capacity
-        let mut recreate = |cap_n: u32| -> buffers::GpuBuffers {
+        let recreate = |cap_n: u32| -> buffers::GpuBuffers {
             GpuBuffers::new(
                 &self.device,
                 cap_n,
                 start_state,
-                input_bytes,
                 &self.next_emit_words,
                 &self.next_u8_packed,
                 &self.token_map,
@@ -223,7 +177,7 @@ impl GpuLexer {
         };
 
         // Ensure buffers exist and have enough capacity; otherwise reuse and just update content
-        let mut bufs = if guard.is_none() {
+        let bufs = if guard.is_none() {
             // First-time allocation: ensure input buffer can accept aligned writes
             let init_cap = (aligned_len_usize as u32).max(1);
             let b = recreate(init_cap);
@@ -239,15 +193,15 @@ impl GpuLexer {
 
         // Current capacities
         let cap_n = bufs.in_bytes.count as u32;
-        let cap_nb_dfa = (bufs.block_summaries.count / crate::lexer::tables::dfa::N_STATES) as u32;
-        let cap_nb_sum = (bufs.block_totals_pair.count / 2) as u32;
+        let cap_nb_dfa = (bufs.dfa_02_ping.count / crate::lexer::tables::dfa::N_STATES) as u32;
+        let cap_nb_sum = (bufs.pair_02_ping.count / 2) as u32;
 
-        let needs_grow =
-            (aligned_len_usize as u32) > (bufs.in_bytes.byte_size as u32)
-                || nb_dfa_needed > cap_nb_dfa
-                || nb_sum_needed > cap_nb_sum
-                || n > cap_n;
+        let needs_grow = (aligned_len_usize as u32) > (bufs.in_bytes.byte_size as u32)
+            || nb_dfa_needed > cap_nb_dfa
+            || nb_sum_needed > cap_nb_sum
+            || n > cap_n;
         if needs_grow {
+            println!("growing");
             // Recreate with a grown capacity; choose ≥ n
             let new_cap = (aligned_len_usize as u32)
                 .max(cap_n.max(1).saturating_mul(2))
@@ -267,8 +221,7 @@ impl GpuLexer {
                 skip3: skip_kinds[3],
             };
             let mut ub = encase::UniformBuffer::new(Vec::<u8>::new());
-            ub.write(&params_val)
-                .expect("failed to encode LexParams");
+            ub.write(&params_val).expect("failed to encode LexParams");
             let bytes = ub.as_ref();
             self.queue.write_buffer(&new_bufs.params, 0, bytes);
             // Upload input bytes (padded to 4-byte alignment)
@@ -284,6 +237,10 @@ impl GpuLexer {
                 }
             }
             *bufs = new_bufs;
+            // Buffers replaced: clear bind group cache so we recreate with new resources
+            if let Ok(mut cache) = self.bg_cache.lock() {
+                cache.clear();
+            }
         } else {
             // Reuse: update input bytes and params for current n/start/skip
             if n > 0 {
@@ -309,8 +266,7 @@ impl GpuLexer {
                 skip3: skip_kinds[3],
             };
             let mut ub = encase::UniformBuffer::new(Vec::<u8>::new());
-            ub.write(&params_val)
-                .expect("failed to encode LexParams");
+            ub.write(&params_val).expect("failed to encode LexParams");
             let bytes = ub.as_ref();
             self.queue.write_buffer(&bufs.params, 0, bytes);
 
@@ -357,38 +313,23 @@ impl GpuLexer {
         // Build a single shared PassContext and run all passes with it.
         let mut timer_ref = maybe_timer.as_mut();
         let mut dbg_ref = maybe_dbg;
-        let mut ctx = crate::gpu::passes_core::PassContext {
+        let mut cache_guard = self
+            .bg_cache
+            .lock()
+            .expect("GpuLexer.bg_cache mutex poisoned");
+
+        let ctx = crate::gpu::passes_core::PassContext {
             device: &self.device,
             encoder: &mut enc,
             buffers: &*bufs,
             maybe_timer: &mut timer_ref,
             maybe_dbg: &mut dbg_ref,
+            bg_cache: Some(&mut *cache_guard),
         };
 
-        self.p_dfa_01_scan_inblock
-            .record_pass(&mut ctx, InputElements::Elements1D(bufs.n))?;
-        self.p_dfa_02_scan_block_summaries
-            .record_pass(&mut ctx, InputElements::Elements1D(bufs.nb_dfa))?;
-        self.p_dfa_03_apply_block_prefix
-            .record_pass(&mut ctx, InputElements::Elements1D(bufs.n))?;
-        self.p_boundary_finalize_and_seed
-            .record_pass(&mut ctx, InputElements::Elements1D(bufs.n))?;
-        self.p_pair_01_sum_inblock
-            .record_pass(&mut ctx, InputElements::Elements1D(bufs.n))?;
-        self.p_pair_02_scan_block_totals
-            .record_pass(&mut ctx, InputElements::Elements1D(bufs.nb_sum))?;
-        self.p_pair_03_apply_block_prefix
-            .record_pass(&mut ctx, InputElements::Elements1D(bufs.n))?;
+        let passes = &self.passes;
 
-        self.p_compact_boundaries_all
-            .record_pass(&mut ctx, InputElements::Elements1D(bufs.n))?;
-        self.p_compact_boundaries_kept
-            .record_pass(&mut ctx, InputElements::Elements1D(bufs.n))?;
-
-        self.p_retag_calls_and_arrays
-            .record_pass(&mut ctx, InputElements::Elements1D(bufs.n))?;
-        self.p_tokens_build
-            .record_pass(&mut ctx, InputElements::Elements1D(bufs.n))?;
+        record_all_passes(bufs.n, bufs.nb_dfa, bufs.nb_sum, ctx, passes)?;
 
         let rb_enabled = readback_enabled();
 

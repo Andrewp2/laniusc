@@ -123,6 +123,7 @@ impl GpuParser {
             buffers: &bufs,
             maybe_timer: &mut timer_ref,
             maybe_dbg: &mut dbg_opt,
+            bg_cache: None,
         };
 
         // 1) pair → headers

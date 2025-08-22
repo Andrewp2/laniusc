@@ -78,21 +78,12 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
             device.push_error_scope(wgpu::ErrorFilter::Validation);
         }
 
-        let nblocks = match input {
+        let n = match input {
             super::InputElements::Elements1D(n) => n,
             _ => unreachable!(),
         };
 
-        let per_round_bytes_u64 = (nblocks as usize * 2 * std::mem::size_of::<u32>()) as u64;
-        encoder.copy_buffer_to_buffer(
-            &b.block_totals_pair,
-            0,
-            &b.block_pair_ping,
-            0,
-            per_round_bytes_u64,
-        );
-
-        let rounds = compute_rounds(nblocks);
+        let rounds = compute_rounds(n);
 
         let pd = self.data();
 
@@ -129,14 +120,8 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
                     "gScan".into(),
                     wgpu::BindingResource::Buffer(scan_params.as_entire_buffer_binding()),
                 ),
-                (
-                    "block_pair_ping".into(),
-                    b.block_pair_ping.as_entire_binding(),
-                ),
-                (
-                    "block_pair_pong".into(),
-                    b.block_pair_pong.as_entire_binding(),
-                ),
+                ("block_pair_ping".into(), b.pair_02_ping.as_entire_binding()),
+                ("block_pair_pong".into(), b.pair_02_pong.as_entire_binding()),
             ]);
 
             let bg = create_bind_group_from_reflection(
@@ -153,7 +138,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
                 // One workgroup per PAIR block; planner must not divide by tgsx.
                 let (gx, gy, gz) = crate::gpu::passes_core::plan_workgroups(
                     crate::gpu::passes_core::DispatchDim::D1,
-                    crate::gpu::passes_core::InputElements::Elements1D(nblocks),
+                    crate::gpu::passes_core::InputElements::Elements1D(n),
                     [1, 1, 1],
                 )?;
                 let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -168,6 +153,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
             #[cfg(feature = "gpu-debug")]
             if let Some(dbg) = maybe_dbg.as_deref_mut() {
                 use crate::lexer::gpu::debug::make_staging;
+                let per_round_bytes_u64 = (n as usize * 2 * std::mem::size_of::<u32>()) as u64;
                 let last_writer = if use_ping_as_src != 0 {
                     &b.block_pair_pong
                 } else {
@@ -216,23 +202,23 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
         dbg.gpu.block_pair_ping.set_from_copy(
             device,
             encoder,
-            &b.block_pair_ping,
+            &b.pair_02_ping,
             "dbg.block_pair_ping",
-            b.block_pair_ping.byte_size,
+            b.pair_02_ping.byte_size,
         );
         dbg.gpu.block_pair_pong.set_from_copy(
             device,
             encoder,
-            &b.block_pair_pong,
+            &b.pair_02_pong,
             "dbg.block_pair_pong",
-            b.block_pair_pong.byte_size,
+            b.pair_02_pong.byte_size,
         );
 
         let rounds = compute_rounds(b.nb_sum);
         let last = if (rounds % 2) == 1 {
-            &b.block_pair_pong
+            &b.pair_02_pong
         } else {
-            &b.block_pair_ping
+            &b.pair_02_ping
         };
         dbg.gpu.block_prefix_pair.set_from_copy(
             device,

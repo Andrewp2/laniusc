@@ -1,5 +1,4 @@
-// src/lexer/gpu/debug_checks.rs
-// Builds only when compiled with `--features gpu-debug`.
+// TODO: This entire file needs to be rewritten to match the new shaders/buffers/everything.
 #![cfg(feature = "gpu-debug")]
 
 use std::cmp::min;

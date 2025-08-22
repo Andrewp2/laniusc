@@ -50,23 +50,23 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair01SumInblock
             ("flags_packed".into(), b.flags_packed.as_entire_binding()),
             (
                 "block_totals_pair".into(),
-                b.block_totals_pair.as_entire_binding(),
+                b.pair_02_ping.as_entire_binding(),
             ),
         ])
     }
-    fn record_debug(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        b: &GpuBuffers,
-        dbg: &mut DebugOutput,
-    ) {
-        dbg.gpu.block_totals_pair.set_from_copy(
-            device,
-            encoder,
-            &b.block_totals_pair,
-            "dbg.block_totals_pair",
-            b.block_totals_pair.byte_size,
-        );
-    }
+    // fn record_debug(
+    //     &self,
+    //     device: &wgpu::Device,
+    //     encoder: &mut wgpu::CommandEncoder,
+    //     b: &GpuBuffers,
+    //     dbg: &mut DebugOutput,
+    // ) {
+    //     dbg.gpu.block_totals_pair.set_from_copy(
+    //         device,
+    //         encoder,
+    //         &b.block_totals_pair,
+    //         "dbg.block_totals_pair",
+    //         b.block_totals_pair.byte_size,
+    //     );
+    // }
 }

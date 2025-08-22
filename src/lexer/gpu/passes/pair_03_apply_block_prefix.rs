@@ -60,9 +60,9 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair03ApplyBlock
         }
 
         let block_prefix_pair_binding: wgpu::BindingResource<'a> = if (rounds % 2) == 1 {
-            b.block_pair_pong.as_entire_binding()
+            b.pair_02_pong.as_entire_binding()
         } else {
-            b.block_pair_ping.as_entire_binding()
+            b.pair_02_ping.as_entire_binding()
         };
 
         HashMap::from([
@@ -101,9 +101,9 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair03ApplyBlock
 
         let rounds = compute_rounds(b.nb_sum);
         let last = if (rounds % 2) == 1 {
-            &b.block_pair_pong
+            &b.pair_02_pong
         } else {
-            &b.block_pair_ping
+            &b.pair_02_ping
         };
         dbg.gpu.block_prefix_pair.set_from_copy(
             device,

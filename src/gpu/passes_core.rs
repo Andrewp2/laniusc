@@ -262,6 +262,26 @@ pub struct PassContext<'a, B, D> {
     pub buffers: &'a B,
     pub maybe_timer: &'a mut Option<&'a mut crate::gpu::timer::GpuTimer>,
     pub maybe_dbg: &'a mut Option<&'a mut D>,
+    /// Optional bind group cache: when present, record_pass will reuse cached
+    /// bind groups keyed by shader id and set index, and populate it on miss.
+    pub bg_cache: Option<&'a mut BindGroupCache>,
+}
+
+#[derive(Default)]
+pub struct BindGroupCache {
+    // Keyed by shader id (label) to its vector of bind groups (per set index)
+    map: HashMap<String, Vec<Arc<wgpu::BindGroup>>>,
+}
+
+impl BindGroupCache {
+    pub fn new() -> Self {
+        Self {
+            map: HashMap::new(),
+        }
+    }
+    pub fn clear(&mut self) {
+        self.map.clear();
+    }
 }
 
 pub trait Pass<Buffers, DebugOutput> {
@@ -294,19 +314,36 @@ pub trait Pass<Buffers, DebugOutput> {
         }
 
         let pd = self.data();
-        let mut bind_groups = Vec::new();
         let resources = self.create_resource_map(ctx.buffers);
-        for (set_idx, bgl) in pd.bind_group_layouts.iter().enumerate() {
-            let bg = bind_group::create_bind_group_from_reflection(
-                ctx.device,
-                Some(Self::NAME),
-                bgl,
-                &pd.reflection,
-                set_idx,
-                &resources,
-            )?;
-            bind_groups.push(bg);
+        // Try cache first if provided
+        let mut cached_entries: Option<Vec<Arc<wgpu::BindGroup>>> = None;
+        if let Some(cache) = ctx.bg_cache.as_mut() {
+            if let Some(v) = cache.map.get(&pd.shader_id) {
+                if v.len() == pd.bind_group_layouts.len() {
+                    cached_entries = Some(v.clone());
+                }
+            }
         }
+        let bind_groups: Vec<Arc<wgpu::BindGroup>> = if let Some(v) = cached_entries {
+            v
+        } else {
+            let mut v = Vec::with_capacity(pd.bind_group_layouts.len());
+            for (set_idx, bgl) in pd.bind_group_layouts.iter().enumerate() {
+                let bg = bind_group::create_bind_group_from_reflection(
+                    ctx.device,
+                    Some(Self::NAME),
+                    bgl,
+                    &pd.reflection,
+                    set_idx,
+                    &resources,
+                )?;
+                v.push(Arc::new(bg));
+            }
+            if let Some(cache) = ctx.bg_cache.as_mut() {
+                cache.map.insert(pd.shader_id.clone(), v.clone());
+            }
+            v
+        };
 
         let [tgsx, tgsy, _tgsz] = pd.thread_group_size;
         let (gx, gy, gz) = plan_workgroups(Self::DIM, input, [tgsx, tgsy, 1])?;
@@ -326,7 +363,7 @@ pub trait Pass<Buffers, DebugOutput> {
             });
         pass.set_pipeline(&pd.pipeline);
         for (i, bg) in bind_groups.iter().enumerate() {
-            pass.set_bind_group(i as u32, bg, &[]);
+            pass.set_bind_group(i as u32, Option::<&wgpu::BindGroup>::Some(&*bg), &[]);
         }
         pass.dispatch_workgroups(gx, gy, gz);
         drop(pass);

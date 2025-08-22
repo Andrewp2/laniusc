@@ -1,13 +1,11 @@
 {
   "commands": [
-    "LANIUS_READBACK=0 LANIUS_GPU_TIMING=1 cargo run --bin perf_one --release",
     "cargo run --bin fuzz_lex",
     "LANIUS_VALIDATION_SCOPES=0 LANIUS_READBACK=0 LANIUS_GPU_TIMING=1 cargo run --bin perf_one --release",
     "LANIUS_GPU_TIMING=1 cargo run --bin perf_one --release",
     "cargo flamegraph --bin perf_one --release",
     "cargo run --bin gen_lex_tables",
-    "LANIUS_GPU_TIMING=1 cargo run --bin fuzz_lex",
-    "LANIUS_READBACK=0 LANIUS_GPU_TIMING=1 cargo run --bin perf_one"
+    "LANIUS_GPU_TIMING=1 cargo run --bin fuzz_lex"
   ],
   "max": 50
 }

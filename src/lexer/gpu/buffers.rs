@@ -2,7 +2,6 @@ use super::LexParams;
 use crate::{
     gpu::buffers::{
         LaniusBuffer,
-        storage_ro_from_bytes,
         storage_ro_from_u32s,
         storage_rw_for_array,
         storage_rw_uninit_bytes,
@@ -23,18 +22,14 @@ pub struct GpuBuffers {
     pub next_u8: LaniusBuffer<u32>,
     pub token_map: LaniusBuffer<u32>,
 
-    pub block_summaries: LaniusBuffer<u32>,
-    pub block_ping: LaniusBuffer<u32>,
-    pub block_pong: LaniusBuffer<u32>,
-    pub f_final: LaniusBuffer<u32>,
-
+    pub dfa_02_ping: LaniusBuffer<u32>,
+    pub dfa_02_pong: LaniusBuffer<u32>,
     pub tok_types: LaniusBuffer<u32>,
     pub flags_packed: LaniusBuffer<u32>,
     pub end_excl_by_i: LaniusBuffer<u32>,
 
-    pub block_totals_pair: LaniusBuffer<u32>,
-    pub block_pair_ping: LaniusBuffer<u32>,
-    pub block_pair_pong: LaniusBuffer<u32>,
+    pub pair_02_ping: LaniusBuffer<u32>,
+    pub pair_02_pong: LaniusBuffer<u32>,
     pub s_all_final: LaniusBuffer<u32>,
     pub s_keep_final: LaniusBuffer<u32>,
 
@@ -54,7 +49,6 @@ impl GpuBuffers {
         device: &wgpu::Device,
         n: u32,
         start_state: u32,
-        input_bytes: &[u8],
         next_emit_packed: &[u32],
         next_u8_packed: &[u32],
         token_map: &[u32],
@@ -81,23 +75,18 @@ impl GpuBuffers {
         let in_bytes: LaniusBuffer<u8> =
             storage_rw_uninit_bytes(device, "in_bytes", n as usize, n as usize);
 
-        let token_map_buf: LaniusBuffer<u32> = storage_ro_from_u32s(device, "token_map", token_map);
+        let token_map: LaniusBuffer<u32> = storage_ro_from_u32s(device, "token_map", token_map);
 
-        let next_emit_buf: LaniusBuffer<u32> =
+        let next_emit: LaniusBuffer<u32> =
             storage_ro_from_u32s(device, "next_emit", next_emit_packed);
 
-        let next_u8_buf: LaniusBuffer<u32> =
-            storage_ro_from_u32s(device, "next_u8", next_u8_packed);
+        let next_u8: LaniusBuffer<u32> = storage_ro_from_u32s(device, "next_u8", next_u8_packed);
 
         let per_block_count = N_STATES * (nb_dfa as usize);
-        let block_summaries: LaniusBuffer<u32> =
-            storage_rw_for_array::<u32>(device, "block_summaries", per_block_count);
-        let block_ping: LaniusBuffer<u32> =
+        let dfa_02_ping: LaniusBuffer<u32> =
             storage_rw_for_array::<u32>(device, "block_ping", per_block_count);
-        let block_pong: LaniusBuffer<u32> =
+        let dfa_02_pong: LaniusBuffer<u32> =
             storage_rw_for_array::<u32>(device, "block_pong", per_block_count);
-
-        let f_final: LaniusBuffer<u32> = storage_rw_for_array::<u32>(device, "f_final", n as usize);
 
         let tok_types: LaniusBuffer<u32> =
             storage_rw_for_array::<u32>(device, "tok_types", n as usize);
@@ -110,11 +99,9 @@ impl GpuBuffers {
 
         let pair_elems_per_block = 2usize;
         let pair_total = (nb_sum as usize) * pair_elems_per_block;
-        let block_totals_pair: LaniusBuffer<u32> =
-            storage_rw_for_array::<u32>(device, "block_totals_pair", pair_total);
-        let block_pair_ping: LaniusBuffer<u32> =
+        let pair_02_ping: LaniusBuffer<u32> =
             storage_rw_for_array::<u32>(device, "block_pair_ping", pair_total);
-        let block_pair_pong: LaniusBuffer<u32> =
+        let pair_02_pong: LaniusBuffer<u32> =
             storage_rw_for_array::<u32>(device, "block_pair_pong", pair_total);
 
         let s_all_final: LaniusBuffer<u32> =
@@ -155,22 +142,18 @@ impl GpuBuffers {
             params,
 
             in_bytes,
-            next_emit: next_emit_buf,
-            next_u8: next_u8_buf,
-            token_map: token_map_buf,
+            next_emit,
+            next_u8,
+            token_map,
 
-            block_summaries,
-            block_ping,
-            block_pong,
-            f_final,
-
+            dfa_02_ping,
+            dfa_02_pong,
             tok_types,
             flags_packed,
             end_excl_by_i,
 
-            block_totals_pair,
-            block_pair_ping,
-            block_pair_pong,
+            pair_02_ping,
+            pair_02_pong,
 
             s_all_final,
             s_keep_final,

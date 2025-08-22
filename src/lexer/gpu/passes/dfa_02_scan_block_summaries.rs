@@ -10,9 +10,11 @@ use crate::{
         bind_group::create_bind_group_from_reflection,
         validation_scopes_enabled,
     },
-    lexer::{
-        gpu::{buffers::GpuBuffers, debug::DebugOutput, passes::ScanParams, util::compute_rounds},
-        tables::dfa::N_STATES,
+    lexer::gpu::{
+        buffers::GpuBuffers,
+        debug::DebugOutput,
+        passes::ScanParams,
+        util::compute_rounds,
     },
 };
 
@@ -82,12 +84,6 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSu
             _ => unreachable!(),
         };
 
-        let per_round_bytes = (n as usize) * N_STATES * std::mem::size_of::<u32>();
-        let per_round_bytes_u64 = per_round_bytes as u64;
-
-        // Seed ping with raw per-block summaries
-        encoder.copy_buffer_to_buffer(&b.block_summaries, 0, &b.block_ping, 0, per_round_bytes_u64);
-
         let rounds = compute_rounds(n);
 
         let pd = self.data();
@@ -125,8 +121,8 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSu
                     "gScan".into(),
                     wgpu::BindingResource::Buffer(scan_params.as_entire_buffer_binding()),
                 ),
-                ("block_ping".into(), b.block_ping.as_entire_binding()),
-                ("block_pong".into(), b.block_pong.as_entire_binding()),
+                ("block_ping".into(), b.dfa_02_ping.as_entire_binding()),
+                ("block_pong".into(), b.dfa_02_pong.as_entire_binding()),
             ]);
 
             let bg = create_bind_group_from_reflection(
@@ -158,14 +154,17 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSu
 
             #[cfg(feature = "gpu-debug")]
             if let Some(dbg) = maybe_dbg.as_deref_mut() {
+                let per_round_bytes = (n as usize) * N_STATES * std::mem::size_of::<u32>();
                 use crate::lexer::gpu::debug::make_staging;
+                // TODO: block_ping and block_pong are both N_STATES * (nb_dfa as usize) as their count, with that times 4 being byte count.
+                // for some reason we're copying n * N_STATES * 4 bytes, which is more than the size of the buffer.
                 let last_writer = if use_ping_as_src != 0 {
                     &b.block_pong
                 } else {
                     &b.block_ping
                 };
                 let staging = make_staging(device, "dbg.func_scan_round", per_round_bytes);
-                encoder.copy_buffer_to_buffer(last_writer, 0, &staging, 0, per_round_bytes_u64);
+                encoder.copy_buffer_to_buffer(last_writer, 0, &staging, 0, per_round_bytes as u64);
                 dbg.gpu
                     .func_scan_rounds
                     .push(crate::lexer::gpu::DebugBuffer {
@@ -206,24 +205,24 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSu
         dbg.gpu.block_ping.set_from_copy(
             device,
             encoder,
-            &b.block_ping,
+            &b.dfa_02_ping,
             "dbg.block_ping",
-            b.block_ping.byte_size,
+            b.dfa_02_ping.byte_size,
         );
         dbg.gpu.block_pong.set_from_copy(
             device,
             encoder,
-            &b.block_pong,
+            &b.dfa_02_pong,
             "dbg.block_pong",
-            b.block_pong.byte_size,
+            b.dfa_02_pong.byte_size,
         );
 
         let rounds = compute_rounds(b.nb_dfa);
 
         let last = if (rounds % 2) == 1 {
-            &b.block_pong
+            &b.dfa_02_pong
         } else {
-            &b.block_ping
+            &b.dfa_02_ping
         };
         dbg.gpu.block_prefix.set_from_copy(
             device,
