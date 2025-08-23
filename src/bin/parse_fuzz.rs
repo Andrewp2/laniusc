@@ -1,0 +1,650 @@
+// src/bin/parse_fuzz.rs
+// Runs fixed corpus + always-on random corpus.
+// For fixed files, also checks sidecar goldens (<name>.parse.json) when present.
+//
+// CLI:
+//   cargo run --bin parse_fuzz
+//   cargo run --bin parse_fuzz -- parser_tests/tricky_combo.lani
+//   cargo run --bin parse_fuzz -- --iters=10 --len=2000000 --seed=123
+
+use std::{
+    path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+use anyhow::{Context, Result};
+use laniusc::{
+    lexer::{gpu::driver::GpuLexer, tables::tokens},
+    parser::{
+        gpu::{
+            buffers::ActionHeader,
+            driver::{GpuParser, ParseResult},
+        },
+        tables::{self as parse_tables, PrecomputedParseTables},
+    },
+};
+use rand::{SeedableRng, rngs::StdRng};
+use serde::Deserialize;
+
+// ------------------------ helpers: input collection ------------------------
+
+fn collect_inputs_from_dir(dir: &str) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(dir) {
+        for ent in rd.flatten() {
+            let p = ent.path();
+            if p.extension().and_then(|e| e.to_str()) == Some("lani") {
+                out.push(p);
+            }
+        }
+        out.sort();
+    }
+    out
+}
+
+fn load_tables(n_kinds: u32) -> PrecomputedParseTables {
+    match std::fs::read("tables/parse_tables.bin") {
+        Ok(bytes) => PrecomputedParseTables::load_bin_bytes(&bytes).unwrap_or_else(|e| {
+            eprintln!("[parse_fuzz] failed to load parse_tables.bin: {e}; using MVP tables");
+            parse_tables::build_mvp_precomputed_tables(n_kinds, vec![])
+        }),
+        Err(_) => {
+            eprintln!("[parse_fuzz] tables/parse_tables.bin not found; using MVP tables");
+            parse_tables::build_mvp_precomputed_tables(n_kinds, vec![])
+        }
+    }
+}
+
+// ------------------------ helpers: bracket CPU oracle (for sanity) ------------------------
+
+#[derive(Debug, Clone)]
+struct CpuBrackets {
+    valid: bool,
+    final_depth: i32,
+    min_depth: i32,
+    _match_for_index: Vec<u32>,
+}
+
+/// Mirror of shaders/parser/brackets_match.slang (single-thread truth kernel).
+fn cpu_brackets(sc_stream: &[u32]) -> CpuBrackets {
+    let n = sc_stream.len();
+    let mut match_for_index = vec![0xFFFF_FFFFu32; n];
+    let mut open_stack: Vec<u32> = Vec::with_capacity(n);
+
+    let mut depth: i32 = 0;
+    let mut min_depth: i32 = 0;
+    let mut valid = true;
+
+    for i in 0..n {
+        let code = sc_stream[i];
+        let is_push = (code & 1) == 1;
+        if is_push {
+            open_stack.push(i as u32);
+            depth += 1;
+            if depth < min_depth {
+                min_depth = depth;
+            }
+        } else {
+            if depth <= 0 || open_stack.is_empty() {
+                valid = false;
+                depth -= 1;
+                if depth < min_depth {
+                    min_depth = depth;
+                }
+                continue;
+            }
+            let push_idx = open_stack.pop().unwrap();
+            depth -= 1;
+            if depth < min_depth {
+                min_depth = depth;
+            }
+            let push_sym = sc_stream[push_idx as usize] >> 1;
+            let pop_sym = code >> 1;
+            if push_sym != pop_sym {
+                valid = false;
+            }
+            match_for_index[push_idx as usize] = i as u32;
+            match_for_index[i] = push_idx;
+        }
+    }
+    if !open_stack.is_empty() {
+        valid = false;
+    }
+    CpuBrackets {
+        valid,
+        final_depth: depth,
+        min_depth,
+        _match_for_index: match_for_index,
+    }
+}
+
+// ------------------------ helpers: additional invariants ------------------------
+
+fn assert_involutive(map: &[u32]) -> Result<()> {
+    for (i, &m) in map.iter().enumerate() {
+        if m != 0xFFFF_FFFF {
+            let back = map.get(m as usize).copied().unwrap_or(0xFFFF_FFFF);
+            if back != i as u32 {
+                anyhow::bail!(
+                    "pair map not involutive at i={i}: match[i]={m}, but match[match[i]]={back}"
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn assert_type_agrees(sc: &[u32], map: &[u32]) -> Result<()> {
+    for (i, &m) in sc.iter().enumerate() {
+        let m = *map.get(i).unwrap_or(&0xFFFF_FFFF);
+        if m == 0xFFFF_FFFF {
+            continue;
+        }
+        let a = sc[i];
+        let b = sc[m as usize];
+        if ((a ^ b) & 1) == 0 {
+            anyhow::bail!(
+                "pair does not connect push<->pop at i={i} <-> {m} (codes {a:#x},{b:#x})"
+            );
+        }
+        let sym_a = a >> 1;
+        let sym_b = b >> 1;
+        if sym_a != sym_b {
+            anyhow::bail!(
+                "type mismatch in pair i={i} <-> {m} (sym_a={}, sym_b={})",
+                sym_a,
+                sym_b
+            );
+        }
+    }
+    Ok(())
+}
+
+fn assert_stream_lengths_from_headers(
+    headers: &[ActionHeader],
+    sc_len: usize,
+    emit_len: usize,
+) -> Result<()> {
+    let mut sum_sc: usize = 0;
+    let mut sum_emit: usize = 0;
+    for h in headers {
+        sum_sc += (h.push_len + h.pop_count) as usize;
+        sum_emit += h.emit_len as usize;
+    }
+    if sum_sc != sc_len {
+        anyhow::bail!(
+            "stack-change length mismatch: headers sum={} vs sc_stream.len()={}",
+            sum_sc,
+            sc_len
+        );
+    }
+    if sum_emit != emit_len {
+        anyhow::bail!(
+            "emit length mismatch: headers sum={} vs emit_stream.len()={}",
+            sum_emit,
+            emit_len
+        );
+    }
+    Ok(())
+}
+
+fn assert_tree_shape(node_kind: &[u32], parent: &[u32], prod_arity: &[u32]) -> Result<()> {
+    if node_kind.len() != parent.len() {
+        anyhow::bail!(
+            "tree arrays length mismatch: node_kind.len()={} parent.len()={}",
+            node_kind.len(),
+            parent.len()
+        );
+    }
+    if node_kind.is_empty() {
+        return Ok(());
+    }
+    if parent[0] != 0xFFFF_FFFF {
+        anyhow::bail!("node 0 is not root (parent[0]={:#x})", parent[0]);
+    }
+    for i in 1..node_kind.len() {
+        let p = parent[i] as usize;
+        if p >= i {
+            anyhow::bail!(
+                "parent pointer not backward at node {}: parent[i]={}",
+                i,
+                parent[i]
+            );
+        }
+    }
+    let mut child_counts = vec![0usize; node_kind.len()];
+    for i in 1..node_kind.len() {
+        let p = parent[i] as usize;
+        child_counts[p] += 1;
+    }
+    for i in 0..node_kind.len() {
+        let nk = node_kind[i] as usize;
+        let want = *prod_arity.get(nk).unwrap_or(&0) as usize;
+        if child_counts[i] != want {
+            anyhow::bail!(
+                "arity mismatch at node {i}: kind={} expected_children={} got={}",
+                nk,
+                want,
+                child_counts[i]
+            );
+        }
+    }
+    Ok(())
+}
+
+// ------------------------ goldens: sidecar .parse.json ------------------------
+
+#[derive(Deserialize)]
+struct GoldenSizes {
+    headers: usize,
+    sc: usize,
+    emit: usize,
+    nodes: usize,
+}
+#[derive(Deserialize)]
+struct GoldenBrackets {
+    valid: bool,
+    final_depth: i32,
+    min_depth: i32,
+}
+#[derive(Deserialize)]
+struct GoldenHashes {
+    sc: u64,
+    emit: u64,
+    match_for_index: u64,
+    node_kind: u64,
+    parent: u64,
+}
+#[derive(Deserialize)]
+struct ParseGolden {
+    sizes: GoldenSizes,
+    brackets: GoldenBrackets,
+    hashes: GoldenHashes,
+}
+
+fn sidecar_path_for(p: &Path) -> PathBuf {
+    let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("case");
+    let dir = p.parent().unwrap_or_else(|| Path::new("."));
+    dir.join(format!("{stem}.parse.json"))
+}
+
+fn fnv1a_u32s(xs: &[u32]) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for &x in xs {
+        for b in x.to_le_bytes() {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x100000001b3);
+        }
+    }
+    h ^ (xs.len() as u64)
+}
+
+// --- CPU-vs-GPU comparison against golden --------------------------------
+
+fn types_from_src(src: &str) -> Vec<u32> {
+    // 0 for paren, 1 for bracket, in the exact source event order.
+    let mut out = Vec::with_capacity(src.len());
+    for ch in src.chars() {
+        match ch {
+            '(' | ')' => out.push(0),
+            '[' | ']' => out.push(1),
+            _ => {}
+        }
+    }
+    out
+}
+
+fn check_against_golden(path: &Path, src: &str, res: &ParseResult) -> Result<()> {
+    use serde_json::Value;
+
+    let sidecar = sidecar_path_for(path);
+    if !sidecar.exists() {
+        return Ok(()); // no golden yet → skip
+    }
+    let s = std::fs::read_to_string(&sidecar)
+        .with_context(|| format!("read golden {}", sidecar.display()))?;
+
+    let v: Value =
+        serde_json::from_str(&s).with_context(|| format!("parse golden {}", sidecar.display()))?;
+
+    // If this is a CPU-only golden, do a full structural comparison.
+    if v.get("cpu_only").and_then(|b| b.as_bool()) == Some(true) {
+        // 1) bracket summary must match
+        let b = v
+            .get("brackets")
+            .ok_or_else(|| anyhow::anyhow!("golden missing 'brackets'"))?;
+        let g_valid = b
+            .get("valid")
+            .and_then(|x| x.as_bool())
+            .ok_or_else(|| anyhow::anyhow!("golden.brackets.valid"))?;
+        let g_final =
+            b.get("final_depth")
+                .and_then(|x| x.as_i64())
+                .ok_or_else(|| anyhow::anyhow!("golden.brackets.final_depth"))? as i32;
+        let g_min =
+            b.get("min_depth")
+                .and_then(|x| x.as_i64())
+                .ok_or_else(|| anyhow::anyhow!("golden.brackets.min_depth"))? as i32;
+
+        if (g_valid, g_final, g_min)
+            != (
+                res.brackets.valid,
+                res.brackets.final_depth,
+                res.brackets.min_depth,
+            )
+        {
+            anyhow::bail!(
+                "{}: brackets summary differs from CPU golden",
+                path.display()
+            );
+        }
+
+        // 2) canonicalize GPU sc_stream to CPU's event typing and compare
+        if let Some(sc_golden) = v.get("sc_canon").and_then(|x| x.as_array()) {
+            let sc_g: Vec<u32> = sc_golden
+                .iter()
+                .map(|x| x.as_u64().unwrap() as u32)
+                .collect();
+
+            let ty_seq = types_from_src(src);
+            if ty_seq.len() != res.sc_stream.len() {
+                anyhow::bail!(
+                    "{}: GPU sc_stream length {} != CPU bracket count {}",
+                    path.display(),
+                    res.sc_stream.len(),
+                    ty_seq.len()
+                );
+            }
+
+            let mut sc_gpu_canon = Vec::with_capacity(res.sc_stream.len());
+            for (i, &code) in res.sc_stream.iter().enumerate() {
+                let push = code & 1;
+                let ty = ty_seq[i]; // 0='(', 1='[' by source order
+                sc_gpu_canon.push((ty << 1) | push);
+            }
+
+            if sc_gpu_canon != sc_g {
+                anyhow::bail!(
+                    "{}: sc_stream differs from CPU golden (canonicalized)",
+                    path.display()
+                );
+            }
+        }
+
+        // 3) exact pair map must match when provided
+        if let Some(mfi_golden) = v.get("match_for_index").and_then(|x| x.as_array()) {
+            let mfi_g: Vec<u32> = mfi_golden
+                .iter()
+                .map(|x| x.as_u64().unwrap() as u32)
+                .collect();
+            if res.brackets.match_for_index != mfi_g {
+                anyhow::bail!(
+                    "{}: match_for_index differs from CPU golden",
+                    path.display()
+                );
+            }
+        }
+
+        // 4) tree parent array must match if sizes agree (node_kind may be production-IDs on GPU)
+        if let Some(tree_v) = v.get("tree") {
+            let nk_g: Option<Vec<u32>> = tree_v
+                .get("node_kind")
+                .and_then(|x| x.as_array())
+                .map(|arr| arr.iter().map(|u| u.as_u64().unwrap() as u32).collect());
+            let par_g: Option<Vec<u32>> = tree_v
+                .get("parent")
+                .and_then(|x| x.as_array())
+                .map(|arr| arr.iter().map(|u| u.as_u64().unwrap() as u32).collect());
+
+            if let (Some(_nk_g), Some(par_g)) = (nk_g, par_g) {
+                if res.parent.len() == par_g.len() {
+                    if res.parent != par_g {
+                        anyhow::bail!(
+                            "{}: parse tree parent array differs from CPU golden",
+                            path.display()
+                        );
+                    }
+                } else {
+                    eprintln!(
+                        "[warn] {}: skipping tree compare (GPU nodes={}, CPU nodes={})",
+                        path.display(),
+                        res.parent.len(),
+                        par_g.len()
+                    );
+                }
+            }
+        }
+        return Ok(());
+    }
+
+    // Otherwise: support the older strict format (sizes + hashes).
+    let g: ParseGolden = serde_json::from_value(v)
+        .with_context(|| format!("parse full golden {}", sidecar.display()))?;
+
+    if g.sizes.headers != res.headers.len()
+        || g.sizes.sc != res.sc_stream.len()
+        || g.sizes.emit != res.emit_stream.len()
+        || g.sizes.nodes != res.node_kind.len()
+    {
+        anyhow::bail!("{}: size mismatch vs golden", path.display());
+    }
+
+    if (
+        g.brackets.valid,
+        g.brackets.final_depth,
+        g.brackets.min_depth,
+    ) != (
+        res.brackets.valid,
+        res.brackets.final_depth,
+        res.brackets.min_depth,
+    ) {
+        anyhow::bail!("{}: brackets summary differs from golden", path.display());
+    }
+
+    let h_sc = fnv1a_u32s(&res.sc_stream);
+    let h_emit = fnv1a_u32s(&res.emit_stream);
+    let h_match = fnv1a_u32s(&res.brackets.match_for_index);
+    let h_node = fnv1a_u32s(&res.node_kind);
+    let h_parent = fnv1a_u32s(&res.parent);
+
+    if g.hashes.sc != h_sc
+        || g.hashes.emit != h_emit
+        || g.hashes.match_for_index != h_match
+        || g.hashes.node_kind != h_node
+        || g.hashes.parent != h_parent
+    {
+        anyhow::bail!("{}: stream/hash differs from golden", path.display());
+    }
+    Ok(())
+}
+
+// ------------------------ run one source ------------------------
+
+async fn run_source(
+    path_opt: Option<&Path>,
+    label: &str,
+    src: &str,
+    lexer: &GpuLexer,
+    parser: &GpuParser,
+    tables: &PrecomputedParseTables,
+) -> Result<()> {
+    let toks = lexer
+        .lex(src)
+        .await
+        .with_context(|| format!("lex {}", label))?;
+    let mut kinds: Vec<u32> = toks.iter().map(|t| t.kind as u32).collect();
+    kinds.insert(0, 0);
+    kinds.push(0);
+
+    let res = parser
+        .parse(&kinds, tables)
+        .await
+        .with_context(|| format!("parse {}", label))?;
+    let expected_pairs = kinds.len().saturating_sub(1);
+
+    // core invariants on the GPU output itself
+    if res.headers.len() != expected_pairs {
+        anyhow::bail!(
+            "headers.len mismatch: got {} want {}",
+            res.headers.len(),
+            expected_pairs
+        );
+    }
+    let cpu = cpu_brackets(&res.sc_stream);
+    if (cpu.valid, cpu.final_depth, cpu.min_depth)
+        != (
+            res.brackets.valid,
+            res.brackets.final_depth,
+            res.brackets.min_depth,
+        )
+    {
+        anyhow::bail!(
+            "CPU/GPU bracket summary mismatch for {} (gpu v={},f={},m={} vs cpu v={},f={},m={})",
+            label,
+            res.brackets.valid,
+            res.brackets.final_depth,
+            res.brackets.min_depth,
+            cpu.valid,
+            cpu.final_depth,
+            cpu.min_depth
+        );
+    }
+    assert_involutive(&res.brackets.match_for_index)?;
+    assert_type_agrees(&res.sc_stream, &res.brackets.match_for_index)?;
+    assert_stream_lengths_from_headers(&res.headers, res.sc_stream.len(), res.emit_stream.len())?;
+    assert_tree_shape(&res.node_kind, &res.parent, &tables.prod_arity)?;
+
+    // golden (if present) — compare GPU to CPU truth
+    if let Some(p) = path_opt {
+        check_against_golden(p, src, &res)?;
+    }
+
+    println!(
+        "[ok] {} (pairs={}, sc={}, emits={}, nodes={})",
+        label,
+        res.headers.len(),
+        res.sc_stream.len(),
+        res.emit_stream.len(),
+        res.node_kind.len()
+    );
+    Ok(())
+}
+
+// ------------------------ CLI args ------------------------
+
+#[derive(Debug, Clone, Copy)]
+struct FuzzCfg {
+    iters: usize,
+    len: usize,
+    seed: u64,
+}
+
+fn parse_cli_args(args: &[String]) -> (Vec<PathBuf>, FuzzCfg) {
+    let mut paths = Vec::new();
+    let mut iters = 3usize;
+    let mut len = 1_000_000usize;
+    let mut seed = 42u64;
+
+    for a in args {
+        if let Some(v) = a.strip_prefix("--iters=") {
+            if let Ok(n) = v.parse() {
+                iters = n;
+            }
+        } else if let Some(v) = a.strip_prefix("--len=") {
+            if let Ok(n) = v.parse() {
+                len = n;
+            }
+        } else if let Some(v) = a.strip_prefix("--seed=") {
+            if let Ok(n) = v.parse() {
+                seed = n;
+            }
+        } else if a.starts_with("--") {
+            eprintln!("[warn] unknown flag '{}'", a);
+        } else {
+            paths.push(PathBuf::from(a));
+        }
+    }
+    (paths, FuzzCfg { iters, len, seed })
+}
+
+// --------------------------------- main ---------------------------------
+
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> Result<()> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let (mut paths, fuzz) = parse_cli_args(&args);
+
+    if paths.is_empty() {
+        paths = collect_inputs_from_dir("parser_tests");
+    }
+
+    if paths.is_empty() {
+        eprintln!(
+            "[parse_fuzz] no .lani files found in parser_tests/ and no explicit files; continuing with random corpus only."
+        );
+    }
+
+    let lexer = GpuLexer::new().await.context("init GpuLexer")?;
+    let parser = GpuParser::new().await.context("init GpuParser")?;
+    let n_kinds = tokens::N_KINDS;
+    let tables = load_tables(n_kinds);
+
+    let mut passed = 0usize;
+    let mut failed = 0usize;
+
+    // 1) File corpus (goldens checked if present)
+    for path in paths {
+        let label = path.display().to_string();
+        let src =
+            std::fs::read_to_string(&path).with_context(|| format!("read input {}", label))?;
+        match run_source(Some(&path), &label, &src, &lexer, &parser, &tables).await {
+            Ok(()) => passed += 1,
+            Err(e) => {
+                eprintln!("[fail] {}:\n  {}", label, e);
+                failed += 1;
+                break; // fail-fast; flip if you want full sweep
+            }
+        }
+    }
+
+    // 2) Random corpus — ALWAYS ON (not env-gated)
+    let mut rng = StdRng::seed_from_u64(fuzz.seed);
+    println!(
+        "[fuzz] random corpus: iters={} len={} seed={}",
+        fuzz.iters, fuzz.len, fuzz.seed
+    );
+
+    for i in 0..fuzz.iters {
+        // Use the repo’s generator to make *valid* sources.
+        let src = laniusc::dev::generator::gen_valid_source(&mut rng, fuzz.len);
+        let label = format!("fuzz_iter_{}_bytes_{}", i, src.len());
+        match run_source(None, &label, &src, &lexer, &parser, &tables).await {
+            Ok(()) => passed += 1,
+            Err(e) => {
+                eprintln!("[fail] {}:\n  {}", label, e);
+                // Write a repro case immediately so it’s not lost.
+                let ts = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                let dir = "fuzz-cases";
+                let _ = std::fs::create_dir_all(dir);
+                let path = format!("{}/case_{ts}_i{}_n{}.lani", dir, i, src.len());
+                if let Err(e) = std::fs::write(&path, src.as_bytes()) {
+                    eprintln!("[save] failed to write repro case: {e}");
+                } else {
+                    eprintln!("[save] wrote repro case: {}", path);
+                    eprintln!("[replay] cargo run --bin parse_fuzz -- {}", path);
+                }
+                failed += 1;
+                break;
+            }
+        }
+    }
+
+    println!("[parse_fuzz] summary: passed={} failed={}", passed, failed);
+    if failed > 0 {
+        std::process::exit(1);
+    }
+    Ok(())
+}

@@ -78,7 +78,7 @@ fn dump_near(src: &str, cpu: &[CpuToken], gpu: &[GpuToken], from: usize) {
 
 fn save_case(dir: &str, tag: &str, target_len: usize, seed: u64, src: &str) -> String {
     let _ = fs::create_dir_all(dir);
-    let base = format!("{tag}_len{target_len}_seed{seed}_n{}.lan", src.len());
+    let base = format!("{tag}_len{target_len}_seed{seed}_n{}.lani", src.len());
     let path = Path::new(dir).join(base);
     let json = path.with_extension("json");
     fs::write(&path, src.as_bytes()).ok();

@@ -60,6 +60,9 @@ pub fn record_all_passes(
     p: &LexerPasses,
 ) -> Result<(), anyhow::Error> {
     use InputElements::Elements1D as E1;
+    // Ensure flags_packed is zeroed so dfa_03 can write flags only at boundaries
+    // and leave non-boundaries as 0 without per-byte stores.
+    ctx.encoder.clear_buffer(&ctx.buffers.flags_packed, 0, None);
     p.dfa_01.record_pass(&mut ctx, E1(n))?;
     p.dfa_02.record_pass(&mut ctx, E1(nb_dfa))?;
     p.dfa_03.record_pass(&mut ctx, E1(n))?;

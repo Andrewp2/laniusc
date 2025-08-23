@@ -2,9 +2,9 @@ Awesome—here’s a clean, GPU-first outline of the **major parser passes** we 
 
 # Parser pipeline (major passes)
 
-1. **Retagging (lexer-adjacent, already in repo)**
+1. **Retagging (integrated in lexer `tokens_build`)**
 
-   * Already done
+   * Already done inside the lexer pipeline; no separate pass.
 
 2. **Pair → Header (LLP headers)**
 

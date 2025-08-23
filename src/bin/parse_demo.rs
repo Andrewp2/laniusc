@@ -1,136 +1,95 @@
 // src/bin/parse_demo.rs
-use std::{env, fs, path::PathBuf, time::Instant};
-
+use anyhow::Result;
 use laniusc::{
-    lexer::gpu::driver::lex_on_gpu,
-    parser::{gpu::GpuParser, tables::PrecomputedParseTables},
+    lexer::{gpu::driver::GpuLexer, tables::tokens},
+    parser::{
+        gpu::driver::GpuParser,
+        tables::{self as parse_tables, PrecomputedParseTables},
+    },
 };
 
-fn ensure_parse_tables_bin() {
-    let path = PathBuf::from("tables/parse_tables.bin");
-    if path.exists() {
-        return;
-    }
-    if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    let n_kinds = laniusc::lexer::tables::tokens::N_KINDS;
-    let tables = laniusc::parser::tables::build_mvp_precomputed_tables(n_kinds, Vec::new());
-    tables
-        .save_bin(&path)
-        .expect("write tables/parse_tables.bin");
-    println!("[parse_demo] generated {}", path.display());
-}
-
-fn load_or_generate() -> (String, String) {
-    if let Some(path) = env::args().nth(1) {
-        let p = PathBuf::from(&path);
-        let t0 = Instant::now();
-        let src = fs::read_to_string(&p).expect("read file");
-        let ms = t0.elapsed().as_secs_f64() * 1e3;
-        println!(
-            "Input: {} ({} bytes) | load {:.3} ms",
-            p.display(),
-            src.len(),
-            ms
-        );
-        (src, format!("file:{}", p.display()))
-    } else {
-        use rand::{SeedableRng, rngs::StdRng};
-        let target_len = env::var("PARSE_DEMO_LEN")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(5000usize);
-        let seed = env::var("PARSE_DEMO_SEED")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(42u64);
-        let mut rng = StdRng::seed_from_u64(seed);
-        let t0 = Instant::now();
-        let s = laniusc::dev::generator::gen_valid_source(&mut rng, target_len);
-        let ms = t0.elapsed().as_secs_f64() * 1e3;
-
-        let out_dir = PathBuf::from("fuzz-cases");
-        let _ = fs::create_dir_all(&out_dir);
-        let filename = format!("parse_demo_seed{}_len{}.lan", seed, s.len());
-        let out_path = out_dir.join(filename);
-        if let Err(e) = fs::write(&out_path, &s) {
-            eprintln!(
-                "[parse_demo] warning: failed to write {}: {e}",
-                out_path.display()
-            );
-        } else {
-            println!("[parse_demo] saved {}", out_path.display());
-        }
-
-        println!(
-            "Input: generated (len={} bytes) | gen {:.3} ms [seed={}]",
-            s.len(),
-            ms,
-            seed
-        );
-        (s, "generated".into())
-    }
-}
-
 #[tokio::main(flavor = "current_thread")]
-async fn main() {
-    ensure_parse_tables_bin();
-    let (text, _desc) = load_or_generate();
+async fn main() -> Result<()> {
+    // Pick a small sample; allow overriding with CLI arg.
+    let args: Vec<String> = std::env::args().collect();
+    let input = if args.len() > 1 {
+        std::fs::read_to_string(&args[1])?
+    } else {
+        // Default to a tiny expression touching (), [], and literals
+        String::from("foo(1, 2)[0] [1,2,3,] (bar)")
+    };
 
-    // 1) Lex on GPU
-    let tokens = lex_on_gpu(&text)
-        .await
-        .expect("GPU lex failed; ensure your GPU backend is working");
-    assert!(!tokens.is_empty(), "no tokens");
-    println!("Lexed: kept={} tokens", tokens.len());
+    // 1) GPU lex
+    let lexer = GpuLexer::new().await?;
+    let tokens = lexer.lex(&input).await?;
 
-    let kinds_u32: Vec<u32> = tokens.iter().map(|t| t.kind as u32).collect();
-    let n_kinds = laniusc::lexer::tables::tokens::N_KINDS;
+    // Build token_kinds (post-retag) from tokens_out; append a sentinel 0.
+    if tokens.is_empty() {
+        eprintln!(
+            "[parse_demo] got 0 tokens. Ensure LANIUS_READBACK=1 (default) and input has tokens."
+        );
+    }
+    let mut token_kinds_u32: Vec<u32> = Vec::with_capacity(tokens.len() + 1);
+    for t in &tokens {
+        token_kinds_u32.push(t.kind as u32);
+    }
+    // Add sentinels: START and END, so the first token participates in a pair.
+    token_kinds_u32.insert(0, 0);
+    token_kinds_u32.push(0);
 
-    // 2) Load offline tables (or MVP) and run the unified parser pipeline.
-    let tbl_bytes = fs::read("tables/parse_tables.bin").expect("read tables/parse_tables.bin");
-    let tables = PrecomputedParseTables::load_bin_bytes(&tbl_bytes).expect("parse tables .bin");
-    assert_eq!(tables.n_kinds, n_kinds, "n_kinds mismatch");
+    // 2) Tables: prefer generated file tables/parse_tables.bin; fallback to MVP tables
+    let n_kinds = tokens::N_KINDS;
+    let tables = match std::fs::read("tables/parse_tables.bin") {
+        Ok(bytes) => match PrecomputedParseTables::load_bin_bytes(&bytes) {
+            Ok(t) => {
+                println!("[parse_demo] using tables/parse_tables.bin");
+                t
+            }
+            Err(e) => {
+                eprintln!("[parse_demo] failed to load parse_tables.bin: {e}; using MVP tables");
+                parse_tables::build_mvp_precomputed_tables(n_kinds, vec![])
+            }
+        },
+        Err(_) => {
+            eprintln!("[parse_demo] tables/parse_tables.bin not found; using MVP tables");
+            parse_tables::build_mvp_precomputed_tables(n_kinds, vec![])
+        }
+    };
 
-    let parser = GpuParser::new().await.expect("GPU parser init");
+    // 3) GPU parser (pairs → headers → pack → brackets → tree)
+    let parser = GpuParser::new().await?;
+    let res = parser.parse(&token_kinds_u32, &tables).await?;
 
-    let res = parser.parse(&kinds_u32, &tables).await.expect("parse()");
-
-    let total_pop: u32 = res.headers.iter().map(|h| h.pop_count).sum();
-    let total_push: u32 = res.headers.iter().map(|h| h.push_len).sum();
+    // Sanity checks per milestone
     println!(
-        "LLP headers: pairs={} | total_push={} total_pop={} balance={} total_emit={}",
+        "headers.len = {} (expect n_tokens-1 = {})",
         res.headers.len(),
-        total_push,
-        total_pop,
-        (total_push as i64) - (total_pop as i64),
-        res.emit_stream.len()
+        token_kinds_u32.len().saturating_sub(1)
     );
-
     println!(
-        "Packed: sc_stream_len={} emit_stream_len={}",
-        res.sc_stream.len(),
-        res.emit_stream.len()
-    );
-
-    println!(
-        "Bracket validate (GPU): valid={} final_depth={} min_depth={}",
+        "brackets: valid={} final_depth={} min_depth={}",
         res.brackets.valid, res.brackets.final_depth, res.brackets.min_depth
     );
 
-    for (i, &m) in res.brackets.match_for_index.iter().take(12).enumerate() {
+    // Emit stream is the left-most derivation for MVP tables (likely empty)
+    let to_show = res.emit_stream.len().min(32);
+    print!("emit_stream[0..{}] = [", to_show);
+    for i in 0..to_show {
+        if i > 0 {
+            print!(", ");
+        }
+        print!("{}", res.emit_stream[i]);
+    }
+    println!("]");
+
+    // NEW: quick tree summary (now part of ParseResult)
+    println!("nodes: {}", res.node_kind.len());
+    for i in 0..res.node_kind.len().min(16) {
         println!(
-            "[match {:02}] {}",
-            i,
-            if m == 0xFFFF_FFFF { u32::MAX } else { m }
+            "  node[{i}] kind={} parent={}",
+            res.node_kind[i], res.parent[i]
         );
     }
 
-    for (i, v) in res.sc_stream.iter().take(16).enumerate() {
-        println!("[sc {:02}] 0x{:08x}", i, v);
-    }
-    for (i, v) in res.emit_stream.iter().take(8).enumerate() {
-        println!("[emit {:02}] {}", i, v);
-    }
+    Ok(())
 }

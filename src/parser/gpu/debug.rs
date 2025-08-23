@@ -20,6 +20,10 @@ pub struct DebugGpuBuffers {
     pub match_for_index: DebugBuffer,
     pub depths_out: DebugBuffer,
     pub valid_out: DebugBuffer,
+
+    // tree_build
+    pub node_kind: DebugBuffer,
+    pub parent: DebugBuffer,
 }
 
 #[derive(Default)]

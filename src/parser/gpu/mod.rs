@@ -3,5 +3,6 @@ pub mod buffers;
 pub mod debug;
 pub mod driver;
 pub mod passes;
+pub mod readback;
 
 pub use driver::*;

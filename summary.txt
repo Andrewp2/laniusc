@@ -1,0 +1,52 @@
+Conversation summary (work completed and findings)
+
+Buffer reuse and allocation changes
+- Reused DFA block ping/pong for pair passes: pair_01/pair_02/pair_03 now bind `dfa_02_ping`/`dfa_02_pong` instead of dedicated pair buffers.
+- Removed buffers: `end_excl_by_i`, `token_count_all`, and `end_positions_all` (the latter now reuses `tok_types`).
+- Kept pass ordering change: run `compact_boundaries_kept` before `compact_boundaries_all` so `tok_types` is free for reuse by ALL.
+- Avoided KEPT aliasing hazards: KEPT `end_positions` writes to its dedicated buffer (initially tried aliasing `flags_packed` but hit validation/logic hazards; reverted to dedicated).
+- Sunk ALL `token_count` to a scratch buffer (`dfa_02_pong`) to avoid overwriting KEPT count used by `tokens_build`.
+
+Shader and pass binding updates
+- dfa_03_apply_block_prefix.slang: removed `end_excl_by_i`; compute KEPT single-boundary end inline (requires EOF present AND kept).
+- compact_boundaries.slang: reads/writes updated to match above; `tok_types` reads only in KEPT path; corrected kept end_excl logic.
+- pair_01/02/03 pass wrappers: bind `dfa_02_ping/pong` in place of pair buffers; debug taps adjusted.
+- compact_boundaries_all.rs: writes `end_positions_all` into `tok_types`; writes ALL token_count into scratch buffer; bindings and debug taps updated.
+- tokens_build.rs: reads KEPT `end_positions` from its dedicated buffer; reads ALL `end_positions_all` from `tok_types`.
+
+Correctness fixes and validation
+- Fixed mismatch from ALL overwriting shared `token_count` by sinking ALL’s count elsewhere.
+- Fixed end_excl for single-kept boundary: set to n only if both PF_EOF and PF_KEEP_EOF are set; otherwise to i.
+- fuzz_lex: runs cleanly after the above; large fuzz inputs also pass with buffer-reuse changes in place.
+
+dfa_03 performance tweaks
+- Cached `token_map` in shared memory (`gTokMap`) once per block (316B) to avoid random reads at boundaries.
+- Gated work at boundaries: only read `token_map` and write `tok_types` when EMIT/EOF occurs; non-boundaries write flags=0.
+- Cleared `flags_packed` once per dispatch (no per-byte zero stores).
+- perf_one impact: limited improvement; likely bandwidth still dominated by flags/tok_types traffic on boundary-heavy inputs.
+
+dfa_01 memory/perf experiments
+- Option 2 (half-warp serialization to halve SMEM): reduced shared from ~20 KB to ~10.5 KB but regressed performance (extra barriers, less ILP). Reverted and suggested keeping behind a toggle if needed.
+- Option 1 (shuffle-based reduction, all-in-register + WaveReadLaneAt): initial attempt had undefined behavior due to reading inactive lanes; corrected by performing shuffles unconditionally, but large-input fuzz still diverged (composition ordering subtlety). Reverted to the original shared-memory reduction for correctness. Noted the WaveReadLaneAt active-lane requirement explicitly.
+
+Net buffer savings (kept)
+- -2: pair ping/pong (reused DFA ping/pong)
+- -1: end_excl_by_i (inlined)
+- -1: token_count_all (sunk to existing buffer)
+- -1: end_positions_all (reused tok_types)
+- Total: 5 buffers eliminated without algorithm changes.
+
+Open suggestions (next steps)
+- Pack `flags_packed` to u8 (same 4 bits) to cut that traffic 4×.
+- Write `tok_types` only for KEPT boundaries to reduce global writes further.
+- Optional: pack `types_compact`+`all_index_compact` into uint2; pack `s_all_final`+`s_keep_final` into uint2 (further buffer reductions).
+- Larger change: segmented dfa_03 to increase intra-block parallelism without extra buffers.
+- If desired later: reintroduce a guarded shuffle path in dfa_01 (`USE_SHUFFLE`) for future A/B once the ordering is proven.
+
+Key files touched (non-exhaustive)
+- shaders/lexer/dfa_03_apply_block_prefix.slang
+- shaders/lexer/compact_boundaries.slang
+- shaders/lexer/dfa_01_scan_inblock.slang (experiments and revert)
+- src/lexer/gpu/passes/{pair_01_sum_inblock.rs,pair_02_scan_block_totals.rs,pair_03_apply_block_prefix.rs}
+- src/lexer/gpu/passes/{compact_boundaries_all.rs,compact_boundaries_kept.rs,tokens_build.rs,mod.rs}
+- src/lexer/gpu/buffers.rs (removed fields and allocations per above)

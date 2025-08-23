@@ -1,6 +1,5 @@
 // shaders/parser/brackets_match.slang
-// MVP: single-thread pass that validates the stack-change stream and builds
-//      a match map (push<->pop). Later we can swap to a parallel O(log n) algo.
+// Validates the stack-change stream and builds a bi-directional match map.
 
 struct Params
 {
@@ -17,6 +16,9 @@ RWStructuredBuffer<uint> match_for_index; // len = n_sc, 0xFFFFFFFF = unset
 RWStructuredBuffer<int> out_depths; // len = 2
 RWStructuredBuffer<uint> out_valid; // len = 1, 1=valid, 0=invalid
 
+// Dedicated stack of *push indices* (size = n_sc)
+RWStructuredBuffer<uint> open_stack; // len = n_sc
+
 [shader("compute")]
 [numthreads(1, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
@@ -25,54 +27,50 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
     const uint n = gParams.n_sc;
 
-    // Clear outputs
+    // Initialize outputs and stack
     for (uint i = 0; i < n; ++i)
     {
-        match_for_index[i] = 0xFFFFFFFF;
+        match_for_index[i] = 0xFFFFFFFFu;
+        open_stack[i] = 0xFFFFFFFFu;
     }
     out_depths[0] = 0; // final
     out_depths[1] = 0; // min
     out_valid[0] = 1;
 
-    // A tiny stack stored inside match_for_index as scratch space
-    //   stack[top] holds a *push index*; we keep a separate top pointer.
-    uint top = 0;
-
+    uint top = 0; // number of items on stack
     int depth = 0;
     int min_depth = 0;
 
-    // First pass: compute matches and depths
+    // Single-thread sweep (correct for any n, no fixed caps)
     for (uint i = 0; i < n; ++i)
     {
         uint code = sc_stream[i];
-        bool is_push = (code & 1) == 1;
+        bool is_push = (code & 1u) == 1u;
 
         if (is_push)
         {
-            // push index onto temp stack region at [top]
-            if (top < n)
-            {
-                match_for_index[top] = i; // use front of buffer as a scratch array
-                top++;
-            }
+            // Push index onto dedicated stack
+            open_stack[top] = i;
+            top++;
+
             depth++;
             if (depth < min_depth)
                 min_depth = depth;
         }
         else
         {
-            // pop
+            // Pop
             if (depth <= 0 || top == 0)
             {
-                // unbalanced close
+                // Unbalanced close — still track depth for diagnostics
                 out_valid[0] = 0;
-                depth--; // keep tracking depth/min for diagnostics
+                depth--;
                 if (depth < min_depth)
                     min_depth = depth;
                 continue;
             }
 
-            uint push_idx = match_for_index[top - 1];
+            uint push_idx = open_stack[top - 1u];
             top--;
             depth--;
             if (depth < min_depth)
@@ -81,15 +79,15 @@ void main(uint3 tid: SV_DispatchThreadID)
             // Optional typed check: require symbol IDs to match
             if (gParams.typed_check != 0)
             {
-                uint push_sym = (sc_stream[push_idx] >> 1);
-                uint pop_sym = (code >> 1);
+                uint push_sym = (sc_stream[push_idx] >> 1u);
+                uint pop_sym = (code >> 1u);
                 if (push_sym != pop_sym)
                 {
                     out_valid[0] = 0;
                 }
             }
 
-            // Write final bi-directional match mapping
+            // Write bi-directional match mapping
             match_for_index[push_idx] = i;
             match_for_index[i] = push_idx;
         }

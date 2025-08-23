@@ -1,5 +1,5 @@
 # PARSING_PLAN.md
-Lanius parsing+lexing plan for **LLP(1,1)** with Rust-like surface syntax and **function calls using `()`** (arrays/indexing use `[]`). We keep the GPU-first pipeline from `LEXING.md` and add one **parallel retagging** pass that separates grouping `()` from call `()` and array literal `[]` from indexing `[]`. With those tokens disambiguated, the grammar remains LLP(1,1) as in the papers.
+Lanius parsing+lexing plan for **LLP(1,1)** with Rust-like surface syntax and **function calls using `()`** (arrays/indexing use `[]`). We keep the GPU-first pipeline from `LEXING.md` and perform a **parallel retagging step inside the existing `tokens_build` pass** that separates grouping `()` from call `()` and array literal `[]` from indexing `[]`. With those tokens disambiguated, the grammar remains LLP(1,1) as in the papers.
 
 ---
 
@@ -22,18 +22,18 @@ Lanius parsing+lexing plan for **LLP(1,1)** with Rust-like surface syntax and **
 
 ## 1) Pipeline overview (GPU-first)
 
-We extend the existing lex pipeline (`LEXING.md`) with one extra, fully parallel pass:
+We extend the existing lex pipeline (`LEXING.md`) conceptually with retagging, but it’s integrated into `tokens_build` rather than a separate pass:
 
 1. **Raw lex (GPU)** — already implemented:
    - Streaming DFA → tokens with kinds, spans.
    - Filter whitespace/comments.
 
-2. **Parallel retagging (GPU)** — **new**:
+2. **Retagging (GPU, integrated in `tokens_build`)**:
    - Compute, for each token, the **previous significant token** index via an exclusive prefix scan.
    - Retag punctuation based on **local, 1-token look-back category**:
      - `LPAREN`  → `CALL_LPAREN` iff **prev** ∈ { `IDENT`, `INT`, `STRING`, `RPAREN`, `RBRACKET`, `RBRACE` } (i.e. previous token **ends a Primary**) ; otherwise `GROUP_LPAREN`.
      - `LBRACKET`→ `INDEX_LBRACKET` iff **prev** ends a Primary; otherwise `ARRAY_LBRACKET`.
-   - This pass is **O(n)** work, **O(log n)** depth (prefix scans + table lookups), identical cost class to lex.
+   - This step is **O(n)** work, **O(log n)** depth (prefix scans + table lookups), identical cost class to lex.
 
 3. **(Optional) Keywordization (GPU/CPU)** — small:
    - Either keep keywords as `IDENT` with known lexemes (`"fn"`, `"struct"`, …) or tag them to dedicated tokens. Parser code supports either.
@@ -41,7 +41,7 @@ We extend the existing lex pipeline (`LEXING.md`) with one extra, fully parallel
 4. **LLP(1,1) parse (GPU)**:
    - With `CALL_LPAREN` / `GROUP_LPAREN` and `INDEX_LBRACKET` / `ARRAY_LBRACKET`, the grammar has unique FIRST sets at each decision site. We follow the “ParallelLLParsing” scheme: segment by bracket structure, parse LARs independently, merge.
 
-> **Why this stays parallel:** Retagging only needs “previous significant token kind”. That’s obtainable with a single exclusive prefix **max** (or carry) over positions marking “is significant here?”, then a gather to read the prior kind, then a constant-time retag table. No serial dependence.
+> **Why this stays parallel:** Retagging only needs “previous significant token kind”. That’s obtainable with a single exclusive prefix **max** (or carry) over positions marking “is significant here?”, then a gather to read the prior kind, then a constant-time retag table. No serial dependence. Implementation resides inside `shaders/lexer/tokens_build.slang`.
 
 ---
 
@@ -51,7 +51,7 @@ We rely on the notion “**token that ends a Primary**”:
 
 ```
 
-ENDS\_PRIMARY := { IDENT, INT, STRING, RPAREN, RBRACKET, RBRACE }
+ENDS_PRIMARY := { IDENT, INT, FLOAT, STRING, CHAR, ANGLE_GENERIC, RPAREN, RBRACKET, RBRACE }
 
 ```
 
@@ -115,7 +115,7 @@ Array           = ARRAY_LBRACKET [ Expr { "," Expr } [ "," ] ] "]" ;
 
 ---
 
-## 5) GPU implementation details for the retag pass
+## 5) GPU implementation details for the retag step (in `tokens_build`)
 
 **Inputs:** compacted token arrays from the lexer:
 
@@ -146,12 +146,7 @@ start[i], len[i] : u32
   ```
 * All threads independent; no divergence besides two ifs.
 
-**Artifacts to add (suggested):**
-
-* `shaders/lexer/retag_calls_and_arrays.slang`
-* `src/lexer/gpu/passes/retag_calls_and_arrays.rs` (host dispatch + tests)
-
-We can reuse the existing scan utilities (see `scan_*` Slang kernels already present).
+This logic is implemented directly in `shaders/lexer/tokens_build.slang`, so no extra pass or host wiring is needed.
 
 ---
 
@@ -164,7 +159,7 @@ We can reuse the existing scan utilities (see `scan_*` Slang kernels already pre
 
 ## 7) Examples
 
-```lan
+```lani
 pub fn mul_add(x: Int, y: Int, z: Int) -> Int {
     (x * y) + z;
 }
@@ -195,11 +190,9 @@ let r2: Int = mul_add(first, 10, 1);
 
 ## 8) Work items
 
-* [ ] Add token kinds: `CALL_LPAREN`, `GROUP_LPAREN`, `INDEX_LBRACKET`, `ARRAY_LBRACKET`.
-* [ ] Emit them in a **retag** GPU pass (not in the raw DFA).
-* [ ] Wire pass into `src/lexer/gpu/mod.rs` pipeline; expose CPU fallback.
-* [ ] Update EBNF comments to reference retagged tokens (the structure already matches).
-* [ ] Parser: consume new tokens; keep LLP(1,1) driver.
+* [x] Add token kinds: `CALL_LPAREN`, `GROUP_LPAREN`, `INDEX_LBRACKET`, `ARRAY_LBRACKET`.
+* [x] Emit them during `tokens_build` (not in the raw DFA).
+* [x] Parser: consume new tokens; keep LLP(1,1) driver.
 * [ ] Tests:
 
   * [ ] Golden token streams around tricky punctuation.
@@ -218,4 +211,4 @@ let r2: Int = mul_add(first, 10, 1);
 
 ### TL;DR
 
-Keep `()` for calls and `[]` for arrays/index with a **GPU retag pass** that uses only “previous token ends a Primary?” to split the punctuation into distinct terminals. With that, the grammar is cleanly **LLP(1,1)** and fits the same parallel model as our lexer and the ParallelLL parser.
+Keep `()` for calls and `[]` for arrays/index with a **GPU retag step integrated in `tokens_build`** that uses only “previous token ends a Primary?” to split the punctuation into distinct terminals. With that, the grammar is cleanly **LLP(1,1)** and fits the same parallel model as our lexer and the ParallelLL parser.

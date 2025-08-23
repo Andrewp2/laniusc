@@ -52,17 +52,17 @@ impl Pass<ParserBuffers, crate::parser::gpu::debug::DebugOutput> for BracketsMat
         &self,
         b: &'a ParserBuffers,
     ) -> HashMap<String, wgpu::BindingResource<'a>> {
-        // Shader expects: sc_stream, match_for_index, out_depths, valid_out, gParams.
+        // Shader expects: sc_stream, open_stack, match_for_index, out_depths, out_valid, gParams.
         HashMap::from([
             ("sc_stream".into(), b.out_sc.as_entire_binding()),
+            ("open_stack".into(), b.open_stack.as_entire_binding()),
             (
                 "match_for_index".into(),
                 b.match_for_index.as_entire_binding(),
             ),
-            // FIX: name must match shader's RWStructuredBuffer<int> out_depths
             ("out_depths".into(), b.depths_out.as_entire_binding()),
-            ("gParams".into(), b.params_brackets.as_entire_binding()),
             ("out_valid".into(), b.valid_out.as_entire_binding()),
+            ("gParams".into(), b.params_brackets.as_entire_binding()),
         ])
     }
 

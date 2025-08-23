@@ -36,11 +36,6 @@ RWStructuredBuffer<uint> block_summaries;
 groupshared uint sgTotals[MAX_WAVES][N_PACK4];
 groupshared uint sgCarries[MAX_WAVES][N_PACK4];
 
-// Staging for the reduction: one row per thread, 20 packs per row
-// 256 * 20 = 5120
-// 5120 * 4 = 20480 bytes
-groupshared uint gRows[WORKGROUP_SIZE][N_PACK4 + 1];
-
 inline uint pack_quads(uint q0, uint q1, uint q2, uint q3)
 {
     return (q0 & 0xFFu) | ((q1 & 0xFFu) << 8) | ((q2 & 0xFFu) << 16) | ((q3 & 0xFFu) << 24);
@@ -58,6 +53,13 @@ inline uint identity_pack(uint p)
         (s2 < N_STATES ? (s2 & 0xFFu) : 0u),
         (s3 < N_STATES ? (s3 & 0xFFu) : 0u));
 }
+
+// Compose a single pack L with the partner lane's row stored in gRows[partnerLane][*].
+// Returns R ∘ L, where R is the partner's row-function, L is our current pack.
+// Staging for the reduction: one row per thread, 20 packs per row
+// 256 * 20 = 5120
+// 5120 * 4 = 20480 bytes
+groupshared uint gRows[WORKGROUP_SIZE][N_PACK4 + 1];
 
 // Compose a single pack L with the partner lane's row stored in gRows[partnerLane][*].
 // Returns R ∘ L, where R is the partner's row-function, L is our current pack.

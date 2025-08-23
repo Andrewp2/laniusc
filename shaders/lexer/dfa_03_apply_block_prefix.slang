@@ -35,6 +35,7 @@ RWStructuredBuffer<uint> tok_types;     // 🤖 pack (eof_kind<<16 | emit_kind) 
 
 groupshared uint gB[WORKGROUP_SIZE];    // 🤖 block byte cache
 groupshared uint gPairCarry[MAX_PAIRS]; // 🤖 end-state after each owner-pair
+groupshared uint gTokMap[N_STATES];     // 🤖 small LUT cached once per block
 
 // 🤖 Compute active length for wave w in this block
 inline uint wave_len_of(uint block_len, uint w)
@@ -90,6 +91,13 @@ void dfa_03_apply_block_prefix(uint3 tid: SV_GroupThreadID,
     gB[tIdx] = b_local;
     GroupMemoryBarrierWithGroupSync(); // 🤖 make gB visible to the whole CTA
 
+    // 🤖 Preload token_map into shared once (79 * 4 bytes)
+    if (tIdx < N_STATES)
+    {
+        gTokMap[tIdx] = token_map[tIdx];
+    }
+    GroupMemoryBarrierWithGroupSync();
+
     const uint wavesInBlock = (block_len + (WAVE_SIZE - 1u)) / WAVE_SIZE; // 🤖 1..8
     const uint pairsInBlock = (wavesInBlock + 1u) / 2u;                   // 🤖 ceil(waves/2) => 1..4
 
@@ -126,32 +134,39 @@ void dfa_03_apply_block_prefix(uint3 tid: SV_GroupThreadID,
                 const bool emit_here = is_highest_bit_set(packed);
                 const uint s_cur = (packed & 0x7FFFu); // 🤖 next DFA state
 
-                // 🤖 EOF / accept / keep logic
                 const bool at_eof = (idx + 1u == gParams.n);
-                const uint tk_emit = token_map[s_prev];
-                const uint tk_eof = token_map[s_cur];
 
-                const bool valid_emit = (tk_emit != 0xFFFFffffu);
-                const bool valid_eof = (tk_eof != 0xFFFFffffu);
-
-                const bool keep_emit = (valid_emit && !is_skip(tk_emit));
-                const bool keep_eof = (valid_eof && !is_skip(tk_eof));
-
-                const uint emit16 = (keep_emit && valid_emit) ? (tk_emit & 0xFFFFu) : 0xFFFFu;
-                const uint eof16 = (keep_eof && valid_eof) ? (tk_eof & 0xFFFFu) : 0xFFFFu;
-
-                const bool eof_accept = (at_eof && valid_eof);
-
-                // 🤖 Pack flags
                 uint f = 0u;
-                f |= emit_here ? PF_EMIT : 0u;
-                f |= eof_accept ? PF_EOF : 0u;
-                f |= keep_emit ? PF_KEEP_EMIT : 0u;
-                f |= keep_eof ? PF_KEEP_EOF : 0u;
+                if (emit_here | at_eof)
+                {
+                    const uint tk_emit = gTokMap[s_prev];
+                    const uint tk_eof = gTokMap[s_cur];
 
-                // 🤖 Write fused outputs
-                flags_packed[idx] = f;
-                tok_types[idx] = (eof16 << 16) | emit16;
+                    const bool valid_emit = (tk_emit != 0xFFFFffffu);
+                    const bool valid_eof = (tk_eof != 0xFFFFffffu);
+                    const bool eof_accept = (at_eof && valid_eof);
+
+                    const bool keep_emit = (valid_emit && !is_skip(tk_emit));
+                    const bool keep_eof = (valid_eof && !is_skip(tk_eof));
+
+                    f |= emit_here ? PF_EMIT : 0u;
+                    f |= eof_accept ? PF_EOF : 0u;
+                    f |= keep_emit ? PF_KEEP_EMIT : 0u;
+                    f |= keep_eof ? PF_KEEP_EOF : 0u;
+
+                    flags_packed[idx] = f;
+
+                    const uint emit16 = (keep_emit && valid_emit) ? (tk_emit & 0xFFFFu) : 0xFFFFu;
+                    const uint eof16 = (keep_eof && valid_eof) ? (tk_eof & 0xFFFFu) : 0xFFFFu;
+                    if ((f & (PF_EMIT | PF_EOF)) != 0u)
+                    {
+                        tok_types[idx] = (eof16 << 16) | emit16;
+                    }
+                }
+                else
+                {
+                    flags_packed[idx] = 0u;
+                }
 
                 s_prev = s_cur; // 🤖 advance DFA
             }
@@ -172,28 +187,38 @@ void dfa_03_apply_block_prefix(uint3 tid: SV_GroupThreadID,
                     const uint s_cur = (packed & 0x7FFFu);
 
                     const bool at_eof = (idx + 1u == gParams.n);
-                    const uint tk_emit = token_map[s_prev];
-                    const uint tk_eof = token_map[s_cur];
-
-                    const bool valid_emit = (tk_emit != 0xFFFFffffu);
-                    const bool valid_eof = (tk_eof != 0xFFFFffffu);
-
-                    const bool keep_emit = (valid_emit && !is_skip(tk_emit));
-                    const bool keep_eof = (valid_eof && !is_skip(tk_eof));
-
-                    const uint emit16 = (keep_emit && valid_emit) ? (tk_emit & 0xFFFFu) : 0xFFFFu;
-                    const uint eof16 = (keep_eof && valid_eof) ? (tk_eof & 0xFFFFu) : 0xFFFFu;
-
-                    const bool eof_accept = (at_eof && valid_eof);
 
                     uint f = 0u;
-                    f |= emit_here ? PF_EMIT : 0u;
-                    f |= eof_accept ? PF_EOF : 0u;
-                    f |= keep_emit ? PF_KEEP_EMIT : 0u;
-                    f |= keep_eof ? PF_KEEP_EOF : 0u;
+                    if (emit_here | at_eof)
+                    {
+                        const uint tk_emit = gTokMap[s_prev];
+                        const uint tk_eof = gTokMap[s_cur];
 
-                    flags_packed[idx] = f;               // 🤖 flags
-                    tok_types[idx] = (eof16 << 16) | emit16; // 🤖 kind pack
+                        const bool valid_emit = (tk_emit != 0xFFFFffffu);
+                        const bool valid_eof = (tk_eof != 0xFFFFffffu);
+                        const bool eof_accept = (at_eof && valid_eof);
+
+                        const bool keep_emit = (valid_emit && !is_skip(tk_emit));
+                        const bool keep_eof = (valid_eof && !is_skip(tk_eof));
+
+                        f |= emit_here ? PF_EMIT : 0u;
+                        f |= eof_accept ? PF_EOF : 0u;
+                        f |= keep_emit ? PF_KEEP_EMIT : 0u;
+                        f |= keep_eof ? PF_KEEP_EOF : 0u;
+
+                        flags_packed[idx] = f; // 🤖 flags
+
+                        const uint emit16 = (keep_emit && valid_emit) ? (tk_emit & 0xFFFFu) : 0xFFFFu;
+                        const uint eof16 = (keep_eof && valid_eof) ? (tk_eof & 0xFFFFu) : 0xFFFFu;
+                        if ((f & (PF_EMIT | PF_EOF)) != 0u)
+                        {
+                            tok_types[idx] = (eof16 << 16) | emit16; // 🤖 kind pack
+                        }
+                    }
+                    else
+                    {
+                        flags_packed[idx] = 0u;
+                    }
 
                     s_prev = s_cur; // 🤖 advance DFA
                 }

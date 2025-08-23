@@ -1,34 +1,62 @@
 // src/parser/gpu/driver.rs
-use std::sync::Arc;
+//! GPU parser driver, reshaped to mirror the style used by the lexer driver:
+//! - Pass bundle + `record_all_passes`
+//! - Bind-group cache reuse across passes
+//! - Env-gated timers and validation scopes
+//! - Optional readback (LANIUS_READBACK), returning empty streams when off
 
-use anyhow::{Result, anyhow};
+use std::sync::{Arc, OnceLock};
+
+use anyhow::Result;
 use wgpu;
 
 use crate::{
     gpu::{
-        buffers::readback_bytes,
         device,
-        passes_core::{InputElements, Pass},
+        passes_core::{BindGroupCache, PassContext},
         timer::{GpuTimer, MINIMUM_TIME_TO_NOT_ELIDE_MS},
     },
     parser::{
         gpu::{
             buffers::{ActionHeader, ParserBuffers},
             debug::DebugOutput,
-            passes::{BracketsMatchPass, LLPPairsPass, PackVarlenPass},
+            passes::{self, ParserPasses},
+            readback,
         },
         tables::PrecomputedParseTables,
     },
 };
+
+// ------------ little helpers (match lexer ergonomics) ----------------
+
+fn bool_from_env(name: &str, default_true: bool) -> bool {
+    std::env::var(name)
+        .map(|v| {
+            if default_true {
+                v != "0" && !v.eq_ignore_ascii_case("false")
+            } else {
+                v == "1" || v.eq_ignore_ascii_case("true")
+            }
+        })
+        .unwrap_or(default_true)
+}
+
+/// Mirrors the lexer: allow disabling readback with `LANIUS_READBACK=0`.
+fn readback_enabled() -> bool {
+    bool_from_env("LANIUS_READBACK", true)
+}
+
+// ---------------------------------------------------------------------
 
 pub struct GpuParser {
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
     timers_supported: bool,
 
-    pass_llp: LLPPairsPass,
-    pass_pack: PackVarlenPass,
-    pass_brackets: BracketsMatchPass,
+    passes: ParserPasses,
+
+    // Bind group cache so passes don’t recreate BGs every dispatch.
+    bg_cache: std::sync::Mutex<BindGroupCache>,
 }
 
 pub struct BracketsMatchResult {
@@ -44,6 +72,10 @@ pub struct ParseResult {
     pub emit_stream: Vec<u32>,
     pub brackets: BracketsMatchResult,
 
+    /// Tree outputs (inverted tree arrays), read back from GPU.
+    pub node_kind: Vec<u32>,
+    pub parent: Vec<u32>,
+
     /// Populated by each pass via record_debug(); consumers can copy out snapshots.
     pub debug: DebugOutput,
 }
@@ -51,40 +83,30 @@ pub struct ParseResult {
 impl GpuParser {
     pub async fn new() -> Result<Self> {
         let ctx = device::global();
-        let device = ctx.device.clone();
-        let queue = ctx.queue.clone();
-
-        let pass_llp = LLPPairsPass::new(&device)?;
-        let pass_pack = PackVarlenPass::new(&device)?;
-        let pass_brackets = BracketsMatchPass::new(&device)?;
+        let device = Arc::clone(&ctx.device);
+        let queue = Arc::clone(&ctx.queue);
 
         Ok(Self {
             device,
             queue,
             timers_supported: ctx.timers_supported,
-            pass_llp,
-            pass_pack,
-            pass_brackets,
+            passes: ParserPasses::new(&ctx.device)?,
+            bg_cache: std::sync::Mutex::new(BindGroupCache::new()),
         })
     }
 
-    /// One-shot GPU parse pipeline:
-    ///   1) pair → headers
-    ///   2) pack var-len streams (stack-change + emits)
-    ///   3) bracket validation + match map
-    ///
-    /// Returns all readbacks you’ll want in one struct, and prints GPU timing if supported.
+    /// One-shot GPU parse pipeline. Tables are provided per-call (unlike the lexer),
+    /// so we allocate `ParserBuffers` per invocation.
     pub async fn parse(
         &self,
         token_kinds_u32: &[u32],
         tables: &PrecomputedParseTables,
     ) -> Result<ParseResult> {
         // Build the headers grid bytes from the 7-array tables.
-        // (This just gives the per-(prev,this) push/pop counts for pass #1.)
         let action_table_bytes = tables.to_action_header_grid_bytes();
         let n_kinds = tables.n_kinds;
 
-        // Build all GPU-side buffers sized for this input.
+        // Allocate per-call buffers (they depend on the specific token pair sequence).
         let bufs = ParserBuffers::new(
             &self.device,
             token_kinds_u32,
@@ -93,16 +115,17 @@ impl GpuParser {
             tables,
         );
 
-        // Optional GPU timer (enabled if supported); we always pass it through when present.
-        let mut maybe_timer = if self.timers_supported {
+        // Timing is gated the same way as the lexer (and only if supported).
+        let timers_on = self.timers_supported && bool_from_env("LANIUS_GPU_TIMING", false);
+        let mut maybe_timer = if timers_on {
             Some(GpuTimer::new(&self.device, &self.queue, 128))
         } else {
             None
         };
 
-        // Real debug capture (we do not pass None here).
+        // Create an owned debug sink; we’ll hand out a temporary &mut to the passes.
+        #[cfg(feature = "gpu-debug")]
         let mut debug_output = DebugOutput::default();
-        let mut dbg_opt: Option<&mut DebugOutput> = Some(&mut debug_output);
 
         let mut encoder = self
             .device
@@ -115,240 +138,159 @@ impl GpuParser {
             t.stamp(&mut encoder, "BEGIN");
         }
 
-        // Build shared context and invoke passes with it.
-        let mut timer_ref = maybe_timer.as_mut();
-        let mut ctx = crate::gpu::passes_core::PassContext {
-            device: &self.device,
-            encoder: &mut encoder,
-            buffers: &bufs,
-            maybe_timer: &mut timer_ref,
-            maybe_dbg: &mut dbg_opt,
-            bg_cache: None,
+        // ---- Record passes inside a short scope so borrows end before readbacks/timer use ----
+        {
+            let mut timer_ref = maybe_timer.as_mut();
+
+            // Build the Option<&mut DebugOutput> locally without moving any outer state.
+            #[allow(unused_mut)]
+            let mut dbg_ref_opt: Option<&mut DebugOutput> = {
+                #[cfg(feature = "gpu-debug")]
+                {
+                    Some(&mut debug_output)
+                }
+                #[cfg(not(feature = "gpu-debug"))]
+                {
+                    None
+                }
+            };
+
+            let mut cache_guard = self.bg_cache.lock().expect("parser.bg_cache poisoned");
+
+            let ctx = PassContext {
+                device: &self.device,
+                encoder: &mut encoder,
+                buffers: &bufs,
+                maybe_timer: &mut timer_ref,
+                maybe_dbg: &mut dbg_ref_opt,
+                bg_cache: Some(&mut *cache_guard),
+            };
+
+            // Record all passes in one place (like the lexer).
+            passes::record_all_passes(ctx, &self.passes)?;
+        } // <- drop ctx, timer_ref, dbg_ref_opt, cache_guard
+
+        // -------- Submit & (optionally) read back --------
+        let rb_enabled = readback_enabled();
+
+        // Build readback buffers only when needed (keeps resource count and bandwidth low).
+        let rb_handles = if rb_enabled {
+            let rb = readback::ParserReadbacks::create(&self.device, &bufs);
+            rb.encode_copies(&mut encoder, &bufs);
+            Some(rb)
+        } else {
+            None
         };
-
-        // 1) pair → headers
-        self.pass_llp.record_pass(
-            &mut ctx,
-            InputElements::Elements1D(bufs.n_tokens.saturating_sub(1)),
-        )?;
-
-        // 2) pack var-len streams (writes out_sc + out_emit)
-        self.pass_pack.record_pass(
-            &mut ctx,
-            InputElements::Elements1D(bufs.n_tokens.saturating_sub(1)),
-        )?;
-
-        // 3) bracket validation on the packed stack-change stream
-        self.pass_brackets
-            .record_pass(&mut ctx, InputElements::Elements1D(1))?; // single-thread
-
-        // Readbacks: headers, out_sc, out_emit, bracket outputs (match/depths/valid)
-        let rb_headers = readback_bytes(
-            &self.device,
-            "rb.parser.out_headers",
-            bufs.out_headers.byte_size,
-            1,
-        );
-        let rb_sc = readback_bytes(
-            &self.device,
-            "rb.parser.out_sc",
-            (bufs.total_sc.max(1) * 4) as usize,
-            1,
-        );
-        let rb_emit = readback_bytes(
-            &self.device,
-            "rb.parser.out_emit",
-            (bufs.total_emit.max(1) * 4) as usize,
-            1,
-        );
-        let rb_match = readback_bytes(
-            &self.device,
-            "rb.parser.match_for_index",
-            bufs.match_for_index.byte_size,
-            1,
-        );
-        let rb_depths = readback_bytes(
-            &self.device,
-            "rb.parser.depths_out",
-            bufs.depths_out.byte_size,
-            1,
-        );
-        let rb_valid = readback_bytes(
-            &self.device,
-            "rb.parser.valid_out",
-            bufs.valid_out.byte_size,
-            1,
-        );
-
-        // Copy to staging
-        encoder.copy_buffer_to_buffer(
-            &bufs.out_headers,
-            0,
-            &rb_headers,
-            0,
-            bufs.out_headers.byte_size as u64,
-        );
-        encoder.copy_buffer_to_buffer(&bufs.out_sc, 0, &rb_sc, 0, bufs.out_sc.byte_size as u64);
-        encoder.copy_buffer_to_buffer(
-            &bufs.out_emit,
-            0,
-            &rb_emit,
-            0,
-            bufs.out_emit.byte_size as u64,
-        );
-        encoder.copy_buffer_to_buffer(
-            &bufs.match_for_index,
-            0,
-            &rb_match,
-            0,
-            bufs.match_for_index.byte_size as u64,
-        );
-        encoder.copy_buffer_to_buffer(
-            &bufs.depths_out,
-            0,
-            &rb_depths,
-            0,
-            bufs.depths_out.byte_size as u64,
-        );
-        encoder.copy_buffer_to_buffer(
-            &bufs.valid_out,
-            0,
-            &rb_valid,
-            0,
-            bufs.valid_out.byte_size as u64,
-        );
 
         if let Some(t) = maybe_timer.as_mut() {
             t.stamp(&mut encoder, "resolve timers");
             t.resolve(&mut encoder);
         }
 
+        let use_scopes = bool_from_env("LANIUS_VALIDATION_SCOPES", false);
+        if use_scopes {
+            self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        }
         self.queue.submit(Some(encoder.finish()));
-
-        // Map readbacks
-        let map_all = |b: &wgpu::Buffer| {
-            let sl = b.slice(..);
-            sl.map_async(wgpu::MapMode::Read, |_| {});
-        };
-        map_all(&rb_headers);
-        map_all(&rb_sc);
-        map_all(&rb_emit);
-        map_all(&rb_match);
-        map_all(&rb_depths);
-        map_all(&rb_valid);
-
-        // Wait for GPU
-        let _ = self.device.poll(wgpu::PollType::Wait);
-
-        // Decode headers
-        let headers = {
-            let data = rb_headers.slice(..).get_mapped_range();
-            let count = (bufs.n_tokens.saturating_sub(1)) as usize;
-            decode_action_headers(&data, count)?
-        };
-        rb_headers.unmap();
-
-        // Decode streams
-        let sc_stream = {
-            let data = rb_sc.slice(..).get_mapped_range();
-            let mut v = Vec::with_capacity(bufs.total_sc as usize);
-            for chunk in data.chunks_exact(4) {
-                v.push(u32::from_le_bytes(chunk.try_into().unwrap()));
-            }
-            v
-        };
-        rb_sc.unmap();
-
-        let emit_stream = {
-            let data = rb_emit.slice(..).get_mapped_range();
-            let mut v = Vec::with_capacity(bufs.total_emit as usize);
-            for chunk in data.chunks_exact(4) {
-                v.push(u32::from_le_bytes(chunk.try_into().unwrap()));
-            }
-            v
-        };
-        rb_emit.unmap();
-
-        // Decode bracket outputs
-        let match_for_index = {
-            let data = rb_match.slice(..).get_mapped_range();
-            let mut v = Vec::with_capacity(bufs.match_for_index.count);
-            for chunk in data.chunks_exact(4) {
-                v.push(u32::from_le_bytes(chunk.try_into().unwrap()));
-            }
-            v
-        };
-        rb_match.unmap();
-
-        let (final_depth, min_depth) = {
-            let data = rb_depths.slice(..).get_mapped_range();
-            let fd = i32::from_le_bytes(data[0..4].try_into().unwrap());
-            let md = i32::from_le_bytes(data[4..8].try_into().unwrap());
-            (fd, md)
-        };
-        rb_depths.unmap();
-
-        let valid = {
-            let data = rb_valid.slice(..).get_mapped_range();
-            u32::from_le_bytes(data[0..4].try_into().unwrap()) != 0
-        };
-        rb_valid.unmap();
-
-        // Emit timer results if available (same style as the lexer).
-        if let Some(timer) = maybe_timer {
-            if let Some(vals) = timer.try_read(&self.device) {
-                if !vals.is_empty() {
-                    let period_ns = timer.period_ns() as f64;
-                    let t0 = vals[0].1;
-                    let mut prev = t0;
-                    for (label, t) in vals {
-                        let dt_ms = ((t - prev) as f64 * period_ns) / 1.0e6;
-                        let total_ms = ((t - t0) as f64 * period_ns) / 1.0e6;
-                        // Keep the log tidy: skip tiny deltas
-                        if dt_ms >= MINIMUM_TIME_TO_NOT_ELIDE_MS {
-                            println!("[gpu_timer] {label}: {dt_ms:.3}ms (total {total_ms:.3}ms)");
-                        }
-                        prev = t;
-                    }
-                }
+        if use_scopes {
+            if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
+                eprintln!("[wgpu submit] validation while submitting parser batch: {err:#?}");
             }
         }
 
+        // If readback is off, return empty result shells (timers still print).
+        if !rb_enabled {
+            if let Some(timer) = maybe_timer
+                && let Some(vals) = timer.try_read(&self.device)
+                && !vals.is_empty()
+            {
+                let period_ns = timer.period_ns() as f64;
+                let t0 = vals[0].1;
+                let mut prev = t0;
+                for (label, t) in vals {
+                    let dt_ms = ((t - prev) as f64 * period_ns) / 1.0e6;
+                    let total_ms = ((t - t0) as f64 * period_ns) / 1.0e6;
+                    if dt_ms >= MINIMUM_TIME_TO_NOT_ELIDE_MS {
+                        println!("[gpu_timer] {label}: {dt_ms:.3}ms (total {total_ms:.3}ms)");
+                    }
+                    prev = t;
+                }
+            }
+
+            return Ok(ParseResult {
+                headers: Vec::new(),
+                sc_stream: Vec::new(),
+                emit_stream: Vec::new(),
+                brackets: BracketsMatchResult {
+                    valid: true,
+                    final_depth: 0,
+                    min_depth: 0,
+                    match_for_index: Vec::new(),
+                },
+                node_kind: Vec::new(),
+                parent: Vec::new(),
+                debug: DebugOutput::default(),
+            });
+        }
+
+        // ------------ map & decode staging buffers -------------
+        let decoded = readback::DecodedParserReadbacks::map_and_decode(
+            &self.device,
+            &bufs,
+            rb_handles.expect("rb_enabled"),
+        )?;
+
+        // Print timers (same as lexer).
+        if let Some(timer) = maybe_timer
+            && let Some(vals) = timer.try_read(&self.device)
+            && !vals.is_empty()
+        {
+            let period_ns = timer.period_ns() as f64;
+            let t0 = vals[0].1;
+            let mut prev = t0;
+            for (label, t) in vals {
+                let dt_ms = ((t - prev) as f64 * period_ns) / 1.0e6;
+                let total_ms = ((t - t0) as f64 * period_ns) / 1.0e6;
+                if dt_ms >= MINIMUM_TIME_TO_NOT_ELIDE_MS {
+                    println!("[gpu_timer] {label}: {dt_ms:.3}ms (total {total_ms:.3}ms)");
+                }
+                prev = t;
+            }
+        }
+
+        // Move out the owned debug snapshot (when the feature is on), otherwise default.
+        #[allow(unused_mut)]
+        let mut debug_sink = {
+            #[cfg(feature = "gpu-debug")]
+            {
+                std::mem::take(&mut debug_output)
+            }
+            #[cfg(not(feature = "gpu-debug"))]
+            {
+                DebugOutput::default()
+            }
+        };
+
         Ok(ParseResult {
-            headers,
-            sc_stream,
-            emit_stream,
+            headers: decoded.headers,
+            sc_stream: decoded.sc_stream,
+            emit_stream: decoded.emit_stream,
             brackets: BracketsMatchResult {
-                valid,
-                final_depth,
-                min_depth,
-                match_for_index,
+                valid: decoded.valid,
+                final_depth: decoded.final_depth,
+                min_depth: decoded.min_depth,
+                match_for_index: decoded.match_for_index,
             },
-            debug: debug_output, // caller can inspect snapshots if compiled in
+            node_kind: decoded.node_kind,
+            parent: decoded.parent,
+            debug: std::mem::take(&mut debug_sink),
         })
     }
 }
 
-// --------- helpers / result types ----------
+// Optional singleton, mirroring the lexer’s `lex_on_gpu`.
+static GPU_PARSER: OnceLock<GpuParser> = OnceLock::new();
 
-fn decode_action_headers(bytes: &[u8], count: usize) -> Result<Vec<ActionHeader>> {
-    let stride = std::mem::size_of::<ActionHeader>();
-    if bytes.len() < stride * count {
-        return Err(anyhow!("out_headers readback too small"));
-    }
-    let mut out = Vec::with_capacity(count);
-    for i in 0..count {
-        let off = i * stride;
-        let push_len = u32::from_le_bytes(bytes[off + 0..off + 4].try_into().unwrap());
-        let emit_len = u32::from_le_bytes(bytes[off + 4..off + 8].try_into().unwrap());
-        let pop_tag = u32::from_le_bytes(bytes[off + 8..off + 12].try_into().unwrap());
-        let pop_count = u32::from_le_bytes(bytes[off + 12..off + 16].try_into().unwrap());
-        out.push(ActionHeader {
-            push_len,
-            emit_len,
-            pop_tag,
-            pop_count,
-        });
-    }
-    Ok(out)
+pub async fn get_global_parser() -> &'static GpuParser {
+    GPU_PARSER.get_or_init(|| pollster::block_on(GpuParser::new()).expect("GPU parser init"))
 }

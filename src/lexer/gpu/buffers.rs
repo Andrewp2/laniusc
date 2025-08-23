@@ -35,6 +35,8 @@ pub struct GpuBuffers {
     pub token_count: LaniusBuffer<u32>,
 
     pub tokens_out: LaniusBuffer<super::GpuToken>,
+
+    // (no separate kinds_retagged; tokens_build writes final kinds)
 }
 
 impl GpuBuffers {
@@ -105,6 +107,7 @@ impl GpuBuffers {
         let token_count: LaniusBuffer<u32> = storage_rw_for_array::<u32>(device, "token_count", 1);
 
         let tokens_out = storage_rw_for_array::<super::GpuToken>(device, "tokens_out", n as usize);
+
 
         let params_val = LexParams {
             n,

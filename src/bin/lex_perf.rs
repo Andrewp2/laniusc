@@ -22,28 +22,28 @@ fn throughput_mibs(bytes: u64, ms: f64) -> f64 {
 }
 
 fn parse_target_len() -> usize {
-    env::var("PERF_ONE_LEN")
+    env::var("LEX_PERF_LEN")
         .ok()
         .and_then(|s| s.parse::<usize>().ok())
         .unwrap_or(10_000_000)
 }
 
 fn parse_seed() -> u64 {
-    env::var("PERF_ONE_SEED")
+    env::var("LEX_PERF_SEED")
         .ok()
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(42)
 }
 
 fn parse_warmup() -> usize {
-    env::var("PERF_ONE_WARMUP")
+    env::var("LEX_PERF_WARMUP")
         .ok()
         .and_then(|s| s.parse::<usize>().ok())
         .unwrap_or(1)
 }
 
 fn parse_reps() -> usize {
-    env::var("PERF_ONE_REPS")
+    env::var("LEX_PERF_REPS")
         .ok()
         .and_then(|s| s.parse::<usize>().ok())
         .unwrap_or(10)

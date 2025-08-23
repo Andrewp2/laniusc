@@ -342,7 +342,7 @@ fn collect_examples() -> Vec<PathBuf> {
             if path
                 .extension()
                 .and_then(|e| e.to_str())
-                .map(|e| e.eq_ignore_ascii_case("lan"))
+                .map(|e| e.eq_ignore_ascii_case("lani"))
                 .unwrap_or(false)
             {
                 out.push(path);
@@ -369,7 +369,7 @@ fn save_case(dir: &str, seed: u64, iter: usize, src: &str) -> PathBuf {
         .unwrap_or_default()
         .as_secs();
 
-    let base = format!("case_s{seed}_i{iter}_n{}.lan", src.len());
+    let base = format!("case_s{seed}_i{iter}_n{}.lani", src.len());
     let path = Path::new(dir).join(base);
 
     fs::write(&path, src.as_bytes()).expect("failed to write case file");
@@ -380,7 +380,7 @@ fn save_case(dir: &str, seed: u64, iter: usize, src: &str) -> PathBuf {
         iter: Some(iter),
         requested_len: None,
         actual_bytes: src.len(),
-        note: "Replay with: FUZZ_INPUT=<this file> cargo run --bin fuzz_lex",
+        note: "Replay with: FUZZ_INPUT=<this file> cargo run --bin lex_fuzz",
     };
     let meta_path = path.with_extension("json");
     let mut f = fs::File::create(&meta_path).expect("failed to write meta");

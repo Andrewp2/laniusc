@@ -26,12 +26,15 @@ use laniusc::{
     parser::tables::{PrecomputedParseTables, build_mvp_precomputed_tables},
 };
 
+// TODO: tag is unused.
 #[derive(Debug)]
 struct Production {
     _lhs: String,
     tag: String,
     rhs_syms: Vec<Sym>,
 }
+
+// TODO: why are these strings inside unused.
 #[derive(Debug)]
 enum Sym {
     Terminal(String),

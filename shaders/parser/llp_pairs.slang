@@ -32,7 +32,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint this_kind = token_kinds[i + 1];
 
     if (prev_kind >= gParams.n_kinds || this_kind >= gParams.n_kinds)
-    { 
+    {
         ActionHeader z = { 0, 0, 0, 0 };
         out_headers[i] = z;
         return;
