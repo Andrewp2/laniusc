@@ -1,19 +1,8 @@
 // src/parser/cpu.rs
 //
 // A plain CPU recursive-descent parser for the grammar in grammar/lanius.bnf.
-// Extended to accept file items, blocks, and statements so that realistic
-// samples like parser_tests/file.lani parse successfully.
-//
-// - Expressions are exactly as before (assign/or/and/eq/compare/add/mul/unary/postfix/primary).
-// - NEW:
-//     * file-or-expr entrypoint that recognizes a top-level fn-item or a block,
-//       otherwise falls back to expression parsing.
-//     * blocks: { stmt* } with semicolon-separated statements
-//     * let statements via a soft-keyword shape: Ident Ident Assign ...
-//       (we skip the first Ident and parse the assignment).
-//
-// AST nodes now include: "fn", "block", "stmt_let", "stmt_expr" in addition to
-// the previous tags.
+// It is intentionally straightforward and acts as the correctness oracle while
+// the GPU parser catches up to the full grammar.
 //
 // This module only depends on the public token kinds from the lexer tables.
 //
@@ -35,7 +24,9 @@ pub struct AstNode {
     /// Grammar-tag-like label: e.g. "group", "array_lit", "call", "index",
     /// "ident", "int", "string", "pos", "neg", "not", "mul", "add", "sub",
     /// "lt", "gt", "le", "ge", "eq", "and", "or", "set",
-    /// plus file/stmt additions: "fn", "block", "stmt_let", "stmt_expr".
+    /// plus file/item additions: "file", "fn", "param", "type_ident",
+    /// "type_array", "block", "stmt_let", "stmt_return", "stmt_if",
+    /// "stmt_while", "stmt_break", "stmt_continue", "stmt_expr".
     pub tag: &'static str,
     /// Children node ids in source order.
     pub children: Vec<u32>,
@@ -67,12 +58,7 @@ impl std::fmt::Display for ParseError {
 }
 impl std::error::Error for ParseError {}
 
-/// Public entrypoint: parse a full file-or-expression with the CPU parser.
-///
-/// Behavior:
-/// - If input looks like a top-level fn item (optionally `pub fn name(...) { ... }`), parse that.
-/// - Else if it starts with a block `{ ... }`, parse the block.
-/// - Else parse a single expression (the previous behavior).
+/// Public entrypoint: parse a full file.
 pub fn parse_from_token_kinds(kinds: &[tokens::TokenKind]) -> Result<Ast, ParseError> {
     let mut p = Parser {
         kinds,
@@ -80,14 +66,7 @@ pub fn parse_from_token_kinds(kinds: &[tokens::TokenKind]) -> Result<Ast, ParseE
         nodes: Vec::new(),
     };
 
-    let root = if p.looks_like_fn_item() {
-        p.parse_fn_item()?
-    } else if p.peek_is_lbrace() {
-        p.parse_block()?
-    } else {
-        // default to the original expression parser
-        p.parse_expr()?
-    };
+    let root = p.parse_file()?;
 
     // Must also be at EOF (no stray tokens). If you prefer partial-consume, remove this.
     if p.peek().is_some() {
@@ -140,16 +119,6 @@ impl<'a> Parser<'a> {
         self.kinds.get(self.i).copied()
     }
 
-    fn la(&self, n: usize) -> Option<tokens::TokenKind> {
-        self.kinds.get(self.i + n).copied()
-    }
-
-    fn bump(&mut self) -> Option<tokens::TokenKind> {
-        let k = self.peek()?;
-        self.i += 1;
-        Some(k)
-    }
-
     fn eat(&mut self, k: tokens::TokenKind) -> bool {
         if self.peek() == Some(k) {
             self.i += 1;
@@ -171,151 +140,113 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn is_open_paren(k: tokens::TokenKind) -> bool {
+    fn is_close_paren(k: tokens::TokenKind) -> bool {
         matches!(
             k,
-            tokens::TokenKind::GroupLParen
-                | tokens::TokenKind::CallLParen
-                | tokens::TokenKind::LParen
+            tokens::TokenKind::GroupRParen
+                | tokens::TokenKind::CallRParen
+                | tokens::TokenKind::RParen
         )
     }
 
-    fn is_open_bracket(k: tokens::TokenKind) -> bool {
-        matches!(
-            k,
-            tokens::TokenKind::ArrayLBracket
-                | tokens::TokenKind::IndexLBracket
-                | tokens::TokenKind::LBracket
-        )
+    fn eat_open_group_paren(&mut self) -> bool {
+        self.eat(tokens::TokenKind::GroupLParen) || self.eat(tokens::TokenKind::LParen)
     }
 
-    fn peek_is_lbrace(&self) -> bool {
-        self.peek() == Some(tokens::TokenKind::LBrace)
+    fn eat_close_group_paren(&mut self) -> bool {
+        self.eat(tokens::TokenKind::GroupRParen) || self.eat(tokens::TokenKind::RParen)
     }
 
-    /// Heuristic: does the file start like `[pub] fn name ( ... ) {` ?
-    /// We don't have keyword tokens; we look for:
-    ///   Ident Ident Ident '(' or Ident Ident '('
-    /// followed by a block `{ ... }` (we only check the paren now, the block is parsed later).
-    fn looks_like_fn_item(&self) -> bool {
-        match (self.la(0), self.la(1), self.la(2), self.la(3)) {
-            // pub fn name (
-            (
-                Some(tokens::TokenKind::Ident),
-                Some(tokens::TokenKind::Ident),
-                Some(tokens::TokenKind::Ident),
-                Some(op),
-            ) if Parser::is_open_paren(op) => true,
-            // fn name (
-            (Some(tokens::TokenKind::Ident), Some(tokens::TokenKind::Ident), Some(op), _)
-                if Parser::is_open_paren(op) =>
-            {
-                true
-            }
-            _ => false,
-        }
-    }
-
-    /// Skip a balanced parenthesis group starting at the current token (which must be an open paren).
-    /// Also tolerates nested brackets inside param lists (e.g. array types like `[u32; 10]`).
-    fn skip_balanced_parens(&mut self) -> Result<(), ParseError> {
-        let mut paren_depth = 0i32;
-        let mut bracket_depth = 0i32;
-
-        // first must be an open paren
-        let k = self.bump().ok_or(ParseError {
-            pos: self.i,
-            expected: "open paren",
-            found: None,
-        })?;
-        if !Parser::is_open_paren(k) {
-            return Err(ParseError {
-                pos: self.i - 1,
-                expected: "open paren",
-                found: Some(k),
-            });
-        }
-        paren_depth += 1;
-
-        while paren_depth > 0 {
-            let Some(k) = self.bump() else {
-                return Err(ParseError {
-                    pos: self.i,
-                    expected: "RParen",
-                    found: None,
-                });
-            };
-            if Parser::is_open_paren(k) {
-                paren_depth += 1;
-            } else if k == tokens::TokenKind::RParen {
-                paren_depth -= 1;
-            } else if Parser::is_open_bracket(k) {
-                bracket_depth += 1;
-            } else if k == tokens::TokenKind::RBracket {
-                if bracket_depth == 0 {
-                    return Err(ParseError {
-                        pos: self.i - 1,
-                        expected: "matching RBracket",
-                        found: Some(k),
-                    });
-                }
-                bracket_depth -= 1;
-            } else {
-                // other tokens are fine (idents, commas, colons, semicolons, ints, etc.)
-            }
-        }
-        Ok(())
+    fn expect_semicolon(&mut self) -> Result<(), ParseError> {
+        self.expect(tokens::TokenKind::Semicolon, "Semicolon")
     }
 
     // ------------- file / items / statements -------------
 
-    /// Parse a top-level `fn` item with optional leading `pub` (both seen as `Ident`).
-    /// Grammar (soft-keyword heuristic):
-    ///   item_fn -> [Ident] Ident Ident '(' params ')' block
-    ///              ^pub?   ^fn   ^name
-    fn parse_fn_item(&mut self) -> Result<u32, ParseError> {
-        // Accept either 3 idents before '(' (pub fn name) or 2 (fn name).
-        let name_is_at = if matches!(self.la(0), Some(tokens::TokenKind::Ident))
-            && matches!(self.la(1), Some(tokens::TokenKind::Ident))
-            && matches!(self.la(2), Some(tokens::TokenKind::Ident))
-            && self.la(3).map_or(false, Parser::is_open_paren)
-        {
-            2usize // pub, fn, name
-        } else if matches!(self.la(0), Some(tokens::TokenKind::Ident))
-            && matches!(self.la(1), Some(tokens::TokenKind::Ident))
-            && self.la(2).map_or(false, Parser::is_open_paren)
-        {
-            1usize // fn, name
-        } else {
-            return Err(ParseError {
-                pos: self.i,
-                expected: "fn item",
-                found: self.peek(),
-            });
-        };
-
-        // Consume leading idents up to the name.
-        for _ in 0..name_is_at {
-            let _ = self.bump(); // 'pub' and/or 'fn'
+    fn parse_file(&mut self) -> Result<u32, ParseError> {
+        let mut items = Vec::new();
+        while self.peek().is_some() {
+            items.push(self.parse_item()?);
         }
+        Ok(self.push("file", items))
+    }
 
-        // Name
+    fn parse_item(&mut self) -> Result<u32, ParseError> {
+        if self.eat(tokens::TokenKind::Pub) {
+            let item = self.parse_fn_item()?;
+            Ok(self.push("pub", vec![item]))
+        } else if self.peek() == Some(tokens::TokenKind::Fn) {
+            self.parse_fn_item()
+        } else {
+            self.parse_stmt()
+        }
+    }
+
+    /// Parse a top-level `fn` item.
+    fn parse_fn_item(&mut self) -> Result<u32, ParseError> {
+        self.expect(tokens::TokenKind::Fn, "Fn")?;
         self.expect(tokens::TokenKind::Ident, "function name")?;
         let name_id = self.push("ident", vec![]);
 
-        // Params (skip balanced, we don't build a typed AST for them here)
-        if !self.peek().map_or(false, Parser::is_open_paren) {
-            return Err(ParseError {
-                pos: self.i,
-                expected: "function parameter list",
-                found: self.peek(),
-            });
+        if !self.eat(tokens::TokenKind::CallLParen) {
+            self.expect(tokens::TokenKind::LParen, "function parameter list")?;
         }
-        self.skip_balanced_parens()?;
+        let params = self.parse_param_list_opt()?;
+        if !self.eat(tokens::TokenKind::CallRParen) {
+            self.expect(tokens::TokenKind::RParen, "RParen")?;
+        }
 
-        // Body block
+        let ret = if self.eat(tokens::TokenKind::Arrow) {
+            self.parse_type_expr()?
+        } else {
+            self.push("type_void", vec![])
+        };
+
         let body = self.parse_block()?;
-        Ok(self.push("fn", vec![name_id, body]))
+        Ok(self.push("fn", vec![name_id, params, ret, body]))
+    }
+
+    fn parse_param_list_opt(&mut self) -> Result<u32, ParseError> {
+        if self.peek().map_or(false, Parser::is_close_paren) {
+            return Ok(self.push("params_none", vec![]));
+        }
+
+        let mut params = Vec::new();
+        params.push(self.parse_param()?);
+        while self.eat(tokens::TokenKind::Comma) {
+            params.push(self.parse_param()?);
+        }
+        Ok(self.push("params", params))
+    }
+
+    fn parse_param(&mut self) -> Result<u32, ParseError> {
+        self.expect(tokens::TokenKind::Ident, "parameter name")?;
+        let name = self.push("ident", vec![]);
+        self.expect(tokens::TokenKind::Colon, "Colon")?;
+        let ty = self.parse_type_expr()?;
+        Ok(self.push("param", vec![name, ty]))
+    }
+
+    fn parse_type_expr(&mut self) -> Result<u32, ParseError> {
+        if self.eat(tokens::TokenKind::Ident) {
+            return Ok(self.push("type_ident", vec![]));
+        }
+
+        if self.eat(tokens::TokenKind::ArrayLBracket) || self.eat(tokens::TokenKind::LBracket) {
+            let elem = self.parse_type_expr()?;
+            self.expect(tokens::TokenKind::Semicolon, "Semicolon")?;
+            self.expect(tokens::TokenKind::Int, "array length")?;
+            if !self.eat(tokens::TokenKind::ArrayRBracket) {
+                self.expect(tokens::TokenKind::RBracket, "RBracket")?;
+            }
+            return Ok(self.push("type_array", vec![elem]));
+        }
+
+        Err(ParseError {
+            pos: self.i,
+            expected: "type expression",
+            found: self.peek(),
+        })
     }
 
     /// Parse a block: `{ stmt* }`
@@ -337,27 +268,89 @@ impl<'a> Parser<'a> {
         Ok(self.push("block", kids))
     }
 
-    /// Parse a statement:
-    ///   - let-stmt (soft keyword): Ident Ident Assign assign ';'?
-    ///                               ^let   ^name
-    ///   - expr-stmt: expr ';'?
+    /// Parse a statement.
     fn parse_stmt(&mut self) -> Result<u32, ParseError> {
-        // let-stmt heuristic: Ident Ident Assign ...
-        if matches!(self.la(0), Some(tokens::TokenKind::Ident))
-            && matches!(self.la(1), Some(tokens::TokenKind::Ident))
-            && matches!(self.la(2), Some(tokens::TokenKind::Assign))
-        {
-            // consume the leading "let" ident (soft keyword)
-            let _let_kw = self.bump();
-            // now parse as a normal assignment starting from the variable ident
-            let set = self.parse_assign()?;
-            let _ = self.eat(tokens::TokenKind::Semicolon);
-            return Ok(self.push("stmt_let", vec![set]));
+        if self.eat(tokens::TokenKind::Let) {
+            self.expect(tokens::TokenKind::Ident, "let binding name")?;
+            let name = self.push("ident", vec![]);
+            let ty = if self.eat(tokens::TokenKind::Colon) {
+                self.parse_type_expr()?
+            } else {
+                self.push("type_infer", vec![])
+            };
+            let value = if self.eat(tokens::TokenKind::Assign) {
+                self.parse_expr()?
+            } else {
+                self.push("init_none", vec![])
+            };
+            self.expect_semicolon()?;
+            return Ok(self.push("stmt_let", vec![name, ty, value]));
         }
 
-        // expr-stmt
+        if self.eat(tokens::TokenKind::Return) {
+            let value = if self.peek() == Some(tokens::TokenKind::Semicolon) {
+                self.push("return_void", vec![])
+            } else {
+                self.parse_expr()?
+            };
+            self.expect_semicolon()?;
+            return Ok(self.push("stmt_return", vec![value]));
+        }
+
+        if self.eat(tokens::TokenKind::If) {
+            if !self.eat_open_group_paren() {
+                return Err(ParseError {
+                    pos: self.i,
+                    expected: "if condition",
+                    found: self.peek(),
+                });
+            }
+            let cond = self.parse_expr()?;
+            if !self.eat_close_group_paren() {
+                self.expect(tokens::TokenKind::RParen, "RParen")?;
+            }
+            let then_block = self.parse_block()?;
+            let else_block = if self.eat(tokens::TokenKind::Else) {
+                self.parse_block()?
+            } else {
+                self.push("else_none", vec![])
+            };
+            return Ok(self.push("stmt_if", vec![cond, then_block, else_block]));
+        }
+
+        if self.eat(tokens::TokenKind::While) {
+            if !self.eat_open_group_paren() {
+                return Err(ParseError {
+                    pos: self.i,
+                    expected: "while condition",
+                    found: self.peek(),
+                });
+            }
+            let cond = self.parse_expr()?;
+            if !self.eat_close_group_paren() {
+                self.expect(tokens::TokenKind::RParen, "RParen")?;
+            }
+            let body = self.parse_block()?;
+            return Ok(self.push("stmt_while", vec![cond, body]));
+        }
+
+        if self.eat(tokens::TokenKind::Break) {
+            self.expect_semicolon()?;
+            return Ok(self.push("stmt_break", vec![]));
+        }
+
+        if self.eat(tokens::TokenKind::Continue) {
+            self.expect_semicolon()?;
+            return Ok(self.push("stmt_continue", vec![]));
+        }
+
+        if self.peek() == Some(tokens::TokenKind::LBrace) {
+            let block = self.parse_block()?;
+            return Ok(self.push("stmt_block", vec![block]));
+        }
+
         let e = self.parse_expr()?;
-        let _ = self.eat(tokens::TokenKind::Semicolon);
+        self.expect_semicolon()?;
         Ok(self.push("stmt_expr", vec![e]))
     }
 
@@ -372,12 +365,34 @@ impl<'a> Parser<'a> {
     // Right-associative.
     fn parse_assign(&mut self) -> Result<u32, ParseError> {
         let lhs = self.parse_orexpr()?;
-        if self.eat(tokens::TokenKind::Assign) {
+        if let Some(tag) = self.eat_assign_op() {
             let rhs = self.parse_assign()?;
-            Ok(self.push("set", vec![lhs, rhs]))
+            Ok(self.push(tag, vec![lhs, rhs]))
         } else {
             Ok(lhs)
         }
+    }
+
+    fn eat_assign_op(&mut self) -> Option<&'static str> {
+        let ops = [
+            (tokens::TokenKind::Assign, "set"),
+            (tokens::TokenKind::PlusAssign, "add_set"),
+            (tokens::TokenKind::MinusAssign, "sub_set"),
+            (tokens::TokenKind::StarAssign, "mul_set"),
+            (tokens::TokenKind::SlashAssign, "div_set"),
+            (tokens::TokenKind::PercentAssign, "mod_set"),
+            (tokens::TokenKind::CaretAssign, "xor_set"),
+            (tokens::TokenKind::ShlAssign, "shl_set"),
+            (tokens::TokenKind::ShrAssign, "shr_set"),
+            (tokens::TokenKind::AmpAssign, "band_set"),
+            (tokens::TokenKind::PipeAssign, "bor_set"),
+        ];
+        for (kind, tag) in ops {
+            if self.eat(kind) {
+                return Some(tag);
+            }
+        }
+        None
     }
 
     // orexpr [or] / [base]
@@ -393,10 +408,37 @@ impl<'a> Parser<'a> {
 
     // andexpr [and] / [base]
     fn parse_andexpr(&mut self) -> Result<u32, ParseError> {
-        let mut lhs = self.parse_equality()?;
+        let mut lhs = self.parse_bit_or()?;
         while self.eat(tokens::TokenKind::AndAnd) {
-            let rhs = self.parse_equality()?;
+            let rhs = self.parse_bit_or()?;
             lhs = self.push("and", vec![lhs, rhs]);
+        }
+        Ok(lhs)
+    }
+
+    fn parse_bit_or(&mut self) -> Result<u32, ParseError> {
+        let mut lhs = self.parse_bit_xor()?;
+        while self.eat(tokens::TokenKind::Pipe) {
+            let rhs = self.parse_bit_xor()?;
+            lhs = self.push("bor", vec![lhs, rhs]);
+        }
+        Ok(lhs)
+    }
+
+    fn parse_bit_xor(&mut self) -> Result<u32, ParseError> {
+        let mut lhs = self.parse_bit_and()?;
+        while self.eat(tokens::TokenKind::Caret) {
+            let rhs = self.parse_bit_and()?;
+            lhs = self.push("xor", vec![lhs, rhs]);
+        }
+        Ok(lhs)
+    }
+
+    fn parse_bit_and(&mut self) -> Result<u32, ParseError> {
+        let mut lhs = self.parse_equality()?;
+        while self.eat(tokens::TokenKind::Ampersand) {
+            let rhs = self.parse_equality()?;
+            lhs = self.push("band", vec![lhs, rhs]);
         }
         Ok(lhs)
     }
@@ -404,29 +446,52 @@ impl<'a> Parser<'a> {
     // equality [eq] / [base]
     fn parse_equality(&mut self) -> Result<u32, ParseError> {
         let mut lhs = self.parse_compare()?;
-        while self.eat(tokens::TokenKind::EqEq) {
-            let rhs = self.parse_compare()?;
-            lhs = self.push("eq", vec![lhs, rhs]);
+        loop {
+            if self.eat(tokens::TokenKind::EqEq) {
+                let rhs = self.parse_compare()?;
+                lhs = self.push("eq", vec![lhs, rhs]);
+            } else if self.eat(tokens::TokenKind::NotEqual) {
+                let rhs = self.parse_compare()?;
+                lhs = self.push("ne", vec![lhs, rhs]);
+            } else {
+                break;
+            }
         }
         Ok(lhs)
     }
 
     // compare [lt|gt|le|ge|base]
     fn parse_compare(&mut self) -> Result<u32, ParseError> {
-        let mut lhs = self.parse_add()?;
+        let mut lhs = self.parse_shift()?;
         loop {
             if self.eat(tokens::TokenKind::Lt) {
-                let rhs = self.parse_add()?;
+                let rhs = self.parse_shift()?;
                 lhs = self.push("lt", vec![lhs, rhs]);
             } else if self.eat(tokens::TokenKind::Gt) {
-                let rhs = self.parse_add()?;
+                let rhs = self.parse_shift()?;
                 lhs = self.push("gt", vec![lhs, rhs]);
             } else if self.eat(tokens::TokenKind::Le) {
-                let rhs = self.parse_add()?;
+                let rhs = self.parse_shift()?;
                 lhs = self.push("le", vec![lhs, rhs]);
             } else if self.eat(tokens::TokenKind::Ge) {
-                let rhs = self.parse_add()?;
+                let rhs = self.parse_shift()?;
                 lhs = self.push("ge", vec![lhs, rhs]);
+            } else {
+                break;
+            }
+        }
+        Ok(lhs)
+    }
+
+    fn parse_shift(&mut self) -> Result<u32, ParseError> {
+        let mut lhs = self.parse_add()?;
+        loop {
+            if self.eat(tokens::TokenKind::Shl) {
+                let rhs = self.parse_add()?;
+                lhs = self.push("shl", vec![lhs, rhs]);
+            } else if self.eat(tokens::TokenKind::Shr) {
+                let rhs = self.parse_add()?;
+                lhs = self.push("shr", vec![lhs, rhs]);
             } else {
                 break;
             }
@@ -438,10 +503,11 @@ impl<'a> Parser<'a> {
     fn parse_add(&mut self) -> Result<u32, ParseError> {
         let mut lhs = self.parse_mul()?;
         loop {
-            if self.eat(tokens::TokenKind::Plus) {
+            if self.eat(tokens::TokenKind::InfixPlus) || self.eat(tokens::TokenKind::Plus) {
                 let rhs = self.parse_mul()?;
                 lhs = self.push("add", vec![lhs, rhs]);
-            } else if self.eat(tokens::TokenKind::Minus) {
+            } else if self.eat(tokens::TokenKind::InfixMinus) || self.eat(tokens::TokenKind::Minus)
+            {
                 let rhs = self.parse_mul()?;
                 lhs = self.push("sub", vec![lhs, rhs]);
             } else {
@@ -454,24 +520,43 @@ impl<'a> Parser<'a> {
     // mul [mul_l|mul_r]
     fn parse_mul(&mut self) -> Result<u32, ParseError> {
         let mut lhs = self.parse_unary()?;
-        while self.eat(tokens::TokenKind::Star) {
-            let rhs = self.parse_unary()?;
-            lhs = self.push("mul", vec![lhs, rhs]);
+        loop {
+            if self.eat(tokens::TokenKind::Star) {
+                let rhs = self.parse_unary()?;
+                lhs = self.push("mul", vec![lhs, rhs]);
+            } else if self.eat(tokens::TokenKind::Slash) {
+                let rhs = self.parse_unary()?;
+                lhs = self.push("div", vec![lhs, rhs]);
+            } else if self.eat(tokens::TokenKind::Percent) {
+                let rhs = self.parse_unary()?;
+                lhs = self.push("mod", vec![lhs, rhs]);
+            } else {
+                break;
+            }
         }
         Ok(lhs)
     }
 
     // unary [pos|neg|not|base]
     fn parse_unary(&mut self) -> Result<u32, ParseError> {
-        if self.eat(tokens::TokenKind::Plus) {
+        if self.eat(tokens::TokenKind::Inc) {
+            let rhs = self.parse_unary()?;
+            Ok(self.push("pre_inc", vec![rhs]))
+        } else if self.eat(tokens::TokenKind::Dec) {
+            let rhs = self.parse_unary()?;
+            Ok(self.push("pre_dec", vec![rhs]))
+        } else if self.eat(tokens::TokenKind::PrefixPlus) || self.eat(tokens::TokenKind::Plus) {
             let rhs = self.parse_unary()?;
             Ok(self.push("pos", vec![rhs]))
-        } else if self.eat(tokens::TokenKind::Minus) {
+        } else if self.eat(tokens::TokenKind::PrefixMinus) || self.eat(tokens::TokenKind::Minus) {
             let rhs = self.parse_unary()?;
             Ok(self.push("neg", vec![rhs]))
         } else if self.eat(tokens::TokenKind::Not) {
             let rhs = self.parse_unary()?;
             Ok(self.push("not", vec![rhs]))
+        } else if self.eat(tokens::TokenKind::Tilde) {
+            let rhs = self.parse_unary()?;
+            Ok(self.push("bit_not", vec![rhs]))
         } else {
             self.parse_postfix()
         }
@@ -479,15 +564,16 @@ impl<'a> Parser<'a> {
 
     // postfix [base|call|index] – left-assoc, repeatedly applies:
     //   base:     primary
-    //   call:     postfix 'CallLParen' arg_list_opt 'RParen'
-    //   index:    postfix 'IndexLBracket' expr 'RBracket'
+    //   call:     postfix 'CallLParen' arg_list_opt 'CallRParen'
+    //   index:    postfix 'IndexLBracket' expr 'IndexRBracket'
     fn parse_postfix(&mut self) -> Result<u32, ParseError> {
         let mut node = self.parse_primary()?;
         loop {
             if self.eat(tokens::TokenKind::CallLParen) || self.eat(tokens::TokenKind::LParen) {
                 // arg_list_opt -> ; | expr arg_tail
                 let mut args = Vec::new();
-                if !self.eat(tokens::TokenKind::RParen) {
+                if !self.eat(tokens::TokenKind::CallRParen) && !self.eat(tokens::TokenKind::RParen)
+                {
                     // some
                     let first = self.parse_expr()?;
                     args.push(first);
@@ -496,7 +582,9 @@ impl<'a> Parser<'a> {
                         let a = self.parse_expr()?;
                         args.push(a);
                     }
-                    self.expect(tokens::TokenKind::RParen, "RParen")?;
+                    if !self.eat(tokens::TokenKind::CallRParen) {
+                        self.expect(tokens::TokenKind::RParen, "RParen")?;
+                    }
                 }
                 // Node: call(callee, a1, a2, ...)
                 let mut children = Vec::with_capacity(1 + args.len());
@@ -508,8 +596,27 @@ impl<'a> Parser<'a> {
 
             if self.eat(tokens::TokenKind::IndexLBracket) || self.eat(tokens::TokenKind::LBracket) {
                 let index = self.parse_expr()?;
-                self.expect(tokens::TokenKind::RBracket, "RBracket")?;
+                if !self.eat(tokens::TokenKind::IndexRBracket) {
+                    self.expect(tokens::TokenKind::RBracket, "RBracket")?;
+                }
                 node = self.push("index", vec![node, index]);
+                continue;
+            }
+
+            if self.eat(tokens::TokenKind::Dot) {
+                self.expect(tokens::TokenKind::Ident, "member name")?;
+                let member = self.push("ident", vec![]);
+                node = self.push("member", vec![node, member]);
+                continue;
+            }
+
+            if self.eat(tokens::TokenKind::Inc) {
+                node = self.push("post_inc", vec![node]);
+                continue;
+            }
+
+            if self.eat(tokens::TokenKind::Dec) {
+                node = self.push("post_dec", vec![node]);
                 continue;
             }
 
@@ -519,22 +626,25 @@ impl<'a> Parser<'a> {
     }
 
     // primary [group|array_lit|ident|int|string]
-    //   group:      '(' expr ')'
-    //   array_lit:  '[' array_elems_opt ']'
+    //   group:      'GroupLParen' expr 'GroupRParen'
+    //   array_lit:  'ArrayLBracket' array_elems_opt 'ArrayRBracket'
     //   ident:      'Ident'
     //   int:        'Int'
     //   string:     'String'
     fn parse_primary(&mut self) -> Result<u32, ParseError> {
         if self.eat(tokens::TokenKind::GroupLParen) || self.eat(tokens::TokenKind::LParen) {
             let e = self.parse_expr()?;
-            self.expect(tokens::TokenKind::RParen, "RParen")?;
+            if !self.eat(tokens::TokenKind::GroupRParen) {
+                self.expect(tokens::TokenKind::RParen, "RParen")?;
+            }
             return Ok(self.push("group", vec![e]));
         }
 
         if self.eat(tokens::TokenKind::ArrayLBracket) || self.eat(tokens::TokenKind::LBracket) {
             // array_elems_opt -> ; | expr array_elems_tail
             let mut elems = Vec::new();
-            if !self.eat(tokens::TokenKind::RBracket) {
+            if !self.eat(tokens::TokenKind::ArrayRBracket) && !self.eat(tokens::TokenKind::RBracket)
+            {
                 let first = self.parse_expr()?;
                 elems.push(first);
                 // array_elems_tail -> 'Comma' expr array_elems_tail | ;
@@ -542,7 +652,9 @@ impl<'a> Parser<'a> {
                     let e = self.parse_expr()?;
                     elems.push(e);
                 }
-                self.expect(tokens::TokenKind::RBracket, "RBracket")?;
+                if !self.eat(tokens::TokenKind::ArrayRBracket) {
+                    self.expect(tokens::TokenKind::RBracket, "RBracket")?;
+                }
             }
             return Ok(self.push("array_lit", elems));
         }
@@ -553,8 +665,14 @@ impl<'a> Parser<'a> {
         if self.eat(tokens::TokenKind::Int) {
             return Ok(self.push("int", vec![]));
         }
+        if self.eat(tokens::TokenKind::Float) {
+            return Ok(self.push("float", vec![]));
+        }
         if self.eat(tokens::TokenKind::String) {
             return Ok(self.push("string", vec![]));
+        }
+        if self.eat(tokens::TokenKind::Char) {
+            return Ok(self.push("char", vec![]));
         }
 
         Err(ParseError {

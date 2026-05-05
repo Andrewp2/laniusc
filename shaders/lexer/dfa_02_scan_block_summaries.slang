@@ -2,7 +2,7 @@
 // Multi-round inclusive scan over per-block function vectors.
 // Result after last round is inclusive prefix for each block.
 
-#define N_STATES 79
+#define N_STATES 80
 #define BLOCK_WIDTH 256u
 static const uint MAX_GROUPS_PER_DIM = 65535u;
 

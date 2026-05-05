@@ -7,7 +7,7 @@ pub enum S {
     Start,
     Ident,
     Int,
-    Zero,                // saw single leading 0 (could be prefixes)
+    Zero, // saw single leading 0 (could be prefixes)
     White,
 
     // comments/slash handling
@@ -72,13 +72,13 @@ pub enum S {
     Oct,
     OctAfterUnderscore,
 
-    FloatDot,              // after seeing digits then '.' (accepting)
-    FloatFrac,             // fractional digits loop (accepting)
+    FloatDot,  // after seeing digits then '.' (accepting)
+    FloatFrac, // fractional digits loop (accepting)
     FloatFracAfterUnderscore,
-    MaybeExpFromInt,       // after 'e' or 'E' following an Int (accepts Int on backoff)
-    MaybeExpFromFloat,     // after 'e' or 'E' following a Float (accepts Float on backoff)
-    FloatExpSign,          // after exponent sign
-    FloatExp,              // exponent digits loop (accepting)
+    MaybeExpFromInt,   // after 'e' or 'E' following an Int (accepts Int on backoff)
+    MaybeExpFromFloat, // after 'e' or 'E' following a Float (accepts Float on backoff)
+    FloatExpSign,      // after exponent sign
+    FloatExp,          // exponent digits loop (accepting)
     FloatExpAfterUnderscore,
 
     // strings and chars
@@ -104,6 +104,7 @@ pub enum S {
     // ++/--
     IncDone,
     DecDone,
+    ArrowDone,
 
     Reject,
 }
@@ -114,7 +115,7 @@ impl S {
     }
 }
 
-pub const N_STATES: usize = 79;
+pub const N_STATES: usize = 80;
 pub const START: S = S::Start;
 pub const REJECT: S = S::Reject;
 
@@ -197,6 +198,7 @@ const ALL_STATES: &[S] = &[
     S::ShrAssignDone,
     S::IncDone,
     S::DecDone,
+    S::ArrowDone,
     S::Reject,
 ];
 
@@ -313,6 +315,7 @@ pub(crate) fn token_of_state(s: S) -> Option<TokenKind> {
 
         IncDone => Some(TokenKind::Inc),
         DecDone => Some(TokenKind::Dec),
+        ArrowDone => Some(TokenKind::Arrow),
         _ => None,
     }
 }
@@ -392,7 +395,10 @@ impl StreamingDfa {
                     _ => S::Reject,
                 }
             };
-            next[S::Start.idx()][b as usize] = Next { state: to.idx() as u16, emit: false };
+            next[S::Start.idx()][b as usize] = Next {
+                state: to.idx() as u16,
+                emit: false,
+            };
         }
 
         // Ident
@@ -407,74 +413,188 @@ impl StreamingDfa {
 
         // Int (no leading 0 handled via Zero)
         for b in b'0'..=b'9' {
-            next[S::Int.idx()][b as usize] = Next { state: S::Int.idx() as u16, emit: false };
+            next[S::Int.idx()][b as usize] = Next {
+                state: S::Int.idx() as u16,
+                emit: false,
+            };
         }
         // separators and fractional/exponent
-        next[S::Int.idx()][b'_' as usize] = Next { state: S::IntAfterUnderscore.idx() as u16, emit: false };
+        next[S::Int.idx()][b'_' as usize] = Next {
+            state: S::IntAfterUnderscore.idx() as u16,
+            emit: false,
+        };
         for b in b'0'..=b'9' {
-            next[S::IntAfterUnderscore.idx()][b as usize] = Next { state: S::Int.idx() as u16, emit: false };
+            next[S::IntAfterUnderscore.idx()][b as usize] = Next {
+                state: S::Int.idx() as u16,
+                emit: false,
+            };
         }
-        next[S::Int.idx()][b'.' as usize] = Next { state: S::FloatDot.idx() as u16, emit: false };
-        next[S::Int.idx()][b'e' as usize] = Next { state: S::MaybeExpFromInt.idx() as u16, emit: false };
-        next[S::Int.idx()][b'E' as usize] = Next { state: S::MaybeExpFromInt.idx() as u16, emit: false };
+        next[S::Int.idx()][b'.' as usize] = Next {
+            state: S::FloatDot.idx() as u16,
+            emit: false,
+        };
+        next[S::Int.idx()][b'e' as usize] = Next {
+            state: S::MaybeExpFromInt.idx() as u16,
+            emit: false,
+        };
+        next[S::Int.idx()][b'E' as usize] = Next {
+            state: S::MaybeExpFromInt.idx() as u16,
+            emit: false,
+        };
 
         // Zero (could be prefixes)
-        next[S::Zero.idx()][b'x' as usize] = Next { state: S::HexStart.idx() as u16, emit: false };
-        next[S::Zero.idx()][b'X' as usize] = Next { state: S::HexStart.idx() as u16, emit: false };
-        next[S::Zero.idx()][b'b' as usize] = Next { state: S::BinStart.idx() as u16, emit: false };
-        next[S::Zero.idx()][b'B' as usize] = Next { state: S::BinStart.idx() as u16, emit: false };
-        next[S::Zero.idx()][b'o' as usize] = Next { state: S::OctStart.idx() as u16, emit: false };
-        next[S::Zero.idx()][b'O' as usize] = Next { state: S::OctStart.idx() as u16, emit: false };
+        next[S::Zero.idx()][b'x' as usize] = Next {
+            state: S::HexStart.idx() as u16,
+            emit: false,
+        };
+        next[S::Zero.idx()][b'X' as usize] = Next {
+            state: S::HexStart.idx() as u16,
+            emit: false,
+        };
+        next[S::Zero.idx()][b'b' as usize] = Next {
+            state: S::BinStart.idx() as u16,
+            emit: false,
+        };
+        next[S::Zero.idx()][b'B' as usize] = Next {
+            state: S::BinStart.idx() as u16,
+            emit: false,
+        };
+        next[S::Zero.idx()][b'o' as usize] = Next {
+            state: S::OctStart.idx() as u16,
+            emit: false,
+        };
+        next[S::Zero.idx()][b'O' as usize] = Next {
+            state: S::OctStart.idx() as u16,
+            emit: false,
+        };
         for b in b'0'..=b'9' {
-            next[S::Zero.idx()][b as usize] = Next { state: S::Int.idx() as u16, emit: false };
+            next[S::Zero.idx()][b as usize] = Next {
+                state: S::Int.idx() as u16,
+                emit: false,
+            };
         }
-        next[S::Zero.idx()][b'_' as usize] = Next { state: S::IntAfterUnderscore.idx() as u16, emit: false };
-        next[S::Zero.idx()][b'.' as usize] = Next { state: S::FloatDot.idx() as u16, emit: false };
-        next[S::Zero.idx()][b'e' as usize] = Next { state: S::MaybeExpFromInt.idx() as u16, emit: false };
-        next[S::Zero.idx()][b'E' as usize] = Next { state: S::MaybeExpFromInt.idx() as u16, emit: false };
+        next[S::Zero.idx()][b'_' as usize] = Next {
+            state: S::IntAfterUnderscore.idx() as u16,
+            emit: false,
+        };
+        next[S::Zero.idx()][b'.' as usize] = Next {
+            state: S::FloatDot.idx() as u16,
+            emit: false,
+        };
+        next[S::Zero.idx()][b'e' as usize] = Next {
+            state: S::MaybeExpFromInt.idx() as u16,
+            emit: false,
+        };
+        next[S::Zero.idx()][b'E' as usize] = Next {
+            state: S::MaybeExpFromInt.idx() as u16,
+            emit: false,
+        };
 
         // Hex
         for b in b'0'..=b'9' {
-            next[S::HexStart.idx()][b as usize] = Next { state: S::Hex.idx() as u16, emit: false };
-            next[S::Hex.idx()][b as usize] = Next { state: S::Hex.idx() as u16, emit: false };
+            next[S::HexStart.idx()][b as usize] = Next {
+                state: S::Hex.idx() as u16,
+                emit: false,
+            };
+            next[S::Hex.idx()][b as usize] = Next {
+                state: S::Hex.idx() as u16,
+                emit: false,
+            };
         }
         for b in b'a'..=b'f' {
-            next[S::HexStart.idx()][b as usize] = Next { state: S::Hex.idx() as u16, emit: false };
-            next[S::Hex.idx()][b as usize] = Next { state: S::Hex.idx() as u16, emit: false };
+            next[S::HexStart.idx()][b as usize] = Next {
+                state: S::Hex.idx() as u16,
+                emit: false,
+            };
+            next[S::Hex.idx()][b as usize] = Next {
+                state: S::Hex.idx() as u16,
+                emit: false,
+            };
         }
         for b in b'A'..=b'F' {
-            next[S::HexStart.idx()][b as usize] = Next { state: S::Hex.idx() as u16, emit: false };
-            next[S::Hex.idx()][b as usize] = Next { state: S::Hex.idx() as u16, emit: false };
+            next[S::HexStart.idx()][b as usize] = Next {
+                state: S::Hex.idx() as u16,
+                emit: false,
+            };
+            next[S::Hex.idx()][b as usize] = Next {
+                state: S::Hex.idx() as u16,
+                emit: false,
+            };
         }
-        next[S::Hex.idx()][b'_' as usize] = Next { state: S::HexAfterUnderscore.idx() as u16, emit: false };
+        next[S::Hex.idx()][b'_' as usize] = Next {
+            state: S::HexAfterUnderscore.idx() as u16,
+            emit: false,
+        };
         // after underscore requires hex digit
         for b in b'0'..=b'9' {
-            next[S::HexAfterUnderscore.idx()][b as usize] = Next { state: S::Hex.idx() as u16, emit: false };
+            next[S::HexAfterUnderscore.idx()][b as usize] = Next {
+                state: S::Hex.idx() as u16,
+                emit: false,
+            };
         }
         for b in b'a'..=b'f' {
-            next[S::HexAfterUnderscore.idx()][b as usize] = Next { state: S::Hex.idx() as u16, emit: false };
+            next[S::HexAfterUnderscore.idx()][b as usize] = Next {
+                state: S::Hex.idx() as u16,
+                emit: false,
+            };
         }
         for b in b'A'..=b'F' {
-            next[S::HexAfterUnderscore.idx()][b as usize] = Next { state: S::Hex.idx() as u16, emit: false };
+            next[S::HexAfterUnderscore.idx()][b as usize] = Next {
+                state: S::Hex.idx() as u16,
+                emit: false,
+            };
         }
 
         // Bin
-        next[S::BinStart.idx()][b'0' as usize] = Next { state: S::Bin.idx() as u16, emit: false };
-        next[S::BinStart.idx()][b'1' as usize] = Next { state: S::Bin.idx() as u16, emit: false };
-        next[S::Bin.idx()][b'0' as usize] = Next { state: S::Bin.idx() as u16, emit: false };
-        next[S::Bin.idx()][b'1' as usize] = Next { state: S::Bin.idx() as u16, emit: false };
-        next[S::Bin.idx()][b'_' as usize] = Next { state: S::BinAfterUnderscore.idx() as u16, emit: false };
-        next[S::BinAfterUnderscore.idx()][b'0' as usize] = Next { state: S::Bin.idx() as u16, emit: false };
-        next[S::BinAfterUnderscore.idx()][b'1' as usize] = Next { state: S::Bin.idx() as u16, emit: false };
+        next[S::BinStart.idx()][b'0' as usize] = Next {
+            state: S::Bin.idx() as u16,
+            emit: false,
+        };
+        next[S::BinStart.idx()][b'1' as usize] = Next {
+            state: S::Bin.idx() as u16,
+            emit: false,
+        };
+        next[S::Bin.idx()][b'0' as usize] = Next {
+            state: S::Bin.idx() as u16,
+            emit: false,
+        };
+        next[S::Bin.idx()][b'1' as usize] = Next {
+            state: S::Bin.idx() as u16,
+            emit: false,
+        };
+        next[S::Bin.idx()][b'_' as usize] = Next {
+            state: S::BinAfterUnderscore.idx() as u16,
+            emit: false,
+        };
+        next[S::BinAfterUnderscore.idx()][b'0' as usize] = Next {
+            state: S::Bin.idx() as u16,
+            emit: false,
+        };
+        next[S::BinAfterUnderscore.idx()][b'1' as usize] = Next {
+            state: S::Bin.idx() as u16,
+            emit: false,
+        };
 
         // Oct
         for b in b'0'..=b'7' {
-            next[S::OctStart.idx()][b as usize] = Next { state: S::Oct.idx() as u16, emit: false };
-            next[S::Oct.idx()][b as usize] = Next { state: S::Oct.idx() as u16, emit: false };
+            next[S::OctStart.idx()][b as usize] = Next {
+                state: S::Oct.idx() as u16,
+                emit: false,
+            };
+            next[S::Oct.idx()][b as usize] = Next {
+                state: S::Oct.idx() as u16,
+                emit: false,
+            };
         }
-        next[S::Oct.idx()][b'_' as usize] = Next { state: S::OctAfterUnderscore.idx() as u16, emit: false };
+        next[S::Oct.idx()][b'_' as usize] = Next {
+            state: S::OctAfterUnderscore.idx() as u16,
+            emit: false,
+        };
         for b in b'0'..=b'7' {
-            next[S::OctAfterUnderscore.idx()][b as usize] = Next { state: S::Oct.idx() as u16, emit: false };
+            next[S::OctAfterUnderscore.idx()][b as usize] = Next {
+                state: S::Oct.idx() as u16,
+                emit: false,
+            };
         }
 
         // Whitespace
@@ -521,29 +641,105 @@ impl StreamingDfa {
         set(&mut next, S::AfterCaret, b"=", S::CaretAssignDone);
         set(&mut next, S::AfterPlus, b"+", S::IncDone);
         set(&mut next, S::AfterMinus, b"-", S::DecDone);
+        set(&mut next, S::AfterMinus, b">", S::ArrowDone);
         set(&mut next, S::ShlDone, b"=", S::ShlAssignDone);
         set(&mut next, S::ShrDone, b"=", S::ShrAssignDone);
 
         // Floats and dot handling
-        for b in b'0'..=b'9' { next[S::MaybeDot.idx()][b as usize] = Next { state: S::FloatFrac.idx() as u16, emit: false }; }
-        for b in b'0'..=b'9' { next[S::FloatDot.idx()][b as usize] = Next { state: S::FloatFrac.idx() as u16, emit: false }; }
-        for b in b'0'..=b'9' { next[S::FloatFrac.idx()][b as usize] = Next { state: S::FloatFrac.idx() as u16, emit: false }; }
-        next[S::FloatFrac.idx()][b'_' as usize] = Next { state: S::FloatFracAfterUnderscore.idx() as u16, emit: false };
-        for b in b'0'..=b'9' { next[S::FloatFracAfterUnderscore.idx()][b as usize] = Next { state: S::FloatFrac.idx() as u16, emit: false }; }
-        next[S::FloatDot.idx()][b'e' as usize] = Next { state: S::MaybeExpFromFloat.idx() as u16, emit: false };
-        next[S::FloatDot.idx()][b'E' as usize] = Next { state: S::MaybeExpFromFloat.idx() as u16, emit: false };
-        next[S::FloatFrac.idx()][b'e' as usize] = Next { state: S::MaybeExpFromFloat.idx() as u16, emit: false };
-        next[S::FloatFrac.idx()][b'E' as usize] = Next { state: S::MaybeExpFromFloat.idx() as u16, emit: false };
-        next[S::MaybeExpFromInt.idx()][b'+' as usize] = Next { state: S::FloatExpSign.idx() as u16, emit: false };
-        next[S::MaybeExpFromInt.idx()][b'-' as usize] = Next { state: S::FloatExpSign.idx() as u16, emit: false };
-        next[S::MaybeExpFromFloat.idx()][b'+' as usize] = Next { state: S::FloatExpSign.idx() as u16, emit: false };
-        next[S::MaybeExpFromFloat.idx()][b'-' as usize] = Next { state: S::FloatExpSign.idx() as u16, emit: false };
-        for b in b'0'..=b'9' { next[S::MaybeExpFromInt.idx()][b as usize] = Next { state: S::FloatExp.idx() as u16, emit: false }; }
-        for b in b'0'..=b'9' { next[S::MaybeExpFromFloat.idx()][b as usize] = Next { state: S::FloatExp.idx() as u16, emit: false }; }
-        for b in b'0'..=b'9' { next[S::FloatExpSign.idx()][b as usize] = Next { state: S::FloatExp.idx() as u16, emit: false }; }
-        for b in b'0'..=b'9' { next[S::FloatExp.idx()][b as usize] = Next { state: S::FloatExp.idx() as u16, emit: false }; }
-        next[S::FloatExp.idx()][b'_' as usize] = Next { state: S::FloatExpAfterUnderscore.idx() as u16, emit: false };
-        for b in b'0'..=b'9' { next[S::FloatExpAfterUnderscore.idx()][b as usize] = Next { state: S::FloatExp.idx() as u16, emit: false }; }
+        for b in b'0'..=b'9' {
+            next[S::MaybeDot.idx()][b as usize] = Next {
+                state: S::FloatFrac.idx() as u16,
+                emit: false,
+            };
+        }
+        for b in b'0'..=b'9' {
+            next[S::FloatDot.idx()][b as usize] = Next {
+                state: S::FloatFrac.idx() as u16,
+                emit: false,
+            };
+        }
+        for b in b'0'..=b'9' {
+            next[S::FloatFrac.idx()][b as usize] = Next {
+                state: S::FloatFrac.idx() as u16,
+                emit: false,
+            };
+        }
+        next[S::FloatFrac.idx()][b'_' as usize] = Next {
+            state: S::FloatFracAfterUnderscore.idx() as u16,
+            emit: false,
+        };
+        for b in b'0'..=b'9' {
+            next[S::FloatFracAfterUnderscore.idx()][b as usize] = Next {
+                state: S::FloatFrac.idx() as u16,
+                emit: false,
+            };
+        }
+        next[S::FloatDot.idx()][b'e' as usize] = Next {
+            state: S::MaybeExpFromFloat.idx() as u16,
+            emit: false,
+        };
+        next[S::FloatDot.idx()][b'E' as usize] = Next {
+            state: S::MaybeExpFromFloat.idx() as u16,
+            emit: false,
+        };
+        next[S::FloatFrac.idx()][b'e' as usize] = Next {
+            state: S::MaybeExpFromFloat.idx() as u16,
+            emit: false,
+        };
+        next[S::FloatFrac.idx()][b'E' as usize] = Next {
+            state: S::MaybeExpFromFloat.idx() as u16,
+            emit: false,
+        };
+        next[S::MaybeExpFromInt.idx()][b'+' as usize] = Next {
+            state: S::FloatExpSign.idx() as u16,
+            emit: false,
+        };
+        next[S::MaybeExpFromInt.idx()][b'-' as usize] = Next {
+            state: S::FloatExpSign.idx() as u16,
+            emit: false,
+        };
+        next[S::MaybeExpFromFloat.idx()][b'+' as usize] = Next {
+            state: S::FloatExpSign.idx() as u16,
+            emit: false,
+        };
+        next[S::MaybeExpFromFloat.idx()][b'-' as usize] = Next {
+            state: S::FloatExpSign.idx() as u16,
+            emit: false,
+        };
+        for b in b'0'..=b'9' {
+            next[S::MaybeExpFromInt.idx()][b as usize] = Next {
+                state: S::FloatExp.idx() as u16,
+                emit: false,
+            };
+        }
+        for b in b'0'..=b'9' {
+            next[S::MaybeExpFromFloat.idx()][b as usize] = Next {
+                state: S::FloatExp.idx() as u16,
+                emit: false,
+            };
+        }
+        for b in b'0'..=b'9' {
+            next[S::FloatExpSign.idx()][b as usize] = Next {
+                state: S::FloatExp.idx() as u16,
+                emit: false,
+            };
+        }
+        for b in b'0'..=b'9' {
+            next[S::FloatExp.idx()][b as usize] = Next {
+                state: S::FloatExp.idx() as u16,
+                emit: false,
+            };
+        }
+        next[S::FloatExp.idx()][b'_' as usize] = Next {
+            state: S::FloatExpAfterUnderscore.idx() as u16,
+            emit: false,
+        };
+        for b in b'0'..=b'9' {
+            next[S::FloatExpAfterUnderscore.idx()][b as usize] = Next {
+                state: S::FloatExp.idx() as u16,
+                emit: false,
+            };
+        }
 
         // Strings
         // InString: loop on any byte except backslash, quote, newline
@@ -551,15 +747,27 @@ impl StreamingDfa {
             match b {
                 b'\\' | b'"' | b'\n' => {}
                 _ => {
-                    next[S::InString.idx()][b as usize] = Next { state: S::InString.idx() as u16, emit: false };
+                    next[S::InString.idx()][b as usize] = Next {
+                        state: S::InString.idx() as u16,
+                        emit: false,
+                    };
                 }
             }
         }
-        next[S::InString.idx()][b'\\' as usize] = Next { state: S::StringEscape.idx() as u16, emit: false };
-        next[S::InString.idx()][b'"' as usize] = Next { state: S::StringDone.idx() as u16, emit: false };
+        next[S::InString.idx()][b'\\' as usize] = Next {
+            state: S::StringEscape.idx() as u16,
+            emit: false,
+        };
+        next[S::InString.idx()][b'"' as usize] = Next {
+            state: S::StringDone.idx() as u16,
+            emit: false,
+        };
         // Escape: accept any char and return to body
         for b in 0u8..=255u8 {
-            next[S::StringEscape.idx()][b as usize] = Next { state: S::InString.idx() as u16, emit: false };
+            next[S::StringEscape.idx()][b as usize] = Next {
+                state: S::InString.idx() as u16,
+                emit: false,
+            };
         }
 
         // Chars
@@ -567,13 +775,27 @@ impl StreamingDfa {
             match b {
                 b'\\' | b'\'' | b'\n' => {}
                 _ => {
-                    next[S::InChar.idx()][b as usize] = Next { state: S::InChar.idx() as u16, emit: false };
+                    next[S::InChar.idx()][b as usize] = Next {
+                        state: S::InChar.idx() as u16,
+                        emit: false,
+                    };
                 }
             }
         }
-        next[S::InChar.idx()][b'\\' as usize] = Next { state: S::CharEscape.idx() as u16, emit: false };
-        next[S::InChar.idx()][b'\'' as usize] = Next { state: S::CharDone.idx() as u16, emit: false };
-        for b in 0u8..=255u8 { next[S::CharEscape.idx()][b as usize] = Next { state: S::InChar.idx() as u16, emit: false }; }
+        next[S::InChar.idx()][b'\\' as usize] = Next {
+            state: S::CharEscape.idx() as u16,
+            emit: false,
+        };
+        next[S::InChar.idx()][b'\'' as usize] = Next {
+            state: S::CharDone.idx() as u16,
+            emit: false,
+        };
+        for b in 0u8..=255u8 {
+            next[S::CharEscape.idx()][b as usize] = Next {
+                state: S::InChar.idx() as u16,
+                emit: false,
+            };
+        }
 
         // Streaming transform: copy Start edges to accepting states as emitting edges
         let mut token_map = [INVALID_TOKEN; N_STATES];

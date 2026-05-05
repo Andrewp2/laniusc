@@ -40,6 +40,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for TokensBuildPass 
         b: &'a GpuBuffers,
     ) -> HashMap<String, wgpu::BindingResource<'a>> {
         HashMap::from([
+            ("in_bytes".into(), b.in_bytes.as_entire_binding()),
             ("token_count".into(), b.token_count.as_entire_binding()),
             ("end_positions".into(), b.end_positions.as_entire_binding()),
             ("types_compact".into(), b.types_compact.as_entire_binding()),

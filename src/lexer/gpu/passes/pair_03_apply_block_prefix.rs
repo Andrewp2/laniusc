@@ -101,7 +101,11 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair03ApplyBlock
         );
 
         let rounds = compute_rounds(b.nb_sum);
-        let last = if (rounds % 2) == 1 { &b.dfa_02_pong } else { &b.dfa_02_ping };
+        let last = if (rounds % 2) == 1 {
+            &b.dfa_02_pong
+        } else {
+            &b.dfa_02_ping
+        };
         dbg.gpu.block_prefix_pair.set_from_copy(
             device,
             encoder,

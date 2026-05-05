@@ -1,0 +1,5399 @@
+{
+  "grammar": "grammar/lanius.bnf",
+  "start": "file",
+  "lookback": 1,
+  "lookahead": 1,
+  "diagnostics": {
+    "undefined_nonterminals": [],
+    "unreachable_nonterminals": [],
+    "left_recursions": [],
+    "ll1_conflicts": []
+  },
+  "pp_projection": {
+    "witness_inputs": 68,
+    "projected_cells": 157,
+    "conflicts": [
+      "(Ident, Comma): kept [postfix_end:100, mul_end:86, add_end:81, shift_end:77, compare_end:73, eq_end:67, band_end:63, xor_end:60, bor_end:57, and_end:54, or_end:51, assign_end:48, array_more:114], saw [postfix_end:100, mul_end:86, add_end:81, shift_end:77, compare_end:73, eq_end:67, band_end:63, xor_end:60, bor_end:57, and_end:54, or_end:51, assign_end:48, args_more:103] from witness [Ident, CallLParen, Ident, Comma, Int, CallRParen, Semicolon]",
+      "(Ident, Semicolon): kept [postfix_end:100, mul_end:86, add_end:81, shift_end:77, compare_end:73, eq_end:67, band_end:63, xor_end:60, bor_end:57, and_end:54, or_end:51, assign_end:48], saw [let_type_none:28, let_init_none:30] from witness [Let, Ident, Semicolon]",
+      "(Ident, Semicolon): kept [postfix_end:100, mul_end:86, add_end:81, shift_end:77, compare_end:73, eq_end:67, band_end:63, xor_end:60, bor_end:57, and_end:54, or_end:51, assign_end:48], saw [let_init_none:30] from witness [Let, Ident, Colon, Ident, Semicolon]",
+      "(Ident, Assign): kept [postfix_end:100, mul_end:86, add_end:81, shift_end:77, compare_end:73, eq_end:67, band_end:63, xor_end:60, bor_end:57, and_end:54, or_end:51, assign_set:37], saw [let_type_none:28, let_init:29] from witness [Let, Ident, Assign, Int, Semicolon]",
+      "(Assign, Int): kept [assign:36, orexpr:49, andexpr:52, bit_or:55, bit_xor:58, bit_and:61, equality:64, compare:68, shift:74, add:78, mul:82, base:93, postfix:94, int:108], saw [expr:35, assign:36, orexpr:49, andexpr:52, bit_or:55, bit_xor:58, bit_and:61, equality:64, compare:68, shift:74, add:78, mul:82, base:93, postfix:94, int:108] from witness [Let, Ident, Assign, Int, Semicolon]",
+      "(Ident, Assign): kept [postfix_end:100, mul_end:86, add_end:81, shift_end:77, compare_end:73, eq_end:67, band_end:63, xor_end:60, bor_end:57, and_end:54, or_end:51, assign_set:37], saw [let_init:29] from witness [Let, Ident, Colon, Ident, Assign, Int, Semicolon]",
+      "(Assign, Int): kept [assign:36, orexpr:49, andexpr:52, bit_or:55, bit_xor:58, bit_and:61, equality:64, compare:68, shift:74, add:78, mul:82, base:93, postfix:94, int:108], saw [expr:35, assign:36, orexpr:49, andexpr:52, bit_or:55, bit_xor:58, bit_and:61, equality:64, compare:68, shift:74, add:78, mul:82, base:93, postfix:94, int:108] from witness [Let, Ident, Colon, Ident, Assign, Int, Semicolon]",
+      "(RBrace, $): kept [else_none:34, items_end:2], saw [items_end:2] from witness [If, GroupLParen, Ident, GroupRParen, LBrace, Return, Ident, Semicolon, RBrace, Else, LBrace, Return, Int, Semicolon, RBrace]",
+      "(RBrace, $): kept [else_none:34, items_end:2], saw [items_end:2] from witness [While, GroupLParen, Ident, GroupRParen, LBrace, Break, Semicolon, Continue, Semicolon, RBrace]",
+      "(Ident, Assign): kept [postfix_end:100, mul_end:86, add_end:81, shift_end:77, compare_end:73, eq_end:67, band_end:63, xor_end:60, bor_end:57, and_end:54, or_end:51, assign_set:37], saw [let_type_none:28, let_init:29] from witness [LBrace, Let, Ident, Assign, Int, Semicolon, RBrace]",
+      "(Assign, Int): kept [assign:36, orexpr:49, andexpr:52, bit_or:55, bit_xor:58, bit_and:61, equality:64, compare:68, shift:74, add:78, mul:82, base:93, postfix:94, int:108], saw [expr:35, assign:36, orexpr:49, andexpr:52, bit_or:55, bit_xor:58, bit_and:61, equality:64, compare:68, shift:74, add:78, mul:82, base:93, postfix:94, int:108] from witness [LBrace, Let, Ident, Assign, Int, Semicolon, RBrace]",
+      "(RBrace, $): kept [else_none:34, items_end:2], saw [items_end:2] from witness [LBrace, Let, Ident, Assign, Int, Semicolon, RBrace]",
+      "(Ident, CallLParen): kept [postfix_call:95], saw [] from witness [Fn, Ident, CallLParen, CallRParen, LBrace, RBrace]",
+      "(RBrace, $): kept [else_none:34, items_end:2], saw [items_end:2] from witness [Fn, Ident, CallLParen, CallRParen, LBrace, RBrace]",
+      "(CallLParen, CallRParen): kept [args_none:101], saw [params_none:9] from witness [Fn, Ident, CallLParen, CallRParen, LBrace, RBrace]",
+      "(Ident, CallLParen): kept [postfix_call:95], saw [] from witness [Fn, Ident, CallLParen, CallRParen, Arrow, Ident, LBrace, Return, Int, Semicolon, RBrace]",
+      "(RBrace, $): kept [else_none:34, items_end:2], saw [items_end:2] from witness [Fn, Ident, CallLParen, CallRParen, Arrow, Ident, LBrace, Return, Int, Semicolon, RBrace]",
+      "(CallLParen, CallRParen): kept [args_none:101], saw [params_none:9] from witness [Fn, Ident, CallLParen, CallRParen, Arrow, Ident, LBrace, Return, Int, Semicolon, RBrace]",
+      "(Ident, CallLParen): kept [postfix_call:95], saw [] from witness [Fn, Ident, CallLParen, Ident, Colon, Ident, CallRParen, Arrow, Ident, LBrace, Return, Ident, Semicolon, RBrace]",
+      "(Ident, Colon): kept [let_type:27], saw [] from witness [Fn, Ident, CallLParen, Ident, Colon, Ident, CallRParen, Arrow, Ident, LBrace, Return, Ident, Semicolon, RBrace]",
+      "(Ident, CallRParen): kept [postfix_end:100, mul_end:86, add_end:81, shift_end:77, compare_end:73, eq_end:67, band_end:63, xor_end:60, bor_end:57, and_end:54, or_end:51, assign_end:48, args_end:104], saw [params_end:13] from witness [Fn, Ident, CallLParen, Ident, Colon, Ident, CallRParen, Arrow, Ident, LBrace, Return, Ident, Semicolon, RBrace]",
+      "(RBrace, $): kept [else_none:34, items_end:2], saw [items_end:2] from witness [Fn, Ident, CallLParen, Ident, Colon, Ident, CallRParen, Arrow, Ident, LBrace, Return, Ident, Semicolon, RBrace]",
+      "(CallLParen, Ident): kept [args_some:102, expr:35, assign:36, orexpr:49, andexpr:52, bit_or:55, bit_xor:58, bit_and:61, equality:64, compare:68, shift:74, add:78, mul:82, base:93, postfix:94, ident:107], saw [params_some:10, param:11] from witness [Fn, Ident, CallLParen, Ident, Colon, Ident, CallRParen, Arrow, Ident, LBrace, Return, Ident, Semicolon, RBrace]",
+      "(Ident, Assign): kept [postfix_end:100, mul_end:86, add_end:81, shift_end:77, compare_end:73, eq_end:67, band_end:63, xor_end:60, bor_end:57, and_end:54, or_end:51, assign_set:37], saw [let_init:29] from witness [Pub, Fn, Ident, CallLParen, Ident, Colon, Ident, Comma, Ident, Colon, ArrayLBracket, Ident, Semicolon, Int, ArrayRBracket, CallRParen, Arrow, Ident, LBrace, Let, Ident, Colon, Ident, Assign, Ident, InfixPlus, Ident, IndexLBracket, Ident, IndexRBracket, Semicolon, If, GroupLParen, Ident, GroupRParen, LBrace, Return, Ident, Semicolon, RBrace, Else, LBrace, While, GroupLParen, Ident, GroupRParen, LBrace, Break, Semicolon, Continue, Semicolon, RBrace, RBrace, RBrace]",
+      "(Ident, CallLParen): kept [postfix_call:95], saw [] from witness [Pub, Fn, Ident, CallLParen, Ident, Colon, Ident, Comma, Ident, Colon, ArrayLBracket, Ident, Semicolon, Int, ArrayRBracket, CallRParen, Arrow, Ident, LBrace, Let, Ident, Colon, Ident, Assign, Ident, InfixPlus, Ident, IndexLBracket, Ident, IndexRBracket, Semicolon, If, GroupLParen, Ident, GroupRParen, LBrace, Return, Ident, Semicolon, RBrace, Else, LBrace, While, GroupLParen, Ident, GroupRParen, LBrace, Break, Semicolon, Continue, Semicolon, RBrace, RBrace, RBrace]",
+      "(Ident, Comma): kept [postfix_end:100, mul_end:86, add_end:81, shift_end:77, compare_end:73, eq_end:67, band_end:63, xor_end:60, bor_end:57, and_end:54, or_end:51, assign_end:48, array_more:114], saw [params_more:12] from witness [Pub, Fn, Ident, CallLParen, Ident, Colon, Ident, Comma, Ident, Colon, ArrayLBracket, Ident, Semicolon, Int, ArrayRBracket, CallRParen, Arrow, Ident, LBrace, Let, Ident, Colon, Ident, Assign, Ident, InfixPlus, Ident, IndexLBracket, Ident, IndexRBracket, Semicolon, If, GroupLParen, Ident, GroupRParen, LBrace, Return, Ident, Semicolon, RBrace, Else, LBrace, While, GroupLParen, Ident, GroupRParen, LBrace, Break, Semicolon, Continue, Semicolon, RBrace, RBrace, RBrace]",
+      "(Int, ArrayRBracket): kept [postfix_end:100, mul_end:86, add_end:81, shift_end:77, compare_end:73, eq_end:67, band_end:63, xor_end:60, bor_end:57, and_end:54, or_end:51, assign_end:48, array_end:115], saw [] from witness [Pub, Fn, Ident, CallLParen, Ident, Colon, Ident, Comma, Ident, Colon, ArrayLBracket, Ident, Semicolon, Int, ArrayRBracket, CallRParen, Arrow, Ident, LBrace, Let, Ident, Colon, Ident, Assign, Ident, InfixPlus, Ident, IndexLBracket, Ident, IndexRBracket, Semicolon, If, GroupLParen, Ident, GroupRParen, LBrace, Return, Ident, Semicolon, RBrace, Else, LBrace, While, GroupLParen, Ident, GroupRParen, LBrace, Break, Semicolon, Continue, Semicolon, RBrace, RBrace, RBrace]",
+      "(RBrace, $): kept [else_none:34, items_end:2], saw [items_end:2] from witness [Pub, Fn, Ident, CallLParen, Ident, Colon, Ident, Comma, Ident, Colon, ArrayLBracket, Ident, Semicolon, Int, ArrayRBracket, CallRParen, Arrow, Ident, LBrace, Let, Ident, Colon, Ident, Assign, Ident, InfixPlus, Ident, IndexLBracket, Ident, IndexRBracket, Semicolon, If, GroupLParen, Ident, GroupRParen, LBrace, Return, Ident, Semicolon, RBrace, Else, LBrace, While, GroupLParen, Ident, GroupRParen, LBrace, Break, Semicolon, Continue, Semicolon, RBrace, RBrace, RBrace]",
+      "(CallLParen, Ident): kept [args_some:102, expr:35, assign:36, orexpr:49, andexpr:52, bit_or:55, bit_xor:58, bit_and:61, equality:64, compare:68, shift:74, add:78, mul:82, base:93, postfix:94, ident:107], saw [params_some:10, param:11] from witness [Pub, Fn, Ident, CallLParen, Ident, Colon, Ident, Comma, Ident, Colon, ArrayLBracket, Ident, Semicolon, Int, ArrayRBracket, CallRParen, Arrow, Ident, LBrace, Let, Ident, Colon, Ident, Assign, Ident, InfixPlus, Ident, IndexLBracket, Ident, IndexRBracket, Semicolon, If, GroupLParen, Ident, GroupRParen, LBrace, Return, Ident, Semicolon, RBrace, Else, LBrace, While, GroupLParen, Ident, GroupRParen, LBrace, Break, Semicolon, Continue, Semicolon, RBrace, RBrace, RBrace]",
+      "(ArrayLBracket, Ident): kept [array_some:113, expr:35, assign:36, orexpr:49, andexpr:52, bit_or:55, bit_xor:58, bit_and:61, equality:64, compare:68, shift:74, add:78, mul:82, base:93, postfix:94, ident:107], saw [type_ident:14] from witness [Pub, Fn, Ident, CallLParen, Ident, Colon, Ident, Comma, Ident, Colon, ArrayLBracket, Ident, Semicolon, Int, ArrayRBracket, CallRParen, Arrow, Ident, LBrace, Let, Ident, Colon, Ident, Assign, Ident, InfixPlus, Ident, IndexLBracket, Ident, IndexRBracket, Semicolon, If, GroupLParen, Ident, GroupRParen, LBrace, Return, Ident, Semicolon, RBrace, Else, LBrace, While, GroupLParen, Ident, GroupRParen, LBrace, Break, Semicolon, Continue, Semicolon, RBrace, RBrace, RBrace]"
+    ]
+  },
+  "ll1_predictions": [
+    {
+      "nonterminal": "add",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 78
+    },
+    {
+      "nonterminal": "add",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 78
+    },
+    {
+      "nonterminal": "add",
+      "lookahead": "Not",
+      "lookahead_id": 19,
+      "production": 78
+    },
+    {
+      "nonterminal": "add",
+      "lookahead": "GroupLParen",
+      "lookahead_id": 29,
+      "production": 78
+    },
+    {
+      "nonterminal": "add",
+      "lookahead": "ArrayLBracket",
+      "lookahead_id": 31,
+      "production": 78
+    },
+    {
+      "nonterminal": "add",
+      "lookahead": "String",
+      "lookahead_id": 32,
+      "production": 78
+    },
+    {
+      "nonterminal": "add",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 78
+    },
+    {
+      "nonterminal": "add",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 78
+    },
+    {
+      "nonterminal": "add",
+      "lookahead": "Tilde",
+      "lookahead_id": 45,
+      "production": 78
+    },
+    {
+      "nonterminal": "add",
+      "lookahead": "Inc",
+      "lookahead_id": 56,
+      "production": 78
+    },
+    {
+      "nonterminal": "add",
+      "lookahead": "Dec",
+      "lookahead_id": 57,
+      "production": 78
+    },
+    {
+      "nonterminal": "add",
+      "lookahead": "PrefixPlus",
+      "lookahead_id": 58,
+      "production": 78
+    },
+    {
+      "nonterminal": "add",
+      "lookahead": "PrefixMinus",
+      "lookahead_id": 60,
+      "production": 78
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "Assign",
+      "lookahead_id": 8,
+      "production": 81
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "Lt",
+      "lookahead_id": 12,
+      "production": 81
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "Gt",
+      "lookahead_id": 13,
+      "production": 81
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "Le",
+      "lookahead_id": 14,
+      "production": 81
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "Ge",
+      "lookahead_id": 15,
+      "production": 81
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "EqEq",
+      "lookahead_id": 16,
+      "production": 81
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "AndAnd",
+      "lookahead_id": 17,
+      "production": 81
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "OrOr",
+      "lookahead_id": 18,
+      "production": 81
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "Ampersand",
+      "lookahead_id": 25,
+      "production": 81
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "Pipe",
+      "lookahead_id": 26,
+      "production": 81
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "Comma",
+      "lookahead_id": 36,
+      "production": 81
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "Semicolon",
+      "lookahead_id": 37,
+      "production": 81
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "NotEqual",
+      "lookahead_id": 40,
+      "production": 81
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "Caret",
+      "lookahead_id": 42,
+      "production": 81
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "Shl",
+      "lookahead_id": 43,
+      "production": 81
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "Shr",
+      "lookahead_id": 44,
+      "production": 81
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "PlusAssign",
+      "lookahead_id": 46,
+      "production": 81
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "MinusAssign",
+      "lookahead_id": 47,
+      "production": 81
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "StarAssign",
+      "lookahead_id": 48,
+      "production": 81
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "SlashAssign",
+      "lookahead_id": 49,
+      "production": 81
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "PercentAssign",
+      "lookahead_id": 50,
+      "production": 81
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "CaretAssign",
+      "lookahead_id": 51,
+      "production": 81
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "ShlAssign",
+      "lookahead_id": 52,
+      "production": 81
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "ShrAssign",
+      "lookahead_id": 53,
+      "production": 81
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "AmpAssign",
+      "lookahead_id": 54,
+      "production": 81
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "PipeAssign",
+      "lookahead_id": 55,
+      "production": 81
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "InfixPlus",
+      "lookahead_id": 59,
+      "production": 79
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "InfixMinus",
+      "lookahead_id": 61,
+      "production": 80
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "GroupRParen",
+      "lookahead_id": 62,
+      "production": 81
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "CallRParen",
+      "lookahead_id": 63,
+      "production": 81
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "ArrayRBracket",
+      "lookahead_id": 64,
+      "production": 81
+    },
+    {
+      "nonterminal": "add_tail",
+      "lookahead": "IndexRBracket",
+      "lookahead_id": 65,
+      "production": 81
+    },
+    {
+      "nonterminal": "andexpr",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 52
+    },
+    {
+      "nonterminal": "andexpr",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 52
+    },
+    {
+      "nonterminal": "andexpr",
+      "lookahead": "Not",
+      "lookahead_id": 19,
+      "production": 52
+    },
+    {
+      "nonterminal": "andexpr",
+      "lookahead": "GroupLParen",
+      "lookahead_id": 29,
+      "production": 52
+    },
+    {
+      "nonterminal": "andexpr",
+      "lookahead": "ArrayLBracket",
+      "lookahead_id": 31,
+      "production": 52
+    },
+    {
+      "nonterminal": "andexpr",
+      "lookahead": "String",
+      "lookahead_id": 32,
+      "production": 52
+    },
+    {
+      "nonterminal": "andexpr",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 52
+    },
+    {
+      "nonterminal": "andexpr",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 52
+    },
+    {
+      "nonterminal": "andexpr",
+      "lookahead": "Tilde",
+      "lookahead_id": 45,
+      "production": 52
+    },
+    {
+      "nonterminal": "andexpr",
+      "lookahead": "Inc",
+      "lookahead_id": 56,
+      "production": 52
+    },
+    {
+      "nonterminal": "andexpr",
+      "lookahead": "Dec",
+      "lookahead_id": 57,
+      "production": 52
+    },
+    {
+      "nonterminal": "andexpr",
+      "lookahead": "PrefixPlus",
+      "lookahead_id": 58,
+      "production": 52
+    },
+    {
+      "nonterminal": "andexpr",
+      "lookahead": "PrefixMinus",
+      "lookahead_id": 60,
+      "production": 52
+    },
+    {
+      "nonterminal": "andexpr_tail",
+      "lookahead": "Assign",
+      "lookahead_id": 8,
+      "production": 54
+    },
+    {
+      "nonterminal": "andexpr_tail",
+      "lookahead": "AndAnd",
+      "lookahead_id": 17,
+      "production": 53
+    },
+    {
+      "nonterminal": "andexpr_tail",
+      "lookahead": "OrOr",
+      "lookahead_id": 18,
+      "production": 54
+    },
+    {
+      "nonterminal": "andexpr_tail",
+      "lookahead": "Comma",
+      "lookahead_id": 36,
+      "production": 54
+    },
+    {
+      "nonterminal": "andexpr_tail",
+      "lookahead": "Semicolon",
+      "lookahead_id": 37,
+      "production": 54
+    },
+    {
+      "nonterminal": "andexpr_tail",
+      "lookahead": "PlusAssign",
+      "lookahead_id": 46,
+      "production": 54
+    },
+    {
+      "nonterminal": "andexpr_tail",
+      "lookahead": "MinusAssign",
+      "lookahead_id": 47,
+      "production": 54
+    },
+    {
+      "nonterminal": "andexpr_tail",
+      "lookahead": "StarAssign",
+      "lookahead_id": 48,
+      "production": 54
+    },
+    {
+      "nonterminal": "andexpr_tail",
+      "lookahead": "SlashAssign",
+      "lookahead_id": 49,
+      "production": 54
+    },
+    {
+      "nonterminal": "andexpr_tail",
+      "lookahead": "PercentAssign",
+      "lookahead_id": 50,
+      "production": 54
+    },
+    {
+      "nonterminal": "andexpr_tail",
+      "lookahead": "CaretAssign",
+      "lookahead_id": 51,
+      "production": 54
+    },
+    {
+      "nonterminal": "andexpr_tail",
+      "lookahead": "ShlAssign",
+      "lookahead_id": 52,
+      "production": 54
+    },
+    {
+      "nonterminal": "andexpr_tail",
+      "lookahead": "ShrAssign",
+      "lookahead_id": 53,
+      "production": 54
+    },
+    {
+      "nonterminal": "andexpr_tail",
+      "lookahead": "AmpAssign",
+      "lookahead_id": 54,
+      "production": 54
+    },
+    {
+      "nonterminal": "andexpr_tail",
+      "lookahead": "PipeAssign",
+      "lookahead_id": 55,
+      "production": 54
+    },
+    {
+      "nonterminal": "andexpr_tail",
+      "lookahead": "GroupRParen",
+      "lookahead_id": 62,
+      "production": 54
+    },
+    {
+      "nonterminal": "andexpr_tail",
+      "lookahead": "CallRParen",
+      "lookahead_id": 63,
+      "production": 54
+    },
+    {
+      "nonterminal": "andexpr_tail",
+      "lookahead": "ArrayRBracket",
+      "lookahead_id": 64,
+      "production": 54
+    },
+    {
+      "nonterminal": "andexpr_tail",
+      "lookahead": "IndexRBracket",
+      "lookahead_id": 65,
+      "production": 54
+    },
+    {
+      "nonterminal": "arg_list_opt",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 102
+    },
+    {
+      "nonterminal": "arg_list_opt",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 102
+    },
+    {
+      "nonterminal": "arg_list_opt",
+      "lookahead": "Not",
+      "lookahead_id": 19,
+      "production": 102
+    },
+    {
+      "nonterminal": "arg_list_opt",
+      "lookahead": "GroupLParen",
+      "lookahead_id": 29,
+      "production": 102
+    },
+    {
+      "nonterminal": "arg_list_opt",
+      "lookahead": "ArrayLBracket",
+      "lookahead_id": 31,
+      "production": 102
+    },
+    {
+      "nonterminal": "arg_list_opt",
+      "lookahead": "String",
+      "lookahead_id": 32,
+      "production": 102
+    },
+    {
+      "nonterminal": "arg_list_opt",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 102
+    },
+    {
+      "nonterminal": "arg_list_opt",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 102
+    },
+    {
+      "nonterminal": "arg_list_opt",
+      "lookahead": "Tilde",
+      "lookahead_id": 45,
+      "production": 102
+    },
+    {
+      "nonterminal": "arg_list_opt",
+      "lookahead": "Inc",
+      "lookahead_id": 56,
+      "production": 102
+    },
+    {
+      "nonterminal": "arg_list_opt",
+      "lookahead": "Dec",
+      "lookahead_id": 57,
+      "production": 102
+    },
+    {
+      "nonterminal": "arg_list_opt",
+      "lookahead": "PrefixPlus",
+      "lookahead_id": 58,
+      "production": 102
+    },
+    {
+      "nonterminal": "arg_list_opt",
+      "lookahead": "PrefixMinus",
+      "lookahead_id": 60,
+      "production": 102
+    },
+    {
+      "nonterminal": "arg_list_opt",
+      "lookahead": "CallRParen",
+      "lookahead_id": 63,
+      "production": 101
+    },
+    {
+      "nonterminal": "arg_tail",
+      "lookahead": "Comma",
+      "lookahead_id": 36,
+      "production": 103
+    },
+    {
+      "nonterminal": "arg_tail",
+      "lookahead": "CallRParen",
+      "lookahead_id": 63,
+      "production": 104
+    },
+    {
+      "nonterminal": "array_elems_opt",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 113
+    },
+    {
+      "nonterminal": "array_elems_opt",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 113
+    },
+    {
+      "nonterminal": "array_elems_opt",
+      "lookahead": "Not",
+      "lookahead_id": 19,
+      "production": 113
+    },
+    {
+      "nonterminal": "array_elems_opt",
+      "lookahead": "GroupLParen",
+      "lookahead_id": 29,
+      "production": 113
+    },
+    {
+      "nonterminal": "array_elems_opt",
+      "lookahead": "ArrayLBracket",
+      "lookahead_id": 31,
+      "production": 113
+    },
+    {
+      "nonterminal": "array_elems_opt",
+      "lookahead": "String",
+      "lookahead_id": 32,
+      "production": 113
+    },
+    {
+      "nonterminal": "array_elems_opt",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 113
+    },
+    {
+      "nonterminal": "array_elems_opt",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 113
+    },
+    {
+      "nonterminal": "array_elems_opt",
+      "lookahead": "Tilde",
+      "lookahead_id": 45,
+      "production": 113
+    },
+    {
+      "nonterminal": "array_elems_opt",
+      "lookahead": "Inc",
+      "lookahead_id": 56,
+      "production": 113
+    },
+    {
+      "nonterminal": "array_elems_opt",
+      "lookahead": "Dec",
+      "lookahead_id": 57,
+      "production": 113
+    },
+    {
+      "nonterminal": "array_elems_opt",
+      "lookahead": "PrefixPlus",
+      "lookahead_id": 58,
+      "production": 113
+    },
+    {
+      "nonterminal": "array_elems_opt",
+      "lookahead": "PrefixMinus",
+      "lookahead_id": 60,
+      "production": 113
+    },
+    {
+      "nonterminal": "array_elems_opt",
+      "lookahead": "ArrayRBracket",
+      "lookahead_id": 64,
+      "production": 112
+    },
+    {
+      "nonterminal": "array_elems_tail",
+      "lookahead": "Comma",
+      "lookahead_id": 36,
+      "production": 114
+    },
+    {
+      "nonterminal": "array_elems_tail",
+      "lookahead": "ArrayRBracket",
+      "lookahead_id": 64,
+      "production": 115
+    },
+    {
+      "nonterminal": "assign",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 36
+    },
+    {
+      "nonterminal": "assign",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 36
+    },
+    {
+      "nonterminal": "assign",
+      "lookahead": "Not",
+      "lookahead_id": 19,
+      "production": 36
+    },
+    {
+      "nonterminal": "assign",
+      "lookahead": "GroupLParen",
+      "lookahead_id": 29,
+      "production": 36
+    },
+    {
+      "nonterminal": "assign",
+      "lookahead": "ArrayLBracket",
+      "lookahead_id": 31,
+      "production": 36
+    },
+    {
+      "nonterminal": "assign",
+      "lookahead": "String",
+      "lookahead_id": 32,
+      "production": 36
+    },
+    {
+      "nonterminal": "assign",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 36
+    },
+    {
+      "nonterminal": "assign",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 36
+    },
+    {
+      "nonterminal": "assign",
+      "lookahead": "Tilde",
+      "lookahead_id": 45,
+      "production": 36
+    },
+    {
+      "nonterminal": "assign",
+      "lookahead": "Inc",
+      "lookahead_id": 56,
+      "production": 36
+    },
+    {
+      "nonterminal": "assign",
+      "lookahead": "Dec",
+      "lookahead_id": 57,
+      "production": 36
+    },
+    {
+      "nonterminal": "assign",
+      "lookahead": "PrefixPlus",
+      "lookahead_id": 58,
+      "production": 36
+    },
+    {
+      "nonterminal": "assign",
+      "lookahead": "PrefixMinus",
+      "lookahead_id": 60,
+      "production": 36
+    },
+    {
+      "nonterminal": "assign_tail",
+      "lookahead": "Assign",
+      "lookahead_id": 8,
+      "production": 37
+    },
+    {
+      "nonterminal": "assign_tail",
+      "lookahead": "Comma",
+      "lookahead_id": 36,
+      "production": 48
+    },
+    {
+      "nonterminal": "assign_tail",
+      "lookahead": "Semicolon",
+      "lookahead_id": 37,
+      "production": 48
+    },
+    {
+      "nonterminal": "assign_tail",
+      "lookahead": "PlusAssign",
+      "lookahead_id": 46,
+      "production": 38
+    },
+    {
+      "nonterminal": "assign_tail",
+      "lookahead": "MinusAssign",
+      "lookahead_id": 47,
+      "production": 39
+    },
+    {
+      "nonterminal": "assign_tail",
+      "lookahead": "StarAssign",
+      "lookahead_id": 48,
+      "production": 40
+    },
+    {
+      "nonterminal": "assign_tail",
+      "lookahead": "SlashAssign",
+      "lookahead_id": 49,
+      "production": 41
+    },
+    {
+      "nonterminal": "assign_tail",
+      "lookahead": "PercentAssign",
+      "lookahead_id": 50,
+      "production": 42
+    },
+    {
+      "nonterminal": "assign_tail",
+      "lookahead": "CaretAssign",
+      "lookahead_id": 51,
+      "production": 43
+    },
+    {
+      "nonterminal": "assign_tail",
+      "lookahead": "ShlAssign",
+      "lookahead_id": 52,
+      "production": 44
+    },
+    {
+      "nonterminal": "assign_tail",
+      "lookahead": "ShrAssign",
+      "lookahead_id": 53,
+      "production": 45
+    },
+    {
+      "nonterminal": "assign_tail",
+      "lookahead": "AmpAssign",
+      "lookahead_id": 54,
+      "production": 46
+    },
+    {
+      "nonterminal": "assign_tail",
+      "lookahead": "PipeAssign",
+      "lookahead_id": 55,
+      "production": 47
+    },
+    {
+      "nonterminal": "assign_tail",
+      "lookahead": "GroupRParen",
+      "lookahead_id": 62,
+      "production": 48
+    },
+    {
+      "nonterminal": "assign_tail",
+      "lookahead": "CallRParen",
+      "lookahead_id": 63,
+      "production": 48
+    },
+    {
+      "nonterminal": "assign_tail",
+      "lookahead": "ArrayRBracket",
+      "lookahead_id": 64,
+      "production": 48
+    },
+    {
+      "nonterminal": "assign_tail",
+      "lookahead": "IndexRBracket",
+      "lookahead_id": 65,
+      "production": 48
+    },
+    {
+      "nonterminal": "bit_and",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 61
+    },
+    {
+      "nonterminal": "bit_and",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 61
+    },
+    {
+      "nonterminal": "bit_and",
+      "lookahead": "Not",
+      "lookahead_id": 19,
+      "production": 61
+    },
+    {
+      "nonterminal": "bit_and",
+      "lookahead": "GroupLParen",
+      "lookahead_id": 29,
+      "production": 61
+    },
+    {
+      "nonterminal": "bit_and",
+      "lookahead": "ArrayLBracket",
+      "lookahead_id": 31,
+      "production": 61
+    },
+    {
+      "nonterminal": "bit_and",
+      "lookahead": "String",
+      "lookahead_id": 32,
+      "production": 61
+    },
+    {
+      "nonterminal": "bit_and",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 61
+    },
+    {
+      "nonterminal": "bit_and",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 61
+    },
+    {
+      "nonterminal": "bit_and",
+      "lookahead": "Tilde",
+      "lookahead_id": 45,
+      "production": 61
+    },
+    {
+      "nonterminal": "bit_and",
+      "lookahead": "Inc",
+      "lookahead_id": 56,
+      "production": 61
+    },
+    {
+      "nonterminal": "bit_and",
+      "lookahead": "Dec",
+      "lookahead_id": 57,
+      "production": 61
+    },
+    {
+      "nonterminal": "bit_and",
+      "lookahead": "PrefixPlus",
+      "lookahead_id": 58,
+      "production": 61
+    },
+    {
+      "nonterminal": "bit_and",
+      "lookahead": "PrefixMinus",
+      "lookahead_id": 60,
+      "production": 61
+    },
+    {
+      "nonterminal": "bit_and_tail",
+      "lookahead": "Assign",
+      "lookahead_id": 8,
+      "production": 63
+    },
+    {
+      "nonterminal": "bit_and_tail",
+      "lookahead": "AndAnd",
+      "lookahead_id": 17,
+      "production": 63
+    },
+    {
+      "nonterminal": "bit_and_tail",
+      "lookahead": "OrOr",
+      "lookahead_id": 18,
+      "production": 63
+    },
+    {
+      "nonterminal": "bit_and_tail",
+      "lookahead": "Ampersand",
+      "lookahead_id": 25,
+      "production": 62
+    },
+    {
+      "nonterminal": "bit_and_tail",
+      "lookahead": "Pipe",
+      "lookahead_id": 26,
+      "production": 63
+    },
+    {
+      "nonterminal": "bit_and_tail",
+      "lookahead": "Comma",
+      "lookahead_id": 36,
+      "production": 63
+    },
+    {
+      "nonterminal": "bit_and_tail",
+      "lookahead": "Semicolon",
+      "lookahead_id": 37,
+      "production": 63
+    },
+    {
+      "nonterminal": "bit_and_tail",
+      "lookahead": "Caret",
+      "lookahead_id": 42,
+      "production": 63
+    },
+    {
+      "nonterminal": "bit_and_tail",
+      "lookahead": "PlusAssign",
+      "lookahead_id": 46,
+      "production": 63
+    },
+    {
+      "nonterminal": "bit_and_tail",
+      "lookahead": "MinusAssign",
+      "lookahead_id": 47,
+      "production": 63
+    },
+    {
+      "nonterminal": "bit_and_tail",
+      "lookahead": "StarAssign",
+      "lookahead_id": 48,
+      "production": 63
+    },
+    {
+      "nonterminal": "bit_and_tail",
+      "lookahead": "SlashAssign",
+      "lookahead_id": 49,
+      "production": 63
+    },
+    {
+      "nonterminal": "bit_and_tail",
+      "lookahead": "PercentAssign",
+      "lookahead_id": 50,
+      "production": 63
+    },
+    {
+      "nonterminal": "bit_and_tail",
+      "lookahead": "CaretAssign",
+      "lookahead_id": 51,
+      "production": 63
+    },
+    {
+      "nonterminal": "bit_and_tail",
+      "lookahead": "ShlAssign",
+      "lookahead_id": 52,
+      "production": 63
+    },
+    {
+      "nonterminal": "bit_and_tail",
+      "lookahead": "ShrAssign",
+      "lookahead_id": 53,
+      "production": 63
+    },
+    {
+      "nonterminal": "bit_and_tail",
+      "lookahead": "AmpAssign",
+      "lookahead_id": 54,
+      "production": 63
+    },
+    {
+      "nonterminal": "bit_and_tail",
+      "lookahead": "PipeAssign",
+      "lookahead_id": 55,
+      "production": 63
+    },
+    {
+      "nonterminal": "bit_and_tail",
+      "lookahead": "GroupRParen",
+      "lookahead_id": 62,
+      "production": 63
+    },
+    {
+      "nonterminal": "bit_and_tail",
+      "lookahead": "CallRParen",
+      "lookahead_id": 63,
+      "production": 63
+    },
+    {
+      "nonterminal": "bit_and_tail",
+      "lookahead": "ArrayRBracket",
+      "lookahead_id": 64,
+      "production": 63
+    },
+    {
+      "nonterminal": "bit_and_tail",
+      "lookahead": "IndexRBracket",
+      "lookahead_id": 65,
+      "production": 63
+    },
+    {
+      "nonterminal": "bit_or",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 55
+    },
+    {
+      "nonterminal": "bit_or",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 55
+    },
+    {
+      "nonterminal": "bit_or",
+      "lookahead": "Not",
+      "lookahead_id": 19,
+      "production": 55
+    },
+    {
+      "nonterminal": "bit_or",
+      "lookahead": "GroupLParen",
+      "lookahead_id": 29,
+      "production": 55
+    },
+    {
+      "nonterminal": "bit_or",
+      "lookahead": "ArrayLBracket",
+      "lookahead_id": 31,
+      "production": 55
+    },
+    {
+      "nonterminal": "bit_or",
+      "lookahead": "String",
+      "lookahead_id": 32,
+      "production": 55
+    },
+    {
+      "nonterminal": "bit_or",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 55
+    },
+    {
+      "nonterminal": "bit_or",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 55
+    },
+    {
+      "nonterminal": "bit_or",
+      "lookahead": "Tilde",
+      "lookahead_id": 45,
+      "production": 55
+    },
+    {
+      "nonterminal": "bit_or",
+      "lookahead": "Inc",
+      "lookahead_id": 56,
+      "production": 55
+    },
+    {
+      "nonterminal": "bit_or",
+      "lookahead": "Dec",
+      "lookahead_id": 57,
+      "production": 55
+    },
+    {
+      "nonterminal": "bit_or",
+      "lookahead": "PrefixPlus",
+      "lookahead_id": 58,
+      "production": 55
+    },
+    {
+      "nonterminal": "bit_or",
+      "lookahead": "PrefixMinus",
+      "lookahead_id": 60,
+      "production": 55
+    },
+    {
+      "nonterminal": "bit_or_tail",
+      "lookahead": "Assign",
+      "lookahead_id": 8,
+      "production": 57
+    },
+    {
+      "nonterminal": "bit_or_tail",
+      "lookahead": "AndAnd",
+      "lookahead_id": 17,
+      "production": 57
+    },
+    {
+      "nonterminal": "bit_or_tail",
+      "lookahead": "OrOr",
+      "lookahead_id": 18,
+      "production": 57
+    },
+    {
+      "nonterminal": "bit_or_tail",
+      "lookahead": "Pipe",
+      "lookahead_id": 26,
+      "production": 56
+    },
+    {
+      "nonterminal": "bit_or_tail",
+      "lookahead": "Comma",
+      "lookahead_id": 36,
+      "production": 57
+    },
+    {
+      "nonterminal": "bit_or_tail",
+      "lookahead": "Semicolon",
+      "lookahead_id": 37,
+      "production": 57
+    },
+    {
+      "nonterminal": "bit_or_tail",
+      "lookahead": "PlusAssign",
+      "lookahead_id": 46,
+      "production": 57
+    },
+    {
+      "nonterminal": "bit_or_tail",
+      "lookahead": "MinusAssign",
+      "lookahead_id": 47,
+      "production": 57
+    },
+    {
+      "nonterminal": "bit_or_tail",
+      "lookahead": "StarAssign",
+      "lookahead_id": 48,
+      "production": 57
+    },
+    {
+      "nonterminal": "bit_or_tail",
+      "lookahead": "SlashAssign",
+      "lookahead_id": 49,
+      "production": 57
+    },
+    {
+      "nonterminal": "bit_or_tail",
+      "lookahead": "PercentAssign",
+      "lookahead_id": 50,
+      "production": 57
+    },
+    {
+      "nonterminal": "bit_or_tail",
+      "lookahead": "CaretAssign",
+      "lookahead_id": 51,
+      "production": 57
+    },
+    {
+      "nonterminal": "bit_or_tail",
+      "lookahead": "ShlAssign",
+      "lookahead_id": 52,
+      "production": 57
+    },
+    {
+      "nonterminal": "bit_or_tail",
+      "lookahead": "ShrAssign",
+      "lookahead_id": 53,
+      "production": 57
+    },
+    {
+      "nonterminal": "bit_or_tail",
+      "lookahead": "AmpAssign",
+      "lookahead_id": 54,
+      "production": 57
+    },
+    {
+      "nonterminal": "bit_or_tail",
+      "lookahead": "PipeAssign",
+      "lookahead_id": 55,
+      "production": 57
+    },
+    {
+      "nonterminal": "bit_or_tail",
+      "lookahead": "GroupRParen",
+      "lookahead_id": 62,
+      "production": 57
+    },
+    {
+      "nonterminal": "bit_or_tail",
+      "lookahead": "CallRParen",
+      "lookahead_id": 63,
+      "production": 57
+    },
+    {
+      "nonterminal": "bit_or_tail",
+      "lookahead": "ArrayRBracket",
+      "lookahead_id": 64,
+      "production": 57
+    },
+    {
+      "nonterminal": "bit_or_tail",
+      "lookahead": "IndexRBracket",
+      "lookahead_id": 65,
+      "production": 57
+    },
+    {
+      "nonterminal": "bit_xor",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 58
+    },
+    {
+      "nonterminal": "bit_xor",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 58
+    },
+    {
+      "nonterminal": "bit_xor",
+      "lookahead": "Not",
+      "lookahead_id": 19,
+      "production": 58
+    },
+    {
+      "nonterminal": "bit_xor",
+      "lookahead": "GroupLParen",
+      "lookahead_id": 29,
+      "production": 58
+    },
+    {
+      "nonterminal": "bit_xor",
+      "lookahead": "ArrayLBracket",
+      "lookahead_id": 31,
+      "production": 58
+    },
+    {
+      "nonterminal": "bit_xor",
+      "lookahead": "String",
+      "lookahead_id": 32,
+      "production": 58
+    },
+    {
+      "nonterminal": "bit_xor",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 58
+    },
+    {
+      "nonterminal": "bit_xor",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 58
+    },
+    {
+      "nonterminal": "bit_xor",
+      "lookahead": "Tilde",
+      "lookahead_id": 45,
+      "production": 58
+    },
+    {
+      "nonterminal": "bit_xor",
+      "lookahead": "Inc",
+      "lookahead_id": 56,
+      "production": 58
+    },
+    {
+      "nonterminal": "bit_xor",
+      "lookahead": "Dec",
+      "lookahead_id": 57,
+      "production": 58
+    },
+    {
+      "nonterminal": "bit_xor",
+      "lookahead": "PrefixPlus",
+      "lookahead_id": 58,
+      "production": 58
+    },
+    {
+      "nonterminal": "bit_xor",
+      "lookahead": "PrefixMinus",
+      "lookahead_id": 60,
+      "production": 58
+    },
+    {
+      "nonterminal": "bit_xor_tail",
+      "lookahead": "Assign",
+      "lookahead_id": 8,
+      "production": 60
+    },
+    {
+      "nonterminal": "bit_xor_tail",
+      "lookahead": "AndAnd",
+      "lookahead_id": 17,
+      "production": 60
+    },
+    {
+      "nonterminal": "bit_xor_tail",
+      "lookahead": "OrOr",
+      "lookahead_id": 18,
+      "production": 60
+    },
+    {
+      "nonterminal": "bit_xor_tail",
+      "lookahead": "Pipe",
+      "lookahead_id": 26,
+      "production": 60
+    },
+    {
+      "nonterminal": "bit_xor_tail",
+      "lookahead": "Comma",
+      "lookahead_id": 36,
+      "production": 60
+    },
+    {
+      "nonterminal": "bit_xor_tail",
+      "lookahead": "Semicolon",
+      "lookahead_id": 37,
+      "production": 60
+    },
+    {
+      "nonterminal": "bit_xor_tail",
+      "lookahead": "Caret",
+      "lookahead_id": 42,
+      "production": 59
+    },
+    {
+      "nonterminal": "bit_xor_tail",
+      "lookahead": "PlusAssign",
+      "lookahead_id": 46,
+      "production": 60
+    },
+    {
+      "nonterminal": "bit_xor_tail",
+      "lookahead": "MinusAssign",
+      "lookahead_id": 47,
+      "production": 60
+    },
+    {
+      "nonterminal": "bit_xor_tail",
+      "lookahead": "StarAssign",
+      "lookahead_id": 48,
+      "production": 60
+    },
+    {
+      "nonterminal": "bit_xor_tail",
+      "lookahead": "SlashAssign",
+      "lookahead_id": 49,
+      "production": 60
+    },
+    {
+      "nonterminal": "bit_xor_tail",
+      "lookahead": "PercentAssign",
+      "lookahead_id": 50,
+      "production": 60
+    },
+    {
+      "nonterminal": "bit_xor_tail",
+      "lookahead": "CaretAssign",
+      "lookahead_id": 51,
+      "production": 60
+    },
+    {
+      "nonterminal": "bit_xor_tail",
+      "lookahead": "ShlAssign",
+      "lookahead_id": 52,
+      "production": 60
+    },
+    {
+      "nonterminal": "bit_xor_tail",
+      "lookahead": "ShrAssign",
+      "lookahead_id": 53,
+      "production": 60
+    },
+    {
+      "nonterminal": "bit_xor_tail",
+      "lookahead": "AmpAssign",
+      "lookahead_id": 54,
+      "production": 60
+    },
+    {
+      "nonterminal": "bit_xor_tail",
+      "lookahead": "PipeAssign",
+      "lookahead_id": 55,
+      "production": 60
+    },
+    {
+      "nonterminal": "bit_xor_tail",
+      "lookahead": "GroupRParen",
+      "lookahead_id": 62,
+      "production": 60
+    },
+    {
+      "nonterminal": "bit_xor_tail",
+      "lookahead": "CallRParen",
+      "lookahead_id": 63,
+      "production": 60
+    },
+    {
+      "nonterminal": "bit_xor_tail",
+      "lookahead": "ArrayRBracket",
+      "lookahead_id": 64,
+      "production": 60
+    },
+    {
+      "nonterminal": "bit_xor_tail",
+      "lookahead": "IndexRBracket",
+      "lookahead_id": 65,
+      "production": 60
+    },
+    {
+      "nonterminal": "block",
+      "lookahead": "LBrace",
+      "lookahead_id": 22,
+      "production": 16
+    },
+    {
+      "nonterminal": "compare",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 68
+    },
+    {
+      "nonterminal": "compare",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 68
+    },
+    {
+      "nonterminal": "compare",
+      "lookahead": "Not",
+      "lookahead_id": 19,
+      "production": 68
+    },
+    {
+      "nonterminal": "compare",
+      "lookahead": "GroupLParen",
+      "lookahead_id": 29,
+      "production": 68
+    },
+    {
+      "nonterminal": "compare",
+      "lookahead": "ArrayLBracket",
+      "lookahead_id": 31,
+      "production": 68
+    },
+    {
+      "nonterminal": "compare",
+      "lookahead": "String",
+      "lookahead_id": 32,
+      "production": 68
+    },
+    {
+      "nonterminal": "compare",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 68
+    },
+    {
+      "nonterminal": "compare",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 68
+    },
+    {
+      "nonterminal": "compare",
+      "lookahead": "Tilde",
+      "lookahead_id": 45,
+      "production": 68
+    },
+    {
+      "nonterminal": "compare",
+      "lookahead": "Inc",
+      "lookahead_id": 56,
+      "production": 68
+    },
+    {
+      "nonterminal": "compare",
+      "lookahead": "Dec",
+      "lookahead_id": 57,
+      "production": 68
+    },
+    {
+      "nonterminal": "compare",
+      "lookahead": "PrefixPlus",
+      "lookahead_id": 58,
+      "production": 68
+    },
+    {
+      "nonterminal": "compare",
+      "lookahead": "PrefixMinus",
+      "lookahead_id": 60,
+      "production": 68
+    },
+    {
+      "nonterminal": "compare_tail",
+      "lookahead": "Assign",
+      "lookahead_id": 8,
+      "production": 73
+    },
+    {
+      "nonterminal": "compare_tail",
+      "lookahead": "Lt",
+      "lookahead_id": 12,
+      "production": 69
+    },
+    {
+      "nonterminal": "compare_tail",
+      "lookahead": "Gt",
+      "lookahead_id": 13,
+      "production": 70
+    },
+    {
+      "nonterminal": "compare_tail",
+      "lookahead": "Le",
+      "lookahead_id": 14,
+      "production": 71
+    },
+    {
+      "nonterminal": "compare_tail",
+      "lookahead": "Ge",
+      "lookahead_id": 15,
+      "production": 72
+    },
+    {
+      "nonterminal": "compare_tail",
+      "lookahead": "EqEq",
+      "lookahead_id": 16,
+      "production": 73
+    },
+    {
+      "nonterminal": "compare_tail",
+      "lookahead": "AndAnd",
+      "lookahead_id": 17,
+      "production": 73
+    },
+    {
+      "nonterminal": "compare_tail",
+      "lookahead": "OrOr",
+      "lookahead_id": 18,
+      "production": 73
+    },
+    {
+      "nonterminal": "compare_tail",
+      "lookahead": "Ampersand",
+      "lookahead_id": 25,
+      "production": 73
+    },
+    {
+      "nonterminal": "compare_tail",
+      "lookahead": "Pipe",
+      "lookahead_id": 26,
+      "production": 73
+    },
+    {
+      "nonterminal": "compare_tail",
+      "lookahead": "Comma",
+      "lookahead_id": 36,
+      "production": 73
+    },
+    {
+      "nonterminal": "compare_tail",
+      "lookahead": "Semicolon",
+      "lookahead_id": 37,
+      "production": 73
+    },
+    {
+      "nonterminal": "compare_tail",
+      "lookahead": "NotEqual",
+      "lookahead_id": 40,
+      "production": 73
+    },
+    {
+      "nonterminal": "compare_tail",
+      "lookahead": "Caret",
+      "lookahead_id": 42,
+      "production": 73
+    },
+    {
+      "nonterminal": "compare_tail",
+      "lookahead": "PlusAssign",
+      "lookahead_id": 46,
+      "production": 73
+    },
+    {
+      "nonterminal": "compare_tail",
+      "lookahead": "MinusAssign",
+      "lookahead_id": 47,
+      "production": 73
+    },
+    {
+      "nonterminal": "compare_tail",
+      "lookahead": "StarAssign",
+      "lookahead_id": 48,
+      "production": 73
+    },
+    {
+      "nonterminal": "compare_tail",
+      "lookahead": "SlashAssign",
+      "lookahead_id": 49,
+      "production": 73
+    },
+    {
+      "nonterminal": "compare_tail",
+      "lookahead": "PercentAssign",
+      "lookahead_id": 50,
+      "production": 73
+    },
+    {
+      "nonterminal": "compare_tail",
+      "lookahead": "CaretAssign",
+      "lookahead_id": 51,
+      "production": 73
+    },
+    {
+      "nonterminal": "compare_tail",
+      "lookahead": "ShlAssign",
+      "lookahead_id": 52,
+      "production": 73
+    },
+    {
+      "nonterminal": "compare_tail",
+      "lookahead": "ShrAssign",
+      "lookahead_id": 53,
+      "production": 73
+    },
+    {
+      "nonterminal": "compare_tail",
+      "lookahead": "AmpAssign",
+      "lookahead_id": 54,
+      "production": 73
+    },
+    {
+      "nonterminal": "compare_tail",
+      "lookahead": "PipeAssign",
+      "lookahead_id": 55,
+      "production": 73
+    },
+    {
+      "nonterminal": "compare_tail",
+      "lookahead": "GroupRParen",
+      "lookahead_id": 62,
+      "production": 73
+    },
+    {
+      "nonterminal": "compare_tail",
+      "lookahead": "CallRParen",
+      "lookahead_id": 63,
+      "production": 73
+    },
+    {
+      "nonterminal": "compare_tail",
+      "lookahead": "ArrayRBracket",
+      "lookahead_id": 64,
+      "production": 73
+    },
+    {
+      "nonterminal": "compare_tail",
+      "lookahead": "IndexRBracket",
+      "lookahead_id": 65,
+      "production": 73
+    },
+    {
+      "nonterminal": "else_opt",
+      "lookahead": "$",
+      "lookahead_id": 0,
+      "production": 34
+    },
+    {
+      "nonterminal": "else_opt",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 34
+    },
+    {
+      "nonterminal": "else_opt",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 34
+    },
+    {
+      "nonterminal": "else_opt",
+      "lookahead": "Not",
+      "lookahead_id": 19,
+      "production": 34
+    },
+    {
+      "nonterminal": "else_opt",
+      "lookahead": "LBrace",
+      "lookahead_id": 22,
+      "production": 34
+    },
+    {
+      "nonterminal": "else_opt",
+      "lookahead": "RBrace",
+      "lookahead_id": 23,
+      "production": 34
+    },
+    {
+      "nonterminal": "else_opt",
+      "lookahead": "GroupLParen",
+      "lookahead_id": 29,
+      "production": 34
+    },
+    {
+      "nonterminal": "else_opt",
+      "lookahead": "ArrayLBracket",
+      "lookahead_id": 31,
+      "production": 34
+    },
+    {
+      "nonterminal": "else_opt",
+      "lookahead": "String",
+      "lookahead_id": 32,
+      "production": 34
+    },
+    {
+      "nonterminal": "else_opt",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 34
+    },
+    {
+      "nonterminal": "else_opt",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 34
+    },
+    {
+      "nonterminal": "else_opt",
+      "lookahead": "Tilde",
+      "lookahead_id": 45,
+      "production": 34
+    },
+    {
+      "nonterminal": "else_opt",
+      "lookahead": "Inc",
+      "lookahead_id": 56,
+      "production": 34
+    },
+    {
+      "nonterminal": "else_opt",
+      "lookahead": "Dec",
+      "lookahead_id": 57,
+      "production": 34
+    },
+    {
+      "nonterminal": "else_opt",
+      "lookahead": "PrefixPlus",
+      "lookahead_id": 58,
+      "production": 34
+    },
+    {
+      "nonterminal": "else_opt",
+      "lookahead": "PrefixMinus",
+      "lookahead_id": 60,
+      "production": 34
+    },
+    {
+      "nonterminal": "else_opt",
+      "lookahead": "Pub",
+      "lookahead_id": 66,
+      "production": 34
+    },
+    {
+      "nonterminal": "else_opt",
+      "lookahead": "Fn",
+      "lookahead_id": 67,
+      "production": 34
+    },
+    {
+      "nonterminal": "else_opt",
+      "lookahead": "Let",
+      "lookahead_id": 68,
+      "production": 34
+    },
+    {
+      "nonterminal": "else_opt",
+      "lookahead": "Return",
+      "lookahead_id": 69,
+      "production": 34
+    },
+    {
+      "nonterminal": "else_opt",
+      "lookahead": "If",
+      "lookahead_id": 70,
+      "production": 34
+    },
+    {
+      "nonterminal": "else_opt",
+      "lookahead": "Else",
+      "lookahead_id": 71,
+      "production": 33
+    },
+    {
+      "nonterminal": "else_opt",
+      "lookahead": "While",
+      "lookahead_id": 72,
+      "production": 34
+    },
+    {
+      "nonterminal": "else_opt",
+      "lookahead": "Break",
+      "lookahead_id": 73,
+      "production": 34
+    },
+    {
+      "nonterminal": "else_opt",
+      "lookahead": "Continue",
+      "lookahead_id": 74,
+      "production": 34
+    },
+    {
+      "nonterminal": "equality",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 64
+    },
+    {
+      "nonterminal": "equality",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 64
+    },
+    {
+      "nonterminal": "equality",
+      "lookahead": "Not",
+      "lookahead_id": 19,
+      "production": 64
+    },
+    {
+      "nonterminal": "equality",
+      "lookahead": "GroupLParen",
+      "lookahead_id": 29,
+      "production": 64
+    },
+    {
+      "nonterminal": "equality",
+      "lookahead": "ArrayLBracket",
+      "lookahead_id": 31,
+      "production": 64
+    },
+    {
+      "nonterminal": "equality",
+      "lookahead": "String",
+      "lookahead_id": 32,
+      "production": 64
+    },
+    {
+      "nonterminal": "equality",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 64
+    },
+    {
+      "nonterminal": "equality",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 64
+    },
+    {
+      "nonterminal": "equality",
+      "lookahead": "Tilde",
+      "lookahead_id": 45,
+      "production": 64
+    },
+    {
+      "nonterminal": "equality",
+      "lookahead": "Inc",
+      "lookahead_id": 56,
+      "production": 64
+    },
+    {
+      "nonterminal": "equality",
+      "lookahead": "Dec",
+      "lookahead_id": 57,
+      "production": 64
+    },
+    {
+      "nonterminal": "equality",
+      "lookahead": "PrefixPlus",
+      "lookahead_id": 58,
+      "production": 64
+    },
+    {
+      "nonterminal": "equality",
+      "lookahead": "PrefixMinus",
+      "lookahead_id": 60,
+      "production": 64
+    },
+    {
+      "nonterminal": "equality_tail",
+      "lookahead": "Assign",
+      "lookahead_id": 8,
+      "production": 67
+    },
+    {
+      "nonterminal": "equality_tail",
+      "lookahead": "EqEq",
+      "lookahead_id": 16,
+      "production": 65
+    },
+    {
+      "nonterminal": "equality_tail",
+      "lookahead": "AndAnd",
+      "lookahead_id": 17,
+      "production": 67
+    },
+    {
+      "nonterminal": "equality_tail",
+      "lookahead": "OrOr",
+      "lookahead_id": 18,
+      "production": 67
+    },
+    {
+      "nonterminal": "equality_tail",
+      "lookahead": "Ampersand",
+      "lookahead_id": 25,
+      "production": 67
+    },
+    {
+      "nonterminal": "equality_tail",
+      "lookahead": "Pipe",
+      "lookahead_id": 26,
+      "production": 67
+    },
+    {
+      "nonterminal": "equality_tail",
+      "lookahead": "Comma",
+      "lookahead_id": 36,
+      "production": 67
+    },
+    {
+      "nonterminal": "equality_tail",
+      "lookahead": "Semicolon",
+      "lookahead_id": 37,
+      "production": 67
+    },
+    {
+      "nonterminal": "equality_tail",
+      "lookahead": "NotEqual",
+      "lookahead_id": 40,
+      "production": 66
+    },
+    {
+      "nonterminal": "equality_tail",
+      "lookahead": "Caret",
+      "lookahead_id": 42,
+      "production": 67
+    },
+    {
+      "nonterminal": "equality_tail",
+      "lookahead": "PlusAssign",
+      "lookahead_id": 46,
+      "production": 67
+    },
+    {
+      "nonterminal": "equality_tail",
+      "lookahead": "MinusAssign",
+      "lookahead_id": 47,
+      "production": 67
+    },
+    {
+      "nonterminal": "equality_tail",
+      "lookahead": "StarAssign",
+      "lookahead_id": 48,
+      "production": 67
+    },
+    {
+      "nonterminal": "equality_tail",
+      "lookahead": "SlashAssign",
+      "lookahead_id": 49,
+      "production": 67
+    },
+    {
+      "nonterminal": "equality_tail",
+      "lookahead": "PercentAssign",
+      "lookahead_id": 50,
+      "production": 67
+    },
+    {
+      "nonterminal": "equality_tail",
+      "lookahead": "CaretAssign",
+      "lookahead_id": 51,
+      "production": 67
+    },
+    {
+      "nonterminal": "equality_tail",
+      "lookahead": "ShlAssign",
+      "lookahead_id": 52,
+      "production": 67
+    },
+    {
+      "nonterminal": "equality_tail",
+      "lookahead": "ShrAssign",
+      "lookahead_id": 53,
+      "production": 67
+    },
+    {
+      "nonterminal": "equality_tail",
+      "lookahead": "AmpAssign",
+      "lookahead_id": 54,
+      "production": 67
+    },
+    {
+      "nonterminal": "equality_tail",
+      "lookahead": "PipeAssign",
+      "lookahead_id": 55,
+      "production": 67
+    },
+    {
+      "nonterminal": "equality_tail",
+      "lookahead": "GroupRParen",
+      "lookahead_id": 62,
+      "production": 67
+    },
+    {
+      "nonterminal": "equality_tail",
+      "lookahead": "CallRParen",
+      "lookahead_id": 63,
+      "production": 67
+    },
+    {
+      "nonterminal": "equality_tail",
+      "lookahead": "ArrayRBracket",
+      "lookahead_id": 64,
+      "production": 67
+    },
+    {
+      "nonterminal": "equality_tail",
+      "lookahead": "IndexRBracket",
+      "lookahead_id": 65,
+      "production": 67
+    },
+    {
+      "nonterminal": "expr",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 35
+    },
+    {
+      "nonterminal": "expr",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 35
+    },
+    {
+      "nonterminal": "expr",
+      "lookahead": "Not",
+      "lookahead_id": 19,
+      "production": 35
+    },
+    {
+      "nonterminal": "expr",
+      "lookahead": "GroupLParen",
+      "lookahead_id": 29,
+      "production": 35
+    },
+    {
+      "nonterminal": "expr",
+      "lookahead": "ArrayLBracket",
+      "lookahead_id": 31,
+      "production": 35
+    },
+    {
+      "nonterminal": "expr",
+      "lookahead": "String",
+      "lookahead_id": 32,
+      "production": 35
+    },
+    {
+      "nonterminal": "expr",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 35
+    },
+    {
+      "nonterminal": "expr",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 35
+    },
+    {
+      "nonterminal": "expr",
+      "lookahead": "Tilde",
+      "lookahead_id": 45,
+      "production": 35
+    },
+    {
+      "nonterminal": "expr",
+      "lookahead": "Inc",
+      "lookahead_id": 56,
+      "production": 35
+    },
+    {
+      "nonterminal": "expr",
+      "lookahead": "Dec",
+      "lookahead_id": 57,
+      "production": 35
+    },
+    {
+      "nonterminal": "expr",
+      "lookahead": "PrefixPlus",
+      "lookahead_id": 58,
+      "production": 35
+    },
+    {
+      "nonterminal": "expr",
+      "lookahead": "PrefixMinus",
+      "lookahead_id": 60,
+      "production": 35
+    },
+    {
+      "nonterminal": "file",
+      "lookahead": "$",
+      "lookahead_id": 0,
+      "production": 0
+    },
+    {
+      "nonterminal": "file",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 0
+    },
+    {
+      "nonterminal": "file",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 0
+    },
+    {
+      "nonterminal": "file",
+      "lookahead": "Not",
+      "lookahead_id": 19,
+      "production": 0
+    },
+    {
+      "nonterminal": "file",
+      "lookahead": "LBrace",
+      "lookahead_id": 22,
+      "production": 0
+    },
+    {
+      "nonterminal": "file",
+      "lookahead": "GroupLParen",
+      "lookahead_id": 29,
+      "production": 0
+    },
+    {
+      "nonterminal": "file",
+      "lookahead": "ArrayLBracket",
+      "lookahead_id": 31,
+      "production": 0
+    },
+    {
+      "nonterminal": "file",
+      "lookahead": "String",
+      "lookahead_id": 32,
+      "production": 0
+    },
+    {
+      "nonterminal": "file",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 0
+    },
+    {
+      "nonterminal": "file",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 0
+    },
+    {
+      "nonterminal": "file",
+      "lookahead": "Tilde",
+      "lookahead_id": 45,
+      "production": 0
+    },
+    {
+      "nonterminal": "file",
+      "lookahead": "Inc",
+      "lookahead_id": 56,
+      "production": 0
+    },
+    {
+      "nonterminal": "file",
+      "lookahead": "Dec",
+      "lookahead_id": 57,
+      "production": 0
+    },
+    {
+      "nonterminal": "file",
+      "lookahead": "PrefixPlus",
+      "lookahead_id": 58,
+      "production": 0
+    },
+    {
+      "nonterminal": "file",
+      "lookahead": "PrefixMinus",
+      "lookahead_id": 60,
+      "production": 0
+    },
+    {
+      "nonterminal": "file",
+      "lookahead": "Pub",
+      "lookahead_id": 66,
+      "production": 0
+    },
+    {
+      "nonterminal": "file",
+      "lookahead": "Fn",
+      "lookahead_id": 67,
+      "production": 0
+    },
+    {
+      "nonterminal": "file",
+      "lookahead": "Let",
+      "lookahead_id": 68,
+      "production": 0
+    },
+    {
+      "nonterminal": "file",
+      "lookahead": "Return",
+      "lookahead_id": 69,
+      "production": 0
+    },
+    {
+      "nonterminal": "file",
+      "lookahead": "If",
+      "lookahead_id": 70,
+      "production": 0
+    },
+    {
+      "nonterminal": "file",
+      "lookahead": "While",
+      "lookahead_id": 72,
+      "production": 0
+    },
+    {
+      "nonterminal": "file",
+      "lookahead": "Break",
+      "lookahead_id": 73,
+      "production": 0
+    },
+    {
+      "nonterminal": "file",
+      "lookahead": "Continue",
+      "lookahead_id": 74,
+      "production": 0
+    },
+    {
+      "nonterminal": "fn_item",
+      "lookahead": "Fn",
+      "lookahead_id": 67,
+      "production": 6
+    },
+    {
+      "nonterminal": "item",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 5
+    },
+    {
+      "nonterminal": "item",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 5
+    },
+    {
+      "nonterminal": "item",
+      "lookahead": "Not",
+      "lookahead_id": 19,
+      "production": 5
+    },
+    {
+      "nonterminal": "item",
+      "lookahead": "LBrace",
+      "lookahead_id": 22,
+      "production": 5
+    },
+    {
+      "nonterminal": "item",
+      "lookahead": "GroupLParen",
+      "lookahead_id": 29,
+      "production": 5
+    },
+    {
+      "nonterminal": "item",
+      "lookahead": "ArrayLBracket",
+      "lookahead_id": 31,
+      "production": 5
+    },
+    {
+      "nonterminal": "item",
+      "lookahead": "String",
+      "lookahead_id": 32,
+      "production": 5
+    },
+    {
+      "nonterminal": "item",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 5
+    },
+    {
+      "nonterminal": "item",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 5
+    },
+    {
+      "nonterminal": "item",
+      "lookahead": "Tilde",
+      "lookahead_id": 45,
+      "production": 5
+    },
+    {
+      "nonterminal": "item",
+      "lookahead": "Inc",
+      "lookahead_id": 56,
+      "production": 5
+    },
+    {
+      "nonterminal": "item",
+      "lookahead": "Dec",
+      "lookahead_id": 57,
+      "production": 5
+    },
+    {
+      "nonterminal": "item",
+      "lookahead": "PrefixPlus",
+      "lookahead_id": 58,
+      "production": 5
+    },
+    {
+      "nonterminal": "item",
+      "lookahead": "PrefixMinus",
+      "lookahead_id": 60,
+      "production": 5
+    },
+    {
+      "nonterminal": "item",
+      "lookahead": "Pub",
+      "lookahead_id": 66,
+      "production": 3
+    },
+    {
+      "nonterminal": "item",
+      "lookahead": "Fn",
+      "lookahead_id": 67,
+      "production": 4
+    },
+    {
+      "nonterminal": "item",
+      "lookahead": "Let",
+      "lookahead_id": 68,
+      "production": 5
+    },
+    {
+      "nonterminal": "item",
+      "lookahead": "Return",
+      "lookahead_id": 69,
+      "production": 5
+    },
+    {
+      "nonterminal": "item",
+      "lookahead": "If",
+      "lookahead_id": 70,
+      "production": 5
+    },
+    {
+      "nonterminal": "item",
+      "lookahead": "While",
+      "lookahead_id": 72,
+      "production": 5
+    },
+    {
+      "nonterminal": "item",
+      "lookahead": "Break",
+      "lookahead_id": 73,
+      "production": 5
+    },
+    {
+      "nonterminal": "item",
+      "lookahead": "Continue",
+      "lookahead_id": 74,
+      "production": 5
+    },
+    {
+      "nonterminal": "item_list",
+      "lookahead": "$",
+      "lookahead_id": 0,
+      "production": 2
+    },
+    {
+      "nonterminal": "item_list",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 1
+    },
+    {
+      "nonterminal": "item_list",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 1
+    },
+    {
+      "nonterminal": "item_list",
+      "lookahead": "Not",
+      "lookahead_id": 19,
+      "production": 1
+    },
+    {
+      "nonterminal": "item_list",
+      "lookahead": "LBrace",
+      "lookahead_id": 22,
+      "production": 1
+    },
+    {
+      "nonterminal": "item_list",
+      "lookahead": "GroupLParen",
+      "lookahead_id": 29,
+      "production": 1
+    },
+    {
+      "nonterminal": "item_list",
+      "lookahead": "ArrayLBracket",
+      "lookahead_id": 31,
+      "production": 1
+    },
+    {
+      "nonterminal": "item_list",
+      "lookahead": "String",
+      "lookahead_id": 32,
+      "production": 1
+    },
+    {
+      "nonterminal": "item_list",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 1
+    },
+    {
+      "nonterminal": "item_list",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 1
+    },
+    {
+      "nonterminal": "item_list",
+      "lookahead": "Tilde",
+      "lookahead_id": 45,
+      "production": 1
+    },
+    {
+      "nonterminal": "item_list",
+      "lookahead": "Inc",
+      "lookahead_id": 56,
+      "production": 1
+    },
+    {
+      "nonterminal": "item_list",
+      "lookahead": "Dec",
+      "lookahead_id": 57,
+      "production": 1
+    },
+    {
+      "nonterminal": "item_list",
+      "lookahead": "PrefixPlus",
+      "lookahead_id": 58,
+      "production": 1
+    },
+    {
+      "nonterminal": "item_list",
+      "lookahead": "PrefixMinus",
+      "lookahead_id": 60,
+      "production": 1
+    },
+    {
+      "nonterminal": "item_list",
+      "lookahead": "Pub",
+      "lookahead_id": 66,
+      "production": 1
+    },
+    {
+      "nonterminal": "item_list",
+      "lookahead": "Fn",
+      "lookahead_id": 67,
+      "production": 1
+    },
+    {
+      "nonterminal": "item_list",
+      "lookahead": "Let",
+      "lookahead_id": 68,
+      "production": 1
+    },
+    {
+      "nonterminal": "item_list",
+      "lookahead": "Return",
+      "lookahead_id": 69,
+      "production": 1
+    },
+    {
+      "nonterminal": "item_list",
+      "lookahead": "If",
+      "lookahead_id": 70,
+      "production": 1
+    },
+    {
+      "nonterminal": "item_list",
+      "lookahead": "While",
+      "lookahead_id": 72,
+      "production": 1
+    },
+    {
+      "nonterminal": "item_list",
+      "lookahead": "Break",
+      "lookahead_id": 73,
+      "production": 1
+    },
+    {
+      "nonterminal": "item_list",
+      "lookahead": "Continue",
+      "lookahead_id": 74,
+      "production": 1
+    },
+    {
+      "nonterminal": "let_init_opt",
+      "lookahead": "Assign",
+      "lookahead_id": 8,
+      "production": 29
+    },
+    {
+      "nonterminal": "let_init_opt",
+      "lookahead": "Semicolon",
+      "lookahead_id": 37,
+      "production": 30
+    },
+    {
+      "nonterminal": "let_type_opt",
+      "lookahead": "Assign",
+      "lookahead_id": 8,
+      "production": 28
+    },
+    {
+      "nonterminal": "let_type_opt",
+      "lookahead": "Semicolon",
+      "lookahead_id": 37,
+      "production": 28
+    },
+    {
+      "nonterminal": "let_type_opt",
+      "lookahead": "Colon",
+      "lookahead_id": 38,
+      "production": 27
+    },
+    {
+      "nonterminal": "mul",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 82
+    },
+    {
+      "nonterminal": "mul",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 82
+    },
+    {
+      "nonterminal": "mul",
+      "lookahead": "Not",
+      "lookahead_id": 19,
+      "production": 82
+    },
+    {
+      "nonterminal": "mul",
+      "lookahead": "GroupLParen",
+      "lookahead_id": 29,
+      "production": 82
+    },
+    {
+      "nonterminal": "mul",
+      "lookahead": "ArrayLBracket",
+      "lookahead_id": 31,
+      "production": 82
+    },
+    {
+      "nonterminal": "mul",
+      "lookahead": "String",
+      "lookahead_id": 32,
+      "production": 82
+    },
+    {
+      "nonterminal": "mul",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 82
+    },
+    {
+      "nonterminal": "mul",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 82
+    },
+    {
+      "nonterminal": "mul",
+      "lookahead": "Tilde",
+      "lookahead_id": 45,
+      "production": 82
+    },
+    {
+      "nonterminal": "mul",
+      "lookahead": "Inc",
+      "lookahead_id": 56,
+      "production": 82
+    },
+    {
+      "nonterminal": "mul",
+      "lookahead": "Dec",
+      "lookahead_id": 57,
+      "production": 82
+    },
+    {
+      "nonterminal": "mul",
+      "lookahead": "PrefixPlus",
+      "lookahead_id": 58,
+      "production": 82
+    },
+    {
+      "nonterminal": "mul",
+      "lookahead": "PrefixMinus",
+      "lookahead_id": 60,
+      "production": 82
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "Star",
+      "lookahead_id": 7,
+      "production": 83
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "Assign",
+      "lookahead_id": 8,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "Slash",
+      "lookahead_id": 9,
+      "production": 84
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "Lt",
+      "lookahead_id": 12,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "Gt",
+      "lookahead_id": 13,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "Le",
+      "lookahead_id": 14,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "Ge",
+      "lookahead_id": 15,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "EqEq",
+      "lookahead_id": 16,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "AndAnd",
+      "lookahead_id": 17,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "OrOr",
+      "lookahead_id": 18,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "Ampersand",
+      "lookahead_id": 25,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "Pipe",
+      "lookahead_id": 26,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "Comma",
+      "lookahead_id": 36,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "Semicolon",
+      "lookahead_id": 37,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "NotEqual",
+      "lookahead_id": 40,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "Percent",
+      "lookahead_id": 41,
+      "production": 85
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "Caret",
+      "lookahead_id": 42,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "Shl",
+      "lookahead_id": 43,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "Shr",
+      "lookahead_id": 44,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "PlusAssign",
+      "lookahead_id": 46,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "MinusAssign",
+      "lookahead_id": 47,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "StarAssign",
+      "lookahead_id": 48,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "SlashAssign",
+      "lookahead_id": 49,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "PercentAssign",
+      "lookahead_id": 50,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "CaretAssign",
+      "lookahead_id": 51,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "ShlAssign",
+      "lookahead_id": 52,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "ShrAssign",
+      "lookahead_id": 53,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "AmpAssign",
+      "lookahead_id": 54,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "PipeAssign",
+      "lookahead_id": 55,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "InfixPlus",
+      "lookahead_id": 59,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "InfixMinus",
+      "lookahead_id": 61,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "GroupRParen",
+      "lookahead_id": 62,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "CallRParen",
+      "lookahead_id": 63,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "ArrayRBracket",
+      "lookahead_id": 64,
+      "production": 86
+    },
+    {
+      "nonterminal": "mul_tail",
+      "lookahead": "IndexRBracket",
+      "lookahead_id": 65,
+      "production": 86
+    },
+    {
+      "nonterminal": "orexpr",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 49
+    },
+    {
+      "nonterminal": "orexpr",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 49
+    },
+    {
+      "nonterminal": "orexpr",
+      "lookahead": "Not",
+      "lookahead_id": 19,
+      "production": 49
+    },
+    {
+      "nonterminal": "orexpr",
+      "lookahead": "GroupLParen",
+      "lookahead_id": 29,
+      "production": 49
+    },
+    {
+      "nonterminal": "orexpr",
+      "lookahead": "ArrayLBracket",
+      "lookahead_id": 31,
+      "production": 49
+    },
+    {
+      "nonterminal": "orexpr",
+      "lookahead": "String",
+      "lookahead_id": 32,
+      "production": 49
+    },
+    {
+      "nonterminal": "orexpr",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 49
+    },
+    {
+      "nonterminal": "orexpr",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 49
+    },
+    {
+      "nonterminal": "orexpr",
+      "lookahead": "Tilde",
+      "lookahead_id": 45,
+      "production": 49
+    },
+    {
+      "nonterminal": "orexpr",
+      "lookahead": "Inc",
+      "lookahead_id": 56,
+      "production": 49
+    },
+    {
+      "nonterminal": "orexpr",
+      "lookahead": "Dec",
+      "lookahead_id": 57,
+      "production": 49
+    },
+    {
+      "nonterminal": "orexpr",
+      "lookahead": "PrefixPlus",
+      "lookahead_id": 58,
+      "production": 49
+    },
+    {
+      "nonterminal": "orexpr",
+      "lookahead": "PrefixMinus",
+      "lookahead_id": 60,
+      "production": 49
+    },
+    {
+      "nonterminal": "orexpr_tail",
+      "lookahead": "Assign",
+      "lookahead_id": 8,
+      "production": 51
+    },
+    {
+      "nonterminal": "orexpr_tail",
+      "lookahead": "OrOr",
+      "lookahead_id": 18,
+      "production": 50
+    },
+    {
+      "nonterminal": "orexpr_tail",
+      "lookahead": "Comma",
+      "lookahead_id": 36,
+      "production": 51
+    },
+    {
+      "nonterminal": "orexpr_tail",
+      "lookahead": "Semicolon",
+      "lookahead_id": 37,
+      "production": 51
+    },
+    {
+      "nonterminal": "orexpr_tail",
+      "lookahead": "PlusAssign",
+      "lookahead_id": 46,
+      "production": 51
+    },
+    {
+      "nonterminal": "orexpr_tail",
+      "lookahead": "MinusAssign",
+      "lookahead_id": 47,
+      "production": 51
+    },
+    {
+      "nonterminal": "orexpr_tail",
+      "lookahead": "StarAssign",
+      "lookahead_id": 48,
+      "production": 51
+    },
+    {
+      "nonterminal": "orexpr_tail",
+      "lookahead": "SlashAssign",
+      "lookahead_id": 49,
+      "production": 51
+    },
+    {
+      "nonterminal": "orexpr_tail",
+      "lookahead": "PercentAssign",
+      "lookahead_id": 50,
+      "production": 51
+    },
+    {
+      "nonterminal": "orexpr_tail",
+      "lookahead": "CaretAssign",
+      "lookahead_id": 51,
+      "production": 51
+    },
+    {
+      "nonterminal": "orexpr_tail",
+      "lookahead": "ShlAssign",
+      "lookahead_id": 52,
+      "production": 51
+    },
+    {
+      "nonterminal": "orexpr_tail",
+      "lookahead": "ShrAssign",
+      "lookahead_id": 53,
+      "production": 51
+    },
+    {
+      "nonterminal": "orexpr_tail",
+      "lookahead": "AmpAssign",
+      "lookahead_id": 54,
+      "production": 51
+    },
+    {
+      "nonterminal": "orexpr_tail",
+      "lookahead": "PipeAssign",
+      "lookahead_id": 55,
+      "production": 51
+    },
+    {
+      "nonterminal": "orexpr_tail",
+      "lookahead": "GroupRParen",
+      "lookahead_id": 62,
+      "production": 51
+    },
+    {
+      "nonterminal": "orexpr_tail",
+      "lookahead": "CallRParen",
+      "lookahead_id": 63,
+      "production": 51
+    },
+    {
+      "nonterminal": "orexpr_tail",
+      "lookahead": "ArrayRBracket",
+      "lookahead_id": 64,
+      "production": 51
+    },
+    {
+      "nonterminal": "orexpr_tail",
+      "lookahead": "IndexRBracket",
+      "lookahead_id": 65,
+      "production": 51
+    },
+    {
+      "nonterminal": "param",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 11
+    },
+    {
+      "nonterminal": "param_list_opt",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 10
+    },
+    {
+      "nonterminal": "param_list_opt",
+      "lookahead": "CallRParen",
+      "lookahead_id": 63,
+      "production": 9
+    },
+    {
+      "nonterminal": "param_tail",
+      "lookahead": "Comma",
+      "lookahead_id": 36,
+      "production": 12
+    },
+    {
+      "nonterminal": "param_tail",
+      "lookahead": "CallRParen",
+      "lookahead_id": 63,
+      "production": 13
+    },
+    {
+      "nonterminal": "postfix",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 94
+    },
+    {
+      "nonterminal": "postfix",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 94
+    },
+    {
+      "nonterminal": "postfix",
+      "lookahead": "GroupLParen",
+      "lookahead_id": 29,
+      "production": 94
+    },
+    {
+      "nonterminal": "postfix",
+      "lookahead": "ArrayLBracket",
+      "lookahead_id": 31,
+      "production": 94
+    },
+    {
+      "nonterminal": "postfix",
+      "lookahead": "String",
+      "lookahead_id": 32,
+      "production": 94
+    },
+    {
+      "nonterminal": "postfix",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 94
+    },
+    {
+      "nonterminal": "postfix",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 94
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "Star",
+      "lookahead_id": 7,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "Assign",
+      "lookahead_id": 8,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "Slash",
+      "lookahead_id": 9,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "Lt",
+      "lookahead_id": 12,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "Gt",
+      "lookahead_id": 13,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "Le",
+      "lookahead_id": 14,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "Ge",
+      "lookahead_id": 15,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "EqEq",
+      "lookahead_id": 16,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "AndAnd",
+      "lookahead_id": 17,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "OrOr",
+      "lookahead_id": 18,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "Ampersand",
+      "lookahead_id": 25,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "Pipe",
+      "lookahead_id": 26,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "CallLParen",
+      "lookahead_id": 28,
+      "production": 95
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "IndexLBracket",
+      "lookahead_id": 30,
+      "production": 96
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "Dot",
+      "lookahead_id": 35,
+      "production": 97
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "Comma",
+      "lookahead_id": 36,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "Semicolon",
+      "lookahead_id": 37,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "NotEqual",
+      "lookahead_id": 40,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "Percent",
+      "lookahead_id": 41,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "Caret",
+      "lookahead_id": 42,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "Shl",
+      "lookahead_id": 43,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "Shr",
+      "lookahead_id": 44,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "PlusAssign",
+      "lookahead_id": 46,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "MinusAssign",
+      "lookahead_id": 47,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "StarAssign",
+      "lookahead_id": 48,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "SlashAssign",
+      "lookahead_id": 49,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "PercentAssign",
+      "lookahead_id": 50,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "CaretAssign",
+      "lookahead_id": 51,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "ShlAssign",
+      "lookahead_id": 52,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "ShrAssign",
+      "lookahead_id": 53,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "AmpAssign",
+      "lookahead_id": 54,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "PipeAssign",
+      "lookahead_id": 55,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "Inc",
+      "lookahead_id": 56,
+      "production": 98
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "Dec",
+      "lookahead_id": 57,
+      "production": 99
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "InfixPlus",
+      "lookahead_id": 59,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "InfixMinus",
+      "lookahead_id": 61,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "GroupRParen",
+      "lookahead_id": 62,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "CallRParen",
+      "lookahead_id": 63,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "ArrayRBracket",
+      "lookahead_id": 64,
+      "production": 100
+    },
+    {
+      "nonterminal": "postfix_tail",
+      "lookahead": "IndexRBracket",
+      "lookahead_id": 65,
+      "production": 100
+    },
+    {
+      "nonterminal": "primary",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 107
+    },
+    {
+      "nonterminal": "primary",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 108
+    },
+    {
+      "nonterminal": "primary",
+      "lookahead": "GroupLParen",
+      "lookahead_id": 29,
+      "production": 106
+    },
+    {
+      "nonterminal": "primary",
+      "lookahead": "ArrayLBracket",
+      "lookahead_id": 31,
+      "production": 105
+    },
+    {
+      "nonterminal": "primary",
+      "lookahead": "String",
+      "lookahead_id": 32,
+      "production": 110
+    },
+    {
+      "nonterminal": "primary",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 109
+    },
+    {
+      "nonterminal": "primary",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 111
+    },
+    {
+      "nonterminal": "return_type_opt",
+      "lookahead": "LBrace",
+      "lookahead_id": 22,
+      "production": 8
+    },
+    {
+      "nonterminal": "return_type_opt",
+      "lookahead": "Arrow",
+      "lookahead_id": 75,
+      "production": 7
+    },
+    {
+      "nonterminal": "return_value_opt",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 31
+    },
+    {
+      "nonterminal": "return_value_opt",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 31
+    },
+    {
+      "nonterminal": "return_value_opt",
+      "lookahead": "Not",
+      "lookahead_id": 19,
+      "production": 31
+    },
+    {
+      "nonterminal": "return_value_opt",
+      "lookahead": "GroupLParen",
+      "lookahead_id": 29,
+      "production": 31
+    },
+    {
+      "nonterminal": "return_value_opt",
+      "lookahead": "ArrayLBracket",
+      "lookahead_id": 31,
+      "production": 31
+    },
+    {
+      "nonterminal": "return_value_opt",
+      "lookahead": "String",
+      "lookahead_id": 32,
+      "production": 31
+    },
+    {
+      "nonterminal": "return_value_opt",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 31
+    },
+    {
+      "nonterminal": "return_value_opt",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 31
+    },
+    {
+      "nonterminal": "return_value_opt",
+      "lookahead": "Semicolon",
+      "lookahead_id": 37,
+      "production": 32
+    },
+    {
+      "nonterminal": "return_value_opt",
+      "lookahead": "Tilde",
+      "lookahead_id": 45,
+      "production": 31
+    },
+    {
+      "nonterminal": "return_value_opt",
+      "lookahead": "Inc",
+      "lookahead_id": 56,
+      "production": 31
+    },
+    {
+      "nonterminal": "return_value_opt",
+      "lookahead": "Dec",
+      "lookahead_id": 57,
+      "production": 31
+    },
+    {
+      "nonterminal": "return_value_opt",
+      "lookahead": "PrefixPlus",
+      "lookahead_id": 58,
+      "production": 31
+    },
+    {
+      "nonterminal": "return_value_opt",
+      "lookahead": "PrefixMinus",
+      "lookahead_id": 60,
+      "production": 31
+    },
+    {
+      "nonterminal": "shift",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 74
+    },
+    {
+      "nonterminal": "shift",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 74
+    },
+    {
+      "nonterminal": "shift",
+      "lookahead": "Not",
+      "lookahead_id": 19,
+      "production": 74
+    },
+    {
+      "nonterminal": "shift",
+      "lookahead": "GroupLParen",
+      "lookahead_id": 29,
+      "production": 74
+    },
+    {
+      "nonterminal": "shift",
+      "lookahead": "ArrayLBracket",
+      "lookahead_id": 31,
+      "production": 74
+    },
+    {
+      "nonterminal": "shift",
+      "lookahead": "String",
+      "lookahead_id": 32,
+      "production": 74
+    },
+    {
+      "nonterminal": "shift",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 74
+    },
+    {
+      "nonterminal": "shift",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 74
+    },
+    {
+      "nonterminal": "shift",
+      "lookahead": "Tilde",
+      "lookahead_id": 45,
+      "production": 74
+    },
+    {
+      "nonterminal": "shift",
+      "lookahead": "Inc",
+      "lookahead_id": 56,
+      "production": 74
+    },
+    {
+      "nonterminal": "shift",
+      "lookahead": "Dec",
+      "lookahead_id": 57,
+      "production": 74
+    },
+    {
+      "nonterminal": "shift",
+      "lookahead": "PrefixPlus",
+      "lookahead_id": 58,
+      "production": 74
+    },
+    {
+      "nonterminal": "shift",
+      "lookahead": "PrefixMinus",
+      "lookahead_id": 60,
+      "production": 74
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "Assign",
+      "lookahead_id": 8,
+      "production": 77
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "Lt",
+      "lookahead_id": 12,
+      "production": 77
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "Gt",
+      "lookahead_id": 13,
+      "production": 77
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "Le",
+      "lookahead_id": 14,
+      "production": 77
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "Ge",
+      "lookahead_id": 15,
+      "production": 77
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "EqEq",
+      "lookahead_id": 16,
+      "production": 77
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "AndAnd",
+      "lookahead_id": 17,
+      "production": 77
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "OrOr",
+      "lookahead_id": 18,
+      "production": 77
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "Ampersand",
+      "lookahead_id": 25,
+      "production": 77
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "Pipe",
+      "lookahead_id": 26,
+      "production": 77
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "Comma",
+      "lookahead_id": 36,
+      "production": 77
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "Semicolon",
+      "lookahead_id": 37,
+      "production": 77
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "NotEqual",
+      "lookahead_id": 40,
+      "production": 77
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "Caret",
+      "lookahead_id": 42,
+      "production": 77
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "Shl",
+      "lookahead_id": 43,
+      "production": 75
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "Shr",
+      "lookahead_id": 44,
+      "production": 76
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "PlusAssign",
+      "lookahead_id": 46,
+      "production": 77
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "MinusAssign",
+      "lookahead_id": 47,
+      "production": 77
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "StarAssign",
+      "lookahead_id": 48,
+      "production": 77
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "SlashAssign",
+      "lookahead_id": 49,
+      "production": 77
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "PercentAssign",
+      "lookahead_id": 50,
+      "production": 77
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "CaretAssign",
+      "lookahead_id": 51,
+      "production": 77
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "ShlAssign",
+      "lookahead_id": 52,
+      "production": 77
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "ShrAssign",
+      "lookahead_id": 53,
+      "production": 77
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "AmpAssign",
+      "lookahead_id": 54,
+      "production": 77
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "PipeAssign",
+      "lookahead_id": 55,
+      "production": 77
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "GroupRParen",
+      "lookahead_id": 62,
+      "production": 77
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "CallRParen",
+      "lookahead_id": 63,
+      "production": 77
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "ArrayRBracket",
+      "lookahead_id": 64,
+      "production": 77
+    },
+    {
+      "nonterminal": "shift_tail",
+      "lookahead": "IndexRBracket",
+      "lookahead_id": 65,
+      "production": 77
+    },
+    {
+      "nonterminal": "stmt",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 26
+    },
+    {
+      "nonterminal": "stmt",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 26
+    },
+    {
+      "nonterminal": "stmt",
+      "lookahead": "Not",
+      "lookahead_id": 19,
+      "production": 26
+    },
+    {
+      "nonterminal": "stmt",
+      "lookahead": "LBrace",
+      "lookahead_id": 22,
+      "production": 25
+    },
+    {
+      "nonterminal": "stmt",
+      "lookahead": "GroupLParen",
+      "lookahead_id": 29,
+      "production": 26
+    },
+    {
+      "nonterminal": "stmt",
+      "lookahead": "ArrayLBracket",
+      "lookahead_id": 31,
+      "production": 26
+    },
+    {
+      "nonterminal": "stmt",
+      "lookahead": "String",
+      "lookahead_id": 32,
+      "production": 26
+    },
+    {
+      "nonterminal": "stmt",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 26
+    },
+    {
+      "nonterminal": "stmt",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 26
+    },
+    {
+      "nonterminal": "stmt",
+      "lookahead": "Tilde",
+      "lookahead_id": 45,
+      "production": 26
+    },
+    {
+      "nonterminal": "stmt",
+      "lookahead": "Inc",
+      "lookahead_id": 56,
+      "production": 26
+    },
+    {
+      "nonterminal": "stmt",
+      "lookahead": "Dec",
+      "lookahead_id": 57,
+      "production": 26
+    },
+    {
+      "nonterminal": "stmt",
+      "lookahead": "PrefixPlus",
+      "lookahead_id": 58,
+      "production": 26
+    },
+    {
+      "nonterminal": "stmt",
+      "lookahead": "PrefixMinus",
+      "lookahead_id": 60,
+      "production": 26
+    },
+    {
+      "nonterminal": "stmt",
+      "lookahead": "Let",
+      "lookahead_id": 68,
+      "production": 19
+    },
+    {
+      "nonterminal": "stmt",
+      "lookahead": "Return",
+      "lookahead_id": 69,
+      "production": 20
+    },
+    {
+      "nonterminal": "stmt",
+      "lookahead": "If",
+      "lookahead_id": 70,
+      "production": 21
+    },
+    {
+      "nonterminal": "stmt",
+      "lookahead": "While",
+      "lookahead_id": 72,
+      "production": 22
+    },
+    {
+      "nonterminal": "stmt",
+      "lookahead": "Break",
+      "lookahead_id": 73,
+      "production": 23
+    },
+    {
+      "nonterminal": "stmt",
+      "lookahead": "Continue",
+      "lookahead_id": 74,
+      "production": 24
+    },
+    {
+      "nonterminal": "stmt_list",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 17
+    },
+    {
+      "nonterminal": "stmt_list",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 17
+    },
+    {
+      "nonterminal": "stmt_list",
+      "lookahead": "Not",
+      "lookahead_id": 19,
+      "production": 17
+    },
+    {
+      "nonterminal": "stmt_list",
+      "lookahead": "LBrace",
+      "lookahead_id": 22,
+      "production": 17
+    },
+    {
+      "nonterminal": "stmt_list",
+      "lookahead": "RBrace",
+      "lookahead_id": 23,
+      "production": 18
+    },
+    {
+      "nonterminal": "stmt_list",
+      "lookahead": "GroupLParen",
+      "lookahead_id": 29,
+      "production": 17
+    },
+    {
+      "nonterminal": "stmt_list",
+      "lookahead": "ArrayLBracket",
+      "lookahead_id": 31,
+      "production": 17
+    },
+    {
+      "nonterminal": "stmt_list",
+      "lookahead": "String",
+      "lookahead_id": 32,
+      "production": 17
+    },
+    {
+      "nonterminal": "stmt_list",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 17
+    },
+    {
+      "nonterminal": "stmt_list",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 17
+    },
+    {
+      "nonterminal": "stmt_list",
+      "lookahead": "Tilde",
+      "lookahead_id": 45,
+      "production": 17
+    },
+    {
+      "nonterminal": "stmt_list",
+      "lookahead": "Inc",
+      "lookahead_id": 56,
+      "production": 17
+    },
+    {
+      "nonterminal": "stmt_list",
+      "lookahead": "Dec",
+      "lookahead_id": 57,
+      "production": 17
+    },
+    {
+      "nonterminal": "stmt_list",
+      "lookahead": "PrefixPlus",
+      "lookahead_id": 58,
+      "production": 17
+    },
+    {
+      "nonterminal": "stmt_list",
+      "lookahead": "PrefixMinus",
+      "lookahead_id": 60,
+      "production": 17
+    },
+    {
+      "nonterminal": "stmt_list",
+      "lookahead": "Let",
+      "lookahead_id": 68,
+      "production": 17
+    },
+    {
+      "nonterminal": "stmt_list",
+      "lookahead": "Return",
+      "lookahead_id": 69,
+      "production": 17
+    },
+    {
+      "nonterminal": "stmt_list",
+      "lookahead": "If",
+      "lookahead_id": 70,
+      "production": 17
+    },
+    {
+      "nonterminal": "stmt_list",
+      "lookahead": "While",
+      "lookahead_id": 72,
+      "production": 17
+    },
+    {
+      "nonterminal": "stmt_list",
+      "lookahead": "Break",
+      "lookahead_id": 73,
+      "production": 17
+    },
+    {
+      "nonterminal": "stmt_list",
+      "lookahead": "Continue",
+      "lookahead_id": 74,
+      "production": 17
+    },
+    {
+      "nonterminal": "type_expr",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 14
+    },
+    {
+      "nonterminal": "type_expr",
+      "lookahead": "ArrayLBracket",
+      "lookahead_id": 31,
+      "production": 15
+    },
+    {
+      "nonterminal": "unary",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 93
+    },
+    {
+      "nonterminal": "unary",
+      "lookahead": "Int",
+      "lookahead_id": 2,
+      "production": 93
+    },
+    {
+      "nonterminal": "unary",
+      "lookahead": "Not",
+      "lookahead_id": 19,
+      "production": 91
+    },
+    {
+      "nonterminal": "unary",
+      "lookahead": "GroupLParen",
+      "lookahead_id": 29,
+      "production": 93
+    },
+    {
+      "nonterminal": "unary",
+      "lookahead": "ArrayLBracket",
+      "lookahead_id": 31,
+      "production": 93
+    },
+    {
+      "nonterminal": "unary",
+      "lookahead": "String",
+      "lookahead_id": 32,
+      "production": 93
+    },
+    {
+      "nonterminal": "unary",
+      "lookahead": "Float",
+      "lookahead_id": 33,
+      "production": 93
+    },
+    {
+      "nonterminal": "unary",
+      "lookahead": "Char",
+      "lookahead_id": 34,
+      "production": 93
+    },
+    {
+      "nonterminal": "unary",
+      "lookahead": "Tilde",
+      "lookahead_id": 45,
+      "production": 92
+    },
+    {
+      "nonterminal": "unary",
+      "lookahead": "Inc",
+      "lookahead_id": 56,
+      "production": 87
+    },
+    {
+      "nonterminal": "unary",
+      "lookahead": "Dec",
+      "lookahead_id": 57,
+      "production": 88
+    },
+    {
+      "nonterminal": "unary",
+      "lookahead": "PrefixPlus",
+      "lookahead_id": 58,
+      "production": 89
+    },
+    {
+      "nonterminal": "unary",
+      "lookahead": "PrefixMinus",
+      "lookahead_id": 60,
+      "production": 90
+    }
+  ],
+  "productions": [
+    {
+      "id": 0,
+      "line": 11,
+      "lhs": "file",
+      "tag": "file",
+      "arity": 1,
+      "rhs": [
+        "item_list"
+      ]
+    },
+    {
+      "id": 1,
+      "line": 12,
+      "lhs": "item_list",
+      "tag": "items_more",
+      "arity": 2,
+      "rhs": [
+        "item",
+        "item_list"
+      ]
+    },
+    {
+      "id": 2,
+      "line": 13,
+      "lhs": "item_list",
+      "tag": "items_end",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 3,
+      "line": 15,
+      "lhs": "item",
+      "tag": "item_pub_fn",
+      "arity": 1,
+      "rhs": [
+        "'Pub'",
+        "fn_item"
+      ]
+    },
+    {
+      "id": 4,
+      "line": 16,
+      "lhs": "item",
+      "tag": "item_fn",
+      "arity": 1,
+      "rhs": [
+        "fn_item"
+      ]
+    },
+    {
+      "id": 5,
+      "line": 17,
+      "lhs": "item",
+      "tag": "item_stmt",
+      "arity": 1,
+      "rhs": [
+        "stmt"
+      ]
+    },
+    {
+      "id": 6,
+      "line": 19,
+      "lhs": "fn_item",
+      "tag": "fn",
+      "arity": 3,
+      "rhs": [
+        "'Fn'",
+        "'Ident'",
+        "'CallLParen'",
+        "param_list_opt",
+        "'CallRParen'",
+        "return_type_opt",
+        "block"
+      ]
+    },
+    {
+      "id": 7,
+      "line": 20,
+      "lhs": "return_type_opt",
+      "tag": "ret_type",
+      "arity": 1,
+      "rhs": [
+        "'Arrow'",
+        "type_expr"
+      ]
+    },
+    {
+      "id": 8,
+      "line": 21,
+      "lhs": "return_type_opt",
+      "tag": "ret_void",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 9,
+      "line": 23,
+      "lhs": "param_list_opt",
+      "tag": "params_none",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 10,
+      "line": 24,
+      "lhs": "param_list_opt",
+      "tag": "params_some",
+      "arity": 2,
+      "rhs": [
+        "param",
+        "param_tail"
+      ]
+    },
+    {
+      "id": 11,
+      "line": 25,
+      "lhs": "param",
+      "tag": "param",
+      "arity": 1,
+      "rhs": [
+        "'Ident'",
+        "'Colon'",
+        "type_expr"
+      ]
+    },
+    {
+      "id": 12,
+      "line": 26,
+      "lhs": "param_tail",
+      "tag": "params_more",
+      "arity": 2,
+      "rhs": [
+        "'Comma'",
+        "param",
+        "param_tail"
+      ]
+    },
+    {
+      "id": 13,
+      "line": 27,
+      "lhs": "param_tail",
+      "tag": "params_end",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 14,
+      "line": 29,
+      "lhs": "type_expr",
+      "tag": "type_ident",
+      "arity": 0,
+      "rhs": [
+        "'Ident'"
+      ]
+    },
+    {
+      "id": 15,
+      "line": 30,
+      "lhs": "type_expr",
+      "tag": "type_array",
+      "arity": 1,
+      "rhs": [
+        "'ArrayLBracket'",
+        "type_expr",
+        "'Semicolon'",
+        "'Int'",
+        "'ArrayRBracket'"
+      ]
+    },
+    {
+      "id": 16,
+      "line": 34,
+      "lhs": "block",
+      "tag": "block",
+      "arity": 1,
+      "rhs": [
+        "'LBrace'",
+        "stmt_list",
+        "'RBrace'"
+      ]
+    },
+    {
+      "id": 17,
+      "line": 35,
+      "lhs": "stmt_list",
+      "tag": "stmts_more",
+      "arity": 2,
+      "rhs": [
+        "stmt",
+        "stmt_list"
+      ]
+    },
+    {
+      "id": 18,
+      "line": 36,
+      "lhs": "stmt_list",
+      "tag": "stmts_end",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 19,
+      "line": 38,
+      "lhs": "stmt",
+      "tag": "let_stmt",
+      "arity": 2,
+      "rhs": [
+        "'Let'",
+        "'Ident'",
+        "let_type_opt",
+        "let_init_opt",
+        "'Semicolon'"
+      ]
+    },
+    {
+      "id": 20,
+      "line": 39,
+      "lhs": "stmt",
+      "tag": "return_stmt",
+      "arity": 1,
+      "rhs": [
+        "'Return'",
+        "return_value_opt",
+        "'Semicolon'"
+      ]
+    },
+    {
+      "id": 21,
+      "line": 40,
+      "lhs": "stmt",
+      "tag": "if_stmt",
+      "arity": 3,
+      "rhs": [
+        "'If'",
+        "'GroupLParen'",
+        "expr",
+        "'GroupRParen'",
+        "block",
+        "else_opt"
+      ]
+    },
+    {
+      "id": 22,
+      "line": 41,
+      "lhs": "stmt",
+      "tag": "while_stmt",
+      "arity": 2,
+      "rhs": [
+        "'While'",
+        "'GroupLParen'",
+        "expr",
+        "'GroupRParen'",
+        "block"
+      ]
+    },
+    {
+      "id": 23,
+      "line": 42,
+      "lhs": "stmt",
+      "tag": "break_stmt",
+      "arity": 0,
+      "rhs": [
+        "'Break'",
+        "'Semicolon'"
+      ]
+    },
+    {
+      "id": 24,
+      "line": 43,
+      "lhs": "stmt",
+      "tag": "continue_stmt",
+      "arity": 0,
+      "rhs": [
+        "'Continue'",
+        "'Semicolon'"
+      ]
+    },
+    {
+      "id": 25,
+      "line": 44,
+      "lhs": "stmt",
+      "tag": "block_stmt",
+      "arity": 1,
+      "rhs": [
+        "block"
+      ]
+    },
+    {
+      "id": 26,
+      "line": 45,
+      "lhs": "stmt",
+      "tag": "expr_stmt",
+      "arity": 1,
+      "rhs": [
+        "expr",
+        "'Semicolon'"
+      ]
+    },
+    {
+      "id": 27,
+      "line": 47,
+      "lhs": "let_type_opt",
+      "tag": "let_type",
+      "arity": 1,
+      "rhs": [
+        "'Colon'",
+        "type_expr"
+      ]
+    },
+    {
+      "id": 28,
+      "line": 48,
+      "lhs": "let_type_opt",
+      "tag": "let_type_none",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 29,
+      "line": 49,
+      "lhs": "let_init_opt",
+      "tag": "let_init",
+      "arity": 1,
+      "rhs": [
+        "'Assign'",
+        "expr"
+      ]
+    },
+    {
+      "id": 30,
+      "line": 50,
+      "lhs": "let_init_opt",
+      "tag": "let_init_none",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 31,
+      "line": 51,
+      "lhs": "return_value_opt",
+      "tag": "return_value",
+      "arity": 1,
+      "rhs": [
+        "expr"
+      ]
+    },
+    {
+      "id": 32,
+      "line": 52,
+      "lhs": "return_value_opt",
+      "tag": "return_void",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 33,
+      "line": 53,
+      "lhs": "else_opt",
+      "tag": "else_block",
+      "arity": 1,
+      "rhs": [
+        "'Else'",
+        "block"
+      ]
+    },
+    {
+      "id": 34,
+      "line": 54,
+      "lhs": "else_opt",
+      "tag": "else_none",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 35,
+      "line": 58,
+      "lhs": "expr",
+      "tag": "expr",
+      "arity": 1,
+      "rhs": [
+        "assign"
+      ]
+    },
+    {
+      "id": 36,
+      "line": 62,
+      "lhs": "assign",
+      "tag": "assign",
+      "arity": 2,
+      "rhs": [
+        "orexpr",
+        "assign_tail"
+      ]
+    },
+    {
+      "id": 37,
+      "line": 63,
+      "lhs": "assign_tail",
+      "tag": "assign_set",
+      "arity": 1,
+      "rhs": [
+        "'Assign'",
+        "assign"
+      ]
+    },
+    {
+      "id": 38,
+      "line": 64,
+      "lhs": "assign_tail",
+      "tag": "assign_add",
+      "arity": 1,
+      "rhs": [
+        "'PlusAssign'",
+        "assign"
+      ]
+    },
+    {
+      "id": 39,
+      "line": 65,
+      "lhs": "assign_tail",
+      "tag": "assign_sub",
+      "arity": 1,
+      "rhs": [
+        "'MinusAssign'",
+        "assign"
+      ]
+    },
+    {
+      "id": 40,
+      "line": 66,
+      "lhs": "assign_tail",
+      "tag": "assign_mul",
+      "arity": 1,
+      "rhs": [
+        "'StarAssign'",
+        "assign"
+      ]
+    },
+    {
+      "id": 41,
+      "line": 67,
+      "lhs": "assign_tail",
+      "tag": "assign_div",
+      "arity": 1,
+      "rhs": [
+        "'SlashAssign'",
+        "assign"
+      ]
+    },
+    {
+      "id": 42,
+      "line": 68,
+      "lhs": "assign_tail",
+      "tag": "assign_mod",
+      "arity": 1,
+      "rhs": [
+        "'PercentAssign'",
+        "assign"
+      ]
+    },
+    {
+      "id": 43,
+      "line": 69,
+      "lhs": "assign_tail",
+      "tag": "assign_xor",
+      "arity": 1,
+      "rhs": [
+        "'CaretAssign'",
+        "assign"
+      ]
+    },
+    {
+      "id": 44,
+      "line": 70,
+      "lhs": "assign_tail",
+      "tag": "assign_shl",
+      "arity": 1,
+      "rhs": [
+        "'ShlAssign'",
+        "assign"
+      ]
+    },
+    {
+      "id": 45,
+      "line": 71,
+      "lhs": "assign_tail",
+      "tag": "assign_shr",
+      "arity": 1,
+      "rhs": [
+        "'ShrAssign'",
+        "assign"
+      ]
+    },
+    {
+      "id": 46,
+      "line": 72,
+      "lhs": "assign_tail",
+      "tag": "assign_band",
+      "arity": 1,
+      "rhs": [
+        "'AmpAssign'",
+        "assign"
+      ]
+    },
+    {
+      "id": 47,
+      "line": 73,
+      "lhs": "assign_tail",
+      "tag": "assign_bor",
+      "arity": 1,
+      "rhs": [
+        "'PipeAssign'",
+        "assign"
+      ]
+    },
+    {
+      "id": 48,
+      "line": 74,
+      "lhs": "assign_tail",
+      "tag": "assign_end",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 49,
+      "line": 78,
+      "lhs": "orexpr",
+      "tag": "orexpr",
+      "arity": 2,
+      "rhs": [
+        "andexpr",
+        "orexpr_tail"
+      ]
+    },
+    {
+      "id": 50,
+      "line": 79,
+      "lhs": "orexpr_tail",
+      "tag": "or_tail",
+      "arity": 2,
+      "rhs": [
+        "'OrOr'",
+        "andexpr",
+        "orexpr_tail"
+      ]
+    },
+    {
+      "id": 51,
+      "line": 80,
+      "lhs": "orexpr_tail",
+      "tag": "or_end",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 52,
+      "line": 82,
+      "lhs": "andexpr",
+      "tag": "andexpr",
+      "arity": 2,
+      "rhs": [
+        "bit_or",
+        "andexpr_tail"
+      ]
+    },
+    {
+      "id": 53,
+      "line": 83,
+      "lhs": "andexpr_tail",
+      "tag": "and_tail",
+      "arity": 2,
+      "rhs": [
+        "'AndAnd'",
+        "bit_or",
+        "andexpr_tail"
+      ]
+    },
+    {
+      "id": 54,
+      "line": 84,
+      "lhs": "andexpr_tail",
+      "tag": "and_end",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 55,
+      "line": 86,
+      "lhs": "bit_or",
+      "tag": "bit_or",
+      "arity": 2,
+      "rhs": [
+        "bit_xor",
+        "bit_or_tail"
+      ]
+    },
+    {
+      "id": 56,
+      "line": 87,
+      "lhs": "bit_or_tail",
+      "tag": "bor_tail",
+      "arity": 2,
+      "rhs": [
+        "'Pipe'",
+        "bit_xor",
+        "bit_or_tail"
+      ]
+    },
+    {
+      "id": 57,
+      "line": 88,
+      "lhs": "bit_or_tail",
+      "tag": "bor_end",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 58,
+      "line": 90,
+      "lhs": "bit_xor",
+      "tag": "bit_xor",
+      "arity": 2,
+      "rhs": [
+        "bit_and",
+        "bit_xor_tail"
+      ]
+    },
+    {
+      "id": 59,
+      "line": 91,
+      "lhs": "bit_xor_tail",
+      "tag": "xor_tail",
+      "arity": 2,
+      "rhs": [
+        "'Caret'",
+        "bit_and",
+        "bit_xor_tail"
+      ]
+    },
+    {
+      "id": 60,
+      "line": 92,
+      "lhs": "bit_xor_tail",
+      "tag": "xor_end",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 61,
+      "line": 94,
+      "lhs": "bit_and",
+      "tag": "bit_and",
+      "arity": 2,
+      "rhs": [
+        "equality",
+        "bit_and_tail"
+      ]
+    },
+    {
+      "id": 62,
+      "line": 95,
+      "lhs": "bit_and_tail",
+      "tag": "band_tail",
+      "arity": 2,
+      "rhs": [
+        "'Ampersand'",
+        "equality",
+        "bit_and_tail"
+      ]
+    },
+    {
+      "id": 63,
+      "line": 96,
+      "lhs": "bit_and_tail",
+      "tag": "band_end",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 64,
+      "line": 98,
+      "lhs": "equality",
+      "tag": "equality",
+      "arity": 2,
+      "rhs": [
+        "compare",
+        "equality_tail"
+      ]
+    },
+    {
+      "id": 65,
+      "line": 99,
+      "lhs": "equality_tail",
+      "tag": "eq_tail",
+      "arity": 2,
+      "rhs": [
+        "'EqEq'",
+        "compare",
+        "equality_tail"
+      ]
+    },
+    {
+      "id": 66,
+      "line": 100,
+      "lhs": "equality_tail",
+      "tag": "ne_tail",
+      "arity": 2,
+      "rhs": [
+        "'NotEqual'",
+        "compare",
+        "equality_tail"
+      ]
+    },
+    {
+      "id": 67,
+      "line": 101,
+      "lhs": "equality_tail",
+      "tag": "eq_end",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 68,
+      "line": 103,
+      "lhs": "compare",
+      "tag": "compare",
+      "arity": 2,
+      "rhs": [
+        "shift",
+        "compare_tail"
+      ]
+    },
+    {
+      "id": 69,
+      "line": 104,
+      "lhs": "compare_tail",
+      "tag": "lt_tail",
+      "arity": 2,
+      "rhs": [
+        "'Lt'",
+        "shift",
+        "compare_tail"
+      ]
+    },
+    {
+      "id": 70,
+      "line": 105,
+      "lhs": "compare_tail",
+      "tag": "gt_tail",
+      "arity": 2,
+      "rhs": [
+        "'Gt'",
+        "shift",
+        "compare_tail"
+      ]
+    },
+    {
+      "id": 71,
+      "line": 106,
+      "lhs": "compare_tail",
+      "tag": "le_tail",
+      "arity": 2,
+      "rhs": [
+        "'Le'",
+        "shift",
+        "compare_tail"
+      ]
+    },
+    {
+      "id": 72,
+      "line": 107,
+      "lhs": "compare_tail",
+      "tag": "ge_tail",
+      "arity": 2,
+      "rhs": [
+        "'Ge'",
+        "shift",
+        "compare_tail"
+      ]
+    },
+    {
+      "id": 73,
+      "line": 108,
+      "lhs": "compare_tail",
+      "tag": "compare_end",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 74,
+      "line": 110,
+      "lhs": "shift",
+      "tag": "shift",
+      "arity": 2,
+      "rhs": [
+        "add",
+        "shift_tail"
+      ]
+    },
+    {
+      "id": 75,
+      "line": 111,
+      "lhs": "shift_tail",
+      "tag": "shl_tail",
+      "arity": 2,
+      "rhs": [
+        "'Shl'",
+        "add",
+        "shift_tail"
+      ]
+    },
+    {
+      "id": 76,
+      "line": 112,
+      "lhs": "shift_tail",
+      "tag": "shr_tail",
+      "arity": 2,
+      "rhs": [
+        "'Shr'",
+        "add",
+        "shift_tail"
+      ]
+    },
+    {
+      "id": 77,
+      "line": 113,
+      "lhs": "shift_tail",
+      "tag": "shift_end",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 78,
+      "line": 115,
+      "lhs": "add",
+      "tag": "add",
+      "arity": 2,
+      "rhs": [
+        "mul",
+        "add_tail"
+      ]
+    },
+    {
+      "id": 79,
+      "line": 116,
+      "lhs": "add_tail",
+      "tag": "add_tail",
+      "arity": 2,
+      "rhs": [
+        "'InfixPlus'",
+        "mul",
+        "add_tail"
+      ]
+    },
+    {
+      "id": 80,
+      "line": 117,
+      "lhs": "add_tail",
+      "tag": "sub_tail",
+      "arity": 2,
+      "rhs": [
+        "'InfixMinus'",
+        "mul",
+        "add_tail"
+      ]
+    },
+    {
+      "id": 81,
+      "line": 118,
+      "lhs": "add_tail",
+      "tag": "add_end",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 82,
+      "line": 120,
+      "lhs": "mul",
+      "tag": "mul",
+      "arity": 2,
+      "rhs": [
+        "unary",
+        "mul_tail"
+      ]
+    },
+    {
+      "id": 83,
+      "line": 121,
+      "lhs": "mul_tail",
+      "tag": "mul_tail",
+      "arity": 2,
+      "rhs": [
+        "'Star'",
+        "unary",
+        "mul_tail"
+      ]
+    },
+    {
+      "id": 84,
+      "line": 122,
+      "lhs": "mul_tail",
+      "tag": "div_tail",
+      "arity": 2,
+      "rhs": [
+        "'Slash'",
+        "unary",
+        "mul_tail"
+      ]
+    },
+    {
+      "id": 85,
+      "line": 123,
+      "lhs": "mul_tail",
+      "tag": "mod_tail",
+      "arity": 2,
+      "rhs": [
+        "'Percent'",
+        "unary",
+        "mul_tail"
+      ]
+    },
+    {
+      "id": 86,
+      "line": 124,
+      "lhs": "mul_tail",
+      "tag": "mul_end",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 87,
+      "line": 128,
+      "lhs": "unary",
+      "tag": "pre_inc",
+      "arity": 1,
+      "rhs": [
+        "'Inc'",
+        "unary"
+      ]
+    },
+    {
+      "id": 88,
+      "line": 129,
+      "lhs": "unary",
+      "tag": "pre_dec",
+      "arity": 1,
+      "rhs": [
+        "'Dec'",
+        "unary"
+      ]
+    },
+    {
+      "id": 89,
+      "line": 130,
+      "lhs": "unary",
+      "tag": "pos",
+      "arity": 1,
+      "rhs": [
+        "'PrefixPlus'",
+        "unary"
+      ]
+    },
+    {
+      "id": 90,
+      "line": 131,
+      "lhs": "unary",
+      "tag": "neg",
+      "arity": 1,
+      "rhs": [
+        "'PrefixMinus'",
+        "unary"
+      ]
+    },
+    {
+      "id": 91,
+      "line": 132,
+      "lhs": "unary",
+      "tag": "not",
+      "arity": 1,
+      "rhs": [
+        "'Not'",
+        "unary"
+      ]
+    },
+    {
+      "id": 92,
+      "line": 133,
+      "lhs": "unary",
+      "tag": "bit_not",
+      "arity": 1,
+      "rhs": [
+        "'Tilde'",
+        "unary"
+      ]
+    },
+    {
+      "id": 93,
+      "line": 134,
+      "lhs": "unary",
+      "tag": "base",
+      "arity": 1,
+      "rhs": [
+        "postfix"
+      ]
+    },
+    {
+      "id": 94,
+      "line": 136,
+      "lhs": "postfix",
+      "tag": "postfix",
+      "arity": 2,
+      "rhs": [
+        "primary",
+        "postfix_tail"
+      ]
+    },
+    {
+      "id": 95,
+      "line": 137,
+      "lhs": "postfix_tail",
+      "tag": "postfix_call",
+      "arity": 2,
+      "rhs": [
+        "'CallLParen'",
+        "arg_list_opt",
+        "'CallRParen'",
+        "postfix_tail"
+      ]
+    },
+    {
+      "id": 96,
+      "line": 138,
+      "lhs": "postfix_tail",
+      "tag": "postfix_index",
+      "arity": 2,
+      "rhs": [
+        "'IndexLBracket'",
+        "expr",
+        "'IndexRBracket'",
+        "postfix_tail"
+      ]
+    },
+    {
+      "id": 97,
+      "line": 139,
+      "lhs": "postfix_tail",
+      "tag": "postfix_member",
+      "arity": 1,
+      "rhs": [
+        "'Dot'",
+        "'Ident'",
+        "postfix_tail"
+      ]
+    },
+    {
+      "id": 98,
+      "line": 140,
+      "lhs": "postfix_tail",
+      "tag": "postfix_inc",
+      "arity": 1,
+      "rhs": [
+        "'Inc'",
+        "postfix_tail"
+      ]
+    },
+    {
+      "id": 99,
+      "line": 141,
+      "lhs": "postfix_tail",
+      "tag": "postfix_dec",
+      "arity": 1,
+      "rhs": [
+        "'Dec'",
+        "postfix_tail"
+      ]
+    },
+    {
+      "id": 100,
+      "line": 142,
+      "lhs": "postfix_tail",
+      "tag": "postfix_end",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 101,
+      "line": 146,
+      "lhs": "arg_list_opt",
+      "tag": "args_none",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 102,
+      "line": 147,
+      "lhs": "arg_list_opt",
+      "tag": "args_some",
+      "arity": 2,
+      "rhs": [
+        "expr",
+        "arg_tail"
+      ]
+    },
+    {
+      "id": 103,
+      "line": 148,
+      "lhs": "arg_tail",
+      "tag": "args_more",
+      "arity": 2,
+      "rhs": [
+        "'Comma'",
+        "expr",
+        "arg_tail"
+      ]
+    },
+    {
+      "id": 104,
+      "line": 149,
+      "lhs": "arg_tail",
+      "tag": "args_end",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 105,
+      "line": 153,
+      "lhs": "primary",
+      "tag": "array_lit",
+      "arity": 1,
+      "rhs": [
+        "'ArrayLBracket'",
+        "array_elems_opt",
+        "'ArrayRBracket'"
+      ]
+    },
+    {
+      "id": 106,
+      "line": 154,
+      "lhs": "primary",
+      "tag": "group",
+      "arity": 1,
+      "rhs": [
+        "'GroupLParen'",
+        "expr",
+        "'GroupRParen'"
+      ]
+    },
+    {
+      "id": 107,
+      "line": 155,
+      "lhs": "primary",
+      "tag": "ident",
+      "arity": 0,
+      "rhs": [
+        "'Ident'"
+      ]
+    },
+    {
+      "id": 108,
+      "line": 156,
+      "lhs": "primary",
+      "tag": "int",
+      "arity": 0,
+      "rhs": [
+        "'Int'"
+      ]
+    },
+    {
+      "id": 109,
+      "line": 157,
+      "lhs": "primary",
+      "tag": "float",
+      "arity": 0,
+      "rhs": [
+        "'Float'"
+      ]
+    },
+    {
+      "id": 110,
+      "line": 158,
+      "lhs": "primary",
+      "tag": "string",
+      "arity": 0,
+      "rhs": [
+        "'String'"
+      ]
+    },
+    {
+      "id": 111,
+      "line": 159,
+      "lhs": "primary",
+      "tag": "char",
+      "arity": 0,
+      "rhs": [
+        "'Char'"
+      ]
+    },
+    {
+      "id": 112,
+      "line": 160,
+      "lhs": "array_elems_opt",
+      "tag": "array_none",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 113,
+      "line": 161,
+      "lhs": "array_elems_opt",
+      "tag": "array_some",
+      "arity": 2,
+      "rhs": [
+        "expr",
+        "array_elems_tail"
+      ]
+    },
+    {
+      "id": 114,
+      "line": 162,
+      "lhs": "array_elems_tail",
+      "tag": "array_more",
+      "arity": 2,
+      "rhs": [
+        "'Comma'",
+        "expr",
+        "array_elems_tail"
+      ]
+    },
+    {
+      "id": 115,
+      "line": 163,
+      "lhs": "array_elems_tail",
+      "tag": "array_end",
+      "arity": 0,
+      "rhs": []
+    }
+  ]
+}

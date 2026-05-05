@@ -79,4 +79,3 @@ pub fn global() -> &'static GpuDeviceCtx {
     static CTX: OnceLock<GpuDeviceCtx> = OnceLock::new();
     CTX.get_or_init(create_context)
 }
-

@@ -14,6 +14,7 @@ pub mod dfa_03_apply_block_prefix;
 pub mod pair_01_sum_inblock;
 pub mod pair_02_scan_block_totals;
 pub mod pair_03_apply_block_prefix;
+pub mod retag_closes;
 pub mod tokens_build;
 
 #[derive(ShaderType, Debug, Clone, Copy)]
@@ -34,6 +35,7 @@ pub struct LexerPasses {
     pub compact_all: compact_boundaries_all::CompactBoundariesAllPass,
     pub compact_kept: compact_boundaries_kept::CompactBoundariesKeptPass,
     pub tokens_build: tokens_build::TokensBuildPass,
+    pub retag_closes: retag_closes::RetagClosesPasses,
 }
 
 impl LexerPasses {
@@ -48,6 +50,7 @@ impl LexerPasses {
             compact_all: compact_boundaries_all::CompactBoundariesAllPass::new(&device)?,
             compact_kept: compact_boundaries_kept::CompactBoundariesKeptPass::new(&device)?,
             tokens_build: tokens_build::TokensBuildPass::new(&device)?,
+            retag_closes: retag_closes::RetagClosesPasses::new(&device)?,
         })
     }
 }
@@ -73,5 +76,6 @@ pub fn record_all_passes(
     p.compact_kept.record_pass(&mut ctx, E1(n))?;
     p.compact_all.record_pass(&mut ctx, E1(n))?;
     p.tokens_build.record_pass(&mut ctx, E1(n))?;
+    p.retag_closes.record_all(&mut ctx, n, nb_sum)?;
     Ok(())
 }

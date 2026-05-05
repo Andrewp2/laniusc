@@ -5,6 +5,7 @@
 #define WORKGROUP_SIZE 256
 
 import utils;
+import prefix_scan;
 
 struct Params
 {
@@ -19,8 +20,6 @@ StructuredBuffer<uint> flags_packed; // length n
 
 // Outputs
 RWStructuredBuffer<uint2> block_totals_pair; // length nb (sum of this block)
-
-groupshared uint2 sh[WORKGROUP_SIZE];
 
 [shader("compute")]
 [numthreads(WORKGROUP_SIZE, 1, 1)]
@@ -39,21 +38,7 @@ void pair_01_sum_inblock(uint3 tid: SV_GroupThreadID,
         uint f = flags_packed[i];
         v = seeds_from_flags(f);
     }
-    sh[tid.x] = v;
-    GroupMemoryBarrierWithGroupSync();
-
-    // Hillis–Steele inclusive scan (uint2 add)
-    for (uint offset = 1u; offset < WORKGROUP_SIZE; offset <<= 1u)
-    {
-        uint2 tmp = sh[tid.x];
-        if (tid.x >= offset)
-        {
-            tmp += sh[tid.x - offset];
-        }
-        GroupMemoryBarrierWithGroupSync();
-        sh[tid.x] = tmp;
-        GroupMemoryBarrierWithGroupSync();
-    }
+    uint2 inc = prefix_scan_u32x2_256(tid.x, v);
 
     // One lane writes block total = prefix at the last valid element
     const uint remain = (gParams.n > base) ? (gParams.n - base) : 0u;
@@ -63,7 +48,7 @@ void pair_01_sum_inblock(uint3 tid: SV_GroupThreadID,
         const uint last_lane = count - 1u;
         if (tid.x == last_lane)
         {
-            block_totals_pair[block] = sh[last_lane];
+            block_totals_pair[block] = inc;
         }
     }
 }

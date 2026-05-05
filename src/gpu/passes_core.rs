@@ -307,10 +307,10 @@ pub trait Pass<Buffers, DebugOutput> {
         ctx: &mut PassContext<'a, Buffers, DebugOutput>,
         input: InputElements,
     ) -> Result<(), anyhow::Error> {
-        let use_scopes = validation_scopes_enabled(); // 🤖 enable per-pass validation only when asked
+        let use_scopes = validation_scopes_enabled(); // enable per-pass validation only when asked
 
         if use_scopes {
-            ctx.device.push_error_scope(wgpu::ErrorFilter::Validation); // 🤖
+            ctx.device.push_error_scope(wgpu::ErrorFilter::Validation);
         }
 
         let pd = self.data();
@@ -374,7 +374,7 @@ pub trait Pass<Buffers, DebugOutput> {
 
         if use_scopes {
             if let Some(err) = pollster::block_on(ctx.device.pop_error_scope()) {
-                return Err(anyhow!("validation in pass {}: {err:?}", Self::NAME)); // 🤖
+                return Err(anyhow!("validation in pass {}: {err:?}", Self::NAME));
             }
         }
 

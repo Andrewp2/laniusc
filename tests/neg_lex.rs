@@ -23,6 +23,8 @@ fn unterminated_char_eof() {
 #[test]
 fn unterminated_block_comment() {
     let src = "a = 1 /* comment"; // no closing */
-    assert!(lex_on_cpu(src).is_err(), "unterminated block comment should error");
+    assert!(
+        lex_on_cpu(src).is_err(),
+        "unterminated block comment should error"
+    );
 }
-

@@ -43,6 +43,7 @@ struct CpuTree {
 
 #[derive(Serialize)]
 struct CpuOnlyGolden {
+    cpu_only: bool,
     brackets: Brackets,
     sc_canon: Vec<u32>,
     match_for_index: Vec<u32>,
@@ -190,6 +191,7 @@ async fn run_one(lexer: &GpuLexer, path: &Path) -> Result<()> {
 
     // Serialize
     let golden = CpuOnlyGolden {
+        cpu_only: true,
         brackets,
         sc_canon,
         match_for_index,

@@ -5,6 +5,7 @@
 #define WORKGROUP_SIZE 256
 
 import utils;
+import prefix_scan;
 
 struct Params
 {
@@ -19,8 +20,6 @@ StructuredBuffer<uint2> block_prefix_pair; // length nb (inclusive per block)
 
 RWStructuredBuffer<uint> s_all_final;  // length n
 RWStructuredBuffer<uint> s_keep_final; // length n
-
-groupshared uint2 sh[WORKGROUP_SIZE];
 
 [shader("compute")]
 [numthreads(WORKGROUP_SIZE, 1, 1)]
@@ -39,20 +38,7 @@ void pair_03_apply_block_prefix(uint3 tid: SV_GroupThreadID,
         uint f = flags_packed[i];
         v = seeds_from_flags(f);
     }
-    sh[tid.x] = v;
-    GroupMemoryBarrierWithGroupSync();
-
-    for (uint offset = 1u; offset < WORKGROUP_SIZE; offset <<= 1u)
-    {
-        uint2 tmp = sh[tid.x];
-        if (tid.x >= offset)
-        {
-            tmp += sh[tid.x - offset];
-        }
-        GroupMemoryBarrierWithGroupSync();
-        sh[tid.x] = tmp;
-        GroupMemoryBarrierWithGroupSync();
-    }
+    uint2 inc = prefix_scan_u32x2_256(tid.x, v);
 
     if (i >= gParams.n)
         return;
@@ -64,7 +50,7 @@ void pair_03_apply_block_prefix(uint3 tid: SV_GroupThreadID,
         carry = block_prefix_pair[block - 1u];
     }
 
-    uint2 res = sh[tid.x] + carry;
+    uint2 res = inc + carry;
     s_all_final[i] = res.x;
     s_keep_final[i] = res.y;
 }

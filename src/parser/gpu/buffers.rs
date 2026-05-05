@@ -253,7 +253,7 @@ impl ParserBuffers {
             "brackets.b07.params",
             &super::passes::brackets_pse_04::Params {
                 n_layers,
-                typed_check: 0,
+                typed_check: 1,
             },
         );
 

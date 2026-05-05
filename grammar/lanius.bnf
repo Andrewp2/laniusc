@@ -2,72 +2,162 @@
 # BNF-with-tags (no EBNF sugar). One production per line, ending with ';'
 # Nonterminals are bare identifiers. Terminals are token kind names in single quotes.
 # Optional production tag: LhsName [tag] -> ... ;
+# Start directive: %start NonTerminal;
 
-# ----- Primary & postfix -----
+%start file;
 
-primary      [group]     -> 'GroupLParen' expr 'RParen';
-primary      [array_lit] -> 'ArrayLBracket' 'RBracket';
-primary      [ident]     -> 'Ident';
-primary      [int]       -> 'Int';
-primary      [string]    -> 'String';
+# ----- File, items, functions -----
 
-# postfix = primary { call | index }  (left-assoc, desugared)
-postfix      [call]      -> postfix 'CallLParen' 'RParen';
-postfix      [index]     -> postfix 'IndexLBracket' expr 'RBracket';
-postfix      [base]      -> primary;
+file                         -> item_list;
+item_list     [items_more]   -> item item_list;
+item_list     [items_end]    -> ;
 
-# ----- Unary -----
+item          [item_pub_fn]  -> 'Pub' fn_item;
+item          [item_fn]      -> fn_item;
+item          [item_stmt]    -> stmt;
 
-unary        [pos]       -> 'Plus' unary;
-unary        [neg]       -> 'Minus' unary;
-unary        [not]       -> 'Not' unary;
-unary        [base]      -> postfix;
+fn_item       [fn]           -> 'Fn' 'Ident' 'CallLParen' param_list_opt 'CallRParen' return_type_opt block;
+return_type_opt [ret_type]   -> 'Arrow' type_expr;
+return_type_opt [ret_void]   -> ;
 
-# ----- Binary (left-assoc via tail recursion pattern) -----
+param_list_opt [params_none] -> ;
+param_list_opt [params_some] -> param param_tail;
+param          [param]       -> 'Ident' 'Colon' type_expr;
+param_tail     [params_more] -> 'Comma' param param_tail;
+param_tail     [params_end]  -> ;
 
-mul          [mul_l]     -> mul 'Star' unary;
-mul          [mul_r]     -> unary;
+type_expr      [type_ident]  -> 'Ident';
+type_expr      [type_array]  -> 'ArrayLBracket' type_expr 'Semicolon' 'Int' 'ArrayRBracket';
 
-add          [add_l]     -> add 'Plus' mul;
-add          [sub_l]     -> add 'Minus' mul;
-add          [add_r]     -> mul;
+# ----- Blocks and statements -----
 
-compare      [lt]        -> compare 'Lt' add;
-compare      [gt]        -> compare 'Gt' add;
-compare      [le]        -> compare 'Le' add;
-compare      [ge]        -> compare 'Ge' add;
-compare      [base]      -> add;
+block         [block]        -> 'LBrace' stmt_list 'RBrace';
+stmt_list     [stmts_more]   -> stmt stmt_list;
+stmt_list     [stmts_end]    -> ;
 
-equality     [eq]        -> equality 'EqEq' compare;
-equality     [base]      -> compare;
+stmt          [let_stmt]     -> 'Let' 'Ident' let_type_opt let_init_opt 'Semicolon';
+stmt          [return_stmt]  -> 'Return' return_value_opt 'Semicolon';
+stmt          [if_stmt]      -> 'If' 'GroupLParen' expr 'GroupRParen' block else_opt;
+stmt          [while_stmt]   -> 'While' 'GroupLParen' expr 'GroupRParen' block;
+stmt          [break_stmt]   -> 'Break' 'Semicolon';
+stmt          [continue_stmt] -> 'Continue' 'Semicolon';
+stmt          [block_stmt]   -> block;
+stmt          [expr_stmt]    -> expr 'Semicolon';
 
-andexpr      [and]       -> andexpr 'AndAnd' equality;
-andexpr      [base]      -> equality;
+let_type_opt  [let_type]     -> 'Colon' type_expr;
+let_type_opt  [let_type_none] -> ;
+let_init_opt  [let_init]     -> 'Assign' expr;
+let_init_opt  [let_init_none] -> ;
+return_value_opt [return_value] -> expr;
+return_value_opt [return_void] -> ;
+else_opt      [else_block]   -> 'Else' block;
+else_opt      [else_none]    -> ;
 
-orexpr       [or]        -> orexpr 'OrOr' andexpr;
-orexpr       [base]      -> andexpr;
+# ----- Expressions -----
 
-# ----- Assignment (right-assoc) -----
+expr                         -> assign;
 
-assign       [set]       -> orexpr 'Assign' assign;
-assign       [base]      -> orexpr;
+# Assignment is right-associative.
 
-# ----- Top -----
+assign                       -> orexpr assign_tail;
+assign_tail  [assign_set]    -> 'Assign' assign;
+assign_tail  [assign_add]    -> 'PlusAssign' assign;
+assign_tail  [assign_sub]    -> 'MinusAssign' assign;
+assign_tail  [assign_mul]    -> 'StarAssign' assign;
+assign_tail  [assign_div]    -> 'SlashAssign' assign;
+assign_tail  [assign_mod]    -> 'PercentAssign' assign;
+assign_tail  [assign_xor]    -> 'CaretAssign' assign;
+assign_tail  [assign_shl]    -> 'ShlAssign' assign;
+assign_tail  [assign_shr]    -> 'ShrAssign' assign;
+assign_tail  [assign_band]   -> 'AmpAssign' assign;
+assign_tail  [assign_bor]    -> 'PipeAssign' assign;
+assign_tail  [assign_end]    -> ;
 
-expr                     -> assign;
+# ----- Binary operators (right-recursive parser shape; rewrite later for associativity) -----
+
+orexpr                       -> andexpr orexpr_tail;
+orexpr_tail  [or_tail]       -> 'OrOr' andexpr orexpr_tail;
+orexpr_tail  [or_end]        -> ;
+
+andexpr                      -> bit_or andexpr_tail;
+andexpr_tail [and_tail]      -> 'AndAnd' bit_or andexpr_tail;
+andexpr_tail [and_end]       -> ;
+
+bit_or                       -> bit_xor bit_or_tail;
+bit_or_tail  [bor_tail]      -> 'Pipe' bit_xor bit_or_tail;
+bit_or_tail  [bor_end]       -> ;
+
+bit_xor                      -> bit_and bit_xor_tail;
+bit_xor_tail [xor_tail]      -> 'Caret' bit_and bit_xor_tail;
+bit_xor_tail [xor_end]       -> ;
+
+bit_and                      -> equality bit_and_tail;
+bit_and_tail [band_tail]     -> 'Ampersand' equality bit_and_tail;
+bit_and_tail [band_end]      -> ;
+
+equality                     -> compare equality_tail;
+equality_tail [eq_tail]      -> 'EqEq' compare equality_tail;
+equality_tail [ne_tail]      -> 'NotEqual' compare equality_tail;
+equality_tail [eq_end]       -> ;
+
+compare                      -> shift compare_tail;
+compare_tail [lt_tail]       -> 'Lt' shift compare_tail;
+compare_tail [gt_tail]       -> 'Gt' shift compare_tail;
+compare_tail [le_tail]       -> 'Le' shift compare_tail;
+compare_tail [ge_tail]       -> 'Ge' shift compare_tail;
+compare_tail [compare_end]   -> ;
+
+shift                        -> add shift_tail;
+shift_tail   [shl_tail]      -> 'Shl' add shift_tail;
+shift_tail   [shr_tail]      -> 'Shr' add shift_tail;
+shift_tail   [shift_end]     -> ;
+
+add                          -> mul add_tail;
+add_tail     [add_tail]      -> 'InfixPlus' mul add_tail;
+add_tail     [sub_tail]      -> 'InfixMinus' mul add_tail;
+add_tail     [add_end]       -> ;
+
+mul                          -> unary mul_tail;
+mul_tail     [mul_tail]      -> 'Star' unary mul_tail;
+mul_tail     [div_tail]      -> 'Slash' unary mul_tail;
+mul_tail     [mod_tail]      -> 'Percent' unary mul_tail;
+mul_tail     [mul_end]       -> ;
+
+# ----- Unary and postfix -----
+
+unary        [pre_inc]       -> 'Inc' unary;
+unary        [pre_dec]       -> 'Dec' unary;
+unary        [pos]           -> 'PrefixPlus' unary;
+unary        [neg]           -> 'PrefixMinus' unary;
+unary        [not]           -> 'Not' unary;
+unary        [bit_not]       -> 'Tilde' unary;
+unary        [base]          -> postfix;
+
+postfix                      -> primary postfix_tail;
+postfix_tail [postfix_call]  -> 'CallLParen' arg_list_opt 'CallRParen' postfix_tail;
+postfix_tail [postfix_index] -> 'IndexLBracket' expr 'IndexRBracket' postfix_tail;
+postfix_tail [postfix_member] -> 'Dot' 'Ident' postfix_tail;
+postfix_tail [postfix_inc]   -> 'Inc' postfix_tail;
+postfix_tail [postfix_dec]   -> 'Dec' postfix_tail;
+postfix_tail [postfix_end]   -> ;
 
 # --- Optional arguments for calls (BNF, no EBNF sugar) ---
 
-postfix      [call]      -> postfix 'CallLParen' arg_list_opt 'RParen';
-arg_list_opt [none]      -> ;
-arg_list_opt [some]      -> expr arg_tail;
-arg_tail     [more]      -> 'Comma' expr arg_tail;
-arg_tail     [end]       -> ;
+arg_list_opt [args_none]     -> ;
+arg_list_opt [args_some]     -> expr arg_tail;
+arg_tail     [args_more]     -> 'Comma' expr arg_tail;
+arg_tail     [args_end]      -> ;
 
-# --- Array literals with elements ---
+# ----- Primary -----
 
-primary      [array_lit] -> 'ArrayLBracket' array_elems_opt 'RBracket';
-array_elems_opt [none]   -> ;
-array_elems_opt [some]   -> expr array_elems_tail;
-array_elems_tail [more]  -> 'Comma' expr array_elems_tail;
-array_elems_tail [end]   -> ;
+primary      [array_lit]     -> 'ArrayLBracket' array_elems_opt 'ArrayRBracket';
+primary      [group]         -> 'GroupLParen' expr 'GroupRParen';
+primary      [ident]         -> 'Ident';
+primary      [int]           -> 'Int';
+primary      [float]         -> 'Float';
+primary      [string]        -> 'String';
+primary      [char]          -> 'Char';
+array_elems_opt [array_none] -> ;
+array_elems_opt [array_some] -> expr array_elems_tail;
+array_elems_tail [array_more] -> 'Comma' expr array_elems_tail;
+array_elems_tail [array_end] -> ;

@@ -156,7 +156,11 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
                 use crate::lexer::gpu::debug::make_staging;
                 let per_round_bytes_u64 = (n as usize * 2 * std::mem::size_of::<u32>()) as u64;
                 // Debug: snapshot reused DFA block ping/pong
-                let last_writer = if use_ping_as_src != 0 { &b.dfa_02_pong } else { &b.dfa_02_ping };
+                let last_writer = if use_ping_as_src != 0 {
+                    &b.dfa_02_pong
+                } else {
+                    &b.dfa_02_ping
+                };
                 let staging =
                     make_staging(device, "dbg.pair_scan_round", per_round_bytes_u64 as usize);
                 encoder.copy_buffer_to_buffer(last_writer, 0, &staging, 0, per_round_bytes_u64);
@@ -213,7 +217,11 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
         );
 
         let rounds = compute_rounds(b.nb_sum);
-        let last = if (rounds % 2) == 1 { &b.dfa_02_pong } else { &b.dfa_02_ping };
+        let last = if (rounds % 2) == 1 {
+            &b.dfa_02_pong
+        } else {
+            &b.dfa_02_ping
+        };
         dbg.gpu.block_prefix_pair.set_from_copy(
             device,
             encoder,

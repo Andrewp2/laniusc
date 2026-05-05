@@ -4,6 +4,8 @@ use encase::UniformBuffer;
 use wgpu::util::DeviceExt;
 
 use super::PassData;
+#[cfg(feature = "gpu-debug")]
+use crate::lexer::tables::dfa::N_STATES;
 use crate::{
     gpu::passes_core::{
         DispatchDim,
@@ -159,9 +161,9 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSu
                 // TODO: block_ping and block_pong are both N_STATES * (nb_dfa as usize) as their count, with that times 4 being byte count.
                 // for some reason we're copying n * N_STATES * 4 bytes, which is more than the size of the buffer.
                 let last_writer = if use_ping_as_src != 0 {
-                    &b.block_pong
+                    &b.dfa_02_pong
                 } else {
-                    &b.block_ping
+                    &b.dfa_02_ping
                 };
                 let staging = make_staging(device, "dbg.func_scan_round", per_round_bytes);
                 encoder.copy_buffer_to_buffer(last_writer, 0, &staging, 0, per_round_bytes as u64);

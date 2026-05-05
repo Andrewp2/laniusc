@@ -13,7 +13,7 @@
       "text": "1"
     },
     {
-      "kind": "Plus",
+      "kind": "InfixPlus",
       "text": "+"
     },
     {

@@ -1,9 +1,12 @@
 use std::collections::HashMap;
+
 use anyhow::Result;
 use encase::ShaderType;
 
-use crate::gpu::passes_core::{DispatchDim, Pass, PassData};
-use crate::parser::gpu::buffers::ParserBuffers;
+use crate::{
+    gpu::passes_core::{DispatchDim, Pass, PassData},
+    parser::gpu::buffers::ParserBuffers,
+};
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
@@ -39,8 +42,12 @@ impl Pass<ParserBuffers, crate::parser::gpu::debug::DebugOutput> for BracketsPse
     const NAME: &'static str = "brackets_pse_04_pair_by_layer";
     const DIM: DispatchDim = DispatchDim::D1;
 
-    fn from_data(data: PassData) -> Self { Self { data } }
-    fn data(&self) -> &PassData { &self.data }
+    fn from_data(data: PassData) -> Self {
+        Self { data }
+    }
+    fn data(&self) -> &PassData {
+        &self.data
+    }
 
     fn create_resource_map<'a>(
         &self,
@@ -52,10 +59,19 @@ impl Pass<ParserBuffers, crate::parser::gpu::debug::DebugOutput> for BracketsPse
             ("hist_pop".into(), b.b_hist_pop.as_entire_binding()),
             ("off_push".into(), b.b_off_push.as_entire_binding()),
             ("off_pop".into(), b.b_off_pop.as_entire_binding()),
-            ("pushes_by_layer".into(), b.b_pushes_by_layer.as_entire_binding()),
-            ("pops_by_layer".into(), b.b_pops_by_layer.as_entire_binding()),
+            (
+                "pushes_by_layer".into(),
+                b.b_pushes_by_layer.as_entire_binding(),
+            ),
+            (
+                "pops_by_layer".into(),
+                b.b_pops_by_layer.as_entire_binding(),
+            ),
             ("sc_stream".into(), b.out_sc.as_entire_binding()),
-            ("match_for_index".into(), b.match_for_index.as_entire_binding()),
+            (
+                "match_for_index".into(),
+                b.match_for_index.as_entire_binding(),
+            ),
             ("out_valid".into(), b.valid_out.as_entire_binding()),
         ])
     }

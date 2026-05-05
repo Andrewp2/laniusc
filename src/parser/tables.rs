@@ -100,26 +100,38 @@ pub fn build_bracket_action_table(n_kinds: u32) -> Vec<u8> {
 
     // Pop on closing tokens (generic pop_tag=0 in MVP)
     for p in all_prev {
-        set(
-            p,
-            TokenKind::RParen as u32,
-            ActionHeader {
-                push_len: 0,
-                emit_len: 0,
-                pop_tag: 0,
-                pop_count: 1,
-            },
-        );
-        set(
-            p,
-            TokenKind::RBracket as u32,
-            ActionHeader {
-                push_len: 0,
-                emit_len: 0,
-                pop_tag: 0,
-                pop_count: 1,
-            },
-        );
+        for close in [
+            TokenKind::RParen,
+            TokenKind::GroupRParen,
+            TokenKind::CallRParen,
+        ] {
+            set(
+                p,
+                close as u32,
+                ActionHeader {
+                    push_len: 0,
+                    emit_len: 0,
+                    pop_tag: 0,
+                    pop_count: 1,
+                },
+            );
+        }
+        for close in [
+            TokenKind::RBracket,
+            TokenKind::ArrayRBracket,
+            TokenKind::IndexRBracket,
+        ] {
+            set(
+                p,
+                close as u32,
+                ActionHeader {
+                    push_len: 0,
+                    emit_len: 0,
+                    pop_tag: 0,
+                    pop_count: 1,
+                },
+            );
+        }
         // (Add RBrace if you want block matching in the MVP)
     }
 
@@ -337,7 +349,7 @@ impl PrecomputedParseTables {
 // ---------- MVP filler (so we can generate a valid file immediately) ----------
 
 /// Build a minimal, *correctly-shaped* set of tables that only handle bracket push/pop.
-/// - Stack symbols: 0=GroupParen, 1=CallParen, 2=ArrayBracket, 3=IndexBracket
+/// - Stack symbols: 0=Paren, 1=Bracket
 /// - Partial parse: empty everywhere (we’ll fill after we wire real grammar).
 /// - Production arity: uses `prod_arity` passed in (possibly from a grammar scan).
 pub fn build_mvp_precomputed_tables(n_kinds: u32, prod_arity: Vec<u32>) -> PrecomputedParseTables {
@@ -345,10 +357,8 @@ pub fn build_mvp_precomputed_tables(n_kinds: u32, prod_arity: Vec<u32>) -> Preco
     let mut t = PrecomputedParseTables::new(n_kinds, n_productions);
     t.prod_arity = prod_arity;
 
-    const SYM_GROUP_PAREN: u32 = 0;
-    const SYM_CALL_PAREN: u32 = 1;
-    const SYM_ARRAY_BRACK: u32 = 2;
-    const SYM_INDEX_BRACK: u32 = 3;
+    const SYM_PAREN: u32 = 0;
+    const SYM_BRACK: u32 = 1;
 
     // For every prev kind, set sequences on open/close delimiters.
     for prev in 0..n_kinds {
@@ -356,27 +366,44 @@ pub fn build_mvp_precomputed_tables(n_kinds: u32, prod_arity: Vec<u32>) -> Preco
         t.set_sc_for_pair(
             prev,
             TokenKind::GroupLParen as u32,
-            &[encode_push(SYM_GROUP_PAREN)],
+            &[encode_push(SYM_PAREN)],
         );
         t.set_sc_for_pair(
             prev,
             TokenKind::CallLParen as u32,
-            &[encode_push(SYM_CALL_PAREN)],
+            &[encode_push(SYM_PAREN)],
         );
         t.set_sc_for_pair(
             prev,
             TokenKind::ArrayLBracket as u32,
-            &[encode_push(SYM_ARRAY_BRACK)],
+            &[encode_push(SYM_BRACK)],
         );
         t.set_sc_for_pair(
             prev,
             TokenKind::IndexLBracket as u32,
-            &[encode_push(SYM_INDEX_BRACK)],
+            &[encode_push(SYM_BRACK)],
         );
 
-        // Closes = pop (type-agnostic MVP; validation happens later)
-        t.set_sc_for_pair(prev, TokenKind::RParen as u32, &[encode_pop(0)]);
-        t.set_sc_for_pair(prev, TokenKind::RBracket as u32, &[encode_pop(0)]);
+        // Closes = typed pops by physical delimiter. Retagged closes are the normal path;
+        // raw closes remain as compatibility/failure-recovery fallbacks.
+        t.set_sc_for_pair(prev, TokenKind::RParen as u32, &[encode_pop(SYM_PAREN)]);
+        t.set_sc_for_pair(
+            prev,
+            TokenKind::GroupRParen as u32,
+            &[encode_pop(SYM_PAREN)],
+        );
+        t.set_sc_for_pair(prev, TokenKind::CallRParen as u32, &[encode_pop(SYM_PAREN)]);
+        t.set_sc_for_pair(prev, TokenKind::RBracket as u32, &[encode_pop(SYM_BRACK)]);
+        t.set_sc_for_pair(
+            prev,
+            TokenKind::ArrayRBracket as u32,
+            &[encode_pop(SYM_BRACK)],
+        );
+        t.set_sc_for_pair(
+            prev,
+            TokenKind::IndexRBracket as u32,
+            &[encode_pop(SYM_BRACK)],
+        );
 
         // Empty partial parse everywhere (MVP).
         t.set_pp_for_pair(prev, TokenKind::GroupLParen as u32, &[]);
@@ -384,11 +411,15 @@ pub fn build_mvp_precomputed_tables(n_kinds: u32, prod_arity: Vec<u32>) -> Preco
         t.set_pp_for_pair(prev, TokenKind::ArrayLBracket as u32, &[]);
         t.set_pp_for_pair(prev, TokenKind::IndexLBracket as u32, &[]);
         t.set_pp_for_pair(prev, TokenKind::RParen as u32, &[]);
+        t.set_pp_for_pair(prev, TokenKind::GroupRParen as u32, &[]);
+        t.set_pp_for_pair(prev, TokenKind::CallRParen as u32, &[]);
         t.set_pp_for_pair(prev, TokenKind::RBracket as u32, &[]);
+        t.set_pp_for_pair(prev, TokenKind::ArrayRBracket as u32, &[]);
+        t.set_pp_for_pair(prev, TokenKind::IndexRBracket as u32, &[]);
     }
 
-    // Bit widths (symbol ids go up to 3 in MVP)
-    t.finalize_bit_widths(3);
+    // Bit widths (symbol ids go up to 1 in MVP)
+    t.finalize_bit_widths(1);
     t
 }
 

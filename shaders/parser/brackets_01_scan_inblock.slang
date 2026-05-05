@@ -1,6 +1,8 @@
 // shaders/parser/brackets_01_scan_inblock.slang
 // Per-workgroup exclusive scan of +1/-1 deltas. Writes in-block exscan and block summaries.
 
+import prefix_scan;
+
 struct Params
 {
     uint n_sc;
@@ -15,7 +17,6 @@ RWStructuredBuffer<int> block_minpref;  // len = n_blocks (min prefix within blo
 RWStructuredBuffer<int> block_maxdepth; // len = n_blocks (max depth within block)
 
 groupshared int s_val[256];
-groupshared int s_scan[256];
 groupshared int s_minp[256];
 groupshared int s_depth[256];
 
@@ -37,23 +38,12 @@ void main(uint3 tid: SV_DispatchThreadID,
         uint code = sc_stream[i];
         v = ((code & 1u) == 1u) ? 1 : -1;
     }
-    s_val[ltid.x] = v;
-    s_scan[ltid.x] = v;
+    int inc = prefix_scan_i32_256(ltid.x, v);
+    s_val[ltid.x] = inc;
     GroupMemoryBarrierWithGroupSync();
 
-    // Hillis–Steele inclusive scan
-    for (uint offs = 1; offs < GSIZE; offs <<= 1)
-    {
-        int t = s_scan[ltid.x];
-        if (ltid.x >= offs)
-            t += s_scan[ltid.x - offs];
-        GroupMemoryBarrierWithGroupSync();
-        s_scan[ltid.x] = t;
-        GroupMemoryBarrierWithGroupSync();
-    }
-
     // Convert to exclusive scan (ex = inc - val) and track min-prefix / max-depth in-block
-    int ex = s_scan[ltid.x] - s_val[ltid.x];
+    int ex = inc - v;
 
     // Compute min prefix in-block: min over partial sums (exclusive domain)
     // We can reconstruct running depth within block as ex + depth_base (added later),
@@ -80,7 +70,7 @@ void main(uint3 tid: SV_DispatchThreadID,
     }
     if (ltid.x == 0)
     {
-        int sum = s_scan[GSIZE - 1];
+        int sum = s_val[GSIZE - 1];
         block_sum[gid.x] = sum;
         block_minpref[gid.x] = s_minp[0];
         block_maxdepth[gid.x] = s_depth[0];

@@ -84,6 +84,14 @@ fn kind_from_str(s: &str) -> Option<TokenKind> {
         "Ampersand" => Ampersand,
         "Pipe" => Pipe,
         "Minus" => Minus,
+        "PrefixPlus" => PrefixPlus,
+        "InfixPlus" => InfixPlus,
+        "PrefixMinus" => PrefixMinus,
+        "InfixMinus" => InfixMinus,
+        "GroupRParen" => GroupRParen,
+        "CallRParen" => CallRParen,
+        "ArrayRBracket" => ArrayRBracket,
+        "IndexRBracket" => IndexRBracket,
         _ => return None,
     })
 }

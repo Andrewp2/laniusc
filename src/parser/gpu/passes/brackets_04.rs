@@ -59,6 +59,10 @@ impl Pass<ParserBuffers, crate::parser::gpu::debug::DebugOutput> for BracketsHis
             ("layer".into(), b.b_layer.as_entire_binding()),
             ("hist_push".into(), b.b_hist_push.as_entire_binding()),
             ("hist_pop".into(), b.b_hist_pop.as_entire_binding()),
+            (
+                "match_for_index".into(),
+                b.match_for_index.as_entire_binding(),
+            ),
         ])
     }
 }

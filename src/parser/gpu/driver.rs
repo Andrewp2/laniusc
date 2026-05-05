@@ -115,6 +115,12 @@ impl GpuParser {
             tables,
         );
 
+        // Parser buffers are per-call, and cached bind groups hold concrete buffer handles.
+        self.bg_cache
+            .lock()
+            .expect("parser.bg_cache poisoned")
+            .clear();
+
         // Timing is gated the same way as the lexer (and only if supported).
         let timers_on = self.timers_supported && bool_from_env("LANIUS_GPU_TIMING", false);
         let mut maybe_timer = if timers_on {

@@ -35,7 +35,17 @@ pub struct GpuBuffers {
     pub token_count: LaniusBuffer<u32>,
 
     pub tokens_out: LaniusBuffer<super::GpuToken>,
-
+    pub close_exscan_inblock: LaniusBuffer<i32>,
+    pub close_block_sum: LaniusBuffer<i32>,
+    pub close_block_prefix: LaniusBuffer<i32>,
+    pub close_layer: LaniusBuffer<u32>,
+    pub close_hist_push: LaniusBuffer<u32>,
+    pub close_hist_pop: LaniusBuffer<u32>,
+    pub close_off_push: LaniusBuffer<u32>,
+    pub close_off_pop: LaniusBuffer<u32>,
+    pub close_rank: LaniusBuffer<u32>,
+    pub close_pushes_by_layer: LaniusBuffer<u32>,
+    pub close_pops_by_layer: LaniusBuffer<u32>,
     // (no separate kinds_retagged; tokens_build writes final kinds)
 }
 
@@ -107,7 +117,27 @@ impl GpuBuffers {
         let token_count: LaniusBuffer<u32> = storage_rw_for_array::<u32>(device, "token_count", 1);
 
         let tokens_out = storage_rw_for_array::<super::GpuToken>(device, "tokens_out", n as usize);
-
+        let close_exscan_inblock =
+            storage_rw_for_array::<i32>(device, "lexer.close.exscan_inblock", n as usize);
+        let close_block_sum =
+            storage_rw_for_array::<i32>(device, "lexer.close.block_sum", nb_sum as usize);
+        let close_block_prefix =
+            storage_rw_for_array::<i32>(device, "lexer.close.block_prefix", nb_sum as usize);
+        let close_layer = storage_rw_for_array::<u32>(device, "lexer.close.layer", n as usize);
+        let close_layer_count = n.saturating_add(2) as usize;
+        let close_hist_push =
+            storage_rw_for_array::<u32>(device, "lexer.close.hist_push", close_layer_count);
+        let close_hist_pop =
+            storage_rw_for_array::<u32>(device, "lexer.close.hist_pop", close_layer_count);
+        let close_off_push =
+            storage_rw_for_array::<u32>(device, "lexer.close.off_push", close_layer_count);
+        let close_off_pop =
+            storage_rw_for_array::<u32>(device, "lexer.close.off_pop", close_layer_count);
+        let close_rank = storage_rw_for_array::<u32>(device, "lexer.close.rank", n as usize);
+        let close_pushes_by_layer =
+            storage_rw_for_array::<u32>(device, "lexer.close.pushes_by_layer", n as usize);
+        let close_pops_by_layer =
+            storage_rw_for_array::<u32>(device, "lexer.close.pops_by_layer", n as usize);
 
         let params_val = LexParams {
             n,
@@ -145,6 +175,17 @@ impl GpuBuffers {
             token_count,
 
             tokens_out,
+            close_exscan_inblock,
+            close_block_sum,
+            close_block_prefix,
+            close_layer,
+            close_hist_push,
+            close_hist_pop,
+            close_off_push,
+            close_off_pop,
+            close_rank,
+            close_pushes_by_layer,
+            close_pops_by_layer,
         }
     }
 }

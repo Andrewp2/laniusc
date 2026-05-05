@@ -32,8 +32,8 @@ impl Dfa03ApplyBlockPrefixPass {
 }
 
 impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa03ApplyBlockPrefixPass {
-    const NAME: &'static str = "dfa_03_apply_block_prefix"; // 🤖
-    const DIM: DispatchDim = DispatchDim::D2; // 🤖 shader uses 2D tiling over blocks
+    const NAME: &'static str = "dfa_03_apply_block_prefix";
+    const DIM: DispatchDim = DispatchDim::D2; // shader uses 2D tiling over blocks
 
     fn from_data(data: PassData) -> Self {
         Self { data }
@@ -48,7 +48,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa03ApplyBlockP
     ) -> HashMap<String, wgpu::BindingResource<'a>> {
         use wgpu::BindingResource::*;
 
-        // 🤖 Pick last-writer of the block scan (dfa_02)
+        // Pick last-writer of the block scan (dfa_02)
         let rounds = compute_rounds(b.nb_dfa);
         let block_prefix_binding: wgpu::BindingResource<'a> = if (rounds % 2) == 1 {
             b.dfa_02_pong.as_entire_binding()
@@ -57,7 +57,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa03ApplyBlockP
         };
         debug_assert!(rounds == 0 || b.dfa_02_ping.count == b.dfa_02_pong.count);
 
-        // 🤖 Bind exactly what the fused Slang shader declares
+        // Bind exactly what the fused Slang shader declares
         HashMap::from([
             (
                 "gParams".into(),
@@ -79,7 +79,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa03ApplyBlockP
         b: &GpuBuffers,
         dbg: &mut DebugOutput,
     ) {
-        // 🤖 Keep a useful tap: show which block-prefix (inclusive scan of block δ) was applied.
+        // Keep a useful tap: show which block-prefix (inclusive scan of block δ) was applied.
         let rounds = compute_rounds(b.nb_dfa);
         let last = if (rounds % 2) == 1 {
             &b.dfa_02_pong

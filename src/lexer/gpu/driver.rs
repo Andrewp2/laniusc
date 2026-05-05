@@ -277,7 +277,7 @@ impl GpuLexer {
 
         let use_scopes = std::env::var("LANIUS_VALIDATION_SCOPES")
             .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
-            .unwrap_or(false); // 🤖
+            .unwrap_or(false);
 
         let timers_on = self.timers_supported
             && std::env::var("LANIUS_GPU_TIMING")
@@ -354,11 +354,11 @@ impl GpuLexer {
 
             if use_scopes {
                 self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-            } // 🤖
+            }
             self.queue.submit(Some(enc.finish()));
             if use_scopes {
                 if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
-                    eprintln!("[wgpu submit] validation while submitting lex batch: {err:#?}"); // 🤖
+                    eprintln!("[wgpu submit] validation while submitting lex batch: {err:#?}");
                 }
             }
 
@@ -387,11 +387,11 @@ impl GpuLexer {
             }
             if use_scopes {
                 self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-            } // 🤖
+            }
             self.queue.submit(Some(enc.finish()));
             if use_scopes {
                 if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
-                    eprintln!("[wgpu submit] validation while submitting lex batch: {err:#?}"); // 🤖
+                    eprintln!("[wgpu submit] validation while submitting lex batch: {err:#?}");
                 }
             }
             // We intentionally skip token-count readback when readback is disabled.

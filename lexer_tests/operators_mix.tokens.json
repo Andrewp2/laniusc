@@ -9,7 +9,7 @@
       "text": "1"
     },
     {
-      "kind": "Plus",
+      "kind": "InfixPlus",
       "text": "+"
     },
     {
@@ -17,7 +17,7 @@
       "text": "2"
     },
     {
-      "kind": "RParen",
+      "kind": "GroupRParen",
       "text": ")"
     },
     {
@@ -53,7 +53,7 @@
       "text": "5"
     },
     {
-      "kind": "RParen",
+      "kind": "GroupRParen",
       "text": ")"
     },
     {
@@ -73,7 +73,7 @@
       "text": "b"
     },
     {
-      "kind": "RBracket",
+      "kind": "IndexRBracket",
       "text": "]"
     },
     {

@@ -370,30 +370,27 @@ fn expected_kept_compaction(
 }
 
 fn retag_on_cpu(kinds_pre: &[TokenKind]) -> Vec<TokenKind> {
-    use TokenKind::*;
     let mut out = kinds_pre.to_vec();
-    for i in 0..out.len() {
-        match out[i] {
-            LParen => {
-                let prev = if i == 0 { None } else { Some(out[i - 1]) };
-                out[i] = if prev.map(is_primary_end).unwrap_or(false) {
-                    CallLParen
-                } else {
-                    GroupLParen
-                };
-            }
-            LBracket => {
-                let prev = if i == 0 { None } else { Some(out[i - 1]) };
-                out[i] = if prev.map(is_primary_end).unwrap_or(false) {
-                    IndexLBracket
-                } else {
-                    ArrayLBracket
-                };
-            }
-            _ => {}
-        }
-    }
+    crate::lexer::cpu::retag_calls_and_arrays_in_place(&mut out);
     out
+}
+
+fn keyword_kind_at(input: &str, start: u32, len: u32) -> Option<TokenKind> {
+    let bytes = input.as_bytes();
+    let start = start as usize;
+    let end = start.checked_add(len as usize)?;
+    match bytes.get(start..end)? {
+        b"pub" => Some(TokenKind::Pub),
+        b"fn" => Some(TokenKind::Fn),
+        b"let" => Some(TokenKind::Let),
+        b"return" => Some(TokenKind::Return),
+        b"if" => Some(TokenKind::If),
+        b"else" => Some(TokenKind::Else),
+        b"while" => Some(TokenKind::While),
+        b"break" => Some(TokenKind::Break),
+        b"continue" => Some(TokenKind::Continue),
+        _ => None,
+    }
 }
 
 // ---------- conversions ----------
@@ -835,36 +832,32 @@ fn check_09_compact_boundaries_kept(
     Some(expect)
 }
 
-// ---------- a tiny retagger mirroring shaders/lexer/retag_calls_and_arrays.slang ----------
-fn is_primary_end(kind: TokenKind) -> bool {
-    matches!(
-        kind,
-        TokenKind::Ident
-            | TokenKind::Int
-            | TokenKind::RParen
-            | TokenKind::RBracket
-            | TokenKind::RBrace
-    )
-}
-
 fn check_10_retag_calls_and_arrays(
     device: &wgpu::Device,
+    input: &str,
     dbg: &DebugOutput,
     expect_kept: &KeptCompactionExpect,
 ) {
-    let Some(types_compact_gpu) = map_u32s(device, &dbg.gpu.types_compact) else {
-        println!("[dbg][10/11] retag_calls_and_arrays: (no types_compact) — skipped");
+    let Some(kc_gpu) = map_first_u32(device, &dbg.gpu.token_count) else {
+        println!("[dbg][10/11] retag_contextual_tokens: (no token_count) — skipped");
         return;
     };
-    let kc = min(expect_kept.kinds_pre_retag.len(), types_compact_gpu.len());
-    // Convert pre kinds (u16 ids) -> enum, retag on CPU, compare to gpu final kinds (u32 ids).
+    let Some(tokens_gpu) = map_u32s(device, &dbg.gpu.tokens_out) else {
+        println!("[dbg][10/11] retag_contextual_tokens: (no tokens_out) — skipped");
+        return;
+    };
+    let kc = min(
+        kc_gpu as usize,
+        min(expect_kept.kinds_pre_retag.len(), tokens_gpu.len() / 3),
+    );
+    // Convert pre kinds (u16 ids) -> enum, retag on CPU, compare to gpu final token kinds.
     let mut kinds_pre_enum = Vec::<TokenKind>::with_capacity(kc);
     for i in 0..kc {
         let k16 = expect_kept.kinds_pre_retag[i] & 0xFFFF;
         let Some(kind) = kind16_to_enum(k16) else {
             // Should not happen: kept stream must have valid kind.
             println!(
-                "[dbg][10/11] retag_calls_and_arrays: ✗ pre kind 0xFFFF at k={}",
+                "[dbg][10/11] retag_contextual_tokens: ✗ pre kind 0xFFFF at k={}",
                 i
             );
             return;
@@ -875,21 +868,26 @@ fn check_10_retag_calls_and_arrays(
     let mut ok = true;
     for i in 0..kc {
         let want_u32 = kinds_post[i] as u32;
-        if types_compact_gpu[i] != want_u32 {
+        let got_u32 = tokens_gpu[3 * i];
+        let start = tokens_gpu[3 * i + 1];
+        let len = tokens_gpu[3 * i + 2];
+        let keyword_match = kinds_post[i] == TokenKind::Ident
+            && keyword_kind_at(input, start, len).map(|kind| kind as u32) == Some(got_u32);
+        if got_u32 != want_u32 && !keyword_match {
             println!(
-                "[dbg][10/11] retag_calls_and_arrays: ✗ mismatch at k={} (gpu={} cpu={})",
-                i, types_compact_gpu[i], want_u32
+                "[dbg][10/11] retag_contextual_tokens: ✗ mismatch at k={} (gpu={} cpu={})",
+                i, got_u32, want_u32
             );
             ok = false;
             break;
         }
     }
     if ok {
-        println!("[dbg][10/11] retag_calls_and_arrays: types_compact (post-retag) ✓");
+        println!("[dbg][10/11] retag_contextual_tokens: tokens_out kinds ✓");
     }
 }
 
-fn check_11_tokens_build(device: &wgpu::Device, dbg: &DebugOutput, input_len: u32) {
+fn check_11_tokens_build(device: &wgpu::Device, dbg: &DebugOutput, input: &str, input_len: u32) {
     let Some(kc_gpu) = map_first_u32(device, &dbg.gpu.token_count) else {
         println!("[dbg][11/11] tokens_build: (no token_count) — skipped");
         return;
@@ -923,6 +921,17 @@ fn check_11_tokens_build(device: &wgpu::Device, dbg: &DebugOutput, input_len: u3
             min(types_k.len(), min(aic.len(), tokens.len() / 3)),
         ),
     );
+    let kinds_post = {
+        let mut kinds = Vec::<TokenKind>::with_capacity(upto);
+        for k in types_k.iter().take(upto) {
+            let Some(kind) = kind16_to_enum(*k & 0xFFFF) else {
+                println!("[dbg][11/11] tokens_build: ✗ pre kind 0xFFFF");
+                return;
+            };
+            kinds.push(kind);
+        }
+        retag_on_cpu(&kinds)
+    };
     let mut ok = true;
     for k in 0..upto {
         let end_excl = ends_k[k];
@@ -939,10 +948,16 @@ fn check_11_tokens_build(device: &wgpu::Device, dbg: &DebugOutput, input_len: u3
         let rec_len = tokens[3 * k + 2];
 
         let expect_len = end_excl.saturating_sub(start);
-        if rec_kind != types_k[k] || rec_start != start || rec_len != expect_len {
+        let expect_kind = kinds_post[k] as u32;
+        let keyword_match = kinds_post[k] == TokenKind::Ident
+            && keyword_kind_at(input, rec_start, rec_len).map(|kind| kind as u32) == Some(rec_kind);
+        if (rec_kind != expect_kind && !keyword_match)
+            || rec_start != start
+            || rec_len != expect_len
+        {
             println!(
                 "[dbg][11/11] tokens_build: ✗ token {} mismatch (gpu kind={},start={},len={} ; expect kind={},start={},len={})",
-                k, rec_kind, rec_start, rec_len, types_k[k], start, expect_len
+                k, rec_kind, rec_start, rec_len, expect_kind, start, expect_len
             );
             ok = false;
             break;
@@ -996,10 +1011,10 @@ pub(crate) fn run_debug_sanity_checks(
 
     // compact_kept returns expectations we re-use for the retag check
     if let Some(expect_kept) = check_09_compact_boundaries_kept(device, dbg, input, &tbl) {
-        check_10_retag_calls_and_arrays(device, dbg, &expect_kept);
+        check_10_retag_calls_and_arrays(device, input, dbg, &expect_kept);
     } else {
         println!("[dbg][10/11] retag_calls_and_arrays: (previous step missing) — skipped");
     }
 
-    check_11_tokens_build(device, dbg, n_input_bytes);
+    check_11_tokens_build(device, dbg, input, n_input_bytes);
 }

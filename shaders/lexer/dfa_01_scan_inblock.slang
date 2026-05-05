@@ -12,7 +12,7 @@
 
 #define WORKGROUP_SIZE 256
 #define WAVE_SIZE 32u
-#define N_STATES 79
+#define N_STATES 80
 #define N_PACK4 ((N_STATES + 3) / 4)           // 20
 #define MAX_WAVES (WORKGROUP_SIZE / WAVE_SIZE) // 8
 
