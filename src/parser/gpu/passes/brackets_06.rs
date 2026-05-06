@@ -69,6 +69,10 @@ impl Pass<ParserBuffers, crate::parser::gpu::debug::DebugOutput> for BracketsSca
                 "pops_by_layer".into(),
                 b.b_pops_by_layer.as_entire_binding(),
             ),
+            (
+                "slot_for_index".into(),
+                b.b_slot_for_index.as_entire_binding(),
+            ),
         ])
     }
 }

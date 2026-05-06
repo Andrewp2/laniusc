@@ -11,6 +11,7 @@ use crate::{
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
 pub struct Params {
+    pub n_sc: u32,
     pub n_layers: u32,
     pub typed_check: u32,
 }
@@ -68,6 +69,11 @@ impl Pass<ParserBuffers, crate::parser::gpu::debug::DebugOutput> for BracketsPse
                 b.b_pops_by_layer.as_entire_binding(),
             ),
             ("sc_stream".into(), b.out_sc.as_entire_binding()),
+            ("layer".into(), b.b_layer.as_entire_binding()),
+            (
+                "slot_for_index".into(),
+                b.b_slot_for_index.as_entire_binding(),
+            ),
             (
                 "match_for_index".into(),
                 b.match_for_index.as_entire_binding(),

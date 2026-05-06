@@ -1,0 +1,220 @@
+{
+  "cpu_only": true,
+  "brackets": {
+    "valid": true,
+    "final_depth": 0,
+    "min_depth": 0
+  },
+  "sc_canon": [
+    1,
+    0
+  ],
+  "match_for_index": [
+    1,
+    0
+  ],
+  "tree": {
+    "node_kind": [
+      0
+    ],
+    "parent": [
+      4294967295
+    ]
+  },
+  "ast": {
+    "root": 13,
+    "nodes": [
+      {
+        "tag": "ident",
+        "children": []
+      },
+      {
+        "tag": "params_none",
+        "children": []
+      },
+      {
+        "tag": "type_void",
+        "children": []
+      },
+      {
+        "tag": "ident",
+        "children": []
+      },
+      {
+        "tag": "type_infer",
+        "children": []
+      },
+      {
+        "tag": "int",
+        "children": []
+      },
+      {
+        "tag": "int",
+        "children": []
+      },
+      {
+        "tag": "add",
+        "children": [
+          5,
+          6
+        ]
+      },
+      {
+        "tag": "stmt_let",
+        "children": [
+          3,
+          4,
+          7
+        ]
+      },
+      {
+        "tag": "ident",
+        "children": []
+      },
+      {
+        "tag": "stmt_return",
+        "children": [
+          9
+        ]
+      },
+      {
+        "tag": "block",
+        "children": [
+          8,
+          10
+        ]
+      },
+      {
+        "tag": "fn",
+        "children": [
+          0,
+          1,
+          2,
+          11
+        ]
+      },
+      {
+        "tag": "file",
+        "children": [
+          12
+        ]
+      }
+    ]
+  },
+  "hir": {
+    "items": [
+      {
+        "Fn": {
+          "public": false,
+          "name": "main",
+          "params": [],
+          "ret": {
+            "kind": "Void",
+            "span": {
+              "start": 10,
+              "len": 0
+            }
+          },
+          "body": {
+            "stmts": [
+              {
+                "kind": {
+                  "Let": {
+                    "name": "x",
+                    "ty": null,
+                    "value": {
+                      "kind": {
+                        "Binary": {
+                          "op": "Add",
+                          "lhs": {
+                            "kind": {
+                              "Literal": {
+                                "kind": "Int",
+                                "text": "1"
+                              }
+                            },
+                            "span": {
+                              "start": 24,
+                              "len": 1
+                            }
+                          },
+                          "rhs": {
+                            "kind": {
+                              "Literal": {
+                                "kind": "Int",
+                                "text": "2"
+                              }
+                            },
+                            "span": {
+                              "start": 28,
+                              "len": 1
+                            }
+                          }
+                        }
+                      },
+                      "span": {
+                        "start": 24,
+                        "len": 5
+                      }
+                    }
+                  }
+                },
+                "span": {
+                  "start": 16,
+                  "len": 14
+                }
+              },
+              {
+                "kind": {
+                  "Return": {
+                    "kind": {
+                      "Name": "x"
+                    },
+                    "span": {
+                      "start": 42,
+                      "len": 1
+                    }
+                  }
+                },
+                "span": {
+                  "start": 35,
+                  "len": 9
+                }
+              }
+            ],
+            "span": {
+              "start": 10,
+              "len": 36
+            }
+          },
+          "span": {
+            "start": 0,
+            "len": 46
+          }
+        }
+      }
+    ],
+    "span": {
+      "start": 0,
+      "len": 46
+    }
+  },
+  "token_kinds": [
+    "Fn",
+    "Ident",
+    "ParamLParen",
+    "ParamRParen",
+    "LBrace",
+    "Let",
+    "LetIdent",
+    "LetAssign",
+    "Int",
+    "InfixPlus",
+    "Int",
+    "Semicolon",
+    "Return",
+    "Ident",
+    "Semicolon",
+    "RBrace"
+  ]
+}

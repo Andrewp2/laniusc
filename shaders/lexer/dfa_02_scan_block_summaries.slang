@@ -4,6 +4,7 @@
 
 #define N_STATES 80
 #define BLOCK_WIDTH 256u
+#define WORKGROUP_SIZE 256
 static const uint MAX_GROUPS_PER_DIM = 65535u;
 
 struct Params
@@ -25,7 +26,7 @@ RWStructuredBuffer<uint> block_ping; // nb * N_STATES
 RWStructuredBuffer<uint> block_pong; // nb * N_STATES
 
 [shader("compute")]
-[numthreads(N_STATES, 1, 1)]
+[numthreads(WORKGROUP_SIZE, 1, 1)]
 void dfa_02_scan_block_summaries(uint3 local_id: SV_GroupThreadID,
                                  uint3 global_id: SV_DispatchThreadID,
                                  uint3 group_id: SV_GroupID)

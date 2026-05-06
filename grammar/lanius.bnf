@@ -16,7 +16,7 @@ item          [item_pub_fn]  -> 'Pub' fn_item;
 item          [item_fn]      -> fn_item;
 item          [item_stmt]    -> stmt;
 
-fn_item       [fn]           -> 'Fn' 'Ident' 'CallLParen' param_list_opt 'CallRParen' return_type_opt block;
+fn_item       [fn]           -> 'Fn' 'Ident' 'LParen' param_list_opt 'RParen' return_type_opt block;
 return_type_opt [ret_type]   -> 'Arrow' type_expr;
 return_type_opt [ret_void]   -> ;
 
@@ -27,7 +27,7 @@ param_tail     [params_more] -> 'Comma' param param_tail;
 param_tail     [params_end]  -> ;
 
 type_expr      [type_ident]  -> 'Ident';
-type_expr      [type_array]  -> 'ArrayLBracket' type_expr 'Semicolon' 'Int' 'ArrayRBracket';
+type_expr      [type_array]  -> 'LBracket' type_expr 'Semicolon' 'Int' 'RBracket';
 
 # ----- Blocks and statements -----
 
@@ -37,8 +37,8 @@ stmt_list     [stmts_end]    -> ;
 
 stmt          [let_stmt]     -> 'Let' 'Ident' let_type_opt let_init_opt 'Semicolon';
 stmt          [return_stmt]  -> 'Return' return_value_opt 'Semicolon';
-stmt          [if_stmt]      -> 'If' 'GroupLParen' expr 'GroupRParen' block else_opt;
-stmt          [while_stmt]   -> 'While' 'GroupLParen' expr 'GroupRParen' block;
+stmt          [if_stmt]      -> 'If' 'LParen' expr 'RParen' if_block else_opt;
+stmt          [while_stmt]   -> 'While' 'LParen' expr 'RParen' block;
 stmt          [break_stmt]   -> 'Break' 'Semicolon';
 stmt          [continue_stmt] -> 'Continue' 'Semicolon';
 stmt          [block_stmt]   -> block;
@@ -46,6 +46,8 @@ stmt          [expr_stmt]    -> expr 'Semicolon';
 
 let_type_opt  [let_type]     -> 'Colon' type_expr;
 let_type_opt  [let_type_none] -> ;
+if_block      [if_block]     -> 'LBrace' stmt_list 'RBrace';
+
 let_init_opt  [let_init]     -> 'Assign' expr;
 let_init_opt  [let_init_none] -> ;
 return_value_opt [return_value] -> expr;
@@ -113,8 +115,8 @@ shift_tail   [shr_tail]      -> 'Shr' add shift_tail;
 shift_tail   [shift_end]     -> ;
 
 add                          -> mul add_tail;
-add_tail     [add_tail]      -> 'InfixPlus' mul add_tail;
-add_tail     [sub_tail]      -> 'InfixMinus' mul add_tail;
+add_tail     [add_tail]      -> 'Plus' mul add_tail;
+add_tail     [sub_tail]      -> 'Minus' mul add_tail;
 add_tail     [add_end]       -> ;
 
 mul                          -> unary mul_tail;
@@ -127,15 +129,15 @@ mul_tail     [mul_end]       -> ;
 
 unary        [pre_inc]       -> 'Inc' unary;
 unary        [pre_dec]       -> 'Dec' unary;
-unary        [pos]           -> 'PrefixPlus' unary;
-unary        [neg]           -> 'PrefixMinus' unary;
+unary        [pos]           -> 'Plus' unary;
+unary        [neg]           -> 'Minus' unary;
 unary        [not]           -> 'Not' unary;
 unary        [bit_not]       -> 'Tilde' unary;
 unary        [base]          -> postfix;
 
 postfix                      -> primary postfix_tail;
-postfix_tail [postfix_call]  -> 'CallLParen' arg_list_opt 'CallRParen' postfix_tail;
-postfix_tail [postfix_index] -> 'IndexLBracket' expr 'IndexRBracket' postfix_tail;
+postfix_tail [postfix_call]  -> 'LParen' arg_list_opt 'RParen' postfix_tail;
+postfix_tail [postfix_index] -> 'LBracket' expr 'RBracket' postfix_tail;
 postfix_tail [postfix_member] -> 'Dot' 'Ident' postfix_tail;
 postfix_tail [postfix_inc]   -> 'Inc' postfix_tail;
 postfix_tail [postfix_dec]   -> 'Dec' postfix_tail;
@@ -150,8 +152,8 @@ arg_tail     [args_end]      -> ;
 
 # ----- Primary -----
 
-primary      [array_lit]     -> 'ArrayLBracket' array_elems_opt 'ArrayRBracket';
-primary      [group]         -> 'GroupLParen' expr 'GroupRParen';
+primary      [array_lit]     -> 'LBracket' array_elems_opt 'RBracket';
+primary      [group]         -> 'LParen' expr 'RParen';
 primary      [ident]         -> 'Ident';
 primary      [int]           -> 'Int';
 primary      [float]         -> 'Float';

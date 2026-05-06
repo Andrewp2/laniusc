@@ -59,11 +59,13 @@ impl Pass<ParserBuffers, crate::parser::gpu::debug::DebugOutput> for PackVarlenP
     ) -> HashMap<String, wgpu::BindingResource<'a>> {
         HashMap::from([
             ("token_kinds".into(), b.token_kinds.as_entire_binding()),
+            ("token_count".into(), b.token_count.as_entire_binding()),
             ("sc_offsets".into(), b.sc_offsets.as_entire_binding()),
             ("emit_offsets".into(), b.emit_offsets.as_entire_binding()),
             ("tables_blob".into(), b.tables_blob.as_entire_binding()),
             ("out_sc".into(), b.out_sc.as_entire_binding()),
             ("out_emit".into(), b.out_emit.as_entire_binding()),
+            ("out_emit_pos".into(), b.out_emit_pos.as_entire_binding()),
             ("gParams".into(), b.params_pack.as_entire_binding()),
         ])
     }

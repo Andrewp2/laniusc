@@ -101,6 +101,24 @@ pub enum TokenKind {
     Break,
     Continue,
     Arrow,
+
+    // context-specific function signature delimiters
+    ParamLParen,
+    ParamRParen,
+
+    // grammar-boundary context retags
+    LetIdent,
+    ParamIdent,
+    TypeIdent,
+    LetAssign,
+    ArgComma,
+    ArrayComma,
+    ParamComma,
+    TypeArrayLBracket,
+    TypeArrayRBracket,
+    TypeSemicolon,
+    IfLBrace,
+    IfRBrace,
 }
 
 impl core::convert::TryFrom<u32> for TokenKind {
@@ -188,6 +206,20 @@ impl TokenKind {
             x if x == TokenKind::Break as u32 => TokenKind::Break,
             x if x == TokenKind::Continue as u32 => TokenKind::Continue,
             x if x == TokenKind::Arrow as u32 => TokenKind::Arrow,
+            x if x == TokenKind::ParamLParen as u32 => TokenKind::ParamLParen,
+            x if x == TokenKind::ParamRParen as u32 => TokenKind::ParamRParen,
+            x if x == TokenKind::LetIdent as u32 => TokenKind::LetIdent,
+            x if x == TokenKind::ParamIdent as u32 => TokenKind::ParamIdent,
+            x if x == TokenKind::TypeIdent as u32 => TokenKind::TypeIdent,
+            x if x == TokenKind::LetAssign as u32 => TokenKind::LetAssign,
+            x if x == TokenKind::ArgComma as u32 => TokenKind::ArgComma,
+            x if x == TokenKind::ArrayComma as u32 => TokenKind::ArrayComma,
+            x if x == TokenKind::ParamComma as u32 => TokenKind::ParamComma,
+            x if x == TokenKind::TypeArrayLBracket as u32 => TokenKind::TypeArrayLBracket,
+            x if x == TokenKind::TypeArrayRBracket as u32 => TokenKind::TypeArrayRBracket,
+            x if x == TokenKind::TypeSemicolon as u32 => TokenKind::TypeSemicolon,
+            x if x == TokenKind::IfLBrace as u32 => TokenKind::IfLBrace,
+            x if x == TokenKind::IfRBrace as u32 => TokenKind::IfRBrace,
             _ => return None,
         };
         Some(k)
@@ -270,6 +302,20 @@ impl TokenKind {
             "Break" => TokenKind::Break,
             "Continue" => TokenKind::Continue,
             "Arrow" => TokenKind::Arrow,
+            "ParamLParen" => TokenKind::ParamLParen,
+            "ParamRParen" => TokenKind::ParamRParen,
+            "LetIdent" => TokenKind::LetIdent,
+            "ParamIdent" => TokenKind::ParamIdent,
+            "TypeIdent" => TokenKind::TypeIdent,
+            "LetAssign" => TokenKind::LetAssign,
+            "ArgComma" => TokenKind::ArgComma,
+            "ArrayComma" => TokenKind::ArrayComma,
+            "ParamComma" => TokenKind::ParamComma,
+            "TypeArrayLBracket" => TokenKind::TypeArrayLBracket,
+            "TypeArrayRBracket" => TokenKind::TypeArrayRBracket,
+            "TypeSemicolon" => TokenKind::TypeSemicolon,
+            "IfLBrace" => TokenKind::IfLBrace,
+            "IfRBrace" => TokenKind::IfRBrace,
             _ => return None,
         };
         Some(k)
@@ -278,7 +324,7 @@ impl TokenKind {
 
 // used on GPU side too
 pub const INVALID_TOKEN: u32 = u32::MAX;
-pub const N_KINDS: u32 = TokenKind::Arrow as u32 + 1;
+pub const N_KINDS: u32 = TokenKind::IfRBrace as u32 + 1;
 
 #[cfg(test)]
 mod tests {

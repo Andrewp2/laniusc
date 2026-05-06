@@ -53,13 +53,13 @@ void main(uint3 tid: SV_DispatchThreadID,
 
     GroupMemoryBarrierWithGroupSync();
 
-    // Reduce min and max
+    // Reduce min and max into the last lane.
     for (uint step = GSIZE >> 1; step > 0; step >>= 1)
     {
-        if (ltid.x < step)
+        if (ltid.x >= GSIZE - step)
         {
-            s_minp[ltid.x] = min(s_minp[ltid.x], s_minp[ltid.x + step]);
-            s_depth[ltid.x] = max(s_depth[ltid.x], s_depth[ltid.x + step]);
+            s_minp[ltid.x] = min(s_minp[ltid.x - step], s_minp[ltid.x]);
+            s_depth[ltid.x] = max(s_depth[ltid.x - step], s_depth[ltid.x]);
         }
         GroupMemoryBarrierWithGroupSync();
     }
@@ -68,11 +68,11 @@ void main(uint3 tid: SV_DispatchThreadID,
     {
         exscan_inblock[i] = ex;
     }
-    if (ltid.x == 0)
+    if (ltid.x + 1u == GSIZE)
     {
         int sum = s_val[GSIZE - 1];
         block_sum[gid.x] = sum;
-        block_minpref[gid.x] = s_minp[0];
-        block_maxdepth[gid.x] = s_depth[0];
+        block_minpref[gid.x] = s_minp[GSIZE - 1];
+        block_maxdepth[gid.x] = s_depth[GSIZE - 1];
     }
 }

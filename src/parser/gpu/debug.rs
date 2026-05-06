@@ -16,7 +16,7 @@ pub struct DebugGpuBuffers {
     pub out_sc: DebugBuffer,
     pub out_emit: DebugBuffer,
 
-    // brackets_match
+    // bracket pairing
     pub match_for_index: DebugBuffer,
     pub depths_out: DebugBuffer,
     pub valid_out: DebugBuffer,

@@ -138,7 +138,8 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa02ScanBlockSu
             .expect("func_blocks_bg reflection");
 
             {
-                // One workgroup per block. The group itself has N_STATES threads.
+                // One 256-thread workgroup per block; only the first N_STATES lanes carry
+                // DFA state vectors, matching the shader guard.
                 // Tell the planner each “element” already maps 1:1 to a group.
                 let (gx, gy, gz) = crate::gpu::passes_core::plan_workgroups(
                     crate::gpu::passes_core::DispatchDim::D1,

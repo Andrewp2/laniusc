@@ -4,6 +4,7 @@
 
 struct Params
 {
+    uint n_sc;
     uint n_layers;
     uint typed_check; // 0: ignore symbol IDs; 1: require matching symbol IDs
 };
@@ -16,6 +17,8 @@ StructuredBuffer<uint> off_pop;         // [n_layers]  exclusive
 StructuredBuffer<uint> pushes_by_layer; // [sum hist_push]
 StructuredBuffer<uint> pops_by_layer;   // [sum hist_pop]
 StructuredBuffer<uint> sc_stream;       // [n_sc]
+StructuredBuffer<uint> layer;           // [n_sc]
+StructuredBuffer<uint> slot_for_index;  // [n_sc], absolute slot in pushes/pops_by_layer
 
 RWStructuredBuffer<uint> match_for_index; // [n_sc]
 RWStructuredBuffer<uint> out_valid;       // [1], ANDed on mismatch
@@ -24,37 +27,37 @@ RWStructuredBuffer<uint> out_valid;       // [1], ANDed on mismatch
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
 {
-    uint l = tid.x;
+    uint i_push = tid.x;
+    if (i_push >= gParams.n_sc)
+        return;
+
+    uint code = sc_stream[i_push];
+    if ((code & 1u) == 0u)
+        return;
+
+    uint l = layer[i_push];
     if (l >= gParams.n_layers)
         return;
 
-    uint npairs = min(hist_push[l], hist_pop[l]);
     uint p0 = off_push[l];
     uint q0 = off_pop[l];
+    uint slot = slot_for_index[i_push];
+    if (slot < p0)
+        return;
+    uint rank = slot - p0;
+    if (rank >= hist_push[l] || rank >= hist_pop[l])
+        return;
 
-    // Rank-by-layer pairing: the r-th pop at layer l pairs the r-th push at l.
-    for (uint r = 0; r < npairs; ++r)
+    uint i_pop = pops_by_layer[q0 + rank];
+
+    match_for_index[i_push] = i_pop;
+    match_for_index[i_pop] = i_push;
+
+    if (gParams.typed_check != 0)
     {
-        uint i_push = pushes_by_layer[p0 + r];
-        uint i_pop = pops_by_layer[q0 + r];
-
-        match_for_index[i_push] = i_pop;
-        match_for_index[i_pop] = i_push;
-
-        if (gParams.typed_check != 0)
-        {
-            uint push_sym = sc_stream[i_push] >> 1u;
-            uint pop_sym = sc_stream[i_pop] >> 1u;
-            if (push_sym != pop_sym)
-            {
-                InterlockedAnd(out_valid[0], 0u);
-            }
-        }
-    }
-
-    // Mismatched counts → invalid
-    if (hist_push[l] != hist_pop[l])
-    {
-        InterlockedAnd(out_valid[0], 0u);
+        uint push_sym = sc_stream[i_push] >> 1u;
+        uint pop_sym = sc_stream[i_pop] >> 1u;
+        if (push_sym != pop_sym)
+            InterlockedAnd(out_valid[0], 0u);
     }
 }

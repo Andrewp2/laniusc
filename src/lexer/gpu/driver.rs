@@ -38,7 +38,10 @@ pub struct GpuLexer {
 
 impl GpuLexer {
     pub async fn new() -> Result<Self> {
-        let ctx = crate::gpu::device::global();
+        Self::new_with_device(crate::gpu::device::global()).await
+    }
+
+    pub async fn new_with_device(ctx: &crate::gpu::device::GpuDevice) -> Result<Self> {
         let device = Arc::clone(&ctx.device);
         let queue = Arc::clone(&ctx.queue);
         let timers_supported = ctx.timers_supported;
@@ -200,7 +203,6 @@ impl GpuLexer {
             || nb_dfa_needed > cap_nb_dfa
             || n > cap_n;
         if needs_grow {
-            println!("growing");
             // Recreate with a grown capacity; choose ≥ n
             let new_cap = (aligned_len_usize as u32)
                 .max(cap_n.max(1).saturating_mul(2))
@@ -487,11 +489,337 @@ impl GpuLexer {
 
         Ok(tokens)
     }
+
+    pub async fn with_resident_tokens<R>(
+        &self,
+        input: &str,
+        consume: impl FnOnce(&wgpu::Device, &wgpu::Queue, &buffers::GpuBuffers) -> R,
+    ) -> Result<R> {
+        #[cfg(feature = "graphics_debugger")]
+        unsafe {
+            self.device.start_graphics_debugger_capture()
+        };
+
+        let start_state = 0u32;
+        let skip_kinds = [
+            TokenKind::White as u32,
+            TokenKind::LineComment as u32,
+            TokenKind::BlockComment as u32,
+            u32::MAX,
+        ];
+        let mut guard = self.prepare_buffers_for_input(input, start_state, skip_kinds)?;
+        let bufs = guard
+            .as_mut()
+            .expect("GpuLexer buffers must exist after preparation");
+
+        let use_scopes = std::env::var("LANIUS_VALIDATION_SCOPES")
+            .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
+            .unwrap_or(false);
+
+        #[cfg(feature = "gpu-debug")]
+        let mut debug_output = crate::lexer::gpu::debug::DebugOutput::default();
+        #[cfg(feature = "gpu-debug")]
+        let maybe_dbg: Option<&mut crate::lexer::gpu::debug::DebugOutput> = Some(&mut debug_output);
+        #[cfg(not(feature = "gpu-debug"))]
+        let maybe_dbg: Option<&mut crate::lexer::gpu::debug::DebugOutput> = None;
+
+        let mut enc = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("lex-resident-enc"),
+            });
+
+        {
+            let mut timer_ref: Option<&mut GpuTimer> = None;
+            let mut dbg_ref = maybe_dbg;
+            let mut cache_guard = self
+                .bg_cache
+                .lock()
+                .expect("GpuLexer.bg_cache mutex poisoned");
+            let ctx = crate::gpu::passes_core::PassContext {
+                device: &self.device,
+                encoder: &mut enc,
+                buffers: &*bufs,
+                maybe_timer: &mut timer_ref,
+                maybe_dbg: &mut dbg_ref,
+                bg_cache: Some(&mut *cache_guard),
+            };
+            record_all_passes(bufs.n, bufs.nb_dfa, bufs.nb_sum, ctx, &self.passes)?;
+        }
+
+        if use_scopes {
+            self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        }
+        self.queue.submit(Some(enc.finish()));
+        if use_scopes {
+            if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
+                eprintln!("[wgpu submit] validation while submitting resident lex batch: {err:#?}");
+            }
+        }
+
+        #[cfg(feature = "gpu-debug")]
+        {
+            super::debug_checks::run_debug_sanity_checks(
+                &self.device,
+                input,
+                &debug_output,
+                bufs.n,
+            );
+        }
+
+        let result = consume(&self.device, &self.queue, bufs);
+
+        #[cfg(feature = "graphics_debugger")]
+        unsafe {
+            self.device.stop_graphics_debugger_capture()
+        };
+
+        Ok(result)
+    }
+
+    pub async fn with_recorded_resident_tokens<S, R, E>(
+        &self,
+        input: &str,
+        record_more: impl FnOnce(
+            &wgpu::Device,
+            &wgpu::Queue,
+            &buffers::GpuBuffers,
+            &mut wgpu::CommandEncoder,
+        ) -> std::result::Result<S, E>,
+        consume_after_submit: impl FnOnce(
+            &wgpu::Device,
+            &wgpu::Queue,
+            &buffers::GpuBuffers,
+            S,
+        ) -> std::result::Result<R, E>,
+    ) -> Result<std::result::Result<R, E>> {
+        #[cfg(feature = "graphics_debugger")]
+        unsafe {
+            self.device.start_graphics_debugger_capture()
+        };
+
+        let start_state = 0u32;
+        let skip_kinds = [
+            TokenKind::White as u32,
+            TokenKind::LineComment as u32,
+            TokenKind::BlockComment as u32,
+            u32::MAX,
+        ];
+        let mut guard = self.prepare_buffers_for_input(input, start_state, skip_kinds)?;
+        let bufs = guard
+            .as_mut()
+            .expect("GpuLexer buffers must exist after preparation");
+
+        let use_scopes = std::env::var("LANIUS_VALIDATION_SCOPES")
+            .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
+            .unwrap_or(false);
+
+        #[cfg(feature = "gpu-debug")]
+        let mut debug_output = crate::lexer::gpu::debug::DebugOutput::default();
+        #[cfg(feature = "gpu-debug")]
+        let maybe_dbg: Option<&mut crate::lexer::gpu::debug::DebugOutput> = Some(&mut debug_output);
+        #[cfg(not(feature = "gpu-debug"))]
+        let maybe_dbg: Option<&mut crate::lexer::gpu::debug::DebugOutput> = None;
+
+        let mut enc = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("lex-resident-recorded-enc"),
+            });
+
+        {
+            let mut timer_ref: Option<&mut GpuTimer> = None;
+            let mut dbg_ref = maybe_dbg;
+            let mut cache_guard = self
+                .bg_cache
+                .lock()
+                .expect("GpuLexer.bg_cache mutex poisoned");
+            let ctx = crate::gpu::passes_core::PassContext {
+                device: &self.device,
+                encoder: &mut enc,
+                buffers: &*bufs,
+                maybe_timer: &mut timer_ref,
+                maybe_dbg: &mut dbg_ref,
+                bg_cache: Some(&mut *cache_guard),
+            };
+            record_all_passes(bufs.n, bufs.nb_dfa, bufs.nb_sum, ctx, &self.passes)?;
+        }
+
+        let recorded_more = match record_more(&self.device, &self.queue, bufs, &mut enc) {
+            Ok(recorded) => recorded,
+            Err(err) => return Ok(Err(err)),
+        };
+
+        if use_scopes {
+            self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        }
+        self.queue.submit(Some(enc.finish()));
+        if use_scopes {
+            if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
+                eprintln!(
+                    "[wgpu submit] validation while submitting recorded resident lex batch: {err:#?}"
+                );
+            }
+        }
+
+        #[cfg(feature = "gpu-debug")]
+        {
+            super::debug_checks::run_debug_sanity_checks(
+                &self.device,
+                input,
+                &debug_output,
+                bufs.n,
+            );
+        }
+
+        let result = consume_after_submit(&self.device, &self.queue, bufs, recorded_more);
+
+        #[cfg(feature = "graphics_debugger")]
+        unsafe {
+            self.device.stop_graphics_debugger_capture()
+        };
+
+        Ok(result)
+    }
+
+    fn prepare_buffers_for_input<'a>(
+        &'a self,
+        input: &str,
+        start_state: u32,
+        skip_kinds: [u32; 4],
+    ) -> Result<std::sync::MutexGuard<'a, Option<buffers::GpuBuffers>>> {
+        let input_bytes = input.as_bytes();
+        let n = input_bytes.len() as u32;
+        let aligned_len_usize = ((n as usize + 3) / 4) * 4;
+
+        const BLOCK_WIDTH_DFA: u32 = 256;
+        const BLOCK_WIDTH_SUM: u32 = 256;
+
+        let mut guard = self
+            .buffers
+            .lock()
+            .expect("GpuLexer.buffers mutex poisoned");
+
+        let recreate = |cap_n: u32| -> buffers::GpuBuffers {
+            GpuBuffers::new(
+                &self.device,
+                cap_n,
+                start_state,
+                &self.next_emit_words,
+                &self.next_u8_packed,
+                &self.token_map,
+                skip_kinds,
+            )
+        };
+
+        if guard.is_none() {
+            let init_cap = (aligned_len_usize as u32).max(1);
+            *guard = Some(recreate(init_cap));
+        }
+
+        {
+            let bufs = guard
+                .as_mut()
+                .expect("GpuLexer buffers must exist after allocation");
+
+            let nb_dfa_needed = n.div_ceil(BLOCK_WIDTH_DFA);
+            let nb_sum_needed = n.div_ceil(BLOCK_WIDTH_SUM);
+            let cap_n = bufs.in_bytes.count as u32;
+            let cap_nb_dfa = (bufs.dfa_02_ping.count / crate::lexer::tables::dfa::N_STATES) as u32;
+
+            let needs_grow = (aligned_len_usize as u32) > (bufs.in_bytes.byte_size as u32)
+                || nb_dfa_needed > cap_nb_dfa
+                || n > cap_n;
+            if needs_grow {
+                let new_cap = (aligned_len_usize as u32)
+                    .max(cap_n.max(1).saturating_mul(2))
+                    .max(1);
+                let mut new_bufs = recreate(new_cap);
+                self.write_current_lex_inputs(
+                    &mut new_bufs,
+                    input_bytes,
+                    n,
+                    nb_dfa_needed,
+                    nb_sum_needed,
+                    start_state,
+                    skip_kinds,
+                );
+                *bufs = new_bufs;
+                if let Ok(mut cache) = self.bg_cache.lock() {
+                    cache.clear();
+                }
+            } else {
+                self.write_current_lex_inputs(
+                    bufs,
+                    input_bytes,
+                    n,
+                    nb_dfa_needed,
+                    nb_sum_needed,
+                    start_state,
+                    skip_kinds,
+                );
+            }
+        }
+
+        Ok(guard)
+    }
+
+    fn write_current_lex_inputs(
+        &self,
+        bufs: &mut buffers::GpuBuffers,
+        input_bytes: &[u8],
+        n: u32,
+        nb_dfa: u32,
+        nb_sum: u32,
+        start_state: u32,
+        skip_kinds: [u32; 4],
+    ) {
+        if n > 0 {
+            let aligned_len = ((n as usize + 3) / 4) * 4;
+            if aligned_len == input_bytes.len() {
+                self.queue.write_buffer(&bufs.in_bytes, 0, input_bytes);
+            } else {
+                let mut tmp = Vec::with_capacity(aligned_len);
+                tmp.extend_from_slice(input_bytes);
+                tmp.resize(aligned_len, 0u8);
+                self.queue.write_buffer(&bufs.in_bytes, 0, &tmp);
+            }
+        }
+
+        let params_val = super::types::LexParams {
+            n,
+            m: self.token_map.len() as u32,
+            start_state,
+            skip0: skip_kinds[0],
+            skip1: skip_kinds[1],
+            skip2: skip_kinds[2],
+            skip3: skip_kinds[3],
+        };
+        let mut ub = encase::UniformBuffer::new(Vec::<u8>::new());
+        ub.write(&params_val).expect("failed to encode LexParams");
+        self.queue.write_buffer(&bufs.params, 0, ub.as_ref());
+        self.queue
+            .write_buffer(&bufs.token_count, 0, &0u32.to_le_bytes());
+
+        bufs.n = n;
+        bufs.nb_dfa = nb_dfa;
+        bufs.nb_sum = nb_sum;
+    }
 }
 
-static GPU_LEXER: OnceLock<GpuLexer> = OnceLock::new();
+static GPU_LEXER: OnceLock<Result<GpuLexer, String>> = OnceLock::new();
+
+pub fn try_global_lexer() -> Result<&'static GpuLexer> {
+    GPU_LEXER
+        .get_or_init(|| pollster::block_on(GpuLexer::new()).map_err(|err| err.to_string()))
+        .as_ref()
+        .map_err(|err| anyhow!("GPU init: {err}"))
+}
+
+pub async fn get_global_lexer() -> &'static GpuLexer {
+    try_global_lexer().expect("GPU init")
+}
 
 pub async fn lex_on_gpu(input: &str) -> Result<Vec<Token>> {
-    let lexer = GPU_LEXER.get_or_init(|| pollster::block_on(GpuLexer::new()).expect("GPU init"));
-    lexer.lex(input).await
+    get_global_lexer().await.lex(input).await
 }

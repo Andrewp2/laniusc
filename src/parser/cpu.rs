@@ -145,6 +145,7 @@ impl<'a> Parser<'a> {
             k,
             tokens::TokenKind::GroupRParen
                 | tokens::TokenKind::CallRParen
+                | tokens::TokenKind::ParamRParen
                 | tokens::TokenKind::RParen
         )
     }
@@ -188,11 +189,11 @@ impl<'a> Parser<'a> {
         self.expect(tokens::TokenKind::Ident, "function name")?;
         let name_id = self.push("ident", vec![]);
 
-        if !self.eat(tokens::TokenKind::CallLParen) {
+        if !(self.eat(tokens::TokenKind::ParamLParen) || self.eat(tokens::TokenKind::CallLParen)) {
             self.expect(tokens::TokenKind::LParen, "function parameter list")?;
         }
         let params = self.parse_param_list_opt()?;
-        if !self.eat(tokens::TokenKind::CallRParen) {
+        if !(self.eat(tokens::TokenKind::ParamRParen) || self.eat(tokens::TokenKind::CallRParen)) {
             self.expect(tokens::TokenKind::RParen, "RParen")?;
         }
 
@@ -213,14 +214,20 @@ impl<'a> Parser<'a> {
 
         let mut params = Vec::new();
         params.push(self.parse_param()?);
-        while self.eat(tokens::TokenKind::Comma) {
+        while self.eat(tokens::TokenKind::ParamComma) || self.eat(tokens::TokenKind::Comma) {
             params.push(self.parse_param()?);
         }
         Ok(self.push("params", params))
     }
 
     fn parse_param(&mut self) -> Result<u32, ParseError> {
-        self.expect(tokens::TokenKind::Ident, "parameter name")?;
+        if !(self.eat(tokens::TokenKind::ParamIdent) || self.eat(tokens::TokenKind::Ident)) {
+            return Err(ParseError {
+                pos: self.i,
+                expected: "parameter name",
+                found: self.peek(),
+            });
+        }
         let name = self.push("ident", vec![]);
         self.expect(tokens::TokenKind::Colon, "Colon")?;
         let ty = self.parse_type_expr()?;
@@ -228,15 +235,28 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_type_expr(&mut self) -> Result<u32, ParseError> {
-        if self.eat(tokens::TokenKind::Ident) {
+        if self.eat(tokens::TokenKind::TypeIdent) || self.eat(tokens::TokenKind::Ident) {
             return Ok(self.push("type_ident", vec![]));
         }
 
-        if self.eat(tokens::TokenKind::ArrayLBracket) || self.eat(tokens::TokenKind::LBracket) {
+        if self.eat(tokens::TokenKind::TypeArrayLBracket)
+            || self.eat(tokens::TokenKind::ArrayLBracket)
+            || self.eat(tokens::TokenKind::LBracket)
+        {
             let elem = self.parse_type_expr()?;
-            self.expect(tokens::TokenKind::Semicolon, "Semicolon")?;
+            if !(self.eat(tokens::TokenKind::TypeSemicolon)
+                || self.eat(tokens::TokenKind::Semicolon))
+            {
+                return Err(ParseError {
+                    pos: self.i,
+                    expected: "Semicolon",
+                    found: self.peek(),
+                });
+            }
             self.expect(tokens::TokenKind::Int, "array length")?;
-            if !self.eat(tokens::TokenKind::ArrayRBracket) {
+            if !(self.eat(tokens::TokenKind::TypeArrayRBracket)
+                || self.eat(tokens::TokenKind::ArrayRBracket))
+            {
                 self.expect(tokens::TokenKind::RBracket, "RBracket")?;
             }
             return Ok(self.push("type_array", vec![elem]));
@@ -271,18 +291,25 @@ impl<'a> Parser<'a> {
     /// Parse a statement.
     fn parse_stmt(&mut self) -> Result<u32, ParseError> {
         if self.eat(tokens::TokenKind::Let) {
-            self.expect(tokens::TokenKind::Ident, "let binding name")?;
+            if !(self.eat(tokens::TokenKind::LetIdent) || self.eat(tokens::TokenKind::Ident)) {
+                return Err(ParseError {
+                    pos: self.i,
+                    expected: "let binding name",
+                    found: self.peek(),
+                });
+            }
             let name = self.push("ident", vec![]);
             let ty = if self.eat(tokens::TokenKind::Colon) {
                 self.parse_type_expr()?
             } else {
                 self.push("type_infer", vec![])
             };
-            let value = if self.eat(tokens::TokenKind::Assign) {
-                self.parse_expr()?
-            } else {
-                self.push("init_none", vec![])
-            };
+            let value =
+                if self.eat(tokens::TokenKind::LetAssign) || self.eat(tokens::TokenKind::Assign) {
+                    self.parse_expr()?
+                } else {
+                    self.push("init_none", vec![])
+                };
             self.expect_semicolon()?;
             return Ok(self.push("stmt_let", vec![name, ty, value]));
         }
@@ -309,7 +336,7 @@ impl<'a> Parser<'a> {
             if !self.eat_close_group_paren() {
                 self.expect(tokens::TokenKind::RParen, "RParen")?;
             }
-            let then_block = self.parse_block()?;
+            let then_block = self.parse_if_block()?;
             let else_block = if self.eat(tokens::TokenKind::Else) {
                 self.parse_block()?
             } else {
@@ -352,6 +379,37 @@ impl<'a> Parser<'a> {
         let e = self.parse_expr()?;
         self.expect_semicolon()?;
         Ok(self.push("stmt_expr", vec![e]))
+    }
+
+    fn parse_if_block(&mut self) -> Result<u32, ParseError> {
+        if !(self.eat(tokens::TokenKind::IfLBrace) || self.eat(tokens::TokenKind::LBrace)) {
+            return Err(ParseError {
+                pos: self.i,
+                expected: "IfLBrace",
+                found: self.peek(),
+            });
+        }
+        let mut kids = Vec::new();
+        while self.peek() != Some(tokens::TokenKind::IfRBrace)
+            && self.peek() != Some(tokens::TokenKind::RBrace)
+        {
+            if self.peek().is_none() {
+                return Err(ParseError {
+                    pos: self.i,
+                    expected: "IfRBrace",
+                    found: None,
+                });
+            }
+            kids.push(self.parse_stmt()?);
+        }
+        if !(self.eat(tokens::TokenKind::IfRBrace) || self.eat(tokens::TokenKind::RBrace)) {
+            return Err(ParseError {
+                pos: self.i,
+                expected: "IfRBrace",
+                found: self.peek(),
+            });
+        }
+        Ok(self.push("block", kids))
     }
 
     // ------------- expressions --------------
@@ -578,7 +636,9 @@ impl<'a> Parser<'a> {
                     let first = self.parse_expr()?;
                     args.push(first);
                     // arg_tail -> 'Comma' expr arg_tail | ;
-                    while self.eat(tokens::TokenKind::Comma) {
+                    while self.eat(tokens::TokenKind::ArgComma)
+                        || self.eat(tokens::TokenKind::Comma)
+                    {
                         let a = self.parse_expr()?;
                         args.push(a);
                     }
@@ -648,7 +708,8 @@ impl<'a> Parser<'a> {
                 let first = self.parse_expr()?;
                 elems.push(first);
                 // array_elems_tail -> 'Comma' expr array_elems_tail | ;
-                while self.eat(tokens::TokenKind::Comma) {
+                while self.eat(tokens::TokenKind::ArrayComma) || self.eat(tokens::TokenKind::Comma)
+                {
                     let e = self.parse_expr()?;
                     elems.push(e);
                 }

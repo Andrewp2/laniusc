@@ -241,23 +241,327 @@
       }
     ]
   },
+  "hir": {
+    "items": [
+      {
+        "Fn": {
+          "public": true,
+          "name": "main",
+          "params": [
+            {
+              "name": "x",
+              "ty": {
+                "kind": {
+                  "Name": "i32"
+                },
+                "span": {
+                  "start": 15,
+                  "len": 3
+                }
+              },
+              "span": {
+                "start": 12,
+                "len": 6
+              }
+            }
+          ],
+          "ret": {
+            "kind": {
+              "Name": "i32"
+            },
+            "span": {
+              "start": 23,
+              "len": 3
+            }
+          },
+          "body": {
+            "stmts": [
+              {
+                "kind": {
+                  "Let": {
+                    "name": "y",
+                    "ty": {
+                      "kind": {
+                        "Name": "i32"
+                      },
+                      "span": {
+                        "start": 40,
+                        "len": 3
+                      }
+                    },
+                    "value": {
+                      "kind": {
+                        "Binary": {
+                          "op": "Add",
+                          "lhs": {
+                            "kind": {
+                              "Name": "x"
+                            },
+                            "span": {
+                              "start": 46,
+                              "len": 1
+                            }
+                          },
+                          "rhs": {
+                            "kind": {
+                              "Literal": {
+                                "kind": "Int",
+                                "text": "1"
+                              }
+                            },
+                            "span": {
+                              "start": 50,
+                              "len": 1
+                            }
+                          }
+                        }
+                      },
+                      "span": {
+                        "start": 46,
+                        "len": 5
+                      }
+                    }
+                  }
+                },
+                "span": {
+                  "start": 33,
+                  "len": 19
+                }
+              },
+              {
+                "kind": {
+                  "If": {
+                    "cond": {
+                      "kind": {
+                        "Binary": {
+                          "op": "Gt",
+                          "lhs": {
+                            "kind": {
+                              "Name": "y"
+                            },
+                            "span": {
+                              "start": 61,
+                              "len": 1
+                            }
+                          },
+                          "rhs": {
+                            "kind": {
+                              "Literal": {
+                                "kind": "Int",
+                                "text": "0"
+                              }
+                            },
+                            "span": {
+                              "start": 65,
+                              "len": 1
+                            }
+                          }
+                        }
+                      },
+                      "span": {
+                        "start": 61,
+                        "len": 5
+                      }
+                    },
+                    "then_block": {
+                      "stmts": [
+                        {
+                          "kind": {
+                            "Return": {
+                              "kind": {
+                                "Name": "y"
+                              },
+                              "span": {
+                                "start": 85,
+                                "len": 1
+                              }
+                            }
+                          },
+                          "span": {
+                            "start": 78,
+                            "len": 9
+                          }
+                        }
+                      ],
+                      "span": {
+                        "start": 68,
+                        "len": 25
+                      }
+                    },
+                    "else_block": {
+                      "stmts": [
+                        {
+                          "kind": {
+                            "While": {
+                              "cond": {
+                                "kind": {
+                                  "Binary": {
+                                    "op": "Ne",
+                                    "lhs": {
+                                      "kind": {
+                                        "Name": "y"
+                                      },
+                                      "span": {
+                                        "start": 116,
+                                        "len": 1
+                                      }
+                                    },
+                                    "rhs": {
+                                      "kind": {
+                                        "Literal": {
+                                          "kind": "Int",
+                                          "text": "0"
+                                        }
+                                      },
+                                      "span": {
+                                        "start": 121,
+                                        "len": 1
+                                      }
+                                    }
+                                  }
+                                },
+                                "span": {
+                                  "start": 116,
+                                  "len": 6
+                                }
+                              },
+                              "body": {
+                                "stmts": [
+                                  {
+                                    "kind": {
+                                      "Expr": {
+                                        "kind": {
+                                          "Assign": {
+                                            "op": "Sub",
+                                            "target": {
+                                              "kind": {
+                                                "Name": "y"
+                                              },
+                                              "span": {
+                                                "start": 138,
+                                                "len": 1
+                                              }
+                                            },
+                                            "value": {
+                                              "kind": {
+                                                "Literal": {
+                                                  "kind": "Int",
+                                                  "text": "1"
+                                                }
+                                              },
+                                              "span": {
+                                                "start": 143,
+                                                "len": 1
+                                              }
+                                            }
+                                          }
+                                        },
+                                        "span": {
+                                          "start": 138,
+                                          "len": 6
+                                        }
+                                      }
+                                    },
+                                    "span": {
+                                      "start": 138,
+                                      "len": 7
+                                    }
+                                  },
+                                  {
+                                    "kind": "Break",
+                                    "span": {
+                                      "start": 158,
+                                      "len": 6
+                                    }
+                                  },
+                                  {
+                                    "kind": "Continue",
+                                    "span": {
+                                      "start": 177,
+                                      "len": 9
+                                    }
+                                  }
+                                ],
+                                "span": {
+                                  "start": 124,
+                                  "len": 72
+                                }
+                              }
+                            }
+                          },
+                          "span": {
+                            "start": 109,
+                            "len": 87
+                          }
+                        }
+                      ],
+                      "span": {
+                        "start": 99,
+                        "len": 103
+                      }
+                    }
+                  }
+                },
+                "span": {
+                  "start": 57,
+                  "len": 145
+                }
+              },
+              {
+                "kind": {
+                  "Return": {
+                    "kind": {
+                      "Literal": {
+                        "kind": "Int",
+                        "text": "0"
+                      }
+                    },
+                    "span": {
+                      "start": 214,
+                      "len": 1
+                    }
+                  }
+                },
+                "span": {
+                  "start": 207,
+                  "len": 9
+                }
+              }
+            ],
+            "span": {
+              "start": 27,
+              "len": 191
+            }
+          },
+          "span": {
+            "start": 0,
+            "len": 218
+          }
+        }
+      }
+    ],
+    "span": {
+      "start": 0,
+      "len": 218
+    }
+  },
   "token_kinds": [
     "Pub",
     "Fn",
     "Ident",
-    "CallLParen",
-    "Ident",
+    "ParamLParen",
+    "ParamIdent",
     "Colon",
-    "Ident",
-    "CallRParen",
+    "TypeIdent",
+    "ParamRParen",
     "Arrow",
-    "Ident",
+    "TypeIdent",
     "LBrace",
     "Let",
-    "Ident",
+    "LetIdent",
     "Colon",
-    "Ident",
-    "Assign",
+    "TypeIdent",
+    "LetAssign",
     "Ident",
     "InfixPlus",
     "Int",
@@ -268,11 +572,11 @@
     "Gt",
     "Int",
     "GroupRParen",
-    "LBrace",
+    "IfLBrace",
     "Return",
     "Ident",
     "Semicolon",
-    "RBrace",
+    "IfRBrace",
     "Else",
     "LBrace",
     "While",

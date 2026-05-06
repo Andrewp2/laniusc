@@ -2,7 +2,6 @@
 // Ping/pong buffers are provided; after the final round the host copies
 // the last writer (ping or pong) into block_prefix_pair.
 
-static const uint MAX_GROUPS_PER_DIM = 65535u;
 static const uint PAIR_BLOCK_WIDTH = 256u; // must match pair_01
 
 struct Params
@@ -24,13 +23,11 @@ RWStructuredBuffer<uint2> block_pair_ping; // length nb
 RWStructuredBuffer<uint2> block_pair_pong; // length nb
 
 [shader("compute")]
-[numthreads(1, 1, 1)]
-void pair_02_scan_block_totals(uint3 tid: SV_DispatchThreadID,
-                               uint3 gid: SV_GroupID)
+[numthreads(256, 1, 1)]
+void pair_02_scan_block_totals(uint3 tid: SV_DispatchThreadID)
 {
     const uint nb = (gParams.n + (PAIR_BLOCK_WIDTH - 1u)) / PAIR_BLOCK_WIDTH;
-    const uint groups_x = (nb < MAX_GROUPS_PER_DIM) ? nb : MAX_GROUPS_PER_DIM;
-    const uint i = gid.y * groups_x + gid.x; // 1 thread per block element
+    const uint i = tid.x;
 
     if (i >= nb)
         return;

@@ -46,6 +46,7 @@ impl Pass<ParserBuffers, crate::parser::gpu::debug::DebugOutput> for LLPPairsPas
     ) -> HashMap<String, wgpu::BindingResource<'a>> {
         HashMap::from([
             ("token_kinds".into(), b.token_kinds.as_entire_binding()),
+            ("token_count".into(), b.token_count.as_entire_binding()),
             ("action_table".into(), b.action_table.as_entire_binding()),
             ("out_headers".into(), b.out_headers.as_entire_binding()),
             ("gParams".into(), b.params_llp.as_entire_binding()),

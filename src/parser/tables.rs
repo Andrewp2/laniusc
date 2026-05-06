@@ -13,7 +13,7 @@
 //      Elements are production IDs.
 //   3) Production arity                              : prod_arity[u32] (by production ID)
 //
-// File I/O (compact, little-endian) uses magic "LXPRSE01".
+// File I/O (compact, little-endian) uses magic "LXPRSE02".
 
 use std::{fs, io::Write, path::Path};
 
@@ -41,6 +41,8 @@ pub fn build_bracket_action_table(n_kinds: u32) -> Vec<u8> {
     const TAG_CALL_PAREN: u32 = 2;
     const TAG_ARRAY_BRACK: u32 = 3;
     const TAG_INDEX_BRACK: u32 = 4;
+    const TAG_PARAM_PAREN: u32 = 5;
+    const TAG_TYPE_ARRAY_BRACK: u32 = 6;
 
     // Helper: write header into (prev, this) cell.
     let mut set = |prev: u32, this: u32, h: ActionHeader| {
@@ -78,6 +80,16 @@ pub fn build_bracket_action_table(n_kinds: u32) -> Vec<u8> {
         );
         set(
             p,
+            TokenKind::ParamLParen as u32,
+            ActionHeader {
+                push_len: 1,
+                emit_len: 0,
+                pop_tag: TAG_PARAM_PAREN,
+                pop_count: 0,
+            },
+        );
+        set(
+            p,
             TokenKind::ArrayLBracket as u32,
             ActionHeader {
                 push_len: 1,
@@ -96,6 +108,16 @@ pub fn build_bracket_action_table(n_kinds: u32) -> Vec<u8> {
                 pop_count: 0,
             },
         );
+        set(
+            p,
+            TokenKind::TypeArrayLBracket as u32,
+            ActionHeader {
+                push_len: 1,
+                emit_len: 0,
+                pop_tag: TAG_TYPE_ARRAY_BRACK,
+                pop_count: 0,
+            },
+        );
     }
 
     // Pop on closing tokens (generic pop_tag=0 in MVP)
@@ -104,6 +126,7 @@ pub fn build_bracket_action_table(n_kinds: u32) -> Vec<u8> {
             TokenKind::RParen,
             TokenKind::GroupRParen,
             TokenKind::CallRParen,
+            TokenKind::ParamRParen,
         ] {
             set(
                 p,
@@ -120,6 +143,7 @@ pub fn build_bracket_action_table(n_kinds: u32) -> Vec<u8> {
             TokenKind::RBracket,
             TokenKind::ArrayRBracket,
             TokenKind::IndexRBracket,
+            TokenKind::TypeArrayRBracket,
         ] {
             set(
                 p,
@@ -140,7 +164,37 @@ pub fn build_bracket_action_table(n_kinds: u32) -> Vec<u8> {
 
 // ---------- Real offline tables (3 data structures / 7 arrays) ----------
 
-const MAGIC: &[u8; 8] = b"LXPRSE01";
+const MAGIC_V1: &[u8; 8] = b"LXPRSE01";
+const MAGIC_V2: &[u8; 8] = b"LXPRSE02";
+pub const INVALID_TABLE_ENTRY: u32 = u32::MAX;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ll1ParseError {
+    pub pos: usize,
+    pub code: Ll1ParseErrorCode,
+    pub detail: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ll1ParseErrorCode {
+    TerminalMismatch,
+    NoPrediction,
+    TrailingInput,
+    BadSymbol,
+    TablesUnavailable,
+}
+
+impl std::fmt::Display for Ll1ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "LL(1) parse error at token {}, {:?} ({})",
+            self.pos, self.code, self.detail
+        )
+    }
+}
+
+impl std::error::Error for Ll1ParseError {}
 
 #[inline]
 pub fn encode_push(symbol_id: u32) -> u32 {
@@ -176,6 +230,17 @@ pub struct PrecomputedParseTables {
 
     // 3) production arity
     pub prod_arity: Vec<u32>, // len = n_productions
+
+    // 4) Full LL(1) acceptance tables.
+    // Symbol encoding for rhs streams:
+    //   terminal    = token kind id in [0, n_kinds)
+    //   nonterminal = n_kinds + nonterminal id
+    pub n_nonterminals: u32,
+    pub start_nonterminal: u32,
+    pub ll1_predict: Vec<u32>, // len = n_nonterminals * n_kinds; u32::MAX means error
+    pub prod_rhs_off: Vec<u32>, // len = n_productions
+    pub prod_rhs_len: Vec<u32>, // len = n_productions
+    pub prod_rhs: Vec<u32>,
 }
 
 impl PrecomputedParseTables {
@@ -193,6 +258,12 @@ impl PrecomputedParseTables {
             pp_len: vec![0; cells],
             pp_prod_bits: 0,
             prod_arity: vec![0; n_productions as usize],
+            n_nonterminals: 0,
+            start_nonterminal: 0,
+            ll1_predict: Vec::new(),
+            prod_rhs_off: vec![0; n_productions as usize],
+            prod_rhs_len: vec![0; n_productions as usize],
+            prod_rhs: Vec::new(),
         }
     }
 
@@ -247,11 +318,107 @@ impl PrecomputedParseTables {
         };
     }
 
+    pub fn ll1_production_stream(&self, token_kinds: &[u32]) -> Result<Vec<u32>, Ll1ParseError> {
+        let (productions, _) = self.ll1_production_stream_with_positions(token_kinds)?;
+        Ok(productions)
+    }
+
+    pub fn ll1_production_stream_with_positions(
+        &self,
+        token_kinds: &[u32],
+    ) -> Result<(Vec<u32>, Vec<u32>), Ll1ParseError> {
+        if self.n_nonterminals == 0 || self.ll1_predict.is_empty() {
+            return Err(Ll1ParseError {
+                pos: 0,
+                code: Ll1ParseErrorCode::TablesUnavailable,
+                detail: 0,
+            });
+        }
+
+        let input_end = token_kinds.len().saturating_sub(1);
+        let first_input = if token_kinds.first().copied() == Some(0) {
+            1
+        } else {
+            0
+        };
+        let mut pos = first_input;
+        let mut stack = vec![self.n_kinds + self.start_nonterminal];
+        let mut out = Vec::new();
+        let mut positions = Vec::new();
+
+        while let Some(sym) = stack.pop() {
+            let lookahead = if pos < input_end { token_kinds[pos] } else { 0 };
+
+            if sym < self.n_kinds {
+                if sym != lookahead {
+                    return Err(Ll1ParseError {
+                        pos,
+                        code: Ll1ParseErrorCode::TerminalMismatch,
+                        detail: sym,
+                    });
+                }
+                pos += 1;
+                continue;
+            }
+
+            let nt = sym - self.n_kinds;
+            if nt >= self.n_nonterminals || lookahead >= self.n_kinds {
+                return Err(Ll1ParseError {
+                    pos,
+                    code: Ll1ParseErrorCode::BadSymbol,
+                    detail: sym,
+                });
+            }
+
+            let pred_idx = (nt as usize) * (self.n_kinds as usize) + lookahead as usize;
+            let prod = self.ll1_predict[pred_idx];
+            if prod == INVALID_TABLE_ENTRY || prod >= self.n_productions {
+                return Err(Ll1ParseError {
+                    pos,
+                    code: Ll1ParseErrorCode::NoPrediction,
+                    detail: nt,
+                });
+            }
+
+            out.push(prod);
+            positions.push(pos.saturating_sub(first_input) as u32);
+            let off = self.prod_rhs_off[prod as usize] as usize;
+            let len = self.prod_rhs_len[prod as usize] as usize;
+            stack.extend(self.prod_rhs[off..off + len].iter().rev().copied());
+        }
+
+        if pos != input_end {
+            return Err(Ll1ParseError {
+                pos,
+                code: Ll1ParseErrorCode::TrailingInput,
+                detail: token_kinds.get(pos).copied().unwrap_or(0),
+            });
+        }
+
+        Ok((out, positions))
+    }
+
+    pub fn projected_production_stream(&self, token_kinds: &[u32]) -> Vec<u32> {
+        let mut out = Vec::new();
+        for pair in token_kinds.windows(2) {
+            let prev = pair[0];
+            let this = pair[1];
+            if prev >= self.n_kinds || this >= self.n_kinds {
+                continue;
+            }
+            let idx = self.cell_index(prev, this);
+            let off = self.pp_off[idx] as usize;
+            let len = self.pp_len[idx] as usize;
+            out.extend_from_slice(&self.pp_superseq[off..off + len]);
+        }
+        out
+    }
+
     // ---------- Binary I/O ----------
 
     pub fn save_bin<P: AsRef<Path>>(&self, path: P) -> std::io::Result<()> {
         let mut f = fs::File::create(path)?;
-        f.write_all(MAGIC)?;
+        f.write_all(MAGIC_V2)?;
         f.write_all(&self.n_kinds.to_le_bytes())?;
         f.write_all(&self.n_productions.to_le_bytes())?;
         f.write_all(&self.sc_symbol_bits.to_le_bytes())?;
@@ -274,6 +441,12 @@ impl PrecomputedParseTables {
         write_vec(&mut f, &self.pp_off)?;
         write_vec(&mut f, &self.pp_len)?;
         write_vec(&mut f, &self.prod_arity)?;
+        f.write_all(&self.n_nonterminals.to_le_bytes())?;
+        f.write_all(&self.start_nonterminal.to_le_bytes())?;
+        write_vec(&mut f, &self.ll1_predict)?;
+        write_vec(&mut f, &self.prod_rhs_off)?;
+        write_vec(&mut f, &self.prod_rhs_len)?;
+        write_vec(&mut f, &self.prod_rhs)?;
         Ok(())
     }
 
@@ -302,9 +475,10 @@ impl PrecomputedParseTables {
 
         // header
         let magic = take::<8>(&mut data)?;
-        if &magic != MAGIC {
+        if &magic != MAGIC_V1 && &magic != MAGIC_V2 {
             return Err("bad magic in parse tables .bin".into());
         }
+        let is_v2 = &magic == MAGIC_V2;
         let n_kinds = take_u32(&mut data)?;
         let n_productions = take_u32(&mut data)?;
         let sc_symbol_bits = take_u32(&mut data)?;
@@ -317,6 +491,26 @@ impl PrecomputedParseTables {
         let pp_off = take_vec(&mut data)?;
         let pp_len = take_vec(&mut data)?;
         let prod_arity = take_vec(&mut data)?;
+        let (n_nonterminals, start_nonterminal, ll1_predict, prod_rhs_off, prod_rhs_len, prod_rhs) =
+            if is_v2 {
+                (
+                    take_u32(&mut data)?,
+                    take_u32(&mut data)?,
+                    take_vec(&mut data)?,
+                    take_vec(&mut data)?,
+                    take_vec(&mut data)?,
+                    take_vec(&mut data)?,
+                )
+            } else {
+                (
+                    0,
+                    0,
+                    Vec::new(),
+                    vec![0; n_productions as usize],
+                    vec![0; n_productions as usize],
+                    Vec::new(),
+                )
+            };
 
         let cells = (n_kinds as usize) * (n_kinds as usize);
         if sc_off.len() != cells
@@ -328,6 +522,20 @@ impl PrecomputedParseTables {
         }
         if prod_arity.len() != n_productions as usize {
             return Err("parse tables: bad arity table size".into());
+        }
+        if prod_rhs_off.len() != n_productions as usize
+            || prod_rhs_len.len() != n_productions as usize
+        {
+            return Err("parse tables: bad rhs table size".into());
+        }
+        if n_nonterminals > 0 {
+            let predict_cells = (n_nonterminals as usize) * (n_kinds as usize);
+            if ll1_predict.len() != predict_cells {
+                return Err("parse tables: bad LL(1) predict table size".into());
+            }
+            if start_nonterminal >= n_nonterminals {
+                return Err("parse tables: bad LL(1) start nonterminal".into());
+            }
         }
 
         Ok(Self {
@@ -342,6 +550,12 @@ impl PrecomputedParseTables {
             pp_len,
             pp_prod_bits,
             prod_arity,
+            n_nonterminals,
+            start_nonterminal,
+            ll1_predict,
+            prod_rhs_off,
+            prod_rhs_len,
+            prod_rhs,
         })
     }
 }
@@ -375,12 +589,22 @@ pub fn build_mvp_precomputed_tables(n_kinds: u32, prod_arity: Vec<u32>) -> Preco
         );
         t.set_sc_for_pair(
             prev,
+            TokenKind::ParamLParen as u32,
+            &[encode_push(SYM_PAREN)],
+        );
+        t.set_sc_for_pair(
+            prev,
             TokenKind::ArrayLBracket as u32,
             &[encode_push(SYM_BRACK)],
         );
         t.set_sc_for_pair(
             prev,
             TokenKind::IndexLBracket as u32,
+            &[encode_push(SYM_BRACK)],
+        );
+        t.set_sc_for_pair(
+            prev,
+            TokenKind::TypeArrayLBracket as u32,
             &[encode_push(SYM_BRACK)],
         );
 
@@ -393,6 +617,11 @@ pub fn build_mvp_precomputed_tables(n_kinds: u32, prod_arity: Vec<u32>) -> Preco
             &[encode_pop(SYM_PAREN)],
         );
         t.set_sc_for_pair(prev, TokenKind::CallRParen as u32, &[encode_pop(SYM_PAREN)]);
+        t.set_sc_for_pair(
+            prev,
+            TokenKind::ParamRParen as u32,
+            &[encode_pop(SYM_PAREN)],
+        );
         t.set_sc_for_pair(prev, TokenKind::RBracket as u32, &[encode_pop(SYM_BRACK)]);
         t.set_sc_for_pair(
             prev,
@@ -404,18 +633,27 @@ pub fn build_mvp_precomputed_tables(n_kinds: u32, prod_arity: Vec<u32>) -> Preco
             TokenKind::IndexRBracket as u32,
             &[encode_pop(SYM_BRACK)],
         );
+        t.set_sc_for_pair(
+            prev,
+            TokenKind::TypeArrayRBracket as u32,
+            &[encode_pop(SYM_BRACK)],
+        );
 
         // Empty partial parse everywhere (MVP).
         t.set_pp_for_pair(prev, TokenKind::GroupLParen as u32, &[]);
         t.set_pp_for_pair(prev, TokenKind::CallLParen as u32, &[]);
+        t.set_pp_for_pair(prev, TokenKind::ParamLParen as u32, &[]);
         t.set_pp_for_pair(prev, TokenKind::ArrayLBracket as u32, &[]);
         t.set_pp_for_pair(prev, TokenKind::IndexLBracket as u32, &[]);
+        t.set_pp_for_pair(prev, TokenKind::TypeArrayLBracket as u32, &[]);
         t.set_pp_for_pair(prev, TokenKind::RParen as u32, &[]);
         t.set_pp_for_pair(prev, TokenKind::GroupRParen as u32, &[]);
         t.set_pp_for_pair(prev, TokenKind::CallRParen as u32, &[]);
+        t.set_pp_for_pair(prev, TokenKind::ParamRParen as u32, &[]);
         t.set_pp_for_pair(prev, TokenKind::RBracket as u32, &[]);
         t.set_pp_for_pair(prev, TokenKind::ArrayRBracket as u32, &[]);
         t.set_pp_for_pair(prev, TokenKind::IndexRBracket as u32, &[]);
+        t.set_pp_for_pair(prev, TokenKind::TypeArrayRBracket as u32, &[]);
     }
 
     // Bit widths (symbol ids go up to 1 in MVP)

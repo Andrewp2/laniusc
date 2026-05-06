@@ -1,17 +1,22 @@
 // shaders/parser/brackets_02_scan_block_prefix.slang
-// Scan block sums → block_prefix, compute final_depth and global min_depth.
+// Parallel scan of block summaries → block_prefix, final_depth, and global min_depth.
 
 struct Params
 {
     uint n_blocks;
+    uint scan_step;
 };
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<int> block_sum;      // len = n_blocks
-StructuredBuffer<int> block_minpref;  // len = n_blocks
-RWStructuredBuffer<int> block_prefix; // len = n_blocks (exclusive)
-RWStructuredBuffer<int> out_depths;   // [0]=final, [1]=min
-RWStructuredBuffer<uint> out_valid;   // set to 1 here; later kernels AND in errors
+StructuredBuffer<int> block_sum;          // len = n_blocks
+StructuredBuffer<int> block_minpref;      // len = n_blocks
+StructuredBuffer<int> prefix_sum_in;      // inclusive scanned block sums
+StructuredBuffer<int> prefix_min_in;      // inclusive scanned block min-prefix summaries
+RWStructuredBuffer<int> prefix_sum_out;
+RWStructuredBuffer<int> prefix_min_out;
+RWStructuredBuffer<int> block_prefix;     // len = n_blocks (exclusive)
+RWStructuredBuffer<int> out_depths;       // [0]=final, [1]=min
+RWStructuredBuffer<uint> out_valid;       // set to 1 here; later kernels AND in errors
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
@@ -21,32 +26,36 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (tid.x >= B)
         return;
 
-    // Simple sequential prefix at block granularity via single-dispatch grid (B <= 65536 typical).
-    // (If you expect B >> 1e5, mirror the lexer’s 01/02/03 pattern here.)
-    int prefix = 0;
-    for (uint b = 0; b < tid.x; ++b)
-        prefix += block_sum[b];
-    block_prefix[tid.x] = prefix;
-
-    GroupMemoryBarrierWithGroupSync();
-
-    // Thread 0 computes final/min
-    if (tid.x == 0)
+    if (gParams.scan_step == 0u)
     {
-        int final_depth = 0;
-        int min_depth = 0;
-        int run = 0;
-        for (uint b = 0; b < B; ++b)
-        {
-            // min over (prefix_before_block + block_minpref[b])
-            int cand = run + block_minpref[b];
-            if (cand < min_depth)
-                min_depth = cand;
-            run += block_sum[b];
-        }
-        final_depth = run;
-        out_depths[0] = final_depth;
-        out_depths[1] = min_depth;
-        out_valid[0] = (min_depth >= 0 && final_depth == 0) ? 1u : 0u;
+        prefix_sum_out[tid.x] = block_sum[tid.x];
+        prefix_min_out[tid.x] = block_minpref[tid.x];
+        return;
     }
+
+    if (gParams.scan_step < B)
+    {
+        int sum = prefix_sum_in[tid.x];
+        int minp = prefix_min_in[tid.x];
+        if (tid.x >= gParams.scan_step)
+        {
+            int left_sum = prefix_sum_in[tid.x - gParams.scan_step];
+            int left_min = prefix_min_in[tid.x - gParams.scan_step];
+            minp = min(left_min, left_sum + minp);
+            sum = left_sum + sum;
+        }
+        prefix_sum_out[tid.x] = sum;
+        prefix_min_out[tid.x] = minp;
+        return;
+    }
+
+    block_prefix[tid.x] = tid.x == 0u ? 0 : prefix_sum_in[tid.x - 1u];
+
+    // Every active thread writes the same aggregate result; this keeps the
+    // finalization free of a single fixed-lane owner.
+    int final_depth = prefix_sum_in[B - 1u];
+    int min_depth = prefix_min_in[B - 1u];
+    out_depths[0] = final_depth;
+    out_depths[1] = min_depth;
+    out_valid[0] = (min_depth >= 0 && final_depth == 0) ? 1u : 0u;
 }

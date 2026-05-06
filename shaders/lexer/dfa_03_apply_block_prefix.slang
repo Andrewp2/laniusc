@@ -1,21 +1,20 @@
-// Fused DFA apply + boundary finalize + seed-kind packing
-// Replaces the old dfa_03_apply_block_prefix and absorbs boundary_finalize_and_seed
-// Writes: flags_packed and tok_types directly (no f_final buffer)
+// Apply scanned DFA block prefixes and emit boundary flags/token kinds.
+//
+// One dispatch thread owns one input byte. It recomputes the short in-block DFA
+// prefix up to that byte from the scanned block seed, then evaluates the byte's
+// emit/EOF flags.
 
 #define WORKGROUP_SIZE 256
-#define WAVE_SIZE 32u
-#define MAX_WAVES (WORKGROUP_SIZE / WAVE_SIZE) // 8
-#define MAX_PAIRS ((MAX_WAVES + 1u) / 2u)      // 4
-#define N_STATES 80                            // Must match tables
+#define N_STATES 80
+#define CHUNK_COUNT 3
 
 import utils; // PF_* bits, load helpers, etc.
 
 struct Params
 {
-    uint n;           // number of input bytes
-    uint n_states;    // DFA state count (must be 79)
-    uint start_state; // DFA start state
-    // skip kinds (White/LineComment/BlockComment/etc.) to compute kept-ness
+    uint n;
+    uint n_states;
+    uint start_state;
     uint skip0;
     uint skip1;
     uint skip2;
@@ -23,34 +22,23 @@ struct Params
 };
 ConstantBuffer<Params> gParams;
 
-// Inputs
-ByteAddressBuffer in_bytes;          // input bytes
-StructuredBuffer<uint> block_prefix; // per-block inclusive prefix (N_STATES per block)
-StructuredBuffer<uint> token_map;    // token kind per state (INVALID32 => non-accepting)
-StructuredBuffer<uint> next_emit;    // u16 packed: next_state (low 15) | HIGH_BIT for EMIT
+ByteAddressBuffer in_bytes;
+StructuredBuffer<uint> block_prefix;
+StructuredBuffer<uint> chunk_summaries;
+StructuredBuffer<uint> token_map;
+StructuredBuffer<uint> next_emit; // u16 packed: next_state (low 15) | HIGH_BIT for EMIT
 
-// Outputs (replaces f_final usage)
-RWStructuredBuffer<uint> flags_packed;  // PF_EMIT/PF_EOF/PF_KEEP_* per i
-RWStructuredBuffer<uint> tok_types;     // pack (eof_kind<<16 | emit_kind) per i (0xFFFF for none)
+RWStructuredBuffer<uint> flags_packed;
+RWStructuredBuffer<uint> tok_types;
 
-groupshared uint gB[WORKGROUP_SIZE];    // block byte cache
-groupshared uint gPairCarry[MAX_PAIRS]; // end-state after each owner-pair
-groupshared uint gTokMap[N_STATES];     // small LUT cached once per block
-
-// Compute active length for wave w in this block
-inline uint wave_len_of(uint block_len, uint w)
-{
-    const uint offset = w * WAVE_SIZE;
-    if (offset >= block_len)
-        return 0u;
-    const uint rem = block_len - offset;
-    return (rem < WAVE_SIZE) ? rem : WAVE_SIZE;
-}
-
-// Local helper: skip-check
 inline bool is_skip(uint tk)
 {
     return (tk == gParams.skip0) || (tk == gParams.skip1) || (tk == gParams.skip2) || (tk == gParams.skip3);
+}
+
+uint next_state_only(uint byte_value, uint state)
+{
+    return load_u16_packed(next_emit, byte_value * N_STATES + state) & 0x7FFFu;
 }
 
 [shader("compute")]
@@ -59,173 +47,73 @@ void dfa_03_apply_block_prefix(uint3 tid: SV_GroupThreadID,
                                uint3 /*gid*/: SV_DispatchThreadID,
                                uint3 ggrp: SV_GroupID)
 {
-    // Partitioning matches dfa_01 / dfa_02
-    const uint nb = (gParams.n + (WORKGROUP_SIZE - 1u)) / WORKGROUP_SIZE; // block count
-    const uint groupsX = (nb < 65535u) ? nb : 65535u;                     // 2D tiling X
-    const uint block = ggrp.y * groupsX + ggrp.x;                         // linear block id
-    const uint base = block * WORKGROUP_SIZE;                             // base index of block
-
-    const uint tIdx = tid.x;              // 0..255
-    const uint lane = WaveGetLaneIndex(); // 0..31
-    const uint waveId = tIdx / WAVE_SIZE; // 0..7
-    const uint i_abs = base + tIdx;       // absolute byte index
+    const uint nb = (gParams.n + (WORKGROUP_SIZE - 1u)) / WORKGROUP_SIZE;
+    const uint groupsX = (nb < 65535u) ? nb : 65535u;
+    const uint block = ggrp.y * groupsX + ggrp.x;
+    const uint base = block * WORKGROUP_SIZE;
+    const uint tIdx = tid.x;
+    const uint i_abs = base + tIdx;
 
     const uint block_len = (base < gParams.n)
                                ? ((gParams.n - base) < WORKGROUP_SIZE ? (gParams.n - base) : WORKGROUP_SIZE)
                                : 0u;
-    if (block >= nb || block_len == 0u)
-        return; // nothing to do
+    if (block >= nb || tIdx >= block_len || i_abs >= gParams.n)
+        return;
 
-    // Seed carry state from prior blocks via block_prefix table
-    uint carry_state0 = gParams.start_state;
+    uint state_before = gParams.start_state;
     if (block > 0u)
     {
         const uint prevBase = (block - 1u) * N_STATES;
-        carry_state0 = block_prefix[prevBase + carry_state0];
+        state_before = block_prefix[prevBase + state_before];
     }
 
-    // Preload the block's bytes into shared memory once
-    uint b_local = 0u;
-    if (i_abs < gParams.n)
-        b_local = load_byte_at(in_bytes, i_abs);
-    gB[tIdx] = b_local;
-    GroupMemoryBarrierWithGroupSync(); // make gB visible to the whole CTA
-
-    // Preload token_map into shared once (79 * 4 bytes)
-    if (tIdx < N_STATES)
+    const uint chunk_width = (block_len + CHUNK_COUNT - 1u) / CHUNK_COUNT;
+    const uint chunk = min(tIdx / chunk_width, CHUNK_COUNT - 1u);
+    [unroll]
+    for (uint c = 0u; c < CHUNK_COUNT; c += 1u)
     {
-        gTokMap[tIdx] = token_map[tIdx];
+        if (c >= chunk)
+            break;
+        state_before = chunk_summaries[(block * CHUNK_COUNT + c) * N_STATES + state_before];
     }
-    GroupMemoryBarrierWithGroupSync();
 
-    const uint wavesInBlock = (block_len + (WAVE_SIZE - 1u)) / WAVE_SIZE; // 1..8
-    const uint pairsInBlock = (wavesInBlock + 1u) / 2u;                   // ceil(waves/2) => 1..4
-
-    // Process pairs (even owner wave handles its 32B and its neighbor’s 32B)
-    for (uint p = 0u; p < pairsInBlock; ++p)
+    const uint chunk_begin = min(block_len, chunk * chunk_width);
+    [loop]
+    for (uint k = chunk_begin; k < tIdx; k += 1u)
     {
-        GroupMemoryBarrierWithGroupSync(); // ensure previous pair carry is visible
-
-        const uint ownerWave = 2u * p;               // even wave id
-        const bool iAmOwner = (waveId == ownerWave); // owner does the sequential walk on lane 0
-
-        const uint wA = ownerWave;                                // first wave in the pair
-        const uint wB = wA + 1u;                                  // second (optional)
-        const uint lenA = wave_len_of(block_len, wA);             // bytes for A in this block
-        const bool hasB = (wB < wavesInBlock);                    // whether B exists
-        const uint lenB = hasB ? wave_len_of(block_len, wB) : 0u; // bytes for B
-
-        if (iAmOwner && lane == 0u)
-        {
-            // Seed for this pair (either from start or previous pair’s carry)
-            uint s_prev = (p == 0u) ? carry_state0 : gPairCarry[p - 1u];
-
-            // Walk Wave A bytes sequentially
-            const uint baseA = base + wA * WAVE_SIZE; // global start idx for A
-            const uint offA = wA * WAVE_SIZE;         // shared-memory offset for A
-            [loop]
-            for (uint k = 0u; k < lenA; ++k)
-            {
-                const uint idx = baseA + k;  // absolute i
-                const uint b = gB[offA + k]; // byte value
-
-                // Load (next_state | EMIT bit) from packed u16 table
-                const uint packed = load_u16_packed(next_emit, b * N_STATES + s_prev);
-                const bool emit_here = is_highest_bit_set(packed);
-                const uint s_cur = (packed & 0x7FFFu); // next DFA state
-
-                const bool at_eof = (idx + 1u == gParams.n);
-
-                uint f = 0u;
-                if (emit_here | at_eof)
-                {
-                    const uint tk_emit = gTokMap[s_prev];
-                    const uint tk_eof = gTokMap[s_cur];
-
-                    const bool valid_emit = (tk_emit != 0xFFFFffffu);
-                    const bool valid_eof = (tk_eof != 0xFFFFffffu);
-                    const bool eof_accept = (at_eof && valid_eof);
-
-                    const bool keep_emit = (valid_emit && !is_skip(tk_emit));
-                    const bool keep_eof = (valid_eof && !is_skip(tk_eof));
-
-                    f |= emit_here ? PF_EMIT : 0u;
-                    f |= eof_accept ? PF_EOF : 0u;
-                    f |= keep_emit ? PF_KEEP_EMIT : 0u;
-                    f |= keep_eof ? PF_KEEP_EOF : 0u;
-
-                    flags_packed[idx] = f;
-
-                    const uint emit16 = (keep_emit && valid_emit) ? (tk_emit & 0xFFFFu) : 0xFFFFu;
-                    const uint eof16 = (keep_eof && valid_eof) ? (tk_eof & 0xFFFFu) : 0xFFFFu;
-                    if ((f & (PF_EMIT | PF_EOF)) != 0u)
-                    {
-                        tok_types[idx] = (eof16 << 16) | emit16;
-                    }
-                }
-                else
-                {
-                    flags_packed[idx] = 0u;
-                }
-
-                s_prev = s_cur; // advance DFA
-            }
-
-            // Walk Wave B bytes (if present)
-            if (hasB)
-            {
-                const uint baseB = base + wB * WAVE_SIZE; // global start idx for B
-                const uint offB = wB * WAVE_SIZE;         // shared-memory offset for B
-                [loop]
-                for (uint k = 0u; k < lenB; ++k)
-                {
-                    const uint idx = baseB + k;  // absolute i
-                    const uint b = gB[offB + k]; // byte value
-
-                    const uint packed = load_u16_packed(next_emit, b * N_STATES + s_prev);
-                    const bool emit_here = is_highest_bit_set(packed);
-                    const uint s_cur = (packed & 0x7FFFu);
-
-                    const bool at_eof = (idx + 1u == gParams.n);
-
-                    uint f = 0u;
-                    if (emit_here | at_eof)
-                    {
-                        const uint tk_emit = gTokMap[s_prev];
-                        const uint tk_eof = gTokMap[s_cur];
-
-                        const bool valid_emit = (tk_emit != 0xFFFFffffu);
-                        const bool valid_eof = (tk_eof != 0xFFFFffffu);
-                        const bool eof_accept = (at_eof && valid_eof);
-
-                        const bool keep_emit = (valid_emit && !is_skip(tk_emit));
-                        const bool keep_eof = (valid_eof && !is_skip(tk_eof));
-
-                        f |= emit_here ? PF_EMIT : 0u;
-                        f |= eof_accept ? PF_EOF : 0u;
-                        f |= keep_emit ? PF_KEEP_EMIT : 0u;
-                        f |= keep_eof ? PF_KEEP_EOF : 0u;
-
-                        flags_packed[idx] = f; // flags
-
-                        const uint emit16 = (keep_emit && valid_emit) ? (tk_emit & 0xFFFFu) : 0xFFFFu;
-                        const uint eof16 = (keep_eof && valid_eof) ? (tk_eof & 0xFFFFu) : 0xFFFFu;
-                        if ((f & (PF_EMIT | PF_EOF)) != 0u)
-                        {
-                            tok_types[idx] = (eof16 << 16) | emit16; // kind pack
-                        }
-                    }
-                    else
-                    {
-                        flags_packed[idx] = 0u;
-                    }
-
-                    s_prev = s_cur; // advance DFA
-                }
-            }
-
-            gPairCarry[p] = s_prev; // publish pair end-state
-        }
-        // Non-owner threads participate only in barriers
+        uint b_prev = load_byte_at(in_bytes, base + k);
+        state_before = next_state_only(b_prev, state_before);
     }
+
+    const uint b = load_byte_at(in_bytes, i_abs);
+    const uint packed = load_u16_packed(next_emit, b * N_STATES + state_before);
+    const bool emit_here = is_highest_bit_set(packed);
+    const uint state_after = packed & 0x7FFFu;
+    const bool at_eof = (i_abs + 1u == gParams.n);
+
+    uint f = 0u;
+    if (emit_here | at_eof)
+    {
+        const uint tk_emit = token_map[state_before];
+        const uint tk_eof = token_map[state_after];
+
+        const bool valid_emit = (tk_emit != 0xFFFFffffu);
+        const bool valid_eof = (tk_eof != 0xFFFFffffu);
+        const bool eof_accept = (at_eof && valid_eof);
+
+        const bool keep_emit = (valid_emit && !is_skip(tk_emit));
+        const bool keep_eof = (valid_eof && !is_skip(tk_eof));
+
+        f |= emit_here ? PF_EMIT : 0u;
+        f |= eof_accept ? PF_EOF : 0u;
+        f |= keep_emit ? PF_KEEP_EMIT : 0u;
+        f |= keep_eof ? PF_KEEP_EOF : 0u;
+
+        const uint emit16 = (keep_emit && valid_emit) ? (tk_emit & 0xFFFFu) : 0xFFFFu;
+        const uint eof16 = (keep_eof && valid_eof) ? (tk_eof & 0xFFFFu) : 0xFFFFu;
+        if ((f & (PF_EMIT | PF_EOF)) != 0u)
+            tok_types[i_abs] = (eof16 << 16) | emit16;
+    }
+
+    flags_packed[i_abs] = f;
 }

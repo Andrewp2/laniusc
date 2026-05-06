@@ -1,5 +1,8 @@
+pub mod codegen;
+pub mod compiler;
 pub mod dev;
 pub mod gpu;
+pub mod hir;
 pub mod lexer;
 pub mod parser;
 pub mod reflection;

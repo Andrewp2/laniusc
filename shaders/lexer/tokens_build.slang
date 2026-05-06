@@ -16,46 +16,6 @@ struct TokenOut
 RWStructuredBuffer<TokenOut> tokens_out;
 
 static const uint TK_IDENT = 1;
-static const uint TK_INT = 2;
-static const uint TK_WHITE = 3;
-
-static const uint TK_LPAREN = 4;
-static const uint TK_RPAREN = 5;
-static const uint TK_PLUS = 6;
-static const uint TK_STAR = 7;
-static const uint TK_ASSIGN = 8;
-static const uint TK_SLASH = 9;
-static const uint TK_LINE_COMMENT = 10;
-static const uint TK_BLOCK_COMMENT = 11;
-
-static const uint TK_LT = 12;
-static const uint TK_GT = 13;
-static const uint TK_LE = 14;
-static const uint TK_GE = 15;
-static const uint TK_EQEQ = 16;
-static const uint TK_ANDAND = 17;
-static const uint TK_OROR = 18;
-static const uint TK_NOT = 19;
-static const uint TK_LBRACKET = 20;
-static const uint TK_RBRACKET = 21;
-static const uint TK_LBRACE = 22;
-static const uint TK_RBRACE = 23;
-static const uint TK_ANGLE_GENERIC = 24;
-static const uint TK_AMPERSAND = 25;
-static const uint TK_PIPE = 26;
-static const uint TK_MINUS = 27;
-
-static const uint TK_CALL_LPAREN = 28;
-static const uint TK_GROUP_LPAREN = 29;
-static const uint TK_INDEX_LBRACKET = 30;
-static const uint TK_ARRAY_LBRACKET = 31;
-static const uint TK_STRING = 32;
-static const uint TK_FLOAT = 33;
-static const uint TK_CHAR = 34;
-static const uint TK_PREFIX_PLUS = 58;
-static const uint TK_INFIX_PLUS = 59;
-static const uint TK_PREFIX_MINUS = 60;
-static const uint TK_INFIX_MINUS = 61;
 static const uint TK_PUB = 66;
 static const uint TK_FN = 67;
 static const uint TK_LET = 68;
@@ -140,62 +100,38 @@ inline uint retag_keyword(uint kind, uint start, uint len)
     return kind;
 }
 
+inline uint compact_token_start(uint token_index)
+{
+    uint all_idx = all_index_compact[token_index];
+    uint all_zero = (all_idx == 0u) ? 0u : (all_idx - 1u);
+    return (all_zero == 0u) ? 0u : end_positions_all[all_zero - 1u];
+}
+
+inline uint retag_compact_kind(uint token_index)
+{
+    uint kind = types_compact[token_index];
+    if (kind == TK_IDENT)
+    {
+        uint end_excl = end_positions[token_index];
+        uint start = compact_token_start(token_index);
+        kind = retag_keyword(kind, start, end_excl - start);
+    }
+    return kind;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void tokens_build(uint3 tid: SV_DispatchThreadID)
 {
     uint k = tid.x;
     uint total = token_count[0];
+
     if (k >= total)
         return;
 
     uint end_excl = end_positions[k];
-
-    uint all_idx = all_index_compact[k];
-    uint all_zero = (all_idx == 0u) ? 0u : (all_idx - 1u);
-
-    uint start = (all_zero == 0u) ? 0u : end_positions_all[all_zero - 1u];
-
-    uint kind = types_compact[k];
-    uint prev = (k == 0u) ? 0xFFFFu : types_compact[k - 1];
-    if (k > 0u && prev == TK_IDENT)
-    {
-        uint prev_end_excl = end_positions[k - 1u];
-        uint prev_all_idx = all_index_compact[k - 1u];
-        uint prev_all_zero = (prev_all_idx == 0u) ? 0u : (prev_all_idx - 1u);
-        uint prev_start = (prev_all_zero == 0u) ? 0u : end_positions_all[prev_all_zero - 1u];
-        prev = retag_keyword(prev, prev_start, prev_end_excl - prev_start);
-    }
-
-    bool ends_primary =
-        (prev == TK_IDENT) ||
-        (prev == TK_INT) ||
-        (prev == TK_FLOAT) ||
-        (prev == TK_RPAREN) ||
-        (prev == TK_RBRACKET) ||
-        (prev == TK_RBRACE) ||
-        (prev == TK_ANGLE_GENERIC) ||
-        (prev == TK_STRING) ||
-        (prev == TK_CHAR);
-
-    if (kind == TK_LPAREN)
-    {
-        kind = ends_primary ? TK_CALL_LPAREN : TK_GROUP_LPAREN;
-    }
-    else if (kind == TK_LBRACKET)
-    {
-        kind = ends_primary ? TK_INDEX_LBRACKET : TK_ARRAY_LBRACKET;
-    }
-    else if (kind == TK_PLUS)
-    {
-        kind = ends_primary ? TK_INFIX_PLUS : TK_PREFIX_PLUS;
-    }
-    else if (kind == TK_MINUS)
-    {
-        kind = ends_primary ? TK_INFIX_MINUS : TK_PREFIX_MINUS;
-    }
-
-    kind = retag_keyword(kind, start, end_excl - start);
+    uint start = compact_token_start(k);
+    uint kind = retag_compact_kind(k);
 
     // Write final token
     TokenOut t;

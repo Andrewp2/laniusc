@@ -202,31 +202,223 @@
       }
     ]
   },
+  "hir": {
+    "items": [
+      {
+        "Fn": {
+          "public": true,
+          "name": "my_func",
+          "params": [
+            {
+              "name": "x",
+              "ty": {
+                "kind": {
+                  "Name": "i32"
+                },
+                "span": {
+                  "start": 18,
+                  "len": 3
+                }
+              },
+              "span": {
+                "start": 15,
+                "len": 6
+              }
+            },
+            {
+              "name": "y",
+              "ty": {
+                "kind": {
+                  "Name": "u32"
+                },
+                "span": {
+                  "start": 26,
+                  "len": 3
+                }
+              },
+              "span": {
+                "start": 23,
+                "len": 6
+              }
+            },
+            {
+              "name": "my_arr",
+              "ty": {
+                "kind": {
+                  "Array": {
+                    "elem": {
+                      "kind": {
+                        "Name": "u32"
+                      },
+                      "span": {
+                        "start": 40,
+                        "len": 3
+                      }
+                    },
+                    "len": "10"
+                  }
+                },
+                "span": {
+                  "start": 39,
+                  "len": 9
+                }
+              },
+              "span": {
+                "start": 31,
+                "len": 17
+              }
+            }
+          ],
+          "ret": {
+            "kind": "Void",
+            "span": {
+              "start": 50,
+              "len": 0
+            }
+          },
+          "body": {
+            "stmts": [
+              {
+                "kind": {
+                  "Let": {
+                    "name": "z",
+                    "ty": null,
+                    "value": {
+                      "kind": {
+                        "Binary": {
+                          "op": "Add",
+                          "lhs": {
+                            "kind": {
+                              "Name": "x"
+                            },
+                            "span": {
+                              "start": 64,
+                              "len": 1
+                            }
+                          },
+                          "rhs": {
+                            "kind": {
+                              "Index": {
+                                "base": {
+                                  "kind": {
+                                    "Name": "my_arr"
+                                  },
+                                  "span": {
+                                    "start": 68,
+                                    "len": 6
+                                  }
+                                },
+                                "index": {
+                                  "kind": {
+                                    "Name": "y"
+                                  },
+                                  "span": {
+                                    "start": 75,
+                                    "len": 1
+                                  }
+                                }
+                              }
+                            },
+                            "span": {
+                              "start": 68,
+                              "len": 9
+                            }
+                          }
+                        }
+                      },
+                      "span": {
+                        "start": 64,
+                        "len": 13
+                      }
+                    }
+                  }
+                },
+                "span": {
+                  "start": 56,
+                  "len": 22
+                }
+              },
+              {
+                "kind": {
+                  "Expr": {
+                    "kind": {
+                      "Call": {
+                        "callee": {
+                          "kind": {
+                            "Name": "print"
+                          },
+                          "span": {
+                            "start": 83,
+                            "len": 5
+                          }
+                        },
+                        "args": [
+                          {
+                            "kind": {
+                              "Name": "z"
+                            },
+                            "span": {
+                              "start": 89,
+                              "len": 1
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    "span": {
+                      "start": 83,
+                      "len": 8
+                    }
+                  }
+                },
+                "span": {
+                  "start": 83,
+                  "len": 9
+                }
+              }
+            ],
+            "span": {
+              "start": 50,
+              "len": 44
+            }
+          },
+          "span": {
+            "start": 0,
+            "len": 94
+          }
+        }
+      }
+    ],
+    "span": {
+      "start": 0,
+      "len": 94
+    }
+  },
   "token_kinds": [
     "Pub",
     "Fn",
     "Ident",
-    "CallLParen",
-    "Ident",
+    "ParamLParen",
+    "ParamIdent",
     "Colon",
-    "Ident",
-    "Comma",
-    "Ident",
+    "TypeIdent",
+    "ParamComma",
+    "ParamIdent",
     "Colon",
-    "Ident",
-    "Comma",
-    "Ident",
+    "TypeIdent",
+    "ParamComma",
+    "ParamIdent",
     "Colon",
-    "ArrayLBracket",
-    "Ident",
-    "Semicolon",
+    "TypeArrayLBracket",
+    "TypeIdent",
+    "TypeSemicolon",
     "Int",
-    "ArrayRBracket",
-    "CallRParen",
+    "TypeArrayRBracket",
+    "ParamRParen",
     "LBrace",
     "Let",
-    "Ident",
-    "Assign",
+    "LetIdent",
+    "LetAssign",
     "Ident",
     "InfixPlus",
     "Ident",

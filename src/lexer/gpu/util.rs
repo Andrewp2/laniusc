@@ -25,7 +25,6 @@ pub fn readback_enabled() -> bool {
 pub fn read_tokens_from_mapped(bytes: &[u8], count: usize) -> Vec<Token> {
     use std::{mem::size_of, ptr::read_unaligned};
 
-    let instant = std::time::Instant::now();
     let mut out = Vec::with_capacity(count);
     let mut p = bytes.as_ptr();
     let stride = size_of::<u32>() * 3;
@@ -48,11 +47,6 @@ pub fn read_tokens_from_mapped(bytes: &[u8], count: usize) -> Vec<Token> {
 
         p = unsafe { p.add(stride) };
     }
-    eprintln!(
-        "[read_tokens_from_mapped] {} tokens in {:.3} ms",
-        count,
-        instant.elapsed().as_nanos() as f64 / 1.0e6
-    );
     out
 }
 

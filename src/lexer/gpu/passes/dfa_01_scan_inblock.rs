@@ -50,6 +50,10 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa01ScanInblock
             ("in_bytes".into(), b.in_bytes.as_entire_binding()),
             ("next_u8".into(), b.next_u8.as_entire_binding()),
             ("block_summaries".into(), b.dfa_02_ping.as_entire_binding()),
+            (
+                "chunk_summary_out".into(),
+                b.dfa_chunk_summaries.as_entire_binding(),
+            ),
         ])
     }
 

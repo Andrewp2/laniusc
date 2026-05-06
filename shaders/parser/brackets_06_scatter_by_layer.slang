@@ -16,6 +16,7 @@ RWStructuredBuffer<uint> cur_push;        // len = n_layers, prefilled with off_
 RWStructuredBuffer<uint> cur_pop;         // len = n_layers, prefilled with off_pop
 RWStructuredBuffer<uint> pushes_by_layer; // len = n_sc (capacity)
 RWStructuredBuffer<uint> pops_by_layer;   // len = n_sc (capacity)
+RWStructuredBuffer<uint> slot_for_index;  // len = n_sc, absolute slot in layer array
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
@@ -35,11 +36,13 @@ void main(uint3 tid: SV_DispatchThreadID)
         uint slot;
         InterlockedAdd(cur_push[l], 1, slot);
         pushes_by_layer[slot] = i;
+        slot_for_index[i] = slot;
     }
     else
     {
         uint slot;
         InterlockedAdd(cur_pop[l], 1, slot);
         pops_by_layer[slot] = i;
+        slot_for_index[i] = slot;
     }
 }

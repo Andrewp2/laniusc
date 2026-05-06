@@ -1,7 +1,3 @@
-Here’s a drop-in README you can add as `shaders/parser/README.md`.
-
----
-
 # GPU Parsing — Brackets & Tree (current plan and next steps)
 
 This document explains the **current** GPU strategy for bracket matching and tree construction, how it fits the **WebGPU constraints** we care about (≤10 buffers per pass, modest buffer sizes, no push constants), and what we plan to do **next**.
@@ -22,15 +18,20 @@ The code lives under `shaders/parser/*` and is driven by `src/parser/gpu/*`. The
 
 ## Input model
 
-From LL(-ish) pair headers we pack two streams (see `pack_varlen.slang`):
+From generated pair headers we pack two streams (see `pack_varlen.slang`):
 
 * `out_sc`: **stack-change codes** (u32). *Odd* = push, *even* = pop. Upper bits carry a **typed ID** for the bracket kind (e.g., `(` vs `[`).
-* `out_emit`: **production IDs** representing a left-most derivation (MVP) or the parser’s emit stream.
+* `out_emit`: **production IDs** from the witness-projected LLP pair table. For the checked fixture programs it matches the exact LL(1) production stream and is the stream used for tree construction.
 
 These are produced by:
 
 * `llp_pairs.slang`  → headers per adjacent token pair
 * `pack_varlen.slang` → densely packs `out_sc` and `out_emit`
+
+The runtime also runs the block-local seeded LL(1) passes and flattens their
+per-block emits into the canonical LL(1) production stream. Those passes provide
+exact acceptance/error reporting while the LLP summary-composition path is still
+being built.
 
 ---
 
@@ -96,10 +97,6 @@ out_sc
 
 We expose `{ final_depth, min_depth, valid }`. Pairing still runs even if invalid to provide best-effort matches and help pinpoint the first violation with downstream checks. Typed pairing is optional (`typed_check`).
 
-### Baseline (debug) kernel
-
-`brackets_match.slang` is a **single-thread** fallback that performs a canonical stack sweep. It’s used for bring-up and can double-check the parallel path during development.
-
 ---
 
 # Part B — Tree construction
@@ -111,24 +108,7 @@ Goal: build an **inverted tree** from `emit_stream`:
 
 We maintain arity per production in `prod_arity`.
 
-We currently ship two shapes (one baseline, one parallel), and we’ll move to a **tiled stack** that combines simplicity with throughput.
-
-### Current options in the repo
-
-1. **Parallel (prefix slots + binary search)**
-
-   * `tree_01_prefix_slots.slang`: scan per-node arity to get `slot_prefix` and `total_slots`.
-   * `tree_02_build_parents.slang`: for node `i>0`, binary search `slot_prefix` to find the parent.
-     Pros: simple, fully parallel, low memory.
-     Cons: the upper-bound search is random-access heavy; not great for big trees on weak GPUs.
-
-2. **Single-thread baseline**
-
-   * `tree_build.slang`: straight stack algorithm (truth kernel).
-
-### Planned: **Tiled stack with stitched block seeds**
-
-We will replace the parent build with a 3-pass tiled approach (block size \~1024):
+The current tree path is the **tiled stack** builder:
 
 1. **TB1 — local (empty seed):** run the simple stack inside each block; write its **end-stack summary** (`[nodeIndex, remainingChildren]` list).
    *Parents are not final yet* if they cross the block boundary.
@@ -152,8 +132,7 @@ tokens ──► llp_pairs ──► pack_varlen
                        ├─► BRACKETS (01..07) → { match_for_index[], final_depth, min_depth, valid }
                        │
                        └─► TREE
-                           ├─ current:  tree_01_prefix_slots → tree_02_build_parents
-                           └─ next:     TB1_local → TB2_stitch → TB3_seeded
+                           └─ TB1_local → TB2_stitch → TB3_seeded
 ```
 
 Driver code lives in `src/parser/gpu/driver.rs`, buffers in `src/parser/gpu/buffers.rs`, and pass wrappers in `src/parser/gpu/passes/*`. The driver seeds cursors (`cur_*`) by copying from offsets to keep bindings low.
@@ -214,19 +193,23 @@ Recommended unit cases:
 
 ## What’s next
 
-1. **Switch tree build to the tiled stack path (TB1/TB2/TB3).**
+1. **Replace witness-projected LLP tables with real LLP summary composition.**
 
-   * Replace `tree_01/02` in the driver with the three TB passes.
-   * Provision CSR buffers for start/end stacks per block.
-   * Keep `tree_build.slang` as the oracle.
+   * The current pair table is conflict-free for the generated witness set and exact on the fixture programs.
+   * The next parser milestone is the paper-style deterministic LLP table/reduction, not adding more ad hoc witnesses.
 
-2. **Optional PSE (min-tree) experiment for brackets.**
+2. **Route full parser-stack summaries through runtime validation.**
+
+   * `sc_projection` is conflict-free in table metadata, but runtime bracket validation still reads a delimiter-safe stream.
+   * Add a dedicated parser-stack summary stream so delimiter matching and parser-stack composition do not share one interpretation.
+
+3. **Optional PSE (min-tree) experiment for brackets.**
 
    * Add `min_tree` build (level-by-level) + “predecessor query” pairing pass.
    * Benchmark vs rank-by-layer; keep the faster default.
    * This can help if we later do **incremental** matching on edited windows.
 
-3. **Memory tightening for layers.**
+4. **Memory tightening for layers.**
 
    * Replace global `n_layers = pushes + 2` with a two-pass bound:
 
@@ -234,17 +217,17 @@ Recommended unit cases:
      * pass B: prefix → global max depth
        Then allocate layer arrays to exactly `maxDepth+2`.
 
-4. **Better diagnostics.**
+5. **Better diagnostics.**
 
    * First error index, error kind (underflow, leftover, typed mismatch).
    * Layer-aware mismatch reporting.
 
-5. **Streaming / chunked inputs.**
+6. **Streaming / chunked inputs.**
 
    * Process `out_sc` in tiles; stitch depth bases across tiles (identical to block scans).
    * Enables truly huge inputs without large transient buffers.
 
-6. **Table compaction & cache.**
+7. **Table compaction & cache.**
 
    * Compress action tables; reduce `tables_blob` footprint.
    * Persist GPU-side tables across parses when possible.
@@ -262,13 +245,9 @@ Brackets:
 * `brackets_05_scan_histograms.slang`
 * `brackets_06_scatter_by_layer.slang`
 * `brackets_07_pair_and_validate.slang`
-* Debug baseline: `brackets_match.slang`
-
 Tree:
 
-* Parallel current: `tree_01_prefix_slots.slang`, `tree_02_build_parents.slang`
-* Baseline single-thread: `tree_build.slang`
-* (Planned) Tiled stack: `tree_blocked_01_local.slang`, `tree_blocked_02_stitch.slang`, `tree_blocked_03_seeded.slang` (to be added)
+* Parent recovery: `tree_parent_parallel.slang`
 
 Host driver:
 
@@ -282,8 +261,3 @@ Host driver:
 
 **Why not a single giant kernel?**
 Because WebGPU resource limits, lack of push constants, and better cache behavior with smaller, composable passes. Scans + reductions are the GPU’s sweet spot.
-
-
----
-
-If you want this document somewhere else (e.g., `PARSING.md` or `docs/BRACKETS_AND_TREE.md`) just say the word and I’ll adjust links and headers.

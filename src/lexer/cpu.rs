@@ -25,6 +25,7 @@ fn ends_primary(k: TokenKind) -> bool {
             | RParen
             | GroupRParen
             | CallRParen
+            | ParamRParen
             | RBracket
             | ArrayRBracket
             | IndexRBracket
@@ -33,34 +34,174 @@ fn ends_primary(k: TokenKind) -> bool {
     )
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GroupOwner {
+    None,
+    If,
+    While,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct OpenCtx {
+    kind: TokenKind,
+    group_owner: GroupOwner,
+}
+
 pub fn retag_calls_and_arrays_in_place(kinds: &mut [TokenKind]) {
     use TokenKind::*;
+    let mut opens: Vec<OpenCtx> = Vec::new();
+    let mut prev2_sig: Option<TokenKind> = None;
     let mut prev_sig: Option<TokenKind> = None; // after filtering, all are significant
+    let mut last_closed_group_owner = GroupOwner::None;
+    let mut expect_let_name = false;
+    let mut in_let_decl = false;
+    let mut let_can_init = false;
+    let mut expect_type = false;
+    let mut param_depth = 0usize;
+    let mut type_array_depth = 0usize;
 
     for k in kinds.iter_mut() {
         let prev_ends = prev_sig.map(ends_primary).unwrap_or(false);
+        let after_fn_name = prev2_sig == Some(Fn) && prev_sig == Some(Ident);
+        let top_open = opens.last().map(|open| open.kind);
 
-        match *k {
+        let raw = *k;
+        let next = match raw {
+            Ident if expect_let_name => LetIdent,
+            Ident if expect_type => TypeIdent,
+            Ident if param_depth > 0 && matches!(prev_sig, Some(ParamLParen | ParamComma)) => {
+                ParamIdent
+            }
             LParen => {
-                *k = if prev_ends { CallLParen } else { GroupLParen };
+                if after_fn_name {
+                    ParamLParen
+                } else if prev_ends {
+                    CallLParen
+                } else {
+                    GroupLParen
+                }
             }
             LBracket => {
-                *k = if prev_ends {
+                if expect_type {
+                    TypeArrayLBracket
+                } else if prev_ends {
                     IndexLBracket
                 } else {
                     ArrayLBracket
-                };
+                }
             }
             Plus => {
-                *k = if prev_ends { InfixPlus } else { PrefixPlus };
+                if prev_ends {
+                    InfixPlus
+                } else {
+                    PrefixPlus
+                }
             }
             Minus => {
-                *k = if prev_ends { InfixMinus } else { PrefixMinus };
+                if prev_ends {
+                    InfixMinus
+                } else {
+                    PrefixMinus
+                }
+            }
+            Assign if in_let_decl && let_can_init => LetAssign,
+            Comma => match top_open {
+                Some(ParamLParen) => ParamComma,
+                Some(CallLParen) => ArgComma,
+                Some(ArrayLBracket) => ArrayComma,
+                _ => Comma,
+            },
+            Semicolon if top_open == Some(TypeArrayLBracket) => TypeSemicolon,
+            LBrace
+                if matches!(prev_sig, Some(RParen | GroupRParen))
+                    && last_closed_group_owner == GroupOwner::If =>
+            {
+                IfLBrace
+            }
+            _ => raw,
+        };
+
+        if raw != RParen && raw != LBrace {
+            last_closed_group_owner = GroupOwner::None;
+        }
+
+        match next {
+            Let => {
+                expect_let_name = true;
+                in_let_decl = false;
+                let_can_init = false;
+            }
+            LetIdent => {
+                expect_let_name = false;
+                in_let_decl = true;
+                let_can_init = true;
+            }
+            Colon => {
+                expect_type = true;
+                if in_let_decl {
+                    let_can_init = false;
+                }
+            }
+            Arrow => {
+                expect_type = true;
+            }
+            TypeIdent => {
+                expect_type = false;
+                if in_let_decl && type_array_depth == 0 {
+                    let_can_init = true;
+                }
+            }
+            LetAssign => {
+                in_let_decl = false;
+                let_can_init = false;
+            }
+            Semicolon => {
+                in_let_decl = false;
+                let_can_init = false;
+                expect_type = false;
             }
             _ => {}
         }
 
-        prev_sig = Some(*k);
+        if is_context_open(next) {
+            let group_owner = if next == GroupLParen {
+                match prev_sig {
+                    Some(If) => GroupOwner::If,
+                    Some(While) => GroupOwner::While,
+                    _ => GroupOwner::None,
+                }
+            } else {
+                GroupOwner::None
+            };
+            if next == ParamLParen {
+                param_depth += 1;
+            } else if next == TypeArrayLBracket {
+                type_array_depth += 1;
+                expect_type = true;
+            }
+            opens.push(OpenCtx {
+                kind: next,
+                group_owner,
+            });
+        } else if is_context_close(raw)
+            && let Some(open) = opens.pop()
+        {
+            if open.kind == ParamLParen {
+                param_depth = param_depth.saturating_sub(1);
+            } else if open.kind == TypeArrayLBracket {
+                type_array_depth = type_array_depth.saturating_sub(1);
+                expect_type = false;
+                if in_let_decl && type_array_depth == 0 {
+                    let_can_init = true;
+                }
+            } else if open.kind == GroupLParen && raw == RParen {
+                last_closed_group_owner = open.group_owner;
+            }
+        }
+
+        *k = next;
+        prev2_sig = prev_sig;
+        prev_sig = Some(next);
     }
 
     retag_closes_by_layer_rank(kinds);
@@ -140,7 +281,14 @@ fn is_open(kind: TokenKind) -> bool {
     use TokenKind::*;
     matches!(
         kind,
-        GroupLParen | CallLParen | ArrayLBracket | IndexLBracket
+        LBrace
+            | IfLBrace
+            | GroupLParen
+            | CallLParen
+            | ParamLParen
+            | ArrayLBracket
+            | IndexLBracket
+            | TypeArrayLBracket
     )
 }
 
@@ -148,19 +296,58 @@ fn is_close(kind: TokenKind) -> bool {
     use TokenKind::*;
     matches!(
         kind,
-        RParen | RBracket | GroupRParen | CallRParen | ArrayRBracket | IndexRBracket
+        RParen
+            | RBracket
+            | RBrace
+            | GroupRParen
+            | CallRParen
+            | ParamRParen
+            | ArrayRBracket
+            | IndexRBracket
+            | TypeArrayRBracket
+            | IfRBrace
     )
 }
 
 fn close_for_open(open: TokenKind, close: TokenKind) -> Option<TokenKind> {
     use TokenKind::*;
     match (open, close) {
-        (GroupLParen, RParen | GroupRParen | CallRParen) => Some(GroupRParen),
-        (CallLParen, RParen | GroupRParen | CallRParen) => Some(CallRParen),
-        (ArrayLBracket, RBracket | ArrayRBracket | IndexRBracket) => Some(ArrayRBracket),
-        (IndexLBracket, RBracket | ArrayRBracket | IndexRBracket) => Some(IndexRBracket),
+        (GroupLParen, RParen | GroupRParen | CallRParen | ParamRParen) => Some(GroupRParen),
+        (CallLParen, RParen | GroupRParen | CallRParen | ParamRParen) => Some(CallRParen),
+        (ParamLParen, RParen | GroupRParen | CallRParen | ParamRParen) => Some(ParamRParen),
+        (ArrayLBracket, RBracket | ArrayRBracket | IndexRBracket | TypeArrayRBracket) => {
+            Some(ArrayRBracket)
+        }
+        (IndexLBracket, RBracket | ArrayRBracket | IndexRBracket | TypeArrayRBracket) => {
+            Some(IndexRBracket)
+        }
+        (TypeArrayLBracket, RBracket | ArrayRBracket | IndexRBracket | TypeArrayRBracket) => {
+            Some(TypeArrayRBracket)
+        }
+        (IfLBrace, RBrace | IfRBrace) => Some(IfRBrace),
+        (LBrace, RBrace | IfRBrace) => Some(RBrace),
         _ => None,
     }
+}
+
+fn is_context_open(kind: TokenKind) -> bool {
+    use TokenKind::*;
+    matches!(
+        kind,
+        LBrace
+            | IfLBrace
+            | GroupLParen
+            | CallLParen
+            | ParamLParen
+            | ArrayLBracket
+            | IndexLBracket
+            | TypeArrayLBracket
+    )
+}
+
+fn is_context_close(kind: TokenKind) -> bool {
+    use TokenKind::*;
+    matches!(kind, RParen | RBracket | RBrace)
 }
 
 #[inline]
@@ -359,23 +546,23 @@ mod tests {
                 Pub,
                 Fn,
                 Ident,
-                CallLParen,
-                CallRParen,
+                ParamLParen,
+                ParamRParen,
                 LBrace,
                 Let,
-                Ident,
-                Assign,
+                LetIdent,
+                LetAssign,
                 Int,
                 Semicolon,
                 If,
                 GroupLParen,
                 Ident,
                 GroupRParen,
-                LBrace,
+                IfLBrace,
                 Return,
                 Ident,
                 Semicolon,
-                RBrace,
+                IfRBrace,
                 Else,
                 LBrace,
                 While,

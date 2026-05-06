@@ -19,6 +19,7 @@ use laniusc::{
         gpu::{
             buffers::ActionHeader,
             driver::{GpuParser, ParseResult},
+            passes::ll1_blocks_01::{LL1_BLOCK_STATUS_ACCEPTED, LL1_BLOCK_STATUS_BOUNDARY},
         },
         tables::{self as parse_tables, PrecomputedParseTables},
     },
@@ -71,7 +72,7 @@ struct CpuBrackets {
     _match_for_index: Vec<u32>,
 }
 
-/// Mirror of shaders/parser/brackets_match.slang (single-thread truth kernel).
+/// CPU oracle for validating the parallel GPU bracket matcher.
 fn cpu_brackets(sc_stream: &[u32]) -> CpuBrackets {
     let n = sc_stream.len();
     let mut match_for_index = vec![0xFFFF_FFFFu32; n];
@@ -491,6 +492,135 @@ async fn run_source(
         .await
         .with_context(|| format!("parse {}", label))?;
     let expected_pairs = kinds.len().saturating_sub(1);
+    if tables.n_nonterminals > 0 {
+        let cpu_ll1 = tables.ll1_production_stream(&kinds);
+
+        if path_opt.is_some() && !res.ll1.accepted {
+            anyhow::bail!(
+                "LL(1) GPU acceptance failed for {} at token pos {} (code={}, detail={}, steps={})",
+                label,
+                res.ll1.error_pos,
+                res.ll1.error_code,
+                res.ll1.detail,
+                res.ll1.steps
+            );
+        }
+        match (cpu_ll1, res.ll1.accepted) {
+            (Ok(expected), true) => {
+                if res.ll1_emit_stream != expected {
+                    anyhow::bail!(
+                        "LL(1) production stream mismatch for {}: GPU len={} CPU len={}",
+                        label,
+                        res.ll1_emit_stream.len(),
+                        expected.len()
+                    );
+                }
+                let projected = tables.projected_production_stream(&kinds);
+                if res.emit_stream != projected {
+                    anyhow::bail!(
+                        "LLP projected stream mismatch for {}: GPU len={} CPU-pair len={}",
+                        label,
+                        res.emit_stream.len(),
+                        projected.len()
+                    );
+                }
+                if projected != expected {
+                    let diff = projected
+                        .iter()
+                        .zip(expected.iter())
+                        .position(|(a, b)| a != b)
+                        .unwrap_or(projected.len().min(expected.len()));
+                    let lo = diff.saturating_sub(8);
+                    let hi = (diff + 8).min(projected.len().max(expected.len()));
+                    anyhow::bail!(
+                        "LLP projected stream is not exact for {}: projected len={} LL(1) len={} first_diff={} projected_window={:?} ll1_window={:?}",
+                        label,
+                        projected.len(),
+                        expected.len(),
+                        diff,
+                        &projected.get(lo..hi.min(projected.len())).unwrap_or(&[]),
+                        &expected.get(lo..hi.min(expected.len())).unwrap_or(&[])
+                    );
+                }
+            }
+            (Ok(expected), false) => {
+                anyhow::bail!(
+                    "GPU rejected a CPU-accepted LL(1) parse for {} (CPU productions={})",
+                    label,
+                    expected.len()
+                );
+            }
+            (Err(err), true) => {
+                anyhow::bail!(
+                    "GPU accepted a CPU-rejected LL(1) parse for {}: {}",
+                    label,
+                    err
+                );
+            }
+            (Err(_), false) => {}
+        }
+    }
+    if tables.n_nonterminals > 0 && res.ll1_block_size > 0 {
+        let real_tokens = kinds.len().saturating_sub(2);
+        let expected_blocks = real_tokens.div_ceil(res.ll1_block_size as usize).max(1);
+        if res.ll1.accepted {
+            if !res.ll1_seed_plan.accepted
+                || res.ll1_seed_plan.emit_len as usize != res.ll1_emit_stream.len()
+                || res.ll1_seed_plan.seed_count as usize != expected_blocks
+            {
+                anyhow::bail!(
+                    "LL(1) seed plan mismatch for {}: accepted={} seeds={} emits={} full_emits={}",
+                    label,
+                    res.ll1_seed_plan.accepted,
+                    res.ll1_seed_plan.seed_count,
+                    res.ll1_seed_plan.emit_len,
+                    res.ll1_emit_stream.len()
+                );
+            }
+            if res.ll1_seeded_blocks.len() != expected_blocks {
+                anyhow::bail!(
+                    "LL(1) seeded block count mismatch for {}: got {} want {}",
+                    label,
+                    res.ll1_seeded_blocks.len(),
+                    expected_blocks
+                );
+            }
+
+            let mut seeded_emit = Vec::with_capacity(res.ll1_emit_stream.len());
+            for (i, block) in res.ll1_seeded_blocks.iter().enumerate() {
+                let expected_status = if i + 1 == expected_blocks {
+                    LL1_BLOCK_STATUS_ACCEPTED
+                } else {
+                    LL1_BLOCK_STATUS_BOUNDARY
+                };
+                if block.status != expected_status || block.pos != block.end {
+                    anyhow::bail!(
+                        "LL(1) seeded block mismatch for {} block {}: status={} want={} pos={} end={}",
+                        label,
+                        i,
+                        block.status,
+                        expected_status,
+                        block.pos,
+                        block.end
+                    );
+                }
+                let base = i * res.ll1_block_emit_stride as usize;
+                let len = block.emit_len as usize;
+                let Some(chunk) = res.ll1_seeded_emit.get(base..base + len) else {
+                    anyhow::bail!("LL(1) seeded emit slice out of range for {}", label);
+                };
+                seeded_emit.extend_from_slice(chunk);
+            }
+            if seeded_emit != res.ll1_emit_stream {
+                anyhow::bail!(
+                    "LL(1) seeded emit mismatch for {}: seeded_len={} full_len={}",
+                    label,
+                    seeded_emit.len(),
+                    res.ll1_emit_stream.len()
+                );
+            }
+        }
+    }
 
     // core invariants on the GPU output itself
     if res.headers.len() != expected_pairs {
@@ -524,10 +654,9 @@ async fn run_source(
         assert_type_agrees(&res.sc_stream, &res.brackets.match_for_index)?;
     }
     assert_stream_lengths_from_headers(&res.headers, res.sc_stream.len(), res.emit_stream.len())?;
-    // The current production stream is an LLP table projection, not a full
-    // accepting parser. Random token fuzz can produce incomplete partial trees,
-    // so keep tree-shape checks opt-in until parse acceptance is wired.
-    if env_truthy("LANIUS_PARSE_FUZZ_CHECK_TREE") {
+    // Random token fuzz usually rejects partway through the grammar, so only
+    // run full production-tree arity checks for accepted streams.
+    if env_truthy("LANIUS_PARSE_FUZZ_CHECK_TREE") && res.ll1.accepted {
         assert_tree_forest_shape(&res.node_kind, &res.parent, &tables.prod_arity)?;
     }
 
@@ -537,11 +666,13 @@ async fn run_source(
     }
 
     println!(
-        "[ok] {} (pairs={}, sc={}, emits={}, nodes={})",
+        "[ok] {} (ll1={}, pairs={}, sc={}, projected_emits={}, ll1_emits={}, nodes={})",
         label,
+        res.ll1.accepted,
         res.headers.len(),
         res.sc_stream.len(),
         res.emit_stream.len(),
+        res.ll1_emit_stream.len(),
         res.node_kind.len()
     );
     Ok(())

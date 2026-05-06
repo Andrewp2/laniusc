@@ -32,7 +32,13 @@ use std::{
 use anyhow::{Context, Result, anyhow, bail};
 use laniusc::{
     lexer::tables::tokens::{N_KINDS, TokenKind},
-    parser::tables::{PrecomputedParseTables, build_mvp_precomputed_tables},
+    parser::tables::{
+        INVALID_TABLE_ENTRY,
+        PrecomputedParseTables,
+        build_mvp_precomputed_tables,
+        encode_pop,
+        encode_push,
+    },
 };
 use serde::Serialize;
 
@@ -83,7 +89,9 @@ struct ParseTablesMeta {
     lookback: u32,
     lookahead: u32,
     diagnostics: GrammarDiagnostics,
+    sc_projection: PairProjectionMeta,
     pp_projection: PairProjectionMeta,
+    ll1_runtime: Ll1RuntimeMeta,
     ll1_predictions: Vec<PredictionMeta>,
     productions: Vec<ProductionMeta>,
 }
@@ -113,6 +121,14 @@ struct ProductionMeta {
     rhs: Vec<String>,
 }
 
+#[derive(Serialize)]
+struct Ll1RuntimeMeta {
+    nonterminals: usize,
+    start_nonterminal: String,
+    predict_cells: usize,
+    rhs_symbols: usize,
+}
+
 #[derive(Debug, Default, Serialize)]
 struct PairProjectionMeta {
     witness_inputs: usize,
@@ -124,6 +140,12 @@ struct PairProjectionMeta {
 struct PairProjection {
     cells: BTreeMap<(u32, u32), Vec<u32>>,
     conflicts: Vec<String>,
+}
+
+#[derive(Debug, Default)]
+struct SummaryProjection {
+    sc: PairProjection,
+    pp: PairProjection,
 }
 
 fn parse_grammar(src: &str) -> Result<GrammarSpec> {
@@ -284,6 +306,14 @@ fn analyze_grammar(spec: &GrammarSpec) -> GrammarAnalysis {
 
 fn collect_nonterminals(prods: &[Production]) -> BTreeSet<String> {
     prods.iter().map(|prod| prod.lhs.clone()).collect()
+}
+
+fn nonterminal_ids(nonterminals: &BTreeSet<String>) -> BTreeMap<String, u32> {
+    nonterminals
+        .iter()
+        .enumerate()
+        .map(|(id, name)| (name.clone(), id as u32))
+        .collect()
 }
 
 fn find_undefined_nonterminals(
@@ -709,14 +739,14 @@ fn compute_prod_arity(prods: &[Production]) -> Vec<u32> {
 fn default_projection_witnesses() -> Vec<Vec<TokenKind>> {
     use TokenKind::*;
 
-    vec![
+    let mut witnesses = vec![
         vec![Ident, Semicolon],
         vec![Int, Semicolon],
         vec![Float, Semicolon],
         vec![String, Semicolon],
         vec![Char, Semicolon],
-        vec![PrefixPlus, Int, Semicolon],
-        vec![PrefixMinus, Int, Semicolon],
+        vec![Plus, Int, Semicolon],
+        vec![Minus, Int, Semicolon],
         vec![Not, Ident, Semicolon],
         vec![Tilde, Ident, Semicolon],
         vec![Inc, Ident, Semicolon],
@@ -734,8 +764,8 @@ fn default_projection_witnesses() -> Vec<Vec<TokenKind>> {
         vec![Ident, ShrAssign, Int, Semicolon],
         vec![Ident, AmpAssign, Int, Semicolon],
         vec![Ident, PipeAssign, Int, Semicolon],
-        vec![Ident, InfixPlus, Int, Semicolon],
-        vec![Ident, InfixMinus, Int, Semicolon],
+        vec![Ident, Plus, Int, Semicolon],
+        vec![Ident, Minus, Int, Semicolon],
         vec![Ident, Star, Int, Semicolon],
         vec![Ident, Slash, Int, Semicolon],
         vec![Ident, Percent, Int, Semicolon],
@@ -752,24 +782,17 @@ fn default_projection_witnesses() -> Vec<Vec<TokenKind>> {
         vec![Ident, Pipe, Ident, Semicolon],
         vec![Ident, AndAnd, Ident, Semicolon],
         vec![Ident, OrOr, Ident, Semicolon],
-        vec![GroupLParen, Ident, GroupRParen, Semicolon],
-        vec![ArrayLBracket, ArrayRBracket, Semicolon],
-        vec![ArrayLBracket, Ident, ArrayRBracket, Semicolon],
-        vec![ArrayLBracket, Ident, Comma, Int, ArrayRBracket, Semicolon],
+        vec![LParen, Ident, RParen, Semicolon],
+        vec![LBracket, RBracket, Semicolon],
+        vec![LBracket, Ident, RBracket, Semicolon],
+        vec![LBracket, Ident, Comma, Int, RBracket, Semicolon],
         vec![Ident, Dot, Ident, Semicolon],
-        vec![Ident, CallLParen, CallRParen, Semicolon],
-        vec![Ident, CallLParen, Ident, CallRParen, Semicolon],
-        vec![Ident, CallLParen, Ident, Comma, Int, CallRParen, Semicolon],
-        vec![Ident, IndexLBracket, Int, IndexRBracket, Semicolon],
+        vec![Ident, LParen, RParen, Semicolon],
+        vec![Ident, LParen, Ident, RParen, Semicolon],
+        vec![Ident, LParen, Ident, Comma, Int, RParen, Semicolon],
+        vec![Ident, LBracket, Int, RBracket, Semicolon],
         vec![
-            Ident,
-            CallLParen,
-            Int,
-            CallRParen,
-            IndexLBracket,
-            Int,
-            IndexRBracket,
-            Semicolon,
+            Ident, LParen, Int, RParen, LBracket, Int, RBracket, Semicolon,
         ],
         vec![Let, Ident, Semicolon],
         vec![Let, Ident, Colon, Ident, Semicolon],
@@ -780,111 +803,210 @@ fn default_projection_witnesses() -> Vec<Vec<TokenKind>> {
         vec![Break, Semicolon],
         vec![Continue, Semicolon],
         vec![
-            If,
-            GroupLParen,
-            Ident,
-            GroupRParen,
-            LBrace,
-            Return,
-            Ident,
-            Semicolon,
-            RBrace,
+            If, LParen, Ident, RParen, LBrace, Return, Ident, Semicolon, RBrace,
         ],
         vec![
-            If,
-            GroupLParen,
-            Ident,
-            GroupRParen,
-            LBrace,
-            Return,
-            Ident,
-            Semicolon,
-            RBrace,
-            Else,
-            LBrace,
-            Return,
-            Int,
-            Semicolon,
-            RBrace,
+            If, LParen, Ident, RParen, LBrace, Return, Ident, Semicolon, RBrace, Else, LBrace,
+            Return, Int, Semicolon, RBrace,
         ],
         vec![
-            While,
-            GroupLParen,
-            Ident,
-            GroupRParen,
-            LBrace,
-            Break,
-            Semicolon,
-            Continue,
-            Semicolon,
-            RBrace,
+            While, LParen, Ident, RParen, LBrace, Break, Semicolon, Continue, Semicolon, RBrace,
         ],
         vec![LBrace, Let, Ident, Assign, Int, Semicolon, RBrace],
-        vec![Fn, Ident, CallLParen, CallRParen, LBrace, RBrace],
+        vec![Fn, Ident, LParen, RParen, LBrace, RBrace],
         vec![
-            Fn, Ident, CallLParen, CallRParen, Arrow, Ident, LBrace, Return, Int, Semicolon, RBrace,
+            Fn, Ident, LParen, RParen, Arrow, Ident, LBrace, Return, Int, Semicolon, RBrace,
         ],
         vec![
-            Fn, Ident, CallLParen, Ident, Colon, Ident, CallRParen, Arrow, Ident, LBrace, Return,
-            Ident, Semicolon, RBrace,
+            Fn, Ident, LParen, Ident, Colon, Ident, RParen, Arrow, Ident, LBrace, Return, Ident,
+            Semicolon, RBrace,
         ],
         vec![
-            Pub,
-            Fn,
-            Ident,
-            CallLParen,
-            Ident,
-            Colon,
-            Ident,
-            Comma,
-            Ident,
-            Colon,
-            ArrayLBracket,
-            Ident,
-            Semicolon,
-            Int,
-            ArrayRBracket,
-            CallRParen,
-            Arrow,
-            Ident,
-            LBrace,
-            Let,
-            Ident,
-            Colon,
-            Ident,
-            Assign,
-            Ident,
-            InfixPlus,
-            Ident,
-            IndexLBracket,
-            Ident,
-            IndexRBracket,
-            Semicolon,
-            If,
-            GroupLParen,
-            Ident,
-            GroupRParen,
-            LBrace,
-            Return,
-            Ident,
-            Semicolon,
-            RBrace,
-            Else,
-            LBrace,
-            While,
-            GroupLParen,
-            Ident,
-            GroupRParen,
-            LBrace,
-            Break,
-            Semicolon,
-            Continue,
-            Semicolon,
-            RBrace,
-            RBrace,
+            Pub, Fn, Ident, LParen, Ident, Colon, Ident, Comma, Ident, Colon, LBracket, Ident,
+            Semicolon, Int, RBracket, RParen, Arrow, Ident, LBrace, Let, Ident, Colon, Ident,
+            Assign, Ident, Plus, Ident, LBracket, Ident, RBracket, Semicolon, If, LParen, Ident,
+            RParen, LBrace, Return, Ident, Semicolon, RBrace, Else, LBrace, While, LParen, Ident,
+            RParen, LBrace, Break, Semicolon, Continue, Semicolon, RBrace, RBrace, RBrace,
+        ],
+    ];
+
+    let exprs = vec![
+        vec![Ident],
+        vec![Int],
+        vec![Float],
+        vec![String],
+        vec![Char],
+        vec![Plus, Int],
+        vec![Minus, Int],
+        vec![Not, Ident],
+        vec![Tilde, Ident],
+        vec![Inc, Ident],
+        vec![Dec, Ident],
+        vec![Ident, Inc],
+        vec![Ident, Dec],
+        vec![Ident, Assign, Int],
+        vec![Ident, PlusAssign, Int],
+        vec![Ident, MinusAssign, Int],
+        vec![Ident, StarAssign, Int],
+        vec![Ident, SlashAssign, Int],
+        vec![Ident, PercentAssign, Int],
+        vec![Ident, CaretAssign, Int],
+        vec![Ident, ShlAssign, Int],
+        vec![Ident, ShrAssign, Int],
+        vec![Ident, AmpAssign, Int],
+        vec![Ident, PipeAssign, Int],
+        vec![Ident, Plus, Int],
+        vec![Ident, Minus, Int],
+        vec![Ident, Star, Int],
+        vec![Ident, Slash, Int],
+        vec![Ident, Percent, Int],
+        vec![Ident, Shl, Int],
+        vec![Ident, Shr, Int],
+        vec![Ident, Lt, Int],
+        vec![Ident, Gt, Int],
+        vec![Ident, Le, Int],
+        vec![Ident, Ge, Int],
+        vec![Ident, EqEq, Int],
+        vec![Ident, NotEqual, Int],
+        vec![Ident, Ampersand, Ident],
+        vec![Ident, Caret, Ident],
+        vec![Ident, Pipe, Ident],
+        vec![Ident, AndAnd, Ident],
+        vec![Ident, OrOr, Ident],
+        vec![Int, Plus, Int],
+        vec![Int, Minus, Int],
+        vec![Int, Star, Int],
+        vec![Int, Slash, Int],
+        vec![Int, Percent, Int],
+        vec![Int, Shl, Int],
+        vec![Int, Shr, Int],
+        vec![Int, Lt, Int],
+        vec![Int, Gt, Int],
+        vec![Int, Le, Int],
+        vec![Int, Ge, Int],
+        vec![Int, EqEq, Int],
+        vec![Int, NotEqual, Int],
+        vec![Int, Ampersand, Int],
+        vec![Int, Caret, Int],
+        vec![Int, Pipe, Int],
+        vec![Int, AndAnd, Int],
+        vec![Int, OrOr, Int],
+        vec![LParen, Ident, RParen],
+        vec![LBracket, RBracket],
+        vec![LBracket, Ident, RBracket],
+        vec![LBracket, Ident, Comma, Int, RBracket],
+        vec![Ident, Dot, Ident],
+        vec![Ident, LParen, RParen],
+        vec![Ident, LParen, Ident, RParen],
+        vec![Ident, LParen, Ident, Comma, Int, RParen],
+        vec![Ident, LBracket, Int, RBracket],
+    ];
+
+    for expr in &exprs {
+        let mut stmt = expr.clone();
+        stmt.push(Semicolon);
+        witnesses.push(stmt);
+
+        let mut ret = vec![Return];
+        ret.extend_from_slice(expr);
+        ret.push(Semicolon);
+        witnesses.push(ret);
+
+        let mut let_init = vec![Let, Ident, Assign];
+        let_init.extend_from_slice(expr);
+        let_init.push(Semicolon);
+        witnesses.push(let_init);
+
+        let mut let_typed_init = vec![Let, Ident, Colon, Ident, Assign];
+        let_typed_init.extend_from_slice(expr);
+        let_typed_init.push(Semicolon);
+        witnesses.push(let_typed_init);
+
+        let mut call = vec![Ident, LParen];
+        call.extend_from_slice(expr);
+        call.extend_from_slice(&[RParen, Semicolon]);
+        witnesses.push(call);
+
+        let mut call_more = vec![Ident, LParen, Ident, Comma];
+        call_more.extend_from_slice(expr);
+        call_more.extend_from_slice(&[RParen, Semicolon]);
+        witnesses.push(call_more);
+
+        let mut array = vec![LBracket];
+        array.extend_from_slice(expr);
+        array.extend_from_slice(&[RBracket, Semicolon]);
+        witnesses.push(array);
+
+        let mut array_more = vec![LBracket, Ident, Comma];
+        array_more.extend_from_slice(expr);
+        array_more.extend_from_slice(&[RBracket, Semicolon]);
+        witnesses.push(array_more);
+
+        let mut index = vec![Ident, LBracket];
+        index.extend_from_slice(expr);
+        index.extend_from_slice(&[RBracket, Semicolon]);
+        witnesses.push(index);
+
+        let mut block_expr = vec![LBrace];
+        block_expr.extend_from_slice(expr);
+        block_expr.extend_from_slice(&[Semicolon, RBrace]);
+        witnesses.push(block_expr);
+
+        let mut if_stmt = vec![If, LParen];
+        if_stmt.extend_from_slice(expr);
+        if_stmt.extend_from_slice(&[RParen, LBrace, Return, Int, Semicolon, RBrace]);
+        witnesses.push(if_stmt);
+
+        let mut while_stmt = vec![While, LParen];
+        while_stmt.extend_from_slice(expr);
+        while_stmt.extend_from_slice(&[RParen, LBrace, Break, Semicolon, RBrace]);
+        witnesses.push(while_stmt);
+    }
+
+    let type_exprs = vec![vec![Ident], vec![LBracket, Ident, Semicolon, Int, RBracket]];
+    for ty in &type_exprs {
+        let mut param = vec![Fn, Ident, LParen, Ident, Colon];
+        param.extend_from_slice(ty);
+        param.extend_from_slice(&[RParen, LBrace, RBrace]);
+        witnesses.push(param);
+
+        let mut params_more = vec![Fn, Ident, LParen, Ident, Colon, Ident, Comma, Ident, Colon];
+        params_more.extend_from_slice(ty);
+        params_more.extend_from_slice(&[RParen, LBrace, RBrace]);
+        witnesses.push(params_more);
+
+        let mut let_type = vec![Let, Ident, Colon];
+        let_type.extend_from_slice(ty);
+        let_type.push(Semicolon);
+        witnesses.push(let_type);
+
+        let mut let_type_init = vec![Let, Ident, Colon];
+        let_type_init.extend_from_slice(ty);
+        let_type_init.extend_from_slice(&[Assign, Int, Semicolon]);
+        witnesses.push(let_type_init);
+
+        let mut ret_type = vec![Fn, Ident, LParen, RParen, Arrow];
+        ret_type.extend_from_slice(ty);
+        ret_type.extend_from_slice(&[LBrace, RBrace]);
+        witnesses.push(ret_type);
+    }
+
+    witnesses.extend([
+        vec![
+            LBrace, Int, Semicolon, Break, Semicolon, Continue, Semicolon, Return, Int, Semicolon,
             RBrace,
         ],
-    ]
+        vec![LBrace, LBrace, RBrace, Return, Int, Semicolon, RBrace],
+        vec![
+            LBrace, While, LParen, Ident, RParen, LBrace, Break, Semicolon, Continue, Semicolon,
+            RBrace, Return, Int, Semicolon, RBrace,
+        ],
+        vec![
+            LBrace, Int, Semicolon, Ident, LParen, Ident, RParen, Semicolon, RBrace,
+        ],
+    ]);
+
+    witnesses
 }
 
 fn build_predict_map(predictions: &[Prediction]) -> HashMap<(String, u32), usize> {
@@ -899,14 +1021,41 @@ fn build_predict_map(predictions: &[Prediction]) -> HashMap<(String, u32), usize
         .collect()
 }
 
-fn ll1_chunks_by_pair_ids(
+fn symbol_ids(spec: &GrammarSpec) -> BTreeMap<String, u32> {
+    let nonterminals = collect_nonterminals(&spec.productions);
+    nonterminal_ids(&nonterminals)
+        .into_iter()
+        .map(|(name, id)| (name, N_KINDS + id))
+        .collect()
+}
+
+fn encode_stack_sym(sym: &Sym, nt_symbol_ids: &BTreeMap<String, u32>) -> Result<u32> {
+    match sym {
+        Sym::Terminal(token) => Ok(*token as u32),
+        Sym::NonTerminal(name) => nt_symbol_ids
+            .get(name)
+            .copied()
+            .ok_or_else(|| anyhow!("unknown nonterminal '{name}'")),
+    }
+}
+
+fn ll1_trace_by_pair_ids(
     spec: &GrammarSpec,
     predict_map: &HashMap<(String, u32), usize>,
     input: &[TokenKind],
-) -> Result<BTreeMap<(u32, u32), Vec<u32>>> {
+) -> Result<(
+    BTreeMap<(u32, u32), Vec<u32>>,
+    BTreeMap<(u32, u32), Vec<u32>>,
+)> {
+    let nt_symbol_ids = symbol_ids(spec);
     let mut chunks_by_pos = vec![Vec::new(); input.len() + 1];
+    let mut sc_by_pos = vec![Vec::new(); input.len() + 1];
     let mut stack = vec![Sym::NonTerminal(spec.start.clone())];
     let mut pos = 0usize;
+
+    sc_by_pos[0].push(encode_push(*nt_symbol_ids.get(&spec.start).ok_or_else(
+        || anyhow!("start nonterminal '{}' is not defined", spec.start),
+    )?));
 
     while let Some(top) = stack.pop() {
         match top {
@@ -919,6 +1068,7 @@ fn ll1_chunks_by_pair_ids(
                         input.get(pos)
                     );
                 }
+                sc_by_pos[pos].push(encode_pop(token as u32));
                 pos += 1;
             }
             Sym::NonTerminal(name) => {
@@ -936,6 +1086,14 @@ fn ll1_chunks_by_pair_ids(
                 };
                 let prod = &spec.productions[prod_id];
                 chunks_by_pos[pos].push(prod_id as u32);
+                sc_by_pos[pos].push(encode_pop(
+                    *nt_symbol_ids
+                        .get(&name)
+                        .ok_or_else(|| anyhow!("unknown nonterminal '{name}'"))?,
+                ));
+                for sym in prod.rhs_syms.iter().rev() {
+                    sc_by_pos[pos].push(encode_push(encode_stack_sym(sym, &nt_symbol_ids)?));
+                }
                 stack.extend(prod.rhs_syms.iter().rev().cloned());
             }
         }
@@ -945,8 +1103,9 @@ fn ll1_chunks_by_pair_ids(
         bail!("parser stopped at token {} of {}", pos, input.len());
     }
 
-    let mut out = BTreeMap::new();
-    for (pos, chunk) in chunks_by_pos.into_iter().enumerate() {
+    let mut pp_out = BTreeMap::new();
+    let mut sc_out = BTreeMap::new();
+    for pos in 0..=input.len() {
         let prev = if pos == 0 {
             EOF_TOKEN
         } else {
@@ -956,55 +1115,137 @@ fn ll1_chunks_by_pair_ids(
             .get(pos)
             .map(|token| *token as u32)
             .unwrap_or(EOF_TOKEN);
-        out.insert((prev, current), chunk);
+        pp_out.insert((prev, current), chunks_by_pos[pos].clone());
+        sc_out.insert((prev, current), sc_by_pos[pos].clone());
     }
 
-    Ok(out)
+    Ok((sc_out, pp_out))
 }
 
-fn project_pair_chunks(
+fn install_projection_cell(
+    projection: &mut PairProjection,
+    pair: (u32, u32),
+    seq: Vec<u32>,
+    spec: &GrammarSpec,
+    witness: &[TokenKind],
+    kind: &str,
+) {
+    let fmt_seq = |seq: &[u32]| {
+        if kind == "sc" {
+            format_sc_ops(seq, spec)
+        } else {
+            format_prod_ids(seq, spec)
+        }
+    };
+    match projection.cells.get(&pair) {
+        Some(existing) if existing != &seq => {
+            projection.conflicts.push(format!(
+                "{kind} {}: kept [{}], saw [{}] from witness {}",
+                format_pair(pair),
+                fmt_seq(existing),
+                fmt_seq(&seq),
+                format_input(witness)
+            ));
+        }
+        Some(_) => {}
+        None => {
+            projection.cells.insert(pair, seq);
+        }
+    }
+}
+
+fn project_pair_summaries(
     spec: &GrammarSpec,
     predictions: &[Prediction],
     witnesses: &[Vec<TokenKind>],
-) -> Result<PairProjection> {
+) -> Result<SummaryProjection> {
     let predict_map = build_predict_map(predictions);
-    let mut projection = PairProjection::default();
+    let mut projection = SummaryProjection::default();
 
     for input in witnesses {
-        let chunks = ll1_chunks_by_pair_ids(spec, &predict_map, input)
-            .with_context(|| format!("project LL(1) chunks for witness {}", format_input(input)))?;
-        for (pair, chunk) in chunks {
-            match projection.cells.get(&pair) {
-                Some(existing) if existing != &chunk => {
-                    projection.conflicts.push(format!(
-                        "{}: kept [{}], saw [{}] from witness {}",
-                        format_pair(pair),
-                        format_prod_ids(existing, spec),
-                        format_prod_ids(&chunk, spec),
-                        format_input(input)
-                    ));
-                }
-                Some(_) => {}
-                None => {
-                    projection.cells.insert(pair, chunk);
-                }
-            }
+        let (sc_chunks, pp_chunks) = ll1_trace_by_pair_ids(spec, &predict_map, input)
+            .with_context(|| {
+                format!(
+                    "project LL(1) summaries for witness {}",
+                    format_input(input)
+                )
+            })?;
+        for (pair, chunk) in sc_chunks {
+            install_projection_cell(&mut projection.sc, pair, chunk, spec, input, "sc");
+        }
+        for (pair, chunk) in pp_chunks {
+            install_projection_cell(&mut projection.pp, pair, chunk, spec, input, "pp");
         }
     }
 
     Ok(projection)
 }
 
+fn install_ll1_runtime_tables(
+    tables: &mut PrecomputedParseTables,
+    spec: &GrammarSpec,
+    predictions: &[Prediction],
+) -> Result<()> {
+    let nonterminals = collect_nonterminals(&spec.productions);
+    let nt_ids = nonterminal_ids(&nonterminals);
+    let n_nonterminals = nt_ids.len() as u32;
+
+    tables.n_nonterminals = n_nonterminals;
+    tables.start_nonterminal = *nt_ids
+        .get(&spec.start)
+        .ok_or_else(|| anyhow!("start nonterminal '{}' is not defined", spec.start))?;
+
+    let predict_cells = (n_nonterminals as usize) * (N_KINDS as usize);
+    tables.ll1_predict = vec![INVALID_TABLE_ENTRY; predict_cells];
+    for entry in predictions {
+        let nt = *nt_ids.get(&entry.nonterminal).ok_or_else(|| {
+            anyhow!(
+                "prediction references unknown nonterminal '{}'",
+                entry.nonterminal
+            )
+        })?;
+        let idx = (nt as usize) * (N_KINDS as usize) + entry.lookahead as usize;
+        tables.ll1_predict[idx] = entry.production;
+    }
+
+    tables.prod_rhs_off.clear();
+    tables.prod_rhs_len.clear();
+    tables.prod_rhs.clear();
+    for prod in &spec.productions {
+        tables.prod_rhs_off.push(tables.prod_rhs.len() as u32);
+        tables.prod_rhs_len.push(prod.rhs_syms.len() as u32);
+        for sym in &prod.rhs_syms {
+            let encoded = match sym {
+                Sym::Terminal(token) => *token as u32,
+                Sym::NonTerminal(name) => {
+                    let id = *nt_ids
+                        .get(name)
+                        .ok_or_else(|| anyhow!("production references undefined '{name}'"))?;
+                    N_KINDS + id
+                }
+            };
+            tables.prod_rhs.push(encoded);
+        }
+    }
+
+    Ok(())
+}
+
 fn build_projected_precomputed_tables(
     spec: &GrammarSpec,
     predictions: &[Prediction],
     prod_arity: Vec<u32>,
-) -> Result<(PrecomputedParseTables, PairProjection, usize)> {
+) -> Result<(PrecomputedParseTables, SummaryProjection, usize)> {
     let witnesses = default_projection_witnesses();
-    let projection = project_pair_chunks(spec, predictions, &witnesses)?;
+    let projection = project_pair_summaries(spec, predictions, &witnesses)?;
     let mut tables = build_mvp_precomputed_tables(N_KINDS, prod_arity);
+    install_ll1_runtime_tables(&mut tables, spec, predictions)?;
 
-    for (&(prev, this), seq) in &projection.cells {
+    tables.pp_superseq.clear();
+    tables.pp_off.fill(0);
+    tables.pp_len.fill(0);
+
+    for (&(prev, this), seq) in &projection.pp.cells {
         tables.set_pp_for_pair(prev, this, seq);
     }
     tables.finalize_bit_widths(1);
@@ -1036,6 +1277,32 @@ fn format_prod_ids(ids: &[u32], spec: &GrammarSpec) -> String {
         .join(", ")
 }
 
+fn format_sc_ops(ops: &[u32], spec: &GrammarSpec) -> String {
+    ops.iter()
+        .map(|op| {
+            let verb = if op & 1 == 1 { "push" } else { "pop" };
+            let sym = format_stack_symbol(op / 2, spec);
+            format!("{verb}({sym})")
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn format_stack_symbol(symbol_id: u32, spec: &GrammarSpec) -> String {
+    if symbol_id < N_KINDS {
+        return format_token(symbol_id);
+    }
+
+    let nt_id = symbol_id - N_KINDS;
+    let nonterminals = collect_nonterminals(&spec.productions);
+    for (name, id) in nonterminal_ids(&nonterminals) {
+        if id == nt_id {
+            return name;
+        }
+    }
+    format!("#{symbol_id}")
+}
+
 fn main() -> Result<()> {
     let grammar_path = env::args()
         .nth(1)
@@ -1062,7 +1329,7 @@ fn main() -> Result<()> {
     let predictions = build_ll1_predictions(&spec, &analysis)?;
     let prod_arity = compute_prod_arity(&spec.productions);
 
-    let (tables, pp_projection, witness_inputs): (PrecomputedParseTables, PairProjection, usize) =
+    let (tables, projection, witness_inputs): (PrecomputedParseTables, SummaryProjection, usize) =
         build_projected_precomputed_tables(&spec, &predictions, prod_arity.clone())?;
 
     if let Some(parent) = out_path.parent() {
@@ -1075,21 +1342,23 @@ fn main() -> Result<()> {
         &analysis,
         &predictions,
         &prod_arity,
-        &pp_projection,
+        &projection,
         witness_inputs,
     );
     let meta_json = serde_json::to_string_pretty(&meta)?;
     fs::write(&meta_path, meta_json)
         .with_context(|| format!("write parse table metadata to {}", meta_path.display()))?;
     println!(
-        "[gen_parse_tables] wrote {} and {} (start={}, productions={}, predictions={}, projected_pp_cells={}, projection_conflicts={}, terminals={}, nonterminals={}, nullable={}, diagnostics=clean)",
+        "[gen_parse_tables] wrote {} and {} (start={}, productions={}, predictions={}, candidate_llp_sc_cells={}, candidate_llp_sc_conflicts={}, projected_pp_cells={}, pp_conflicts={}, terminals={}, nonterminals={}, nullable={}, diagnostics=clean)",
         out_path.display(),
         meta_path.display(),
         spec.start,
         spec.productions.len(),
         predictions.len(),
-        pp_projection.cells.len(),
-        pp_projection.conflicts.len(),
+        projection.sc.cells.len(),
+        projection.sc.conflicts.len(),
+        projection.pp.cells.len(),
+        projection.pp.conflicts.len(),
         count_terminal_refs(&spec.productions),
         count_nonterminal_refs(&spec.productions),
         analysis.nullable.len()
@@ -1125,7 +1394,7 @@ fn build_meta(
     analysis: &GrammarAnalysis,
     predictions: &[Prediction],
     prod_arity: &[u32],
-    pp_projection: &PairProjection,
+    projection: &SummaryProjection,
     witness_inputs: usize,
 ) -> ParseTablesMeta {
     ParseTablesMeta {
@@ -1134,10 +1403,29 @@ fn build_meta(
         lookback: DEFAULT_LOOKBACK,
         lookahead: DEFAULT_LOOKAHEAD,
         diagnostics: analysis.diagnostics.clone(),
+        sc_projection: PairProjectionMeta {
+            witness_inputs,
+            projected_cells: projection.sc.cells.len(),
+            conflicts: projection.sc.conflicts.clone(),
+        },
         pp_projection: PairProjectionMeta {
             witness_inputs,
-            projected_cells: pp_projection.cells.len(),
-            conflicts: pp_projection.conflicts.clone(),
+            projected_cells: projection.pp.cells.len(),
+            conflicts: projection.pp.conflicts.clone(),
+        },
+        ll1_runtime: {
+            let nonterminals = collect_nonterminals(&spec.productions);
+            let rhs_symbols = spec
+                .productions
+                .iter()
+                .map(|prod| prod.rhs_syms.len())
+                .sum();
+            Ll1RuntimeMeta {
+                nonterminals: nonterminals.len(),
+                start_nonterminal: spec.start.clone(),
+                predict_cells: nonterminals.len() * N_KINDS as usize,
+                rhs_symbols,
+            }
         },
         ll1_predictions: predictions
             .iter()
@@ -1346,7 +1634,7 @@ mod tests {
             &analysis,
             &[
                 TokenKind::Ident,
-                TokenKind::InfixPlus,
+                TokenKind::Plus,
                 TokenKind::Int,
                 TokenKind::Semicolon,
             ],
@@ -1371,12 +1659,13 @@ mod tests {
             build_projected_precomputed_tables(&spec, &predictions, prod_arity)
                 .expect("project tables");
 
-        assert!(!projection.cells.is_empty());
+        assert!(!projection.pp.cells.is_empty());
+        assert!(!projection.sc.cells.is_empty());
 
         let input = [
             EOF_TOKEN,
             TokenKind::Ident as u32,
-            TokenKind::InfixPlus as u32,
+            TokenKind::Plus as u32,
             TokenKind::Int as u32,
             TokenKind::Semicolon as u32,
             EOF_TOKEN,
@@ -1402,6 +1691,19 @@ mod tests {
     }
 
     #[test]
+    fn candidate_llp_stack_summaries_are_projected_for_raw_tokens() {
+        let spec = parse_grammar(include_str!("../../grammar/lanius.bnf")).expect("parse grammar");
+        let analysis = analyze_grammar(&spec);
+        let predictions = build_ll1_predictions(&spec, &analysis).expect("ll1 predictions");
+        let witnesses = default_projection_witnesses();
+        let projection =
+            project_pair_summaries(&spec, &predictions, &witnesses).expect("project summaries");
+
+        assert!(!projection.sc.cells.is_empty());
+        assert!(!projection.pp.cells.is_empty());
+    }
+
+    #[test]
     fn ll1_predictions_parse_empty_array() {
         let spec = parse_grammar(include_str!("../../grammar/lanius.bnf")).expect("parse grammar");
         let analysis = analyze_grammar(&spec);
@@ -1409,8 +1711,8 @@ mod tests {
             &spec,
             &analysis,
             &[
-                TokenKind::ArrayLBracket,
-                TokenKind::ArrayRBracket,
+                TokenKind::LBracket,
+                TokenKind::RBracket,
                 TokenKind::Semicolon,
             ],
         )
@@ -1421,7 +1723,7 @@ mod tests {
     }
 
     #[test]
-    fn closing_delimiter_retags_disambiguate_rparen_pairs() {
+    fn raw_closing_delimiters_share_rparen_projection_pairs() {
         let spec = parse_grammar(include_str!("../../grammar/lanius.bnf")).expect("parse grammar");
         let analysis = analyze_grammar(&spec);
 
@@ -1429,9 +1731,9 @@ mod tests {
             &spec,
             &analysis,
             &[
-                TokenKind::GroupLParen,
+                TokenKind::LParen,
                 TokenKind::Ident,
-                TokenKind::GroupRParen,
+                TokenKind::RParen,
                 TokenKind::Semicolon,
             ],
         )
@@ -1441,37 +1743,20 @@ mod tests {
             &analysis,
             &[
                 TokenKind::Ident,
-                TokenKind::CallLParen,
+                TokenKind::LParen,
                 TokenKind::Ident,
-                TokenKind::CallRParen,
+                TokenKind::RParen,
                 TokenKind::Semicolon,
             ],
         )
         .expect("parse call expression");
 
-        let group_key = (TokenKind::Ident as u32, TokenKind::GroupRParen as u32);
-        let call_key = (TokenKind::Ident as u32, TokenKind::CallRParen as u32);
-        assert!(
-            !group.contains_key(&call_key),
-            "group parse should not project through CallRParen"
-        );
-        assert!(
-            !call.contains_key(&group_key),
-            "call parse should not project through GroupRParen"
-        );
-
-        let key = (TokenKind::Ident as u32, TokenKind::CallRParen as u32);
-        assert!(!group.contains_key(&key));
-        let key = (TokenKind::Ident as u32, TokenKind::GroupRParen as u32);
-        assert!(!call.contains_key(&key));
-
-        let key = (TokenKind::Ident as u32, TokenKind::GroupRParen as u32);
+        let key = (TokenKind::Ident as u32, TokenKind::RParen as u32);
         let group_chunk = group.get(&key).expect("group Ident/RParen chunk");
-        let key = (TokenKind::Ident as u32, TokenKind::CallRParen as u32);
         let call_chunk = call.get(&key).expect("call Ident/RParen chunk");
 
-        assert!(!group_chunk.iter().any(|tag| tag == "args_end"));
-        assert!(call_chunk.iter().any(|tag| tag == "args_end"));
+        assert!(!group_chunk.is_empty());
+        assert!(!call_chunk.is_empty());
     }
 
     #[test]

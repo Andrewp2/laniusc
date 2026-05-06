@@ -1,7 +1,7 @@
 use laniusc::lexer::{gpu::driver::GpuLexer, tables::tokens::TokenKind};
 
 #[test]
-fn gpu_lexer_retags_local_syntax_context() {
+fn gpu_lexer_emits_raw_local_syntax_tokens() {
     use TokenKind::*;
 
     pollster::block_on(async {
@@ -18,28 +18,9 @@ fn gpu_lexer_retags_local_syntax_context() {
         assert_eq!(
             kinds,
             vec![
-                PrefixMinus,
-                Ident,
-                InfixPlus,
-                PrefixPlus,
-                Ident,
-                InfixMinus,
-                Ident,
-                Ident,
-                CallLParen,
-                Ident,
-                CallRParen,
-                IndexLBracket,
-                Ident,
-                IndexRBracket,
-                InfixPlus,
-                ArrayLBracket,
-                Ident,
-                ArrayRBracket,
-                InfixPlus,
-                GroupLParen,
-                Ident,
-                GroupRParen,
+                Minus, Ident, Plus, Plus, Ident, Minus, Ident, Ident, LParen, Ident, RParen,
+                LBracket, Ident, RBracket, Plus, LBracket, Ident, RBracket, Plus, LParen, Ident,
+                RParen,
             ]
         );
     });
@@ -63,42 +44,10 @@ fn gpu_lexer_retags_keywords() {
         assert_eq!(
             kinds,
             vec![
-                Pub,
-                Fn,
-                Ident,
-                CallLParen,
-                CallRParen,
-                Arrow,
-                Ident,
-                LBrace,
-                Let,
-                Ident,
-                Assign,
-                Int,
-                Semicolon,
-                If,
-                GroupLParen,
-                Ident,
-                GroupRParen,
-                LBrace,
-                Return,
-                Ident,
-                Semicolon,
-                RBrace,
-                Else,
-                LBrace,
-                While,
-                GroupLParen,
-                Ident,
-                GroupRParen,
-                LBrace,
-                Break,
-                Semicolon,
-                Continue,
-                Semicolon,
-                RBrace,
-                RBrace,
-                RBrace,
+                Pub, Fn, Ident, LParen, RParen, Arrow, Ident, LBrace, Let, Ident, Assign, Int,
+                Semicolon, If, LParen, Ident, RParen, LBrace, Return, Ident, Semicolon, RBrace,
+                Else, LBrace, While, LParen, Ident, RParen, LBrace, Break, Semicolon, Continue,
+                Semicolon, RBrace, RBrace, RBrace,
             ]
         );
     });

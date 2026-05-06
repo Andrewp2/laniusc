@@ -140,7 +140,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
                 let (gx, gy, gz) = crate::gpu::passes_core::plan_workgroups(
                     crate::gpu::passes_core::DispatchDim::D1,
                     crate::gpu::passes_core::InputElements::Elements1D(n),
-                    [1, 1, 1],
+                    [256, 1, 1],
                 )?;
                 let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                     label: Some(Self::NAME),

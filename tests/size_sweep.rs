@@ -12,6 +12,7 @@ use laniusc::{
     lexer::{
         cpu::{CpuToken, lex_on_cpu},
         gpu::{Token as GpuToken, lex_on_gpu},
+        tables::tokens::TokenKind,
     },
 };
 use rand::{SeedableRng, rngs::StdRng};
@@ -40,6 +41,31 @@ fn first_divergence_idx(cpu: &[CpuToken], gpu: &[GpuToken]) -> usize {
         }
     }
     n
+}
+
+fn raw_parser_kind(kind: TokenKind) -> TokenKind {
+    use TokenKind::*;
+    match kind {
+        CallLParen | GroupLParen | ParamLParen => LParen,
+        GroupRParen | CallRParen | ParamRParen => RParen,
+        IndexLBracket | ArrayLBracket | TypeArrayLBracket => LBracket,
+        ArrayRBracket | IndexRBracket | TypeArrayRBracket => RBracket,
+        PrefixPlus | InfixPlus => Plus,
+        PrefixMinus | InfixMinus => Minus,
+        LetIdent | ParamIdent | TypeIdent => Ident,
+        LetAssign => Assign,
+        ArgComma | ArrayComma | ParamComma => Comma,
+        TypeSemicolon => Semicolon,
+        IfLBrace => LBrace,
+        IfRBrace => RBrace,
+        other => other,
+    }
+}
+
+fn normalize_cpu_tokens_to_gpu_raw(tokens: &mut [CpuToken]) {
+    for token in tokens {
+        token.kind = raw_parser_kind(token.kind);
+    }
 }
 
 fn slice_preview(src: &str, start: usize, len: usize) -> String {
@@ -139,7 +165,8 @@ async fn run_one(target_len: usize, seed: u64) {
         StdRng::seed_from_u64(seed ^ (target_len as u64).wrapping_mul(0x9E3779B97F4A7C15));
     let src = gen_valid_source(&mut rng, target_len);
 
-    let cpu = lex_on_cpu(&src).expect("CPU lex failed");
+    let mut cpu = lex_on_cpu(&src).expect("CPU lex failed");
+    normalize_cpu_tokens_to_gpu_raw(&mut cpu);
     let gpu = lex_on_gpu(&src).await.expect("GPU lex failed");
 
     assert_tokens_equal_or_dump(&src, &cpu, &gpu, "size_sweep", target_len, seed);

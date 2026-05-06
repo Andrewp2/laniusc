@@ -1,5 +1,5 @@
 // shaders/parser/pack_varlen.slang
-// Packs two dense streams in parallel, one thread per token pair:
+// Packs two dense streams in parallel, one 256-lane wave per token pair:
 //  - out_sc   : stack-change codes (push=odd, pop=even) from sc_superseq
 //  - out_emit : production IDs from pp_superseq
 
@@ -23,6 +23,7 @@ ConstantBuffer<PackParams> gParams;
 
 // Inputs
 StructuredBuffer<uint> token_kinds;  // len = n_tokens
+StructuredBuffer<uint> token_count;
 StructuredBuffer<uint> sc_offsets;   // len = n_pairs (exclusive)
 StructuredBuffer<uint> emit_offsets; // len = n_pairs (exclusive)
 
@@ -33,6 +34,15 @@ StructuredBuffer<uint> tables_blob;
 // Outputs
 RWStructuredBuffer<uint> out_sc;   // len = total_sc
 RWStructuredBuffer<uint> out_emit; // len = total_emit
+RWStructuredBuffer<uint> out_emit_pos; // len = total_emit
+
+static const uint WG_SIZE = 256u;
+static const uint MAX_GROUPS_X = 65535u;
+
+uint linear_group_id(uint3 gid)
+{
+    return gid.x + gid.y * MAX_GROUPS_X;
+}
 
 // ----- Small helpers into the packed blob -----
 uint tbl_at(uint base, uint i)
@@ -68,13 +78,15 @@ uint pp_seq_at(uint i)
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
-void main(uint3 tid: SV_DispatchThreadID)
+void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
 {
     if (gParams.n_tokens < 2)
         return;
 
-    uint n_pairs = gParams.n_tokens - 1;
-    uint i = tid.x;
+    uint active_tokens = min(gParams.n_tokens, token_count[0] + 2u);
+    uint n_pairs = active_tokens > 0u ? active_tokens - 1u : 0u;
+    uint i = linear_group_id(gid);
+    uint lane = ltid.x;
     if (i >= n_pairs)
         return;
 
@@ -91,7 +103,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint dst_sc = sc_offsets[i];
 
     [loop]
-    for (uint k = 0; k < scl; ++k)
+    for (uint k = lane; k < scl; k += WG_SIZE)
     {
         out_sc[dst_sc + k] = sc_seq_at(sco + k);
     }
@@ -102,8 +114,9 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint dst_emit = emit_offsets[i];
 
     [loop]
-    for (uint k = 0; k < epl; ++k)
+    for (uint k = lane; k < epl; k += WG_SIZE)
     {
         out_emit[dst_emit + k] = pp_seq_at(epo + k);
+        out_emit_pos[dst_emit + k] = i;
     }
 }

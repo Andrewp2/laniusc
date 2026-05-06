@@ -5,6 +5,13 @@ use super::buffers::{ActionHeader, ParserBuffers};
 
 /// Staging buffers for parser readbacks.
 pub struct ParserReadbacks {
+    pub ll1_status: wgpu::Buffer,
+    pub ll1_emit: wgpu::Buffer,
+    pub ll1_emit_pos: wgpu::Buffer,
+    pub ll1_block_seed_len: wgpu::Buffer,
+    pub ll1_seed_plan_status: wgpu::Buffer,
+    pub ll1_seeded_status: wgpu::Buffer,
+    pub ll1_seeded_emit: wgpu::Buffer,
     pub headers: wgpu::Buffer,
     pub sc: wgpu::Buffer,
     pub emit: wgpu::Buffer,
@@ -13,6 +20,12 @@ pub struct ParserReadbacks {
     pub valid: wgpu::Buffer,
     pub node_kind: wgpu::Buffer,
     pub parent: wgpu::Buffer,
+    pub first_child: wgpu::Buffer,
+    pub next_sibling: wgpu::Buffer,
+    pub subtree_end: wgpu::Buffer,
+    pub hir_kind: wgpu::Buffer,
+    pub hir_token_pos: wgpu::Buffer,
+    pub hir_token_end: wgpu::Buffer,
 }
 
 impl ParserReadbacks {
@@ -27,6 +40,25 @@ impl ParserReadbacks {
             })
         };
 
+        let ll1_status = mk("rb.parser.ll1_status", bufs.ll1_status.byte_size as u64);
+        let ll1_emit = mk("rb.parser.ll1_emit", bufs.ll1_emit.byte_size as u64);
+        let ll1_emit_pos = mk("rb.parser.ll1_emit_pos", bufs.ll1_emit_pos.byte_size as u64);
+        let ll1_block_seed_len = mk(
+            "rb.parser.ll1_block_seed_len",
+            bufs.ll1_block_seed_len.byte_size as u64,
+        );
+        let ll1_seed_plan_status = mk(
+            "rb.parser.ll1_seed_plan_status",
+            bufs.ll1_seed_plan_status.byte_size as u64,
+        );
+        let ll1_seeded_status = mk(
+            "rb.parser.ll1_seeded_status",
+            bufs.ll1_seeded_status.byte_size as u64,
+        );
+        let ll1_seeded_emit = mk(
+            "rb.parser.ll1_seeded_emit",
+            bufs.ll1_seeded_emit.byte_size as u64,
+        );
         let headers = mk("rb.parser.out_headers", bufs.out_headers.byte_size as u64);
         let sc_bytes = (bufs.total_sc.max(1) * 4) as u64;
         let emit_bytes = (bufs.total_emit.max(1) * 4) as u64;
@@ -36,10 +68,29 @@ impl ParserReadbacks {
         let match_idx = mk("rb.parser.match_for_index", sc_bytes);
         let depths = mk("rb.parser.depths_out", bufs.depths_out.byte_size as u64);
         let valid = mk("rb.parser.valid_out", bufs.valid_out.byte_size as u64);
-        let node_kind = mk("rb.parser.node_kind", emit_bytes);
-        let parent = mk("rb.parser.parent", emit_bytes);
+        let node_kind = mk("rb.parser.node_kind", bufs.node_kind.byte_size as u64);
+        let parent = mk("rb.parser.parent", bufs.parent.byte_size as u64);
+        let first_child = mk("rb.parser.first_child", bufs.first_child.byte_size as u64);
+        let next_sibling = mk("rb.parser.next_sibling", bufs.next_sibling.byte_size as u64);
+        let subtree_end = mk("rb.parser.subtree_end", bufs.subtree_end.byte_size as u64);
+        let hir_kind = mk("rb.parser.hir_kind", bufs.hir_kind.byte_size as u64);
+        let hir_token_pos = mk(
+            "rb.parser.hir_token_pos",
+            bufs.hir_token_pos.byte_size as u64,
+        );
+        let hir_token_end = mk(
+            "rb.parser.hir_token_end",
+            bufs.hir_token_end.byte_size as u64,
+        );
 
         Self {
+            ll1_status,
+            ll1_emit,
+            ll1_emit_pos,
+            ll1_block_seed_len,
+            ll1_seed_plan_status,
+            ll1_seeded_status,
+            ll1_seeded_emit,
             headers,
             sc,
             emit,
@@ -48,11 +99,67 @@ impl ParserReadbacks {
             valid,
             node_kind,
             parent,
+            first_child,
+            next_sibling,
+            subtree_end,
+            hir_kind,
+            hir_token_pos,
+            hir_token_end,
         }
     }
 
     /// Record copy commands from device-local outputs into staging buffers.
     pub fn encode_copies(&self, encoder: &mut wgpu::CommandEncoder, bufs: &ParserBuffers) {
+        encoder.copy_buffer_to_buffer(
+            &bufs.ll1_status,
+            0,
+            &self.ll1_status,
+            0,
+            bufs.ll1_status.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.ll1_emit,
+            0,
+            &self.ll1_emit,
+            0,
+            bufs.ll1_emit.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.ll1_emit_pos,
+            0,
+            &self.ll1_emit_pos,
+            0,
+            bufs.ll1_emit_pos.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.ll1_block_seed_len,
+            0,
+            &self.ll1_block_seed_len,
+            0,
+            bufs.ll1_block_seed_len.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.ll1_seed_plan_status,
+            0,
+            &self.ll1_seed_plan_status,
+            0,
+            bufs.ll1_seed_plan_status.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.ll1_seeded_status,
+            0,
+            &self.ll1_seeded_status,
+            0,
+            bufs.ll1_seeded_status.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.ll1_seeded_emit,
+            0,
+            &self.ll1_seeded_emit,
+            0,
+            bufs.ll1_seeded_emit.byte_size as u64,
+        );
+
         // out_headers
         encoder.copy_buffer_to_buffer(
             &bufs.out_headers,
@@ -70,8 +177,62 @@ impl ParserReadbacks {
         // out_emit, node_kind, parent
         let emit_bytes = (bufs.total_emit.max(1) * 4) as u64;
         encoder.copy_buffer_to_buffer(&bufs.out_emit, 0, &self.emit, 0, emit_bytes);
-        encoder.copy_buffer_to_buffer(&bufs.node_kind, 0, &self.node_kind, 0, emit_bytes);
-        encoder.copy_buffer_to_buffer(&bufs.parent, 0, &self.parent, 0, emit_bytes);
+        encoder.copy_buffer_to_buffer(
+            &bufs.node_kind,
+            0,
+            &self.node_kind,
+            0,
+            bufs.node_kind.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.parent,
+            0,
+            &self.parent,
+            0,
+            bufs.parent.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.first_child,
+            0,
+            &self.first_child,
+            0,
+            bufs.first_child.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.next_sibling,
+            0,
+            &self.next_sibling,
+            0,
+            bufs.next_sibling.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.subtree_end,
+            0,
+            &self.subtree_end,
+            0,
+            bufs.subtree_end.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_kind,
+            0,
+            &self.hir_kind,
+            0,
+            bufs.hir_kind.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_token_pos,
+            0,
+            &self.hir_token_pos,
+            0,
+            bufs.hir_token_pos.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_token_end,
+            0,
+            &self.hir_token_end,
+            0,
+            bufs.hir_token_end.byte_size as u64,
+        );
 
         // depths_out, valid_out
         encoder.copy_buffer_to_buffer(
@@ -93,6 +254,13 @@ impl ParserReadbacks {
 
 /// Decoded results from the staging buffers.
 pub struct DecodedParserReadbacks {
+    pub ll1_status: [u32; 6],
+    pub ll1_emit_stream: Vec<u32>,
+    pub ll1_emit_token_pos: Vec<u32>,
+    pub ll1_block_seed_len: Vec<u32>,
+    pub ll1_seed_plan_status: [u32; 8],
+    pub ll1_seeded_status: Vec<u32>,
+    pub ll1_seeded_emit: Vec<u32>,
     pub headers: Vec<ActionHeader>,
     pub sc_stream: Vec<u32>,
     pub emit_stream: Vec<u32>,
@@ -102,6 +270,12 @@ pub struct DecodedParserReadbacks {
     pub valid: bool,
     pub node_kind: Vec<u32>,
     pub parent: Vec<u32>,
+    pub first_child: Vec<u32>,
+    pub next_sibling: Vec<u32>,
+    pub subtree_end: Vec<u32>,
+    pub hir_kind: Vec<u32>,
+    pub hir_token_pos: Vec<u32>,
+    pub hir_token_end: Vec<u32>,
 }
 
 impl DecodedParserReadbacks {
@@ -117,6 +291,13 @@ impl DecodedParserReadbacks {
             sl.map_async(wgpu::MapMode::Read, |_| {});
         };
         map(&rb.headers);
+        map(&rb.ll1_status);
+        map(&rb.ll1_emit);
+        map(&rb.ll1_emit_pos);
+        map(&rb.ll1_block_seed_len);
+        map(&rb.ll1_seed_plan_status);
+        map(&rb.ll1_seeded_status);
+        map(&rb.ll1_seeded_emit);
         map(&rb.sc);
         map(&rb.emit);
         map(&rb.match_idx);
@@ -124,8 +305,107 @@ impl DecodedParserReadbacks {
         map(&rb.valid);
         map(&rb.node_kind);
         map(&rb.parent);
+        map(&rb.first_child);
+        map(&rb.next_sibling);
+        map(&rb.subtree_end);
+        map(&rb.hir_kind);
+        map(&rb.hir_token_pos);
+        map(&rb.hir_token_end);
 
         let _ = device.poll(wgpu::PollType::Wait);
+
+        let ll1_status = {
+            let data = rb.ll1_status.slice(..).get_mapped_range();
+            let mut out = [0u32; 6];
+            for (i, chunk) in data.chunks_exact(4).take(6).enumerate() {
+                out[i] = u32::from_le_bytes(chunk.try_into().unwrap());
+            }
+            drop(data);
+            rb.ll1_status.unmap();
+            out
+        };
+        let ll1_emit_stream = {
+            let data = rb.ll1_emit.slice(..).get_mapped_range();
+            let len = (ll1_status[5] as usize).min(bufs.ll1_emit.count);
+            let mut v = Vec::with_capacity(len);
+            for (i, chunk) in data.chunks_exact(4).enumerate() {
+                if i >= len {
+                    break;
+                }
+                v.push(u32::from_le_bytes(chunk.try_into().unwrap()));
+            }
+            drop(data);
+            rb.ll1_emit.unmap();
+            v
+        };
+        let ll1_emit_token_pos = {
+            let data = rb.ll1_emit_pos.slice(..).get_mapped_range();
+            let len = (ll1_status[5] as usize).min(bufs.ll1_emit_pos.count);
+            let mut v = Vec::with_capacity(len);
+            for (i, chunk) in data.chunks_exact(4).enumerate() {
+                if i >= len {
+                    break;
+                }
+                v.push(u32::from_le_bytes(chunk.try_into().unwrap()));
+            }
+            drop(data);
+            rb.ll1_emit_pos.unmap();
+            v
+        };
+        let ll1_block_seed_len = {
+            let data = rb.ll1_block_seed_len.slice(..).get_mapped_range();
+            let mut v = Vec::with_capacity(bufs.ll1_block_seed_len.count);
+            for (i, chunk) in data.chunks_exact(4).enumerate() {
+                if i >= bufs.ll1_block_seed_len.count {
+                    break;
+                }
+                v.push(u32::from_le_bytes(chunk.try_into().unwrap()));
+            }
+            drop(data);
+            rb.ll1_block_seed_len.unmap();
+            v
+        };
+        let ll1_seed_plan_status = {
+            let data = rb.ll1_seed_plan_status.slice(..).get_mapped_range();
+            let mut out = [0u32; 8];
+            for (i, chunk) in data.chunks_exact(4).take(8).enumerate() {
+                out[i] = u32::from_le_bytes(chunk.try_into().unwrap());
+            }
+            drop(data);
+            rb.ll1_seed_plan_status.unmap();
+            out
+        };
+        let ll1_seeded_status = {
+            let data = rb.ll1_seeded_status.slice(..).get_mapped_range();
+            let mut v = Vec::with_capacity(bufs.ll1_seeded_status.count);
+            for (i, chunk) in data.chunks_exact(4).enumerate() {
+                if i >= bufs.ll1_seeded_status.count {
+                    break;
+                }
+                v.push(u32::from_le_bytes(chunk.try_into().unwrap()));
+            }
+            drop(data);
+            rb.ll1_seeded_status.unmap();
+            v
+        };
+        let ll1_seeded_emit = {
+            let data = rb.ll1_seeded_emit.slice(..).get_mapped_range();
+            let mut v = Vec::with_capacity(bufs.ll1_seeded_emit.count);
+            for (i, chunk) in data.chunks_exact(4).enumerate() {
+                if i >= bufs.ll1_seeded_emit.count {
+                    break;
+                }
+                v.push(u32::from_le_bytes(chunk.try_into().unwrap()));
+            }
+            drop(data);
+            rb.ll1_seeded_emit.unmap();
+            v
+        };
+        let tree_len = if bufs.tree_count_uses_status {
+            (ll1_status[5] as usize).min(bufs.node_kind.count)
+        } else {
+            (bufs.total_emit as usize).min(bufs.node_kind.count)
+        };
 
         // headers
         let headers = {
@@ -200,9 +480,9 @@ impl DecodedParserReadbacks {
         // node_kind
         let node_kind = {
             let data = rb.node_kind.slice(..).get_mapped_range();
-            let mut v = Vec::with_capacity(bufs.total_emit as usize);
+            let mut v = Vec::with_capacity(tree_len);
             for (i, chunk) in data.chunks_exact(4).enumerate() {
-                if i >= bufs.total_emit as usize {
+                if i >= tree_len {
                     break;
                 }
                 v.push(u32::from_le_bytes(chunk.try_into().unwrap()));
@@ -215,9 +495,9 @@ impl DecodedParserReadbacks {
         // parent
         let parent = {
             let data = rb.parent.slice(..).get_mapped_range();
-            let mut v = Vec::with_capacity(bufs.total_emit as usize);
+            let mut v = Vec::with_capacity(tree_len);
             for (i, chunk) in data.chunks_exact(4).enumerate() {
-                if i >= bufs.total_emit as usize {
+                if i >= tree_len {
                     break;
                 }
                 v.push(u32::from_le_bytes(chunk.try_into().unwrap()));
@@ -227,7 +507,98 @@ impl DecodedParserReadbacks {
             v
         };
 
+        let first_child = {
+            let data = rb.first_child.slice(..).get_mapped_range();
+            let mut v = Vec::with_capacity(tree_len);
+            for (i, chunk) in data.chunks_exact(4).enumerate() {
+                if i >= tree_len {
+                    break;
+                }
+                v.push(u32::from_le_bytes(chunk.try_into().unwrap()));
+            }
+            drop(data);
+            rb.first_child.unmap();
+            v
+        };
+
+        let next_sibling = {
+            let data = rb.next_sibling.slice(..).get_mapped_range();
+            let mut v = Vec::with_capacity(tree_len);
+            for (i, chunk) in data.chunks_exact(4).enumerate() {
+                if i >= tree_len {
+                    break;
+                }
+                v.push(u32::from_le_bytes(chunk.try_into().unwrap()));
+            }
+            drop(data);
+            rb.next_sibling.unmap();
+            v
+        };
+
+        let subtree_end = {
+            let data = rb.subtree_end.slice(..).get_mapped_range();
+            let mut v = Vec::with_capacity(tree_len);
+            for (i, chunk) in data.chunks_exact(4).enumerate() {
+                if i >= tree_len {
+                    break;
+                }
+                v.push(u32::from_le_bytes(chunk.try_into().unwrap()));
+            }
+            drop(data);
+            rb.subtree_end.unmap();
+            v
+        };
+
+        let hir_kind = {
+            let data = rb.hir_kind.slice(..).get_mapped_range();
+            let mut v = Vec::with_capacity(tree_len);
+            for (i, chunk) in data.chunks_exact(4).enumerate() {
+                if i >= tree_len {
+                    break;
+                }
+                v.push(u32::from_le_bytes(chunk.try_into().unwrap()));
+            }
+            drop(data);
+            rb.hir_kind.unmap();
+            v
+        };
+
+        let hir_token_pos = {
+            let data = rb.hir_token_pos.slice(..).get_mapped_range();
+            let mut v = Vec::with_capacity(tree_len);
+            for (i, chunk) in data.chunks_exact(4).enumerate() {
+                if i >= tree_len {
+                    break;
+                }
+                v.push(u32::from_le_bytes(chunk.try_into().unwrap()));
+            }
+            drop(data);
+            rb.hir_token_pos.unmap();
+            v
+        };
+
+        let hir_token_end = {
+            let data = rb.hir_token_end.slice(..).get_mapped_range();
+            let mut v = Vec::with_capacity(tree_len);
+            for (i, chunk) in data.chunks_exact(4).enumerate() {
+                if i >= tree_len {
+                    break;
+                }
+                v.push(u32::from_le_bytes(chunk.try_into().unwrap()));
+            }
+            drop(data);
+            rb.hir_token_end.unmap();
+            v
+        };
+
         Ok(Self {
+            ll1_status,
+            ll1_emit_stream,
+            ll1_emit_token_pos,
+            ll1_block_seed_len,
+            ll1_seed_plan_status,
+            ll1_seeded_status,
+            ll1_seeded_emit,
             headers,
             sc_stream,
             emit_stream,
@@ -237,6 +608,12 @@ impl DecodedParserReadbacks {
             valid,
             node_kind,
             parent,
+            first_child,
+            next_sibling,
+            subtree_end,
+            hir_kind,
+            hir_token_pos,
+            hir_token_end,
         })
     }
 }

@@ -12,6 +12,9 @@ use anyhow::{Context, Result, anyhow};
 
 fn main() -> Result<()> {
     println!("cargo:rustc-check-cfg=cfg(has_prebuilt_tables)");
+    println!("cargo:rerun-if-env-changed=LANIUS_SHADER_DEBUG");
+    println!("cargo:rerun-if-env-changed=LANIUS_SHADER_OPT_LEVEL");
+    println!("cargo:rerun-if-env-changed=SLANGC_EXTRA_FLAGS");
     track_dir_recursively("shaders");
 
     let slangc = find_slangc()
@@ -53,7 +56,7 @@ fn main() -> Result<()> {
             .arg("-reflection-json")
             .arg(&refl_out)
             .arg("-emit-spirv-directly")
-            .arg("-g3")
+            .arg(format!("-O{}", shader_opt_level()))
             // Let `import utils;` and other modules resolve from source by search path:
             .arg("-I")
             .arg("shaders")
@@ -64,13 +67,18 @@ fn main() -> Result<()> {
             .arg("-I")
             .arg("shaders/type_checker")
             .arg("-o")
-            .arg(&spv_out)
-            // Finally, the entrypoint source itself (no module/library sources added!)
-            .arg(&ep);
+            .arg(&spv_out);
+
+        if env_truthy("LANIUS_SHADER_DEBUG") {
+            cmd.arg("-g3");
+        }
 
         for a in &extra_args {
             cmd.arg(a);
         }
+
+        // Finally, the entrypoint source itself (no module/library sources added!)
+        cmd.arg(&ep);
 
         let out = cmd
             .output()
@@ -126,6 +134,19 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn env_truthy(name: &str) -> bool {
+    env::var(name)
+        .map(|value| {
+            let value = value.to_ascii_lowercase();
+            value != "0" && value != "false" && value != "off"
+        })
+        .unwrap_or(false)
+}
+
+fn shader_opt_level() -> String {
+    env::var("LANIUS_SHADER_OPT_LEVEL").unwrap_or_else(|_| "1".into())
 }
 
 fn find_slangc() -> Result<PathBuf> {

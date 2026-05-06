@@ -10,6 +10,7 @@
 //   "match_for_index": [...],
 //   "tree": { "node_kind": [...], "parent": [...] },   // back-compat shape-only
 //   "ast":  { "root": N, "nodes": [ { "tag": "...", "children": [...] }, ... ] },
+//   "hir":  { "items": [...] },
 //   "token_kinds": ["Ident","CallLParen", ...]         // optional, for debugging
 // }
 //
@@ -21,6 +22,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use laniusc::{
+    hir::{HirFile, parse_source},
     lexer::{gpu::driver::GpuLexer, tables::tokens},
     parser::cpu::{Ast, parse_from_token_kinds},
 };
@@ -49,8 +51,9 @@ struct CpuOnlyGolden {
     match_for_index: Vec<u32>,
     tree: CpuTree,
 
-    // NEW: full CPU AST
+    // Full CPU AST and lowered HIR.
     ast: Ast,
+    hir: HirFile,
 
     // Optional: human-friendly token names for debugging diffs
     token_kinds: Vec<String>,
@@ -185,9 +188,11 @@ async fn run_one(lexer: &GpuLexer, path: &Path) -> Result<()> {
     let kinds: Vec<tokens::TokenKind> = toks.iter().map(|t| t.kind).collect();
     let token_kinds: Vec<String> = kinds.iter().map(|k| format!("{:?}", k)).collect();
 
-    // Full CPU parse
+    // Full CPU parse and lowered HIR.
     let ast: Ast =
         parse_from_token_kinds(&kinds).map_err(|e| anyhow::anyhow!("CPU parse failed: {}", e))?;
+    let hir: HirFile =
+        parse_source(&src).map_err(|e| anyhow::anyhow!("HIR parse failed: {}", e))?;
 
     // Serialize
     let golden = CpuOnlyGolden {
@@ -197,6 +202,7 @@ async fn run_one(lexer: &GpuLexer, path: &Path) -> Result<()> {
         match_for_index,
         tree,
         ast,
+        hir,
         token_kinds,
     };
 

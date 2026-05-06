@@ -124,14 +124,15 @@ pub fn pipeline_from_spirv_and_bgls(
         bind_group_layouts: bgls,
         push_constant_ranges: &[],
     });
-    device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+    let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
         label: Some(label),
         layout: Some(&pl),
         module: &module,
         entry_point: Some(entry),
         compilation_options: wgpu::PipelineCompilationOptions::default(),
-        cache: None,
-    })
+        cache: crate::gpu::device::pipeline_cache_for(device).as_deref(),
+    });
+    pipeline
 }
 
 pub fn make_pass_data(
