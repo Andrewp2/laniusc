@@ -307,6 +307,24 @@ fn main() {
 }
 
 #[test]
+fn module_style_array_seed_import_expands() {
+    let src = r#"
+import core::array_i32_4;
+
+fn main() {
+    let values: [i32; 4] = [1, 2, 3, 4];
+    return core::array_i32_4::sum(values);
+}
+"#;
+
+    let expanded = expand_source_imports(src).expect("expand module-style array stdlib import");
+    assert!(expanded.contains("pub fn __lanius_core_array_i32_4_sum"));
+    assert!(expanded.contains("return __lanius_core_array_i32_4_sum(values);"));
+    assert!(!expanded.contains("core::array_i32_4::sum"));
+    parse_source(&expanded).expect("expanded module-style array stdlib import should parse");
+}
+
+#[test]
 fn missing_module_import_reports_candidates() {
     let err = expand_source_imports("import core::not_a_module;\n")
         .expect_err("missing module import should fail");

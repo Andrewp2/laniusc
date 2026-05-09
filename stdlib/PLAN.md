@@ -111,6 +111,7 @@ The current `stdlib/` directory contains plain `.lani` files:
 
 - `core/i32.lani`
 - `core/bool.lani`
+- `core/array_i32_4.lani`
 - `i32.lani`
 - `bool.lani`
 - `array_i32_4.lani`

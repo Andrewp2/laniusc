@@ -18,8 +18,9 @@ Supported enough for the seed library:
 
 - Global `pub fn` declarations with typed parameters and return types, used by
   `stdlib/i32.lani`, `stdlib/bool.lani`, and `stdlib/array_i32_4.lani`.
-- Module-form `core::i32` and `core::bool` seed files now expose namespaced
-  helpers such as `core::i32::abs()` and `core::bool::to_i32()`.
+- Module-form `core::i32`, `core::bool`, and `core::array_i32_4` seed files now
+  expose namespaced helpers such as `core::i32::abs()`,
+  `core::bool::to_i32()`, and `core::array_i32_4::sum()`.
 - Top-level `module core::name;`, `import core::name;`, and quoted
   `import "path.lani";` items now parse and lower to HIR. Normal compilation
   still expands import directives before parsing. Imported files with a module
