@@ -2,7 +2,9 @@ use std::{env, fs, io::Write, path::PathBuf};
 
 use laniusc::compiler::{
     compile_source_to_wasm_with_gpu_codegen,
+    compile_source_to_wasm_with_gpu_codegen_from_path,
     compile_source_to_x86_64_with_gpu_codegen,
+    compile_source_to_x86_64_with_gpu_codegen_from_path,
 };
 
 fn main() {
@@ -58,18 +60,24 @@ fn run() -> Result<(), String> {
         ));
     }
 
-    let src = if let Some(input) = &input {
-        fs::read_to_string(input).map_err(|err| format!("read {}: {err}", input.display()))?
+    let emitted = if let Some(input) = &input {
+        if emit == "wasm" {
+            pollster::block_on(compile_source_to_wasm_with_gpu_codegen_from_path(input))
+                .map_err(|err| err.to_string())?
+        } else {
+            pollster::block_on(compile_source_to_x86_64_with_gpu_codegen_from_path(input))
+                .map_err(|err| err.to_string())?
+        }
+    } else if emit == "wasm" {
+        pollster::block_on(compile_source_to_wasm_with_gpu_codegen(
+            "fn main() { return 7; }\n",
+        ))
+        .map_err(|err| err.to_string())?
     } else {
-        "fn main() { return 7; }\n".to_string()
-    };
-
-    let emitted = if emit == "wasm" {
-        pollster::block_on(compile_source_to_wasm_with_gpu_codegen(&src))
-            .map_err(|err| err.to_string())?
-    } else {
-        pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&src))
-            .map_err(|err| err.to_string())?
+        pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
+            "fn main() { return 7; }\n",
+        ))
+        .map_err(|err| err.to_string())?
     };
     if let Some(output) = output {
         fs::write(&output, emitted).map_err(|err| format!("write {}: {err}", output.display()))?;
