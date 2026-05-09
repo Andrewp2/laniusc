@@ -237,6 +237,10 @@ fn assert_type_spans(name: &str, src: &str, ty: &HirType) {
             assert_type_spans(name, src, elem);
             assert_span_contains(name, "array element type", ty.span, elem.span);
         }
+        HirTypeKind::Slice { elem } => {
+            assert_type_spans(name, src, elem);
+            assert_span_contains(name, "slice element type", ty.span, elem.span);
+        }
         HirTypeKind::Generic { args, .. } => {
             for (i, arg) in args.iter().enumerate() {
                 assert_type_spans(name, src, arg);
@@ -820,6 +824,25 @@ fn hir_preserves_struct_literal_expressions() {
     };
     assert_eq!(name, "Point");
     assert!(fields.is_empty());
+}
+
+#[test]
+fn hir_preserves_slice_type_syntax() {
+    let func = only_fn("fn first(values: [i32], nested: [[bool]]) -> i32 { return 0; }");
+    assert_eq!(func.params.len(), 2);
+
+    let HirTypeKind::Slice { elem } = &func.params[0].ty.kind else {
+        panic!("expected first parameter to be a slice");
+    };
+    assert_eq!(elem.kind, HirTypeKind::Name("i32".into()));
+
+    let HirTypeKind::Slice { elem } = &func.params[1].ty.kind else {
+        panic!("expected second parameter to be a slice");
+    };
+    let HirTypeKind::Slice { elem } = &elem.kind else {
+        panic!("expected nested slice element");
+    };
+    assert_eq!(elem.kind, HirTypeKind::Name("bool".into()));
 }
 
 #[test]

@@ -429,12 +429,18 @@ impl<'a> Parser<'a> {
             || self.eat(tokens::TokenKind::LBracket)
         {
             let elem = self.parse_type_expr()?;
+            if self.eat(tokens::TokenKind::TypeArrayRBracket)
+                || self.eat(tokens::TokenKind::ArrayRBracket)
+                || self.eat(tokens::TokenKind::RBracket)
+            {
+                return Ok(self.push("type_slice", vec![elem]));
+            }
             if !(self.eat(tokens::TokenKind::TypeSemicolon)
                 || self.eat(tokens::TokenKind::Semicolon))
             {
                 return Err(ParseError {
                     pos: self.i,
-                    expected: "Semicolon",
+                    expected: "Semicolon or RBracket",
                     found: self.peek(),
                 });
             }

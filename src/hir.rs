@@ -129,6 +129,7 @@ pub enum HirTypeKind {
     Void,
     Name(String),
     Generic { name: String, args: Vec<HirType> },
+    Slice { elem: Box<HirType> },
     Array { elem: Box<HirType>, len: String },
 }
 
@@ -619,9 +620,24 @@ impl<'a> HirParser<'a> {
             .is_some()
         {
             let elem = self.parse_type_expr()?;
+            if self
+                .eat_any(&[
+                    TokenKind::TypeArrayRBracket,
+                    TokenKind::ArrayRBracket,
+                    TokenKind::RBracket,
+                ])
+                .is_some()
+            {
+                return Ok(HirType {
+                    kind: HirTypeKind::Slice {
+                        elem: Box::new(elem),
+                    },
+                    span: self.span_since(start),
+                });
+            }
             self.expect_any(
                 &[TokenKind::TypeSemicolon, TokenKind::Semicolon],
-                "Semicolon",
+                "Semicolon or RBracket",
             )?;
             let len_tok = self.expect(TokenKind::Int, "array length")?;
             let len = self.lexeme(len_tok);

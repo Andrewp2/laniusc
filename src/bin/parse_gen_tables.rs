@@ -995,6 +995,7 @@ fn default_projection_witnesses() -> Vec<Vec<TokenKind>> {
         vec![Ident],
         vec![Ident, Lt, Ident, Gt],
         vec![Ident, Lt, Ident, Comma, Ident, Gt],
+        vec![LBracket, Ident, RBracket],
         vec![LBracket, Ident, Semicolon, Int, RBracket],
     ];
     for ty in &type_exprs {

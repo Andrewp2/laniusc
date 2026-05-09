@@ -27,7 +27,7 @@ param_tail     [params_more] -> 'Comma' param param_tail;
 param_tail     [params_end]  -> ;
 
 type_expr      [type_ident]  -> 'Ident' type_args_opt;
-type_expr      [type_array]  -> 'LBracket' type_expr 'Semicolon' 'Int' 'RBracket';
+type_expr      [type_array]  -> 'LBracket' type_expr type_bracket_tail;
 
 # ----- Blocks and statements -----
 
@@ -206,3 +206,5 @@ struct_lit_field_list_opt [struct_lit_fields_some] -> struct_lit_field struct_li
 struct_lit_field [struct_lit_field] -> 'Ident' 'Colon' expr;
 struct_lit_field_tail [struct_lit_fields_more] -> 'Comma' struct_lit_field struct_lit_field_tail;
 struct_lit_field_tail [struct_lit_fields_end] -> ;
+type_bracket_tail [type_array_tail] -> 'Semicolon' 'Int' 'RBracket';
+type_bracket_tail [type_slice_tail] -> 'RBracket';

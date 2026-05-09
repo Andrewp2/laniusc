@@ -45,6 +45,9 @@ Supported enough for the seed library:
   shown in `sample_programs/*.lani`.
 - Fixed-size array type syntax, array literals, and indexing for concrete
   arrays, used by `stdlib/array_i32_4.lani` and `sample_programs/array_sum.lani`.
+- Slice type syntax such as `[i32]` now parses and lowers to HIR. It does not
+  yet have a runtime representation, borrow semantics, indexing rules, or
+  backend lowering.
 - Lexing/HIR representation for integer, float, string, and char literals, but
   only integer and bool-oriented source patterns are exercised by the current
   stdlib.
@@ -56,9 +59,10 @@ Important limitations visible in current files:
   `lstd_` prefix.
 - No generics or const parameters. `stdlib/array_i32_4.lani` is tied to
   `[i32; 4]`; every other element type or length would need another source file.
-- No enum/sum types, structs, methods, traits/interfaces, slices, references, or
-  heap allocation. These block `Option`, `Result`, `String`, `Vec`, maps, and
-  most ergonomic APIs from `PLAN.md`.
+- No enum/sum type semantics, struct/product semantics, methods,
+  traits/interfaces, slice runtime semantics, references, or heap allocation.
+  These block `Option`, `Result`, `String`, `Vec`, maps, and most ergonomic APIs
+  from `PLAN.md`.
 - No package/prelude mechanism, target-specific std runtime ABI, allocator ABI,
   panic/assert runtime, formatting runtime, or host I/O API surface.
 
