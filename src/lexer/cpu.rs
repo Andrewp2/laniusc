@@ -378,6 +378,10 @@ pub fn lex_on_cpu(input: &str) -> Result<Vec<CpuToken>, String> {
     let bytes = input.as_bytes();
     let n = bytes.len();
 
+    if n == 0 {
+        return Ok(Vec::new());
+    }
+
     let dfa = StreamingDfa::new();
     let mut out: Vec<CpuToken> = Vec::new();
 
@@ -467,6 +471,11 @@ mod tests {
             .into_iter()
             .map(|token| token.kind)
             .collect()
+    }
+
+    #[test]
+    fn lexes_empty_input_as_empty_stream() {
+        assert_eq!(lex_on_cpu("").expect("lex empty input"), Vec::new());
     }
 
     #[test]
