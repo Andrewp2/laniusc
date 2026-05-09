@@ -460,7 +460,8 @@ impl GpuLexer {
         let mapped = readback_tokens_buffer
             .slice(0..need_bytes)
             .get_mapped_range();
-        let tokens = read_tokens_from_mapped(&mapped, token_count_u32);
+        let tokens =
+            read_tokens_from_mapped(&mapped, token_count_u32).map_err(anyhow::Error::msg)?;
         drop(mapped);
         readback_tokens_buffer.unmap();
 
