@@ -30,12 +30,14 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
 static const uint TK_IDENT = 1u;
+static const uint TK_LPAREN = 4u;
 static const uint TK_RPAREN = 5u;
 static const uint TK_LBRACE = 22u;
 static const uint TK_RBRACE = 23u;
 static const uint TK_SEMICOLON = 37u;
 static const uint TK_COLON = 38u;
 static const uint TK_DOT = 35u;
+static const uint TK_CALL_LPAREN = 28u;
 static const uint TK_FN = 67u;
 static const uint TK_LET = 68u;
 static const uint TK_ARROW = 75u;
@@ -93,6 +95,22 @@ bool same_text(uint a, uint b)
             return false;
     }
     return true;
+}
+
+bool token_text_eq5(uint i, uint a, uint b, uint c, uint d, uint e)
+{
+    uint start = token_start(i);
+    return token_len(i) == 5u && source_at(start, 0u) == a && source_at(start, 1u) == b &&
+           source_at(start, 2u) == c && source_at(start, 3u) == d &&
+           source_at(start, 4u) == e;
+}
+
+bool is_builtin_print_call(uint i)
+{
+    if (!token_text_eq5(i, 112u, 114u, 105u, 110u, 116u))
+        return false;
+    uint next = i + 1u < active_token_count() ? token_kind(i + 1u) : 0u;
+    return next == TK_CALL_LPAREN || next == TK_LPAREN;
 }
 
 bool is_open_block_token(uint kind)
@@ -257,6 +275,8 @@ bool ident_is_use(uint i)
         return false;
 
     uint next = i + 1u < active_token_count() ? token_kind(i + 1u) : 0u;
+    if (is_builtin_print_call(i))
+        return false;
     return next != TK_COLON;
 }
 

@@ -1,0 +1,10 @@
+fn main() {
+    let n: i32 = 5;
+    let acc: i32 = 1;
+    while (n > 0) {
+        acc *= n;
+        n -= 1;
+    }
+    print(acc);
+    return 0;
+}

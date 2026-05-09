@@ -56,17 +56,14 @@
 ## Code Generation
 
 - Keep the resident GPU compiler path as the default CLI path. `GpuCompiler`
-  owns a reusable `GpuDevice`, lexer, parser, type checker, and C code generator;
-  `--gpu-codegen` and the default CLI path compile directly from the lexer token
+  owns a reusable `GpuDevice`, lexer, parser, type checker, and GPU backend;
+  `--gpu-codegen` and the default x86_64 CLI path compile directly from the lexer token
   buffers through parser/type/codegen without a CPU token readback/reupload
   between stages.
-- Replace the C emitter's shallow local inference with checked HIR types once
-  name resolution and type checking are in place. The current C backend is an
-  end-to-end smoke target for the existing C-like subset.
 - Move HIR construction and code emission onto the GPU. The default
   GPU-codegen path now runs GPU lexing, GPU parse acceptance/HIR span
-  discovery, GPU token type checking, and GPU C byte emission for the current
-  parser fixture subset. General semantic HIR lowering and checked type
-  analysis still need a real GPU IR path instead of token-directed C emission.
-- Add the real fast backend after the C target stabilizes: lower typed HIR to a
-  compact IR, then emit native code or another GPU-friendly target.
+  discovery, GPU token type checking, and GPU x86_64 ELF emission for the
+  current sample-program subset. General semantic HIR lowering and checked type
+  analysis still need a real GPU IR path instead of token-directed lowering.
+- Keep x86_64 as the primary backend target. WASM can remain useful as a compact
+  validation target, but native executable emission is the compiler direction.

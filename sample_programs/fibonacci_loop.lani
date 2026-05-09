@@ -1,0 +1,13 @@
+fn main() {
+    let a = 0;
+    let b = 1;
+    let i = 0;
+    while (i < 10) {
+        let next = a + b;
+        a = b;
+        b = next;
+        i += 1;
+    }
+    print(a);
+    return 0;
+}

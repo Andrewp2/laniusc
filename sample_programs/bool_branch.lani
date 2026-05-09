@@ -1,0 +1,9 @@
+fn main() {
+    let ok: bool = (3 < 4) && !(5 == 6);
+    if (ok || (1 > 2)) {
+        print(1);
+    } else {
+        print(0);
+    }
+    return 0;
+}

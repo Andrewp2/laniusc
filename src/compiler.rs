@@ -1,9 +1,8 @@
 use std::sync::OnceLock;
 
 use crate::{
-    codegen::{c, gpu_c},
+    codegen::{gpu_wasm, gpu_x86},
     gpu::device::{self, GpuDevice},
-    hir::{self, HirError, HirToken},
     lexer::gpu::driver::GpuLexer,
     parser::{gpu::driver::GpuParser, tables::PrecomputedParseTables},
     type_checker::gpu as gpu_type_checker,
@@ -11,7 +10,6 @@ use crate::{
 
 #[derive(Debug)]
 pub enum CompileError {
-    Hir(HirError),
     GpuFrontend(String),
     GpuSyntax(String),
     GpuTypeCheck(String),
@@ -21,7 +19,6 @@ pub enum CompileError {
 impl std::fmt::Display for CompileError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CompileError::Hir(err) => write!(f, "{err}"),
             CompileError::GpuFrontend(err) => write!(f, "GPU frontend error: {err}"),
             CompileError::GpuSyntax(err) => write!(f, "GPU syntax error: {err}"),
             CompileError::GpuTypeCheck(err) => write!(f, "GPU type check error: {err}"),
@@ -32,40 +29,14 @@ impl std::fmt::Display for CompileError {
 
 impl std::error::Error for CompileError {}
 
-impl From<HirError> for CompileError {
-    fn from(err: HirError) -> Self {
-        Self::Hir(err)
-    }
-}
-
-pub fn compile_source_to_c(src: &str) -> Result<String, CompileError> {
-    let hir = hir::parse_source(src)?;
-    Ok(c::emit_c(&hir))
-}
-
-pub async fn compile_source_to_c_with_gpu_frontend(src: &str) -> Result<String, CompileError> {
-    global_gpu_compiler()?
-        .compile_source_to_c_with_gpu_frontend(src)
-        .await
-}
-
-pub async fn compile_simple_source_to_c_with_gpu_codegen(
-    src: &str,
-) -> Result<String, CompileError> {
-    compile_source_to_c_with_gpu_codegen(src).await
-}
-
-pub async fn compile_source_to_c_with_gpu_codegen(src: &str) -> Result<String, CompileError> {
-    global_gpu_compiler()?.compile_source_to_c(src).await
-}
-
 pub struct GpuCompiler<'gpu> {
     gpu: &'gpu GpuDevice,
     lexer: GpuLexer,
     parser: GpuParser,
     parse_tables: PrecomputedParseTables,
     type_checker: gpu_type_checker::GpuTypeChecker,
-    code_generator: OnceLock<Result<gpu_c::GpuCCodeGenerator, String>>,
+    wasm_generator: OnceLock<Result<gpu_wasm::GpuWasmCodeGenerator, String>>,
+    x86_generator: OnceLock<Result<gpu_x86::GpuX86CodeGenerator, String>>,
 }
 
 impl GpuCompiler<'static> {
@@ -98,7 +69,8 @@ impl<'gpu> GpuCompiler<'gpu> {
             parser,
             parse_tables,
             type_checker,
-            code_generator: OnceLock::new(),
+            wasm_generator: OnceLock::new(),
+            x86_generator: OnceLock::new(),
         })
     }
 
@@ -106,22 +78,29 @@ impl<'gpu> GpuCompiler<'gpu> {
         self.gpu
     }
 
-    pub async fn compile_source_to_c(&self, src: &str) -> Result<String, CompileError> {
+    pub async fn compile_source_to_wasm(&self, src: &str) -> Result<Vec<u8>, CompileError> {
+        trace_wasm_compile("compile.start");
         self.lexer
             .with_recorded_resident_tokens(
                 src,
-                |device, queue, bufs, encoder| {
+                |device, queue, bufs, encoder, mut timer| {
+                    trace_wasm_compile("lex.recorded");
                     let (parser_check, type_check) = self
                         .parser
-                        .record_checked_resident_ll1_hir_artifacts(
+                        .record_checked_resident_syntax_hir_artifacts(
                             encoder,
                             bufs.n,
                             &bufs.tokens_out,
                             &bufs.token_count,
                             &self.parse_tables,
                             |parse_bufs, encoder| {
+                                trace_wasm_compile("parser.recorded");
+                                if let Some(timer) = timer.as_deref_mut() {
+                                    timer.stamp(encoder, "parser.direct_hir.done");
+                                }
                                 let hir_status = &parse_bufs.ll1_status;
-                                self.type_checker
+                                let recorded = self
+                                    .type_checker
                                     .record_resident_token_buffer_with_hir_on_gpu(
                                         device,
                                         queue,
@@ -136,63 +115,74 @@ impl<'gpu> GpuCompiler<'gpu> {
                                         &parse_bufs.hir_token_pos,
                                         &parse_bufs.hir_token_end,
                                         hir_status,
+                                        timer.as_deref_mut(),
                                     )
-                                    .map_err(|err| CompileError::GpuTypeCheck(err.to_string()))
+                                    .map_err(|err| CompileError::GpuTypeCheck(err.to_string()))?;
+                                trace_wasm_compile("typecheck.recorded");
+                                if let Some(timer) = timer.as_deref_mut() {
+                                    timer.stamp(encoder, "typecheck.done");
+                                }
+                                let wasm_check = self
+                                    .type_checker
+                                    .with_codegen_buffers(
+                                        |visible_decl,
+                                         visible_type,
+                                         call_fn_index,
+                                         call_return_type| {
+                                            self.wasm_generator()?
+                                                .record_wasm_from_gpu_token_buffer(
+                                                    device,
+                                                    queue,
+                                                    encoder,
+                                                    bufs.n,
+                                                    bufs.n,
+                                                    &bufs.tokens_out,
+                                                    &bufs.token_count,
+                                                    &bufs.in_bytes,
+                                                    parse_bufs.tree_capacity,
+                                                    &parse_bufs.hir_kind,
+                                                    &parse_bufs.hir_token_pos,
+                                                    &parse_bufs.hir_token_end,
+                                                    hir_status,
+                                                    visible_decl,
+                                                    visible_type,
+                                                    call_fn_index,
+                                                    call_return_type,
+                                                )
+                                                .map_err(|err| {
+                                                    CompileError::GpuCodegen(err.to_string())
+                                                })
+                                        },
+                                    )
+                                    .ok_or_else(|| {
+                                        CompileError::GpuCodegen(
+                                            "GPU type metadata buffers missing".into(),
+                                        )
+                                    })??;
+                                trace_wasm_compile("wasm.recorded");
+                                Ok::<_, CompileError>((recorded, wasm_check))
                             },
                         )
                         .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
-                    let type_check = type_check?;
-                    let codegen_check = self
-                        .type_checker
-                        .with_codegen_buffers(
-                            |visible_decl, visible_type, call_fn_index, call_return_type| {
-                                let parse_bufs = self.parser.with_current_resident_buffers(
-                                    bufs.n,
-                                    &self.parse_tables,
-                                    |parse_bufs| {
-                                        let code_generator = self.code_generator()?;
-                                        code_generator
-                                            .record_c_from_gpu_token_buffer_with_hir(
-                                                device,
-                                                queue,
-                                                encoder,
-                                                bufs.n,
-                                                bufs.n,
-                                                &bufs.tokens_out,
-                                                &bufs.token_count,
-                                                &bufs.in_bytes,
-                                                parse_bufs.tree_capacity,
-                                                &parse_bufs.hir_kind,
-                                                &parse_bufs.hir_token_pos,
-                                                &parse_bufs.hir_token_end,
-                                                &parse_bufs.ll1_status,
-                                                visible_decl,
-                                                visible_type,
-                                                call_fn_index,
-                                                call_return_type,
-                                            )
-                                            .map_err(|err| {
-                                                CompileError::GpuCodegen(err.to_string())
-                                            })
-                                    },
-                                );
-                                parse_bufs
-                            },
-                        )
-                        .ok_or_else(|| {
-                            CompileError::GpuCodegen("GPU visible declaration table missing".into())
-                        })??;
-                    Ok((parser_check, type_check, codegen_check))
+                    trace_wasm_compile("parser.typecheck.recorded");
+                    let (type_check, wasm_check) = type_check?;
+                    if let Some(timer) = timer.as_deref_mut() {
+                        timer.stamp(encoder, "wasm.codegen.done");
+                    }
+                    Ok((parser_check, type_check, wasm_check))
                 },
-                |device, _queue, _bufs, (parser_check, type_check, codegen_check)| {
+                |device, queue, _bufs, (parser_check, type_check, wasm_check)| {
+                    trace_wasm_compile("finish.parser.start");
                     self.parser
-                        .finish_recorded_resident_ll1_hir_check(&parser_check)
+                        .finish_recorded_resident_syntax_hir_check(&parser_check)
                         .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
+                    trace_wasm_compile("finish.typecheck.start");
                     self.type_checker
                         .finish_recorded_check(device, &type_check)
                         .map_err(|err| CompileError::GpuTypeCheck(err.to_string()))?;
-                    self.code_generator()?
-                        .finish_recorded_c_codegen(device, &codegen_check)
+                    trace_wasm_compile("finish.wasm.start");
+                    self.wasm_generator()?
+                        .finish_recorded_wasm(device, queue, &wasm_check)
                         .map_err(|err| CompileError::GpuCodegen(err.to_string()))
                 },
             )
@@ -200,25 +190,143 @@ impl<'gpu> GpuCompiler<'gpu> {
             .map_err(|err| CompileError::GpuFrontend(format!("lex source: {err}")))?
     }
 
-    pub async fn compile_source_to_c_with_gpu_frontend(
-        &self,
-        src: &str,
-    ) -> Result<String, CompileError> {
-        compile_source_to_c_with_gpu_frontend_using(src, &self.lexer).await
-    }
-
-    fn code_generator(&self) -> Result<&gpu_c::GpuCCodeGenerator, CompileError> {
-        self.code_generator
+    fn wasm_generator(&self) -> Result<&gpu_wasm::GpuWasmCodeGenerator, CompileError> {
+        trace_wasm_compile("wasm.generator");
+        self.wasm_generator
             .get_or_init(|| {
-                let generator = gpu_c::GpuCCodeGenerator::new_with_device(self.gpu)
+                let generator = gpu_wasm::GpuWasmCodeGenerator::new_with_device(self.gpu)
                     .map_err(|err| err.to_string())?;
                 self.gpu.persist_pipeline_cache();
                 Ok(generator)
             })
             .as_ref()
             .map_err(|err| {
-                CompileError::GpuCodegen(format!("initialize GPU C code generator: {err}"))
+                CompileError::GpuCodegen(format!("initialize GPU WASM code generator: {err}"))
             })
+    }
+
+    pub async fn compile_source_to_x86_64(&self, src: &str) -> Result<Vec<u8>, CompileError> {
+        trace_wasm_compile("compile.x86.start");
+        self.lexer
+            .with_recorded_resident_tokens(
+                src,
+                |device, queue, bufs, encoder, mut timer| {
+                    let (parser_check, type_check) = self
+                        .parser
+                        .record_checked_resident_syntax_hir_artifacts(
+                            encoder,
+                            bufs.n,
+                            &bufs.tokens_out,
+                            &bufs.token_count,
+                            &self.parse_tables,
+                            |parse_bufs, encoder| {
+                                if let Some(timer) = timer.as_deref_mut() {
+                                    timer.stamp(encoder, "parser.direct_hir.done");
+                                }
+                                let hir_status = &parse_bufs.ll1_status;
+                                let recorded = self
+                                    .type_checker
+                                    .record_resident_token_buffer_with_hir_on_gpu(
+                                        device,
+                                        queue,
+                                        encoder,
+                                        bufs.n,
+                                        bufs.n,
+                                        &bufs.tokens_out,
+                                        &bufs.token_count,
+                                        &bufs.in_bytes,
+                                        parse_bufs.tree_capacity,
+                                        &parse_bufs.hir_kind,
+                                        &parse_bufs.hir_token_pos,
+                                        &parse_bufs.hir_token_end,
+                                        hir_status,
+                                        timer.as_deref_mut(),
+                                    )
+                                    .map_err(|err| CompileError::GpuTypeCheck(err.to_string()))?;
+                                if let Some(timer) = timer.as_deref_mut() {
+                                    timer.stamp(encoder, "typecheck.done");
+                                }
+                                let x86_check = self
+                                    .type_checker
+                                    .with_codegen_buffers(
+                                        |visible_decl,
+                                         visible_type,
+                                         call_fn_index,
+                                         call_return_type| {
+                                            self.x86_generator()?
+                                                .record_x86_from_gpu_token_buffer(
+                                                    device,
+                                                    queue,
+                                                    encoder,
+                                                    bufs.n,
+                                                    bufs.n,
+                                                    &bufs.tokens_out,
+                                                    &bufs.token_count,
+                                                    &bufs.in_bytes,
+                                                    parse_bufs.tree_capacity,
+                                                    &parse_bufs.hir_kind,
+                                                    &parse_bufs.hir_token_pos,
+                                                    &parse_bufs.hir_token_end,
+                                                    hir_status,
+                                                    visible_decl,
+                                                    visible_type,
+                                                    call_fn_index,
+                                                    call_return_type,
+                                                )
+                                                .map_err(|err| {
+                                                    CompileError::GpuCodegen(err.to_string())
+                                                })
+                                        },
+                                    )
+                                    .ok_or_else(|| {
+                                        CompileError::GpuCodegen(
+                                            "GPU type metadata buffers missing".into(),
+                                        )
+                                    })??;
+                                Ok::<_, CompileError>((recorded, x86_check))
+                            },
+                        )
+                        .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
+                    let (type_check, x86_check) = type_check?;
+                    if let Some(timer) = timer.as_deref_mut() {
+                        timer.stamp(encoder, "x86.codegen.done");
+                    }
+                    Ok((parser_check, type_check, x86_check))
+                },
+                |device, queue, _bufs, (parser_check, type_check, x86_check)| {
+                    self.parser
+                        .finish_recorded_resident_syntax_hir_check(&parser_check)
+                        .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
+                    self.type_checker
+                        .finish_recorded_check(device, &type_check)
+                        .map_err(|err| CompileError::GpuTypeCheck(err.to_string()))?;
+                    self.x86_generator()?
+                        .finish_recorded_x86(device, queue, &x86_check)
+                        .map_err(|err| CompileError::GpuCodegen(err.to_string()))
+                },
+            )
+            .await
+            .map_err(|err| CompileError::GpuFrontend(format!("lex source: {err}")))?
+    }
+
+    fn x86_generator(&self) -> Result<&gpu_x86::GpuX86CodeGenerator, CompileError> {
+        self.x86_generator
+            .get_or_init(|| {
+                let generator = gpu_x86::GpuX86CodeGenerator::new_with_device(self.gpu)
+                    .map_err(|err| err.to_string())?;
+                self.gpu.persist_pipeline_cache();
+                Ok(generator)
+            })
+            .as_ref()
+            .map_err(|err| {
+                CompileError::GpuCodegen(format!("initialize GPU x86 code generator: {err}"))
+            })
+    }
+}
+
+fn trace_wasm_compile(stage: &str) {
+    if std::env::var("LANIUS_WASM_TRACE").ok().as_deref() == Some("1") {
+        eprintln!("[laniusc][wasm] {stage}");
     }
 }
 
@@ -230,38 +338,24 @@ fn global_gpu_compiler() -> Result<&'static GpuCompiler<'static>, CompileError> 
         .map_err(|err| CompileError::GpuFrontend(format!("initialize GPU compiler: {err}")))
 }
 
-pub async fn compile_source_to_c_with_gpu_codegen_using(
+pub async fn compile_source_to_wasm_with_gpu_codegen(src: &str) -> Result<Vec<u8>, CompileError> {
+    global_gpu_compiler()?.compile_source_to_wasm(src).await
+}
+
+pub async fn compile_source_to_wasm_with_gpu_codegen_using(
     src: &str,
     compiler: &GpuCompiler<'_>,
-) -> Result<String, CompileError> {
-    compiler.compile_source_to_c(src).await
+) -> Result<Vec<u8>, CompileError> {
+    compiler.compile_source_to_wasm(src).await
 }
 
-pub async fn compile_source_to_c_with_gpu_frontend_using(
-    src: &str,
-    lexer: &GpuLexer,
-) -> Result<String, CompileError> {
-    let tokens = run_gpu_frontend(src, lexer).await?;
-
-    let hir_tokens = tokens
-        .iter()
-        .map(|token| HirToken {
-            kind: token.kind,
-            start: token.start,
-            len: token.len,
-        })
-        .collect::<Vec<_>>();
-    let hir = hir::parse_tokens(src, &hir_tokens)?;
-    Ok(c::emit_c(&hir))
+pub async fn compile_source_to_x86_64_with_gpu_codegen(src: &str) -> Result<Vec<u8>, CompileError> {
+    global_gpu_compiler()?.compile_source_to_x86_64(src).await
 }
 
-async fn run_gpu_frontend(
+pub async fn compile_source_to_x86_64_with_gpu_codegen_using(
     src: &str,
-    lexer: &GpuLexer,
-) -> Result<Vec<crate::lexer::gpu::types::Token>, CompileError> {
-    let tokens = lexer
-        .lex(src)
-        .await
-        .map_err(|err| CompileError::GpuFrontend(format!("lex source: {err}")))?;
-    Ok(tokens)
+    compiler: &GpuCompiler<'_>,
+) -> Result<Vec<u8>, CompileError> {
+    compiler.compile_source_to_x86_64(src).await
 }

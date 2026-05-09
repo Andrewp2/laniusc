@@ -15,6 +15,7 @@ fn main() -> Result<()> {
     println!("cargo:rerun-if-env-changed=LANIUS_SHADER_DEBUG");
     println!("cargo:rerun-if-env-changed=LANIUS_SHADER_OPT_LEVEL");
     println!("cargo:rerun-if-env-changed=SLANGC_EXTRA_FLAGS");
+    println!("cargo:rerun-if-env-changed=GLSLANG_VALIDATOR");
     track_dir_recursively("shaders");
 
     let slangc = find_slangc()
@@ -47,6 +48,13 @@ fn main() -> Result<()> {
         let extra = env::var("SLANGC_EXTRA_FLAGS").unwrap_or_default();
         let extra_args: Vec<&str> = extra.split_whitespace().filter(|s| !s.is_empty()).collect();
 
+        if file_stem == "wasm_body" || file_stem == "wasm_functions" {
+            compile_entrypoint_via_glslang(&slangc, &ep, &spv_out, &refl_out, &extra_args)?;
+            continue;
+        }
+
+        let opt_level = shader_opt_level();
+
         let mut cmd = Command::new(&slangc);
         cmd.arg("-target")
             .arg("spirv")
@@ -56,7 +64,7 @@ fn main() -> Result<()> {
             .arg("-reflection-json")
             .arg(&refl_out)
             .arg("-emit-spirv-directly")
-            .arg(format!("-O{}", shader_opt_level()))
+            .arg(format!("-O{opt_level}"))
             // Let `import utils;` and other modules resolve from source by search path:
             .arg("-I")
             .arg("shaders")
@@ -147,6 +155,103 @@ fn env_truthy(name: &str) -> bool {
 
 fn shader_opt_level() -> String {
     env::var("LANIUS_SHADER_OPT_LEVEL").unwrap_or_else(|_| "1".into())
+}
+
+fn compile_entrypoint_via_glslang(
+    slangc: &Path,
+    ep: &Path,
+    spv_out: &Path,
+    refl_out: &Path,
+    extra_args: &[&str],
+) -> Result<()> {
+    let glslang = find_glslang_validator().context(
+        "could not locate `glslangValidator` for wasm_body shader. Set $GLSLANG_VALIDATOR or add it to PATH.",
+    )?;
+    let glsl_out = spv_out.with_extension("comp");
+
+    let mut slang = Command::new(slangc);
+    slang
+        .arg("-target")
+        .arg("glsl")
+        .arg("-profile")
+        .arg("glsl_450")
+        .arg("-entry")
+        .arg("main")
+        .arg("-stage")
+        .arg("compute")
+        .arg("-reflection-json")
+        .arg(refl_out)
+        .arg(format!("-O{}", shader_opt_level()))
+        .arg("-I")
+        .arg("shaders")
+        .arg("-I")
+        .arg("shaders/lexer")
+        .arg("-I")
+        .arg("shaders/parser")
+        .arg("-I")
+        .arg("shaders/type_checker")
+        .arg("-o")
+        .arg(&glsl_out);
+
+    if env_truthy("LANIUS_SHADER_DEBUG") {
+        slang.arg("-g3");
+    }
+    for a in extra_args {
+        slang.arg(a);
+    }
+    slang.arg(ep);
+    run_checked_command(slang, "slangc", ep)?;
+
+    let mut glslang_cmd = Command::new(&glslang);
+    glslang_cmd
+        .arg("-V")
+        .arg("--target-env")
+        .arg("vulkan1.2")
+        .arg("-S")
+        .arg("comp")
+        .arg("-e")
+        .arg("main")
+        .arg(&glsl_out)
+        .arg("-o")
+        .arg(spv_out);
+    run_checked_command(glslang_cmd, "glslangValidator", ep)
+}
+
+fn run_checked_command(mut cmd: Command, tool: &str, ep: &Path) -> Result<()> {
+    let out = cmd
+        .output()
+        .with_context(|| format!("failed running {tool} for {ep:?}"))?;
+    if !out.stdout.is_empty() {
+        for line in String::from_utf8_lossy(&out.stdout).lines() {
+            println!("cargo:warning={tool} STDOUT: {line}");
+        }
+    }
+    if !out.stderr.is_empty() {
+        for line in String::from_utf8_lossy(&out.stderr).lines() {
+            eprintln!("{tool}: {line}");
+        }
+    }
+    if !out.status.success() {
+        return Err(anyhow!(
+            "{tool} failed on {:?} (exit: {:?}). See diagnostics above.",
+            ep,
+            out.status.code()
+        ));
+    }
+    Ok(())
+}
+
+fn find_glslang_validator() -> Result<PathBuf> {
+    if let Ok(p) = env::var("GLSLANG_VALIDATOR") {
+        let pb = PathBuf::from(p);
+        if pb.is_file() {
+            return Ok(pb);
+        }
+    }
+    if let Ok(pb) = which::which("glslangValidator") {
+        return Ok(pb);
+    }
+    Err(anyhow!("`glslangValidator` not found"))
 }
 
 fn find_slangc() -> Result<PathBuf> {

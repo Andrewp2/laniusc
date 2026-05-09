@@ -1,2 +1,2 @@
-pub mod c;
-pub mod gpu_c;
+pub mod gpu_wasm;
+pub mod gpu_x86;

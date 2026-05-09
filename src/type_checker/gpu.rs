@@ -393,6 +393,7 @@ impl GpuTypeChecker {
             hir_token_pos_buf,
             hir_token_end_buf,
             hir_status_buf,
+            None,
         )?;
         queue.submit(Some(encoder.finish()));
         self.finish_recorded_check(device, &recorded)
@@ -417,6 +418,7 @@ impl GpuTypeChecker {
         hir_token_pos_buf: &wgpu::Buffer,
         hir_token_end_buf: &wgpu::Buffer,
         hir_status_buf: &wgpu::Buffer,
+        mut timer: Option<&mut crate::gpu::timer::GpuTimer>,
     ) -> Result<RecordedTypeCheck, GpuTypeCheckError> {
         let params = TypeCheckParams {
             n_tokens: token_capacity,
@@ -472,6 +474,9 @@ impl GpuTypeChecker {
                 .expect("resident type checker bind groups must exist");
 
             record_loop_depth_passes_with_passes(&self.passes, encoder, bind_groups)?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.loop_depth.done");
+            }
             let n_work = token_capacity.max(hir_node_capacity).max(512);
             record_call_bind_groups_with_passes(
                 &self.passes,
@@ -480,6 +485,9 @@ impl GpuTypeChecker {
                 n_work,
                 &bind_groups.calls,
             )?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.calls.done");
+            }
             record_fn_context_bind_groups_with_passes(
                 &self.passes,
                 encoder,
@@ -488,6 +496,9 @@ impl GpuTypeChecker {
                 bind_groups.fn_n_blocks,
                 &bind_groups.fn_context_bind_groups,
             )?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.fn_context.done");
+            }
             record_visible_bind_groups_with_passes(
                 &self.passes,
                 encoder,
@@ -495,6 +506,9 @@ impl GpuTypeChecker {
                 hir_node_capacity,
                 &bind_groups.visible_bind_groups,
             )?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.visible.done");
+            }
 
             record_compute(
                 encoder,
@@ -503,6 +517,9 @@ impl GpuTypeChecker {
                 "type_check.resident.scope.pass",
                 n_work,
             )?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.scope.done");
+            }
             record_compute(
                 encoder,
                 pass,
@@ -510,6 +527,9 @@ impl GpuTypeChecker {
                 "type_check.resident.tokens.pass",
                 n_work,
             )?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.tokens.done");
+            }
             record_compute(
                 encoder,
                 control_pass,
@@ -517,6 +537,9 @@ impl GpuTypeChecker {
                 "type_check.resident.control.pass",
                 n_work,
             )?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.control.done");
+            }
         }
         encoder.copy_buffer_to_buffer(&self.status_buf, 0, &self.status_readback, 0, 16);
         Ok(RecordedTypeCheck)

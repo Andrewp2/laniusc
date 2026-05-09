@@ -60,6 +60,16 @@ fn bool_from_env(name: &str, default_true: bool) -> bool {
         .unwrap_or(default_true)
 }
 
+fn stamp_timer(
+    timer_ref: &mut Option<&mut GpuTimer>,
+    encoder: &mut wgpu::CommandEncoder,
+    label: impl Into<String>,
+) {
+    if let Some(timer) = timer_ref.as_deref_mut() {
+        timer.stamp(encoder, label);
+    }
+}
+
 /// Mirrors the lexer: allow disabling readback with `LANIUS_READBACK=0`.
 fn readback_enabled() -> bool {
     bool_from_env("LANIUS_READBACK", true)
@@ -263,7 +273,8 @@ impl GpuParser {
             token_count_buf,
             &bufs,
         )?;
-        self.record_ll1_resident_passes(&mut encoder, &bufs, true, true)?;
+        let mut timer_ref: Option<&mut GpuTimer> = None;
+        self.record_ll1_resident_passes(&mut encoder, &bufs, true, true, &mut timer_ref)?;
 
         let status_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rb.parser.resident_ll1.status"),
@@ -452,7 +463,12 @@ impl GpuParser {
         token_buf: &wgpu::Buffer,
         token_count_buf: &wgpu::Buffer,
         tables: &PrecomputedParseTables,
-        consume: impl FnOnce(&ParserBuffers, &mut wgpu::CommandEncoder) -> std::result::Result<R, E>,
+        timer_ref: &mut Option<&mut GpuTimer>,
+        consume: impl FnOnce(
+            &ParserBuffers,
+            &mut wgpu::CommandEncoder,
+            &mut Option<&mut GpuTimer>,
+        ) -> std::result::Result<R, E>,
     ) -> Result<(RecordedResidentLl1HirCheck, std::result::Result<R, E>)> {
         let mut resident_guard = self
             .resident_buffers
@@ -461,7 +477,10 @@ impl GpuParser {
         let bufs = self.resident_buffers_for(&mut resident_guard, token_capacity, tables);
 
         self.record_tokens_to_kinds(encoder, token_capacity, token_buf, token_count_buf, bufs)?;
-        self.record_ll1_resident_passes(encoder, bufs, true, true)?;
+        self.record_ll1_resident_passes(encoder, bufs, true, true, timer_ref)?;
+        if let Some(timer) = timer_ref.as_deref_mut() {
+            timer.stamp(encoder, "parser.done");
+        }
 
         let status_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rb.parser.recorded_ll1_hir.status"),
@@ -471,7 +490,7 @@ impl GpuParser {
         });
         encoder.copy_buffer_to_buffer(&bufs.ll1_status, 0, &status_readback, 0, 24);
 
-        let consumed = consume(bufs, encoder);
+        let consumed = consume(bufs, encoder, timer_ref);
         Ok((RecordedResidentLl1HirCheck { status_readback }, consumed))
     }
 
@@ -615,7 +634,8 @@ impl GpuParser {
             token_count_buf,
             &bufs,
         )?;
-        self.record_ll1_resident_passes(&mut encoder, &bufs, true, true)?;
+        let mut timer_ref: Option<&mut GpuTimer> = None;
+        self.record_ll1_resident_passes(&mut encoder, &bufs, true, true, &mut timer_ref)?;
 
         let status_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rb.parser.recorded_ll1_hir.status"),
@@ -713,7 +733,8 @@ impl GpuParser {
             token_count_buf,
             &bufs,
         )?;
-        self.record_ll1_resident_passes(&mut encoder, &bufs, true, true)?;
+        let mut timer_ref: Option<&mut GpuTimer> = None;
+        self.record_ll1_resident_passes(&mut encoder, &bufs, true, true, &mut timer_ref)?;
 
         let status_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rb.parser.resident_tree.status"),
@@ -1173,15 +1194,16 @@ impl GpuParser {
         bufs: &ParserBuffers,
         include_tree: bool,
         include_hir_spans: bool,
+        timer_ref: &mut Option<&mut GpuTimer>,
     ) -> Result<()> {
-        let mut timer_ref: Option<&mut GpuTimer> = None;
+        let mut no_timer: Option<&mut GpuTimer> = None;
         let mut dbg_ref: Option<&mut DebugOutput> = None;
         let mut cache_guard = self.bg_cache.lock().expect("parser.bg_cache poisoned");
         let mut ctx = PassContext {
             device: &self.device,
             encoder,
             buffers: bufs,
-            maybe_timer: &mut timer_ref,
+            maybe_timer: &mut no_timer,
             maybe_dbg: &mut dbg_ref,
             bg_cache: Some(&mut *cache_guard),
         };
@@ -1191,19 +1213,23 @@ impl GpuParser {
             &mut ctx,
             crate::gpu::passes_core::InputElements::Elements1D(n_ll1_blocks.saturating_mul(256)),
         )?;
+        stamp_timer(timer_ref, ctx.encoder, "parser.ll1_blocks_02");
         self.passes.ll1_blocks_03.record_pass(
             &mut ctx,
             crate::gpu::passes_core::InputElements::Elements1D(n_ll1_blocks.saturating_mul(256)),
         )?;
+        stamp_timer(timer_ref, ctx.encoder, "parser.ll1_blocks_03");
         self.passes
             .ll1_blocks_04_scan
             .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+        stamp_timer(timer_ref, ctx.encoder, "parser.ll1_blocks_04_scan");
         self.passes.ll1_blocks_04.record_pass(
             &mut ctx,
             crate::gpu::passes_core::InputElements::Elements1D(
                 n_ll1_blocks.max(2).saturating_mul(256),
             ),
         )?;
+        stamp_timer(timer_ref, ctx.encoder, "parser.ll1_blocks_04");
         if include_tree {
             self.passes.tree_prefix_01.record_pass(
                 &mut ctx,
@@ -1211,35 +1237,43 @@ impl GpuParser {
                     bufs.tree_n_node_blocks.saturating_mul(256),
                 ),
             )?;
+            stamp_timer(timer_ref, ctx.encoder, "parser.tree_prefix_01");
             self.passes
                 .tree_prefix_02
                 .record_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+            stamp_timer(timer_ref, ctx.encoder, "parser.tree_prefix_02");
             self.passes.tree_prefix_03.record_pass(
                 &mut ctx,
                 crate::gpu::passes_core::InputElements::Elements1D(
                     bufs.tree_capacity.saturating_add(1),
                 ),
             )?;
+            stamp_timer(timer_ref, ctx.encoder, "parser.tree_prefix_03");
             self.passes
                 .tree_prefix_04
                 .record_build(ctx.device, ctx.encoder, ctx.buffers)?;
+            stamp_timer(timer_ref, ctx.encoder, "parser.tree_prefix_04");
             self.passes.tree_parent.record_pass(
                 &mut ctx,
                 crate::gpu::passes_core::InputElements::Elements1D(bufs.tree_capacity),
             )?;
+            stamp_timer(timer_ref, ctx.encoder, "parser.tree_parent");
             self.passes.tree_spans.record_pass(
                 &mut ctx,
                 crate::gpu::passes_core::InputElements::Elements1D(bufs.tree_capacity),
             )?;
+            stamp_timer(timer_ref, ctx.encoder, "parser.tree_spans");
             self.passes.hir_nodes.record_pass(
                 &mut ctx,
                 crate::gpu::passes_core::InputElements::Elements1D(bufs.tree_capacity),
             )?;
+            stamp_timer(timer_ref, ctx.encoder, "parser.hir_nodes");
             if include_hir_spans {
                 self.passes.hir_spans.record_pass(
                     &mut ctx,
                     crate::gpu::passes_core::InputElements::Elements1D(bufs.tree_capacity),
                 )?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_spans");
             }
         }
         Ok(())

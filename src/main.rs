@@ -1,9 +1,8 @@
-use std::{env, fs, path::PathBuf};
+use std::{env, fs, io::Write, path::PathBuf};
 
 use laniusc::compiler::{
-    compile_source_to_c,
-    compile_source_to_c_with_gpu_codegen,
-    compile_source_to_c_with_gpu_frontend,
+    compile_source_to_wasm_with_gpu_codegen,
+    compile_source_to_x86_64_with_gpu_codegen,
 };
 
 fn main() {
@@ -16,9 +15,7 @@ fn main() {
 fn run() -> Result<(), String> {
     let mut input: Option<PathBuf> = None;
     let mut output: Option<PathBuf> = None;
-    let mut emit = "c".to_string();
-    let mut gpu_frontend = false;
-    let mut gpu_codegen = true;
+    let mut emit = "x86_64".to_string();
 
     let mut args = env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -32,17 +29,8 @@ fn run() -> Result<(), String> {
                     .next()
                     .ok_or_else(|| "--emit requires a target".to_string())?;
             }
-            "--gpu-frontend" => {
-                gpu_frontend = true;
-                gpu_codegen = false;
-            }
             "--gpu-codegen" => {
-                gpu_codegen = true;
-                gpu_frontend = true;
-            }
-            "--cpu" => {
-                gpu_frontend = false;
-                gpu_codegen = false;
+                // Kept as a compatibility no-op; WASM emission is GPU-only.
             }
             "-o" | "--out" => {
                 output = Some(PathBuf::from(
@@ -64,41 +52,49 @@ fn run() -> Result<(), String> {
         }
     }
 
-    if emit != "c" {
+    if emit != "wasm" && emit != "x86_64" && emit != "native" {
         return Err(format!(
-            "unsupported emit target {emit:?}; supported target: c"
+            "unsupported emit target {emit:?}; supported targets: wasm, x86_64"
         ));
     }
 
     let src = if let Some(input) = &input {
         fs::read_to_string(input).map_err(|err| format!("read {}: {err}", input.display()))?
     } else {
-        "fn main() { let x = 1 + 2; return x; }\n".to_string()
+        "fn main() { return 7; }\n".to_string()
     };
 
-    let emitted = if gpu_codegen {
-        pollster::block_on(compile_source_to_c_with_gpu_codegen(&src))
-    } else if gpu_frontend {
-        pollster::block_on(compile_source_to_c_with_gpu_frontend(&src))
+    let emitted = if emit == "wasm" {
+        pollster::block_on(compile_source_to_wasm_with_gpu_codegen(&src))
+            .map_err(|err| err.to_string())?
     } else {
-        compile_source_to_c(&src)
-    }
-    .map_err(|err| err.to_string())?;
+        pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&src))
+            .map_err(|err| err.to_string())?
+    };
     if let Some(output) = output {
         fs::write(&output, emitted).map_err(|err| format!("write {}: {err}", output.display()))?;
+        #[cfg(unix)]
+        if emit != "wasm" {
+            use std::os::unix::fs::PermissionsExt;
+            let mut permissions = fs::metadata(&output)
+                .map_err(|err| format!("stat {}: {err}", output.display()))?
+                .permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&output, permissions)
+                .map_err(|err| format!("chmod {}: {err}", output.display()))?;
+        }
     } else {
-        print!("{emitted}");
+        std::io::stdout()
+            .write_all(&emitted)
+            .map_err(|err| format!("write stdout: {err}"))?;
     }
     Ok(())
 }
 
 fn print_help() {
     eprintln!(
-        "Usage: laniusc [--emit c] [--gpu-frontend|--gpu-codegen] [-o output.c] <input.lani>\n\
-         Emits C code for the current Lanius frontend subset. Without an input\n\
-         file, compiles a tiny built-in sample to stdout. By default this uses\n\
-         GPU lexing, GPU parsing, GPU type checking, and GPU C emission. Use\n\
-         --cpu for the legacy CPU path or --gpu-frontend for GPU lexing plus\n\
-         CPU HIR/code emission."
+        "Usage: laniusc [--emit x86_64|wasm] [--gpu-codegen] [-o output] <input.lani>\n\
+         Emits x86_64 ELF or WASM using GPU lexing, GPU parsing, GPU type checking, and GPU emission.\n\
+         Without an input file, compiles a tiny built-in sample to stdout."
     );
 }

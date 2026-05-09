@@ -1,0 +1,9 @@
+fn main() {
+    let x: i32 = 5;
+    {
+        let x: i32 = 12;
+        print(x);
+    }
+    print(x);
+    return 0;
+}

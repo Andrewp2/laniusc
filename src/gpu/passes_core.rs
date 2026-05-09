@@ -106,14 +106,24 @@ pub fn pipeline_from_spirv_and_bgls(
     spirv: &'static [u8],
     bgls: &[&wgpu::BindGroupLayout],
 ) -> wgpu::ComputePipeline {
-    // SAFETY: YOLO
-    let module = unsafe {
-        device.create_shader_module_passthrough(wgpu::ShaderModuleDescriptorPassthrough::SpirV(
-            wgpu::ShaderModuleDescriptorSpirV {
-                label: Some(label),
-                source: wgpu::util::make_spirv_raw(spirv),
-            },
-        ))
+    let module = if label == "codegen_wasm_body"
+        || label == "codegen_wasm_functions"
+        || label == "codegen_x86_elf"
+    {
+        device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some(label),
+            source: wgpu::util::make_spirv(spirv),
+        })
+    } else {
+        // SAFETY: YOLO
+        unsafe {
+            device.create_shader_module_passthrough(wgpu::ShaderModuleDescriptorPassthrough::SpirV(
+                wgpu::ShaderModuleDescriptorSpirV {
+                    label: Some(label),
+                    source: wgpu::util::make_spirv_raw(spirv),
+                },
+            ))
+        }
     };
     // let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
     //     label: Some(label),

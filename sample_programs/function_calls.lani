@@ -1,0 +1,12 @@
+fn add(x: i32, y: i32) -> i32 {
+    return x + y;
+}
+
+fn double(x: i32) -> i32 {
+    return add(x, x);
+}
+
+fn main() {
+    print(double(21));
+    return 0;
+}

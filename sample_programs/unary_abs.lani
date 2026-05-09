@@ -1,0 +1,13 @@
+fn abs_i32(x: i32) -> i32 {
+    if (x < 0) {
+        return -x;
+    } else {
+        return x;
+    }
+}
+
+fn main() {
+    print(abs_i32(-17));
+    print(abs_i32(23));
+    return 0;
+}

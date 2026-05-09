@@ -585,6 +585,7 @@ impl GpuLexer {
             &wgpu::Queue,
             &buffers::GpuBuffers,
             &mut wgpu::CommandEncoder,
+            Option<&mut GpuTimer>,
         ) -> std::result::Result<S, E>,
         consume_after_submit: impl FnOnce(
             &wgpu::Device,
@@ -626,9 +627,21 @@ impl GpuLexer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("lex-resident-recorded-enc"),
             });
+        let timers_on = self.timers_supported
+            && std::env::var("LANIUS_GPU_COMPILE_TIMING")
+                .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
+                .unwrap_or(false);
+        let mut maybe_timer = if timers_on {
+            Some(GpuTimer::new(&self.device, &self.queue, 512))
+        } else {
+            None
+        };
+        if let Some(timer) = maybe_timer.as_mut() {
+            timer.stamp(&mut enc, "compile.start");
+        }
 
         {
-            let mut timer_ref: Option<&mut GpuTimer> = None;
+            let mut timer_ref = maybe_timer.as_mut();
             let mut dbg_ref = maybe_dbg;
             let mut cache_guard = self
                 .bg_cache
@@ -644,11 +657,24 @@ impl GpuLexer {
             };
             record_all_passes(bufs.n, bufs.nb_dfa, bufs.nb_sum, ctx, &self.passes)?;
         }
+        if let Some(timer) = maybe_timer.as_mut() {
+            timer.stamp(&mut enc, "lexer.done");
+        }
 
-        let recorded_more = match record_more(&self.device, &self.queue, bufs, &mut enc) {
+        let recorded_more = match record_more(
+            &self.device,
+            &self.queue,
+            bufs,
+            &mut enc,
+            maybe_timer.as_mut(),
+        ) {
             Ok(recorded) => recorded,
             Err(err) => return Ok(Err(err)),
         };
+        if let Some(timer) = maybe_timer.as_mut() {
+            timer.stamp(&mut enc, "compile.recorded");
+            timer.resolve(&mut enc);
+        }
 
         if use_scopes {
             self.device.push_error_scope(wgpu::ErrorFilter::Validation);
@@ -673,6 +699,15 @@ impl GpuLexer {
         }
 
         let result = consume_after_submit(&self.device, &self.queue, bufs, recorded_more);
+        if let Some(timer) = maybe_timer
+            .as_ref()
+            .and_then(|timer| timer.try_read(&self.device))
+        {
+            print_timer_trace(
+                &timer,
+                maybe_timer.as_ref().expect("timer exists").period_ns(),
+            );
+        }
 
         #[cfg(feature = "graphics_debugger")]
         unsafe {
@@ -804,6 +839,22 @@ impl GpuLexer {
         bufs.n = n;
         bufs.nb_dfa = nb_dfa;
         bufs.nb_sum = nb_sum;
+    }
+}
+
+fn print_timer_trace(stamps: &[(String, u64)], period_ns: f32) {
+    if stamps.len() < 2 {
+        return;
+    }
+    let mut last = stamps[0].1;
+    let mut total = 0.0f64;
+    for (label, value) in stamps.iter().skip(1) {
+        let dt_ms = value.saturating_sub(last) as f64 * period_ns as f64 / 1_000_000.0;
+        total += dt_ms;
+        if dt_ms >= MINIMUM_TIME_TO_NOT_ELIDE_MS {
+            println!("[gpu_compile_timer] {label}: {dt_ms:.3}ms (total {total:.3}ms)");
+        }
+        last = *value;
     }
 }
 
