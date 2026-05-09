@@ -815,11 +815,16 @@ fn default_projection_witnesses() -> Vec<Vec<TokenKind>> {
         vec![LBrace, Let, Ident, Assign, Int, Semicolon, RBrace],
         vec![Fn, Ident, LParen, RParen, LBrace, RBrace],
         vec![Enum, Ident, LBrace, RBrace],
+        vec![Enum, Ident, Lt, Ident, Gt, LBrace, RBrace],
         vec![Enum, Ident, LBrace, Ident, RBrace],
         vec![Enum, Ident, LBrace, Ident, Comma, Ident, RBrace],
         vec![
             Enum, Ident, LBrace, Ident, LParen, Ident, RParen, Comma, Ident, LParen, LBracket,
             Ident, Semicolon, Int, RBracket, RParen, RBrace,
+        ],
+        vec![
+            Enum, Ident, Lt, Ident, Comma, Ident, Gt, LBrace, Ident, LParen, Ident, RParen, Comma,
+            Ident, LParen, Ident, RParen, RBrace,
         ],
         vec![
             Fn, Ident, LParen, RParen, Arrow, Ident, LBrace, Return, Int, Semicolon, RBrace,
@@ -970,7 +975,12 @@ fn default_projection_witnesses() -> Vec<Vec<TokenKind>> {
         witnesses.push(while_stmt);
     }
 
-    let type_exprs = vec![vec![Ident], vec![LBracket, Ident, Semicolon, Int, RBracket]];
+    let type_exprs = vec![
+        vec![Ident],
+        vec![Ident, Lt, Ident, Gt],
+        vec![Ident, Lt, Ident, Comma, Ident, Gt],
+        vec![LBracket, Ident, Semicolon, Int, RBracket],
+    ];
     for ty in &type_exprs {
         let mut param = vec![Fn, Ident, LParen, Ident, Colon];
         param.extend_from_slice(ty);

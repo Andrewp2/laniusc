@@ -26,7 +26,7 @@ param          [param]       -> 'Ident' 'Colon' type_expr;
 param_tail     [params_more] -> 'Comma' param param_tail;
 param_tail     [params_end]  -> ;
 
-type_expr      [type_ident]  -> 'Ident';
+type_expr      [type_ident]  -> 'Ident' type_args_opt;
 type_expr      [type_array]  -> 'LBracket' type_expr 'Semicolon' 'Int' 'RBracket';
 
 # ----- Blocks and statements -----
@@ -168,7 +168,7 @@ primary      [false]         -> 'False';
 item         [item_const]    -> const_item;
 const_item   [const]         -> 'Const' 'Ident' 'Colon' type_expr 'Assign' expr 'Semicolon';
 item         [item_enum]     -> enum_item;
-enum_item    [enum]          -> 'Enum' 'Ident' 'LBrace' enum_variant_list_opt 'RBrace';
+enum_item    [enum]          -> 'Enum' 'Ident' enum_type_params_opt 'LBrace' enum_variant_list_opt 'RBrace';
 enum_variant_list_opt [enum_variants_none] -> ;
 enum_variant_list_opt [enum_variants_some] -> enum_variant enum_variant_tail;
 enum_variant [enum_variant] -> 'Ident' enum_variant_payload_opt;
@@ -180,3 +180,12 @@ enum_variant_fields_tail [enum_variant_fields_more] -> 'Comma' type_expr enum_va
 enum_variant_fields_tail [enum_variant_fields_end] -> ;
 enum_variant_tail [enum_variants_more] -> 'Comma' enum_variant enum_variant_tail;
 enum_variant_tail [enum_variants_end] -> ;
+type_args_opt [type_args_none] -> ;
+type_args_opt [type_args_some] -> 'Lt' type_expr type_arg_tail 'Gt';
+type_arg_tail [type_args_more] -> 'Comma' type_expr type_arg_tail;
+type_arg_tail [type_args_end] -> ;
+enum_type_params_opt [enum_type_params_none] -> ;
+enum_type_params_opt [enum_type_params_some] -> 'Lt' enum_type_param enum_type_param_tail 'Gt';
+enum_type_param [enum_type_param] -> 'Ident';
+enum_type_param_tail [enum_type_params_more] -> 'Comma' enum_type_param enum_type_param_tail;
+enum_type_param_tail [enum_type_params_end] -> ;

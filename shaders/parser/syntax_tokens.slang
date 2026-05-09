@@ -373,11 +373,9 @@ void check_enum(uint i)
         record_error(i, ERR_EXPECTED_TOKEN, TK_IDENT);
         return;
     }
-    if (token_kind(i + 2u) != TK_LBRACE)
-    {
-        record_error(i + 2u, ERR_EXPECTED_TOKEN, TK_LBRACE);
-        return;
-    }
+    uint body = find_before_boundary_at_depth(i + 2u, TK_LBRACE, i);
+    if (body == INVALID)
+        record_error(i, ERR_EXPECTED_TOKEN, TK_LBRACE);
 }
 
 void check_let(uint i)

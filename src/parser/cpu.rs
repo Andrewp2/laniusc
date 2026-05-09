@@ -25,9 +25,10 @@ pub struct AstNode {
     /// "ident", "int", "string", "pos", "neg", "not", "mul", "add", "sub",
     /// "lt", "gt", "le", "ge", "eq", "and", "or", "set",
     /// plus file/item additions: "file", "fn", "param", "type_ident",
-    /// "type_array", "block", "stmt_let", "stmt_return", "stmt_if",
-    /// "stmt_while", "stmt_break", "stmt_continue", "stmt_expr", "enum",
-    /// "enum_variant", "enum_fields", "enum_fields_none".
+    /// "type_generic", "type_array", "block", "stmt_let", "stmt_return",
+    /// "stmt_if", "stmt_while", "stmt_break", "stmt_continue", "stmt_expr",
+    /// "enum", "enum_variant", "enum_fields", "enum_fields_none",
+    /// "type_params".
     pub tag: &'static str,
     /// Children node ids in source order.
     pub children: Vec<u32>,
@@ -234,6 +235,7 @@ impl<'a> Parser<'a> {
         self.expect(tokens::TokenKind::Enum, "Enum")?;
         self.expect(tokens::TokenKind::Ident, "enum name")?;
         let name_id = self.push("ident", vec![]);
+        let type_params = self.parse_type_params_opt()?;
         self.expect(tokens::TokenKind::LBrace, "LBrace")?;
 
         let mut variants = Vec::new();
@@ -262,7 +264,23 @@ impl<'a> Parser<'a> {
         }
 
         self.expect(tokens::TokenKind::RBrace, "RBrace")?;
-        Ok(self.push("enum", [vec![name_id], variants].concat()))
+        Ok(self.push("enum", [vec![name_id, type_params], variants].concat()))
+    }
+
+    fn parse_type_params_opt(&mut self) -> Result<u32, ParseError> {
+        if !self.eat(tokens::TokenKind::Lt) {
+            return Ok(self.push("type_params_none", vec![]));
+        }
+
+        let mut params = Vec::new();
+        self.expect(tokens::TokenKind::Ident, "type parameter name")?;
+        params.push(self.push("ident", vec![]));
+        while self.eat(tokens::TokenKind::Comma) {
+            self.expect(tokens::TokenKind::Ident, "type parameter name")?;
+            params.push(self.push("ident", vec![]));
+        }
+        self.expect(tokens::TokenKind::Gt, "Gt")?;
+        Ok(self.push("type_params", params))
     }
 
     fn parse_enum_variant(&mut self) -> Result<u32, ParseError> {
@@ -348,7 +366,13 @@ impl<'a> Parser<'a> {
 
     fn parse_type_expr(&mut self) -> Result<u32, ParseError> {
         if self.eat(tokens::TokenKind::TypeIdent) || self.eat(tokens::TokenKind::Ident) {
-            return Ok(self.push("type_ident", vec![]));
+            let args = self.parse_type_args_opt()?;
+            if self.nodes[args as usize].children.is_empty()
+                && self.nodes[args as usize].tag == "type_args_none"
+            {
+                return Ok(self.push("type_ident", vec![]));
+            }
+            return Ok(self.push("type_generic", vec![args]));
         }
 
         if self.eat(tokens::TokenKind::TypeArrayLBracket)
@@ -379,6 +403,19 @@ impl<'a> Parser<'a> {
             expected: "type expression",
             found: self.peek(),
         })
+    }
+
+    fn parse_type_args_opt(&mut self) -> Result<u32, ParseError> {
+        if !self.eat(tokens::TokenKind::Lt) {
+            return Ok(self.push("type_args_none", vec![]));
+        }
+
+        let mut args = vec![self.parse_type_expr()?];
+        while self.eat(tokens::TokenKind::Comma) {
+            args.push(self.parse_type_expr()?);
+        }
+        self.expect(tokens::TokenKind::Gt, "Gt")?;
+        Ok(self.push("type_args", args))
     }
 
     /// Parse a block: `{ stmt* }`

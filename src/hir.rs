@@ -76,6 +76,7 @@ pub struct HirConst {
 pub struct HirEnum {
     pub public: bool,
     pub name: String,
+    pub type_params: Vec<String>,
     pub variants: Vec<HirEnumVariant>,
     pub span: Span,
 }
@@ -110,6 +111,7 @@ pub struct HirType {
 pub enum HirTypeKind {
     Void,
     Name(String),
+    Generic { name: String, args: Vec<HirType> },
     Array { elem: Box<HirType>, len: String },
 }
 
@@ -394,6 +396,7 @@ impl<'a> HirParser<'a> {
         };
         self.expect(TokenKind::Enum, "Enum")?;
         let name = self.expect_name(&[TokenKind::Ident], "enum name")?;
+        let type_params = self.parse_type_params()?;
         self.expect(TokenKind::LBrace, "LBrace")?;
 
         let mut variants = Vec::new();
@@ -417,9 +420,24 @@ impl<'a> HirParser<'a> {
         Ok(HirEnum {
             public,
             name,
+            type_params,
             variants,
             span: self.span_since(start),
         })
+    }
+
+    fn parse_type_params(&mut self) -> Result<Vec<String>, HirError> {
+        if self.eat(TokenKind::Lt).is_none() {
+            return Ok(Vec::new());
+        }
+
+        let mut params = Vec::new();
+        params.push(self.expect_name(&[TokenKind::Ident], "type parameter name")?);
+        while self.eat(TokenKind::Comma).is_some() {
+            params.push(self.expect_name(&[TokenKind::Ident], "type parameter name")?);
+        }
+        self.expect(TokenKind::Gt, "Gt")?;
+        Ok(params)
     }
 
     fn parse_enum_variant(&mut self) -> Result<HirEnumVariant, HirError> {
@@ -496,8 +514,16 @@ impl<'a> HirParser<'a> {
     fn parse_type_expr(&mut self) -> Result<HirType, HirError> {
         let start = self.peek_start();
         if let Some(tok) = self.eat_any(&[TokenKind::TypeIdent, TokenKind::Ident]) {
+            let name = self.lexeme(tok);
+            let args = self.parse_type_args()?;
+            if !args.is_empty() {
+                return Ok(HirType {
+                    kind: HirTypeKind::Generic { name, args },
+                    span: self.span_since(start),
+                });
+            }
             return Ok(HirType {
-                kind: HirTypeKind::Name(self.lexeme(tok)),
+                kind: HirTypeKind::Name(name),
                 span: self.span_since(start),
             });
         }
@@ -535,6 +561,19 @@ impl<'a> HirParser<'a> {
         }
 
         Err(self.error("type expression"))
+    }
+
+    fn parse_type_args(&mut self) -> Result<Vec<HirType>, HirError> {
+        if self.eat(TokenKind::Lt).is_none() {
+            return Ok(Vec::new());
+        }
+
+        let mut args = vec![self.parse_type_expr()?];
+        while self.eat(TokenKind::Comma).is_some() {
+            args.push(self.parse_type_expr()?);
+        }
+        self.expect(TokenKind::Gt, "Gt")?;
+        Ok(args)
     }
 
     fn parse_block(&mut self) -> Result<HirBlock, HirError> {

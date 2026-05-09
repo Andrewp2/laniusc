@@ -207,9 +207,18 @@ fn assert_enum_spans(name: &str, src: &str, enm: &laniusc::hir::HirEnum) {
 
 fn assert_type_spans(name: &str, src: &str, ty: &HirType) {
     assert_span_in_source(name, "type", ty.span, src);
-    if let HirTypeKind::Array { elem, .. } = &ty.kind {
-        assert_type_spans(name, src, elem);
-        assert_span_contains(name, "array element type", ty.span, elem.span);
+    match &ty.kind {
+        HirTypeKind::Array { elem, .. } => {
+            assert_type_spans(name, src, elem);
+            assert_span_contains(name, "array element type", ty.span, elem.span);
+        }
+        HirTypeKind::Generic { args, .. } => {
+            for (i, arg) in args.iter().enumerate() {
+                assert_type_spans(name, src, arg);
+                assert_span_contains(name, &format!("generic type arg {i}"), ty.span, arg.span);
+            }
+        }
+        HirTypeKind::Void | HirTypeKind::Name(_) => {}
     }
 }
 
@@ -608,6 +617,7 @@ fn hir_preserves_enum_declarations() {
     };
     assert!(result.public);
     assert_eq!(result.name, "ResultI32");
+    assert!(result.type_params.is_empty());
     assert_eq!(result.variants.len(), 3);
     assert_eq!(result.variants[0].name, "Ok");
     assert_eq!(result.variants[0].fields.len(), 1);
@@ -637,6 +647,50 @@ fn hir_preserves_enum_declarations() {
             .collect::<Vec<_>>(),
         vec!["Less", "Equal", "Greater"]
     );
+}
+
+#[test]
+fn hir_preserves_generic_enum_declarations_and_type_uses() {
+    let file = parse_source(
+        "pub enum Option<T> { Some(T), None } enum Result<T, E> { Ok(T), Err(E) } fn unwrap_or(value: Option<i32>, fallback: i32) -> i32 { return fallback; }",
+    )
+    .expect("parse generic enum declarations");
+    assert_eq!(file.items.len(), 3);
+
+    let HirItem::Enum(option) = &file.items[0] else {
+        panic!("expected first item to be enum");
+    };
+    assert_eq!(option.name, "Option");
+    assert_eq!(option.type_params, vec!["T"]);
+    assert_eq!(option.variants[0].name, "Some");
+    assert_eq!(
+        option.variants[0].fields[0].kind,
+        HirTypeKind::Name("T".into())
+    );
+
+    let HirItem::Enum(result) = &file.items[1] else {
+        panic!("expected second item to be enum");
+    };
+    assert_eq!(result.name, "Result");
+    assert_eq!(result.type_params, vec!["T", "E"]);
+    assert_eq!(
+        result.variants[0].fields[0].kind,
+        HirTypeKind::Name("T".into())
+    );
+    assert_eq!(
+        result.variants[1].fields[0].kind,
+        HirTypeKind::Name("E".into())
+    );
+
+    let HirItem::Fn(func) = &file.items[2] else {
+        panic!("expected third item to be function");
+    };
+    let HirTypeKind::Generic { name, args } = &func.params[0].ty.kind else {
+        panic!("expected generic parameter type");
+    };
+    assert_eq!(name, "Option");
+    assert_eq!(args.len(), 1);
+    assert_eq!(args[0].kind, HirTypeKind::Name("i32".into()));
 }
 
 #[test]

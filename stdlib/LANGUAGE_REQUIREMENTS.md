@@ -24,6 +24,10 @@ Supported enough for the seed library:
   parse, lower to HIR, and are ignored safely by syntax/HIR validation. They do
   not yet create usable types, constructors, pattern matching, or backend
   representations.
+- Generic type parameter syntax on enums and generic type-use syntax such as
+  `Option<T>` and `Result<T, E>` now parse and lower to HIR. They do not yet
+  participate in type checking, monomorphization, trait/interface resolution, or
+  code generation.
 - `i32` arithmetic, comparisons, unary minus, logical operators, assignment, and
   compound assignment, used by `lstd_i32_abs`, `lstd_i32_clamp`, and array
   loops.
@@ -92,6 +96,8 @@ Strict blockers:
   `Ordering`. Declaration syntax exists, but constructors, type checking,
   pattern matching, layout, and codegen support are still missing.
 - Generics for primitive-independent helpers and generic array/slice algorithms.
+  Syntax exists for enum parameters and type uses, but semantic checking and
+  codegen support are still missing.
 - Const parameters or equivalent array length abstraction, replacing files like
   `array_i32_4.lani`.
 - Borrowed views or references for slices and non-owning APIs.
