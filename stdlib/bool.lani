@@ -1,0 +1,35 @@
+// Source-level bool helpers for the current Lanius language surface.
+// Lanius has bool values from comparisons/logical expressions, but no bool
+// literals in the grammar yet.
+
+pub fn lstd_bool_not(value: bool) -> bool {
+    return !value;
+}
+
+pub fn lstd_bool_and(left: bool, right: bool) -> bool {
+    return left && right;
+}
+
+pub fn lstd_bool_or(left: bool, right: bool) -> bool {
+    return left || right;
+}
+
+pub fn lstd_bool_xor(left: bool, right: bool) -> bool {
+    return (left && !right) || (!left && right);
+}
+
+pub fn lstd_bool_eq(left: bool, right: bool) -> bool {
+    return left == right;
+}
+
+pub fn lstd_bool_to_i32(value: bool) -> i32 {
+    if (value) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+pub fn lstd_i32_to_bool(value: i32) -> bool {
+    return value != 0;
+}
