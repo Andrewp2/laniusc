@@ -293,7 +293,29 @@ bool token_in_type_array(uint token_i)
             continue;
 
         uint end = matching_type_array_end(open_i);
-        return token_i < min(end, n);
+        if (token_i >= min(end, n))
+            return false;
+
+        uint depth = 0u;
+        [loop]
+        for (uint j = open_i + 1u; j < token_i; j += 1u)
+        {
+            uint kind = token_kind(j);
+            if (is_type_open(kind))
+            {
+                depth += 1u;
+                continue;
+            }
+            if (is_type_close(kind))
+            {
+                if (depth > 0u)
+                    depth -= 1u;
+                continue;
+            }
+            if (kind == TK_SEMICOLON && depth == 0u)
+                return false;
+        }
+        return true;
     }
     return false;
 }

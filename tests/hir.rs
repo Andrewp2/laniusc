@@ -163,6 +163,22 @@ fn assert_hir_file_spans(name: &str, src: &str, tokens: &[CpuToken], file: &HirF
 
 fn assert_fn_spans(name: &str, src: &str, func: &HirFn) {
     assert_span_in_source(name, "function", func.span, src);
+    for (i, param) in func.const_params.iter().enumerate() {
+        assert_span_in_source(name, &format!("function const param {i}"), param.span, src);
+        assert_span_contains(
+            name,
+            &format!("function const param {i}"),
+            func.span,
+            param.span,
+        );
+        assert_type_spans(name, src, &param.ty);
+        assert_span_contains(
+            name,
+            &format!("function const param {i} type"),
+            param.span,
+            param.ty.span,
+        );
+    }
     for (i, param) in func.params.iter().enumerate() {
         assert_span_in_source(name, &format!("param {i}"), param.span, src);
         assert_span_contains(name, &format!("function param {i}"), func.span, param.span);
@@ -185,6 +201,17 @@ fn assert_const_spans(name: &str, src: &str, konst: &HirConst) {
 
 fn assert_enum_spans(name: &str, src: &str, enm: &laniusc::hir::HirEnum) {
     assert_span_in_source(name, "enum", enm.span, src);
+    for (i, param) in enm.const_params.iter().enumerate() {
+        assert_span_in_source(name, &format!("enum const param {i}"), param.span, src);
+        assert_span_contains(name, &format!("enum const param {i}"), enm.span, param.span);
+        assert_type_spans(name, src, &param.ty);
+        assert_span_contains(
+            name,
+            &format!("enum const param {i} type"),
+            param.span,
+            param.ty.span,
+        );
+    }
     for (variant_i, variant) in enm.variants.iter().enumerate() {
         assert_span_in_source(
             name,
@@ -212,6 +239,22 @@ fn assert_enum_spans(name: &str, src: &str, enm: &laniusc::hir::HirEnum) {
 
 fn assert_struct_spans(name: &str, src: &str, strukt: &laniusc::hir::HirStruct) {
     assert_span_in_source(name, "struct", strukt.span, src);
+    for (i, param) in strukt.const_params.iter().enumerate() {
+        assert_span_in_source(name, &format!("struct const param {i}"), param.span, src);
+        assert_span_contains(
+            name,
+            &format!("struct const param {i}"),
+            strukt.span,
+            param.span,
+        );
+        assert_type_spans(name, src, &param.ty);
+        assert_span_contains(
+            name,
+            &format!("struct const param {i} type"),
+            param.span,
+            param.ty.span,
+        );
+    }
     for (field_i, field) in strukt.fields.iter().enumerate() {
         assert_span_in_source(name, &format!("struct field {field_i}"), field.span, src);
         assert_span_contains(
@@ -889,6 +932,45 @@ fn hir_preserves_generic_function_declarations() {
     assert_eq!(func.params[1].name, "fallback");
     assert_eq!(func.params[1].ty.kind, HirTypeKind::Name("T".into()));
     assert_eq!(func.ret.kind, HirTypeKind::Name("T".into()));
+}
+
+#[test]
+fn hir_preserves_const_generic_params_and_named_array_lengths() {
+    let file = parse_source(
+        "pub struct ArrayVec<T, const N: usize> { values: [T; N], len: usize } fn first<T, const N: usize>(values: [T; N]) -> T { return values[0]; }",
+    )
+    .expect("parse const generic declarations");
+    assert_eq!(file.items.len(), 2);
+
+    let HirItem::Struct(array_vec) = &file.items[0] else {
+        panic!("expected first item to be struct");
+    };
+    assert_eq!(array_vec.name, "ArrayVec");
+    assert_eq!(array_vec.type_params, vec!["T"]);
+    assert_eq!(array_vec.const_params.len(), 1);
+    assert_eq!(array_vec.const_params[0].name, "N");
+    assert_eq!(
+        array_vec.const_params[0].ty.kind,
+        HirTypeKind::Name("usize".into())
+    );
+    let HirTypeKind::Array { elem, len } = &array_vec.fields[0].ty.kind else {
+        panic!("expected array field");
+    };
+    assert_eq!(elem.kind, HirTypeKind::Name("T".into()));
+    assert_eq!(len, "N");
+
+    let HirItem::Fn(first) = &file.items[1] else {
+        panic!("expected second item to be function");
+    };
+    assert_eq!(first.name, "first");
+    assert_eq!(first.type_params, vec!["T"]);
+    assert_eq!(first.const_params.len(), 1);
+    assert_eq!(first.const_params[0].name, "N");
+    let HirTypeKind::Array { elem, len } = &first.params[0].ty.kind else {
+        panic!("expected array parameter");
+    };
+    assert_eq!(elem.kind, HirTypeKind::Name("T".into()));
+    assert_eq!(len, "N");
 }
 
 #[test]

@@ -31,6 +31,11 @@ Supported enough for the seed library:
 - Generic type parameter syntax on functions, such as `fn first<T>(value: T) ->
   T`, now parses and lowers to HIR. It does not yet participate in type
   checking, monomorphization, trait/interface resolution, or code generation.
+- Const generic parameter syntax in generic parameter lists, such as
+  `fn first<T, const N: usize>(values: [T; N]) -> T`, now parses and lowers to
+  HIR, and fixed-array lengths may be identifiers as well as integer literals.
+  These names do not yet participate in const evaluation, type checking,
+  monomorphization, or backend layout.
 - Top-level `struct` declarations with named fields and generic parameters now
   parse, lower to HIR, and are ignored safely by syntax/HIR validation. They do
   not yet create usable product types, constructors, field access semantics, or
@@ -117,7 +122,9 @@ Strict blockers:
   Syntax exists for enum parameters, function parameters, and type uses, but
   semantic checking and codegen support are still missing.
 - Const parameters or equivalent array length abstraction, replacing files like
-  `array_i32_4.lani`.
+  `array_i32_4.lani`. Syntax for const parameters and named array lengths
+  exists, but semantic checking, const evaluation, and codegen support are still
+  missing.
 - Borrowed views or references for slices and non-owning APIs.
 - A defined panic lowering path. `assert(bool)` has a minimal builtin lowering
   that traps on WASM and exits nonzero through native lowering.

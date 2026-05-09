@@ -284,14 +284,25 @@ impl<'a> Parser<'a> {
         }
 
         let mut params = Vec::new();
-        self.expect(tokens::TokenKind::Ident, "type parameter name")?;
-        params.push(self.push("ident", vec![]));
+        params.push(self.parse_type_param()?);
         while self.eat(tokens::TokenKind::Comma) {
-            self.expect(tokens::TokenKind::Ident, "type parameter name")?;
-            params.push(self.push("ident", vec![]));
+            params.push(self.parse_type_param()?);
         }
         self.expect(tokens::TokenKind::Gt, "Gt")?;
         Ok(self.push("type_params", params))
+    }
+
+    fn parse_type_param(&mut self) -> Result<u32, ParseError> {
+        if self.eat(tokens::TokenKind::Const) {
+            self.expect(tokens::TokenKind::Ident, "const parameter name")?;
+            let name = self.push("ident", vec![]);
+            self.expect(tokens::TokenKind::Colon, "Colon")?;
+            let ty = self.parse_type_expr()?;
+            return Ok(self.push("const_param", vec![name, ty]));
+        }
+
+        self.expect(tokens::TokenKind::Ident, "type parameter name")?;
+        Ok(self.push("ident", vec![]))
     }
 
     /// Parse a top-level `struct` item.
@@ -451,7 +462,13 @@ impl<'a> Parser<'a> {
                     found: self.peek(),
                 });
             }
-            self.expect(tokens::TokenKind::Int, "array length")?;
+            if !(self.eat(tokens::TokenKind::Int) || self.eat(tokens::TokenKind::Ident)) {
+                return Err(ParseError {
+                    pos: self.i,
+                    expected: "array length",
+                    found: self.peek(),
+                });
+            }
             if !(self.eat(tokens::TokenKind::TypeArrayRBracket)
                 || self.eat(tokens::TokenKind::ArrayRBracket))
             {

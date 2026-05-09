@@ -313,6 +313,20 @@ fn generated_ll1_tables_accept_generic_function_declarations() {
 }
 
 #[test]
+fn generated_ll1_tables_accept_const_generic_params_and_named_array_lengths() {
+    let tables =
+        PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+            .expect("load generated parse tables");
+    let token_kinds = kinds_with_sentinels(
+        "pub struct ArrayVec<T, const N: usize> { values: [T; N], len: usize } fn first<T, const N: usize>(values: [T; N]) -> T { return values[0]; }",
+    );
+
+    tables
+        .ll1_production_stream_with_positions(&token_kinds)
+        .expect("const generic fixture should parse with LL(1)");
+}
+
+#[test]
 fn gpu_parser_builds_tree_from_emit_stream() {
     pollster::block_on(async {
         let parser = GpuParser::new().await.expect("GPU parser init");

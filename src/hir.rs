@@ -60,6 +60,7 @@ pub struct HirFn {
     pub public: bool,
     pub name: String,
     pub type_params: Vec<String>,
+    pub const_params: Vec<HirConstParam>,
     pub params: Vec<HirParam>,
     pub ret: HirType,
     pub body: HirBlock,
@@ -79,6 +80,7 @@ pub struct HirEnum {
     pub public: bool,
     pub name: String,
     pub type_params: Vec<String>,
+    pub const_params: Vec<HirConstParam>,
     pub variants: Vec<HirEnumVariant>,
     pub span: Span,
 }
@@ -95,7 +97,15 @@ pub struct HirStruct {
     pub public: bool,
     pub name: String,
     pub type_params: Vec<String>,
+    pub const_params: Vec<HirConstParam>,
     pub fields: Vec<HirStructField>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HirConstParam {
+    pub name: String,
+    pub ty: HirType,
     pub span: Span,
 }
 
@@ -111,6 +121,12 @@ pub struct HirParam {
     pub name: String,
     pub ty: HirType,
     pub span: Span,
+}
+
+#[derive(Debug, Clone, Default)]
+struct HirGenericParams {
+    type_params: Vec<String>,
+    const_params: Vec<HirConstParam>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -368,7 +384,7 @@ impl<'a> HirParser<'a> {
         };
         self.expect(TokenKind::Fn, "Fn")?;
         let name = self.expect_name(&[TokenKind::Ident], "function name")?;
-        let type_params = self.parse_type_params()?;
+        let generic_params = self.parse_type_params()?;
         self.expect_any(
             &[
                 TokenKind::ParamLParen,
@@ -402,7 +418,8 @@ impl<'a> HirParser<'a> {
         Ok(HirFn {
             public,
             name,
-            type_params,
+            type_params: generic_params.type_params,
+            const_params: generic_params.const_params,
             params,
             ret,
             body,
@@ -435,7 +452,7 @@ impl<'a> HirParser<'a> {
         };
         self.expect(TokenKind::Enum, "Enum")?;
         let name = self.expect_name(&[TokenKind::Ident], "enum name")?;
-        let type_params = self.parse_type_params()?;
+        let generic_params = self.parse_type_params()?;
         self.expect(TokenKind::LBrace, "LBrace")?;
 
         let mut variants = Vec::new();
@@ -459,24 +476,45 @@ impl<'a> HirParser<'a> {
         Ok(HirEnum {
             public,
             name,
-            type_params,
+            type_params: generic_params.type_params,
+            const_params: generic_params.const_params,
             variants,
             span: self.span_since(start),
         })
     }
 
-    fn parse_type_params(&mut self) -> Result<Vec<String>, HirError> {
+    fn parse_type_params(&mut self) -> Result<HirGenericParams, HirError> {
         if self.eat(TokenKind::Lt).is_none() {
-            return Ok(Vec::new());
+            return Ok(HirGenericParams::default());
         }
 
-        let mut params = Vec::new();
-        params.push(self.expect_name(&[TokenKind::Ident], "type parameter name")?);
+        let mut params = HirGenericParams::default();
+        self.parse_generic_param(&mut params)?;
         while self.eat(TokenKind::Comma).is_some() {
-            params.push(self.expect_name(&[TokenKind::Ident], "type parameter name")?);
+            self.parse_generic_param(&mut params)?;
         }
         self.expect(TokenKind::Gt, "Gt")?;
         Ok(params)
+    }
+
+    fn parse_generic_param(&mut self, params: &mut HirGenericParams) -> Result<(), HirError> {
+        if self.eat(TokenKind::Const).is_some() {
+            let start = self.prev_start();
+            let name = self.expect_name(&[TokenKind::Ident], "const parameter name")?;
+            self.expect(TokenKind::Colon, "Colon")?;
+            let ty = self.parse_type_expr()?;
+            params.const_params.push(HirConstParam {
+                name,
+                ty,
+                span: self.span_since(start),
+            });
+            return Ok(());
+        }
+
+        params
+            .type_params
+            .push(self.expect_name(&[TokenKind::Ident], "type parameter name")?);
+        Ok(())
     }
 
     fn parse_struct(&mut self, public: bool) -> Result<HirStruct, HirError> {
@@ -487,7 +525,7 @@ impl<'a> HirParser<'a> {
         };
         self.expect(TokenKind::Struct, "Struct")?;
         let name = self.expect_name(&[TokenKind::Ident], "struct name")?;
-        let type_params = self.parse_type_params()?;
+        let generic_params = self.parse_type_params()?;
         self.expect(TokenKind::LBrace, "LBrace")?;
 
         let mut fields = Vec::new();
@@ -511,7 +549,8 @@ impl<'a> HirParser<'a> {
         Ok(HirStruct {
             public,
             name,
-            type_params,
+            type_params: generic_params.type_params,
+            const_params: generic_params.const_params,
             fields,
             span: self.span_since(start),
         })
@@ -645,7 +684,7 @@ impl<'a> HirParser<'a> {
                 &[TokenKind::TypeSemicolon, TokenKind::Semicolon],
                 "Semicolon or RBracket",
             )?;
-            let len_tok = self.expect(TokenKind::Int, "array length")?;
+            let len_tok = self.expect_any(&[TokenKind::Int, TokenKind::Ident], "array length")?;
             let len = self.lexeme(len_tok);
             self.expect_any(
                 &[
