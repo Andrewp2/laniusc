@@ -97,6 +97,38 @@ fn main() {
 }
 
 #[test]
+fn imported_module_declaration_exposes_namespaced_calls_in_expanded_source() {
+    let dir = TempDir::new("module_namespace");
+    dir.write(
+        "math.lani",
+        r#"
+module app::math;
+
+pub fn add_one(value: i32) -> i32 {
+    return value + 1;
+}
+"#,
+    );
+    let main = dir.write(
+        "main.lani",
+        r#"
+import "math.lani";
+
+fn main() {
+    return app::math::add_one(41);
+}
+"#,
+    );
+
+    let expanded = expand_source_imports_from_path(&main).expect("expand namespaced module import");
+    assert!(expanded.contains("pub fn __lanius_app_math_add_one"));
+    assert!(expanded.contains("return __lanius_app_math_add_one(41);"));
+    assert!(!expanded.contains("module app::math;"));
+    assert!(!expanded.contains("app::math::add_one"));
+    parse_source(&expanded).expect("expanded namespaced module import should parse");
+}
+
+#[test]
 fn relative_imports_resolve_from_each_importing_file() {
     let dir = TempDir::new("relative");
     dir.write(

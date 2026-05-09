@@ -20,8 +20,11 @@ Supported enough for the seed library:
   `stdlib/i32.lani`, `stdlib/bool.lani`, and `stdlib/array_i32_4.lani`.
 - Top-level `module core::name;`, `import core::name;`, and quoted
   `import "path.lani";` items now parse and lower to HIR. Normal compilation
-  still expands import directives before parsing, and these HIR nodes do not
-  yet create namespaces, visibility scopes, or package boundaries.
+  still expands import directives before parsing. Imported files with a module
+  declaration get a source-level namespace bridge: declarations are mangled to
+  compiler-private identifiers and calls like `core::i32::abs()` are rewritten
+  before lexing. This does not yet provide full visibility scopes or package
+  boundaries.
 - Top-level primitive `const` items, used by `stdlib/i32.lani` for
   `LSTD_I32_MIN` and `LSTD_I32_MAX`.
 - Top-level `enum` declarations with unit variants and tuple payload syntax now
@@ -74,9 +77,10 @@ Supported enough for the seed library:
 
 Important limitations visible in current files:
 
-- No real modules, namespaces, or visibility rules. Module/import syntax and
-  source-level import expansion exist, but names are still global and
-  `stdlib/README.md` documents the temporary `lstd_` prefix.
+- No full module/package system or visibility rules. Module/import syntax and a
+  source-level namespace rewrite exist, but names still lower to global
+  compiler-private identifiers and `stdlib/README.md` documents the temporary
+  `lstd_` prefix for the current seed files.
 - No generics or const parameters. `stdlib/array_i32_4.lani` is tied to
   `[i32; 4]`; every other element type or length would need another source file.
 - No enum/sum type semantics, struct/product semantics, methods,
@@ -94,7 +98,7 @@ runtime work lands.
 Strict blockers:
 
 - Real namespaces and visibility rules, so module imports expose stable names
-  instead of source-level global helpers.
+  beyond the current source-level rewrite bridge.
 - Name visibility and namespace rules, so `lstd_` can be retired or isolated
   behind compatibility shims.
 - A stable source fixture path for stdlib tests, extending the current

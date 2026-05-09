@@ -8,7 +8,7 @@ use std::{
 use crate::{
     codegen::{gpu_wasm, gpu_x86},
     gpu::device::{self, GpuDevice},
-    lexer::gpu::driver::GpuLexer,
+    lexer::{cpu::lex_on_cpu, gpu::driver::GpuLexer, tables::tokens::TokenKind},
     parser::{gpu::driver::GpuParser, tables::PrecomputedParseTables},
     type_checker::gpu as gpu_type_checker,
 };
@@ -387,8 +387,14 @@ impl ImportExpander {
         }
     }
 
-    fn expand_source(&mut self, src: &str, context: ImportContext) -> Result<String, CompileError> {
+    fn expand_source(
+        &mut self,
+        src: &str,
+        context: ImportContext,
+        imported: bool,
+    ) -> Result<String, CompileError> {
         let mut expanded = String::new();
+        let mut module: Option<String> = None;
 
         for (line_index, line) in src.lines().enumerate() {
             match parse_import_directive(line) {
@@ -400,13 +406,44 @@ impl ImportExpander {
                             line_index + 1
                         ))
                     })?;
-                    expanded.push_str(&self.expand_file(&import_path)?);
+                    expanded.push_str(&self.expand_file(&import_path, true)?);
                     if !expanded.ends_with('\n') {
                         expanded.push('\n');
                     }
                 }
                 Ok(None) => {
-                    expanded.push_str(line);
+                    match parse_module_directive(line) {
+                        Ok(Some(module_path)) => {
+                            if module.replace(module_path).is_some() {
+                                return Err(CompileError::Import(format!(
+                                    "duplicate module declaration at {}:{}",
+                                    context.display(),
+                                    line_index + 1
+                                )));
+                            }
+                            continue;
+                        }
+                        Ok(None) => {}
+                        Err(err) => {
+                            return Err(CompileError::Import(format!(
+                                "{err} at {}:{}",
+                                context.display(),
+                                line_index + 1
+                            )));
+                        }
+                    }
+
+                    let line = if imported {
+                        if let Some(module) = &module {
+                            rewrite_module_decl_name(line, module)?
+                        } else {
+                            line.to_string()
+                        }
+                    } else {
+                        line.to_string()
+                    };
+                    let line = rewrite_namespaced_paths(&line)?;
+                    expanded.push_str(&line);
                     expanded.push('\n');
                 }
                 Err(err) => {
@@ -422,7 +459,7 @@ impl ImportExpander {
         Ok(expanded)
     }
 
-    fn expand_file(&mut self, path: &Path) -> Result<String, CompileError> {
+    fn expand_file(&mut self, path: &Path, imported: bool) -> Result<String, CompileError> {
         let canonical = fs::canonicalize(path)
             .map_err(|err| CompileError::Import(format!("resolve {}: {err}", path.display())))?;
 
@@ -445,7 +482,7 @@ impl ImportExpander {
         let src = fs::read_to_string(&canonical)
             .map_err(|err| CompileError::Import(format!("read {}: {err}", canonical.display())))?;
         self.stack.push(canonical.clone());
-        let result = self.expand_source(&src, ImportContext::File(canonical.clone()));
+        let result = self.expand_source(&src, ImportContext::File(canonical.clone()), imported);
         self.stack.pop();
         let expanded = result?;
         self.expanded.insert(canonical);
@@ -549,11 +586,11 @@ impl ImportContext {
 }
 
 pub fn expand_source_imports(src: &str) -> Result<String, CompileError> {
-    ImportExpander::new().expand_source(src, ImportContext::SourceOnly)
+    ImportExpander::new().expand_source(src, ImportContext::SourceOnly, false)
 }
 
 pub fn expand_source_imports_from_path(path: impl AsRef<Path>) -> Result<String, CompileError> {
-    ImportExpander::new().expand_file(path.as_ref())
+    ImportExpander::new().expand_file(path.as_ref(), false)
 }
 
 fn parse_import_directive(line: &str) -> Result<Option<ImportSpec>, String> {
@@ -590,6 +627,24 @@ fn parse_import_directive(line: &str) -> Result<Option<ImportSpec>, String> {
     Ok(Some(ImportSpec::Module(module.to_string())))
 }
 
+fn parse_module_directive(line: &str) -> Result<Option<String>, String> {
+    let trimmed = line.trim();
+    let Some(rest) = trimmed.strip_prefix("module") else {
+        return Ok(None);
+    };
+    if !rest.starts_with(char::is_whitespace) {
+        return Ok(None);
+    }
+    let Some(module) = rest.trim_start().strip_suffix(';') else {
+        return Err("expected `;` after module path".to_string());
+    };
+    let module = module.trim();
+    if !is_valid_import_module(module) {
+        return Err("expected module path".to_string());
+    }
+    Ok(Some(module.to_string()))
+}
+
 fn is_valid_import_module(module: &str) -> bool {
     if module.is_empty() || !module.contains("::") {
         return false;
@@ -604,6 +659,145 @@ fn is_valid_module_segment(segment: &str) -> bool {
     };
     (first == '_' || first.is_ascii_alphabetic())
         && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
+fn rewrite_module_decl_name(line: &str, module: &str) -> Result<String, CompileError> {
+    let Ok(tokens) = lex_on_cpu(line) else {
+        return Ok(line.to_string());
+    };
+    let Some(first) = tokens.first() else {
+        return Ok(line.to_string());
+    };
+
+    let name_i = if first.kind == TokenKind::Pub {
+        let Some(keyword) = tokens.get(1).map(|token| token.kind) else {
+            return Ok(line.to_string());
+        };
+        if matches!(
+            keyword,
+            TokenKind::Fn | TokenKind::Const | TokenKind::Enum | TokenKind::Struct
+        ) {
+            Some(2)
+        } else {
+            None
+        }
+    } else if matches!(
+        first.kind,
+        TokenKind::Fn | TokenKind::Const | TokenKind::Enum | TokenKind::Struct
+    ) {
+        Some(1)
+    } else {
+        None
+    };
+
+    let Some(name_i) = name_i else {
+        return Ok(line.to_string());
+    };
+    let Some(name_token) = tokens.get(name_i) else {
+        return Ok(line.to_string());
+    };
+    if !is_path_segment_token(name_token.kind) {
+        return Ok(line.to_string());
+    }
+
+    let name = line
+        .get(name_token.start..name_token.start.saturating_add(name_token.len))
+        .unwrap_or("");
+    let replacement = mangle_module_member(module, name);
+    Ok(apply_replacements(
+        line,
+        vec![(
+            name_token.start,
+            name_token.start.saturating_add(name_token.len),
+            replacement,
+        )],
+    ))
+}
+
+fn rewrite_namespaced_paths(src: &str) -> Result<String, CompileError> {
+    let Ok(tokens) = lex_on_cpu(src) else {
+        return Ok(src.to_string());
+    };
+    let mut replacements = Vec::new();
+    let mut i = 0usize;
+
+    while i < tokens.len() {
+        if !is_path_segment_token(tokens[i].kind) {
+            i += 1;
+            continue;
+        }
+
+        let mut segments = vec![token_text(src, &tokens[i]).to_string()];
+        let start = tokens[i].start;
+        let mut end = tokens[i].start.saturating_add(tokens[i].len);
+        let mut j = i + 1;
+
+        while j + 2 < tokens.len()
+            && tokens[j].kind == TokenKind::Colon
+            && tokens[j + 1].kind == TokenKind::Colon
+            && is_path_segment_token(tokens[j + 2].kind)
+        {
+            segments.push(token_text(src, &tokens[j + 2]).to_string());
+            end = tokens[j + 2].start.saturating_add(tokens[j + 2].len);
+            j += 3;
+        }
+
+        if segments.len() > 1 {
+            replacements.push((start, end, mangle_path_segments(&segments)));
+            i = j;
+        } else {
+            i += 1;
+        }
+    }
+
+    Ok(apply_replacements(src, replacements))
+}
+
+fn is_path_segment_token(kind: TokenKind) -> bool {
+    matches!(
+        kind,
+        TokenKind::Ident | TokenKind::TypeIdent | TokenKind::ParamIdent | TokenKind::LetIdent
+    )
+}
+
+fn token_text<'a>(src: &'a str, token: &crate::lexer::cpu::CpuToken) -> &'a str {
+    src.get(token.start..token.start.saturating_add(token.len))
+        .unwrap_or("")
+}
+
+fn mangle_module_member(module: &str, name: &str) -> String {
+    let mut segments = module.split("::").map(str::to_string).collect::<Vec<_>>();
+    segments.push(name.to_string());
+    mangle_path_segments(&segments)
+}
+
+fn mangle_path_segments(segments: &[String]) -> String {
+    let mut mangled = String::from("__lanius");
+    for segment in segments {
+        mangled.push('_');
+        mangled.push_str(segment);
+    }
+    mangled
+}
+
+fn apply_replacements(src: &str, mut replacements: Vec<(usize, usize, String)>) -> String {
+    if replacements.is_empty() {
+        return src.to_string();
+    }
+
+    replacements.sort_by_key(|(start, _, _)| *start);
+    let mut out = String::with_capacity(src.len());
+    let mut cursor = 0usize;
+    for (start, end, replacement) in replacements {
+        if start < cursor || end < start || end > src.len() {
+            continue;
+        }
+        out.push_str(&src[cursor..start]);
+        out.push_str(&replacement);
+        cursor = end;
+    }
+    out.push_str(&src[cursor..]);
+    out
 }
 
 fn manifest_root() -> PathBuf {
