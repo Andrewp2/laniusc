@@ -43,6 +43,205 @@ name collisions. This spec describes the long-term desired shape.
 - Do not rush cryptography, async, or unsafe low-level APIs into the stable
   standard library before the language can express their contracts clearly.
 
+## Complete Inventory Checklist
+
+This is the whole target surface in one place. Not every item belongs in the
+first stable release, and not every item belongs in the always-available core,
+but these are the normal standard-library capabilities Lanius should plan for.
+
+### Foundations
+
+- Primitive types: `bool`, signed integers, unsigned integers, pointer-sized
+  integers, floats, `char`, byte values, unit, never/bottom if the language has
+  one.
+- Core sum types: `Option<T>`, `Result<T, E>`, `Ordering`.
+- Product and tuple helpers.
+- Ranges: exclusive, inclusive, open-ended, full ranges, and integer range
+  iteration.
+- Assertions, panic, debug assertions, source locations, and panic hooks.
+- Comparison, hashing, conversion, formatting, and display/debug traits or
+  interfaces once the language has them.
+- Compile-time and runtime target capability checks.
+- Stable naming, visibility, module, and prelude policy.
+
+### Text, Strings, And Bytes
+
+- Borrowed UTF-8 string slices.
+- Owned growable `String`.
+- String builders and formatting buffers.
+- Owned byte buffers and borrowed byte slices.
+- ASCII classification and conversion.
+- UTF-8 validation, encoding, decoding, and error reporting.
+- Character iteration, byte iteration, line splitting, substring search,
+  prefix/suffix helpers, trimming, splitting, replacing, and escaping.
+- Primitive parsing from text and byte slices.
+- Integer, float, bool, char, string, debug, and display formatting.
+- Full Unicode properties, grapheme clusters, normalization, collation, and
+  locale behavior as staged or optional packages.
+
+### Numbers And Math
+
+- Numeric limits, bit widths, byte widths, min/max constants, and classification.
+- Checked, saturating, wrapping, overflowing, and unchecked arithmetic families.
+- Bit operations: shifts, rotates, popcount, leading/trailing zeros, power-of-two
+  helpers, masks, and endian conversion.
+- Explicit casts plus fallible conversions.
+- Integer math: absolute value, sign, gcd, lcm, exponentiation, modular
+  arithmetic, division rounding modes.
+- Floating-point math: classification, roots, powers, logs, trig, rounding,
+  decomposition, constants.
+- Simple statistics over slices: sum, min, max, mean, variance.
+- Optional numeric packages: big integers, decimal, rational, complex,
+  fixed-point, vectors/matrices.
+
+### Core Contiguous Data
+
+- Fixed arrays.
+- Slices and mutable slices.
+- Checked and unsafe unchecked indexing.
+- Slice splitting, chunks, windows, fill, copy, clone, swap, reverse, rotate,
+  search, binary search, sort, dedup, and partition.
+- Generic array APIs once generics and const parameters exist.
+- Fixed-capacity arrays/vectors for no-heap targets.
+
+### Heap Collections
+
+- `Vec<T>` as the primary growable array.
+- `VecDeque<T>` for double-ended queues.
+- `Queue<T>` and `Stack<T>` as thin convenience wrappers or aliases.
+- `BinaryHeap<T>` for priority queues, with min-heap and max-heap adapters.
+- `HashMap<K, V>` and `HashSet<T>`.
+- `BTreeMap<K, V>` and `BTreeSet<T>` for deterministic ordered collections.
+- `BitVec` and bit sets.
+- `SmallVec<T, N>` and `ArrayVec<T, N>` when inline/fixed capacity matters.
+- `LinkedList<T>` only as a specialized structure, not as a default choice.
+- Optional or tooling-oriented structures: trie, rope, interval tree, LRU cache,
+  memo map, sparse set, dense map, dense set, table, union-find, graph, DAG,
+  work queue, slot map, generational indices, symbol interner, arena, bump
+  allocator, slab allocator, index vectors, bit matrices.
+
+### Iteration And Algorithms
+
+- Iterator, exact-size iterator, double-ended iterator, into-iterator,
+  from-iterator, and extend interfaces once abstraction support exists.
+- Iterator adapters: map, filter, filter-map, flat-map, take, skip, enumerate,
+  zip, chain, rev, inspect, fold, reduce, collect, all, any, find, position,
+  count.
+- Sorting: stable, unstable, by comparator, by key.
+- Searching: linear search, binary search, lower/upper bound.
+- Partitioning, deduplication, reverse, rotate, min/max, min/max by key, clamp.
+- Heap operations and top-k helpers.
+- Prefix sums/scans and reductions.
+- Graph algorithms: BFS, DFS, topological sort, strongly connected components,
+  shortest paths where useful for tooling.
+- Deterministic algorithms suitable for compilers and reproducible builds.
+
+### Memory, Allocation, And Ownership
+
+- Global allocator hooks.
+- Fallible allocation and `try_reserve`-style APIs.
+- Allocator interfaces.
+- Arenas, bump allocators, slabs, pools, and fixed buffers.
+- Boxes or owned heap pointers if the ownership model supports them.
+- Reference counting, weak references, and atomic reference counting if the
+  ownership/concurrency model supports them.
+- Interior-mutability primitives only after aliasing rules are explicit.
+- Layout, alignment, size, and memory initialization helpers.
+- Move, copy, clone, drop, and destructor contracts.
+- Raw pointers, uninitialized memory, volatile access, and unsafe unchecked APIs
+  only behind a defined unsafe boundary.
+
+### Errors, Diagnostics, And Observability
+
+- Standard error families for parsing, conversion, UTF-8, bounds, overflow,
+  allocation, I/O, paths, time, process, network, and GPU operations.
+- Diagnostic types: source files, source maps, spans, labels, notes, help text,
+  fix suggestions, severities, and renderers.
+- Logging levels, structured fields, sinks/subscribers, tracing spans, and
+  timing scopes.
+- Backtrace capture where the host supports it.
+- Deterministic human-readable and machine-readable output.
+
+### Host I/O And Operating System APIs
+
+- Reader/writer abstractions.
+- Buffered I/O, cursors, stdin, stdout, stderr.
+- Files, open options, metadata, permissions, directories, recursive directory
+  operations, copy/rename/remove/canonicalize.
+- Paths and path buffers with platform-aware joining, parents, names,
+  extensions, stems, normalization, and display.
+- Process arguments, environment variables, current directory, exit codes,
+  process spawning, child status, captured output, and stream redirection.
+- Terminal detection, color control, ANSI styling, width/height queries, prompts,
+  and later raw mode.
+- Clocks, instants, durations, sleep, timeouts, wall-clock time, and optional
+  calendar/timezone packages.
+- Platform extension modules for OS-specific handles, descriptors, errors, and
+  capabilities.
+- FFI declarations, calling conventions, C strings, byte buffers, and dynamic
+  library loading once the unsafe boundary exists.
+
+### Concurrency, Async, And Networking
+
+- Threads and join handles.
+- Mutexes, read/write locks, condition variables, once cells, lazy values, and
+  channels.
+- Atomics and memory-ordering constants after the memory model is specified.
+- Async tasks, futures, cancellation, timers, and executors only after the
+  language model is clear.
+- TCP streams/listeners, UDP sockets, socket addresses, IP addresses, DNS
+  resolution, blocking/nonblocking modes, and I/O integration.
+- Higher-level protocols such as HTTP and WebSocket as optional packages first.
+- TLS as a separate carefully reviewed package unless the project can commit to
+  the required security maintenance.
+
+### Data Formats, Encoding, And Compression
+
+- Hex, base64, binary encoding/decoding, and endian helpers.
+- JSON, CSV, TOML, and compact binary formats.
+- Streaming encoders and decoders.
+- Value-tree APIs where appropriate.
+- Pretty printing and error locations.
+- URL parsing, percent encoding, UUIDs, glob matching, and regular expressions.
+- Checksums and non-cryptographic hashes.
+- Compression packages such as gzip, zlib, and zstd as optional distribution
+  packages.
+
+### Randomness And Security
+
+- Deterministic PRNGs for tests, simulations, and reproducible tools.
+- Secure random byte generation through host capabilities, with explicit
+  failure when unavailable.
+- Range generation, shuffling, sampling, and distribution helpers.
+- Constant-time equality and secure zeroing if the language/runtime can support
+  their contracts.
+- Cryptographic hashes, HMAC, password hashing, public-key crypto, certificate
+  validation, and TLS only as audited or separately versioned packages.
+
+### Testing, Benchmarking, And Developer Tools
+
+- Assertions, equality assertions, ordering assertions, expected failure/panic,
+  test registration, filtering, and reporting.
+- Snapshot and golden-file testing.
+- Temporary files and directories.
+- Property testing, shrinking, fuzzing harnesses, and benchmarks.
+- Coverage hooks if instrumentation exists.
+- Compiler-tooling helpers: lexer utilities, parser utilities, source maps,
+  diagnostics, arenas, interners, stable IDs, control-flow graphs, data-flow
+  utilities, and worklist algorithms.
+- Package, documentation, and example conventions for stdlib modules.
+
+### GPU And Data-Parallel Support
+
+- Device, queue, buffer, buffer view, dispatch, workgroup size, and GPU error
+  types.
+- Host/device layout validation.
+- Upload, dispatch, readback, profiling, and CPU/GPU parity testing.
+- Prefix scan, segmented scan, reduce, compact, scatter/gather, histogram,
+  radix sort, and parallel partition.
+- Explicit target capability checks; GPU APIs should never enter the default
+  prelude.
+
 ## Library Layers
 
 ### `core`
