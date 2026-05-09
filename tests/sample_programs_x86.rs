@@ -1,10 +1,16 @@
+#[cfg(all(unix, target_arch = "x86_64"))]
 use std::{
     fs,
-    path::{Path, PathBuf},
     process::Command,
     time::{Duration, Instant},
 };
 
+#[cfg(all(unix, target_arch = "x86_64"))]
+mod common;
+
+#[cfg(all(unix, target_arch = "x86_64"))]
+use common::sample_programs::{SampleProgram, load_sample_programs};
+#[cfg(all(unix, target_arch = "x86_64"))]
 use laniusc::{
     compiler::{GpuCompiler, compile_source_to_x86_64_with_gpu_codegen_using},
     gpu::device,
@@ -17,50 +23,42 @@ fn sample_programs_compile_to_x86_and_match_stdout_under_100ms() {
         let compiler = GpuCompiler::new_with_device(device::global())
             .await
             .expect("initialize reusable GPU compiler");
-        let programs = sample_programs();
+        let programs = load_sample_programs();
 
-        let sources = programs
+        let warm_src = programs
             .iter()
-            .map(|program| {
-                let src = fs::read_to_string(program)
-                    .unwrap_or_else(|err| panic!("read {}: {err}", program.display()));
-                (program.clone(), src)
-            })
-            .collect::<Vec<_>>();
-        let warm_src = sources
-            .iter()
-            .max_by_key(|(_, src)| src.len())
-            .map(|(_, src)| src.as_str())
+            .max_by_key(|program| program.source().len())
+            .map(SampleProgram::source)
             .expect("sample source for native warmup");
         compile_source_to_x86_64_with_gpu_codegen_using(warm_src, &compiler)
             .await
             .expect("warm up reusable x86 compiler");
 
-        for (program, src) in sources {
-            let name = program
-                .file_stem()
-                .and_then(|stem| stem.to_str())
-                .expect("sample program file stem");
-            let expected_path = program.with_extension("stdout");
-            let expected = fs::read_to_string(&expected_path)
-                .unwrap_or_else(|err| panic!("{name}: read {}: {err}", expected_path.display()));
-
+        for program in programs {
             let start = Instant::now();
-            let elf = compile_source_to_x86_64_with_gpu_codegen_using(&src, &compiler)
+            let elf = compile_source_to_x86_64_with_gpu_codegen_using(program.source(), &compiler)
                 .await
-                .unwrap_or_else(|err| panic!("{name}: compile x86_64: {err}"));
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "{}: compile x86_64 from {}: {err}",
+                        program.name(),
+                        program.path().display()
+                    )
+                });
             let elapsed = start.elapsed();
             assert!(
                 elapsed < Duration::from_millis(100),
-                "{name}: x86_64 compile took {elapsed:?}, expected under 100ms"
+                "{}: x86_64 compile took {elapsed:?}, expected under 100ms",
+                program.name()
             );
             println!(
-                "{name}: x86_compile_ms={:.3}",
+                "{}: x86_compile_ms={:.3}",
+                program.name(),
                 elapsed.as_secs_f64() * 1000.0
             );
 
-            let stdout = run_x86(name, &elf);
-            assert_eq!(stdout, expected, "{name}: x86_64 stdout mismatch");
+            let stdout = run_x86(&program, &elf);
+            program.assert_stdout_eq("x86_64", &stdout);
         }
     });
 }
@@ -68,11 +66,7 @@ fn sample_programs_compile_to_x86_and_match_stdout_under_100ms() {
 #[test]
 #[cfg(all(unix, target_arch = "x86_64"))]
 fn cli_defaults_to_x86_64_executable() {
-    let src_path = std::env::temp_dir().join(format!(
-        "laniusc_gpu_x86_{}_{}.lani",
-        std::process::id(),
-        unique_suffix()
-    ));
+    let src_path = common::temp_artifact_path("laniusc_gpu_x86", "cli_default", Some("lani"));
     let exe_path = src_path.with_extension("elf");
     fs::write(&src_path, "fn main() {\n    print(42);\n    return 0;\n}\n")
         .expect("write temporary source");
@@ -108,96 +102,52 @@ fn cli_defaults_to_x86_64_executable() {
     assert_eq!(String::from_utf8_lossy(&run.stdout), "42\n");
 }
 
-fn sample_programs() -> Vec<PathBuf> {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("sample_programs");
-    let mut programs = Vec::new();
-    let mut expected_outputs = Vec::new();
-    for entry in fs::read_dir(&root)
-        .unwrap_or_else(|err| panic!("read sample_programs dir {}: {err}", root.display()))
-    {
-        let path = entry
-            .unwrap_or_else(|err| panic!("read sample_programs entry: {err}"))
-            .path();
-        match path.extension().and_then(|ext| ext.to_str()) {
-            Some("lani") => programs.push(path),
-            Some("stdout") => expected_outputs.push(path),
-            _ => {}
-        }
-    }
-    programs.sort();
-    expected_outputs.sort();
-    assert!(
-        !programs.is_empty(),
-        "expected at least one sample program in {}",
-        root.display()
-    );
-
-    let missing_stdout = programs
-        .iter()
-        .filter(|program| !program.with_extension("stdout").is_file())
-        .map(sample_file_name)
-        .collect::<Vec<_>>();
-    assert!(
-        missing_stdout.is_empty(),
-        "sample programs missing .stdout files: {}",
-        missing_stdout.join(", ")
-    );
-
-    let orphan_stdout = expected_outputs
-        .iter()
-        .filter(|expected| !expected.with_extension("lani").is_file())
-        .map(sample_file_name)
-        .collect::<Vec<_>>();
-    assert!(
-        orphan_stdout.is_empty(),
-        "sample stdout files missing .lani programs: {}",
-        orphan_stdout.join(", ")
-    );
-
-    programs
-}
-
-fn sample_file_name(path: &PathBuf) -> String {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .map(str::to_owned)
-        .unwrap_or_else(|| path.display().to_string())
-}
-
 #[cfg(all(unix, target_arch = "x86_64"))]
-fn run_x86(name: &str, elf: &[u8]) -> String {
+fn run_x86(program: &SampleProgram, elf: &[u8]) -> String {
     use std::os::unix::fs::PermissionsExt;
 
-    let exe_path = std::env::temp_dir().join(format!(
-        "laniusc_sample_x86_{name}_{}_{}",
-        std::process::id(),
-        unique_suffix()
-    ));
-    fs::write(&exe_path, elf)
-        .unwrap_or_else(|err| panic!("{name}: write temporary ELF {}: {err}", exe_path.display()));
+    let exe_path = common::temp_artifact_path("laniusc_sample_x86", program.name(), None);
+    fs::write(&exe_path, elf).unwrap_or_else(|err| {
+        panic!(
+            "{}: write temporary ELF {}: {err}",
+            program.name(),
+            exe_path.display()
+        )
+    });
     let mut permissions = fs::metadata(&exe_path)
-        .unwrap_or_else(|err| panic!("{name}: stat temporary ELF {}: {err}", exe_path.display()))
+        .unwrap_or_else(|err| {
+            panic!(
+                "{}: stat temporary ELF {}: {err}",
+                program.name(),
+                exe_path.display()
+            )
+        })
         .permissions();
     permissions.set_mode(0o700);
-    fs::set_permissions(&exe_path, permissions)
-        .unwrap_or_else(|err| panic!("{name}: chmod temporary ELF {}: {err}", exe_path.display()));
+    fs::set_permissions(&exe_path, permissions).unwrap_or_else(|err| {
+        panic!(
+            "{}: chmod temporary ELF {}: {err}",
+            program.name(),
+            exe_path.display()
+        )
+    });
 
-    let output = Command::new(&exe_path)
-        .output()
-        .unwrap_or_else(|err| panic!("{name}: run native ELF {}: {err}", exe_path.display()));
+    let output = Command::new(&exe_path).output().unwrap_or_else(|err| {
+        panic!(
+            "{}: run native ELF {}: {err}",
+            program.name(),
+            exe_path.display()
+        )
+    });
     let _ = fs::remove_file(&exe_path);
     assert!(
         output.status.success(),
-        "{name}: native ELF failed:\nstdout:\n{}\nstderr:\n{}",
+        "{}: native ELF failed for {}:\nstdout:\n{}\nstderr:\n{}",
+        program.name(),
+        exe_path.display(),
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    String::from_utf8(output.stdout).unwrap_or_else(|err| panic!("{name}: stdout utf8: {err}"))
-}
-
-fn unique_suffix() -> u128 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos()
+    String::from_utf8(output.stdout)
+        .unwrap_or_else(|err| panic!("{}: native stdout utf8: {err}", program.name()))
 }
