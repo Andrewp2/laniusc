@@ -219,6 +219,32 @@ fn main() {
     run_wasm_main_if_node_available(&wasm, "12\n");
 }
 
+#[test]
+fn gpu_codegen_ignores_enum_declarations() {
+    let src = r#"
+pub enum ResultI32 {
+    Ok(i32),
+    Err(i32),
+}
+
+enum Ordering {
+    Less,
+    Equal,
+    Greater,
+}
+
+fn main() {
+    print(3);
+    return 0;
+}
+"#;
+    let wasm =
+        pollster::block_on(compile_source_to_wasm_with_gpu_codegen(src)).expect("compile WASM");
+
+    assert_lanius_wasm(&wasm);
+    run_wasm_main_if_node_available(&wasm, "3\n");
+}
+
 fn assert_lanius_wasm(bytes: &[u8]) {
     assert!(
         bytes.len() >= 37,

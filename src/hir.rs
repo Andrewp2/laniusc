@@ -50,6 +50,7 @@ pub struct HirFile {
 pub enum HirItem {
     Fn(HirFn),
     Const(HirConst),
+    Enum(HirEnum),
     Stmt(HirStmt),
 }
 
@@ -68,6 +69,21 @@ pub struct HirConst {
     pub name: String,
     pub ty: HirType,
     pub value: HirExpr,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HirEnum {
+    pub public: bool,
+    pub name: String,
+    pub variants: Vec<HirEnumVariant>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HirEnumVariant {
+    pub name: String,
+    pub fields: Vec<HirType>,
     pub span: Span,
 }
 
@@ -294,10 +310,14 @@ impl<'a> HirParser<'a> {
 
     fn parse_item(&mut self) -> Result<HirItem, HirError> {
         let public = self.eat(TokenKind::Pub).is_some();
-        if public || self.peek() == Some(TokenKind::Fn) {
+        if public && self.peek() == Some(TokenKind::Enum) {
+            Ok(HirItem::Enum(self.parse_enum(public)?))
+        } else if public || self.peek() == Some(TokenKind::Fn) {
             Ok(HirItem::Fn(self.parse_fn(public)?))
         } else if self.peek() == Some(TokenKind::Const) {
             Ok(HirItem::Const(self.parse_const()?))
+        } else if self.peek() == Some(TokenKind::Enum) {
+            Ok(HirItem::Enum(self.parse_enum(public)?))
         } else {
             Ok(HirItem::Stmt(self.parse_stmt()?))
         }
@@ -364,6 +384,88 @@ impl<'a> HirParser<'a> {
             value,
             span: self.span_since(start),
         })
+    }
+
+    fn parse_enum(&mut self, public: bool) -> Result<HirEnum, HirError> {
+        let start = if public {
+            self.prev_start()
+        } else {
+            self.peek_start()
+        };
+        self.expect(TokenKind::Enum, "Enum")?;
+        let name = self.expect_name(&[TokenKind::Ident], "enum name")?;
+        self.expect(TokenKind::LBrace, "LBrace")?;
+
+        let mut variants = Vec::new();
+        while self.peek() != Some(TokenKind::RBrace) {
+            if self.peek().is_none() {
+                return Err(self.error("RBrace"));
+            }
+            variants.push(self.parse_enum_variant()?);
+            if self.eat(TokenKind::Comma).is_some() || self.eat(TokenKind::ArgComma).is_some() {
+                if self.peek() == Some(TokenKind::RBrace) {
+                    break;
+                }
+                continue;
+            }
+            if self.peek() != Some(TokenKind::RBrace) {
+                return Err(self.error("Comma or RBrace"));
+            }
+        }
+
+        self.expect(TokenKind::RBrace, "RBrace")?;
+        Ok(HirEnum {
+            public,
+            name,
+            variants,
+            span: self.span_since(start),
+        })
+    }
+
+    fn parse_enum_variant(&mut self) -> Result<HirEnumVariant, HirError> {
+        let start = self.peek_start();
+        let name = self.expect_name(&[TokenKind::Ident], "enum variant name")?;
+        let fields = if self
+            .eat_any(&[
+                TokenKind::CallLParen,
+                TokenKind::GroupLParen,
+                TokenKind::LParen,
+            ])
+            .is_some()
+        {
+            let fields = self.parse_enum_variant_fields()?;
+            self.expect_any(
+                &[
+                    TokenKind::CallRParen,
+                    TokenKind::GroupRParen,
+                    TokenKind::RParen,
+                ],
+                "RParen",
+            )?;
+            fields
+        } else {
+            Vec::new()
+        };
+        Ok(HirEnumVariant {
+            name,
+            fields,
+            span: self.span_since(start),
+        })
+    }
+
+    fn parse_enum_variant_fields(&mut self) -> Result<Vec<HirType>, HirError> {
+        if self.peek().is_some_and(Self::is_close_paren) {
+            return Ok(Vec::new());
+        }
+
+        let mut fields = vec![self.parse_type_expr()?];
+        while self.eat(TokenKind::ArgComma).is_some() || self.eat(TokenKind::Comma).is_some() {
+            if self.peek().is_some_and(Self::is_close_paren) {
+                break;
+            }
+            fields.push(self.parse_type_expr()?);
+        }
+        Ok(fields)
     }
 
     fn parse_params(&mut self) -> Result<Vec<HirParam>, HirError> {

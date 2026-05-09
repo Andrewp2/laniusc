@@ -26,7 +26,8 @@ pub struct AstNode {
     /// "lt", "gt", "le", "ge", "eq", "and", "or", "set",
     /// plus file/item additions: "file", "fn", "param", "type_ident",
     /// "type_array", "block", "stmt_let", "stmt_return", "stmt_if",
-    /// "stmt_while", "stmt_break", "stmt_continue", "stmt_expr".
+    /// "stmt_while", "stmt_break", "stmt_continue", "stmt_expr", "enum",
+    /// "enum_variant", "enum_fields", "enum_fields_none".
     pub tag: &'static str,
     /// Children node ids in source order.
     pub children: Vec<u32>,
@@ -174,12 +175,18 @@ impl<'a> Parser<'a> {
 
     fn parse_item(&mut self) -> Result<u32, ParseError> {
         if self.eat(tokens::TokenKind::Pub) {
-            let item = self.parse_fn_item()?;
+            let item = if self.peek() == Some(tokens::TokenKind::Enum) {
+                self.parse_enum_item()?
+            } else {
+                self.parse_fn_item()?
+            };
             Ok(self.push("pub", vec![item]))
         } else if self.peek() == Some(tokens::TokenKind::Fn) {
             self.parse_fn_item()
         } else if self.peek() == Some(tokens::TokenKind::Const) {
             self.parse_const_item()
+        } else if self.peek() == Some(tokens::TokenKind::Enum) {
+            self.parse_enum_item()
         } else {
             self.parse_stmt()
         }
@@ -220,6 +227,96 @@ impl<'a> Parser<'a> {
         let value = self.parse_expr()?;
         self.expect_semicolon()?;
         Ok(self.push("const", vec![name_id, ty, value]))
+    }
+
+    /// Parse a top-level `enum` item.
+    fn parse_enum_item(&mut self) -> Result<u32, ParseError> {
+        self.expect(tokens::TokenKind::Enum, "Enum")?;
+        self.expect(tokens::TokenKind::Ident, "enum name")?;
+        let name_id = self.push("ident", vec![]);
+        self.expect(tokens::TokenKind::LBrace, "LBrace")?;
+
+        let mut variants = Vec::new();
+        while self.peek() != Some(tokens::TokenKind::RBrace) {
+            if self.peek().is_none() {
+                return Err(ParseError {
+                    pos: self.i,
+                    expected: "RBrace",
+                    found: None,
+                });
+            }
+            variants.push(self.parse_enum_variant()?);
+            if self.eat(tokens::TokenKind::Comma) || self.eat(tokens::TokenKind::ArgComma) {
+                if self.peek() == Some(tokens::TokenKind::RBrace) {
+                    break;
+                }
+                continue;
+            }
+            if self.peek() != Some(tokens::TokenKind::RBrace) {
+                return Err(ParseError {
+                    pos: self.i,
+                    expected: "Comma or RBrace",
+                    found: self.peek(),
+                });
+            }
+        }
+
+        self.expect(tokens::TokenKind::RBrace, "RBrace")?;
+        Ok(self.push("enum", [vec![name_id], variants].concat()))
+    }
+
+    fn parse_enum_variant(&mut self) -> Result<u32, ParseError> {
+        self.expect(tokens::TokenKind::Ident, "enum variant name")?;
+        let name_id = self.push("ident", vec![]);
+        let fields = if self.eat(tokens::TokenKind::CallLParen)
+            || self.eat(tokens::TokenKind::GroupLParen)
+            || self.eat(tokens::TokenKind::LParen)
+        {
+            let fields = self.parse_enum_fields()?;
+            if !(self.eat(tokens::TokenKind::CallRParen)
+                || self.eat(tokens::TokenKind::GroupRParen)
+                || self.eat(tokens::TokenKind::RParen))
+            {
+                return Err(ParseError {
+                    pos: self.i,
+                    expected: "RParen",
+                    found: self.peek(),
+                });
+            }
+            fields
+        } else {
+            self.push("enum_fields_none", vec![])
+        };
+        Ok(self.push("enum_variant", vec![name_id, fields]))
+    }
+
+    fn parse_enum_fields(&mut self) -> Result<u32, ParseError> {
+        if matches!(
+            self.peek(),
+            Some(
+                tokens::TokenKind::CallRParen
+                    | tokens::TokenKind::GroupRParen
+                    | tokens::TokenKind::RParen
+            )
+        ) {
+            return Ok(self.push("enum_fields", vec![]));
+        }
+
+        let mut fields = vec![self.parse_type_expr()?];
+        while self.eat(tokens::TokenKind::ArgComma) || self.eat(tokens::TokenKind::Comma) {
+            if matches!(
+                self.peek(),
+                Some(
+                    tokens::TokenKind::CallRParen
+                        | tokens::TokenKind::GroupRParen
+                        | tokens::TokenKind::RParen
+                )
+            ) {
+                break;
+            }
+            fields.push(self.parse_type_expr()?);
+        }
+        Ok(self.push("enum_fields", fields))
     }
 
     fn parse_param_list_opt(&mut self) -> Result<u32, ParseError> {

@@ -55,6 +55,7 @@ static const uint TK_TYPE_ARRAY_RBRACKET = 86u;
 static const uint TK_IF_LBRACE = 88u;
 static const uint TK_IF_RBRACE = 89u;
 static const uint TK_CONST = 92u;
+static const uint TK_ENUM = 93u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -271,7 +272,8 @@ uint declaration_scope_end(uint decl_i)
         (kind == TK_IDENT && decl_i + 1u < active_token_count() &&
          token_kind(decl_i + 1u) == TK_COLON &&
          (decl_i == 0u ||
-          (token_kind(decl_i - 1u) != TK_LET && token_kind(decl_i - 1u) != TK_CONST))))
+          (token_kind(decl_i - 1u) != TK_LET && token_kind(decl_i - 1u) != TK_CONST &&
+           token_kind(decl_i - 1u) != TK_ENUM))))
         return param_scope_end(decl_i);
     if (kind == TK_LET_IDENT ||
         (kind == TK_IDENT && decl_i > 0u && token_kind(decl_i - 1u) == TK_LET))
@@ -325,7 +327,8 @@ bool is_param_decl_at(uint i)
     uint kind = token_kind(i);
     return kind == TK_PARAM_IDENT ||
            (kind == TK_IDENT && i + 1u < active_token_count() && token_kind(i + 1u) == TK_COLON &&
-            (i == 0u || (token_kind(i - 1u) != TK_LET && token_kind(i - 1u) != TK_CONST)));
+            (i == 0u || (token_kind(i - 1u) != TK_LET && token_kind(i - 1u) != TK_CONST &&
+                         token_kind(i - 1u) != TK_ENUM)));
 }
 
 bool ident_is_use(uint i)
@@ -334,7 +337,7 @@ bool ident_is_use(uint i)
         return false;
 
     uint prev = i > 0u ? token_kind(i - 1u) : 0u;
-    if (prev == TK_FN || prev == TK_LET || prev == TK_CONST || prev == TK_DOT ||
+    if (prev == TK_FN || prev == TK_LET || prev == TK_CONST || prev == TK_ENUM || prev == TK_DOT ||
         prev == TK_COLON || prev == TK_ARROW)
         return false;
 

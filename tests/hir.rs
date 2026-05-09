@@ -30,6 +30,7 @@ fn only_fn(src: &str) -> HirFn {
     match file.items.into_iter().next().unwrap() {
         HirItem::Fn(func) => func,
         HirItem::Const(_) => panic!("expected function item"),
+        HirItem::Enum(_) => panic!("expected function item"),
         HirItem::Stmt(_) => panic!("expected function item"),
     }
 }
@@ -142,6 +143,10 @@ fn assert_hir_file_spans(name: &str, src: &str, tokens: &[CpuToken], file: &HirF
                 assert_const_spans(name, src, konst);
                 konst.span
             }
+            HirItem::Enum(enm) => {
+                assert_enum_spans(name, src, enm);
+                enm.span
+            }
             HirItem::Stmt(stmt) => {
                 assert_stmt_spans(name, src, stmt);
                 stmt.span
@@ -171,6 +176,33 @@ fn assert_const_spans(name: &str, src: &str, konst: &HirConst) {
     assert_span_contains(name, "constant type", konst.span, konst.ty.span);
     assert_expr_spans(name, src, &konst.value);
     assert_span_contains(name, "constant value", konst.span, konst.value.span);
+}
+
+fn assert_enum_spans(name: &str, src: &str, enm: &laniusc::hir::HirEnum) {
+    assert_span_in_source(name, "enum", enm.span, src);
+    for (variant_i, variant) in enm.variants.iter().enumerate() {
+        assert_span_in_source(
+            name,
+            &format!("enum variant {variant_i}"),
+            variant.span,
+            src,
+        );
+        assert_span_contains(
+            name,
+            &format!("enum variant {variant_i}"),
+            enm.span,
+            variant.span,
+        );
+        for (field_i, field) in variant.fields.iter().enumerate() {
+            assert_type_spans(name, src, field);
+            assert_span_contains(
+                name,
+                &format!("enum variant {variant_i} field {field_i}"),
+                variant.span,
+                field.span,
+            );
+        }
+    }
 }
 
 fn assert_type_spans(name: &str, src: &str, ty: &HirType) {
@@ -560,6 +592,50 @@ fn hir_preserves_top_level_constants() {
             kind: HirLiteralKind::Bool,
             text: "true".into()
         }
+    );
+}
+
+#[test]
+fn hir_preserves_enum_declarations() {
+    let file = parse_source(
+        "pub enum ResultI32 { Ok(i32), Err([i32; 4]), Empty } enum Ordering { Less, Equal, Greater }",
+    )
+    .expect("parse enum declarations");
+    assert_eq!(file.items.len(), 2);
+
+    let HirItem::Enum(result) = &file.items[0] else {
+        panic!("expected first item to be enum");
+    };
+    assert!(result.public);
+    assert_eq!(result.name, "ResultI32");
+    assert_eq!(result.variants.len(), 3);
+    assert_eq!(result.variants[0].name, "Ok");
+    assert_eq!(result.variants[0].fields.len(), 1);
+    assert_eq!(
+        result.variants[0].fields[0].kind,
+        HirTypeKind::Name("i32".into())
+    );
+    assert_eq!(result.variants[1].name, "Err");
+    assert_eq!(result.variants[1].fields.len(), 1);
+    assert!(matches!(
+        result.variants[1].fields[0].kind,
+        HirTypeKind::Array { .. }
+    ));
+    assert_eq!(result.variants[2].name, "Empty");
+    assert!(result.variants[2].fields.is_empty());
+
+    let HirItem::Enum(ordering) = &file.items[1] else {
+        panic!("expected second item to be enum");
+    };
+    assert!(!ordering.public);
+    assert_eq!(ordering.name, "Ordering");
+    assert_eq!(
+        ordering
+            .variants
+            .iter()
+            .map(|variant| variant.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Less", "Equal", "Greater"]
     );
 }
 

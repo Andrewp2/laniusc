@@ -28,6 +28,7 @@ static const uint TK_CONTINUE = 74;
 static const uint TK_TRUE = 90;
 static const uint TK_FALSE = 91;
 static const uint TK_CONST = 92;
+static const uint TK_ENUM = 93;
 
 inline uint retag_keyword(uint kind, uint start, uint len)
 {
@@ -61,6 +62,8 @@ inline uint retag_keyword(uint kind, uint start, uint len)
         uint b3 = load_byte_at(in_bytes, start + 3u);
         if (b0 == 101u && b1 == 108u && b2 == 115u && b3 == 101u)
             return TK_ELSE;
+        if (b0 == 101u && b1 == 110u && b2 == 117u && b3 == 109u)
+            return TK_ENUM;
         if (b0 == 116u && b1 == 114u && b2 == 117u && b3 == 101u)
             return TK_TRUE;
     }

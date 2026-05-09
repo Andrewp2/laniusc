@@ -392,6 +392,7 @@ fn keyword_kind_at(input: &str, start: u32, len: u32) -> Option<TokenKind> {
         b"true" => Some(TokenKind::True),
         b"false" => Some(TokenKind::False),
         b"const" => Some(TokenKind::Const),
+        b"enum" => Some(TokenKind::Enum),
         _ => None,
     }
 }

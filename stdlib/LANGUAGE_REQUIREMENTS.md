@@ -20,6 +20,10 @@ Supported enough for the seed library:
   `stdlib/i32.lani`, `stdlib/bool.lani`, and `stdlib/array_i32_4.lani`.
 - Top-level primitive `const` items, used by `stdlib/i32.lani` for
   `LSTD_I32_MIN` and `LSTD_I32_MAX`.
+- Top-level `enum` declarations with unit variants and tuple payload syntax now
+  parse, lower to HIR, and are ignored safely by syntax/HIR validation. They do
+  not yet create usable types, constructors, pattern matching, or backend
+  representations.
 - `i32` arithmetic, comparisons, unary minus, logical operators, assignment, and
   compound assignment, used by `lstd_i32_abs`, `lstd_i32_clamp`, and array
   loops.
@@ -84,7 +88,9 @@ minimal formatting hooks.
 
 Strict blockers:
 
-- Enum/sum types with payloads for `Option<T>`, `Result<T, E>`, and `Ordering`.
+- Full enum/sum types with payloads for `Option<T>`, `Result<T, E>`, and
+  `Ordering`. Declaration syntax exists, but constructors, type checking,
+  pattern matching, layout, and codegen support are still missing.
 - Generics for primitive-independent helpers and generic array/slice algorithms.
 - Const parameters or equivalent array length abstraction, replacing files like
   `array_i32_4.lani`.

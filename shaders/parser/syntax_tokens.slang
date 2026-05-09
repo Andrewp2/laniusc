@@ -118,6 +118,8 @@ static const uint TK_IF_LBRACE = 88u;
 static const uint TK_IF_RBRACE = 89u;
 static const uint TK_TRUE = 90u;
 static const uint TK_FALSE = 91u;
+static const uint TK_CONST = 92u;
+static const uint TK_ENUM = 93u;
 
 uint active_token_count()
 {
@@ -150,7 +152,8 @@ void record_error(uint token_i, uint code, uint detail)
 bool is_stmt_keyword(uint kind)
 {
     return kind == TK_LET || kind == TK_RETURN || kind == TK_IF || kind == TK_WHILE ||
-           kind == TK_BREAK || kind == TK_CONTINUE || kind == TK_FN;
+           kind == TK_BREAK || kind == TK_CONTINUE || kind == TK_FN || kind == TK_CONST ||
+           kind == TK_ENUM;
 }
 
 bool is_stmt_boundary(uint kind)
@@ -363,6 +366,20 @@ void check_fn(uint i)
         record_error(i, ERR_EXPECTED_TOKEN, TK_LBRACE);
 }
 
+void check_enum(uint i)
+{
+    if (token_kind(i + 1u) != TK_IDENT)
+    {
+        record_error(i, ERR_EXPECTED_TOKEN, TK_IDENT);
+        return;
+    }
+    if (token_kind(i + 2u) != TK_LBRACE)
+    {
+        record_error(i + 2u, ERR_EXPECTED_TOKEN, TK_LBRACE);
+        return;
+    }
+}
+
 void check_let(uint i)
 {
     uint ident_kind = token_kind(i + 1u);
@@ -547,10 +564,12 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (delimiter_prefix_underflows(i))
         record_error(i, ERR_UNBALANCED_DELIMITER, kind);
 
-    if (kind == TK_PUB && token_kind(i + 1u) != TK_FN)
+    if (kind == TK_PUB && token_kind(i + 1u) != TK_FN && token_kind(i + 1u) != TK_ENUM)
         record_error(i, ERR_EXPECTED_TOKEN, TK_FN);
     else if (kind == TK_FN)
         check_fn(i);
+    else if (kind == TK_ENUM)
+        check_enum(i);
     else if (kind == TK_PARAM_IDENT && (token_kind(i + 1u) != TK_COLON || !is_type_start(token_kind(i + 2u))))
         record_error(i, ERR_EXPECTED_TOKEN, TK_COLON);
     else if (kind == TK_PARAM_COMMA &&

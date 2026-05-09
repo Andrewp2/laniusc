@@ -48,6 +48,8 @@ static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_LITERAL_EXPR = 23u;
 static const uint HIR_ARRAY_EXPR = 24u;
+static const uint HIR_CONST_ITEM = 25u;
+static const uint HIR_ENUM_ITEM = 26u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -109,6 +111,10 @@ uint classify(uint prod)
         return HIR_NAME_EXPR;
     if ((prod >= 109u && prod <= 112u) || prod == 117u || prod == 118u)
         return HIR_LITERAL_EXPR;
+    if (prod == 120u)
+        return HIR_CONST_ITEM;
+    if (prod == 122u)
+        return HIR_ENUM_ITEM;
     return HIR_NONE;
 }
 
