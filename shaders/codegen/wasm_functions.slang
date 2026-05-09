@@ -56,6 +56,8 @@ static const uint TK_PARAM_RPAREN = 77u;
 static const uint TK_PARAM_IDENT = 79u;
 static const uint TK_IF_LBRACE = 88u;
 static const uint TK_IF_RBRACE = 89u;
+static const uint TK_TRUE = 90u;
+static const uint TK_FALSE = 91u;
 static const uint TK_LBRACE = 22u;
 static const uint TK_RBRACE = 23u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -466,6 +468,8 @@ void emit_atom(inout uint cursor, uint token_i, bool write, uint lane)
     uint kind = token_kind(token_i);
     if (kind == TK_INT)
         emit_i64_const_u32(cursor, parse_uint_token(token_i), write, lane);
+    else if (kind == TK_TRUE || kind == TK_FALSE)
+        emit_i64_const_u32(cursor, kind == TK_TRUE ? 1u : 0u, write, lane);
     else if (kind == TK_IDENT || kind == TK_PARAM_IDENT)
     {
         uint decl = visible_decl[token_i];
@@ -499,7 +503,8 @@ void emit_simple_expr(inout uint cursor, uint start_i, uint end_i, bool write, u
         {
             pending_op = kind == TK_INFIX_MINUS ? TK_MINUS : kind;
         }
-        else if (kind == TK_INT || kind == TK_IDENT || kind == TK_PARAM_IDENT)
+        else if (kind == TK_INT || kind == TK_TRUE || kind == TK_FALSE ||
+                 kind == TK_IDENT || kind == TK_PARAM_IDENT)
         {
             emit_atom(cursor, i, write, lane);
             if (negate_next)
@@ -617,7 +622,8 @@ void emit_expr(inout uint cursor, uint start_i, uint end_i, bool write, uint lan
         {
             pending_op = kind == TK_INFIX_MINUS ? TK_MINUS : kind;
         }
-        else if (kind == TK_INT || kind == TK_IDENT || kind == TK_PARAM_IDENT)
+        else if (kind == TK_INT || kind == TK_TRUE || kind == TK_FALSE ||
+                 kind == TK_IDENT || kind == TK_PARAM_IDENT)
         {
             emit_atom(cursor, i, write, lane);
             if (negate_next)

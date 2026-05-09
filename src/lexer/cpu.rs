@@ -20,6 +20,8 @@ fn ends_primary(k: TokenKind) -> bool {
         Ident
             | Int
             | Float
+            | True
+            | False
             | String
             | Char
             | RParen
@@ -218,6 +220,8 @@ fn keyword_kind(bytes: &[u8]) -> Option<TokenKind> {
         b"while" => Some(TokenKind::While),
         b"break" => Some(TokenKind::Break),
         b"continue" => Some(TokenKind::Continue),
+        b"true" => Some(TokenKind::True),
+        b"false" => Some(TokenKind::False),
         _ => None,
     }
 }

@@ -116,6 +116,8 @@ static const uint TK_TYPE_ARRAY_RBRACKET = 86u;
 static const uint TK_TYPE_SEMICOLON = 87u;
 static const uint TK_IF_LBRACE = 88u;
 static const uint TK_IF_RBRACE = 89u;
+static const uint TK_TRUE = 90u;
+static const uint TK_FALSE = 91u;
 
 uint active_token_count()
 {
@@ -182,6 +184,7 @@ bool is_binary_operator(uint kind)
 bool is_expr_start(uint kind)
 {
     return kind == TK_IDENT || kind == TK_INT || kind == TK_FLOAT || kind == TK_STRING ||
+           kind == TK_TRUE || kind == TK_FALSE ||
            kind == TK_CHAR || kind == TK_GROUP_LPAREN || kind == TK_LPAREN ||
            kind == TK_ARRAY_LBRACKET || kind == TK_LBRACKET || kind == TK_PREFIX_PLUS ||
            kind == TK_PREFIX_MINUS || kind == TK_NOT || kind == TK_TILDE || kind == TK_INC ||
@@ -191,6 +194,7 @@ bool is_expr_start(uint kind)
 bool is_expr_end(uint kind)
 {
     return kind == TK_IDENT || kind == TK_INT || kind == TK_FLOAT || kind == TK_STRING ||
+           kind == TK_TRUE || kind == TK_FALSE ||
            kind == TK_CHAR || kind == TK_GROUP_RPAREN || kind == TK_RPAREN ||
            kind == TK_CALL_RPAREN || kind == TK_INDEX_RBRACKET || kind == TK_ARRAY_RBRACKET ||
            kind == TK_RBRACKET || kind == TK_INC || kind == TK_DEC;

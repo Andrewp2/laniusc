@@ -484,6 +484,37 @@ fn hir_preserves_names_and_literals_in_function_fixture() {
 }
 
 #[test]
+fn hir_preserves_bool_literals() {
+    let func =
+        only_fn("fn main() { let flag: bool = false; if (true) { return 1; } else { return 0; } }");
+
+    let HirStmtKind::Let {
+        value: Some(value), ..
+    } = &func.body.stmts[0].kind
+    else {
+        panic!("expected let with initializer");
+    };
+    assert_eq!(
+        value.kind,
+        HirExprKind::Literal {
+            kind: HirLiteralKind::Bool,
+            text: "false".to_string()
+        }
+    );
+
+    let HirStmtKind::If { cond, .. } = &func.body.stmts[1].kind else {
+        panic!("expected if statement");
+    };
+    assert_eq!(
+        cond.kind,
+        HirExprKind::Literal {
+            kind: HirLiteralKind::Bool,
+            text: "true".to_string()
+        }
+    );
+}
+
+#[test]
 fn hir_lowers_typed_function_control_flow_and_postfix_exprs() {
     let src = r#"
 pub fn pick(a: i32, b: [i32; 4]) -> i32 {

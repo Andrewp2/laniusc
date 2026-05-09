@@ -163,3 +163,5 @@ array_elems_opt [array_none] -> ;
 array_elems_opt [array_some] -> expr array_elems_tail;
 array_elems_tail [array_more] -> 'Comma' expr array_elems_tail;
 array_elems_tail [array_end] -> ;
+primary      [true]          -> 'True';
+primary      [false]         -> 'False';

@@ -134,6 +134,8 @@ static const uint TK_TYPE_SEMICOLON = 87u;
 static const uint TK_IF_LBRACE = 88u;
 static const uint TK_IF_RBRACE = 89u;
 static const uint TK_LET_IDENT = 78u;
+static const uint TK_TRUE = 90u;
+static const uint TK_FALSE = 91u;
 static const uint PARAM_CACHE_STRIDE = 16u;
 
 uint active_token_count()
@@ -421,6 +423,8 @@ uint literal_head_type(uint expr_i, uint limit_i)
 
         if (kind == TK_INT)
             return TY_INT;
+        if (kind == TK_TRUE || kind == TK_FALSE)
+            return TY_BOOL;
         if (kind == TK_FLOAT)
             return TY_FLOAT;
         if (kind == TK_STRING)
@@ -443,6 +447,8 @@ uint literal_head_type(uint expr_i, uint limit_i)
                 }
                 if (elem_kind == TK_INT)
                     return TY_ARRAY_BASE + TY_INT;
+                if (elem_kind == TK_TRUE || elem_kind == TK_FALSE)
+                    return TY_ARRAY_BASE + TY_BOOL;
                 if (elem_kind == TK_FLOAT)
                     return TY_ARRAY_BASE + TY_FLOAT;
                 if (elem_kind == TK_STRING)

@@ -60,6 +60,8 @@ static const uint TK_LET_IDENT = 78u;
 static const uint TK_LET_ASSIGN = 81u;
 static const uint TK_IF_LBRACE = 88u;
 static const uint TK_IF_RBRACE = 89u;
+static const uint TK_TRUE = 90u;
+static const uint TK_FALSE = 91u;
 
 uint active_token_count()
 {
@@ -288,6 +290,11 @@ void emit_i64_atom_range(inout uint cursor, uint start_i, uint end_i, bool write
         if (kind == TK_INT)
         {
             emit_i64_const_u32(cursor, parse_uint_token(i), write, lane);
+            return;
+        }
+        if (kind == TK_TRUE || kind == TK_FALSE)
+        {
+            emit_i64_const_u32(cursor, kind == TK_TRUE ? 1u : 0u, write, lane);
             return;
         }
         if (kind == TK_IDENT || kind == TK_LET_IDENT)

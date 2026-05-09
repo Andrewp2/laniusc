@@ -84,6 +84,8 @@ static const uint TK_LET_IDENT = 78u;
 static const uint TK_LET_ASSIGN = 81u;
 static const uint TK_IF_LBRACE = 88u;
 static const uint TK_IF_RBRACE = 89u;
+static const uint TK_TRUE = 90u;
+static const uint TK_FALSE = 91u;
 static const uint MAX_ARRAY_ELEMS = 16u;
 
 static const uint OP_PAREN = 1000u;
@@ -420,6 +422,10 @@ void emit_i32_index_atom(inout uint cursor, uint token_i, bool write, uint lane)
     {
         emit_i32_const_u32(cursor, parse_uint_token(token_i), write, lane);
     }
+    else if (kind == TK_TRUE || kind == TK_FALSE)
+    {
+        emit_i32_const_u32(cursor, kind == TK_TRUE ? 1u : 0u, write, lane);
+    }
     else if (kind == TK_IDENT || kind == TK_LET_IDENT)
     {
         uint decl = visible_decl[token_i];
@@ -501,6 +507,10 @@ void emit_int_expr(inout uint cursor, uint start_i, uint end_i, bool write, uint
         if (kind == TK_INT)
         {
             emit_i64_const_u32(cursor, parse_uint_token(i), write, lane);
+        }
+        else if (kind == TK_TRUE || kind == TK_FALSE)
+        {
+            emit_i64_const_u32(cursor, kind == TK_TRUE ? 1u : 0u, write, lane);
         }
         else if (kind == TK_IDENT || kind == TK_LET_IDENT)
         {

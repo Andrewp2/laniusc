@@ -91,6 +91,39 @@ fn cli_defaults_to_x86_64_executable() {
     );
 }
 
+#[test]
+#[cfg(all(unix, target_arch = "x86_64"))]
+fn x86_codegen_lowers_bool_literals() {
+    let src = r#"
+fn main() {
+    let flag: bool = false;
+    if (true) {
+        print(1);
+    } else {
+        print(0);
+    }
+    if (flag) {
+        print(0);
+    } else {
+        print(2);
+    }
+    return 0;
+}
+"#;
+
+    let elf = pollster::block_on(async {
+        let compiler = GpuCompiler::new_with_device(device::global())
+            .await
+            .expect("initialize reusable GPU compiler");
+        compile_source_to_x86_64_with_gpu_codegen_using(src, &compiler)
+            .await
+            .expect("compile bool literal x86")
+    });
+
+    let stdout = common::run_x86_64_elf("bool_literals: x86_64 sample", "bool_literals", &elf);
+    assert_eq!(stdout, "1\n2\n");
+}
+
 #[cfg(all(unix, target_arch = "x86_64"))]
 fn run_x86(program: &SampleProgram, elf: &[u8]) -> String {
     common::run_x86_64_elf(

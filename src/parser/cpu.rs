@@ -685,7 +685,7 @@ impl<'a> Parser<'a> {
         Ok(node)
     }
 
-    // primary [group|array_lit|ident|int|string]
+    // primary [group|array_lit|ident|int|bool|string]
     //   group:      'GroupLParen' expr 'GroupRParen'
     //   array_lit:  'ArrayLBracket' array_elems_opt 'ArrayRBracket'
     //   ident:      'Ident'
@@ -725,6 +725,12 @@ impl<'a> Parser<'a> {
         }
         if self.eat(tokens::TokenKind::Int) {
             return Ok(self.push("int", vec![]));
+        }
+        if self.eat(tokens::TokenKind::True) {
+            return Ok(self.push("true", vec![]));
+        }
+        if self.eat(tokens::TokenKind::False) {
+            return Ok(self.push("false", vec![]));
         }
         if self.eat(tokens::TokenKind::Float) {
             return Ok(self.push("float", vec![]));
