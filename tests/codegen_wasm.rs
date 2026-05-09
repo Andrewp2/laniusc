@@ -156,6 +156,48 @@ fn main() {
 }
 
 #[test]
+fn gpu_codegen_lowers_assert_builtin_success() {
+    let src = r#"
+fn main() {
+    let ok: bool = true;
+    assert(ok);
+    assert(3 < 4);
+    print(1);
+    return 0;
+}
+"#;
+    let wasm =
+        pollster::block_on(compile_source_to_wasm_with_gpu_codegen(src)).expect("compile WASM");
+
+    assert_lanius_wasm(&wasm);
+    run_wasm_main_if_node_available(&wasm, "1\n");
+}
+
+#[test]
+fn gpu_codegen_traps_failed_assert_builtin() {
+    let src = r#"
+fn main() {
+    assert(false);
+    print(1);
+    return 0;
+}
+"#;
+    let wasm =
+        pollster::block_on(compile_source_to_wasm_with_gpu_codegen(src)).expect("compile WASM");
+
+    assert_lanius_wasm(&wasm);
+    if common::node_available() {
+        let output = common::run_wasm_main_with_node_output("assert trap", "assert_trap", &wasm);
+        assert!(
+            !output.status.success(),
+            "failed assertion should make node exit nonzero\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
 fn gpu_codegen_lowers_top_level_constants() {
     let src = r#"
 const LIMIT: i32 = 7;

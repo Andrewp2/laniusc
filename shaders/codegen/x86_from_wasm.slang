@@ -238,6 +238,16 @@ void emit_exit(inout uint cursor, uint lane)
     put_byte(cursor, 0x05u, lane);
 }
 
+void emit_exit_code(inout uint cursor, uint code, uint lane)
+{
+    put_byte(cursor, 0xb8u, lane);
+    put_u32(cursor, 60u, lane);
+    put_byte(cursor, 0xbfu, lane);
+    put_u32(cursor, code, lane);
+    put_byte(cursor, 0x0fu, lane);
+    put_byte(cursor, 0x05u, lane);
+}
+
 void emit_mov_rax_imm64(inout uint cursor, uint lo, uint hi, uint lane)
 {
     put_byte(cursor, 0x48u, lane);
@@ -525,6 +535,10 @@ bool translate_wasm_body(
                     patch_rel32(br_patch[p], cursor, lane);
             }
             ctrl_top = frame;
+        }
+        else if (op == 0x00u)
+        {
+            emit_exit_code(cursor, 101u, lane);
         }
         else if (op == 0x02u || op == 0x03u)
         {

@@ -159,6 +159,25 @@ bool token_text_eq5(uint i, uint a, uint b, uint c, uint d, uint e)
     return span5(token_start(i), token_len(i), a, b, c, d, e);
 }
 
+bool is_print_name(uint i)
+{
+    return token_text_eq5(i, 112u, 114u, 105u, 110u, 116u);
+}
+
+bool is_assert_name(uint i)
+{
+    uint start = token_start(i);
+    return token_len(i) == 6u && source_at(start, 0u) == 97u &&
+           source_at(start, 1u) == 115u && source_at(start, 2u) == 115u &&
+           source_at(start, 3u) == 101u && source_at(start, 4u) == 114u &&
+           source_at(start, 5u) == 116u;
+}
+
+bool is_builtin_name(uint i)
+{
+    return is_print_name(i) || is_assert_name(i);
+}
+
 bool token_text_eq(uint i, uint a, uint b, uint c, uint d)
 {
     return span4(token_start(i), token_len(i), a, b, c, d);
@@ -446,7 +465,7 @@ uint declaration_type_shallow(uint decl_i)
             if (head_kind == TK_IDENT && cur + 1u < semi &&
                 (token_kind(cur + 1u) == TK_CALL_LPAREN || token_kind(cur + 1u) == TK_LPAREN))
             {
-                if (token_text_eq5(cur, 112u, 114u, 105u, 110u, 116u))
+                if (is_builtin_name(cur))
                     return TY_VOID;
                 return find_named_function_return(cur);
             }
@@ -521,7 +540,7 @@ bool ident_is_use(uint i)
 
 bool ident_resolves_in_scope(uint i)
 {
-    if (token_text_eq5(i, 112u, 114u, 105u, 110u, 116u))
+    if (is_builtin_name(i))
         return true;
     if (i + 1u < active_token_count() &&
         (token_kind(i + 1u) == TK_CALL_LPAREN || token_kind(i + 1u) == TK_LPAREN))
@@ -556,7 +575,7 @@ void main(uint3 tid: SV_DispatchThreadID)
             visible_type[i] = declaration_type(i);
         }
 
-        if (ident_is_use(i) && !token_text_eq5(i, 112u, 114u, 105u, 110u, 116u) &&
+        if (ident_is_use(i) && !is_builtin_name(i) &&
             !(i + 1u < active_token_count() &&
               (token_kind(i + 1u) == TK_CALL_LPAREN || token_kind(i + 1u) == TK_LPAREN)))
         {

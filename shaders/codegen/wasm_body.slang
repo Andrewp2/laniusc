@@ -137,6 +137,15 @@ bool is_print_name(uint i)
     return token_text_eq5(i, 112u, 114u, 105u, 110u, 116u);
 }
 
+bool is_assert_name(uint i)
+{
+    uint start = token_start(i);
+    return token_len(i) == 6u && source_at(start, 0u) == 97u &&
+           source_at(start, 1u) == 115u && source_at(start, 2u) == 115u &&
+           source_at(start, 3u) == 101u && source_at(start, 4u) == 114u &&
+           source_at(start, 5u) == 116u;
+}
+
 bool is_open_paren(uint kind)
 {
     return kind == TK_LPAREN || kind == TK_GROUP_LPAREN || kind == TK_CALL_LPAREN;
@@ -781,6 +790,17 @@ void emit_cond_expr(inout uint cursor, uint start_i, uint end_i, bool write, uin
     emit_compare_op(cursor, token_kind(op_i), write, lane);
 }
 
+void emit_assert_statement(inout uint cursor, uint name_i, bool write, uint lane)
+{
+    uint close_i = matching_paren(name_i + 1u);
+    emit_cond_expr(cursor, name_i + 2u, close_i, write, lane);
+    put_byte(cursor, 0x45u, write, lane);
+    put_byte(cursor, 0x04u, write, lane);
+    put_byte(cursor, 0x40u, write, lane);
+    put_byte(cursor, 0x00u, write, lane);
+    put_byte(cursor, 0x0bu, write, lane);
+}
+
 void emit_branch(inout uint cursor, uint label, bool write, uint lane)
 {
     put_byte(cursor, 0x0cu, write, lane);
@@ -804,6 +824,13 @@ void emit_if_body_statements(
         {
             uint close_i = matching_paren(i + 1u);
             emit_print_statement(cursor, i, write, lane);
+            i = close_i;
+        }
+        else if (i + 1u < n && token_kind(i) == TK_IDENT && is_assert_name(i) &&
+            (token_kind(i + 1u) == TK_CALL_LPAREN || token_kind(i + 1u) == TK_LPAREN))
+        {
+            uint close_i = matching_paren(i + 1u);
+            emit_assert_statement(cursor, i, write, lane);
             i = close_i;
         }
         else if (token_kind(i) == TK_CONTINUE)
@@ -902,6 +929,13 @@ void emit_block_statements(inout uint cursor, uint start_i, uint end_i, bool ins
             emit_print_statement(cursor, i, write, lane);
             i = close_i;
         }
+        else if (i + 1u < n && token_kind(i) == TK_IDENT && is_assert_name(i) &&
+            (token_kind(i + 1u) == TK_CALL_LPAREN || token_kind(i + 1u) == TK_LPAREN))
+        {
+            uint close_i = matching_paren(i + 1u);
+            emit_assert_statement(cursor, i, write, lane);
+            i = close_i;
+        }
     }
 }
 
@@ -974,6 +1008,13 @@ void emit_body(inout uint cursor, bool write, uint lane)
         {
             uint close_i = matching_paren(i + 1u);
             emit_print_statement(cursor, i, write, lane);
+            i = close_i;
+        }
+        else if (i + 1u < n && token_kind(i) == TK_IDENT && is_assert_name(i) &&
+            (token_kind(i + 1u) == TK_CALL_LPAREN || token_kind(i + 1u) == TK_LPAREN))
+        {
+            uint close_i = matching_paren(i + 1u);
+            emit_assert_statement(cursor, i, write, lane);
             i = close_i;
         }
     }

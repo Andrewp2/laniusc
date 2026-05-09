@@ -114,9 +114,15 @@ bool token_text_eq5(uint i, uint a, uint b, uint c, uint d, uint e)
            source_at(start, 4u) == e;
 }
 
-bool is_builtin_print_call(uint i)
+bool is_builtin_call(uint i)
 {
-    if (!token_text_eq5(i, 112u, 114u, 105u, 110u, 116u))
+    uint start = token_start(i);
+    bool is_builtin = token_text_eq5(i, 112u, 114u, 105u, 110u, 116u) ||
+                      (token_len(i) == 6u && source_at(start, 0u) == 97u &&
+                       source_at(start, 1u) == 115u && source_at(start, 2u) == 115u &&
+                       source_at(start, 3u) == 101u && source_at(start, 4u) == 114u &&
+                       source_at(start, 5u) == 116u);
+    if (!is_builtin)
         return false;
     uint next = i + 1u < active_token_count() ? token_kind(i + 1u) : 0u;
     return next == TK_CALL_LPAREN || next == TK_LPAREN;
@@ -333,7 +339,7 @@ bool ident_is_use(uint i)
         return false;
 
     uint next = i + 1u < active_token_count() ? token_kind(i + 1u) : 0u;
-    if (is_builtin_print_call(i))
+    if (is_builtin_call(i))
         return false;
     return next != TK_COLON;
 }

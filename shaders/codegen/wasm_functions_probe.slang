@@ -70,6 +70,20 @@ bool is_print_name(uint i)
     return span5(token_start(i), token_len(i), 112u, 114u, 105u, 110u, 116u);
 }
 
+bool is_assert_name(uint i)
+{
+    uint start = token_start(i);
+    return token_len(i) == 6u && source_at(start, 0u) == 97u &&
+           source_at(start, 1u) == 115u && source_at(start, 2u) == 115u &&
+           source_at(start, 3u) == 101u && source_at(start, 4u) == 114u &&
+           source_at(start, 5u) == 116u;
+}
+
+bool is_builtin_name(uint i)
+{
+    return is_print_name(i) || is_assert_name(i);
+}
+
 bool same_text(uint a_i, uint b_i)
 {
     uint len = token_len(a_i);
@@ -103,7 +117,7 @@ bool token_needs_function_module(uint i)
     return token_kind(i) == TK_IDENT &&
            (token_kind(i + 1u) == TK_CALL_LPAREN || token_kind(i + 1u) == TK_LPAREN) &&
            (i == 0u || token_kind(i - 1u) != TK_FN) &&
-           !is_print_name(i) && find_named_function(i) != INVALID;
+           !is_builtin_name(i) && find_named_function(i) != INVALID;
 }
 
 void enable_function_dispatch()

@@ -119,6 +119,20 @@ bool is_print_name(uint i)
     return span5(token_start(i), token_len(i), 112u, 114u, 105u, 110u, 116u);
 }
 
+bool is_assert_name(uint i)
+{
+    uint start = token_start(i);
+    return token_len(i) == 6u && source_at(start, 0u) == 97u &&
+           source_at(start, 1u) == 115u && source_at(start, 2u) == 115u &&
+           source_at(start, 3u) == 101u && source_at(start, 4u) == 114u &&
+           source_at(start, 5u) == 116u;
+}
+
+bool is_builtin_name(uint i)
+{
+    return is_print_name(i) || is_assert_name(i);
+}
+
 bool same_text(uint a_i, uint b_i)
 {
     uint len = token_len(a_i);
@@ -355,7 +369,7 @@ bool has_user_call()
         if (token_kind(i) == TK_IDENT &&
             (token_kind(i + 1u) == TK_CALL_LPAREN || token_kind(i + 1u) == TK_LPAREN) &&
             (i == 0u || token_kind(i - 1u) != TK_FN) &&
-            !is_print_name(i) && find_named_function(i) != INVALID)
+            !is_builtin_name(i) && find_named_function(i) != INVALID)
             return true;
     }
     return false;
@@ -740,6 +754,17 @@ void emit_cond(inout uint cursor, uint start_i, uint end_i, bool write, uint lan
         put_byte(cursor, 0x52u, write, lane);
 }
 
+void emit_assert_statement(inout uint cursor, uint name_i, bool write, uint lane)
+{
+    uint call_close = matching_paren(name_i + 1u);
+    emit_cond(cursor, name_i + 2u, call_close, write, lane);
+    put_byte(cursor, 0x45u, write, lane);
+    put_byte(cursor, 0x04u, write, lane);
+    put_byte(cursor, 0x40u, write, lane);
+    put_byte(cursor, 0x00u, write, lane);
+    put_byte(cursor, 0x0bu, write, lane);
+}
+
 uint first_return_expr_start(uint start_i, uint end_i)
 {
     [loop]
@@ -909,6 +934,13 @@ void emit_function_body(inout uint cursor, uint fn_i, bool write, uint lane)
             emit_expr(cursor, i + 1u, semi, write, lane);
             put_byte(cursor, 0x0fu, write, lane);
             i = semi;
+        }
+        else if (i + 1u < close_i && token_kind(i) == TK_IDENT && is_assert_name(i) &&
+                 (token_kind(i + 1u) == TK_CALL_LPAREN || token_kind(i + 1u) == TK_LPAREN))
+        {
+            uint call_close = matching_paren(i + 1u);
+            emit_assert_statement(cursor, i, write, lane);
+            i = call_close;
         }
         else if (is_main && i + 1u < close_i && token_kind(i) == TK_IDENT && is_print_name(i) &&
                  (token_kind(i + 1u) == TK_CALL_LPAREN || token_kind(i + 1u) == TK_LPAREN))

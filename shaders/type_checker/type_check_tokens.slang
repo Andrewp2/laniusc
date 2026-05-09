@@ -226,6 +226,25 @@ bool token_text_eq5(uint i, uint a, uint b, uint c, uint d, uint e)
     return span5(token_start(i), token_len(i), a, b, c, d, e);
 }
 
+bool is_print_name(uint i)
+{
+    return token_text_eq5(i, 112u, 114u, 105u, 110u, 116u);
+}
+
+bool is_assert_name(uint i)
+{
+    uint start = token_start(i);
+    return token_len(i) == 6u && source_at(start, 0u) == 97u &&
+           source_at(start, 1u) == 115u && source_at(start, 2u) == 115u &&
+           source_at(start, 3u) == 101u && source_at(start, 4u) == 114u &&
+           source_at(start, 5u) == 116u;
+}
+
+bool is_builtin_name(uint i)
+{
+    return is_print_name(i) || is_assert_name(i);
+}
+
 bool same_text(uint a, uint b)
 {
     uint len = token_len(a);
@@ -533,7 +552,7 @@ uint declaration_type_shallow(uint decl_i)
             if (head_kind == TK_IDENT && cur + 1u < semi &&
                 (token_kind(cur + 1u) == TK_CALL_LPAREN || token_kind(cur + 1u) == TK_LPAREN))
             {
-                if (token_text_eq5(cur, 112u, 114u, 105u, 110u, 116u))
+                if (is_builtin_name(cur))
                     return TY_VOID;
                 return find_named_function_return(cur);
             }
@@ -748,7 +767,7 @@ uint simple_expr_type(uint expr_i, uint limit_i)
             if (cur + 1u < limit_i &&
                 (token_kind(cur + 1u) == TK_CALL_LPAREN || token_kind(cur + 1u) == TK_LPAREN))
         {
-            if (token_text_eq5(cur, 112u, 114u, 105u, 110u, 116u))
+            if (is_builtin_name(cur))
                 return TY_VOID;
             return find_named_function_return(cur);
         }
@@ -1274,7 +1293,7 @@ void check_call(uint callee_i, uint end_i)
         return;
 
     uint arg_count = call_arg_count(open_i, close_i);
-    if (token_text_eq5(callee_i, 112u, 114u, 105u, 110u, 116u))
+    if (is_print_name(callee_i))
     {
         if (arg_count != 1u)
         {
@@ -1287,6 +1306,22 @@ void check_call(uint callee_i, uint end_i)
         uint arg_ty = simple_expr_type(arg_start_i, call_arg_end(arg_start_i, close_i));
         if (!assignable(TY_INT, arg_ty))
             record_error(arg_start_i, ERR_ASSIGN_MISMATCH, TY_INT * 256u + arg_ty);
+        return;
+    }
+
+    if (is_assert_name(callee_i))
+    {
+        if (arg_count != 1u)
+        {
+            record_error(callee_i, ERR_CALL_MISMATCH, arg_count);
+            return;
+        }
+        uint arg_start_i = call_arg_start(open_i, close_i, 0u);
+        if (arg_start_i == INVALID)
+            return;
+        uint arg_ty = simple_expr_type(arg_start_i, call_arg_end(arg_start_i, close_i));
+        if (!assignable(TY_BOOL, arg_ty))
+            record_error(arg_start_i, ERR_ASSIGN_MISMATCH, TY_BOOL * 256u + arg_ty);
         return;
     }
 
@@ -1340,7 +1375,7 @@ bool ident_is_use(uint i)
 
 bool ident_resolves(uint i)
 {
-    if (token_text_eq5(i, 112u, 114u, 105u, 110u, 116u))
+    if (is_builtin_name(i))
         return true;
     if (i + 1u < active_token_count() &&
         (token_kind(i + 1u) == TK_CALL_LPAREN || token_kind(i + 1u) == TK_LPAREN) &&
@@ -1586,8 +1621,7 @@ void check_hir_node(uint i)
                                 (token_kind(pos + 1u) == TK_CALL_LPAREN ||
                                  token_kind(pos + 1u) == TK_LPAREN);
         if (!followed_by_call && visible_decl_for(pos) == INVALID &&
-            (find_named_function(pos) != INVALID ||
-             token_text_eq5(pos, 112u, 114u, 105u, 110u, 116u)))
+            (find_named_function(pos) != INVALID || is_builtin_name(pos)))
         {
             record_error(pos, ERR_CALL_MISMATCH, 0u);
             return;

@@ -154,6 +154,61 @@ fn main() {
     assert_eq!(stdout, "12\n");
 }
 
+#[test]
+#[cfg(all(unix, target_arch = "x86_64"))]
+fn x86_codegen_lowers_assert_builtin_success() {
+    let src = r#"
+fn main() {
+    assert(true);
+    assert(7 > 3);
+    print(9);
+    return 0;
+}
+"#;
+
+    let elf = pollster::block_on(async {
+        let compiler = GpuCompiler::new_with_device(device::global())
+            .await
+            .expect("initialize reusable GPU compiler");
+        compile_source_to_x86_64_with_gpu_codegen_using(src, &compiler)
+            .await
+            .expect("compile assert success x86")
+    });
+
+    let stdout = common::run_x86_64_elf("assert_success: x86_64 sample", "assert_success", &elf);
+    assert_eq!(stdout, "9\n");
+}
+
+#[test]
+#[cfg(all(unix, target_arch = "x86_64"))]
+fn x86_codegen_exits_nonzero_for_failed_assert_builtin() {
+    let src = r#"
+fn main() {
+    assert(false);
+    print(9);
+    return 0;
+}
+"#;
+
+    let elf = pollster::block_on(async {
+        let compiler = GpuCompiler::new_with_device(device::global())
+            .await
+            .expect("initialize reusable GPU compiler");
+        compile_source_to_x86_64_with_gpu_codegen_using(src, &compiler)
+            .await
+            .expect("compile assert failure x86")
+    });
+
+    let output =
+        common::run_x86_64_elf_output("assert_failure: x86_64 sample", "assert_failure", &elf);
+    assert!(
+        !output.status.success(),
+        "failed assertion should make native executable exit nonzero\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 #[cfg(all(unix, target_arch = "x86_64"))]
 fn run_x86(program: &SampleProgram, elf: &[u8]) -> String {
     common::run_x86_64_elf(

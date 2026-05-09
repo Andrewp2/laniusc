@@ -89,7 +89,8 @@ Strict blockers:
 - Const parameters or equivalent array length abstraction, replacing files like
   `array_i32_4.lani`.
 - Borrowed views or references for slices and non-owning APIs.
-- A defined panic/assert lowering path, even if the first implementation traps.
+- A defined panic lowering path. `assert(bool)` has a minimal builtin lowering
+  that traps on WASM and exits nonzero through native lowering.
 - Integer intrinsics or checked arithmetic primitives for `checked_*`,
   `saturating_*`, wrapping operations, bit counts, rotations, and power-of-two
   helpers.
@@ -110,7 +111,8 @@ Acceptance checks:
 - One generic fixed-array helper replaces a concrete `array_i32_N` helper in a
   test fixture.
 - Slice `len`, `get`, and `first` work without heap allocation.
-- Panic/assert behavior is deterministic for WASM and native targets.
+- Assert behavior is deterministic for WASM and native targets; panic should use
+  the same failure path once source-level panic support exists.
 
 ## Alloc Collections
 

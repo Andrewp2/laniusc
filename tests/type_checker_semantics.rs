@@ -98,6 +98,18 @@ fn main() {
 }
 
 #[test]
+fn type_checker_rejects_integer_assert_argument() {
+    let src = r#"
+fn main() {
+    assert(1);
+    return 0;
+}
+"#;
+
+    assert_gpu_type_check_error(src, "AssignMismatch");
+}
+
+#[test]
 fn type_checker_rejects_const_initializer_type_mismatch() {
     let src = r#"
 const LIMIT: i32 = true;

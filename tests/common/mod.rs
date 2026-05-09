@@ -98,6 +98,17 @@ pub fn run_wasm_main_with_node(
     wasm: &[u8],
 ) -> String {
     let context = context.to_string();
+    let output = run_wasm_main_with_node_output(&context, artifact_stem, wasm);
+    assert_command_success(format!("{context}: node executing WASM main"), &output);
+    stdout_utf8(format!("{context}: node stdout"), output.stdout)
+}
+
+pub fn run_wasm_main_with_node_output(
+    context: impl fmt::Display,
+    artifact_stem: &str,
+    wasm: &[u8],
+) -> Output {
+    let context = context.to_string();
     let wasm_path = TempArtifact::new("laniusc_exec_wasm", artifact_stem, Some("wasm"));
     wasm_path.write_bytes(wasm);
 
@@ -129,7 +140,7 @@ const fs = require('fs');
 });
 "#;
 
-    let output = Command::new("node")
+    Command::new("node")
         .arg("-e")
         .arg(script)
         .arg(wasm_path.path())
@@ -139,16 +150,23 @@ const fs = require('fs');
                 "{context}: run node for {}: {err}",
                 wasm_path.path().display()
             )
-        });
-    assert_command_success(
-        format!("{context}: node executing {}", wasm_path.path().display()),
-        &output,
-    );
-    stdout_utf8(format!("{context}: node stdout"), output.stdout)
+        })
 }
 
 #[cfg(all(unix, target_arch = "x86_64"))]
 pub fn run_x86_64_elf(context: impl fmt::Display, artifact_stem: &str, elf: &[u8]) -> String {
+    let context = context.to_string();
+    let output = run_x86_64_elf_output(&context, artifact_stem, elf);
+    assert_command_success(format!("{context}: native ELF execution"), &output);
+    stdout_utf8(format!("{context}: native stdout"), output.stdout)
+}
+
+#[cfg(all(unix, target_arch = "x86_64"))]
+pub fn run_x86_64_elf_output(
+    context: impl fmt::Display,
+    artifact_stem: &str,
+    elf: &[u8],
+) -> Output {
     use std::os::unix::fs::PermissionsExt;
 
     let context = context.to_string();
@@ -171,22 +189,14 @@ pub fn run_x86_64_elf(context: impl fmt::Display, artifact_stem: &str, elf: &[u8
         )
     });
 
-    let output = Command::new(exe_path.path())
+    Command::new(exe_path.path())
         .output()
         .unwrap_or_else(|err| {
             panic!(
                 "{context}: run native ELF {}: {err}",
                 exe_path.path().display()
             )
-        });
-    assert_command_success(
-        format!(
-            "{context}: native ELF execution {}",
-            exe_path.path().display()
-        ),
-        &output,
-    );
-    stdout_utf8(format!("{context}: native stdout"), output.stdout)
+        })
 }
 
 fn sanitize_path_component(value: &str) -> String {

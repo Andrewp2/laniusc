@@ -88,6 +88,16 @@ bool token_text_eq5(uint i, uint a, uint b, uint c, uint d, uint e)
     return span5(token_start(i), token_len(i), a, b, c, d, e);
 }
 
+bool is_builtin_name(uint i)
+{
+    uint start = token_start(i);
+    return token_text_eq5(i, 112u, 114u, 105u, 110u, 116u) ||
+           (token_len(i) == 6u && source_at(start, 0u) == 97u &&
+            source_at(start, 1u) == 115u && source_at(start, 2u) == 115u &&
+            source_at(start, 3u) == 101u && source_at(start, 4u) == 114u &&
+            source_at(start, 5u) == 116u);
+}
+
 bool same_text(uint a, uint b)
 {
     uint len = token_len(a);
@@ -129,7 +139,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     bool is_call = i + 1u < n_active &&
                    (token_kind(i + 1u) == TK_CALL_LPAREN || token_kind(i + 1u) == TK_LPAREN);
 
-    if (token_text_eq5(i, 112u, 114u, 105u, 110u, 116u))
+    if (is_builtin_name(i))
     {
         if (is_call)
         {
