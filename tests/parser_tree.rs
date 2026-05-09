@@ -273,6 +273,20 @@ fn generated_ll1_tables_accept_struct_literal_expressions() {
 }
 
 #[test]
+fn generated_ll1_tables_accept_match_expressions() {
+    let tables =
+        PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+            .expect("load generated parse tables");
+    let token_kinds = kinds_with_sentinels(
+        "fn choose(value: i32, fallback: i32) -> i32 { let out = match (value) { 0 -> fallback, Some(inner) -> inner, _ -> value }; return out; }",
+    );
+
+    tables
+        .ll1_production_stream_with_positions(&token_kinds)
+        .expect("match fixture should parse with LL(1)");
+}
+
+#[test]
 fn generated_ll1_tables_accept_slice_type_syntax() {
     let tables =
         PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))

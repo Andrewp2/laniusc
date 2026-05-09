@@ -569,10 +569,7 @@ impl ParserBuffers {
         );
 
         // ---------- Tree parent recovery ----------
-        let tree_stream_uses_ll1 = !resident_projected_capacity
-            && tables.n_nonterminals > 0
-            && !tables.ll1_predict.is_empty()
-            && total_emit == 0;
+        let tree_stream_uses_ll1 = tables.n_nonterminals > 0 && !tables.ll1_predict.is_empty();
         let tree_count_uses_status = tree_stream_uses_ll1 || resident_projected_capacity;
         let tree_capacity = if tree_count_uses_status {
             ll1_stack_capacity

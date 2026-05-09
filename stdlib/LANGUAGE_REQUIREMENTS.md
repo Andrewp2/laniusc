@@ -44,6 +44,11 @@ Supported enough for the seed library:
   parse and lower to HIR. This provides the source constructor form that product
   types will need, but the literals are not yet type-checked against struct
   declarations or lowered to backend layouts.
+- `match (expr) { pattern -> expr, ... }` expressions with identifier,
+  tuple-style, wildcard, integer, and boolean patterns now parse and lower to
+  HIR. This provides the source shape needed by `Option`, `Result`, and
+  `Ordering`, but matching is not yet type-checked for exhaustiveness or lowered
+  to backend control flow.
 - `i32` arithmetic, comparisons, unary minus, logical operators, assignment, and
   compound assignment, used by `lstd_i32_abs`, `lstd_i32_clamp`, and array
   loops.
@@ -71,9 +76,9 @@ Important limitations visible in current files:
 - No generics or const parameters. `stdlib/array_i32_4.lani` is tied to
   `[i32; 4]`; every other element type or length would need another source file.
 - No enum/sum type semantics, struct/product semantics, methods,
-  traits/interfaces, slice runtime semantics, reference semantics, or heap
-  allocation. These block `Option`, `Result`, `String`, `Vec`, maps, and most
-  ergonomic APIs from `PLAN.md`.
+  traits/interfaces, slice runtime semantics, reference semantics, match
+  semantics, or heap allocation. These block `Option`, `Result`, `String`,
+  `Vec`, maps, and most ergonomic APIs from `PLAN.md`.
 - No package/prelude mechanism, target-specific std runtime ABI, allocator ABI,
   panic/assert runtime, formatting runtime, or host I/O API surface.
 
@@ -116,8 +121,9 @@ minimal formatting hooks.
 Strict blockers:
 
 - Full enum/sum types with payloads for `Option<T>`, `Result<T, E>`, and
-  `Ordering`. Declaration syntax exists, but constructors, type checking,
-  pattern matching, layout, and codegen support are still missing.
+  `Ordering`. Declaration and `match` syntax exists, but constructors, type
+  checking, exhaustiveness analysis, layout, and codegen support are still
+  missing.
 - Generics for primitive-independent helpers and generic array/slice algorithms.
   Syntax exists for enum parameters, function parameters, and type uses, but
   semantic checking and codegen support are still missing.

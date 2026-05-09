@@ -121,6 +121,7 @@ static const uint TK_FALSE = 91u;
 static const uint TK_CONST = 92u;
 static const uint TK_ENUM = 93u;
 static const uint TK_STRUCT = 94u;
+static const uint TK_MATCH = 95u;
 
 uint active_token_count()
 {
@@ -192,7 +193,7 @@ bool is_expr_start(uint kind)
            kind == TK_CHAR || kind == TK_GROUP_LPAREN || kind == TK_LPAREN ||
            kind == TK_ARRAY_LBRACKET || kind == TK_LBRACKET || kind == TK_PREFIX_PLUS ||
            kind == TK_PREFIX_MINUS || kind == TK_NOT || kind == TK_TILDE || kind == TK_INC ||
-           kind == TK_DEC;
+           kind == TK_DEC || kind == TK_MATCH;
 }
 
 bool is_expr_end(uint kind)
@@ -576,7 +577,7 @@ void check_incdec(uint i)
 void check_group_lparen(uint i)
 {
     uint prev = i > 0u ? token_kind(i - 1u) : 0u;
-    if (prev == TK_FN || prev == TK_IF || prev == TK_WHILE)
+    if (prev == TK_FN || prev == TK_IF || prev == TK_WHILE || prev == TK_MATCH)
         return;
     if (prev == TK_GT)
         return;
@@ -620,7 +621,8 @@ void main(uint3 tid: SV_DispatchThreadID)
     else if (kind == TK_PARAM_COMMA &&
              token_kind(i + 1u) != TK_PARAM_IDENT && token_kind(i + 1u) != TK_IDENT)
         record_error(i, ERR_EXPECTED_TOKEN, TK_PARAM_IDENT);
-    else if (kind == TK_ARROW && !is_type_start(token_kind(i + 1u)))
+    else if (kind == TK_ARROW && !is_type_start(token_kind(i + 1u)) &&
+             !is_expr_start(token_kind(i + 1u)))
         record_error(i, ERR_EXPECTED_TOKEN, TK_TYPE_IDENT);
     else if (kind == TK_ARG_COMMA)
         check_arg_comma(i);

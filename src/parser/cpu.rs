@@ -953,7 +953,43 @@ impl<'a> Parser<'a> {
             return Ok(self.push("array_lit", elems));
         }
 
-        if self.eat(tokens::TokenKind::Ident) {
+        if self.eat(tokens::TokenKind::Match) {
+            if !self.eat_open_group_paren() {
+                return Err(ParseError {
+                    pos: self.i,
+                    expected: "match scrutinee",
+                    found: self.peek(),
+                });
+            }
+            let expr = self.parse_expr()?;
+            if !self.eat_close_group_paren() {
+                self.expect(tokens::TokenKind::RParen, "RParen")?;
+            }
+            self.expect(tokens::TokenKind::LBrace, "LBrace")?;
+            let mut arms = Vec::new();
+            if !self.eat(tokens::TokenKind::RBrace) {
+                arms.push(self.parse_match_arm()?);
+                while self.eat(tokens::TokenKind::Comma) || self.eat(tokens::TokenKind::ArgComma) {
+                    if self.eat(tokens::TokenKind::RBrace) {
+                        break;
+                    }
+                    arms.push(self.parse_match_arm()?);
+                }
+                if !self.eat(tokens::TokenKind::RBrace) {
+                    self.expect(tokens::TokenKind::RBrace, "RBrace")?;
+                }
+            }
+            let mut children = Vec::with_capacity(1 + arms.len());
+            children.push(expr);
+            children.extend(arms);
+            return Ok(self.push("match", children));
+        }
+
+        if self.eat(tokens::TokenKind::Ident)
+            || self.eat(tokens::TokenKind::TypeIdent)
+            || self.eat(tokens::TokenKind::ParamIdent)
+            || self.eat(tokens::TokenKind::LetIdent)
+        {
             let ident = self.push("ident", vec![]);
             if self.eat(tokens::TokenKind::LBrace) {
                 let mut fields = Vec::new();
@@ -1002,6 +1038,70 @@ impl<'a> Parser<'a> {
             expected: "primary",
             found: self.peek(),
         })
+    }
+
+    fn parse_match_arm(&mut self) -> Result<u32, ParseError> {
+        let pattern = self.parse_pattern()?;
+        self.expect(tokens::TokenKind::Arrow, "Arrow")?;
+        let value = self.parse_expr()?;
+        Ok(self.push("match_arm", vec![pattern, value]))
+    }
+
+    fn parse_pattern(&mut self) -> Result<u32, ParseError> {
+        if self.eat(tokens::TokenKind::Ident)
+            || self.eat(tokens::TokenKind::TypeIdent)
+            || self.eat(tokens::TokenKind::ParamIdent)
+            || self.eat(tokens::TokenKind::LetIdent)
+        {
+            let ident = self.push("pattern_ident", vec![]);
+            if self.eat(tokens::TokenKind::CallLParen)
+                || self.eat(tokens::TokenKind::GroupLParen)
+                || self.eat(tokens::TokenKind::LParen)
+            {
+                let fields = self.parse_pattern_list()?;
+                if !(self.eat(tokens::TokenKind::CallRParen)
+                    || self.eat(tokens::TokenKind::GroupRParen)
+                    || self.eat(tokens::TokenKind::RParen))
+                {
+                    return Err(ParseError {
+                        pos: self.i,
+                        expected: "RParen",
+                        found: self.peek(),
+                    });
+                }
+                return Ok(self.push("pattern_tuple", vec![ident, fields]));
+            }
+            return Ok(ident);
+        }
+        if self.eat(tokens::TokenKind::Int) {
+            return Ok(self.push("pattern_int", vec![]));
+        }
+        if self.eat(tokens::TokenKind::True) {
+            return Ok(self.push("pattern_true", vec![]));
+        }
+        if self.eat(tokens::TokenKind::False) {
+            return Ok(self.push("pattern_false", vec![]));
+        }
+        Err(ParseError {
+            pos: self.i,
+            expected: "pattern",
+            found: self.peek(),
+        })
+    }
+
+    fn parse_pattern_list(&mut self) -> Result<u32, ParseError> {
+        if self.peek().map_or(false, Parser::is_close_paren) {
+            return Ok(self.push("patterns", vec![]));
+        }
+
+        let mut patterns = vec![self.parse_pattern()?];
+        while self.eat(tokens::TokenKind::ArgComma) || self.eat(tokens::TokenKind::Comma) {
+            if self.peek().map_or(false, Parser::is_close_paren) {
+                break;
+            }
+            patterns.push(self.parse_pattern()?);
+        }
+        Ok(self.push("patterns", patterns))
     }
 
     fn parse_struct_lit_field(&mut self) -> Result<u32, ParseError> {

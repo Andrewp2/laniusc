@@ -198,6 +198,10 @@ pub enum HirExprKind {
         name: String,
         fields: Vec<HirStructLiteralField>,
     },
+    Match {
+        expr: Box<HirExpr>,
+        arms: Vec<HirMatchArm>,
+    },
     Call {
         callee: Box<HirExpr>,
         args: Vec<HirExpr>,
@@ -231,6 +235,33 @@ pub struct HirStructLiteralField {
     pub name: String,
     pub value: HirExpr,
     pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HirMatchArm {
+    pub pattern: HirPattern,
+    pub value: HirExpr,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HirPattern {
+    pub kind: HirPatternKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub enum HirPatternKind {
+    Wildcard,
+    Name(String),
+    Tuple {
+        name: String,
+        fields: Vec<HirPattern>,
+    },
+    Literal {
+        kind: HirLiteralKind,
+        text: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -1147,7 +1178,31 @@ impl<'a> HirParser<'a> {
             });
         }
 
-        if let Some(tok) = self.eat(TokenKind::Ident) {
+        if self.eat(TokenKind::Match).is_some() {
+            self.expect_any(
+                &[TokenKind::GroupLParen, TokenKind::LParen],
+                "match scrutinee",
+            )?;
+            let expr = self.parse_expr()?;
+            self.expect_any(&[TokenKind::GroupRParen, TokenKind::RParen], "RParen")?;
+            self.expect(TokenKind::LBrace, "LBrace")?;
+            let arms = self.parse_match_arms()?;
+            self.expect(TokenKind::RBrace, "RBrace")?;
+            return Ok(HirExpr {
+                kind: HirExprKind::Match {
+                    expr: Box::new(expr),
+                    arms,
+                },
+                span: self.span_since(start),
+            });
+        }
+
+        if let Some(tok) = self.eat_any(&[
+            TokenKind::Ident,
+            TokenKind::TypeIdent,
+            TokenKind::ParamIdent,
+            TokenKind::LetIdent,
+        ]) {
             let name = self.lexeme(tok);
             if self.eat(TokenKind::LBrace).is_some() {
                 let fields = self.parse_struct_literal_fields()?;
@@ -1183,6 +1238,109 @@ impl<'a> HirParser<'a> {
         }
 
         Err(self.error("primary"))
+    }
+
+    fn parse_match_arms(&mut self) -> Result<Vec<HirMatchArm>, HirError> {
+        if self.peek() == Some(TokenKind::RBrace) {
+            return Ok(Vec::new());
+        }
+
+        let mut arms = vec![self.parse_match_arm()?];
+        while self.eat(TokenKind::Comma).is_some() || self.eat(TokenKind::ArgComma).is_some() {
+            if self.peek() == Some(TokenKind::RBrace) {
+                break;
+            }
+            arms.push(self.parse_match_arm()?);
+        }
+        Ok(arms)
+    }
+
+    fn parse_match_arm(&mut self) -> Result<HirMatchArm, HirError> {
+        let start = self.peek_start();
+        let pattern = self.parse_pattern()?;
+        self.expect(TokenKind::Arrow, "Arrow")?;
+        let value = self.parse_expr()?;
+        Ok(HirMatchArm {
+            pattern,
+            value,
+            span: self.span_since(start),
+        })
+    }
+
+    fn parse_pattern(&mut self) -> Result<HirPattern, HirError> {
+        let start = self.peek_start();
+        if let Some(tok) = self.eat_any(&[
+            TokenKind::Ident,
+            TokenKind::TypeIdent,
+            TokenKind::ParamIdent,
+            TokenKind::LetIdent,
+        ]) {
+            let name = self.lexeme(tok);
+            if self
+                .eat_any(&[
+                    TokenKind::CallLParen,
+                    TokenKind::GroupLParen,
+                    TokenKind::LParen,
+                ])
+                .is_some()
+            {
+                let fields = self.parse_pattern_list()?;
+                self.expect_any(
+                    &[
+                        TokenKind::CallRParen,
+                        TokenKind::GroupRParen,
+                        TokenKind::RParen,
+                    ],
+                    "RParen",
+                )?;
+                return Ok(HirPattern {
+                    kind: HirPatternKind::Tuple { name, fields },
+                    span: self.span_since(start),
+                });
+            }
+            let kind = if name == "_" {
+                HirPatternKind::Wildcard
+            } else {
+                HirPatternKind::Name(name)
+            };
+            return Ok(HirPattern {
+                kind,
+                span: self.span_since(start),
+            });
+        }
+
+        for (kind, lit_kind) in [
+            (TokenKind::Int, HirLiteralKind::Int),
+            (TokenKind::True, HirLiteralKind::Bool),
+            (TokenKind::False, HirLiteralKind::Bool),
+        ] {
+            if let Some(tok) = self.eat(kind) {
+                return Ok(HirPattern {
+                    kind: HirPatternKind::Literal {
+                        kind: lit_kind,
+                        text: self.lexeme(tok),
+                    },
+                    span: self.span_since(start),
+                });
+            }
+        }
+
+        Err(self.error("pattern"))
+    }
+
+    fn parse_pattern_list(&mut self) -> Result<Vec<HirPattern>, HirError> {
+        if self.peek().is_some_and(Self::is_close_paren) {
+            return Ok(Vec::new());
+        }
+
+        let mut patterns = vec![self.parse_pattern()?];
+        while self.eat(TokenKind::ArgComma).is_some() || self.eat(TokenKind::Comma).is_some() {
+            if self.peek().is_some_and(Self::is_close_paren) {
+                break;
+            }
+            patterns.push(self.parse_pattern()?);
+        }
+        Ok(patterns)
     }
 
     fn parse_struct_literal_fields(&mut self) -> Result<Vec<HirStructLiteralField>, HirError> {

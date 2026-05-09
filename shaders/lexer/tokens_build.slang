@@ -30,6 +30,7 @@ static const uint TK_FALSE = 91;
 static const uint TK_CONST = 92;
 static const uint TK_ENUM = 93;
 static const uint TK_STRUCT = 94;
+static const uint TK_MATCH = 95;
 
 inline uint retag_keyword(uint kind, uint start, uint len)
 {
@@ -83,6 +84,8 @@ inline uint retag_keyword(uint kind, uint start, uint len)
             return TK_FALSE;
         if (b0 == 99u && b1 == 111u && b2 == 110u && b3 == 115u && b4 == 116u)
             return TK_CONST;
+        if (b0 == 109u && b1 == 97u && b2 == 116u && b3 == 99u && b4 == 104u)
+            return TK_MATCH;
     }
     else if (len == 6u)
     {

@@ -13,6 +13,8 @@ use laniusc::{
         HirFn,
         HirItem,
         HirLiteralKind,
+        HirPattern,
+        HirPatternKind,
         HirStmt,
         HirStmtKind,
         HirType,
@@ -384,6 +386,28 @@ fn assert_expr_spans(name: &str, src: &str, expr: &HirExpr) {
                 );
             }
         }
+        HirExprKind::Match { expr: inner, arms } => {
+            assert_expr_spans(name, src, inner);
+            assert_span_contains(name, "match scrutinee", expr.span, inner.span);
+            for (i, arm) in arms.iter().enumerate() {
+                assert_span_in_source(name, &format!("match arm {i}"), arm.span, src);
+                assert_span_contains(name, &format!("match arm {i}"), expr.span, arm.span);
+                assert_pattern_spans(name, src, &arm.pattern);
+                assert_span_contains(
+                    name,
+                    &format!("match arm {i} pattern"),
+                    arm.span,
+                    arm.pattern.span,
+                );
+                assert_expr_spans(name, src, &arm.value);
+                assert_span_contains(
+                    name,
+                    &format!("match arm {i} value"),
+                    arm.span,
+                    arm.value.span,
+                );
+            }
+        }
         HirExprKind::Call { callee, args } => {
             assert_expr_spans(name, src, callee);
             assert_span_contains(name, "call callee", expr.span, callee.span);
@@ -419,6 +443,21 @@ fn assert_expr_spans(name: &str, src: &str, expr: &HirExpr) {
             assert_span_contains(name, "assign value", expr.span, value.span);
         }
         HirExprKind::Name(_) | HirExprKind::Literal { .. } => {}
+    }
+}
+
+fn assert_pattern_spans(name: &str, src: &str, pattern: &HirPattern) {
+    assert_span_in_source(name, "pattern", pattern.span, src);
+    if let HirPatternKind::Tuple { fields, .. } = &pattern.kind {
+        for (i, field) in fields.iter().enumerate() {
+            assert_pattern_spans(name, src, field);
+            assert_span_contains(
+                name,
+                &format!("tuple pattern field {i}"),
+                pattern.span,
+                field.span,
+            );
+        }
     }
 }
 
@@ -785,6 +824,38 @@ fn hir_preserves_generic_enum_declarations_and_type_uses() {
     assert_eq!(name, "Option");
     assert_eq!(args.len(), 1);
     assert_eq!(args[0].kind, HirTypeKind::Name("i32".into()));
+}
+
+#[test]
+fn hir_preserves_match_expressions_and_patterns() {
+    let func = only_fn(
+        "fn choose(value: i32, fallback: i32) -> i32 { let out = match (value) { 0 -> fallback, Some(inner) -> inner, _ -> value }; return out; }",
+    );
+    assert_eq!(func.body.stmts.len(), 2);
+
+    let out = let_value(&func.body.stmts[0], "out");
+    let HirExprKind::Match { expr, arms } = &out.kind else {
+        panic!("expected match expression");
+    };
+    assert_eq!(expr.kind, HirExprKind::Name("value".into()));
+    assert_eq!(arms.len(), 3);
+    assert_eq!(
+        arms[0].pattern.kind,
+        HirPatternKind::Literal {
+            kind: HirLiteralKind::Int,
+            text: "0".into()
+        }
+    );
+    assert_eq!(arms[0].value.kind, HirExprKind::Name("fallback".into()));
+    let HirPatternKind::Tuple { name, fields } = &arms[1].pattern.kind else {
+        panic!("expected tuple variant-style pattern");
+    };
+    assert_eq!(name, "Some");
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, HirPatternKind::Name("inner".into()));
+    assert_eq!(arms[1].value.kind, HirExprKind::Name("inner".into()));
+    assert_eq!(arms[2].pattern.kind, HirPatternKind::Wildcard);
+    assert_eq!(arms[2].value.kind, HirExprKind::Name("value".into()));
 }
 
 #[test]

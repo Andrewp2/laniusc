@@ -67,14 +67,14 @@ uint classify(uint prod)
 {
     if (prod == 0u)
         return HIR_FILE;
-    if ((prod >= 3u && prod <= 5u) || prod == 119u || prod == 121u || prod == 144u ||
-        (prod >= 151u && prod <= 153u))
+    if ((prod >= 3u && prod <= 5u) || prod == 135u || prod == 137u || prod == 160u ||
+        (prod >= 167u && prod <= 169u))
         return HIR_ITEM;
     if (prod == 6u)
         return HIR_FN;
     if (prod == 11u)
         return HIR_PARAM;
-    if (prod == 14u || prod == 15u || prod == 163u)
+    if (prod == 14u || prod == 15u || prod == 179u)
         return HIR_TYPE;
     if (prod == 16u || prod == 25u || prod == 29u)
         return HIR_BLOCK;
@@ -92,7 +92,7 @@ uint classify(uint prod)
         return HIR_BREAK_STMT;
     if (prod == 24u)
         return HIR_CONTINUE_STMT;
-    if (prod == 36u)
+    if (prod == 36u || prod == 119u)
         return HIR_EXPR;
     if ((prod >= 37u && prod <= 48u))
         return HIR_ASSIGN_EXPR;
@@ -114,13 +114,13 @@ uint classify(uint prod)
         return HIR_NAME_EXPR;
     if ((prod >= 109u && prod <= 112u) || prod == 117u || prod == 118u)
         return HIR_LITERAL_EXPR;
-    if (prod == 120u)
+    if (prod == 136u)
         return HIR_CONST_ITEM;
-    if (prod == 122u)
+    if (prod == 138u)
         return HIR_ENUM_ITEM;
-    if (prod == 145u)
+    if (prod == 161u)
         return HIR_STRUCT_ITEM;
-    if (prod == 155u)
+    if (prod == 171u)
         return HIR_STRUCT_LITERAL_EXPR;
     return HIR_NONE;
 }

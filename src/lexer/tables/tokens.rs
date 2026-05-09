@@ -124,6 +124,7 @@ pub enum TokenKind {
     Const,
     Enum,
     Struct,
+    Match,
 }
 
 impl core::convert::TryFrom<u32> for TokenKind {
@@ -230,6 +231,7 @@ impl TokenKind {
             x if x == TokenKind::Const as u32 => TokenKind::Const,
             x if x == TokenKind::Enum as u32 => TokenKind::Enum,
             x if x == TokenKind::Struct as u32 => TokenKind::Struct,
+            x if x == TokenKind::Match as u32 => TokenKind::Match,
             _ => return None,
         };
         Some(k)
@@ -331,6 +333,7 @@ impl TokenKind {
             "Const" => TokenKind::Const,
             "Enum" => TokenKind::Enum,
             "Struct" => TokenKind::Struct,
+            "Match" => TokenKind::Match,
             _ => return None,
         };
         Some(k)
@@ -339,7 +342,7 @@ impl TokenKind {
 
 // used on GPU side too
 pub const INVALID_TOKEN: u32 = u32::MAX;
-pub const N_KINDS: u32 = TokenKind::Struct as u32 + 1;
+pub const N_KINDS: u32 = TokenKind::Match as u32 + 1;
 
 #[cfg(test)]
 mod tests {
