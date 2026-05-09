@@ -1,5 +1,7 @@
 use std::{fs, process::Command};
 
+mod common;
+
 use laniusc::compiler::compile_source_to_wasm_with_gpu_codegen;
 
 #[test]
@@ -22,13 +24,9 @@ fn main() {
 
 #[test]
 fn gpu_codegen_cli_emits_wasm_file() {
-    let src_path = std::env::temp_dir().join(format!(
-        "laniusc_gpu_wasm_{}_{}.lani",
-        std::process::id(),
-        unique_suffix()
-    ));
-    let out_path = src_path.with_extension("wasm");
-    fs::write(&src_path, "let x = 1;\n").expect("write temporary source");
+    let src_path = common::TempArtifact::new("laniusc_gpu_wasm", "cli_source", Some("lani"));
+    let out_path = common::TempArtifact::new("laniusc_gpu_wasm", "cli_output", Some("wasm"));
+    src_path.write_str("let x = 1;\n");
 
     let bin = option_env!("CARGO_BIN_EXE_laniusc").unwrap_or("target/debug/laniusc");
     let output = Command::new(bin)
@@ -36,21 +34,14 @@ fn gpu_codegen_cli_emits_wasm_file() {
         .env("PERF_ONE_READBACK", "0")
         .arg("--emit")
         .arg("wasm")
-        .arg(&src_path)
+        .arg(src_path.path())
         .arg("-o")
-        .arg(&out_path)
+        .arg(out_path.path())
         .output()
         .expect("run laniusc");
 
-    let _ = fs::remove_file(&src_path);
-    assert!(
-        output.status.success(),
-        "laniusc failed:\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let wasm = fs::read(&out_path).expect("read emitted WASM");
-    let _ = fs::remove_file(&out_path);
+    common::assert_command_success("laniusc --emit wasm", &output);
+    let wasm = fs::read(out_path.path()).expect("read emitted WASM");
     assert_lanius_wasm(&wasm);
     run_wasm_main_if_node_available(&wasm, "");
 }
@@ -154,31 +145,13 @@ fn assert_lanius_wasm(bytes: &[u8]) {
 }
 
 fn run_wasm_main_if_node_available(wasm: &[u8], expected_stdout: &str) {
-    if Command::new("node").arg("--version").output().is_err() {
+    if !common::node_available() {
         return;
     }
-    let wasm_path = std::env::temp_dir().join(format!(
-        "laniusc_exec_wasm_{}_{}.wasm",
-        std::process::id(),
-        unique_suffix()
-    ));
-    fs::write(&wasm_path, wasm).expect("write executable WASM");
-    let script = format!(
-        "(async()=>{{ const fs=require('fs'); let stdout=''; const imports={{env:{{print_i64(value){{ stdout += value.toString() + '\\n'; }}}}}}; const m=await WebAssembly.instantiate(fs.readFileSync({:?}), imports); const got=m.instance.exports.main(); if (got !== 0) {{ console.error('return='+got); process.exit(1); }} if (stdout !== {:?}) {{ console.error(JSON.stringify(stdout)); process.exit(1); }} }})().catch(e=>{{ console.error(e); process.exit(1); }});",
-        wasm_path.display().to_string(),
-        expected_stdout
-    );
-    let output = Command::new("node")
-        .arg("-e")
-        .arg(script)
-        .output()
-        .expect("run node WASM check");
-    let _ = fs::remove_file(&wasm_path);
-    assert!(
-        output.status.success(),
-        "node failed to execute emitted WASM:\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
+    let stdout = common::run_wasm_main_with_node("codegen WASM check", "codegen_wasm", wasm);
+    assert_eq!(
+        stdout, expected_stdout,
+        "codegen WASM stdout mismatch\nexpected:\n{expected_stdout:?}\nactual:\n{stdout:?}"
     );
 }
 
@@ -187,11 +160,4 @@ fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
         && haystack
             .windows(needle.len())
             .any(|window| window == needle)
-}
-
-fn unique_suffix() -> u128 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or(0)
 }

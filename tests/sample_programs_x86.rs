@@ -1,6 +1,5 @@
 #[cfg(all(unix, target_arch = "x86_64"))]
 use std::{
-    fs,
     process::Command,
     time::{Duration, Instant},
 };
@@ -66,88 +65,37 @@ fn sample_programs_compile_to_x86_and_match_stdout_under_100ms() {
 #[test]
 #[cfg(all(unix, target_arch = "x86_64"))]
 fn cli_defaults_to_x86_64_executable() {
-    let src_path = common::temp_artifact_path("laniusc_gpu_x86", "cli_default", Some("lani"));
-    let exe_path = src_path.with_extension("elf");
-    fs::write(&src_path, "fn main() {\n    print(42);\n    return 0;\n}\n")
-        .expect("write temporary source");
+    let src_path = common::TempArtifact::new("laniusc_gpu_x86", "cli_default_src", Some("lani"));
+    let exe_path = common::TempArtifact::new("laniusc_gpu_x86", "cli_default_exe", None);
+    src_path.write_str("fn main() {\n    print(42);\n    return 0;\n}\n");
 
     let bin = option_env!("CARGO_BIN_EXE_laniusc").unwrap_or("target/debug/laniusc");
     let output = Command::new(bin)
         .env("LANIUS_READBACK", "0")
         .env("PERF_ONE_READBACK", "0")
-        .arg(&src_path)
+        .arg(src_path.path())
         .arg("-o")
-        .arg(&exe_path)
+        .arg(exe_path.path())
         .output()
         .expect("run laniusc");
 
-    let _ = fs::remove_file(&src_path);
-    assert!(
-        output.status.success(),
-        "laniusc failed:\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    common::assert_command_success("laniusc CLI default x86_64", &output);
 
-    let run = Command::new(&exe_path)
+    let run = Command::new(exe_path.path())
         .output()
-        .unwrap_or_else(|err| panic!("run emitted ELF {}: {err}", exe_path.display()));
-    let _ = fs::remove_file(&exe_path);
-    assert!(
-        run.status.success(),
-        "emitted ELF failed:\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&run.stdout),
-        String::from_utf8_lossy(&run.stderr)
+        .unwrap_or_else(|err| panic!("run emitted ELF {}: {err}", exe_path.path().display()));
+    common::assert_command_success(format!("emitted ELF {}", exe_path.path().display()), &run);
+    assert_eq!(
+        common::stdout_utf8("emitted ELF stdout", run.stdout),
+        "42\n"
     );
-    assert_eq!(String::from_utf8_lossy(&run.stdout), "42\n");
 }
 
 #[cfg(all(unix, target_arch = "x86_64"))]
 fn run_x86(program: &SampleProgram, elf: &[u8]) -> String {
-    use std::os::unix::fs::PermissionsExt;
-
-    let exe_path = common::temp_artifact_path("laniusc_sample_x86", program.name(), None);
-    fs::write(&exe_path, elf).unwrap_or_else(|err| {
-        panic!(
-            "{}: write temporary ELF {}: {err}",
-            program.name(),
-            exe_path.display()
-        )
-    });
-    let mut permissions = fs::metadata(&exe_path)
-        .unwrap_or_else(|err| {
-            panic!(
-                "{}: stat temporary ELF {}: {err}",
-                program.name(),
-                exe_path.display()
-            )
-        })
-        .permissions();
-    permissions.set_mode(0o700);
-    fs::set_permissions(&exe_path, permissions).unwrap_or_else(|err| {
-        panic!(
-            "{}: chmod temporary ELF {}: {err}",
-            program.name(),
-            exe_path.display()
-        )
-    });
-
-    let output = Command::new(&exe_path).output().unwrap_or_else(|err| {
-        panic!(
-            "{}: run native ELF {}: {err}",
-            program.name(),
-            exe_path.display()
-        )
-    });
-    let _ = fs::remove_file(&exe_path);
-    assert!(
-        output.status.success(),
-        "{}: native ELF failed for {}:\nstdout:\n{}\nstderr:\n{}",
+    common::run_x86_64_elf(
+        format!("{}: x86_64 sample", program.name()),
         program.name(),
-        exe_path.display(),
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8(output.stdout)
-        .unwrap_or_else(|err| panic!("{}: native stdout utf8: {err}", program.name()))
+        elf,
+    )
 }
