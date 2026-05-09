@@ -61,7 +61,7 @@ fn main() {
 fn type_checker_rejects_inner_block_declaration_leak() {
     let src = r#"
 fn main() {
-    if (1) {
+    if (1 == 1) {
         let hidden: i32 = 1;
         print(hidden);
     }
@@ -78,7 +78,7 @@ fn type_checker_keeps_shadowing_block_local() {
     let src = r#"
 fn main() {
     let x: i32 = 1;
-    if (1) {
+    if (1 == 1) {
         print(x);
         let x: bool = 1 < 2;
         if (x) {
