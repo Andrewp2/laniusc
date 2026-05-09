@@ -3,6 +3,8 @@
 This directory contains the initial Lanius standard library as plain `.lani`
 source files.
 
+The long-term design is tracked in [PLAN.md](PLAN.md).
+
 Lanius does not have modules or imports yet. These files are not auto-imported by
 the compiler. To use a helper today, concatenate the needed stdlib source before
 your program source:
