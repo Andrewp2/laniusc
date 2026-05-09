@@ -1,6 +1,6 @@
 // Source-level bool helpers for the current Lanius language surface.
-// Lanius has bool values from comparisons/logical expressions, but no bool
-// literals in the grammar yet.
+// Lanius has bool values from comparisons/logical expressions and direct
+// true/false literals.
 
 pub fn lstd_bool_not(value: bool) -> bool {
     return !value;

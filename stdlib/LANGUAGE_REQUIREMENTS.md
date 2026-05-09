@@ -7,10 +7,11 @@ should prove before the next layer depends on it.
 
 ## Already Supported Today
 
-Current source-level stdlib files are plain `.lani` sources that must be
-concatenated ahead of user code. `tests/stdlib.rs` verifies that every
-`stdlib/*.lani` file parses, lowers to HIR, and that representative concatenated
-usage compiles to WASM.
+Current source-level stdlib files are plain `.lani` sources that can be included
+with explicit source imports such as `import "stdlib/i32.lani";`. `tests/stdlib.rs`
+verifies that every `stdlib/*.lani` file parses, lowers to HIR, and that
+representative combined usage compiles to WASM. `tests/imports.rs` covers stdlib,
+relative, duplicate, and cyclic imports.
 
 Supported enough for the seed library:
 
@@ -19,9 +20,8 @@ Supported enough for the seed library:
 - `i32` arithmetic, comparisons, unary minus, logical operators, assignment, and
   compound assignment, used by `lstd_i32_abs`, `lstd_i32_clamp`, and array
   loops.
-- `bool` values produced by comparisons and logical expressions. There are no
-  bool literals yet, so `stdlib/bool.lani` and `lstd_i32x4_contains` return
-  comparisons such as `1 == 1` instead of `true`.
+- `bool` values produced by comparisons, logical expressions, and direct
+  `true`/`false` literals.
 - `if`/`else`, `while`, `break`, `continue`, recursion, blocks, and shadowing, as
   shown in `sample_programs/*.lani`.
 - Fixed-size array type syntax, array literals, and indexing for concrete
@@ -32,8 +32,8 @@ Supported enough for the seed library:
 
 Important limitations visible in current files:
 
-- No modules or imports. `stdlib/README.md` documents concatenation and the
-  temporary `lstd_` prefix.
+- No real modules, namespaces, or package imports. Source-level path imports
+  exist and `stdlib/README.md` documents the temporary `lstd_` prefix.
 - No generics or const parameters. `stdlib/array_i32_4.lani` is tied to
   `[i32; 4]`; every other element type or length would need another source file.
 - No enum/sum types, structs, methods, traits/interfaces, slices, references, or
@@ -49,25 +49,24 @@ runtime work lands.
 
 Strict blockers:
 
-- Module/import syntax and package lookup, so users can write explicit imports
-  instead of concatenating files.
+- Real module/import syntax and package lookup, so users can import stable
+  modules instead of source include paths.
 - Name visibility and namespace rules, so `lstd_` can be retired or isolated
   behind compatibility shims.
-- Bool literals, so bool helpers and tests can use `true` and `false` directly.
 - A stable source fixture path for stdlib tests, extending the current
-  `tests/stdlib.rs` concatenation check.
+  `tests/stdlib.rs` and `tests/imports.rs` checks.
 
 Nice-to-have:
 
 - `const` values for primitive limits, array lengths, and module constants.
 - Better diagnostics for duplicate names when multiple source files are
-  concatenated or imported.
+  imported.
 - Doc examples that can be parsed or compiled as tests.
 
 Acceptance checks:
 
-- A user program can import `core::i32` and `core::bool` explicitly without
-  source concatenation.
+- A user program can import `core::i32` and `core::bool` explicitly through the
+  eventual package/module syntax.
 - Existing `lstd_i32_*`, `lstd_bool_*`, and `lstd_i32x4_*` examples still compile
   through a compatibility path.
 - A stdlib test uses bool literals in a helper and verifies both WASM output and
@@ -223,8 +222,9 @@ Acceptance checks:
 ## Realistic Implementation Order
 
 1. Stabilize the source seed.
-   Acceptance: existing `tests/stdlib.rs` still passes; add bool literal coverage
-   once literals land; keep source concatenation documented until imports exist.
+   Acceptance: existing `tests/stdlib.rs` still passes; source import coverage
+   exists for stdlib and relative files; bool literal coverage exists in
+   frontend, type-checker, and codegen tests.
 
 2. Add modules/imports and namespace visibility.
    Acceptance: stdlib helpers are imported by module path; compatibility names

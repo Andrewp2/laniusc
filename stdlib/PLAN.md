@@ -3,8 +3,9 @@
 This document describes the full standard library we want Lanius to grow into.
 It is intentionally broader than the source files that exist today. The current
 `stdlib/*.lani` files are a source-level seed package; they are not imported
-automatically and should stay explicit until modules, imports, generics, heap
-allocation, traits/interfaces, and target-specific runtime support exist.
+automatically and should stay explicit until real modules, package imports,
+generics, heap allocation, traits/interfaces, and target-specific runtime
+support exist.
 
 The guiding idea is that the standard library should make ordinary programs
 pleasant without hiding control flow or surprising the compiler. Lanius values
@@ -26,7 +27,7 @@ where it matters, and avoid implicit magic.
 
 ## Non-Goals
 
-- Do not pretend modules/imports exist before they do.
+- Do not pretend real modules/package imports exist before they do.
 - Do not make every package part of the core standard library.
 - Do not silently allocate from APIs that look like simple scalar operations.
 - Do not bake in one async runtime as the only possible I/O story too early.
@@ -112,16 +113,21 @@ The current `stdlib/` directory contains plain `.lani` files:
 - `bool.lani`
 - `array_i32_4.lani`
 
-Until imports exist, users concatenate these files before program source:
+Use explicit source imports before program source:
 
-```sh
-cat stdlib/i32.lani stdlib/bool.lani my_program.lani > combined.lani
-laniusc combined.lani
+```lani
+import "stdlib/i32.lani";
+import "stdlib/bool.lani";
+
+fn main() {
+    return lstd_i32_abs(-7);
+}
 ```
 
-These files use an `lstd_` prefix to avoid collisions. When modules/imports are
-implemented, the naming should become module-based and the prefix can be retired
-or kept only for compatibility shims.
+These imports are source-level includes expanded before lexing/parsing, not a
+module system. The files use an `lstd_` prefix to avoid collisions. When real
+modules/package imports are implemented, the naming should become module-based
+and the prefix can be retired or kept only for compatibility shims.
 
 ## Module And Package Model
 
@@ -960,7 +966,7 @@ This keeps embedded and WASM use cases honest.
 ## Naming Principles
 
 - Prefer clear names over abbreviations.
-- Use module namespaces once imports exist.
+- Use module namespaces once real modules/package imports exist.
 - Use `lstd_` prefixes only for the current source-level stopgap.
 - Avoid names that imply allocation when an API does not allocate, and vice
   versa.
@@ -985,7 +991,7 @@ The current source-level stdlib is experimental.
 Current phase.
 
 - Plain `.lani` files.
-- Manual concatenation.
+- Source-level imports expanded before lexing/parsing.
 - `lstd_` prefix.
 - CPU parser/HIR validation.
 - Representative type-check/codegen tests.
@@ -1012,7 +1018,7 @@ Requires enum/sum types or equivalent representation.
 Requires module/import support.
 
 - Organize stdlib into modules.
-- Remove need for manual concatenation.
+- Remove need for source include paths and compatibility prefixes.
 - Define explicit prelude.
 - Define visibility and package boundaries.
 
@@ -1120,4 +1126,3 @@ A new stdlib feature should have:
 - Clear target support notes.
 - Failure-mode tests.
 - No accidental reliance on unsupported language features.
-
