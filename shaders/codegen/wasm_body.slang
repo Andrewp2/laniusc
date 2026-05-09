@@ -876,6 +876,10 @@ void emit_body(inout uint cursor, bool write, uint lane)
             emit_while_statement(cursor, i, write, lane);
             i = body_close;
         }
+        else if (token_kind(i) == TK_IF)
+        {
+            i = emit_if_statement(cursor, i, false, write, lane);
+        }
         else if (i + 1u < n && token_kind(i) == TK_IDENT && is_print_name(i) &&
             (token_kind(i + 1u) == TK_CALL_LPAREN || token_kind(i + 1u) == TK_LPAREN))
         {
