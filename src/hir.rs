@@ -528,7 +528,31 @@ impl<'a> HirParser<'a> {
     }
 
     fn parse_path_segment(&mut self) -> Result<String, HirError> {
-        self.expect_name(&[TokenKind::Ident, TokenKind::TypeIdent], "path segment")
+        self.expect_name(
+            &[
+                TokenKind::Ident,
+                TokenKind::TypeIdent,
+                TokenKind::ParamIdent,
+                TokenKind::LetIdent,
+            ],
+            "path segment",
+        )
+    }
+
+    fn is_path_start(&self) -> bool {
+        matches!(
+            self.peek(),
+            Some(
+                TokenKind::Ident
+                    | TokenKind::TypeIdent
+                    | TokenKind::ParamIdent
+                    | TokenKind::LetIdent
+            )
+        )
+    }
+
+    fn path_name(path: &HirPath) -> String {
+        path.segments.join("::")
     }
 
     fn parse_const(&mut self) -> Result<HirConst, HirError> {
@@ -745,8 +769,9 @@ impl<'a> HirParser<'a> {
 
     fn parse_type_expr(&mut self) -> Result<HirType, HirError> {
         let start = self.peek_start();
-        if let Some(tok) = self.eat_any(&[TokenKind::TypeIdent, TokenKind::Ident]) {
-            let name = self.lexeme(tok);
+        if self.is_path_start() {
+            let path = self.parse_path()?;
+            let name = Self::path_name(&path);
             let args = self.parse_type_args()?;
             if !args.is_empty() {
                 return Ok(HirType {
@@ -1139,10 +1164,14 @@ impl<'a> HirParser<'a> {
     fn parse_postfix(&mut self) -> Result<HirExpr, HirError> {
         let mut node = self.parse_primary()?;
         loop {
-            if self.eat(TokenKind::CallLParen).is_some() || self.eat(TokenKind::LParen).is_some() {
+            if self.eat(TokenKind::CallLParen).is_some()
+                || self.eat(TokenKind::GroupLParen).is_some()
+                || self.eat(TokenKind::LParen).is_some()
+            {
                 let start = node.span.start;
                 let mut args = Vec::new();
                 if self.eat(TokenKind::CallRParen).is_none()
+                    && self.eat(TokenKind::GroupRParen).is_none()
                     && self.eat(TokenKind::RParen).is_none()
                 {
                     args.push(self.parse_expr()?);
@@ -1151,7 +1180,14 @@ impl<'a> HirParser<'a> {
                     {
                         args.push(self.parse_expr()?);
                     }
-                    self.expect_any(&[TokenKind::CallRParen, TokenKind::RParen], "RParen")?;
+                    self.expect_any(
+                        &[
+                            TokenKind::CallRParen,
+                            TokenKind::GroupRParen,
+                            TokenKind::RParen,
+                        ],
+                        "RParen",
+                    )?;
                 }
                 node = HirExpr {
                     kind: HirExprKind::Call {
@@ -1270,13 +1306,9 @@ impl<'a> HirParser<'a> {
             });
         }
 
-        if let Some(tok) = self.eat_any(&[
-            TokenKind::Ident,
-            TokenKind::TypeIdent,
-            TokenKind::ParamIdent,
-            TokenKind::LetIdent,
-        ]) {
-            let name = self.lexeme(tok);
+        if self.is_path_start() {
+            let path = self.parse_path()?;
+            let name = Self::path_name(&path);
             if self.eat(TokenKind::LBrace).is_some() {
                 let fields = self.parse_struct_literal_fields()?;
                 self.expect(TokenKind::RBrace, "RBrace")?;
@@ -1342,13 +1374,9 @@ impl<'a> HirParser<'a> {
 
     fn parse_pattern(&mut self) -> Result<HirPattern, HirError> {
         let start = self.peek_start();
-        if let Some(tok) = self.eat_any(&[
-            TokenKind::Ident,
-            TokenKind::TypeIdent,
-            TokenKind::ParamIdent,
-            TokenKind::LetIdent,
-        ]) {
-            let name = self.lexeme(tok);
+        if self.is_path_start() {
+            let path = self.parse_path()?;
+            let name = Self::path_name(&path);
             if self
                 .eat_any(&[
                     TokenKind::CallLParen,

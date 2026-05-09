@@ -237,6 +237,20 @@ fn generated_ll1_tables_accept_module_and_import_items() {
 }
 
 #[test]
+fn generated_ll1_tables_accept_namespaced_paths() {
+    let tables =
+        PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+            .expect("load generated parse tables");
+    let token_kinds = kinds_with_sentinels(
+        "fn main(value: core::option::Option<i32>) { let out = core::math::add_one(1); let p = core::point::Point { x: out }; let y = match (out) { core::option::Some(inner) -> inner, _ -> out }; return; }",
+    );
+
+    tables
+        .ll1_production_stream_with_positions(&token_kinds)
+        .expect("namespaced path fixture should parse with LL(1)");
+}
+
+#[test]
 fn generated_ll1_tables_accept_enum_declarations() {
     let tables =
         PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))

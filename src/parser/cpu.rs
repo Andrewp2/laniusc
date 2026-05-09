@@ -262,7 +262,11 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_path_segment(&mut self) -> Result<u32, ParseError> {
-        if self.eat(tokens::TokenKind::Ident) || self.eat(tokens::TokenKind::TypeIdent) {
+        if self.eat(tokens::TokenKind::Ident)
+            || self.eat(tokens::TokenKind::TypeIdent)
+            || self.eat(tokens::TokenKind::ParamIdent)
+            || self.eat(tokens::TokenKind::LetIdent)
+        {
             return Ok(self.push("ident", vec![]));
         }
         Err(ParseError {
@@ -270,6 +274,18 @@ impl<'a> Parser<'a> {
             expected: "path segment",
             found: self.peek(),
         })
+    }
+
+    fn is_path_start(&self) -> bool {
+        matches!(
+            self.peek(),
+            Some(
+                tokens::TokenKind::Ident
+                    | tokens::TokenKind::TypeIdent
+                    | tokens::TokenKind::ParamIdent
+                    | tokens::TokenKind::LetIdent
+            )
+        )
     }
 
     /// Parse a top-level `const` item.
@@ -476,14 +492,15 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_type_expr(&mut self) -> Result<u32, ParseError> {
-        if self.eat(tokens::TokenKind::TypeIdent) || self.eat(tokens::TokenKind::Ident) {
+        if self.is_path_start() {
+            let path = self.parse_path()?;
             let args = self.parse_type_args_opt()?;
             if self.nodes[args as usize].children.is_empty()
                 && self.nodes[args as usize].tag == "type_args_none"
             {
-                return Ok(self.push("type_ident", vec![]));
+                return Ok(self.push("type_ident", vec![path]));
             }
-            return Ok(self.push("type_generic", vec![args]));
+            return Ok(self.push("type_generic", vec![path, args]));
         }
 
         if self.eat(tokens::TokenKind::TypeArrayLBracket)
@@ -904,10 +921,15 @@ impl<'a> Parser<'a> {
     fn parse_postfix(&mut self) -> Result<u32, ParseError> {
         let mut node = self.parse_primary()?;
         loop {
-            if self.eat(tokens::TokenKind::CallLParen) || self.eat(tokens::TokenKind::LParen) {
+            if self.eat(tokens::TokenKind::CallLParen)
+                || self.eat(tokens::TokenKind::GroupLParen)
+                || self.eat(tokens::TokenKind::LParen)
+            {
                 // arg_list_opt -> ; | expr arg_tail
                 let mut args = Vec::new();
-                if !self.eat(tokens::TokenKind::CallRParen) && !self.eat(tokens::TokenKind::RParen)
+                if !self.eat(tokens::TokenKind::CallRParen)
+                    && !self.eat(tokens::TokenKind::GroupRParen)
+                    && !self.eat(tokens::TokenKind::RParen)
                 {
                     // some
                     let first = self.parse_expr()?;
@@ -919,7 +941,9 @@ impl<'a> Parser<'a> {
                         let a = self.parse_expr()?;
                         args.push(a);
                     }
-                    if !self.eat(tokens::TokenKind::CallRParen) {
+                    if !self.eat(tokens::TokenKind::CallRParen)
+                        && !self.eat(tokens::TokenKind::GroupRParen)
+                    {
                         self.expect(tokens::TokenKind::RParen, "RParen")?;
                     }
                 }
@@ -1029,12 +1053,8 @@ impl<'a> Parser<'a> {
             return Ok(self.push("match", children));
         }
 
-        if self.eat(tokens::TokenKind::Ident)
-            || self.eat(tokens::TokenKind::TypeIdent)
-            || self.eat(tokens::TokenKind::ParamIdent)
-            || self.eat(tokens::TokenKind::LetIdent)
-        {
-            let ident = self.push("ident", vec![]);
+        if self.is_path_start() {
+            let path = self.parse_path()?;
             if self.eat(tokens::TokenKind::LBrace) {
                 let mut fields = Vec::new();
                 if !self.eat(tokens::TokenKind::RBrace) {
@@ -1052,11 +1072,11 @@ impl<'a> Parser<'a> {
                     }
                 }
                 let mut children = Vec::with_capacity(1 + fields.len());
-                children.push(ident);
+                children.push(path);
                 children.extend(fields);
                 return Ok(self.push("struct_lit", children));
             }
-            return Ok(ident);
+            return Ok(self.push("ident", vec![path]));
         }
         if self.eat(tokens::TokenKind::Int) {
             return Ok(self.push("int", vec![]));
@@ -1092,12 +1112,8 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_pattern(&mut self) -> Result<u32, ParseError> {
-        if self.eat(tokens::TokenKind::Ident)
-            || self.eat(tokens::TokenKind::TypeIdent)
-            || self.eat(tokens::TokenKind::ParamIdent)
-            || self.eat(tokens::TokenKind::LetIdent)
-        {
-            let ident = self.push("pattern_ident", vec![]);
+        if self.is_path_start() {
+            let path = self.parse_path()?;
             if self.eat(tokens::TokenKind::CallLParen)
                 || self.eat(tokens::TokenKind::GroupLParen)
                 || self.eat(tokens::TokenKind::LParen)
@@ -1113,9 +1129,9 @@ impl<'a> Parser<'a> {
                         found: self.peek(),
                     });
                 }
-                return Ok(self.push("pattern_tuple", vec![ident, fields]));
+                return Ok(self.push("pattern_tuple", vec![path, fields]));
             }
-            return Ok(ident);
+            return Ok(self.push("pattern_ident", vec![path]));
         }
         if self.eat(tokens::TokenKind::Int) {
             return Ok(self.push("pattern_int", vec![]));

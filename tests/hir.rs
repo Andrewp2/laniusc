@@ -680,6 +680,48 @@ fn cpu_parser_and_hir_preserve_module_and_import_items() {
 }
 
 #[test]
+fn hir_preserves_namespaced_paths_in_types_exprs_and_patterns() {
+    let file = parse_source(
+        "fn main(value: core::option::Option<i32>) { let out = core::math::add_one(1); let p = core::point::Point { x: out }; let y = match (out) { core::option::Some(inner) -> inner, _ -> out }; return; }",
+    )
+    .expect("parse namespaced paths");
+    let HirItem::Fn(func) = &file.items[0] else {
+        panic!("expected function item");
+    };
+
+    let HirTypeKind::Generic { name, args } = &func.params[0].ty.kind else {
+        panic!("expected namespaced generic type");
+    };
+    assert_eq!(name, "core::option::Option");
+    assert_eq!(args.len(), 1);
+    assert_eq!(args[0].kind, HirTypeKind::Name("i32".into()));
+
+    let call = let_value(&func.body.stmts[0], "out");
+    let HirExprKind::Call { callee, args } = &call.kind else {
+        panic!("expected namespaced call");
+    };
+    assert_eq!(callee.kind, HirExprKind::Name("core::math::add_one".into()));
+    assert_eq!(args.len(), 1);
+
+    let literal = let_value(&func.body.stmts[1], "p");
+    let HirExprKind::StructLiteral { name, fields } = &literal.kind else {
+        panic!("expected namespaced struct literal");
+    };
+    assert_eq!(name, "core::point::Point");
+    assert_eq!(fields.len(), 1);
+
+    let matched = let_value(&func.body.stmts[2], "y");
+    let HirExprKind::Match { arms, .. } = &matched.kind else {
+        panic!("expected match expression");
+    };
+    let HirPatternKind::Tuple { name, fields } = &arms[0].pattern.kind else {
+        panic!("expected namespaced tuple pattern");
+    };
+    assert_eq!(name, "core::option::Some");
+    assert_eq!(fields.len(), 1);
+}
+
+#[test]
 fn hir_preserves_names_and_literals_in_function_fixture() {
     let func = only_fn(include_str!("../parser_tests/function.lani"));
 

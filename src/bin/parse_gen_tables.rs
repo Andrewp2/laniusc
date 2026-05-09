@@ -787,12 +787,19 @@ fn default_projection_witnesses() -> Vec<Vec<TokenKind>> {
         vec![LBracket, Ident, RBracket, Semicolon],
         vec![LBracket, Ident, Comma, Int, RBracket, Semicolon],
         vec![Ident, Dot, Ident, Semicolon],
+        vec![
+            Ident, Colon, Colon, TypeIdent, Colon, Colon, TypeIdent, LParen, Int, RParen, Semicolon,
+        ],
         vec![Ident, LBrace, RBrace, Semicolon],
         vec![
             Ident, LBrace, Ident, Colon, Int, Comma, Ident, Colon, Ident, RBrace, Semicolon,
         ],
         vec![
             Match, LParen, Ident, RParen, LBrace, Int, Arrow, Ident, Comma, Ident, LParen, Ident,
+            RParen, Arrow, Ident, Comma, Ident, Arrow, Int, RBrace, Semicolon,
+        ],
+        vec![
+            Match, LParen, Ident, RParen, LBrace, Ident, Colon, Colon, TypeIdent, LParen, Ident,
             RParen, Arrow, Ident, Comma, Ident, Arrow, Int, RBrace, Semicolon,
         ],
         vec![Ident, LParen, RParen, Semicolon],
@@ -941,12 +948,19 @@ fn default_projection_witnesses() -> Vec<Vec<TokenKind>> {
         vec![LBracket, Ident, RBracket],
         vec![LBracket, Ident, Comma, Int, RBracket],
         vec![Ident, Dot, Ident],
+        vec![
+            Ident, Colon, Colon, TypeIdent, Colon, Colon, TypeIdent, LParen, Int, RParen,
+        ],
         vec![Ident, LBrace, RBrace],
         vec![
             Ident, LBrace, Ident, Colon, Int, Comma, Ident, Colon, Ident, RBrace,
         ],
         vec![
             Match, LParen, Ident, RParen, LBrace, Int, Arrow, Ident, Comma, Ident, LParen, Ident,
+            RParen, Arrow, Ident, Comma, Ident, Arrow, Int, RBrace,
+        ],
+        vec![
+            Match, LParen, Ident, RParen, LBrace, Ident, Colon, Colon, TypeIdent, LParen, Ident,
             RParen, Arrow, Ident, Comma, Ident, Arrow, Int, RBrace,
         ],
         vec![Ident, LParen, RParen],
@@ -1018,7 +1032,9 @@ fn default_projection_witnesses() -> Vec<Vec<TokenKind>> {
 
     let type_exprs = vec![
         vec![Ident],
+        vec![Ident, Colon, Colon, TypeIdent],
         vec![Ident, Lt, Ident, Gt],
+        vec![Ident, Colon, Colon, TypeIdent, Lt, Ident, Gt],
         vec![Ident, Lt, Ident, Comma, Ident, Gt],
         vec![Ampersand, Ident],
         vec![Ampersand, LBracket, Ident, RBracket],
