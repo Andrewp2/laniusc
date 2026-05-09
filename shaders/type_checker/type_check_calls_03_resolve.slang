@@ -123,14 +123,19 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
     uint n_active = active_token_count();
-    if (i >= n_active || token_kind(i) != TK_IDENT || i + 1u >= n_active ||
-        (token_kind(i + 1u) != TK_CALL_LPAREN && token_kind(i + 1u) != TK_LPAREN))
+    if (i >= n_active || token_kind(i) != TK_IDENT)
         return;
+
+    bool is_call = i + 1u < n_active &&
+                   (token_kind(i + 1u) == TK_CALL_LPAREN || token_kind(i + 1u) == TK_LPAREN);
 
     if (token_text_eq5(i, 112u, 114u, 105u, 110u, 116u))
     {
-        call_return_type[i] = TY_VOID;
-        call_return_type_token[i] = INVALID;
+        if (is_call)
+        {
+            call_return_type[i] = TY_VOID;
+            call_return_type_token[i] = INVALID;
+        }
         return;
     }
 
@@ -147,8 +152,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (function_lookup_key[slot] == key && same_text(fn_i + 1u, i))
         {
             call_fn_index[i] = fn_i;
-            call_return_type[i] = call_return_type[fn_i];
-            call_return_type_token[i] = call_return_type_token[fn_i];
+            if (is_call)
+            {
+                call_return_type[i] = call_return_type[fn_i];
+                call_return_type_token[i] = call_return_type_token[fn_i];
+            }
             return;
         }
     }

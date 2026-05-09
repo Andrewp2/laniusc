@@ -102,6 +102,7 @@ pub enum GpuTypeCheckCode {
     LoopControl,
     InvalidMemberAccess,
     InvalidArrayReturn,
+    CallMismatch,
     Unknown(u32),
 }
 
@@ -117,6 +118,7 @@ impl GpuTypeCheckCode {
             7 => Self::LoopControl,
             8 => Self::InvalidMemberAccess,
             9 => Self::InvalidArrayReturn,
+            10 => Self::CallMismatch,
             other => Self::Unknown(other),
         }
     }

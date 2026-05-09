@@ -99,3 +99,139 @@ fn main() {
 
     assert_gpu_type_check_error(src, "ConditionType (131)");
 }
+
+#[test]
+fn type_checker_rejects_call_argument_count_mismatch() {
+    let src = r#"
+fn add(left: i32, right: i32) -> i32 {
+    return left;
+}
+
+fn main() {
+    print(add(1));
+    return 0;
+}
+"#;
+
+    assert_gpu_type_check_error(src, "CallMismatch (513)");
+}
+
+#[test]
+fn type_checker_rejects_call_argument_type_mismatch() {
+    let src = r#"
+fn as_int(value: i32) -> i32 {
+    return value;
+}
+
+fn main() {
+    let flag: bool = 1 < 2;
+    print(as_int(flag));
+    return 0;
+}
+"#;
+
+    assert_gpu_type_check_error(src, "AssignMismatch (770)");
+}
+
+#[test]
+fn type_checker_rejects_calling_non_function_value() {
+    let src = r#"
+fn main() {
+    let value: i32 = 1;
+    value();
+    return 0;
+}
+"#;
+
+    assert_gpu_type_check_error(src, "CallMismatch (3)");
+}
+
+#[test]
+fn type_checker_rejects_function_name_as_value() {
+    let src = r#"
+fn helper() -> i32 {
+    return 1;
+}
+
+fn main() {
+    let value: i32 = helper;
+    return value;
+}
+"#;
+
+    assert_gpu_type_check_error(src, "CallMismatch (0)");
+}
+
+#[test]
+fn type_checker_rejects_non_integer_array_index() {
+    let src = r#"
+fn main() {
+    let values: [i32; 2] = [1, 2];
+    let flag: bool = 1 < 2;
+    let value: i32 = values[flag];
+    return value;
+}
+"#;
+
+    assert_gpu_type_check_error(src, "AssignMismatch (770)");
+}
+
+#[test]
+fn type_checker_rejects_indexing_non_array_value() {
+    let src = r#"
+fn main() {
+    let value: i32 = 1;
+    let result: i32 = value[0];
+    return result;
+}
+"#;
+
+    assert_gpu_type_check_error(src, "AssignMismatch (3)");
+}
+
+#[test]
+fn type_checker_rejects_array_element_assignment_mismatch() {
+    let src = r#"
+fn main() {
+    let values: [i32; 2] = [1, 2];
+    let flag: bool = 1 < 2;
+    values[0] = flag;
+    return 0;
+}
+"#;
+
+    assert_gpu_type_check_error(src, "AssignMismatch (770)");
+}
+
+#[test]
+fn type_checker_rejects_inferred_array_literal_element_mismatch() {
+    let src = r#"
+fn main() {
+    let first: i32 = 1;
+    let values = [first, 1 < 2];
+    return 0;
+}
+"#;
+
+    assert_gpu_type_check_error(src, "AssignMismatch (770)");
+}
+
+#[test]
+fn type_checker_keeps_nested_call_commas_inside_argument() {
+    let src = r#"
+fn pair(left: i32, right: i32) -> i32 {
+    return left;
+}
+
+fn takes_one(value: i32) -> i32 {
+    return value;
+}
+
+fn main() {
+    let flag: bool = takes_one(pair(1, 2));
+    return 0;
+}
+"#;
+
+    assert_gpu_type_check_error(src, "AssignMismatch (515)");
+}
