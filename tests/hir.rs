@@ -682,7 +682,7 @@ fn cpu_parser_and_hir_preserve_module_and_import_items() {
 #[test]
 fn hir_preserves_namespaced_paths_in_types_exprs_and_patterns() {
     let file = parse_source(
-        "fn main(value: core::option::Option<i32>) { let out = core::math::add_one(1); let p = core::point::Point { x: out }; let y = match (out) { core::option::Some(inner) -> inner, _ -> out }; return; }",
+        "fn main(value: core::option::Option<i32>, result: core::result::Result<i32, i32>) { let out = core::math::add_one(1); let p = core::point::Point { x: out }; let y = match (out) { core::option::Some(inner) -> inner, _ -> out }; return; }",
     )
     .expect("parse namespaced paths");
     let HirItem::Fn(func) = &file.items[0] else {
@@ -695,6 +695,14 @@ fn hir_preserves_namespaced_paths_in_types_exprs_and_patterns() {
     assert_eq!(name, "core::option::Option");
     assert_eq!(args.len(), 1);
     assert_eq!(args[0].kind, HirTypeKind::Name("i32".into()));
+
+    let HirTypeKind::Generic { name, args } = &func.params[1].ty.kind else {
+        panic!("expected namespaced two-arg generic type");
+    };
+    assert_eq!(name, "core::result::Result");
+    assert_eq!(args.len(), 2);
+    assert_eq!(args[0].kind, HirTypeKind::Name("i32".into()));
+    assert_eq!(args[1].kind, HirTypeKind::Name("i32".into()));
 
     let call = let_value(&func.body.stmts[0], "out");
     let HirExprKind::Call { callee, args } = &call.kind else {

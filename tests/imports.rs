@@ -325,6 +325,28 @@ fn main() {
 }
 
 #[test]
+fn module_style_sum_type_seed_imports_expand() {
+    let src = r#"
+import core::option;
+import core::result;
+import core::ordering;
+
+fn main(value: core::option::Option<i32>, result: core::result::Result<i32, i32>, ordering: core::ordering::Ordering) {
+    return;
+}
+"#;
+
+    let expanded = expand_source_imports(src).expect("expand module-style sum type imports");
+    assert!(expanded.contains("pub enum __lanius_core_option_Option<T>"));
+    assert!(expanded.contains("pub enum __lanius_core_result_Result<T, E>"));
+    assert!(expanded.contains("pub enum __lanius_core_ordering_Ordering"));
+    assert!(expanded.contains("value: __lanius_core_option_Option<i32>"));
+    assert!(expanded.contains("result: __lanius_core_result_Result<i32, i32>"));
+    assert!(expanded.contains("ordering: __lanius_core_ordering_Ordering"));
+    parse_source(&expanded).expect("expanded module-style sum type imports should parse");
+}
+
+#[test]
 fn missing_module_import_reports_candidates() {
     let err = expand_source_imports("import core::not_a_module;\n")
         .expect_err("missing module import should fail");

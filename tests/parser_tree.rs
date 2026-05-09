@@ -244,7 +244,7 @@ fn generated_ll1_tables_accept_namespaced_paths() {
         PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
             .expect("load generated parse tables");
     let token_kinds = kinds_with_sentinels(
-        "fn main(value: core::option::Option<i32>) { let out = core::math::add_one(1); let p = core::point::Point { x: out }; let y = match (out) { core::option::Some(inner) -> inner, _ -> out }; return; }",
+        "fn main(value: core::option::Option<i32>, result: core::result::Result<i32, i32>) { let out = core::math::add_one(1); let p = core::point::Point { x: out }; let y = match (out) { core::option::Some(inner) -> inner, _ -> out }; return; }",
     );
 
     tables

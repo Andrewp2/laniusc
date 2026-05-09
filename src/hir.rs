@@ -859,7 +859,10 @@ impl<'a> HirParser<'a> {
         }
 
         let mut args = vec![self.parse_type_expr()?];
-        while self.eat(TokenKind::Comma).is_some() {
+        while self.eat(TokenKind::Comma).is_some()
+            || self.eat(TokenKind::ArgComma).is_some()
+            || self.eat(TokenKind::ParamComma).is_some()
+        {
             args.push(self.parse_type_expr()?);
         }
         self.expect(TokenKind::Gt, "Gt")?;

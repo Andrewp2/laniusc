@@ -1,0 +1,9 @@
+// Declaration seed for comparison ordering.
+
+module core::ordering;
+
+pub enum Ordering {
+    Less,
+    Equal,
+    Greater,
+}

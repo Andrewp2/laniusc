@@ -33,6 +33,10 @@ Current scope is intentionally small:
 - `core/bool.lani` has module-form boolean combinators and conversions built on
   the current bool expression surface, including `true` and `false` literals.
 - `core/array_i32_4.lani` has module-form fixed-size `[i32; 4]` helpers.
+- `core/option.lani`, `core/result.lani`, and `core/ordering.lani` have
+  declaration seeds for the core sum types. They parse and import, but enum
+  constructors, match semantics, and backend representation are not implemented
+  yet.
 - `i32.lani`, `bool.lani`, and `array_i32_4.lani` keep the older `lstd_`
   compatibility helpers. There are no generics or const parameters yet, so
   other array sizes need separate source helpers.

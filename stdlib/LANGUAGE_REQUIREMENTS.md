@@ -21,6 +21,9 @@ Supported enough for the seed library:
 - Module-form `core::i32`, `core::bool`, and `core::array_i32_4` seed files now
   expose namespaced helpers such as `core::i32::abs()`,
   `core::bool::to_i32()`, and `core::array_i32_4::sum()`.
+- Module-form `core::option`, `core::result`, and `core::ordering` declaration
+  seeds now expose the parseable enum shapes for `Option<T>`, `Result<T, E>`,
+  and `Ordering`.
 - Top-level `module core::name;`, `import core::name;`, and quoted
   `import "path.lani";` items now parse and lower to HIR. Normal compilation
   still expands import directives before parsing. Imported files with a module
@@ -37,8 +40,8 @@ Supported enough for the seed library:
   exports, used by `stdlib/i32.lani` for `LSTD_I32_MIN` and `LSTD_I32_MAX`.
 - Top-level `enum` declarations with unit variants and tuple payload syntax now
   parse, lower to HIR, and are ignored safely by syntax/HIR validation. They do
-  not yet create usable types, constructors, pattern matching, or backend
-  representations.
+  not yet create usable types, constructors, pattern matching semantics, or
+  backend representations.
 - Generic type parameter syntax on enums and generic type-use syntax such as
   `Option<T>` and `Result<T, E>` now parse and lower to HIR. They do not yet
   participate in type checking, monomorphization, trait/interface resolution, or

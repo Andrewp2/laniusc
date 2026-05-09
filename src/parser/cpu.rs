@@ -558,7 +558,10 @@ impl<'a> Parser<'a> {
         }
 
         let mut args = vec![self.parse_type_expr()?];
-        while self.eat(tokens::TokenKind::Comma) {
+        while self.eat(tokens::TokenKind::Comma)
+            || self.eat(tokens::TokenKind::ArgComma)
+            || self.eat(tokens::TokenKind::ParamComma)
+        {
             args.push(self.parse_type_expr()?);
         }
         self.expect(tokens::TokenKind::Gt, "Gt")?;

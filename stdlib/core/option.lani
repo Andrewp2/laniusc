@@ -1,0 +1,8 @@
+// Declaration seed for optional values.
+
+module core::option;
+
+pub enum Option<T> {
+    Some(T),
+    None,
+}

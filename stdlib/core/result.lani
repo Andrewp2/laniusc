@@ -1,0 +1,8 @@
+// Declaration seed for recoverable results.
+
+module core::result;
+
+pub enum Result<T, E> {
+    Ok(T),
+    Err(E),
+}
