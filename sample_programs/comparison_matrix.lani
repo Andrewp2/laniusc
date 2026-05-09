@@ -1,0 +1,31 @@
+fn main() {
+    let a: i32 = 7;
+    let b: i32 = 7;
+    let c: i32 = 3;
+
+    if (a >= b) {
+        print(1);
+    } else {
+        print(0);
+    }
+
+    if (c <= a) {
+        print(2);
+    } else {
+        print(0);
+    }
+
+    if (a != c) {
+        print(3);
+    } else {
+        print(0);
+    }
+
+    if (a == b) {
+        print(4);
+    } else {
+        print(0);
+    }
+
+    return 0;
+}
