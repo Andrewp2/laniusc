@@ -18,11 +18,6 @@ fn sample_programs_compile_to_x86_and_match_stdout_under_100ms() {
             .await
             .expect("initialize reusable GPU compiler");
         let programs = sample_programs();
-        assert_eq!(
-            programs.len(),
-            14,
-            "expected exactly the 14 checked-in sample programs"
-        );
 
         let sources = programs
             .iter()
@@ -115,17 +110,58 @@ fn cli_defaults_to_x86_64_executable() {
 
 fn sample_programs() -> Vec<PathBuf> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("sample_programs");
-    let mut programs = fs::read_dir(&root)
+    let mut programs = Vec::new();
+    let mut expected_outputs = Vec::new();
+    for entry in fs::read_dir(&root)
         .unwrap_or_else(|err| panic!("read sample_programs dir {}: {err}", root.display()))
-        .map(|entry| {
-            entry
-                .unwrap_or_else(|err| panic!("read sample_programs entry: {err}"))
-                .path()
-        })
-        .filter(|path| path.extension().is_some_and(|ext| ext == "lani"))
-        .collect::<Vec<_>>();
+    {
+        let path = entry
+            .unwrap_or_else(|err| panic!("read sample_programs entry: {err}"))
+            .path();
+        match path.extension().and_then(|ext| ext.to_str()) {
+            Some("lani") => programs.push(path),
+            Some("stdout") => expected_outputs.push(path),
+            _ => {}
+        }
+    }
     programs.sort();
+    expected_outputs.sort();
+    assert!(
+        !programs.is_empty(),
+        "expected at least one sample program in {}",
+        root.display()
+    );
+
+    let missing_stdout = programs
+        .iter()
+        .filter(|program| !program.with_extension("stdout").is_file())
+        .map(sample_file_name)
+        .collect::<Vec<_>>();
+    assert!(
+        missing_stdout.is_empty(),
+        "sample programs missing .stdout files: {}",
+        missing_stdout.join(", ")
+    );
+
+    let orphan_stdout = expected_outputs
+        .iter()
+        .filter(|expected| !expected.with_extension("lani").is_file())
+        .map(sample_file_name)
+        .collect::<Vec<_>>();
+    assert!(
+        orphan_stdout.is_empty(),
+        "sample stdout files missing .lani programs: {}",
+        orphan_stdout.join(", ")
+    );
+
     programs
+}
+
+fn sample_file_name(path: &PathBuf) -> String {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(str::to_owned)
+        .unwrap_or_else(|| path.display().to_string())
 }
 
 #[cfg(all(unix, target_arch = "x86_64"))]
