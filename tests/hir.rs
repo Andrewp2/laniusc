@@ -31,6 +31,7 @@ fn only_fn(src: &str) -> HirFn {
         HirItem::Fn(func) => func,
         HirItem::Const(_) => panic!("expected function item"),
         HirItem::Enum(_) => panic!("expected function item"),
+        HirItem::Struct(_) => panic!("expected function item"),
         HirItem::Stmt(_) => panic!("expected function item"),
     }
 }
@@ -147,6 +148,10 @@ fn assert_hir_file_spans(name: &str, src: &str, tokens: &[CpuToken], file: &HirF
                 assert_enum_spans(name, src, enm);
                 enm.span
             }
+            HirItem::Struct(strukt) => {
+                assert_struct_spans(name, src, strukt);
+                strukt.span
+            }
             HirItem::Stmt(stmt) => {
                 assert_stmt_spans(name, src, stmt);
                 stmt.span
@@ -202,6 +207,26 @@ fn assert_enum_spans(name: &str, src: &str, enm: &laniusc::hir::HirEnum) {
                 field.span,
             );
         }
+    }
+}
+
+fn assert_struct_spans(name: &str, src: &str, strukt: &laniusc::hir::HirStruct) {
+    assert_span_in_source(name, "struct", strukt.span, src);
+    for (field_i, field) in strukt.fields.iter().enumerate() {
+        assert_span_in_source(name, &format!("struct field {field_i}"), field.span, src);
+        assert_span_contains(
+            name,
+            &format!("struct field {field_i}"),
+            strukt.span,
+            field.span,
+        );
+        assert_type_spans(name, src, &field.ty);
+        assert_span_contains(
+            name,
+            &format!("struct field {field_i} type"),
+            field.span,
+            field.ty.span,
+        );
     }
 }
 
@@ -691,6 +716,44 @@ fn hir_preserves_generic_enum_declarations_and_type_uses() {
     assert_eq!(name, "Option");
     assert_eq!(args.len(), 1);
     assert_eq!(args[0].kind, HirTypeKind::Name("i32".into()));
+}
+
+#[test]
+fn hir_preserves_struct_declarations() {
+    let file = parse_source(
+        "pub struct VecHeader<T> { ptr: i32, len: i32, cap: i32, value: Option<T> } struct Empty { }",
+    )
+    .expect("parse struct declarations");
+    assert_eq!(file.items.len(), 2);
+
+    let HirItem::Struct(header) = &file.items[0] else {
+        panic!("expected first item to be struct");
+    };
+    assert!(header.public);
+    assert_eq!(header.name, "VecHeader");
+    assert_eq!(header.type_params, vec!["T"]);
+    assert_eq!(
+        header
+            .fields
+            .iter()
+            .map(|field| field.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["ptr", "len", "cap", "value"]
+    );
+    assert_eq!(header.fields[0].ty.kind, HirTypeKind::Name("i32".into()));
+    let HirTypeKind::Generic { name, args } = &header.fields[3].ty.kind else {
+        panic!("expected generic field type");
+    };
+    assert_eq!(name, "Option");
+    assert_eq!(args.len(), 1);
+    assert_eq!(args[0].kind, HirTypeKind::Name("T".into()));
+
+    let HirItem::Struct(empty) = &file.items[1] else {
+        panic!("expected second item to be struct");
+    };
+    assert!(!empty.public);
+    assert_eq!(empty.name, "Empty");
+    assert!(empty.fields.is_empty());
 }
 
 #[test]

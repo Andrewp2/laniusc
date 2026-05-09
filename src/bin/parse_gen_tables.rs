@@ -826,6 +826,14 @@ fn default_projection_witnesses() -> Vec<Vec<TokenKind>> {
             Enum, Ident, Lt, Ident, Comma, Ident, Gt, LBrace, Ident, LParen, Ident, RParen, Comma,
             Ident, LParen, Ident, RParen, RBrace,
         ],
+        vec![Struct, Ident, LBrace, RBrace],
+        vec![
+            Struct, Ident, LBrace, Ident, Colon, Ident, Comma, Ident, Colon, Ident, RBrace,
+        ],
+        vec![
+            Pub, Struct, Ident, Lt, Ident, Gt, LBrace, Ident, Colon, Ident, Lt, Ident, Gt, Comma,
+            Ident, Colon, LBracket, Ident, Semicolon, Int, RBracket, RBrace,
+        ],
         vec![
             Fn, Ident, LParen, RParen, Arrow, Ident, LBrace, Return, Int, Semicolon, RBrace,
         ],

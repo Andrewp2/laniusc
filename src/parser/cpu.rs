@@ -178,6 +178,8 @@ impl<'a> Parser<'a> {
         if self.eat(tokens::TokenKind::Pub) {
             let item = if self.peek() == Some(tokens::TokenKind::Enum) {
                 self.parse_enum_item()?
+            } else if self.peek() == Some(tokens::TokenKind::Struct) {
+                self.parse_struct_item()?
             } else {
                 self.parse_fn_item()?
             };
@@ -188,6 +190,8 @@ impl<'a> Parser<'a> {
             self.parse_const_item()
         } else if self.peek() == Some(tokens::TokenKind::Enum) {
             self.parse_enum_item()
+        } else if self.peek() == Some(tokens::TokenKind::Struct) {
+            self.parse_struct_item()
         } else {
             self.parse_stmt()
         }
@@ -281,6 +285,51 @@ impl<'a> Parser<'a> {
         }
         self.expect(tokens::TokenKind::Gt, "Gt")?;
         Ok(self.push("type_params", params))
+    }
+
+    /// Parse a top-level `struct` item.
+    fn parse_struct_item(&mut self) -> Result<u32, ParseError> {
+        self.expect(tokens::TokenKind::Struct, "Struct")?;
+        self.expect(tokens::TokenKind::Ident, "struct name")?;
+        let name_id = self.push("ident", vec![]);
+        let type_params = self.parse_type_params_opt()?;
+        self.expect(tokens::TokenKind::LBrace, "LBrace")?;
+
+        let mut fields = Vec::new();
+        while self.peek() != Some(tokens::TokenKind::RBrace) {
+            if self.peek().is_none() {
+                return Err(ParseError {
+                    pos: self.i,
+                    expected: "RBrace",
+                    found: None,
+                });
+            }
+            fields.push(self.parse_struct_field()?);
+            if self.eat(tokens::TokenKind::Comma) || self.eat(tokens::TokenKind::ArgComma) {
+                if self.peek() == Some(tokens::TokenKind::RBrace) {
+                    break;
+                }
+                continue;
+            }
+            if self.peek() != Some(tokens::TokenKind::RBrace) {
+                return Err(ParseError {
+                    pos: self.i,
+                    expected: "Comma or RBrace",
+                    found: self.peek(),
+                });
+            }
+        }
+
+        self.expect(tokens::TokenKind::RBrace, "RBrace")?;
+        Ok(self.push("struct", [vec![name_id, type_params], fields].concat()))
+    }
+
+    fn parse_struct_field(&mut self) -> Result<u32, ParseError> {
+        self.expect(tokens::TokenKind::Ident, "struct field name")?;
+        let name_id = self.push("ident", vec![]);
+        self.expect(tokens::TokenKind::Colon, "Colon")?;
+        let ty = self.parse_type_expr()?;
+        Ok(self.push("struct_field", vec![name_id, ty]))
     }
 
     fn parse_enum_variant(&mut self) -> Result<u32, ParseError> {

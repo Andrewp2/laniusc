@@ -42,6 +42,7 @@ pub const HIR_NODE_LITERAL_EXPR: u32 = 23;
 pub const HIR_NODE_ARRAY_EXPR: u32 = 24;
 pub const HIR_NODE_CONST_ITEM: u32 = 25;
 pub const HIR_NODE_ENUM_ITEM: u32 = 26;
+pub const HIR_NODE_STRUCT_ITEM: u32 = 27;
 
 pub struct HirNodesPass {
     data: PassData,

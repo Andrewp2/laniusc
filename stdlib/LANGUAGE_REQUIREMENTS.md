@@ -28,6 +28,10 @@ Supported enough for the seed library:
   `Option<T>` and `Result<T, E>` now parse and lower to HIR. They do not yet
   participate in type checking, monomorphization, trait/interface resolution, or
   code generation.
+- Top-level `struct` declarations with named fields and generic parameters now
+  parse, lower to HIR, and are ignored safely by syntax/HIR validation. They do
+  not yet create usable product types, constructors, field access semantics, or
+  backend layouts.
 - `i32` arithmetic, comparisons, unary minus, logical operators, assignment, and
   compound assignment, used by `lstd_i32_abs`, `lstd_i32_clamp`, and array
   loops.
@@ -135,10 +139,10 @@ Strict blockers:
 
 - Allocator ABI: allocation, reallocation/growth, deallocation, alignment, and
   allocation failure semantics.
+- Usable struct/product types. Declaration syntax exists, but field access,
+  construction, layout, type checking, and codegen support are still missing.
 - Owned heap pointer/reference representation and lifetime or ownership rules
   sufficient to prevent use-after-free in ordinary library code.
-- Struct/product types for collection layouts such as pointer, length, and
-  capacity.
 - Generics for `Vec<T>`, maps, sets, queues, and arenas.
 - Move/copy/drop semantics for values stored in collections.
 - Slice interop for `as_slice`, `as_mut_slice`, sorting, searching, and bulk

@@ -102,6 +102,11 @@ fn stdlib_sources_parse_with_cpu_parser_and_hir() {
                 HirItem::Enum(enm) => {
                     assert!(enm.public, "{name}: enum {} should be public", enm.name)
                 }
+                HirItem::Struct(strukt) => assert!(
+                    strukt.public,
+                    "{name}: struct {} should be public",
+                    strukt.name
+                ),
                 HirItem::Stmt(_) => panic!("{name}: stdlib source should not contain statements"),
             }
         }

@@ -50,6 +50,7 @@ static const uint HIR_LITERAL_EXPR = 23u;
 static const uint HIR_ARRAY_EXPR = 24u;
 static const uint HIR_CONST_ITEM = 25u;
 static const uint HIR_ENUM_ITEM = 26u;
+static const uint HIR_STRUCT_ITEM = 27u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -65,7 +66,8 @@ uint classify(uint prod)
 {
     if (prod == 0u)
         return HIR_FILE;
-    if (prod >= 3u && prod <= 5u)
+    if ((prod >= 3u && prod <= 5u) || prod == 119u || prod == 121u || prod == 143u ||
+        (prod >= 150u && prod <= 152u))
         return HIR_ITEM;
     if (prod == 6u)
         return HIR_FN;
@@ -115,6 +117,8 @@ uint classify(uint prod)
         return HIR_CONST_ITEM;
     if (prod == 122u)
         return HIR_ENUM_ITEM;
+    if (prod == 144u)
+        return HIR_STRUCT_ITEM;
     return HIR_NONE;
 }
 

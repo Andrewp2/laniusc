@@ -48,6 +48,7 @@ static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_ARRAY_EXPR = 24u;
 static const uint HIR_CONST_ITEM = 25u;
 static const uint HIR_ENUM_ITEM = 26u;
+static const uint HIR_STRUCT_ITEM = 27u;
 
 static const uint TK_IDENT = 1u;
 static const uint TK_LPAREN = 4u;
@@ -98,6 +99,7 @@ static const uint TK_TRUE = 90u;
 static const uint TK_FALSE = 91u;
 static const uint TK_CONST = 92u;
 static const uint TK_ENUM = 93u;
+static const uint TK_STRUCT = 94u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -376,13 +378,30 @@ uint enum_end(uint enum_i)
         uint kind = token_kind(j);
         if (is_open_brace(kind))
             return matching_brace_end(j);
-        if (kind == TK_SEMICOLON || kind == TK_FN || kind == TK_CONST || kind == TK_ENUM)
+        if (kind == TK_SEMICOLON || kind == TK_FN || kind == TK_CONST || kind == TK_ENUM ||
+            kind == TK_STRUCT)
             return j;
     }
     return n;
 }
 
-bool token_in_enum_decl(uint token_i)
+uint struct_end(uint struct_i)
+{
+    uint n = active_token_count();
+    [loop]
+    for (uint j = struct_i + 1u; j < n; j += 1u)
+    {
+        uint kind = token_kind(j);
+        if (is_open_brace(kind))
+            return matching_brace_end(j);
+        if (kind == TK_SEMICOLON || kind == TK_FN || kind == TK_CONST || kind == TK_ENUM ||
+            kind == TK_STRUCT)
+            return j;
+    }
+    return n;
+}
+
+bool token_in_type_decl(uint token_i)
 {
     uint j = token_i;
     [loop]
@@ -391,6 +410,8 @@ bool token_in_enum_decl(uint token_i)
         j -= 1u;
         if (token_kind(j) == TK_ENUM)
             return token_i < enum_end(j);
+        if (token_kind(j) == TK_STRUCT)
+            return token_i < struct_end(j);
     }
     return false;
 }
@@ -423,7 +444,12 @@ uint classify(uint i, out uint end)
         end = enum_end(i);
         return HIR_ENUM_ITEM;
     }
-    if (token_in_enum_decl(i))
+    if (kind == TK_STRUCT)
+    {
+        end = struct_end(i);
+        return HIR_STRUCT_ITEM;
+    }
+    if (token_in_type_decl(i))
         return HIR_NONE;
     if (kind == TK_PARAM_IDENT ||
         (kind == TK_IDENT && i + 1u < n && token_kind(i + 1u) == TK_COLON &&
@@ -507,7 +533,7 @@ uint classify(uint i, out uint end)
     {
         uint prev = i > 0u ? token_kind(i - 1u) : 0u;
         if (prev == TK_FN || prev == TK_LET || prev == TK_DOT || prev == TK_CONST ||
-            prev == TK_ENUM)
+            prev == TK_ENUM || prev == TK_STRUCT)
             return HIR_NONE;
         return HIR_NAME_EXPR;
     }

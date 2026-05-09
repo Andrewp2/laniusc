@@ -12,7 +12,7 @@ file                         -> item_list;
 item_list     [items_more]   -> item item_list;
 item_list     [items_end]    -> ;
 
-item          [item_pub_fn]  -> 'Pub' fn_item;
+item          [item_pub]     -> 'Pub' pub_item;
 item          [item_fn]      -> fn_item;
 item          [item_stmt]    -> stmt;
 
@@ -189,3 +189,13 @@ enum_type_params_opt [enum_type_params_some] -> 'Lt' enum_type_param enum_type_p
 enum_type_param [enum_type_param] -> 'Ident';
 enum_type_param_tail [enum_type_params_more] -> 'Comma' enum_type_param enum_type_param_tail;
 enum_type_param_tail [enum_type_params_end] -> ;
+item         [item_struct]   -> struct_item;
+struct_item  [struct]        -> 'Struct' 'Ident' enum_type_params_opt 'LBrace' struct_field_list_opt 'RBrace';
+struct_field_list_opt [struct_fields_none] -> ;
+struct_field_list_opt [struct_fields_some] -> struct_field struct_field_tail;
+struct_field [struct_field]  -> 'Ident' 'Colon' type_expr;
+struct_field_tail [struct_fields_more] -> 'Comma' struct_field struct_field_tail;
+struct_field_tail [struct_fields_end] -> ;
+pub_item [pub_fn]            -> fn_item;
+pub_item [pub_enum]          -> enum_item;
+pub_item [pub_struct]        -> struct_item;

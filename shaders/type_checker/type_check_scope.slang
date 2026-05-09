@@ -91,6 +91,7 @@ static const uint TK_TRUE = 90u;
 static const uint TK_FALSE = 91u;
 static const uint TK_CONST = 92u;
 static const uint TK_ENUM = 93u;
+static const uint TK_STRUCT = 94u;
 
 uint active_token_count()
 {
@@ -426,7 +427,7 @@ uint declaration_type_shallow(uint decl_i)
          token_kind(decl_i + 1u) == TK_COLON &&
          (decl_i == 0u ||
           (token_kind(decl_i - 1u) != TK_LET && token_kind(decl_i - 1u) != TK_CONST &&
-           token_kind(decl_i - 1u) != TK_ENUM))))
+           token_kind(decl_i - 1u) != TK_ENUM && token_kind(decl_i - 1u) != TK_STRUCT))))
         return type_code_for_type_expr(decl_i + 2u);
 
     if (is_const_decl_at(decl_i))
@@ -533,7 +534,7 @@ bool ident_is_use(uint i)
         return false;
     uint prev = i > 0u ? token_kind(i - 1u) : 0u;
     if (prev == TK_FN || prev == TK_DOT || prev == TK_LET || prev == TK_CONST ||
-        prev == TK_ENUM)
+        prev == TK_ENUM || prev == TK_STRUCT)
         return false;
     uint next = i + 1u < active_token_count() ? token_kind(i + 1u) : 0u;
     if (next == TK_COLON)
@@ -571,7 +572,7 @@ void main(uint3 tid: SV_DispatchThreadID)
              token_kind(i + 1u) == TK_COLON &&
              (i == 0u ||
               (token_kind(i - 1u) != TK_LET && token_kind(i - 1u) != TK_CONST &&
-               token_kind(i - 1u) != TK_ENUM))) ||
+               token_kind(i - 1u) != TK_ENUM && token_kind(i - 1u) != TK_STRUCT))) ||
             token_kind(i) == TK_LET_IDENT ||
             (token_kind(i) == TK_IDENT && i > 0u && token_kind(i - 1u) == TK_LET) ||
             is_const_decl_at(i))

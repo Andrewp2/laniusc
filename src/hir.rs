@@ -51,6 +51,7 @@ pub enum HirItem {
     Fn(HirFn),
     Const(HirConst),
     Enum(HirEnum),
+    Struct(HirStruct),
     Stmt(HirStmt),
 }
 
@@ -85,6 +86,22 @@ pub struct HirEnum {
 pub struct HirEnumVariant {
     pub name: String,
     pub fields: Vec<HirType>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HirStruct {
+    pub public: bool,
+    pub name: String,
+    pub type_params: Vec<String>,
+    pub fields: Vec<HirStructField>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HirStructField {
+    pub name: String,
+    pub ty: HirType,
     pub span: Span,
 }
 
@@ -314,12 +331,16 @@ impl<'a> HirParser<'a> {
         let public = self.eat(TokenKind::Pub).is_some();
         if public && self.peek() == Some(TokenKind::Enum) {
             Ok(HirItem::Enum(self.parse_enum(public)?))
+        } else if public && self.peek() == Some(TokenKind::Struct) {
+            Ok(HirItem::Struct(self.parse_struct(public)?))
         } else if public || self.peek() == Some(TokenKind::Fn) {
             Ok(HirItem::Fn(self.parse_fn(public)?))
         } else if self.peek() == Some(TokenKind::Const) {
             Ok(HirItem::Const(self.parse_const()?))
         } else if self.peek() == Some(TokenKind::Enum) {
             Ok(HirItem::Enum(self.parse_enum(public)?))
+        } else if self.peek() == Some(TokenKind::Struct) {
+            Ok(HirItem::Struct(self.parse_struct(public)?))
         } else {
             Ok(HirItem::Stmt(self.parse_stmt()?))
         }
@@ -438,6 +459,56 @@ impl<'a> HirParser<'a> {
         }
         self.expect(TokenKind::Gt, "Gt")?;
         Ok(params)
+    }
+
+    fn parse_struct(&mut self, public: bool) -> Result<HirStruct, HirError> {
+        let start = if public {
+            self.prev_start()
+        } else {
+            self.peek_start()
+        };
+        self.expect(TokenKind::Struct, "Struct")?;
+        let name = self.expect_name(&[TokenKind::Ident], "struct name")?;
+        let type_params = self.parse_type_params()?;
+        self.expect(TokenKind::LBrace, "LBrace")?;
+
+        let mut fields = Vec::new();
+        while self.peek() != Some(TokenKind::RBrace) {
+            if self.peek().is_none() {
+                return Err(self.error("RBrace"));
+            }
+            fields.push(self.parse_struct_field()?);
+            if self.eat(TokenKind::Comma).is_some() || self.eat(TokenKind::ArgComma).is_some() {
+                if self.peek() == Some(TokenKind::RBrace) {
+                    break;
+                }
+                continue;
+            }
+            if self.peek() != Some(TokenKind::RBrace) {
+                return Err(self.error("Comma or RBrace"));
+            }
+        }
+
+        self.expect(TokenKind::RBrace, "RBrace")?;
+        Ok(HirStruct {
+            public,
+            name,
+            type_params,
+            fields,
+            span: self.span_since(start),
+        })
+    }
+
+    fn parse_struct_field(&mut self) -> Result<HirStructField, HirError> {
+        let start = self.peek_start();
+        let name = self.expect_name(&[TokenKind::Ident], "struct field name")?;
+        self.expect(TokenKind::Colon, "Colon")?;
+        let ty = self.parse_type_expr()?;
+        Ok(HirStructField {
+            name,
+            ty,
+            span: self.span_since(start),
+        })
     }
 
     fn parse_enum_variant(&mut self) -> Result<HirEnumVariant, HirError> {

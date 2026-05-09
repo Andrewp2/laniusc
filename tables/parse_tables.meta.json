@@ -10,8 +10,8 @@
     "ll1_conflicts": []
   },
   "sc_projection": {
-    "witness_inputs": 926,
-    "projected_cells": 269,
+    "witness_inputs": 929,
+    "projected_cells": 274,
     "conflicts": [
       "sc (Plus, Int): kept [pop(unary), push(postfix), pop(postfix), push(postfix_tail), push(primary), pop(primary), push(Int), pop(Int)], saw [pop(mul), push(mul_tail), push(unary), pop(unary), push(postfix), pop(postfix), push(postfix_tail), push(primary), pop(primary), push(Int), pop(Int)] from witness [Ident, Plus, Int, Semicolon]",
       "sc (Minus, Int): kept [pop(unary), push(postfix), pop(postfix), push(postfix_tail), push(primary), pop(primary), push(Int), pop(Int)], saw [pop(mul), push(mul_tail), push(unary), pop(unary), push(postfix), pop(postfix), push(postfix_tail), push(primary), pop(primary), push(Int), pop(Int)] from witness [Ident, Minus, Int, Semicolon]",
@@ -60,6 +60,24 @@
       "sc (Ident, Comma): kept [pop(postfix_tail), pop(mul_tail), pop(add_tail), pop(shift_tail), pop(compare_tail), pop(equality_tail), pop(bit_and_tail), pop(bit_xor_tail), pop(bit_or_tail), pop(andexpr_tail), pop(orexpr_tail), pop(assign_tail), pop(array_elems_tail), push(array_elems_tail), push(expr), push(Comma), pop(Comma)], saw [pop(enum_type_param_tail), push(enum_type_param_tail), push(enum_type_param), push(Comma), pop(Comma)] from witness [Enum, Ident, Lt, Ident, Comma, Ident, Gt, LBrace, Ident, LParen, Ident, RParen, Comma, Ident, LParen, Ident, RParen, RBrace]",
       "sc (LParen, Ident): kept [pop(expr), push(assign), pop(assign), push(assign_tail), push(orexpr), pop(orexpr), push(orexpr_tail), push(andexpr), pop(andexpr), push(andexpr_tail), push(bit_or), pop(bit_or), push(bit_or_tail), push(bit_xor), pop(bit_xor), push(bit_xor_tail), push(bit_and), pop(bit_and), push(bit_and_tail), push(equality), pop(equality), push(equality_tail), push(compare), pop(compare), push(compare_tail), push(shift), pop(shift), push(shift_tail), push(add), pop(add), push(add_tail), push(mul), pop(mul), push(mul_tail), push(unary), pop(unary), push(postfix), pop(postfix), push(postfix_tail), push(primary), pop(primary), push(Ident), pop(Ident)], saw [pop(enum_variant_fields_opt), push(enum_variant_fields_tail), push(type_expr), pop(type_expr), push(type_args_opt), push(Ident), pop(Ident)] from witness [Enum, Ident, Lt, Ident, Comma, Ident, Gt, LBrace, Ident, LParen, Ident, RParen, Comma, Ident, LParen, Ident, RParen, RBrace]",
       "sc (RBrace, $): kept [pop(else_opt), pop(item_list)], saw [pop(item_list)] from witness [Enum, Ident, Lt, Ident, Comma, Ident, Gt, LBrace, Ident, LParen, Ident, RParen, Comma, Ident, LParen, Ident, RParen, RBrace]",
+      "sc (LBrace, RBrace): kept [pop(stmt_list), pop(RBrace)], saw [pop(struct_field_list_opt), pop(RBrace)] from witness [Struct, Ident, LBrace, RBrace]",
+      "sc (RBrace, $): kept [pop(else_opt), pop(item_list)], saw [pop(item_list)] from witness [Struct, Ident, LBrace, RBrace]",
+      "sc (Ident, RBrace): kept [pop(enum_variant_payload_opt), pop(enum_variant_tail), pop(RBrace)], saw [pop(type_args_opt), pop(struct_field_tail), pop(RBrace)] from witness [Struct, Ident, LBrace, Ident, Colon, Ident, Comma, Ident, Colon, Ident, RBrace]",
+      "sc (Ident, Comma): kept [pop(postfix_tail), pop(mul_tail), pop(add_tail), pop(shift_tail), pop(compare_tail), pop(equality_tail), pop(bit_and_tail), pop(bit_xor_tail), pop(bit_or_tail), pop(andexpr_tail), pop(orexpr_tail), pop(assign_tail), pop(array_elems_tail), push(array_elems_tail), push(expr), push(Comma), pop(Comma)], saw [pop(type_args_opt), pop(struct_field_tail), push(struct_field_tail), push(struct_field), push(Comma), pop(Comma)] from witness [Struct, Ident, LBrace, Ident, Colon, Ident, Comma, Ident, Colon, Ident, RBrace]",
+      "sc (Ident, Colon): kept [pop(let_type_opt), push(type_expr), push(Colon), pop(Colon)], saw [pop(Colon)] from witness [Struct, Ident, LBrace, Ident, Colon, Ident, Comma, Ident, Colon, Ident, RBrace]",
+      "sc (LBrace, Ident): kept [pop(enum_variant_list_opt), push(enum_variant_tail), push(enum_variant), pop(enum_variant), push(enum_variant_payload_opt), push(Ident), pop(Ident)], saw [pop(struct_field_list_opt), push(struct_field_tail), push(struct_field), pop(struct_field), push(type_expr), push(Colon), push(Ident), pop(Ident)] from witness [Struct, Ident, LBrace, Ident, Colon, Ident, Comma, Ident, Colon, Ident, RBrace]",
+      "sc (RBrace, $): kept [pop(else_opt), pop(item_list)], saw [pop(item_list)] from witness [Struct, Ident, LBrace, Ident, Colon, Ident, Comma, Ident, Colon, Ident, RBrace]",
+      "sc (Comma, Ident): kept [pop(enum_variant), push(enum_variant_payload_opt), push(Ident), pop(Ident)], saw [pop(struct_field), push(type_expr), push(Colon), push(Ident), pop(Ident)] from witness [Struct, Ident, LBrace, Ident, Colon, Ident, Comma, Ident, Colon, Ident, RBrace]",
+      "sc (Ident, Lt): kept [pop(postfix_tail), pop(mul_tail), pop(add_tail), pop(shift_tail), pop(compare_tail), push(compare_tail), push(shift), push(Lt), pop(Lt)], saw [pop(type_args_opt), push(Gt), push(type_arg_tail), push(type_expr), push(Lt), pop(Lt)] from witness [Pub, Struct, Ident, Lt, Ident, Gt, LBrace, Ident, Colon, Ident, Lt, Ident, Gt, Comma, Ident, Colon, LBracket, Ident, Semicolon, Int, RBracket, RBrace]",
+      "sc (Ident, Gt): kept [pop(postfix_tail), pop(mul_tail), pop(add_tail), pop(shift_tail), pop(compare_tail), push(compare_tail), push(shift), push(Gt), pop(Gt)], saw [pop(type_args_opt), pop(type_arg_tail), pop(Gt)] from witness [Pub, Struct, Ident, Lt, Ident, Gt, LBrace, Ident, Colon, Ident, Lt, Ident, Gt, Comma, Ident, Colon, LBracket, Ident, Semicolon, Int, RBracket, RBrace]",
+      "sc (Ident, Semicolon): kept [pop(postfix_tail), pop(mul_tail), pop(add_tail), pop(shift_tail), pop(compare_tail), pop(equality_tail), pop(bit_and_tail), pop(bit_xor_tail), pop(bit_or_tail), pop(andexpr_tail), pop(orexpr_tail), pop(assign_tail), pop(Semicolon)], saw [pop(type_args_opt), pop(Semicolon)] from witness [Pub, Struct, Ident, Lt, Ident, Gt, LBrace, Ident, Colon, Ident, Lt, Ident, Gt, Comma, Ident, Colon, LBracket, Ident, Semicolon, Int, RBracket, RBrace]",
+      "sc (Ident, Colon): kept [pop(let_type_opt), push(type_expr), push(Colon), pop(Colon)], saw [pop(Colon)] from witness [Pub, Struct, Ident, Lt, Ident, Gt, LBrace, Ident, Colon, Ident, Lt, Ident, Gt, Comma, Ident, Colon, LBracket, Ident, Semicolon, Int, RBracket, RBrace]",
+      "sc (Int, RBracket): kept [pop(postfix_tail), pop(mul_tail), pop(add_tail), pop(shift_tail), pop(compare_tail), pop(equality_tail), pop(bit_and_tail), pop(bit_xor_tail), pop(bit_or_tail), pop(andexpr_tail), pop(orexpr_tail), pop(assign_tail), pop(array_elems_tail), pop(RBracket)], saw [pop(RBracket)] from witness [Pub, Struct, Ident, Lt, Ident, Gt, LBrace, Ident, Colon, Ident, Lt, Ident, Gt, Comma, Ident, Colon, LBracket, Ident, Semicolon, Int, RBracket, RBrace]",
+      "sc (Lt, Ident): kept [pop(enum_type_param), push(Ident), pop(Ident)], saw [pop(type_expr), push(type_args_opt), push(Ident), pop(Ident)] from witness [Pub, Struct, Ident, Lt, Ident, Gt, LBrace, Ident, Colon, Ident, Lt, Ident, Gt, Comma, Ident, Colon, LBracket, Ident, Semicolon, Int, RBracket, RBrace]",
+      "sc (LBracket, Ident): kept [pop(array_elems_opt), push(array_elems_tail), push(expr), pop(expr), push(assign), pop(assign), push(assign_tail), push(orexpr), pop(orexpr), push(orexpr_tail), push(andexpr), pop(andexpr), push(andexpr_tail), push(bit_or), pop(bit_or), push(bit_or_tail), push(bit_xor), pop(bit_xor), push(bit_xor_tail), push(bit_and), pop(bit_and), push(bit_and_tail), push(equality), pop(equality), push(equality_tail), push(compare), pop(compare), push(compare_tail), push(shift), pop(shift), push(shift_tail), push(add), pop(add), push(add_tail), push(mul), pop(mul), push(mul_tail), push(unary), pop(unary), push(postfix), pop(postfix), push(postfix_tail), push(primary), pop(primary), push(Ident), pop(Ident)], saw [pop(type_expr), push(type_args_opt), push(Ident), pop(Ident)] from witness [Pub, Struct, Ident, Lt, Ident, Gt, LBrace, Ident, Colon, Ident, Lt, Ident, Gt, Comma, Ident, Colon, LBracket, Ident, Semicolon, Int, RBracket, RBrace]",
+      "sc (LBrace, Ident): kept [pop(enum_variant_list_opt), push(enum_variant_tail), push(enum_variant), pop(enum_variant), push(enum_variant_payload_opt), push(Ident), pop(Ident)], saw [pop(struct_field_list_opt), push(struct_field_tail), push(struct_field), pop(struct_field), push(type_expr), push(Colon), push(Ident), pop(Ident)] from witness [Pub, Struct, Ident, Lt, Ident, Gt, LBrace, Ident, Colon, Ident, Lt, Ident, Gt, Comma, Ident, Colon, LBracket, Ident, Semicolon, Int, RBracket, RBrace]",
+      "sc (RBrace, $): kept [pop(else_opt), pop(item_list)], saw [pop(item_list)] from witness [Pub, Struct, Ident, Lt, Ident, Gt, LBrace, Ident, Colon, Ident, Lt, Ident, Gt, Comma, Ident, Colon, LBracket, Ident, Semicolon, Int, RBracket, RBrace]",
+      "sc (Comma, Ident): kept [pop(enum_variant), push(enum_variant_payload_opt), push(Ident), pop(Ident)], saw [pop(struct_field), push(type_expr), push(Colon), push(Ident), pop(Ident)] from witness [Pub, Struct, Ident, Lt, Ident, Gt, LBrace, Ident, Colon, Ident, Lt, Ident, Gt, Comma, Ident, Colon, LBracket, Ident, Semicolon, Int, RBracket, RBrace]",
       "sc (Ident, LParen): kept [pop(postfix_tail), push(postfix_tail), push(RParen), push(arg_list_opt), push(LParen), pop(LParen)], saw [pop(LParen)] from witness [Fn, Ident, LParen, RParen, Arrow, Ident, LBrace, Return, Int, Semicolon, RBrace]",
       "sc (Ident, LBrace): kept [pop(enum_type_params_opt), pop(LBrace)], saw [pop(type_args_opt), pop(block), push(RBrace), push(stmt_list), push(LBrace), pop(LBrace)] from witness [Fn, Ident, LParen, RParen, Arrow, Ident, LBrace, Return, Int, Semicolon, RBrace]",
       "sc (LParen, RParen): kept [pop(arg_list_opt), pop(RParen)], saw [pop(param_list_opt), pop(RParen)] from witness [Fn, Ident, LParen, RParen, Arrow, Ident, LBrace, Return, Int, Semicolon, RBrace]",
@@ -1337,8 +1355,8 @@
     ]
   },
   "pp_projection": {
-    "witness_inputs": 926,
-    "projected_cells": 269,
+    "witness_inputs": 929,
+    "projected_cells": 274,
     "conflicts": [
       "pp (Plus, Int): kept [base:94, postfix:95, int:109], saw [mul:83, base:94, postfix:95, int:109] from witness [Ident, Plus, Int, Semicolon]",
       "pp (Minus, Int): kept [base:94, postfix:95, int:109], saw [mul:83, base:94, postfix:95, int:109] from witness [Ident, Minus, Int, Semicolon]",
@@ -1387,6 +1405,24 @@
       "pp (Ident, Comma): kept [postfix_end:101, mul_end:87, add_end:82, shift_end:78, compare_end:74, eq_end:68, band_end:64, xor_end:61, bor_end:58, and_end:55, or_end:52, assign_end:49, array_more:115], saw [enum_type_params_more:141] from witness [Enum, Ident, Lt, Ident, Comma, Ident, Gt, LBrace, Ident, LParen, Ident, RParen, Comma, Ident, LParen, Ident, RParen, RBrace]",
       "pp (LParen, Ident): kept [expr:36, assign:37, orexpr:50, andexpr:53, bit_or:56, bit_xor:59, bit_and:62, equality:65, compare:69, shift:75, add:79, mul:83, base:94, postfix:95, ident:108], saw [enum_variant_fields_some:129, type_ident:14] from witness [Enum, Ident, Lt, Ident, Comma, Ident, Gt, LBrace, Ident, LParen, Ident, RParen, Comma, Ident, LParen, Ident, RParen, RBrace]",
       "pp (RBrace, $): kept [else_none:35, items_end:2], saw [items_end:2] from witness [Enum, Ident, Lt, Ident, Comma, Ident, Gt, LBrace, Ident, LParen, Ident, RParen, Comma, Ident, LParen, Ident, RParen, RBrace]",
+      "pp (LBrace, RBrace): kept [stmts_end:18], saw [struct_fields_none:145] from witness [Struct, Ident, LBrace, RBrace]",
+      "pp (RBrace, $): kept [else_none:35, items_end:2], saw [items_end:2] from witness [Struct, Ident, LBrace, RBrace]",
+      "pp (Ident, RBrace): kept [enum_variant_unit:126, enum_variants_end:133], saw [type_args_none:134, struct_fields_end:149] from witness [Struct, Ident, LBrace, Ident, Colon, Ident, Comma, Ident, Colon, Ident, RBrace]",
+      "pp (Ident, Comma): kept [postfix_end:101, mul_end:87, add_end:82, shift_end:78, compare_end:74, eq_end:68, band_end:64, xor_end:61, bor_end:58, and_end:55, or_end:52, assign_end:49, array_more:115], saw [type_args_none:134, struct_fields_more:148] from witness [Struct, Ident, LBrace, Ident, Colon, Ident, Comma, Ident, Colon, Ident, RBrace]",
+      "pp (Ident, Colon): kept [let_type:27], saw [] from witness [Struct, Ident, LBrace, Ident, Colon, Ident, Comma, Ident, Colon, Ident, RBrace]",
+      "pp (LBrace, Ident): kept [enum_variants_some:124, enum_variant:125], saw [struct_fields_some:146, struct_field:147] from witness [Struct, Ident, LBrace, Ident, Colon, Ident, Comma, Ident, Colon, Ident, RBrace]",
+      "pp (RBrace, $): kept [else_none:35, items_end:2], saw [items_end:2] from witness [Struct, Ident, LBrace, Ident, Colon, Ident, Comma, Ident, Colon, Ident, RBrace]",
+      "pp (Comma, Ident): kept [enum_variant:125], saw [struct_field:147] from witness [Struct, Ident, LBrace, Ident, Colon, Ident, Comma, Ident, Colon, Ident, RBrace]",
+      "pp (Ident, Lt): kept [postfix_end:101, mul_end:87, add_end:82, shift_end:78, lt_tail:70], saw [type_args_some:135] from witness [Pub, Struct, Ident, Lt, Ident, Gt, LBrace, Ident, Colon, Ident, Lt, Ident, Gt, Comma, Ident, Colon, LBracket, Ident, Semicolon, Int, RBracket, RBrace]",
+      "pp (Ident, Gt): kept [postfix_end:101, mul_end:87, add_end:82, shift_end:78, gt_tail:71], saw [type_args_none:134, type_args_end:137] from witness [Pub, Struct, Ident, Lt, Ident, Gt, LBrace, Ident, Colon, Ident, Lt, Ident, Gt, Comma, Ident, Colon, LBracket, Ident, Semicolon, Int, RBracket, RBrace]",
+      "pp (Ident, Semicolon): kept [postfix_end:101, mul_end:87, add_end:82, shift_end:78, compare_end:74, eq_end:68, band_end:64, xor_end:61, bor_end:58, and_end:55, or_end:52, assign_end:49], saw [type_args_none:134] from witness [Pub, Struct, Ident, Lt, Ident, Gt, LBrace, Ident, Colon, Ident, Lt, Ident, Gt, Comma, Ident, Colon, LBracket, Ident, Semicolon, Int, RBracket, RBrace]",
+      "pp (Ident, Colon): kept [let_type:27], saw [] from witness [Pub, Struct, Ident, Lt, Ident, Gt, LBrace, Ident, Colon, Ident, Lt, Ident, Gt, Comma, Ident, Colon, LBracket, Ident, Semicolon, Int, RBracket, RBrace]",
+      "pp (Int, RBracket): kept [postfix_end:101, mul_end:87, add_end:82, shift_end:78, compare_end:74, eq_end:68, band_end:64, xor_end:61, bor_end:58, and_end:55, or_end:52, assign_end:49, array_end:116], saw [] from witness [Pub, Struct, Ident, Lt, Ident, Gt, LBrace, Ident, Colon, Ident, Lt, Ident, Gt, Comma, Ident, Colon, LBracket, Ident, Semicolon, Int, RBracket, RBrace]",
+      "pp (Lt, Ident): kept [enum_type_param:140], saw [type_ident:14] from witness [Pub, Struct, Ident, Lt, Ident, Gt, LBrace, Ident, Colon, Ident, Lt, Ident, Gt, Comma, Ident, Colon, LBracket, Ident, Semicolon, Int, RBracket, RBrace]",
+      "pp (LBracket, Ident): kept [array_some:114, expr:36, assign:37, orexpr:50, andexpr:53, bit_or:56, bit_xor:59, bit_and:62, equality:65, compare:69, shift:75, add:79, mul:83, base:94, postfix:95, ident:108], saw [type_ident:14] from witness [Pub, Struct, Ident, Lt, Ident, Gt, LBrace, Ident, Colon, Ident, Lt, Ident, Gt, Comma, Ident, Colon, LBracket, Ident, Semicolon, Int, RBracket, RBrace]",
+      "pp (LBrace, Ident): kept [enum_variants_some:124, enum_variant:125], saw [struct_fields_some:146, struct_field:147] from witness [Pub, Struct, Ident, Lt, Ident, Gt, LBrace, Ident, Colon, Ident, Lt, Ident, Gt, Comma, Ident, Colon, LBracket, Ident, Semicolon, Int, RBracket, RBrace]",
+      "pp (RBrace, $): kept [else_none:35, items_end:2], saw [items_end:2] from witness [Pub, Struct, Ident, Lt, Ident, Gt, LBrace, Ident, Colon, Ident, Lt, Ident, Gt, Comma, Ident, Colon, LBracket, Ident, Semicolon, Int, RBracket, RBrace]",
+      "pp (Comma, Ident): kept [enum_variant:125], saw [struct_field:147] from witness [Pub, Struct, Ident, Lt, Ident, Gt, LBrace, Ident, Colon, Ident, Lt, Ident, Gt, Comma, Ident, Colon, LBracket, Ident, Semicolon, Int, RBracket, RBrace]",
       "pp (Ident, LParen): kept [postfix_call:96], saw [] from witness [Fn, Ident, LParen, RParen, Arrow, Ident, LBrace, Return, Int, Semicolon, RBrace]",
       "pp (Ident, LBrace): kept [enum_type_params_none:138], saw [type_args_none:134, block:16] from witness [Fn, Ident, LParen, RParen, Arrow, Ident, LBrace, Return, Int, Semicolon, RBrace]",
       "pp (LParen, RParen): kept [args_none:102], saw [params_none:9] from witness [Fn, Ident, LParen, RParen, Arrow, Ident, LBrace, Return, Int, Semicolon, RBrace]",
@@ -2664,10 +2700,10 @@
     ]
   },
   "ll1_runtime": {
-    "nonterminals": 61,
+    "nonterminals": 66,
     "start_nonterminal": "file",
-    "predict_cells": 5734,
-    "rhs_symbols": 269
+    "predict_cells": 6270,
+    "rhs_symbols": 287
   },
   "ll1_predictions": [
     {
@@ -4573,6 +4609,12 @@
       "production": 35
     },
     {
+      "nonterminal": "else_opt",
+      "lookahead": "Struct",
+      "lookahead_id": 94,
+      "production": 35
+    },
+    {
       "nonterminal": "enum_item",
       "lookahead": "Enum",
       "lookahead_id": 93,
@@ -5161,6 +5203,12 @@
       "production": 0
     },
     {
+      "nonterminal": "file",
+      "lookahead": "Struct",
+      "lookahead_id": 94,
+      "production": 0
+    },
+    {
       "nonterminal": "fn_item",
       "lookahead": "Fn",
       "lookahead_id": 67,
@@ -5329,6 +5377,12 @@
       "production": 121
     },
     {
+      "nonterminal": "item",
+      "lookahead": "Struct",
+      "lookahead_id": 94,
+      "production": 143
+    },
+    {
       "nonterminal": "item_list",
       "lookahead": "$",
       "lookahead_id": 0,
@@ -5488,6 +5542,12 @@
       "nonterminal": "item_list",
       "lookahead": "Enum",
       "lookahead_id": 93,
+      "production": 1
+    },
+    {
+      "nonterminal": "item_list",
+      "lookahead": "Struct",
+      "lookahead_id": 94,
       "production": 1
     },
     {
@@ -6361,6 +6421,24 @@
       "production": 118
     },
     {
+      "nonterminal": "pub_item",
+      "lookahead": "Fn",
+      "lookahead_id": 67,
+      "production": 150
+    },
+    {
+      "nonterminal": "pub_item",
+      "lookahead": "Enum",
+      "lookahead_id": 93,
+      "production": 151
+    },
+    {
+      "nonterminal": "pub_item",
+      "lookahead": "Struct",
+      "lookahead_id": 94,
+      "production": 152
+    },
+    {
       "nonterminal": "return_type_opt",
       "lookahead": "LBrace",
       "lookahead_id": 22,
@@ -6997,6 +7075,42 @@
       "production": 17
     },
     {
+      "nonterminal": "struct_field",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 147
+    },
+    {
+      "nonterminal": "struct_field_list_opt",
+      "lookahead": "Ident",
+      "lookahead_id": 1,
+      "production": 146
+    },
+    {
+      "nonterminal": "struct_field_list_opt",
+      "lookahead": "RBrace",
+      "lookahead_id": 23,
+      "production": 145
+    },
+    {
+      "nonterminal": "struct_field_tail",
+      "lookahead": "RBrace",
+      "lookahead_id": 23,
+      "production": 149
+    },
+    {
+      "nonterminal": "struct_field_tail",
+      "lookahead": "Comma",
+      "lookahead_id": 36,
+      "production": 148
+    },
+    {
+      "nonterminal": "struct_item",
+      "lookahead": "Struct",
+      "lookahead_id": 94,
+      "production": 144
+    },
+    {
       "nonterminal": "type_arg_tail",
       "lookahead": "Gt",
       "lookahead_id": 13,
@@ -7036,6 +7150,12 @@
       "nonterminal": "type_args_opt",
       "lookahead": "LBrace",
       "lookahead_id": 22,
+      "production": 134
+    },
+    {
+      "nonterminal": "type_args_opt",
+      "lookahead": "RBrace",
+      "lookahead_id": 23,
       "production": 134
     },
     {
@@ -7187,11 +7307,11 @@
       "id": 3,
       "line": 15,
       "lhs": "item",
-      "tag": "item_pub_fn",
+      "tag": "item_pub",
       "arity": 1,
       "rhs": [
         "'Pub'",
-        "fn_item"
+        "pub_item"
       ]
     },
     {
@@ -8675,6 +8795,112 @@
       "tag": "enum_type_params_end",
       "arity": 0,
       "rhs": []
+    },
+    {
+      "id": 143,
+      "line": 192,
+      "lhs": "item",
+      "tag": "item_struct",
+      "arity": 1,
+      "rhs": [
+        "struct_item"
+      ]
+    },
+    {
+      "id": 144,
+      "line": 193,
+      "lhs": "struct_item",
+      "tag": "struct",
+      "arity": 2,
+      "rhs": [
+        "'Struct'",
+        "'Ident'",
+        "enum_type_params_opt",
+        "'LBrace'",
+        "struct_field_list_opt",
+        "'RBrace'"
+      ]
+    },
+    {
+      "id": 145,
+      "line": 194,
+      "lhs": "struct_field_list_opt",
+      "tag": "struct_fields_none",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 146,
+      "line": 195,
+      "lhs": "struct_field_list_opt",
+      "tag": "struct_fields_some",
+      "arity": 2,
+      "rhs": [
+        "struct_field",
+        "struct_field_tail"
+      ]
+    },
+    {
+      "id": 147,
+      "line": 196,
+      "lhs": "struct_field",
+      "tag": "struct_field",
+      "arity": 1,
+      "rhs": [
+        "'Ident'",
+        "'Colon'",
+        "type_expr"
+      ]
+    },
+    {
+      "id": 148,
+      "line": 197,
+      "lhs": "struct_field_tail",
+      "tag": "struct_fields_more",
+      "arity": 2,
+      "rhs": [
+        "'Comma'",
+        "struct_field",
+        "struct_field_tail"
+      ]
+    },
+    {
+      "id": 149,
+      "line": 198,
+      "lhs": "struct_field_tail",
+      "tag": "struct_fields_end",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 150,
+      "line": 199,
+      "lhs": "pub_item",
+      "tag": "pub_fn",
+      "arity": 1,
+      "rhs": [
+        "fn_item"
+      ]
+    },
+    {
+      "id": 151,
+      "line": 200,
+      "lhs": "pub_item",
+      "tag": "pub_enum",
+      "arity": 1,
+      "rhs": [
+        "enum_item"
+      ]
+    },
+    {
+      "id": 152,
+      "line": 201,
+      "lhs": "pub_item",
+      "tag": "pub_struct",
+      "arity": 1,
+      "rhs": [
+        "struct_item"
+      ]
     }
   ]
 }

@@ -60,6 +60,7 @@ static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_ARRAY_EXPR = 24u;
 static const uint HIR_CONST_ITEM = 25u;
 static const uint HIR_ENUM_ITEM = 26u;
+static const uint HIR_STRUCT_ITEM = 27u;
 
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_VOID = 1u;
@@ -140,6 +141,7 @@ static const uint TK_TRUE = 90u;
 static const uint TK_FALSE = 91u;
 static const uint TK_CONST = 92u;
 static const uint TK_ENUM = 93u;
+static const uint TK_STRUCT = 94u;
 static const uint PARAM_CACHE_STRIDE = 16u;
 
 uint active_token_count()
@@ -515,7 +517,7 @@ uint declaration_type_shallow(uint decl_i)
          token_kind(decl_i + 1u) == TK_COLON &&
          (decl_i == 0u ||
           (token_kind(decl_i - 1u) != TK_LET && token_kind(decl_i - 1u) != TK_CONST &&
-           token_kind(decl_i - 1u) != TK_ENUM))))
+           token_kind(decl_i - 1u) != TK_ENUM && token_kind(decl_i - 1u) != TK_STRUCT))))
         return type_code_for_type_expr(decl_i + 2u);
 
     if (is_const_decl_at(decl_i))
@@ -1371,7 +1373,8 @@ bool ident_is_use(uint i)
     if (token_kind(i) != TK_IDENT)
         return false;
     uint prev = i > 0u ? token_kind(i - 1u) : 0u;
-    if (prev == TK_FN || prev == TK_DOT || prev == TK_CONST || prev == TK_ENUM)
+    if (prev == TK_FN || prev == TK_DOT || prev == TK_CONST || prev == TK_ENUM ||
+        prev == TK_STRUCT)
         return false;
     return true;
 }
@@ -1586,6 +1589,13 @@ void check_hir_node(uint i)
     if (kind == HIR_ENUM_ITEM)
     {
         if (token_kind(pos) != TK_ENUM)
+            record_error(pos, ERR_BAD_HIR, kind);
+        return;
+    }
+
+    if (kind == HIR_STRUCT_ITEM)
+    {
+        if (token_kind(pos) != TK_STRUCT)
             record_error(pos, ERR_BAD_HIR, kind);
         return;
     }

@@ -53,6 +53,22 @@ fn cpu_lexer_retags_enum_keyword() {
 }
 
 #[test]
+fn cpu_lexer_retags_struct_keyword() {
+    use TokenKind::*;
+
+    let kinds = lex_on_cpu("struct VecHeader { len: i32 }")
+        .expect("CPU lex")
+        .into_iter()
+        .map(|token| token.kind)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        kinds,
+        vec![Struct, Ident, LBrace, Ident, Colon, TypeIdent, RBrace]
+    );
+}
+
+#[test]
 fn gpu_lexer_emits_raw_local_syntax_tokens() {
     use TokenKind::*;
 
@@ -85,7 +101,7 @@ fn gpu_lexer_retags_keywords() {
     pollster::block_on(async {
         let lexer = GpuLexer::new().await.expect("GPU lexer init");
         let tokens = lexer
-            .lex("enum Ordering { Less, Equal, Greater } const LIMIT: i32 = 7; pub fn f() -> i32 { let x = 1; let t = true; let f = false; if (x) { return x; } else { while (x) { break; continue; } } }")
+            .lex("struct VecHeader { len: i32 } enum Ordering { Less, Equal, Greater } const LIMIT: i32 = 7; pub fn f() -> i32 { let x = 1; let t = true; let f = false; if (x) { return x; } else { while (x) { break; continue; } } }")
             .await
             .expect("lex");
         let kinds = tokens
@@ -96,12 +112,13 @@ fn gpu_lexer_retags_keywords() {
         assert_eq!(
             kinds,
             vec![
-                Enum, Ident, LBrace, Ident, Comma, Ident, Comma, Ident, RBrace, Const, Ident,
-                Colon, Ident, Assign, Int, Semicolon, Pub, Fn, Ident, LParen, RParen, Arrow, Ident,
-                LBrace, Let, Ident, Assign, Int, Semicolon, Let, Ident, Assign, True, Semicolon,
-                Let, Ident, Assign, False, Semicolon, If, LParen, Ident, RParen, LBrace, Return,
-                Ident, Semicolon, RBrace, Else, LBrace, While, LParen, Ident, RParen, LBrace,
-                Break, Semicolon, Continue, Semicolon, RBrace, RBrace, RBrace,
+                Struct, Ident, LBrace, Ident, Colon, Ident, RBrace, Enum, Ident, LBrace, Ident,
+                Comma, Ident, Comma, Ident, RBrace, Const, Ident, Colon, Ident, Assign, Int,
+                Semicolon, Pub, Fn, Ident, LParen, RParen, Arrow, Ident, LBrace, Let, Ident,
+                Assign, Int, Semicolon, Let, Ident, Assign, True, Semicolon, Let, Ident, Assign,
+                False, Semicolon, If, LParen, Ident, RParen, LBrace, Return, Ident, Semicolon,
+                RBrace, Else, LBrace, While, LParen, Ident, RParen, LBrace, Break, Semicolon,
+                Continue, Semicolon, RBrace, RBrace, RBrace,
             ]
         );
     });
