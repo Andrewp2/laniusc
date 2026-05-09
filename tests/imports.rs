@@ -129,6 +129,90 @@ fn main() {
 }
 
 #[test]
+fn imported_module_rewrites_private_helpers_for_public_exports() {
+    let dir = TempDir::new("module_private_helpers");
+    dir.write(
+        "math.lani",
+        r#"
+module app::math;
+
+const OFFSET: i32 = 1;
+
+fn add_one(value: i32) -> i32 {
+    return value + OFFSET;
+}
+
+pub fn add_two(value: i32) -> i32 {
+    return add_one(add_one(value));
+}
+"#,
+    );
+    let main = dir.write(
+        "main.lani",
+        r#"
+import "math.lani";
+
+fn main() {
+    return app::math::add_two(40);
+}
+"#,
+    );
+
+    let expanded =
+        expand_source_imports_from_path(&main).expect("expand module with private helpers");
+    assert!(expanded.contains("const __lanius_app_math_OFFSET"));
+    assert!(expanded.contains("fn __lanius_app_math_add_one"));
+    assert!(expanded.contains("pub fn __lanius_app_math_add_two"));
+    assert!(
+        expanded.contains("return __lanius_app_math_add_one(__lanius_app_math_add_one(value));")
+    );
+    assert!(expanded.contains("return __lanius_app_math_add_two(40);"));
+    assert!(!expanded.contains("app::math::add_two"));
+    parse_source(&expanded).expect("expanded private-helper module should parse");
+}
+
+#[test]
+fn imported_module_rejects_external_private_member_access() {
+    let dir = TempDir::new("module_private_reject");
+    dir.write(
+        "math.lani",
+        r#"
+module app::math;
+
+fn add_one(value: i32) -> i32 {
+    return value + 1;
+}
+
+pub fn add_two(value: i32) -> i32 {
+    return add_one(add_one(value));
+}
+"#,
+    );
+    let main = dir.write(
+        "main.lani",
+        r#"
+import "math.lani";
+
+fn main() {
+    return app::math::add_one(41);
+}
+"#,
+    );
+
+    let err = expand_source_imports_from_path(&main)
+        .expect_err("private module member should not be externally visible");
+    match err {
+        CompileError::Import(message) => {
+            assert!(
+                message.contains("module member `app::math::add_one` is private"),
+                "expected private module member error, got {message}"
+            );
+        }
+        other => panic!("expected import error, got {other:?}"),
+    }
+}
+
+#[test]
 fn relative_imports_resolve_from_each_importing_file() {
     let dir = TempDir::new("relative");
     dir.write(

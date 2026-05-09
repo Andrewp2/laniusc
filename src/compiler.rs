@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
     sync::OnceLock,
@@ -377,6 +377,19 @@ enum ImportSpec {
 struct ImportExpander {
     expanded: HashSet<PathBuf>,
     stack: Vec<PathBuf>,
+    modules: HashMap<String, ModuleDecls>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct ModuleDecls {
+    all: HashSet<String>,
+    public: HashSet<String>,
+}
+
+#[derive(Clone, Debug)]
+struct ModuleInfo {
+    path: String,
+    decls: ModuleDecls,
 }
 
 impl ImportExpander {
@@ -384,6 +397,7 @@ impl ImportExpander {
         Self {
             expanded: HashSet::new(),
             stack: Vec::new(),
+            modules: HashMap::new(),
         }
     }
 
@@ -393,6 +407,12 @@ impl ImportExpander {
         context: ImportContext,
         imported: bool,
     ) -> Result<String, CompileError> {
+        let scanned_module = scan_module_info(src, &context)?;
+        let active_module = if imported {
+            scanned_module.as_ref()
+        } else {
+            None
+        };
         let mut expanded = String::new();
         let mut module: Option<String> = None;
 
@@ -434,15 +454,15 @@ impl ImportExpander {
                     }
 
                     let line = if imported {
-                        if let Some(module) = &module {
-                            rewrite_module_decl_name(line, module)?
+                        if let Some(module) = active_module {
+                            rewrite_module_line(line, module)?
                         } else {
                             line.to_string()
                         }
                     } else {
                         line.to_string()
                     };
-                    let line = rewrite_namespaced_paths(&line)?;
+                    let line = rewrite_namespaced_paths(&line, &self.modules, active_module)?;
                     expanded.push_str(&line);
                     expanded.push('\n');
                 }
@@ -453,6 +473,12 @@ impl ImportExpander {
                         line_index + 1
                     )));
                 }
+            }
+        }
+
+        if imported {
+            if let Some(module) = scanned_module {
+                self.modules.insert(module.path, module.decls);
             }
         }
 
@@ -661,60 +687,154 @@ fn is_valid_module_segment(segment: &str) -> bool {
         && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
 }
 
-fn rewrite_module_decl_name(line: &str, module: &str) -> Result<String, CompileError> {
-    let Ok(tokens) = lex_on_cpu(line) else {
-        return Ok(line.to_string());
-    };
-    let Some(first) = tokens.first() else {
-        return Ok(line.to_string());
-    };
+fn scan_module_info(
+    src: &str,
+    context: &ImportContext,
+) -> Result<Option<ModuleInfo>, CompileError> {
+    let mut module: Option<String> = None;
+    let mut decls = ModuleDecls::default();
 
-    let name_i = if first.kind == TokenKind::Pub {
-        let Some(keyword) = tokens.get(1).map(|token| token.kind) else {
-            return Ok(line.to_string());
-        };
+    for (line_index, line) in src.lines().enumerate() {
+        match parse_module_directive(line) {
+            Ok(Some(module_path)) => {
+                if module.replace(module_path).is_some() {
+                    return Err(CompileError::Import(format!(
+                        "duplicate module declaration at {}:{}",
+                        context.display(),
+                        line_index + 1
+                    )));
+                }
+            }
+            Ok(None) => {}
+            Err(err) => {
+                return Err(CompileError::Import(format!(
+                    "{err} at {}:{}",
+                    context.display(),
+                    line_index + 1
+                )));
+            }
+        }
+
+        if let Some((public, name)) = parse_module_member_decl(line) {
+            decls.all.insert(name.clone());
+            if public {
+                decls.public.insert(name);
+            }
+        }
+    }
+
+    Ok(module.map(|path| ModuleInfo { path, decls }))
+}
+
+fn parse_module_member_decl(line: &str) -> Option<(bool, String)> {
+    let tokens = lex_on_cpu(line).ok()?;
+    let (public, name_i) = module_decl_name_index(&tokens)?;
+    let name_token = tokens.get(name_i)?;
+    if !is_path_segment_token(name_token.kind) {
+        return None;
+    }
+    Some((public, token_text(line, name_token).to_string()))
+}
+
+fn module_decl_name_index(tokens: &[crate::lexer::cpu::CpuToken]) -> Option<(bool, usize)> {
+    let first = tokens.first()?;
+    if first.kind == TokenKind::Pub {
+        let keyword = tokens.get(1).map(|token| token.kind)?;
         if matches!(
             keyword,
             TokenKind::Fn | TokenKind::Const | TokenKind::Enum | TokenKind::Struct
         ) {
-            Some(2)
-        } else {
-            None
+            return Some((true, 2));
         }
-    } else if matches!(
+        return None;
+    }
+
+    if matches!(
         first.kind,
         TokenKind::Fn | TokenKind::Const | TokenKind::Enum | TokenKind::Struct
     ) {
-        Some(1)
-    } else {
-        None
-    };
-
-    let Some(name_i) = name_i else {
-        return Ok(line.to_string());
-    };
-    let Some(name_token) = tokens.get(name_i) else {
-        return Ok(line.to_string());
-    };
-    if !is_path_segment_token(name_token.kind) {
-        return Ok(line.to_string());
+        return Some((false, 1));
     }
 
-    let name = line
-        .get(name_token.start..name_token.start.saturating_add(name_token.len))
-        .unwrap_or("");
-    let replacement = mangle_module_member(module, name);
-    Ok(apply_replacements(
-        line,
-        vec![(
-            name_token.start,
-            name_token.start.saturating_add(name_token.len),
-            replacement,
-        )],
-    ))
+    None
 }
 
-fn rewrite_namespaced_paths(src: &str) -> Result<String, CompileError> {
+fn rewrite_module_line(line: &str, module: &ModuleInfo) -> Result<String, CompileError> {
+    let Ok(tokens) = lex_on_cpu(line) else {
+        return Ok(line.to_string());
+    };
+    let decl_name_i = module_decl_name_index(&tokens).map(|(_, index)| index);
+    let mut replacements = Vec::new();
+
+    for (i, token) in tokens.iter().enumerate() {
+        if !is_path_segment_token(token.kind) {
+            continue;
+        }
+        let name = token_text(line, token);
+        if !module.decls.all.contains(name) {
+            continue;
+        }
+        if skip_unqualified_module_member_rewrite(&tokens, i, decl_name_i) {
+            continue;
+        }
+        replacements.push((
+            token.start,
+            token.start.saturating_add(token.len),
+            mangle_module_member(&module.path, name),
+        ));
+    }
+
+    Ok(apply_replacements(line, replacements))
+}
+
+fn skip_unqualified_module_member_rewrite(
+    tokens: &[crate::lexer::cpu::CpuToken],
+    index: usize,
+    decl_name_i: Option<usize>,
+) -> bool {
+    if Some(index) == decl_name_i {
+        return false;
+    }
+
+    if token_before_is_path_separator(tokens, index) || token_after_is_path_separator(tokens, index)
+    {
+        return true;
+    }
+
+    let prev = index.checked_sub(1).and_then(|i| tokens.get(i));
+    let next = tokens.get(index + 1);
+
+    if prev.is_some_and(|token| matches!(token.kind, TokenKind::Let | TokenKind::Dot)) {
+        return true;
+    }
+
+    if next.is_some_and(|token| token.kind == TokenKind::Colon) {
+        return true;
+    }
+
+    false
+}
+
+fn token_before_is_path_separator(tokens: &[crate::lexer::cpu::CpuToken], index: usize) -> bool {
+    index >= 2
+        && tokens[index - 2].kind == TokenKind::Colon
+        && tokens[index - 1].kind == TokenKind::Colon
+}
+
+fn token_after_is_path_separator(tokens: &[crate::lexer::cpu::CpuToken], index: usize) -> bool {
+    tokens
+        .get(index + 1)
+        .is_some_and(|token| token.kind == TokenKind::Colon)
+        && tokens
+            .get(index + 2)
+            .is_some_and(|token| token.kind == TokenKind::Colon)
+}
+
+fn rewrite_namespaced_paths(
+    src: &str,
+    modules: &HashMap<String, ModuleDecls>,
+    current_module: Option<&ModuleInfo>,
+) -> Result<String, CompileError> {
     let Ok(tokens) = lex_on_cpu(src) else {
         return Ok(src.to_string());
     };
@@ -743,6 +863,7 @@ fn rewrite_namespaced_paths(src: &str) -> Result<String, CompileError> {
         }
 
         if segments.len() > 1 {
+            validate_namespaced_visibility(&segments, modules, current_module)?;
             replacements.push((start, end, mangle_path_segments(&segments)));
             i = j;
         } else {
@@ -751,6 +872,33 @@ fn rewrite_namespaced_paths(src: &str) -> Result<String, CompileError> {
     }
 
     Ok(apply_replacements(src, replacements))
+}
+
+fn validate_namespaced_visibility(
+    segments: &[String],
+    modules: &HashMap<String, ModuleDecls>,
+    current_module: Option<&ModuleInfo>,
+) -> Result<(), CompileError> {
+    let Some((member, module_segments)) = segments.split_last() else {
+        return Ok(());
+    };
+    let module_path = module_segments.join("::");
+
+    if let Some(current) = current_module {
+        if current.path == module_path {
+            return Ok(());
+        }
+    }
+
+    if let Some(decls) = modules.get(&module_path) {
+        if decls.all.contains(member) && !decls.public.contains(member) {
+            return Err(CompileError::Import(format!(
+                "module member `{module_path}::{member}` is private"
+            )));
+        }
+    }
+
+    Ok(())
 }
 
 fn is_path_segment_token(kind: TokenKind) -> bool {

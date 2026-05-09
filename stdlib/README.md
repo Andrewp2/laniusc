@@ -39,7 +39,9 @@ user file imports resolve relative to the importing file; source-only compiler
 APIs also look relative to the current working directory and package root.
 
 Imported files may declare `module app::name;`. In that case, source expansion
-rewrites exported declarations and uses such as `app::name::helper()` to
-compiler-private identifiers before lexing. This is a source-level namespace
-bridge, not full visibility or package semantics yet. The current seed files
-still use the `lstd_` prefix until they are reorganized as modules.
+rewrites module declarations and uses such as `app::name::helper()` to
+compiler-private identifiers before lexing. Public declarations are visible
+through the module path, and private declarations can be used by other code in
+the same imported module. This is still a source-level namespace bridge, not a
+full package system. The current seed files still use the `lstd_` prefix until
+they are reorganized as modules.
