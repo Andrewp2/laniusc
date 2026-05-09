@@ -753,12 +753,40 @@ bool assignable(uint dst, uint src)
     return false;
 }
 
+bool is_numeric_scalar_type(uint ty)
+{
+    return ty == TY_UNKNOWN || ty == TY_INT || ty == TY_UINT || ty == TY_FLOAT || ty == TY_CHAR;
+}
+
+bool is_integer_scalar_type(uint ty)
+{
+    return ty == TY_UNKNOWN || ty == TY_INT || ty == TY_UINT || ty == TY_CHAR;
+}
+
 bool is_assignment_operator(uint kind)
 {
     return kind == TK_ASSIGN || kind == TK_PLUS_ASSIGN || kind == TK_MINUS_ASSIGN ||
            kind == TK_STAR_ASSIGN || kind == TK_SLASH_ASSIGN || kind == TK_PERCENT_ASSIGN ||
            kind == TK_CARET_ASSIGN || kind == TK_SHL_ASSIGN || kind == TK_SHR_ASSIGN ||
            kind == TK_AMP_ASSIGN || kind == TK_PIPE_ASSIGN;
+}
+
+bool compound_assignment_compatible(uint op, uint dst, uint src)
+{
+    if (op == TK_ASSIGN)
+        return assignable(dst, src);
+    if (dst == TY_UNKNOWN || src == TY_UNKNOWN)
+        return true;
+
+    if (op == TK_PLUS_ASSIGN || op == TK_MINUS_ASSIGN || op == TK_STAR_ASSIGN ||
+        op == TK_SLASH_ASSIGN)
+        return is_numeric_scalar_type(dst) && is_numeric_scalar_type(src) && assignable(dst, src);
+
+    if (op == TK_PERCENT_ASSIGN || op == TK_CARET_ASSIGN || op == TK_SHL_ASSIGN ||
+        op == TK_SHR_ASSIGN || op == TK_AMP_ASSIGN || op == TK_PIPE_ASSIGN)
+        return is_integer_scalar_type(dst) && is_integer_scalar_type(src) && assignable(dst, src);
+
+    return false;
 }
 
 void assignment_target_info(uint assign_i, out bool is_lvalue, out uint target_ty)
@@ -859,7 +887,7 @@ void check_assignment(uint assign_i, uint end_i)
         record_error(assign_i, ERR_ASSIGN_MISMATCH, dst);
         return;
     }
-    if (!assignable(dst, src))
+    if (!compound_assignment_compatible(token_kind(assign_i), dst, src))
         record_error(assign_i + 1u, ERR_ASSIGN_MISMATCH, dst * 256u + src);
 }
 
@@ -1189,7 +1217,7 @@ void check_condition(uint i, uint end_i)
         }
     }
     uint ty = simple_expr_type(expr_i, close_i);
-    if (ty == TY_VOID || ty == TY_STRING || ty >= TY_ARRAY_BASE)
+    if (ty != TY_UNKNOWN && ty != TY_BOOL)
         record_error(expr_i, ERR_COND_TYPE, ty);
 }
 
