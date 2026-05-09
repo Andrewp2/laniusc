@@ -82,6 +82,12 @@ fn ast_tag_counts(ast: &Ast) -> BTreeMap<&'static str, usize> {
     counts
 }
 
+fn ast_children<'a>(ast: &'a Ast, id: u32, expected_tag: &str) -> &'a [u32] {
+    let node = &ast.nodes[id as usize];
+    assert_eq!(node.tag, expected_tag, "AST node {id} tag");
+    &node.children
+}
+
 fn assert_span_in_source(name: &str, label: &str, span: Span, src: &str) {
     assert!(
         span.start <= src.len(),
@@ -271,6 +277,10 @@ fn span_text<'a>(src: &'a str, span: Span) -> &'a str {
     &src[span.start..span.end()]
 }
 
+fn assert_span_text(src: &str, span: Span, expected: &str) {
+    assert_eq!(span_text(src, span), expected);
+}
+
 fn let_value<'a>(stmt: &'a HirStmt, expected_name: &str) -> &'a HirExpr {
     let HirStmtKind::Let {
         name,
@@ -282,6 +292,145 @@ fn let_value<'a>(stmt: &'a HirStmt, expected_name: &str) -> &'a HirExpr {
     };
     assert_eq!(name, expected_name);
     value
+}
+
+#[test]
+fn cpu_parser_and_hir_preserve_nested_if_else_structure_and_block_spans() {
+    let src = "fn main() { if (outer) { if (inner) { return 1; } else { return 2; } } else { return 3; } }";
+    let (_, ast) = parse_cpu_ast("nested if/else", src);
+    let file_children = ast_children(&ast, ast.root, "file");
+    assert_eq!(file_children.len(), 1);
+    let fn_children = ast_children(&ast, file_children[0], "fn");
+    let body_children = ast_children(&ast, fn_children[3], "block");
+    assert_eq!(body_children.len(), 1);
+    let outer_if_children = ast_children(&ast, body_children[0], "stmt_if");
+    assert_eq!(outer_if_children.len(), 3);
+    let outer_then_children = ast_children(&ast, outer_if_children[1], "block");
+    assert_eq!(outer_then_children.len(), 1);
+    let outer_else_children = ast_children(&ast, outer_if_children[2], "block");
+    assert_eq!(outer_else_children.len(), 1);
+    ast_children(&ast, outer_else_children[0], "stmt_return");
+    let inner_if_children = ast_children(&ast, outer_then_children[0], "stmt_if");
+    assert_eq!(inner_if_children.len(), 3);
+    let inner_then_children = ast_children(&ast, inner_if_children[1], "block");
+    assert_eq!(inner_then_children.len(), 1);
+    ast_children(&ast, inner_then_children[0], "stmt_return");
+    let inner_else_children = ast_children(&ast, inner_if_children[2], "block");
+    assert_eq!(inner_else_children.len(), 1);
+    ast_children(&ast, inner_else_children[0], "stmt_return");
+
+    let func = only_fn(src);
+    assert_eq!(func.body.stmts.len(), 1);
+    let HirStmtKind::If {
+        cond: outer_cond,
+        then_block: outer_then,
+        else_block: Some(outer_else),
+    } = &func.body.stmts[0].kind
+    else {
+        panic!("expected outer if/else");
+    };
+    assert_eq!(outer_cond.kind, HirExprKind::Name("outer".into()));
+    assert_span_text(
+        src,
+        func.body.stmts[0].span,
+        "if (outer) { if (inner) { return 1; } else { return 2; } } else { return 3; }",
+    );
+    assert_span_text(
+        src,
+        outer_then.span,
+        "{ if (inner) { return 1; } else { return 2; } }",
+    );
+    assert_span_text(src, outer_else.span, "{ return 3; }");
+    assert_eq!(outer_then.stmts.len(), 1);
+    assert_eq!(outer_else.stmts.len(), 1);
+
+    let HirStmtKind::If {
+        cond: inner_cond,
+        then_block: inner_then,
+        else_block: Some(inner_else),
+    } = &outer_then.stmts[0].kind
+    else {
+        panic!("expected nested if/else");
+    };
+    assert_eq!(inner_cond.kind, HirExprKind::Name("inner".into()));
+    assert_span_text(
+        src,
+        outer_then.stmts[0].span,
+        "if (inner) { return 1; } else { return 2; }",
+    );
+    assert_span_text(src, inner_then.span, "{ return 1; }");
+    assert_span_text(src, inner_else.span, "{ return 2; }");
+}
+
+#[test]
+fn cpu_parser_and_hir_reject_else_if_without_else_block() {
+    let src = "fn main() { if (a) { return 1; } else if (b) { return 2; } }";
+    let tokens = lex_on_cpu(src).expect("lex else-if fixture");
+    let kinds = tokens.iter().map(|token| token.kind).collect::<Vec<_>>();
+    let cpu_err = parse_from_token_kinds(&kinds).expect_err("CPU parser should reject else-if");
+    assert_eq!(cpu_err.expected, "LBrace");
+
+    let hir_err = parse_source(src).expect_err("HIR parser should reject else-if");
+    let HirError::Parse { expected, .. } = hir_err else {
+        panic!("expected HIR parse error");
+    };
+    assert_eq!(expected, "LBrace");
+}
+
+#[test]
+fn cpu_parser_and_hir_preserve_mixed_top_level_item_order_and_spans() {
+    let src =
+        "let before = 1;\nfn main() { return before; }\nprint(before);\nfn helper() { return 0; }";
+    let (_, ast) = parse_cpu_ast("mixed top-level items", src);
+    let file_children = ast_children(&ast, ast.root, "file");
+    assert_eq!(file_children.len(), 4);
+    ast_children(&ast, file_children[0], "stmt_let");
+    ast_children(&ast, file_children[1], "fn");
+    ast_children(&ast, file_children[2], "stmt_expr");
+    ast_children(&ast, file_children[3], "fn");
+
+    let file = parse_source(src).expect("parse mixed top-level HIR");
+    assert_eq!(file.items.len(), 4);
+    assert_span_text(src, file.span, src);
+
+    let HirItem::Stmt(first) = &file.items[0] else {
+        panic!("expected first item to be a statement");
+    };
+    assert_span_text(src, first.span, "let before = 1;");
+    let before = let_value(first, "before");
+    assert_eq!(
+        before.kind,
+        HirExprKind::Literal {
+            kind: HirLiteralKind::Int,
+            text: "1".into()
+        }
+    );
+
+    let HirItem::Fn(main) = &file.items[1] else {
+        panic!("expected second item to be main function");
+    };
+    assert_eq!(main.name, "main");
+    assert_span_text(src, main.span, "fn main() { return before; }");
+
+    let HirItem::Stmt(third) = &file.items[2] else {
+        panic!("expected third item to be a statement");
+    };
+    assert_span_text(src, third.span, "print(before);");
+    let HirStmtKind::Expr(call) = &third.kind else {
+        panic!("expected top-level call expression");
+    };
+    let HirExprKind::Call { callee, args } = &call.kind else {
+        panic!("expected call expression");
+    };
+    assert_eq!(callee.kind, HirExprKind::Name("print".into()));
+    assert_eq!(args.len(), 1);
+    assert_eq!(args[0].kind, HirExprKind::Name("before".into()));
+
+    let HirItem::Fn(helper) = &file.items[3] else {
+        panic!("expected fourth item to be helper function");
+    };
+    assert_eq!(helper.name, "helper");
+    assert_span_text(src, helper.span, "fn helper() { return 0; }");
 }
 
 #[test]
