@@ -251,6 +251,21 @@ uint declaration_scope_end(uint decl_i)
     return decl_i;
 }
 
+uint let_decl_statement_end(uint decl_i)
+{
+    uint n = active_token_count();
+    [loop]
+    for (uint j = decl_i + 1u; j < n; j += 1u)
+    {
+        uint kind = token_kind(j);
+        if (kind == TK_SEMICOLON)
+            return j;
+        if (kind == TK_FN || is_open_block_token(kind) || is_close_block_token(kind))
+            return INVALID;
+    }
+    return INVALID;
+}
+
 bool is_let_decl_at(uint i)
 {
     uint kind = token_kind(i);
@@ -302,6 +317,14 @@ uint resolve_visible_declaration(uint ident_i)
             continue;
         if (!same_text(j, ident_i))
             continue;
+
+        if (is_let_decl_at(j))
+        {
+            uint stmt_end = let_decl_statement_end(j);
+            if (stmt_end == INVALID || ident_i <= stmt_end)
+                continue;
+        }
+
         uint end_i = declaration_scope_end(j);
         if (ident_i < end_i)
             return j;
