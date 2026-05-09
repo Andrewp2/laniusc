@@ -3,8 +3,10 @@
 This directory contains the initial Lanius standard library as plain `.lani`
 source files.
 
-The long-term design is tracked in [PLAN.md](PLAN.md). Compiler and runtime
-prerequisites for implementing those layers are tracked in
+The full desired standard library surface is tracked in
+[STANDARD_LIBRARY_SPEC.md](STANDARD_LIBRARY_SPEC.md). The long-term roadmap is
+tracked in [PLAN.md](PLAN.md). Compiler and runtime prerequisites for
+implementing those layers are tracked in
 [LANGUAGE_REQUIREMENTS.md](LANGUAGE_REQUIREMENTS.md).
 
 These files are not auto-imported by the compiler. To use a helper, add explicit
