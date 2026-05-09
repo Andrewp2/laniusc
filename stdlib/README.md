@@ -7,13 +7,16 @@ The long-term design is tracked in [PLAN.md](PLAN.md). Compiler and runtime
 prerequisites for implementing those layers are tracked in
 [LANGUAGE_REQUIREMENTS.md](LANGUAGE_REQUIREMENTS.md).
 
-Lanius does not have modules or imports yet. These files are not auto-imported by
-the compiler. To use a helper today, concatenate the needed stdlib source before
-your program source:
+These files are not auto-imported by the compiler. To use a helper, add explicit
+source import lines before the code that calls it:
 
-```sh
-cat stdlib/i32.lani stdlib/bool.lani my_program.lani > combined.lani
-laniusc combined.lani
+```lani
+import "stdlib/i32.lani";
+import "stdlib/bool.lani";
+
+fn main() {
+    return lstd_i32_abs(-7);
+}
 ```
 
 All exported helper names use the `lstd_` prefix so copied files are less likely
@@ -28,5 +31,6 @@ Current scope is intentionally small:
 - `array_i32_4.lani` has fixed-size `[i32; 4]` helpers. There are no generics or
   const parameters yet, so other array sizes need separate source helpers.
 
-Keep these files source-level and explicit until a real package/import system
-lands.
+Imports are source-level includes expanded before lexing/parsing. User file
+imports resolve relative to the importing file; source-only compiler APIs also
+look relative to the current working directory and package root.

@@ -1,5 +1,5 @@
 // Source-level i32 helpers for the current Lanius language surface.
-// Concatenate this file before user code that calls these functions.
+// Import this file before user code that calls these functions.
 
 pub fn lstd_i32_abs(value: i32) -> i32 {
     if (value < 0) {

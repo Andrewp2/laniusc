@@ -1,4 +1,9 @@
-use std::sync::OnceLock;
+use std::{
+    collections::HashSet,
+    fs,
+    path::{Path, PathBuf},
+    sync::OnceLock,
+};
 
 use crate::{
     codegen::{gpu_wasm, gpu_x86},
@@ -10,6 +15,7 @@ use crate::{
 
 #[derive(Debug)]
 pub enum CompileError {
+    Import(String),
     GpuFrontend(String),
     GpuSyntax(String),
     GpuTypeCheck(String),
@@ -19,6 +25,7 @@ pub enum CompileError {
 impl std::fmt::Display for CompileError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            CompileError::Import(err) => write!(f, "import error: {err}"),
             CompileError::GpuFrontend(err) => write!(f, "GPU frontend error: {err}"),
             CompileError::GpuSyntax(err) => write!(f, "GPU syntax error: {err}"),
             CompileError::GpuTypeCheck(err) => write!(f, "GPU type check error: {err}"),
@@ -79,6 +86,19 @@ impl<'gpu> GpuCompiler<'gpu> {
     }
 
     pub async fn compile_source_to_wasm(&self, src: &str) -> Result<Vec<u8>, CompileError> {
+        let src = expand_source_imports(src)?;
+        self.compile_expanded_source_to_wasm(&src).await
+    }
+
+    pub async fn compile_source_to_wasm_from_path(
+        &self,
+        path: impl AsRef<Path>,
+    ) -> Result<Vec<u8>, CompileError> {
+        let src = expand_source_imports_from_path(path)?;
+        self.compile_expanded_source_to_wasm(&src).await
+    }
+
+    async fn compile_expanded_source_to_wasm(&self, src: &str) -> Result<Vec<u8>, CompileError> {
         trace_wasm_compile("compile.start");
         self.lexer
             .with_recorded_resident_tokens(
@@ -206,6 +226,19 @@ impl<'gpu> GpuCompiler<'gpu> {
     }
 
     pub async fn compile_source_to_x86_64(&self, src: &str) -> Result<Vec<u8>, CompileError> {
+        let src = expand_source_imports(src)?;
+        self.compile_expanded_source_to_x86_64(&src).await
+    }
+
+    pub async fn compile_source_to_x86_64_from_path(
+        &self,
+        path: impl AsRef<Path>,
+    ) -> Result<Vec<u8>, CompileError> {
+        let src = expand_source_imports_from_path(path)?;
+        self.compile_expanded_source_to_x86_64(&src).await
+    }
+
+    async fn compile_expanded_source_to_x86_64(&self, src: &str) -> Result<Vec<u8>, CompileError> {
         trace_wasm_compile("compile.x86.start");
         self.lexer
             .with_recorded_resident_tokens(
@@ -330,6 +363,182 @@ fn trace_wasm_compile(stage: &str) {
     }
 }
 
+#[derive(Clone)]
+enum ImportContext {
+    SourceOnly,
+    File(PathBuf),
+}
+
+struct ImportExpander {
+    expanded: HashSet<PathBuf>,
+    stack: Vec<PathBuf>,
+}
+
+impl ImportExpander {
+    fn new() -> Self {
+        Self {
+            expanded: HashSet::new(),
+            stack: Vec::new(),
+        }
+    }
+
+    fn expand_source(&mut self, src: &str, context: ImportContext) -> Result<String, CompileError> {
+        let mut expanded = String::new();
+
+        for (line_index, line) in src.lines().enumerate() {
+            match parse_import_directive(line) {
+                Ok(Some(spec)) => {
+                    let import_path = self.resolve_import(&spec, &context).map_err(|err| {
+                        CompileError::Import(format!(
+                            "{err} at {}:{}",
+                            context.display(),
+                            line_index + 1
+                        ))
+                    })?;
+                    expanded.push_str(&self.expand_file(&import_path)?);
+                    if !expanded.ends_with('\n') {
+                        expanded.push('\n');
+                    }
+                }
+                Ok(None) => {
+                    expanded.push_str(line);
+                    expanded.push('\n');
+                }
+                Err(err) => {
+                    return Err(CompileError::Import(format!(
+                        "{err} at {}:{}",
+                        context.display(),
+                        line_index + 1
+                    )));
+                }
+            }
+        }
+
+        Ok(expanded)
+    }
+
+    fn expand_file(&mut self, path: &Path) -> Result<String, CompileError> {
+        let canonical = fs::canonicalize(path)
+            .map_err(|err| CompileError::Import(format!("resolve {}: {err}", path.display())))?;
+
+        if let Some(cycle_start) = self.stack.iter().position(|entry| entry == &canonical) {
+            let mut cycle = self.stack[cycle_start..]
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>();
+            cycle.push(canonical.display().to_string());
+            return Err(CompileError::Import(format!(
+                "import cycle detected: {}",
+                cycle.join(" -> ")
+            )));
+        }
+
+        if self.expanded.contains(&canonical) {
+            return Ok(String::new());
+        }
+
+        let src = fs::read_to_string(&canonical)
+            .map_err(|err| CompileError::Import(format!("read {}: {err}", canonical.display())))?;
+        self.stack.push(canonical.clone());
+        let result = self.expand_source(&src, ImportContext::File(canonical.clone()));
+        self.stack.pop();
+        let expanded = result?;
+        self.expanded.insert(canonical);
+        Ok(expanded)
+    }
+
+    fn resolve_import(&self, spec: &str, context: &ImportContext) -> Result<PathBuf, String> {
+        let spec_path = Path::new(spec);
+        if spec_path.is_absolute() {
+            if spec_path.exists() {
+                return Ok(spec_path.to_path_buf());
+            }
+            return Err(format!(
+                "import {spec:?} not found; tried {}",
+                spec_path.display()
+            ));
+        }
+
+        let mut candidates = Vec::new();
+        match context {
+            ImportContext::File(path) => {
+                if let Some(parent) = path.parent() {
+                    candidates.push(parent.join(spec_path));
+                }
+                if spec_path.starts_with("stdlib") {
+                    candidates.push(manifest_root().join(spec_path));
+                }
+            }
+            ImportContext::SourceOnly => {
+                if let Ok(cwd) = std::env::current_dir() {
+                    candidates.push(cwd.join(spec_path));
+                }
+                candidates.push(manifest_root().join(spec_path));
+            }
+        }
+
+        for candidate in &candidates {
+            if candidate.exists() {
+                return Ok(candidate.clone());
+            }
+        }
+
+        let tried = candidates
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        Err(format!("import {spec:?} not found; tried {tried}"))
+    }
+}
+
+impl ImportContext {
+    fn display(&self) -> String {
+        match self {
+            ImportContext::SourceOnly => "<source>".to_string(),
+            ImportContext::File(path) => path.display().to_string(),
+        }
+    }
+}
+
+pub fn expand_source_imports(src: &str) -> Result<String, CompileError> {
+    ImportExpander::new().expand_source(src, ImportContext::SourceOnly)
+}
+
+pub fn expand_source_imports_from_path(path: impl AsRef<Path>) -> Result<String, CompileError> {
+    ImportExpander::new().expand_file(path.as_ref())
+}
+
+fn parse_import_directive(line: &str) -> Result<Option<String>, String> {
+    let trimmed = line.trim();
+    let Some(rest) = trimmed.strip_prefix("import") else {
+        return Ok(None);
+    };
+    if !rest.starts_with(char::is_whitespace) {
+        return Ok(None);
+    }
+    let rest = rest.trim_start();
+    let Some(rest) = rest.strip_prefix('"') else {
+        return Err("expected import path string".to_string());
+    };
+    let Some(closing_quote) = rest.find('"') else {
+        return Err("unterminated import path string".to_string());
+    };
+    let (spec, rest) = rest.split_at(closing_quote);
+    let rest = rest[1..].trim();
+    if rest != ";" {
+        return Err("expected `;` after import path".to_string());
+    }
+    if spec.is_empty() {
+        return Err("import path must not be empty".to_string());
+    }
+    Ok(Some(spec.to_string()))
+}
+
+fn manifest_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
 fn global_gpu_compiler() -> Result<&'static GpuCompiler<'static>, CompileError> {
     static GPU_COMPILER: OnceLock<Result<GpuCompiler<'static>, String>> = OnceLock::new();
     GPU_COMPILER
@@ -339,23 +548,65 @@ fn global_gpu_compiler() -> Result<&'static GpuCompiler<'static>, CompileError> 
 }
 
 pub async fn compile_source_to_wasm_with_gpu_codegen(src: &str) -> Result<Vec<u8>, CompileError> {
-    global_gpu_compiler()?.compile_source_to_wasm(src).await
+    let src = expand_source_imports(src)?;
+    global_gpu_compiler()?
+        .compile_expanded_source_to_wasm(&src)
+        .await
+}
+
+pub async fn compile_source_to_wasm_with_gpu_codegen_from_path(
+    path: impl AsRef<Path>,
+) -> Result<Vec<u8>, CompileError> {
+    let src = expand_source_imports_from_path(path)?;
+    global_gpu_compiler()?
+        .compile_expanded_source_to_wasm(&src)
+        .await
 }
 
 pub async fn compile_source_to_wasm_with_gpu_codegen_using(
     src: &str,
     compiler: &GpuCompiler<'_>,
 ) -> Result<Vec<u8>, CompileError> {
-    compiler.compile_source_to_wasm(src).await
+    let src = expand_source_imports(src)?;
+    compiler.compile_expanded_source_to_wasm(&src).await
+}
+
+pub async fn compile_source_to_wasm_with_gpu_codegen_using_path(
+    path: impl AsRef<Path>,
+    compiler: &GpuCompiler<'_>,
+) -> Result<Vec<u8>, CompileError> {
+    let src = expand_source_imports_from_path(path)?;
+    compiler.compile_expanded_source_to_wasm(&src).await
 }
 
 pub async fn compile_source_to_x86_64_with_gpu_codegen(src: &str) -> Result<Vec<u8>, CompileError> {
-    global_gpu_compiler()?.compile_source_to_x86_64(src).await
+    let src = expand_source_imports(src)?;
+    global_gpu_compiler()?
+        .compile_expanded_source_to_x86_64(&src)
+        .await
+}
+
+pub async fn compile_source_to_x86_64_with_gpu_codegen_from_path(
+    path: impl AsRef<Path>,
+) -> Result<Vec<u8>, CompileError> {
+    let src = expand_source_imports_from_path(path)?;
+    global_gpu_compiler()?
+        .compile_expanded_source_to_x86_64(&src)
+        .await
 }
 
 pub async fn compile_source_to_x86_64_with_gpu_codegen_using(
     src: &str,
     compiler: &GpuCompiler<'_>,
 ) -> Result<Vec<u8>, CompileError> {
-    compiler.compile_source_to_x86_64(src).await
+    let src = expand_source_imports(src)?;
+    compiler.compile_expanded_source_to_x86_64(&src).await
+}
+
+pub async fn compile_source_to_x86_64_with_gpu_codegen_using_path(
+    path: impl AsRef<Path>,
+    compiler: &GpuCompiler<'_>,
+) -> Result<Vec<u8>, CompileError> {
+    let src = expand_source_imports_from_path(path)?;
+    compiler.compile_expanded_source_to_x86_64(&src).await
 }
