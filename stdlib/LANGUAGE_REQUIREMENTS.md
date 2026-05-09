@@ -28,6 +28,9 @@ Supported enough for the seed library:
   `Option<T>` and `Result<T, E>` now parse and lower to HIR. They do not yet
   participate in type checking, monomorphization, trait/interface resolution, or
   code generation.
+- Generic type parameter syntax on functions, such as `fn first<T>(value: T) ->
+  T`, now parses and lowers to HIR. It does not yet participate in type
+  checking, monomorphization, trait/interface resolution, or code generation.
 - Top-level `struct` declarations with named fields and generic parameters now
   parse, lower to HIR, and are ignored safely by syntax/HIR validation. They do
   not yet create usable product types, constructors, field access semantics, or
@@ -111,8 +114,8 @@ Strict blockers:
   `Ordering`. Declaration syntax exists, but constructors, type checking,
   pattern matching, layout, and codegen support are still missing.
 - Generics for primitive-independent helpers and generic array/slice algorithms.
-  Syntax exists for enum parameters and type uses, but semantic checking and
-  codegen support are still missing.
+  Syntax exists for enum parameters, function parameters, and type uses, but
+  semantic checking and codegen support are still missing.
 - Const parameters or equivalent array length abstraction, replacing files like
   `array_i32_4.lani`.
 - Borrowed views or references for slices and non-owning APIs.

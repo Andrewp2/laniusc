@@ -59,6 +59,7 @@ pub enum HirItem {
 pub struct HirFn {
     pub public: bool,
     pub name: String,
+    pub type_params: Vec<String>,
     pub params: Vec<HirParam>,
     pub ret: HirType,
     pub body: HirBlock,
@@ -367,9 +368,11 @@ impl<'a> HirParser<'a> {
         };
         self.expect(TokenKind::Fn, "Fn")?;
         let name = self.expect_name(&[TokenKind::Ident], "function name")?;
+        let type_params = self.parse_type_params()?;
         self.expect_any(
             &[
                 TokenKind::ParamLParen,
+                TokenKind::GroupLParen,
                 TokenKind::CallLParen,
                 TokenKind::LParen,
             ],
@@ -379,6 +382,7 @@ impl<'a> HirParser<'a> {
         self.expect_any(
             &[
                 TokenKind::ParamRParen,
+                TokenKind::GroupRParen,
                 TokenKind::CallRParen,
                 TokenKind::RParen,
             ],
@@ -398,6 +402,7 @@ impl<'a> HirParser<'a> {
         Ok(HirFn {
             public,
             name,
+            type_params,
             params,
             ret,
             body,

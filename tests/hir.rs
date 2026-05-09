@@ -407,7 +407,7 @@ fn cpu_parser_and_hir_preserve_nested_if_else_structure_and_block_spans() {
     let file_children = ast_children(&ast, ast.root, "file");
     assert_eq!(file_children.len(), 1);
     let fn_children = ast_children(&ast, file_children[0], "fn");
-    let body_children = ast_children(&ast, fn_children[3], "block");
+    let body_children = ast_children(&ast, fn_children[4], "block");
     assert_eq!(body_children.len(), 1);
     let outer_if_children = ast_children(&ast, body_children[0], "stmt_if");
     assert_eq!(outer_if_children.len(), 3);
@@ -874,6 +874,21 @@ fn hir_preserves_reference_type_syntax() {
         panic!("expected inner reference");
     };
     assert_eq!(inner.kind, HirTypeKind::Name("bool".into()));
+}
+
+#[test]
+fn hir_preserves_generic_function_declarations() {
+    let func = only_fn("pub fn unwrap_or<T>(value: T, fallback: T) -> T { return fallback; }");
+
+    assert!(func.public);
+    assert_eq!(func.name, "unwrap_or");
+    assert_eq!(func.type_params, vec!["T"]);
+    assert_eq!(func.params.len(), 2);
+    assert_eq!(func.params[0].name, "value");
+    assert_eq!(func.params[0].ty.kind, HirTypeKind::Name("T".into()));
+    assert_eq!(func.params[1].name, "fallback");
+    assert_eq!(func.params[1].ty.kind, HirTypeKind::Name("T".into()));
+    assert_eq!(func.ret.kind, HirTypeKind::Name("T".into()));
 }
 
 #[test]

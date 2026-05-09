@@ -202,12 +202,19 @@ impl<'a> Parser<'a> {
         self.expect(tokens::TokenKind::Fn, "Fn")?;
         self.expect(tokens::TokenKind::Ident, "function name")?;
         let name_id = self.push("ident", vec![]);
+        let type_params = self.parse_type_params_opt()?;
 
-        if !(self.eat(tokens::TokenKind::ParamLParen) || self.eat(tokens::TokenKind::CallLParen)) {
+        if !(self.eat(tokens::TokenKind::ParamLParen)
+            || self.eat(tokens::TokenKind::GroupLParen)
+            || self.eat(tokens::TokenKind::CallLParen))
+        {
             self.expect(tokens::TokenKind::LParen, "function parameter list")?;
         }
         let params = self.parse_param_list_opt()?;
-        if !(self.eat(tokens::TokenKind::ParamRParen) || self.eat(tokens::TokenKind::CallRParen)) {
+        if !(self.eat(tokens::TokenKind::ParamRParen)
+            || self.eat(tokens::TokenKind::GroupRParen)
+            || self.eat(tokens::TokenKind::CallRParen))
+        {
             self.expect(tokens::TokenKind::RParen, "RParen")?;
         }
 
@@ -218,7 +225,7 @@ impl<'a> Parser<'a> {
         };
 
         let body = self.parse_block()?;
-        Ok(self.push("fn", vec![name_id, params, ret, body]))
+        Ok(self.push("fn", vec![name_id, type_params, params, ret, body]))
     }
 
     /// Parse a top-level `const` item.

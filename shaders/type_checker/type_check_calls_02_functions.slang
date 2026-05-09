@@ -46,6 +46,7 @@ static const uint TK_ARRAY_LBRACKET = 31u;
 static const uint TK_COLON = 38u;
 static const uint TK_ARROW = 75u;
 static const uint TK_FN = 67u;
+static const uint TK_GROUP_RPAREN = 62u;
 static const uint TK_PARAM_RPAREN = 77u;
 static const uint TK_PARAM_IDENT = 79u;
 static const uint TK_TYPE_IDENT = 80u;
@@ -242,7 +243,8 @@ void cache_function_params(uint fn_i)
     for (uint j = fn_i + 2u; j < n_active; j += 1u)
     {
         uint kind = token_kind(j);
-        if (kind == TK_PARAM_RPAREN || kind == TK_RPAREN || kind == TK_LBRACE || kind == TK_IF_LBRACE)
+        if (kind == TK_PARAM_RPAREN || kind == TK_GROUP_RPAREN || kind == TK_RPAREN ||
+            kind == TK_LBRACE || kind == TK_IF_LBRACE)
             break;
         if (!is_param_decl(j))
             continue;

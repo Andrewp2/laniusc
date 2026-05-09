@@ -28,6 +28,7 @@ RWStructuredBuffer<uint> hir_status;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
+static const uint INVALID = 0xffffffffu;
 
 static const uint HIR_NONE = 0u;
 static const uint HIR_FILE = 1u;
@@ -55,6 +56,8 @@ static const uint TK_IDENT = 1u;
 static const uint TK_LPAREN = 4u;
 static const uint TK_RPAREN = 5u;
 static const uint TK_ASSIGN = 8u;
+static const uint TK_LT = 12u;
+static const uint TK_GT = 13u;
 static const uint TK_LBRACKET = 20u;
 static const uint TK_RBRACKET = 21u;
 static const uint TK_LBRACE = 22u;
@@ -391,6 +394,50 @@ uint function_end(uint fn_i)
     return n;
 }
 
+uint fn_type_params_end(uint fn_i)
+{
+    uint n = active_token_count();
+    if (fn_i + 2u >= n || token_kind(fn_i + 2u) != TK_LT)
+        return INVALID;
+
+    uint depth = 0u;
+    [loop]
+    for (uint j = fn_i + 2u; j < n; j += 1u)
+    {
+        uint kind = token_kind(j);
+        if (kind == TK_LT)
+        {
+            depth += 1u;
+            continue;
+        }
+        if (kind != TK_GT)
+            continue;
+        if (depth == 0u)
+            return INVALID;
+        depth -= 1u;
+        if (depth == 0u)
+            return j + 1u;
+    }
+    return INVALID;
+}
+
+bool token_in_fn_type_params(uint token_i)
+{
+    uint j = token_i;
+    [loop]
+    for (uint guard = 0u; guard < 128u && j > 0u; guard += 1u)
+    {
+        j -= 1u;
+        if (token_kind(j) != TK_FN)
+            continue;
+        uint end = fn_type_params_end(j);
+        if (end == INVALID)
+            return false;
+        return token_i >= j + 2u && token_i < end;
+    }
+    return false;
+}
+
 uint enum_end(uint enum_i)
 {
     uint n = active_token_count();
@@ -472,6 +519,8 @@ uint classify(uint i, out uint end)
         return HIR_STRUCT_ITEM;
     }
     if (token_in_type_decl(i))
+        return HIR_NONE;
+    if (token_in_fn_type_params(i))
         return HIR_NONE;
     if (kind == TK_PARAM_IDENT ||
         (kind == TK_IDENT && i + 1u < n && token_kind(i + 1u) == TK_COLON &&

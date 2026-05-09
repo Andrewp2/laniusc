@@ -16,7 +16,7 @@ item          [item_pub]     -> 'Pub' pub_item;
 item          [item_fn]      -> fn_item;
 item          [item_stmt]    -> stmt;
 
-fn_item       [fn]           -> 'Fn' 'Ident' 'LParen' param_list_opt 'RParen' return_type_opt block;
+fn_item       [fn]           -> 'Fn' 'Ident' enum_type_params_opt 'LParen' param_list_opt 'RParen' return_type_opt block;
 return_type_opt [ret_type]   -> 'Arrow' type_expr;
 return_type_opt [ret_void]   -> ;
 

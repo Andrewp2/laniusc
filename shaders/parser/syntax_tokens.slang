@@ -299,6 +299,35 @@ uint find_condition_close(uint start_i)
     return INVALID;
 }
 
+uint find_fn_param_open(uint fn_i)
+{
+    uint n_active = active_token_count();
+    uint angle_depth = 0u;
+    [loop]
+    for (uint j = fn_i + 2u; j < n_active; j += 1u)
+    {
+        uint kind = token_kind(j);
+        if (kind == TK_LT)
+        {
+            angle_depth += 1u;
+            continue;
+        }
+        if (kind == TK_GT && angle_depth > 0u)
+        {
+            angle_depth -= 1u;
+            continue;
+        }
+        if (angle_depth != 0u)
+            continue;
+        if (kind == TK_PARAM_LPAREN || kind == TK_GROUP_LPAREN || kind == TK_LPAREN)
+            return j;
+        if (kind == TK_LBRACE || kind == TK_IF_LBRACE || kind == TK_SEMICOLON ||
+            is_stmt_boundary(kind))
+            return INVALID;
+    }
+    return INVALID;
+}
+
 uint delimiter_class(uint kind)
 {
     if (kind == TK_LPAREN || kind == TK_GROUP_LPAREN || kind == TK_CALL_LPAREN ||
@@ -355,14 +384,14 @@ void check_fn(uint i)
         record_error(i, ERR_EXPECTED_TOKEN, TK_IDENT);
         return;
     }
-    uint params_open = token_kind(i + 2u);
-    if (params_open != TK_PARAM_LPAREN && params_open != TK_LPAREN)
+    uint params_open_i = find_fn_param_open(i);
+    if (params_open_i == INVALID)
     {
         record_error(i + 2u, ERR_EXPECTED_TOKEN, TK_LPAREN);
         return;
     }
 
-    uint body = find_before_boundary_at_depth(i + 3u, TK_LBRACE, i);
+    uint body = find_before_boundary_at_depth(params_open_i + 1u, TK_LBRACE, i);
     if (body == INVALID)
         record_error(i, ERR_EXPECTED_TOKEN, TK_LBRACE);
 }
@@ -548,6 +577,8 @@ void check_group_lparen(uint i)
 {
     uint prev = i > 0u ? token_kind(i - 1u) : 0u;
     if (prev == TK_FN || prev == TK_IF || prev == TK_WHILE)
+        return;
+    if (prev == TK_GT)
         return;
     if (prev == TK_IDENT)
         return;

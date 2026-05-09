@@ -322,6 +322,8 @@ uint function_param_count(uint fn_i)
     if (open_i == INVALID)
         open_i = find_next_kind(fn_i + 1u, active_token_count(), TK_LPAREN);
     if (open_i == INVALID)
+        open_i = find_next_kind(fn_i + 1u, active_token_count(), TK_GROUP_LPAREN);
+    if (open_i == INVALID)
         return 0u;
     uint close_i = matching_paren(open_i);
     uint count = 0u;
@@ -341,6 +343,8 @@ uint function_param_token(uint fn_i, uint param_index)
     uint open_i = find_next_kind(fn_i + 1u, active_token_count(), TK_PARAM_LPAREN);
     if (open_i == INVALID)
         open_i = find_next_kind(fn_i + 1u, active_token_count(), TK_LPAREN);
+    if (open_i == INVALID)
+        open_i = find_next_kind(fn_i + 1u, active_token_count(), TK_GROUP_LPAREN);
     if (open_i == INVALID)
         return INVALID;
     uint close_i = matching_paren(open_i);
