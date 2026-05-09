@@ -226,6 +226,7 @@ struct_field [struct_field]  -> 'Ident' 'Colon' type_expr;
 struct_field_tail [struct_fields_more] -> 'Comma' struct_field struct_field_tail;
 struct_field_tail [struct_fields_end] -> ;
 pub_item [pub_fn]            -> fn_item;
+pub_item [pub_const]         -> const_item;
 pub_item [pub_enum]          -> enum_item;
 pub_item [pub_struct]        -> struct_item;
 primary_ident_tail [ident_plain] -> ;

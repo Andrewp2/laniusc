@@ -95,6 +95,7 @@ pub struct HirFn {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct HirConst {
+    pub public: bool,
     pub name: String,
     pub ty: HirType,
     pub value: HirExpr,
@@ -420,6 +421,8 @@ impl<'a> HirParser<'a> {
             Ok(HirItem::Enum(self.parse_enum(public)?))
         } else if public && self.peek() == Some(TokenKind::Struct) {
             Ok(HirItem::Struct(self.parse_struct(public)?))
+        } else if public && self.peek() == Some(TokenKind::Const) {
+            Ok(HirItem::Const(self.parse_const(public)?))
         } else if public || self.peek() == Some(TokenKind::Fn) {
             Ok(HirItem::Fn(self.parse_fn(public)?))
         } else if self.peek() == Some(TokenKind::Import) {
@@ -427,7 +430,7 @@ impl<'a> HirParser<'a> {
         } else if self.peek() == Some(TokenKind::Module) {
             Ok(HirItem::Module(self.parse_module()?))
         } else if self.peek() == Some(TokenKind::Const) {
-            Ok(HirItem::Const(self.parse_const()?))
+            Ok(HirItem::Const(self.parse_const(public)?))
         } else if self.peek() == Some(TokenKind::Enum) {
             Ok(HirItem::Enum(self.parse_enum(public)?))
         } else if self.peek() == Some(TokenKind::Struct) {
@@ -555,8 +558,12 @@ impl<'a> HirParser<'a> {
         path.segments.join("::")
     }
 
-    fn parse_const(&mut self) -> Result<HirConst, HirError> {
-        let start = self.peek_start();
+    fn parse_const(&mut self, public: bool) -> Result<HirConst, HirError> {
+        let start = if public {
+            self.prev_start()
+        } else {
+            self.peek_start()
+        };
         self.expect(TokenKind::Const, "Const")?;
         let name = self.expect_name(&[TokenKind::Ident], "constant name")?;
         self.expect(TokenKind::Colon, "Colon")?;
@@ -565,6 +572,7 @@ impl<'a> HirParser<'a> {
         let value = self.parse_expr()?;
         self.expect_semicolon()?;
         Ok(HirConst {
+            public,
             name,
             ty,
             value,

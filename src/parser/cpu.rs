@@ -180,6 +180,8 @@ impl<'a> Parser<'a> {
                 self.parse_enum_item()?
             } else if self.peek() == Some(tokens::TokenKind::Struct) {
                 self.parse_struct_item()?
+            } else if self.peek() == Some(tokens::TokenKind::Const) {
+                self.parse_const_item()?
             } else {
                 self.parse_fn_item()?
             };

@@ -215,7 +215,9 @@ fn generated_ll1_tables_accept_top_level_constants() {
     let tables =
         PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
             .expect("load generated parse tables");
-    let token_kinds = kinds_with_sentinels("const LIMIT: i32 = 7; fn main() { return LIMIT; }");
+    let token_kinds = kinds_with_sentinels(
+        "const LIMIT: i32 = 7; pub const PUBLIC_LIMIT: i32 = 9; fn main() { return LIMIT; }",
+    );
 
     tables
         .ll1_production_stream_with_positions(&token_kinds)

@@ -805,14 +805,15 @@ fn hir_preserves_bool_literals() {
 #[test]
 fn hir_preserves_top_level_constants() {
     let file = parse_source(
-        "const LIMIT: i32 = 7; const ENABLED: bool = true; fn main() { return LIMIT; }",
+        "const LIMIT: i32 = 7; pub const PUBLIC_LIMIT: i32 = 9; const ENABLED: bool = true; fn main() { return LIMIT; }",
     )
     .expect("parse constants");
-    assert_eq!(file.items.len(), 3);
+    assert_eq!(file.items.len(), 4);
 
     let HirItem::Const(limit) = &file.items[0] else {
         panic!("expected first item to be const");
     };
+    assert!(!limit.public);
     assert_eq!(limit.name, "LIMIT");
     assert_eq!(limit.ty.kind, HirTypeKind::Name("i32".into()));
     assert_eq!(
@@ -823,9 +824,24 @@ fn hir_preserves_top_level_constants() {
         }
     );
 
-    let HirItem::Const(enabled) = &file.items[1] else {
+    let HirItem::Const(public_limit) = &file.items[1] else {
+        panic!("expected second item to be public const");
+    };
+    assert!(public_limit.public);
+    assert_eq!(public_limit.name, "PUBLIC_LIMIT");
+    assert_eq!(public_limit.ty.kind, HirTypeKind::Name("i32".into()));
+    assert_eq!(
+        public_limit.value.kind,
+        HirExprKind::Literal {
+            kind: HirLiteralKind::Int,
+            text: "9".into()
+        }
+    );
+
+    let HirItem::Const(enabled) = &file.items[2] else {
         panic!("expected second item to be const");
     };
+    assert!(!enabled.public);
     assert_eq!(enabled.name, "ENABLED");
     assert_eq!(enabled.ty.kind, HirTypeKind::Name("bool".into()));
     assert_eq!(

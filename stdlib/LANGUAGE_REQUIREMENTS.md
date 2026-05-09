@@ -30,8 +30,8 @@ Supported enough for the seed library:
   match patterns now parse and lower to HIR directly. Normal compilation still
   rewrites imported module paths to compiler-private identifiers before GPU
   lexing.
-- Top-level primitive `const` items, used by `stdlib/i32.lani` for
-  `LSTD_I32_MIN` and `LSTD_I32_MAX`.
+- Top-level primitive `const` items, including public constants for module
+  exports, used by `stdlib/i32.lani` for `LSTD_I32_MIN` and `LSTD_I32_MAX`.
 - Top-level `enum` declarations with unit variants and tuple payload syntax now
   parse, lower to HIR, and are ignored safely by syntax/HIR validation. They do
   not yet create usable types, constructors, pattern matching, or backend
