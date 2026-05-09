@@ -3,7 +3,7 @@
 
 use crate::lexer::tables::{
     dfa::{S, StreamingDfa},
-    tokens::TokenKind,
+    tokens::{INVALID_TOKEN, TokenKind},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -356,6 +356,16 @@ fn keep_kind(k: TokenKind) -> bool {
     !matches!(k, White | LineComment | BlockComment)
 }
 
+fn decode_dfa_token(kind_u32: u32, state: usize, at: usize) -> Result<TokenKind, String> {
+    TokenKind::from_u32(kind_u32).ok_or_else(|| {
+        if kind_u32 == INVALID_TOKEN {
+            format!("emit from non-accepting state={state} at i={at}")
+        } else {
+            format!("invalid token kind {kind_u32} from DFA state={state} at i={at}")
+        }
+    })
+}
+
 fn slice_dbg(src: &[u8], i: usize) -> (usize, String) {
     let lo = i.saturating_sub(16);
     let hi = (i + 16).min(src.len());
@@ -409,10 +419,7 @@ pub fn lex_on_cpu(input: &str) -> Result<Vec<CpuToken>, String> {
         // If this edge "emits", a token just ended BEFORE consuming b.
         if next.emit {
             let kind_u32 = dfa.token_map[state];
-            if kind_u32 == u32::MAX {
-                return Err(format!("emit from non-accepting state={state} at i={i}"));
-            }
-            let kind = unsafe { std::mem::transmute::<u32, TokenKind>(kind_u32) };
+            let kind = decode_dfa_token(kind_u32, state, i)?;
             if keep_kind(kind) {
                 out.push(CpuToken {
                     kind,
@@ -430,8 +437,8 @@ pub fn lex_on_cpu(input: &str) -> Result<Vec<CpuToken>, String> {
 
     // End-of-input: if final state is accepting, emit the final token to `n`.
     let end_kind_u32 = dfa.token_map[state];
-    if end_kind_u32 != u32::MAX {
-        let kind = unsafe { std::mem::transmute::<u32, TokenKind>(end_kind_u32) };
+    if end_kind_u32 != INVALID_TOKEN {
+        let kind = decode_dfa_token(end_kind_u32, state, n)?;
         if keep_kind(kind) {
             out.push(CpuToken {
                 kind,

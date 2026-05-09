@@ -833,3 +833,39 @@ impl StreamingDfa {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn token_map_entries_are_valid_or_invalid_sentinel() {
+        let dfa = StreamingDfa::new();
+
+        assert_eq!(
+            ALL_STATES.len(),
+            N_STATES,
+            "ALL_STATES should cover every DFA state"
+        );
+
+        for &state in ALL_STATES {
+            let raw = dfa.token_map[state.idx()];
+            match token_of_state(state) {
+                Some(expected) => {
+                    assert_eq!(
+                        TokenKind::from_u32(raw),
+                        Some(expected),
+                        "accepting state {state:?} has invalid token_map entry {raw}"
+                    );
+                }
+                None => {
+                    assert_eq!(
+                        raw, INVALID_TOKEN,
+                        "non-accepting state {state:?} should use INVALID_TOKEN"
+                    );
+                    assert_eq!(TokenKind::from_u32(raw), None);
+                }
+            }
+        }
+    }
+}

@@ -339,6 +339,9 @@ mod tests {
             assert_eq!(kind as u32, v);
         }
         assert_eq!(TokenKind::from_u32(N_KINDS), None);
+        assert_eq!(TokenKind::from_u32(0xFFFF), None);
+        assert_eq!(TokenKind::from_u32(INVALID_TOKEN), None);
+        assert!(TokenKind::try_from(INVALID_TOKEN).is_err());
     }
 
     #[test]

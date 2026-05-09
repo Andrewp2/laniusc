@@ -22,32 +22,33 @@ pub fn readback_enabled() -> bool {
 }
 
 /// Convert a mapped `[GpuToken]` byte slice into a `Vec<Token>`.
-pub fn read_tokens_from_mapped(bytes: &[u8], count: usize) -> Vec<Token> {
-    use std::{mem::size_of, ptr::read_unaligned};
+pub fn read_tokens_from_mapped(bytes: &[u8], count: usize) -> Result<Vec<Token>, String> {
+    use std::mem::size_of;
+
+    let stride = size_of::<u32>() * 3;
+    let needed = count
+        .checked_mul(stride)
+        .ok_or_else(|| "read_tokens_from_mapped: byte count overflow".to_string())?;
+    if bytes.len() < needed {
+        return Err(format!(
+            "read_tokens_from_mapped: mapped slice too small (have {}, need >= {})",
+            bytes.len(),
+            needed
+        ));
+    }
 
     let mut out = Vec::with_capacity(count);
-    let mut p = bytes.as_ptr();
-    let stride = size_of::<u32>() * 3;
+    for (i, raw) in bytes[..needed].chunks_exact(stride).enumerate() {
+        let kind_u32 = u32::from_le_bytes(raw[0..4].try_into().expect("kind word"));
+        let start = u32::from_le_bytes(raw[4..8].try_into().expect("start word")) as usize;
+        let len = u32::from_le_bytes(raw[8..12].try_into().expect("len word")) as usize;
 
-    debug_assert!(
-        bytes.len() >= count * stride,
-        "read_tokens_from_mapped: mapped slice too small (have {}, need >= {})",
-        bytes.len(),
-        count * stride
-    );
-
-    for _ in 0..count {
-        let kind_u32 = unsafe { read_unaligned(p as *const u32) };
-        let start = unsafe { read_unaligned(p.add(4) as *const u32) } as usize;
-        let len = unsafe { read_unaligned(p.add(8) as *const u32) } as usize;
-
-        // SAFETY: TokenKind is repr(u32) in practice; same assumption as before.
-        let kind = unsafe { std::mem::transmute::<u32, TokenKind>(kind_u32) };
+        let kind = TokenKind::from_u32(kind_u32).ok_or_else(|| {
+            format!("read_tokens_from_mapped: invalid token kind {kind_u32} at token {i}")
+        })?;
         out.push(Token { kind, start, len });
-
-        p = unsafe { p.add(stride) };
     }
-    out
+    Ok(out)
 }
 
 pub fn compute_rounds(val: u32) -> u32 {
@@ -58,4 +59,41 @@ pub fn compute_rounds(val: u32) -> u32 {
         s <<= 1;
     }
     r
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn token_bytes(kind: u32, start: u32, len: u32) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&kind.to_le_bytes());
+        bytes.extend_from_slice(&start.to_le_bytes());
+        bytes.extend_from_slice(&len.to_le_bytes());
+        bytes
+    }
+
+    #[test]
+    fn read_tokens_from_mapped_decodes_valid_kind() {
+        let bytes = token_bytes(TokenKind::Ident as u32, 4, 3);
+
+        let tokens = read_tokens_from_mapped(&bytes, 1).expect("valid token readback");
+
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].kind, TokenKind::Ident);
+        assert_eq!(tokens[0].start, 4);
+        assert_eq!(tokens[0].len, 3);
+    }
+
+    #[test]
+    fn read_tokens_from_mapped_rejects_invalid_kind() {
+        let bytes = token_bytes(0, 4, 3);
+
+        let err = read_tokens_from_mapped(&bytes, 1).expect_err("invalid token kind");
+
+        assert!(
+            err.contains("invalid token kind 0"),
+            "unexpected error: {err}"
+        );
+    }
 }

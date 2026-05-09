@@ -394,11 +394,13 @@ fn keyword_kind_at(input: &str, start: u32, len: u32) -> Option<TokenKind> {
 }
 
 // ---------- conversions ----------
-fn kind16_to_enum(x: u32) -> Option<TokenKind> {
+fn kind16_to_enum(x: u32) -> Result<Option<TokenKind>, String> {
     if x == 0xFFFF {
-        None
+        Ok(None)
     } else {
-        Some(unsafe { std::mem::transmute::<u32, TokenKind>(x) })
+        TokenKind::from_u32(x)
+            .map(Some)
+            .ok_or_else(|| format!("invalid token kind {x}"))
     }
 }
 
@@ -854,13 +856,20 @@ fn check_10_retag_calls_and_arrays(
     let mut kinds_pre_enum = Vec::<TokenKind>::with_capacity(kc);
     for i in 0..kc {
         let k16 = expect_kept.kinds_pre_retag[i] & 0xFFFF;
-        let Some(kind) = kind16_to_enum(k16) else {
-            // Should not happen: kept stream must have valid kind.
-            println!(
-                "[dbg][10/11] retag_contextual_tokens: ✗ pre kind 0xFFFF at k={}",
-                i
-            );
-            return;
+        let kind = match kind16_to_enum(k16) {
+            Ok(Some(kind)) => kind,
+            Ok(None) => {
+                // Should not happen: kept stream must have valid kind.
+                println!(
+                    "[dbg][10/11] retag_contextual_tokens: ✗ pre kind 0xFFFF at k={}",
+                    i
+                );
+                return;
+            }
+            Err(err) => {
+                println!("[dbg][10/11] retag_contextual_tokens: ✗ {err} at k={}", i);
+                return;
+            }
         };
         kinds_pre_enum.push(kind);
     }
@@ -924,9 +933,16 @@ fn check_11_tokens_build(device: &wgpu::Device, dbg: &DebugOutput, input: &str, 
     let kinds_post = {
         let mut kinds = Vec::<TokenKind>::with_capacity(upto);
         for k in types_k.iter().take(upto) {
-            let Some(kind) = kind16_to_enum(*k & 0xFFFF) else {
-                println!("[dbg][11/11] tokens_build: ✗ pre kind 0xFFFF");
-                return;
+            let kind = match kind16_to_enum(*k & 0xFFFF) {
+                Ok(Some(kind)) => kind,
+                Ok(None) => {
+                    println!("[dbg][11/11] tokens_build: ✗ pre kind 0xFFFF");
+                    return;
+                }
+                Err(err) => {
+                    println!("[dbg][11/11] tokens_build: ✗ {err}");
+                    return;
+                }
             };
             kinds.push(kind);
         }

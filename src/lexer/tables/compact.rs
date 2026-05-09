@@ -6,7 +6,7 @@
 //   u16:   next_emit[256 * n_states]   // (emit<<15 | next_low15)
 //   u16:   token_map[n_states]         // INVALID=0xFFFF, else token kind as u16
 
-use super::tokens::INVALID_TOKEN;
+use super::tokens::{INVALID_TOKEN, TokenKind};
 
 const MAGIC: &[u8; 8] = b"LXDFA001";
 
@@ -71,10 +71,70 @@ pub fn load_compact_tables_from_bytes(
 
     // token_map
     let mut token_map_u32 = Vec::with_capacity(n_states);
-    for _ in 0..n_states {
+    for state in 0..n_states {
         let v = take_u16(&mut data)?;
-        token_map_u32.push(if v == 0xFFFF { INVALID_TOKEN } else { v as u32 });
+        if v == 0xFFFF {
+            token_map_u32.push(INVALID_TOKEN);
+        } else {
+            let kind = v as u32;
+            if TokenKind::from_u32(kind).is_none() {
+                return Err(format!(
+                    "invalid token_map entry {kind} for compact DFA state {state}"
+                ));
+            }
+            token_map_u32.push(kind);
+        }
     }
 
     Ok((n_states, next_emit_words, token_map_u32))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn compact_table_with_token_map_entry(entry: u16) -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(MAGIC);
+        data.extend_from_slice(&1u32.to_le_bytes());
+        data.extend_from_slice(&0u32.to_le_bytes());
+        for _ in 0..256 {
+            data.extend_from_slice(&0u16.to_le_bytes());
+        }
+        data.extend_from_slice(&entry.to_le_bytes());
+        data
+    }
+
+    #[test]
+    fn compact_loader_keeps_invalid_sentinel_invalid() {
+        let data = compact_table_with_token_map_entry(0xFFFF);
+
+        let (_, _, token_map) =
+            load_compact_tables_from_bytes(&data).expect("sentinel token map entry");
+
+        assert_eq!(token_map, vec![INVALID_TOKEN]);
+        assert_eq!(TokenKind::from_u32(token_map[0]), None);
+    }
+
+    #[test]
+    fn compact_loader_accepts_valid_token_kind() {
+        let data = compact_table_with_token_map_entry(TokenKind::Ident as u16);
+
+        let (_, _, token_map) =
+            load_compact_tables_from_bytes(&data).expect("valid token map entry");
+
+        assert_eq!(TokenKind::from_u32(token_map[0]), Some(TokenKind::Ident));
+    }
+
+    #[test]
+    fn compact_loader_rejects_invalid_token_kind() {
+        let data = compact_table_with_token_map_entry(0);
+
+        let err = load_compact_tables_from_bytes(&data).expect_err("invalid token map entry");
+
+        assert!(
+            err.contains("invalid token_map entry 0"),
+            "unexpected error: {err}"
+        );
+    }
 }
