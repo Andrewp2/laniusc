@@ -32,18 +32,26 @@ static const uint MAX_GROUPS_X = 65535u;
 static const uint TK_IDENT = 1u;
 static const uint TK_LPAREN = 4u;
 static const uint TK_RPAREN = 5u;
+static const uint TK_LBRACKET = 20u;
+static const uint TK_RBRACKET = 21u;
 static const uint TK_LBRACE = 22u;
 static const uint TK_RBRACE = 23u;
+static const uint TK_INDEX_LBRACKET = 30u;
+static const uint TK_ARRAY_LBRACKET = 31u;
 static const uint TK_SEMICOLON = 37u;
 static const uint TK_COLON = 38u;
 static const uint TK_DOT = 35u;
 static const uint TK_CALL_LPAREN = 28u;
+static const uint TK_ARRAY_RBRACKET = 64u;
+static const uint TK_INDEX_RBRACKET = 65u;
 static const uint TK_FN = 67u;
 static const uint TK_LET = 68u;
 static const uint TK_ARROW = 75u;
 static const uint TK_LET_IDENT = 78u;
 static const uint TK_PARAM_IDENT = 79u;
 static const uint TK_PARAM_RPAREN = 77u;
+static const uint TK_TYPE_ARRAY_LBRACKET = 85u;
+static const uint TK_TYPE_ARRAY_RBRACKET = 86u;
 static const uint TK_IF_LBRACE = 88u;
 static const uint TK_IF_RBRACE = 89u;
 
@@ -121,6 +129,18 @@ bool is_open_block_token(uint kind)
 bool is_close_block_token(uint kind)
 {
     return kind == TK_RBRACE || kind == TK_IF_RBRACE;
+}
+
+bool is_bracket_open_token(uint kind)
+{
+    return kind == TK_LBRACKET || kind == TK_ARRAY_LBRACKET || kind == TK_INDEX_LBRACKET ||
+           kind == TK_TYPE_ARRAY_LBRACKET;
+}
+
+bool is_bracket_close_token(uint kind)
+{
+    return kind == TK_RBRACKET || kind == TK_ARRAY_RBRACKET || kind == TK_INDEX_RBRACKET ||
+           kind == TK_TYPE_ARRAY_RBRACKET;
 }
 
 uint enclosing_scope_limit(uint i)
@@ -254,13 +274,26 @@ uint declaration_scope_end(uint decl_i)
 uint let_decl_statement_end(uint decl_i)
 {
     uint n = active_token_count();
+    uint bracket_depth = 0u;
     [loop]
     for (uint j = decl_i + 1u; j < n; j += 1u)
     {
         uint kind = token_kind(j);
-        if (kind == TK_SEMICOLON)
+        if (is_bracket_open_token(kind))
+        {
+            bracket_depth += 1u;
+            continue;
+        }
+        if (is_bracket_close_token(kind))
+        {
+            if (bracket_depth > 0u)
+                bracket_depth -= 1u;
+            continue;
+        }
+        if (kind == TK_SEMICOLON && bracket_depth == 0u)
             return j;
-        if (kind == TK_FN || is_open_block_token(kind) || is_close_block_token(kind))
+        if (bracket_depth == 0u &&
+            (kind == TK_FN || is_open_block_token(kind) || is_close_block_token(kind)))
             return INVALID;
     }
     return INVALID;
