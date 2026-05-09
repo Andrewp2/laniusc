@@ -389,6 +389,8 @@ fn keyword_kind_at(input: &str, start: u32, len: u32) -> Option<TokenKind> {
         b"while" => Some(TokenKind::While),
         b"break" => Some(TokenKind::Break),
         b"continue" => Some(TokenKind::Continue),
+        b"true" => Some(TokenKind::True),
+        b"false" => Some(TokenKind::False),
         _ => None,
     }
 }

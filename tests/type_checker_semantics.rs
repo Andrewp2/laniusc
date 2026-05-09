@@ -86,6 +86,18 @@ fn main() {
 }
 
 #[test]
+fn type_checker_rejects_bool_literal_in_integer_expression() {
+    let src = r#"
+fn main() {
+    let value: i32 = true + 1;
+    return value;
+}
+"#;
+
+    assert_gpu_type_check_error(src, "AssignMismatch");
+}
+
+#[test]
 fn type_checker_rejects_array_condition() {
     let src = r#"
 fn main() {

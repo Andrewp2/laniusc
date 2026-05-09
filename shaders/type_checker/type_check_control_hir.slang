@@ -76,8 +76,11 @@ static const uint TK_ARRAY_RBRACKET = 64u;
 static const uint TK_INDEX_RBRACKET = 65u;
 static const uint TK_BREAK = 73u;
 static const uint TK_CONTINUE = 74u;
+static const uint TK_TRUE = 90u;
+static const uint TK_FALSE = 91u;
 
 static const uint TY_UNKNOWN = 0u;
+static const uint TY_BOOL = 2u;
 static const uint TY_INT = 3u;
 static const uint TY_UINT = 4u;
 static const uint TY_FLOAT = 5u;
@@ -279,6 +282,10 @@ bool binary_operand_rejected(uint operand, uint op)
         return true;
     if (operand == TK_STRING)
         return true;
+    if ((is_numeric_binary_operator(op) || op == TK_LT || op == TK_GT || op == TK_LE ||
+         op == TK_GE) &&
+        (operand == TK_TRUE || operand == TK_FALSE))
+        return true;
     if (is_integer_binary_operator(op) && operand == TK_FLOAT)
         return true;
     return false;
@@ -357,6 +364,8 @@ uint grouped_index_base_type(uint close_i)
             return TY_ARRAY_BASE + TY_UNKNOWN;
         if (kind == TK_IDENT)
             return visible_type_for(cur);
+        if (kind == TK_TRUE || kind == TK_FALSE)
+            return TY_BOOL;
         if (kind == TK_INT)
             return TY_INT;
         if (kind == TK_FLOAT)
@@ -378,6 +387,8 @@ uint simple_index_expr_type(uint open_i)
         return TY_UNKNOWN;
 
     uint kind = token_kind(operand_i);
+    if (kind == TK_TRUE || kind == TK_FALSE)
+        return TY_BOOL;
     if (kind == TK_INT)
         return TY_INT;
     if (kind == TK_FLOAT)

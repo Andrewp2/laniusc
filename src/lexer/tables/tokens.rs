@@ -119,6 +119,8 @@ pub enum TokenKind {
     TypeSemicolon,
     IfLBrace,
     IfRBrace,
+    True,
+    False,
 }
 
 impl core::convert::TryFrom<u32> for TokenKind {
@@ -220,6 +222,8 @@ impl TokenKind {
             x if x == TokenKind::TypeSemicolon as u32 => TokenKind::TypeSemicolon,
             x if x == TokenKind::IfLBrace as u32 => TokenKind::IfLBrace,
             x if x == TokenKind::IfRBrace as u32 => TokenKind::IfRBrace,
+            x if x == TokenKind::True as u32 => TokenKind::True,
+            x if x == TokenKind::False as u32 => TokenKind::False,
             _ => return None,
         };
         Some(k)
@@ -316,6 +320,8 @@ impl TokenKind {
             "TypeSemicolon" => TokenKind::TypeSemicolon,
             "IfLBrace" => TokenKind::IfLBrace,
             "IfRBrace" => TokenKind::IfRBrace,
+            "True" => TokenKind::True,
+            "False" => TokenKind::False,
             _ => return None,
         };
         Some(k)
@@ -324,7 +330,7 @@ impl TokenKind {
 
 // used on GPU side too
 pub const INVALID_TOKEN: u32 = u32::MAX;
-pub const N_KINDS: u32 = TokenKind::IfRBrace as u32 + 1;
+pub const N_KINDS: u32 = TokenKind::False as u32 + 1;
 
 #[cfg(test)]
 mod tests {

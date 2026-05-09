@@ -130,6 +130,31 @@ fn main() {
     run_wasm_main_if_node_available(&wasm, "1\n");
 }
 
+#[test]
+fn gpu_codegen_lowers_bool_literals() {
+    let src = r#"
+fn main() {
+    let flag: bool = false;
+    if (true) {
+        print(1);
+    } else {
+        print(0);
+    }
+    if (flag) {
+        print(0);
+    } else {
+        print(2);
+    }
+    return 0;
+}
+"#;
+    let wasm =
+        pollster::block_on(compile_source_to_wasm_with_gpu_codegen(src)).expect("compile WASM");
+
+    assert_lanius_wasm(&wasm);
+    run_wasm_main_if_node_available(&wasm, "1\n2\n");
+}
+
 fn assert_lanius_wasm(bytes: &[u8]) {
     assert!(
         bytes.len() >= 37,

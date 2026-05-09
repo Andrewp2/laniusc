@@ -107,7 +107,7 @@ uint classify(uint prod)
         return HIR_ARRAY_EXPR;
     if (prod == 108u)
         return HIR_NAME_EXPR;
-    if (prod >= 109u && prod <= 112u)
+    if ((prod >= 109u && prod <= 112u) || prod == 117u || prod == 118u)
         return HIR_LITERAL_EXPR;
     return HIR_NONE;
 }

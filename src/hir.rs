@@ -162,6 +162,7 @@ pub enum HirExprKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum HirLiteralKind {
     Int,
+    Bool,
     Float,
     String,
     Char,
@@ -833,6 +834,8 @@ impl<'a> HirParser<'a> {
 
         for (kind, lit_kind) in [
             (TokenKind::Int, HirLiteralKind::Int),
+            (TokenKind::True, HirLiteralKind::Bool),
+            (TokenKind::False, HirLiteralKind::Bool),
             (TokenKind::Float, HirLiteralKind::Float),
             (TokenKind::String, HirLiteralKind::String),
             (TokenKind::Char, HirLiteralKind::Char),

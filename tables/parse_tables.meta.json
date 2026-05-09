@@ -2376,8 +2376,8 @@
   "ll1_runtime": {
     "nonterminals": 48,
     "start_nonterminal": "file",
-    "predict_cells": 4320,
-    "rhs_symbols": 221
+    "predict_cells": 4416,
+    "rhs_symbols": 223
   },
   "ll1_predictions": [
     {
@@ -2456,6 +2456,18 @@
       "nonterminal": "add",
       "lookahead": "Dec",
       "lookahead_id": 57,
+      "production": 79
+    },
+    {
+      "nonterminal": "add",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 79
+    },
+    {
+      "nonterminal": "add",
+      "lookahead": "False",
+      "lookahead_id": 91,
       "production": 79
     },
     {
@@ -2717,6 +2729,18 @@
       "production": 53
     },
     {
+      "nonterminal": "andexpr",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 53
+    },
+    {
+      "nonterminal": "andexpr",
+      "lookahead": "False",
+      "lookahead_id": 91,
+      "production": 53
+    },
+    {
       "nonterminal": "andexpr_tail",
       "lookahead": "RParen",
       "lookahead_id": 5,
@@ -2903,6 +2927,18 @@
       "production": 103
     },
     {
+      "nonterminal": "arg_list_opt",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 103
+    },
+    {
+      "nonterminal": "arg_list_opt",
+      "lookahead": "False",
+      "lookahead_id": 91,
+      "production": 103
+    },
+    {
       "nonterminal": "arg_tail",
       "lookahead": "RParen",
       "lookahead_id": 5,
@@ -2999,6 +3035,18 @@
       "production": 114
     },
     {
+      "nonterminal": "array_elems_opt",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 114
+    },
+    {
+      "nonterminal": "array_elems_opt",
+      "lookahead": "False",
+      "lookahead_id": 91,
+      "production": 114
+    },
+    {
       "nonterminal": "array_elems_tail",
       "lookahead": "RBracket",
       "lookahead_id": 21,
@@ -3086,6 +3134,18 @@
       "nonterminal": "assign",
       "lookahead": "Dec",
       "lookahead_id": 57,
+      "production": 37
+    },
+    {
+      "nonterminal": "assign",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 37
+    },
+    {
+      "nonterminal": "assign",
+      "lookahead": "False",
+      "lookahead_id": 91,
       "production": 37
     },
     {
@@ -3254,6 +3314,18 @@
       "nonterminal": "bit_and",
       "lookahead": "Dec",
       "lookahead_id": 57,
+      "production": 62
+    },
+    {
+      "nonterminal": "bit_and",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 62
+    },
+    {
+      "nonterminal": "bit_and",
+      "lookahead": "False",
+      "lookahead_id": 91,
       "production": 62
     },
     {
@@ -3455,6 +3527,18 @@
       "production": 56
     },
     {
+      "nonterminal": "bit_or",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 56
+    },
+    {
+      "nonterminal": "bit_or",
+      "lookahead": "False",
+      "lookahead_id": 91,
+      "production": 56
+    },
+    {
       "nonterminal": "bit_or_tail",
       "lookahead": "RParen",
       "lookahead_id": 5,
@@ -3638,6 +3722,18 @@
       "nonterminal": "bit_xor",
       "lookahead": "Dec",
       "lookahead_id": 57,
+      "production": 59
+    },
+    {
+      "nonterminal": "bit_xor",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 59
+    },
+    {
+      "nonterminal": "bit_xor",
+      "lookahead": "False",
+      "lookahead_id": 91,
       "production": 59
     },
     {
@@ -3836,6 +3932,18 @@
       "nonterminal": "compare",
       "lookahead": "Dec",
       "lookahead_id": 57,
+      "production": 69
+    },
+    {
+      "nonterminal": "compare",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 69
+    },
+    {
+      "nonterminal": "compare",
+      "lookahead": "False",
+      "lookahead_id": 91,
       "production": 69
     },
     {
@@ -4145,6 +4253,18 @@
       "production": 35
     },
     {
+      "nonterminal": "else_opt",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 35
+    },
+    {
+      "nonterminal": "else_opt",
+      "lookahead": "False",
+      "lookahead_id": 91,
+      "production": 35
+    },
+    {
       "nonterminal": "equality",
       "lookahead": "Ident",
       "lookahead_id": 1,
@@ -4220,6 +4340,18 @@
       "nonterminal": "equality",
       "lookahead": "Dec",
       "lookahead_id": 57,
+      "production": 65
+    },
+    {
+      "nonterminal": "equality",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 65
+    },
+    {
+      "nonterminal": "equality",
+      "lookahead": "False",
+      "lookahead_id": 91,
       "production": 65
     },
     {
@@ -4433,6 +4565,18 @@
       "production": 36
     },
     {
+      "nonterminal": "expr",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 36
+    },
+    {
+      "nonterminal": "expr",
+      "lookahead": "False",
+      "lookahead_id": 91,
+      "production": 36
+    },
+    {
       "nonterminal": "file",
       "lookahead": "$",
       "lookahead_id": 0,
@@ -4568,6 +4712,18 @@
       "nonterminal": "file",
       "lookahead": "Continue",
       "lookahead_id": 74,
+      "production": 0
+    },
+    {
+      "nonterminal": "file",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 0
+    },
+    {
+      "nonterminal": "file",
+      "lookahead": "False",
+      "lookahead_id": 91,
       "production": 0
     },
     {
@@ -4715,6 +4871,18 @@
       "production": 5
     },
     {
+      "nonterminal": "item",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 5
+    },
+    {
+      "nonterminal": "item",
+      "lookahead": "False",
+      "lookahead_id": 91,
+      "production": 5
+    },
+    {
       "nonterminal": "item_list",
       "lookahead": "$",
       "lookahead_id": 0,
@@ -4853,6 +5021,18 @@
       "production": 1
     },
     {
+      "nonterminal": "item_list",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 1
+    },
+    {
+      "nonterminal": "item_list",
+      "lookahead": "False",
+      "lookahead_id": 91,
+      "production": 1
+    },
+    {
       "nonterminal": "let_init_opt",
       "lookahead": "Assign",
       "lookahead_id": 8,
@@ -4958,6 +5138,18 @@
       "nonterminal": "mul",
       "lookahead": "Dec",
       "lookahead_id": 57,
+      "production": 83
+    },
+    {
+      "nonterminal": "mul",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 83
+    },
+    {
+      "nonterminal": "mul",
+      "lookahead": "False",
+      "lookahead_id": 91,
       "production": 83
     },
     {
@@ -5237,6 +5429,18 @@
       "production": 50
     },
     {
+      "nonterminal": "orexpr",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 50
+    },
+    {
+      "nonterminal": "orexpr",
+      "lookahead": "False",
+      "lookahead_id": 91,
+      "production": 50
+    },
+    {
       "nonterminal": "orexpr_tail",
       "lookahead": "RParen",
       "lookahead_id": 5,
@@ -5402,6 +5606,18 @@
       "nonterminal": "postfix",
       "lookahead": "Char",
       "lookahead_id": 34,
+      "production": 95
+    },
+    {
+      "nonterminal": "postfix",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 95
+    },
+    {
+      "nonterminal": "postfix",
+      "lookahead": "False",
+      "lookahead_id": 91,
       "production": 95
     },
     {
@@ -5675,6 +5891,18 @@
       "production": 112
     },
     {
+      "nonterminal": "primary",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 117
+    },
+    {
+      "nonterminal": "primary",
+      "lookahead": "False",
+      "lookahead_id": 91,
+      "production": 118
+    },
+    {
       "nonterminal": "return_type_opt",
       "lookahead": "LBrace",
       "lookahead_id": 22,
@@ -5771,6 +5999,18 @@
       "production": 32
     },
     {
+      "nonterminal": "return_value_opt",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 32
+    },
+    {
+      "nonterminal": "return_value_opt",
+      "lookahead": "False",
+      "lookahead_id": 91,
+      "production": 32
+    },
+    {
       "nonterminal": "shift",
       "lookahead": "Ident",
       "lookahead_id": 1,
@@ -5846,6 +6086,18 @@
       "nonterminal": "shift",
       "lookahead": "Dec",
       "lookahead_id": 57,
+      "production": 75
+    },
+    {
+      "nonterminal": "shift",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 75
+    },
+    {
+      "nonterminal": "shift",
+      "lookahead": "False",
+      "lookahead_id": 91,
       "production": 75
     },
     {
@@ -6137,6 +6389,18 @@
       "production": 24
     },
     {
+      "nonterminal": "stmt",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 26
+    },
+    {
+      "nonterminal": "stmt",
+      "lookahead": "False",
+      "lookahead_id": 91,
+      "production": 26
+    },
+    {
       "nonterminal": "stmt_list",
       "lookahead": "Ident",
       "lookahead_id": 1,
@@ -6263,6 +6527,18 @@
       "production": 17
     },
     {
+      "nonterminal": "stmt_list",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 17
+    },
+    {
+      "nonterminal": "stmt_list",
+      "lookahead": "False",
+      "lookahead_id": 91,
+      "production": 17
+    },
+    {
       "nonterminal": "type_expr",
       "lookahead": "Ident",
       "lookahead_id": 1,
@@ -6351,6 +6627,18 @@
       "lookahead": "Dec",
       "lookahead_id": 57,
       "production": 89
+    },
+    {
+      "nonterminal": "unary",
+      "lookahead": "True",
+      "lookahead_id": 90,
+      "production": 94
+    },
+    {
+      "nonterminal": "unary",
+      "lookahead": "False",
+      "lookahead_id": 91,
+      "production": 94
     }
   ],
   "productions": [
@@ -7602,6 +7890,26 @@
       "tag": "array_end",
       "arity": 0,
       "rhs": []
+    },
+    {
+      "id": 117,
+      "line": 166,
+      "lhs": "primary",
+      "tag": "true",
+      "arity": 0,
+      "rhs": [
+        "'True'"
+      ]
+    },
+    {
+      "id": 118,
+      "line": 167,
+      "lhs": "primary",
+      "tag": "false",
+      "arity": 0,
+      "rhs": [
+        "'False'"
+      ]
     }
   ]
 }

@@ -92,6 +92,8 @@ static const uint TK_TYPE_ARRAY_LBRACKET = 85u;
 static const uint TK_TYPE_ARRAY_RBRACKET = 86u;
 static const uint TK_IF_LBRACE = 88u;
 static const uint TK_IF_RBRACE = 89u;
+static const uint TK_TRUE = 90u;
+static const uint TK_FALSE = 91u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -162,6 +164,7 @@ bool is_paren_close(uint kind)
 bool is_expr_end_kind(uint kind)
 {
     return kind == TK_IDENT || kind == TK_RPAREN || kind == TK_RBRACKET ||
+           kind == TK_TRUE || kind == TK_FALSE ||
            kind == TK_ARRAY_RBRACKET;
 }
 
