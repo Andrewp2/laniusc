@@ -1,0 +1,58 @@
+// Module-form i32 helpers for source-level stdlib imports.
+
+module core::i32;
+
+pub const MIN: i32 = -2147483648;
+pub const MAX: i32 = 2147483647;
+
+pub fn abs(value: i32) -> i32 {
+    if (value < 0) {
+        return -value;
+    } else {
+        return value;
+    }
+}
+
+pub fn min(left: i32, right: i32) -> i32 {
+    if (left < right) {
+        return left;
+    } else {
+        return right;
+    }
+}
+
+pub fn max(left: i32, right: i32) -> i32 {
+    if (left > right) {
+        return left;
+    } else {
+        return right;
+    }
+}
+
+pub fn clamp(value: i32, low: i32, high: i32) -> i32 {
+    if (value < low) {
+        return low;
+    } else {
+        if (value > high) {
+            return high;
+        } else {
+            return value;
+        }
+    }
+}
+
+pub fn signum(value: i32) -> i32 {
+    if (value < 0) {
+        return -1;
+    } else {
+        if (value > 0) {
+            return 1;
+        } else {
+            return 0;
+        }
+    }
+}
+
+pub fn between_inclusive(value: i32, low: i32, high: i32) -> bool {
+    return value >= low && value <= high;
+}

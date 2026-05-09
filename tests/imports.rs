@@ -77,14 +77,19 @@ import core::i32;
 import core::bool;
 
 fn main() {
-    let positive: bool = lstd_i32_between_inclusive(7, 0, 10);
-    return lstd_bool_to_i32(positive) + lstd_i32_abs(-6);
+    let high: i32 = core::i32::MAX;
+    let positive: bool = core::i32::between_inclusive(7, 0, high);
+    return core::bool::to_i32(positive) + core::i32::abs(-6);
 }
 "#;
 
     let expanded = expand_source_imports(src).expect("expand module-style stdlib imports");
-    assert!(expanded.contains("pub fn lstd_i32_abs"));
-    assert!(expanded.contains("pub fn lstd_bool_to_i32"));
+    assert!(expanded.contains("pub fn __lanius_core_i32_abs"));
+    assert!(expanded.contains("pub const __lanius_core_i32_MAX"));
+    assert!(expanded.contains("pub fn __lanius_core_bool_to_i32"));
+    assert!(expanded.contains("let high: i32 = __lanius_core_i32_MAX;"));
+    assert!(expanded.contains("__lanius_core_i32_between_inclusive(7, 0, high)"));
+    assert!(expanded.contains("__lanius_core_bool_to_i32(positive) + __lanius_core_i32_abs(-6)"));
     assert!(!expanded.contains("import core::i32;"));
     parse_source(&expanded).expect("expanded module-style stdlib imports should parse");
 
@@ -286,18 +291,18 @@ fn main() {
 }
 
 #[test]
-fn path_and_module_import_of_same_file_expands_once() {
+fn path_and_module_import_of_core_file_expands_once() {
     let src = r#"
-import "stdlib/i32.lani";
+import "stdlib/core/i32.lani";
 import core::i32;
 
 fn main() {
-    return lstd_i32_abs(-1);
+    return core::i32::abs(-1);
 }
 "#;
 
     let expanded = expand_source_imports(src).expect("expand duplicate stdlib imports");
-    assert_eq!(expanded.matches("pub fn lstd_i32_abs").count(), 1);
+    assert_eq!(expanded.matches("pub fn __lanius_core_i32_abs").count(), 1);
     parse_source(&expanded).expect("expanded duplicate stdlib import should parse");
 }
 

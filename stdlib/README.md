@@ -17,19 +17,22 @@ import core::i32;
 import core::bool;
 
 fn main() {
-    return lstd_i32_abs(-7);
+    return core::i32::abs(-7);
 }
 ```
 
-All exported helper names use the `lstd_` prefix so copied files are less likely
-to collide with application functions.
+Module-form helpers live under `stdlib/core/` and use module names such as
+`core::i32::abs`. Legacy flat files are still available through quoted imports
+and keep the `lstd_` prefix so copied files are less likely to collide with
+application functions.
 
 Current scope is intentionally small:
 
-- `i32.lani` has integer constants and helpers built from supported arithmetic
-  and comparison operators.
-- `bool.lani` has boolean combinators and conversions built on the current bool
-  expression surface, including `true` and `false` literals.
+- `core/i32.lani` has module-form integer constants and helpers built from
+  supported arithmetic and comparison operators.
+- `core/bool.lani` has module-form boolean combinators and conversions built on
+  the current bool expression surface, including `true` and `false` literals.
+- `i32.lani` and `bool.lani` keep the older `lstd_` compatibility helpers.
 - `array_i32_4.lani` has fixed-size `[i32; 4]` helpers. There are no generics or
   const parameters yet, so other array sizes need separate source helpers.
 
@@ -43,5 +46,4 @@ rewrites module declarations and uses such as `app::name::helper()` to
 compiler-private identifiers before lexing. Public declarations are visible
 through the module path, and private declarations can be used by other code in
 the same imported module. This is still a source-level namespace bridge, not a
-full package system. The current seed files still use the `lstd_` prefix until
-they are reorganized as modules.
+full package system.

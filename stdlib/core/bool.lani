@@ -1,0 +1,35 @@
+// Module-form bool helpers for source-level stdlib imports.
+
+module core::bool;
+
+pub fn not(value: bool) -> bool {
+    return !value;
+}
+
+pub fn and(left: bool, right: bool) -> bool {
+    return left && right;
+}
+
+pub fn or(left: bool, right: bool) -> bool {
+    return left || right;
+}
+
+pub fn xor(left: bool, right: bool) -> bool {
+    return (left && !right) || (!left && right);
+}
+
+pub fn eq(left: bool, right: bool) -> bool {
+    return left == right;
+}
+
+pub fn to_i32(value: bool) -> i32 {
+    if (value) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+pub fn from_i32(value: i32) -> bool {
+    return value != 0;
+}

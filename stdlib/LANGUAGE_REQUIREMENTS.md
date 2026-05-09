@@ -8,16 +8,18 @@ should prove before the next layer depends on it.
 ## Already Supported Today
 
 Current source-level stdlib files are plain `.lani` sources that can be included
-with explicit source imports such as `import core::i32;` or
-`import "stdlib/i32.lani";`. `tests/stdlib.rs` verifies that every
-`stdlib/*.lani` file parses, lowers to HIR, and that representative combined
-usage compiles to WASM. `tests/imports.rs` covers stdlib package lookup,
-relative, duplicate, and cyclic imports.
+with explicit source imports such as `import core::i32;` for module-form helpers
+or `import "stdlib/i32.lani";` for legacy flat helpers. `tests/stdlib.rs`
+verifies that every `stdlib/*.lani` file parses, lowers to HIR, and that
+representative combined usage compiles to WASM. `tests/imports.rs` covers
+stdlib package lookup, relative, duplicate, and cyclic imports.
 
 Supported enough for the seed library:
 
 - Global `pub fn` declarations with typed parameters and return types, used by
   `stdlib/i32.lani`, `stdlib/bool.lani`, and `stdlib/array_i32_4.lani`.
+- Module-form `core::i32` and `core::bool` seed files now expose namespaced
+  helpers such as `core::i32::abs()` and `core::bool::to_i32()`.
 - Top-level `module core::name;`, `import core::name;`, and quoted
   `import "path.lani";` items now parse and lower to HIR. Normal compilation
   still expands import directives before parsing. Imported files with a module
@@ -104,8 +106,8 @@ Strict blockers:
 
 - A real package boundary model beyond the current source-level namespace
   bridge.
-- Migration of the seed files into module declarations so `lstd_` can be
-  retired or isolated behind compatibility shims.
+- Migration of the remaining flat seed files into module declarations so
+  `lstd_` can be retired or isolated behind compatibility shims.
 - A stable source fixture path for stdlib tests, extending the current
   `tests/stdlib.rs` and `tests/imports.rs` checks.
 

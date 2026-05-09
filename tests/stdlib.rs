@@ -91,17 +91,33 @@ fn stdlib_sources_parse_with_cpu_parser_and_hir() {
             !hir.items.is_empty(),
             "{name}: stdlib source should define public functions or constants"
         );
+        let is_module_source = hir
+            .items
+            .iter()
+            .any(|item| matches!(item, HirItem::Module(_)));
         for item in hir.items {
             match item {
-                HirItem::Import(_) | HirItem::Module(_) => {
-                    panic!("{name}: stdlib source should not contain module/import items")
+                HirItem::Import(_) => {
+                    panic!("{name}: stdlib source should not contain import items")
+                }
+                HirItem::Module(_) => {
+                    assert!(
+                        is_module_source,
+                        "{name}: module item should only appear in module-form stdlib sources"
+                    );
                 }
                 HirItem::Fn(func) => assert!(func.public, "{name}: {} should be pub", func.name),
-                HirItem::Const(konst) => assert!(
-                    konst.name.starts_with("LSTD_"),
-                    "{name}: {} should use the stdlib constant prefix",
-                    konst.name
-                ),
+                HirItem::Const(konst) => {
+                    if is_module_source {
+                        assert!(konst.public, "{name}: {} should be pub", konst.name);
+                    } else {
+                        assert!(
+                            konst.name.starts_with("LSTD_"),
+                            "{name}: {} should use the stdlib constant prefix",
+                            konst.name
+                        );
+                    }
+                }
                 HirItem::Enum(enm) => {
                     assert!(enm.public, "{name}: enum {} should be public", enm.name)
                 }

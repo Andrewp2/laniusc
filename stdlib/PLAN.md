@@ -109,6 +109,8 @@ Expected contents:
 
 The current `stdlib/` directory contains plain `.lani` files:
 
+- `core/i32.lani`
+- `core/bool.lani`
 - `i32.lani`
 - `bool.lani`
 - `array_i32_4.lani`
@@ -120,18 +122,18 @@ import core::i32;
 import core::bool;
 
 fn main() {
-    return lstd_i32_abs(-7);
+    return core::i32::abs(-7);
 }
 ```
 
 These imports are source-level includes expanded before lexing/parsing. They use
-stdlib package lookup, but they do not create namespaces yet. The files use an
-`lstd_` prefix to avoid collisions. When real modules and visibility are
-implemented, the naming should become module-based and the prefix can be retired
-or kept only for compatibility shims.
+stdlib package lookup and a source-level namespace bridge. The module-form files
+use names such as `core::i32::abs()`. The older flat files still use an `lstd_`
+prefix to avoid collisions and remain available as compatibility shims.
 
 Top-level primitive constants are available for source stdlib modules. Current
-examples include `LSTD_I32_MIN` and `LSTD_I32_MAX`.
+examples include `core::i32::MIN`, `core::i32::MAX`, `LSTD_I32_MIN`, and
+`LSTD_I32_MAX`.
 
 ## Module And Package Model
 
