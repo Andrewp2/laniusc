@@ -237,6 +237,10 @@ fn assert_type_spans(name: &str, src: &str, ty: &HirType) {
             assert_type_spans(name, src, elem);
             assert_span_contains(name, "array element type", ty.span, elem.span);
         }
+        HirTypeKind::Ref { inner } => {
+            assert_type_spans(name, src, inner);
+            assert_span_contains(name, "reference inner type", ty.span, inner.span);
+        }
         HirTypeKind::Slice { elem } => {
             assert_type_spans(name, src, elem);
             assert_span_contains(name, "slice element type", ty.span, elem.span);
@@ -843,6 +847,33 @@ fn hir_preserves_slice_type_syntax() {
         panic!("expected nested slice element");
     };
     assert_eq!(elem.kind, HirTypeKind::Name("bool".into()));
+}
+
+#[test]
+fn hir_preserves_reference_type_syntax() {
+    let func = only_fn("fn borrow(value: &i32, values: &[i32], nested: & &bool) { return; }");
+    assert_eq!(func.params.len(), 3);
+
+    let HirTypeKind::Ref { inner } = &func.params[0].ty.kind else {
+        panic!("expected first parameter to be a reference");
+    };
+    assert_eq!(inner.kind, HirTypeKind::Name("i32".into()));
+
+    let HirTypeKind::Ref { inner } = &func.params[1].ty.kind else {
+        panic!("expected second parameter to be a reference");
+    };
+    let HirTypeKind::Slice { elem } = &inner.kind else {
+        panic!("expected referenced slice");
+    };
+    assert_eq!(elem.kind, HirTypeKind::Name("i32".into()));
+
+    let HirTypeKind::Ref { inner } = &func.params[2].ty.kind else {
+        panic!("expected nested reference");
+    };
+    let HirTypeKind::Ref { inner } = &inner.kind else {
+        panic!("expected inner reference");
+    };
+    assert_eq!(inner.kind, HirTypeKind::Name("bool".into()));
 }
 
 #[test]

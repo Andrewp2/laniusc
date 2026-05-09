@@ -165,7 +165,7 @@ bool is_stmt_boundary(uint kind)
 bool is_type_start(uint kind)
 {
     return kind == TK_TYPE_IDENT || kind == TK_IDENT || kind == TK_TYPE_ARRAY_LBRACKET ||
-           kind == TK_ARRAY_LBRACKET || kind == TK_LBRACKET;
+           kind == TK_ARRAY_LBRACKET || kind == TK_LBRACKET || kind == TK_AMPERSAND;
 }
 
 bool is_assignment_operator(uint kind)

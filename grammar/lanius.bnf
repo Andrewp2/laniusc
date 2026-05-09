@@ -208,3 +208,4 @@ struct_lit_field_tail [struct_lit_fields_more] -> 'Comma' struct_lit_field struc
 struct_lit_field_tail [struct_lit_fields_end] -> ;
 type_bracket_tail [type_array_tail] -> 'Semicolon' 'Int' 'RBracket';
 type_bracket_tail [type_slice_tail] -> 'RBracket';
+type_expr [type_ref] -> 'Ampersand' type_expr;

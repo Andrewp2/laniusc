@@ -453,6 +453,11 @@ impl<'a> Parser<'a> {
             return Ok(self.push("type_array", vec![elem]));
         }
 
+        if self.eat(tokens::TokenKind::Ampersand) {
+            let inner = self.parse_type_expr()?;
+            return Ok(self.push("type_ref", vec![inner]));
+        }
+
         Err(ParseError {
             pos: self.i,
             expected: "type expression",

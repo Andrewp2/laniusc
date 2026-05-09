@@ -129,6 +129,7 @@ pub enum HirTypeKind {
     Void,
     Name(String),
     Generic { name: String, args: Vec<HirType> },
+    Ref { inner: Box<HirType> },
     Slice { elem: Box<HirType> },
     Array { elem: Box<HirType>, len: String },
 }
@@ -653,6 +654,16 @@ impl<'a> HirParser<'a> {
                 kind: HirTypeKind::Array {
                     elem: Box::new(elem),
                     len,
+                },
+                span: self.span_since(start),
+            });
+        }
+
+        if self.eat(TokenKind::Ampersand).is_some() {
+            let inner = self.parse_type_expr()?;
+            return Ok(HirType {
+                kind: HirTypeKind::Ref {
+                    inner: Box::new(inner),
                 },
                 span: self.span_since(start),
             });

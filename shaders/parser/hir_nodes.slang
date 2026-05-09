@@ -74,7 +74,7 @@ uint classify(uint prod)
         return HIR_FN;
     if (prod == 11u)
         return HIR_PARAM;
-    if (prod == 14u || prod == 15u)
+    if (prod == 14u || prod == 15u || prod == 162u)
         return HIR_TYPE;
     if (prod == 16u || prod == 25u || prod == 29u)
         return HIR_BLOCK;

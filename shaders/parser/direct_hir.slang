@@ -59,6 +59,7 @@ static const uint TK_LBRACKET = 20u;
 static const uint TK_RBRACKET = 21u;
 static const uint TK_LBRACE = 22u;
 static const uint TK_RBRACE = 23u;
+static const uint TK_AMPERSAND = 25u;
 static const uint TK_CALL_LPAREN = 28u;
 static const uint TK_GROUP_LPAREN = 29u;
 static const uint TK_ARRAY_LBRACKET = 31u;
@@ -479,12 +480,20 @@ uint classify(uint i, out uint end)
     if (kind == TK_TYPE_IDENT ||
         (kind == TK_IDENT &&
          ((i > 0u && (token_kind(i - 1u) == TK_COLON || token_kind(i - 1u) == TK_ARROW)) ||
-          token_in_type_array(i))))
+          token_kind(i - 1u) == TK_AMPERSAND || token_in_type_array(i))))
         return HIR_TYPE;
+    if (kind == TK_AMPERSAND)
+    {
+        uint prev = i > 0u ? token_kind(i - 1u) : 0u;
+        if (prev == TK_COLON || prev == TK_ARROW || prev == TK_AMPERSAND ||
+            token_in_type_array(i))
+            return HIR_TYPE;
+    }
     if (is_type_open(kind))
     {
         uint prev = i > 0u ? token_kind(i - 1u) : 0u;
-        if (prev == TK_COLON || prev == TK_ARROW || kind == TK_TYPE_ARRAY_LBRACKET)
+        if (prev == TK_COLON || prev == TK_ARROW || prev == TK_AMPERSAND ||
+            kind == TK_TYPE_ARRAY_LBRACKET)
         {
             end = matching_type_array_end(i);
             return HIR_TYPE;
