@@ -978,3 +978,16 @@ impl<'a> HirParser<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_empty_source_as_empty_file() {
+        let file = parse_source("").expect("parse empty source");
+
+        assert!(file.items.is_empty());
+        assert_eq!(file.span, Span { start: 0, len: 0 });
+    }
+}
