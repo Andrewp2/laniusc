@@ -795,13 +795,16 @@ impl<'a> HirParser<'a> {
     }
 
     fn parse_primary(&mut self) -> Result<HirExpr, HirError> {
+        let start = self.peek_start();
         if self.eat(TokenKind::GroupLParen).is_some() || self.eat(TokenKind::LParen).is_some() {
             let expr = self.parse_expr()?;
             self.expect_any(&[TokenKind::GroupRParen, TokenKind::RParen], "RParen")?;
-            return Ok(expr);
+            return Ok(HirExpr {
+                kind: expr.kind,
+                span: self.span_since(start),
+            });
         }
 
-        let start = self.peek_start();
         if self.eat(TokenKind::ArrayLBracket).is_some() || self.eat(TokenKind::LBracket).is_some() {
             let mut elems = Vec::new();
             if self.eat(TokenKind::ArrayRBracket).is_none()
