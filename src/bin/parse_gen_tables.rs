@@ -787,6 +787,10 @@ fn default_projection_witnesses() -> Vec<Vec<TokenKind>> {
         vec![LBracket, Ident, RBracket, Semicolon],
         vec![LBracket, Ident, Comma, Int, RBracket, Semicolon],
         vec![Ident, Dot, Ident, Semicolon],
+        vec![Ident, LBrace, RBrace, Semicolon],
+        vec![
+            Ident, LBrace, Ident, Colon, Int, Comma, Ident, Colon, Ident, RBrace, Semicolon,
+        ],
         vec![Ident, LParen, RParen, Semicolon],
         vec![Ident, LParen, Ident, RParen, Semicolon],
         vec![Ident, LParen, Ident, Comma, Int, RParen, Semicolon],
@@ -916,6 +920,10 @@ fn default_projection_witnesses() -> Vec<Vec<TokenKind>> {
         vec![LBracket, Ident, RBracket],
         vec![LBracket, Ident, Comma, Int, RBracket],
         vec![Ident, Dot, Ident],
+        vec![Ident, LBrace, RBrace],
+        vec![
+            Ident, LBrace, Ident, Colon, Int, Comma, Ident, Colon, Ident, RBrace,
+        ],
         vec![Ident, LParen, RParen],
         vec![Ident, LParen, Ident, RParen],
         vec![Ident, LParen, Ident, Comma, Int, RParen],

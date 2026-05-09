@@ -32,6 +32,10 @@ Supported enough for the seed library:
   parse, lower to HIR, and are ignored safely by syntax/HIR validation. They do
   not yet create usable product types, constructors, field access semantics, or
   backend layouts.
+- Named struct literal expressions such as `VecHeader { ptr: 0, len: 0 }` now
+  parse and lower to HIR. This provides the source constructor form that product
+  types will need, but the literals are not yet type-checked against struct
+  declarations or lowered to backend layouts.
 - `i32` arithmetic, comparisons, unary minus, logical operators, assignment, and
   compound assignment, used by `lstd_i32_abs`, `lstd_i32_clamp`, and array
   loops.
@@ -139,8 +143,9 @@ Strict blockers:
 
 - Allocator ABI: allocation, reallocation/growth, deallocation, alignment, and
   allocation failure semantics.
-- Usable struct/product types. Declaration syntax exists, but field access,
-  construction, layout, type checking, and codegen support are still missing.
+- Usable struct/product types. Declaration and literal syntax exists, but field
+  access, declaration/literal validation, layout, type checking, and codegen
+  support are still missing.
 - Owned heap pointer/reference representation and lifetime or ownership rules
   sufficient to prevent use-after-free in ordinary library code.
 - Generics for `Vec<T>`, maps, sets, queues, and arenas.

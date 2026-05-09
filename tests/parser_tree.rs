@@ -260,6 +260,19 @@ fn generated_ll1_tables_accept_struct_declarations() {
 }
 
 #[test]
+fn generated_ll1_tables_accept_struct_literal_expressions() {
+    let tables =
+        PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+            .expect("load generated parse tables");
+    let token_kinds =
+        kinds_with_sentinels("fn make() { let p = Point { x: 1, y: 2 }; let q = Point { }; }");
+
+    tables
+        .ll1_production_stream_with_positions(&token_kinds)
+        .expect("struct literal fixture should parse with LL(1)");
+}
+
+#[test]
 fn gpu_parser_builds_tree_from_emit_stream() {
     pollster::block_on(async {
         let parser = GpuParser::new().await.expect("GPU parser init");

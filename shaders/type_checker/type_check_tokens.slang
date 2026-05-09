@@ -61,6 +61,7 @@ static const uint HIR_ARRAY_EXPR = 24u;
 static const uint HIR_CONST_ITEM = 25u;
 static const uint HIR_ENUM_ITEM = 26u;
 static const uint HIR_STRUCT_ITEM = 27u;
+static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_VOID = 1u;
@@ -1596,6 +1597,13 @@ void check_hir_node(uint i)
     if (kind == HIR_STRUCT_ITEM)
     {
         if (token_kind(pos) != TK_STRUCT)
+            record_error(pos, ERR_BAD_HIR, kind);
+        return;
+    }
+
+    if (kind == HIR_STRUCT_LITERAL_EXPR)
+    {
+        if (token_kind(pos) != TK_LBRACE)
             record_error(pos, ERR_BAD_HIR, kind);
         return;
     }

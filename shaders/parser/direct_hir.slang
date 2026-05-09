@@ -49,6 +49,7 @@ static const uint HIR_ARRAY_EXPR = 24u;
 static const uint HIR_CONST_ITEM = 25u;
 static const uint HIR_ENUM_ITEM = 26u;
 static const uint HIR_STRUCT_ITEM = 27u;
+static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 
 static const uint TK_IDENT = 1u;
 static const uint TK_LPAREN = 4u;
@@ -153,6 +154,15 @@ bool is_assignment_operator(uint kind)
            kind == TK_STAR_ASSIGN || kind == TK_SLASH_ASSIGN || kind == TK_PERCENT_ASSIGN ||
            kind == TK_CARET_ASSIGN || kind == TK_SHL_ASSIGN || kind == TK_SHR_ASSIGN ||
            kind == TK_AMP_ASSIGN || kind == TK_PIPE_ASSIGN;
+}
+
+bool is_struct_literal_open_at(uint i)
+{
+    if (token_kind(i) != TK_LBRACE || i == 0u || token_kind(i - 1u) != TK_IDENT)
+        return false;
+    uint before_name = i > 1u ? token_kind(i - 2u) : 0u;
+    return before_name != TK_STRUCT && before_name != TK_ENUM && before_name != TK_ARROW &&
+           before_name != TK_COLON;
 }
 
 bool is_paren_open(uint kind)
@@ -288,10 +298,21 @@ uint statement_end(uint start_i)
 {
     uint n = active_token_count();
     uint bracket_depth = 0u;
+    uint struct_literal_depth = 0u;
     [loop]
     for (uint j = start_i + 1u; j < n; j += 1u)
     {
         uint kind = token_kind(j);
+        if (is_struct_literal_open_at(j))
+        {
+            struct_literal_depth += 1u;
+            continue;
+        }
+        if (kind == TK_RBRACE && struct_literal_depth > 0u)
+        {
+            struct_literal_depth -= 1u;
+            continue;
+        }
         if (kind == TK_LBRACKET || kind == TK_TYPE_ARRAY_LBRACKET)
         {
             bracket_depth += 1u;
@@ -303,9 +324,9 @@ uint statement_end(uint start_i)
                 bracket_depth -= 1u;
             continue;
         }
-        if (kind == TK_SEMICOLON && bracket_depth == 0u)
+        if (kind == TK_SEMICOLON && bracket_depth == 0u && struct_literal_depth == 0u)
             return j + 1u;
-        if (is_close_brace(kind) && bracket_depth == 0u)
+        if (is_close_brace(kind) && bracket_depth == 0u && struct_literal_depth == 0u)
             return j;
     }
     return n;
@@ -468,6 +489,11 @@ uint classify(uint i, out uint end)
             end = matching_type_array_end(i);
             return HIR_TYPE;
         }
+    }
+    if (is_struct_literal_open_at(i))
+    {
+        end = matching_brace_end(i);
+        return HIR_STRUCT_LITERAL_EXPR;
     }
     if (is_open_brace(kind))
     {

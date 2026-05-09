@@ -919,7 +919,29 @@ impl<'a> Parser<'a> {
         }
 
         if self.eat(tokens::TokenKind::Ident) {
-            return Ok(self.push("ident", vec![]));
+            let ident = self.push("ident", vec![]);
+            if self.eat(tokens::TokenKind::LBrace) {
+                let mut fields = Vec::new();
+                if !self.eat(tokens::TokenKind::RBrace) {
+                    fields.push(self.parse_struct_lit_field()?);
+                    while self.eat(tokens::TokenKind::Comma)
+                        || self.eat(tokens::TokenKind::ArgComma)
+                    {
+                        if self.eat(tokens::TokenKind::RBrace) {
+                            break;
+                        }
+                        fields.push(self.parse_struct_lit_field()?);
+                    }
+                    if !self.eat(tokens::TokenKind::RBrace) {
+                        self.expect(tokens::TokenKind::RBrace, "RBrace")?;
+                    }
+                }
+                let mut children = Vec::with_capacity(1 + fields.len());
+                children.push(ident);
+                children.extend(fields);
+                return Ok(self.push("struct_lit", children));
+            }
+            return Ok(ident);
         }
         if self.eat(tokens::TokenKind::Int) {
             return Ok(self.push("int", vec![]));
@@ -945,5 +967,15 @@ impl<'a> Parser<'a> {
             expected: "primary",
             found: self.peek(),
         })
+    }
+
+    fn parse_struct_lit_field(&mut self) -> Result<u32, ParseError> {
+        if !self.eat(tokens::TokenKind::Ident) && !self.eat(tokens::TokenKind::TypeIdent) {
+            self.expect(tokens::TokenKind::Ident, "struct literal field name")?;
+        }
+        let name = self.push("ident", vec![]);
+        self.expect(tokens::TokenKind::Colon, "Colon")?;
+        let value = self.parse_expr()?;
+        Ok(self.push("struct_lit_field", vec![name, value]))
     }
 }

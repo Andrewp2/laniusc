@@ -175,6 +175,10 @@ pub enum HirExprKind {
         text: String,
     },
     Array(Vec<HirExpr>),
+    StructLiteral {
+        name: String,
+        fields: Vec<HirStructLiteralField>,
+    },
     Call {
         callee: Box<HirExpr>,
         args: Vec<HirExpr>,
@@ -201,6 +205,13 @@ pub enum HirExprKind {
         target: Box<HirExpr>,
         value: Box<HirExpr>,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HirStructLiteralField {
+    pub name: String,
+    pub value: HirExpr,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -1066,8 +1077,17 @@ impl<'a> HirParser<'a> {
         }
 
         if let Some(tok) = self.eat(TokenKind::Ident) {
+            let name = self.lexeme(tok);
+            if self.eat(TokenKind::LBrace).is_some() {
+                let fields = self.parse_struct_literal_fields()?;
+                self.expect(TokenKind::RBrace, "RBrace")?;
+                return Ok(HirExpr {
+                    kind: HirExprKind::StructLiteral { name, fields },
+                    span: self.span_since(start),
+                });
+            }
             return Ok(HirExpr {
-                kind: HirExprKind::Name(self.lexeme(tok)),
+                kind: HirExprKind::Name(name),
                 span: self.span_since(start),
             });
         }
@@ -1092,6 +1112,36 @@ impl<'a> HirParser<'a> {
         }
 
         Err(self.error("primary"))
+    }
+
+    fn parse_struct_literal_fields(&mut self) -> Result<Vec<HirStructLiteralField>, HirError> {
+        if self.peek() == Some(TokenKind::RBrace) {
+            return Ok(Vec::new());
+        }
+
+        let mut fields = vec![self.parse_struct_literal_field()?];
+        while self.eat(TokenKind::Comma).is_some() || self.eat(TokenKind::ArgComma).is_some() {
+            if self.peek() == Some(TokenKind::RBrace) {
+                break;
+            }
+            fields.push(self.parse_struct_literal_field()?);
+        }
+        Ok(fields)
+    }
+
+    fn parse_struct_literal_field(&mut self) -> Result<HirStructLiteralField, HirError> {
+        let start = self.peek_start();
+        let name = self.expect_name(
+            &[TokenKind::Ident, TokenKind::TypeIdent],
+            "struct literal field name",
+        )?;
+        self.expect(TokenKind::Colon, "Colon")?;
+        let value = self.parse_expr()?;
+        Ok(HirStructLiteralField {
+            name,
+            value,
+            span: self.span_since(start),
+        })
     }
 
     fn eat_assign_op(&mut self) -> Option<HirAssignOp> {

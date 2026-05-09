@@ -315,6 +315,24 @@ fn assert_expr_spans(name: &str, src: &str, expr: &HirExpr) {
                 assert_span_contains(name, &format!("array element {i}"), expr.span, elem.span);
             }
         }
+        HirExprKind::StructLiteral { fields, .. } => {
+            for (i, field) in fields.iter().enumerate() {
+                assert_span_in_source(name, &format!("struct literal field {i}"), field.span, src);
+                assert_span_contains(
+                    name,
+                    &format!("struct literal field {i}"),
+                    expr.span,
+                    field.span,
+                );
+                assert_expr_spans(name, src, &field.value);
+                assert_span_contains(
+                    name,
+                    &format!("struct literal field {i} value"),
+                    field.span,
+                    field.value.span,
+                );
+            }
+        }
         HirExprKind::Call { callee, args } => {
             assert_expr_spans(name, src, callee);
             assert_span_contains(name, "call callee", expr.span, callee.span);
@@ -754,6 +772,54 @@ fn hir_preserves_struct_declarations() {
     assert!(!empty.public);
     assert_eq!(empty.name, "Empty");
     assert!(empty.fields.is_empty());
+}
+
+#[test]
+fn hir_preserves_struct_literal_expressions() {
+    let file = parse_source(
+        "struct Point { x: i32, y: i32 } fn make() { let p = Point { x: 1, y: 2 }; let empty = Point { }; }",
+    )
+    .expect("parse struct literal expressions");
+    assert_eq!(file.items.len(), 2);
+
+    let HirItem::Fn(func) = &file.items[1] else {
+        panic!("expected second item to be function");
+    };
+    assert_eq!(func.body.stmts.len(), 2);
+
+    let first = let_value(&func.body.stmts[0], "p");
+    let HirExprKind::StructLiteral { name, fields } = &first.kind else {
+        panic!("expected named struct literal");
+    };
+    assert_eq!(name, "Point");
+    assert_eq!(
+        fields
+            .iter()
+            .map(|field| field.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["x", "y"]
+    );
+    assert_eq!(
+        fields[0].value.kind,
+        HirExprKind::Literal {
+            kind: HirLiteralKind::Int,
+            text: "1".into()
+        }
+    );
+    assert_eq!(
+        fields[1].value.kind,
+        HirExprKind::Literal {
+            kind: HirLiteralKind::Int,
+            text: "2".into()
+        }
+    );
+
+    let second = let_value(&func.body.stmts[1], "empty");
+    let HirExprKind::StructLiteral { name, fields } = &second.kind else {
+        panic!("expected empty named struct literal");
+    };
+    assert_eq!(name, "Point");
+    assert!(fields.is_empty());
 }
 
 #[test]
