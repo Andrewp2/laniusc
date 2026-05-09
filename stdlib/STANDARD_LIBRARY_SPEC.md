@@ -1,9 +1,10 @@
 # Lanius Standard Library Specification
 
-This document is the full target inventory for the Lanius standard library. It
-describes what we want the library to contain once the language, compiler, and
-runtime are capable of supporting it. It is intentionally broader than the
-current source-level seed files in this directory.
+This document is the canonical target inventory for the Lanius standard
+library. It describes the whole library we want to grow into once the language,
+compiler, and runtime are capable of supporting it. It is intentionally broader
+than the current source-level seed files in this directory, and it should be
+updated whenever a new standard-library idea becomes part of the target design.
 
 The short version:
 
@@ -15,6 +16,11 @@ The short version:
 - `gpu` provides explicit data-parallel primitives and validation support.
 - Compiler-oriented utilities are first-class because Lanius should be a good
   language for building compilers, build tools, and GPU tooling.
+- Some useful libraries should stay outside the core distribution until their
+  contracts are clear. Cryptography, TLS, full Unicode normalization, async
+  runtimes, and higher-level protocols should start as carefully reviewed
+  optional packages unless the language grows a strong reason to bless one
+  implementation.
 
 The current implementation is only a seed. Today, `stdlib/*.lani` files are
 included explicitly before user code and still use `lstd_` prefixes to avoid
@@ -110,6 +116,22 @@ Expected contents:
 - CPU fallback or CPU/GPU parity testing hooks.
 - Device availability and shader/dispatch error reporting.
 
+### Optional Distribution Packages
+
+Some packages can ship with the standard distribution without being part of the
+default language surface. These should have clear target requirements and
+versioning, and they should be easy to omit from embedded or no-host builds.
+
+Candidates:
+
+- `diagnostic`, `source_map`, and related compiler-tooling packages.
+- `json`, `csv`, `toml`, and compact binary encoding packages.
+- `regex`, once the language can support a robust implementation.
+- `url`, `uuid`, checksums, and compression.
+- Full Unicode tables, normalization, and locale-aware text processing.
+- Higher-level network protocols such as HTTP.
+- Cryptography and TLS only after careful API and implementation review.
+
 ## Module Map
 
 The eventual module tree should look roughly like this. Names can change, but
@@ -125,6 +147,8 @@ the responsibilities should remain clear.
 - `core::f32`, `core::f64`
 - `core::char`
 - `core::byte`
+- `core::ascii`
+- `core::utf8`
 - `core::option`
 - `core::result`
 - `core::ordering`
@@ -134,6 +158,11 @@ the responsibilities should remain clear.
 - `core::tuple`
 - `core::mem`
 - `core::ptr`, only when the language has a defined unsafe boundary.
+- `core::marker`, for zero-sized marker types and marker traits.
+- `core::ops`, for operator traits/interfaces if the language exposes them.
+- `core::iter`, once iterator traits/interfaces exist.
+- `core::num`, for shared numeric helpers.
+- `core::math`, for no-heap math constants and scalar math functions.
 - `core::convert`
 - `core::cmp`
 - `core::hash`
@@ -148,6 +177,8 @@ the responsibilities should remain clear.
 - `alloc::vec_deque`
 - `alloc::string`
 - `alloc::bytes`
+- `alloc::array_vec`
+- `alloc::small_vec`
 - `alloc::box`
 - `alloc::rc`, if reference counting is supported.
 - `alloc::arc`, if atomic reference counting is supported.
@@ -163,6 +194,7 @@ the responsibilities should remain clear.
 - `alloc::slot_map`
 - `alloc::interner`
 - `alloc::graph`
+- `alloc::rope`, if text-heavy tooling needs it.
 
 ### Std Modules
 
@@ -175,10 +207,16 @@ the responsibilities should remain clear.
 - `std::time`
 - `std::thread`
 - `std::sync`
+- `std::atomic`
 - `std::net`
+- `std::dns`
+- `std::random`
 - `std::os`
+- `std::ffi`
 - `std::terminal`
 - `std::logging`
+- `std::backtrace`
+- `std::async`, after the async model is defined.
 
 ### Test Modules
 
@@ -190,6 +228,8 @@ the responsibilities should remain clear.
 - `test::fuzz`
 - `test::bench`
 - `test::temp`
+- `test::mock`
+- `test::coverage`, if coverage instrumentation becomes available.
 
 ### GPU Modules
 
@@ -202,6 +242,8 @@ the responsibilities should remain clear.
 - `gpu::sort`
 - `gpu::histogram`
 - `gpu::parity`
+- `gpu::atomics`
+- `gpu::profiler`
 
 ### Tooling Modules
 
@@ -218,6 +260,11 @@ compiler-like tools well.
 - `bit_set`
 - `graph`
 - `work_queue`
+- `lexer`
+- `parser`
+- `cfg`
+- `dataflow`
+- `intern`
 
 ## Prelude
 
@@ -276,6 +323,29 @@ Rules:
 - Unchecked operations must be named `unchecked_*` and require an explicit unsafe
   boundary once the language supports one.
 - Allocation failure must never become silent memory corruption.
+
+## Panic, Debug, And Backtrace
+
+Panic is for bugs and violated preconditions, not ordinary recoverable errors.
+
+Expected APIs:
+
+- `panic`
+- `assert`
+- `assert_eq`
+- `debug_assert`
+- Source location capture when available.
+- Panic message formatting once formatting exists.
+- Target-specific panic hooks.
+- Backtrace capture in host builds when supported.
+- Trap or abort behavior for minimal targets.
+
+Expected policy:
+
+- `core` can expose panic/assert declarations and target-independent contracts.
+- `std` can install richer hooks that write to stderr or capture backtraces.
+- Panics across FFI boundaries require an explicit policy and should default to
+  aborting or trapping until unwinding semantics are specified.
 
 ## Primitive APIs
 
@@ -501,6 +571,51 @@ Expected APIs:
 - Base64 encoding and decoding.
 - Byte-slice comparison.
 - Byte searching.
+
+## Numeric And Math APIs
+
+Numeric helpers should be split between primitive-specific modules and shared
+math modules. Scalar math can live in `core` when it does not require allocation
+or host services; larger numeric types may live in `alloc` or optional packages.
+
+Core numeric types and concepts:
+
+- Fixed-width signed integers.
+- Fixed-width unsigned integers.
+- Pointer-sized integers.
+- Floating-point numbers.
+- Non-zero integer wrappers, if useful for layout optimizations.
+- Numeric limits and classification.
+- Checked, wrapping, saturating, and overflowing arithmetic families.
+- Explicit casts and fallible conversions.
+
+Core math constants:
+
+- `PI`
+- `TAU`
+- `E`
+- `FRAC_PI_2`
+- `FRAC_PI_4`
+- `SQRT_2`
+- `LN_2`
+- `LN_10`
+
+Expected math APIs:
+
+- Integer absolute value, gcd, lcm, exponentiation, and modular arithmetic.
+- Floating-point roots, powers, logarithms, trigonometry, and classification.
+- Min/max/clamp helpers.
+- Rounding and decomposition helpers.
+- Simple slice statistics such as sum, mean, min, max, and variance.
+
+Optional or later numeric packages:
+
+- `BigInt`
+- `BigUint`
+- `BigDecimal` or decimal fixed-point.
+- Rational numbers.
+- Complex numbers.
+- Matrix/vector math for graphics or scientific work.
 
 ## Sum Types
 
@@ -973,6 +1088,30 @@ Expected use cases:
 - Stable node IDs.
 - Deterministic compiler output.
 
+### Caches, Tables, And Indexing Helpers
+
+These are not always part of a minimal stdlib, but they are valuable for
+compiler tooling and long-running services.
+
+Possible types:
+
+- `LruCache<K, V>`
+- `MemoMap<K, V>`
+- `IdMap<I, V>`
+- `IdSet<I>`
+- `SparseSet<T>`
+- `DenseVecMap<I, V>`
+- `UnionFind<T>`
+- `Table<R, C, V>`
+
+Expected APIs:
+
+- Insert, lookup, remove, and clear.
+- Capacity limits for caches.
+- Deterministic eviction where reproducibility matters.
+- Stable ID allocation and lookup.
+- Efficient union/find operations for equivalence classes.
+
 ### Linked Lists
 
 Linked lists should not be a priority. If included, they should be documented as
@@ -1103,6 +1242,30 @@ Expected contracts:
   iterators.
 - Drop/destructor behavior must be deterministic.
 
+## Unsafe And Low-Level Utilities
+
+Low-level utilities should exist only after the language has a clear unsafe
+boundary. They are necessary for allocators, FFI, and high-performance
+collections, but they should not leak into ordinary APIs.
+
+Possible APIs:
+
+- Raw pointer creation and arithmetic.
+- Volatile reads and writes.
+- Uninitialized memory wrappers.
+- Alignment and layout calculations.
+- Byte reinterpretation with explicit layout contracts.
+- Unsafe unchecked indexing.
+- Atomic memory-ordering primitives.
+- Intrinsics for target-specific operations.
+
+Policy:
+
+- Unsafe APIs must be named and documented as unsafe.
+- Safe wrappers must state their invariants.
+- Undefined behavior must be minimized and specified precisely where it cannot
+  be avoided.
+
 ## I/O
 
 Types:
@@ -1186,6 +1349,30 @@ Expected APIs:
 - Pass stdin/stdout/stderr handles.
 
 Process spawning belongs in `std`, not `core` or `alloc`.
+
+## Command Line And Terminal
+
+Command-line support should make small tools straightforward without turning
+the standard library into a full CLI framework.
+
+Expected command-line APIs:
+
+- Access raw arguments.
+- Access executable path when the host provides it.
+- Parse flags and positional arguments through a small helper layer.
+- Render usage text.
+- Report parse errors with spans into the argument list.
+- Read stdin and write stdout/stderr.
+- Return explicit exit codes.
+
+Terminal support:
+
+- Detect whether a stream is a terminal.
+- Query terminal width and height when available.
+- Enable or disable color based on capability and environment.
+- Basic ANSI styling helpers.
+- Prompt and line-reading helpers later.
+- Raw terminal mode later, behind platform support.
 
 ## Time
 
@@ -1274,6 +1461,27 @@ Higher-level protocols:
 - WebSocket eventually.
 - TLS likely as a separate carefully reviewed package.
 
+## Platform, OS, And FFI
+
+Platform APIs should be explicit and isolated so portable code can avoid them.
+
+Expected platform APIs:
+
+- Target family and architecture detection.
+- OS error codes and descriptions.
+- Handles, descriptors, and owned handle wrappers.
+- Dynamic library loading later, if the safety model supports it.
+- Foreign-function declarations and calling conventions.
+- C-compatible strings and byte buffers.
+- Endianness helpers.
+- Page size and memory-map APIs later.
+- Platform extension namespaces such as `std::os::linux` or
+  `std::os::windows`.
+
+FFI should require a clear unsafe boundary once the language has one. The
+standard library should provide the boring, correct building blocks, not hide
+foreign lifetime or aliasing hazards.
+
 ## Encoding, Serialization, And Data Formats
 
 Core encoding formats:
@@ -1300,6 +1508,16 @@ Expected APIs:
 - Pretty printing.
 - Error spans or byte offsets.
 - Typed derive support later if the language gets derivation/macros.
+
+Related utility packages:
+
+- URL parsing and formatting.
+- Percent encoding.
+- UUID parsing, formatting, and generation.
+- Glob matching for file tools.
+- Regular expressions after strings, slices, and allocation are solid.
+- Checksums such as CRC32 and non-cryptographic hashes.
+- Compression such as gzip, zlib, and zstd as optional packages.
 
 ## Randomness
 
@@ -1697,4 +1915,3 @@ A new stdlib feature should have:
 - Failure-mode tests.
 - No accidental reliance on unsupported language features.
 - A compatibility story if it replaces an existing `lstd_` helper.
-
