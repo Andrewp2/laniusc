@@ -802,6 +802,9 @@ fn default_projection_witnesses() -> Vec<Vec<TokenKind>> {
         vec![
             Ident, LParen, Int, RParen, LBracket, Int, RBracket, Semicolon,
         ],
+        vec![Import, Ident, Colon, Colon, TypeIdent, Semicolon],
+        vec![Import, String, Semicolon],
+        vec![Module, Ident, Colon, Colon, TypeIdent, Semicolon],
         vec![Let, Ident, Semicolon],
         vec![Let, Ident, Colon, Ident, Semicolon],
         vec![Let, Ident, Assign, Int, Semicolon],

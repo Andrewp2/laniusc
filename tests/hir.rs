@@ -11,6 +11,7 @@ use laniusc::{
         HirExprKind,
         HirFile,
         HirFn,
+        HirImportPath,
         HirItem,
         HirLiteralKind,
         HirPattern,
@@ -31,6 +32,8 @@ fn only_fn(src: &str) -> HirFn {
     assert_eq!(file.items.len(), 1);
     match file.items.into_iter().next().unwrap() {
         HirItem::Fn(func) => func,
+        HirItem::Import(_) => panic!("expected function item"),
+        HirItem::Module(_) => panic!("expected function item"),
         HirItem::Const(_) => panic!("expected function item"),
         HirItem::Enum(_) => panic!("expected function item"),
         HirItem::Struct(_) => panic!("expected function item"),
@@ -138,6 +141,20 @@ fn assert_hir_file_spans(name: &str, src: &str, tokens: &[CpuToken], file: &HirF
 
     for (i, item) in file.items.iter().enumerate() {
         let span = match item {
+            HirItem::Import(import) => {
+                assert_span_in_source(name, "import", import.span, src);
+                if let HirImportPath::Module(path) = &import.path {
+                    assert_span_in_source(name, "import path", path.span, src);
+                    assert_span_contains(name, "import path", import.span, path.span);
+                }
+                import.span
+            }
+            HirItem::Module(module) => {
+                assert_span_in_source(name, "module", module.span, src);
+                assert_span_in_source(name, "module path", module.path.span, src);
+                assert_span_contains(name, "module path", module.span, module.path.span);
+                module.span
+            }
             HirItem::Fn(func) => {
                 assert_fn_spans(name, src, func);
                 func.span
@@ -619,6 +636,47 @@ fn cpu_parser_and_hir_preserve_mixed_top_level_item_order_and_spans() {
     };
     assert_eq!(helper.name, "helper");
     assert_span_text(src, helper.span, "fn helper() { return 0; }");
+}
+
+#[test]
+fn cpu_parser_and_hir_preserve_module_and_import_items() {
+    let src = "module core::numbers;\nimport core::i32;\nimport \"stdlib/bool.lani\";\nfn main() { return; }";
+    let (_, ast) = parse_cpu_ast("module/import items", src);
+    let file_children = ast_children(&ast, ast.root, "file");
+    assert_eq!(file_children.len(), 4);
+    ast_children(&ast, file_children[0], "module");
+    ast_children(&ast, file_children[1], "import_path");
+    ast_children(&ast, file_children[2], "import_string");
+    ast_children(&ast, file_children[3], "fn");
+
+    let file = parse_source(src).expect("parse module/import HIR");
+    assert_eq!(file.items.len(), 4);
+
+    let HirItem::Module(module) = &file.items[0] else {
+        panic!("expected first item to be module");
+    };
+    assert_eq!(module.path.segments, vec!["core", "numbers"]);
+    assert_span_text(src, module.span, "module core::numbers;");
+    assert_span_text(src, module.path.span, "core::numbers");
+
+    let HirItem::Import(import) = &file.items[1] else {
+        panic!("expected second item to be module import");
+    };
+    let HirImportPath::Module(path) = &import.path else {
+        panic!("expected module import path");
+    };
+    assert_eq!(path.segments, vec!["core", "i32"]);
+    assert_span_text(src, import.span, "import core::i32;");
+    assert_span_text(src, path.span, "core::i32");
+
+    let HirItem::Import(import) = &file.items[2] else {
+        panic!("expected third item to be string import");
+    };
+    assert_eq!(
+        import.path,
+        HirImportPath::String("stdlib/bool.lani".into())
+    );
+    assert_span_text(src, import.span, "import \"stdlib/bool.lani\";");
 }
 
 #[test]

@@ -48,11 +48,37 @@ pub struct HirFile {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum HirItem {
+    Import(HirImport),
+    Module(HirModule),
     Fn(HirFn),
     Const(HirConst),
     Enum(HirEnum),
     Struct(HirStruct),
     Stmt(HirStmt),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HirImport {
+    pub path: HirImportPath,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub enum HirImportPath {
+    Module(HirPath),
+    String(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HirModule {
+    pub path: HirPath,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HirPath {
+    pub segments: Vec<String>,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -396,6 +422,10 @@ impl<'a> HirParser<'a> {
             Ok(HirItem::Struct(self.parse_struct(public)?))
         } else if public || self.peek() == Some(TokenKind::Fn) {
             Ok(HirItem::Fn(self.parse_fn(public)?))
+        } else if self.peek() == Some(TokenKind::Import) {
+            Ok(HirItem::Import(self.parse_import()?))
+        } else if self.peek() == Some(TokenKind::Module) {
+            Ok(HirItem::Module(self.parse_module()?))
         } else if self.peek() == Some(TokenKind::Const) {
             Ok(HirItem::Const(self.parse_const()?))
         } else if self.peek() == Some(TokenKind::Enum) {
@@ -456,6 +486,49 @@ impl<'a> HirParser<'a> {
             body,
             span: self.span_since(start),
         })
+    }
+
+    fn parse_import(&mut self) -> Result<HirImport, HirError> {
+        let start = self.peek_start();
+        self.expect(TokenKind::Import, "Import")?;
+        let path = if let Some(tok) = self.eat(TokenKind::String) {
+            HirImportPath::String(self.string_contents(tok))
+        } else {
+            HirImportPath::Module(self.parse_path()?)
+        };
+        self.expect_semicolon()?;
+        Ok(HirImport {
+            path,
+            span: self.span_since(start),
+        })
+    }
+
+    fn parse_module(&mut self) -> Result<HirModule, HirError> {
+        let start = self.peek_start();
+        self.expect(TokenKind::Module, "Module")?;
+        let path = self.parse_path()?;
+        self.expect_semicolon()?;
+        Ok(HirModule {
+            path,
+            span: self.span_since(start),
+        })
+    }
+
+    fn parse_path(&mut self) -> Result<HirPath, HirError> {
+        let start = self.peek_start();
+        let mut segments = vec![self.parse_path_segment()?];
+        while self.eat(TokenKind::Colon).is_some() {
+            self.expect(TokenKind::Colon, "Colon")?;
+            segments.push(self.parse_path_segment()?);
+        }
+        Ok(HirPath {
+            segments,
+            span: self.span_since(start),
+        })
+    }
+
+    fn parse_path_segment(&mut self) -> Result<String, HirError> {
+        self.expect_name(&[TokenKind::Ident, TokenKind::TypeIdent], "path segment")
     }
 
     fn parse_const(&mut self) -> Result<HirConst, HirError> {
@@ -1455,6 +1528,14 @@ impl<'a> HirParser<'a> {
     fn lexeme(&self, tok: HirToken) -> String {
         let end = tok.start.saturating_add(tok.len);
         self.src.get(tok.start..end).unwrap_or("").to_string()
+    }
+
+    fn string_contents(&self, tok: HirToken) -> String {
+        let text = self.lexeme(tok);
+        text.strip_prefix('"')
+            .and_then(|inner| inner.strip_suffix('"'))
+            .unwrap_or(&text)
+            .to_string()
     }
 
     fn peek_start(&self) -> usize {

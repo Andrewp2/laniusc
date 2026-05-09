@@ -67,60 +67,60 @@ uint classify(uint prod)
 {
     if (prod == 0u)
         return HIR_FILE;
-    if ((prod >= 3u && prod <= 5u) || prod == 135u || prod == 137u || prod == 160u ||
-        (prod >= 167u && prod <= 169u))
+    if ((prod >= 3u && prod <= 7u) || prod == 146u || prod == 148u || prod == 171u ||
+        (prod >= 178u && prod <= 180u))
         return HIR_ITEM;
-    if (prod == 6u)
+    if (prod == 8u)
         return HIR_FN;
-    if (prod == 11u)
-        return HIR_PARAM;
-    if (prod == 14u || prod == 15u || prod == 179u)
-        return HIR_TYPE;
-    if (prod == 16u || prod == 25u || prod == 29u)
-        return HIR_BLOCK;
-    if (prod == 17u || prod == 18u || prod == 26u)
-        return HIR_STMT;
-    if (prod == 19u)
-        return HIR_LET_STMT;
-    if (prod == 20u)
-        return HIR_RETURN_STMT;
-    if (prod == 21u)
-        return HIR_IF_STMT;
     if (prod == 22u)
+        return HIR_PARAM;
+    if (prod == 25u || prod == 26u || prod == 190u)
+        return HIR_TYPE;
+    if (prod == 27u || prod == 36u || prod == 40u)
+        return HIR_BLOCK;
+    if (prod == 28u || prod == 29u || prod == 37u)
+        return HIR_STMT;
+    if (prod == 30u)
+        return HIR_LET_STMT;
+    if (prod == 31u)
+        return HIR_RETURN_STMT;
+    if (prod == 32u)
+        return HIR_IF_STMT;
+    if (prod == 33u)
         return HIR_WHILE_STMT;
-    if (prod == 23u)
+    if (prod == 34u)
         return HIR_BREAK_STMT;
-    if (prod == 24u)
+    if (prod == 35u)
         return HIR_CONTINUE_STMT;
-    if (prod == 36u || prod == 119u)
+    if (prod == 47u || prod == 130u)
         return HIR_EXPR;
-    if ((prod >= 37u && prod <= 48u))
+    if ((prod >= 49u && prod <= 60u))
         return HIR_ASSIGN_EXPR;
-    if ((prod >= 50u && prod <= 87u))
+    if ((prod >= 62u && prod <= 98u))
         return HIR_BINARY_EXPR;
-    if ((prod >= 88u && prod <= 94u) || prod == 99u || prod == 100u)
+    if ((prod >= 99u && prod <= 105u) || prod == 110u || prod == 111u)
         return HIR_UNARY_EXPR;
-    if (prod == 95u || prod == 101u)
+    if (prod == 106u || prod == 112u)
         return HIR_POSTFIX_EXPR;
-    if (prod == 96u)
+    if (prod == 107u)
         return HIR_CALL_EXPR;
-    if (prod == 97u)
-        return HIR_INDEX_EXPR;
-    if (prod == 98u)
-        return HIR_MEMBER_EXPR;
-    if (prod == 106u)
-        return HIR_ARRAY_EXPR;
     if (prod == 108u)
+        return HIR_INDEX_EXPR;
+    if (prod == 109u)
+        return HIR_MEMBER_EXPR;
+    if (prod == 117u)
+        return HIR_ARRAY_EXPR;
+    if (prod == 119u)
         return HIR_NAME_EXPR;
-    if ((prod >= 109u && prod <= 112u) || prod == 117u || prod == 118u)
+    if ((prod >= 120u && prod <= 123u) || prod == 128u || prod == 129u)
         return HIR_LITERAL_EXPR;
-    if (prod == 136u)
+    if (prod == 147u)
         return HIR_CONST_ITEM;
-    if (prod == 138u)
+    if (prod == 149u)
         return HIR_ENUM_ITEM;
-    if (prod == 161u)
+    if (prod == 172u)
         return HIR_STRUCT_ITEM;
-    if (prod == 171u)
+    if (prod == 182u)
         return HIR_STRUCT_LITERAL_EXPR;
     return HIR_NONE;
 }

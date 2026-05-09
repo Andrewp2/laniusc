@@ -122,6 +122,8 @@ static const uint TK_CONST = 92u;
 static const uint TK_ENUM = 93u;
 static const uint TK_STRUCT = 94u;
 static const uint TK_MATCH = 95u;
+static const uint TK_IMPORT = 96u;
+static const uint TK_MODULE = 97u;
 
 uint active_token_count()
 {
@@ -155,7 +157,7 @@ bool is_stmt_keyword(uint kind)
 {
     return kind == TK_LET || kind == TK_RETURN || kind == TK_IF || kind == TK_WHILE ||
            kind == TK_BREAK || kind == TK_CONTINUE || kind == TK_FN || kind == TK_CONST ||
-           kind == TK_ENUM || kind == TK_STRUCT;
+           kind == TK_ENUM || kind == TK_STRUCT || kind == TK_IMPORT || kind == TK_MODULE;
 }
 
 bool is_stmt_boundary(uint kind)

@@ -223,6 +223,20 @@ fn generated_ll1_tables_accept_top_level_constants() {
 }
 
 #[test]
+fn generated_ll1_tables_accept_module_and_import_items() {
+    let tables =
+        PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+            .expect("load generated parse tables");
+    let token_kinds = kinds_with_sentinels(
+        "module core::numbers; import core::i32; import \"stdlib/bool.lani\"; fn main() { return; }",
+    );
+
+    tables
+        .ll1_production_stream_with_positions(&token_kinds)
+        .expect("module/import fixture should parse with LL(1)");
+}
+
+#[test]
 fn generated_ll1_tables_accept_enum_declarations() {
     let tables =
         PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))

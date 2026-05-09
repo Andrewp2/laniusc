@@ -18,6 +18,10 @@ Supported enough for the seed library:
 
 - Global `pub fn` declarations with typed parameters and return types, used by
   `stdlib/i32.lani`, `stdlib/bool.lani`, and `stdlib/array_i32_4.lani`.
+- Top-level `module core::name;`, `import core::name;`, and quoted
+  `import "path.lani";` items now parse and lower to HIR. Normal compilation
+  still expands import directives before parsing, and these HIR nodes do not
+  yet create namespaces, visibility scopes, or package boundaries.
 - Top-level primitive `const` items, used by `stdlib/i32.lani` for
   `LSTD_I32_MIN` and `LSTD_I32_MAX`.
 - Top-level `enum` declarations with unit variants and tuple payload syntax now
@@ -70,9 +74,9 @@ Supported enough for the seed library:
 
 Important limitations visible in current files:
 
-- No real modules, namespaces, or visibility rules. Source-level module imports
-  and path imports exist, and `stdlib/README.md` documents the temporary
-  `lstd_` prefix.
+- No real modules, namespaces, or visibility rules. Module/import syntax and
+  source-level import expansion exist, but names are still global and
+  `stdlib/README.md` documents the temporary `lstd_` prefix.
 - No generics or const parameters. `stdlib/array_i32_4.lani` is tied to
   `[i32; 4]`; every other element type or length would need another source file.
 - No enum/sum type semantics, struct/product semantics, methods,

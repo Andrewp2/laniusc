@@ -93,6 +93,9 @@ fn stdlib_sources_parse_with_cpu_parser_and_hir() {
         );
         for item in hir.items {
             match item {
+                HirItem::Import(_) | HirItem::Module(_) => {
+                    panic!("{name}: stdlib source should not contain module/import items")
+                }
                 HirItem::Fn(func) => assert!(func.public, "{name}: {} should be pub", func.name),
                 HirItem::Const(konst) => assert!(
                     konst.name.starts_with("LSTD_"),

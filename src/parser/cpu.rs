@@ -186,6 +186,10 @@ impl<'a> Parser<'a> {
             Ok(self.push("pub", vec![item]))
         } else if self.peek() == Some(tokens::TokenKind::Fn) {
             self.parse_fn_item()
+        } else if self.peek() == Some(tokens::TokenKind::Import) {
+            self.parse_import_item()
+        } else if self.peek() == Some(tokens::TokenKind::Module) {
+            self.parse_module_item()
         } else if self.peek() == Some(tokens::TokenKind::Const) {
             self.parse_const_item()
         } else if self.peek() == Some(tokens::TokenKind::Enum) {
@@ -226,6 +230,46 @@ impl<'a> Parser<'a> {
 
         let body = self.parse_block()?;
         Ok(self.push("fn", vec![name_id, type_params, params, ret, body]))
+    }
+
+    fn parse_import_item(&mut self) -> Result<u32, ParseError> {
+        self.expect(tokens::TokenKind::Import, "Import")?;
+        if self.eat(tokens::TokenKind::String) {
+            let string_id = self.push("string", vec![]);
+            self.expect_semicolon()?;
+            return Ok(self.push("import_string", vec![string_id]));
+        }
+
+        let path = self.parse_path()?;
+        self.expect_semicolon()?;
+        Ok(self.push("import_path", vec![path]))
+    }
+
+    fn parse_module_item(&mut self) -> Result<u32, ParseError> {
+        self.expect(tokens::TokenKind::Module, "Module")?;
+        let path = self.parse_path()?;
+        self.expect_semicolon()?;
+        Ok(self.push("module", vec![path]))
+    }
+
+    fn parse_path(&mut self) -> Result<u32, ParseError> {
+        let mut segments = vec![self.parse_path_segment()?];
+        while self.eat(tokens::TokenKind::Colon) {
+            self.expect(tokens::TokenKind::Colon, "Colon")?;
+            segments.push(self.parse_path_segment()?);
+        }
+        Ok(self.push("path", segments))
+    }
+
+    fn parse_path_segment(&mut self) -> Result<u32, ParseError> {
+        if self.eat(tokens::TokenKind::Ident) || self.eat(tokens::TokenKind::TypeIdent) {
+            return Ok(self.push("ident", vec![]));
+        }
+        Err(ParseError {
+            pos: self.i,
+            expected: "path segment",
+            found: self.peek(),
+        })
     }
 
     /// Parse a top-level `const` item.

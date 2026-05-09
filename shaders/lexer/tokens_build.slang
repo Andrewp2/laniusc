@@ -31,6 +31,8 @@ static const uint TK_CONST = 92;
 static const uint TK_ENUM = 93;
 static const uint TK_STRUCT = 94;
 static const uint TK_MATCH = 95;
+static const uint TK_IMPORT = 96;
+static const uint TK_MODULE = 97;
 
 inline uint retag_keyword(uint kind, uint start, uint len)
 {
@@ -99,6 +101,10 @@ inline uint retag_keyword(uint kind, uint start, uint len)
             return TK_RETURN;
         if (b0 == 115u && b1 == 116u && b2 == 114u && b3 == 117u && b4 == 99u && b5 == 116u)
             return TK_STRUCT;
+        if (b0 == 105u && b1 == 109u && b2 == 112u && b3 == 111u && b4 == 114u && b5 == 116u)
+            return TK_IMPORT;
+        if (b0 == 109u && b1 == 111u && b2 == 100u && b3 == 117u && b4 == 108u && b5 == 101u)
+            return TK_MODULE;
     }
     else if (len == 8u)
     {

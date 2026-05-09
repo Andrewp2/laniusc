@@ -14,11 +14,23 @@ item_list     [items_end]    -> ;
 
 item          [item_pub]     -> 'Pub' pub_item;
 item          [item_fn]      -> fn_item;
+item          [item_import]  -> import_item;
+item          [item_module]  -> module_item;
 item          [item_stmt]    -> stmt;
 
 fn_item       [fn]           -> 'Fn' 'Ident' enum_type_params_opt 'LParen' param_list_opt 'RParen' return_type_opt block;
 return_type_opt [ret_type]   -> 'Arrow' type_expr;
 return_type_opt [ret_void]   -> ;
+
+import_item   [import]       -> 'Import' import_tail;
+import_tail   [import_path]  -> path 'Semicolon';
+import_tail   [import_string] -> 'String' 'Semicolon';
+module_item   [module]       -> 'Module' path 'Semicolon';
+path          [path]         -> path_segment path_tail;
+path_segment  [path_ident]   -> 'Ident';
+path_segment  [path_type_ident] -> 'TypeIdent';
+path_tail     [path_more]    -> 'Colon' 'Colon' path_segment path_tail;
+path_tail     [path_end]     -> ;
 
 param_list_opt [params_none] -> ;
 param_list_opt [params_some] -> param param_tail;
