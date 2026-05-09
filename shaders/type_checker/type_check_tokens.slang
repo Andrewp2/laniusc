@@ -42,6 +42,7 @@ static const uint ERR_COND_TYPE = 5u;
 static const uint ERR_BAD_HIR = 6u;
 static const uint ERR_INVALID_MEMBER_ACCESS = 8u;
 static const uint ERR_INVALID_ARRAY_RETURN = 9u;
+static const uint ERR_CALL_MISMATCH = 10u;
 
 static const uint HIR_FILE = 1u;
 static const uint HIR_TYPE = 5u;
@@ -53,6 +54,7 @@ static const uint HIR_BREAK_STMT = 12u;
 static const uint HIR_CONTINUE_STMT = 13u;
 static const uint HIR_ASSIGN_EXPR = 15u;
 static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_ARRAY_EXPR = 24u;
@@ -632,6 +634,16 @@ bool is_group_close_kind(uint kind)
            kind == TK_PARAM_RPAREN;
 }
 
+bool is_index_open_kind(uint kind)
+{
+    return kind == TK_INDEX_LBRACKET || kind == TK_LBRACKET;
+}
+
+bool is_index_close_kind(uint kind)
+{
+    return kind == TK_INDEX_RBRACKET || kind == TK_RBRACKET;
+}
+
 uint find_group_close(uint open_i, uint limit_i)
 {
     uint depth = 0u;
@@ -866,6 +878,121 @@ bool array_literal_is_let_initializer(uint open_i)
     return false;
 }
 
+uint find_call_close(uint call_lparen_i)
+{
+    uint n_active = active_token_count();
+    uint depth = 0u;
+    for (uint j = call_lparen_i; j < n_active; j += 1u)
+    {
+        uint kind = token_kind(j);
+        if (kind == TK_CALL_LPAREN || kind == TK_GROUP_LPAREN || kind == TK_LPAREN)
+            depth += 1u;
+        else if (kind == TK_CALL_RPAREN || kind == TK_GROUP_RPAREN || kind == TK_RPAREN)
+        {
+            if (depth == 0u)
+                return INVALID;
+            depth -= 1u;
+            if (depth == 0u)
+                return j;
+        }
+    }
+    return INVALID;
+}
+
+uint find_index_open_for_close(uint close_i)
+{
+    if (close_i >= active_token_count() || !is_index_close_kind(token_kind(close_i)))
+        return INVALID;
+
+    uint depth = 1u;
+    uint j = close_i;
+    for (uint guard = 0u; guard < 128u && j > 0u; guard += 1u)
+    {
+        j -= 1u;
+        uint kind = token_kind(j);
+        if (is_index_close_kind(kind) || kind == TK_ARRAY_RBRACKET)
+        {
+            depth += 1u;
+            continue;
+        }
+        if (is_index_open_kind(kind) || kind == TK_ARRAY_LBRACKET)
+        {
+            if (depth == 0u)
+                return INVALID;
+            depth -= 1u;
+            if (depth == 0u)
+                return j;
+        }
+    }
+    return INVALID;
+}
+
+uint find_index_close(uint open_i, uint limit_i)
+{
+    uint depth = 0u;
+    uint n_active = min(limit_i, active_token_count());
+    for (uint j = open_i; j < n_active; j += 1u)
+    {
+        uint kind = token_kind(j);
+        if (is_index_open_kind(kind) || kind == TK_ARRAY_LBRACKET)
+            depth += 1u;
+        else if (is_index_close_kind(kind) || kind == TK_ARRAY_RBRACKET)
+        {
+            if (depth == 0u)
+                return INVALID;
+            depth -= 1u;
+            if (depth == 0u)
+                return j;
+        }
+    }
+    return INVALID;
+}
+
+uint index_base_type(uint open_i)
+{
+    if (open_i == 0u)
+        return TY_UNKNOWN;
+
+    uint base_i = open_i - 1u;
+    uint base_kind = token_kind(base_i);
+    if (base_kind == TK_IDENT)
+        return identifier_type(base_i);
+    return TY_UNKNOWN;
+}
+
+bool check_index(uint open_i, uint end_i)
+{
+    if (open_i == INVALID || !is_index_open_kind(token_kind(open_i)))
+        return true;
+
+    uint close_i = INVALID;
+    if (end_i != INVALID && end_i > open_i)
+    {
+        uint candidate = end_i - 1u;
+        if (is_index_close_kind(token_kind(candidate)))
+            close_i = candidate;
+    }
+    if (close_i == INVALID)
+        close_i = find_index_close(open_i, end_i == INVALID ? active_token_count() : end_i);
+    if (close_i == INVALID || close_i <= open_i)
+        return true;
+
+    uint base_ty = index_base_type(open_i);
+    if (base_ty != TY_UNKNOWN && base_ty < TY_ARRAY_BASE)
+    {
+        record_error(open_i, ERR_ASSIGN_MISMATCH, base_ty);
+        return false;
+    }
+
+    uint index_ty = simple_expr_type(open_i + 1u, close_i);
+    if (!is_integer_scalar_type(index_ty))
+    {
+        record_error(open_i + 1u, ERR_ASSIGN_MISMATCH, TY_INT * 256u + index_ty);
+        return false;
+    }
+    return true;
+}
+
 void check_assignment(uint assign_i, uint end_i)
 {
     uint semi = stmt_semicolon_from_hir_end(assign_i, end_i);
@@ -875,6 +1002,12 @@ void check_assignment(uint assign_i, uint end_i)
     bool is_lvalue = false;
     uint dst = TY_UNKNOWN;
     assignment_target_info(assign_i, is_lvalue, dst);
+    if (assign_i > 0u && is_index_close_kind(token_kind(assign_i - 1u)))
+    {
+        uint open_i = find_index_open_for_close(assign_i - 1u);
+        if (open_i != INVALID && !check_index(open_i, assign_i))
+            return;
+    }
     if (!is_lvalue)
     {
         record_error(assign_i, ERR_ASSIGN_MISMATCH, 0u);
@@ -889,18 +1022,6 @@ void check_assignment(uint assign_i, uint end_i)
     }
     if (!compound_assignment_compatible(token_kind(assign_i), dst, src))
         record_error(assign_i + 1u, ERR_ASSIGN_MISMATCH, dst * 256u + src);
-}
-
-uint find_call_close(uint call_lparen_i)
-{
-    uint n_active = active_token_count();
-    for (uint j = call_lparen_i + 1u; j < n_active; j += 1u)
-    {
-        uint kind = token_kind(j);
-        if (kind == TK_CALL_RPAREN || kind == TK_RPAREN)
-            return j;
-    }
-    return INVALID;
 }
 
 uint find_array_literal_close(uint open_i, uint limit_i)
@@ -925,15 +1046,24 @@ uint find_array_literal_close(uint open_i, uint limit_i)
 
 uint array_elem_end(uint elem_start_i, uint close_i)
 {
-    uint depth = 0u;
+    uint bracket_depth = 0u;
+    uint group_depth = 0u;
     for (uint j = elem_start_i; j < close_i; j += 1u)
     {
         uint kind = token_kind(j);
-        if (kind == TK_ARRAY_LBRACKET || kind == TK_LBRACKET)
-            depth += 1u;
-        else if ((kind == TK_ARRAY_RBRACKET || kind == TK_RBRACKET) && depth > 0u)
-            depth -= 1u;
-        else if ((kind == TK_ARRAY_COMMA || kind == TK_COMMA) && depth == 0u)
+        if (is_group_open_kind(kind))
+            group_depth += 1u;
+        else if (is_group_close_kind(kind) && group_depth > 0u)
+            group_depth -= 1u;
+        else if (kind == TK_ARRAY_LBRACKET || kind == TK_INDEX_LBRACKET ||
+                 kind == TK_LBRACKET)
+            bracket_depth += 1u;
+        else if ((kind == TK_ARRAY_RBRACKET || kind == TK_INDEX_RBRACKET ||
+                  kind == TK_RBRACKET) &&
+                 bracket_depth > 0u)
+            bracket_depth -= 1u;
+        else if ((kind == TK_ARRAY_COMMA || kind == TK_COMMA) && bracket_depth == 0u &&
+                 group_depth == 0u)
             return j;
     }
     return close_i;
@@ -944,16 +1074,25 @@ uint array_literal_len(uint open_i, uint close_i)
     if (open_i == INVALID || close_i == INVALID || open_i + 1u >= close_i)
         return 0u;
 
-    uint depth = 0u;
+    uint bracket_depth = 0u;
+    uint group_depth = 0u;
     uint count = 1u;
     for (uint j = open_i + 1u; j < close_i; j += 1u)
     {
         uint kind = token_kind(j);
-        if (kind == TK_ARRAY_LBRACKET || kind == TK_LBRACKET)
-            depth += 1u;
-        else if ((kind == TK_ARRAY_RBRACKET || kind == TK_RBRACKET) && depth > 0u)
-            depth -= 1u;
-        else if ((kind == TK_ARRAY_COMMA || kind == TK_COMMA) && depth == 0u)
+        if (is_group_open_kind(kind))
+            group_depth += 1u;
+        else if (is_group_close_kind(kind) && group_depth > 0u)
+            group_depth -= 1u;
+        else if (kind == TK_ARRAY_LBRACKET || kind == TK_INDEX_LBRACKET ||
+                 kind == TK_LBRACKET)
+            bracket_depth += 1u;
+        else if ((kind == TK_ARRAY_RBRACKET || kind == TK_INDEX_RBRACKET ||
+                  kind == TK_RBRACKET) &&
+                 bracket_depth > 0u)
+            bracket_depth -= 1u;
+        else if ((kind == TK_ARRAY_COMMA || kind == TK_COMMA) && bracket_depth == 0u &&
+                 group_depth == 0u)
             count += 1u;
     }
     return count;
@@ -980,6 +1119,19 @@ void check_array_literal_elements(uint open_i, uint close_i, uint elem_ty)
     }
 }
 
+uint array_literal_element_type(uint open_i, uint close_i, uint array_ty)
+{
+    uint elem_ty = indexed_element_type(array_ty);
+    if (elem_ty != TY_UNKNOWN || open_i == INVALID || close_i == INVALID ||
+        open_i + 1u >= close_i)
+        return elem_ty;
+
+    uint elem_end = array_elem_end(open_i + 1u, close_i);
+    if (elem_end <= open_i + 1u)
+        return TY_UNKNOWN;
+    return simple_expr_type(open_i + 1u, elem_end);
+}
+
 uint function_param_count(uint fn_i)
 {
     if (fn_i < active_token_count())
@@ -998,11 +1150,25 @@ uint call_arg_count(uint call_lparen_i, uint close_i)
 {
     if (close_i == INVALID || call_lparen_i + 1u >= close_i)
         return 0u;
+    uint bracket_depth = 0u;
+    uint group_depth = 0u;
     uint count = 1u;
     for (uint j = call_lparen_i + 1u; j < close_i; j += 1u)
     {
         uint kind = token_kind(j);
-        if (kind == TK_ARG_COMMA || kind == TK_COMMA)
+        if (is_group_open_kind(kind))
+            group_depth += 1u;
+        else if (is_group_close_kind(kind) && group_depth > 0u)
+            group_depth -= 1u;
+        else if (kind == TK_ARRAY_LBRACKET || kind == TK_INDEX_LBRACKET ||
+                 kind == TK_LBRACKET)
+            bracket_depth += 1u;
+        else if ((kind == TK_ARRAY_RBRACKET || kind == TK_INDEX_RBRACKET ||
+                  kind == TK_RBRACKET) &&
+                 bracket_depth > 0u)
+            bracket_depth -= 1u;
+        else if ((kind == TK_ARG_COMMA || kind == TK_COMMA) && bracket_depth == 0u &&
+                 group_depth == 0u)
             count += 1u;
     }
     return count;
@@ -1012,10 +1178,24 @@ uint call_arg_start(uint call_lparen_i, uint close_i, uint arg_index)
 {
     uint current = 0u;
     uint start = call_lparen_i + 1u;
+    uint bracket_depth = 0u;
+    uint group_depth = 0u;
     for (uint j = call_lparen_i + 1u; j < close_i; j += 1u)
     {
         uint kind = token_kind(j);
-        if (kind == TK_ARG_COMMA || kind == TK_COMMA)
+        if (is_group_open_kind(kind))
+            group_depth += 1u;
+        else if (is_group_close_kind(kind) && group_depth > 0u)
+            group_depth -= 1u;
+        else if (kind == TK_ARRAY_LBRACKET || kind == TK_INDEX_LBRACKET ||
+                 kind == TK_LBRACKET)
+            bracket_depth += 1u;
+        else if ((kind == TK_ARRAY_RBRACKET || kind == TK_INDEX_RBRACKET ||
+                  kind == TK_RBRACKET) &&
+                 bracket_depth > 0u)
+            bracket_depth -= 1u;
+        else if ((kind == TK_ARG_COMMA || kind == TK_COMMA) && bracket_depth == 0u &&
+                 group_depth == 0u)
         {
             if (current == arg_index)
                 return start < j ? start : INVALID;
@@ -1030,10 +1210,24 @@ uint call_arg_start(uint call_lparen_i, uint close_i, uint arg_index)
 
 uint call_arg_end(uint arg_start_i, uint close_i)
 {
+    uint bracket_depth = 0u;
+    uint group_depth = 0u;
     for (uint j = arg_start_i; j < close_i; j += 1u)
     {
         uint kind = token_kind(j);
-        if (kind == TK_ARG_COMMA || kind == TK_COMMA)
+        if (is_group_open_kind(kind))
+            group_depth += 1u;
+        else if (is_group_close_kind(kind) && group_depth > 0u)
+            group_depth -= 1u;
+        else if (kind == TK_ARRAY_LBRACKET || kind == TK_INDEX_LBRACKET ||
+                 kind == TK_LBRACKET)
+            bracket_depth += 1u;
+        else if ((kind == TK_ARRAY_RBRACKET || kind == TK_INDEX_RBRACKET ||
+                  kind == TK_RBRACKET) &&
+                 bracket_depth > 0u)
+            bracket_depth -= 1u;
+        else if ((kind == TK_ARG_COMMA || kind == TK_COMMA) && bracket_depth == 0u &&
+                 group_depth == 0u)
             return j;
     }
     return close_i;
@@ -1064,7 +1258,7 @@ void check_call(uint callee_i, uint end_i)
     {
         if (arg_count != 1u)
         {
-            record_error(callee_i, ERR_ASSIGN_MISMATCH, arg_count);
+            record_error(callee_i, ERR_CALL_MISMATCH, arg_count);
             return;
         }
         uint arg_start_i = call_arg_start(open_i, close_i, 0u);
@@ -1078,12 +1272,23 @@ void check_call(uint callee_i, uint end_i)
 
     uint fn_i = find_named_function(callee_i);
     if (fn_i == INVALID)
+    {
+        uint callee_ty = visible_type_for(callee_i);
+        if (callee_ty == TY_UNKNOWN)
+        {
+            uint callee_decl = visible_decl_for(callee_i);
+            if (callee_decl != INVALID)
+                callee_ty = declaration_type(callee_decl);
+        }
+        if (callee_ty != TY_UNKNOWN)
+            record_error(callee_i, ERR_CALL_MISMATCH, callee_ty);
         return;
+    }
 
     uint param_count = function_param_count(fn_i);
     if (arg_count != param_count)
     {
-        record_error(callee_i, ERR_ASSIGN_MISMATCH, param_count * 256u + arg_count);
+        record_error(callee_i, ERR_CALL_MISMATCH, param_count * 256u + arg_count);
         return;
     }
 
@@ -1159,7 +1364,8 @@ void check_let(uint i, uint end_i)
     if (token_kind(assign_i + 1u) == TK_ARRAY_LBRACKET || token_kind(assign_i + 1u) == TK_LBRACKET)
     {
         uint close_i = find_array_literal_close(assign_i + 1u, semi);
-        uint elem_ty = has_type ? indexed_element_type(dst) : indexed_element_type(src);
+        uint elem_ty = has_type ? indexed_element_type(dst)
+                                : array_literal_element_type(assign_i + 1u, close_i, src);
         uint actual_len = array_literal_len(assign_i + 1u, close_i);
         uint declared_len = has_type ? type_array_decl_len(i + 2u, semi) : INVALID;
         if (declared_len != INVALID && actual_len != declared_len)
@@ -1312,6 +1518,16 @@ void check_hir_node(uint i)
             record_error(pos, ERR_BAD_HIR, kind);
             return;
         }
+        bool followed_by_call = pos + 1u < n_active &&
+                                (token_kind(pos + 1u) == TK_CALL_LPAREN ||
+                                 token_kind(pos + 1u) == TK_LPAREN);
+        if (!followed_by_call && visible_decl_for(pos) == INVALID &&
+            (find_named_function(pos) != INVALID ||
+             token_text_eq5(pos, 112u, 114u, 105u, 110u, 116u)))
+        {
+            record_error(pos, ERR_CALL_MISMATCH, 0u);
+            return;
+        }
         if (!ident_resolves(pos))
             record_error(pos, ERR_UNRESOLVED_IDENT, 0u);
         return;
@@ -1326,6 +1542,17 @@ void check_hir_node(uint i)
             return;
         }
         check_call(pos - 1u, end_i);
+        return;
+    }
+
+    if (kind == HIR_INDEX_EXPR)
+    {
+        if (!is_index_open_kind(token_kind(pos)))
+        {
+            record_error(pos, ERR_BAD_HIR, kind);
+            return;
+        }
+        check_index(pos, end_i);
         return;
     }
 
