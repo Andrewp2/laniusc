@@ -34,6 +34,11 @@ Performance is essential, but Lanius is not looking to be the fastest possible l
 
 Lanius is in an early alpha. Expect bugs, glitches, and nasal demons.
 
+## Standard Library
+
+An initial source-level standard library lives in `stdlib/`. Until modules and
+imports exist, concatenate the `.lani` files you need before your program source.
+
 ## Benchmarks
 
 TBA

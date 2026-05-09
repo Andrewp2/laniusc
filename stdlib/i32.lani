@@ -1,0 +1,54 @@
+// Source-level i32 helpers for the current Lanius language surface.
+// Concatenate this file before user code that calls these functions.
+
+pub fn lstd_i32_abs(value: i32) -> i32 {
+    if (value < 0) {
+        return -value;
+    } else {
+        return value;
+    }
+}
+
+pub fn lstd_i32_min(left: i32, right: i32) -> i32 {
+    if (left < right) {
+        return left;
+    } else {
+        return right;
+    }
+}
+
+pub fn lstd_i32_max(left: i32, right: i32) -> i32 {
+    if (left > right) {
+        return left;
+    } else {
+        return right;
+    }
+}
+
+pub fn lstd_i32_clamp(value: i32, low: i32, high: i32) -> i32 {
+    if (value < low) {
+        return low;
+    } else {
+        if (value > high) {
+            return high;
+        } else {
+            return value;
+        }
+    }
+}
+
+pub fn lstd_i32_signum(value: i32) -> i32 {
+    if (value < 0) {
+        return -1;
+    } else {
+        if (value > 0) {
+            return 1;
+        } else {
+            return 0;
+        }
+    }
+}
+
+pub fn lstd_i32_between_inclusive(value: i32, low: i32, high: i32) -> bool {
+    return value >= low && value <= high;
+}
