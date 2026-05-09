@@ -1,7 +1,7 @@
-use laniusc::compiler::{CompileError, compile_source_to_wasm_with_gpu_codegen};
+use laniusc::compiler::{CompileError, type_check_source_with_gpu};
 
 fn assert_gpu_type_check_error(src: &str, code: &str) {
-    let err = pollster::block_on(compile_source_to_wasm_with_gpu_codegen(src))
+    let err = pollster::block_on(type_check_source_with_gpu(src))
         .expect_err("source should fail GPU type checking");
 
     match err {
@@ -16,8 +16,8 @@ fn assert_gpu_type_check_error(src: &str, code: &str) {
 }
 
 fn assert_gpu_compile_ok(src: &str) {
-    pollster::block_on(compile_source_to_wasm_with_gpu_codegen(src))
-        .expect("source should pass GPU type checking and codegen");
+    pollster::block_on(type_check_source_with_gpu(src))
+        .expect("source should pass GPU type checking");
 }
 
 #[test]

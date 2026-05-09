@@ -85,6 +85,78 @@ impl<'gpu> GpuCompiler<'gpu> {
         self.gpu
     }
 
+    pub async fn type_check_source(&self, src: &str) -> Result<(), CompileError> {
+        let src = expand_source_imports(src)?;
+        self.type_check_expanded_source(&src).await
+    }
+
+    pub async fn type_check_source_from_path(
+        &self,
+        path: impl AsRef<Path>,
+    ) -> Result<(), CompileError> {
+        let src = expand_source_imports_from_path(path)?;
+        self.type_check_expanded_source(&src).await
+    }
+
+    async fn type_check_expanded_source(&self, src: &str) -> Result<(), CompileError> {
+        self.lexer
+            .with_recorded_resident_tokens(
+                src,
+                |device, queue, bufs, encoder, mut timer| {
+                    let (parser_check, type_check) = self
+                        .parser
+                        .record_checked_resident_syntax_hir_artifacts(
+                            encoder,
+                            bufs.n,
+                            &bufs.tokens_out,
+                            &bufs.token_count,
+                            &self.parse_tables,
+                            |parse_bufs, encoder| {
+                                if let Some(timer) = timer.as_deref_mut() {
+                                    timer.stamp(encoder, "parser.direct_hir.done");
+                                }
+                                let recorded = self
+                                    .type_checker
+                                    .record_resident_token_buffer_with_hir_on_gpu(
+                                        device,
+                                        queue,
+                                        encoder,
+                                        bufs.n,
+                                        bufs.n,
+                                        &bufs.tokens_out,
+                                        &bufs.token_count,
+                                        &bufs.in_bytes,
+                                        parse_bufs.tree_capacity,
+                                        &parse_bufs.hir_kind,
+                                        &parse_bufs.hir_token_pos,
+                                        &parse_bufs.hir_token_end,
+                                        &parse_bufs.ll1_status,
+                                        timer.as_deref_mut(),
+                                    )
+                                    .map_err(|err| CompileError::GpuTypeCheck(err.to_string()))?;
+                                if let Some(timer) = timer.as_deref_mut() {
+                                    timer.stamp(encoder, "typecheck.done");
+                                }
+                                Ok::<_, CompileError>(recorded)
+                            },
+                        )
+                        .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
+                    let type_check = type_check?;
+                    Ok((parser_check, type_check))
+                },
+                |device, _queue, _bufs, (parser_check, type_check)| {
+                    self.parser
+                        .finish_recorded_resident_syntax_hir_check(&parser_check)
+                        .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
+                    self.type_checker
+                        .finish_recorded_check(device, &type_check)
+                        .map_err(|err| CompileError::GpuTypeCheck(err.to_string()))
+                },
+            )
+            .await
+            .map_err(|err| CompileError::GpuFrontend(format!("lex source: {err}")))?
+    }
+
     pub async fn compile_source_to_wasm(&self, src: &str) -> Result<Vec<u8>, CompileError> {
         let src = expand_source_imports(src)?;
         self.compile_expanded_source_to_wasm(&src).await
@@ -965,6 +1037,38 @@ pub async fn compile_source_to_wasm_with_gpu_codegen(src: &str) -> Result<Vec<u8
     global_gpu_compiler()?
         .compile_expanded_source_to_wasm(&src)
         .await
+}
+
+pub async fn type_check_source_with_gpu(src: &str) -> Result<(), CompileError> {
+    let src = expand_source_imports(src)?;
+    global_gpu_compiler()?
+        .type_check_expanded_source(&src)
+        .await
+}
+
+pub async fn type_check_source_with_gpu_from_path(
+    path: impl AsRef<Path>,
+) -> Result<(), CompileError> {
+    let src = expand_source_imports_from_path(path)?;
+    global_gpu_compiler()?
+        .type_check_expanded_source(&src)
+        .await
+}
+
+pub async fn type_check_source_with_gpu_using(
+    src: &str,
+    compiler: &GpuCompiler<'_>,
+) -> Result<(), CompileError> {
+    let src = expand_source_imports(src)?;
+    compiler.type_check_expanded_source(&src).await
+}
+
+pub async fn type_check_source_with_gpu_using_path(
+    path: impl AsRef<Path>,
+    compiler: &GpuCompiler<'_>,
+) -> Result<(), CompileError> {
+    let src = expand_source_imports_from_path(path)?;
+    compiler.type_check_expanded_source(&src).await
 }
 
 pub async fn compile_source_to_wasm_with_gpu_codegen_from_path(

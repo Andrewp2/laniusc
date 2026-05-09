@@ -76,15 +76,17 @@ Supported enough for the seed library:
   shown in `sample_programs/*.lani`.
 - Fixed-size array type syntax, array literals, and indexing for concrete
   arrays, used by `stdlib/array_i32_4.lani` and `sample_programs/array_sum.lani`.
+- `str` type annotations are recognized by the GPU type checker and string
+  literals have a distinct frontend type. Runtime representation, string
+  operations, and backend lowering are still missing.
 - Slice type syntax such as `[i32]` now parses and lowers to HIR. It does not
   yet have a runtime representation, borrow semantics, indexing rules, or
   backend lowering.
 - Reference type syntax such as `&i32` and `&[i32]` now parses, lowers to HIR,
   and is accepted by syntax validation as a type form. It does not yet have
   borrow checking, lifetime rules, aliasing rules, or backend representation.
-- Lexing/HIR representation for integer, float, string, and char literals, but
-  only integer and bool-oriented source patterns are exercised by the current
-  stdlib.
+- Lexing/HIR representation for integer, float, string, and char literals.
+  Primitive type checking is still much narrower than the final stdlib needs.
 
 Important limitations visible in current files:
 
@@ -156,8 +158,8 @@ Strict blockers:
 - Integer intrinsics or checked arithmetic primitives for `checked_*`,
   `saturating_*`, wrapping operations, bit counts, rotations, and power-of-two
   helpers.
-- Type-checker and codegen support for all types exposed by `core`; parse-only
-  support for floats, strings, or chars is not enough.
+- Type-checker and codegen support for all types exposed by `core`; partial
+  frontend support for floats, strings, or chars is not enough.
 
 Nice-to-have:
 

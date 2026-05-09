@@ -232,6 +232,8 @@ uint primitive_type_code(uint type_i)
         return TY_BOOL;
     if (span4(start, len, 99u, 104u, 97u, 114u))
         return TY_CHAR;
+    if (span3(start, len, 115u, 116u, 114u))
+        return TY_STRING;
 
     return TY_UNKNOWN;
 }

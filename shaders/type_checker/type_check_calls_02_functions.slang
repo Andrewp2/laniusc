@@ -36,6 +36,7 @@ static const uint TY_INT = 3u;
 static const uint TY_UINT = 4u;
 static const uint TY_FLOAT = 5u;
 static const uint TY_CHAR = 6u;
+static const uint TY_STRING = 7u;
 static const uint TY_ARRAY_BASE = 128u;
 
 static const uint TK_IDENT = 1u;
@@ -174,6 +175,8 @@ uint primitive_type_code(uint type_i)
         return 2u;
     if (span4(start, len, 99u, 104u, 97u, 114u))
         return TY_CHAR;
+    if (span3(start, len, 115u, 116u, 114u))
+        return TY_STRING;
 
     return TY_UNKNOWN;
 }

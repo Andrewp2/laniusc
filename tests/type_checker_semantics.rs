@@ -1,7 +1,7 @@
-use laniusc::compiler::{CompileError, compile_source_to_wasm_with_gpu_codegen};
+use laniusc::compiler::{CompileError, type_check_source_with_gpu};
 
 fn assert_gpu_type_check_error(src: &str, expected: &str) {
-    let err = pollster::block_on(compile_source_to_wasm_with_gpu_codegen(src))
+    let err = pollster::block_on(type_check_source_with_gpu(src))
         .expect_err("source should fail GPU type checking");
 
     match err {
@@ -53,6 +53,48 @@ fn main() {
 "#;
 
     assert_gpu_type_check_error(src, "AssignMismatch (1283)");
+}
+
+#[test]
+fn type_checker_recognizes_str_type_annotations() {
+    let src = r#"
+fn main() {
+    let text: str = 1;
+    return 0;
+}
+"#;
+
+    assert_gpu_type_check_error(src, "AssignMismatch (1795)");
+}
+
+#[test]
+fn type_checker_recognizes_str_function_parameters() {
+    let src = r#"
+fn takes_text(value: str) -> i32 {
+    return 0;
+}
+
+fn main() {
+    return takes_text(1);
+}
+"#;
+
+    assert_gpu_type_check_error(src, "AssignMismatch (1795)");
+}
+
+#[test]
+fn type_checker_recognizes_str_return_types() {
+    let src = r#"
+fn make_text() -> str {
+    return 1;
+}
+
+fn main() {
+    return 0;
+}
+"#;
+
+    assert_gpu_type_check_error(src, "ReturnMismatch (1795)");
 }
 
 #[test]
