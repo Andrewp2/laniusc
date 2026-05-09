@@ -58,6 +58,7 @@ static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_ARRAY_EXPR = 24u;
+static const uint HIR_CONST_ITEM = 25u;
 
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_VOID = 1u;
@@ -136,6 +137,7 @@ static const uint TK_IF_RBRACE = 89u;
 static const uint TK_LET_IDENT = 78u;
 static const uint TK_TRUE = 90u;
 static const uint TK_FALSE = 91u;
+static const uint TK_CONST = 92u;
 static const uint PARAM_CACHE_STRIDE = 16u;
 
 uint active_token_count()
@@ -392,6 +394,11 @@ uint find_let_assign(uint let_ident_i, uint semi_i)
     return INVALID;
 }
 
+bool is_const_decl_at(uint i)
+{
+    return token_kind(i) == TK_IDENT && i > 0u && token_kind(i - 1u) == TK_CONST;
+}
+
 uint find_function_return_type(uint fn_i)
 {
     return fn_i < active_token_count() ? call_return_type[fn_i] : TY_UNKNOWN;
@@ -485,7 +492,11 @@ uint declaration_type_shallow(uint decl_i)
     if (kind == TK_PARAM_IDENT ||
         (kind == TK_IDENT && decl_i + 1u < active_token_count() &&
          token_kind(decl_i + 1u) == TK_COLON &&
-         (decl_i == 0u || token_kind(decl_i - 1u) != TK_LET)))
+         (decl_i == 0u ||
+          (token_kind(decl_i - 1u) != TK_LET && token_kind(decl_i - 1u) != TK_CONST))))
+        return type_code_for_type_expr(decl_i + 2u);
+
+    if (is_const_decl_at(decl_i))
         return type_code_for_type_expr(decl_i + 2u);
 
     if (kind == TK_LET_IDENT ||
@@ -818,6 +829,9 @@ void assignment_target_info(uint assign_i, out bool is_lvalue, out uint target_t
     uint prev = token_kind(prev_i);
     if (prev == TK_IDENT)
     {
+        uint decl = visible_decl_for(prev_i);
+        if (is_const_decl_at(decl))
+            return;
         is_lvalue = true;
         target_ty = identifier_type(prev_i);
         return;
@@ -1319,7 +1333,7 @@ bool ident_is_use(uint i)
     if (token_kind(i) != TK_IDENT)
         return false;
     uint prev = i > 0u ? token_kind(i - 1u) : 0u;
-    if (prev == TK_FN || prev == TK_DOT)
+    if (prev == TK_FN || prev == TK_DOT || prev == TK_CONST)
         return false;
     return true;
 }
@@ -1381,6 +1395,39 @@ void check_let(uint i, uint end_i)
         }
         check_array_literal_elements(assign_i + 1u, close_i, elem_ty);
     }
+}
+
+void check_const(uint const_i, uint end_i)
+{
+    uint n_active = active_token_count();
+    if (const_i + 4u >= n_active || token_kind(const_i + 1u) != TK_IDENT ||
+        token_kind(const_i + 2u) != TK_COLON)
+    {
+        record_error(const_i, ERR_BAD_HIR, HIR_CONST_ITEM);
+        return;
+    }
+
+    uint decl_i = const_i + 1u;
+    uint dst = type_code_for_type_expr(decl_i + 2u);
+    if (dst == TY_UNKNOWN)
+    {
+        record_error(decl_i + 2u, ERR_UNKNOWN_TYPE, 0u);
+        return;
+    }
+
+    uint semi = stmt_semicolon_from_hir_end(const_i, end_i);
+    if (semi == INVALID)
+        return;
+    uint assign_i = find_let_assign(decl_i, semi);
+    if (assign_i == INVALID || assign_i + 1u >= semi)
+    {
+        record_error(const_i, ERR_BAD_HIR, HIR_CONST_ITEM);
+        return;
+    }
+
+    uint src = simple_expr_type(assign_i + 1u, semi);
+    if (!assignable(dst, src))
+        record_error(assign_i + 1u, ERR_ASSIGN_MISMATCH, dst * 256u + src);
 }
 
 void check_return(uint i, uint end_i)
@@ -1484,6 +1531,17 @@ void check_hir_node(uint i)
             return;
         }
         check_let(pos + 1u, end_i);
+        return;
+    }
+
+    if (kind == HIR_CONST_ITEM)
+    {
+        if (token_kind(pos) != TK_CONST)
+        {
+            record_error(pos, ERR_BAD_HIR, kind);
+            return;
+        }
+        check_const(pos, end_i);
         return;
     }
 

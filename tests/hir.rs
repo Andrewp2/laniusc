@@ -5,6 +5,7 @@ use laniusc::{
         HirAssignOp,
         HirBinaryOp,
         HirBlock,
+        HirConst,
         HirError,
         HirExpr,
         HirExprKind,
@@ -28,6 +29,7 @@ fn only_fn(src: &str) -> HirFn {
     assert_eq!(file.items.len(), 1);
     match file.items.into_iter().next().unwrap() {
         HirItem::Fn(func) => func,
+        HirItem::Const(_) => panic!("expected function item"),
         HirItem::Stmt(_) => panic!("expected function item"),
     }
 }
@@ -136,6 +138,10 @@ fn assert_hir_file_spans(name: &str, src: &str, tokens: &[CpuToken], file: &HirF
                 assert_fn_spans(name, src, func);
                 func.span
             }
+            HirItem::Const(konst) => {
+                assert_const_spans(name, src, konst);
+                konst.span
+            }
             HirItem::Stmt(stmt) => {
                 assert_stmt_spans(name, src, stmt);
                 stmt.span
@@ -157,6 +163,14 @@ fn assert_fn_spans(name: &str, src: &str, func: &HirFn) {
     assert_span_contains(name, "function return type", func.span, func.ret.span);
     assert_block_spans(name, src, &func.body);
     assert_span_contains(name, "function body", func.span, func.body.span);
+}
+
+fn assert_const_spans(name: &str, src: &str, konst: &HirConst) {
+    assert_span_in_source(name, "constant", konst.span, src);
+    assert_type_spans(name, src, &konst.ty);
+    assert_span_contains(name, "constant type", konst.span, konst.ty.span);
+    assert_expr_spans(name, src, &konst.value);
+    assert_span_contains(name, "constant value", konst.span, konst.value.span);
 }
 
 fn assert_type_spans(name: &str, src: &str, ty: &HirType) {
@@ -510,6 +524,41 @@ fn hir_preserves_bool_literals() {
         HirExprKind::Literal {
             kind: HirLiteralKind::Bool,
             text: "true".to_string()
+        }
+    );
+}
+
+#[test]
+fn hir_preserves_top_level_constants() {
+    let file = parse_source(
+        "const LIMIT: i32 = 7; const ENABLED: bool = true; fn main() { return LIMIT; }",
+    )
+    .expect("parse constants");
+    assert_eq!(file.items.len(), 3);
+
+    let HirItem::Const(limit) = &file.items[0] else {
+        panic!("expected first item to be const");
+    };
+    assert_eq!(limit.name, "LIMIT");
+    assert_eq!(limit.ty.kind, HirTypeKind::Name("i32".into()));
+    assert_eq!(
+        limit.value.kind,
+        HirExprKind::Literal {
+            kind: HirLiteralKind::Int,
+            text: "7".into()
+        }
+    );
+
+    let HirItem::Const(enabled) = &file.items[1] else {
+        panic!("expected second item to be const");
+    };
+    assert_eq!(enabled.name, "ENABLED");
+    assert_eq!(enabled.ty.kind, HirTypeKind::Name("bool".into()));
+    assert_eq!(
+        enabled.value.kind,
+        HirExprKind::Literal {
+            kind: HirLiteralKind::Bool,
+            text: "true".into()
         }
     );
 }

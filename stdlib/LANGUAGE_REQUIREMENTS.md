@@ -18,6 +18,8 @@ Supported enough for the seed library:
 
 - Global `pub fn` declarations with typed parameters and return types, used by
   `stdlib/i32.lani`, `stdlib/bool.lani`, and `stdlib/array_i32_4.lani`.
+- Top-level primitive `const` items, used by `stdlib/i32.lani` for
+  `LSTD_I32_MIN` and `LSTD_I32_MAX`.
 - `i32` arithmetic, comparisons, unary minus, logical operators, assignment, and
   compound assignment, used by `lstd_i32_abs`, `lstd_i32_clamp`, and array
   loops.
@@ -60,7 +62,7 @@ Strict blockers:
 
 Nice-to-have:
 
-- `const` values for primitive limits, array lengths, and module constants.
+- Broader compile-time constant evaluation beyond primitive literal constants.
 - Better diagnostics for duplicate names when multiple source files are
   imported.
 - Doc examples that can be parsed or compiled as tests.

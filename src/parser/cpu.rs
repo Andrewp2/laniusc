@@ -178,6 +178,8 @@ impl<'a> Parser<'a> {
             Ok(self.push("pub", vec![item]))
         } else if self.peek() == Some(tokens::TokenKind::Fn) {
             self.parse_fn_item()
+        } else if self.peek() == Some(tokens::TokenKind::Const) {
+            self.parse_const_item()
         } else {
             self.parse_stmt()
         }
@@ -205,6 +207,19 @@ impl<'a> Parser<'a> {
 
         let body = self.parse_block()?;
         Ok(self.push("fn", vec![name_id, params, ret, body]))
+    }
+
+    /// Parse a top-level `const` item.
+    fn parse_const_item(&mut self) -> Result<u32, ParseError> {
+        self.expect(tokens::TokenKind::Const, "Const")?;
+        self.expect(tokens::TokenKind::Ident, "constant name")?;
+        let name_id = self.push("ident", vec![]);
+        self.expect(tokens::TokenKind::Colon, "Colon")?;
+        let ty = self.parse_type_expr()?;
+        self.expect(tokens::TokenKind::Assign, "Assign")?;
+        let value = self.parse_expr()?;
+        self.expect_semicolon()?;
+        Ok(self.push("const", vec![name_id, ty, value]))
     }
 
     fn parse_param_list_opt(&mut self) -> Result<u32, ParseError> {

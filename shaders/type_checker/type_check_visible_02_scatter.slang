@@ -54,6 +54,7 @@ static const uint TK_TYPE_ARRAY_LBRACKET = 85u;
 static const uint TK_TYPE_ARRAY_RBRACKET = 86u;
 static const uint TK_IF_LBRACE = 88u;
 static const uint TK_IF_RBRACE = 89u;
+static const uint TK_CONST = 92u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -263,11 +264,14 @@ uint declaration_scope_end(uint decl_i)
     if (kind == TK_PARAM_IDENT ||
         (kind == TK_IDENT && decl_i + 1u < active_token_count() &&
          token_kind(decl_i + 1u) == TK_COLON &&
-         (decl_i == 0u || token_kind(decl_i - 1u) != TK_LET)))
+         (decl_i == 0u ||
+          (token_kind(decl_i - 1u) != TK_LET && token_kind(decl_i - 1u) != TK_CONST))))
         return param_scope_end(decl_i);
     if (kind == TK_LET_IDENT ||
         (kind == TK_IDENT && decl_i > 0u && token_kind(decl_i - 1u) == TK_LET))
         return let_scope_end(decl_i);
+    if (kind == TK_IDENT && decl_i > 0u && token_kind(decl_i - 1u) == TK_CONST)
+        return active_token_count();
     return decl_i;
 }
 
@@ -305,12 +309,17 @@ bool is_let_decl_at(uint i)
     return kind == TK_LET_IDENT || (kind == TK_IDENT && i > 0u && token_kind(i - 1u) == TK_LET);
 }
 
+bool is_const_decl_at(uint i)
+{
+    return token_kind(i) == TK_IDENT && i > 0u && token_kind(i - 1u) == TK_CONST;
+}
+
 bool is_param_decl_at(uint i)
 {
     uint kind = token_kind(i);
     return kind == TK_PARAM_IDENT ||
            (kind == TK_IDENT && i + 1u < active_token_count() && token_kind(i + 1u) == TK_COLON &&
-            (i == 0u || token_kind(i - 1u) != TK_LET));
+            (i == 0u || (token_kind(i - 1u) != TK_LET && token_kind(i - 1u) != TK_CONST)));
 }
 
 bool ident_is_use(uint i)
@@ -319,7 +328,8 @@ bool ident_is_use(uint i)
         return false;
 
     uint prev = i > 0u ? token_kind(i - 1u) : 0u;
-    if (prev == TK_FN || prev == TK_LET || prev == TK_DOT || prev == TK_COLON || prev == TK_ARROW)
+    if (prev == TK_FN || prev == TK_LET || prev == TK_CONST || prev == TK_DOT ||
+        prev == TK_COLON || prev == TK_ARROW)
         return false;
 
     uint next = i + 1u < active_token_count() ? token_kind(i + 1u) : 0u;
@@ -361,6 +371,23 @@ uint resolve_visible_declaration(uint ident_i)
         uint end_i = declaration_scope_end(j);
         if (ident_i < end_i)
             return j;
+    }
+
+    j = ident_i;
+    [loop]
+    while (j > 0u)
+    {
+        j -= 1u;
+        if (!is_const_decl_at(j))
+            continue;
+        if (!same_text(j, ident_i))
+            continue;
+
+        uint stmt_end = let_decl_statement_end(j);
+        if (stmt_end == INVALID || ident_i <= stmt_end)
+            continue;
+
+        return j;
     }
     return INVALID;
 }

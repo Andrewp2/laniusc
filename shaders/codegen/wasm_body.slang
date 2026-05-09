@@ -86,6 +86,7 @@ static const uint TK_IF_LBRACE = 88u;
 static const uint TK_IF_RBRACE = 89u;
 static const uint TK_TRUE = 90u;
 static const uint TK_FALSE = 91u;
+static const uint TK_CONST = 92u;
 static const uint MAX_ARRAY_ELEMS = 16u;
 
 static const uint OP_PAREN = 1000u;
@@ -347,6 +348,71 @@ uint parse_uint_token(uint token_i)
     return value;
 }
 
+bool is_const_decl_at(uint decl_i)
+{
+    return decl_i < active_token_count() && token_kind(decl_i) == TK_IDENT && decl_i > 0u &&
+           token_kind(decl_i - 1u) == TK_CONST;
+}
+
+uint const_value_token(uint decl_i, out bool negate)
+{
+    negate = false;
+    uint semi = statement_end(decl_i);
+    uint assign_i = find_assign(decl_i, semi);
+    if (assign_i == 0xffffffffu || assign_i + 1u >= semi)
+        return 0xffffffffu;
+
+    uint value_i = assign_i + 1u;
+    uint kind = token_kind(value_i);
+    if ((kind == TK_MINUS || kind == TK_PREFIX_MINUS) && value_i + 1u < semi)
+    {
+        negate = true;
+        value_i += 1u;
+    }
+    return value_i;
+}
+
+void emit_i64_const_decl_value(inout uint cursor, uint decl_i, bool write, uint lane)
+{
+    bool negate = false;
+    uint value_i = const_value_token(decl_i, negate);
+    uint kind = token_kind(value_i);
+    if (kind == TK_INT)
+    {
+        emit_i64_const_u32(cursor, parse_uint_token(value_i), write, lane);
+        if (negate)
+        {
+            emit_i64_const_minus_one(cursor, write, lane);
+            put_byte(cursor, 0x7eu, write, lane);
+        }
+        return;
+    }
+    if (kind == TK_TRUE || kind == TK_FALSE)
+    {
+        emit_i64_const_u32(cursor, kind == TK_TRUE ? 1u : 0u, write, lane);
+        return;
+    }
+    emit_i64_const_u32(cursor, 0u, write, lane);
+}
+
+void emit_i32_const_decl_value(inout uint cursor, uint decl_i, bool write, uint lane)
+{
+    bool negate = false;
+    uint value_i = const_value_token(decl_i, negate);
+    uint kind = token_kind(value_i);
+    if (kind == TK_INT)
+    {
+        emit_i32_const_u32(cursor, parse_uint_token(value_i), write, lane);
+        return;
+    }
+    if (kind == TK_TRUE || kind == TK_FALSE)
+    {
+        emit_i32_const_u32(cursor, kind == TK_TRUE ? 1u : 0u, write, lane);
+        return;
+    }
+    emit_i32_const_u32(cursor, 0u, write, lane);
+}
+
 bool is_binary_op(uint kind)
 {
     return kind == TK_PLUS || kind == TK_INFIX_PLUS || kind == TK_MINUS ||
@@ -431,8 +497,15 @@ void emit_i32_index_atom(inout uint cursor, uint token_i, bool write, uint lane)
         uint decl = visible_decl[token_i];
         if (decl != 0xffffffffu)
         {
-            emit_local_get(cursor, decl, write, lane);
-            put_byte(cursor, 0xa7u, write, lane);
+            if (is_const_decl_at(decl))
+            {
+                emit_i32_const_decl_value(cursor, decl, write, lane);
+            }
+            else
+            {
+                emit_local_get(cursor, decl, write, lane);
+                put_byte(cursor, 0xa7u, write, lane);
+            }
         }
         else
         {
@@ -517,7 +590,11 @@ void emit_int_expr(inout uint cursor, uint start_i, uint end_i, bool write, uint
             uint decl = visible_decl[i];
             if (decl != 0xffffffffu)
             {
-                if (i + 3u < end_i && is_index_open(token_kind(i + 1u)) &&
+                if (is_const_decl_at(decl))
+                {
+                    emit_i64_const_decl_value(cursor, decl, write, lane);
+                }
+                else if (i + 3u < end_i && is_index_open(token_kind(i + 1u)) &&
                     is_index_close(token_kind(i + 3u)))
                 {
                     emit_array_lookup(cursor, decl, i + 2u, write, lane);
@@ -651,6 +728,8 @@ void emit_assignment_statement(inout uint cursor, uint name_i, uint semi, bool w
     uint op = token_kind(name_i + 1u);
     uint decl = visible_decl[name_i];
     if (decl == 0xffffffffu)
+        return;
+    if (is_const_decl_at(decl))
         return;
 
     if (op == TK_ASSIGN)

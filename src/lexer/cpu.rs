@@ -222,6 +222,7 @@ fn keyword_kind(bytes: &[u8]) -> Option<TokenKind> {
         b"continue" => Some(TokenKind::Continue),
         b"true" => Some(TokenKind::True),
         b"false" => Some(TokenKind::False),
+        b"const" => Some(TokenKind::Const),
         _ => None,
     }
 }

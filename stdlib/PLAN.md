@@ -130,6 +130,9 @@ stdlib package lookup, but they do not create namespaces yet. The files use an
 implemented, the naming should become module-based and the prefix can be retired
 or kept only for compatibility shims.
 
+Top-level primitive constants are available for source stdlib modules. Current
+examples include `LSTD_I32_MIN` and `LSTD_I32_MAX`.
+
 ## Module And Package Model
 
 The stdlib should eventually be organized as modules, not as prefixed global
@@ -993,6 +996,7 @@ Current phase.
 
 - Plain `.lani` files.
 - Source-level imports expanded before lexing/parsing.
+- Top-level primitive constants.
 - `lstd_` prefix.
 - CPU parser/HIR validation.
 - Representative type-check/codegen tests.

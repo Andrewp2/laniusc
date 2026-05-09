@@ -98,6 +98,33 @@ fn main() {
 }
 
 #[test]
+fn type_checker_rejects_const_initializer_type_mismatch() {
+    let src = r#"
+const LIMIT: i32 = true;
+
+fn main() {
+    return 0;
+}
+"#;
+
+    assert_gpu_type_check_error(src, "AssignMismatch");
+}
+
+#[test]
+fn type_checker_rejects_assignment_to_const() {
+    let src = r#"
+const LIMIT: i32 = 7;
+
+fn main() {
+    LIMIT = 8;
+    return LIMIT;
+}
+"#;
+
+    assert_gpu_type_check_error(src, "AssignMismatch");
+}
+
+#[test]
 fn type_checker_rejects_array_condition() {
     let src = r#"
 fn main() {

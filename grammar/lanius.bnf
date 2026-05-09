@@ -165,3 +165,5 @@ array_elems_tail [array_more] -> 'Comma' expr array_elems_tail;
 array_elems_tail [array_end] -> ;
 primary      [true]          -> 'True';
 primary      [false]         -> 'False';
+item         [item_const]    -> const_item;
+const_item   [const]         -> 'Const' 'Ident' 'Colon' type_expr 'Assign' expr 'Semicolon';

@@ -49,6 +49,7 @@ pub struct HirFile {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum HirItem {
     Fn(HirFn),
+    Const(HirConst),
     Stmt(HirStmt),
 }
 
@@ -59,6 +60,14 @@ pub struct HirFn {
     pub params: Vec<HirParam>,
     pub ret: HirType,
     pub body: HirBlock,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HirConst {
+    pub name: String,
+    pub ty: HirType,
+    pub value: HirExpr,
     pub span: Span,
 }
 
@@ -287,6 +296,8 @@ impl<'a> HirParser<'a> {
         let public = self.eat(TokenKind::Pub).is_some();
         if public || self.peek() == Some(TokenKind::Fn) {
             Ok(HirItem::Fn(self.parse_fn(public)?))
+        } else if self.peek() == Some(TokenKind::Const) {
+            Ok(HirItem::Const(self.parse_const()?))
         } else {
             Ok(HirItem::Stmt(self.parse_stmt()?))
         }
@@ -334,6 +345,23 @@ impl<'a> HirParser<'a> {
             params,
             ret,
             body,
+            span: self.span_since(start),
+        })
+    }
+
+    fn parse_const(&mut self) -> Result<HirConst, HirError> {
+        let start = self.peek_start();
+        self.expect(TokenKind::Const, "Const")?;
+        let name = self.expect_name(&[TokenKind::Ident], "constant name")?;
+        self.expect(TokenKind::Colon, "Colon")?;
+        let ty = self.parse_type_expr()?;
+        self.expect(TokenKind::Assign, "Assign")?;
+        let value = self.parse_expr()?;
+        self.expect_semicolon()?;
+        Ok(HirConst {
+            name,
+            ty,
+            value,
             span: self.span_since(start),
         })
     }

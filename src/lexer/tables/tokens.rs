@@ -121,6 +121,7 @@ pub enum TokenKind {
     IfRBrace,
     True,
     False,
+    Const,
 }
 
 impl core::convert::TryFrom<u32> for TokenKind {
@@ -224,6 +225,7 @@ impl TokenKind {
             x if x == TokenKind::IfRBrace as u32 => TokenKind::IfRBrace,
             x if x == TokenKind::True as u32 => TokenKind::True,
             x if x == TokenKind::False as u32 => TokenKind::False,
+            x if x == TokenKind::Const as u32 => TokenKind::Const,
             _ => return None,
         };
         Some(k)
@@ -322,6 +324,7 @@ impl TokenKind {
             "IfRBrace" => TokenKind::IfRBrace,
             "True" => TokenKind::True,
             "False" => TokenKind::False,
+            "Const" => TokenKind::Const,
             _ => return None,
         };
         Some(k)
@@ -330,7 +333,7 @@ impl TokenKind {
 
 // used on GPU side too
 pub const INVALID_TOKEN: u32 = u32::MAX;
-pub const N_KINDS: u32 = TokenKind::False as u32 + 1;
+pub const N_KINDS: u32 = TokenKind::Const as u32 + 1;
 
 #[cfg(test)]
 mod tests {

@@ -46,6 +46,7 @@ static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_ARRAY_EXPR = 24u;
+static const uint HIR_CONST_ITEM = 25u;
 
 static const uint TK_IDENT = 1u;
 static const uint TK_LPAREN = 4u;
@@ -94,6 +95,7 @@ static const uint TK_IF_LBRACE = 88u;
 static const uint TK_IF_RBRACE = 89u;
 static const uint TK_TRUE = 90u;
 static const uint TK_FALSE = 91u;
+static const uint TK_CONST = 92u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -388,7 +390,7 @@ uint classify(uint i, out uint end)
     }
     if (kind == TK_PARAM_IDENT ||
         (kind == TK_IDENT && i + 1u < n && token_kind(i + 1u) == TK_COLON &&
-         (i == 0u || token_kind(i - 1u) != TK_LET)))
+         (i == 0u || (token_kind(i - 1u) != TK_LET && token_kind(i - 1u) != TK_CONST))))
         return HIR_PARAM;
     if (kind == TK_TYPE_IDENT ||
         (kind == TK_IDENT &&
@@ -413,6 +415,11 @@ uint classify(uint i, out uint end)
     {
         end = statement_end(i);
         return HIR_LET_STMT;
+    }
+    if (kind == TK_CONST)
+    {
+        end = statement_end(i);
+        return HIR_CONST_ITEM;
     }
     if (kind == TK_RETURN)
     {
@@ -462,7 +469,7 @@ uint classify(uint i, out uint end)
     if (kind == TK_IDENT)
     {
         uint prev = i > 0u ? token_kind(i - 1u) : 0u;
-        if (prev == TK_FN || prev == TK_LET || prev == TK_DOT)
+        if (prev == TK_FN || prev == TK_LET || prev == TK_DOT || prev == TK_CONST)
             return HIR_NONE;
         return HIR_NAME_EXPR;
     }

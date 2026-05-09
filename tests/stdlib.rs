@@ -89,13 +89,18 @@ fn stdlib_sources_parse_with_cpu_parser_and_hir() {
             parse_source(&src).unwrap_or_else(|err| panic!("{name}: HIR parse failed: {err}"));
         assert!(
             !hir.items.is_empty(),
-            "{name}: stdlib source should define public functions"
+            "{name}: stdlib source should define public functions or constants"
         );
         for item in hir.items {
-            let HirItem::Fn(func) = item else {
-                panic!("{name}: stdlib source should only contain function items");
-            };
-            assert!(func.public, "{name}: {} should be pub", func.name);
+            match item {
+                HirItem::Fn(func) => assert!(func.public, "{name}: {} should be pub", func.name),
+                HirItem::Const(konst) => assert!(
+                    konst.name.starts_with("LSTD_"),
+                    "{name}: {} should use the stdlib constant prefix",
+                    konst.name
+                ),
+                HirItem::Stmt(_) => panic!("{name}: stdlib source should not contain statements"),
+            }
         }
     }
 }
@@ -116,8 +121,9 @@ fn main() {
     let upper: i32 = high * 3;
     let inside: bool = lstd_i32_between_inclusive(limited, low, upper);
     let ok: bool = lstd_bool_and(found, inside);
+    let max_ok: bool = LSTD_I32_MAX > total;
     let negative_total: bool = total < 0;
-    let flipped: bool = lstd_bool_xor(ok, negative_total);
+    let flipped: bool = lstd_bool_xor(lstd_bool_and(ok, max_ok), negative_total);
 
     if (flipped) {
         let ok_value: i32 = lstd_bool_to_i32(ok);

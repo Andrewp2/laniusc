@@ -124,6 +124,36 @@ fn main() {
     assert_eq!(stdout, "1\n2\n");
 }
 
+#[test]
+#[cfg(all(unix, target_arch = "x86_64"))]
+fn x86_codegen_lowers_top_level_constants() {
+    let src = r#"
+const LIMIT: i32 = 7;
+const ENABLED: bool = true;
+
+fn main() {
+    if (ENABLED) {
+        print(LIMIT + 5);
+    } else {
+        print(0);
+    }
+    return LIMIT;
+}
+"#;
+
+    let elf = pollster::block_on(async {
+        let compiler = GpuCompiler::new_with_device(device::global())
+            .await
+            .expect("initialize reusable GPU compiler");
+        compile_source_to_x86_64_with_gpu_codegen_using(src, &compiler)
+            .await
+            .expect("compile const x86")
+    });
+
+    let stdout = common::run_x86_64_elf("consts: x86_64 sample", "consts", &elf);
+    assert_eq!(stdout, "12\n");
+}
+
 #[cfg(all(unix, target_arch = "x86_64"))]
 fn run_x86(program: &SampleProgram, elf: &[u8]) -> String {
     common::run_x86_64_elf(

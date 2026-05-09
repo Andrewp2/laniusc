@@ -89,6 +89,7 @@ static const uint TK_TYPE_ARRAY_RBRACKET = 86u;
 static const uint TK_IF_LBRACE = 88u;
 static const uint TK_TRUE = 90u;
 static const uint TK_FALSE = 91u;
+static const uint TK_CONST = 92u;
 
 uint active_token_count()
 {
@@ -298,6 +299,11 @@ uint find_let_assign(uint let_ident_i, uint semi_i)
     return INVALID;
 }
 
+bool is_const_decl_at(uint i)
+{
+    return token_kind(i) == TK_IDENT && i > 0u && token_kind(i - 1u) == TK_CONST;
+}
+
 uint find_function_return_type(uint fn_i)
 {
     return fn_i < active_token_count() ? call_return_type[fn_i] : TY_UNKNOWN;
@@ -398,7 +404,11 @@ uint declaration_type_shallow(uint decl_i)
     if (kind == TK_PARAM_IDENT ||
         (kind == TK_IDENT && decl_i + 1u < active_token_count() &&
          token_kind(decl_i + 1u) == TK_COLON &&
-         (decl_i == 0u || token_kind(decl_i - 1u) != TK_LET)))
+         (decl_i == 0u ||
+          (token_kind(decl_i - 1u) != TK_LET && token_kind(decl_i - 1u) != TK_CONST))))
+        return type_code_for_type_expr(decl_i + 2u);
+
+    if (is_const_decl_at(decl_i))
         return type_code_for_type_expr(decl_i + 2u);
 
     if (kind == TK_LET_IDENT ||
@@ -501,7 +511,7 @@ bool ident_is_use(uint i)
     if (token_kind(i) != TK_IDENT)
         return false;
     uint prev = i > 0u ? token_kind(i - 1u) : 0u;
-    if (prev == TK_FN || prev == TK_DOT || prev == TK_LET)
+    if (prev == TK_FN || prev == TK_DOT || prev == TK_LET || prev == TK_CONST)
         return false;
     uint next = i + 1u < active_token_count() ? token_kind(i + 1u) : 0u;
     if (next == TK_COLON)
@@ -536,9 +546,12 @@ void main(uint3 tid: SV_DispatchThreadID)
     {
         if (token_kind(i) == TK_PARAM_IDENT ||
             (token_kind(i) == TK_IDENT && i + 1u < active_token_count() &&
-             token_kind(i + 1u) == TK_COLON && (i == 0u || token_kind(i - 1u) != TK_LET)) ||
+             token_kind(i + 1u) == TK_COLON &&
+             (i == 0u ||
+              (token_kind(i - 1u) != TK_LET && token_kind(i - 1u) != TK_CONST))) ||
             token_kind(i) == TK_LET_IDENT ||
-            (token_kind(i) == TK_IDENT && i > 0u && token_kind(i - 1u) == TK_LET))
+            (token_kind(i) == TK_IDENT && i > 0u && token_kind(i - 1u) == TK_LET) ||
+            is_const_decl_at(i))
         {
             visible_type[i] = declaration_type(i);
         }

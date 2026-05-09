@@ -24,8 +24,8 @@ to collide with application functions.
 
 Current scope is intentionally small:
 
-- `i32.lani` has integer helpers built from supported arithmetic and comparison
-  operators.
+- `i32.lani` has integer constants and helpers built from supported arithmetic
+  and comparison operators.
 - `bool.lani` has boolean combinators and conversions built on the current bool
   expression surface, including `true` and `false` literals.
 - `array_i32_4.lani` has fixed-size `[i32; 4]` helpers. There are no generics or

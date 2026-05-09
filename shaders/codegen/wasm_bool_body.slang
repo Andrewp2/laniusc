@@ -46,10 +46,12 @@ static const uint TK_OROR = 18u;
 static const uint TK_NOT = 19u;
 static const uint TK_LBRACE = 22u;
 static const uint TK_RBRACE = 23u;
+static const uint TK_MINUS = 27u;
 static const uint TK_CALL_LPAREN = 28u;
 static const uint TK_GROUP_LPAREN = 29u;
 static const uint TK_SEMICOLON = 37u;
 static const uint TK_NOT_EQUAL = 40u;
+static const uint TK_PREFIX_MINUS = 60u;
 static const uint TK_GROUP_RPAREN = 62u;
 static const uint TK_CALL_RPAREN = 63u;
 static const uint TK_FN = 67u;
@@ -62,6 +64,7 @@ static const uint TK_IF_LBRACE = 88u;
 static const uint TK_IF_RBRACE = 89u;
 static const uint TK_TRUE = 90u;
 static const uint TK_FALSE = 91u;
+static const uint TK_CONST = 92u;
 
 uint active_token_count()
 {
@@ -253,6 +256,15 @@ void emit_i64_const_u32(inout uint cursor, uint value, bool write, uint lane)
     }
 }
 
+void emit_i64_const_minus_one(inout uint cursor, bool write, uint lane)
+{
+    put_byte(cursor, 0x42u, write, lane);
+    [loop]
+    for (uint i = 0u; i < 9u; i += 1u)
+        put_byte(cursor, 0xffu, write, lane);
+    put_byte(cursor, 0x7fu, write, lane);
+}
+
 void emit_local_get(inout uint cursor, uint local_i, bool write, uint lane)
 {
     put_byte(cursor, 0x20u, write, lane);
@@ -281,6 +293,53 @@ uint parse_uint_token(uint token_i)
     return value;
 }
 
+bool is_const_decl_at(uint decl_i)
+{
+    return decl_i < active_token_count() && token_kind(decl_i) == TK_IDENT && decl_i > 0u &&
+           token_kind(decl_i - 1u) == TK_CONST;
+}
+
+uint const_value_token(uint decl_i, out bool negate)
+{
+    negate = false;
+    uint semi = statement_end(decl_i);
+    uint assign_i = find_next_kind(decl_i + 1u, semi, TK_ASSIGN);
+    if (assign_i == 0xffffffffu || assign_i + 1u >= semi)
+        return 0xffffffffu;
+
+    uint value_i = assign_i + 1u;
+    uint kind = token_kind(value_i);
+    if ((kind == TK_MINUS || kind == TK_PREFIX_MINUS) && value_i + 1u < semi)
+    {
+        negate = true;
+        value_i += 1u;
+    }
+    return value_i;
+}
+
+void emit_const_decl_value(inout uint cursor, uint decl_i, bool write, uint lane)
+{
+    bool negate = false;
+    uint value_i = const_value_token(decl_i, negate);
+    uint kind = token_kind(value_i);
+    if (kind == TK_INT)
+    {
+        emit_i64_const_u32(cursor, parse_uint_token(value_i), write, lane);
+        if (negate)
+        {
+            emit_i64_const_minus_one(cursor, write, lane);
+            put_byte(cursor, 0x7eu, write, lane);
+        }
+        return;
+    }
+    if (kind == TK_TRUE || kind == TK_FALSE)
+    {
+        emit_i64_const_u32(cursor, kind == TK_TRUE ? 1u : 0u, write, lane);
+        return;
+    }
+    emit_i64_const_u32(cursor, 0u, write, lane);
+}
+
 void emit_i64_atom_range(inout uint cursor, uint start_i, uint end_i, bool write, uint lane)
 {
     [loop]
@@ -302,7 +361,10 @@ void emit_i64_atom_range(inout uint cursor, uint start_i, uint end_i, bool write
             uint decl = visible_decl[i];
             if (decl != 0xffffffffu)
             {
-                emit_local_get(cursor, decl, write, lane);
+                if (is_const_decl_at(decl))
+                    emit_const_decl_value(cursor, decl, write, lane);
+                else
+                    emit_local_get(cursor, decl, write, lane);
                 return;
             }
         }

@@ -2374,10 +2374,10 @@
     ]
   },
   "ll1_runtime": {
-    "nonterminals": 48,
+    "nonterminals": 49,
     "start_nonterminal": "file",
-    "predict_cells": 4416,
-    "rhs_symbols": 223
+    "predict_cells": 4557,
+    "rhs_symbols": 231
   },
   "ll1_predictions": [
     {
@@ -4103,6 +4103,12 @@
       "production": 74
     },
     {
+      "nonterminal": "const_item",
+      "lookahead": "Const",
+      "lookahead_id": 92,
+      "production": 120
+    },
+    {
       "nonterminal": "else_opt",
       "lookahead": "$",
       "lookahead_id": 0,
@@ -4262,6 +4268,12 @@
       "nonterminal": "else_opt",
       "lookahead": "False",
       "lookahead_id": 91,
+      "production": 35
+    },
+    {
+      "nonterminal": "else_opt",
+      "lookahead": "Const",
+      "lookahead_id": 92,
       "production": 35
     },
     {
@@ -4727,6 +4739,12 @@
       "production": 0
     },
     {
+      "nonterminal": "file",
+      "lookahead": "Const",
+      "lookahead_id": 92,
+      "production": 0
+    },
+    {
       "nonterminal": "fn_item",
       "lookahead": "Fn",
       "lookahead_id": 67,
@@ -4883,6 +4901,12 @@
       "production": 5
     },
     {
+      "nonterminal": "item",
+      "lookahead": "Const",
+      "lookahead_id": 92,
+      "production": 119
+    },
+    {
       "nonterminal": "item_list",
       "lookahead": "$",
       "lookahead_id": 0,
@@ -5030,6 +5054,12 @@
       "nonterminal": "item_list",
       "lookahead": "False",
       "lookahead_id": 91,
+      "production": 1
+    },
+    {
+      "nonterminal": "item_list",
+      "lookahead": "Const",
+      "lookahead_id": 92,
       "production": 1
     },
     {
@@ -7909,6 +7939,32 @@
       "arity": 0,
       "rhs": [
         "'False'"
+      ]
+    },
+    {
+      "id": 119,
+      "line": 168,
+      "lhs": "item",
+      "tag": "item_const",
+      "arity": 1,
+      "rhs": [
+        "const_item"
+      ]
+    },
+    {
+      "id": 120,
+      "line": 169,
+      "lhs": "const_item",
+      "tag": "const",
+      "arity": 2,
+      "rhs": [
+        "'Const'",
+        "'Ident'",
+        "'Colon'",
+        "type_expr",
+        "'Assign'",
+        "expr",
+        "'Semicolon'"
       ]
     }
   ]
