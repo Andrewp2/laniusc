@@ -3,7 +3,9 @@
 This directory contains the initial Lanius standard library as plain `.lani`
 source files.
 
-The long-term design is tracked in [PLAN.md](PLAN.md).
+The long-term design is tracked in [PLAN.md](PLAN.md). Compiler and runtime
+prerequisites for implementing those layers are tracked in
+[LANGUAGE_REQUIREMENTS.md](LANGUAGE_REQUIREMENTS.md).
 
 Lanius does not have modules or imports yet. These files are not auto-imported by
 the compiler. To use a helper today, concatenate the needed stdlib source before
