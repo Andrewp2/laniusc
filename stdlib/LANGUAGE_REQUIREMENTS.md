@@ -8,9 +8,10 @@ should prove before the next layer depends on it.
 ## Already Supported Today
 
 Current source-level stdlib files are plain `.lani` sources that can be included
-with explicit source imports such as `import "stdlib/i32.lani";`. `tests/stdlib.rs`
-verifies that every `stdlib/*.lani` file parses, lowers to HIR, and that
-representative combined usage compiles to WASM. `tests/imports.rs` covers stdlib,
+with explicit source imports such as `import core::i32;` or
+`import "stdlib/i32.lani";`. `tests/stdlib.rs` verifies that every
+`stdlib/*.lani` file parses, lowers to HIR, and that representative combined
+usage compiles to WASM. `tests/imports.rs` covers stdlib package lookup,
 relative, duplicate, and cyclic imports.
 
 Supported enough for the seed library:
@@ -32,8 +33,9 @@ Supported enough for the seed library:
 
 Important limitations visible in current files:
 
-- No real modules, namespaces, or package imports. Source-level path imports
-  exist and `stdlib/README.md` documents the temporary `lstd_` prefix.
+- No real modules, namespaces, or visibility rules. Source-level module imports
+  and path imports exist, and `stdlib/README.md` documents the temporary
+  `lstd_` prefix.
 - No generics or const parameters. `stdlib/array_i32_4.lani` is tied to
   `[i32; 4]`; every other element type or length would need another source file.
 - No enum/sum types, structs, methods, traits/interfaces, slices, references, or
@@ -49,8 +51,8 @@ runtime work lands.
 
 Strict blockers:
 
-- Real module/import syntax and package lookup, so users can import stable
-  modules instead of source include paths.
+- Real namespaces and visibility rules, so module imports expose stable names
+  instead of source-level global helpers.
 - Name visibility and namespace rules, so `lstd_` can be retired or isolated
   behind compatibility shims.
 - A stable source fixture path for stdlib tests, extending the current
@@ -66,7 +68,7 @@ Nice-to-have:
 Acceptance checks:
 
 - A user program can import `core::i32` and `core::bool` explicitly through the
-  eventual package/module syntax.
+  source-level package lookup.
 - Existing `lstd_i32_*`, `lstd_bool_*`, and `lstd_i32x4_*` examples still compile
   through a compatibility path.
 - A stdlib test uses bool literals in a helper and verifies both WASM output and

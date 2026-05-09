@@ -116,18 +116,19 @@ The current `stdlib/` directory contains plain `.lani` files:
 Use explicit source imports before program source:
 
 ```lani
-import "stdlib/i32.lani";
-import "stdlib/bool.lani";
+import core::i32;
+import core::bool;
 
 fn main() {
     return lstd_i32_abs(-7);
 }
 ```
 
-These imports are source-level includes expanded before lexing/parsing, not a
-module system. The files use an `lstd_` prefix to avoid collisions. When real
-modules/package imports are implemented, the naming should become module-based
-and the prefix can be retired or kept only for compatibility shims.
+These imports are source-level includes expanded before lexing/parsing. They use
+stdlib package lookup, but they do not create namespaces yet. The files use an
+`lstd_` prefix to avoid collisions. When real modules and visibility are
+implemented, the naming should become module-based and the prefix can be retired
+or kept only for compatibility shims.
 
 ## Module And Package Model
 

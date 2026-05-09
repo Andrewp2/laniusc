@@ -369,6 +369,11 @@ enum ImportContext {
     File(PathBuf),
 }
 
+enum ImportSpec {
+    Path(String),
+    Module(String),
+}
+
 struct ImportExpander {
     expanded: HashSet<PathBuf>,
     stack: Vec<PathBuf>,
@@ -447,7 +452,18 @@ impl ImportExpander {
         Ok(expanded)
     }
 
-    fn resolve_import(&self, spec: &str, context: &ImportContext) -> Result<PathBuf, String> {
+    fn resolve_import(
+        &self,
+        spec: &ImportSpec,
+        context: &ImportContext,
+    ) -> Result<PathBuf, String> {
+        match spec {
+            ImportSpec::Path(path) => self.resolve_path_import(path, context),
+            ImportSpec::Module(module) => self.resolve_module_import(module),
+        }
+    }
+
+    fn resolve_path_import(&self, spec: &str, context: &ImportContext) -> Result<PathBuf, String> {
         let spec_path = Path::new(spec);
         if spec_path.is_absolute() {
             if spec_path.exists() {
@@ -490,6 +506,37 @@ impl ImportExpander {
             .join(", ");
         Err(format!("import {spec:?} not found; tried {tried}"))
     }
+
+    fn resolve_module_import(&self, module: &str) -> Result<PathBuf, String> {
+        let segments = module.split("::").collect::<Vec<_>>();
+        let mut candidates = Vec::new();
+
+        let mut module_path = manifest_root().join("stdlib");
+        for segment in &segments {
+            module_path.push(segment);
+        }
+        module_path.set_extension("lani");
+        candidates.push(module_path);
+
+        if segments.first() == Some(&"core") {
+            if let Some(last) = segments.last() {
+                candidates.push(manifest_root().join("stdlib").join(format!("{last}.lani")));
+            }
+        }
+
+        for candidate in &candidates {
+            if candidate.exists() {
+                return Ok(candidate.clone());
+            }
+        }
+
+        let tried = candidates
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        Err(format!("module import {module:?} not found; tried {tried}"))
+    }
 }
 
 impl ImportContext {
@@ -509,7 +556,7 @@ pub fn expand_source_imports_from_path(path: impl AsRef<Path>) -> Result<String,
     ImportExpander::new().expand_file(path.as_ref())
 }
 
-fn parse_import_directive(line: &str) -> Result<Option<String>, String> {
+fn parse_import_directive(line: &str) -> Result<Option<ImportSpec>, String> {
     let trimmed = line.trim();
     let Some(rest) = trimmed.strip_prefix("import") else {
         return Ok(None);
@@ -518,21 +565,45 @@ fn parse_import_directive(line: &str) -> Result<Option<String>, String> {
         return Ok(None);
     }
     let rest = rest.trim_start();
-    let Some(rest) = rest.strip_prefix('"') else {
-        return Err("expected import path string".to_string());
-    };
-    let Some(closing_quote) = rest.find('"') else {
-        return Err("unterminated import path string".to_string());
-    };
-    let (spec, rest) = rest.split_at(closing_quote);
-    let rest = rest[1..].trim();
-    if rest != ";" {
-        return Err("expected `;` after import path".to_string());
+    if let Some(rest) = rest.strip_prefix('"') {
+        let Some(closing_quote) = rest.find('"') else {
+            return Err("unterminated import path string".to_string());
+        };
+        let (spec, rest) = rest.split_at(closing_quote);
+        let rest = rest[1..].trim();
+        if rest != ";" {
+            return Err("expected `;` after import path".to_string());
+        }
+        if spec.is_empty() {
+            return Err("import path must not be empty".to_string());
+        }
+        return Ok(Some(ImportSpec::Path(spec.to_string())));
     }
-    if spec.is_empty() {
-        return Err("import path must not be empty".to_string());
+
+    let Some(module) = rest.strip_suffix(';') else {
+        return Err("expected `;` after import module".to_string());
+    };
+    let module = module.trim();
+    if !is_valid_import_module(module) {
+        return Err("expected import path string or module path".to_string());
     }
-    Ok(Some(spec.to_string()))
+    Ok(Some(ImportSpec::Module(module.to_string())))
+}
+
+fn is_valid_import_module(module: &str) -> bool {
+    if module.is_empty() || !module.contains("::") {
+        return false;
+    }
+    module.split("::").all(is_valid_module_segment)
+}
+
+fn is_valid_module_segment(segment: &str) -> bool {
+    let mut chars = segment.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
 }
 
 fn manifest_root() -> PathBuf {

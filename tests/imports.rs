@@ -71,6 +71,32 @@ fn main() {
 }
 
 #[test]
+fn module_style_stdlib_imports_expand_and_compile() {
+    let src = r#"
+import core::i32;
+import core::bool;
+
+fn main() {
+    let positive: bool = lstd_i32_between_inclusive(7, 0, 10);
+    return lstd_bool_to_i32(positive) + lstd_i32_abs(-6);
+}
+"#;
+
+    let expanded = expand_source_imports(src).expect("expand module-style stdlib imports");
+    assert!(expanded.contains("pub fn lstd_i32_abs"));
+    assert!(expanded.contains("pub fn lstd_bool_to_i32"));
+    assert!(!expanded.contains("import core::i32;"));
+    parse_source(&expanded).expect("expanded module-style stdlib imports should parse");
+
+    let wasm = pollster::block_on(compile_source_to_wasm_with_gpu_codegen(src))
+        .expect("module-style stdlib imports should compile to WASM");
+    assert_eq!(
+        &wasm[0..8],
+        &[0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]
+    );
+}
+
+#[test]
 fn relative_imports_resolve_from_each_importing_file() {
     let dir = TempDir::new("relative");
     dir.write(
@@ -141,6 +167,45 @@ fn main() {
     let expanded = expand_source_imports_from_path(&main).expect("expand duplicate imports");
     assert_eq!(expanded.matches("pub fn imported_once").count(), 1);
     parse_source(&expanded).expect("expanded duplicate import should parse");
+}
+
+#[test]
+fn path_and_module_import_of_same_file_expands_once() {
+    let src = r#"
+import "stdlib/i32.lani";
+import core::i32;
+
+fn main() {
+    return lstd_i32_abs(-1);
+}
+"#;
+
+    let expanded = expand_source_imports(src).expect("expand duplicate stdlib imports");
+    assert_eq!(expanded.matches("pub fn lstd_i32_abs").count(), 1);
+    parse_source(&expanded).expect("expanded duplicate stdlib import should parse");
+}
+
+#[test]
+fn missing_module_import_reports_candidates() {
+    let err = expand_source_imports("import core::not_a_module;\n")
+        .expect_err("missing module import should fail");
+    match err {
+        CompileError::Import(message) => {
+            assert!(
+                message.contains("module import \"core::not_a_module\" not found"),
+                "expected module lookup error, got {message}"
+            );
+            assert!(
+                message.contains("stdlib/core/not_a_module.lani"),
+                "expected canonical stdlib module candidate, got {message}"
+            );
+            assert!(
+                message.contains("stdlib/not_a_module.lani"),
+                "expected core compatibility candidate, got {message}"
+            );
+        }
+        other => panic!("expected import error, got {other:?}"),
+    }
 }
 
 #[test]
