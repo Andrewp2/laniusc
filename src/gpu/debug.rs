@@ -4,7 +4,7 @@
 
 use wgpu;
 
-/// CPU-side holder for a staged GPU buffer.
+/// Host-side holder for a staged GPU buffer.
 #[derive(Clone, Default)]
 pub struct DebugBuffer {
     /// Label for the buffer

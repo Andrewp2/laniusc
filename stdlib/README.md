@@ -9,17 +9,9 @@ tracked in [PLAN.md](PLAN.md). Compiler and runtime prerequisites for
 implementing those layers are tracked in
 [LANGUAGE_REQUIREMENTS.md](LANGUAGE_REQUIREMENTS.md).
 
-These files are not auto-imported by the compiler. To use a helper, add explicit
-module-style source import lines before the code that calls it:
-
-```lani
-import core::i32;
-import core::bool;
-
-fn main() {
-    return core::i32::abs(-7);
-}
-```
+These files are not auto-imported by the compiler. The old CPU source import
+expander has been removed; module imports now need a GPU implementation before
+they can be used by the normal compile path.
 
 Module-form helpers live under `stdlib/core/` and use module names such as
 `core::i32::abs`. Legacy flat files are still available through quoted imports
@@ -63,9 +55,8 @@ Current scope is intentionally small:
 - `core/cmp.lani` has declaration seeds for generic `Eq<T>` and `Ord<T>`
   traits plus bounded `i32` trait impls. `core/hash.lani` similarly seeds a
   generic `Hash<T>` trait and an `i32` impl. This validates `impl Trait for
-  Type` parsing, import expansion, conformance precheck, `Self` in trait method
-  signatures, and type-check-only method calls. Generic parameter bounds such as
-  `T: core::cmp::Eq<T>` and
+  Type` parsing, conformance precheck, and type-check-only method calls.
+  Generic parameter bounds such as `T: core::cmp::Eq<T>` and
   `K: core::cmp::Eq<K> + core::hash::Hash<K>` can drive bounded
   type-check-only method lookup in generic functions. `where` clauses,
   associated items, dictionaries, full trait solving, and backend lowering are

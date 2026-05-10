@@ -2,9 +2,6 @@
 
 pub mod buffers;
 pub mod debug;
-#[cfg(feature = "gpu-debug")]
-pub mod debug_checks;
-pub mod debug_host;
 pub mod driver;
 pub mod passes;
 pub mod types;

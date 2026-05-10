@@ -35,7 +35,7 @@ We extend the existing lex pipeline (`LEXING.md`) conceptually with retagging, b
      - `LBRACKET`→ `INDEX_LBRACKET` iff **prev** ends a Primary; otherwise `ARRAY_LBRACKET`.
    - This step is **O(n)** work, **O(log n)** depth (prefix scans + table lookups), identical cost class to lex.
 
-3. **(Optional) Keywordization (GPU/CPU)** — small:
+3. **Keywordization (GPU)** — small:
    - Either keep keywords as `IDENT` with known lexemes (`"fn"`, `"struct"`, …) or tag them to dedicated tokens. Parser code supports either.
 
 4. **LLP(1,1) parse (GPU)**:
@@ -197,7 +197,8 @@ let r2: Int = mul_add(first, 10, 1);
 
   * [ ] Golden token streams around tricky punctuation.
   * [ ] Parsing samples (`()` calls, `[]` arrays/index, nested cases, trailing commas).
-  * [ ] Property tests comparing CPU/GPU parser outputs.
+  * [ ] Property tests comparing GPU parser outputs against explicitly named
+    test CPU oracles.
 
 ---
 

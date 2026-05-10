@@ -12,9 +12,9 @@ use std::{fs, io::Write, path::Path};
 use laniusc::{
     dev::generator::gen_valid_source,
     lexer::{
-        cpu::{CpuToken, lex_on_cpu},
         gpu::{Token as GpuToken, lex_on_gpu},
         tables::tokens::TokenKind,
+        test_cpu::{TestCpuToken, lex_on_test_cpu},
     },
 };
 use rand::{SeedableRng, rngs::StdRng};
@@ -33,10 +33,10 @@ fn env_usize(name: &str, default: usize) -> usize {
         .unwrap_or(default)
 }
 
-fn first_divergence_idx(cpu: &[CpuToken], gpu: &[GpuToken]) -> usize {
-    let n = cpu.len().min(gpu.len());
+fn first_divergence_idx(test_cpu: &[TestCpuToken], gpu: &[GpuToken]) -> usize {
+    let n = test_cpu.len().min(gpu.len());
     for i in 0..n {
-        let ct = &cpu[i];
+        let ct = &test_cpu[i];
         let gt = &gpu[i];
         if ct.kind as u32 != gt.kind as u32 || ct.start != gt.start || ct.len != gt.len {
             return i;
@@ -64,7 +64,7 @@ fn raw_parser_kind(kind: TokenKind) -> TokenKind {
     }
 }
 
-fn normalize_cpu_tokens_to_gpu_raw(tokens: &mut [CpuToken]) {
+fn normalize_test_cpu_tokens_to_gpu_raw(tokens: &mut [TestCpuToken]) {
     for token in tokens {
         token.kind = raw_parser_kind(token.kind);
     }
@@ -88,19 +88,19 @@ fn slice_preview(src: &str, start: usize, len: usize) -> String {
     }
 }
 
-fn dump_near(src: &str, cpu: &[CpuToken], gpu: &[GpuToken], from: usize) {
+fn dump_near(src: &str, test_cpu: &[TestCpuToken], gpu: &[GpuToken], from: usize) {
     let lo = from.saturating_sub(1);
-    let hi = (from + 3).min(cpu.len().min(gpu.len()));
+    let hi = (from + 3).min(test_cpu.len().min(gpu.len()));
     eprintln!("--- context tokens [{lo}..{hi}) ---");
     for i in lo..hi {
-        let c = cpu
+        let c = test_cpu
             .get(i)
             .map(|t| (t.kind, t.start, t.len, slice_preview(src, t.start, t.len)));
         let g = gpu
             .get(i)
             .map(|t| (t.kind, t.start, t.len, slice_preview(src, t.start, t.len)));
         let mark = if c == g { "✅" } else { "❌" };
-        eprintln!("{mark} #{i:06} CPU={c:?}  GPU={g:?}");
+        eprintln!("{mark} #{i:06} test_cpu={c:?}  GPU={g:?}");
     }
 }
 
@@ -126,27 +126,27 @@ fn save_case(dir: &str, tag: &str, target_len: usize, seed: u64, src: &str) -> S
 
 fn assert_tokens_equal_or_dump(
     src: &str,
-    cpu: &[CpuToken],
+    test_cpu: &[TestCpuToken],
     gpu: &[GpuToken],
     label: &str,
     target: usize,
     seed: u64,
 ) {
-    if cpu.len() != gpu.len() {
+    if test_cpu.len() != gpu.len() {
         let case_path = save_case("fuzz-cases", "size_sweep_fail", target, seed, src);
         eprintln!(
-            "[{label}] target_len={} actual_len={} token-count mismatch: CPU={} GPU={}\n  saved: {}",
+            "[{label}] target_len={} actual_len={} token-count mismatch: test_cpu={} GPU={}\n  saved: {}",
             target,
             src.len(),
-            cpu.len(),
+            test_cpu.len(),
             gpu.len(),
             case_path
         );
-        let i = first_divergence_idx(cpu, gpu);
-        dump_near(src, cpu, gpu, i);
+        let i = first_divergence_idx(test_cpu, gpu);
+        dump_near(src, test_cpu, gpu, i);
         panic!("token-count mismatch");
     }
-    for (i, (ct, gt)) in cpu.iter().zip(gpu.iter()).enumerate() {
+    for (i, (ct, gt)) in test_cpu.iter().zip(gpu.iter()).enumerate() {
         if ct.kind as u32 != gt.kind as u32 || ct.start != gt.start || ct.len != gt.len {
             let case_path = save_case("fuzz-cases", "size_sweep_fail", target, seed, src);
             eprintln!(
@@ -155,7 +155,7 @@ fn assert_tokens_equal_or_dump(
                 src.len(),
                 case_path
             );
-            dump_near(src, cpu, gpu, i);
+            dump_near(src, test_cpu, gpu, i);
             panic!("token mismatch");
         }
     }
@@ -167,11 +167,11 @@ async fn run_one(target_len: usize, seed: u64) {
         StdRng::seed_from_u64(seed ^ (target_len as u64).wrapping_mul(0x9E3779B97F4A7C15));
     let src = gen_valid_source(&mut rng, target_len);
 
-    let mut cpu = lex_on_cpu(&src).expect("CPU lex failed");
-    normalize_cpu_tokens_to_gpu_raw(&mut cpu);
+    let mut test_cpu = lex_on_test_cpu(&src).expect("test CPU oracle lex failed");
+    normalize_test_cpu_tokens_to_gpu_raw(&mut test_cpu);
     let gpu = lex_on_gpu(&src).await.expect("GPU lex failed");
 
-    assert_tokens_equal_or_dump(&src, &cpu, &gpu, "size_sweep", target_len, seed);
+    assert_tokens_equal_or_dump(&src, &test_cpu, &gpu, "size_sweep", target_len, seed);
 }
 
 /// Sweep 0..=31 target lengths. (Fast; runs by default.)

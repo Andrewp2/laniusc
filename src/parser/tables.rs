@@ -318,12 +318,19 @@ impl PrecomputedParseTables {
         };
     }
 
-    pub fn ll1_production_stream(&self, token_kinds: &[u32]) -> Result<Vec<u32>, Ll1ParseError> {
-        let (productions, _) = self.ll1_production_stream_with_positions(token_kinds)?;
+    /// Test-only host LL(1) oracle for parser tests and fuzz tooling.
+    ///
+    /// The compiler must not call this; production parsing is recorded and
+    /// executed by `parser::gpu`.
+    pub fn test_cpu_ll1_production_stream(
+        &self,
+        token_kinds: &[u32],
+    ) -> Result<Vec<u32>, Ll1ParseError> {
+        let (productions, _) = self.test_cpu_ll1_production_stream_with_positions(token_kinds)?;
         Ok(productions)
     }
 
-    pub fn ll1_production_stream_with_positions(
+    pub fn test_cpu_ll1_production_stream_with_positions(
         &self,
         token_kinds: &[u32],
     ) -> Result<(Vec<u32>, Vec<u32>), Ll1ParseError> {
@@ -398,7 +405,8 @@ impl PrecomputedParseTables {
         Ok((out, positions))
     }
 
-    pub fn projected_production_stream(&self, token_kinds: &[u32]) -> Vec<u32> {
+    /// Test-only host oracle for the pair-projected production stream.
+    pub fn test_cpu_projected_production_stream(&self, token_kinds: &[u32]) -> Vec<u32> {
         let mut out = Vec::new();
         for pair in token_kinds.windows(2) {
             let prev = pair[0];
@@ -560,9 +568,12 @@ impl PrecomputedParseTables {
     }
 }
 
-// ---------- MVP filler (so we can generate a valid file immediately) ----------
+// ---------- Generator seed table ----------
 
 /// Build a minimal, *correctly-shaped* set of tables that only handle bracket push/pop.
+///
+/// This is used by table-generation tooling as an initial data shape, not as a
+/// runtime parser fallback.
 /// - Stack symbols: 0=Paren, 1=Bracket
 /// - Partial parse: empty everywhere (we’ll fill after we wire real grammar).
 /// - Production arity: uses `prod_arity` passed in (possibly from a grammar scan).
@@ -609,7 +620,7 @@ pub fn build_mvp_precomputed_tables(n_kinds: u32, prod_arity: Vec<u32>) -> Preco
         );
 
         // Closes = typed pops by physical delimiter. Retagged closes are the normal path;
-        // raw closes remain as compatibility/failure-recovery fallbacks.
+        // raw closes are compatibility recovery entries for malformed token streams.
         t.set_sc_for_pair(prev, TokenKind::RParen as u32, &[encode_pop(SYM_PAREN)]);
         t.set_sc_for_pair(
             prev,

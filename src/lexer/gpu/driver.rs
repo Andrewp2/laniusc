@@ -400,12 +400,6 @@ impl GpuLexer {
             0usize
         };
 
-        // Optional debug sanity checks
-        #[cfg(feature = "gpu-debug")]
-        {
-            super::debug_checks::run_debug_sanity_checks(&self.device, input, &debug_output, n);
-        }
-
         if !rb_enabled {
             if let Some(timer) = maybe_timer
                 && let Some(vals) = timer.try_read(&self.device)
@@ -558,16 +552,6 @@ impl GpuLexer {
             }
         }
 
-        #[cfg(feature = "gpu-debug")]
-        {
-            super::debug_checks::run_debug_sanity_checks(
-                &self.device,
-                input,
-                &debug_output,
-                bufs.n,
-            );
-        }
-
         let result = consume(&self.device, &self.queue, bufs);
 
         #[cfg(feature = "graphics_debugger")]
@@ -687,16 +671,6 @@ impl GpuLexer {
                     "[wgpu submit] validation while submitting recorded resident lex batch: {err:#?}"
                 );
             }
-        }
-
-        #[cfg(feature = "gpu-debug")]
-        {
-            super::debug_checks::run_debug_sanity_checks(
-                &self.device,
-                input,
-                &debug_output,
-                bufs.n,
-            );
         }
 
         let result = consume_after_submit(&self.device, &self.queue, bufs, recorded_more);

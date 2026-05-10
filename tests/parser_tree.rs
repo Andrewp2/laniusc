@@ -2,12 +2,11 @@ mod common;
 
 use laniusc::{
     lexer::{
-        cpu::lex_on_cpu,
         gpu::driver::GpuLexer,
         tables::tokens::{N_KINDS, TokenKind},
+        test_cpu::lex_on_test_cpu,
     },
     parser::{
-        cpu::parse_from_token_kinds,
         gpu::{
             driver::GpuParser,
             passes::{
@@ -33,8 +32,8 @@ use laniusc::{
 };
 
 fn kinds_with_sentinels(src: &str) -> Vec<u32> {
-    let mut kinds = lex_on_cpu(src)
-        .expect("CPU lex fixture")
+    let mut kinds = lex_on_test_cpu(src)
+        .expect("test CPU oracle lex fixture")
         .into_iter()
         .map(|token| raw_parser_kind(token.kind) as u32)
         .collect::<Vec<_>>();
@@ -160,7 +159,7 @@ fn gpu_parser_builds_tree_from_resident_lexer_tokens() {
         let src = include_str!("../parser_tests/function.lani");
         let token_kinds = kinds_with_sentinels(src);
         let (expected, expected_pos) = tables
-            .ll1_production_stream_with_positions(&token_kinds)
+            .test_cpu_ll1_production_stream_with_positions(&token_kinds)
             .expect("fixture should parse with LL(1)");
 
         let res = lexer
@@ -210,7 +209,7 @@ fn generated_ll1_tables_accept_bool_literals() {
         kinds_with_sentinels("fn main() { let flag: bool = false; if (true) { return 1; } }");
 
     tables
-        .ll1_production_stream_with_positions(&token_kinds)
+        .test_cpu_ll1_production_stream_with_positions(&token_kinds)
         .expect("bool literal fixture should parse with LL(1)");
 }
 
@@ -224,7 +223,7 @@ fn generated_ll1_tables_accept_for_in_statements() {
     );
 
     tables
-        .ll1_production_stream_with_positions(&token_kinds)
+        .test_cpu_ll1_production_stream_with_positions(&token_kinds)
         .expect("for-in fixture should parse with LL(1)");
 }
 
@@ -238,7 +237,7 @@ fn generated_ll1_tables_accept_extern_function_declarations() {
     );
 
     tables
-        .ll1_production_stream_with_positions(&token_kinds)
+        .test_cpu_ll1_production_stream_with_positions(&token_kinds)
         .expect("extern function fixture with trailing parameter comma should parse with LL(1)");
 }
 
@@ -252,7 +251,7 @@ fn generated_ll1_tables_accept_top_level_constants() {
     );
 
     tables
-        .ll1_production_stream_with_positions(&token_kinds)
+        .test_cpu_ll1_production_stream_with_positions(&token_kinds)
         .expect("const fixture should parse with LL(1)");
 }
 
@@ -302,7 +301,7 @@ fn generated_ll1_tables_accept_module_and_import_items() {
     );
 
     tables
-        .ll1_production_stream_with_positions(&token_kinds)
+        .test_cpu_ll1_production_stream_with_positions(&token_kinds)
         .expect("module/import fixture should parse with LL(1)");
 }
 
@@ -316,7 +315,7 @@ fn generated_ll1_tables_accept_namespaced_paths() {
     );
 
     tables
-        .ll1_production_stream_with_positions(&token_kinds)
+        .test_cpu_ll1_production_stream_with_positions(&token_kinds)
         .expect("namespaced path fixture should parse with LL(1)");
 }
 
@@ -328,7 +327,7 @@ fn generated_ll1_tables_accept_enum_declarations() {
     let token_kinds = kinds_with_sentinels("enum ResultI32 { Ok(i32), Err([i32; 4]), Empty }");
 
     tables
-        .ll1_production_stream_with_positions(&token_kinds)
+        .test_cpu_ll1_production_stream_with_positions(&token_kinds)
         .expect("enum fixture should parse with LL(1)");
 }
 
@@ -340,7 +339,7 @@ fn generated_ll1_tables_accept_generic_enum_declarations() {
     let token_kinds = kinds_with_sentinels("enum Result<T, E> { Ok(T), Err(E), Empty }");
 
     tables
-        .ll1_production_stream_with_positions(&token_kinds)
+        .test_cpu_ll1_production_stream_with_positions(&token_kinds)
         .expect("generic enum fixture should parse with LL(1)");
 }
 
@@ -353,7 +352,7 @@ fn generated_ll1_tables_accept_struct_declarations() {
         kinds_with_sentinels("pub struct VecHeader<T> { ptr: i32, len: i32, value: Option<T> }");
 
     tables
-        .ll1_production_stream_with_positions(&token_kinds)
+        .test_cpu_ll1_production_stream_with_positions(&token_kinds)
         .expect("struct fixture should parse with LL(1)");
 }
 
@@ -366,7 +365,7 @@ fn generated_ll1_tables_accept_struct_literal_expressions() {
         kinds_with_sentinels("fn make() { let p = Point { x: 1, y: 2 }; let q = Point { }; }");
 
     tables
-        .ll1_production_stream_with_positions(&token_kinds)
+        .test_cpu_ll1_production_stream_with_positions(&token_kinds)
         .expect("struct literal fixture should parse with LL(1)");
 }
 
@@ -380,21 +379,8 @@ fn generated_ll1_tables_accept_match_expressions() {
     );
 
     tables
-        .ll1_production_stream_with_positions(&token_kinds)
+        .test_cpu_ll1_production_stream_with_positions(&token_kinds)
         .expect("match fixture should parse with LL(1)");
-}
-
-#[test]
-fn cpu_parser_accepts_return_match_with_trailing_arm_comma() {
-    let tokens = lex_on_cpu(
-        "fn unwrap_or(value: Option, fallback: i32) -> i32 { return match (value) { Some(inner) -> inner, None -> fallback, }; }",
-    )
-    .expect("CPU lex return match fixture")
-    .into_iter()
-    .map(|token| token.kind)
-    .collect::<Vec<_>>();
-
-    parse_from_token_kinds(&tokens).expect("CPU parser should accept return match expressions");
 }
 
 #[test]
@@ -406,7 +392,7 @@ fn generated_ll1_tables_accept_slice_type_syntax() {
         kinds_with_sentinels("fn first(values: [i32], nested: [[bool]]) -> i32 { return 0; }");
 
     tables
-        .ll1_production_stream_with_positions(&token_kinds)
+        .test_cpu_ll1_production_stream_with_positions(&token_kinds)
         .expect("slice type fixture should parse with LL(1)");
 }
 
@@ -419,7 +405,7 @@ fn generated_ll1_tables_accept_reference_type_syntax() {
         kinds_with_sentinels("fn borrow(value: &i32, values: &[i32], nested: & &bool) { return; }");
 
     tables
-        .ll1_production_stream_with_positions(&token_kinds)
+        .test_cpu_ll1_production_stream_with_positions(&token_kinds)
         .expect("reference type fixture should parse with LL(1)");
 }
 
@@ -433,7 +419,7 @@ fn generated_ll1_tables_accept_generic_function_declarations() {
     );
 
     tables
-        .ll1_production_stream_with_positions(&token_kinds)
+        .test_cpu_ll1_production_stream_with_positions(&token_kinds)
         .expect("generic function fixture should parse with LL(1)");
 }
 
@@ -447,7 +433,7 @@ fn generated_ll1_tables_accept_generic_type_parameter_bounds() {
     );
 
     tables
-        .ll1_production_stream_with_positions(&token_kinds)
+        .test_cpu_ll1_production_stream_with_positions(&token_kinds)
         .expect("generic type parameter bound fixture should parse with LL(1)");
 }
 
@@ -461,7 +447,7 @@ fn generated_ll1_tables_accept_multiple_generic_type_parameter_bounds() {
     );
 
     tables
-        .ll1_production_stream_with_positions(&token_kinds)
+        .test_cpu_ll1_production_stream_with_positions(&token_kinds)
         .expect("multiple generic type parameter bounds fixture should parse with LL(1)");
 }
 
@@ -505,7 +491,7 @@ fn generated_ll1_tables_accept_type_alias_declarations() {
     );
 
     tables
-        .ll1_production_stream_with_positions(&token_kinds)
+        .test_cpu_ll1_production_stream_with_positions(&token_kinds)
         .expect("type alias fixture should parse with LL(1)");
 }
 
@@ -519,7 +505,7 @@ fn generated_ll1_tables_accept_const_generic_params_and_named_array_lengths() {
     );
 
     tables
-        .ll1_production_stream_with_positions(&token_kinds)
+        .test_cpu_ll1_production_stream_with_positions(&token_kinds)
         .expect("const generic fixture should parse with LL(1)");
 }
 
@@ -533,22 +519,8 @@ fn generated_ll1_tables_accept_impl_and_trait_declarations() {
     );
 
     tables
-        .ll1_production_stream_with_positions(&token_kinds)
+        .test_cpu_ll1_production_stream_with_positions(&token_kinds)
         .expect("trait impl fixture should parse with LL(1)");
-}
-
-#[test]
-fn generated_ll1_tables_accept_self_receiver_parameters() {
-    let tables =
-        PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
-            .expect("load generated parse tables");
-    let token_kinds = kinds_with_sentinels(
-        "struct Boxed<T> { value: T } impl<T> Boxed<T> { fn value(self) -> T { return self.value; } }",
-    );
-
-    tables
-        .ll1_production_stream_with_positions(&token_kinds)
-        .expect("self receiver fixture should parse with LL(1)");
 }
 
 #[test]
@@ -560,18 +532,6 @@ fn gpu_syntax_accepts_trait_impl_declaration_shape() {
         check_tokens_on_gpu(&tokens)
             .await
             .expect("GPU syntax should accept trait impl fixture");
-    });
-}
-
-#[test]
-fn gpu_syntax_accepts_self_receiver_parameters() {
-    common::block_on_gpu_with_timeout("GPU syntax self receiver", async move {
-        let src = "struct Boxed<T> { value: T } impl<T> Boxed<T> { fn value(self) -> T { return self.value; } }";
-        let lexer = GpuLexer::new().await.expect("GPU lexer init");
-        let tokens = lexer.lex(src).await.expect("GPU lex self receiver fixture");
-        check_tokens_on_gpu(&tokens)
-            .await
-            .expect("GPU syntax should accept self receiver fixture");
     });
 }
 
@@ -664,7 +624,7 @@ fn gpu_parser_emits_exact_ll1_stream_for_fixtures() {
         ] {
             let token_kinds = kinds_with_sentinels(src);
             let (expected, expected_pos) = tables
-                .ll1_production_stream_with_positions(&token_kinds)
+                .test_cpu_ll1_production_stream_with_positions(&token_kinds)
                 .unwrap_or_else(|err| panic!("{name} fixture should parse with LL(1): {err}"));
             let res = parser
                 .parse(&token_kinds, &tables)
@@ -714,7 +674,10 @@ fn gpu_parser_runs_seeded_ll1_acceptance_table() {
         assert!(ok.ll1.accepted);
         assert_eq!(ok.ll1.emit_len, 1);
         assert_eq!(ok.ll1_emit_stream, vec![0]);
-        assert_eq!(tables.ll1_production_stream(&ok_tokens).unwrap(), vec![0]);
+        assert_eq!(
+            tables.test_cpu_ll1_production_stream(&ok_tokens).unwrap(),
+            vec![0]
+        );
         assert!(ok.ll1_seed_plan.accepted);
         assert_eq!(ok.ll1_seed_plan.seed_count, 1);
         assert_eq!(ok.ll1_seeded_blocks[0].status, LL1_BLOCK_STATUS_ACCEPTED);

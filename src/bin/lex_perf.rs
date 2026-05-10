@@ -2,10 +2,7 @@ use std::{env, fs, path::PathBuf, time::Instant};
 
 use laniusc::{
     dev::generator::gen_valid_source,
-    lexer::{
-        cpu::lex_on_cpu,
-        gpu::{GpuLexer, util::readback_enabled},
-    },
+    lexer::gpu::{GpuLexer, util::readback_enabled},
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -80,7 +77,7 @@ fn main() {
     pollster::block_on(async {
         let maybe_path = env::args().nth(1);
 
-        let (text, src_desc) = if let Some(path) = maybe_path {
+        let text = if let Some(path) = maybe_path {
             let p = PathBuf::from(path);
             let load_t0 = Instant::now();
             let src = match fs::read_to_string(&p) {
@@ -99,7 +96,7 @@ fn main() {
                 bytes
             );
             println!("Load:  {load_ms:.3} ms");
-            (src, "file".to_string())
+            src
         } else {
             let target_len = parse_target_len();
             let seed = parse_seed();
@@ -115,31 +112,12 @@ fn main() {
                 seed
             );
             println!("Gen:   {gen_ms:.3} ms");
-            (src, "generated".to_string())
+            src
         };
 
         let bytes = text.len() as u64;
         let warmup = parse_warmup();
         let reps = parse_reps();
-
-        let mut cpu_runs = Vec::with_capacity(reps);
-        for i in 0..(warmup + reps) {
-            let t0 = Instant::now();
-            let cpu_tokens = match lex_on_cpu(&text) {
-                Ok(v) => v,
-                Err(e) => {
-                    eprintln!("CPU lex failed: {e}");
-                    std::process::exit(1);
-                }
-            };
-            let ms = t0.elapsed().as_secs_f64() * 1e3;
-            if i >= warmup {
-                cpu_runs.push(ms);
-            }
-            if i == warmup {
-                println!("CPU:  first={:.3} ms | tokens={}", ms, cpu_tokens.len());
-            }
-        }
 
         let gpu_init_t0 = Instant::now();
         let gpu = match GpuLexer::new().await {
@@ -177,7 +155,6 @@ fn main() {
                 gpu_runs.push(ms);
             }
         }
-        print_stats("CPU", &cpu_runs, bytes);
         print_stats("GPU", &gpu_runs, bytes);
 
         if let Some(&best_gpu) = gpu_runs.iter().min_by(|a, b| a.partial_cmp(b).unwrap()) {
@@ -189,22 +166,6 @@ fn main() {
             );
         }
 
-        if let Some(gpu_len) = first_tokens_len {
-            let cpu_first = { lex_on_cpu(&text).map(|v| v.len()).unwrap_or_default() };
-            if cpu_first != gpu_len {
-                eprintln!(
-                    "PANIC!!!: token count mismatch (cpu={cpu_first} vs gpu={gpu_len}) [{src_desc}]"
-                );
-            }
-        }
-
-        if !cpu_runs.is_empty() && !gpu_runs.is_empty() {
-            let mut c = cpu_runs.clone();
-            c.sort_by(|a, b| a.partial_cmp(b).unwrap());
-            let mut g = gpu_runs.clone();
-            g.sort_by(|a, b| a.partial_cmp(b).unwrap());
-            let speedup = c[c.len() / 2] / g[g.len() / 2];
-            println!("Speedup (median CPU / median GPU_lex): {speedup:.2}×");
-        }
+        let _ = first_tokens_len;
     });
 }

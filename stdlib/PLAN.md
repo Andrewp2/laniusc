@@ -17,8 +17,6 @@ where it matters, and avoid implicit magic.
 - Provide a small always-available core that works without an OS or heap.
 - Provide predictable collections, strings, and algorithms once allocation
   exists.
-- Make compiler-oriented data structures first-class enough that Lanius can use
-  its own library to build compilers, tools, and GPU-oriented applications.
 - Keep APIs explicit about allocation, mutation, error handling, and target
   requirements.
 - Keep WebAssembly embedding and native compilation both in mind.
@@ -93,17 +91,6 @@ Expected contents:
 - Benchmark harness support.
 - Temporary files and directories.
 
-### `gpu`
-
-`gpu` is optional and should expose explicit GPU-friendly primitives.
-
-Expected contents:
-
-- Prefix scan/reduce abstractions.
-- Parallel partition/compact helpers.
-- GPU buffer layout helpers.
-- Compute dispatch helpers.
-- Deterministic validation utilities for GPU/CPU parity.
 
 ## Current Source-Level Seed
 
@@ -686,16 +673,6 @@ General algorithms:
 - DFS.
 - Strongly connected components.
 
-GPU-oriented algorithms:
-
-- Prefix scan.
-- Segmented scan.
-- Reduce.
-- Compact.
-- Scatter/gather.
-- Histogram.
-- Radix sort.
-
 ## Iterators
 
 Once the language has the needed abstraction support, iterators should become
@@ -1034,11 +1011,12 @@ The current source-level stdlib is experimental.
 Current phase.
 
 - Plain `.lani` files.
-- Source-level imports expanded before lexing/parsing.
+- Source-level imports need a GPU implementation before they can be part of the
+  normal compile path.
 - Top-level primitive constants.
 - `lstd_` prefix.
-- CPU parser/HIR validation.
-- Representative type-check/codegen tests.
+- GPU parser/type-check validation.
+- Representative GPU codegen tests.
 
 Near-term additions:
 
@@ -1109,7 +1087,6 @@ Requires target-specific runtime support.
 - Benchmarks.
 - Serialization.
 - Logging/tracing.
-- GPU algorithms.
 
 ## Priority List
 
@@ -1155,7 +1132,6 @@ Lower initial priority:
 - What is the trait/interface system for `Eq`, `Ord`, `Hash`, `Debug`, and
   `Display`?
 - How should async be represented?
-- How much GPU functionality belongs in the stdlib versus separate packages?
 - What stability promise should early stdlib modules make?
 
 ## Definition Of Done For A Stdlib Feature

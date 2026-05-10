@@ -39,7 +39,7 @@ fn gpu_codegen_cli_emits_wasm_file() {
 
 #[test]
 #[ignore = "GPU WASM codegen integration test; run explicitly with --ignored"]
-fn gpu_codegen_rejects_function_bodies_without_cpu_backend_route() {
+fn gpu_codegen_rejects_function_bodies_when_gpu_emitter_cannot_emit_them() {
     let src = "fn main() {\n    return 0;\n}\n";
     let err = common::compile_source_to_wasm_with_timeout(src)
         .expect_err("function-body WASM lowering should fail until the GPU path supports it");

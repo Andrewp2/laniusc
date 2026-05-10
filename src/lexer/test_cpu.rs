@@ -1,5 +1,8 @@
-// src/lexer/cpu.rs
-// Simple streaming-DFA lexer on CPU used as a correctness oracle for the GPU path.
+//! TEST-ONLY CPU lexer oracle.
+//!
+//! This module is not a compiler implementation and must not be used as a
+//! fallback. It exists so tests and fuzzers can compare GPU lexer output against
+//! a small host-side oracle while the production compiler lexes on the GPU.
 
 use crate::lexer::tables::{
     dfa::{S, StreamingDfa},
@@ -7,7 +10,7 @@ use crate::lexer::tables::{
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CpuToken {
+pub struct TestCpuToken {
     pub kind: TokenKind,
     pub start: usize,
     pub len: usize,
@@ -109,7 +112,7 @@ fn generic_angle_boundary(kind: TokenKind) -> bool {
     )
 }
 
-fn nested_generic_shr_split_positions(tokens: &[CpuToken]) -> Vec<usize> {
+fn nested_generic_shr_split_positions(tokens: &[TestCpuToken]) -> Vec<usize> {
     use TokenKind::*;
     let kinds = tokens.iter().map(|token| token.kind).collect::<Vec<_>>();
     let mut depth = 0usize;
@@ -137,7 +140,7 @@ fn nested_generic_shr_split_positions(tokens: &[CpuToken]) -> Vec<usize> {
     splits
 }
 
-fn split_nested_generic_shr_tokens(tokens: Vec<CpuToken>) -> Vec<CpuToken> {
+fn split_nested_generic_shr_tokens(tokens: Vec<TestCpuToken>) -> Vec<TestCpuToken> {
     let split_positions = nested_generic_shr_split_positions(&tokens);
     if split_positions.is_empty() {
         return tokens;
@@ -149,12 +152,12 @@ fn split_nested_generic_shr_tokens(tokens: Vec<CpuToken>) -> Vec<CpuToken> {
     let mut out = Vec::with_capacity(tokens.len() + split_positions.len());
     for (index, token) in tokens.into_iter().enumerate() {
         if split_positions.contains(&index) {
-            out.push(CpuToken {
+            out.push(TestCpuToken {
                 kind: TokenKind::Gt,
                 start: token.start,
                 len: 1,
             });
-            out.push(CpuToken {
+            out.push(TestCpuToken {
                 kind: TokenKind::Gt,
                 start: token.start + 1,
                 len: 1,
@@ -166,23 +169,7 @@ fn split_nested_generic_shr_tokens(tokens: Vec<CpuToken>) -> Vec<CpuToken> {
     out
 }
 
-pub fn normalize_nested_generic_closers(input: &str) -> Result<String, String> {
-    let mut tokens = lex_raw_kept(input)?;
-    retag_keywords_in_place(&mut tokens, input.as_bytes());
-    let split_positions = nested_generic_shr_split_positions(&tokens);
-    if split_positions.is_empty() {
-        return Ok(input.to_string());
-    }
-
-    let mut out = input.to_string();
-    for split in split_positions.into_iter().rev() {
-        let insert_at = tokens[split].start + 1;
-        out.insert(insert_at, ' ');
-    }
-    Ok(out)
-}
-
-pub fn retag_calls_and_arrays_in_place(kinds: &mut [TokenKind]) {
+fn retag_calls_and_arrays_in_test_oracle(kinds: &mut [TokenKind]) {
     use TokenKind::*;
     let mut opens: Vec<OpenCtx> = Vec::new();
     let mut prev2_sig: Option<TokenKind> = None;
@@ -371,7 +358,7 @@ fn keyword_kind(bytes: &[u8]) -> Option<TokenKind> {
     }
 }
 
-fn retag_keywords_in_place(tokens: &mut [CpuToken], src: &[u8]) {
+fn retag_keywords_in_place(tokens: &mut [TestCpuToken], src: &[u8]) {
     for token in tokens {
         if token.kind != TokenKind::Ident {
             continue;
@@ -531,7 +518,7 @@ fn slice_dbg(src: &[u8], i: usize) -> (usize, String) {
     (lo, s)
 }
 
-fn lex_raw_kept(input: &str) -> Result<Vec<CpuToken>, String> {
+fn lex_raw_kept(input: &str) -> Result<Vec<TestCpuToken>, String> {
     let bytes = input.as_bytes();
     let n = bytes.len();
 
@@ -540,7 +527,7 @@ fn lex_raw_kept(input: &str) -> Result<Vec<CpuToken>, String> {
     }
 
     let dfa = StreamingDfa::new();
-    let mut out: Vec<CpuToken> = Vec::new();
+    let mut out: Vec<TestCpuToken> = Vec::new();
 
     let mut state = dfa.start as usize;
     let mut tok_start: usize = 0;
@@ -568,7 +555,7 @@ fn lex_raw_kept(input: &str) -> Result<Vec<CpuToken>, String> {
             let kind_u32 = dfa.token_map[state];
             let kind = decode_dfa_token(kind_u32, state, i)?;
             if keep_kind(kind) {
-                out.push(CpuToken {
+                out.push(TestCpuToken {
                     kind,
                     start: tok_start,
                     len: i - tok_start,
@@ -587,7 +574,7 @@ fn lex_raw_kept(input: &str) -> Result<Vec<CpuToken>, String> {
     if end_kind_u32 != INVALID_TOKEN {
         let kind = decode_dfa_token(end_kind_u32, state, n)?;
         if keep_kind(kind) {
-            out.push(CpuToken {
+            out.push(TestCpuToken {
                 kind,
                 start: tok_start,
                 len: n - tok_start,
@@ -607,15 +594,15 @@ fn lex_raw_kept(input: &str) -> Result<Vec<CpuToken>, String> {
     ))
 }
 
-/// Deterministic CPU lexer that mirrors the streaming-emit rules used on GPU.
+/// Deterministic test CPU oracle for the GPU streaming-emit lexer rules.
 /// Returns kept tokens (whitespace/comments filtered out).
-pub fn lex_on_cpu(input: &str) -> Result<Vec<CpuToken>, String> {
+pub fn lex_on_test_cpu(input: &str) -> Result<Vec<TestCpuToken>, String> {
     let bytes = input.as_bytes();
     let mut out = lex_raw_kept(input)?;
     retag_keywords_in_place(&mut out, bytes);
     out = split_nested_generic_shr_tokens(out);
     let mut kinds: Vec<TokenKind> = out.iter().map(|t| t.kind).collect();
-    retag_calls_and_arrays_in_place(&mut kinds);
+    retag_calls_and_arrays_in_test_oracle(&mut kinds);
     for (tok, k) in out.iter_mut().zip(kinds.into_iter()) {
         tok.kind = k;
     }
@@ -627,7 +614,7 @@ mod tests {
     use super::*;
 
     fn kinds(src: &str) -> Vec<TokenKind> {
-        lex_on_cpu(src)
+        lex_on_test_cpu(src)
             .expect("lex")
             .into_iter()
             .map(|token| token.kind)
@@ -636,7 +623,7 @@ mod tests {
 
     #[test]
     fn lexes_empty_input_as_empty_stream() {
-        assert_eq!(lex_on_cpu("").expect("lex empty input"), Vec::new());
+        assert_eq!(lex_on_test_cpu("").expect("lex empty input"), Vec::new());
     }
 
     #[test]

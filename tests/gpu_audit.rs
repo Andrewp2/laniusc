@@ -65,6 +65,11 @@ fn default_compiler_records_resident_gpu_pipeline() {
     assert!(!compiler.contains("LANIUS_USE_GPU_X86_CODEGEN"));
     assert!(!compiler.contains("cpu_wasm"));
     assert!(!compiler.contains("cpu_native"));
+    assert!(!compiler.contains("parse_source"));
+    assert!(!compiler.contains("expand_source_imports"));
+    assert!(!compiler.contains("expand_type_aliases"));
+    assert!(!compiler.contains("lexer::test_cpu"));
+    assert!(!compiler.contains("lex_on_test_cpu"));
     assert!(!compiler.contains("hir::parse_source"));
     assert!(!compiler.contains("emit_wasm"));
     assert!(!compiler.contains("emit_c"));
@@ -94,6 +99,53 @@ fn cpu_codegen_backends_are_deleted() {
     assert!(!codegen_mod.contains("pub mod cpu_native;"));
     assert!(!codegen_mod.contains("pub mod c;"));
     assert!(!codegen_mod.contains("pub mod gpu_c;"));
+}
+
+#[test]
+fn cpu_parser_and_rust_hir_frontend_are_deleted() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    for rel in [
+        "src/parser/cpu.rs",
+        "src/hir.rs",
+        "tests/hir.rs",
+        "tests/imports.rs",
+        "tests/stdlib.rs",
+        "src/bin/parse_gen_golden.rs",
+    ] {
+        assert!(!root.join(rel).exists(), "{rel} should not exist");
+    }
+
+    let lib_mod = include_str!("../src/lib.rs");
+    let parser_mod = include_str!("../src/parser/mod.rs");
+    assert!(!lib_mod.contains("pub mod hir;"));
+    assert!(!parser_mod.contains("pub mod cpu;"));
+}
+
+#[test]
+fn cpu_lexer_oracle_is_explicitly_test_only() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    assert!(!root.join("src/lexer/cpu.rs").exists());
+    assert!(!root.join("src/lexer/gpu/debug_checks.rs").exists());
+    assert!(!root.join("src/lexer/gpu/debug_host.rs").exists());
+
+    let lexer_mod = include_str!("../src/lexer/mod.rs");
+    let test_cpu = include_str!("../src/lexer/test_cpu.rs");
+    assert!(lexer_mod.contains("pub mod test_cpu;"));
+    assert!(!lexer_mod.contains("pub mod cpu;"));
+    assert!(lexer_mod.contains("TEST-ONLY CPU lexer oracle"));
+    assert!(lexer_mod.contains("must not call it or use it as a fallback"));
+    assert!(test_cpu.contains("TEST-ONLY CPU lexer oracle"));
+    assert!(test_cpu.contains("must not be used as a"));
+    assert!(test_cpu.contains("lex_on_test_cpu"));
+
+    for source in [
+        include_str!("../src/compiler.rs"),
+        include_str!("../src/main.rs"),
+        include_str!("../src/lexer/gpu/driver.rs"),
+    ] {
+        assert!(!source.contains("lex_on_test_cpu"));
+        assert!(!source.contains("lexer::test_cpu"));
+    }
 }
 
 #[test]

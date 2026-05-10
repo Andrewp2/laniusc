@@ -44,19 +44,19 @@ pub fn contains_i32(range: Range<i32>, value: i32) -> bool {
 }
 
 pub impl Range<i32> {
-    pub fn start(self) -> i32 {
-        return self.start;
+    pub fn start(receiver: Range<i32>) -> i32 {
+        return receiver.start;
     }
 
-    pub fn end(self) -> i32 {
-        return self.end;
+    pub fn end(receiver: Range<i32>) -> i32 {
+        return receiver.end;
     }
 
-    pub fn is_empty(self) -> bool {
-        return self.start >= self.end;
+    pub fn is_empty(receiver: Range<i32>) -> bool {
+        return receiver.start >= receiver.end;
     }
 
-    pub fn contains(self, value: i32) -> bool {
-        return value >= self.start && value < self.end;
+    pub fn contains(receiver: Range<i32>, value: i32) -> bool {
+        return value >= receiver.start && value < receiver.end;
     }
 }

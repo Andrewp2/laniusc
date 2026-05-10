@@ -14,14 +14,14 @@ use std::{
 
 use anyhow::{Context, Result};
 use laniusc::{
-    lexer::{gpu::driver::GpuLexer, tables::tokens},
+    lexer::gpu::driver::GpuLexer,
     parser::{
         gpu::{
             buffers::ActionHeader,
             driver::{GpuParser, ParseResult},
             passes::ll1_blocks_01::{LL1_BLOCK_STATUS_ACCEPTED, LL1_BLOCK_STATUS_BOUNDARY},
         },
-        tables::{self as parse_tables, PrecomputedParseTables},
+        tables::PrecomputedParseTables,
     },
 };
 use rand::{SeedableRng, rngs::StdRng};
@@ -43,17 +43,11 @@ fn collect_inputs_from_dir(dir: &str) -> Vec<PathBuf> {
     out
 }
 
-fn load_tables(n_kinds: u32) -> PrecomputedParseTables {
-    match std::fs::read("tables/parse_tables.bin") {
-        Ok(bytes) => PrecomputedParseTables::load_bin_bytes(&bytes).unwrap_or_else(|e| {
-            eprintln!("[parse_fuzz] failed to load parse_tables.bin: {e}; using MVP tables");
-            parse_tables::build_mvp_precomputed_tables(n_kinds, vec![])
-        }),
-        Err(_) => {
-            eprintln!("[parse_fuzz] tables/parse_tables.bin not found; using MVP tables");
-            parse_tables::build_mvp_precomputed_tables(n_kinds, vec![])
-        }
-    }
+fn load_tables() -> Result<PrecomputedParseTables> {
+    let bytes = std::fs::read("tables/parse_tables.bin")
+        .context("read generated GPU parser tables from tables/parse_tables.bin")?;
+    PrecomputedParseTables::load_bin_bytes(&bytes)
+        .map_err(|err| anyhow::anyhow!("load generated GPU parser tables: {err}"))
 }
 
 fn env_truthy(name: &str) -> bool {
@@ -62,18 +56,18 @@ fn env_truthy(name: &str) -> bool {
         .unwrap_or(false)
 }
 
-// ------------------------ helpers: bracket CPU oracle (for sanity) ------------------------
+// ------------------------ helpers: test CPU bracket oracle ------------------------
 
 #[derive(Debug, Clone)]
-struct CpuBrackets {
+struct TestCpuBrackets {
     valid: bool,
     final_depth: i32,
     min_depth: i32,
     _match_for_index: Vec<u32>,
 }
 
-/// CPU oracle for validating the parallel GPU bracket matcher.
-fn cpu_brackets(sc_stream: &[u32]) -> CpuBrackets {
+/// Test-only CPU oracle for validating the parallel GPU bracket matcher.
+fn test_cpu_brackets(sc_stream: &[u32]) -> TestCpuBrackets {
     let n = sc_stream.len();
     let mut match_for_index = vec![0xFFFF_FFFFu32; n];
     let mut open_stack: Vec<u32> = Vec::with_capacity(n);
@@ -117,7 +111,7 @@ fn cpu_brackets(sc_stream: &[u32]) -> CpuBrackets {
     if !open_stack.is_empty() {
         valid = false;
     }
-    CpuBrackets {
+    TestCpuBrackets {
         valid,
         final_depth: depth,
         min_depth,
@@ -289,7 +283,7 @@ fn fnv1a_u32s(xs: &[u32]) -> u64 {
     h ^ (xs.len() as u64)
 }
 
-// --- CPU-vs-GPU comparison against golden --------------------------------
+// --- test-oracle-vs-GPU comparison against golden -------------------------
 
 fn types_from_src(src: &str) -> Vec<u32> {
     // 0 for paren, 1 for bracket, in the exact source event order.
@@ -317,15 +311,15 @@ fn check_against_golden(path: &Path, src: &str, res: &ParseResult) -> Result<()>
     let v: Value =
         serde_json::from_str(&s).with_context(|| format!("parse golden {}", sidecar.display()))?;
 
-    // If this is a CPU-only golden, do a full structural comparison.
+    // If this is an older CPU-oracle golden, do a full structural comparison.
     // Older generated sidecars predate the marker but contain `sc_canon`.
     if v.get("cpu_only").and_then(|b| b.as_bool()) == Some(true) || v.get("sc_canon").is_some() {
         let ty_seq = types_from_src(src);
         let delimiter_shape_matches = ty_seq.len() == res.sc_stream.len();
         if delimiter_shape_matches {
-            // 1) bracket summary must match when CPU and GPU streams describe
+            // 1) bracket summary must match when test CPU oracle and GPU streams describe
             // the same delimiter event surface. Newer parser stack streams also
-            // include grammar events, so old CPU-only delimiter goldens are not
+            // include grammar events, so old test-CPU delimiter goldens are not
             // directly comparable in that case.
             let b = v
                 .get("brackets")
@@ -353,20 +347,20 @@ fn check_against_golden(path: &Path, src: &str, res: &ParseResult) -> Result<()>
                 )
             {
                 anyhow::bail!(
-                    "{}: brackets summary differs from CPU golden",
+                    "{}: brackets summary differs from test CPU oracle golden",
                     path.display()
                 );
             }
         } else {
             eprintln!(
-                "[warn] {}: skipping CPU-only delimiter golden compare (golden events={}, GPU sc={})",
+                "[warn] {}: skipping test-CPU delimiter golden compare (golden events={}, GPU sc={})",
                 path.display(),
                 ty_seq.len(),
                 res.sc_stream.len()
             );
         }
 
-        // 2) canonicalize GPU sc_stream to CPU's event typing and compare
+        // 2) canonicalize GPU sc_stream to the test CPU oracle's event typing and compare
         if delimiter_shape_matches
             && let Some(sc_golden) = v.get("sc_canon").and_then(|x| x.as_array())
         {
@@ -384,7 +378,7 @@ fn check_against_golden(path: &Path, src: &str, res: &ParseResult) -> Result<()>
 
             if sc_gpu_canon != sc_g {
                 anyhow::bail!(
-                    "{}: sc_stream differs from CPU golden (canonicalized)",
+                    "{}: sc_stream differs from test CPU oracle golden (canonicalized)",
                     path.display()
                 );
             }
@@ -400,7 +394,7 @@ fn check_against_golden(path: &Path, src: &str, res: &ParseResult) -> Result<()>
                 .collect();
             if res.brackets.match_for_index != mfi_g {
                 anyhow::bail!(
-                    "{}: match_for_index differs from CPU golden",
+                    "{}: match_for_index differs from test CPU oracle golden",
                     path.display()
                 );
             }
@@ -421,13 +415,13 @@ fn check_against_golden(path: &Path, src: &str, res: &ParseResult) -> Result<()>
                 if res.parent.len() == par_g.len() {
                     if res.parent != par_g {
                         anyhow::bail!(
-                            "{}: parse tree parent array differs from CPU golden",
+                            "{}: parse tree parent array differs from test CPU oracle golden",
                             path.display()
                         );
                     }
                 } else {
                     eprintln!(
-                        "[warn] {}: skipping tree compare (GPU nodes={}, CPU nodes={})",
+                        "[warn] {}: skipping tree compare (GPU nodes={}, test CPU oracle nodes={})",
                         path.display(),
                         res.parent.len(),
                         par_g.len()
@@ -503,7 +497,7 @@ async fn run_source(
         .with_context(|| format!("parse {}", label))?;
     let expected_pairs = kinds.len().saturating_sub(1);
     if tables.n_nonterminals > 0 {
-        let cpu_ll1 = tables.ll1_production_stream(&kinds);
+        let test_cpu_ll1 = tables.test_cpu_ll1_production_stream(&kinds);
 
         if path_opt.is_some() && !res.ll1.accepted {
             anyhow::bail!(
@@ -515,20 +509,20 @@ async fn run_source(
                 res.ll1.steps
             );
         }
-        match (cpu_ll1, res.ll1.accepted) {
+        match (test_cpu_ll1, res.ll1.accepted) {
             (Ok(expected), true) => {
                 if res.ll1_emit_stream != expected {
                     anyhow::bail!(
-                        "LL(1) production stream mismatch for {}: GPU len={} CPU len={}",
+                        "LL(1) production stream mismatch for {}: GPU len={} test CPU oracle len={}",
                         label,
                         res.ll1_emit_stream.len(),
                         expected.len()
                     );
                 }
-                let projected = tables.projected_production_stream(&kinds);
+                let projected = tables.test_cpu_projected_production_stream(&kinds);
                 if res.emit_stream != projected {
                     anyhow::bail!(
-                        "LLP projected stream mismatch for {}: GPU len={} CPU-pair len={}",
+                        "LLP projected stream mismatch for {}: GPU len={} test CPU pair-oracle len={}",
                         label,
                         res.emit_stream.len(),
                         projected.len()
@@ -537,14 +531,14 @@ async fn run_source(
             }
             (Ok(expected), false) => {
                 anyhow::bail!(
-                    "GPU rejected a CPU-accepted LL(1) parse for {} (CPU productions={})",
+                    "GPU rejected a test-CPU-oracle-accepted LL(1) parse for {} (oracle productions={})",
                     label,
                     expected.len()
                 );
             }
             (Err(err), true) => {
                 anyhow::bail!(
-                    "GPU accepted a CPU-rejected LL(1) parse for {}: {}",
+                    "GPU accepted a test-CPU-oracle-rejected LL(1) parse for {}: {}",
                     label,
                     err
                 );
@@ -622,8 +616,8 @@ async fn run_source(
             expected_pairs
         );
     }
-    let cpu = cpu_brackets(&res.sc_stream);
-    if (cpu.valid, cpu.final_depth, cpu.min_depth)
+    let test_cpu = test_cpu_brackets(&res.sc_stream);
+    if (test_cpu.valid, test_cpu.final_depth, test_cpu.min_depth)
         != (
             res.brackets.valid,
             res.brackets.final_depth,
@@ -631,14 +625,14 @@ async fn run_source(
         )
     {
         anyhow::bail!(
-            "CPU/GPU bracket summary mismatch for {} (gpu v={},f={},m={} vs cpu v={},f={},m={})",
+            "test CPU oracle/GPU bracket summary mismatch for {} (gpu v={},f={},m={} vs oracle v={},f={},m={})",
             label,
             res.brackets.valid,
             res.brackets.final_depth,
             res.brackets.min_depth,
-            cpu.valid,
-            cpu.final_depth,
-            cpu.min_depth
+            test_cpu.valid,
+            test_cpu.final_depth,
+            test_cpu.min_depth
         );
     }
     assert_involutive(&res.brackets.match_for_index)?;
@@ -652,7 +646,7 @@ async fn run_source(
         assert_tree_forest_shape(&res.node_kind, &res.parent, &tables.prod_arity)?;
     }
 
-    // golden (if present) — compare GPU to CPU truth
+    // golden (if present) — compare GPU to explicitly named test-oracle truth
     if let Some(p) = path_opt {
         check_against_golden(p, src, &res)?;
     }
@@ -726,8 +720,7 @@ async fn main() -> Result<()> {
 
     let lexer = GpuLexer::new().await.context("init GpuLexer")?;
     let parser = GpuParser::new().await.context("init GpuParser")?;
-    let n_kinds = tokens::N_KINDS;
-    let tables = load_tables(n_kinds);
+    let tables = load_tables()?;
 
     let mut passed = 0usize;
     let mut failed = 0usize;

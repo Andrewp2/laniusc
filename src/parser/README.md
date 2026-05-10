@@ -11,7 +11,8 @@ The code lives under `shaders/parser/*` and is driven by `src/parser/gpu/*`. The
 * **Work-efficient & parallel:** ☑️ O(n) work and large-grid throughput; only O(#blocks) small scans.
 * **WebGPU-friendly:** ☑️ ≤10 buffers per pass, no push constants, fixed threadgroups (256).
 * **Deterministic pairing:** ☑️ Typed pairing invariant, involutive match map.
-* **Good fallbacks:** ☑️ Single-thread “truth” kernels exist for debugging and bring-up.
+* **Test oracles only:** ☑️ Any host-side sequential checks must be explicitly
+  named as test CPU oracles and must not be called by the compiler pipeline.
 * **Composable:** ☑️ Reuse the three-phase scan pattern from the lexer.
 
 ---
@@ -170,7 +171,7 @@ We keep the single-thread kernels to cross-check during bring-up and tests.
 * **Scans are king.** We reuse the lexer’s 3-stage scan pattern. Most time is spent in 01 (dense scan) and 06 (atomics).
 * **Atomics scale well** because each layer has relatively few hits; contention is typically minimal on real world inputs.
 * **Layer bound:** worst-case `n_layers ≤ pushes ≤ len(out_sc)`. We can tighten allocation later by sampling block maxima.
-* **CPU/gpu overlap:** The driver minimizes bind-group churn via a shared cache, and we do seed copies via `copy_buffer_to_buffer` instead of extra shader bindings.
+* **Host/GPU overlap:** The driver minimizes bind-group churn via a shared cache, and we do seed copies via `copy_buffer_to_buffer` instead of extra shader bindings.
 
 ---
 

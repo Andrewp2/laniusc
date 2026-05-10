@@ -272,7 +272,8 @@ but these are the normal standard-library capabilities Lanius should plan for.
 - Device, queue, buffer, buffer view, dispatch, workgroup size, and GPU error
   types.
 - Host/device layout validation.
-- Upload, dispatch, readback, profiling, and CPU/GPU parity testing.
+- Upload, dispatch, readback, profiling, and comparisons against explicitly
+  named test CPU oracles.
 - Prefix scan, segmented scan, reduce, compact, scatter/gather, histogram,
   radix sort, and parallel partition.
 - Explicit target capability checks; GPU APIs should never enter the default
@@ -1969,7 +1970,7 @@ Expected APIs:
 - Dispatch kernels.
 - Read back data.
 - Validate layouts.
-- Run CPU/GPU parity tests.
+- Run GPU behavior checks against explicitly named test CPU oracles.
 
 Expected algorithms:
 
@@ -2037,11 +2038,12 @@ The current source-level stdlib is experimental.
 Current phase.
 
 - Plain `.lani` files.
-- Source-level imports expanded before lexing/parsing.
+- Source-level imports need a GPU implementation before they can be part of the
+  normal compile path.
 - Top-level primitive constants.
 - `lstd_` prefix.
-- CPU parser/HIR validation.
-- Representative type-check/codegen tests.
+- GPU parser/type-check validation.
+- Representative GPU codegen tests.
 
 Current files:
 

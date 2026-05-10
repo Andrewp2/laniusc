@@ -8,8 +8,8 @@ use std::{
 use laniusc::{
     dev::generator::gen_valid_source,
     lexer::{
-        cpu::{CpuToken, lex_on_cpu},
         tables::TokenKind,
+        test_cpu::{TestCpuToken, lex_on_test_cpu},
     },
 };
 use rand::{SeedableRng, rngs::StdRng};
@@ -274,16 +274,16 @@ async fn run_once(
     golden_for: Option<&Path>,
 ) -> bool {
     let t0 = Instant::now();
-    let cpu = match lex_on_cpu(src) {
+    let test_cpu = match lex_on_test_cpu(src) {
         Ok(toks) => toks,
         Err(e) => {
-            eprintln!("\n[CPU] {e}");
+            eprintln!("\n[test CPU oracle] {e}");
             let tail = src.len().saturating_sub(64);
             eprintln!(
                 "[tail] {:?}",
                 String::from_utf8_lossy(&src.as_bytes()[tail..])
             );
-            panic!("CPU lex failed");
+            panic!("test CPU oracle lex failed");
         }
     };
     let t1 = Instant::now();
@@ -292,24 +292,24 @@ async fn run_once(
         .expect("GPU lex failed");
     let t2 = Instant::now();
 
-    let eq = compare_streams(src, &cpu, &gpu);
-    let cpu_ms = (t1 - t0).as_millis();
+    let eq = compare_streams(src, &test_cpu, &gpu);
+    let test_cpu_ms = (t1 - t0).as_millis();
     let gpu_ms = (t2 - t1).as_millis();
 
     match (seed, iter, len) {
         (Some(_seed), Some(i), Some(_l)) => eprintln!(
-            "[fuzz] iter {i}: CPU/GPU {} ms/{} ms  |  CPU/GPU tokens kept = {}/{}  -> {}",
-            cpu_ms,
+            "[fuzz] iter {i}: test CPU oracle/GPU {} ms/{} ms  |  test CPU oracle/GPU tokens kept = {}/{}  -> {}",
+            test_cpu_ms,
             gpu_ms,
-            cpu.len(),
+            test_cpu.len(),
             gpu.len(),
             if eq { "OK" } else { "MISMATCH!" }
         ),
         _ => eprintln!(
-            "[replay] CPU/GPU {} ms/{} ms  |  CPU/GPU tokens kept = {}/{}  -> {}",
-            cpu_ms,
+            "[replay] test CPU oracle/GPU {} ms/{} ms  |  test CPU oracle/GPU tokens kept = {}/{}  -> {}",
+            test_cpu_ms,
             gpu_ms,
-            cpu.len(),
+            test_cpu.len(),
             gpu.len(),
             if eq { "OK" } else { "MISMATCH!" }
         ),
@@ -319,15 +319,15 @@ async fn run_once(
 
     if let Some(p) = golden_for {
         if let Some(g) = load_golden_for(p) {
-            let cpu_norm: Vec<(TokenKind, usize, usize)> =
-                cpu.iter().map(|t| (t.kind, t.start, t.len)).collect();
+            let test_cpu_norm: Vec<(TokenKind, usize, usize)> =
+                test_cpu.iter().map(|t| (t.kind, t.start, t.len)).collect();
             let gpu_norm: Vec<(TokenKind, usize, usize)> =
                 gpu.iter().map(|t| (t.kind, t.start, t.len)).collect();
 
-            let cpu_ok = check_against_golden("cpu", src, &cpu_norm, &g);
+            let test_cpu_ok = check_against_golden("test_cpu", src, &test_cpu_norm, &g);
             let gpu_ok = check_against_golden("gpu", src, &gpu_norm, &g);
 
-            if !cpu_ok || !gpu_ok {
+            if !test_cpu_ok || !gpu_ok {
                 ok = false;
             }
         } else {
@@ -415,26 +415,30 @@ fn save_case(dir: &str, seed: u64, iter: usize, src: &str) -> PathBuf {
     path
 }
 
-fn compare_streams(src: &str, cpu: &[CpuToken], gpu: &[laniusc::lexer::gpu::Token]) -> bool {
-    if cpu.len() != gpu.len() {
-        let i = first_divergence_idx(cpu, gpu);
+fn compare_streams(
+    src: &str,
+    test_cpu: &[TestCpuToken],
+    gpu: &[laniusc::lexer::gpu::Token],
+) -> bool {
+    if test_cpu.len() != gpu.len() {
+        let i = first_divergence_idx(test_cpu, gpu);
         eprintln!(
-            "[diff] token count mismatch: cpu={} gpu={} (first divergence at index {})",
-            cpu.len(),
+            "[diff] token count mismatch: test_cpu={} gpu={} (first divergence at index {})",
+            test_cpu.len(),
             gpu.len(),
             i
         );
-        dump_near(src, cpu, gpu, i.saturating_sub(1));
+        dump_near(src, test_cpu, gpu, i.saturating_sub(1));
 
-        let min_len = cpu.len().min(gpu.len());
+        let min_len = test_cpu.len().min(gpu.len());
         if i == min_len {
-            if cpu.len() > gpu.len() {
-                eprintln!("--- extra CPU tokens starting at {min_len} ---");
-                for j in min_len..(min_len + 6).min(cpu.len()) {
-                    let t = &cpu[j];
+            if test_cpu.len() > gpu.len() {
+                eprintln!("--- extra test CPU oracle tokens starting at {min_len} ---");
+                for j in min_len..(min_len + 6).min(test_cpu.len()) {
+                    let t = &test_cpu[j];
                     let text = &src.as_bytes()[t.start..t.start + t.len];
                     eprintln!(
-                        "#{:06} CPU extra = {:?} @{}+{} {:?}",
+                        "#{:06} test CPU oracle extra = {:?} @{}+{} {:?}",
                         j,
                         t.kind,
                         t.start,
@@ -461,27 +465,27 @@ fn compare_streams(src: &str, cpu: &[CpuToken], gpu: &[laniusc::lexer::gpu::Toke
         return false;
     }
 
-    for (idx, (ct, gt)) in cpu.iter().zip(gpu.iter()).enumerate() {
+    for (idx, (ct, gt)) in test_cpu.iter().zip(gpu.iter()).enumerate() {
         if ct.kind as u32 != gt.kind as u32 || ct.start != gt.start || ct.len != gt.len {
             eprintln!(
-                "[diff] token {} mismatch:\n  CPU: kind={:?} start={} len={}\n  GPU: kind={:?} start={} len={}",
+                "[diff] token {} mismatch:\n  test CPU oracle: kind={:?} start={} len={}\n  GPU: kind={:?} start={} len={}",
                 idx, ct.kind, ct.start, ct.len, gt.kind, gt.start, gt.len
             );
 
-            dump_src_window(src, ct.start, ct.len, "CPU", idx);
+            dump_src_window(src, ct.start, ct.len, "test CPU oracle", idx);
             dump_src_window(src, gt.start, gt.len, "GPU", idx);
 
-            dump_near(src, cpu, gpu, idx.saturating_sub(1));
+            dump_near(src, test_cpu, gpu, idx.saturating_sub(1));
             return false;
         }
     }
     true
 }
 
-fn first_divergence_idx(cpu: &[CpuToken], gpu: &[laniusc::lexer::gpu::Token]) -> usize {
-    let n = cpu.len().min(gpu.len());
+fn first_divergence_idx(test_cpu: &[TestCpuToken], gpu: &[laniusc::lexer::gpu::Token]) -> usize {
+    let n = test_cpu.len().min(gpu.len());
     for i in 0..n {
-        let ct = &cpu[i];
+        let ct = &test_cpu[i];
         let gt = &gpu[i];
         if ct.kind as u32 != gt.kind as u32 || ct.start != gt.start || ct.len != gt.len {
             return i;
@@ -563,15 +567,20 @@ fn dump_src_window(src: &str, start: usize, len: usize, who: &str, idx: usize) {
     eprintln!("    {underline}");
 }
 
-fn dump_near(src: &str, cpu: &[CpuToken], gpu: &[laniusc::lexer::gpu::Token], from_idx: usize) {
+fn dump_near(
+    src: &str,
+    test_cpu: &[TestCpuToken],
+    gpu: &[laniusc::lexer::gpu::Token],
+    from_idx: usize,
+) {
     let lo = from_idx;
-    let last_index = cpu.len().min(gpu.len());
+    let last_index = test_cpu.len().min(gpu.len());
     let hi = (from_idx + 3).min(last_index);
-    eprintln!("gpu len {} cpu len {}", gpu.len(), cpu.len());
+    eprintln!("gpu len {} test_cpu len {}", gpu.len(), test_cpu.len());
     eprintln!("--- context tokens [{lo}..{hi}) ---");
     let bytes = src.as_bytes();
     for i in lo..hi {
-        let cpu_dbg = cpu.get(i).map(|t| {
+        let test_cpu_dbg = test_cpu.get(i).map(|t| {
             let len = t.len.min(src.len() - t.start);
             let s = &bytes[t.start..t.start + len];
             (t.kind, t.start, len, preview_lossy(s, 10, 10))
@@ -581,11 +590,11 @@ fn dump_near(src: &str, cpu: &[CpuToken], gpu: &[laniusc::lexer::gpu::Token], fr
             let s = &bytes[t.start..t.start + len];
             (t.kind, t.start, len, preview_lossy(s, 10, 10))
         });
-        let same = if cpu_dbg == gpu_dbg {
+        let same = if test_cpu_dbg == gpu_dbg {
             "\u{2705}"
         } else {
             "\u{274c}"
         };
-        eprintln!("{same} #{i:06} CPU={cpu_dbg:?} GPU={gpu_dbg:?}");
+        eprintln!("{same} #{i:06} test_cpu={test_cpu_dbg:?} GPU={gpu_dbg:?}");
     }
 }

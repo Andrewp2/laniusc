@@ -1,13 +1,13 @@
 mod common;
 
-use laniusc::lexer::{cpu::lex_on_cpu, gpu::driver::GpuLexer, tables::tokens::TokenKind};
+use laniusc::lexer::{gpu::driver::GpuLexer, tables::tokens::TokenKind, test_cpu::lex_on_test_cpu};
 
 #[test]
-fn cpu_lexer_retags_bool_keywords() {
+fn test_cpu_lexer_oracle_retags_bool_keywords() {
     use TokenKind::*;
 
-    let kinds = lex_on_cpu("let t = true; let f = false;")
-        .expect("CPU lex")
+    let kinds = lex_on_test_cpu("let t = true; let f = false;")
+        .expect("test CPU oracle lex")
         .into_iter()
         .map(|token| token.kind)
         .collect::<Vec<_>>();
@@ -21,11 +21,11 @@ fn cpu_lexer_retags_bool_keywords() {
 }
 
 #[test]
-fn cpu_lexer_retags_const_keyword() {
+fn test_cpu_lexer_oracle_retags_const_keyword() {
     use TokenKind::*;
 
-    let kinds = lex_on_cpu("const LIMIT: i32 = 7;")
-        .expect("CPU lex")
+    let kinds = lex_on_test_cpu("const LIMIT: i32 = 7;")
+        .expect("test CPU oracle lex")
         .into_iter()
         .map(|token| token.kind)
         .collect::<Vec<_>>();
@@ -37,11 +37,11 @@ fn cpu_lexer_retags_const_keyword() {
 }
 
 #[test]
-fn cpu_lexer_retags_enum_keyword() {
+fn test_cpu_lexer_oracle_retags_enum_keyword() {
     use TokenKind::*;
 
-    let kinds = lex_on_cpu("enum Ordering { Less, Equal, Greater }")
-        .expect("CPU lex")
+    let kinds = lex_on_test_cpu("enum Ordering { Less, Equal, Greater }")
+        .expect("test CPU oracle lex")
         .into_iter()
         .map(|token| token.kind)
         .collect::<Vec<_>>();
@@ -55,11 +55,11 @@ fn cpu_lexer_retags_enum_keyword() {
 }
 
 #[test]
-fn cpu_lexer_retags_struct_keyword() {
+fn test_cpu_lexer_oracle_retags_struct_keyword() {
     use TokenKind::*;
 
-    let kinds = lex_on_cpu("struct VecHeader { len: i32 }")
-        .expect("CPU lex")
+    let kinds = lex_on_test_cpu("struct VecHeader { len: i32 }")
+        .expect("test CPU oracle lex")
         .into_iter()
         .map(|token| token.kind)
         .collect::<Vec<_>>();
@@ -71,11 +71,11 @@ fn cpu_lexer_retags_struct_keyword() {
 }
 
 #[test]
-fn cpu_lexer_retags_impl_keyword() {
+fn test_cpu_lexer_oracle_retags_impl_keyword() {
     use TokenKind::*;
 
-    let kinds = lex_on_cpu("impl VecHeader { pub fn len() -> i32 { return 0; } }")
-        .expect("CPU lex")
+    let kinds = lex_on_test_cpu("impl VecHeader { pub fn len() -> i32 { return 0; } }")
+        .expect("test CPU oracle lex")
         .into_iter()
         .map(|token| token.kind)
         .collect::<Vec<_>>();
@@ -104,11 +104,11 @@ fn cpu_lexer_retags_impl_keyword() {
 }
 
 #[test]
-fn cpu_lexer_retags_trait_keyword() {
+fn test_cpu_lexer_oracle_retags_trait_keyword() {
     use TokenKind::*;
 
-    let kinds = lex_on_cpu("trait Eq<T> { fn eq(left: T, right: T) -> bool; }")
-        .expect("CPU lex")
+    let kinds = lex_on_test_cpu("trait Eq<T> { fn eq(left: T, right: T) -> bool; }")
+        .expect("test CPU oracle lex")
         .into_iter()
         .map(|token| token.kind)
         .collect::<Vec<_>>();
@@ -142,12 +142,12 @@ fn cpu_lexer_retags_trait_keyword() {
 }
 
 #[test]
-fn cpu_lexer_splits_nested_generic_closers_in_type_contexts() {
+fn test_cpu_lexer_oracle_splits_nested_generic_closers_in_type_contexts() {
     use TokenKind::*;
 
     let kinds =
-        lex_on_cpu("fn same<T: Eq<T>>(left: T, right: T) -> bool { return left.eq(right); }")
-            .expect("CPU lex")
+        lex_on_test_cpu("fn same<T: Eq<T>>(left: T, right: T) -> bool { return left.eq(right); }")
+            .expect("test CPU oracle lex")
             .into_iter()
             .map(|token| token.kind)
             .collect::<Vec<_>>();
@@ -191,14 +191,15 @@ fn cpu_lexer_splits_nested_generic_closers_in_type_contexts() {
 }
 
 #[test]
-fn cpu_lexer_splits_nested_generic_closers_after_multiple_bounds() {
+fn test_cpu_lexer_oracle_splits_nested_generic_closers_after_multiple_bounds() {
     use TokenKind::*;
 
-    let kinds = lex_on_cpu("fn key<T: Eq<T> + Hash<T>>(value: T) -> u32 { return value.hash(); }")
-        .expect("CPU lex")
-        .into_iter()
-        .map(|token| token.kind)
-        .collect::<Vec<_>>();
+    let kinds =
+        lex_on_test_cpu("fn key<T: Eq<T> + Hash<T>>(value: T) -> u32 { return value.hash(); }")
+            .expect("test CPU oracle lex")
+            .into_iter()
+            .map(|token| token.kind)
+            .collect::<Vec<_>>();
 
     assert_eq!(
         kinds,
@@ -239,11 +240,11 @@ fn cpu_lexer_splits_nested_generic_closers_after_multiple_bounds() {
 }
 
 #[test]
-fn cpu_lexer_retags_for_in_keywords() {
+fn test_cpu_lexer_oracle_retags_for_in_keywords() {
     use TokenKind::*;
 
-    let kinds = lex_on_cpu("for item in values { continue; }")
-        .expect("CPU lex")
+    let kinds = lex_on_test_cpu("for item in values { continue; }")
+        .expect("test CPU oracle lex")
         .into_iter()
         .map(|token| token.kind)
         .collect::<Vec<_>>();
@@ -255,11 +256,11 @@ fn cpu_lexer_retags_for_in_keywords() {
 }
 
 #[test]
-fn cpu_lexer_retags_extern_keyword() {
+fn test_cpu_lexer_oracle_retags_extern_keyword() {
     use TokenKind::*;
 
-    let kinds = lex_on_cpu(r#"pub extern "wasm" fn host_alloc(size: usize) -> u32;"#)
-        .expect("CPU lex")
+    let kinds = lex_on_test_cpu(r#"pub extern "wasm" fn host_alloc(size: usize) -> u32;"#)
+        .expect("test CPU oracle lex")
         .into_iter()
         .map(|token| token.kind)
         .collect::<Vec<_>>();
@@ -285,11 +286,11 @@ fn cpu_lexer_retags_extern_keyword() {
 }
 
 #[test]
-fn cpu_lexer_retags_type_keyword() {
+fn test_cpu_lexer_oracle_retags_type_keyword() {
     use TokenKind::*;
 
-    let kinds = lex_on_cpu("pub type Count = i32;")
-        .expect("CPU lex")
+    let kinds = lex_on_test_cpu("pub type Count = i32;")
+        .expect("test CPU oracle lex")
         .into_iter()
         .map(|token| token.kind)
         .collect::<Vec<_>>();
@@ -298,11 +299,11 @@ fn cpu_lexer_retags_type_keyword() {
 }
 
 #[test]
-fn cpu_lexer_retags_match_keyword() {
+fn test_cpu_lexer_oracle_retags_match_keyword() {
     use TokenKind::*;
 
-    let kinds = lex_on_cpu("match (value) { _ -> value }")
-        .expect("CPU lex")
+    let kinds = lex_on_test_cpu("match (value) { _ -> value }")
+        .expect("test CPU oracle lex")
         .into_iter()
         .map(|token| token.kind)
         .collect::<Vec<_>>();
@@ -324,11 +325,11 @@ fn cpu_lexer_retags_match_keyword() {
 }
 
 #[test]
-fn cpu_lexer_retags_module_and_import_keywords() {
+fn test_cpu_lexer_oracle_retags_module_and_import_keywords() {
     use TokenKind::*;
 
-    let kinds = lex_on_cpu("module core::i32; import core::bool; import \"stdlib/i32.lani\";")
-        .expect("CPU lex")
+    let kinds = lex_on_test_cpu("module core::i32; import core::bool; import \"stdlib/i32.lani\";")
+        .expect("test CPU oracle lex")
         .into_iter()
         .map(|token| token.kind)
         .collect::<Vec<_>>();

@@ -16,7 +16,7 @@ pub fn env_flag_true(var: &str, default: bool) -> bool {
         .unwrap_or(default)
 }
 
-/// Gate for token payload readback to the CPU (can be turned off in perf runs).
+/// Gate for host readback of token payloads (can be turned off in perf runs).
 pub fn readback_enabled() -> bool {
     env_flag_true("LANIUS_READBACK", true) && env_flag_true("PERF_ONE_READBACK", true)
 }
