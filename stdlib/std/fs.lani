@@ -1,0 +1,28 @@
+// Source-level filesystem host ABI declarations.
+
+module std::fs;
+
+pub extern "lanius_std" fn open_read(path_ptr: u32, path_len: usize) -> i32;
+
+pub extern "lanius_std" fn open_write(path_ptr: u32, path_len: usize) -> i32;
+
+pub extern "lanius_std" fn open_append(path_ptr: u32, path_len: usize) -> i32;
+
+pub extern "lanius_std" fn close(handle: i32) -> i32;
+
+pub extern "lanius_std" fn read(handle: i32, ptr: u32, len: usize) -> i32;
+
+pub extern "lanius_std" fn write(handle: i32, ptr: u32, len: usize) -> i32;
+
+pub extern "lanius_std" fn remove_file(path_ptr: u32, path_len: usize) -> i32;
+
+pub extern "lanius_std" fn create_dir(path_ptr: u32, path_len: usize) -> i32;
+
+pub extern "lanius_std" fn remove_dir(path_ptr: u32, path_len: usize) -> i32;
+
+pub extern "lanius_std" fn rename(
+    from_ptr: u32,
+    from_len: usize,
+    to_ptr: u32,
+    to_len: usize,
+) -> i32;

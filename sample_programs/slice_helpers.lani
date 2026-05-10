@@ -1,0 +1,16 @@
+import core::slice;
+
+fn main() {
+    let values: [i32; 4] = [3, 1, 4, 1];
+    let first: i32 = core::slice::first_i32(values);
+    let third: i32 = core::slice::get_or_i32(values, 4, 2, 0);
+    let fallback: i32 = core::slice::get_or_i32(values, 4, 9, 7);
+    let total: i32 = core::slice::sum_i32(values, 4);
+    let found: bool = core::slice::contains_i32(values, 4, third);
+    if (found) {
+        print(first + third + fallback + total);
+    } else {
+        print(0);
+    }
+    return 0;
+}

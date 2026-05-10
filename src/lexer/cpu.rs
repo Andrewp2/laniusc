@@ -49,6 +49,139 @@ struct OpenCtx {
     group_owner: GroupOwner,
 }
 
+fn can_start_generic_angle_list(kinds: &[TokenKind], lt_i: usize) -> bool {
+    use TokenKind::*;
+    if kinds.get(lt_i).copied() != Some(Lt) || lt_i == 0 {
+        return false;
+    }
+    if kinds.get(lt_i - 1).copied() != Some(Ident) {
+        return false;
+    }
+
+    let before = lt_i
+        .checked_sub(2)
+        .and_then(|index| kinds.get(index))
+        .copied();
+    matches!(
+        before,
+        Some(
+            Fn | Enum
+                | Struct
+                | Type
+                | Impl
+                | Trait
+                | Colon
+                | Arrow
+                | Assign
+                | Comma
+                | Plus
+                | Lt
+                | LParen
+                | LBracket
+                | Ampersand
+        )
+    )
+}
+
+fn generic_angle_boundary(kind: TokenKind) -> bool {
+    use TokenKind::*;
+    matches!(
+        kind,
+        Semicolon
+            | LBrace
+            | RBrace
+            | Fn
+            | Let
+            | Return
+            | If
+            | While
+            | For
+            | Break
+            | Continue
+            | Enum
+            | Struct
+            | Type
+            | Import
+            | Module
+            | Impl
+            | Trait
+            | Extern
+    )
+}
+
+fn nested_generic_shr_split_positions(tokens: &[CpuToken]) -> Vec<usize> {
+    use TokenKind::*;
+    let kinds = tokens.iter().map(|token| token.kind).collect::<Vec<_>>();
+    let mut depth = 0usize;
+    let mut splits = Vec::new();
+
+    for (index, token) in tokens.iter().enumerate() {
+        match token.kind {
+            Lt if can_start_generic_angle_list(&kinds, index) => {
+                depth = depth.saturating_add(1);
+            }
+            Gt if depth > 0 => {
+                depth -= 1;
+            }
+            Shr if depth >= 2 => {
+                splits.push(index);
+                depth -= 2;
+            }
+            kind if generic_angle_boundary(kind) => {
+                depth = 0;
+            }
+            _ => {}
+        }
+    }
+
+    splits
+}
+
+fn split_nested_generic_shr_tokens(tokens: Vec<CpuToken>) -> Vec<CpuToken> {
+    let split_positions = nested_generic_shr_split_positions(&tokens);
+    if split_positions.is_empty() {
+        return tokens;
+    }
+
+    let split_positions = split_positions
+        .into_iter()
+        .collect::<std::collections::HashSet<_>>();
+    let mut out = Vec::with_capacity(tokens.len() + split_positions.len());
+    for (index, token) in tokens.into_iter().enumerate() {
+        if split_positions.contains(&index) {
+            out.push(CpuToken {
+                kind: TokenKind::Gt,
+                start: token.start,
+                len: 1,
+            });
+            out.push(CpuToken {
+                kind: TokenKind::Gt,
+                start: token.start + 1,
+                len: 1,
+            });
+        } else {
+            out.push(token);
+        }
+    }
+    out
+}
+
+pub fn normalize_nested_generic_closers(input: &str) -> Result<String, String> {
+    let mut tokens = lex_raw_kept(input)?;
+    retag_keywords_in_place(&mut tokens, input.as_bytes());
+    let split_positions = nested_generic_shr_split_positions(&tokens);
+    if split_positions.is_empty() {
+        return Ok(input.to_string());
+    }
+
+    let mut out = input.to_string();
+    for split in split_positions.into_iter().rev() {
+        let insert_at = tokens[split].start + 1;
+        out.insert(insert_at, ' ');
+    }
+    Ok(out)
+}
+
 pub fn retag_calls_and_arrays_in_place(kinds: &mut [TokenKind]) {
     use TokenKind::*;
     let mut opens: Vec<OpenCtx> = Vec::new();
@@ -213,7 +346,9 @@ fn keyword_kind(bytes: &[u8]) -> Option<TokenKind> {
     match bytes {
         b"pub" => Some(TokenKind::Pub),
         b"fn" => Some(TokenKind::Fn),
+        b"in" => Some(TokenKind::In),
         b"let" => Some(TokenKind::Let),
+        b"for" => Some(TokenKind::For),
         b"return" => Some(TokenKind::Return),
         b"if" => Some(TokenKind::If),
         b"else" => Some(TokenKind::Else),
@@ -224,10 +359,14 @@ fn keyword_kind(bytes: &[u8]) -> Option<TokenKind> {
         b"false" => Some(TokenKind::False),
         b"const" => Some(TokenKind::Const),
         b"enum" => Some(TokenKind::Enum),
+        b"extern" => Some(TokenKind::Extern),
         b"import" => Some(TokenKind::Import),
+        b"impl" => Some(TokenKind::Impl),
         b"match" => Some(TokenKind::Match),
         b"module" => Some(TokenKind::Module),
         b"struct" => Some(TokenKind::Struct),
+        b"trait" => Some(TokenKind::Trait),
+        b"type" => Some(TokenKind::Type),
         _ => None,
     }
 }
@@ -392,9 +531,7 @@ fn slice_dbg(src: &[u8], i: usize) -> (usize, String) {
     (lo, s)
 }
 
-/// Deterministic CPU lexer that mirrors the streaming-emit rules used on GPU.
-/// Returns kept tokens (whitespace/comments filtered out).
-pub fn lex_on_cpu(input: &str) -> Result<Vec<CpuToken>, String> {
+fn lex_raw_kept(input: &str) -> Result<Vec<CpuToken>, String> {
     let bytes = input.as_bytes();
     let n = bytes.len();
 
@@ -456,14 +593,6 @@ pub fn lex_on_cpu(input: &str) -> Result<Vec<CpuToken>, String> {
                 len: n - tok_start,
             });
         }
-        {
-            retag_keywords_in_place(&mut out, bytes);
-            let mut kinds: Vec<TokenKind> = out.iter().map(|t| t.kind).collect();
-            retag_calls_and_arrays_in_place(&mut kinds);
-            for (tok, k) in out.iter_mut().zip(kinds.into_iter()) {
-                tok.kind = k;
-            }
-        }
         return Ok(out);
     }
 
@@ -476,6 +605,21 @@ pub fn lex_on_cpu(input: &str) -> Result<Vec<CpuToken>, String> {
     Err(format!(
         "ended in non-accepting state={state} (unterminated token?)"
     ))
+}
+
+/// Deterministic CPU lexer that mirrors the streaming-emit rules used on GPU.
+/// Returns kept tokens (whitespace/comments filtered out).
+pub fn lex_on_cpu(input: &str) -> Result<Vec<CpuToken>, String> {
+    let bytes = input.as_bytes();
+    let mut out = lex_raw_kept(input)?;
+    retag_keywords_in_place(&mut out, bytes);
+    out = split_nested_generic_shr_tokens(out);
+    let mut kinds: Vec<TokenKind> = out.iter().map(|t| t.kind).collect();
+    retag_calls_and_arrays_in_place(&mut kinds);
+    for (tok, k) in out.iter_mut().zip(kinds.into_iter()) {
+        tok.kind = k;
+    }
+    Ok(out)
 }
 
 #[cfg(test)]

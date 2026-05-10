@@ -1,0 +1,26 @@
+struct Pair {
+    left: i32,
+    right: i32,
+}
+
+fn make_pair(left: i32, right: i32) -> Pair {
+    return Pair { left: left, right: right };
+}
+
+fn bump(pair: Pair) -> Pair {
+    let next: Pair = pair;
+    next.left += 2;
+    next.right = next.left - 1;
+    return next;
+}
+
+fn score(pair: Pair) -> i32 {
+    return pair.left * 10 + pair.right;
+}
+
+fn main() {
+    let pair: Pair = make_pair(7, 5);
+    let next: Pair = bump(pair);
+    print(score(next));
+    return 0;
+}

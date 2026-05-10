@@ -26,8 +26,8 @@ pub struct AstNode {
     /// "lt", "gt", "le", "ge", "eq", "and", "or", "set",
     /// plus file/item additions: "file", "fn", "param", "type_ident",
     /// "type_generic", "type_array", "block", "stmt_let", "stmt_return",
-    /// "stmt_if", "stmt_while", "stmt_break", "stmt_continue", "stmt_expr",
-    /// "enum", "enum_variant", "enum_fields", "enum_fields_none",
+    /// "stmt_if", "stmt_while", "stmt_for", "stmt_break", "stmt_continue", "stmt_expr",
+    /// "extern_fn", "enum", "enum_variant", "enum_fields", "enum_fields_none",
     /// "type_params".
     pub tag: &'static str,
     /// Children node ids in source order.
@@ -66,6 +66,7 @@ pub fn parse_from_token_kinds(kinds: &[tokens::TokenKind]) -> Result<Ast, ParseE
         kinds,
         i: 0,
         nodes: Vec::new(),
+        allow_struct_literals: true,
     };
 
     let root = p.parse_file()?;
@@ -106,6 +107,7 @@ struct Parser<'a> {
     kinds: &'a [tokens::TokenKind],
     i: usize,
     nodes: Vec<AstNode>,
+    allow_struct_literals: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -182,22 +184,38 @@ impl<'a> Parser<'a> {
                 self.parse_struct_item()?
             } else if self.peek() == Some(tokens::TokenKind::Const) {
                 self.parse_const_item()?
+            } else if self.peek() == Some(tokens::TokenKind::Type) {
+                self.parse_type_alias_item()?
+            } else if self.peek() == Some(tokens::TokenKind::Impl) {
+                self.parse_impl_item()?
+            } else if self.peek() == Some(tokens::TokenKind::Trait) {
+                self.parse_trait_item()?
+            } else if self.peek() == Some(tokens::TokenKind::Extern) {
+                self.parse_extern_fn_item()?
             } else {
                 self.parse_fn_item()?
             };
             Ok(self.push("pub", vec![item]))
         } else if self.peek() == Some(tokens::TokenKind::Fn) {
             self.parse_fn_item()
+        } else if self.peek() == Some(tokens::TokenKind::Extern) {
+            self.parse_extern_fn_item()
         } else if self.peek() == Some(tokens::TokenKind::Import) {
             self.parse_import_item()
         } else if self.peek() == Some(tokens::TokenKind::Module) {
             self.parse_module_item()
         } else if self.peek() == Some(tokens::TokenKind::Const) {
             self.parse_const_item()
+        } else if self.peek() == Some(tokens::TokenKind::Type) {
+            self.parse_type_alias_item()
         } else if self.peek() == Some(tokens::TokenKind::Enum) {
             self.parse_enum_item()
         } else if self.peek() == Some(tokens::TokenKind::Struct) {
             self.parse_struct_item()
+        } else if self.peek() == Some(tokens::TokenKind::Impl) {
+            self.parse_impl_item()
+        } else if self.peek() == Some(tokens::TokenKind::Trait) {
+            self.parse_trait_item()
         } else {
             self.parse_stmt()
         }
@@ -234,6 +252,121 @@ impl<'a> Parser<'a> {
         Ok(self.push("fn", vec![name_id, type_params, params, ret, body]))
     }
 
+    fn parse_extern_fn_item(&mut self) -> Result<u32, ParseError> {
+        self.expect(tokens::TokenKind::Extern, "Extern")?;
+        let abi = if self.eat(tokens::TokenKind::String) {
+            self.push("extern_abi", vec![])
+        } else {
+            self.push("extern_abi_none", vec![])
+        };
+        self.expect(tokens::TokenKind::Fn, "Fn")?;
+        self.expect(tokens::TokenKind::Ident, "extern function name")?;
+        let name_id = self.push("ident", vec![]);
+        let type_params = self.parse_type_params_opt()?;
+
+        if !(self.eat(tokens::TokenKind::ParamLParen)
+            || self.eat(tokens::TokenKind::GroupLParen)
+            || self.eat(tokens::TokenKind::CallLParen))
+        {
+            self.expect(tokens::TokenKind::LParen, "extern function parameter list")?;
+        }
+        let params = self.parse_param_list_opt()?;
+        if !(self.eat(tokens::TokenKind::ParamRParen)
+            || self.eat(tokens::TokenKind::GroupRParen)
+            || self.eat(tokens::TokenKind::CallRParen))
+        {
+            self.expect(tokens::TokenKind::RParen, "RParen")?;
+        }
+
+        let ret = if self.eat(tokens::TokenKind::Arrow) {
+            self.parse_type_expr()?
+        } else {
+            self.push("type_void", vec![])
+        };
+        self.expect_semicolon()?;
+        Ok(self.push("extern_fn", vec![abi, name_id, type_params, params, ret]))
+    }
+
+    fn parse_impl_item(&mut self) -> Result<u32, ParseError> {
+        self.expect(tokens::TokenKind::Impl, "Impl")?;
+        let type_params = self.parse_type_params_opt()?;
+        let first_ty = self.parse_type_expr()?;
+        let target_tail = if self.eat(tokens::TokenKind::For) {
+            let target = self.parse_type_expr()?;
+            self.push("impl_trait", vec![target])
+        } else {
+            self.push("impl_inherent", vec![])
+        };
+        self.expect(tokens::TokenKind::LBrace, "LBrace")?;
+
+        let mut methods = Vec::new();
+        while self.peek() != Some(tokens::TokenKind::RBrace) {
+            if self.eat(tokens::TokenKind::Pub) {
+                let method = self.parse_fn_item()?;
+                methods.push(self.push("pub", vec![method]));
+            } else {
+                methods.push(self.parse_fn_item()?);
+            }
+        }
+
+        self.expect(tokens::TokenKind::RBrace, "RBrace")?;
+        let mut children = vec![type_params, first_ty, target_tail];
+        children.extend(methods);
+        Ok(self.push("impl", children))
+    }
+
+    fn parse_trait_item(&mut self) -> Result<u32, ParseError> {
+        self.expect(tokens::TokenKind::Trait, "Trait")?;
+        self.expect(tokens::TokenKind::Ident, "trait name")?;
+        let name = self.push("ident", vec![]);
+        let type_params = self.parse_type_params_opt()?;
+        self.expect(tokens::TokenKind::LBrace, "LBrace")?;
+
+        let mut methods = Vec::new();
+        while self.peek() != Some(tokens::TokenKind::RBrace) {
+            if self.eat(tokens::TokenKind::Pub) {
+                let method = self.parse_trait_method()?;
+                methods.push(self.push("pub", vec![method]));
+            } else {
+                methods.push(self.parse_trait_method()?);
+            }
+        }
+
+        self.expect(tokens::TokenKind::RBrace, "RBrace")?;
+        let mut children = vec![name, type_params];
+        children.extend(methods);
+        Ok(self.push("trait", children))
+    }
+
+    fn parse_trait_method(&mut self) -> Result<u32, ParseError> {
+        self.expect(tokens::TokenKind::Fn, "Fn")?;
+        self.expect(tokens::TokenKind::Ident, "trait method name")?;
+        let name = self.push("ident", vec![]);
+        let type_params = self.parse_type_params_opt()?;
+
+        if !(self.eat(tokens::TokenKind::ParamLParen)
+            || self.eat(tokens::TokenKind::GroupLParen)
+            || self.eat(tokens::TokenKind::CallLParen))
+        {
+            self.expect(tokens::TokenKind::LParen, "trait method parameter list")?;
+        }
+        let params = self.parse_param_list_opt()?;
+        if !(self.eat(tokens::TokenKind::ParamRParen)
+            || self.eat(tokens::TokenKind::GroupRParen)
+            || self.eat(tokens::TokenKind::CallRParen))
+        {
+            self.expect(tokens::TokenKind::RParen, "RParen")?;
+        }
+
+        let ret = if self.eat(tokens::TokenKind::Arrow) {
+            self.parse_type_expr()?
+        } else {
+            self.push("type_void", vec![])
+        };
+        self.expect_semicolon()?;
+        Ok(self.push("trait_method", vec![name, type_params, params, ret]))
+    }
+
     fn parse_import_item(&mut self) -> Result<u32, ParseError> {
         self.expect(tokens::TokenKind::Import, "Import")?;
         if self.eat(tokens::TokenKind::String) {
@@ -252,6 +385,17 @@ impl<'a> Parser<'a> {
         let path = self.parse_path()?;
         self.expect_semicolon()?;
         Ok(self.push("module", vec![path]))
+    }
+
+    fn parse_type_alias_item(&mut self) -> Result<u32, ParseError> {
+        self.expect(tokens::TokenKind::Type, "Type")?;
+        self.expect(tokens::TokenKind::Ident, "type alias name")?;
+        let name = self.push("ident", vec![]);
+        let type_params = self.parse_type_params_opt()?;
+        self.expect(tokens::TokenKind::Assign, "Assign")?;
+        let target = self.parse_type_expr()?;
+        self.expect_semicolon()?;
+        Ok(self.push("type_alias", vec![name, type_params, target]))
     }
 
     fn parse_path(&mut self) -> Result<u32, ParseError> {
@@ -364,7 +508,18 @@ impl<'a> Parser<'a> {
         }
 
         self.expect(tokens::TokenKind::Ident, "type parameter name")?;
-        Ok(self.push("ident", vec![]))
+        let name = self.push("ident", vec![]);
+        if self.eat(tokens::TokenKind::Colon) {
+            let mut children = vec![name, self.parse_type_expr()?];
+            while self.eat(tokens::TokenKind::InfixPlus)
+                || self.eat(tokens::TokenKind::PrefixPlus)
+                || self.eat(tokens::TokenKind::Plus)
+            {
+                children.push(self.parse_type_expr()?);
+            }
+            return Ok(self.push("type_param_bound", children));
+        }
+        Ok(name)
     }
 
     /// Parse a top-level `struct` item.
@@ -474,6 +629,9 @@ impl<'a> Parser<'a> {
         let mut params = Vec::new();
         params.push(self.parse_param()?);
         while self.eat(tokens::TokenKind::ParamComma) || self.eat(tokens::TokenKind::Comma) {
+            if self.peek().map_or(false, Parser::is_close_paren) {
+                break;
+            }
             params.push(self.parse_param()?);
         }
         Ok(self.push("params", params))
@@ -660,6 +818,21 @@ impl<'a> Parser<'a> {
             return Ok(self.push("stmt_while", vec![cond, body]));
         }
 
+        if self.eat(tokens::TokenKind::For) {
+            if !self.eat(tokens::TokenKind::Ident) {
+                return Err(ParseError {
+                    pos: self.i,
+                    expected: "for binding name",
+                    found: self.peek(),
+                });
+            }
+            let name = self.push("ident", vec![]);
+            self.expect(tokens::TokenKind::In, "In")?;
+            let iter = self.parse_for_iter_expr()?;
+            let body = self.parse_block()?;
+            return Ok(self.push("stmt_for", vec![name, iter, body]));
+        }
+
         if self.eat(tokens::TokenKind::Break) {
             self.expect_semicolon()?;
             return Ok(self.push("stmt_break", vec![]));
@@ -716,6 +889,14 @@ impl<'a> Parser<'a> {
     // expr -> assign
     fn parse_expr(&mut self) -> Result<u32, ParseError> {
         self.parse_assign()
+    }
+
+    fn parse_for_iter_expr(&mut self) -> Result<u32, ParseError> {
+        let previous = self.allow_struct_literals;
+        self.allow_struct_literals = false;
+        let expr = self.parse_expr();
+        self.allow_struct_literals = previous;
+        expr
     }
 
     // assign [set] -> orexpr 'Assign' assign | orexpr
@@ -1042,13 +1223,15 @@ impl<'a> Parser<'a> {
             let mut arms = Vec::new();
             if !self.eat(tokens::TokenKind::RBrace) {
                 arms.push(self.parse_match_arm()?);
+                let mut closed = false;
                 while self.eat(tokens::TokenKind::Comma) || self.eat(tokens::TokenKind::ArgComma) {
                     if self.eat(tokens::TokenKind::RBrace) {
+                        closed = true;
                         break;
                     }
                     arms.push(self.parse_match_arm()?);
                 }
-                if !self.eat(tokens::TokenKind::RBrace) {
+                if !closed && !self.eat(tokens::TokenKind::RBrace) {
                     self.expect(tokens::TokenKind::RBrace, "RBrace")?;
                 }
             }
@@ -1060,7 +1243,7 @@ impl<'a> Parser<'a> {
 
         if self.is_path_start() {
             let path = self.parse_path()?;
-            if self.eat(tokens::TokenKind::LBrace) {
+            if self.allow_struct_literals && self.eat(tokens::TokenKind::LBrace) {
                 let mut fields = Vec::new();
                 if !self.eat(tokens::TokenKind::RBrace) {
                     fields.push(self.parse_struct_lit_field()?);

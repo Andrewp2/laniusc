@@ -1,0 +1,15 @@
+fn main() {
+    let values: [i32; 6] = [1, 2, 3, 4, 5, 6];
+    let total: i32 = 0;
+    for value in values {
+        if (value == 2) {
+            continue;
+        }
+        if (value == 5) {
+            break;
+        }
+        total += value;
+    }
+    print(total);
+    return 0;
+}

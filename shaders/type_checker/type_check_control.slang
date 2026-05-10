@@ -97,6 +97,7 @@ static const uint TY_FLOAT = 5u;
 static const uint TY_CHAR = 6u;
 static const uint TY_STRING = 7u;
 static const uint TY_ARRAY_BASE = 128u;
+static const uint TY_STRUCT_BASE = 4096u;
 
 uint active_token_count()
 {
@@ -117,6 +118,11 @@ uint token_kind(uint i)
 uint visible_type_for(uint i)
 {
     return i < active_token_count() ? visible_type[i] : TY_UNKNOWN;
+}
+
+bool is_array_type(uint ty)
+{
+    return ty >= TY_ARRAY_BASE && ty < TY_STRUCT_BASE;
 }
 
 void record_error(uint token_i, uint code, uint detail)
@@ -399,7 +405,7 @@ void check_index_operands(uint open_i)
     if (token_kind(base_i) == TK_IDENT)
     {
         uint base_ty = visible_type_for(base_i);
-        if (base_ty != TY_UNKNOWN && base_ty < TY_ARRAY_BASE)
+        if (base_ty != TY_UNKNOWN && !is_array_type(base_ty))
         {
             record_error(open_i, ERR_ASSIGN_MISMATCH, base_ty);
             return;

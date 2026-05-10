@@ -2,6 +2,10 @@
 [env]
 # 🤖 Ensure build.rs can dlopen libslang.so at runtime
 LD_LIBRARY_PATH = { value = "/home/andrew-peterson/Downloads/slang-2025.10.4-linux-x86_64/lib", force = true }
+# Most integration tests touch the shared GPU frontend and already serialize in
+# the test helper. Running libtest serially avoids scheduler contention that can
+# trip the short watchdog and makes plain `cargo test` the fast path.
+RUST_TEST_THREADS = { value = "1" }
 
 [build]
 # 🤖 Embed an rpath so the final binary can run without LD_LIBRARY_PATH

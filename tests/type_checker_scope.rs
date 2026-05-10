@@ -1,7 +1,9 @@
-use laniusc::compiler::{CompileError, type_check_source_with_gpu};
+mod common;
+
+use laniusc::compiler::CompileError;
 
 fn assert_gpu_type_check_error(src: &str, code: &str) {
-    let err = pollster::block_on(type_check_source_with_gpu(src))
+    let err = common::type_check_source_with_timeout(src)
         .expect_err("source should fail GPU type checking");
 
     match err {
@@ -16,8 +18,7 @@ fn assert_gpu_type_check_error(src: &str, code: &str) {
 }
 
 fn assert_gpu_compile_ok(src: &str) {
-    pollster::block_on(type_check_source_with_gpu(src))
-        .expect("source should pass GPU type checking");
+    common::type_check_source_with_timeout(src).expect("source should pass GPU type checking");
 }
 
 #[test]

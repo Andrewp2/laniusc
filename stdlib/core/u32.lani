@@ -1,0 +1,86 @@
+// Module-form u32 helpers for source-level stdlib imports.
+
+module core::u32;
+
+pub const MIN: u32 = 0;
+pub const MAX: u32 = 4294967295;
+
+pub fn min(left: u32, right: u32) -> u32 {
+    if (left < right) {
+        return left;
+    } else {
+        return right;
+    }
+}
+
+pub fn max(left: u32, right: u32) -> u32 {
+    if (left > right) {
+        return left;
+    } else {
+        return right;
+    }
+}
+
+pub fn clamp(value: u32, low: u32, high: u32) -> u32 {
+    if (value < low) {
+        return low;
+    } else {
+        if (value > high) {
+            return high;
+        } else {
+            return value;
+        }
+    }
+}
+
+pub fn wrapping_add(left: u32, right: u32) -> u32 {
+    return left + right;
+}
+
+pub fn wrapping_sub(left: u32, right: u32) -> u32 {
+    return left - right;
+}
+
+pub fn wrapping_mul(left: u32, right: u32) -> u32 {
+    return left * right;
+}
+
+pub fn saturating_add(left: u32, right: u32) -> u32 {
+    if (left > MAX - right) {
+        return MAX;
+    } else {
+        return left + right;
+    }
+}
+
+pub fn saturating_sub(left: u32, right: u32) -> u32 {
+    if (left < right) {
+        return MIN;
+    } else {
+        return left - right;
+    }
+}
+
+pub fn is_power_of_two(value: u32) -> bool {
+    if (value <= 0) {
+        return false;
+    } else {
+        let power: u32 = 1;
+        while (power < value) {
+            power *= 2;
+        }
+        return power == value;
+    }
+}
+
+pub fn next_power_of_two(value: u32) -> u32 {
+    if (value <= 1) {
+        return 1;
+    } else {
+        let power: u32 = 1;
+        while (power < value) {
+            power *= 2;
+        }
+        return power;
+    }
+}

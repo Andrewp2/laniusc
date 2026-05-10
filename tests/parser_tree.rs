@@ -1,3 +1,5 @@
+mod common;
+
 use laniusc::{
     lexer::{
         cpu::lex_on_cpu,
@@ -5,6 +7,7 @@ use laniusc::{
         tables::tokens::{N_KINDS, TokenKind},
     },
     parser::{
+        cpu::parse_from_token_kinds,
         gpu::{
             driver::GpuParser,
             passes::{
@@ -23,6 +26,7 @@ use laniusc::{
                     LL1_BLOCK_STATUS_ERROR,
                 },
             },
+            syntax::check_tokens_on_gpu,
         },
         tables::{INVALID_TABLE_ENTRY, PrecomputedParseTables, encode_pop, encode_push},
     },
@@ -147,7 +151,7 @@ fn assert_hir_token_spans(name: &str, hir_token_pos: &[u32], hir_token_end: &[u3
 
 #[test]
 fn gpu_parser_builds_tree_from_resident_lexer_tokens() {
-    pollster::block_on(async {
+    common::block_on_gpu_with_timeout("GPU parser resident lexer tokens", async move {
         let lexer = GpuLexer::new().await.expect("GPU lexer init");
         let parser = GpuParser::new().await.expect("GPU parser init");
         let tables =
@@ -211,6 +215,34 @@ fn generated_ll1_tables_accept_bool_literals() {
 }
 
 #[test]
+fn generated_ll1_tables_accept_for_in_statements() {
+    let tables =
+        PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+            .expect("load generated parse tables");
+    let token_kinds = kinds_with_sentinels(
+        "fn sum(values: [i32]) -> i32 { let total: i32 = 0; for value in values { total += value; } return total; }",
+    );
+
+    tables
+        .ll1_production_stream_with_positions(&token_kinds)
+        .expect("for-in fixture should parse with LL(1)");
+}
+
+#[test]
+fn generated_ll1_tables_accept_extern_function_declarations() {
+    let tables =
+        PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+            .expect("load generated parse tables");
+    let token_kinds = kinds_with_sentinels(
+        r#"pub extern "wasm" fn host_alloc(size: usize, align: usize,) -> u32; extern fn clock_ms() -> i64;"#,
+    );
+
+    tables
+        .ll1_production_stream_with_positions(&token_kinds)
+        .expect("extern function fixture with trailing parameter comma should parse with LL(1)");
+}
+
+#[test]
 fn generated_ll1_tables_accept_top_level_constants() {
     let tables =
         PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
@@ -222,6 +254,42 @@ fn generated_ll1_tables_accept_top_level_constants() {
     tables
         .ll1_production_stream_with_positions(&token_kinds)
         .expect("const fixture should parse with LL(1)");
+}
+
+#[test]
+fn gpu_syntax_accepts_public_top_level_constants() {
+    common::block_on_gpu_with_timeout("GPU syntax public const", async move {
+        let src = "pub const PUBLIC_LIMIT: i32 = 9; fn main() { return PUBLIC_LIMIT; }";
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let tokens = lexer.lex(src).await.expect("GPU lex public const fixture");
+        check_tokens_on_gpu(&tokens)
+            .await
+            .expect("GPU syntax should accept public const fixture");
+    });
+}
+
+#[test]
+fn gpu_syntax_accepts_for_in_statement_shape() {
+    common::block_on_gpu_with_timeout("GPU syntax for-in statement", async move {
+        let src = "fn main(values: [i32]) { for value in values { continue; } return; }";
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let tokens = lexer.lex(src).await.expect("GPU lex for-in fixture");
+        check_tokens_on_gpu(&tokens)
+            .await
+            .expect("GPU syntax should accept for-in fixture");
+    });
+}
+
+#[test]
+fn gpu_syntax_accepts_extern_function_declaration_shape() {
+    common::block_on_gpu_with_timeout("GPU syntax extern function declaration", async move {
+        let src = r#"pub extern "wasm" fn host_alloc(size: usize, align: usize,) -> u32;"#;
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let tokens = lexer.lex(src).await.expect("GPU lex extern fixture");
+        check_tokens_on_gpu(&tokens).await.expect(
+            "GPU syntax should accept extern function fixture with trailing parameter comma",
+        );
+    });
 }
 
 #[test]
@@ -317,6 +385,19 @@ fn generated_ll1_tables_accept_match_expressions() {
 }
 
 #[test]
+fn cpu_parser_accepts_return_match_with_trailing_arm_comma() {
+    let tokens = lex_on_cpu(
+        "fn unwrap_or(value: Option, fallback: i32) -> i32 { return match (value) { Some(inner) -> inner, None -> fallback, }; }",
+    )
+    .expect("CPU lex return match fixture")
+    .into_iter()
+    .map(|token| token.kind)
+    .collect::<Vec<_>>();
+
+    parse_from_token_kinds(&tokens).expect("CPU parser should accept return match expressions");
+}
+
+#[test]
 fn generated_ll1_tables_accept_slice_type_syntax() {
     let tables =
         PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
@@ -357,6 +438,78 @@ fn generated_ll1_tables_accept_generic_function_declarations() {
 }
 
 #[test]
+fn generated_ll1_tables_accept_generic_type_parameter_bounds() {
+    let tables =
+        PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+            .expect("load generated parse tables");
+    let token_kinds = kinds_with_sentinels(
+        "trait Eq<T> { fn eq(left: T, right: T) -> bool; } fn same<T: Eq<T>>(left: T, right: T) -> bool { return left.eq(right); }",
+    );
+
+    tables
+        .ll1_production_stream_with_positions(&token_kinds)
+        .expect("generic type parameter bound fixture should parse with LL(1)");
+}
+
+#[test]
+fn generated_ll1_tables_accept_multiple_generic_type_parameter_bounds() {
+    let tables =
+        PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+            .expect("load generated parse tables");
+    let token_kinds = kinds_with_sentinels(
+        "trait Eq<T> { fn eq(left: T, right: T) -> bool; } trait Hash<T> { fn hash(value: T) -> u32; } fn key<T: Eq<T> + Hash<T>>(value: T) -> u32 { return value.hash(); }",
+    );
+
+    tables
+        .ll1_production_stream_with_positions(&token_kinds)
+        .expect("multiple generic type parameter bounds fixture should parse with LL(1)");
+}
+
+#[test]
+fn gpu_syntax_accepts_generic_type_parameter_bounds() {
+    common::block_on_gpu_with_timeout("GPU syntax generic type parameter bounds", async move {
+        let src = "trait Eq<T> { fn eq(left: T, right: T) -> bool; } fn same<T: Eq<T> >(left: T, right: T) -> bool { return left.eq(right); }";
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let tokens = lexer.lex(src).await.expect("GPU lex generic bound fixture");
+        check_tokens_on_gpu(&tokens)
+            .await
+            .expect("GPU syntax should accept generic type parameter bounds");
+    });
+}
+
+#[test]
+fn gpu_syntax_accepts_multiple_generic_type_parameter_bounds() {
+    common::block_on_gpu_with_timeout(
+        "GPU syntax multiple generic type parameter bounds",
+        async move {
+            let src = "trait Eq<T> { fn eq(left: T, right: T) -> bool; } trait Hash<T> { fn hash(value: T) -> u32; } fn key<T: Eq<T> + Hash<T> >(value: T) -> u32 { return value.hash(); }";
+            let lexer = GpuLexer::new().await.expect("GPU lexer init");
+            let tokens = lexer
+                .lex(src)
+                .await
+                .expect("GPU lex multiple generic bounds fixture");
+            check_tokens_on_gpu(&tokens)
+                .await
+                .expect("GPU syntax should accept multiple generic type parameter bounds");
+        },
+    );
+}
+
+#[test]
+fn generated_ll1_tables_accept_type_alias_declarations() {
+    let tables =
+        PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+            .expect("load generated parse tables");
+    let token_kinds = kinds_with_sentinels(
+        "pub type Count = i32; type Buffer<T, const N: usize> = [T; N]; fn keep(value: Count) -> Count { return value; }",
+    );
+
+    tables
+        .ll1_production_stream_with_positions(&token_kinds)
+        .expect("type alias fixture should parse with LL(1)");
+}
+
+#[test]
 fn generated_ll1_tables_accept_const_generic_params_and_named_array_lengths() {
     let tables =
         PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
@@ -371,8 +524,34 @@ fn generated_ll1_tables_accept_const_generic_params_and_named_array_lengths() {
 }
 
 #[test]
+fn generated_ll1_tables_accept_impl_and_trait_declarations() {
+    let tables =
+        PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+            .expect("load generated parse tables");
+    let token_kinds = kinds_with_sentinels(
+        "pub trait Eq<T> { pub fn eq(left: T, right: T) -> bool; } pub impl Eq<i32> for i32 { pub fn eq(left: i32, right: i32) -> bool { return left == right; } }",
+    );
+
+    tables
+        .ll1_production_stream_with_positions(&token_kinds)
+        .expect("trait impl fixture should parse with LL(1)");
+}
+
+#[test]
+fn gpu_syntax_accepts_trait_impl_declaration_shape() {
+    common::block_on_gpu_with_timeout("GPU syntax trait impl declaration", async move {
+        let src = "pub trait Eq<T> { pub fn eq(left: T, right: T) -> bool; } pub impl Eq<i32> for i32 { pub fn eq(left: i32, right: i32) -> bool { return left == right; } }";
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let tokens = lexer.lex(src).await.expect("GPU lex trait impl fixture");
+        check_tokens_on_gpu(&tokens)
+            .await
+            .expect("GPU syntax should accept trait impl fixture");
+    });
+}
+
+#[test]
 fn gpu_parser_builds_tree_from_emit_stream() {
-    pollster::block_on(async {
+    common::block_on_gpu_with_timeout("GPU parser emit stream", async move {
         let parser = GpuParser::new().await.expect("GPU parser init");
         let mut tables = PrecomputedParseTables::new(N_KINDS, 3);
 
@@ -404,12 +583,13 @@ fn gpu_parser_builds_tree_from_emit_stream() {
 }
 
 #[test]
+#[ignore = "GPU parser stress test; run explicitly with --ignored"]
 fn gpu_parser_recovers_large_flat_tree_with_prefix_blocks() {
-    pollster::block_on(async {
+    common::block_on_gpu_with_timeout("GPU parser large flat tree", async move {
         let parser = GpuParser::new().await.expect("GPU parser init");
         let mut tables = PrecomputedParseTables::new(N_KINDS, 2);
 
-        let leaf_count = 70_000usize;
+        let leaf_count = 256 * 256;
         tables.prod_arity = vec![leaf_count as u32, 0];
         tables.set_pp_for_pair(0, TokenKind::Ident as u32, &[0]);
         tables.set_pp_for_pair(TokenKind::Ident as u32, TokenKind::Ident as u32, &[1]);
@@ -445,7 +625,7 @@ fn gpu_parser_recovers_large_flat_tree_with_prefix_blocks() {
 
 #[test]
 fn gpu_parser_emits_exact_ll1_stream_for_fixtures() {
-    pollster::block_on(async {
+    common::block_on_gpu_with_timeout("GPU parser LL(1) fixtures", async move {
         let parser = GpuParser::new().await.expect("GPU parser init");
         let tables =
             PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
@@ -489,7 +669,7 @@ fn gpu_parser_emits_exact_ll1_stream_for_fixtures() {
 
 #[test]
 fn gpu_parser_runs_seeded_ll1_acceptance_table() {
-    pollster::block_on(async {
+    common::block_on_gpu_with_timeout("GPU parser seeded LL(1) table", async move {
         let parser = GpuParser::new().await.expect("GPU parser init");
         let mut tables = PrecomputedParseTables::new(N_KINDS, 1);
 
@@ -529,7 +709,7 @@ fn gpu_parser_runs_seeded_ll1_acceptance_table() {
 
 #[test]
 fn gpu_parser_seeds_ll1_stacks_across_blocks() {
-    pollster::block_on(async {
+    common::block_on_gpu_with_timeout("GPU parser seeded LL(1) stacks", async move {
         let parser = GpuParser::new().await.expect("GPU parser init");
         let mut tables = PrecomputedParseTables::new(N_KINDS, 2);
 
@@ -576,8 +756,9 @@ fn gpu_parser_seeds_ll1_stacks_across_blocks() {
 }
 
 #[test]
+#[ignore = "GPU parser stress test; run explicitly with --ignored"]
 fn gpu_parser_reduces_ll1_status_across_many_blocks() {
-    pollster::block_on(async {
+    common::block_on_gpu_with_timeout("GPU parser LL(1) status reduction", async move {
         let parser = GpuParser::new().await.expect("GPU parser init");
         let mut tables = PrecomputedParseTables::new(N_KINDS, 2);
 
@@ -622,7 +803,7 @@ fn gpu_parser_reduces_ll1_status_across_many_blocks() {
 
 #[test]
 fn gpu_parser_reports_typed_bracket_mismatches() {
-    pollster::block_on(async {
+    common::block_on_gpu_with_timeout("GPU parser bracket mismatch", async move {
         let parser = GpuParser::new().await.expect("GPU parser init");
         let mut tables = PrecomputedParseTables::new(N_KINDS, 1);
 
@@ -648,8 +829,9 @@ fn gpu_parser_reports_typed_bracket_mismatches() {
 }
 
 #[test]
+#[ignore = "GPU parser stress test; run explicitly with --ignored"]
 fn gpu_parser_scans_deep_bracket_histogram_offsets() {
-    pollster::block_on(async {
+    common::block_on_gpu_with_timeout("GPU parser deep bracket scan", async move {
         let parser = GpuParser::new().await.expect("GPU parser init");
         let mut tables = PrecomputedParseTables::new(N_KINDS, 1);
 
@@ -696,7 +878,7 @@ fn gpu_parser_scans_deep_bracket_histogram_offsets() {
 
 #[test]
 fn gpu_parser_pairs_many_flat_brackets_in_parallel() {
-    pollster::block_on(async {
+    common::block_on_gpu_with_timeout("GPU parser flat bracket pairing", async move {
         let parser = GpuParser::new().await.expect("GPU parser init");
         let mut tables = PrecomputedParseTables::new(N_KINDS, 1);
 

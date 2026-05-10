@@ -7,3 +7,15 @@ pub enum Ordering {
     Equal,
     Greater,
 }
+
+pub fn compare_i32(left: i32, right: i32) -> Ordering {
+    if (left < right) {
+        return Less;
+    } else {
+        if (left > right) {
+            return Greater;
+        } else {
+            return Equal;
+        }
+    }
+}

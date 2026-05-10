@@ -55,3 +55,39 @@ pub fn lstd_i32_signum(value: i32) -> i32 {
 pub fn lstd_i32_between_inclusive(value: i32, low: i32, high: i32) -> bool {
     return value >= low && value <= high;
 }
+
+pub fn lstd_i32_wrapping_add(left: i32, right: i32) -> i32 {
+    return left + right;
+}
+
+pub fn lstd_i32_wrapping_sub(left: i32, right: i32) -> i32 {
+    return left - right;
+}
+
+pub fn lstd_i32_wrapping_mul(left: i32, right: i32) -> i32 {
+    return left * right;
+}
+
+pub fn lstd_i32_is_power_of_two(value: i32) -> bool {
+    if (value <= 0) {
+        return false;
+    } else {
+        let power: i32 = 1;
+        while (power < value) {
+            power *= 2;
+        }
+        return power == value;
+    }
+}
+
+pub fn lstd_i32_next_power_of_two(value: i32) -> i32 {
+    if (value <= 1) {
+        return 1;
+    } else {
+        let power: i32 = 1;
+        while (power < value) {
+            power *= 2;
+        }
+        return power;
+    }
+}

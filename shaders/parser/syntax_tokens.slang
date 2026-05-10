@@ -124,6 +124,12 @@ static const uint TK_STRUCT = 94u;
 static const uint TK_MATCH = 95u;
 static const uint TK_IMPORT = 96u;
 static const uint TK_MODULE = 97u;
+static const uint TK_IMPL = 98u;
+static const uint TK_TRAIT = 99u;
+static const uint TK_FOR = 100u;
+static const uint TK_IN = 101u;
+static const uint TK_EXTERN = 102u;
+static const uint TK_TYPE = 103u;
 
 uint active_token_count()
 {
@@ -156,8 +162,11 @@ void record_error(uint token_i, uint code, uint detail)
 bool is_stmt_keyword(uint kind)
 {
     return kind == TK_LET || kind == TK_RETURN || kind == TK_IF || kind == TK_WHILE ||
+           kind == TK_FOR ||
            kind == TK_BREAK || kind == TK_CONTINUE || kind == TK_FN || kind == TK_CONST ||
-           kind == TK_ENUM || kind == TK_STRUCT || kind == TK_IMPORT || kind == TK_MODULE;
+           kind == TK_TYPE ||
+           kind == TK_ENUM || kind == TK_STRUCT || kind == TK_IMPORT || kind == TK_MODULE ||
+           kind == TK_IMPL || kind == TK_TRAIT || kind == TK_EXTERN;
 }
 
 bool is_stmt_boundary(uint kind)
@@ -232,6 +241,129 @@ bool same_delimiter_depth_before(uint a, uint b)
            brace_depth_before(a) == brace_depth_before(b);
 }
 
+bool is_impl_trait_for(uint i)
+{
+    if (token_kind(i) != TK_FOR || !is_type_start(token_kind(i + 1u)))
+        return false;
+
+    uint j = i;
+    [loop]
+    for (uint guard = 0u; guard < 256u && j > 0u; guard += 1u)
+    {
+        j -= 1u;
+        if (!same_delimiter_depth_before(i, j))
+            continue;
+
+        uint kind = token_kind(j);
+        if (kind == TK_IMPL)
+            return true;
+        if (kind == TK_SEMICOLON || kind == TK_LBRACE || kind == TK_IF_LBRACE ||
+            kind == TK_RBRACE || kind == TK_IF_RBRACE || kind == TK_ELSE ||
+            (is_stmt_keyword(kind) && kind != TK_IMPL))
+            return false;
+    }
+    return false;
+}
+
+bool is_generic_name_kind(uint kind)
+{
+    return kind == TK_IDENT || kind == TK_TYPE_IDENT || kind == TK_PARAM_IDENT;
+}
+
+bool can_start_generic_angle_list(uint lt_i)
+{
+    if (token_kind(lt_i) != TK_LT || lt_i == 0u)
+        return false;
+
+    uint prev = token_kind(lt_i - 1u);
+    if (!is_generic_name_kind(prev))
+        return false;
+
+    uint before = lt_i > 1u ? token_kind(lt_i - 2u) : 0u;
+    return before == TK_FN || before == TK_ENUM || before == TK_STRUCT || before == TK_TYPE ||
+           before == TK_IMPL || before == TK_TRAIT || before == TK_COLON || before == TK_ARROW || before == TK_COMMA ||
+           before == TK_ARG_COMMA || before == TK_PARAM_COMMA || before == TK_LT ||
+           before == TK_PLUS || before == TK_PREFIX_PLUS || before == TK_INFIX_PLUS ||
+           before == TK_LPAREN || before == TK_GROUP_LPAREN || before == TK_CALL_LPAREN ||
+           before == TK_PARAM_LPAREN || before == TK_TYPE_ARRAY_LBRACKET ||
+           before == TK_ARRAY_LBRACKET || before == TK_AMPERSAND;
+}
+
+bool is_generic_angle_boundary(uint kind)
+{
+    return kind == TK_SEMICOLON || kind == TK_LBRACE || kind == TK_IF_LBRACE ||
+           kind == TK_RBRACE || kind == TK_IF_RBRACE || kind == TK_FN ||
+           kind == TK_LET || kind == TK_RETURN || kind == TK_IF || kind == TK_WHILE ||
+           kind == TK_FOR ||
+           kind == TK_BREAK || kind == TK_CONTINUE || kind == TK_ENUM ||
+           kind == TK_STRUCT || kind == TK_TYPE || kind == TK_IMPORT || kind == TK_MODULE ||
+           kind == TK_IMPL || kind == TK_TRAIT || kind == TK_EXTERN;
+}
+
+uint generic_angle_list_end(uint open_i)
+{
+    uint n_active = active_token_count();
+    uint depth = 0u;
+    [loop]
+    for (uint j = open_i + 1u; j < n_active; j += 1u)
+    {
+        uint kind = token_kind(j);
+        if (kind == TK_LT && can_start_generic_angle_list(j))
+        {
+            depth += 1u;
+            continue;
+        }
+        if (kind == TK_GT)
+        {
+            if (depth == 0u)
+                return j + 1u;
+            depth -= 1u;
+            continue;
+        }
+        if (is_generic_angle_boundary(kind))
+            return INVALID;
+    }
+    return INVALID;
+}
+
+bool token_in_generic_angle_list(uint token_i)
+{
+    if (token_kind(token_i) == TK_LT && can_start_generic_angle_list(token_i))
+    {
+        uint close = generic_angle_list_end(token_i);
+        return close != INVALID && token_i < close;
+    }
+
+    uint depth = 0u;
+    uint j = token_i;
+    [loop]
+    for (uint guard = 0u; guard < 128u && j > 0u; guard += 1u)
+    {
+        j -= 1u;
+        uint kind = token_kind(j);
+        if (kind == TK_GT)
+        {
+            depth += 1u;
+            continue;
+        }
+        if (kind == TK_LT)
+        {
+            if (depth > 0u)
+            {
+                depth -= 1u;
+                continue;
+            }
+            if (!can_start_generic_angle_list(j))
+                return false;
+            uint close = generic_angle_list_end(j);
+            return close != INVALID && token_i < close;
+        }
+        if (is_generic_angle_boundary(kind))
+            return false;
+    }
+    return false;
+}
+
 uint find_before_boundary_at_depth(uint start_i, uint want, uint base_i)
 {
     uint n_active = active_token_count();
@@ -242,6 +374,8 @@ uint find_before_boundary_at_depth(uint start_i, uint want, uint base_i)
             continue;
         if (kind == want)
             return j;
+        if (token_in_generic_angle_list(j))
+            continue;
         if (is_stmt_boundary(kind))
             return INVALID;
     }
@@ -263,6 +397,25 @@ uint find_let_assign(uint start_i, uint end_i, uint base_i)
         uint kind = token_kind(j);
         if (kind == TK_LET_ASSIGN || kind == TK_ASSIGN)
             return j;
+    }
+    return INVALID;
+}
+
+uint find_for_in(uint for_i)
+{
+    uint n_active = active_token_count();
+    for (uint j = for_i + 1u; j < n_active; j += 1u)
+    {
+        if (!same_delimiter_depth_before(for_i, j))
+            continue;
+        uint kind = token_kind(j);
+        if (kind == TK_IN)
+            return j;
+        if (token_in_generic_angle_list(j))
+            continue;
+        if (kind == TK_LBRACE || kind == TK_IF_LBRACE || kind == TK_SEMICOLON ||
+            is_stmt_boundary(kind))
+            return INVALID;
     }
     return INVALID;
 }
@@ -331,6 +484,22 @@ uint find_fn_param_open(uint fn_i)
     return INVALID;
 }
 
+bool is_trait_method_fn(uint fn_i)
+{
+    uint j = fn_i;
+    [loop]
+    for (uint guard = 0u; guard < 512u && j > 0u; guard += 1u)
+    {
+        j -= 1u;
+        uint kind = token_kind(j);
+        if (kind == TK_TRAIT)
+            return true;
+        if (kind == TK_IMPL || kind == TK_RBRACE || kind == TK_IF_RBRACE)
+            return false;
+    }
+    return false;
+}
+
 uint delimiter_class(uint kind)
 {
     if (kind == TK_LPAREN || kind == TK_GROUP_LPAREN || kind == TK_CALL_LPAREN ||
@@ -394,9 +563,32 @@ void check_fn(uint i)
         return;
     }
 
-    uint body = find_before_boundary_at_depth(params_open_i + 1u, TK_LBRACE, i);
-    if (body == INVALID)
-        record_error(i, ERR_EXPECTED_TOKEN, TK_LBRACE);
+    bool semicolon_terminated = (i > 0u && token_kind(i - 1u) == TK_EXTERN) ||
+                                (i > 1u && token_kind(i - 1u) == TK_STRING &&
+                                 token_kind(i - 2u) == TK_EXTERN) ||
+                                is_trait_method_fn(i);
+    if (semicolon_terminated)
+    {
+        uint semi = find_stmt_semicolon(i);
+        if (semi == INVALID)
+            record_error(i, ERR_MISSING_SEMICOLON, 0u);
+    }
+    else
+    {
+        uint body = find_before_boundary_at_depth(params_open_i + 1u, TK_LBRACE, i);
+        if (body == INVALID)
+            record_error(i, ERR_EXPECTED_TOKEN, TK_LBRACE);
+    }
+}
+
+void check_extern(uint i)
+{
+    uint next = token_kind(i + 1u);
+    if (next == TK_FN)
+        return;
+    if (next == TK_STRING && token_kind(i + 2u) == TK_FN)
+        return;
+    record_error(i + 1u, ERR_EXPECTED_TOKEN, TK_FN);
 }
 
 void check_enum(uint i)
@@ -421,6 +613,29 @@ void check_struct(uint i)
     uint body = find_before_boundary_at_depth(i + 2u, TK_LBRACE, i);
     if (body == INVALID)
         record_error(i, ERR_EXPECTED_TOKEN, TK_LBRACE);
+}
+
+void check_type_alias(uint i)
+{
+    if (token_kind(i + 1u) != TK_IDENT)
+    {
+        record_error(i, ERR_EXPECTED_TOKEN, TK_IDENT);
+        return;
+    }
+    uint semi = find_stmt_semicolon(i);
+    if (semi == INVALID)
+    {
+        record_error(i, ERR_MISSING_SEMICOLON, 0u);
+        return;
+    }
+    uint assign_i = find_before_boundary_at_depth(i + 2u, TK_ASSIGN, i);
+    if (assign_i == INVALID || assign_i + 1u >= semi)
+    {
+        record_error(i, ERR_EXPECTED_TOKEN, TK_ASSIGN);
+        return;
+    }
+    if (!is_type_start(token_kind(assign_i + 1u)))
+        record_error(assign_i + 1u, ERR_EXPECTED_TOKEN, TK_TYPE_IDENT);
 }
 
 void check_let(uint i)
@@ -483,6 +698,29 @@ void check_condition_stmt(uint i, uint brace_kind)
         record_error(close + 1u, ERR_EXPECTED_TOKEN, brace_kind);
 }
 
+void check_for_stmt(uint i)
+{
+    if (token_kind(i + 1u) != TK_IDENT)
+    {
+        record_error(i, ERR_EXPECTED_TOKEN, TK_IDENT);
+        return;
+    }
+    uint in_i = find_for_in(i);
+    if (in_i == INVALID || in_i <= i + 1u)
+    {
+        record_error(i + 1u, ERR_EXPECTED_TOKEN, TK_IN);
+        return;
+    }
+    if (!is_expr_start(token_kind(in_i + 1u)))
+    {
+        record_error(in_i + 1u, ERR_EXPECTED_TOKEN, TK_IDENT);
+        return;
+    }
+    uint body = find_before_boundary_at_depth(in_i + 1u, TK_LBRACE, i);
+    if (body == INVALID)
+        record_error(in_i + 1u, ERR_EXPECTED_TOKEN, TK_LBRACE);
+}
+
 void check_assignment(uint i)
 {
     uint semi = find_stmt_semicolon(i);
@@ -514,10 +752,76 @@ void check_array_comma(uint i)
         record_error(i, ERR_EXPECTED_TOKEN, TK_IDENT);
 }
 
+bool is_open_paren_kind(uint kind)
+{
+    return kind == TK_LPAREN || kind == TK_GROUP_LPAREN || kind == TK_CALL_LPAREN ||
+           kind == TK_PARAM_LPAREN;
+}
+
+bool is_close_paren_kind(uint kind)
+{
+    return kind == TK_RPAREN || kind == TK_GROUP_RPAREN || kind == TK_CALL_RPAREN ||
+           kind == TK_PARAM_RPAREN;
+}
+
+uint matching_open_paren_before(uint close_i)
+{
+    uint depth = 0u;
+    uint j = close_i;
+    [loop]
+    for (uint guard = 0u; guard < 512u && j > 0u; guard += 1u)
+    {
+        j -= 1u;
+        uint kind = token_kind(j);
+        if (is_close_paren_kind(kind))
+        {
+            depth += 1u;
+            continue;
+        }
+        if (!is_open_paren_kind(kind))
+            continue;
+        if (depth == 0u)
+            return j;
+        depth -= 1u;
+    }
+    return INVALID;
+}
+
+bool is_fn_param_open_token(uint open_i)
+{
+    uint j = open_i;
+    [loop]
+    for (uint guard = 0u; guard < 256u && j > 0u; guard += 1u)
+    {
+        j -= 1u;
+        uint kind = token_kind(j);
+        if (kind == TK_FN)
+            return find_fn_param_open(j) == open_i;
+        if (kind == TK_SEMICOLON || kind == TK_LBRACE || kind == TK_IF_LBRACE ||
+            kind == TK_RBRACE || kind == TK_IF_RBRACE)
+            return false;
+    }
+    return false;
+}
+
+bool is_trailing_param_comma(uint i)
+{
+    uint next = token_kind(i + 1u);
+    if (next != TK_RPAREN && next != TK_PARAM_RPAREN)
+        return false;
+    if (token_kind(i) == TK_PARAM_COMMA)
+        return true;
+
+    uint open_i = matching_open_paren_before(i + 1u);
+    return open_i != INVALID && is_fn_param_open_token(open_i);
+}
+
 void check_comma(uint i)
 {
     uint prev = i > 0u ? token_kind(i - 1u) : 0u;
     uint next = token_kind(i + 1u);
+    if (is_trailing_param_comma(i))
+        return;
     if (prev == TK_LPAREN || prev == TK_CALL_LPAREN || prev == TK_GROUP_LPAREN ||
         prev == TK_ARRAY_LBRACKET || prev == TK_LBRACKET || prev == TK_ARG_COMMA ||
         prev == TK_ARRAY_COMMA || prev == TK_PARAM_COMMA || prev == TK_COMMA ||
@@ -547,6 +851,32 @@ void check_raw_plus_minus(uint i)
         record_error(i, ERR_EXPECTED_TOKEN, TK_IDENT);
 }
 
+bool is_for_iter_expr_end(uint i)
+{
+    if (token_kind(i + 1u) != TK_LBRACE)
+        return false;
+
+    bool saw_in = false;
+    [loop]
+    for (uint j = i; j > 0u; j -= 1u)
+    {
+        uint kind = token_kind(j - 1u);
+        if (kind == TK_IN)
+        {
+            saw_in = true;
+            continue;
+        }
+        if (saw_in && kind == TK_FOR)
+            return true;
+        if (kind == TK_SEMICOLON || kind == TK_RBRACE || kind == TK_IF_RBRACE ||
+            kind == TK_ELSE)
+            return false;
+        if (is_stmt_keyword(kind) && kind != TK_FOR)
+            return false;
+    }
+    return false;
+}
+
 void check_expr_end(uint i)
 {
     uint prev = i > 0u ? token_kind(i - 1u) : 0u;
@@ -559,6 +889,8 @@ void check_expr_end(uint i)
     if (next == TK_INDEX_LBRACKET || next == TK_LBRACKET)
         return;
     if (next == TK_INC || next == TK_DEC)
+        return;
+    if (is_for_iter_expr_end(i))
         return;
     if (is_expr_start(next))
         record_error(i + 1u, ERR_EXPECTED_TOKEN, TK_SEMICOLON);
@@ -609,8 +941,13 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (delimiter_prefix_underflows(i))
         record_error(i, ERR_UNBALANCED_DELIMITER, kind);
 
-    if (kind == TK_PUB && token_kind(i + 1u) != TK_FN && token_kind(i + 1u) != TK_ENUM &&
-        token_kind(i + 1u) != TK_STRUCT)
+    if (token_in_generic_angle_list(i))
+        return;
+
+    if (kind == TK_PUB && token_kind(i + 1u) != TK_FN && token_kind(i + 1u) != TK_CONST &&
+        token_kind(i + 1u) != TK_ENUM && token_kind(i + 1u) != TK_STRUCT &&
+        token_kind(i + 1u) != TK_IMPL && token_kind(i + 1u) != TK_TRAIT &&
+        token_kind(i + 1u) != TK_EXTERN && token_kind(i + 1u) != TK_TYPE)
         record_error(i, ERR_EXPECTED_TOKEN, TK_FN);
     else if (kind == TK_FN)
         check_fn(i);
@@ -618,10 +955,15 @@ void main(uint3 tid: SV_DispatchThreadID)
         check_enum(i);
     else if (kind == TK_STRUCT)
         check_struct(i);
+    else if (kind == TK_TYPE)
+        check_type_alias(i);
+    else if (kind == TK_EXTERN)
+        check_extern(i);
     else if (kind == TK_PARAM_IDENT && (token_kind(i + 1u) != TK_COLON || !is_type_start(token_kind(i + 2u))))
         record_error(i, ERR_EXPECTED_TOKEN, TK_COLON);
     else if (kind == TK_PARAM_COMMA &&
-             token_kind(i + 1u) != TK_PARAM_IDENT && token_kind(i + 1u) != TK_IDENT)
+             token_kind(i + 1u) != TK_PARAM_IDENT && token_kind(i + 1u) != TK_IDENT &&
+             token_kind(i + 1u) != TK_PARAM_RPAREN)
         record_error(i, ERR_EXPECTED_TOKEN, TK_PARAM_IDENT);
     else if (kind == TK_ARROW && !is_type_start(token_kind(i + 1u)) &&
              !is_expr_start(token_kind(i + 1u)))
@@ -648,6 +990,11 @@ void main(uint3 tid: SV_DispatchThreadID)
         check_condition_stmt(i, TK_IF_LBRACE);
     else if (kind == TK_WHILE)
         check_condition_stmt(i, TK_LBRACE);
+    else if (kind == TK_FOR)
+    {
+        if (!is_impl_trait_for(i))
+            check_for_stmt(i);
+    }
     else if (is_assignment_operator(kind))
         check_assignment(i);
     else if (kind == TK_PLUS || kind == TK_MINUS)

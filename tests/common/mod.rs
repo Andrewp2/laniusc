@@ -3,15 +3,43 @@
 pub mod sample_programs;
 
 use std::{
+    env,
     fmt,
     fs,
-    io,
+    future::Future,
+    io::{self, Write},
     path::{Path, PathBuf},
-    process::{Command, ExitStatus, Output},
-    sync::atomic::{AtomicU64, Ordering},
+    process::{Command, ExitStatus, Output, Stdio},
+    sync::{
+        Mutex,
+        MutexGuard,
+        atomic::{AtomicU64, Ordering},
+        mpsc,
+    },
+    thread,
+    time::{Duration, Instant},
+};
+
+use laniusc::compiler::{
+    CompileError,
+    compile_source_to_wasm_with_gpu_codegen,
+    compile_source_to_wasm_with_gpu_codegen_from_path,
+    type_check_source_with_gpu,
+    type_check_source_with_gpu_from_path,
 };
 
 static TEMP_ARTIFACT_COUNTER: AtomicU64 = AtomicU64::new(0);
+// libtest runs cases concurrently; start GPU timeouts after queued work gets the device.
+static GPU_TEST_LOCK: Mutex<()> = Mutex::new(());
+const DEFAULT_GPU_TEST_TIMEOUT_MS: u64 = 2_000;
+// Codegen integration tests are ignored by default; keep their hang watchdog short
+// while still allowing frontend trace stages to reach the stuck backend pass.
+const DEFAULT_GPU_CODEGEN_TEST_TIMEOUT_MS: u64 = 2_000;
+const DEFAULT_GPU_CODEGEN_SUITE_TEST_TIMEOUT_MS: u64 = 5_000;
+const DEFAULT_COMPILER_PROCESS_TEST_TIMEOUT_MS: u64 = 4_000;
+const DEFAULT_PROCESS_TEST_TIMEOUT_MS: u64 = 500;
+const CHILD_PROCESS_POLL_INTERVAL_MS: u64 = 2;
+const TEST_TIMEOUT_EXIT_CODE: i32 = 124;
 
 pub struct TempArtifact {
     path: PathBuf,
@@ -73,22 +101,268 @@ pub fn assert_command_success(context: impl fmt::Display, output: &Output) {
     );
 }
 
+pub fn type_check_source_with_timeout(src: &str) -> Result<(), CompileError> {
+    let src = src.to_owned();
+    run_with_timeout("GPU type check", move || {
+        pollster::block_on(type_check_source_with_gpu(&src))
+    })
+}
+
+pub fn type_check_path_with_timeout(path: &Path) -> Result<(), CompileError> {
+    let path = path.to_path_buf();
+    run_with_timeout("GPU path type check", move || {
+        pollster::block_on(type_check_source_with_gpu_from_path(&path))
+    })
+}
+
+pub fn compile_source_to_wasm_with_timeout(src: &str) -> Result<Vec<u8>, CompileError> {
+    let src = src.to_owned();
+    run_with_timeout_for("GPU WASM compile", gpu_codegen_test_timeout(), move || {
+        pollster::block_on(compile_source_to_wasm_with_gpu_codegen(&src))
+    })
+}
+
+pub fn compile_path_to_wasm_with_timeout(path: &Path) -> Result<Vec<u8>, CompileError> {
+    let path = path.to_path_buf();
+    run_with_timeout_for(
+        "GPU path WASM compile",
+        gpu_codegen_test_timeout(),
+        move || pollster::block_on(compile_source_to_wasm_with_gpu_codegen_from_path(&path)),
+    )
+}
+
+pub fn block_on_gpu_with_timeout<T, F>(context: &str, future: F) -> T
+where
+    T: Send + 'static,
+    F: Future<Output = T> + Send + 'static,
+{
+    run_with_timeout(context, move || pollster::block_on(future))
+}
+
+pub fn run_gpu_codegen_with_timeout<T, F>(context: &str, f: F) -> T
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    run_with_timeout_for(context, gpu_codegen_test_timeout(), f)
+}
+
+pub fn run_gpu_codegen_suite_with_timeout<T, F>(context: &str, f: F) -> T
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    run_with_timeout_for(context, gpu_codegen_suite_test_timeout(), f)
+}
+
+pub fn command_output_with_timeout(context: impl fmt::Display, command: &mut Command) -> Output {
+    let context = context.to_string();
+    let _guard = gpu_test_lock();
+    command_output_result_with_timeout(&context, command, compiler_process_test_timeout())
+        .unwrap_or_else(|err| {
+            panic!("{context}: spawn command: {err}");
+        })
+}
+
+pub fn short_process_output_with_timeout(
+    context: impl fmt::Display,
+    command: &mut Command,
+) -> Output {
+    let context = context.to_string();
+    command_output_result_with_timeout(&context, command, process_test_timeout()).unwrap_or_else(
+        |err| {
+            panic!("{context}: spawn command: {err}");
+        },
+    )
+}
+
+fn command_output_result_with_timeout(
+    context: impl fmt::Display,
+    command: &mut Command,
+    timeout: Duration,
+) -> io::Result<Output> {
+    let context = context.to_string();
+    let mut child = match command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(err) => return Err(err),
+    };
+    let start = Instant::now();
+
+    loop {
+        match child.try_wait() {
+            Ok(Some(_status)) => {
+                return Ok(child
+                    .wait_with_output()
+                    .unwrap_or_else(|err| panic!("{context}: collect command output: {err}")));
+            }
+            Ok(None) => {}
+            Err(err) => panic!("{context}: wait for command: {err}"),
+        }
+
+        if start.elapsed() >= timeout {
+            let _ = child.kill();
+            let output = child
+                .wait_with_output()
+                .unwrap_or_else(|err| panic!("{context}: collect timed-out command output: {err}"));
+            exit_after_timeout(format_args!(
+                "{}\nstdout:\n{}\nstderr:\n{}",
+                timeout_message(&context, timeout),
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+
+        thread::sleep(Duration::from_millis(CHILD_PROCESS_POLL_INTERVAL_MS));
+    }
+}
+
+pub fn run_with_timeout<T, F>(context: &str, f: F) -> T
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    run_with_timeout_for(context, gpu_test_timeout(), f)
+}
+
+fn run_with_timeout_for<T, F>(context: &str, timeout: Duration, f: F) -> T
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    let _guard = gpu_test_lock();
+    let (tx, rx) = mpsc::channel();
+    let handle = thread::spawn(move || {
+        let result = f();
+        let _ = tx.send(result);
+    });
+
+    match rx.recv_timeout(timeout) {
+        Ok(result) => {
+            handle
+                .join()
+                .expect("timeout worker should not panic after sending a result");
+            result
+        }
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            exit_after_timeout(format_args!("{}", timeout_message(context, timeout)));
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => match handle.join() {
+            Ok(()) => panic!("{context} worker exited without sending a result"),
+            Err(payload) => std::panic::resume_unwind(payload),
+        },
+    }
+}
+
+fn gpu_test_lock() -> MutexGuard<'static, ()> {
+    GPU_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn gpu_test_timeout() -> Duration {
+    env_millis("LANIUS_GPU_TEST_TIMEOUT_MS")
+        .or_else(|| {
+            env::var("LANIUS_GPU_TEST_TIMEOUT_SECS")
+                .ok()
+                .and_then(|value| value.parse::<u64>().ok())
+                .filter(|seconds| *seconds > 0)
+                .map(Duration::from_secs)
+        })
+        .unwrap_or_else(|| Duration::from_millis(DEFAULT_GPU_TEST_TIMEOUT_MS))
+}
+
+fn gpu_codegen_test_timeout() -> Duration {
+    env_millis("LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS")
+        .or_else(|| env_millis("LANIUS_GPU_TEST_TIMEOUT_MS"))
+        .or_else(|| {
+            env::var("LANIUS_GPU_TEST_TIMEOUT_SECS")
+                .ok()
+                .and_then(|value| value.parse::<u64>().ok())
+                .filter(|seconds| *seconds > 0)
+                .map(Duration::from_secs)
+        })
+        .unwrap_or_else(|| Duration::from_millis(DEFAULT_GPU_CODEGEN_TEST_TIMEOUT_MS))
+}
+
+fn gpu_codegen_suite_test_timeout() -> Duration {
+    env_millis("LANIUS_GPU_CODEGEN_SUITE_TEST_TIMEOUT_MS")
+        .or_else(|| env_millis("LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS"))
+        .or_else(|| env_millis("LANIUS_GPU_TEST_TIMEOUT_MS"))
+        .unwrap_or_else(|| Duration::from_millis(DEFAULT_GPU_CODEGEN_SUITE_TEST_TIMEOUT_MS))
+}
+
+fn compiler_process_test_timeout() -> Duration {
+    env_millis("LANIUS_COMPILER_PROCESS_TEST_TIMEOUT_MS")
+        .or_else(|| env_millis("LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS"))
+        .or_else(|| env_millis("LANIUS_GPU_TEST_TIMEOUT_MS"))
+        .unwrap_or_else(|| Duration::from_millis(DEFAULT_COMPILER_PROCESS_TEST_TIMEOUT_MS))
+}
+
+fn env_millis(name: &str) -> Option<Duration> {
+    env::var(name)
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|milliseconds| *milliseconds > 0)
+        .map(Duration::from_millis)
+}
+
+fn process_test_timeout() -> Duration {
+    env::var("LANIUS_PROCESS_TEST_TIMEOUT_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|milliseconds| *milliseconds > 0)
+        .map(Duration::from_millis)
+        .unwrap_or_else(|| Duration::from_millis(DEFAULT_PROCESS_TEST_TIMEOUT_MS))
+}
+
+fn timeout_message(context: &str, timeout: Duration) -> String {
+    format!(
+        "{context} timed out after {} ms; aborting this test binary to stop the timed-out worker",
+        timeout.as_millis()
+    )
+}
+
+fn exit_after_timeout(args: fmt::Arguments<'_>) -> ! {
+    eprintln!("{args}");
+    let _ = io::stderr().flush();
+    immediate_process_exit(TEST_TIMEOUT_EXIT_CODE);
+}
+
+#[cfg(unix)]
+fn immediate_process_exit(code: i32) -> ! {
+    unsafe extern "C" {
+        fn _exit(status: i32) -> !;
+    }
+
+    unsafe { _exit(code) }
+}
+
+#[cfg(not(unix))]
+fn immediate_process_exit(code: i32) -> ! {
+    std::process::exit(code);
+}
+
 pub fn stdout_utf8(context: impl fmt::Display, stdout: Vec<u8>) -> String {
     String::from_utf8(stdout).unwrap_or_else(|err| panic!("{context}: stdout was not UTF-8: {err}"))
 }
 
 pub fn node_available() -> bool {
+    let mut command = Command::new("node");
+    command.arg("--version");
     matches!(
-        Command::new("node").arg("--version").output(),
+        command_output_result_with_timeout("node --version", &mut command, process_test_timeout()),
         Ok(output) if output.status.success()
     )
 }
 
 pub fn require_node() {
-    let output = Command::new("node")
-        .arg("--version")
-        .output()
-        .expect("node is required to execute sample WASM modules");
+    let mut command = Command::new("node");
+    command.arg("--version");
+    let output = short_process_output_with_timeout("node --version", &mut command);
     assert_command_success("node --version", &output);
 }
 
@@ -140,17 +414,12 @@ const fs = require('fs');
 });
 "#;
 
-    Command::new("node")
-        .arg("-e")
-        .arg(script)
-        .arg(wasm_path.path())
-        .output()
-        .unwrap_or_else(|err| {
-            panic!(
-                "{context}: run node for {}: {err}",
-                wasm_path.path().display()
-            )
-        })
+    let mut command = Command::new("node");
+    command.arg("-e").arg(script).arg(wasm_path.path());
+    short_process_output_with_timeout(
+        format!("{context}: run node for {}", wasm_path.path().display()),
+        &mut command,
+    )
 }
 
 #[cfg(all(unix, target_arch = "x86_64"))]
@@ -189,14 +458,11 @@ pub fn run_x86_64_elf_output(
         )
     });
 
-    Command::new(exe_path.path())
-        .output()
-        .unwrap_or_else(|err| {
-            panic!(
-                "{context}: run native ELF {}: {err}",
-                exe_path.path().display()
-            )
-        })
+    let mut command = Command::new(exe_path.path());
+    short_process_output_with_timeout(
+        format!("{context}: run native ELF {}", exe_path.path().display()),
+        &mut command,
+    )
 }
 
 fn sanitize_path_component(value: &str) -> String {

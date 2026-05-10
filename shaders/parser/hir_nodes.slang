@@ -52,6 +52,7 @@ static const uint HIR_CONST_ITEM = 25u;
 static const uint HIR_ENUM_ITEM = 26u;
 static const uint HIR_STRUCT_ITEM = 27u;
 static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
+static const uint HIR_TYPE_ALIAS_ITEM = 29u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -67,60 +68,62 @@ uint classify(uint prod)
 {
     if (prod == 0u)
         return HIR_FILE;
-    if ((prod >= 3u && prod <= 7u) || prod == 146u || prod == 148u || prod == 171u ||
-        (prod >= 178u && prod <= 180u))
+    if ((prod >= 3u && prod <= 11u) || prod == 171u || prod == 173u || prod == 196u ||
+        (prod >= 203u && prod <= 210u))
         return HIR_ITEM;
-    if (prod == 8u)
+    if (prod == 12u)
         return HIR_FN;
-    if (prod == 22u)
+    if (prod == 46u)
         return HIR_PARAM;
-    if (prod == 25u || prod == 26u || prod == 190u)
+    if (prod == 49u || prod == 50u || prod == 220u)
         return HIR_TYPE;
-    if (prod == 27u || prod == 36u || prod == 40u)
+    if (prod == 51u || prod == 65u)
         return HIR_BLOCK;
-    if (prod == 28u || prod == 29u || prod == 37u)
+    if (prod == 52u || prod == 53u || prod == 61u || prod == 62u)
         return HIR_STMT;
-    if (prod == 30u)
+    if (prod == 54u)
         return HIR_LET_STMT;
-    if (prod == 31u)
+    if (prod == 55u)
         return HIR_RETURN_STMT;
-    if (prod == 32u)
+    if (prod == 56u)
         return HIR_IF_STMT;
-    if (prod == 33u)
+    if (prod == 57u)
         return HIR_WHILE_STMT;
-    if (prod == 34u)
+    if (prod == 59u)
         return HIR_BREAK_STMT;
-    if (prod == 35u)
+    if (prod == 60u)
         return HIR_CONTINUE_STMT;
-    if (prod == 47u || prod == 130u)
+    if (prod == 72u || prod == 155u)
         return HIR_EXPR;
-    if ((prod >= 49u && prod <= 60u))
+    if ((prod >= 74u && prod <= 85u))
         return HIR_ASSIGN_EXPR;
-    if ((prod >= 62u && prod <= 98u))
+    if ((prod >= 86u && prod <= 123u))
         return HIR_BINARY_EXPR;
-    if ((prod >= 99u && prod <= 105u) || prod == 110u || prod == 111u)
+    if ((prod >= 124u && prod <= 130u) || prod == 135u || prod == 136u)
         return HIR_UNARY_EXPR;
-    if (prod == 106u || prod == 112u)
+    if (prod == 131u || prod == 137u)
         return HIR_POSTFIX_EXPR;
-    if (prod == 107u)
+    if (prod == 132u)
         return HIR_CALL_EXPR;
-    if (prod == 108u)
+    if (prod == 133u)
         return HIR_INDEX_EXPR;
-    if (prod == 109u)
+    if (prod == 134u)
         return HIR_MEMBER_EXPR;
-    if (prod == 117u)
+    if (prod == 142u)
         return HIR_ARRAY_EXPR;
-    if (prod == 119u)
+    if (prod == 144u)
         return HIR_NAME_EXPR;
-    if ((prod >= 120u && prod <= 123u) || prod == 128u || prod == 129u)
+    if ((prod >= 145u && prod <= 148u) || prod == 153u || prod == 154u)
         return HIR_LITERAL_EXPR;
-    if (prod == 147u)
-        return HIR_CONST_ITEM;
-    if (prod == 149u)
-        return HIR_ENUM_ITEM;
     if (prod == 172u)
+        return HIR_CONST_ITEM;
+    if (prod == 14u)
+        return HIR_TYPE_ALIAS_ITEM;
+    if (prod == 174u)
+        return HIR_ENUM_ITEM;
+    if (prod == 197u)
         return HIR_STRUCT_ITEM;
-    if (prod == 182u)
+    if (prod == 212u)
         return HIR_STRUCT_LITERAL_EXPR;
     return HIR_NONE;
 }

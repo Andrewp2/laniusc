@@ -1,0 +1,23 @@
+// Source-level assertion helpers for tests.
+
+module test::assert;
+
+pub fn is_true(value: bool) {
+    assert(value);
+    return;
+}
+
+pub fn is_false(value: bool) {
+    assert(!value);
+    return;
+}
+
+pub fn eq_i32(left: i32, right: i32) {
+    assert(left == right);
+    return;
+}
+
+pub fn ne_i32(left: i32, right: i32) {
+    assert(left != right);
+    return;
+}

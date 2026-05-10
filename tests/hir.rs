@@ -9,6 +9,7 @@ use laniusc::{
         HirError,
         HirExpr,
         HirExprKind,
+        HirExternFn,
         HirFile,
         HirFn,
         HirImportPath,
@@ -19,6 +20,7 @@ use laniusc::{
         HirStmt,
         HirStmtKind,
         HirType,
+        HirTypeAlias,
         HirTypeKind,
         Span,
         parse_source,
@@ -34,9 +36,13 @@ fn only_fn(src: &str) -> HirFn {
         HirItem::Fn(func) => func,
         HirItem::Import(_) => panic!("expected function item"),
         HirItem::Module(_) => panic!("expected function item"),
+        HirItem::ExternFn(_) => panic!("expected function item"),
         HirItem::Const(_) => panic!("expected function item"),
+        HirItem::TypeAlias(_) => panic!("expected function item"),
         HirItem::Enum(_) => panic!("expected function item"),
         HirItem::Struct(_) => panic!("expected function item"),
+        HirItem::Impl(_) => panic!("expected function item"),
+        HirItem::Trait(_) => panic!("expected function item"),
         HirItem::Stmt(_) => panic!("expected function item"),
     }
 }
@@ -159,9 +165,17 @@ fn assert_hir_file_spans(name: &str, src: &str, tokens: &[CpuToken], file: &HirF
                 assert_fn_spans(name, src, func);
                 func.span
             }
+            HirItem::ExternFn(func) => {
+                assert_extern_fn_spans(name, src, func);
+                func.span
+            }
             HirItem::Const(konst) => {
                 assert_const_spans(name, src, konst);
                 konst.span
+            }
+            HirItem::TypeAlias(alias) => {
+                assert_type_alias_spans(name, src, alias);
+                alias.span
             }
             HirItem::Enum(enm) => {
                 assert_enum_spans(name, src, enm);
@@ -170,6 +184,28 @@ fn assert_hir_file_spans(name: &str, src: &str, tokens: &[CpuToken], file: &HirF
             HirItem::Struct(strukt) => {
                 assert_struct_spans(name, src, strukt);
                 strukt.span
+            }
+            HirItem::Impl(implementation) => {
+                assert_span_in_source(name, "impl", implementation.span, src);
+                assert_span_contains(
+                    name,
+                    "impl target",
+                    implementation.span,
+                    implementation.target.span,
+                );
+                for method in &implementation.methods {
+                    assert_fn_spans(name, src, method);
+                    assert_span_contains(name, "impl method", implementation.span, method.span);
+                }
+                implementation.span
+            }
+            HirItem::Trait(trait_item) => {
+                assert_span_in_source(name, "trait", trait_item.span, src);
+                for method in &trait_item.methods {
+                    assert_span_in_source(name, "trait method", method.span, src);
+                    assert_span_contains(name, "trait method", trait_item.span, method.span);
+                }
+                trait_item.span
             }
             HirItem::Stmt(stmt) => {
                 assert_stmt_spans(name, src, stmt);
@@ -210,12 +246,87 @@ fn assert_fn_spans(name: &str, src: &str, func: &HirFn) {
     assert_span_contains(name, "function body", func.span, func.body.span);
 }
 
+fn assert_extern_fn_spans(name: &str, src: &str, func: &HirExternFn) {
+    assert_span_in_source(name, "extern function", func.span, src);
+    for (i, param) in func.const_params.iter().enumerate() {
+        assert_span_in_source(
+            name,
+            &format!("extern function const param {i}"),
+            param.span,
+            src,
+        );
+        assert_span_contains(
+            name,
+            &format!("extern function const param {i}"),
+            func.span,
+            param.span,
+        );
+        assert_type_spans(name, src, &param.ty);
+        assert_span_contains(
+            name,
+            &format!("extern function const param {i} type"),
+            param.span,
+            param.ty.span,
+        );
+    }
+    for (i, param) in func.params.iter().enumerate() {
+        assert_span_in_source(name, &format!("extern param {i}"), param.span, src);
+        assert_span_contains(
+            name,
+            &format!("extern function param {i}"),
+            func.span,
+            param.span,
+        );
+        assert_type_spans(name, src, &param.ty);
+        assert_span_contains(
+            name,
+            &format!("extern param {i} type"),
+            param.span,
+            param.ty.span,
+        );
+    }
+    assert_type_spans(name, src, &func.ret);
+    assert_span_contains(
+        name,
+        "extern function return type",
+        func.span,
+        func.ret.span,
+    );
+}
+
 fn assert_const_spans(name: &str, src: &str, konst: &HirConst) {
     assert_span_in_source(name, "constant", konst.span, src);
     assert_type_spans(name, src, &konst.ty);
     assert_span_contains(name, "constant type", konst.span, konst.ty.span);
     assert_expr_spans(name, src, &konst.value);
     assert_span_contains(name, "constant value", konst.span, konst.value.span);
+}
+
+fn assert_type_alias_spans(name: &str, src: &str, alias: &HirTypeAlias) {
+    assert_span_in_source(name, "type alias", alias.span, src);
+    for (i, param) in alias.const_params.iter().enumerate() {
+        assert_span_in_source(
+            name,
+            &format!("type alias const param {i}"),
+            param.span,
+            src,
+        );
+        assert_span_contains(
+            name,
+            &format!("type alias const param {i}"),
+            alias.span,
+            param.span,
+        );
+        assert_type_spans(name, src, &param.ty);
+        assert_span_contains(
+            name,
+            &format!("type alias const param {i} type"),
+            param.span,
+            param.ty.span,
+        );
+    }
+    assert_type_spans(name, src, &alias.target);
+    assert_span_contains(name, "type alias target", alias.span, alias.target.span);
 }
 
 fn assert_enum_spans(name: &str, src: &str, enm: &laniusc::hir::HirEnum) {
@@ -363,6 +474,12 @@ fn assert_stmt_spans(name: &str, src: &str, stmt: &HirStmt) {
             assert_span_contains(name, "while condition", stmt.span, cond.span);
             assert_block_spans(name, src, body);
             assert_span_contains(name, "while body", stmt.span, body.span);
+        }
+        HirStmtKind::For { iter, body, .. } => {
+            assert_expr_spans(name, src, iter);
+            assert_span_contains(name, "for iterable", stmt.span, iter.span);
+            assert_block_spans(name, src, body);
+            assert_span_contains(name, "for body", stmt.span, body.span);
         }
         HirStmtKind::Block(block) => {
             assert_block_spans(name, src, block);
@@ -862,6 +979,51 @@ fn hir_preserves_top_level_constants() {
 }
 
 #[test]
+fn hir_preserves_type_alias_declarations() {
+    let src = "pub type Count = i32; type Buffer<T, const N: usize> = [T; N]; fn keep(value: Count) -> Count { return value; }";
+    let tokens = lex_on_cpu(src).expect("lex type aliases");
+    let kinds = tokens.iter().map(|token| token.kind).collect::<Vec<_>>();
+    let ast = parse_from_token_kinds(&kinds).expect("CPU parser accepts type aliases");
+    assert_eq!(ast.nodes[ast.root as usize].tag, "file");
+
+    let file = parse_source(src).expect("parse type aliases");
+    assert_eq!(file.items.len(), 3);
+
+    let HirItem::TypeAlias(count) = &file.items[0] else {
+        panic!("expected first item to be type alias");
+    };
+    assert!(count.public);
+    assert_eq!(count.name, "Count");
+    assert!(count.type_params.is_empty());
+    assert!(count.const_params.is_empty());
+    assert_eq!(count.target.kind, HirTypeKind::Name("i32".into()));
+
+    let HirItem::TypeAlias(buffer) = &file.items[1] else {
+        panic!("expected second item to be type alias");
+    };
+    assert!(!buffer.public);
+    assert_eq!(buffer.name, "Buffer");
+    assert_eq!(buffer.type_params, vec!["T"]);
+    assert_eq!(buffer.const_params.len(), 1);
+    assert_eq!(buffer.const_params[0].name, "N");
+    assert_eq!(
+        buffer.const_params[0].ty.kind,
+        HirTypeKind::Name("usize".into())
+    );
+    let HirTypeKind::Array { elem, len } = &buffer.target.kind else {
+        panic!("expected array alias target");
+    };
+    assert_eq!(elem.kind, HirTypeKind::Name("T".into()));
+    assert_eq!(len, "N");
+
+    let HirItem::Fn(func) = &file.items[2] else {
+        panic!("expected third item to be function");
+    };
+    assert_eq!(func.params[0].ty.kind, HirTypeKind::Name("Count".into()));
+    assert_eq!(func.ret.kind, HirTypeKind::Name("Count".into()));
+}
+
+#[test]
 fn hir_preserves_enum_declarations() {
     let file = parse_source(
         "pub enum ResultI32 { Ok(i32), Err([i32; 4]), Empty } enum Ordering { Less, Equal, Greater }",
@@ -1021,6 +1183,132 @@ fn hir_preserves_struct_declarations() {
 }
 
 #[test]
+fn hir_preserves_impl_blocks() {
+    let src = "pub impl<T> Boxed<T> { pub fn value(self_value: i32) -> i32 { return self_value; } fn fallback() -> i32 { return 0; } }";
+    let tokens = lex_on_cpu(src).expect("lex impl block");
+    let kinds = tokens.iter().map(|token| token.kind).collect::<Vec<_>>();
+    let ast = parse_from_token_kinds(&kinds).expect("CPU parser accepts impl block");
+    assert_eq!(ast.nodes[ast.root as usize].tag, "file");
+
+    let file = parse_source(src).expect("parse impl block");
+    assert_eq!(file.items.len(), 1);
+
+    let HirItem::Impl(implementation) = &file.items[0] else {
+        panic!("expected impl item");
+    };
+    assert!(implementation.public);
+    assert_eq!(implementation.type_params, vec!["T"]);
+    assert!(implementation.const_params.is_empty());
+    assert!(implementation.trait_ref.is_none());
+    let HirTypeKind::Generic { name, args } = &implementation.target.kind else {
+        panic!("expected generic impl target");
+    };
+    assert_eq!(name, "Boxed");
+    assert_eq!(args.len(), 1);
+    assert_eq!(args[0].kind, HirTypeKind::Name("T".into()));
+    assert_eq!(implementation.methods.len(), 2);
+    assert!(implementation.methods[0].public);
+    assert_eq!(implementation.methods[0].name, "value");
+    assert!(!implementation.methods[1].public);
+    assert_eq!(implementation.methods[1].name, "fallback");
+}
+
+#[test]
+fn hir_preserves_trait_impl_blocks() {
+    let src = "pub trait Eq<T> { pub fn eq(left: T, right: T) -> bool; } pub impl Eq<i32> for i32 { pub fn eq(left: i32, right: i32) -> bool { return left == right; } }";
+    let tokens = lex_on_cpu(src).expect("lex trait impl block");
+    let kinds = tokens.iter().map(|token| token.kind).collect::<Vec<_>>();
+    let ast = parse_from_token_kinds(&kinds).expect("CPU parser accepts trait impl block");
+    assert_eq!(ast.nodes[ast.root as usize].tag, "file");
+
+    let file = parse_source(src).expect("parse trait impl block");
+    assert_eq!(file.items.len(), 2);
+
+    let HirItem::Impl(implementation) = &file.items[1] else {
+        panic!("expected impl item");
+    };
+    assert!(implementation.public);
+    let Some(trait_ref) = &implementation.trait_ref else {
+        panic!("expected trait reference on impl");
+    };
+    let HirTypeKind::Generic { name, args } = &trait_ref.kind else {
+        panic!("expected generic trait reference");
+    };
+    assert_eq!(name, "Eq");
+    assert_eq!(args.len(), 1);
+    assert_eq!(args[0].kind, HirTypeKind::Name("i32".into()));
+    assert_eq!(implementation.target.kind, HirTypeKind::Name("i32".into()));
+    assert_eq!(implementation.methods.len(), 1);
+    assert_eq!(implementation.methods[0].name, "eq");
+}
+
+#[test]
+fn hir_preserves_trait_declarations() {
+    let src = "pub trait Eq<T> { fn eq(left: T, right: T) -> bool; pub fn ne(left: T, right: T) -> bool; }";
+    let tokens = lex_on_cpu(src).expect("lex trait declaration");
+    let kinds = tokens.iter().map(|token| token.kind).collect::<Vec<_>>();
+    let ast = parse_from_token_kinds(&kinds).expect("CPU parser accepts trait declaration");
+    assert_eq!(ast.nodes[ast.root as usize].tag, "file");
+
+    let file = parse_source(src).expect("parse trait declaration");
+    assert_eq!(file.items.len(), 1);
+
+    let HirItem::Trait(trait_item) = &file.items[0] else {
+        panic!("expected trait item");
+    };
+    assert!(trait_item.public);
+    assert_eq!(trait_item.name, "Eq");
+    assert_eq!(trait_item.type_params, vec!["T"]);
+    assert!(trait_item.const_params.is_empty());
+    assert_eq!(trait_item.methods.len(), 2);
+    assert!(!trait_item.methods[0].public);
+    assert_eq!(trait_item.methods[0].name, "eq");
+    assert_eq!(trait_item.methods[0].params.len(), 2);
+    assert_eq!(
+        trait_item.methods[0].ret.kind,
+        HirTypeKind::Name("bool".into())
+    );
+    assert!(trait_item.methods[1].public);
+    assert_eq!(trait_item.methods[1].name, "ne");
+}
+
+#[test]
+fn hir_preserves_extern_function_declarations() {
+    let src = r#"pub extern "wasm" fn host_alloc(size: usize, align: usize,) -> u32; extern fn clock_ms() -> i64;"#;
+    let tokens = lex_on_cpu(src).expect("lex extern declarations");
+    let kinds = tokens.iter().map(|token| token.kind).collect::<Vec<_>>();
+    let ast = parse_from_token_kinds(&kinds)
+        .expect("CPU parser accepts extern declarations with trailing parameter comma");
+    assert_eq!(ast.nodes[ast.root as usize].tag, "file");
+
+    let file = parse_source(src).expect("parse extern declarations with trailing parameter comma");
+    assert_eq!(file.items.len(), 2);
+
+    let HirItem::ExternFn(host_alloc) = &file.items[0] else {
+        panic!("expected extern function item");
+    };
+    assert!(host_alloc.public);
+    assert_eq!(host_alloc.abi.as_deref(), Some("wasm"));
+    assert_eq!(host_alloc.name, "host_alloc");
+    assert_eq!(host_alloc.params.len(), 2);
+    assert_eq!(host_alloc.params[0].name, "size");
+    assert_eq!(
+        host_alloc.params[0].ty.kind,
+        HirTypeKind::Name("usize".into())
+    );
+    assert_eq!(host_alloc.ret.kind, HirTypeKind::Name("u32".into()));
+
+    let HirItem::ExternFn(clock_ms) = &file.items[1] else {
+        panic!("expected extern function item");
+    };
+    assert!(!clock_ms.public);
+    assert_eq!(clock_ms.abi, None);
+    assert_eq!(clock_ms.name, "clock_ms");
+    assert!(clock_ms.params.is_empty());
+    assert_eq!(clock_ms.ret.kind, HirTypeKind::Name("i64".into()));
+}
+
+#[test]
 fn hir_preserves_struct_literal_expressions() {
     let file = parse_source(
         "struct Point { x: i32, y: i32 } fn make() { let p = Point { x: 1, y: 2 }; let empty = Point { }; }",
@@ -1121,12 +1409,57 @@ fn hir_preserves_generic_function_declarations() {
     assert!(func.public);
     assert_eq!(func.name, "unwrap_or");
     assert_eq!(func.type_params, vec!["T"]);
+    assert!(func.type_param_bounds.is_empty());
     assert_eq!(func.params.len(), 2);
     assert_eq!(func.params[0].name, "value");
     assert_eq!(func.params[0].ty.kind, HirTypeKind::Name("T".into()));
     assert_eq!(func.params[1].name, "fallback");
     assert_eq!(func.params[1].ty.kind, HirTypeKind::Name("T".into()));
     assert_eq!(func.ret.kind, HirTypeKind::Name("T".into()));
+}
+
+#[test]
+fn hir_preserves_generic_type_parameter_bounds() {
+    let func =
+        only_fn("pub fn same<T: Eq<T>>(left: T, right: T) -> bool { return left.eq(right); }");
+
+    assert_eq!(func.type_params, vec!["T"]);
+    assert_eq!(func.type_param_bounds.len(), 1);
+    assert_eq!(func.type_param_bounds[0].param, "T");
+    let HirTypeKind::Generic { name, args } = &func.type_param_bounds[0].bound.kind else {
+        panic!("expected generic trait bound");
+    };
+    assert_eq!(name, "Eq");
+    assert_eq!(args.len(), 1);
+    assert_eq!(args[0].kind, HirTypeKind::Name("T".into()));
+}
+
+#[test]
+fn hir_preserves_multiple_generic_type_parameter_bounds() {
+    let func = only_fn("pub fn key<T: Eq<T> + Hash<T>>(value: T) -> u32 { return value.hash(); }");
+
+    assert_eq!(func.type_params, vec!["T"]);
+    assert_eq!(func.type_param_bounds.len(), 2);
+    assert_eq!(func.type_param_bounds[0].param, "T");
+    assert_eq!(func.type_param_bounds[1].param, "T");
+    let HirTypeKind::Generic {
+        name: first_name,
+        args: first_args,
+    } = &func.type_param_bounds[0].bound.kind
+    else {
+        panic!("expected first generic trait bound");
+    };
+    let HirTypeKind::Generic {
+        name: second_name,
+        args: second_args,
+    } = &func.type_param_bounds[1].bound.kind
+    else {
+        panic!("expected second generic trait bound");
+    };
+    assert_eq!(first_name, "Eq");
+    assert_eq!(second_name, "Hash");
+    assert_eq!(first_args[0].kind, HirTypeKind::Name("T".into()));
+    assert_eq!(second_args[0].kind, HirTypeKind::Name("T".into()));
 }
 
 #[test]
@@ -1212,6 +1545,38 @@ pub fn pick(a: i32, b: [i32; 4]) -> i32 {
 
     let HirStmtKind::Expr(assign) = &body.stmts[1].kind else {
         panic!("expected assignment expression statement");
+    };
+    assert!(matches!(
+        assign.kind,
+        HirExprKind::Assign {
+            op: HirAssignOp::Add,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn hir_preserves_for_in_statements() {
+    let src = r#"
+fn sum(values: [i32]) -> i32 {
+    let total: i32 = 0;
+    for value in values {
+        total += value;
+    }
+    return total;
+}
+"#;
+    let func = only_fn(src);
+
+    assert_eq!(func.body.stmts.len(), 3);
+    let HirStmtKind::For { name, iter, body } = &func.body.stmts[1].kind else {
+        panic!("expected for statement");
+    };
+    assert_eq!(name, "value");
+    assert_eq!(iter.kind, HirExprKind::Name("values".into()));
+    assert_eq!(body.stmts.len(), 1);
+    let HirStmtKind::Expr(assign) = &body.stmts[0].kind else {
+        panic!("expected assignment in for body");
     };
     assert!(matches!(
         assign.kind,

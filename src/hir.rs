@@ -51,9 +51,13 @@ pub enum HirItem {
     Import(HirImport),
     Module(HirModule),
     Fn(HirFn),
+    ExternFn(HirExternFn),
     Const(HirConst),
+    TypeAlias(HirTypeAlias),
     Enum(HirEnum),
     Struct(HirStruct),
+    Impl(HirImpl),
+    Trait(HirTrait),
     Stmt(HirStmt),
 }
 
@@ -86,10 +90,24 @@ pub struct HirFn {
     pub public: bool,
     pub name: String,
     pub type_params: Vec<String>,
+    pub type_param_bounds: Vec<HirTypeParamBound>,
     pub const_params: Vec<HirConstParam>,
     pub params: Vec<HirParam>,
     pub ret: HirType,
     pub body: HirBlock,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HirExternFn {
+    pub public: bool,
+    pub abi: Option<String>,
+    pub name: String,
+    pub type_params: Vec<String>,
+    pub type_param_bounds: Vec<HirTypeParamBound>,
+    pub const_params: Vec<HirConstParam>,
+    pub params: Vec<HirParam>,
+    pub ret: HirType,
     pub span: Span,
 }
 
@@ -103,10 +121,22 @@ pub struct HirConst {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HirTypeAlias {
+    pub public: bool,
+    pub name: String,
+    pub type_params: Vec<String>,
+    pub type_param_bounds: Vec<HirTypeParamBound>,
+    pub const_params: Vec<HirConstParam>,
+    pub target: HirType,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct HirEnum {
     pub public: bool,
     pub name: String,
     pub type_params: Vec<String>,
+    pub type_param_bounds: Vec<HirTypeParamBound>,
     pub const_params: Vec<HirConstParam>,
     pub variants: Vec<HirEnumVariant>,
     pub span: Span,
@@ -124,8 +154,44 @@ pub struct HirStruct {
     pub public: bool,
     pub name: String,
     pub type_params: Vec<String>,
+    pub type_param_bounds: Vec<HirTypeParamBound>,
     pub const_params: Vec<HirConstParam>,
     pub fields: Vec<HirStructField>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HirImpl {
+    pub public: bool,
+    pub type_params: Vec<String>,
+    pub type_param_bounds: Vec<HirTypeParamBound>,
+    pub const_params: Vec<HirConstParam>,
+    pub trait_ref: Option<HirType>,
+    pub target: HirType,
+    pub methods: Vec<HirFn>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HirTrait {
+    pub public: bool,
+    pub name: String,
+    pub type_params: Vec<String>,
+    pub type_param_bounds: Vec<HirTypeParamBound>,
+    pub const_params: Vec<HirConstParam>,
+    pub methods: Vec<HirTraitMethod>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HirTraitMethod {
+    pub public: bool,
+    pub name: String,
+    pub type_params: Vec<String>,
+    pub type_param_bounds: Vec<HirTypeParamBound>,
+    pub const_params: Vec<HirConstParam>,
+    pub params: Vec<HirParam>,
+    pub ret: HirType,
     pub span: Span,
 }
 
@@ -133,6 +199,13 @@ pub struct HirStruct {
 pub struct HirConstParam {
     pub name: String,
     pub ty: HirType,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HirTypeParamBound {
+    pub param: String,
+    pub bound: HirType,
     pub span: Span,
 }
 
@@ -153,6 +226,7 @@ pub struct HirParam {
 #[derive(Debug, Clone, Default)]
 struct HirGenericParams {
     type_params: Vec<String>,
+    type_param_bounds: Vec<HirTypeParamBound>,
     const_params: Vec<HirConstParam>,
 }
 
@@ -199,6 +273,11 @@ pub enum HirStmtKind {
     },
     While {
         cond: HirExpr,
+        body: HirBlock,
+    },
+    For {
+        name: String,
+        iter: HirExpr,
         body: HirBlock,
     },
     Break,
@@ -393,13 +472,20 @@ pub fn parse_source(src: &str) -> Result<HirFile, HirError> {
 }
 
 pub fn parse_tokens(src: &str, tokens: &[HirToken]) -> Result<HirFile, HirError> {
-    HirParser { src, tokens, i: 0 }.parse_file()
+    HirParser {
+        src,
+        tokens,
+        i: 0,
+        allow_struct_literals: true,
+    }
+    .parse_file()
 }
 
 struct HirParser<'a> {
     src: &'a str,
     tokens: &'a [HirToken],
     i: usize,
+    allow_struct_literals: bool,
 }
 
 impl<'a> HirParser<'a> {
@@ -423,6 +509,14 @@ impl<'a> HirParser<'a> {
             Ok(HirItem::Struct(self.parse_struct(public)?))
         } else if public && self.peek() == Some(TokenKind::Const) {
             Ok(HirItem::Const(self.parse_const(public)?))
+        } else if public && self.peek() == Some(TokenKind::Type) {
+            Ok(HirItem::TypeAlias(self.parse_type_alias(public)?))
+        } else if public && self.peek() == Some(TokenKind::Impl) {
+            Ok(HirItem::Impl(self.parse_impl(public)?))
+        } else if public && self.peek() == Some(TokenKind::Trait) {
+            Ok(HirItem::Trait(self.parse_trait(public)?))
+        } else if public && self.peek() == Some(TokenKind::Extern) {
+            Ok(HirItem::ExternFn(self.parse_extern_fn(public)?))
         } else if public || self.peek() == Some(TokenKind::Fn) {
             Ok(HirItem::Fn(self.parse_fn(public)?))
         } else if self.peek() == Some(TokenKind::Import) {
@@ -431,10 +525,18 @@ impl<'a> HirParser<'a> {
             Ok(HirItem::Module(self.parse_module()?))
         } else if self.peek() == Some(TokenKind::Const) {
             Ok(HirItem::Const(self.parse_const(public)?))
+        } else if self.peek() == Some(TokenKind::Type) {
+            Ok(HirItem::TypeAlias(self.parse_type_alias(public)?))
         } else if self.peek() == Some(TokenKind::Enum) {
             Ok(HirItem::Enum(self.parse_enum(public)?))
         } else if self.peek() == Some(TokenKind::Struct) {
             Ok(HirItem::Struct(self.parse_struct(public)?))
+        } else if self.peek() == Some(TokenKind::Impl) {
+            Ok(HirItem::Impl(self.parse_impl(public)?))
+        } else if self.peek() == Some(TokenKind::Trait) {
+            Ok(HirItem::Trait(self.parse_trait(public)?))
+        } else if self.peek() == Some(TokenKind::Extern) {
+            Ok(HirItem::ExternFn(self.parse_extern_fn(public)?))
         } else {
             Ok(HirItem::Stmt(self.parse_stmt()?))
         }
@@ -483,10 +585,181 @@ impl<'a> HirParser<'a> {
             public,
             name,
             type_params: generic_params.type_params,
+            type_param_bounds: generic_params.type_param_bounds,
             const_params: generic_params.const_params,
             params,
             ret,
             body,
+            span: self.span_since(start),
+        })
+    }
+
+    fn parse_extern_fn(&mut self, public: bool) -> Result<HirExternFn, HirError> {
+        let start = if public {
+            self.prev_start()
+        } else {
+            self.peek_start()
+        };
+        self.expect(TokenKind::Extern, "Extern")?;
+        let abi = self
+            .eat(TokenKind::String)
+            .map(|token| self.string_contents(token));
+        self.expect(TokenKind::Fn, "Fn")?;
+        let name = self.expect_name(&[TokenKind::Ident], "extern function name")?;
+        let generic_params = self.parse_type_params()?;
+        self.expect_any(
+            &[
+                TokenKind::ParamLParen,
+                TokenKind::GroupLParen,
+                TokenKind::CallLParen,
+                TokenKind::LParen,
+            ],
+            "extern function parameter list",
+        )?;
+        let params = self.parse_params()?;
+        self.expect_any(
+            &[
+                TokenKind::ParamRParen,
+                TokenKind::GroupRParen,
+                TokenKind::CallRParen,
+                TokenKind::RParen,
+            ],
+            "RParen",
+        )?;
+
+        let ret = if self.eat(TokenKind::Arrow).is_some() {
+            self.parse_type_expr()?
+        } else {
+            HirType {
+                kind: HirTypeKind::Void,
+                span: self.empty_span(),
+            }
+        };
+        self.expect_semicolon()?;
+
+        Ok(HirExternFn {
+            public,
+            abi,
+            name,
+            type_params: generic_params.type_params,
+            type_param_bounds: generic_params.type_param_bounds,
+            const_params: generic_params.const_params,
+            params,
+            ret,
+            span: self.span_since(start),
+        })
+    }
+
+    fn parse_impl(&mut self, public: bool) -> Result<HirImpl, HirError> {
+        let start = if public {
+            self.prev_start()
+        } else {
+            self.peek_start()
+        };
+        self.expect(TokenKind::Impl, "Impl")?;
+        let generic_params = self.parse_type_params()?;
+        let first_ty = self.parse_type_expr()?;
+        let (trait_ref, target) = if self.eat(TokenKind::For).is_some() {
+            (Some(first_ty), self.parse_type_expr()?)
+        } else {
+            (None, first_ty)
+        };
+        self.expect(TokenKind::LBrace, "LBrace")?;
+
+        let mut methods = Vec::new();
+        while self.peek() != Some(TokenKind::RBrace) {
+            let method_public = self.eat(TokenKind::Pub).is_some();
+            methods.push(self.parse_fn(method_public)?);
+        }
+
+        self.expect(TokenKind::RBrace, "RBrace")?;
+        Ok(HirImpl {
+            public,
+            type_params: generic_params.type_params,
+            type_param_bounds: generic_params.type_param_bounds,
+            const_params: generic_params.const_params,
+            trait_ref,
+            target,
+            methods,
+            span: self.span_since(start),
+        })
+    }
+
+    fn parse_trait(&mut self, public: bool) -> Result<HirTrait, HirError> {
+        let start = if public {
+            self.prev_start()
+        } else {
+            self.peek_start()
+        };
+        self.expect(TokenKind::Trait, "Trait")?;
+        let name = self.expect_name(&[TokenKind::Ident], "trait name")?;
+        let generic_params = self.parse_type_params()?;
+        self.expect(TokenKind::LBrace, "LBrace")?;
+
+        let mut methods = Vec::new();
+        while self.peek() != Some(TokenKind::RBrace) {
+            let method_public = self.eat(TokenKind::Pub).is_some();
+            methods.push(self.parse_trait_method(method_public)?);
+        }
+
+        self.expect(TokenKind::RBrace, "RBrace")?;
+        Ok(HirTrait {
+            public,
+            name,
+            type_params: generic_params.type_params,
+            type_param_bounds: generic_params.type_param_bounds,
+            const_params: generic_params.const_params,
+            methods,
+            span: self.span_since(start),
+        })
+    }
+
+    fn parse_trait_method(&mut self, public: bool) -> Result<HirTraitMethod, HirError> {
+        let start = if public {
+            self.prev_start()
+        } else {
+            self.peek_start()
+        };
+        self.expect(TokenKind::Fn, "Fn")?;
+        let name = self.expect_name(&[TokenKind::Ident], "trait method name")?;
+        let generic_params = self.parse_type_params()?;
+        self.expect_any(
+            &[
+                TokenKind::ParamLParen,
+                TokenKind::GroupLParen,
+                TokenKind::CallLParen,
+                TokenKind::LParen,
+            ],
+            "trait method parameter list",
+        )?;
+        let params = self.parse_params()?;
+        self.expect_any(
+            &[
+                TokenKind::ParamRParen,
+                TokenKind::GroupRParen,
+                TokenKind::CallRParen,
+                TokenKind::RParen,
+            ],
+            "RParen",
+        )?;
+
+        let ret = if self.eat(TokenKind::Arrow).is_some() {
+            self.parse_type_expr()?
+        } else {
+            HirType {
+                kind: HirTypeKind::Void,
+                span: self.empty_span(),
+            }
+        };
+        self.expect_semicolon()?;
+        Ok(HirTraitMethod {
+            public,
+            name,
+            type_params: generic_params.type_params,
+            type_param_bounds: generic_params.type_param_bounds,
+            const_params: generic_params.const_params,
+            params,
+            ret,
             span: self.span_since(start),
         })
     }
@@ -580,6 +853,29 @@ impl<'a> HirParser<'a> {
         })
     }
 
+    fn parse_type_alias(&mut self, public: bool) -> Result<HirTypeAlias, HirError> {
+        let start = if public {
+            self.prev_start()
+        } else {
+            self.peek_start()
+        };
+        self.expect(TokenKind::Type, "Type")?;
+        let name = self.expect_name(&[TokenKind::Ident], "type alias name")?;
+        let generic_params = self.parse_type_params()?;
+        self.expect(TokenKind::Assign, "Assign")?;
+        let target = self.parse_type_expr()?;
+        self.expect_semicolon()?;
+        Ok(HirTypeAlias {
+            public,
+            name,
+            type_params: generic_params.type_params,
+            type_param_bounds: generic_params.type_param_bounds,
+            const_params: generic_params.const_params,
+            target,
+            span: self.span_since(start),
+        })
+    }
+
     fn parse_enum(&mut self, public: bool) -> Result<HirEnum, HirError> {
         let start = if public {
             self.prev_start()
@@ -613,6 +909,7 @@ impl<'a> HirParser<'a> {
             public,
             name,
             type_params: generic_params.type_params,
+            type_param_bounds: generic_params.type_param_bounds,
             const_params: generic_params.const_params,
             variants,
             span: self.span_since(start),
@@ -647,9 +944,25 @@ impl<'a> HirParser<'a> {
             return Ok(());
         }
 
-        params
-            .type_params
-            .push(self.expect_name(&[TokenKind::Ident], "type parameter name")?);
+        let name = self.expect_name(&[TokenKind::Ident], "type parameter name")?;
+        params.type_params.push(name.clone());
+        if self.eat(TokenKind::Colon).is_some() {
+            loop {
+                let bound_start = self.peek_start();
+                let bound = self.parse_type_expr()?;
+                params.type_param_bounds.push(HirTypeParamBound {
+                    param: name.clone(),
+                    bound,
+                    span: self.span_since(bound_start),
+                });
+                if self
+                    .eat_any(&[TokenKind::InfixPlus, TokenKind::PrefixPlus, TokenKind::Plus])
+                    .is_none()
+                {
+                    break;
+                }
+            }
+        }
         Ok(())
     }
 
@@ -686,6 +999,7 @@ impl<'a> HirParser<'a> {
             public,
             name,
             type_params: generic_params.type_params,
+            type_param_bounds: generic_params.type_param_bounds,
             const_params: generic_params.const_params,
             fields,
             span: self.span_since(start),
@@ -757,6 +1071,9 @@ impl<'a> HirParser<'a> {
 
         let mut params = vec![self.parse_param()?];
         while self.eat(TokenKind::ParamComma).is_some() || self.eat(TokenKind::Comma).is_some() {
+            if self.peek().is_some_and(Self::is_close_paren) {
+                break;
+            }
             params.push(self.parse_param()?);
         }
         Ok(params)
@@ -974,6 +1291,17 @@ impl<'a> HirParser<'a> {
             });
         }
 
+        if self.eat(TokenKind::For).is_some() {
+            let name = self.expect_name(&[TokenKind::Ident], "for binding name")?;
+            self.expect(TokenKind::In, "In")?;
+            let iter = self.parse_for_iter_expr()?;
+            let body = self.parse_block()?;
+            return Ok(HirStmt {
+                kind: HirStmtKind::For { name, iter, body },
+                span: self.span_since(start),
+            });
+        }
+
         if self.eat(TokenKind::Break).is_some() {
             self.expect_semicolon()?;
             return Ok(HirStmt {
@@ -1008,6 +1336,14 @@ impl<'a> HirParser<'a> {
 
     fn parse_expr(&mut self) -> Result<HirExpr, HirError> {
         self.parse_assign()
+    }
+
+    fn parse_for_iter_expr(&mut self) -> Result<HirExpr, HirError> {
+        let previous = self.allow_struct_literals;
+        self.allow_struct_literals = false;
+        let expr = self.parse_expr();
+        self.allow_struct_literals = previous;
+        expr
     }
 
     fn parse_assign(&mut self) -> Result<HirExpr, HirError> {
@@ -1320,7 +1656,7 @@ impl<'a> HirParser<'a> {
         if self.is_path_start() {
             let path = self.parse_path()?;
             let name = Self::path_name(&path);
-            if self.eat(TokenKind::LBrace).is_some() {
+            if self.allow_struct_literals && self.eat(TokenKind::LBrace).is_some() {
                 let fields = self.parse_struct_literal_fields()?;
                 self.expect(TokenKind::RBrace, "RBrace")?;
                 return Ok(HirExpr {

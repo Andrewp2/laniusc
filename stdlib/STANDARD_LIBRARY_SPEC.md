@@ -23,8 +23,29 @@ The short version:
   implementation.
 
 The current implementation is only a seed. Today, `stdlib/*.lani` files are
-included explicitly before user code and still use `lstd_` prefixes to avoid
-name collisions. This spec describes the long-term desired shape.
+included explicitly before user code. Module-form seed files use source-level
+paths such as `core::i32` and `test::assert`; legacy flat compatibility files
+still use `lstd_` prefixes to avoid name collisions. This spec describes the
+long-term desired shape.
+
+This document is meant to be category-complete, not release-complete. A feature
+belongs here when ordinary Lanius programs, compiler tools, build tools, tests,
+or GPU workloads would reasonably expect it from a mature standard distribution.
+It does not mean every item ships in `core`, appears in the prelude, or becomes
+stable at the same time.
+
+Scope rules:
+
+- Include the primitives, collections, strings, algorithms, I/O, diagnostics,
+  tests, and runtime utilities that most projects repeatedly need.
+- Include compiler-oriented utilities because Lanius should be able to implement
+  serious compilers and build systems in itself.
+- Include optional distribution packages when the implementation is broadly
+  useful but too large or target-dependent for the base layers.
+- Keep highly specialized domains outside the standard distribution unless
+  there is a strong language-level reason to bless one implementation.
+- Keep unstable or security-sensitive surfaces marked as optional or
+  experimental until their contracts can be maintained.
 
 ## Design Principles
 
@@ -181,6 +202,18 @@ but these are the normal standard-library capabilities Lanius should plan for.
 - FFI declarations, calling conventions, C strings, byte buffers, and dynamic
   library loading once the unsafe boundary exists.
 
+### Command Line, Configuration, And Runtime Utilities
+
+- Raw argument access, executable path access, exit codes, and a small flag and
+  positional-argument parser.
+- Usage rendering, argument parse diagnostics, and environment-variable
+  overlays for configuration.
+- Configuration value trees for simple maps, lists, strings, numbers, and bools.
+- Temporary files and directories for tests and tools.
+- File watching as an optional host feature when the platform supports it.
+- Semantic version parsing, package manifest parsing, and content hashing for
+  build and package tooling.
+
 ### Concurrency, Async, And Networking
 
 - Threads and join handles.
@@ -206,6 +239,9 @@ but these are the normal standard-library capabilities Lanius should plan for.
 - Checksums and non-cryptographic hashes.
 - Compression packages such as gzip, zlib, and zstd as optional distribution
   packages.
+- Archive formats such as tar and zip as optional distribution packages.
+- Manifest and lockfile helpers for Lanius package/build tooling once those
+  formats exist.
 
 ### Randomness And Security
 
@@ -327,9 +363,15 @@ Candidates:
 - `json`, `csv`, `toml`, and compact binary encoding packages.
 - `regex`, once the language can support a robust implementation.
 - `url`, `uuid`, checksums, and compression.
+- `archive` packages for tar and zip.
+- `config`, `semver`, and manifest helpers for package/build tooling.
+- File watching when the host platform supports it.
 - Full Unicode tables, normalization, and locale-aware text processing.
 - Higher-level network protocols such as HTTP.
 - Cryptography and TLS only after careful API and implementation review.
+- Database drivers, GUI frameworks, media codecs, ML libraries, and cloud SDKs
+  should stay external packages unless the ecosystem later has a clear reason to
+  standardize one small shared interface.
 
 ## Module Map
 
@@ -368,10 +410,11 @@ the responsibilities should remain clear.
 - `core::fmt`
 - `core::panic`
 - `core::intrinsics`
-- `core::target`
+- `core::target` (currently seeded as source-level target capability defaults)
 
 ### Alloc Modules
 
+- `alloc::allocator`
 - `alloc::vec`
 - `alloc::vec_deque`
 - `alloc::string`
@@ -398,21 +441,25 @@ the responsibilities should remain clear.
 ### Std Modules
 
 - `std::prelude`
-- `std::io`
-- `std::fs`
+- `std::io` (currently seeded as source-level host ABI declarations)
+- `std::fs` (currently seeded as source-level host ABI declarations)
 - `std::path`
-- `std::env`
-- `std::process`
-- `std::time`
+- `std::env` (currently seeded as source-level host ABI declarations)
+- `std::process` (currently seeded as source-level host ABI declarations)
+- `std::cli`
+- `std::config`
+- `std::time` (currently seeded as source-level host ABI declarations)
 - `std::thread`
 - `std::sync`
 - `std::atomic`
-- `std::net`
+- `std::net` (currently seeded as source-level host ABI declarations)
 - `std::dns`
 - `std::random`
 - `std::os`
 - `std::ffi`
 - `std::terminal`
+- `std::temp`
+- `std::watch`, if file watching is supported.
 - `std::logging`
 - `std::backtrace`
 - `std::async`, after the async model is defined.
@@ -464,6 +511,8 @@ compiler-like tools well.
 - `cfg`
 - `dataflow`
 - `intern`
+- `semver`
+- `manifest`
 
 ## Prelude
 
@@ -1573,6 +1622,34 @@ Terminal support:
 - Prompt and line-reading helpers later.
 - Raw terminal mode later, behind platform support.
 
+## Configuration, Temp Resources, And File Watching
+
+Configuration support should cover the simple cases build tools and CLIs need
+without turning `std` into an application framework.
+
+Expected configuration APIs:
+
+- Read configuration from environment variables.
+- Read key/value maps and nested value trees from files.
+- Merge defaults, file values, environment values, and command-line overrides.
+- Report missing keys, wrong types, and parse errors with useful locations.
+- Preserve deterministic output order when writing config files for tools.
+
+Temporary resource APIs:
+
+- Create a temporary file.
+- Create a temporary directory.
+- Generate collision-resistant temporary names.
+- Clean up temporary resources on success or failure where the host supports it.
+- Keep explicit escape hatches for preserving temp resources after failures.
+
+File watching APIs:
+
+- Watch files and directories for create, modify, remove, and rename events.
+- Debounce or batch events for build tools.
+- Report unsupported platforms explicitly.
+- Fall back to polling only when requested by the caller.
+
 ## Time
 
 Types:
@@ -1717,6 +1794,37 @@ Related utility packages:
 - Regular expressions after strings, slices, and allocation are solid.
 - Checksums such as CRC32 and non-cryptographic hashes.
 - Compression such as gzip, zlib, and zstd as optional packages.
+
+## Archives, Compression, And Package Metadata
+
+Archives and compression are useful for package managers, build caches, test
+fixtures, and distribution artifacts. They should be optional distribution
+packages rather than required `core` or `std` APIs.
+
+Archive formats:
+
+- Tar.
+- Zip.
+- Directory tree packing and unpacking helpers.
+- Path traversal protection during extraction.
+- Permission and timestamp handling with deterministic build options.
+
+Compression formats:
+
+- Gzip.
+- Zlib/deflate.
+- Zstd later.
+- Streaming compression and decompression.
+- Explicit error reporting for corrupt or truncated streams.
+
+Package and build metadata:
+
+- Semantic version parsing and comparison.
+- Version requirement parsing.
+- Package manifest parsing once Lanius has a manifest format.
+- Lockfile parsing once Lanius has a lockfile format.
+- Content hashing for build caches and reproducible artifacts.
+- Stable serialization for generated metadata.
 
 ## Randomness
 
@@ -1882,25 +1990,28 @@ The library should expose target capabilities explicitly.
 
 Examples:
 
-- `target::is_wasm`
-- `target::is_native`
-- `target::has_allocator`
-- `target::has_filesystem`
-- `target::has_stdio`
-- `target::has_threads`
-- `target::has_network`
-- `target::has_clock`
-- `target::has_secure_rng`
-- `target::has_gpu`
+- `core::target::is_wasm`
+- `core::target::is_native`
+- `core::target::has_allocator`
+- `core::target::has_filesystem`
+- `core::target::has_stdio`
+- `core::target::has_threads`
+- `core::target::has_network`
+- `core::target::has_clock`
+- `core::target::has_secure_rng`
+- `core::target::has_gpu`
 
 Capability checks should be compile-time where possible and runtime where
 necessary.
+The current source seed exposes static defaults only; real target configuration
+and compile-time capability evaluation are still required.
 
 ## Naming Rules
 
 - Prefer clear names over abbreviations.
 - Use module namespaces once real modules and package imports exist.
-- Use `lstd_` prefixes only for the current source-level stopgap.
+- Use `lstd_` prefixes only for legacy flat compatibility files during the
+  current source-level stopgap.
 - Avoid names that imply allocation when an API does not allocate.
 - Avoid names that hide failure when an API can fail.
 - Use `try_` or `checked_` for fallible operations where failure is central.
@@ -1934,6 +2045,31 @@ Current phase.
 
 Current files:
 
+- `core/i32.lani`
+- `core/u8.lani`
+- `core/u32.lani`
+- `core/i64.lani`
+- `core/f32.lani`
+- `core/char.lani`
+- `core/bool.lani`
+- `core/array_i32_4.lani`
+- `core/option.lani`
+- `core/result.lani`
+- `core/ordering.lani`
+- `core/cmp.lani`
+- `core/hash.lani`
+- `core/range.lani`
+- `core/slice.lani`
+- `core/panic.lani`
+- `core/target.lani`
+- `alloc/allocator.lani`
+- `std/io.lani`
+- `std/process.lani`
+- `std/env.lani`
+- `std/time.lani`
+- `std/fs.lani`
+- `std/net.lani`
+- `test/assert.lani`
 - `i32.lani`
 - `bool.lani`
 - `array_i32_4.lani`

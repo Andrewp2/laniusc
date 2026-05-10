@@ -33,6 +33,12 @@ static const uint TK_STRUCT = 94;
 static const uint TK_MATCH = 95;
 static const uint TK_IMPORT = 96;
 static const uint TK_MODULE = 97;
+static const uint TK_IMPL = 98;
+static const uint TK_TRAIT = 99;
+static const uint TK_FOR = 100;
+static const uint TK_IN = 101;
+static const uint TK_EXTERN = 102;
+static const uint TK_TYPE = 103;
 
 inline uint retag_keyword(uint kind, uint start, uint len)
 {
@@ -47,6 +53,8 @@ inline uint retag_keyword(uint kind, uint start, uint len)
             return TK_FN;
         if (b0 == 105u && b1 == 102u)
             return TK_IF;
+        if (b0 == 105u && b1 == 110u)
+            return TK_IN;
     }
     else if (len == 3u)
     {
@@ -57,6 +65,8 @@ inline uint retag_keyword(uint kind, uint start, uint len)
             return TK_PUB;
         if (b0 == 108u && b1 == 101u && b2 == 116u)
             return TK_LET;
+        if (b0 == 102u && b1 == 111u && b2 == 114u)
+            return TK_FOR;
     }
     else if (len == 4u)
     {
@@ -68,8 +78,12 @@ inline uint retag_keyword(uint kind, uint start, uint len)
             return TK_ELSE;
         if (b0 == 101u && b1 == 110u && b2 == 117u && b3 == 109u)
             return TK_ENUM;
+        if (b0 == 105u && b1 == 109u && b2 == 112u && b3 == 108u)
+            return TK_IMPL;
         if (b0 == 116u && b1 == 114u && b2 == 117u && b3 == 101u)
             return TK_TRUE;
+        if (b0 == 116u && b1 == 121u && b2 == 112u && b3 == 101u)
+            return TK_TYPE;
     }
     else if (len == 5u)
     {
@@ -88,6 +102,8 @@ inline uint retag_keyword(uint kind, uint start, uint len)
             return TK_CONST;
         if (b0 == 109u && b1 == 97u && b2 == 116u && b3 == 99u && b4 == 104u)
             return TK_MATCH;
+        if (b0 == 116u && b1 == 114u && b2 == 97u && b3 == 105u && b4 == 116u)
+            return TK_TRAIT;
     }
     else if (len == 6u)
     {
@@ -105,6 +121,8 @@ inline uint retag_keyword(uint kind, uint start, uint len)
             return TK_IMPORT;
         if (b0 == 109u && b1 == 111u && b2 == 100u && b3 == 117u && b4 == 108u && b5 == 101u)
             return TK_MODULE;
+        if (b0 == 101u && b1 == 120u && b2 == 116u && b3 == 101u && b4 == 114u && b5 == 110u)
+            return TK_EXTERN;
     }
     else if (len == 8u)
     {

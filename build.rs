@@ -1,11 +1,13 @@
 // build.rs — compile Slang entrypoints (no duplicate module sources) and bundle prebuilt lexer tables.
 
 use std::{
+    collections::HashSet,
     env,
     fs,
     io,
     path::{Path, PathBuf},
     process::Command,
+    time::SystemTime,
 };
 
 use anyhow::{Context, Result, anyhow};
@@ -44,6 +46,9 @@ fn main() -> Result<()> {
 
         let spv_out = shader_out_dir.join(format!("{file_stem}.spv"));
         let refl_out = shader_out_dir.join(format!("{file_stem}.reflect.json"));
+        if shader_outputs_fresh(&ep, &spv_out, &refl_out)? {
+            continue;
+        }
 
         let extra = env::var("SLANGC_EXTRA_FLAGS").unwrap_or_default();
         let extra_args: Vec<&str> = extra.split_whitespace().filter(|s| !s.is_empty()).collect();
@@ -155,6 +160,89 @@ fn env_truthy(name: &str) -> bool {
 
 fn shader_opt_level() -> String {
     env::var("LANIUS_SHADER_OPT_LEVEL").unwrap_or_else(|_| "1".into())
+}
+
+fn shader_outputs_fresh(ep: &Path, spv_out: &Path, refl_out: &Path) -> Result<bool> {
+    let output_mtime = oldest_mtime([spv_out, refl_out]);
+    let Some(output_mtime) = output_mtime else {
+        return Ok(false);
+    };
+
+    let mut deps = Vec::new();
+    let mut seen = HashSet::new();
+    collect_shader_dependencies(ep, &mut seen, &mut deps)?;
+    for dep in deps {
+        let input_mtime = fs::metadata(&dep)
+            .and_then(|metadata| metadata.modified())
+            .with_context(|| format!("read shader dependency mtime for {}", dep.display()))?;
+        if input_mtime > output_mtime {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn oldest_mtime<const N: usize>(paths: [&Path; N]) -> Option<SystemTime> {
+    paths
+        .into_iter()
+        .map(|path| {
+            fs::metadata(path)
+                .and_then(|metadata| metadata.modified())
+                .ok()
+        })
+        .try_fold(None, |oldest, mtime| {
+            let mtime = mtime?;
+            Some(Some(match oldest {
+                Some(oldest) if oldest <= mtime => oldest,
+                _ => mtime,
+            }))
+        })
+        .flatten()
+}
+
+fn collect_shader_dependencies(
+    path: &Path,
+    seen: &mut HashSet<PathBuf>,
+    out: &mut Vec<PathBuf>,
+) -> Result<()> {
+    let path = path.to_path_buf();
+    if !seen.insert(path.clone()) {
+        return Ok(());
+    }
+    out.push(path.clone());
+
+    let text = fs::read_to_string(&path)
+        .with_context(|| format!("read shader dependency {}", path.display()))?;
+    for import in shader_imports(&text) {
+        if let Some(dep) = resolve_shader_import(&path, import) {
+            collect_shader_dependencies(&dep, seen, out)?;
+        }
+    }
+    Ok(())
+}
+
+fn shader_imports(text: &str) -> impl Iterator<Item = &str> {
+    text.lines().filter_map(|line| {
+        let line = line.split("//").next().unwrap_or("").trim();
+        let rest = line.strip_prefix("import ")?;
+        rest.strip_suffix(';').map(str::trim)
+    })
+}
+
+fn resolve_shader_import(importer: &Path, import: &str) -> Option<PathBuf> {
+    let rel = PathBuf::from(format!("{}.slang", import.replace("::", "/")));
+    let mut candidates = Vec::new();
+    if let Some(parent) = importer.parent() {
+        candidates.push(parent.join(&rel));
+    }
+    candidates.extend([
+        Path::new("shaders").join(&rel),
+        Path::new("shaders/lexer").join(&rel),
+        Path::new("shaders/parser").join(&rel),
+        Path::new("shaders/type_checker").join(&rel),
+        Path::new("shaders/codegen").join(&rel),
+    ]);
+    candidates.into_iter().find(|candidate| candidate.is_file())
 }
 
 fn compile_entrypoint_via_glslang(

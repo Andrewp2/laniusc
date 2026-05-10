@@ -1,0 +1,15 @@
+// Source-level standard I/O host ABI declarations.
+
+module std::io;
+
+pub extern "lanius_std" fn write_stdout(ptr: u32, len: usize) -> i32;
+
+pub extern "lanius_std" fn write_stderr(ptr: u32, len: usize) -> i32;
+
+pub extern "lanius_std" fn read_stdin(ptr: u32, len: usize) -> i32;
+
+pub extern "lanius_std" fn flush_stdout() -> i32;
+
+pub extern "lanius_std" fn flush_stderr() -> i32;
+
+pub extern "lanius_std" fn print_i32(value: i32);

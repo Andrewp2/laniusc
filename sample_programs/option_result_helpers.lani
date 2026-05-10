@@ -1,0 +1,28 @@
+import core::option;
+import core::result;
+
+fn main() {
+    let some: core::option::Option<i32> = core::option::Some(7);
+    let none: core::option::Option<i32> = core::option::None;
+    let ok: core::result::Result<i32, i32> = core::result::Ok(9);
+    let err: core::result::Result<i32, i32> = core::result::Err(4);
+
+    let total: i32 = 0;
+    if (core::option::is_some(some)) {
+        total += core::option::unwrap_or(some, 0);
+    }
+    if (core::option::is_none(none)) {
+        total += core::option::unwrap_or(none, 5);
+    }
+    if (core::result::is_ok(ok)) {
+        total += core::result::unwrap_or(ok, 0);
+    }
+    if (core::result::is_err(err)) {
+        total += core::result::unwrap_or(err, 6);
+    }
+    let replaced: core::option::Option<i32> = core::option::replace(none, 11);
+    total += core::option::unwrap_or(replaced, 0);
+
+    print(total);
+    return 0;
+}

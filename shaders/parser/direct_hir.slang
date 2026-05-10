@@ -51,6 +51,7 @@ static const uint HIR_CONST_ITEM = 25u;
 static const uint HIR_ENUM_ITEM = 26u;
 static const uint HIR_STRUCT_ITEM = 27u;
 static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
+static const uint HIR_TYPE_ALIAS_ITEM = 29u;
 
 static const uint TK_IDENT = 1u;
 static const uint TK_LPAREN = 4u;
@@ -67,6 +68,7 @@ static const uint TK_CALL_LPAREN = 28u;
 static const uint TK_GROUP_LPAREN = 29u;
 static const uint TK_ARRAY_LBRACKET = 31u;
 static const uint TK_DOT = 35u;
+static const uint TK_COMMA = 36u;
 static const uint TK_SEMICOLON = 37u;
 static const uint TK_COLON = 38u;
 static const uint TK_PLUS_ASSIGN = 46u;
@@ -94,10 +96,13 @@ static const uint TK_ARROW = 75u;
 static const uint TK_PARAM_IDENT = 79u;
 static const uint TK_TYPE_IDENT = 80u;
 static const uint TK_LET_ASSIGN = 81u;
+static const uint TK_ARG_COMMA = 82u;
+static const uint TK_PARAM_COMMA = 84u;
 static const uint TK_PARAM_LPAREN = 76u;
 static const uint TK_PARAM_RPAREN = 77u;
 static const uint TK_TYPE_ARRAY_LBRACKET = 85u;
 static const uint TK_TYPE_ARRAY_RBRACKET = 86u;
+static const uint TK_TYPE_SEMICOLON = 87u;
 static const uint TK_IF_LBRACE = 88u;
 static const uint TK_IF_RBRACE = 89u;
 static const uint TK_TRUE = 90u;
@@ -105,6 +110,7 @@ static const uint TK_FALSE = 91u;
 static const uint TK_CONST = 92u;
 static const uint TK_ENUM = 93u;
 static const uint TK_STRUCT = 94u;
+static const uint TK_TYPE = 103u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -165,7 +171,8 @@ bool is_struct_literal_open_at(uint i)
     if (token_kind(i) != TK_LBRACE || i == 0u || token_kind(i - 1u) != TK_IDENT)
         return false;
     uint before_name = i > 1u ? token_kind(i - 2u) : 0u;
-    return before_name != TK_STRUCT && before_name != TK_ENUM && before_name != TK_ARROW &&
+    return before_name != TK_STRUCT && before_name != TK_ENUM && before_name != TK_TYPE &&
+           before_name != TK_ARROW &&
            before_name != TK_COLON;
 }
 
@@ -320,6 +327,51 @@ bool token_in_type_array(uint token_i)
     return false;
 }
 
+bool token_in_type_array_length(uint token_i)
+{
+    uint n = active_token_count();
+    uint open_i = token_i;
+    [loop]
+    for (uint guard = 0u; guard < 64u && open_i > 0u; guard += 1u)
+    {
+        open_i -= 1u;
+        uint open_kind = token_kind(open_i);
+        if (!is_type_open(open_kind))
+            continue;
+
+        uint prev = open_i > 0u ? token_kind(open_i - 1u) : 0u;
+        if (prev != TK_COLON && prev != TK_ARROW && open_kind != TK_TYPE_ARRAY_LBRACKET)
+            continue;
+
+        uint end = matching_type_array_end(open_i);
+        if (token_i >= min(end, n))
+            return false;
+
+        uint depth = 0u;
+        bool saw_len_sep = false;
+        [loop]
+        for (uint j = open_i + 1u; j < token_i; j += 1u)
+        {
+            uint kind = token_kind(j);
+            if (is_type_open(kind))
+            {
+                depth += 1u;
+                continue;
+            }
+            if (is_type_close(kind))
+            {
+                if (depth > 0u)
+                    depth -= 1u;
+                continue;
+            }
+            if ((kind == TK_SEMICOLON || kind == TK_TYPE_SEMICOLON) && depth == 0u)
+                saw_len_sep = true;
+        }
+        return saw_len_sep;
+    }
+    return false;
+}
+
 uint statement_end(uint start_i)
 {
     uint n = active_token_count();
@@ -460,6 +512,64 @@ bool token_in_fn_type_params(uint token_i)
     return false;
 }
 
+bool generic_type_name_context(uint type_name_i)
+{
+    if (type_name_i == 0u)
+        return false;
+    uint prev = token_kind(type_name_i - 1u);
+    return prev == TK_COLON || prev == TK_ARROW || prev == TK_LT || prev == TK_COMMA ||
+           prev == TK_ARG_COMMA || prev == TK_PARAM_COMMA;
+}
+
+bool token_in_shallow_generic_type_arg(uint token_i)
+{
+    if (token_i >= 2u && token_kind(token_i - 1u) == TK_LT &&
+        (token_kind(token_i - 2u) == TK_IDENT || token_kind(token_i - 2u) == TK_TYPE_IDENT) &&
+        generic_type_name_context(token_i - 2u))
+        return true;
+    if (token_i >= 4u &&
+        (token_kind(token_i - 1u) == TK_COMMA || token_kind(token_i - 1u) == TK_ARG_COMMA ||
+         token_kind(token_i - 1u) == TK_PARAM_COMMA) &&
+        token_kind(token_i - 3u) == TK_LT &&
+        (token_kind(token_i - 4u) == TK_IDENT || token_kind(token_i - 4u) == TK_TYPE_IDENT) &&
+        generic_type_name_context(token_i - 4u))
+        return true;
+    return false;
+}
+
+uint item_type_params_end(uint item_i)
+{
+    uint n = active_token_count();
+    if (item_i + 2u >= n || token_kind(item_i + 2u) != TK_LT)
+        return INVALID;
+
+    uint depth = 0u;
+    [loop]
+    for (uint j = item_i + 2u; j < n; j += 1u)
+    {
+        uint kind = token_kind(j);
+        if (kind == TK_LT)
+        {
+            depth += 1u;
+            continue;
+        }
+        if (kind != TK_GT)
+            continue;
+        if (depth == 0u)
+            return INVALID;
+        depth -= 1u;
+        if (depth == 0u)
+            return j + 1u;
+    }
+    return INVALID;
+}
+
+bool token_in_item_type_params(uint token_i, uint item_i)
+{
+    uint end = item_type_params_end(item_i);
+    return end != INVALID && token_i >= item_i + 2u && token_i < end;
+}
+
 uint enum_end(uint enum_i)
 {
     uint n = active_token_count();
@@ -469,8 +579,10 @@ uint enum_end(uint enum_i)
         uint kind = token_kind(j);
         if (is_open_brace(kind))
             return matching_brace_end(j);
+        if (token_in_item_type_params(j, enum_i))
+            continue;
         if (kind == TK_SEMICOLON || kind == TK_FN || kind == TK_CONST || kind == TK_ENUM ||
-            kind == TK_STRUCT)
+            kind == TK_STRUCT || kind == TK_TYPE)
             return j;
     }
     return n;
@@ -485,11 +597,18 @@ uint struct_end(uint struct_i)
         uint kind = token_kind(j);
         if (is_open_brace(kind))
             return matching_brace_end(j);
+        if (token_in_item_type_params(j, struct_i))
+            continue;
         if (kind == TK_SEMICOLON || kind == TK_FN || kind == TK_CONST || kind == TK_ENUM ||
-            kind == TK_STRUCT)
+            kind == TK_STRUCT || kind == TK_TYPE)
             return j;
     }
     return n;
+}
+
+uint type_alias_end(uint alias_i)
+{
+    return statement_end(alias_i);
 }
 
 bool token_in_type_decl(uint token_i)
@@ -503,6 +622,8 @@ bool token_in_type_decl(uint token_i)
             return token_i < enum_end(j);
         if (token_kind(j) == TK_STRUCT)
             return token_i < struct_end(j);
+        if (token_kind(j) == TK_TYPE)
+            return token_i < type_alias_end(j);
     }
     return false;
 }
@@ -540,18 +661,27 @@ uint classify(uint i, out uint end)
         end = struct_end(i);
         return HIR_STRUCT_ITEM;
     }
+    if (kind == TK_TYPE)
+    {
+        end = type_alias_end(i);
+        return HIR_TYPE_ALIAS_ITEM;
+    }
     if (token_in_type_decl(i))
         return HIR_NONE;
     if (token_in_fn_type_params(i))
         return HIR_NONE;
+    if ((kind == TK_IDENT || kind == TK_TYPE_IDENT) && token_in_type_array_length(i))
+        return HIR_NONE;
     if (kind == TK_PARAM_IDENT ||
         (kind == TK_IDENT && i + 1u < n && token_kind(i + 1u) == TK_COLON &&
-         (i == 0u || (token_kind(i - 1u) != TK_LET && token_kind(i - 1u) != TK_CONST))))
+         (i == 0u || (token_kind(i - 1u) != TK_LET && token_kind(i - 1u) != TK_CONST &&
+                      token_kind(i - 1u) != TK_TYPE))))
         return HIR_PARAM;
     if (kind == TK_TYPE_IDENT ||
         (kind == TK_IDENT &&
          ((i > 0u && (token_kind(i - 1u) == TK_COLON || token_kind(i - 1u) == TK_ARROW)) ||
-          token_kind(i - 1u) == TK_AMPERSAND || token_in_type_array(i))))
+          token_kind(i - 1u) == TK_AMPERSAND || token_in_type_array(i) ||
+          token_in_shallow_generic_type_arg(i))))
         return HIR_TYPE;
     if (kind == TK_AMPERSAND)
     {
@@ -639,6 +769,7 @@ uint classify(uint i, out uint end)
     {
         uint prev = i > 0u ? token_kind(i - 1u) : 0u;
         if (prev == TK_FN || prev == TK_LET || prev == TK_DOT || prev == TK_CONST ||
+            prev == TK_TYPE ||
             prev == TK_ENUM || prev == TK_STRUCT)
             return HIR_NONE;
         return HIR_NAME_EXPR;

@@ -6,3 +6,28 @@ pub enum Option<T> {
     Some(T),
     None,
 }
+
+pub fn is_some<T>(value: Option<T>) -> bool {
+    return match (value) {
+        Some(inner) -> true,
+        None -> false,
+    };
+}
+
+pub fn is_none<T>(value: Option<T>) -> bool {
+    return match (value) {
+        Some(inner) -> false,
+        None -> true,
+    };
+}
+
+pub fn unwrap_or<T>(value: Option<T>, fallback: T) -> T {
+    return match (value) {
+        Some(inner) -> inner,
+        None -> fallback,
+    };
+}
+
+pub fn replace<T>(value: Option<T>, next: T) -> Option<T> {
+    return Some(next);
+}

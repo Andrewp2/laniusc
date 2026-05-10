@@ -1,0 +1,36 @@
+// Source-level networking host ABI declarations.
+
+module std::net;
+
+pub extern "lanius_std" fn tcp_connect(addr_ptr: u32, addr_len: usize, port: i32) -> i32;
+
+pub extern "lanius_std" fn tcp_bind(addr_ptr: u32, addr_len: usize, port: i32) -> i32;
+
+pub extern "lanius_std" fn tcp_listen(handle: i32, backlog: i32) -> i32;
+
+pub extern "lanius_std" fn tcp_accept(listener: i32) -> i32;
+
+pub extern "lanius_std" fn tcp_close(handle: i32) -> i32;
+
+pub extern "lanius_std" fn tcp_send(handle: i32, ptr: u32, len: usize) -> i32;
+
+pub extern "lanius_std" fn tcp_recv(handle: i32, ptr: u32, len: usize) -> i32;
+
+pub extern "lanius_std" fn udp_bind(addr_ptr: u32, addr_len: usize, port: i32) -> i32;
+
+pub extern "lanius_std" fn udp_send_to(
+    handle: i32,
+    addr_ptr: u32,
+    addr_len: usize,
+    port: i32,
+    ptr: u32,
+    len: usize,
+) -> i32;
+
+pub extern "lanius_std" fn udp_recv_from(
+    handle: i32,
+    addr_ptr: u32,
+    addr_len: usize,
+    ptr: u32,
+    len: usize,
+) -> i32;

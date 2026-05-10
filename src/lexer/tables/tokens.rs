@@ -127,6 +127,12 @@ pub enum TokenKind {
     Match,
     Import,
     Module,
+    Impl,
+    Trait,
+    For,
+    In,
+    Extern,
+    Type,
 }
 
 impl core::convert::TryFrom<u32> for TokenKind {
@@ -236,6 +242,12 @@ impl TokenKind {
             x if x == TokenKind::Match as u32 => TokenKind::Match,
             x if x == TokenKind::Import as u32 => TokenKind::Import,
             x if x == TokenKind::Module as u32 => TokenKind::Module,
+            x if x == TokenKind::Impl as u32 => TokenKind::Impl,
+            x if x == TokenKind::Trait as u32 => TokenKind::Trait,
+            x if x == TokenKind::For as u32 => TokenKind::For,
+            x if x == TokenKind::In as u32 => TokenKind::In,
+            x if x == TokenKind::Extern as u32 => TokenKind::Extern,
+            x if x == TokenKind::Type as u32 => TokenKind::Type,
             _ => return None,
         };
         Some(k)
@@ -340,6 +352,12 @@ impl TokenKind {
             "Match" => TokenKind::Match,
             "Import" => TokenKind::Import,
             "Module" => TokenKind::Module,
+            "Impl" => TokenKind::Impl,
+            "Trait" => TokenKind::Trait,
+            "For" => TokenKind::For,
+            "In" => TokenKind::In,
+            "Extern" => TokenKind::Extern,
+            "Type" => TokenKind::Type,
             _ => return None,
         };
         Some(k)
@@ -348,7 +366,7 @@ impl TokenKind {
 
 // used on GPU side too
 pub const INVALID_TOKEN: u32 = u32::MAX;
-pub const N_KINDS: u32 = TokenKind::Module as u32 + 1;
+pub const N_KINDS: u32 = TokenKind::Type as u32 + 1;
 
 #[cfg(test)]
 mod tests {

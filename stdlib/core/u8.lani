@@ -1,0 +1,78 @@
+// Module-form u8 helpers for source-level stdlib imports.
+
+module core::u8;
+
+pub const MIN: u8 = 0;
+pub const MAX: u8 = 255;
+
+pub fn min(left: u8, right: u8) -> u8 {
+    if (left < right) {
+        return left;
+    } else {
+        return right;
+    }
+}
+
+pub fn max(left: u8, right: u8) -> u8 {
+    if (left > right) {
+        return left;
+    } else {
+        return right;
+    }
+}
+
+pub fn clamp(value: u8, low: u8, high: u8) -> u8 {
+    if (value < low) {
+        return low;
+    } else {
+        if (value > high) {
+            return high;
+        } else {
+            return value;
+        }
+    }
+}
+
+pub fn wrapping_add(left: u8, right: u8) -> u8 {
+    return left + right;
+}
+
+pub fn wrapping_sub(left: u8, right: u8) -> u8 {
+    return left - right;
+}
+
+pub fn saturating_add(left: u8, right: u8) -> u8 {
+    if (left > MAX - right) {
+        return MAX;
+    } else {
+        return left + right;
+    }
+}
+
+pub fn saturating_sub(left: u8, right: u8) -> u8 {
+    if (left < right) {
+        return MIN;
+    } else {
+        return left - right;
+    }
+}
+
+pub fn is_ascii_digit(value: u8) -> bool {
+    return value >= 48 && value <= 57;
+}
+
+pub fn is_ascii_lowercase(value: u8) -> bool {
+    return value >= 97 && value <= 122;
+}
+
+pub fn is_ascii_uppercase(value: u8) -> bool {
+    return value >= 65 && value <= 90;
+}
+
+pub fn is_ascii_alphabetic(value: u8) -> bool {
+    return is_ascii_lowercase(value) || is_ascii_uppercase(value);
+}
+
+pub fn is_ascii_alphanumeric(value: u8) -> bool {
+    return is_ascii_alphabetic(value) || is_ascii_digit(value);
+}

@@ -22,13 +22,6 @@ struct WasmParams {
     n_hir_nodes: u32,
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, ShaderType)]
-struct BoolScanParams {
-    n_tokens: u32,
-    scan_step: u32,
-}
-
 pub struct RecordedWasmCodegen {
     output_capacity: usize,
     token_capacity: u32,
@@ -54,6 +47,7 @@ struct ResidentWasmBuffers {
     _bool_body_buf: wgpu::Buffer,
     _bool_body_status_buf: wgpu::Buffer,
     functions_dispatch_buf: wgpu::Buffer,
+    _functions_status_mode_buf: wgpu::Buffer,
     out_buf: wgpu::Buffer,
     packed_out_buf: wgpu::Buffer,
     status_buf: wgpu::Buffer,
@@ -61,10 +55,6 @@ struct ResidentWasmBuffers {
     status_readback: wgpu::Buffer,
     simple_bind_group: wgpu::BindGroup,
     arrays_bind_group: wgpu::BindGroup,
-    body_bind_group: wgpu::BindGroup,
-    bool_probe_bind_group: wgpu::BindGroup,
-    bool_body_bind_group: wgpu::BindGroup,
-    bool_compact_bind_group: wgpu::BindGroup,
     functions_probe_bind_group: wgpu::BindGroup,
     functions_bind_group: wgpu::BindGroup,
     bind_group: wgpu::BindGroup,
@@ -74,11 +64,6 @@ struct ResidentWasmBuffers {
 pub struct GpuWasmCodeGenerator {
     simple_pass: PassData,
     arrays_pass: PassData,
-    body_pass: PassData,
-    bool_probe_pass: PassData,
-    bool_body_pass: PassData,
-    bool_scan_pass: PassData,
-    bool_compact_pass: PassData,
     functions_probe_pass: PassData,
     functions_pass: PassData,
     pass: PassData,
@@ -112,63 +97,6 @@ impl GpuWasmCodeGenerator {
             )),
         )?;
         trace_wasm_codegen("arrays.pipeline.done");
-        trace_wasm_codegen("body.pipeline.start");
-        let body_pass = make_pass_data(
-            &gpu.device,
-            "codegen_wasm_body",
-            "main",
-            include_bytes!(concat!(env!("OUT_DIR"), "/shaders/wasm_body.spv")),
-            include_bytes!(concat!(env!("OUT_DIR"), "/shaders/wasm_body.reflect.json")),
-        )?;
-        trace_wasm_codegen("body.pipeline.done");
-        trace_wasm_codegen("bool_probe.pipeline.start");
-        let bool_probe_pass = make_pass_data(
-            &gpu.device,
-            "codegen_wasm_bool_probe",
-            "main",
-            include_bytes!(concat!(env!("OUT_DIR"), "/shaders/wasm_bool_probe.spv")),
-            include_bytes!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/wasm_bool_probe.reflect.json"
-            )),
-        )?;
-        trace_wasm_codegen("bool_probe.pipeline.done");
-        trace_wasm_codegen("bool_body.pipeline.start");
-        let bool_body_pass = make_pass_data(
-            &gpu.device,
-            "codegen_wasm_bool_body",
-            "main",
-            include_bytes!(concat!(env!("OUT_DIR"), "/shaders/wasm_bool_body.spv")),
-            include_bytes!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/wasm_bool_body.reflect.json"
-            )),
-        )?;
-        trace_wasm_codegen("bool_body.pipeline.done");
-        trace_wasm_codegen("bool_scan.pipeline.start");
-        let bool_scan_pass = make_pass_data(
-            &gpu.device,
-            "codegen_wasm_bool_scan",
-            "main",
-            include_bytes!(concat!(env!("OUT_DIR"), "/shaders/wasm_bool_scan.spv")),
-            include_bytes!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/wasm_bool_scan.reflect.json"
-            )),
-        )?;
-        trace_wasm_codegen("bool_scan.pipeline.done");
-        trace_wasm_codegen("bool_compact.pipeline.start");
-        let bool_compact_pass = make_pass_data(
-            &gpu.device,
-            "codegen_wasm_bool_compact",
-            "main",
-            include_bytes!(concat!(env!("OUT_DIR"), "/shaders/wasm_bool_compact.spv")),
-            include_bytes!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/wasm_bool_compact.reflect.json"
-            )),
-        )?;
-        trace_wasm_codegen("bool_compact.pipeline.done");
         trace_wasm_codegen("module.pipeline.start");
         let pass = make_pass_data(
             &gpu.device,
@@ -223,11 +151,6 @@ impl GpuWasmCodeGenerator {
         Ok(Self {
             simple_pass,
             arrays_pass,
-            body_pass,
-            bool_probe_pass,
-            bool_body_pass,
-            bool_scan_pass,
-            bool_compact_pass,
             functions_probe_pass,
             functions_pass,
             pass,
@@ -306,9 +229,15 @@ impl GpuWasmCodeGenerator {
         queue.write_buffer(&bufs._bool_body_status_buf, 0, &zero_status_bytes());
         queue.write_buffer(&bufs.status_buf, 0, &fast_path_status_init_bytes());
         encoder.clear_buffer(&bufs.body_dispatch_buf, 0, None);
-        encoder.clear_buffer(&bufs.functions_dispatch_buf, 0, None);
 
         let simple_groups = token_capacity.div_ceil(256).max(1);
+        let function_groups = (output_capacity as u32).div_ceil(256).max(1);
+        let (function_groups_x, function_groups_y) = workgroup_grid_1d(function_groups);
+        queue.write_buffer(
+            &bufs.functions_dispatch_buf,
+            0,
+            &dispatch_args_bytes(function_groups_x, function_groups_y, 1),
+        );
         let packed_output_groups = ((output_capacity as u32).div_ceil(4)).div_ceil(256).max(1);
         let (packed_output_groups_x, packed_output_groups_y) =
             workgroup_grid_1d(packed_output_groups);
@@ -331,44 +260,6 @@ impl GpuWasmCodeGenerator {
         drop(compute);
 
         let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("codegen.wasm.bool_probe"),
-            timestamp_writes: None,
-        });
-        compute.set_pipeline(&self.bool_probe_pass.pipeline);
-        compute.set_bind_group(0, Some(&bufs.bool_probe_bind_group), &[]);
-        compute.dispatch_workgroups(simple_groups, 1, 1);
-        drop(compute);
-
-        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("codegen.wasm.bool_body"),
-            timestamp_writes: None,
-        });
-        compute.set_pipeline(&self.bool_body_pass.pipeline);
-        compute.set_bind_group(0, Some(&bufs.bool_body_bind_group), &[]);
-        compute.dispatch_workgroups(simple_groups, 1, 1);
-        drop(compute);
-
-        self.record_bool_scan(device, encoder, bufs, token_count_buf, token_capacity)?;
-
-        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("codegen.wasm.bool_compact"),
-            timestamp_writes: None,
-        });
-        compute.set_pipeline(&self.bool_compact_pass.pipeline);
-        compute.set_bind_group(0, Some(&bufs.bool_compact_bind_group), &[]);
-        compute.dispatch_workgroups(simple_groups, 1, 1);
-        drop(compute);
-
-        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("codegen.wasm.body"),
-            timestamp_writes: None,
-        });
-        compute.set_pipeline(&self.body_pass.pipeline);
-        compute.set_bind_group(0, Some(&bufs.body_bind_group), &[]);
-        compute.dispatch_workgroups_indirect(&bufs.body_dispatch_buf, 0);
-        drop(compute);
-
-        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("codegen.wasm.module"),
             timestamp_writes: None,
         });
@@ -376,6 +267,7 @@ impl GpuWasmCodeGenerator {
         compute.set_bind_group(0, Some(&bufs.bind_group), &[]);
         compute.dispatch_workgroups(packed_output_groups_x, packed_output_groups_y, 1);
         drop(compute);
+        encoder.copy_buffer_to_buffer(&bufs._functions_status_mode_buf, 0, &bufs.status_buf, 4, 4);
 
         let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("codegen.wasm.functions_probe"),
@@ -409,124 +301,6 @@ impl GpuWasmCodeGenerator {
             output_capacity,
             token_capacity,
         })
-    }
-
-    fn record_bool_scan(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        bufs: &ResidentWasmBuffers,
-        token_count_buf: &wgpu::Buffer,
-        token_capacity: u32,
-    ) -> Result<()> {
-        self.record_bool_scan_step(
-            device,
-            encoder,
-            bufs,
-            token_count_buf,
-            token_capacity,
-            0,
-            false,
-            true,
-        )?;
-        let mut scan_step = 1u32;
-        let mut current_is_a = true;
-        while scan_step < token_capacity {
-            self.record_bool_scan_step(
-                device,
-                encoder,
-                bufs,
-                token_count_buf,
-                token_capacity,
-                scan_step,
-                current_is_a,
-                !current_is_a,
-            )?;
-            current_is_a = !current_is_a;
-            scan_step = scan_step.saturating_mul(2);
-        }
-        self.record_bool_scan_step(
-            device,
-            encoder,
-            bufs,
-            token_count_buf,
-            token_capacity,
-            token_capacity,
-            current_is_a,
-            !current_is_a,
-        )
-    }
-
-    fn record_bool_scan_step(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        bufs: &ResidentWasmBuffers,
-        token_count_buf: &wgpu::Buffer,
-        token_capacity: u32,
-        scan_step: u32,
-        read_from_a: bool,
-        write_to_a: bool,
-    ) -> Result<()> {
-        let params = BoolScanParams {
-            n_tokens: token_capacity,
-            scan_step,
-        };
-        let params_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("codegen.wasm.bool_scan.params"),
-            contents: &bool_scan_params_bytes(&params),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
-        let prefix_in = if read_from_a {
-            &bufs._bool_prefix_a_buf
-        } else {
-            &bufs._bool_prefix_b_buf
-        };
-        let prefix_out = if write_to_a {
-            &bufs._bool_prefix_a_buf
-        } else {
-            &bufs._bool_prefix_b_buf
-        };
-        let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-            ("gScan".into(), params_buf.as_entire_binding()),
-            ("token_count".into(), token_count_buf.as_entire_binding()),
-            (
-                "bool_probe_status".into(),
-                bufs._bool_probe_status_buf.as_entire_binding(),
-            ),
-            (
-                "bool_stmt_len".into(),
-                bufs._bool_stmt_len_buf.as_entire_binding(),
-            ),
-            ("prefix_in".into(), prefix_in.as_entire_binding()),
-            ("prefix_out".into(), prefix_out.as_entire_binding()),
-            (
-                "bool_stmt_offsets".into(),
-                bufs._bool_stmt_offsets_buf.as_entire_binding(),
-            ),
-            (
-                "bool_scan_status".into(),
-                bufs._bool_scan_status_buf.as_entire_binding(),
-            ),
-        ]);
-        let bind_group = bind_group::create_bind_group_from_reflection(
-            device,
-            Some("codegen_wasm_bool_scan"),
-            &self.bool_scan_pass.bind_group_layouts[0],
-            &self.bool_scan_pass.reflection,
-            0,
-            &resources,
-        )?;
-        let groups = token_capacity.div_ceil(256).max(1);
-        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("codegen.wasm.bool_scan"),
-            timestamp_writes: None,
-        });
-        compute.set_pipeline(&self.bool_scan_pass.pipeline);
-        compute.set_bind_group(0, Some(&bind_group), &[]);
-        compute.dispatch_workgroups(groups, 1, 1);
-        drop(compute);
-        Ok(())
     }
 
     pub fn finish_recorded_wasm(
@@ -726,6 +500,12 @@ impl GpuWasmCodeGenerator {
             3,
             wgpu::BufferUsages::INDIRECT,
         );
+        let functions_status_mode_buf =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("codegen.wasm.functions_status_mode"),
+                contents: &4u32.to_le_bytes(),
+                usage: wgpu::BufferUsages::COPY_SRC,
+            });
         let status_buf = storage_u32_rw(
             device,
             "codegen.wasm.status",
@@ -777,115 +557,6 @@ impl GpuWasmCodeGenerator {
             &self.arrays_pass.reflection,
             0,
             &arrays_resources,
-        )?;
-
-        let body_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-            ("gParams".into(), params_buf.as_entire_binding()),
-            ("token_words".into(), token_buf.as_entire_binding()),
-            ("token_count".into(), token_count_buf.as_entire_binding()),
-            ("source_bytes".into(), source_buf.as_entire_binding()),
-            ("visible_decl".into(), visible_decl_buf.as_entire_binding()),
-            ("array_len".into(), array_len_buf.as_entire_binding()),
-            ("array_values".into(), array_values_buf.as_entire_binding()),
-            (
-                "bool_body_status".into(),
-                bool_body_status_buf.as_entire_binding(),
-            ),
-            ("body_words".into(), body_buf.as_entire_binding()),
-            ("body_status".into(), body_status_buf.as_entire_binding()),
-        ]);
-        let body_bind_group = bind_group::create_bind_group_from_reflection(
-            device,
-            Some("codegen_wasm_body"),
-            &self.body_pass.bind_group_layouts[0],
-            &self.body_pass.reflection,
-            0,
-            &body_resources,
-        )?;
-
-        let bool_probe_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-            ("gParams".into(), params_buf.as_entire_binding()),
-            ("token_words".into(), token_buf.as_entire_binding()),
-            ("token_count".into(), token_count_buf.as_entire_binding()),
-            (
-                "bool_probe_status".into(),
-                bool_probe_status_buf.as_entire_binding(),
-            ),
-        ]);
-        let bool_probe_bind_group = bind_group::create_bind_group_from_reflection(
-            device,
-            Some("codegen_wasm_bool_probe"),
-            &self.bool_probe_pass.bind_group_layouts[0],
-            &self.bool_probe_pass.reflection,
-            0,
-            &bool_probe_resources,
-        )?;
-
-        let bool_body_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-            ("gParams".into(), params_buf.as_entire_binding()),
-            ("token_words".into(), token_buf.as_entire_binding()),
-            ("token_count".into(), token_count_buf.as_entire_binding()),
-            ("source_bytes".into(), source_buf.as_entire_binding()),
-            ("visible_decl".into(), visible_decl_buf.as_entire_binding()),
-            ("body_status".into(), body_status_buf.as_entire_binding()),
-            (
-                "bool_probe_status".into(),
-                bool_probe_status_buf.as_entire_binding(),
-            ),
-            (
-                "body_dispatch_args".into(),
-                body_dispatch_buf.as_entire_binding(),
-            ),
-            (
-                "bool_body_slots".into(),
-                bool_body_slots_buf.as_entire_binding(),
-            ),
-            (
-                "bool_stmt_len".into(),
-                bool_stmt_len_buf.as_entire_binding(),
-            ),
-        ]);
-        let bool_body_bind_group = bind_group::create_bind_group_from_reflection(
-            device,
-            Some("codegen_wasm_bool_body"),
-            &self.bool_body_pass.bind_group_layouts[0],
-            &self.bool_body_pass.reflection,
-            0,
-            &bool_body_resources,
-        )?;
-
-        let bool_compact_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-            ("gParams".into(), params_buf.as_entire_binding()),
-            ("token_count".into(), token_count_buf.as_entire_binding()),
-            (
-                "bool_body_slots".into(),
-                bool_body_slots_buf.as_entire_binding(),
-            ),
-            (
-                "bool_stmt_len".into(),
-                bool_stmt_len_buf.as_entire_binding(),
-            ),
-            (
-                "bool_stmt_offsets".into(),
-                bool_stmt_offsets_buf.as_entire_binding(),
-            ),
-            (
-                "bool_scan_status".into(),
-                bool_scan_status_buf.as_entire_binding(),
-            ),
-            ("bool_body_words".into(), bool_body_buf.as_entire_binding()),
-            (
-                "bool_body_status".into(),
-                bool_body_status_buf.as_entire_binding(),
-            ),
-        ]);
-        let bool_compact_bind_group = bind_group::create_bind_group_from_reflection(
-            device,
-            Some("codegen_wasm_bool_compact"),
-            &self.bool_compact_pass.bind_group_layouts[0],
-            &self.bool_compact_pass.reflection,
-            0,
-            &bool_compact_resources,
         )?;
 
         let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
@@ -984,6 +655,7 @@ impl GpuWasmCodeGenerator {
             _bool_body_buf: bool_body_buf,
             _bool_body_status_buf: bool_body_status_buf,
             functions_dispatch_buf,
+            _functions_status_mode_buf: functions_status_mode_buf,
             out_buf,
             packed_out_buf,
             status_buf,
@@ -991,10 +663,6 @@ impl GpuWasmCodeGenerator {
             status_readback,
             simple_bind_group,
             arrays_bind_group,
-            body_bind_group,
-            bool_probe_bind_group,
-            bool_body_bind_group,
-            bool_compact_bind_group,
             functions_probe_bind_group,
             functions_bind_group,
             bind_group,
@@ -1016,13 +684,6 @@ fn wasm_params_bytes(params: &WasmParams) -> Vec<u8> {
     ub.as_ref().to_vec()
 }
 
-fn bool_scan_params_bytes(params: &BoolScanParams) -> Vec<u8> {
-    let mut ub = encase::UniformBuffer::new(Vec::<u8>::new());
-    ub.write(params)
-        .expect("failed to encode WASM bool scan params");
-    ub.as_ref().to_vec()
-}
-
 fn fast_path_status_init_bytes() -> [u8; 8] {
     let mut bytes = [0u8; 8];
     bytes[4..8].copy_from_slice(&2u32.to_le_bytes());
@@ -1031,6 +692,14 @@ fn fast_path_status_init_bytes() -> [u8; 8] {
 
 fn zero_status_bytes() -> [u8; 8] {
     [0u8; 8]
+}
+
+fn dispatch_args_bytes(x: u32, y: u32, z: u32) -> [u8; 12] {
+    let mut bytes = [0u8; 12];
+    bytes[0..4].copy_from_slice(&x.to_le_bytes());
+    bytes[4..8].copy_from_slice(&y.to_le_bytes());
+    bytes[8..12].copy_from_slice(&z.to_le_bytes());
+    bytes
 }
 
 fn read_wasm_output(

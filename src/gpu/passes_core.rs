@@ -106,6 +106,7 @@ pub fn pipeline_from_spirv_and_bgls(
     spirv: &'static [u8],
     bgls: &[&wgpu::BindGroupLayout],
 ) -> wgpu::ComputePipeline {
+    trace_pipeline(label, "shader_module.start");
     let module = if label == "codegen_wasm_body"
         || label == "codegen_wasm_functions"
         || label == "codegen_x86_elf"
@@ -125,6 +126,8 @@ pub fn pipeline_from_spirv_and_bgls(
             ))
         }
     };
+    trace_pipeline(label, "shader_module.done");
+    trace_pipeline(label, "pipeline_layout.start");
     // let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
     //     label: Some(label),
     //     source: wgpu::util::make_spirv(spirv),
@@ -134,6 +137,8 @@ pub fn pipeline_from_spirv_and_bgls(
         bind_group_layouts: bgls,
         push_constant_ranges: &[],
     });
+    trace_pipeline(label, "pipeline_layout.done");
+    trace_pipeline(label, "compute_pipeline.start");
     let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
         label: Some(label),
         layout: Some(&pl),
@@ -142,7 +147,14 @@ pub fn pipeline_from_spirv_and_bgls(
         compilation_options: wgpu::PipelineCompilationOptions::default(),
         cache: crate::gpu::device::pipeline_cache_for(device).as_deref(),
     });
+    trace_pipeline(label, "compute_pipeline.done");
     pipeline
+}
+
+fn trace_pipeline(label: &str, stage: &str) {
+    if std::env::var("LANIUS_PIPELINE_TRACE").ok().as_deref() == Some("1") {
+        eprintln!("[laniusc][pipeline][{label}] {stage}");
+    }
 }
 
 pub fn make_pass_data(

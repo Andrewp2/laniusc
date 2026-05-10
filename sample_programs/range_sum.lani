@@ -1,0 +1,11 @@
+import core::range;
+
+fn main() {
+    let range: core::range::Range<i32> = core::range::range_i32(2, 6);
+    let total: i32 = 0;
+    for index in range {
+        total += index;
+    }
+    print(total + core::range::start_i32(range) + core::range::end_i32(range) + range.start() + range.end());
+    return 0;
+}

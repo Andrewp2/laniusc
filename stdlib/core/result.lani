@@ -6,3 +6,24 @@ pub enum Result<T, E> {
     Ok(T),
     Err(E),
 }
+
+pub fn is_ok<T, E>(value: Result<T, E>) -> bool {
+    return match (value) {
+        Ok(inner) -> true,
+        Err(error) -> false,
+    };
+}
+
+pub fn is_err<T, E>(value: Result<T, E>) -> bool {
+    return match (value) {
+        Ok(inner) -> false,
+        Err(error) -> true,
+    };
+}
+
+pub fn unwrap_or<T, E>(value: Result<T, E>, fallback: T) -> T {
+    return match (value) {
+        Ok(inner) -> inner,
+        Err(error) -> fallback,
+    };
+}

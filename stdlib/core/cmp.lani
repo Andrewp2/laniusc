@@ -1,0 +1,43 @@
+// Declaration seeds for core comparison traits.
+
+module core::cmp;
+
+pub trait Eq<T> {
+    pub fn eq(left: T, right: T) -> bool;
+    pub fn ne(left: T, right: T) -> bool;
+}
+
+pub trait Ord<T> {
+    pub fn lt(left: T, right: T) -> bool;
+    pub fn le(left: T, right: T) -> bool;
+    pub fn gt(left: T, right: T) -> bool;
+    pub fn ge(left: T, right: T) -> bool;
+}
+
+pub impl Eq<i32> for i32 {
+    pub fn eq(left: i32, right: i32) -> bool {
+        return left == right;
+    }
+
+    pub fn ne(left: i32, right: i32) -> bool {
+        return left != right;
+    }
+}
+
+pub impl Ord<i32> for i32 {
+    pub fn lt(left: i32, right: i32) -> bool {
+        return left < right;
+    }
+
+    pub fn le(left: i32, right: i32) -> bool {
+        return left <= right;
+    }
+
+    pub fn gt(left: i32, right: i32) -> bool {
+        return left > right;
+    }
+
+    pub fn ge(left: i32, right: i32) -> bool {
+        return left >= right;
+    }
+}

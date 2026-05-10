@@ -1,0 +1,17 @@
+// Declaration seeds for core hashing traits.
+
+module core::hash;
+
+pub trait Hash<T> {
+    pub fn hash(value: T) -> u32;
+}
+
+pub impl Hash<i32> for i32 {
+    pub fn hash(value: i32) -> u32 {
+        return value;
+    }
+}
+
+pub fn hash_i32(value: i32) -> u32 {
+    return value.hash();
+}

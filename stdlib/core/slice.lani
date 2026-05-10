@@ -1,0 +1,41 @@
+// Source-level slice helpers for [i32] views.
+// Slices do not have runtime metadata yet, so helpers take length explicitly.
+
+module core::slice;
+
+pub fn first_i32(values: [i32]) -> i32 {
+    return values[0];
+}
+
+pub fn get_or_i32(values: [i32], len: i32, index: i32, fallback: i32) -> i32 {
+    if (index < 0) {
+        return fallback;
+    } else {
+        if (index >= len) {
+            return fallback;
+        } else {
+            return values[index];
+        }
+    }
+}
+
+pub fn contains_i32(values: [i32], len: i32, needle: i32) -> bool {
+    let index: i32 = 0;
+    while (index < len) {
+        if (values[index] == needle) {
+            return true;
+        }
+        index += 1;
+    }
+    return false;
+}
+
+pub fn sum_i32(values: [i32], len: i32) -> i32 {
+    let index: i32 = 0;
+    let total: i32 = 0;
+    while (index < len) {
+        total += values[index];
+        index += 1;
+    }
+    return total;
+}

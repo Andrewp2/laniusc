@@ -288,10 +288,21 @@ uint let_decl_statement_end(uint decl_i)
 {
     uint n = active_token_count();
     uint bracket_depth = 0u;
+    uint brace_depth = 0u;
     [loop]
     for (uint j = decl_i + 1u; j < n; j += 1u)
     {
         uint kind = token_kind(j);
+        if (is_open_block_token(kind) && j > 0u && token_kind(j - 1u) == TK_IDENT)
+        {
+            brace_depth += 1u;
+            continue;
+        }
+        if (is_close_block_token(kind) && brace_depth > 0u)
+        {
+            brace_depth -= 1u;
+            continue;
+        }
         if (is_bracket_open_token(kind))
         {
             bracket_depth += 1u;
@@ -303,9 +314,9 @@ uint let_decl_statement_end(uint decl_i)
                 bracket_depth -= 1u;
             continue;
         }
-        if (kind == TK_SEMICOLON && bracket_depth == 0u)
+        if (kind == TK_SEMICOLON && bracket_depth == 0u && brace_depth == 0u)
             return j;
-        if (bracket_depth == 0u &&
+        if (bracket_depth == 0u && brace_depth == 0u &&
             (kind == TK_FN || is_open_block_token(kind) || is_close_block_token(kind)))
             return INVALID;
     }

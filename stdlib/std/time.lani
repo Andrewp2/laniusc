@@ -1,0 +1,9 @@
+// Source-level time host ABI declarations.
+
+module std::time;
+
+pub extern "lanius_std" fn monotonic_now_ns() -> i64;
+
+pub extern "lanius_std" fn system_now_unix_ms() -> i64;
+
+pub extern "lanius_std" fn sleep_ms(milliseconds: i64) -> i32;

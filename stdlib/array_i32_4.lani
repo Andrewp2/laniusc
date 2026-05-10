@@ -2,6 +2,34 @@
 // The language does not have generics or const parameters yet, so this file is
 // intentionally specific to one element type and length.
 
+pub fn lstd_i32x4_len() -> i32 {
+    return 4;
+}
+
+pub fn lstd_i32x4_is_empty() -> bool {
+    return false;
+}
+
+pub fn lstd_i32x4_first(values: [i32; 4]) -> i32 {
+    return values[0];
+}
+
+pub fn lstd_i32x4_last(values: [i32; 4]) -> i32 {
+    return values[3];
+}
+
+pub fn lstd_i32x4_copy(values: [i32; 4]) -> [i32; 4] {
+    return values;
+}
+
+pub fn lstd_i32x4_filled(value: i32) -> [i32; 4] {
+    return [value, value, value, value];
+}
+
+pub fn lstd_i32x4_reversed(values: [i32; 4]) -> [i32; 4] {
+    return [values[3], values[2], values[1], values[0]];
+}
+
 pub fn lstd_i32x4_sum(values: [i32; 4]) -> i32 {
     let index: i32 = 0;
     let total: i32 = 0;
@@ -65,4 +93,27 @@ pub fn lstd_i32x4_contains(values: [i32; 4], needle: i32) -> bool {
         index += 1;
     }
     return 1 == 0;
+}
+
+pub fn lstd_i32x4_count(values: [i32; 4], needle: i32) -> i32 {
+    let index: i32 = 0;
+    let total: i32 = 0;
+    while (index < 4) {
+        if (values[index] == needle) {
+            total += 1;
+        }
+        index += 1;
+    }
+    return total;
+}
+
+pub fn lstd_i32x4_index_of_or(values: [i32; 4], needle: i32, fallback: i32) -> i32 {
+    let index: i32 = 0;
+    while (index < 4) {
+        if (values[index] == needle) {
+            return index;
+        }
+        index += 1;
+    }
+    return fallback;
 }

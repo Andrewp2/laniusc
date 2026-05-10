@@ -5,6 +5,8 @@
 //! We generate using the **shared** generator (same as fuzz_lex/perf_one).
 //! It produces at least `target_len` bytes and always appends a safe trailer.
 
+mod common;
+
 use std::{fs, io::Write, path::Path};
 
 use laniusc::{
@@ -175,7 +177,7 @@ async fn run_one(target_len: usize, seed: u64) {
 /// Sweep 0..=31 target lengths. (Fast; runs by default.)
 #[test]
 fn size_sweep_small_targets() {
-    pollster::block_on(async {
+    common::block_on_gpu_with_timeout("GPU lexer small size sweep", async move {
         let seed = env_u64("SIZE_SWEEP_SEED", 42);
         for len in 0..=31 {
             run_one(len, seed).await;
@@ -188,7 +190,7 @@ fn size_sweep_small_targets() {
 #[test]
 #[ignore]
 fn size_sweep_powers_of_two() {
-    pollster::block_on(async {
+    common::block_on_gpu_with_timeout("GPU lexer large size sweep", async move {
         let seed = env_u64("SIZE_SWEEP_SEED", 42);
         let max_len = env_usize("SIZE_SWEEP_MAX", 10_000_000);
 

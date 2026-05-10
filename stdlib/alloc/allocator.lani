@@ -1,0 +1,8 @@
+// Source-level allocator ABI declarations.
+
+module alloc::allocator;
+
+pub extern "lanius_alloc" fn alloc(size: usize, align: usize) -> u32;
+pub extern "lanius_alloc" fn realloc(ptr: u32, old_size: usize, new_size: usize, align: usize) -> u32;
+pub extern "lanius_alloc" fn dealloc(ptr: u32, size: usize, align: usize);
+pub extern "lanius_alloc" fn alloc_failed(size: usize, align: usize);

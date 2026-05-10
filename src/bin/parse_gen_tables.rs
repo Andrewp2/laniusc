@@ -1054,6 +1054,11 @@ fn default_projection_witnesses() -> Vec<Vec<TokenKind>> {
         params_more.extend_from_slice(&[RParen, LBrace, RBrace]);
         witnesses.push(params_more);
 
+        let mut params_trailing = vec![Fn, Ident, LParen, Ident, Colon];
+        params_trailing.extend_from_slice(ty);
+        params_trailing.extend_from_slice(&[Comma, RParen, LBrace, RBrace]);
+        witnesses.push(params_trailing);
+
         let mut let_type = vec![Let, Ident, Colon];
         let_type.extend_from_slice(ty);
         let_type.push(Semicolon);
@@ -1540,23 +1545,54 @@ fn build_meta(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::OnceLock;
+
     use super::*;
+
+    struct CurrentGrammarFixture {
+        spec: GrammarSpec,
+        analysis: GrammarAnalysis,
+        predictions: Vec<Prediction>,
+    }
+
+    struct CurrentProjectedFixture {
+        tables: PrecomputedParseTables,
+        projection: SummaryProjection,
+    }
+
+    fn current_grammar_fixture() -> &'static CurrentGrammarFixture {
+        static FIXTURE: OnceLock<CurrentGrammarFixture> = OnceLock::new();
+        FIXTURE.get_or_init(|| {
+            let spec =
+                parse_grammar(include_str!("../../grammar/lanius.bnf")).expect("parse grammar");
+            let analysis = analyze_grammar(&spec);
+            let predictions = build_ll1_predictions(&spec, &analysis).expect("ll1 predictions");
+            CurrentGrammarFixture {
+                spec,
+                analysis,
+                predictions,
+            }
+        })
+    }
+
+    fn current_projected_fixture() -> &'static CurrentProjectedFixture {
+        static FIXTURE: OnceLock<CurrentProjectedFixture> = OnceLock::new();
+        FIXTURE.get_or_init(|| {
+            let current = current_grammar_fixture();
+            let prod_arity = compute_prod_arity(&current.spec.productions);
+            let (tables, projection, _) =
+                build_projected_precomputed_tables(&current.spec, &current.predictions, prod_arity)
+                    .expect("project tables");
+            CurrentProjectedFixture { tables, projection }
+        })
+    }
 
     fn parse_with_predictions(
         spec: &GrammarSpec,
-        analysis: &GrammarAnalysis,
+        predictions: &[Prediction],
         input: &[TokenKind],
     ) -> Result<Vec<String>> {
-        let predictions = build_ll1_predictions(spec, analysis)?;
-        let predict_map = predictions
-            .into_iter()
-            .map(|entry| {
-                (
-                    (entry.nonterminal, entry.lookahead),
-                    entry.production as usize,
-                )
-            })
-            .collect::<HashMap<_, _>>();
+        let predict_map = build_predict_map(predictions);
 
         let mut stack = vec![Sym::NonTerminal(spec.start.clone())];
         let mut pos = 0usize;
@@ -1604,19 +1640,10 @@ mod tests {
 
     fn prediction_chunks_by_pair(
         spec: &GrammarSpec,
-        analysis: &GrammarAnalysis,
+        predictions: &[Prediction],
         input: &[TokenKind],
     ) -> Result<BTreeMap<(u32, u32), Vec<String>>> {
-        let predictions = build_ll1_predictions(spec, analysis)?;
-        let predict_map = predictions
-            .into_iter()
-            .map(|entry| {
-                (
-                    (entry.nonterminal, entry.lookahead),
-                    entry.production as usize,
-                )
-            })
-            .collect::<HashMap<_, _>>();
+        let predict_map = build_predict_map(predictions);
 
         let mut chunks_by_pos = vec![Vec::new(); input.len() + 1];
         let mut stack = vec![Sym::NonTerminal(spec.start.clone())];
@@ -1691,26 +1718,23 @@ mod tests {
 
     #[test]
     fn current_grammar_is_clean_at_generator_boundary() {
-        let spec = parse_grammar(include_str!("../../grammar/lanius.bnf")).expect("parse grammar");
-        let analysis = analyze_grammar(&spec);
-        let predictions = build_ll1_predictions(&spec, &analysis).expect("ll1 predictions");
+        let current = current_grammar_fixture();
 
-        assert_eq!(spec.start, "file");
-        assert!(!predictions.is_empty());
+        assert_eq!(current.spec.start, "file");
+        assert!(!current.predictions.is_empty());
         assert!(
-            !diagnostics_are_fatal(&analysis.diagnostics),
+            !diagnostics_are_fatal(&current.analysis.diagnostics),
             "{}",
-            format_diagnostics(&analysis.diagnostics)
+            format_diagnostics(&current.analysis.diagnostics)
         );
     }
 
     #[test]
     fn ll1_predictions_parse_expression_stream() {
-        let spec = parse_grammar(include_str!("../../grammar/lanius.bnf")).expect("parse grammar");
-        let analysis = analyze_grammar(&spec);
+        let current = current_grammar_fixture();
         let tags = parse_with_predictions(
-            &spec,
-            &analysis,
+            &current.spec,
+            &current.predictions,
             &[
                 TokenKind::Ident,
                 TokenKind::Plus,
@@ -1730,16 +1754,11 @@ mod tests {
 
     #[test]
     fn projected_tables_emit_expression_pairs() {
-        let spec = parse_grammar(include_str!("../../grammar/lanius.bnf")).expect("parse grammar");
-        let analysis = analyze_grammar(&spec);
-        let predictions = build_ll1_predictions(&spec, &analysis).expect("ll1 predictions");
-        let prod_arity = compute_prod_arity(&spec.productions);
-        let (tables, projection, _) =
-            build_projected_precomputed_tables(&spec, &predictions, prod_arity)
-                .expect("project tables");
+        let current = current_grammar_fixture();
+        let projected = current_projected_fixture();
 
-        assert!(!projection.pp.cells.is_empty());
-        assert!(!projection.sc.cells.is_empty());
+        assert!(!projected.projection.pp.cells.is_empty());
+        assert!(!projected.projection.sc.cells.is_empty());
 
         let input = [
             EOF_TOKEN,
@@ -1751,15 +1770,15 @@ mod tests {
         ];
         let mut emitted = Vec::new();
         for pair in input.windows(2) {
-            let idx = (pair[0] as usize) * (tables.n_kinds as usize) + (pair[1] as usize);
-            let off = tables.pp_off[idx] as usize;
-            let len = tables.pp_len[idx] as usize;
-            emitted.extend_from_slice(&tables.pp_superseq[off..off + len]);
+            let idx = (pair[0] as usize) * (projected.tables.n_kinds as usize) + (pair[1] as usize);
+            let off = projected.tables.pp_off[idx] as usize;
+            let len = projected.tables.pp_len[idx] as usize;
+            emitted.extend_from_slice(&projected.tables.pp_superseq[off..off + len]);
         }
 
         let tags = emitted
             .iter()
-            .map(|id| spec.productions[*id as usize].tag.as_str())
+            .map(|id| current.spec.productions[*id as usize].tag.as_str())
             .collect::<Vec<_>>();
 
         assert!(tags.contains(&"expr"));
@@ -1771,12 +1790,7 @@ mod tests {
 
     #[test]
     fn candidate_llp_stack_summaries_are_projected_for_raw_tokens() {
-        let spec = parse_grammar(include_str!("../../grammar/lanius.bnf")).expect("parse grammar");
-        let analysis = analyze_grammar(&spec);
-        let predictions = build_ll1_predictions(&spec, &analysis).expect("ll1 predictions");
-        let witnesses = default_projection_witnesses();
-        let projection =
-            project_pair_summaries(&spec, &predictions, &witnesses).expect("project summaries");
+        let projection = &current_projected_fixture().projection;
 
         assert!(!projection.sc.cells.is_empty());
         assert!(!projection.pp.cells.is_empty());
@@ -1784,11 +1798,10 @@ mod tests {
 
     #[test]
     fn ll1_predictions_parse_empty_array() {
-        let spec = parse_grammar(include_str!("../../grammar/lanius.bnf")).expect("parse grammar");
-        let analysis = analyze_grammar(&spec);
+        let current = current_grammar_fixture();
         let tags = parse_with_predictions(
-            &spec,
-            &analysis,
+            &current.spec,
+            &current.predictions,
             &[
                 TokenKind::LBracket,
                 TokenKind::RBracket,
@@ -1803,12 +1816,11 @@ mod tests {
 
     #[test]
     fn raw_closing_delimiters_share_rparen_projection_pairs() {
-        let spec = parse_grammar(include_str!("../../grammar/lanius.bnf")).expect("parse grammar");
-        let analysis = analyze_grammar(&spec);
+        let current = current_grammar_fixture();
 
         let group = prediction_chunks_by_pair(
-            &spec,
-            &analysis,
+            &current.spec,
+            &current.predictions,
             &[
                 TokenKind::LParen,
                 TokenKind::Ident,
@@ -1818,8 +1830,8 @@ mod tests {
         )
         .expect("parse grouped expression");
         let call = prediction_chunks_by_pair(
-            &spec,
-            &analysis,
+            &current.spec,
+            &current.predictions,
             &[
                 TokenKind::Ident,
                 TokenKind::LParen,

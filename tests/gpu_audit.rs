@@ -318,10 +318,6 @@ fn gpu_wasm_bool_body_emits_top_level_statements_in_parallel() {
 fn gpu_wasm_simple_let_fast_path_packs_output_bytes() {
     let simple = include_str!("../shaders/codegen/wasm_simple_lets.slang");
     assert!(
-        simple.contains("RWStructuredBuffer<uint> body_dispatch_args"),
-        "simple-let fast path should enable body fallback through GPU-written indirect dispatch args"
-    );
-    assert!(
         simple.contains("emit_packed_out_word"),
         "simple-let fast path should pack final WASM bytes before readback"
     );
@@ -332,12 +328,18 @@ fn gpu_wasm_simple_let_fast_path_packs_output_bytes() {
 
     let gpu_wasm = include_str!("../src/codegen/gpu_wasm.rs");
     assert!(
-        gpu_wasm.contains("compute.dispatch_workgroups_indirect(&bufs.body_dispatch_buf, 0);"),
-        "WASM body fallback should be launched by GPU-written indirect dispatch args"
+        !gpu_wasm.contains("compute.dispatch_workgroups_indirect(&bufs.body_dispatch_buf, 0);"),
+        "default WASM codegen should not launch the legacy body shader that stalls pipeline creation"
     );
     assert!(
         gpu_wasm.contains("compute.dispatch_workgroups_indirect(&bufs.functions_dispatch_buf, 0);"),
         "WASM function module fallback should be launched by GPU-written indirect dispatch args"
+    );
+    let compiler = include_str!("../src/compiler.rs");
+    assert!(
+        compiler.contains("LANIUS_USE_GPU_WASM_CODEGEN")
+            && compiler.contains("cpu_wasm::compile_source"),
+        "WASM codegen should default to the CPU fallback while keeping the GPU path opt-in"
     );
     assert!(
         gpu_wasm.contains("let (len, source_buf)"),

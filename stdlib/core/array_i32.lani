@@ -1,0 +1,11 @@
+// Module-form helpers for fixed-size i32 arrays of any const length.
+
+module core::array_i32;
+
+pub fn first<const N: usize>(values: [i32; N]) -> i32 {
+    return values[0];
+}
+
+pub fn get_unchecked<const N: usize>(values: [i32; N], index: i32) -> i32 {
+    return values[index];
+}

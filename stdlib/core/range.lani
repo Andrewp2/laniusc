@@ -1,0 +1,62 @@
+// Declaration seeds for core range values.
+
+module core::range;
+
+pub struct Range<T> {
+    start: T,
+    end: T,
+}
+
+pub struct RangeInclusive<T> {
+    start: T,
+    end: T,
+}
+
+pub struct RangeFrom<T> {
+    start: T,
+}
+
+pub struct RangeTo<T> {
+    end: T,
+}
+
+pub struct RangeFull {
+}
+
+pub fn range_i32(start: i32, end: i32) -> Range<i32> {
+    return Range { start: start, end: end };
+}
+
+pub fn start_i32(range: Range<i32>) -> i32 {
+    return range.start;
+}
+
+pub fn end_i32(range: Range<i32>) -> i32 {
+    return range.end;
+}
+
+pub fn is_empty_i32(range: Range<i32>) -> bool {
+    return range.start >= range.end;
+}
+
+pub fn contains_i32(range: Range<i32>, value: i32) -> bool {
+    return value >= range.start && value < range.end;
+}
+
+pub impl Range<i32> {
+    pub fn start(receiver: Range<i32>) -> i32 {
+        return receiver.start;
+    }
+
+    pub fn end(receiver: Range<i32>) -> i32 {
+        return receiver.end;
+    }
+
+    pub fn is_empty(receiver: Range<i32>) -> bool {
+        return receiver.start >= receiver.end;
+    }
+
+    pub fn contains(receiver: Range<i32>, value: i32) -> bool {
+        return value >= receiver.start && value < receiver.end;
+    }
+}

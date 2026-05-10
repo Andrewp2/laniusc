@@ -32,17 +32,25 @@ static const uint TK_RPAREN = 5u;
 static const uint TK_ASSIGN = 8u;
 static const uint TK_PLUS = 6u;
 static const uint TK_STAR = 7u;
+static const uint TK_SLASH = 9u;
 static const uint TK_LT = 12u;
 static const uint TK_GT = 13u;
 static const uint TK_LE = 14u;
 static const uint TK_GE = 15u;
 static const uint TK_EQEQ = 16u;
+static const uint TK_AMPERSAND = 25u;
+static const uint TK_PIPE = 26u;
 static const uint TK_MINUS = 27u;
 static const uint TK_CALL_LPAREN = 28u;
 static const uint TK_GROUP_LPAREN = 29u;
+static const uint TK_STRING = 32u;
 static const uint TK_SEMICOLON = 37u;
 static const uint TK_COLON = 38u;
 static const uint TK_NOT_EQUAL = 40u;
+static const uint TK_PERCENT = 41u;
+static const uint TK_CARET = 42u;
+static const uint TK_SHL = 43u;
+static const uint TK_SHR = 44u;
 static const uint TK_INFIX_PLUS = 59u;
 static const uint TK_PREFIX_MINUS = 60u;
 static const uint TK_INFIX_MINUS = 61u;
@@ -52,6 +60,7 @@ static const uint TK_FN = 67u;
 static const uint TK_RETURN = 69u;
 static const uint TK_IF = 70u;
 static const uint TK_ELSE = 71u;
+static const uint TK_ARROW = 75u;
 static const uint TK_PARAM_LPAREN = 76u;
 static const uint TK_PARAM_RPAREN = 77u;
 static const uint TK_PARAM_IDENT = 79u;
@@ -60,10 +69,15 @@ static const uint TK_IF_RBRACE = 89u;
 static const uint TK_TRUE = 90u;
 static const uint TK_FALSE = 91u;
 static const uint TK_CONST = 92u;
+static const uint TK_EXTERN = 102u;
 static const uint TK_LBRACE = 22u;
 static const uint TK_RBRACE = 23u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint INVALID = 0xffffffffu;
+static const uint WVT_VOID = 0u;
+static const uint WVT_I32 = 0x7fu;
+static const uint WVT_I64 = 0x7eu;
+static const uint MAX_EXTERN_PARAMS = 8u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -109,6 +123,12 @@ bool span5(uint start, uint len, uint a, uint b, uint c, uint d, uint e)
            source_at(start, 4u) == e;
 }
 
+bool span3(uint start, uint len, uint a, uint b, uint c)
+{
+    return len == 3u && source_at(start, 0u) == a && source_at(start, 1u) == b &&
+           source_at(start, 2u) == c;
+}
+
 bool is_main_name(uint i)
 {
     return span4(token_start(i), token_len(i), 109u, 97u, 105u, 110u);
@@ -147,6 +167,14 @@ bool same_text(uint a_i, uint b_i)
             return false;
     }
     return true;
+}
+
+bool is_extern_fn(uint fn_i)
+{
+    if (fn_i > 0u && token_kind(fn_i - 1u) == TK_EXTERN)
+        return true;
+    return fn_i > 1u && token_kind(fn_i - 1u) == TK_STRING &&
+           token_kind(fn_i - 2u) == TK_EXTERN;
 }
 
 bool is_open_paren(uint kind)
@@ -246,7 +274,7 @@ uint function_count()
     [loop]
     for (uint i = 0u; i < n; i += 1u)
     {
-        if (token_kind(i) == TK_FN)
+        if (token_kind(i) == TK_FN && !is_extern_fn(i))
             count += 1u;
     }
     return count;
@@ -258,7 +286,7 @@ uint function_order(uint fn_i)
     [loop]
     for (uint i = 0u; i < fn_i && i < active_token_count(); i += 1u)
     {
-        if (token_kind(i) == TK_FN)
+        if (token_kind(i) == TK_FN && !is_extern_fn(i))
             order += 1u;
     }
     return order;
@@ -271,7 +299,7 @@ uint function_by_order(uint wanted)
     [loop]
     for (uint i = 0u; i < n; i += 1u)
     {
-        if (token_kind(i) == TK_FN)
+        if (token_kind(i) == TK_FN && !is_extern_fn(i))
         {
             if (order == wanted)
                 return i;
@@ -299,10 +327,64 @@ uint main_function()
     [loop]
     for (uint i = 0u; i + 1u < n; i += 1u)
     {
-        if (token_kind(i) == TK_FN && is_main_name(i + 1u))
+        if (token_kind(i) == TK_FN && !is_extern_fn(i) && is_main_name(i + 1u))
             return i;
     }
     return INVALID;
+}
+
+uint extern_function_count()
+{
+    uint count = 0u;
+    uint n = active_token_count();
+    [loop]
+    for (uint i = 0u; i < n; i += 1u)
+    {
+        if (token_kind(i) == TK_FN && is_extern_fn(i))
+            count += 1u;
+    }
+    return count;
+}
+
+uint extern_function_order(uint fn_i)
+{
+    uint order = 0u;
+    [loop]
+    for (uint i = 0u; i < fn_i && i < active_token_count(); i += 1u)
+    {
+        if (token_kind(i) == TK_FN && is_extern_fn(i))
+            order += 1u;
+    }
+    return order;
+}
+
+uint extern_function_by_order(uint wanted)
+{
+    uint order = 0u;
+    uint n = active_token_count();
+    [loop]
+    for (uint i = 0u; i < n; i += 1u)
+    {
+        if (token_kind(i) == TK_FN && is_extern_fn(i))
+        {
+            if (order == wanted)
+                return i;
+            order += 1u;
+        }
+    }
+    return INVALID;
+}
+
+uint imported_function_count()
+{
+    return 1u + extern_function_count();
+}
+
+uint wasm_function_index(uint fn_i)
+{
+    if (is_extern_fn(fn_i))
+        return 1u + extern_function_order(fn_i);
+    return imported_function_count() + function_order(fn_i);
 }
 
 uint function_body_open(uint fn_i)
@@ -362,6 +444,109 @@ uint function_param_token(uint fn_i, uint param_index)
         }
     }
     return INVALID;
+}
+
+uint function_param_type_token(uint fn_i, uint param_index)
+{
+    uint param_i = function_param_token(fn_i, param_index);
+    return param_i == INVALID ? INVALID : param_i + 2u;
+}
+
+uint function_return_type_token(uint fn_i)
+{
+    uint n = active_token_count();
+    uint close_i = INVALID;
+    uint open_i = find_next_kind(fn_i + 1u, n, TK_PARAM_LPAREN);
+    if (open_i == INVALID)
+        open_i = find_next_kind(fn_i + 1u, n, TK_LPAREN);
+    if (open_i != INVALID)
+        close_i = matching_paren(open_i);
+    uint start_i = close_i == INVALID ? fn_i + 2u : close_i + 1u;
+    [loop]
+    for (uint i = start_i; i + 1u < n; i += 1u)
+    {
+        uint kind = token_kind(i);
+        if (kind == TK_SEMICOLON || kind == TK_LBRACE || kind == TK_IF_LBRACE)
+            return INVALID;
+        if (kind == TK_ARROW)
+            return i + 1u;
+    }
+    return INVALID;
+}
+
+uint wasm_valtype_for_type_token(uint type_i)
+{
+    if (type_i == INVALID)
+        return WVT_VOID;
+    uint start = token_start(type_i);
+    uint len = token_len(type_i);
+    if (span3(start, len, 105u, 54u, 52u) || span3(start, len, 117u, 54u, 52u))
+        return WVT_I64;
+
+    if (span3(start, len, 105u, 51u, 50u) || span3(start, len, 117u, 51u, 50u) ||
+        span5(start, len, 105u, 115u, 105u, 122u, 101u) ||
+        span5(start, len, 117u, 115u, 105u, 122u, 101u) ||
+        span4(start, len, 98u, 111u, 111u, 108u) ||
+        span4(start, len, 99u, 104u, 97u, 114u))
+        return WVT_I32;
+
+    return WVT_I64;
+}
+
+uint extern_param_valtype(uint fn_i, uint param_index)
+{
+    return wasm_valtype_for_type_token(function_param_type_token(fn_i, param_index));
+}
+
+uint extern_return_valtype(uint fn_i)
+{
+    return wasm_valtype_for_type_token(function_return_type_token(fn_i));
+}
+
+bool extern_return_has_value(uint fn_i)
+{
+    return extern_return_valtype(fn_i) != WVT_VOID;
+}
+
+void emit_i32_to_i64(inout uint cursor, uint type_i, bool write, uint lane)
+{
+    uint start = token_start(type_i);
+    uint len = token_len(type_i);
+    bool unsigned_ty = span3(start, len, 117u, 51u, 50u) ||
+                       span5(start, len, 117u, 115u, 105u, 122u, 101u);
+    put_byte(cursor, unsigned_ty ? 0xadu : 0xacu, write, lane);
+}
+
+void emit_abi_module_name(inout uint cursor, uint fn_i, bool write, uint lane)
+{
+    bool has_abi = fn_i > 1u && token_kind(fn_i - 1u) == TK_STRING &&
+                   token_kind(fn_i - 2u) == TK_EXTERN && token_len(fn_i - 1u) >= 2u;
+    if (!has_abi)
+    {
+        emit_u32_leb(cursor, 3u, write, lane);
+        put_byte(cursor, 101u, write, lane);
+        put_byte(cursor, 110u, write, lane);
+        put_byte(cursor, 118u, write, lane);
+        return;
+    }
+
+    uint abi_i = fn_i - 1u;
+    uint len = token_len(abi_i) - 2u;
+    emit_u32_leb(cursor, len, write, lane);
+    uint start = token_start(abi_i) + 1u;
+    [loop]
+    for (uint d = 0u; d < len && d < 128u; d += 1u)
+        put_byte(cursor, source_at(start, d), write, lane);
+}
+
+void emit_token_name(inout uint cursor, uint token_i, bool write, uint lane)
+{
+    uint len = token_len(token_i);
+    emit_u32_leb(cursor, len, write, lane);
+    uint start = token_start(token_i);
+    [loop]
+    for (uint d = 0u; d < len && d < 128u; d += 1u)
+        put_byte(cursor, source_at(start, d), write, lane);
 }
 
 bool has_user_call()
@@ -554,6 +739,47 @@ void emit_atom(inout uint cursor, uint token_i, bool write, uint lane)
         emit_i64_const_u32(cursor, 0u, write, lane);
 }
 
+bool is_simple_expr_binary_op(uint kind)
+{
+    return kind == TK_PLUS || kind == TK_INFIX_PLUS || kind == TK_MINUS ||
+           kind == TK_INFIX_MINUS || kind == TK_STAR || kind == TK_SLASH ||
+           kind == TK_PERCENT || kind == TK_SHL || kind == TK_SHR ||
+           kind == TK_AMPERSAND || kind == TK_CARET || kind == TK_PIPE;
+}
+
+uint normalize_simple_expr_op(uint kind)
+{
+    if (kind == TK_INFIX_PLUS)
+        return TK_PLUS;
+    if (kind == TK_INFIX_MINUS)
+        return TK_MINUS;
+    return kind;
+}
+
+void emit_simple_expr_op(inout uint cursor, uint op, bool write, uint lane)
+{
+    if (op == TK_MINUS)
+        put_byte(cursor, 0x7du, write, lane);
+    else if (op == TK_STAR)
+        put_byte(cursor, 0x7eu, write, lane);
+    else if (op == TK_SLASH)
+        put_byte(cursor, 0x7fu, write, lane);
+    else if (op == TK_PERCENT)
+        put_byte(cursor, 0x81u, write, lane);
+    else if (op == TK_AMPERSAND)
+        put_byte(cursor, 0x83u, write, lane);
+    else if (op == TK_PIPE)
+        put_byte(cursor, 0x84u, write, lane);
+    else if (op == TK_CARET)
+        put_byte(cursor, 0x85u, write, lane);
+    else if (op == TK_SHL)
+        put_byte(cursor, 0x86u, write, lane);
+    else if (op == TK_SHR)
+        put_byte(cursor, 0x87u, write, lane);
+    else
+        put_byte(cursor, 0x7cu, write, lane);
+}
+
 void emit_simple_expr(inout uint cursor, uint start_i, uint end_i, bool write, uint lane)
 {
     bool have_value = false;
@@ -570,10 +796,9 @@ void emit_simple_expr(inout uint cursor, uint start_i, uint end_i, bool write, u
             else
                 pending_op = TK_MINUS;
         }
-        else if (kind == TK_PLUS || kind == TK_INFIX_PLUS || kind == TK_INFIX_MINUS ||
-                 kind == TK_STAR)
+        else if (is_simple_expr_binary_op(kind))
         {
-            pending_op = kind == TK_INFIX_MINUS ? TK_MINUS : kind;
+            pending_op = normalize_simple_expr_op(kind);
         }
         else if (kind == TK_INT || kind == TK_TRUE || kind == TK_FALSE ||
                  kind == TK_IDENT || kind == TK_PARAM_IDENT)
@@ -587,12 +812,7 @@ void emit_simple_expr(inout uint cursor, uint start_i, uint end_i, bool write, u
             }
             if (have_value)
             {
-                if (pending_op == TK_MINUS)
-                    put_byte(cursor, 0x7du, write, lane);
-                else if (pending_op == TK_STAR)
-                    put_byte(cursor, 0x7eu, write, lane);
-                else
-                    put_byte(cursor, 0x7cu, write, lane);
+                emit_simple_expr_op(cursor, pending_op, write, lane);
             }
             have_value = true;
             pending_op = 0u;
@@ -634,18 +854,33 @@ uint arg_end(uint start_i, uint close_i)
 void emit_call(inout uint cursor, uint callee_i, uint close_i, bool write, uint lane)
 {
     uint fn_i = find_named_function(callee_i);
+    bool extern_call = fn_i != INVALID && is_extern_fn(fn_i);
     uint params = function_param_count(fn_i);
     [loop]
-    for (uint arg = 0u; arg < 2u; arg += 1u)
+    for (uint arg = 0u; arg < MAX_EXTERN_PARAMS; arg += 1u)
     {
         if (arg >= params)
             break;
         uint s = arg_start(callee_i + 1u, close_i, arg);
         if (s != INVALID)
+        {
             emit_simple_expr(cursor, s, arg_end(s, close_i), write, lane);
+            if (extern_call && extern_param_valtype(fn_i, arg) == WVT_I32)
+                put_byte(cursor, 0xa7u, write, lane);
+        }
     }
     put_byte(cursor, 0x10u, write, lane);
-    emit_u32_leb(cursor, 1u + function_order(fn_i), write, lane);
+    emit_u32_leb(cursor, wasm_function_index(fn_i), write, lane);
+    if (extern_call && extern_return_valtype(fn_i) == WVT_I32)
+        emit_i32_to_i64(cursor, function_return_type_token(fn_i), write, lane);
+}
+
+void emit_call_statement(inout uint cursor, uint callee_i, uint close_i, bool write, uint lane)
+{
+    uint fn_i = find_named_function(callee_i);
+    emit_call(cursor, callee_i, close_i, write, lane);
+    if (is_extern_fn(fn_i) && extern_return_has_value(fn_i))
+        put_byte(cursor, 0x1au, write, lane);
 }
 
 void emit_expr(inout uint cursor, uint start_i, uint end_i, bool write, uint lane)
@@ -689,10 +924,9 @@ void emit_expr(inout uint cursor, uint start_i, uint end_i, bool write, uint lan
             else
                 pending_op = TK_MINUS;
         }
-        else if (kind == TK_PLUS || kind == TK_INFIX_PLUS || kind == TK_INFIX_MINUS ||
-                 kind == TK_STAR)
+        else if (is_simple_expr_binary_op(kind))
         {
-            pending_op = kind == TK_INFIX_MINUS ? TK_MINUS : kind;
+            pending_op = normalize_simple_expr_op(kind);
         }
         else if (kind == TK_INT || kind == TK_TRUE || kind == TK_FALSE ||
                  kind == TK_IDENT || kind == TK_PARAM_IDENT)
@@ -706,12 +940,7 @@ void emit_expr(inout uint cursor, uint start_i, uint end_i, bool write, uint lan
             }
             if (have_value)
             {
-                if (pending_op == TK_STAR)
-                    put_byte(cursor, 0x7eu, write, lane);
-                else if (pending_op == TK_MINUS)
-                    put_byte(cursor, 0x7du, write, lane);
-                else
-                    put_byte(cursor, 0x7cu, write, lane);
+                emit_simple_expr_op(cursor, pending_op, write, lane);
             }
             have_value = true;
             pending_op = 0u;
@@ -827,7 +1056,8 @@ uint if_statement_end(uint if_i, uint limit_i)
 
 void emit_type_section_payload(inout uint cursor, bool write, uint lane)
 {
-    emit_u32_leb(cursor, 4u, write, lane);
+    uint extern_count = extern_function_count();
+    emit_u32_leb(cursor, 4u + extern_count, write, lane);
     put_byte(cursor, 0x60u, write, lane);
     emit_u32_leb(cursor, 1u, write, lane);
     put_byte(cursor, 0x7eu, write, lane);
@@ -847,11 +1077,28 @@ void emit_type_section_payload(inout uint cursor, bool write, uint lane)
     put_byte(cursor, 0x7eu, write, lane);
     emit_u32_leb(cursor, 1u, write, lane);
     put_byte(cursor, 0x7eu, write, lane);
+
+    [loop]
+    for (uint order = 0u; order < extern_count && order < 32u; order += 1u)
+    {
+        uint fn_i = extern_function_by_order(order);
+        uint params = min(function_param_count(fn_i), MAX_EXTERN_PARAMS);
+        put_byte(cursor, 0x60u, write, lane);
+        emit_u32_leb(cursor, params, write, lane);
+        [loop]
+        for (uint p = 0u; p < params; p += 1u)
+            put_byte(cursor, extern_param_valtype(fn_i, p), write, lane);
+        uint ret = extern_return_valtype(fn_i);
+        emit_u32_leb(cursor, ret == WVT_VOID ? 0u : 1u, write, lane);
+        if (ret != WVT_VOID)
+            put_byte(cursor, ret, write, lane);
+    }
 }
 
 void emit_import_section_payload(inout uint cursor, bool write, uint lane)
 {
-    emit_u32_leb(cursor, 1u, write, lane);
+    uint extern_count = extern_function_count();
+    emit_u32_leb(cursor, 1u + extern_count, write, lane);
     emit_u32_leb(cursor, 3u, write, lane);
     put_byte(cursor, 101u, write, lane);
     put_byte(cursor, 110u, write, lane);
@@ -868,6 +1115,16 @@ void emit_import_section_payload(inout uint cursor, bool write, uint lane)
     put_byte(cursor, 52u, write, lane);
     put_byte(cursor, 0x00u, write, lane);
     emit_u32_leb(cursor, 0u, write, lane);
+
+    [loop]
+    for (uint order = 0u; order < extern_count && order < 32u; order += 1u)
+    {
+        uint fn_i = extern_function_by_order(order);
+        emit_abi_module_name(cursor, fn_i, write, lane);
+        emit_token_name(cursor, fn_i + 1u, write, lane);
+        put_byte(cursor, 0x00u, write, lane);
+        emit_u32_leb(cursor, 4u + order, write, lane);
+    }
 }
 
 void emit_function_section_payload(inout uint cursor, bool write, uint lane)
@@ -898,7 +1155,7 @@ void emit_export_section_payload(inout uint cursor, bool write, uint lane)
     put_byte(cursor, 105u, write, lane);
     put_byte(cursor, 110u, write, lane);
     put_byte(cursor, 0x00u, write, lane);
-    emit_u32_leb(cursor, 1u + function_order(main_i), write, lane);
+    emit_u32_leb(cursor, wasm_function_index(main_i), write, lane);
 }
 
 void emit_function_body(inout uint cursor, uint fn_i, bool write, uint lane)
@@ -954,6 +1211,17 @@ void emit_function_body(inout uint cursor, uint fn_i, bool write, uint lane)
             put_byte(cursor, 0x10u, write, lane);
             emit_u32_leb(cursor, 0u, write, lane);
             i = call_close;
+        }
+        else if (i + 1u < close_i && token_kind(i) == TK_IDENT &&
+                 (token_kind(i + 1u) == TK_CALL_LPAREN || token_kind(i + 1u) == TK_LPAREN))
+        {
+            uint fn_call_i = find_named_function(i);
+            if (fn_call_i != INVALID && is_extern_fn(fn_call_i))
+            {
+                uint call_close = matching_paren(i + 1u);
+                emit_call_statement(cursor, i, call_close, write, lane);
+                i = call_close;
+            }
         }
     }
 

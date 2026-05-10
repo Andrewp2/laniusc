@@ -1,0 +1,54 @@
+// Source-level target capability defaults.
+
+module core::target;
+
+pub const IS_WASM: bool = false;
+pub const IS_NATIVE: bool = true;
+pub const HAS_ALLOCATOR: bool = true;
+pub const HAS_FILESYSTEM: bool = true;
+pub const HAS_STDIO: bool = true;
+pub const HAS_THREADS: bool = false;
+pub const HAS_NETWORK: bool = false;
+pub const HAS_CLOCK: bool = true;
+pub const HAS_SECURE_RNG: bool = false;
+pub const HAS_GPU: bool = false;
+
+pub fn is_wasm() -> bool {
+    return IS_WASM;
+}
+
+pub fn is_native() -> bool {
+    return IS_NATIVE;
+}
+
+pub fn has_allocator() -> bool {
+    return HAS_ALLOCATOR;
+}
+
+pub fn has_filesystem() -> bool {
+    return HAS_FILESYSTEM;
+}
+
+pub fn has_stdio() -> bool {
+    return HAS_STDIO;
+}
+
+pub fn has_threads() -> bool {
+    return HAS_THREADS;
+}
+
+pub fn has_network() -> bool {
+    return HAS_NETWORK;
+}
+
+pub fn has_clock() -> bool {
+    return HAS_CLOCK;
+}
+
+pub fn has_secure_rng() -> bool {
+    return HAS_SECURE_RNG;
+}
+
+pub fn has_gpu() -> bool {
+    return HAS_GPU;
+}

@@ -382,7 +382,9 @@ fn keyword_kind_at(input: &str, start: u32, len: u32) -> Option<TokenKind> {
     match bytes.get(start..end)? {
         b"pub" => Some(TokenKind::Pub),
         b"fn" => Some(TokenKind::Fn),
+        b"in" => Some(TokenKind::In),
         b"let" => Some(TokenKind::Let),
+        b"for" => Some(TokenKind::For),
         b"return" => Some(TokenKind::Return),
         b"if" => Some(TokenKind::If),
         b"else" => Some(TokenKind::Else),
@@ -393,10 +395,14 @@ fn keyword_kind_at(input: &str, start: u32, len: u32) -> Option<TokenKind> {
         b"false" => Some(TokenKind::False),
         b"const" => Some(TokenKind::Const),
         b"enum" => Some(TokenKind::Enum),
+        b"extern" => Some(TokenKind::Extern),
         b"import" => Some(TokenKind::Import),
+        b"impl" => Some(TokenKind::Impl),
         b"match" => Some(TokenKind::Match),
         b"module" => Some(TokenKind::Module),
         b"struct" => Some(TokenKind::Struct),
+        b"trait" => Some(TokenKind::Trait),
+        b"type" => Some(TokenKind::Type),
         _ => None,
     }
 }

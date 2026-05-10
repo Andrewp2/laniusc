@@ -1,0 +1,66 @@
+// Module-form i64 helpers for source-level stdlib imports.
+
+module core::i64;
+
+pub const MIN: i64 = -9223372036854775808;
+pub const MAX: i64 = 9223372036854775807;
+
+pub fn abs(value: i64) -> i64 {
+    if (value < 0) {
+        return -value;
+    } else {
+        return value;
+    }
+}
+
+pub fn min(left: i64, right: i64) -> i64 {
+    if (left < right) {
+        return left;
+    } else {
+        return right;
+    }
+}
+
+pub fn max(left: i64, right: i64) -> i64 {
+    if (left > right) {
+        return left;
+    } else {
+        return right;
+    }
+}
+
+pub fn clamp(value: i64, low: i64, high: i64) -> i64 {
+    if (value < low) {
+        return low;
+    } else {
+        if (value > high) {
+            return high;
+        } else {
+            return value;
+        }
+    }
+}
+
+pub fn signum(value: i64) -> i64 {
+    if (value < 0) {
+        return -1;
+    } else {
+        if (value > 0) {
+            return 1;
+        } else {
+            return 0;
+        }
+    }
+}
+
+pub fn wrapping_add(left: i64, right: i64) -> i64 {
+    return left + right;
+}
+
+pub fn wrapping_sub(left: i64, right: i64) -> i64 {
+    return left - right;
+}
+
+pub fn wrapping_mul(left: i64, right: i64) -> i64 {
+    return left * right;
+}

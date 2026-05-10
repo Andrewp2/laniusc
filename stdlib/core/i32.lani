@@ -13,6 +13,14 @@ pub fn abs(value: i32) -> i32 {
     }
 }
 
+pub fn saturating_abs(value: i32) -> i32 {
+    if (value == MIN) {
+        return MAX;
+    } else {
+        return abs(value);
+    }
+}
+
 pub fn min(left: i32, right: i32) -> i32 {
     if (left < right) {
         return left;
@@ -55,4 +63,40 @@ pub fn signum(value: i32) -> i32 {
 
 pub fn between_inclusive(value: i32, low: i32, high: i32) -> bool {
     return value >= low && value <= high;
+}
+
+pub fn wrapping_add(left: i32, right: i32) -> i32 {
+    return left + right;
+}
+
+pub fn wrapping_sub(left: i32, right: i32) -> i32 {
+    return left - right;
+}
+
+pub fn wrapping_mul(left: i32, right: i32) -> i32 {
+    return left * right;
+}
+
+pub fn is_power_of_two(value: i32) -> bool {
+    if (value <= 0) {
+        return false;
+    } else {
+        let power: i32 = 1;
+        while (power < value) {
+            power *= 2;
+        }
+        return power == value;
+    }
+}
+
+pub fn next_power_of_two(value: i32) -> i32 {
+    if (value <= 1) {
+        return 1;
+    } else {
+        let power: i32 = 1;
+        while (power < value) {
+            power *= 2;
+        }
+        return power;
+    }
 }

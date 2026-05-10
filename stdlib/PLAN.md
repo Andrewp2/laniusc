@@ -110,11 +110,31 @@ Expected contents:
 The current `stdlib/` directory contains plain `.lani` files:
 
 - `core/i32.lani`
+- `core/u8.lani`
+- `core/u32.lani`
+- `core/i64.lani`
+- `core/f32.lani`
+- `core/char.lani`
 - `core/bool.lani`
+- `core/array_i32.lani`
 - `core/array_i32_4.lani`
 - `core/option.lani`
 - `core/result.lani`
 - `core/ordering.lani`
+- `core/cmp.lani`
+- `core/hash.lani`
+- `core/range.lani`
+- `core/slice.lani`
+- `core/panic.lani`
+- `core/target.lani`
+- `alloc/allocator.lani`
+- `std/io.lani`
+- `std/process.lani`
+- `std/env.lani`
+- `std/time.lani`
+- `std/fs.lani`
+- `std/net.lani`
+- `test/assert.lani`
 - `i32.lani`
 - `bool.lani`
 - `array_i32_4.lani`
@@ -148,14 +168,22 @@ Candidate module names:
 
 - `core::bool`
 - `core::i32`
+- `core::u8`
 - `core::u32`
 - `core::i64`
 - `core::f32`
 - `core::char`
+- `core::array_i32`
 - `core::option`
 - `core::result`
+- `core::ordering`
+- `core::cmp`
+- `core::hash`
 - `core::range`
 - `core::slice`
+- `core::panic`
+- `core::target`
+- `alloc::allocator`
 - `alloc::vec`
 - `alloc::string`
 - `alloc::hash_map`
@@ -163,6 +191,7 @@ Candidate module names:
 - `std::io`
 - `std::fs`
 - `std::path`
+- `std::env`
 - `std::time`
 - `std::process`
 - `std::net`
@@ -390,9 +419,10 @@ Expected slice APIs:
 - `dedup`
 - `partition`
 
-Early Lanius may need generated modules like `array_i32_4` until generics and
-const parameters exist. Long-term, those should collapse into generic array and
-slice APIs.
+Early Lanius may still need generated modules like `array_i32_4` for helpers
+that depend on known length values, array-valued returns, or element-generic
+implementations. Long-term, those should collapse into generic array and slice
+APIs.
 
 ## Strings And Text
 
@@ -964,14 +994,17 @@ The library should expose target capabilities explicitly.
 
 Examples:
 
-- `target::has_filesystem`
-- `target::has_threads`
-- `target::has_network`
-- `target::has_clock`
-- `target::has_secure_rng`
-- `target::is_wasm`
+- `core::target::has_filesystem`
+- `core::target::has_threads`
+- `core::target::has_network`
+- `core::target::has_clock`
+- `core::target::has_secure_rng`
+- `core::target::is_wasm`
 
 This keeps embedded and WASM use cases honest.
+The current `core::target` source seed exposes static defaults for the current
+host-backed test environment; real target configuration and compile-time
+capability evaluation are still future work.
 
 ## Naming Principles
 
@@ -1032,6 +1065,7 @@ Requires module/import support.
 - Remove need for source include paths and compatibility prefixes.
 - Define explicit prelude.
 - Define visibility and package boundaries.
+- Expand non-const type aliases semantically after import rewriting.
 
 ### Phase 3: Generics And Traits/Interfaces
 

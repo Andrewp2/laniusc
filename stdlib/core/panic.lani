@@ -1,0 +1,13 @@
+// Source-level panic helpers built on the current assert trap path.
+
+module core::panic;
+
+pub fn panic() {
+    assert(false);
+    return;
+}
+
+pub fn unreachable() {
+    assert(false);
+    return;
+}

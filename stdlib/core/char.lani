@@ -1,0 +1,23 @@
+// Module-form char helpers for source-level stdlib imports.
+
+module core::char;
+
+pub fn is_ascii_digit(value: char) -> bool {
+    return value >= '0' && value <= '9';
+}
+
+pub fn is_ascii_lowercase(value: char) -> bool {
+    return value >= 'a' && value <= 'z';
+}
+
+pub fn is_ascii_uppercase(value: char) -> bool {
+    return value >= 'A' && value <= 'Z';
+}
+
+pub fn is_ascii_alphabetic(value: char) -> bool {
+    return is_ascii_lowercase(value) || is_ascii_uppercase(value);
+}
+
+pub fn is_ascii_alphanumeric(value: char) -> bool {
+    return is_ascii_alphabetic(value) || is_ascii_digit(value);
+}
