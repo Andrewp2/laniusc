@@ -333,11 +333,11 @@ struct Boxed<T> {
 }
 
 impl<T> Boxed<T> {
-    fn value(receiver: Boxed<T>) -> T {
-        return receiver.value;
+    fn value(self) -> T {
+        return self.value;
     }
 
-    fn keep(receiver: Boxed<T>, fallback: T) -> T {
+    fn keep(self, fallback: T) -> T {
         return fallback;
     }
 }
@@ -346,6 +346,40 @@ fn main() {
     let boxed: Boxed<i32> = Boxed { value: 7 };
     let value: i32 = boxed.value();
     return boxed.keep(value);
+}
+"#;
+
+    assert_gpu_type_check_ok(src);
+}
+
+#[test]
+fn type_checker_accepts_self_receivers_in_trait_methods() {
+    let src = r#"
+struct Boxed {
+    value: i32,
+}
+
+trait EqSelf {
+    fn eq(self, other: Self) -> bool;
+}
+
+impl EqSelf for Boxed {
+    fn eq(self, other: Boxed) -> bool {
+        return self.value == other.value;
+    }
+}
+
+fn same<T: EqSelf>(left: T, right: T) -> bool {
+    return left.eq(right);
+}
+
+fn main() {
+    let left: Boxed = Boxed { value: 7 };
+    let right: Boxed = Boxed { value: 7 };
+    if (same(left, right)) {
+        return 1;
+    }
+    return 0;
 }
 "#;
 

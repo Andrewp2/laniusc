@@ -538,6 +538,20 @@ fn generated_ll1_tables_accept_impl_and_trait_declarations() {
 }
 
 #[test]
+fn generated_ll1_tables_accept_self_receiver_parameters() {
+    let tables =
+        PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+            .expect("load generated parse tables");
+    let token_kinds = kinds_with_sentinels(
+        "struct Boxed<T> { value: T } impl<T> Boxed<T> { fn value(self) -> T { return self.value; } }",
+    );
+
+    tables
+        .ll1_production_stream_with_positions(&token_kinds)
+        .expect("self receiver fixture should parse with LL(1)");
+}
+
+#[test]
 fn gpu_syntax_accepts_trait_impl_declaration_shape() {
     common::block_on_gpu_with_timeout("GPU syntax trait impl declaration", async move {
         let src = "pub trait Eq<T> { pub fn eq(left: T, right: T) -> bool; } pub impl Eq<i32> for i32 { pub fn eq(left: i32, right: i32) -> bool { return left == right; } }";
@@ -546,6 +560,18 @@ fn gpu_syntax_accepts_trait_impl_declaration_shape() {
         check_tokens_on_gpu(&tokens)
             .await
             .expect("GPU syntax should accept trait impl fixture");
+    });
+}
+
+#[test]
+fn gpu_syntax_accepts_self_receiver_parameters() {
+    common::block_on_gpu_with_timeout("GPU syntax self receiver", async move {
+        let src = "struct Boxed<T> { value: T } impl<T> Boxed<T> { fn value(self) -> T { return self.value; } }";
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let tokens = lexer.lex(src).await.expect("GPU lex self receiver fixture");
+        check_tokens_on_gpu(&tokens)
+            .await
+            .expect("GPU syntax should accept self receiver fixture");
     });
 }
 

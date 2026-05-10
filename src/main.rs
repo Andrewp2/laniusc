@@ -17,7 +17,7 @@ fn main() {
 fn run() -> Result<(), String> {
     let mut input: Option<PathBuf> = None;
     let mut output: Option<PathBuf> = None;
-    let mut emit = "x86_64".to_string();
+    let mut emit = "wasm".to_string();
 
     let mut args = env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -30,9 +30,6 @@ fn run() -> Result<(), String> {
                 emit = args
                     .next()
                     .ok_or_else(|| "--emit requires a target".to_string())?;
-            }
-            "--gpu-codegen" => {
-                // Kept as a compatibility no-op; WASM emission is GPU-only.
             }
             "-o" | "--out" => {
                 output = Some(PathBuf::from(
@@ -54,7 +51,7 @@ fn run() -> Result<(), String> {
         }
     }
 
-    if emit != "wasm" && emit != "x86_64" && emit != "native" {
+    if emit != "wasm" && emit != "x86_64" {
         return Err(format!(
             "unsupported emit target {emit:?}; supported targets: wasm, x86_64"
         ));
@@ -69,10 +66,8 @@ fn run() -> Result<(), String> {
                 .map_err(|err| err.to_string())?
         }
     } else if emit == "wasm" {
-        pollster::block_on(compile_source_to_wasm_with_gpu_codegen(
-            "fn main() { return 7; }\n",
-        ))
-        .map_err(|err| err.to_string())?
+        pollster::block_on(compile_source_to_wasm_with_gpu_codegen("let x = 7;\n"))
+            .map_err(|err| err.to_string())?
     } else {
         pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
             "fn main() { return 7; }\n",
@@ -101,8 +96,9 @@ fn run() -> Result<(), String> {
 
 fn print_help() {
     eprintln!(
-        "Usage: laniusc [--emit x86_64|wasm] [--gpu-codegen] [-o output] <input.lani>\n\
+        "Usage: laniusc [--emit x86_64|wasm] [-o output] <input.lani>\n\
          Emits x86_64 ELF or WASM using GPU lexing, GPU parsing, GPU type checking, and GPU emission.\n\
+         WASM has a narrow top-level-statement GPU backend today; x86_64 reports unavailable until its GPU backend is ready.\n\
          Without an input file, compiles a tiny built-in sample to stdout."
     );
 }

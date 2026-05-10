@@ -63,8 +63,9 @@ Current scope is intentionally small:
 - `core/cmp.lani` has declaration seeds for generic `Eq<T>` and `Ord<T>`
   traits plus bounded `i32` trait impls. `core/hash.lani` similarly seeds a
   generic `Hash<T>` trait and an `i32` impl. This validates `impl Trait for
-  Type` parsing, import expansion, conformance precheck, and type-check-only
-  method calls. Generic parameter bounds such as `T: core::cmp::Eq<T>` and
+  Type` parsing, import expansion, conformance precheck, `Self` in trait method
+  signatures, and type-check-only method calls. Generic parameter bounds such as
+  `T: core::cmp::Eq<T>` and
   `K: core::cmp::Eq<K> + core::hash::Hash<K>` can drive bounded
   type-check-only method lookup in generic functions. `where` clauses,
   associated items, dictionaries, full trait solving, and backend lowering are
@@ -74,9 +75,8 @@ Current scope is intentionally small:
   source-level `i32` helpers for construction, endpoints, emptiness, and
   containment. It also has bounded type-check-only `Range<i32>` impl methods
   for `start`, `end`, `is_empty`, and `contains`. These exercise generic struct
-  literals, member access, method calls, and `for` traversal over range-like
-  seed structs in concrete contexts, with narrow executable fallback coverage
-  for the current `Range<i32>` shape. General range operators, slicing
+  literals, member access, `self` receiver method calls, and `for` traversal
+  over range-like seed structs in concrete contexts. General range operators, slicing
   integration, full monomorphization, and general backend representation are not
   implemented yet.
 - `core/slice.lani` has source-level `[i32]` view helpers such as
@@ -124,8 +124,8 @@ Current scope is intentionally small:
 - `i32.lani`, `bool.lani`, and `array_i32_4.lani` keep the older `lstd_`
   compatibility helpers. Const-generic array parameters have limited frontend
   coverage for `[i32; N]`, while concrete `[i32; 4]` array-returning helpers
-  are available as source-level seeds for copy/fill/reverse and the default
-  WASM/native fallback paths execute concrete fixed-array return values.
+  are available as source-level seeds for copy/fill/reverse. Real GPU backend
+  lowering for array-returning helpers is still incomplete.
 
 Imports are source-level includes expanded before lexing/parsing. Module-style
 imports such as `core::i32` resolve through the package stdlib lookup. Quoted

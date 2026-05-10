@@ -6,7 +6,6 @@ use std::{
 
 use anyhow::Result;
 use encase::ShaderType;
-use wgpu::util::DeviceExt;
 
 use crate::gpu::{
     device,
@@ -46,8 +45,6 @@ struct ResidentWasmBuffers {
     _bool_scan_status_buf: wgpu::Buffer,
     _bool_body_buf: wgpu::Buffer,
     _bool_body_status_buf: wgpu::Buffer,
-    functions_dispatch_buf: wgpu::Buffer,
-    _functions_status_mode_buf: wgpu::Buffer,
     out_buf: wgpu::Buffer,
     packed_out_buf: wgpu::Buffer,
     status_buf: wgpu::Buffer,
@@ -55,8 +52,6 @@ struct ResidentWasmBuffers {
     status_readback: wgpu::Buffer,
     simple_bind_group: wgpu::BindGroup,
     arrays_bind_group: wgpu::BindGroup,
-    functions_probe_bind_group: wgpu::BindGroup,
-    functions_bind_group: wgpu::BindGroup,
     bind_group: wgpu::BindGroup,
     pack_bind_group: wgpu::BindGroup,
 }
@@ -64,8 +59,6 @@ struct ResidentWasmBuffers {
 pub struct GpuWasmCodeGenerator {
     simple_pass: PassData,
     arrays_pass: PassData,
-    functions_probe_pass: PassData,
-    functions_pass: PassData,
     pass: PassData,
     pack_pass: PassData,
     buffers: Mutex<Option<ResidentWasmBuffers>>,
@@ -109,33 +102,6 @@ impl GpuWasmCodeGenerator {
             )),
         )?;
         trace_wasm_codegen("module.pipeline.done");
-        trace_wasm_codegen("functions_probe.pipeline.start");
-        let functions_probe_pass = make_pass_data(
-            &gpu.device,
-            "codegen_wasm_functions_probe",
-            "main",
-            include_bytes!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/wasm_functions_probe.spv"
-            )),
-            include_bytes!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/wasm_functions_probe.reflect.json"
-            )),
-        )?;
-        trace_wasm_codegen("functions_probe.pipeline.done");
-        trace_wasm_codegen("functions.pipeline.start");
-        let functions_pass = make_pass_data(
-            &gpu.device,
-            "codegen_wasm_functions",
-            "main",
-            include_bytes!(concat!(env!("OUT_DIR"), "/shaders/wasm_functions.spv")),
-            include_bytes!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/wasm_functions.reflect.json"
-            )),
-        )?;
-        trace_wasm_codegen("functions.pipeline.done");
         trace_wasm_codegen("pack.pipeline.start");
         let pack_pass = make_pass_data(
             &gpu.device,
@@ -151,8 +117,6 @@ impl GpuWasmCodeGenerator {
         Ok(Self {
             simple_pass,
             arrays_pass,
-            functions_probe_pass,
-            functions_pass,
             pass,
             pack_pass,
             buffers: Mutex::new(None),
@@ -231,13 +195,6 @@ impl GpuWasmCodeGenerator {
         encoder.clear_buffer(&bufs.body_dispatch_buf, 0, None);
 
         let simple_groups = token_capacity.div_ceil(256).max(1);
-        let function_groups = (output_capacity as u32).div_ceil(256).max(1);
-        let (function_groups_x, function_groups_y) = workgroup_grid_1d(function_groups);
-        queue.write_buffer(
-            &bufs.functions_dispatch_buf,
-            0,
-            &dispatch_args_bytes(function_groups_x, function_groups_y, 1),
-        );
         let packed_output_groups = ((output_capacity as u32).div_ceil(4)).div_ceil(256).max(1);
         let (packed_output_groups_x, packed_output_groups_y) =
             workgroup_grid_1d(packed_output_groups);
@@ -266,25 +223,6 @@ impl GpuWasmCodeGenerator {
         compute.set_pipeline(&self.pass.pipeline);
         compute.set_bind_group(0, Some(&bufs.bind_group), &[]);
         compute.dispatch_workgroups(packed_output_groups_x, packed_output_groups_y, 1);
-        drop(compute);
-        encoder.copy_buffer_to_buffer(&bufs._functions_status_mode_buf, 0, &bufs.status_buf, 4, 4);
-
-        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("codegen.wasm.functions_probe"),
-            timestamp_writes: None,
-        });
-        compute.set_pipeline(&self.functions_probe_pass.pipeline);
-        compute.set_bind_group(0, Some(&bufs.functions_probe_bind_group), &[]);
-        compute.dispatch_workgroups(simple_groups, 1, 1);
-        drop(compute);
-
-        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("codegen.wasm.functions"),
-            timestamp_writes: None,
-        });
-        compute.set_pipeline(&self.functions_pass.pipeline);
-        compute.set_bind_group(0, Some(&bufs.functions_bind_group), &[]);
-        compute.dispatch_workgroups_indirect(&bufs.functions_dispatch_buf, 0);
         drop(compute);
 
         let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -387,7 +325,7 @@ impl GpuWasmCodeGenerator {
         _hir_token_pos_buf: &wgpu::Buffer,
         _hir_token_end_buf: &wgpu::Buffer,
         _hir_status_buf: &wgpu::Buffer,
-        visible_decl_buf: &wgpu::Buffer,
+        _visible_decl_buf: &wgpu::Buffer,
         _visible_type_buf: &wgpu::Buffer,
         _call_fn_index_buf: &wgpu::Buffer,
         _call_return_type_buf: &wgpu::Buffer,
@@ -494,18 +432,6 @@ impl GpuWasmCodeGenerator {
             2,
             wgpu::BufferUsages::empty(),
         );
-        let functions_dispatch_buf = storage_u32_rw(
-            device,
-            "codegen.wasm.functions_dispatch",
-            3,
-            wgpu::BufferUsages::INDIRECT,
-        );
-        let functions_status_mode_buf =
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("codegen.wasm.functions_status_mode"),
-                contents: &4u32.to_le_bytes(),
-                usage: wgpu::BufferUsages::COPY_SRC,
-            });
         let status_buf = storage_u32_rw(
             device,
             "codegen.wasm.status",
@@ -580,46 +506,6 @@ impl GpuWasmCodeGenerator {
             &resources,
         )?;
 
-        let functions_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-            ("gParams".into(), params_buf.as_entire_binding()),
-            ("token_words".into(), token_buf.as_entire_binding()),
-            ("token_count".into(), token_count_buf.as_entire_binding()),
-            ("source_bytes".into(), source_buf.as_entire_binding()),
-            ("visible_decl".into(), visible_decl_buf.as_entire_binding()),
-            ("body_status".into(), body_status_buf.as_entire_binding()),
-            ("out_words".into(), out_buf.as_entire_binding()),
-            ("status".into(), status_buf.as_entire_binding()),
-        ]);
-        let functions_bind_group = bind_group::create_bind_group_from_reflection(
-            device,
-            Some("codegen_wasm_functions"),
-            &self.functions_pass.bind_group_layouts[0],
-            &self.functions_pass.reflection,
-            0,
-            &functions_resources,
-        )?;
-
-        let functions_probe_resources: HashMap<String, wgpu::BindingResource<'_>> =
-            HashMap::from([
-                ("gParams".into(), params_buf.as_entire_binding()),
-                ("token_words".into(), token_buf.as_entire_binding()),
-                ("token_count".into(), token_count_buf.as_entire_binding()),
-                ("source_bytes".into(), source_buf.as_entire_binding()),
-                ("status".into(), status_buf.as_entire_binding()),
-                (
-                    "dispatch_args".into(),
-                    functions_dispatch_buf.as_entire_binding(),
-                ),
-            ]);
-        let functions_probe_bind_group = bind_group::create_bind_group_from_reflection(
-            device,
-            Some("codegen_wasm_functions_probe"),
-            &self.functions_probe_pass.bind_group_layouts[0],
-            &self.functions_probe_pass.reflection,
-            0,
-            &functions_probe_resources,
-        )?;
-
         let pack_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
             ("gParams".into(), params_buf.as_entire_binding()),
             ("unpacked_words".into(), out_buf.as_entire_binding()),
@@ -654,8 +540,6 @@ impl GpuWasmCodeGenerator {
             _bool_scan_status_buf: bool_scan_status_buf,
             _bool_body_buf: bool_body_buf,
             _bool_body_status_buf: bool_body_status_buf,
-            functions_dispatch_buf,
-            _functions_status_mode_buf: functions_status_mode_buf,
             out_buf,
             packed_out_buf,
             status_buf,
@@ -663,8 +547,6 @@ impl GpuWasmCodeGenerator {
             status_readback,
             simple_bind_group,
             arrays_bind_group,
-            functions_probe_bind_group,
-            functions_bind_group,
             bind_group,
             pack_bind_group,
         })
@@ -692,14 +574,6 @@ fn fast_path_status_init_bytes() -> [u8; 8] {
 
 fn zero_status_bytes() -> [u8; 8] {
     [0u8; 8]
-}
-
-fn dispatch_args_bytes(x: u32, y: u32, z: u32) -> [u8; 12] {
-    let mut bytes = [0u8; 12];
-    bytes[0..4].copy_from_slice(&x.to_le_bytes());
-    bytes[4..8].copy_from_slice(&y.to_le_bytes());
-    bytes[8..12].copy_from_slice(&z.to_le_bytes());
-    bytes
 }
 
 fn read_wasm_output(

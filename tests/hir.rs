@@ -1463,6 +1463,25 @@ fn hir_preserves_multiple_generic_type_parameter_bounds() {
 }
 
 #[test]
+fn hir_preserves_self_receiver_parameters() {
+    let file = parse_source(
+        "struct Boxed<T> { value: T } impl<T> Boxed<T> { pub fn value(self) -> T { return self.value; } }",
+    )
+    .expect("parse self receiver method");
+    assert_eq!(file.items.len(), 2);
+
+    let HirItem::Impl(implementation) = &file.items[1] else {
+        panic!("expected impl item");
+    };
+    assert_eq!(implementation.methods.len(), 1);
+    let method = &implementation.methods[0];
+    assert_eq!(method.name, "value");
+    assert_eq!(method.params.len(), 1);
+    assert_eq!(method.params[0].name, "self");
+    assert_eq!(method.params[0].ty.kind, HirTypeKind::Name("Self".into()));
+}
+
+#[test]
 fn hir_preserves_const_generic_params_and_named_array_lengths() {
     let file = parse_source(
         "pub struct ArrayVec<T, const N: usize> { values: [T; N], len: usize } fn first<T, const N: usize>(values: [T; N]) -> T { return values[0]; }",

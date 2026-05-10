@@ -59,7 +59,12 @@ fn default_compiler_records_resident_gpu_pipeline() {
     assert!(compiler.contains("compile_source_to_wasm"));
     assert!(compiler.contains("record_wasm_from_gpu_token_buffer"));
     assert!(compiler.contains("compile_source_to_x86_64"));
-    assert!(compiler.contains("record_x86_from_gpu_token_buffer"));
+    assert!(compiler.contains("GPU x86_64 codegen is not currently available"));
+    assert!(!compiler.contains("record_x86_from_gpu_token_buffer"));
+    assert!(!compiler.contains("LANIUS_USE_GPU_WASM_CODEGEN"));
+    assert!(!compiler.contains("LANIUS_USE_GPU_X86_CODEGEN"));
+    assert!(!compiler.contains("cpu_wasm"));
+    assert!(!compiler.contains("cpu_native"));
     assert!(!compiler.contains("hir::parse_source"));
     assert!(!compiler.contains("emit_wasm"));
     assert!(!compiler.contains("emit_c"));
@@ -72,6 +77,8 @@ fn cpu_codegen_backends_are_deleted() {
     for rel in [
         "src/codegen/c.rs",
         "src/codegen/wasm.rs",
+        "src/codegen/cpu_wasm.rs",
+        "src/codegen/cpu_native.rs",
         "src/codegen/gpu_c.rs",
         "tests/codegen_c.rs",
         "tests/sample_programs.rs",
@@ -83,6 +90,8 @@ fn cpu_codegen_backends_are_deleted() {
     assert!(codegen_mod.contains("pub mod gpu_wasm;"));
     assert!(codegen_mod.contains("pub mod gpu_x86;"));
     assert!(!codegen_mod.contains("pub mod wasm;"));
+    assert!(!codegen_mod.contains("pub mod cpu_wasm;"));
+    assert!(!codegen_mod.contains("pub mod cpu_native;"));
     assert!(!codegen_mod.contains("pub mod c;"));
     assert!(!codegen_mod.contains("pub mod gpu_c;"));
 }
@@ -124,9 +133,7 @@ fn gpu_codegen_has_no_source_recognition_patterns() {
     }
 
     let body = include_str!("../shaders/codegen/wasm_body.slang");
-    let functions = include_str!("../shaders/codegen/wasm_functions.slang");
     assert!(body.contains("StructuredBuffer<uint> visible_decl"));
-    assert!(functions.contains("StructuredBuffer<uint> visible_decl"));
 
     let gpu_wasm = include_str!("../src/codegen/gpu_wasm.rs");
     assert!(gpu_wasm.contains("hir_kind_buf"));
@@ -135,8 +142,10 @@ fn gpu_codegen_has_no_source_recognition_patterns() {
     assert!(gpu_wasm.contains("codegen.wasm.body"));
     assert!(gpu_wasm.contains("codegen.wasm.bool_body"));
     assert!(gpu_wasm.contains("codegen.wasm.module"));
-    assert!(gpu_wasm.contains("codegen.wasm.functions_probe"));
-    assert!(gpu_wasm.contains("codegen.wasm.functions"));
+    assert!(
+        !gpu_wasm.contains("wasm_functions.spv") && !gpu_wasm.contains("codegen.wasm.functions"),
+        "WASM generator must not initialize the stalled function-module shader path"
+    );
 }
 
 #[test]
@@ -331,15 +340,11 @@ fn gpu_wasm_simple_let_fast_path_packs_output_bytes() {
         !gpu_wasm.contains("compute.dispatch_workgroups_indirect(&bufs.body_dispatch_buf, 0);"),
         "default WASM codegen should not launch the legacy body shader that stalls pipeline creation"
     );
-    assert!(
-        gpu_wasm.contains("compute.dispatch_workgroups_indirect(&bufs.functions_dispatch_buf, 0);"),
-        "WASM function module fallback should be launched by GPU-written indirect dispatch args"
-    );
     let compiler = include_str!("../src/compiler.rs");
     assert!(
-        compiler.contains("LANIUS_USE_GPU_WASM_CODEGEN")
-            && compiler.contains("cpu_wasm::compile_source"),
-        "WASM codegen should default to the CPU fallback while keeping the GPU path opt-in"
+        !compiler.contains("cpu_wasm::compile_source")
+            && !compiler.contains("LANIUS_USE_GPU_WASM_CODEGEN"),
+        "WASM codegen must not route through a CPU backend"
     );
     assert!(
         gpu_wasm.contains("let (len, source_buf)"),
@@ -351,7 +356,7 @@ fn gpu_wasm_simple_let_fast_path_packs_output_bytes() {
     );
     assert!(
         gpu_wasm.contains("mode == 1 || mode == 5"),
-        "WASM readback should use the explicit pack buffer for function-path output"
+        "WASM readback should use the explicit pack buffer for unpacked byte streams"
     );
 }
 
@@ -387,7 +392,7 @@ fn gpu_codegen_packs_remaining_unpacked_outputs_before_readback() {
 }
 
 #[test]
-fn gpu_x86_codegen_lowers_gpu_ir_and_register_allocates_on_gpu() {
+fn gpu_x86_codegen_module_exists_but_is_not_wired_into_compiler() {
     let gpu_x86 = include_str!("../src/codegen/gpu_x86.rs");
     assert!(gpu_x86.contains("x86_regalloc.spv"));
     assert!(gpu_x86.contains("x86_from_wasm.spv"));
@@ -409,6 +414,11 @@ fn gpu_x86_codegen_lowers_gpu_ir_and_register_allocates_on_gpu() {
         "x86 reused function module lowering should launch through GPU-written indirect dispatch args"
     );
     assert!(gpu_x86.contains("compute.dispatch_workgroups(output_groups_x, output_groups_y, 1);"));
+    let compiler = include_str!("../src/compiler.rs");
+    assert!(
+        !compiler.contains("record_x86_from_gpu_token_buffer"),
+        "x86 module should not be wired into the compiler until it has a non-hanging GPU path"
+    );
 
     let regalloc = include_str!("../shaders/codegen/x86_regalloc.slang");
     assert!(regalloc.contains("RWStructuredBuffer<uint> reg_map"));

@@ -646,9 +646,11 @@ impl<'a> Parser<'a> {
             });
         }
         let name = self.push("ident", vec![]);
-        self.expect(tokens::TokenKind::Colon, "Colon")?;
-        let ty = self.parse_type_expr()?;
-        Ok(self.push("param", vec![name, ty]))
+        if self.eat(tokens::TokenKind::Colon) {
+            let ty = self.parse_type_expr()?;
+            return Ok(self.push("param", vec![name, ty]));
+        }
+        Ok(self.push("param_self", vec![name]))
     }
 
     fn parse_type_expr(&mut self) -> Result<u32, ParseError> {

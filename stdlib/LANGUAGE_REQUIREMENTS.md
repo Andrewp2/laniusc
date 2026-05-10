@@ -51,10 +51,9 @@ Supported enough for the seed library:
   `start`, `end`, `is_empty`, and `contains`.
 - Module-form `core::slice` now exposes source-level `[i32]` view helpers using
   explicit length parameters. This validates slice parameter and indexing
-  coverage in the bounded GPU frontend, and fixed arrays can now be passed to
-  these helpers through the default WASM/native fallback paths as covered by
-  `sample_programs/slice_helpers`. Real slice metadata, borrow semantics, and
-  general backend representation are still missing.
+  coverage in the bounded GPU frontend. Real slice metadata, borrow semantics,
+  fixed-array-to-slice lowering, and general backend representation are still
+  missing.
 - Module-form `core::panic` now exposes source-level `panic()` and
   `unreachable()` helpers by reusing the current `assert(false)` failure path.
   Panic payloads, hooks, unwinding, and source locations are still missing.
@@ -125,10 +124,9 @@ Supported enough for the seed library:
   these generic enum value uses to scalar placeholders after precheck because
   the GPU frontend still erases generic enum arguments. A separate codegen-only
   lowering now rewrites the seed `Option`, `Result`, and all-unit enum shapes
-  to `i32`-backed source for backend input. `sample_programs/option_result_helpers`
-  verifies the narrow `Option<i32>` and `Result<i32, i32>` helper path on the
-  executable WASM and native fallbacks. Full inference without context,
-  monomorphization, trait/interface resolution, general layout, and
+  to `i32`-backed source for backend input. Real GPU backend lowering for these
+  source-level seed rewrites is still narrow, and full inference without
+  context, monomorphization, trait/interface resolution, general layout, and
   exhaustiveness are still missing.
 - Generic type parameter syntax on functions, such as `fn first<T>(value: T) ->
   T`, now parses, lowers to HIR, and has frontend GPU type-checker support for
@@ -165,38 +163,32 @@ Supported enough for the seed library:
   frontend types by the GPU type checker. Bounded CPU HIR precheck now validates
   concrete generic struct literals and member access, then the type-check-only
   GPU source erases those generic struct values and type uses after precheck.
-  The default WASM/native fallback paths now have a narrow scalar representation
-  for the current two-`i32` `Range<i32>` seed shape so range constructors,
-  `start`/`end` member reads, helper calls, and range iteration can execute.
-  The WASM/native fallback paths also execute simple non-generic all-scalar
-  product values, including local copies, field assignment, flattened
-  parameter passing, and flattened return values, as covered by
-  `sample_programs/struct_fields`. Full generic struct instantiation, nested or
-  heap-backed struct layout, and GPU backend lowering are still missing.
+  Real GPU backend lowering for range constructors, member reads, generic
+  struct instantiation, nested or heap-backed struct layout, field assignment,
+  and struct parameter/return ABI is still missing.
 - Named struct literal expressions such as `VecHeader { ptr: 0, len: 0 }` now
   parse, lower to HIR, and type-check against non-generic structs and bounded
   concrete generic struct contexts such as `Range<i32>`. Literal field
   existence, required fields, field value types, member access, field assignment
   targets, and struct function parameter/return types have frontend type-checker
-  coverage. Local all-scalar struct literals, copies, field reads, field
-  assignments, function parameters, and return values now have executable
-  fallback coverage, but nested fields and heap/object layout are still missing.
+  coverage. Backend lowering for local all-scalar struct literals, copies,
+  field reads, field assignments, function parameters, return values, nested
+  fields, and heap/object layout is still missing.
 - Top-level `impl` blocks with optional generic parameters now lex, parse, and
   lower to HIR with method declarations preserved. Bounded CPU HIR precheck
   resolves method calls by using the first declared method parameter as the
-  receiver and validating remaining call arguments against the impl target.
-  The type-check-only GPU source erases these method calls and strips impl
-  blocks after precheck. `self` receiver syntax, visibility enforcement beyond
-  import/export preservation, trait-driven method lookup, and general backend
-  lowering are still missing. The default WASM/native fallback paths now compile
-  impl methods as ordinary functions and lower direct receiver-style calls such
-  as `range.start()` for the current source-level method shape.
+  receiver, including shorthand `self` receiver parameters that substitute to
+  the enclosing impl target. The type-check-only GPU source erases these method
+  calls and strips impl blocks after precheck. Visibility enforcement beyond
+  import/export preservation, full trait-driven method lookup, and general
+  backend lowering are still missing.
 - Top-level `trait` declarations with optional generic parameters and
   semicolon-terminated method signatures now lex, parse, and lower to HIR.
   Bounded `impl Trait for Type` blocks parse and get CPU HIR conformance
   precheck for required method names, arity, parameter types, and return types
-  after trait type substitution. Trait declarations and impl blocks are erased
-  from the type-check-only GPU source after precheck. Single trait bounds on
+  after trait type substitution, including `Self` in trait method receiver
+  signatures. Trait declarations and impl blocks are erased from the
+  type-check-only GPU source after precheck. Single trait bounds on
   generic type parameters can drive bounded method lookup during CPU precheck.
   Full trait solving, associated items, vtables/dictionaries, and backend
   lowering are still missing.
@@ -237,12 +229,8 @@ Supported enough for the seed library:
   CPU HIR precheck binds the loop variable for fixed arrays, slices, and
   range-like `Range<T>` seed structs, then the type-check-only GPU source
   rewrites the loop to a non-executed `while` body with a dummy loop binding.
-  The current executable WASM/native fallback paths lower fixed-array iteration
-  with `break` and `continue`, as covered by `sample_programs/for_array_control`,
-  and lower the current `Range<i32>` seed shape as covered by
-  `sample_programs/range_sum`. Iterator protocol lookup, borrow semantics,
-  executable slice iteration, general range forms, and GPU backend lowering are
-  still missing.
+  Iterator protocol lookup, borrow semantics, executable slice iteration,
+  general range forms, and GPU backend lowering are still missing.
 - Fixed-size array type syntax, array literals, and indexing for concrete
   arrays, used by `stdlib/array_i32_4.lani` and `sample_programs/array_sum.lani`.
   The limited const-generic `core::array_i32` seed covers scalar element access
@@ -251,10 +239,8 @@ Supported enough for the seed library:
   as length, first/last, lookup, count, min, max, sum, copy, fill, and reverse.
   The CPU HIR precheck validates concrete array-valued function returns and
   calls, then the type-check-only GPU source erases array-returning signatures
-  and calls to scalar or literal placeholders. The default WASM/native fallback
-  paths execute concrete fixed-array return values through flattened array
-  results as covered by `sample_programs/array_return_helpers`. General GPU
-  backend lowering, generic element arrays, and dynamic lengths are still
+  and calls to scalar or literal placeholders. Real GPU backend lowering for
+  array-valued returns, generic element arrays, and dynamic lengths is still
   missing.
 - `str` type annotations are recognized by the GPU type checker and string
   literals have a distinct frontend type. Runtime representation, string
@@ -266,10 +252,9 @@ Supported enough for the seed library:
   representations are still missing.
 - Slice type syntax such as `[i32]` now parses and lowers to HIR, and the
   bounded GPU frontend accepts simple `[i32]` parameters and indexing as used by
-  the `core::slice` seed. The default WASM/native fallback paths support a
-  bounded fixed-array-to-slice call ABI for the current `[i32]` helper shape.
-  It does not yet have runtime metadata, borrow semantics, mutation-view rules,
-  or general backend lowering.
+  the `core::slice` seed. It does not yet have runtime metadata,
+  fixed-array-to-slice lowering, borrow semantics, mutation-view rules, or
+  general backend lowering.
 - Reference type syntax such as `&i32` and `&[i32]` now parses, lowers to HIR,
   and is accepted by syntax validation as a type form. It does not yet have
   borrow checking, lifetime rules, aliasing rules, or backend representation.
@@ -287,15 +272,11 @@ Important limitations visible in current files:
   but helpers that need the numeric value of `N`, other element types, or
   array-valued function returns still need concrete source files. Concrete
   fixed-array return helpers now type-check through CPU precheck plus
-  type-check-only erasure and execute through the default WASM/native fallback
-  paths, but generic element arrays and dynamic lengths still need real const
-  evaluation and layout support.
+  type-check-only erasure, but generic element arrays, dynamic lengths, and
+  real backend lowering still need real const evaluation and layout support.
 - `for` loops have bounded type-check-only lowering for arrays, slices, and
-  range-like seed structs. Fixed-array iteration now executes through the
-  default WASM/native fallback paths, including `break` and `continue`, and the
-  current `Range<i32>` seed shape executes through the same fallbacks. Executable
-  slice iteration, general range forms, and GPU backend lowering are still
-  missing.
+  range-like seed structs. Executable slice iteration, general range forms, and
+  GPU backend lowering are still missing.
 - No complete enum/sum type semantics, full struct/product backend representation,
   full trait solving, slice runtime semantics, reference semantics,
   match semantics, or heap
@@ -306,10 +287,9 @@ Important limitations visible in current files:
   `Result<T, E>` semantics because general layout, exhaustiveness,
   unconstrained inference, and verified backend execution are missing. Generic
   range declarations now have bounded concrete `i32` helper coverage through
-  type-check-only generic struct and method-call erasure, plus narrow fallback
-  execution for the current `Range<i32>` constructor/member/iteration shape.
-  Range operators, slicing integration, general backend representation, and GPU
-  backend lowering are still missing.
+  type-check-only generic struct and method-call erasure. Range operators,
+  slicing integration, general backend representation, and GPU backend lowering
+  are still missing.
 - `extern fn` declarations have a narrow WASM import-lowering path for direct
   integer-shaped calls. Calls are checked for argument count, argument type, and
   declared return type, but there is still no native lowering, target-specific
@@ -383,9 +363,8 @@ Strict blockers:
   type-identity model that needs aliases preserved past source expansion.
 - Borrowed views or references for slices and non-owning APIs. `[i32]`
   parameters and indexing now have source-level seed coverage through
-  `core::slice`, and fixed arrays can execute through these helpers in the
-  default WASM/native fallback paths. Slice length metadata, mutation views,
-  aliasing rules, and general backend lowering are still missing.
+  `core::slice`. Slice length metadata, mutation views, aliasing rules, and
+  general backend lowering are still missing.
 - A defined panic lowering path. `assert(bool)` has a minimal builtin lowering
   that traps on WASM and exits nonzero through native lowering, and
   `core::panic` now reuses that path for source-level `panic()` and
@@ -402,10 +381,9 @@ Nice-to-have:
 - Traits/interfaces for `Debug` and iterator-like APIs. `Eq<T>`, `Ord<T>`, and
   `Hash<T>` now have bounded source seeds, impl conformance checks, and
   multi-bound method lookup, but not full solver behavior or backend lowering.
-- Method syntax for primitive helpers. Bounded impl method calls and
-  single-bound trait method calls now type-check, and direct impl method calls
-  execute through the default WASM/native fallback paths for simple receiver
-  methods. Full trait-directed backend lowering is still missing.
+- Method syntax for primitive helpers. Bounded impl method calls, `self`
+  receivers, and single-bound trait method calls now type-check. Full
+  trait-directed backend lowering is still missing.
 - Compile-time evaluation for simple constants and bounds.
 - Unsafe or intrinsic boundaries for unchecked indexing and low-level utilities.
 
@@ -416,8 +394,7 @@ Acceptance checks:
 - One limited const-generic fixed-array helper replaces a concrete
   `array_i32_N` element-access helper in a frontend stdlib fixture.
 - Slice `first`, `get_or`, `contains`, and `sum` have source-level `[i32]`
-  frontend coverage with explicit length parameters and executable fallback
-  coverage through `sample_programs/slice_helpers`. Real `len` metadata and
+  frontend coverage with explicit length parameters. Real `len` metadata and
   general slice backend execution are still missing.
 - Assert behavior is deterministic for WASM and native targets; source-level
   `core::panic` currently uses the same failure path, while richer panic
@@ -433,8 +410,7 @@ Strict blockers:
 - Allocator ABI: allocation, reallocation/growth, deallocation, alignment, and
   allocation failure semantics.
 - Usable struct/product types. Non-generic declarations, literals, field access,
-  and field-level type checking now have frontend coverage, and simple
-  all-scalar local structs execute through the fallback backends. Parameter and
+  and field-level type checking now have frontend coverage. Parameter and
   return passing, nested/heap layout, generic instantiation, and GPU backend
   support are still missing.
 - Owned heap pointer/reference representation and lifetime or ownership rules
@@ -519,7 +495,7 @@ Strict blockers for `gpu`:
 - A stable host/device buffer ABI and layout rules.
 - Explicit address spaces or buffer view types for GPU data.
 - Kernel/compute dispatch declaration model.
-- Deterministic CPU fallback or parity harness for each primitive.
+- Deterministic GPU parity harness for each primitive.
 - Error reporting for device availability, shader compilation, dispatch, and
   readback.
 

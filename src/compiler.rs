@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    codegen::{cpu_native, cpu_wasm, gpu_wasm, gpu_x86},
+    codegen::gpu_wasm,
     gpu::device::{self, GpuDevice},
     hir::{
         HirAssignOp,
@@ -68,7 +68,6 @@ pub struct GpuCompiler<'gpu> {
     parse_tables: PrecomputedParseTables,
     type_checker: gpu_type_checker::GpuTypeChecker,
     wasm_generator: OnceLock<Result<gpu_wasm::GpuWasmCodeGenerator, String>>,
-    x86_generator: OnceLock<Result<gpu_x86::GpuX86CodeGenerator, String>>,
 }
 
 impl GpuCompiler<'static> {
@@ -102,7 +101,6 @@ impl<'gpu> GpuCompiler<'gpu> {
             parse_tables,
             type_checker,
             wasm_generator: OnceLock::new(),
-            x86_generator: OnceLock::new(),
         })
     }
 
@@ -196,13 +194,6 @@ impl<'gpu> GpuCompiler<'gpu> {
     }
 
     async fn compile_expanded_source_to_wasm(&self, src: &str) -> Result<Vec<u8>, CompileError> {
-        if std::env::var("LANIUS_USE_GPU_WASM_CODEGEN").ok().as_deref() != Some("1") {
-            let type_check_src = erase_match_expressions_for_type_check(src)?;
-            self.type_check_expanded_source(&type_check_src).await?;
-            return cpu_wasm::compile_source(src)
-                .map_err(|err| CompileError::GpuCodegen(format!("CPU WASM fallback: {err}")));
-        }
-
         trace_wasm_compile("compile.start");
         self.lexer
             .with_recorded_resident_tokens(
@@ -330,142 +321,29 @@ impl<'gpu> GpuCompiler<'gpu> {
     }
 
     pub async fn compile_source_to_x86_64(&self, src: &str) -> Result<Vec<u8>, CompileError> {
-        let src = prepare_source_for_gpu_codegen(src)?;
-        self.compile_expanded_source_to_x86_64(&src).await
+        let _ = src;
+        self.compile_expanded_source_to_x86_64("").await
     }
 
     pub async fn compile_source_to_x86_64_from_path(
         &self,
         path: impl AsRef<Path>,
     ) -> Result<Vec<u8>, CompileError> {
-        let src = prepare_source_for_gpu_codegen_from_path(path)?;
-        self.compile_expanded_source_to_x86_64(&src).await
+        let _ = path;
+        self.compile_expanded_source_to_x86_64("").await
     }
 
     async fn compile_expanded_source_to_x86_64(&self, src: &str) -> Result<Vec<u8>, CompileError> {
-        if std::env::var("LANIUS_USE_GPU_X86_CODEGEN").ok().as_deref() != Some("1") {
-            let type_check_src = erase_match_expressions_for_type_check(src)?;
-            self.type_check_expanded_source(&type_check_src).await?;
-            return cpu_native::compile_source(src)
-                .map_err(|err| CompileError::GpuCodegen(format!("CPU native fallback: {err}")));
-        }
-
-        trace_wasm_compile("compile.x86.start");
-        self.lexer
-            .with_recorded_resident_tokens(
-                src,
-                |device, queue, bufs, encoder, mut timer| {
-                    let (parser_check, type_check) = self
-                        .parser
-                        .record_checked_resident_syntax_hir_artifacts(
-                            encoder,
-                            bufs.n,
-                            &bufs.tokens_out,
-                            &bufs.token_count,
-                            &self.parse_tables,
-                            |parse_bufs, encoder| {
-                                if let Some(timer) = timer.as_deref_mut() {
-                                    timer.stamp(encoder, "parser.direct_hir.done");
-                                }
-                                let hir_status = &parse_bufs.ll1_status;
-                                let recorded = self
-                                    .type_checker
-                                    .record_resident_token_buffer_with_hir_on_gpu(
-                                        device,
-                                        queue,
-                                        encoder,
-                                        bufs.n,
-                                        bufs.n,
-                                        &bufs.tokens_out,
-                                        &bufs.token_count,
-                                        &bufs.in_bytes,
-                                        parse_bufs.tree_capacity,
-                                        &parse_bufs.hir_kind,
-                                        &parse_bufs.hir_token_pos,
-                                        &parse_bufs.hir_token_end,
-                                        hir_status,
-                                        timer.as_deref_mut(),
-                                    )
-                                    .map_err(|err| CompileError::GpuTypeCheck(err.to_string()))?;
-                                if let Some(timer) = timer.as_deref_mut() {
-                                    timer.stamp(encoder, "typecheck.done");
-                                }
-                                let x86_check = self
-                                    .type_checker
-                                    .with_codegen_buffers(
-                                        |visible_decl,
-                                         visible_type,
-                                         call_fn_index,
-                                         call_return_type| {
-                                            self.x86_generator()?
-                                                .record_x86_from_gpu_token_buffer(
-                                                    device,
-                                                    queue,
-                                                    encoder,
-                                                    bufs.n,
-                                                    bufs.n,
-                                                    &bufs.tokens_out,
-                                                    &bufs.token_count,
-                                                    &bufs.in_bytes,
-                                                    parse_bufs.tree_capacity,
-                                                    &parse_bufs.hir_kind,
-                                                    &parse_bufs.hir_token_pos,
-                                                    &parse_bufs.hir_token_end,
-                                                    hir_status,
-                                                    visible_decl,
-                                                    visible_type,
-                                                    call_fn_index,
-                                                    call_return_type,
-                                                )
-                                                .map_err(|err| {
-                                                    CompileError::GpuCodegen(err.to_string())
-                                                })
-                                        },
-                                    )
-                                    .ok_or_else(|| {
-                                        CompileError::GpuCodegen(
-                                            "GPU type metadata buffers missing".into(),
-                                        )
-                                    })??;
-                                Ok::<_, CompileError>((recorded, x86_check))
-                            },
-                        )
-                        .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
-                    let (type_check, x86_check) = type_check?;
-                    if let Some(timer) = timer.as_deref_mut() {
-                        timer.stamp(encoder, "x86.codegen.done");
-                    }
-                    Ok((parser_check, type_check, x86_check))
-                },
-                |device, queue, _bufs, (parser_check, type_check, x86_check)| {
-                    self.parser
-                        .finish_recorded_resident_syntax_hir_check(&parser_check)
-                        .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
-                    self.type_checker
-                        .finish_recorded_check(device, &type_check)
-                        .map_err(|err| CompileError::GpuTypeCheck(err.to_string()))?;
-                    self.x86_generator()?
-                        .finish_recorded_x86(device, queue, &x86_check)
-                        .map_err(|err| CompileError::GpuCodegen(err.to_string()))
-                },
-            )
-            .await
-            .map_err(|err| CompileError::GpuFrontend(format!("lex source: {err}")))?
+        let _ = src;
+        Err(gpu_x86_unavailable_error())
     }
+}
 
-    fn x86_generator(&self) -> Result<&gpu_x86::GpuX86CodeGenerator, CompileError> {
-        self.x86_generator
-            .get_or_init(|| {
-                let generator = gpu_x86::GpuX86CodeGenerator::new_with_device(self.gpu)
-                    .map_err(|err| err.to_string())?;
-                self.gpu.persist_pipeline_cache();
-                Ok(generator)
-            })
-            .as_ref()
-            .map_err(|err| {
-                CompileError::GpuCodegen(format!("initialize GPU x86 code generator: {err}"))
-            })
-    }
+fn gpu_x86_unavailable_error() -> CompileError {
+    CompileError::GpuCodegen(
+        "GPU x86_64 codegen is not currently available; the CPU backend route has been removed"
+            .to_string(),
+    )
 }
 
 fn trace_wasm_compile(stage: &str) {
@@ -1422,9 +1300,19 @@ impl HirPrecheckContext {
                                 params: method
                                     .params
                                     .iter()
-                                    .map(|param| simple_type_from_hir_type(&param.ty, &params))
+                                    .map(|param| {
+                                        simple_type_from_hir_type_with_self(
+                                            &param.ty,
+                                            &params,
+                                            Some(&target),
+                                        )
+                                    })
                                     .collect(),
-                                ret: simple_type_from_hir_type(&method.ret, &params),
+                                ret: simple_type_from_hir_type_with_self(
+                                    &method.ret,
+                                    &params,
+                                    Some(&target),
+                                ),
                             },
                         });
                     }
@@ -1450,6 +1338,7 @@ impl HirPrecheckContext {
                                 .map(|method| {
                                     let mut params = trait_params.clone();
                                     params.extend(method.type_params.iter().cloned());
+                                    let self_ty = SimpleType::Param(SELF_TYPE_NAME.into());
                                     TraitMethodInfo {
                                         name: method.name.clone(),
                                         type_params: method.type_params.clone(),
@@ -1462,10 +1351,18 @@ impl HirPrecheckContext {
                                             .params
                                             .iter()
                                             .map(|param| {
-                                                simple_type_from_hir_type(&param.ty, &params)
+                                                simple_type_from_hir_type_with_self(
+                                                    &param.ty,
+                                                    &params,
+                                                    Some(&self_ty),
+                                                )
                                             })
                                             .collect(),
-                                        ret: simple_type_from_hir_type(&method.ret, &params),
+                                        ret: simple_type_from_hir_type_with_self(
+                                            &method.ret,
+                                            &params,
+                                            Some(&self_ty),
+                                        ),
                                     }
                                 })
                                 .collect(),
@@ -1503,6 +1400,7 @@ impl HirPrecheckContext {
                         .iter()
                         .cloned()
                         .collect::<HashSet<_>>();
+                    let self_ty = simple_type_from_hir_type(&implementation.target, &params);
                     self.precheck_trait_impl_conformance(implementation, &params)?;
                     for method in &implementation.methods {
                         let mut method_params = params.clone();
@@ -1515,10 +1413,18 @@ impl HirPrecheckContext {
                         for param in &method.params {
                             env.insert(
                                 param.name.clone(),
-                                simple_type_from_hir_type(&param.ty, &method_params),
+                                simple_type_from_hir_type_with_self(
+                                    &param.ty,
+                                    &method_params,
+                                    Some(&self_ty),
+                                ),
                             );
                         }
-                        let ret = simple_type_from_hir_type(&method.ret, &method_params);
+                        let ret = simple_type_from_hir_type_with_self(
+                            &method.ret,
+                            &method_params,
+                            Some(&self_ty),
+                        );
                         self.precheck_block(&method.body, &mut env, &ret)?;
                     }
                 }
@@ -1605,6 +1511,8 @@ impl HirPrecheckContext {
         for (param, arg) in info.type_params.iter().zip(trait_args.iter()) {
             trait_substitutions.insert(param.clone(), arg.clone());
         }
+        let self_ty = simple_type_from_hir_type(&implementation.target, impl_params);
+        trait_substitutions.insert(SELF_TYPE_NAME.into(), self_ty.clone());
 
         for required in &info.methods {
             let Some(method) = implementation
@@ -1626,6 +1534,7 @@ impl HirPrecheckContext {
                 required,
                 method,
                 impl_params,
+                &self_ty,
                 &trait_substitutions,
             )?;
         }
@@ -1639,6 +1548,7 @@ impl HirPrecheckContext {
         required: &TraitMethodInfo,
         method: &crate::hir::HirFn,
         impl_params: &HashSet<String>,
+        self_ty: &SimpleType,
         trait_substitutions: &HashMap<String, SimpleType>,
     ) -> Result<(), CompileError> {
         if required.type_params.len() != method.type_params.len() {
@@ -1678,7 +1588,8 @@ impl HirPrecheckContext {
             required.params.iter().zip(method.params.iter()).enumerate()
         {
             let expected = substitute_simple_type(expected, trait_substitutions);
-            let actual = simple_type_from_hir_type(&actual.ty, &method_params);
+            let actual =
+                simple_type_from_hir_type_with_self(&actual.ty, &method_params, Some(self_ty));
             if !simple_types_compatible_for_function(&expected, &actual, &const_params) {
                 return Err(CompileError::GpuTypeCheck(format!(
                     "method `{}` parameter {} in impl of trait `{trait_name}` expected {}, got {}",
@@ -1691,7 +1602,8 @@ impl HirPrecheckContext {
         }
 
         let expected_ret = substitute_simple_type(&required.ret, trait_substitutions);
-        let actual_ret = simple_type_from_hir_type(&method.ret, &method_params);
+        let actual_ret =
+            simple_type_from_hir_type_with_self(&method.ret, &method_params, Some(self_ty));
         if !simple_types_compatible_for_function(&expected_ret, &actual_ret, &const_params) {
             return Err(CompileError::GpuTypeCheck(format!(
                 "method `{}` return type in impl of trait `{trait_name}` expected {}, got {}",
@@ -1870,6 +1782,7 @@ impl HirPrecheckContext {
                         .iter()
                         .cloned()
                         .collect::<HashSet<_>>();
+                    let self_ty = simple_type_from_hir_type(&implementation.target, &params);
                     for method in &implementation.methods {
                         let mut method_params = params.clone();
                         method_params.extend(method.type_params.iter().cloned());
@@ -1881,7 +1794,11 @@ impl HirPrecheckContext {
                         for param in &method.params {
                             env.insert(
                                 param.name.clone(),
-                                simple_type_from_hir_type(&param.ty, &method_params),
+                                simple_type_from_hir_type_with_self(
+                                    &param.ty,
+                                    &method_params,
+                                    Some(&self_ty),
+                                ),
                             );
                         }
                         self.collect_block_sum_type_codegen(
@@ -2261,6 +2178,7 @@ impl HirPrecheckContext {
                         .iter()
                         .cloned()
                         .collect::<HashSet<_>>();
+                    let self_ty = simple_type_from_hir_type(&implementation.target, &params);
                     for method in &implementation.methods {
                         let mut method_params = params.clone();
                         method_params.extend(method.type_params.iter().cloned());
@@ -2272,7 +2190,11 @@ impl HirPrecheckContext {
                         for param in &method.params {
                             env.insert(
                                 param.name.clone(),
-                                simple_type_from_hir_type(&param.ty, &method_params),
+                                simple_type_from_hir_type_with_self(
+                                    &param.ty,
+                                    &method_params,
+                                    Some(&self_ty),
+                                ),
                             );
                         }
                         self.collect_block_match_erasure(&method.body, &mut env, replacements)?;
@@ -2398,6 +2320,7 @@ impl HirPrecheckContext {
                         .iter()
                         .cloned()
                         .collect::<HashSet<_>>();
+                    let self_ty = simple_type_from_hir_type(&implementation.target, &params);
                     for method in &implementation.methods {
                         let mut method_params = params.clone();
                         method_params.extend(method.type_params.iter().cloned());
@@ -2409,10 +2332,18 @@ impl HirPrecheckContext {
                         for param in &method.params {
                             env.insert(
                                 param.name.clone(),
-                                simple_type_from_hir_type(&param.ty, &method_params),
+                                simple_type_from_hir_type_with_self(
+                                    &param.ty,
+                                    &method_params,
+                                    Some(&self_ty),
+                                ),
                             );
                         }
-                        let ret = simple_type_from_hir_type(&method.ret, &method_params);
+                        let ret = simple_type_from_hir_type_with_self(
+                            &method.ret,
+                            &method_params,
+                            Some(&self_ty),
+                        );
                         self.collect_block_method_call_erasure(
                             &method.body,
                             &mut env,
@@ -2640,6 +2571,7 @@ impl HirPrecheckContext {
                         .iter()
                         .cloned()
                         .collect::<HashSet<_>>();
+                    let self_ty = simple_type_from_hir_type(&implementation.target, &params);
                     for method in &implementation.methods {
                         let mut method_params = params.clone();
                         method_params.extend(method.type_params.iter().cloned());
@@ -2651,10 +2583,18 @@ impl HirPrecheckContext {
                         for param in &method.params {
                             env.insert(
                                 param.name.clone(),
-                                simple_type_from_hir_type(&param.ty, &method_params),
+                                simple_type_from_hir_type_with_self(
+                                    &param.ty,
+                                    &method_params,
+                                    Some(&self_ty),
+                                ),
                             );
                         }
-                        let ret = simple_type_from_hir_type(&method.ret, &method_params);
+                        let ret = simple_type_from_hir_type_with_self(
+                            &method.ret,
+                            &method_params,
+                            Some(&self_ty),
+                        );
                         self.collect_block_generic_struct_value_erasure(
                             &method.body,
                             &mut env,
@@ -2980,6 +2920,7 @@ impl HirPrecheckContext {
                         .iter()
                         .cloned()
                         .collect::<HashSet<_>>();
+                    let self_ty = simple_type_from_hir_type(&implementation.target, &params);
                     for method in &implementation.methods {
                         let mut method_params = params.clone();
                         method_params.extend(method.type_params.iter().cloned());
@@ -2991,7 +2932,11 @@ impl HirPrecheckContext {
                         for param in &method.params {
                             env.insert(
                                 param.name.clone(),
-                                simple_type_from_hir_type(&param.ty, &method_params),
+                                simple_type_from_hir_type_with_self(
+                                    &param.ty,
+                                    &method_params,
+                                    Some(&self_ty),
+                                ),
                             );
                         }
                         self.collect_block_for_loop_erasure(&method.body, &mut env, replacements)?;
@@ -3124,8 +3069,13 @@ impl HirPrecheckContext {
                         .iter()
                         .cloned()
                         .collect::<HashSet<_>>();
+                    let self_ty = simple_type_from_hir_type(&implementation.target, &params);
                     for method in &implementation.methods {
-                        let ret = simple_type_from_hir_type(&method.ret, &params);
+                        let ret = simple_type_from_hir_type_with_self(
+                            &method.ret,
+                            &params,
+                            Some(&self_ty),
+                        );
                         let erase_returns = ret.is_array();
                         if erase_returns {
                             replacements.push((
@@ -3303,6 +3253,7 @@ impl HirPrecheckContext {
                         .iter()
                         .cloned()
                         .collect::<HashSet<_>>();
+                    let self_ty = simple_type_from_hir_type(&implementation.target, &params);
                     for method in &implementation.methods {
                         let mut method_params = params.clone();
                         method_params.extend(method.type_params.iter().cloned());
@@ -3314,10 +3265,18 @@ impl HirPrecheckContext {
                         for param in &method.params {
                             env.insert(
                                 param.name.clone(),
-                                simple_type_from_hir_type(&param.ty, &method_params),
+                                simple_type_from_hir_type_with_self(
+                                    &param.ty,
+                                    &method_params,
+                                    Some(&self_ty),
+                                ),
                             );
                         }
-                        let ret = simple_type_from_hir_type(&method.ret, &method_params);
+                        let ret = simple_type_from_hir_type_with_self(
+                            &method.ret,
+                            &method_params,
+                            Some(&self_ty),
+                        );
                         self.collect_block_generic_call_erasure(
                             &method.body,
                             &mut env,
@@ -4200,6 +4159,7 @@ impl HirPrecheckContext {
             for (param, arg) in info.type_params.iter().zip(trait_args.iter()) {
                 trait_substitutions.insert(param.clone(), arg.clone());
             }
+            trait_substitutions.insert(SELF_TYPE_NAME.into(), receiver.clone());
 
             for required in info
                 .methods
@@ -4526,9 +4486,22 @@ fn replace_bound_names_in_source(src: &str, bindings: &HashMap<String, String>) 
     apply_replacements(src, replacements)
 }
 
+const SELF_TYPE_NAME: &str = "Self";
+
 fn simple_type_from_hir_type(ty: &HirType, params: &HashSet<String>) -> SimpleType {
+    simple_type_from_hir_type_with_self(ty, params, None)
+}
+
+fn simple_type_from_hir_type_with_self(
+    ty: &HirType,
+    params: &HashSet<String>,
+    self_ty: Option<&SimpleType>,
+) -> SimpleType {
     match &ty.kind {
         HirTypeKind::Void => SimpleType::Void,
+        HirTypeKind::Name(name) if name == SELF_TYPE_NAME => self_ty
+            .cloned()
+            .unwrap_or_else(|| SimpleType::Named(name.clone())),
         HirTypeKind::Name(name) => primitive_simple_type(name).unwrap_or_else(|| {
             if params.contains(name) {
                 SimpleType::Param(name.clone())
@@ -4540,17 +4513,17 @@ fn simple_type_from_hir_type(ty: &HirType, params: &HashSet<String>) -> SimpleTy
             name: name.clone(),
             args: args
                 .iter()
-                .map(|arg| simple_type_from_hir_type(arg, params))
+                .map(|arg| simple_type_from_hir_type_with_self(arg, params, self_ty))
                 .collect(),
         },
-        HirTypeKind::Ref { inner } => {
-            SimpleType::Ref(Box::new(simple_type_from_hir_type(inner, params)))
-        }
-        HirTypeKind::Slice { elem } => {
-            SimpleType::Slice(Box::new(simple_type_from_hir_type(elem, params)))
-        }
+        HirTypeKind::Ref { inner } => SimpleType::Ref(Box::new(
+            simple_type_from_hir_type_with_self(inner, params, self_ty),
+        )),
+        HirTypeKind::Slice { elem } => SimpleType::Slice(Box::new(
+            simple_type_from_hir_type_with_self(elem, params, self_ty),
+        )),
         HirTypeKind::Array { elem, len } => SimpleType::Array {
-            elem: Box::new(simple_type_from_hir_type(elem, params)),
+            elem: Box::new(simple_type_from_hir_type_with_self(elem, params, self_ty)),
             len: len.clone(),
         },
     }
@@ -5500,33 +5473,29 @@ pub async fn compile_source_to_wasm_with_gpu_codegen_using_path(
 }
 
 pub async fn compile_source_to_x86_64_with_gpu_codegen(src: &str) -> Result<Vec<u8>, CompileError> {
-    let src = prepare_source_for_gpu_codegen(src)?;
-    global_gpu_compiler()?
-        .compile_expanded_source_to_x86_64(&src)
-        .await
+    let _ = src;
+    Err(gpu_x86_unavailable_error())
 }
 
 pub async fn compile_source_to_x86_64_with_gpu_codegen_from_path(
     path: impl AsRef<Path>,
 ) -> Result<Vec<u8>, CompileError> {
-    let src = prepare_source_for_gpu_codegen_from_path(path)?;
-    global_gpu_compiler()?
-        .compile_expanded_source_to_x86_64(&src)
-        .await
+    let _ = path;
+    Err(gpu_x86_unavailable_error())
 }
 
 pub async fn compile_source_to_x86_64_with_gpu_codegen_using(
     src: &str,
     compiler: &GpuCompiler<'_>,
 ) -> Result<Vec<u8>, CompileError> {
-    let src = prepare_source_for_gpu_codegen(src)?;
-    compiler.compile_expanded_source_to_x86_64(&src).await
+    let _ = (src, compiler);
+    Err(gpu_x86_unavailable_error())
 }
 
 pub async fn compile_source_to_x86_64_with_gpu_codegen_using_path(
     path: impl AsRef<Path>,
     compiler: &GpuCompiler<'_>,
 ) -> Result<Vec<u8>, CompileError> {
-    let src = prepare_source_for_gpu_codegen_from_path(path)?;
-    compiler.compile_expanded_source_to_x86_64(&src).await
+    let _ = (path, compiler);
+    Err(gpu_x86_unavailable_error())
 }

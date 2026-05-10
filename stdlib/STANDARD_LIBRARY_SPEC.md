@@ -348,7 +348,7 @@ Expected contents:
 - Compute dispatch helpers.
 - Prefix scan, segmented scan, reduce, compact, scatter/gather, histogram, and
   radix-sort primitives.
-- CPU fallback or CPU/GPU parity testing hooks.
+- GPU parity testing hooks against deterministic reference outputs.
 - Device availability and shader/dispatch error reporting.
 
 ### Optional Distribution Packages

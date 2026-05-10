@@ -1083,8 +1083,17 @@ impl<'a> HirParser<'a> {
         let start = self.peek_start();
         let name =
             self.expect_name(&[TokenKind::ParamIdent, TokenKind::Ident], "parameter name")?;
-        self.expect(TokenKind::Colon, "Colon")?;
-        let ty = self.parse_type_expr()?;
+        let ty = if self.eat(TokenKind::Colon).is_some() {
+            self.parse_type_expr()?
+        } else {
+            if name != "self" {
+                return Err(self.error("Colon"));
+            }
+            HirType {
+                kind: HirTypeKind::Name("Self".into()),
+                span: self.span_since(start),
+            }
+        };
         Ok(HirParam {
             name,
             ty,

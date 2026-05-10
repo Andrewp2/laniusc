@@ -58,7 +58,9 @@ path_tail     [path_end]     -> ;
 
 param_list_opt [params_none] -> ;
 param_list_opt [params_some] -> param param_tail;
-param          [param]       -> 'Ident' 'Colon' type_expr;
+param          [param]       -> 'Ident' param_type_tail;
+param_type_tail [param_type] -> 'Colon' type_expr;
+param_type_tail [param_self] -> ;
 param_tail     [params_more] -> 'Comma' param_tail_after_comma;
 param_tail     [params_end]  -> ;
 
