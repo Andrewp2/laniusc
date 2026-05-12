@@ -84,6 +84,7 @@ static const uint TK_IF_LBRACE = 88u;
 static const uint TK_IF_RBRACE = 89u;
 static const uint TK_TRUE = 90u;
 static const uint TK_FALSE = 91u;
+static const uint TK_FOR = 100u;
 
 static const uint BLOCK_OWNER_NONE = 0u;
 static const uint BLOCK_OWNER_WHILE = 1u;
@@ -170,7 +171,7 @@ uint block_owner(uint open_i)
 
         if (paren_depth != 0u)
             continue;
-        if (kind == TK_WHILE)
+        if (kind == TK_WHILE || kind == TK_FOR)
             return BLOCK_OWNER_WHILE;
         if (kind == TK_FN)
             return BLOCK_OWNER_FN;

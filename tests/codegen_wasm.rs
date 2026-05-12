@@ -3,6 +3,66 @@ use std::{fs, process::Command};
 mod common;
 
 #[test]
+fn wasm_codegen_current_slice_is_not_primitive_helper_execution() {
+    let gpu_wasm = include_str!("../src/codegen/gpu_wasm.rs");
+    let simple_lets = include_str!("../shaders/codegen/wasm_simple_lets.slang");
+    let module = include_str!("../shaders/codegen/wasm_module.slang");
+    let i32_helpers = include_str!("../stdlib/core/i32.lani");
+    let bool_helpers = include_str!("../stdlib/core/bool.lani");
+    let assert_helpers = include_str!("../stdlib/test/assert.lani");
+
+    assert!(i32_helpers.contains("module core::i32;"));
+    assert!(i32_helpers.contains("pub fn abs(value: i32) -> i32"));
+    assert!(i32_helpers.contains("return abs(value);"));
+    assert!(i32_helpers.contains("while (power < value)"));
+    assert!(bool_helpers.contains("module core::bool;"));
+    assert!(assert_helpers.contains("assert(value);"));
+
+    assert!(gpu_wasm.contains("codegen.wasm.simple_lets"));
+    assert!(gpu_wasm.contains("codegen.wasm.module"));
+    assert!(gpu_wasm.contains("pack_output.spv"));
+    assert!(
+        !gpu_wasm.contains("wasm_functions.spv"),
+        "default WASM codegen should stay unavailable for function-helper modules until HIR-driven lowering exists"
+    );
+    assert!(simple_lets.contains("ERR_UNSUPPORTED_SOURCE_SHAPE"));
+    assert!(
+        !simple_lets.contains("hir_kind") && !module.contains("hir_kind"),
+        "current default WASM emitters are token/source driven, not HIR-driven helper lowering"
+    );
+}
+
+#[test]
+fn docs_name_smallest_gpu_only_primitive_helper_slice() {
+    let backend_paper = normalize_doc_whitespace(include_str!("../docs/ParallelCodeGeneration.md"));
+    let requirements_doc =
+        normalize_doc_whitespace(include_str!("../stdlib/LANGUAGE_REQUIREMENTS.md"));
+
+    for needle in [
+        "semantic analysis stage",
+        "abstract syntax tree",
+        "node type and resulting data type",
+    ] {
+        assert!(
+            backend_paper.contains(needle),
+            "backend paper text should describe AST/type-driven code generation: {needle}"
+        );
+    }
+
+    for needle in [
+        "Parser and type-check coverage for `stdlib/core/*.lani` seeds is not execution",
+        "default WASM backend does not wire the stalled function-module shader path",
+        "HIR-driven WASM lowering for no-loop scalar helpers",
+        "Partial for frontend; blocked for execution",
+    ] {
+        assert!(
+            requirements_doc.contains(needle),
+            "stdlib requirements should separate frontend coverage from backend execution: {needle}"
+        );
+    }
+}
+
+#[test]
 #[ignore = "GPU WASM codegen integration test; run explicitly with --ignored"]
 fn gpu_codegen_emits_wasm_for_top_level_lets() {
     let src = "let x = 1;\nlet y = 2;\n";
@@ -45,8 +105,29 @@ fn gpu_codegen_rejects_function_bodies_when_gpu_emitter_cannot_emit_them() {
         .expect_err("function-body WASM lowering should fail until the GPU path supports it");
     let message = err.to_string();
     assert!(
-        message.contains("GPU WASM emitter produced"),
+        message.contains("GPU WASM emitter rejected unsupported source shape"),
         "unexpected function-body rejection: {message}"
+    );
+}
+
+#[test]
+#[ignore = "GPU WASM codegen integration test; run explicitly with --ignored"]
+fn gpu_codegen_rejects_for_loops_with_gpu_written_status() {
+    let src = r#"
+fn main(values: [i32]) {
+    for value in values {
+        let copied: i32 = value;
+        continue;
+    }
+    return 0;
+}
+"#;
+    let err = common::compile_source_to_wasm_with_timeout(src)
+        .expect_err("for-loop WASM lowering should fail until the GPU path supports it");
+    let message = err.to_string();
+    assert!(
+        message.contains("unsupported for loop"),
+        "unexpected for-loop rejection: {message}"
     );
 }
 
@@ -79,4 +160,8 @@ fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
     haystack
         .windows(needle.len())
         .any(|candidate| candidate == needle)
+}
+
+fn normalize_doc_whitespace(source: &str) -> String {
+    source.split_whitespace().collect::<Vec<_>>().join(" ")
 }

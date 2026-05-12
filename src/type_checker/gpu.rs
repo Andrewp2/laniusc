@@ -87,9 +87,24 @@ struct CallBindGroups {
     clear: wgpu::BindGroup,
     functions: wgpu::BindGroup,
     resolve: wgpu::BindGroup,
+    erase_generic_params: wgpu::BindGroup,
+}
+
+struct MethodBindGroups {
+    clear: wgpu::BindGroup,
+    collect: wgpu::BindGroup,
+    resolve: wgpu::BindGroup,
+}
+
+struct ModuleMetadataBindGroups {
+    clear: wgpu::BindGroup,
+    collect: wgpu::BindGroup,
+    collect_decls: wgpu::BindGroup,
+    resolve_imports: wgpu::BindGroup,
 }
 
 const CALL_PARAM_CACHE_STRIDE: usize = 16;
+pub const TYPE_INSTANCE_ARG_REF_STRIDE: usize = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GpuTypeCheckCode {
@@ -170,7 +185,32 @@ pub struct GpuTypeChecker {
 
 pub struct RecordedTypeCheck;
 
+#[derive(Clone, Copy)]
+pub struct HirItemMetadataBuffers<'a> {
+    pub kind: &'a wgpu::Buffer,
+    pub name_token: &'a wgpu::Buffer,
+    pub namespace: &'a wgpu::Buffer,
+    pub visibility: &'a wgpu::Buffer,
+    pub path_start: &'a wgpu::Buffer,
+    pub path_end: &'a wgpu::Buffer,
+    pub file_id: &'a wgpu::Buffer,
+    pub import_target_kind: &'a wgpu::Buffer,
+}
+
 struct TypeCheckPasses {
+    modules_clear: PassData,
+    modules_collect: PassData,
+    modules_collect_decls: PassData,
+    modules_resolve_imports: PassData,
+    type_instances_collect: PassData,
+    type_instances_struct_fields: PassData,
+    type_instances_member_results: PassData,
+    type_instances_struct_init_fields: PassData,
+    type_instances_array_return_refs: PassData,
+    type_instances_enum_ctors: PassData,
+    type_instances_array_index_results: PassData,
+    modules_types: PassData,
+    modules_patch_visible: PassData,
     tokens: PassData,
     control: PassData,
     control_hir: PassData,
@@ -178,6 +218,10 @@ struct TypeCheckPasses {
     calls_clear: PassData,
     calls_functions: PassData,
     calls_resolve: PassData,
+    calls_erase_generic_params: PassData,
+    methods_clear: PassData,
+    methods_collect: PassData,
+    methods_resolve: PassData,
     visible_clear: PassData,
     visible_scope_blocks: PassData,
     visible_scatter: PassData,
@@ -214,7 +258,56 @@ impl TypeCheckPasses {
         }
 
         Ok(Self {
-            tokens: pass!("type_check_tokens", "type_check_tokens"),
+            modules_clear: pass!("type_check_modules_00_clear", "type_check_modules_00_clear"),
+            modules_collect: pass!(
+                "type_check_modules_00_collect",
+                "type_check_modules_00_collect"
+            ),
+            modules_collect_decls: pass!(
+                "type_check_modules_00_collect_decls",
+                "type_check_modules_00_collect_decls"
+            ),
+            modules_resolve_imports: pass!(
+                "type_check_modules_00_resolve_imports",
+                "type_check_modules_00_resolve_imports"
+            ),
+            type_instances_collect: pass!(
+                "type_check_type_instances_01_collect",
+                "type_check_type_instances_01_collect"
+            ),
+            type_instances_struct_fields: pass!(
+                "type_check_type_instances_02_struct_fields",
+                "type_check_type_instances_02_struct_fields"
+            ),
+            type_instances_member_results: pass!(
+                "type_check_type_instances_03_member_results",
+                "type_check_type_instances_03_member_results"
+            ),
+            type_instances_struct_init_fields: pass!(
+                "type_check_type_instances_04_struct_init_fields",
+                "type_check_type_instances_04_struct_init_fields"
+            ),
+            type_instances_array_return_refs: pass!(
+                "type_check_type_instances_05_array_return_refs",
+                "type_check_type_instances_05_array_return_refs"
+            ),
+            type_instances_enum_ctors: pass!(
+                "type_check_type_instances_06_enum_ctors",
+                "type_check_type_instances_06_enum_ctors"
+            ),
+            type_instances_array_index_results: pass!(
+                "type_check_type_instances_07_array_index_results",
+                "type_check_type_instances_07_array_index_results"
+            ),
+            modules_types: pass!(
+                "type_check_modules_01_same_source_types",
+                "type_check_modules_01_same_source_types"
+            ),
+            modules_patch_visible: pass!(
+                "type_check_modules_02_patch_visible_types",
+                "type_check_modules_02_patch_visible_types"
+            ),
+            tokens: pass!("type_check_tokens", "type_check_tokens_min"),
             control: pass!("type_check_control", "type_check_control"),
             control_hir: pass!("type_check_control_hir", "type_check_control_hir"),
             scope: pass!("type_check_scope", "type_check_scope"),
@@ -224,6 +317,19 @@ impl TypeCheckPasses {
                 "type_check_calls_02_functions"
             ),
             calls_resolve: pass!("type_check_calls_03_resolve", "type_check_calls_03_resolve"),
+            calls_erase_generic_params: pass!(
+                "type_check_calls_04_erase_generic_params",
+                "type_check_calls_04_erase_generic_params"
+            ),
+            methods_clear: pass!("type_check_methods_01_clear", "type_check_methods_01_clear"),
+            methods_collect: pass!(
+                "type_check_methods_02_collect",
+                "type_check_methods_02_collect"
+            ),
+            methods_resolve: pass!(
+                "type_check_methods_03_resolve",
+                "type_check_methods_03_resolve"
+            ),
             visible_clear: pass!("type_check_visible_01_clear", "type_check_visible_01_clear"),
             visible_scope_blocks: pass!(
                 "type_check_visible_02_scope_blocks",
@@ -285,6 +391,7 @@ impl TypeCheckPasses {
 struct ResidentTypeCheckBindGroups {
     token_capacity: u32,
     hir_node_capacity: u32,
+    has_hir_item_metadata: bool,
     uses_hir_control: bool,
     loop_n_blocks: u32,
     fn_n_blocks: u32,
@@ -315,6 +422,48 @@ struct ResidentTypeCheckBindGroups {
     call_param_type: wgpu::Buffer,
     function_lookup_key: wgpu::Buffer,
     function_lookup_fn: wgpu::Buffer,
+    method_decl_receiver_type: wgpu::Buffer,
+    method_decl_impl_token: wgpu::Buffer,
+    method_decl_name_token: wgpu::Buffer,
+    method_decl_param_offset: wgpu::Buffer,
+    method_lookup_key: wgpu::Buffer,
+    method_lookup_receiver: wgpu::Buffer,
+    method_lookup_name_token: wgpu::Buffer,
+    method_lookup_fn: wgpu::Buffer,
+    module_item_kind: wgpu::Buffer,
+    module_path_start: wgpu::Buffer,
+    module_path_end: wgpu::Buffer,
+    module_path_hash: wgpu::Buffer,
+    import_enclosing_module_token: wgpu::Buffer,
+    import_target_kind: wgpu::Buffer,
+    import_resolved_module_token: wgpu::Buffer,
+    decl_item_kind: wgpu::Buffer,
+    decl_name_hash: wgpu::Buffer,
+    decl_name_len: wgpu::Buffer,
+    decl_namespace: wgpu::Buffer,
+    decl_visibility: wgpu::Buffer,
+    decl_file_id: wgpu::Buffer,
+    decl_hir_node: wgpu::Buffer,
+    type_expr_ref_tag: wgpu::Buffer,
+    type_expr_ref_payload: wgpu::Buffer,
+    type_instance_kind: wgpu::Buffer,
+    type_instance_head_token: wgpu::Buffer,
+    type_instance_decl_token: wgpu::Buffer,
+    type_instance_arg_start: wgpu::Buffer,
+    type_instance_arg_count: wgpu::Buffer,
+    type_instance_arg_ref_tag: wgpu::Buffer,
+    type_instance_arg_ref_payload: wgpu::Buffer,
+    type_instance_elem_ref_tag: wgpu::Buffer,
+    type_instance_elem_ref_payload: wgpu::Buffer,
+    type_instance_len_kind: wgpu::Buffer,
+    type_instance_len_payload: wgpu::Buffer,
+    type_instance_state: wgpu::Buffer,
+    fn_return_ref_tag: wgpu::Buffer,
+    fn_return_ref_payload: wgpu::Buffer,
+    member_result_ref_tag: wgpu::Buffer,
+    member_result_ref_payload: wgpu::Buffer,
+    struct_init_field_expected_ref_tag: wgpu::Buffer,
+    struct_init_field_expected_ref_payload: wgpu::Buffer,
     loop_params: LaniusBuffer<LoopDepthParams>,
     loop_scan_steps: Vec<LoopDepthScanStep>,
     fn_params: LaniusBuffer<FnContextParams>,
@@ -323,6 +472,17 @@ struct ResidentTypeCheckBindGroups {
     fn_context_bind_groups: FnContextBindGroups,
     visible_bind_groups: VisibleBindGroups,
     calls: CallBindGroups,
+    methods: MethodBindGroups,
+    module_metadata: ModuleMetadataBindGroups,
+    type_instances_collect: wgpu::BindGroup,
+    type_instances_struct_fields: wgpu::BindGroup,
+    type_instances_member_results: wgpu::BindGroup,
+    type_instances_struct_init_fields: wgpu::BindGroup,
+    type_instances_array_return_refs: wgpu::BindGroup,
+    type_instances_enum_ctors: wgpu::BindGroup,
+    type_instances_array_index_results: wgpu::BindGroup,
+    modules_types: wgpu::BindGroup,
+    modules_patch_visible: wgpu::BindGroup,
     tokens: wgpu::BindGroup,
     control: wgpu::BindGroup,
     scope: wgpu::BindGroup,
@@ -376,7 +536,9 @@ impl GpuTypeChecker {
         hir_kind_buf: &wgpu::Buffer,
         hir_token_pos_buf: &wgpu::Buffer,
         hir_token_end_buf: &wgpu::Buffer,
+        hir_token_file_id_buf: &wgpu::Buffer,
         hir_status_buf: &wgpu::Buffer,
+        hir_item_metadata: Option<HirItemMetadataBuffers<'_>>,
     ) -> Result<(), GpuTypeCheckError> {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("type_check.resident.encoder"),
@@ -394,10 +556,16 @@ impl GpuTypeChecker {
             hir_kind_buf,
             hir_token_pos_buf,
             hir_token_end_buf,
+            hir_token_file_id_buf,
             hir_status_buf,
+            hir_item_metadata,
             None,
         )?;
-        queue.submit(Some(encoder.finish()));
+        crate::gpu::passes_core::submit_with_progress(
+            queue,
+            "type_check.resident-with-hir",
+            encoder.finish(),
+        );
         self.finish_recorded_check(device, &recorded)
     }
 
@@ -419,7 +587,9 @@ impl GpuTypeChecker {
         hir_kind_buf: &wgpu::Buffer,
         hir_token_pos_buf: &wgpu::Buffer,
         hir_token_end_buf: &wgpu::Buffer,
+        hir_token_file_id_buf: &wgpu::Buffer,
         hir_status_buf: &wgpu::Buffer,
+        hir_item_metadata: Option<HirItemMetadataBuffers<'_>>,
         mut timer: Option<&mut crate::gpu::timer::GpuTimer>,
     ) -> Result<RecordedTypeCheck, GpuTypeCheckError> {
         let params = TypeCheckParams {
@@ -431,6 +601,7 @@ impl GpuTypeChecker {
         queue.write_buffer(&self.status_buf, 0, &status_init_bytes());
 
         let pass = &self.passes.tokens;
+        let has_hir_item_metadata = hir_item_metadata.is_some();
         let uses_hir_control = hir_node_capacity > 0;
         let control_pass = if uses_hir_control {
             &self.passes.control_hir
@@ -449,6 +620,7 @@ impl GpuTypeChecker {
                 .map(|groups| {
                     token_capacity > groups.token_capacity
                         || hir_node_capacity > groups.hir_node_capacity
+                        || has_hir_item_metadata != groups.has_hir_item_metadata
                         || uses_hir_control != groups.uses_hir_control
                 })
                 .unwrap_or(true);
@@ -463,7 +635,9 @@ impl GpuTypeChecker {
                     hir_kind_buf,
                     hir_token_pos_buf,
                     hir_token_end_buf,
+                    hir_token_file_id_buf,
                     hir_status_buf,
+                    hir_item_metadata,
                     &self.passes,
                     pass,
                     control_pass,
@@ -480,15 +654,25 @@ impl GpuTypeChecker {
                 timer.stamp(encoder, "typecheck.loop_depth.done");
             }
             let n_work = token_capacity.max(hir_node_capacity).max(512);
-            record_call_bind_groups_with_passes(
+            record_module_metadata_bind_groups_with_passes(
                 &self.passes,
                 encoder,
                 token_capacity,
-                n_work,
-                &bind_groups.calls,
+                hir_node_capacity,
+                &bind_groups.module_metadata,
             )?;
             if let Some(timer) = timer.as_deref_mut() {
-                timer.stamp(encoder, "typecheck.calls.done");
+                timer.stamp(encoder, "typecheck.modules_metadata.done");
+            }
+            record_compute(
+                encoder,
+                &self.passes.modules_types,
+                &bind_groups.modules_types,
+                "type_check.resident.modules_types.pass",
+                token_capacity,
+            )?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.modules_types.done");
             }
             record_fn_context_bind_groups_with_passes(
                 &self.passes,
@@ -514,6 +698,60 @@ impl GpuTypeChecker {
 
             record_compute(
                 encoder,
+                &self.passes.type_instances_collect,
+                &bind_groups.type_instances_collect,
+                "type_check.resident.type_instances_collect.pass",
+                token_capacity,
+            )?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.type_instances.done");
+            }
+            record_compute(
+                encoder,
+                &self.passes.type_instances_struct_fields,
+                &bind_groups.type_instances_struct_fields,
+                "type_check.resident.type_instances_struct_fields.pass",
+                token_capacity,
+            )?;
+            record_compute(
+                encoder,
+                &self.passes.type_instances_member_results,
+                &bind_groups.type_instances_member_results,
+                "type_check.resident.type_instances_member_results.pass",
+                token_capacity,
+            )?;
+            record_compute(
+                encoder,
+                &self.passes.type_instances_struct_init_fields,
+                &bind_groups.type_instances_struct_init_fields,
+                "type_check.resident.type_instances_struct_init_fields.pass",
+                token_capacity,
+            )?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.type_instance_fields.done");
+            }
+            record_call_bind_groups_with_passes(
+                &self.passes,
+                encoder,
+                token_capacity,
+                n_work,
+                &bind_groups.calls,
+            )?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.calls.done");
+            }
+            record_method_bind_groups_with_passes(
+                &self.passes,
+                encoder,
+                token_capacity,
+                n_work,
+                &bind_groups.methods,
+            )?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.methods.done");
+            }
+            record_compute(
+                encoder,
                 scope_pass,
                 &bind_groups.scope,
                 "type_check.resident.scope.pass",
@@ -521,6 +759,50 @@ impl GpuTypeChecker {
             )?;
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.scope.done");
+            }
+            record_compute(
+                encoder,
+                &self.passes.modules_patch_visible,
+                &bind_groups.modules_patch_visible,
+                "type_check.resident.modules_patch_visible.pass",
+                token_capacity,
+            )?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.modules_patch_visible.done");
+            }
+            record_compute(
+                encoder,
+                &self.passes.methods_resolve,
+                &bind_groups.methods.resolve,
+                "type_check.resident.methods.resolve",
+                n_work,
+            )?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.methods_resolve.done");
+            }
+            record_compute(
+                encoder,
+                &self.passes.type_instances_array_return_refs,
+                &bind_groups.type_instances_array_return_refs,
+                "type_check.resident.type_instances_array_return_refs.pass",
+                token_capacity,
+            )?;
+            record_compute(
+                encoder,
+                &self.passes.type_instances_enum_ctors,
+                &bind_groups.type_instances_enum_ctors,
+                "type_check.resident.type_instances_enum_ctors.pass",
+                token_capacity,
+            )?;
+            record_compute(
+                encoder,
+                &self.passes.type_instances_array_index_results,
+                &bind_groups.type_instances_array_index_results,
+                "type_check.resident.type_instances_array_index_results.pass",
+                token_capacity,
+            )?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.type_instances_late_consumers.done");
             }
             record_compute(
                 encoder,
@@ -553,8 +835,12 @@ impl GpuTypeChecker {
         _recorded: &RecordedTypeCheck,
     ) -> Result<(), GpuTypeCheckError> {
         let slice = self.status_readback.slice(..);
-        slice.map_async(wgpu::MapMode::Read, |_| {});
-        let _ = device.poll(wgpu::PollType::Wait);
+        crate::gpu::passes_core::map_readback_for_progress(&slice, "type_check.status");
+        crate::gpu::passes_core::wait_for_map_progress(
+            device,
+            "type_check.status",
+            wgpu::PollType::Wait,
+        );
         let mapped = slice.get_mapped_range();
         let words = read_status_words(&mapped)?;
         drop(mapped);
@@ -596,6 +882,19 @@ impl GpuTypeChecker {
             .map(|bind_groups| consume(&bind_groups.visible_type))
     }
 
+    pub fn with_enclosing_fn_buffer<R>(
+        &self,
+        consume: impl FnOnce(&wgpu::Buffer) -> R,
+    ) -> Option<R> {
+        let guard = self
+            .bind_groups
+            .lock()
+            .expect("GpuTypeChecker.bind_groups poisoned");
+        guard
+            .as_ref()
+            .map(|bind_groups| consume(&bind_groups.enclosing_fn))
+    }
+
     pub fn with_codegen_buffers<R>(
         &self,
         consume: impl FnOnce(&wgpu::Buffer, &wgpu::Buffer, &wgpu::Buffer, &wgpu::Buffer) -> R,
@@ -615,6 +914,54 @@ impl GpuTypeChecker {
     }
 
     #[allow(clippy::too_many_arguments)]
+    pub fn with_type_expr_metadata_buffers<R>(
+        &self,
+        consume: impl FnOnce(
+            &wgpu::Buffer,
+            &wgpu::Buffer,
+            &wgpu::Buffer,
+            &wgpu::Buffer,
+            &wgpu::Buffer,
+            &wgpu::Buffer,
+            &wgpu::Buffer,
+            &wgpu::Buffer,
+            &wgpu::Buffer,
+            &wgpu::Buffer,
+            &wgpu::Buffer,
+            &wgpu::Buffer,
+            &wgpu::Buffer,
+            &wgpu::Buffer,
+            &wgpu::Buffer,
+            &wgpu::Buffer,
+        ) -> R,
+    ) -> Option<R> {
+        let guard = self
+            .bind_groups
+            .lock()
+            .expect("GpuTypeChecker.bind_groups poisoned");
+        guard.as_ref().map(|bind_groups| {
+            consume(
+                &bind_groups.type_expr_ref_tag,
+                &bind_groups.type_expr_ref_payload,
+                &bind_groups.type_instance_kind,
+                &bind_groups.type_instance_decl_token,
+                &bind_groups.type_instance_arg_start,
+                &bind_groups.type_instance_arg_count,
+                &bind_groups.type_instance_arg_ref_tag,
+                &bind_groups.type_instance_arg_ref_payload,
+                &bind_groups.member_result_ref_tag,
+                &bind_groups.member_result_ref_payload,
+                &bind_groups.type_instance_state,
+                &bind_groups.type_instance_elem_ref_tag,
+                &bind_groups.fn_return_ref_tag,
+                &bind_groups.fn_return_ref_payload,
+                &bind_groups.struct_init_field_expected_ref_tag,
+                &bind_groups.struct_init_field_expected_ref_payload,
+            )
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn create_bind_groups(
         &self,
         device: &wgpu::Device,
@@ -626,7 +973,9 @@ impl GpuTypeChecker {
         hir_kind_buf: &wgpu::Buffer,
         hir_token_pos_buf: &wgpu::Buffer,
         hir_token_end_buf: &wgpu::Buffer,
+        hir_token_file_id_buf: &wgpu::Buffer,
         hir_status_buf: &wgpu::Buffer,
+        hir_item_metadata: Option<HirItemMetadataBuffers<'_>>,
         passes: &TypeCheckPasses,
         pass: &PassData,
         control_pass: &PassData,
@@ -822,7 +1171,311 @@ impl GpuTypeChecker {
             function_lookup_capacity,
             wgpu::BufferUsages::empty(),
         );
-
+        let method_decl_receiver_type = storage_u32_rw(
+            device,
+            "type_check.resident.method_decl_receiver_type",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let method_decl_impl_token = storage_u32_rw(
+            device,
+            "type_check.resident.method_decl_impl_token",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let method_decl_name_token = storage_u32_rw(
+            device,
+            "type_check.resident.method_decl_name_token",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let method_decl_param_offset = storage_u32_rw(
+            device,
+            "type_check.resident.method_decl_param_offset",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let method_lookup_capacity = token_capacity.saturating_mul(2).max(1) as usize;
+        let method_lookup_key = storage_u32_rw(
+            device,
+            "type_check.resident.method_lookup_key",
+            method_lookup_capacity,
+            wgpu::BufferUsages::empty(),
+        );
+        let method_lookup_receiver = storage_u32_rw(
+            device,
+            "type_check.resident.method_lookup_receiver",
+            method_lookup_capacity,
+            wgpu::BufferUsages::empty(),
+        );
+        let method_lookup_name_token = storage_u32_rw(
+            device,
+            "type_check.resident.method_lookup_name_token",
+            method_lookup_capacity,
+            wgpu::BufferUsages::empty(),
+        );
+        let method_lookup_fn = storage_u32_rw(
+            device,
+            "type_check.resident.method_lookup_fn",
+            method_lookup_capacity,
+            wgpu::BufferUsages::empty(),
+        );
+        let module_item_kind = storage_u32_rw(
+            device,
+            "type_check.resident.module_item_kind",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let module_path_start = storage_u32_rw(
+            device,
+            "type_check.resident.module_path_start",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let module_path_end = storage_u32_rw(
+            device,
+            "type_check.resident.module_path_end",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let module_path_hash = storage_u32_rw(
+            device,
+            "type_check.resident.module_path_hash",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let import_enclosing_module_token = storage_u32_rw(
+            device,
+            "type_check.resident.import_enclosing_module_token",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let import_target_kind = storage_u32_rw(
+            device,
+            "type_check.resident.import_target_kind",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let import_resolved_module_token = storage_u32_rw(
+            device,
+            "type_check.resident.import_resolved_module_token",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let decl_item_kind = storage_u32_rw(
+            device,
+            "type_check.resident.decl_item_kind",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let decl_name_hash = storage_u32_rw(
+            device,
+            "type_check.resident.decl_name_hash",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let decl_name_len = storage_u32_rw(
+            device,
+            "type_check.resident.decl_name_len",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let decl_namespace = storage_u32_rw(
+            device,
+            "type_check.resident.decl_namespace",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let decl_visibility = storage_u32_rw(
+            device,
+            "type_check.resident.decl_visibility",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let decl_file_id = storage_u32_rw(
+            device,
+            "type_check.resident.decl_file_id",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let decl_hir_node = storage_u32_rw(
+            device,
+            "type_check.resident.decl_hir_node",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let type_expr_ref_tag = storage_u32_rw(
+            device,
+            "type_check.resident.type_expr_ref_tag",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let type_expr_ref_payload = storage_u32_rw(
+            device,
+            "type_check.resident.type_expr_ref_payload",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let type_instance_kind = storage_u32_rw(
+            device,
+            "type_check.resident.type_instance_kind",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let type_instance_head_token = storage_u32_rw(
+            device,
+            "type_check.resident.type_instance_head_token",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let type_instance_decl_token = storage_u32_rw(
+            device,
+            "type_check.resident.type_instance_decl_token",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let type_instance_arg_start = storage_u32_rw(
+            device,
+            "type_check.resident.type_instance_arg_start",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let type_instance_arg_count = storage_u32_rw(
+            device,
+            "type_check.resident.type_instance_arg_count",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let type_instance_arg_ref_tag = storage_u32_rw(
+            device,
+            "type_check.resident.type_instance_arg_ref_tag",
+            (token_capacity as usize).max(1) * TYPE_INSTANCE_ARG_REF_STRIDE,
+            wgpu::BufferUsages::empty(),
+        );
+        let type_instance_arg_ref_payload = storage_u32_rw(
+            device,
+            "type_check.resident.type_instance_arg_ref_payload",
+            (token_capacity as usize).max(1) * TYPE_INSTANCE_ARG_REF_STRIDE,
+            wgpu::BufferUsages::empty(),
+        );
+        let type_instance_elem_ref_tag = storage_u32_rw(
+            device,
+            "type_check.resident.type_instance_elem_ref_tag",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let type_instance_elem_ref_payload = storage_u32_rw(
+            device,
+            "type_check.resident.type_instance_elem_ref_payload",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let type_instance_len_kind = storage_u32_rw(
+            device,
+            "type_check.resident.type_instance_len_kind",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let type_instance_len_payload = storage_u32_rw(
+            device,
+            "type_check.resident.type_instance_len_payload",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let type_instance_state = storage_u32_rw(
+            device,
+            "type_check.resident.type_instance_state",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let fn_return_ref_tag = storage_u32_rw(
+            device,
+            "type_check.resident.fn_return_ref_tag",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let fn_return_ref_payload = storage_u32_rw(
+            device,
+            "type_check.resident.fn_return_ref_payload",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let member_result_ref_tag = storage_u32_rw(
+            device,
+            "type_check.resident.member_result_ref_tag",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let member_result_ref_payload = storage_u32_rw(
+            device,
+            "type_check.resident.member_result_ref_payload",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let struct_init_field_expected_ref_tag = storage_u32_rw(
+            device,
+            "type_check.resident.struct_init_field_expected_ref_tag",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let struct_init_field_expected_ref_payload = storage_u32_rw(
+            device,
+            "type_check.resident.struct_init_field_expected_ref_payload",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let empty_hir_item_kind =
+            storage_ro_from_u32s(device, "type_check.resident.hir_item_kind.empty", &[0]);
+        let empty_hir_item_name_token = storage_ro_from_u32s(
+            device,
+            "type_check.resident.hir_item_name_token.empty",
+            &[0],
+        );
+        let empty_hir_item_namespace =
+            storage_ro_from_u32s(device, "type_check.resident.hir_item_namespace.empty", &[0]);
+        let empty_hir_item_visibility = storage_ro_from_u32s(
+            device,
+            "type_check.resident.hir_item_visibility.empty",
+            &[0],
+        );
+        let empty_hir_item_path_start = storage_ro_from_u32s(
+            device,
+            "type_check.resident.hir_item_path_start.empty",
+            &[0],
+        );
+        let empty_hir_item_path_end =
+            storage_ro_from_u32s(device, "type_check.resident.hir_item_path_end.empty", &[0]);
+        let empty_hir_item_file_id =
+            storage_ro_from_u32s(device, "type_check.resident.hir_item_file_id.empty", &[0]);
+        let empty_hir_item_import_target_kind = storage_ro_from_u32s(
+            device,
+            "type_check.resident.hir_item_import_target_kind.empty",
+            &[0],
+        );
+        let hir_item_kind_buf = hir_item_metadata
+            .map(|metadata| metadata.kind)
+            .unwrap_or(&empty_hir_item_kind);
+        let hir_item_name_token_buf = hir_item_metadata
+            .map(|metadata| metadata.name_token)
+            .unwrap_or(&empty_hir_item_name_token);
+        let hir_item_namespace_buf = hir_item_metadata
+            .map(|metadata| metadata.namespace)
+            .unwrap_or(&empty_hir_item_namespace);
+        let hir_item_visibility_buf = hir_item_metadata
+            .map(|metadata| metadata.visibility)
+            .unwrap_or(&empty_hir_item_visibility);
+        let hir_item_path_start_buf = hir_item_metadata
+            .map(|metadata| metadata.path_start)
+            .unwrap_or(&empty_hir_item_path_start);
+        let hir_item_path_end_buf = hir_item_metadata
+            .map(|metadata| metadata.path_end)
+            .unwrap_or(&empty_hir_item_path_end);
+        let hir_item_file_id_buf = hir_item_metadata
+            .map(|metadata| metadata.file_id)
+            .unwrap_or(&empty_hir_item_file_id);
+        let hir_item_import_target_kind_buf = hir_item_metadata
+            .map(|metadata| metadata.import_target_kind)
+            .unwrap_or(&empty_hir_item_import_target_kind);
         let mut resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::new();
         resources.insert("gParams".into(), self.params_buf.as_entire_binding());
         resources.insert("token_words".into(), token_buf.as_entire_binding());
@@ -837,7 +1490,43 @@ impl GpuTypeChecker {
             "hir_token_end".into(),
             hir_token_end_buf.as_entire_binding(),
         );
+        resources.insert(
+            "hir_token_file_id".into(),
+            hir_token_file_id_buf.as_entire_binding(),
+        );
         resources.insert("hir_status".into(), hir_status_buf.as_entire_binding());
+        resources.insert(
+            "hir_item_kind".into(),
+            hir_item_kind_buf.as_entire_binding(),
+        );
+        resources.insert(
+            "hir_item_name_token".into(),
+            hir_item_name_token_buf.as_entire_binding(),
+        );
+        resources.insert(
+            "hir_item_namespace".into(),
+            hir_item_namespace_buf.as_entire_binding(),
+        );
+        resources.insert(
+            "hir_item_visibility".into(),
+            hir_item_visibility_buf.as_entire_binding(),
+        );
+        resources.insert(
+            "hir_item_path_start".into(),
+            hir_item_path_start_buf.as_entire_binding(),
+        );
+        resources.insert(
+            "hir_item_path_end".into(),
+            hir_item_path_end_buf.as_entire_binding(),
+        );
+        resources.insert(
+            "hir_item_file_id".into(),
+            hir_item_file_id_buf.as_entire_binding(),
+        );
+        resources.insert(
+            "hir_item_import_target_kind".into(),
+            hir_item_import_target_kind_buf.as_entire_binding(),
+        );
         resources.insert("status".into(), self.status_buf.as_entire_binding());
         resources.insert("visible_decl".into(), visible_decl.as_entire_binding());
         resources.insert("visible_type".into(), visible_type.as_entire_binding());
@@ -882,7 +1571,266 @@ impl GpuTypeChecker {
             "function_lookup_fn".into(),
             function_lookup_fn.as_entire_binding(),
         );
-
+        resources.insert(
+            "method_decl_receiver_type".into(),
+            method_decl_receiver_type.as_entire_binding(),
+        );
+        resources.insert(
+            "method_decl_impl_token".into(),
+            method_decl_impl_token.as_entire_binding(),
+        );
+        resources.insert(
+            "method_decl_name_token".into(),
+            method_decl_name_token.as_entire_binding(),
+        );
+        resources.insert(
+            "method_decl_param_offset".into(),
+            method_decl_param_offset.as_entire_binding(),
+        );
+        resources.insert(
+            "method_lookup_key".into(),
+            method_lookup_key.as_entire_binding(),
+        );
+        resources.insert(
+            "method_lookup_receiver".into(),
+            method_lookup_receiver.as_entire_binding(),
+        );
+        resources.insert(
+            "method_lookup_name_token".into(),
+            method_lookup_name_token.as_entire_binding(),
+        );
+        resources.insert(
+            "method_lookup_fn".into(),
+            method_lookup_fn.as_entire_binding(),
+        );
+        resources.insert(
+            "module_item_kind".into(),
+            module_item_kind.as_entire_binding(),
+        );
+        resources.insert(
+            "module_path_start".into(),
+            module_path_start.as_entire_binding(),
+        );
+        resources.insert(
+            "module_path_end".into(),
+            module_path_end.as_entire_binding(),
+        );
+        resources.insert(
+            "module_path_hash".into(),
+            module_path_hash.as_entire_binding(),
+        );
+        resources.insert(
+            "import_enclosing_module_token".into(),
+            import_enclosing_module_token.as_entire_binding(),
+        );
+        resources.insert(
+            "import_target_kind".into(),
+            import_target_kind.as_entire_binding(),
+        );
+        resources.insert(
+            "import_resolved_module_token".into(),
+            import_resolved_module_token.as_entire_binding(),
+        );
+        resources.insert("decl_item_kind".into(), decl_item_kind.as_entire_binding());
+        resources.insert("decl_name_hash".into(), decl_name_hash.as_entire_binding());
+        resources.insert("decl_name_len".into(), decl_name_len.as_entire_binding());
+        resources.insert("decl_namespace".into(), decl_namespace.as_entire_binding());
+        resources.insert(
+            "decl_visibility".into(),
+            decl_visibility.as_entire_binding(),
+        );
+        resources.insert("decl_file_id".into(), decl_file_id.as_entire_binding());
+        resources.insert("decl_hir_node".into(), decl_hir_node.as_entire_binding());
+        resources.insert(
+            "type_expr_ref_tag".into(),
+            type_expr_ref_tag.as_entire_binding(),
+        );
+        resources.insert(
+            "type_expr_ref_payload".into(),
+            type_expr_ref_payload.as_entire_binding(),
+        );
+        resources.insert(
+            "type_instance_kind".into(),
+            type_instance_kind.as_entire_binding(),
+        );
+        resources.insert(
+            "type_instance_head_token".into(),
+            type_instance_head_token.as_entire_binding(),
+        );
+        resources.insert(
+            "type_instance_decl_token".into(),
+            type_instance_decl_token.as_entire_binding(),
+        );
+        resources.insert(
+            "type_instance_arg_start".into(),
+            type_instance_arg_start.as_entire_binding(),
+        );
+        resources.insert(
+            "type_instance_arg_count".into(),
+            type_instance_arg_count.as_entire_binding(),
+        );
+        resources.insert(
+            "type_instance_arg_ref_tag".into(),
+            type_instance_arg_ref_tag.as_entire_binding(),
+        );
+        resources.insert(
+            "type_instance_arg_ref_payload".into(),
+            type_instance_arg_ref_payload.as_entire_binding(),
+        );
+        resources.insert(
+            "type_instance_elem_ref_tag".into(),
+            type_instance_elem_ref_tag.as_entire_binding(),
+        );
+        resources.insert(
+            "type_instance_elem_ref_payload".into(),
+            type_instance_elem_ref_payload.as_entire_binding(),
+        );
+        resources.insert(
+            "type_instance_len_kind".into(),
+            type_instance_len_kind.as_entire_binding(),
+        );
+        resources.insert(
+            "type_instance_len_payload".into(),
+            type_instance_len_payload.as_entire_binding(),
+        );
+        resources.insert(
+            "type_instance_state".into(),
+            type_instance_state.as_entire_binding(),
+        );
+        resources.insert(
+            "fn_return_ref_tag".into(),
+            fn_return_ref_tag.as_entire_binding(),
+        );
+        resources.insert(
+            "fn_return_ref_payload".into(),
+            fn_return_ref_payload.as_entire_binding(),
+        );
+        resources.insert(
+            "member_result_ref_tag".into(),
+            member_result_ref_tag.as_entire_binding(),
+        );
+        resources.insert(
+            "member_result_ref_payload".into(),
+            member_result_ref_payload.as_entire_binding(),
+        );
+        resources.insert(
+            "struct_init_field_expected_ref_tag".into(),
+            struct_init_field_expected_ref_tag.as_entire_binding(),
+        );
+        resources.insert(
+            "struct_init_field_expected_ref_payload".into(),
+            struct_init_field_expected_ref_payload.as_entire_binding(),
+        );
+        let type_instances_collect = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("type_check_resident_type_instances_collect"),
+            &passes.type_instances_collect.bind_group_layouts[0],
+            &passes.type_instances_collect.reflection,
+            0,
+            &resources,
+        )?;
+        let type_instances_struct_fields = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("type_check_resident_type_instances_struct_fields"),
+            &passes.type_instances_struct_fields.bind_group_layouts[0],
+            &passes.type_instances_struct_fields.reflection,
+            0,
+            &resources,
+        )?;
+        let type_instances_member_results = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("type_check_resident_type_instances_member_results"),
+            &passes.type_instances_member_results.bind_group_layouts[0],
+            &passes.type_instances_member_results.reflection,
+            0,
+            &resources,
+        )?;
+        let type_instances_struct_init_fields = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("type_check_resident_type_instances_struct_init_fields"),
+            &passes.type_instances_struct_init_fields.bind_group_layouts[0],
+            &passes.type_instances_struct_init_fields.reflection,
+            0,
+            &resources,
+        )?;
+        let type_instances_array_return_refs = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("type_check_resident_type_instances_array_return_refs"),
+            &passes.type_instances_array_return_refs.bind_group_layouts[0],
+            &passes.type_instances_array_return_refs.reflection,
+            0,
+            &resources,
+        )?;
+        let type_instances_enum_ctors = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("type_check_resident_type_instances_enum_ctors"),
+            &passes.type_instances_enum_ctors.bind_group_layouts[0],
+            &passes.type_instances_enum_ctors.reflection,
+            0,
+            &resources,
+        )?;
+        let type_instances_array_index_results = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("type_check_resident_type_instances_array_index_results"),
+            &passes.type_instances_array_index_results.bind_group_layouts[0],
+            &passes.type_instances_array_index_results.reflection,
+            0,
+            &resources,
+        )?;
+        let modules_clear = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("type_check_resident_modules_clear"),
+            &passes.modules_clear.bind_group_layouts[0],
+            &passes.modules_clear.reflection,
+            0,
+            &resources,
+        )?;
+        let modules_collect = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("type_check_resident_modules_collect"),
+            &passes.modules_collect.bind_group_layouts[0],
+            &passes.modules_collect.reflection,
+            0,
+            &resources,
+        )?;
+        let modules_collect_decls = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("type_check_resident_modules_collect_decls"),
+            &passes.modules_collect_decls.bind_group_layouts[0],
+            &passes.modules_collect_decls.reflection,
+            0,
+            &resources,
+        )?;
+        let modules_resolve_imports = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("type_check_resident_modules_resolve_imports"),
+            &passes.modules_resolve_imports.bind_group_layouts[0],
+            &passes.modules_resolve_imports.reflection,
+            0,
+            &resources,
+        )?;
+        let module_metadata = ModuleMetadataBindGroups {
+            clear: modules_clear,
+            collect: modules_collect,
+            collect_decls: modules_collect_decls,
+            resolve_imports: modules_resolve_imports,
+        };
+        let modules_types = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("type_check_resident_modules_types"),
+            &passes.modules_types.bind_group_layouts[0],
+            &passes.modules_types.reflection,
+            0,
+            &resources,
+        )?;
+        let modules_patch_visible = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("type_check_resident_modules_patch_visible"),
+            &passes.modules_patch_visible.bind_group_layouts[0],
+            &passes.modules_patch_visible.reflection,
+            0,
+            &resources,
+        )?;
         let calls_clear = bind_group::create_bind_group_from_reflection(
             device,
             Some("type_check_resident_calls_clear"),
@@ -907,10 +1855,48 @@ impl GpuTypeChecker {
             0,
             &resources,
         )?;
+        let calls_erase_generic_params = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("type_check_resident_calls_erase_generic_params"),
+            &passes.calls_erase_generic_params.bind_group_layouts[0],
+            &passes.calls_erase_generic_params.reflection,
+            0,
+            &resources,
+        )?;
         let calls = CallBindGroups {
             clear: calls_clear,
             functions: calls_functions,
             resolve: calls_resolve,
+            erase_generic_params: calls_erase_generic_params,
+        };
+        let methods_clear = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("type_check_resident_methods_clear"),
+            &passes.methods_clear.bind_group_layouts[0],
+            &passes.methods_clear.reflection,
+            0,
+            &resources,
+        )?;
+        let methods_collect = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("type_check_resident_methods_collect"),
+            &passes.methods_collect.bind_group_layouts[0],
+            &passes.methods_collect.reflection,
+            0,
+            &resources,
+        )?;
+        let methods_resolve = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("type_check_resident_methods_resolve"),
+            &passes.methods_resolve.bind_group_layouts[0],
+            &passes.methods_resolve.reflection,
+            0,
+            &resources,
+        )?;
+        let methods = MethodBindGroups {
+            clear: methods_clear,
+            collect: methods_collect,
+            resolve: methods_resolve,
         };
 
         let tokens = bind_group::create_bind_group_from_reflection(
@@ -982,6 +1968,7 @@ impl GpuTypeChecker {
         Ok(ResidentTypeCheckBindGroups {
             token_capacity,
             hir_node_capacity,
+            has_hir_item_metadata: hir_item_metadata.is_some(),
             uses_hir_control,
             loop_n_blocks,
             fn_n_blocks,
@@ -1012,6 +1999,48 @@ impl GpuTypeChecker {
             call_param_type,
             function_lookup_key,
             function_lookup_fn,
+            method_decl_receiver_type,
+            method_decl_impl_token,
+            method_decl_name_token,
+            method_decl_param_offset,
+            method_lookup_key,
+            method_lookup_receiver,
+            method_lookup_name_token,
+            method_lookup_fn,
+            module_item_kind,
+            module_path_start,
+            module_path_end,
+            module_path_hash,
+            import_enclosing_module_token,
+            import_target_kind,
+            import_resolved_module_token,
+            decl_item_kind,
+            decl_name_hash,
+            decl_name_len,
+            decl_namespace,
+            decl_visibility,
+            decl_file_id,
+            decl_hir_node,
+            type_expr_ref_tag,
+            type_expr_ref_payload,
+            type_instance_kind,
+            type_instance_head_token,
+            type_instance_decl_token,
+            type_instance_arg_start,
+            type_instance_arg_count,
+            type_instance_arg_ref_tag,
+            type_instance_arg_ref_payload,
+            type_instance_elem_ref_tag,
+            type_instance_elem_ref_payload,
+            type_instance_len_kind,
+            type_instance_len_payload,
+            type_instance_state,
+            fn_return_ref_tag,
+            fn_return_ref_payload,
+            member_result_ref_tag,
+            member_result_ref_payload,
+            struct_init_field_expected_ref_tag,
+            struct_init_field_expected_ref_payload,
             loop_params,
             loop_scan_steps,
             fn_params,
@@ -1020,6 +2049,17 @@ impl GpuTypeChecker {
             fn_context_bind_groups,
             visible_bind_groups,
             calls,
+            methods,
+            module_metadata,
+            type_instances_collect,
+            type_instances_struct_fields,
+            type_instances_member_results,
+            type_instances_struct_init_fields,
+            type_instances_array_return_refs,
+            type_instances_enum_ctors,
+            type_instances_array_index_results,
+            modules_types,
+            modules_patch_visible,
             tokens,
             control,
             scope,
@@ -1061,6 +2101,8 @@ async fn check_tokens_on_gpu_inner(src: &str, tokens: &[Token]) -> Result<(), Gp
         storage_ro_from_u32s(device, "type_check.tokens.hir_token_pos.empty", &[0]);
     let hir_token_end_buf =
         storage_ro_from_u32s(device, "type_check.tokens.hir_token_end.empty", &[0]);
+    let hir_token_file_id_buf =
+        storage_ro_from_u32s(device, "type_check.tokens.hir_token_file_id.empty", &[0]);
     let hir_status_buf = storage_ro_from_u32s(
         device,
         "type_check.tokens.hir_status.empty",
@@ -1078,7 +2120,9 @@ async fn check_tokens_on_gpu_inner(src: &str, tokens: &[Token]) -> Result<(), Gp
         &hir_kind_buf,
         &hir_token_pos_buf,
         &hir_token_end_buf,
+        &hir_token_file_id_buf,
         &hir_status_buf,
+        None,
     )
 }
 
@@ -1094,6 +2138,8 @@ pub fn check_token_buffer_on_gpu(
     let empty = storage_ro_from_u32s(device, "type_check.tokens.hir_kind.empty", &[0]);
     let empty_pos = storage_ro_from_u32s(device, "type_check.tokens.hir_token_pos.empty", &[0]);
     let empty_end = storage_ro_from_u32s(device, "type_check.tokens.hir_token_end.empty", &[0]);
+    let empty_file_id =
+        storage_ro_from_u32s(device, "type_check.tokens.hir_token_file_id.empty", &[0]);
     let empty_status = storage_ro_from_u32s(
         device,
         "type_check.tokens.hir_status.empty",
@@ -1111,7 +2157,9 @@ pub fn check_token_buffer_on_gpu(
         &empty,
         &empty_pos,
         &empty_end,
+        &empty_file_id,
         &empty_status,
+        None,
     )
 }
 
@@ -1127,7 +2175,9 @@ pub fn check_token_buffer_with_hir_on_gpu(
     hir_kind_buf: &wgpu::Buffer,
     hir_token_pos_buf: &wgpu::Buffer,
     hir_token_end_buf: &wgpu::Buffer,
+    hir_token_file_id_buf: &wgpu::Buffer,
     hir_status_buf: &wgpu::Buffer,
+    hir_item_metadata: Option<HirItemMetadataBuffers<'_>>,
 ) -> Result<(), GpuTypeCheckError> {
     let params = TypeCheckParams {
         n_tokens: token_capacity,
@@ -1330,6 +2380,259 @@ pub fn check_token_buffer_with_hir_on_gpu(
         function_lookup_capacity,
         wgpu::BufferUsages::empty(),
     );
+    let method_decl_receiver_type_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.method_decl_receiver_type",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let method_decl_impl_token_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.method_decl_impl_token",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let method_decl_name_token_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.method_decl_name_token",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let method_decl_param_offset_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.method_decl_param_offset",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let method_lookup_capacity = token_capacity.saturating_mul(2).max(1) as usize;
+    let method_lookup_key_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.method_lookup_key",
+        method_lookup_capacity,
+        wgpu::BufferUsages::empty(),
+    );
+    let method_lookup_receiver_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.method_lookup_receiver",
+        method_lookup_capacity,
+        wgpu::BufferUsages::empty(),
+    );
+    let method_lookup_name_token_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.method_lookup_name_token",
+        method_lookup_capacity,
+        wgpu::BufferUsages::empty(),
+    );
+    let method_lookup_fn_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.method_lookup_fn",
+        method_lookup_capacity,
+        wgpu::BufferUsages::empty(),
+    );
+    let module_item_kind_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.module_item_kind",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let module_path_start_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.module_path_start",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let module_path_end_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.module_path_end",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let module_path_hash_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.module_path_hash",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let import_enclosing_module_token_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.import_enclosing_module_token",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let import_target_kind_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.import_target_kind",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let import_resolved_module_token_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.import_resolved_module_token",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let decl_item_kind_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.decl_item_kind",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let decl_name_hash_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.decl_name_hash",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let decl_name_len_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.decl_name_len",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let decl_namespace_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.decl_namespace",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let decl_visibility_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.decl_visibility",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let decl_file_id_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.decl_file_id",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let decl_hir_node_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.decl_hir_node",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let type_expr_ref_tag_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.type_expr_ref_tag",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let type_expr_ref_payload_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.type_expr_ref_payload",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let type_instance_kind_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.type_instance_kind",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let type_instance_head_token_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.type_instance_head_token",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let type_instance_decl_token_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.type_instance_decl_token",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let type_instance_arg_start_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.type_instance_arg_start",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let type_instance_arg_count_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.type_instance_arg_count",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let type_instance_arg_ref_tag_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.type_instance_arg_ref_tag",
+        (token_capacity as usize).max(1) * TYPE_INSTANCE_ARG_REF_STRIDE,
+        wgpu::BufferUsages::empty(),
+    );
+    let type_instance_arg_ref_payload_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.type_instance_arg_ref_payload",
+        (token_capacity as usize).max(1) * TYPE_INSTANCE_ARG_REF_STRIDE,
+        wgpu::BufferUsages::empty(),
+    );
+    let type_instance_elem_ref_tag_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.type_instance_elem_ref_tag",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let type_instance_elem_ref_payload_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.type_instance_elem_ref_payload",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let type_instance_len_kind_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.type_instance_len_kind",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let type_instance_len_payload_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.type_instance_len_payload",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let type_instance_state_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.type_instance_state",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let fn_return_ref_tag_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.fn_return_ref_tag",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let fn_return_ref_payload_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.fn_return_ref_payload",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let member_result_ref_tag_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.member_result_ref_tag",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let member_result_ref_payload_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.member_result_ref_payload",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let struct_init_field_expected_ref_tag_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.struct_init_field_expected_ref_tag",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let struct_init_field_expected_ref_payload_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.struct_init_field_expected_ref_payload",
+        token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
     queue.write_buffer(&status_buf, 0, &status_init_bytes());
     let status_readback = readback_u32s(device, "rb.type_check.tokens.status", 4);
 
@@ -1343,7 +2646,65 @@ pub fn check_token_buffer_with_hir_on_gpu(
     let calls_clear_pass = type_check_calls_clear_pass(device)?;
     let calls_functions_pass = type_check_calls_functions_pass(device)?;
     let calls_resolve_pass = type_check_calls_resolve_pass(device)?;
-
+    let calls_erase_generic_params_pass = type_check_calls_erase_generic_params_pass(device)?;
+    let methods_clear_pass = type_check_methods_clear_pass(device)?;
+    let methods_collect_pass = type_check_methods_collect_pass(device)?;
+    let methods_resolve_pass = type_check_methods_resolve_pass(device)?;
+    let modules_types_pass = type_check_modules_types_pass(device)?;
+    let modules_patch_visible_pass = type_check_modules_patch_visible_pass(device)?;
+    let type_instances_collect_pass = type_check_type_instances_collect_pass(device)?;
+    let type_instances_struct_fields_pass = type_check_type_instances_struct_fields_pass(device)?;
+    let type_instances_member_results_pass = type_check_type_instances_member_results_pass(device)?;
+    let type_instances_struct_init_fields_pass =
+        type_check_type_instances_struct_init_fields_pass(device)?;
+    let type_instances_array_return_refs_pass =
+        type_check_type_instances_array_return_refs_pass(device)?;
+    let type_instances_enum_ctors_pass = type_check_type_instances_enum_ctors_pass(device)?;
+    let type_instances_array_index_results_pass =
+        type_check_type_instances_array_index_results_pass(device)?;
+    let empty_hir_item_kind =
+        storage_ro_from_u32s(device, "type_check.tokens.hir_item_kind.empty", &[0]);
+    let empty_hir_item_name_token =
+        storage_ro_from_u32s(device, "type_check.tokens.hir_item_name_token.empty", &[0]);
+    let empty_hir_item_namespace =
+        storage_ro_from_u32s(device, "type_check.tokens.hir_item_namespace.empty", &[0]);
+    let empty_hir_item_visibility =
+        storage_ro_from_u32s(device, "type_check.tokens.hir_item_visibility.empty", &[0]);
+    let empty_hir_item_path_start =
+        storage_ro_from_u32s(device, "type_check.tokens.hir_item_path_start.empty", &[0]);
+    let empty_hir_item_path_end =
+        storage_ro_from_u32s(device, "type_check.tokens.hir_item_path_end.empty", &[0]);
+    let empty_hir_item_file_id =
+        storage_ro_from_u32s(device, "type_check.tokens.hir_item_file_id.empty", &[0]);
+    let empty_hir_item_import_target_kind = storage_ro_from_u32s(
+        device,
+        "type_check.tokens.hir_item_import_target_kind.empty",
+        &[0],
+    );
+    let hir_item_kind_buf = hir_item_metadata
+        .map(|metadata| metadata.kind)
+        .unwrap_or(&empty_hir_item_kind);
+    let hir_item_name_token_buf = hir_item_metadata
+        .map(|metadata| metadata.name_token)
+        .unwrap_or(&empty_hir_item_name_token);
+    let hir_item_namespace_buf = hir_item_metadata
+        .map(|metadata| metadata.namespace)
+        .unwrap_or(&empty_hir_item_namespace);
+    let hir_item_visibility_buf = hir_item_metadata
+        .map(|metadata| metadata.visibility)
+        .unwrap_or(&empty_hir_item_visibility);
+    let hir_item_path_start_buf = hir_item_metadata
+        .map(|metadata| metadata.path_start)
+        .unwrap_or(&empty_hir_item_path_start);
+    let hir_item_path_end_buf = hir_item_metadata
+        .map(|metadata| metadata.path_end)
+        .unwrap_or(&empty_hir_item_path_end);
+    let hir_item_file_id_buf = hir_item_metadata
+        .map(|metadata| metadata.file_id)
+        .unwrap_or(&empty_hir_item_file_id);
+    let hir_item_import_target_kind_buf = hir_item_metadata
+        .map(|metadata| metadata.import_target_kind)
+        .unwrap_or(&empty_hir_item_import_target_kind);
     let mut resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::new();
     resources.insert("gParams".into(), params_buf.as_entire_binding());
     resources.insert("token_words".into(), token_buf.as_entire_binding());
@@ -1358,7 +2719,43 @@ pub fn check_token_buffer_with_hir_on_gpu(
         "hir_token_end".into(),
         hir_token_end_buf.as_entire_binding(),
     );
+    resources.insert(
+        "hir_token_file_id".into(),
+        hir_token_file_id_buf.as_entire_binding(),
+    );
     resources.insert("hir_status".into(), hir_status_buf.as_entire_binding());
+    resources.insert(
+        "hir_item_kind".into(),
+        hir_item_kind_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "hir_item_name_token".into(),
+        hir_item_name_token_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "hir_item_namespace".into(),
+        hir_item_namespace_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "hir_item_visibility".into(),
+        hir_item_visibility_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "hir_item_path_start".into(),
+        hir_item_path_start_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "hir_item_path_end".into(),
+        hir_item_path_end_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "hir_item_file_id".into(),
+        hir_item_file_id_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "hir_item_import_target_kind".into(),
+        hir_item_import_target_kind_buf.as_entire_binding(),
+    );
     resources.insert("status".into(), status_buf.as_entire_binding());
     resources.insert("visible_decl".into(), visible_decl_buf.as_entire_binding());
     resources.insert("visible_type".into(), visible_type_buf.as_entire_binding());
@@ -1398,6 +2795,288 @@ pub fn check_token_buffer_with_hir_on_gpu(
         "function_lookup_fn".into(),
         function_lookup_fn_buf.as_entire_binding(),
     );
+    resources.insert(
+        "method_decl_receiver_type".into(),
+        method_decl_receiver_type_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "method_decl_impl_token".into(),
+        method_decl_impl_token_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "method_decl_name_token".into(),
+        method_decl_name_token_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "method_decl_param_offset".into(),
+        method_decl_param_offset_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "method_lookup_key".into(),
+        method_lookup_key_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "method_lookup_receiver".into(),
+        method_lookup_receiver_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "method_lookup_name_token".into(),
+        method_lookup_name_token_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "method_lookup_fn".into(),
+        method_lookup_fn_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "module_item_kind".into(),
+        module_item_kind_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "module_path_start".into(),
+        module_path_start_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "module_path_end".into(),
+        module_path_end_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "module_path_hash".into(),
+        module_path_hash_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "import_enclosing_module_token".into(),
+        import_enclosing_module_token_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "import_target_kind".into(),
+        import_target_kind_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "import_resolved_module_token".into(),
+        import_resolved_module_token_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "decl_item_kind".into(),
+        decl_item_kind_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "decl_name_hash".into(),
+        decl_name_hash_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "decl_name_len".into(),
+        decl_name_len_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "decl_namespace".into(),
+        decl_namespace_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "decl_visibility".into(),
+        decl_visibility_buf.as_entire_binding(),
+    );
+    resources.insert("decl_file_id".into(), decl_file_id_buf.as_entire_binding());
+    resources.insert(
+        "decl_hir_node".into(),
+        decl_hir_node_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "type_expr_ref_tag".into(),
+        type_expr_ref_tag_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "type_expr_ref_payload".into(),
+        type_expr_ref_payload_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "type_instance_kind".into(),
+        type_instance_kind_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "type_instance_head_token".into(),
+        type_instance_head_token_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "type_instance_decl_token".into(),
+        type_instance_decl_token_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "type_instance_arg_start".into(),
+        type_instance_arg_start_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "type_instance_arg_count".into(),
+        type_instance_arg_count_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "type_instance_arg_ref_tag".into(),
+        type_instance_arg_ref_tag_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "type_instance_arg_ref_payload".into(),
+        type_instance_arg_ref_payload_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "type_instance_elem_ref_tag".into(),
+        type_instance_elem_ref_tag_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "type_instance_elem_ref_payload".into(),
+        type_instance_elem_ref_payload_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "type_instance_len_kind".into(),
+        type_instance_len_kind_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "type_instance_len_payload".into(),
+        type_instance_len_payload_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "type_instance_state".into(),
+        type_instance_state_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "fn_return_ref_tag".into(),
+        fn_return_ref_tag_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "fn_return_ref_payload".into(),
+        fn_return_ref_payload_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "member_result_ref_tag".into(),
+        member_result_ref_tag_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "member_result_ref_payload".into(),
+        member_result_ref_payload_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "struct_init_field_expected_ref_tag".into(),
+        struct_init_field_expected_ref_tag_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "struct_init_field_expected_ref_payload".into(),
+        struct_init_field_expected_ref_payload_buf.as_entire_binding(),
+    );
+    let type_instances_collect_bind_group = bind_group::create_bind_group_from_reflection(
+        device,
+        Some("type_check_type_instances_collect"),
+        &type_instances_collect_pass.bind_group_layouts[0],
+        &type_instances_collect_pass.reflection,
+        0,
+        &resources,
+    )?;
+    let type_instances_struct_fields_bind_group = bind_group::create_bind_group_from_reflection(
+        device,
+        Some("type_check_type_instances_struct_fields"),
+        &type_instances_struct_fields_pass.bind_group_layouts[0],
+        &type_instances_struct_fields_pass.reflection,
+        0,
+        &resources,
+    )?;
+    let type_instances_member_results_bind_group = bind_group::create_bind_group_from_reflection(
+        device,
+        Some("type_check_type_instances_member_results"),
+        &type_instances_member_results_pass.bind_group_layouts[0],
+        &type_instances_member_results_pass.reflection,
+        0,
+        &resources,
+    )?;
+    let type_instances_struct_init_fields_bind_group =
+        bind_group::create_bind_group_from_reflection(
+            device,
+            Some("type_check_type_instances_struct_init_fields"),
+            &type_instances_struct_init_fields_pass.bind_group_layouts[0],
+            &type_instances_struct_init_fields_pass.reflection,
+            0,
+            &resources,
+        )?;
+    let type_instances_array_return_refs_bind_group =
+        bind_group::create_bind_group_from_reflection(
+            device,
+            Some("type_check_type_instances_array_return_refs"),
+            &type_instances_array_return_refs_pass.bind_group_layouts[0],
+            &type_instances_array_return_refs_pass.reflection,
+            0,
+            &resources,
+        )?;
+    let type_instances_enum_ctors_bind_group = bind_group::create_bind_group_from_reflection(
+        device,
+        Some("type_check_type_instances_enum_ctors"),
+        &type_instances_enum_ctors_pass.bind_group_layouts[0],
+        &type_instances_enum_ctors_pass.reflection,
+        0,
+        &resources,
+    )?;
+    let type_instances_array_index_results_bind_group =
+        bind_group::create_bind_group_from_reflection(
+            device,
+            Some("type_check_type_instances_array_index_results"),
+            &type_instances_array_index_results_pass.bind_group_layouts[0],
+            &type_instances_array_index_results_pass.reflection,
+            0,
+            &resources,
+        )?;
+    let modules_clear_pass = type_check_modules_clear_pass(device)?;
+    let modules_collect_pass = type_check_modules_collect_pass(device)?;
+    let modules_collect_decls_pass = type_check_modules_collect_decls_pass(device)?;
+    let modules_resolve_imports_pass = type_check_modules_resolve_imports_pass(device)?;
+    let modules_clear_bind_group = bind_group::create_bind_group_from_reflection(
+        device,
+        Some("type_check_modules_clear"),
+        &modules_clear_pass.bind_group_layouts[0],
+        &modules_clear_pass.reflection,
+        0,
+        &resources,
+    )?;
+    let modules_collect_bind_group = bind_group::create_bind_group_from_reflection(
+        device,
+        Some("type_check_modules_collect"),
+        &modules_collect_pass.bind_group_layouts[0],
+        &modules_collect_pass.reflection,
+        0,
+        &resources,
+    )?;
+    let modules_collect_decls_bind_group = bind_group::create_bind_group_from_reflection(
+        device,
+        Some("type_check_modules_collect_decls"),
+        &modules_collect_decls_pass.bind_group_layouts[0],
+        &modules_collect_decls_pass.reflection,
+        0,
+        &resources,
+    )?;
+    let modules_resolve_imports_bind_group = bind_group::create_bind_group_from_reflection(
+        device,
+        Some("type_check_modules_resolve_imports"),
+        &modules_resolve_imports_pass.bind_group_layouts[0],
+        &modules_resolve_imports_pass.reflection,
+        0,
+        &resources,
+    )?;
+    let module_metadata_bind_groups = ModuleMetadataBindGroups {
+        clear: modules_clear_bind_group,
+        collect: modules_collect_bind_group,
+        collect_decls: modules_collect_decls_bind_group,
+        resolve_imports: modules_resolve_imports_bind_group,
+    };
+    let modules_types_bind_group = bind_group::create_bind_group_from_reflection(
+        device,
+        Some("type_check_modules_types"),
+        &modules_types_pass.bind_group_layouts[0],
+        &modules_types_pass.reflection,
+        0,
+        &resources,
+    )?;
+    let modules_patch_visible_bind_group = bind_group::create_bind_group_from_reflection(
+        device,
+        Some("type_check_modules_patch_visible"),
+        &modules_patch_visible_pass.bind_group_layouts[0],
+        &modules_patch_visible_pass.reflection,
+        0,
+        &resources,
+    )?;
     let calls_clear_bind_group = bind_group::create_bind_group_from_reflection(
         device,
         Some("type_check_calls_clear"),
@@ -1422,10 +3101,48 @@ pub fn check_token_buffer_with_hir_on_gpu(
         0,
         &resources,
     )?;
+    let calls_erase_generic_params_bind_group = bind_group::create_bind_group_from_reflection(
+        device,
+        Some("type_check_calls_erase_generic_params"),
+        &calls_erase_generic_params_pass.bind_group_layouts[0],
+        &calls_erase_generic_params_pass.reflection,
+        0,
+        &resources,
+    )?;
     let calls_bind_groups = CallBindGroups {
         clear: calls_clear_bind_group,
         functions: calls_functions_bind_group,
         resolve: calls_resolve_bind_group,
+        erase_generic_params: calls_erase_generic_params_bind_group,
+    };
+    let methods_clear_bind_group = bind_group::create_bind_group_from_reflection(
+        device,
+        Some("type_check_methods_clear"),
+        &methods_clear_pass.bind_group_layouts[0],
+        &methods_clear_pass.reflection,
+        0,
+        &resources,
+    )?;
+    let methods_collect_bind_group = bind_group::create_bind_group_from_reflection(
+        device,
+        Some("type_check_methods_collect"),
+        &methods_collect_pass.bind_group_layouts[0],
+        &methods_collect_pass.reflection,
+        0,
+        &resources,
+    )?;
+    let methods_resolve_bind_group = bind_group::create_bind_group_from_reflection(
+        device,
+        Some("type_check_methods_resolve"),
+        &methods_resolve_pass.bind_group_layouts[0],
+        &methods_resolve_pass.reflection,
+        0,
+        &resources,
+    )?;
+    let methods_bind_groups = MethodBindGroups {
+        clear: methods_clear_bind_group,
+        collect: methods_collect_bind_group,
+        resolve: methods_resolve_bind_group,
     };
     let bind_group = bind_group::create_bind_group_from_reflection(
         device,
@@ -1502,12 +3219,19 @@ pub fn check_token_buffer_with_hir_on_gpu(
         loop_n_blocks,
         &loop_bind_groups,
     )?;
-    record_call_bind_groups(
+    record_module_metadata_bind_groups(
         device,
         &mut encoder,
         token_capacity,
-        n_work,
-        &calls_bind_groups,
+        hir_node_capacity,
+        &module_metadata_bind_groups,
+    )?;
+    record_compute(
+        &mut encoder,
+        modules_types_pass,
+        &modules_types_bind_group,
+        "type_check.modules_types.pass",
+        token_capacity,
     )?;
     record_fn_context_bind_groups(
         device,
@@ -1526,10 +3250,87 @@ pub fn check_token_buffer_with_hir_on_gpu(
     )?;
     record_compute(
         &mut encoder,
+        type_instances_collect_pass,
+        &type_instances_collect_bind_group,
+        "type_check.type_instances_collect.pass",
+        token_capacity,
+    )?;
+    record_compute(
+        &mut encoder,
+        type_instances_struct_fields_pass,
+        &type_instances_struct_fields_bind_group,
+        "type_check.type_instances_struct_fields.pass",
+        token_capacity,
+    )?;
+    record_compute(
+        &mut encoder,
+        type_instances_member_results_pass,
+        &type_instances_member_results_bind_group,
+        "type_check.type_instances_member_results.pass",
+        token_capacity,
+    )?;
+    record_compute(
+        &mut encoder,
+        type_instances_struct_init_fields_pass,
+        &type_instances_struct_init_fields_bind_group,
+        "type_check.type_instances_struct_init_fields.pass",
+        token_capacity,
+    )?;
+    record_call_bind_groups(
+        device,
+        &mut encoder,
+        token_capacity,
+        n_work,
+        &calls_bind_groups,
+    )?;
+    record_method_bind_groups(
+        device,
+        &mut encoder,
+        token_capacity,
+        n_work,
+        &methods_bind_groups,
+    )?;
+    record_compute(
+        &mut encoder,
         scope_pass,
         &scope_bind_group,
         "type_check.scope.pass",
         n_work,
+    )?;
+    record_compute(
+        &mut encoder,
+        modules_patch_visible_pass,
+        &modules_patch_visible_bind_group,
+        "type_check.modules_patch_visible.pass",
+        token_capacity,
+    )?;
+    record_compute(
+        &mut encoder,
+        methods_resolve_pass,
+        &methods_bind_groups.resolve,
+        "type_check.methods.resolve",
+        n_work,
+    )?;
+    record_compute(
+        &mut encoder,
+        type_instances_array_return_refs_pass,
+        &type_instances_array_return_refs_bind_group,
+        "type_check.type_instances_array_return_refs.pass",
+        token_capacity,
+    )?;
+    record_compute(
+        &mut encoder,
+        type_instances_enum_ctors_pass,
+        &type_instances_enum_ctors_bind_group,
+        "type_check.type_instances_enum_ctors.pass",
+        token_capacity,
+    )?;
+    record_compute(
+        &mut encoder,
+        type_instances_array_index_results_pass,
+        &type_instances_array_index_results_bind_group,
+        "type_check.type_instances_array_index_results.pass",
+        token_capacity,
     )?;
     record_compute(
         &mut encoder,
@@ -1546,11 +3347,15 @@ pub fn check_token_buffer_with_hir_on_gpu(
         n_work,
     )?;
     encoder.copy_buffer_to_buffer(&status_buf, 0, &status_readback, 0, 16);
-    queue.submit(Some(encoder.finish()));
+    crate::gpu::passes_core::submit_with_progress(queue, "type_check.resident", encoder.finish());
 
     let slice = status_readback.slice(..);
-    slice.map_async(wgpu::MapMode::Read, |_| {});
-    let _ = device.poll(wgpu::PollType::Wait);
+    crate::gpu::passes_core::map_readback_for_progress(&slice, "type_check.resident.status");
+    crate::gpu::passes_core::wait_for_map_progress(
+        device,
+        "type_check.resident.status",
+        wgpu::PollType::Wait,
+    );
     let mapped = slice.get_mapped_range();
     let words = read_status_words(&mapped)?;
     drop(mapped);
@@ -1573,10 +3378,309 @@ fn type_check_tokens_pass(device: &wgpu::Device) -> Result<&'static PassData> {
             device,
             "type_check_tokens",
             "main",
-            include_bytes!(concat!(env!("OUT_DIR"), "/shaders/type_check_tokens.spv")),
             include_bytes!(concat!(
                 env!("OUT_DIR"),
-                "/shaders/type_check_tokens.reflect.json"
+                "/shaders/type_check_tokens_min.spv"
+            )),
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_tokens_min.reflect.json"
+            )),
+        )
+        .map_err(|err| err.to_string())
+    })
+    .as_ref()
+    .map_err(|err| anyhow!("{err}"))
+}
+
+fn type_check_type_instances_collect_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+    static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
+    PASS.get_or_init(|| {
+        make_pass_data(
+            device,
+            "type_check_type_instances_01_collect",
+            "main",
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_type_instances_01_collect.spv"
+            )),
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_type_instances_01_collect.reflect.json"
+            )),
+        )
+        .map_err(|err| err.to_string())
+    })
+    .as_ref()
+    .map_err(|err| anyhow!("{err}"))
+}
+
+fn type_check_type_instances_struct_fields_pass(
+    device: &wgpu::Device,
+) -> Result<&'static PassData> {
+    static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
+    PASS.get_or_init(|| {
+        make_pass_data(
+            device,
+            "type_check_type_instances_02_struct_fields",
+            "main",
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_type_instances_02_struct_fields.spv"
+            )),
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_type_instances_02_struct_fields.reflect.json"
+            )),
+        )
+        .map_err(|err| err.to_string())
+    })
+    .as_ref()
+    .map_err(|err| anyhow!("{err}"))
+}
+
+fn type_check_type_instances_member_results_pass(
+    device: &wgpu::Device,
+) -> Result<&'static PassData> {
+    static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
+    PASS.get_or_init(|| {
+        make_pass_data(
+            device,
+            "type_check_type_instances_03_member_results",
+            "main",
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_type_instances_03_member_results.spv"
+            )),
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_type_instances_03_member_results.reflect.json"
+            )),
+        )
+        .map_err(|err| err.to_string())
+    })
+    .as_ref()
+    .map_err(|err| anyhow!("{err}"))
+}
+
+fn type_check_type_instances_struct_init_fields_pass(
+    device: &wgpu::Device,
+) -> Result<&'static PassData> {
+    static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
+    PASS.get_or_init(|| {
+        make_pass_data(
+            device,
+            "type_check_type_instances_04_struct_init_fields",
+            "main",
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_type_instances_04_struct_init_fields.spv"
+            )),
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_type_instances_04_struct_init_fields.reflect.json"
+            )),
+        )
+        .map_err(|err| err.to_string())
+    })
+    .as_ref()
+    .map_err(|err| anyhow!("{err}"))
+}
+
+fn type_check_type_instances_array_return_refs_pass(
+    device: &wgpu::Device,
+) -> Result<&'static PassData> {
+    static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
+    PASS.get_or_init(|| {
+        make_pass_data(
+            device,
+            "type_check_type_instances_05_array_return_refs",
+            "main",
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_type_instances_05_array_return_refs.spv"
+            )),
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_type_instances_05_array_return_refs.reflect.json"
+            )),
+        )
+        .map_err(|err| err.to_string())
+    })
+    .as_ref()
+    .map_err(|err| anyhow!("{err}"))
+}
+
+fn type_check_type_instances_enum_ctors_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+    static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
+    PASS.get_or_init(|| {
+        make_pass_data(
+            device,
+            "type_check_type_instances_06_enum_ctors",
+            "main",
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_type_instances_06_enum_ctors.spv"
+            )),
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_type_instances_06_enum_ctors.reflect.json"
+            )),
+        )
+        .map_err(|err| err.to_string())
+    })
+    .as_ref()
+    .map_err(|err| anyhow!("{err}"))
+}
+
+fn type_check_type_instances_array_index_results_pass(
+    device: &wgpu::Device,
+) -> Result<&'static PassData> {
+    static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
+    PASS.get_or_init(|| {
+        make_pass_data(
+            device,
+            "type_check_type_instances_07_array_index_results",
+            "main",
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_type_instances_07_array_index_results.spv"
+            )),
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_type_instances_07_array_index_results.reflect.json"
+            )),
+        )
+        .map_err(|err| err.to_string())
+    })
+    .as_ref()
+    .map_err(|err| anyhow!("{err}"))
+}
+
+fn type_check_modules_clear_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+    static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
+    PASS.get_or_init(|| {
+        make_pass_data(
+            device,
+            "type_check_modules_00_clear",
+            "main",
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_modules_00_clear.spv"
+            )),
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_modules_00_clear.reflect.json"
+            )),
+        )
+        .map_err(|err| err.to_string())
+    })
+    .as_ref()
+    .map_err(|err| anyhow!("{err}"))
+}
+
+fn type_check_modules_collect_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+    static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
+    PASS.get_or_init(|| {
+        make_pass_data(
+            device,
+            "type_check_modules_00_collect",
+            "main",
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_modules_00_collect.spv"
+            )),
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_modules_00_collect.reflect.json"
+            )),
+        )
+        .map_err(|err| err.to_string())
+    })
+    .as_ref()
+    .map_err(|err| anyhow!("{err}"))
+}
+
+fn type_check_modules_collect_decls_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+    static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
+    PASS.get_or_init(|| {
+        make_pass_data(
+            device,
+            "type_check_modules_00_collect_decls",
+            "main",
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_modules_00_collect_decls.spv"
+            )),
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_modules_00_collect_decls.reflect.json"
+            )),
+        )
+        .map_err(|err| err.to_string())
+    })
+    .as_ref()
+    .map_err(|err| anyhow!("{err}"))
+}
+
+fn type_check_modules_resolve_imports_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+    static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
+    PASS.get_or_init(|| {
+        make_pass_data(
+            device,
+            "type_check_modules_00_resolve_imports",
+            "main",
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_modules_00_resolve_imports.spv"
+            )),
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_modules_00_resolve_imports.reflect.json"
+            )),
+        )
+        .map_err(|err| err.to_string())
+    })
+    .as_ref()
+    .map_err(|err| anyhow!("{err}"))
+}
+
+fn type_check_modules_types_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+    static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
+    PASS.get_or_init(|| {
+        make_pass_data(
+            device,
+            "type_check_modules_01_same_source_types",
+            "main",
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_modules_01_same_source_types.spv"
+            )),
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_modules_01_same_source_types.reflect.json"
+            )),
+        )
+        .map_err(|err| err.to_string())
+    })
+    .as_ref()
+    .map_err(|err| anyhow!("{err}"))
+}
+
+fn type_check_modules_patch_visible_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+    static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
+    PASS.get_or_init(|| {
+        make_pass_data(
+            device,
+            "type_check_modules_02_patch_visible_types",
+            "main",
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_modules_02_patch_visible_types.spv"
+            )),
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_modules_02_patch_visible_types.reflect.json"
             )),
         )
         .map_err(|err| err.to_string())
@@ -1703,6 +3807,94 @@ fn type_check_calls_resolve_pass(device: &wgpu::Device) -> Result<&'static PassD
             include_bytes!(concat!(
                 env!("OUT_DIR"),
                 "/shaders/type_check_calls_03_resolve.reflect.json"
+            )),
+        )
+        .map_err(|err| err.to_string())
+    })
+    .as_ref()
+    .map_err(|err| anyhow!("{err}"))
+}
+
+fn type_check_calls_erase_generic_params_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+    static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
+    PASS.get_or_init(|| {
+        make_pass_data(
+            device,
+            "type_check_calls_04_erase_generic_params",
+            "main",
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_calls_04_erase_generic_params.spv"
+            )),
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_calls_04_erase_generic_params.reflect.json"
+            )),
+        )
+        .map_err(|err| err.to_string())
+    })
+    .as_ref()
+    .map_err(|err| anyhow!("{err}"))
+}
+
+fn type_check_methods_clear_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+    static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
+    PASS.get_or_init(|| {
+        make_pass_data(
+            device,
+            "type_check_methods_01_clear",
+            "main",
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_methods_01_clear.spv"
+            )),
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_methods_01_clear.reflect.json"
+            )),
+        )
+        .map_err(|err| err.to_string())
+    })
+    .as_ref()
+    .map_err(|err| anyhow!("{err}"))
+}
+
+fn type_check_methods_collect_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+    static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
+    PASS.get_or_init(|| {
+        make_pass_data(
+            device,
+            "type_check_methods_02_collect",
+            "main",
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_methods_02_collect.spv"
+            )),
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_methods_02_collect.reflect.json"
+            )),
+        )
+        .map_err(|err| err.to_string())
+    })
+    .as_ref()
+    .map_err(|err| anyhow!("{err}"))
+}
+
+fn type_check_methods_resolve_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+    static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
+    PASS.get_or_init(|| {
+        make_pass_data(
+            device,
+            "type_check_methods_03_resolve",
+            "main",
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_methods_03_resolve.spv"
+            )),
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/type_check_methods_03_resolve.reflect.json"
             )),
         )
         .map_err(|err| err.to_string())
@@ -2806,6 +4998,76 @@ fn record_call_bind_groups(
         &groups.resolve,
         "type_check.calls.resolve",
         n_work,
+    )?;
+    record_compute(
+        encoder,
+        type_check_calls_erase_generic_params_pass(device)?,
+        &groups.erase_generic_params,
+        "type_check.calls.erase_generic_params",
+        token_capacity
+            .saturating_mul(CALL_PARAM_CACHE_STRIDE as u32)
+            .max(1),
+    )
+}
+
+fn record_module_metadata_bind_groups(
+    device: &wgpu::Device,
+    encoder: &mut wgpu::CommandEncoder,
+    token_capacity: u32,
+    hir_node_capacity: u32,
+    groups: &ModuleMetadataBindGroups,
+) -> Result<()> {
+    record_compute(
+        encoder,
+        type_check_modules_clear_pass(device)?,
+        &groups.clear,
+        "type_check.modules.clear",
+        token_capacity.max(1),
+    )?;
+    record_compute(
+        encoder,
+        type_check_modules_collect_pass(device)?,
+        &groups.collect,
+        "type_check.modules.collect",
+        hir_node_capacity.max(1),
+    )?;
+    record_compute(
+        encoder,
+        type_check_modules_collect_decls_pass(device)?,
+        &groups.collect_decls,
+        "type_check.modules.collect_decls",
+        hir_node_capacity.max(1),
+    )?;
+    record_compute(
+        encoder,
+        type_check_modules_resolve_imports_pass(device)?,
+        &groups.resolve_imports,
+        "type_check.modules.resolve_imports",
+        token_capacity.max(1),
+    )
+}
+
+fn record_method_bind_groups(
+    device: &wgpu::Device,
+    encoder: &mut wgpu::CommandEncoder,
+    token_capacity: u32,
+    n_work: u32,
+    groups: &MethodBindGroups,
+) -> Result<()> {
+    let lookup_work = token_capacity.saturating_mul(2).max(n_work);
+    record_compute(
+        encoder,
+        type_check_methods_clear_pass(device)?,
+        &groups.clear,
+        "type_check.methods.clear",
+        lookup_work,
+    )?;
+    record_compute(
+        encoder,
+        type_check_methods_collect_pass(device)?,
+        &groups.collect,
+        "type_check.methods.collect",
+        token_capacity.max(1),
     )
 }
 
@@ -2985,6 +5247,76 @@ fn record_call_bind_groups_with_passes(
         &groups.resolve,
         "type_check.calls.resolve",
         n_work,
+    )?;
+    record_compute(
+        encoder,
+        &passes.calls_erase_generic_params,
+        &groups.erase_generic_params,
+        "type_check.calls.erase_generic_params",
+        token_capacity
+            .saturating_mul(CALL_PARAM_CACHE_STRIDE as u32)
+            .max(1),
+    )
+}
+
+fn record_module_metadata_bind_groups_with_passes(
+    passes: &TypeCheckPasses,
+    encoder: &mut wgpu::CommandEncoder,
+    token_capacity: u32,
+    hir_node_capacity: u32,
+    groups: &ModuleMetadataBindGroups,
+) -> Result<()> {
+    record_compute(
+        encoder,
+        &passes.modules_clear,
+        &groups.clear,
+        "type_check.modules.clear",
+        token_capacity.max(1),
+    )?;
+    record_compute(
+        encoder,
+        &passes.modules_collect,
+        &groups.collect,
+        "type_check.modules.collect",
+        hir_node_capacity.max(1),
+    )?;
+    record_compute(
+        encoder,
+        &passes.modules_collect_decls,
+        &groups.collect_decls,
+        "type_check.modules.collect_decls",
+        hir_node_capacity.max(1),
+    )?;
+    record_compute(
+        encoder,
+        &passes.modules_resolve_imports,
+        &groups.resolve_imports,
+        "type_check.modules.resolve_imports",
+        token_capacity.max(1),
+    )
+}
+
+fn record_method_bind_groups_with_passes(
+    passes: &TypeCheckPasses,
+    encoder: &mut wgpu::CommandEncoder,
+    token_capacity: u32,
+    n_work: u32,
+    groups: &MethodBindGroups,
+) -> Result<()> {
+    let lookup_work = token_capacity.saturating_mul(2).max(n_work);
+    record_compute(
+        encoder,
+        &passes.methods_clear,
+        &groups.clear,
+        "type_check.methods.clear",
+        lookup_work,
+    )?;
+    record_compute(
+        encoder,
+        &passes.methods_collect,
+        &groups.collect,
+        "type_check.methods.collect",
+        token_capacity.max(1),
     )
 }
 
@@ -3093,7 +5425,7 @@ fn storage_u32_rw(
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
         size: (count.max(1) * 4) as u64,
-        usage: wgpu::BufferUsages::STORAGE | extra_usage,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | extra_usage,
         mapped_at_creation: false,
     })
 }

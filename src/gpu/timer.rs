@@ -1,5 +1,6 @@
 //! Simple per-encode GPU timestamp helper. Not thread-safe; create per "frame"/encode.
 
+use log::warn;
 use wgpu;
 
 pub const MINIMUM_TIME_TO_NOT_ELIDE_MS: f64 = 0.2;
@@ -92,10 +93,18 @@ impl GpuTimer {
         }
         let slice = self.readback_buffer.slice(..(query_count as u64) * 8);
         let (sender, receiver) = std::sync::mpsc::channel();
+        crate::gpu::passes_core::trace_gpu_progress("gpu.timer.readback.map.start");
         slice.map_async(wgpu::MapMode::Read, move |v| {
-            sender.send(v).expect("mpsc send")
+            if let Err(err) = sender.send(v) {
+                warn!("failed to send timer readback completion signal: {err}");
+            }
         });
-        let _ = device.poll(wgpu::PollType::Wait);
+        crate::gpu::passes_core::trace_gpu_progress("gpu.timer.readback.map.queued");
+        crate::gpu::passes_core::wait_for_map_progress(
+            device,
+            "gpu.timer.readback",
+            wgpu::PollType::Wait,
+        );
 
         if let Ok(Ok(())) = receiver.try_recv() {
             let data = slice.get_mapped_range().to_vec();

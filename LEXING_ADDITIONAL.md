@@ -1,5 +1,5 @@
 # PARSING_PLAN.md
-Lanius parsing+lexing plan for **LLP(1,1)** with Rust-like surface syntax and **function calls using `()`** (arrays/indexing use `[]`). We keep the GPU-first pipeline from `LEXING.md` and perform a **parallel retagging step inside the existing `tokens_build` pass** that separates grouping `()` from call `()` and array literal `[]` from indexing `[]`. With those tokens disambiguated, the grammar remains LLP(1,1) as in the papers.
+Lanius parsing+lexing plan for **LLP(1,1)** with Rust-like surface syntax and **function calls using `()`** (arrays/indexing use `[]`). We keep the GPU-first pipeline from `docs/ParallelLexingParsingSemanticAnalysis.md` and perform a **parallel retagging step inside the existing `tokens_build` pass** that separates grouping `()` from call `()` and array literal `[]` from indexing `[]`. With those tokens disambiguated, the grammar remains LLP(1,1) as in the papers.
 
 ---
 
@@ -22,7 +22,7 @@ Lanius parsing+lexing plan for **LLP(1,1)** with Rust-like surface syntax and **
 
 ## 1) Pipeline overview (GPU-first)
 
-We extend the existing lex pipeline (`LEXING.md`) conceptually with retagging, but it’s integrated into `tokens_build` rather than a separate pass:
+We extend the existing lex pipeline from `docs/ParallelLexingParsingSemanticAnalysis.md` conceptually with retagging, but it’s integrated into `tokens_build` rather than a separate pass:
 
 1. **Raw lex (GPU)** — already implemented:
    - Streaming DFA → tokens with kinds, spans.

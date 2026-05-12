@@ -53,7 +53,7 @@ fn run() -> Result<(), String> {
 
     if emit != "wasm" && emit != "x86_64" {
         return Err(format!(
-            "unsupported emit target {emit:?}; supported targets: wasm, x86_64"
+            "unsupported emit target {emit:?}; accepted targets: wasm, x86_64 (x86_64 currently reports unavailable)"
         ));
     }
 
@@ -97,8 +97,8 @@ fn run() -> Result<(), String> {
 fn print_help() {
     eprintln!(
         "Usage: laniusc [--emit x86_64|wasm] [-o output] <input.lani>\n\
-         Emits x86_64 ELF or WASM using GPU lexing, GPU parsing, GPU type checking, and GPU emission.\n\
-         WASM has a narrow top-level-statement GPU backend today; x86_64 reports unavailable until its GPU backend is ready.\n\
-         Without an input file, compiles a tiny built-in sample to stdout."
+         Emits WASM using GPU lexing, GPU parsing, GPU type checking, and GPU emission.\n\
+         x86_64 is accepted only to report explicit unavailability until its GPU backend is wired.\n\
+         Without an input file, compiles a tiny built-in WASM sample to stdout."
     );
 }

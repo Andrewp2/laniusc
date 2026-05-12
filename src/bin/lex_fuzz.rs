@@ -1,3 +1,8 @@
+// Developer lexer fuzz tool.
+//
+// This binary is not part of the compiler pipeline. It may call the explicitly
+// named test CPU lexer oracle to compare against GPU lexer output.
+
 use std::{
     fs,
     io::Write,
@@ -12,6 +17,7 @@ use laniusc::{
         test_cpu::{TestCpuToken, lex_on_test_cpu},
     },
 };
+use log::warn;
 use rand::{SeedableRng, rngs::StdRng};
 
 #[derive(serde::Deserialize)]
@@ -118,11 +124,17 @@ fn load_golden_for(base_lan: &Path) -> Option<Golden> {
     ];
     for p in candidates {
         if p.exists() {
-            let s = fs::read_to_string(&p).ok()?;
+            let s = match fs::read_to_string(&p) {
+                Ok(s) => s,
+                Err(err) => {
+                    warn!("failed to read lex fuzz golden {}: {err}", p.display());
+                    return None;
+                }
+            };
             match serde_json::from_str::<Golden>(&s) {
                 Ok(g) => return Some(g),
                 Err(e) => {
-                    eprintln!("[golden] failed to parse {}: {e}", p.display());
+                    warn!("[golden] failed to parse {}: {e}", p.display());
                     return None;
                 }
             }
@@ -193,10 +205,25 @@ fn dump_kind_text_diff(got: &[(TokenKind, String)], exp: &[GoldenTok], from: usi
 }
 
 fn main() {
-    if std::env::var("LANIUS_READBACK").ok().as_deref() == Some("0") {
-        panic!("LANIUS_READBACK=0 not supported (we can't fuzz output that we can't get)");
+    match std::env::var("LANIUS_READBACK") {
+        Ok(value) => {
+            if value == "0" {
+                panic!("LANIUS_READBACK=0 not supported (we can't fuzz output that we can't get)");
+            }
+            if value != "1" && !value.eq_ignore_ascii_case("true") {
+                warn!(
+                    "LANIUS_READBACK has value '{value}'; expected 0/1/true/false. continuing with default enabled mode"
+                );
+            }
+        }
+        Err(_) => {
+            warn!("LANIUS_READBACK is unset; using default readback-enabled mode");
+        }
     }
-    let _ = pollster::block_on(laniusc::lexer::gpu::lex_on_gpu("warmup"));
+    if let Err(err) = pollster::block_on(laniusc::lexer::gpu::lex_on_gpu("warmup")) {
+        warn!("GPU warmup lex failed: {err}");
+        std::process::exit(1);
+    }
     if let Ok(path) = std::env::var("FUZZ_INPUT") {
         eprintln!("[replay] reading {path}");
         let s = fs::read_to_string(&path).expect("failed to read FUZZ_INPUT");
@@ -223,20 +250,14 @@ fn main() {
         }
     }
 
-    let save_cases = std::env::var("FUZZ_SAVE").ok().as_deref() == Some("1");
-    let out_dir = std::env::var("FUZZ_DIR").unwrap_or_else(|_| "fuzz-cases".to_string());
-    let len: usize = std::env::var("FUZZ_LEN")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(1_000_000);
-    let iters: usize = std::env::var("FUZZ_ITERS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(3);
-    let seed: u64 = std::env::var("FUZZ_SEED")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(42);
+    let save_cases = env_bool_flag("FUZZ_SAVE", false);
+    let out_dir = std::env::var("FUZZ_DIR").unwrap_or_else(|_| {
+        warn!("FUZZ_DIR is unset; using default fuzz-cases");
+        "fuzz-cases".to_string()
+    });
+    let len: usize = parse_env_or_default("FUZZ_LEN", 1_000_000usize);
+    let iters: usize = parse_env_or_default("FUZZ_ITERS", 3usize);
+    let seed: u64 = parse_env_or_default("FUZZ_SEED", 42u64);
 
     eprintln!("[fuzz] len={len} iters={iters} seed={seed}");
     let mut rng = StdRng::seed_from_u64(seed);
@@ -349,30 +370,68 @@ fn collect_examples() -> Vec<PathBuf> {
         if !out.is_empty() {
             return out;
         }
+        warn!("FUZZ_EX is set but did not yield any existing .lani files");
+    } else {
+        warn!("FUZZ_EX is unset; checking FUZZ_EX_DIR");
     }
 
-    let dir = std::env::var("FUZZ_EX_DIR").unwrap_or_else(|_| "lexer_tests".into());
+    let dir = std::env::var("FUZZ_EX_DIR").unwrap_or_else(|_| {
+        warn!("FUZZ_EX_DIR is unset; using default lexer_tests");
+        "lexer_tests".into()
+    });
     let p = Path::new(&dir);
-    if !p.exists() || !p.is_dir() {
+    if !p.exists() {
+        warn!("example directory {dir} does not exist");
+        return Vec::new();
+    }
+    if !p.is_dir() {
+        warn!("FUZZ_EX_DIR value {dir} is not a directory");
         return Vec::new();
     }
 
     let mut out = Vec::new();
-    if let Ok(rd) = fs::read_dir(p) {
-        for ent in rd.flatten() {
-            let path = ent.path();
-            if path
-                .extension()
-                .and_then(|e| e.to_str())
-                .map(|e| e.eq_ignore_ascii_case("lani"))
-                .unwrap_or(false)
-            {
-                out.push(path);
+    let Ok(rd) = fs::read_dir(p) else {
+        warn!("failed to read example directory {}", p.display());
+        return Vec::new();
+    };
+    {
+        for ent in rd {
+            match ent {
+                Ok(ent) => {
+                    let path = ent.path();
+                    if path
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .map(|e| e.eq_ignore_ascii_case("lani"))
+                        .unwrap_or(false)
+                    {
+                        out.push(path);
+                    }
+                }
+                Err(err) => warn!("failed to read an example entry from {dir}: {err}"),
             }
         }
     }
     out.sort();
     out
+}
+
+fn env_bool_flag(name: &str, default: bool) -> bool {
+    let default_label = if default { "true" } else { "false" };
+    match std::env::var(name) {
+        Ok(value) => match value.trim().to_ascii_lowercase().as_str() {
+            "1" | "true" => true,
+            "0" | "false" => false,
+            _ => {
+                warn!("{name} has value '{value}'; using default {default_label}");
+                default
+            }
+        },
+        Err(_) => {
+            warn!("{name} is unset; using default {default_label}");
+            default
+        }
+    }
 }
 
 #[derive(serde::Serialize)]
@@ -386,15 +445,20 @@ struct CaseMeta<'a> {
 }
 
 fn save_case(dir: &str, seed: u64, iter: usize, src: &str) -> PathBuf {
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+    let ts = match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(elapsed) => elapsed.as_secs(),
+        Err(err) => {
+            warn!("system time before UNIX_EPOCH: {err}");
+            0
+        }
+    };
 
     let base = format!("case_s{seed}_i{iter}_n{}.lani", src.len());
     let path = Path::new(dir).join(base);
 
-    fs::write(&path, src.as_bytes()).expect("failed to write case file");
+    if let Err(err) = fs::write(&path, src.as_bytes()) {
+        warn!("failed to write fuzz case {}: {err}", path.display());
+    }
 
     let meta = CaseMeta {
         unix_ts: ts,
@@ -405,14 +469,41 @@ fn save_case(dir: &str, seed: u64, iter: usize, src: &str) -> PathBuf {
         note: "Replay with: FUZZ_INPUT=<this file> cargo run --bin lex_fuzz",
     };
     let meta_path = path.with_extension("json");
-    let mut f = fs::File::create(&meta_path).expect("failed to write meta");
-    let _ = writeln!(
-        f,
-        "{}",
-        serde_json::to_string_pretty(&meta).expect("failed to serialize meta")
-    );
+    match fs::File::create(&meta_path) {
+        Ok(mut f) => {
+            let meta = serde_json::to_string_pretty(&meta).unwrap_or_else(|err| {
+                let msg = format!("failed to serialize meta for {path:?}: {err}");
+                warn!("{msg}");
+                format!("{{\"error\": \"{}\"}}", msg.replace('"', "\\\""))
+            });
+            if let Err(err) = writeln!(f, "{}", meta) {
+                warn!("failed to write fuzz meta {}: {err}", meta_path.display());
+            }
+        }
+        Err(err) => warn!("failed to create fuzz meta {}: {err}", meta_path.display()),
+    }
 
     path
+}
+
+fn parse_env_or_default<T>(name: &str, default: T) -> T
+where
+    T: std::str::FromStr + Copy + std::fmt::Debug,
+    <T as std::str::FromStr>::Err: std::fmt::Display,
+{
+    match std::env::var(name) {
+        Ok(raw) => match raw.parse::<T>() {
+            Ok(value) => value,
+            Err(err) => {
+                warn!("invalid {name} value '{raw}': {err}; using default {default:?}");
+                default
+            }
+        },
+        Err(_) => {
+            warn!("{name} is unset; using default {default:?}");
+            default
+        }
+    }
 }
 
 fn compare_streams(

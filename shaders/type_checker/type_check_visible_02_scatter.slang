@@ -36,8 +36,10 @@ static const uint TK_LBRACKET = 20u;
 static const uint TK_RBRACKET = 21u;
 static const uint TK_LBRACE = 22u;
 static const uint TK_RBRACE = 23u;
+static const uint TK_AMPERSAND = 25u;
 static const uint TK_INDEX_LBRACKET = 30u;
 static const uint TK_ARRAY_LBRACKET = 31u;
+static const uint TK_COMMA = 36u;
 static const uint TK_SEMICOLON = 37u;
 static const uint TK_COLON = 38u;
 static const uint TK_DOT = 35u;
@@ -48,7 +50,9 @@ static const uint TK_FN = 67u;
 static const uint TK_LET = 68u;
 static const uint TK_ARROW = 75u;
 static const uint TK_LET_IDENT = 78u;
+static const uint TK_PARAM_LPAREN = 76u;
 static const uint TK_PARAM_IDENT = 79u;
+static const uint TK_PARAM_COMMA = 84u;
 static const uint TK_PARAM_RPAREN = 77u;
 static const uint TK_TYPE_ARRAY_LBRACKET = 85u;
 static const uint TK_TYPE_ARRAY_RBRACKET = 86u;
@@ -57,6 +61,10 @@ static const uint TK_IF_RBRACE = 89u;
 static const uint TK_CONST = 92u;
 static const uint TK_ENUM = 93u;
 static const uint TK_STRUCT = 94u;
+static const uint TK_IMPL = 98u;
+static const uint TK_FOR = 100u;
+static const uint TK_IN = 101u;
+static const uint TK_SELF_VALUE = 105u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -263,18 +271,90 @@ uint param_scope_end(uint decl_i)
     return n;
 }
 
+bool is_self_receiver_decl_at(uint i)
+{
+    if (token_kind(i) != TK_SELF_VALUE || i == 0u)
+        return false;
+    uint prev = token_kind(i - 1u);
+    uint next = i + 1u < active_token_count() ? token_kind(i + 1u) : 0u;
+    bool prev_ok = prev == TK_PARAM_LPAREN || prev == TK_LPAREN || prev == TK_PARAM_COMMA ||
+                   prev == TK_COMMA || prev == TK_AMPERSAND;
+    bool next_ok = next == TK_COLON || next == TK_PARAM_RPAREN || next == TK_RPAREN ||
+                   next == TK_PARAM_COMMA || next == TK_COMMA;
+    return prev_ok && next_ok;
+}
+
+bool is_param_decl_at(uint i)
+{
+    uint kind = token_kind(i);
+    return kind == TK_PARAM_IDENT || is_self_receiver_decl_at(i) ||
+           (kind == TK_IDENT && i + 1u < active_token_count() && token_kind(i + 1u) == TK_COLON &&
+            (i == 0u || (token_kind(i - 1u) != TK_LET && token_kind(i - 1u) != TK_CONST &&
+                         token_kind(i - 1u) != TK_ENUM &&
+                         token_kind(i - 1u) != TK_STRUCT)));
+}
+
+bool is_for_iter_decl_at(uint i)
+{
+    return token_kind(i) == TK_IDENT && i > 0u && token_kind(i - 1u) == TK_FOR &&
+           i + 1u < active_token_count() && token_kind(i + 1u) == TK_IN;
+}
+
+uint for_body_open(uint iter_i)
+{
+    uint n = enclosing_scope_limit(iter_i);
+    uint bracket_depth = 0u;
+    uint group_depth = 0u;
+    [loop]
+    for (uint j = iter_i + 2u; j < n; j += 1u)
+    {
+        uint kind = token_kind(j);
+        if (kind == TK_LPAREN || kind == TK_CALL_LPAREN || kind == TK_PARAM_LPAREN)
+        {
+            group_depth += 1u;
+            continue;
+        }
+        if ((kind == TK_RPAREN || kind == TK_PARAM_RPAREN) && group_depth > 0u)
+        {
+            group_depth -= 1u;
+            continue;
+        }
+        if (is_bracket_open_token(kind))
+        {
+            bracket_depth += 1u;
+            continue;
+        }
+        if (is_bracket_close_token(kind) && bracket_depth > 0u)
+        {
+            bracket_depth -= 1u;
+            continue;
+        }
+        if (group_depth == 0u && bracket_depth == 0u && is_open_block_token(kind))
+            return j;
+        if (group_depth == 0u && bracket_depth == 0u &&
+            (kind == TK_SEMICOLON || kind == TK_FN || is_close_block_token(kind)))
+            return INVALID;
+    }
+    return INVALID;
+}
+
+uint for_iter_scope_end(uint iter_i)
+{
+    uint open_i = for_body_open(iter_i);
+    if (open_i == INVALID)
+        return iter_i;
+    return matching_block_end(open_i, enclosing_scope_limit(iter_i));
+}
+
 uint declaration_scope_end(uint decl_i)
 {
+    if (is_for_iter_decl_at(decl_i))
+        return for_iter_scope_end(decl_i);
     if (has_hir_scope_end())
         return cached_declaration_scope_end(decl_i);
 
     uint kind = token_kind(decl_i);
-    if (kind == TK_PARAM_IDENT ||
-        (kind == TK_IDENT && decl_i + 1u < active_token_count() &&
-         token_kind(decl_i + 1u) == TK_COLON &&
-         (decl_i == 0u ||
-          (token_kind(decl_i - 1u) != TK_LET && token_kind(decl_i - 1u) != TK_CONST &&
-           token_kind(decl_i - 1u) != TK_ENUM && token_kind(decl_i - 1u) != TK_STRUCT))))
+    if (is_param_decl_at(decl_i))
         return param_scope_end(decl_i);
     if (kind == TK_LET_IDENT ||
         (kind == TK_IDENT && decl_i > 0u && token_kind(decl_i - 1u) == TK_LET))
@@ -334,25 +414,31 @@ bool is_const_decl_at(uint i)
     return token_kind(i) == TK_IDENT && i > 0u && token_kind(i - 1u) == TK_CONST;
 }
 
-bool is_param_decl_at(uint i)
-{
-    uint kind = token_kind(i);
-    return kind == TK_PARAM_IDENT ||
-           (kind == TK_IDENT && i + 1u < active_token_count() && token_kind(i + 1u) == TK_COLON &&
-            (i == 0u || (token_kind(i - 1u) != TK_LET && token_kind(i - 1u) != TK_CONST &&
-                         token_kind(i - 1u) != TK_ENUM &&
-                         token_kind(i - 1u) != TK_STRUCT)));
-}
-
 bool ident_is_use(uint i)
 {
-    if (token_kind(i) != TK_IDENT)
+    uint kind = token_kind(i);
+    if (kind == TK_SELF_VALUE)
+        return !is_self_receiver_decl_at(i) && (i == 0u || token_kind(i - 1u) != TK_DOT);
+    if (kind != TK_IDENT)
         return false;
 
     uint prev = i > 0u ? token_kind(i - 1u) : 0u;
     if (prev == TK_FN || prev == TK_LET || prev == TK_CONST || prev == TK_ENUM ||
-        prev == TK_STRUCT || prev == TK_DOT || prev == TK_COLON || prev == TK_ARROW)
+        prev == TK_STRUCT || prev == TK_IMPL || prev == TK_FOR || prev == TK_DOT ||
+        prev == TK_ARROW)
         return false;
+    uint j = i;
+    [loop]
+    for (uint guard = 0u; guard < 256u && j > 0u; guard += 1u)
+    {
+        j -= 1u;
+        uint prior = token_kind(j);
+        if (prior == TK_IMPL)
+            return false;
+        if (prior == TK_LBRACE || prior == TK_RBRACE || prior == TK_FN ||
+            prior == TK_SEMICOLON)
+            break;
+    }
 
     uint next = i + 1u < active_token_count() ? token_kind(i + 1u) : 0u;
     if (is_builtin_call(i))
@@ -378,7 +464,7 @@ uint resolve_visible_declaration(uint ident_i)
     while (j > lower)
     {
         j -= 1u;
-        if (!is_let_decl_at(j) && !is_param_decl_at(j))
+        if (!is_let_decl_at(j) && !is_param_decl_at(j) && !is_for_iter_decl_at(j))
             continue;
         if (!same_text(j, ident_i))
             continue;

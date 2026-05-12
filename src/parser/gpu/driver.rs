@@ -49,15 +49,11 @@ struct DirectHirParams {
 // ------------ little helpers (match lexer ergonomics) ----------------
 
 fn bool_from_env(name: &str, default_true: bool) -> bool {
-    std::env::var(name)
-        .map(|v| {
-            if default_true {
-                v != "0" && !v.eq_ignore_ascii_case("false")
-            } else {
-                v == "1" || v.eq_ignore_ascii_case("true")
-            }
-        })
-        .unwrap_or(default_true)
+    if default_true {
+        crate::gpu::env::env_bool_truthy(name, true)
+    } else {
+        crate::gpu::env::env_bool_strict(name, false)
+    }
 }
 
 fn stamp_timer(
@@ -163,6 +159,14 @@ pub struct ParseResult {
     pub hir_kind: Vec<u32>,
     pub hir_token_pos: Vec<u32>,
     pub hir_token_end: Vec<u32>,
+    pub hir_item_kind: Vec<u32>,
+    pub hir_item_name_token: Vec<u32>,
+    pub hir_item_namespace: Vec<u32>,
+    pub hir_item_visibility: Vec<u32>,
+    pub hir_item_path_start: Vec<u32>,
+    pub hir_item_path_end: Vec<u32>,
+    pub hir_item_file_id: Vec<u32>,
+    pub hir_item_import_target_kind: Vec<u32>,
 
     /// Populated by each pass via record_debug(); consumers can copy out snapshots.
     pub debug: DebugOutput,
@@ -181,6 +185,14 @@ pub struct ResidentParseResult {
     pub hir_kind: Vec<u32>,
     pub hir_token_pos: Vec<u32>,
     pub hir_token_end: Vec<u32>,
+    pub hir_item_kind: Vec<u32>,
+    pub hir_item_name_token: Vec<u32>,
+    pub hir_item_namespace: Vec<u32>,
+    pub hir_item_visibility: Vec<u32>,
+    pub hir_item_path_start: Vec<u32>,
+    pub hir_item_path_end: Vec<u32>,
+    pub hir_item_file_id: Vec<u32>,
+    pub hir_item_import_target_kind: Vec<u32>,
 }
 
 pub struct RecordedResidentSyntaxHirCheck {
@@ -189,6 +201,7 @@ pub struct RecordedResidentSyntaxHirCheck {
 }
 
 pub struct RecordedResidentLl1HirCheck {
+    syntax_check: super::syntax::RecordedSyntaxCheck,
     status_readback: wgpu::Buffer,
 }
 
@@ -271,6 +284,7 @@ impl GpuParser {
             token_capacity,
             token_buf,
             token_count_buf,
+            None,
             &bufs,
         )?;
         let mut timer_ref: Option<&mut GpuTimer> = None;
@@ -288,7 +302,11 @@ impl GpuParser {
         if use_scopes {
             self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         }
-        self.queue.submit(Some(encoder.finish()));
+        crate::gpu::passes_core::submit_with_progress(
+            &self.queue,
+            "parser.resident-ll1",
+            encoder.finish(),
+        );
         if use_scopes {
             if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
                 eprintln!(
@@ -298,8 +316,12 @@ impl GpuParser {
         }
 
         let slice = status_readback.slice(..);
-        slice.map_async(wgpu::MapMode::Read, |_| {});
-        let _ = self.device.poll(wgpu::PollType::Wait);
+        crate::gpu::passes_core::map_readback_for_progress(&slice, "parser.resident-ll1.status");
+        crate::gpu::passes_core::wait_for_map_progress(
+            &self.device,
+            "parser.resident-ll1.status",
+            wgpu::PollType::Wait,
+        );
         let mapped = slice.get_mapped_range();
         let words = read_u32_words(&mapped, 6)?;
         drop(mapped);
@@ -354,6 +376,7 @@ impl GpuParser {
             token_capacity,
             token_buf,
             token_count_buf,
+            None,
             &bufs,
         )?;
         self.record_direct_hir(
@@ -361,6 +384,7 @@ impl GpuParser {
             token_capacity,
             token_buf,
             token_count_buf,
+            None,
             &bufs,
         )?;
 
@@ -376,7 +400,11 @@ impl GpuParser {
         if use_scopes {
             self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         }
-        self.queue.submit(Some(encoder.finish()));
+        crate::gpu::passes_core::submit_with_progress(
+            &self.queue,
+            "parser.resident-direct-hir",
+            encoder.finish(),
+        );
         if use_scopes {
             if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
                 eprintln!(
@@ -389,8 +417,15 @@ impl GpuParser {
             .map_err(|err| anyhow::anyhow!(err.to_string()))?;
 
         let slice = status_readback.slice(..);
-        slice.map_async(wgpu::MapMode::Read, |_| {});
-        let _ = self.device.poll(wgpu::PollType::Wait);
+        crate::gpu::passes_core::map_readback_for_progress(
+            &slice,
+            "parser.resident-direct-hir.status",
+        );
+        crate::gpu::passes_core::wait_for_map_progress(
+            &self.device,
+            "parser.resident-direct-hir.status",
+            wgpu::PollType::Wait,
+        );
         let mapped = slice.get_mapped_range();
         let words = read_u32_words(&mapped, 6)?;
         drop(mapped);
@@ -415,6 +450,7 @@ impl GpuParser {
         token_capacity: u32,
         token_buf: &wgpu::Buffer,
         token_count_buf: &wgpu::Buffer,
+        token_file_id_buf: Option<&wgpu::Buffer>,
         tables: &PrecomputedParseTables,
         consume: impl FnOnce(&ParserBuffers, &mut wgpu::CommandEncoder) -> std::result::Result<R, E>,
     ) -> Result<(RecordedResidentSyntaxHirCheck, std::result::Result<R, E>)> {
@@ -424,19 +460,42 @@ impl GpuParser {
             .expect("parser.resident_buffers poisoned");
         let bufs = self.resident_buffers_for(&mut resident_guard, token_capacity, tables);
 
-        let syntax_check = self
-            .syntax_checker
-            .record_token_buffer_check(
+        let syntax_check = match token_file_id_buf {
+            Some(token_file_id_buf) => self.syntax_checker.record_token_buffer_check_with_file_ids(
                 &self.device,
                 &self.queue,
                 encoder,
                 token_capacity,
                 token_buf,
                 token_count_buf,
-            )
-            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
-        self.record_tokens_to_kinds(encoder, token_capacity, token_buf, token_count_buf, &bufs)?;
-        self.record_direct_hir(encoder, token_capacity, token_buf, token_count_buf, &bufs)?;
+                token_file_id_buf,
+            ),
+            None => self.syntax_checker.record_token_buffer_check(
+                &self.device,
+                &self.queue,
+                encoder,
+                token_capacity,
+                token_buf,
+                token_count_buf,
+            ),
+        }
+        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        self.record_tokens_to_kinds(
+            encoder,
+            token_capacity,
+            token_buf,
+            token_count_buf,
+            token_file_id_buf,
+            &bufs,
+        )?;
+        self.record_direct_hir(
+            encoder,
+            token_capacity,
+            token_buf,
+            token_count_buf,
+            token_file_id_buf,
+            &bufs,
+        )?;
 
         let status_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rb.parser.recorded_direct_hir.status"),
@@ -462,6 +521,7 @@ impl GpuParser {
         token_capacity: u32,
         token_buf: &wgpu::Buffer,
         token_count_buf: &wgpu::Buffer,
+        token_file_id_buf: Option<&wgpu::Buffer>,
         tables: &PrecomputedParseTables,
         timer_ref: &mut Option<&mut GpuTimer>,
         consume: impl FnOnce(
@@ -476,7 +536,46 @@ impl GpuParser {
             .expect("parser.resident_buffers poisoned");
         let bufs = self.resident_buffers_for(&mut resident_guard, token_capacity, tables);
 
-        self.record_tokens_to_kinds(encoder, token_capacity, token_buf, token_count_buf, bufs)?;
+        let syntax_check = match token_file_id_buf {
+            Some(token_file_id_buf) => self.syntax_checker.record_token_buffer_check_with_file_ids(
+                &self.device,
+                &self.queue,
+                encoder,
+                token_capacity,
+                token_buf,
+                token_count_buf,
+                token_file_id_buf,
+            ),
+            None => self.syntax_checker.record_token_buffer_check(
+                &self.device,
+                &self.queue,
+                encoder,
+                token_capacity,
+                token_buf,
+                token_count_buf,
+            ),
+        }
+        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        self.record_tokens_to_kinds(
+            encoder,
+            token_capacity,
+            token_buf,
+            token_count_buf,
+            token_file_id_buf,
+            bufs,
+        )?;
+        if let Some(token_file_id_buf) = token_file_id_buf {
+            let copy_bytes = (token_capacity as u64).saturating_mul(4);
+            if copy_bytes > 0 {
+                encoder.copy_buffer_to_buffer(
+                    token_file_id_buf,
+                    0,
+                    &bufs.default_token_file_id,
+                    0,
+                    copy_bytes,
+                );
+            }
+        }
         self.record_ll1_resident_passes(encoder, bufs, true, true, timer_ref)?;
         if let Some(timer) = timer_ref.as_deref_mut() {
             timer.stamp(encoder, "parser.done");
@@ -491,7 +590,13 @@ impl GpuParser {
         encoder.copy_buffer_to_buffer(&bufs.ll1_status, 0, &status_readback, 0, 24);
 
         let consumed = consume(bufs, encoder, timer_ref);
-        Ok((RecordedResidentLl1HirCheck { status_readback }, consumed))
+        Ok((
+            RecordedResidentLl1HirCheck {
+                syntax_check,
+                status_readback,
+            },
+            consumed,
+        ))
     }
 
     pub fn finish_recorded_resident_syntax_hir_check(
@@ -505,8 +610,15 @@ impl GpuParser {
         .map_err(|err| anyhow::anyhow!(err.to_string()))?;
 
         let slice = recorded.status_readback.slice(..);
-        slice.map_async(wgpu::MapMode::Read, |_| {});
-        let _ = self.device.poll(wgpu::PollType::Wait);
+        crate::gpu::passes_core::map_readback_for_progress(
+            &slice,
+            "parser.resident-syntax-hir.status",
+        );
+        crate::gpu::passes_core::wait_for_map_progress(
+            &self.device,
+            "parser.resident-syntax-hir.status",
+            wgpu::PollType::Wait,
+        );
         let mapped = slice.get_mapped_range();
         let words = read_u32_words(&mapped, 6)?;
         drop(mapped);
@@ -562,6 +674,7 @@ impl GpuParser {
             token_capacity,
             token_buf,
             token_count_buf,
+            None,
             &bufs,
         )?;
         self.record_direct_hir(
@@ -569,6 +682,7 @@ impl GpuParser {
             token_capacity,
             token_buf,
             token_count_buf,
+            None,
             &bufs,
         )?;
 
@@ -593,7 +707,11 @@ impl GpuParser {
         if use_scopes {
             self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         }
-        self.queue.submit(Some(encoder.finish()));
+        crate::gpu::passes_core::submit_with_progress(
+            &self.queue,
+            "parser.recorded-direct-hir",
+            encoder.finish(),
+        );
         if use_scopes {
             if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
                 eprintln!(
@@ -627,11 +745,23 @@ impl GpuParser {
                 label: Some("parser.resident_ll1_hir.recorded.encoder"),
             });
 
+        let syntax_check = self
+            .syntax_checker
+            .record_token_buffer_check(
+                &self.device,
+                &self.queue,
+                &mut encoder,
+                token_capacity,
+                token_buf,
+                token_count_buf,
+            )
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
         self.record_tokens_to_kinds(
             &mut encoder,
             token_capacity,
             token_buf,
             token_count_buf,
+            None,
             &bufs,
         )?;
         let mut timer_ref: Option<&mut GpuTimer> = None;
@@ -645,7 +775,10 @@ impl GpuParser {
         });
         encoder.copy_buffer_to_buffer(&bufs.ll1_status, 0, &status_readback, 0, 24);
 
-        let recorded_parser = RecordedResidentLl1HirCheck { status_readback };
+        let recorded_parser = RecordedResidentLl1HirCheck {
+            syntax_check,
+            status_readback,
+        };
         let recorded_more = match record_more(bufs, &mut encoder) {
             Ok(recorded) => recorded,
             Err(err) => return Ok(Err(err)),
@@ -655,7 +788,11 @@ impl GpuParser {
         if use_scopes {
             self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         }
-        self.queue.submit(Some(encoder.finish()));
+        crate::gpu::passes_core::submit_with_progress(
+            &self.queue,
+            "parser.recorded-ll1-hir",
+            encoder.finish(),
+        );
         if use_scopes {
             if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
                 eprintln!(
@@ -672,9 +809,22 @@ impl GpuParser {
         &self,
         recorded: &RecordedResidentLl1HirCheck,
     ) -> Result<()> {
+        super::syntax::GpuSyntaxChecker::finish_recorded_check(
+            &self.device,
+            &recorded.syntax_check,
+        )
+        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+
         let slice = recorded.status_readback.slice(..);
-        slice.map_async(wgpu::MapMode::Read, |_| {});
-        let _ = self.device.poll(wgpu::PollType::Wait);
+        crate::gpu::passes_core::map_readback_for_progress(
+            &slice,
+            "parser.recorded-ll1-hir.status",
+        );
+        crate::gpu::passes_core::wait_for_map_progress(
+            &self.device,
+            "parser.recorded-ll1-hir.status",
+            wgpu::PollType::Wait,
+        );
         let mapped = slice.get_mapped_range();
         let words = read_u32_words(&mapped, 6)?;
         drop(mapped);
@@ -731,6 +881,7 @@ impl GpuParser {
             token_capacity,
             token_buf,
             token_count_buf,
+            None,
             &bufs,
         )?;
         let mut timer_ref: Option<&mut GpuTimer> = None;
@@ -802,6 +953,55 @@ impl GpuParser {
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
+        let hir_item_kind_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rb.parser.resident_tree.hir_item_kind"),
+            size: bufs.hir_item_kind.byte_size as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let hir_item_name_token_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rb.parser.resident_tree.hir_item_name_token"),
+            size: bufs.hir_item_name_token.byte_size as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let hir_item_namespace_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rb.parser.resident_tree.hir_item_namespace"),
+            size: bufs.hir_item_namespace.byte_size as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let hir_item_visibility_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rb.parser.resident_tree.hir_item_visibility"),
+            size: bufs.hir_item_visibility.byte_size as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let hir_item_path_start_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rb.parser.resident_tree.hir_item_path_start"),
+            size: bufs.hir_item_path_start.byte_size as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let hir_item_path_end_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rb.parser.resident_tree.hir_item_path_end"),
+            size: bufs.hir_item_path_end.byte_size as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let hir_item_file_id_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rb.parser.resident_tree.hir_item_file_id"),
+            size: bufs.hir_item_file_id.byte_size as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let hir_item_import_target_kind_readback =
+            self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("rb.parser.resident_tree.hir_item_import_target_kind"),
+                size: bufs.hir_item_import_target_kind.byte_size as u64,
+                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                mapped_at_creation: false,
+            });
 
         encoder.copy_buffer_to_buffer(
             &bufs.ll1_status,
@@ -880,12 +1080,72 @@ impl GpuParser {
             0,
             bufs.hir_token_end.byte_size as u64,
         );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_item_kind,
+            0,
+            &hir_item_kind_readback,
+            0,
+            bufs.hir_item_kind.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_item_name_token,
+            0,
+            &hir_item_name_token_readback,
+            0,
+            bufs.hir_item_name_token.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_item_namespace,
+            0,
+            &hir_item_namespace_readback,
+            0,
+            bufs.hir_item_namespace.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_item_visibility,
+            0,
+            &hir_item_visibility_readback,
+            0,
+            bufs.hir_item_visibility.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_item_path_start,
+            0,
+            &hir_item_path_start_readback,
+            0,
+            bufs.hir_item_path_start.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_item_path_end,
+            0,
+            &hir_item_path_end_readback,
+            0,
+            bufs.hir_item_path_end.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_item_file_id,
+            0,
+            &hir_item_file_id_readback,
+            0,
+            bufs.hir_item_file_id.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_item_import_target_kind,
+            0,
+            &hir_item_import_target_kind_readback,
+            0,
+            bufs.hir_item_import_target_kind.byte_size as u64,
+        );
 
         let use_scopes = bool_from_env("LANIUS_VALIDATION_SCOPES", false);
         if use_scopes {
             self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         }
-        self.queue.submit(Some(encoder.finish()));
+        crate::gpu::passes_core::submit_with_progress(
+            &self.queue,
+            "parser.resident-tree",
+            encoder.finish(),
+        );
         if use_scopes {
             if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
                 eprintln!(
@@ -894,21 +1154,63 @@ impl GpuParser {
             }
         }
 
-        let map = |buffer: &wgpu::Buffer| {
-            buffer.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+        let map = |label: &str, buffer: &wgpu::Buffer| {
+            crate::gpu::passes_core::map_readback_for_progress(&buffer.slice(..), label);
         };
-        map(&status_readback);
-        map(&emit_readback);
-        map(&emit_pos_readback);
-        map(&node_kind_readback);
-        map(&parent_readback);
-        map(&first_child_readback);
-        map(&next_sibling_readback);
-        map(&subtree_end_readback);
-        map(&hir_kind_readback);
-        map(&hir_token_pos_readback);
-        map(&hir_token_end_readback);
-        let _ = self.device.poll(wgpu::PollType::Wait);
+        map("parser.resident-tree.status", &status_readback);
+        map("parser.resident-tree.emit", &emit_readback);
+        map("parser.resident-tree.emit_pos", &emit_pos_readback);
+        map("parser.resident-tree.node_kind", &node_kind_readback);
+        map("parser.resident-tree.parent", &parent_readback);
+        map("parser.resident-tree.first_child", &first_child_readback);
+        map("parser.resident-tree.next_sibling", &next_sibling_readback);
+        map("parser.resident-tree.subtree_end", &subtree_end_readback);
+        map("parser.resident-tree.hir_kind", &hir_kind_readback);
+        map(
+            "parser.resident-tree.hir_token_pos",
+            &hir_token_pos_readback,
+        );
+        map(
+            "parser.resident-tree.hir_token_end",
+            &hir_token_end_readback,
+        );
+        map(
+            "parser.resident-tree.hir_item_kind",
+            &hir_item_kind_readback,
+        );
+        map(
+            "parser.resident-tree.hir_item_name_token",
+            &hir_item_name_token_readback,
+        );
+        map(
+            "parser.resident-tree.hir_item_namespace",
+            &hir_item_namespace_readback,
+        );
+        map(
+            "parser.resident-tree.hir_item_visibility",
+            &hir_item_visibility_readback,
+        );
+        map(
+            "parser.resident-tree.hir_item_path_start",
+            &hir_item_path_start_readback,
+        );
+        map(
+            "parser.resident-tree.hir_item_path_end",
+            &hir_item_path_end_readback,
+        );
+        map(
+            "parser.resident-tree.hir_item_file_id",
+            &hir_item_file_id_readback,
+        );
+        map(
+            "parser.resident-tree.hir_item_import_target_kind",
+            &hir_item_import_target_kind_readback,
+        );
+        crate::gpu::passes_core::wait_for_map_progress(
+            &self.device,
+            "parser.resident-tree",
+            wgpu::PollType::Wait,
+        );
 
         let ll1_words = {
             let mapped = status_readback.slice(..).get_mapped_range();
@@ -992,6 +1294,64 @@ impl GpuParser {
             hir_token_end_readback.unmap();
             words
         };
+        let hir_item_kind = {
+            let mapped = hir_item_kind_readback.slice(..).get_mapped_range();
+            let words = read_u32_words(&mapped, emit_len)?;
+            drop(mapped);
+            hir_item_kind_readback.unmap();
+            words
+        };
+        let hir_item_name_token = {
+            let mapped = hir_item_name_token_readback.slice(..).get_mapped_range();
+            let words = read_u32_words(&mapped, emit_len)?;
+            drop(mapped);
+            hir_item_name_token_readback.unmap();
+            words
+        };
+        let hir_item_namespace = {
+            let mapped = hir_item_namespace_readback.slice(..).get_mapped_range();
+            let words = read_u32_words(&mapped, emit_len)?;
+            drop(mapped);
+            hir_item_namespace_readback.unmap();
+            words
+        };
+        let hir_item_visibility = {
+            let mapped = hir_item_visibility_readback.slice(..).get_mapped_range();
+            let words = read_u32_words(&mapped, emit_len)?;
+            drop(mapped);
+            hir_item_visibility_readback.unmap();
+            words
+        };
+        let hir_item_path_start = {
+            let mapped = hir_item_path_start_readback.slice(..).get_mapped_range();
+            let words = read_u32_words(&mapped, emit_len)?;
+            drop(mapped);
+            hir_item_path_start_readback.unmap();
+            words
+        };
+        let hir_item_path_end = {
+            let mapped = hir_item_path_end_readback.slice(..).get_mapped_range();
+            let words = read_u32_words(&mapped, emit_len)?;
+            drop(mapped);
+            hir_item_path_end_readback.unmap();
+            words
+        };
+        let hir_item_file_id = {
+            let mapped = hir_item_file_id_readback.slice(..).get_mapped_range();
+            let words = read_u32_words(&mapped, emit_len)?;
+            drop(mapped);
+            hir_item_file_id_readback.unmap();
+            words
+        };
+        let hir_item_import_target_kind = {
+            let mapped = hir_item_import_target_kind_readback
+                .slice(..)
+                .get_mapped_range();
+            let words = read_u32_words(&mapped, emit_len)?;
+            drop(mapped);
+            hir_item_import_target_kind_readback.unmap();
+            words
+        };
 
         Ok(ResidentParseResult {
             ll1: Ll1AcceptResult {
@@ -1012,6 +1372,14 @@ impl GpuParser {
             hir_kind,
             hir_token_pos,
             hir_token_end,
+            hir_item_kind,
+            hir_item_name_token,
+            hir_item_namespace,
+            hir_item_visibility,
+            hir_item_path_start,
+            hir_item_path_end,
+            hir_item_file_id,
+            hir_item_import_target_kind,
         })
     }
 
@@ -1021,6 +1389,7 @@ impl GpuParser {
         token_capacity: u32,
         token_buf: &wgpu::Buffer,
         token_count_buf: &wgpu::Buffer,
+        token_file_id_buf: Option<&wgpu::Buffer>,
         bufs: &ParserBuffers,
     ) -> Result<()> {
         let pass = &self.tokens_to_kinds;
@@ -1028,7 +1397,13 @@ impl GpuParser {
             .resident_direct_bind_groups
             .lock()
             .expect("parser.resident_direct_bind_groups poisoned");
-        self.ensure_resident_direct_bind_groups(&mut bind_guard, token_buf, token_count_buf, bufs)?;
+        self.ensure_resident_direct_bind_groups(
+            &mut bind_guard,
+            token_buf,
+            token_count_buf,
+            token_file_id_buf,
+            bufs,
+        )?;
         let bind_groups = bind_guard
             .as_ref()
             .expect("resident direct parser bind groups allocated");
@@ -1054,6 +1429,7 @@ impl GpuParser {
         token_capacity: u32,
         token_buf: &wgpu::Buffer,
         token_count_buf: &wgpu::Buffer,
+        token_file_id_buf: Option<&wgpu::Buffer>,
         bufs: &ParserBuffers,
     ) -> Result<()> {
         let pass = &self.direct_hir;
@@ -1061,7 +1437,13 @@ impl GpuParser {
             .resident_direct_bind_groups
             .lock()
             .expect("parser.resident_direct_bind_groups poisoned");
-        self.ensure_resident_direct_bind_groups(&mut bind_guard, token_buf, token_count_buf, bufs)?;
+        self.ensure_resident_direct_bind_groups(
+            &mut bind_guard,
+            token_buf,
+            token_count_buf,
+            token_file_id_buf,
+            bufs,
+        )?;
         let bind_groups = bind_guard
             .as_ref()
             .expect("resident direct parser bind groups allocated");
@@ -1088,16 +1470,21 @@ impl GpuParser {
         slot: &mut Option<ResidentDirectParserBindGroups>,
         token_buf: &wgpu::Buffer,
         token_count_buf: &wgpu::Buffer,
+        token_file_id_buf: Option<&wgpu::Buffer>,
         bufs: &ParserBuffers,
     ) -> Result<()> {
+        let token_file_id_buf: &wgpu::Buffer =
+            token_file_id_buf.unwrap_or(&bufs.default_token_file_id);
         let fingerprint = buffer_fingerprint(&[
             token_buf,
             token_count_buf,
+            token_file_id_buf,
             &bufs.token_kinds,
             &bufs.token_count,
             &bufs.hir_kind,
             &bufs.hir_token_pos,
             &bufs.hir_token_end,
+            &bufs.hir_token_file_id,
             &bufs.ll1_status,
         ]);
         if slot
@@ -1108,6 +1495,7 @@ impl GpuParser {
                 fingerprint,
                 token_buf,
                 token_count_buf,
+                token_file_id_buf,
                 bufs,
             )?);
         }
@@ -1119,6 +1507,7 @@ impl GpuParser {
         input_fingerprint: u64,
         token_buf: &wgpu::Buffer,
         token_count_buf: &wgpu::Buffer,
+        token_file_id_buf: &wgpu::Buffer,
         bufs: &ParserBuffers,
     ) -> Result<ResidentDirectParserBindGroups> {
         let tokens_to_kinds_params = uniform_from_val(
@@ -1159,6 +1548,10 @@ impl GpuParser {
             ("gParams".into(), direct_hir_params.as_entire_binding()),
             ("token_words".into(), token_buf.as_entire_binding()),
             ("token_count".into(), bufs.token_count.as_entire_binding()),
+            (
+                "token_file_id".into(),
+                token_file_id_buf.as_entire_binding(),
+            ),
             ("hir_kind".into(), bufs.hir_kind.as_entire_binding()),
             (
                 "hir_token_pos".into(),
@@ -1167,6 +1560,10 @@ impl GpuParser {
             (
                 "hir_token_end".into(),
                 bufs.hir_token_end.as_entire_binding(),
+            ),
+            (
+                "hir_token_file_id".into(),
+                bufs.hir_token_file_id.as_entire_binding(),
             ),
             ("hir_status".into(), bufs.ll1_status.as_entire_binding()),
         ]);
@@ -1274,6 +1671,11 @@ impl GpuParser {
                     crate::gpu::passes_core::InputElements::Elements1D(bufs.tree_capacity),
                 )?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_spans");
+                self.passes.hir_item_fields.record_pass(
+                    &mut ctx,
+                    crate::gpu::passes_core::InputElements::Elements1D(bufs.tree_capacity),
+                )?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_item_fields");
             }
         }
         Ok(())
@@ -1429,7 +1831,11 @@ impl GpuParser {
         if use_scopes {
             self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         }
-        self.queue.submit(Some(encoder.finish()));
+        crate::gpu::passes_core::submit_with_progress(
+            &self.queue,
+            "parser.batch",
+            encoder.finish(),
+        );
         if use_scopes {
             if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
                 eprintln!("[wgpu submit] validation while submitting parser batch: {err:#?}");
@@ -1498,6 +1904,14 @@ impl GpuParser {
                 hir_kind: Vec::new(),
                 hir_token_pos: Vec::new(),
                 hir_token_end: Vec::new(),
+                hir_item_kind: Vec::new(),
+                hir_item_name_token: Vec::new(),
+                hir_item_namespace: Vec::new(),
+                hir_item_visibility: Vec::new(),
+                hir_item_path_start: Vec::new(),
+                hir_item_path_end: Vec::new(),
+                hir_item_file_id: Vec::new(),
+                hir_item_import_target_kind: Vec::new(),
                 debug: DebugOutput::default(),
             });
         }
@@ -1574,6 +1988,14 @@ impl GpuParser {
             hir_kind: decoded.hir_kind,
             hir_token_pos: decoded.hir_token_pos,
             hir_token_end: decoded.hir_token_end,
+            hir_item_kind: decoded.hir_item_kind,
+            hir_item_name_token: decoded.hir_item_name_token,
+            hir_item_namespace: decoded.hir_item_namespace,
+            hir_item_visibility: decoded.hir_item_visibility,
+            hir_item_path_start: decoded.hir_item_path_start,
+            hir_item_path_end: decoded.hir_item_path_end,
+            hir_item_file_id: decoded.hir_item_file_id,
+            hir_item_import_target_kind: decoded.hir_item_import_target_kind,
             debug: std::mem::take(&mut debug_sink),
         })
     }

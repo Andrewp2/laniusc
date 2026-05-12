@@ -1,6 +1,9 @@
 //! Small helpers for readback and env flags.
 
-use crate::lexer::{gpu::types::Token, tables::tokens::TokenKind};
+use crate::{
+    gpu,
+    lexer::{gpu::types::Token, tables::tokens::TokenKind},
+};
 
 /// Read a little-endian u32 from the first 4 bytes.
 pub fn u32_from_first_4(bytes: &[u8]) -> u32 {
@@ -11,9 +14,7 @@ pub fn u32_from_first_4(bytes: &[u8]) -> u32 {
 
 /// Treat any value other than "0"/"false" (case-insensitive) as true.
 pub fn env_flag_true(var: &str, default: bool) -> bool {
-    std::env::var(var)
-        .map(|v| !(v == "0" || v.eq_ignore_ascii_case("false")))
-        .unwrap_or(default)
+    gpu::env::env_bool_truthy(var, default)
 }
 
 /// Gate for host readback of token payloads (can be turned off in perf runs).

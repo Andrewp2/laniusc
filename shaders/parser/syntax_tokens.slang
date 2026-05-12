@@ -12,6 +12,7 @@ struct TokenIn
 };
 StructuredBuffer<TokenIn> token_words;
 StructuredBuffer<uint> token_count;
+StructuredBuffer<uint> token_file_id;
 
 // [0] ok, [1] first error token, [2] error code, [3] detail
 RWStructuredBuffer<uint> status;
@@ -130,6 +131,8 @@ static const uint TK_FOR = 100u;
 static const uint TK_IN = 101u;
 static const uint TK_EXTERN = 102u;
 static const uint TK_TYPE = 103u;
+static const uint TK_WHERE = 104u;
+static const uint TK_SELF_VALUE = 105u;
 
 uint active_token_count()
 {
@@ -145,6 +148,12 @@ uint token_kind(uint i)
 {
     uint n_active = active_token_count();
     return i < n_active ? token_words[i].kind : 0u;
+}
+
+uint token_file(uint i)
+{
+    uint n_active = active_token_count();
+    return i < n_active ? token_file_id[i] : INVALID;
 }
 
 void record_error(uint token_i, uint code, uint detail)
@@ -197,10 +206,19 @@ bool is_binary_operator(uint kind)
            kind == TK_CARET || kind == TK_SHL || kind == TK_SHR;
 }
 
+bool is_self_receiver_ref_amp(uint i)
+{
+    if (token_kind(i) != TK_AMPERSAND || token_kind(i + 1u) != TK_SELF_VALUE || i == 0u)
+        return false;
+    uint prev = token_kind(i - 1u);
+    return prev == TK_PARAM_LPAREN || prev == TK_LPAREN || prev == TK_PARAM_COMMA ||
+           prev == TK_COMMA;
+}
+
 bool is_expr_start(uint kind)
 {
     return kind == TK_IDENT || kind == TK_INT || kind == TK_FLOAT || kind == TK_STRING ||
-           kind == TK_TRUE || kind == TK_FALSE ||
+           kind == TK_TRUE || kind == TK_FALSE || kind == TK_SELF_VALUE ||
            kind == TK_CHAR || kind == TK_GROUP_LPAREN || kind == TK_LPAREN ||
            kind == TK_ARRAY_LBRACKET || kind == TK_LBRACKET || kind == TK_PREFIX_PLUS ||
            kind == TK_PREFIX_MINUS || kind == TK_NOT || kind == TK_TILDE || kind == TK_INC ||
@@ -210,7 +228,7 @@ bool is_expr_start(uint kind)
 bool is_expr_end(uint kind)
 {
     return kind == TK_IDENT || kind == TK_INT || kind == TK_FLOAT || kind == TK_STRING ||
-           kind == TK_TRUE || kind == TK_FALSE ||
+           kind == TK_TRUE || kind == TK_FALSE || kind == TK_SELF_VALUE ||
            kind == TK_CHAR || kind == TK_GROUP_RPAREN || kind == TK_RPAREN ||
            kind == TK_CALL_RPAREN || kind == TK_INDEX_RBRACKET || kind == TK_ARRAY_RBRACKET ||
            kind == TK_RBRACKET || kind == TK_INC || kind == TK_DEC;
@@ -286,7 +304,7 @@ bool can_start_generic_angle_list(uint lt_i)
            before == TK_PLUS || before == TK_PREFIX_PLUS || before == TK_INFIX_PLUS ||
            before == TK_LPAREN || before == TK_GROUP_LPAREN || before == TK_CALL_LPAREN ||
            before == TK_PARAM_LPAREN || before == TK_TYPE_ARRAY_LBRACKET ||
-           before == TK_ARRAY_LBRACKET || before == TK_AMPERSAND;
+           before == TK_ARRAY_LBRACKET || before == TK_AMPERSAND || before == TK_WHERE;
 }
 
 bool is_generic_angle_boundary(uint kind)
@@ -297,7 +315,7 @@ bool is_generic_angle_boundary(uint kind)
            kind == TK_FOR ||
            kind == TK_BREAK || kind == TK_CONTINUE || kind == TK_ENUM ||
            kind == TK_STRUCT || kind == TK_TYPE || kind == TK_IMPORT || kind == TK_MODULE ||
-           kind == TK_IMPL || kind == TK_TRAIT || kind == TK_EXTERN;
+           kind == TK_IMPL || kind == TK_TRAIT || kind == TK_EXTERN || kind == TK_WHERE;
 }
 
 uint generic_angle_list_end(uint open_i)
@@ -617,25 +635,7 @@ void check_struct(uint i)
 
 void check_type_alias(uint i)
 {
-    if (token_kind(i + 1u) != TK_IDENT)
-    {
-        record_error(i, ERR_EXPECTED_TOKEN, TK_IDENT);
-        return;
-    }
-    uint semi = find_stmt_semicolon(i);
-    if (semi == INVALID)
-    {
-        record_error(i, ERR_MISSING_SEMICOLON, 0u);
-        return;
-    }
-    uint assign_i = find_before_boundary_at_depth(i + 2u, TK_ASSIGN, i);
-    if (assign_i == INVALID || assign_i + 1u >= semi)
-    {
-        record_error(i, ERR_EXPECTED_TOKEN, TK_ASSIGN);
-        return;
-    }
-    if (!is_type_start(token_kind(assign_i + 1u)))
-        record_error(assign_i + 1u, ERR_EXPECTED_TOKEN, TK_TYPE_IDENT);
+    record_error(i, ERR_UNEXPECTED_TOKEN, TK_TYPE);
 }
 
 void check_let(uint i)
@@ -737,8 +737,7 @@ void check_arg_comma(uint i)
 {
     uint prev = i > 0u ? token_kind(i - 1u) : 0u;
     uint next = token_kind(i + 1u);
-    if (prev == TK_CALL_LPAREN || prev == TK_ARG_COMMA || next == TK_CALL_RPAREN ||
-        next == TK_ARG_COMMA)
+    if (prev == TK_CALL_LPAREN || prev == TK_ARG_COMMA || next == TK_ARG_COMMA)
         record_error(i, ERR_EXPECTED_TOKEN, TK_IDENT);
 }
 
@@ -747,8 +746,7 @@ void check_array_comma(uint i)
     uint prev = i > 0u ? token_kind(i - 1u) : 0u;
     uint next = token_kind(i + 1u);
     if (prev == TK_ARRAY_LBRACKET || prev == TK_LBRACKET || prev == TK_ARRAY_COMMA ||
-        prev == TK_COMMA || next == TK_ARRAY_RBRACKET || next == TK_RBRACKET ||
-        next == TK_ARRAY_COMMA || next == TK_COMMA)
+        prev == TK_COMMA || next == TK_ARRAY_COMMA || next == TK_COMMA)
         record_error(i, ERR_EXPECTED_TOKEN, TK_IDENT);
 }
 
@@ -816,11 +814,28 @@ bool is_trailing_param_comma(uint i)
     return open_i != INVALID && is_fn_param_open_token(open_i);
 }
 
+bool is_allowed_trailing_list_comma(uint i)
+{
+    uint kind = token_kind(i);
+    uint next = token_kind(i + 1u);
+    if (is_trailing_param_comma(i))
+        return true;
+    if (kind == TK_ARG_COMMA)
+        return next == TK_CALL_RPAREN || next == TK_RPAREN;
+    if (kind == TK_ARRAY_COMMA)
+        return next == TK_ARRAY_RBRACKET || next == TK_RBRACKET;
+    if (kind != TK_COMMA)
+        return false;
+    return next == TK_RBRACE || next == TK_IF_RBRACE || next == TK_RPAREN ||
+           next == TK_GROUP_RPAREN || next == TK_CALL_RPAREN || next == TK_PARAM_RPAREN ||
+           next == TK_RBRACKET || next == TK_ARRAY_RBRACKET || next == TK_INDEX_RBRACKET;
+}
+
 void check_comma(uint i)
 {
     uint prev = i > 0u ? token_kind(i - 1u) : 0u;
     uint next = token_kind(i + 1u);
-    if (is_trailing_param_comma(i))
+    if (is_allowed_trailing_list_comma(i))
         return;
     if (prev == TK_LPAREN || prev == TK_CALL_LPAREN || prev == TK_GROUP_LPAREN ||
         prev == TK_ARRAY_LBRACKET || prev == TK_LBRACKET || prev == TK_ARG_COMMA ||
@@ -829,6 +844,323 @@ void check_comma(uint i)
         next == TK_ARRAY_RBRACKET || next == TK_RBRACKET || next == TK_ARG_COMMA ||
         next == TK_ARRAY_COMMA || next == TK_PARAM_COMMA || next == TK_COMMA)
         record_error(i, ERR_EXPECTED_TOKEN, TK_IDENT);
+}
+
+bool is_path_segment(uint kind)
+{
+    return kind == TK_IDENT || kind == TK_TYPE_IDENT || kind == TK_PARAM_IDENT ||
+           kind == TK_LET_IDENT;
+}
+
+bool is_module_path_segment(uint kind)
+{
+    return kind == TK_IDENT || kind == TK_TYPE_IDENT;
+}
+
+bool same_token_file(uint a, uint b)
+{
+    uint file = token_file(a);
+    return file != INVALID && file == token_file(b);
+}
+
+uint file_first_token(uint i)
+{
+    uint file = token_file(i);
+    if (file == INVALID)
+        return i;
+
+    uint n = active_token_count();
+    uint first = i;
+    [loop]
+    for (uint guard = 0u; guard < n && first > 0u; guard += 1u)
+    {
+        if (token_file(first - 1u) != file)
+            break;
+        first -= 1u;
+    }
+    return first;
+}
+
+uint leading_module_decl_end(uint file_start)
+{
+    if (token_file(file_start) == INVALID || token_kind(file_start) != TK_MODULE)
+        return INVALID;
+
+    uint n = active_token_count();
+    [loop]
+    for (uint j = file_start + 1u; j < n; j += 1u)
+    {
+        if (!same_token_file(j, file_start))
+            return INVALID;
+        if (token_kind(j) == TK_SEMICOLON)
+            return j;
+    }
+    return INVALID;
+}
+
+bool token_in_leading_module_decl(uint i)
+{
+    uint file_start = file_first_token(i);
+    uint end = leading_module_decl_end(file_start);
+    return end != INVALID && i >= file_start && i <= end && same_token_file(i, file_start);
+}
+
+uint import_decl_end(uint import_i)
+{
+    if (token_kind(import_i) != TK_IMPORT)
+        return INVALID;
+
+    uint n = active_token_count();
+    [loop]
+    for (uint j = import_i + 1u; j < n; j += 1u)
+    {
+        if (!same_token_file(j, import_i))
+            return INVALID;
+        uint kind = token_kind(j);
+        if (kind == TK_SEMICOLON)
+            return j;
+        if (kind == TK_FN || kind == TK_CONST || kind == TK_ENUM || kind == TK_STRUCT ||
+            kind == TK_IMPL || kind == TK_TRAIT || kind == TK_EXTERN || kind == TK_MODULE ||
+            kind == TK_LBRACE || kind == TK_IF_LBRACE || kind == TK_RBRACE ||
+            kind == TK_IF_RBRACE)
+            return INVALID;
+    }
+    return INVALID;
+}
+
+uint first_token_after_optional_module(uint file_start)
+{
+    if (token_kind(file_start) != TK_MODULE)
+        return file_start;
+    uint module_end = leading_module_decl_end(file_start);
+    return module_end == INVALID ? file_start : module_end + 1u;
+}
+
+bool is_leading_import_decl(uint import_i)
+{
+    if (token_file(import_i) == INVALID || token_kind(import_i) != TK_IMPORT)
+        return false;
+
+    uint n = active_token_count();
+    uint file_start = file_first_token(import_i);
+    uint j = first_token_after_optional_module(file_start);
+    [loop]
+    for (uint guard = 0u; guard < 256u && j < n; guard += 1u)
+    {
+        if (!same_token_file(j, file_start))
+            return false;
+        if (j == import_i)
+            return true;
+        if (j > import_i || token_kind(j) != TK_IMPORT)
+            return false;
+        uint end = import_decl_end(j);
+        if (end == INVALID)
+            return false;
+        j = end + 1u;
+    }
+    return false;
+}
+
+bool token_in_leading_import_decl(uint i)
+{
+    if (token_file(i) == INVALID)
+        return false;
+
+    uint n = active_token_count();
+    uint file_start = file_first_token(i);
+    uint j = first_token_after_optional_module(file_start);
+    [loop]
+    for (uint guard = 0u; guard < 256u && j < n; guard += 1u)
+    {
+        if (!same_token_file(j, file_start))
+            return false;
+        if (token_kind(j) != TK_IMPORT)
+            return false;
+        uint end = import_decl_end(j);
+        if (end == INVALID)
+            return false;
+        if (i >= j && i <= end)
+            return true;
+        if (i < j)
+            return false;
+        j = end + 1u;
+    }
+    return false;
+}
+
+uint qualified_path_start(uint first_colon_i)
+{
+    uint start = first_colon_i > 0u ? first_colon_i - 1u : 0u;
+    [loop]
+    for (uint guard = 0u; guard < 32u && start >= 3u; guard += 1u)
+    {
+        if (token_kind(start - 1u) != TK_COLON || token_kind(start - 2u) != TK_COLON ||
+            !is_path_segment(token_kind(start - 3u)))
+            break;
+        start -= 3u;
+    }
+    return start;
+}
+
+uint qualified_path_end(uint start)
+{
+    uint n = active_token_count();
+    uint end = start;
+    [loop]
+    for (uint guard = 0u; guard < 32u && end + 3u < n; guard += 1u)
+    {
+        if (token_kind(end + 1u) != TK_COLON || token_kind(end + 2u) != TK_COLON ||
+            !is_path_segment(token_kind(end + 3u)))
+            break;
+        end += 3u;
+    }
+    return end;
+}
+
+bool is_qualified_type_context(uint prev)
+{
+    return prev == TK_COLON || prev == TK_ARROW || prev == TK_LT || prev == TK_COMMA ||
+           prev == TK_PARAM_COMMA;
+}
+
+bool is_qualified_value_call_path(uint start)
+{
+    if (!is_path_segment(token_kind(start)))
+        return false;
+    uint leaf = qualified_path_end(start);
+    if (leaf <= start + 1u)
+        return false;
+    uint next = token_kind(leaf + 1u);
+    return next == TK_CALL_LPAREN || next == TK_LPAREN;
+}
+
+void check_qualified_path_colon(uint i)
+{
+    if (token_kind(i + 1u) != TK_COLON)
+        return;
+    if (token_in_leading_module_decl(i))
+        return;
+    if (token_in_leading_import_decl(i))
+        return;
+    uint start = qualified_path_start(i);
+    uint prev = start > 0u ? token_kind(start - 1u) : 0u;
+    if (!is_qualified_type_context(prev) && !is_qualified_value_call_path(start))
+        record_error(i, ERR_UNEXPECTED_TOKEN, TK_COLON);
+}
+
+void check_module_decl(uint i)
+{
+    uint file_start = file_first_token(i);
+    if (i != file_start)
+    {
+        record_error(i, ERR_UNEXPECTED_TOKEN, TK_MODULE);
+        return;
+    }
+
+    uint n = active_token_count();
+    if (i + 1u >= n || !same_token_file(i + 1u, i))
+    {
+        record_error(i, ERR_EXPECTED_TOKEN, TK_IDENT);
+        return;
+    }
+
+    uint j = i + 1u;
+    bool expect_segment = true;
+    bool saw_segment = false;
+    [loop]
+    for (uint guard = 0u; guard < 128u && j < n; guard += 1u)
+    {
+        if (!same_token_file(j, i))
+        {
+            record_error(saw_segment ? j - 1u : i, ERR_MISSING_SEMICOLON, TK_SEMICOLON);
+            return;
+        }
+        uint kind = token_kind(j);
+        if (expect_segment)
+        {
+            if (!is_module_path_segment(kind))
+            {
+                record_error(j, ERR_EXPECTED_TOKEN, TK_IDENT);
+                return;
+            }
+            saw_segment = true;
+            expect_segment = false;
+            j += 1u;
+            continue;
+        }
+
+        if (kind == TK_SEMICOLON)
+            return;
+        if (kind == TK_COLON && token_kind(j + 1u) == TK_COLON)
+        {
+            expect_segment = true;
+            j += 2u;
+            continue;
+        }
+
+        record_error(j, ERR_EXPECTED_TOKEN, TK_SEMICOLON);
+        return;
+    }
+
+    record_error(saw_segment ? n - 1u : i, ERR_MISSING_SEMICOLON, TK_SEMICOLON);
+}
+
+void check_import_decl(uint i)
+{
+    if (!is_leading_import_decl(i))
+    {
+        record_error(i, ERR_UNEXPECTED_TOKEN, TK_IMPORT);
+        return;
+    }
+
+    uint end = import_decl_end(i);
+    if (end == INVALID)
+    {
+        record_error(i, ERR_MISSING_SEMICOLON, TK_SEMICOLON);
+        return;
+    }
+
+    if (token_kind(i + 1u) == TK_STRING)
+    {
+        if (i + 2u != end)
+            record_error(i + 2u, ERR_EXPECTED_TOKEN, TK_SEMICOLON);
+        return;
+    }
+
+    uint j = i + 1u;
+    bool expect_segment = true;
+    bool saw_segment = false;
+    [loop]
+    for (uint guard = 0u; guard < 128u && j <= end; guard += 1u)
+    {
+        uint kind = token_kind(j);
+        if (expect_segment)
+        {
+            if (!is_module_path_segment(kind))
+            {
+                record_error(j, ERR_EXPECTED_TOKEN, TK_IDENT);
+                return;
+            }
+            saw_segment = true;
+            expect_segment = false;
+            j += 1u;
+            continue;
+        }
+
+        if (kind == TK_SEMICOLON)
+            return;
+        if (kind == TK_COLON && token_kind(j + 1u) == TK_COLON)
+        {
+            expect_segment = true;
+            j += 2u;
+            continue;
+        }
+
+        record_error(j, ERR_EXPECTED_TOKEN, TK_SEMICOLON);
+        return;
+    }
+
+    record_error(saw_segment ? end : i, ERR_MISSING_SEMICOLON, TK_SEMICOLON);
 }
 
 void check_binary_operator(uint i)
@@ -938,10 +1270,15 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     uint kind = token_kind(i);
 
+    if (token_file(i) == INVALID)
+        record_error(i, ERR_UNEXPECTED_TOKEN, kind);
+
     if (delimiter_prefix_underflows(i))
         record_error(i, ERR_UNBALANCED_DELIMITER, kind);
 
     if (token_in_generic_angle_list(i))
+        return;
+    if (kind != TK_IMPORT && token_in_leading_import_decl(i))
         return;
 
     if (kind == TK_PUB && token_kind(i + 1u) != TK_FN && token_kind(i + 1u) != TK_CONST &&
@@ -957,12 +1294,17 @@ void main(uint3 tid: SV_DispatchThreadID)
         check_struct(i);
     else if (kind == TK_TYPE)
         check_type_alias(i);
+    else if (kind == TK_IMPORT)
+        check_import_decl(i);
+    else if (kind == TK_MODULE)
+        check_module_decl(i);
     else if (kind == TK_EXTERN)
         check_extern(i);
     else if (kind == TK_PARAM_IDENT && (token_kind(i + 1u) != TK_COLON || !is_type_start(token_kind(i + 2u))))
         record_error(i, ERR_EXPECTED_TOKEN, TK_COLON);
     else if (kind == TK_PARAM_COMMA &&
              token_kind(i + 1u) != TK_PARAM_IDENT && token_kind(i + 1u) != TK_IDENT &&
+             token_kind(i + 1u) != TK_SELF_VALUE && token_kind(i + 1u) != TK_AMPERSAND &&
              token_kind(i + 1u) != TK_PARAM_RPAREN)
         record_error(i, ERR_EXPECTED_TOKEN, TK_PARAM_IDENT);
     else if (kind == TK_ARROW && !is_type_start(token_kind(i + 1u)) &&
@@ -982,6 +1324,8 @@ void main(uint3 tid: SV_DispatchThreadID)
     else if (kind == TK_TYPE_ARRAY_LBRACKET &&
              (!is_type_start(token_kind(i + 1u)) || token_kind(i + 2u) != TK_TYPE_SEMICOLON))
         record_error(i, ERR_EXPECTED_TOKEN, TK_TYPE_SEMICOLON);
+    else if (kind == TK_COLON)
+        check_qualified_path_colon(i);
     else if (kind == TK_LET)
         check_let(i);
     else if (kind == TK_RETURN || kind == TK_BREAK || kind == TK_CONTINUE)
@@ -999,6 +1343,9 @@ void main(uint3 tid: SV_DispatchThreadID)
         check_assignment(i);
     else if (kind == TK_PLUS || kind == TK_MINUS)
         check_raw_plus_minus(i);
+    else if (is_self_receiver_ref_amp(i))
+    {
+    }
     else if (is_binary_operator(kind))
         check_binary_operator(i);
     else if (kind == TK_INC || kind == TK_DEC)

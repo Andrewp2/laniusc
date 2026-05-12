@@ -33,12 +33,15 @@ static const uint TK_SEMICOLON = 37u;
 static const uint TK_LET = 68u;
 static const uint TK_LET_IDENT = 78u;
 static const uint TK_LET_ASSIGN = 81u;
+static const uint TK_FOR = 100u;
 
 static const uint BODY_OFF = 80u;
 static const uint BODY_HEADER_LEN = 7u;
 static const uint SIMPLE_LET_BODY_LEN = 17u;
 static const uint BODY_FOOTER_LEN = 3u;
 static const uint MAX_DISPATCH_X = 65535u;
+static const uint ERR_UNSUPPORTED_SOURCE_SHAPE = 1u;
+static const uint ERR_UNSUPPORTED_FOR_LOOP = 2u;
 
 uint active_token_count()
 {
@@ -82,14 +85,23 @@ uint parse_uint_token(uint token_i)
     return value;
 }
 
+void record_codegen_error(uint code, uint token_i)
+{
+    uint old;
+    InterlockedMin(status[3u], token_i, old);
+    if (token_i <= old)
+        status[2u] = code;
+    InterlockedAnd(status[1u], 0u, old);
+}
+
 void invalidate_fast_path()
 {
     uint groups = (gParams.out_capacity + 255u) / 256u;
     body_dispatch_args[0u] = min(groups, MAX_DISPATCH_X);
     body_dispatch_args[1u] = (groups + MAX_DISPATCH_X - 1u) / MAX_DISPATCH_X;
     body_dispatch_args[2u] = 1u;
+    record_codegen_error(ERR_UNSUPPORTED_SOURCE_SHAPE, active_token_count());
     InterlockedAnd(body_status[1u], 0u);
-    InterlockedAnd(status[1u], 0u);
 }
 
 void put_body(uint pos, uint value)
@@ -373,6 +385,9 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint statement_count = n / 5u;
     uint body_len = BODY_HEADER_LEN + statement_count * SIMPLE_LET_BODY_LEN + BODY_FOOTER_LEN;
     uint module_len = BODY_OFF + body_len;
+
+    if (tid.x < n && token_kind(tid.x) == TK_FOR)
+        record_codegen_error(ERR_UNSUPPORTED_FOR_LOOP, tid.x);
 
     if (tid.x == 0u)
     {

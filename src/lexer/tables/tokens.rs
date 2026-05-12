@@ -133,6 +133,8 @@ pub enum TokenKind {
     In,
     Extern,
     Type,
+    Where,
+    SelfValue,
 }
 
 impl core::convert::TryFrom<u32> for TokenKind {
@@ -248,6 +250,8 @@ impl TokenKind {
             x if x == TokenKind::In as u32 => TokenKind::In,
             x if x == TokenKind::Extern as u32 => TokenKind::Extern,
             x if x == TokenKind::Type as u32 => TokenKind::Type,
+            x if x == TokenKind::Where as u32 => TokenKind::Where,
+            x if x == TokenKind::SelfValue as u32 => TokenKind::SelfValue,
             _ => return None,
         };
         Some(k)
@@ -358,6 +362,8 @@ impl TokenKind {
             "In" => TokenKind::In,
             "Extern" => TokenKind::Extern,
             "Type" => TokenKind::Type,
+            "Where" => TokenKind::Where,
+            "SelfValue" => TokenKind::SelfValue,
             _ => return None,
         };
         Some(k)
@@ -366,7 +372,7 @@ impl TokenKind {
 
 // used on GPU side too
 pub const INVALID_TOKEN: u32 = u32::MAX;
-pub const N_KINDS: u32 = TokenKind::Type as u32 + 1;
+pub const N_KINDS: u32 = TokenKind::SelfValue as u32 + 1;
 
 #[cfg(test)]
 mod tests {

@@ -35,6 +35,7 @@ static const uint INVALID = 0xffffffffu;
 
 static const uint ERR_UNRESOLVED_IDENT = 2u;
 static const uint ERR_BAD_HIR = 6u;
+static const uint ERR_INVALID_MEMBER_ACCESS = 8u;
 
 static const uint HIR_NAME_EXPR = 22u;
 
@@ -54,6 +55,7 @@ static const uint TY_GENERIC_BASE = 8192u;
 static const uint TK_IDENT = 1u;
 static const uint TK_INT = 2u;
 static const uint TK_LPAREN = 4u;
+static const uint TK_RPAREN = 5u;
 static const uint TK_ASSIGN = 8u;
 static const uint TK_LT = 12u;
 static const uint TK_GT = 13u;
@@ -66,6 +68,7 @@ static const uint TK_LBRACKET = 20u;
 static const uint TK_RBRACKET = 21u;
 static const uint TK_LBRACE = 22u;
 static const uint TK_RBRACE = 23u;
+static const uint TK_AMPERSAND = 25u;
 static const uint TK_CALL_LPAREN = 28u;
 static const uint TK_GROUP_LPAREN = 29u;
 static const uint TK_INDEX_LBRACKET = 30u;
@@ -82,7 +85,9 @@ static const uint TK_PREFIX_PLUS = 58u;
 static const uint TK_PREFIX_MINUS = 60u;
 static const uint TK_ARRAY_RBRACKET = 64u;
 static const uint TK_INDEX_RBRACKET = 65u;
+static const uint TK_ARROW = 75u;
 static const uint TK_PARAM_LPAREN = 76u;
+static const uint TK_PARAM_RPAREN = 77u;
 static const uint TK_FN = 67u;
 static const uint TK_LET = 68u;
 static const uint TK_LET_IDENT = 78u;
@@ -90,14 +95,22 @@ static const uint TK_PARAM_IDENT = 79u;
 static const uint TK_TYPE_IDENT = 80u;
 static const uint TK_LET_ASSIGN = 81u;
 static const uint TK_ARG_COMMA = 82u;
+static const uint TK_PARAM_COMMA = 84u;
 static const uint TK_TYPE_ARRAY_LBRACKET = 85u;
 static const uint TK_TYPE_ARRAY_RBRACKET = 86u;
 static const uint TK_IF_LBRACE = 88u;
+static const uint TK_IF_RBRACE = 89u;
 static const uint TK_TRUE = 90u;
 static const uint TK_FALSE = 91u;
 static const uint TK_CONST = 92u;
 static const uint TK_ENUM = 93u;
 static const uint TK_STRUCT = 94u;
+static const uint TK_IMPORT = 96u;
+static const uint TK_IMPL = 98u;
+static const uint TK_TRAIT = 99u;
+static const uint TK_FOR = 100u;
+static const uint TK_WHERE = 104u;
+static const uint TK_SELF_VALUE = 105u;
 
 uint active_token_count()
 {
@@ -415,6 +428,40 @@ bool is_type_generic_param_token(uint param_i, uint open_i, uint close_i)
     return true;
 }
 
+bool is_generic_bound_colon(uint colon_i)
+{
+    if (token_kind(colon_i) != TK_COLON || colon_i == 0u)
+        return false;
+    uint before = token_kind(colon_i - 1u);
+    if (before != TK_IDENT && before != TK_TYPE_IDENT && before != TK_PARAM_IDENT)
+        return false;
+    if (colon_i > 1u && token_kind(colon_i - 2u) == TK_CONST)
+        return false;
+
+    uint depth = 0u;
+    uint j = colon_i;
+    [loop]
+    for (uint guard = 0u; guard < 128u && j > 0u; guard += 1u)
+    {
+        j -= 1u;
+        uint kind = token_kind(j);
+        if (kind == TK_GT)
+            depth += 1u;
+        else if (kind == TK_LT)
+        {
+            if (depth == 0u)
+                return true;
+            depth -= 1u;
+        }
+        else if (kind == TK_LBRACE || kind == TK_IF_LBRACE || kind == TK_SEMICOLON ||
+                 kind == TK_PARAM_LPAREN || kind == TK_LPAREN)
+        {
+            return false;
+        }
+    }
+    return false;
+}
+
 uint find_generic_type_param_decl(uint name_i)
 {
     uint j = name_i;
@@ -447,6 +494,140 @@ uint generic_type_code_for_name(uint name_i)
 {
     uint decl_i = find_generic_type_param_decl(name_i);
     return decl_i == INVALID ? TY_UNKNOWN : TY_GENERIC_BASE + decl_i;
+}
+
+uint find_const_generic_param_decl(uint name_i)
+{
+    uint j = name_i;
+    [loop]
+    for (uint guard = 0u; guard < 256u && j > 0u; guard += 1u)
+    {
+        j -= 1u;
+        uint kind = token_kind(j);
+        if (kind != TK_FN && kind != TK_ENUM && kind != TK_STRUCT)
+            continue;
+
+        uint open_i = generic_param_list_open(j);
+        uint close_i = generic_param_list_close(open_i);
+        if (open_i == INVALID || close_i == INVALID)
+            return INVALID;
+        [loop]
+        for (uint p = open_i + 1u; p < close_i; p += 1u)
+        {
+            if (p > open_i + 1u && token_kind(p - 1u) == TK_CONST && same_text(p, name_i))
+                return p;
+        }
+        return INVALID;
+    }
+    return INVALID;
+}
+
+bool is_type_array_open(uint kind)
+{
+    return kind == TK_TYPE_ARRAY_LBRACKET || kind == TK_ARRAY_LBRACKET || kind == TK_LBRACKET;
+}
+
+bool is_type_array_close(uint kind)
+{
+    return kind == TK_TYPE_ARRAY_RBRACKET || kind == TK_ARRAY_RBRACKET || kind == TK_RBRACKET;
+}
+
+uint find_matching_type_array_rbracket(uint open_i)
+{
+    uint n = active_token_count();
+    uint depth = 0u;
+    [loop]
+    for (uint j = open_i; j < n; j += 1u)
+    {
+        uint kind = token_kind(j);
+        if (is_type_array_open(kind))
+            depth += 1u;
+        else if (is_type_array_close(kind))
+        {
+            if (depth == 0u)
+                return INVALID;
+            depth -= 1u;
+            if (depth == 0u)
+                return j;
+        }
+        else if (kind == TK_LBRACE)
+            return INVALID;
+    }
+    return INVALID;
+}
+
+uint find_type_array_semicolon(uint open_i, uint close_i)
+{
+    [loop]
+    for (uint j = open_i + 1u; j < close_i; j += 1u)
+    {
+        if (token_kind(j) == TK_SEMICOLON)
+            return j;
+    }
+    return INVALID;
+}
+
+bool generic_array_decl_context_allowed(uint open_i)
+{
+    if (open_i < 2u || token_kind(open_i - 1u) != TK_COLON)
+        return false;
+
+    uint decl_i = open_i - 2u;
+    uint decl_kind = token_kind(decl_i);
+    if (decl_kind == TK_PARAM_IDENT)
+        return true;
+    if (decl_kind != TK_IDENT || decl_i + 1u >= active_token_count() ||
+        token_kind(decl_i + 1u) != TK_COLON)
+        return false;
+    if (decl_i > 0u)
+    {
+        uint prev = token_kind(decl_i - 1u);
+        if (prev == TK_LET || prev == TK_CONST || prev == TK_ENUM || prev == TK_STRUCT)
+            return false;
+    }
+    return true;
+}
+
+bool is_invalid_generic_array_or_slice_type(uint open_i)
+{
+    if (!is_type_array_open(token_kind(open_i)))
+        return false;
+
+    uint close_i = find_matching_type_array_rbracket(open_i);
+    if (close_i == INVALID)
+        return true;
+
+    uint elem_i = open_i + 1u;
+    uint elem_kind = token_kind(elem_i);
+    bool elem_is_name =
+        elem_kind == TK_IDENT || elem_kind == TK_TYPE_IDENT || elem_kind == TK_PARAM_IDENT;
+    if (!elem_is_name)
+        return false;
+
+    bool elem_is_primitive = primitive_type_code(elem_i) != TY_UNKNOWN;
+    bool elem_is_generic = generic_type_code_for_name(elem_i) != TY_UNKNOWN;
+    uint semicolon_i = find_type_array_semicolon(open_i, close_i);
+    bool len_name_is_present = false;
+    bool len_is_generic = false;
+    if (semicolon_i != INVALID && semicolon_i + 1u < close_i)
+    {
+        uint len_i = semicolon_i + 1u;
+        uint len_kind = token_kind(len_i);
+        len_name_is_present =
+            len_kind == TK_IDENT || len_kind == TK_TYPE_IDENT || len_kind == TK_PARAM_IDENT;
+        if (len_name_is_present)
+            len_is_generic = find_const_generic_param_decl(len_i) != INVALID;
+    }
+
+    if (!elem_is_generic && !len_name_is_present)
+        return false;
+    if (!generic_array_decl_context_allowed(open_i))
+        return true;
+    if (!elem_is_generic && !elem_is_primitive)
+        return true;
+    if (len_name_is_present && !len_is_generic)
+        return true;
+    return false;
 }
 
 uint type_code_for_type_expr(uint type_i)
@@ -483,10 +664,59 @@ uint type_code_for_type_expr(uint type_i)
     return array_depth == 0u ? elem : TY_ARRAY_BASE + elem;
 }
 
+bool is_self_receiver_decl_at(uint i)
+{
+    if (token_kind(i) != TK_SELF_VALUE || i == 0u)
+        return false;
+    uint prev = token_kind(i - 1u);
+    uint next = i + 1u < active_token_count() ? token_kind(i + 1u) : 0u;
+    bool prev_ok = prev == TK_PARAM_LPAREN || prev == TK_LPAREN || prev == TK_PARAM_COMMA ||
+                   prev == TK_COMMA || prev == TK_AMPERSAND;
+    bool next_ok = next == TK_COLON || next == TK_PARAM_RPAREN || next == TK_RPAREN ||
+                   next == TK_PARAM_COMMA || next == TK_COMMA;
+    return prev_ok && next_ok;
+}
+
+uint impl_body_open(uint impl_i)
+{
+    uint n_active = active_token_count();
+    [loop]
+    for (uint j = impl_i + 1u; j < n_active; j += 1u)
+    {
+        uint kind = token_kind(j);
+        if (kind == TK_LBRACE)
+            return j;
+        if (kind == TK_SEMICOLON || kind == TK_FN || kind == TK_CONST || kind == TK_ENUM ||
+            kind == TK_STRUCT)
+            return INVALID;
+    }
+    return INVALID;
+}
+
 bool is_bool_result_operator(uint kind)
 {
     return kind == TK_LT || kind == TK_GT || kind == TK_LE || kind == TK_GE || kind == TK_EQEQ ||
            kind == TK_NOT_EQUAL || kind == TK_ANDAND || kind == TK_OROR;
+}
+
+bool token_in_impl_header(uint token_i)
+{
+    uint j = token_i;
+    [loop]
+    for (uint guard = 0u; guard < 128u && j > 0u; guard += 1u)
+    {
+        j -= 1u;
+        uint kind = token_kind(j);
+        if (kind == TK_IMPL)
+        {
+            uint open_i = impl_body_open(j);
+            return open_i != INVALID && token_i > j && token_i < open_i;
+        }
+        if (kind == TK_LBRACE || kind == TK_IF_LBRACE || kind == TK_RBRACE ||
+            kind == TK_IF_RBRACE || kind == TK_FN || kind == TK_SEMICOLON)
+            return false;
+    }
+    return false;
 }
 
 uint find_stmt_semicolon(uint start_i)
@@ -665,7 +895,7 @@ uint scanned_expr_result_type(uint expr_i, uint limit_i)
 
 bool find_named_function(uint name_i)
 {
-    return name_i < active_token_count() && call_return_type[name_i] != TY_UNKNOWN;
+    return name_i < active_token_count() && call_fn_index[name_i] != INVALID;
 }
 
 uint resolved_visible_decl(uint ident_i)
@@ -678,6 +908,13 @@ uint resolved_visible_decl(uint ident_i)
 uint declaration_type_shallow(uint decl_i)
 {
     uint kind = token_kind(decl_i);
+    if (kind == TK_SELF_VALUE && is_self_receiver_decl_at(decl_i))
+        return decl_i + 2u < active_token_count() && token_kind(decl_i + 1u) == TK_COLON
+                   ? type_code_for_type_expr(decl_i + 2u)
+                   : TY_UNKNOWN;
+    if (kind == TK_SELF_VALUE)
+        return TY_UNKNOWN;
+
     if (kind == TK_PARAM_IDENT ||
         (kind == TK_IDENT && decl_i + 1u < active_token_count() &&
          token_kind(decl_i + 1u) == TK_COLON &&
@@ -793,11 +1030,18 @@ uint declaration_type(uint decl_i)
 
 bool ident_is_use(uint i)
 {
-    if (token_kind(i) != TK_IDENT)
+    uint kind = token_kind(i);
+    if (kind == TK_SELF_VALUE)
+    {
+        return !is_self_receiver_decl_at(i) && (i == 0u || token_kind(i - 1u) != TK_DOT);
+    }
+    if (kind != TK_IDENT)
+        return false;
+    if (token_in_impl_header(i))
         return false;
     uint prev = i > 0u ? token_kind(i - 1u) : 0u;
     if (prev == TK_FN || prev == TK_DOT || prev == TK_LET || prev == TK_CONST ||
-        prev == TK_ENUM || prev == TK_STRUCT)
+        prev == TK_ENUM || prev == TK_STRUCT || prev == TK_COLON)
         return false;
     uint next = i + 1u < active_token_count() ? token_kind(i + 1u) : 0u;
     if (next == TK_COLON)
@@ -835,7 +1079,18 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint i = tid.x;
     if (i < active_token_count())
     {
-        if (token_kind(i) == TK_PARAM_IDENT ||
+        if (token_kind(i) == TK_TRAIT || token_text_eq5(i, 116u, 114u, 97u, 105u, 116u))
+            record_error(i, ERR_BAD_HIR, TK_TRAIT);
+        if (token_kind(i) == TK_FOR && token_in_impl_header(i))
+            record_error(i, ERR_BAD_HIR, TK_FOR);
+        if (token_kind(i) == TK_WHERE)
+            record_error(i, ERR_BAD_HIR, TK_WHERE);
+        if (is_generic_bound_colon(i))
+            record_error(i, ERR_BAD_HIR, TK_COLON);
+        if (is_invalid_generic_array_or_slice_type(i))
+            record_error(i, ERR_BAD_HIR, TK_TYPE_ARRAY_LBRACKET);
+        if (is_self_receiver_decl_at(i) ||
+            token_kind(i) == TK_PARAM_IDENT ||
             (token_kind(i) == TK_IDENT && i + 1u < active_token_count() &&
              token_kind(i + 1u) == TK_COLON &&
              (i == 0u ||
@@ -856,6 +1111,9 @@ void main(uint3 tid: SV_DispatchThreadID)
             if (decl != INVALID)
                 visible_type[i] = declaration_type(decl);
         }
+
+        if (token_kind(i) == TK_SELF_VALUE)
+            check_ident_use(i);
     }
 
     uint n_hir = active_hir_node_count();

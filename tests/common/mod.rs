@@ -24,9 +24,11 @@ use laniusc::compiler::{
     CompileError,
     compile_source_to_wasm_with_gpu_codegen,
     compile_source_to_wasm_with_gpu_codegen_from_path,
+    type_check_source_pack_with_gpu,
     type_check_source_with_gpu,
     type_check_source_with_gpu_from_path,
 };
+use log::warn;
 
 static TEMP_ARTIFACT_COUNTER: AtomicU64 = AtomicU64::new(0);
 // libtest runs cases concurrently; start GPU timeouts after queued work gets the device.
@@ -72,7 +74,10 @@ impl Drop for TempArtifact {
         match fs::remove_file(&self.path) {
             Ok(()) => {}
             Err(err) if err.kind() == io::ErrorKind::NotFound => {}
-            Err(_) => {}
+            Err(err) => warn!(
+                "failed to remove temp artifact {}: {err}",
+                self.path.display()
+            ),
         }
     }
 }
@@ -105,6 +110,16 @@ pub fn type_check_source_with_timeout(src: &str) -> Result<(), CompileError> {
     let src = src.to_owned();
     run_with_timeout("GPU type check", move || {
         pollster::block_on(type_check_source_with_gpu(&src))
+    })
+}
+
+pub fn type_check_source_pack_with_timeout(sources: &[&str]) -> Result<(), CompileError> {
+    let sources = sources
+        .iter()
+        .map(|source| (*source).to_owned())
+        .collect::<Vec<_>>();
+    run_with_timeout("GPU source-pack type check", move || {
+        pollster::block_on(type_check_source_pack_with_gpu(&sources))
     })
 }
 
@@ -204,7 +219,9 @@ fn command_output_result_with_timeout(
         }
 
         if start.elapsed() >= timeout {
-            let _ = child.kill();
+            if let Err(err) = child.kill() {
+                warn!("{context}: failed to terminate timed-out helper process: {err}");
+            }
             let output = child
                 .wait_with_output()
                 .unwrap_or_else(|err| panic!("{context}: collect timed-out command output: {err}"));
@@ -237,7 +254,9 @@ where
     let (tx, rx) = mpsc::channel();
     let handle = thread::spawn(move || {
         let result = f();
-        let _ = tx.send(result);
+        if let Err(err) = tx.send(result) {
+            warn!("failed to send test result from worker thread: {err}");
+        }
     });
 
     match rx.recv_timeout(timeout) {
@@ -265,26 +284,14 @@ fn gpu_test_lock() -> MutexGuard<'static, ()> {
 
 fn gpu_test_timeout() -> Duration {
     env_millis("LANIUS_GPU_TEST_TIMEOUT_MS")
-        .or_else(|| {
-            env::var("LANIUS_GPU_TEST_TIMEOUT_SECS")
-                .ok()
-                .and_then(|value| value.parse::<u64>().ok())
-                .filter(|seconds| *seconds > 0)
-                .map(Duration::from_secs)
-        })
+        .or_else(|| env_seconds("LANIUS_GPU_TEST_TIMEOUT_SECS"))
         .unwrap_or_else(|| Duration::from_millis(DEFAULT_GPU_TEST_TIMEOUT_MS))
 }
 
 fn gpu_codegen_test_timeout() -> Duration {
     env_millis("LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS")
         .or_else(|| env_millis("LANIUS_GPU_TEST_TIMEOUT_MS"))
-        .or_else(|| {
-            env::var("LANIUS_GPU_TEST_TIMEOUT_SECS")
-                .ok()
-                .and_then(|value| value.parse::<u64>().ok())
-                .filter(|seconds| *seconds > 0)
-                .map(Duration::from_secs)
-        })
+        .or_else(|| env_seconds("LANIUS_GPU_TEST_TIMEOUT_SECS"))
         .unwrap_or_else(|| Duration::from_millis(DEFAULT_GPU_CODEGEN_TEST_TIMEOUT_MS))
 }
 
@@ -303,19 +310,49 @@ fn compiler_process_test_timeout() -> Duration {
 }
 
 fn env_millis(name: &str) -> Option<Duration> {
-    env::var(name)
-        .ok()
-        .and_then(|value| value.parse::<u64>().ok())
-        .filter(|milliseconds| *milliseconds > 0)
-        .map(Duration::from_millis)
+    let value = match env::var(name) {
+        Ok(value) => value,
+        Err(_) => {
+            warn!("{name} is unset; using caller default");
+            return None;
+        }
+    };
+    match value.parse::<u64>() {
+        Ok(milliseconds) if milliseconds > 0 => Some(Duration::from_millis(milliseconds)),
+        Ok(_) => {
+            warn!("{name} is not positive; using caller default");
+            None
+        }
+        Err(err) => {
+            warn!("{name} is not a valid timeout millis value '{value}': {err}");
+            None
+        }
+    }
+}
+
+fn env_seconds(name: &str) -> Option<Duration> {
+    let value = match env::var(name) {
+        Ok(value) => value,
+        Err(_) => {
+            warn!("{name} is unset; using caller default");
+            return None;
+        }
+    };
+    match value.parse::<u64>() {
+        Ok(seconds) if seconds > 0 => Some(Duration::from_secs(seconds)),
+        Ok(_) => {
+            warn!("{name} is not positive; using caller default");
+            None
+        }
+        Err(err) => {
+            warn!("{name} is not a valid timeout seconds value '{value}': {err}");
+            None
+        }
+    }
 }
 
 fn process_test_timeout() -> Duration {
-    env::var("LANIUS_PROCESS_TEST_TIMEOUT_MS")
-        .ok()
-        .and_then(|value| value.parse::<u64>().ok())
-        .filter(|milliseconds| *milliseconds > 0)
-        .map(Duration::from_millis)
+    env_millis("LANIUS_PROCESS_TEST_TIMEOUT_MS")
         .unwrap_or_else(|| Duration::from_millis(DEFAULT_PROCESS_TEST_TIMEOUT_MS))
 }
 
@@ -328,7 +365,9 @@ fn timeout_message(context: &str, timeout: Duration) -> String {
 
 fn exit_after_timeout(args: fmt::Arguments<'_>) -> ! {
     eprintln!("{args}");
-    let _ = io::stderr().flush();
+    if let Err(err) = io::stderr().flush() {
+        warn!("failed to flush stderr during timeout: {err}");
+    }
     immediate_process_exit(TEST_TIMEOUT_EXIT_CODE);
 }
 

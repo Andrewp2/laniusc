@@ -45,6 +45,10 @@ pub const HIR_NODE_ENUM_ITEM: u32 = 26;
 pub const HIR_NODE_STRUCT_ITEM: u32 = 27;
 pub const HIR_NODE_STRUCT_LITERAL_EXPR: u32 = 28;
 pub const HIR_NODE_TYPE_ALIAS_ITEM: u32 = 29;
+pub const HIR_NODE_FOR_STMT: u32 = 30;
+pub const HIR_NODE_MODULE_ITEM: u32 = 31;
+pub const HIR_NODE_IMPORT_ITEM: u32 = 32;
+pub const HIR_NODE_PATH_EXPR: u32 = 33;
 
 pub struct HirNodesPass {
     data: PassData,
@@ -98,6 +102,10 @@ impl Pass<ParserBuffers, crate::parser::gpu::debug::DebugOutput> for HirNodesPas
                 },
             ),
             (
+                "token_file_id".into(),
+                b.default_token_file_id.as_entire_binding(),
+            ),
+            (
                 "ll1_status".into(),
                 if b.tree_count_uses_status && !b.tree_stream_uses_ll1 {
                     b.projected_status.as_entire_binding()
@@ -107,6 +115,10 @@ impl Pass<ParserBuffers, crate::parser::gpu::debug::DebugOutput> for HirNodesPas
             ),
             ("hir_kind".into(), b.hir_kind.as_entire_binding()),
             ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
+            (
+                "hir_token_file_id".into(),
+                b.hir_token_file_id.as_entire_binding(),
+            ),
         ])
     }
 }

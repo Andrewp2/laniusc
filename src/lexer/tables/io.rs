@@ -88,8 +88,8 @@ pub fn save_tables_bin(path: &std::path::Path, t: &Tables) -> std::io::Result<()
     let size_token_of = m * 2;
     let total_len = header + size_char_to_func + size_merge + size_token_of;
 
-    // Pre-allocate (best effort).
-    let _ = f.set_len(total_len as u64);
+    // Pre-allocate.
+    f.set_len(total_len as u64)?;
 
     let mut w = BufWriter::new(f);
 

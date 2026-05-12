@@ -53,6 +53,18 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for TokensBuildPass 
                 // ALL end positions are stored in tok_types now
                 b.tok_types.as_entire_binding(),
             ),
+            (
+                "source_file_count".into(),
+                b.source_file_count.as_entire_binding(),
+            ),
+            (
+                "source_file_start".into(),
+                b.source_file_start.as_entire_binding(),
+            ),
+            (
+                "source_file_len".into(),
+                b.source_file_len.as_entire_binding(),
+            ),
             ("tokens_out".into(), b.tokens_out.as_entire_binding()),
         ])
     }

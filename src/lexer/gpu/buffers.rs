@@ -36,6 +36,10 @@ pub struct GpuBuffers {
     pub token_count: LaniusBuffer<u32>,
 
     pub tokens_out: LaniusBuffer<super::GpuToken>,
+    pub source_file_count: LaniusBuffer<u32>,
+    pub source_file_start: LaniusBuffer<u32>,
+    pub source_file_len: LaniusBuffer<u32>,
+    pub token_file_id: LaniusBuffer<u32>,
 }
 
 impl GpuBuffers {
@@ -43,6 +47,7 @@ impl GpuBuffers {
     pub fn new(
         device: &wgpu::Device,
         n: u32,
+        source_file_capacity: u32,
         start_state: u32,
         next_emit_packed: &[u32],
         next_u8_packed: &[u32],
@@ -112,6 +117,13 @@ impl GpuBuffers {
         let token_count: LaniusBuffer<u32> = storage_rw_for_array::<u32>(device, "token_count", 1);
 
         let tokens_out = storage_rw_for_array::<super::GpuToken>(device, "tokens_out", n as usize);
+        let source_file_count = storage_rw_for_array::<u32>(device, "source_file_count", 1);
+        let source_file_capacity = source_file_capacity.max(1) as usize;
+        let source_file_start =
+            storage_rw_for_array::<u32>(device, "source_file_start", source_file_capacity);
+        let source_file_len =
+            storage_rw_for_array::<u32>(device, "source_file_len", source_file_capacity);
+        let token_file_id = storage_rw_for_array::<u32>(device, "token_file_id", n as usize);
 
         let params_val = LexParams {
             n,
@@ -150,6 +162,10 @@ impl GpuBuffers {
             token_count,
 
             tokens_out,
+            source_file_count,
+            source_file_start,
+            source_file_len,
+            token_file_id,
         }
     }
 }

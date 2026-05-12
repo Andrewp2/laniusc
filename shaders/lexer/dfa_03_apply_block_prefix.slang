@@ -23,6 +23,8 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 ByteAddressBuffer in_bytes;
+StructuredBuffer<uint> source_file_count;
+StructuredBuffer<uint> source_file_start;
 StructuredBuffer<uint> block_prefix;
 StructuredBuffer<uint> chunk_summaries;
 StructuredBuffer<uint> token_map;
@@ -30,6 +32,8 @@ StructuredBuffer<uint> next_emit; // u16 packed: next_state (low 15) | HIGH_BIT 
 
 RWStructuredBuffer<uint> flags_packed;
 RWStructuredBuffer<uint> tok_types;
+
+static const uint MAX_FILES_SCAN = 1024u;
 
 inline bool is_skip(uint tk)
 {
@@ -39,6 +43,18 @@ inline bool is_skip(uint tk)
 uint next_state_only(uint byte_value, uint state)
 {
     return load_u16_packed(next_emit, byte_value * N_STATES + state) & 0x7FFFu;
+}
+
+bool is_file_start(uint i_abs)
+{
+    uint files = min(source_file_count[0], MAX_FILES_SCAN);
+    [loop]
+    for (uint f = 0u; f < files; f += 1u)
+    {
+        if (source_file_start[f] == i_abs)
+            return true;
+    }
+    return false;
 }
 
 [shader("compute")]
@@ -81,9 +97,15 @@ void dfa_03_apply_block_prefix(uint3 tid: SV_GroupThreadID,
     [loop]
     for (uint k = chunk_begin; k < tIdx; k += 1u)
     {
+        uint prev_abs = base + k;
+        if (is_file_start(prev_abs))
+            state_before = gParams.start_state;
         uint b_prev = load_byte_at(in_bytes, base + k);
         state_before = next_state_only(b_prev, state_before);
     }
+
+    if (is_file_start(i_abs))
+        state_before = gParams.start_state;
 
     const uint b = load_byte_at(in_bytes, i_abs);
     const uint packed = load_u16_packed(next_emit, b * N_STATES + state_before);

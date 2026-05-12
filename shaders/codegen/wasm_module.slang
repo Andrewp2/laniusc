@@ -116,7 +116,7 @@ uint module_byte(uint pos, uint body_len, uint module_len, bool use_bool_body)
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
 {
-    if (status[1u] == 2u)
+    if (status[1u] == 2u || status[2u] != 0u)
         return;
 
     bool use_bool_body = bool_body_status[1u] != 0u;

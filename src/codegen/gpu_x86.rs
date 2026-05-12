@@ -6,6 +6,7 @@ use std::{
 
 use anyhow::Result;
 use encase::ShaderType;
+use log::warn;
 use wgpu::util::DeviceExt;
 
 use crate::gpu::{
@@ -1059,7 +1060,7 @@ fn zero_status_bytes() -> [u8; 8] {
 }
 
 fn trace_x86_codegen(stage: &str) {
-    if std::env::var("LANIUS_X86_TRACE").ok().as_deref() == Some("1") {
+    if crate::gpu::env::env_bool_strict("LANIUS_X86_TRACE", false) {
         eprintln!("[laniusc][x86-codegen] {stage}");
     }
 }
@@ -1100,7 +1101,11 @@ fn read_x86_output(
         label: Some("codegen.x86.exact_output_readback.encoder"),
     });
     encoder.copy_buffer_to_buffer(out_buf, 0, out_readback, 0, output_bytes);
-    queue.submit(Some(encoder.finish()));
+    crate::gpu::passes_core::submit_with_progress(
+        queue,
+        "codegen.x86.output-readback",
+        encoder.finish(),
+    );
 
     let output_slice = out_readback.slice(0..output_bytes);
     trace_x86_codegen("output.readback.start");
@@ -1121,16 +1126,26 @@ fn read_x86_output(
 }
 
 fn wait_for_map(device: &wgpu::Device, slice: &wgpu::BufferSlice<'_>, label: &str) -> Result<()> {
+    let label = label.to_string();
+    let cb_label = label.clone();
     let (tx, rx) = mpsc::channel();
+    crate::gpu::passes_core::trace_gpu_progress(&format!("map.start :: {label}"));
     slice.map_async(wgpu::MapMode::Read, move |result| {
-        let _ = tx.send(result);
+        if let Err(err) = tx.send(result) {
+            warn!("failed to dispatch readback status for {cb_label}: {err}");
+        }
     });
+    crate::gpu::passes_core::trace_gpu_progress(&format!("map.queued :: {label}"));
 
     let timeout = x86_readback_timeout();
     let start = Instant::now();
     let mut spins = 0u32;
     loop {
-        let _ = device.poll(wgpu::PollType::Poll);
+        crate::gpu::passes_core::wait_for_map_progress(
+            device,
+            &format!("codegen.x86.output-poll({label})"),
+            wgpu::PollType::Poll,
+        );
         match rx.try_recv() {
             Ok(Ok(())) => return Ok(()),
             Ok(Err(err)) => {
@@ -1157,11 +1172,7 @@ fn wait_for_map(device: &wgpu::Device, slice: &wgpu::BufferSlice<'_>, label: &st
 }
 
 fn x86_readback_timeout() -> Duration {
-    let ms = std::env::var("LANIUS_X86_READBACK_TIMEOUT_MS")
-        .ok()
-        .and_then(|value| value.parse::<u64>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(3_000);
+    let ms = crate::gpu::env::env_u64("LANIUS_X86_READBACK_TIMEOUT_MS", 3_000);
     Duration::from_millis(ms)
 }
 

@@ -1,5 +1,6 @@
 // src/parser/gpu/buffers.rs
 use encase::ShaderType;
+use log::warn;
 
 use crate::gpu::buffers::{
     LaniusBuffer,
@@ -60,6 +61,7 @@ pub struct ParserBuffers {
     pub params_llp: LaniusBuffer<super::passes::llp_pairs::LLPParams>,
     pub token_kinds: LaniusBuffer<u32>,
     pub token_count: LaniusBuffer<u32>,
+    pub default_token_file_id: LaniusBuffer<u32>,
     pub action_table: LaniusBuffer<u8>,
     pub out_headers: LaniusBuffer<ActionHeader>,
 
@@ -147,9 +149,19 @@ pub struct ParserBuffers {
     // -------- HIR-facing classification --------
     pub hir_params: LaniusBuffer<super::passes::hir_nodes::Params>,
     pub hir_span_params: LaniusBuffer<super::passes::hir_spans::Params>,
+    pub hir_item_fields_params: LaniusBuffer<super::passes::hir_item_fields::Params>,
     pub hir_kind: LaniusBuffer<u32>,
     pub hir_token_pos: LaniusBuffer<u32>,
     pub hir_token_end: LaniusBuffer<u32>,
+    pub hir_token_file_id: LaniusBuffer<u32>,
+    pub hir_item_kind: LaniusBuffer<u32>,
+    pub hir_item_name_token: LaniusBuffer<u32>,
+    pub hir_item_namespace: LaniusBuffer<u32>,
+    pub hir_item_visibility: LaniusBuffer<u32>,
+    pub hir_item_path_start: LaniusBuffer<u32>,
+    pub hir_item_path_end: LaniusBuffer<u32>,
+    pub hir_item_file_id: LaniusBuffer<u32>,
+    pub hir_item_import_target_kind: LaniusBuffer<u32>,
 }
 
 pub struct LL1EmitPrefixScanStep {
@@ -684,12 +696,58 @@ impl ParserBuffers {
                 uses_ll1: u32::from(tree_count_uses_status),
             },
         );
+        let hir_item_fields_params = uniform_from_val(
+            device,
+            "parser.hir_item_fields.params",
+            &super::passes::hir_item_fields::Params {
+                n: tree_capacity,
+                uses_ll1: u32::from(tree_count_uses_status),
+            },
+        );
         let hir_kind =
             storage_rw_for_array::<u32>(device, "parser.hir_kind", tree_capacity as usize);
         let hir_token_pos =
             storage_rw_for_array::<u32>(device, "parser.hir_token_pos", tree_capacity as usize);
         let hir_token_end =
             storage_rw_for_array::<u32>(device, "parser.hir_token_end", tree_capacity as usize);
+        let hir_token_file_id =
+            storage_rw_for_array::<u32>(device, "parser.hir_token_file_id", tree_capacity as usize);
+        let hir_item_kind =
+            storage_rw_for_array::<u32>(device, "parser.hir_item_kind", tree_capacity as usize);
+        let hir_item_name_token = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_item_name_token",
+            tree_capacity as usize,
+        );
+        let hir_item_namespace = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_item_namespace",
+            tree_capacity as usize,
+        );
+        let hir_item_visibility = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_item_visibility",
+            tree_capacity as usize,
+        );
+        let hir_item_path_start = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_item_path_start",
+            tree_capacity as usize,
+        );
+        let hir_item_path_end =
+            storage_rw_for_array::<u32>(device, "parser.hir_item_path_end", tree_capacity as usize);
+        let hir_item_file_id =
+            storage_rw_for_array::<u32>(device, "parser.hir_item_file_id", tree_capacity as usize);
+        let hir_item_import_target_kind = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_item_import_target_kind",
+            tree_capacity as usize,
+        );
+        let default_token_file_id = storage_ro_from_u32s(
+            device,
+            "parser.default_token_file_id",
+            &vec![0u32; n_tokens.max(1) as usize],
+        );
 
         Self {
             n_tokens,
@@ -727,6 +785,7 @@ impl ParserBuffers {
             params_llp,
             token_kinds,
             token_count,
+            default_token_file_id,
             action_table,
             out_headers,
 
@@ -811,9 +870,19 @@ impl ParserBuffers {
             // HIR-facing classification
             hir_params,
             hir_span_params,
+            hir_item_fields_params,
             hir_kind,
             hir_token_pos,
             hir_token_end,
+            hir_token_file_id,
+            hir_item_kind,
+            hir_item_name_token,
+            hir_item_namespace,
+            hir_item_visibility,
+            hir_item_path_start,
+            hir_item_path_end,
+            hir_item_file_id,
+            hir_item_import_target_kind,
         }
     }
 }
@@ -1171,5 +1240,11 @@ fn make_tree_prefix_max_build_steps(
 }
 
 fn next_power_of_two_u32(value: u32) -> u32 {
-    value.checked_next_power_of_two().unwrap_or(1 << 31)
+    value.checked_next_power_of_two().unwrap_or_else(|| {
+        warn!(
+            "value {value} overflows next_power_of_two_u32; using fallback {}",
+            1 << 31
+        );
+        1 << 31
+    })
 }

@@ -26,6 +26,14 @@ pub struct ParserReadbacks {
     pub hir_kind: wgpu::Buffer,
     pub hir_token_pos: wgpu::Buffer,
     pub hir_token_end: wgpu::Buffer,
+    pub hir_item_kind: wgpu::Buffer,
+    pub hir_item_name_token: wgpu::Buffer,
+    pub hir_item_namespace: wgpu::Buffer,
+    pub hir_item_visibility: wgpu::Buffer,
+    pub hir_item_path_start: wgpu::Buffer,
+    pub hir_item_path_end: wgpu::Buffer,
+    pub hir_item_file_id: wgpu::Buffer,
+    pub hir_item_import_target_kind: wgpu::Buffer,
 }
 
 impl ParserReadbacks {
@@ -82,6 +90,38 @@ impl ParserReadbacks {
             "rb.parser.hir_token_end",
             bufs.hir_token_end.byte_size as u64,
         );
+        let hir_item_kind = mk(
+            "rb.parser.hir_item_kind",
+            bufs.hir_item_kind.byte_size as u64,
+        );
+        let hir_item_name_token = mk(
+            "rb.parser.hir_item_name_token",
+            bufs.hir_item_name_token.byte_size as u64,
+        );
+        let hir_item_namespace = mk(
+            "rb.parser.hir_item_namespace",
+            bufs.hir_item_namespace.byte_size as u64,
+        );
+        let hir_item_visibility = mk(
+            "rb.parser.hir_item_visibility",
+            bufs.hir_item_visibility.byte_size as u64,
+        );
+        let hir_item_path_start = mk(
+            "rb.parser.hir_item_path_start",
+            bufs.hir_item_path_start.byte_size as u64,
+        );
+        let hir_item_path_end = mk(
+            "rb.parser.hir_item_path_end",
+            bufs.hir_item_path_end.byte_size as u64,
+        );
+        let hir_item_file_id = mk(
+            "rb.parser.hir_item_file_id",
+            bufs.hir_item_file_id.byte_size as u64,
+        );
+        let hir_item_import_target_kind = mk(
+            "rb.parser.hir_item_import_target_kind",
+            bufs.hir_item_import_target_kind.byte_size as u64,
+        );
 
         Self {
             ll1_status,
@@ -105,6 +145,14 @@ impl ParserReadbacks {
             hir_kind,
             hir_token_pos,
             hir_token_end,
+            hir_item_kind,
+            hir_item_name_token,
+            hir_item_namespace,
+            hir_item_visibility,
+            hir_item_path_start,
+            hir_item_path_end,
+            hir_item_file_id,
+            hir_item_import_target_kind,
         }
     }
 
@@ -233,6 +281,62 @@ impl ParserReadbacks {
             0,
             bufs.hir_token_end.byte_size as u64,
         );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_item_kind,
+            0,
+            &self.hir_item_kind,
+            0,
+            bufs.hir_item_kind.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_item_name_token,
+            0,
+            &self.hir_item_name_token,
+            0,
+            bufs.hir_item_name_token.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_item_namespace,
+            0,
+            &self.hir_item_namespace,
+            0,
+            bufs.hir_item_namespace.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_item_visibility,
+            0,
+            &self.hir_item_visibility,
+            0,
+            bufs.hir_item_visibility.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_item_path_start,
+            0,
+            &self.hir_item_path_start,
+            0,
+            bufs.hir_item_path_start.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_item_path_end,
+            0,
+            &self.hir_item_path_end,
+            0,
+            bufs.hir_item_path_end.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_item_file_id,
+            0,
+            &self.hir_item_file_id,
+            0,
+            bufs.hir_item_file_id.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_item_import_target_kind,
+            0,
+            &self.hir_item_import_target_kind,
+            0,
+            bufs.hir_item_import_target_kind.byte_size as u64,
+        );
 
         // depths_out, valid_out
         encoder.copy_buffer_to_buffer(
@@ -276,6 +380,14 @@ pub struct DecodedParserReadbacks {
     pub hir_kind: Vec<u32>,
     pub hir_token_pos: Vec<u32>,
     pub hir_token_end: Vec<u32>,
+    pub hir_item_kind: Vec<u32>,
+    pub hir_item_name_token: Vec<u32>,
+    pub hir_item_namespace: Vec<u32>,
+    pub hir_item_visibility: Vec<u32>,
+    pub hir_item_path_start: Vec<u32>,
+    pub hir_item_path_end: Vec<u32>,
+    pub hir_item_file_id: Vec<u32>,
+    pub hir_item_import_target_kind: Vec<u32>,
 }
 
 impl DecodedParserReadbacks {
@@ -286,33 +398,50 @@ impl DecodedParserReadbacks {
         rb: ParserReadbacks,
     ) -> Result<Self> {
         // Map all
-        let map = |b: &wgpu::Buffer| {
-            let sl = b.slice(..);
-            sl.map_async(wgpu::MapMode::Read, |_| {});
+        let map = |name: &str, b: &wgpu::Buffer| {
+            crate::gpu::passes_core::map_readback_for_progress(
+                &b.slice(..),
+                &format!("parser.readback.{name}"),
+            );
         };
-        map(&rb.headers);
-        map(&rb.ll1_status);
-        map(&rb.ll1_emit);
-        map(&rb.ll1_emit_pos);
-        map(&rb.ll1_block_seed_len);
-        map(&rb.ll1_seed_plan_status);
-        map(&rb.ll1_seeded_status);
-        map(&rb.ll1_seeded_emit);
-        map(&rb.sc);
-        map(&rb.emit);
-        map(&rb.match_idx);
-        map(&rb.depths);
-        map(&rb.valid);
-        map(&rb.node_kind);
-        map(&rb.parent);
-        map(&rb.first_child);
-        map(&rb.next_sibling);
-        map(&rb.subtree_end);
-        map(&rb.hir_kind);
-        map(&rb.hir_token_pos);
-        map(&rb.hir_token_end);
+        map("headers", &rb.headers);
+        map("ll1_status", &rb.ll1_status);
+        map("ll1_emit", &rb.ll1_emit);
+        map("ll1_emit_pos", &rb.ll1_emit_pos);
+        map("ll1_block_seed_len", &rb.ll1_block_seed_len);
+        map("ll1_seed_plan_status", &rb.ll1_seed_plan_status);
+        map("ll1_seeded_status", &rb.ll1_seeded_status);
+        map("ll1_seeded_emit", &rb.ll1_seeded_emit);
+        map("sc", &rb.sc);
+        map("emit", &rb.emit);
+        map("match_idx", &rb.match_idx);
+        map("depths", &rb.depths);
+        map("valid", &rb.valid);
+        map("node_kind", &rb.node_kind);
+        map("parent", &rb.parent);
+        map("first_child", &rb.first_child);
+        map("next_sibling", &rb.next_sibling);
+        map("subtree_end", &rb.subtree_end);
+        map("hir_kind", &rb.hir_kind);
+        map("hir_token_pos", &rb.hir_token_pos);
+        map("hir_token_end", &rb.hir_token_end);
+        map("hir_item_kind", &rb.hir_item_kind);
+        map("hir_item_name_token", &rb.hir_item_name_token);
+        map("hir_item_namespace", &rb.hir_item_namespace);
+        map("hir_item_visibility", &rb.hir_item_visibility);
+        map("hir_item_path_start", &rb.hir_item_path_start);
+        map("hir_item_path_end", &rb.hir_item_path_end);
+        map("hir_item_file_id", &rb.hir_item_file_id);
+        map(
+            "hir_item_import_target_kind",
+            &rb.hir_item_import_target_kind,
+        );
 
-        let _ = device.poll(wgpu::PollType::Wait);
+        crate::gpu::passes_core::wait_for_map_progress(
+            device,
+            "parser.readback",
+            wgpu::PollType::Wait,
+        );
 
         let ll1_status = {
             let data = rb.ll1_status.slice(..).get_mapped_range();
@@ -590,6 +719,110 @@ impl DecodedParserReadbacks {
             rb.hir_token_end.unmap();
             v
         };
+        let hir_item_kind = {
+            let data = rb.hir_item_kind.slice(..).get_mapped_range();
+            let mut v = Vec::with_capacity(tree_len);
+            for (i, chunk) in data.chunks_exact(4).enumerate() {
+                if i >= tree_len {
+                    break;
+                }
+                v.push(u32::from_le_bytes(chunk.try_into().unwrap()));
+            }
+            drop(data);
+            rb.hir_item_kind.unmap();
+            v
+        };
+        let hir_item_name_token = {
+            let data = rb.hir_item_name_token.slice(..).get_mapped_range();
+            let mut v = Vec::with_capacity(tree_len);
+            for (i, chunk) in data.chunks_exact(4).enumerate() {
+                if i >= tree_len {
+                    break;
+                }
+                v.push(u32::from_le_bytes(chunk.try_into().unwrap()));
+            }
+            drop(data);
+            rb.hir_item_name_token.unmap();
+            v
+        };
+        let hir_item_namespace = {
+            let data = rb.hir_item_namespace.slice(..).get_mapped_range();
+            let mut v = Vec::with_capacity(tree_len);
+            for (i, chunk) in data.chunks_exact(4).enumerate() {
+                if i >= tree_len {
+                    break;
+                }
+                v.push(u32::from_le_bytes(chunk.try_into().unwrap()));
+            }
+            drop(data);
+            rb.hir_item_namespace.unmap();
+            v
+        };
+        let hir_item_visibility = {
+            let data = rb.hir_item_visibility.slice(..).get_mapped_range();
+            let mut v = Vec::with_capacity(tree_len);
+            for (i, chunk) in data.chunks_exact(4).enumerate() {
+                if i >= tree_len {
+                    break;
+                }
+                v.push(u32::from_le_bytes(chunk.try_into().unwrap()));
+            }
+            drop(data);
+            rb.hir_item_visibility.unmap();
+            v
+        };
+        let hir_item_path_start = {
+            let data = rb.hir_item_path_start.slice(..).get_mapped_range();
+            let mut v = Vec::with_capacity(tree_len);
+            for (i, chunk) in data.chunks_exact(4).enumerate() {
+                if i >= tree_len {
+                    break;
+                }
+                v.push(u32::from_le_bytes(chunk.try_into().unwrap()));
+            }
+            drop(data);
+            rb.hir_item_path_start.unmap();
+            v
+        };
+        let hir_item_path_end = {
+            let data = rb.hir_item_path_end.slice(..).get_mapped_range();
+            let mut v = Vec::with_capacity(tree_len);
+            for (i, chunk) in data.chunks_exact(4).enumerate() {
+                if i >= tree_len {
+                    break;
+                }
+                v.push(u32::from_le_bytes(chunk.try_into().unwrap()));
+            }
+            drop(data);
+            rb.hir_item_path_end.unmap();
+            v
+        };
+        let hir_item_file_id = {
+            let data = rb.hir_item_file_id.slice(..).get_mapped_range();
+            let mut v = Vec::with_capacity(tree_len);
+            for (i, chunk) in data.chunks_exact(4).enumerate() {
+                if i >= tree_len {
+                    break;
+                }
+                v.push(u32::from_le_bytes(chunk.try_into().unwrap()));
+            }
+            drop(data);
+            rb.hir_item_file_id.unmap();
+            v
+        };
+        let hir_item_import_target_kind = {
+            let data = rb.hir_item_import_target_kind.slice(..).get_mapped_range();
+            let mut v = Vec::with_capacity(tree_len);
+            for (i, chunk) in data.chunks_exact(4).enumerate() {
+                if i >= tree_len {
+                    break;
+                }
+                v.push(u32::from_le_bytes(chunk.try_into().unwrap()));
+            }
+            drop(data);
+            rb.hir_item_import_target_kind.unmap();
+            v
+        };
 
         Ok(Self {
             ll1_status,
@@ -614,6 +847,14 @@ impl DecodedParserReadbacks {
             hir_kind,
             hir_token_pos,
             hir_token_end,
+            hir_item_kind,
+            hir_item_name_token,
+            hir_item_namespace,
+            hir_item_visibility,
+            hir_item_path_start,
+            hir_item_path_end,
+            hir_item_file_id,
+            hir_item_import_target_kind,
         })
     }
 }

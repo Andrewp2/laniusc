@@ -1,22 +1,47 @@
 mod common;
 
 use laniusc::{
+    gpu::buffers::storage_ro_from_u32s,
     lexer::{
         gpu::driver::GpuLexer,
         tables::tokens::{N_KINDS, TokenKind},
-        test_cpu::lex_on_test_cpu,
+        test_cpu::{TestCpuToken, lex_on_test_cpu},
     },
     parser::{
         gpu::{
             driver::GpuParser,
             passes::{
+                hir_item_fields::{
+                    HIR_ITEM_IMPORT_TARGET_PATH,
+                    HIR_ITEM_IMPORT_TARGET_STRING,
+                    HIR_ITEM_KIND_CONST,
+                    HIR_ITEM_KIND_ENUM,
+                    HIR_ITEM_KIND_EXTERN_FN,
+                    HIR_ITEM_KIND_FN,
+                    HIR_ITEM_KIND_IMPORT,
+                    HIR_ITEM_KIND_MODULE,
+                    HIR_ITEM_KIND_STRUCT,
+                    HIR_ITEM_KIND_TYPE_ALIAS,
+                    HIR_ITEM_NAMESPACE_MODULE,
+                    HIR_ITEM_NAMESPACE_TYPE,
+                    HIR_ITEM_NAMESPACE_VALUE,
+                    HIR_ITEM_VIS_PRIVATE,
+                    HIR_ITEM_VIS_PUBLIC,
+                },
                 hir_nodes::{
                     HIR_NODE_BINARY_EXPR,
+                    HIR_NODE_CONST_ITEM,
+                    HIR_NODE_ENUM_ITEM,
                     HIR_NODE_FILE,
                     HIR_NODE_FN,
+                    HIR_NODE_IMPORT_ITEM,
                     HIR_NODE_LET_STMT,
                     HIR_NODE_LITERAL_EXPR,
+                    HIR_NODE_MODULE_ITEM,
+                    HIR_NODE_PATH_EXPR,
                     HIR_NODE_RETURN_STMT,
+                    HIR_NODE_STRUCT_ITEM,
+                    HIR_NODE_STRUCT_LITERAL_EXPR,
                 },
                 ll1_blocks_01::{
                     LL1_BLOCK_STATUS_ACCEPTED,
@@ -25,7 +50,7 @@ use laniusc::{
                     LL1_BLOCK_STATUS_ERROR,
                 },
             },
-            syntax::check_tokens_on_gpu,
+            syntax::{check_token_buffer_on_gpu_with_file_ids, check_tokens_on_gpu},
         },
         tables::{INVALID_TABLE_ENTRY, PrecomputedParseTables, encode_pop, encode_push},
     },
@@ -59,6 +84,81 @@ fn raw_parser_kind(kind: TokenKind) -> TokenKind {
         IfRBrace => RBrace,
         other => other,
     }
+}
+
+#[test]
+#[ignore]
+fn debug_parser_hir_positions_for_generic_return() {
+    common::block_on_gpu_with_timeout("GPU parser generic return token spans", async move {
+        let src = r#"
+struct Range<T> {
+    start: T,
+    end: T,
+}
+
+fn make_range(start: i32, end: i32) -> Range<i32> {
+    return Range { start: start, end: end };
+}
+"#;
+
+        let tokens = lex_on_test_cpu(src).expect("test CPU oracle lex fixture");
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let parser = GpuParser::new().await.expect("GPU parser init");
+        let tables =
+            PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+                .expect("load generated parse tables");
+
+        let parsed = lexer
+            .with_resident_tokens(src, |_, _, bufs| {
+                parser.parse_resident_tokens(bufs.n, &bufs.tokens_out, &bufs.token_count, &tables)
+            })
+            .await
+            .expect("resident GPU lex")
+            .expect("resident GPU parse");
+
+        println!(
+            "hir_kind count={} token span count={}",
+            parsed.hir_kind.len(),
+            parsed.hir_token_pos.len()
+        );
+        for (i, (&kind, &pos)) in parsed
+            .hir_kind
+            .iter()
+            .zip(parsed.hir_token_pos.iter())
+            .enumerate()
+        {
+            if kind == HIR_NODE_RETURN_STMT {
+                println!(
+                    "hir node {} => kind={} pos={} token_text={:?}",
+                    i,
+                    kind,
+                    pos,
+                    tokens
+                        .get(pos as usize)
+                        .map(|t| &src[t.start..t.start + t.len])
+                );
+            }
+        }
+
+        for (i, &kind) in parsed.hir_kind.iter().enumerate() {
+            if kind == 0 {
+                continue;
+            }
+            let pos = parsed.hir_token_pos.get(i).copied().unwrap_or(u32::MAX);
+            let end = parsed.hir_token_end.get(i).copied().unwrap_or(u32::MAX);
+            if pos == u32::MAX || end == u32::MAX || pos >= end {
+                continue;
+            }
+            if pos >= tokens.len() as u32 || end > tokens.len() as u32 {
+                continue;
+            }
+            println!(
+                "node {i}: kind={kind} span=({pos},{end}) text={:?}",
+                &src[tokens[pos as usize].start
+                    ..tokens[(end - 1u32) as usize].start + tokens[(end - 1u32) as usize].len]
+            );
+        }
+    });
 }
 
 fn assert_tree_forest_shape(node_kind: &[u32], parent: &[u32], prod_arity: &[u32]) {
@@ -148,6 +248,97 @@ fn assert_hir_token_spans(name: &str, hir_token_pos: &[u32], hir_token_end: &[u3
     }
 }
 
+fn assert_hir_kind_points_to_token(
+    name: &str,
+    hir_kind: &[u32],
+    hir_token_pos: &[u32],
+    tokens: &[TestCpuToken],
+    kind: u32,
+    token_kind: TokenKind,
+) {
+    let found = hir_kind
+        .iter()
+        .zip(hir_token_pos)
+        .filter(|&(&hir, _)| hir == kind)
+        .any(|(_, &pos)| {
+            let pos = pos as usize;
+            pos < tokens.len() && raw_parser_kind(tokens[pos].kind) == token_kind
+        });
+    assert!(
+        found,
+        "{name} should contain HIR kind {kind} pointing at {token_kind:?}"
+    );
+}
+
+fn hir_span_snippets_for_kind(
+    src: &str,
+    hir_kind: &[u32],
+    hir_token_pos: &[u32],
+    hir_token_end: &[u32],
+    tokens: &[TestCpuToken],
+    kind: u32,
+) -> Vec<String> {
+    hir_kind
+        .iter()
+        .zip(hir_token_pos)
+        .zip(hir_token_end)
+        .filter_map(|((&hir, &start), &end)| {
+            if hir != kind || start == u32::MAX || end == u32::MAX {
+                return None;
+            }
+            let start = start as usize;
+            let end = end as usize;
+            if start >= end || end > tokens.len() {
+                return None;
+            }
+            let byte_start = tokens[start].start;
+            let last = tokens[end - 1];
+            let byte_end = last.start + last.len;
+            Some(src[byte_start..byte_end].to_string())
+        })
+        .collect()
+}
+
+fn token_snippet(src: &str, tokens: &[TestCpuToken], token: u32) -> Option<String> {
+    let token = token as usize;
+    let t = tokens.get(token)?;
+    Some(src[t.start..t.start + t.len].to_string())
+}
+
+fn token_span_snippet(src: &str, tokens: &[TestCpuToken], start: u32, end: u32) -> Option<String> {
+    if start == u32::MAX || end == u32::MAX || start >= end {
+        return None;
+    }
+    let start = start as usize;
+    let end = end as usize;
+    if end > tokens.len() {
+        return None;
+    }
+    let byte_start = tokens[start].start;
+    let last = tokens[end - 1];
+    Some(src[byte_start..last.start + last.len].to_string())
+}
+
+fn hir_item_names_for_kind(
+    src: &str,
+    tokens: &[TestCpuToken],
+    hir_item_kind: &[u32],
+    hir_item_name_token: &[u32],
+    item_kind: u32,
+) -> Vec<String> {
+    hir_item_kind
+        .iter()
+        .zip(hir_item_name_token)
+        .filter_map(|(&kind, &name)| {
+            if kind == item_kind {
+                token_snippet(src, tokens, name)
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 #[test]
 fn gpu_parser_builds_tree_from_resident_lexer_tokens() {
     common::block_on_gpu_with_timeout("GPU parser resident lexer tokens", async move {
@@ -196,6 +387,61 @@ fn gpu_parser_builds_tree_from_resident_lexer_tokens() {
             &res.next_sibling,
             &res.subtree_end,
             &tables.prod_arity,
+        );
+    });
+}
+
+#[test]
+fn gpu_parser_ll1_hir_classifies_current_item_and_struct_literal_productions() {
+    common::block_on_gpu_with_timeout("GPU parser current HIR production ids", async move {
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let parser = GpuParser::new().await.expect("GPU parser init");
+        let tables =
+            PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+                .expect("load generated parse tables");
+        let src = "const LIMIT: i32 = 7; enum Maybe { Some(i32), None } struct Point { x: i32, y: i32 } fn make() { let p = Point { x: 1, y: 2 }; return; }";
+        let tokens = lex_on_test_cpu(src).expect("test CPU oracle lex fixture");
+
+        let res = lexer
+            .with_resident_tokens(src, |_, _, bufs| {
+                parser.parse_resident_tokens(bufs.n, &bufs.tokens_out, &bufs.token_count, &tables)
+            })
+            .await
+            .expect("resident GPU lex")
+            .expect("resident GPU parse");
+
+        assert!(res.ll1.accepted, "resident LL(1) parser rejected fixture");
+        assert_hir_kind_points_to_token(
+            "resident",
+            &res.hir_kind,
+            &res.hir_token_pos,
+            &tokens,
+            HIR_NODE_CONST_ITEM,
+            TokenKind::Const,
+        );
+        assert_hir_kind_points_to_token(
+            "resident",
+            &res.hir_kind,
+            &res.hir_token_pos,
+            &tokens,
+            HIR_NODE_ENUM_ITEM,
+            TokenKind::Enum,
+        );
+        assert_hir_kind_points_to_token(
+            "resident",
+            &res.hir_kind,
+            &res.hir_token_pos,
+            &tokens,
+            HIR_NODE_STRUCT_ITEM,
+            TokenKind::Struct,
+        );
+        assert_hir_kind_points_to_token(
+            "resident",
+            &res.hir_kind,
+            &res.hir_token_pos,
+            &tokens,
+            HIR_NODE_STRUCT_LITERAL_EXPR,
+            TokenKind::LBrace,
         );
     });
 }
@@ -292,6 +538,38 @@ fn gpu_syntax_accepts_extern_function_declaration_shape() {
 }
 
 #[test]
+fn gpu_syntax_rejects_invalid_token_file_ids_from_gpu_metadata() {
+    common::block_on_gpu_with_timeout("GPU syntax token file-id validation", async move {
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        lexer
+            .with_resident_tokens("fn main() { return 0; }", |device, queue, bufs| {
+                let invalid_file_ids = vec![u32::MAX; bufs.token_file_id.count.max(1)];
+                let invalid_file_id_buf = storage_ro_from_u32s(
+                    device,
+                    "test.parser.syntax.invalid_token_file_id",
+                    &invalid_file_ids,
+                );
+                let err = check_token_buffer_on_gpu_with_file_ids(
+                    device,
+                    queue,
+                    bufs.n,
+                    &bufs.tokens_out,
+                    &bufs.token_count,
+                    &invalid_file_id_buf,
+                )
+                .expect_err("invalid token file ids should fail syntax validation");
+                let message = err.to_string();
+                assert!(
+                    message.contains("UnexpectedToken"),
+                    "expected invalid file id to be reported as syntax rejection, got {message}"
+                );
+            })
+            .await
+            .expect("resident lex");
+    });
+}
+
+#[test]
 fn generated_ll1_tables_accept_module_and_import_items() {
     let tables =
         PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
@@ -306,6 +584,380 @@ fn generated_ll1_tables_accept_module_and_import_items() {
 }
 
 #[test]
+fn gpu_ll1_hir_preserves_module_import_and_path_evidence() {
+    common::block_on_gpu_with_timeout("GPU parser module/import/path HIR evidence", async move {
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let parser = GpuParser::new().await.expect("GPU parser init");
+        let tables =
+            PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+                .expect("load generated parse tables");
+        let src = "module core::numbers; import core::i32; fn main() { return core::i32::abs(1); }";
+        let tokens = lex_on_test_cpu(src).expect("test CPU oracle lex fixture");
+
+        let res = lexer
+            .with_resident_tokens(src, |_, _, bufs| {
+                parser.parse_resident_tokens(bufs.n, &bufs.tokens_out, &bufs.token_count, &tables)
+            })
+            .await
+            .expect("resident GPU lex")
+            .expect("resident GPU parse");
+
+        assert!(res.ll1.accepted, "resident LL(1) parser rejected fixture");
+        assert_hir_kind_points_to_token(
+            "resident",
+            &res.hir_kind,
+            &res.hir_token_pos,
+            &tokens,
+            HIR_NODE_MODULE_ITEM,
+            TokenKind::Module,
+        );
+        assert_hir_kind_points_to_token(
+            "resident",
+            &res.hir_kind,
+            &res.hir_token_pos,
+            &tokens,
+            HIR_NODE_IMPORT_ITEM,
+            TokenKind::Import,
+        );
+        assert_hir_kind_points_to_token(
+            "resident",
+            &res.hir_kind,
+            &res.hir_token_pos,
+            &tokens,
+            HIR_NODE_PATH_EXPR,
+            TokenKind::Ident,
+        );
+        let path_spans = hir_span_snippets_for_kind(
+            src,
+            &res.hir_kind,
+            &res.hir_token_pos,
+            &res.hir_token_end,
+            &tokens,
+            HIR_NODE_PATH_EXPR,
+        );
+        assert!(
+            path_spans.iter().any(|path| path == "core::numbers"),
+            "resident HIR should span the full module path, got {path_spans:?}"
+        );
+        assert!(
+            path_spans.iter().any(|path| path == "core::i32"),
+            "resident HIR should span the full import path, got {path_spans:?}"
+        );
+        assert!(
+            path_spans.iter().any(|path| path == "core::i32::abs"),
+            "resident HIR should span the full qualified value path, got {path_spans:?}"
+        );
+    });
+}
+
+#[test]
+fn gpu_ll1_hir_item_fields_are_ast_derived_and_exclude_methods() {
+    common::block_on_gpu_with_timeout("GPU parser HIR item field metadata", async move {
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let parser = GpuParser::new().await.expect("GPU parser init");
+        let tables =
+            PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+                .expect("load generated parse tables");
+        let src = r#"
+module core::numbers;
+import core::bool;
+import "core/bool";
+
+pub const MIN: i32 = 0;
+fn private_fn() { return; }
+pub fn abs(value: i32) -> i32 { return value; }
+pub extern "wasm" fn host_alloc(size: usize,) -> u32;
+extern fn clock_ms() -> i64;
+pub struct Point { x: i32 }
+enum Maybe { Some(i32), None }
+type Alias = i32;
+
+impl Point {
+    pub fn method(self: Point) { return; }
+}
+"#;
+        let tokens = lex_on_test_cpu(src).expect("test CPU oracle lex fixture");
+
+        let res = lexer
+            .with_resident_tokens(src, |_, _, bufs| {
+                parser.parse_resident_tokens(bufs.n, &bufs.tokens_out, &bufs.token_count, &tables)
+            })
+            .await
+            .expect("resident GPU lex")
+            .expect("resident GPU parse");
+
+        assert!(res.ll1.accepted, "resident LL(1) parser rejected fixture");
+
+        let module_paths = res
+            .hir_item_kind
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &kind)| {
+                if kind == HIR_ITEM_KIND_MODULE {
+                    token_span_snippet(
+                        src,
+                        &tokens,
+                        res.hir_item_path_start[i],
+                        res.hir_item_path_end[i],
+                    )
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(module_paths, vec!["core::numbers"]);
+
+        let import_paths = res
+            .hir_item_kind
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &kind)| {
+                if kind == HIR_ITEM_KIND_IMPORT {
+                    token_span_snippet(
+                        src,
+                        &tokens,
+                        res.hir_item_path_start[i],
+                        res.hir_item_path_end[i],
+                    )
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(import_paths, vec!["core::bool", "\"core/bool\""]);
+
+        let import_targets = res
+            .hir_item_kind
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &kind)| {
+                if kind == HIR_ITEM_KIND_IMPORT {
+                    Some(res.hir_item_import_target_kind[i])
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            import_targets,
+            vec![HIR_ITEM_IMPORT_TARGET_PATH, HIR_ITEM_IMPORT_TARGET_STRING]
+        );
+
+        for (item_kind, namespace, visibility, name) in [
+            (
+                HIR_ITEM_KIND_CONST,
+                HIR_ITEM_NAMESPACE_VALUE,
+                HIR_ITEM_VIS_PUBLIC,
+                "MIN",
+            ),
+            (
+                HIR_ITEM_KIND_FN,
+                HIR_ITEM_NAMESPACE_VALUE,
+                HIR_ITEM_VIS_PRIVATE,
+                "private_fn",
+            ),
+            (
+                HIR_ITEM_KIND_FN,
+                HIR_ITEM_NAMESPACE_VALUE,
+                HIR_ITEM_VIS_PUBLIC,
+                "abs",
+            ),
+            (
+                HIR_ITEM_KIND_EXTERN_FN,
+                HIR_ITEM_NAMESPACE_VALUE,
+                HIR_ITEM_VIS_PUBLIC,
+                "host_alloc",
+            ),
+            (
+                HIR_ITEM_KIND_EXTERN_FN,
+                HIR_ITEM_NAMESPACE_VALUE,
+                HIR_ITEM_VIS_PRIVATE,
+                "clock_ms",
+            ),
+            (
+                HIR_ITEM_KIND_STRUCT,
+                HIR_ITEM_NAMESPACE_TYPE,
+                HIR_ITEM_VIS_PUBLIC,
+                "Point",
+            ),
+            (
+                HIR_ITEM_KIND_ENUM,
+                HIR_ITEM_NAMESPACE_TYPE,
+                HIR_ITEM_VIS_PRIVATE,
+                "Maybe",
+            ),
+            (
+                HIR_ITEM_KIND_TYPE_ALIAS,
+                HIR_ITEM_NAMESPACE_TYPE,
+                HIR_ITEM_VIS_PRIVATE,
+                "Alias",
+            ),
+        ] {
+            let found = res.hir_item_kind.iter().enumerate().any(|(i, &kind)| {
+                kind == item_kind
+                    && res.hir_item_namespace[i] == namespace
+                    && res.hir_item_visibility[i] == visibility
+                    && token_snippet(src, &tokens, res.hir_item_name_token[i]).as_deref()
+                        == Some(name)
+                    && res.hir_item_file_id[i] == 0
+            });
+            assert!(found, "missing HIR item metadata for {name}");
+        }
+
+        let fn_names = hir_item_names_for_kind(
+            src,
+            &tokens,
+            &res.hir_item_kind,
+            &res.hir_item_name_token,
+            HIR_ITEM_KIND_FN,
+        );
+        assert!(
+            fn_names.contains(&"private_fn".to_string()) && fn_names.contains(&"abs".to_string()),
+            "top-level function names should be recorded, got {fn_names:?}"
+        );
+        assert!(
+            !fn_names.contains(&"method".to_string()),
+            "impl methods must not be reported as top-level functions"
+        );
+
+        for (i, &kind) in res.hir_item_kind.iter().enumerate() {
+            if kind == HIR_ITEM_KIND_MODULE || kind == HIR_ITEM_KIND_IMPORT {
+                assert_eq!(res.hir_item_namespace[i], HIR_ITEM_NAMESPACE_MODULE);
+                assert_eq!(res.hir_item_visibility[i], HIR_ITEM_VIS_PRIVATE);
+                assert_eq!(res.hir_item_file_id[i], 0);
+            }
+        }
+    });
+}
+
+#[test]
+fn gpu_syntax_accepts_leading_module_metadata() {
+    common::block_on_gpu_with_timeout("GPU syntax leading module metadata", async move {
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let src = "module app::main; fn main() { return 0; }";
+        let tokens = lexer.lex(src).await.expect("GPU lex module fixture");
+        check_tokens_on_gpu(&tokens)
+            .await
+            .expect("GPU syntax should accept leading module metadata");
+    });
+}
+
+#[test]
+fn gpu_syntax_accepts_leading_import_metadata_and_rejects_invalid_module_metadata() {
+    common::block_on_gpu_with_timeout("GPU syntax module/import metadata", async move {
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        for src in [
+            "import core::i32; fn main() { return 0; }",
+            "import \"stdlib/core/i32.lani\"; fn main() { return 0; }",
+            "module app::main; import core::i32; import test::assert; fn main() { return 0; }",
+        ] {
+            let tokens = lexer.lex(src).await.expect("GPU lex import fixture");
+            check_tokens_on_gpu(&tokens)
+                .await
+                .expect("GPU syntax should accept leading import metadata");
+        }
+        for src in [
+            "fn main() { return 0; } import core::i32;",
+            "fn main() { return 0; } module app::late;",
+            "module app::main; module app::again; fn main() { return 0; }",
+        ] {
+            let tokens = lexer.lex(src).await.expect("GPU lex module/import fixture");
+            check_tokens_on_gpu(&tokens)
+                .await
+                .expect_err("GPU syntax should reject non-leading import/module metadata");
+        }
+    });
+}
+
+#[test]
+fn gpu_syntax_treats_source_pack_module_import_metadata_file_locally() {
+    common::block_on_gpu_with_timeout("GPU syntax source pack metadata", async move {
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let valid = [
+            "module first; fn first() { return; } ",
+            "module second; import first; fn second() { return; }",
+        ];
+        lexer
+            .with_resident_source_pack_tokens(&valid, |device, queue, bufs| {
+                check_token_buffer_on_gpu_with_file_ids(
+                    device,
+                    queue,
+                    bufs.n,
+                    &bufs.tokens_out,
+                    &bufs.token_count,
+                    &bufs.token_file_id,
+                )
+                .expect("GPU syntax should accept file-local source pack metadata");
+            })
+            .await
+            .expect("resident source pack lex");
+
+        for invalid in [
+            [
+                "module first; fn first() { return; } ",
+                "fn second() { return; } import first;",
+            ],
+            [
+                "module first; fn first() { return; } ",
+                "module second; module duplicate; fn second() { return; }",
+            ],
+            [
+                "module first; fn first() { return; } ",
+                "module ; fn second() { return; }",
+            ],
+        ] {
+            lexer
+                .with_resident_source_pack_tokens(&invalid, |device, queue, bufs| {
+                    check_token_buffer_on_gpu_with_file_ids(
+                        device,
+                        queue,
+                        bufs.n,
+                        &bufs.tokens_out,
+                        &bufs.token_count,
+                        &bufs.token_file_id,
+                    )
+                    .expect_err(
+                        "GPU syntax should reject non-leading module/import metadata per file",
+                    );
+                })
+                .await
+                .expect("resident invalid source pack lex");
+        }
+    });
+}
+
+#[test]
+fn gpu_syntax_accepts_simple_stdlib_module_seed_files() {
+    common::block_on_gpu_with_timeout("GPU syntax stdlib seed module metadata", async move {
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        for (path, src) in [
+            (
+                "stdlib/core/i32.lani",
+                include_str!("../stdlib/core/i32.lani"),
+            ),
+            (
+                "stdlib/core/bool.lani",
+                include_str!("../stdlib/core/bool.lani"),
+            ),
+            (
+                "stdlib/test/assert.lani",
+                include_str!("../stdlib/test/assert.lani"),
+            ),
+        ] {
+            let tokens = lexer
+                .lex(src)
+                .await
+                .unwrap_or_else(|err| panic!("GPU lex {path}: {err}"));
+            let result = check_tokens_on_gpu(&tokens).await;
+            assert!(
+                result.is_ok(),
+                "{path} should accept leading module metadata: {result:?}"
+            );
+        }
+    });
+}
+
+#[test]
 fn generated_ll1_tables_accept_namespaced_paths() {
     let tables =
         PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
@@ -317,6 +969,44 @@ fn generated_ll1_tables_accept_namespaced_paths() {
     tables
         .test_cpu_ll1_production_stream_with_positions(&token_kinds)
         .expect("namespaced path fixture should parse with LL(1)");
+}
+
+#[test]
+fn gpu_syntax_accepts_call_shaped_qualified_value_paths_only() {
+    common::block_on_gpu_with_timeout("GPU syntax qualified value path call shape", async move {
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let accepted = r#"
+module app::main;
+
+fn helper() -> i32 {
+    return 1;
+}
+
+fn main() {
+    return app::main::helper();
+}
+"#;
+        let tokens = lexer
+            .lex(accepted)
+            .await
+            .expect("GPU lex same-source qualified call fixture");
+        check_tokens_on_gpu(&tokens)
+            .await
+            .expect("GPU syntax should accept call-shaped qualified value paths");
+
+        for src in [
+            "fn main() { let value: i32 = core::i32::MIN; return value; }",
+            "fn main() { return core::i32::abs + 1; }",
+        ] {
+            let tokens = lexer
+                .lex(src)
+                .await
+                .expect("GPU lex non-call qualified value path fixture");
+            check_tokens_on_gpu(&tokens)
+                .await
+                .expect_err("GPU syntax should still reject non-call qualified value paths");
+        }
+    });
 }
 
 #[test]
@@ -384,6 +1074,20 @@ fn generated_ll1_tables_accept_match_expressions() {
 }
 
 #[test]
+fn generated_ll1_tables_accept_trailing_commas_in_stdlib_shapes() {
+    let tables =
+        PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+            .expect("load generated parse tables");
+    let token_kinds = kinds_with_sentinels(
+        "struct Pair { left: i32, right: bool, } enum Maybe<T,> { Some(T,), None, } type Alias<T,> = Maybe<T,>; fn main(values: [i32; 2],) { let xs = [1, 2,]; let p = Pair { left: 1, right: true, }; let out = match (value) { Some(inner,) -> inner, _ -> value, }; take(1, 2,); return; }",
+    );
+
+    tables
+        .test_cpu_ll1_production_stream_with_positions(&token_kinds)
+        .expect("trailing comma fixture should parse with LL(1)");
+}
+
+#[test]
 fn generated_ll1_tables_accept_slice_type_syntax() {
     let tables =
         PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
@@ -407,6 +1111,22 @@ fn generated_ll1_tables_accept_reference_type_syntax() {
     tables
         .test_cpu_ll1_production_stream_with_positions(&token_kinds)
         .expect("reference type fixture should parse with LL(1)");
+}
+
+#[test]
+fn gpu_syntax_rejects_general_references_until_borrow_semantics_exist() {
+    common::block_on_gpu_with_timeout("GPU syntax general reference rejection", async move {
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        for src in [
+            "fn read(value: &i32) -> i32 { return 0; }",
+            "fn main() { let value: i32 = 7; let ptr: &i32 = &value; return value; }",
+        ] {
+            let tokens = lexer.lex(src).await.expect("GPU lex reference fixture");
+            check_tokens_on_gpu(&tokens)
+                .await
+                .expect_err("GPU syntax should reject general references until borrowing exists");
+        }
+    });
 }
 
 #[test]
@@ -449,6 +1169,242 @@ fn generated_ll1_tables_accept_multiple_generic_type_parameter_bounds() {
     tables
         .test_cpu_ll1_production_stream_with_positions(&token_kinds)
         .expect("multiple generic type parameter bounds fixture should parse with LL(1)");
+}
+
+#[test]
+fn generated_ll1_tables_accept_where_clause_declarations() {
+    let tables =
+        PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+            .expect("load generated parse tables");
+    let token_kinds = kinds_with_sentinels(
+        "pub trait Eq<T> where T: core::cmp::Eq<T> { pub fn eq(left: T, right: T) -> bool where T: core::cmp::Eq<T>; } pub struct Wrapper<T> where T: Eq<T> { value: T } pub enum Maybe<T> where T: Eq<T> { Some(T), None } pub type Wrapped<T> where T: Eq<T> = Wrapper<T>; pub impl<T> Eq<T> for Wrapper<T> where T: Eq<T> { pub fn eq(left: Wrapper<T>, right: Wrapper<T>) -> bool where T: Eq<T> { return true; } } pub fn keep<T>(value: T) -> T where T: Eq<T>, { return value; }",
+    );
+
+    tables
+        .test_cpu_ll1_production_stream_with_positions(&token_kinds)
+        .expect("where-clause fixture should parse with LL(1)");
+}
+
+#[test]
+fn generated_ll1_tables_accept_self_receiver_methods() {
+    let tables =
+        PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+            .expect("load generated parse tables");
+    let token_kinds = kinds_with_sentinels(
+        "trait Len { fn len(self) -> i32; fn is_empty(&self) -> bool; } struct Range { start: i32, end: i32 } impl Range { fn start(self) -> i32 { return self.start; } fn end(self: Range) -> i32 { return self.end; } fn is_empty(&self) -> bool { return self.start == self.end; } }",
+    );
+
+    tables
+        .test_cpu_ll1_production_stream_with_positions(&token_kinds)
+        .expect("self receiver fixture should parse with LL(1)");
+}
+
+#[test]
+fn generated_ll1_tables_accept_core_range_seed() {
+    let tables =
+        PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+            .expect("load generated parse tables");
+    let token_kinds = kinds_with_sentinels(include_str!("../stdlib/core/range.lani"));
+
+    tables
+        .test_cpu_ll1_production_stream_with_positions(&token_kinds)
+        .expect("core range stdlib seed should parse with LL(1)");
+}
+
+#[test]
+fn generated_ll1_tables_accept_stdlib_seed_files() {
+    let tables =
+        PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+            .expect("load generated parse tables");
+    let fixtures = [
+        (
+            "stdlib/core/i32.lani",
+            include_str!("../stdlib/core/i32.lani"),
+        ),
+        (
+            "stdlib/core/u8.lani",
+            include_str!("../stdlib/core/u8.lani"),
+        ),
+        (
+            "stdlib/core/u32.lani",
+            include_str!("../stdlib/core/u32.lani"),
+        ),
+        (
+            "stdlib/core/i64.lani",
+            include_str!("../stdlib/core/i64.lani"),
+        ),
+        (
+            "stdlib/core/f32.lani",
+            include_str!("../stdlib/core/f32.lani"),
+        ),
+        (
+            "stdlib/core/char.lani",
+            include_str!("../stdlib/core/char.lani"),
+        ),
+        (
+            "stdlib/core/bool.lani",
+            include_str!("../stdlib/core/bool.lani"),
+        ),
+        (
+            "stdlib/core/array_i32.lani",
+            include_str!("../stdlib/core/array_i32.lani"),
+        ),
+        (
+            "stdlib/core/array_i32_4.lani",
+            include_str!("../stdlib/core/array_i32_4.lani"),
+        ),
+        (
+            "stdlib/core/option.lani",
+            include_str!("../stdlib/core/option.lani"),
+        ),
+        (
+            "stdlib/core/result.lani",
+            include_str!("../stdlib/core/result.lani"),
+        ),
+        (
+            "stdlib/core/ordering.lani",
+            include_str!("../stdlib/core/ordering.lani"),
+        ),
+        (
+            "stdlib/core/cmp.lani",
+            include_str!("../stdlib/core/cmp.lani"),
+        ),
+        (
+            "stdlib/core/hash.lani",
+            include_str!("../stdlib/core/hash.lani"),
+        ),
+        (
+            "stdlib/core/range.lani",
+            include_str!("../stdlib/core/range.lani"),
+        ),
+        (
+            "stdlib/core/slice.lani",
+            include_str!("../stdlib/core/slice.lani"),
+        ),
+        (
+            "stdlib/core/panic.lani",
+            include_str!("../stdlib/core/panic.lani"),
+        ),
+        (
+            "stdlib/core/target.lani",
+            include_str!("../stdlib/core/target.lani"),
+        ),
+        (
+            "stdlib/alloc/allocator.lani",
+            include_str!("../stdlib/alloc/allocator.lani"),
+        ),
+        ("stdlib/std/io.lani", include_str!("../stdlib/std/io.lani")),
+        (
+            "stdlib/std/process.lani",
+            include_str!("../stdlib/std/process.lani"),
+        ),
+        (
+            "stdlib/std/env.lani",
+            include_str!("../stdlib/std/env.lani"),
+        ),
+        (
+            "stdlib/std/time.lani",
+            include_str!("../stdlib/std/time.lani"),
+        ),
+        ("stdlib/std/fs.lani", include_str!("../stdlib/std/fs.lani")),
+        (
+            "stdlib/std/net.lani",
+            include_str!("../stdlib/std/net.lani"),
+        ),
+        (
+            "stdlib/test/assert.lani",
+            include_str!("../stdlib/test/assert.lani"),
+        ),
+        ("stdlib/i32.lani", include_str!("../stdlib/i32.lani")),
+        ("stdlib/bool.lani", include_str!("../stdlib/bool.lani")),
+        (
+            "stdlib/array_i32_4.lani",
+            include_str!("../stdlib/array_i32_4.lani"),
+        ),
+    ];
+
+    for (path, src) in fixtures {
+        let token_kinds = kinds_with_sentinels(src);
+        tables
+            .test_cpu_ll1_production_stream_with_positions(&token_kinds)
+            .unwrap_or_else(|err| panic!("{path} should parse with LL(1): {err:?}"));
+    }
+}
+
+#[test]
+fn gpu_parser_accepts_where_clause_declarations_from_resident_lexer_tokens() {
+    common::block_on_gpu_with_timeout("GPU parser where clauses", async move {
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let parser = GpuParser::new().await.expect("GPU parser init");
+        let tables =
+            PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+                .expect("load generated parse tables");
+        let src = "pub trait Eq<T> where T: core::cmp::Eq<T> { pub fn eq(left: T, right: T) -> bool where T: core::cmp::Eq<T>; } pub impl<T> Eq<T> for T where T: core::cmp::Eq<T> { pub fn eq(left: T, right: T) -> bool where T: core::cmp::Eq<T> { return true; } } pub fn keep<T>(value: T) -> T where T: core::cmp::Eq<T>, { return value; }";
+
+        let res = lexer
+            .with_resident_tokens(src, |_, _, bufs| {
+                parser.parse_resident_tokens(bufs.n, &bufs.tokens_out, &bufs.token_count, &tables)
+            })
+            .await
+            .expect("resident GPU lex")
+            .expect("resident GPU parse");
+
+        assert!(
+            res.ll1.accepted,
+            "where-clause fixture rejected by GPU parser"
+        );
+        assert!(!res.ll1_emit_stream.is_empty());
+    });
+}
+
+#[test]
+fn gpu_parser_accepts_self_receivers_from_resident_lexer_tokens() {
+    common::block_on_gpu_with_timeout("GPU parser self receivers", async move {
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let parser = GpuParser::new().await.expect("GPU parser init");
+        let tables =
+            PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+                .expect("load generated parse tables");
+        let src = "trait Len { fn len(self) -> i32; fn is_empty(&self) -> bool; } impl Range { fn start(self) -> i32 { return self.start; } fn end(self: Range) -> i32 { return self.end; } }";
+
+        let res = lexer
+            .with_resident_tokens(src, |_, _, bufs| {
+                parser.parse_resident_tokens(bufs.n, &bufs.tokens_out, &bufs.token_count, &tables)
+            })
+            .await
+            .expect("resident GPU lex")
+            .expect("resident GPU parse");
+
+        assert!(
+            res.ll1.accepted,
+            "self receiver fixture rejected by GPU parser"
+        );
+        assert!(!res.ll1_emit_stream.is_empty());
+    });
+}
+
+#[test]
+fn gpu_syntax_accepts_where_clause_shape() {
+    common::block_on_gpu_with_timeout("GPU syntax where clauses", async move {
+        let src = "pub fn keep<T>(value: T) -> T where T: core::cmp::Eq<T>, { return value; }";
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let tokens = lexer.lex(src).await.expect("GPU lex where-clause fixture");
+        check_tokens_on_gpu(&tokens)
+            .await
+            .expect("GPU syntax should accept where-clause fixture");
+    });
+}
+
+#[test]
+fn gpu_syntax_accepts_self_receiver_shape() {
+    common::block_on_gpu_with_timeout("GPU syntax self receivers", async move {
+        let src = "impl Range { fn start(self) -> i32 { return self.start; } fn end(self: Range) -> i32 { return self.end; } fn is_empty(&self) -> bool { return self.start == self.end; } }";
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let tokens = lexer.lex(src).await.expect("GPU lex self receiver fixture");
+        check_tokens_on_gpu(&tokens)
+            .await
+            .expect("GPU syntax should accept self receiver fixture");
+    });
 }
 
 #[test]
@@ -496,6 +1452,18 @@ fn generated_ll1_tables_accept_type_alias_declarations() {
 }
 
 #[test]
+fn gpu_syntax_rejects_type_aliases_until_gpu_alias_resolution_exists() {
+    common::block_on_gpu_with_timeout("GPU syntax type alias rejection", async move {
+        let src = "type Count = i32; fn main() { return 0; }";
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let tokens = lexer.lex(src).await.expect("GPU lex type alias fixture");
+        check_tokens_on_gpu(&tokens)
+            .await
+            .expect_err("GPU syntax should reject type aliases until alias resolution exists");
+    });
+}
+
+#[test]
 fn generated_ll1_tables_accept_const_generic_params_and_named_array_lengths() {
     let tables =
         PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
@@ -532,6 +1500,21 @@ fn gpu_syntax_accepts_trait_impl_declaration_shape() {
         check_tokens_on_gpu(&tokens)
             .await
             .expect("GPU syntax should accept trait impl fixture");
+    });
+}
+
+#[test]
+fn gpu_syntax_accepts_trailing_commas_in_stdlib_shapes() {
+    common::block_on_gpu_with_timeout("GPU syntax trailing commas", async move {
+        let src = "struct Pair { left: i32, right: bool, } enum Maybe<T,> { Some(T,), None, } fn main(values: [i32; 2],) { let xs = [1, 2,]; let p = Pair { left: 1, right: true, }; let out = match (value) { Some(inner,) -> inner, _ -> value, }; take(1, 2,); return; }";
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let tokens = lexer
+            .lex(src)
+            .await
+            .expect("GPU lex trailing comma fixture");
+        check_tokens_on_gpu(&tokens)
+            .await
+            .expect("GPU syntax should accept trailing comma fixture");
     });
 }
 

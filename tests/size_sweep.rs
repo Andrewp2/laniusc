@@ -7,7 +7,7 @@
 
 mod common;
 
-use std::{fs, io::Write, path::Path};
+use std::{env, fs, io::Write, path::Path};
 
 use laniusc::{
     dev::generator::gen_valid_source,
@@ -17,20 +17,43 @@ use laniusc::{
         test_cpu::{TestCpuToken, lex_on_test_cpu},
     },
 };
+use log::warn;
 use rand::{SeedableRng, rngs::StdRng};
 
 fn env_u64(name: &str, default: u64) -> u64 {
-    std::env::var(name)
-        .ok()
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(default)
+    match env::var(name) {
+        Ok(value) => match value.parse::<u64>() {
+            Ok(value) => value,
+            Err(err) => {
+                warn!("invalid {name} value '{value}': {err}; using default {default}");
+                default
+            }
+        },
+        Err(_) => {
+            warn!("{name} is unset; using default {default}");
+            default
+        }
+    }
 }
 
 fn env_usize(name: &str, default: usize) -> usize {
-    std::env::var(name)
-        .ok()
-        .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(default)
+    match env::var(name) {
+        Ok(value) => match value.parse::<usize>() {
+            Ok(value) if value > 0 => value,
+            Ok(value) => {
+                warn!("{name} value {value} must be > 0; using default {default}");
+                default
+            }
+            Err(err) => {
+                warn!("invalid {name} value '{value}': {err}; using default {default}");
+                default
+            }
+        },
+        Err(_) => {
+            warn!("{name} is unset; using default {default}");
+            default
+        }
+    }
 }
 
 fn first_divergence_idx(test_cpu: &[TestCpuToken], gpu: &[GpuToken]) -> usize {
@@ -105,11 +128,20 @@ fn dump_near(src: &str, test_cpu: &[TestCpuToken], gpu: &[GpuToken], from: usize
 }
 
 fn save_case(dir: &str, tag: &str, target_len: usize, seed: u64, src: &str) -> String {
-    let _ = fs::create_dir_all(dir);
+    if let Err(err) = fs::create_dir_all(dir) {
+        warn!("failed to create size sweep directory {dir}: {err}");
+        return format!("failed_to_create_directory:{dir}");
+    }
     let base = format!("{tag}_len{target_len}_seed{seed}_n{}.lani", src.len());
     let path = Path::new(dir).join(base);
     let json = path.with_extension("json");
-    fs::write(&path, src.as_bytes()).ok();
+    if let Err(err) = fs::write(&path, src.as_bytes()) {
+        warn!(
+            "failed to write size sweep source {}: {err}",
+            path.display()
+        );
+        return dir.to_string();
+    }
 
     // minimal meta
     let meta = serde_json::json!({
@@ -118,8 +150,19 @@ fn save_case(dir: &str, tag: &str, target_len: usize, seed: u64, src: &str) -> S
         "seed": seed,
         "replay": format!("FUZZ_INPUT={} cargo run --bin fuzz_lex", path.display()),
     });
-    if let Ok(mut f) = fs::File::create(&json) {
-        let _ = writeln!(f, "{}", serde_json::to_string_pretty(&meta).unwrap());
+    match fs::File::create(&json) {
+        Ok(mut f) => {
+            if let Err(err) = writeln!(f, "{}", serde_json::to_string_pretty(&meta).unwrap()) {
+                warn!(
+                    "failed to write size sweep metadata {}: {err}",
+                    json.display()
+                );
+            }
+        }
+        Err(err) => warn!(
+            "failed to create size sweep metadata {}: {err}",
+            json.display()
+        ),
     }
     path.display().to_string()
 }

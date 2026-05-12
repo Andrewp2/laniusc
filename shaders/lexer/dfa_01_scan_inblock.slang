@@ -19,9 +19,13 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 ByteAddressBuffer in_bytes;
+StructuredBuffer<uint> source_file_count;
+StructuredBuffer<uint> source_file_start;
 StructuredBuffer<uint> next_u8; // layout: [state_pack][byte] -> packed 4x u8 next states
 RWStructuredBuffer<uint> block_summaries;
 RWStructuredBuffer<uint> chunk_summary_out;
+
+static const uint MAX_FILES_SCAN = 1024u;
 
 groupshared uint chunk_summaries[CHUNK_COUNT * N_STATES];
 
@@ -29,6 +33,18 @@ uint load_next_state(uint byte_value, uint state)
 {
     uint packed = next_u8[(state >> 2u) * 256u + byte_value];
     return (packed >> ((state & 3u) * 8u)) & 0xFFu;
+}
+
+bool is_file_start(uint i_abs)
+{
+    uint files = min(source_file_count[0], MAX_FILES_SCAN);
+    [loop]
+    for (uint f = 0u; f < files; f += 1u)
+    {
+        if (source_file_start[f] == i_abs)
+            return true;
+    }
+    return false;
 }
 
 [shader("compute")]
@@ -59,6 +75,9 @@ void dfa_01_scan_inblock(uint3 tid: SV_GroupThreadID,
         [loop]
         for (uint k = rel_begin; k < rel_end; k += 1u)
         {
+            uint i_abs = base + k;
+            if (is_file_start(i_abs))
+                state = gParams.start_state;
             uint b = load_byte_at(in_bytes, base + k);
             state = load_next_state(b, state);
         }

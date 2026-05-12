@@ -1158,7 +1158,12 @@ uint simple_expr_type(uint expr_i, uint limit_i)
 
         if (cur + 2u < limit_i && token_kind(cur + 1u) == TK_DOT &&
             token_kind(cur + 2u) == TK_IDENT)
+        {
+            uint member_ty = visible_type_for(cur + 2u);
+            if (member_ty != TY_UNKNOWN)
+                return member_ty;
             return struct_field_type(identifier_type(cur), cur + 2u);
+        }
 
         if (cur + 1u < limit_i &&
             (token_kind(cur + 1u) == TK_CALL_LPAREN || token_kind(cur + 1u) == TK_LPAREN))
@@ -1693,6 +1698,9 @@ void check_struct_literal(uint open_i, uint end_i)
         }
 
         uint expected = struct_field_type(struct_ty, field_i);
+        uint resolved_expected = visible_type_for(field_i);
+        if (resolved_expected != TY_UNKNOWN)
+            expected = resolved_expected;
         if (expected == TY_UNKNOWN)
         {
             record_error(field_i, ERR_INVALID_MEMBER_ACCESS, struct_ty);
@@ -2178,6 +2186,10 @@ void check_member(uint dot_i)
         return;
     }
 
+    uint member_ty = visible_type_for(dot_i + 1u);
+    if (member_ty != TY_UNKNOWN)
+        return;
+
     uint base_ty = identifier_type(dot_i - 1u);
     if (!is_struct_type(base_ty))
     {
@@ -2271,11 +2283,7 @@ void check_hir_node(uint i)
     if (kind == HIR_STRUCT_LITERAL_EXPR)
     {
         if (token_kind(pos) != TK_LBRACE)
-        {
             record_error(pos, ERR_BAD_HIR, kind);
-            return;
-        }
-        check_struct_literal(pos, end_i);
         return;
     }
 
@@ -2390,13 +2398,59 @@ void check_hir_node(uint i)
 
 }
 
+void check_hir_node_min(uint node_i)
+{
+    uint kind = hir_kind[node_i];
+    if (kind == 0u)
+        return;
+
+    uint pos = hir_token_pos[node_i];
+    uint end_i = hir_token_end[node_i];
+    uint n_active = active_token_count();
+    if (pos >= n_active)
+    {
+        record_error(n_active, ERR_BAD_HIR, pos);
+        return;
+    }
+
+    if (kind == HIR_LET_STMT)
+    {
+        if (token_kind(pos) == TK_LET_IDENT)
+            check_let(pos, end_i);
+        else if (token_kind(pos) == TK_LET && pos + 1u < n_active)
+            check_let(pos + 1u, end_i);
+        else
+            record_error(pos, ERR_BAD_HIR, kind);
+        return;
+    }
+
+    if (kind == HIR_CONST_ITEM)
+    {
+        if (token_kind(pos) == TK_CONST)
+            check_const(pos, end_i);
+        else
+            record_error(pos, ERR_BAD_HIR, kind);
+        return;
+    }
+
+    if (kind == HIR_RETURN_STMT)
+    {
+        if (token_kind(pos) == TK_RETURN)
+            check_return(pos, end_i);
+        else
+            record_error(pos, ERR_BAD_HIR, kind);
+        return;
+    }
+
+    if (kind == HIR_ASSIGN_EXPR && is_assignment_operator(token_kind(pos)))
+        check_assignment(pos, end_i);
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
 {
     uint i = tid.x;
-    // Keep this pass HIR-driven. The older token-only fallback made this large
-    // shader's reachable call graph expensive enough to stall pipeline creation.
     if (i < active_hir_node_count())
-        check_hir_node(i);
+        check_hir_node_min(i);
 }

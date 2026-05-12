@@ -1,6 +1,8 @@
 // src/bin/parse_fuzz.rs
 // Runs fixed corpus + always-on random corpus.
 // For fixed files, also checks sidecar goldens (<name>.parse.json) when present.
+// This is developer test/fuzz tooling, not part of the compiler pipeline; its
+// test CPU oracles exist only to validate GPU parser passes.
 //
 // CLI:
 //   cargo run --bin parse_fuzz
@@ -24,6 +26,7 @@ use laniusc::{
         tables::PrecomputedParseTables,
     },
 };
+use log::warn;
 use rand::{SeedableRng, rngs::StdRng};
 use serde::Deserialize;
 
@@ -31,15 +34,22 @@ use serde::Deserialize;
 
 fn collect_inputs_from_dir(dir: &str) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    if let Ok(rd) = std::fs::read_dir(dir) {
-        for ent in rd.flatten() {
-            let p = ent.path();
-            if p.extension().and_then(|e| e.to_str()) == Some("lani") {
-                out.push(p);
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        warn!("failed to read parser test directory {dir}");
+        return out;
+    };
+    for ent in rd {
+        match ent {
+            Ok(ent) => {
+                let p = ent.path();
+                if p.extension().and_then(|e| e.to_str()) == Some("lani") {
+                    out.push(p);
+                }
             }
+            Err(err) => warn!("failed to read parser test directory entry in {dir}: {err}"),
         }
-        out.sort();
     }
+    out.sort();
     out
 }
 
@@ -51,9 +61,22 @@ fn load_tables() -> Result<PrecomputedParseTables> {
 }
 
 fn env_truthy(name: &str) -> bool {
-    std::env::var(name)
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false)
+    match std::env::var(name) {
+        Ok(v) => {
+            if v == "1" || v.eq_ignore_ascii_case("true") {
+                true
+            } else if v == "0" || v.eq_ignore_ascii_case("false") {
+                false
+            } else {
+                warn!("{name} has unrecognized value '{v}'; using default false");
+                false
+            }
+        }
+        Err(_) => {
+            warn!("{name} is unset; using default false");
+            false
+        }
+    }
 }
 
 // ------------------------ helpers: test CPU bracket oracle ------------------------
@@ -311,9 +334,11 @@ fn check_against_golden(path: &Path, src: &str, res: &ParseResult) -> Result<()>
     let v: Value =
         serde_json::from_str(&s).with_context(|| format!("parse golden {}", sidecar.display()))?;
 
-    // If this is an older CPU-oracle golden, do a full structural comparison.
+    // If this is a test CPU oracle golden, do a full structural comparison.
     // Older generated sidecars predate the marker but contain `sc_canon`.
-    if v.get("cpu_only").and_then(|b| b.as_bool()) == Some(true) || v.get("sc_canon").is_some() {
+    if v.get("test_cpu_oracle_only").and_then(|b| b.as_bool()) == Some(true)
+        || v.get("sc_canon").is_some()
+    {
         let ty_seq = types_from_src(src);
         let delimiter_shape_matches = ty_seq.len() == res.sc_stream.len();
         if delimiter_shape_matches {
@@ -683,14 +708,20 @@ fn parse_cli_args(args: &[String]) -> (Vec<PathBuf>, FuzzCfg) {
         if let Some(v) = a.strip_prefix("--iters=") {
             if let Ok(n) = v.parse() {
                 iters = n;
+            } else {
+                warn!("invalid --iters value '{v}'; keeping default {iters}");
             }
         } else if let Some(v) = a.strip_prefix("--len=") {
             if let Ok(n) = v.parse() {
                 len = n;
+            } else {
+                warn!("invalid --len value '{v}'; keeping default {len}");
             }
         } else if let Some(v) = a.strip_prefix("--seed=") {
             if let Ok(n) = v.parse() {
                 seed = n;
+            } else {
+                warn!("invalid --seed value '{v}'; keeping default {seed}");
             }
         } else if a.starts_with("--") {
             eprintln!("[warn] unknown flag '{}'", a);
@@ -756,12 +787,17 @@ async fn main() -> Result<()> {
             Err(e) => {
                 eprintln!("[fail] {}:\n  {}", label, e);
                 // Write a repro case immediately so it’s not lost.
-                let ts = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs();
+                let ts = match SystemTime::now().duration_since(UNIX_EPOCH) {
+                    Ok(elapsed) => elapsed.as_secs(),
+                    Err(err) => {
+                        warn!("system clock before UNIX_EPOCH: {err}");
+                        0
+                    }
+                };
                 let dir = "fuzz-cases";
-                let _ = std::fs::create_dir_all(dir);
+                if let Err(err) = std::fs::create_dir_all(dir) {
+                    warn!("failed to create {dir}: {err}");
+                }
                 let path = format!("{}/case_{ts}_i{}_n{}.lani", dir, i, src.len());
                 if let Err(e) = std::fs::write(&path, src.as_bytes()) {
                     eprintln!("[save] failed to write repro case: {e}");

@@ -6,6 +6,7 @@ use std::{
 
 use anyhow::Result;
 use encase::ShaderType;
+use log::warn;
 
 use crate::gpu::{
     device,
@@ -233,7 +234,7 @@ impl GpuWasmCodeGenerator {
         compute.set_bind_group(0, Some(&bufs.pack_bind_group), &[]);
         compute.dispatch_workgroups(packed_output_groups_x, packed_output_groups_y, 1);
         drop(compute);
-        encoder.copy_buffer_to_buffer(&bufs.status_buf, 0, &bufs.status_readback, 0, 8);
+        encoder.copy_buffer_to_buffer(&bufs.status_buf, 0, &bufs.status_readback, 0, 16);
 
         Ok(RecordedWasmCodegen {
             output_capacity,
@@ -375,7 +376,7 @@ impl GpuWasmCodeGenerator {
         let body_status_buf = storage_u32_rw(
             device,
             "codegen.wasm.body_status",
-            2,
+            4,
             wgpu::BufferUsages::empty(),
         );
         let bool_body_buf = storage_u32_rw(
@@ -387,7 +388,7 @@ impl GpuWasmCodeGenerator {
         let bool_probe_status_buf = storage_u32_rw(
             device,
             "codegen.wasm.bool_probe_status",
-            2,
+            4,
             wgpu::BufferUsages::empty(),
         );
         let bool_body_slots_buf = storage_u32_rw(
@@ -423,19 +424,19 @@ impl GpuWasmCodeGenerator {
         let bool_scan_status_buf = storage_u32_rw(
             device,
             "codegen.wasm.bool_scan_status",
-            2,
+            4,
             wgpu::BufferUsages::empty(),
         );
         let bool_body_status_buf = storage_u32_rw(
             device,
             "codegen.wasm.bool_body_status",
-            2,
+            4,
             wgpu::BufferUsages::empty(),
         );
         let status_buf = storage_u32_rw(
             device,
             "codegen.wasm.status",
-            2,
+            4,
             wgpu::BufferUsages::COPY_SRC,
         );
         let out_readback = readback_u32s(
@@ -443,7 +444,7 @@ impl GpuWasmCodeGenerator {
             "rb.codegen.wasm.out_words",
             output_capacity.div_ceil(4),
         );
-        let status_readback = readback_u32s(device, "rb.codegen.wasm.status", 2);
+        let status_readback = readback_u32s(device, "rb.codegen.wasm.status", 4);
 
         let arrays_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
             ("gParams".into(), params_buf.as_entire_binding()),
@@ -554,7 +555,7 @@ impl GpuWasmCodeGenerator {
 }
 
 fn trace_wasm_codegen(stage: &str) {
-    if std::env::var("LANIUS_WASM_TRACE").ok().as_deref() == Some("1") {
+    if crate::gpu::env::env_bool_strict("LANIUS_WASM_TRACE", false) {
         eprintln!("[laniusc][wasm-codegen] {stage}");
     }
 }
@@ -566,14 +567,15 @@ fn wasm_params_bytes(params: &WasmParams) -> Vec<u8> {
     ub.as_ref().to_vec()
 }
 
-fn fast_path_status_init_bytes() -> [u8; 8] {
-    let mut bytes = [0u8; 8];
+fn fast_path_status_init_bytes() -> [u8; 16] {
+    let mut bytes = [0u8; 16];
     bytes[4..8].copy_from_slice(&2u32.to_le_bytes());
+    bytes[12..16].copy_from_slice(&u32::MAX.to_le_bytes());
     bytes
 }
 
-fn zero_status_bytes() -> [u8; 8] {
-    [0u8; 8]
+fn zero_status_bytes() -> [u8; 16] {
+    [0u8; 16]
 }
 
 fn read_wasm_output(
@@ -593,9 +595,20 @@ fn read_wasm_output(
         let data = status_readback.slice(..).get_mapped_range();
         let len = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize;
         let mode = u32::from_le_bytes(data[4..8].try_into().unwrap());
-        let ok = mode != 0;
+        let error_code = u32::from_le_bytes(data[8..12].try_into().unwrap());
+        let error_detail = u32::from_le_bytes(data[12..16].try_into().unwrap());
+        let ok = matches!(mode, 1 | 2 | 3 | 5);
         drop(data);
         status_readback.unmap();
+        if error_code != 0 {
+            let error_name = match error_code {
+                2 => "unsupported for loop",
+                _ => "unsupported source shape",
+            };
+            return Err(anyhow::anyhow!(
+                "GPU WASM emitter rejected {error_name} at token {error_detail}"
+            ));
+        }
         if !ok || len > output_capacity {
             return Err(anyhow::anyhow!(
                 "GPU WASM emitter produced {} bytes for capacity {} with {} tokens",
@@ -617,7 +630,11 @@ fn read_wasm_output(
         label: Some("codegen.wasm.exact_output_readback.encoder"),
     });
     encoder.copy_buffer_to_buffer(source_buf, 0, out_readback, 0, output_bytes);
-    queue.submit(Some(encoder.finish()));
+    crate::gpu::passes_core::submit_with_progress(
+        queue,
+        "codegen.wasm.output-readback",
+        encoder.finish(),
+    );
 
     let output_slice = out_readback.slice(0..output_bytes);
     wait_for_map(device, &output_slice, "codegen.wasm.output")?;
@@ -636,16 +653,26 @@ fn read_wasm_output(
 }
 
 fn wait_for_map(device: &wgpu::Device, slice: &wgpu::BufferSlice<'_>, label: &str) -> Result<()> {
+    let label = label.to_string();
+    let cb_label = label.clone();
     let (tx, rx) = mpsc::channel();
+    crate::gpu::passes_core::trace_gpu_progress(&format!("map.start :: {label}"));
     slice.map_async(wgpu::MapMode::Read, move |result| {
-        let _ = tx.send(result);
+        if let Err(err) = tx.send(result) {
+            warn!("failed to dispatch readback status for {cb_label}: {err}");
+        }
     });
+    crate::gpu::passes_core::trace_gpu_progress(&format!("map.queued :: {label}"));
 
     let timeout = wasm_readback_timeout();
     let start = Instant::now();
     let mut spins = 0u32;
     loop {
-        let _ = device.poll(wgpu::PollType::Poll);
+        crate::gpu::passes_core::wait_for_map_progress(
+            device,
+            &format!("codegen.wasm.output-poll({label})"),
+            wgpu::PollType::Poll,
+        );
         match rx.try_recv() {
             Ok(Ok(())) => return Ok(()),
             Ok(Err(err)) => {
@@ -672,11 +699,7 @@ fn wait_for_map(device: &wgpu::Device, slice: &wgpu::BufferSlice<'_>, label: &st
 }
 
 fn wasm_readback_timeout() -> Duration {
-    let ms = std::env::var("LANIUS_WASM_READBACK_TIMEOUT_MS")
-        .ok()
-        .and_then(|value| value.parse::<u64>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(3_000);
+    let ms = crate::gpu::env::env_u64("LANIUS_WASM_READBACK_TIMEOUT_MS", 3_000);
     Duration::from_millis(ms)
 }
 

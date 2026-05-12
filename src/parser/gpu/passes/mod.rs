@@ -14,6 +14,7 @@ pub mod brackets_05;
 pub mod brackets_06;
 pub mod brackets_pse_04;
 
+pub mod hir_item_fields;
 pub mod hir_nodes;
 pub mod hir_spans;
 pub mod ll1_blocks_01;
@@ -63,6 +64,7 @@ pub struct ParserPasses {
     // HIR-facing classification
     pub hir_nodes: hir_nodes::HirNodesPass,
     pub hir_spans: hir_spans::HirSpansPass,
+    pub hir_item_fields: hir_item_fields::HirItemFieldsPass,
 }
 
 impl ParserPasses {
@@ -93,6 +95,7 @@ impl ParserPasses {
             tree_spans: tree_spans::TreeSpansPass::new(device)?,
             hir_nodes: hir_nodes::HirNodesPass::new(device)?,
             hir_spans: hir_spans::HirSpansPass::new(device)?,
+            hir_item_fields: hir_item_fields::HirItemFieldsPass::new(device)?,
         })
     }
 }
@@ -176,6 +179,7 @@ pub fn record_all_passes(
     p.tree_spans.record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_nodes.record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_spans.record_pass(&mut ctx, E1D(n_tree))?;
+    p.hir_item_fields.record_pass(&mut ctx, E1D(n_tree))?;
 
     Ok(())
 }

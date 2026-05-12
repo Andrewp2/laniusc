@@ -4,6 +4,7 @@ use laniusc::{
     dev::generator::gen_valid_source,
     lexer::gpu::{GpuLexer, util::readback_enabled},
 };
+use log::warn;
 use rand::{SeedableRng, rngs::StdRng};
 
 fn fmt_mib(bytes: u64) -> String {
@@ -19,31 +20,83 @@ fn throughput_mibs(bytes: u64, ms: f64) -> f64 {
 }
 
 fn parse_target_len() -> usize {
-    env::var("LEX_PERF_LEN")
-        .ok()
-        .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(10_000_000)
+    let default = 10_000_000usize;
+    match env::var("LEX_PERF_LEN") {
+        Ok(value) => match value.parse::<usize>() {
+            Ok(len) if len > 0 => len,
+            Ok(len) => {
+                warn!("LEX_PERF_LEN value {len} must be > 0; using default {default}");
+                default
+            }
+            Err(err) => {
+                warn!("invalid LEX_PERF_LEN '{value}': {err}; using default {default}");
+                default
+            }
+        },
+        Err(_) => {
+            warn!("LEX_PERF_LEN is unset; using default {default}");
+            default
+        }
+    }
 }
 
 fn parse_seed() -> u64 {
-    env::var("LEX_PERF_SEED")
-        .ok()
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(42)
+    let default = 42u64;
+    match env::var("LEX_PERF_SEED") {
+        Ok(value) => match value.parse::<u64>() {
+            Ok(seed) => seed,
+            Err(err) => {
+                warn!("invalid LEX_PERF_SEED '{value}': {err}; using default {default}");
+                default
+            }
+        },
+        Err(_) => {
+            warn!("LEX_PERF_SEED is unset; using default {default}");
+            default
+        }
+    }
 }
 
 fn parse_warmup() -> usize {
-    env::var("LEX_PERF_WARMUP")
-        .ok()
-        .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(1)
+    let default = 1usize;
+    match env::var("LEX_PERF_WARMUP") {
+        Ok(value) => match value.parse::<usize>() {
+            Ok(warmup) if warmup > 0 => warmup,
+            Ok(warmup) => {
+                warn!("LEX_PERF_WARMUP value {warmup} must be > 0; using default {default}");
+                default
+            }
+            Err(err) => {
+                warn!("invalid LEX_PERF_WARMUP '{value}': {err}; using default {default}");
+                default
+            }
+        },
+        Err(_) => {
+            warn!("LEX_PERF_WARMUP is unset; using default {default}");
+            default
+        }
+    }
 }
 
 fn parse_reps() -> usize {
-    env::var("LEX_PERF_REPS")
-        .ok()
-        .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(10)
+    let default = 10usize;
+    match env::var("LEX_PERF_REPS") {
+        Ok(value) => match value.parse::<usize>() {
+            Ok(reps) if reps > 0 => reps,
+            Ok(reps) => {
+                warn!("LEX_PERF_REPS value {reps} must be > 0; using default {default}");
+                default
+            }
+            Err(err) => {
+                warn!("invalid LEX_PERF_REPS '{value}': {err}; using default {default}");
+                default
+            }
+        },
+        Err(_) => {
+            warn!("LEX_PERF_REPS is unset; using default {default}");
+            default
+        }
+    }
 }
 
 fn percentile(sorted_ms: &[f64], p: f64) -> f64 {

@@ -1,7 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, env, sync::Arc};
 
 use anyhow::{Result, anyhow};
-use log::warn;
+use log::{info, warn};
 use wgpu;
 
 use crate::reflection::{
@@ -14,9 +14,7 @@ use crate::reflection::{
 };
 
 pub fn validation_scopes_enabled() -> bool {
-    std::env::var("LANIUS_VALIDATION_SCOPES")
-        .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
-        .unwrap_or(false)
+    crate::gpu::env::env_bool_truthy("LANIUS_VALIDATION_SCOPES", false)
 }
 
 pub struct PassData {
@@ -152,9 +150,54 @@ pub fn pipeline_from_spirv_and_bgls(
 }
 
 fn trace_pipeline(label: &str, stage: &str) {
-    if std::env::var("LANIUS_PIPELINE_TRACE").ok().as_deref() == Some("1") {
+    if crate::gpu::env::env_bool_strict("LANIUS_PIPELINE_TRACE", false) {
         eprintln!("[laniusc][pipeline][{label}] {stage}");
     }
+}
+
+fn gpu_pipeline_progress_enabled() -> bool {
+    is_env_truthy("LANIUS_GPU_PIPELINE_PROGRESS")
+        || is_env_truthy("LANIUS_PIPELINE_TRACE")
+        || is_env_truthy("LANIUS_WASM_TRACE")
+        || is_env_truthy("LANIUS_X86_TRACE")
+}
+
+fn is_env_truthy(name: &str) -> bool {
+    env::var_os(name)
+        .and_then(|value| value.into_string().ok())
+        .is_some_and(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "True" | "on" | "ON"))
+}
+
+pub(crate) fn trace_gpu_progress(label: &str) {
+    if gpu_pipeline_progress_enabled() {
+        if log::log_enabled!(log::Level::Info) {
+            info!("[laniusc][gpu-progress] {label}");
+        } else {
+            eprintln!("[laniusc][gpu-progress] {label}");
+        }
+    }
+}
+
+pub(crate) fn submit_with_progress(
+    queue: &wgpu::Queue,
+    label: &str,
+    command_buffer: wgpu::CommandBuffer,
+) {
+    trace_gpu_progress(&format!("submit.start :: {label}"));
+    queue.submit(Some(command_buffer));
+    trace_gpu_progress(&format!("submit.done :: {label}"));
+}
+
+pub(crate) fn map_readback_for_progress(slice: &wgpu::BufferSlice<'_>, label: &str) {
+    trace_gpu_progress(&format!("map.start :: {label}"));
+    slice.map_async(wgpu::MapMode::Read, |_| {});
+    trace_gpu_progress(&format!("map.queued :: {label}"));
+}
+
+pub(crate) fn wait_for_map_progress(device: &wgpu::Device, label: &str, poll_type: wgpu::PollType) {
+    trace_gpu_progress(&format!("poll.start :: {label}"));
+    let _ = device.poll(poll_type);
+    trace_gpu_progress(&format!("poll.done :: {label}"));
 }
 
 pub fn make_pass_data(
@@ -169,7 +212,10 @@ pub fn make_pass_data(
     let owned_bgls = bgls_from_reflection(device, &reflection)?;
     let bgl_refs: Vec<&wgpu::BindGroupLayout> = owned_bgls.iter().collect();
     let pipeline = pipeline_from_spirv_and_bgls(device, label, entry, spirv, &bgl_refs);
-    let tgs = get_thread_group_size(&reflection).unwrap_or([1, 1, 1]);
+    let tgs = get_thread_group_size(&reflection).unwrap_or_else(|| {
+        warn!("missing thread_group_size in reflection for {label}; defaulting to [1,1,1]");
+        [1, 1, 1]
+    });
     debug_assert!(
         tgs[0] > 0 && tgs[1] > 0 && tgs[2] > 0,
         "thread_group_size must be non-zero"

@@ -20,10 +20,12 @@ struct TokenIn
 
 StructuredBuffer<TokenIn> token_words;
 StructuredBuffer<uint> token_count;
+StructuredBuffer<uint> token_file_id;
 
 RWStructuredBuffer<uint> hir_kind;
 RWStructuredBuffer<uint> hir_token_pos;
 RWStructuredBuffer<uint> hir_token_end;
+RWStructuredBuffer<uint> hir_token_file_id;
 RWStructuredBuffer<uint> hir_status;
 
 static const uint WG_SIZE = 256u;
@@ -52,6 +54,10 @@ static const uint HIR_ENUM_ITEM = 26u;
 static const uint HIR_STRUCT_ITEM = 27u;
 static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 static const uint HIR_TYPE_ALIAS_ITEM = 29u;
+static const uint HIR_FOR_STMT = 30u;
+static const uint HIR_MODULE_ITEM = 31u;
+static const uint HIR_IMPORT_ITEM = 32u;
+static const uint HIR_PATH_EXPR = 33u;
 
 static const uint TK_IDENT = 1u;
 static const uint TK_LPAREN = 4u;
@@ -100,6 +106,7 @@ static const uint TK_ARG_COMMA = 82u;
 static const uint TK_PARAM_COMMA = 84u;
 static const uint TK_PARAM_LPAREN = 76u;
 static const uint TK_PARAM_RPAREN = 77u;
+static const uint TK_LET_IDENT = 78u;
 static const uint TK_TYPE_ARRAY_LBRACKET = 85u;
 static const uint TK_TYPE_ARRAY_RBRACKET = 86u;
 static const uint TK_TYPE_SEMICOLON = 87u;
@@ -110,7 +117,13 @@ static const uint TK_FALSE = 91u;
 static const uint TK_CONST = 92u;
 static const uint TK_ENUM = 93u;
 static const uint TK_STRUCT = 94u;
+static const uint TK_IMPORT = 96u;
+static const uint TK_MODULE = 97u;
+static const uint TK_IMPL = 98u;
+static const uint TK_FOR = 100u;
+static const uint TK_IN = 101u;
 static const uint TK_TYPE = 103u;
+static const uint TK_SELF_VALUE = 105u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -126,6 +139,12 @@ uint token_kind(uint i)
 {
     uint n = active_token_count();
     return i < n ? token_words[i].kind : 0u;
+}
+
+uint token_file(uint i)
+{
+    uint n = active_token_count();
+    return i < n ? token_file_id[i] : INVALID;
 }
 
 bool is_open_brace(uint kind)
@@ -172,8 +191,46 @@ bool is_struct_literal_open_at(uint i)
         return false;
     uint before_name = i > 1u ? token_kind(i - 2u) : 0u;
     return before_name != TK_STRUCT && before_name != TK_ENUM && before_name != TK_TYPE &&
+           before_name != TK_IMPL && before_name != TK_FOR && before_name != TK_IN &&
            before_name != TK_ARROW &&
            before_name != TK_COLON;
+}
+
+bool token_is_identifier(uint kind)
+{
+    return kind == TK_IDENT || kind == TK_TYPE_IDENT || kind == TK_PARAM_IDENT || kind == TK_LET_IDENT;
+}
+
+bool is_struct_literal_field_value_context(uint value_i)
+{
+    if (value_i == 0u || token_kind(value_i - 1u) != TK_COLON)
+        return false;
+
+    if (value_i < 2u || !token_is_identifier(token_kind(value_i - 2u)))
+        return false;
+
+    uint j = value_i - 2u;
+    [loop]
+    for (uint guard = 0u; guard < 64u && j > 0u; guard += 1u)
+    {
+        j -= 1u;
+        uint kind = token_kind(j);
+        if (kind == TK_LBRACE)
+        {
+            if (j == 0u)
+                return false;
+            if (token_kind(j - 1u) == TK_STRUCT)
+                return false;
+            return token_is_identifier(token_kind(j - 1u));
+        }
+        if (kind == TK_SEMICOLON || kind == TK_RETURN || kind == TK_FN || kind == TK_STRUCT ||
+            kind == TK_ENUM || kind == TK_TYPE || kind == TK_LET || kind == TK_CONST ||
+            kind == TK_IF || kind == TK_WHILE || kind == TK_FOR)
+        {
+            return false;
+        }
+    }
+    return false;
 }
 
 bool is_paren_open(uint kind)
@@ -191,8 +248,185 @@ bool is_paren_close(uint kind)
 bool is_expr_end_kind(uint kind)
 {
     return kind == TK_IDENT || kind == TK_RPAREN || kind == TK_RBRACKET ||
-           kind == TK_TRUE || kind == TK_FALSE ||
+           kind == TK_TRUE || kind == TK_FALSE || kind == TK_SELF_VALUE ||
            kind == TK_ARRAY_RBRACKET;
+}
+
+bool is_path_segment(uint kind)
+{
+    return kind == TK_IDENT || kind == TK_TYPE_IDENT || kind == TK_PARAM_IDENT ||
+           kind == TK_LET_IDENT;
+}
+
+bool is_qualified_type_context(uint prev)
+{
+    return prev == TK_COLON || prev == TK_ARROW || prev == TK_LT || prev == TK_COMMA ||
+           prev == TK_PARAM_COMMA;
+}
+
+bool same_token_file(uint a, uint b)
+{
+    uint file = token_file(a);
+    return file != INVALID && file == token_file(b);
+}
+
+uint file_first_token(uint i)
+{
+    uint file = token_file(i);
+    if (file == INVALID)
+        return i;
+
+    uint n = active_token_count();
+    uint first = i;
+    [loop]
+    for (uint guard = 0u; guard < n && first > 0u; guard += 1u)
+    {
+        if (token_file(first - 1u) != file)
+            break;
+        first -= 1u;
+    }
+    return first;
+}
+
+uint leading_module_decl_end(uint file_start)
+{
+    if (token_file(file_start) == INVALID || token_kind(file_start) != TK_MODULE)
+        return INVALID;
+
+    uint n = active_token_count();
+    [loop]
+    for (uint j = file_start + 1u; j < n; j += 1u)
+    {
+        if (!same_token_file(j, file_start))
+            return INVALID;
+        if (token_kind(j) == TK_SEMICOLON)
+            return j;
+    }
+    return INVALID;
+}
+
+bool token_in_leading_module_decl(uint i)
+{
+    uint file_start = file_first_token(i);
+    uint end = leading_module_decl_end(file_start);
+    return end != INVALID && i >= file_start && i <= end && same_token_file(i, file_start);
+}
+
+uint item_semicolon_end(uint item_i)
+{
+    uint n = active_token_count();
+    [loop]
+    for (uint j = item_i + 1u; j < n; j += 1u)
+    {
+        if (!same_token_file(j, item_i))
+            return j;
+        if (token_kind(j) == TK_SEMICOLON)
+            return j + 1u;
+        uint kind = token_kind(j);
+        if (is_open_brace(kind) || is_close_brace(kind) || kind == TK_FN || kind == TK_CONST ||
+            kind == TK_ENUM || kind == TK_STRUCT || kind == TK_TYPE)
+            return j;
+    }
+    return n;
+}
+
+uint enclosing_module_or_import_item(uint i)
+{
+    uint file = token_file(i);
+    if (file == INVALID)
+        return INVALID;
+
+    uint j = i;
+    [loop]
+    for (uint guard = 0u; guard < 128u && j > 0u; guard += 1u)
+    {
+        j -= 1u;
+        if (token_file(j) != file)
+            return INVALID;
+        uint kind = token_kind(j);
+        if (kind == TK_MODULE || kind == TK_IMPORT)
+        {
+            uint end = item_semicolon_end(j);
+            return i < end ? j : INVALID;
+        }
+        if (kind == TK_SEMICOLON || is_open_brace(kind) || is_close_brace(kind) ||
+            kind == TK_FN || kind == TK_CONST || kind == TK_ENUM || kind == TK_STRUCT ||
+            kind == TK_TYPE)
+            return INVALID;
+    }
+    return INVALID;
+}
+
+uint qualified_path_end(uint start)
+{
+    uint n = active_token_count();
+    uint end = start + 1u;
+    [loop]
+    for (uint guard = 0u; guard < 32u && end + 2u < n; guard += 1u)
+    {
+        if (token_kind(end) != TK_COLON || token_kind(end + 1u) != TK_COLON ||
+            !is_path_segment(token_kind(end + 2u)))
+            break;
+        end += 3u;
+    }
+    return end;
+}
+
+bool is_qualified_path_head(uint i)
+{
+    if (!is_path_segment(token_kind(i)))
+        return false;
+    if (i > 0u && token_kind(i - 1u) == TK_COLON)
+        return false;
+    if (token_kind(i + 1u) != TK_COLON || token_kind(i + 2u) != TK_COLON ||
+        !is_path_segment(token_kind(i + 3u)))
+        return false;
+    uint prev = i > 0u ? token_kind(i - 1u) : 0u;
+    return !is_qualified_type_context(prev);
+}
+
+bool token_in_qualified_path_tail(uint i)
+{
+    if (!is_path_segment(token_kind(i)) || i < 3u ||
+        token_kind(i - 1u) != TK_COLON || token_kind(i - 2u) != TK_COLON)
+        return false;
+
+    uint start = i - 3u;
+    [loop]
+    for (uint guard = 0u; guard < 32u && start >= 3u; guard += 1u)
+    {
+        if (token_kind(start - 1u) != TK_COLON || token_kind(start - 2u) != TK_COLON ||
+            !is_path_segment(token_kind(start - 3u)))
+            break;
+        start -= 3u;
+    }
+    if (!is_path_segment(token_kind(start)))
+        return false;
+    uint prev = start > 0u ? token_kind(start - 1u) : 0u;
+    return !is_qualified_type_context(prev);
+}
+
+bool token_in_qualified_type_path(uint i)
+{
+    if (!is_path_segment(token_kind(i)))
+        return false;
+
+    uint start = i;
+    [loop]
+    for (uint guard = 0u; guard < 32u && start >= 3u; guard += 1u)
+    {
+        if (token_kind(start - 1u) != TK_COLON || token_kind(start - 2u) != TK_COLON ||
+            !is_path_segment(token_kind(start - 3u)))
+            break;
+        start -= 3u;
+    }
+
+    if (!is_path_segment(token_kind(start)))
+        return false;
+    uint prev = start > 0u ? token_kind(start - 1u) : 0u;
+    if (!is_qualified_type_context(prev))
+        return false;
+    return qualified_path_end(start) > start + 1u;
 }
 
 uint matching_brace_end(uint open_i)
@@ -537,6 +771,41 @@ bool token_in_shallow_generic_type_arg(uint token_i)
     return false;
 }
 
+bool token_in_for_iterable(uint token_i)
+{
+    uint token = token_kind(token_i);
+    if (token_i == 0u || (token != TK_IDENT && token != TK_TYPE_IDENT))
+        return false;
+
+    uint j = token_i;
+    [loop]
+    for (uint guard = 0u; guard < 128u && j > 0u; guard += 1u)
+    {
+        j -= 1u;
+        uint kind = token_kind(j);
+        if (kind == TK_IN)
+        {
+            uint k = j;
+            [loop]
+            for (uint inner_guard = 0u; inner_guard < 128u && k > 0u; inner_guard += 1u)
+            {
+                k -= 1u;
+                uint before = token_kind(k);
+                if (before == TK_FOR)
+                    return true;
+                if (before == TK_SEMICOLON || before == TK_FN ||
+                    is_open_brace(before) || is_close_brace(before))
+                    return false;
+            }
+            return false;
+        }
+        if (kind == TK_FOR || kind == TK_SEMICOLON || kind == TK_FN ||
+            is_open_brace(kind) || is_close_brace(kind))
+            return false;
+    }
+    return false;
+}
+
 uint item_type_params_end(uint item_i)
 {
     uint n = active_token_count();
@@ -646,6 +915,21 @@ uint classify(uint i, out uint end)
     uint kind = token_kind(i);
     end = min(i + 1u, n);
 
+    if (kind == TK_MODULE)
+    {
+        end = item_semicolon_end(i);
+        return HIR_MODULE_ITEM;
+    }
+    if (kind == TK_IMPORT)
+    {
+        end = item_semicolon_end(i);
+        return HIR_IMPORT_ITEM;
+    }
+    if (enclosing_module_or_import_item(i) != INVALID)
+        return HIR_NONE;
+    if (token_in_leading_module_decl(i))
+        return HIR_NONE;
+
     if (kind == TK_FN)
     {
         end = function_end(i);
@@ -672,17 +956,52 @@ uint classify(uint i, out uint end)
         return HIR_NONE;
     if ((kind == TK_IDENT || kind == TK_TYPE_IDENT) && token_in_type_array_length(i))
         return HIR_NONE;
-    if (kind == TK_PARAM_IDENT ||
+    if (token_in_qualified_type_path(i))
+        return HIR_NONE;
+    if (is_qualified_path_head(i))
+    {
+        end = qualified_path_end(i);
+        return HIR_PATH_EXPR;
+    }
+    if (token_in_qualified_path_tail(i))
+        return HIR_NONE;
+    bool self_param =
+        kind == TK_SELF_VALUE && i > 0u &&
+        (token_kind(i - 1u) == TK_PARAM_LPAREN || token_kind(i - 1u) == TK_LPAREN ||
+         token_kind(i - 1u) == TK_PARAM_COMMA || token_kind(i - 1u) == TK_COMMA ||
+         token_kind(i - 1u) == TK_AMPERSAND);
+    if (kind == TK_PARAM_IDENT || self_param ||
         (kind == TK_IDENT && i + 1u < n && token_kind(i + 1u) == TK_COLON &&
          (i == 0u || (token_kind(i - 1u) != TK_LET && token_kind(i - 1u) != TK_CONST &&
                       token_kind(i - 1u) != TK_TYPE))))
         return HIR_PARAM;
-    if (kind == TK_TYPE_IDENT ||
-        (kind == TK_IDENT &&
-         ((i > 0u && (token_kind(i - 1u) == TK_COLON || token_kind(i - 1u) == TK_ARROW)) ||
-          token_kind(i - 1u) == TK_AMPERSAND || token_in_type_array(i) ||
-          token_in_shallow_generic_type_arg(i))))
+    if ((kind == TK_IDENT || kind == TK_TYPE_IDENT) &&
+        ((i > 0u && token_kind(i - 1u) == TK_IN) || token_in_for_iterable(i)))
+        return HIR_NAME_EXPR;
+    if (kind == TK_TYPE_IDENT &&
+        ((i > 0u && ((token_kind(i - 1u) == TK_COLON &&
+                      !is_struct_literal_field_value_context(i)) ||
+                     token_kind(i - 1u) == TK_ARROW ||
+                     token_kind(i - 1u) == TK_AMPERSAND ||
+                     token_in_type_array(i) ||
+                     token_in_shallow_generic_type_arg(i)))))
+    {
         return HIR_TYPE;
+    }
+    if (kind == TK_IDENT &&
+        ((i > 0u && token_kind(i - 1u) == TK_IN) || token_in_for_iterable(i)))
+        return HIR_NAME_EXPR;
+    if (kind == TK_IDENT &&
+        (i > 0u && ((token_kind(i - 1u) == TK_COLON &&
+                     !is_struct_literal_field_value_context(i)) ||
+                    token_kind(i - 1u) == TK_ARROW ||
+                    token_kind(i - 1u) == TK_AMPERSAND ||
+                    token_in_type_array(i) ||
+                    token_in_shallow_generic_type_arg(i))) &&
+        token_kind(i - 1u) != TK_IN)
+    {
+        return HIR_TYPE;
+    }
     if (kind == TK_AMPERSAND)
     {
         uint prev = i > 0u ? token_kind(i - 1u) : 0u;
@@ -735,6 +1054,11 @@ uint classify(uint i, out uint end)
         end = control_stmt_end(i);
         return HIR_WHILE_STMT;
     }
+    if (kind == TK_FOR)
+    {
+        end = control_stmt_end(i);
+        return HIR_FOR_STMT;
+    }
     if (kind == TK_BREAK)
     {
         end = statement_end(i);
@@ -764,16 +1088,24 @@ uint classify(uint i, out uint end)
         return HIR_ARRAY_EXPR;
     }
     if (kind == TK_DOT)
+    {
+        if (i > 0u && token_kind(i - 1u) == TK_SELF_VALUE)
+            return HIR_NONE;
         return HIR_MEMBER_EXPR;
+    }
+    if (kind == TK_TYPE_IDENT)
+        return HIR_NAME_EXPR;
     if (kind == TK_IDENT)
     {
         uint prev = i > 0u ? token_kind(i - 1u) : 0u;
         if (prev == TK_FN || prev == TK_LET || prev == TK_DOT || prev == TK_CONST ||
-            prev == TK_TYPE ||
+            prev == TK_TYPE || prev == TK_FOR ||
             prev == TK_ENUM || prev == TK_STRUCT)
             return HIR_NONE;
         return HIR_NAME_EXPR;
     }
+    if (kind == TK_SELF_VALUE)
+        return HIR_NONE;
     return HIR_NONE;
 }
 
@@ -796,6 +1128,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         hir_kind[0u] = HIR_FILE;
         hir_token_pos[0u] = 0u;
         hir_token_end[0u] = n;
+        hir_token_file_id[0u] = 0u;
     }
 
     if (i >= n)
@@ -807,4 +1140,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_kind[out_i] = kind;
     hir_token_pos[out_i] = i;
     hir_token_end[out_i] = min(end, n);
+    hir_token_file_id[out_i] = token_file(i);
 }

@@ -16,6 +16,7 @@ RWStructuredBuffer<int> loop_delta;
 
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_WHILE_STMT = 11u;
+static const uint HIR_FOR_STMT = 30u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -34,7 +35,11 @@ uint active_hir_node_count()
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
-    if (i >= active_hir_node_count() || hir_kind[i] != HIR_WHILE_STMT)
+    if (i >= active_hir_node_count())
+        return;
+
+    uint kind = hir_kind[i];
+    if (kind != HIR_WHILE_STMT && kind != HIR_FOR_STMT)
         return;
 
     uint start = hir_token_pos[i];

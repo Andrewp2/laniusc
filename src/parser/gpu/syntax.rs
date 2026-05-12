@@ -77,6 +77,27 @@ impl GpuSyntaxChecker {
         )
     }
 
+    pub fn check_token_buffer_on_gpu_with_file_ids(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        token_capacity: u32,
+        token_buf: &wgpu::Buffer,
+        token_count_buf: &wgpu::Buffer,
+        token_file_id_buf: &wgpu::Buffer,
+    ) -> Result<(), GpuSyntaxError> {
+        let mut guard = self.buffers.lock().expect("syntax checker cache poisoned");
+        check_token_buffer_with_cache_and_file_ids(
+            device,
+            queue,
+            token_capacity,
+            token_buf,
+            token_count_buf,
+            Some(token_file_id_buf),
+            &mut guard,
+        )
+    }
+
     pub fn record_token_buffer_check(
         &self,
         device: &wgpu::Device,
@@ -94,6 +115,29 @@ impl GpuSyntaxChecker {
             token_capacity,
             token_buf,
             token_count_buf,
+            &mut guard,
+        )
+    }
+
+    pub fn record_token_buffer_check_with_file_ids(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        token_capacity: u32,
+        token_buf: &wgpu::Buffer,
+        token_count_buf: &wgpu::Buffer,
+        token_file_id_buf: &wgpu::Buffer,
+    ) -> Result<RecordedSyntaxCheck, GpuSyntaxError> {
+        let mut guard = self.buffers.lock().expect("syntax checker cache poisoned");
+        record_token_buffer_check_with_cache_and_file_ids(
+            device,
+            queue,
+            encoder,
+            token_capacity,
+            token_buf,
+            token_count_buf,
+            Some(token_file_id_buf),
             &mut guard,
         )
     }
@@ -133,6 +177,7 @@ struct SyntaxBufferCache {
     block_prefix_paren: wgpu::Buffer,
     block_prefix_bracket: wgpu::Buffer,
     block_prefix_brace: wgpu::Buffer,
+    default_token_file_id: LaniusBuffer<u32>,
     status_buf: wgpu::Buffer,
     counters_buf: wgpu::Buffer,
 }
@@ -252,6 +297,11 @@ impl SyntaxBufferCache {
                 "parser.syntax.block_prefix_brace",
                 n_blocks_capacity as usize,
                 wgpu::BufferUsages::empty(),
+            ),
+            default_token_file_id: storage_ro_from_u32s(
+                device,
+                "parser.syntax.default_token_file_id",
+                &vec![0u32; token_capacity as usize],
             ),
             status_buf: storage_u32_rw(
                 device,
@@ -420,6 +470,26 @@ pub fn check_token_buffer_on_gpu(
     )
 }
 
+pub fn check_token_buffer_on_gpu_with_file_ids(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    token_capacity: u32,
+    token_buf: &wgpu::Buffer,
+    token_count_buf: &wgpu::Buffer,
+    token_file_id_buf: &wgpu::Buffer,
+) -> Result<(), GpuSyntaxError> {
+    let mut cache = None;
+    check_token_buffer_with_cache_and_file_ids(
+        device,
+        queue,
+        token_capacity,
+        token_buf,
+        token_count_buf,
+        Some(token_file_id_buf),
+        &mut cache,
+    )
+}
+
 fn check_token_buffer_with_cache(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -428,19 +498,40 @@ fn check_token_buffer_with_cache(
     token_count_buf: &wgpu::Buffer,
     cache: &mut Option<SyntaxBufferCache>,
 ) -> Result<(), GpuSyntaxError> {
+    check_token_buffer_with_cache_and_file_ids(
+        device,
+        queue,
+        token_capacity,
+        token_buf,
+        token_count_buf,
+        None,
+        cache,
+    )
+}
+
+fn check_token_buffer_with_cache_and_file_ids(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    token_capacity: u32,
+    token_buf: &wgpu::Buffer,
+    token_count_buf: &wgpu::Buffer,
+    token_file_id_buf: Option<&wgpu::Buffer>,
+    cache: &mut Option<SyntaxBufferCache>,
+) -> Result<(), GpuSyntaxError> {
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("parser.syntax.encoder"),
     });
-    let recorded = record_token_buffer_check_with_cache(
+    let recorded = record_token_buffer_check_with_cache_and_file_ids(
         device,
         queue,
         &mut encoder,
         token_capacity,
         token_buf,
         token_count_buf,
+        token_file_id_buf,
         cache,
     )?;
-    queue.submit(Some(encoder.finish()));
+    crate::gpu::passes_core::submit_with_progress(queue, "parser.syntax.batch", encoder.finish());
     finish_recorded_check(device, &recorded)
 }
 
@@ -453,8 +544,32 @@ fn record_token_buffer_check_with_cache(
     token_count_buf: &wgpu::Buffer,
     cache: &mut Option<SyntaxBufferCache>,
 ) -> Result<RecordedSyntaxCheck, GpuSyntaxError> {
+    record_token_buffer_check_with_cache_and_file_ids(
+        device,
+        queue,
+        encoder,
+        token_capacity,
+        token_buf,
+        token_count_buf,
+        None,
+        cache,
+    )
+}
+
+fn record_token_buffer_check_with_cache_and_file_ids(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    encoder: &mut wgpu::CommandEncoder,
+    token_capacity: u32,
+    token_buf: &wgpu::Buffer,
+    token_count_buf: &wgpu::Buffer,
+    token_file_id_buf: Option<&wgpu::Buffer>,
+    cache: &mut Option<SyntaxBufferCache>,
+) -> Result<RecordedSyntaxCheck, GpuSyntaxError> {
     let n_blocks = token_capacity.div_ceil(256).max(1);
     let buffers = SyntaxBufferCache::prepare(cache, device, queue, token_capacity, n_blocks);
+    let default_token_file_id: &wgpu::Buffer = &buffers.default_token_file_id;
+    let token_file_id_buf = token_file_id_buf.unwrap_or(default_token_file_id);
 
     let delimiter_local_pass = syntax_delimiters_01_pass(device)?;
     let delimiter_scan_pass = syntax_delimiters_02_pass(device)?;
@@ -464,6 +579,10 @@ fn record_token_buffer_check_with_cache(
     resources.insert("gParams".into(), buffers.params_buf.as_entire_binding());
     resources.insert("token_words".into(), token_buf.as_entire_binding());
     resources.insert("token_count".into(), token_count_buf.as_entire_binding());
+    resources.insert(
+        "token_file_id".into(),
+        token_file_id_buf.as_entire_binding(),
+    );
     resources.insert("status".into(), buffers.status_buf.as_entire_binding());
     resources.insert(
         "depth_paren_inblock".into(),
@@ -672,9 +791,13 @@ fn finish_recorded_check(
 ) -> Result<(), GpuSyntaxError> {
     let status_slice = recorded.status_readback.slice(..);
     let counters_slice = recorded.counters_readback.slice(..);
-    status_slice.map_async(wgpu::MapMode::Read, |_| {});
-    counters_slice.map_async(wgpu::MapMode::Read, |_| {});
-    let _ = device.poll(wgpu::PollType::Wait);
+    crate::gpu::passes_core::map_readback_for_progress(&status_slice, "parser.syntax.status");
+    crate::gpu::passes_core::map_readback_for_progress(&counters_slice, "parser.syntax.counters");
+    crate::gpu::passes_core::wait_for_map_progress(
+        device,
+        "parser.syntax.recorded-check",
+        wgpu::PollType::Wait,
+    );
 
     let status_words = {
         let mapped = status_slice.get_mapped_range();

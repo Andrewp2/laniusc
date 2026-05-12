@@ -6,6 +6,9 @@ StructuredBuffer<uint> end_positions;
 StructuredBuffer<uint> types_compact;
 StructuredBuffer<uint> all_index_compact;
 StructuredBuffer<uint> end_positions_all;
+StructuredBuffer<uint> source_file_count;
+StructuredBuffer<uint> source_file_start;
+StructuredBuffer<uint> source_file_len;
 
 struct TokenOut
 {
@@ -39,6 +42,27 @@ static const uint TK_FOR = 100;
 static const uint TK_IN = 101;
 static const uint TK_EXTERN = 102;
 static const uint TK_TYPE = 103;
+static const uint TK_WHERE = 104;
+static const uint TK_SELF_VALUE = 105;
+static const uint MAX_FILES_SCAN = 1024u;
+
+uint file_start_for_token_end(uint end_excl)
+{
+    if (end_excl == 0u)
+        return 0u;
+
+    uint pos = end_excl - 1u;
+    uint files = min(source_file_count[0], MAX_FILES_SCAN);
+    [loop]
+    for (uint f = 0u; f < files; f += 1u)
+    {
+        uint start = source_file_start[f];
+        uint end = start + source_file_len[f];
+        if (pos >= start && pos < end)
+            return start;
+    }
+    return 0u;
+}
 
 inline uint retag_keyword(uint kind, uint start, uint len)
 {
@@ -80,6 +104,8 @@ inline uint retag_keyword(uint kind, uint start, uint len)
             return TK_ENUM;
         if (b0 == 105u && b1 == 109u && b2 == 112u && b3 == 108u)
             return TK_IMPL;
+        if (b0 == 115u && b1 == 101u && b2 == 108u && b3 == 102u)
+            return TK_SELF_VALUE;
         if (b0 == 116u && b1 == 114u && b2 == 117u && b3 == 101u)
             return TK_TRUE;
         if (b0 == 116u && b1 == 121u && b2 == 112u && b3 == 101u)
@@ -94,6 +120,8 @@ inline uint retag_keyword(uint kind, uint start, uint len)
         uint b4 = load_byte_at(in_bytes, start + 4u);
         if (b0 == 119u && b1 == 104u && b2 == 105u && b3 == 108u && b4 == 101u)
             return TK_WHILE;
+        if (b0 == 119u && b1 == 104u && b2 == 101u && b3 == 114u && b4 == 101u)
+            return TK_WHERE;
         if (b0 == 98u && b1 == 114u && b2 == 101u && b3 == 97u && b4 == 107u)
             return TK_BREAK;
         if (b0 == 102u && b1 == 97u && b2 == 108u && b3 == 115u && b4 == 101u)
@@ -156,6 +184,7 @@ inline uint retag_compact_kind(uint token_index)
     {
         uint end_excl = end_positions[token_index];
         uint start = compact_token_start(token_index);
+        start = max(start, file_start_for_token_end(end_excl));
         kind = retag_keyword(kind, start, end_excl - start);
     }
     return kind;
@@ -173,6 +202,7 @@ void tokens_build(uint3 tid: SV_DispatchThreadID)
 
     uint end_excl = end_positions[k];
     uint start = compact_token_start(k);
+    start = max(start, file_start_for_token_end(end_excl));
     uint kind = retag_compact_kind(k);
 
     // Write final token

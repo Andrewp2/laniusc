@@ -73,6 +73,7 @@ fn can_start_generic_angle_list(kinds: &[TokenKind], lt_i: usize) -> bool {
                 | Type
                 | Impl
                 | Trait
+                | Where
                 | Colon
                 | Arrow
                 | Assign
@@ -109,6 +110,7 @@ fn generic_angle_boundary(kind: TokenKind) -> bool {
             | Impl
             | Trait
             | Extern
+            | Where
     )
 }
 
@@ -351,9 +353,11 @@ fn keyword_kind(bytes: &[u8]) -> Option<TokenKind> {
         b"impl" => Some(TokenKind::Impl),
         b"match" => Some(TokenKind::Match),
         b"module" => Some(TokenKind::Module),
+        b"self" => Some(TokenKind::SelfValue),
         b"struct" => Some(TokenKind::Struct),
         b"trait" => Some(TokenKind::Trait),
         b"type" => Some(TokenKind::Type),
+        b"where" => Some(TokenKind::Where),
         _ => None,
     }
 }

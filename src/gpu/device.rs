@@ -4,6 +4,8 @@ use std::{
     sync::{Arc, Mutex, OnceLock, Weak},
 };
 
+use log::warn;
+
 /// Global GPU device/queue resource shared across compiler subsystems.
 pub struct GpuDevice {
     pub device: Arc<wgpu::Device>,
@@ -30,28 +32,44 @@ impl GpuDevice {
             return;
         };
         if let Some(parent) = path.parent() {
-            if std::fs::create_dir_all(parent).is_err() {
+            if let Err(err) = std::fs::create_dir_all(parent) {
+                warn!(
+                    "failed to create pipeline cache directory {}: {err}",
+                    parent.display()
+                );
                 return;
             }
         }
         let tmp = path.with_extension("tmp");
-        if std::fs::write(&tmp, data).is_ok() {
-            let _ = std::fs::rename(tmp, path);
+        if let Err(err) = std::fs::write(&tmp, data) {
+            warn!(
+                "failed to write pipeline cache tmp file {}: {err}",
+                tmp.display()
+            );
+            return;
+        }
+        if let Err(err) = std::fs::rename(&tmp, path) {
+            warn!(
+                "failed to move pipeline cache {} -> {}: {err}",
+                tmp.display(),
+                path.display()
+            );
         }
     }
 }
 
 fn create_context() -> GpuDevice {
-    let backends = match std::env::var("LANIUS_BACKEND")
-        .unwrap_or_else(|_| "auto".into())
-        .to_ascii_lowercase()
-        .as_str()
-    {
+    let backends = crate::gpu::env::env_string("LANIUS_BACKEND", "auto").to_ascii_lowercase();
+    let backends = match backends.as_str() {
         "vulkan" | "vk" => wgpu::Backends::VULKAN,
         "dx12" => wgpu::Backends::DX12,
         "metal" | "mtl" => wgpu::Backends::METAL,
         "gl" => wgpu::Backends::GL,
-        _ => wgpu::Backends::all(),
+        "auto" => wgpu::Backends::all(),
+        other => {
+            warn!("unknown LANIUS_BACKEND '{other}'; using default backends");
+            wgpu::Backends::all()
+        }
     };
 
     let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
@@ -137,11 +155,15 @@ pub fn persist_pipeline_cache() {
 
 pub fn pipeline_cache_for(device: &wgpu::Device) -> Option<Arc<wgpu::PipelineCache>> {
     let key = device as *const wgpu::Device as usize;
-    pipeline_cache_registry()
-        .lock()
-        .ok()
-        .and_then(|caches| caches.get(&key).cloned())
-        .and_then(|cache| cache.upgrade())
+    match pipeline_cache_registry().lock() {
+        Ok(caches) => caches.get(&key).cloned().and_then(|cache| cache.upgrade()),
+        Err(err) => {
+            warn!(
+                "failed to lock pipeline cache registry: {err}; proceeding without pipeline cache"
+            );
+            None
+        }
+    }
 }
 
 fn register_pipeline_cache(device: &Arc<wgpu::Device>, cache: Option<&Arc<wgpu::PipelineCache>>) {
@@ -149,8 +171,13 @@ fn register_pipeline_cache(device: &Arc<wgpu::Device>, cache: Option<&Arc<wgpu::
         return;
     };
     let key = Arc::as_ptr(device) as usize;
-    if let Ok(mut caches) = pipeline_cache_registry().lock() {
-        caches.insert(key, Arc::downgrade(cache));
+    match pipeline_cache_registry().lock() {
+        Ok(mut caches) => {
+            caches.insert(key, Arc::downgrade(cache));
+        }
+        Err(err) => {
+            warn!("failed to register pipeline cache due poisoned lock: {err}");
+        }
     }
 }
 
@@ -166,15 +193,28 @@ fn create_pipeline_cache(
     let Some(filename) = wgpu::util::pipeline_cache_key(adapter_info) else {
         return (None, None);
     };
-    let cache_dir = std::env::var_os("LANIUS_PIPELINE_CACHE_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("target").join("wgpu-pipeline-cache"));
+    let cache_dir = crate::gpu::env::env_path(
+        "LANIUS_PIPELINE_CACHE_DIR",
+        PathBuf::from("target").join("wgpu-pipeline-cache"),
+    );
     let cache_path = cache_dir.join(filename);
-    let cache_data = std::fs::read(&cache_path).ok();
+    let cache_data = match std::fs::read(&cache_path) {
+        Ok(data) => Some(data),
+        Err(err) => {
+            warn!(
+                "failed to read pipeline cache {}: {err}",
+                cache_path.display()
+            );
+            None
+        }
+    };
     let cache = unsafe {
         device.create_pipeline_cache(&wgpu::PipelineCacheDescriptor {
             label: Some("laniusc_pipeline_cache"),
             data: cache_data.as_deref(),
+            // This is only wgpu cache-data recovery when an on-disk pipeline
+            // cache is stale. Adapter selection above keeps compiler execution
+            // on a real GPU and does not allow a CPU compiler fallback.
             fallback: true,
         })
     };

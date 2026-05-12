@@ -1,5 +1,5 @@
 {
-  "cpu_only": true,
+  "test_cpu_oracle_only": true,
   "brackets": {
     "valid": true,
     "final_depth": 0,

@@ -22,11 +22,12 @@ The short version:
   optional packages unless the language grows a strong reason to bless one
   implementation.
 
-The current implementation is only a seed. Today, `stdlib/*.lani` files are
-included explicitly before user code. Module-form seed files use source-level
-paths such as `core::i32` and `test::assert`; legacy flat compatibility files
-still use `lstd_` prefixes to avoid name collisions. This spec describes the
-long-term desired shape.
+The current implementation is only a seed. `stdlib/*.lani` files are not
+auto-imported by the normal compiler path, and source-level imports need a GPU
+implementation before they can be counted as supported. Module-form seed files
+use source-level paths such as `core::i32` and `test::assert`; legacy flat
+compatibility files still use `lstd_` prefixes to avoid name collisions. This
+spec describes the long-term desired shape.
 
 This document is meant to be category-complete, not release-complete. A feature
 belongs here when ordinary Lanius programs, compiler tools, build tools, tests,

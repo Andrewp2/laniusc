@@ -126,7 +126,7 @@ The current `stdlib/` directory contains plain `.lani` files:
 - `bool.lani`
 - `array_i32_4.lani`
 
-Use explicit source imports before program source:
+The intended use will eventually be explicit imports before program source:
 
 ```lani
 import core::i32;
@@ -137,14 +137,51 @@ fn main() {
 }
 ```
 
-These imports are source-level includes expanded before lexing/parsing. They use
-stdlib package lookup and a source-level namespace bridge. The module-form files
-use names such as `core::i32::abs()`. The older flat files still use an `lstd_`
-prefix to avoid collisions and remain available as compatibility shims.
+This is not available in the normal compiler path today. The GPU syntax/parser
+path accepts `module` and leading `import` declarations as metadata, but source
+import expansion was removed with the old CPU prepass, imports are not loaded or
+resolved, and GPU type checking rejects import items until a resolver exists.
+Call-shaped qualified value paths can pass GPU syntax as HIR evidence, and GPU
+type checking resolves same-source qualified function calls whose prefix matches
+the leading module declaration. External qualified calls such as
+`core::i32::abs(-7)`, qualified constants such as `core::i32::MIN`, and imports
+still fail until a real GPU-compatible module/package model exists. The older
+flat files still use an `lstd_` prefix so copied or manually concatenated
+helpers are less likely to collide with application functions.
 
-Top-level primitive constants are available for source stdlib modules. Current
-examples include `core::i32::MIN`, `core::i32::MAX`, `LSTD_I32_MIN`, and
-`LSTD_I32_MAX`.
+The GPU lexer has the first explicit source-pack groundwork for that model. An
+API can upload multiple already-supplied source strings as one byte buffer plus
+GPU-visible file-span metadata. The DFA resets at file starts, token construction
+clamps starts to the containing file after skipped trivia, and `token_file_id` is
+written on GPU. GPU syntax treats leading `module` and `import` metadata
+file-locally for that source-pack path, and an explicit source-pack type-check
+entrypoint records the resident GPU lexer/parser/type-checker path against those
+buffers. Already-supplied multi-file source packs can type-check when the files
+contain independent module metadata and supported declarations. Path imports in
+an already-uploaded source pack now resolve on GPU to matching module metadata,
+while unresolved imports, string imports, and duplicate module paths reject.
+This still uses parser-owned HIR item spans for module/import headers rather
+than token-neighborhood discovery. It does not load files, follow module
+declarations to files, make declarations visible across files, or make the
+normal compiler path a package compiler. The normal compiler now records the
+LL(1) tree/HIR path, which receives the lexer-produced `token_file_id` sideband,
+validates it during GPU syntax checking, and feeds it into LL(1) HIR ownership
+metadata.
+The older direct-HIR helper still mirrors the token ownership sideband, but it
+is not the semantic path to extend.
+
+The LL(1) parser tree path also now produces parser-owned HIR item-field
+metadata from production ids and AST ancestry. It records top-level module,
+import, const, fn, extern fn, struct, enum, and type-alias item facts while
+excluding impl methods from top-level function declarations. That metadata is
+resident in the normal compiler's parser path, but it is not yet a dense
+declaration table or module resolver.
+
+The seed files declare top-level primitive constants. Module-form constants
+such as `core::i32::MIN` and `core::i32::MAX` are intended names once module
+resolution exists; today only direct single-file constants or manually copied
+flat compatibility constants such as `LSTD_I32_MIN` and `LSTD_I32_MAX` are
+normal compile-path inputs.
 
 ## Module And Package Model
 
@@ -1049,7 +1086,18 @@ Requires module/import support.
 
 Requires generics and shared behavior abstraction.
 
+- Simple generic function-call substitution now has GPU type-check coverage for
+  direct calls inferred from arguments, including generic helper calls such as
+  `keep(value)` from another generic function and nested direct helper calls
+  such as `keep(keep(7))`. Full monomorphization and backend specialization
+  remain separate work.
 - Generic arrays/slices.
+- Semantic use of `where` predicates beyond current GPU parser coverage.
+- Method lookup and calls. Direct `self.field` access for `self`, `self: Type`,
+  and `&self` receiver forms now has GPU type-checker coverage, and concrete
+  inherent method calls type-check for direct single-file receivers. `&self`
+  still needs real reference/borrow semantics, and trait/generic/imported method
+  lookup remains separate work.
 - Generic `Vec`.
 - Generic maps/sets.
 - Iterators.

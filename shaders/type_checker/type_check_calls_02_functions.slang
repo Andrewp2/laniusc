@@ -66,6 +66,7 @@ static const uint TK_IF_LBRACE = 88u;
 static const uint TK_CONST = 92u;
 static const uint TK_ENUM = 93u;
 static const uint TK_STRUCT = 94u;
+static const uint TK_MODULE = 97u;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -240,6 +241,77 @@ uint enum_type_code_for_name(uint name_i)
     return decl_i == INVALID ? TY_UNKNOWN : TY_ENUM_BASE + decl_i;
 }
 
+bool is_type_path_segment(uint i)
+{
+    uint kind = token_kind(i);
+    return kind == TK_IDENT || kind == TK_TYPE_IDENT || kind == TK_PARAM_IDENT;
+}
+
+uint leading_module_decl_end()
+{
+    if (token_kind(0u) != TK_MODULE)
+        return INVALID;
+
+    uint n_active = active_token_count();
+    [loop]
+    for (uint j = 1u; j < n_active; j += 1u)
+    {
+        if (token_kind(j) == TK_SEMICOLON)
+            return j;
+    }
+    return INVALID;
+}
+
+uint same_source_qualified_type_leaf(uint type_i)
+{
+    uint module_end = leading_module_decl_end();
+    if (module_end == INVALID || type_i >= active_token_count())
+        return INVALID;
+
+    uint module_seg = 1u;
+    uint path_seg = type_i;
+    [loop]
+    for (uint guard = 0u; guard < 32u; guard += 1u)
+    {
+        if (module_seg >= module_end || !is_type_path_segment(module_seg) ||
+            !is_type_path_segment(path_seg) || !same_text(module_seg, path_seg))
+            return INVALID;
+
+        bool module_has_next =
+            module_seg + 3u < module_end && token_kind(module_seg + 1u) == TK_COLON &&
+            token_kind(module_seg + 2u) == TK_COLON && is_type_path_segment(module_seg + 3u);
+        if (module_has_next)
+        {
+            if (path_seg + 3u >= active_token_count() ||
+                token_kind(path_seg + 1u) != TK_COLON || token_kind(path_seg + 2u) != TK_COLON ||
+                !is_type_path_segment(path_seg + 3u))
+                return INVALID;
+            module_seg += 3u;
+            path_seg += 3u;
+            continue;
+        }
+
+        uint leaf = path_seg + 3u;
+        if (leaf >= active_token_count() || token_kind(path_seg + 1u) != TK_COLON ||
+            token_kind(path_seg + 2u) != TK_COLON || !is_type_path_segment(leaf))
+            return INVALID;
+        if (leaf + 2u < active_token_count() && token_kind(leaf + 1u) == TK_COLON &&
+            token_kind(leaf + 2u) == TK_COLON)
+            return INVALID;
+        return leaf;
+    }
+    return INVALID;
+}
+
+uint same_source_qualified_type_code(uint type_i)
+{
+    uint leaf = same_source_qualified_type_leaf(type_i);
+    if (leaf == INVALID)
+        return TY_UNKNOWN;
+    uint ty = struct_type_code_for_name(leaf);
+    return ty != TY_UNKNOWN ? ty : enum_type_code_for_name(leaf);
+}
+
 bool is_struct_type(uint ty)
 {
     return ty >= TY_STRUCT_BASE && ty < TY_ENUM_BASE;
@@ -370,8 +442,9 @@ uint type_code_for_type_expr(uint type_i)
             elem = struct_type_code_for_name(cur);
         if (elem == TY_UNKNOWN && array_depth == 0u)
             elem = enum_type_code_for_name(cur);
+        if (elem == TY_UNKNOWN && array_depth == 0u)
+            elem = same_source_qualified_type_code(cur);
     }
-
     if (elem == TY_UNKNOWN)
         return TY_UNKNOWN;
     if (array_depth > 0u && (is_struct_type(elem) || is_enum_type(elem) || is_generic_type(elem)))

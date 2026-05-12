@@ -1,6 +1,10 @@
 mod common;
 
-use laniusc::lexer::{gpu::driver::GpuLexer, tables::tokens::TokenKind, test_cpu::lex_on_test_cpu};
+use laniusc::lexer::{
+    gpu::{GpuToken, driver::GpuLexer, util::read_tokens_from_mapped},
+    tables::tokens::TokenKind,
+    test_cpu::lex_on_test_cpu,
+};
 
 #[test]
 fn test_cpu_lexer_oracle_retags_bool_keywords() {
@@ -299,6 +303,54 @@ fn test_cpu_lexer_oracle_retags_type_keyword() {
 }
 
 #[test]
+fn test_cpu_lexer_oracle_retags_where_keyword() {
+    use TokenKind::*;
+
+    let kinds = lex_on_test_cpu("fn keep<T>(value: T) -> T where T: Eq<T> { return value; }")
+        .expect("test CPU oracle lex")
+        .into_iter()
+        .map(|token| token.kind)
+        .collect::<Vec<_>>();
+
+    assert!(kinds.contains(&Where));
+}
+
+#[test]
+fn test_cpu_lexer_oracle_retags_self_keyword() {
+    use TokenKind::*;
+
+    let kinds = lex_on_test_cpu("impl Range { fn start(self) -> i32 { return self.start; } }")
+        .expect("test CPU oracle lex")
+        .into_iter()
+        .map(|token| token.kind)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        kinds,
+        vec![
+            Impl,
+            Ident,
+            LBrace,
+            Fn,
+            Ident,
+            ParamLParen,
+            SelfValue,
+            ParamRParen,
+            Arrow,
+            TypeIdent,
+            LBrace,
+            Return,
+            SelfValue,
+            Dot,
+            Ident,
+            Semicolon,
+            RBrace,
+            RBrace,
+        ]
+    );
+}
+
+#[test]
 fn test_cpu_lexer_oracle_retags_match_keyword() {
     use TokenKind::*;
 
@@ -404,5 +456,210 @@ fn gpu_lexer_retags_keywords() {
                 Continue, Semicolon, RBrace, RBrace, RBrace,
             ]
         );
+    });
+}
+
+#[test]
+fn gpu_lexer_records_single_source_token_file_ids_on_gpu() {
+    common::block_on_gpu_with_timeout("GPU lexer single source token file ids", async move {
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let src = "module app::main; fn main() { return 0; }";
+        let file_ids = lexer
+            .with_resident_tokens(src, |device, queue, bufs| {
+                let ids_readback = device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("rb.test.lexer.token_file_id"),
+                    size: bufs.token_file_id.byte_size as u64,
+                    usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                    mapped_at_creation: false,
+                });
+                let count_readback = device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("rb.test.lexer.token_count"),
+                    size: 4,
+                    usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                    mapped_at_creation: false,
+                });
+
+                let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("test.lexer.token_file_id.readback"),
+                });
+                encoder.copy_buffer_to_buffer(&bufs.token_count, 0, &count_readback, 0, 4);
+                encoder.copy_buffer_to_buffer(
+                    &bufs.token_file_id,
+                    0,
+                    &ids_readback,
+                    0,
+                    bufs.token_file_id.byte_size as u64,
+                );
+                queue.submit(Some(encoder.finish()));
+
+                let count_slice = count_readback.slice(..);
+                count_slice.map_async(wgpu::MapMode::Read, |_| {});
+                let _ = device.poll(wgpu::PollType::Wait);
+                let count_bytes = count_slice.get_mapped_range();
+                let count = u32::from_le_bytes(count_bytes[0..4].try_into().unwrap()) as usize;
+                drop(count_bytes);
+                count_readback.unmap();
+
+                let ids_slice = ids_readback.slice(0..(count * 4) as u64);
+                ids_slice.map_async(wgpu::MapMode::Read, |_| {});
+                let _ = device.poll(wgpu::PollType::Wait);
+                let ids_bytes = ids_slice.get_mapped_range();
+                let ids = ids_bytes
+                    .chunks_exact(4)
+                    .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
+                    .collect::<Vec<_>>();
+                drop(ids_bytes);
+                ids_readback.unmap();
+                ids
+            })
+            .await
+            .expect("resident lex");
+
+        assert!(!file_ids.is_empty(), "fixture should produce tokens");
+        assert!(
+            file_ids.iter().all(|file_id| *file_id == 0),
+            "single-source tokens should all be assigned to file 0: {file_ids:?}"
+        );
+    });
+}
+
+#[test]
+fn gpu_lexer_records_source_pack_token_file_ids_on_gpu() {
+    common::block_on_gpu_with_timeout("GPU lexer source pack token file ids", async move {
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let sources = [
+            "module first; // comment without newline",
+            "module second; import first; fn second() { return; }",
+        ];
+        let boundary = sources[0].len();
+        let (tokens, file_ids) = lexer
+            .with_resident_source_pack_tokens(&sources, |device, queue, bufs| {
+                let tokens_readback = device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("rb.test.lexer.source_pack.tokens"),
+                    size: bufs.tokens_out.byte_size as u64,
+                    usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                    mapped_at_creation: false,
+                });
+                let ids_readback = device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("rb.test.lexer.source_pack.token_file_id"),
+                    size: bufs.token_file_id.byte_size as u64,
+                    usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                    mapped_at_creation: false,
+                });
+                let count_readback = device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("rb.test.lexer.source_pack.token_count"),
+                    size: 4,
+                    usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                    mapped_at_creation: false,
+                });
+
+                let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("test.lexer.source_pack.readback"),
+                });
+                encoder.copy_buffer_to_buffer(&bufs.token_count, 0, &count_readback, 0, 4);
+                encoder.copy_buffer_to_buffer(
+                    &bufs.tokens_out,
+                    0,
+                    &tokens_readback,
+                    0,
+                    bufs.tokens_out.byte_size as u64,
+                );
+                encoder.copy_buffer_to_buffer(
+                    &bufs.token_file_id,
+                    0,
+                    &ids_readback,
+                    0,
+                    bufs.token_file_id.byte_size as u64,
+                );
+                queue.submit(Some(encoder.finish()));
+
+                let count_slice = count_readback.slice(..);
+                count_slice.map_async(wgpu::MapMode::Read, |_| {});
+                let _ = device.poll(wgpu::PollType::Wait);
+                let count_bytes = count_slice.get_mapped_range();
+                let count = u32::from_le_bytes(count_bytes[0..4].try_into().unwrap()) as usize;
+                drop(count_bytes);
+                count_readback.unmap();
+
+                let token_bytes_len = (count * std::mem::size_of::<GpuToken>()) as u64;
+                let tokens_slice = tokens_readback.slice(0..token_bytes_len);
+                tokens_slice.map_async(wgpu::MapMode::Read, |_| {});
+                let _ = device.poll(wgpu::PollType::Wait);
+                let token_bytes = tokens_slice.get_mapped_range();
+                let tokens =
+                    read_tokens_from_mapped(&token_bytes, count).expect("source pack tokens");
+                drop(token_bytes);
+                tokens_readback.unmap();
+
+                let ids_slice = ids_readback.slice(0..(count * 4) as u64);
+                ids_slice.map_async(wgpu::MapMode::Read, |_| {});
+                let _ = device.poll(wgpu::PollType::Wait);
+                let ids_bytes = ids_slice.get_mapped_range();
+                let ids = ids_bytes
+                    .chunks_exact(4)
+                    .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
+                    .collect::<Vec<_>>();
+                drop(ids_bytes);
+                ids_readback.unmap();
+                (tokens, ids)
+            })
+            .await
+            .expect("resident source pack lex");
+
+        assert!(!tokens.is_empty(), "fixture should produce tokens");
+        assert_eq!(tokens.len(), file_ids.len());
+        assert!(
+            file_ids.iter().any(|file_id| *file_id == 0)
+                && file_ids.iter().any(|file_id| *file_id == 1),
+            "source pack should produce token ids for both files: {file_ids:?}"
+        );
+        for (token, file_id) in tokens.iter().zip(file_ids.iter()) {
+            let expected = if token.start < boundary { 0 } else { 1 };
+            assert_eq!(
+                *file_id, expected,
+                "token at byte {} should belong to file {expected}",
+                token.start
+            );
+            if *file_id == 0 {
+                assert!(
+                    token.start + token.len <= boundary,
+                    "file 0 token should not span into file 1: start={} len={}",
+                    token.start,
+                    token.len
+                );
+            }
+        }
+    });
+}
+
+#[test]
+fn gpu_lexer_retags_where_keyword() {
+    use TokenKind::*;
+
+    common::block_on_gpu_with_timeout("GPU lexer where keyword retagging", async move {
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let tokens = lexer.lex("where elsewhere").await.expect("lex");
+        let kinds = tokens
+            .into_iter()
+            .map(|token| token.kind)
+            .collect::<Vec<_>>();
+
+        assert_eq!(kinds, vec![Where, Ident]);
+    });
+}
+
+#[test]
+fn gpu_lexer_retags_self_keyword() {
+    use TokenKind::*;
+
+    common::block_on_gpu_with_timeout("GPU lexer self keyword retagging", async move {
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let tokens = lexer.lex("self selfish").await.expect("lex");
+        let kinds = tokens
+            .into_iter()
+            .map(|token| token.kind)
+            .collect::<Vec<_>>();
+
+        assert_eq!(kinds, vec![SelfValue, Ident]);
     });
 }
