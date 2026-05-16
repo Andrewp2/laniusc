@@ -67,8 +67,8 @@ inline void compact_impl(bool use_kept_pred, uint3 tid)
         }
 
         uint k1 = pref - 1u;
-        // EOF boundary closes the final token: end_excl = n
-        end_positions[k1] = gParams.n;
+        // EOF/file-end boundary closes the current token at this byte.
+        end_positions[k1] = i + 1u;
 
         if (use_kept_pred)
         {
@@ -86,16 +86,16 @@ inline void compact_impl(bool use_kept_pred, uint3 tid)
     uint end_excl;
     if (use_kept_pred)
     {
-        // Single *kept* boundary: n only when EOF is present AND kept
+        // Single *kept* boundary: EOF/file-end closes at this byte.
         uint eof_present = ((f & PF_EOF) != 0u) ? 1u : 0u;
         uint eof_kept    = ((f & PF_KEEP_EOF) != 0u) ? 1u : 0u;
-        end_excl = ((eof_present & eof_kept) != 0u) ? gParams.n : i;
+        end_excl = ((eof_present & eof_kept) != 0u) ? (i + 1u) : i;
     }
     else
     {
         // Single boundary in the ALL stream: derive directly from flags.
-        // EMIT at i => end_excl = i,  EOF at i => end_excl = n.
-        end_excl = ((f & PF_EOF) != 0u) ? gParams.n : i;
+        // EMIT at i => end_excl = i,  EOF/file-end at i => end_excl = i + 1.
+        end_excl = ((f & PF_EOF) != 0u) ? (i + 1u) : i;
     }
     end_positions[k] = end_excl;
 

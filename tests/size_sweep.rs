@@ -12,7 +12,8 @@ use std::{env, fs, io::Write, path::Path};
 use laniusc::{
     dev::generator::gen_valid_source,
     lexer::{
-        gpu::{Token as GpuToken, lex_on_gpu},
+        Token as GpuToken,
+        lex_on_gpu,
         tables::tokens::TokenKind,
         test_cpu::{TestCpuToken, lex_on_test_cpu},
     },

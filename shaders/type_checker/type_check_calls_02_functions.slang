@@ -1,4 +1,10 @@
-import utils;
+// HIR function metadata projection.
+//
+// This pass consumes parser/HIR records plus semantic type-reference records.
+// It intentionally does not read token kinds, source bytes, source-level names, or
+// whole function bodies. Parameter typing belongs in a separate HIR expression
+// and declaration-type pass so this shader stays within the WebGPU storage
+// buffer limit.
 
 struct Params
 {
@@ -9,22 +15,19 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct TokenIn
-{
-    uint kind;
-    uint start;
-    uint len;
-};
-
-StructuredBuffer<TokenIn> token_words;
-StructuredBuffer<uint> token_count;
-ByteAddressBuffer source_bytes;
+StructuredBuffer<uint> hir_status;
+StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_item_kind;
+StructuredBuffer<uint> hir_item_name_token;
+StructuredBuffer<uint> name_id_by_token;
+StructuredBuffer<uint> module_type_path_type;
+StructuredBuffer<uint> fn_entrypoint_tag;
+StructuredBuffer<uint> fn_return_ref_tag;
+StructuredBuffer<uint> fn_return_ref_payload;
 
 RWStructuredBuffer<uint> call_fn_index;
 RWStructuredBuffer<uint> call_return_type;
 RWStructuredBuffer<uint> call_return_type_token;
-RWStructuredBuffer<uint> call_param_count;
-RWStructuredBuffer<uint> call_param_type;
 RWStructuredBuffer<uint> function_lookup_key;
 RWStructuredBuffer<uint> function_lookup_fn;
 
@@ -33,53 +36,28 @@ static const uint INVALID = 0xffffffffu;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_VOID = 1u;
 static const uint TY_INT = 3u;
-static const uint TY_UINT = 4u;
-static const uint TY_FLOAT = 5u;
-static const uint TY_CHAR = 6u;
-static const uint TY_STRING = 7u;
-static const uint TY_ARRAY_BASE = 128u;
-static const uint TY_STRUCT_BASE = 4096u;
-static const uint TY_ENUM_BASE = 6144u;
 static const uint TY_GENERIC_BASE = 8192u;
 
-static const uint TK_IDENT = 1u;
-static const uint TK_LPAREN = 4u;
-static const uint TK_RPAREN = 5u;
-static const uint TK_LT = 12u;
-static const uint TK_GT = 13u;
-static const uint TK_LBRACKET = 20u;
-static const uint TK_RBRACKET = 21u;
-static const uint TK_LBRACE = 22u;
-static const uint TK_ARRAY_LBRACKET = 31u;
-static const uint TK_SEMICOLON = 37u;
-static const uint TK_COLON = 38u;
-static const uint TK_ARROW = 75u;
-static const uint TK_PARAM_LPAREN = 76u;
-static const uint TK_FN = 67u;
-static const uint TK_GROUP_RPAREN = 62u;
-static const uint TK_PARAM_RPAREN = 77u;
-static const uint TK_PARAM_IDENT = 79u;
-static const uint TK_TYPE_IDENT = 80u;
-static const uint TK_TYPE_ARRAY_LBRACKET = 85u;
-static const uint TK_TYPE_ARRAY_RBRACKET = 86u;
-static const uint TK_IF_LBRACE = 88u;
-static const uint TK_CONST = 92u;
-static const uint TK_ENUM = 93u;
-static const uint TK_STRUCT = 94u;
-static const uint TK_MODULE = 97u;
+static const uint TYPE_REF_INVALID = 0u;
+static const uint TYPE_REF_SCALAR = 1u;
+static const uint TYPE_REF_GENERIC_PARAM = 2u;
+static const uint TYPE_REF_INSTANCE = 3u;
+
+static const uint HIR_ITEM_KIND_FN = 4u;
+static const uint HIR_ITEM_KIND_EXTERN_FN = 5u;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint PARAM_CACHE_STRIDE = 16u;
+static const uint ENTRYPOINT_MAIN = 1u;
 
 uint linear_thread_id(uint3 dtid)
 {
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
 }
 
-uint active_token_count()
+uint active_hir_node_count()
 {
-    return min(token_count[0], gParams.n_tokens);
+    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
 }
 
 uint lookup_capacity()
@@ -87,500 +65,116 @@ uint lookup_capacity()
     return max(gParams.n_tokens * 2u, 1u);
 }
 
-uint token_kind(uint i)
+bool valid_node(uint node)
 {
-    uint n = active_token_count();
-    return i < n ? token_words[i].kind : 0u;
+    return node != INVALID && node < active_hir_node_count();
 }
 
-uint token_start(uint i)
+bool valid_token(uint token)
 {
-    uint n = active_token_count();
-    return i < n ? token_words[i].start : 0u;
+    return token != INVALID && token < gParams.n_tokens;
 }
 
-uint token_len(uint i)
+uint declaration_token_for_function(uint fn_node)
 {
-    uint n = active_token_count();
-    return i < n ? token_words[i].len : 0u;
+    uint decl_token = hir_token_pos[fn_node];
+    return valid_token(decl_token) ? decl_token : INVALID;
 }
 
-uint source_at(uint start, uint delta)
+uint name_token_for_function(uint fn_node)
 {
-    uint idx = start + delta;
-    return idx < gParams.source_len ? load_byte_at(source_bytes, idx) : 0u;
+    uint name_token = hir_item_name_token[fn_node];
+    return valid_token(name_token) ? name_token : INVALID;
 }
 
-bool span2(uint start, uint len, uint a, uint b)
+uint semantic_type_code_for_ref(uint tag, uint payload)
 {
-    return len == 2u && source_at(start, 0u) == a && source_at(start, 1u) == b;
-}
-
-bool span3(uint start, uint len, uint a, uint b, uint c)
-{
-    return len == 3u && source_at(start, 0u) == a && source_at(start, 1u) == b &&
-           source_at(start, 2u) == c;
-}
-
-bool span4(uint start, uint len, uint a, uint b, uint c, uint d)
-{
-    return len == 4u && source_at(start, 0u) == a && source_at(start, 1u) == b &&
-           source_at(start, 2u) == c && source_at(start, 3u) == d;
-}
-
-bool span5(uint start, uint len, uint a, uint b, uint c, uint d, uint e)
-{
-    return len == 5u && source_at(start, 0u) == a && source_at(start, 1u) == b &&
-           source_at(start, 2u) == c && source_at(start, 3u) == d &&
-           source_at(start, 4u) == e;
-}
-
-bool token_text_eq(uint i, uint a, uint b, uint c, uint d)
-{
-    return span4(token_start(i), token_len(i), a, b, c, d);
-}
-
-bool same_text(uint a, uint b)
-{
-    uint len = token_len(a);
-    if (len != token_len(b))
-        return false;
-    uint sa = token_start(a);
-    uint sb = token_start(b);
-    [loop]
-    for (uint i = 0u; i < len; i += 1u)
+    if (tag == TYPE_REF_SCALAR)
+        return payload;
+    if (tag == TYPE_REF_GENERIC_PARAM)
     {
-        if (source_at(sa, i) != source_at(sb, i))
-            return false;
+        uint name_id = valid_token(payload) ? name_id_by_token[payload] : INVALID;
+        return name_id == INVALID ? TY_UNKNOWN : TY_GENERIC_BASE + name_id;
     }
-    return true;
-}
-
-uint token_hash(uint i)
-{
-    uint h = 2166136261u;
-    uint start = token_start(i);
-    uint len = token_len(i);
-    [loop]
-    for (uint d = 0u; d < len; d += 1u)
+    if (tag == TYPE_REF_INSTANCE)
     {
-        h = (h ^ source_at(start, d)) * 16777619u;
+        uint head = valid_token(payload) ? payload : INVALID;
+        uint resolved = valid_token(head) ? module_type_path_type[head] : TY_UNKNOWN;
+        return resolved;
     }
-    return h ^ len;
-}
-
-uint primitive_type_code(uint type_i)
-{
-    uint start = token_start(type_i);
-    uint len = token_len(type_i);
-    if (span2(start, len, 105u, 56u) || span3(start, len, 105u, 49u, 54u) ||
-        span3(start, len, 105u, 51u, 50u) || span3(start, len, 105u, 54u, 52u) ||
-        span5(start, len, 105u, 115u, 105u, 122u, 101u))
-        return TY_INT;
-
-    if (span2(start, len, 117u, 56u) || span3(start, len, 117u, 49u, 54u) ||
-        span3(start, len, 117u, 51u, 50u) || span3(start, len, 117u, 54u, 52u) ||
-        span5(start, len, 117u, 115u, 105u, 122u, 101u))
-        return TY_UINT;
-
-    if (span3(start, len, 102u, 51u, 50u) || span3(start, len, 102u, 54u, 52u))
-        return TY_FLOAT;
-    if (span4(start, len, 98u, 111u, 111u, 108u))
-        return 2u;
-    if (span4(start, len, 99u, 104u, 97u, 114u))
-        return TY_CHAR;
-    if (span3(start, len, 115u, 116u, 114u))
-        return TY_STRING;
-
     return TY_UNKNOWN;
 }
 
-bool is_struct_decl_name_at(uint i)
+uint return_type_token_for_ref(uint tag, uint payload)
 {
-    return token_kind(i) == TK_IDENT && i > 0u && token_kind(i - 1u) == TK_STRUCT;
+    return (tag == TYPE_REF_GENERIC_PARAM || tag == TYPE_REF_INSTANCE) && valid_token(payload)
+               ? payload
+               : INVALID;
 }
 
-uint find_struct_decl_name(uint name_i)
+uint return_type_for_function(uint fn_node, uint fn_decl_token)
 {
-    uint n_active = active_token_count();
-    [loop]
-    for (uint j = 1u; j < n_active; j += 1u)
-    {
-        if (is_struct_decl_name_at(j) && same_text(j, name_i))
-            return j;
-    }
-    return INVALID;
-}
-
-uint struct_type_code_for_name(uint name_i)
-{
-    uint decl_i = find_struct_decl_name(name_i);
-    return decl_i == INVALID ? TY_UNKNOWN : TY_STRUCT_BASE + decl_i;
-}
-
-bool is_enum_decl_name_at(uint i)
-{
-    return token_kind(i) == TK_IDENT && i > 0u && token_kind(i - 1u) == TK_ENUM;
-}
-
-uint find_enum_decl_name(uint name_i)
-{
-    uint n_active = active_token_count();
-    [loop]
-    for (uint j = 1u; j < n_active; j += 1u)
-    {
-        if (is_enum_decl_name_at(j) && same_text(j, name_i))
-            return j;
-    }
-    return INVALID;
-}
-
-uint enum_type_code_for_name(uint name_i)
-{
-    uint decl_i = find_enum_decl_name(name_i);
-    return decl_i == INVALID ? TY_UNKNOWN : TY_ENUM_BASE + decl_i;
-}
-
-bool is_type_path_segment(uint i)
-{
-    uint kind = token_kind(i);
-    return kind == TK_IDENT || kind == TK_TYPE_IDENT || kind == TK_PARAM_IDENT;
-}
-
-uint leading_module_decl_end()
-{
-    if (token_kind(0u) != TK_MODULE)
-        return INVALID;
-
-    uint n_active = active_token_count();
-    [loop]
-    for (uint j = 1u; j < n_active; j += 1u)
-    {
-        if (token_kind(j) == TK_SEMICOLON)
-            return j;
-    }
-    return INVALID;
-}
-
-uint same_source_qualified_type_leaf(uint type_i)
-{
-    uint module_end = leading_module_decl_end();
-    if (module_end == INVALID || type_i >= active_token_count())
-        return INVALID;
-
-    uint module_seg = 1u;
-    uint path_seg = type_i;
-    [loop]
-    for (uint guard = 0u; guard < 32u; guard += 1u)
-    {
-        if (module_seg >= module_end || !is_type_path_segment(module_seg) ||
-            !is_type_path_segment(path_seg) || !same_text(module_seg, path_seg))
-            return INVALID;
-
-        bool module_has_next =
-            module_seg + 3u < module_end && token_kind(module_seg + 1u) == TK_COLON &&
-            token_kind(module_seg + 2u) == TK_COLON && is_type_path_segment(module_seg + 3u);
-        if (module_has_next)
-        {
-            if (path_seg + 3u >= active_token_count() ||
-                token_kind(path_seg + 1u) != TK_COLON || token_kind(path_seg + 2u) != TK_COLON ||
-                !is_type_path_segment(path_seg + 3u))
-                return INVALID;
-            module_seg += 3u;
-            path_seg += 3u;
-            continue;
-        }
-
-        uint leaf = path_seg + 3u;
-        if (leaf >= active_token_count() || token_kind(path_seg + 1u) != TK_COLON ||
-            token_kind(path_seg + 2u) != TK_COLON || !is_type_path_segment(leaf))
-            return INVALID;
-        if (leaf + 2u < active_token_count() && token_kind(leaf + 1u) == TK_COLON &&
-            token_kind(leaf + 2u) == TK_COLON)
-            return INVALID;
-        return leaf;
-    }
-    return INVALID;
-}
-
-uint same_source_qualified_type_code(uint type_i)
-{
-    uint leaf = same_source_qualified_type_leaf(type_i);
-    if (leaf == INVALID)
-        return TY_UNKNOWN;
-    uint ty = struct_type_code_for_name(leaf);
-    return ty != TY_UNKNOWN ? ty : enum_type_code_for_name(leaf);
-}
-
-bool is_struct_type(uint ty)
-{
-    return ty >= TY_STRUCT_BASE && ty < TY_ENUM_BASE;
-}
-
-bool is_enum_type(uint ty)
-{
-    return ty >= TY_ENUM_BASE && ty < TY_GENERIC_BASE;
-}
-
-bool is_generic_type(uint ty)
-{
-    return ty >= TY_GENERIC_BASE;
-}
-
-uint generic_param_list_open(uint item_i)
-{
-    uint n_active = active_token_count();
-    [loop]
-    for (uint j = item_i + 1u; j < n_active; j += 1u)
-    {
-        uint kind = token_kind(j);
-        if (kind == TK_LT)
-            return j;
-        if (kind == TK_LBRACE || kind == TK_IF_LBRACE || kind == TK_LPAREN ||
-            kind == TK_PARAM_LPAREN || kind == TK_SEMICOLON)
-            return INVALID;
-    }
-    return INVALID;
-}
-
-uint generic_param_list_close(uint open_i)
-{
-    uint n_active = active_token_count();
-    uint depth = 0u;
-    [loop]
-    for (uint j = open_i; j < n_active; j += 1u)
-    {
-        uint kind = token_kind(j);
-        if (kind == TK_LT)
-            depth += 1u;
-        else if (kind == TK_GT)
-        {
-            if (depth == 0u)
-                return INVALID;
-            depth -= 1u;
-            if (depth == 0u)
-                return j;
-        }
-        else if (kind == TK_LBRACE || kind == TK_IF_LBRACE || kind == TK_SEMICOLON)
-        {
-            return INVALID;
-        }
-    }
-    return INVALID;
-}
-
-bool is_type_generic_param_token(uint param_i, uint open_i, uint close_i)
-{
-    uint kind = token_kind(param_i);
-    if (param_i <= open_i || param_i >= close_i ||
-        (kind != TK_IDENT && kind != TK_TYPE_IDENT && kind != TK_PARAM_IDENT))
-        return false;
-    if (param_i > open_i + 1u && token_kind(param_i - 1u) == TK_CONST)
-        return false;
-    if (param_i + 1u < close_i && token_kind(param_i + 1u) == TK_COLON)
-        return false;
-    return true;
-}
-
-uint find_generic_type_param_decl(uint name_i)
-{
-    uint j = name_i;
-    [loop]
-    for (uint guard = 0u; guard < 256u && j > 0u; guard += 1u)
-    {
-        j -= 1u;
-        uint kind = token_kind(j);
-        if (kind != TK_FN && kind != TK_ENUM && kind != TK_STRUCT)
-            continue;
-
-        uint open_i = generic_param_list_open(j);
-        if (open_i == INVALID)
-            return INVALID;
-        uint close_i = generic_param_list_close(open_i);
-        if (close_i == INVALID)
-            return INVALID;
-        [loop]
-        for (uint p = open_i + 1u; p < close_i; p += 1u)
-        {
-            if (is_type_generic_param_token(p, open_i, close_i) && same_text(p, name_i))
-                return p;
-        }
-        return INVALID;
-    }
-    return INVALID;
-}
-
-uint generic_type_code_for_name(uint name_i)
-{
-    uint decl_i = find_generic_type_param_decl(name_i);
-    return decl_i == INVALID ? TY_UNKNOWN : TY_GENERIC_BASE + decl_i;
-}
-
-uint type_code_for_type_expr(uint type_i)
-{
-    uint cur = type_i;
-    uint array_depth = 0u;
-    uint n_active = active_token_count();
-    [loop]
-    for (uint guard = 0u; guard < 16u && cur < n_active; guard += 1u)
-    {
-        uint kind = token_kind(cur);
-        if (kind != TK_TYPE_ARRAY_LBRACKET && kind != TK_ARRAY_LBRACKET && kind != TK_LBRACKET)
-            break;
-        array_depth += 1u;
-        cur += 1u;
-    }
-
-    uint kind = token_kind(cur);
-    uint elem = TY_UNKNOWN;
-    if (kind == TK_TYPE_IDENT || kind == TK_IDENT)
-    {
-        elem = primitive_type_code(cur);
-        if (elem == TY_UNKNOWN)
-            elem = generic_type_code_for_name(cur);
-        if (elem == TY_UNKNOWN && array_depth == 0u)
-            elem = struct_type_code_for_name(cur);
-        if (elem == TY_UNKNOWN && array_depth == 0u)
-            elem = enum_type_code_for_name(cur);
-        if (elem == TY_UNKNOWN && array_depth == 0u)
-            elem = same_source_qualified_type_code(cur);
-    }
-    if (elem == TY_UNKNOWN)
-        return TY_UNKNOWN;
-    if (array_depth > 0u && (is_struct_type(elem) || is_enum_type(elem) || is_generic_type(elem)))
-        return TY_UNKNOWN;
-    return array_depth == 0u ? elem : TY_ARRAY_BASE + elem;
-}
-
-uint function_return_type_from_token(uint fn_i, uint ret_i)
-{
-    if (ret_i != INVALID)
-        return type_code_for_type_expr(ret_i);
-    if (fn_i + 1u < active_token_count() && token_text_eq(fn_i + 1u, 109u, 97u, 105u, 110u))
+    uint tag = fn_return_ref_tag[fn_decl_token];
+    uint payload = fn_return_ref_payload[fn_decl_token];
+    if (tag != TYPE_REF_INVALID)
+        return semantic_type_code_for_ref(tag, payload);
+    if (fn_entrypoint_tag[fn_node] == ENTRYPOINT_MAIN ||
+        (valid_token(fn_decl_token) && fn_entrypoint_tag[fn_decl_token] == ENTRYPOINT_MAIN))
         return TY_INT;
     return TY_VOID;
 }
 
-uint function_return_type_token(uint fn_i)
+void publish_function_lookup(uint fn_node)
 {
-    uint n_active = active_token_count();
-    uint bracket_depth = 0u;
-    [loop]
-    for (uint j = fn_i + 2u; j < n_active; j += 1u)
-    {
-        uint kind = token_kind(j);
-        if (kind == TK_LBRACKET || kind == TK_TYPE_ARRAY_LBRACKET || kind == TK_ARRAY_LBRACKET)
-        {
-            bracket_depth += 1u;
-            continue;
-        }
-        if (kind == TK_RBRACKET || kind == TK_TYPE_ARRAY_RBRACKET)
-        {
-            if (bracket_depth > 0u)
-                bracket_depth -= 1u;
-            continue;
-        }
-        if (kind == TK_SEMICOLON && bracket_depth == 0u)
-            return INVALID;
-        if ((kind == TK_LBRACE || kind == TK_IF_LBRACE) && bracket_depth == 0u)
-            return INVALID;
-        if (kind == TK_ARROW && bracket_depth == 0u)
-            return j + 1u;
-    }
-    return INVALID;
-}
-
-bool is_param_decl(uint i)
-{
-    uint n_active = active_token_count();
-    uint kind = token_kind(i);
-    return kind == TK_PARAM_IDENT ||
-           (kind == TK_IDENT && i + 1u < n_active && token_kind(i + 1u) == TK_COLON);
-}
-
-uint function_value_params_start(uint fn_i)
-{
-    uint n_active = active_token_count();
-    uint j = fn_i + 2u;
-    if (j < n_active && token_kind(j) == TK_LT)
-    {
-        uint close_i = generic_param_list_close(j);
-        if (close_i == INVALID)
-            return INVALID;
-        j = close_i + 1u;
-    }
-
-    [loop]
-    for (; j < n_active; j += 1u)
-    {
-        uint kind = token_kind(j);
-        if (kind == TK_PARAM_LPAREN || kind == TK_LPAREN)
-            return j + 1u;
-        if (kind == TK_LBRACE || kind == TK_IF_LBRACE || kind == TK_SEMICOLON)
-            return INVALID;
-    }
-    return INVALID;
-}
-
-void cache_function_params(uint fn_i)
-{
-    uint count = 0u;
-    uint n_active = active_token_count();
-    uint start_i = function_value_params_start(fn_i);
-    if (start_i == INVALID)
-    {
-        call_param_count[fn_i] = 0u;
-        return;
-    }
-    [loop]
-    for (uint j = start_i; j < n_active; j += 1u)
-    {
-        uint kind = token_kind(j);
-        if (kind == TK_PARAM_RPAREN || kind == TK_GROUP_RPAREN || kind == TK_RPAREN ||
-            kind == TK_LBRACE || kind == TK_IF_LBRACE)
-            break;
-        if (!is_param_decl(j))
-            continue;
-        if (count < PARAM_CACHE_STRIDE)
-            call_param_type[fn_i * PARAM_CACHE_STRIDE + count] = type_code_for_type_expr(j + 2u);
-        count += 1u;
-    }
-    call_param_count[fn_i] = count;
-}
-
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
-{
-    uint i = linear_thread_id(dtid);
-    if (i >= active_token_count() || token_kind(i) != TK_FN)
+    uint fn_decl_token = declaration_token_for_function(fn_node);
+    uint fn_name_token = name_token_for_function(fn_node);
+    if (!valid_token(fn_decl_token) || !valid_token(fn_name_token))
         return;
 
-    call_fn_index[i] = i;
-    uint ret_i = function_return_type_token(i);
-    call_return_type_token[i] = ret_i;
-    call_return_type[i] = function_return_type_from_token(i, ret_i);
-    cache_function_params(i);
+    call_fn_index[fn_decl_token] = fn_decl_token;
+    uint tag = fn_return_ref_tag[fn_decl_token];
+    uint payload = fn_return_ref_payload[fn_decl_token];
+    call_return_type_token[fn_decl_token] = return_type_token_for_ref(tag, payload);
+    call_return_type[fn_decl_token] = return_type_for_function(fn_node, fn_decl_token);
+
+    uint key = name_id_by_token[fn_name_token];
+    if (key == INVALID)
+        return;
 
     uint cap = lookup_capacity();
-    uint key = token_hash(i + 1u);
     uint start_slot = key % cap;
     [loop]
     for (uint probe = 0u; probe < cap; probe += 1u)
     {
         uint slot = (start_slot + probe) % cap;
         uint old_fn;
-        InterlockedCompareExchange(function_lookup_fn[slot], INVALID, i, old_fn);
+        InterlockedCompareExchange(function_lookup_fn[slot], INVALID, fn_decl_token, old_fn);
         if (old_fn == INVALID)
         {
             function_lookup_key[slot] = key;
             return;
         }
-        if (function_lookup_key[slot] == key && same_text(old_fn + 1u, i + 1u))
+        if (function_lookup_key[slot] == key)
         {
             uint old_min;
-            InterlockedMin(function_lookup_fn[slot], i, old_min);
+            InterlockedMin(function_lookup_fn[slot], fn_decl_token, old_min);
             return;
         }
     }
+}
+
+bool function_item_kind(uint item_kind)
+{
+    return item_kind == HIR_ITEM_KIND_FN || item_kind == HIR_ITEM_KIND_EXTERN_FN;
+}
+
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void main(uint3 dtid: SV_DispatchThreadID)
+{
+    uint node = linear_thread_id(dtid);
+    if (node >= active_hir_node_count() || !function_item_kind(hir_item_kind[node]))
+        return;
+
+    publish_function_lookup(node);
 }

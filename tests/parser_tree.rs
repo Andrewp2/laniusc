@@ -3,55 +3,55 @@ mod common;
 use laniusc::{
     gpu::buffers::storage_ro_from_u32s,
     lexer::{
-        gpu::driver::GpuLexer,
+        driver::GpuLexer,
         tables::tokens::{N_KINDS, TokenKind},
         test_cpu::{TestCpuToken, lex_on_test_cpu},
     },
     parser::{
-        gpu::{
-            driver::GpuParser,
-            passes::{
-                hir_item_fields::{
-                    HIR_ITEM_IMPORT_TARGET_PATH,
-                    HIR_ITEM_IMPORT_TARGET_STRING,
-                    HIR_ITEM_KIND_CONST,
-                    HIR_ITEM_KIND_ENUM,
-                    HIR_ITEM_KIND_EXTERN_FN,
-                    HIR_ITEM_KIND_FN,
-                    HIR_ITEM_KIND_IMPORT,
-                    HIR_ITEM_KIND_MODULE,
-                    HIR_ITEM_KIND_STRUCT,
-                    HIR_ITEM_KIND_TYPE_ALIAS,
-                    HIR_ITEM_NAMESPACE_MODULE,
-                    HIR_ITEM_NAMESPACE_TYPE,
-                    HIR_ITEM_NAMESPACE_VALUE,
-                    HIR_ITEM_VIS_PRIVATE,
-                    HIR_ITEM_VIS_PUBLIC,
-                },
-                hir_nodes::{
-                    HIR_NODE_BINARY_EXPR,
-                    HIR_NODE_CONST_ITEM,
-                    HIR_NODE_ENUM_ITEM,
-                    HIR_NODE_FILE,
-                    HIR_NODE_FN,
-                    HIR_NODE_IMPORT_ITEM,
-                    HIR_NODE_LET_STMT,
-                    HIR_NODE_LITERAL_EXPR,
-                    HIR_NODE_MODULE_ITEM,
-                    HIR_NODE_PATH_EXPR,
-                    HIR_NODE_RETURN_STMT,
-                    HIR_NODE_STRUCT_ITEM,
-                    HIR_NODE_STRUCT_LITERAL_EXPR,
-                },
-                ll1_blocks_01::{
-                    LL1_BLOCK_STATUS_ACCEPTED,
-                    LL1_BLOCK_STATUS_BOUNDARY,
-                    LL1_BLOCK_STATUS_DISABLED,
-                    LL1_BLOCK_STATUS_ERROR,
-                },
+        driver::GpuParser,
+        passes::{
+            hir_item_fields::{
+                HIR_ITEM_IMPORT_TARGET_PATH,
+                HIR_ITEM_IMPORT_TARGET_STRING,
+                HIR_ITEM_KIND_CONST,
+                HIR_ITEM_KIND_ENUM,
+                HIR_ITEM_KIND_ENUM_VARIANT,
+                HIR_ITEM_KIND_EXTERN_FN,
+                HIR_ITEM_KIND_FN,
+                HIR_ITEM_KIND_IMPORT,
+                HIR_ITEM_KIND_MODULE,
+                HIR_ITEM_KIND_STRUCT,
+                HIR_ITEM_KIND_TYPE_ALIAS,
+                HIR_ITEM_NAMESPACE_MODULE,
+                HIR_ITEM_NAMESPACE_TYPE,
+                HIR_ITEM_NAMESPACE_VALUE,
+                HIR_ITEM_VIS_PRIVATE,
+                HIR_ITEM_VIS_PUBLIC,
             },
-            syntax::{check_token_buffer_on_gpu_with_file_ids, check_tokens_on_gpu},
+            hir_nodes::{
+                HIR_NODE_BINARY_EXPR,
+                HIR_NODE_CONST_ITEM,
+                HIR_NODE_ENUM_ITEM,
+                HIR_NODE_FILE,
+                HIR_NODE_FN,
+                HIR_NODE_IMPORT_ITEM,
+                HIR_NODE_LET_STMT,
+                HIR_NODE_LITERAL_EXPR,
+                HIR_NODE_MATCH_EXPR,
+                HIR_NODE_MODULE_ITEM,
+                HIR_NODE_PATH_EXPR,
+                HIR_NODE_RETURN_STMT,
+                HIR_NODE_STRUCT_ITEM,
+                HIR_NODE_STRUCT_LITERAL_EXPR,
+            },
+            ll1_blocks_01::{
+                LL1_BLOCK_STATUS_ACCEPTED,
+                LL1_BLOCK_STATUS_BOUNDARY,
+                LL1_BLOCK_STATUS_DISABLED,
+                LL1_BLOCK_STATUS_ERROR,
+            },
         },
+        syntax::{check_token_buffer_on_gpu_with_file_ids, check_tokens_on_gpu},
         tables::{INVALID_TABLE_ENTRY, PrecomputedParseTables, encode_pop, encode_push},
     },
 };
@@ -319,6 +319,22 @@ fn token_span_snippet(src: &str, tokens: &[TestCpuToken], start: u32, end: u32) 
     Some(src[byte_start..last.start + last.len].to_string())
 }
 
+fn hir_node_snippet(
+    src: &str,
+    tokens: &[TestCpuToken],
+    hir_token_pos: &[u32],
+    hir_token_end: &[u32],
+    node: u32,
+) -> Option<String> {
+    let node = node as usize;
+    token_span_snippet(
+        src,
+        tokens,
+        *hir_token_pos.get(node)?,
+        *hir_token_end.get(node)?,
+    )
+}
+
 fn hir_item_names_for_kind(
     src: &str,
     tokens: &[TestCpuToken],
@@ -399,7 +415,7 @@ fn gpu_parser_ll1_hir_classifies_current_item_and_struct_literal_productions() {
         let tables =
             PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
                 .expect("load generated parse tables");
-        let src = "const LIMIT: i32 = 7; enum Maybe { Some(i32), None } struct Point { x: i32, y: i32 } fn make() { let p = Point { x: 1, y: 2 }; return; }";
+        let src = "const LIMIT: i32 = 7; enum Maybe { Some(i32), None } struct Point { x: i32, y: i32 } fn make() { let p = Point { x: 1, y: 2 }; let out = match (1) { _ -> 1 }; return; }";
         let tokens = lex_on_test_cpu(src).expect("test CPU oracle lex fixture");
 
         let res = lexer
@@ -442,6 +458,14 @@ fn gpu_parser_ll1_hir_classifies_current_item_and_struct_literal_productions() {
             &tokens,
             HIR_NODE_STRUCT_LITERAL_EXPR,
             TokenKind::LBrace,
+        );
+        assert_hir_kind_points_to_token(
+            "resident",
+            &res.hir_kind,
+            &res.hir_token_pos,
+            &tokens,
+            HIR_NODE_MATCH_EXPR,
+            TokenKind::Match,
         );
     });
 }
@@ -602,7 +626,7 @@ fn gpu_ll1_hir_preserves_module_import_and_path_evidence() {
             .expect("resident GPU lex")
             .expect("resident GPU parse");
 
-        assert!(res.ll1.accepted, "resident LL(1) parser rejected fixture");
+        assert!(res.ll1.accepted, "GPU LL(1) parser rejected fixture");
         assert_hir_kind_points_to_token(
             "resident",
             &res.hir_kind,
@@ -669,6 +693,7 @@ pub fn abs(value: i32) -> i32 { return value; }
 pub extern "wasm" fn host_alloc(size: usize,) -> u32;
 extern fn clock_ms() -> i64;
 pub struct Point { x: i32 }
+pub struct Range<T> { start: T, end: T }
 enum Maybe { Some(i32), None }
 type Alias = i32;
 
@@ -781,10 +806,28 @@ impl Point {
                 "Point",
             ),
             (
+                HIR_ITEM_KIND_STRUCT,
+                HIR_ITEM_NAMESPACE_TYPE,
+                HIR_ITEM_VIS_PUBLIC,
+                "Range",
+            ),
+            (
                 HIR_ITEM_KIND_ENUM,
                 HIR_ITEM_NAMESPACE_TYPE,
                 HIR_ITEM_VIS_PRIVATE,
                 "Maybe",
+            ),
+            (
+                HIR_ITEM_KIND_ENUM_VARIANT,
+                HIR_ITEM_NAMESPACE_VALUE,
+                HIR_ITEM_VIS_PRIVATE,
+                "Some",
+            ),
+            (
+                HIR_ITEM_KIND_ENUM_VARIANT,
+                HIR_ITEM_NAMESPACE_VALUE,
+                HIR_ITEM_VIS_PRIVATE,
+                "None",
             ),
             (
                 HIR_ITEM_KIND_TYPE_ALIAS,
@@ -892,6 +935,28 @@ fn gpu_syntax_treats_source_pack_module_import_metadata_file_locally() {
             .await
             .expect("resident source pack lex");
 
+        let final_semicolon_before_file_boundary = [
+            "module core::count; pub type Count = i32;",
+            "module app::main; import core::count; fn main() { return 0; }",
+        ];
+        lexer
+            .with_resident_source_pack_tokens(
+                &final_semicolon_before_file_boundary,
+                |device, queue, bufs| {
+                    check_token_buffer_on_gpu_with_file_ids(
+                        device,
+                        queue,
+                        bufs.n,
+                        &bufs.tokens_out,
+                        &bufs.token_count,
+                        &bufs.token_file_id,
+                    )
+                    .expect("GPU syntax should preserve final file tokens in source packs");
+                },
+            )
+            .await
+            .expect("resident source pack final semicolon lex");
+
         for invalid in [
             [
                 "module first; fn first() { return; } ",
@@ -972,10 +1037,11 @@ fn generated_ll1_tables_accept_namespaced_paths() {
 }
 
 #[test]
-fn gpu_syntax_accepts_call_shaped_qualified_value_paths_only() {
-    common::block_on_gpu_with_timeout("GPU syntax qualified value path call shape", async move {
+fn gpu_syntax_accepts_qualified_value_paths_as_hir_evidence() {
+    common::block_on_gpu_with_timeout("GPU syntax qualified value path evidence", async move {
         let lexer = GpuLexer::new().await.expect("GPU lexer init");
-        let accepted = r#"
+        for accepted in [
+            r#"
 module app::main;
 
 fn helper() -> i32 {
@@ -985,26 +1051,17 @@ fn helper() -> i32 {
 fn main() {
     return app::main::helper();
 }
-"#;
-        let tokens = lexer
-            .lex(accepted)
-            .await
-            .expect("GPU lex same-source qualified call fixture");
-        check_tokens_on_gpu(&tokens)
-            .await
-            .expect("GPU syntax should accept call-shaped qualified value paths");
-
-        for src in [
+"#,
             "fn main() { let value: i32 = core::i32::MIN; return value; }",
             "fn main() { return core::i32::abs + 1; }",
         ] {
             let tokens = lexer
-                .lex(src)
+                .lex(accepted)
                 .await
-                .expect("GPU lex non-call qualified value path fixture");
+                .expect("GPU lex qualified value path fixture");
             check_tokens_on_gpu(&tokens)
                 .await
-                .expect_err("GPU syntax should still reject non-call qualified value paths");
+                .expect("GPU syntax should preserve qualified value paths for type checking");
         }
     });
 }
@@ -1452,14 +1509,14 @@ fn generated_ll1_tables_accept_type_alias_declarations() {
 }
 
 #[test]
-fn gpu_syntax_rejects_type_aliases_until_gpu_alias_resolution_exists() {
-    common::block_on_gpu_with_timeout("GPU syntax type alias rejection", async move {
+fn gpu_syntax_accepts_type_alias_declarations_for_gpu_semantics() {
+    common::block_on_gpu_with_timeout("GPU syntax type alias acceptance", async move {
         let src = "type Count = i32; fn main() { return 0; }";
         let lexer = GpuLexer::new().await.expect("GPU lexer init");
         let tokens = lexer.lex(src).await.expect("GPU lex type alias fixture");
         check_tokens_on_gpu(&tokens)
             .await
-            .expect_err("GPU syntax should reject type aliases until alias resolution exists");
+            .expect("GPU syntax should accept type aliases for GPU semantic resolution");
     });
 }
 

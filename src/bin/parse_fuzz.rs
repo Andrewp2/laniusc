@@ -16,13 +16,11 @@ use std::{
 
 use anyhow::{Context, Result};
 use laniusc::{
-    lexer::gpu::driver::GpuLexer,
+    lexer::driver::GpuLexer,
     parser::{
-        gpu::{
-            buffers::ActionHeader,
-            driver::{GpuParser, ParseResult},
-            passes::ll1_blocks_01::{LL1_BLOCK_STATUS_ACCEPTED, LL1_BLOCK_STATUS_BOUNDARY},
-        },
+        buffers::ActionHeader,
+        driver::{GpuParser, ParseResult},
+        passes::ll1_blocks_01::{LL1_BLOCK_STATUS_ACCEPTED, LL1_BLOCK_STATUS_BOUNDARY},
         tables::PrecomputedParseTables,
     },
 };

@@ -1,4 +1,11 @@
-import utils;
+// HIR identifier array-return projection.
+//
+// This pass consumes parser-owned return-statement records, visible-decl
+// records, declaration type refs, and function return type refs. It publishes
+// the array-return sentinel for `return values;` only when the returned
+// declaration has the same bounded array instance as the enclosing function
+// return type. It does not inspect token kinds, token spelling, source bytes,
+// or expression punctuation.
 
 struct Params
 {
@@ -9,51 +16,36 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct TokenIn
-{
-    uint kind;
-    uint start;
-    uint len;
-};
-
-StructuredBuffer<TokenIn> token_words;
-StructuredBuffer<uint> token_count;
+StructuredBuffer<uint> hir_status;
+StructuredBuffer<uint> parent;
+StructuredBuffer<uint> hir_kind;
+StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> visible_decl;
-StructuredBuffer<uint> enclosing_fn;
-StructuredBuffer<uint> type_expr_ref_tag;
-StructuredBuffer<uint> type_expr_ref_payload;
+StructuredBuffer<uint> decl_type_ref_tag;
+StructuredBuffer<uint> decl_type_ref_payload;
+StructuredBuffer<uint> fn_return_ref_tag;
+StructuredBuffer<uint> fn_return_ref_payload;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_elem_ref_tag;
 StructuredBuffer<uint> type_instance_elem_ref_payload;
 StructuredBuffer<uint> type_instance_len_kind;
 StructuredBuffer<uint> type_instance_len_payload;
-StructuredBuffer<uint> type_instance_state;
-StructuredBuffer<uint> fn_return_ref_tag;
-StructuredBuffer<uint> fn_return_ref_payload;
 
 RWStructuredBuffer<uint> call_return_type;
 
 static const uint INVALID = 0xffffffffu;
 static const uint ARRAY_RETURN_OK = 0xfffffffeu;
 
-static const uint TYPE_REF_SCALAR = 1u;
+static const uint HIR_FN = 3u;
+static const uint HIR_RETURN_STMT = 9u;
+
+static const uint STMT_RECORD_STRIDE = 4u;
+static const uint STMT_RECORD_KIND_RETURN = 2u;
+
 static const uint TYPE_REF_INSTANCE = 3u;
-
 static const uint TYPE_INSTANCE_ARRAY = 2u;
-static const uint TYPE_INSTANCE_RESOLVED = 1u;
 static const uint TYPE_LEN_LITERAL = 1u;
-
-static const uint TY_INT = 3u;
-
-static const uint TK_IDENT = 1u;
-static const uint TK_LBRACKET = 20u;
-static const uint TK_FN = 67u;
-static const uint TK_SEMICOLON = 37u;
-static const uint TK_COLON = 38u;
-static const uint TK_RETURN = 69u;
-static const uint TK_LET_IDENT = 78u;
-static const uint TK_PARAM_IDENT = 79u;
-static const uint TK_TYPE_ARRAY_LBRACKET = 85u;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -63,113 +55,138 @@ uint linear_thread_id(uint3 dtid)
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
 }
 
-uint active_token_count()
+uint active_hir_node_count()
 {
-    return min(token_count[0], gParams.n_tokens);
+    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
 }
 
-uint token_kind(uint i)
+bool valid_node(uint node)
 {
-    uint n = active_token_count();
-    return i < n ? token_words[i].kind : 0u;
+    return node != INVALID && node < active_hir_node_count();
 }
 
-bool is_value_name_token(uint i)
+bool valid_token(uint token)
 {
-    uint kind = token_kind(i);
-    return kind == TK_IDENT || kind == TK_LET_IDENT || kind == TK_PARAM_IDENT;
+    return token != INVALID && token < gParams.n_tokens;
 }
 
-bool is_type_array_open(uint kind)
+uint stmt_slot(uint node, uint slot)
 {
-    return kind == TK_TYPE_ARRAY_LBRACKET || kind == TK_LBRACKET;
+    return node * STMT_RECORD_STRIDE + slot;
 }
 
-uint enclosing_function_start(uint token_i)
+uint owning_function_node(uint node)
 {
-    if (token_i >= active_token_count())
-        return INVALID;
-    uint encoded = enclosing_fn[token_i];
-    if (encoded != 0u)
-        return encoded - 1u;
-
-    uint j = token_i;
+    uint cur = node;
     [loop]
-    for (uint guard = 0u; guard < 512u && j > 0u; guard += 1u)
+    for (uint guard = 0u; guard < 128u; guard += 1u)
     {
-        j -= 1u;
-        if (token_kind(j) == TK_FN)
-            return j;
+        if (!valid_node(cur))
+            return INVALID;
+        if (hir_kind[cur] == HIR_FN)
+            return cur;
+
+        uint p = parent[cur];
+        if (!valid_node(p) || p == cur)
+            return INVALID;
+        cur = p;
     }
     return INVALID;
 }
 
-uint instance_from_ref(uint tag, uint payload)
+uint bounded_array_instance_from_ref(uint tag, uint payload)
 {
-    return tag == TYPE_REF_INSTANCE && payload < active_token_count() ? payload : INVALID;
+    if (tag != TYPE_REF_INSTANCE || !valid_token(payload))
+        return INVALID;
+    if (type_instance_kind[payload] != TYPE_INSTANCE_ARRAY)
+        return INVALID;
+    if (type_instance_len_kind[payload] != TYPE_LEN_LITERAL)
+        return INVALID;
+    return payload;
 }
 
-uint concrete_i32_array_instance(uint instance_i)
+bool same_type_ref(uint lhs_tag, uint lhs_payload, uint rhs_tag, uint rhs_payload)
 {
-    if (instance_i >= active_token_count())
-        return INVALID;
-    if (type_instance_state[instance_i] != TYPE_INSTANCE_RESOLVED ||
-        type_instance_kind[instance_i] != TYPE_INSTANCE_ARRAY)
-        return INVALID;
-    if (type_instance_elem_ref_tag[instance_i] != TYPE_REF_SCALAR ||
-        type_instance_elem_ref_payload[instance_i] != TY_INT)
-        return INVALID;
-    if (type_instance_len_kind[instance_i] != TYPE_LEN_LITERAL)
-        return INVALID;
-    return instance_i;
+    return lhs_tag == rhs_tag && lhs_payload == rhs_payload;
 }
 
-uint annotated_decl_instance(uint decl_i)
+bool same_bounded_array_instance(uint lhs, uint rhs)
 {
-    if (decl_i + 2u >= active_token_count() || token_kind(decl_i + 1u) != TK_COLON)
-        return INVALID;
-    uint type_head = decl_i + 2u;
-    if (!is_type_array_open(token_kind(type_head)))
-        return INVALID;
-    return concrete_i32_array_instance(
-        instance_from_ref(type_expr_ref_tag[type_head], type_expr_ref_payload[type_head]));
-}
-
-bool same_concrete_array(uint lhs_instance, uint rhs_instance)
-{
-    lhs_instance = concrete_i32_array_instance(lhs_instance);
-    rhs_instance = concrete_i32_array_instance(rhs_instance);
-    if (lhs_instance == INVALID || rhs_instance == INVALID)
+    lhs = valid_token(lhs) ? lhs : INVALID;
+    rhs = valid_token(rhs) ? rhs : INVALID;
+    if (lhs == INVALID || rhs == INVALID)
         return false;
-    return type_instance_len_payload[lhs_instance] == type_instance_len_payload[rhs_instance];
+    if (type_instance_kind[lhs] != TYPE_INSTANCE_ARRAY ||
+        type_instance_kind[rhs] != TYPE_INSTANCE_ARRAY)
+        return false;
+    if (type_instance_len_kind[lhs] != TYPE_LEN_LITERAL ||
+        type_instance_len_kind[rhs] != TYPE_LEN_LITERAL)
+        return false;
+    if (type_instance_len_payload[lhs] != type_instance_len_payload[rhs])
+        return false;
+    return same_type_ref(
+        type_instance_elem_ref_tag[lhs],
+        type_instance_elem_ref_payload[lhs],
+        type_instance_elem_ref_tag[rhs],
+        type_instance_elem_ref_payload[rhs]);
+}
+
+uint function_return_array_instance(uint return_node)
+{
+    uint fn_node = owning_function_node(return_node);
+    if (!valid_node(fn_node))
+        return INVALID;
+
+    uint fn_token = hir_token_pos[fn_node];
+    if (!valid_token(fn_token))
+        return INVALID;
+
+    return bounded_array_instance_from_ref(
+        fn_return_ref_tag[fn_token],
+        fn_return_ref_payload[fn_token]);
+}
+
+uint declaration_array_instance(uint value_token)
+{
+    if (!valid_token(value_token))
+        return INVALID;
+
+    uint decl_token = visible_decl[value_token];
+    if (!valid_token(decl_token))
+        return INVALID;
+
+    return bounded_array_instance_from_ref(
+        decl_type_ref_tag[decl_token],
+        decl_type_ref_payload[decl_token]);
+}
+
+void publish_identifier_array_return(uint return_node)
+{
+    if (hir_kind[return_node] != HIR_RETURN_STMT ||
+        hir_stmt_record[stmt_slot(return_node, 0u)] != STMT_RECORD_KIND_RETURN)
+        return;
+
+    uint return_token = hir_token_pos[return_node];
+    if (!valid_token(return_token))
+        return;
+
+    uint value_token = hir_stmt_record[stmt_slot(return_node, 3u)];
+    uint src_instance = declaration_array_instance(value_token);
+    if (src_instance == INVALID)
+        return;
+
+    uint dst_instance = function_return_array_instance(return_node);
+    if (same_bounded_array_instance(dst_instance, src_instance))
+        call_return_type[return_token] = ARRAY_RETURN_OK;
 }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint i = linear_thread_id(dtid);
-    uint n = active_token_count();
-    if (i >= n || token_kind(i) != TK_RETURN)
+    uint node = linear_thread_id(dtid);
+    if (!valid_node(node))
         return;
 
-    uint first = i + 1u;
-    if (first + 1u >= n || !is_value_name_token(first) || token_kind(first + 1u) != TK_SEMICOLON)
-        return;
-
-    uint fn_i = enclosing_function_start(i);
-    if (fn_i == INVALID)
-        return;
-
-    uint dst_instance =
-        concrete_i32_array_instance(instance_from_ref(fn_return_ref_tag[fn_i], fn_return_ref_payload[fn_i]));
-    if (dst_instance == INVALID)
-        return;
-
-    uint decl_i = visible_decl[first];
-    uint src_instance = annotated_decl_instance(decl_i);
-    if (src_instance == INVALID)
-        return;
-    if (same_concrete_array(dst_instance, src_instance))
-        call_return_type[i] = ARRAY_RETURN_OK;
+    publish_identifier_array_return(node);
 }

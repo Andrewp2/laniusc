@@ -2,7 +2,7 @@ use std::{env, fs, path::PathBuf, time::Instant};
 
 use laniusc::{
     dev::generator::gen_valid_source,
-    lexer::gpu::{GpuLexer, util::readback_enabled},
+    lexer::{GpuLexer, util::readback_enabled},
 };
 use log::warn;
 use rand::{SeedableRng, rngs::StdRng};

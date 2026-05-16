@@ -15,7 +15,7 @@ pub fn lstd_bool_or(left: bool, right: bool) -> bool {
 }
 
 pub fn lstd_bool_xor(left: bool, right: bool) -> bool {
-    return (left && !right) || (!left && right);
+    return left != right;
 }
 
 pub fn lstd_bool_eq(left: bool, right: bool) -> bool {
@@ -32,4 +32,12 @@ pub fn lstd_bool_to_i32(value: bool) -> i32 {
 
 pub fn lstd_i32_to_bool(value: i32) -> bool {
     return value != 0;
+}
+
+pub fn lstd_bool_select_i32(condition: bool, when_true: i32, when_false: i32) -> i32 {
+    if (condition) {
+        return when_true;
+    } else {
+        return when_false;
+    }
 }

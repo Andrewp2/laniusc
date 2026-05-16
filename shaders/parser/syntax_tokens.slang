@@ -405,6 +405,33 @@ uint find_stmt_semicolon(uint start_i)
     return find_before_boundary_at_depth(start_i + 1u, TK_SEMICOLON, start_i);
 }
 
+uint find_type_alias_semicolon(uint start_i)
+{
+    uint n_active = active_token_count();
+    uint angle_depth = 0u;
+    uint array_depth = 0u;
+    uint limit = min(n_active, start_i + 256u);
+    [loop]
+    for (uint j = start_i + 1u; j < limit; j += 1u)
+    {
+        uint kind = token_kind(j);
+        if (kind == TK_LT)
+            angle_depth += 1u;
+        else if (kind == TK_GT && angle_depth > 0u)
+            angle_depth -= 1u;
+        else if (kind == TK_LBRACKET || kind == TK_TYPE_ARRAY_LBRACKET)
+            array_depth += 1u;
+        else if ((kind == TK_RBRACKET || kind == TK_TYPE_ARRAY_RBRACKET) && array_depth > 0u)
+            array_depth -= 1u;
+        else if ((kind == TK_SEMICOLON || kind == TK_TYPE_SEMICOLON) && angle_depth == 0u &&
+                 array_depth == 0u)
+            return j;
+        else if (is_stmt_keyword(kind) && angle_depth == 0u && array_depth == 0u)
+            return INVALID;
+    }
+    return INVALID;
+}
+
 uint find_let_assign(uint start_i, uint end_i, uint base_i)
 {
     uint n_active = active_token_count();
@@ -635,7 +662,48 @@ void check_struct(uint i)
 
 void check_type_alias(uint i)
 {
-    record_error(i, ERR_UNEXPECTED_TOKEN, TK_TYPE);
+    if (token_kind(i + 1u) != TK_IDENT)
+    {
+        record_error(i, ERR_EXPECTED_TOKEN, TK_IDENT);
+        return;
+    }
+
+    uint semi = find_type_alias_semicolon(i);
+    if (semi == INVALID)
+    {
+        record_error(i, ERR_MISSING_SEMICOLON, 0u);
+        return;
+    }
+
+    uint assign_i = INVALID;
+    uint angle_depth = 0u;
+    uint array_depth = 0u;
+    [loop]
+    for (uint j = i + 2u; j < semi; j += 1u)
+    {
+        uint kind = token_kind(j);
+        if (kind == TK_LT)
+            angle_depth += 1u;
+        else if (kind == TK_GT && angle_depth > 0u)
+            angle_depth -= 1u;
+        else if (kind == TK_LBRACKET || kind == TK_TYPE_ARRAY_LBRACKET)
+            array_depth += 1u;
+        else if ((kind == TK_RBRACKET || kind == TK_TYPE_ARRAY_RBRACKET) && array_depth > 0u)
+            array_depth -= 1u;
+        else if (kind == TK_ASSIGN && angle_depth == 0u && array_depth == 0u)
+        {
+            assign_i = j;
+            break;
+        }
+    }
+
+    if (assign_i == INVALID)
+    {
+        record_error(i, ERR_EXPECTED_TOKEN, TK_ASSIGN);
+        return;
+    }
+    if (assign_i + 1u >= semi || !is_type_start(token_kind(assign_i + 1u)))
+        record_error(assign_i + 1u, ERR_EXPECTED_TOKEN, TK_TYPE_IDENT);
 }
 
 void check_let(uint i)
@@ -1023,15 +1091,12 @@ bool is_qualified_type_context(uint prev)
            prev == TK_PARAM_COMMA;
 }
 
-bool is_qualified_value_call_path(uint start)
+bool is_qualified_value_path(uint start)
 {
     if (!is_path_segment(token_kind(start)))
         return false;
     uint leaf = qualified_path_end(start);
-    if (leaf <= start + 1u)
-        return false;
-    uint next = token_kind(leaf + 1u);
-    return next == TK_CALL_LPAREN || next == TK_LPAREN;
+    return leaf > start + 1u;
 }
 
 void check_qualified_path_colon(uint i)
@@ -1044,7 +1109,7 @@ void check_qualified_path_colon(uint i)
         return;
     uint start = qualified_path_start(i);
     uint prev = start > 0u ? token_kind(start - 1u) : 0u;
-    if (!is_qualified_type_context(prev) && !is_qualified_value_call_path(start))
+    if (!is_qualified_type_context(prev) && !is_qualified_value_path(start))
         record_error(i, ERR_UNEXPECTED_TOKEN, TK_COLON);
 }
 

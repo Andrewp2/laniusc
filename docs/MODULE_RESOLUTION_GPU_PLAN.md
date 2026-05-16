@@ -44,9 +44,9 @@ What GPU syntax accepts and rejects today:
 - `tests/parser_tree.rs` requires `check_tokens_on_gpu` to reject duplicate
   module declarations, non-leading module declarations, and non-leading imports
   until GPU module resolution exists.
-- `tests/parser_tree.rs` requires call-shaped qualified value paths to pass GPU
-  syntax, while non-call qualified value paths such as `core::i32::MIN` still
-  fail syntax. Semantic resolution remains a GPU type-checker responsibility.
+- `tests/parser_tree.rs` requires qualified value paths, including non-call
+  paths such as `core::i32::MIN`, to pass GPU syntax as HIR evidence. Semantic
+  resolution remains a GPU type-checker responsibility.
 
 What GPU HIR preserves today:
 
@@ -62,62 +62,82 @@ What GPU HIR preserves today:
   top-level module, import, const, fn, extern fn, struct, enum, and type-alias
   item kind, name/path tokens, namespace, visibility, and file id, while
   excluding reused `fn_item` productions inside impl methods. This is structural
-  AST/HIR metadata. The sparse module/import metadata collector consumes these
-  HIR item fields instead of rediscovering item spans from token neighborhoods;
-  import path-vs-string target kind also comes from the parser import-tail
-  production. The first resolver consumes those records for path-import target
-  validation inside an already-uploaded source pack.
+  AST/HIR metadata. The current type-checker module/import foundation consumes
+  it only to build GPU-resident path/module/import/declaration records, sorted
+  module keys, duplicate-module status, and import-target module ids. The
+  earlier scan-based resolver and the later hash/prefix-scan metadata slice
+  were both deleted because neither implemented the paper-style
+  sort/deduplicate/lookup strategy for semantic names. Import path-vs-string
+  target kind still comes from the parser import-tail production. Path imports
+  now resolve only against explicitly supplied source-pack modules; string
+  imports still fail in the GPU resolver because host-driven import loading is
+  not implemented.
 - The path evidence is span metadata only: tests assert that `HIR_PATH_EXPR`
   covers complete token ranges such as `core::numbers`, `core::i32`, and
-  `core::i32::abs`, but no module id, import target, declaration id, visibility
-  result, or callable target is produced from those spans yet.
+  `core::i32::abs`. Module declarations and import paths can now flow through a
+  sorted module-key lookup to produce import-target module ids, and through a
+  per-namespace GPU path-resolution checkpoint that writes declaration id and
+  status arrays. The first consumer bridge projects resolved type declarations
+  into `module_type_path_type`, so same-module qualified struct/enum type paths
+  can pass through the existing type-expression code without a token-level
+  qualified-path shortcut. A fail-closed value-path status bridge now marks HIR
+  value-path heads through parse-tree relationships and projects
+  `resolved_value_status` into `module_value_path_status`; regular function
+  calls and top-level consts now have declaration-consuming HIR value
+  consumers, while general qualified values remain blocked.
+- `type_check_modules_00_mark_records.slang` and
+  `type_check_modules_01_scatter_paths.slang` now exist as pre-resolution GPU
+  metadata shaders and are scheduled by the resident type checker after name id
+  assignment. They mark parser-owned module, import, declaration, and path
+  candidates, prefix-scan path flags, then scatter compact path spans and path
+  segment name ids from `name_id_by_token`. They deliberately do not perform
+  module lookup, import resolution, declaration lookup, visibility checks,
+  same-source shortcuts, or hash-only lookup.
+- The resident type checker now schedules the name extraction and bounded radix
+  checkpoint: mark lexemes, prefix-scan, scatter compact name spans, run stable
+  byte-radix scatter passes, deduplicate adjacent sorted spans by byte equality,
+  scan run heads, and assign prefix-derived name ids. Module/import record
+  extraction, module-key sorting, duplicate validation, import path lookup,
+  namespace-specific declaration lookup, and the type-path projection consume
+  those ids now. This is still incomplete: it rejects names beyond the current
+  radix byte/block bounds and only connects regular qualified function calls and
+  top-level constants through HIR value consumers; general qualified value paths
+  remain blocked.
 - Direct HIR classifies module/import item heads and qualified value path heads
   as structured records, while suppressing extra value-path tail identifier
-  uses. Qualified type-path tails remain visible to the existing type checker;
-  a narrow same-source type path slice is handled in GPU module/type passes,
-  while unsupported external paths still fail instead of becoming no-ops.
+  uses. `HIR_PATH_EXPR` segment records feed sorted module/import/declaration
+  tables; same-module qualified type paths can now project back to struct/enum
+  type codes. Regular qualified function calls are consumed from
+  `resolved_value_decl` by a HIR call-context consumer that writes the existing
+  call result arrays at the path head without inspecting source text or token
+  hashes. Top-level qualified constants and one-segment constants made visible
+  by path imports consume `resolved_value_decl` after declaration types are
+  available. General qualified value paths still reject unless a dedicated HIR
+  consumer clears the fail-closed status.
+  The older token-segment `::` special-case rejection was deleted so it cannot
+  be mistaken for a resolver.
 
 What GPU type checking accepts and rejects today:
 
-- `tests/type_checker_modules.rs` requires same-source qualified type paths,
-  such as `app::main::Point`, to be accepted when they match the leading
-  `module app::main;` declaration and name a struct or enum declared in the
-  same source. This covers function signature positions plus parameter-use flow
-  through `visible_type`, such as `point.x` where `point:
-  app::main::Point`, and returning such a parameter from a function with a
-  qualified return type.
-- `tests/type_checker_modules.rs` still requires unresolved external qualified
-  type paths such as `core::option::Option<i32>` in a parameter type to fail
-  with `CompileError::GpuTypeCheck`.
-- `shaders/type_checker/type_check_modules_01_same_source_types.slang` performs a
-  GPU precheck for `::` type paths against the leading module declaration and
-  same-source struct/enum declarations.
-- `shaders/type_checker/type_check_modules_02_patch_visible_types.slang` patches
-  `visible_type` after scope analysis so qualified parameter declarations and
-  their resolved uses carry the same struct/enum type code as unqualified names.
-  Existing type checker passes still do not build a module table, import table,
-  or cross-file path table.
-- `shaders/type_checker/type_check_calls_03_resolve.slang` resolves the first
-  same-source qualified function-call slice. Calls such as `app::helper()` and
-  `app::main::helper()` type-check when the prefix matches the leading module
-  declaration and the callee is a function declared in the same source. This is
-  still not import or package resolution: imports, external qualified calls,
-  qualified constants, and module-aware value lookup tables remain blocked.
-- `shaders/type_checker/type_check_modules_00_clear.slang` and
-  `shaders/type_checker/type_check_modules_00_collect.slang` now create a
-  GPU-resident sparse metadata artifact for leading module/import HIR records:
-  item kind, path token span, path hash, import target kind, and enclosing
-  module token. `type_check_modules_00_collect_decls.slang` records sparse
-  top-level declaration facts from parser-owned HIR item fields: item kind, name
-  hash, name length, namespace, visibility, file id, and source HIR node.
-  Collection is driven by parser-owned `hir_item_*` metadata, not by discovering
-  semantic items from local token neighborhoods.
-  `type_check_modules_00_resolve_imports.slang` consumes those records for the
-  first bounded resolver slice: path imports in an already-uploaded source pack
-  resolve to a matching module token, unresolved path imports reject, string
-  imports reject, duplicate module paths reject, and resolved path-import
-  metadata is written to `import_resolved_module_token`. Cross-file declaration
-  visibility still does not exist.
+- `tests/type_checker_modules.rs` requires leading `module path;` metadata to
+  pass GPU type checking as metadata, and requires path imports to resolve only
+  through the GPU module-key lookup when the imported module is explicitly present
+  in the source pack.
+- `tests/type_checker_modules.rs` requires same-module qualified struct/enum type
+  paths such as `app::main::Point`, regular qualified function calls such as
+  `app::helper()`, and top-level qualified constants such as `app::LIMIT` to
+  pass through resolver arrays, while wrong-module, unresolved, non-function,
+  and general qualified value paths still fail with `CompileError::GpuTypeCheck`.
+- Deleted Misleading Slice: `type_check_names_00_hash.slang`,
+  `type_check_modules_00_clear.slang`, `type_check_modules_01_dense_scan.slang`,
+  `type_check_modules_02_dense_scatter.slang`,
+  `type_check_modules_02b_dense_scatter_imports.slang`,
+  `type_check_modules_02c_dense_scatter_decls.slang`, and
+  `type_check_modules_03_attach_ids.slang` are intentionally absent. They were
+  not a resolver: they assigned dense records and path hashes without sorting,
+  deduplicating lexemes into stable name ids, validating duplicates, resolving
+  imports by lookup, or producing declaration visibility. Keeping them made the
+  type checker look more complete than it was.
 - Existing value visibility is token-local: `type_check_visible_02_scatter.slang`
   walks earlier tokens in scope, compares identifier text, encodes
   `visible_decl`, and later passes decode `visible_type`. Struct/enum/function
@@ -156,14 +176,16 @@ file starts, clamps token starts to the containing file after skipped trivia, an
 writes `token_file_id` on GPU. The parser syntax checker consumes that sideband
 to validate leading `module` and `import` metadata per file. The compiler now
 also exposes explicit source-pack type checking that records the resident LL(1)
-tree/HIR and type-check passes against source-pack buffers. Already-supplied
-multi-file source packs can flow through the resident GPU parser and type
-checker when the files contain independent module metadata and supported
-declarations. The type checker suppresses module/import headers through
-parser-owned HIR item spans rather than token-neighborhood discovery. This
-groundwork does not load imports, discover files from module declarations,
-build module tables, resolve cross-file paths, or make declarations visible
-across files. The normal compiler now uses the LL(1) tree/HIR path, which
+tree/HIR and type-check passes against source-pack buffers. Module headers now
+pass as GPU metadata, path imports resolve only against explicitly supplied
+source-pack modules, and the resolver foundation uses paper-style name
+interning, sorting, deduplication, module-key lookup, import-to-module lookup,
+type-path projection, and regular qualified function-call consumption. This
+groundwork does not load imports, discover files from module declarations, or
+make general qualified value paths pass. Top-level qualified constants are only
+accepted through the resolver/const-consumer bridge when the declaring module is
+explicitly present in the source pack. The normal compiler now uses the LL(1)
+tree/HIR path, which
 receives the lexer-produced `token_file_id` sideband, validates it during GPU
 syntax checking, and feeds it into LL(1) HIR ownership metadata. The older
 direct-HIR helper still mirrors the same sideband, but it is not the semantic
@@ -173,17 +195,21 @@ path to extend.
 
 Add GPU buffers that convert token text into stable integer keys:
 
-- `ident_hash[token]`: 64-bit or two-u32 hash over identifier token bytes.
-- `ident_len[token]`: text length for collision checks.
+- `name_id[token]`: dense identifier id assigned by sorting identifier/string
+  lexemes and deduplicating equal byte spans, following the semantic-analysis
+  paper's name extraction strategy.
+- `name_hash[token]` and `name_len[token]`: optional sort/lookup accelerators;
+  hash equality is never sufficient without byte collision checks.
 - `path_start[path_id]`, `path_len[path_id]`: token span for every `path`.
 - `path_segment_count[path_id]`.
-- `path_segment_hash[path_segment_slot]`.
+- `path_segment_name_id[path_segment_slot]`.
 - `path_segment_token[path_segment_slot]`.
-- `path_hash[path_id]`: ordered segment hash for radix sorting.
+- `path_key[path_id]`: ordered segment-key record for radix sorting.
 
-Build these with per-token maps, prefix scans over path-start flags, and scatter
-from each path segment. Use byte equality only as a collision check after hash
-matches; never repeatedly scan arbitrary source text inside every resolver.
+Build these with stable partitioning, GPU-friendly radix sort, adjacent
+deduplication, prefix sums, and scatter/gather over parser-owned AST/HIR path
+spans. Use byte equality only as a collision check after candidate matches;
+never repeatedly scan arbitrary source text inside every resolver.
 
 ### Modules
 
@@ -193,11 +219,9 @@ Create module declarations from `module path;` items:
   root module path for root-only legacy inputs during transition.
 - `module_record_id[file_id]`: dense module id from a prefix scan over valid
   declarations.
-- `module_path_hash[module_id]`, `module_path_start[module_id]`,
-  `module_path_len[module_id]`.
-- `module_file_id[module_id]`.
+- packed module records containing path hash, path span, and file id.
 
-Validate on GPU by sorting `(module_path_hash, module_id)`, comparing adjacent
+Validate on GPU by sorting `(module path hash, module_id)`, comparing adjacent
 records with segment-by-segment collision checks, and rejecting duplicate module
 paths. A file can have at most one `module` declaration; the declaration must be
 before non-import items in the same file.
@@ -227,11 +251,11 @@ Extract top-level declarations into a declaration table:
 
 - `decl_id`: dense id from top-level declaration flags.
 - `decl_module_id`.
-- `decl_name_hash`, `decl_name_token`, `decl_name_len`.
+- declaration name id, declaration name token, and declaration name length.
 - `decl_kind`: const, fn, extern fn, struct, enum, enum variant, type alias
   later, trait/impl later.
-- `decl_visibility`: private or public.
-- `decl_hir_node`, `decl_token_start`, `decl_token_end`.
+- declaration visibility: private or public.
+- declaration HIR node, token start, and token end.
 - `decl_type_code` or `decl_type_record_id` for type declarations.
 
 For enum variants, store both the variant declaration and the parent enum
@@ -239,9 +263,10 @@ declaration so qualified constructor lookup can resolve
 `core::option::Some` to the variant and type checking can still know the enum.
 
 Validate duplicates with radix sort over
-`(decl_module_id, decl_namespace, decl_name_hash)` plus collision checks. Keep
-type/value namespaces separate so a type and function can share a spelling if
-the language permits it.
+`(decl_module_id, decl_namespace, decl_name_id)`. The name ids already come
+from byte-equality-checked GPU name interning, so declaration-key equality can
+compare integer ids directly. Keep type/value namespaces separate so a type and
+function can share a spelling if the language permits it.
 
 ### Qualified Type Paths
 
@@ -257,15 +282,20 @@ Represent every type path as a path id. Resolution cases:
 Implementation should use sorted lookup tables:
 
 - `module_key_to_module_id`: sorted by full module path.
-- `decl_type_key_to_decl_id`: sorted by `(module_id, name_hash)`.
+- `decl_type_key_to_decl_id`: sorted by `(module_id, name_id)`.
 - `import_visible_type_key`: sorted/scattered from each importing module's
   imports for unqualified imported lookup.
 
 `type_code_for_type_expr` should stop scanning all tokens for struct/enum names
-and instead call a path resolver that writes `resolved_type_decl[path_id]` and
-`type_record[path_id]`. Existing primitive and generic parameter paths can remain
-fast local cases, but the result must flow through the same `visible_type`
-buffers.
+and instead consume resolver outputs. The current path-resolution checkpoint
+writes `resolved_type_decl[path_id]` and `resolved_type_status[path_id]` from
+sorted module keys, `decl_type_key_to_decl_id`, and
+`import_visible_type_key_to_decl_id`. A narrow GPU projection now writes
+`module_type_path_type[token]` and `module_type_path_status[token]` from those
+arrays so existing type-expression consumers can accept same-module qualified
+struct/enum type paths and reject unresolved qualified type paths without
+inventing token-level `::` cases. Existing primitive and generic parameter
+paths can remain fast local cases while the remaining consumers migrate.
 
 ### Qualified Value Paths
 
@@ -280,15 +310,22 @@ Resolution cases:
 - Multiple segments: resolve prefix module path, then resolve final segment in
   that module's value namespace.
 
-Outputs:
+First array checkpoint outputs:
 
 - `resolved_value_decl[path_id or use_id]`.
-- `visible_decl[token]` for the head token of resolved value paths, so existing
-  codegen consumers can continue reading declaration metadata.
-- `call_fn_index[call_token]` and `call_return_type[call_token]` for qualified
-  function calls.
-- Enum constructor calls use the resolved enum-variant declaration instead of
-  unqualified global variant scans.
+- `resolved_value_status[path_id or use_id]`.
+
+This value namespace checkpoint reads sorted module keys,
+`decl_value_key_to_decl_id`, and `import_visible_value_key_to_decl_id`. It does
+not write `resolved_call_decl`, `visible_decl`, `call_fn_index`, or
+`call_return_type`; qualified value paths remain fail-closed until downstream
+visible/type/call consumers use the arrays. The current HIR value consumers
+handle resolved regular function calls, top-level constants, and local or
+qualified unit enum variants. Unit variants use the enum-variant declaration plus
+`decl_parent_type_decl` so type checking can publish the parent enum type without
+looking at token text. Payload and generic enum constructors should use the
+resolved enum-variant declaration too, but remain blocked until variant payload
+metadata is available as a GPU declaration artifact.
 
 Member access (`value.field`) stays separate from module paths (`module::name`).
 Do not lower `::` to `.` or reuse struct field lookup for modules.
@@ -304,8 +341,8 @@ The new pass family should be array-oriented:
 5. Resolve module paths and declaration paths with parallel binary search or
    sort-merge joins.
 6. Validate duplicates, unresolved imports, private cross-module use, and
-   ambiguous imports by reducing status records into the existing type-check
-   status buffer.
+   ambiguous imports in the consumer namespace that needs that status, rather
+   than globally reducing both type and value path namespaces.
 7. Feed resolved declaration/type outputs into the existing visible/type/call
    passes, then remove the old unqualified all-token scans once parity exists.
 
@@ -319,57 +356,391 @@ ad hoc recursive CPU structures or source rewrites.
 The GPU syntax path now accepts one leading `module path;` declaration followed
 by leading `import path;` or `import "path";` declarations. These records are
 metadata only: no file is loaded, no source is spliced, no cross-file namespace
-is built. Call-shaped qualified value paths can pass syntax, and GPU type
-checking resolves same-source qualified function calls whose prefix matches the
-leading module declaration. GPU type checking still rejects import items,
-external qualified calls, unresolved module prefixes, missing qualified callees,
-and qualified constants so syntax metadata cannot be mistaken for module/import
-resolution.
+is built by the host. Qualified value paths, including non-call paths such as
+`core::i32::MIN`, can pass syntax as HIR evidence. GPU type checking accepts
+regular qualified function calls, top-level qualified constants, local or
+qualified unit enum variants, and bounded contextual local or qualified generic
+enum constructors when the GPU module/import resolver produces an OK declaration
+and the matching HIR consumer identifies that declaration in its use context.
+Unresolved module prefixes, missing qualified callees/constants/variants,
+non-function call targets, non-constructor symbolic generic enum returns,
+trait methods, broad generic callees, and general qualified values still reject.
+Bounded module-qualified generic helpers such as `core::option::unwrap_or(value,
+fallback)` can type-check when the HIR call consumer infers the scalar return
+from literal or annotated local arguments using GPU type-ref metadata; this is
+not full monomorphization or package loading.
+Bounded module-form inherent method calls can type-check when the receiver is
+either an annotated concrete type ref or a GPU-resolved call result with a
+concrete `fn_return_ref_*`, as in `core::range::range_i32(1, 4).start()`.
 
-## Minimal Resolver Implementation Slice
+## First Real Resolver Slice Checklist
 
 Goal: one source pack can contain multiple module-declared files, path imports,
 qualified type paths, and qualified value paths for public top-level consts,
-functions, structs, enums, and enum variants. No string imports, aliases, globs,
-traits, impl method lookup, type aliases, or generics beyond existing parsed
+functions, structs, enums, enum variants, bounded inherent method calls, and
+bounded scalar type aliases. No string imports, import aliases, globs, traits,
+trait method lookup, broad type aliases, or generics beyond existing parsed
 shape.
 
-Exact files to change:
+This slice starts from parser/HIR arrays. It must not resurrect the deleted
+resolver slice, and it must not treat source text rewriting, CPU import
+expansion, hash-only lookup, or a same-source qualified shortcut as module
+resolution. The paper-aligned flow is:
 
-- `shaders/parser/syntax_tokens.slang`: consume the existing module/import
-  metadata and allow `::` in value path contexts when the token sequence is a
-  valid path followed by call, struct-literal open, semicolon, comma, operator,
-  return boundary, or match-pattern boundary.
-- `shaders/parser/hir_nodes.slang` and
-  `src/parser/gpu/passes/hir_nodes.rs`: add HIR constants for module item,
-  import item, and path expression/type path.
-- `src/parser/gpu/driver.rs` and parser buffer structs as needed: allocate and
-  expose any new HIR path metadata buffers produced by the LL(1) tree/HIR path.
-- `shaders/type_checker/type_check_modules_*.slang`: new passes for path
-  extraction, module/import/declaration record scatter, key sort/join, duplicate
-  validation, and path resolution. If a generic radix-sort helper is not already
-  available, add the smallest reusable GPU sort helper under the existing GPU
-  pass infrastructure.
-- `src/type_checker/gpu.rs`: allocate module/path/declaration buffers, record
-  the new module-resolution passes before visible declaration/type/call passes,
-  and bind resolved outputs into existing passes.
-- `shaders/type_checker/type_check_visible_02_scatter.slang`: consult resolved
-  module value declarations before reporting unresolved global names; keep local
-  lexical resolution for params and lets.
-- `shaders/type_checker/type_check_scope.slang`,
-  `shaders/type_checker/type_check_tokens.slang`, and
-  `shaders/type_checker/type_check_calls_02_functions.slang`: replace
-  unqualified struct/enum/function scans with resolved declaration/type buffers
-  for module-aware declarations, while preserving existing unqualified behavior
-  inside a module.
-- `tests/parser_tree.rs`: keep leading module/import metadata accepted, keep
-  non-call qualified value paths rejected, and broaden qualified value
-  acceptance only as resolver buffers become real.
-- `tests/type_checker_modules.rs`: replace the current qualified type rejection
-  with positive GPU type-check tests for imported qualified types and values, and
-  add negative tests for unresolved module, unresolved declaration, duplicate
-  module, duplicate declaration, private cross-module use, and unsupported string
-  import.
+1. Extract name and path evidence from parser/HIR arrays.
+2. Assign stable name ids by GPU radix sort, adjacent byte equality
+   deduplication, and prefix-sum ids.
+3. Scatter dense module, import, declaration, and use records from prefix scans.
+4. Build sorted lookup tables for modules, declarations, imports, and qualified
+   uses.
+5. Validate duplicates and unsupported imports with sorted-adjacent comparison
+   plus byte equality collision checks.
+6. Write per-namespace `resolved_type_decl`, `resolved_value_decl`,
+   `resolved_type_status`, and `resolved_value_status` arrays.
+7. In a later consumer bridge, feed resolved declaration/type outputs into the
+   existing visible/type/call passes and reduce user-facing status records.
+
+Concrete pass names for the first implementation:
+
+- `type_check_names_00_mark_lexemes.slang`: read token/HIR ownership buffers
+  and mark identifier/string lexemes that can participate in semantic names.
+- `type_check_names_scan_00_local.slang`,
+  `type_check_names_scan_01_blocks.slang`, and
+  `type_check_names_scan_02_apply.slang`: reusable GPU exclusive-prefix scan
+  helpers used for lexeme scatter, run-head id assignment, and later compact
+  module/import/declaration record allocation.
+- `type_check_names_01_scatter_lexemes.slang`: prefix-scan lexeme flags and
+  scatter `name_lexeme_token`, `name_lexeme_file_id`, `name_lexeme_start`,
+  `name_lexeme_len`, `name_lexeme_hash`, `name_lexeme_original_index`, and a
+  GPU-written compact `name_count_out`.
+- `type_check_names_radix_00_histogram.slang`: for one byte offset, build
+  per-block radix bucket counts over compact name spans, clamped by the
+  GPU-written `name_count_in` buffer rather than a host-read count.
+- `type_check_names_radix_00b_bucket_prefix.slang`: scan per-bucket block
+  histogram counts on the GPU to produce exclusive block prefixes for stable
+  scatter. The first helper has a 256 histogram-block scheduling bound and is
+  not a CPU fallback.
+- `type_check_names_radix_00c_bucket_bases.slang`: scan bucket totals on the
+  GPU to produce global radix bucket bases.
+- `type_check_names_radix_01_scatter.slang`: consume GPU-scanned bucket counts
+  and perform a stable radix scatter while carrying name span ids.
+- `type_check_names_radix_02_adjacent_dedup.slang`: compare adjacent sorted
+  lexemes by byte equality over `source_bytes`; hash equality is only a
+  candidate filter.
+- `type_check_names_radix_03_assign_ids.slang`: consume an exclusive prefix sum
+  over unique-name run heads and write `name_id_by_token[token]` plus
+  `name_id_by_input[name_span_id]`.
+- `type_check_modules_00_mark_records.slang`: mark module declarations, imports,
+  top-level declarations, type paths, value paths, and call paths from parser
+  HIR arrays such as item kind, item path span, visibility, namespace, file id,
+  path expression spans, and type-expression spans.
+- `type_check_modules_01_scatter_paths.slang`: prefix-scan path flags and
+  scatter compact `path_start`, `path_len`, `path_segment_base`,
+  `path_owner_hir`, `path_owner_token`, and `path_kind` records.
+- `type_check_modules_01b_scatter_path_segments.slang`: scatter
+  `path_segment_count`, `path_segment_name_id`, and `path_segment_token` from
+  compact path spans and `name_id_by_token`.
+- `type_check_modules_02_scatter_module_records.slang`,
+  `type_check_modules_02b_scatter_import_records.slang`,
+  `type_check_modules_02c_scatter_decl_core_records.slang`, and
+  `type_check_modules_02d_scatter_decl_span_records.slang`: after separate
+  GPU prefix scans over module/import/declaration flags, scatter
+  `module_file_id`, `module_path_id`, `import_module_file_id`,
+  `import_path_id`, `import_kind`, `decl_module_file_id`, `decl_name_id`,
+  `decl_kind`, `decl_namespace`, `decl_visibility`, `decl_hir_node`,
+  `decl_name_token`, `decl_token_start`, and `decl_token_end`.
+- `type_check_modules_02e_build_module_keys.slang`: copy each module record's
+  path segment-name ids into fixed-width `module_key_segment_count`,
+  `module_key_segment_base`, and `module_key_segment_name_id` rows, plus
+  `module_key_to_module_id`, so a later GPU radix sort can order full module
+  paths. This is key construction only, not lookup or sorting.
+- `type_check_modules_03_sort_module_keys_histogram.slang` and
+  `type_check_modules_03b_sort_module_keys_scatter.slang`: perform a stable GPU
+  radix sort over bounded `module_key_to_module_id` rows. The first slice sorts
+  up to eight path segments and `type_check_modules_02e_build_module_keys.slang`
+  rejects deeper module declarations until the bound is lifted.
+- `type_check_modules_04_validate_modules.slang`: compare adjacent sorted module
+  keys segment by segment without hashes and write duplicate-module status.
+- `type_check_modules_05_resolve_imports.slang`: resolve import path ids with
+  sorted lookup against `module_key_to_module_id`, then write
+  `import_target_module_id` and `import_status`.
+- `type_check_modules_05b_clear_file_module_map.slang`,
+  `type_check_modules_05c_build_file_module_map.slang`, and
+  `type_check_modules_05d_attach_record_modules.slang`: clear a GPU
+  `module_id_by_file_id` table, scatter module ids into that table from
+  parser-owned module file ids, and attach `decl_module_id`,
+  `import_module_id`, and `path_owner_module_id` to dense records. This is a
+  GPU table bridge from file ownership to
+  module ownership; it is not declaration lookup or visibility.
+- `type_check_modules_06a_seed_decl_key_order.slang`,
+  `type_check_modules_06_sort_decl_keys.slang`, and
+  `type_check_modules_06b_sort_decl_keys_scatter.slang`: seed and radix-sort
+  dense declaration key rows keyed by `(module_id, namespace, name_id)`.
+- `type_check_modules_07_validate_decls.slang`: compare adjacent declaration
+  keys and write duplicate/invalid declaration status per namespace.
+- `type_check_modules_08_mark_decl_namespace_keys.slang`: walk the sorted
+  declaration key order and mark validated type/value declarations by namespace
+  with `decl_type_key_flag` and `decl_value_key_flag`. This is table
+  materialization setup only, not declaration lookup or visibility.
+- `type_check_modules_08b_scatter_decl_namespace_keys.slang`: after GPU prefix
+  scans over those namespace flags, scatter `decl_type_key_to_decl_id` and
+  `decl_value_key_to_decl_id`. Because the input order is the declaration-key
+  radix order, filtering one namespace preserves sorted `(module_id, name_id)`
+  lookup order for each table. These tables are still not consumed by path
+  resolution yet.
+- `type_check_modules_09_count_import_visibility.slang`: for each resolved path
+  import, range-query the sorted `decl_type_key_to_decl_id` and
+  `decl_value_key_to_decl_id` tables for the target module id and count only
+  public declarations. This writes per-import type/value counts for GPU prefix
+  scans. It is not a source import expander and it does not resolve paths.
+- `type_check_modules_09b_scatter_import_visibility.slang`: after GPU prefix
+  scans over those counts, scatter imported-public rows carrying
+  `(importer_module_id, name_id, decl_id)` for type and value namespaces. The
+  first implementation uses a bounded visibility-row capacity and writes a GPU
+  `NameLimit` status if the expansion would overflow instead of silently
+  truncating.
+- `type_check_modules_09c_sort_import_visible_keys.slang` and
+  `type_check_modules_09d_sort_import_visible_keys_scatter.slang`: stable-radix
+  sort imported visibility rows by `(importer_module_id, name_id)` in separate
+  type/value tables.
+- `type_check_modules_09e_build_import_visible_key_tables.slang`: materialize
+  final sorted imported lookup tables:
+  `import_visible_type_key_module_id`, `import_visible_type_key_name_id`,
+  `import_visible_type_key_to_decl_id`, `import_visible_value_key_module_id`,
+  `import_visible_value_key_name_id`, and
+  `import_visible_value_key_to_decl_id`.
+- `type_check_modules_09f_validate_import_visible_keys.slang`: compare adjacent
+  sorted imported visibility keys and write ambiguous/invalid row statuses.
+  Later namespace-aware consumers decide whether duplicate imports are legal
+  re-imports or user-facing ambiguous names; this pass prevents first-match
+  lookup from being mistaken for resolution.
+- `type_check_modules_10_resolve_local_paths.slang`: initialize one namespace's
+  `resolved_decl`/`resolved_status` arrays and resolve one-segment HIR path
+  expressions against declarations in the owner module by binary searching the
+  sorted declaration namespace table.
+- `type_check_modules_10b_resolve_imported_paths.slang`: resolve still
+  unresolved one-segment HIR path expressions against sorted imported-public
+  declaration tables for the owner module. Ambiguous imported rows produce
+  status instead of first-match lookup.
+- `type_check_modules_10c_resolve_qualified_paths.slang`: resolve
+  multi-segment HIR path expressions by looking up the prefix in sorted module
+  keys and the leaf in the selected declaration namespace table. It writes only
+  `resolved_type_decl`, `resolved_type_status`, `resolved_value_decl`, and
+  `resolved_value_status` through per-namespace bind groups; it does not patch
+  `visible_decl`, `visible_type`, `resolved_call_decl`, `call_fn_index`, or
+  `call_return_type`.
+- `type_check_modules_10d_clear_type_path_types.slang`: clear the
+  token-indexed `module_type_path_type`, `module_type_path_status`,
+  `module_value_path_expr_head`, `module_value_path_call_head`, and
+  `module_value_path_status` bridges before the current run projects path
+  results.
+- `type_check_modules_10e_project_type_paths.slang`: consume
+  `resolved_type_decl`, `resolved_type_status`, `decl_namespace`,
+  `decl_kind`, and the parser-derived `decl_name_token` to project resolved
+  struct/enum type paths into `module_type_path_type` and type-path failures
+  into `module_type_path_status`. It does not inspect source bytes, hash tokens,
+  scan for `::`, patch visibility, patch call outputs, or globally reduce
+  value-namespace failures.
+- `type_check_modules_10f_mark_value_call_paths.slang`: consume parser HIR
+  `parent` and `next_sibling` arrays to mark qualified path heads whose
+  enclosing `HIR_NAME_EXPR` is in value-expression context, while separately
+  marking the subset followed by a sibling `HIR_CALL_EXPR`. This identifies
+  value path use sites and call-shaped value path use sites without token text
+  scans.
+- `type_check_modules_10g_project_value_paths.slang`: consume
+  `resolved_value_status` and the HIR value-expression marker to project
+  value-namespace path status into `module_value_path_status`. It keeps
+  qualified value paths fail-closed unless a later consumer clears the status
+  after reading `resolved_value_decl`; it does not patch call outputs or accept
+  qualified values by itself.
+- `type_check_modules_10h_consume_value_calls.slang`: consume
+  `resolved_value_decl`, `resolved_value_status`, declaration metadata, and the
+  HIR call-open marker after regular function return metadata exists. For
+  resolved HIR path expressions that target regular function declarations, it
+  writes `call_fn_index`, `call_return_type`, and `call_return_type_token` at
+  the path head, then clears `module_value_path_status`. It does not inspect
+  source bytes, hash token text, scan for `::`, perform unqualified lookup, or
+  ask the CPU.
+- `type_check_modules_10i_consume_value_consts.slang`: consume
+  `resolved_value_decl`, `resolved_value_status`, declaration metadata, and the
+  existing declaration `visible_type` output after scope typing has populated
+  const declarations. For resolved non-call HIR path expressions that target
+  top-level const declarations, it writes `visible_decl` and `visible_type` at
+  the path head, then clears `module_value_path_status`. It does not inspect
+  source bytes, hash token text, scan for `::`, perform unqualified lookup, or
+  ask the CPU.
+- `type_check_modules_10j_consume_value_enum_units.slang`: consume
+  `resolved_value_decl`, `resolved_value_status`, declaration metadata, and
+  `decl_parent_type_decl`. For resolved non-call HIR path expressions that
+  target unit enum variant declarations, it writes `visible_decl` and the parent
+  enum `visible_type` at the path head, then clears `module_value_path_status`.
+  It does not inspect source bytes, hash token text, scan for `::`, perform
+  unqualified lookup, or ask the CPU.
+- `type_check_modules_10k_project_type_instances.slang`: consume resolved local
+  and qualified type paths plus path segment tokens and project generic type
+  heads such as `Option<i32>` and `core::option::Option<i32>` onto the existing
+  `TYPE_REF_INSTANCE` metadata. It binds the leaf instance to the resolver's
+  declaration token and copies argument refs without token text comparison.
+- `type_check_modules_10l_consume_value_enum_calls.slang`: consume resolved
+  local and qualified enum-variant calls after
+  `type_check_type_instances_06_enum_ctors` validates contextual generic
+  payloads. It clears `module_value_path_status` and publishes the parent enum
+  `call_return_type` only when the resolver names an enum variant and generic
+  constructor validation has produced `GENERIC_ENUM_CTOR_OK` when needed.
+  One-segment generic constructors keep the validator sentinel at the leaf token
+  instead of replacing it with the parent enum type, because the token checker
+  consumes that sentinel for bounded contextual generic constructor validation.
+  Non-constructor symbolic generic returns, exhaustive match semantics, enum
+  layout, and backend lowering remain separate checkpoints. The bounded
+  stdlib-shaped match type-check slice consumes HIR match spans plus these
+  resolver/type-instance arrays for enum payload arms, but it is not package
+  loading, exhaustiveness, layout, or codegen support.
+
+Required data buffers for the first implementation:
+
+- Name interning: `name_lexeme_token`, `name_lexeme_start`,
+  `name_lexeme_len`, `name_lexeme_hash`, `name_lexeme_original_index`,
+  `name_count_out`, `name_count_in`, `name_sorted_lexeme`,
+  `name_unique_flag`, `name_unique_prefix`, `interned_name_start`,
+  `interned_name_len`, `name_id_by_token`, and `name_id_by_lexeme`.
+- Paths: `path_start`, `path_len`, `path_segment_count`,
+  `path_segment_name_id`, `path_segment_token`, `path_owner_hir`, and
+  `path_owner_token`.
+- Modules: `module_decl_file`, `module_record_id`, `module_file_id`,
+  `module_path_id`, `module_key_to_module_id`, `module_id_by_file_id`, and
+  `module_status`.
+- Imports: `import_module_id`, `import_path_id`, `import_kind`,
+  `import_target_module_id`, `import_status`, `import_visible_type_count`,
+  `import_visible_value_count`, `import_visible_type_prefix`,
+  `import_visible_value_prefix`, `import_visible_type_count_out`,
+  `import_visible_value_count_out`, `import_visible_type_module_id`,
+  `import_visible_type_name_id`, `import_visible_type_decl_id`,
+  `import_visible_type_key_order`, `import_visible_type_key_to_decl_id`,
+  `import_visible_type_status`, `import_visible_value_module_id`,
+  `import_visible_value_name_id`, `import_visible_value_decl_id`,
+  `import_visible_value_key_order`, `import_visible_value_key_to_decl_id`, and
+  `import_visible_value_status`.
+- Declarations: `decl_module_id`, `decl_name_id`, `decl_kind`,
+  `decl_namespace`, `decl_visibility`, `decl_hir_node`, `decl_name_token`,
+  `decl_token_start`, `decl_token_end`, `decl_parent_type_decl`, `decl_key_to_decl_id`,
+  `decl_type_key_to_decl_id`, `decl_value_key_to_decl_id`, `decl_type_key_flag`,
+  `decl_value_key_flag`, `decl_type_key_prefix`, `decl_value_key_prefix`,
+  `decl_type_key_count_out`, `decl_value_key_count_out`, `decl_status`,
+  and `decl_duplicate_of`.
+- Resolution arrays: `resolved_type_decl`, `resolved_type_status`,
+  `resolved_value_decl`, and `resolved_value_status`.
+- Type path projection: `module_type_path_type` and
+  `module_type_path_status`, token-indexed bridges from resolver path ids to the
+  current struct/enum type-code representation and type-context status checks.
+- Type instance projection: `type_expr_ref_tag`, `type_expr_ref_payload`,
+  `type_instance_decl_token`, `type_instance_arg_start`,
+  `type_instance_arg_ref_tag`, `type_instance_arg_ref_payload`, and
+  `type_instance_state` for local and module-qualified generic type heads.
+- Value path status projection: `module_value_path_expr_head`,
+  `module_value_path_call_head`, and `module_value_path_status`, token-indexed
+  bridges from HIR value-path ids to value-context status checks.
+- Value call consumer projection: `call_fn_index`, `call_return_type`, and
+  `call_return_type_token` for resolved regular function calls, keyed by the
+  HIR-produced `module_value_path_call_open` marker. General value lookup
+  outputs such as `resolved_call_decl` and `visible_decl` are a later checkpoint.
+- Value const consumer projection: `visible_decl` and `visible_type` for
+  resolved top-level constants, including one-segment constants made visible by
+  sorted import visibility tables.
+- Value unit enum projection: `decl_parent_type_decl`, `visible_decl`, and
+  `visible_type` for resolved local and qualified unit enum variants.
+- Value enum constructor projection: `decl_parent_type_decl` and
+  `call_return_type` for resolved local and qualified enum constructor calls
+  whose payloads have already passed the bounded GPU constructor validator.
+
+Implementation checkpoints:
+
+- The name interning checkpoint is complete only when equal identifier/string
+  bytes share one id, unequal bytes never share an id after byte equality
+  collision checks, and ids come from prefix-sum ids over unique sorted names.
+  The current runtime wiring is a bounded fail-closed checkpoint, not the final
+  unbounded name interner.
+- The module/import checkpoint is complete only when module path lookup is a
+  sorted lookup table over path segment name ids and duplicate validation is
+  performed on GPU.
+- The declaration checkpoint is complete only when declaration keys are sorted
+  by module id, namespace, and name id, duplicate validation is separate for
+  value and type namespaces, and namespace-specific declaration lookup tables
+  are materialized from the sorted order. The current runtime reaches this
+  table-materialization checkpoint.
+- The import visibility checkpoint is complete only when resolved path imports
+  expand public target declarations into GPU-scanned rows, those rows are
+  stable-radix-sorted by importer module and name id, final type/value imported
+  lookup tables are materialized, visibility expansion overflows fail closed on
+  GPU, and adjacent duplicate imported names are recorded as row statuses. The
+  current runtime reaches this table-materialization checkpoint.
+- The path resolution array checkpoint is complete only when per-namespace GPU
+  passes resolve local, imported, and qualified type/value path ids from sorted
+  module keys, declaration tables, and `import_visible` tables, then write
+  `resolved_type_decl`, `resolved_type_status`, `resolved_value_decl`, and
+  `resolved_value_status`.
+- The type-path projection checkpoint is complete only when same-module
+  qualified struct/enum type annotations consume `resolved_type_decl` through
+  `module_type_path_type` and still fail unresolved, ambiguous, or wrong-module
+  type paths without a same-source shortcut. It does not make qualified value
+  paths or calls pass by itself; those require value/call consumers to read
+  `resolved_value_decl` in their use context.
+- The value-path status checkpoint is complete only when qualified value paths
+  are identified from HIR/tree relationships and feed `resolved_value_status`
+  into a consumer-context status buffer, with call-shaped paths marked as a
+  subset for call consumers. It is intentionally fail-closed and must not be
+  replaced by a global type/value status reducer.
+- The regular qualified-call checkpoint is complete only when the consumer reads
+  `resolved_value_decl` in HIR path context, verifies the resolved declaration
+  is a value-namespace function, and writes call result arrays without any
+  token-text qualified-call bridge. It does not imply enum constructors,
+  methods, generic call inference, or general value lookup.
+- The qualified-constant checkpoint is complete only when the consumer reads
+  `resolved_value_decl` in non-call HIR path context, verifies the resolved
+  declaration is a value-namespace const, reuses the declaration type computed
+  by scope typing, and writes `visible_decl`/`visible_type` at the path head
+  without any token-text bridge. It does not imply enum constructors, methods,
+  generic values, or general value lookup.
+- The qualified-unit-enum-variant checkpoint is complete only when the consumer
+  reads `resolved_value_decl` in non-call HIR path context, verifies the resolved
+  declaration is a value-namespace enum variant, reads `decl_parent_type_decl`,
+  and writes `visible_decl`/`visible_type` for the parent enum without token-text
+  lookup. It does not imply constructor calls, methods, or general value lookup.
+- The qualified-enum-constructor checkpoint is complete only when qualified
+  generic type heads are projected into type-instance metadata, the existing GPU
+  enum-constructor validator accepts contextual concrete payloads, and the
+  enum-call consumer clears the value-path status from resolver arrays. It does
+  not imply non-constructor symbolic generic returns, exhaustive match
+  semantics, enum layout, backend lowering, methods, or general value lookup.
+  The current bounded match consumer is limited to HIR-spanned arm result typing
+  and enum tuple payload binding.
+- The host checkpoint is complete only when the CPU reads explicitly supplied
+  files, uploads source-pack buffers, and does not parse imports, expand import
+  closure, rewrite module names, precompute declarations, or decide
+  visibility.
+
+Forbidden legacy resolver shapes:
+
+- Do not recreate `type_check_names_00_hash.slang`,
+  `type_check_modules_00_collect.slang`,
+  `type_check_modules_00_collect_decls.slang`,
+  `type_check_modules_00_resolve_imports.slang`,
+  `type_check_modules_00_clear.slang`,
+  `type_check_modules_01_dense_scan.slang`,
+  `type_check_modules_01_same_source_types.slang`,
+  `type_check_modules_02_dense_scatter.slang`,
+  `type_check_modules_02b_dense_scatter_imports.slang`,
+  `type_check_modules_02c_dense_scatter_decls.slang`,
+  `type_check_modules_02_patch_visible_types.slang`, or
+  `type_check_modules_03_attach_ids.slang`.
+- Do not reintroduce the earlier hash-prefix-scan slice: path hashes, dense
+  counts, module records, import records, and declaration records are not enough
+  unless they flow through radix sort, byte equality deduplication, prefix-sum
+  ids, sorted lookup tables, duplicate validation, and resolution arrays.
+- Do not implement a same-source qualified shortcut. Same-source qualified
+  names must exercise the same module/import/declaration lookup path as
+  cross-file qualified names.
+- Do not implement source rewriting, CPU import expansion, CPU path lookup,
+  CPU declaration visibility, `lstd_` namespace rewriting, or hash-only lookup.
 
 First positive fixtures:
 
@@ -413,6 +784,9 @@ non-generic fixture such as `OptionI32` for the first module-resolution tests.
 - Do not treat parser-table acceptance as feature support. A module feature is
   supported only when GPU syntax accepts it, GPU type checking resolves it, and
   backend consumers receive GPU-resolved declaration/type/call buffers.
+- Do not treat the path resolution array checkpoint as feature support by
+  itself. It may write declaration/status arrays while qualified paths still
+  fail closed in existing consumers.
 - Unsupported paths must fail as GPU syntax or GPU type-check errors with stable
   tests. Existing unqualified single-module names may continue to use the current
   token-scan implementation until module resolution reaches parity, but `::`

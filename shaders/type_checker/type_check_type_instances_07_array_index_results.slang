@@ -1,4 +1,12 @@
-import utils;
+// HIR array/slice index result projection.
+//
+// This pass consumes parser-owned index-expression records, visible-decl
+// records, declaration type refs, and array/slice type-instance records. It
+// publishes the element type at the index-expression token for later type
+// checks. It does not inspect token kinds, token spelling, source bytes, or
+// generic parameter token neighborhoods.
+
+import generated_parse_production_ids;
 
 struct Params
 {
@@ -9,19 +17,17 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct TokenIn
-{
-    uint kind;
-    uint start;
-    uint len;
-};
-
-StructuredBuffer<TokenIn> token_words;
-StructuredBuffer<uint> token_count;
-ByteAddressBuffer source_bytes;
+StructuredBuffer<uint> hir_status;
+StructuredBuffer<uint> node_kind;
+StructuredBuffer<uint> parent;
+StructuredBuffer<uint> next_sibling;
+StructuredBuffer<uint> hir_kind;
+StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_expr_value_token;
 StructuredBuffer<uint> visible_decl;
-StructuredBuffer<uint> type_expr_ref_tag;
-StructuredBuffer<uint> type_expr_ref_payload;
+StructuredBuffer<uint> name_id_by_token;
+StructuredBuffer<uint> decl_type_ref_tag;
+StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_elem_ref_tag;
 StructuredBuffer<uint> type_instance_elem_ref_payload;
@@ -41,22 +47,14 @@ static const uint TYPE_INSTANCE_SLICE = 3u;
 static const uint TYPE_INSTANCE_RESOLVED = 1u;
 
 static const uint TY_UNKNOWN = 0u;
-static const uint TY_STRING = 7u;
+static const uint TY_BOOL = 2u;
+static const uint TY_INT = 3u;
 static const uint TY_GENERIC_BASE = 8192u;
 
-static const uint TK_IDENT = 1u;
-static const uint TK_LT = 12u;
-static const uint TK_GT = 13u;
-static const uint TK_LBRACKET = 20u;
-static const uint TK_LBRACE = 22u;
-static const uint TK_INDEX_LBRACKET = 30u;
-static const uint TK_COMMA = 36u;
-static const uint TK_SEMICOLON = 37u;
-static const uint TK_COLON = 38u;
-static const uint TK_FN = 67u;
-static const uint TK_CONST = 92u;
-static const uint TK_ENUM = 93u;
-static const uint TK_STRUCT = 94u;
+static const uint HIR_EXPR = 14u;
+static const uint HIR_POSTFIX_EXPR = 18u;
+static const uint HIR_INDEX_EXPR = 20u;
+static const uint HIR_NAME_EXPR = 22u;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -66,194 +64,292 @@ uint linear_thread_id(uint3 dtid)
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
 }
 
-uint active_token_count()
+uint active_hir_node_count()
 {
-    return min(token_count[0], gParams.n_tokens);
+    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
 }
 
-uint token_kind(uint i)
+bool valid_node(uint node)
 {
-    uint n = active_token_count();
-    return i < n ? token_words[i].kind : 0u;
+    return node != INVALID && node < active_hir_node_count();
 }
 
-uint token_start(uint i)
+bool valid_token(uint token)
 {
-    uint n = active_token_count();
-    return i < n ? token_words[i].start : 0u;
+    return token != INVALID && token < gParams.n_tokens;
 }
 
-uint token_len(uint i)
+bool has_ancestor_node(uint node, uint ancestor)
 {
-    uint n = active_token_count();
-    return i < n ? token_words[i].len : 0u;
-}
-
-uint source_at(uint start, uint delta)
-{
-    uint idx = start + delta;
-    return idx < gParams.source_len ? load_byte_at(source_bytes, idx) : 0u;
-}
-
-bool same_text(uint a, uint b)
-{
-    uint len = token_len(a);
-    if (len != token_len(b))
-        return false;
-
-    uint sa = token_start(a);
-    uint sb = token_start(b);
+    uint cur = node;
     [loop]
-    for (uint i = 0u; i < len; i += 1u)
+    for (uint guard = 0u; guard < 128u; guard += 1u)
     {
-        if (source_at(sa, i) != source_at(sb, i))
+        if (!valid_node(cur))
             return false;
+        if (cur == ancestor)
+            return true;
+        uint p = parent[cur];
+        if (!valid_node(p) || p == cur)
+            return false;
+        cur = p;
     }
-    return true;
+    return false;
 }
 
-bool is_index_open(uint kind)
+uint previous_sibling_node(uint node)
 {
-    return kind == TK_INDEX_LBRACKET || kind == TK_LBRACKET;
-}
-
-bool is_type_name_token(uint i)
-{
-    return token_kind(i) == TK_IDENT;
-}
-
-uint generic_param_list_open(uint item_i)
-{
-    uint n = active_token_count();
-    [loop]
-    for (uint j = item_i + 1u; j < n; j += 1u)
-    {
-        uint kind = token_kind(j);
-        if (kind == TK_LT)
-            return j;
-        if (kind == TK_LBRACE || kind == TK_SEMICOLON)
-            return INVALID;
-    }
-    return INVALID;
-}
-
-uint generic_param_list_close(uint open_i)
-{
-    if (open_i == INVALID)
+    if (!valid_node(node))
         return INVALID;
-    uint n = active_token_count();
-    uint depth = 0u;
+
+    uint p = parent[node];
+    if (!valid_node(p))
+        return INVALID;
+
+    uint n = active_hir_node_count();
     [loop]
-    for (uint j = open_i; j < n; j += 1u)
+    for (uint candidate = 0u; candidate < n; candidate += 1u)
     {
-        uint kind = token_kind(j);
-        if (kind == TK_LT)
-            depth += 1u;
-        else if (kind == TK_GT)
-        {
-            if (depth == 0u)
-                return INVALID;
-            depth -= 1u;
-            if (depth == 0u)
-                return j;
-        }
-        else if (kind == TK_LBRACE || kind == TK_SEMICOLON)
-            return INVALID;
+        if (parent[candidate] == p && next_sibling[candidate] == node)
+            return candidate;
     }
     return INVALID;
 }
 
-bool is_type_generic_param_token(uint param_i, uint open_i, uint close_i)
+uint base_node_for_index(uint index_node)
 {
-    if (param_i <= open_i || param_i >= close_i || !is_type_name_token(param_i))
-        return false;
-    if (param_i > open_i + 1u && token_kind(param_i - 1u) == TK_CONST)
-        return false;
-    return true;
+    uint p = valid_node(index_node) ? parent[index_node] : INVALID;
+    if (!valid_node(p))
+        return INVALID;
+
+    uint previous = previous_sibling_node(index_node);
+    if (valid_node(previous))
+        return previous;
+
+    return hir_kind[p] == HIR_POSTFIX_EXPR ? p : INVALID;
 }
 
-uint generic_param_decl_for_use(uint name_i)
+uint first_name_token_descendant(uint root)
 {
-    uint j = name_i;
+    if (!valid_node(root))
+        return INVALID;
+
+    uint n = active_hir_node_count();
     [loop]
-    for (uint guard = 0u; guard < 256u && j > 0u; guard += 1u)
+    for (uint node = 0u; node < n; node += 1u)
     {
-        j -= 1u;
-        uint kind = token_kind(j);
-        if (kind != TK_FN && kind != TK_ENUM && kind != TK_STRUCT)
+        if (hir_kind[node] != HIR_NAME_EXPR || !has_ancestor_node(node, root))
             continue;
 
-        uint open_i = generic_param_list_open(j);
-        uint close_i = generic_param_list_close(open_i);
-        if (open_i == INVALID || close_i == INVALID)
-            return INVALID;
-        [loop]
-        for (uint p = open_i + 1u; p < close_i; p += 1u)
-        {
-            if (is_type_generic_param_token(p, open_i, close_i) && same_text(p, name_i))
-                return p;
-        }
-        return INVALID;
+        uint token = hir_expr_value_token[node];
+        if (valid_token(token))
+            return token;
+
+        token = hir_token_pos[node];
+        if (valid_token(token))
+            return token;
     }
     return INVALID;
 }
 
-uint instance_from_ref(uint tag, uint payload)
+bool scalar_atom_type(uint node, out uint ty)
 {
-    return tag == TYPE_REF_INSTANCE ? payload : INVALID;
+    ty = TY_UNKNOWN;
+
+    uint prod = node_kind[node];
+    if (prod == PROD_INT)
+    {
+        ty = TY_INT;
+        return true;
+    }
+    if (prod == PROD_TRUE || prod == PROD_FALSE)
+    {
+        ty = TY_BOOL;
+        return true;
+    }
+    if (hir_kind[node] == HIR_NAME_EXPR)
+    {
+        uint token = hir_expr_value_token[node];
+        if (!valid_token(token))
+            token = hir_token_pos[node];
+        if (!valid_token(token))
+            return false;
+
+        uint decl_token = visible_decl[token];
+        if (!valid_token(decl_token))
+            return false;
+        if (decl_type_ref_tag[decl_token] != TYPE_REF_SCALAR)
+            return false;
+
+        ty = decl_type_ref_payload[decl_token];
+        return ty != TY_UNKNOWN;
+    }
+
+    return false;
 }
 
-uint array_or_slice_instance_from_decl(uint decl_i)
+uint index_operand_scalar_type(uint index_node)
 {
-    if (decl_i == INVALID || decl_i + 2u >= active_token_count() ||
-        token_kind(decl_i + 1u) != TK_COLON)
+    uint found_ty = TY_UNKNOWN;
+    uint atom_count = 0u;
+    uint n = active_hir_node_count();
+    [loop]
+    for (uint node = 0u; node < n; node += 1u)
+    {
+        if (!has_ancestor_node(node, index_node))
+            continue;
+
+        uint atom_ty = TY_UNKNOWN;
+        if (!scalar_atom_type(node, atom_ty))
+            continue;
+
+        atom_count += 1u;
+        found_ty = atom_ty;
+        if (atom_count > 1u)
+            return TY_UNKNOWN;
+    }
+    return atom_count == 1u ? found_ty : TY_UNKNOWN;
+}
+
+bool generic_decl_production(uint prod)
+{
+    return prod == PROD_FN || prod == PROD_EXTERN_FN || prod == PROD_STRUCT ||
+           prod == PROD_ENUM || prod == PROD_TYPE_ALIAS;
+}
+
+uint generic_decl_ancestor(uint node)
+{
+    uint cur = node;
+    [loop]
+    for (uint guard = 0u; guard < 128u; guard += 1u)
+    {
+        if (!valid_node(cur))
+            return INVALID;
+        if (generic_decl_production(node_kind[cur]))
+            return cur;
+        uint p = parent[cur];
+        if (!valid_node(p) || p == cur)
+            return INVALID;
+        cur = p;
+    }
+    return INVALID;
+}
+
+uint first_node_at_token(uint token)
+{
+    if (!valid_token(token))
         return INVALID;
 
-    uint type_head = decl_i + 2u;
-    if (type_expr_ref_tag[type_head] != TYPE_REF_INSTANCE)
+    uint n = active_hir_node_count();
+    [loop]
+    for (uint node = 0u; node < n; node += 1u)
+    {
+        if (hir_token_pos[node] == token)
+            return node;
+    }
+    return INVALID;
+}
+
+uint generic_param_decl_for_ref_token(uint token)
+{
+    uint use_node = first_node_at_token(token);
+    uint use_decl = generic_decl_ancestor(use_node);
+    if (!valid_node(use_decl))
         return INVALID;
 
-    uint instance_i = instance_from_ref(type_expr_ref_tag[type_head], type_expr_ref_payload[type_head]);
-    if (instance_i >= active_token_count() || type_instance_state[instance_i] != TYPE_INSTANCE_RESOLVED)
+    uint name_id = name_id_by_token[token];
+    if (name_id == INVALID)
         return INVALID;
 
-    uint kind = type_instance_kind[instance_i];
-    return kind == TYPE_INSTANCE_ARRAY || kind == TYPE_INSTANCE_SLICE ? instance_i : INVALID;
+    uint n = active_hir_node_count();
+    [loop]
+    for (uint node = 0u; node < n; node += 1u)
+    {
+        if (node_kind[node] != PROD_ENUM_TYPE_PARAM || generic_decl_ancestor(node) != use_decl)
+            continue;
+
+        uint decl_token = hir_token_pos[node];
+        if (valid_token(decl_token) && name_id_by_token[decl_token] == name_id)
+            return decl_token;
+    }
+    return INVALID;
+}
+
+uint type_instance_from_ref(uint tag, uint payload)
+{
+    if (tag != TYPE_REF_INSTANCE || !valid_token(payload))
+        return INVALID;
+    if (type_instance_state[payload] != TYPE_INSTANCE_RESOLVED)
+        return INVALID;
+
+    uint kind = type_instance_kind[payload];
+    if (kind != TYPE_INSTANCE_ARRAY && kind != TYPE_INSTANCE_SLICE)
+        return INVALID;
+
+    return payload;
+}
+
+uint array_or_slice_instance_from_decl(uint decl_token)
+{
+    if (!valid_token(decl_token))
+        return INVALID;
+    return type_instance_from_ref(decl_type_ref_tag[decl_token], decl_type_ref_payload[decl_token]);
+}
+
+uint array_or_slice_instance_for_base_node(uint base_node)
+{
+    if (!valid_node(base_node))
+        return INVALID;
+
+    uint base_token = first_name_token_descendant(base_node);
+    if (!valid_token(base_token))
+        return INVALID;
+
+    uint decl_token = visible_decl[base_token];
+    return array_or_slice_instance_from_decl(decl_token);
 }
 
 uint type_ref_to_type_code(uint tag, uint payload)
 {
     if (tag == TYPE_REF_SCALAR)
-    {
-        if (payload <= TY_STRING)
-            return payload;
-        uint decl_i = generic_param_decl_for_use(payload);
-        return decl_i == INVALID ? TY_UNKNOWN : TY_GENERIC_BASE + decl_i;
-    }
+        return payload;
+
     if (tag == TYPE_REF_GENERIC_PARAM)
     {
-        uint decl_i = generic_param_decl_for_use(payload);
-        return decl_i == INVALID ? TY_UNKNOWN : TY_GENERIC_BASE + decl_i;
+        uint decl_token = generic_param_decl_for_ref_token(payload);
+        return decl_token == INVALID ? TY_UNKNOWN : TY_GENERIC_BASE + decl_token;
     }
+
     return TY_UNKNOWN;
+}
+
+void publish_index_result(uint index_node)
+{
+    uint result_token = hir_token_pos[index_node];
+    if (!valid_token(result_token))
+        return;
+    if (index_operand_scalar_type(index_node) != TY_INT)
+        return;
+
+    uint base_node = base_node_for_index(index_node);
+    uint instance = array_or_slice_instance_for_base_node(base_node);
+    if (instance == INVALID)
+        return;
+
+    uint elem_ty = type_ref_to_type_code(
+        type_instance_elem_ref_tag[instance],
+        type_instance_elem_ref_payload[instance]);
+    if (elem_ty != TY_UNKNOWN)
+        call_return_type[result_token] = elem_ty;
 }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint i = linear_thread_id(dtid);
-    uint n = active_token_count();
-    if (i + 1u >= n || token_kind(i) != TK_IDENT || !is_index_open(token_kind(i + 1u)))
+    uint node = linear_thread_id(dtid);
+    if (!valid_node(node) || hir_kind[node] != HIR_INDEX_EXPR)
         return;
 
-    uint decl_i = visible_decl[i];
-    uint instance_i = array_or_slice_instance_from_decl(decl_i);
-    if (instance_i == INVALID)
-        return;
-
-    uint elem_ty = type_ref_to_type_code(type_instance_elem_ref_tag[instance_i],
-                                         type_instance_elem_ref_payload[instance_i]);
-    if (elem_ty != TY_UNKNOWN)
-        call_return_type[i + 1u] = elem_ty;
+    publish_index_result(node);
 }

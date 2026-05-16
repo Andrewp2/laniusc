@@ -26,6 +26,37 @@ fn assert_gpu_type_check_rejects_with_code(src: &str, code: &str) {
 }
 
 #[test]
+fn type_checker_accepts_bounded_scalar_type_aliases_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+type Count = i32;
+
+fn keep(value: Count) -> Count {
+    return value;
+}
+
+fn main() {
+    let value: Count = keep(7);
+    return value;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_rejects_unsupported_generic_type_aliases_on_gpu() {
+    assert_gpu_type_check_rejects(
+        r#"
+type Alias<T> = T;
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+}
+
+#[test]
 fn type_checker_accepts_struct_literals_members_and_field_assignment() {
     let src = r#"
 struct Pair {
@@ -213,12 +244,17 @@ fn main() {
 
 #[test]
 fn type_checker_accepts_concrete_generic_struct_instances() {
-    // Generic struct declarations remain unsupported in generic form, but concrete
-    // generic instances must be accepted once token consumers can use the
-    // resolved member/type metadata from the instance passes.
+    // Generic struct declarations can be parsed and type-checked for concrete
+    // instances here. Non-constructor symbolic generic returns, monomorphized
+    // backend lowering, and cross-module generic use remain separate GPU work.
     assert_gpu_type_check_ok(
         r#"
 struct Range<T> {
+    start: T,
+    end: T,
+}
+
+struct RangeInclusive<T> {
     start: T,
     end: T,
 }
@@ -246,6 +282,23 @@ fn start_i32(range: Range<i32>) -> i32 {
 
 fn main() {
     return 0;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_accepts_concrete_generic_struct_literal_local_assignment() {
+    assert_gpu_type_check_ok(
+        r#"
+struct Range<T> {
+    start: T,
+    end: T,
+}
+
+fn main() {
+    let range: Range<i32> = Range { start: 1, end: 4 };
+    return range.start - 1;
 }
 "#,
     );
@@ -542,8 +595,8 @@ fn main() {
 }
 
 #[test]
-fn type_checker_rejects_generic_enum_constructor_returns_until_gpu_substitution_exists() {
-    assert_gpu_type_check_rejects(
+fn type_checker_accepts_symbolic_generic_enum_constructor_returns_on_gpu() {
+    assert_gpu_type_check_ok(
         r#"
 enum Maybe<T> {
     Some(T),
@@ -551,6 +604,22 @@ enum Maybe<T> {
 }
 
 fn wrap<T>(value: T) -> Maybe<T> {
+    return Some(value);
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+    assert_gpu_type_check_rejects(
+        r#"
+enum Maybe<T> {
+    Some(T),
+    None,
+}
+
+fn wrong<T>(value: bool) -> Maybe<T> {
     return Some(value);
 }
 
@@ -604,11 +673,94 @@ fn main() {
 }
 
 #[test]
+fn type_checker_accepts_concrete_i32_array_literal_returns_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+fn values() -> [i32; 4] {
+    return [1, 2, 3, 4];
+}
+
+fn with_trailing_comma() -> [i32; 2] {
+    return [1, 2,];
+}
+
+fn empty() -> [i32; 0] {
+    return [];
+}
+
+fn filled(value: i32) -> [i32; 4] {
+    return [value, value, value, value];
+}
+
+fn mixed(value: i32) -> [i32; 4] {
+    return [value, 1, value, 2];
+}
+
+fn reversed(values: [i32; 4]) -> [i32; 4] {
+    return [values[3], values[2], values[1], values[0]];
+}
+
+fn selected(values: [i32; 4], index: i32) -> [i32; 2] {
+    return [values[index], values[0]];
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+}
+
+#[test]
 fn type_checker_rejects_array_returns_outside_bounded_gpu_slice() {
     assert_gpu_type_check_rejects(
         r#"
-fn filled(value: i32) -> [i32; 4] {
+fn bool_filled(value: bool) -> [i32; 4] {
     return [value, value, value, value];
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+    assert_gpu_type_check_rejects(
+        r#"
+fn wrong_len() -> [i32; 4] {
+    return [1, 2];
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+    assert_gpu_type_check_rejects(
+        r#"
+fn wrong_elem() -> [i32; 2] {
+    return [1, true];
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+    assert_gpu_type_check_rejects(
+        r#"
+fn bool_index(values: [i32; 4], index: bool) -> [i32; 1] {
+    return [values[index]];
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+    assert_gpu_type_check_rejects(
+        r#"
+fn index_scalar(value: i32) -> [i32; 1] {
+    return [value[0]];
 }
 
 fn main() {
@@ -736,6 +888,17 @@ impl Range {
     fn contains(receiver: Range, value: i32) -> bool {
         return value >= receiver.start && value < receiver.end;
     }
+}
+
+fn make_range() -> Range {
+    return Range { start: 1, end: 4 };
+}
+
+fn read_direct() -> i32 {
+    if (make_range().contains(2)) {
+        return 1;
+    }
+    return 0;
 }
 
 fn main() {
@@ -895,17 +1058,65 @@ fn main(values: [i32]) {
 }
 "#,
     );
+
+    assert_gpu_type_check_ok(
+        r#"
+fn main(values: [i32]) {
+    for value in values {
+        if (value == 2) {
+            continue;
+        }
+    }
+    return 0;
+}
+"#,
+    );
 }
 
 #[test]
-fn type_checker_rejects_match_until_gpu_match_semantics_exist() {
-    assert_gpu_type_check_rejects(
+fn type_checker_accepts_bounded_match_result_types_on_gpu() {
+    assert_gpu_type_check_ok(
         r#"
-fn main() {
-    let value: i32 = match (0) {
+fn main() -> i32 {
+    return match (0) {
         _ -> 1
     };
-    return value;
+}
+"#,
+    );
+
+    assert_gpu_type_check_rejects(
+        r#"
+fn main() -> i32 {
+    return match (0) {
+        _ -> true
+    };
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_accepts_generic_enum_match_payloads_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+enum Option<T> {
+    Some(T),
+    None,
+}
+
+fn is_some<T>(value: Option<T>) -> bool {
+    return match (value) {
+        Some(inner) -> true,
+        None -> false,
+    };
+}
+
+fn unwrap_or<T>(value: Option<T>, fallback: T) -> T {
+    return match (value) {
+        Some(inner) -> inner,
+        None -> fallback,
+    };
 }
 "#,
     );

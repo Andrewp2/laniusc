@@ -12,6 +12,14 @@ pub fn lstd_i32_abs(value: i32) -> i32 {
     }
 }
 
+pub fn lstd_i32_saturating_abs(value: i32) -> i32 {
+    if (value == LSTD_I32_MIN) {
+        return LSTD_I32_MAX;
+    } else {
+        return lstd_i32_abs(value);
+    }
+}
+
 pub fn lstd_i32_min(left: i32, right: i32) -> i32 {
     if (left < right) {
         return left;
@@ -52,8 +60,32 @@ pub fn lstd_i32_signum(value: i32) -> i32 {
     }
 }
 
+pub fn lstd_i32_is_zero(value: i32) -> bool {
+    return value == 0;
+}
+
+pub fn lstd_i32_is_negative(value: i32) -> bool {
+    return value < 0;
+}
+
+pub fn lstd_i32_is_positive(value: i32) -> bool {
+    return value > 0;
+}
+
 pub fn lstd_i32_between_inclusive(value: i32, low: i32, high: i32) -> bool {
     return value >= low && value <= high;
+}
+
+pub fn lstd_i32_compare_as_i32(left: i32, right: i32) -> i32 {
+    if (left < right) {
+        return -1;
+    } else {
+        if (left > right) {
+            return 1;
+        } else {
+            return 0;
+        }
+    }
 }
 
 pub fn lstd_i32_wrapping_add(left: i32, right: i32) -> i32 {

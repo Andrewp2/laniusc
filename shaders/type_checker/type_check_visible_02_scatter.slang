@@ -1,5 +1,3 @@
-import utils;
-
 struct Params
 {
     uint n_tokens;
@@ -18,16 +16,19 @@ struct TokenIn
 
 StructuredBuffer<TokenIn> token_words;
 StructuredBuffer<uint> token_count;
-ByteAddressBuffer source_bytes;
+StructuredBuffer<uint> token_file_id;
+StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> enclosing_fn_end;
 StructuredBuffer<uint> scope_end;
+StructuredBuffer<uint> call_intrinsic_tag;
 RWStructuredBuffer<uint> visible_decl;
 
 static const uint INVALID = 0xffffffffu;
 static const uint ENCODE_BASE = 0xfffffffeu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
+static const uint INTRINSIC_NONE = 0u;
 
 static const uint TK_IDENT = 1u;
 static const uint TK_LPAREN = 4u;
@@ -44,6 +45,9 @@ static const uint TK_SEMICOLON = 37u;
 static const uint TK_COLON = 38u;
 static const uint TK_DOT = 35u;
 static const uint TK_CALL_LPAREN = 28u;
+static const uint TK_GROUP_LPAREN = 29u;
+static const uint TK_GROUP_RPAREN = 62u;
+static const uint TK_CALL_RPAREN = 63u;
 static const uint TK_ARRAY_RBRACKET = 64u;
 static const uint TK_INDEX_RBRACKET = 65u;
 static const uint TK_FN = 67u;
@@ -61,6 +65,7 @@ static const uint TK_IF_RBRACE = 89u;
 static const uint TK_CONST = 92u;
 static const uint TK_ENUM = 93u;
 static const uint TK_STRUCT = 94u;
+static const uint TK_MATCH = 95u;
 static const uint TK_IMPL = 98u;
 static const uint TK_FOR = 100u;
 static const uint TK_IN = 101u;
@@ -82,57 +87,33 @@ uint token_kind(uint i)
     return i < n ? token_words[i].kind : 0u;
 }
 
-uint token_start(uint i)
+uint file_id_for_token(uint i)
 {
-    uint n = active_token_count();
-    return i < n ? token_words[i].start : 0u;
+    return i < active_token_count() ? token_file_id[i] : INVALID;
 }
 
-uint token_len(uint i)
+bool same_file(uint a, uint b)
 {
-    uint n = active_token_count();
-    return i < n ? token_words[i].len : 0u;
+    uint file_a = file_id_for_token(a);
+    uint file_b = file_id_for_token(b);
+    return file_a != INVALID && file_a == file_b;
 }
 
-uint source_at(uint start, uint delta)
+uint name_id_for_token(uint i)
 {
-    uint idx = start + delta;
-    return idx < gParams.source_len ? load_byte_at(source_bytes, idx) : 0u;
+    return i < active_token_count() ? name_id_by_token[i] : INVALID;
 }
 
-bool same_text(uint a, uint b)
+bool same_name_id(uint a, uint b)
 {
-    uint len = token_len(a);
-    if (len != token_len(b))
-        return false;
-    uint sa = token_start(a);
-    uint sb = token_start(b);
-    [loop]
-    for (uint i = 0u; i < len; i += 1u)
-    {
-        if (source_at(sa, i) != source_at(sb, i))
-            return false;
-    }
-    return true;
-}
-
-bool token_text_eq5(uint i, uint a, uint b, uint c, uint d, uint e)
-{
-    uint start = token_start(i);
-    return token_len(i) == 5u && source_at(start, 0u) == a && source_at(start, 1u) == b &&
-           source_at(start, 2u) == c && source_at(start, 3u) == d &&
-           source_at(start, 4u) == e;
+    uint an = name_id_for_token(a);
+    uint bn = name_id_for_token(b);
+    return an != INVALID && an == bn;
 }
 
 bool is_builtin_call(uint i)
 {
-    uint start = token_start(i);
-    bool is_builtin = token_text_eq5(i, 112u, 114u, 105u, 110u, 116u) ||
-                      (token_len(i) == 6u && source_at(start, 0u) == 97u &&
-                       source_at(start, 1u) == 115u && source_at(start, 2u) == 115u &&
-                       source_at(start, 3u) == 101u && source_at(start, 4u) == 114u &&
-                       source_at(start, 5u) == 116u);
-    if (!is_builtin)
+    if (i >= active_token_count() || call_intrinsic_tag[i] == INTRINSIC_NONE)
         return false;
     uint next = i + 1u < active_token_count() ? token_kind(i + 1u) : 0u;
     return next == TK_CALL_LPAREN || next == TK_LPAREN;
@@ -158,6 +139,73 @@ bool is_bracket_close_token(uint kind)
 {
     return kind == TK_RBRACKET || kind == TK_ARRAY_RBRACKET || kind == TK_INDEX_RBRACKET ||
            kind == TK_TYPE_ARRAY_RBRACKET;
+}
+
+bool is_group_open_kind(uint kind)
+{
+    return kind == TK_LPAREN || kind == TK_GROUP_LPAREN || kind == TK_CALL_LPAREN ||
+           kind == TK_PARAM_LPAREN;
+}
+
+bool is_group_close_kind(uint kind)
+{
+    return kind == TK_RPAREN || kind == TK_GROUP_RPAREN || kind == TK_CALL_RPAREN ||
+           kind == TK_PARAM_RPAREN;
+}
+
+uint matching_group_open_before(uint close_i)
+{
+    uint depth = 0u;
+    [loop]
+    for (uint guard = 0u; guard < 64u && close_i > guard; guard += 1u)
+    {
+        uint j = close_i - guard;
+        uint kind = token_kind(j);
+        if (is_group_close_kind(kind))
+            depth += 1u;
+        else if (is_group_open_kind(kind))
+        {
+            if (depth == 0u)
+                return INVALID;
+            depth -= 1u;
+            if (depth == 0u)
+                return j;
+        }
+    }
+    return INVALID;
+}
+
+uint match_token_for_brace(uint brace_i)
+{
+    if (brace_i == 0u)
+        return INVALID;
+    uint close_i = brace_i - 1u;
+    if (!is_group_close_kind(token_kind(close_i)))
+        return INVALID;
+    uint open_i = matching_group_open_before(close_i);
+    if (open_i == INVALID || open_i == 0u)
+        return INVALID;
+    return token_kind(open_i - 1u) == TK_MATCH ? open_i - 1u : INVALID;
+}
+
+uint enclosing_match_token(uint token_i)
+{
+    uint depth = 0u;
+    [loop]
+    for (uint guard = 0u; guard < 256u && token_i > guard; guard += 1u)
+    {
+        uint j = token_i - guard;
+        uint kind = token_kind(j);
+        if (kind == TK_RBRACE)
+            depth += 1u;
+        else if (kind == TK_LBRACE)
+        {
+            if (depth == 0u)
+                return match_token_for_brace(j);
+            depth -= 1u;
+        }
+    }
+    return INVALID;
 }
 
 uint enclosing_scope_limit(uint i)
@@ -287,11 +335,16 @@ bool is_self_receiver_decl_at(uint i)
 bool is_param_decl_at(uint i)
 {
     uint kind = token_kind(i);
-    return kind == TK_PARAM_IDENT || is_self_receiver_decl_at(i) ||
-           (kind == TK_IDENT && i + 1u < active_token_count() && token_kind(i + 1u) == TK_COLON &&
-            (i == 0u || (token_kind(i - 1u) != TK_LET && token_kind(i - 1u) != TK_CONST &&
-                         token_kind(i - 1u) != TK_ENUM &&
-                         token_kind(i - 1u) != TK_STRUCT)));
+    if (is_self_receiver_decl_at(i))
+        return true;
+    if (i == 0u || i + 1u >= active_token_count() || token_kind(i + 1u) != TK_COLON)
+        return false;
+
+    uint prev = token_kind(i - 1u);
+    if (kind == TK_PARAM_IDENT)
+        return prev != TK_COLON;
+    return kind == TK_IDENT && prev != TK_LET && prev != TK_CONST && prev != TK_ENUM &&
+           prev != TK_STRUCT && prev != TK_COLON;
 }
 
 bool is_for_iter_decl_at(uint i)
@@ -406,7 +459,8 @@ uint let_decl_statement_end(uint decl_i)
 bool is_let_decl_at(uint i)
 {
     uint kind = token_kind(i);
-    return kind == TK_LET_IDENT || (kind == TK_IDENT && i > 0u && token_kind(i - 1u) == TK_LET);
+    return i > 0u && token_kind(i - 1u) == TK_LET &&
+           (kind == TK_LET_IDENT || kind == TK_IDENT);
 }
 
 bool is_const_decl_at(uint i)
@@ -423,9 +477,10 @@ bool ident_is_use(uint i)
         return false;
 
     uint prev = i > 0u ? token_kind(i - 1u) : 0u;
+    if (prev == TK_ARROW && enclosing_match_token(i) == INVALID)
+        return false;
     if (prev == TK_FN || prev == TK_LET || prev == TK_CONST || prev == TK_ENUM ||
-        prev == TK_STRUCT || prev == TK_IMPL || prev == TK_FOR || prev == TK_DOT ||
-        prev == TK_ARROW)
+        prev == TK_STRUCT || prev == TK_IMPL || prev == TK_FOR || prev == TK_DOT)
         return false;
     uint j = i;
     [loop]
@@ -466,7 +521,7 @@ uint resolve_visible_declaration(uint ident_i)
         j -= 1u;
         if (!is_let_decl_at(j) && !is_param_decl_at(j) && !is_for_iter_decl_at(j))
             continue;
-        if (!same_text(j, ident_i))
+        if (!same_name_id(j, ident_i))
             continue;
 
         if (is_let_decl_at(j))
@@ -488,7 +543,9 @@ uint resolve_visible_declaration(uint ident_i)
         j -= 1u;
         if (!is_const_decl_at(j))
             continue;
-        if (!same_text(j, ident_i))
+        if (!same_file(j, ident_i))
+            continue;
+        if (!same_name_id(j, ident_i))
             continue;
 
         uint stmt_end = let_decl_statement_end(j);

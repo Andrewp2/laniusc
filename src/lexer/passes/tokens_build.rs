@@ -1,0 +1,78 @@
+use std::collections::HashMap;
+
+use super::PassData;
+use crate::{
+    gpu::passes_core::DispatchDim,
+    lexer::{buffers::GpuBuffers, debug::DebugOutput},
+};
+
+pub struct TokensBuildPass {
+    data: PassData,
+}
+crate::gpu::passes_core::impl_static_shader_pass!(
+    TokensBuildPass,
+    label: "tokens_build",
+    entry: "tokens_build",
+    shader: "tokens_build"
+);
+
+impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for TokensBuildPass {
+    const NAME: &'static str = "tokens_build";
+    const DIM: DispatchDim = DispatchDim::D1;
+
+    fn from_data(data: PassData) -> Self {
+        Self { data }
+    }
+    fn data(&self) -> &PassData {
+        &self.data
+    }
+    fn create_resource_map<'a>(
+        &self,
+        b: &'a GpuBuffers,
+    ) -> HashMap<String, wgpu::BindingResource<'a>> {
+        HashMap::from([
+            ("in_bytes".into(), b.in_bytes.as_entire_binding()),
+            ("token_count".into(), b.token_count.as_entire_binding()),
+            ("end_positions".into(), b.end_positions.as_entire_binding()),
+            ("types_compact".into(), b.types_compact.as_entire_binding()),
+            (
+                "all_index_compact".into(),
+                b.all_index_compact.as_entire_binding(),
+            ),
+            (
+                "end_positions_all".into(),
+                // ALL end positions are stored in tok_types now
+                b.tok_types.as_entire_binding(),
+            ),
+            (
+                "source_file_count".into(),
+                b.source_file_count.as_entire_binding(),
+            ),
+            (
+                "source_file_start".into(),
+                b.source_file_start.as_entire_binding(),
+            ),
+            (
+                "source_file_len".into(),
+                b.source_file_len.as_entire_binding(),
+            ),
+            ("tokens_out".into(), b.tokens_out.as_entire_binding()),
+        ])
+    }
+
+    fn record_debug(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        b: &GpuBuffers,
+        dbg: &mut DebugOutput,
+    ) {
+        dbg.gpu.tokens_out.set_from_copy(
+            device,
+            encoder,
+            &b.tokens_out,
+            "dbg.tokens_out",
+            b.tokens_out.byte_size,
+        );
+    }
+}

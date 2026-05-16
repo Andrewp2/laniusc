@@ -43,6 +43,26 @@ pub fn contains_i32(range: Range<i32>, value: i32) -> bool {
     return value >= range.start && value < range.end;
 }
 
+pub fn range_inclusive_i32(start: i32, end: i32) -> RangeInclusive<i32> {
+    return RangeInclusive { start: start, end: end, };
+}
+
+pub fn start_inclusive_i32(range: RangeInclusive<i32>) -> i32 {
+    return range.start;
+}
+
+pub fn end_inclusive_i32(range: RangeInclusive<i32>) -> i32 {
+    return range.end;
+}
+
+pub fn is_empty_inclusive_i32(range: RangeInclusive<i32>) -> bool {
+    return range.start > range.end;
+}
+
+pub fn contains_inclusive_i32(range: RangeInclusive<i32>, value: i32) -> bool {
+    return value >= range.start && value <= range.end;
+}
+
 pub impl Range<i32> {
     pub fn start(self) -> i32 {
         return self.start;
@@ -58,5 +78,23 @@ pub impl Range<i32> {
 
     pub fn contains(&self, value: i32) -> bool {
         return value >= self.start && value < self.end;
+    }
+}
+
+pub impl RangeInclusive<i32> {
+    pub fn start(self) -> i32 {
+        return self.start;
+    }
+
+    pub fn end(self: RangeInclusive<i32>) -> i32 {
+        return self.end;
+    }
+
+    pub fn is_empty(&self) -> bool {
+        return self.start > self.end;
+    }
+
+    pub fn contains(&self, value: i32) -> bool {
+        return value >= self.start && value <= self.end;
     }
 }

@@ -139,14 +139,29 @@ fn main() {
 
 This is not available in the normal compiler path today. The GPU syntax/parser
 path accepts `module` and leading `import` declarations as metadata, but source
-import expansion was removed with the old CPU prepass, imports are not loaded or
-resolved, and GPU type checking rejects import items until a resolver exists.
-Call-shaped qualified value paths can pass GPU syntax as HIR evidence, and GPU
-type checking resolves same-source qualified function calls whose prefix matches
-the leading module declaration. External qualified calls such as
-`core::i32::abs(-7)`, qualified constants such as `core::i32::MIN`, and imports
-still fail until a real GPU-compatible module/package model exists. The older
-flat files still use an `lstd_` prefix so copied or manually concatenated
+import expansion was removed with the old CPU prepass, and the host does not
+load import closures. Path imports only resolve against explicitly supplied
+source-pack modules.
+Qualified value paths can pass GPU syntax as HIR evidence. GPU type checking can
+accept regular qualified function calls, top-level qualified constants, local or
+qualified unit enum variants, and bounded contextual local or qualified generic
+enum constructors when the paper-aligned module/import resolver resolves the HIR
+path to a matching declaration. External qualified calls, constants, unit
+variants, and bounded constructors require the target module to be present in
+the source pack; quoted imports, non-constructor symbolic generic enum returns,
+broad generic callees, and general qualified value paths still fail until a
+broader GPU-compatible module/package model exists. Bounded
+module-qualified generic helpers such as `core::option::unwrap_or(value,
+fallback)` can type-check when their scalar return is inferred from literal or
+annotated local arguments, but this is not full monomorphization. A bounded
+WASM enum/match module can execute explicit source-pack `Option`/`Result` tag
+predicate helpers by consuming HIR match scrutinee, arm, payload-boundary, and
+result metadata compacted into a GPU record table, resolver-selected calls, and
+variant ordinals. Payload projection helpers such as `unwrap_or` remain blocked
+until backend lowering consumes parser-owned call/constructor argument records
+and typed payload value records instead of token-shaped call syntax. The older
+flat files still use an `lstd_` prefix so copied or
+manually concatenated
 helpers are less likely to collide with application functions.
 
 The GPU lexer has the first explicit source-pack groundwork for that model. An
@@ -156,17 +171,20 @@ clamps starts to the containing file after skipped trivia, and `token_file_id` i
 written on GPU. GPU syntax treats leading `module` and `import` metadata
 file-locally for that source-pack path, and an explicit source-pack type-check
 entrypoint records the resident GPU lexer/parser/type-checker path against those
-buffers. Already-supplied multi-file source packs can type-check when the files
-contain independent module metadata and supported declarations. Path imports in
-an already-uploaded source pack now resolve on GPU to matching module metadata,
-while unresolved imports, string imports, and duplicate module paths reject.
-This still uses parser-owned HIR item spans for module/import headers rather
-than token-neighborhood discovery. It does not load files, follow module
-declarations to files, make declarations visible across files, or make the
-normal compiler path a package compiler. The normal compiler now records the
-LL(1) tree/HIR path, which receives the lexer-produced `token_file_id` sideband,
-validates it during GPU syntax checking, and feeds it into LL(1) HIR ownership
-metadata.
+buffers. The resolver foundation has been rebuilt with the paper's name
+extraction pattern: sort/deduplicate identifiers into stable ids, build
+path/module/import/declaration records from AST/HIR spans, sort module and
+declaration keys, validate duplicate keys with sorted adjacent comparisons,
+resolve path imports to module ids through a GPU sorted lookup table, materialize
+visibility tables, resolve type/value paths, and connect narrow HIR consumers for
+regular qualified function calls and top-level constants. The prior scan-based
+resolver and the later dense hash/prefix-scan metadata slice were deleted so
+neither can be mistaken for the intended sorted-table design. This does not load files,
+follow module declarations to files, support quoted import loading,
+support general qualified value lookup, or make the normal compiler path a
+package compiler. The normal compiler now records the LL(1) tree/HIR path, which
+receives the lexer-produced `token_file_id` sideband, validates it during GPU
+syntax checking, and feeds it into LL(1) HIR ownership metadata.
 The older direct-HIR helper still mirrors the token ownership sideband, but it
 is not the semantic path to extend.
 
@@ -174,14 +192,21 @@ The LL(1) parser tree path also now produces parser-owned HIR item-field
 metadata from production ids and AST ancestry. It records top-level module,
 import, const, fn, extern fn, struct, enum, and type-alias item facts while
 excluding impl methods from top-level function declarations. That metadata is
-resident in the normal compiler's parser path, but it is not yet a dense
-declaration table or module resolver.
+resident in the normal compiler's parser path, but it is parse evidence only
+unless the paper-aligned declaration table and module resolver consume it.
+The same parser-owned path now records enum variant ownership/ordinals/payload
+type spans and match scrutinee/arm/payload/result nodes from the inverted tree,
+so later GPU semantic and lowering passes can consume `Option`/`Result`-shaped
+structure without rediscovering it from token text.
+It also records struct declaration fields and struct literal field/value nodes
+from the same inverted tree representation, giving aggregate/range lowering a
+parser-owned syntactic surface before semantic declaration matching and layout.
 
 The seed files declare top-level primitive constants. Module-form constants
-such as `core::i32::MIN` and `core::i32::MAX` are intended names once module
-resolution exists; today only direct single-file constants or manually copied
-flat compatibility constants such as `LSTD_I32_MIN` and `LSTD_I32_MAX` are
-normal compile-path inputs.
+such as `core::i32::MIN` and `core::i32::MAX` can type-check when the declaring
+module is explicitly present in a source pack. Manually copied flat
+compatibility constants such as `LSTD_I32_MIN` and `LSTD_I32_MAX` remain useful
+for single-file compatibility and current backend/codegen fixtures.
 
 ## Module And Package Model
 
@@ -1080,7 +1105,9 @@ Requires module/import support.
 - Remove need for source include paths and compatibility prefixes.
 - Define explicit prelude.
 - Define visibility and package boundaries.
-- Expand non-const type aliases semantically after import rewriting.
+- Resolve type aliases through GPU module/type metadata. The current compiler
+  has only a bounded scalar alias projection; generic aliases and wrapper-style
+  aliases still belong with the later generics work.
 
 ### Phase 3: Generics And Traits/Interfaces
 
@@ -1095,9 +1122,13 @@ Requires generics and shared behavior abstraction.
 - Semantic use of `where` predicates beyond current GPU parser coverage.
 - Method lookup and calls. Direct `self.field` access for `self`, `self: Type`,
   and `&self` receiver forms now has GPU type-checker coverage, and concrete
-  inherent method calls type-check for direct single-file receivers. `&self`
-  still needs real reference/borrow semantics, and trait/generic/imported method
-  lookup remains separate work.
+  inherent method calls type-check for direct single-file receivers. Bounded
+  `core::range::Range<i32>` method calls also type-check in explicit source-pack
+  fixtures when the receiver has an annotated type; the method declaration and
+  call keys plus simple argument validation are derived from parser/HIR records.
+  `&self` still needs real
+  reference/borrow semantics, and trait/generic method lookup, private/public
+  method visibility enforcement, and backend lowering remain separate work.
 - Generic `Vec`.
 - Generic maps/sets.
 - Iterators.

@@ -59,6 +59,7 @@ static const uint HIR_FOR_STMT = 30u;
 static const uint HIR_MODULE_ITEM = 31u;
 static const uint HIR_IMPORT_ITEM = 32u;
 static const uint HIR_PATH_EXPR = 33u;
+static const uint HIR_MATCH_EXPR = 34u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -112,8 +113,10 @@ uint classify(uint prod)
         return HIR_BREAK_STMT;
     if (prod == 71u)
         return HIR_CONTINUE_STMT;
-    if (prod == 83u || prod == 171u)
+    if (prod == 83u)
         return HIR_EXPR;
+    if (prod == 171u)
+        return HIR_MATCH_EXPR;
     if ((prod >= 85u && prod <= 96u))
         return HIR_ASSIGN_EXPR;
     if ((prod >= 97u && prod <= 134u))

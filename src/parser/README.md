@@ -2,7 +2,7 @@
 
 This document explains the **current** GPU strategy for bracket matching and tree construction, how it fits the **WebGPU constraints** we care about (≤10 buffers per pass, modest buffer sizes, no push constants), and what we plan to do **next**.
 
-The code lives under `shaders/parser/*` and is driven by `src/parser/gpu/*`. The demo entry point is `src/bin/parse_demo.rs`.
+The code lives under `shaders/parser/*` and is driven by `src/parser/*`. The demo entry point is `src/bin/parse_demo.rs`.
 
 ---
 
@@ -136,7 +136,7 @@ tokens ──► llp_pairs ──► pack_varlen
                            └─ TB1_local → TB2_stitch → TB3_seeded
 ```
 
-Driver code lives in `src/parser/gpu/driver.rs`, buffers in `src/parser/gpu/buffers.rs`, and pass wrappers in `src/parser/gpu/passes/*`. The driver seeds cursors (`cur_*`) by copying from offsets to keep bindings low.
+Driver code lives in `src/parser/driver.rs`, buffers in `src/parser/buffers.rs`, and pass wrappers in `src/parser/passes/*`. The driver seeds cursors (`cur_*`) by copying from offsets to keep bindings low.
 
 ---
 
@@ -252,9 +252,9 @@ Tree:
 
 Host driver:
 
-* `src/parser/gpu/buffers.rs`
-* `src/parser/gpu/passes/*`
-* `src/parser/gpu/driver.rs`
+* `src/parser/buffers.rs`
+* `src/parser/passes/*`
+* `src/parser/driver.rs`
 
 ---
 

@@ -1,4 +1,12 @@
-import utils;
+// GPU method declaration collection from parser/HIR tree records.
+//
+// Scheduling contract:
+// - Dispatch after parser HIR nodes and tree parent links are available.
+// - This pass records fn_item nodes whose parent production is impl_method.
+// - Later passes attach module ids, interned method name ids, and receiver
+//   type refs from GPU module/name/type tables.
+// - It does not inspect source bytes, hash token text, scan impl token bodies,
+//   build a direct lookup table, or decide whether a call resolves.
 
 struct Params
 {
@@ -9,407 +17,150 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct TokenIn
-{
-    uint kind;
-    uint start;
-    uint len;
-};
+StructuredBuffer<uint> hir_status;
+StructuredBuffer<uint> node_kind;
+StructuredBuffer<uint> parent;
+StructuredBuffer<uint> first_child;
+StructuredBuffer<uint> next_sibling;
+StructuredBuffer<uint> hir_kind;
+StructuredBuffer<uint> hir_token_pos;
 
-StructuredBuffer<TokenIn> token_words;
-StructuredBuffer<uint> token_count;
-ByteAddressBuffer source_bytes;
-
-RWStructuredBuffer<uint> method_decl_receiver_type;
-RWStructuredBuffer<uint> method_decl_impl_token;
+RWStructuredBuffer<uint> method_decl_impl_node;
 RWStructuredBuffer<uint> method_decl_name_token;
 RWStructuredBuffer<uint> method_decl_param_offset;
-RWStructuredBuffer<uint> method_lookup_key;
-RWStructuredBuffer<uint> method_lookup_receiver;
-RWStructuredBuffer<uint> method_lookup_name_token;
-RWStructuredBuffer<uint> method_lookup_fn;
+RWStructuredBuffer<uint> method_decl_receiver_mode;
+RWStructuredBuffer<uint> method_decl_visibility;
 
 static const uint INVALID = 0xffffffffu;
-
-static const uint TY_UNKNOWN = 0u;
-static const uint TY_BOOL = 2u;
-static const uint TY_INT = 3u;
-static const uint TY_UINT = 4u;
-static const uint TY_FLOAT = 5u;
-static const uint TY_CHAR = 6u;
-static const uint TY_STRING = 7u;
-static const uint TY_STRUCT_BASE = 4096u;
-static const uint TY_ENUM_BASE = 6144u;
-
-static const uint TK_IDENT = 1u;
-static const uint TK_LPAREN = 4u;
-static const uint TK_LT = 12u;
-static const uint TK_GT = 13u;
-static const uint TK_LBRACE = 22u;
-static const uint TK_RBRACE = 23u;
-static const uint TK_SEMICOLON = 37u;
-static const uint TK_COLON = 38u;
-static const uint TK_ARROW = 75u;
-static const uint TK_PARAM_LPAREN = 76u;
-static const uint TK_TYPE_IDENT = 80u;
-static const uint TK_IF_LBRACE = 88u;
-static const uint TK_IF_RBRACE = 89u;
-static const uint TK_FN = 67u;
-static const uint TK_CONST = 92u;
-static const uint TK_ENUM = 93u;
-static const uint TK_STRUCT = 94u;
-static const uint TK_IMPL = 98u;
-static const uint TK_FOR = 100u;
-
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint MAX_IMPL_HEADER_SCAN = 96u;
-static const uint MAX_IMPL_BODY_SCAN = 512u;
-static const uint MAX_METHOD_HEADER_SCAN = 96u;
-static const uint MAX_LOOKUP_PROBE = 32u;
+
+static const uint HIR_FN = 3u;
+static const uint HIR_PARAM = 4u;
+
+static const uint PROD_FN_ITEM = 12u;
+static const uint PROD_IMPL_ITEM = 15u;
+static const uint PROD_IMPL_METHOD = 20u;
+static const uint PROD_IMPL_METHOD_PUB = 21u;
+static const uint PROD_PARAM_LIST = 52u;
+static const uint PROD_PARAM_IDENT = 53u;
+static const uint PROD_PARAM_SELF = 54u;
+static const uint PROD_PARAM_REF_SELF = 55u;
+
+static const uint METHOD_RECEIVER_NONE = 0u;
+static const uint METHOD_RECEIVER_SELF = 1u;
+static const uint METHOD_RECEIVER_REF_SELF = 2u;
+static const uint METHOD_RECEIVER_EXPLICIT = 3u;
+
+static const uint METHOD_VIS_PRIVATE = 0u;
+static const uint METHOD_VIS_PUBLIC = 1u;
 
 uint linear_thread_id(uint3 dtid)
 {
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
 }
 
-uint active_token_count()
+uint active_hir_node_count()
 {
-    return min(token_count[0], gParams.n_tokens);
+    return min(gParams.n_hir_nodes, hir_status[5u]);
 }
 
-uint lookup_capacity()
+bool valid_node(uint i)
 {
-    return max(gParams.n_tokens * 2u, 1u);
+    return i != INVALID && i < active_hir_node_count();
 }
 
-uint token_kind(uint i)
+uint node_production(uint i)
 {
-    uint n = active_token_count();
-    return i < n ? token_words[i].kind : 0u;
+    return valid_node(i) ? node_kind[i] : INVALID;
 }
 
-uint token_start(uint i)
+uint first_child_node(uint i)
 {
-    uint n = active_token_count();
-    return i < n ? token_words[i].start : 0u;
+    uint child = valid_node(i) ? first_child[i] : INVALID;
+    return valid_node(child) ? child : INVALID;
 }
 
-uint token_len(uint i)
+uint next_sibling_node(uint i)
 {
-    uint n = active_token_count();
-    return i < n ? token_words[i].len : 0u;
+    uint sibling = valid_node(i) ? next_sibling[i] : INVALID;
+    return valid_node(sibling) ? sibling : INVALID;
 }
 
-uint source_at(uint start, uint delta)
+uint parent_node(uint i)
 {
-    uint idx = start + delta;
-    return idx < gParams.source_len ? load_byte_at(source_bytes, idx) : 0u;
+    uint p = valid_node(i) ? parent[i] : INVALID;
+    return valid_node(p) ? p : INVALID;
 }
 
-bool span2(uint start, uint len, uint a, uint b)
+bool is_impl_method_production(uint prod)
 {
-    return len == 2u && source_at(start, 0u) == a && source_at(start, 1u) == b;
+    return prod == PROD_IMPL_METHOD || prod == PROD_IMPL_METHOD_PUB;
 }
 
-bool span3(uint start, uint len, uint a, uint b, uint c)
+bool is_param_production(uint prod)
 {
-    return len == 3u && source_at(start, 0u) == a && source_at(start, 1u) == b &&
-           source_at(start, 2u) == c;
+    return prod == PROD_PARAM_IDENT || prod == PROD_PARAM_SELF || prod == PROD_PARAM_REF_SELF;
 }
 
-bool span4(uint start, uint len, uint a, uint b, uint c, uint d)
+uint ancestor_impl_node(uint i)
 {
-    return len == 4u && source_at(start, 0u) == a && source_at(start, 1u) == b &&
-           source_at(start, 2u) == c && source_at(start, 3u) == d;
-}
-
-bool span5(uint start, uint len, uint a, uint b, uint c, uint d, uint e)
-{
-    return len == 5u && source_at(start, 0u) == a && source_at(start, 1u) == b &&
-           source_at(start, 2u) == c && source_at(start, 3u) == d &&
-           source_at(start, 4u) == e;
-}
-
-bool same_text(uint a, uint b)
-{
-    uint len = token_len(a);
-    if (len != token_len(b))
-        return false;
-    uint sa = token_start(a);
-    uint sb = token_start(b);
+    uint cur = i;
     [loop]
-    for (uint i = 0u; i < len; i += 1u)
+    for (uint guard = 0u; guard < 32u; guard += 1u)
     {
-        if (source_at(sa, i) != source_at(sb, i))
-            return false;
+        uint p = parent_node(cur);
+        if (p == INVALID)
+            return INVALID;
+        if (node_kind[p] == PROD_IMPL_ITEM)
+            return p;
+        cur = p;
     }
-    return true;
+    return INVALID;
 }
 
-uint token_hash(uint i)
+uint first_method_param_token(uint fn_node)
 {
-    uint h = 2166136261u;
-    uint start = token_start(i);
-    uint len = token_len(i);
+    uint child = first_child_node(fn_node);
     [loop]
-    for (uint d = 0u; d < len; d += 1u)
+    for (uint guard = 0u; guard < 16u && child != INVALID; guard += 1u)
     {
-        h = (h ^ source_at(start, d)) * 16777619u;
-    }
-    return h ^ len;
-}
-
-uint primitive_type_code(uint type_i)
-{
-    uint start = token_start(type_i);
-    uint len = token_len(type_i);
-    if (span2(start, len, 105u, 56u) || span3(start, len, 105u, 49u, 54u) ||
-        span3(start, len, 105u, 51u, 50u) || span3(start, len, 105u, 54u, 52u) ||
-        span5(start, len, 105u, 115u, 105u, 122u, 101u))
-        return TY_INT;
-
-    if (span2(start, len, 117u, 56u) || span3(start, len, 117u, 49u, 54u) ||
-        span3(start, len, 117u, 51u, 50u) || span3(start, len, 117u, 54u, 52u) ||
-        span5(start, len, 117u, 115u, 105u, 122u, 101u))
-        return TY_UINT;
-
-    if (span3(start, len, 102u, 51u, 50u) || span3(start, len, 102u, 54u, 52u))
-        return TY_FLOAT;
-    if (span4(start, len, 98u, 111u, 111u, 108u))
-        return TY_BOOL;
-    if (span4(start, len, 99u, 104u, 97u, 114u))
-        return TY_CHAR;
-    if (span3(start, len, 115u, 116u, 114u))
-        return TY_STRING;
-
-    return TY_UNKNOWN;
-}
-
-bool is_struct_decl_name_at(uint i)
-{
-    return token_kind(i) == TK_IDENT && i > 0u && token_kind(i - 1u) == TK_STRUCT;
-}
-
-uint struct_type_code_for_name(uint name_i)
-{
-    uint n_active = active_token_count();
-    [loop]
-    for (uint j = 1u; j < n_active; j += 1u)
-    {
-        if (is_struct_decl_name_at(j) && same_text(j, name_i))
-            return TY_STRUCT_BASE + j;
-    }
-    return TY_UNKNOWN;
-}
-
-bool is_enum_decl_name_at(uint i)
-{
-    return token_kind(i) == TK_IDENT && i > 0u && token_kind(i - 1u) == TK_ENUM;
-}
-
-uint enum_type_code_for_name(uint name_i)
-{
-    uint n_active = active_token_count();
-    [loop]
-    for (uint j = 1u; j < n_active; j += 1u)
-    {
-        if (is_enum_decl_name_at(j) && same_text(j, name_i))
-            return TY_ENUM_BASE + j;
-    }
-    return TY_UNKNOWN;
-}
-
-uint type_code_for_type_expr(uint type_i)
-{
-    uint kind = token_kind(type_i);
-    if (kind != TK_IDENT && kind != TK_TYPE_IDENT)
-        return TY_UNKNOWN;
-
-    uint primitive = primitive_type_code(type_i);
-    if (primitive != TY_UNKNOWN)
-        return primitive;
-
-    uint struct_ty = struct_type_code_for_name(type_i);
-    if (struct_ty != TY_UNKNOWN)
-        return struct_ty;
-
-    return enum_type_code_for_name(type_i);
-}
-
-uint generic_param_list_close(uint open_i)
-{
-    uint n_active = active_token_count();
-    uint limit = min(n_active, open_i + MAX_IMPL_HEADER_SCAN);
-    uint depth = 0u;
-    [loop]
-    for (uint j = open_i; j < limit; j += 1u)
-    {
-        uint kind = token_kind(j);
-        if (kind == TK_LT)
-            depth += 1u;
-        else if (kind == TK_GT)
+        if (node_kind[child] == PROD_PARAM_LIST)
         {
-            if (depth == 0u)
-                return INVALID;
-            depth -= 1u;
-            if (depth == 0u)
-                return j;
-        }
-        else if (kind == TK_LBRACE || kind == TK_IF_LBRACE || kind == TK_SEMICOLON)
-        {
+            uint param = first_child_node(child);
+            if (param != INVALID && hir_kind[param] == HIR_PARAM &&
+                is_param_production(node_kind[param]))
+                return hir_token_pos[param];
             return INVALID;
         }
+        child = next_sibling_node(child);
     }
     return INVALID;
 }
 
-uint impl_body_open(uint impl_i)
+uint method_receiver_mode(uint fn_node)
 {
-    uint n_active = active_token_count();
-    uint limit = min(n_active, impl_i + MAX_IMPL_HEADER_SCAN);
+    uint child = first_child_node(fn_node);
     [loop]
-    for (uint j = impl_i + 1u; j < limit; j += 1u)
+    for (uint guard = 0u; guard < 16u && child != INVALID; guard += 1u)
     {
-        uint kind = token_kind(j);
-        if (kind == TK_LBRACE)
-            return j;
-        if (kind == TK_SEMICOLON || kind == TK_FN || kind == TK_CONST || kind == TK_ENUM ||
-            kind == TK_STRUCT)
-            return INVALID;
-    }
-    return INVALID;
-}
-
-uint matching_block_close_bounded(uint open_i)
-{
-    uint depth = 0u;
-    uint n_active = active_token_count();
-    uint limit = min(n_active, open_i + MAX_IMPL_BODY_SCAN);
-    [loop]
-    for (uint j = open_i; j < limit; j += 1u)
-    {
-        uint kind = token_kind(j);
-        if (kind == TK_LBRACE || kind == TK_IF_LBRACE)
-            depth += 1u;
-        else if (kind == TK_RBRACE || kind == TK_IF_RBRACE)
+        if (node_kind[child] == PROD_PARAM_LIST)
         {
-            if (depth == 0u)
-                return INVALID;
-            depth -= 1u;
-            if (depth == 0u)
-                return j;
+            uint param = first_child_node(child);
+            if (param == INVALID || hir_kind[param] != HIR_PARAM)
+                return METHOD_RECEIVER_NONE;
+            uint prod = node_kind[param];
+            if (prod == PROD_PARAM_SELF)
+                return METHOD_RECEIVER_SELF;
+            if (prod == PROD_PARAM_REF_SELF)
+                return METHOD_RECEIVER_REF_SELF;
+            if (prod == PROD_PARAM_IDENT)
+                return METHOD_RECEIVER_EXPLICIT;
+            return METHOD_RECEIVER_NONE;
         }
+        child = next_sibling_node(child);
     }
-    return INVALID;
-}
-
-uint impl_receiver_type_start(uint impl_i)
-{
-    uint n_active = active_token_count();
-    uint first_type = impl_i + 1u;
-    if (first_type < n_active && token_kind(first_type) == TK_LT)
-    {
-        uint close_i = generic_param_list_close(first_type);
-        if (close_i == INVALID || close_i + 1u >= n_active)
-            return INVALID;
-        first_type = close_i + 1u;
-    }
-
-    uint angle_depth = 0u;
-    uint limit = min(n_active, first_type + MAX_IMPL_HEADER_SCAN);
-    [loop]
-    for (uint j = first_type; j < limit; j += 1u)
-    {
-        uint kind = token_kind(j);
-        if (kind == TK_LT)
-            angle_depth += 1u;
-        else if (kind == TK_GT && angle_depth > 0u)
-            angle_depth -= 1u;
-        else if (kind == TK_FOR && angle_depth == 0u)
-            return j + 1u < n_active ? j + 1u : INVALID;
-        else if ((kind == TK_LBRACE || kind == TK_IF_LBRACE || kind == TK_SEMICOLON) &&
-                 angle_depth == 0u)
-            return first_type;
-    }
-    return INVALID;
-}
-
-uint method_param_offset(uint fn_i)
-{
-    uint n_active = active_token_count();
-    uint limit = min(n_active, fn_i + MAX_METHOD_HEADER_SCAN);
-    [loop]
-    for (uint j = fn_i + 1u; j < limit; j += 1u)
-    {
-        uint kind = token_kind(j);
-        if (kind == TK_PARAM_LPAREN || kind == TK_LPAREN)
-            return j + 1u;
-        if (kind == TK_LBRACE || kind == TK_IF_LBRACE || kind == TK_SEMICOLON ||
-            kind == TK_ARROW)
-            return INVALID;
-    }
-    return INVALID;
-}
-
-uint method_key(uint receiver_ty, uint name_i)
-{
-    return (receiver_ty * 16777619u) ^ token_hash(name_i);
-}
-
-void insert_method_lookup(uint fn_i, uint receiver_ty, uint name_i)
-{
-    if (receiver_ty == TY_UNKNOWN || name_i >= active_token_count())
-        return;
-
-    uint cap = lookup_capacity();
-    uint key = method_key(receiver_ty, name_i);
-    uint start_slot = key % cap;
-    uint probe_limit = min(cap, MAX_LOOKUP_PROBE);
-    [loop]
-    for (uint probe = 0u; probe < probe_limit; probe += 1u)
-    {
-        uint slot = (start_slot + probe) % cap;
-        uint old_fn;
-        InterlockedCompareExchange(method_lookup_fn[slot], INVALID, fn_i, old_fn);
-        if (old_fn == INVALID)
-        {
-            method_lookup_key[slot] = key;
-            method_lookup_receiver[slot] = receiver_ty;
-            method_lookup_name_token[slot] = name_i;
-            return;
-        }
-        if (method_lookup_key[slot] == key && method_lookup_receiver[slot] == receiver_ty &&
-            same_text(method_lookup_name_token[slot], name_i))
-        {
-            uint old_min;
-            InterlockedMin(method_lookup_fn[slot], fn_i, old_min);
-            return;
-        }
-    }
-}
-
-void collect_impl_methods(uint impl_i)
-{
-    uint type_i = impl_receiver_type_start(impl_i);
-    uint receiver_ty = type_i == INVALID ? TY_UNKNOWN : type_code_for_type_expr(type_i);
-    uint open_i = impl_body_open(impl_i);
-    uint close_i = open_i == INVALID ? INVALID : matching_block_close_bounded(open_i);
-    if (open_i == INVALID || close_i == INVALID)
-        return;
-
-    [loop]
-    for (uint j = open_i + 1u; j < close_i; j += 1u)
-    {
-        if (token_kind(j) != TK_FN)
-            continue;
-        uint name_i = j + 1u;
-        method_decl_receiver_type[j] = receiver_ty;
-        method_decl_impl_token[j] = impl_i;
-        method_decl_name_token[j] = name_i;
-        method_decl_param_offset[j] = method_param_offset(j);
-        insert_method_lookup(j, receiver_ty, name_i);
-    }
+    return METHOD_RECEIVER_NONE;
 }
 
 [shader("compute")]
@@ -417,8 +168,25 @@ void collect_impl_methods(uint impl_i)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
-    if (i >= active_token_count() || token_kind(i) != TK_IMPL)
+    if (i >= active_hir_node_count())
         return;
 
-    collect_impl_methods(i);
+    if (node_kind[i] != PROD_FN_ITEM || hir_kind[i] != HIR_FN)
+        return;
+
+    uint method_parent = parent_node(i);
+    if (method_parent == INVALID || !is_impl_method_production(node_kind[method_parent]))
+        return;
+
+    uint impl_node = ancestor_impl_node(i);
+    uint fn_token = hir_token_pos[i];
+    if (fn_token == INVALID || impl_node == INVALID || fn_token >= gParams.n_tokens)
+        return;
+
+    method_decl_impl_node[fn_token] = impl_node;
+    method_decl_name_token[fn_token] = fn_token + 1u;
+    method_decl_param_offset[fn_token] = first_method_param_token(i);
+    method_decl_receiver_mode[fn_token] = method_receiver_mode(i);
+    method_decl_visibility[fn_token] =
+        node_kind[method_parent] == PROD_IMPL_METHOD_PUB ? METHOD_VIS_PUBLIC : METHOD_VIS_PRIVATE;
 }

@@ -7,17 +7,22 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-RWStructuredBuffer<uint> method_decl_receiver_type;
-RWStructuredBuffer<uint> method_decl_impl_token;
+RWStructuredBuffer<uint> method_decl_receiver_ref_tag;
+RWStructuredBuffer<uint> method_decl_receiver_ref_payload;
+RWStructuredBuffer<uint> method_decl_module_id;
+RWStructuredBuffer<uint> method_decl_impl_node;
 RWStructuredBuffer<uint> method_decl_name_token;
+RWStructuredBuffer<uint> method_decl_name_id;
 RWStructuredBuffer<uint> method_decl_param_offset;
-RWStructuredBuffer<uint> method_lookup_key;
-RWStructuredBuffer<uint> method_lookup_receiver;
-RWStructuredBuffer<uint> method_lookup_name_token;
-RWStructuredBuffer<uint> method_lookup_fn;
+RWStructuredBuffer<uint> method_decl_receiver_mode;
+RWStructuredBuffer<uint> method_decl_visibility;
+RWStructuredBuffer<uint> method_call_receiver_ref_tag;
+RWStructuredBuffer<uint> method_call_receiver_ref_payload;
+RWStructuredBuffer<uint> method_call_name_id;
+RWStructuredBuffer<uint> method_call_site_module_id;
 
 static const uint INVALID = 0xffffffffu;
-static const uint TY_UNKNOWN = 0u;
+static const uint TYPE_REF_INVALID = 0u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -33,18 +38,18 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint i = linear_thread_id(dtid);
     if (i < gParams.n_tokens)
     {
-        method_decl_receiver_type[i] = TY_UNKNOWN;
-        method_decl_impl_token[i] = INVALID;
+        method_decl_receiver_ref_tag[i] = TYPE_REF_INVALID;
+        method_decl_receiver_ref_payload[i] = INVALID;
+        method_decl_module_id[i] = INVALID;
+        method_decl_impl_node[i] = INVALID;
         method_decl_name_token[i] = INVALID;
+        method_decl_name_id[i] = INVALID;
         method_decl_param_offset[i] = INVALID;
-    }
-
-    uint lookup_capacity = max(gParams.n_tokens * 2u, 1u);
-    if (i < lookup_capacity)
-    {
-        method_lookup_key[i] = 0u;
-        method_lookup_receiver[i] = TY_UNKNOWN;
-        method_lookup_name_token[i] = INVALID;
-        method_lookup_fn[i] = INVALID;
+        method_decl_receiver_mode[i] = 0u;
+        method_decl_visibility[i] = 0u;
+        method_call_receiver_ref_tag[i] = TYPE_REF_INVALID;
+        method_call_receiver_ref_payload[i] = INVALID;
+        method_call_name_id[i] = INVALID;
+        method_call_site_module_id[i] = INVALID;
     }
 }

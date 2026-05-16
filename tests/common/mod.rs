@@ -22,6 +22,7 @@ use std::{
 
 use laniusc::compiler::{
     CompileError,
+    compile_source_pack_to_wasm_with_gpu_codegen,
     compile_source_to_wasm_with_gpu_codegen,
     compile_source_to_wasm_with_gpu_codegen_from_path,
     type_check_source_pack_with_gpu,
@@ -33,10 +34,11 @@ use log::warn;
 static TEMP_ARTIFACT_COUNTER: AtomicU64 = AtomicU64::new(0);
 // libtest runs cases concurrently; start GPU timeouts after queued work gets the device.
 static GPU_TEST_LOCK: Mutex<()> = Mutex::new(());
-const DEFAULT_GPU_TEST_TIMEOUT_MS: u64 = 2_000;
-// Codegen integration tests are ignored by default; keep their hang watchdog short
-// while still allowing frontend trace stages to reach the stuck backend pass.
-const DEFAULT_GPU_CODEGEN_TEST_TIMEOUT_MS: u64 = 2_000;
+const DEFAULT_GPU_TEST_TIMEOUT_MS: u64 = 15_000;
+// The default codegen coverage now includes small source-pack GPU fixtures.
+// Pipeline setup can exceed a couple of seconds on cold runs, so keep this
+// below the outer command watchdog while avoiding false timeout failures.
+const DEFAULT_GPU_CODEGEN_TEST_TIMEOUT_MS: u64 = 30_000;
 const DEFAULT_GPU_CODEGEN_SUITE_TEST_TIMEOUT_MS: u64 = 5_000;
 const DEFAULT_COMPILER_PROCESS_TEST_TIMEOUT_MS: u64 = 4_000;
 const DEFAULT_PROCESS_TEST_TIMEOUT_MS: u64 = 500;
@@ -135,6 +137,18 @@ pub fn compile_source_to_wasm_with_timeout(src: &str) -> Result<Vec<u8>, Compile
     run_with_timeout_for("GPU WASM compile", gpu_codegen_test_timeout(), move || {
         pollster::block_on(compile_source_to_wasm_with_gpu_codegen(&src))
     })
+}
+
+pub fn compile_source_pack_to_wasm_with_timeout(sources: &[&str]) -> Result<Vec<u8>, CompileError> {
+    let sources = sources
+        .iter()
+        .map(|src| (*src).to_owned())
+        .collect::<Vec<_>>();
+    run_with_timeout_for(
+        "GPU source-pack WASM compile",
+        gpu_codegen_test_timeout(),
+        move || pollster::block_on(compile_source_pack_to_wasm_with_gpu_codegen(&sources)),
+    )
 }
 
 pub fn compile_path_to_wasm_with_timeout(path: &Path) -> Result<Vec<u8>, CompileError> {
@@ -459,6 +473,48 @@ const fs = require('fs');
         format!("{context}: run node for {}", wasm_path.path().display()),
         &mut command,
     )
+}
+
+pub fn run_wasm_main_return_with_node(
+    context: impl fmt::Display,
+    artifact_stem: &str,
+    wasm: &[u8],
+) -> i32 {
+    let context = context.to_string();
+    let wasm_path = TempArtifact::new("laniusc_exec_wasm", artifact_stem, Some("wasm"));
+    wasm_path.write_bytes(wasm);
+
+    let script = r#"
+const fs = require('fs');
+(async () => {
+  const imports = { env: { print_i64(_value) {} } };
+  const module = await WebAssembly.instantiate(fs.readFileSync(process.argv[1]), imports);
+  const main = module.instance.exports.main;
+  if (typeof main !== 'function') {
+    throw new Error('missing exported main function');
+  }
+  const status = main();
+  if (!Number.isInteger(status)) {
+    throw new Error(`main returned non-integer ${String(status)}`);
+  }
+  process.stdout.write(String(status));
+})().catch((err) => {
+  console.error(err && err.stack ? err.stack : err);
+  process.exit(1);
+});
+"#;
+
+    let mut command = Command::new("node");
+    command.arg("-e").arg(script).arg(wasm_path.path());
+    let output = short_process_output_with_timeout(
+        format!("{context}: run node for {}", wasm_path.path().display()),
+        &mut command,
+    );
+    assert_command_success(format!("{context}: node executing WASM main"), &output);
+    stdout_utf8(format!("{context}: node stdout"), output.stdout)
+        .trim()
+        .parse::<i32>()
+        .unwrap_or_else(|err| panic!("{context}: parse WASM main return value: {err}"))
 }
 
 #[cfg(all(unix, target_arch = "x86_64"))]

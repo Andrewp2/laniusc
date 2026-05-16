@@ -3,6 +3,8 @@
 // This pass is intentionally fed by production ids and tree ancestry. It does
 // not rediscover declarations by scanning token neighborhoods.
 
+import generated_parse_production_ids;
+
 struct Params
 {
     uint n;
@@ -42,6 +44,7 @@ static const uint HIR_ITEM_KIND_EXTERN_FN = 5u;
 static const uint HIR_ITEM_KIND_STRUCT = 6u;
 static const uint HIR_ITEM_KIND_ENUM = 7u;
 static const uint HIR_ITEM_KIND_TYPE_ALIAS = 8u;
+static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
 
 static const uint HIR_ITEM_NAMESPACE_NONE = 0u;
 static const uint HIR_ITEM_NAMESPACE_MODULE = 1u;
@@ -61,34 +64,6 @@ static const uint HIR_STRUCT_ITEM = 27u;
 static const uint HIR_TYPE_ALIAS_ITEM = 29u;
 static const uint HIR_MODULE_ITEM = 31u;
 static const uint HIR_IMPORT_ITEM = 32u;
-
-static const uint PROD_ITEM_PUB = 3u;
-static const uint PROD_ITEM_FN = 4u;
-static const uint PROD_ITEM_EXTERN_FN = 5u;
-static const uint PROD_ITEM_IMPORT = 6u;
-static const uint PROD_ITEM_MODULE = 7u;
-static const uint PROD_ITEM_TYPE_ALIAS = 8u;
-static const uint PROD_FN_ITEM = 12u;
-static const uint PROD_EXTERN_FN_ITEM = 13u;
-static const uint PROD_TYPE_ALIAS_ITEM = 14u;
-static const uint PROD_EXTERN_ABI = 31u;
-static const uint PROD_IMPORT_ITEM = 42u;
-static const uint PROD_IMPORT_PATH = 43u;
-static const uint PROD_IMPORT_STRING = 44u;
-static const uint PROD_MODULE_ITEM = 45u;
-static const uint PROD_PATH = 46u;
-static const uint PROD_ITEM_CONST = 191u;
-static const uint PROD_CONST_ITEM = 192u;
-static const uint PROD_ITEM_ENUM = 193u;
-static const uint PROD_ENUM_ITEM = 194u;
-static const uint PROD_ITEM_STRUCT = 231u;
-static const uint PROD_STRUCT_ITEM = 232u;
-static const uint PROD_PUB_FN = 240u;
-static const uint PROD_PUB_EXTERN_FN = 241u;
-static const uint PROD_PUB_CONST = 242u;
-static const uint PROD_PUB_TYPE_ALIAS = 243u;
-static const uint PROD_PUB_ENUM = 244u;
-static const uint PROD_PUB_STRUCT = 245u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -123,17 +98,17 @@ bool is_public_wrapper(uint kind)
 
 uint expected_hir_kind_for_item_production(uint prod)
 {
-    if (prod == PROD_MODULE_ITEM)
+    if (prod == PROD_MODULE)
         return HIR_MODULE_ITEM;
-    if (prod == PROD_IMPORT_ITEM)
+    if (prod == PROD_IMPORT)
         return HIR_IMPORT_ITEM;
-    if (prod == PROD_CONST_ITEM)
+    if (prod == PROD_CONST)
         return HIR_CONST_ITEM;
-    if (prod == PROD_STRUCT_ITEM)
+    if (prod == PROD_STRUCT)
         return HIR_STRUCT_ITEM;
-    if (prod == PROD_ENUM_ITEM)
+    if (prod == PROD_ENUM)
         return HIR_ENUM_ITEM;
-    if (prod == PROD_TYPE_ALIAS_ITEM)
+    if (prod == PROD_TYPE_ALIAS)
         return HIR_TYPE_ALIAS_ITEM;
     return 0u;
 }
@@ -146,17 +121,17 @@ bool hir_kind_matches_item_production(uint i, uint prod)
 
 bool is_private_top_level_child(uint kind, uint parent_prod)
 {
-    if (kind == PROD_FN_ITEM)
+    if (kind == PROD_FN)
         return parent_prod == PROD_ITEM_FN;
-    if (kind == PROD_EXTERN_FN_ITEM)
+    if (kind == PROD_EXTERN_FN)
         return parent_prod == PROD_ITEM_EXTERN_FN;
-    if (kind == PROD_CONST_ITEM)
+    if (kind == PROD_CONST)
         return parent_prod == PROD_ITEM_CONST;
-    if (kind == PROD_TYPE_ALIAS_ITEM)
+    if (kind == PROD_TYPE_ALIAS)
         return parent_prod == PROD_ITEM_TYPE_ALIAS;
-    if (kind == PROD_ENUM_ITEM)
+    if (kind == PROD_ENUM)
         return parent_prod == PROD_ITEM_ENUM;
-    if (kind == PROD_STRUCT_ITEM)
+    if (kind == PROD_STRUCT)
         return parent_prod == PROD_ITEM_STRUCT;
     return false;
 }
@@ -165,39 +140,41 @@ bool is_public_top_level_child(uint kind, uint parent_prod, uint grandparent_pro
 {
     if (grandparent_prod != PROD_ITEM_PUB || !is_public_wrapper(parent_prod))
         return false;
-    if (kind == PROD_FN_ITEM)
+    if (kind == PROD_FN)
         return parent_prod == PROD_PUB_FN;
-    if (kind == PROD_EXTERN_FN_ITEM)
+    if (kind == PROD_EXTERN_FN)
         return parent_prod == PROD_PUB_EXTERN_FN;
-    if (kind == PROD_CONST_ITEM)
+    if (kind == PROD_CONST)
         return parent_prod == PROD_PUB_CONST;
-    if (kind == PROD_TYPE_ALIAS_ITEM)
+    if (kind == PROD_TYPE_ALIAS)
         return parent_prod == PROD_PUB_TYPE_ALIAS;
-    if (kind == PROD_ENUM_ITEM)
+    if (kind == PROD_ENUM)
         return parent_prod == PROD_PUB_ENUM;
-    if (kind == PROD_STRUCT_ITEM)
+    if (kind == PROD_STRUCT)
         return parent_prod == PROD_PUB_STRUCT;
     return false;
 }
 
 uint item_kind_for_production(uint prod)
 {
-    if (prod == PROD_MODULE_ITEM)
+    if (prod == PROD_MODULE)
         return HIR_ITEM_KIND_MODULE;
-    if (prod == PROD_IMPORT_ITEM)
+    if (prod == PROD_IMPORT)
         return HIR_ITEM_KIND_IMPORT;
-    if (prod == PROD_CONST_ITEM)
+    if (prod == PROD_CONST)
         return HIR_ITEM_KIND_CONST;
-    if (prod == PROD_FN_ITEM)
+    if (prod == PROD_FN)
         return HIR_ITEM_KIND_FN;
-    if (prod == PROD_EXTERN_FN_ITEM)
+    if (prod == PROD_EXTERN_FN)
         return HIR_ITEM_KIND_EXTERN_FN;
-    if (prod == PROD_STRUCT_ITEM)
+    if (prod == PROD_STRUCT)
         return HIR_ITEM_KIND_STRUCT;
-    if (prod == PROD_ENUM_ITEM)
+    if (prod == PROD_ENUM)
         return HIR_ITEM_KIND_ENUM;
-    if (prod == PROD_TYPE_ALIAS_ITEM)
+    if (prod == PROD_TYPE_ALIAS)
         return HIR_ITEM_KIND_TYPE_ALIAS;
+    if (prod == PROD_ENUM_VARIANT)
+        return HIR_ITEM_KIND_ENUM_VARIANT;
     return HIR_ITEM_KIND_NONE;
 }
 
@@ -206,7 +183,7 @@ uint namespace_for_item(uint item_kind)
     if (item_kind == HIR_ITEM_KIND_MODULE || item_kind == HIR_ITEM_KIND_IMPORT)
         return HIR_ITEM_NAMESPACE_MODULE;
     if (item_kind == HIR_ITEM_KIND_CONST || item_kind == HIR_ITEM_KIND_FN ||
-        item_kind == HIR_ITEM_KIND_EXTERN_FN)
+        item_kind == HIR_ITEM_KIND_EXTERN_FN || item_kind == HIR_ITEM_KIND_ENUM_VARIANT)
         return HIR_ITEM_NAMESPACE_VALUE;
     if (item_kind == HIR_ITEM_KIND_STRUCT || item_kind == HIR_ITEM_KIND_ENUM ||
         item_kind == HIR_ITEM_KIND_TYPE_ALIAS)
@@ -226,10 +203,12 @@ uint name_token_for_item(uint i, uint prod, uint start)
 {
     if (start == INVALID)
         return INVALID;
-    if (prod == PROD_FN_ITEM || prod == PROD_CONST_ITEM || prod == PROD_STRUCT_ITEM ||
-        prod == PROD_ENUM_ITEM || prod == PROD_TYPE_ALIAS_ITEM)
+    if (prod == PROD_FN || prod == PROD_CONST || prod == PROD_STRUCT || prod == PROD_ENUM ||
+        prod == PROD_TYPE_ALIAS)
         return start + 1u;
-    if (prod == PROD_EXTERN_FN_ITEM)
+    if (prod == PROD_ENUM_VARIANT)
+        return start;
+    if (prod == PROD_EXTERN_FN)
         return extern_fn_name_token(i, start);
     return INVALID;
 }
@@ -248,7 +227,7 @@ void clear_item(uint i)
 
 uint import_target_kind(uint i)
 {
-    if (node_kind[i] != PROD_IMPORT_ITEM)
+    if (node_kind[i] != PROD_IMPORT)
         return HIR_ITEM_IMPORT_TARGET_NONE;
     uint child = first_child[i];
     if (child == INVALID || child >= active_node_count())
@@ -272,16 +251,16 @@ uint module_or_import_path_node(uint i, uint prod, uint target_kind)
     uint child = first_child_node(i);
     if (child == INVALID)
         return INVALID;
-    if (prod == PROD_MODULE_ITEM)
+    if (prod == PROD_MODULE)
         return node_kind[child] == PROD_PATH ? child : INVALID;
-    if (prod != PROD_IMPORT_ITEM || target_kind != HIR_ITEM_IMPORT_TARGET_PATH)
+    if (prod != PROD_IMPORT || target_kind != HIR_ITEM_IMPORT_TARGET_PATH)
         return INVALID;
     return node_kind[child] == PROD_IMPORT_PATH ? first_child_node(child) : INVALID;
 }
 
 uint module_or_import_path_start(uint i, uint prod, uint target_kind)
 {
-    if (prod == PROD_IMPORT_ITEM && target_kind == HIR_ITEM_IMPORT_TARGET_STRING)
+    if (prod == PROD_IMPORT && target_kind == HIR_ITEM_IMPORT_TARGET_STRING)
     {
         uint tail = first_child_node(i);
         return tail == INVALID || node_kind[tail] != PROD_IMPORT_STRING ? INVALID
@@ -294,7 +273,7 @@ uint module_or_import_path_start(uint i, uint prod, uint target_kind)
 
 uint module_or_import_path_end(uint i, uint prod, uint target_kind)
 {
-    if (prod == PROD_IMPORT_ITEM && target_kind == HIR_ITEM_IMPORT_TARGET_STRING)
+    if (prod == PROD_IMPORT && target_kind == HIR_ITEM_IMPORT_TARGET_STRING)
     {
         uint tail = first_child_node(i);
         if (tail == INVALID || node_kind[tail] != PROD_IMPORT_STRING ||
@@ -331,6 +310,35 @@ void publish_decl(uint i, uint prod, uint start, uint visibility)
     hir_item_path_end[i] = INVALID;
 }
 
+uint ancestor_enum_item(uint i)
+{
+    uint cur = i;
+    [loop]
+    for (uint guard = 0u; guard < 16u; guard += 1u)
+    {
+        uint p = parent[cur];
+        if (p == INVALID || p >= active_node_count())
+            return INVALID;
+        if (node_kind[p] == PROD_ENUM)
+            return p;
+        cur = p;
+    }
+    return INVALID;
+}
+
+uint enum_item_visibility(uint enum_i)
+{
+    if (enum_i == INVALID || enum_i >= active_node_count())
+        return INVALID;
+    uint p_kind = parent_kind(enum_i);
+    uint gp_kind = grandparent_kind(enum_i);
+    if (is_private_top_level_child(PROD_ENUM, p_kind))
+        return HIR_ITEM_VIS_PRIVATE;
+    if (is_public_top_level_child(PROD_ENUM, p_kind, gp_kind))
+        return HIR_ITEM_VIS_PUBLIC;
+    return INVALID;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -351,11 +359,20 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint start = hir_token_pos[i];
     uint end_exclusive = hir_token_end[i];
 
-    if (prod == PROD_MODULE_ITEM || prod == PROD_IMPORT_ITEM)
+    if (prod == PROD_ENUM_VARIANT)
+    {
+        uint visibility = enum_item_visibility(ancestor_enum_item(i));
+        if (visibility != INVALID && start != INVALID && end_exclusive != INVALID &&
+            start < end_exclusive)
+            publish_decl(i, prod, start, visibility);
+        return;
+    }
+
+    if (prod == PROD_MODULE || prod == PROD_IMPORT)
     {
         uint p = parent_kind(i);
-        if ((prod == PROD_MODULE_ITEM && p == PROD_ITEM_MODULE) ||
-            (prod == PROD_IMPORT_ITEM && p == PROD_ITEM_IMPORT))
+        if ((prod == PROD_MODULE && p == PROD_ITEM_MODULE) ||
+            (prod == PROD_IMPORT && p == PROD_ITEM_IMPORT))
             publish_module_or_import(i, prod);
         return;
     }

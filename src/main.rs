@@ -1,6 +1,8 @@
 use std::{env, fs, io::Write, path::PathBuf};
 
 use laniusc::compiler::{
+    compile_explicit_source_pack_paths_to_wasm_with_gpu_codegen,
+    compile_explicit_source_pack_paths_to_x86_64_with_gpu_codegen,
     compile_source_to_wasm_with_gpu_codegen,
     compile_source_to_wasm_with_gpu_codegen_from_path,
     compile_source_to_x86_64_with_gpu_codegen,
@@ -15,7 +17,8 @@ fn main() {
 }
 
 fn run() -> Result<(), String> {
-    let mut input: Option<PathBuf> = None;
+    let mut inputs: Vec<PathBuf> = Vec::new();
+    let mut stdlib_paths: Vec<PathBuf> = Vec::new();
     let mut output: Option<PathBuf> = None;
     let mut emit = "wasm".to_string();
 
@@ -31,6 +34,12 @@ fn run() -> Result<(), String> {
                     .next()
                     .ok_or_else(|| "--emit requires a target".to_string())?;
             }
+            "--stdlib" => {
+                stdlib_paths
+                    .push(PathBuf::from(args.next().ok_or_else(|| {
+                        "--stdlib requires a source file path".to_string()
+                    })?));
+            }
             "-o" | "--out" => {
                 output = Some(PathBuf::from(
                     args.next()
@@ -40,24 +49,46 @@ fn run() -> Result<(), String> {
             flag if flag.starts_with("--emit=") => {
                 emit = flag.trim_start_matches("--emit=").to_string();
             }
+            flag if flag.starts_with("--stdlib=") => {
+                stdlib_paths.push(PathBuf::from(flag.trim_start_matches("--stdlib=")));
+            }
             flag if flag.starts_with('-') => {
                 return Err(format!("unknown flag {flag}"));
             }
             path => {
-                if input.replace(PathBuf::from(path)).is_some() {
-                    return Err("only one input file is supported right now".into());
-                }
+                inputs.push(PathBuf::from(path));
             }
         }
     }
 
     if emit != "wasm" && emit != "x86_64" {
         return Err(format!(
-            "unsupported emit target {emit:?}; accepted targets: wasm, x86_64 (x86_64 currently reports unavailable)"
+            "unsupported emit target {emit:?}; accepted targets: wasm, x86_64 (x86_64 currently supports only the direct GPU HIR main-return and resolver-backed scalar-const source-pack slices)"
         ));
     }
 
-    let emitted = if let Some(input) = &input {
+    let source_pack_requested = !stdlib_paths.is_empty() || inputs.len() > 1;
+    if source_pack_requested && inputs.is_empty() {
+        return Err("explicit source-pack compilation requires at least one input file".into());
+    }
+
+    let emitted = if source_pack_requested {
+        if emit == "wasm" {
+            pollster::block_on(compile_explicit_source_pack_paths_to_wasm_with_gpu_codegen(
+                &stdlib_paths,
+                &inputs,
+            ))
+            .map_err(|err| err.to_string())?
+        } else {
+            pollster::block_on(
+                compile_explicit_source_pack_paths_to_x86_64_with_gpu_codegen(
+                    &stdlib_paths,
+                    &inputs,
+                ),
+            )
+            .map_err(|err| err.to_string())?
+        }
+    } else if let Some(input) = inputs.first() {
         if emit == "wasm" {
             pollster::block_on(compile_source_to_wasm_with_gpu_codegen_from_path(input))
                 .map_err(|err| err.to_string())?
@@ -96,9 +127,10 @@ fn run() -> Result<(), String> {
 
 fn print_help() {
     eprintln!(
-        "Usage: laniusc [--emit x86_64|wasm] [-o output] <input.lani>\n\
-         Emits WASM using GPU lexing, GPU parsing, GPU type checking, and GPU emission.\n\
-         x86_64 is accepted only to report explicit unavailability until its GPU backend is wired.\n\
-         Without an input file, compiles a tiny built-in WASM sample to stdout."
+        "Usage: laniusc [--emit x86_64|wasm] [--stdlib path]... [-o output] <input.lani> [more-input.lani...]\n\
+         Emits the selected target using GPU lexing, GPU parsing, GPU type checking, and GPU emission.\n\
+         Repeating --stdlib adds explicitly supplied source-pack files before positional user files; imports are not loaded from the filesystem.\n\
+         x86_64 currently supports only the direct GPU HIR main-return and resolver-backed scalar-const source-pack slices and rejects unsupported source shapes through GPU status.\n\
+         Without an input file, compiles a tiny built-in sample to stdout."
     );
 }

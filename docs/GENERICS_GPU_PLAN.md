@@ -31,20 +31,31 @@ The syntax surface is ahead of semantic support:
 - Generic structs and enums parse and partly type-check as declarations and
   annotations. The same acceptance test covers `struct Boxed<T>`, `enum
   Maybe<T>`, `Boxed<i32>`, and `Maybe<i32>` annotations.
-- Generic struct substitution is not semantic yet. The rejection test
-  `type_checker_rejects_generic_struct_substitution_until_gpu_consumers_are_split_from_token_checker`
-  covers `Range<i32>` construction and `Range<i32>.start` projection.
-  A bounded attempt to substitute `Range<i32>.start` directly inside
-  `type_check_tokens.slang` by walking the base value's annotation, struct
+- Generic struct substitution has bounded GPU semantic coverage for concrete
+  `Range<i32>`-style uses. The acceptance tests cover `Range<i32>`
+  construction, `Range<i32>.start` projection, concrete `Range<i32>` inherent
+  method calls, method receivers that are already resolved GPU call results,
+  and the module-form `core::range` seed through resolver arrays.
+  The bounded WASM aggregate-helper slice also executes
+  `core::range::range_i32` construction plus `core::range::start_i32`
+  projection from a full explicit source pack through GPU aggregate metadata,
+  and the bounded aggregate body emitter can now lower an annotated-local
+  `.start()` method projection by consuming the GPU method resolver result and
+  method receiver refs. It can also lower the direct call-result receiver form
+  `core::range::range_i32(1, 4).start()`/`.end()` by storing the
+  resolver-selected aggregate constructor result into scalar slots before
+  projecting the table-resolved method body.
+  An earlier attempt to substitute `Range<i32>.start` directly inside
+  `type_check_tokens_min.slang` by walking the base value's annotation, struct
   generic parameter list, and field type compiled, but made the focused GPU
   type-check test hit both the 2s and 60s watchdogs. That route was backed out;
   generic struct projection needs a precomputed GPU type-instance/substitution
   table instead of adding instance lookup to the hot token checker. A later
   attempt to feed the hot token checker a concrete scalar bridge from those
   metadata buffers still stalled in `type_check_tokens` compute-pipeline
-  creation with both 15s and 30s focused-test watchdogs, so the remaining
-  consumer work should split the struct literal/member checks out of
-  `type_check_tokens.slang` rather than expanding that shader.
+  creation with both 15s and 30s focused-test watchdogs. The working path keeps
+  reusable type-instance metadata in GPU arrays and feeds bounded consumers from
+  those arrays instead of expanding token-local substitution.
 - Concrete enum constructors are checked on GPU today. The tests
   `type_checker_accepts_enum_constructors_with_concrete_types` and
   `type_checker_rejects_invalid_enum_constructor_payloads_on_gpu` cover payload
@@ -54,9 +65,17 @@ The syntax surface is ahead of semantic support:
   `type_check_type_instances_06_enum_ctors.slang` consumes resident
   type-instance refs, validates payload arity/type for annotated concrete locals
   such as `Maybe<i32> = Some(1)` and `Result<i32, bool>` constructors, and writes a
-  constructor-token sentinel consumed by `type_check_tokens_min.slang`.
-  Symbolic generic returns such as `fn wrap<T>(value: T) -> Maybe<T> { return
-  Some(value); }`, imports/external paths, `match`, enum layout, and backend
+  constructor-token sentinel consumed by `type_check_tokens_min.slang`. It also
+  validates symbolic constructor returns such as
+  `fn wrap<T>(value: T) -> Maybe<T> { return Some(value); }` against
+  `fn_return_ref_*` and type-instance argument refs, then writes a return-token
+  sentinel. Bounded GPU match typing now covers stdlib-shaped enum payload arms
+  such as `Some(inner) -> inner` / `None -> fallback`, publishing the match
+  result type from HIR match spans and resolver/type-instance metadata. A
+  bounded WASM codegen slice now lowers `core::ordering::compare_i32` unit enum
+  returns plus a `match` over those unit variants from a full explicit source
+  pack by deriving variant tags from parser HIR item metadata. Match
+  exhaustiveness, payload enum layout, monomorphization, and broad backend
   lowering remain rejected.
 - Bounded generic array and slice element declarations now have GPU semantic
   coverage. `type_checker_accepts_generic_array_and_slice_elements_on_gpu`
@@ -80,7 +99,7 @@ The syntax surface is ahead of semantic support:
   `call_fn_index`, `call_return_type`, `call_return_type_token`,
   `call_param_count`, `call_param_type`, and function lookup hash tables.
 - `shaders/type_checker/type_check_scope.slang` and
-  `type_check_tokens.slang` already recognize generic parameter names as
+  `type_check_tokens_min.slang` already recognize generic parameter names as
   `TY_GENERIC_BASE + token_index`, but assignment currently requires exact
   equality for generic type codes. That is why generic calls fail with
   `AssignMismatch` or `ReturnMismatch`.
@@ -177,8 +196,8 @@ Failure behavior:
   GPU type-check error.
 - If repeated inference for the same type parameter disagrees, record
   `AssignMismatch` or a new GPU error code such as `GenericSubstitutionMismatch`.
-- If the substituted type contains unsupported shapes such as `Range<T>`,
-  `[T; N]`, or `[T]`, reject on GPU.
+- If the substituted call type contains unsupported shapes such as symbolic
+  `Range<T>`, `[T; N]`, or `[T]`, reject on GPU.
 
 ## Next Slice: GPU Type-Instance Metadata
 
@@ -187,11 +206,11 @@ struct/enum/array semantics can be enabled. This slice builds reusable
 type-instance records first, then enables narrow consumers only when they read
 those records instead of reparsing declarations in the hot token checker.
 
-The key rule is that `type_check_tokens.slang` must not rediscover generic
+The key rule is that `type_check_tokens_min.slang` must not rediscover generic
 arguments by walking item headers, field declarations, or return type spans.
-Token checks should read precomputed type refs and emit errors. The failed
-`Range<i32>.start` and enum-constructor attempts both timed out because they put
-substitution work in hot token-local paths.
+Token checks should read precomputed type refs and emit errors. The earlier
+failed `Range<i32>.start` and enum-constructor attempts both timed out because
+they put substitution work in hot token-local paths.
 
 The first committed implementation slice starts with
 `type_check_type_instances_01_collect.slang`, wired through
@@ -204,13 +223,23 @@ metadata passes bind named generic instances to struct/enum declarations,
 publish argument refs, publish `member_result_ref_*` plus
 `struct_init_field_expected_ref_*` for generic struct fields, and publish a
 bounded concrete array-return sentinel for matching `[i32; literal]` identifier
-returns. A later bounded consumer now validates concrete contextual generic
-enum constructors and writes a constructor-token sentinel. A bounded
-array-index consumer now accepts generic array/slice declaration shapes and
-precomputes `values[0]` element result types. Array literal returns,
-mismatched concrete lengths, symbolic generic enum
-returns, and `match` must stay rejecting until consuming checks compare the
-relevant records directly outside the hot token checker.
+returns and HIR-backed i32 value array returns. A later bounded consumer now
+validates concrete contextual generic enum constructors and writes a
+constructor-token sentinel. A bounded array-index consumer now accepts
+generic array/slice declaration shapes and
+  precomputes `values[0]` element result types. The module resolver also carries a
+  parser-derived `decl_name_token` so type and enum projections use declaration
+  names instead of declaration span starts. Symbolic generic enum constructor
+returns now compare precomputed return refs and expression refs before the hot
+token checker. Array literal returns are limited to concrete i32 value arrays
+with matching concrete lengths, including bounded `values[index]` elements when
+the base has a concrete `[i32; literal]` type and the HIR index expression has an
+i32 scalar index. Mismatched concrete lengths, non-constructor symbolic generic
+enum returns, and broader match forms remain rejected until consuming checks
+compare the relevant records directly outside the hot token checker. The current
+match slice is limited to HIR-spanned arms
+  whose result expressions can be typed from visible declarations, literals, or
+  tuple enum payload bindings.
 
 Type refs are stored as two `u32` values at each use site:
 
@@ -276,9 +305,11 @@ Minimal passes:
 5. `type_instances_05_publish_array_uses`
    publishes array/slice element and length refs for parameters, locals, fields,
    and returns. The first consumer accepts matching concrete `[i32; literal]`
-   identifier returns while continuing to reject `[T; N]`, `[T]`, array literal
-   returns, call returns, and mismatched concrete lengths until the existing
-   checks compare broader records directly.
+   identifier returns and HIR-backed i32 value array returns while continuing
+   to reject `[T; N]`, `[T]`, call returns, and mismatched concrete lengths until
+   the existing checks compare broader records directly. Indexed array literal
+   elements are bounded to HIR index expressions whose base is a concrete i32
+   array and whose index is an i32 scalar atom.
 6. `type_instances_06_enum_ctors`
    consumes contextual concrete generic enum instances from annotated locals,
    substitutes payload generic refs through the instance argument pool, validates
@@ -311,28 +342,36 @@ Data structures:
 Passes:
 
 1. Dispatch the type-instance metadata passes before scope/token checks.
-2. Split struct literal checking out of `type_check_tokens.slang` and have the
+2. Split struct literal checking out of `type_check_tokens_min.slang` and have the
    new checker read `struct_init_field_expected_ref_*`.
-3. Split member projection checking out of `type_check_tokens.slang` and have
+3. Split member projection checking out of `type_check_tokens_min.slang` and have
    the new checker read `member_result_ref_*`.
 4. Update enum constructor checking to consume the `GENERIC_ENUM_CTOR_OK`
-   sentinel after a dedicated pass validates contextual concrete payload refs.
-5. Update annotated let/return checks only for concrete contextual instances.
-   Symbolic generic enum returns such as `Maybe<T>` remain rejected until return
-   metadata and backend layout can carry `TYPE_REF_INSTANCE`.
+   sentinel after a dedicated pass validates contextual concrete payload refs
+   or symbolic constructor-return refs.
+5. Update annotated let and constructor-return checks from contextual
+   `TYPE_REF_INSTANCE` records. Concrete contextual instances validate scalar
+   payloads, and symbolic generic enum constructor returns compare
+   `fn_return_ref_*` against expression refs before publishing a return-token
+   sentinel. Non-constructor symbolic generic returns and backend layout remain
+   separate work.
 
 Acceptance targets:
 
-- Flip `Range<i32>` construction and `range.start` projection in
-  `type_checker_rejects_generic_struct_substitution_until_gpu_consumers_are_split_from_token_checker`
-  to acceptance.
+- Keep concrete `Range<i32>` construction, `range.start` projection, and the
+  `core::range` source-pack seed accepting through GPU type-instance and module
+  resolver arrays, including concrete call-result receivers such as
+  `core::range::range_i32(1, 4).start()`.
 - Keep `type_checker_accepts_contextual_generic_enum_constructors_on_gpu`
   accepting `let value: Maybe<i32> = Some(1)` and `Result<i32, bool>`
   constructors, and keep invalid payload tests rejecting.
 
-Keep `fn wrap<T>(value: T) -> Maybe<T> { return Some(value); }` rejected until
-symbolic generic enum instances can be represented consistently in return
-checking and codegen metadata.
+Keep `fn wrap<T>(value: T) -> Maybe<T> { return Some(value); }` accepting at GPU
+type-check time through the return-ref sentinel, and keep bounded
+`Option<T>`-style matches accepting through HIR match spans and resolver arrays,
+while keeping match exhaustiveness, payload enum layout, monomorphization, and
+broad backend execution blocked. The separate codegen proof is limited to unit
+enum tags and `Ordering`-style match dispatch.
 
 ## Stage 3: Generic Array And Slice Elements
 
@@ -428,7 +467,7 @@ Files to change:
   preserve existing rejections for generic arrays, bounds, and where predicates;
   do not reject simple generic function declarations or calls once call
   substitution succeeds.
-- `shaders/type_checker/type_check_tokens.slang`
+- `shaders/type_checker/type_check_tokens_min.slang`
   consume substituted call return types and keep strict mismatch checks for
   unresolved generic codes.
 - `tests/type_checker_semantics.rs` and `tests/type_checker_generics.rs`
@@ -490,7 +529,6 @@ fn main() {
 
 Tests that must remain rejecting while their GPU consumers are missing:
 
-- `type_checker_rejects_generic_enum_constructor_returns_until_gpu_substitution_exists`
 - `type_checker_rejects_invalid_generic_array_element_returns_on_gpu`
 - `type_checker_rejects_generic_bounds_until_gpu_predicate_semantics_exist`
 - `type_checker_rejects_where_clauses_until_gpu_predicate_semantics_exist`

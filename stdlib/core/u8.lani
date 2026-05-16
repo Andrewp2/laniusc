@@ -34,11 +34,25 @@ pub fn clamp(value: u8, low: u8, high: u8) -> u8 {
 }
 
 pub fn wrapping_add(left: u8, right: u8) -> u8 {
-    return left + right;
+    let space: u8 = MAX - right;
+    if (left > space) {
+        return left - space - 1;
+    } else {
+        return left + right;
+    }
 }
 
 pub fn wrapping_sub(left: u8, right: u8) -> u8 {
-    return left - right;
+    let needed: u8 = right - left;
+    if (left < right) {
+        return MAX - needed + 1;
+    } else {
+        return left - right;
+    }
+}
+
+pub fn wrapping_mul(left: u8, right: u8) -> u8 {
+    return left * right % 256;
 }
 
 pub fn saturating_add(left: u8, right: u8) -> u8 {
@@ -57,6 +71,46 @@ pub fn saturating_sub(left: u8, right: u8) -> u8 {
     }
 }
 
+pub fn saturating_mul(left: u8, right: u8) -> u8 {
+    if (left * right > MAX) {
+        return MAX;
+    } else {
+        return left * right;
+    }
+}
+
+pub fn is_zero(value: u8) -> bool {
+    return value == 0;
+}
+
+pub fn is_power_of_two(value: u8) -> bool {
+    if (value <= 0) {
+        return false;
+    } else {
+        let power: u8 = 1;
+        while (power < value) {
+            power *= 2;
+        }
+        return power == value;
+    }
+}
+
+pub fn next_power_of_two(value: u8) -> u8 {
+    if (value <= 1) {
+        return 1;
+    } else {
+        let power: u8 = 1;
+        while (power < value) {
+            power *= 2;
+        }
+        return power;
+    }
+}
+
+pub fn between_inclusive(value: u8, low: u8, high: u8) -> bool {
+    return value >= low && value <= high;
+}
+
 pub fn is_ascii_digit(value: u8) -> bool {
     return value >= 48 && value <= 57;
 }
@@ -70,9 +124,17 @@ pub fn is_ascii_uppercase(value: u8) -> bool {
 }
 
 pub fn is_ascii_alphabetic(value: u8) -> bool {
-    return is_ascii_lowercase(value) || is_ascii_uppercase(value);
+    return value >= 97 && value <= 122 || value >= 65 && value <= 90;
 }
 
 pub fn is_ascii_alphanumeric(value: u8) -> bool {
-    return is_ascii_alphabetic(value) || is_ascii_digit(value);
+    return value >= 97 && value <= 122 || value >= 65 && value <= 90 || value >= 48 && value <= 57;
+}
+
+pub fn is_ascii_hexdigit(value: u8) -> bool {
+    return value >= 48 && value <= 57 || value >= 65 && value <= 70 || value >= 97 && value <= 102;
+}
+
+pub fn is_ascii_whitespace(value: u8) -> bool {
+    return value == 32 || value == 9 || value == 10 || value == 13;
 }

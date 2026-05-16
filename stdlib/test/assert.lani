@@ -21,3 +21,23 @@ pub fn ne_i32(left: i32, right: i32) {
     assert(left != right);
     return;
 }
+
+pub fn lt_i32(left: i32, right: i32) {
+    assert(left < right);
+    return;
+}
+
+pub fn le_i32(left: i32, right: i32) {
+    assert(left <= right);
+    return;
+}
+
+pub fn gt_i32(left: i32, right: i32) {
+    assert(left > right);
+    return;
+}
+
+pub fn ge_i32(left: i32, right: i32) {
+    assert(left >= right);
+    return;
+}

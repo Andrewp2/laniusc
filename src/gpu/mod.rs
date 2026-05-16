@@ -5,4 +5,6 @@ pub mod debug;
 pub mod device;
 pub mod env;
 pub mod passes_core;
+pub mod readback;
+pub mod scan;
 pub mod timer;

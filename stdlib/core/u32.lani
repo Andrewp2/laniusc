@@ -61,6 +61,14 @@ pub fn saturating_sub(left: u32, right: u32) -> u32 {
     }
 }
 
+pub fn is_zero(value: u32) -> bool {
+    return value == 0;
+}
+
+pub fn between_inclusive(value: u32, low: u32, high: u32) -> bool {
+    return value >= low && value <= high;
+}
+
 pub fn is_power_of_two(value: u32) -> bool {
     if (value <= 0) {
         return false;

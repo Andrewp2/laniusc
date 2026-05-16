@@ -1,5 +1,3 @@
-import utils;
-
 struct Params
 {
     uint n_tokens;
@@ -18,8 +16,9 @@ struct TokenIn
 
 StructuredBuffer<TokenIn> token_words;
 StructuredBuffer<uint> token_count;
-ByteAddressBuffer source_bytes;
+StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> visible_type;
+StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> type_instance_decl_token;
@@ -28,6 +27,8 @@ StructuredBuffer<uint> type_instance_arg_count;
 StructuredBuffer<uint> type_instance_arg_ref_tag;
 StructuredBuffer<uint> type_instance_arg_ref_payload;
 StructuredBuffer<uint> type_instance_state;
+StructuredBuffer<uint> fn_return_ref_tag;
+StructuredBuffer<uint> fn_return_ref_payload;
 
 RWStructuredBuffer<uint> call_return_type;
 
@@ -49,6 +50,7 @@ static const uint TY_UINT = 4u;
 static const uint TY_FLOAT = 5u;
 static const uint TY_CHAR = 6u;
 static const uint TY_STRING = 7u;
+static const uint TY_GENERIC_BASE = 8192u;
 
 static const uint TK_IDENT = 1u;
 static const uint TK_INT = 2u;
@@ -100,39 +102,16 @@ uint token_kind(uint i)
     return i < n ? token_words[i].kind : 0u;
 }
 
-uint token_start(uint i)
+uint name_id_for_token(uint i)
 {
-    uint n = active_token_count();
-    return i < n ? token_words[i].start : 0u;
+    return i < active_token_count() ? name_id_by_token[i] : INVALID;
 }
 
-uint token_len(uint i)
+bool same_name_id(uint a, uint b)
 {
-    uint n = active_token_count();
-    return i < n ? token_words[i].len : 0u;
-}
-
-uint source_at(uint start, uint delta)
-{
-    uint idx = start + delta;
-    return idx < gParams.source_len ? load_byte_at(source_bytes, idx) : 0u;
-}
-
-bool same_text(uint a, uint b)
-{
-    uint len = token_len(a);
-    if (len != token_len(b))
-        return false;
-
-    uint sa = token_start(a);
-    uint sb = token_start(b);
-    [loop]
-    for (uint i = 0u; i < len; i += 1u)
-    {
-        if (source_at(sa, i) != source_at(sb, i))
-            return false;
-    }
-    return true;
+    uint an = name_id_for_token(a);
+    uint bn = name_id_for_token(b);
+    return an != INVALID && an == bn;
 }
 
 bool is_type_name_token(uint i)
@@ -149,7 +128,9 @@ bool is_value_name_token(uint i)
 
 bool is_enum_decl_name_at(uint i)
 {
-    return token_kind(i) == TK_IDENT && i > 0u && token_kind(i - 1u) == TK_ENUM;
+    uint kind = token_kind(i);
+    return (kind == TK_IDENT || kind == TK_TYPE_IDENT) && i > 0u &&
+           token_kind(i - 1u) == TK_ENUM;
 }
 
 uint enum_decl_open(uint enum_i)
@@ -227,7 +208,7 @@ uint find_enum_variant_decl(uint name_i)
         {
             uint kind = token_kind(j);
             uint prev = j > 0u ? token_kind(j - 1u) : 0u;
-            if (kind == TK_IDENT && same_text(j, name_i) &&
+            if (kind == TK_IDENT && same_name_id(j, name_i) &&
                 (prev == TK_LBRACE || prev == TK_COMMA || prev == TK_ARG_COMMA))
                 return j;
         }
@@ -395,6 +376,29 @@ bool instance_args_are_concrete_scalars(uint instance_i)
     return true;
 }
 
+bool instance_args_are_supported(uint instance_i, bool allow_generic_params)
+{
+    if (instance_i >= active_token_count())
+        return false;
+    uint count = type_instance_arg_count[instance_i];
+    if (count > TYPE_INSTANCE_ARG_REF_STRIDE)
+        return false;
+    [loop]
+    for (uint slot = 0u; slot < TYPE_INSTANCE_ARG_REF_STRIDE; slot += 1u)
+    {
+        if (slot >= count)
+            break;
+        uint arg_i = type_instance_arg_start[instance_i] + slot;
+        uint tag = type_instance_arg_ref_tag[arg_i];
+        if (tag == TYPE_REF_SCALAR)
+            continue;
+        if (allow_generic_params && tag == TYPE_REF_GENERIC_PARAM)
+            continue;
+        return false;
+    }
+    return true;
+}
+
 uint instance_from_annotated_let(uint callee_i)
 {
     uint assign_i = INVALID;
@@ -434,9 +438,61 @@ uint instance_from_annotated_let(uint callee_i)
     return INVALID;
 }
 
-uint context_instance_for_constructor(uint callee_i)
+uint enclosing_function_start(uint token_i)
 {
-    return instance_from_annotated_let(callee_i);
+    if (token_i >= active_token_count())
+        return INVALID;
+    uint encoded = enclosing_fn[token_i];
+    if (encoded != 0u)
+        return encoded - 1u;
+
+    uint j = token_i;
+    [loop]
+    for (uint guard = 0u; guard < 512u && j > 0u; guard += 1u)
+    {
+        j -= 1u;
+        if (token_kind(j) == TK_FN)
+            return j;
+    }
+    return INVALID;
+}
+
+uint instance_from_ref(uint tag, uint payload)
+{
+    return tag == TYPE_REF_INSTANCE && payload < active_token_count() ? payload : INVALID;
+}
+
+uint instance_from_enclosing_return(uint callee_i, out uint return_i)
+{
+    return_i = INVALID;
+    uint j = callee_i;
+    [loop]
+    for (uint guard = 0u; guard < 128u && j > 0u; guard += 1u)
+    {
+        j -= 1u;
+        uint kind = token_kind(j);
+        if (kind == TK_RETURN)
+        {
+            return_i = j;
+            uint fn_i = enclosing_function_start(j);
+            if (fn_i == INVALID)
+                return INVALID;
+            return instance_from_ref(fn_return_ref_tag[fn_i], fn_return_ref_payload[fn_i]);
+        }
+        if (kind == TK_SEMICOLON || kind == TK_LBRACE || kind == TK_RBRACE ||
+            kind == TK_LET_ASSIGN || kind == TK_ASSIGN)
+            return INVALID;
+    }
+    return INVALID;
+}
+
+uint context_instance_for_constructor(uint callee_i, out uint return_i)
+{
+    return_i = INVALID;
+    uint instance_i = instance_from_annotated_let(callee_i);
+    if (instance_i != INVALID)
+        return instance_i;
+    return instance_from_enclosing_return(callee_i, return_i);
 }
 
 uint generic_param_list_open(uint item_i)
@@ -502,9 +558,36 @@ uint generic_param_slot(uint decl_i, uint param_i)
     {
         if (!is_type_generic_param_token(p, open_i, close_i))
             continue;
-        if (same_text(p, param_i))
+        if (same_name_id(p, param_i))
             return slot;
         slot += 1u;
+    }
+    return INVALID;
+}
+
+uint generic_param_decl_for_use(uint name_i)
+{
+    uint j = name_i;
+    [loop]
+    for (uint guard = 0u; guard < 256u && j > 0u; guard += 1u)
+    {
+        j -= 1u;
+        uint kind = token_kind(j);
+        if (kind != TK_FN && kind != TK_ENUM)
+            continue;
+
+        uint open_i = generic_param_list_open(j);
+        if (open_i == INVALID)
+            continue;
+        uint close_i = generic_param_list_close(open_i);
+        if (close_i == INVALID)
+            continue;
+        [loop]
+        for (uint p = open_i + 1u; p < close_i; p += 1u)
+        {
+            if (is_type_generic_param_token(p, open_i, close_i) && same_name_id(p, name_i))
+                return p;
+        }
     }
     return INVALID;
 }
@@ -530,6 +613,11 @@ uint type_ref_to_type_code(uint tag, uint payload)
 {
     if (tag == TYPE_REF_SCALAR)
         return payload;
+    if (tag == TYPE_REF_GENERIC_PARAM)
+    {
+        uint decl_i = generic_param_decl_for_use(payload);
+        return decl_i == INVALID ? TY_UNKNOWN : TY_GENERIC_BASE + decl_i;
+    }
     return TY_UNKNOWN;
 }
 
@@ -583,8 +671,9 @@ bool assignable(uint dst, uint src)
     return false;
 }
 
-bool validate_generic_enum_constructor(uint callee_i, uint open_i, uint close_i)
+bool validate_generic_enum_constructor(uint callee_i, uint open_i, uint close_i, out uint return_i)
 {
+    return_i = INVALID;
     uint variant_i = find_enum_variant_decl(callee_i);
     if (variant_i == INVALID)
         return false;
@@ -593,9 +682,9 @@ bool validate_generic_enum_constructor(uint callee_i, uint open_i, uint close_i)
     if (enum_decl_i == INVALID)
         return false;
 
-    uint instance_i = context_instance_for_constructor(callee_i);
+    uint instance_i = context_instance_for_constructor(callee_i, return_i);
     if (instance_i == INVALID || type_instance_decl_token[instance_i] != enum_decl_i ||
-        !instance_args_are_concrete_scalars(instance_i))
+        !instance_args_are_supported(instance_i, return_i != INVALID))
         return false;
 
     uint expected_count = enum_variant_payload_count(variant_i);
@@ -645,6 +734,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (close_i == INVALID)
         return;
 
-    if (validate_generic_enum_constructor(i, i + 1u, close_i))
+    uint return_i = INVALID;
+    if (validate_generic_enum_constructor(i, i + 1u, close_i, return_i))
+    {
         call_return_type[i] = GENERIC_ENUM_CTOR_OK;
+        if (return_i != INVALID)
+            call_return_type[return_i] = GENERIC_ENUM_CTOR_OK;
+    }
 }

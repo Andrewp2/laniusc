@@ -37,6 +37,11 @@ fn main() -> Result<()> {
             // Still tracked for rebuild via track_dir_recursively; just not compiled as an entrypoint.
             continue;
         }
+        if is_unwired_shader_entrypoint(&ep) {
+            // These are retained as source/audit fixtures, but the default compiler no longer
+            // loads their SPIR-V. Skipping them keeps clean builds from paying for dead pipelines.
+            continue;
+        }
 
         let file_stem = ep
             .file_stem()
@@ -45,14 +50,17 @@ fn main() -> Result<()> {
 
         let spv_out = shader_out_dir.join(format!("{file_stem}.spv"));
         let refl_out = shader_out_dir.join(format!("{file_stem}.reflect.json"));
-        if shader_outputs_fresh(&ep, &spv_out, &refl_out)? {
-            continue;
-        }
-
         let extra = env::var("SLANGC_EXTRA_FLAGS").unwrap_or_default();
         let extra_args: Vec<&str> = extra.split_whitespace().filter(|s| !s.is_empty()).collect();
-
         let opt_level = shader_opt_level();
+        let stamp_out = shader_out_dir.join(format!("{file_stem}.stamp"));
+        let compile_stamp = format!(
+            "slangc={}\nopt={opt_level}\nextra={extra}\n",
+            slangc.display()
+        );
+        if shader_outputs_fresh(&ep, &spv_out, &refl_out, &stamp_out, &compile_stamp)? {
+            continue;
+        }
 
         let mut cmd = Command::new(&slangc);
         cmd.arg("-target")
@@ -107,6 +115,8 @@ fn main() -> Result<()> {
                 out.status.code()
             ));
         }
+        fs::write(&stamp_out, compile_stamp)
+            .with_context(|| format!("write shader stamp {}", stamp_out.display()))?;
     }
 
     // Prefer a compact .bin; fall back to .json
@@ -156,8 +166,30 @@ fn shader_opt_level() -> String {
     env::var("LANIUS_SHADER_OPT_LEVEL").unwrap_or_else(|_| "1".into())
 }
 
-fn shader_outputs_fresh(ep: &Path, spv_out: &Path, refl_out: &Path) -> Result<bool> {
-    let output_mtime = oldest_mtime([spv_out, refl_out]);
+fn is_unwired_shader_entrypoint(path: &Path) -> bool {
+    matches!(
+        path.to_str(),
+        Some("shaders/codegen/wasm_body.slang")
+            | Some("shaders/codegen/wasm_bool_body.slang")
+            | Some("shaders/codegen/wasm_bool_compact.slang")
+            | Some("shaders/codegen/wasm_bool_probe.slang")
+            | Some("shaders/codegen/wasm_bool_scan.slang")
+            | Some("shaders/codegen/wasm_functions.slang")
+            | Some("shaders/codegen/wasm_functions_probe.slang")
+    )
+}
+
+fn shader_outputs_fresh(
+    ep: &Path,
+    spv_out: &Path,
+    refl_out: &Path,
+    stamp_out: &Path,
+    compile_stamp: &str,
+) -> Result<bool> {
+    if fs::read_to_string(stamp_out).ok().as_deref() != Some(compile_stamp) {
+        return Ok(false);
+    }
+    let output_mtime = oldest_mtime([spv_out, refl_out, stamp_out]);
     let Some(output_mtime) = output_mtime else {
         return Ok(false);
     };

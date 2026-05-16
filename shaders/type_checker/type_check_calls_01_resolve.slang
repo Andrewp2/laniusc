@@ -1,5 +1,3 @@
-import utils;
-
 struct Params
 {
     uint n_tokens;
@@ -9,18 +7,9 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct TokenIn
-{
-    uint kind;
-    uint start;
-    uint len;
-};
-
-StructuredBuffer<TokenIn> token_words;
-StructuredBuffer<uint> token_count;
-ByteAddressBuffer source_bytes;
-
 RWStructuredBuffer<uint> call_fn_index;
+RWStructuredBuffer<uint> call_intrinsic_tag;
+RWStructuredBuffer<uint> fn_entrypoint_tag;
 RWStructuredBuffer<uint> call_return_type;
 RWStructuredBuffer<uint> call_return_type_token;
 RWStructuredBuffer<uint> call_param_count;
@@ -59,11 +48,6 @@ uint linear_thread_id(uint3 dtid)
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
 }
 
-uint active_token_count()
-{
-    return min(token_count[0], gParams.n_tokens);
-}
-
 uint lookup_capacity()
 {
     return max(gParams.n_tokens * 2u, 1u);
@@ -77,6 +61,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i < gParams.n_tokens)
     {
         call_fn_index[i] = INVALID;
+        call_intrinsic_tag[i] = 0u;
         call_return_type[i] = TY_UNKNOWN;
         call_return_type_token[i] = INVALID;
         call_param_count[i] = 0u;
@@ -84,6 +69,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         for (uint param_i = 0u; param_i < PARAM_CACHE_STRIDE; param_i += 1u)
             call_param_type[i * PARAM_CACHE_STRIDE + param_i] = TY_UNKNOWN;
     }
+
+    if (i < gParams.n_hir_nodes)
+        fn_entrypoint_tag[i] = 0u;
 
     if (i < lookup_capacity())
     {

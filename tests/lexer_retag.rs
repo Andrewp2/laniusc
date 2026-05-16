@@ -1,10 +1,36 @@
 mod common;
 
 use laniusc::lexer::{
-    gpu::{GpuToken, driver::GpuLexer, util::read_tokens_from_mapped},
+    GpuToken,
+    driver::GpuLexer,
     tables::tokens::TokenKind,
     test_cpu::lex_on_test_cpu,
+    util::read_tokens_from_mapped,
 };
+
+fn normalized_reuse_kind(kind: TokenKind) -> TokenKind {
+    match kind {
+        TokenKind::LetIdent | TokenKind::ParamIdent | TokenKind::TypeIdent => TokenKind::Ident,
+        TokenKind::LetAssign => TokenKind::Assign,
+        TokenKind::ArgComma | TokenKind::ArrayComma | TokenKind::ParamComma => TokenKind::Comma,
+        TokenKind::TypeArrayLBracket => TokenKind::LBracket,
+        TokenKind::TypeArrayRBracket => TokenKind::RBracket,
+        TokenKind::TypeSemicolon => TokenKind::Semicolon,
+        TokenKind::IfLBrace => TokenKind::LBrace,
+        TokenKind::IfRBrace => TokenKind::RBrace,
+        TokenKind::ParamLParen | TokenKind::CallLParen | TokenKind::GroupLParen => {
+            TokenKind::LParen
+        }
+        TokenKind::ParamRParen | TokenKind::CallRParen | TokenKind::GroupRParen => {
+            TokenKind::RParen
+        }
+        TokenKind::ArrayLBracket | TokenKind::IndexLBracket => TokenKind::LBracket,
+        TokenKind::ArrayRBracket | TokenKind::IndexRBracket => TokenKind::RBracket,
+        TokenKind::PrefixPlus | TokenKind::InfixPlus => TokenKind::Plus,
+        TokenKind::PrefixMinus | TokenKind::InfixMinus => TokenKind::Minus,
+        other => other,
+    }
+}
 
 #[test]
 fn test_cpu_lexer_oracle_retags_bool_keywords() {
@@ -630,6 +656,44 @@ fn gpu_lexer_records_source_pack_token_file_ids_on_gpu() {
             }
         }
     });
+}
+
+#[test]
+fn gpu_lexer_reuses_resident_buffers_after_stdlib_source_shrink() {
+    common::block_on_gpu_with_timeout(
+        "GPU lexer resident reuse after stdlib source shrink",
+        async move {
+            let lexer = GpuLexer::new().await.expect("GPU lexer init");
+            let _ = lexer
+                .lex(include_str!("../stdlib/array_i32_4.lani"))
+                .await
+                .expect("lex larger array_i32_4 seed before shrinking");
+            let _ = lexer
+                .lex(include_str!("../stdlib/bool.lani"))
+                .await
+                .expect("lex smaller bool seed before i32");
+            let gpu_tokens = lexer
+                .lex(include_str!("../stdlib/i32.lani"))
+                .await
+                .expect("lex i32 after resident buffer reuse");
+            let cpu_tokens = lex_on_test_cpu(include_str!("../stdlib/i32.lani"))
+                .expect("test CPU lexer oracle for i32 seed");
+
+            assert_eq!(
+                gpu_tokens.len(),
+                cpu_tokens.len(),
+                "resident GPU lexer token count should match the test-only CPU oracle"
+            );
+
+            for (i, (gpu, cpu)) in gpu_tokens.iter().zip(cpu_tokens.iter()).enumerate() {
+                assert_eq!(
+                    (normalized_reuse_kind(gpu.kind), gpu.start, gpu.len,),
+                    (normalized_reuse_kind(cpu.kind), cpu.start, cpu.len,),
+                    "resident GPU lexer token {i} should match the test-only CPU oracle"
+                );
+            }
+        },
+    );
 }
 
 #[test]

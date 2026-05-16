@@ -25,6 +25,7 @@ ConstantBuffer<Params> gParams;
 ByteAddressBuffer in_bytes;
 StructuredBuffer<uint> source_file_count;
 StructuredBuffer<uint> source_file_start;
+StructuredBuffer<uint> source_file_len;
 StructuredBuffer<uint> block_prefix;
 StructuredBuffer<uint> chunk_summaries;
 StructuredBuffer<uint> token_map;
@@ -52,6 +53,18 @@ bool is_file_start(uint i_abs)
     for (uint f = 0u; f < files; f += 1u)
     {
         if (source_file_start[f] == i_abs)
+            return true;
+    }
+    return false;
+}
+
+bool is_file_end(uint i_abs)
+{
+    uint files = min(source_file_count[0], MAX_FILES_SCAN);
+    [loop]
+    for (uint f = 0u; f < files; f += 1u)
+    {
+        if (source_file_start[f] + source_file_len[f] == i_abs)
             return true;
     }
     return false;
@@ -111,7 +124,7 @@ void dfa_03_apply_block_prefix(uint3 tid: SV_GroupThreadID,
     const uint packed = load_u16_packed(next_emit, b * N_STATES + state_before);
     const bool emit_here = is_highest_bit_set(packed);
     const uint state_after = packed & 0x7FFFu;
-    const bool at_eof = (i_abs + 1u == gParams.n);
+    const bool at_eof = (i_abs + 1u == gParams.n) || is_file_end(i_abs + 1u);
 
     uint f = 0u;
     if (emit_here | at_eof)

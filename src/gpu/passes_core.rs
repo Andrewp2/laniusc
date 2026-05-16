@@ -105,10 +105,7 @@ pub fn pipeline_from_spirv_and_bgls(
     bgls: &[&wgpu::BindGroupLayout],
 ) -> wgpu::ComputePipeline {
     trace_pipeline(label, "shader_module.start");
-    let module = if label == "codegen_wasm_body"
-        || label == "codegen_wasm_functions"
-        || label == "codegen_x86_elf"
-    {
+    let module = if label == "codegen_wasm_body" || label == "codegen_wasm_functions" {
         device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some(label),
             source: wgpu::util::make_spirv(spirv),
@@ -229,6 +226,137 @@ pub fn make_pass_data(
     })
 }
 
+macro_rules! make_shader_pass {
+    ($device:expr, $label:expr, entry: $entry:expr, shader: $shader:literal) => {
+        $crate::gpu::passes_core::make_pass_data(
+            $device,
+            $label,
+            $entry,
+            include_bytes!(concat!(env!("OUT_DIR"), "/shaders/", $shader, ".spv")),
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/",
+                $shader,
+                ".reflect.json"
+            )),
+        )
+    };
+    ($device:expr, $label:expr, entry: $entry:expr, artifacts: ($spv:literal, $reflection:literal)) => {
+        $crate::gpu::passes_core::make_pass_data(
+            $device,
+            $label,
+            $entry,
+            include_bytes!(concat!(env!("OUT_DIR"), "/shaders/", $spv)),
+            include_bytes!(concat!(env!("OUT_DIR"), "/shaders/", $reflection)),
+        )
+    };
+}
+
+macro_rules! make_main_pass {
+    ($device:expr, $label:expr, shader: $shader:literal) => {
+        $crate::gpu::passes_core::make_shader_pass!(
+            $device,
+            $label,
+            entry: "main",
+            shader: $shader
+        )
+    };
+    ($device:expr, $label:expr, artifacts: ($spv:literal, $reflection:literal)) => {
+        $crate::gpu::passes_core::make_shader_pass!(
+            $device,
+            $label,
+            entry: "main",
+            artifacts: ($spv, $reflection)
+        )
+    };
+}
+
+macro_rules! make_traced_main_pass {
+    ($device:expr, $trace:expr, $stage:literal, $label:expr, shader: $shader:literal) => {{
+        ($trace)(concat!($stage, ".pipeline.start"));
+        let pass = $crate::gpu::passes_core::make_main_pass!(
+            $device,
+            $label,
+            shader: $shader
+        )?;
+        ($trace)(concat!($stage, ".pipeline.done"));
+        pass
+    }};
+    ($device:expr, $trace:expr, $stage:literal, $label:expr, artifacts: ($spv:literal, $reflection:literal)) => {{
+        ($trace)(concat!($stage, ".pipeline.start"));
+        let pass = $crate::gpu::passes_core::make_main_pass!(
+            $device,
+            $label,
+            artifacts: ($spv, $reflection)
+        )?;
+        ($trace)(concat!($stage, ".pipeline.done"));
+        pass
+    }};
+}
+
+macro_rules! impl_static_shader_pass {
+    ($pass:ident, label: $label:expr, entry: $entry:expr, shader: $shader:literal) => {
+        impl $pass {
+            pub fn new(device: &wgpu::Device) -> anyhow::Result<Self> {
+                let data = $crate::gpu::passes_core::make_shader_pass!(
+                    device,
+                    $label,
+                    entry: $entry,
+                    shader: $shader
+                )?;
+                Ok(Self { data })
+            }
+        }
+    };
+    ($pass:ident, label: $label:expr, shader: $shader:literal) => {
+        $crate::gpu::passes_core::impl_static_shader_pass!(
+            $pass,
+            label: $label,
+            entry: "main",
+            shader: $shader
+        );
+    };
+    ($pass:ident, label: $label:expr, entry: $entry:expr, artifacts: ($spv:literal, $reflection:literal)) => {
+        impl $pass {
+            pub fn new(device: &wgpu::Device) -> anyhow::Result<Self> {
+                let data = $crate::gpu::passes_core::make_shader_pass!(
+                    device,
+                    $label,
+                    entry: $entry,
+                    artifacts: ($spv, $reflection)
+                )?;
+                Ok(Self { data })
+            }
+        }
+    };
+}
+
+macro_rules! impl_cached_main_pass_getter {
+    ($(#[$meta:meta])* $vis:vis fn $name:ident($device:ident), label: $label:expr, shader: $shader:literal) => {
+        $(#[$meta])*
+        $vis fn $name($device: &wgpu::Device) -> anyhow::Result<&'static $crate::gpu::passes_core::PassData> {
+            static PASS: std::sync::OnceLock<Result<$crate::gpu::passes_core::PassData, String>> =
+                std::sync::OnceLock::new();
+            PASS.get_or_init(|| {
+                $crate::gpu::passes_core::make_main_pass!(
+                    $device,
+                    $label,
+                    shader: $shader
+                )
+                .map_err(|err| err.to_string())
+            })
+            .as_ref()
+            .map_err(|err| anyhow::anyhow!("{err}"))
+        }
+    };
+}
+
+pub(crate) use impl_cached_main_pass_getter;
+pub(crate) use impl_static_shader_pass;
+pub(crate) use make_main_pass;
+pub(crate) use make_shader_pass;
+pub(crate) use make_traced_main_pass;
+
 pub mod bind_group {
     use std::collections::HashMap;
 
@@ -278,6 +406,27 @@ pub mod bind_group {
             layout: bgl,
             entries: &entries,
         }))
+    }
+
+    pub fn create_bind_group_from_bindings<'a>(
+        device: &wgpu::Device,
+        label: Option<&str>,
+        pass: &PassData,
+        set_index: usize,
+        bindings: &[(&str, wgpu::BindingResource<'a>)],
+    ) -> Result<wgpu::BindGroup> {
+        let resources = bindings
+            .iter()
+            .map(|(name, binding)| ((*name).into(), binding.clone()))
+            .collect::<HashMap<_, _>>();
+        create_bind_group_from_reflection(
+            device,
+            label,
+            &pass.bind_group_layouts[set_index],
+            &pass.reflection,
+            set_index,
+            &resources,
+        )
     }
 }
 
@@ -350,6 +499,10 @@ impl BindGroupCache {
     }
     pub fn clear(&mut self) {
         self.map.clear();
+    }
+
+    pub fn remove(&mut self, shader_id: &str) {
+        self.map.remove(shader_id);
     }
 }
 

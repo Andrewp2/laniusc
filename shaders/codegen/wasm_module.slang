@@ -10,8 +10,6 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> body_words;
 StructuredBuffer<uint> body_status;
-StructuredBuffer<uint> bool_body_words;
-StructuredBuffer<uint> bool_body_status;
 RWStructuredBuffer<uint> out_words;
 RWStructuredBuffer<uint> status;
 
@@ -24,9 +22,9 @@ uint linear_dispatch_id(uint3 tid)
     return tid.x + tid.y * DISPATCH_X_STRIDE;
 }
 
-uint body_byte(uint i, bool use_bool_body)
+uint body_byte(uint i)
 {
-    return use_bool_body ? bool_body_words[i] : body_words[i];
+    return body_words[i];
 }
 
 uint leb5_byte(uint value, uint i)
@@ -103,25 +101,24 @@ uint module_prefix_byte(uint pos, uint body_len)
     return 0u;
 }
 
-uint module_byte(uint pos, uint body_len, uint module_len, bool use_bool_body)
+uint module_byte(uint pos, uint body_len, uint module_len)
 {
     if (pos >= module_len)
         return 0u;
     if (pos < BODY_OFF)
         return module_prefix_byte(pos, body_len);
-    return body_byte(pos - BODY_OFF, use_bool_body);
+    return body_byte(pos - BODY_OFF);
 }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
 {
-    if (status[1u] == 2u || status[2u] != 0u)
+    if (status[1u] == 1u || status[1u] == 2u || status[1u] == 5u || status[2u] != 0u)
         return;
 
-    bool use_bool_body = bool_body_status[1u] != 0u;
-    uint body_len = use_bool_body ? bool_body_status[0u] : body_status[0u];
-    bool body_ok = use_bool_body || body_status[1u] != 0u;
+    uint body_len = body_status[0u];
+    bool body_ok = body_status[1u] != 0u;
     uint module_len = BODY_OFF + body_len;
     bool ok = body_ok && module_len <= gParams.out_capacity;
 
@@ -141,8 +138,8 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     uint pos = word_i * 4u;
     out_words[word_i] =
-        (module_byte(pos + 0u, body_len, module_len, use_bool_body) << 0u) |
-        (module_byte(pos + 1u, body_len, module_len, use_bool_body) << 8u) |
-        (module_byte(pos + 2u, body_len, module_len, use_bool_body) << 16u) |
-        (module_byte(pos + 3u, body_len, module_len, use_bool_body) << 24u);
+        (module_byte(pos + 0u, body_len, module_len) << 0u) |
+        (module_byte(pos + 1u, body_len, module_len) << 8u) |
+        (module_byte(pos + 2u, body_len, module_len) << 16u) |
+        (module_byte(pos + 3u, body_len, module_len) << 24u);
 }

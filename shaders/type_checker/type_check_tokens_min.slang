@@ -1,5 +1,3 @@
-import utils;
-
 struct Params
 {
     uint n_tokens;
@@ -18,14 +16,18 @@ struct TokenIn
 
 StructuredBuffer<TokenIn> token_words;
 StructuredBuffer<uint> token_count;
-ByteAddressBuffer source_bytes;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_token_end;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> visible_type;
+StructuredBuffer<uint> module_type_path_type;
+StructuredBuffer<uint> module_type_path_status;
+StructuredBuffer<uint> module_value_path_status;
 StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> call_return_type;
+StructuredBuffer<uint> name_id_by_token;
+StructuredBuffer<uint> language_decl_name_id;
 
 RWStructuredBuffer<uint> status;
 
@@ -34,6 +36,7 @@ static const uint ARRAY_RETURN_OK = 0xfffffffeu;
 static const uint GENERIC_ENUM_CTOR_OK = 0xfffffffdu;
 
 static const uint ERR_UNKNOWN_TYPE = 1u;
+static const uint ERR_UNRESOLVED_IDENT = 2u;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint ERR_RETURN_MISMATCH = 4u;
 static const uint ERR_BAD_HIR = 6u;
@@ -59,6 +62,7 @@ static const uint TY_ARRAY_BASE = 128u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
 static const uint TY_GENERIC_BASE = 8192u;
+static const uint PATH_RESOLVE_STATUS_OK = 0u;
 
 static const uint TK_IDENT = 1u;
 static const uint TK_INT = 2u;
@@ -124,8 +128,12 @@ static const uint TK_FALSE = 91u;
 static const uint TK_CONST = 92u;
 static const uint TK_ENUM = 93u;
 static const uint TK_STRUCT = 94u;
+static const uint TK_MATCH = 95u;
 static const uint TK_TRAIT = 99u;
 static const uint TK_SELF_VALUE = 105u;
+
+static const uint LANGUAGE_PRIMITIVE_DECL_FIRST = 3u;
+static const uint LANGUAGE_DECL_COUNT = 18u;
 
 uint active_token_count()
 {
@@ -143,40 +151,6 @@ uint token_kind(uint i)
     return i < n ? token_words[i].kind : 0u;
 }
 
-uint token_start(uint i)
-{
-    uint n = active_token_count();
-    return i < n ? token_words[i].start : 0u;
-}
-
-uint token_len(uint i)
-{
-    uint n = active_token_count();
-    return i < n ? token_words[i].len : 0u;
-}
-
-uint source_at(uint start, uint delta)
-{
-    uint idx = start + delta;
-    return idx < gParams.source_len ? load_byte_at(source_bytes, idx) : 0u;
-}
-
-bool same_text(uint a, uint b)
-{
-    uint len = token_len(a);
-    if (len != token_len(b))
-        return false;
-    uint sa = token_start(a);
-    uint sb = token_start(b);
-    [loop]
-    for (uint i = 0u; i < len; i += 1u)
-    {
-        if (source_at(sa, i) != source_at(sb, i))
-            return false;
-    }
-    return true;
-}
-
 void record_error(uint token_i, uint code, uint detail)
 {
     uint old;
@@ -189,55 +163,46 @@ void record_error(uint token_i, uint code, uint detail)
     }
 }
 
-bool span2(uint start, uint len, uint a, uint b)
+bool same_name_id(uint a, uint b)
 {
-    return len == 2u && source_at(start, 0u) == a && source_at(start, 1u) == b;
+    uint n = active_token_count();
+    if (a >= n || b >= n)
+        return false;
+    uint left = name_id_by_token[a];
+    uint right = name_id_by_token[b];
+    return left != INVALID && left == right;
 }
 
-bool span3(uint start, uint len, uint a, uint b, uint c)
+uint language_type_code_for_decl(uint decl_i)
 {
-    return len == 3u && source_at(start, 0u) == a && source_at(start, 1u) == b &&
-           source_at(start, 2u) == c;
-}
-
-bool span4(uint start, uint len, uint a, uint b, uint c, uint d)
-{
-    return len == 4u && source_at(start, 0u) == a && source_at(start, 1u) == b &&
-           source_at(start, 2u) == c && source_at(start, 3u) == d;
-}
-
-bool span5(uint start, uint len, uint a, uint b, uint c, uint d, uint e)
-{
-    return len == 5u && source_at(start, 0u) == a && source_at(start, 1u) == b &&
-           source_at(start, 2u) == c && source_at(start, 3u) == d &&
-           source_at(start, 4u) == e;
-}
-
-bool token_text_eq5(uint i, uint a, uint b, uint c, uint d, uint e)
-{
-    return span5(token_start(i), token_len(i), a, b, c, d, e);
-}
-
-uint primitive_type_code(uint type_i)
-{
-    uint start = token_start(type_i);
-    uint len = token_len(type_i);
-    if (span2(start, len, 105u, 56u) || span3(start, len, 105u, 49u, 54u) ||
-        span3(start, len, 105u, 51u, 50u) || span3(start, len, 105u, 54u, 52u) ||
-        span5(start, len, 105u, 115u, 105u, 122u, 101u))
+    if (decl_i >= 4u && decl_i <= 8u)
         return TY_INT;
-    if (span2(start, len, 117u, 56u) || span3(start, len, 117u, 49u, 54u) ||
-        span3(start, len, 117u, 51u, 50u) || span3(start, len, 117u, 54u, 52u) ||
-        span5(start, len, 117u, 115u, 105u, 122u, 101u))
+    if (decl_i >= 9u && decl_i <= 13u)
         return TY_UINT;
-    if (span3(start, len, 102u, 51u, 50u) || span3(start, len, 102u, 54u, 52u))
+    if (decl_i >= 14u && decl_i <= 15u)
         return TY_FLOAT;
-    if (span4(start, len, 98u, 111u, 111u, 108u))
+    if (decl_i == 3u)
         return TY_BOOL;
-    if (span4(start, len, 99u, 104u, 97u, 114u))
+    if (decl_i == 16u)
         return TY_CHAR;
-    if (span3(start, len, 115u, 116u, 114u))
+    if (decl_i == 17u)
         return TY_STRING;
+    return TY_UNKNOWN;
+}
+
+uint language_type_code_for_token(uint type_i)
+{
+    if (type_i >= active_token_count())
+        return TY_UNKNOWN;
+    uint name_id = name_id_by_token[type_i];
+    if (name_id == INVALID)
+        return TY_UNKNOWN;
+    [loop]
+    for (uint decl_i = LANGUAGE_PRIMITIVE_DECL_FIRST; decl_i < LANGUAGE_DECL_COUNT; decl_i += 1u)
+    {
+        if (language_decl_name_id[decl_i] == name_id)
+            return language_type_code_for_decl(decl_i);
+    }
     return TY_UNKNOWN;
 }
 
@@ -268,7 +233,8 @@ uint indexed_element_type(uint base_ty)
 
 bool is_struct_decl_name_at(uint i)
 {
-    return token_kind(i) == TK_IDENT && i > 0u && token_kind(i - 1u) == TK_STRUCT;
+    uint kind = token_kind(i);
+    return (kind == TK_IDENT || kind == TK_TYPE_IDENT) && i > 0u && token_kind(i - 1u) == TK_STRUCT;
 }
 
 uint find_struct_decl_name(uint name_i)
@@ -277,7 +243,7 @@ uint find_struct_decl_name(uint name_i)
     [loop]
     for (uint j = 1u; j < n; j += 1u)
     {
-        if (is_struct_decl_name_at(j) && same_text(j, name_i))
+        if (is_struct_decl_name_at(j) && same_name_id(j, name_i))
             return j;
     }
     return INVALID;
@@ -291,7 +257,8 @@ uint struct_type_code_for_name(uint name_i)
 
 bool is_enum_decl_name_at(uint i)
 {
-    return token_kind(i) == TK_IDENT && i > 0u && token_kind(i - 1u) == TK_ENUM;
+    uint kind = token_kind(i);
+    return (kind == TK_IDENT || kind == TK_TYPE_IDENT) && i > 0u && token_kind(i - 1u) == TK_ENUM;
 }
 
 uint find_enum_decl_name(uint name_i)
@@ -300,7 +267,7 @@ uint find_enum_decl_name(uint name_i)
     [loop]
     for (uint j = 1u; j < n; j += 1u)
     {
-        if (is_enum_decl_name_at(j) && same_text(j, name_i))
+        if (is_enum_decl_name_at(j) && same_name_id(j, name_i))
             return j;
     }
     return INVALID;
@@ -384,7 +351,7 @@ uint find_generic_type_param_decl(uint name_i)
         [loop]
         for (uint p = open_i + 1u; p < close_i; p += 1u)
         {
-            if (is_type_generic_param_token(p, open_i, close_i) && same_text(p, name_i))
+            if (is_type_generic_param_token(p, open_i, close_i) && same_name_id(p, name_i))
                 return p;
         }
         return INVALID;
@@ -413,9 +380,11 @@ uint type_code_for_type_expr(uint type_i)
         cur += 1u;
     }
 
-    uint elem = primitive_type_code(cur);
+    uint elem = language_type_code_for_token(cur);
     if (elem == TY_UNKNOWN && (token_kind(cur) == TK_IDENT || token_kind(cur) == TK_TYPE_IDENT))
         elem = generic_type_code_for_name(cur);
+    if (elem == TY_UNKNOWN && array_depth == 0u && cur < active_token_count())
+        elem = module_type_path_type[cur];
     if (elem == TY_UNKNOWN && (token_kind(cur) == TK_IDENT || token_kind(cur) == TK_TYPE_IDENT))
         elem = struct_type_code_for_name(cur);
     if (elem == TY_UNKNOWN && (token_kind(cur) == TK_IDENT || token_kind(cur) == TK_TYPE_IDENT))
@@ -427,21 +396,9 @@ uint type_code_for_type_expr(uint type_i)
     return array_depth == 0u ? elem : TY_ARRAY_BASE + elem;
 }
 
-bool is_qualified_type_expr_head(uint type_i)
-{
-    return type_i + 2u < active_token_count() &&
-           (token_kind(type_i) == TK_IDENT || token_kind(type_i) == TK_TYPE_IDENT ||
-            token_kind(type_i) == TK_PARAM_IDENT) &&
-           token_kind(type_i + 1u) == TK_COLON && token_kind(type_i + 2u) == TK_COLON;
-}
-
 uint explicit_let_decl_type(uint decl_i)
 {
-    uint ty = type_code_for_type_expr(decl_i + 2u);
-    if (ty != TY_UNKNOWN || !is_qualified_type_expr_head(decl_i + 2u))
-        return ty;
-
-    return decl_i < active_token_count() ? visible_type[decl_i] : TY_UNKNOWN;
+    return type_code_for_type_expr(decl_i + 2u);
 }
 
 uint struct_decl_name_from_type(uint ty)
@@ -559,7 +516,7 @@ uint find_enum_variant_decl(uint name_i)
         {
             uint kind = token_kind(j);
             uint prev = j > 0u ? token_kind(j - 1u) : 0u;
-            if (kind == TK_IDENT && same_text(j, name_i) &&
+            if (kind == TK_IDENT && same_name_id(j, name_i) &&
                 (prev == TK_LBRACE || prev == TK_COMMA || prev == TK_ARG_COMMA))
                 return j;
         }
@@ -586,7 +543,7 @@ uint struct_field_type(uint struct_ty, uint member_i)
     for (uint j = open_i + 1u; j + 2u < close_i; j += 1u)
     {
         if ((token_kind(j) == TK_IDENT || token_kind(j) == TK_TYPE_IDENT) &&
-            token_kind(j + 1u) == TK_COLON && same_text(j, member_i))
+            token_kind(j + 1u) == TK_COLON && same_name_id(j, member_i))
             return type_code_for_type_expr(j + 2u);
     }
     return TY_UNKNOWN;
@@ -634,11 +591,6 @@ uint simple_expr_type(uint expr_i, uint limit_i)
             cur += 1u;
             continue;
         }
-        uint start = token_start(cur);
-        uint len = token_len(cur);
-        if (span4(start, len, 116u, 114u, 117u, 101u) ||
-            span5(start, len, 102u, 97u, 108u, 115u, 101u))
-            return TY_BOOL;
         if (kind == TK_INT)
             return TY_INT;
         if (kind == TK_TRUE || kind == TK_FALSE)
@@ -651,11 +603,13 @@ uint simple_expr_type(uint expr_i, uint limit_i)
             return TY_CHAR;
         if (kind == TK_ARRAY_LBRACKET || kind == TK_LBRACKET)
             return TY_ARRAY_BASE + TY_INT;
-        if (kind == TK_IDENT || kind == TK_SELF_VALUE)
+        if (kind == TK_MATCH)
+            return call_return_type[cur];
+        if (kind == TK_IDENT || kind == TK_TYPE_IDENT || kind == TK_SELF_VALUE)
         {
             if (cur + 1u < limit_i && token_kind(cur + 1u) == TK_LBRACE)
                 return struct_type_code_for_name(cur);
-            if (kind == TK_IDENT)
+            if (kind == TK_IDENT || kind == TK_TYPE_IDENT)
             {
                 uint variant_ty = enum_type_for_variant_name(cur);
                 uint variant_decl = variant_ty == TY_UNKNOWN ? INVALID : find_enum_variant_decl(cur);
@@ -912,7 +866,8 @@ void check_return(uint return_i, uint end_i)
     uint first = return_i + 1u;
     if (first < semi && (token_kind(first) == TK_ARRAY_LBRACKET || token_kind(first) == TK_LBRACKET))
     {
-        record_error(first, ERR_INVALID_ARRAY_RETURN, 0u);
+        if (call_return_type[return_i] != ARRAY_RETURN_OK)
+            record_error(first, ERR_INVALID_ARRAY_RETURN, 0u);
         return;
     }
     uint fn_start = enclosing_function_start(return_i);
@@ -928,6 +883,10 @@ void check_return(uint return_i, uint end_i)
         record_error(first, ERR_INVALID_ARRAY_RETURN, 0u);
         return;
     }
+    if (call_return_type[return_i] == ARRAY_RETURN_OK)
+        return;
+    if (call_return_type[return_i] == GENERIC_ENUM_CTOR_OK)
+        return;
     uint src = first == semi ? TY_VOID : simple_expr_type(first, semi);
     if (is_generic_type(dst) && src == TY_UNKNOWN)
     {
@@ -1085,8 +1044,28 @@ uint enum_variant_payload_type(uint variant_i, uint field_index)
     return field_i == INVALID ? TY_UNKNOWN : type_code_for_type_expr(field_i);
 }
 
+bool is_match_pattern_tuple(uint callee_i, uint open_i, uint close_i)
+{
+    if (open_i != callee_i + 1u || close_i == INVALID)
+        return false;
+    uint n = active_token_count();
+    [loop]
+    for (uint j = close_i + 1u; j < n; j += 1u)
+    {
+        uint kind = token_kind(j);
+        if (kind == TK_ARROW)
+            return true;
+        if (kind == TK_COMMA || kind == TK_RBRACE || kind == TK_SEMICOLON)
+            return false;
+    }
+    return false;
+}
+
 bool check_enum_constructor_call(uint callee_i, uint open_i, uint close_i)
 {
+    if (is_match_pattern_tuple(callee_i, open_i, close_i))
+        return true;
+
     uint variant_i = find_enum_variant_decl(callee_i);
     if (variant_i == INVALID)
         return false;
@@ -1161,30 +1140,6 @@ void check_assignment(uint assign_i, uint end_i)
         record_error(assign_i + 1u, ERR_ASSIGN_MISMATCH, dst * 256u + src);
 }
 
-void check_member(uint dot_i)
-{
-    if (dot_i == 0u || dot_i + 1u >= active_token_count() ||
-        !((token_kind(dot_i - 1u) == TK_IDENT || token_kind(dot_i - 1u) == TK_SELF_VALUE) &&
-          token_kind(dot_i + 1u) == TK_IDENT))
-    {
-        record_error(dot_i, ERR_INVALID_MEMBER_ACCESS, 0u);
-        return;
-    }
-
-    uint member_ty = visible_type[dot_i + 1u];
-    if (member_ty != TY_UNKNOWN)
-        return;
-
-    uint base_ty = visible_type[dot_i - 1u];
-    if (!is_struct_type(base_ty))
-    {
-        record_error(dot_i, ERR_INVALID_MEMBER_ACCESS, base_ty);
-        return;
-    }
-    if (struct_field_type(base_ty, dot_i + 1u) == TY_UNKNOWN)
-        record_error(dot_i + 1u, ERR_INVALID_MEMBER_ACCESS, base_ty);
-}
-
 uint struct_literal_value_end(uint value_i, uint close_i)
 {
     uint brace_depth = 0u;
@@ -1216,7 +1171,8 @@ uint struct_literal_value_end(uint value_i, uint close_i)
 
 void check_struct_literal(uint open_i, uint end_i)
 {
-    if (open_i == 0u || token_kind(open_i - 1u) != TK_IDENT)
+    uint head_kind = open_i == 0u ? 0u : token_kind(open_i - 1u);
+    if (open_i == 0u || (head_kind != TK_IDENT && head_kind != TK_TYPE_IDENT))
         return;
     uint struct_ty = struct_type_code_for_name(open_i - 1u);
     if (struct_ty == TY_UNKNOWN)
@@ -1305,7 +1261,19 @@ void check_hir_node(uint node_i)
 void check_token(uint i)
 {
     uint kind = token_kind(i);
-    if (kind == TK_TRAIT || token_text_eq5(i, 116u, 114u, 97u, 105u, 116u))
+    uint type_path_status = module_type_path_status[i];
+    if (type_path_status != INVALID && type_path_status != PATH_RESOLVE_STATUS_OK)
+    {
+        record_error(i, ERR_UNKNOWN_TYPE, type_path_status);
+        return;
+    }
+    uint value_path_status = module_value_path_status[i];
+    if (value_path_status != INVALID)
+    {
+        record_error(i, ERR_UNRESOLVED_IDENT, value_path_status);
+        return;
+    }
+    if (kind == TK_TRAIT)
     {
         record_error(i, ERR_BAD_HIR, TK_TRAIT);
         return;
@@ -1331,18 +1299,10 @@ void check_token(uint i)
         return;
     }
     if (kind == TK_IF || kind == TK_WHILE)
-    {
-        check_condition(i);
         return;
-    }
     if (is_assignment_operator(kind))
     {
         check_assignment(i, INVALID);
-        return;
-    }
-    if (kind == TK_DOT)
-    {
-        check_member(i);
         return;
     }
     if (kind == TK_IDENT && i + 1u < active_token_count() &&
@@ -1356,10 +1316,12 @@ void check_token(uint i)
         }
         return;
     }
-    if (kind == TK_LBRACE && i > 0u && token_kind(i - 1u) == TK_IDENT &&
+    uint prev_kind = i > 0u ? token_kind(i - 1u) : 0u;
+    if (kind == TK_LBRACE && i > 0u && (prev_kind == TK_IDENT || prev_kind == TK_TYPE_IDENT) &&
         !(i >= 2u && token_kind(i - 2u) == TK_STRUCT) &&
         (token_kind(i + 1u) == TK_RBRACE ||
-         (token_kind(i + 1u) == TK_IDENT && token_kind(i + 2u) == TK_COLON)))
+         ((token_kind(i + 1u) == TK_IDENT || token_kind(i + 1u) == TK_TYPE_IDENT) &&
+          token_kind(i + 2u) == TK_COLON)))
     {
         check_struct_literal(i, INVALID);
     }

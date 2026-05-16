@@ -17,7 +17,7 @@
 
 use std::{fs, io::Write, path::Path};
 
-use crate::{lexer::tables::tokens::TokenKind, parser::gpu::buffers::ActionHeader};
+use crate::{lexer::tables::tokens::TokenKind, parser::buffers::ActionHeader};
 
 // ---------- MVP (already in tree): action headers for bracket sanity ----------
 
@@ -321,7 +321,7 @@ impl PrecomputedParseTables {
     /// Test-only host LL(1) oracle for parser tests and fuzz tooling.
     ///
     /// The compiler must not call this; production parsing is recorded and
-    /// executed by `parser::gpu`.
+    /// executed by the parser driver.
     pub fn test_cpu_ll1_production_stream(
         &self,
         token_kinds: &[u32],
@@ -679,7 +679,7 @@ impl PrecomputedParseTables {
         use std::mem::size_of;
         let n = self.n_kinds as usize;
         let cell_count = n * n;
-        let sz = size_of::<crate::parser::gpu::buffers::ActionHeader>();
+        let sz = size_of::<crate::parser::buffers::ActionHeader>();
         let mut out = vec![0u8; cell_count * sz];
 
         for prev in 0..self.n_kinds {
@@ -705,7 +705,7 @@ impl PrecomputedParseTables {
                 // Partial-parse length is emit_len for this pair
                 let emit_len = self.pp_len[idx2d];
 
-                let hdr = crate::parser::gpu::buffers::ActionHeader {
+                let hdr = crate::parser::buffers::ActionHeader {
                     push_len,
                     emit_len,
                     pop_tag: 0, // typed matching comes from the packed streams later

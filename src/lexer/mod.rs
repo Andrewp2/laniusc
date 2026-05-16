@@ -1,5 +1,16 @@
-pub mod gpu;
+pub mod buffers;
+pub mod debug;
+pub mod driver;
+pub mod passes;
 pub mod tables;
+pub mod types;
+pub mod util;
+
+pub use driver::{GpuLexer, lex_on_gpu};
+pub(super) use types::LexParams;
+pub use types::{GpuToken, Token};
+
+pub use crate::gpu::{debug::DebugBuffer, passes_core::Pass};
 
 /// TEST-ONLY CPU lexer oracle.
 ///

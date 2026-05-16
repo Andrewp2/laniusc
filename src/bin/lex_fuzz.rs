@@ -220,7 +220,7 @@ fn main() {
             warn!("LANIUS_READBACK is unset; using default readback-enabled mode");
         }
     }
-    if let Err(err) = pollster::block_on(laniusc::lexer::gpu::lex_on_gpu("warmup")) {
+    if let Err(err) = pollster::block_on(laniusc::lexer::lex_on_gpu("warmup")) {
         warn!("GPU warmup lex failed: {err}");
         std::process::exit(1);
     }
@@ -308,7 +308,7 @@ async fn run_once(
         }
     };
     let t1 = Instant::now();
-    let gpu = laniusc::lexer::gpu::lex_on_gpu(src)
+    let gpu = laniusc::lexer::lex_on_gpu(src)
         .await
         .expect("GPU lex failed");
     let t2 = Instant::now();
@@ -506,11 +506,7 @@ where
     }
 }
 
-fn compare_streams(
-    src: &str,
-    test_cpu: &[TestCpuToken],
-    gpu: &[laniusc::lexer::gpu::Token],
-) -> bool {
+fn compare_streams(src: &str, test_cpu: &[TestCpuToken], gpu: &[laniusc::lexer::Token]) -> bool {
     if test_cpu.len() != gpu.len() {
         let i = first_divergence_idx(test_cpu, gpu);
         eprintln!(
@@ -573,7 +569,7 @@ fn compare_streams(
     true
 }
 
-fn first_divergence_idx(test_cpu: &[TestCpuToken], gpu: &[laniusc::lexer::gpu::Token]) -> usize {
+fn first_divergence_idx(test_cpu: &[TestCpuToken], gpu: &[laniusc::lexer::Token]) -> usize {
     let n = test_cpu.len().min(gpu.len());
     for i in 0..n {
         let ct = &test_cpu[i];
@@ -658,12 +654,7 @@ fn dump_src_window(src: &str, start: usize, len: usize, who: &str, idx: usize) {
     eprintln!("    {underline}");
 }
 
-fn dump_near(
-    src: &str,
-    test_cpu: &[TestCpuToken],
-    gpu: &[laniusc::lexer::gpu::Token],
-    from_idx: usize,
-) {
+fn dump_near(src: &str, test_cpu: &[TestCpuToken], gpu: &[laniusc::lexer::Token], from_idx: usize) {
     let lo = from_idx;
     let last_index = test_cpu.len().min(gpu.len());
     let hi = (from_idx + 3).min(last_index);

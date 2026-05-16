@@ -1,8 +1,8 @@
 // src/bin/parse_demo.rs
 use anyhow::Result;
 use laniusc::{
-    lexer::gpu::driver::GpuLexer,
-    parser::{gpu::driver::GpuParser, tables::PrecomputedParseTables},
+    lexer::driver::GpuLexer,
+    parser::{driver::GpuParser, tables::PrecomputedParseTables},
 };
 
 #[tokio::main(flavor = "current_thread")]
@@ -128,6 +128,24 @@ async fn main() -> Result<()> {
             "  node[{i}] kind={} parent={}",
             res.node_kind[i], res.parent[i]
         );
+    }
+    if std::env::var_os("LANIUS_PARSE_DEMO_FULL").is_some() {
+        for (i, &kind) in res.node_kind.iter().enumerate() {
+            let hir = res.hir_kind.get(i).copied().unwrap_or(u32::MAX);
+            let pos = res.hir_token_pos.get(i).copied().unwrap_or(u32::MAX);
+            let end = res.hir_token_end.get(i).copied().unwrap_or(u32::MAX);
+            let parent = res.parent.get(i).copied().unwrap_or(u32::MAX);
+            let first_child = res.first_child.get(i).copied().unwrap_or(u32::MAX);
+            let next_sibling = res.next_sibling.get(i).copied().unwrap_or(u32::MAX);
+            let subtree_end = res.subtree_end.get(i).copied().unwrap_or(u32::MAX);
+            let token_text = tokens
+                .get(pos as usize)
+                .map(|t| &input[t.start..t.start + t.len])
+                .unwrap_or("");
+            println!(
+                "  node[{i}] prod={kind} hir={hir} pos={pos} end={end} parent={parent} child={first_child} next={next_sibling} subtree_end={subtree_end} token={token_text:?}"
+            );
+        }
     }
 
     Ok(())

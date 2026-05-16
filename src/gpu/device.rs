@@ -87,9 +87,10 @@ fn create_context() -> GpuDevice {
 
     let adapter_limits = adapter.limits();
     let mut limits = wgpu::Limits::defaults();
-    // Limits tuned from web3d survey; keep in sync across subsystems.
+    // Native compiler stages use wide GPU record tables; keep this limit in
+    // sync with reflected shader resource counts.
     limits.max_storage_buffers_per_shader_stage =
-        adapter_limits.max_storage_buffers_per_shader_stage.min(16);
+        adapter_limits.max_storage_buffers_per_shader_stage.min(32);
     limits.max_storage_buffer_binding_size = 2_147_483_644;
     limits.max_buffer_size = 2_147_483_644;
 

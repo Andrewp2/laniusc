@@ -1,4 +1,10 @@
-import utils;
+// Record struct-literal field expectations from parser-owned HIR metadata.
+//
+// This pass does not substitute generic arguments itself. It publishes the
+// declaration-side field ref plus the contextual type-instance token; the next
+// pass substitutes generic slots using the type-instance argument table.
+
+import generated_parse_production_ids;
 
 struct Params
 {
@@ -9,62 +15,28 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct TokenIn
-{
-    uint kind;
-    uint start;
-    uint len;
-};
-
-StructuredBuffer<TokenIn> token_words;
-StructuredBuffer<uint> token_count;
-ByteAddressBuffer source_bytes;
-StructuredBuffer<uint> enclosing_fn;
+StructuredBuffer<uint> node_kind;
+StructuredBuffer<uint> parent;
+StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_item_name_token;
+StructuredBuffer<uint> hir_struct_field_parent_struct;
+StructuredBuffer<uint> hir_struct_field_type_node;
+StructuredBuffer<uint> hir_struct_lit_head_node;
+StructuredBuffer<uint> hir_struct_lit_field_parent_lit;
+StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> type_instance_decl_token;
-StructuredBuffer<uint> type_instance_arg_start;
-StructuredBuffer<uint> type_instance_arg_count;
-StructuredBuffer<uint> type_instance_arg_ref_tag;
-StructuredBuffer<uint> type_instance_arg_ref_payload;
-StructuredBuffer<uint> fn_return_ref_tag;
-StructuredBuffer<uint> fn_return_ref_payload;
 
-RWStructuredBuffer<uint> visible_type;
+RWStructuredBuffer<uint> struct_init_field_context_instance;
 RWStructuredBuffer<uint> struct_init_field_expected_ref_tag;
 RWStructuredBuffer<uint> struct_init_field_expected_ref_payload;
+RWStructuredBuffer<uint> struct_init_field_ordinal;
 
 static const uint INVALID = 0xffffffffu;
 
 static const uint TYPE_REF_INVALID = 0u;
-static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
-static const uint TYPE_REF_INSTANCE = 3u;
-
-static const uint TY_UNKNOWN = 0u;
-static const uint TY_STRUCT_BASE = 4096u;
-static const uint TY_ENUM_BASE = 6144u;
-static const uint TY_GENERIC_BASE = 8192u;
-
-static const uint TK_IDENT = 1u;
-static const uint TK_ASSIGN = 8u;
-static const uint TK_LT = 12u;
-static const uint TK_GT = 13u;
-static const uint TK_LPAREN = 4u;
-static const uint TK_LBRACE = 22u;
-static const uint TK_RBRACE = 23u;
-static const uint TK_SEMICOLON = 37u;
-static const uint TK_COLON = 38u;
-static const uint TK_CONST = 92u;
-static const uint TK_FN = 67u;
-static const uint TK_LET = 68u;
-static const uint TK_RETURN = 69u;
-static const uint TK_LET_IDENT = 78u;
-static const uint TK_LET_ASSIGN = 81u;
-static const uint TK_ENUM = 93u;
-static const uint TK_STRUCT = 94u;
-static const uint TK_TYPE_IDENT = 80u;
-static const uint TK_PARAM_IDENT = 79u;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -76,342 +48,268 @@ uint linear_thread_id(uint3 dtid)
 
 uint active_token_count()
 {
-    return min(token_count[0], gParams.n_tokens);
+    return gParams.n_tokens;
 }
 
-uint token_kind(uint i)
+uint active_node_count()
 {
-    uint n = active_token_count();
-    return i < n ? token_words[i].kind : 0u;
+    return gParams.n_hir_nodes;
 }
 
-uint token_start(uint i)
+bool valid_token(uint i)
 {
-    uint n = active_token_count();
-    return i < n ? token_words[i].start : 0u;
+    return i != INVALID && i < active_token_count();
 }
 
-uint token_len(uint i)
+bool valid_node(uint i)
 {
-    uint n = active_token_count();
-    return i < n ? token_words[i].len : 0u;
+    return i != INVALID && i < active_node_count();
 }
 
-uint source_at(uint start, uint delta)
+bool has_ancestor_node(uint node_i, uint ancestor_i)
 {
-    uint idx = start + delta;
-    return idx < gParams.source_len ? load_byte_at(source_bytes, idx) : 0u;
-}
-
-bool same_text(uint a, uint b)
-{
-    uint len = token_len(a);
-    if (len != token_len(b))
+    if (!valid_node(node_i) || !valid_node(ancestor_i))
         return false;
 
-    uint sa = token_start(a);
-    uint sb = token_start(b);
+    uint cur = node_i;
     [loop]
-    for (uint i = 0u; i < len; i += 1u)
+    for (uint guard = 0u; guard < 96u; guard += 1u)
     {
-        if (source_at(sa, i) != source_at(sb, i))
+        if (cur == ancestor_i)
+            return true;
+        if (!valid_node(cur))
             return false;
+        cur = parent[cur];
     }
-    return true;
+    return false;
 }
 
-bool is_type_name_token(uint i)
+uint ancestor_with_production(uint node_i, uint prod)
 {
-    uint kind = token_kind(i);
-    return kind == TK_IDENT || kind == TK_TYPE_IDENT || kind == TK_PARAM_IDENT;
-}
-
-bool is_struct_decl_name_at(uint i)
-{
-    return token_kind(i) == TK_IDENT && i > 0u && token_kind(i - 1u) == TK_STRUCT;
-}
-
-uint find_struct_decl_name(uint name_i)
-{
-    uint n = active_token_count();
+    uint cur = node_i;
     [loop]
-    for (uint j = 1u; j < n; j += 1u)
+    for (uint guard = 0u; guard < 96u; guard += 1u)
     {
-        if (is_struct_decl_name_at(j) && same_text(j, name_i))
-            return j;
-    }
-    return INVALID;
-}
-
-uint decl_to_type_code(uint decl_i)
-{
-    if (decl_i == INVALID)
-        return TY_UNKNOWN;
-    if (decl_i > 0u && token_kind(decl_i - 1u) == TK_STRUCT)
-        return TY_STRUCT_BASE + decl_i;
-    if (decl_i > 0u && token_kind(decl_i - 1u) == TK_ENUM)
-        return TY_ENUM_BASE + decl_i;
-    return TY_UNKNOWN;
-}
-
-uint type_ref_to_type_code(uint tag, uint payload)
-{
-    if (tag == TYPE_REF_SCALAR)
-        return payload;
-    if (tag == TYPE_REF_GENERIC_PARAM)
-        return TY_GENERIC_BASE + payload;
-    if (tag == TYPE_REF_INSTANCE && payload < active_token_count())
-        return decl_to_type_code(type_instance_decl_token[payload]);
-    return TY_UNKNOWN;
-}
-
-uint generic_param_list_open(uint item_i)
-{
-    uint n = active_token_count();
-    [loop]
-    for (uint j = item_i + 1u; j < n; j += 1u)
-    {
-        uint kind = token_kind(j);
-        if (kind == TK_LT)
-            return j;
-        if (kind == TK_LBRACE || kind == TK_LPAREN || kind == TK_SEMICOLON)
+        if (!valid_node(cur))
             return INVALID;
+        uint p = parent[cur];
+        if (!valid_node(p))
+            return INVALID;
+        if (node_kind[p] == prod)
+            return p;
+        cur = p;
     }
     return INVALID;
 }
 
-uint generic_param_list_close(uint open_i)
+bool is_item_decl_production(uint prod)
 {
-    if (open_i == INVALID)
+    return prod == PROD_FN || prod == PROD_EXTERN_FN || prod == PROD_TYPE_ALIAS ||
+           prod == PROD_IMPL || prod == PROD_TRAIT || prod == PROD_ENUM || prod == PROD_STRUCT;
+}
+
+bool is_type_expr_production(uint prod)
+{
+    return prod == PROD_TYPE_IDENT || prod == PROD_TYPE_ARRAY || prod == PROD_TYPE_REF;
+}
+
+uint item_decl_ancestor(uint node_i)
+{
+    uint cur = node_i;
+    [loop]
+    for (uint guard = 0u; guard < 96u; guard += 1u)
+    {
+        if (!valid_node(cur))
+            return INVALID;
+        if (is_item_decl_production(node_kind[cur]))
+            return cur;
+        cur = parent[cur];
+    }
+    return INVALID;
+}
+
+uint first_type_expr_descendant(uint root_i)
+{
+    if (!valid_node(root_i))
         return INVALID;
 
-    uint n = active_token_count();
-    uint depth = 0u;
+    uint n = active_node_count();
     [loop]
-    for (uint j = open_i; j < n; j += 1u)
+    for (uint j = 0u; j < n; j += 1u)
     {
-        uint kind = token_kind(j);
-        if (kind == TK_LT)
-            depth += 1u;
-        else if (kind == TK_GT)
-        {
-            if (depth == 0u)
-                return INVALID;
-            depth -= 1u;
-            if (depth == 0u)
-                return j;
-        }
-        else if (kind == TK_LBRACE || kind == TK_SEMICOLON)
-        {
-            return INVALID;
-        }
+        if (is_type_expr_production(node_kind[j]) && has_ancestor_node(j, root_i))
+            return j;
     }
     return INVALID;
 }
 
-bool is_type_generic_param_token(uint param_i, uint open_i, uint close_i)
+uint type_head_token_for_node(uint type_node)
 {
-    if (param_i <= open_i || param_i >= close_i || !is_type_name_token(param_i))
-        return false;
-    if (param_i > open_i + 1u && token_kind(param_i - 1u) == TK_CONST)
-        return false;
-    return true;
+    if (!valid_node(type_node))
+        return INVALID;
+    uint type_head = hir_token_pos[type_node];
+    return valid_token(type_head) ? type_head : INVALID;
 }
 
-uint generic_param_slot(uint decl_i, uint param_i)
+uint instance_from_type_node(uint type_node)
 {
-    uint open_i = generic_param_list_open(decl_i);
-    uint close_i = generic_param_list_close(open_i);
-    if (open_i == INVALID || close_i == INVALID)
+    uint type_head = type_head_token_for_node(type_node);
+    if (!valid_token(type_head) || !valid_token(type_instance_decl_token[type_head]))
+        return INVALID;
+    return type_head;
+}
+
+uint let_annotation_type_node(uint let_node)
+{
+    if (!valid_node(let_node))
+        return INVALID;
+
+    uint n = active_node_count();
+    [loop]
+    for (uint j = 0u; j < n; j += 1u)
+    {
+        if (node_kind[j] == PROD_LET_TYPE && has_ancestor_node(j, let_node))
+            return first_type_expr_descendant(j);
+    }
+    return INVALID;
+}
+
+uint context_instance_for_struct_literal_node(uint literal_node)
+{
+    uint let_node = ancestor_with_production(literal_node, PROD_LET_STMT);
+    return instance_from_type_node(let_annotation_type_node(let_node));
+}
+
+uint struct_node_for_decl_token(uint decl_token)
+{
+    if (!valid_token(decl_token))
+        return INVALID;
+
+    uint n = active_node_count();
+    [loop]
+    for (uint j = 0u; j < n; j += 1u)
+    {
+        if (node_kind[j] == PROD_STRUCT && hir_item_name_token[j] == decl_token)
+            return j;
+    }
+    return INVALID;
+}
+
+bool same_name_id(uint left_token, uint right_token)
+{
+    if (!valid_token(left_token) || !valid_token(right_token))
+        return false;
+    uint left_name = name_id_by_token[left_token];
+    uint right_name = name_id_by_token[right_token];
+    return left_name != INVALID && left_name == right_name;
+}
+
+bool literal_head_matches_decl(uint literal_node, uint decl_token)
+{
+    uint head_node = hir_struct_lit_head_node[literal_node];
+    if (!valid_node(head_node) || !valid_token(decl_token))
+        return false;
+    return same_name_id(hir_token_pos[head_node], decl_token);
+}
+
+bool field_node_for_literal_field(uint struct_node, uint field_token, out uint field_node, out uint field_ordinal)
+{
+    field_node = INVALID;
+    field_ordinal = INVALID;
+    if (!valid_node(struct_node) || !valid_token(field_token))
+        return false;
+
+    uint field_name = name_id_by_token[field_token];
+    if (field_name == INVALID)
+        return false;
+
+    uint ordinal = 0u;
+    uint n = active_node_count();
+    [loop]
+    for (uint j = 0u; j < n; j += 1u)
+    {
+        if (node_kind[j] != PROD_STRUCT_FIELD ||
+            hir_struct_field_parent_struct[j] != struct_node)
+            continue;
+
+        uint decl_field_token = hir_token_pos[j];
+        if (valid_token(decl_field_token) && name_id_by_token[decl_field_token] == field_name)
+        {
+            field_node = j;
+            field_ordinal = ordinal;
+            return true;
+        }
+        ordinal += 1u;
+    }
+    return false;
+}
+
+uint generic_param_slot_for_name(uint decl_node, uint param_token)
+{
+    if (!valid_node(decl_node) || !valid_token(param_token))
+        return INVALID;
+
+    uint param_name = name_id_by_token[param_token];
+    if (param_name == INVALID)
         return INVALID;
 
     uint slot = 0u;
+    uint n = active_node_count();
     [loop]
-    for (uint p = open_i + 1u; p < close_i; p += 1u)
+    for (uint j = 0u; j < n; j += 1u)
     {
-        if (!is_type_generic_param_token(p, open_i, close_i))
+        if (node_kind[j] != PROD_ENUM_TYPE_PARAM || item_decl_ancestor(j) != decl_node)
             continue;
-        if (same_text(p, param_i))
+
+        uint decl_param_token = hir_token_pos[j];
+        if (valid_token(decl_param_token) && name_id_by_token[decl_param_token] == param_name)
             return slot;
         slot += 1u;
     }
     return INVALID;
 }
 
-uint struct_decl_open(uint decl_i)
+void publish_struct_init_field_node(uint field_node)
 {
-    uint n = active_token_count();
-    [loop]
-    for (uint j = decl_i + 1u; j < n; j += 1u)
-    {
-        uint kind = token_kind(j);
-        if (kind == TK_LBRACE)
-            return j;
-        if (kind == TK_SEMICOLON || kind == TK_STRUCT || kind == TK_FN)
-            return INVALID;
-    }
-    return INVALID;
-}
-
-uint struct_decl_close(uint open_i)
-{
-    uint n = active_token_count();
-    uint depth = 0u;
-    [loop]
-    for (uint j = open_i; j < n; j += 1u)
-    {
-        uint kind = token_kind(j);
-        if (kind == TK_LBRACE)
-            depth += 1u;
-        else if (kind == TK_RBRACE)
-        {
-            if (depth == 0u)
-                return INVALID;
-            depth -= 1u;
-            if (depth == 0u)
-                return j;
-        }
-    }
-    return INVALID;
-}
-
-uint enclosing_function_start(uint token_i)
-{
-    if (token_i >= active_token_count())
-        return INVALID;
-    uint encoded = enclosing_fn[token_i];
-    return encoded == 0u ? INVALID : encoded - 1u;
-}
-
-uint instance_from_type_head(uint type_head)
-{
-    if (type_head == INVALID || type_expr_ref_tag[type_head] != TYPE_REF_INSTANCE)
-        return INVALID;
-    return type_expr_ref_payload[type_head];
-}
-
-uint instance_from_annotated_let(uint head_i)
-{
-    if (head_i == 0u)
-        return INVALID;
-    uint assign_i = head_i - 1u;
-    uint assign_kind = token_kind(assign_i);
-    if (assign_kind != TK_ASSIGN && assign_kind != TK_LET_ASSIGN)
-        return INVALID;
-
-    uint j = assign_i;
-    [loop]
-    for (uint guard = 0u; guard < 128u && j > 0u; guard += 1u)
-    {
-        j -= 1u;
-        uint kind = token_kind(j);
-        if (kind == TK_LET_IDENT ||
-            (kind == TK_IDENT && j > 0u && token_kind(j - 1u) == TK_LET))
-        {
-            if (j + 2u < active_token_count() && token_kind(j + 1u) == TK_COLON)
-                return instance_from_type_head(j + 2u);
-            return INVALID;
-        }
-        if (kind == TK_SEMICOLON || kind == TK_LBRACE || kind == TK_RBRACE || kind == TK_FN)
-            return INVALID;
-    }
-    return INVALID;
-}
-
-uint context_instance_for_struct_literal_head(uint head_i)
-{
-    uint instance_i = instance_from_annotated_let(head_i);
-    if (instance_i != INVALID)
-        return instance_i;
-
-    if (head_i > 0u && token_kind(head_i - 1u) == TK_RETURN)
-    {
-        uint fn_i = enclosing_function_start(head_i);
-        if (fn_i != INVALID && fn_return_ref_tag[fn_i] == TYPE_REF_INSTANCE)
-            return fn_return_ref_payload[fn_i];
-    }
-    return INVALID;
-}
-
-uint struct_literal_open_for_field(uint field_i)
-{
-    if (field_i == 0u || token_kind(field_i) != TK_IDENT || token_kind(field_i + 1u) != TK_COLON)
-        return INVALID;
-
-    uint j = field_i;
-    [loop]
-    for (uint guard = 0u; guard < 128u && j > 0u; guard += 1u)
-    {
-        j -= 1u;
-        uint kind = token_kind(j);
-        if (kind == TK_LBRACE)
-        {
-            if (j == 0u || token_kind(j - 1u) != TK_IDENT)
-                return INVALID;
-            if (j >= 2u && token_kind(j - 2u) == TK_STRUCT)
-                return INVALID;
-            return j;
-        }
-        if (kind == TK_SEMICOLON || kind == TK_FN)
-            return INVALID;
-    }
-    return INVALID;
-}
-
-void substituted_ref(uint instance_i, uint type_head, out uint tag, out uint payload)
-{
-    tag = type_expr_ref_tag[type_head];
-    payload = type_expr_ref_payload[type_head];
-    if (tag != TYPE_REF_GENERIC_PARAM)
+    uint literal_node = hir_struct_lit_field_parent_lit[field_node];
+    if (!valid_node(literal_node))
         return;
 
-    uint decl_i = type_instance_decl_token[instance_i];
-    uint slot = generic_param_slot(decl_i, payload);
-    if (slot == INVALID || slot >= type_instance_arg_count[instance_i])
+    uint field_token = hir_token_pos[field_node];
+    if (!valid_token(field_token))
         return;
 
-    uint arg_i = type_instance_arg_start[instance_i] + slot;
-    tag = type_instance_arg_ref_tag[arg_i];
-    payload = type_instance_arg_ref_payload[arg_i];
-}
-
-void publish_struct_init_field(uint field_i)
-{
-    uint open_i = struct_literal_open_for_field(field_i);
-    if (open_i == INVALID)
+    uint instance_i = context_instance_for_struct_literal_node(literal_node);
+    if (!valid_token(instance_i))
         return;
 
-    uint head_i = open_i - 1u;
-    uint instance_i = context_instance_for_struct_literal_head(head_i);
-    if (instance_i == INVALID || type_instance_decl_token[instance_i] == INVALID)
+    uint decl_token = type_instance_decl_token[instance_i];
+    if (!valid_token(decl_token) || !literal_head_matches_decl(literal_node, decl_token))
         return;
 
-    uint decl_i = type_instance_decl_token[instance_i];
-    uint literal_decl_i = find_struct_decl_name(head_i);
-    if (literal_decl_i == INVALID || literal_decl_i != decl_i)
+    uint struct_node = struct_node_for_decl_token(decl_token);
+    if (!valid_node(struct_node))
         return;
 
-    uint decl_open = struct_decl_open(decl_i);
-    uint decl_close = decl_open == INVALID ? INVALID : struct_decl_close(decl_open);
-    if (decl_open == INVALID || decl_close == INVALID)
+    uint decl_field_node;
+    uint field_ordinal;
+    if (!field_node_for_literal_field(struct_node, field_token, decl_field_node, field_ordinal))
         return;
 
-    [loop]
-    for (uint j = decl_open + 1u; j + 2u < decl_close; j += 1u)
-    {
-        if (!is_type_name_token(j) || token_kind(j + 1u) != TK_COLON || !same_text(j, field_i))
-            continue;
-
-        uint tag = TYPE_REF_INVALID;
-        uint payload = INVALID;
-        substituted_ref(instance_i, j + 2u, tag, payload);
-        struct_init_field_expected_ref_tag[field_i] = tag;
-        struct_init_field_expected_ref_payload[field_i] = payload;
-        uint ty = type_ref_to_type_code(tag, payload);
-        if (ty != TY_UNKNOWN)
-            visible_type[field_i] = ty;
+    uint field_type_node = hir_struct_field_type_node[decl_field_node];
+    uint type_head = type_head_token_for_node(field_type_node);
+    if (!valid_token(type_head))
         return;
-    }
+
+    uint tag = type_expr_ref_tag[type_head];
+    uint payload = type_expr_ref_payload[type_head];
+    if (tag == TYPE_REF_GENERIC_PARAM)
+        payload = generic_param_slot_for_name(struct_node, payload);
+
+    struct_init_field_context_instance[field_token] = instance_i;
+    struct_init_field_expected_ref_tag[field_token] = tag;
+    struct_init_field_expected_ref_payload[field_token] = payload;
+    struct_init_field_ordinal[field_token] = field_ordinal;
 }
 
 [shader("compute")]
@@ -419,10 +317,7 @@ void publish_struct_init_field(uint field_i)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
-    if (i >= active_token_count())
+    if (!valid_node(i) || node_kind[i] != PROD_STRUCT_LIT_FIELD)
         return;
-
-    struct_init_field_expected_ref_tag[i] = TYPE_REF_INVALID;
-    struct_init_field_expected_ref_payload[i] = INVALID;
-    publish_struct_init_field(i);
+    publish_struct_init_field_node(i);
 }
