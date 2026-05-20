@@ -18,6 +18,7 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+StructuredBuffer<uint> token_count;
 RWStructuredBuffer<uint> method_key_to_fn_token;
 RWStructuredBuffer<uint> method_key_status;
 RWStructuredBuffer<uint> method_key_duplicate_of;
@@ -33,12 +34,17 @@ uint linear_thread_id(uint3 dtid)
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
 }
 
+uint active_method_capacity()
+{
+    return min(token_count[0], gParams.method_capacity);
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
-    if (i >= gParams.method_capacity)
+    if (i >= active_method_capacity())
         return;
 
     method_key_to_fn_token[i] = i;

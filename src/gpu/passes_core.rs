@@ -1,4 +1,9 @@
-use std::{collections::HashMap, env, sync::Arc};
+use std::{
+    collections::HashMap,
+    env,
+    sync::{Arc, mpsc},
+    time::{Duration, Instant},
+};
 
 use anyhow::{Result, anyhow};
 use log::{info, warn};
@@ -195,6 +200,73 @@ pub(crate) fn wait_for_map_progress(device: &wgpu::Device, label: &str, poll_typ
     trace_gpu_progress(&format!("poll.start :: {label}"));
     let _ = device.poll(poll_type);
     trace_gpu_progress(&format!("poll.done :: {label}"));
+}
+
+pub(crate) fn map_readback_blocking(
+    device: &wgpu::Device,
+    slice: &wgpu::BufferSlice<'_>,
+    label: &str,
+) -> Result<()> {
+    let timeout = Duration::from_millis(crate::gpu::env::env_u64(
+        "LANIUS_READBACK_TIMEOUT_MS",
+        120_000,
+    ));
+    wait_for_readback_map(device, slice, label, timeout)
+}
+
+pub(crate) fn wait_for_readback_map(
+    device: &wgpu::Device,
+    slice: &wgpu::BufferSlice<'_>,
+    label: &str,
+    timeout: Duration,
+) -> Result<()> {
+    let label = label.to_string();
+    let cb_label = label.clone();
+    let (tx, rx) = mpsc::channel();
+    trace_gpu_progress(&format!("map.start :: {label}"));
+    slice.map_async(wgpu::MapMode::Read, move |result| {
+        if let Err(err) = tx.send(result) {
+            warn!("failed to dispatch readback status for {cb_label}: {err}");
+        }
+    });
+    trace_gpu_progress(&format!("map.queued :: {label}"));
+
+    let start = Instant::now();
+    let mut next_progress = Duration::from_millis(500);
+    loop {
+        device
+            .poll(wgpu::PollType::Poll)
+            .map_err(|err| anyhow!("{label} readback poll failed: {err}"))?;
+        match rx.try_recv() {
+            Ok(Ok(())) => {
+                trace_gpu_progress(&format!(
+                    "map.done :: {label} elapsed_ms={}",
+                    start.elapsed().as_millis()
+                ));
+                return Ok(());
+            }
+            Ok(Err(err)) => return Err(anyhow!("{label} readback map failed: {err}")),
+            Err(mpsc::TryRecvError::Empty) => {}
+            Err(mpsc::TryRecvError::Disconnected) => {
+                return Err(anyhow!("{label} readback callback disconnected"));
+            }
+        }
+        let elapsed = start.elapsed();
+        if elapsed >= timeout {
+            return Err(anyhow!(
+                "{label} readback did not complete within {} ms",
+                timeout.as_millis()
+            ));
+        }
+        if elapsed >= next_progress {
+            trace_gpu_progress(&format!(
+                "map.waiting :: {label} elapsed_ms={}",
+                elapsed.as_millis()
+            ));
+            next_progress += Duration::from_millis(500);
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
 }
 
 pub fn make_pass_data(
@@ -588,6 +660,76 @@ pub trait Pass<Buffers, DebugOutput> {
             pass.set_bind_group(i as u32, Option::<&wgpu::BindGroup>::Some(&*bg), &[]);
         }
         pass.dispatch_workgroups(gx, gy, gz);
+        drop(pass);
+
+        if let Some(t) = ctx.maybe_timer.as_deref_mut() {
+            t.stamp(ctx.encoder, Self::NAME.to_string());
+        }
+
+        if use_scopes {
+            if let Some(err) = pollster::block_on(ctx.device.pop_error_scope()) {
+                return Err(anyhow!("validation in pass {}: {err:?}", Self::NAME));
+            }
+        }
+
+        if let Some(d) = ctx.maybe_dbg.as_deref_mut() {
+            self.record_debug(ctx.device, ctx.encoder, ctx.buffers, d);
+        }
+        Ok(())
+    }
+
+    fn record_pass_indirect<'a>(
+        &self,
+        ctx: &mut PassContext<'a, Buffers, DebugOutput>,
+        dispatch_args: &wgpu::Buffer,
+    ) -> Result<(), anyhow::Error> {
+        let use_scopes = validation_scopes_enabled();
+
+        if use_scopes {
+            ctx.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        }
+
+        let pd = self.data();
+        let resources = self.create_resource_map(ctx.buffers);
+        let mut cached_entries: Option<Vec<Arc<wgpu::BindGroup>>> = None;
+        if let Some(cache) = ctx.bg_cache.as_mut()
+            && let Some(v) = cache.map.get(&pd.shader_id)
+            && v.len() == pd.bind_group_layouts.len()
+        {
+            cached_entries = Some(v.clone());
+        }
+        let bind_groups: Vec<Arc<wgpu::BindGroup>> = if let Some(v) = cached_entries {
+            v
+        } else {
+            let mut v = Vec::with_capacity(pd.bind_group_layouts.len());
+            for (set_idx, bgl) in pd.bind_group_layouts.iter().enumerate() {
+                let bg = bind_group::create_bind_group_from_reflection(
+                    ctx.device,
+                    Some(Self::NAME),
+                    bgl,
+                    &pd.reflection,
+                    set_idx,
+                    &resources,
+                )?;
+                v.push(Arc::new(bg));
+            }
+            if let Some(cache) = ctx.bg_cache.as_mut() {
+                cache.map.insert(pd.shader_id.clone(), v.clone());
+            }
+            v
+        };
+
+        let mut pass = ctx
+            .encoder
+            .begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some(Self::NAME),
+                timestamp_writes: None,
+            });
+        pass.set_pipeline(&pd.pipeline);
+        for (i, bg) in bind_groups.iter().enumerate() {
+            pass.set_bind_group(i as u32, Option::<&wgpu::BindGroup>::Some(&*bg), &[]);
+        }
+        pass.dispatch_workgroups_indirect(dispatch_args, 0);
         drop(pass);
 
         if let Some(t) = ctx.maybe_timer.as_deref_mut() {

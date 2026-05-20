@@ -14,6 +14,8 @@ pub struct PackParams {
     pub n_kinds: u32,
     pub total_sc: u32,
     pub total_emit: u32,
+    pub sc_capacity: u32,
+    pub emit_capacity: u32,
 
     // Offsets (u32 elements) inside tables_blob
     pub sc_superseq_off: u32,
@@ -50,7 +52,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for PackVarlenPass {
         b: &'a ParserBuffers,
     ) -> HashMap<String, wgpu::BindingResource<'a>> {
         HashMap::from([
-            ("token_kinds".into(), b.token_kinds.as_entire_binding()),
+            (
+                "token_kinds".into(),
+                b.semantic_token_kinds.as_entire_binding(),
+            ),
             ("token_count".into(), b.token_count.as_entire_binding()),
             ("sc_offsets".into(), b.sc_offsets.as_entire_binding()),
             ("emit_offsets".into(), b.emit_offsets.as_entire_binding()),

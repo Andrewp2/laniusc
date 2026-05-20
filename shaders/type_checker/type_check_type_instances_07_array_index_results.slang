@@ -6,8 +6,6 @@
 // checks. It does not inspect token kinds, token spelling, source bytes, or
 // generic parameter token neighborhoods.
 
-import generated_parse_production_ids;
-
 struct Params
 {
     uint n_tokens;
@@ -18,16 +16,13 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> parent;
-StructuredBuffer<uint> next_sibling;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_expr_value_token;
+StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> visible_decl;
-StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
+StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_elem_ref_tag;
 StructuredBuffer<uint> type_instance_elem_ref_payload;
@@ -51,13 +46,42 @@ static const uint TY_BOOL = 2u;
 static const uint TY_INT = 3u;
 static const uint TY_GENERIC_BASE = 8192u;
 
-static const uint HIR_EXPR = 14u;
-static const uint HIR_POSTFIX_EXPR = 18u;
 static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_NAME_EXPR = 22u;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
+static const uint HIR_EXPR_RECORD_STRIDE = 4u;
+static const uint HIR_EXPR_RECORD_FORM = 0u;
+static const uint HIR_EXPR_RECORD_LEFT = 1u;
+static const uint HIR_EXPR_RECORD_RIGHT = 2u;
+static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
+
+static const uint HIR_EXPR_FORWARD = 1u;
+static const uint HIR_EXPR_NAME = 2u;
+static const uint HIR_EXPR_INT = 3u;
+static const uint HIR_EXPR_TRUE = 4u;
+static const uint HIR_EXPR_FALSE = 5u;
+static const uint HIR_EXPR_NOT = 6u;
+static const uint HIR_EXPR_EQ = 7u;
+static const uint HIR_EXPR_NE = 8u;
+static const uint HIR_EXPR_LT = 9u;
+static const uint HIR_EXPR_GT = 10u;
+static const uint HIR_EXPR_LE = 11u;
+static const uint HIR_EXPR_GE = 12u;
+static const uint HIR_EXPR_NEG = 13u;
+static const uint HIR_EXPR_ADD = 14u;
+static const uint HIR_EXPR_SUB = 15u;
+static const uint HIR_EXPR_MUL = 16u;
+static const uint HIR_EXPR_AND = 17u;
+static const uint HIR_EXPR_OR = 18u;
+static const uint HIR_EXPR_MOD = 19u;
+static const uint HIR_EXPR_DIV = 20u;
+static const uint HIR_EXPR_BIT_OR = 21u;
+static const uint HIR_EXPR_BIT_XOR = 22u;
+static const uint HIR_EXPR_BIT_AND = 23u;
+static const uint HIR_EXPR_SHL = 24u;
+static const uint HIR_EXPR_SHR = 25u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -79,200 +103,104 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
-bool has_ancestor_node(uint node, uint ancestor)
+uint expr_slot(uint node, uint slot)
 {
-    uint cur = node;
-    [loop]
-    for (uint guard = 0u; guard < 128u; guard += 1u)
-    {
-        if (!valid_node(cur))
-            return false;
-        if (cur == ancestor)
-            return true;
-        uint p = parent[cur];
-        if (!valid_node(p) || p == cur)
-            return false;
-        cur = p;
-    }
-    return false;
-}
-
-uint previous_sibling_node(uint node)
-{
-    if (!valid_node(node))
-        return INVALID;
-
-    uint p = parent[node];
-    if (!valid_node(p))
-        return INVALID;
-
-    uint n = active_hir_node_count();
-    [loop]
-    for (uint candidate = 0u; candidate < n; candidate += 1u)
-    {
-        if (parent[candidate] == p && next_sibling[candidate] == node)
-            return candidate;
-    }
-    return INVALID;
+    return valid_node(node) ? hir_expr_record[node * HIR_EXPR_RECORD_STRIDE + slot] : INVALID;
 }
 
 uint base_node_for_index(uint index_node)
 {
-    uint p = valid_node(index_node) ? parent[index_node] : INVALID;
-    if (!valid_node(p))
-        return INVALID;
-
-    uint previous = previous_sibling_node(index_node);
-    if (valid_node(previous))
-        return previous;
-
-    return hir_kind[p] == HIR_POSTFIX_EXPR ? p : INVALID;
+    return expr_slot(index_node, HIR_EXPR_RECORD_LEFT);
 }
 
-uint first_name_token_descendant(uint root)
+uint expr_form(uint node)
 {
-    if (!valid_node(root))
-        return INVALID;
+    return expr_slot(node, HIR_EXPR_RECORD_FORM);
+}
 
-    uint n = active_hir_node_count();
+uint resolve_expr(uint node)
+{
     [loop]
-    for (uint node = 0u; node < n; node += 1u)
+    for (uint guard = 0u; guard < 64u && valid_node(node); guard += 1u)
     {
-        if (hir_kind[node] != HIR_NAME_EXPR || !has_ancestor_node(node, root))
-            continue;
-
-        uint token = hir_expr_value_token[node];
-        if (valid_token(token))
-            return token;
-
-        token = hir_token_pos[node];
-        if (valid_token(token))
-            return token;
+        if (expr_form(node) != HIR_EXPR_FORWARD)
+            return node;
+        uint child = expr_slot(node, HIR_EXPR_RECORD_LEFT);
+        if (!valid_node(child))
+            return node;
+        node = child;
     }
-    return INVALID;
+    return node;
 }
 
-bool scalar_atom_type(uint node, out uint ty)
+uint scalar_expr_type(uint node)
 {
-    ty = TY_UNKNOWN;
+    node = resolve_expr(node);
+    if (!valid_node(node))
+        return TY_UNKNOWN;
 
-    uint prod = node_kind[node];
-    if (prod == PROD_INT)
+    uint form = expr_form(node);
+    if (form == HIR_EXPR_INT)
+        return TY_INT;
+    if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
+        return TY_BOOL;
+    if (form == HIR_EXPR_NAME)
     {
-        ty = TY_INT;
-        return true;
-    }
-    if (prod == PROD_TRUE || prod == PROD_FALSE)
-    {
-        ty = TY_BOOL;
-        return true;
-    }
-    if (hir_kind[node] == HIR_NAME_EXPR)
-    {
-        uint token = hir_expr_value_token[node];
+        uint token = expr_slot(node, HIR_EXPR_RECORD_VALUE_TOKEN);
         if (!valid_token(token))
             token = hir_token_pos[node];
         if (!valid_token(token))
-            return false;
+            return TY_UNKNOWN;
 
         uint decl_token = visible_decl[token];
         if (!valid_token(decl_token))
-            return false;
+            return TY_UNKNOWN;
         if (decl_type_ref_tag[decl_token] != TYPE_REF_SCALAR)
-            return false;
+            return TY_UNKNOWN;
 
-        ty = decl_type_ref_payload[decl_token];
-        return ty != TY_UNKNOWN;
+        return decl_type_ref_payload[decl_token];
     }
+    if (form == HIR_EXPR_NOT ||
+        form == HIR_EXPR_EQ ||
+        form == HIR_EXPR_NE ||
+        form == HIR_EXPR_LT ||
+        form == HIR_EXPR_GT ||
+        form == HIR_EXPR_LE ||
+        form == HIR_EXPR_GE ||
+        form == HIR_EXPR_AND ||
+        form == HIR_EXPR_OR)
+        return TY_BOOL;
+    if (form == HIR_EXPR_NEG ||
+        form == HIR_EXPR_ADD ||
+        form == HIR_EXPR_SUB ||
+        form == HIR_EXPR_MUL ||
+        form == HIR_EXPR_MOD ||
+        form == HIR_EXPR_DIV ||
+        form == HIR_EXPR_BIT_OR ||
+        form == HIR_EXPR_BIT_XOR ||
+        form == HIR_EXPR_BIT_AND ||
+        form == HIR_EXPR_SHL ||
+        form == HIR_EXPR_SHR)
+        return TY_INT;
 
-    return false;
+    return TY_UNKNOWN;
 }
 
 uint index_operand_scalar_type(uint index_node)
 {
-    uint found_ty = TY_UNKNOWN;
-    uint atom_count = 0u;
-    uint n = active_hir_node_count();
-    [loop]
-    for (uint node = 0u; node < n; node += 1u)
-    {
-        if (!has_ancestor_node(node, index_node))
-            continue;
-
-        uint atom_ty = TY_UNKNOWN;
-        if (!scalar_atom_type(node, atom_ty))
-            continue;
-
-        atom_count += 1u;
-        found_ty = atom_ty;
-        if (atom_count > 1u)
-            return TY_UNKNOWN;
-    }
-    return atom_count == 1u ? found_ty : TY_UNKNOWN;
+    if (!valid_node(index_node) || hir_kind[index_node] != HIR_INDEX_EXPR)
+        return TY_UNKNOWN;
+    return scalar_expr_type(expr_slot(index_node, HIR_EXPR_RECORD_RIGHT));
 }
 
-bool generic_decl_production(uint prod)
+uint name_token_for_expr(uint root)
 {
-    return prod == PROD_FN || prod == PROD_EXTERN_FN || prod == PROD_STRUCT ||
-           prod == PROD_ENUM || prod == PROD_TYPE_ALIAS;
-}
-
-uint generic_decl_ancestor(uint node)
-{
-    uint cur = node;
-    [loop]
-    for (uint guard = 0u; guard < 128u; guard += 1u)
-    {
-        if (!valid_node(cur))
-            return INVALID;
-        if (generic_decl_production(node_kind[cur]))
-            return cur;
-        uint p = parent[cur];
-        if (!valid_node(p) || p == cur)
-            return INVALID;
-        cur = p;
-    }
-    return INVALID;
-}
-
-uint first_node_at_token(uint token)
-{
-    if (!valid_token(token))
+    uint node = resolve_expr(root);
+    if (!valid_node(node) || hir_kind[node] != HIR_NAME_EXPR)
         return INVALID;
 
-    uint n = active_hir_node_count();
-    [loop]
-    for (uint node = 0u; node < n; node += 1u)
-    {
-        if (hir_token_pos[node] == token)
-            return node;
-    }
-    return INVALID;
-}
-
-uint generic_param_decl_for_ref_token(uint token)
-{
-    uint use_node = first_node_at_token(token);
-    uint use_decl = generic_decl_ancestor(use_node);
-    if (!valid_node(use_decl))
-        return INVALID;
-
-    uint name_id = name_id_by_token[token];
-    if (name_id == INVALID)
-        return INVALID;
-
-    uint n = active_hir_node_count();
-    [loop]
-    for (uint node = 0u; node < n; node += 1u)
-    {
-        if (node_kind[node] != PROD_ENUM_TYPE_PARAM || generic_decl_ancestor(node) != use_decl)
-            continue;
-
-        uint decl_token = hir_token_pos[node];
-        if (valid_token(decl_token) && name_id_by_token[decl_token] == name_id)
-            return decl_token;
-    }
-    return INVALID;
+    uint token = expr_slot(node, HIR_EXPR_RECORD_VALUE_TOKEN);
+    return valid_token(token) ? token : hir_token_pos[node];
 }
 
 uint type_instance_from_ref(uint tag, uint payload)
@@ -301,7 +229,7 @@ uint array_or_slice_instance_for_base_node(uint base_node)
     if (!valid_node(base_node))
         return INVALID;
 
-    uint base_token = first_name_token_descendant(base_node);
+    uint base_token = name_token_for_expr(base_node);
     if (!valid_token(base_token))
         return INVALID;
 
@@ -316,8 +244,8 @@ uint type_ref_to_type_code(uint tag, uint payload)
 
     if (tag == TYPE_REF_GENERIC_PARAM)
     {
-        uint decl_token = generic_param_decl_for_ref_token(payload);
-        return decl_token == INVALID ? TY_UNKNOWN : TY_GENERIC_BASE + decl_token;
+        uint slot = valid_token(payload) ? type_generic_param_slot_by_token[payload] : INVALID;
+        return slot == INVALID ? TY_UNKNOWN : TY_GENERIC_BASE + slot;
     }
 
     return TY_UNKNOWN;

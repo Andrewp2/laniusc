@@ -19,6 +19,10 @@ struct X86Params {
     source_len: u32,
     out_capacity: u32,
     n_hir_nodes: u32,
+    inst_capacity: u32,
+    virtual_next_call_step_count: u32,
+    regalloc_rows_per_chunk: u32,
+    regalloc_chunk_count: u32,
 }
 
 #[repr(C)]
@@ -27,6 +31,16 @@ struct X86ScanParams {
     n_items: u32,
     n_blocks: u32,
     scan_step: u32,
+    inst_capacity: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, ShaderType)]
+struct X86RegallocParams {
+    chunk_start: u32,
+    chunk_len: u32,
+    init_status: u32,
+    reserved: u32,
 }
 
 pub struct GpuX86ExprMetadataBuffers<'a> {
@@ -36,9 +50,14 @@ pub struct GpuX86ExprMetadataBuffers<'a> {
 }
 
 pub struct GpuX86FunctionMetadataBuffers<'a> {
-    pub item_kind: &'a wgpu::Buffer,
-    pub item_decl_token: &'a wgpu::Buffer,
+    pub node_decl_token: &'a wgpu::Buffer,
+    pub node_name_token: &'a wgpu::Buffer,
+    pub hir_token_pos: &'a wgpu::Buffer,
     pub param_record: &'a wgpu::Buffer,
+    pub enclosing_fn: &'a wgpu::Buffer,
+    pub method_decl_param_offset: &'a wgpu::Buffer,
+    pub method_decl_receiver_ref_tag: &'a wgpu::Buffer,
+    pub method_decl_receiver_ref_payload: &'a wgpu::Buffer,
 }
 
 pub struct GpuX86CallMetadataBuffers<'a> {
@@ -48,6 +67,8 @@ pub struct GpuX86CallMetadataBuffers<'a> {
     pub arg_count: &'a wgpu::Buffer,
     pub arg_parent_call: &'a wgpu::Buffer,
     pub arg_ordinal: &'a wgpu::Buffer,
+    pub member_receiver_node: &'a wgpu::Buffer,
+    pub member_name_token: &'a wgpu::Buffer,
     pub call_fn_index: &'a wgpu::Buffer,
     pub call_intrinsic_tag: &'a wgpu::Buffer,
     pub call_return_type: &'a wgpu::Buffer,
@@ -55,71 +76,237 @@ pub struct GpuX86CallMetadataBuffers<'a> {
     pub call_param_type: &'a wgpu::Buffer,
 }
 
-const MAX_X86_VREGS: usize = 8;
-const MAX_X86_USE_EDGES: usize = MAX_X86_VREGS * 4 + 1;
-const MAX_X86_INSTS: usize = 256;
-const MAX_X86_NODE_LOCAL_INSTS: usize = 4;
-const MAX_X86_VIRTUAL_USE_EDGES: usize = MAX_X86_INSTS * 4 + 1;
-const MAX_X86_RELOCS: usize = 8;
+pub struct GpuX86ArrayMetadataBuffers<'a> {
+    pub lit_first_element: &'a wgpu::Buffer,
+    pub lit_element_count: &'a wgpu::Buffer,
+    pub element_parent_lit: &'a wgpu::Buffer,
+    pub element_ordinal: &'a wgpu::Buffer,
+    pub element_next: &'a wgpu::Buffer,
+}
+
+pub struct GpuX86EnumMetadataBuffers<'a> {
+    pub item_decl_token: &'a wgpu::Buffer,
+    pub variant_parent_enum: &'a wgpu::Buffer,
+    pub variant_ordinal: &'a wgpu::Buffer,
+    pub variant_payload_count: &'a wgpu::Buffer,
+    pub match_scrutinee_node: &'a wgpu::Buffer,
+    pub match_arm_start: &'a wgpu::Buffer,
+    pub match_arm_count: &'a wgpu::Buffer,
+    pub match_arm_next: &'a wgpu::Buffer,
+    pub match_arm_pattern_node: &'a wgpu::Buffer,
+    pub match_arm_payload_start: &'a wgpu::Buffer,
+    pub match_arm_payload_count: &'a wgpu::Buffer,
+    pub match_arm_result_node: &'a wgpu::Buffer,
+    pub hir_token_pos: &'a wgpu::Buffer,
+    pub path_count_out: &'a wgpu::Buffer,
+    pub path_id_by_owner_hir: &'a wgpu::Buffer,
+    pub resolved_value_decl: &'a wgpu::Buffer,
+    pub resolved_value_status: &'a wgpu::Buffer,
+    pub decl_count_out: &'a wgpu::Buffer,
+    pub decl_kind: &'a wgpu::Buffer,
+    pub decl_name_token: &'a wgpu::Buffer,
+    pub decl_id_by_name_token: &'a wgpu::Buffer,
+    pub decl_hir_node: &'a wgpu::Buffer,
+    pub decl_parent_type_decl: &'a wgpu::Buffer,
+}
+
+pub struct GpuX86StructMetadataBuffers<'a> {
+    pub item_name_token: &'a wgpu::Buffer,
+    pub decl_hir_node: &'a wgpu::Buffer,
+    pub struct_decl_field_count: &'a wgpu::Buffer,
+    pub struct_lit_field_parent_lit: &'a wgpu::Buffer,
+    pub struct_lit_field_start: &'a wgpu::Buffer,
+    pub struct_lit_field_count: &'a wgpu::Buffer,
+    pub struct_lit_field_value_node: &'a wgpu::Buffer,
+    pub struct_lit_field_next: &'a wgpu::Buffer,
+    pub member_result_field_ordinal: &'a wgpu::Buffer,
+    pub struct_init_field_ordinal: &'a wgpu::Buffer,
+    pub struct_init_field_ordinal_by_node: &'a wgpu::Buffer,
+}
+
+pub struct GpuX86TypeMetadataBuffers<'a> {
+    pub decl_type_ref_tag: &'a wgpu::Buffer,
+    pub decl_type_ref_payload: &'a wgpu::Buffer,
+    pub visible_type: &'a wgpu::Buffer,
+    pub type_instance_kind: &'a wgpu::Buffer,
+    pub type_instance_decl_token: &'a wgpu::Buffer,
+    pub type_instance_len_kind: &'a wgpu::Buffer,
+    pub type_instance_len_payload: &'a wgpu::Buffer,
+}
+
+// Host-side conservative capacity estimate before GPU instruction counts are
+// exact. The HIR-only path keeps a conservative floor; the live-token path uses
+// measured token count plus slack so small/medium programs do not allocate a
+// fixed 16k instruction rows when the frontend already knows the real token
+// count.
+const X86_INST_CAPACITY_HIR_ESTIMATE_CAP: usize = 16_384;
+const MAX_X86_INSTS: usize = 1_048_576;
+const X86_INST_CAPACITY_MIN: usize = 256;
+const X86_INST_CAPACITY_SLACK: usize = 1_024;
+const X86_INSTS_PER_HIR_NODE_CAPACITY: usize = 8;
+const X86_INSTS_PER_TOKEN_CAPACITY: usize = 1;
+// Keep each register-allocation dispatch bounded so a single shader invocation
+// does not serially walk a long function and monopolize the GPU. The host
+// records one chunked pass per row block while the shader carries per-function
+// active-register state between blocks. A workgroup-sized chunk keeps the
+// current sequential slice bounded while staying close to Pareas' row-step map
+// shape.
+const X86_REGALLOC_ROWS_PER_CHUNK: usize = 256;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct X86CapacityEstimate {
+    pub hir_words: usize,
+    pub requested_inst_capacity: usize,
+    pub inst_capacity: usize,
+    pub inst_capacity_capped: bool,
+    pub output_capacity: usize,
+}
+
+pub fn x86_capacity_estimate_for_hir(hir_words: usize) -> X86CapacityEstimate {
+    x86_capacity_estimate_for_hir_with_limit(hir_words, X86_INST_CAPACITY_HIR_ESTIMATE_CAP)
+}
+
+pub fn x86_capacity_estimate_for_hir_and_tokens(
+    hir_words: usize,
+    token_capacity: usize,
+) -> X86CapacityEstimate {
+    let token_scaled_limit = token_capacity
+        .max(1)
+        .saturating_mul(X86_INSTS_PER_TOKEN_CAPACITY)
+        .saturating_add(X86_INST_CAPACITY_SLACK)
+        .min(MAX_X86_INSTS);
+    x86_capacity_estimate_for_hir_with_limit(hir_words, token_scaled_limit)
+}
+
+fn x86_capacity_estimate_for_hir_with_limit(
+    hir_words: usize,
+    inst_capacity_limit: usize,
+) -> X86CapacityEstimate {
+    let hir_words = hir_words.max(1);
+    let inst_capacity_limit = inst_capacity_limit.clamp(X86_INST_CAPACITY_MIN, MAX_X86_INSTS);
+    let requested_inst_capacity = x86_requested_inst_capacity_for_hir(hir_words);
+    let inst_capacity = requested_inst_capacity.clamp(X86_INST_CAPACITY_MIN, inst_capacity_limit);
+    X86CapacityEstimate {
+        hir_words,
+        requested_inst_capacity,
+        inst_capacity,
+        inst_capacity_capped: requested_inst_capacity > inst_capacity,
+        output_capacity: x86_output_capacity_for_inst_capacity(inst_capacity),
+    }
+}
+
+fn x86_requested_inst_capacity_for_hir(hir_words: usize) -> usize {
+    hir_words
+        .saturating_mul(X86_INSTS_PER_HIR_NODE_CAPACITY)
+        .saturating_add(X86_INST_CAPACITY_SLACK)
+}
+
+fn x86_output_capacity_for_inst_capacity(inst_capacity: usize) -> usize {
+    inst_capacity
+        .saturating_mul(16)
+        .saturating_add(4096)
+        .max(4096)
+}
+
+pub fn x86_node_inst_order_rows(hir_words: usize, inst_capacity: usize) -> usize {
+    inst_capacity.min(hir_words.max(1)).saturating_add(1)
+}
+
+pub fn x86_node_inst_order_record_words(
+    hir_words: usize,
+    inst_capacity: usize,
+    token_capacity: usize,
+) -> usize {
+    x86_node_inst_order_rows(hir_words, inst_capacity)
+        .saturating_mul(3)
+        .max(hir_words.max(1).saturating_mul(2))
+        .max(token_capacity.max(1).saturating_mul(14))
+}
 
 pub struct RecordedX86Codegen {
     output_capacity: usize,
+    output_status_offset: u64,
     _retained_buffers: Vec<wgpu::Buffer>,
-    out_buf: wgpu::Buffer,
-    status_readback: wgpu::Buffer,
+    _retained_bind_groups: Vec<wgpu::BindGroup>,
+    _out_buf: wgpu::Buffer,
+    output_readback: wgpu::Buffer,
     status_trace_readback: Option<wgpu::Buffer>,
-    out_readback: wgpu::Buffer,
 }
 
 pub struct GpuX86CodeGenerator {
+    fill_u32_pass: PassData,
+    active_clear_u32_pass: PassData,
+    active_scan_dispatch_args_pass: PassData,
+    virtual_dispatch_args_pass: PassData,
+    output_dispatch_args_pass: PassData,
     node_tree_info_pass: PassData,
     func_discover_pass: PassData,
+    func_owner_scan_local_pass: PassData,
+    func_owner_scan_blocks_pass: PassData,
+    func_assign_nodes_pass: PassData,
+    func_assign_nodes_step_pass: PassData,
+    expr_resolve_init_pass: PassData,
+    expr_resolve_step_pass: PassData,
+    expr_semantic_type_init_pass: PassData,
+    expr_semantic_type_step_pass: PassData,
+    enum_records_pass: PassData,
+    struct_records_pass: PassData,
+    array_records_pass: PassData,
+    match_records_pass: PassData,
+    match_result_owner_init_pass: PassData,
+    match_result_owner_step_pass: PassData,
+    match_pattern_owner_init_pass: PassData,
+    match_pattern_owner_step_pass: PassData,
+    match_pattern_records_pass: PassData,
+    match_pattern_finalize_pass: PassData,
+    return_match_records_pass: PassData,
+    match_ownership_pass: PassData,
+    enclosing_return_init_pass: PassData,
+    enclosing_return_step_pass: PassData,
+    enclosing_let_init_pass: PassData,
+    enclosing_let_step_pass: PassData,
+    enclosing_stmt_init_pass: PassData,
+    enclosing_stmt_step_pass: PassData,
+    decl_widths_pass: PassData,
+    decl_layout_pass: PassData,
     call_records_pass: PassData,
+    call_callee_owner_init_pass: PassData,
+    call_callee_owner_step_pass: PassData,
     const_values_pass: PassData,
     param_regs_pass: PassData,
     local_literals_pass: PassData,
-    func_return_stmts_pass: PassData,
-    block_return_stmts_pass: PassData,
-    terminal_ifs_pass: PassData,
-    return_calls_pass: PassData,
     call_arg_values_pass: PassData,
-    call_arg_lookup_pass: PassData,
     intrinsic_calls_pass: PassData,
     call_abi_pass: PassData,
-    call_arg_widths_pass: PassData,
-    call_arg_prefix_seed_pass: PassData,
-    call_arg_prefix_scan_pass: PassData,
-    call_arg_vregs_pass: PassData,
     node_inst_counts_pass: PassData,
+    node_inst_same_end_rank_init_pass: PassData,
+    node_inst_same_end_rank_step_pass: PassData,
+    node_inst_end_counts_pass: PassData,
     node_inst_order_pass: PassData,
+    node_order_dispatch_args_pass: PassData,
     node_inst_scan_local_pass: PassData,
     node_inst_scan_blocks_pass: PassData,
     node_inst_prefix_scan_pass: PassData,
+    node_inst_subtree_bounds_pass: PassData,
     node_inst_locations_pass: PassData,
+    enclosing_loop_init_pass: PassData,
+    enclosing_loop_step_pass: PassData,
+    node_inst_gen_inputs_pass: PassData,
+    virtual_inst_clear_dispatch_args_pass: PassData,
+    virtual_inst_clear_pass: PassData,
     node_inst_gen_pass: PassData,
-    virtual_use_edges_pass: PassData,
+    virtual_liveness_init_pass: PassData,
     virtual_liveness_pass: PassData,
+    virtual_next_calls_pass: PassData,
+    virtual_param_masks_pass: PassData,
     virtual_regalloc_pass: PassData,
-    func_body_plan_pass: PassData,
-    lower_values_pass: PassData,
-    use_edges_pass: PassData,
-    liveness_pass: PassData,
-    regalloc_pass: PassData,
-    func_inst_counts_pass: PassData,
-    func_inst_order_pass: PassData,
-    func_inst_scan_local_pass: PassData,
-    func_inst_scan_blocks_pass: PassData,
-    func_inst_prefix_scan_pass: PassData,
-    func_layout_pass: PassData,
-    func_return_inst_plan_pass: PassData,
-    entry_inst_plan_pass: PassData,
-    inst_plan_pass: PassData,
-    reloc_plan_pass: PassData,
+    virtual_func_rows_init_pass: PassData,
+    virtual_func_first_row_pass: PassData,
     select_pass: PassData,
     inst_size_pass: PassData,
+    text_scan_local_pass: PassData,
     text_offsets_pass: PassData,
     encode_pass: PassData,
-    reloc_patch_pass: PassData,
     elf_layout_pass: PassData,
     elf_write_pass: PassData,
 }
@@ -138,6 +325,28 @@ impl GpuX86CodeGenerator {
             }};
         }
 
+        let fill_u32_pass =
+            load_x86_pass!("fill_u32", "x86_fill_u32.spv", "x86_fill_u32.reflect.json");
+        let active_clear_u32_pass = load_x86_pass!(
+            "active_clear_u32",
+            "x86_active_clear_u32.spv",
+            "x86_active_clear_u32.reflect.json"
+        );
+        let active_scan_dispatch_args_pass = load_x86_pass!(
+            "active_scan_dispatch_args",
+            "x86_active_scan_dispatch_args.spv",
+            "x86_active_scan_dispatch_args.reflect.json"
+        );
+        let virtual_dispatch_args_pass = load_x86_pass!(
+            "virtual_dispatch_args",
+            "x86_virtual_dispatch_args.spv",
+            "x86_virtual_dispatch_args.reflect.json"
+        );
+        let output_dispatch_args_pass = load_x86_pass!(
+            "output_dispatch_args",
+            "x86_output_dispatch_args.spv",
+            "x86_output_dispatch_args.reflect.json"
+        );
         let node_tree_info_pass = load_x86_pass!(
             "node_tree_info",
             "x86_node_tree_info.spv",
@@ -148,10 +357,160 @@ impl GpuX86CodeGenerator {
             "x86_func_discover.spv",
             "x86_func_discover.reflect.json"
         );
+        let func_owner_scan_local_pass = load_x86_pass!(
+            "func_owner_scan_local",
+            "x86_func_owner_scan_local.spv",
+            "x86_func_owner_scan_local.reflect.json"
+        );
+        let func_owner_scan_blocks_pass = load_x86_pass!(
+            "func_owner_scan_blocks",
+            "x86_func_owner_scan_blocks.spv",
+            "x86_func_owner_scan_blocks.reflect.json"
+        );
+        let func_assign_nodes_pass = load_x86_pass!(
+            "func_assign_nodes",
+            "x86_func_assign_nodes.spv",
+            "x86_func_assign_nodes.reflect.json"
+        );
+        let func_assign_nodes_step_pass = load_x86_pass!(
+            "func_assign_nodes_step",
+            "x86_func_assign_nodes_step.spv",
+            "x86_func_assign_nodes_step.reflect.json"
+        );
+        let expr_resolve_init_pass = load_x86_pass!(
+            "expr_resolve_init",
+            "x86_expr_resolve_init.spv",
+            "x86_expr_resolve_init.reflect.json"
+        );
+        let expr_resolve_step_pass = load_x86_pass!(
+            "expr_resolve_step",
+            "x86_expr_resolve_step.spv",
+            "x86_expr_resolve_step.reflect.json"
+        );
+        let expr_semantic_type_init_pass = load_x86_pass!(
+            "expr_semantic_type_init",
+            "x86_expr_semantic_type_init.spv",
+            "x86_expr_semantic_type_init.reflect.json"
+        );
+        let expr_semantic_type_step_pass = load_x86_pass!(
+            "expr_semantic_type_step",
+            "x86_expr_semantic_type_step.spv",
+            "x86_expr_semantic_type_step.reflect.json"
+        );
+        let enum_records_pass = load_x86_pass!(
+            "enum_records",
+            "x86_enum_records.spv",
+            "x86_enum_records.reflect.json"
+        );
+        let struct_records_pass = load_x86_pass!(
+            "struct_records",
+            "x86_struct_records.spv",
+            "x86_struct_records.reflect.json"
+        );
+        let array_records_pass = load_x86_pass!(
+            "array_records",
+            "x86_array_records.spv",
+            "x86_array_records.reflect.json"
+        );
+        let match_records_pass = load_x86_pass!(
+            "match_records",
+            "x86_match_records.spv",
+            "x86_match_records.reflect.json"
+        );
+        let match_result_owner_init_pass = load_x86_pass!(
+            "match_result_owner_init",
+            "x86_match_result_owner_init.spv",
+            "x86_match_result_owner_init.reflect.json"
+        );
+        let match_result_owner_step_pass = load_x86_pass!(
+            "match_result_owner_step",
+            "x86_match_result_owner_step.spv",
+            "x86_match_result_owner_step.reflect.json"
+        );
+        let match_pattern_owner_init_pass = load_x86_pass!(
+            "match_pattern_owner_init",
+            "x86_match_pattern_owner_init.spv",
+            "x86_match_pattern_owner_init.reflect.json"
+        );
+        let match_pattern_owner_step_pass = load_x86_pass!(
+            "match_pattern_owner_step",
+            "x86_match_pattern_owner_step.spv",
+            "x86_match_pattern_owner_step.reflect.json"
+        );
+        let match_pattern_records_pass = load_x86_pass!(
+            "match_pattern_records",
+            "x86_match_pattern_records.spv",
+            "x86_match_pattern_records.reflect.json"
+        );
+        let match_pattern_finalize_pass = load_x86_pass!(
+            "match_pattern_finalize",
+            "x86_match_pattern_finalize.spv",
+            "x86_match_pattern_finalize.reflect.json"
+        );
+        let return_match_records_pass = load_x86_pass!(
+            "return_match_records",
+            "x86_return_match_records.spv",
+            "x86_return_match_records.reflect.json"
+        );
+        let match_ownership_pass = load_x86_pass!(
+            "match_ownership",
+            "x86_match_ownership.spv",
+            "x86_match_ownership.reflect.json"
+        );
+        let enclosing_return_init_pass = load_x86_pass!(
+            "enclosing_return_init",
+            "x86_enclosing_return_init.spv",
+            "x86_enclosing_return_init.reflect.json"
+        );
+        let enclosing_return_step_pass = load_x86_pass!(
+            "enclosing_return_step",
+            "x86_enclosing_return_step.spv",
+            "x86_enclosing_return_step.reflect.json"
+        );
+        let enclosing_let_init_pass = load_x86_pass!(
+            "enclosing_let_init",
+            "x86_enclosing_let_init.spv",
+            "x86_enclosing_let_init.reflect.json"
+        );
+        let enclosing_let_step_pass = load_x86_pass!(
+            "enclosing_let_step",
+            "x86_enclosing_let_step.spv",
+            "x86_enclosing_let_step.reflect.json"
+        );
+        let enclosing_stmt_init_pass = load_x86_pass!(
+            "enclosing_stmt_init",
+            "x86_enclosing_stmt_init.spv",
+            "x86_enclosing_stmt_init.reflect.json"
+        );
+        let enclosing_stmt_step_pass = load_x86_pass!(
+            "enclosing_stmt_step",
+            "x86_enclosing_stmt_step.spv",
+            "x86_enclosing_stmt_step.reflect.json"
+        );
+        let decl_widths_pass = load_x86_pass!(
+            "decl_widths",
+            "x86_decl_widths.spv",
+            "x86_decl_widths.reflect.json"
+        );
+        let decl_layout_pass = load_x86_pass!(
+            "decl_layout",
+            "x86_decl_layout.spv",
+            "x86_decl_layout.reflect.json"
+        );
         let call_records_pass = load_x86_pass!(
             "call_records",
             "x86_call_records.spv",
             "x86_call_records.reflect.json"
+        );
+        let call_callee_owner_init_pass = load_x86_pass!(
+            "call_callee_owner_init",
+            "x86_call_callee_owner_init.spv",
+            "x86_call_callee_owner_init.reflect.json"
+        );
+        let call_callee_owner_step_pass = load_x86_pass!(
+            "call_callee_owner_step",
+            "x86_call_callee_owner_step.spv",
+            "x86_call_callee_owner_step.reflect.json"
         );
         let const_values_pass = load_x86_pass!(
             "const_values",
@@ -168,35 +527,10 @@ impl GpuX86CodeGenerator {
             "x86_local_literals.spv",
             "x86_local_literals.reflect.json"
         );
-        let func_return_stmts_pass = load_x86_pass!(
-            "func_return_stmts",
-            "x86_func_return_stmts.spv",
-            "x86_func_return_stmts.reflect.json"
-        );
-        let block_return_stmts_pass = load_x86_pass!(
-            "block_return_stmts",
-            "x86_block_return_stmts.spv",
-            "x86_block_return_stmts.reflect.json"
-        );
-        let terminal_ifs_pass = load_x86_pass!(
-            "terminal_ifs",
-            "x86_terminal_ifs.spv",
-            "x86_terminal_ifs.reflect.json"
-        );
-        let return_calls_pass = load_x86_pass!(
-            "return_calls",
-            "x86_return_calls.spv",
-            "x86_return_calls.reflect.json"
-        );
         let call_arg_values_pass = load_x86_pass!(
             "call_arg_values",
             "x86_call_arg_values.spv",
             "x86_call_arg_values.reflect.json"
-        );
-        let call_arg_lookup_pass = load_x86_pass!(
-            "call_arg_lookup",
-            "x86_call_arg_lookup.spv",
-            "x86_call_arg_lookup.reflect.json"
         );
         let intrinsic_calls_pass = load_x86_pass!(
             "intrinsic_calls",
@@ -205,35 +539,35 @@ impl GpuX86CodeGenerator {
         );
         let call_abi_pass =
             load_x86_pass!("call_abi", "x86_call_abi.spv", "x86_call_abi.reflect.json");
-        let call_arg_widths_pass = load_x86_pass!(
-            "call_arg_widths",
-            "x86_call_arg_widths.spv",
-            "x86_call_arg_widths.reflect.json"
-        );
-        let call_arg_prefix_seed_pass = load_x86_pass!(
-            "call_arg_prefix_seed",
-            "x86_call_arg_prefix_seed.spv",
-            "x86_call_arg_prefix_seed.reflect.json"
-        );
-        let call_arg_prefix_scan_pass = load_x86_pass!(
-            "call_arg_prefix_scan",
-            "x86_call_arg_prefix_scan.spv",
-            "x86_call_arg_prefix_scan.reflect.json"
-        );
-        let call_arg_vregs_pass = load_x86_pass!(
-            "call_arg_vregs",
-            "x86_call_arg_vregs.spv",
-            "x86_call_arg_vregs.reflect.json"
-        );
         let node_inst_counts_pass = load_x86_pass!(
             "node_inst_counts",
             "x86_node_inst_counts.spv",
             "x86_node_inst_counts.reflect.json"
         );
+        let node_inst_same_end_rank_init_pass = load_x86_pass!(
+            "node_inst_same_end_rank_init",
+            "x86_node_inst_same_end_rank_init.spv",
+            "x86_node_inst_same_end_rank_init.reflect.json"
+        );
+        let node_inst_same_end_rank_step_pass = load_x86_pass!(
+            "node_inst_same_end_rank_step",
+            "x86_node_inst_same_end_rank_step.spv",
+            "x86_node_inst_same_end_rank_step.reflect.json"
+        );
+        let node_inst_end_counts_pass = load_x86_pass!(
+            "node_inst_end_counts",
+            "x86_node_inst_end_counts.spv",
+            "x86_node_inst_end_counts.reflect.json"
+        );
         let node_inst_order_pass = load_x86_pass!(
             "node_inst_order",
             "x86_node_inst_order.spv",
             "x86_node_inst_order.reflect.json"
+        );
+        let node_order_dispatch_args_pass = load_x86_pass!(
+            "node_order_dispatch_args",
+            "x86_node_order_dispatch_args.spv",
+            "x86_node_order_dispatch_args.reflect.json"
         );
         let node_inst_scan_local_pass = load_x86_pass!(
             "node_inst_scan_local",
@@ -250,99 +584,80 @@ impl GpuX86CodeGenerator {
             "x86_node_inst_prefix_scan.spv",
             "x86_node_inst_prefix_scan.reflect.json"
         );
+        let node_inst_subtree_bounds_pass = load_x86_pass!(
+            "node_inst_subtree_bounds",
+            "x86_node_inst_subtree_bounds.spv",
+            "x86_node_inst_subtree_bounds.reflect.json"
+        );
         let node_inst_locations_pass = load_x86_pass!(
             "node_inst_locations",
             "x86_node_inst_locations.spv",
             "x86_node_inst_locations.reflect.json"
+        );
+        let enclosing_loop_init_pass = load_x86_pass!(
+            "enclosing_loop_init",
+            "x86_enclosing_loop_init.spv",
+            "x86_enclosing_loop_init.reflect.json"
+        );
+        let enclosing_loop_step_pass = load_x86_pass!(
+            "enclosing_loop_step",
+            "x86_enclosing_loop_step.spv",
+            "x86_enclosing_loop_step.reflect.json"
+        );
+        let node_inst_gen_inputs_pass = load_x86_pass!(
+            "node_inst_gen_inputs",
+            "x86_node_inst_gen_inputs.spv",
+            "x86_node_inst_gen_inputs.reflect.json"
+        );
+        let virtual_inst_clear_dispatch_args_pass = load_x86_pass!(
+            "virtual_inst_clear_dispatch_args",
+            "x86_virtual_inst_clear_dispatch_args.spv",
+            "x86_virtual_inst_clear_dispatch_args.reflect.json"
+        );
+        let virtual_inst_clear_pass = load_x86_pass!(
+            "virtual_inst_clear",
+            "x86_virtual_inst_clear.spv",
+            "x86_virtual_inst_clear.reflect.json"
         );
         let node_inst_gen_pass = load_x86_pass!(
             "node_inst_gen",
             "x86_node_inst_gen.spv",
             "x86_node_inst_gen.reflect.json"
         );
-        let virtual_use_edges_pass = load_x86_pass!(
-            "virtual_use_edges",
-            "x86_virtual_use_edges.spv",
-            "x86_virtual_use_edges.reflect.json"
+        let virtual_liveness_init_pass = load_x86_pass!(
+            "virtual_liveness_init",
+            "x86_virtual_liveness_init.spv",
+            "x86_virtual_liveness_init.reflect.json"
         );
         let virtual_liveness_pass = load_x86_pass!(
             "virtual_liveness",
             "x86_virtual_liveness.spv",
             "x86_virtual_liveness.reflect.json"
         );
+        let virtual_next_calls_pass = load_x86_pass!(
+            "virtual_next_calls",
+            "x86_virtual_next_calls.spv",
+            "x86_virtual_next_calls.reflect.json"
+        );
+        let virtual_param_masks_pass = load_x86_pass!(
+            "virtual_param_masks",
+            "x86_virtual_param_masks.spv",
+            "x86_virtual_param_masks.reflect.json"
+        );
         let virtual_regalloc_pass = load_x86_pass!(
             "virtual_regalloc",
             "x86_virtual_regalloc.spv",
             "x86_virtual_regalloc.reflect.json"
         );
-        let func_body_plan_pass = load_x86_pass!(
-            "func_body_plan",
-            "x86_func_body_plan.spv",
-            "x86_func_body_plan.reflect.json"
+        let virtual_func_rows_init_pass = load_x86_pass!(
+            "virtual_func_rows_init",
+            "x86_virtual_func_rows_init.spv",
+            "x86_virtual_func_rows_init.reflect.json"
         );
-        let lower_values_pass = load_x86_pass!(
-            "lower_values",
-            "x86_lower_values.spv",
-            "x86_lower_values.reflect.json"
-        );
-        let use_edges_pass = load_x86_pass!(
-            "use_edges",
-            "x86_use_edges.spv",
-            "x86_use_edges.reflect.json"
-        );
-        let liveness_pass =
-            load_x86_pass!("liveness", "x86_liveness.spv", "x86_liveness.reflect.json");
-        let regalloc_pass =
-            load_x86_pass!("regalloc", "x86_regalloc.spv", "x86_regalloc.reflect.json");
-        let func_inst_counts_pass = load_x86_pass!(
-            "func_inst_counts",
-            "x86_func_inst_counts.spv",
-            "x86_func_inst_counts.reflect.json"
-        );
-        let func_inst_order_pass = load_x86_pass!(
-            "func_inst_order",
-            "x86_func_inst_order.spv",
-            "x86_func_inst_order.reflect.json"
-        );
-        let func_inst_scan_local_pass = load_x86_pass!(
-            "func_inst_scan_local",
-            "x86_func_inst_scan_local.spv",
-            "x86_func_inst_scan_local.reflect.json"
-        );
-        let func_inst_scan_blocks_pass = load_x86_pass!(
-            "func_inst_scan_blocks",
-            "x86_func_inst_scan_blocks.spv",
-            "x86_func_inst_scan_blocks.reflect.json"
-        );
-        let func_inst_prefix_scan_pass = load_x86_pass!(
-            "func_inst_prefix_scan",
-            "x86_func_inst_prefix_scan.spv",
-            "x86_func_inst_prefix_scan.reflect.json"
-        );
-        let func_layout_pass = load_x86_pass!(
-            "func_layout",
-            "x86_func_layout.spv",
-            "x86_func_layout.reflect.json"
-        );
-        let func_return_inst_plan_pass = load_x86_pass!(
-            "func_return_inst_plan",
-            "x86_func_return_inst_plan.spv",
-            "x86_func_return_inst_plan.reflect.json"
-        );
-        let entry_inst_plan_pass = load_x86_pass!(
-            "entry_inst_plan",
-            "x86_entry_inst_plan.spv",
-            "x86_entry_inst_plan.reflect.json"
-        );
-        let inst_plan_pass = load_x86_pass!(
-            "inst_plan",
-            "x86_inst_plan.spv",
-            "x86_inst_plan.reflect.json"
-        );
-        let reloc_plan_pass = load_x86_pass!(
-            "reloc_plan",
-            "x86_reloc_plan.spv",
-            "x86_reloc_plan.reflect.json"
+        let virtual_func_first_row_pass = load_x86_pass!(
+            "virtual_func_first_row",
+            "x86_virtual_func_first_row.spv",
+            "x86_virtual_func_first_row.reflect.json"
         );
         let select_pass = load_x86_pass!("select", "x86_select.spv", "x86_select.reflect.json");
         let inst_size_pass = load_x86_pass!(
@@ -350,17 +665,17 @@ impl GpuX86CodeGenerator {
             "x86_inst_size.spv",
             "x86_inst_size.reflect.json"
         );
+        let text_scan_local_pass = load_x86_pass!(
+            "text_scan_local",
+            "x86_text_scan_local.spv",
+            "x86_text_scan_local.reflect.json"
+        );
         let text_offsets_pass = load_x86_pass!(
             "text_offsets",
             "x86_text_offsets.spv",
             "x86_text_offsets.reflect.json"
         );
         let encode_pass = load_x86_pass!("encode", "x86_encode.spv", "x86_encode.reflect.json");
-        let reloc_patch_pass = load_x86_pass!(
-            "reloc_patch",
-            "x86_reloc_patch.spv",
-            "x86_reloc_patch.reflect.json"
-        );
         let elf_layout_pass = load_x86_pass!(
             "elf_layout",
             "x86_elf_layout.spv",
@@ -372,54 +687,79 @@ impl GpuX86CodeGenerator {
             "x86_elf_write.reflect.json"
         );
         Ok(Self {
+            fill_u32_pass,
+            active_clear_u32_pass,
+            active_scan_dispatch_args_pass,
+            virtual_dispatch_args_pass,
+            output_dispatch_args_pass,
             node_tree_info_pass,
             func_discover_pass,
+            func_owner_scan_local_pass,
+            func_owner_scan_blocks_pass,
+            func_assign_nodes_pass,
+            func_assign_nodes_step_pass,
+            expr_resolve_init_pass,
+            expr_resolve_step_pass,
+            expr_semantic_type_init_pass,
+            expr_semantic_type_step_pass,
+            enum_records_pass,
+            struct_records_pass,
+            array_records_pass,
+            match_records_pass,
+            match_result_owner_init_pass,
+            match_result_owner_step_pass,
+            match_pattern_owner_init_pass,
+            match_pattern_owner_step_pass,
+            match_pattern_records_pass,
+            match_pattern_finalize_pass,
+            return_match_records_pass,
+            match_ownership_pass,
+            enclosing_return_init_pass,
+            enclosing_return_step_pass,
+            enclosing_let_init_pass,
+            enclosing_let_step_pass,
+            enclosing_stmt_init_pass,
+            enclosing_stmt_step_pass,
+            decl_widths_pass,
+            decl_layout_pass,
             call_records_pass,
+            call_callee_owner_init_pass,
+            call_callee_owner_step_pass,
             const_values_pass,
             param_regs_pass,
             local_literals_pass,
-            func_return_stmts_pass,
-            block_return_stmts_pass,
-            terminal_ifs_pass,
-            return_calls_pass,
             call_arg_values_pass,
-            call_arg_lookup_pass,
             intrinsic_calls_pass,
             call_abi_pass,
-            call_arg_widths_pass,
-            call_arg_prefix_seed_pass,
-            call_arg_prefix_scan_pass,
-            call_arg_vregs_pass,
             node_inst_counts_pass,
+            node_inst_same_end_rank_init_pass,
+            node_inst_same_end_rank_step_pass,
+            node_inst_end_counts_pass,
             node_inst_order_pass,
+            node_order_dispatch_args_pass,
             node_inst_scan_local_pass,
             node_inst_scan_blocks_pass,
             node_inst_prefix_scan_pass,
+            node_inst_subtree_bounds_pass,
             node_inst_locations_pass,
+            enclosing_loop_init_pass,
+            enclosing_loop_step_pass,
+            node_inst_gen_inputs_pass,
+            virtual_inst_clear_dispatch_args_pass,
+            virtual_inst_clear_pass,
             node_inst_gen_pass,
-            virtual_use_edges_pass,
+            virtual_liveness_init_pass,
             virtual_liveness_pass,
+            virtual_next_calls_pass,
+            virtual_param_masks_pass,
             virtual_regalloc_pass,
-            func_body_plan_pass,
-            lower_values_pass,
-            use_edges_pass,
-            liveness_pass,
-            regalloc_pass,
-            func_inst_counts_pass,
-            func_inst_order_pass,
-            func_inst_scan_local_pass,
-            func_inst_scan_blocks_pass,
-            func_inst_prefix_scan_pass,
-            func_layout_pass,
-            func_return_inst_plan_pass,
-            entry_inst_plan_pass,
-            inst_plan_pass,
-            reloc_plan_pass,
+            virtual_func_rows_init_pass,
+            virtual_func_first_row_pass,
             select_pass,
             inst_size_pass,
+            text_scan_local_pass,
             text_offsets_pass,
             encode_pass,
-            reloc_patch_pass,
             elf_layout_pass,
             elf_write_pass,
         })

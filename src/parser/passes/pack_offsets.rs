@@ -33,7 +33,20 @@ impl PackOffsetsScanPass {
         buffers: &ParserBuffers,
     ) -> Result<()> {
         for step in &buffers.pack_offset_scan_steps {
-            self.record_step(device, encoder, buffers, step)?;
+            self.record_step(device, encoder, buffers, step, None)?;
+        }
+        Ok(())
+    }
+
+    pub fn record_scan_indirect(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        buffers: &ParserBuffers,
+        dispatch_args: &wgpu::Buffer,
+    ) -> Result<()> {
+        for step in &buffers.pack_offset_scan_steps {
+            self.record_step(device, encoder, buffers, step, Some(dispatch_args))?;
         }
         Ok(())
     }
@@ -44,6 +57,7 @@ impl PackOffsetsScanPass {
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
         step: &PackOffsetScanStep,
+        dispatch_args: Option<&wgpu::Buffer>,
     ) -> Result<()> {
         let sc_prefix_in = if step.read_from_a {
             &buffers.pack_sc_prefix_a
@@ -97,19 +111,23 @@ impl PackOffsetsScanPass {
             0,
             &resources,
         )?;
-        let [tgsx, tgsy, _] = self.data.thread_group_size;
-        let (gx, gy, gz) = plan_workgroups(
-            DispatchDim::D1,
-            InputElements::Elements1D(buffers.n_tokens.saturating_sub(1)),
-            [tgsx, tgsy, 1],
-        )?;
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("pack_offsets_scan"),
             timestamp_writes: None,
         });
         pass.set_pipeline(&self.data.pipeline);
         pass.set_bind_group(0, Some(&bind_group), &[]);
-        pass.dispatch_workgroups(gx, gy, gz);
+        if let Some(dispatch_args) = dispatch_args {
+            pass.dispatch_workgroups_indirect(dispatch_args, 0);
+        } else {
+            let [tgsx, tgsy, _] = self.data.thread_group_size;
+            let (gx, gy, gz) = plan_workgroups(
+                DispatchDim::D1,
+                InputElements::Elements1D(buffers.n_tokens.saturating_sub(1)),
+                [tgsx, tgsy, 1],
+            )?;
+            pass.dispatch_workgroups(gx, gy, gz);
+        }
         Ok(())
     }
 }

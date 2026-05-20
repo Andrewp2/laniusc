@@ -5,6 +5,7 @@
 // instead of deriving declaration type heads from token offsets.
 
 import generated_parse_production_ids;
+import tree_walk;
 
 struct Params
 {
@@ -20,6 +21,7 @@ StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> parent;
 StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> next_sibling;
+StructuredBuffer<uint> subtree_end;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_stmt_record;
@@ -64,6 +66,52 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
+uint decl_type_ref_parent_node(uint node)
+{
+    return parent[node];
+}
+
+uint decl_type_ref_first_child_node(uint node)
+{
+    return first_child[node];
+}
+
+uint decl_type_ref_next_sibling_node(uint node)
+{
+    return next_sibling[node];
+}
+
+public struct DeclTypeRefGraph : ITreeWalkGraph
+{
+    public static bool valid(uint node)
+    {
+        return valid_node(node);
+    }
+
+    public static uint parent(uint node)
+    {
+        return decl_type_ref_parent_node(node);
+    }
+}
+
+public struct DeclTypeRefChildGraph : ITreeChildGraph
+{
+    public static bool valid(uint node)
+    {
+        return valid_node(node);
+    }
+
+    public static uint first_child(uint node)
+    {
+        return decl_type_ref_first_child_node(node);
+    }
+
+    public static uint next_sibling(uint node)
+    {
+        return decl_type_ref_next_sibling_node(node);
+    }
+}
+
 uint stmt_slot(uint node, uint slot)
 {
     return node * STMT_RECORD_STRIDE + slot;
@@ -71,31 +119,18 @@ uint stmt_slot(uint node, uint slot)
 
 bool has_ancestor_node(uint node, uint ancestor)
 {
-    uint cur = node;
-    [loop]
-    for (uint guard = 0u; guard < 96u; guard += 1u)
-    {
-        if (!valid_node(cur))
-            return false;
-        if (cur == ancestor)
-            return true;
-        uint p = parent[cur];
-        if (!valid_node(p) || p == cur)
-            return false;
-        cur = p;
-    }
-    return false;
+    return has_self_or_ancestor_node<DeclTypeRefGraph>(node, ancestor, 96u);
 }
 
 uint first_descendant_with_production(uint root, uint prod)
 {
     if (!valid_node(root))
         return INVALID;
-    uint n = active_hir_node_count();
+    uint n = min(subtree_end[root], active_hir_node_count());
     [loop]
-    for (uint node = 0u; node < n; node += 1u)
+    for (uint node = root + 1u; node < n; node += 1u)
     {
-        if (node_kind[node] == prod && has_ancestor_node(node, root))
+        if (node_kind[node] == prod)
             return node;
     }
     return INVALID;
@@ -103,25 +138,25 @@ uint first_descendant_with_production(uint root, uint prod)
 
 uint first_child_node(uint node)
 {
-    uint child = valid_node(node) ? first_child[node] : INVALID;
-    return valid_node(child) ? child : INVALID;
+    uint child;
+    return tree_child_first<DeclTypeRefChildGraph>(node, child) ? child : INVALID;
 }
 
 uint next_sibling_node(uint node)
 {
-    uint sibling = valid_node(node) ? next_sibling[node] : INVALID;
-    return valid_node(sibling) ? sibling : INVALID;
+    uint sibling;
+    return tree_child_next<DeclTypeRefChildGraph>(node, sibling) ? sibling : INVALID;
 }
 
 uint first_type_descendant(uint root)
 {
     if (!valid_node(root))
         return INVALID;
-    uint n = active_hir_node_count();
+    uint n = min(subtree_end[root], active_hir_node_count());
     [loop]
-    for (uint node = 0u; node < n; node += 1u)
+    for (uint node = root + 1u; node < n; node += 1u)
     {
-        if (hir_kind[node] == HIR_TYPE && has_ancestor_node(node, root))
+        if (hir_kind[node] == HIR_TYPE)
             return node;
     }
     return INVALID;

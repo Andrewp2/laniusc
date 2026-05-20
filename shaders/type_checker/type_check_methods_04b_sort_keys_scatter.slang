@@ -8,6 +8,10 @@
 // - It does not resolve methods, inspect source bytes, hash token text, perform
 //   CPU lookup, or apply same-source shortcuts.
 
+import gpu_index;
+import radix;
+import scatter;
+
 struct Params
 {
     uint method_capacity;
@@ -18,6 +22,7 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+StructuredBuffer<uint> token_count;
 StructuredBuffer<uint> method_decl_impl_node;
 StructuredBuffer<uint> method_decl_receiver_ref_tag;
 StructuredBuffer<uint> method_decl_receiver_ref_payload;
@@ -40,21 +45,23 @@ static const uint TY_ENUM_BASE = 6144u;
 static const uint TY_GENERIC_BASE = 8192u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint RADIX_BUCKETS = 257u;
+static const uint RADIX_BUCKETS = RADIX_U8_SENTINEL_BUCKETS;
+
+groupshared uint local_radix_keys[256];
 
 uint linear_group_id(uint3 gid)
 {
-    return gid.x + gid.y * MAX_GROUPS_X;
+    return linear_group_id_2d(gid, MAX_GROUPS_X);
 }
 
-uint encoded_id(uint value)
+uint active_method_capacity()
 {
-    return value == INVALID ? 0u : value + 1u;
+    return min(token_count[0], gParams.method_capacity);
 }
 
 bool valid_method_record(uint fn_i)
 {
-    return fn_i < gParams.method_capacity && method_decl_impl_node[fn_i] != INVALID &&
+    return fn_i < active_method_capacity() && method_decl_impl_node[fn_i] != INVALID &&
            method_decl_module_id[fn_i] != INVALID &&
            method_decl_receiver_ref_tag[fn_i] != TYPE_REF_INVALID &&
            method_decl_receiver_ref_payload[fn_i] != INVALID &&
@@ -72,7 +79,7 @@ uint decl_token_from_type_code(uint ty)
 
 uint resolved_nominal_decl_token(uint token_i)
 {
-    if (token_i >= gParams.method_capacity)
+    if (token_i >= active_method_capacity())
         return INVALID;
     return decl_token_from_type_code(module_type_path_type[token_i]);
 }
@@ -105,37 +112,50 @@ uint method_key_field(uint fn_i, uint field_i)
         return 0u;
 
     if (field_i == 0u)
-        return encoded_id(method_decl_name_id[fn_i]);
+        return encode_nullable_id(method_decl_name_id[fn_i], INVALID);
     if (field_i == 1u)
-        return encoded_id(receiver_payload_key(fn_i));
+        return encode_nullable_id(receiver_payload_key(fn_i), INVALID);
     if (field_i == 2u)
         return method_decl_receiver_ref_tag[fn_i] + 1u;
-    return encoded_id(method_decl_module_id[fn_i]);
+    return encode_nullable_id(method_decl_module_id[fn_i], INVALID);
 }
 
 uint method_key_radix_key(uint fn_i, uint key_step)
 {
-    uint field_i = min(key_step / 4u, 3u);
-    uint byte_i = key_step & 3u;
+    uint field_i = radix_field_index(key_step, 3u);
     uint value = method_key_field(fn_i, field_i);
-    return (value >> (byte_i * 8u)) & 0xffu;
+    return radix_byte_key(value, key_step);
 }
 
-uint local_same_key_rank(uint block_begin, uint lane, uint key)
+public struct MethodKeyScatterSource : IStableRadixScatterSource<uint>
 {
-    uint rank = 0u;
-    [loop]
-    for (uint j = 0u; j < lane; j += 1u)
+    public static uint active_count()
     {
-        uint order_j = block_begin + j;
-        if (order_j < gParams.method_capacity)
-        {
-            uint prev_fn_i = method_key_order_in[order_j];
-            if (method_key_radix_key(prev_fn_i, gParams.key_step) == key)
-                rank += 1u;
-        }
+        return active_method_capacity();
     }
-    return rank;
+
+    public static uint inactive_value()
+    {
+        return 0u;
+    }
+
+    public static uint ordered_value(uint order_i)
+    {
+        return method_key_order_in[order_i];
+    }
+
+    public static uint radix_key(uint value, uint key_step)
+    {
+        return method_key_radix_key(value, key_step);
+    }
+}
+
+public struct MethodKeyOrderOutSink : IScatterSink<uint>
+{
+    public static void store(uint dst, uint value)
+    {
+        method_key_order_out[dst] = value;
+    }
 }
 
 [shader("compute")]
@@ -143,20 +163,14 @@ uint local_same_key_rank(uint block_begin, uint lane, uint key)
 void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
 {
     uint block_idx = linear_group_id(gid);
-    if (block_idx >= gParams.n_blocks)
-        return;
-
     uint lane = ltid.x;
-    uint order_i = block_idx * WG_SIZE + lane;
-    if (order_i >= gParams.method_capacity)
-        return;
-
-    uint fn_i = method_key_order_in[order_i];
-    uint key = method_key_radix_key(fn_i, gParams.key_step);
-    uint rank = local_same_key_rank(block_idx * WG_SIZE, lane, key);
-    uint block_prefix = radix_block_bucket_prefix[block_idx * RADIX_BUCKETS + key];
-    uint dst = radix_bucket_base[key] + block_prefix + rank;
-
-    if (dst < gParams.method_capacity)
-        method_key_order_out[dst] = fn_i;
+    stable_radix_scatter_block<uint, MethodKeyScatterSource, MethodKeyOrderOutSink, 256>(
+        block_idx,
+        lane,
+        gParams.n_blocks,
+        gParams.key_step,
+        RADIX_BUCKETS,
+        radix_bucket_base,
+        radix_block_bucket_prefix,
+        local_radix_keys);
 }

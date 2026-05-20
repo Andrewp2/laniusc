@@ -35,19 +35,29 @@ uint linear_thread_id(uint3 dtid)
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
 }
 
+uint record_capacity()
+{
+    return gParams.module_capacity;
+}
+
+uint file_capacity()
+{
+    return gParams.reserved == 0u ? gParams.module_capacity : gParams.reserved;
+}
+
 uint active_decl_count()
 {
-    return min(decl_count_out[0], gParams.module_capacity);
+    return min(decl_count_out[0], record_capacity());
 }
 
 uint active_import_count()
 {
-    return min(import_count_out[0], gParams.module_capacity);
+    return min(import_count_out[0], record_capacity());
 }
 
 uint active_path_count()
 {
-    return min(path_count_out[0], gParams.module_capacity);
+    return min(path_count_out[0], record_capacity());
 }
 
 [shader("compute")]
@@ -55,10 +65,12 @@ uint active_path_count()
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
-    if (i >= gParams.module_capacity)
+
+    if (i < file_capacity())
+        module_id_by_file_id[i] = INVALID;
+    if (i >= record_capacity())
         return;
 
-    module_id_by_file_id[i] = INVALID;
     if (i < active_decl_count())
         decl_module_id[i] = INVALID;
     if (i < active_import_count())

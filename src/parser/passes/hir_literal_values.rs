@@ -6,7 +6,7 @@ use encase::ShaderType;
 use crate::{
     gpu::{
         buffers::uniform_from_val,
-        passes_core::{DispatchDim, InputElements, PassData, bind_group, plan_workgroups},
+        passes_core::{PassData, bind_group},
     },
     parser::buffers::ParserBuffers,
 };
@@ -35,6 +35,7 @@ impl HirLiteralValuesPass {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
+        dispatch_args: &wgpu::Buffer,
         source_len: u32,
         token_buf: &wgpu::Buffer,
         source_buf: &wgpu::Buffer,
@@ -61,12 +62,8 @@ impl HirLiteralValuesPass {
                 },
             ),
             (
-                "hir_expr_form".into(),
-                buffers.hir_expr_form.as_entire_binding(),
-            ),
-            (
-                "hir_expr_value_token".into(),
-                buffers.hir_expr_value_token.as_entire_binding(),
+                "hir_expr_record".into(),
+                buffers.hir_expr_record.as_entire_binding(),
             ),
             (
                 "hir_type_len_token".into(),
@@ -89,19 +86,13 @@ impl HirLiteralValuesPass {
             0,
             &resources,
         )?;
-        let [tgsx, tgsy, _] = self.data.thread_group_size;
-        let (gx, gy, gz) = plan_workgroups(
-            DispatchDim::D1,
-            InputElements::Elements1D(buffers.tree_capacity),
-            [tgsx, tgsy, 1],
-        )?;
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("parser_hir_literal_values"),
             timestamp_writes: None,
         });
         pass.set_pipeline(&self.data.pipeline);
         pass.set_bind_group(0, Some(&bind_group), &[]);
-        pass.dispatch_workgroups(gx, gy, gz);
+        pass.dispatch_workgroups_indirect(dispatch_args, 0);
         Ok(())
     }
 }

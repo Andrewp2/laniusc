@@ -1,6 +1,9 @@
 
 module utils;
 
+import byte_packing;
+import gpu_index;
+
 public static const uint HIGH_BIT = 0x8000u;
 public static const uint PF_EMIT = 1u << 0;
 public static const uint PF_EOF = 1u << 1;
@@ -14,16 +17,13 @@ public inline bool is_highest_bit_set(uint value)
 
 public inline uint load_byte_at(ByteAddressBuffer buf, uint i)
 {
-    uint word = buf.Load(i & ~3u);
-    uint shift = (i & 3u) * 8u;
-    return (word >> shift) & 0xFFu;
+    return byte_address_load_u8(buf, i);
 }
 
 public inline uint load_u16_packed(StructuredBuffer<uint> buf, uint idx)
 {
     uint w = buf[idx >> 1];
-    uint sh = (idx & 1u) * 16u;
-    return (w >> sh) & 0xFFFFu;
+    return (idx & 1u) == 0u ? unpack_u16_pair_low(w) : unpack_u16_pair_high(w);
 }
 
 // Load two consecutive u16 values starting at idx (may cross u32 word boundary).
@@ -41,9 +41,7 @@ public inline uint load_u32_two_u16(StructuredBuffer<uint> buf, uint idx)
     {
         // Crosses boundary: hi16 comes from next word's low16.
         const uint w1 = buf[(idx >> 1) + 1u];
-        const uint lo = (w0 >> 16) & 0xFFFFu;
-        const uint hi = (w1 & 0xFFFFu) << 16;
-        return lo | hi;
+        return pack_u16_pair(unpack_u16_pair_high(w0), unpack_u16_pair_low(w1));
     }
 }
 

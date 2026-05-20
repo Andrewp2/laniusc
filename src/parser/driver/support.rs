@@ -109,11 +109,51 @@ pub(super) fn make_tokens_to_kinds_pass(device: &wgpu::Device) -> Result<PassDat
     )
 }
 
-pub(super) fn make_direct_hir_pass(device: &wgpu::Device) -> Result<PassData> {
+pub(super) fn make_token_delimiters_01_pass(device: &wgpu::Device) -> Result<PassData> {
     crate::gpu::passes_core::make_main_pass!(
         device,
-        "parser_direct_hir",
-        shader: "direct_hir"
+        "parser_tokens_delimiters_01_local",
+        shader: "tokens_delimiters_01_local"
+    )
+}
+
+pub(super) fn make_token_delimiters_02_pass(device: &wgpu::Device) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_delimiters_02_scan",
+        shader: "tokens_delimiters_02_scan"
+    )
+}
+
+pub(super) fn make_token_delimiters_03_owner_local_pass(device: &wgpu::Device) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_delimiters_03_owner_local",
+        shader: "tokens_delimiters_03_owner_local"
+    )
+}
+
+pub(super) fn make_tokens_brace_context_pass(device: &wgpu::Device) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_brace_context",
+        shader: "tokens_brace_context"
+    )
+}
+
+pub(super) fn make_tree_active_dispatch_args_pass(device: &wgpu::Device) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tree_active_dispatch_args",
+        shader: "tree_active_dispatch_args"
+    )
+}
+
+pub(super) fn make_active_pair_dispatch_args_pass(device: &wgpu::Device) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_active_pair_dispatch_args",
+        shader: "active_pair_dispatch_args"
     )
 }
 

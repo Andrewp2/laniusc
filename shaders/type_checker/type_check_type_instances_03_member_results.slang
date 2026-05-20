@@ -6,6 +6,7 @@
 // It does not read source bytes, token spellings, or token kinds.
 
 import generated_parse_production_ids;
+import tree_walk;
 
 struct Params
 {
@@ -19,16 +20,20 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> parent;
+StructuredBuffer<uint> subtree_end;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_member_name_token;
-StructuredBuffer<uint> hir_item_name_token;
+StructuredBuffer<uint> hir_struct_decl_field_start;
+StructuredBuffer<uint> hir_struct_decl_field_count;
 StructuredBuffer<uint> hir_struct_field_parent_struct;
+StructuredBuffer<uint> hir_struct_field_ordinal;
 StructuredBuffer<uint> hir_struct_field_type_node;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> type_instance_decl_token;
+StructuredBuffer<uint> type_decl_hir_node_by_token;
 
 RWStructuredBuffer<uint> member_result_ref_tag;
 RWStructuredBuffer<uint> member_result_ref_payload;
@@ -69,18 +74,30 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
-uint member_node_for_token(uint member_token)
+uint parent_node(uint node)
 {
-    uint n = active_hir_node_count();
-    [loop]
-    for (uint node = 0u; node < n; node += 1u)
+    return parent[node];
+}
+
+public struct MemberResultWalkGraph : ITreeWalkGraph
+{
+    public static bool valid(uint node)
     {
-        if (hir_kind[node] != 21u)
-            continue;
-        if (hir_member_name_token[node] == member_token)
-            return node;
+        return valid_node(node);
     }
-    return INVALID;
+
+    public static uint parent(uint node)
+    {
+        return parent_node(node);
+    }
+}
+
+public struct MemberResultStructPredicate : ITreeWalkPredicate
+{
+    public static bool matches(uint node)
+    {
+        return hir_kind[node] == HIR_STRUCT_ITEM;
+    }
 }
 
 uint scalar_struct_decl_token(uint payload)
@@ -115,15 +132,8 @@ uint struct_node_for_decl_token(uint decl_token)
 {
     if (!valid_token(decl_token))
         return INVALID;
-
-    uint n = active_hir_node_count();
-    [loop]
-    for (uint node = 0u; node < n; node += 1u)
-    {
-        if (hir_kind[node] == HIR_STRUCT_ITEM && same_name_id(hir_item_name_token[node], decl_token))
-            return node;
-    }
-    return INVALID;
+    uint node = type_decl_hir_node_by_token[decl_token];
+    return valid_node(node) && hir_kind[node] == HIR_STRUCT_ITEM ? node : INVALID;
 }
 
 uint field_node_for_member(uint struct_node, uint member_token)
@@ -131,12 +141,19 @@ uint field_node_for_member(uint struct_node, uint member_token)
     if (!valid_node(struct_node) || !valid_token(member_token))
         return INVALID;
 
-    uint n = active_hir_node_count();
+    uint start = hir_struct_decl_field_start[struct_node];
+    uint count = hir_struct_decl_field_count[struct_node];
+    if (!valid_node(start) || count == 0u)
+        return INVALID;
+
+    uint seen = 0u;
+    uint end = min(subtree_end[struct_node], active_hir_node_count());
     [loop]
-    for (uint node = 0u; node < n; node += 1u)
+    for (uint node = start; node < end && seen < count; node += 1u)
     {
         if (hir_struct_field_parent_struct[node] != struct_node)
             continue;
+        seen += 1u;
         uint field_token = hir_token_pos[node];
         if (same_name_id(field_token, member_token))
             return node;
@@ -148,37 +165,18 @@ uint ordinal_for_field_node(uint struct_node, uint field_node)
 {
     if (!valid_node(struct_node) || !valid_node(field_node))
         return INVALID;
-
-    uint ordinal = 0u;
-    uint n = active_hir_node_count();
-    [loop]
-    for (uint node = 0u; node < n; node += 1u)
-    {
-        if (hir_struct_field_parent_struct[node] != struct_node)
-            continue;
-        if (node == field_node)
-            return ordinal;
-        ordinal += 1u;
-    }
-    return INVALID;
+    return hir_struct_field_parent_struct[field_node] == struct_node
+               ? hir_struct_field_ordinal[field_node]
+               : INVALID;
 }
 
 uint generic_decl_ancestor(uint node)
 {
-    uint cur = node;
-    [loop]
-    for (uint guard = 0u; guard < 128u; guard += 1u)
-    {
-        if (!valid_node(cur))
-            return INVALID;
-        if (cur != node && hir_kind[cur] == HIR_STRUCT_ITEM)
-            return cur;
-        uint p = parent[cur];
-        if (!valid_node(p) || p == cur)
-            return INVALID;
-        cur = p;
-    }
-    return INVALID;
+    uint ancestor;
+    return find_ancestor<MemberResultWalkGraph, MemberResultStructPredicate>(
+        node,
+        128u,
+        ancestor) ? ancestor : INVALID;
 }
 
 uint generic_param_slot_for_name(uint decl_node, uint param_token)
@@ -191,9 +189,9 @@ uint generic_param_slot_for_name(uint decl_node, uint param_token)
         return INVALID;
 
     uint slot = 0u;
-    uint n = active_hir_node_count();
+    uint n = min(subtree_end[decl_node], active_hir_node_count());
     [loop]
-    for (uint node = 0u; node < n; node += 1u)
+    for (uint node = decl_node + 1u; node < n; node += 1u)
     {
         if (node_kind[node] != PROD_ENUM_TYPE_PARAM || generic_decl_ancestor(node) != decl_node)
             continue;
@@ -206,10 +204,13 @@ uint generic_param_slot_for_name(uint decl_node, uint param_token)
     return INVALID;
 }
 
-void publish_member_field_ref(uint member_token)
+void publish_member_field_ref_for_node(uint member_node)
 {
-    uint member_node = member_node_for_token(member_token);
-    if (!valid_node(member_node))
+    if (!valid_node(member_node) || hir_kind[member_node] != 21u)
+        return;
+
+    uint member_token = hir_member_name_token[member_node];
+    if (!valid_token(member_token))
         return;
 
     uint receiver_tag = member_result_ref_tag[member_token];
@@ -244,10 +245,8 @@ void publish_member_field_ref(uint member_token)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint token = linear_thread_id(dtid);
-    if (!valid_token(token))
+    uint node = linear_thread_id(dtid);
+    if (!valid_node(node))
         return;
-    if (member_result_ref_tag[token] == TYPE_REF_INVALID)
-        return;
-    publish_member_field_ref(token);
+    publish_member_field_ref_for_node(node);
 }

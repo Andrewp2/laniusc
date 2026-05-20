@@ -1,3 +1,5 @@
+import prefix_scan;
+
 struct Params
 {
     uint n_tokens;
@@ -16,8 +18,6 @@ RWStructuredBuffer<uint> block_sum;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
-groupshared uint s_event_index[256];
-
 uint linear_group_id(uint3 gid)
 {
     return gid.x + gid.y * MAX_GROUPS_X;
@@ -34,22 +34,10 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     uint lane = ltid.x;
     uint i = block_idx * WG_SIZE + lane;
     uint value = i < gParams.n_tokens ? fn_event_index[i] : 0u;
-
-    s_event_index[lane] = value;
-    GroupMemoryBarrierWithGroupSync();
-
-    for (uint offs = 1u; offs < WG_SIZE; offs <<= 1u)
-    {
-        uint next = s_event_index[lane];
-        if (lane >= offs)
-            next = max(next, s_event_index[lane - offs]);
-        GroupMemoryBarrierWithGroupSync();
-        s_event_index[lane] = next;
-        GroupMemoryBarrierWithGroupSync();
-    }
+    uint inclusive = prefix_scan_u32_max_256(lane, value);
 
     if (i < gParams.n_tokens)
-        fn_event_inblock[i] = s_event_index[lane];
+        fn_event_inblock[i] = inclusive;
     if (lane + 1u == WG_SIZE)
-        block_sum[block_idx] = s_event_index[lane];
+        block_sum[block_idx] = inclusive;
 }

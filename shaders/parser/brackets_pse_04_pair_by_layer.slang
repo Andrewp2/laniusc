@@ -2,6 +2,8 @@
 // PSE pairing via rank-by-layer (equivalent to predecessor-on-depth for well-formed streams).
 // Inputs assume you've already run passes 01..03 to compute global depth and `layer[i]`.
 
+import atomics;
+
 struct Params
 {
     uint n_sc;
@@ -58,6 +60,6 @@ void main(uint3 tid: SV_DispatchThreadID)
         uint push_sym = sc_stream[i_push] >> 1u;
         uint pop_sym = sc_stream[i_pop] >> 1u;
         if (push_sym != pop_sym)
-            InterlockedAnd(out_valid[0], 0u);
+            atomic_u32_and(out_valid, 0u, 0u);
     }
 }

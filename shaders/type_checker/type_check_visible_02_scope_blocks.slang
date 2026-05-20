@@ -1,3 +1,5 @@
+import atomics;
+
 struct Params
 {
     uint n_tokens;
@@ -12,6 +14,7 @@ StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_token_end;
 StructuredBuffer<uint> hir_status;
+StructuredBuffer<uint> enclosing_fn_end;
 
 RWStructuredBuffer<uint> scope_end;
 
@@ -48,10 +51,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (start == INVALID || start >= end)
         return;
 
+    // visible_clear initializes every token to its enclosing function end. A
+    // top-level function body block has the same end, so rewriting its whole
+    // token range only creates a long serial range update for no new fact.
+    uint fn_end = start < active_token_count() ? enclosing_fn_end[start] : 0u;
+    if (fn_end == end)
+        return;
+
     [loop]
     for (uint i = start; i < end; i += 1u)
     {
-        uint old_value = 0u;
-        InterlockedMin(scope_end[i], end, old_value);
+        atomic_u32_min(scope_end, i, end);
     }
 }

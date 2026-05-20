@@ -57,12 +57,19 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirStmtFieldsPas
             ("parent".into(), b.parent.as_entire_binding()),
             ("first_child".into(), b.first_child.as_entire_binding()),
             ("next_sibling".into(), b.next_sibling.as_entire_binding()),
-            ("subtree_end".into(), b.subtree_end.as_entire_binding()),
             ("hir_kind".into(), b.hir_kind.as_entire_binding()),
             ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
             (
-                "hir_expr_value_token".into(),
-                b.hir_expr_value_token.as_entire_binding(),
+                "hir_expr_record".into(),
+                b.hir_expr_record.as_entire_binding(),
+            ),
+            (
+                "hir_semantic_dense_node".into(),
+                b.hir_semantic_dense_node.as_entire_binding(),
+            ),
+            (
+                "hir_semantic_count".into(),
+                b.hir_semantic_count.as_entire_binding(),
             ),
             (
                 "hir_stmt_record".into(),

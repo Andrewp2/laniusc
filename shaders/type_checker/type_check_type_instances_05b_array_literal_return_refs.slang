@@ -1,13 +1,14 @@
 // HIR array-literal return projection.
 //
-// This pass consumes return-statement records, expression/tree records, visible
-// scalar types, function return type refs, and bounded array type-instance
-// records. It publishes the array-return sentinel for `return [..];` when the
-// literal's top-level element expressions match the enclosing function's
-// bounded array element ref and literal length. It does not inspect token
-// kinds, token spelling, source bytes, helper names, or punctuation.
+// This pass consumes return-statement records, expression records, parser-owned
+// array literal links, visible scalar types, function return type refs, and
+// bounded array type-instance records. It publishes the array-return sentinel
+// for `return [..];` when the literal's linked element expressions match the
+// enclosing function's bounded array element ref and literal length. It does not
+// inspect token kinds, token spelling, source bytes, helper names, or
+// punctuation.
 
-import generated_parse_production_ids;
+import tree_walk;
 
 struct Params
 {
@@ -19,11 +20,14 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> parent;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_stmt_record;
+StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint> hir_array_lit_first_element;
+StructuredBuffer<uint> hir_array_lit_element_count;
+StructuredBuffer<uint> hir_array_element_next;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> fn_return_ref_tag;
@@ -41,13 +45,46 @@ static const uint ARRAY_RETURN_OK = 0xfffffffeu;
 
 static const uint HIR_FN = 3u;
 static const uint HIR_RETURN_STMT = 9u;
-static const uint HIR_EXPR = 14u;
 static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_ARRAY_EXPR = 24u;
 
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_RETURN = 2u;
+
+static const uint EXPR_RECORD_STRIDE = 4u;
+static const uint EXPR_RECORD_FORM = 0u;
+static const uint EXPR_RECORD_LEFT = 1u;
+static const uint EXPR_RECORD_RIGHT = 2u;
+static const uint EXPR_RECORD_VALUE_TOKEN = 3u;
+
+static const uint HIR_EXPR_NONE = 0u;
+static const uint HIR_EXPR_FORWARD = 1u;
+static const uint HIR_EXPR_NAME = 2u;
+static const uint HIR_EXPR_INT = 3u;
+static const uint HIR_EXPR_TRUE = 4u;
+static const uint HIR_EXPR_FALSE = 5u;
+static const uint HIR_EXPR_NOT = 6u;
+static const uint HIR_EXPR_EQ = 7u;
+static const uint HIR_EXPR_NE = 8u;
+static const uint HIR_EXPR_LT = 9u;
+static const uint HIR_EXPR_GT = 10u;
+static const uint HIR_EXPR_LE = 11u;
+static const uint HIR_EXPR_GE = 12u;
+static const uint HIR_EXPR_NEG = 13u;
+static const uint HIR_EXPR_ADD = 14u;
+static const uint HIR_EXPR_SUB = 15u;
+static const uint HIR_EXPR_MUL = 16u;
+static const uint HIR_EXPR_AND = 17u;
+static const uint HIR_EXPR_OR = 18u;
+static const uint HIR_EXPR_MOD = 19u;
+static const uint HIR_EXPR_DIV = 20u;
+static const uint HIR_EXPR_BIT_OR = 21u;
+static const uint HIR_EXPR_BIT_XOR = 22u;
+static const uint HIR_EXPR_BIT_AND = 23u;
+static const uint HIR_EXPR_SHL = 24u;
+static const uint HIR_EXPR_SHR = 25u;
+static const uint HIR_EXPR_INDEX = 26u;
 
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_INSTANCE = 3u;
@@ -81,66 +118,56 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
+uint array_literal_parent_record(uint node)
+{
+    return parent[node];
+}
+
+public struct ArrayLiteralReturnWalkGraph : ITreeWalkGraph
+{
+    public static bool valid(uint node)
+    {
+        return valid_node(node);
+    }
+
+    public static uint parent(uint node)
+    {
+        return array_literal_parent_record(node);
+    }
+}
+
+public struct ArrayLiteralReturnFnPredicate : ITreeWalkPredicate
+{
+    public static bool matches(uint node)
+    {
+        return hir_kind[node] == HIR_FN;
+    }
+}
+
 uint stmt_slot(uint node, uint slot)
 {
     return node * STMT_RECORD_STRIDE + slot;
 }
 
-bool has_ancestor_node(uint node, uint ancestor)
+uint expr_slot(uint node, uint slot)
 {
-    uint cur = node;
-    [loop]
-    for (uint guard = 0u; guard < 128u; guard += 1u)
-    {
-        if (!valid_node(cur))
-            return false;
-        if (cur == ancestor)
-            return true;
-        uint p = parent[cur];
-        if (!valid_node(p) || p == cur)
-            return false;
-        cur = p;
-    }
-    return false;
+    return node * EXPR_RECORD_STRIDE + slot;
 }
 
-bool has_intermediate_hir_kind(uint node, uint stop_ancestor, uint kind)
+uint expr_record(uint node, uint slot)
 {
-    uint cur = valid_node(node) ? parent[node] : INVALID;
-    [loop]
-    for (uint guard = 0u; guard < 128u; guard += 1u)
-    {
-        if (!valid_node(cur))
-            return false;
-        if (cur == stop_ancestor)
-            return false;
-        if (hir_kind[cur] == kind)
-            return true;
-        uint p = parent[cur];
-        if (!valid_node(p) || p == cur)
-            return false;
-        cur = p;
-    }
-    return false;
+    return valid_node(node) ? hir_expr_record[expr_slot(node, slot)] : INVALID;
 }
 
 uint owning_function_node(uint node)
 {
-    uint cur = node;
-    [loop]
-    for (uint guard = 0u; guard < 128u; guard += 1u)
-    {
-        if (!valid_node(cur))
-            return INVALID;
-        if (hir_kind[cur] == HIR_FN)
-            return cur;
-
-        uint p = parent[cur];
-        if (!valid_node(p) || p == cur)
-            return INVALID;
-        cur = p;
-    }
-    return INVALID;
+    uint found;
+    return find_self_or_ancestor<
+        ArrayLiteralReturnWalkGraph,
+        ArrayLiteralReturnFnPredicate>(
+        node,
+        128u,
+        found) ? found : INVALID;
 }
 
 uint bounded_array_instance_from_ref(uint tag, uint payload)
@@ -176,6 +203,8 @@ bool same_type_ref(uint lhs_tag, uint lhs_payload, uint rhs_tag, uint rhs_payloa
 
 bool publish_scalar_ref(uint ty, out uint tag, out uint payload)
 {
+    tag = 0u;
+    payload = INVALID;
     if (ty == TY_UNKNOWN || ty == INVALID || ty == ARRAY_RETURN_OK)
         return false;
     tag = TYPE_REF_SCALAR;
@@ -202,57 +231,33 @@ uint visible_scalar_type_for_name_token(uint token)
     return TY_UNKNOWN;
 }
 
-uint first_descendant_with_hir_kind(uint root, uint kind)
+uint resolve_expr_node(uint node)
 {
-    uint n = active_hir_node_count();
     [loop]
-    for (uint node = 0u; node < n; node += 1u)
+    for (uint guard = 0u; guard < 128u && valid_node(node); guard += 1u)
     {
-        if (hir_kind[node] == kind && has_ancestor_node(node, root))
+        if (hir_kind[node] == HIR_ARRAY_EXPR)
             return node;
-    }
-    return INVALID;
-}
-
-uint first_descendant_with_production(uint root, uint prod)
-{
-    uint n = active_hir_node_count();
-    [loop]
-    for (uint node = 0u; node < n; node += 1u)
-    {
-        if (node_kind[node] == prod && has_ancestor_node(node, root))
+        if (expr_record(node, EXPR_RECORD_FORM) != HIR_EXPR_FORWARD)
             return node;
+        uint child = expr_record(node, EXPR_RECORD_LEFT);
+        if (!valid_node(child))
+            return node;
+        node = child;
     }
-    return INVALID;
+    return node;
 }
 
 uint array_literal_for_return_expr(uint return_expr)
 {
-    uint n = active_hir_node_count();
-    [loop]
-    for (uint node = 0u; node < n; node += 1u)
-    {
-        if (hir_kind[node] != HIR_ARRAY_EXPR || !has_ancestor_node(node, return_expr))
-            continue;
-        if (!has_intermediate_hir_kind(node, return_expr, HIR_ARRAY_EXPR))
-            return node;
-    }
-    return INVALID;
-}
-
-bool top_level_array_element_expr(uint expr_node, uint array_node)
-{
-    if (hir_kind[expr_node] != HIR_EXPR || !has_ancestor_node(expr_node, array_node))
-        return false;
-    if (has_intermediate_hir_kind(expr_node, array_node, HIR_EXPR))
-        return false;
-    if (has_intermediate_hir_kind(expr_node, array_node, HIR_ARRAY_EXPR))
-        return false;
-    return true;
+    uint node = resolve_expr_node(return_expr);
+    return valid_node(node) && hir_kind[node] == HIR_ARRAY_EXPR ? node : INVALID;
 }
 
 bool index_expr_ref(uint index_node, out uint tag, out uint payload)
 {
+    tag = 0u;
+    payload = INVALID;
     uint index_token = hir_token_pos[index_node];
     if (!valid_token(index_token))
         return false;
@@ -261,37 +266,57 @@ bool index_expr_ref(uint index_node, out uint tag, out uint payload)
     return publish_scalar_ref(ty, tag, payload);
 }
 
-bool literal_or_name_expr_ref(uint expr_node, out uint tag, out uint payload)
-{
-    uint int_node = first_descendant_with_production(expr_node, PROD_INT);
-    if (valid_node(int_node))
-        return publish_scalar_ref(TY_INT, tag, payload);
-
-    uint true_node = first_descendant_with_production(expr_node, PROD_TRUE);
-    uint false_node = first_descendant_with_production(expr_node, PROD_FALSE);
-    if (valid_node(true_node) || valid_node(false_node))
-        return publish_scalar_ref(TY_BOOL, tag, payload);
-
-    uint name_node = first_descendant_with_hir_kind(expr_node, HIR_NAME_EXPR);
-    if (valid_node(name_node))
-    {
-        uint name_token = hir_token_pos[name_node];
-        return publish_scalar_ref(visible_scalar_type_for_name_token(name_token), tag, payload);
-    }
-
-    return false;
-}
-
-bool expr_type_ref(uint expr_node, out uint tag, out uint payload)
+bool scalar_expr_ref(uint expr_node, out uint tag, out uint payload)
 {
     tag = 0u;
     payload = INVALID;
+    uint node = resolve_expr_node(expr_node);
+    if (!valid_node(node))
+        return false;
 
-    uint index_node = first_descendant_with_hir_kind(expr_node, HIR_INDEX_EXPR);
-    if (valid_node(index_node))
-        return index_expr_ref(index_node, tag, payload);
+    uint form = expr_record(node, EXPR_RECORD_FORM);
+    if (form == HIR_EXPR_INT)
+        return publish_scalar_ref(TY_INT, tag, payload);
 
-    return literal_or_name_expr_ref(expr_node, tag, payload);
+    if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
+        return publish_scalar_ref(TY_BOOL, tag, payload);
+
+    if (form == HIR_EXPR_NAME)
+    {
+        uint name_token = expr_record(node, EXPR_RECORD_VALUE_TOKEN);
+        if (!valid_token(name_token))
+            name_token = hir_token_pos[node];
+        return publish_scalar_ref(visible_scalar_type_for_name_token(name_token), tag, payload);
+    }
+
+    if (form == HIR_EXPR_INDEX || hir_kind[node] == HIR_INDEX_EXPR)
+        return index_expr_ref(node, tag, payload);
+
+    if (form == HIR_EXPR_NOT ||
+        form == HIR_EXPR_EQ ||
+        form == HIR_EXPR_NE ||
+        form == HIR_EXPR_LT ||
+        form == HIR_EXPR_GT ||
+        form == HIR_EXPR_LE ||
+        form == HIR_EXPR_GE ||
+        form == HIR_EXPR_AND ||
+        form == HIR_EXPR_OR)
+        return publish_scalar_ref(TY_BOOL, tag, payload);
+
+    if (form == HIR_EXPR_NEG ||
+        form == HIR_EXPR_ADD ||
+        form == HIR_EXPR_SUB ||
+        form == HIR_EXPR_MUL ||
+        form == HIR_EXPR_MOD ||
+        form == HIR_EXPR_DIV ||
+        form == HIR_EXPR_BIT_OR ||
+        form == HIR_EXPR_BIT_XOR ||
+        form == HIR_EXPR_BIT_AND ||
+        form == HIR_EXPR_SHL ||
+        form == HIR_EXPR_SHR)
+        return publish_scalar_ref(TY_INT, tag, payload);
+
+    return false;
 }
 
 bool array_literal_matches_return_instance(uint array_node, uint dst_instance)
@@ -302,26 +327,28 @@ bool array_literal_matches_return_instance(uint array_node, uint dst_instance)
     uint elem_tag = type_instance_elem_ref_tag[dst_instance];
     uint elem_payload = type_instance_elem_ref_payload[dst_instance];
     uint expected_len = type_instance_len_payload[dst_instance];
-    uint count = 0u;
+    uint count = hir_array_lit_element_count[array_node];
+    if (count != expected_len)
+        return false;
 
-    uint n = active_hir_node_count();
+    uint element = hir_array_lit_first_element[array_node];
     [loop]
-    for (uint node = 0u; node < n; node += 1u)
+    for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
     {
-        if (!top_level_array_element_expr(node, array_node))
-            continue;
+        if (!valid_node(element))
+            return false;
 
         uint actual_tag = 0u;
         uint actual_payload = INVALID;
-        if (!expr_type_ref(node, actual_tag, actual_payload))
+        if (!scalar_expr_ref(element, actual_tag, actual_payload))
             return false;
         if (!same_type_ref(elem_tag, elem_payload, actual_tag, actual_payload))
             return false;
 
-        count += 1u;
+        element = hir_array_element_next[element];
     }
 
-    return count == expected_len;
+    return true;
 }
 
 void publish_array_literal_return(uint return_node)

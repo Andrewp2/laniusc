@@ -37,9 +37,14 @@ uint linear_thread_id(uint3 dtid)
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
 }
 
+uint visible_capacity()
+{
+    return gParams.reserved == 0u ? gParams.capacity : gParams.reserved;
+}
+
 uint active_count()
 {
-    return min(import_visible_count_out[0], gParams.capacity);
+    return min(import_visible_count_out[0], visible_capacity());
 }
 
 [shader("compute")]
@@ -47,19 +52,17 @@ uint active_count()
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
-    if (i >= gParams.capacity)
-        return;
-
-    import_visible_key_module_id[i] = INVALID;
-    import_visible_key_name_id[i] = INVALID;
-    import_visible_key_to_decl_id[i] = INVALID;
-
     if (i >= active_count())
         return;
 
     uint visible_i = import_visible_key_order[i];
-    if (visible_i >= gParams.capacity)
+    if (visible_i >= visible_capacity())
+    {
+        import_visible_key_module_id[i] = INVALID;
+        import_visible_key_name_id[i] = INVALID;
+        import_visible_key_to_decl_id[i] = INVALID;
         return;
+    }
 
     import_visible_key_module_id[i] = import_visible_module_id[visible_i];
     import_visible_key_name_id[i] = import_visible_name_id[visible_i];

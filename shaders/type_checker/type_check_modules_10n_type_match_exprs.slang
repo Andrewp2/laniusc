@@ -8,6 +8,8 @@
 // - Arm-local names are consumed from the visible_decl/visible_type bindings
 //   produced by type_check_modules_10m_bind_match_patterns.slang.
 
+import status;
+
 struct Params
 {
     uint n_tokens;
@@ -30,11 +32,15 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_token_end;
+StructuredBuffer<uint> hir_match_arm_start;
+StructuredBuffer<uint> hir_match_arm_count;
+StructuredBuffer<uint> hir_match_arm_next;
+StructuredBuffer<uint> hir_match_arm_result_node;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
-StructuredBuffer<uint> name_id_by_token;
+StructuredBuffer<uint> type_generic_param_slot_by_token;
 
 RWStructuredBuffer<uint> call_return_type;
 RWStructuredBuffer<uint> status;
@@ -42,8 +48,6 @@ RWStructuredBuffer<uint> status;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint MAX_TYPE_SCAN = 64u;
-
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint ERR_BAD_HIR = 6u;
 
@@ -74,25 +78,14 @@ static const uint TK_LBRACE = 22u;
 static const uint TK_RBRACE = 23u;
 static const uint TK_CALL_LPAREN = 28u;
 static const uint TK_GROUP_LPAREN = 29u;
-static const uint TK_INDEX_LBRACKET = 30u;
-static const uint TK_ARRAY_LBRACKET = 31u;
 static const uint TK_STRING = 32u;
 static const uint TK_FLOAT = 33u;
 static const uint TK_CHAR = 34u;
-static const uint TK_COMMA = 36u;
 static const uint TK_COLON = 38u;
-static const uint TK_NOT_EQUAL = 40u;
-static const uint TK_GROUP_RPAREN = 62u;
-static const uint TK_CALL_RPAREN = 63u;
-static const uint TK_ARRAY_RBRACKET = 64u;
-static const uint TK_INDEX_RBRACKET = 65u;
-static const uint TK_FN = 67u;
-static const uint TK_ARROW = 75u;
 static const uint TK_PARAM_IDENT = 79u;
 static const uint TK_TYPE_IDENT = 80u;
 static const uint TK_TRUE = 90u;
 static const uint TK_FALSE = 91u;
-static const uint TK_ENUM = 93u;
 static const uint TK_MATCH = 95u;
 static const uint TK_PREFIX_PLUS = 58u;
 static const uint TK_PREFIX_MINUS = 60u;
@@ -118,16 +111,14 @@ uint token_kind(uint i)
     return i < n ? token_words[i].kind : 0u;
 }
 
+bool valid_node(uint node)
+{
+    return node != INVALID && node < active_hir_node_count();
+}
+
 void record_error(uint token_i, uint code, uint detail)
 {
-    uint old;
-    InterlockedMin(status[1], token_i, old);
-    if (token_i <= old)
-    {
-        status[0] = 0u;
-        status[2] = code;
-        status[3] = detail;
-    }
+    record_min_token_error(status, token_i, code, detail);
 }
 
 bool is_name_kind(uint kind)
@@ -140,219 +131,14 @@ bool is_group_open_kind(uint kind)
     return kind == TK_LPAREN || kind == TK_GROUP_LPAREN || kind == TK_CALL_LPAREN;
 }
 
-bool is_group_close_kind(uint kind)
-{
-    return kind == TK_RPAREN || kind == TK_GROUP_RPAREN || kind == TK_CALL_RPAREN;
-}
-
-bool is_bracket_open_kind(uint kind)
-{
-    return kind == TK_LBRACKET || kind == TK_ARRAY_LBRACKET || kind == TK_INDEX_LBRACKET;
-}
-
-bool is_bracket_close_kind(uint kind)
-{
-    return kind == TK_RBRACKET || kind == TK_ARRAY_RBRACKET || kind == TK_INDEX_RBRACKET;
-}
-
-bool same_name(uint a, uint b)
-{
-    uint n = active_token_count();
-    if (a >= n || b >= n)
-        return false;
-    uint left = name_id_by_token[a];
-    uint right = name_id_by_token[b];
-    return left != INVALID && left == right;
-}
-
-uint find_group_close(uint open_i, uint limit_i)
-{
-    uint n = min(active_token_count(), limit_i);
-    uint depth = 0u;
-    [loop]
-    for (uint j = open_i; j < n; j += 1u)
-    {
-        uint kind = token_kind(j);
-        if (is_group_open_kind(kind))
-            depth += 1u;
-        else if (is_group_close_kind(kind))
-        {
-            if (depth == 0u)
-                return INVALID;
-            depth -= 1u;
-            if (depth == 0u)
-                return j;
-        }
-    }
-    return INVALID;
-}
-
-uint find_match_brace_close(uint open_i, uint limit_i)
-{
-    uint n = min(active_token_count(), limit_i);
-    uint depth = 0u;
-    [loop]
-    for (uint j = open_i; j < n; j += 1u)
-    {
-        uint kind = token_kind(j);
-        if (kind == TK_LBRACE)
-            depth += 1u;
-        else if (kind == TK_RBRACE)
-        {
-            if (depth == 0u)
-                return INVALID;
-            depth -= 1u;
-            if (depth == 0u)
-                return j;
-        }
-    }
-    return INVALID;
-}
-
-uint find_arm_arrow(uint pattern_i, uint limit_i)
-{
-    uint group_depth = 0u;
-    uint bracket_depth = 0u;
-    uint n = min(active_token_count(), limit_i);
-    [loop]
-    for (uint j = pattern_i; j < n; j += 1u)
-    {
-        uint kind = token_kind(j);
-        if (is_group_open_kind(kind))
-            group_depth += 1u;
-        else if (is_group_close_kind(kind) && group_depth > 0u)
-            group_depth -= 1u;
-        else if (is_bracket_open_kind(kind))
-            bracket_depth += 1u;
-        else if (is_bracket_close_kind(kind) && bracket_depth > 0u)
-            bracket_depth -= 1u;
-        else if (group_depth == 0u && bracket_depth == 0u && kind == TK_ARROW)
-            return j;
-        else if (group_depth == 0u && bracket_depth == 0u &&
-                 (kind == TK_COMMA || kind == TK_RBRACE))
-            return INVALID;
-    }
-    return INVALID;
-}
-
-uint arm_result_end(uint result_i, uint limit_i)
-{
-    uint group_depth = 0u;
-    uint bracket_depth = 0u;
-    uint brace_depth = 0u;
-    uint n = min(active_token_count(), limit_i);
-    [loop]
-    for (uint j = result_i; j < n; j += 1u)
-    {
-        uint kind = token_kind(j);
-        if (is_group_open_kind(kind))
-            group_depth += 1u;
-        else if (is_group_close_kind(kind) && group_depth > 0u)
-            group_depth -= 1u;
-        else if (is_bracket_open_kind(kind))
-            bracket_depth += 1u;
-        else if (is_bracket_close_kind(kind) && bracket_depth > 0u)
-            bracket_depth -= 1u;
-        else if (kind == TK_LBRACE)
-            brace_depth += 1u;
-        else if (kind == TK_RBRACE)
-        {
-            if (brace_depth == 0u && group_depth == 0u && bracket_depth == 0u)
-                return j;
-            if (brace_depth > 0u)
-                brace_depth -= 1u;
-        }
-        else if (kind == TK_COMMA && group_depth == 0u && bracket_depth == 0u &&
-                 brace_depth == 0u)
-            return j;
-    }
-    return n;
-}
-
-uint generic_param_list_open(uint item_i)
-{
-    uint n = active_token_count();
-    uint limit = min(n, item_i + MAX_TYPE_SCAN);
-    [loop]
-    for (uint j = item_i + 1u; j < limit; j += 1u)
-    {
-        uint kind = token_kind(j);
-        if (kind == TK_LT)
-            return j;
-        if (kind == TK_LBRACE || kind == TK_LPAREN)
-            return INVALID;
-    }
-    return INVALID;
-}
-
-uint generic_param_list_close(uint open_i)
-{
-    if (open_i == INVALID)
-        return INVALID;
-
-    uint n = active_token_count();
-    uint limit = min(n, open_i + MAX_TYPE_SCAN);
-    uint depth = 0u;
-    [loop]
-    for (uint j = open_i; j < limit; j += 1u)
-    {
-        uint kind = token_kind(j);
-        if (kind == TK_LT)
-            depth += 1u;
-        else if (kind == TK_GT)
-        {
-            if (depth == 0u)
-                return INVALID;
-            depth -= 1u;
-            if (depth == 0u)
-                return j;
-        }
-        else if (kind == TK_LBRACE)
-            return INVALID;
-    }
-    return INVALID;
-}
-
-bool is_type_generic_param_token(uint param_i, uint open_i, uint close_i)
-{
-    return param_i > open_i && param_i < close_i && is_name_kind(token_kind(param_i));
-}
-
-uint generic_param_decl_for_use(uint name_i)
-{
-    uint j = name_i;
-    [loop]
-    for (uint guard = 0u; guard < 256u && j > 0u; guard += 1u)
-    {
-        j -= 1u;
-        uint kind = token_kind(j);
-        if (kind != TK_FN && kind != TK_ENUM)
-            continue;
-
-        uint open_i = generic_param_list_open(j);
-        if (open_i == INVALID)
-            continue;
-        uint close_i = generic_param_list_close(open_i);
-        if (close_i == INVALID)
-            continue;
-        [loop]
-        for (uint p = open_i + 1u; p < close_i; p += 1u)
-        {
-            if (is_type_generic_param_token(p, open_i, close_i) && same_name(p, name_i))
-                return p;
-        }
-    }
-    return INVALID;
-}
-
 uint type_ref_to_type_code(uint tag, uint payload)
 {
     if (tag == TYPE_REF_SCALAR)
         return payload;
     if (tag == TYPE_REF_GENERIC_PARAM)
     {
-        uint decl_i = generic_param_decl_for_use(payload);
-        return decl_i == INVALID ? TY_UNKNOWN : TY_GENERIC_BASE + decl_i;
+        uint slot = payload < active_token_count() ? type_generic_param_slot_by_token[payload] : INVALID;
+        return slot == INVALID ? TY_UNKNOWN : TY_GENERIC_BASE + slot;
     }
     return TY_UNKNOWN;
 }
@@ -434,50 +220,43 @@ bool same_result_type(uint left, uint right)
     return left == right;
 }
 
-void type_match(uint match_i, uint end_i)
+void type_match(uint match_node, uint match_i)
 {
-    if (match_i + 1u >= active_token_count() || !is_group_open_kind(token_kind(match_i + 1u)))
-    {
-        record_error(match_i, ERR_BAD_HIR, TK_MATCH);
-        return;
-    }
-
-    uint group_close = find_group_close(match_i + 1u, end_i);
-    if (group_close == INVALID || group_close + 1u >= end_i ||
-        token_kind(group_close + 1u) != TK_LBRACE)
-    {
-        record_error(match_i, ERR_BAD_HIR, TK_MATCH);
-        return;
-    }
-
-    uint brace_open = group_close + 1u;
-    uint brace_close = find_match_brace_close(brace_open, end_i);
-    if (brace_close == INVALID)
+    uint arm_i = hir_match_arm_start[match_node];
+    uint arm_count = hir_match_arm_count[match_node];
+    if (arm_count == 0u || !valid_node(arm_i))
     {
         record_error(match_i, ERR_BAD_HIR, TK_MATCH);
         return;
     }
 
     uint result_ty = TY_UNKNOWN;
-    uint arm_i = brace_open + 1u;
     bool saw_arm = false;
     [loop]
-    for (uint guard = 0u; guard < 64u && arm_i < brace_close; guard += 1u)
+    for (uint ordinal = 0u; ordinal < arm_count; ordinal += 1u)
     {
-        if (token_kind(arm_i) == TK_COMMA)
+        if (!valid_node(arm_i))
         {
-            arm_i += 1u;
-            continue;
-        }
-
-        uint arrow_i = find_arm_arrow(arm_i, brace_close);
-        if (arrow_i == INVALID)
-        {
-            record_error(match_i, ERR_BAD_HIR, TK_ARROW);
+            record_error(match_i, ERR_BAD_HIR, TK_MATCH);
             return;
         }
-        uint result_start = arrow_i + 1u;
-        uint result_end = arm_result_end(result_start, brace_close);
+
+        uint result_node = hir_match_arm_result_node[arm_i];
+        if (!valid_node(result_node))
+        {
+            record_error(match_i, ERR_BAD_HIR, TK_MATCH);
+            return;
+        }
+
+        uint result_start = hir_token_pos[result_node];
+        uint result_end = hir_token_end[result_node];
+        if (result_start == INVALID || result_end == INVALID || result_start >= result_end ||
+            result_end > active_token_count())
+        {
+            record_error(match_i, ERR_BAD_HIR, TK_MATCH);
+            return;
+        }
+
         uint arm_ty = expr_type(result_start, result_end);
         if (arm_ty == TY_UNKNOWN)
         {
@@ -496,9 +275,7 @@ void type_match(uint match_i, uint end_i)
             return;
         }
 
-        arm_i = result_end;
-        if (arm_i < brace_close && token_kind(arm_i) == TK_COMMA)
-            arm_i += 1u;
+        arm_i = hir_match_arm_next[arm_i];
     }
 
     if (!saw_arm || result_ty == TY_UNKNOWN)
@@ -527,5 +304,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
         record_error(active_token_count(), ERR_BAD_HIR, match_i);
         return;
     }
-    type_match(match_i, end_i);
+    type_match(i, match_i);
 }

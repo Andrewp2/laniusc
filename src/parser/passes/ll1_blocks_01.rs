@@ -24,4 +24,5 @@ pub struct LL1BlocksParams {
     pub max_steps: u32,
     pub fill_production: u32,
     pub emit_scan_step: u32,
+    pub emit_capacity: u32,
 }

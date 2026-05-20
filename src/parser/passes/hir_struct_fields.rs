@@ -46,19 +46,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirStructFieldsP
                 b.hir_struct_fields_params.as_entire_binding(),
             ),
             (
-                "ll1_status".into(),
-                if b.tree_count_uses_status && !b.tree_stream_uses_ll1 {
-                    b.projected_status.as_entire_binding()
-                } else {
-                    b.ll1_status.as_entire_binding()
-                },
-            ),
-            ("node_kind".into(), b.node_kind.as_entire_binding()),
-            ("parent".into(), b.parent.as_entire_binding()),
-            ("subtree_end".into(), b.subtree_end.as_entire_binding()),
-            ("hir_kind".into(), b.hir_kind.as_entire_binding()),
-            ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
-            (
                 "hir_struct_field_parent_struct".into(),
                 b.hir_struct_field_parent_struct.as_entire_binding(),
             ),

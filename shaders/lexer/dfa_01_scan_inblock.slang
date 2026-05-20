@@ -8,6 +8,7 @@
 #define N_STATES 80
 #define CHUNK_COUNT 3
 
+import byte_packing;
 import utils;
 
 struct Params
@@ -32,7 +33,7 @@ groupshared uint chunk_summaries[CHUNK_COUNT * N_STATES];
 uint load_next_state(uint byte_value, uint state)
 {
     uint packed = next_u8[(state >> 2u) * 256u + byte_value];
-    return (packed >> ((state & 3u) * 8u)) & 0xFFu;
+    return packed_u8_at(packed, state & 3u);
 }
 
 bool is_file_start(uint i_abs)

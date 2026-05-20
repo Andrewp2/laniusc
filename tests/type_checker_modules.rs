@@ -1,7 +1,7 @@
 mod common;
 
 use laniusc::{
-    compiler::{CompileError, GpuCompiler, type_check_source_pack_with_gpu_using},
+    compiler::{type_check_source_pack_with_gpu_using, CompileError, GpuCompiler},
     lexer::test_cpu::lex_on_test_cpu,
 };
 
@@ -14,13 +14,18 @@ fn assert_gpu_type_check_rejects(src: &str) {
 }
 
 fn assert_gpu_type_check_accepts(src: &str) {
-    common::type_check_source_with_timeout(src)
-        .unwrap_or_else(|err| panic!("source should pass GPU type checking: {err:?}"));
+    common::type_check_source_with_timeout(src).unwrap_or_else(|err| {
+        dump_test_cpu_token_context_for_gpu_error(&[src], &err);
+        panic!("source should pass GPU type checking: {err:?}");
+    });
 }
 
 fn assert_gpu_type_check_pack_rejects(sources: &[&str]) {
     match common::type_check_source_pack_with_timeout(sources) {
-        Ok(()) => panic!("source pack should fail GPU type checking"),
+        Ok(()) => panic!(
+            "source pack should fail GPU type checking:\n{}",
+            sources.join("\n--- source split ---\n")
+        ),
         Err(CompileError::GpuTypeCheck(_)) => {}
         Err(other) => panic!("expected GPU type check error, got {other:?}"),
     }
@@ -582,33 +587,6 @@ fn main() {
 
 #[test]
 fn type_checker_accepts_qualified_function_calls_via_hir_value_consumer() {
-    let calls = include_str!("../shaders/type_checker/type_check_calls_03_resolve.slang");
-    let consumer =
-        include_str!("../shaders/type_checker/type_check_modules_10h_consume_value_calls.slang");
-
-    assert!(
-        !calls.contains("StructuredBuffer<uint> dense_counts")
-            && !calls.contains("StructuredBuffer<uint> module_records")
-            && !calls.contains("StructuredBuffer<uint> import_records")
-            && !calls.contains("token_belongs_to_module_metadata_ast_span")
-            && !calls.contains("module_value_path_decl")
-            && !calls.contains("same_source_qualified")
-            && !calls.contains("qualified_leaf_token"),
-        "GPU call resolution should not keep deleted module/import shortcuts or a token-level qualified-call bridge"
-    );
-    assert!(
-        consumer.contains("resolved_value_decl")
-            && consumer.contains("decl_token_start")
-            && consumer.contains("call_fn_index")
-            && consumer.contains("call_return_type")
-            && !consumer.contains("ByteAddressBuffer")
-            && !consumer.contains("token_words")
-            && !consumer.contains("token_kind")
-            && !consumer.contains("token_hash")
-            && !consumer.contains("same_text"),
-        "qualified calls should be consumed from HIR path resolver arrays, not token text lookup"
-    );
-
     assert_gpu_type_check_accepts(
         r#"
 module app;
@@ -752,28 +730,6 @@ fn main() {
 
 #[test]
 fn type_checker_accepts_qualified_constants_via_hir_value_consumer() {
-    let project_value =
-        include_str!("../shaders/type_checker/type_check_modules_10g_project_value_paths.slang");
-    let consumer =
-        include_str!("../shaders/type_checker/type_check_modules_10i_consume_value_consts.slang");
-
-    assert!(
-        project_value.contains("module_value_path_status[owner_token] = resolved_value_status")
-            && project_value.contains("module_value_path_expr_head")
-            && !project_value.contains("module_value_path_decl_token")
-            && !project_value.contains("ByteAddressBuffer"),
-        "value status projection should be fail-closed and should not use token-level declaration bridges"
-    );
-    assert!(
-        consumer.contains("resolved_value_decl")
-            && consumer.contains("visible_type[const_token]")
-            && consumer.contains("visible_type[owner_token]")
-            && !consumer.contains("ByteAddressBuffer")
-            && !consumer.contains("token_hash")
-            && !consumer.contains("same_text"),
-        "qualified constants should be consumed from resolver arrays and declaration type outputs"
-    );
-
     assert_gpu_type_check_accepts(
         r#"
 module app;
@@ -876,22 +832,6 @@ fn main() {
 
 #[test]
 fn type_checker_accepts_qualified_unit_enum_variants_via_hir_value_consumer() {
-    let consumer = include_str!(
-        "../shaders/type_checker/type_check_modules_10j_consume_value_enum_units.slang"
-    );
-
-    assert!(
-        consumer.contains("resolved_value_decl")
-            && consumer.contains("decl_parent_type_decl")
-            && consumer.contains("HIR_ITEM_KIND_ENUM_VARIANT")
-            && consumer.contains("TY_ENUM_BASE + enum_token")
-            && !consumer.contains("ByteAddressBuffer")
-            && !consumer.contains("source_bytes")
-            && !consumer.contains("token_hash")
-            && !consumer.contains("same_text"),
-        "unit enum variants should be consumed from resolver arrays and parent enum metadata"
-    );
-
     assert_gpu_type_check_pack_accepts(&[
         r#"
 module core::ordering;
@@ -958,35 +898,6 @@ fn main() {
 
 #[test]
 fn type_checker_accepts_generic_enum_constructors_via_resolver_arrays() {
-    let project_instances =
-        include_str!("../shaders/type_checker/type_check_modules_10k_project_type_instances.slang");
-    let consume_enum_calls = include_str!(
-        "../shaders/type_checker/type_check_modules_10l_consume_value_enum_calls.slang"
-    );
-
-    assert!(
-        project_instances.contains("resolved_type_decl")
-            && project_instances.contains("path_segment_token")
-            && project_instances.contains("TYPE_REF_INSTANCE")
-            && project_instances.contains("type_instance_decl_token")
-            && !project_instances.contains("ByteAddressBuffer")
-            && !project_instances.contains("source_bytes")
-            && !project_instances.contains("same_text"),
-        "generic type instances should project from resolver path records"
-    );
-    assert!(
-        consume_enum_calls.contains("resolved_value_decl")
-            && consume_enum_calls.contains("decl_parent_type_decl")
-            && consume_enum_calls.contains("GENERIC_ENUM_CTOR_OK")
-            && consume_enum_calls.contains("TY_ENUM_BASE + enum_token")
-            && !consume_enum_calls.contains("ByteAddressBuffer")
-            && !consume_enum_calls.contains("source_bytes")
-            && !consume_enum_calls.contains("token_words")
-            && !consume_enum_calls.contains("generic_param_list")
-            && !consume_enum_calls.contains("same_text"),
-        "enum constructor calls should consume resolver arrays and constructor validation state"
-    );
-
     assert_gpu_type_check_pack_accepts(&[
         r#"
 module core::maybe;

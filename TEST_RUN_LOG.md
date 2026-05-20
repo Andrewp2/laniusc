@@ -2,7 +2,7 @@
 
 Started: 2026-05-12T17:54:50-05:00
 
-Each test run from this point forward will be appended here before execution with an ISO timestamp and the exact command.
+Retired: this file is historical only. New test runs should not be appended here.
 
 - 2026-05-12T17:56:58-05:00 — `SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_GPU_TEST_TIMEOUT_MS=15000 timeout 60s cargo test --test type_checker_modules type_checker_rejects_private_cross_module_method_call -- --nocapture`
 - 2026-05-12T17:58:19-05:00 — `SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_GPU_TEST_TIMEOUT_MS=15000 timeout 60s cargo test --test parser_tree debug_parser_hir_method_call_shape -- --ignored --nocapture`
@@ -1480,3 +1480,1080 @@ timeout 15s env SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test 
 2026-05-15T19:24:10-05:00	SLANGC=/home/andrew-peterson/tools/slang-2026.2-linux-x86_64/bin/slangc cargo test --test codegen_x86_properties generated_x86_programs_are_name_and_shape_independent -- --exact --nocapture
 2026-05-15T19:31:18-05:00	SLANGC=/home/andrew-peterson/tools/slang-2026.2-linux-x86_64/bin/slangc cargo test --test codegen_x86_properties generated_x86_programs_are_name_and_shape_independent -- --exact --nocapture
 2026-05-15T19:34:49-05:00	SLANGC=/home/andrew-peterson/tools/slang-2026.2-linux-x86_64/bin/slangc cargo test --test codegen_x86_properties generated_x86_prints_nested_call_results_from_hir_arguments -- --exact --nocapture
+2026-05-15T19:48:54-05:00	SLANGC=/home/andrew-peterson/tools/slang-2026.2-linux-x86_64/bin/slangc cargo test --test codegen_x86_properties generated_x86_programs_are_name_and_shape_independent -- --exact --nocapture
+2026-05-15T19:49:09-05:00	SLANGC=/home/andrew-peterson/tools/slang-2026.2-linux-x86_64/bin/slangc cargo test --test codegen_x86_properties generated_x86_programs_are_name_and_shape_independent -- --exact --nocapture
+2026-05-15T19:49:29-05:00	SLANGC=/home/andrew-peterson/tools/slang-2026.2-linux-x86_64/bin/slangc cargo test --test codegen_x86_properties generated_x86_prints_nested_call_results_from_hir_arguments -- --exact --nocapture
+2026-05-15T19:51:40-05:00	SLANGC=/home/andrew-peterson/tools/slang-2026.2-linux-x86_64/bin/slangc cargo test --test codegen_x86_properties generated_x86_programs_are_name_and_shape_independent -- --exact --nocapture
+2026-05-15T19:54:41-05:00	SLANGC=/home/andrew-peterson/tools/slang-2026.2-linux-x86_64/bin/slangc cargo test --test codegen_x86_properties generated_x86_top_level_scripts_print_from_synthetic_entry -- --exact --nocapture
+2026-05-15T19:54:51-05:00	SLANGC=/home/andrew-peterson/tools/slang-2026.2-linux-x86_64/bin/slangc cargo test --test codegen_x86_properties -- --nocapture
+2026-05-15T20:09:19-05:00 SLANGC=/home/andrew-peterson/tools/slang-2026.2-linux-x86_64/bin/slangc cargo test --test codegen_x86_properties generated_x86_recursive_calls_compose_with_enclosing_expressions -- --nocapture
+2026-05-15T20:09:31-05:00 SLANGC=/home/andrew-peterson/tools/slang-2026.2-linux-x86_64/bin/slangc cargo test --test codegen_x86_properties -- --nocapture
+2026-05-15T20:09:59-05:00 SLANGC=/home/andrew-peterson/tools/slang-2026.2-linux-x86_64/bin/slangc cargo test --test codegen_x86 -- --nocapture
+2026-05-15T20:15:55-05:00 cargo test --test type_checker_modules type_checker_accepts_core_range_source_pack_seed -- --nocapture
+2026-05-15T20:16:03-05:00 cargo test --test type_checker_modules type_checker_accepts_core_range_method_source_pack_seed -- --nocapture
+2026-05-15T21:17:20-05:00 timeout 30s env LANIUS_X86_TRACE=1 target/debug/laniusc --emit x86_64 -o /tmp/laniusc-array_return_helpers sample_programs/array_return_helpers.lani
+2026-05-15T21:18:17-05:00 timeout 30s env LANIUS_X86_TRACE=1 LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 -o /tmp/laniusc-array_return_helpers sample_programs/array_return_helpers.lani
+2026-05-15T21:19:59-05:00 timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 -o /tmp/laniusc-array_return_helpers sample_programs/array_return_helpers.lani
+2026-05-15T21:22:18-05:00 timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 -o /tmp/laniusc-array_return_helpers sample_programs/array_return_helpers.lani
+2026-05-15T21:23:07-05:00 timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 -o /tmp/laniusc-array_return_helpers sample_programs/array_return_helpers.lani
+2026-05-15T21:24:14-05:00 env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo test --test parser_tree debug_parser_hir_positions_for_generic_return -- --ignored --nocapture
+2026-05-15T21:26:24-05:00 timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 -o /tmp/laniusc-array_return_helpers sample_programs/array_return_helpers.lani
+2026-05-15T21:26:41-05:00 timeout 30s /tmp/laniusc-array_return_helpers
+2026-05-15T21:28:45-05:00 timeout 30s target/debug/laniusc --emit x86_64 -o /tmp/laniusc-array_return_helpers sample_programs/array_return_helpers.lani
+2026-05-15T21:29:01-05:00 timeout 30s /tmp/laniusc-array_return_helpers
+2026-05-15T21:30:12-05:00 timeout 30s target/debug/laniusc --emit x86_64 -o /tmp/laniusc-array_return_helpers sample_programs/array_return_helpers.lani
+2026-05-15T21:30:27-05:00 timeout 30s /tmp/laniusc-array_return_helpers
+2026-05-15T21:34:09-05:00 timeout 30s target/debug/laniusc --emit x86_64 -o /tmp/laniusc-array_return_helpers sample_programs/array_return_helpers.lani
+2026-05-15T21:34:30-05:00 timeout 30s /tmp/laniusc-array_return_helpers
+2026-05-15T21:35:53-05:00 env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo test --test codegen_x86_properties generated_x86_array_return_abi_is_name_independent -- --exact --nocapture
+2026-05-15T21:38:45-05:00 for src in sample_programs/*.lani; do timeout 30s target/debug/laniusc --emit x86_64 -o /tmp/laniusc-sample-"$(basename "${src%.lani}")" "$src" && timeout 30s /tmp/laniusc-sample-"$(basename "${src%.lani}")" > /tmp/laniusc-sample-"$(basename "${src%.lani}")".out && diff -u "${src%.lani}.stdout" /tmp/laniusc-sample-"$(basename "${src%.lani}")".out; done
+2026-05-15T21:43:38-05:00 env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo test --test codegen_x86_properties generated_x86_precedence_expressions_print_expected_values -- --exact --nocapture
+2026-05-15T21:44:04-05:00 env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc
+2026-05-15T21:44:22-05:00 timeout 30s target/debug/laniusc --emit x86_64 -o /tmp/laniusc-sample-arithmetic_precedence sample_programs/arithmetic_precedence.lani
+2026-05-15T21:44:35-05:00 timeout 30s /tmp/laniusc-sample-arithmetic_precedence
+2026-05-15T21:44:56-05:00 for src in sample_programs/*.lani; do name="$(basename "${src%.lani}")"; exe="/tmp/laniusc-sample-$name"; out="/tmp/laniusc-sample-$name.out"; echo "== $name =="; timeout 30s target/debug/laniusc --emit x86_64 -o "$exe" "$src" || exit 1; timeout 30s "$exe" > "$out" || exit 1; diff -u "${src%.lani}.stdout" "$out" || exit 1; done
+2026-05-15T21:46:18-05:00 timeout 30s target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers sample_programs/option_result_helpers.lani
+2026-05-15T21:48:15-05:00 timeout 30s target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>
+2026-05-15T21:48:36-05:00 timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>
+2026-05-15T21:49:51-05:00 env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc
+2026-05-15T21:50:09-05:00 timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>
+2026-05-15T22:12:14-05:00 env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc
+2026-05-15T22:12:47-05:00 timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>
+2026-05-15T22:13:53-05:00 env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc
+2026-05-15T22:14:11-05:00 timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>
+2026-05-15T22:15:46-05:00 tmp=$(mktemp); cat stdlib/core/option.lani stdlib/core/result.lani > "$tmp"; printf 'module app::main;\\n' >> "$tmp"; cat sample_programs/option_result_helpers.lani >> "$tmp"; LANIUS_PARSE_DEMO_FULL=1 cargo run --bin parse_demo -- "$tmp" | rg 'node\\[(1368|1369|1370|1371|1372|1373|1374|1375|1376|1377|1378)\\]'; rm -f "$tmp"
+2026-05-15T22:16:52-05:00 env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc
+2026-05-15T22:17:13-05:00 timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>
+2026-05-15T22:19:06-05:00 tmp=$(mktemp); cat stdlib/core/option.lani stdlib/core/result.lani > "$tmp"; printf 'module app::main;\n' >> "$tmp"; cat sample_programs/option_result_helpers.lani >> "$tmp"; LANIUS_PARSE_DEMO_FULL=1 cargo run --bin parse_demo -- "$tmp" | rg 'node\[(5[8-9]|6[0-9]|7[0-5])\]'; rm -f "$tmp"
+2026-05-15T22:24:05-05:00 tmp=$(mktemp); cat stdlib/core/option.lani stdlib/core/result.lani > "$tmp"; printf 'module app::main;\n' >> "$tmp"; cat sample_programs/option_result_helpers.lani >> "$tmp"; LANIUS_PARSE_DEMO_FULL=1 cargo run --bin parse_demo -- "$tmp" | rg 'node\[(7[5-9]|8[0-9]|9[0-9]|1[0-2][0-9])\]'; rm -f "$tmp"
+2026-05-15T22:24:31-05:00 tmp=$(mktemp); cat stdlib/core/option.lani stdlib/core/result.lani > "$tmp"; printf 'module app::main;\n' >> "$tmp"; cat sample_programs/option_result_helpers.lani >> "$tmp"; LANIUS_PARSE_DEMO_FULL=1 cargo run --quiet --bin parse_demo -- "$tmp" | rg 'node\[(13[0-9]|14[0-9]|15[0-9]|16[0-9]|17[0-9]|18[0-9]|190)\]'; rm -f "$tmp"
+2026-05-15T22:33:29-05:00 env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc
+2026-05-15T22:34:05-05:00 timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>
+2026-05-15T22:35:23-05:00 env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc
+2026-05-15T22:35:40-05:00 timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>
+2026-05-15T22:36:40-05:00 env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc
+2026-05-15T22:36:58-05:00 timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>
+2026-05-15T22:37:42-05:00 env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc
+2026-05-15T22:37:59-05:00 timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>
+- 2026-05-15T22:40:53-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T22:41:08-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T22:42:54-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T22:43:10-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T22:45:35-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T22:45:53-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T22:47:22-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T22:47:43-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T22:51:34-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T22:51:55-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T22:53:33-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T22:53:49-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T22:54:38-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T22:54:55-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T22:56:00-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T22:56:20-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T22:57:05-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T22:57:21-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T22:58:33-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T22:58:55-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T23:00:02-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T23:00:24-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T23:01:14-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T23:01:33-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T23:03:10-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T23:03:27-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T23:04:10-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T23:04:32-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T23:05:49-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T23:06:15-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T23:07:15-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T23:07:39-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T23:08:21-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T23:08:44-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T23:09:20-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T23:09:44-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T23:12:21-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T23:12:38-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T23:13:46-05:00 `env LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo /dev/fd/<process-substitution joining option/result/app sources> | awk <node 610-639 filter>`
+- 2026-05-15T23:14:28-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T23:14:44-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T23:15:03-05:00 `env LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo /dev/fd/<process-substitution joining option/result/app sources> | awk <node 480-509 filter>`
+- 2026-05-15T23:18:28-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T23:18:46-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T23:21:04-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T23:21:26-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T23:21:57-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T23:22:14-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T23:22:57-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T23:23:17-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T23:24:44-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T23:25:04-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T23:25:45-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T23:26:06-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T23:26:41-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T23:27:00-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T23:28:15-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T23:28:32-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T23:30:30-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T23:30:52-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/option.lani --stdlib stdlib/core/result.lani -o /tmp/laniusc-sample-option_result_helpers /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T23:31:25-05:00 `cargo fmt --check`
+- 2026-05-15T23:31:46-05:00 `cargo fmt`
+- 2026-05-15T23:31:59-05:00 `cargo fmt --check`
+- 2026-05-15T23:32:13-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo test --test codegen_x86`
+- 2026-05-15T23:33:02-05:00 `git diff --check`
+- 2026-05-15T23:34:09-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo test --test codegen_x86_properties`
+- 2026-05-15T23:34:48-05:00 `timeout 30s target/debug/laniusc --emit x86_64 -o /tmp/laniusc-array-return sample_programs/array_return_helpers.lani && chmod 700 /tmp/laniusc-array-return && timeout 5s /tmp/laniusc-array-return; printf <status>`
+- 2026-05-15T23:37:23-05:00 `timeout 30s target/debug/laniusc --emit x86_64 -o /tmp/laniusc-array-return sample_programs/array_return_helpers.lani && chmod 700 /tmp/laniusc-array-return && timeout 5s /tmp/laniusc-array-return; printf <status>`
+- 2026-05-15T23:40:20-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T23:40:43-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T23:40:58-05:00 `timeout 30s target/debug/laniusc --emit x86_64 -o /tmp/laniusc-array-return sample_programs/array_return_helpers.lani && chmod 700 /tmp/laniusc-array-return && timeout 5s /tmp/laniusc-array-return; printf <status>`
+- 2026-05-15T23:41:15-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo test --test codegen_x86_properties`
+- 2026-05-15T23:42:32-05:00 `bash sample_program x86_64 sweep with 30s compile timeout and 5s runtime timeout`
+- 2026-05-15T23:44:58-05:00 `bash focused x86_64 sample reruns for option_result_helpers, range_sum, slice_helpers, and struct_fields`
+- 2026-05-15T23:45:33-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-sum /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T23:50:50-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T23:51:08-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-sum /dev/fd/<process-substitution adding module app::main header>`
+- 2026-05-15T23:52:46-05:00 `env LD_LIBRARY_PATH=/opt/slang-2025.19.1/lib SLANGC=/opt/slang-2025.19.1/bin/slangc cargo build -p laniusc --bin laniusc`
+- 2026-05-15T23:53:06-05:00 `timeout 30s env LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-sum /dev/fd/<process-substitution adding module app::main header>`
+2026-05-15T23:57:00-05:00 diagnostic: LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo /tmp/laniusc-range-debug.lani | rg "node\[(104[0-9]|105[0-9]|106[0-9]|107[0-9]|108[0-9]|109[0-9]|110[0-9]|111[0-9]|112[0-9]|202[0-9]|203[0-9])\]"
+2026-05-15T23:57:06-05:00 diagnostic: LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo /tmp/laniusc-range-debug.lani | rg "node\[(203[8-9]|204[0-9]|205[0-9])\]"
+2026-05-16T00:00:33-05:00 cargo build
+2026-05-16T00:01:29-05:00 SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+2026-05-16T00:02:46-05:00 SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-sum sample_programs/range_sum.lani
+2026-05-16T00:03:11-05:00 diagnostic: LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo /tmp/laniusc-range-debug.lani | rg "pos=50[0-9]|pos=51[0-9]|pos=52[0-9]"
+2026-05-16T00:03:45-05:00 SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 -o /tmp/laniusc-range-sum-single /tmp/laniusc-range-debug.lani
+2026-05-16T00:04:16-05:00 SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test type_checker_modules type_checker_accepts_core_range_method_source_pack_seed -- --nocapture
+2026-05-16T00:04:34-05:00 SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-sum /tmp/laniusc-range-user.lani
+2026-05-16T00:04:47-05:00 diagnostic: LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo /tmp/laniusc-range-user-only-debug.lani | rg "node\[(179[0-9]|180[0-9]|181[0-9]|182[0-9])\]"
+2026-05-16T00:04:57-05:00 diagnostic: LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo /tmp/laniusc-range-debug.lani | rg "node\[(179[0-9]|180[0-9]|181[0-9]|182[0-9])\]"
+2026-05-16T00:06:21-05:00 SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-no-for /tmp/laniusc-range-no-for.lani
+2026-05-16T00:06:35-05:00 diagnostic: LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo /tmp/laniusc-range-no-for-combined.lani | rg "node\[(149[0-9]|150[0-9]|151[0-9]|152[0-9])\]"
+2026-05-16T00:17:48-05:00	SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+2026-05-16T00:18:06-05:00	SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 30s target/debug/laniusc --emit x86_64 -o /tmp/laniusc-struct-member-check /tmp/laniusc-struct-member-check.lani
+## 2026-05-16T00:31:00-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+## 2026-05-16T00:31:31-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 -o /tmp/laniusc-struct-member-check /tmp/laniusc-struct-member-check.lani
+
+## 2026-05-16T00:31:59-05:00
+diagnostic: LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo /tmp/laniusc-struct-member-check.lani | rg "node\\[(2[5-9]|3[0-9]|4[0-5])\\]|token\\[32\\]"
+
+## 2026-05-16T00:32:05-05:00
+diagnostic: LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo /tmp/laniusc-struct-member-check.lani | rg "node\\[(4[6-9]|[5-9][0-9]|1[0-3][0-9])\\]"
+
+## 2026-05-16T00:32:11-05:00
+diagnostic: LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo /tmp/laniusc-struct-member-check.lani | rg "node\\[(14[0-9]|15[0-9]|16[0-9]|17[0-9])\\]"
+
+## 2026-05-16T00:37:15-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+## 2026-05-16T00:37:33-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 -o /tmp/laniusc-struct-member-check /tmp/laniusc-struct-member-check.lani
+
+## 2026-05-16T00:38:40-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+## 2026-05-16T00:38:51-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 -o /tmp/laniusc-struct-member-check /tmp/laniusc-struct-member-check.lani
+
+## 2026-05-16T00:40:45-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+## 2026-05-16T00:40:54-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 -o /tmp/laniusc-struct-member-check /tmp/laniusc-struct-member-check.lani
+
+## 2026-05-16T00:43:12-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+## 2026-05-16T00:43:20-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 -o /tmp/laniusc-struct-member-check /tmp/laniusc-struct-member-check.lani
+
+## 2026-05-16T00:43:47-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-no-for /tmp/laniusc-range-no-for.lani
+
+## 2026-05-16T00:44:06-05:00
+diagnostic: LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo /tmp/laniusc-range-no-for-combined.lani | rg "node\\[(149[0-9]|150[0-9]|151[0-9]|152[0-9])\\]"
+
+## 2026-05-16T00:46:55-05:00
+diagnostic: LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo /tmp/laniusc-range-no-for-combined.lani | rg "node\\[(145[0-9]|146[0-9]|147[0-9]|148[0-9]|149[0-9]|150[0-9]|151[0-9]|152[0-9])\\]|token\\[(47[0-9]|48[0-9]|49[0-9])\\]"
+
+## 2026-05-16T00:47:41-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+## 2026-05-16T00:47:56-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-no-for /tmp/laniusc-range-no-for.lani
+
+## 2026-05-16T00:48:16-05:00
+diagnostic: LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo /tmp/laniusc-range-no-for-combined.lani | rg "node\\[(26[0-9]|27[0-9]|28[0-9]|29[0-9]|30[0-9]|31[0-9]|32[0-9])\\]|token\\[(8[0-9]|9[0-9]|10[0-9])\\]"
+
+## 2026-05-16T00:49:13-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+## 2026-05-16T00:49:29-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-no-for /tmp/laniusc-range-no-for.lani
+
+## 2026-05-16T00:50:15-05:00
+diagnostic: LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo /tmp/laniusc-range-no-for-combined.lani | rg "node\\[(22[0-9]|23[0-9]|24[0-9]|25[0-9])\\]|token\\[(9[0-9]|10[0-9]|11[0-9])\\]"
+
+## 2026-05-16T00:56:53-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+## 2026-05-16T00:57:10-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-no-for /tmp/laniusc-range-no-for.lani
+
+## 2026-05-16T00:57:56-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+## 2026-05-16T00:58:12-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-no-for /tmp/laniusc-range-no-for.lani
+
+## 2026-05-16T00:58:44-05:00
+diagnostic: LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo /tmp/laniusc-range-no-for-combined.lani | rg "node\\[(33[0-9]|34[0-9]|35[0-9]|36[0-9]|37[0-9])\\]"
+
+## 2026-05-16T01:00:26-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+## 2026-05-16T01:00:40-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-no-for /tmp/laniusc-range-no-for.lani
+
+## 2026-05-16T01:02:11-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+## 2026-05-16T01:02:26-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-no-for /tmp/laniusc-range-no-for.lani
+
+## 2026-05-16T01:02:45-05:00
+diagnostic: LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo /tmp/laniusc-range-no-for-combined.lani | rg "node\\[(158[0-9]|159[0-9]|160[0-9]|161[0-9]|162[0-9]|163[0-9])\\]"
+
+## 2026-05-16T01:04:12-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+## 2026-05-16T01:04:32-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-no-for /tmp/laniusc-range-no-for.lani
+
+## 2026-05-16T01:04:50-05:00
+diagnostic: LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo /tmp/laniusc-range-no-for-combined.lani | rg "node\\[(191[0-9]|192[0-9]|193[0-9]|194[0-9]|195[0-9]|196[0-9]|197[0-9])\\]"
+
+## 2026-05-16T01:06:18-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+## 2026-05-16T01:06:36-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-no-for /tmp/laniusc-range-no-for.lani
+
+## 2026-05-16T01:07:07-05:00
+diagnostic: LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo /tmp/laniusc-range-no-for-combined.lani | rg "node\\[(194[0-9]|195[0-9]|196[0-9]|197[0-9]|198[0-9])\\]"
+
+## 2026-05-16T01:09:26-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+## 2026-05-16T01:09:39-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-no-for /tmp/laniusc-range-no-for.lani
+
+## 2026-05-16T01:09:58-05:00
+diagnostic: LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo /tmp/laniusc-range-no-for-combined.lani | rg "node\\[(184[0-9]|185[0-9]|186[0-9]|187[0-9]|188[0-9])\\]"
+
+## 2026-05-16T01:11:59-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+## 2026-05-16T01:12:15-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-no-for /tmp/laniusc-range-no-for.lani
+
+## 2026-05-16T01:12:39-05:00
+diagnostic: LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo /tmp/laniusc-range-no-for-combined.lani | rg "node\\[(12[0-9]|13[0-9]|14[0-9]|15[0-9]|16[0-9])\\]"
+
+## 2026-05-16T01:13:43-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+## 2026-05-16T01:14:01-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-no-for /tmp/laniusc-range-no-for.lani
+
+## 2026-05-16T01:15:51-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+## 2026-05-16T01:16:06-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-no-for /tmp/laniusc-range-no-for.lani
+
+## 2026-05-16T01:16:25-05:00
+diagnostic: LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo /tmp/laniusc-range-no-for-combined.lani | rg "node\\[(62[0-9]|63[0-9]|64[0-9]|65[0-9]|66[0-9])\\]"
+
+## 2026-05-16T01:17:45-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+## 2026-05-16T01:18:02-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-no-for /tmp/laniusc-range-no-for.lani
+
+## 2026-05-16T01:18:38-05:00
+diagnostic: LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo /tmp/laniusc-range-no-for-combined.lani | rg "node\\[(16[0-9]|17[0-9]|18[0-9]|19[0-9]|20[0-9])\\]"
+
+## 2026-05-16T01:20:53-05:00
+diagnostic: LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo /tmp/laniusc-range-no-for-combined.lani | rg "node\\[(8[0-9]|9[0-9]|10[0-9]|11[0-9])\\]"
+
+## 2026-05-16T01:22:39-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+## 2026-05-16T01:22:53-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-no-for /tmp/laniusc-range-no-for.lani
+
+## 2026-05-16T01:23:13-05:00
+diagnostic: LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo /tmp/laniusc-range-no-for-combined.lani | rg "node\\[1861\\]"
+
+## 2026-05-16T01:23:25-05:00
+diagnostic: LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo /tmp/laniusc-range-no-for-combined.lani | rg "node\\[(185[0-9]|186[0-9]|187[0-9]|188[0-9]|189[0-6])\\]"
+
+## 2026-05-16T01:25:54-05:00
+diagnostic: LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo /tmp/laniusc-range-no-for-combined.lani | rg "token=\"range_i32\"|token=\"fn\"|node\\[(1[0-9][0-9])\\]"
+
+## 2026-05-16T01:27:29-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+## 2026-05-16T01:27:47-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-no-for /tmp/laniusc-range-no-for.lani
+
+## 2026-05-16T01:35:34-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+## 2026-05-16T01:36:02-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-no-for /tmp/laniusc-range-no-for.lani
+
+## 2026-05-16T01:36:42-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+## 2026-05-16T01:36:58-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-no-for /tmp/laniusc-range-no-for.lani
+
+## 2026-05-16T01:37:31-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-sum sample_programs/range_sum.lani
+
+## 2026-05-16T01:38:40-05:00
+diagnostic: LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo /tmp/laniusc-range-no-for-combined.lani | rg "pos=511|token=\"for\"|node\\[[0-9]+\\].*pos=5(0[0-9]|1[0-9]|2[0-9])"
+
+## 2026-05-16T01:39:00-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-user /tmp/laniusc-range-user.lani
+
+## 2026-05-16T01:40:55-05:00
+diagnostic retroactive: LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo /tmp/laniusc-range-debug.lani | rg "node\\[1805\\]|node\\[(179[0-9]|180[0-9]|181[0-9]|182[0-9]|183[0-9]|184[0-9])\\]"
+
+## 2026-05-16T01:44:40-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+## 2026-05-16T01:45:03-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 -o /tmp/laniusc-for-array sample_programs/for_array_control.lani
+
+## 2026-05-16T01:45:03-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-user /tmp/laniusc-range-user.lani
+
+## 2026-05-16T01:46:27-05:00
+cargo fmt --check
+
+## 2026-05-16T01:46:27-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test codegen_x86_properties generated_x86_array_for_loop_is_name_independent -- --nocapture
+
+## 2026-05-16T01:46:42-05:00
+cargo fmt
+
+## 2026-05-16T01:46:42-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test codegen_x86_properties generated_x86_array_for_loop_is_name_independent -- --nocapture
+
+## 2026-05-16T01:47:08-05:00
+cargo fmt --check
+
+## 2026-05-16T01:47:08-05:00
+git diff --check
+
+## 2026-05-16T01:54:20-05:00
+diagnostic: for src in sample_programs/*.lani without imports; compile with `SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 -o /tmp/laniusc-sample "$src"`, execute with `timeout 5s`, and compare stdout with the sibling `.stdout`
+
+## 2026-05-16T01:55:22-05:00
+diagnostic: LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo sample_programs/struct_fields.lani | rg "node\\[215\\]|node\\[(19[0-9]|20[0-9]|21[0-9]|22[0-9]|23[0-9])\\]"
+
+## 2026-05-16T01:55:53-05:00
+diagnostic retroactive: LANIUS_PARSE_DEMO_FULL=1 target/debug/parse_demo sample_programs/struct_fields.lani | rg "node\\[(24[0-9]|25[0-9]|26[0-9]|27[0-9])\\]"
+
+## 2026-05-16T01:57:20-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+## 2026-05-16T01:57:20-05:00
+SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 -o /tmp/laniusc-struct-fields sample_programs/struct_fields.lani && timeout 5s /tmp/laniusc-struct-fields > /tmp/laniusc-struct-fields.stdout && diff -u sample_programs/struct_fields.stdout /tmp/laniusc-struct-fields.stdout
+
+## 2026-05-16T01:58:06-05:00
+diagnostic: objdump -d /tmp/laniusc-struct-fields | sed -n '1,220p'
+
+## 2026-05-16T01:58:22-05:00
+diagnostic: readelf -S /tmp/laniusc-struct-fields && objdump -D -b binary -m i386:x86-64 --start-address=0x1000 --stop-address=0x1300 /tmp/laniusc-struct-fields
+
+## 2026-05-16T01:58:36-05:00
+diagnostic: wc -c /tmp/laniusc-struct-fields && xxd -g1 -l 512 /tmp/laniusc-struct-fields
+
+[2026-05-16T01:59:50-05:00] diagnostic: objdump -D -b binary -m i386:x86-64 --adjust-vma=0x400078 /tmp/laniusc-struct-fields | sed -n '1,220p'
+
+[2026-05-16T02:00:10-05:00] inspect: sed -n '1,260p' shaders/codegen/x86_node_inst_gen.slang
+
+[2026-05-16T02:00:10-05:00] inspect: rg -n "param_record_for_name|aggregate_source_for_decl|aggregate_source_for_expr|emit_member_field_value|X86_ARG_|LOAD_PARAM_SLOT|STORE_RET_PTR|CALL_MIXED" shaders/codegen src/codegen tests
+
+[2026-05-16T02:00:10-05:00] inspect: sed -n '260,620p' shaders/codegen/x86_node_inst_gen.slang
+
+[2026-05-16T02:00:22-05:00] inspect: sed -n '1010,1255p' shaders/codegen/x86_node_inst_gen.slang
+
+[2026-05-16T02:00:22-05:00] inspect: sed -n '1440,1565p' shaders/codegen/x86_node_inst_gen.slang
+
+[2026-05-16T02:00:22-05:00] inspect: sed -n '1880,1945p' shaders/codegen/x86_node_inst_gen.slang
+
+[2026-05-16T02:00:22-05:00] inspect: sed -n '2120,2188p' shaders/codegen/x86_node_inst_gen.slang
+
+[2026-05-16T02:00:38-05:00] inspect: sed -n '1,180p' shaders/codegen/x86_param_regs.slang
+
+[2026-05-16T02:00:38-05:00] inspect: sed -n '340,500p' shaders/codegen/x86_select.slang
+
+[2026-05-16T02:00:38-05:00] inspect: sed -n '1290,1320p' shaders/codegen/x86_encode.slang && sed -n '1850,1905p' shaders/codegen/x86_encode.slang
+
+[2026-05-16T02:00:38-05:00] inspect: sed -n '520,580p' shaders/codegen/x86_inst_size.slang
+
+[2026-05-16T02:00:51-05:00] inspect: sed -n '180,320p' shaders/codegen/x86_param_regs.slang
+
+[2026-05-16T02:00:52-05:00] inspect: sed -n '210,265p' shaders/codegen/x86_select.slang
+
+[2026-05-16T02:00:52-05:00] inspect: sed -n '1260,1350p' shaders/codegen/x86_encode.slang
+
+[2026-05-16T02:00:52-05:00] inspect: sed -n '1620,1665p' shaders/codegen/x86_encode.slang
+
+[2026-05-16T02:01:06-05:00] inspect: rg -n "load_ptr_slot_r32|ptr_slot_mem|X86_REG_RSI|r64" shaders/codegen/x86_encode.slang shaders/codegen/x86_inst_size.slang shaders/codegen/x86_select.slang
+
+[2026-05-16T02:01:06-05:00] inspect: sed -n '1120,1195p' shaders/codegen/x86_encode.slang
+
+[2026-05-16T02:01:06-05:00] inspect: sed -n '1188,1250p' shaders/codegen/x86_inst_size.slang
+
+[2026-05-16T02:01:14-05:00] inspect: sed -n '360,465p' shaders/codegen/x86_encode.slang
+
+[2026-05-16T02:01:14-05:00] inspect: sed -n '310,345p' shaders/codegen/x86_inst_size.slang
+
+[2026-05-16T02:01:14-05:00] inspect: sed -n '1360,1392p' shaders/codegen/x86_encode.slang
+
+[2026-05-16T02:01:24-05:00] inspect: sed -n '1,200p' sample_programs/struct_fields.lani
+
+[2026-05-16T02:01:24-05:00] inspect: sed -n '1,120p' sample_programs/struct_fields.stdout
+
+[2026-05-16T02:01:24-05:00] inspect: rg -n "struct_fields|member|aggregate|struct" tests shaders/codegen src/codegen | head -200
+
+[2026-05-16T02:01:44-05:00] inspect: rg -n "emit_aggregate_element_stores|emit_let|STMT_RECORD_KIND_LET|COPY_AGG_RET|STORE_LOCAL" shaders/codegen/x86_node_inst_gen.slang shaders/codegen/x86_node_inst_counts.slang
+
+[2026-05-16T02:01:44-05:00] inspect: sed -n '1565,1890p' shaders/codegen/x86_node_inst_gen.slang
+
+[2026-05-16T02:01:44-05:00] inspect: sed -n '1,240p' shaders/codegen/x86_node_inst_counts.slang
+
+[2026-05-16T02:01:54-05:00] inspect: sed -n '640,740p' shaders/codegen/x86_node_inst_counts.slang
+
+[2026-05-16T02:01:54-05:00] inspect: sed -n '740,930p' shaders/codegen/x86_node_inst_counts.slang
+
+[2026-05-16T02:01:54-05:00] inspect: sed -n '2420,2520p' shaders/codegen/x86_node_inst_gen.slang
+
+[2026-05-16T02:02:07-05:00] inspect: rg -n "decl_aggregate_width|decl_is_aggregate|aggregate_return_width|decl_array_len|type_width|visible_type|x86_param_reg_record" shaders/codegen/x86_node_inst_counts.slang
+
+[2026-05-16T02:02:07-05:00] inspect: sed -n '240,420p' shaders/codegen/x86_node_inst_counts.slang
+
+[2026-05-16T02:02:07-05:00] inspect: sed -n '420,640p' shaders/codegen/x86_node_inst_counts.slang
+
+[2026-05-16T02:02:31-05:00] inspect: sed -n '2520,2675p' shaders/codegen/x86_node_inst_gen.slang
+
+[2026-05-16T02:02:35-05:00] inspect: sed -n '2675,2735p' shaders/codegen/x86_node_inst_gen.slang
+
+[2026-05-16T02:03:22-05:00] SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+[2026-05-16T02:03:35-05:00] SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 -o /tmp/laniusc-struct-fields sample_programs/struct_fields.lani && timeout 5s /tmp/laniusc-struct-fields > /tmp/laniusc-struct-fields.stdout && diff -u sample_programs/struct_fields.stdout /tmp/laniusc-struct-fields.stdout
+
+[2026-05-16T02:04:02-05:00] diagnostic: objdump -D -b binary -m i386:x86-64 --adjust-vma=0x400078 /tmp/laniusc-struct-fields | sed -n '90,190p'
+
+[2026-05-16T02:04:07-05:00] diagnostic: objdump -D -b binary -m i386:x86-64 --adjust-vma=0x400078 /tmp/laniusc-struct-fields | sed -n '50,115p'
+
+[2026-05-16T02:04:22-05:00] inspect: sed -n '1,260p' shaders/codegen/x86_call_abi.slang
+
+[2026-05-16T02:04:22-05:00] inspect: rg -n "x86_call_abi|call_return_type_token|decl_type_ref|visible_type|x86_param_regs" src/codegen/x86/record.rs shaders/codegen/*.slang
+
+[2026-05-16T02:04:22-05:00] inspect: sed -n '1,240p' shaders/codegen/x86_call_arg_values.slang
+
+[2026-05-16T02:04:30-05:00] inspect: sed -n '260,340p' shaders/codegen/x86_call_abi.slang
+
+[2026-05-16T02:04:34-05:00] inspect: sed -n '1,220p' shaders/codegen/x86_call_records.slang
+
+[2026-05-16T02:04:45-05:00] inspect: rg -n "hir_node_decl_token|fn_name|function.*name|decl_token.*fn|call_fn_index" src shaders tests | head -240
+
+[2026-05-16T02:04:45-05:00] inspect: rg -n "hir_param_record|HIR_PARAM_RECORD" src shaders tests | head -220
+
+[2026-05-16T02:04:45-05:00] inspect: sed -n '1010,1075p' src/codegen/x86/record.rs
+
+[2026-05-16T02:04:52-05:00] inspect: sed -n '32,52p' src/codegen/x86.rs && sed -n '540,572p' src/codegen/x86/record.rs
+
+[2026-05-16T02:05:01-05:00] inspect: rg -n "call_return_type(_token)?\[" shaders/type_checker src/type_checker tests/gpu_audit/type_metadata.rs | head -200
+
+[2026-05-16T02:05:16-05:00] inspect: sed -n '100,150p' shaders/type_checker/type_check_calls_02_functions.slang
+
+[2026-05-16T02:05:17-05:00] inspect: rg -n "return_type_token_for_ref|return_type_for_function|declaration_token_for_function|name_token_for_function" shaders/type_checker/type_check_calls_02_functions.slang shaders/type_checker/*.slang
+
+[2026-05-16T02:05:17-05:00] inspect: sed -n '1,110p' shaders/type_checker/type_check_calls_02_functions.slang
+
+[2026-05-16T02:05:41-05:00] SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+[2026-05-16T02:05:51-05:00] SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 -o /tmp/laniusc-struct-fields sample_programs/struct_fields.lani && timeout 5s /tmp/laniusc-struct-fields > /tmp/laniusc-struct-fields.stdout && diff -u sample_programs/struct_fields.stdout /tmp/laniusc-struct-fields.stdout
+
+[2026-05-16T02:06:00-05:00] inspect: sed -n '980,1065p' src/codegen/x86/record.rs
+
+[2026-05-16T02:06:08-05:00] inspect: rg -n "call_return_type"" src/codegen/x86/record.rs
+
+[2026-05-16T02:06:14-05:00] inspect: sed -n '936,966p' src/codegen/x86/record.rs
+
+[2026-05-16T02:06:14-05:00] inspect: sed -n '1018,1045p' src/codegen/x86/record.rs
+
+[2026-05-16T02:06:26-05:00] SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+[2026-05-16T02:06:37-05:00] SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 -o /tmp/laniusc-struct-fields sample_programs/struct_fields.lani && timeout 5s /tmp/laniusc-struct-fields > /tmp/laniusc-struct-fields.stdout && diff -u sample_programs/struct_fields.stdout /tmp/laniusc-struct-fields.stdout
+
+[2026-05-16T02:06:47-05:00] diagnostic: objdump -D -b binary -m i386:x86-64 --adjust-vma=0x400078 /tmp/laniusc-struct-fields | sed -n '50,125p'
+
+[2026-05-16T02:07:04-05:00] diagnostic: cat /tmp/laniusc-struct-fields.stdout 2>/dev/null | xxd -g1
+
+[2026-05-16T02:07:04-05:00] diagnostic: timeout 5s /tmp/laniusc-struct-fields; printf '
+exit=
+' "$?"
+
+[2026-05-16T02:07:05-05:00] diagnostic: command -v strace || true
+
+[2026-05-16T02:07:13-05:00] diagnostic: timeout 5s strace -o /tmp/laniusc-struct-fields.strace -f /tmp/laniusc-struct-fields; tail -80 /tmp/laniusc-struct-fields.strace
+
+[2026-05-16T02:07:30-05:00] inspect: rg -n "local_slot_disp" shaders/codegen src/codegen tests
+
+[2026-05-16T02:07:30-05:00] inspect: sed -n '340,370p' shaders/codegen/x86_encode.slang && sed -n '300,335p' shaders/codegen/x86_inst_size.slang
+
+[2026-05-16T02:07:47-05:00] SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+[2026-05-16T02:08:05-05:00] SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 timeout 30s target/debug/laniusc --emit x86_64 -o /tmp/laniusc-struct-fields sample_programs/struct_fields.lani && timeout 5s /tmp/laniusc-struct-fields > /tmp/laniusc-struct-fields.stdout && diff -u sample_programs/struct_fields.stdout /tmp/laniusc-struct-fields.stdout
+
+[2026-05-16T02:08:17-05:00] inspect: sed -n '1,260p' tests/codegen_x86_properties.rs
+
+[2026-05-16T02:08:23-05:00] inspect: rg -n "fn random_distinct_idents|fn random_ident|fn i32_lit|sanitize" tests/codegen_x86_properties.rs
+
+[2026-05-16T02:08:27-05:00] inspect: sed -n '620,705p' tests/codegen_x86_properties.rs
+
+[2026-05-16T02:09:17-05:00] SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test codegen_x86_properties generated_x86_struct_copy_member_assignment_and_abi_are_name_independent -- --nocapture
+
+[2026-05-16T02:09:34-05:00] non-import sample harness: for src in sample_programs/*.lani without imports, compile with x86_64 backend, execute, and diff .stdout when present
+
+[2026-05-16T02:10:12-05:00] SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test codegen_x86_properties -- --nocapture
+
+[2026-05-16T02:10:36-05:00] cargo fmt --check
+
+[2026-05-16T02:10:36-05:00] SLANGC=/home/andrew-peterson/tools/bin/slangc cargo check -p laniusc
+
+[2026-05-16T02:10:37-05:00] git diff --check
+
+[2026-05-16T02:11:34-05:00] diagnostic: git status --short
+
+[2026-05-16T02:11:46-05:00] diagnostic: git diff -- shaders/codegen/x86_node_inst_counts.slang shaders/codegen/x86_node_inst_gen.slang shaders/codegen/x86_param_regs.slang shaders/codegen/x86_encode.slang shaders/codegen/x86_inst_size.slang src/codegen/x86/record.rs tests/codegen_x86_properties.rs | sed -n '260,520p'
+
+[2026-05-16T02:11:46-05:00] diagnostic: git diff -- shaders/codegen/x86_node_inst_counts.slang shaders/codegen/x86_node_inst_gen.slang shaders/codegen/x86_param_regs.slang shaders/codegen/x86_encode.slang shaders/codegen/x86_inst_size.slang src/codegen/x86/record.rs tests/codegen_x86_properties.rs | sed -n '1,260p'
+
+[2026-05-16T02:12:22-05:00] inspect: rg -n "^import|Range|module|\.stdout" sample_programs stdlib docs tests | head -260
+
+[2026-05-16T02:12:22-05:00] inspect: rg --files sample_programs stdlib docs | sort
+
+[2026-05-16T02:12:38-05:00] inspect: sed -n '1,200p' sample_programs/range_sum.lani && sed -n '1,220p' sample_programs/option_result_helpers.lani && sed -n '1,220p' sample_programs/slice_helpers.lani
+
+[2026-05-16T02:12:38-05:00] inspect: sed -n '1,260p' stdlib/core/range.lani && sed -n '1,220p' stdlib/core/option.lani && sed -n '1,220p' stdlib/core/result.lani && sed -n '1,220p' stdlib/core/slice.lani
+
+[2026-05-16T02:12:38-05:00] inspect: target/debug/laniusc --help | sed -n '1,220p'
+
+[2026-05-16T02:12:49-05:00] import sample harness: compile import samples with stdlib/core files, execute, and diff .stdout when present
+
+[2026-05-16T02:14:59-05:00] targeted import compile: slice_helpers with only stdlib/core/slice.lani
+
+[2026-05-16T02:15:14-05:00] inspect: rg -n "BadHir|token_text|token_text\(|lex_gpu|parse.*readback|compile_source_pack|Gpu.*Type" src tests | head -260
+
+[2026-05-16T02:15:14-05:00] inspect: sed -n '1,220p' tests/common/mod.rs
+
+[2026-05-16T02:15:14-05:00] inspect: rg -n "pub async fn.*parse|parse_source|parse.*gpu|lex.*gpu|readback" src/parser src/lexer src/compiler.rs tests/common tests | head -260
+
+[2026-05-16T02:15:19-05:00] inspect: cargo run --bin parse_demo -- --help | sed -n '1,120p'
+
+[2026-05-16T02:15:33-05:00] diagnostic: parse_demo combined slice stdlib/sample around token 190-220
+
+[2026-05-16T02:15:40-05:00] inspect: sed -n '1,240p' src/bin/parse_demo.rs
+
+[2026-05-16T02:15:46-05:00] diagnostic: LANIUS_PARSE_DEMO_FULL=1 parse_demo combined slice source for pos 204
+
+[2026-05-16T02:15:53-05:00] diagnostic: parse_demo combined slice source only pos 196-212
+
+[2026-05-16T02:16:18-05:00] targeted import compile: slice_helpers with in-memory module header and stdlib/core/slice.lani
+
+[2026-05-16T02:16:33-05:00] diagnostic: parse_demo module-headed slice source around node 332
+
+[2026-05-16T02:17:46-05:00] SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+[2026-05-16T02:17:55-05:00] SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test codegen_x86_properties generated_x86_slice_param_indexing_is_name_independent -- --nocapture
+
+[2026-05-16T02:18:18-05:00] LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test codegen_x86_properties generated_x86_slice_param_indexing_is_name_independent -- --nocapture
+
+[2026-05-16T02:18:34-05:00] inspect: sed -n '170,230p' shaders/type_checker/type_check_type_instances_01f_decl_refs.slang && rg -n "TYPE_REF_INSTANCE|decl_type_ref_tag|type_instance_kind" tests/type_checker_generics.rs tests/gpu_audit/type_metadata.rs | head -160
+
+[2026-05-16T02:18:40-05:00] inspect: rg -n "TYPE_INSTANCE_ARRAY|TYPE_LEN_LITERAL|len_kind|type_expr_ref_tag|array" shaders/type_checker/type_check_type_instances_*.slang tests/type_checker_generics.rs | head -260
+
+[2026-05-16T02:18:47-05:00] inspect: sed -n '60,95p' shaders/type_checker/type_check_type_instances_01c_collect_aggregate_refs.slang && sed -n '80,120p' shaders/type_checker/type_check_type_instances_01d_collect_aggregate_details.slang && sed -n '270,315p' shaders/type_checker/type_check_type_instances_07_array_index_results.slang
+
+[2026-05-16T02:18:53-05:00] inspect: rg -n "TYPE_INSTANCE_SLICE" shaders/type_checker shaders/codegen tests | head -80
+
+[2026-05-16T02:19:08-05:00] SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+
+[2026-05-16T02:19:16-05:00] SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test codegen_x86_properties generated_x86_slice_param_indexing_is_name_independent -- --nocapture
+
+[2026-05-16T02:19:27-05:00] targeted import compile+run: slice_helpers with in-memory module header and stdlib/core/slice.lani
+
+[2026-05-16T02:19:51-05:00] inspect: sed -n '2128,2190p' shaders/codegen/x86_node_inst_gen.slang && sed -n '1180,1285p' shaders/codegen/x86_encode.slang && sed -n '470,520p' shaders/codegen/x86_inst_size.slang
+
+[2026-05-16T02:19:51-05:00] inspect: rg -n "x86_call_arg_abi_record|call_arg_abi|CALL_DIRECT|arg_count|pack_vreg_rows|call_arg_node_for_call" shaders/codegen src/codegen/x86/record.rs | head -240
+
+[2026-05-16T02:19:52-05:00] inspect: sed -n '300,340p' shaders/codegen/x86_call_abi.slang && sed -n '1,140p' shaders/codegen/x86_call_arg_vregs.slang
+
+[2026-05-16T02:20:01-05:00] inspect: sed -n '320,365p' shaders/codegen/x86_select.slang && sed -n '1388,1415p' shaders/codegen/x86_encode.slang
+
+[2026-05-16T02:20:43-05:00] inspect: sed -n '940,970p' shaders/codegen/x86_node_inst_gen.slang && sed -n '1834,1855p' shaders/codegen/x86_node_inst_gen.slang && sed -n '52,115p' shaders/codegen/x86_virtual_use_edges.slang
+
+[2026-05-16T02:21:03-05:00] inspect: sed -n '115,205p' shaders/codegen/x86_virtual_use_edges.slang
+2026-05-16T02:25:31-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+2026-05-16T02:25:45-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test codegen_x86_properties generated_x86_slice_param_indexing_is_name_independent -- --nocapture
+2026-05-16T02:26:43-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test codegen_x86_properties generated_x86_slice_param_indexing_is_name_independent -- --nocapture
+2026-05-16T02:27:20-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test codegen_x86_properties generated_x86_slice_param_indexing_is_name_independent -- --nocapture
+2026-05-16T02:27:49-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test codegen_x86_properties generated_x86_slice_param_indexing_is_name_independent -- --nocapture
+2026-05-16T02:28:06-05:00 | timeout 45s env SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/slice.lani -o /tmp/laniusc-slice-module <(printf 'module app::main;\n%s\n' "import core::slice;
+
+fn main() {
+    let values: [i32; 4] = [3, 1, 4, 1];
+    let first: i32 = core::slice::first_i32(values);
+    let third: i32 = core::slice::get_or_i32(values, 4, 2, 0);
+    let fallback: i32 = core::slice::get_or_i32(values, 4, 9, 7);
+    let total: i32 = core::slice::sum_i32(values, 4);
+    let found: bool = core::slice::contains_i32(values, 4, third);
+    if (found) {
+        print(first + third + fallback + total);
+    } else {
+        print(0);
+    }
+    return 0;
+}") && timeout 5s /tmp/laniusc-slice-module > /tmp/laniusc-slice-module.stdout && diff -u sample_programs/slice_helpers.stdout /tmp/laniusc-slice-module.stdout
+2026-05-16T02:28:39-05:00 | diagnostic compile/run slice helper components with module app::main and stdlib/core/slice.lani
+2026-05-16T02:29:42-05:00 | objdump -d -Mintel /tmp/laniusc-fallback
+2026-05-16T02:29:52-05:00 | objdump -D -Mintel /tmp/laniusc-fallback
+2026-05-16T02:30:01-05:00 | dd if=/tmp/laniusc-fallback bs=1 skip=120 status=none | objdump -D -b binary -m i386:x86-64 -Mintel --adjust-vma=0x400078 -
+2026-05-16T02:30:10-05:00 | dd if=/tmp/laniusc-fallback of=/tmp/laniusc-fallback.text bs=1 skip=120 status=none && objdump -D -b binary -m i386:x86-64 -Mintel --adjust-vma=0x400078 /tmp/laniusc-fallback.text
+2026-05-16T02:31:34-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test codegen_x86_properties generated_x86_slice_param_indexing_is_name_independent -- --nocapture
+2026-05-16T02:31:51-05:00 | diagnostic compile/run slice helper components after saved-register call argument setup
+2026-05-16T02:32:36-05:00 | dd if=/tmp/laniusc-fallback of=/tmp/laniusc-fallback.text bs=1 skip=120 status=none && objdump -D -b binary -m i386:x86-64 -Mintel --adjust-vma=0x400078 /tmp/laniusc-fallback.text
+2026-05-16T02:34:34-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test codegen_x86_properties generated_x86_slice_param_indexing_is_name_independent -- --nocapture
+2026-05-16T02:34:47-05:00 | diagnostic compile/run slice helper components after reserving ABI arg regs
+2026-05-16T02:35:24-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test codegen_x86_properties generated_x86_slice_param_indexing_is_name_independent -- --nocapture
+2026-05-16T02:35:37-05:00 | diagnostic compile/run slice helper components after allowing r8/r9 temps
+2026-05-16T02:36:03-05:00 | timeout 45s env SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/slice.lani -o /tmp/laniusc-slice-module <(printf 'module app::main;\n%s\n' "import core::slice;
+
+fn main() {
+    let values: [i32; 4] = [3, 1, 4, 1];
+    let first: i32 = core::slice::first_i32(values);
+    let third: i32 = core::slice::get_or_i32(values, 4, 2, 0);
+    let fallback: i32 = core::slice::get_or_i32(values, 4, 9, 7);
+    let total: i32 = core::slice::sum_i32(values, 4);
+    let found: bool = core::slice::contains_i32(values, 4, third);
+    if (found) {
+        print(first + third + fallback + total);
+    } else {
+        print(0);
+    }
+    return 0;
+}") && timeout 5s /tmp/laniusc-slice-module > /tmp/laniusc-slice-module.stdout && diff -u sample_programs/slice_helpers.stdout /tmp/laniusc-slice-module.stdout
+2026-05-16T02:36:55-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test codegen_x86_properties generated_x86_mixed_four_arg_calls_preserve_argument_values -- --nocapture
+2026-05-16T02:37:11-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test codegen_x86_properties -- --nocapture
+2026-05-16T02:38:04-05:00 | timeout 45s env SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-module <(printf 'module app::main;\n%s\n' "import core::range;
+
+fn main() {
+    let range: core::range::Range<i32> = core::range::range_i32(2, 6);
+    let total: i32 = 0;
+    for index in range {
+        total += index;
+    }
+    print(total + core::range::start_i32(range) + core::range::end_i32(range) + range.start() + range.end());
+    return 0;
+}") && timeout 5s /tmp/laniusc-range-module > /tmp/laniusc-range-module.stdout && diff -u sample_programs/range_sum.stdout /tmp/laniusc-range-module.stdout
+2026-05-16T02:38:19-05:00 | diagnostic parse_demo range_sum with module header and stdlib/core/range.lani for codegen error node 1805
+2026-05-16T02:38:43-05:00 | cargo run --bin parse_demo -- --stdlib stdlib/core/range.lani <module-header range_sum temp>
+2026-05-16T02:38:57-05:00 | LANIUS_PARSE_DEMO_FULL=1 cargo run --bin parse_demo -- /tmp/laniusc-range-pack.lani
+2026-05-16T02:45:21-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+2026-05-16T02:45:37-05:00 | timeout 45s env SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-module <(printf 'module app::main;\n%s\n' "import core::range;
+
+fn main() {
+    let range: core::range::Range<i32> = core::range::range_i32(2, 6);
+    let total: i32 = 0;
+    for index in range {
+        total += index;
+    }
+    print(total + core::range::start_i32(range) + core::range::end_i32(range) + range.start() + range.end());
+    return 0;
+}") && timeout 5s /tmp/laniusc-range-module > /tmp/laniusc-range-module.stdout && diff -u sample_programs/range_sum.stdout /tmp/laniusc-range-module.stdout
+2026-05-16T02:46:49-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+2026-05-16T02:47:05-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+2026-05-16T02:47:24-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+2026-05-16T02:49:07-05:00 | timeout 45s env SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-module <(printf 'module app::main;\n%s\n' "$(cat sample_programs/range_sum.lani)") && timeout 5s /tmp/laniusc-range-module > /tmp/laniusc-range-module.stdout && diff -u sample_programs/range_sum.stdout /tmp/laniusc-range-module.stdout
+2026-05-16T02:52:06-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test codegen_x86_properties generated_x86_interval_for_loop_is_name_independent -- --nocapture
+2026-05-16T02:52:25-05:00 | timeout 45s env SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/range.lani -o /tmp/laniusc-range-module <(printf 'module app::main;\n%s\n' "$(cat sample_programs/range_sum.lani)") && timeout 5s /tmp/laniusc-range-module > /tmp/laniusc-range-module.stdout && diff -u sample_programs/range_sum.stdout /tmp/laniusc-range-module.stdout
+2026-05-16T02:52:36-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test codegen_x86_properties generated_x86_mixed_four_arg_calls_preserve_argument_values generated_x86_slice_param_indexing_is_name_independent -- --nocapture
+2026-05-16T02:52:46-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test codegen_x86_properties generated_x86_mixed_four_arg_calls_preserve_argument_values -- --nocapture
+2026-05-16T02:52:55-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test codegen_x86_properties generated_x86_slice_param_indexing_is_name_independent -- --nocapture
+2026-05-16T02:53:06-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test codegen_x86_properties -- --nocapture
+2026-05-16T02:53:31-05:00 | timeout 45s env SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_X86_STATUS_TRACE=1 target/debug/laniusc --emit x86_64 --stdlib stdlib/core/slice.lani -o /tmp/laniusc-slice-module <(printf 'module app::main;\n%s\n' "$(cat sample_programs/slice_helpers.lani)") && timeout 5s /tmp/laniusc-slice-module > /tmp/laniusc-slice-module.stdout && diff -u sample_programs/slice_helpers.stdout /tmp/laniusc-slice-module.stdout
+2026-05-16T02:53:50-05:00 | cargo fmt
+2026-05-16T02:54:00-05:00 | cargo fmt --check
+2026-05-16T02:54:00-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo check -p laniusc
+2026-05-16T02:54:00-05:00 | git diff --check
+2026-05-16T02:54:48-05:00 | rg -n "token_text|source_bytes|raw_token|is_type_name_token|RETURN_EVAL|extract_return|extract_terminal|stdlib|helper" shaders/codegen/x86_decl_layout.slang shaders/codegen/x86_node_inst_gen.slang shaders/codegen/x86_select.slang shaders/codegen/x86_inst_size.slang shaders/codegen/x86_encode.slang tests/codegen_x86_properties.rs src/codegen/x86/record.rs
+2026-05-16T02:55:00-05:00 | rg -n "range_i32|start_i32|end_i32|contains_i32|Range<|Range\b" shaders/codegen src/codegen
+2026-05-16T02:56:05-05:00 | run all sample_programs through x86 CLI with matching stdlib imports and diff stdout
+2026-05-16T02:58:01-05:00 | option_result_helpers with module app::main temp source through x86 CLI and stdout diff
+2026-05-16T02:59:45-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --nocapture
+2026-05-16T03:00:07-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test codegen_x86_properties -- --nocapture
+2026-05-16T03:00:36-05:00 | run all sample_programs through x86 CLI with matching stdlib imports after adding module headers and diff stdout
+2026-05-16T03:01:29-05:00 | cargo fmt
+2026-05-16T03:01:39-05:00 | cargo fmt --check
+2026-05-16T03:01:39-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo check -p laniusc
+2026-05-16T03:01:39-05:00 | git diff --check
+2026-05-16T03:02:05-05:00 | rg -n "token_text|source_bytes|raw_token|is_type_name_token|RETURN_EVAL|extract_return|extract_terminal|stdlib-function-specific|range_i32|start_i32|end_i32|contains_i32" shaders/codegen src/codegen tests/codegen_x86.rs tests/codegen_x86_properties.rs sample_programs
+2026-05-16T03:02:31-05:00 | rg -n "token_text|source_bytes|raw_token|is_type_name_token|RETURN_EVAL|extract_return|extract_terminal|range_i32|start_i32|end_i32|contains_i32" shaders/codegen/x86*.slang src/codegen/x86.rs src/codegen/x86 tests/codegen_x86_properties.rs
+2026-05-16T03:02:41-05:00 | git diff -- AGENTS.MD AGENTS.md
+2026-05-16T03:22:40-05:00 | generate /tmp/laniusc-long-10000.lani with 9996 pseudo-random const declarations plus tiny main using awk
+2026-05-16T03:22:57-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build
+2026-05-16T03:23:06-05:00 | /usr/bin/time -p timeout 180s env SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-10000 /tmp/laniusc-long-10000.lani
+2026-05-16T03:26:18-05:00 | RUST_BACKTRACE=1 target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-10000 /tmp/laniusc-long-10000.lani 2>&1 | head -80 (logged after accidental run)
+2026-05-16T03:28:18-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo check -p laniusc after blocking parser/type-check readback map fix
+2026-05-16T03:28:28-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build after blocking parser/type-check readback map fix
+2026-05-16T03:28:41-05:00 | /usr/bin/time -p timeout 180s env SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-10000 /tmp/laniusc-long-10000.lani after blocking parser/type-check readback map fix
+2026-05-16T03:31:06-05:00 | generate and compile 1000-line pseudo-random const stress program through x86 CLI with /usr/bin/time
+2026-05-16T03:32:53-05:00 | generate and compile 100-line pseudo-random const stress program through x86 CLI with /usr/bin/time
+2026-05-16T03:33:26-05:00 | generate and compile 10000-line pseudo-random comment/trivia stress program with tiny main through x86 CLI with /usr/bin/time
+2026-05-16T03:33:48-05:00 | generate and compile 10000-line whitespace stress program with tiny main through x86 CLI with /usr/bin/time
+2026-05-16T03:34:08-05:00 | generate and compile 10000-line blank-line stress program under 65536 bytes with tiny main through x86 CLI with /usr/bin/time
+2026-05-16T03:34:39-05:00 | cargo fmt after readback wait fix
+2026-05-16T03:34:39-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --nocapture after readback wait fix
+2026-05-16T03:34:39-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test codegen_x86_properties -- --nocapture after readback wait fix
+2026-05-16T03:34:39-05:00 | cargo fmt --check after readback wait fix
+2026-05-16T03:34:39-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo check -p laniusc after readback wait fix
+2026-05-16T03:34:39-05:00 | git diff --check after readback wait fix
+- 2026-05-16T03:51:33-05:00 | generate /tmp/laniusc-long-lets-1000.lani supported 1k-line stress input
+- 2026-05-16T03:51:33-05:00 | generate /tmp/laniusc-long-functions-1000.lani supported 1k-line stress input
+- 2026-05-16T03:51:44-05:00 | /usr/bin/time -p timeout 60s env SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-1000 /tmp/laniusc-long-lets-1000.lani
+- 2026-05-16T03:52:56-05:00 | /usr/bin/time -p timeout 35s env LANIUS_GPU_PIPELINE_PROGRESS=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-1000 /tmp/laniusc-long-lets-1000.lani
+- 2026-05-16T03:54:32-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build after readback poll throttle
+- 2026-05-16T03:54:43-05:00 | /usr/bin/time -p timeout 35s env LANIUS_GPU_PIPELINE_PROGRESS=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-1000 /tmp/laniusc-long-lets-1000.lani after readback poll throttle
+- 2026-05-16T03:55:53-05:00 | generate and compile let-chain stress sizes 100 250 500 with 20s timeout each
+- 2026-05-16T03:57:02-05:00 | generate and compile tiny let-chain repro with 15s timeout
+- 2026-05-16T03:57:15-05:00 | generate and compile let-chain stress sizes 20 50 80 with 15s timeout each
+- 2026-05-16T03:59:17-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test parser_tree gpu_syntax_accepts_generated_let_chain_without_import_header_scan -- --nocapture
+- 2026-05-16T03:59:29-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build before rerunning long x86 stress
+- 2026-05-16T03:59:36-05:00 | /usr/bin/time stress compile let-chain sizes 80 100 1000 after import prefilter
+- 2026-05-16T04:01:48-05:00 | /usr/bin/time -p timeout 35s env LANIUS_GPU_PIPELINE_PROGRESS=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-80 /tmp/laniusc-long-lets-80.lani after syntax import prefilter
+- 2026-05-16T04:03:38-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test parser_tree gpu_syntax_accepts_generated_let_chain_without_import_header_scan -- --nocapture after resident-capacity assertion
+- 2026-05-16T04:04:08-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test parser_tree gpu_parser_accepts_generated_let_chain_resident_ll1_hir -- --nocapture
+- 2026-05-16T04:04:52-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test type_checker_semantics type_checker_accepts_generated_let_chain_from_hir_records -- --nocapture
+- 2026-05-16T04:07:06-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build after bounded x86_local_literals
+- 2026-05-16T04:07:15-05:00 | /usr/bin/time -p timeout 35s env LANIUS_GPU_PIPELINE_PROGRESS=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-80 /tmp/laniusc-long-lets-80.lani after bounded local literals
+- 2026-05-16T04:08:52-05:00 | /usr/bin/time -p timeout 60s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-1000 /tmp/laniusc-long-lets-1000.lani after bounded local literals
+- 2026-05-16T04:16:21-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo check -p laniusc after x86 stack/capacity backend changes
+- 2026-05-16T04:16:39-05:00 | /usr/bin/time -p timeout 30s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-80 /tmp/laniusc-long-lets-80.lani after dynamic stack slots and 8192 inst cap
+- 2026-05-16T04:16:52-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc after x86 stack/capacity backend changes
+- 2026-05-16T04:17:10-05:00 | /usr/bin/time -p timeout 30s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-80 /tmp/laniusc-long-lets-80.lani after rebuilt dynamic stack slots and 8192 inst cap
+- 2026-05-16T04:20:17-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc after scalable x86 text offset scan
+- 2026-05-16T04:20:28-05:00 | /usr/bin/time -p timeout 30s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-80 /tmp/laniusc-long-lets-80.lani after scalable x86 text offset scan
+- 2026-05-16T04:20:39-05:00 | /usr/bin/time -p timeout 60s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-1000 /tmp/laniusc-long-lets-1000.lani after scalable x86 text offset scan
+- 2026-05-16T04:21:24-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc after decl-layout extent trace
+- 2026-05-16T04:21:41-05:00 | /usr/bin/time -p timeout 30s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-1000 /tmp/laniusc-long-lets-1000.lani with decl-layout extent trace
+- 2026-05-16T04:23:27-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc after declaration count bound for x86 enum records
+- 2026-05-16T04:23:39-05:00 | /usr/bin/time -p timeout 60s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-1000 /tmp/laniusc-long-lets-1000.lani after declaration count bound for x86 enum records
+- 2026-05-16T04:23:56-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc after x86 enum/struct status trace
+- 2026-05-16T04:24:09-05:00 | /usr/bin/time -p timeout 30s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-1000 /tmp/laniusc-long-lets-1000.lani with enum/struct x86 status trace
+- 2026-05-16T04:25:49-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc after next-sibling x86 tree record
+- 2026-05-16T04:26:01-05:00 | /usr/bin/time -p timeout 60s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-1000 /tmp/laniusc-long-lets-1000.lani after next-sibling x86 tree record
+- 2026-05-16T04:27:47-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc after x86 virtual overflow row trace
+- 2026-05-16T04:27:59-05:00 | /usr/bin/time -p timeout 60s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-1000 /tmp/laniusc-long-lets-1000.lani with x86 virtual overflow row trace
+- 2026-05-16T04:28:45-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc after x86 let emit failure detail
+- 2026-05-16T04:29:00-05:00 | /usr/bin/time -p timeout 60s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-1000 /tmp/laniusc-long-lets-1000.lani with x86 let emit failure detail
+- 2026-05-16T04:30:20-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc after strict x86 statement classification
+- 2026-05-16T04:30:35-05:00 | /usr/bin/time -p timeout 60s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-1000 /tmp/laniusc-long-lets-1000.lani after strict x86 statement classification
+- 2026-05-16T04:31:41-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc after x86 let slot decl-token trace
+- 2026-05-16T04:31:53-05:00 | /usr/bin/time -p timeout 60s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-1000 /tmp/laniusc-long-lets-1000.lani with x86 let slot decl-token trace
+- 2026-05-16T04:33:57-05:00 | generate deterministic 10000-line long-program fixture at /tmp/laniusc-long-random-10000.lani
+- 2026-05-16T04:34:17-05:00 | /usr/bin/time -p timeout 30s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-random-10000 /tmp/laniusc-long-random-10000.lani
+- 2026-05-16T04:34:53-05:00 | rg -n "NameLimit|65536|MAX_.*NAME|name.*capacity|capacity.*name" src shaders tests
+- 2026-05-16T04:35:11-05:00 | rg -n "NAME_RADIX_MAX|MAX_RADIX_BLOCKS|radix.*block|MAX_NAME_RADIX_ITEMS|name_capacity" src/type_checker shaders/type_checker
+- 2026-05-16T04:35:44-05:00 | rg -n "radix|histogram|prefix|scan" /home/andrew-peterson/code/pareas --glob "*.slang" --glob "*.hlsl" --glob "*.wgsl" --glob "*.cpp" --glob "*.rs"
+- 2026-05-16T04:35:54-05:00 | rg --files /home/andrew-peterson/code/pareas | sed -n "1,120p"
+- 2026-05-16T04:36:04-05:00 | sed -n "260,470p" src/type_checker/bind_support.rs && sed -n "140,285p" src/type_checker/bind_groups.rs && sed -n "120,170p" src/type_checker/record.rs
+- 2026-05-16T04:36:13-05:00 | sed -n "80,145p" src/type_checker/record.rs
+- 2026-05-16T04:37:22-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T04:37:35-05:00 | /usr/bin/time -p timeout 30s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-random-10000 /tmp/laniusc-long-random-10000.lani
+- 2026-05-16T04:38:44-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T04:38:57-05:00 | /usr/bin/time -p timeout 30s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-random-10000 /tmp/laniusc-long-random-10000.lani
+- 2026-05-16T04:40:44-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T04:40:56-05:00 | /usr/bin/time -p timeout 30s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-random-10000 /tmp/laniusc-long-random-10000.lani
+- 2026-05-16T04:41:09-05:00 | rg -n "type_check_names_radix_00b_bucket_prefix|names_radix_bucket_prefix|radix_bucket_prefix_resources|radix_block_histogram.*as_entire_binding" src/type_checker
+- 2026-05-16T04:41:17-05:00 | sed -n "1160,1265p" src/type_checker/record.rs && sed -n "340,385p" src/type_checker/bind_support.rs && sed -n "1780,1810p" src/type_checker/bind_groups.rs
+- 2026-05-16T04:42:30-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T04:42:42-05:00 | /usr/bin/time -p timeout 30s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-random-10000 /tmp/laniusc-long-random-10000.lani
+- 2026-05-16T04:43:13-05:00 | rg -n "struct_records|decl_layout|ERR_|STATUS_|code 11|X86" shaders/codegen src/codegen/x86
+- 2026-05-16T04:43:49-05:00 | rg -n "depth|subtree_end|first_child|parent|next_sibling" src shaders/parser shaders/hir shaders/codegen tests | head -n 200
+- 2026-05-16T04:43:58-05:00 | rg -n "x86_node_tree_record\[[^\]]+\]\.y|\.y.*depth|depth" shaders/codegen/x86_*.slang
+- 2026-05-16T04:44:25-05:00 | rg -n "x86_node_tree|node_tree_info|tree_record" tests shaders/codegen src/codegen
+- 2026-05-16T04:45:13-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T04:45:34-05:00 | /usr/bin/time -p timeout 30s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-random-10000 /tmp/laniusc-long-random-10000.lani
+- 2026-05-16T04:46:17-05:00 | rg -n "TRACE|STATUS_TRACE|PASS|LOG|env_bool|env_u64|LANIUS_" src/gpu src/codegen src/type_checker src/parser
+- 2026-05-16T04:46:27-05:00 | /usr/bin/time -p timeout 30s env LANIUS_GPU_PIPELINE_PROGRESS=1 LANIUS_X86_TRACE=1 LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-random-10000 /tmp/laniusc-long-random-10000.lani
+- 2026-05-16T04:47:11-05:00 | target/debug/laniusc --help
+- 2026-05-16T04:47:21-05:00 | /usr/bin/time -p timeout 30s env LANIUS_GPU_PIPELINE_PROGRESS=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit wasm -o /tmp/laniusc-long-random-10000.wasm /tmp/laniusc-long-random-10000.lani
+- 2026-05-16T04:48:03-05:00 | /usr/bin/time -p timeout 30s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-1000 /tmp/laniusc-long-lets-1000.lani
+- 2026-05-16T04:51:16-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T04:51:29-05:00 | /usr/bin/time -p timeout 30s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-1000 /tmp/laniusc-long-lets-1000.lani
+- 2026-05-16T04:52:28-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T04:52:40-05:00 | /usr/bin/time -p timeout 30s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-1000 /tmp/laniusc-long-lets-1000.lani
+- 2026-05-16T04:53:22-05:00 | /usr/bin/time -p timeout 30s env LANIUS_GPU_PIPELINE_PROGRESS=1 LANIUS_X86_TRACE=1 LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-1000 /tmp/laniusc-long-lets-1000.lani
+- 2026-05-16T04:53:51-05:00 | generate deterministic 500-line let-chain fixture at /tmp/laniusc-long-lets-500.lani
+- 2026-05-16T04:54:05-05:00 | /usr/bin/time -p timeout 20s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-500 /tmp/laniusc-long-lets-500.lani
+- 2026-05-16T04:54:20-05:00 | generate deterministic 800-line let-chain fixture at /tmp/laniusc-long-lets-800.lani
+- 2026-05-16T04:54:31-05:00 | /usr/bin/time -p timeout 20s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-800 /tmp/laniusc-long-lets-800.lani
+- 2026-05-16T04:56:00-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T04:56:15-05:00 | /usr/bin/time -p timeout 20s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-800 /tmp/laniusc-long-lets-800.lani
+- 2026-05-16T04:56:46-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T04:57:00-05:00 | /usr/bin/time -p timeout 20s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-800 /tmp/laniusc-long-lets-800.lani
+- 2026-05-16T04:57:39-05:00 | generate deterministic 650-line let-chain fixture at /tmp/laniusc-long-lets-650.lani
+- 2026-05-16T04:57:54-05:00 | /usr/bin/time -p timeout 20s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-650 /tmp/laniusc-long-lets-650.lani
+- 2026-05-16T04:59:15-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T04:59:29-05:00 | /usr/bin/time -p timeout 20s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-650 /tmp/laniusc-long-lets-650.lani
+- 2026-05-16T05:00:04-05:00 | /usr/bin/time -p timeout 60s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-650 /tmp/laniusc-long-lets-650.lani
+- 2026-05-16T05:01:19-05:00 | rg -n "for \(uint .*< (active_hir_node_count\(\)|active_nodes|gParams\.n_hir_nodes|n;)" shaders/codegen/x86_*.slang
+- 2026-05-16T05:01:28-05:00 | generate deterministic 600-line let-chain fixture at /tmp/laniusc-long-lets-600.lani
+- 2026-05-16T05:01:42-05:00 | /usr/bin/time -p timeout 20s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-600 /tmp/laniusc-long-lets-600.lani
+- 2026-05-16T05:02:53-05:00 | /usr/bin/time -p timeout 20s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-500 /tmp/laniusc-long-lets-500.lani
+- 2026-05-16T05:04:00-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T05:04:14-05:00 | /usr/bin/time -p timeout 20s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-500 /tmp/laniusc-long-lets-500.lani
+- 2026-05-16T05:04:46-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T05:05:07-05:00 | /usr/bin/time -p timeout 20s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-500 /tmp/laniusc-long-lets-500.lani
+- 2026-05-16T05:06:26-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T05:06:42-05:00 | /usr/bin/time -p timeout 20s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-500 /tmp/laniusc-long-lets-500.lani
+- 2026-05-16T05:07:29-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T05:07:45-05:00 | /usr/bin/time -p timeout 20s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-500 /tmp/laniusc-long-lets-500.lani
+- 2026-05-16T05:08:07-05:00 | /usr/bin/time -p timeout 20s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-600 /tmp/laniusc-long-lets-600.lani
+- 2026-05-16T05:08:44-05:00 | generate deterministic 550-line let-chain fixture at /tmp/laniusc-long-lets-550.lani
+- 2026-05-16T05:08:56-05:00 | /usr/bin/time -p timeout 20s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-550 /tmp/laniusc-long-lets-550.lani
+- 2026-05-16T05:09:15-05:00 | generate deterministic 575-line let-chain fixture at /tmp/laniusc-long-lets-575.lani
+- 2026-05-16T05:09:31-05:00 | /usr/bin/time -p timeout 20s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-575 /tmp/laniusc-long-lets-575.lani
+- 2026-05-16T05:09:49-05:00 | generate deterministic 590-line let-chain fixture at /tmp/laniusc-long-lets-590.lani
+- 2026-05-16T05:10:01-05:00 | /usr/bin/time -p timeout 20s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-590 /tmp/laniusc-long-lets-590.lani
+- 2026-05-16T05:11:05-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T05:12:14-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T05:12:25-05:00 | /usr/bin/time -p timeout 20s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-600 /tmp/laniusc-long-lets-600.lani
+- 2026-05-16T05:14:37-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T05:14:45-05:00 | /usr/bin/time -p timeout 20s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-600 /tmp/laniusc-long-lets-600.lani
+- 2026-05-16T05:14:55-05:00 | /usr/bin/time -p timeout 30s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-1000 /tmp/laniusc-long-lets-1000.lani
+- 2026-05-16T05:15:04-05:00 | /usr/bin/time -p timeout 60s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-random-10000 /tmp/laniusc-long-random-10000.lani
+- 2026-05-16T05:17:24-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T05:17:39-05:00 | /usr/bin/time -p timeout 30s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-1000 /tmp/laniusc-long-lets-1000.lani
+- 2026-05-16T05:17:56-05:00 | /usr/bin/time -p timeout 90s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-random-10000 /tmp/laniusc-long-random-10000.lani
+- 2026-05-16T05:19:01-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T05:19:10-05:00 | /usr/bin/time -p timeout 30s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-1000 /tmp/laniusc-long-lets-1000.lani
+- 2026-05-16T05:19:21-05:00 | /usr/bin/time -p timeout 90s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-random-10000 /tmp/laniusc-long-random-10000.lani
+- 2026-05-16T05:20:01-05:00 | cargo fmt --check
+- 2026-05-16T05:20:18-05:00 | rustfmt --check src/codegen/x86.rs src/codegen/x86/record.rs src/codegen/x86/record_init.rs
+- 2026-05-16T05:20:32-05:00 | cargo test --test codegen_x86
+- 2026-05-16T05:21:12-05:00 | cargo test --test gpu_audit codegen
+- 2026-05-16T05:21:31-05:00 | git diff --check
+- 2026-05-16T05:27:30-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T05:27:40-05:00 | /usr/bin/time -p timeout 30s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-1000 /tmp/laniusc-long-lets-1000.lani
+- 2026-05-16T05:27:49-05:00 | /usr/bin/time -p timeout 90s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-random-10000 /tmp/laniusc-long-random-10000.lani
+- 2026-05-16T05:31:24-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T05:31:34-05:00 | /usr/bin/time -p timeout 30s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-lets-1000 /tmp/laniusc-long-lets-1000.lani
+- 2026-05-16T05:31:45-05:00 | /usr/bin/time -p timeout 90s env LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc target/debug/laniusc --emit x86_64 -o /tmp/laniusc-long-random-10000 /tmp/laniusc-long-random-10000.lani
+- 2026-05-16T05:32:17-05:00 | target/debug/laniusc --help
+- 2026-05-16T05:43:44-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T05:44:04-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T05:45:03-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T05:45:37-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T05:45:47-05:00 | git diff --check
+- 2026-05-16T05:55:53-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T05:56:20-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test gpu_name_radix_audit
+- 2026-05-16T05:57:01-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test gpu_name_radix_audit
+- 2026-05-16T05:57:06-05:00 | git diff --check
+- 2026-05-16T06:06:38-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T06:06:51-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T06:07:07-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test gpu_name_radix_audit
+- 2026-05-16T06:07:11-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test module_path_records_audit
+- 2026-05-16T06:07:26-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test gpu_audit method_lookup_slice_is_gpu_resident_and_bounded
+- 2026-05-16T06:08:39-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T06:08:49-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test module_path_records_audit
+- 2026-05-16T06:09:03-05:00 | rg -n "uint local_same_key_rank|radix_bucket_base\[key\] \+|radix_block_bucket_prefix\[block_idx" shaders/type_checker
+- 2026-05-16T06:09:08-05:00 | git diff --check
+- 2026-05-16T06:09:22-05:00 | git diff --stat -- shaders/scatter.slang shaders/type_checker/type_check_names_01_scatter_lexemes.slang shaders/type_checker/type_check_names_radix_01_scatter.slang shaders/type_checker/type_check_modules_01_scatter_paths.slang shaders/type_checker/type_check_modules_02_scatter_module_records.slang shaders/type_checker/type_check_modules_02b_scatter_import_records.slang shaders/type_checker/type_check_modules_02c_scatter_decl_core_records.slang shaders/type_checker/type_check_modules_02d_scatter_decl_span_records.slang shaders/type_checker/type_check_modules_03b_sort_module_keys_scatter.slang shaders/type_checker/type_check_modules_06b_sort_decl_keys_scatter.slang shaders/type_checker/type_check_modules_08b_scatter_decl_namespace_keys.slang shaders/type_checker/type_check_modules_09d_sort_import_visible_keys_scatter.slang shaders/type_checker/type_check_methods_04b_sort_keys_scatter.slang tests/gpu_name_radix_audit.rs tests/module_path_records_audit.rs
+- 2026-05-16T06:09:28-05:00 | git status --short
+- 2026-05-16T06:20:11-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc
+- 2026-05-16T06:20:52-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test --test gpu_name_radix_audit
+2026-05-16T06:22:10-05:00 | git status --short
+2026-05-16T06:22:21-05:00 | sed -n '1,220p' AGENTS.MD
+2026-05-16T06:22:34-05:00 | rg -n "linear_thread_id|linear_group_id|encoded_id|scan_total|scanned_prefix|lower_bound|upper_bound|same_key_rank|for \(uint .*<.*count|while \(" shaders
+2026-05-16T06:22:34-05:00 | rg -n "prefix\[.*\]|block_prefix|local_prefix|compact_scatter_slot|stable_radix_dst|segment_item_dst" shaders
+2026-05-16T06:22:34-05:00 | sed -n '1,220p' shaders/prefix_scan.slang
+2026-05-16T06:22:34-05:00 | sed -n '1,220p' shaders/scatter.slang
+2026-05-16T06:22:46-05:00 | rg -n "linear_thread_id|linear_group_id|encoded_id|scan_total|scanned_prefix|lower_bound|upper_bound|same_key_rank|while \\(" shaders
+2026-05-16T06:22:46-05:00 | sed -n '220,260p' shaders/prefix_scan.slang
+2026-05-16T06:22:55-05:00 | rg -n -e linear_thread_id -e linear_group_id -e encoded_id -e scan_total -e scanned_prefix -e lower_bound -e upper_bound -e same_key_rank -e 'while (' shaders
+2026-05-16T06:23:03-05:00 | rg -n -F -e linear_thread_id -e linear_group_id -e encoded_id -e scan_total -e scanned_prefix -e lower_bound -e upper_bound -e same_key_rank -e 'while (' shaders
+- 2026-05-17T11:21:17-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc --bin gpu_compile_bench
+- 2026-05-17T11:21:32-05:00 | target/debug/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --estimate-only
+- 2026-05-17T11:21:50-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test -p laniusc --test gpu_audit codegen_guardrails
+- 2026-05-17T11:22:04-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test -p laniusc --test codegen_x86 x86_compiler_route_uses_direct_hir_elf_backend
+- 2026-05-17T11:22:21-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test -p laniusc --test codegen_x86_properties generated_x86_mixed_four_arg_calls_preserve_argument_values -- --nocapture
+- 2026-05-17T11:22:38-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test -p laniusc --test codegen_x86_properties generated_x86_scalar_three_and_four_arg_calls_preserve_argument_values -- --nocapture
+- 2026-05-17T11:22:55-05:00 | target/debug/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --iters 1 --warmups 0 --validate-output
+- 2026-05-17T11:23:15-05:00 | rustfmt --edition 2024 --check src/bin/gpu_compile_bench.rs src/codegen/x86.rs src/codegen/x86/record.rs src/codegen/x86/record_init.rs src/codegen/x86/record_retained_expr.rs tests/codegen_x86.rs tests/gpu_audit/codegen_guardrails.rs
+- 2026-05-17T11:23:15-05:00 | git diff --check -- src/bin/gpu_compile_bench.rs src/codegen/x86.rs src/codegen/x86/record.rs src/codegen/x86/record_init.rs src/codegen/x86/record_retained_expr.rs tests/codegen_x86.rs tests/gpu_audit/codegen_guardrails.rs docs/X86_64_GPU_BACKEND_PLAN.md TEST_RUN_LOG.md
+- 2026-05-17T11:23:39-05:00 | rustfmt --edition 2024 --check src/bin/gpu_compile_bench.rs src/codegen/x86.rs src/codegen/x86/record.rs tests/codegen_x86.rs tests/gpu_audit/codegen_guardrails.rs
+- 2026-05-17T11:23:53-05:00 | git diff --check -- src/bin/gpu_compile_bench.rs src/codegen/x86.rs src/codegen/x86/record.rs src/codegen/x86/record_init.rs src/codegen/x86/record_retained_expr.rs tests/codegen_x86.rs tests/gpu_audit/codegen_guardrails.rs docs/X86_64_GPU_BACKEND_PLAN.md TEST_RUN_LOG.md
+- 2026-05-17T11:24:47-05:00 | git diff --check -- src/bin/gpu_compile_bench.rs src/codegen/x86.rs src/codegen/x86/record.rs src/codegen/x86/record_init.rs src/codegen/x86/record_retained_expr.rs tests/codegen_x86.rs tests/gpu_audit/codegen_guardrails.rs docs/X86_64_GPU_BACKEND_PLAN.md TEST_RUN_LOG.md
+- 2026-05-17T11:26:46-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc --bin gpu_compile_bench
+- 2026-05-17T11:27:06-05:00 | target/debug/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --estimate-only
+- 2026-05-17T11:27:25-05:00 | target/debug/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --iters 1 --warmups 0 --validate-output
+- 2026-05-17T11:27:43-05:00 | rustfmt --edition 2024 --check src/bin/gpu_compile_bench.rs src/codegen/x86.rs src/codegen/x86/record.rs tests/codegen_x86.rs tests/gpu_audit/codegen_guardrails.rs
+- 2026-05-17T11:27:43-05:00 | git diff --check -- src/bin/gpu_compile_bench.rs src/codegen/x86.rs src/codegen/x86/record.rs src/codegen/x86/record_init.rs src/codegen/x86/record_retained_expr.rs tests/codegen_x86.rs tests/gpu_audit/codegen_guardrails.rs docs/X86_64_GPU_BACKEND_PLAN.md shaders/codegen/x86_virtual_use_edges.slang shaders/codegen/x86_virtual_liveness.slang TEST_RUN_LOG.md
+- 2026-05-17T11:31:08-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test -p laniusc --test codegen_x86 x86_compiler_route_uses_direct_hir_elf_backend
+- 2026-05-17T11:35:26-05:00 | SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc --bin gpu_compile_bench
+- 2026-05-17T11:35:55-05:00 | target/debug/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --estimate-only
+- 2026-05-17T11:36:12-05:00 | target/debug/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --iters 1 --warmups 0 --validate-output
+- 2026-05-17T11:36:34-05:00 | rustfmt --edition 2024 --check src/bin/gpu_compile_bench.rs src/codegen/x86.rs src/codegen/x86/record.rs tests/codegen_x86.rs tests/gpu_audit/codegen_guardrails.rs
+- 2026-05-17T11:36:34-05:00 | git diff --check -- src/bin/gpu_compile_bench.rs src/codegen/x86.rs src/codegen/x86/record.rs src/codegen/x86/record_init.rs src/codegen/x86/record_retained_expr.rs tests/codegen_x86.rs tests/gpu_audit/codegen_guardrails.rs docs/X86_64_GPU_BACKEND_PLAN.md shaders/codegen/x86_virtual_use_edges.slang shaders/codegen/x86_virtual_liveness.slang TEST_RUN_LOG.md
+- 2026-05-17T11:43:55-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc --bin gpu_compile_bench`
+- 2026-05-17T11:43:55-05:00 `target/debug/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --estimate-only`
+- 2026-05-17T11:43:55-05:00 `target/debug/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --iters 1 --warmups 0 --validate-output`
+- 2026-05-17T11:43:55-05:00 `rustfmt --edition 2024 --check src/bin/gpu_compile_bench.rs src/codegen/x86.rs src/codegen/x86/record.rs tests/codegen_x86.rs tests/gpu_audit/codegen_guardrails.rs`
+- 2026-05-17T11:43:55-05:00 `git diff --check -- src/bin/gpu_compile_bench.rs src/codegen/x86.rs src/codegen/x86/record.rs src/codegen/x86/record_init.rs src/codegen/x86/record_retained_expr.rs TEST_RUN_LOG.md`
+- 2026-05-17T11:44:44-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test -p laniusc --test gpu_audit codegen_guardrails`
+- 2026-05-17T11:44:44-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test -p laniusc --test codegen_x86 x86_compiler_route_uses_direct_hir_elf_backend`
+- 2026-05-17T11:45:05-05:00 `git diff --check -- src/bin/gpu_compile_bench.rs src/codegen/x86.rs src/codegen/x86/record.rs src/codegen/x86/record_init.rs src/codegen/x86/record_retained_expr.rs TEST_RUN_LOG.md`
+- 2026-05-17T11:46:44-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc --bin gpu_compile_bench`
+- 2026-05-17T11:46:44-05:00 `target/debug/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --estimate-only`
+- 2026-05-17T11:46:44-05:00 `target/debug/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --iters 1 --warmups 0 --validate-output`
+- 2026-05-17T11:46:44-05:00 `rustfmt --edition 2024 --check src/bin/gpu_compile_bench.rs src/codegen/x86.rs src/codegen/x86/record.rs tests/codegen_x86.rs tests/gpu_audit/codegen_guardrails.rs`
+- 2026-05-17T11:46:44-05:00 `git diff --check -- src/bin/gpu_compile_bench.rs src/codegen/x86.rs src/codegen/x86/record.rs src/codegen/x86/record_init.rs src/codegen/x86/record_retained_expr.rs TEST_RUN_LOG.md`
+- 2026-05-17T11:48:13-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc --bin gpu_compile_bench`
+- 2026-05-17T11:48:13-05:00 `target/debug/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --iters 1 --warmups 0 --validate-output`
+- 2026-05-17T11:48:13-05:00 `rustfmt --edition 2024 --check src/bin/gpu_compile_bench.rs src/codegen/x86.rs src/codegen/x86/record.rs tests/codegen_x86.rs tests/gpu_audit/codegen_guardrails.rs`
+- 2026-05-17T11:48:13-05:00 `git diff --check -- src/bin/gpu_compile_bench.rs src/codegen/x86.rs src/codegen/x86/record.rs src/codegen/x86/record_init.rs src/codegen/x86/record_retained_expr.rs TEST_RUN_LOG.md`
+- 2026-05-17T11:49:12-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test -p laniusc --test gpu_audit codegen_guardrails`
+- 2026-05-17T11:49:12-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test -p laniusc --test codegen_x86 x86_compiler_route_uses_direct_hir_elf_backend`
+- 2026-05-17T11:49:12-05:00 `git diff --check -- src/bin/gpu_compile_bench.rs src/codegen/x86.rs src/codegen/x86/record.rs src/codegen/x86/record_init.rs src/codegen/x86/record_retained_expr.rs TEST_RUN_LOG.md`
+- 2026-05-17T11:52:47-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc --bin gpu_compile_bench`
+- 2026-05-17T11:52:47-05:00 `target/debug/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --estimate-only`
+- 2026-05-17T11:52:47-05:00 `target/debug/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --iters 1 --warmups 0 --validate-output`
+- 2026-05-17T11:52:47-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test -p laniusc --test gpu_audit codegen_guardrails`
+- 2026-05-17T11:52:47-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test -p laniusc --test codegen_x86 x86_compiler_route_uses_direct_hir_elf_backend`
+- 2026-05-17T11:52:47-05:00 `rustfmt --edition 2024 --check src/bin/gpu_compile_bench.rs src/codegen/x86.rs src/codegen/x86/record.rs tests/codegen_x86.rs tests/gpu_audit/codegen_guardrails.rs`
+- 2026-05-17T11:52:47-05:00 `git diff --check -- src/bin/gpu_compile_bench.rs src/codegen/x86.rs src/codegen/x86/record.rs src/codegen/x86/record_init.rs src/codegen/x86/record_retained_expr.rs shaders/codegen/x86_encode.slang shaders/codegen/x86_reloc_patch.slang shaders/codegen/x86_elf_write.slang tests/codegen_x86.rs TEST_RUN_LOG.md`
+- 2026-05-17T11:53:48-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test -p laniusc --test codegen_x86 x86_source_codegen_emits_direct_elf_for_integer_literal_return`
+- 2026-05-17T11:53:48-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test -p laniusc --test codegen_x86 x86_source_codegen_emits_direct_elf_for_zero_arg_direct_call_return`
+- 2026-05-17T11:53:48-05:00 `git diff --check -- src/bin/gpu_compile_bench.rs src/codegen/x86.rs src/codegen/x86/record.rs src/codegen/x86/record_init.rs src/codegen/x86/record_retained_expr.rs shaders/codegen/x86_encode.slang shaders/codegen/x86_reloc_patch.slang shaders/codegen/x86_elf_write.slang tests/codegen_x86.rs TEST_RUN_LOG.md`
+- 2026-05-17T11:54:21-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test -p laniusc --test codegen_x86 x86_source_codegen_executes_intrinsic_output_for_hir_constant_locals`
+- 2026-05-17T11:54:55-05:00 `git diff --check -- src/bin/gpu_compile_bench.rs src/codegen/x86.rs src/codegen/x86/record.rs src/codegen/x86/record_init.rs src/codegen/x86/record_retained_expr.rs shaders/codegen/x86_encode.slang shaders/codegen/x86_reloc_patch.slang shaders/codegen/x86_elf_write.slang tests/codegen_x86.rs TEST_RUN_LOG.md`
+- 2026-05-17T11:56:36-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc --bin gpu_compile_bench`
+- 2026-05-17T11:56:36-05:00 `target/debug/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --estimate-only`
+- 2026-05-17T11:56:36-05:00 `target/debug/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --iters 1 --warmups 0 --validate-output`
+- 2026-05-17T11:56:36-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test -p laniusc --test gpu_audit codegen_guardrails`
+- 2026-05-17T11:56:36-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test -p laniusc --test codegen_x86 x86_compiler_route_uses_direct_hir_elf_backend`
+- 2026-05-17T11:56:36-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test -p laniusc --test codegen_x86 x86_source_codegen_executes_intrinsic_output_for_hir_constant_locals`
+- 2026-05-17T11:56:36-05:00 `rustfmt --edition 2024 --check src/bin/gpu_compile_bench.rs src/codegen/x86.rs src/codegen/x86/record.rs src/codegen/x86/support.rs tests/codegen_x86.rs tests/gpu_audit/codegen_guardrails.rs`
+- 2026-05-17T11:56:36-05:00 `git diff --check -- src/bin/gpu_compile_bench.rs src/codegen/x86.rs src/codegen/x86/record.rs src/codegen/x86/record_init.rs src/codegen/x86/record_retained_expr.rs src/codegen/x86/support.rs shaders/codegen/x86_encode.slang shaders/codegen/x86_reloc_patch.slang shaders/codegen/x86_elf_write.slang tests/codegen_x86.rs TEST_RUN_LOG.md`
+- 2026-05-17T11:57:13-05:00 `rustfmt --edition 2024 --check src/bin/gpu_compile_bench.rs src/codegen/x86.rs src/codegen/x86/record.rs src/codegen/x86/support.rs tests/codegen_x86.rs tests/gpu_audit/codegen_guardrails.rs`
+- 2026-05-17T11:57:13-05:00 `git diff --check -- src/bin/gpu_compile_bench.rs src/codegen/x86.rs src/codegen/x86/record.rs src/codegen/x86/record_init.rs src/codegen/x86/record_retained_expr.rs src/codegen/x86/support.rs shaders/codegen/x86_encode.slang shaders/codegen/x86_reloc_patch.slang shaders/codegen/x86_elf_write.slang tests/codegen_x86.rs TEST_RUN_LOG.md`
+- 2026-05-17T12:05:38-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc cargo check -p laniusc`
+- 2026-05-17T12:05:38-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test -p laniusc --test gpu_audit codegen_guardrails`
+- 2026-05-17T12:05:38-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test -p laniusc --test codegen_x86 x86_compiler_route_uses_direct_hir_elf_backend`
+- 2026-05-17T12:05:38-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test -p laniusc --test codegen_x86 x86_source_codegen_executes_intrinsic_output_for_hir_constant_locals`
+- 2026-05-17T12:05:38-05:00 `rustfmt --edition 2024 --check src/compiler.rs src/codegen/x86/record.rs src/codegen/x86/support.rs tests/gpu_audit/codegen_guardrails.rs`
+- 2026-05-17T12:05:38-05:00 `git diff --check -- src/compiler.rs src/codegen/x86/record.rs src/codegen/x86/support.rs tests/gpu_audit/codegen_guardrails.rs TEST_RUN_LOG.md`
+- 2026-05-17T12:06:50-05:00 `rustfmt --edition 2024 --check src/compiler.rs src/codegen/x86/record.rs src/codegen/x86/support.rs tests/gpu_audit/codegen_guardrails.rs`
+- 2026-05-17T12:06:50-05:00 `git diff --check -- src/compiler.rs src/codegen/x86/record.rs src/codegen/x86/support.rs tests/gpu_audit/codegen_guardrails.rs TEST_RUN_LOG.md`
+- 2026-05-17T12:07:13-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc --bin gpu_compile_bench`
+- 2026-05-17T12:07:13-05:00 `target/debug/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --iters 1 --warmups 0 --validate-output`
+- 2026-05-17T12:07:42-05:00 `git diff --check -- src/compiler.rs src/codegen/x86/record.rs src/codegen/x86/support.rs tests/gpu_audit/codegen_guardrails.rs TEST_RUN_LOG.md`
+- 2026-05-17T12:12:13-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc cargo check -p laniusc`
+- 2026-05-17T12:12:13-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test -p laniusc --test gpu_audit codegen_guardrails`
+- 2026-05-17T12:12:13-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test -p laniusc --test codegen_x86 x86_compiler_route_uses_direct_hir_elf_backend`
+- 2026-05-17T12:12:13-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc cargo test -p laniusc --test codegen_x86 x86_source_codegen_executes_intrinsic_output_for_hir_constant_locals`
+- 2026-05-17T12:12:13-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc cargo build -p laniusc --bin gpu_compile_bench`
+- 2026-05-17T12:12:13-05:00 `target/debug/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --estimate-only`
+- 2026-05-17T12:12:13-05:00 `target/debug/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --iters 1 --warmups 0 --validate-output`
+- 2026-05-17T12:12:13-05:00 `rustfmt --edition 2024 --check src/bin/gpu_compile_bench.rs src/compiler.rs src/codegen/x86/record.rs src/codegen/x86/record_init.rs src/codegen/x86/record_retained_expr.rs src/codegen/x86/support.rs shaders/codegen/x86_call_arg_values.slang shaders/codegen/x86_call_abi.slang shaders/codegen/x86_node_inst_gen.slang tests/codegen_x86.rs tests/gpu_audit/codegen_guardrails.rs`
+- 2026-05-17T12:12:13-05:00 `git diff --check -- docs/X86_64_GPU_BACKEND_PLAN.md src/bin/gpu_compile_bench.rs src/compiler.rs src/codegen/x86/record.rs src/codegen/x86/record_init.rs src/codegen/x86/record_retained_expr.rs src/codegen/x86/support.rs shaders/codegen/x86_call_arg_values.slang shaders/codegen/x86_call_abi.slang shaders/codegen/x86_node_inst_gen.slang tests/codegen_x86.rs tests/gpu_audit/codegen_guardrails.rs TEST_RUN_LOG.md`
+- 2026-05-17T12:13:47-05:00 `rustfmt --edition 2024 --check src/bin/gpu_compile_bench.rs src/compiler.rs src/codegen/x86/record.rs src/codegen/x86/support.rs tests/codegen_x86.rs tests/gpu_audit/codegen_guardrails.rs`
+- 2026-05-17T12:13:47-05:00 `git diff --check -- docs/X86_64_GPU_BACKEND_PLAN.md src/bin/gpu_compile_bench.rs src/compiler.rs src/codegen/x86/record.rs src/codegen/x86/record_init.rs src/codegen/x86/record_retained_expr.rs src/codegen/x86/support.rs shaders/codegen/x86_call_arg_values.slang shaders/codegen/x86_call_abi.slang shaders/codegen/x86_node_inst_gen.slang tests/codegen_x86.rs tests/gpu_audit/codegen_guardrails.rs TEST_RUN_LOG.md`
+- 2026-05-17T23:43:52-05:00 `timeout 60s cargo test -p laniusc --test gpu_audit x86_call_argument_lookup_is_compact_and_order_ranges_are_validated -- --nocapture`
+- 2026-05-17T23:44:02-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 60s cargo test -p laniusc --test gpu_audit x86_call_argument_lookup_is_compact_and_order_ranges_are_validated -- --nocapture`
+- 2026-05-17T23:44:18-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_GPU_TEST_TIMEOUT_MS=30000 timeout 120s cargo test -p laniusc --test codegen_x86 x86_source_codegen_executes_intrinsic_output_for_hir_constant_locals -- --nocapture`
+- 2026-05-17T23:45:13-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 60s cargo test -p laniusc --test codegen_x86 x86_compiler_route_uses_direct_hir_elf_backend -- --nocapture`
+- 2026-05-17T23:46:06-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_GPU_TEST_TIMEOUT_MS=30000 timeout 180s cargo test -p laniusc --test codegen_x86_properties generated_x86_array_return_abi_is_name_independent -- --nocapture`
+- 2026-05-17T23:50:04-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 60s cargo test -p laniusc --test gpu_audit x86_call_argument_lookup_is_compact_and_order_ranges_are_validated -- --nocapture`
+- 2026-05-17T23:50:22-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 60s cargo test -p laniusc --test codegen_x86 x86_compiler_route_uses_direct_hir_elf_backend -- --nocapture`
+- 2026-05-17T23:50:34-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_GPU_TEST_TIMEOUT_MS=30000 timeout 180s cargo test -p laniusc --test codegen_x86_properties generated_x86_array_return_abi_is_name_independent -- --nocapture`
+- 2026-05-17T23:53:00-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_GPU_TEST_TIMEOUT_MS=30000 timeout 180s cargo test -p laniusc --test codegen_x86_properties generated_x86_array_return_abi_is_name_independent -- --nocapture`
+- 2026-05-17T23:53:37-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_GPU_TEST_TIMEOUT_MS=30000 timeout 180s cargo test -p laniusc --test codegen_x86_properties generated_x86_array_return_abi_is_name_independent -- --nocapture`
+- 2026-05-17T23:53:54-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 60s cargo test -p laniusc --test gpu_audit x86_call_argument_lookup_is_compact_and_order_ranges_are_validated -- --nocapture`
+- 2026-05-17T23:54:04-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 60s cargo test -p laniusc --test codegen_x86 x86_compiler_route_uses_direct_hir_elf_backend -- --nocapture`
+- 2026-05-17T23:54:51-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_GPU_TEST_TIMEOUT_MS=30000 timeout 120s cargo test -p laniusc --test codegen_x86 x86_source_codegen_executes_intrinsic_output_for_hir_constant_locals -- --nocapture`
+- 2026-05-18T00:02:41-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_GPU_TEST_TIMEOUT_MS=30000 timeout 180s cargo test -p laniusc --test codegen_x86_properties generated_x86_unit_enum_match_is_name_independent -- --nocapture`
+- 2026-05-18T00:03:18-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 60s cargo test -p laniusc --test gpu_audit x86_call_argument_lookup_is_compact_and_order_ranges_are_validated -- --nocapture`
+- 2026-05-18T00:03:32-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 60s cargo test -p laniusc --test codegen_x86 x86_compiler_route_uses_direct_hir_elf_backend -- --nocapture`
+- 2026-05-18T00:13:52-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 60s cargo test -p laniusc --test codegen_x86 x86_compiler_route_uses_direct_hir_elf_backend -- --nocapture`
+- 2026-05-18T00:14:11-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_GPU_TEST_TIMEOUT_MS=30000 timeout 180s cargo test -p laniusc --test codegen_x86_properties generated_x86_array_for_loop_is_name_independent -- --nocapture`
+- 2026-05-18T00:14:40-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_GPU_TEST_TIMEOUT_MS=30000 timeout 180s cargo test -p laniusc --test codegen_x86_properties generated_x86_interval_for_loop_is_name_independent -- --nocapture`
+- 2026-05-18T00:15:11-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_GPU_TEST_TIMEOUT_MS=30000 timeout 180s cargo test -p laniusc --test codegen_x86_properties generated_x86_struct_copy_member_assignment_and_abi_are_name_independent -- --nocapture`
+- 2026-05-18T00:19:31-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 60s cargo test -p laniusc --test codegen_x86 x86_compiler_route_uses_direct_hir_elf_backend -- --nocapture`
+- 2026-05-18T00:19:49-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_GPU_TEST_TIMEOUT_MS=30000 timeout 180s cargo test -p laniusc --test codegen_x86_properties generated_x86_struct_copy_member_assignment_and_abi_are_name_independent -- --nocapture`
+- 2026-05-18T00:20:09-05:00 `SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_GPU_TEST_TIMEOUT_MS=30000 timeout 180s cargo test -p laniusc --test codegen_x86_properties generated_x86_array_for_loop_is_name_independent -- --nocapture`
+- 2026-05-18T00:27:39-05:00: `SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 60s cargo test -p laniusc --test codegen_x86 x86_compiler_route_uses_direct_hir_elf_backend -- --nocapture`
+- 2026-05-18T00:27:57-05:00: `SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_GPU_TEST_TIMEOUT_MS=30000 timeout 180s cargo test -p laniusc --test codegen_x86_properties generated_x86_scalar_three_and_four_arg_calls_preserve_argument_values -- --nocapture`
+- 2026-05-18T00:28:12-05:00: `SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_GPU_TEST_TIMEOUT_MS=30000 timeout 180s cargo test -p laniusc --test codegen_x86_properties generated_x86_struct_copy_member_assignment_and_abi_are_name_independent -- --nocapture`
+- 2026-05-18T00:36:30-05:00: `SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 60s cargo test -p laniusc --test codegen_x86 x86_compiler_route_uses_direct_hir_elf_backend -- --nocapture`
+- 2026-05-18T00:36:52-05:00: `SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_GPU_TEST_TIMEOUT_MS=30000 timeout 180s cargo test -p laniusc --test codegen_x86_properties generated_x86_scalar_three_and_four_arg_calls_preserve_argument_values -- --nocapture`
+- 2026-05-18T00:37:20-05:00: `SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_GPU_TEST_TIMEOUT_MS=30000 timeout 180s cargo test -p laniusc --test codegen_x86_properties generated_x86_array_for_loop_is_name_independent -- --nocapture`
+- 2026-05-18T00:37:36-05:00: `timeout 60s cargo test -p laniusc --test gpu_audit x86_call_argument_lookup_is_compact_and_order_ranges_are_validated -- --nocapture`
+- 2026-05-18T00:41:21-05:00: `SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 60s cargo test -p laniusc --test codegen_x86 x86_compiler_route_uses_direct_hir_elf_backend -- --nocapture`
+- 2026-05-18T00:42:09-05:00: `SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 60s cargo test -p laniusc --test codegen_x86 x86_compiler_route_uses_direct_hir_elf_backend -- --nocapture`
+- 2026-05-18T00:42:25-05:00: `SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_GPU_TEST_TIMEOUT_MS=30000 timeout 180s cargo test -p laniusc --test codegen_x86_properties generated_x86_scalar_three_and_four_arg_calls_preserve_argument_values -- --nocapture`
+- 2026-05-18T00:42:44-05:00: `SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_GPU_TEST_TIMEOUT_MS=30000 timeout 180s cargo test -p laniusc --test codegen_x86_properties generated_x86_array_for_loop_is_name_independent -- --nocapture`
+- 2026-05-18T00:46:18-05:00: `SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 60s cargo test -p laniusc --test codegen_x86 x86_compiler_route_uses_direct_hir_elf_backend -- --nocapture`
+- 2026-05-18T00:46:59-05:00: `SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 90s cargo test -p laniusc --test codegen_x86 x86_source_pack_codegen_emits_direct_elf_for_qualified_scalar_const_return -- --nocapture`
+- 2026-05-18T00:47:48-05:00: `RUST_LOG=laniusc=warn LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 90s cargo test -p laniusc --test codegen_x86 x86_source_pack_codegen_emits_direct_elf_for_qualified_scalar_const_return -- --nocapture`
+- 2026-05-18T00:48:30-05:00: `SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 90s cargo test -p laniusc --test codegen_x86 x86_source_pack_codegen_emits_direct_elf_for_module_main_literal_return -- --nocapture`
+- 2026-05-18T00:49:02-05:00: `SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 60s cargo test -p laniusc --test codegen_x86 x86_source_codegen_emits_direct_elf_for_integer_literal_return -- --nocapture`
+- 2026-05-18T00:51:43-05:00: `SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 60s cargo test -p laniusc --test codegen_x86 x86_compiler_route_uses_direct_hir_elf_backend -- --nocapture`
+- 2026-05-18T00:51:53-05:00: `SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 90s cargo test -p laniusc --test codegen_x86 x86_source_pack_codegen_emits_direct_elf_for_module_main_literal_return -- --nocapture`
+- 2026-05-18T00:53:01-05:00: `SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 90s cargo test -p laniusc --test codegen_x86 x86_source_pack_codegen_emits_direct_elf_for_module_main_literal_return -- --nocapture`
+- 2026-05-18T00:53:14-05:00: `SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 90s cargo test -p laniusc --test codegen_x86 x86_source_pack_codegen_emits_direct_elf_for_qualified_scalar_const_return -- --nocapture`
+- 2026-05-18T00:53:29-05:00: `SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_GPU_TEST_TIMEOUT_MS=30000 timeout 180s cargo test -p laniusc --test codegen_x86_properties generated_x86_scalar_three_and_four_arg_calls_preserve_argument_values -- --nocapture`
+- 2026-05-18T00:53:41-05:00: `SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_GPU_TEST_TIMEOUT_MS=30000 timeout 180s cargo test -p laniusc --test codegen_x86_properties generated_x86_array_for_loop_is_name_independent -- --nocapture`
+- 2026-05-18T01:01:26-05:00: `SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 90s cargo test -p laniusc --test codegen_x86 x86_source_pack_codegen_emits_direct_elf_for_qualified_scalar_const_return -- --nocapture`
+- 2026-05-18T01:01:26-05:00: `SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 60s cargo test -p laniusc --test gpu_audit x86_call_argument_lookup_is_compact_and_order_ranges_are_validated -- --nocapture`
+- 2026-05-18T01:05:35-05:00: `SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 90s cargo test -p laniusc --test codegen_x86 x86_source_pack_codegen_emits_direct_elf_for_qualified_scalar_const_return -- --nocapture`
+- 2026-05-18T01:07:16-05:00: `SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 90s cargo test -p laniusc --test codegen_x86 x86_source_pack_codegen_emits_direct_elf_for_qualified_scalar_const_return -- --nocapture`
+- 2026-05-18T01:07:50-05:00: `RUST_LOG=laniusc=warn LANIUS_X86_STATUS_TRACE=1 SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 90s cargo test -p laniusc --test codegen_x86 x86_source_pack_codegen_emits_direct_elf_for_qualified_scalar_const_return -- --nocapture`
+- 2026-05-18T01:08:39-05:00: `SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 90s cargo test -p laniusc --test codegen_x86 x86_source_pack_codegen_emits_direct_elf_for_qualified_scalar_const_return -- --nocapture`
+- 2026-05-18T01:12:47-05:00: `SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 90s cargo test -p laniusc --test codegen_x86 x86_source_pack_codegen_emits_direct_elf_for_qualified_scalar_const_return -- --nocapture`
+- 2026-05-18T01:14:18-05:00: `SLANGC=/home/andrew-peterson/tools/bin/slangc LANIUS_GPU_TEST_TIMEOUT_MS=30000 timeout 180s cargo test -p laniusc --test codegen_x86_properties generated_x86_scalar_three_and_four_arg_calls_preserve_argument_values -- --nocapture`
+2026-05-18T01:21:50-05:00	SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 90s cargo test -p laniusc --test codegen_x86 x86_source_pack_codegen_emits_direct_elf_for_qualified_scalar_const_return -- --nocapture
+2026-05-18T01:23:10-05:00	SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 60s cargo test -p laniusc --test codegen_x86 x86_compiler_route_uses_direct_hir_elf_backend -- --nocapture
+2026-05-18T01:25:35-05:00	SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 90s cargo test -p laniusc --test codegen_x86 x86_source_pack_codegen_emits_direct_elf_for_qualified_scalar_const_return -- --nocapture
+2026-05-18T01:25:59-05:00	SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 60s cargo test -p laniusc --test codegen_x86 x86_compiler_route_uses_direct_hir_elf_backend -- --nocapture
+2026-05-18T01:41:13-05:00 SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 90s cargo test -p laniusc --test type_checker_modules -- --nocapture
+2026-05-18T01:42:56-05:00 SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 60s cargo test -p laniusc --test type_checker_modules type_checker_accepts_qualified_generic_option_and_result_calls -- --nocapture
+2026-05-18T01:45:53-05:00 SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 60s cargo test -p laniusc --test type_checker_modules type_checker_accepts_qualified_generic_option_and_result_calls -- --nocapture
+2026-05-18T01:48:32-05:00 SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 60s cargo test -p laniusc --test type_checker_modules type_checker_accepts_qualified_generic_option_and_result_calls -- --nocapture
+2026-05-18T01:49:28-05:00 SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 60s cargo test -p laniusc --test type_checker_modules type_checker_accepts_qualified_generic_option_and_result_calls -- --nocapture
+2026-05-18T02:01:00-05:00 SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 60s cargo test -p laniusc --test type_checker_modules type_checker_accepts_qualified_generic_option_and_result_calls -- --nocapture
+2026-05-18T03:01:22-05:00 SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 90s cargo test -p laniusc --test codegen_x86 x86_source_pack_codegen_emits_direct_elf_for_module_main_literal_return -- --nocapture
+2026-05-18T03:03:35-05:00 SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 60s cargo test -p laniusc --test gpu_audit source_pack_compile_paths_use_scalar_count_boundaries -- --nocapture
+2026-05-18T03:08:44-05:00 SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 60s cargo test -p laniusc --test gpu_audit parse_benchmark_uses_live_count_and_projected_tree_capacity -- --nocapture

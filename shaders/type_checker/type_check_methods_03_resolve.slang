@@ -1,9 +1,13 @@
 // Final method-call result publication and argument validation.
 //
 // This pass consumes the sorted-table method resolution written at the method
-// name token and walks parser/HIR member-call and arg-list records to validate
-// arguments. It does not rediscover calls by scanning token neighborhoods or by
-// matching parentheses/commas in token ranges.
+// name token plus parser-owned member/call-argument records. It does not
+// rediscover calls by scanning token neighborhoods or by matching
+// parentheses/commas in token ranges.
+
+import gpu_index;
+import generated_parse_production_ids;
+import status;
 
 struct Params
 {
@@ -16,11 +20,13 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> parent;
 StructuredBuffer<uint> first_child;
-StructuredBuffer<uint> next_sibling;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_member_receiver_token;
+StructuredBuffer<uint> hir_member_name_token;
+StructuredBuffer<uint4> call_arg_record;
+StructuredBuffer<uint> call_arg_node;
 StructuredBuffer<uint> method_decl_receiver_mode;
 StructuredBuffer<uint> method_call_name_id;
 StructuredBuffer<uint> call_param_count;
@@ -44,21 +50,9 @@ static const uint TY_STRING = 7u;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint ERR_CALL_MISMATCH = 10u;
 
-static const uint HIR_POSTFIX_EXPR = 18u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
-
-static const uint PROD_ARG_LIST_EMPTY = 149u;
-static const uint PROD_ARG_LIST = 150u;
-static const uint PROD_ARG_TAIL_COMMA = 151u;
-static const uint PROD_ARG_TAIL_AFTER_COMMA = 153u;
-static const uint PROD_LITERAL_INT = 159u;
-static const uint PROD_LITERAL_FLOAT = 160u;
-static const uint PROD_LITERAL_STRING = 161u;
-static const uint PROD_LITERAL_CHAR = 162u;
-static const uint PROD_LITERAL_TRUE = 169u;
-static const uint PROD_LITERAL_FALSE = 170u;
 
 static const uint METHOD_RECEIVER_NONE = 0u;
 static const uint METHOD_RECEIVER_SELF = 1u;
@@ -89,34 +83,20 @@ bool valid_node(uint i)
     return i != INVALID && i < active_hir_node_count();
 }
 
-uint parent_node(uint i)
+uint method_resolve_first_child_record(uint i)
 {
-    uint p = valid_node(i) ? parent[i] : INVALID;
-    return valid_node(p) ? p : INVALID;
+    return first_child[i];
 }
 
 uint first_child_node(uint i)
 {
-    uint child = valid_node(i) ? first_child[i] : INVALID;
+    uint child = valid_node(i) ? method_resolve_first_child_record(i) : INVALID;
     return valid_node(child) ? child : INVALID;
-}
-
-uint next_sibling_node(uint i)
-{
-    uint sibling = valid_node(i) ? next_sibling[i] : INVALID;
-    return valid_node(sibling) ? sibling : INVALID;
 }
 
 void record_error(uint token_i, uint code, uint detail)
 {
-    uint old;
-    InterlockedMin(status[1], token_i, old);
-    if (token_i <= old)
-    {
-        status[0] = 0u;
-        status[2] = code;
-        status[3] = detail;
-    }
+    record_min_token_error(status, token_i, code, detail);
 }
 
 bool assignable(uint dst, uint src)
@@ -136,15 +116,15 @@ bool assignable(uint dst, uint src)
 
 uint scalar_type_for_literal_prod(uint prod)
 {
-    if (prod == PROD_LITERAL_INT)
+    if (prod == PROD_INT)
         return TY_INT;
-    if (prod == PROD_LITERAL_TRUE || prod == PROD_LITERAL_FALSE)
+    if (prod == PROD_TRUE || prod == PROD_FALSE)
         return TY_BOOL;
-    if (prod == PROD_LITERAL_FLOAT)
+    if (prod == PROD_FLOAT)
         return TY_FLOAT;
-    if (prod == PROD_LITERAL_STRING)
+    if (prod == PROD_STRING)
         return TY_STRING;
-    if (prod == PROD_LITERAL_CHAR)
+    if (prod == PROD_CHAR)
         return TY_CHAR;
     return TY_UNKNOWN;
 }
@@ -172,7 +152,7 @@ uint direct_node_type(uint node)
 
     if (hir_kind[node] == HIR_MEMBER_EXPR)
     {
-        uint member_i = token_i + 1u;
+        uint member_i = hir_member_name_token[node];
         if (member_i >= active_token_count())
             return TY_UNKNOWN;
         uint member_ty = visible_type[member_i];
@@ -214,81 +194,47 @@ bool method_explicit_receiver_consumes_param(uint fn_i, uint receiver_ty)
         return false;
     if (call_param_count[fn_i] == 0u)
         return false;
-    uint first_ty = call_param_type[fn_i * PARAM_CACHE_STRIDE];
+    uint first_ty = row_major_load<uint>(
+        call_param_type,
+        fn_i,
+        PARAM_CACHE_STRIDE,
+        0u,
+        TY_UNKNOWN);
     return first_ty == receiver_ty;
 }
 
-uint next_descendant_node(uint root, uint cur)
+uint call_node_for_method_token(uint method_i)
 {
-    uint child = first_child_node(cur);
-    if (child != INVALID)
-        return child;
-
-    uint node = cur;
-    [loop]
-    for (uint guard = 0u; guard < 32u && node != INVALID; guard += 1u)
-    {
-        if (node == root)
-            return INVALID;
-        uint sibling = next_sibling_node(node);
-        if (sibling != INVALID)
-            return sibling;
-        node = parent_node(node);
-    }
-    return INVALID;
+    if (method_i >= active_token_count())
+        return INVALID;
+    return call_arg_record[method_i].z;
 }
 
-uint call_descendant_for_member(uint member_node)
+uint call_arg_count_for_method_token(uint method_i)
 {
-    uint child = first_child_node(member_node);
-    [loop]
-    for (uint guard = 0u; guard < 64u && child != INVALID; guard += 1u)
-    {
-        if (hir_kind[child] == HIR_CALL_EXPR)
-            return child;
-        child = next_descendant_node(member_node, child);
-    }
-    return INVALID;
+    if (method_i >= active_token_count())
+        return 0u;
+    return call_arg_record[method_i].w;
+}
+
+uint call_arg_node_for_method_token(uint method_i, uint ordinal)
+{
+    if (method_i >= active_token_count() || ordinal >= PARAM_CACHE_STRIDE)
+        return INVALID;
+    return row_major_load<uint>(
+        call_arg_node,
+        method_i,
+        PARAM_CACHE_STRIDE,
+        ordinal,
+        INVALID);
 }
 
 uint receiver_token_for_member(uint member_node)
 {
-    uint cur = member_node;
-    [loop]
-    for (uint guard = 0u; guard < 16u; guard += 1u)
-    {
-        uint p = parent_node(cur);
-        if (p == INVALID)
-            return INVALID;
-        if (hir_kind[p] == HIR_POSTFIX_EXPR)
-        {
-            uint base = first_child_node(p);
-            return base == INVALID ? INVALID : hir_token_pos[base];
-        }
-        cur = p;
-    }
-    return INVALID;
+    return valid_node(member_node) ? hir_member_receiver_token[member_node] : INVALID;
 }
 
-bool next_arg_from_tail(uint tail_node, out uint expr_node, out uint next_tail_node)
-{
-    expr_node = INVALID;
-    next_tail_node = INVALID;
-    if (!valid_node(tail_node) || node_kind[tail_node] != PROD_ARG_TAIL_COMMA)
-        return false;
-
-    uint after_comma = first_child_node(tail_node);
-    if (!valid_node(after_comma) || node_kind[after_comma] != PROD_ARG_TAIL_AFTER_COMMA)
-        return false;
-
-    expr_node = first_child_node(after_comma);
-    if (!valid_node(expr_node))
-        return false;
-    next_tail_node = next_sibling_node(expr_node);
-    return true;
-}
-
-bool validate_method_args(uint method_i, uint call_node, uint fn_i, uint receiver_ty)
+bool validate_method_args(uint method_i, uint fn_i, uint receiver_ty)
 {
     uint param_count = call_param_count[fn_i];
     bool has_self_receiver = method_has_self_receiver(fn_i);
@@ -301,41 +247,30 @@ bool validate_method_args(uint method_i, uint call_node, uint fn_i, uint receive
 
     bool receiver_consumed = has_self_receiver || consumes_receiver;
     uint expected_args = receiver_consumed && param_count > 0u ? param_count - 1u : param_count;
-    uint arg_list = first_child_node(call_node);
-    uint actual_args = 0u;
-    if (valid_node(arg_list) && node_kind[arg_list] == PROD_ARG_LIST)
+    uint actual_args = call_arg_count_for_method_token(method_i);
+    if (actual_args > PARAM_CACHE_STRIDE)
+        actual_args = PARAM_CACHE_STRIDE;
+    [loop]
+    for (uint arg_i = 0u; arg_i < actual_args && arg_i < PARAM_CACHE_STRIDE; arg_i += 1u)
     {
-        uint expr_node = first_child_node(arg_list);
-        uint tail_node = next_sibling_node(expr_node);
-        [loop]
-        for (uint guard = 0u; guard < PARAM_CACHE_STRIDE && valid_node(expr_node); guard += 1u)
+        uint param_i = receiver_consumed ? arg_i + 1u : arg_i;
+        if (param_i >= PARAM_CACHE_STRIDE)
+            break;
+
+        uint expr_node = call_arg_node_for_method_token(method_i, arg_i);
+        uint dst = row_major_load<uint>(
+            call_param_type,
+            fn_i,
+            PARAM_CACHE_STRIDE,
+            param_i,
+            TY_UNKNOWN);
+        uint src = expr_type_from_hir(expr_node);
+        uint arg_token = valid_node(expr_node) ? hir_token_pos[expr_node] : method_i;
+        if (!assignable(dst, src))
         {
-            uint param_i = receiver_consumed ? actual_args + 1u : actual_args;
-            if (param_i >= PARAM_CACHE_STRIDE)
-                break;
-
-            uint dst = call_param_type[fn_i * PARAM_CACHE_STRIDE + param_i];
-            uint src = expr_type_from_hir(expr_node);
-            uint arg_token = hir_token_pos[expr_node];
-            if (!assignable(dst, src))
-            {
-                record_error(arg_token, ERR_ASSIGN_MISMATCH, dst * 256u + src);
-                return false;
-            }
-
-            actual_args += 1u;
-            uint next_expr;
-            uint next_tail;
-            if (!next_arg_from_tail(tail_node, next_expr, next_tail))
-                break;
-            expr_node = next_expr;
-            tail_node = next_tail;
+            record_error(arg_token, ERR_ASSIGN_MISMATCH, dst * 256u + src);
+            return false;
         }
-    }
-    else if (valid_node(arg_list) && node_kind[arg_list] != PROD_ARG_LIST_EMPTY)
-    {
-        record_error(method_i, ERR_CALL_MISMATCH, expected_args);
-        return false;
     }
 
     if (actual_args != expected_args)
@@ -348,12 +283,14 @@ bool validate_method_args(uint method_i, uint call_node, uint fn_i, uint receive
 
 void resolve_method_member_node(uint member_node)
 {
-    uint call_node = call_descendant_for_member(member_node);
-    if (call_node == INVALID)
+    uint method_i = valid_node(member_node) ? hir_member_name_token[member_node] : INVALID;
+    if (method_i >= active_token_count())
+        return;
+    if (method_call_name_id[method_i] == INVALID)
         return;
 
-    uint method_i = hir_token_pos[member_node] + 1u;
-    if (method_i >= active_token_count())
+    uint call_node = call_node_for_method_token(method_i);
+    if (call_node == INVALID)
         return;
 
     uint fn_i = call_fn_index[method_i];
@@ -379,7 +316,7 @@ void resolve_method_member_node(uint member_node)
     if (call_return_type[receiver_i] != TY_UNKNOWN)
         call_return_type[receiver_i] = ret_ty;
 
-    validate_method_args(method_i, call_node, fn_i, receiver_ty);
+    validate_method_args(method_i, fn_i, receiver_ty);
 }
 
 void reject_unresolved_marked_method_token(uint method_i)

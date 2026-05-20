@@ -3,12 +3,17 @@
 // x86_64 instructions are variable width, so byte sizes are GPU records instead
 // of constants baked into the ELF writer.
 
+import gpu_index;
+import byte_packing;
+import bit_packing;
+import status;
 struct Params
 {
     uint n_tokens;
     uint source_len;
     uint out_capacity;
     uint n_hir_nodes;
+    uint inst_capacity;
 };
 
 ConstantBuffer<Params> gParams;
@@ -17,6 +22,7 @@ StructuredBuffer<uint> x86_inst_kind;
 StructuredBuffer<uint> x86_inst_arg0;
 StructuredBuffer<uint> x86_inst_arg1;
 StructuredBuffer<uint> x86_inst_arg2;
+StructuredBuffer<uint> x86_decl_layout_status;
 StructuredBuffer<uint> select_status;
 
 RWStructuredBuffer<uint> x86_inst_size;
@@ -85,9 +91,32 @@ static const uint X86_INST_V_RETURN_R32 = 55u;
 static const uint X86_INST_V_BRANCH_ZERO = 56u;
 static const uint X86_INST_V_JMP = 57u;
 static const uint X86_INST_V_PARAM_R32 = 58u;
-static const uint X86_INST_V_CALL_DIRECT = 59u;
 static const uint X86_INST_V_RETURN_FUNC_R32 = 60u;
 static const uint X86_INST_V_PRINT_I32 = 61u;
+static const uint X86_INST_V_LOAD_LOCAL_R32 = 62u;
+static const uint X86_INST_V_STORE_LOCAL_R32 = 63u;
+static const uint X86_INST_V_ENTRY_STACK_JMP = 64u;
+static const uint X86_INST_V_EXIT_ZERO = 65u;
+static const uint X86_INST_V_LOAD_LOCAL_INDEX_R32 = 66u;
+static const uint X86_INST_V_STORE_LOCAL_IMM32 = 67u;
+static const uint X86_INST_V_FOR_ARRAY_BRANCH = 68u;
+static const uint X86_INST_V_FOR_ARRAY_LOAD = 69u;
+static const uint X86_INST_V_FOR_ARRAY_INC_JMP = 70u;
+static const uint X86_INST_V_CALL_MIXED_DIRECT = 71u;
+static const uint X86_INST_V_LOAD_PARAM_INDEX_R32 = 72u;
+static const uint X86_INST_V_STORE_RET_PTR_R32 = 73u;
+static const uint X86_INST_V_COPY_AGG_RET = 74u;
+static const uint X86_INST_V_STORE_RET_PTR_IMM32 = 75u;
+static const uint X86_INST_V_LOAD_PTR_SLOT_R32 = 76u;
+static const uint X86_INST_V_MATCH_TAG_BRANCH = 77u;
+static const uint X86_INST_V_FOR_INTERVAL_BRANCH = 78u;
+static const uint X86_INST_V_COPY_LOCAL_R32 = 79u;
+static const uint X86_ARG_SCALAR = 1u;
+static const uint X86_ARG_LOCAL_PTR = 2u;
+static const uint X86_ARG_PARAM_PTR = 3u;
+static const uint X86_AGG_SOURCE_LOCAL = 1u;
+static const uint X86_AGG_SOURCE_PARAM = 2u;
+static const uint MAX_X86_LOCAL_SLOTS = 65536u;
 
 static const uint X86_OP_NEG_I32 = 1u;
 static const uint X86_OP_NOT_BOOL = 2u;
@@ -106,6 +135,7 @@ static const uint X86_OP_SHR_I32 = 12u;
 static const uint X86_REG_EAX = 0u;
 static const uint X86_REG_ECX = 1u;
 static const uint X86_REG_EDX = 2u;
+static const uint X86_REG_EBX = 3u;
 static const uint X86_REG_ESI = 6u;
 static const uint X86_REG_EDI = 7u;
 static const uint X86_REG_R8D = 8u;
@@ -115,7 +145,7 @@ static const uint X86_REG_R11D = 11u;
 
 uint linear_dispatch_id(uint3 tid)
 {
-    return tid.x + tid.y * DISPATCH_X_STRIDE;
+    return linear_dispatch_thread_id_2d(tid, DISPATCH_X_STRIDE);
 }
 
 uint abs_i32_magnitude(uint value)
@@ -159,6 +189,13 @@ uint rex_for_modrm(uint reg_field, uint rm)
     return (reg_field >= 8u && reg_field < 16u) || (rm >= 8u && rm < 16u) ? 1u : 0u;
 }
 
+uint rex_for_sib(uint reg_field, uint index, uint base)
+{
+    return (reg_field >= 8u && reg_field < 16u) ||
+           (index >= 8u && index < 16u) ||
+           (base >= 8u && base < 16u) ? 1u : 0u;
+}
+
 uint rex_for_low8_modrm(uint reg_field, uint rm)
 {
     return (reg_field >= 8u && reg_field < 16u) || (rm >= 4u && rm < 16u) ? 1u : 0u;
@@ -166,12 +203,12 @@ uint rex_for_low8_modrm(uint reg_field, uint rm)
 
 uint packed_reg_a(uint packed)
 {
-    return packed & 0xffu;
+    return packed_u8_at(packed, 0u);
 }
 
 uint packed_reg_b(uint packed)
 {
-    return (packed >> 8u) & 0xffu;
+    return packed_u8_at(packed, 1u);
 }
 
 uint mov_r32_imm32_size(uint dst)
@@ -263,9 +300,153 @@ uint compare_size(uint dst, uint packed)
            3u + rex_for_low8_modrm(dst, dst);
 }
 
+uint cmp_r32_r32_size(uint left, uint right)
+{
+    return valid_reg(left) && valid_reg(right) ? 2u + rex_for_modrm(right, left) : 0u;
+}
+
+uint local_slot_disp(uint slot)
+{
+    return (slot + 3u) * 4u;
+}
+
+bool valid_local_slot(uint slot)
+{
+    return slot < MAX_X86_LOCAL_SLOTS;
+}
+
+uint cmp_local_r32_size(uint slot, uint reg)
+{
+    if (!valid_reg(reg) || !valid_local_slot(slot))
+        return 0u;
+    uint disp = local_slot_disp(slot);
+    return (disp <= 127u ? 4u : 7u) + rex_for_modrm(reg, 4u);
+}
+
 uint branch_zero_size(uint cond)
 {
     return valid_reg(cond) ? 2u + rex_for_modrm(cond, cond) + 6u : 0u;
+}
+
+uint local_mem_r32_size(uint reg, uint slot)
+{
+    if (!valid_reg(reg) || !valid_local_slot(slot))
+        return 0u;
+    uint disp = local_slot_disp(slot);
+    return (disp <= 127u ? 4u : 7u) + rex_for_modrm(reg, 4u);
+}
+
+bool valid_index_reg(uint reg)
+{
+    return valid_reg(reg) && (reg & 7u) != 4u;
+}
+
+uint local_index_mem_r32_size(uint dst, uint slot, uint index)
+{
+    if (!valid_reg(dst) || !valid_index_reg(index) || !valid_local_slot(slot))
+        return 0u;
+    uint disp = local_slot_disp(slot);
+    return (disp <= 127u ? 4u : 7u) + rex_for_sib(dst, index, 4u);
+}
+
+uint param_index_mem_r32_size(uint dst, uint base, uint index)
+{
+    return valid_reg(dst) && valid_reg(base) && valid_index_reg(index) && (base & 7u) != 4u
+               ? 4u + rex_for_sib(dst, index, base)
+               : 0u;
+}
+
+uint ptr_slot_mem_r32_size(uint reg, uint base, uint ordinal)
+{
+    uint disp = ordinal * 4u;
+    return valid_reg(reg) && valid_reg(base) && disp <= 127u
+               ? 3u + rex_for_modrm(reg, base)
+               : 0u;
+}
+
+uint ptr_slot_imm32_size(uint base, uint ordinal)
+{
+    uint disp = ordinal * 4u;
+    return valid_reg(base) && disp <= 127u
+               ? 7u + rex_for_modrm(0u, base)
+               : 0u;
+}
+
+uint cmp_ptr_slot_imm32_size(uint base, uint ordinal)
+{
+    uint disp = ordinal * 4u;
+    return valid_reg(base) && disp <= 127u
+               ? 7u + rex_for_modrm(7u, base)
+               : 0u;
+}
+
+uint lea_arg_local_ptr_size(uint target, uint slot, uint stack_adjust)
+{
+    if (!valid_reg(target) || !valid_local_slot(slot))
+        return 0u;
+    uint disp = stack_adjust + local_slot_disp(slot);
+    return disp <= 127u ? 5u : 8u;
+}
+
+uint mov_r64_r64_size(uint dst, uint src)
+{
+    return valid_reg(dst) && valid_reg(src) ? 3u : 0u;
+}
+
+uint local_imm32_size(uint slot)
+{
+    if (!valid_local_slot(slot))
+        return 0u;
+    return local_slot_disp(slot) <= 127u ? 8u : 11u;
+}
+
+uint for_array_branch_size(uint index_slot)
+{
+    uint cmp_size = local_imm32_size(index_slot);
+    return cmp_size == 0u ? 0u : cmp_size + 6u;
+}
+
+uint match_tag_branch_size(uint source_kind, uint payload)
+{
+    uint cmp_size = 0u;
+    if (source_kind == X86_AGG_SOURCE_LOCAL)
+        cmp_size = local_imm32_size(payload);
+    else if (source_kind == X86_AGG_SOURCE_PARAM)
+        cmp_size = cmp_ptr_slot_imm32_size(payload, 0u);
+    return cmp_size == 0u ? 0u : cmp_size + 6u;
+}
+
+uint for_array_load_size(uint array_base_slot, uint index_slot, uint value_slot)
+{
+    uint load_index = local_mem_r32_size(X86_REG_R11D, index_slot);
+    uint load_value = local_index_mem_r32_size(X86_REG_R11D, array_base_slot, X86_REG_R11D);
+    uint store_value = local_mem_r32_size(X86_REG_R11D, value_slot);
+    return load_index != 0u && load_value != 0u && store_value != 0u
+               ? load_index + load_value + store_value
+               : 0u;
+}
+
+uint for_array_inc_jmp_size(uint index_slot)
+{
+    if (!valid_local_slot(index_slot))
+        return 0u;
+    return (local_slot_disp(index_slot) <= 127u ? 5u : 8u) + 5u;
+}
+
+uint copy_local_r32_size(uint dst_slot, uint src_slot)
+{
+    uint load_size = local_mem_r32_size(X86_REG_R11D, src_slot);
+    uint store_size = local_mem_r32_size(X86_REG_R11D, dst_slot);
+    return load_size != 0u && store_size != 0u ? load_size + store_size : 0u;
+}
+
+uint for_interval_branch_size(uint index_slot, uint end_slot)
+{
+    uint load_end = local_mem_r32_size(X86_REG_R11D, end_slot);
+    uint cmp_size = cmp_local_r32_size(index_slot, X86_REG_R11D);
+    return load_end != 0u && cmp_size != 0u
+               ? load_end + cmp_size + 6u
+               : 0u;
 }
 
 uint return_size(uint src)
@@ -325,6 +506,50 @@ uint call_save_restore_size()
     return size;
 }
 
+uint call_save_stack_size()
+{
+    uint size = 0u;
+    [unroll]
+    for (uint slot = 0u; slot < 8u; slot += 1u)
+        size += 8u;
+    return size;
+}
+
+uint call_frame_size()
+{
+    uint local_slots = x86_decl_layout_status[3u];
+    uint bytes = max((local_slots + 3u) * 4u, 128u);
+    return (bytes + 15u) & 0xfffffff0u;
+}
+
+uint stack_frame_adjust_size(uint frame_size)
+{
+    return frame_size == 0u ? 0u : 7u;
+}
+
+bool call_saved_reg_slot(uint reg, out uint slot)
+{
+    slot = 0xffffffffu;
+    [unroll]
+    for (uint candidate = 0u; candidate < 8u; candidate += 1u)
+    {
+        if (call_saved_reg_for_slot(candidate) == reg)
+        {
+            slot = candidate;
+            return true;
+        }
+    }
+    return false;
+}
+
+uint load_saved_call_reg_r32_size(uint dst, uint src)
+{
+    uint slot = 0xffffffffu;
+    if (!valid_reg(dst) || !call_saved_reg_slot(src, slot))
+        return 0u;
+    return 4u + rex_for_modrm(dst, 4u);
+}
+
 uint print_save_restore_size()
 {
     uint size = 0u;
@@ -342,48 +567,105 @@ uint print_i32_size(uint src)
     return print_save_restore_size() + 92u + src_move + print_save_restore_size();
 }
 
-uint call_arg_move_size(uint arg_count, uint arg0, uint arg1)
+uint mixed_target_reg(uint ordinal, bool aggregate_return)
 {
-    if (arg_count == 0u)
-        return 0u;
-    if (arg_count == 1u)
-        return valid_reg(arg0) ? (arg0 == X86_REG_EDI ? 0u : mov_r32_r32_size(X86_REG_EDI, arg0)) : 0u;
-    if (!valid_reg(arg0) || !valid_reg(arg1))
+    uint shifted = ordinal + (aggregate_return ? 1u : 0u);
+    if (shifted == 0u) return X86_REG_EDI;
+    if (shifted == 1u) return X86_REG_ESI;
+    if (shifted == 2u) return X86_REG_EDX;
+    if (shifted == 3u) return X86_REG_ECX;
+    if (shifted == 4u) return X86_REG_R8D;
+    if (shifted == 5u) return X86_REG_R9D;
+    return 0xffffffffu;
+}
+
+uint selected_mixed_arg_kind(uint info, uint ordinal)
+{
+    if (ordinal < 4u)
+        return packed_u2_at_offset(info, 24u, ordinal);
+    return 0u;
+}
+
+uint selected_mixed_arg_payload(uint packed, uint ordinal)
+{
+    if (ordinal < 4u)
+        return packed_u8_at(packed, ordinal);
+    return 0xffffffffu;
+}
+
+uint mixed_arg_move_size(uint target, uint kind, uint payload, uint save_size)
+{
+    if (kind == X86_ARG_SCALAR)
+    {
+        if (!valid_reg(payload))
+            return 0u;
+        if (payload == target)
+            return 0u;
+        uint saved_load_size = load_saved_call_reg_r32_size(target, payload);
+        return saved_load_size != 0u ? saved_load_size : mov_r32_r32_size(target, payload);
+    }
+    if (kind == X86_ARG_LOCAL_PTR)
+        return lea_arg_local_ptr_size(target, payload, save_size);
+    if (kind == X86_ARG_PARAM_PTR)
+        return payload == target ? 0u : mov_r64_r64_size(target, payload);
+    return 0u;
+}
+
+uint call_mixed_size(uint target, uint info, uint packed)
+{
+    bool aggregate_return = (info & 1u) != 0u;
+    uint dest = packed_u8_at(info, 1u);
+    uint arg_count = packed_u8_at(info, 2u);
+    if (arg_count > 4u || (aggregate_return && !valid_local_slot(dest)) ||
+        (!aggregate_return && !valid_reg(dest)))
         return 0u;
 
-    if (arg0 == X86_REG_ESI && arg1 == X86_REG_EDI)
+    uint save_size = call_save_restore_size();
+    uint save_stack = call_save_stack_size();
+    uint size = save_size;
+    if (aggregate_return)
+        size += lea_arg_local_ptr_size(X86_REG_EDI, dest, save_stack);
+
+    [unroll]
+    for (uint ordinal = 0u; ordinal < 4u; ordinal += 1u)
     {
-        return mov_r32_r32_size(X86_REG_EAX, X86_REG_EDI) +
-               mov_r32_r32_size(X86_REG_EDI, X86_REG_ESI) +
-               mov_r32_r32_size(X86_REG_ESI, X86_REG_EAX);
+        if (ordinal >= arg_count)
+            break;
+        uint target_reg = mixed_target_reg(ordinal, aggregate_return);
+        if (!valid_reg(target_reg))
+            return 0u;
+        uint payload = selected_mixed_arg_payload(packed, ordinal);
+        uint kind = selected_mixed_arg_kind(info, ordinal);
+        uint move_size = mixed_arg_move_size(target_reg, kind, payload, save_stack);
+        if (move_size == 0u &&
+            !(kind == X86_ARG_SCALAR && payload == target_reg) &&
+            !(kind == X86_ARG_PARAM_PTR && payload == target_reg))
+            return 0u;
+        size += move_size;
     }
 
-    uint size = 0u;
-    if (arg0 != X86_REG_EDI)
-        size += mov_r32_r32_size(X86_REG_EDI, arg0);
-    if (arg1 != X86_REG_ESI)
-        size += mov_r32_r32_size(X86_REG_ESI, arg1);
+    uint frame_adjust_size = stack_frame_adjust_size(call_frame_size());
+    size += frame_adjust_size + 5u + frame_adjust_size + save_size;
+    if (!aggregate_return && dest != X86_REG_EAX)
+        size += mov_r32_r32_size(dest, X86_REG_EAX);
     return size;
 }
 
-uint call_direct_size(uint dst, uint packed)
+uint copy_agg_ret_size(uint source_kind, uint payload, uint ordinal)
 {
-    uint arg_count = packed & 0xffu;
-    uint arg0 = (packed >> 8u) & 0xffu;
-    uint arg1 = (packed >> 16u) & 0xffu;
-    if (!valid_reg(dst) || arg_count > 2u)
-        return 0u;
-
-    uint move_size = call_arg_move_size(arg_count, arg0, arg1);
-    if ((arg_count > 0u && move_size == 0u && arg0 != X86_REG_EDI) ||
-        (arg_count > 1u && !valid_reg(arg1)))
-        return 0u;
-
-    uint save_restore_size = call_save_restore_size();
-    uint size = save_restore_size + move_size + 5u + save_restore_size;
-    if (dst != X86_REG_EAX)
-        size += mov_r32_r32_size(dst, X86_REG_EAX);
-    return size;
+    if (source_kind == X86_AGG_SOURCE_LOCAL)
+    {
+        uint load_size = local_mem_r32_size(X86_REG_R11D, payload + ordinal);
+        uint store_size = ptr_slot_mem_r32_size(X86_REG_R11D, X86_REG_EDI, ordinal);
+        return load_size != 0u && store_size != 0u ? load_size + store_size : 0u;
+    }
+    if (source_kind == X86_AGG_SOURCE_PARAM)
+    {
+        uint load_size = ptr_slot_mem_r32_size(X86_REG_R11D, payload, ordinal);
+        uint store_size = ptr_slot_mem_r32_size(X86_REG_R11D, X86_REG_EDI, ordinal);
+        return load_size != 0u && store_size != 0u ? load_size + store_size : 0u;
+    }
+    return 0u;
 }
 
 uint byte_size_for_inst(uint inst_i)
@@ -447,9 +729,26 @@ uint byte_size_for_inst(uint inst_i)
     if (kind == X86_INST_V_BRANCH_ZERO) return branch_zero_size(x86_inst_arg0[inst_i]);
     if (kind == X86_INST_V_JMP) return 5u;
     if (kind == X86_INST_V_PARAM_R32) return mov_r32_r32_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i]);
-    if (kind == X86_INST_V_CALL_DIRECT) return call_direct_size(x86_inst_arg1[inst_i], x86_inst_arg2[inst_i]);
     if (kind == X86_INST_V_RETURN_FUNC_R32) return return_func_size(x86_inst_arg0[inst_i]);
     if (kind == X86_INST_V_PRINT_I32) return print_i32_size(x86_inst_arg0[inst_i]);
+    if (kind == X86_INST_V_LOAD_LOCAL_R32) return local_mem_r32_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i]);
+    if (kind == X86_INST_V_STORE_LOCAL_R32) return local_mem_r32_size(x86_inst_arg1[inst_i], x86_inst_arg0[inst_i]);
+    if (kind == X86_INST_V_LOAD_LOCAL_INDEX_R32) return local_index_mem_r32_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i]);
+    if (kind == X86_INST_V_STORE_LOCAL_IMM32) return local_imm32_size(x86_inst_arg0[inst_i]);
+    if (kind == X86_INST_V_FOR_ARRAY_BRANCH) return for_array_branch_size(x86_inst_arg0[inst_i]);
+    if (kind == X86_INST_V_FOR_ARRAY_LOAD) return for_array_load_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i]);
+    if (kind == X86_INST_V_FOR_ARRAY_INC_JMP) return for_array_inc_jmp_size(x86_inst_arg0[inst_i]);
+    if (kind == X86_INST_V_FOR_INTERVAL_BRANCH) return for_interval_branch_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i]);
+    if (kind == X86_INST_V_COPY_LOCAL_R32) return copy_local_r32_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i]);
+    if (kind == X86_INST_V_CALL_MIXED_DIRECT) return call_mixed_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i]);
+    if (kind == X86_INST_V_LOAD_PARAM_INDEX_R32) return param_index_mem_r32_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i]);
+    if (kind == X86_INST_V_STORE_RET_PTR_R32) return ptr_slot_mem_r32_size(x86_inst_arg0[inst_i], X86_REG_EDI, x86_inst_arg1[inst_i]);
+    if (kind == X86_INST_V_COPY_AGG_RET) return copy_agg_ret_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i]);
+    if (kind == X86_INST_V_STORE_RET_PTR_IMM32) return ptr_slot_imm32_size(X86_REG_EDI, x86_inst_arg1[inst_i]);
+    if (kind == X86_INST_V_LOAD_PTR_SLOT_R32) return ptr_slot_mem_r32_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i]);
+    if (kind == X86_INST_V_MATCH_TAG_BRANCH) return match_tag_branch_size(unpack_u16_pair_low(x86_inst_arg0[inst_i]), x86_inst_arg1[inst_i]);
+    if (kind == X86_INST_V_ENTRY_STACK_JMP) return 12u;
+    if (kind == X86_INST_V_EXIT_ZERO) return 12u;
     return 0u;
 }
 
@@ -458,7 +757,8 @@ uint byte_size_for_inst(uint inst_i)
 void main(uint3 tid: SV_DispatchThreadID)
 {
     uint inst_i = linear_dispatch_id(tid);
-    bool select_ok = select_status[0u] == X86_SELECT_OK;
+    bool select_ok = select_status[0u] == X86_SELECT_OK &&
+                     select_status[3u] <= gParams.inst_capacity;
     uint inst_count = select_ok ? select_status[3u] : 0u;
 
     if (inst_i == 0u)
@@ -474,11 +774,6 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     uint size = byte_size_for_inst(inst_i);
     x86_inst_size[inst_i] = size;
-    if (size == 0u)
-    {
-        size_status[0u] = 0u;
-        size_status[1u] = X86_ERR_INST_SIZE;
-        uint old_detail = 0u;
-        InterlockedMin(size_status[2u], inst_i, old_detail);
-    }
+    if (size == 0u && x86_inst_kind[inst_i] != 0u)
+        publish_stage_error_min_detail4(size_status, X86_ERR_INST_SIZE, inst_i);
 }

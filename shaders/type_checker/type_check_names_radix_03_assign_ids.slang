@@ -7,6 +7,8 @@
 // - The final name id comes from the run_head/prefix pair and is scattered back
 //   to the original NameSpan index.
 
+import sorted_runs;
+
 struct Params
 {
     uint name_count;
@@ -42,16 +44,6 @@ uint linear_thread_id(uint3 dtid)
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
 }
 
-uint name_id_from_run_head(uint sorted_i)
-{
-    uint run_prefix = run_head_prefix[sorted_i];
-    if (run_head_mask[sorted_i] != 0u)
-        return run_prefix;
-    if (run_prefix == 0u)
-        return 0u;
-    return run_prefix - 1u;
-}
-
 uint active_name_count()
 {
     return min(name_count_in[0], gParams.name_count);
@@ -68,7 +60,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i >= name_count)
         return;
 
-    uint id = name_id_from_run_head(i);
+    uint id = sorted_run_id_from_head_prefix(run_head_mask[i], run_head_prefix[i]);
     uint name_i = sorted_name_order[i];
     sorted_name_id[i] = id;
     name_id_by_input[name_i] = id;
@@ -79,5 +71,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
         name_id_by_token[span.token_index] = id;
 
     if (i + 1u == name_count)
-        unique_name_count[0] = id + 1u;
+        unique_name_count[0] = sorted_run_count_from_last_id(true, id);
 }

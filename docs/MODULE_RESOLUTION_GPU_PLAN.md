@@ -26,10 +26,10 @@ What parses today:
   positions, value-call positions, struct literal heads, and match patterns:
   `core::option::Option<i32>`, `core::math::add_one(1)`,
   `core::point::Point { ... }`, and `core::option::Some(inner)`.
-- The GPU parser/HIR path already classifies current direct-HIR nodes such as
+- The GPU parser/HIR path already classifies LL(1)-derived HIR nodes such as
   functions, params, types, lets, returns, consts, enums, structs, struct
-  literals, and type aliases in `shaders/parser/direct_hir.slang`,
-  `shaders/parser/hir_nodes.slang`, and `src/parser/gpu/passes/hir_nodes.rs`.
+  literals, and type aliases in `shaders/parser/hir_nodes.slang` and
+  `src/parser/gpu/passes/hir_nodes.rs`.
 
 What GPU syntax accepts and rejects today:
 
@@ -50,9 +50,8 @@ What GPU syntax accepts and rejects today:
 
 What GPU HIR preserves today:
 
-- `shaders/parser/direct_hir.slang`, `shaders/parser/hir_nodes.slang`, and
-  `src/parser/gpu/passes/hir_nodes.rs` now define `HIR_MODULE_ITEM`,
-  `HIR_IMPORT_ITEM`, and `HIR_PATH_EXPR`.
+- `shaders/parser/hir_nodes.slang` and `src/parser/gpu/passes/hir_nodes.rs`
+  now define `HIR_MODULE_ITEM`, `HIR_IMPORT_ITEM`, and `HIR_PATH_EXPR`.
 - LL(1) parser tests preserve module/import/path evidence for
   `module core::numbers; import core::i32;` and a qualified value path head
   without making imports resolve or making external qualified value paths pass
@@ -185,11 +184,9 @@ groundwork does not load imports, discover files from module declarations, or
 make general qualified value paths pass. Top-level qualified constants are only
 accepted through the resolver/const-consumer bridge when the declaring module is
 explicitly present in the source pack. The normal compiler now uses the LL(1)
-tree/HIR path, which
-receives the lexer-produced `token_file_id` sideband, validates it during GPU
-syntax checking, and feeds it into LL(1) HIR ownership metadata. The older
-direct-HIR helper still mirrors the same sideband, but it is not the semantic
-path to extend.
+tree/HIR path, which receives the lexer-produced `token_file_id` sideband,
+validates it during GPU syntax checking, and feeds it into LL(1) HIR ownership
+metadata.
 
 ### Interned Names And Path Spans
 
@@ -488,15 +485,23 @@ Concrete pass names for the first implementation:
   radix order, filtering one namespace preserves sorted `(module_id, name_id)`
   lookup order for each table. These tables are still not consumed by path
   resolution yet.
+- `type_check_modules_08c_mark_public_decl_keys.slang`: walk the compact
+  type/value declaration tables and mark rows whose declaration visibility is
+  public. GPU prefix scans over those public flags provide per-table public
+  prefixes for import visibility counting.
 - `type_check_modules_09_count_import_visibility.slang`: for each resolved path
   import, range-query the sorted `decl_type_key_to_decl_id` and
-  `decl_value_key_to_decl_id` tables for the target module id and count only
-  public declarations. This writes per-import type/value counts for GPU prefix
-  scans. It is not a source import expander and it does not resolve paths.
+  `decl_value_key_to_decl_id` tables for the target module id and compute public
+  declaration counts from the public-prefix tables. This writes per-import
+  type/value counts for GPU prefix scans. It is not a source import expander and
+  it does not resolve paths.
 - `type_check_modules_09b_scatter_import_visibility.slang`: after GPU prefix
-  scans over those counts, scatter imported-public rows carrying
+  scans over those counts, dispatch over compact imported-visibility output
+  rows. Each row finds its owning import from the per-import visibility prefix,
+  then finds the corresponding public declaration by binary search over the
+  public-prefix table for the target module range. The output rows carry
   `(importer_module_id, name_id, decl_id)` for type and value namespaces. The
-  first implementation uses a bounded visibility-row capacity and writes a GPU
+  implementation uses a bounded visibility-row capacity and writes a GPU
   `NameLimit` status if the expansion would overflow instead of silently
   truncating.
 - `type_check_modules_09c_sort_import_visible_keys.slang` and
@@ -625,8 +630,10 @@ Required data buffers for the first implementation:
   `decl_token_start`, `decl_token_end`, `decl_parent_type_decl`, `decl_key_to_decl_id`,
   `decl_type_key_to_decl_id`, `decl_value_key_to_decl_id`, `decl_type_key_flag`,
   `decl_value_key_flag`, `decl_type_key_prefix`, `decl_value_key_prefix`,
-  `decl_type_key_count_out`, `decl_value_key_count_out`, `decl_status`,
-  and `decl_duplicate_of`.
+  `decl_type_key_count_out`, `decl_value_key_count_out`, `decl_status`, and
+  `decl_duplicate_of`. After declaration validation and namespace marking,
+  `decl_status` and `decl_duplicate_of` are reused as public-prefix scratch for
+  import visibility counting.
 - Resolution arrays: `resolved_type_decl`, `resolved_type_status`,
   `resolved_value_decl`, and `resolved_value_status`.
 - Type path projection: `module_type_path_type` and

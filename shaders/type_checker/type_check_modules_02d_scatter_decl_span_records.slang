@@ -7,6 +7,8 @@
 //   visibility checks, same-source shortcuts, hash-only lookup, or CPU path
 //   lookup.
 
+import scatter;
+
 struct Params
 {
     uint n_tokens;
@@ -25,6 +27,7 @@ StructuredBuffer<uint> hir_token_end;
 RWStructuredBuffer<uint> decl_name_token;
 RWStructuredBuffer<uint> decl_token_start;
 RWStructuredBuffer<uint> decl_token_end;
+RWStructuredBuffer<uint> decl_id_by_name_token;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -39,11 +42,17 @@ uint linear_thread_id(uint3 dtid)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
-    if (i >= gParams.n_hir_nodes || decl_record_flag[i] == 0u)
+    if (i >= gParams.n_hir_nodes)
         return;
 
-    uint slot = decl_record_prefix[i];
-    decl_name_token[slot] = hir_item_name_token[i];
-    decl_token_start[slot] = hir_token_pos[i];
-    decl_token_end[slot] = hir_token_end[i];
+    CompactScatterSlot slot = compact_scatter_slot(decl_record_flag[i], decl_record_prefix[i]);
+    if (slot.active == 0u)
+        return;
+
+    uint name_token = hir_item_name_token[i];
+    decl_name_token[slot.dst] = name_token;
+    decl_token_start[slot.dst] = hir_token_pos[i];
+    decl_token_end[slot.dst] = hir_token_end[i];
+    if (name_token < gParams.n_tokens)
+        decl_id_by_name_token[name_token] = slot.dst;
 }

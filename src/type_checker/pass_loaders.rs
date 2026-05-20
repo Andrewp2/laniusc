@@ -9,25 +9,41 @@ impl TypeCheckPasses {
         }
 
         Ok(Self {
+            hir_active_dispatch_args: pass!(
+                "type_check_hir_active_dispatch_args",
+                "type_check_hir_active_dispatch_args"
+            ),
             names_mark_lexemes: pass!(
                 "type_check_names_00_mark_lexemes",
                 "type_check_names_00_mark_lexemes"
             ),
-            names_scan_local: pass!(
-                "type_check_names_scan_00_local",
-                "type_check_names_scan_00_local"
+            counted_scan_local: pass!(
+                "type_check_counted_scan_00_local",
+                "type_check_counted_scan_00_local"
             ),
-            names_scan_blocks: pass!(
-                "type_check_names_scan_01_blocks",
-                "type_check_names_scan_01_blocks"
+            counted_scan_blocks: pass!(
+                "type_check_counted_scan_01_blocks",
+                "type_check_counted_scan_01_blocks"
             ),
-            names_scan_apply: pass!(
-                "type_check_names_scan_02_apply",
-                "type_check_names_scan_02_apply"
+            counted_scan_apply: pass!(
+                "type_check_counted_scan_02_apply",
+                "type_check_counted_scan_02_apply"
+            ),
+            count_dispatch_args: pass!(
+                "type_check_count_dispatch_args",
+                "type_check_count_dispatch_args"
+            ),
+            count_pair_max_dispatch_args: pass!(
+                "type_check_count_pair_max_dispatch_args",
+                "type_check_count_pair_max_dispatch_args"
             ),
             names_scatter_lexemes: pass!(
                 "type_check_names_01_scatter_lexemes",
                 "type_check_names_01_scatter_lexemes"
+            ),
+            names_radix_dispatch_args: pass!(
+                "type_check_names_radix_dispatch_args",
+                "type_check_names_radix_dispatch_args"
             ),
             names_radix_histogram: pass!(
                 "type_check_names_radix_00_histogram",
@@ -61,6 +77,10 @@ impl TypeCheckPasses {
                 "type_check_language_names_01_mark",
                 "type_check_language_names_01_mark"
             ),
+            language_type_codes_clear: pass!(
+                "type_check_language_decls_00a_clear_type_codes",
+                "type_check_language_decls_00a_clear_type_codes"
+            ),
             language_decls_materialize: pass!(
                 "type_check_language_decls_00_materialize",
                 "type_check_language_decls_00_materialize"
@@ -69,9 +89,17 @@ impl TypeCheckPasses {
                 "type_check_modules_00_mark_records",
                 "type_check_modules_00_mark_records"
             ),
+            modules_extract_record_flag: pass!(
+                "type_check_modules_00b_extract_record_flag",
+                "type_check_modules_00b_extract_record_flag"
+            ),
             modules_scatter_paths: pass!(
                 "type_check_modules_01_scatter_paths",
                 "type_check_modules_01_scatter_paths"
+            ),
+            modules_count_path_segments: pass!(
+                "type_check_modules_01b_count_path_segments",
+                "type_check_modules_01b_count_path_segments"
             ),
             modules_scatter_path_segments: pass!(
                 "type_check_modules_01b_scatter_path_segments",
@@ -88,6 +116,10 @@ impl TypeCheckPasses {
             modules_scatter_decl_core_records: pass!(
                 "type_check_modules_02c_scatter_decl_core_records",
                 "type_check_modules_02c_scatter_decl_core_records"
+            ),
+            modules_clear_decl_lookup: pass!(
+                "type_check_modules_02d_clear_decl_lookup",
+                "type_check_modules_02d_clear_decl_lookup"
             ),
             modules_scatter_decl_span_records: pass!(
                 "type_check_modules_02d_scatter_decl_span_records",
@@ -149,6 +181,10 @@ impl TypeCheckPasses {
                 "type_check_modules_08b_scatter_decl_namespace_keys",
                 "type_check_modules_08b_scatter_decl_namespace_keys"
             ),
+            modules_mark_public_decl_keys: pass!(
+                "type_check_modules_08c_mark_public_decl_keys",
+                "type_check_modules_08c_mark_public_decl_keys"
+            ),
             modules_count_import_visibility: pass!(
                 "type_check_modules_09_count_import_visibility",
                 "type_check_modules_09_count_import_visibility"
@@ -192,6 +228,10 @@ impl TypeCheckPasses {
             modules_project_type_paths: pass!(
                 "type_check_modules_10e_project_type_paths",
                 "type_check_modules_10e_project_type_paths"
+            ),
+            modules_validate_type_paths: pass!(
+                "type_check_modules_10e3_validate_type_paths",
+                "type_check_modules_10e3_validate_type_paths"
             ),
             modules_project_type_aliases: pass!(
                 "type_check_modules_10e2_project_type_aliases",
@@ -244,6 +284,10 @@ impl TypeCheckPasses {
             type_instances_decl_generic_params: pass!(
                 "type_check_type_instances_00b_decl_generic_params",
                 "type_check_type_instances_00b_decl_generic_params"
+            ),
+            type_instances_generic_param_use_slots: pass!(
+                "type_check_type_instances_00c_generic_param_use_slots",
+                "type_check_type_instances_00c_generic_param_use_slots"
             ),
             type_instances_collect: pass!(
                 "type_check_type_instances_01_collect",
@@ -318,6 +362,7 @@ impl TypeCheckPasses {
             control: pass!("type_check_control", "type_check_control"),
             control_hir: pass!("type_check_control_hir", "type_check_control_hir"),
             scope: pass!("type_check_scope", "type_check_scope"),
+            scope_hir: pass!("type_check_scope_hir", "type_check_scope_hir"),
             calls_clear: pass!("type_check_calls_01_resolve", "type_check_calls_01_resolve"),
             calls_return_refs: pass!(
                 "type_check_calls_02a_return_refs_from_hir",
@@ -397,7 +442,10 @@ impl TypeCheckPasses {
                 "type_check_methods_03_resolve",
                 "type_check_methods_03_resolve"
             ),
-            visible_clear: pass!("type_check_visible_01_clear", "type_check_visible_01_clear"),
+            visible_clear_resident: pass!(
+                "type_check_visible_01_clear_resident",
+                "type_check_visible_01_clear_resident"
+            ),
             visible_scope_blocks: pass!(
                 "type_check_visible_02_scope_blocks",
                 "type_check_visible_02_scope_blocks"
@@ -409,6 +457,38 @@ impl TypeCheckPasses {
             visible_decode: pass!(
                 "type_check_visible_03_decode",
                 "type_check_visible_03_decode"
+            ),
+            visible_mark_hir_decl_names: pass!(
+                "type_check_visible_03b_mark_hir_decl_names",
+                "type_check_visible_03b_mark_hir_decl_names"
+            ),
+            visible_scatter_hir_decl_records: pass!(
+                "type_check_visible_03c_scatter_hir_decls",
+                "type_check_visible_03c_scatter_hir_decls"
+            ),
+            visible_seed_hir_decl_order: pass!(
+                "type_check_visible_03d_seed_hir_decl_order",
+                "type_check_visible_03d_seed_hir_decl_order"
+            ),
+            visible_sort_hir_decl_keys: pass!(
+                "type_check_visible_03e_sort_hir_decl_keys",
+                "type_check_visible_03e_sort_hir_decl_keys"
+            ),
+            visible_sort_hir_decl_keys_scatter: pass!(
+                "type_check_visible_03f_sort_hir_decl_keys_scatter",
+                "type_check_visible_03f_sort_hir_decl_keys_scatter"
+            ),
+            visible_build_hir_decl_scope_leaves: pass!(
+                "type_check_visible_03g_build_hir_decl_scope_leaves",
+                "type_check_visible_03g_build_hir_decl_scope_leaves"
+            ),
+            visible_build_hir_decl_scope_tree: pass!(
+                "type_check_visible_03h_build_hir_decl_scope_tree",
+                "type_check_visible_03h_build_hir_decl_scope_tree"
+            ),
+            visible_hir_names: pass!(
+                "type_check_visible_04_hir_names",
+                "type_check_visible_04_hir_names"
             ),
             fn_context_clear: pass!(
                 "type_check_fn_context_01_clear",
@@ -471,6 +551,12 @@ crate::gpu::passes_core::impl_cached_main_pass_getter!(
     pub(super) fn type_check_type_instances_decl_generic_params_pass(device),
     label: "type_check_type_instances_00b_decl_generic_params",
     shader: "type_check_type_instances_00b_decl_generic_params"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    pub(super) fn type_check_type_instances_generic_param_use_slots_pass(device),
+    label: "type_check_type_instances_00c_generic_param_use_slots",
+    shader: "type_check_type_instances_00c_generic_param_use_slots"
 );
 
 crate::gpu::passes_core::impl_cached_main_pass_getter!(
@@ -618,6 +704,12 @@ crate::gpu::passes_core::impl_cached_main_pass_getter!(
 );
 
 crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    pub(super) fn type_check_language_type_codes_clear_pass(device),
+    label: "type_check_language_decls_00a_clear_type_codes",
+    shader: "type_check_language_decls_00a_clear_type_codes"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
     pub(super) fn type_check_language_decls_materialize_pass(device),
     label: "type_check_language_decls_00_materialize",
     shader: "type_check_language_decls_00_materialize"
@@ -663,6 +755,36 @@ crate::gpu::passes_core::impl_cached_main_pass_getter!(
     pub(super) fn type_check_calls_pack_hir_call_args_pass(device),
     label: "type_check_calls_02e_pack_hir_call_args",
     shader: "type_check_calls_02e_pack_hir_call_args"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    pub(super) fn type_check_names_radix_dispatch_args_pass(device),
+    label: "type_check_names_radix_dispatch_args",
+    shader: "type_check_names_radix_dispatch_args"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    pub(super) fn type_check_counted_scan_local_pass(device),
+    label: "type_check_counted_scan_00_local",
+    shader: "type_check_counted_scan_00_local"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    pub(super) fn type_check_counted_scan_blocks_pass(device),
+    label: "type_check_counted_scan_01_blocks",
+    shader: "type_check_counted_scan_01_blocks"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    pub(super) fn type_check_counted_scan_apply_pass(device),
+    label: "type_check_counted_scan_02_apply",
+    shader: "type_check_counted_scan_02_apply"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    pub(super) fn type_check_count_dispatch_args_pass(device),
+    label: "type_check_count_dispatch_args",
+    shader: "type_check_count_dispatch_args"
 );
 
 crate::gpu::passes_core::impl_cached_main_pass_getter!(
@@ -783,6 +905,54 @@ crate::gpu::passes_core::impl_cached_main_pass_getter!(
     pub(super) fn type_check_visible_decode_pass(device),
     label: "type_check_visible_03_decode",
     shader: "type_check_visible_03_decode"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    pub(super) fn type_check_visible_mark_hir_decl_names_pass(device),
+    label: "type_check_visible_03b_mark_hir_decl_names",
+    shader: "type_check_visible_03b_mark_hir_decl_names"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    pub(super) fn type_check_visible_scatter_hir_decl_records_pass(device),
+    label: "type_check_visible_03c_scatter_hir_decls",
+    shader: "type_check_visible_03c_scatter_hir_decls"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    pub(super) fn type_check_visible_seed_hir_decl_order_pass(device),
+    label: "type_check_visible_03d_seed_hir_decl_order",
+    shader: "type_check_visible_03d_seed_hir_decl_order"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    pub(super) fn type_check_visible_sort_hir_decl_keys_pass(device),
+    label: "type_check_visible_03e_sort_hir_decl_keys",
+    shader: "type_check_visible_03e_sort_hir_decl_keys"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    pub(super) fn type_check_visible_sort_hir_decl_keys_scatter_pass(device),
+    label: "type_check_visible_03f_sort_hir_decl_keys_scatter",
+    shader: "type_check_visible_03f_sort_hir_decl_keys_scatter"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    pub(super) fn type_check_visible_build_hir_decl_scope_leaves_pass(device),
+    label: "type_check_visible_03g_build_hir_decl_scope_leaves",
+    shader: "type_check_visible_03g_build_hir_decl_scope_leaves"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    pub(super) fn type_check_visible_build_hir_decl_scope_tree_pass(device),
+    label: "type_check_visible_03h_build_hir_decl_scope_tree",
+    shader: "type_check_visible_03h_build_hir_decl_scope_tree"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    pub(super) fn type_check_visible_hir_names_pass(device),
+    label: "type_check_visible_04_hir_names",
+    shader: "type_check_visible_04_hir_names"
 );
 
 crate::gpu::passes_core::impl_cached_main_pass_getter!(

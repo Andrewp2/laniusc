@@ -64,10 +64,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirTypeFieldsPas
             ("next_sibling".into(), b.next_sibling.as_entire_binding()),
             ("hir_kind".into(), b.hir_kind.as_entire_binding()),
             ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
-            (
-                "hir_token_file_id".into(),
-                b.hir_token_file_id.as_entire_binding(),
-            ),
             ("hir_type_form".into(), b.hir_type_form.as_entire_binding()),
             (
                 "hir_type_value_node".into(),
@@ -78,8 +74,20 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirTypeFieldsPas
                 b.hir_type_len_token.as_entire_binding(),
             ),
             (
-                "hir_type_file_id".into(),
-                b.hir_type_file_id.as_entire_binding(),
+                "hir_type_path_leaf_node".into(),
+                b.hir_type_path_leaf_node.as_entire_binding(),
+            ),
+            (
+                "hir_type_arg_start".into(),
+                b.hir_type_arg_start.as_entire_binding(),
+            ),
+            (
+                "hir_type_arg_count".into(),
+                b.hir_type_arg_count.as_entire_binding(),
+            ),
+            (
+                "hir_type_arg_next".into(),
+                b.hir_type_arg_next.as_entire_binding(),
             ),
         ])
     }

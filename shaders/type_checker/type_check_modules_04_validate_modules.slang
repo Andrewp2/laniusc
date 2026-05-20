@@ -7,6 +7,10 @@
 // - This pass only validates module declarations. It does not resolve imports,
 //   perform declaration lookup, produce visibility, or use CPU path lookup.
 
+import fixed_key;
+import sorted_runs;
+import status;
+
 struct Params
 {
     uint module_capacity;
@@ -30,7 +34,8 @@ RWStructuredBuffer<uint> module_status;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint MAX_PATH_SEGMENTS = 64u;
+static const uint MODULE_KEY_SEGMENT_ROW_WIDTH = 8u;
+static const uint INVALID = 0xffffffffu;
 
 static const uint MODULE_STATUS_OK = 0u;
 static const uint MODULE_STATUS_DUPLICATE = 2u;
@@ -47,35 +52,59 @@ uint active_module_count()
     return min(module_count_out[0], gParams.module_capacity);
 }
 
+uint record_capacity()
+{
+    return gParams.reserved == 0u ? gParams.module_capacity : gParams.reserved;
+}
+
 void record_error(uint token_i, uint code, uint detail)
 {
-    uint old;
-    InterlockedMin(status[1], token_i, old);
-    if (token_i <= old)
+    record_min_token_error(status, token_i, code, detail);
+}
+
+uint module_key_lane(uint module_i, uint lane)
+{
+    uint count = min(module_key_segment_count[module_i], MODULE_KEY_SEGMENT_ROW_WIDTH);
+    if (lane >= count)
+        return 0u;
+    uint base = module_key_segment_base[module_i];
+    return fixed_key_encode_nullable_u32(
+        module_key_segment_name_id[base + lane],
+        INVALID);
+}
+
+public struct ModuleValidationFixedKey : IFixedU32RowKey<uint>
+{
+    public static uint row_lane(uint module_i, uint lane)
     {
-        status[0] = 0u;
-        status[2] = code;
-        status[3] = detail;
+        return module_key_lane(module_i, lane);
+    }
+
+    public static uint key_lane(uint module_i, uint lane)
+    {
+        return module_key_lane(module_i, lane);
     }
 }
 
 bool module_keys_equal(uint left_module_i, uint right_module_i)
 {
-    uint left_count = min(module_key_segment_count[left_module_i], MAX_PATH_SEGMENTS);
-    uint right_count = min(module_key_segment_count[right_module_i], MAX_PATH_SEGMENTS);
+    uint left_count = min(module_key_segment_count[left_module_i], MODULE_KEY_SEGMENT_ROW_WIDTH);
+    uint right_count = min(module_key_segment_count[right_module_i], MODULE_KEY_SEGMENT_ROW_WIDTH);
     if (left_count != right_count)
         return false;
 
-    uint left_base = module_key_segment_base[left_module_i];
-    uint right_base = module_key_segment_base[right_module_i];
-    [loop]
-    for (uint segment_i = 0u; segment_i < left_count; segment_i += 1u)
+    return fixed_u32_row_key_equal<uint, ModuleValidationFixedKey>(
+        left_module_i,
+        right_module_i,
+        left_count);
+}
+
+public struct ModuleKeyEquality : ISortedRunEquality
+{
+    public static bool equal(uint left_item, uint right_item)
     {
-        if (module_key_segment_name_id[left_base + segment_i] !=
-            module_key_segment_name_id[right_base + segment_i])
-            return false;
+        return module_keys_equal(left_item, right_item);
     }
-    return true;
 }
 
 [shader("compute")]
@@ -87,24 +116,29 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i >= module_count)
         return;
 
-    uint module_i = sorted_module_key_order[i];
-    if (module_i >= module_count)
+    uint module_i;
+    if (!sorted_order_item(
+        i,
+        module_count,
+        module_count,
+        sorted_module_key_order,
+        module_i))
         return;
 
     if (module_status[module_i] != MODULE_STATUS_OK)
         return;
-    if (i == 0u)
-        return;
 
-    uint prev_module_i = sorted_module_key_order[i - 1u];
-    if (prev_module_i >= module_count)
+    uint prev_module_i;
+    if (!sorted_adjacent_duplicate<ModuleKeyEquality>(
+        i,
+        module_count,
+        module_count,
+        sorted_module_key_order,
+        module_i,
+        prev_module_i))
         return;
-
-    if (!module_keys_equal(prev_module_i, module_i))
-        return;
-
     module_status[module_i] = MODULE_STATUS_DUPLICATE;
     uint path_id = module_path_id[module_i];
-    uint token_i = path_id < gParams.module_capacity ? path_owner_token[path_id] : gParams.module_capacity;
+    uint token_i = path_id < record_capacity() ? path_owner_token[path_id] : record_capacity();
     record_error(token_i, ERR_BAD_HIR, MODULE_STATUS_DUPLICATE);
 }

@@ -11,6 +11,11 @@
 //
 // This pass performs the stable scatter step of a GPU-friendly parallel radix sort.
 
+import gpu_index;
+import byte_packing;
+import radix;
+import scatter;
+
 struct Params
 {
     uint name_count;
@@ -31,6 +36,7 @@ struct NameSpan
 
 StructuredBuffer<NameSpan> name_spans;
 StructuredBuffer<uint> name_count_in;
+StructuredBuffer<uint> name_max_len_in;
 StructuredBuffer<uint> name_order_in;
 StructuredBuffer<uint> radix_bucket_base;
 StructuredBuffer<uint> radix_block_bucket_prefix;
@@ -40,28 +46,24 @@ RWStructuredBuffer<uint> name_order_out;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint RADIX_BUCKETS = 257u;
+static const uint RADIX_BUCKETS = RADIX_U8_SENTINEL_BUCKETS;
 static const uint NAME_KIND_LANGUAGE_SYMBOL = 3u;
+
+groupshared uint local_radix_keys[256];
 
 uint linear_group_id(uint3 gid)
 {
-    return gid.x + gid.y * MAX_GROUPS_X;
+    return linear_group_id_2d(gid, MAX_GROUPS_X);
 }
 
 uint load_source_byte(uint byte_index)
 {
-    if (byte_index >= gParams.source_len)
-        return 0u;
-    uint word = source_bytes.Load(byte_index & ~3u);
-    uint shift = (byte_index & 3u) * 8u;
-    return (word >> shift) & 0xffu;
+    return byte_address_load_u8_bounded(source_bytes, byte_index, gParams.source_len);
 }
 
 uint load_language_symbol_byte(uint byte_index)
 {
-    uint word = language_symbol_bytes.Load(byte_index & ~3u);
-    uint shift = (byte_index & 3u) * 8u;
-    return (word >> shift) & 0xffu;
+    return byte_address_load_u8(language_symbol_bytes, byte_index);
 }
 
 uint active_name_count()
@@ -84,21 +86,35 @@ uint span_radix_key(uint name_i, uint byte_offset)
     return b + 1u;
 }
 
-uint local_same_key_rank(uint block_begin, uint lane, uint key)
+public struct NameRadixScatterSource : IStableRadixScatterSource<uint>
 {
-    uint rank = 0u;
-    [loop]
-    for (uint j = 0u; j < lane; j += 1u)
+    public static uint active_count()
     {
-        uint order_j = block_begin + j;
-        if (order_j < active_name_count())
-        {
-            uint prev_name_i = name_order_in[order_j];
-            if (span_radix_key(prev_name_i, gParams.radix_byte_offset) == key)
-                rank += 1u;
-        }
+        return active_name_count();
     }
-    return rank;
+
+    public static uint inactive_value()
+    {
+        return 0u;
+    }
+
+    public static uint ordered_value(uint order_i)
+    {
+        return name_order_in[order_i];
+    }
+
+    public static uint radix_key(uint value, uint key_step)
+    {
+        return span_radix_key(value, key_step);
+    }
+}
+
+public struct NameOrderOutSink : IScatterSink<uint>
+{
+    public static void store(uint dst, uint value)
+    {
+        name_order_out[dst] = value;
+    }
 }
 
 [shader("compute")]
@@ -106,21 +122,21 @@ uint local_same_key_rank(uint block_begin, uint lane, uint key)
 void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
 {
     uint block_idx = linear_group_id(gid);
-    if (block_idx >= gParams.n_blocks)
-        return;
-
     uint lane = ltid.x;
-    uint order_i = block_idx * WG_SIZE + lane;
-    uint name_count = active_name_count();
-    if (order_i >= name_count)
+    if (gParams.radix_byte_offset >= name_max_len_in[0u])
+    {
+        uint order_i = block_idx * 256u + lane;
+        if (order_i < active_name_count())
+            name_order_out[order_i] = name_order_in[order_i];
         return;
-
-    uint name_i = name_order_in[order_i];
-    uint key = span_radix_key(name_i, gParams.radix_byte_offset);
-    uint rank = local_same_key_rank(block_idx * WG_SIZE, lane, key);
-    uint block_prefix = radix_block_bucket_prefix[block_idx * RADIX_BUCKETS + key];
-    uint dst = radix_bucket_base[key] + block_prefix + rank;
-
-    if (dst < name_count)
-        name_order_out[dst] = name_i;
+    }
+    stable_radix_scatter_block<uint, NameRadixScatterSource, NameOrderOutSink, 256>(
+        block_idx,
+        lane,
+        gParams.n_blocks,
+        gParams.radix_byte_offset,
+        RADIX_BUCKETS,
+        radix_bucket_base,
+        radix_block_bucket_prefix,
+        local_radix_keys);
 }

@@ -1,6 +1,8 @@
 // shaders/parser/brackets_02_scan_block_prefix.slang
 // Parallel scan of block summaries → block_prefix, final_depth, and global min_depth.
 
+import prefix_scan;
+
 struct Params
 {
     uint n_blocks;
@@ -35,17 +37,15 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     if (gParams.scan_step < B)
     {
-        int sum = prefix_sum_in[tid.x];
-        int minp = prefix_min_in[tid.x];
-        if (tid.x >= gParams.scan_step)
-        {
-            int left_sum = prefix_sum_in[tid.x - gParams.scan_step];
-            int left_min = prefix_min_in[tid.x - gParams.scan_step];
-            minp = min(left_min, left_sum + minp);
-            sum = left_sum + sum;
-        }
-        prefix_sum_out[tid.x] = sum;
-        prefix_min_out[tid.x] = minp;
+        int2 summary = block_prefix_scan_step_i32_sum_min_prefix(
+            tid.x,
+            gParams.scan_step,
+            block_sum,
+            block_minpref,
+            prefix_sum_in,
+            prefix_min_in);
+        prefix_sum_out[tid.x] = summary.x;
+        prefix_min_out[tid.x] = summary.y;
         return;
     }
 

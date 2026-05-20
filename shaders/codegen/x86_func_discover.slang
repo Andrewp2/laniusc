@@ -1,4 +1,6 @@
-import utils;
+import gpu_index;
+import atomics;
+import scatter;
 
 // Direct x86_64 function discovery.
 //
@@ -21,15 +23,15 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint4> x86_node_tree_record;
 StructuredBuffer<uint> x86_node_tree_status;
-StructuredBuffer<uint> hir_item_kind;
-StructuredBuffer<uint> hir_item_decl_token;
+StructuredBuffer<uint> hir_node_decl_token;
+StructuredBuffer<uint> hir_node_name_token;
+StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> fn_entrypoint_tag;
 
 RWStructuredBuffer<uint> x86_func_meta;
 RWStructuredBuffer<uint> x86_node_func;
-RWStructuredBuffer<uint4> x86_func_record;
-RWStructuredBuffer<uint> x86_func_lookup_key;
-RWStructuredBuffer<uint> x86_func_lookup_node;
+RWStructuredBuffer<uint> x86_decl_node_by_token;
+RWStructuredBuffer<uint> x86_func_slot_by_index;
 
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_FN = 3u;
@@ -43,7 +45,7 @@ static const uint FUNC_META_MAIN_NODE = 4u;
 
 uint linear_dispatch_id(uint3 tid)
 {
-    return tid.x + tid.y * DISPATCH_X_STRIDE;
+    return linear_dispatch_thread_id_2d(tid, DISPATCH_X_STRIDE);
 }
 
 uint active_hir_node_count()
@@ -54,6 +56,11 @@ uint active_hir_node_count()
 bool is_main_function_node(uint node_i)
 {
     return hir_kind[node_i] == HIR_FN && fn_entrypoint_tag[node_i] == ENTRYPOINT_MAIN;
+}
+
+bool is_function_record_node(uint node_i)
+{
+    return hir_kind[node_i] == HIR_FN;
 }
 
 bool valid_node(uint node_i)
@@ -72,30 +79,12 @@ bool node_tree_ok()
            x86_node_tree_status[1u] == 0u;
 }
 
-uint lookup_capacity()
+void publish_function_lookup_key(uint key, uint node_i)
 {
-    return max(gParams.n_tokens * 2u, 1u);
-}
+    if (!valid_token(key))
+        return;
 
-uint owning_function_node(uint node_i)
-{
-    if (!valid_node(node_i))
-        return INVALID;
-    if (hir_kind[node_i] == HIR_FN)
-        return node_i;
-
-    uint cur = node_i;
-    [loop]
-    for (uint guard = 0u; guard < 128u; guard += 1u)
-    {
-        uint p = x86_node_tree_record[cur].x;
-        if (!valid_node(p) || p == cur)
-            return INVALID;
-        if (hir_kind[p] == HIR_FN)
-            return p;
-        cur = p;
-    }
-    return INVALID;
+    atomic_u32_min(x86_decl_node_by_token, key, node_i);
 }
 
 void publish_function_lookup(uint node_i)
@@ -103,31 +92,29 @@ void publish_function_lookup(uint node_i)
     if (hir_kind[node_i] != HIR_FN)
         return;
 
-    uint resolver_target_token = hir_item_decl_token[node_i];
-    if (!valid_token(resolver_target_token))
+    publish_function_lookup_key(hir_node_decl_token[node_i], node_i);
+    publish_function_lookup_key(hir_node_name_token[node_i], node_i);
+    publish_function_lookup_key(hir_token_pos[node_i], node_i);
+}
+
+uint function_slot_key(uint node_i)
+{
+    if (!valid_node(node_i))
+        return INVALID;
+    uint slot = hir_node_decl_token[node_i];
+    if (valid_token(slot))
+        return slot;
+    slot = hir_token_pos[node_i];
+    return valid_token(slot) ? slot : INVALID;
+}
+
+void publish_function_slot(uint node_i)
+{
+    uint func_i = atomic_counter_add(x86_func_meta, FUNC_META_FUNC_COUNT, 1u);
+    if (func_i >= gParams.n_tokens)
         return;
 
-    uint key = resolver_target_token;
-    uint cap = lookup_capacity();
-    uint start_slot = key % cap;
-    [loop]
-    for (uint probe = 0u; probe < cap; probe += 1u)
-    {
-        uint slot = (start_slot + probe) % cap;
-        uint old_node = INVALID;
-        InterlockedCompareExchange(x86_func_lookup_node[slot], INVALID, node_i, old_node);
-        if (old_node == INVALID)
-        {
-            x86_func_lookup_key[slot] = key;
-            return;
-        }
-        if (x86_func_lookup_key[slot] == key)
-        {
-            uint old_min = INVALID;
-            InterlockedMin(x86_func_lookup_node[slot], node_i, old_min);
-            return;
-        }
-    }
+    x86_func_slot_by_index[func_i] = function_slot_key(node_i);
 }
 
 [shader("compute")]
@@ -135,25 +122,19 @@ void publish_function_lookup(uint node_i)
 void main(uint3 tid: SV_DispatchThreadID)
 {
     uint node_i = linear_dispatch_id(tid);
-    if (!node_tree_ok() || node_i >= active_hir_node_count())
+    if (node_i >= active_hir_node_count())
         return;
 
-    uint owner = owning_function_node(node_i);
-    x86_node_func[node_i] = owner;
-
-    if (hir_kind[node_i] != HIR_FN)
+    if (!is_function_record_node(node_i))
         return;
 
-    x86_func_record[node_i] = uint4(node_i, fn_entrypoint_tag[node_i], hir_item_decl_token[node_i], 0u);
+    x86_node_func[node_i] = node_i;
     publish_function_lookup(node_i);
-
-    uint old_count = 0u;
-    InterlockedAdd(x86_func_meta[FUNC_META_FUNC_COUNT], 1u, old_count);
+    publish_function_slot(node_i);
 
     if (!is_main_function_node(node_i))
         return;
 
-    uint old_main_count = 0u;
-    InterlockedAdd(x86_func_meta[FUNC_META_MAIN_COUNT], 1u, old_main_count);
-    InterlockedMin(x86_func_meta[FUNC_META_MAIN_NODE], node_i);
+    atomic_counter_add(x86_func_meta, FUNC_META_MAIN_COUNT, 1u);
+    atomic_u32_min(x86_func_meta, FUNC_META_MAIN_NODE, node_i);
 }

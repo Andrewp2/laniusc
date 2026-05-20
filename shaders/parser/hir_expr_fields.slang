@@ -18,12 +18,12 @@ StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> parent;
 StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> next_sibling;
+StructuredBuffer<uint> prev_sibling;
+StructuredBuffer<uint> subtree_end;
 StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_semantic_dense_node;
+StructuredBuffer<uint> hir_semantic_count;
 
-RWStructuredBuffer<uint> hir_expr_form;
-RWStructuredBuffer<uint> hir_expr_left_node;
-RWStructuredBuffer<uint> hir_expr_right_node;
-RWStructuredBuffer<uint> hir_expr_value_token;
 RWStructuredBuffer<uint> hir_expr_record;
 
 static const uint INVALID = 0xffffffffu;
@@ -56,6 +56,7 @@ static const uint HIR_EXPR_BIT_XOR = 22u;
 static const uint HIR_EXPR_BIT_AND = 23u;
 static const uint HIR_EXPR_SHL = 24u;
 static const uint HIR_EXPR_SHR = 25u;
+static const uint HIR_EXPR_INDEX = 26u;
 
 static const uint HIR_EXPR_RECORD_STRIDE = 4u;
 static const uint HIR_EXPR_RECORD_FORM = 0u;
@@ -78,6 +79,19 @@ bool valid_node(uint i)
     return i != INVALID && i < active_node_count();
 }
 
+uint active_semantic_count()
+{
+    return min(hir_semantic_count[0u], active_node_count());
+}
+
+uint semantic_row_node(uint row)
+{
+    if (row >= active_semantic_count())
+        return INVALID;
+    uint node = hir_semantic_dense_node[row];
+    return valid_node(node) ? node : INVALID;
+}
+
 uint first_child_node(uint i)
 {
     if (!valid_node(i))
@@ -92,6 +106,16 @@ uint next_sibling_node(uint i)
         return INVALID;
     uint next = next_sibling[i];
     return valid_node(next) ? next : INVALID;
+}
+
+uint previous_sibling_node(uint node)
+{
+    if (!valid_node(node))
+        return INVALID;
+    uint previous = prev_sibling[node];
+    return valid_node(previous) && parent[previous] == parent[node] ?
+        previous :
+        INVALID;
 }
 
 uint parent_node(uint i)
@@ -211,9 +235,34 @@ uint end_production_for_tail(uint prod)
     return HIR_EXPR_NONE;
 }
 
+bool is_expr_end_production(uint prod)
+{
+    return prod == PROD_ASSIGN_END ||
+           prod == PROD_OR_END ||
+           prod == PROD_AND_END ||
+           prod == PROD_BOR_END ||
+           prod == PROD_XOR_END ||
+           prod == PROD_BAND_END ||
+           prod == PROD_EQ_END ||
+           prod == PROD_COMPARE_END ||
+           prod == PROD_SHIFT_END ||
+           prod == PROD_ADD_END ||
+           prod == PROD_MUL_END ||
+           prod == PROD_POSTFIX_END;
+}
+
 bool is_binary_tail_production(uint prod)
 {
     return binary_form_for_tail(prod) != HIR_EXPR_NONE;
+}
+
+bool is_value_postfix_production(uint prod)
+{
+    return prod == PROD_POSTFIX_CALL ||
+           prod == PROD_POSTFIX_INDEX ||
+           prod == PROD_POSTFIX_MEMBER ||
+           prod == PROD_POSTFIX_INC ||
+           prod == PROD_POSTFIX_DEC;
 }
 
 uint tail_continuation(uint tail)
@@ -224,46 +273,58 @@ uint tail_continuation(uint tail)
     return next_sibling_node(right);
 }
 
+uint rightmost_leaf_parent(uint node)
+{
+    if (!valid_node(node))
+        return INVALID;
+
+    uint end = subtree_end[node];
+    if (end <= node || end > active_node_count())
+        return INVALID;
+
+    uint leaf = end - 1u;
+    if (!valid_node(leaf))
+        return INVALID;
+
+    return parent_node(leaf);
+}
+
 uint binary_tail_chain_result(uint tail)
 {
-    uint result = INVALID;
-    [loop]
-    for (uint guard = 0u; guard < 64u; guard += 1u)
-    {
-        if (!valid_node(tail) || !is_binary_tail_production(node_kind[tail]))
-            return INVALID;
-        result = tail;
+    if (!valid_node(tail) || !is_binary_tail_production(node_kind[tail]))
+        return INVALID;
 
-        uint continuation = tail_continuation(tail);
-        uint expected_end = end_production_for_tail(node_kind[tail]);
-        if (valid_node(continuation) && node_kind[continuation] == expected_end)
-            return result;
-        if (!valid_node(continuation) || !is_binary_tail_production(node_kind[continuation]))
-            return INVALID;
-        tail = continuation;
-    }
-    return INVALID;
+    uint result = rightmost_leaf_parent(tail);
+    if (!valid_node(result) || !is_binary_tail_production(node_kind[result]))
+        return INVALID;
+
+    uint continuation = tail_continuation(result);
+    uint expected_end = end_production_for_tail(node_kind[result]);
+    if (!valid_node(continuation) || node_kind[continuation] != expected_end)
+        return INVALID;
+
+    return result;
+}
+
+void write_expr_record(uint i, uint form, uint left, uint right, uint value_token)
+{
+    uint base = i * HIR_EXPR_RECORD_STRIDE;
+    hir_expr_record[base + HIR_EXPR_RECORD_FORM] = form;
+    hir_expr_record[base + HIR_EXPR_RECORD_LEFT] = left;
+    hir_expr_record[base + HIR_EXPR_RECORD_RIGHT] = right;
+    hir_expr_record[base + HIR_EXPR_RECORD_VALUE_TOKEN] = value_token;
 }
 
 void clear_expr(uint i)
 {
-    hir_expr_form[i] = HIR_EXPR_NONE;
-    hir_expr_left_node[i] = INVALID;
-    hir_expr_right_node[i] = INVALID;
-    hir_expr_value_token[i] = INVALID;
-    uint base = i * HIR_EXPR_RECORD_STRIDE;
-    hir_expr_record[base + HIR_EXPR_RECORD_FORM] = HIR_EXPR_NONE;
-    hir_expr_record[base + HIR_EXPR_RECORD_LEFT] = INVALID;
-    hir_expr_record[base + HIR_EXPR_RECORD_RIGHT] = INVALID;
-    hir_expr_record[base + HIR_EXPR_RECORD_VALUE_TOKEN] = INVALID;
+    write_expr_record(i, HIR_EXPR_NONE, INVALID, INVALID, INVALID);
 }
 
 void publish_forward(uint i, uint child)
 {
     if (!valid_node(child))
         return;
-    hir_expr_form[i] = HIR_EXPR_FORWARD;
-    hir_expr_left_node[i] = child;
+    write_expr_record(i, HIR_EXPR_FORWARD, child, INVALID, INVALID);
 }
 
 bool publish_binary_from_tail(uint i, uint left, uint tail)
@@ -283,9 +344,7 @@ bool publish_binary_from_tail(uint i, uint left, uint tail)
     if (!valid_node(continuation) || node_kind[continuation] != expected_end)
         return false;
 
-    hir_expr_form[i] = form;
-    hir_expr_left_node[i] = left;
-    hir_expr_right_node[i] = right;
+    write_expr_record(i, form, left, right, INVALID);
     return true;
 }
 
@@ -317,10 +376,31 @@ bool publish_binary_tail_expr(uint i)
     if (!valid_continuation)
         return false;
 
-    hir_expr_form[i] = form;
-    hir_expr_left_node[i] = left;
-    hir_expr_right_node[i] = right;
+    write_expr_record(i, form, left, right, INVALID);
     return true;
+}
+
+uint postfix_value_node(uint postfix)
+{
+    if (!valid_node(postfix) || node_kind[postfix] != PROD_POSTFIX)
+        return INVALID;
+
+    uint final_operator = rightmost_leaf_parent(postfix);
+    if (valid_node(final_operator) &&
+        is_value_postfix_production(node_kind[final_operator]))
+        return final_operator;
+
+    return first_child_node(postfix);
+}
+
+uint index_base_node(uint index_node)
+{
+    uint previous = previous_sibling_node(index_node);
+    if (valid_node(previous))
+        return previous;
+
+    uint p = parent_node(index_node);
+    return valid_node(p) && node_kind[p] == PROD_POSTFIX ? p : INVALID;
 }
 
 void publish_expr(uint i)
@@ -328,46 +408,53 @@ void publish_expr(uint i)
     uint prod = node_kind[i];
     uint child = first_child_node(i);
 
-    if (prod == PROD_IDENT || prod == PROD_PATH || prod == PROD_IDENT_PLAIN)
+    if (prod == PROD_IDENT || prod == PROD_SELF_VALUE ||
+        prod == PROD_PATH)
     {
-        hir_expr_form[i] = HIR_EXPR_NAME;
-        hir_expr_value_token[i] = hir_token_pos[i];
+        write_expr_record(i, HIR_EXPR_NAME, INVALID, INVALID, hir_token_pos[i]);
         return;
     }
     if (prod == PROD_INT)
     {
-        hir_expr_form[i] = HIR_EXPR_INT;
-        hir_expr_value_token[i] = hir_token_pos[i];
+        write_expr_record(i, HIR_EXPR_INT, INVALID, INVALID, hir_token_pos[i]);
         return;
     }
     if (prod == PROD_TRUE)
     {
-        hir_expr_form[i] = HIR_EXPR_TRUE;
-        hir_expr_value_token[i] = hir_token_pos[i];
+        write_expr_record(i, HIR_EXPR_TRUE, INVALID, INVALID, hir_token_pos[i]);
         return;
     }
     if (prod == PROD_FALSE)
     {
-        hir_expr_form[i] = HIR_EXPR_FALSE;
-        hir_expr_value_token[i] = hir_token_pos[i];
+        write_expr_record(i, HIR_EXPR_FALSE, INVALID, INVALID, hir_token_pos[i]);
         return;
     }
     if (prod == PROD_NOT)
     {
-        hir_expr_form[i] = HIR_EXPR_NOT;
-        hir_expr_left_node[i] = child;
+        write_expr_record(i, HIR_EXPR_NOT, child, INVALID, INVALID);
         return;
     }
     if (prod == PROD_NEG)
     {
-        hir_expr_form[i] = HIR_EXPR_NEG;
-        hir_expr_left_node[i] = child;
+        write_expr_record(i, HIR_EXPR_NEG, child, INVALID, INVALID);
         return;
     }
 
     if (is_binary_tail_production(prod))
     {
         publish_binary_tail_expr(i);
+        return;
+    }
+
+    if (prod == PROD_POSTFIX)
+    {
+        publish_forward(i, postfix_value_node(i));
+        return;
+    }
+
+    if (prod == PROD_POSTFIX_INDEX)
+    {
+        write_expr_record(i, HIR_EXPR_INDEX, index_base_node(i), child, INVALID);
         return;
     }
 
@@ -380,7 +467,9 @@ void publish_expr(uint i)
             publish_forward(i, tail_result);
             return;
         }
-        if (valid_node(tail) && node_kind[tail] == end_production_for_expr_layer(prod))
+        if (valid_node(tail) &&
+            (node_kind[tail] == end_production_for_expr_layer(prod) ||
+             is_expr_end_production(node_kind[tail])))
             publish_forward(i, child);
         return;
     }
@@ -389,27 +478,15 @@ void publish_expr(uint i)
         publish_forward(i, child);
 }
 
-void publish_expr_record(uint i)
-{
-    uint base = i * HIR_EXPR_RECORD_STRIDE;
-    hir_expr_record[base + HIR_EXPR_RECORD_FORM] = hir_expr_form[i];
-    hir_expr_record[base + HIR_EXPR_RECORD_LEFT] = hir_expr_left_node[i];
-    hir_expr_record[base + HIR_EXPR_RECORD_RIGHT] = hir_expr_right_node[i];
-    hir_expr_record[base + HIR_EXPR_RECORD_VALUE_TOKEN] = hir_expr_value_token[i];
-}
-
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint i = linear_thread_id(dtid);
-    if (i >= gHirExpr.n)
+    uint row = linear_thread_id(dtid);
+    uint i = semantic_row_node(row);
+    if (i == INVALID)
         return;
 
     clear_expr(i);
-    if (!valid_node(i))
-        return;
-
     publish_expr(i);
-    publish_expr_record(i);
 }

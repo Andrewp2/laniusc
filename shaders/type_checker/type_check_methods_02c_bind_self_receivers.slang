@@ -5,6 +5,9 @@
 // inside methods without inspecting token kinds, spelling, source bytes, or
 // token neighborhoods.
 
+import generated_parse_production_ids;
+import tree_walk;
+
 struct Params
 {
     uint n_tokens;
@@ -29,8 +32,6 @@ static const uint INVALID = 0xffffffffu;
 
 static const uint HIR_FN = 3u;
 static const uint HIR_MEMBER_EXPR = 21u;
-
-static const uint PROD_SELF_VALUE = 158u;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -61,23 +62,34 @@ uint parent_node(uint node)
     return valid_node(p) ? p : INVALID;
 }
 
+public struct MethodSelfReceiverWalkGraph : ITreeWalkGraph
+{
+    public static bool valid(uint node)
+    {
+        return valid_node(node);
+    }
+
+    public static uint parent(uint node)
+    {
+        return parent_node(node);
+    }
+}
+
+public struct MethodSelfReceiverFnPredicate : ITreeWalkPredicate
+{
+    public static bool matches(uint node)
+    {
+        return hir_kind[node] == HIR_FN;
+    }
+}
+
 uint enclosing_function_node(uint node)
 {
-    uint cur = node;
-    [loop]
-    for (uint guard = 0u; guard < 128u; guard += 1u)
-    {
-        if (!valid_node(cur))
-            return INVALID;
-        if (hir_kind[cur] == HIR_FN)
-            return cur;
-
-        uint p = parent_node(cur);
-        if (!valid_node(p) || p == cur)
-            return INVALID;
-        cur = p;
-    }
-    return INVALID;
+    uint fn_node;
+    return find_self_or_ancestor<MethodSelfReceiverWalkGraph, MethodSelfReceiverFnPredicate>(
+        node,
+        128u,
+        fn_node) ? fn_node : INVALID;
 }
 
 void bind_self_receiver_for_member(uint member_node)

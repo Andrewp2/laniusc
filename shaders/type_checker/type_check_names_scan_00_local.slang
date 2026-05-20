@@ -6,6 +6,8 @@
 // - Dispatch type_check_names_scan_02_apply.slang to add prior block totals.
 // - The host schedules kernels and binds buffers; it does not inspect scan data.
 
+import prefix_scan;
+
 struct Params
 {
     uint n_items;
@@ -21,8 +23,6 @@ RWStructuredBuffer<uint> scan_block_sum;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-
-groupshared uint scan_values[256];
 
 uint linear_group_id(uint3 gid)
 {
@@ -40,22 +40,11 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     uint lane = ltid.x;
     uint i = block_i * WG_SIZE + lane;
     uint value = i < gScan.n_items ? scan_input[i] : 0u;
-
-    scan_values[lane] = value;
-    GroupMemoryBarrierWithGroupSync();
-
-    [unroll]
-    for (uint offset = 1u; offset < WG_SIZE; offset <<= 1u)
-    {
-        uint addend = lane >= offset ? scan_values[lane - offset] : 0u;
-        GroupMemoryBarrierWithGroupSync();
-        scan_values[lane] += addend;
-        GroupMemoryBarrierWithGroupSync();
-    }
+    uint inclusive = prefix_scan_u32_256(lane, value);
 
     if (i < gScan.n_items)
-        scan_local_prefix[i] = scan_values[lane] - value;
+        scan_local_prefix[i] = inclusive - value;
 
     if (lane == WG_SIZE - 1u)
-        scan_block_sum[block_i] = scan_values[lane];
+        scan_block_sum[block_i] = inclusive;
 }

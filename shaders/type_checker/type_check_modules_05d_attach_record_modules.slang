@@ -10,10 +10,12 @@
 
 struct Params
 {
-    uint module_capacity;
+    // Compact record buffers are token-capacity sized, while path owners are
+    // parser HIR node ids and must be checked against the HIR node capacity.
+    uint record_capacity;
+    uint file_capacity;
+    uint hir_node_capacity;
     uint reserved;
-    uint n_blocks;
-    uint key_step;
 };
 
 ConstantBuffer<Params> gParams;
@@ -40,24 +42,39 @@ uint linear_thread_id(uint3 dtid)
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
 }
 
+uint record_capacity()
+{
+    return gParams.record_capacity;
+}
+
+uint file_capacity()
+{
+    return gParams.file_capacity == 0u ? gParams.record_capacity : gParams.file_capacity;
+}
+
+uint hir_node_capacity()
+{
+    return gParams.hir_node_capacity;
+}
+
 uint active_decl_count()
 {
-    return min(decl_count_out[0], gParams.module_capacity);
+    return min(decl_count_out[0], record_capacity());
 }
 
 uint active_import_count()
 {
-    return min(import_count_out[0], gParams.module_capacity);
+    return min(import_count_out[0], record_capacity());
 }
 
 uint active_path_count()
 {
-    return min(path_count_out[0], gParams.module_capacity);
+    return min(path_count_out[0], record_capacity());
 }
 
 uint owner_module_from_file(uint file_id)
 {
-    uint module_id = file_id < gParams.module_capacity ? module_id_by_file_id[file_id] : INVALID;
+    uint module_id = file_id < file_capacity() ? module_id_by_file_id[file_id] : INVALID;
     if (module_id != INVALID)
         return module_id;
     return file_id == 0u ? 0u : INVALID;
@@ -68,7 +85,7 @@ uint owner_module_from_file(uint file_id)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
-    if (i >= gParams.module_capacity)
+    if (i >= record_capacity())
         return;
 
     if (i < active_decl_count())
@@ -80,7 +97,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i < active_path_count())
     {
         uint owner_hir = path_owner_hir[i];
-        uint file_id = owner_hir < gParams.module_capacity ? hir_item_file_id[owner_hir] : INVALID;
+        uint file_id =
+            owner_hir < hir_node_capacity() ? hir_item_file_id[owner_hir] : INVALID;
         path_owner_module_id[i] = owner_module_from_file(file_id);
     }
 }

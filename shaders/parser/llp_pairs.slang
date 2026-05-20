@@ -18,18 +18,26 @@ StructuredBuffer<uint> token_count;
 StructuredBuffer<ActionHeader> action_table;
 RWStructuredBuffer<ActionHeader> out_headers;
 
+static const uint WG_SIZE = 256u;
+static const uint MAX_GROUPS_X = 65535u;
+
+uint linear_thread_id(uint3 gid, uint3 ltid)
+{
+    return (gid.x + gid.y * MAX_GROUPS_X) * WG_SIZE + ltid.x;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
-void main(uint3 tid: SV_DispatchThreadID)
+void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
 {
-    uint i = tid.x;
+    uint i = linear_thread_id(gid, ltid);
     if (gParams.n_tokens < 2)
         return;
     uint capacity_pairs = gParams.n_tokens - 1;
     if (i >= capacity_pairs)
         return;
 
-    uint active_tokens = min(gParams.n_tokens, token_count[0] + 2u);
+    uint active_tokens = min(gParams.n_tokens, token_count[0u] + 2u);
     uint n_pairs = active_tokens > 0u ? active_tokens - 1u : 0u;
     if (i >= n_pairs)
     {

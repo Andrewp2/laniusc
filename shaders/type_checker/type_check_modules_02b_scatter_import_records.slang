@@ -9,6 +9,8 @@
 //   visibility checks, same-source shortcuts, hash-only lookup, or CPU path
 //   lookup.
 
+import scatter;
+
 struct Params
 {
     uint n_tokens;
@@ -45,13 +47,17 @@ uint linear_thread_id(uint3 dtid)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
-    if (i >= gParams.n_hir_nodes || import_record_flag[i] == 0u)
+    if (i >= gParams.n_hir_nodes)
         return;
 
-    uint slot = import_record_prefix[i];
+    CompactScatterSlot slot = compact_scatter_slot(import_record_flag[i], import_record_prefix[i]);
+    if (slot.active == 0u)
+        return;
+
     uint kind = hir_item_import_target_kind[i];
-    import_module_file_id[slot] = hir_item_file_id[i];
-    import_path_id[slot] = kind == HIR_ITEM_IMPORT_TARGET_PATH ? path_record_prefix[i] : INVALID;
-    import_kind[slot] = kind;
-    import_owner_hir[slot] = i;
+    import_module_file_id[slot.dst] = hir_item_file_id[i];
+    import_path_id[slot.dst] =
+        kind == HIR_ITEM_IMPORT_TARGET_PATH ? path_record_prefix[i] : INVALID;
+    import_kind[slot.dst] = kind;
+    import_owner_hir[slot.dst] = i;
 }

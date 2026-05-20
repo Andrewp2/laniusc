@@ -1,21 +1,27 @@
 // Attach method declaration metadata from GPU module/name/type tables.
 //
-// The receiver type is located through parser tree children of impl_item. This
-// keeps method records tied to AST/HIR structure instead of rediscovering impl
-// headers by token scans.
+// The receiver type is located from direct parser tree children of impl_item.
+// This keeps method records tied to AST/HIR structure instead of rediscovering
+// impl headers by token scans or full-HIR searches.
+
+import generated_parse_production_ids;
+import tree_walk;
 
 struct Params
 {
     uint n_tokens;
     uint source_len;
     uint n_hir_nodes;
+    uint n_source_files;
 };
 
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> token_file_id;
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> parent;
+StructuredBuffer<uint> node_kind;
+StructuredBuffer<uint> first_child;
+StructuredBuffer<uint> next_sibling;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> module_id_by_file_id;
@@ -31,7 +37,6 @@ RWStructuredBuffer<uint> method_decl_module_id;
 RWStructuredBuffer<uint> method_decl_name_id;
 
 static const uint INVALID = 0xffffffffu;
-static const uint HIR_FN = 3u;
 static const uint HIR_TYPE = 5u;
 static const uint TYPE_REF_INVALID = 0u;
 static const uint WG_SIZE = 256u;
@@ -52,6 +57,11 @@ uint active_hir_node_count()
     return min(gParams.n_hir_nodes, hir_status[5u]);
 }
 
+uint source_file_count()
+{
+    return max(gParams.n_source_files, 1u);
+}
+
 bool valid_node(uint i)
 {
     return i != INVALID && i < active_hir_node_count();
@@ -64,7 +74,7 @@ uint module_for_token(uint i)
         return INVALID;
     if (gParams.n_hir_nodes == 0u)
         return file_id == 0u ? module_id_by_file_id[0u] : INVALID;
-    uint module_id = file_id < gParams.n_hir_nodes ? module_id_by_file_id[file_id] : INVALID;
+    uint module_id = file_id < source_file_count() ? module_id_by_file_id[file_id] : INVALID;
     if (module_id != INVALID)
         return module_id;
     return file_id == 0u ? 0u : INVALID;
@@ -75,62 +85,59 @@ uint name_id_for_token(uint i)
     return i < active_token_count() ? name_id_by_token[i] : INVALID;
 }
 
-uint parent_node(uint node)
+uint method_metadata_first_child_record(uint node)
 {
-    uint p = valid_node(node) ? parent[node] : INVALID;
-    return valid_node(p) ? p : INVALID;
+    return valid_node(node) ? first_child[node] : INVALID;
 }
 
-bool has_ancestor_before_fn(uint node, uint ancestor)
+uint method_metadata_next_sibling_record(uint node)
 {
-    uint cur = node;
-    [loop]
-    for (uint guard = 0u; guard < 128u; guard += 1u)
-    {
-        if (!valid_node(cur))
-            return false;
-        if (cur == ancestor)
-            return true;
-        if (cur != node && hir_kind[cur] == HIR_FN)
-            return false;
-        uint p = parent_node(cur);
-        if (!valid_node(p) || p == cur)
-            return false;
-        cur = p;
-    }
-    return false;
+    return valid_node(node) ? next_sibling[node] : INVALID;
 }
 
-bool has_type_ancestor_before(uint node, uint ancestor)
+public struct MethodMetadataChildGraph : ITreeChildGraph
 {
-    uint cur = node;
-    [loop]
-    for (uint guard = 0u; guard < 128u; guard += 1u)
+    public static bool valid(uint node)
     {
-        if (!valid_node(cur))
-            return false;
-        uint p = parent_node(cur);
-        if (!valid_node(p) || p == cur || p == ancestor)
-            return false;
-        if (hir_kind[p] == HIR_FN)
-            return false;
-        if (hir_kind[p] == HIR_TYPE)
-            return true;
-        cur = p;
+        return valid_node(node);
     }
-    return false;
+
+    public static uint first_child(uint node)
+    {
+        return method_metadata_first_child_record(node);
+    }
+
+    public static uint next_sibling(uint node)
+    {
+        return method_metadata_next_sibling_record(node);
+    }
+}
+
+uint first_child_node(uint node)
+{
+    uint child;
+    return tree_child_first<MethodMetadataChildGraph>(node, child) ? child : INVALID;
+}
+
+uint next_sibling_node(uint node)
+{
+    uint sibling;
+    return tree_child_next<MethodMetadataChildGraph>(node, sibling) ? sibling : INVALID;
 }
 
 uint impl_receiver_type_node(uint impl_node)
 {
     uint receiver = INVALID;
-    uint n = active_hir_node_count();
+    uint child = first_child_node(impl_node);
     [loop]
-    for (uint node = 0u; node < n; node += 1u)
+    for (uint guard = 0u; guard < 64u && valid_node(child); guard += 1u)
     {
-        if (hir_kind[node] == HIR_TYPE && has_ancestor_before_fn(node, impl_node) &&
-            !has_type_ancestor_before(node, impl_node))
-            receiver = node;
+        uint prod = node_kind[child];
+        if (prod == PROD_IMPL_METHODS_NONE || prod == PROD_IMPL_METHODS_SOME)
+            break;
+        if (hir_kind[child] == HIR_TYPE)
+            receiver = child;
+        child = next_sibling_node(child);
     }
     return receiver;
 }

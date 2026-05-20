@@ -1,4 +1,6 @@
 import utils;
+import atomics;
+import byte_packing;
 
 struct Params
 {
@@ -87,21 +89,21 @@ uint parse_uint_token(uint token_i)
 
 void record_codegen_error(uint code, uint token_i)
 {
-    uint old;
-    InterlockedMin(status[3u], token_i, old);
+    uint old = atomic_u32_min(status, 3u, token_i);
     if (token_i <= old)
         status[2u] = code;
-    InterlockedAnd(status[1u], 0u, old);
+    atomic_u32_and(status, 1u, 0u);
 }
 
 void invalidate_fast_path()
 {
-    uint groups = (gParams.out_capacity + 255u) / 256u;
+    uint packed_word_count = (gParams.out_capacity + 3u) / 4u;
+    uint groups = (packed_word_count + 255u) / 256u;
     body_dispatch_args[0u] = min(groups, MAX_DISPATCH_X);
     body_dispatch_args[1u] = (groups + MAX_DISPATCH_X - 1u) / MAX_DISPATCH_X;
     body_dispatch_args[2u] = 1u;
     record_codegen_error(ERR_UNSUPPORTED_SOURCE_SHAPE, active_token_count());
-    InterlockedAnd(body_status[1u], 0u);
+    atomic_u32_and(body_status, 1u, 0u);
 }
 
 void put_body(uint pos, uint value)
@@ -369,12 +371,11 @@ void emit_packed_out_word(uint word_i, uint n, uint body_len, uint module_len)
     if (word_i >= gParams.out_capacity)
         return;
     uint pos = word_i * 4u;
-    uint packed =
-        (output_byte(pos + 0u, n, body_len, module_len) << 0u) |
-        (output_byte(pos + 1u, n, body_len, module_len) << 8u) |
-        (output_byte(pos + 2u, n, body_len, module_len) << 16u) |
-        (output_byte(pos + 3u, n, body_len, module_len) << 24u);
-    out_words[word_i] = packed;
+    out_words[word_i] = pack_u8x4(
+        output_byte(pos + 0u, n, body_len, module_len),
+        output_byte(pos + 1u, n, body_len, module_len),
+        output_byte(pos + 2u, n, body_len, module_len),
+        output_byte(pos + 3u, n, body_len, module_len));
 }
 
 [shader("compute")]

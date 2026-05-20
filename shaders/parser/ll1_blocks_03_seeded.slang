@@ -66,17 +66,6 @@ uint token_at(uint pos)
     return pos < gParams.input_end ? token_kinds[pos] : 0u;
 }
 
-void fill_emit(uint block_idx, uint fill_prod, uint lane)
-{
-    uint base = block_idx * gParams.emit_stride;
-    [loop]
-    for (uint i = lane; i < gParams.emit_stride; i += WG_SIZE)
-    {
-        seeded_emit[base + i] = fill_prod;
-        seeded_emit_pos[base + i] = INVALID;
-    }
-}
-
 uint output_pos(uint pos)
 {
     return pos >= gParams.first_input ? pos - gParams.first_input : 0u;
@@ -127,10 +116,6 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     uint lane = ltid.x;
     if (block_idx >= gParams.n_blocks)
         return;
-
-    uint fill_prod = (gParams.fill_production < gParams.n_productions) ? gParams.fill_production : 0u;
-    fill_emit(block_idx, fill_prod, lane);
-    GroupMemoryBarrierWithGroupSync();
 
     uint begin = gParams.first_input + block_idx * gParams.block_size;
     bool has_next_seed = block_idx + 1u < gParams.n_blocks && block_seed_len[block_idx + 1u] != INVALID;

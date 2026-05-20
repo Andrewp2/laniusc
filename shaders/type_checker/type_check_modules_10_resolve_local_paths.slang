@@ -9,6 +9,10 @@
 // - It does not scan source bytes, use hashes, perform CPU lookup, or apply
 //   same-source shortcuts.
 
+import fixed_key;
+import gpu_index;
+import range_query;
+
 struct Params
 {
     uint capacity;
@@ -46,7 +50,7 @@ static const uint PATH_RESOLVE_STATUS_INVALID_OWNER = 3u;
 
 uint linear_thread_id(uint3 dtid)
 {
-    return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
+    return linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
 }
 
 uint active_path_count()
@@ -59,48 +63,49 @@ uint active_decl_count()
     return min(decl_key_count_out[0], gParams.capacity);
 }
 
-uint encoded_id(uint value)
+public struct DeclLookupKey
 {
-    return value == INVALID ? 0u : value + 1u;
+    uint module_id;
+    uint name_id;
 }
 
-int compare_decl_key(uint row, uint module_id, uint name_id)
+public struct DeclFixedKey : IFixedU32RowKey<DeclLookupKey>
 {
-    uint decl_i = decl_key_to_decl_id[row];
-    uint row_module = decl_i < gParams.capacity ? decl_module_id[decl_i] : INVALID;
-    uint row_name = decl_i < gParams.capacity ? decl_name_id[decl_i] : INVALID;
-    uint left_module = encoded_id(row_module);
-    uint right_module = encoded_id(module_id);
-    if (left_module < right_module)
-        return -1;
-    if (left_module > right_module)
-        return 1;
+    public static uint row_lane(uint row, uint lane)
+    {
+        uint decl_i = decl_key_to_decl_id[row];
+        uint value = INVALID;
+        if (decl_i < gParams.capacity)
+            value = lane == 0u ? decl_module_id[decl_i] : decl_name_id[decl_i];
+        return fixed_key_encode_nullable_u32(value, INVALID);
+    }
 
-    uint left_name = encoded_id(row_name);
-    uint right_name = encoded_id(name_id);
-    if (left_name < right_name)
-        return -1;
-    if (left_name > right_name)
-        return 1;
-    return 0;
+    public static uint key_lane(DeclLookupKey key, uint lane)
+    {
+        uint value = lane == 0u ? key.module_id : key.name_id;
+        return fixed_key_encode_nullable_u32(value, INVALID);
+    }
+}
+
+public struct DeclKeyCompare : IRowQueryCompare<DeclLookupKey>
+{
+    public static int compare(uint row, DeclLookupKey key)
+    {
+        return fixed_u32_row_key_compare<DeclLookupKey, DeclFixedKey>(
+            row,
+            key,
+            2u);
+    }
 }
 
 uint find_decl(uint module_id, uint name_id)
 {
-    uint lo = 0u;
-    uint hi = active_decl_count();
-    [loop]
-    for (uint guard = 0u; guard < 32u && lo < hi; guard += 1u)
-    {
-        uint mid = lo + ((hi - lo) >> 1u);
-        int cmp = compare_decl_key(mid, module_id, name_id);
-        if (cmp < 0)
-            lo = mid + 1u;
-        else
-            hi = mid;
-    }
-    if (lo < active_decl_count() && compare_decl_key(lo, module_id, name_id) == 0)
-        return decl_key_to_decl_id[lo];
+    DeclLookupKey key;
+    key.module_id = module_id;
+    key.name_id = name_id;
+    uint row = find_equal_query<DeclLookupKey, DeclKeyCompare>(active_decl_count(), key);
+    if (row != INVALID)
+        return decl_key_to_decl_id[row];
     return INVALID;
 }
 
@@ -109,14 +114,13 @@ uint find_decl(uint module_id, uint name_id)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint path_i = linear_thread_id(dtid);
-    if (path_i >= gParams.capacity)
+    if (path_i >= active_path_count())
         return;
 
     resolved_decl[path_i] = INVALID;
     resolved_status[path_i] = PATH_RESOLVE_STATUS_SKIPPED;
 
-    if (path_i >= active_path_count() ||
-        (path_kind[path_i] != PATH_RECORD_KIND_HIR_PATH_EXPR &&
+    if ((path_kind[path_i] != PATH_RECORD_KIND_HIR_PATH_EXPR &&
          path_kind[path_i] != PATH_RECORD_KIND_HIR_TYPE_EXPR))
         return;
 

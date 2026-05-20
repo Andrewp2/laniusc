@@ -90,9 +90,9 @@ The syntax surface is ahead of semantic support:
   rejection tests are
   `type_checker_rejects_generic_bounds_until_gpu_predicate_semantics_exist` and
   `type_checker_rejects_where_clauses_until_gpu_predicate_semantics_exist`.
-- `shaders/parser/direct_hir.slang` and `shaders/parser/hir_nodes.slang`
-  classify coarse HIR nodes, but most type-checking still relies on resident
-  token buffers plus HIR spans rather than a fully lowered semantic AST.
+- The LL(1) parser/HIR path in `shaders/parser/hir_nodes.slang` classifies
+  coarse HIR nodes, but most type-checking still relies on resident token
+  buffers plus HIR spans rather than a fully lowered semantic AST.
 - `shaders/type_checker/type_check_calls_01_resolve.slang`,
   `type_check_calls_02_functions.slang`, and
   `type_check_calls_03_resolve.slang` already build GPU call metadata:

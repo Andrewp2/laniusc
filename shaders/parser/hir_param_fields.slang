@@ -1,7 +1,8 @@
-// Derive parser-owned function parameter metadata from HIR/tree arrays.
+// Publish parser-owned function parameter metadata from pointer-jumped links.
 //
 // Parameter consumers should use these rows instead of deriving parameter
-// identity or ordinal from token neighborhoods.
+// identity or ordinal from token neighborhoods. Owner and ordinal are produced
+// by the preceding linked-list passes, not by walking ancestors here.
 
 struct Params
 {
@@ -13,8 +14,11 @@ ConstantBuffer<Params> gHirParam;
 
 StructuredBuffer<uint> ll1_status;
 StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> parent;
 StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_param_owner_a;
+StructuredBuffer<uint> hir_param_rank_a;
+StructuredBuffer<uint> hir_semantic_dense_node;
+StructuredBuffer<uint> hir_semantic_count;
 
 RWStructuredBuffer<uint4> hir_param_record;
 
@@ -22,7 +26,6 @@ static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
-static const uint HIR_FN = 3u;
 static const uint HIR_PARAM = 4u;
 
 uint linear_thread_id(uint3 dtid)
@@ -40,55 +43,33 @@ bool valid_node(uint node)
     return node != INVALID && node < active_node_count();
 }
 
-uint owning_function_node(uint node)
+uint active_semantic_count()
 {
-    if (!valid_node(node))
-        return INVALID;
-    if (hir_kind[node] == HIR_FN)
-        return node;
-
-    uint cur = node;
-    [loop]
-    for (uint guard = 0u; guard < 128u; guard += 1u)
-    {
-        uint p = parent[cur];
-        if (!valid_node(p) || p == cur)
-            return INVALID;
-        if (hir_kind[p] == HIR_FN)
-            return p;
-        cur = p;
-    }
-    return INVALID;
+    return min(hir_semantic_count[0u], active_node_count());
 }
 
-uint param_ordinal_in_function(uint param_node, uint fn_node)
+uint semantic_row_node(uint row)
 {
-    uint ordinal = 0u;
-    uint n = active_node_count();
-    [loop]
-    for (uint node = 0u; node < n; node += 1u)
-    {
-        if (node == param_node)
-            break;
-        if (hir_kind[node] == HIR_PARAM && owning_function_node(node) == fn_node)
-            ordinal += 1u;
-    }
-    return ordinal;
+    if (row >= active_semantic_count())
+        return INVALID;
+    uint node = hir_semantic_dense_node[row];
+    return valid_node(node) ? node : INVALID;
 }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = linear_thread_id(dtid);
-    if (node >= gHirParam.n)
+    uint row = linear_thread_id(dtid);
+    uint node = semantic_row_node(row);
+    if (node == INVALID)
         return;
 
     hir_param_record[node] = uint4(INVALID, INVALID, INVALID, INVALID);
-    if (!valid_node(node) || hir_kind[node] != HIR_PARAM)
+    if (hir_kind[node] != HIR_PARAM)
         return;
 
-    uint fn_node = owning_function_node(node);
+    uint fn_node = hir_param_owner_a[node];
     if (!valid_node(fn_node))
         return;
 
@@ -98,7 +79,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     hir_param_record[node] = uint4(
         fn_node,
-        param_ordinal_in_function(node, fn_node),
+        hir_param_rank_a[node],
         name_token,
         node);
 }

@@ -1,3 +1,5 @@
+import gpu_index;
+
 struct Params
 {
     uint n_tokens;
@@ -67,7 +69,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
         call_param_count[i] = 0u;
         [loop]
         for (uint param_i = 0u; param_i < PARAM_CACHE_STRIDE; param_i += 1u)
-            call_param_type[i * PARAM_CACHE_STRIDE + param_i] = TY_UNKNOWN;
+            row_major_store<uint>(
+                call_param_type,
+                i,
+                PARAM_CACHE_STRIDE,
+                param_i,
+                TY_UNKNOWN);
     }
 
     if (i < gParams.n_hir_nodes)

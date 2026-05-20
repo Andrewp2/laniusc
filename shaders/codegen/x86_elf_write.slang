@@ -1,8 +1,10 @@
 // Direct x86_64 ELF writer for the first native backend slice.
 //
-// This pass consumes encoded `.text` words and writes the final packed ELF bytes
-// directly into the output buffer.
+// This pass fills the ELF and program headers. The encoder and relocation patch
+// stages already wrote `.text` bytes directly into the final output buffer.
 
+import gpu_index;
+import byte_packing;
 struct Params
 {
     uint n_tokens;
@@ -13,7 +15,6 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> x86_text_words;
 StructuredBuffer<uint> x86_elf_layout;
 StructuredBuffer<uint> layout_status;
 
@@ -33,17 +34,12 @@ static const uint LAYOUT_ALIGN = 5u;
 
 uint linear_dispatch_id(uint3 tid)
 {
-    return tid.x + tid.y * DISPATCH_X_STRIDE;
-}
-
-uint le32_byte(uint value, uint byte_i)
-{
-    return (value >> (byte_i * 8u)) & 0xffu;
+    return linear_dispatch_thread_id_2d(tid, DISPATCH_X_STRIDE);
 }
 
 uint le64_small_byte(uint value, uint byte_i)
 {
-    return byte_i < 4u ? le32_byte(value, byte_i) : 0u;
+    return byte_i < 4u ? u32_le_byte(value, byte_i) : 0u;
 }
 
 uint elf_header_byte(uint pos)
@@ -98,21 +94,12 @@ uint program_header_byte(uint pos, uint file_len)
     return 0u;
 }
 
-uint text_byte(uint pos)
-{
-    uint p = pos - x86_elf_layout[LAYOUT_TEXT_OFFSET];
-    uint word = x86_text_words[p / 4u];
-    return (word >> ((p % 4u) * 8u)) & 0xffu;
-}
-
 uint file_byte(uint pos, uint file_len)
 {
     if (pos < 64u)
         return elf_header_byte(pos);
     if (pos < x86_elf_layout[LAYOUT_TEXT_OFFSET])
         return program_header_byte(pos, file_len);
-    if (pos < file_len)
-        return text_byte(pos);
     return 0u;
 }
 
@@ -142,7 +129,7 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     uint word_i = linear_dispatch_id(tid);
-    uint word_count = (file_len + 3u) / 4u;
+    uint word_count = (text_offset + 3u) / 4u;
     if (word_i >= word_count)
         return;
 
@@ -151,5 +138,5 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint b1 = file_byte(pos + 1u, file_len);
     uint b2 = file_byte(pos + 2u, file_len);
     uint b3 = file_byte(pos + 3u, file_len);
-    out_words[word_i] = b0 | (b1 << 8u) | (b2 << 16u) | (b3 << 24u);
+    out_words[word_i] = pack_u8x4(b0, b1, b2, b3);
 }

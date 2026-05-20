@@ -1,6 +1,9 @@
 // shaders/parser/brackets_05_scan_histograms.slang
 // Exclusive scan hist_push / hist_pop → off_push / off_pop; also detect count mismatch.
 
+import atomics;
+import prefix_scan;
+
 struct Params
 {
     uint n_layers;
@@ -24,28 +27,31 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (tid.x >= L)
         return;
 
-    uint ps;
-    uint pp;
+    uint push_seed;
+    uint pop_seed;
     if (gParams.scan_step == 0u)
     {
-        ps = tid.x == 0u ? 0u : hist_push[tid.x - 1u];
-        pp = tid.x == 0u ? 0u : hist_pop[tid.x - 1u];
+        push_seed = tid.x == 0u ? 0u : hist_push[tid.x - 1u];
+        pop_seed = tid.x == 0u ? 0u : hist_pop[tid.x - 1u];
 
         // Count mismatch makes the stream invalid (but we can still produce partial matches).
         if (hist_push[tid.x] != hist_pop[tid.x])
-            InterlockedAnd(out_valid[0], 0u);
+            atomic_u32_and(out_valid, 0u, 0u);
     }
     else
     {
-        ps = prefix_push_in[tid.x];
-        pp = prefix_pop_in[tid.x];
-        if (gParams.scan_step < L && tid.x >= gParams.scan_step)
-        {
-            ps += prefix_push_in[tid.x - gParams.scan_step];
-            pp += prefix_pop_in[tid.x - gParams.scan_step];
-        }
+        push_seed = 0u;
+        pop_seed = 0u;
     }
 
-    prefix_push_out[tid.x] = ps;
-    prefix_pop_out[tid.x] = pp;
+    prefix_push_out[tid.x] = parallel_scan_step_value<uint, PrefixScanU32Add>(
+        tid.x,
+        gParams.scan_step,
+        push_seed,
+        prefix_push_in);
+    prefix_pop_out[tid.x] = parallel_scan_step_value<uint, PrefixScanU32Add>(
+        tid.x,
+        gParams.scan_step,
+        pop_seed,
+        prefix_pop_in);
 }

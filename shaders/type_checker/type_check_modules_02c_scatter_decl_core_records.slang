@@ -8,6 +8,9 @@
 //   visibility checks, same-source shortcuts, hash-only lookup, or CPU path
 //   lookup.
 
+import scatter;
+import tree_walk;
+
 struct Params
 {
     uint n_tokens;
@@ -52,20 +55,44 @@ uint name_id_for_decl(uint name_token)
     return name_token < gParams.n_tokens ? name_id_by_token[name_token] : INVALID;
 }
 
+bool valid_node(uint node)
+{
+    return node != INVALID && node < gParams.n_hir_nodes;
+}
+
+uint parent_node(uint node)
+{
+    return valid_node(node) ? parent[node] : INVALID;
+}
+
+public struct DeclCoreWalkGraph : ITreeWalkGraph
+{
+    public static bool valid(uint node)
+    {
+        return valid_node(node);
+    }
+
+    public static uint parent(uint node)
+    {
+        return parent_node(node);
+    }
+}
+
+public struct DeclCoreParentEnumPredicate : ITreeWalkPredicate
+{
+    public static bool matches(uint node)
+    {
+        return hir_item_kind[node] == HIR_ITEM_KIND_ENUM && decl_record_flag[node] != 0u;
+    }
+}
+
 uint parent_enum_decl_for_variant(uint hir_i)
 {
-    uint cur = hir_i;
-    [loop]
-    for (uint guard = 0u; guard < 16u; guard += 1u)
-    {
-        uint p = parent[cur];
-        if (p == INVALID || p >= gParams.n_hir_nodes)
-            return INVALID;
-        if (hir_item_kind[p] == HIR_ITEM_KIND_ENUM && decl_record_flag[p] != 0u)
-            return decl_record_prefix[p];
-        cur = p;
-    }
-    return INVALID;
+    uint enum_node;
+    return find_ancestor<DeclCoreWalkGraph, DeclCoreParentEnumPredicate>(
+        hir_i,
+        16u,
+        enum_node) ? decl_record_prefix[enum_node] : INVALID;
 }
 
 [shader("compute")]
@@ -73,17 +100,20 @@ uint parent_enum_decl_for_variant(uint hir_i)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
-    if (i >= gParams.n_hir_nodes || decl_record_flag[i] == 0u)
+    if (i >= gParams.n_hir_nodes)
         return;
 
-    uint slot = decl_record_prefix[i];
+    CompactScatterSlot slot = compact_scatter_slot(decl_record_flag[i], decl_record_prefix[i]);
+    if (slot.active == 0u)
+        return;
+
     uint name_token = hir_item_name_token[i];
-    decl_module_file_id[slot] = hir_item_file_id[i];
-    decl_name_id[slot] = name_id_for_decl(name_token);
-    decl_kind[slot] = hir_item_kind[i];
-    decl_namespace[slot] = hir_item_namespace[i];
-    decl_visibility[slot] = hir_item_visibility[i];
-    decl_hir_node[slot] = i;
-    decl_parent_type_decl[slot] =
+    decl_module_file_id[slot.dst] = hir_item_file_id[i];
+    decl_name_id[slot.dst] = name_id_for_decl(name_token);
+    decl_kind[slot.dst] = hir_item_kind[i];
+    decl_namespace[slot.dst] = hir_item_namespace[i];
+    decl_visibility[slot.dst] = hir_item_visibility[i];
+    decl_hir_node[slot.dst] = i;
+    decl_parent_type_decl[slot.dst] =
         hir_item_kind[i] == HIR_ITEM_KIND_ENUM_VARIANT ? parent_enum_decl_for_variant(i) : INVALID;
 }

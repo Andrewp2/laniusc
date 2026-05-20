@@ -6,9 +6,9 @@
 //   * Parses production lines and a `%start NonTerminal;` directive.
 //   * Resolves quoted terminal names to lexer TokenKind discriminants.
 //   * Validates the grammar boundary before table generation.
-//   * Emits bracket stack-change sequences for the current runtime.
-//   * Emits a first LL(1) witness-projected partial-parse table so the GPU parser
-//     produces real production IDs for common expression inputs.
+//   * Emits Pareas-style LLP(1, 1) stack-change and partial-parse tables.
+//   * Emits LL(1) runtime tables while the GPU replay path remains available for
+//     cross-checking and diagnostics.
 //
 // Grammar line examples:
 //   %start expr;
@@ -29,15 +29,15 @@ use std::{
     path::PathBuf,
 };
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{anyhow, bail, Context, Result};
 use laniusc::{
-    lexer::tables::tokens::{N_KINDS, TokenKind},
+    lexer::tables::tokens::{TokenKind, N_KINDS},
     parser::tables::{
-        INVALID_TABLE_ENTRY,
-        PrecomputedParseTables,
         build_mvp_precomputed_tables,
         encode_pop,
         encode_push,
+        PrecomputedParseTables,
+        INVALID_TABLE_ENTRY,
     },
 };
 use serde::Serialize;
@@ -46,13 +46,13 @@ const DEFAULT_LOOKBACK: u32 = 1;
 const DEFAULT_LOOKAHEAD: u32 = 1;
 const EOF_TOKEN: u32 = 0;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct GrammarSpec {
     start: String,
     productions: Vec<Production>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Production {
     line: usize,
     lhs: String,
@@ -60,9 +60,9 @@ struct Production {
     rhs_syms: Vec<Sym>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum Sym {
-    Terminal(TokenKind),
+    Terminal(u32),
     NonTerminal(String),
 }
 
@@ -148,6 +148,62 @@ struct SummaryProjection {
     pp: PairProjection,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+enum TerminalRef {
+    Empty,
+    Token(u32),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct LlpItem {
+    prod: usize,
+    dot: usize,
+    lookback: TerminalRef,
+    lookahead: TerminalRef,
+    gamma: Vec<Sym>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LlpItemSet {
+    items: Vec<LlpItem>,
+}
+
+#[derive(Debug, Clone)]
+struct PslsEntry {
+    gamma: Vec<Sym>,
+    prod: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct PslsConflict {
+    pair: (u32, u32),
+    existing_prod: usize,
+    prod: usize,
+    existing_gamma: Vec<Sym>,
+    gamma: Vec<Sym>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct PslsConflictGroupKey {
+    existing_prod: usize,
+    prod: usize,
+    existing_gamma: Vec<Sym>,
+    gamma: Vec<Sym>,
+}
+
+#[derive(Debug, Default)]
+struct PslsTable {
+    cells: BTreeMap<(u32, u32), PslsEntry>,
+    conflicts: Vec<PslsConflict>,
+}
+
+#[derive(Debug, Clone)]
+struct LlpParseEntry {
+    initial_stack: Vec<Sym>,
+    final_stack: Vec<Sym>,
+    productions: Vec<usize>,
+}
+
 fn parse_grammar(src: &str) -> Result<GrammarSpec> {
     let mut prods = Vec::new();
     let mut tag_counts: HashMap<String, usize> = HashMap::new();
@@ -203,7 +259,7 @@ fn parse_grammar(src: &str) -> Result<GrammarSpec> {
                 let token = TokenKind::from_name(terminal_name).ok_or_else(|| {
                     anyhow!("line {line_number}: unknown terminal token kind '{terminal_name}'")
                 })?;
-                rhs_syms.push(Sym::Terminal(token));
+                rhs_syms.push(Sym::Terminal(token as u32));
             } else if is_ident(tok) {
                 rhs_syms.push(Sym::NonTerminal(tok.to_string()));
             } else {
@@ -477,7 +533,7 @@ fn first_of_sequence(
     for sym in seq {
         match sym {
             Sym::Terminal(token) => {
-                out.insert(*token as u32);
+                out.insert(*token);
                 return (out, false);
             }
             Sym::NonTerminal(name) => {
@@ -697,6 +753,645 @@ fn prediction_lookaheads(prod: &Production, analysis: &GrammarAnalysis) -> BTree
     out
 }
 
+fn item_set_key(set: &LlpItemSet) -> Vec<LlpItem> {
+    let mut keys = set.items.clone();
+    keys.sort();
+    keys
+}
+
+fn insert_item_unique(
+    items: &mut Vec<LlpItem>,
+    seen: &mut HashSet<LlpItem>,
+    item: LlpItem,
+) -> bool {
+    if !seen.insert(item.clone()) {
+        return false;
+    }
+    items.push(item);
+    true
+}
+
+fn insert_term_set_omit_empty(
+    dst: &mut BTreeSet<TerminalRef>,
+    src: &BTreeSet<TerminalRef>,
+) -> bool {
+    let mut changed = false;
+    for term in src {
+        if *term != TerminalRef::Empty && dst.insert(*term) {
+            changed = true;
+        }
+    }
+    changed
+}
+
+fn compute_base_first_or_last_terms(
+    spec: &GrammarSpec,
+    first: bool,
+) -> BTreeMap<String, BTreeSet<TerminalRef>> {
+    let nonterminals = collect_nonterminals(&spec.productions);
+    let mut sets = nonterminals
+        .iter()
+        .map(|name| (name.clone(), BTreeSet::new()))
+        .collect::<BTreeMap<_, _>>();
+
+    loop {
+        let mut changed = false;
+        for prod in &spec.productions {
+            let mut nullable_prefix = true;
+            let len = prod.rhs_syms.len();
+            for i in 0..len {
+                let sym = if first {
+                    &prod.rhs_syms[i]
+                } else {
+                    &prod.rhs_syms[len - i - 1]
+                };
+                match sym {
+                    Sym::Terminal(token) => {
+                        changed |= sets
+                            .entry(prod.lhs.clone())
+                            .or_default()
+                            .insert(TerminalRef::Token(*token));
+                        nullable_prefix = false;
+                        break;
+                    }
+                    Sym::NonTerminal(name) => {
+                        let sym_set = sets.get(name).cloned().unwrap_or_default();
+                        let has_empty = sym_set.contains(&TerminalRef::Empty);
+                        changed |= insert_term_set_omit_empty(
+                            sets.entry(prod.lhs.clone()).or_default(),
+                            &sym_set,
+                        );
+                        if !has_empty {
+                            nullable_prefix = false;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if nullable_prefix {
+                changed |= sets
+                    .entry(prod.lhs.clone())
+                    .or_default()
+                    .insert(TerminalRef::Empty);
+            }
+        }
+
+        if !changed {
+            return sets;
+        }
+    }
+}
+
+fn compute_first_or_last_terms_for_sequence(
+    seq: &[Sym],
+    first: bool,
+    base_sets: &BTreeMap<String, BTreeSet<TerminalRef>>,
+) -> BTreeSet<TerminalRef> {
+    let mut out = BTreeSet::new();
+    let len = seq.len();
+    for i in 0..len {
+        let sym = if first { &seq[i] } else { &seq[len - i - 1] };
+        match sym {
+            Sym::Terminal(token) => {
+                out.insert(TerminalRef::Token(*token));
+                return out;
+            }
+            Sym::NonTerminal(name) => {
+                let Some(sym_set) = base_sets.get(name) else {
+                    return out;
+                };
+                insert_term_set_omit_empty(&mut out, sym_set);
+                if !sym_set.contains(&TerminalRef::Empty) {
+                    return out;
+                }
+            }
+        }
+    }
+    out.insert(TerminalRef::Empty);
+    out
+}
+
+fn compute_before_sets(
+    spec: &GrammarSpec,
+    base_last: &BTreeMap<String, BTreeSet<TerminalRef>>,
+) -> BTreeMap<String, BTreeSet<TerminalRef>> {
+    let nonterminals = collect_nonterminals(&spec.productions);
+    let mut before = nonterminals
+        .iter()
+        .map(|name| (name.clone(), BTreeSet::new()))
+        .collect::<BTreeMap<_, _>>();
+    before
+        .entry(spec.start.clone())
+        .or_default()
+        .insert(TerminalRef::Token(EOF_TOKEN));
+
+    loop {
+        let mut changed = false;
+        for prod in &spec.productions {
+            for (i, sym) in prod.rhs_syms.iter().enumerate() {
+                let Sym::NonTerminal(name) = sym else {
+                    continue;
+                };
+
+                let prefix = &prod.rhs_syms[..i];
+                let prefix_last =
+                    compute_first_or_last_terms_for_sequence(prefix, false, base_last);
+                changed |= insert_term_set_omit_empty(
+                    before.entry(name.clone()).or_default(),
+                    &prefix_last,
+                );
+                if prefix_last.contains(&TerminalRef::Empty) {
+                    let lhs_before = before.get(&prod.lhs).cloned().unwrap_or_default();
+                    changed |= insert_term_set_omit_empty(
+                        before.entry(name.clone()).or_default(),
+                        &lhs_before,
+                    );
+                }
+            }
+        }
+
+        if !changed {
+            return before;
+        }
+    }
+}
+
+fn compute_first_for_symbol_then_term(
+    sym: &Sym,
+    lookahead: TerminalRef,
+    base_first: &BTreeMap<String, BTreeSet<TerminalRef>>,
+) -> BTreeSet<TerminalRef> {
+    let mut out = BTreeSet::new();
+    match sym {
+        Sym::Terminal(token) => {
+            out.insert(TerminalRef::Token(*token));
+        }
+        Sym::NonTerminal(name) => {
+            if let Some(first) = base_first.get(name) {
+                insert_term_set_omit_empty(&mut out, first);
+                if first.contains(&TerminalRef::Empty) {
+                    out.insert(lookahead);
+                }
+            }
+        }
+    }
+    out
+}
+
+fn compute_gamma(
+    target: TerminalRef,
+    x: &Sym,
+    delta: &[Sym],
+    base_first: &BTreeMap<String, BTreeSet<TerminalRef>>,
+) -> Result<Vec<Sym>> {
+    let TerminalRef::Token(target_token) = target else {
+        bail!("LLP gamma target must be a concrete terminal");
+    };
+
+    let mut gamma = Vec::new();
+    for sym in std::iter::once(x).chain(delta.iter()) {
+        gamma.push(sym.clone());
+        match sym {
+            Sym::Terminal(token) => {
+                if *token != target_token {
+                    bail!(
+                        "LLP gamma terminal mismatch: wanted {}, found {:?}",
+                        format_token(target_token),
+                        token
+                    );
+                }
+                return Ok(gamma);
+            }
+            Sym::NonTerminal(name) => {
+                let first = base_first
+                    .get(name)
+                    .ok_or_else(|| anyhow!("missing FIRST set for '{name}'"))?;
+                if first.contains(&TerminalRef::Token(target_token)) {
+                    return Ok(gamma);
+                }
+                if !first.contains(&TerminalRef::Empty) {
+                    bail!(
+                        "LLP gamma cannot pass non-nullable nonterminal '{}' toward {}",
+                        name,
+                        format_token(target_token)
+                    );
+                }
+            }
+        }
+    }
+
+    bail!(
+        "LLP gamma exhausted symbols before {}",
+        format_token(target_token)
+    )
+}
+
+fn llp_syms_before_dot(set: &LlpItemSet, spec: &GrammarSpec) -> Vec<Sym> {
+    let mut out = Vec::new();
+    for item in &set.items {
+        if item.dot == 0 {
+            continue;
+        }
+        let sym = spec.productions[item.prod].rhs_syms[item.dot - 1].clone();
+        if !out.iter().any(|existing| existing == &sym) {
+            out.push(sym);
+        }
+    }
+    out
+}
+
+fn llp_predecessor(
+    set: &LlpItemSet,
+    sym: &Sym,
+    spec: &GrammarSpec,
+    base_first: &BTreeMap<String, BTreeSet<TerminalRef>>,
+    base_last: &BTreeMap<String, BTreeSet<TerminalRef>>,
+    before: &BTreeMap<String, BTreeSet<TerminalRef>>,
+) -> Result<LlpItemSet> {
+    let mut new_set = LlpItemSet { items: Vec::new() };
+    let mut seen = HashSet::new();
+
+    for item in &set.items {
+        if item.dot == 0 || &spec.productions[item.prod].rhs_syms[item.dot - 1] != sym {
+            continue;
+        }
+
+        let prod = &spec.productions[item.prod];
+        let alpha = &prod.rhs_syms[..item.dot - 1];
+        let mut us = compute_first_or_last_terms_for_sequence(alpha, false, base_last);
+        if us.contains(&TerminalRef::Empty) {
+            let before_lhs = before.get(&prod.lhs).cloned().unwrap_or_default();
+            if !before_lhs.is_empty() {
+                us.remove(&TerminalRef::Empty);
+            }
+            insert_term_set_omit_empty(&mut us, &before_lhs);
+        }
+
+        let vs = compute_first_for_symbol_then_term(sym, item.lookahead, base_first);
+        for u in &us {
+            for v in &vs {
+                if *v == TerminalRef::Empty {
+                    continue;
+                }
+                let gamma = compute_gamma(*v, sym, &item.gamma, base_first)?;
+                insert_item_unique(
+                    &mut new_set.items,
+                    &mut seen,
+                    LlpItem {
+                        prod: item.prod,
+                        dot: item.dot - 1,
+                        lookback: *u,
+                        lookahead: *v,
+                        gamma,
+                    },
+                );
+            }
+        }
+    }
+
+    Ok(new_set)
+}
+
+fn llp_closure(
+    set: &mut LlpItemSet,
+    spec: &GrammarSpec,
+    base_last: &BTreeMap<String, BTreeSet<TerminalRef>>,
+    before: &BTreeMap<String, BTreeSet<TerminalRef>>,
+) {
+    let mut queue = VecDeque::new();
+    let mut seen = set.items.iter().cloned().collect::<HashSet<_>>();
+    for item in &set.items {
+        if item.dot > 0
+            && matches!(
+                spec.productions[item.prod].rhs_syms[item.dot - 1],
+                Sym::NonTerminal(_)
+            )
+        {
+            queue.push_back(item.clone());
+        }
+    }
+
+    while let Some(item) = queue.pop_front() {
+        let Sym::NonTerminal(nt) = &spec.productions[item.prod].rhs_syms[item.dot - 1] else {
+            continue;
+        };
+
+        for (prod_id, prod) in spec.productions.iter().enumerate() {
+            if &prod.lhs != nt {
+                continue;
+            }
+
+            let mut us = compute_first_or_last_terms_for_sequence(&prod.rhs_syms, false, base_last);
+            if us.contains(&TerminalRef::Empty) {
+                us.remove(&TerminalRef::Empty);
+                let before_lhs = before.get(&prod.lhs).cloned().unwrap_or_default();
+                insert_term_set_omit_empty(&mut us, &before_lhs);
+            }
+
+            for u in us {
+                let new_item = LlpItem {
+                    prod: prod_id,
+                    dot: prod.rhs_syms.len(),
+                    lookback: u,
+                    lookahead: item.lookahead,
+                    gamma: item.gamma.clone(),
+                };
+                if insert_item_unique(&mut set.items, &mut seen, new_item.clone())
+                    && new_item.dot > 0
+                    && matches!(
+                        spec.productions[new_item.prod].rhs_syms[new_item.dot - 1],
+                        Sym::NonTerminal(_)
+                    )
+                {
+                    queue.push_back(new_item);
+                }
+            }
+        }
+    }
+}
+
+fn compute_llp_item_sets(
+    spec: &GrammarSpec,
+    base_first: &BTreeMap<String, BTreeSet<TerminalRef>>,
+    base_last: &BTreeMap<String, BTreeSet<TerminalRef>>,
+    before: &BTreeMap<String, BTreeSet<TerminalRef>>,
+) -> Result<Vec<LlpItemSet>> {
+    let start_prod = spec
+        .productions
+        .iter()
+        .position(|prod| prod.lhs == spec.start)
+        .ok_or_else(|| anyhow!("start nonterminal '{}' has no production", spec.start))?;
+
+    let initial = LlpItemSet {
+        items: vec![LlpItem {
+            prod: start_prod,
+            dot: spec.productions[start_prod].rhs_syms.len(),
+            lookback: TerminalRef::Token(EOF_TOKEN),
+            lookahead: TerminalRef::Empty,
+            gamma: Vec::new(),
+        }],
+    };
+
+    let mut sets = Vec::new();
+    let mut seen = BTreeSet::new();
+    let mut queue = VecDeque::new();
+    seen.insert(item_set_key(&initial));
+    queue.push_back(initial.clone());
+    sets.push(initial);
+
+    while let Some(set) = queue.pop_front() {
+        for sym in llp_syms_before_dot(&set, spec) {
+            let mut new_set = llp_predecessor(&set, &sym, spec, base_first, base_last, before)?;
+            llp_closure(&mut new_set, spec, base_last, before);
+            let key = item_set_key(&new_set);
+            if seen.insert(key) {
+                queue.push_back(new_set.clone());
+                sets.push(new_set);
+            }
+        }
+    }
+
+    Ok(sets)
+}
+
+fn build_psls_table(spec: &GrammarSpec, item_sets: &[LlpItemSet]) -> PslsTable {
+    let mut psls = PslsTable::default();
+    let mut seen_conflicts = BTreeSet::new();
+    for set in item_sets {
+        for item in &set.items {
+            if item.dot == 0 {
+                continue;
+            }
+            let Sym::Terminal(_) = spec.productions[item.prod].rhs_syms[item.dot - 1] else {
+                continue;
+            };
+            let (TerminalRef::Token(x), TerminalRef::Token(y)) = (item.lookback, item.lookahead)
+            else {
+                continue;
+            };
+            let pair = (x, y);
+            match psls.cells.get(&pair) {
+                Some(existing) if existing.gamma != item.gamma => {
+                    let conflict = PslsConflict {
+                        pair,
+                        existing_prod: existing.prod,
+                        prod: item.prod,
+                        existing_gamma: existing.gamma.clone(),
+                        gamma: item.gamma.clone(),
+                    };
+                    if seen_conflicts.insert(conflict.clone()) {
+                        psls.conflicts.push(conflict);
+                    }
+                }
+                Some(_) => {}
+                None => {
+                    psls.cells.insert(
+                        pair,
+                        PslsEntry {
+                            gamma: item.gamma.clone(),
+                            prod: item.prod,
+                        },
+                    );
+                }
+            }
+        }
+    }
+    psls
+}
+
+fn format_psls_conflicts(spec: &GrammarSpec, conflicts: &[PslsConflict], limit: usize) -> String {
+    let mut grouped: BTreeMap<PslsConflictGroupKey, Vec<(u32, u32)>> = BTreeMap::new();
+    for conflict in conflicts {
+        grouped
+            .entry(PslsConflictGroupKey {
+                existing_prod: conflict.existing_prod,
+                prod: conflict.prod,
+                existing_gamma: conflict.existing_gamma.clone(),
+                gamma: conflict.gamma.clone(),
+            })
+            .or_default()
+            .push(conflict.pair);
+    }
+
+    let mut groups = grouped.into_iter().collect::<Vec<_>>();
+    groups.sort_by(|(key_a, pairs_a), (key_b, pairs_b)| {
+        pairs_b
+            .len()
+            .cmp(&pairs_a.len())
+            .then_with(|| key_a.existing_prod.cmp(&key_b.existing_prod))
+            .then_with(|| key_a.prod.cmp(&key_b.prod))
+    });
+
+    let mut lines = Vec::new();
+    for (key, pairs) in groups.iter().take(limit) {
+        let existing = &spec.productions[key.existing_prod];
+        let incoming = &spec.productions[key.prod];
+        lines.push(format!(
+            "  {} pair(s), samples {}: {} vs {}",
+            pairs.len(),
+            format_pair_samples(pairs, 8),
+            format_production_ref(key.existing_prod, existing),
+            format_production_ref(key.prod, incoming)
+        ));
+        lines.push(format!(
+            "    existing gamma: {}",
+            format_symbol_sequence(&key.existing_gamma)
+        ));
+        lines.push(format!(
+            "    incoming gamma: {}",
+            format_symbol_sequence(&key.gamma)
+        ));
+    }
+    lines.join("\n")
+}
+
+fn format_pair_samples(pairs: &[(u32, u32)], limit: usize) -> String {
+    let samples = pairs
+        .iter()
+        .take(limit)
+        .map(|pair| format_pair(*pair))
+        .collect::<Vec<_>>();
+    if pairs.len() > limit {
+        format!("{} ...", samples.join(", "))
+    } else {
+        samples.join(", ")
+    }
+}
+
+fn format_production_ref(id: usize, prod: &Production) -> String {
+    format!(
+        "#{id} {} [{}] line {} -> {}",
+        prod.lhs,
+        prod.tag,
+        prod.line,
+        format_symbol_sequence(&prod.rhs_syms)
+    )
+}
+
+fn format_symbol_sequence(syms: &[Sym]) -> String {
+    if syms.is_empty() {
+        return "<empty>".to_string();
+    }
+    syms.iter()
+        .map(|sym| match sym {
+            Sym::Terminal(token) => format!("'{}'", format_token(*token)),
+            Sym::NonTerminal(name) => name.clone(),
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn stack_symbol_id(sym: &Sym, nt_symbol_ids: &BTreeMap<String, u32>) -> Result<u32> {
+    match sym {
+        Sym::Terminal(token) => Ok(*token),
+        Sym::NonTerminal(name) => nt_symbol_ids
+            .get(name)
+            .copied()
+            .ok_or_else(|| anyhow!("unknown nonterminal '{name}'")),
+    }
+}
+
+fn ll_partial_parse(
+    spec: &GrammarSpec,
+    predict_map: &HashMap<(String, u32), usize>,
+    y: u32,
+    stack: &mut Vec<Sym>,
+) -> Result<Vec<usize>> {
+    let mut productions = Vec::new();
+    loop {
+        let Some(top) = stack.pop() else {
+            bail!("LL partial parse stack emptied before {}", format_token(y));
+        };
+        match top {
+            Sym::Terminal(token) => {
+                if token != y {
+                    bail!(
+                        "LL partial parse terminal mismatch: expected {:?}, found {}",
+                        format_token(token),
+                        format_token(y)
+                    );
+                }
+                break;
+            }
+            Sym::NonTerminal(name) => {
+                let Some(&prod_id) = predict_map.get(&(name.clone(), y)) else {
+                    bail!("no LL prediction for {name} on {}", format_token(y));
+                };
+                productions.push(prod_id);
+                stack.extend(spec.productions[prod_id].rhs_syms.iter().rev().cloned());
+            }
+        }
+    }
+    Ok(productions)
+}
+
+fn build_llp_parse_entries(
+    spec: &GrammarSpec,
+    real_start: &str,
+    predictions: &[Prediction],
+    psls: &PslsTable,
+) -> Result<BTreeMap<(u32, u32), LlpParseEntry>> {
+    let predict_map = build_predict_map(predictions);
+    let start_prod = spec
+        .productions
+        .iter()
+        .position(|prod| prod.lhs == spec.start)
+        .ok_or_else(|| anyhow!("start nonterminal '{}' has no production", spec.start))?;
+    let mut entries = BTreeMap::new();
+
+    for (&pair, entry) in &psls.cells {
+        let (x, y) = pair;
+        let (initial_stack, mut stack) = if entry.prod == start_prod && x == EOF_TOKEN {
+            (
+                Vec::new(),
+                vec![
+                    Sym::Terminal(EOF_TOKEN),
+                    Sym::NonTerminal(real_start.to_string()),
+                    Sym::Terminal(EOF_TOKEN),
+                ],
+            )
+        } else {
+            let initial = entry.gamma.iter().rev().cloned().collect::<Vec<_>>();
+            (initial.clone(), initial)
+        };
+
+        if entry.prod == start_prod && x == EOF_TOKEN {
+            ll_partial_parse(spec, &predict_map, x, &mut stack)
+                .with_context(|| format!("consume start marker for {}", format_pair(pair)))?;
+        }
+
+        let productions = ll_partial_parse(spec, &predict_map, y, &mut stack)
+            .with_context(|| format!("build LLP parse entry for {}", format_pair(pair)))?;
+        entries.insert(
+            pair,
+            LlpParseEntry {
+                initial_stack,
+                final_stack: stack,
+                productions,
+            },
+        );
+    }
+
+    Ok(entries)
+}
+
+fn llp_augmented_spec(spec: &GrammarSpec) -> GrammarSpec {
+    let start = "__llp_start".to_string();
+    let mut productions = spec.productions.clone();
+    productions.push(Production {
+        line: 0,
+        lhs: start.clone(),
+        tag: "__llp_start".to_string(),
+        rhs_syms: vec![
+            Sym::Terminal(EOF_TOKEN),
+            Sym::NonTerminal(spec.start.clone()),
+            Sym::Terminal(EOF_TOKEN),
+        ],
+    });
+    GrammarSpec { start, productions }
+}
+
 fn format_token(token: u32) -> String {
     if token == EOF_TOKEN {
         "$".to_string()
@@ -736,363 +1431,6 @@ fn compute_prod_arity(prods: &[Production]) -> Vec<u32> {
         .collect()
 }
 
-fn default_projection_witnesses() -> Vec<Vec<TokenKind>> {
-    use TokenKind::*;
-
-    let mut witnesses = vec![
-        vec![Ident, Semicolon],
-        vec![Int, Semicolon],
-        vec![Float, Semicolon],
-        vec![String, Semicolon],
-        vec![Char, Semicolon],
-        vec![Plus, Int, Semicolon],
-        vec![Minus, Int, Semicolon],
-        vec![Not, Ident, Semicolon],
-        vec![Tilde, Ident, Semicolon],
-        vec![Inc, Ident, Semicolon],
-        vec![Dec, Ident, Semicolon],
-        vec![Ident, Inc, Semicolon],
-        vec![Ident, Dec, Semicolon],
-        vec![Ident, Assign, Int, Semicolon],
-        vec![Ident, PlusAssign, Int, Semicolon],
-        vec![Ident, MinusAssign, Int, Semicolon],
-        vec![Ident, StarAssign, Int, Semicolon],
-        vec![Ident, SlashAssign, Int, Semicolon],
-        vec![Ident, PercentAssign, Int, Semicolon],
-        vec![Ident, CaretAssign, Int, Semicolon],
-        vec![Ident, ShlAssign, Int, Semicolon],
-        vec![Ident, ShrAssign, Int, Semicolon],
-        vec![Ident, AmpAssign, Int, Semicolon],
-        vec![Ident, PipeAssign, Int, Semicolon],
-        vec![Ident, Plus, Int, Semicolon],
-        vec![Ident, Minus, Int, Semicolon],
-        vec![Ident, Star, Int, Semicolon],
-        vec![Ident, Slash, Int, Semicolon],
-        vec![Ident, Percent, Int, Semicolon],
-        vec![Ident, Shl, Int, Semicolon],
-        vec![Ident, Shr, Int, Semicolon],
-        vec![Ident, Lt, Int, Semicolon],
-        vec![Ident, Gt, Int, Semicolon],
-        vec![Ident, Le, Int, Semicolon],
-        vec![Ident, Ge, Int, Semicolon],
-        vec![Ident, EqEq, Int, Semicolon],
-        vec![Ident, NotEqual, Int, Semicolon],
-        vec![Ident, Ampersand, Ident, Semicolon],
-        vec![Ident, Caret, Ident, Semicolon],
-        vec![Ident, Pipe, Ident, Semicolon],
-        vec![Ident, AndAnd, Ident, Semicolon],
-        vec![Ident, OrOr, Ident, Semicolon],
-        vec![LParen, Ident, RParen, Semicolon],
-        vec![LBracket, RBracket, Semicolon],
-        vec![LBracket, Ident, RBracket, Semicolon],
-        vec![LBracket, Ident, Comma, Int, RBracket, Semicolon],
-        vec![Ident, Dot, Ident, Semicolon],
-        vec![
-            Ident, Colon, Colon, TypeIdent, Colon, Colon, TypeIdent, LParen, Int, RParen, Semicolon,
-        ],
-        vec![Ident, LBrace, RBrace, Semicolon],
-        vec![
-            Ident, LBrace, Ident, Colon, Int, Comma, Ident, Colon, Ident, RBrace, Semicolon,
-        ],
-        vec![
-            Match, LParen, Ident, RParen, LBrace, Int, Arrow, Ident, Comma, Ident, LParen, Ident,
-            RParen, Arrow, Ident, Comma, Ident, Arrow, Int, RBrace, Semicolon,
-        ],
-        vec![
-            Match, LParen, Ident, RParen, LBrace, Ident, Colon, Colon, TypeIdent, LParen, Ident,
-            RParen, Arrow, Ident, Comma, Ident, Arrow, Int, RBrace, Semicolon,
-        ],
-        vec![Ident, LParen, RParen, Semicolon],
-        vec![Ident, LParen, Ident, RParen, Semicolon],
-        vec![Ident, LParen, Ident, Comma, Int, RParen, Semicolon],
-        vec![Ident, LBracket, Int, RBracket, Semicolon],
-        vec![
-            Ident, LParen, Int, RParen, LBracket, Int, RBracket, Semicolon,
-        ],
-        vec![Import, Ident, Colon, Colon, TypeIdent, Semicolon],
-        vec![Import, String, Semicolon],
-        vec![Module, Ident, Colon, Colon, TypeIdent, Semicolon],
-        vec![Pub, Const, Ident, Colon, Ident, Assign, Int, Semicolon],
-        vec![Let, Ident, Semicolon],
-        vec![Let, Ident, Colon, Ident, Semicolon],
-        vec![Let, Ident, Assign, Int, Semicolon],
-        vec![Let, Ident, Colon, Ident, Assign, Int, Semicolon],
-        vec![Return, Semicolon],
-        vec![Return, Ident, Semicolon],
-        vec![Break, Semicolon],
-        vec![Continue, Semicolon],
-        vec![
-            If, LParen, Ident, RParen, LBrace, Return, Ident, Semicolon, RBrace,
-        ],
-        vec![
-            If, LParen, Ident, RParen, LBrace, Return, Ident, Semicolon, RBrace, Else, LBrace,
-            Return, Int, Semicolon, RBrace,
-        ],
-        vec![
-            While, LParen, Ident, RParen, LBrace, Break, Semicolon, Continue, Semicolon, RBrace,
-        ],
-        vec![LBrace, Let, Ident, Assign, Int, Semicolon, RBrace],
-        vec![Fn, Ident, LParen, RParen, LBrace, RBrace],
-        vec![Fn, Ident, Lt, Ident, Gt, LParen, RParen, LBrace, RBrace],
-        vec![
-            Pub, Fn, Ident, Lt, Ident, Comma, Ident, Gt, LParen, Ident, Colon, Ident, RParen,
-            Arrow, Ident, LBrace, Return, Ident, Semicolon, RBrace,
-        ],
-        vec![
-            Pub, Struct, Ident, Lt, Ident, Comma, Const, Ident, Colon, Ident, Gt, LBrace, Ident,
-            Colon, LBracket, Ident, Semicolon, Ident, RBracket, RBrace,
-        ],
-        vec![
-            Fn, Ident, Lt, Ident, Comma, Const, Ident, Colon, Ident, Gt, LParen, Ident, Colon,
-            LBracket, Ident, Semicolon, Ident, RBracket, RParen, Arrow, Ident, LBrace, Return,
-            Ident, LBracket, Int, RBracket, Semicolon, RBrace,
-        ],
-        vec![Enum, Ident, LBrace, RBrace],
-        vec![Enum, Ident, Lt, Ident, Gt, LBrace, RBrace],
-        vec![Enum, Ident, LBrace, Ident, RBrace],
-        vec![Enum, Ident, LBrace, Ident, Comma, Ident, RBrace],
-        vec![
-            Enum, Ident, LBrace, Ident, LParen, Ident, RParen, Comma, Ident, LParen, LBracket,
-            Ident, Semicolon, Int, RBracket, RParen, RBrace,
-        ],
-        vec![
-            Enum, Ident, Lt, Ident, Comma, Ident, Gt, LBrace, Ident, LParen, Ident, RParen, Comma,
-            Ident, LParen, Ident, RParen, RBrace,
-        ],
-        vec![Struct, Ident, LBrace, RBrace],
-        vec![
-            Struct, Ident, LBrace, Ident, Colon, Ident, Comma, Ident, Colon, Ident, RBrace,
-        ],
-        vec![
-            Pub, Struct, Ident, Lt, Ident, Gt, LBrace, Ident, Colon, Ident, Lt, Ident, Gt, Comma,
-            Ident, Colon, LBracket, Ident, Semicolon, Int, RBracket, RBrace,
-        ],
-        vec![
-            Fn, Ident, LParen, RParen, Arrow, Ident, LBrace, Return, Int, Semicolon, RBrace,
-        ],
-        vec![
-            Fn, Ident, LParen, Ident, Colon, Ident, RParen, Arrow, Ident, LBrace, Return, Ident,
-            Semicolon, RBrace,
-        ],
-        vec![
-            Pub, Fn, Ident, LParen, Ident, Colon, Ident, Comma, Ident, Colon, LBracket, Ident,
-            Semicolon, Int, RBracket, RParen, Arrow, Ident, LBrace, Let, Ident, Colon, Ident,
-            Assign, Ident, Plus, Ident, LBracket, Ident, RBracket, Semicolon, If, LParen, Ident,
-            RParen, LBrace, Return, Ident, Semicolon, RBrace, Else, LBrace, While, LParen, Ident,
-            RParen, LBrace, Break, Semicolon, Continue, Semicolon, RBrace, RBrace, RBrace,
-        ],
-    ];
-
-    let exprs = vec![
-        vec![Ident],
-        vec![Int],
-        vec![Float],
-        vec![String],
-        vec![Char],
-        vec![Plus, Int],
-        vec![Minus, Int],
-        vec![Not, Ident],
-        vec![Tilde, Ident],
-        vec![Inc, Ident],
-        vec![Dec, Ident],
-        vec![Ident, Inc],
-        vec![Ident, Dec],
-        vec![Ident, Assign, Int],
-        vec![Ident, PlusAssign, Int],
-        vec![Ident, MinusAssign, Int],
-        vec![Ident, StarAssign, Int],
-        vec![Ident, SlashAssign, Int],
-        vec![Ident, PercentAssign, Int],
-        vec![Ident, CaretAssign, Int],
-        vec![Ident, ShlAssign, Int],
-        vec![Ident, ShrAssign, Int],
-        vec![Ident, AmpAssign, Int],
-        vec![Ident, PipeAssign, Int],
-        vec![Ident, Plus, Int],
-        vec![Ident, Minus, Int],
-        vec![Ident, Star, Int],
-        vec![Ident, Slash, Int],
-        vec![Ident, Percent, Int],
-        vec![Ident, Shl, Int],
-        vec![Ident, Shr, Int],
-        vec![Ident, Lt, Int],
-        vec![Ident, Gt, Int],
-        vec![Ident, Le, Int],
-        vec![Ident, Ge, Int],
-        vec![Ident, EqEq, Int],
-        vec![Ident, NotEqual, Int],
-        vec![Ident, Ampersand, Ident],
-        vec![Ident, Caret, Ident],
-        vec![Ident, Pipe, Ident],
-        vec![Ident, AndAnd, Ident],
-        vec![Ident, OrOr, Ident],
-        vec![Int, Plus, Int],
-        vec![Int, Minus, Int],
-        vec![Int, Star, Int],
-        vec![Int, Slash, Int],
-        vec![Int, Percent, Int],
-        vec![Int, Shl, Int],
-        vec![Int, Shr, Int],
-        vec![Int, Lt, Int],
-        vec![Int, Gt, Int],
-        vec![Int, Le, Int],
-        vec![Int, Ge, Int],
-        vec![Int, EqEq, Int],
-        vec![Int, NotEqual, Int],
-        vec![Int, Ampersand, Int],
-        vec![Int, Caret, Int],
-        vec![Int, Pipe, Int],
-        vec![Int, AndAnd, Int],
-        vec![Int, OrOr, Int],
-        vec![LParen, Ident, RParen],
-        vec![LBracket, RBracket],
-        vec![LBracket, Ident, RBracket],
-        vec![LBracket, Ident, Comma, Int, RBracket],
-        vec![Ident, Dot, Ident],
-        vec![
-            Ident, Colon, Colon, TypeIdent, Colon, Colon, TypeIdent, LParen, Int, RParen,
-        ],
-        vec![Ident, LBrace, RBrace],
-        vec![
-            Ident, LBrace, Ident, Colon, Int, Comma, Ident, Colon, Ident, RBrace,
-        ],
-        vec![
-            Match, LParen, Ident, RParen, LBrace, Int, Arrow, Ident, Comma, Ident, LParen, Ident,
-            RParen, Arrow, Ident, Comma, Ident, Arrow, Int, RBrace,
-        ],
-        vec![
-            Match, LParen, Ident, RParen, LBrace, Ident, Colon, Colon, TypeIdent, LParen, Ident,
-            RParen, Arrow, Ident, Comma, Ident, Arrow, Int, RBrace,
-        ],
-        vec![Ident, LParen, RParen],
-        vec![Ident, LParen, Ident, RParen],
-        vec![Ident, LParen, Ident, Comma, Int, RParen],
-        vec![Ident, LBracket, Int, RBracket],
-    ];
-
-    for expr in &exprs {
-        let mut stmt = expr.clone();
-        stmt.push(Semicolon);
-        witnesses.push(stmt);
-
-        let mut ret = vec![Return];
-        ret.extend_from_slice(expr);
-        ret.push(Semicolon);
-        witnesses.push(ret);
-
-        let mut let_init = vec![Let, Ident, Assign];
-        let_init.extend_from_slice(expr);
-        let_init.push(Semicolon);
-        witnesses.push(let_init);
-
-        let mut let_typed_init = vec![Let, Ident, Colon, Ident, Assign];
-        let_typed_init.extend_from_slice(expr);
-        let_typed_init.push(Semicolon);
-        witnesses.push(let_typed_init);
-
-        let mut call = vec![Ident, LParen];
-        call.extend_from_slice(expr);
-        call.extend_from_slice(&[RParen, Semicolon]);
-        witnesses.push(call);
-
-        let mut call_more = vec![Ident, LParen, Ident, Comma];
-        call_more.extend_from_slice(expr);
-        call_more.extend_from_slice(&[RParen, Semicolon]);
-        witnesses.push(call_more);
-
-        let mut array = vec![LBracket];
-        array.extend_from_slice(expr);
-        array.extend_from_slice(&[RBracket, Semicolon]);
-        witnesses.push(array);
-
-        let mut array_more = vec![LBracket, Ident, Comma];
-        array_more.extend_from_slice(expr);
-        array_more.extend_from_slice(&[RBracket, Semicolon]);
-        witnesses.push(array_more);
-
-        let mut index = vec![Ident, LBracket];
-        index.extend_from_slice(expr);
-        index.extend_from_slice(&[RBracket, Semicolon]);
-        witnesses.push(index);
-
-        let mut block_expr = vec![LBrace];
-        block_expr.extend_from_slice(expr);
-        block_expr.extend_from_slice(&[Semicolon, RBrace]);
-        witnesses.push(block_expr);
-
-        let mut if_stmt = vec![If, LParen];
-        if_stmt.extend_from_slice(expr);
-        if_stmt.extend_from_slice(&[RParen, LBrace, Return, Int, Semicolon, RBrace]);
-        witnesses.push(if_stmt);
-
-        let mut while_stmt = vec![While, LParen];
-        while_stmt.extend_from_slice(expr);
-        while_stmt.extend_from_slice(&[RParen, LBrace, Break, Semicolon, RBrace]);
-        witnesses.push(while_stmt);
-    }
-
-    let type_exprs = vec![
-        vec![Ident],
-        vec![Ident, Colon, Colon, TypeIdent],
-        vec![Ident, Lt, Ident, Gt],
-        vec![Ident, Colon, Colon, TypeIdent, Lt, Ident, Gt],
-        vec![Ident, Lt, Ident, Comma, Ident, Gt],
-        vec![Ampersand, Ident],
-        vec![Ampersand, LBracket, Ident, RBracket],
-        vec![LBracket, Ident, Semicolon, Ident, RBracket],
-        vec![LBracket, Ident, RBracket],
-        vec![LBracket, Ident, Semicolon, Int, RBracket],
-    ];
-    for ty in &type_exprs {
-        let mut param = vec![Fn, Ident, LParen, Ident, Colon];
-        param.extend_from_slice(ty);
-        param.extend_from_slice(&[RParen, LBrace, RBrace]);
-        witnesses.push(param);
-
-        let mut params_more = vec![Fn, Ident, LParen, Ident, Colon, Ident, Comma, Ident, Colon];
-        params_more.extend_from_slice(ty);
-        params_more.extend_from_slice(&[RParen, LBrace, RBrace]);
-        witnesses.push(params_more);
-
-        let mut params_trailing = vec![Fn, Ident, LParen, Ident, Colon];
-        params_trailing.extend_from_slice(ty);
-        params_trailing.extend_from_slice(&[Comma, RParen, LBrace, RBrace]);
-        witnesses.push(params_trailing);
-
-        let mut let_type = vec![Let, Ident, Colon];
-        let_type.extend_from_slice(ty);
-        let_type.push(Semicolon);
-        witnesses.push(let_type);
-
-        let mut let_type_init = vec![Let, Ident, Colon];
-        let_type_init.extend_from_slice(ty);
-        let_type_init.extend_from_slice(&[Assign, Int, Semicolon]);
-        witnesses.push(let_type_init);
-
-        let mut ret_type = vec![Fn, Ident, LParen, RParen, Arrow];
-        ret_type.extend_from_slice(ty);
-        ret_type.extend_from_slice(&[LBrace, RBrace]);
-        witnesses.push(ret_type);
-    }
-
-    witnesses.extend([
-        vec![
-            LBrace, Int, Semicolon, Break, Semicolon, Continue, Semicolon, Return, Int, Semicolon,
-            RBrace,
-        ],
-        vec![LBrace, LBrace, RBrace, Return, Int, Semicolon, RBrace],
-        vec![
-            LBrace, While, LParen, Ident, RParen, LBrace, Break, Semicolon, Continue, Semicolon,
-            RBrace, Return, Int, Semicolon, RBrace,
-        ],
-        vec![
-            LBrace, Int, Semicolon, Ident, LParen, Ident, RParen, Semicolon, RBrace,
-        ],
-    ]);
-
-    witnesses
-}
-
 fn build_predict_map(predictions: &[Prediction]) -> HashMap<(String, u32), usize> {
     predictions
         .iter()
@@ -1111,158 +1449,6 @@ fn symbol_ids(spec: &GrammarSpec) -> BTreeMap<String, u32> {
         .into_iter()
         .map(|(name, id)| (name, N_KINDS + id))
         .collect()
-}
-
-fn encode_stack_sym(sym: &Sym, nt_symbol_ids: &BTreeMap<String, u32>) -> Result<u32> {
-    match sym {
-        Sym::Terminal(token) => Ok(*token as u32),
-        Sym::NonTerminal(name) => nt_symbol_ids
-            .get(name)
-            .copied()
-            .ok_or_else(|| anyhow!("unknown nonterminal '{name}'")),
-    }
-}
-
-fn ll1_trace_by_pair_ids(
-    spec: &GrammarSpec,
-    predict_map: &HashMap<(String, u32), usize>,
-    input: &[TokenKind],
-) -> Result<(
-    BTreeMap<(u32, u32), Vec<u32>>,
-    BTreeMap<(u32, u32), Vec<u32>>,
-)> {
-    let nt_symbol_ids = symbol_ids(spec);
-    let mut chunks_by_pos = vec![Vec::new(); input.len() + 1];
-    let mut sc_by_pos = vec![Vec::new(); input.len() + 1];
-    let mut stack = vec![Sym::NonTerminal(spec.start.clone())];
-    let mut pos = 0usize;
-
-    sc_by_pos[0].push(encode_push(*nt_symbol_ids.get(&spec.start).ok_or_else(
-        || anyhow!("start nonterminal '{}' is not defined", spec.start),
-    )?));
-
-    while let Some(top) = stack.pop() {
-        match top {
-            Sym::Terminal(token) => {
-                if input.get(pos).copied() != Some(token) {
-                    bail!(
-                        "terminal mismatch at pos {}: expected {:?}, found {:?}",
-                        pos,
-                        token,
-                        input.get(pos)
-                    );
-                }
-                sc_by_pos[pos].push(encode_pop(token as u32));
-                pos += 1;
-            }
-            Sym::NonTerminal(name) => {
-                let lookahead = input
-                    .get(pos)
-                    .map(|token| *token as u32)
-                    .unwrap_or(EOF_TOKEN);
-                let Some(&prod_id) = predict_map.get(&(name.clone(), lookahead)) else {
-                    bail!(
-                        "no prediction for {} on {} at pos {}",
-                        name,
-                        format_token(lookahead),
-                        pos
-                    );
-                };
-                let prod = &spec.productions[prod_id];
-                chunks_by_pos[pos].push(prod_id as u32);
-                sc_by_pos[pos].push(encode_pop(
-                    *nt_symbol_ids
-                        .get(&name)
-                        .ok_or_else(|| anyhow!("unknown nonterminal '{name}'"))?,
-                ));
-                for sym in prod.rhs_syms.iter().rev() {
-                    sc_by_pos[pos].push(encode_push(encode_stack_sym(sym, &nt_symbol_ids)?));
-                }
-                stack.extend(prod.rhs_syms.iter().rev().cloned());
-            }
-        }
-    }
-
-    if pos != input.len() {
-        bail!("parser stopped at token {} of {}", pos, input.len());
-    }
-
-    let mut pp_out = BTreeMap::new();
-    let mut sc_out = BTreeMap::new();
-    for pos in 0..=input.len() {
-        let prev = if pos == 0 {
-            EOF_TOKEN
-        } else {
-            input[pos - 1] as u32
-        };
-        let current = input
-            .get(pos)
-            .map(|token| *token as u32)
-            .unwrap_or(EOF_TOKEN);
-        pp_out.insert((prev, current), chunks_by_pos[pos].clone());
-        sc_out.insert((prev, current), sc_by_pos[pos].clone());
-    }
-
-    Ok((sc_out, pp_out))
-}
-
-fn install_projection_cell(
-    projection: &mut PairProjection,
-    pair: (u32, u32),
-    seq: Vec<u32>,
-    spec: &GrammarSpec,
-    witness: &[TokenKind],
-    kind: &str,
-) {
-    let fmt_seq = |seq: &[u32]| {
-        if kind == "sc" {
-            format_sc_ops(seq, spec)
-        } else {
-            format_prod_ids(seq, spec)
-        }
-    };
-    match projection.cells.get(&pair) {
-        Some(existing) if existing != &seq => {
-            projection.conflicts.push(format!(
-                "{kind} {}: kept [{}], saw [{}] from witness {}",
-                format_pair(pair),
-                fmt_seq(existing),
-                fmt_seq(&seq),
-                format_input(witness)
-            ));
-        }
-        Some(_) => {}
-        None => {
-            projection.cells.insert(pair, seq);
-        }
-    }
-}
-
-fn project_pair_summaries(
-    spec: &GrammarSpec,
-    predictions: &[Prediction],
-    witnesses: &[Vec<TokenKind>],
-) -> Result<SummaryProjection> {
-    let predict_map = build_predict_map(predictions);
-    let mut projection = SummaryProjection::default();
-
-    for input in witnesses {
-        let (sc_chunks, pp_chunks) = ll1_trace_by_pair_ids(spec, &predict_map, input)
-            .with_context(|| {
-                format!(
-                    "project LL(1) summaries for witness {}",
-                    format_input(input)
-                )
-            })?;
-        for (pair, chunk) in sc_chunks {
-            install_projection_cell(&mut projection.sc, pair, chunk, spec, input, "sc");
-        }
-        for (pair, chunk) in pp_chunks {
-            install_projection_cell(&mut projection.pp, pair, chunk, spec, input, "pp");
-        }
-    }
-
-    Ok(projection)
 }
 
 fn install_ll1_runtime_tables(
@@ -1300,7 +1486,7 @@ fn install_ll1_runtime_tables(
         tables.prod_rhs_len.push(prod.rhs_syms.len() as u32);
         for sym in &prod.rhs_syms {
             let encoded = match sym {
-                Sym::Terminal(token) => *token as u32,
+                Sym::Terminal(token) => *token,
                 Sym::NonTerminal(name) => {
                     let id = *nt_ids
                         .get(name)
@@ -1320,71 +1506,64 @@ fn build_projected_precomputed_tables(
     predictions: &[Prediction],
     prod_arity: Vec<u32>,
 ) -> Result<(PrecomputedParseTables, SummaryProjection, usize)> {
-    let witnesses = default_projection_witnesses();
-    let projection = project_pair_summaries(spec, predictions, &witnesses)?;
+    let llp_spec = llp_augmented_spec(spec);
+    let base_first = compute_base_first_or_last_terms(&llp_spec, true);
+    let base_last = compute_base_first_or_last_terms(&llp_spec, false);
+    let before = compute_before_sets(&llp_spec, &base_last);
+    let item_sets = compute_llp_item_sets(&llp_spec, &base_first, &base_last, &before)?;
+    let psls = build_psls_table(&llp_spec, &item_sets);
+    if !psls.conflicts.is_empty() {
+        let sample = format_psls_conflicts(&llp_spec, &psls.conflicts, 20);
+        bail!(
+            "grammar is not LLP(1, 1): {} PSLS conflicts\n{sample}",
+            psls.conflicts.len()
+        );
+    }
+    let entries = build_llp_parse_entries(&llp_spec, &spec.start, predictions, &psls)?;
+
+    let mut projection = SummaryProjection::default();
+
     let mut tables = build_mvp_precomputed_tables(N_KINDS, prod_arity);
     install_ll1_runtime_tables(&mut tables, spec, predictions)?;
 
+    tables.sc_superseq.clear();
+    tables.sc_off.fill(0);
+    tables.sc_len.fill(0);
     tables.pp_superseq.clear();
     tables.pp_off.fill(0);
     tables.pp_len.fill(0);
 
-    for (&(prev, this), seq) in &projection.pp.cells {
-        tables.set_pp_for_pair(prev, this, seq);
+    let nt_symbol_ids = symbol_ids(&llp_spec);
+    for (&(prev, this), entry) in &entries {
+        let mut sc = Vec::new();
+        for sym in entry.initial_stack.iter().rev() {
+            sc.push(encode_pop(stack_symbol_id(sym, &nt_symbol_ids)?));
+        }
+        for sym in &entry.final_stack {
+            sc.push(encode_push(stack_symbol_id(sym, &nt_symbol_ids)?));
+        }
+        let pp = entry
+            .productions
+            .iter()
+            .map(|prod| *prod as u32)
+            .collect::<Vec<_>>();
+
+        projection.sc.cells.insert((prev, this), sc.clone());
+        projection.pp.cells.insert((prev, this), pp.clone());
+        tables.set_sc_for_pair(prev, this, &sc);
+        tables.set_pp_for_pair(prev, this, &pp);
     }
-    tables.finalize_bit_widths(1);
 
-    Ok((tables, projection, witnesses.len()))
-}
+    let max_symbol_id = N_KINDS
+        .saturating_add(nt_symbol_ids.len() as u32)
+        .saturating_sub(1);
+    tables.finalize_bit_widths(max_symbol_id);
 
-fn format_input(input: &[TokenKind]) -> String {
-    let names = input
-        .iter()
-        .map(|token| format!("{token:?}"))
-        .collect::<Vec<_>>();
-    format!("[{}]", names.join(", "))
+    Ok((tables, projection, 0))
 }
 
 fn format_pair(pair: (u32, u32)) -> String {
     format!("({}, {})", format_token(pair.0), format_token(pair.1))
-}
-
-fn format_prod_ids(ids: &[u32], spec: &GrammarSpec) -> String {
-    ids.iter()
-        .map(|id| {
-            spec.productions
-                .get(*id as usize)
-                .map(|prod| format!("{}:{id}", prod.tag))
-                .unwrap_or_else(|| format!("#{id}"))
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-fn format_sc_ops(ops: &[u32], spec: &GrammarSpec) -> String {
-    ops.iter()
-        .map(|op| {
-            let verb = if op & 1 == 1 { "push" } else { "pop" };
-            let sym = format_stack_symbol(op / 2, spec);
-            format!("{verb}({sym})")
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-fn format_stack_symbol(symbol_id: u32, spec: &GrammarSpec) -> String {
-    if symbol_id < N_KINDS {
-        return format_token(symbol_id);
-    }
-
-    let nt_id = symbol_id - N_KINDS;
-    let nonterminals = collect_nonterminals(&spec.productions);
-    for (name, id) in nonterminal_ids(&nonterminals) {
-        if id == nt_id {
-            return name;
-        }
-    }
-    format!("#{symbol_id}")
 }
 
 fn main() -> Result<()> {
@@ -1502,7 +1681,7 @@ fn count_terminal_refs(prods: &[Production]) -> usize {
         .iter()
         .flat_map(|prod| prod.rhs_syms.iter())
         .filter_map(|sym| match sym {
-            Sym::Terminal(token) => Some(*token as u32),
+            Sym::Terminal(token) => Some(*token),
             Sym::NonTerminal(_) => None,
         })
         .count()
@@ -1581,7 +1760,7 @@ fn build_meta(
                     .rhs_syms
                     .iter()
                     .map(|sym| match sym {
-                        Sym::Terminal(token) => format!("'{token:?}'"),
+                        Sym::Terminal(token) => format!("'{}'", format_token(*token)),
                         Sym::NonTerminal(name) => name.clone(),
                     })
                     .collect(),

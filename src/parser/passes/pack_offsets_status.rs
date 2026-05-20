@@ -15,6 +15,7 @@ use crate::{
 #[derive(Clone, Copy, ShaderType)]
 pub struct Params {
     pub n_pairs: u32,
+    pub emit_capacity: u32,
 }
 
 pub struct PackOffsetsStatusPass {
@@ -34,9 +35,35 @@ impl PackOffsetsStatusPass {
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
     ) -> Result<()> {
+        self.record_pass_inner(device, encoder, buffers, None)
+    }
+
+    pub fn record_pass_indirect(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        buffers: &ParserBuffers,
+        dispatch_args: &wgpu::Buffer,
+    ) -> Result<()> {
+        self.record_pass_inner(device, encoder, buffers, Some(dispatch_args))
+    }
+
+    fn record_pass_inner(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        buffers: &ParserBuffers,
+        dispatch_args: Option<&wgpu::Buffer>,
+    ) -> Result<()> {
         let n_pairs = buffers.n_tokens.saturating_sub(1);
-        let params: LaniusBuffer<Params> =
-            uniform_from_val(device, "pack.offset_status.params", &Params { n_pairs });
+        let params: LaniusBuffer<Params> = uniform_from_val(
+            device,
+            "pack.offset_status.params",
+            &Params {
+                n_pairs,
+                emit_capacity: buffers.tree_capacity,
+            },
+        );
         let read_from_a = buffers
             .pack_offset_scan_steps
             .last()
@@ -75,18 +102,22 @@ impl PackOffsetsStatusPass {
             &resources,
         )?;
         let [tgsx, tgsy, _] = self.data.thread_group_size;
-        let (gx, gy, gz) = plan_workgroups(
-            DispatchDim::D1,
-            InputElements::Elements1D(n_pairs.max(1)),
-            [tgsx, tgsy, 1],
-        )?;
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("pack_offsets_status"),
             timestamp_writes: None,
         });
         pass.set_pipeline(&self.data.pipeline);
         pass.set_bind_group(0, Some(&bind_group), &[]);
-        pass.dispatch_workgroups(gx, gy, gz);
+        if let Some(dispatch_args) = dispatch_args {
+            pass.dispatch_workgroups_indirect(dispatch_args, 0);
+        } else {
+            let (gx, gy, gz) = plan_workgroups(
+                DispatchDim::D1,
+                InputElements::Elements1D(n_pairs.max(1)),
+                [tgsx, tgsy, 1],
+            )?;
+            pass.dispatch_workgroups(gx, gy, gz);
+        }
         Ok(())
     }
 }

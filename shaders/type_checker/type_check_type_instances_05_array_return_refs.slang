@@ -7,6 +7,8 @@
 // return type. It does not inspect token kinds, token spelling, source bytes,
 // or expression punctuation.
 
+import tree_walk;
+
 struct Params
 {
     uint n_tokens;
@@ -70,6 +72,32 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
+uint parent_node(uint node)
+{
+    return valid_node(node) ? parent[node] : INVALID;
+}
+
+public struct ArrayReturnWalkGraph : ITreeWalkGraph
+{
+    public static bool valid(uint node)
+    {
+        return valid_node(node);
+    }
+
+    public static uint parent(uint node)
+    {
+        return parent_node(node);
+    }
+}
+
+public struct ArrayReturnFnPredicate : ITreeWalkPredicate
+{
+    public static bool matches(uint node)
+    {
+        return hir_kind[node] == HIR_FN;
+    }
+}
+
 uint stmt_slot(uint node, uint slot)
 {
     return node * STMT_RECORD_STRIDE + slot;
@@ -77,21 +105,11 @@ uint stmt_slot(uint node, uint slot)
 
 uint owning_function_node(uint node)
 {
-    uint cur = node;
-    [loop]
-    for (uint guard = 0u; guard < 128u; guard += 1u)
-    {
-        if (!valid_node(cur))
-            return INVALID;
-        if (hir_kind[cur] == HIR_FN)
-            return cur;
-
-        uint p = parent[cur];
-        if (!valid_node(p) || p == cur)
-            return INVALID;
-        cur = p;
-    }
-    return INVALID;
+    uint fn_node;
+    return find_self_or_ancestor<ArrayReturnWalkGraph, ArrayReturnFnPredicate>(
+        node,
+        128u,
+        fn_node) ? fn_node : INVALID;
 }
 
 uint bounded_array_instance_from_ref(uint tag, uint payload)

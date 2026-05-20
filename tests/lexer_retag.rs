@@ -1,33 +1,107 @@
 mod common;
 
-use laniusc::lexer::{
-    GpuToken,
-    driver::GpuLexer,
-    tables::tokens::TokenKind,
-    test_cpu::lex_on_test_cpu,
-    util::read_tokens_from_mapped,
+use laniusc::{
+    lexer::{
+        GpuToken,
+        driver::GpuLexer,
+        tables::tokens::TokenKind,
+        test_cpu::lex_on_test_cpu,
+        util::read_tokens_from_mapped,
+    },
+    parser::{driver::GpuParser, tables::PrecomputedParseTables},
 };
 
 fn normalized_reuse_kind(kind: TokenKind) -> TokenKind {
     match kind {
-        TokenKind::LetIdent | TokenKind::ParamIdent | TokenKind::TypeIdent => TokenKind::Ident,
-        TokenKind::LetAssign => TokenKind::Assign,
-        TokenKind::ArgComma | TokenKind::ArrayComma | TokenKind::ParamComma => TokenKind::Comma,
+        TokenKind::LetIdent
+        | TokenKind::ParamIdent
+        | TokenKind::TypeIdent
+        | TokenKind::TypeAliasNameIdent
+        | TokenKind::TraitNameIdent
+        | TokenKind::GenericParamIdent
+        | TokenKind::WhereIdent
+        | TokenKind::BoundTypeIdent => TokenKind::Ident,
+        TokenKind::MemberIdent => TokenKind::Ident,
+        TokenKind::LetAssign
+        | TokenKind::DeclAssign
+        | TokenKind::TypeAliasAssign
+        | TokenKind::ConstAssign => TokenKind::Assign,
+        TokenKind::ArgComma
+        | TokenKind::ArrayComma
+        | TokenKind::ParamComma
+        | TokenKind::TypeArgComma
+        | TokenKind::GenericParamComma
+        | TokenKind::EnumFieldComma
+        | TokenKind::MatchArmComma
+        | TokenKind::PatternComma
+        | TokenKind::WhereComma
+        | TokenKind::EnumVariantComma
+        | TokenKind::StructFieldComma
+        | TokenKind::StructLitComma
+        | TokenKind::BoundTypeArgComma => TokenKind::Comma,
+        TokenKind::BoundColon | TokenKind::TypeColon | TokenKind::PathColon => TokenKind::Colon,
         TokenKind::TypeArrayLBracket => TokenKind::LBracket,
         TokenKind::TypeArrayRBracket => TokenKind::RBracket,
-        TokenKind::TypeSemicolon => TokenKind::Semicolon,
-        TokenKind::IfLBrace => TokenKind::LBrace,
-        TokenKind::IfRBrace => TokenKind::RBrace,
-        TokenKind::ParamLParen | TokenKind::CallLParen | TokenKind::GroupLParen => {
-            TokenKind::LParen
-        }
-        TokenKind::ParamRParen | TokenKind::CallRParen | TokenKind::GroupRParen => {
-            TokenKind::RParen
-        }
+        TokenKind::TypeSemicolon
+        | TokenKind::TraitMethodSemicolon
+        | TokenKind::ImportSemicolon
+        | TokenKind::ModuleSemicolon
+        | TokenKind::ExternSemicolon
+        | TokenKind::TypeAliasSemicolon
+        | TokenKind::ConstSemicolon
+        | TokenKind::LetSemicolon
+        | TokenKind::ReturnSemicolon
+        | TokenKind::ExprSemicolon
+        | TokenKind::BreakSemicolon
+        | TokenKind::ContinueSemicolon => TokenKind::Semicolon,
+        TokenKind::IfLBrace
+        | TokenKind::MatchLBrace
+        | TokenKind::ImplLBrace
+        | TokenKind::TraitLBrace
+        | TokenKind::StructLitLBrace
+        | TokenKind::StructDeclLBrace
+        | TokenKind::EnumLBrace
+        | TokenKind::FnBlockLBrace
+        | TokenKind::ImplFnBlockLBrace => TokenKind::LBrace,
+        TokenKind::IfRBrace
+        | TokenKind::MatchRBrace
+        | TokenKind::ImplRBrace
+        | TokenKind::TraitRBrace
+        | TokenKind::StructLitRBrace
+        | TokenKind::StructDeclRBrace
+        | TokenKind::EnumRBrace
+        | TokenKind::FnBlockRBrace
+        | TokenKind::ImplFnBlockRBrace => TokenKind::RBrace,
+        TokenKind::ParamLParen
+        | TokenKind::CallLParen
+        | TokenKind::GroupLParen
+        | TokenKind::PatternLParen
+        | TokenKind::EnumPayloadLParen => TokenKind::LParen,
+        TokenKind::ParamRParen
+        | TokenKind::CallRParen
+        | TokenKind::GroupRParen
+        | TokenKind::PatternRParen
+        | TokenKind::EnumPayloadRParen => TokenKind::RParen,
         TokenKind::ArrayLBracket | TokenKind::IndexLBracket => TokenKind::LBracket,
         TokenKind::ArrayRBracket | TokenKind::IndexRBracket => TokenKind::RBracket,
-        TokenKind::PrefixPlus | TokenKind::InfixPlus => TokenKind::Plus,
+        TokenKind::PrefixPlus | TokenKind::InfixPlus | TokenKind::BoundPlus => TokenKind::Plus,
         TokenKind::PrefixMinus | TokenKind::InfixMinus => TokenKind::Minus,
+        TokenKind::PrefixInc | TokenKind::PostfixInc => TokenKind::Inc,
+        TokenKind::PrefixDec | TokenKind::PostfixDec => TokenKind::Dec,
+        TokenKind::TypeArgLt | TokenKind::GenericParamLt | TokenKind::BoundTypeArgLt => {
+            TokenKind::Lt
+        }
+        TokenKind::TypeArgGt | TokenKind::GenericParamGt | TokenKind::BoundTypeArgGt => {
+            TokenKind::Gt
+        }
+        TokenKind::TypeAmpersand => TokenKind::Ampersand,
+        TokenKind::ReturnArrow | TokenKind::MatchArrow => TokenKind::Arrow,
+        TokenKind::ImplPub | TokenKind::TraitPub => TokenKind::Pub,
+        TokenKind::ImportString => TokenKind::String,
+        TokenKind::ImplFor => TokenKind::For,
+        TokenKind::ParamSelfValue | TokenKind::ParamSelfRefValue => TokenKind::SelfValue,
+        TokenKind::BoundTypeAmpersand => TokenKind::Ampersand,
+        TokenKind::InherentImpl | TokenKind::TraitImpl => TokenKind::Impl,
         other => other,
     }
 }
@@ -483,6 +557,581 @@ fn gpu_lexer_retags_keywords() {
             ]
         );
     });
+}
+
+#[test]
+fn gpu_parser_boundary_builds_semantic_context_tokens_on_gpu() {
+    use TokenKind::*;
+
+    common::block_on_gpu_with_timeout("GPU parser semantic token boundary", async move {
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let parser = GpuParser::new().await.expect("GPU parser init");
+        let tables =
+            PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+                .expect("parse tables");
+        let src = "fn main() { return -a + f(b)[c] + [d] + (e); }";
+
+        let semantic = lexer
+            .with_resident_tokens(src, |_, _, bufs| {
+                parser.debug_semantic_token_kinds_for_resident_tokens(
+                    bufs.n,
+                    &bufs.tokens_out,
+                    &bufs.token_count,
+                    &tables,
+                )
+            })
+            .await
+            .expect("resident lex")
+            .expect("semantic token kinds");
+
+        let expected = [
+            0u32,
+            Fn as u32,
+            Ident as u32,
+            ParamLParen as u32,
+            ParamRParen as u32,
+            FnBlockLBrace as u32,
+            Return as u32,
+            PrefixMinus as u32,
+            Ident as u32,
+            InfixPlus as u32,
+            Ident as u32,
+            CallLParen as u32,
+            Ident as u32,
+            CallRParen as u32,
+            IndexLBracket as u32,
+            Ident as u32,
+            IndexRBracket as u32,
+            InfixPlus as u32,
+            ArrayLBracket as u32,
+            Ident as u32,
+            ArrayRBracket as u32,
+            InfixPlus as u32,
+            GroupLParen as u32,
+            Ident as u32,
+            GroupRParen as u32,
+            ReturnSemicolon as u32,
+            FnBlockRBrace as u32,
+            0u32,
+        ];
+
+        assert_eq!(semantic, expected);
+    });
+}
+
+#[test]
+fn gpu_parser_boundary_retags_nested_if_condition_block_as_block() {
+    use TokenKind::*;
+
+    common::block_on_gpu_with_timeout("GPU parser nested if block token boundary", async move {
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let parser = GpuParser::new().await.expect("GPU parser init");
+        let tables =
+            PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+                .expect("parse tables");
+        let src = "fn main() { let ok: bool = true; if (ok || (1 > 2)) { print(1); } return 0; }";
+
+        let semantic = lexer
+            .with_resident_tokens(src, |_, _, bufs| {
+                parser.debug_semantic_token_kinds_for_resident_tokens(
+                    bufs.n,
+                    &bufs.tokens_out,
+                    &bufs.token_count,
+                    &tables,
+                )
+            })
+            .await
+            .expect("resident lex")
+            .expect("semantic token kinds");
+
+        let if_pos = semantic
+            .iter()
+            .position(|&kind| kind == If as u32)
+            .expect("fixture should contain if token");
+        let expected = [
+            If as u32,
+            GroupLParen as u32,
+            Ident as u32,
+            OrOr as u32,
+            GroupLParen as u32,
+            Int as u32,
+            Gt as u32,
+            Int as u32,
+            GroupRParen as u32,
+            GroupRParen as u32,
+            LBrace as u32,
+            Ident as u32,
+            CallLParen as u32,
+            Int as u32,
+            CallRParen as u32,
+            ExprSemicolon as u32,
+            RBrace as u32,
+        ];
+
+        assert_eq!(&semantic[if_pos..if_pos + expected.len()], expected);
+    });
+}
+
+#[test]
+fn gpu_parser_boundary_retags_tuple_match_arm_arrow_as_match_arrow() {
+    use TokenKind::*;
+
+    common::block_on_gpu_with_timeout("GPU parser tuple match arm arrow boundary", async move {
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let parser = GpuParser::new().await.expect("GPU parser init");
+        let tables =
+            PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+                .expect("parse tables");
+        let src = "fn main(value: Option) -> bool { return match (value) { Some(inner) -> check(1, (2 + 3)), None -> false, }; }";
+
+        let semantic = lexer
+            .with_resident_tokens(src, |_, _, bufs| {
+                parser.debug_semantic_token_kinds_for_resident_tokens(
+                    bufs.n,
+                    &bufs.tokens_out,
+                    &bufs.token_count,
+                    &tables,
+                )
+            })
+            .await
+            .expect("resident lex")
+            .expect("semantic token kinds");
+
+        let match_pos = semantic
+            .iter()
+            .position(|&kind| kind == Match as u32)
+            .expect("fixture should contain match token");
+        let expected = [
+            Match as u32,
+            GroupLParen as u32,
+            Ident as u32,
+            GroupRParen as u32,
+            MatchLBrace as u32,
+            Ident as u32,
+            PatternLParen as u32,
+            Ident as u32,
+            PatternRParen as u32,
+            MatchArrow as u32,
+            Ident as u32,
+            CallLParen as u32,
+            Int as u32,
+            ArgComma as u32,
+            GroupLParen as u32,
+            Int as u32,
+            InfixPlus as u32,
+            Int as u32,
+            GroupRParen as u32,
+            CallRParen as u32,
+            MatchArmComma as u32,
+            Ident as u32,
+            MatchArrow as u32,
+            False as u32,
+            MatchArmComma as u32,
+            MatchRBrace as u32,
+        ];
+
+        assert_eq!(&semantic[match_pos..match_pos + expected.len()], expected);
+    });
+}
+
+#[test]
+fn gpu_parser_boundary_retags_enum_payload_fields_as_type_names() {
+    use TokenKind::*;
+
+    common::block_on_gpu_with_timeout("GPU parser enum payload type tokens", async move {
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let parser = GpuParser::new().await.expect("GPU parser init");
+        let tables =
+            PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+                .expect("parse tables");
+        let src = "enum Option<T> { Some(T), Pair(T, i32), None }";
+
+        let semantic = lexer
+            .with_resident_tokens(src, |_, _, bufs| {
+                parser.debug_semantic_token_kinds_for_resident_tokens(
+                    bufs.n,
+                    &bufs.tokens_out,
+                    &bufs.token_count,
+                    &tables,
+                )
+            })
+            .await
+            .expect("resident lex")
+            .expect("semantic token kinds");
+
+        let expected = [
+            0u32,
+            Enum as u32,
+            Ident as u32,
+            GenericParamLt as u32,
+            GenericParamIdent as u32,
+            GenericParamGt as u32,
+            EnumLBrace as u32,
+            Ident as u32,
+            EnumPayloadLParen as u32,
+            TypeIdent as u32,
+            EnumPayloadRParen as u32,
+            EnumVariantComma as u32,
+            Ident as u32,
+            EnumPayloadLParen as u32,
+            TypeIdent as u32,
+            EnumFieldComma as u32,
+            TypeIdent as u32,
+            EnumPayloadRParen as u32,
+            EnumVariantComma as u32,
+            Ident as u32,
+            EnumRBrace as u32,
+            0u32,
+        ];
+
+        assert_eq!(semantic, expected);
+    });
+}
+
+#[test]
+fn gpu_parser_boundary_retags_generic_impl_receiver_type() {
+    use TokenKind::*;
+
+    common::block_on_gpu_with_timeout("GPU parser generic impl receiver tokens", async move {
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let parser = GpuParser::new().await.expect("GPU parser init");
+        let tables =
+            PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+                .expect("parse tables");
+        let src = "impl Range<i32> { fn start(self) -> i32 { return self.start; } }";
+
+        let semantic = lexer
+            .with_resident_tokens(src, |_, _, bufs| {
+                parser.debug_semantic_token_kinds_for_resident_tokens(
+                    bufs.n,
+                    &bufs.tokens_out,
+                    &bufs.token_count,
+                    &tables,
+                )
+            })
+            .await
+            .expect("resident lex")
+            .expect("semantic token kinds");
+
+        let expected = [
+            0u32,
+            InherentImpl as u32,
+            TypeIdent as u32,
+            TypeArgLt as u32,
+            TypeIdent as u32,
+            TypeArgGt as u32,
+            ImplLBrace as u32,
+            Fn as u32,
+            Ident as u32,
+            ParamLParen as u32,
+            ParamSelfValue as u32,
+            ParamRParen as u32,
+            ReturnArrow as u32,
+            TypeIdent as u32,
+            ImplFnBlockLBrace as u32,
+            Return as u32,
+            SelfValue as u32,
+            Dot as u32,
+            MemberIdent as u32,
+            ReturnSemicolon as u32,
+            ImplFnBlockRBrace as u32,
+            ImplRBrace as u32,
+            0u32,
+        ];
+
+        assert_eq!(semantic, expected);
+    });
+}
+
+#[test]
+fn gpu_parser_boundary_retags_long_function_close_from_delimiter_records() {
+    use TokenKind::*;
+
+    common::block_on_gpu_with_timeout("GPU parser long function brace retagging", async move {
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let parser = GpuParser::new().await.expect("GPU parser init");
+        let tables =
+            PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+                .expect("parse tables");
+        let mut src = std::string::String::from("fn main() {\n");
+        for i in 0..300 {
+            src.push_str(&format!("let v{i} = {i};\n"));
+        }
+        src.push_str("}\n");
+
+        let semantic = lexer
+            .with_resident_tokens(&src, |_, _, bufs| {
+                parser.debug_semantic_token_kinds_for_resident_tokens(
+                    bufs.n,
+                    &bufs.tokens_out,
+                    &bufs.token_count,
+                    &tables,
+                )
+            })
+            .await
+            .expect("resident lex")
+            .expect("semantic token kinds");
+
+        assert_eq!(semantic[5], FnBlockLBrace as u32);
+        assert_eq!(semantic[semantic.len() - 2], FnBlockRBrace as u32);
+    });
+}
+
+#[test]
+fn gpu_parser_boundary_retags_adjacent_function_closes_across_blocks() {
+    use TokenKind::*;
+
+    common::block_on_gpu_with_timeout("GPU parser adjacent function brace retagging", async move {
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let parser = GpuParser::new().await.expect("GPU parser init");
+        let tables =
+            PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+                .expect("parse tables");
+        let mut src = std::string::String::new();
+        for i in 0..180 {
+            let arity = i % 4;
+            let params = (0..arity)
+                .map(|param_i| format!("p{i}v{param_i}"))
+                .collect::<Vec<_>>();
+            src.push_str(&format!("fn f{i}("));
+            for (param_i, param) in params.iter().enumerate() {
+                if param_i != 0 {
+                    src.push_str(", ");
+                }
+                src.push_str(param);
+                src.push_str(": i32");
+            }
+            src.push_str(") -> i32 {\n");
+            if arity >= 2 && i % 11 == 5 {
+                src.push_str(&format!(
+                        "    if ({} < {}) {{\n        return {} + {};\n    }} else {{\n        return {} - {};\n    }}\n",
+                        params[0], params[1], params[0], params[1], params[0], params[1]
+                    ));
+            } else if arity >= 1 && i % 7 == 3 {
+                src.push_str(&format!(
+                    "    let t{i}: i32 = {} * {};\n    return t{i} + {};\n",
+                    params[0],
+                    params.get(1).unwrap_or(&params[0]),
+                    i % 9
+                ));
+            } else if arity >= 1 && i % 13 == 6 {
+                src.push_str(&format!(
+                    "    let a{i}: i32 = {};\n    a{i} += {};\n    return a{i};\n",
+                    params[0],
+                    i % 7
+                ));
+            } else if arity == 0 {
+                src.push_str(&format!("    return ({} + {});\n", i % 64, (i + 3) % 64));
+            } else {
+                src.push_str(&format!("    return {} + {};\n", params[0], i % 64));
+            }
+            src.push_str("}\n");
+        }
+
+        let tokens = lexer.lex(&src).await.expect("tokens");
+        let semantic = lexer
+            .with_resident_tokens(&src, |_, _, bufs| {
+                parser.debug_semantic_token_kinds_for_resident_tokens(
+                    bufs.n,
+                    &bufs.tokens_out,
+                    &bufs.token_count,
+                    &tables,
+                )
+            })
+            .await
+            .expect("resident lex")
+            .expect("semantic token kinds");
+
+        let mut checked = 0usize;
+        for (i, pair) in tokens.windows(2).enumerate() {
+            if pair[0].kind == RBrace && pair[1].kind == Fn {
+                checked += 1;
+                assert_eq!(
+                    semantic[i + 1],
+                    FnBlockRBrace as u32,
+                    "raw token {i} is a function close before another fn"
+                );
+            }
+        }
+        assert!(
+            checked > 64,
+            "generated source should cover many adjacent function boundaries"
+        );
+    });
+}
+
+#[test]
+fn gpu_parser_boundary_builds_param_and_type_context_tokens_on_gpu() {
+    use TokenKind::*;
+
+    common::block_on_gpu_with_timeout("GPU parser parameter/type semantic boundary", async move {
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let parser = GpuParser::new().await.expect("GPU parser init");
+        let tables =
+            PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+                .expect("parse tables");
+        let src = "fn add(x: i32, y: [i32; 4]) { let z: [i32; 4] = x; return z; }";
+
+        let semantic = lexer
+            .with_resident_tokens(src, |_, _, bufs| {
+                parser.debug_semantic_token_kinds_for_resident_tokens(
+                    bufs.n,
+                    &bufs.tokens_out,
+                    &bufs.token_count,
+                    &tables,
+                )
+            })
+            .await
+            .expect("resident lex")
+            .expect("semantic token kinds");
+
+        let expected = [
+            0u32,
+            Fn as u32,
+            Ident as u32,
+            ParamLParen as u32,
+            ParamIdent as u32,
+            TypeColon as u32,
+            TypeIdent as u32,
+            ParamComma as u32,
+            ParamIdent as u32,
+            TypeColon as u32,
+            TypeArrayLBracket as u32,
+            TypeIdent as u32,
+            TypeSemicolon as u32,
+            Int as u32,
+            TypeArrayRBracket as u32,
+            ParamRParen as u32,
+            FnBlockLBrace as u32,
+            Let as u32,
+            LetIdent as u32,
+            TypeColon as u32,
+            TypeArrayLBracket as u32,
+            TypeIdent as u32,
+            TypeSemicolon as u32,
+            Int as u32,
+            TypeArrayRBracket as u32,
+            LetAssign as u32,
+            Ident as u32,
+            LetSemicolon as u32,
+            Return as u32,
+            Ident as u32,
+            ReturnSemicolon as u32,
+            FnBlockRBrace as u32,
+            0u32,
+        ];
+
+        assert_eq!(semantic, expected);
+    });
+}
+
+#[test]
+fn gpu_parser_boundary_retags_generic_function_params_on_gpu() {
+    use TokenKind::*;
+
+    common::block_on_gpu_with_timeout("GPU parser generic function param boundary", async move {
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let parser = GpuParser::new().await.expect("GPU parser init");
+        let tables =
+            PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+                .expect("parse tables");
+        let src = "fn unwrap_or<T, E>(value: Result<T, E>, fallback: T) -> T { return fallback; }";
+
+        let semantic = lexer
+            .with_resident_tokens(src, |_, _, bufs| {
+                parser.debug_semantic_token_kinds_for_resident_tokens(
+                    bufs.n,
+                    &bufs.tokens_out,
+                    &bufs.token_count,
+                    &tables,
+                )
+            })
+            .await
+            .expect("resident lex")
+            .expect("semantic token kinds");
+
+        let expected = [
+            0u32,
+            Fn as u32,
+            Ident as u32,
+            GenericParamLt as u32,
+            GenericParamIdent as u32,
+            GenericParamComma as u32,
+            GenericParamIdent as u32,
+            GenericParamGt as u32,
+            ParamLParen as u32,
+            ParamIdent as u32,
+            TypeColon as u32,
+            TypeIdent as u32,
+            TypeArgLt as u32,
+            TypeIdent as u32,
+            TypeArgComma as u32,
+            TypeIdent as u32,
+            TypeArgGt as u32,
+            ParamComma as u32,
+            ParamIdent as u32,
+            TypeColon as u32,
+            TypeIdent as u32,
+            ParamRParen as u32,
+            ReturnArrow as u32,
+            TypeIdent as u32,
+        ];
+
+        assert_eq!(&semantic[..expected.len()], expected);
+    });
+}
+
+#[test]
+fn gpu_parser_boundary_keeps_typed_let_initializer_plus_as_infix() {
+    use TokenKind::*;
+
+    common::block_on_gpu_with_timeout(
+        "GPU parser typed let initializer plus retagging",
+        async move {
+            let lexer = GpuLexer::new().await.expect("GPU lexer init");
+            let parser = GpuParser::new().await.expect("GPU parser init");
+            let tables = PrecomputedParseTables::load_bin_bytes(include_bytes!(
+                "../tables/parse_tables.bin"
+            ))
+            .expect("parse tables");
+            let src = "fn main() { let b: i32 = a + 20; }";
+
+            let semantic = lexer
+                .with_resident_tokens(src, |_, _, bufs| {
+                    parser.debug_semantic_token_kinds_for_resident_tokens(
+                        bufs.n,
+                        &bufs.tokens_out,
+                        &bufs.token_count,
+                        &tables,
+                    )
+                })
+                .await
+                .expect("resident lex")
+                .expect("semantic token kinds");
+
+            let expected = [
+                0u32,
+                Fn as u32,
+                Ident as u32,
+                ParamLParen as u32,
+                ParamRParen as u32,
+                FnBlockLBrace as u32,
+                Let as u32,
+                LetIdent as u32,
+                TypeColon as u32,
+                TypeIdent as u32,
+                LetAssign as u32,
+                Ident as u32,
+                InfixPlus as u32,
+                Int as u32,
+                LetSemicolon as u32,
+                FnBlockRBrace as u32,
+                0u32,
+            ];
+
+            assert_eq!(semantic, expected);
+        },
+    );
 }
 
 #[test]

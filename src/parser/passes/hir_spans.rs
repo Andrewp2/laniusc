@@ -50,11 +50,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirSpansPass {
                     b.ll1_status.as_entire_binding()
                 },
             ),
-            ("token_kinds".into(), b.token_kinds.as_entire_binding()),
             ("token_count".into(), b.token_count.as_entire_binding()),
             ("subtree_end".into(), b.subtree_end.as_entire_binding()),
             ("hir_kind".into(), b.hir_kind.as_entire_binding()),
             ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
+            (
+                "hir_type_path_leaf_node".into(),
+                b.hir_type_path_leaf_node.as_entire_binding(),
+            ),
             ("hir_token_end".into(), b.hir_token_end.as_entire_binding()),
         ])
     }

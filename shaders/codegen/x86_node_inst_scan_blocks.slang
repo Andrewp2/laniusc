@@ -3,6 +3,9 @@
 // scan_step == 0 seeds inclusive block prefixes from local block sums. Later
 // dispatches ping-pong prefix buffers with scan_step = 1, 2, 4, ...
 
+import gpu_index;
+import prefix_scan;
+
 struct ScanParams
 {
     uint n_items;
@@ -21,7 +24,7 @@ static const uint MAX_GROUPS_X = 65535u;
 
 uint linear_thread_id(uint3 dtid)
 {
-    return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
+    return linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
 }
 
 [shader("compute")]
@@ -32,14 +35,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i >= gScan.n_blocks)
         return;
 
-    if (gScan.scan_step == 0u)
-    {
-        x86_node_inst_scan_block_prefix_out[i] = x86_node_inst_scan_block_sum[i];
-        return;
-    }
-
-    uint value = x86_node_inst_scan_block_prefix_in[i];
-    if (i >= gScan.scan_step)
-        value += x86_node_inst_scan_block_prefix_in[i - gScan.scan_step];
-    x86_node_inst_scan_block_prefix_out[i] = value;
+    x86_node_inst_scan_block_prefix_out[i] =
+        block_prefix_scan_step<uint, PrefixScanU32Add>(
+            i,
+            gScan.scan_step,
+            x86_node_inst_scan_block_sum,
+            x86_node_inst_scan_block_prefix_in);
 }

@@ -26,8 +26,7 @@ struct TokenIn
 StructuredBuffer<TokenIn> token_words;
 ByteAddressBuffer source_bytes;
 StructuredBuffer<uint> ll1_status;
-StructuredBuffer<uint> hir_expr_form;
-StructuredBuffer<uint> hir_expr_value_token;
+StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_type_len_token;
 
 RWStructuredBuffer<uint> hir_expr_int_value;
@@ -38,6 +37,9 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
 static const uint HIR_EXPR_INT = 3u;
+static const uint HIR_EXPR_RECORD_STRIDE = 4u;
+static const uint HIR_EXPR_RECORD_FORM = 0u;
+static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -52,6 +54,11 @@ uint active_node_count()
 bool valid_node(uint i)
 {
     return i != INVALID && i < active_node_count();
+}
+
+uint expr_slot(uint node, uint slot)
+{
+    return valid_node(node) ? hir_expr_record[node * HIR_EXPR_RECORD_STRIDE + slot] : INVALID;
 }
 
 uint source_at(uint start, uint delta)
@@ -105,10 +112,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (token_starts_with_digit(len_token))
         hir_type_len_value[i] = parse_uint_token(len_token);
 
-    if (hir_expr_form[i] != HIR_EXPR_INT)
+    if (expr_slot(i, HIR_EXPR_RECORD_FORM) != HIR_EXPR_INT)
         return;
 
-    uint value_token = hir_expr_value_token[i];
+    uint value_token = expr_slot(i, HIR_EXPR_RECORD_VALUE_TOKEN);
     if (value_token == INVALID)
         return;
 

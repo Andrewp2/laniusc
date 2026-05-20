@@ -1,3 +1,5 @@
+import prefix_scan;
+
 struct ActionHeader
 {
     uint push_len;
@@ -23,43 +25,47 @@ RWStructuredBuffer<uint> emit_prefix_out;
 RWStructuredBuffer<uint> sc_offsets;
 RWStructuredBuffer<uint> emit_offsets;
 
+static const uint WG_SIZE = 256u;
+static const uint MAX_GROUPS_X = 65535u;
+
+uint linear_thread_id(uint3 gid, uint3 ltid)
+{
+    return (gid.x + gid.y * MAX_GROUPS_X) * WG_SIZE + ltid.x;
+}
+
 uint active_pair_count()
 {
-    uint active_tokens = token_count[0] + 2u;
+    uint active_tokens = token_count[0u] + 2u;
     uint active_pairs = active_tokens > 0u ? active_tokens - 1u : 0u;
     return min(gParams.n_pairs, active_pairs);
 }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
-void main(uint3 tid: SV_DispatchThreadID)
+void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
 {
-    uint i = tid.x;
+    uint i = linear_thread_id(gid, ltid);
     if (i >= gParams.n_pairs)
         return;
 
     uint n_active = active_pair_count();
     ActionHeader zero = { 0u, 0u, 0u, 0u };
     ActionHeader header = i < n_active ? out_headers[i] : zero;
-
-    if (gParams.scan_step == 0u)
-    {
-        sc_prefix_out[i] = header.push_len + header.pop_count;
-        emit_prefix_out[i] = header.emit_len;
-        return;
-    }
+    uint sc_seed = header.push_len + header.pop_count;
+    uint emit_seed = header.emit_len;
 
     if (gParams.scan_step < gParams.n_pairs)
     {
-        uint sc = sc_prefix_in[i];
-        uint emit = emit_prefix_in[i];
-        if (i >= gParams.scan_step)
-        {
-            sc += sc_prefix_in[i - gParams.scan_step];
-            emit += emit_prefix_in[i - gParams.scan_step];
-        }
-        sc_prefix_out[i] = sc;
-        emit_prefix_out[i] = emit;
+        sc_prefix_out[i] = parallel_scan_step_value<uint, PrefixScanU32Add>(
+            i,
+            gParams.scan_step,
+            sc_seed,
+            sc_prefix_in);
+        emit_prefix_out[i] = parallel_scan_step_value<uint, PrefixScanU32Add>(
+            i,
+            gParams.scan_step,
+            emit_seed,
+            emit_prefix_in);
         return;
     }
 

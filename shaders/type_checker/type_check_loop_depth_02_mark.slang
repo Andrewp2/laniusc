@@ -1,3 +1,5 @@
+import atomics;
+
 struct Params
 {
     uint n_tokens;
@@ -51,7 +53,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint bounded_end = min(end, gParams.n_tokens);
-    int old;
-    InterlockedAdd(loop_delta[start], 1, old);
-    InterlockedAdd(loop_delta[bounded_end], -1, old);
+    atomic_i32_add(loop_delta, start, 1);
+    atomic_i32_add(loop_delta, bounded_end, -1);
 }

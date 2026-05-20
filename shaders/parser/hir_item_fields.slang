@@ -20,7 +20,9 @@ StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_token_end;
-StructuredBuffer<uint> hir_token_file_id;
+StructuredBuffer<uint> hir_variant_parent_enum;
+StructuredBuffer<uint> hir_semantic_dense_node;
+StructuredBuffer<uint> hir_semantic_count;
 
 RWStructuredBuffer<uint> hir_item_kind;
 RWStructuredBuffer<uint> hir_item_name_token;
@@ -28,7 +30,6 @@ RWStructuredBuffer<uint> hir_item_namespace;
 RWStructuredBuffer<uint> hir_item_visibility;
 RWStructuredBuffer<uint> hir_item_path_start;
 RWStructuredBuffer<uint> hir_item_path_end;
-RWStructuredBuffer<uint> hir_item_file_id;
 RWStructuredBuffer<uint> hir_item_import_target_kind;
 
 static const uint INVALID = 0xffffffffu;
@@ -73,6 +74,19 @@ uint linear_thread_id(uint3 dtid)
 uint active_node_count()
 {
     return gHirItem.uses_ll1 != 0u ? min(gHirItem.n, ll1_status[5u]) : gHirItem.n;
+}
+
+uint active_semantic_count()
+{
+    return min(hir_semantic_count[0u], active_node_count());
+}
+
+uint semantic_row_node(uint row)
+{
+    if (row >= active_semantic_count())
+        return INVALID;
+    uint node = hir_semantic_dense_node[row];
+    return node < active_node_count() ? node : INVALID;
 }
 
 uint parent_kind(uint i)
@@ -221,7 +235,6 @@ void clear_item(uint i)
     hir_item_visibility[i] = HIR_ITEM_VIS_PRIVATE;
     hir_item_path_start[i] = INVALID;
     hir_item_path_end[i] = INVALID;
-    hir_item_file_id[i] = hir_token_file_id[i];
     hir_item_import_target_kind[i] = HIR_ITEM_IMPORT_TARGET_NONE;
 }
 
@@ -310,22 +323,6 @@ void publish_decl(uint i, uint prod, uint start, uint visibility)
     hir_item_path_end[i] = INVALID;
 }
 
-uint ancestor_enum_item(uint i)
-{
-    uint cur = i;
-    [loop]
-    for (uint guard = 0u; guard < 16u; guard += 1u)
-    {
-        uint p = parent[cur];
-        if (p == INVALID || p >= active_node_count())
-            return INVALID;
-        if (node_kind[p] == PROD_ENUM)
-            return p;
-        cur = p;
-    }
-    return INVALID;
-}
-
 uint enum_item_visibility(uint enum_i)
 {
     if (enum_i == INVALID || enum_i >= active_node_count())
@@ -343,14 +340,12 @@ uint enum_item_visibility(uint enum_i)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint i = linear_thread_id(dtid);
-    if (i >= gHirItem.n)
+    uint row = linear_thread_id(dtid);
+    uint i = semantic_row_node(row);
+    if (i == INVALID)
         return;
 
     clear_item(i);
-
-    if (i >= active_node_count())
-        return;
 
     uint prod = node_kind[i];
     if (!hir_kind_matches_item_production(i, prod))
@@ -361,7 +356,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     if (prod == PROD_ENUM_VARIANT)
     {
-        uint visibility = enum_item_visibility(ancestor_enum_item(i));
+        uint visibility = enum_item_visibility(hir_variant_parent_enum[i]);
         if (visibility != INVALID && start != INVALID && end_exclusive != INVALID &&
             start < end_exclusive)
             publish_decl(i, prod, start, visibility);

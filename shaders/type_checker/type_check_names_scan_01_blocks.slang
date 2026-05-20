@@ -7,6 +7,9 @@
 // - The final apply pass converts local exclusive prefixes to global exclusive
 //   prefixes.
 
+import gpu_index;
+import prefix_scan;
+
 struct Params
 {
     uint n_items;
@@ -25,7 +28,7 @@ static const uint MAX_GROUPS_X = 65535u;
 
 uint linear_thread_id(uint3 dtid)
 {
-    return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
+    return linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
 }
 
 [shader("compute")]
@@ -36,14 +39,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i >= gScan.n_blocks)
         return;
 
-    if (gScan.scan_step == 0u)
-    {
-        scan_block_prefix_out[i] = scan_block_sum[i];
-        return;
-    }
-
-    uint value = scan_block_prefix_in[i];
-    if (i >= gScan.scan_step)
-        value += scan_block_prefix_in[i - gScan.scan_step];
-    scan_block_prefix_out[i] = value;
+    scan_block_prefix_out[i] = block_prefix_scan_step<uint, PrefixScanU32Add>(
+        i,
+        gScan.scan_step,
+        scan_block_sum,
+        scan_block_prefix_in);
 }

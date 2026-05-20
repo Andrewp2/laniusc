@@ -10,6 +10,10 @@
 //
 // This pass builds per-block histograms for a GPU-friendly parallel radix sort.
 
+import gpu_index;
+import byte_packing;
+import radix;
+
 struct Params
 {
     uint name_count;
@@ -30,6 +34,7 @@ struct NameSpan
 
 StructuredBuffer<NameSpan> name_spans;
 StructuredBuffer<uint> name_count_in;
+StructuredBuffer<uint> name_max_len_in;
 StructuredBuffer<uint> name_order_in;
 ByteAddressBuffer source_bytes;
 ByteAddressBuffer language_symbol_bytes;
@@ -37,30 +42,24 @@ RWStructuredBuffer<uint> radix_block_histogram;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint RADIX_BUCKETS = 257u;
+static const uint RADIX_BUCKETS = RADIX_U8_SENTINEL_BUCKETS;
 static const uint NAME_KIND_IDENTIFIER = 1u;
 static const uint NAME_KIND_STRING = 2u;
 static const uint NAME_KIND_LANGUAGE_SYMBOL = 3u;
 
 uint linear_group_id(uint3 gid)
 {
-    return gid.x + gid.y * MAX_GROUPS_X;
+    return linear_group_id_2d(gid, MAX_GROUPS_X);
 }
 
 uint load_source_byte(uint byte_index)
 {
-    if (byte_index >= gParams.source_len)
-        return 0u;
-    uint word = source_bytes.Load(byte_index & ~3u);
-    uint shift = (byte_index & 3u) * 8u;
-    return (word >> shift) & 0xffu;
+    return byte_address_load_u8_bounded(source_bytes, byte_index, gParams.source_len);
 }
 
 uint load_language_symbol_byte(uint byte_index)
 {
-    uint word = language_symbol_bytes.Load(byte_index & ~3u);
-    uint shift = (byte_index & 3u) * 8u;
-    return (word >> shift) & 0xffu;
+    return byte_address_load_u8(language_symbol_bytes, byte_index);
 }
 
 uint active_name_count()
@@ -83,28 +82,38 @@ uint span_radix_key(uint name_i, uint byte_offset)
     return b + 1u;
 }
 
+public struct NameRadixKeySource : IRadixU8KeySource
+{
+    public static uint active_count()
+    {
+        return active_name_count();
+    }
+
+    public static uint ordered_row(uint order_i)
+    {
+        return name_order_in[order_i];
+    }
+
+    public static uint radix_key(uint row, uint key_step)
+    {
+        return span_radix_key(row, key_step);
+    }
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
 {
     uint block_idx = linear_group_id(gid);
-    if (block_idx >= gParams.n_blocks)
-        return;
-
     uint lane = ltid.x;
-    uint block_base = block_idx * RADIX_BUCKETS;
-    for (uint bucket = lane; bucket < RADIX_BUCKETS; bucket += WG_SIZE)
-    {
-        radix_block_histogram[block_base + bucket] = 0u;
-    }
-    DeviceMemoryBarrierWithGroupSync();
-
-    uint order_i = block_idx * WG_SIZE + lane;
-    if (order_i >= active_name_count())
+    if (gParams.radix_byte_offset >= name_max_len_in[0u])
         return;
-
-    uint name_i = name_order_in[order_i];
-    uint key = span_radix_key(name_i, gParams.radix_byte_offset);
-    uint old_count;
-    InterlockedAdd(radix_block_histogram[block_base + key], 1u, old_count);
+    radix_u8_histogram_block<NameRadixKeySource>(
+        block_idx,
+        lane,
+        gParams.n_blocks,
+        gParams.radix_byte_offset,
+        WG_SIZE,
+        RADIX_BUCKETS,
+        radix_block_histogram);
 }

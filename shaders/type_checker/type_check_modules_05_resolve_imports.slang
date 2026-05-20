@@ -9,6 +9,11 @@
 //   not make declarations visible, resolve value/type paths, perform CPU path
 //   lookup, scan source bytes, use hashes, or apply same-source shortcuts.
 
+import fixed_key;
+import range_query;
+import sorted_join;
+import status;
+
 struct Params
 {
     uint module_capacity;
@@ -39,8 +44,9 @@ RWStructuredBuffer<uint> import_status;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint MAX_PATH_SEGMENTS = 64u;
 static const uint SORT_PATH_SEGMENTS = 8u;
+static const uint PATH_SEGMENT_ROW_WIDTH = SORT_PATH_SEGMENTS + 1u;
+static const uint MODULE_KEY_SEGMENT_ROW_WIDTH = SORT_PATH_SEGMENTS;
 
 static const uint HIR_ITEM_IMPORT_TARGET_PATH = 1u;
 
@@ -56,33 +62,36 @@ uint linear_thread_id(uint3 dtid)
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
 }
 
+uint record_capacity()
+{
+    return gParams.module_capacity;
+}
+
+uint module_capacity()
+{
+    return gParams.reserved == 0u ? gParams.module_capacity : gParams.reserved;
+}
+
 uint active_import_count()
 {
-    return min(import_count_out[0], gParams.module_capacity);
+    return min(import_count_out[0], record_capacity());
 }
 
 uint active_module_count()
 {
-    return min(module_count_out[0], gParams.module_capacity);
+    return min(module_count_out[0], module_capacity());
 }
 
 void record_error(uint token_i, uint code, uint detail)
 {
-    uint old;
-    InterlockedMin(status[1], token_i, old);
-    if (token_i <= old)
-    {
-        status[0] = 0u;
-        status[2] = code;
-        status[3] = detail;
-    }
+    record_min_token_error(status, token_i, code, detail);
 }
 
 uint path_segment_value(uint path_id, uint segment_i)
 {
-    if (path_id >= gParams.module_capacity)
+    if (path_id >= record_capacity())
         return 0u;
-    if (segment_i >= min(path_segment_count[path_id], MAX_PATH_SEGMENTS))
+    if (segment_i >= min(path_segment_count[path_id], PATH_SEGMENT_ROW_WIDTH))
         return 0u;
 
     uint base = path_segment_base[path_id];
@@ -94,7 +103,7 @@ uint module_segment_value(uint module_i, uint segment_i)
 {
     if (module_i >= active_module_count())
         return 0u;
-    if (segment_i >= min(module_key_segment_count[module_i], MAX_PATH_SEGMENTS))
+    if (segment_i >= min(module_key_segment_count[module_i], MODULE_KEY_SEGMENT_ROW_WIDTH))
         return 0u;
 
     uint base = module_key_segment_base[module_i];
@@ -102,39 +111,61 @@ uint module_segment_value(uint module_i, uint segment_i)
     return name_id == INVALID ? 0u : name_id + 1u;
 }
 
-int compare_path_to_module(uint path_id, uint module_i)
+public struct ImportPathLookupKey
 {
-    [loop]
-    for (uint segment_i = 0u; segment_i < SORT_PATH_SEGMENTS; segment_i += 1u)
+    uint path_id;
+}
+
+public struct ImportModulePathKey : IFixedU32RowKey<ImportPathLookupKey>
+{
+    public static uint row_lane(uint module_i, uint lane)
     {
-        uint left = path_segment_value(path_id, segment_i);
-        uint right = module_segment_value(module_i, segment_i);
-        if (left < right)
-            return -1;
-        if (left > right)
-            return 1;
+        return module_segment_value(module_i, lane);
     }
-    return 0;
+
+    public static uint key_lane(ImportPathLookupKey key, uint lane)
+    {
+        return path_segment_value(key.path_id, lane);
+    }
+}
+
+public struct ImportModuleCompare : IRowQueryCompare<ImportPathLookupKey>
+{
+    public static int compare(uint row, ImportPathLookupKey key)
+    {
+        uint module_i = sorted_module_key_order[row];
+        return fixed_u32_row_key_compare<ImportPathLookupKey, ImportModulePathKey>(
+            module_i,
+            key,
+            SORT_PATH_SEGMENTS);
+    }
+}
+
+public struct ImportModuleValue : ISortedJoinValue<uint>
+{
+    public static uint invalid_value()
+    {
+        return INVALID;
+    }
+
+    public static uint row_value(uint row)
+    {
+        return row < active_module_count() ? sorted_module_key_order[row] : INVALID;
+    }
 }
 
 uint find_module_for_path(uint path_id)
 {
-    uint lo = 0u;
-    uint hi = active_module_count();
-    [loop]
-    for (uint guard = 0u; guard < 32u && lo < hi; guard += 1u)
-    {
-        uint mid = lo + ((hi - lo) >> 1u);
-        uint module_i = sorted_module_key_order[mid];
-        int cmp = compare_path_to_module(path_id, module_i);
-        if (cmp == 0)
-            return module_i;
-        if (cmp < 0)
-            hi = mid;
-        else
-            lo = mid + 1u;
-    }
-    return INVALID;
+    ImportPathLookupKey key;
+    key.path_id = path_id;
+    return sorted_join_project_key_or_invalid<
+        ImportPathLookupKey,
+        uint,
+        ImportModuleCompare,
+        ImportModuleValue>(
+        active_module_count(),
+        key,
+        INVALID);
 }
 
 [shader("compute")]
@@ -155,7 +186,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
 
     uint path_id = import_path_id[import_i];
-    if (path_id >= gParams.module_capacity)
+    if (path_id >= record_capacity())
     {
         import_status[import_i] = IMPORT_STATUS_UNRESOLVED;
         record_error(import_i, ERR_BAD_HIR, IMPORT_STATUS_UNRESOLVED);

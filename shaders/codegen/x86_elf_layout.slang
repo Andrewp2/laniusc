@@ -4,6 +4,7 @@
 // writer consumes these records instead of hard-coding file length and entry
 // layout decisions in the byte writer.
 
+import gpu_index;
 struct Params
 {
     uint n_tokens;
@@ -39,7 +40,7 @@ static const uint LAYOUT_ALIGN = 5u;
 
 uint linear_dispatch_id(uint3 tid)
 {
-    return tid.x + tid.y * DISPATCH_X_STRIDE;
+    return linear_dispatch_thread_id_2d(tid, DISPATCH_X_STRIDE);
 }
 
 [shader("compute")]

@@ -3,8 +3,10 @@ use log::warn;
 use super::{
     BracketsBlockPrefixScanStep,
     BracketsHistogramScanStep,
+    HirSemanticPrefixScanStep,
     LL1EmitPrefixScanStep,
     PackOffsetScanStep,
+    TokenDelimiterScanStep,
     TreePrefixMaxBuildStep,
     TreePrefixScanStep,
 };
@@ -65,6 +67,42 @@ pub(super) fn make_pack_offset_scan_steps(
                     &super::super::passes::pack_offsets::Params {
                         n_pairs,
                         scan_step: plan.scan_step,
+                    },
+                ),
+                read_from_a: plan.read_from_a,
+                write_to_a: plan.write_to_a,
+            }
+        })
+        .collect()
+}
+
+pub(super) fn make_token_delimiter_scan_steps(
+    device: &wgpu::Device,
+    n_tokens: u32,
+    n_blocks: u32,
+) -> Vec<TokenDelimiterScanStep> {
+    let base = super::TokenDelimiterParams {
+        n_tokens,
+        n_blocks,
+        scan_step: 0,
+    };
+    ping_pong_scan_steps(n_blocks, ScanFinalize::Always(n_blocks))
+        .into_iter()
+        .map(|plan| {
+            let label = if plan.scan_step == 0 {
+                "parser.token_delimiter_scan.params.init"
+            } else if plan.scan_step == n_blocks {
+                "parser.token_delimiter_scan.params.finalize"
+            } else {
+                "parser.token_delimiter_scan.params.step"
+            };
+            TokenDelimiterScanStep {
+                params: uniform_from_val(
+                    device,
+                    label,
+                    &super::TokenDelimiterParams {
+                        scan_step: plan.scan_step,
+                        ..base
                     },
                 ),
                 read_from_a: plan.read_from_a,
@@ -156,6 +194,36 @@ pub(super) fn make_tree_prefix_scan_steps(
                     &super::super::passes::tree_prefix_01::Params {
                         scan_step: plan.scan_step,
                         ..base
+                    },
+                ),
+                read_from_a: plan.read_from_a,
+                write_to_a: plan.write_to_a,
+            }
+        })
+        .collect()
+}
+
+pub(super) fn make_hir_semantic_prefix_scan_steps(
+    device: &wgpu::Device,
+    n_blocks: u32,
+) -> Vec<HirSemanticPrefixScanStep> {
+    ping_pong_scan_steps(n_blocks, ScanFinalize::CopyToAIfNeeded(n_blocks))
+        .into_iter()
+        .map(|plan| {
+            let label = if plan.scan_step == 0 {
+                "parser.hir_semantic_prefix.params.init"
+            } else if plan.scan_step == n_blocks {
+                "parser.hir_semantic_prefix.params.copy"
+            } else {
+                "parser.hir_semantic_prefix.params.step"
+            };
+            HirSemanticPrefixScanStep {
+                params: uniform_from_val(
+                    device,
+                    label,
+                    &super::super::passes::hir_semantic_prefix_blocks::Params {
+                        n_blocks,
+                        scan_step: plan.scan_step,
                     },
                 ),
                 read_from_a: plan.read_from_a,

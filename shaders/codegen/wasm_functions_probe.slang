@@ -1,3 +1,4 @@
+import atomics;
 import utils;
 
 struct Params
@@ -126,7 +127,7 @@ void enable_function_dispatch()
     dispatch_args[0u] = min(groups, MAX_DISPATCH_X);
     dispatch_args[1u] = (groups + MAX_DISPATCH_X - 1u) / MAX_DISPATCH_X;
     dispatch_args[2u] = 1u;
-    InterlockedOr(status[1u], FUNCTION_MODULE_NEEDED);
+    atomic_u32_or(status, 1u, FUNCTION_MODULE_NEEDED);
 }
 
 [shader("compute")]

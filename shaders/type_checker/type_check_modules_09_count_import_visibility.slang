@@ -4,11 +4,15 @@
 // - Dispatch after imports have target module ids and declaration namespace
 //   lookup tables have been materialized.
 // - For each resolved path import, find the target module's type/value
-//   declaration ranges in the sorted declaration tables and count public rows.
+//   declaration ranges in the sorted declaration tables and read public row
+//   counts from GPU prefix sums over those sorted declaration tables.
 // - This pass writes per-import counts only. A GPU prefix scan over these
 //   counts allocates compact import-visible rows for the scatter pass.
 // - It does not resolve paths, scan source bytes, use hashes, append with
 //   atomics, perform CPU lookup, or apply same-source shortcuts.
+
+import gpu_index;
+import range_query;
 
 struct Params
 {
@@ -28,8 +32,11 @@ StructuredBuffer<uint> decl_type_key_count_out;
 StructuredBuffer<uint> decl_value_key_count_out;
 StructuredBuffer<uint> decl_type_key_to_decl_id;
 StructuredBuffer<uint> decl_value_key_to_decl_id;
+StructuredBuffer<uint> decl_type_public_flag;
+StructuredBuffer<uint> decl_value_public_flag;
+StructuredBuffer<uint> decl_type_public_prefix;
+StructuredBuffer<uint> decl_value_public_prefix;
 StructuredBuffer<uint> decl_module_id;
-StructuredBuffer<uint> decl_visibility;
 
 RWStructuredBuffer<uint> import_visible_type_count;
 RWStructuredBuffer<uint> import_visible_value_count;
@@ -39,11 +46,9 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
 static const uint IMPORT_STATUS_OK = 0u;
-static const uint HIR_ITEM_VIS_PUBLIC = 1u;
-
 uint linear_thread_id(uint3 dtid)
 {
-    return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
+    return linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
 }
 
 uint active_import_count()
@@ -61,63 +66,95 @@ uint active_value_decl_count()
     return min(decl_value_key_count_out[0], gParams.capacity);
 }
 
-uint decl_module_for_table_row(StructuredBuffer<uint> table, uint row)
+uint type_decl_module_for_table_row(uint row)
 {
-    uint decl_i = table[row];
+    uint decl_i = decl_type_key_to_decl_id[row];
     return decl_i >= gParams.capacity ? INVALID : decl_module_id[decl_i];
 }
 
-uint lower_bound_module(StructuredBuffer<uint> table, uint count, uint module_id)
+uint value_decl_module_for_table_row(uint row)
 {
-    uint lo = 0u;
-    uint hi = count;
-    [loop]
-    for (uint guard = 0u; guard < 32u && lo < hi; guard += 1u)
-    {
-        uint mid = lo + ((hi - lo) >> 1u);
-        uint mid_module = decl_module_for_table_row(table, mid);
-        uint key = mid_module == INVALID ? 0u : mid_module + 1u;
-        uint target = module_id == INVALID ? 0u : module_id + 1u;
-        if (key < target)
-            lo = mid + 1u;
-        else
-            hi = mid;
-    }
-    return lo;
+    uint decl_i = decl_value_key_to_decl_id[row];
+    return decl_i >= gParams.capacity ? INVALID : decl_module_id[decl_i];
 }
 
-uint upper_bound_module(StructuredBuffer<uint> table, uint count, uint module_id)
+public struct ModuleLookupKey
 {
-    uint lo = 0u;
-    uint hi = count;
-    [loop]
-    for (uint guard = 0u; guard < 32u && lo < hi; guard += 1u)
-    {
-        uint mid = lo + ((hi - lo) >> 1u);
-        uint mid_module = decl_module_for_table_row(table, mid);
-        uint key = mid_module == INVALID ? 0u : mid_module + 1u;
-        uint target = module_id == INVALID ? 0u : module_id + 1u;
-        if (key <= target)
-            lo = mid + 1u;
-        else
-            hi = mid;
-    }
-    return lo;
+    uint module_id;
 }
 
-uint public_decl_count_in_module(StructuredBuffer<uint> table, uint count, uint module_id)
+public struct TypeDeclModuleCompare : IRowQueryCompare<ModuleLookupKey>
 {
-    uint begin = lower_bound_module(table, count, module_id);
-    uint end = upper_bound_module(table, count, module_id);
-    uint public_count = 0u;
-    [loop]
-    for (uint row = begin; row < end; row += 1u)
+    public static int compare(uint row, ModuleLookupKey key)
     {
-        uint decl_i = table[row];
-        if (decl_i < gParams.capacity && decl_visibility[decl_i] == HIR_ITEM_VIS_PUBLIC)
-            public_count += 1u;
+        return compare_nullable_id(type_decl_module_for_table_row(row), key.module_id, INVALID);
     }
-    return public_count;
+}
+
+public struct ValueDeclModuleCompare : IRowQueryCompare<ModuleLookupKey>
+{
+    public static int compare(uint row, ModuleLookupKey key)
+    {
+        return compare_nullable_id(value_decl_module_for_table_row(row), key.module_id, INVALID);
+    }
+}
+
+uint type_public_prefix_after(uint row)
+{
+    uint count = active_type_decl_count();
+    if (row == 0u)
+        return 0u;
+    if (row >= count)
+        row = count;
+    uint last = row - 1u;
+    return decl_type_public_prefix[last] + decl_type_public_flag[last];
+}
+
+uint value_public_prefix_after(uint row)
+{
+    uint count = active_value_decl_count();
+    if (row == 0u)
+        return 0u;
+    if (row >= count)
+        row = count;
+    uint last = row - 1u;
+    return decl_value_public_prefix[last] + decl_value_public_flag[last];
+}
+
+uint type_public_count_in_range(uint begin, uint end)
+{
+    if (end <= begin)
+        return 0u;
+    return type_public_prefix_after(end) - type_public_prefix_after(begin);
+}
+
+uint value_public_count_in_range(uint begin, uint end)
+{
+    if (end <= begin)
+        return 0u;
+    return value_public_prefix_after(end) - value_public_prefix_after(begin);
+}
+
+uint public_type_decl_count_in_module(uint module_id)
+{
+    ModuleLookupKey key;
+    key.module_id = module_id;
+    QueryRange range =
+        equal_range_query<ModuleLookupKey, TypeDeclModuleCompare>(
+            active_type_decl_count(),
+            key);
+    return type_public_count_in_range(range.begin, range.end);
+}
+
+uint public_value_decl_count_in_module(uint module_id)
+{
+    ModuleLookupKey key;
+    key.module_id = module_id;
+    QueryRange range =
+        equal_range_query<ModuleLookupKey, ValueDeclModuleCompare>(
+            active_value_decl_count(),
+            key);
+    return value_public_count_in_range(range.begin, range.end);
 }
 
 [shader("compute")]
@@ -140,8 +177,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
         target_module == INVALID)
         return;
 
-    import_visible_type_count[import_i] = public_decl_count_in_module(
-        decl_type_key_to_decl_id, active_type_decl_count(), target_module);
-    import_visible_value_count[import_i] = public_decl_count_in_module(
-        decl_value_key_to_decl_id, active_value_decl_count(), target_module);
+    import_visible_type_count[import_i] = public_type_decl_count_in_module(target_module);
+    import_visible_value_count[import_i] = public_value_decl_count_in_module(target_module);
 }

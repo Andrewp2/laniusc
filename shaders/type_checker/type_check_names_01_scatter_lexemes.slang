@@ -6,6 +6,10 @@
 // - String lexemes use their raw interior byte span. Escape interpretation is a
 //   later string-literal semantic step and is not part of module resolution.
 
+import scatter;
+import status;
+import atomics;
+
 struct Params
 {
     uint n_tokens;
@@ -42,13 +46,14 @@ RWStructuredBuffer<NameSpan> name_spans;
 RWStructuredBuffer<uint> name_order_in;
 RWStructuredBuffer<uint> name_id_by_token;
 RWStructuredBuffer<uint> name_count_out;
+RWStructuredBuffer<uint> name_max_len_out;
 RWStructuredBuffer<uint> status;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint INVALID = 0xffffffffu;
 static const uint MAX_NAME_RADIX_BYTES = 64u;
-static const uint MAX_NAME_RADIX_ITEMS = 65536u;
+static const uint MAX_NAME_RADIX_ITEMS = 262144u;
 static const uint ERR_NAME_LIMIT = 11u;
 static const uint LANGUAGE_SYMBOL_COUNT = 19u;
 
@@ -79,14 +84,7 @@ uint token_len(uint i)
 
 void record_error(uint token_i, uint code, uint detail)
 {
-    uint old;
-    InterlockedMin(status[1], token_i, old);
-    if (token_i <= old)
-    {
-        status[0] = 0u;
-        status[2] = code;
-        status[3] = detail;
-    }
+    record_min_token_error(status, token_i, code, detail);
 }
 
 NameSpan make_name_span(uint token_i, uint kind)
@@ -135,13 +133,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     name_id_by_token[i] = INVALID;
-    if (i == 0u && gParams.n_tokens + LANGUAGE_SYMBOL_COUNT > MAX_NAME_RADIX_ITEMS)
-        record_error(0u, ERR_NAME_LIMIT, MAX_NAME_RADIX_ITEMS);
 
     uint active = active_token_count();
     uint token_name_count = compact_token_name_count();
     if (i == 0u)
     {
+        uint total_name_count = token_name_count + LANGUAGE_SYMBOL_COUNT;
+        if (total_name_count > MAX_NAME_RADIX_ITEMS)
+            record_error(0u, ERR_NAME_LIMIT, total_name_count);
+
         [unroll]
         for (uint symbol_i = 0u; symbol_i < LANGUAGE_SYMBOL_COUNT; symbol_i += 1u)
         {
@@ -149,10 +149,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
             NameSpan span = make_language_symbol_span(symbol_i);
             if (span.len > MAX_NAME_RADIX_BYTES)
                 record_error(0u, ERR_NAME_LIMIT, span.len);
+            atomic_u32_max(name_max_len_out, 0u, span.len);
             name_spans[slot] = span;
             name_order_in[slot] = slot;
         }
-        name_count_out[0] = token_name_count + LANGUAGE_SYMBOL_COUNT;
+        name_count_out[0] = total_name_count;
     }
 
     if (i >= active)
@@ -160,13 +161,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint flag = name_lexeme_flag[i];
     uint prefix = name_lexeme_prefix[i];
-    if (flag != 0u)
+    CompactScatterSlot slot = compact_scatter_slot(flag, prefix);
+    if (slot.active != 0u)
     {
-        uint slot = prefix;
         NameSpan span = make_name_span(i, name_lexeme_kind[i]);
         if (span.len > MAX_NAME_RADIX_BYTES)
             record_error(i, ERR_NAME_LIMIT, span.len);
-        name_spans[slot] = span;
-        name_order_in[slot] = slot;
+        atomic_u32_max(name_max_len_out, 0u, span.len);
+        name_spans[slot.dst] = span;
+        name_order_in[slot.dst] = slot.dst;
     }
 }

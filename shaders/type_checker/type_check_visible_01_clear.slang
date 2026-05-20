@@ -12,11 +12,13 @@ StructuredBuffer<uint> enclosing_fn_end;
 RWStructuredBuffer<uint> visible_decl;
 RWStructuredBuffer<uint> visible_type;
 RWStructuredBuffer<uint> scope_end;
+RWStructuredBuffer<uint> hir_value_decl_name_present;
 
 static const uint INVALID = 0xffffffffu;
 static const uint TY_UNKNOWN = 0u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
+static const uint LANGUAGE_SYMBOL_COUNT = 19u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -33,12 +35,15 @@ uint active_token_count()
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
-    if (i >= active_token_count())
-        return;
+    if (i < gParams.n_tokens + LANGUAGE_SYMBOL_COUNT)
+        hir_value_decl_name_present[i] = 0u;
 
-    uint n = active_token_count();
-    uint fn_end = enclosing_fn_end[i];
-    visible_decl[i] = INVALID;
-    visible_type[i] = TY_UNKNOWN;
-    scope_end[i] = fn_end == 0u ? n : min(fn_end, n);
+    if (i < active_token_count())
+    {
+        uint n = active_token_count();
+        uint fn_end = enclosing_fn_end[i];
+        visible_decl[i] = INVALID;
+        visible_type[i] = TY_UNKNOWN;
+        scope_end[i] = fn_end == 0u ? n : min(fn_end, n);
+    }
 }

@@ -1,3 +1,5 @@
+import byte_packing;
+
 struct Params
 {
     uint n_tokens;
@@ -137,9 +139,9 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     uint pos = word_i * 4u;
-    out_words[word_i] =
-        (module_byte(pos + 0u, body_len, module_len) << 0u) |
-        (module_byte(pos + 1u, body_len, module_len) << 8u) |
-        (module_byte(pos + 2u, body_len, module_len) << 16u) |
-        (module_byte(pos + 3u, body_len, module_len) << 24u);
+    out_words[word_i] = pack_u8x4(
+        module_byte(pos + 0u, body_len, module_len),
+        module_byte(pos + 1u, body_len, module_len),
+        module_byte(pos + 2u, body_len, module_len),
+        module_byte(pos + 3u, body_len, module_len));
 }

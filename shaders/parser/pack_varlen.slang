@@ -9,6 +9,8 @@ struct PackParams
     uint n_kinds;
     uint total_sc;   // sum over pairs of sc_len
     uint total_emit; // sum over pairs of pp_len
+    uint sc_capacity; // allocated out_sc words; resident HIR path may keep this as a one-word compatibility buffer
+    uint emit_capacity; // allocated production-stream words
 
     // Offsets (in u32 elements) into tables_blob:
     uint sc_superseq_off;
@@ -33,8 +35,8 @@ StructuredBuffer<uint> tables_blob;
 
 // Outputs
 RWStructuredBuffer<uint> out_sc;   // len = total_sc
-RWStructuredBuffer<uint> out_emit; // len = total_emit
-RWStructuredBuffer<uint> out_emit_pos; // len = total_emit
+RWStructuredBuffer<uint> out_emit; // len = emit_capacity
+RWStructuredBuffer<uint> out_emit_pos; // len = emit_capacity
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -105,7 +107,9 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     [loop]
     for (uint k = lane; k < scl; k += WG_SIZE)
     {
-        out_sc[dst_sc + k] = sc_seq_at(sco + k);
+        uint dst = dst_sc + k;
+        if (dst < gParams.sc_capacity)
+            out_sc[dst] = sc_seq_at(sco + k);
     }
 
     // Emit copy
@@ -116,7 +120,11 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     [loop]
     for (uint k = lane; k < epl; k += WG_SIZE)
     {
-        out_emit[dst_emit + k] = pp_seq_at(epo + k);
-        out_emit_pos[dst_emit + k] = i;
+        uint dst = dst_emit + k;
+        if (dst < gParams.emit_capacity)
+        {
+            out_emit[dst] = pp_seq_at(epo + k);
+            out_emit_pos[dst] = i;
+        }
     }
 }

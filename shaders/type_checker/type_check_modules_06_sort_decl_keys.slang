@@ -13,6 +13,9 @@
 //   duplicates, perform lookup, scan source bytes, use hashes, or apply
 //   same-source shortcuts.
 
+import gpu_index;
+import radix;
+
 struct Params
 {
     uint decl_capacity;
@@ -34,21 +37,16 @@ RWStructuredBuffer<uint> radix_block_histogram;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint RADIX_BUCKETS = 257u;
+static const uint RADIX_BUCKETS = RADIX_U8_SENTINEL_BUCKETS;
 
 uint linear_group_id(uint3 gid)
 {
-    return gid.x + gid.y * MAX_GROUPS_X;
+    return linear_group_id_2d(gid, MAX_GROUPS_X);
 }
 
 uint active_decl_count()
 {
     return min(decl_count_out[0], gParams.decl_capacity);
-}
-
-uint encoded_id(uint value)
-{
-    return value == INVALID ? 0u : value + 1u;
 }
 
 uint decl_key_field(uint decl_i, uint field_i)
@@ -57,18 +55,35 @@ uint decl_key_field(uint decl_i, uint field_i)
         return 0u;
 
     if (field_i == 0u)
-        return encoded_id(decl_name_id[decl_i]);
+        return encode_nullable_id(decl_name_id[decl_i], INVALID);
     if (field_i == 1u)
         return decl_namespace[decl_i];
-    return encoded_id(decl_module_id[decl_i]);
+    return encode_nullable_id(decl_module_id[decl_i], INVALID);
 }
 
 uint decl_key_radix_key(uint decl_i, uint key_step)
 {
-    uint field_i = min(key_step / 4u, 2u);
-    uint byte_i = key_step & 3u;
+    uint field_i = radix_field_index(key_step, 2u);
     uint value = decl_key_field(decl_i, field_i);
-    return (value >> (byte_i * 8u)) & 0xffu;
+    return radix_byte_key(value, key_step);
+}
+
+public struct DeclKeyRadixSource : IRadixU8KeySource
+{
+    public static uint active_count()
+    {
+        return active_decl_count();
+    }
+
+    public static uint ordered_row(uint order_i)
+    {
+        return decl_key_order_in[order_i];
+    }
+
+    public static uint radix_key(uint row, uint key_step)
+    {
+        return decl_key_radix_key(row, key_step);
+    }
 }
 
 [shader("compute")]
@@ -76,23 +91,13 @@ uint decl_key_radix_key(uint decl_i, uint key_step)
 void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
 {
     uint block_idx = linear_group_id(gid);
-    if (block_idx >= gParams.n_blocks)
-        return;
-
     uint lane = ltid.x;
-    uint block_base = block_idx * RADIX_BUCKETS;
-    for (uint bucket = lane; bucket < RADIX_BUCKETS; bucket += WG_SIZE)
-    {
-        radix_block_histogram[block_base + bucket] = 0u;
-    }
-    DeviceMemoryBarrierWithGroupSync();
-
-    uint order_i = block_idx * WG_SIZE + lane;
-    if (order_i >= active_decl_count())
-        return;
-
-    uint decl_i = decl_key_order_in[order_i];
-    uint key = decl_key_radix_key(decl_i, gParams.key_step);
-    uint old_count;
-    InterlockedAdd(radix_block_histogram[block_base + key], 1u, old_count);
+    radix_u8_histogram_block<DeclKeyRadixSource>(
+        block_idx,
+        lane,
+        gParams.n_blocks,
+        gParams.key_step,
+        WG_SIZE,
+        RADIX_BUCKETS,
+        radix_block_histogram);
 }

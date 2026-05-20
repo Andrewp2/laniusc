@@ -1,5 +1,8 @@
 // Parallel scan of syntax delimiter block sums.
 
+import gpu_index;
+import prefix_scan;
+
 struct Params
 {
     uint n_tokens;
@@ -28,7 +31,7 @@ static const uint MAX_GROUPS_X = 65535u;
 
 uint linear_thread_id(uint3 dtid)
 {
-    return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
+    return linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
 }
 
 [shader("compute")]
@@ -50,24 +53,28 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     if (gParams.scan_step < n_blocks)
     {
-        int paren = prefix_paren_in[i];
-        int bracket = prefix_bracket_in[i];
-        int brace = prefix_brace_in[i];
-        if (i >= gParams.scan_step)
-        {
-            paren += prefix_paren_in[i - gParams.scan_step];
-            bracket += prefix_bracket_in[i - gParams.scan_step];
-            brace += prefix_brace_in[i - gParams.scan_step];
-        }
-        prefix_paren_out[i] = paren;
-        prefix_bracket_out[i] = bracket;
-        prefix_brace_out[i] = brace;
+        prefix_paren_out[i] = block_prefix_scan_step<int, PrefixScanI32Add>(
+            i,
+            gParams.scan_step,
+            block_sum_paren,
+            prefix_paren_in);
+        prefix_bracket_out[i] = block_prefix_scan_step<int, PrefixScanI32Add>(
+            i,
+            gParams.scan_step,
+            block_sum_bracket,
+            prefix_bracket_in);
+        prefix_brace_out[i] = block_prefix_scan_step<int, PrefixScanI32Add>(
+            i,
+            gParams.scan_step,
+            block_sum_brace,
+            prefix_brace_in);
         return;
     }
 
-    block_prefix_paren[i] = i == 0u ? 0 : prefix_paren_in[i - 1u];
-    block_prefix_bracket[i] = i == 0u ? 0 : prefix_bracket_in[i - 1u];
-    block_prefix_brace[i] = i == 0u ? 0 : prefix_brace_in[i - 1u];
+    block_prefix_paren[i] = exclusive_block_prefix<int, PrefixScanI32Add>(i, prefix_paren_in);
+    block_prefix_bracket[i] =
+        exclusive_block_prefix<int, PrefixScanI32Add>(i, prefix_bracket_in);
+    block_prefix_brace[i] = exclusive_block_prefix<int, PrefixScanI32Add>(i, prefix_brace_in);
 
     int final_paren = prefix_paren_in[n_blocks - 1u];
     int final_bracket = prefix_bracket_in[n_blocks - 1u];

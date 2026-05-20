@@ -42,7 +42,7 @@ RWStructuredBuffer<uint> visible_type;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint MAX_PATH_SEGMENTS = 8u;
+static const uint MAX_PATH_SEGMENTS = 9u;
 
 static const uint PATH_RECORD_KIND_HIR_PATH_EXPR = 3u;
 static const uint PATH_RESOLVE_STATUS_OK = 0u;

@@ -17,6 +17,11 @@ RWStructuredBuffer<uint> type_expr_ref_payload;
 RWStructuredBuffer<uint> type_instance_kind;
 RWStructuredBuffer<uint> type_instance_head_token;
 RWStructuredBuffer<uint> type_decl_generic_param_count;
+RWStructuredBuffer<uint> type_decl_generic_param_count_by_node;
+RWStructuredBuffer<uint> type_decl_const_param_count_by_node;
+RWStructuredBuffer<uint> type_decl_hir_node_by_token;
+RWStructuredBuffer<uint> type_generic_param_slot_by_token;
+RWStructuredBuffer<uint> type_const_param_slot_by_token;
 RWStructuredBuffer<uint> type_instance_arg_start;
 RWStructuredBuffer<uint> type_instance_arg_count;
 RWStructuredBuffer<uint> type_instance_elem_ref_tag;
@@ -28,6 +33,10 @@ RWStructuredBuffer<uint> fn_return_ref_tag;
 RWStructuredBuffer<uint> fn_return_ref_payload;
 RWStructuredBuffer<uint> decl_type_ref_tag;
 RWStructuredBuffer<uint> decl_type_ref_payload;
+RWStructuredBuffer<uint> member_result_context_instance;
+RWStructuredBuffer<uint> member_result_ref_tag;
+RWStructuredBuffer<uint> member_result_ref_payload;
+RWStructuredBuffer<uint> member_result_field_ordinal;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -48,6 +57,12 @@ uint linear_thread_id(uint3 dtid)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
+    if (i < gParams.n_hir_nodes)
+    {
+        type_decl_generic_param_count_by_node[i] = 0u;
+        type_decl_const_param_count_by_node[i] = 0u;
+    }
+
     if (i >= gParams.n_tokens)
         return;
 
@@ -56,6 +71,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     type_instance_kind[i] = TYPE_INSTANCE_INVALID;
     type_instance_head_token[i] = INVALID;
     type_decl_generic_param_count[i] = 0u;
+    type_decl_hir_node_by_token[i] = INVALID;
+    type_generic_param_slot_by_token[i] = INVALID;
+    type_const_param_slot_by_token[i] = INVALID;
     type_instance_arg_start[i] = INVALID;
     type_instance_arg_count[i] = 0u;
     type_instance_elem_ref_tag[i] = TYPE_REF_INVALID;
@@ -67,4 +85,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     fn_return_ref_payload[i] = INVALID;
     decl_type_ref_tag[i] = TYPE_REF_INVALID;
     decl_type_ref_payload[i] = INVALID;
+    member_result_context_instance[i] = INVALID;
+    member_result_ref_tag[i] = TYPE_REF_INVALID;
+    member_result_ref_payload[i] = INVALID;
+    member_result_field_ordinal[i] = INVALID;
 }

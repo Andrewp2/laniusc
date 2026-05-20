@@ -41,7 +41,7 @@ RWStructuredBuffer<uint> type_instance_state;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint MAX_PATH_SEGMENTS = 64u;
+static const uint MAX_PATH_SEGMENTS = 9u;
 static const uint TYPE_INSTANCE_ARG_REF_STRIDE = 4u;
 
 static const uint TYPE_REF_INSTANCE = 3u;
@@ -87,6 +87,8 @@ bool bind_resolved_named_instance(uint owner_token, uint leaf_token, uint decl_t
     type_instance_state[leaf_token] = TYPE_INSTANCE_RESOLVED;
     type_expr_ref_tag[owner_token] = TYPE_REF_INSTANCE;
     type_expr_ref_payload[owner_token] = leaf_token;
+    type_expr_ref_tag[leaf_token] = TYPE_REF_INSTANCE;
+    type_expr_ref_payload[leaf_token] = leaf_token;
     return true;
 }
 

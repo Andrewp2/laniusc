@@ -8,6 +8,8 @@
 // - It does not resolve imports, expand visibility, resolve type/value paths,
 //   read source bytes, or apply same-source shortcuts.
 
+import scatter;
+
 struct Params
 {
     uint decl_capacity;
@@ -60,17 +62,24 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (decl_i >= active_decl_count())
         return;
 
-    if (decl_type_key_flag[i] != 0u)
+    CompactScatterSlot type_slot = compact_scatter_slot(decl_type_key_flag[i], decl_type_key_prefix[i]);
+    if (type_slot.active != 0u)
     {
-        uint dst = decl_type_key_prefix[i];
-        if (dst < gParams.decl_capacity)
-            decl_type_key_to_decl_id[dst] = decl_i;
+        compact_scatter_store<uint>(
+            type_slot,
+            decl_type_key_to_decl_id,
+            gParams.decl_capacity,
+            decl_i);
     }
 
-    if (decl_value_key_flag[i] != 0u)
+    CompactScatterSlot value_slot =
+        compact_scatter_slot(decl_value_key_flag[i], decl_value_key_prefix[i]);
+    if (value_slot.active != 0u)
     {
-        uint dst = decl_value_key_prefix[i];
-        if (dst < gParams.decl_capacity)
-            decl_value_key_to_decl_id[dst] = decl_i;
+        compact_scatter_store<uint>(
+            value_slot,
+            decl_value_key_to_decl_id,
+            gParams.decl_capacity,
+            decl_i);
     }
 }

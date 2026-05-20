@@ -31,6 +31,10 @@ pub struct ParserReadbacks {
     pub hir_type_len_token: wgpu::Buffer,
     pub hir_type_len_value: wgpu::Buffer,
     pub hir_type_file_id: wgpu::Buffer,
+    pub hir_type_path_leaf_node: wgpu::Buffer,
+    pub hir_type_arg_start: wgpu::Buffer,
+    pub hir_type_arg_count: wgpu::Buffer,
+    pub hir_type_arg_next: wgpu::Buffer,
     pub hir_item_kind: wgpu::Buffer,
     pub hir_item_name_token: wgpu::Buffer,
     pub hir_item_decl_token: wgpu::Buffer,
@@ -47,16 +51,25 @@ pub struct ParserReadbacks {
     pub hir_match_scrutinee_node: wgpu::Buffer,
     pub hir_match_arm_start: wgpu::Buffer,
     pub hir_match_arm_count: wgpu::Buffer,
+    pub hir_match_arm_next: wgpu::Buffer,
     pub hir_match_arm_pattern_node: wgpu::Buffer,
     pub hir_match_arm_payload_start: wgpu::Buffer,
     pub hir_match_arm_payload_count: wgpu::Buffer,
     pub hir_match_arm_result_node: wgpu::Buffer,
+    pub hir_match_payload_owner_arm: wgpu::Buffer,
+    pub hir_match_payload_match_node: wgpu::Buffer,
+    pub hir_match_payload_ordinal: wgpu::Buffer,
     pub hir_call_callee_node: wgpu::Buffer,
     pub hir_call_arg_start: wgpu::Buffer,
     pub hir_call_arg_end: wgpu::Buffer,
     pub hir_call_arg_count: wgpu::Buffer,
     pub hir_call_arg_parent_call: wgpu::Buffer,
     pub hir_call_arg_ordinal: wgpu::Buffer,
+    pub hir_array_lit_first_element: wgpu::Buffer,
+    pub hir_array_lit_element_count: wgpu::Buffer,
+    pub hir_array_element_parent_lit: wgpu::Buffer,
+    pub hir_array_element_ordinal: wgpu::Buffer,
+    pub hir_array_element_next: wgpu::Buffer,
     pub hir_member_receiver_node: wgpu::Buffer,
     pub hir_member_receiver_token: wgpu::Buffer,
     pub hir_member_name_token: wgpu::Buffer,
@@ -70,6 +83,7 @@ pub struct ParserReadbacks {
     pub hir_struct_lit_field_count: wgpu::Buffer,
     pub hir_struct_lit_field_parent_lit: wgpu::Buffer,
     pub hir_struct_lit_field_value_node: wgpu::Buffer,
+    pub hir_struct_lit_field_next: wgpu::Buffer,
 }
 
 impl ParserReadbacks {
@@ -146,6 +160,22 @@ impl ParserReadbacks {
             "rb.parser.hir_type_file_id",
             bufs.hir_type_file_id.byte_size as u64,
         );
+        let hir_type_path_leaf_node = mk(
+            "rb.parser.hir_type_path_leaf_node",
+            bufs.hir_type_path_leaf_node.byte_size as u64,
+        );
+        let hir_type_arg_start = mk(
+            "rb.parser.hir_type_arg_start",
+            bufs.hir_type_arg_start.byte_size as u64,
+        );
+        let hir_type_arg_count = mk(
+            "rb.parser.hir_type_arg_count",
+            bufs.hir_type_arg_count.byte_size as u64,
+        );
+        let hir_type_arg_next = mk(
+            "rb.parser.hir_type_arg_next",
+            bufs.hir_type_arg_next.byte_size as u64,
+        );
         let hir_item_kind = mk(
             "rb.parser.hir_item_kind",
             bufs.hir_item_kind.byte_size as u64,
@@ -210,6 +240,10 @@ impl ParserReadbacks {
             "rb.parser.hir_match_arm_count",
             bufs.hir_match_arm_count.byte_size as u64,
         );
+        let hir_match_arm_next = mk(
+            "rb.parser.hir_match_arm_next",
+            bufs.hir_match_arm_next.byte_size as u64,
+        );
         let hir_match_arm_pattern_node = mk(
             "rb.parser.hir_match_arm_pattern_node",
             bufs.hir_match_arm_pattern_node.byte_size as u64,
@@ -225,6 +259,18 @@ impl ParserReadbacks {
         let hir_match_arm_result_node = mk(
             "rb.parser.hir_match_arm_result_node",
             bufs.hir_match_arm_result_node.byte_size as u64,
+        );
+        let hir_match_payload_owner_arm = mk(
+            "rb.parser.hir_match_payload_owner_arm",
+            bufs.hir_match_payload_owner_arm.byte_size as u64,
+        );
+        let hir_match_payload_match_node = mk(
+            "rb.parser.hir_match_payload_match_node",
+            bufs.hir_match_payload_match_node.byte_size as u64,
+        );
+        let hir_match_payload_ordinal = mk(
+            "rb.parser.hir_match_payload_ordinal",
+            bufs.hir_match_payload_ordinal.byte_size as u64,
         );
         let hir_call_callee_node = mk(
             "rb.parser.hir_call_callee_node",
@@ -249,6 +295,26 @@ impl ParserReadbacks {
         let hir_call_arg_ordinal = mk(
             "rb.parser.hir_call_arg_ordinal",
             bufs.hir_call_arg_ordinal.byte_size as u64,
+        );
+        let hir_array_lit_first_element = mk(
+            "rb.parser.hir_array_lit_first_element",
+            bufs.hir_array_lit_first_element.byte_size as u64,
+        );
+        let hir_array_lit_element_count = mk(
+            "rb.parser.hir_array_lit_element_count",
+            bufs.hir_array_lit_element_count.byte_size as u64,
+        );
+        let hir_array_element_parent_lit = mk(
+            "rb.parser.hir_array_element_parent_lit",
+            bufs.hir_array_element_parent_lit.byte_size as u64,
+        );
+        let hir_array_element_ordinal = mk(
+            "rb.parser.hir_array_element_ordinal",
+            bufs.hir_array_element_ordinal.byte_size as u64,
+        );
+        let hir_array_element_next = mk(
+            "rb.parser.hir_array_element_next",
+            bufs.hir_array_element_next.byte_size as u64,
         );
         let hir_member_receiver_node = mk(
             "rb.parser.hir_member_receiver_node",
@@ -302,6 +368,10 @@ impl ParserReadbacks {
             "rb.parser.hir_struct_lit_field_value_node",
             bufs.hir_struct_lit_field_value_node.byte_size as u64,
         );
+        let hir_struct_lit_field_next = mk(
+            "rb.parser.hir_struct_lit_field_next",
+            bufs.hir_struct_lit_field_next.byte_size as u64,
+        );
 
         Self {
             ll1_status,
@@ -330,6 +400,10 @@ impl ParserReadbacks {
             hir_type_len_token,
             hir_type_len_value,
             hir_type_file_id,
+            hir_type_path_leaf_node,
+            hir_type_arg_start,
+            hir_type_arg_count,
+            hir_type_arg_next,
             hir_item_kind,
             hir_item_name_token,
             hir_item_decl_token,
@@ -346,16 +420,25 @@ impl ParserReadbacks {
             hir_match_scrutinee_node,
             hir_match_arm_start,
             hir_match_arm_count,
+            hir_match_arm_next,
             hir_match_arm_pattern_node,
             hir_match_arm_payload_start,
             hir_match_arm_payload_count,
             hir_match_arm_result_node,
+            hir_match_payload_owner_arm,
+            hir_match_payload_match_node,
+            hir_match_payload_ordinal,
             hir_call_callee_node,
             hir_call_arg_start,
             hir_call_arg_end,
             hir_call_arg_count,
             hir_call_arg_parent_call,
             hir_call_arg_ordinal,
+            hir_array_lit_first_element,
+            hir_array_lit_element_count,
+            hir_array_element_parent_lit,
+            hir_array_element_ordinal,
+            hir_array_element_next,
             hir_member_receiver_node,
             hir_member_receiver_token,
             hir_member_name_token,
@@ -369,6 +452,7 @@ impl ParserReadbacks {
             hir_struct_lit_field_count,
             hir_struct_lit_field_parent_lit,
             hir_struct_lit_field_value_node,
+            hir_struct_lit_field_next,
         }
     }
 
@@ -533,6 +617,34 @@ impl ParserReadbacks {
             bufs.hir_type_file_id.byte_size as u64,
         );
         encoder.copy_buffer_to_buffer(
+            &bufs.hir_type_path_leaf_node,
+            0,
+            &self.hir_type_path_leaf_node,
+            0,
+            bufs.hir_type_path_leaf_node.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_type_arg_start,
+            0,
+            &self.hir_type_arg_start,
+            0,
+            bufs.hir_type_arg_start.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_type_arg_count,
+            0,
+            &self.hir_type_arg_count,
+            0,
+            bufs.hir_type_arg_count.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_type_arg_next,
+            0,
+            &self.hir_type_arg_next,
+            0,
+            bufs.hir_type_arg_next.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
             &bufs.hir_item_kind,
             0,
             &self.hir_item_kind,
@@ -645,6 +757,13 @@ impl ParserReadbacks {
             bufs.hir_match_arm_count.byte_size as u64,
         );
         encoder.copy_buffer_to_buffer(
+            &bufs.hir_match_arm_next,
+            0,
+            &self.hir_match_arm_next,
+            0,
+            bufs.hir_match_arm_next.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
             &bufs.hir_match_arm_pattern_node,
             0,
             &self.hir_match_arm_pattern_node,
@@ -671,6 +790,27 @@ impl ParserReadbacks {
             &self.hir_match_arm_result_node,
             0,
             bufs.hir_match_arm_result_node.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_match_payload_owner_arm,
+            0,
+            &self.hir_match_payload_owner_arm,
+            0,
+            bufs.hir_match_payload_owner_arm.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_match_payload_match_node,
+            0,
+            &self.hir_match_payload_match_node,
+            0,
+            bufs.hir_match_payload_match_node.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_match_payload_ordinal,
+            0,
+            &self.hir_match_payload_ordinal,
+            0,
+            bufs.hir_match_payload_ordinal.byte_size as u64,
         );
         encoder.copy_buffer_to_buffer(
             &bufs.hir_call_callee_node,
@@ -713,6 +853,41 @@ impl ParserReadbacks {
             &self.hir_call_arg_ordinal,
             0,
             bufs.hir_call_arg_ordinal.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_array_lit_first_element,
+            0,
+            &self.hir_array_lit_first_element,
+            0,
+            bufs.hir_array_lit_first_element.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_array_lit_element_count,
+            0,
+            &self.hir_array_lit_element_count,
+            0,
+            bufs.hir_array_lit_element_count.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_array_element_parent_lit,
+            0,
+            &self.hir_array_element_parent_lit,
+            0,
+            bufs.hir_array_element_parent_lit.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_array_element_ordinal,
+            0,
+            &self.hir_array_element_ordinal,
+            0,
+            bufs.hir_array_element_ordinal.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_array_element_next,
+            0,
+            &self.hir_array_element_next,
+            0,
+            bufs.hir_array_element_next.byte_size as u64,
         );
         encoder.copy_buffer_to_buffer(
             &bufs.hir_member_receiver_node,
@@ -805,6 +980,13 @@ impl ParserReadbacks {
             0,
             bufs.hir_struct_lit_field_value_node.byte_size as u64,
         );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_struct_lit_field_next,
+            0,
+            &self.hir_struct_lit_field_next,
+            0,
+            bufs.hir_struct_lit_field_next.byte_size as u64,
+        );
 
         // depths_out, valid_out
         encoder.copy_buffer_to_buffer(
@@ -853,6 +1035,10 @@ pub struct DecodedParserReadbacks {
     pub hir_type_len_token: Vec<u32>,
     pub hir_type_len_value: Vec<u32>,
     pub hir_type_file_id: Vec<u32>,
+    pub hir_type_path_leaf_node: Vec<u32>,
+    pub hir_type_arg_start: Vec<u32>,
+    pub hir_type_arg_count: Vec<u32>,
+    pub hir_type_arg_next: Vec<u32>,
     pub hir_item_kind: Vec<u32>,
     pub hir_item_name_token: Vec<u32>,
     pub hir_item_decl_token: Vec<u32>,
@@ -869,16 +1055,25 @@ pub struct DecodedParserReadbacks {
     pub hir_match_scrutinee_node: Vec<u32>,
     pub hir_match_arm_start: Vec<u32>,
     pub hir_match_arm_count: Vec<u32>,
+    pub hir_match_arm_next: Vec<u32>,
     pub hir_match_arm_pattern_node: Vec<u32>,
     pub hir_match_arm_payload_start: Vec<u32>,
     pub hir_match_arm_payload_count: Vec<u32>,
     pub hir_match_arm_result_node: Vec<u32>,
+    pub hir_match_payload_owner_arm: Vec<u32>,
+    pub hir_match_payload_match_node: Vec<u32>,
+    pub hir_match_payload_ordinal: Vec<u32>,
     pub hir_call_callee_node: Vec<u32>,
     pub hir_call_arg_start: Vec<u32>,
     pub hir_call_arg_end: Vec<u32>,
     pub hir_call_arg_count: Vec<u32>,
     pub hir_call_arg_parent_call: Vec<u32>,
     pub hir_call_arg_ordinal: Vec<u32>,
+    pub hir_array_lit_first_element: Vec<u32>,
+    pub hir_array_lit_element_count: Vec<u32>,
+    pub hir_array_element_parent_lit: Vec<u32>,
+    pub hir_array_element_ordinal: Vec<u32>,
+    pub hir_array_element_next: Vec<u32>,
     pub hir_member_receiver_node: Vec<u32>,
     pub hir_member_receiver_token: Vec<u32>,
     pub hir_member_name_token: Vec<u32>,
@@ -892,6 +1087,7 @@ pub struct DecodedParserReadbacks {
     pub hir_struct_lit_field_count: Vec<u32>,
     pub hir_struct_lit_field_parent_lit: Vec<u32>,
     pub hir_struct_lit_field_value_node: Vec<u32>,
+    pub hir_struct_lit_field_next: Vec<u32>,
 }
 
 impl DecodedParserReadbacks {
@@ -934,6 +1130,10 @@ impl DecodedParserReadbacks {
         map("hir_type_len_token", &rb.hir_type_len_token);
         map("hir_type_len_value", &rb.hir_type_len_value);
         map("hir_type_file_id", &rb.hir_type_file_id);
+        map("hir_type_path_leaf_node", &rb.hir_type_path_leaf_node);
+        map("hir_type_arg_start", &rb.hir_type_arg_start);
+        map("hir_type_arg_count", &rb.hir_type_arg_count);
+        map("hir_type_arg_next", &rb.hir_type_arg_next);
         map("hir_item_kind", &rb.hir_item_kind);
         map("hir_item_name_token", &rb.hir_item_name_token);
         map("hir_item_decl_token", &rb.hir_item_decl_token);
@@ -953,6 +1153,7 @@ impl DecodedParserReadbacks {
         map("hir_match_scrutinee_node", &rb.hir_match_scrutinee_node);
         map("hir_match_arm_start", &rb.hir_match_arm_start);
         map("hir_match_arm_count", &rb.hir_match_arm_count);
+        map("hir_match_arm_next", &rb.hir_match_arm_next);
         map("hir_match_arm_pattern_node", &rb.hir_match_arm_pattern_node);
         map(
             "hir_match_arm_payload_start",
@@ -963,12 +1164,35 @@ impl DecodedParserReadbacks {
             &rb.hir_match_arm_payload_count,
         );
         map("hir_match_arm_result_node", &rb.hir_match_arm_result_node);
+        map(
+            "hir_match_payload_owner_arm",
+            &rb.hir_match_payload_owner_arm,
+        );
+        map(
+            "hir_match_payload_match_node",
+            &rb.hir_match_payload_match_node,
+        );
+        map("hir_match_payload_ordinal", &rb.hir_match_payload_ordinal);
         map("hir_call_callee_node", &rb.hir_call_callee_node);
         map("hir_call_arg_start", &rb.hir_call_arg_start);
         map("hir_call_arg_end", &rb.hir_call_arg_end);
         map("hir_call_arg_count", &rb.hir_call_arg_count);
         map("hir_call_arg_parent_call", &rb.hir_call_arg_parent_call);
         map("hir_call_arg_ordinal", &rb.hir_call_arg_ordinal);
+        map(
+            "hir_array_lit_first_element",
+            &rb.hir_array_lit_first_element,
+        );
+        map(
+            "hir_array_lit_element_count",
+            &rb.hir_array_lit_element_count,
+        );
+        map(
+            "hir_array_element_parent_lit",
+            &rb.hir_array_element_parent_lit,
+        );
+        map("hir_array_element_ordinal", &rb.hir_array_element_ordinal);
+        map("hir_array_element_next", &rb.hir_array_element_next);
         map("hir_member_receiver_node", &rb.hir_member_receiver_node);
         map("hir_member_receiver_token", &rb.hir_member_receiver_token);
         map("hir_member_name_token", &rb.hir_member_name_token);
@@ -997,6 +1221,7 @@ impl DecodedParserReadbacks {
             "hir_struct_lit_field_value_node",
             &rb.hir_struct_lit_field_value_node,
         );
+        map("hir_struct_lit_field_next", &rb.hir_struct_lit_field_next);
 
         crate::gpu::passes_core::wait_for_map_progress(
             device,
@@ -1027,18 +1252,37 @@ impl DecodedParserReadbacks {
 
         let headers = {
             let data = rb.headers.slice(..).get_mapped_range();
-            let count = (bufs.n_tokens.saturating_sub(1)) as usize;
+            let count = if bufs.tree_stream_uses_ll1 {
+                0
+            } else {
+                bufs.n_tokens.saturating_sub(1) as usize
+            };
             let out = decode_action_headers(&data, count)?;
             drop(data);
             rb.headers.unmap();
             out
         };
 
-        let sc_stream = read_u32_vec(&rb.sc, bufs.total_sc as usize);
-        let emit_stream = read_u32_vec(&rb.emit, bufs.total_emit as usize);
-        let match_for_index = read_u32_vec(&rb.match_idx, bufs.total_sc as usize);
-        let [final_depth, min_depth] = read_i32_array::<2>(&rb.depths, "depths")?;
-        let valid = read_u32_array::<1>(&rb.valid, "valid")?[0] != 0;
+        let legacy_stream_len = if bufs.tree_stream_uses_ll1 {
+            0
+        } else {
+            bufs.total_sc as usize
+        };
+        let legacy_emit_len = if bufs.tree_stream_uses_ll1 {
+            0
+        } else {
+            bufs.total_emit as usize
+        };
+        let sc_stream = read_u32_vec(&rb.sc, legacy_stream_len);
+        let emit_stream = read_u32_vec(&rb.emit, legacy_emit_len);
+        let match_for_index = read_u32_vec(&rb.match_idx, legacy_stream_len);
+        let [read_final_depth, read_min_depth] = read_i32_array::<2>(&rb.depths, "depths")?;
+        let read_valid = read_u32_array::<1>(&rb.valid, "valid")?[0] != 0;
+        let (final_depth, min_depth, valid) = if bufs.tree_stream_uses_ll1 {
+            (0, 0, false)
+        } else {
+            (read_final_depth, read_min_depth, read_valid)
+        };
 
         let node_kind = read_u32_vec(&rb.node_kind, tree_len);
         let parent = read_u32_vec(&rb.parent, tree_len);
@@ -1053,6 +1297,10 @@ impl DecodedParserReadbacks {
         let hir_type_len_token = read_u32_vec(&rb.hir_type_len_token, tree_len);
         let hir_type_len_value = read_u32_vec(&rb.hir_type_len_value, tree_len);
         let hir_type_file_id = read_u32_vec(&rb.hir_type_file_id, tree_len);
+        let hir_type_path_leaf_node = read_u32_vec(&rb.hir_type_path_leaf_node, tree_len);
+        let hir_type_arg_start = read_u32_vec(&rb.hir_type_arg_start, tree_len);
+        let hir_type_arg_count = read_u32_vec(&rb.hir_type_arg_count, tree_len);
+        let hir_type_arg_next = read_u32_vec(&rb.hir_type_arg_next, tree_len);
         let hir_item_kind = read_u32_vec(&rb.hir_item_kind, tree_len);
         let hir_item_name_token = read_u32_vec(&rb.hir_item_name_token, tree_len);
         let hir_item_decl_token = read_u32_vec(&rb.hir_item_decl_token, tree_len);
@@ -1070,16 +1318,34 @@ impl DecodedParserReadbacks {
         let hir_match_scrutinee_node = decode_tree_vec(&rb.hir_match_scrutinee_node);
         let hir_match_arm_start = decode_tree_vec(&rb.hir_match_arm_start);
         let hir_match_arm_count = decode_tree_vec(&rb.hir_match_arm_count);
+        let hir_match_arm_next = decode_tree_vec(&rb.hir_match_arm_next);
         let hir_match_arm_pattern_node = decode_tree_vec(&rb.hir_match_arm_pattern_node);
         let hir_match_arm_payload_start = decode_tree_vec(&rb.hir_match_arm_payload_start);
         let hir_match_arm_payload_count = decode_tree_vec(&rb.hir_match_arm_payload_count);
         let hir_match_arm_result_node = decode_tree_vec(&rb.hir_match_arm_result_node);
+        let hir_match_payload_owner_arm = decode_tree_vec(&rb.hir_match_payload_owner_arm);
+        let hir_match_payload_match_node = decode_tree_vec(&rb.hir_match_payload_match_node);
+        let hir_match_payload_ordinal = decode_tree_vec(&rb.hir_match_payload_ordinal);
         let hir_call_callee_node = decode_tree_vec(&rb.hir_call_callee_node);
         let hir_call_arg_start = decode_tree_vec(&rb.hir_call_arg_start);
         let hir_call_arg_end = decode_tree_vec(&rb.hir_call_arg_end);
         let hir_call_arg_count = decode_tree_vec(&rb.hir_call_arg_count);
-        let hir_call_arg_parent_call = decode_tree_vec(&rb.hir_call_arg_parent_call);
-        let hir_call_arg_ordinal = decode_tree_vec(&rb.hir_call_arg_ordinal);
+        let packed_hir_call_arg = decode_tree_vec(&rb.hir_call_arg_parent_call);
+        let hir_call_arg_parent_call = packed_hir_call_arg
+            .iter()
+            .copied()
+            .map(crate::parser::hir_records::node_ordinal_node)
+            .collect();
+        let hir_call_arg_ordinal = packed_hir_call_arg
+            .iter()
+            .copied()
+            .map(crate::parser::hir_records::node_ordinal_ordinal)
+            .collect();
+        let hir_array_lit_first_element = decode_tree_vec(&rb.hir_array_lit_first_element);
+        let hir_array_lit_element_count = decode_tree_vec(&rb.hir_array_lit_element_count);
+        let hir_array_element_parent_lit = decode_tree_vec(&rb.hir_array_element_parent_lit);
+        let hir_array_element_ordinal = decode_tree_vec(&rb.hir_array_element_ordinal);
+        let hir_array_element_next = decode_tree_vec(&rb.hir_array_element_next);
         let hir_member_receiver_node = decode_tree_vec(&rb.hir_member_receiver_node);
         let hir_member_receiver_token = decode_tree_vec(&rb.hir_member_receiver_token);
         let hir_member_name_token = decode_tree_vec(&rb.hir_member_name_token);
@@ -1093,6 +1359,7 @@ impl DecodedParserReadbacks {
         let hir_struct_lit_field_count = decode_tree_vec(&rb.hir_struct_lit_field_count);
         let hir_struct_lit_field_parent_lit = decode_tree_vec(&rb.hir_struct_lit_field_parent_lit);
         let hir_struct_lit_field_value_node = decode_tree_vec(&rb.hir_struct_lit_field_value_node);
+        let hir_struct_lit_field_next = decode_tree_vec(&rb.hir_struct_lit_field_next);
 
         Ok(Self {
             ll1_status,
@@ -1122,6 +1389,10 @@ impl DecodedParserReadbacks {
             hir_type_len_token,
             hir_type_len_value,
             hir_type_file_id,
+            hir_type_path_leaf_node,
+            hir_type_arg_start,
+            hir_type_arg_count,
+            hir_type_arg_next,
             hir_item_kind,
             hir_item_name_token,
             hir_item_decl_token,
@@ -1138,16 +1409,25 @@ impl DecodedParserReadbacks {
             hir_match_scrutinee_node,
             hir_match_arm_start,
             hir_match_arm_count,
+            hir_match_arm_next,
             hir_match_arm_pattern_node,
             hir_match_arm_payload_start,
             hir_match_arm_payload_count,
             hir_match_arm_result_node,
+            hir_match_payload_owner_arm,
+            hir_match_payload_match_node,
+            hir_match_payload_ordinal,
             hir_call_callee_node,
             hir_call_arg_start,
             hir_call_arg_end,
             hir_call_arg_count,
             hir_call_arg_parent_call,
             hir_call_arg_ordinal,
+            hir_array_lit_first_element,
+            hir_array_lit_element_count,
+            hir_array_element_parent_lit,
+            hir_array_element_ordinal,
+            hir_array_element_next,
             hir_member_receiver_node,
             hir_member_receiver_token,
             hir_member_name_token,
@@ -1161,6 +1441,7 @@ impl DecodedParserReadbacks {
             hir_struct_lit_field_count,
             hir_struct_lit_field_parent_lit,
             hir_struct_lit_field_value_node,
+            hir_struct_lit_field_next,
         })
     }
 }

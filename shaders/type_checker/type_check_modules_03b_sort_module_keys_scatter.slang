@@ -8,6 +8,10 @@
 // - It does not resolve imports, validate duplicates, perform lookup, use
 //   hashes, or ask the CPU to inspect module paths.
 
+import gpu_index;
+import radix;
+import scatter;
+
 struct Params
 {
     uint module_capacity;
@@ -31,13 +35,15 @@ RWStructuredBuffer<uint> module_key_order_out;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint MAX_PATH_SEGMENTS = 64u;
 static const uint SORT_PATH_SEGMENTS = 8u;
-static const uint RADIX_BUCKETS = 257u;
+static const uint MODULE_KEY_SEGMENT_ROW_WIDTH = SORT_PATH_SEGMENTS;
+static const uint RADIX_BUCKETS = RADIX_U8_SENTINEL_BUCKETS;
+
+groupshared uint local_radix_keys[256];
 
 uint linear_group_id(uint3 gid)
 {
-    return gid.x + gid.y * MAX_GROUPS_X;
+    return linear_group_id_2d(gid, MAX_GROUPS_X);
 }
 
 uint active_module_count()
@@ -49,37 +55,50 @@ uint module_key_segment_value(uint module_i, uint segment_i)
 {
     if (module_i >= active_module_count())
         return 0u;
-    if (segment_i >= min(module_key_segment_count[module_i], MAX_PATH_SEGMENTS))
+    if (segment_i >= min(module_key_segment_count[module_i], MODULE_KEY_SEGMENT_ROW_WIDTH))
         return 0u;
 
     uint segment_base = module_key_segment_base[module_i];
     uint name_id = module_key_segment_name_id[segment_base + segment_i];
-    return name_id == INVALID ? 0u : name_id + 1u;
+    return encode_nullable_id(name_id, INVALID);
 }
 
 uint module_key_radix_key(uint module_i, uint key_step)
 {
-    uint segment_i = SORT_PATH_SEGMENTS - 1u - min(key_step / 4u, SORT_PATH_SEGMENTS - 1u);
-    uint byte_i = key_step & 3u;
+    uint segment_i = radix_reverse_field_index(key_step, SORT_PATH_SEGMENTS);
     uint value = module_key_segment_value(module_i, segment_i);
-    return (value >> (byte_i * 8u)) & 0xffu;
+    return radix_byte_key(value, key_step);
 }
 
-uint local_same_key_rank(uint block_begin, uint lane, uint key)
+public struct ModuleKeyScatterSource : IStableRadixScatterSource<uint>
 {
-    uint rank = 0u;
-    [loop]
-    for (uint j = 0u; j < lane; j += 1u)
+    public static uint active_count()
     {
-        uint order_j = block_begin + j;
-        if (order_j < active_module_count())
-        {
-            uint prev_module_i = module_key_order_in[order_j];
-            if (module_key_radix_key(prev_module_i, gParams.key_step) == key)
-                rank += 1u;
-        }
+        return active_module_count();
     }
-    return rank;
+
+    public static uint inactive_value()
+    {
+        return 0u;
+    }
+
+    public static uint ordered_value(uint order_i)
+    {
+        return module_key_order_in[order_i];
+    }
+
+    public static uint radix_key(uint value, uint key_step)
+    {
+        return module_key_radix_key(value, key_step);
+    }
+}
+
+public struct ModuleKeyOrderOutSink : IScatterSink<uint>
+{
+    public static void store(uint dst, uint value)
+    {
+        module_key_order_out[dst] = value;
+    }
 }
 
 [shader("compute")]
@@ -87,21 +106,14 @@ uint local_same_key_rank(uint block_begin, uint lane, uint key)
 void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
 {
     uint block_idx = linear_group_id(gid);
-    if (block_idx >= gParams.n_blocks)
-        return;
-
     uint lane = ltid.x;
-    uint order_i = block_idx * WG_SIZE + lane;
-    uint module_count = active_module_count();
-    if (order_i >= module_count)
-        return;
-
-    uint module_i = module_key_order_in[order_i];
-    uint key = module_key_radix_key(module_i, gParams.key_step);
-    uint rank = local_same_key_rank(block_idx * WG_SIZE, lane, key);
-    uint block_prefix = radix_block_bucket_prefix[block_idx * RADIX_BUCKETS + key];
-    uint dst = radix_bucket_base[key] + block_prefix + rank;
-
-    if (dst < module_count)
-        module_key_order_out[dst] = module_i;
+    stable_radix_scatter_block<uint, ModuleKeyScatterSource, ModuleKeyOrderOutSink, 256>(
+        block_idx,
+        lane,
+        gParams.n_blocks,
+        gParams.key_step,
+        RADIX_BUCKETS,
+        radix_bucket_base,
+        radix_block_bucket_prefix,
+        local_radix_keys);
 }

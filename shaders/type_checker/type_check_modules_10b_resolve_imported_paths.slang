@@ -8,6 +8,10 @@
 // - It does not scan source bytes, use hashes, perform CPU lookup, or apply
 //   same-source shortcuts.
 
+import fixed_key;
+import gpu_index;
+import range_query;
+
 struct Params
 {
     uint capacity;
@@ -48,7 +52,7 @@ static const uint IMPORT_VISIBLE_STATUS_AMBIGUOUS = 1u;
 
 uint linear_thread_id(uint3 dtid)
 {
-    return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
+    return linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
 }
 
 uint active_path_count()
@@ -56,51 +60,56 @@ uint active_path_count()
     return min(path_count_out[0], gParams.capacity);
 }
 
+uint visible_capacity()
+{
+    return gParams.reserved == 0u ? gParams.capacity : gParams.reserved;
+}
+
 uint active_visible_count()
 {
-    return min(import_visible_count_out[0], gParams.capacity);
+    return min(import_visible_count_out[0], visible_capacity());
 }
 
-uint encoded_id(uint value)
+public struct VisibleLookupKey
 {
-    return value == INVALID ? 0u : value + 1u;
+    uint module_id;
+    uint name_id;
 }
 
-int compare_visible_key(uint row, uint module_id, uint name_id)
+public struct VisibleFixedKey : IFixedU32RowKey<VisibleLookupKey>
 {
-    uint left_module = encoded_id(import_visible_key_module_id[row]);
-    uint right_module = encoded_id(module_id);
-    if (left_module < right_module)
-        return -1;
-    if (left_module > right_module)
-        return 1;
+    public static uint row_lane(uint row, uint lane)
+    {
+        uint value = lane == 0u
+            ? import_visible_key_module_id[row]
+            : import_visible_key_name_id[row];
+        return fixed_key_encode_nullable_u32(value, INVALID);
+    }
 
-    uint left_name = encoded_id(import_visible_key_name_id[row]);
-    uint right_name = encoded_id(name_id);
-    if (left_name < right_name)
-        return -1;
-    if (left_name > right_name)
-        return 1;
-    return 0;
+    public static uint key_lane(VisibleLookupKey key, uint lane)
+    {
+        uint value = lane == 0u ? key.module_id : key.name_id;
+        return fixed_key_encode_nullable_u32(value, INVALID);
+    }
+}
+
+public struct VisibleKeyCompare : IRowQueryCompare<VisibleLookupKey>
+{
+    public static int compare(uint row, VisibleLookupKey key)
+    {
+        return fixed_u32_row_key_compare<VisibleLookupKey, VisibleFixedKey>(
+            row,
+            key,
+            2u);
+    }
 }
 
 uint find_visible_row(uint module_id, uint name_id)
 {
-    uint lo = 0u;
-    uint hi = active_visible_count();
-    [loop]
-    for (uint guard = 0u; guard < 32u && lo < hi; guard += 1u)
-    {
-        uint mid = lo + ((hi - lo) >> 1u);
-        int cmp = compare_visible_key(mid, module_id, name_id);
-        if (cmp < 0)
-            lo = mid + 1u;
-        else
-            hi = mid;
-    }
-    if (lo < active_visible_count() && compare_visible_key(lo, module_id, name_id) == 0)
-        return lo;
-    return INVALID;
+    VisibleLookupKey key;
+    key.module_id = module_id;
+    key.name_id = name_id;
+    return find_equal_query<VisibleLookupKey, VisibleKeyCompare>(active_visible_count(), key);
 }
 
 [shader("compute")]

@@ -22,6 +22,12 @@ RWStructuredBuffer<uint> status;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
+bool module_already_emitted()
+{
+    return status[1u] == 1u || status[1u] == 2u || status[1u] == 3u ||
+           status[1u] == 5u;
+}
+
 uint linear_dispatch_id(uint3 tid)
 {
     return tid.x + tid.y * DISPATCH_X_STRIDE;
@@ -31,6 +37,9 @@ uint linear_dispatch_id(uint3 tid)
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
 {
+    if (module_already_emitted())
+        return;
+
     uint target = linear_dispatch_id(tid);
     if (target != 0u && target >= gParams.out_capacity)
         return;

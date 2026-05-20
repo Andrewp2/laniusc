@@ -1,12 +1,12 @@
 // x86_64 local literal projection over HIR statement/expression records.
 //
-// This pass projects supported top-level literal/constant let bindings by
-// declaration token. It repeatedly scans HIR records on the GPU so local chains
-// resolve through visible_decl and the already-projected declaration table,
-// without relying on HIR node numbering as a source-order proxy. Later x86
-// consumers resolve a name through visible_decl and read this table directly
-// instead of scanning all HIR statements to rediscover locals.
+// This pass projects immediately available scalar literal/constant let bindings
+// by declaration token. It is a best-effort acceleration table:
+// consumers must still be able to lower ordinary local values through generic
+// virtual load/store instructions when a local has no projected literal.
 
+import gpu_index;
+import status;
 struct Params
 {
     uint n_tokens;
@@ -19,22 +19,20 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> parent;
+StructuredBuffer<uint> x86_node_func;
 StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint> x86_expr_resolved_node;
 StructuredBuffer<uint> hir_expr_int_value;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> visible_decl;
-StructuredBuffer<uint4> x86_const_value_record;
+StructuredBuffer<uint2> x86_const_value_record;
 StructuredBuffer<uint> x86_const_value_status;
 
-RWStructuredBuffer<uint4> x86_local_literal_record;
+RWStructuredBuffer<uint> x86_local_literal_record;
 RWStructuredBuffer<uint> x86_local_literal_status;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
-static const uint HIR_FN = 3u;
-static const uint HIR_IF_STMT = 10u;
-static const uint HIR_EXPR_FORWARD = 1u;
 static const uint HIR_EXPR_NAME = 2u;
 static const uint HIR_EXPR_INT = 3u;
 static const uint HIR_EXPR_TRUE = 4u;
@@ -67,13 +65,13 @@ static const uint EXPR_RECORD_LEFT = 1u;
 static const uint EXPR_RECORD_RIGHT = 2u;
 static const uint EXPR_RECORD_VALUE_TOKEN = 3u;
 static const uint X86_LOCAL_LITERALS_OK = 1u;
-static const uint X86_LOCAL_LITERAL_TOP_LEVEL = 1u;
+static const uint X86_LOCAL_LITERAL_STRIDE = 3u;
 static const uint X86_CONST_VALUES_OK = 1u;
 static const uint X86_CONST_VALUE_LITERAL = 1u;
 
 uint linear_dispatch_id(uint3 tid)
 {
-    return tid.x + tid.y * DISPATCH_X_STRIDE;
+    return linear_dispatch_thread_id_2d(tid, DISPATCH_X_STRIDE);
 }
 
 uint active_hir_node_count()
@@ -93,12 +91,22 @@ bool valid_token(uint token)
 
 uint stmt_record_slot(uint node, uint slot)
 {
-    return hir_stmt_record[node * STMT_RECORD_STRIDE + slot];
+    return row_major_load<uint>(
+        hir_stmt_record,
+        node,
+        STMT_RECORD_STRIDE,
+        slot,
+        INVALID);
 }
 
 uint expr_record_slot(uint node, uint slot)
 {
-    return hir_expr_record[node * EXPR_RECORD_STRIDE + slot];
+    return row_major_load<uint>(
+        hir_expr_record,
+        node,
+        EXPR_RECORD_STRIDE,
+        slot,
+        INVALID);
 }
 
 uint expr_form(uint node)
@@ -123,61 +131,63 @@ uint expr_value_token(uint node)
 
 uint resolve_expr(uint node)
 {
-    [loop]
-    for (uint guard = 0u; guard < 64u; guard += 1u)
-    {
-        if (!valid_node(node))
-            return INVALID;
-        if (expr_form(node) != HIR_EXPR_FORWARD)
-            return node;
-        node = expr_left(node);
-    }
-    return INVALID;
+    return valid_node(node) ? x86_expr_resolved_node[node] : INVALID;
 }
 
 uint owning_function_node(uint node)
 {
-    if (!valid_node(node))
-        return INVALID;
-    if (hir_kind[node] == HIR_FN)
-        return node;
-
-    uint cur = node;
-    [loop]
-    for (uint guard = 0u; guard < 128u; guard += 1u)
-    {
-        uint p = parent[cur];
-        if (!valid_node(p) || p == cur)
-            return INVALID;
-        if (hir_kind[p] == HIR_FN)
-            return p;
-        cur = p;
-    }
-    return INVALID;
-}
-
-bool node_has_hir_ancestor(uint node, uint ancestor_kind, uint stop_node)
-{
-    if (!valid_node(node))
-        return false;
-    uint cur = node;
-    [loop]
-    for (uint guard = 0u; guard < 128u; guard += 1u)
-    {
-        uint p = parent[cur];
-        if (!valid_node(p) || p == cur || p == stop_node)
-            return false;
-        if (hir_kind[p] == ancestor_kind)
-            return true;
-        cur = p;
-    }
-    return false;
+    return valid_node(node) ? x86_node_func[node] : INVALID;
 }
 
 bool const_values_ok()
 {
     return x86_const_value_status[0u] == X86_CONST_VALUES_OK &&
            x86_const_value_status[1u] == 0u;
+}
+
+uint local_literal_word(uint decl_token, uint slot)
+{
+    if (!valid_token(decl_token) || slot >= X86_LOCAL_LITERAL_STRIDE)
+        return INVALID;
+    return x86_local_literal_record[
+        row_major_slot(decl_token, X86_LOCAL_LITERAL_STRIDE, slot)];
+}
+
+uint local_literal_owner(uint decl_token)
+{
+    return local_literal_word(decl_token, 0u);
+}
+
+uint local_literal_let_node(uint decl_token)
+{
+    return local_literal_word(decl_token, 1u);
+}
+
+uint local_literal_value(uint decl_token)
+{
+    return local_literal_word(decl_token, 2u);
+}
+
+void write_local_literal_record(uint decl_token, uint fn_node, uint let_node, uint value)
+{
+    row_major_store<uint>(
+        x86_local_literal_record,
+        decl_token,
+        X86_LOCAL_LITERAL_STRIDE,
+        0u,
+        fn_node);
+    row_major_store<uint>(
+        x86_local_literal_record,
+        decl_token,
+        X86_LOCAL_LITERAL_STRIDE,
+        1u,
+        let_node);
+    row_major_store<uint>(
+        x86_local_literal_record,
+        decl_token,
+        X86_LOCAL_LITERAL_STRIDE,
+        2u,
+        value);
 }
 
 bool literal_leaf_value(uint value_node, out uint value)
@@ -211,7 +221,7 @@ bool const_atom_value(uint token_i, out uint value)
     if (!valid_token(decl_i))
         return false;
 
-    uint4 record = x86_const_value_record[decl_i];
+    uint2 record = x86_const_value_record[decl_i];
     if (record.x != X86_CONST_VALUE_LITERAL)
         return false;
 
@@ -232,13 +242,11 @@ bool local_atom_value(
     if (!valid_token(decl_i))
         return false;
 
-    uint4 record = x86_local_literal_record[decl_i];
-    if (record.x != fn_node || record.y == INVALID)
-        return false;
-    if (record.w != X86_LOCAL_LITERAL_TOP_LEVEL)
+    if (local_literal_owner(decl_i) != fn_node ||
+        local_literal_let_node(decl_i) == INVALID)
         return false;
 
-    value = record.z;
+    value = local_literal_value(decl_i);
     return true;
 }
 
@@ -265,217 +273,30 @@ bool expr_leaf_value(
     return false;
 }
 
-bool binary_const_value(uint form, uint left, uint right, out uint value)
-{
-    value = 0u;
-    if (form == HIR_EXPR_ADD)
-    {
-        value = left + right;
-        return true;
-    }
-    if (form == HIR_EXPR_SUB)
-    {
-        value = left - right;
-        return true;
-    }
-    if (form == HIR_EXPR_MUL)
-    {
-        value = left * right;
-        return true;
-    }
-    if (form == HIR_EXPR_EQ)
-    {
-        value = left == right ? 1u : 0u;
-        return true;
-    }
-    if (form == HIR_EXPR_NE)
-    {
-        value = left != right ? 1u : 0u;
-        return true;
-    }
-    if (form == HIR_EXPR_LT)
-    {
-        value = int(left) < int(right) ? 1u : 0u;
-        return true;
-    }
-    if (form == HIR_EXPR_GT)
-    {
-        value = int(left) > int(right) ? 1u : 0u;
-        return true;
-    }
-    if (form == HIR_EXPR_LE)
-    {
-        value = int(left) <= int(right) ? 1u : 0u;
-        return true;
-    }
-    if (form == HIR_EXPR_GE)
-    {
-        value = int(left) >= int(right) ? 1u : 0u;
-        return true;
-    }
-    if (form == HIR_EXPR_AND)
-    {
-        value = (left != 0u && right != 0u) ? 1u : 0u;
-        return true;
-    }
-    if (form == HIR_EXPR_OR)
-    {
-        value = (left != 0u || right != 0u) ? 1u : 0u;
-        return true;
-    }
-    if (form == HIR_EXPR_BIT_AND)
-    {
-        value = left & right;
-        return true;
-    }
-    if (form == HIR_EXPR_BIT_OR)
-    {
-        value = left | right;
-        return true;
-    }
-    if (form == HIR_EXPR_BIT_XOR)
-    {
-        value = left ^ right;
-        return true;
-    }
-    if (form == HIR_EXPR_SHL)
-    {
-        value = left << (right & 31u);
-        return true;
-    }
-    if (form == HIR_EXPR_SHR)
-    {
-        value = uint(int(left) >> int(right & 31u));
-        return true;
-    }
-    if (form == HIR_EXPR_MOD)
-    {
-        if (right == 0u)
-            return false;
-        value = left % right;
-        return true;
-    }
-    if (form == HIR_EXPR_DIV)
-    {
-        if (right == 0u)
-            return false;
-        value = uint(int(left) / int(right));
-        return true;
-    }
-    return false;
-}
-
-bool const_expr_value(uint root, uint fn_node, uint before_node, out uint value)
+bool scalar_projection_value(
+    uint root,
+    uint fn_node,
+    uint before_node,
+    out uint value)
 {
     value = 0u;
     root = resolve_expr(root);
     if (!valid_node(root))
         return false;
 
-    uint node_stack[32];
-    uint state_stack[32];
-    uint left_stack[32];
-    uint sp = 1u;
-    uint last_value = 0u;
-    node_stack[0u] = root;
-    state_stack[0u] = 0u;
-    left_stack[0u] = 0u;
+    if (expr_leaf_value(root, fn_node, before_node, value))
+        return true;
 
-    [loop]
-    for (uint guard = 0u; guard < 128u; guard += 1u)
-    {
-        if (sp == 0u)
-        {
-            value = last_value;
-            return true;
-        }
-
-        uint frame = sp - 1u;
-        uint node = resolve_expr(node_stack[frame]);
-        if (!valid_node(node))
-            return false;
-
-        uint state = state_stack[frame];
-        uint form = expr_form(node);
-        if (state == 0u)
-        {
-            if (expr_leaf_value(node, fn_node, before_node, last_value))
-            {
-                sp -= 1u;
-                continue;
-            }
-            if (form == HIR_EXPR_NEG || form == HIR_EXPR_NOT)
-            {
-                if (sp >= 32u)
-                    return false;
-                state_stack[frame] = 1u;
-                node_stack[sp] = expr_left(node);
-                state_stack[sp] = 0u;
-                left_stack[sp] = 0u;
-                sp += 1u;
-                continue;
-            }
-            if (form == HIR_EXPR_ADD ||
-                form == HIR_EXPR_SUB ||
-                form == HIR_EXPR_MUL ||
-                form == HIR_EXPR_EQ ||
-                form == HIR_EXPR_NE ||
-                form == HIR_EXPR_LT ||
-                form == HIR_EXPR_GT ||
-                form == HIR_EXPR_LE ||
-                form == HIR_EXPR_GE ||
-                form == HIR_EXPR_AND ||
-                form == HIR_EXPR_OR ||
-                form == HIR_EXPR_MOD ||
-                form == HIR_EXPR_DIV ||
-                form == HIR_EXPR_BIT_OR ||
-                form == HIR_EXPR_BIT_XOR ||
-                form == HIR_EXPR_BIT_AND ||
-                form == HIR_EXPR_SHL ||
-                form == HIR_EXPR_SHR)
-            {
-                if (sp >= 32u)
-                    return false;
-                state_stack[frame] = 2u;
-                node_stack[sp] = expr_left(node);
-                state_stack[sp] = 0u;
-                left_stack[sp] = 0u;
-                sp += 1u;
-                continue;
-            }
-            return false;
-        }
-        if (state == 1u)
-        {
-            last_value = form == HIR_EXPR_NEG ? 0u - last_value :
-                                                (last_value == 0u ? 1u : 0u);
-            sp -= 1u;
-            continue;
-        }
-        if (state == 2u)
-        {
-            left_stack[frame] = last_value;
-            state_stack[frame] = 3u;
-            if (sp >= 32u)
-                return false;
-            node_stack[sp] = expr_right(node);
-            state_stack[sp] = 0u;
-            left_stack[sp] = 0u;
-            sp += 1u;
-            continue;
-        }
-        if (state == 3u)
-        {
-            uint result = 0u;
-            if (!binary_const_value(form, left_stack[frame], last_value, result))
-                return false;
-            last_value = result;
-            sp -= 1u;
-            continue;
-        }
+    uint form = expr_form(root);
+    if (form != HIR_EXPR_NEG && form != HIR_EXPR_NOT)
         return false;
-    }
-    return false;
+
+    uint operand = 0u;
+    if (!expr_leaf_value(expr_left(root), fn_node, before_node, operand))
+        return false;
+
+    value = form == HIR_EXPR_NEG ? 0u - operand : (operand == 0u ? 1u : 0u);
+    return true;
 }
 
 void scatter_local_literal(uint let_node)
@@ -486,8 +307,6 @@ void scatter_local_literal(uint let_node)
     uint fn_node = owning_function_node(let_node);
     if (!valid_node(fn_node))
         return;
-    if (node_has_hir_ancestor(let_node, HIR_IF_STMT, fn_node))
-        return;
 
     uint decl_i = stmt_record_slot(let_node, 1u);
     if (!valid_token(decl_i))
@@ -495,20 +314,10 @@ void scatter_local_literal(uint let_node)
 
     uint value = 0u;
     uint expr_node = stmt_record_slot(let_node, 2u);
-    if (!const_expr_value(expr_node, fn_node, let_node, value))
+    if (!scalar_projection_value(expr_node, fn_node, let_node, value))
         return;
 
-    uint4 previous = x86_local_literal_record[decl_i];
-    bool fresh_record = previous.x != fn_node ||
-                        previous.y != let_node ||
-                        previous.w != X86_LOCAL_LITERAL_TOP_LEVEL;
-    x86_local_literal_record[decl_i] =
-        uint4(fn_node, let_node, value, X86_LOCAL_LITERAL_TOP_LEVEL);
-    if (fresh_record)
-    {
-        uint old_count = 0u;
-        InterlockedAdd(x86_local_literal_status[3u], 1u, old_count);
-    }
+    write_local_literal_record(decl_i, fn_node, let_node, value);
 }
 
 [shader("compute")]
@@ -516,22 +325,8 @@ void scatter_local_literal(uint let_node)
 void main(uint3 tid: SV_DispatchThreadID)
 {
     uint node_i = linear_dispatch_id(tid);
-    if (node_i != 0u)
+    if (node_i >= active_hir_node_count())
         return;
 
-    uint n = active_hir_node_count();
-    [loop]
-    for (uint iteration = 0u; iteration < gParams.n_hir_nodes; iteration += 1u)
-    {
-        if (iteration >= n)
-            break;
-
-        [loop]
-        for (uint scan = 0u; scan < gParams.n_hir_nodes; scan += 1u)
-        {
-            if (scan >= n)
-                break;
-            scatter_local_literal(scan);
-        }
-    }
+    scatter_local_literal(node_i);
 }

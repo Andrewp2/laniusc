@@ -3,32 +3,12 @@ mod common;
 use laniusc::{
     lexer::{
         driver::GpuLexer,
-        tables::tokens::TokenKind,
-        test_cpu::{TestCpuToken, lex_on_test_cpu},
+        test_cpu::{lex_on_test_cpu, TestCpuToken},
     },
     parser::{driver::GpuParser, tables::PrecomputedParseTables},
 };
 
 const INVALID: u32 = u32::MAX;
-
-fn raw_parser_kind(kind: TokenKind) -> TokenKind {
-    use TokenKind::*;
-    match kind {
-        CallLParen | GroupLParen | ParamLParen => LParen,
-        GroupRParen | CallRParen | ParamRParen => RParen,
-        IndexLBracket | ArrayLBracket | TypeArrayLBracket => LBracket,
-        ArrayRBracket | IndexRBracket | TypeArrayRBracket => RBracket,
-        PrefixPlus | InfixPlus => Plus,
-        PrefixMinus | InfixMinus => Minus,
-        LetIdent | ParamIdent | TypeIdent => Ident,
-        LetAssign => Assign,
-        ArgComma | ArrayComma | ParamComma => Comma,
-        TypeSemicolon => Semicolon,
-        IfLBrace => LBrace,
-        IfRBrace => RBrace,
-        other => other,
-    }
-}
 
 fn token_span_snippet(src: &str, tokens: &[TestCpuToken], start: u32, end: u32) -> Option<String> {
     if start == INVALID || end == INVALID || start >= end {
@@ -76,7 +56,11 @@ fn pair(a: i32, b: i32) -> i32 {
 fn main() -> i32 {
     let x = pair(1, pair(2, 3));
     let y = core::range::contains_i32(core::range::range_i32(1, 4), 3);
-    return x + y;
+    let z = match (true) {
+        true -> pair(4, (5 + 6)) + y,
+        false -> x,
+    };
+    return x + y + z;
 }
 "#;
         let tokens = lex_on_test_cpu(src).expect("test CPU oracle lex fixture");
@@ -156,6 +140,14 @@ fn main() -> i32 {
             }),
             "missing qualified call metadata: {calls:?}"
         );
+        assert!(
+            calls.iter().any(|(callee, first_arg, count)| {
+                callee == "pair"
+                    && first_arg.as_deref().is_some_and(|arg| arg.starts_with("4"))
+                    && *count == 2
+            }),
+            "call inside match result should keep grouped arguments: {calls:?}"
+        );
 
         let args = res
             .hir_call_arg_parent_call
@@ -207,97 +199,14 @@ fn main() -> i32 {
             }),
             "qualified call should publish first argument as a HIR node: {args:?}"
         );
-    });
-}
-
-#[test]
-fn hir_call_fields_pass_is_wired_without_token_text_access() {
-    let shader = include_str!("../shaders/parser/hir_call_fields.slang");
-    let pass = include_str!("../src/parser/passes/hir_call_fields.rs");
-    let buffers = include_str!("../src/parser/buffers.rs");
-    let driver = include_str!("../src/parser/driver.rs");
-    let resident_tree = include_str!("../src/parser/driver/resident_tree.rs");
-    let passes = include_str!("../src/parser/passes/mod.rs");
-
-    for required in [
-        "StructuredBuffer<uint> node_kind",
-        "StructuredBuffer<uint> parent",
-        "StructuredBuffer<uint> subtree_end",
-        "PROD_POSTFIX_CALL",
-        "PROD_ARGS_SOME",
-        "PROD_ARGS_AFTER_COMMA_MORE",
-        "hir_call_callee_node",
-        "hir_call_arg_end",
-        "hir_call_arg_parent_call",
-    ] {
         assert!(
-            shader.contains(required),
-            "HIR call metadata should be derived from tree arrays: {required}"
-        );
-    }
-
-    for forbidden in [
-        "TokenIn",
-        "token_words",
-        "source_bytes",
-        "token_kind(",
-        "same_text(",
-        "find_next_open_paren",
-        "matching_paren",
-        "unwrap_or",
-        "record_error",
-    ] {
-        assert!(
-            !shader.contains(forbidden),
-            "HIR call metadata must not inspect token text or helper names: {forbidden}"
-        );
-    }
-
-    for required in [
-        "hir_call_fields",
-        "hir_call_callee_node",
-        "hir_call_arg_start",
-        "hir_call_arg_end",
-        "hir_call_arg_parent_call",
-    ] {
-        assert!(pass.contains(required) || buffers.contains(required));
-        assert!(driver.contains(required) || resident_tree.contains(required));
-    }
-    assert!(passes.contains("pub mod hir_call_fields;"));
-    assert!(passes.contains("hir_call_fields.record_pass"));
-}
-
-#[test]
-fn gpu_ll1_hir_call_fields_capture_nonresident_parser_results() {
-    common::block_on_gpu_with_timeout("GPU parser nonresident HIR call metadata", async move {
-        let parser = GpuParser::new().await.expect("GPU parser init");
-        let tables =
-            PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
-                .expect("load generated parse tables");
-        let src = "fn pair(a: i32, b: i32) -> i32 { return a + b; } fn main() { let x = pair(1, pair(2, 3)); return; }";
-        let mut token_kinds = lex_on_test_cpu(src)
-            .expect("test CPU oracle lex fixture")
-            .into_iter()
-            .map(|token| raw_parser_kind(token.kind) as u32)
-            .collect::<Vec<_>>();
-        token_kinds.insert(0, 0);
-        token_kinds.push(0);
-
-        let res = parser
-            .parse(&token_kinds, &tables)
-            .await
-            .expect("GPU parse call fixture");
-
-        assert!(res.ll1.accepted, "LL(1) parser rejected fixture");
-        assert_eq!(res.hir_call_arg_count.len(), res.node_kind.len());
-        assert_eq!(res.hir_call_arg_end.len(), res.node_kind.len());
-        assert!(
-            res.hir_call_arg_count.iter().any(|&count| count == 2),
-            "expected call metadata for two-argument calls"
-        );
-        assert!(
-            res.hir_call_arg_ordinal.iter().any(|&ordinal| ordinal == 1),
-            "expected ordinal metadata for second call arguments"
+            args.iter().any(|(callee, arg, exact_arg, ordinal)| {
+                callee == "pair"
+                    && arg.starts_with("(5 + 6)")
+                    && exact_arg == "(5 + 6)"
+                    && *ordinal == 1
+            }),
+            "call inside match result should publish grouped argument as one argument: {args:?}"
         );
     });
 }

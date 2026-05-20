@@ -10,6 +10,10 @@
 //   does not resolve calls, inspect source bytes, hash token text, perform CPU
 //   lookup, or apply same-source shortcuts.
 
+import fixed_key;
+import sorted_runs;
+import status;
+
 struct Params
 {
     uint method_capacity;
@@ -20,6 +24,7 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+StructuredBuffer<uint> token_count;
 StructuredBuffer<uint> module_count_out;
 StructuredBuffer<uint> sorted_method_key_order;
 StructuredBuffer<uint> method_decl_impl_node;
@@ -65,9 +70,14 @@ uint active_module_count()
     return max(1u, min(module_count_out[0], gParams.method_capacity));
 }
 
+uint active_method_capacity()
+{
+    return min(token_count[0], gParams.method_capacity);
+}
+
 bool is_method_decl(uint fn_i)
 {
-    return fn_i < gParams.method_capacity && method_decl_impl_node[fn_i] != INVALID;
+    return fn_i < active_method_capacity() && method_decl_impl_node[fn_i] != INVALID;
 }
 
 uint decl_token_from_type_code(uint ty)
@@ -81,7 +91,7 @@ uint decl_token_from_type_code(uint ty)
 
 uint resolved_nominal_decl_token(uint token_i)
 {
-    if (token_i >= gParams.method_capacity)
+    if (token_i >= active_method_capacity())
         return INVALID;
     return decl_token_from_type_code(module_type_path_type[token_i]);
 }
@@ -125,21 +135,50 @@ uint invalid_method_status(uint fn_i)
     return METHOD_KEY_STATUS_PRIVATE_OK;
 }
 
+public struct MethodValidationFixedKey : IFixedU32RowKey<uint>
+{
+    public static uint row_lane(uint fn_i, uint lane)
+    {
+        if (lane == 0u)
+            return fixed_key_encode_nullable_u32(method_decl_module_id[fn_i], INVALID);
+        if (lane == 1u)
+            return fixed_key_encode_nullable_u32(
+                method_decl_receiver_ref_tag[fn_i],
+                TYPE_REF_INVALID);
+        if (lane == 2u)
+            return fixed_key_encode_nullable_u32(receiver_payload_key(fn_i), INVALID);
+        return fixed_key_encode_nullable_u32(method_decl_name_id[fn_i], INVALID);
+    }
+
+    public static uint key_lane(uint fn_i, uint lane)
+    {
+        return row_lane(fn_i, lane);
+    }
+}
+
 bool method_keys_equal(uint left_fn_i, uint right_fn_i)
 {
     if (invalid_method_status(left_fn_i) != METHOD_KEY_STATUS_PRIVATE_OK ||
         invalid_method_status(right_fn_i) != METHOD_KEY_STATUS_PRIVATE_OK)
         return false;
 
-    return method_decl_module_id[left_fn_i] == method_decl_module_id[right_fn_i] &&
-           method_decl_receiver_ref_tag[left_fn_i] == method_decl_receiver_ref_tag[right_fn_i] &&
-           receiver_payload_key(left_fn_i) == receiver_payload_key(right_fn_i) &&
-           method_decl_name_id[left_fn_i] == method_decl_name_id[right_fn_i];
+    return fixed_u32_row_key_equal<uint, MethodValidationFixedKey>(
+        left_fn_i,
+        right_fn_i,
+        4u);
+}
+
+public struct MethodKeyEquality : ISortedRunEquality
+{
+    public static bool equal(uint left_item, uint right_item)
+    {
+        return method_keys_equal(left_item, right_item);
+    }
 }
 
 uint error_token_for_method(uint fn_i)
 {
-    if (fn_i < gParams.method_capacity)
+    if (fn_i < active_method_capacity())
     {
         uint name_token = method_decl_name_token[fn_i];
         if (name_token != INVALID)
@@ -152,14 +191,7 @@ uint error_token_for_method(uint fn_i)
 
 void record_error(uint token_i, uint code, uint detail)
 {
-    uint old;
-    InterlockedMin(status[1], token_i, old);
-    if (token_i <= old)
-    {
-        status[0] = 0u;
-        status[2] = code;
-        status[3] = detail;
-    }
+    record_min_token_error(status, token_i, code, detail);
 }
 
 [shader("compute")]
@@ -167,11 +199,17 @@ void record_error(uint token_i, uint code, uint detail)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
-    if (i >= gParams.method_capacity)
+    uint method_count = active_method_capacity();
+    if (i >= method_count)
         return;
 
-    uint fn_i = sorted_method_key_order[i];
-    if (fn_i >= gParams.method_capacity)
+    uint fn_i;
+    if (!sorted_order_item(
+        i,
+        method_count,
+        method_count,
+        sorted_method_key_order,
+        fn_i))
         return;
 
     method_key_duplicate_of[fn_i] = INVALID;
@@ -192,16 +230,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     method_key_status[fn_i] =
         method_decl_visibility[fn_i] == METHOD_VIS_PUBLIC ? METHOD_KEY_STATUS_PUBLIC_OK
                                                           : METHOD_KEY_STATUS_PRIVATE_OK;
-    if (i == 0u)
+    uint prev_fn_i;
+    if (!sorted_adjacent_duplicate<MethodKeyEquality>(
+        i,
+        method_count,
+        method_count,
+        sorted_method_key_order,
+        fn_i,
+        prev_fn_i))
         return;
-
-    uint prev_fn_i = sorted_method_key_order[i - 1u];
-    if (prev_fn_i >= gParams.method_capacity)
-        return;
-
-    if (!method_keys_equal(prev_fn_i, fn_i))
-        return;
-
     method_key_status[fn_i] = METHOD_KEY_STATUS_DUPLICATE;
     method_key_duplicate_of[fn_i] = prev_fn_i;
     record_error(error_token_for_method(fn_i), ERR_BAD_HIR, METHOD_KEY_STATUS_DUPLICATE);

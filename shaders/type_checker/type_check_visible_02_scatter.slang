@@ -18,6 +18,7 @@ StructuredBuffer<TokenIn> token_words;
 StructuredBuffer<uint> token_count;
 StructuredBuffer<uint> token_file_id;
 StructuredBuffer<uint> name_id_by_token;
+StructuredBuffer<uint> hir_value_decl_name_present;
 StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> enclosing_fn_end;
 StructuredBuffer<uint> scope_end;
@@ -29,6 +30,7 @@ static const uint ENCODE_BASE = 0xfffffffeu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint INTRINSIC_NONE = 0u;
+static const uint LANGUAGE_SYMBOL_COUNT = 19u;
 
 static const uint TK_IDENT = 1u;
 static const uint TK_LPAREN = 4u;
@@ -482,6 +484,8 @@ bool ident_is_use(uint i)
     if (prev == TK_FN || prev == TK_LET || prev == TK_CONST || prev == TK_ENUM ||
         prev == TK_STRUCT || prev == TK_IMPL || prev == TK_FOR || prev == TK_DOT)
         return false;
+    if (is_builtin_call(i))
+        return false;
     uint j = i;
     [loop]
     for (uint guard = 0u; guard < 256u && j > 0u; guard += 1u)
@@ -496,8 +500,6 @@ bool ident_is_use(uint i)
     }
 
     uint next = i + 1u < active_token_count() ? token_kind(i + 1u) : 0u;
-    if (is_builtin_call(i))
-        return false;
     return next != TK_COLON;
 }
 
@@ -563,7 +565,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
     uint n = active_token_count();
-    if (i >= n || !ident_is_use(i))
+    if (i >= n)
+        return;
+    if (gParams.n_hir_nodes != 0u && token_kind(i) == TK_IDENT)
+    {
+        uint name_id = name_id_by_token[i];
+        if (name_id != INVALID && name_id < gParams.n_tokens + LANGUAGE_SYMBOL_COUNT &&
+            hir_value_decl_name_present[name_id] == 0u)
+            return;
+    }
+    if (!ident_is_use(i))
         return;
 
     uint decl_i = resolve_visible_declaration(i);

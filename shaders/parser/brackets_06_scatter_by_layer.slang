@@ -1,6 +1,8 @@
 // shaders/parser/brackets_06_scatter_by_layer.slang
 // Scatter indices into per-layer arrays using atomic cursors seeded from offsets.
 
+import scatter;
+
 struct Params
 {
     uint n_sc;
@@ -33,15 +35,13 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint code = sc_stream[i];
     if ((code & 1u) == 1u)
     {
-        uint slot;
-        InterlockedAdd(cur_push[l], 1, slot);
+        uint slot = atomic_counter_add(cur_push, l, 1u);
         pushes_by_layer[slot] = i;
         slot_for_index[i] = slot;
     }
     else
     {
-        uint slot;
-        InterlockedAdd(cur_pop[l], 1, slot);
+        uint slot = atomic_counter_add(cur_pop, l, 1u);
         pops_by_layer[slot] = i;
         slot_for_index[i] = slot;
     }

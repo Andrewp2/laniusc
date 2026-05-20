@@ -8,6 +8,9 @@
 // - It does not inspect source bytes, hash token text, scan impl token bodies,
 //   build a direct lookup table, or decide whether a call resolves.
 
+import generated_parse_production_ids;
+import tree_walk;
+
 struct Params
 {
     uint n_tokens;
@@ -38,15 +41,6 @@ static const uint MAX_GROUPS_X = 65535u;
 static const uint HIR_FN = 3u;
 static const uint HIR_PARAM = 4u;
 
-static const uint PROD_FN_ITEM = 12u;
-static const uint PROD_IMPL_ITEM = 15u;
-static const uint PROD_IMPL_METHOD = 20u;
-static const uint PROD_IMPL_METHOD_PUB = 21u;
-static const uint PROD_PARAM_LIST = 52u;
-static const uint PROD_PARAM_IDENT = 53u;
-static const uint PROD_PARAM_SELF = 54u;
-static const uint PROD_PARAM_REF_SELF = 55u;
-
 static const uint METHOD_RECEIVER_NONE = 0u;
 static const uint METHOD_RECEIVER_SELF = 1u;
 static const uint METHOD_RECEIVER_REF_SELF = 2u;
@@ -75,21 +69,69 @@ uint node_production(uint i)
     return valid_node(i) ? node_kind[i] : INVALID;
 }
 
-uint first_child_node(uint i)
+uint method_collect_parent_record(uint i)
 {
-    uint child = valid_node(i) ? first_child[i] : INVALID;
-    return valid_node(child) ? child : INVALID;
+    return parent[i];
 }
 
-uint next_sibling_node(uint i)
+uint method_collect_first_child_record(uint i)
 {
-    uint sibling = valid_node(i) ? next_sibling[i] : INVALID;
-    return valid_node(sibling) ? sibling : INVALID;
+    return first_child[i];
+}
+
+uint method_collect_next_sibling_record(uint i)
+{
+    return next_sibling[i];
+}
+
+public struct MethodCollectWalkGraph : ITreeWalkGraph
+{
+    public static bool valid(uint node)
+    {
+        return valid_node(node);
+    }
+
+    public static uint parent(uint node)
+    {
+        return method_collect_parent_record(node);
+    }
+}
+
+public struct MethodCollectChildGraph : ITreeChildGraph
+{
+    public static bool valid(uint node)
+    {
+        return valid_node(node);
+    }
+
+    public static uint first_child(uint node)
+    {
+        return method_collect_first_child_record(node);
+    }
+
+    public static uint next_sibling(uint node)
+    {
+        return method_collect_next_sibling_record(node);
+    }
+}
+
+public struct MethodCollectProductionPredicate : ITreeWalkKeyPredicate
+{
+    public static bool matches(uint node, uint key)
+    {
+        return node_kind[node] == key;
+    }
+}
+
+uint first_child_node(uint i)
+{
+    uint child;
+    return tree_child_first<MethodCollectChildGraph>(i, child) ? child : INVALID;
 }
 
 uint parent_node(uint i)
 {
-    uint p = valid_node(i) ? parent[i] : INVALID;
+    uint p = valid_node(i) ? method_collect_parent_record(i) : INVALID;
     return valid_node(p) ? p : INVALID;
 }
 
@@ -100,65 +142,70 @@ bool is_impl_method_production(uint prod)
 
 bool is_param_production(uint prod)
 {
-    return prod == PROD_PARAM_IDENT || prod == PROD_PARAM_SELF || prod == PROD_PARAM_REF_SELF;
+    return prod == PROD_PARAM_NAMED || prod == PROD_PARAM_SELF || prod == PROD_PARAM_SELF_REF;
 }
 
 uint ancestor_impl_node(uint i)
 {
-    uint cur = i;
-    [loop]
-    for (uint guard = 0u; guard < 32u; guard += 1u)
-    {
-        uint p = parent_node(cur);
-        if (p == INVALID)
-            return INVALID;
-        if (node_kind[p] == PROD_IMPL_ITEM)
-            return p;
-        cur = p;
-    }
-    return INVALID;
+    uint ancestor;
+    if (find_ancestor_matching_key<
+        MethodCollectWalkGraph,
+        MethodCollectProductionPredicate>(
+        i,
+        PROD_IMPL_INHERENT,
+        32u,
+        ancestor))
+        return ancestor;
+
+    return find_ancestor_matching_key<
+        MethodCollectWalkGraph,
+        MethodCollectProductionPredicate>(
+        i,
+        PROD_IMPL_TRAIT,
+        32u,
+        ancestor) ? ancestor : INVALID;
+}
+
+uint direct_child_with_production(uint i, uint prod)
+{
+    uint child;
+    return tree_child_first_matching_key<
+        MethodCollectChildGraph,
+        MethodCollectProductionPredicate>(
+        i,
+        prod,
+        16u,
+        child) ? child : INVALID;
 }
 
 uint first_method_param_token(uint fn_node)
 {
-    uint child = first_child_node(fn_node);
-    [loop]
-    for (uint guard = 0u; guard < 16u && child != INVALID; guard += 1u)
+    uint child = direct_child_with_production(fn_node, PROD_PARAMS_SOME);
+    if (child != INVALID)
     {
-        if (node_kind[child] == PROD_PARAM_LIST)
-        {
-            uint param = first_child_node(child);
-            if (param != INVALID && hir_kind[param] == HIR_PARAM &&
-                is_param_production(node_kind[param]))
-                return hir_token_pos[param];
-            return INVALID;
-        }
-        child = next_sibling_node(child);
+        uint param = first_child_node(child);
+        if (param != INVALID && hir_kind[param] == HIR_PARAM &&
+            is_param_production(node_kind[param]))
+            return hir_token_pos[param];
     }
     return INVALID;
 }
 
 uint method_receiver_mode(uint fn_node)
 {
-    uint child = first_child_node(fn_node);
-    [loop]
-    for (uint guard = 0u; guard < 16u && child != INVALID; guard += 1u)
+    uint child = direct_child_with_production(fn_node, PROD_PARAMS_SOME);
+    if (child != INVALID)
     {
-        if (node_kind[child] == PROD_PARAM_LIST)
-        {
-            uint param = first_child_node(child);
-            if (param == INVALID || hir_kind[param] != HIR_PARAM)
-                return METHOD_RECEIVER_NONE;
-            uint prod = node_kind[param];
-            if (prod == PROD_PARAM_SELF)
-                return METHOD_RECEIVER_SELF;
-            if (prod == PROD_PARAM_REF_SELF)
-                return METHOD_RECEIVER_REF_SELF;
-            if (prod == PROD_PARAM_IDENT)
-                return METHOD_RECEIVER_EXPLICIT;
+        uint param = first_child_node(child);
+        if (param == INVALID || hir_kind[param] != HIR_PARAM)
             return METHOD_RECEIVER_NONE;
-        }
-        child = next_sibling_node(child);
+        uint prod = node_kind[param];
+        if (prod == PROD_PARAM_SELF)
+            return METHOD_RECEIVER_SELF;
+        if (prod == PROD_PARAM_SELF_REF)
+            return METHOD_RECEIVER_REF_SELF;
+        if (prod == PROD_PARAM_NAMED)
+            return METHOD_RECEIVER_EXPLICIT;
     }
     return METHOD_RECEIVER_NONE;
 }
@@ -171,7 +218,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i >= active_hir_node_count())
         return;
 
-    if (node_kind[i] != PROD_FN_ITEM || hir_kind[i] != HIR_FN)
+    if (node_kind[i] != PROD_IMPL_FN || hir_kind[i] != HIR_FN)
         return;
 
     uint method_parent = parent_node(i);

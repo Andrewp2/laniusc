@@ -1,3 +1,6 @@
+import gpu_index;
+import status;
+
 struct Params
 {
     uint n_tokens;
@@ -19,6 +22,12 @@ StructuredBuffer<uint> token_count;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> language_decl_name_id;
 StructuredBuffer<uint4> call_arg_record;
+StructuredBuffer<uint> call_arg_node;
+StructuredBuffer<uint> hir_kind;
+StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_token_end;
+StructuredBuffer<uint> hir_call_callee_node;
+StructuredBuffer<uint> hir_call_arg_end;
 
 RWStructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> call_intrinsic_tag;
@@ -41,6 +50,8 @@ static const uint TY_FLOAT = 5u;
 static const uint TY_CHAR = 6u;
 static const uint TY_STRING = 7u;
 static const uint TY_GENERIC_BASE = 8192u;
+static const uint HIR_MEMBER_EXPR = 21u;
+static const uint HIR_PATH_EXPR = 33u;
 static const uint LANGUAGE_DECL_COUNT = 18u;
 static const uint LANGUAGE_PRIMITIVE_DECL_FIRST = 3u;
 static const uint ERR_UNRESOLVED_IDENT = 2u;
@@ -89,6 +100,11 @@ uint active_token_count()
     return min(token_count[0], gParams.n_tokens);
 }
 
+bool valid_node(uint node)
+{
+    return node != INVALID && node < gParams.n_hir_nodes;
+}
+
 uint lookup_capacity()
 {
     return max(gParams.n_tokens * 2u, 1u);
@@ -114,14 +130,7 @@ bool same_name_id(uint a, uint b)
 
 void record_error(uint token_i, uint code, uint detail)
 {
-    uint old;
-    InterlockedMin(status[1], token_i, old);
-    if (token_i <= old)
-    {
-        status[0] = 0u;
-        status[2] = code;
-        status[3] = detail;
-    }
+    record_min_token_error(status, token_i, code, detail);
 }
 
 bool is_generic_type(uint ty)
@@ -267,14 +276,34 @@ uint call_node_for_callee_token(uint callee_i)
 {
     if (callee_i >= active_token_count())
         return INVALID;
-    return call_arg_record[callee_i * PARAM_CACHE_STRIDE].z;
+    return call_arg_record[callee_i].z;
+}
+
+bool call_record_is_member_call(uint call_node)
+{
+    if (!valid_node(call_node))
+        return false;
+    uint callee_node = hir_call_callee_node[call_node];
+    return valid_node(callee_node) && hir_kind[callee_node] == HIR_MEMBER_EXPR;
+}
+
+bool call_record_is_qualified_path_call(uint call_node)
+{
+    if (!valid_node(call_node))
+        return false;
+    uint callee_node = hir_call_callee_node[call_node];
+    if (!valid_node(callee_node) || hir_kind[callee_node] != HIR_PATH_EXPR)
+        return false;
+    uint start = hir_token_pos[callee_node];
+    uint end = hir_token_end[callee_node];
+    return start != INVALID && end != INVALID && end > start + 1u;
 }
 
 uint call_arg_count_for_callee(uint callee_i)
 {
     if (callee_i >= active_token_count())
         return 0u;
-    return call_arg_record[callee_i * PARAM_CACHE_STRIDE].w;
+    return call_arg_record[callee_i].w;
 }
 
 bool call_arg_token_range(uint callee_i, uint ordinal, out uint arg_start_i, out uint arg_end_i)
@@ -283,9 +312,25 @@ bool call_arg_token_range(uint callee_i, uint ordinal, out uint arg_start_i, out
     arg_end_i = INVALID;
     if (callee_i >= active_token_count() || ordinal >= PARAM_CACHE_STRIDE)
         return false;
-    uint4 record = call_arg_record[callee_i * PARAM_CACHE_STRIDE + ordinal];
-    arg_start_i = record.x;
-    arg_end_i = record.y;
+    if (ordinal == 0u)
+    {
+        uint4 record = call_arg_record[callee_i];
+        arg_start_i = record.x;
+        arg_end_i = record.y;
+    }
+    else
+    {
+        uint arg_node = row_major_load<uint>(
+            call_arg_node,
+            callee_i,
+            PARAM_CACHE_STRIDE,
+            ordinal,
+            INVALID);
+        if (arg_node == INVALID || arg_node >= gParams.n_hir_nodes)
+            return false;
+        arg_start_i = hir_token_pos[arg_node];
+        arg_end_i = hir_call_arg_end[arg_node];
+    }
     return arg_start_i != INVALID && arg_end_i != INVALID && arg_start_i < arg_end_i;
 }
 
@@ -430,7 +475,12 @@ uint inferred_generic_return_type_direct(uint callee_i, uint fn_i, uint ret_ty)
     [loop]
     for (uint arg_i = 0u; arg_i < arg_count && arg_i < PARAM_CACHE_STRIDE; arg_i += 1u)
     {
-        uint param_ty = call_param_type[fn_i * PARAM_CACHE_STRIDE + arg_i];
+        uint param_ty = row_major_load<uint>(
+            call_param_type,
+            fn_i,
+            PARAM_CACHE_STRIDE,
+            arg_i,
+            TY_UNKNOWN);
         if (param_ty != ret_ty)
             continue;
 
@@ -490,7 +540,12 @@ uint inferred_generic_return_type(uint callee_i, uint fn_i, uint ret_ty)
     [loop]
     for (uint arg_i = 0u; arg_i < arg_count && arg_i < PARAM_CACHE_STRIDE; arg_i += 1u)
     {
-        uint param_ty = call_param_type[fn_i * PARAM_CACHE_STRIDE + arg_i];
+        uint param_ty = row_major_load<uint>(
+            call_param_type,
+            fn_i,
+            PARAM_CACHE_STRIDE,
+            arg_i,
+            TY_UNKNOWN);
         if (param_ty != ret_ty)
             continue;
 
@@ -523,7 +578,12 @@ bool check_generic_argument_consistency(uint callee_i, uint fn_i)
     [loop]
     for (uint arg_i = 0u; arg_i < arg_count && arg_i < PARAM_CACHE_STRIDE; arg_i += 1u)
     {
-        uint param_ty = call_param_type[fn_i * PARAM_CACHE_STRIDE + arg_i];
+        uint param_ty = row_major_load<uint>(
+            call_param_type,
+            fn_i,
+            PARAM_CACHE_STRIDE,
+            arg_i,
+            TY_UNKNOWN);
         if (!is_generic_type(param_ty))
             continue;
 
@@ -538,7 +598,12 @@ bool check_generic_argument_consistency(uint callee_i, uint fn_i)
         [loop]
         for (uint prev_i = 0u; prev_i < arg_i && prev_i < PARAM_CACHE_STRIDE; prev_i += 1u)
         {
-            uint prev_param_ty = call_param_type[fn_i * PARAM_CACHE_STRIDE + prev_i];
+            uint prev_param_ty = row_major_load<uint>(
+                call_param_type,
+                fn_i,
+                PARAM_CACHE_STRIDE,
+                prev_i,
+                TY_UNKNOWN);
             if (prev_param_ty != param_ty)
                 continue;
 
@@ -568,6 +633,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint call_node = call_node_for_callee_token(i);
     bool is_call = call_node != INVALID;
+    if (is_call && call_record_is_member_call(call_node))
+        return;
+    if (is_call && call_record_is_qualified_path_call(call_node))
+        return;
 
     if (call_intrinsic_tag[i] != INTRINSIC_NONE)
     {

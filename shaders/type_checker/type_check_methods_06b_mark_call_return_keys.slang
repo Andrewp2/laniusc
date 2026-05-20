@@ -17,6 +17,7 @@ struct Params
     uint n_tokens;
     uint source_len;
     uint n_hir_nodes;
+    uint n_source_files;
 };
 
 ConstantBuffer<Params> gParams;
@@ -62,6 +63,11 @@ uint active_hir_node_count()
     return min(gParams.n_hir_nodes, hir_status[5u]);
 }
 
+uint source_file_count()
+{
+    return max(gParams.n_source_files, 1u);
+}
+
 bool valid_node(uint i)
 {
     return i != INVALID && i < active_hir_node_count();
@@ -71,7 +77,7 @@ uint module_for_hir_node(uint node)
 {
     uint token_i = node < active_hir_node_count() ? hir_token_pos[node] : INVALID;
     uint file_id = token_i < active_token_count() ? token_file_id[token_i] : INVALID;
-    uint module_id = file_id < gParams.n_hir_nodes ? module_id_by_file_id[file_id] : INVALID;
+    uint module_id = file_id < source_file_count() ? module_id_by_file_id[file_id] : INVALID;
     if (module_id != INVALID)
         return module_id;
     return file_id == 0u ? 0u : INVALID;

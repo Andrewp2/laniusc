@@ -6,6 +6,7 @@ impl GpuTypeChecker {
         &self,
         device: &wgpu::Device,
         source_len: u32,
+        source_file_capacity: u32,
         token_capacity: u32,
         token_buf: &wgpu::Buffer,
         token_count_buf: &wgpu::Buffer,
@@ -89,15 +90,110 @@ impl GpuTypeChecker {
             u32::MAX,
             wgpu::BufferUsages::empty(),
         );
-        let scope_end = storage_u32_rw(
-            device,
-            "type_check.resident.scope_end",
-            token_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
         let name_capacity = token_capacity.saturating_add(LANGUAGE_SYMBOL_COUNT).max(1);
         let token_scan_n_blocks = token_capacity.div_ceil(256).max(1);
         let name_n_blocks = name_capacity.div_ceil(256).max(1);
+        let hir_value_decl_name_present = storage_u32_rw(
+            device,
+            "type_check.resident.hir_value_decl_name_present",
+            name_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let hir_visible_decl_scan_capacity = hir_node_capacity.max(1);
+        let hir_visible_decl_capacity = token_capacity.max(1);
+        let hir_decl_scan_n_blocks = hir_visible_decl_scan_capacity.div_ceil(256).max(1);
+        let hir_decl_record_n_blocks = hir_visible_decl_capacity.div_ceil(256).max(1);
+        let hir_decl_scan_params = NameScanParams {
+            n_items: hir_node_capacity,
+            n_blocks: hir_decl_scan_n_blocks,
+            scan_step: 0,
+        };
+        let hir_decl_scan_steps = make_name_scan_steps(device, hir_decl_scan_params);
+        let hir_decl_tree_leaf_count = hir_visible_decl_capacity
+            .div_ceil(HIR_VISIBLE_DECL_ROW_BLOCK_SIZE)
+            .max(1);
+        let hir_decl_tree_leaf_base = hir_decl_tree_leaf_count.next_power_of_two().max(1);
+        let hir_decl_tree_len = hir_decl_tree_leaf_base.saturating_mul(2).max(2) as usize;
+        let hir_visible_decl_count_out = storage_u32_rw(
+            device,
+            "type_check.resident.hir_visible_decl_count_out",
+            1,
+            wgpu::BufferUsages::empty(),
+        );
+        let hir_visible_decl_owner_fn = storage_u32_rw(
+            device,
+            "type_check.resident.hir_visible_decl_owner_fn",
+            hir_visible_decl_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let hir_visible_decl_name_id = storage_u32_rw(
+            device,
+            "type_check.resident.hir_visible_decl_name_id",
+            hir_visible_decl_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let hir_visible_decl_token = storage_u32_rw(
+            device,
+            "type_check.resident.hir_visible_decl_token",
+            hir_visible_decl_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let hir_visible_decl_scope_end = storage_u32_rw(
+            device,
+            "type_check.resident.hir_visible_decl_scope_end",
+            hir_visible_decl_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let hir_visible_decl_key_order = storage_u32_rw(
+            device,
+            "type_check.resident.hir_visible_decl_key_order",
+            hir_visible_decl_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let hir_visible_decl_key_order_tmp = storage_u32_rw(
+            device,
+            "type_check.resident.hir_visible_decl_key_order_tmp",
+            hir_visible_decl_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let hir_visible_decl_key_radix_dispatch_args = storage_u32_rw(
+            device,
+            "type_check.resident.hir_visible_decl_key_radix_dispatch_args",
+            3,
+            wgpu::BufferUsages::INDIRECT,
+        );
+        let hir_visible_decl_key_radix_histogram_len =
+            (hir_decl_record_n_blocks as usize).max(1) * NAME_RADIX_BUCKETS as usize;
+        let hir_visible_decl_key_radix_block_histogram = storage_u32_rw(
+            device,
+            "type_check.resident.hir_visible_decl_key_radix_block_histogram",
+            hir_visible_decl_key_radix_histogram_len,
+            wgpu::BufferUsages::empty(),
+        );
+        let hir_visible_decl_key_radix_block_bucket_prefix = storage_u32_rw(
+            device,
+            "type_check.resident.hir_visible_decl_key_radix_block_bucket_prefix",
+            hir_visible_decl_key_radix_histogram_len,
+            wgpu::BufferUsages::empty(),
+        );
+        let hir_visible_decl_key_radix_bucket_total = storage_u32_rw(
+            device,
+            "type_check.resident.hir_visible_decl_key_radix_bucket_total",
+            NAME_RADIX_BUCKETS as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let hir_visible_decl_key_radix_bucket_base = storage_u32_rw(
+            device,
+            "type_check.resident.hir_visible_decl_key_radix_bucket_base",
+            NAME_RADIX_BUCKETS as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let hir_visible_decl_scope_tree = storage_u32_rw(
+            device,
+            "type_check.resident.hir_visible_decl_scope_tree",
+            hir_decl_tree_len,
+            wgpu::BufferUsages::empty(),
+        );
         let name_scan_params = NameScanParams {
             n_items: token_capacity,
             n_blocks: token_scan_n_blocks,
@@ -151,6 +247,12 @@ impl GpuTypeChecker {
             "type_check.resident.name_scan_total",
             1,
             wgpu::BufferUsages::empty(),
+        );
+        let name_max_len = storage_u32_rw(
+            device,
+            "type_check.resident.name_max_len",
+            1,
+            wgpu::BufferUsages::COPY_DST,
         );
         let name_spans = storage_u32_rw(
             device,
@@ -219,6 +321,12 @@ impl GpuTypeChecker {
             LANGUAGE_DECL_COUNT as usize,
             wgpu::BufferUsages::empty(),
         );
+        let language_type_code_by_name_id = storage_u32_rw(
+            device,
+            "type_check.resident.language_type_code_by_name_id",
+            name_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
         let radix_histogram_len = (name_n_blocks as usize).max(1) * NAME_RADIX_BUCKETS as usize;
         let radix_block_histogram = storage_u32_rw(
             device,
@@ -243,6 +351,12 @@ impl GpuTypeChecker {
             "type_check.resident.radix_bucket_base",
             NAME_RADIX_BUCKETS as usize,
             wgpu::BufferUsages::empty(),
+        );
+        let radix_dispatch_args = storage_u32_rw(
+            device,
+            "type_check.resident.radix_dispatch_args",
+            3,
+            wgpu::BufferUsages::INDIRECT,
         );
         let run_head_mask = storage_u32_rw(
             device,
@@ -453,7 +567,13 @@ impl GpuTypeChecker {
         let call_arg_record = storage_u32_rw(
             device,
             "type_check.resident.call_arg_record",
-            (token_capacity as usize).max(1) * CALL_PARAM_CACHE_STRIDE * 4,
+            (token_capacity as usize).max(1) * 4,
+            wgpu::BufferUsages::empty(),
+        );
+        let call_arg_node = storage_u32_rw(
+            device,
+            "type_check.resident.call_arg_node",
+            (token_capacity as usize).max(1) * CALL_PARAM_CACHE_STRIDE,
             wgpu::BufferUsages::empty(),
         );
         let function_lookup_capacity = token_capacity.saturating_mul(2).max(1) as usize;
@@ -526,7 +646,7 @@ impl GpuTypeChecker {
         let method_module_id_by_file_id_implicit_root = storage_u32_fill_rw(
             device,
             "type_check.resident.method_module_id_by_file_id_implicit_root",
-            hir_node_capacity as usize,
+            source_file_capacity.max(1) as usize,
             0,
             wgpu::BufferUsages::empty(),
         );
@@ -638,6 +758,36 @@ impl GpuTypeChecker {
         let type_decl_generic_param_count = storage_u32_rw(
             device,
             "type_check.resident.type_decl_generic_param_count",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let type_decl_generic_param_count_by_node = storage_u32_rw(
+            device,
+            "type_check.resident.type_decl_generic_param_count_by_node",
+            hir_node_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let type_decl_const_param_count_by_node = storage_u32_rw(
+            device,
+            "type_check.resident.type_decl_const_param_count_by_node",
+            hir_node_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let type_decl_hir_node_by_token = storage_u32_rw(
+            device,
+            "type_check.resident.type_decl_hir_node_by_token",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let type_generic_param_slot_by_token = storage_u32_rw(
+            device,
+            "type_check.resident.type_generic_param_slot_by_token",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let type_const_param_slot_by_token = storage_u32_rw(
+            device,
+            "type_check.resident.type_const_param_slot_by_token",
             token_capacity as usize,
             wgpu::BufferUsages::empty(),
         );
@@ -773,9 +923,48 @@ impl GpuTypeChecker {
             token_capacity as usize,
             wgpu::BufferUsages::empty(),
         );
-        let empty_hir_len = hir_node_capacity.max(1) as usize;
+        let struct_init_field_ordinal_by_node = storage_u32_rw(
+            device,
+            "type_check.resident.struct_init_field_ordinal_by_node",
+            hir_node_capacity.max(1) as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let token_active_dispatch_args = storage_u32_rw(
+            device,
+            "type_check.resident.token_active_dispatch_args",
+            3,
+            wgpu::BufferUsages::INDIRECT,
+        );
+        let hir_active_dispatch_args = storage_u32_rw(
+            device,
+            "type_check.resident.hir_active_dispatch_args",
+            3,
+            wgpu::BufferUsages::INDIRECT,
+        );
+        let token_hir_active_dispatch_args = storage_u32_rw(
+            device,
+            "type_check.resident.token_hir_active_dispatch_args",
+            3,
+            wgpu::BufferUsages::INDIRECT,
+        );
+        let hir_active_count = storage_u32_rw(
+            device,
+            "type_check.resident.hir_active_count",
+            1,
+            wgpu::BufferUsages::empty(),
+        );
+        let empty_hir_len = if uses_hir_items {
+            1
+        } else {
+            hir_node_capacity.max(1) as usize
+        };
         let invalid_node = vec![u32::MAX; empty_hir_len];
         let zero_node = vec![0u32; empty_hir_len];
+        let identity_node: Vec<u32> = if uses_hir_items {
+            vec![0]
+        } else {
+            (0..empty_hir_len as u32).collect()
+        };
         let node_kind_empty =
             storage_ro_from_u32s(device, "type_check.resident.node_kind.empty", &zero_node);
         let parent_empty =
@@ -789,6 +978,11 @@ impl GpuTypeChecker {
             device,
             "type_check.resident.next_sibling.empty",
             &invalid_node,
+        );
+        let hir_semantic_dense_node_identity = storage_ro_from_u32s(
+            device,
+            "type_check.resident.hir_semantic_dense_node.identity",
+            &identity_node,
         );
         let mut resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::new();
         resources.insert("gParams".into(), self.params_buf.as_entire_binding());
@@ -813,9 +1007,26 @@ impl GpuTypeChecker {
             hir_token_file_id_buf.as_entire_binding(),
         );
         resources.insert("hir_status".into(), hir_status_buf.as_entire_binding());
+        resources.insert(
+            "token_active_dispatch_args".into(),
+            token_active_dispatch_args.as_entire_binding(),
+        );
+        resources.insert(
+            "hir_active_dispatch_args".into(),
+            hir_active_dispatch_args.as_entire_binding(),
+        );
+        resources.insert(
+            "token_hir_active_dispatch_args".into(),
+            token_hir_active_dispatch_args.as_entire_binding(),
+        );
+        resources.insert(
+            "hir_active_count".into(),
+            hir_active_count.as_entire_binding(),
+        );
         if let Some(hir_items) = hir_items {
             resources.insert("node_kind".into(), hir_items.node_kind.as_entire_binding());
             resources.insert("parent".into(), hir_items.parent.as_entire_binding());
+            resources.insert("parent_record".into(), hir_items.parent.as_entire_binding());
             resources.insert(
                 "first_child".into(),
                 hir_items.first_child.as_entire_binding(),
@@ -823,6 +1034,10 @@ impl GpuTypeChecker {
             resources.insert(
                 "next_sibling".into(),
                 hir_items.next_sibling.as_entire_binding(),
+            );
+            resources.insert(
+                "subtree_end".into(),
+                hir_items.subtree_end.as_entire_binding(),
             );
             resources.insert("hir_item_kind".into(), hir_items.kind.as_entire_binding());
             resources.insert(
@@ -846,24 +1061,24 @@ impl GpuTypeChecker {
                 hir_items.type_len_value.as_entire_binding(),
             );
             resources.insert(
+                "hir_type_path_leaf_node".into(),
+                hir_items.type_path_leaf_node.as_entire_binding(),
+            );
+            resources.insert(
+                "hir_type_arg_start".into(),
+                hir_items.type_arg_start.as_entire_binding(),
+            );
+            resources.insert(
+                "hir_type_arg_count".into(),
+                hir_items.type_arg_count.as_entire_binding(),
+            );
+            resources.insert(
+                "hir_type_arg_next".into(),
+                hir_items.type_arg_next.as_entire_binding(),
+            );
+            resources.insert(
                 "hir_param_record".into(),
                 hir_items.param_record.as_entire_binding(),
-            );
-            resources.insert(
-                "hir_expr_form".into(),
-                hir_items.expr_form.as_entire_binding(),
-            );
-            resources.insert(
-                "hir_expr_left_node".into(),
-                hir_items.expr_left_node.as_entire_binding(),
-            );
-            resources.insert(
-                "hir_expr_right_node".into(),
-                hir_items.expr_right_node.as_entire_binding(),
-            );
-            resources.insert(
-                "hir_expr_value_token".into(),
-                hir_items.expr_value_token.as_entire_binding(),
             );
             resources.insert(
                 "hir_expr_record".into(),
@@ -890,6 +1105,18 @@ impl GpuTypeChecker {
                 hir_items.stmt_record.as_entire_binding(),
             );
             resources.insert(
+                "hir_array_lit_first_element".into(),
+                hir_items.array_lit_first_element.as_entire_binding(),
+            );
+            resources.insert(
+                "hir_array_lit_element_count".into(),
+                hir_items.array_lit_element_count.as_entire_binding(),
+            );
+            resources.insert(
+                "hir_array_element_next".into(),
+                hir_items.array_element_next.as_entire_binding(),
+            );
+            resources.insert(
                 "hir_call_callee_node".into(),
                 hir_items.call_callee_node.as_entire_binding(),
             );
@@ -914,8 +1141,32 @@ impl GpuTypeChecker {
                 hir_items.call_arg_ordinal.as_entire_binding(),
             );
             resources.insert(
+                "hir_variant_parent_enum".into(),
+                hir_items.variant_parent_enum.as_entire_binding(),
+            );
+            resources.insert(
+                "hir_variant_payload_start".into(),
+                hir_items.variant_payload_start.as_entire_binding(),
+            );
+            resources.insert(
                 "hir_variant_payload_count".into(),
                 hir_items.variant_payload_count.as_entire_binding(),
+            );
+            resources.insert(
+                "hir_match_arm_result_node".into(),
+                hir_items.match_arm_result_node.as_entire_binding(),
+            );
+            resources.insert(
+                "hir_match_payload_owner_arm".into(),
+                hir_items.match_payload_owner_arm.as_entire_binding(),
+            );
+            resources.insert(
+                "hir_match_payload_match_node".into(),
+                hir_items.match_payload_match_node.as_entire_binding(),
+            );
+            resources.insert(
+                "hir_match_payload_ordinal".into(),
+                hir_items.match_payload_ordinal.as_entire_binding(),
             );
             resources.insert(
                 "hir_struct_field_parent_struct".into(),
@@ -957,9 +1208,18 @@ impl GpuTypeChecker {
                 "hir_struct_lit_field_value_node".into(),
                 hir_items.struct_lit_field_value_node.as_entire_binding(),
             );
+            resources.insert(
+                "hir_semantic_dense_node".into(),
+                hir_items.semantic_dense_node.as_entire_binding(),
+            );
+            resources.insert(
+                "hir_semantic_count".into(),
+                hir_items.semantic_count.as_entire_binding(),
+            );
         } else {
             resources.insert("node_kind".into(), node_kind_empty.as_entire_binding());
             resources.insert("parent".into(), parent_empty.as_entire_binding());
+            resources.insert("parent_record".into(), parent_empty.as_entire_binding());
             resources.insert("first_child".into(), first_child_empty.as_entire_binding());
             resources.insert(
                 "next_sibling".into(),
@@ -983,20 +1243,20 @@ impl GpuTypeChecker {
                 "hir_type_len_value".into(),
                 parent_empty.as_entire_binding(),
             );
+            resources.insert(
+                "hir_type_path_leaf_node".into(),
+                parent_empty.as_entire_binding(),
+            );
+            resources.insert(
+                "hir_type_arg_start".into(),
+                parent_empty.as_entire_binding(),
+            );
+            resources.insert(
+                "hir_type_arg_count".into(),
+                node_kind_empty.as_entire_binding(),
+            );
+            resources.insert("hir_type_arg_next".into(), parent_empty.as_entire_binding());
             resources.insert("hir_param_record".into(), parent_empty.as_entire_binding());
-            resources.insert("hir_expr_form".into(), node_kind_empty.as_entire_binding());
-            resources.insert(
-                "hir_expr_left_node".into(),
-                parent_empty.as_entire_binding(),
-            );
-            resources.insert(
-                "hir_expr_right_node".into(),
-                parent_empty.as_entire_binding(),
-            );
-            resources.insert(
-                "hir_expr_value_token".into(),
-                parent_empty.as_entire_binding(),
-            );
             resources.insert("hir_expr_record".into(), parent_empty.as_entire_binding());
             resources.insert(
                 "hir_expr_int_value".into(),
@@ -1015,6 +1275,18 @@ impl GpuTypeChecker {
                 parent_empty.as_entire_binding(),
             );
             resources.insert("hir_stmt_record".into(), parent_empty.as_entire_binding());
+            resources.insert(
+                "hir_array_lit_first_element".into(),
+                parent_empty.as_entire_binding(),
+            );
+            resources.insert(
+                "hir_array_lit_element_count".into(),
+                node_kind_empty.as_entire_binding(),
+            );
+            resources.insert(
+                "hir_array_element_next".into(),
+                parent_empty.as_entire_binding(),
+            );
             resources.insert(
                 "hir_call_callee_node".into(),
                 parent_empty.as_entire_binding(),
@@ -1037,8 +1309,32 @@ impl GpuTypeChecker {
                 parent_empty.as_entire_binding(),
             );
             resources.insert(
+                "hir_variant_parent_enum".into(),
+                parent_empty.as_entire_binding(),
+            );
+            resources.insert(
+                "hir_variant_payload_start".into(),
+                parent_empty.as_entire_binding(),
+            );
+            resources.insert(
                 "hir_variant_payload_count".into(),
                 node_kind_empty.as_entire_binding(),
+            );
+            resources.insert(
+                "hir_match_arm_result_node".into(),
+                parent_empty.as_entire_binding(),
+            );
+            resources.insert(
+                "hir_match_payload_owner_arm".into(),
+                parent_empty.as_entire_binding(),
+            );
+            resources.insert(
+                "hir_match_payload_match_node".into(),
+                parent_empty.as_entire_binding(),
+            );
+            resources.insert(
+                "hir_match_payload_ordinal".into(),
+                parent_empty.as_entire_binding(),
             );
             resources.insert(
                 "hir_struct_field_parent_struct".into(),
@@ -1080,10 +1376,50 @@ impl GpuTypeChecker {
                 "hir_struct_lit_field_value_node".into(),
                 parent_empty.as_entire_binding(),
             );
+            resources.insert(
+                "hir_semantic_dense_node".into(),
+                hir_semantic_dense_node_identity.as_entire_binding(),
+            );
+            resources.insert(
+                "hir_semantic_count".into(),
+                hir_active_count.as_entire_binding(),
+            );
         }
         resources.insert("status".into(), self.status_buf.as_entire_binding());
         resources.insert("visible_decl".into(), visible_decl.as_entire_binding());
         resources.insert("visible_type".into(), visible_type.as_entire_binding());
+        resources.insert(
+            "hir_value_decl_name_present".into(),
+            hir_value_decl_name_present.as_entire_binding(),
+        );
+        resources.insert(
+            "hir_visible_decl_count_out".into(),
+            hir_visible_decl_count_out.as_entire_binding(),
+        );
+        resources.insert(
+            "hir_visible_decl_owner_fn".into(),
+            hir_visible_decl_owner_fn.as_entire_binding(),
+        );
+        resources.insert(
+            "hir_visible_decl_name_id".into(),
+            hir_visible_decl_name_id.as_entire_binding(),
+        );
+        resources.insert(
+            "hir_visible_decl_token".into(),
+            hir_visible_decl_token.as_entire_binding(),
+        );
+        resources.insert(
+            "hir_visible_decl_scope_end".into(),
+            hir_visible_decl_scope_end.as_entire_binding(),
+        );
+        resources.insert(
+            "hir_visible_decl_key_order".into(),
+            hir_visible_decl_key_order.as_entire_binding(),
+        );
+        resources.insert(
+            "hir_visible_decl_scope_tree".into(),
+            hir_visible_decl_scope_tree.as_entire_binding(),
+        );
         resources.insert(
             "module_type_path_type".into(),
             module_type_path_type.as_entire_binding(),
@@ -1096,7 +1432,6 @@ impl GpuTypeChecker {
             "module_value_path_status".into(),
             module_value_path_status.as_entire_binding(),
         );
-        resources.insert("scope_end".into(), scope_end.as_entire_binding());
         resources.insert("loop_depth".into(), loop_depth.as_entire_binding());
         resources.insert("enclosing_fn".into(), enclosing_fn.as_entire_binding());
         resources.insert(
@@ -1141,6 +1476,7 @@ impl GpuTypeChecker {
             "call_arg_record".into(),
             call_arg_record.as_entire_binding(),
         );
+        resources.insert("call_arg_node".into(), call_arg_node.as_entire_binding());
         resources.insert(
             "function_lookup_key".into(),
             function_lookup_key.as_entire_binding(),
@@ -1242,6 +1578,10 @@ impl GpuTypeChecker {
             language_decl_name_id.as_entire_binding(),
         );
         resources.insert(
+            "language_type_code_by_name_id".into(),
+            language_type_code_by_name_id.as_entire_binding(),
+        );
+        resources.insert(
             "language_symbol_bytes".into(),
             language_symbol_bytes.as_entire_binding(),
         );
@@ -1272,6 +1612,26 @@ impl GpuTypeChecker {
         resources.insert(
             "type_decl_generic_param_count".into(),
             type_decl_generic_param_count.as_entire_binding(),
+        );
+        resources.insert(
+            "type_decl_generic_param_count_by_node".into(),
+            type_decl_generic_param_count_by_node.as_entire_binding(),
+        );
+        resources.insert(
+            "type_decl_const_param_count_by_node".into(),
+            type_decl_const_param_count_by_node.as_entire_binding(),
+        );
+        resources.insert(
+            "type_decl_hir_node_by_token".into(),
+            type_decl_hir_node_by_token.as_entire_binding(),
+        );
+        resources.insert(
+            "type_generic_param_slot_by_token".into(),
+            type_generic_param_slot_by_token.as_entire_binding(),
+        );
+        resources.insert(
+            "type_const_param_slot_by_token".into(),
+            type_const_param_slot_by_token.as_entire_binding(),
         );
         resources.insert(
             "type_instance_decl_token".into(),
@@ -1361,6 +1721,18 @@ impl GpuTypeChecker {
             "struct_init_field_ordinal".into(),
             struct_init_field_ordinal.as_entire_binding(),
         );
+        resources.insert(
+            "struct_init_field_ordinal_by_node".into(),
+            struct_init_field_ordinal_by_node.as_entire_binding(),
+        );
+        let hir_active_dispatch = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("type_check_resident_hir_active_dispatch_args"),
+            &passes.hir_active_dispatch_args.bind_group_layouts[0],
+            &passes.hir_active_dispatch_args.reflection,
+            0,
+            &resources,
+        )?;
         let type_instances_clear = bind_group::create_bind_group_from_reflection(
             device,
             Some("type_check_resident_type_instances_clear"),
@@ -1374,6 +1746,16 @@ impl GpuTypeChecker {
             Some("type_check_resident_type_instances_decl_generic_params"),
             &passes.type_instances_decl_generic_params.bind_group_layouts[0],
             &passes.type_instances_decl_generic_params.reflection,
+            0,
+            &resources,
+        )?;
+        let type_instances_generic_param_use_slots = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("type_check_resident_type_instances_generic_param_use_slots"),
+            &passes
+                .type_instances_generic_param_use_slots
+                .bind_group_layouts[0],
+            &passes.type_instances_generic_param_use_slots.reflection,
             0,
             &resources,
         )?;
@@ -1644,6 +2026,14 @@ impl GpuTypeChecker {
             0,
             &resources,
         )?;
+        let language_type_codes_clear = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("type_check_language_type_codes_clear"),
+            &passes.language_type_codes_clear.bind_group_layouts[0],
+            &passes.language_type_codes_clear.reflection,
+            0,
+            &resources,
+        )?;
         let language_decls_materialize = bind_group::create_bind_group_from_reflection(
             device,
             Some("type_check_language_decls_materialize"),
@@ -1655,6 +2045,7 @@ impl GpuTypeChecker {
         let language_name_bind_groups = LanguageNameBindGroups {
             clear: language_names_clear,
             mark: language_names_mark,
+            type_codes_clear: language_type_codes_clear,
             decls_materialize: language_decls_materialize,
         };
         let name_bind_groups = create_name_bind_groups_with_passes(
@@ -1678,6 +2069,7 @@ impl GpuTypeChecker {
             &name_scan_prefix_a,
             &name_scan_prefix_b,
             &name_scan_total,
+            &name_max_len,
             &name_spans,
             &name_order_in,
             &name_order_tmp,
@@ -1690,6 +2082,7 @@ impl GpuTypeChecker {
             &radix_block_bucket_prefix,
             &radix_bucket_total,
             &radix_bucket_base,
+            &radix_dispatch_args,
             &run_head_mask,
             &adjacent_equal_mask,
             &run_head_prefix,
@@ -1702,6 +2095,7 @@ impl GpuTypeChecker {
                 passes,
                 device,
                 &self.params_buf,
+                source_file_capacity,
                 token_capacity,
                 hir_node_capacity,
                 token_buf,
@@ -1711,6 +2105,7 @@ impl GpuTypeChecker {
                 hir_token_pos_buf,
                 hir_token_end_buf,
                 &self.status_buf,
+                &hir_active_count,
                 hir_items,
                 &name_id_by_token,
                 &language_name_id,
@@ -1724,12 +2119,14 @@ impl GpuTypeChecker {
                 &module_value_path_status,
                 &visible_decl,
                 &visible_type,
+                &enclosing_fn,
                 &call_fn_index,
                 &call_return_type,
                 &call_return_type_token,
                 &call_param_count,
                 &call_param_type,
                 &call_arg_record,
+                &call_arg_node,
                 &type_expr_ref_tag,
                 &type_expr_ref_payload,
                 &type_instance_kind,
@@ -1739,11 +2136,83 @@ impl GpuTypeChecker {
                 &type_instance_arg_ref_tag,
                 &type_instance_arg_ref_payload,
                 &type_decl_generic_param_count,
+                &type_generic_param_slot_by_token,
                 &type_instance_state,
+                &decl_type_ref_tag,
+                &decl_type_ref_payload,
+                &fn_return_ref_tag,
+                &fn_return_ref_payload,
             )?)
         } else {
             None
         };
+        let (
+            hir_visible_decl_flag,
+            hir_visible_decl_prefix,
+            hir_visible_decl_scan_local_prefix,
+            hir_visible_decl_scan_block_sum,
+            hir_visible_decl_scan_prefix_a,
+            hir_visible_decl_scan_prefix_b,
+        ) = if let Some(module_path) = &module_path {
+            // Module/path record scans have finished before resident visible
+            // declaration scans run, so the HIR-sized flag/prefix scratch can
+            // reuse those buffers instead of allocating another scan family.
+            (
+                alias_storage_buffer(&module_path.module_record_flag),
+                alias_storage_buffer(&module_path.module_record_prefix),
+                alias_storage_buffer(&module_path.record_scan_local_prefix),
+                alias_storage_buffer(&module_path.record_scan_block_sum),
+                alias_storage_buffer(&module_path.record_scan_prefix_a),
+                alias_storage_buffer(&module_path.record_scan_prefix_b),
+            )
+        } else {
+            (
+                storage_u32_rw(
+                    device,
+                    "type_check.resident.hir_visible_decl_flag",
+                    hir_visible_decl_scan_capacity as usize,
+                    wgpu::BufferUsages::empty(),
+                ),
+                storage_u32_rw(
+                    device,
+                    "type_check.resident.hir_visible_decl_prefix",
+                    hir_visible_decl_scan_capacity as usize,
+                    wgpu::BufferUsages::empty(),
+                ),
+                storage_u32_rw(
+                    device,
+                    "type_check.resident.hir_visible_decl_scan_local_prefix",
+                    hir_visible_decl_scan_capacity as usize,
+                    wgpu::BufferUsages::empty(),
+                ),
+                storage_u32_rw(
+                    device,
+                    "type_check.resident.hir_visible_decl_scan_block_sum",
+                    hir_decl_scan_n_blocks as usize,
+                    wgpu::BufferUsages::empty(),
+                ),
+                storage_u32_rw(
+                    device,
+                    "type_check.resident.hir_visible_decl_scan_prefix_a",
+                    hir_decl_scan_n_blocks as usize,
+                    wgpu::BufferUsages::empty(),
+                ),
+                storage_u32_rw(
+                    device,
+                    "type_check.resident.hir_visible_decl_scan_prefix_b",
+                    hir_decl_scan_n_blocks as usize,
+                    wgpu::BufferUsages::empty(),
+                ),
+            )
+        };
+        resources.insert(
+            "hir_visible_decl_flag".into(),
+            hir_visible_decl_flag.as_entire_binding(),
+        );
+        resources.insert(
+            "hir_visible_decl_prefix".into(),
+            hir_visible_decl_prefix.as_entire_binding(),
+        );
         let method_module_id_by_file_id = module_path
             .as_ref()
             .map(|module_path| &module_path.module_id_by_file_id)
@@ -1804,6 +2273,7 @@ impl GpuTypeChecker {
             &passes.methods_validate_keys,
             token_capacity,
             name_n_blocks,
+            token_count_buf,
             method_module_count_out,
             &method_decl_impl_node,
             &method_decl_receiver_ref_tag,
@@ -1892,6 +2362,14 @@ impl GpuTypeChecker {
             0,
             &resources,
         )?;
+        let scope_hir = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("type_check_resident_scope_hir"),
+            &passes.scope_hir.bind_group_layouts[0],
+            &passes.scope_hir.reflection,
+            0,
+            &resources,
+        )?;
         let loop_bind_groups = create_loop_depth_bind_groups_with_passes(
             passes,
             device,
@@ -1931,12 +2409,45 @@ impl GpuTypeChecker {
             &fn_prefix_b,
             &fn_block_prefix,
         )?;
-        let visible_bind_groups =
-            create_visible_bind_groups_with_passes(passes, device, &resources)?;
+        let visible_bind_groups = create_visible_bind_groups_with_passes(
+            passes,
+            device,
+            &resources,
+            hir_node_capacity,
+            hir_decl_scan_n_blocks,
+            hir_visible_decl_capacity,
+            hir_decl_record_n_blocks,
+            hir_decl_tree_leaf_base,
+            &hir_decl_scan_steps,
+            &hir_active_count,
+            hir_items
+                .map(|items| items.semantic_count)
+                .unwrap_or(&hir_active_count),
+            &hir_visible_decl_flag,
+            &hir_visible_decl_prefix,
+            &hir_visible_decl_scan_local_prefix,
+            &hir_visible_decl_scan_block_sum,
+            &hir_visible_decl_scan_prefix_a,
+            &hir_visible_decl_scan_prefix_b,
+            &hir_visible_decl_count_out,
+            &hir_visible_decl_owner_fn,
+            &hir_visible_decl_name_id,
+            &hir_visible_decl_token,
+            &hir_visible_decl_scope_end,
+            &hir_visible_decl_key_order,
+            &hir_visible_decl_key_order_tmp,
+            &hir_visible_decl_key_radix_dispatch_args,
+            &hir_visible_decl_key_radix_block_histogram,
+            &hir_visible_decl_key_radix_block_bucket_prefix,
+            &hir_visible_decl_key_radix_bucket_total,
+            &hir_visible_decl_key_radix_bucket_base,
+            &hir_visible_decl_scope_tree,
+        )?;
         drop(resources);
 
         Ok(ResidentTypeCheckBindGroups {
             source_len,
+            source_file_capacity,
             token_capacity,
             hir_node_capacity,
             input_fingerprint,
@@ -1963,6 +2474,7 @@ impl GpuTypeChecker {
             language_decl_kind,
             language_decl_tag,
             language_decl_name_id,
+            language_type_code_by_name_id,
             radix_block_histogram,
             radix_block_bucket_prefix,
             radix_bucket_total,
@@ -1985,7 +2497,31 @@ impl GpuTypeChecker {
             module_value_path_status,
             visible_decl,
             visible_type,
-            scope_end,
+            hir_value_decl_name_present,
+            hir_visible_decl_flag,
+            hir_visible_decl_prefix,
+            hir_visible_decl_scan_local_prefix,
+            hir_visible_decl_scan_block_sum,
+            hir_visible_decl_scan_prefix_a,
+            hir_visible_decl_scan_prefix_b,
+            hir_visible_decl_count_out,
+            hir_visible_decl_owner_fn,
+            hir_visible_decl_name_id,
+            hir_visible_decl_token,
+            hir_visible_decl_scope_end,
+            hir_visible_decl_key_order,
+            hir_visible_decl_key_order_tmp,
+            hir_visible_decl_key_radix_dispatch_args,
+            hir_visible_decl_key_radix_block_histogram,
+            hir_visible_decl_key_radix_block_bucket_prefix,
+            hir_visible_decl_key_radix_bucket_total,
+            hir_visible_decl_key_radix_bucket_base,
+            hir_visible_decl_scope_tree,
+            token_active_dispatch_args,
+            hir_active_dispatch_args,
+            token_hir_active_dispatch_args,
+            hir_active_count,
+            hir_active_dispatch,
             loop_delta,
             loop_depth_inblock,
             loop_block_sum,
@@ -2011,6 +2547,7 @@ impl GpuTypeChecker {
             call_param_count,
             call_param_type,
             call_arg_record,
+            call_arg_node,
             function_lookup_key,
             function_lookup_fn,
             method_decl_receiver_ref_tag,
@@ -2040,6 +2577,11 @@ impl GpuTypeChecker {
             type_instance_kind,
             type_instance_head_token,
             type_decl_generic_param_count,
+            type_decl_generic_param_count_by_node,
+            type_decl_const_param_count_by_node,
+            type_decl_hir_node_by_token,
+            type_generic_param_slot_by_token,
+            type_const_param_slot_by_token,
             type_instance_decl_token,
             type_instance_arg_start,
             type_instance_arg_count,
@@ -2062,6 +2604,7 @@ impl GpuTypeChecker {
             struct_init_field_expected_ref_payload,
             struct_init_field_context_instance,
             struct_init_field_ordinal,
+            struct_init_field_ordinal_by_node,
             name_scan_steps,
             name_bind_groups,
             language_name_bind_groups,
@@ -2076,6 +2619,7 @@ impl GpuTypeChecker {
             methods,
             type_instances_clear,
             type_instances_decl_generic_params,
+            type_instances_generic_param_use_slots,
             type_instances_collect,
             type_instances_collect_named,
             type_instances_collect_aggregate_refs,
@@ -2097,6 +2641,7 @@ impl GpuTypeChecker {
             tokens,
             control,
             scope,
+            scope_hir,
         })
     }
 }

@@ -46,18 +46,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirEnumMatchFiel
                 b.hir_enum_match_fields_params.as_entire_binding(),
             ),
             (
-                "ll1_status".into(),
-                if b.tree_count_uses_status && !b.tree_stream_uses_ll1 {
-                    b.projected_status.as_entire_binding()
-                } else {
-                    b.ll1_status.as_entire_binding()
-                },
-            ),
-            ("node_kind".into(), b.node_kind.as_entire_binding()),
-            ("parent".into(), b.parent.as_entire_binding()),
-            ("subtree_end".into(), b.subtree_end.as_entire_binding()),
-            ("hir_kind".into(), b.hir_kind.as_entire_binding()),
-            (
                 "hir_variant_parent_enum".into(),
                 b.hir_variant_parent_enum.as_entire_binding(),
             ),
@@ -86,6 +74,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirEnumMatchFiel
                 b.hir_match_arm_count.as_entire_binding(),
             ),
             (
+                "hir_match_arm_next".into(),
+                b.hir_match_arm_next.as_entire_binding(),
+            ),
+            (
                 "hir_match_arm_pattern_node".into(),
                 b.hir_match_arm_pattern_node.as_entire_binding(),
             ),
@@ -100,6 +92,18 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirEnumMatchFiel
             (
                 "hir_match_arm_result_node".into(),
                 b.hir_match_arm_result_node.as_entire_binding(),
+            ),
+            (
+                "hir_match_payload_owner_arm".into(),
+                b.hir_match_payload_owner_arm.as_entire_binding(),
+            ),
+            (
+                "hir_match_payload_match_node".into(),
+                b.hir_match_payload_match_node.as_entire_binding(),
+            ),
+            (
+                "hir_match_payload_ordinal".into(),
+                b.hir_match_payload_ordinal.as_entire_binding(),
             ),
         ])
     }

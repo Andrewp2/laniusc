@@ -34,7 +34,6 @@ static const uint PATH_RESOLVE_STATUS_UNRESOLVED_DECL = 6u;
 
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_GENERIC_BASE = 8192u;
-static const uint PARAM_CACHE_STRIDE = 16u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -65,7 +64,7 @@ uint call_node_for_callee_token(uint callee_i)
 {
     if (!valid_token(callee_i))
         return INVALID;
-    return call_arg_record[callee_i * PARAM_CACHE_STRIDE].z;
+    return call_arg_record[callee_i].z;
 }
 
 bool valid_function_decl(uint decl_i, out uint fn_token)

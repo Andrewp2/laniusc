@@ -8,6 +8,10 @@
 // - run_head_mask is then scanned on the GPU and consumed by the id assignment
 //   pass.
 
+import gpu_index;
+import byte_packing;
+import sorted_runs;
+
 struct Params
 {
     uint name_count;
@@ -38,23 +42,17 @@ static const uint NAME_KIND_LANGUAGE_SYMBOL = 3u;
 
 uint linear_thread_id(uint3 dtid)
 {
-    return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
+    return linear_dispatch_thread_id_2d(dtid, MAX_GROUPS_X * WG_SIZE);
 }
 
 uint load_source_byte(uint byte_index)
 {
-    if (byte_index >= gParams.source_len)
-        return 0u;
-    uint word = source_bytes.Load(byte_index & ~3u);
-    uint shift = (byte_index & 3u) * 8u;
-    return (word >> shift) & 0xffu;
+    return byte_address_load_u8_bounded(source_bytes, byte_index, gParams.source_len);
 }
 
 uint load_language_symbol_byte(uint byte_index)
 {
-    uint word = language_symbol_bytes.Load(byte_index & ~3u);
-    uint shift = (byte_index & 3u) * 8u;
-    return (word >> shift) & 0xffu;
+    return byte_address_load_u8(language_symbol_bytes, byte_index);
 }
 
 uint load_name_byte(NameSpan span, uint byte_offset)
@@ -113,7 +111,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         equal_prev = byte_equal_name_spans(prev_name_i, name_i) ? 1u : 0u;
     }
 
-    uint is_head = equal_prev == 0u ? 1u : 0u;
+    uint is_head = sorted_run_head_flag(equal_prev != 0u);
     adjacent_equal_mask[i] = equal_prev;
     run_head_mask[i] = is_head;
 }

@@ -40,6 +40,11 @@ uint active_module_count()
     return min(module_count_out[0], gParams.module_capacity);
 }
 
+uint file_capacity()
+{
+    return gParams.reserved == 0u ? gParams.module_capacity : gParams.reserved;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -51,6 +56,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint file_id = module_file_id[module_i];
-    if (file_id < gParams.module_capacity)
+    if (file_id < file_capacity())
         module_id_by_file_id[file_id] = module_i;
 }

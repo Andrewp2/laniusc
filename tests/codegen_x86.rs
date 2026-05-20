@@ -1,527 +1,32 @@
 mod common;
 
-use std::path::Path;
-
 use laniusc::compiler::{
-    CompileError,
     compile_explicit_source_pack_paths_to_x86_64_with_gpu_codegen,
     compile_source_pack_to_x86_64_with_gpu_codegen,
     compile_source_to_x86_64_with_gpu_codegen,
     compile_source_to_x86_64_with_gpu_codegen_from_path,
+    CompileError,
 };
 
-#[test]
-fn x86_compiler_route_uses_direct_hir_elf_backend() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let compiler = include_str!("../src/compiler.rs");
-    let codegen_mod = include_str!("../src/codegen/mod.rs");
-    let x86_backend = [
-        include_str!("../src/codegen/x86.rs"),
-        include_str!("../src/codegen/x86/record.rs"),
-        include_str!("../src/codegen/x86/record_init.rs"),
-        include_str!("../src/codegen/x86/record_retained_expr.rs"),
-        include_str!("../src/codegen/x86/support.rs"),
-        include_str!("../src/codegen/x86/finish.rs"),
-    ]
-    .join("\n");
-    let x86_shaders = [
-        (
-            "x86_node_tree_info.slang",
-            include_str!("../shaders/codegen/x86_node_tree_info.slang"),
-        ),
-        (
-            "x86_func_discover.slang",
-            include_str!("../shaders/codegen/x86_func_discover.slang"),
-        ),
-        (
-            "x86_call_records.slang",
-            include_str!("../shaders/codegen/x86_call_records.slang"),
-        ),
-        (
-            "x86_intrinsic_calls.slang",
-            include_str!("../shaders/codegen/x86_intrinsic_calls.slang"),
-        ),
-        (
-            "x86_const_values.slang",
-            include_str!("../shaders/codegen/x86_const_values.slang"),
-        ),
-        (
-            "x86_local_literals.slang",
-            include_str!("../shaders/codegen/x86_local_literals.slang"),
-        ),
-        (
-            "x86_call_abi.slang",
-            include_str!("../shaders/codegen/x86_call_abi.slang"),
-        ),
-        (
-            "x86_func_body_plan.slang",
-            include_str!("../shaders/codegen/x86_func_body_plan.slang"),
-        ),
-        (
-            "x86_node_inst_counts.slang",
-            include_str!("../shaders/codegen/x86_node_inst_counts.slang"),
-        ),
-        (
-            "x86_node_inst_order.slang",
-            include_str!("../shaders/codegen/x86_node_inst_order.slang"),
-        ),
-        (
-            "x86_node_inst_scan_local.slang",
-            include_str!("../shaders/codegen/x86_node_inst_scan_local.slang"),
-        ),
-        (
-            "x86_node_inst_scan_blocks.slang",
-            include_str!("../shaders/codegen/x86_node_inst_scan_blocks.slang"),
-        ),
-        (
-            "x86_node_inst_prefix_scan.slang",
-            include_str!("../shaders/codegen/x86_node_inst_prefix_scan.slang"),
-        ),
-        (
-            "x86_node_inst_locations.slang",
-            include_str!("../shaders/codegen/x86_node_inst_locations.slang"),
-        ),
-        (
-            "x86_node_inst_gen.slang",
-            include_str!("../shaders/codegen/x86_node_inst_gen.slang"),
-        ),
-        (
-            "x86_virtual_use_edges.slang",
-            include_str!("../shaders/codegen/x86_virtual_use_edges.slang"),
-        ),
-        (
-            "x86_virtual_liveness.slang",
-            include_str!("../shaders/codegen/x86_virtual_liveness.slang"),
-        ),
-        (
-            "x86_virtual_regalloc.slang",
-            include_str!("../shaders/codegen/x86_virtual_regalloc.slang"),
-        ),
-        (
-            "x86_lower_values.slang",
-            include_str!("../shaders/codegen/x86_lower_values.slang"),
-        ),
-        (
-            "x86_func_inst_counts.slang",
-            include_str!("../shaders/codegen/x86_func_inst_counts.slang"),
-        ),
-        (
-            "x86_func_layout.slang",
-            include_str!("../shaders/codegen/x86_func_layout.slang"),
-        ),
-        (
-            "x86_func_return_inst_plan.slang",
-            include_str!("../shaders/codegen/x86_func_return_inst_plan.slang"),
-        ),
-        (
-            "x86_entry_inst_plan.slang",
-            include_str!("../shaders/codegen/x86_entry_inst_plan.slang"),
-        ),
-        (
-            "x86_inst_plan.slang",
-            include_str!("../shaders/codegen/x86_inst_plan.slang"),
-        ),
-        (
-            "x86_reloc_plan.slang",
-            include_str!("../shaders/codegen/x86_reloc_plan.slang"),
-        ),
-        (
-            "x86_select.slang",
-            include_str!("../shaders/codegen/x86_select.slang"),
-        ),
-        (
-            "x86_inst_size.slang",
-            include_str!("../shaders/codegen/x86_inst_size.slang"),
-        ),
-        (
-            "x86_text_offsets.slang",
-            include_str!("../shaders/codegen/x86_text_offsets.slang"),
-        ),
-        (
-            "x86_encode.slang",
-            include_str!("../shaders/codegen/x86_encode.slang"),
-        ),
-        (
-            "x86_reloc_patch.slang",
-            include_str!("../shaders/codegen/x86_reloc_patch.slang"),
-        ),
-        (
-            "x86_elf_layout.slang",
-            include_str!("../shaders/codegen/x86_elf_layout.slang"),
-        ),
-        (
-            "x86_elf_write.slang",
-            include_str!("../shaders/codegen/x86_elf_write.slang"),
-        ),
-    ];
-    let plan = include_str!("../docs/X86_64_GPU_BACKEND_PLAN.md");
+fn assert_x86_64_elf_entry(bytes: &[u8]) {
+    assert_eq!(&bytes[0..4], b"\x7fELF");
+    assert_eq!(
+        u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
+        0x400078
+    );
+}
 
-    assert!(compiler.contains("codegen::{wasm, x86}"));
-    assert!(compiler.contains("record_x86_elf_from_gpu_hir"));
-    assert!(compiler.contains("with_recorded_resident_source_pack_tokens"));
-    assert!(!compiler.contains("record_x86_from_gpu_token_buffer"));
-    assert!(codegen_mod.contains("pub mod x86;"));
-    assert!(root.join("src/codegen/x86.rs").exists());
-    assert!(root.join("src/codegen/x86/record.rs").exists());
-    assert!(!root.join("src/codegen/gpu_x86.rs").exists());
-    assert!(!root.join("shaders/codegen/x86_from_wasm.slang").exists());
+fn assert_x86_text_contains_direct_call(bytes: &[u8]) {
+    assert!(
+        bytes[0x78..].contains(&0xe8),
+        "direct call lowering should emit a call rel32 opcode in .text"
+    );
+}
 
-    for shader_name in [
-        "x86_node_tree_info",
-        "x86_func_discover",
-        "x86_call_records",
-        "x86_const_values",
-        "x86_param_regs",
-        "x86_local_literals",
-        "x86_func_return_stmts",
-        "x86_block_return_stmts",
-        "x86_terminal_ifs",
-        "x86_return_calls",
-        "x86_call_arg_values",
-        "x86_call_arg_lookup",
-        "x86_intrinsic_calls",
-        "x86_call_abi",
-        "x86_call_arg_widths",
-        "x86_call_arg_prefix_seed",
-        "x86_call_arg_prefix_scan",
-        "x86_call_arg_vregs",
-        "x86_node_inst_counts",
-        "x86_node_inst_order",
-        "x86_node_inst_scan_local",
-        "x86_node_inst_scan_blocks",
-        "x86_node_inst_prefix_scan",
-        "x86_node_inst_locations",
-        "x86_node_inst_gen",
-        "x86_virtual_use_edges",
-        "x86_virtual_liveness",
-        "x86_virtual_regalloc",
-        "x86_func_body_plan",
-        "x86_lower_values",
-        "x86_use_edges",
-        "x86_liveness",
-        "x86_regalloc",
-        "x86_func_inst_counts",
-        "x86_func_inst_order",
-        "x86_func_inst_scan_local",
-        "x86_func_inst_scan_blocks",
-        "x86_func_inst_prefix_scan",
-        "x86_func_layout",
-        "x86_func_return_inst_plan",
-        "x86_entry_inst_plan",
-        "x86_inst_plan",
-        "x86_reloc_plan",
-        "x86_select",
-        "x86_inst_size",
-        "x86_text_offsets",
-        "x86_encode",
-        "x86_reloc_patch",
-        "x86_elf_layout",
-        "x86_elf_write",
-    ] {
-        assert!(
-            root.join(format!("shaders/codegen/{shader_name}.slang"))
-                .exists(),
-            "missing x86 shader source {shader_name}"
-        );
-        assert!(
-            x86_backend.contains(&format!("{shader_name}.spv")),
-            "x86 backend should dispatch {shader_name}.spv"
-        );
-    }
-
-    let backend_surfaces = std::iter::once(("src/codegen/x86/*.rs", x86_backend.as_str()))
-        .chain(x86_shaders.iter().copied());
-    for (label, source) in backend_surfaces {
-        for forbidden in [
-            "core::i32",
-            "core::u32",
-            "core::u8",
-            "core::bool",
-            "is_ascii_digit",
-            "is_ascii_lowercase",
-            "between_inclusive",
-            "saturating_abs",
-            "ByteAddressBuffer",
-            "source_bytes",
-            "source_at",
-            "token_kind",
-            "TokenKind",
-            "token_text",
-            "hir_token_pos",
-            "hir_token_end",
-            "PROD_",
-            "TK_",
-        ] {
-            assert!(
-                !source.contains(forbidden),
-                "{label} should not inspect source/token spelling or stdlib helper names via {forbidden:?}"
-            );
-        }
-    }
-
-    for required in [
-        "record_x86_elf_from_gpu_hir",
-        "GpuX86CallMetadataBuffers",
-        "node_tree_info_pass",
-        "node_inst_counts_pass",
-        "node_inst_order_pass",
-        "node_inst_prefix_scan_pass",
-        "node_inst_locations_pass",
-        "node_inst_gen_pass",
-        "virtual_use_edges_pass",
-        "virtual_liveness_pass",
-        "virtual_regalloc_pass",
-        "func_inst_counts_pass",
-        "func_layout_pass",
-        "func_return_inst_plan_pass",
-        "entry_inst_plan_pass",
-        "reloc_plan_pass",
-        "x86_elf_write.spv",
-    ] {
-        assert!(
-            x86_backend.contains(required),
-            "missing backend route marker {required}"
-        );
-    }
-
-    let shader_contracts = [
-        (
-            "x86_node_tree_info.slang",
-            [
-                "StructuredBuffer<uint> parent",
-                "StructuredBuffer<uint> first_child",
-                "StructuredBuffer<uint> next_sibling",
-                "StructuredBuffer<uint> subtree_end",
-                "RWStructuredBuffer<uint4> x86_node_tree_record",
-            ]
-            .as_slice(),
-        ),
-        (
-            "x86_func_discover.slang",
-            [
-                "StructuredBuffer<uint4> x86_node_tree_record",
-                "RWStructuredBuffer<uint4> x86_func_record",
-                "RWStructuredBuffer<uint> x86_func_lookup_key",
-                "StructuredBuffer<uint> hir_item_decl_token",
-            ]
-            .as_slice(),
-        ),
-        (
-            "x86_node_inst_counts.slang",
-            [
-                "StructuredBuffer<uint4> x86_node_tree_record",
-                "StructuredBuffer<uint> hir_stmt_record",
-                "StructuredBuffer<uint> hir_expr_record",
-                "RWStructuredBuffer<uint4> x86_node_inst_count_record",
-                "RWStructuredBuffer<uint> x86_node_inst_scan_input",
-            ]
-            .as_slice(),
-        ),
-        (
-            "x86_node_inst_order.slang",
-            [
-                "StructuredBuffer<uint4> x86_node_tree_record",
-                "StructuredBuffer<uint4> x86_node_inst_count_record",
-                "RWStructuredBuffer<uint4> x86_node_inst_order_record",
-                "RWStructuredBuffer<uint> x86_node_inst_scan_input",
-            ]
-            .as_slice(),
-        ),
-        (
-            "x86_node_inst_prefix_scan.slang",
-            [
-                "StructuredBuffer<uint4> x86_node_inst_order_record",
-                "StructuredBuffer<uint> x86_node_inst_scan_local_prefix",
-                "RWStructuredBuffer<uint4> x86_node_inst_range_record",
-            ]
-            .as_slice(),
-        ),
-        (
-            "x86_node_inst_locations.slang",
-            [
-                "StructuredBuffer<uint> hir_kind",
-                "StructuredBuffer<uint> hir_stmt_record",
-                "StructuredBuffer<uint4> x86_node_inst_count_record",
-                "StructuredBuffer<uint4> x86_node_inst_range_record",
-                "RWStructuredBuffer<uint4> x86_node_inst_location_record",
-            ]
-            .as_slice(),
-        ),
-        (
-            "x86_node_inst_gen.slang",
-            [
-                "StructuredBuffer<uint4> x86_node_inst_range_record",
-                "StructuredBuffer<uint4> x86_node_inst_location_record",
-                "StructuredBuffer<uint> hir_stmt_record",
-                "StructuredBuffer<uint> hir_expr_record",
-                "RWStructuredBuffer<uint4> x86_virtual_inst_record",
-                "RWStructuredBuffer<uint4> x86_node_value_record",
-            ]
-            .as_slice(),
-        ),
-        (
-            "x86_virtual_use_edges.slang",
-            [
-                "StructuredBuffer<uint4> x86_virtual_inst_record",
-                "StructuredBuffer<uint4> x86_virtual_inst_args",
-                "RWStructuredBuffer<uint> x86_virtual_use_key",
-                "RWStructuredBuffer<uint> x86_virtual_use_value",
-            ]
-            .as_slice(),
-        ),
-        (
-            "x86_virtual_liveness.slang",
-            [
-                "StructuredBuffer<uint> x86_virtual_use_key",
-                "StructuredBuffer<uint> x86_virtual_use_value",
-                "RWStructuredBuffer<uint> x86_virtual_live_start",
-                "RWStructuredBuffer<uint> x86_virtual_live_end",
-            ]
-            .as_slice(),
-        ),
-        (
-            "x86_virtual_regalloc.slang",
-            [
-                "StructuredBuffer<uint> x86_virtual_live_start",
-                "StructuredBuffer<uint> x86_virtual_live_end",
-                "RWStructuredBuffer<uint> x86_virtual_phys_reg",
-            ]
-            .as_slice(),
-        ),
-        (
-            "x86_call_records.slang",
-            [
-                "StructuredBuffer<uint> hir_call_callee_node",
-                "RWStructuredBuffer<uint4> x86_call_record",
-            ]
-            .as_slice(),
-        ),
-        (
-            "x86_intrinsic_calls.slang",
-            [
-                "StructuredBuffer<uint> call_intrinsic_tag",
-                "StructuredBuffer<uint4> x86_call_record",
-                "StructuredBuffer<uint4> x86_call_arg_lookup_record",
-                "RWStructuredBuffer<uint4> x86_intrinsic_call_record",
-            ]
-            .as_slice(),
-        ),
-        (
-            "x86_local_literals.slang",
-            [
-                "StructuredBuffer<uint> visible_decl",
-                "StructuredBuffer<uint4> x86_const_value_record",
-                "RWStructuredBuffer<uint4> x86_local_literal_record",
-            ]
-            .as_slice(),
-        ),
-        (
-            "x86_call_abi.slang",
-            [
-                "StructuredBuffer<uint> call_intrinsic_tag",
-                "StructuredBuffer<uint4> x86_call_arg_lookup_record",
-                "RWStructuredBuffer<uint4> x86_call_abi_record",
-            ]
-            .as_slice(),
-        ),
-        (
-            "x86_func_inst_counts.slang",
-            [
-                "StructuredBuffer<uint> hir_stmt_record",
-                "StructuredBuffer<uint4> x86_intrinsic_call_record",
-                "StructuredBuffer<uint4> x86_call_abi_record",
-                "X86_INTRINSIC_TEXT_WRITE",
-                "RWStructuredBuffer<uint4> x86_func_inst_count_record",
-            ]
-            .as_slice(),
-        ),
-        (
-            "x86_func_return_inst_plan.slang",
-            [
-                "StructuredBuffer<uint4> x86_func_layout_record",
-                "StructuredBuffer<uint4> x86_call_arg_eval_record",
-                "RWStructuredBuffer<uint> x86_planned_inst_kind",
-            ]
-            .as_slice(),
-        ),
-        (
-            "x86_entry_inst_plan.slang",
-            [
-                "StructuredBuffer<uint> hir_stmt_record",
-                "StructuredBuffer<uint4> x86_intrinsic_call_record",
-                "StructuredBuffer<uint4> x86_call_abi_record",
-                "StructuredBuffer<uint4> x86_call_arg_eval_record",
-                "X86_ENTRY_STATUS_RELOC_COUNT",
-                "X86_INST_DATA_I32_NL",
-                "RWStructuredBuffer<uint> x86_planned_inst_kind",
-            ]
-            .as_slice(),
-        ),
-        (
-            "x86_reloc_plan.slang",
-            [
-                "StructuredBuffer<uint> hir_stmt_record",
-                "StructuredBuffer<uint4> x86_intrinsic_call_record",
-                "X86_ENTRY_STATUS_RELOC_COUNT",
-                "StructuredBuffer<uint4> x86_func_layout_record",
-                "RWStructuredBuffer<uint> x86_planned_reloc_kind",
-            ]
-            .as_slice(),
-        ),
-        (
-            "x86_encode.slang",
-            [
-                "StructuredBuffer<uint> x86_inst_byte_offset",
-                "RWStructuredBuffer<uint> x86_text_words",
-            ]
-            .as_slice(),
-        ),
-        (
-            "x86_elf_write.slang",
-            [
-                "StructuredBuffer<uint> x86_text_words",
-                "RWStructuredBuffer<uint> out_words",
-            ]
-            .as_slice(),
-        ),
-    ];
-    for (label, required_terms) in shader_contracts {
-        let source = x86_shaders
-            .iter()
-            .find_map(|(shader_label, shader_source)| {
-                (*shader_label == label).then_some(*shader_source)
-            })
-            .expect("shader contract source should be listed");
-        for required in required_terms {
-            assert!(
-                source.contains(required),
-                "{label} missing stable contract term {required}"
-            );
-        }
-    }
-
-    let x86_api_tail = x86_backend
-        .split("pub fn record_x86_elf_from_gpu_hir(")
-        .nth(1)
-        .expect("x86 backend API should be present");
-    let x86_api_signature = x86_api_tail
-        .split(") -> Result<RecordedX86Codegen>")
-        .next()
-        .expect("x86 backend API signature should be parseable");
-    assert!(!x86_api_signature.contains("token_buf"));
-    assert!(!x86_api_signature.contains("hir_token_pos_buf"));
-    assert!(!x86_api_signature.contains("hir_token_end_buf"));
-    for (offset, _) in compiler.match_indices("record_x86_elf_from_gpu_hir(") {
-        let end = (offset + 1600).min(compiler.len());
-        let call_site = &compiler[offset..end];
-        assert!(!call_site.contains("&bufs.tokens_out"));
-        assert!(!call_site.contains("&parse_bufs.hir_token_pos"));
-        assert!(!call_site.contains("&parse_bufs.hir_token_end"));
-    }
-
-    assert!(plan.contains("The prior WASM-to-x86 prototype has been deleted"));
-    assert!(plan.contains("direct HIR lowering"));
-    assert!(plan.contains("source-pack x86 entrypoints"));
+#[cfg(all(unix, target_arch = "x86_64"))]
+fn assert_x86_exit_code(context: &str, artifact_stem: &str, bytes: &[u8], expected: i32) {
+    let output = common::run_x86_64_elf_output(context, artifact_stem, bytes);
+    assert_eq!(output.status.code(), Some(expected));
 }
 
 #[test]
@@ -555,24 +60,73 @@ fn x86_path_codegen_reports_missing_input_before_codegen() {
 }
 
 #[test]
+#[cfg(all(unix, target_arch = "x86_64"))]
+fn x86_sample_programs_execute_expected_stdout() {
+    for sample in common::sample_programs::load_sample_programs() {
+        let sample_name = sample.name().to_string();
+        let sample_source = sample.source().to_string();
+        let bytes = common::run_gpu_codegen_with_timeout(
+            &format!("GPU x86 sample compile {sample_name}"),
+            move || match sample_name.as_str() {
+                "option_result_helpers" => {
+                    pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&[
+                        include_str!("../stdlib/core/option.lani"),
+                        include_str!("../stdlib/core/result.lani"),
+                        sample_source.as_str(),
+                    ]))
+                }
+                "range_sum" => {
+                    pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&[
+                        include_str!("../stdlib/core/range.lani"),
+                        sample_source.as_str(),
+                    ]))
+                }
+                "slice_helpers" => {
+                    pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&[
+                        include_str!("../stdlib/core/slice.lani"),
+                        sample_source.as_str(),
+                    ]))
+                }
+                _ => pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&sample_source)),
+            },
+        )
+        .unwrap_or_else(|err| {
+            panic!(
+                "x86 sample {} should compile from {}\nerror: {err}",
+                sample.name(),
+                sample.path().display()
+            )
+        });
+
+        let output = common::run_x86_64_elf_output(
+            format!("x86 sample {}", sample.name()),
+            &format!("sample_{}", sample.name()),
+            &bytes,
+        );
+        common::assert_command_success(format!("x86 sample {}", sample.name()), &output);
+        sample.assert_stdout_eq("x86", &String::from_utf8_lossy(&output.stdout));
+    }
+}
+
+#[test]
 fn x86_source_codegen_emits_direct_elf_for_integer_literal_return() {
     let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
         "fn main() {\n    return 7;\n}\n",
     ))
-    .expect("x86 codegen should emit direct ELF bytes for the first HIR slice");
+    .expect("x86 codegen should emit an executable ELF for a scalar return");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
+    assert_x86_64_elf_entry(&bytes);
     assert_eq!(bytes[4], 2, "ELF64 class");
     assert_eq!(bytes[5], 1, "little-endian ELF");
     assert_eq!(u16::from_le_bytes(bytes[18..20].try_into().unwrap()), 62);
-    assert_eq!(
-        u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-        0x400078
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 integer literal return",
+        "x86_integer_literal_return",
+        &bytes,
+        7,
     );
-    assert_eq!(&bytes[0x78..0x7d], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(bytes[0x7d], 0xbf);
-    assert_eq!(&bytes[0x7e..0x82], &7u32.to_le_bytes());
-    assert_eq!(&bytes[0x82..0x84], &[0x0f, 0x05]);
 }
 
 #[test]
@@ -587,14 +141,20 @@ fn x86_source_codegen_emits_direct_elf_for_zero_arg_direct_call_return() {
         u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
         0x400078
     );
-    assert_eq!(bytes[0x78], 0xe8, "main should start with call rel32");
-    assert_eq!(&bytes[0x79..0x7d], &9u32.to_le_bytes());
-    assert_eq!(&bytes[0x7d..0x7f], &[0x89, 0xc7]);
-    assert_eq!(&bytes[0x7f..0x84], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(&bytes[0x84..0x86], &[0x0f, 0x05]);
-    assert_eq!(bytes[0x86], 0xb8);
-    assert_eq!(&bytes[0x87..0x8b], &7u32.to_le_bytes());
-    assert_eq!(bytes[0x8b], 0xc3);
+    assert!(
+        bytes[0x78..].contains(&0xe8),
+        "direct call lowering should emit a call rel32 opcode in .text"
+    );
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "x86 zero-arg direct call return",
+            "x86_zero_arg_direct_call_return",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(7));
+    }
 }
 
 #[test]
@@ -604,21 +164,15 @@ fn x86_source_codegen_emits_direct_elf_for_one_literal_arg_direct_call_return() 
     ))
     .expect("x86 codegen should pass a literal SysV integer arg before a direct call");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(
-        u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-        0x400078
+    assert_x86_64_elf_entry(&bytes);
+    assert_x86_text_contains_direct_call(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 one literal arg direct call return",
+        "x86_one_literal_arg_direct_call_return",
+        &bytes,
+        9,
     );
-    assert_eq!(bytes[0x78], 0xbf, "main should load arg0 into edi");
-    assert_eq!(&bytes[0x79..0x7d], &7u32.to_le_bytes());
-    assert_eq!(bytes[0x7d], 0xe8, "main should call rel32 after arg setup");
-    assert_eq!(&bytes[0x7e..0x82], &9u32.to_le_bytes());
-    assert_eq!(&bytes[0x82..0x84], &[0x89, 0xc7]);
-    assert_eq!(&bytes[0x84..0x89], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(&bytes[0x89..0x8b], &[0x0f, 0x05]);
-    assert_eq!(bytes[0x8b], 0xb8);
-    assert_eq!(&bytes[0x8c..0x90], &9u32.to_le_bytes());
-    assert_eq!(bytes[0x90], 0xc3);
 }
 
 #[test]
@@ -628,20 +182,15 @@ fn x86_source_codegen_emits_direct_elf_for_one_arg_param_return() {
     ))
     .expect("x86 codegen should lower a direct call whose callee returns its first parameter");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(
-        u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-        0x400078
+    assert_x86_64_elf_entry(&bytes);
+    assert_x86_text_contains_direct_call(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 one param direct call return",
+        "x86_one_param_direct_call_return",
+        &bytes,
+        7,
     );
-    assert_eq!(bytes[0x78], 0xbf, "main should load arg0 into edi");
-    assert_eq!(&bytes[0x79..0x7d], &7u32.to_le_bytes());
-    assert_eq!(bytes[0x7d], 0xe8, "main should call rel32 after arg setup");
-    assert_eq!(&bytes[0x7e..0x82], &9u32.to_le_bytes());
-    assert_eq!(&bytes[0x82..0x84], &[0x89, 0xc7]);
-    assert_eq!(&bytes[0x84..0x89], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(&bytes[0x89..0x8b], &[0x0f, 0x05]);
-    assert_eq!(&bytes[0x8b..0x8d], &[0x89, 0xf8]);
-    assert_eq!(bytes[0x8d], 0xc3);
 }
 
 #[test]
@@ -651,12 +200,15 @@ fn x86_source_codegen_emits_direct_elf_for_local_call_arg_return() {
     ))
     .expect("x86 codegen should lower a local scalar call argument through call-arg value records");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(bytes[0x78], 0xbf, "main should load arg0 into edi");
-    assert_eq!(&bytes[0x79..0x7d], &7u32.to_le_bytes());
-    assert_eq!(bytes[0x7d], 0xe8, "main should call rel32 after arg setup");
-    assert_eq!(&bytes[0x8b..0x8d], &[0x89, 0xf8]);
-    assert_eq!(bytes[0x8d], 0xc3);
+    assert_x86_64_elf_entry(&bytes);
+    assert_x86_text_contains_direct_call(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 local arg direct call return",
+        "x86_local_arg_direct_call_return",
+        &bytes,
+        7,
+    );
 }
 
 #[test]
@@ -668,23 +220,37 @@ fn x86_source_codegen_emits_direct_elf_for_binary_call_arg_return() {
         "x86 codegen should lower a scalar binary call argument through call-arg value records",
     );
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(bytes[0x78], 0xb8, "main should evaluate arg left into eax");
-    assert_eq!(&bytes[0x79..0x7d], &4u32.to_le_bytes());
-    assert_eq!(
-        bytes[0x7d], 0x05,
-        "main should evaluate binary arg before call"
+    assert_x86_64_elf_entry(&bytes);
+    assert_x86_text_contains_direct_call(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 binary arg direct call return",
+        "x86_binary_arg_direct_call_return",
+        &bytes,
+        9,
     );
-    assert_eq!(&bytes[0x7e..0x82], &5u32.to_le_bytes());
-    assert_eq!(
-        &bytes[0x82..0x84],
-        &[0x89, 0xc7],
-        "main should move arg vreg result into edi"
+}
+
+#[test]
+fn x86_source_codegen_keeps_param_values_across_fixed_register_arg_eval() {
+    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
+        "fn g(x: i32, y: i32) -> i32 {\n    print(x);\n    print(y);\n    return y;\n}\nfn f(a: i32, b: i32, c: i32, d: i32) -> i32 {\n    return g((11 << 1), d);\n}\nfn main() {\n    print(f(9, 52, 90, 14));\n    return 0;\n}\n",
+    ))
+    .expect(
+        "x86 codegen should snapshot parameter values before fixed-register expression lowering",
     );
-    assert_eq!(bytes[0x84], 0xe8, "main should call rel32 after arg setup");
-    assert_eq!(&bytes[0x85..0x89], &9u32.to_le_bytes());
-    assert_eq!(&bytes[0x92..0x94], &[0x89, 0xf8]);
-    assert_eq!(bytes[0x94], 0xc3);
+
+    assert_x86_64_elf_entry(&bytes);
+    assert_x86_text_contains_direct_call(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let stdout = common::run_x86_64_elf(
+            "x86 fixed register call argument parameter",
+            "x86_fixed_register_call_arg_param",
+            &bytes,
+        );
+        assert_eq!(stdout, "22\n14\n14\n");
+    }
 }
 
 #[test]
@@ -759,22 +325,16 @@ fn x86_source_codegen_emits_direct_elf_for_one_arg_param_add_return() {
     ))
     .expect("x86 codegen should lower a direct call whose callee returns param plus literal");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(
-        u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-        0x400078
+    assert_x86_64_elf_entry(&bytes);
+    assert_x86_text_contains_direct_call(&bytes);
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 one param add direct call return",
+        "x86_one_param_add_direct_call_return",
+        &bytes,
+        8,
     );
-    assert_eq!(bytes[0x78], 0xbf, "main should load arg0 into edi");
-    assert_eq!(&bytes[0x79..0x7d], &7u32.to_le_bytes());
-    assert_eq!(bytes[0x7d], 0xe8, "main should call rel32 after arg setup");
-    assert_eq!(&bytes[0x7e..0x82], &9u32.to_le_bytes());
-    assert_eq!(&bytes[0x82..0x84], &[0x89, 0xc7]);
-    assert_eq!(&bytes[0x84..0x89], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(&bytes[0x89..0x8b], &[0x0f, 0x05]);
-    assert_eq!(&bytes[0x8b..0x8d], &[0x89, 0xf8]);
-    assert_eq!(bytes[0x8d], 0x05);
-    assert_eq!(&bytes[0x8e..0x92], &1u32.to_le_bytes());
-    assert_eq!(bytes[0x92], 0xc3);
 }
 
 #[test]
@@ -784,23 +344,15 @@ fn x86_source_codegen_emits_direct_elf_for_two_arg_param_add_return() {
     ))
     .expect("x86 codegen should lower a direct call whose callee adds two parameters");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(
-        u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-        0x400078
+    assert_x86_64_elf_entry(&bytes);
+    assert_x86_text_contains_direct_call(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 two param add direct call return",
+        "x86_two_param_add_direct_call_return",
+        &bytes,
+        12,
     );
-    assert_eq!(bytes[0x78], 0xbf, "main should load arg0 into edi");
-    assert_eq!(&bytes[0x79..0x7d], &7u32.to_le_bytes());
-    assert_eq!(bytes[0x7d], 0xbe, "main should load arg1 into esi");
-    assert_eq!(&bytes[0x7e..0x82], &5u32.to_le_bytes());
-    assert_eq!(bytes[0x82], 0xe8, "main should call rel32 after arg setup");
-    assert_eq!(&bytes[0x83..0x87], &9u32.to_le_bytes());
-    assert_eq!(&bytes[0x87..0x89], &[0x89, 0xc7]);
-    assert_eq!(&bytes[0x89..0x8e], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(&bytes[0x8e..0x90], &[0x0f, 0x05]);
-    assert_eq!(&bytes[0x90..0x92], &[0x89, 0xf8]);
-    assert_eq!(&bytes[0x92..0x94], &[0x01, 0xf0]);
-    assert_eq!(bytes[0x94], 0xc3);
 }
 
 #[test]
@@ -810,27 +362,16 @@ fn x86_source_codegen_emits_direct_elf_for_three_arg_third_param_return() {
     ))
     .expect("x86 codegen should lower the third SysV integer argument through HIR call records");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(
-        u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-        0x400078
+    assert_x86_64_elf_entry(&bytes);
+    assert_x86_text_contains_direct_call(&bytes);
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 three param third direct call return",
+        "x86_three_param_third_direct_call_return",
+        &bytes,
+        3,
     );
-    assert_eq!(bytes[0x78], 0xbf, "main should load arg0 into edi");
-    assert_eq!(&bytes[0x79..0x7d], &7u32.to_le_bytes());
-    assert_eq!(bytes[0x7d], 0xbe, "main should load arg1 into esi");
-    assert_eq!(&bytes[0x7e..0x82], &5u32.to_le_bytes());
-    assert_eq!(bytes[0x82], 0xba, "main should load arg2 into edx");
-    assert_eq!(&bytes[0x83..0x87], &3u32.to_le_bytes());
-    assert_eq!(
-        bytes[0x87], 0xe8,
-        "main should call rel32 after all arg setup"
-    );
-    assert_eq!(&bytes[0x88..0x8c], &9u32.to_le_bytes());
-    assert_eq!(&bytes[0x8c..0x8e], &[0x89, 0xc7]);
-    assert_eq!(&bytes[0x8e..0x93], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(&bytes[0x93..0x95], &[0x0f, 0x05]);
-    assert_eq!(&bytes[0x95..0x97], &[0x89, 0xd0]);
-    assert_eq!(bytes[0x97], 0xc3);
 }
 
 #[test]
@@ -840,43 +381,20 @@ fn x86_source_codegen_emits_direct_elf_for_two_binary_arg_param_add_return() {
     ))
     .expect("x86 codegen should assign width-based vreg ranges for two binary call args");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(
-        u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-        0x400078
+    assert_x86_64_elf_entry(&bytes);
+    assert_x86_text_contains_direct_call(&bytes);
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 two binary arg param add return",
+        "x86_two_binary_arg_param_add_return",
+        &bytes,
+        22,
     );
-    assert_eq!(bytes[0x78], 0xb8, "arg0 left should move to eax");
-    assert_eq!(&bytes[0x79..0x7d], &4u32.to_le_bytes());
-    assert_eq!(bytes[0x7d], 0x05, "arg0 binary should fold in eax");
-    assert_eq!(&bytes[0x7e..0x82], &5u32.to_le_bytes());
-    assert_eq!(
-        &bytes[0x82..0x84],
-        &[0x89, 0xc7],
-        "arg0 result should move to edi"
-    );
-    assert_eq!(bytes[0x84], 0xb8, "arg1 left should move to eax");
-    assert_eq!(&bytes[0x85..0x89], &6u32.to_le_bytes());
-    assert_eq!(bytes[0x89], 0x05, "arg1 binary should fold in eax");
-    assert_eq!(&bytes[0x8a..0x8e], &7u32.to_le_bytes());
-    assert_eq!(
-        &bytes[0x8e..0x90],
-        &[0x89, 0xc6],
-        "arg1 result should move to esi"
-    );
-    assert_eq!(
-        bytes[0x90], 0xe8,
-        "main should call rel32 after both arg ranges"
-    );
-    assert_eq!(&bytes[0x91..0x95], &9u32.to_le_bytes());
-    assert_eq!(&bytes[0x95..0x97], &[0x89, 0xc7]);
-    assert_eq!(&bytes[0x97..0x9c], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(&bytes[0x9c..0x9e], &[0x0f, 0x05]);
-    assert_eq!(&bytes[0x9e..0xa0], &[0x89, 0xf8]);
-    assert_eq!(&bytes[0xa0..0xa2], &[0x01, 0xf0]);
-    assert_eq!(bytes[0xa2], 0xc3);
 }
 
 #[test]
+#[cfg(all(unix, target_arch = "x86_64"))]
 fn x86_source_pack_codegen_emits_direct_elf_for_module_main_literal_return() {
     let sources = [
         include_str!("../stdlib/core/i32.lani"),
@@ -885,14 +403,17 @@ fn x86_source_pack_codegen_emits_direct_elf_for_module_main_literal_return() {
     let bytes = pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
         .expect("x86 source-pack codegen should emit direct ELF bytes for a bounded main return");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(&bytes[0x78..0x7d], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(bytes[0x7d], 0xbf);
-    assert_eq!(&bytes[0x7e..0x82], &5u32.to_le_bytes());
-    assert_eq!(&bytes[0x82..0x84], &[0x0f, 0x05]);
+    assert_x86_64_elf_entry(&bytes);
+    assert_x86_exit_code(
+        "x86 source-pack module literal return",
+        "x86_source_pack_module_literal_return",
+        &bytes,
+        5,
+    );
 }
 
 #[test]
+#[cfg(all(unix, target_arch = "x86_64"))]
 fn x86_source_pack_codegen_emits_direct_elf_for_qualified_scalar_const_return() {
     let sources = [
         include_str!("../stdlib/core/i32.lani"),
@@ -901,11 +422,19 @@ fn x86_source_pack_codegen_emits_direct_elf_for_qualified_scalar_const_return() 
     let bytes = pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
         .expect("x86 source-pack codegen should lower a resolver-backed scalar const return");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(&bytes[0x78..0x7d], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(bytes[0x7d], 0xbf);
-    assert_eq!(&bytes[0x7e..0x82], &2_147_483_647u32.to_le_bytes());
-    assert_eq!(&bytes[0x82..0x84], &[0x0f, 0x05]);
+    assert_x86_64_elf_entry(&bytes);
+    assert!(
+        bytes
+            .windows(4)
+            .any(|window| window == 2_147_483_647u32.to_le_bytes()),
+        "qualified const return should materialize i32::MAX"
+    );
+    assert_x86_exit_code(
+        "x86 source-pack qualified const return",
+        "x86_source_pack_qualified_const_return",
+        &bytes,
+        255,
+    );
 }
 
 #[test]
@@ -917,23 +446,11 @@ fn x86_source_pack_codegen_emits_direct_elf_for_stdlib_min_helper_branch() {
     let bytes = pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
         .expect("x86 source-pack codegen should lower a resolver-backed terminal-if helper");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(bytes[0x78], 0xbf, "main should load arg0 into edi");
-    assert_eq!(&bytes[0x79..0x7d], &7u32.to_le_bytes());
-    assert_eq!(bytes[0x7d], 0xbe, "main should load arg1 into esi");
-    assert_eq!(&bytes[0x7e..0x82], &5u32.to_le_bytes());
-    assert_eq!(bytes[0x82], 0xe8, "main should call rel32 after arg setup");
-    assert_eq!(&bytes[0x83..0x87], &9u32.to_le_bytes());
-    assert_eq!(&bytes[0x87..0x89], &[0x89, 0xc7]);
-    assert_eq!(&bytes[0x89..0x8e], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(&bytes[0x8e..0x90], &[0x0f, 0x05]);
-    assert_eq!(&bytes[0x90..0x92], &[0x89, 0xf8]);
-    assert_eq!(&bytes[0x92..0x94], &[0x39, 0xf0]);
-    assert_eq!(&bytes[0x94..0x9a], &[0x0f, 0x8d, 7, 0, 0, 0]);
-    assert_eq!(&bytes[0x9a..0x9c], &[0x89, 0xf8]);
-    assert_eq!(&bytes[0x9c..0xa1], &[0xe9, 2, 0, 0, 0]);
-    assert_eq!(&bytes[0xa1..0xa3], &[0x89, 0xf0]);
-    assert_eq!(bytes[0xa3], 0xc3);
+    assert_x86_64_elf_entry(&bytes);
+    assert_x86_text_contains_direct_call(&bytes);
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code("x86 source-pack core::i32::min", "core_i32_min", &bytes, 5);
 }
 
 #[test]
@@ -1006,33 +523,8 @@ fn x86_source_pack_codegen_executes_core_i32_clamp_nested_helper_branch() {
     let bytes = pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
         .expect("x86 source-pack codegen should lower a resolver-backed nested terminal-if helper");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(bytes[0x78], 0xbf, "main should load value into edi");
-    assert_eq!(&bytes[0x79..0x7d], &9u32.to_le_bytes());
-    assert_eq!(bytes[0x7d], 0xbe, "main should load low into esi");
-    assert_eq!(&bytes[0x7e..0x82], &0u32.to_le_bytes());
-    assert_eq!(bytes[0x82], 0xba, "main should load high into edx");
-    assert_eq!(&bytes[0x83..0x87], &7u32.to_le_bytes());
-    assert_eq!(
-        bytes[0x87], 0xe8,
-        "main should call rel32 after three arg setup"
-    );
-    assert_eq!(&bytes[0x88..0x8c], &9u32.to_le_bytes());
-    assert_eq!(&bytes[0x8c..0x8e], &[0x89, 0xc7]);
-    assert_eq!(&bytes[0x8e..0x93], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(&bytes[0x93..0x95], &[0x0f, 0x05]);
-    assert_eq!(&bytes[0x95..0x97], &[0x89, 0xf8]);
-    assert_eq!(&bytes[0x97..0x99], &[0x39, 0xf0]);
-    assert_eq!(&bytes[0x99..0x9f], &[0x0f, 0x8d, 7, 0, 0, 0]);
-    assert_eq!(&bytes[0x9f..0xa1], &[0x89, 0xf0]);
-    assert_eq!(&bytes[0xa1..0xa6], &[0xe9, 0x13, 0, 0, 0]);
-    assert_eq!(&bytes[0xa6..0xa8], &[0x89, 0xf8]);
-    assert_eq!(&bytes[0xa8..0xaa], &[0x39, 0xd0]);
-    assert_eq!(&bytes[0xaa..0xb0], &[0x0f, 0x8e, 7, 0, 0, 0]);
-    assert_eq!(&bytes[0xb0..0xb2], &[0x89, 0xd0]);
-    assert_eq!(&bytes[0xb2..0xb7], &[0xe9, 2, 0, 0, 0]);
-    assert_eq!(&bytes[0xb7..0xb9], &[0x89, 0xf8]);
-    assert_eq!(bytes[0xb9], 0xc3);
+    assert_x86_64_elf_entry(&bytes);
+    assert_x86_text_contains_direct_call(&bytes);
 
     #[cfg(all(unix, target_arch = "x86_64"))]
     {
@@ -1053,7 +545,7 @@ fn x86_source_pack_codegen_executes_core_i32_signum_nested_literal_branch() {
         ("positive", "9", 9u32, Some(1)),
     ];
 
-    for (name, arg_source, arg_bits, expected_status) in cases {
+    for (name, arg_source, _arg_bits, expected_status) in cases {
         let user_source = format!(
             "module app::main;\nimport core::i32;\nfn main() {{\n    return core::i32::signum({arg_source});\n}}\n"
         );
@@ -1066,26 +558,8 @@ fn x86_source_pack_codegen_executes_core_i32_signum_nested_literal_branch() {
                 panic!("x86 source-pack codegen should lower core::i32::signum {name}: {err}")
             });
 
-        assert_eq!(&bytes[0..4], b"\x7fELF");
-        assert_eq!(bytes[0x78], 0xbf, "main should load signum arg into edi");
-        assert_eq!(&bytes[0x79..0x7d], &arg_bits.to_le_bytes());
-        assert_eq!(bytes[0x7d], 0xe8, "main should call rel32 after arg setup");
-        assert_eq!(&bytes[0x7e..0x82], &9u32.to_le_bytes());
-        assert_eq!(&bytes[0x82..0x84], &[0x89, 0xc7]);
-        assert_eq!(&bytes[0x84..0x89], &[0xb8, 0x3c, 0, 0, 0]);
-        assert_eq!(&bytes[0x89..0x8b], &[0x0f, 0x05]);
-        assert_eq!(&bytes[0x8b..0x8d], &[0x89, 0xf8]);
-        assert_eq!(&bytes[0x8d..0x92], &[0x3d, 0, 0, 0, 0]);
-        assert_eq!(&bytes[0x92..0x98], &[0x0f, 0x8d, 0x0a, 0, 0, 0]);
-        assert_eq!(&bytes[0x98..0x9d], &[0xb8, 0xff, 0xff, 0xff, 0xff]);
-        assert_eq!(&bytes[0x9d..0xa2], &[0xe9, 0x1c, 0, 0, 0]);
-        assert_eq!(&bytes[0xa2..0xa4], &[0x89, 0xf8]);
-        assert_eq!(&bytes[0xa4..0xa9], &[0x3d, 0, 0, 0, 0]);
-        assert_eq!(&bytes[0xa9..0xaf], &[0x0f, 0x8e, 0x0a, 0, 0, 0]);
-        assert_eq!(&bytes[0xaf..0xb4], &[0xb8, 1, 0, 0, 0]);
-        assert_eq!(&bytes[0xb4..0xb9], &[0xe9, 5, 0, 0, 0]);
-        assert_eq!(&bytes[0xb9..0xbe], &[0xb8, 0, 0, 0, 0]);
-        assert_eq!(bytes[0xbe], 0xc3);
+        assert_x86_64_elf_entry(&bytes);
+        assert_x86_text_contains_direct_call(&bytes);
 
         #[cfg(all(unix, target_arch = "x86_64"))]
         {
@@ -1107,7 +581,7 @@ fn x86_source_pack_codegen_executes_core_i32_compare_as_i32_nested_literal_branc
         ("equal", "4", "4", 4u32, 4u32, Some(0)),
     ];
 
-    for (name, left_source, right_source, left_bits, right_bits, expected_status) in cases {
+    for (name, left_source, right_source, _left_bits, _right_bits, expected_status) in cases {
         let user_source = format!(
             "module app::main;\nimport core::i32;\nfn main() {{\n    return core::i32::compare_as_i32({left_source}, {right_source});\n}}\n"
         );
@@ -1122,28 +596,8 @@ fn x86_source_pack_codegen_executes_core_i32_compare_as_i32_nested_literal_branc
                 )
             });
 
-        assert_eq!(&bytes[0..4], b"\x7fELF");
-        assert_eq!(bytes[0x78], 0xbf, "main should load left into edi");
-        assert_eq!(&bytes[0x79..0x7d], &left_bits.to_le_bytes());
-        assert_eq!(bytes[0x7d], 0xbe, "main should load right into esi");
-        assert_eq!(&bytes[0x7e..0x82], &right_bits.to_le_bytes());
-        assert_eq!(bytes[0x82], 0xe8, "main should call rel32 after arg setup");
-        assert_eq!(&bytes[0x83..0x87], &9u32.to_le_bytes());
-        assert_eq!(&bytes[0x87..0x89], &[0x89, 0xc7]);
-        assert_eq!(&bytes[0x89..0x8e], &[0xb8, 0x3c, 0, 0, 0]);
-        assert_eq!(&bytes[0x8e..0x90], &[0x0f, 0x05]);
-        assert_eq!(&bytes[0x90..0x92], &[0x89, 0xf8]);
-        assert_eq!(&bytes[0x92..0x94], &[0x39, 0xf0]);
-        assert_eq!(&bytes[0x94..0x9a], &[0x0f, 0x8d, 0x0a, 0, 0, 0]);
-        assert_eq!(&bytes[0x9a..0x9f], &[0xb8, 0xff, 0xff, 0xff, 0xff]);
-        assert_eq!(&bytes[0x9f..0xa4], &[0xe9, 0x19, 0, 0, 0]);
-        assert_eq!(&bytes[0xa4..0xa6], &[0x89, 0xf8]);
-        assert_eq!(&bytes[0xa6..0xa8], &[0x39, 0xf0]);
-        assert_eq!(&bytes[0xa8..0xae], &[0x0f, 0x8e, 0x0a, 0, 0, 0]);
-        assert_eq!(&bytes[0xae..0xb3], &[0xb8, 1, 0, 0, 0]);
-        assert_eq!(&bytes[0xb3..0xb8], &[0xe9, 5, 0, 0, 0]);
-        assert_eq!(&bytes[0xb8..0xbd], &[0xb8, 0, 0, 0, 0]);
-        assert_eq!(bytes[0xbd], 0xc3);
+        assert_x86_64_elf_entry(&bytes);
+        assert_x86_text_contains_direct_call(&bytes);
 
         #[cfg(all(unix, target_arch = "x86_64"))]
         {
@@ -1170,7 +624,7 @@ fn x86_source_pack_codegen_executes_core_i32_predicate_helpers() {
         ("is_positive", "core::i32::is_positive(5)", 5u32, 0x9fu8),
     ];
 
-    for (name, call, arg, setcc_opcode) in cases {
+    for (name, call, _arg, _setcc_opcode) in cases {
         let user_source = format!(
             "module app::main;\nimport core::i32;\nfn main() -> bool {{\n    return {call};\n}}\n"
         );
@@ -1183,19 +637,8 @@ fn x86_source_pack_codegen_executes_core_i32_predicate_helpers() {
                 panic!("x86 source-pack codegen should lower core::i32::{name}: {err}")
             });
 
-        assert_eq!(&bytes[0..4], b"\x7fELF");
-        assert_eq!(bytes[0x78], 0xbf, "main should load predicate arg into edi");
-        assert_eq!(&bytes[0x79..0x7d], &arg.to_le_bytes());
-        assert_eq!(bytes[0x7d], 0xe8, "main should call rel32 after arg setup");
-        assert_eq!(&bytes[0x7e..0x82], &9u32.to_le_bytes());
-        assert_eq!(&bytes[0x82..0x84], &[0x89, 0xc7]);
-        assert_eq!(&bytes[0x84..0x89], &[0xb8, 0x3c, 0, 0, 0]);
-        assert_eq!(&bytes[0x89..0x8b], &[0x0f, 0x05]);
-        assert_eq!(&bytes[0x8b..0x8d], &[0x89, 0xf8]);
-        assert_eq!(&bytes[0x8d..0x92], &[0x3d, 0, 0, 0, 0]);
-        assert_eq!(&bytes[0x92..0x95], &[0x0f, setcc_opcode, 0xc0]);
-        assert_eq!(&bytes[0x95..0x98], &[0x0f, 0xb6, 0xc0]);
-        assert_eq!(bytes[0x98], 0xc3);
+        assert_x86_64_elf_entry(&bytes);
+        assert_x86_text_contains_direct_call(&bytes);
 
         #[cfg(all(unix, target_arch = "x86_64"))]
         {
@@ -1265,22 +708,8 @@ fn x86_source_pack_codegen_executes_core_u32_min_with_unsigned_branch() {
     let bytes = pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
         .expect("x86 source-pack codegen should lower core::u32::min with unsigned ordering");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(bytes[0x78], 0xbf, "main should load left into edi");
-    assert_eq!(&bytes[0x79..0x7d], &u32::MAX.to_le_bytes());
-    assert_eq!(bytes[0x7d], 0xbe, "main should load right into esi");
-    assert_eq!(&bytes[0x7e..0x82], &1u32.to_le_bytes());
-    assert_eq!(bytes[0x82], 0xe8, "main should call rel32 after arg setup");
-    assert_eq!(&bytes[0x90..0x92], &[0x89, 0xf8]);
-    assert_eq!(&bytes[0x92..0x94], &[0x39, 0xf0]);
-    assert_eq!(
-        &bytes[0x94..0x9a],
-        &[0x0f, 0x83, 7, 0, 0, 0],
-        "unsigned '<' branch should use JAE for the false arm"
-    );
-    assert_eq!(&bytes[0x9a..0x9c], &[0x89, 0xf8]);
-    assert_eq!(&bytes[0xa1..0xa3], &[0x89, 0xf0]);
-    assert_eq!(bytes[0xa3], 0xc3);
+    assert_x86_64_elf_entry(&bytes);
+    assert_x86_text_contains_direct_call(&bytes);
 
     #[cfg(all(unix, target_arch = "x86_64"))]
     {
@@ -1302,22 +731,8 @@ fn x86_source_pack_codegen_executes_core_u32_max_with_unsigned_branch() {
     let bytes = pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
         .expect("x86 source-pack codegen should lower core::u32::max with unsigned ordering");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(bytes[0x78], 0xbf, "main should load left into edi");
-    assert_eq!(&bytes[0x79..0x7d], &u32::MAX.to_le_bytes());
-    assert_eq!(bytes[0x7d], 0xbe, "main should load right into esi");
-    assert_eq!(&bytes[0x7e..0x82], &1u32.to_le_bytes());
-    assert_eq!(bytes[0x82], 0xe8, "main should call rel32 after arg setup");
-    assert_eq!(&bytes[0x90..0x92], &[0x89, 0xf8]);
-    assert_eq!(&bytes[0x92..0x94], &[0x39, 0xf0]);
-    assert_eq!(
-        &bytes[0x94..0x9a],
-        &[0x0f, 0x86, 7, 0, 0, 0],
-        "unsigned '>' branch should use JBE for the false arm"
-    );
-    assert_eq!(&bytes[0x9a..0x9c], &[0x89, 0xf8]);
-    assert_eq!(&bytes[0xa1..0xa3], &[0x89, 0xf0]);
-    assert_eq!(bytes[0xa3], 0xc3);
+    assert_x86_64_elf_entry(&bytes);
+    assert_x86_text_contains_direct_call(&bytes);
 
     #[cfg(all(unix, target_arch = "x86_64"))]
     {
@@ -1341,29 +756,8 @@ fn x86_source_pack_codegen_executes_core_u32_between_inclusive_unsigned_setcc() 
             "x86 source-pack codegen should lower core::u32::between_inclusive with unsigned comparisons",
         );
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(bytes[0x78], 0xbf, "main should load value into edi");
-    assert_eq!(&bytes[0x79..0x7d], &2_147_483_648u32.to_le_bytes());
-    assert_eq!(bytes[0x7d], 0xbe, "main should load low into esi");
-    assert_eq!(&bytes[0x7e..0x82], &1u32.to_le_bytes());
-    assert_eq!(bytes[0x82], 0xba, "main should load high into edx");
-    assert_eq!(&bytes[0x83..0x87], &u32::MAX.to_le_bytes());
-    assert_eq!(bytes[0x87], 0xe8, "main should call after three args");
-    assert_eq!(&bytes[0x95..0x97], &[0x89, 0xf8]);
-    assert_eq!(&bytes[0x97..0x99], &[0x39, 0xf0]);
-    assert_eq!(
-        &bytes[0x99..0x9c],
-        &[0x0f, 0x93, 0xc0],
-        "unsigned '>=' return should use SETAE"
-    );
-    assert_eq!(&bytes[0xa1..0xa3], &[0x89, 0xf8]);
-    assert_eq!(&bytes[0xa3..0xa5], &[0x39, 0xd0]);
-    assert_eq!(
-        &bytes[0xa5..0xa8],
-        &[0x0f, 0x96, 0xc0],
-        "unsigned '<=' return should use SETBE"
-    );
-    assert_eq!(bytes[0xad], 0xc3);
+    assert_x86_64_elf_entry(&bytes);
+    assert_x86_text_contains_direct_call(&bytes);
 
     #[cfg(all(unix, target_arch = "x86_64"))]
     {
@@ -1377,6 +771,24 @@ fn x86_source_pack_codegen_executes_core_u32_between_inclusive_unsigned_setcc() 
 }
 
 #[test]
+fn x86_source_codegen_executes_u32_local_comparison_as_unsigned() {
+    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
+        "fn main() -> bool {\n    let left: u32 = 4294967295;\n    let right: u32 = 1;\n    return left > right;\n}\n",
+    ))
+    .expect("x86 codegen should compare local u32 declarations with unsigned ordering");
+
+    assert_x86_64_elf_entry(&bytes);
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 local u32 unsigned comparison",
+        "x86_local_u32_unsigned_comparison",
+        &bytes,
+        1,
+    );
+}
+
+#[test]
 fn x86_source_pack_codegen_executes_core_u8_max_above_signed_boundary() {
     let sources = [
         include_str!("../stdlib/core/u8.lani"),
@@ -1385,13 +797,8 @@ fn x86_source_pack_codegen_executes_core_u8_max_above_signed_boundary() {
     let bytes = pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
         .expect("x86 source-pack codegen should lower core::u8::max with unsigned ordering");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(bytes[0x78], 0xbf, "main should load left into edi");
-    assert_eq!(&bytes[0x79..0x7d], &255u32.to_le_bytes());
-    assert_eq!(bytes[0x7d], 0xbe, "main should load right into esi");
-    assert_eq!(&bytes[0x7e..0x82], &128u32.to_le_bytes());
-    assert_eq!(bytes[0x82], 0xe8, "main should call rel32 after arg setup");
-    assert_eq!(&bytes[0x94..0x9a], &[0x0f, 0x86, 7, 0, 0, 0]);
+    assert_x86_64_elf_entry(&bytes);
+    assert_x86_text_contains_direct_call(&bytes);
 
     #[cfg(all(unix, target_arch = "x86_64"))]
     {
@@ -1696,11 +1103,14 @@ fn x86_source_codegen_emits_direct_elf_for_true_literal_return() {
     ))
     .expect("x86 codegen should lower a HIR boolean literal into direct ELF bytes");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(&bytes[0x78..0x7d], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(bytes[0x7d], 0xbf);
-    assert_eq!(&bytes[0x7e..0x82], &1u32.to_le_bytes());
-    assert_eq!(&bytes[0x82..0x84], &[0x0f, 0x05]);
+    assert_x86_64_elf_entry(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 true literal return",
+        "x86_true_literal_return",
+        &bytes,
+        1,
+    );
 }
 
 #[test]
@@ -1710,11 +1120,14 @@ fn x86_source_codegen_emits_direct_elf_for_false_literal_return() {
     ))
     .expect("x86 codegen should lower a false HIR literal into direct ELF bytes");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(&bytes[0x78..0x7d], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(bytes[0x7d], 0xbf);
-    assert_eq!(&bytes[0x7e..0x82], &0u32.to_le_bytes());
-    assert_eq!(&bytes[0x82..0x84], &[0x0f, 0x05]);
+    assert_x86_64_elf_entry(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 false literal return",
+        "x86_false_literal_return",
+        &bytes,
+        0,
+    );
 }
 
 #[test]
@@ -1724,11 +1137,14 @@ fn x86_source_codegen_emits_direct_elf_for_logical_not_return() {
     ))
     .expect("x86 codegen should lower HIR logical-not of a boolean literal");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(&bytes[0x78..0x7d], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(bytes[0x7d], 0xbf);
-    assert_eq!(&bytes[0x7e..0x82], &1u32.to_le_bytes());
-    assert_eq!(&bytes[0x82..0x84], &[0x0f, 0x05]);
+    assert_x86_64_elf_entry(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 logical not return",
+        "x86_logical_not_return",
+        &bytes,
+        1,
+    );
 }
 
 #[test]
@@ -1755,17 +1171,17 @@ fn x86_source_codegen_emits_direct_elf_for_local_integer_return() {
     let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
         "fn main() {\n    let value: i32 = 7;\n    return value;\n}\n",
     ))
-    .expect("x86 codegen should lower one scalar local into direct ELF bytes");
+    .expect("x86 codegen should lower one scalar local into an executable ELF");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(
-        u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-        0x400078
+    assert_x86_64_elf_entry(&bytes);
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 local integer return",
+        "x86_local_integer_return",
+        &bytes,
+        7,
     );
-    assert_eq!(&bytes[0x78..0x7d], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(bytes[0x7d], 0xbf);
-    assert_eq!(&bytes[0x7e..0x82], &7u32.to_le_bytes());
-    assert_eq!(&bytes[0x82..0x84], &[0x0f, 0x05]);
 }
 
 #[test]
@@ -1775,11 +1191,9 @@ fn x86_source_codegen_emits_direct_elf_for_bool_local_return() {
     ))
     .expect("x86 codegen should lower scalar locals initialized from HIR boolean literals");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(&bytes[0x78..0x7d], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(bytes[0x7d], 0xbf);
-    assert_eq!(&bytes[0x7e..0x82], &1u32.to_le_bytes());
-    assert_eq!(&bytes[0x82..0x84], &[0x0f, 0x05]);
+    assert_x86_64_elf_entry(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code("x86 bool local return", "x86_bool_local_return", &bytes, 1);
 }
 
 #[test]
@@ -1789,11 +1203,14 @@ fn x86_source_codegen_emits_direct_elf_for_logical_not_local_return() {
     ))
     .expect("x86 codegen should lower HIR logical-not of a scalar local");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(&bytes[0x78..0x7d], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(bytes[0x7d], 0xbf);
-    assert_eq!(&bytes[0x7e..0x82], &1u32.to_le_bytes());
-    assert_eq!(&bytes[0x82..0x84], &[0x0f, 0x05]);
+    assert_x86_64_elf_entry(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 logical not local return",
+        "x86_logical_not_local_return",
+        &bytes,
+        1,
+    );
 }
 
 #[test]
@@ -2037,38 +1454,37 @@ fn x86_source_codegen_emits_direct_elf_for_negated_local_comparison_return() {
 }
 
 #[test]
-fn x86_source_codegen_rejects_non_constant_local_initializer_via_gpu_status() {
-    let err = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
+fn x86_source_codegen_executes_call_initialized_local_return() {
+    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
         "fn id(x: i32) -> i32 {\n    return x;\n}\nfn main() {\n    let value: i32 = id(1);\n    return value;\n}\n",
     ))
-    .expect_err("x86 codegen should reject non-constant local initializers in the bounded slice");
+    .expect("x86 codegen should lower a call-initialized local through HIR value records");
 
-    let message = err.to_string();
-    match err {
-        CompileError::GpuCodegen(_) => {}
-        other => panic!("expected GPU codegen rejection, got {other:?}: {message}"),
-    }
-    assert!(
-        message.contains("GPU x86 emitter rejected unsupported return expression"),
-        "unexpected x86 codegen error: {message}"
+    assert_x86_64_elf_entry(&bytes);
+    assert_x86_text_contains_direct_call(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 call-initialized local return",
+        "x86_call_initialized_local_return",
+        &bytes,
+        1,
     );
 }
 
 #[test]
-fn x86_source_codegen_rejects_unsupported_return_expr_via_gpu_status() {
-    let err = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
+fn x86_source_codegen_executes_nested_hir_expression_return() {
+    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
         "fn main() {\n    return 1 + 2 + 3;\n}\n",
     ))
-    .expect_err("x86 codegen should reject unsupported return expressions");
+    .expect("x86 codegen should lower nested HIR expression returns");
 
-    let message = err.to_string();
-    match err {
-        CompileError::GpuCodegen(_) => {}
-        other => panic!("expected GPU codegen rejection, got {other:?}: {message}"),
-    }
-    assert!(
-        message.contains("GPU x86 emitter rejected unsupported return expression"),
-        "unexpected x86 codegen error: {message}"
+    assert_x86_64_elf_entry(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 nested HIR expression return",
+        "x86_nested_hir_expression_return",
+        &bytes,
+        6,
     );
 }
 

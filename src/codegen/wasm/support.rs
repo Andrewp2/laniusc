@@ -1,11 +1,9 @@
 use std::{
     hash::{Hash, Hasher},
-    sync::mpsc,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use anyhow::Result;
-use log::warn;
 
 use super::WasmParams;
 
@@ -29,6 +27,14 @@ pub(super) fn fast_path_status_init_bytes() -> [u8; 16] {
     bytes
 }
 
+pub(super) fn dispatch_args_bytes(x: u32, y: u32, z: u32) -> [u8; 12] {
+    let mut bytes = [0u8; 12];
+    bytes[0..4].copy_from_slice(&x.to_le_bytes());
+    bytes[4..8].copy_from_slice(&y.to_le_bytes());
+    bytes[8..12].copy_from_slice(&z.to_le_bytes());
+    bytes
+}
+
 pub(super) fn read_wasm_output(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -40,7 +46,12 @@ pub(super) fn read_wasm_output(
     token_capacity: u32,
 ) -> Result<Vec<u8>> {
     let status_slice = status_readback.slice(..);
-    wait_for_map(device, &status_slice, "codegen.wasm.status")?;
+    crate::gpu::passes_core::wait_for_readback_map(
+        device,
+        &status_slice,
+        "codegen.wasm.status",
+        wasm_readback_timeout(),
+    )?;
 
     let (len, source_buf) = {
         let data = status_readback.slice(..).get_mapped_range();
@@ -92,7 +103,12 @@ pub(super) fn read_wasm_output(
     );
 
     let output_slice = out_readback.slice(0..output_bytes);
-    wait_for_map(device, &output_slice, "codegen.wasm.output")?;
+    crate::gpu::passes_core::wait_for_readback_map(
+        device,
+        &output_slice,
+        "codegen.wasm.output",
+        wasm_readback_timeout(),
+    )?;
 
     let bytes = {
         let data = out_readback.slice(0..output_bytes).get_mapped_range();
@@ -105,52 +121,6 @@ pub(super) fn read_wasm_output(
         bytes
     };
     Ok(bytes)
-}
-
-fn wait_for_map(device: &wgpu::Device, slice: &wgpu::BufferSlice<'_>, label: &str) -> Result<()> {
-    let label = label.to_string();
-    let cb_label = label.clone();
-    let (tx, rx) = mpsc::channel();
-    crate::gpu::passes_core::trace_gpu_progress(&format!("map.start :: {label}"));
-    slice.map_async(wgpu::MapMode::Read, move |result| {
-        if let Err(err) = tx.send(result) {
-            warn!("failed to dispatch readback status for {cb_label}: {err}");
-        }
-    });
-    crate::gpu::passes_core::trace_gpu_progress(&format!("map.queued :: {label}"));
-
-    let timeout = wasm_readback_timeout();
-    let start = Instant::now();
-    let mut spins = 0u32;
-    loop {
-        crate::gpu::passes_core::wait_for_map_progress(
-            device,
-            &format!("codegen.wasm.output-poll({label})"),
-            wgpu::PollType::Poll,
-        );
-        match rx.try_recv() {
-            Ok(Ok(())) => return Ok(()),
-            Ok(Err(err)) => {
-                return Err(anyhow::anyhow!("{label} readback map failed: {err}"));
-            }
-            Err(mpsc::TryRecvError::Empty) => {}
-            Err(mpsc::TryRecvError::Disconnected) => {
-                return Err(anyhow::anyhow!("{label} readback callback disconnected"));
-            }
-        }
-        if start.elapsed() >= timeout {
-            return Err(anyhow::anyhow!(
-                "{label} readback did not complete within {} ms",
-                timeout.as_millis()
-            ));
-        }
-        if spins < 64 {
-            std::hint::spin_loop();
-            spins += 1;
-        } else {
-            std::thread::yield_now();
-        }
-    }
 }
 
 fn wasm_readback_timeout() -> Duration {

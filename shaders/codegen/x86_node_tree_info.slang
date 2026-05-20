@@ -1,11 +1,13 @@
 // x86_64 backend HIR tree projection.
 //
-// Pareas codegen operates over node-property arrays: parent, depth, child
-// index, and node data. The parser already owns the tree buffers, but the x86
-// backend needs a stable attributed tree record so later instruction counting
-// and generation consume backend records instead of reconstructing tree shape
-// locally in each pass.
+// Pareas codegen operates over node-property arrays: parent, child/sibling
+// links, subtree spans, and node data. The parser already owns the tree buffers,
+// but the x86 backend needs a stable attributed tree record so later
+// instruction counting and generation consume backend records instead of
+// reconstructing tree shape locally in each pass.
 
+import gpu_index;
+import status;
 struct Params
 {
     uint n_tokens;
@@ -32,7 +34,7 @@ static const uint X86_ERR_TREE_SHAPE = 9u;
 
 uint linear_dispatch_id(uint3 tid)
 {
-    return tid.x + tid.y * DISPATCH_X_STRIDE;
+    return linear_dispatch_thread_id_2d(tid, DISPATCH_X_STRIDE);
 }
 
 uint active_hir_node_count()
@@ -51,57 +53,9 @@ uint valid_parent_or_invalid(uint node)
     return valid_node(p) ? p : INVALID;
 }
 
-bool compute_depth(uint node, out uint depth)
-{
-    depth = 0u;
-    if (!valid_node(node))
-        return false;
-
-    uint cur = node;
-    [loop]
-    for (uint guard = 0u; guard < 256u; guard += 1u)
-    {
-        uint p = valid_parent_or_invalid(cur);
-        if (p == INVALID)
-            return true;
-        if (p == cur)
-            return false;
-        depth += 1u;
-        cur = p;
-    }
-    return false;
-}
-
-bool compute_child_index(uint node, uint p, out uint child_index)
-{
-    child_index = 0u;
-    if (!valid_node(node))
-        return false;
-    if (p == INVALID)
-        return true;
-    if (!valid_node(p))
-        return false;
-
-    uint child = first_child[p];
-    [loop]
-    for (uint guard = 0u; guard < 512u; guard += 1u)
-    {
-        if (!valid_node(child) || parent[child] != p)
-            return false;
-        if (child == node)
-            return true;
-        child = next_sibling[child];
-        child_index += 1u;
-    }
-    return false;
-}
-
 void publish_error(uint node)
 {
-    uint old_error = 0u;
-    InterlockedCompareExchange(x86_node_tree_status[1u], 0u, X86_ERR_TREE_SHAPE, old_error);
-    uint old_detail = INVALID;
-    InterlockedMin(x86_node_tree_status[2u], node, old_detail);
+    publish_stage_error_min_detail4(x86_node_tree_status, X86_ERR_TREE_SHAPE, node);
 }
 
 [shader("compute")]
@@ -118,9 +72,8 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     uint p = valid_parent_or_invalid(node);
-    uint depth = 0u;
-    uint child_index = 0u;
-    bool ok = compute_depth(node, depth) && compute_child_index(node, p, child_index);
+    uint end = subtree_end[node];
+    bool ok = p != node && (valid_node(end) || end == active_nodes);
     if (!ok)
     {
         x86_node_tree_record[node] = uint4(INVALID, INVALID, INVALID, INVALID);
@@ -128,10 +81,11 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
     }
 
-    uint end = subtree_end[node];
+    uint next = next_sibling[node];
+    uint child = first_child[node];
     x86_node_tree_record[node] = uint4(
         p,
-        depth,
-        child_index,
-        valid_node(end) || end == active_nodes ? end : INVALID);
+        valid_node(child) ? child : INVALID,
+        valid_node(next) ? next : INVALID,
+        end);
 }

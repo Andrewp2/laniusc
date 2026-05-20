@@ -29,6 +29,17 @@ async fn main() -> Result<()> {
     for t in &tokens {
         token_kinds_u32.push(t.kind as u32);
     }
+    if std::env::var_os("LANIUS_PARSE_DEMO_TOKENS").is_some() {
+        for (i, t) in tokens.iter().enumerate() {
+            println!(
+                "token[{i}] kind={} start={} len={} text={:?}",
+                t.kind as u32,
+                t.start,
+                t.len,
+                &input[t.start..t.start + t.len]
+            );
+        }
+    }
     // Add sentinels: START and END, so the first token participates in a pair.
     token_kinds_u32.insert(0, 0);
     token_kinds_u32.push(0);
@@ -41,6 +52,121 @@ async fn main() -> Result<()> {
 
     // 3) GPU parser (pairs → headers → pack → brackets → tree)
     let parser = GpuParser::new().await?;
+    if std::env::var_os("LANIUS_PARSE_DEMO_RESIDENT").is_some() {
+        let parsed = lexer
+            .with_resident_tokens(&input, |_, _, bufs| {
+                parser.parse_resident_tokens(bufs.n, &bufs.tokens_out, &bufs.token_count, &tables)
+            })
+            .await??;
+        println!(
+            "resident ll1: accepted={} error_pos={} error_code={} detail={} steps={} emits={}",
+            parsed.ll1.accepted,
+            parsed.ll1.error_pos,
+            parsed.ll1.error_code,
+            parsed.ll1.detail,
+            parsed.ll1.steps,
+            parsed.ll1.emit_len
+        );
+        println!("resident nodes: {}", parsed.node_kind.len());
+        for i in 0..parsed.node_kind.len().min(16) {
+            println!(
+                "  node[{i}] kind={} parent={}",
+                parsed.node_kind[i], parsed.parent[i]
+            );
+        }
+        if std::env::var_os("LANIUS_PARSE_DEMO_FULL").is_some() {
+            for (i, &kind) in parsed.node_kind.iter().enumerate() {
+                let hir = parsed.hir_kind.get(i).copied().unwrap_or(u32::MAX);
+                let pos = parsed.hir_token_pos.get(i).copied().unwrap_or(u32::MAX);
+                let end = parsed.hir_token_end.get(i).copied().unwrap_or(u32::MAX);
+                let parent = parsed.parent.get(i).copied().unwrap_or(u32::MAX);
+                let first_child = parsed.first_child.get(i).copied().unwrap_or(u32::MAX);
+                let next_sibling = parsed.next_sibling.get(i).copied().unwrap_or(u32::MAX);
+                let subtree_end = parsed.subtree_end.get(i).copied().unwrap_or(u32::MAX);
+                let callee = parsed
+                    .hir_call_callee_node
+                    .get(i)
+                    .copied()
+                    .unwrap_or(u32::MAX);
+                let arg_start = parsed
+                    .hir_call_arg_start
+                    .get(i)
+                    .copied()
+                    .unwrap_or(u32::MAX);
+                let arg_end = parsed.hir_call_arg_end.get(i).copied().unwrap_or(u32::MAX);
+                let arg_count = parsed
+                    .hir_call_arg_count
+                    .get(i)
+                    .copied()
+                    .unwrap_or(u32::MAX);
+                let array_first = parsed
+                    .hir_array_lit_first_element
+                    .get(i)
+                    .copied()
+                    .unwrap_or(u32::MAX);
+                let array_count = parsed
+                    .hir_array_lit_element_count
+                    .get(i)
+                    .copied()
+                    .unwrap_or(0);
+                let array_parent = parsed
+                    .hir_array_element_parent_lit
+                    .get(i)
+                    .copied()
+                    .unwrap_or(u32::MAX);
+                let array_ordinal = parsed
+                    .hir_array_element_ordinal
+                    .get(i)
+                    .copied()
+                    .unwrap_or(u32::MAX);
+                let array_next = parsed
+                    .hir_array_element_next
+                    .get(i)
+                    .copied()
+                    .unwrap_or(u32::MAX);
+                let match_arm_start = parsed
+                    .hir_match_arm_start
+                    .get(i)
+                    .copied()
+                    .unwrap_or(u32::MAX);
+                let match_arm_count = parsed.hir_match_arm_count.get(i).copied().unwrap_or(0);
+                let match_pattern = parsed
+                    .hir_match_arm_pattern_node
+                    .get(i)
+                    .copied()
+                    .unwrap_or(u32::MAX);
+                let match_payload_start = parsed
+                    .hir_match_arm_payload_start
+                    .get(i)
+                    .copied()
+                    .unwrap_or(u32::MAX);
+                let match_payload_count = parsed
+                    .hir_match_arm_payload_count
+                    .get(i)
+                    .copied()
+                    .unwrap_or(0);
+                let match_result = parsed
+                    .hir_match_arm_result_node
+                    .get(i)
+                    .copied()
+                    .unwrap_or(u32::MAX);
+                let match_next = parsed
+                    .hir_match_arm_next
+                    .get(i)
+                    .copied()
+                    .unwrap_or(u32::MAX);
+                let token_text = tokens
+                    .get(pos as usize)
+                    .map(|t| &input[t.start..t.start + t.len])
+                    .unwrap_or("");
+                println!(
+                    "  node[{i}] prod={kind} hir={hir} pos={pos} end={end} parent={parent} child={first_child} next={next_sibling} subtree_end={subtree_end} callee={callee} args=({arg_start},{arg_end},{arg_count}) array=({array_first},{array_count},{array_parent},{array_ordinal},{array_next}) match=({match_arm_start},{match_arm_count}) arm=({match_pattern},{match_payload_start},{match_payload_count},{match_result},{match_next}) token={token_text:?}"
+                );
+            }
+        }
+        return Ok(());
+    }
+
     let res = parser.parse(&token_kinds_u32, &tables).await?;
 
     // Sanity checks per milestone

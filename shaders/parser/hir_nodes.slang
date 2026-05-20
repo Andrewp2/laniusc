@@ -4,6 +4,8 @@
 // the full tree yet; it creates the stable GPU-side bridge that later type and
 // codegen passes can consume instead of rediscovering structure from tokens.
 
+import generated_parse_production_ids;
+
 struct Params
 {
     uint n;
@@ -78,75 +80,84 @@ uint hir_file_for_emit_pos(uint token_i)
 
 uint classify(uint prod)
 {
-    if (prod == 0u)
+    if (prod == PROD_FILE)
         return HIR_FILE;
-    if ((prod >= 3u && prod <= 11u) || prod == 191u || prod == 193u || prod == 231u ||
-        (prod >= 240u && prod <= 247u))
+    if (prod == PROD_ITEM_PUB || prod == PROD_ITEM_FN || prod == PROD_ITEM_EXTERN_FN ||
+        prod == PROD_ITEM_IMPORT || prod == PROD_ITEM_MODULE ||
+        prod == PROD_ITEM_TYPE_ALIAS || prod == PROD_ITEM_IMPL || prod == PROD_ITEM_TRAIT ||
+        prod == PROD_ITEM_CONST || prod == PROD_ITEM_ENUM || prod == PROD_ITEM_STRUCT ||
+        prod == PROD_PUB_FN || prod == PROD_PUB_EXTERN_FN || prod == PROD_PUB_CONST ||
+        prod == PROD_PUB_TYPE_ALIAS || prod == PROD_PUB_ENUM || prod == PROD_PUB_STRUCT ||
+        prod == PROD_PUB_IMPL || prod == PROD_PUB_TRAIT || prod == PROD_ENUM_VARIANT)
         return HIR_ITEM;
-    if (prod == 12u || prod == 13u)
+    if (prod == PROD_FN || prod == PROD_EXTERN_FN || prod == PROD_IMPL_FN)
         return HIR_FN;
-    if (prod == 42u)
+    if (prod == PROD_IMPORT)
         return HIR_IMPORT_ITEM;
-    if (prod == 45u)
+    if (prod == PROD_MODULE)
         return HIR_MODULE_ITEM;
-    if (prod == 46u)
+    if (prod == PROD_PATH)
         return HIR_PATH_EXPR;
-    if (prod >= 53u && prod <= 55u)
+    if (prod == PROD_PARAM_NAMED || prod == PROD_PARAM_SELF ||
+        prod == PROD_PARAM_SELF_REF)
         return HIR_PARAM;
-    if (prod == 60u || prod == 61u || prod == 259u)
+    if (prod == PROD_TYPE_IDENT || prod == PROD_TYPE_ARRAY || prod == PROD_TYPE_REF)
         return HIR_TYPE;
-    if (prod == 62u || prod == 76u)
+    if (prod == PROD_FN_BLOCK || prod == PROD_IMPL_FN_BLOCK || prod == PROD_BLOCK)
         return HIR_BLOCK;
-    if (prod == 63u || prod == 64u || prod == 72u || prod == 73u)
+    if (prod == PROD_BLOCK_STMT || prod == PROD_EXPR_STMT || prod == PROD_ELSE_STMT)
         return HIR_STMT;
-    if (prod == 65u)
+    if (prod == PROD_LET_STMT)
         return HIR_LET_STMT;
-    if (prod == 66u)
+    if (prod == PROD_RETURN_STMT)
         return HIR_RETURN_STMT;
-    if (prod == 67u)
+    if (prod == PROD_IF_STMT)
         return HIR_IF_STMT;
-    if (prod == 68u)
+    if (prod == PROD_WHILE_STMT)
         return HIR_WHILE_STMT;
-    if (prod == 69u)
+    if (prod == PROD_FOR_STMT)
         return HIR_FOR_STMT;
-    if (prod == 70u)
+    if (prod == PROD_BREAK_STMT)
         return HIR_BREAK_STMT;
-    if (prod == 71u)
+    if (prod == PROD_CONTINUE_STMT)
         return HIR_CONTINUE_STMT;
-    if (prod == 83u)
+    if (prod == PROD_EXPR)
         return HIR_EXPR;
-    if (prod == 171u)
+    if (prod == PROD_MATCH_EXPR)
         return HIR_MATCH_EXPR;
-    if ((prod >= 85u && prod <= 96u))
+    if (prod >= PROD_ASSIGN && prod <= PROD_ASSIGN_END)
         return HIR_ASSIGN_EXPR;
-    if ((prod >= 97u && prod <= 134u))
+    if (prod >= PROD_OREXPR && prod <= PROD_MUL_END)
         return HIR_BINARY_EXPR;
-    if ((prod >= 135u && prod <= 141u) || prod == 146u || prod == 147u)
+    if ((prod >= PROD_PRE_INC && prod <= PROD_BASE) ||
+        prod == PROD_POSTFIX_INC || prod == PROD_POSTFIX_DEC)
         return HIR_UNARY_EXPR;
-    if (prod == 142u || prod == 148u)
+    if (prod == PROD_POSTFIX || prod == PROD_POSTFIX_END)
         return HIR_POSTFIX_EXPR;
-    if (prod == 143u)
+    if (prod == PROD_POSTFIX_CALL)
         return HIR_CALL_EXPR;
-    if (prod == 144u)
+    if (prod == PROD_POSTFIX_INDEX)
         return HIR_INDEX_EXPR;
-    if (prod == 145u)
+    if (prod == PROD_POSTFIX_MEMBER)
         return HIR_MEMBER_EXPR;
-    if (prod == 155u)
+    if (prod == PROD_ARRAY_LIT)
         return HIR_ARRAY_EXPR;
-    if (prod == 157u || prod == 179u)
+    if (prod == PROD_IDENT || prod == PROD_SELF_VALUE ||
+        prod == PROD_PATTERN_IDENT)
         return HIR_NAME_EXPR;
-    if ((prod >= 159u && prod <= 162u) || prod == 169u || prod == 170u ||
-        (prod >= 180u && prod <= 182u))
+    if (prod == PROD_INT || prod == PROD_FLOAT || prod == PROD_STRING ||
+        prod == PROD_CHAR || prod == PROD_TRUE || prod == PROD_FALSE ||
+        prod == PROD_PATTERN_INT || prod == PROD_PATTERN_TRUE || prod == PROD_PATTERN_FALSE)
         return HIR_LITERAL_EXPR;
-    if (prod == 192u)
+    if (prod == PROD_CONST)
         return HIR_CONST_ITEM;
-    if (prod == 14u)
+    if (prod == PROD_TYPE_ALIAS)
         return HIR_TYPE_ALIAS_ITEM;
-    if (prod == 194u)
+    if (prod == PROD_ENUM)
         return HIR_ENUM_ITEM;
-    if (prod == 232u)
+    if (prod == PROD_STRUCT)
         return HIR_STRUCT_ITEM;
-    if (prod == 249u)
+    if (prod == PROD_STRUCT_LIT)
         return HIR_STRUCT_LITERAL_EXPR;
     return HIR_NONE;
 }

@@ -5,6 +5,7 @@
 //   - compact_boundaries_kept  : uses KEPT-end predicate ((emit&keep_emit)||(eof&keep_eof))
 
 import utils;
+import gpu_index;
 
 struct LexParams
 {
@@ -59,8 +60,8 @@ inline void compact_impl(bool use_kept_pred, uint3 tid)
         // ▼ Only KEPT stream writes kinds / ALL-index bookkeeping
         if (use_kept_pred)
         {
-            uint emit_kind16 = (tok_types[i]) & 0xFFFFu;
-            uint eof_kind16 = (tok_types[i] >> 16) & 0xFFFFu;
+            uint emit_kind16 = unpack_u16_pair_low(tok_types[i]);
+            uint eof_kind16 = unpack_u16_pair_high(tok_types[i]);
             uint kind0 = (emit_kind16 != 0xFFFFu) ? emit_kind16 : eof_kind16;
             types_compact[k0] = kind0;
             all_index_compact[k0] = all_idx_1based - 1u;
@@ -72,8 +73,8 @@ inline void compact_impl(bool use_kept_pred, uint3 tid)
 
         if (use_kept_pred)
         {
-            uint emit_kind16 = (tok_types[i]) & 0xFFFFu;
-            uint eof_kind16 = (tok_types[i] >> 16) & 0xFFFFu;
+            uint emit_kind16 = unpack_u16_pair_low(tok_types[i]);
+            uint eof_kind16 = unpack_u16_pair_high(tok_types[i]);
             uint kind1 = (eof_kind16 != 0xFFFFu) ? eof_kind16 : emit_kind16;
             types_compact[k1] = kind1;
             all_index_compact[k1] = all_idx_1based;
@@ -104,8 +105,8 @@ inline void compact_impl(bool use_kept_pred, uint3 tid)
     // ▼ Only KEPT stream needs token kinds
     if (use_kept_pred)
     {
-        uint emit_kind16 = (tok_types[i]) & 0xFFFFu;
-        uint eof_kind16 = (tok_types[i] >> 16) & 0xFFFFu;
+        uint emit_kind16 = unpack_u16_pair_low(tok_types[i]);
+        uint eof_kind16 = unpack_u16_pair_high(tok_types[i]);
         uint kind = 0u;
         if (is_last != 0u)
         {

@@ -34,7 +34,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for LL1BlocksStitchP
         b: &'a ParserBuffers,
     ) -> HashMap<String, wgpu::BindingResource<'a>> {
         HashMap::from([
-            ("token_kinds".into(), b.token_kinds.as_entire_binding()),
+            (
+                "token_kinds".into(),
+                b.semantic_token_kinds.as_entire_binding(),
+            ),
             ("token_count".into(), b.token_count.as_entire_binding()),
             ("ll1_predict".into(), b.ll1_predict.as_entire_binding()),
             (

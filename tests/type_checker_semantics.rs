@@ -1,6 +1,7 @@
 mod common;
 
 use laniusc::compiler::CompileError;
+use rand::{Rng, SeedableRng, rngs::StdRng};
 
 fn assert_gpu_type_check_ok(src: &str) {
     common::type_check_source_with_timeout(src).expect("source should pass GPU type checking");
@@ -23,6 +24,95 @@ fn assert_gpu_type_check_rejects_with_code(src: &str, code: &str) {
         ),
         Err(other) => panic!("expected GPU type check error, got {other:?}"),
     }
+}
+
+#[test]
+fn type_checker_accepts_generated_let_chain_from_hir_records() {
+    let mut src = String::from("fn main() -> i32 {\n    let v0: i32 = 1;\n");
+    for i in 1..80 {
+        let prev = i - 1;
+        let add = (i * 17 + 3) % 11;
+        src.push_str(&format!("    let v{i}: i32 = v{prev} + {add};\n"));
+    }
+    src.push_str("    return v79;\n}\n");
+
+    assert_gpu_type_check_ok(&src);
+}
+
+#[test]
+fn type_checker_accepts_generated_call_argument_shapes_from_hir_records() {
+    let mut rng = StdRng::seed_from_u64(0x7479_636b_6172_6773);
+    let mut names = Vec::new();
+    while names.len() < 24 {
+        let candidate = random_ident(&mut rng);
+        if !names.contains(&candidate) {
+            names.push(candidate);
+        }
+    }
+
+    let id_fn = &names[0];
+    let id_param = &names[1];
+    let local = &names[2];
+    let mut src = format!("fn {id_fn}({id_param}: i32) -> i32 {{\n    return {id_param};\n}}\n");
+    for arity in 0..5 {
+        let fn_name = &names[3 + arity];
+        let params = (0..arity)
+            .map(|i| format!("{}: i32", names[8 + arity * 2 + i]))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let body = if arity == 0 {
+            String::from("11")
+        } else {
+            names[8 + arity * 2..8 + arity * 2 + arity].join(" + ")
+        };
+        src.push_str(&format!(
+            "fn {fn_name}({params}) -> i32 {{\n    return {body};\n}}\n"
+        ));
+    }
+
+    src.push_str(&format!(
+        "fn main() -> i32 {{\n    let {local}: i32 = {id_fn}(3);\n"
+    ));
+    for arity in 0..5 {
+        let fn_name = &names[3 + arity];
+        let args = match arity {
+            0 => String::new(),
+            1 => local.to_owned(),
+            2 => format!("{local}, {id_fn}(5)"),
+            3 => format!("{id_fn}(1), {local} + 2, 7"),
+            _ => format!("{local}, {id_fn}(4), 8 + 9, {id_fn}({local})"),
+        };
+        src.push_str(&format!("    let r{arity}: i32 = {fn_name}({args});\n"));
+    }
+    src.push_str("    return r0 + r1 + r2 + r3 + r4;\n}\n");
+
+    assert_gpu_type_check_ok(&src);
+}
+
+#[test]
+fn type_checker_resolves_shadowed_hir_names_by_scope_records() {
+    assert_gpu_type_check_ok(
+        r#"
+fn main() -> i32 {
+    let value: i32 = 1;
+    if (true) {
+        let value: i32 = 2;
+    }
+    return value;
+}
+"#,
+    );
+}
+
+fn random_ident(rng: &mut StdRng) -> String {
+    const FIRST: &[u8] = b"abcdefghijklmnopqrstuvwxyz";
+    const REST: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
+    let mut ident = String::new();
+    ident.push(FIRST[rng.random_range(0..FIRST.len())] as char);
+    for _ in 0..rng.random_range(3..=9) {
+        ident.push(REST[rng.random_range(0..REST.len())] as char);
+    }
+    ident
 }
 
 #[test]
@@ -92,12 +182,17 @@ fn make_pair() -> Pair {
     return Pair { left: 7, flag: true };
 }
 
+fn make_pair_from_values(input_left: i32, input_flag: bool) -> Pair {
+    return Pair { left: input_left, flag: input_flag };
+}
+
 fn get_left(pair: Pair) -> i32 {
     return pair.left;
 }
 
 fn main() {
-    return get_left(make_pair());
+    let pair: Pair = make_pair_from_values(7, true);
+    return get_left(make_pair()) + get_left(pair);
 }
 "#;
 
@@ -532,6 +627,19 @@ enum Result<T, E> {
 fn main() {
     let ok: Result<i32, bool> = Ok(1);
     let err: Result<i32, bool> = Err(false);
+    return 0;
+}
+"#,
+    );
+    assert_gpu_type_check_ok(
+        r#"
+enum Outcome<Good, Bad> {
+    Succeed(Good),
+    Fail(Bad),
+}
+
+fn main() {
+    let fail: Outcome<i32, bool> = Fail(false);
     return 0;
 }
 "#,

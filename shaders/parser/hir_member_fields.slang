@@ -1,8 +1,9 @@
 // Derive parser-owned member expression metadata from the inverted tree.
 //
-// This pass records the receiver and selected member name for each
-// PROD_POSTFIX_MEMBER node. Downstream semantic passes consume these HIR
-// records instead of guessing from neighboring tokens.
+// Postfix tails are right-recursive in the grammar. A member's receiver is
+// either the immediately enclosing postfix operator or the postfix root's base
+// expression. Downstream semantic passes consume these HIR records instead of
+// guessing from neighboring tokens.
 
 import generated_parse_production_ids;
 
@@ -18,10 +19,11 @@ StructuredBuffer<uint> ll1_status;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> parent;
 StructuredBuffer<uint> first_child;
-StructuredBuffer<uint> subtree_end;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_token_end;
+StructuredBuffer<uint> hir_semantic_dense_node;
+StructuredBuffer<uint> hir_semantic_count;
 
 RWStructuredBuffer<uint> hir_member_receiver_node;
 RWStructuredBuffer<uint> hir_member_receiver_token;
@@ -48,59 +50,33 @@ bool valid_node(uint node)
     return node != INVALID && node < active_node_count();
 }
 
-uint first_child_node(uint node)
+uint active_semantic_count()
 {
-    uint child = valid_node(node) ? first_child[node] : INVALID;
-    return valid_node(child) ? child : INVALID;
+    return min(hir_semantic_count[0u], active_node_count());
+}
+
+uint semantic_row_node(uint row)
+{
+    if (row >= active_semantic_count())
+        return INVALID;
+    uint node = hir_semantic_dense_node[row];
+    return valid_node(node) ? node : INVALID;
 }
 
 uint parent_node(uint node)
 {
-    uint p = valid_node(node) ? parent[node] : INVALID;
+    if (!valid_node(node))
+        return INVALID;
+    uint p = parent[node];
     return valid_node(p) ? p : INVALID;
 }
 
-uint node_end(uint node)
+uint first_child_node(uint node)
 {
     if (!valid_node(node))
         return INVALID;
-    return min(subtree_end[node], active_node_count());
-}
-
-bool has_ancestor_node(uint node, uint ancestor)
-{
-    uint cur = node;
-    [loop]
-    for (uint guard = 0u; guard < 128u; guard += 1u)
-    {
-        if (!valid_node(cur))
-            return false;
-        if (cur == ancestor)
-            return true;
-        uint p = parent_node(cur);
-        if (!valid_node(p) || p == cur)
-            return false;
-        cur = p;
-    }
-    return false;
-}
-
-uint ancestor_with_production(uint node, uint prod)
-{
-    uint cur = node;
-    [loop]
-    for (uint guard = 0u; guard < 128u; guard += 1u)
-    {
-        if (!valid_node(cur))
-            return INVALID;
-        if (node_kind[cur] == prod)
-            return cur;
-        uint p = parent_node(cur);
-        if (!valid_node(p) || p == cur)
-            return INVALID;
-        cur = p;
-    }
-    return INVALID;
+    uint child = first_child[node];
+    return valid_node(child) ? child : INVALID;
 }
 
 bool is_postfix_operator(uint prod)
@@ -110,115 +86,59 @@ bool is_postfix_operator(uint prod)
            prod == PROD_POSTFIX_DEC;
 }
 
-bool is_name_value_production(uint prod)
+uint token_before(uint token)
 {
-    return prod == PROD_IDENT || prod == PROD_IDENT_PLAIN || prod == PROD_PATH ||
-           prod == PROD_SELF_VALUE;
-}
-
-bool is_member_name_production(uint prod)
-{
-    return prod == PROD_IDENT || prod == PROD_IDENT_PLAIN;
-}
-
-uint first_descendant_token_with_kind(uint root, bool want_member_name)
-{
-    if (!valid_node(root))
-        return INVALID;
-
-    uint end = node_end(root);
-    [loop]
-    for (uint node = root; node < end; node += 1u)
-    {
-        uint prod = node_kind[node];
-        bool ok = want_member_name ? is_member_name_production(prod)
-                                   : is_name_value_production(prod);
-        if (ok)
-        {
-            uint token = hir_token_pos[node];
-            if (token != INVALID)
-                return token;
-        }
-    }
-    return INVALID;
+    return token != INVALID && token > 0u ? token - 1u : INVALID;
 }
 
 uint member_name_token_for_node(uint member_node)
 {
-    uint start = valid_node(member_node) ? hir_token_pos[member_node] : INVALID;
-    uint end = valid_node(member_node) ? hir_token_end[member_node] : INVALID;
-    uint child = first_child_node(member_node);
-    uint child_token = valid_node(child) ? hir_token_pos[child] : INVALID;
-    if (start != INVALID && end != INVALID && child_token != INVALID &&
-        child_token > start && child_token <= end)
-        return child_token - 1u;
-    if (start != INVALID && end != INVALID && end >= 1u && end - 1u > start)
-        return end - 1u;
-    if (start != INVALID && end != INVALID && end >= 2u && end - 2u > start)
-        return end - 2u;
-    if (start != INVALID && end != INVALID && start + 1u < end)
-        return start + 1u;
-    return first_descendant_token_with_kind(member_node, true);
-}
-
-uint previous_postfix_operator(uint postfix_node, uint member_node)
-{
-    if (!valid_node(postfix_node) || !valid_node(member_node))
+    if (!valid_node(member_node))
         return INVALID;
 
-    uint previous = INVALID;
-    uint end = min(member_node, node_end(postfix_node));
-    [loop]
-    for (uint node = postfix_node + 1u; node < end; node += 1u)
-    {
-        if (!has_ancestor_node(node, postfix_node))
-            continue;
-        if (is_postfix_operator(node_kind[node]))
-            previous = node;
-    }
-    return previous;
-}
+    uint child = first_child_node(member_node);
+    uint child_token = valid_node(child) ? hir_token_pos[child] : INVALID;
+    if (child_token != INVALID && child_token > hir_token_pos[member_node])
+        return child_token - 1u;
 
-uint postfix_base_token(uint postfix_node)
-{
-    uint base = valid_node(postfix_node) ? first_child_node(postfix_node) : INVALID;
-    return first_descendant_token_with_kind(base, false);
+    uint end = hir_token_end[member_node];
+    if (end != INVALID && end > hir_token_pos[member_node] + 1u)
+        return end - 1u;
+
+    return INVALID;
 }
 
 uint postfix_operator_head_token(uint operator_node)
 {
-    uint postfix_node = ancestor_with_production(operator_node, PROD_POSTFIX);
-    uint previous = previous_postfix_operator(postfix_node, operator_node);
-    if (valid_node(previous) && node_kind[previous] == PROD_POSTFIX_MEMBER)
-        return member_name_token_for_node(previous);
-    if (valid_node(previous) && node_kind[previous] == PROD_POSTFIX_CALL)
-        return hir_token_pos[previous] > 0u ? hir_token_pos[previous] - 1u : INVALID;
-    return postfix_base_token(postfix_node);
+    if (!valid_node(operator_node))
+        return INVALID;
+    if (node_kind[operator_node] == PROD_POSTFIX_MEMBER)
+        return member_name_token_for_node(operator_node);
+    return token_before(hir_token_pos[operator_node]);
 }
 
 uint receiver_token_for_node(uint receiver_node)
 {
     if (!valid_node(receiver_node))
         return INVALID;
-    if (node_kind[receiver_node] == PROD_POSTFIX_MEMBER || hir_kind[receiver_node] == HIR_MEMBER_EXPR)
-        return member_name_token_for_node(receiver_node);
     if (is_postfix_operator(node_kind[receiver_node]))
         return postfix_operator_head_token(receiver_node);
-    return first_descendant_token_with_kind(receiver_node, false);
+    return hir_token_pos[receiver_node];
 }
 
 uint receiver_node_for_member(uint member_node)
 {
-    uint postfix_node = ancestor_with_production(member_node, PROD_POSTFIX);
-    if (!valid_node(postfix_node))
+    uint p = parent_node(member_node);
+    if (!valid_node(p))
         return INVALID;
 
-    uint previous = previous_postfix_operator(postfix_node, member_node);
-    if (valid_node(previous))
-        return previous;
+    if (is_postfix_operator(node_kind[p]))
+        return p;
 
-    uint base = first_child_node(postfix_node);
-    return valid_node(base) ? base : INVALID;
+    if (node_kind[p] == PROD_POSTFIX)
+        return first_child_node(p);
+
+    return INVALID;
 }
 
 void clear_member(uint node)
@@ -232,12 +152,13 @@ void clear_member(uint node)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = linear_thread_id(dtid);
-    if (node >= gHirMember.n)
+    uint row = linear_thread_id(dtid);
+    uint node = semantic_row_node(row);
+    if (node == INVALID)
         return;
 
     clear_member(node);
-    if (!valid_node(node) || hir_kind[node] != HIR_MEMBER_EXPR)
+    if (hir_kind[node] != HIR_MEMBER_EXPR)
         return;
 
     uint receiver = receiver_node_for_member(node);

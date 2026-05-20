@@ -1,3 +1,5 @@
+import status;
+
 struct Params
 {
     uint n_tokens;
@@ -27,6 +29,13 @@ StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> module_type_path_type;
 StructuredBuffer<uint> module_value_path_status;
+StructuredBuffer<uint> decl_type_ref_tag;
+StructuredBuffer<uint> decl_type_ref_payload;
+StructuredBuffer<uint> type_generic_param_slot_by_token;
+StructuredBuffer<uint> type_instance_kind;
+StructuredBuffer<uint> type_instance_decl_token;
+StructuredBuffer<uint> type_instance_elem_ref_tag;
+StructuredBuffer<uint> type_instance_elem_ref_payload;
 
 // Shared with type_check_tokens: [0] ok, [1] first error token, [2] error code, [3] detail.
 RWStructuredBuffer<uint> status;
@@ -57,6 +66,13 @@ static const uint TY_ARRAY_BASE = 128u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
 static const uint TY_GENERIC_BASE = 8192u;
+static const uint TYPE_REF_INVALID = 0u;
+static const uint TYPE_REF_SCALAR = 1u;
+static const uint TYPE_REF_GENERIC_PARAM = 2u;
+static const uint TYPE_REF_INSTANCE = 3u;
+static const uint TYPE_INSTANCE_NAMED = 1u;
+static const uint TYPE_INSTANCE_ARRAY = 2u;
+static const uint TYPE_INSTANCE_SLICE = 3u;
 static const uint LANGUAGE_DECL_COUNT = 18u;
 static const uint LANGUAGE_PRIMITIVE_DECL_FIRST = 3u;
 
@@ -116,6 +132,8 @@ static const uint TK_CONST = 92u;
 static const uint TK_ENUM = 93u;
 static const uint TK_STRUCT = 94u;
 static const uint TK_MATCH = 95u;
+static const uint TK_MATCH_LBRACE = 119u;
+static const uint TK_MATCH_RBRACE = 120u;
 static const uint TK_IMPORT = 96u;
 static const uint TK_IMPL = 98u;
 static const uint TK_TRAIT = 99u;
@@ -136,6 +154,11 @@ uint active_hir_node_count()
 bool has_token_aligned_hir()
 {
     return active_hir_node_count() == active_token_count() + 1u;
+}
+
+bool legacy_token_validation_enabled()
+{
+    return active_hir_node_count() == 0u;
 }
 
 uint token_kind(uint i)
@@ -181,14 +204,7 @@ uint language_type_code_for_decl(uint decl_i)
 
 void record_error(uint token_i, uint code, uint detail)
 {
-    uint old;
-    InterlockedMin(status[1], token_i, old);
-    if (token_i <= old)
-    {
-        status[0] = 0u;
-        status[2] = code;
-        status[3] = detail;
-    }
+    record_min_token_error(status, token_i, code, detail);
 }
 
 uint language_type_code_for_token(uint type_i)
@@ -283,6 +299,16 @@ bool is_group_close_kind(uint kind)
            kind == TK_PARAM_RPAREN;
 }
 
+bool is_match_brace_open_kind(uint kind)
+{
+    return kind == TK_LBRACE || kind == TK_MATCH_LBRACE;
+}
+
+bool is_match_brace_close_kind(uint kind)
+{
+    return kind == TK_RBRACE || kind == TK_MATCH_RBRACE;
+}
+
 uint matching_group_open_before(uint close_i)
 {
     uint depth = 0u;
@@ -326,9 +352,9 @@ uint enclosing_match_token(uint token_i)
     {
         uint j = token_i - guard;
         uint kind = token_kind(j);
-        if (kind == TK_RBRACE)
+        if (is_match_brace_close_kind(kind))
             depth += 1u;
-        else if (kind == TK_LBRACE)
+        else if (is_match_brace_open_kind(kind))
         {
             if (depth == 0u)
                 return match_token_for_brace(j);
@@ -352,7 +378,8 @@ bool is_in_match_pattern(uint i)
         else if (group_depth == 0u && kind == TK_ARROW)
             return enclosing_match_token(i) != INVALID;
         else if (group_depth == 0u &&
-                 (kind == TK_COMMA || kind == TK_RBRACE || kind == TK_SEMICOLON))
+                 (kind == TK_COMMA || is_match_brace_close_kind(kind) ||
+                  kind == TK_SEMICOLON))
             return false;
     }
     return false;
@@ -941,8 +968,48 @@ uint resolved_visible_decl(uint ident_i)
     return visible_decl[ident_i];
 }
 
+uint type_code_for_ref(uint tag, uint payload)
+{
+    if (tag == TYPE_REF_SCALAR)
+        return payload;
+    if (tag == TYPE_REF_GENERIC_PARAM && payload < active_token_count())
+    {
+        uint slot = type_generic_param_slot_by_token[payload];
+        return slot == INVALID ? TY_UNKNOWN : TY_GENERIC_BASE + slot;
+    }
+    if (tag == TYPE_REF_INSTANCE && payload < active_token_count())
+    {
+        uint instance_kind = type_instance_kind[payload];
+        if (instance_kind == TYPE_INSTANCE_ARRAY || instance_kind == TYPE_INSTANCE_SLICE)
+        {
+            uint elem_tag = type_instance_elem_ref_tag[payload];
+            uint elem_payload = type_instance_elem_ref_payload[payload];
+            return elem_tag == TYPE_REF_SCALAR ? TY_ARRAY_BASE + elem_payload : TY_ARRAY_BASE + TY_UNKNOWN;
+        }
+
+        if (instance_kind == TYPE_INSTANCE_NAMED)
+        {
+            uint decl_token = type_instance_decl_token[payload];
+            if (decl_token != INVALID && decl_token < active_token_count())
+                return visible_type[decl_token];
+        }
+    }
+    return TY_UNKNOWN;
+}
+
+uint declaration_type_from_ref(uint decl_i)
+{
+    if (decl_i >= active_token_count())
+        return TY_UNKNOWN;
+    return type_code_for_ref(decl_type_ref_tag[decl_i], decl_type_ref_payload[decl_i]);
+}
+
 uint declaration_type_shallow(uint decl_i)
 {
+    uint ref_ty = declaration_type_from_ref(decl_i);
+    if (ref_ty != TY_UNKNOWN)
+        return ref_ty;
+
     uint kind = token_kind(decl_i);
     if (kind == TK_SELF_VALUE && is_self_receiver_decl_at(decl_i))
         return decl_i + 2u < active_token_count() && token_kind(decl_i + 1u) == TK_COLON
@@ -1116,27 +1183,57 @@ void check_ident_use(uint i)
         record_error(i, ERR_UNRESOLVED_IDENT, 0u);
 }
 
+void publish_hir_visible_type(uint i)
+{
+    if (i >= active_token_count())
+        return;
+
+    uint decl_ref_ty = declaration_type_from_ref(i);
+    if (decl_ref_ty != TY_UNKNOWN)
+        visible_type[i] = decl_ref_ty;
+
+    uint decl = resolved_visible_decl(i);
+    if (decl == INVALID || decl >= active_token_count() || decl == i)
+        return;
+
+    uint use_ty = declaration_type_from_ref(decl);
+    if (use_ty == TY_UNKNOWN)
+        use_ty = visible_type[decl];
+    if (use_ty != TY_UNKNOWN)
+        visible_type[i] = use_ty;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
 {
     uint i = tid.x;
+    if (active_hir_node_count() != 0u)
+    {
+        publish_hir_visible_type(i);
+        return;
+    }
+
     if (i < active_token_count())
     {
-        if (token_kind(i) == TK_TRAIT)
-            record_error(i, ERR_BAD_HIR, TK_TRAIT);
-        if (token_kind(i) == TK_FOR && token_in_impl_header(i))
-            record_error(i, ERR_BAD_HIR, TK_FOR);
-        if (token_kind(i) == TK_WHERE)
-            record_error(i, ERR_BAD_HIR, TK_WHERE);
-        if (is_generic_bound_colon(i))
-            record_error(i, ERR_BAD_HIR, TK_COLON);
-        if (is_invalid_generic_array_or_slice_type(i))
-            record_error(i, ERR_BAD_HIR, TK_TYPE_ARRAY_LBRACKET);
-        uint value_path_status = module_value_path_status[i];
-        if (value_path_status != PATH_RESOLVE_STATUS_INVALID &&
-            value_path_status != PATH_RESOLVE_STATUS_OK)
-            record_error(i, ERR_UNRESOLVED_IDENT, value_path_status);
+        bool validate_tokens = legacy_token_validation_enabled();
+        if (validate_tokens)
+        {
+            if (token_kind(i) == TK_TRAIT)
+                record_error(i, ERR_BAD_HIR, TK_TRAIT);
+            if (token_kind(i) == TK_FOR && token_in_impl_header(i))
+                record_error(i, ERR_BAD_HIR, TK_FOR);
+            if (token_kind(i) == TK_WHERE)
+                record_error(i, ERR_BAD_HIR, TK_WHERE);
+            if (is_generic_bound_colon(i))
+                record_error(i, ERR_BAD_HIR, TK_COLON);
+            if (is_invalid_generic_array_or_slice_type(i))
+                record_error(i, ERR_BAD_HIR, TK_TYPE_ARRAY_LBRACKET);
+            uint value_path_status = module_value_path_status[i];
+            if (value_path_status != PATH_RESOLVE_STATUS_INVALID &&
+                value_path_status != PATH_RESOLVE_STATUS_OK)
+                record_error(i, ERR_UNRESOLVED_IDENT, value_path_status);
+        }
         if (is_self_receiver_decl_at(i) ||
             token_kind(i) == TK_PARAM_IDENT ||
             (token_kind(i) == TK_IDENT && i + 1u < active_token_count() &&
@@ -1160,12 +1257,12 @@ void main(uint3 tid: SV_DispatchThreadID)
                 visible_type[i] = declaration_type(decl);
         }
 
-        if (token_kind(i) == TK_SELF_VALUE)
+        if (validate_tokens && token_kind(i) == TK_SELF_VALUE)
             check_ident_use(i);
     }
 
     uint n_hir = active_hir_node_count();
-    if (i < n_hir)
+    if (legacy_token_validation_enabled() && i < n_hir)
     {
         if (hir_kind[i] == HIR_NAME_EXPR)
         {

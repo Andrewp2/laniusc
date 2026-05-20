@@ -56,6 +56,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirItemDeclToken
             ("hir_item_kind".into(), b.hir_item_kind.as_entire_binding()),
             ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
             (
+                "hir_semantic_dense_node".into(),
+                b.hir_semantic_dense_node.as_entire_binding(),
+            ),
+            (
+                "hir_semantic_count".into(),
+                b.hir_semantic_count.as_entire_binding(),
+            ),
+            (
                 "hir_item_decl_token".into(),
                 b.hir_item_decl_token.as_entire_binding(),
             ),

@@ -1,3 +1,5 @@
+import status;
+
 struct Params
 {
     uint n_tokens;
@@ -158,14 +160,7 @@ uint token_file(uint i)
 
 void record_error(uint token_i, uint code, uint detail)
 {
-    uint old;
-    InterlockedMin(status[1], token_i, old);
-    if (token_i <= old)
-    {
-        status[0] = 0u;
-        status[2] = code;
-        status[3] = detail;
-    }
+    record_min_token_error(status, token_i, code, detail);
 }
 
 bool is_stmt_keyword(uint kind)
@@ -1056,6 +1051,30 @@ bool token_in_leading_import_decl(uint i)
     return false;
 }
 
+bool token_may_be_in_import_decl(uint i)
+{
+    if (token_file(i) == INVALID)
+        return false;
+
+    uint j = i;
+    [loop]
+    for (uint guard = 0u; guard < 128u && j > 0u; guard += 1u)
+    {
+        j -= 1u;
+        if (!same_token_file(j, i))
+            return false;
+
+        uint kind = token_kind(j);
+        if (kind == TK_IMPORT)
+            return true;
+        if (kind == TK_SEMICOLON || kind == TK_LBRACE || kind == TK_IF_LBRACE ||
+            kind == TK_RBRACE || kind == TK_IF_RBRACE || kind == TK_ELSE ||
+            (is_stmt_keyword(kind) && kind != TK_IMPORT))
+            return false;
+    }
+    return false;
+}
+
 uint qualified_path_start(uint first_colon_i)
 {
     uint start = first_colon_i > 0u ? first_colon_i - 1u : 0u;
@@ -1343,7 +1362,7 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     if (token_in_generic_angle_list(i))
         return;
-    if (kind != TK_IMPORT && token_in_leading_import_decl(i))
+    if (kind != TK_IMPORT && token_may_be_in_import_decl(i) && token_in_leading_import_decl(i))
         return;
 
     if (kind == TK_PUB && token_kind(i + 1u) != TK_FN && token_kind(i + 1u) != TK_CONST &&

@@ -1,3 +1,5 @@
+import prefix_scan;
+
 struct Params
 {
     uint n_tokens;
@@ -52,13 +54,9 @@ bool block_ok(uint block_idx, uint status, uint active_blocks)
     return status == STATUS_BOUNDARY;
 }
 
-void write_summary(uint i, uint steps, uint seed_count, uint max_depth, uint first_error)
+void write_summary(uint i, uint4 summary)
 {
-    uint base = i * SUMMARY_WORDS;
-    status_summary_out[base + 0u] = steps;
-    status_summary_out[base + 1u] = seed_count;
-    status_summary_out[base + 2u] = max_depth;
-    status_summary_out[base + 3u] = first_error;
+    store_u32x4_flat(status_summary_out, i * SUMMARY_WORDS, summary);
 }
 
 [shader("compute")]
@@ -70,21 +68,21 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     uint value;
+    uint4 summary_seed;
     if (gParams.emit_scan_step == 0u)
     {
         value = seeded_status[i * STATUS_WORDS + 5u];
         uint active_blocks = active_block_count();
         if (i >= active_blocks)
         {
-            write_summary(i, 0u, 0u, 0u, INVALID);
+            summary_seed = uint4(0u, 0u, 0u, INVALID);
         }
         else
         {
             uint base = i * STATUS_WORDS;
             uint status = seeded_status[base + 0u];
             uint first_error = block_ok(i, status, active_blocks) ? INVALID : i;
-            write_summary(
-                i,
+            summary_seed = uint4(
                 seeded_status[base + 4u],
                 status != STATUS_DISABLED ? 1u : 0u,
                 seeded_status[base + 6u],
@@ -94,21 +92,20 @@ void main(uint3 tid: SV_DispatchThreadID)
     else
     {
         value = prefix_in[i];
-        uint summary_base = i * SUMMARY_WORDS;
-        uint steps = status_summary_in[summary_base + 0u];
-        uint seed_count = status_summary_in[summary_base + 1u];
-        uint max_depth = status_summary_in[summary_base + 2u];
-        uint first_error = status_summary_in[summary_base + 3u];
-        if (i >= gParams.emit_scan_step)
-        {
-            value += prefix_in[i - gParams.emit_scan_step];
-            uint other_base = (i - gParams.emit_scan_step) * SUMMARY_WORDS;
-            steps += status_summary_in[other_base + 0u];
-            seed_count += status_summary_in[other_base + 1u];
-            max_depth = max(max_depth, status_summary_in[other_base + 2u]);
-            first_error = min(first_error, status_summary_in[other_base + 3u]);
-        }
-        write_summary(i, steps, seed_count, max_depth, first_error);
+        summary_seed = uint4(0u, 0u, 0u, INVALID);
     }
-    prefix_out[i] = value;
+
+    prefix_out[i] = parallel_scan_step_value<uint, PrefixScanU32Add>(
+        i,
+        gParams.emit_scan_step,
+        value,
+        prefix_in);
+    write_summary(
+        i,
+        parallel_scan_step_u32x4_flat<PrefixScanU32x4SumSumMaxMin>(
+            i,
+            gParams.emit_scan_step,
+            summary_seed,
+            status_summary_in,
+            SUMMARY_WORDS));
 }

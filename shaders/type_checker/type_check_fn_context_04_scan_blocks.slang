@@ -1,3 +1,6 @@
+import gpu_index;
+import prefix_scan;
+
 struct Params
 {
     uint n_tokens;
@@ -19,7 +22,7 @@ static const uint MAX_GROUPS_X = 65535u;
 
 uint linear_thread_id(uint3 dtid)
 {
-    return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
+    return linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
 }
 
 [shader("compute")]
@@ -38,12 +41,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     if (gParams.scan_step < gParams.n_blocks)
     {
-        uint value = prefix_in[i];
-        if (i >= gParams.scan_step)
-            value = max(value, prefix_in[i - gParams.scan_step]);
-        prefix_out[i] = value;
+        prefix_out[i] = block_prefix_scan_step<uint, PrefixScanU32Max>(
+            i,
+            gParams.scan_step,
+            block_sum,
+            prefix_in);
         return;
     }
 
-    block_prefix[i] = i == 0u ? 0u : prefix_in[i - 1u];
+    block_prefix[i] = exclusive_block_prefix<uint, PrefixScanU32Max>(i, prefix_in);
 }

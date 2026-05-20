@@ -1,3 +1,5 @@
+module app::main;
+
 import core::slice;
 
 fn main() {

@@ -1,7 +1,8 @@
 // Derive parser-owned type expression metadata from production ids and tree edges.
 //
 // The pass records syntax facts needed by future array/slice/reference semantics
-// without re-reading source text or scanning token neighborhoods.
+// without re-reading source text or scanning token neighborhoods. Follow-up
+// path/type-argument passes publish list-derived metadata with pointer jumping.
 
 import generated_parse_production_ids;
 
@@ -19,12 +20,14 @@ StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> next_sibling;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_token_file_id;
 
 RWStructuredBuffer<uint> hir_type_form;
 RWStructuredBuffer<uint> hir_type_value_node;
 RWStructuredBuffer<uint> hir_type_len_token;
-RWStructuredBuffer<uint> hir_type_file_id;
+RWStructuredBuffer<uint> hir_type_path_leaf_node;
+RWStructuredBuffer<uint> hir_type_arg_start;
+RWStructuredBuffer<uint> hir_type_arg_count;
+RWStructuredBuffer<uint> hir_type_arg_next;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -55,13 +58,17 @@ bool valid_node(uint i)
 
 uint first_child_node(uint i)
 {
-    uint child = valid_node(i) ? first_child[i] : INVALID;
+    if (!valid_node(i))
+        return INVALID;
+    uint child = first_child[i];
     return valid_node(child) ? child : INVALID;
 }
 
 uint next_sibling_node(uint i)
 {
-    uint sibling = valid_node(i) ? next_sibling[i] : INVALID;
+    if (!valid_node(i))
+        return INVALID;
+    uint sibling = next_sibling[i];
     return valid_node(sibling) ? sibling : INVALID;
 }
 
@@ -70,13 +77,17 @@ void clear_type(uint i)
     hir_type_form[i] = HIR_TYPE_FORM_NONE;
     hir_type_value_node[i] = INVALID;
     hir_type_len_token[i] = INVALID;
-    hir_type_file_id[i] = valid_node(i) ? hir_token_file_id[i] : INVALID;
+    hir_type_path_leaf_node[i] = INVALID;
+    hir_type_arg_start[i] = INVALID;
+    hir_type_arg_count[i] = 0u;
+    hir_type_arg_next[i] = INVALID;
 }
 
 void publish_path_type(uint i)
 {
+    uint path_node = first_child_node(i);
     hir_type_form[i] = HIR_TYPE_FORM_PATH;
-    hir_type_value_node[i] = first_child_node(i);
+    hir_type_value_node[i] = path_node;
 }
 
 void publish_ref_type(uint i)

@@ -18,10 +18,11 @@ StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> parent;
 StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> next_sibling;
-StructuredBuffer<uint> subtree_end;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_expr_value_token;
+StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint> hir_semantic_dense_node;
+StructuredBuffer<uint> hir_semantic_count;
 
 RWStructuredBuffer<uint> hir_stmt_record;
 
@@ -29,6 +30,7 @@ static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint HIR_EXPR = 14u;
+static const uint HIR_FOR_STMT = 30u;
 
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_NONE = 0u;
@@ -38,6 +40,10 @@ static const uint STMT_RECORD_KIND_IF = 3u;
 static const uint STMT_RECORD_KIND_CONST = 4u;
 static const uint STMT_RECORD_KIND_ASSIGN = 5u;
 static const uint STMT_RECORD_KIND_WHILE = 6u;
+static const uint STMT_RECORD_KIND_FOR = 7u;
+
+static const uint HIR_EXPR_RECORD_STRIDE = 4u;
+static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
 
 static const uint ASSIGN_OP_SET = 1u;
 static const uint ASSIGN_OP_ADD = 2u;
@@ -66,9 +72,27 @@ bool valid_node(uint i)
     return i != INVALID && i < active_node_count();
 }
 
+uint active_semantic_count()
+{
+    return min(hir_semantic_count[0u], active_node_count());
+}
+
+uint semantic_row_node(uint row)
+{
+    if (row >= active_semantic_count())
+        return INVALID;
+    uint node = hir_semantic_dense_node[row];
+    return valid_node(node) ? node : INVALID;
+}
+
 uint stmt_slot(uint node, uint slot)
 {
     return node * STMT_RECORD_STRIDE + slot;
+}
+
+uint expr_slot(uint node, uint slot)
+{
+    return valid_node(node) ? hir_expr_record[node * HIR_EXPR_RECORD_STRIDE + slot] : INVALID;
 }
 
 void clear_record(uint i)
@@ -95,147 +119,75 @@ uint valid_sibling_or_invalid(uint node)
     return valid_node(sibling) ? sibling : INVALID;
 }
 
-bool has_ancestor_with_production(uint node, uint ancestor_prod, uint stop_node)
+uint child_if_production(uint node, uint prod)
 {
-    uint cur = node;
-    [loop]
-    for (uint guard = 0u; guard < 64u; guard += 1u)
-    {
-        if (!valid_node(cur) || cur == stop_node)
-            return false;
-        uint p = parent[cur];
-        if (!valid_node(p))
-            return false;
-        if (node_kind[p] == ancestor_prod)
-            return true;
-        cur = p;
-    }
-    return false;
+    uint child = valid_child_or_invalid(node);
+    return valid_node(child) && node_kind[child] == prod ? child : INVALID;
 }
 
-bool atom_expr_candidate(uint node, uint container)
+uint sibling_if_production(uint node, uint prod)
 {
-    if (!valid_node(node))
-        return false;
-
-    uint prod = node_kind[node];
-    if (prod == PROD_IDENT && has_ancestor_with_production(node, PROD_PATH, container))
-        return false;
-    if (prod == PROD_IDENT_PLAIN &&
-        (has_ancestor_with_production(node, PROD_IDENT, container) ||
-         has_ancestor_with_production(node, PROD_PATH, container)))
-        return false;
-
-    return prod == PROD_INT || prod == PROD_TRUE || prod == PROD_FALSE ||
-           prod == PROD_IDENT || prod == PROD_IDENT_PLAIN || prod == PROD_PATH;
+    uint sibling = valid_sibling_or_invalid(node);
+    return valid_node(sibling) && node_kind[sibling] == prod ? sibling : INVALID;
 }
 
-bool unary_expr_production(uint prod)
+uint direct_expr_child(uint node)
 {
-    return prod == PROD_NEG || prod == PROD_NOT;
+    uint child = valid_child_or_invalid(node);
+    return valid_node(child) &&
+           (node_kind[child] == PROD_EXPR || hir_kind[child] == HIR_EXPR)
+        ? child
+        : INVALID;
 }
 
-uint unary_ancestor_for_atom(uint atom, uint container)
+uint let_init_child(uint node)
 {
-    uint unary = INVALID;
-    uint cur = atom;
-    [loop]
-    for (uint guard = 0u; guard < 64u; guard += 1u)
-    {
-        if (!valid_node(cur) || cur == container)
-            break;
-        uint p = parent[cur];
-        if (!valid_node(p) || p == container)
-            break;
-        if (unary_expr_production(node_kind[p]))
-        {
-            if (unary != INVALID)
-                return INVALID;
-            unary = p;
-        }
-        cur = p;
-    }
-    return unary;
+    uint let_type = valid_child_or_invalid(node);
+    return sibling_if_production(let_type, PROD_LET_INIT);
+}
+
+uint return_value_child(uint node)
+{
+    return child_if_production(node, PROD_RETURN_VALUE);
+}
+
+uint block_child(uint node)
+{
+    return child_if_production(node, PROD_BLOCK);
+}
+
+uint if_then_block(uint node)
+{
+    uint condition = direct_expr_child(node);
+    return sibling_if_production(condition, PROD_BLOCK);
+}
+
+uint else_block_for_if(uint node)
+{
+    uint sibling = valid_sibling_or_invalid(node);
+    if (!valid_node(sibling))
+        return INVALID;
+    if (node_kind[sibling] == PROD_BLOCK)
+        return sibling;
+    if (node_kind[sibling] == PROD_ELSE_STMT)
+        return block_child(sibling);
+
+    uint child = valid_child_or_invalid(sibling);
+    if (!valid_node(child))
+        return INVALID;
+    if (node_kind[child] == PROD_BLOCK)
+        return child;
+    if (node_kind[child] == PROD_ELSE_STMT)
+        return block_child(child);
+    return INVALID;
 }
 
 uint value_token_for_expr(uint node)
 {
     if (!valid_node(node))
         return INVALID;
-    uint token_i = hir_expr_value_token[node];
+    uint token_i = expr_slot(node, HIR_EXPR_RECORD_VALUE_TOKEN);
     return token_i != INVALID ? token_i : hir_token_pos[node];
-}
-
-bool simple_value_node_in(
-    uint container,
-    out uint value_node,
-    out uint operand_node,
-    out uint value_token)
-{
-    value_node = INVALID;
-    operand_node = INVALID;
-    value_token = INVALID;
-    if (!valid_node(container))
-        return false;
-
-    uint first_atom = INVALID;
-    uint atom_count = 0u;
-    uint end = min(subtree_end[container], active_node_count());
-    [loop]
-    for (uint node = container + 1u; node < end; node += 1u)
-    {
-        if (!atom_expr_candidate(node, container))
-            continue;
-        if (first_atom == INVALID)
-            first_atom = node;
-        atom_count += 1u;
-        uint atom_end = subtree_end[node];
-        if (atom_end > node + 1u && valid_node(atom_end - 1u))
-            node = atom_end - 1u;
-    }
-    if (atom_count != 1u)
-        return false;
-
-    uint unary = unary_ancestor_for_atom(first_atom, container);
-    if (unary != INVALID)
-    {
-        value_node = unary;
-        operand_node = first_atom;
-        value_token = value_token_for_expr(first_atom);
-        return true;
-    }
-
-    value_node = first_atom;
-    value_token = value_token_for_expr(first_atom);
-    return true;
-}
-
-uint first_descendant_with_production(uint node, uint prod)
-{
-    if (!valid_node(node))
-        return INVALID;
-    uint end = min(subtree_end[node], active_node_count());
-    [loop]
-    for (uint i = node + 1u; i < end; i += 1u)
-    {
-        if (node_kind[i] == prod)
-            return i;
-    }
-    return INVALID;
-}
-
-uint first_descendant_hir_expr(uint node)
-{
-    if (!valid_node(node))
-        return INVALID;
-    uint end = min(subtree_end[node], active_node_count());
-    [loop]
-    for (uint i = node + 1u; i < end; i += 1u)
-    {
-        if (hir_kind[i] == HIR_EXPR)
-            return i;
-    }
-    return INVALID;
 }
 
 bool is_assignment_tail_production(uint prod)
@@ -273,86 +225,119 @@ uint assignment_op_for_production(uint prod)
     return 0u;
 }
 
-uint first_descendant_assignment_tail(uint node)
+uint direct_assignment_tail(uint expr_stmt)
 {
-    if (!valid_node(node))
+    uint expr = direct_expr_child(expr_stmt);
+    if (!valid_node(expr))
         return INVALID;
-    uint end = min(subtree_end[node], active_node_count());
-    [loop]
-    for (uint i = node + 1u; i < end; i += 1u)
-    {
-        if (is_assignment_tail_production(node_kind[i]))
-            return i;
-    }
-    return INVALID;
+
+    uint assign = node_kind[expr] == PROD_ASSIGN ?
+        expr :
+        child_if_production(expr, PROD_ASSIGN);
+    if (!valid_node(assign))
+        return INVALID;
+
+    uint lhs = valid_child_or_invalid(assign);
+    uint tail = valid_sibling_or_invalid(lhs);
+    return valid_node(tail) && is_assignment_tail_production(node_kind[tail])
+        ? tail
+        : INVALID;
 }
 
 void publish_let(uint node)
 {
-    uint init = first_descendant_with_production(node, PROD_LET_INIT);
-    uint init_expr = first_descendant_with_production(init, PROD_EXPR);
-    uint value_node = INVALID;
-    uint operand_node = INVALID;
-    uint value_token = INVALID;
-    simple_value_node_in(init, value_node, operand_node, value_token);
+    uint init = let_init_child(node);
+    uint init_expr = direct_expr_child(init);
 
     hir_stmt_record[stmt_slot(node, 0u)] = STMT_RECORD_KIND_LET;
     hir_stmt_record[stmt_slot(node, 1u)] = hir_token_pos[node] == INVALID ? INVALID
                                                                           : hir_token_pos[node] + 1u;
     hir_stmt_record[stmt_slot(node, 2u)] = init_expr;
-    hir_stmt_record[stmt_slot(node, 3u)] = operand_node;
+    hir_stmt_record[stmt_slot(node, 3u)] = INVALID;
 }
 
 void publish_return(uint node)
 {
-    uint ret_value = first_descendant_with_production(node, PROD_RETURN_VALUE);
-    uint ret_expr = first_descendant_with_production(ret_value, PROD_EXPR);
-    uint value_node = INVALID;
-    uint operand_node = INVALID;
-    uint value_token = INVALID;
-    simple_value_node_in(ret_value, value_node, operand_node, value_token);
+    uint ret_value = return_value_child(node);
+    uint ret_expr = direct_expr_child(ret_value);
 
     hir_stmt_record[stmt_slot(node, 0u)] = STMT_RECORD_KIND_RETURN;
     hir_stmt_record[stmt_slot(node, 1u)] = ret_expr;
-    hir_stmt_record[stmt_slot(node, 2u)] = operand_node;
-    hir_stmt_record[stmt_slot(node, 3u)] = value_token;
+    hir_stmt_record[stmt_slot(node, 2u)] = INVALID;
+    hir_stmt_record[stmt_slot(node, 3u)] = value_token_for_expr(ret_expr);
+}
+
+void publish_return_value(uint node)
+{
+    uint ret_expr = direct_expr_child(node);
+
+    hir_stmt_record[stmt_slot(node, 0u)] = STMT_RECORD_KIND_RETURN;
+    hir_stmt_record[stmt_slot(node, 1u)] = ret_expr;
+    hir_stmt_record[stmt_slot(node, 2u)] = INVALID;
+    hir_stmt_record[stmt_slot(node, 3u)] = value_token_for_expr(ret_expr);
+}
+
+bool compressed_if_return_value(uint node)
+{
+    if (!valid_node(node) || node_kind[node] != PROD_RETURN_VALUE)
+        return false;
+    uint p = parent[node];
+    return valid_node(p) && node_kind[p] == PROD_IF_STMT;
 }
 
 void publish_if(uint node)
 {
+    uint else_block = else_block_for_if(node);
+    uint cond = direct_expr_child(node);
+    uint then_block = if_then_block(node);
+    uint then_return = return_value_child(node);
+    uint then_arm = valid_node(then_block) ? then_block : then_return;
+
     hir_stmt_record[stmt_slot(node, 0u)] = STMT_RECORD_KIND_IF;
-    hir_stmt_record[stmt_slot(node, 1u)] = first_descendant_with_production(node, PROD_EXPR);
-    hir_stmt_record[stmt_slot(node, 2u)] = first_descendant_with_production(node, PROD_IF_BLOCK);
-    hir_stmt_record[stmt_slot(node, 3u)] = first_descendant_with_production(node, PROD_ELSE_BLOCK);
+    hir_stmt_record[stmt_slot(node, 1u)] = cond;
+    hir_stmt_record[stmt_slot(node, 2u)] = then_arm;
+    hir_stmt_record[stmt_slot(node, 3u)] = else_block;
 }
 
 void publish_while(uint node)
 {
+    uint cond = direct_expr_child(node);
+    uint body = valid_sibling_or_invalid(cond);
     hir_stmt_record[stmt_slot(node, 0u)] = STMT_RECORD_KIND_WHILE;
-    hir_stmt_record[stmt_slot(node, 1u)] = first_descendant_with_production(node, PROD_EXPR);
-    hir_stmt_record[stmt_slot(node, 2u)] = first_descendant_with_production(node, PROD_BLOCK);
+    hir_stmt_record[stmt_slot(node, 1u)] = cond;
+    hir_stmt_record[stmt_slot(node, 2u)] = valid_node(body) && node_kind[body] == PROD_BLOCK
+        ? body
+        : INVALID;
     hir_stmt_record[stmt_slot(node, 3u)] = INVALID;
+}
+
+void publish_for(uint node)
+{
+    uint iterable = valid_child_or_invalid(node);
+    uint body = valid_sibling_or_invalid(iterable);
+
+    hir_stmt_record[stmt_slot(node, 0u)] = STMT_RECORD_KIND_FOR;
+    hir_stmt_record[stmt_slot(node, 1u)] = hir_token_pos[node] == INVALID ? INVALID
+                                                                          : hir_token_pos[node] + 1u;
+    hir_stmt_record[stmt_slot(node, 2u)] = valid_node(iterable) ? hir_token_pos[iterable] : INVALID;
+    hir_stmt_record[stmt_slot(node, 3u)] = body;
 }
 
 void publish_const(uint node)
 {
-    uint value_node = INVALID;
-    uint operand_node = INVALID;
-    uint value_token = INVALID;
     uint type_node = valid_child_or_invalid(node);
     uint value_expr = valid_sibling_or_invalid(type_node);
-    simple_value_node_in(value_expr, value_node, operand_node, value_token);
 
     hir_stmt_record[stmt_slot(node, 0u)] = STMT_RECORD_KIND_CONST;
     hir_stmt_record[stmt_slot(node, 1u)] = hir_token_pos[node] == INVALID ? INVALID
                                                                           : hir_token_pos[node] + 1u;
-    hir_stmt_record[stmt_slot(node, 2u)] = value_node;
-    hir_stmt_record[stmt_slot(node, 3u)] = operand_node;
+    hir_stmt_record[stmt_slot(node, 2u)] = value_expr;
+    hir_stmt_record[stmt_slot(node, 3u)] = INVALID;
 }
 
 void publish_assignment(uint node)
 {
-    uint assign_tail = first_descendant_assignment_tail(node);
+    uint assign_tail = direct_assignment_tail(node);
     if (!valid_node(assign_tail))
         return;
 
@@ -373,23 +358,25 @@ void publish_assignment(uint node)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint i = linear_thread_id(dtid);
-    if (i >= gHirStmt.n)
+    uint row = linear_thread_id(dtid);
+    uint i = semantic_row_node(row);
+    if (i == INVALID)
         return;
 
     clear_record(i);
-    if (!valid_node(i))
-        return;
-
     uint prod = node_kind[i];
     if (prod == PROD_LET_STMT)
         publish_let(i);
     else if (prod == PROD_RETURN_STMT)
         publish_return(i);
+    else if (compressed_if_return_value(i))
+        publish_return_value(i);
     else if (prod == PROD_IF_STMT)
         publish_if(i);
     else if (prod == PROD_WHILE_STMT)
         publish_while(i);
+    else if (prod == PROD_FOR_STMT || hir_kind[i] == HIR_FOR_STMT)
+        publish_for(i);
     else if (prod == PROD_CONST)
         publish_const(i);
     else if (prod == PROD_EXPR_STMT)

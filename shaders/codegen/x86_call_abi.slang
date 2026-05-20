@@ -1,10 +1,12 @@
-// SysV x86_64 call ABI projection over backend call and argument-value records.
+// SysV x86_64 call ABI projection over backend call records.
 //
 // x86_call_records owns the parser/resolver/type boundary,
-// x86_call_arg_values owns argument value/eval projection, and
-// x86_call_arg_lookup owns the per-call/per-ordinal argument lookup table.
-// This pass assigns SysV argument registers and records argument identity
-// without looking at source text, token layout, or HIR expression forms.
+// x86_call_arg_values owns per-call/per-ordinal argument lookup, and this pass
+// records target/width ABI metadata without looking at argument expression
+// forms.
+
+import gpu_index;
+import status;
 
 struct Params
 {
@@ -17,80 +19,83 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> x86_func_lookup_key;
-StructuredBuffer<uint> x86_func_lookup_node;
+StructuredBuffer<uint> x86_decl_node_by_token;
 StructuredBuffer<uint4> x86_call_record;
-StructuredBuffer<uint4> x86_call_type_record;
+StructuredBuffer<uint> x86_call_type_record;
 StructuredBuffer<uint> call_record_status;
-StructuredBuffer<uint4> x86_call_arg_value_record;
-StructuredBuffer<uint4> x86_call_arg_lookup_record;
-StructuredBuffer<uint> call_arg_lookup_status;
-StructuredBuffer<uint> call_intrinsic_tag;
+StructuredBuffer<uint> type_instance_kind;
+StructuredBuffer<uint> type_instance_decl_token;
+StructuredBuffer<uint> type_instance_len_kind;
+StructuredBuffer<uint> type_instance_len_payload;
+StructuredBuffer<uint> x86_struct_type_record;
+StructuredBuffer<uint> x86_struct_record_status;
+StructuredBuffer<uint> x86_enum_type_record;
+StructuredBuffer<uint> x86_enum_record_status;
 
-RWStructuredBuffer<uint4> x86_call_abi_record;
-RWStructuredBuffer<uint4> x86_call_arg_abi_record;
-RWStructuredBuffer<uint> x86_call_abi_flags;
+RWStructuredBuffer<uint2> x86_call_abi_record;
 RWStructuredBuffer<uint> call_abi_status;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint X86_CALL_RECORDS_OK = 1u;
-static const uint X86_CALL_ARG_LOOKUP_OK = 1u;
 static const uint X86_CALL_ABI_OK = 1u;
+static const uint X86_ENUM_RECORDS_OK = 1u;
+static const uint X86_STRUCT_RECORDS_OK = 1u;
 static const uint X86_ERR_CALL_ABI = 9u;
 
-static const uint X86_CALL_ABI_PRESENT = 1u;
-static const uint X86_CALL_ABI_DIRECT_TARGET = 2u;
-static const uint X86_CALL_ABI_ARG_WINDOW = 4u;
-static const uint X86_CALL_ABI_TYPED_RETURN = 8u;
-static const uint X86_CALL_ABI_VALUE_ARG_WINDOW = 16u;
-static const uint INTRINSIC_NONE = 0u;
-static const uint X86_CALL_ARG_VALUE_SCALAR = 1u;
-static const uint X86_CALL_ARG_VALUE_BINARY_IMM = 2u;
-static const uint X86_CALL_ARG_VALUE_PARAM = 3u;
+static const uint X86_CALL_TYPE_STRIDE = 3u;
+static const uint X86_CALL_ABI_ARG_COUNT_BITS = 8u;
+static const uint X86_CALL_ABI_ARG_COUNT_MASK = 0xffu;
+static const uint X86_CALL_ABI_RETURN_WIDTH_MAX = 0x00ffffffu;
 
 static const uint X86_SYSV_MAX_INTEGER_ARGS = 6u;
-static const uint X86_REG_EDI = 7u;
-static const uint X86_REG_ESI = 6u;
-static const uint X86_REG_EDX = 2u;
-static const uint X86_REG_ECX = 1u;
-static const uint X86_REG_R8D = 8u;
-static const uint X86_REG_R9D = 9u;
+static const uint TYPE_INSTANCE_ARRAY = 2u;
+static const uint TYPE_LEN_LITERAL = 1u;
+static const uint TY_STRUCT_BASE = 4096u;
+static const uint TY_ENUM_BASE = 6144u;
+static const uint TY_GENERIC_BASE = 8192u;
 
 uint linear_dispatch_id(uint3 tid)
 {
-    return tid.x + tid.y * DISPATCH_X_STRIDE;
+    return linear_dispatch_thread_id_2d(tid, DISPATCH_X_STRIDE);
 }
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return active_count_from_status(gParams.n_hir_nodes, hir_status, 5u);
 }
 
 bool valid_node(uint node)
 {
-    return node != INVALID && node < active_hir_node_count();
+    return valid_index_or_invalid(node, active_hir_node_count(), INVALID);
 }
 
 bool valid_token(uint token)
 {
-    return token != INVALID && token < gParams.n_tokens;
+    return valid_index_or_invalid(token, gParams.n_tokens, INVALID);
 }
 
-uint lookup_capacity()
+uint call_record_slot(uint call_node)
 {
-    return max(gParams.n_tokens * 2u, 1u);
+    if (!valid_node(call_node))
+        return INVALID;
+    uint token = x86_call_record[call_node].z;
+    return valid_token(token) ? token : INVALID;
 }
 
 bool call_records_ok()
 {
-    return call_record_status[0u] == X86_CALL_RECORDS_OK && call_record_status[1u] == 0u;
+    return stage_status4_ok(call_record_status, X86_CALL_RECORDS_OK);
 }
 
-bool call_arg_lookup_ok()
+bool enum_records_ok()
 {
-    return call_arg_lookup_status[0u] == X86_CALL_ARG_LOOKUP_OK &&
-           call_arg_lookup_status[1u] == 0u;
+    return stage_status4_ok(x86_enum_record_status, X86_ENUM_RECORDS_OK);
+}
+
+bool struct_records_ok()
+{
+    return stage_status4_ok(x86_struct_record_status, X86_STRUCT_RECORDS_OK);
 }
 
 bool has_call_record(uint call_node)
@@ -99,24 +104,51 @@ bool has_call_record(uint call_node)
         return false;
 
     uint4 record = x86_call_record[call_node];
-    return record.x != INVALID || record.y != INVALID ||
-           record.z != INVALID || record.w != INVALID;
+    return uint4_any_not_equal(record, INVALID);
 }
 
-uint sysv_integer_arg_reg(uint ordinal)
+uint call_type_word(uint call_node, uint slot)
 {
-    if (ordinal == 0u) return X86_REG_EDI;
-    if (ordinal == 1u) return X86_REG_ESI;
-    if (ordinal == 2u) return X86_REG_EDX;
-    if (ordinal == 3u) return X86_REG_ECX;
-    if (ordinal == 4u) return X86_REG_R8D;
-    if (ordinal == 5u) return X86_REG_R9D;
-    return INVALID;
+    return row_major_load<uint>(
+        x86_call_type_record,
+        call_node,
+        X86_CALL_TYPE_STRIDE,
+        slot,
+        INVALID);
 }
 
-uint call_abi_base_row(uint call_node)
+uint semantic_type_width(uint ty)
 {
-    return call_node * 2u;
+    if (ty >= TY_ENUM_BASE && ty < TY_GENERIC_BASE)
+        return 2u;
+    if (ty >= TY_STRUCT_BASE && ty < TY_ENUM_BASE)
+    {
+        uint struct_token = ty - TY_STRUCT_BASE;
+        if (valid_token(struct_token) && x86_struct_type_record[struct_token] != 0u)
+            return x86_struct_type_record[struct_token];
+    }
+    return 1u;
+}
+
+uint type_instance_width(uint ty)
+{
+    if (!valid_token(ty))
+        return 1u;
+    if (type_instance_kind[ty] == TYPE_INSTANCE_ARRAY &&
+        type_instance_len_kind[ty] == TYPE_LEN_LITERAL &&
+        type_instance_len_payload[ty] != 0u)
+        return type_instance_len_payload[ty];
+    uint enum_token = type_instance_decl_token[ty];
+    if (valid_token(enum_token) && x86_enum_type_record[enum_token] > 1u)
+        return x86_enum_type_record[enum_token];
+    if (valid_token(enum_token) && x86_struct_type_record[enum_token] != 0u)
+        return x86_struct_type_record[enum_token];
+    return 1u;
+}
+
+uint call_return_width(uint semantic_ty, uint type_token)
+{
+    return max(semantic_type_width(semantic_ty), type_instance_width(type_token));
 }
 
 uint function_node_for_resolver_target(uint resolver_fn_token)
@@ -124,120 +156,42 @@ uint function_node_for_resolver_target(uint resolver_fn_token)
     if (!valid_token(resolver_fn_token))
         return INVALID;
 
-    uint key = resolver_fn_token;
-    uint cap = lookup_capacity();
-    uint start_slot = key % cap;
-    [loop]
-    for (uint probe = 0u; probe < cap; probe += 1u)
-    {
-        uint slot = (start_slot + probe) % cap;
-        uint node = x86_func_lookup_node[slot];
-        if (node == INVALID)
-            return INVALID;
-        if (x86_func_lookup_key[slot] == key)
-            return node;
-    }
-    return INVALID;
+    uint node = x86_decl_node_by_token[resolver_fn_token];
+    return valid_node(node) ? node : INVALID;
 }
 
 void mark_call_abi_error(uint detail)
 {
-    call_abi_status[0u] = 0u;
-    call_abi_status[1u] = X86_ERR_CALL_ABI;
-    uint old_detail = 0u;
-    InterlockedMin(call_abi_status[2u], detail, old_detail);
+    publish_stage_error_min_detail4(call_abi_status, X86_ERR_CALL_ABI, detail);
 }
 
-uint call_arg_lookup_slot(uint call_node, uint ordinal)
+uint pack_call_abi_info(uint arg_count, uint return_width)
 {
-    return call_node * X86_SYSV_MAX_INTEGER_ARGS + ordinal;
-}
-
-bool lookup_arg_node_for_call(uint call_node, uint ordinal, out uint arg_node)
-{
-    arg_node = INVALID;
-    if (!valid_node(call_node) || ordinal >= X86_SYSV_MAX_INTEGER_ARGS)
-        return false;
-
-    uint4 record = x86_call_arg_lookup_record[call_arg_lookup_slot(call_node, ordinal)];
-    if (record.x != call_node || record.y != ordinal)
-        return false;
-    if (record.w != X86_CALL_ARG_VALUE_SCALAR &&
-        record.w != X86_CALL_ARG_VALUE_BINARY_IMM &&
-        record.w != X86_CALL_ARG_VALUE_PARAM)
-        return false;
-
-    arg_node = record.z;
-    return valid_node(arg_node);
+    if (return_width > X86_CALL_ABI_RETURN_WIDTH_MAX)
+        return INVALID;
+    return (return_width << X86_CALL_ABI_ARG_COUNT_BITS) |
+           (arg_count & X86_CALL_ABI_ARG_COUNT_MASK);
 }
 
 void project_call_record(uint call_node)
 {
     uint4 call_record = x86_call_record[call_node];
-    uint4 type_record = x86_call_type_record[call_node];
-    uint owner_fn = call_record.x;
     uint target_fn = function_node_for_resolver_target(call_record.y);
     uint arg_count = call_record.w;
-    uint return_ty = type_record.x;
-    uint callee_token = type_record.z;
-    uint intrinsic_tag = valid_token(callee_token) ? call_intrinsic_tag[callee_token] :
-                                                     INTRINSIC_NONE;
+    uint return_ty = call_type_word(call_node, 0u);
+    uint return_ty_token = call_type_word(call_node, 1u);
 
-    uint flags = X86_CALL_ABI_PRESENT;
-    if (target_fn != INVALID)
-        flags |= X86_CALL_ABI_DIRECT_TARGET;
-    if (arg_count <= X86_SYSV_MAX_INTEGER_ARGS)
-        flags |= X86_CALL_ABI_ARG_WINDOW;
-    else
+    uint return_width = call_return_width(return_ty, return_ty_token);
+    uint abi_register_count = arg_count + (return_width > 1u ? 1u : 0u);
+    if (abi_register_count > X86_SYSV_MAX_INTEGER_ARGS)
         mark_call_abi_error(call_node);
-    if (return_ty != 0u && return_ty != INVALID)
-        flags |= X86_CALL_ABI_TYPED_RETURN;
 
-    uint arg0_node = INVALID;
-    uint arg1_node = INVALID;
-    uint arg2_node = INVALID;
-    uint arg_value_mask = 0u;
-    if (arg_count >= 1u && lookup_arg_node_for_call(call_node, 0u, arg0_node))
-        arg_value_mask |= 1u;
-    if (arg_count >= 2u && lookup_arg_node_for_call(call_node, 1u, arg1_node))
-        arg_value_mask |= 2u;
-    if (arg_count >= 3u && lookup_arg_node_for_call(call_node, 2u, arg2_node))
-        arg_value_mask |= 4u;
-    bool value_window_ok = arg_count == 0u ||
-                           (arg_count == 1u && (arg_value_mask & 1u) != 0u) ||
-                           (arg_count == 2u && (arg_value_mask & 3u) == 3u) ||
-                           (arg_count == 3u && (arg_value_mask & 7u) == 7u);
-    if (value_window_ok)
-        flags |= X86_CALL_ABI_VALUE_ARG_WINDOW;
-
-    uint row = call_abi_base_row(call_node);
-    x86_call_abi_record[row] = uint4(owner_fn, target_fn, arg_count, intrinsic_tag);
-    x86_call_abi_record[row + 1u] = uint4(arg0_node, arg1_node, arg_value_mask, INVALID);
-    x86_call_abi_flags[call_node] = flags;
-
-    uint old_count = 0u;
-    InterlockedAdd(call_abi_status[3u], 1u, old_count);
-}
-
-void project_call_arg_record(uint arg_node)
-{
-    uint4 value_record = x86_call_arg_value_record[arg_node];
-    if (value_record.z != X86_CALL_ARG_VALUE_SCALAR &&
-        value_record.z != X86_CALL_ARG_VALUE_BINARY_IMM &&
-        value_record.z != X86_CALL_ARG_VALUE_PARAM)
-        return;
-
-    uint call_node = value_record.x;
-    if (!has_call_record(call_node))
-        return;
-
-    uint ordinal = value_record.y;
-    uint arg_count = x86_call_record[call_node].w;
-    bool ordinal_ok = ordinal < X86_SYSV_MAX_INTEGER_ARGS && ordinal < arg_count;
-    uint arg_reg = ordinal_ok ? sysv_integer_arg_reg(ordinal) : INVALID;
-    x86_call_arg_abi_record[arg_node] = uint4(call_node, ordinal, arg_reg, arg_node);
-    if (!ordinal_ok)
-        mark_call_abi_error(arg_node);
+    uint abi_info = pack_call_abi_info(arg_count, return_width);
+    uint slot = call_record_slot(call_node);
+    if (abi_info == INVALID || slot == INVALID)
+        mark_call_abi_error(call_node);
+    else
+        x86_call_abi_record[slot] = uint2(target_fn, abi_info);
 }
 
 [shader("compute")]
@@ -245,19 +199,31 @@ void project_call_arg_record(uint arg_node)
 void main(uint3 tid: SV_DispatchThreadID)
 {
     uint node_i = linear_dispatch_id(tid);
-    if (node_i == 0u && (!call_records_ok() || !call_arg_lookup_ok()))
+    if (node_i == 0u && (!call_records_ok() || !enum_records_ok() || !struct_records_ok()))
     {
         call_abi_status[0u] = 0u;
-        call_abi_status[1u] = call_records_ok() ? call_arg_lookup_status[1u] : call_record_status[1u];
-        call_abi_status[2u] = call_records_ok() ? call_arg_lookup_status[2u] : call_record_status[2u];
+        if (!call_records_ok())
+        {
+            call_abi_status[1u] = call_record_status[1u];
+            call_abi_status[2u] = call_record_status[2u];
+        }
+        else if (!enum_records_ok())
+        {
+            call_abi_status[1u] = x86_enum_record_status[1u];
+            call_abi_status[2u] = x86_enum_record_status[2u];
+        }
+        else
+        {
+            call_abi_status[1u] = x86_struct_record_status[1u];
+            call_abi_status[2u] = x86_struct_record_status[2u];
+        }
         call_abi_status[3u] = 0u;
     }
 
-    if (!call_records_ok() || !call_arg_lookup_ok() || node_i >= active_hir_node_count())
+    if (!call_records_ok() || !enum_records_ok() || !struct_records_ok() ||
+        node_i >= active_hir_node_count())
         return;
 
     if (has_call_record(node_i))
         project_call_record(node_i);
-
-    project_call_arg_record(node_i);
 }

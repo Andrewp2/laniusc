@@ -93,6 +93,12 @@ static const uint TK_FALSE = 91u;
 
 static const uint MAX_ARRAY_ELEMS = 16u;
 
+bool module_already_emitted()
+{
+    return status[1u] == 1u || status[1u] == 2u || status[1u] == 3u ||
+           status[1u] == 5u;
+}
+
 uint linear_dispatch_id(uint3 tid)
 {
     return tid.x + tid.y * DISPATCH_X_STRIDE;
@@ -2298,6 +2304,9 @@ bool emit_body(out uint body_len, out uint reject_stage, out uint reject_detail,
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
 {
+    if (module_already_emitted())
+        return;
+
     uint target = linear_dispatch_id(tid);
     if (target >= gParams.out_capacity && target != 0u)
         return;

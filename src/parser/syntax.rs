@@ -40,8 +40,7 @@ pub struct GpuSyntaxChecker {
 }
 
 pub struct RecordedSyntaxCheck {
-    status_readback: wgpu::Buffer,
-    counters_readback: wgpu::Buffer,
+    readback: wgpu::Buffer,
 }
 
 impl GpuSyntaxChecker {
@@ -291,10 +290,17 @@ impl SyntaxBufferCache {
                 n_blocks_capacity as usize,
                 wgpu::BufferUsages::empty(),
             ),
-            default_token_file_id: storage_ro_from_u32s(
-                device,
-                "parser.syntax.default_token_file_id",
-                &vec![0u32; token_capacity as usize],
+            default_token_file_id: LaniusBuffer::new(
+                (
+                    storage_u32_rw(
+                        device,
+                        "parser.syntax.default_token_file_id",
+                        token_capacity as usize,
+                        wgpu::BufferUsages::COPY_DST,
+                    ),
+                    (token_capacity.max(1) as u64) * 4,
+                ),
+                token_capacity as usize,
             ),
             status_buf: storage_u32_rw(
                 device,
@@ -561,8 +567,12 @@ fn record_token_buffer_check_with_cache_and_file_ids(
 ) -> Result<RecordedSyntaxCheck, GpuSyntaxError> {
     let n_blocks = token_capacity.div_ceil(256).max(1);
     let buffers = SyntaxBufferCache::prepare(cache, device, queue, token_capacity, n_blocks);
-    let default_token_file_id: &wgpu::Buffer = &buffers.default_token_file_id;
-    let token_file_id_buf = token_file_id_buf.unwrap_or(default_token_file_id);
+    let token_file_id_buf = if let Some(token_file_id_buf) = token_file_id_buf {
+        token_file_id_buf
+    } else {
+        encoder.clear_buffer(&buffers.default_token_file_id, 0, None);
+        &buffers.default_token_file_id
+    };
 
     let delimiter_local_pass = syntax_delimiters_01_pass(device)?;
     let delimiter_scan_pass = syntax_delimiters_02_pass(device)?;
@@ -768,44 +778,45 @@ fn record_token_buffer_check_with_cache_and_file_ids(
         let (gx, gy, gz) = plan_compute(pass, token_capacity.max(512))?;
         compute.dispatch_workgroups(gx, gy, gz);
     }
-    let status_readback = readback_u32s(device, "rb.parser.syntax.status", 4);
-    let counters_readback = readback_i32s(device, "rb.parser.syntax.counters", 3);
-    encoder.copy_buffer_to_buffer(&buffers.status_buf, 0, &status_readback, 0, 16);
-    encoder.copy_buffer_to_buffer(&buffers.counters_buf, 0, &counters_readback, 0, 12);
-    Ok(RecordedSyntaxCheck {
-        status_readback,
-        counters_readback,
-    })
+    let readback = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("rb.parser.syntax.status_counters"),
+        size: 28,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    encoder.copy_buffer_to_buffer(&buffers.status_buf, 0, &readback, 0, 16);
+    encoder.copy_buffer_to_buffer(&buffers.counters_buf, 0, &readback, 16, 12);
+    Ok(RecordedSyntaxCheck { readback })
 }
 
 fn finish_recorded_check(
     device: &wgpu::Device,
     recorded: &RecordedSyntaxCheck,
 ) -> Result<(), GpuSyntaxError> {
-    let status_slice = recorded.status_readback.slice(..);
-    let counters_slice = recorded.counters_readback.slice(..);
-    crate::gpu::passes_core::map_readback_for_progress(&status_slice, "parser.syntax.status");
-    crate::gpu::passes_core::map_readback_for_progress(&counters_slice, "parser.syntax.counters");
-    crate::gpu::passes_core::wait_for_map_progress(
+    let slice = recorded.readback.slice(..);
+    crate::gpu::passes_core::map_readback_blocking(
         device,
-        "parser.syntax.recorded-check",
-        wgpu::PollType::Wait,
-    );
+        &slice,
+        "parser.syntax.status_counters",
+    )?;
 
-    let status_words = {
-        let mapped = status_slice.get_mapped_range();
-        let words = read_status_words(&mapped)?;
-        drop(mapped);
-        recorded.status_readback.unmap();
-        words
-    };
-    let counters = {
-        let mapped = counters_slice.get_mapped_range();
-        let words = read_counter_words(&mapped)?;
-        drop(mapped);
-        recorded.counters_readback.unmap();
-        words
-    };
+    let mapped = slice.get_mapped_range();
+    let result = finish_recorded_check_mapped(&mapped);
+    drop(mapped);
+    recorded.readback.unmap();
+    result
+}
+
+fn finish_recorded_check_mapped(bytes: &[u8]) -> Result<(), GpuSyntaxError> {
+    if bytes.len() < 28 {
+        return Err(GpuSyntaxError::Gpu(anyhow::anyhow!(
+            "syntax parser readback was truncated: expected at least 28 bytes, got {}",
+            bytes.len()
+        )));
+    }
+
+    let status_words = read_status_words(&bytes[0..16])?;
+    let counters = read_counter_words(&bytes[16..28])?;
 
     if status_words[0] == 0 {
         return Err(GpuSyntaxError::Rejected {
@@ -1002,19 +1013,6 @@ fn storage_i32_rw(
     extra_usage: wgpu::BufferUsages,
 ) -> wgpu::Buffer {
     storage_u32_rw(device, label, count, extra_usage)
-}
-
-fn readback_u32s(device: &wgpu::Device, label: &str, count: usize) -> wgpu::Buffer {
-    device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some(label),
-        size: (count.max(1) * 4) as u64,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    })
-}
-
-fn readback_i32s(device: &wgpu::Device, label: &str, count: usize) -> wgpu::Buffer {
-    readback_u32s(device, label, count)
 }
 
 fn token_bytes(tokens: &[Token]) -> Vec<u8> {

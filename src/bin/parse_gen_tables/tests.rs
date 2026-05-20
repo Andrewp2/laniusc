@@ -8,11 +8,6 @@ struct CurrentGrammarFixture {
     predictions: Vec<Prediction>,
 }
 
-struct CurrentProjectedFixture {
-    tables: PrecomputedParseTables,
-    projection: SummaryProjection,
-}
-
 fn current_grammar_fixture() -> &'static CurrentGrammarFixture {
     static FIXTURE: OnceLock<CurrentGrammarFixture> = OnceLock::new();
     FIXTURE.get_or_init(|| {
@@ -31,18 +26,6 @@ fn current_grammar_fixture() -> &'static CurrentGrammarFixture {
     })
 }
 
-fn current_projected_fixture() -> &'static CurrentProjectedFixture {
-    static FIXTURE: OnceLock<CurrentProjectedFixture> = OnceLock::new();
-    FIXTURE.get_or_init(|| {
-        let current = current_grammar_fixture();
-        let prod_arity = compute_prod_arity(&current.spec.productions);
-        let (tables, projection, _) =
-            build_projected_precomputed_tables(&current.spec, &current.predictions, prod_arity)
-                .expect("project tables");
-        CurrentProjectedFixture { tables, projection }
-    })
-}
-
 fn parse_with_predictions(
     spec: &GrammarSpec,
     predictions: &[Prediction],
@@ -57,11 +40,11 @@ fn parse_with_predictions(
     while let Some(top) = stack.pop() {
         match top {
             Sym::Terminal(token) => {
-                if input.get(pos).copied() != Some(token) {
+                if input.get(pos).map(|kind| *kind as u32) != Some(token) {
                     bail!(
                         "terminal mismatch at pos {}: expected {:?}, found {:?}",
                         pos,
-                        token,
+                        format_token(token),
                         input.get(pos)
                     );
                 }
@@ -108,11 +91,11 @@ fn prediction_chunks_by_pair(
     while let Some(top) = stack.pop() {
         match top {
             Sym::Terminal(token) => {
-                if input.get(pos).copied() != Some(token) {
+                if input.get(pos).map(|kind| *kind as u32) != Some(token) {
                     bail!(
                         "terminal mismatch at pos {}: expected {:?}, found {:?}",
                         pos,
-                        token,
+                        format_token(token),
                         input.get(pos)
                     );
                 }
@@ -192,64 +175,28 @@ fn ll1_predictions_parse_expression_stream() {
         &current.spec,
         &current.predictions,
         &[
+            TokenKind::Fn,
             TokenKind::Ident,
-            TokenKind::Plus,
+            TokenKind::ParamLParen,
+            TokenKind::ParamRParen,
+            TokenKind::FnBlockLBrace,
+            TokenKind::Return,
+            TokenKind::Ident,
+            TokenKind::InfixPlus,
             TokenKind::Int,
-            TokenKind::Semicolon,
+            TokenKind::ReturnSemicolon,
+            TokenKind::FnBlockRBrace,
         ],
     )
-    .expect("parse token stream");
+    .expect("parse function token stream");
 
     assert_eq!(tags.first().map(String::as_str), Some("file"));
+    assert!(tags.iter().any(|tag| tag == "fn"));
     assert!(tags.iter().any(|tag| tag == "expr"));
     assert!(tags.iter().any(|tag| tag == "ident"));
     assert!(tags.iter().any(|tag| tag == "add_tail"));
     assert!(tags.iter().any(|tag| tag == "int"));
     assert!(tags.iter().any(|tag| tag == "assign_end"));
-}
-
-#[test]
-fn projected_tables_emit_expression_pairs() {
-    let current = current_grammar_fixture();
-    let projected = current_projected_fixture();
-
-    assert!(!projected.projection.pp.cells.is_empty());
-    assert!(!projected.projection.sc.cells.is_empty());
-
-    let input = [
-        EOF_TOKEN,
-        TokenKind::Ident as u32,
-        TokenKind::Plus as u32,
-        TokenKind::Int as u32,
-        TokenKind::Semicolon as u32,
-        EOF_TOKEN,
-    ];
-    let mut emitted = Vec::new();
-    for pair in input.windows(2) {
-        let idx = (pair[0] as usize) * (projected.tables.n_kinds as usize) + (pair[1] as usize);
-        let off = projected.tables.pp_off[idx] as usize;
-        let len = projected.tables.pp_len[idx] as usize;
-        emitted.extend_from_slice(&projected.tables.pp_superseq[off..off + len]);
-    }
-
-    let tags = emitted
-        .iter()
-        .map(|id| current.spec.productions[*id as usize].tag.as_str())
-        .collect::<Vec<_>>();
-
-    assert!(tags.contains(&"expr"));
-    assert!(tags.contains(&"ident"));
-    assert!(tags.contains(&"add_tail"));
-    assert!(tags.contains(&"int"));
-    assert!(tags.contains(&"assign_end"));
-}
-
-#[test]
-fn candidate_llp_stack_summaries_are_projected_for_raw_tokens() {
-    let projection = &current_projected_fixture().projection;
-
-    assert!(!projection.sc.cells.is_empty());
-    assert!(!projection.pp.cells.is_empty());
 }
 
 #[test]
@@ -259,29 +206,106 @@ fn ll1_predictions_parse_empty_array() {
         &current.spec,
         &current.predictions,
         &[
-            TokenKind::LBracket,
-            TokenKind::RBracket,
-            TokenKind::Semicolon,
+            TokenKind::Fn,
+            TokenKind::Ident,
+            TokenKind::ParamLParen,
+            TokenKind::ParamRParen,
+            TokenKind::FnBlockLBrace,
+            TokenKind::Return,
+            TokenKind::ArrayLBracket,
+            TokenKind::ArrayRBracket,
+            TokenKind::ReturnSemicolon,
+            TokenKind::FnBlockRBrace,
         ],
     )
-    .expect("parse token stream");
+    .expect("parse function token stream");
 
     assert!(tags.iter().any(|tag| tag == "array_lit"));
     assert!(tags.iter().any(|tag| tag == "array_none"));
 }
 
 #[test]
-fn raw_closing_delimiters_share_rparen_projection_pairs() {
+fn simple_llp_grammar_builds_paper_style_pair_tables() {
+    let spec = parse_grammar(
+        "
+        %start file;
+        file [file_ident] -> 'Ident' 'Semicolon';
+        ",
+    )
+    .expect("parse grammar");
+    let analysis = analyze_grammar(&spec);
+    assert!(
+        !diagnostics_are_fatal(&analysis.diagnostics),
+        "{}",
+        format_diagnostics(&analysis.diagnostics)
+    );
+    let predictions = build_ll1_predictions(&spec, &analysis).expect("ll1 predictions");
+    let prod_arity = compute_prod_arity(&spec.productions);
+
+    let (tables, projection, witness_inputs) =
+        build_projected_precomputed_tables(&spec, &predictions, prod_arity)
+            .expect("build paper-style LLP tables");
+
+    assert_eq!(witness_inputs, 0);
+    assert!(!projection.sc.cells.is_empty());
+    assert!(!projection.pp.cells.is_empty());
+    assert!(!tables.sc_superseq.is_empty());
+    assert!(!tables.pp_superseq.is_empty());
+}
+
+#[test]
+fn psls_conflict_report_names_productions_and_gammas() {
+    let spec = parse_grammar(
+        "
+        %start file;
+        file [file_item] -> item;
+        item [item_impl] -> 'Impl' block;
+        block [block] -> 'LBrace' 'RBrace';
+        ",
+    )
+    .expect("parse grammar");
+    let conflicts = vec![PslsConflict {
+        pair: (TokenKind::RBrace as u32, EOF_TOKEN),
+        existing_prod: 1,
+        prod: 2,
+        existing_gamma: vec![Sym::Terminal(TokenKind::RBrace as u32)],
+        gamma: vec![
+            Sym::NonTerminal("block".to_string()),
+            Sym::Terminal(TokenKind::RBrace as u32),
+        ],
+    }];
+
+    let report = format_psls_conflicts(&spec, &conflicts, 20);
+
+    assert!(report.contains("(RBrace, $)"), "{report}");
+    assert!(report.contains("#1 item [item_impl] line"), "{report}");
+    assert!(report.contains("#2 block [block] line"), "{report}");
+    assert!(report.contains("existing gamma: 'RBrace'"), "{report}");
+    assert!(
+        report.contains("incoming gamma: block 'RBrace'"),
+        "{report}"
+    );
+}
+
+#[test]
+fn semantic_closing_delimiters_use_distinct_projection_pairs() {
     let current = current_grammar_fixture();
 
     let group = prediction_chunks_by_pair(
         &current.spec,
         &current.predictions,
         &[
-            TokenKind::LParen,
+            TokenKind::Fn,
             TokenKind::Ident,
-            TokenKind::RParen,
-            TokenKind::Semicolon,
+            TokenKind::ParamLParen,
+            TokenKind::ParamRParen,
+            TokenKind::FnBlockLBrace,
+            TokenKind::Return,
+            TokenKind::GroupLParen,
+            TokenKind::Ident,
+            TokenKind::GroupRParen,
+            TokenKind::ReturnSemicolon,
+            TokenKind::FnBlockRBrace,
         ],
     )
     .expect("parse grouped expression");
@@ -289,18 +313,28 @@ fn raw_closing_delimiters_share_rparen_projection_pairs() {
         &current.spec,
         &current.predictions,
         &[
+            TokenKind::Fn,
             TokenKind::Ident,
-            TokenKind::LParen,
+            TokenKind::ParamLParen,
+            TokenKind::ParamRParen,
+            TokenKind::FnBlockLBrace,
+            TokenKind::Return,
             TokenKind::Ident,
-            TokenKind::RParen,
-            TokenKind::Semicolon,
+            TokenKind::CallLParen,
+            TokenKind::Ident,
+            TokenKind::CallRParen,
+            TokenKind::ReturnSemicolon,
+            TokenKind::FnBlockRBrace,
         ],
     )
     .expect("parse call expression");
 
-    let key = (TokenKind::Ident as u32, TokenKind::RParen as u32);
-    let group_chunk = group.get(&key).expect("group Ident/RParen chunk");
-    let call_chunk = call.get(&key).expect("call Ident/RParen chunk");
+    let group_key = (TokenKind::Ident as u32, TokenKind::GroupRParen as u32);
+    let call_key = (TokenKind::Ident as u32, TokenKind::CallRParen as u32);
+    let group_chunk = group
+        .get(&group_key)
+        .expect("group Ident/GroupRParen chunk");
+    let call_chunk = call.get(&call_key).expect("call Ident/CallRParen chunk");
 
     assert!(!group_chunk.is_empty());
     assert!(!call_chunk.is_empty());

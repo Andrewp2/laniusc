@@ -1,3 +1,5 @@
+module app::main;
+
 import core::option;
 import core::result;
 

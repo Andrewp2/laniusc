@@ -40,6 +40,10 @@ pub(super) fn storage_u32_rw(
     })
 }
 
+pub(super) fn alias_storage_buffer(source: &wgpu::Buffer) -> wgpu::Buffer {
+    source.clone()
+}
+
 pub(super) fn storage_u32_fill_rw(
     device: &wgpu::Device,
     label: &str,

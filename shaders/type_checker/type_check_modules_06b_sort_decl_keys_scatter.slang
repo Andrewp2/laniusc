@@ -8,6 +8,10 @@
 // - It does not resolve imports, validate duplicates, perform lookup, scan
 //   source bytes, use hashes, or apply same-source shortcuts.
 
+import gpu_index;
+import radix;
+import scatter;
+
 struct Params
 {
     uint decl_capacity;
@@ -31,21 +35,18 @@ RWStructuredBuffer<uint> decl_key_order_out;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint RADIX_BUCKETS = 257u;
+static const uint RADIX_BUCKETS = RADIX_U8_SENTINEL_BUCKETS;
+
+groupshared uint local_radix_keys[256];
 
 uint linear_group_id(uint3 gid)
 {
-    return gid.x + gid.y * MAX_GROUPS_X;
+    return linear_group_id_2d(gid, MAX_GROUPS_X);
 }
 
 uint active_decl_count()
 {
     return min(decl_count_out[0], gParams.decl_capacity);
-}
-
-uint encoded_id(uint value)
-{
-    return value == INVALID ? 0u : value + 1u;
 }
 
 uint decl_key_field(uint decl_i, uint field_i)
@@ -54,35 +55,48 @@ uint decl_key_field(uint decl_i, uint field_i)
         return 0u;
 
     if (field_i == 0u)
-        return encoded_id(decl_name_id[decl_i]);
+        return encode_nullable_id(decl_name_id[decl_i], INVALID);
     if (field_i == 1u)
         return decl_namespace[decl_i];
-    return encoded_id(decl_module_id[decl_i]);
+    return encode_nullable_id(decl_module_id[decl_i], INVALID);
 }
 
 uint decl_key_radix_key(uint decl_i, uint key_step)
 {
-    uint field_i = min(key_step / 4u, 2u);
-    uint byte_i = key_step & 3u;
+    uint field_i = radix_field_index(key_step, 2u);
     uint value = decl_key_field(decl_i, field_i);
-    return (value >> (byte_i * 8u)) & 0xffu;
+    return radix_byte_key(value, key_step);
 }
 
-uint local_same_key_rank(uint block_begin, uint lane, uint key)
+public struct DeclKeyScatterSource : IStableRadixScatterSource<uint>
 {
-    uint rank = 0u;
-    [loop]
-    for (uint j = 0u; j < lane; j += 1u)
+    public static uint active_count()
     {
-        uint order_j = block_begin + j;
-        if (order_j < active_decl_count())
-        {
-            uint prev_decl_i = decl_key_order_in[order_j];
-            if (decl_key_radix_key(prev_decl_i, gParams.key_step) == key)
-                rank += 1u;
-        }
+        return active_decl_count();
     }
-    return rank;
+
+    public static uint inactive_value()
+    {
+        return 0u;
+    }
+
+    public static uint ordered_value(uint order_i)
+    {
+        return decl_key_order_in[order_i];
+    }
+
+    public static uint radix_key(uint value, uint key_step)
+    {
+        return decl_key_radix_key(value, key_step);
+    }
+}
+
+public struct DeclKeyOrderOutSink : IScatterSink<uint>
+{
+    public static void store(uint dst, uint value)
+    {
+        decl_key_order_out[dst] = value;
+    }
 }
 
 [shader("compute")]
@@ -90,21 +104,14 @@ uint local_same_key_rank(uint block_begin, uint lane, uint key)
 void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
 {
     uint block_idx = linear_group_id(gid);
-    if (block_idx >= gParams.n_blocks)
-        return;
-
     uint lane = ltid.x;
-    uint order_i = block_idx * WG_SIZE + lane;
-    uint decl_count = active_decl_count();
-    if (order_i >= decl_count)
-        return;
-
-    uint decl_i = decl_key_order_in[order_i];
-    uint key = decl_key_radix_key(decl_i, gParams.key_step);
-    uint rank = local_same_key_rank(block_idx * WG_SIZE, lane, key);
-    uint block_prefix = radix_block_bucket_prefix[block_idx * RADIX_BUCKETS + key];
-    uint dst = radix_bucket_base[key] + block_prefix + rank;
-
-    if (dst < decl_count)
-        decl_key_order_out[dst] = decl_i;
+    stable_radix_scatter_block<uint, DeclKeyScatterSource, DeclKeyOrderOutSink, 256>(
+        block_idx,
+        lane,
+        gParams.n_blocks,
+        gParams.key_step,
+        RADIX_BUCKETS,
+        radix_bucket_base,
+        radix_block_bucket_prefix,
+        local_radix_keys);
 }

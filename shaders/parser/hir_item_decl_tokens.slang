@@ -17,6 +17,8 @@ ConstantBuffer<Params> gHirItemDecl;
 StructuredBuffer<uint> ll1_status;
 StructuredBuffer<uint> hir_item_kind;
 StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_semantic_dense_node;
+StructuredBuffer<uint> hir_semantic_count;
 
 RWStructuredBuffer<uint> hir_item_decl_token;
 
@@ -42,6 +44,19 @@ uint active_node_count()
     return gHirItemDecl.uses_ll1 != 0u ? min(gHirItemDecl.n, ll1_status[5u]) : gHirItemDecl.n;
 }
 
+uint active_semantic_count()
+{
+    return min(hir_semantic_count[0u], active_node_count());
+}
+
+uint semantic_row_node(uint row)
+{
+    if (row >= active_semantic_count())
+        return INVALID;
+    uint node = hir_semantic_dense_node[row];
+    return node < active_node_count() ? node : INVALID;
+}
+
 bool has_declaration_target(uint item_kind)
 {
     return item_kind == HIR_ITEM_KIND_CONST ||
@@ -57,13 +72,12 @@ bool has_declaration_target(uint item_kind)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint i = linear_thread_id(dtid);
-    if (i >= gHirItemDecl.n)
+    uint row = linear_thread_id(dtid);
+    uint i = semantic_row_node(row);
+    if (i == INVALID)
         return;
 
     hir_item_decl_token[i] = INVALID;
-    if (i >= active_node_count())
-        return;
 
     uint item_kind = hir_item_kind[i];
     if (!has_declaration_target(item_kind))

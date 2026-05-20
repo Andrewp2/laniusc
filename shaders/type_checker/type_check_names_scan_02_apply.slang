@@ -6,6 +6,8 @@
 // - scan_output_prefix[i] receives the exclusive prefix for scan_input[i].
 // - scan_total[0] receives the total sum, used as the compact record count.
 
+import prefix_scan;
+
 struct Params
 {
     uint n_items;
@@ -34,14 +36,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
     if (i == 0u)
-        scan_total[0] = gScan.n_items == 0u || gScan.n_blocks == 0u
-                            ? 0u
-                            : scan_block_prefix[gScan.n_blocks - 1u];
+        scan_total[0] = inclusive_scan_total(gScan.n_blocks, scan_block_prefix);
 
     if (i >= gScan.n_items)
         return;
 
-    uint block_i = i / WG_SIZE;
-    uint prior_blocks = block_i == 0u ? 0u : scan_block_prefix[block_i - 1u];
-    scan_output_prefix[i] = prior_blocks + scan_local_prefix[i];
+    scan_output_prefix[i] = global_exclusive_prefix(
+        i,
+        WG_SIZE,
+        scan_local_prefix,
+        scan_block_prefix);
 }

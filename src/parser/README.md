@@ -22,17 +22,17 @@ The code lives under `shaders/parser/*` and is driven by `src/parser/*`. The dem
 From generated pair headers we pack two streams (see `pack_varlen.slang`):
 
 * `out_sc`: **stack-change codes** (u32). *Odd* = push, *even* = pop. Upper bits carry a **typed ID** for the bracket kind (e.g., `(` vs `[`).
-* `out_emit`: **production IDs** from the witness-projected LLP pair table. For the checked fixture programs it matches the exact LL(1) production stream and is the stream used for tree construction.
+* `out_emit`: **candidate production IDs** from the LLP pair table. This stream is not the compiler's trusted tree source until the grammar has a real conflict-free LLP table.
 
 These are produced by:
 
 * `llp_pairs.slang`  → headers per adjacent token pair
 * `pack_varlen.slang` → densely packs `out_sc` and `out_emit`
 
-The runtime also runs the block-local seeded LL(1) passes and flattens their
-per-block emits into the canonical LL(1) production stream. Those passes provide
-exact acceptance/error reporting while the LLP summary-composition path is still
-being built.
+The runtime currently runs the block-local seeded LL(1) passes and flattens
+their per-block emits into the canonical LL(1) production stream. Those passes
+provide exact acceptance/error reporting and feed tree/HIR construction while
+the paper-style LLP summary-composition path is blocked on grammar conflicts.
 
 ---
 
@@ -194,10 +194,18 @@ Recommended unit cases:
 
 ## What’s next
 
-1. **Replace witness-projected LLP tables with real LLP summary composition.**
+1. **Make the grammar conflict-free for real LLP summary composition.**
 
-   * The current pair table is conflict-free for the generated witness set and exact on the fixture programs.
-   * The next parser milestone is the paper-style deterministic LLP table/reduction, not adding more ad hoc witnesses.
+   * `parse_gen_tables` now computes Pareas-style LLP item sets and rejects the current grammar instead of emitting conflicting tables.
+   * Its conflict output is grouped by competing production/gamma pairs so grammar work can be prioritized by source of ambiguity rather than by repeated token-pair rows.
+   * Current dominant ambiguity classes are:
+     * remaining declaration subcontexts such as type-alias assignment versus const assignment;
+     * context-specific list commas in match arms, patterns, type arguments, and enum fields;
+     * brace-context ambiguity for match arms, impl methods, trait methods, and ordinary blocks;
+     * generic angle brackets versus comparisons, prefix/postfix `Inc`/`Dec`, enum tuple payloads versus calls, and type-reference ampersands versus bitwise ampersands.
+   * File-level statements were removed from the generated grammar path, and `else` now follows Pareas's shape: it parses as its own statement for a later fixup pass instead of being encoded as a dangling-else grammar branch.
+   * The grammar now consumes semantic `PrefixMinus`/`InfixMinus`, `GroupLParen`/`CallLParen`, `ArrayLBracket`/`IndexLBracket`, function-parameter delimiters, declaration assignment, bound/type colons, member identifiers, and the first argument/array/parameter comma variants where those contexts are already separated.
+   * The next parser milestone is to remove those PSLS conflicts, then route tree/HIR construction to the paper-style deterministic LLP table/reduction.
 
 2. **Route full parser-stack summaries through runtime validation.**
 

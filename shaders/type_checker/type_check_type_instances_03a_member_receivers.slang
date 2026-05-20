@@ -4,6 +4,8 @@
 // for generic receiver instances, the receiver instance token needed by the
 // later generic substitution pass.
 
+import tree_walk;
+
 struct Params
 {
     uint n_tokens;
@@ -22,7 +24,6 @@ StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
-StructuredBuffer<uint> method_decl_param_offset;
 StructuredBuffer<uint> method_decl_receiver_ref_tag;
 StructuredBuffer<uint> method_decl_receiver_ref_payload;
 
@@ -68,18 +69,25 @@ uint parent_node(uint node)
     return valid_node(p) ? p : INVALID;
 }
 
-uint member_node_for_token(uint member_token)
+public struct MemberReceiverWalkGraph : ITreeWalkGraph
 {
-    uint n = active_hir_node_count();
-    [loop]
-    for (uint node = 0u; node < n; node += 1u)
+    public static bool valid(uint node)
     {
-        if (hir_kind[node] != HIR_MEMBER_EXPR)
-            continue;
-        if (hir_member_name_token[node] == member_token)
-            return node;
+        return valid_node(node);
     }
-    return INVALID;
+
+    public static uint parent(uint node)
+    {
+        return parent_node(node);
+    }
+}
+
+public struct MemberReceiverFnPredicate : ITreeWalkPredicate
+{
+    public static bool matches(uint node)
+    {
+        return hir_kind[node] == HIR_FN;
+    }
 }
 
 uint receiver_token_for_member(uint member_node)
@@ -89,20 +97,11 @@ uint receiver_token_for_member(uint member_node)
 
 uint enclosing_function_node(uint node)
 {
-    uint cur = node;
-    [loop]
-    for (uint guard = 0u; guard < 96u; guard += 1u)
-    {
-        if (!valid_node(cur))
-            return INVALID;
-        if (hir_kind[cur] == HIR_FN)
-            return cur;
-        uint p = parent_node(cur);
-        if (!valid_node(p) || p == cur)
-            return INVALID;
-        cur = p;
-    }
-    return INVALID;
+    uint fn_node;
+    return find_self_or_ancestor<MemberReceiverWalkGraph, MemberReceiverFnPredicate>(
+        node,
+        96u,
+        fn_node) ? fn_node : INVALID;
 }
 
 bool receiver_decl_type_ref(uint receiver_token, out uint tag, out uint payload)
@@ -117,27 +116,6 @@ bool receiver_decl_type_ref(uint receiver_token, out uint tag, out uint payload)
     tag = decl_type_ref_tag[decl_token];
     payload = decl_type_ref_payload[decl_token];
     return tag != TYPE_REF_INVALID && payload != INVALID;
-}
-
-bool method_receiver_type_ref(uint receiver_token, out uint tag, out uint payload)
-{
-    tag = TYPE_REF_INVALID;
-    payload = INVALID;
-
-    uint decl_token = valid_token(receiver_token) ? visible_decl[receiver_token] : INVALID;
-    if (!valid_token(decl_token))
-        return false;
-
-    [loop]
-    for (uint fn_token = 0u; fn_token < gParams.n_tokens; fn_token += 1u)
-    {
-        if (method_decl_param_offset[fn_token] != decl_token)
-            continue;
-        tag = method_decl_receiver_ref_tag[fn_token];
-        payload = method_decl_receiver_ref_payload[fn_token];
-        return tag != TYPE_REF_INVALID && payload != INVALID;
-    }
-    return false;
 }
 
 bool enclosing_method_receiver_type_ref(uint member_node, out uint tag, out uint payload)
@@ -155,10 +133,13 @@ bool enclosing_method_receiver_type_ref(uint member_node, out uint tag, out uint
     return tag != TYPE_REF_INVALID && payload != INVALID;
 }
 
-void publish_receiver_ref(uint member_token)
+void publish_receiver_ref_for_node(uint member_node)
 {
-    uint member_node = member_node_for_token(member_token);
-    if (!valid_node(member_node))
+    if (!valid_node(member_node) || hir_kind[member_node] != HIR_MEMBER_EXPR)
+        return;
+
+    uint member_token = hir_member_name_token[member_node];
+    if (!valid_token(member_token))
         return;
 
     uint receiver_token = receiver_token_for_member(member_node);
@@ -168,10 +149,7 @@ void publish_receiver_ref(uint member_token)
     uint tag = TYPE_REF_INVALID;
     uint payload = INVALID;
     if (!receiver_decl_type_ref(receiver_token, tag, payload))
-    {
-        if (!method_receiver_type_ref(receiver_token, tag, payload))
-            enclosing_method_receiver_type_ref(member_node, tag, payload);
-    }
+        enclosing_method_receiver_type_ref(member_node, tag, payload);
     if (tag == TYPE_REF_INVALID || payload == INVALID)
         return;
 
@@ -185,13 +163,8 @@ void publish_receiver_ref(uint member_token)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint token = linear_thread_id(dtid);
-    if (!valid_token(token))
+    uint node = linear_thread_id(dtid);
+    if (!valid_node(node))
         return;
-
-    member_result_context_instance[token] = INVALID;
-    member_result_ref_tag[token] = TYPE_REF_INVALID;
-    member_result_ref_payload[token] = INVALID;
-    member_result_field_ordinal[token] = INVALID;
-    publish_receiver_ref(token);
+    publish_receiver_ref_for_node(node);
 }

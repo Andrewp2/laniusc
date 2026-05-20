@@ -2,8 +2,8 @@
 //
 // Scheduling contract:
 // - Dispatch after parser-owned HIR item fields and name_id_by_token exist.
-// - This pass marks candidate rows only. A GPU prefix scan over these flags
-//   allocates compact records for later scatter passes.
+// - This pass marks candidate rows only. Later GPU projection passes select one
+//   packed family bit at a time for prefix scans and compact scatters.
 // - It does not resolve imports, decide declaration visibility, accept
 //   qualified paths, perform same-source shortcuts, use hash-only lookup, or
 //   ask the CPU to classify paths.
@@ -28,11 +28,7 @@ StructuredBuffer<uint> hir_item_path_start;
 StructuredBuffer<uint> hir_item_path_end;
 StructuredBuffer<uint> hir_item_import_target_kind;
 
-RWStructuredBuffer<uint> module_record_flag;
-RWStructuredBuffer<uint> import_record_flag;
-RWStructuredBuffer<uint> decl_record_flag;
-RWStructuredBuffer<uint> path_record_flag;
-RWStructuredBuffer<uint> path_record_kind;
+RWStructuredBuffer<uint> record_family_bits;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -66,6 +62,12 @@ static const uint PATH_RECORD_KIND_MODULE_DECL = 1u;
 static const uint PATH_RECORD_KIND_IMPORT_PATH = 2u;
 static const uint PATH_RECORD_KIND_HIR_PATH_EXPR = 3u;
 static const uint PATH_RECORD_KIND_HIR_TYPE_EXPR = 4u;
+
+static const uint RECORD_FLAG_MODULE = 1u << 0u;
+static const uint RECORD_FLAG_IMPORT = 1u << 1u;
+static const uint RECORD_FLAG_DECL = 1u << 2u;
+static const uint RECORD_FLAG_PATH = 1u << 3u;
+static const uint RECORD_PATH_KIND_SHIFT = 8u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -124,40 +126,39 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i >= gParams.n_hir_nodes)
         return;
 
-    module_record_flag[i] = 0u;
-    import_record_flag[i] = 0u;
-    decl_record_flag[i] = 0u;
-    path_record_flag[i] = 0u;
-    path_record_kind[i] = PATH_RECORD_KIND_NONE;
-
     if (i >= active_hir_node_count())
+    {
+        record_family_bits[i] = 0u;
         return;
+    }
 
     uint item_kind = hir_item_kind[i];
     uint item_namespace = hir_item_namespace[i];
+    uint bits = 0u;
 
     if (item_kind == HIR_ITEM_KIND_MODULE &&
         valid_span(hir_item_path_start[i], hir_item_path_end[i]))
     {
-        module_record_flag[i] = 1u;
+        bits |= RECORD_FLAG_MODULE;
     }
 
     if (item_kind == HIR_ITEM_KIND_IMPORT &&
         hir_item_import_target_kind[i] != HIR_ITEM_IMPORT_TARGET_NONE)
     {
-        import_record_flag[i] = 1u;
+        bits |= RECORD_FLAG_IMPORT;
     }
 
     if (is_top_level_decl_kind(item_kind) && is_decl_namespace(item_namespace) &&
         hir_item_name_token[i] != INVALID)
     {
-        decl_record_flag[i] = 1u;
+        bits |= RECORD_FLAG_DECL;
     }
 
     uint kind = candidate_path_kind(i, item_kind);
     if (kind != PATH_RECORD_KIND_NONE)
     {
-        path_record_flag[i] = 1u;
-        path_record_kind[i] = kind;
+        bits |= RECORD_FLAG_PATH | (kind << RECORD_PATH_KIND_SHIFT);
     }
+
+    record_family_bits[i] = bits;
 }

@@ -1,6 +1,8 @@
 // shaders/parser/brackets_04_histogram_layers.slang
 // Build histograms of pushes and pops per layer.
 
+import scatter;
+
 struct Params
 {
     uint n_sc;
@@ -30,7 +32,7 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     uint code = sc_stream[i];
     if ((code & 1u) == 1u)
-        InterlockedAdd(hist_push[l], 1);
+        atomic_counter_add(hist_push, l, 1u);
     else
-        InterlockedAdd(hist_pop[l], 1);
+        atomic_counter_add(hist_pop, l, 1u);
 }

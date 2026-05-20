@@ -58,6 +58,10 @@ struct ResidentTreeReadbacks {
     hir_type_len_token: U32Readback,
     hir_type_len_value: U32Readback,
     hir_type_file_id: U32Readback,
+    hir_type_path_leaf_node: U32Readback,
+    hir_type_arg_start: U32Readback,
+    hir_type_arg_count: U32Readback,
+    hir_type_arg_next: U32Readback,
     hir_item_kind: U32Readback,
     hir_item_name_token: U32Readback,
     hir_item_decl_token: U32Readback,
@@ -74,16 +78,25 @@ struct ResidentTreeReadbacks {
     hir_match_scrutinee_node: U32Readback,
     hir_match_arm_start: U32Readback,
     hir_match_arm_count: U32Readback,
+    hir_match_arm_next: U32Readback,
     hir_match_arm_pattern_node: U32Readback,
     hir_match_arm_payload_start: U32Readback,
     hir_match_arm_payload_count: U32Readback,
     hir_match_arm_result_node: U32Readback,
+    hir_match_payload_owner_arm: U32Readback,
+    hir_match_payload_match_node: U32Readback,
+    hir_match_payload_ordinal: U32Readback,
     hir_call_callee_node: U32Readback,
     hir_call_arg_start: U32Readback,
     hir_call_arg_end: U32Readback,
     hir_call_arg_count: U32Readback,
     hir_call_arg_parent_call: U32Readback,
     hir_call_arg_ordinal: U32Readback,
+    hir_array_lit_first_element: U32Readback,
+    hir_array_lit_element_count: U32Readback,
+    hir_array_element_parent_lit: U32Readback,
+    hir_array_element_ordinal: U32Readback,
+    hir_array_element_next: U32Readback,
     hir_member_receiver_node: U32Readback,
     hir_member_receiver_token: U32Readback,
     hir_member_name_token: U32Readback,
@@ -97,6 +110,7 @@ struct ResidentTreeReadbacks {
     hir_struct_lit_field_count: U32Readback,
     hir_struct_lit_field_parent_lit: U32Readback,
     hir_struct_lit_field_value_node: U32Readback,
+    hir_struct_lit_field_next: U32Readback,
 }
 
 impl ResidentTreeReadbacks {
@@ -182,6 +196,26 @@ impl ResidentTreeReadbacks {
                 "rb.parser.resident_tree.hir_type_file_id",
                 bufs.hir_type_file_id.byte_size,
             ),
+            hir_type_path_leaf_node: rb(
+                device,
+                "rb.parser.resident_tree.hir_type_path_leaf_node",
+                bufs.hir_type_path_leaf_node.byte_size,
+            ),
+            hir_type_arg_start: rb(
+                device,
+                "rb.parser.resident_tree.hir_type_arg_start",
+                bufs.hir_type_arg_start.byte_size,
+            ),
+            hir_type_arg_count: rb(
+                device,
+                "rb.parser.resident_tree.hir_type_arg_count",
+                bufs.hir_type_arg_count.byte_size,
+            ),
+            hir_type_arg_next: rb(
+                device,
+                "rb.parser.resident_tree.hir_type_arg_next",
+                bufs.hir_type_arg_next.byte_size,
+            ),
             hir_item_kind: rb(
                 device,
                 "rb.parser.resident_tree.hir_item_kind",
@@ -262,6 +296,11 @@ impl ResidentTreeReadbacks {
                 "rb.parser.resident_tree.hir_match_arm_count",
                 bufs.hir_match_arm_count.byte_size,
             ),
+            hir_match_arm_next: rb(
+                device,
+                "rb.parser.resident_tree.hir_match_arm_next",
+                bufs.hir_match_arm_next.byte_size,
+            ),
             hir_match_arm_pattern_node: rb(
                 device,
                 "rb.parser.resident_tree.hir_match_arm_pattern_node",
@@ -281,6 +320,21 @@ impl ResidentTreeReadbacks {
                 device,
                 "rb.parser.resident_tree.hir_match_arm_result_node",
                 bufs.hir_match_arm_result_node.byte_size,
+            ),
+            hir_match_payload_owner_arm: rb(
+                device,
+                "rb.parser.resident_tree.hir_match_payload_owner_arm",
+                bufs.hir_match_payload_owner_arm.byte_size,
+            ),
+            hir_match_payload_match_node: rb(
+                device,
+                "rb.parser.resident_tree.hir_match_payload_match_node",
+                bufs.hir_match_payload_match_node.byte_size,
+            ),
+            hir_match_payload_ordinal: rb(
+                device,
+                "rb.parser.resident_tree.hir_match_payload_ordinal",
+                bufs.hir_match_payload_ordinal.byte_size,
             ),
             hir_call_callee_node: rb(
                 device,
@@ -311,6 +365,31 @@ impl ResidentTreeReadbacks {
                 device,
                 "rb.parser.resident_tree.hir_call_arg_ordinal",
                 bufs.hir_call_arg_ordinal.byte_size,
+            ),
+            hir_array_lit_first_element: rb(
+                device,
+                "rb.parser.resident_tree.hir_array_lit_first_element",
+                bufs.hir_array_lit_first_element.byte_size,
+            ),
+            hir_array_lit_element_count: rb(
+                device,
+                "rb.parser.resident_tree.hir_array_lit_element_count",
+                bufs.hir_array_lit_element_count.byte_size,
+            ),
+            hir_array_element_parent_lit: rb(
+                device,
+                "rb.parser.resident_tree.hir_array_element_parent_lit",
+                bufs.hir_array_element_parent_lit.byte_size,
+            ),
+            hir_array_element_ordinal: rb(
+                device,
+                "rb.parser.resident_tree.hir_array_element_ordinal",
+                bufs.hir_array_element_ordinal.byte_size,
+            ),
+            hir_array_element_next: rb(
+                device,
+                "rb.parser.resident_tree.hir_array_element_next",
+                bufs.hir_array_element_next.byte_size,
             ),
             hir_member_receiver_node: rb(
                 device,
@@ -376,6 +455,11 @@ impl ResidentTreeReadbacks {
                 device,
                 "rb.parser.resident_tree.hir_struct_lit_field_value_node",
                 bufs.hir_struct_lit_field_value_node.byte_size,
+            ),
+            hir_struct_lit_field_next: rb(
+                device,
+                "rb.parser.resident_tree.hir_struct_lit_field_next",
+                bufs.hir_struct_lit_field_next.byte_size,
             ),
         }
     }
@@ -445,6 +529,26 @@ impl ResidentTreeReadbacks {
             encoder,
             &bufs.hir_type_file_id,
             bufs.hir_type_file_id.byte_size as u64,
+        );
+        self.hir_type_path_leaf_node.copy_from(
+            encoder,
+            &bufs.hir_type_path_leaf_node,
+            bufs.hir_type_path_leaf_node.byte_size as u64,
+        );
+        self.hir_type_arg_start.copy_from(
+            encoder,
+            &bufs.hir_type_arg_start,
+            bufs.hir_type_arg_start.byte_size as u64,
+        );
+        self.hir_type_arg_count.copy_from(
+            encoder,
+            &bufs.hir_type_arg_count,
+            bufs.hir_type_arg_count.byte_size as u64,
+        );
+        self.hir_type_arg_next.copy_from(
+            encoder,
+            &bufs.hir_type_arg_next,
+            bufs.hir_type_arg_next.byte_size as u64,
         );
         self.hir_item_kind.copy_from(
             encoder,
@@ -526,6 +630,11 @@ impl ResidentTreeReadbacks {
             &bufs.hir_match_arm_count,
             bufs.hir_match_arm_count.byte_size as u64,
         );
+        self.hir_match_arm_next.copy_from(
+            encoder,
+            &bufs.hir_match_arm_next,
+            bufs.hir_match_arm_next.byte_size as u64,
+        );
         self.hir_match_arm_pattern_node.copy_from(
             encoder,
             &bufs.hir_match_arm_pattern_node,
@@ -545,6 +654,21 @@ impl ResidentTreeReadbacks {
             encoder,
             &bufs.hir_match_arm_result_node,
             bufs.hir_match_arm_result_node.byte_size as u64,
+        );
+        self.hir_match_payload_owner_arm.copy_from(
+            encoder,
+            &bufs.hir_match_payload_owner_arm,
+            bufs.hir_match_payload_owner_arm.byte_size as u64,
+        );
+        self.hir_match_payload_match_node.copy_from(
+            encoder,
+            &bufs.hir_match_payload_match_node,
+            bufs.hir_match_payload_match_node.byte_size as u64,
+        );
+        self.hir_match_payload_ordinal.copy_from(
+            encoder,
+            &bufs.hir_match_payload_ordinal,
+            bufs.hir_match_payload_ordinal.byte_size as u64,
         );
         self.hir_call_callee_node.copy_from(
             encoder,
@@ -575,6 +699,31 @@ impl ResidentTreeReadbacks {
             encoder,
             &bufs.hir_call_arg_ordinal,
             bufs.hir_call_arg_ordinal.byte_size as u64,
+        );
+        self.hir_array_lit_first_element.copy_from(
+            encoder,
+            &bufs.hir_array_lit_first_element,
+            bufs.hir_array_lit_first_element.byte_size as u64,
+        );
+        self.hir_array_lit_element_count.copy_from(
+            encoder,
+            &bufs.hir_array_lit_element_count,
+            bufs.hir_array_lit_element_count.byte_size as u64,
+        );
+        self.hir_array_element_parent_lit.copy_from(
+            encoder,
+            &bufs.hir_array_element_parent_lit,
+            bufs.hir_array_element_parent_lit.byte_size as u64,
+        );
+        self.hir_array_element_ordinal.copy_from(
+            encoder,
+            &bufs.hir_array_element_ordinal,
+            bufs.hir_array_element_ordinal.byte_size as u64,
+        );
+        self.hir_array_element_next.copy_from(
+            encoder,
+            &bufs.hir_array_element_next,
+            bufs.hir_array_element_next.byte_size as u64,
         );
         self.hir_member_receiver_node.copy_from(
             encoder,
@@ -641,6 +790,11 @@ impl ResidentTreeReadbacks {
             &bufs.hir_struct_lit_field_value_node,
             bufs.hir_struct_lit_field_value_node.byte_size as u64,
         );
+        self.hir_struct_lit_field_next.copy_from(
+            encoder,
+            &bufs.hir_struct_lit_field_next,
+            bufs.hir_struct_lit_field_next.byte_size as u64,
+        );
     }
 
     fn map_all(&self) {
@@ -660,6 +814,10 @@ impl ResidentTreeReadbacks {
         self.hir_type_len_token.map();
         self.hir_type_len_value.map();
         self.hir_type_file_id.map();
+        self.hir_type_path_leaf_node.map();
+        self.hir_type_arg_start.map();
+        self.hir_type_arg_count.map();
+        self.hir_type_arg_next.map();
         self.hir_item_kind.map();
         self.hir_item_name_token.map();
         self.hir_item_decl_token.map();
@@ -676,16 +834,25 @@ impl ResidentTreeReadbacks {
         self.hir_match_scrutinee_node.map();
         self.hir_match_arm_start.map();
         self.hir_match_arm_count.map();
+        self.hir_match_arm_next.map();
         self.hir_match_arm_pattern_node.map();
         self.hir_match_arm_payload_start.map();
         self.hir_match_arm_payload_count.map();
         self.hir_match_arm_result_node.map();
+        self.hir_match_payload_owner_arm.map();
+        self.hir_match_payload_match_node.map();
+        self.hir_match_payload_ordinal.map();
         self.hir_call_callee_node.map();
         self.hir_call_arg_start.map();
         self.hir_call_arg_end.map();
         self.hir_call_arg_count.map();
         self.hir_call_arg_parent_call.map();
         self.hir_call_arg_ordinal.map();
+        self.hir_array_lit_first_element.map();
+        self.hir_array_lit_element_count.map();
+        self.hir_array_element_parent_lit.map();
+        self.hir_array_element_ordinal.map();
+        self.hir_array_element_next.map();
         self.hir_member_receiver_node.map();
         self.hir_member_receiver_token.map();
         self.hir_member_name_token.map();
@@ -699,11 +866,32 @@ impl ResidentTreeReadbacks {
         self.hir_struct_lit_field_count.map();
         self.hir_struct_lit_field_parent_lit.map();
         self.hir_struct_lit_field_value_node.map();
+        self.hir_struct_lit_field_next.map();
     }
 
     fn decode(&self, bufs: &ParserBuffers) -> Result<ResidentParseResult> {
         let ll1_words = self.status.read_words(6)?;
-        let emit_len = (ll1_words[5] as usize).min(bufs.ll1_emit.count);
+        let ll1_emit_len = if bufs.tree_stream_uses_ll1 {
+            (ll1_words[5] as usize).min(bufs.ll1_emit.count)
+        } else {
+            0
+        };
+        let tree_len = if bufs.tree_count_uses_status {
+            (ll1_words[5] as usize).min(bufs.node_kind.count)
+        } else {
+            (bufs.total_emit as usize).min(bufs.node_kind.count)
+        };
+
+        let packed_hir_call_arg = self.hir_call_arg_parent_call.read_words(tree_len)?;
+        let hir_call_arg_parent_call = packed_hir_call_arg
+            .iter()
+            .copied()
+            .map(crate::parser::hir_records::node_ordinal_node)
+            .collect();
+        let hir_call_arg_ordinal = packed_hir_call_arg
+            .into_iter()
+            .map(crate::parser::hir_records::node_ordinal_ordinal)
+            .collect();
 
         Ok(ResidentParseResult {
             ll1: Ll1AcceptResult {
@@ -714,66 +902,80 @@ impl ResidentTreeReadbacks {
                 steps: ll1_words[4],
                 emit_len: ll1_words[5],
             },
-            ll1_emit_stream: self.emit.read_words(emit_len)?,
-            ll1_emit_token_pos: self.emit_pos.read_words(emit_len)?,
-            node_kind: self.node_kind.read_words(emit_len)?,
-            parent: self.parent.read_words(emit_len)?,
-            first_child: self.first_child.read_words(emit_len)?,
-            next_sibling: self.next_sibling.read_words(emit_len)?,
-            subtree_end: self.subtree_end.read_words(emit_len)?,
-            hir_kind: self.hir_kind.read_words(emit_len)?,
-            hir_token_pos: self.hir_token_pos.read_words(emit_len)?,
-            hir_token_end: self.hir_token_end.read_words(emit_len)?,
-            hir_type_form: self.hir_type_form.read_words(emit_len)?,
-            hir_type_value_node: self.hir_type_value_node.read_words(emit_len)?,
-            hir_type_len_token: self.hir_type_len_token.read_words(emit_len)?,
-            hir_type_len_value: self.hir_type_len_value.read_words(emit_len)?,
-            hir_type_file_id: self.hir_type_file_id.read_words(emit_len)?,
-            hir_item_kind: self.hir_item_kind.read_words(emit_len)?,
-            hir_item_name_token: self.hir_item_name_token.read_words(emit_len)?,
-            hir_item_decl_token: self.hir_item_decl_token.read_words(emit_len)?,
-            hir_item_namespace: self.hir_item_namespace.read_words(emit_len)?,
-            hir_item_visibility: self.hir_item_visibility.read_words(emit_len)?,
-            hir_item_path_start: self.hir_item_path_start.read_words(emit_len)?,
-            hir_item_path_end: self.hir_item_path_end.read_words(emit_len)?,
-            hir_item_file_id: self.hir_item_file_id.read_words(emit_len)?,
-            hir_item_import_target_kind: self.hir_item_import_target_kind.read_words(emit_len)?,
-            hir_variant_parent_enum: self.hir_variant_parent_enum.read_words(emit_len)?,
-            hir_variant_ordinal: self.hir_variant_ordinal.read_words(emit_len)?,
-            hir_variant_payload_start: self.hir_variant_payload_start.read_words(emit_len)?,
-            hir_variant_payload_count: self.hir_variant_payload_count.read_words(emit_len)?,
-            hir_match_scrutinee_node: self.hir_match_scrutinee_node.read_words(emit_len)?,
-            hir_match_arm_start: self.hir_match_arm_start.read_words(emit_len)?,
-            hir_match_arm_count: self.hir_match_arm_count.read_words(emit_len)?,
-            hir_match_arm_pattern_node: self.hir_match_arm_pattern_node.read_words(emit_len)?,
-            hir_match_arm_payload_start: self.hir_match_arm_payload_start.read_words(emit_len)?,
-            hir_match_arm_payload_count: self.hir_match_arm_payload_count.read_words(emit_len)?,
-            hir_match_arm_result_node: self.hir_match_arm_result_node.read_words(emit_len)?,
-            hir_call_callee_node: self.hir_call_callee_node.read_words(emit_len)?,
-            hir_call_arg_start: self.hir_call_arg_start.read_words(emit_len)?,
-            hir_call_arg_end: self.hir_call_arg_end.read_words(emit_len)?,
-            hir_call_arg_count: self.hir_call_arg_count.read_words(emit_len)?,
-            hir_call_arg_parent_call: self.hir_call_arg_parent_call.read_words(emit_len)?,
-            hir_call_arg_ordinal: self.hir_call_arg_ordinal.read_words(emit_len)?,
-            hir_member_receiver_node: self.hir_member_receiver_node.read_words(emit_len)?,
-            hir_member_receiver_token: self.hir_member_receiver_token.read_words(emit_len)?,
-            hir_member_name_token: self.hir_member_name_token.read_words(emit_len)?,
+            ll1_emit_stream: self.emit.read_words(ll1_emit_len)?,
+            ll1_emit_token_pos: self.emit_pos.read_words(ll1_emit_len)?,
+            node_kind: self.node_kind.read_words(tree_len)?,
+            parent: self.parent.read_words(tree_len)?,
+            first_child: self.first_child.read_words(tree_len)?,
+            next_sibling: self.next_sibling.read_words(tree_len)?,
+            subtree_end: self.subtree_end.read_words(tree_len)?,
+            hir_kind: self.hir_kind.read_words(tree_len)?,
+            hir_token_pos: self.hir_token_pos.read_words(tree_len)?,
+            hir_token_end: self.hir_token_end.read_words(tree_len)?,
+            hir_type_form: self.hir_type_form.read_words(tree_len)?,
+            hir_type_value_node: self.hir_type_value_node.read_words(tree_len)?,
+            hir_type_len_token: self.hir_type_len_token.read_words(tree_len)?,
+            hir_type_len_value: self.hir_type_len_value.read_words(tree_len)?,
+            hir_type_file_id: self.hir_type_file_id.read_words(tree_len)?,
+            hir_type_path_leaf_node: self.hir_type_path_leaf_node.read_words(tree_len)?,
+            hir_type_arg_start: self.hir_type_arg_start.read_words(tree_len)?,
+            hir_type_arg_count: self.hir_type_arg_count.read_words(tree_len)?,
+            hir_type_arg_next: self.hir_type_arg_next.read_words(tree_len)?,
+            hir_item_kind: self.hir_item_kind.read_words(tree_len)?,
+            hir_item_name_token: self.hir_item_name_token.read_words(tree_len)?,
+            hir_item_decl_token: self.hir_item_decl_token.read_words(tree_len)?,
+            hir_item_namespace: self.hir_item_namespace.read_words(tree_len)?,
+            hir_item_visibility: self.hir_item_visibility.read_words(tree_len)?,
+            hir_item_path_start: self.hir_item_path_start.read_words(tree_len)?,
+            hir_item_path_end: self.hir_item_path_end.read_words(tree_len)?,
+            hir_item_file_id: self.hir_item_file_id.read_words(tree_len)?,
+            hir_item_import_target_kind: self.hir_item_import_target_kind.read_words(tree_len)?,
+            hir_variant_parent_enum: self.hir_variant_parent_enum.read_words(tree_len)?,
+            hir_variant_ordinal: self.hir_variant_ordinal.read_words(tree_len)?,
+            hir_variant_payload_start: self.hir_variant_payload_start.read_words(tree_len)?,
+            hir_variant_payload_count: self.hir_variant_payload_count.read_words(tree_len)?,
+            hir_match_scrutinee_node: self.hir_match_scrutinee_node.read_words(tree_len)?,
+            hir_match_arm_start: self.hir_match_arm_start.read_words(tree_len)?,
+            hir_match_arm_count: self.hir_match_arm_count.read_words(tree_len)?,
+            hir_match_arm_next: self.hir_match_arm_next.read_words(tree_len)?,
+            hir_match_arm_pattern_node: self.hir_match_arm_pattern_node.read_words(tree_len)?,
+            hir_match_arm_payload_start: self.hir_match_arm_payload_start.read_words(tree_len)?,
+            hir_match_arm_payload_count: self.hir_match_arm_payload_count.read_words(tree_len)?,
+            hir_match_arm_result_node: self.hir_match_arm_result_node.read_words(tree_len)?,
+            hir_match_payload_owner_arm: self.hir_match_payload_owner_arm.read_words(tree_len)?,
+            hir_match_payload_match_node: self.hir_match_payload_match_node.read_words(tree_len)?,
+            hir_match_payload_ordinal: self.hir_match_payload_ordinal.read_words(tree_len)?,
+            hir_call_callee_node: self.hir_call_callee_node.read_words(tree_len)?,
+            hir_call_arg_start: self.hir_call_arg_start.read_words(tree_len)?,
+            hir_call_arg_end: self.hir_call_arg_end.read_words(tree_len)?,
+            hir_call_arg_count: self.hir_call_arg_count.read_words(tree_len)?,
+            hir_call_arg_parent_call,
+            hir_call_arg_ordinal,
+            hir_array_lit_first_element: self.hir_array_lit_first_element.read_words(tree_len)?,
+            hir_array_lit_element_count: self.hir_array_lit_element_count.read_words(tree_len)?,
+            hir_array_element_parent_lit: self.hir_array_element_parent_lit.read_words(tree_len)?,
+            hir_array_element_ordinal: self.hir_array_element_ordinal.read_words(tree_len)?,
+            hir_array_element_next: self.hir_array_element_next.read_words(tree_len)?,
+            hir_member_receiver_node: self.hir_member_receiver_node.read_words(tree_len)?,
+            hir_member_receiver_token: self.hir_member_receiver_token.read_words(tree_len)?,
+            hir_member_name_token: self.hir_member_name_token.read_words(tree_len)?,
             hir_struct_field_parent_struct: self
                 .hir_struct_field_parent_struct
-                .read_words(emit_len)?,
-            hir_struct_field_ordinal: self.hir_struct_field_ordinal.read_words(emit_len)?,
-            hir_struct_field_type_node: self.hir_struct_field_type_node.read_words(emit_len)?,
-            hir_struct_decl_field_start: self.hir_struct_decl_field_start.read_words(emit_len)?,
-            hir_struct_decl_field_count: self.hir_struct_decl_field_count.read_words(emit_len)?,
-            hir_struct_lit_head_node: self.hir_struct_lit_head_node.read_words(emit_len)?,
-            hir_struct_lit_field_start: self.hir_struct_lit_field_start.read_words(emit_len)?,
-            hir_struct_lit_field_count: self.hir_struct_lit_field_count.read_words(emit_len)?,
+                .read_words(tree_len)?,
+            hir_struct_field_ordinal: self.hir_struct_field_ordinal.read_words(tree_len)?,
+            hir_struct_field_type_node: self.hir_struct_field_type_node.read_words(tree_len)?,
+            hir_struct_decl_field_start: self.hir_struct_decl_field_start.read_words(tree_len)?,
+            hir_struct_decl_field_count: self.hir_struct_decl_field_count.read_words(tree_len)?,
+            hir_struct_lit_head_node: self.hir_struct_lit_head_node.read_words(tree_len)?,
+            hir_struct_lit_field_start: self.hir_struct_lit_field_start.read_words(tree_len)?,
+            hir_struct_lit_field_count: self.hir_struct_lit_field_count.read_words(tree_len)?,
             hir_struct_lit_field_parent_lit: self
                 .hir_struct_lit_field_parent_lit
-                .read_words(emit_len)?,
+                .read_words(tree_len)?,
             hir_struct_lit_field_value_node: self
                 .hir_struct_lit_field_value_node
-                .read_words(emit_len)?,
+                .read_words(tree_len)?,
+            hir_struct_lit_field_next: self.hir_struct_lit_field_next.read_words(tree_len)?,
         })
     }
 }

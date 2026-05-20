@@ -1,5 +1,35 @@
 use super::*;
 
+struct TypeCheckRecordHostTimer {
+    enabled: bool,
+    start: std::time::Instant,
+    last: std::time::Instant,
+}
+
+impl TypeCheckRecordHostTimer {
+    fn new() -> Self {
+        let now = std::time::Instant::now();
+        Self {
+            enabled: crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false),
+            start: now,
+            last: now,
+        }
+    }
+
+    fn stamp(&mut self, stage: &str) {
+        if !self.enabled {
+            return;
+        }
+        let now = std::time::Instant::now();
+        let dt_ms = now.duration_since(self.last).as_secs_f64() * 1000.0;
+        let total_ms = now.duration_since(self.start).as_secs_f64() * 1000.0;
+        println!(
+            "[gpu_compile_host_timer] typecheck.record.{stage}: {dt_ms:.3}ms (total {total_ms:.3}ms)"
+        );
+        self.last = now;
+    }
+}
+
 impl GpuTypeChecker {
     pub fn new_with_device(gpu: &device::GpuDevice) -> Result<Self> {
         Self::new(&gpu.device)
@@ -14,6 +44,7 @@ impl GpuTypeChecker {
                 n_tokens: 0,
                 source_len: 0,
                 n_hir_nodes: 0,
+                n_source_files: 0,
             },
         );
         let status_buf = storage_u32_rw(
@@ -40,6 +71,7 @@ impl GpuTypeChecker {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         source_len: u32,
+        source_file_capacity: u32,
         token_capacity: u32,
         token_buf: &wgpu::Buffer,
         token_count_buf: &wgpu::Buffer,
@@ -60,6 +92,7 @@ impl GpuTypeChecker {
             queue,
             &mut encoder,
             source_len,
+            source_file_capacity,
             token_capacity,
             token_buf,
             token_count_buf,
@@ -90,6 +123,7 @@ impl GpuTypeChecker {
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         source_len: u32,
+        source_file_capacity: u32,
         token_capacity: u32,
         token_buf: &wgpu::Buffer,
         token_count_buf: &wgpu::Buffer,
@@ -109,6 +143,7 @@ impl GpuTypeChecker {
             queue,
             encoder,
             source_len,
+            source_file_capacity,
             token_capacity,
             token_buf,
             token_count_buf,
@@ -135,6 +170,7 @@ impl GpuTypeChecker {
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         source_len: u32,
+        source_file_capacity: u32,
         token_capacity: u32,
         token_buf: &wgpu::Buffer,
         token_count_buf: &wgpu::Buffer,
@@ -153,6 +189,7 @@ impl GpuTypeChecker {
             queue,
             encoder,
             source_len,
+            source_file_capacity,
             token_capacity,
             token_buf,
             token_count_buf,
@@ -176,6 +213,7 @@ impl GpuTypeChecker {
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         source_len: u32,
+        source_file_capacity: u32,
         token_capacity: u32,
         token_buf: &wgpu::Buffer,
         token_count_buf: &wgpu::Buffer,
@@ -194,14 +232,17 @@ impl GpuTypeChecker {
             n_tokens: token_capacity,
             source_len,
             n_hir_nodes: hir_node_capacity,
+            n_source_files: source_file_capacity,
         };
         queue.write_buffer(&self.params_buf, 0, &type_check_params_bytes(&params));
         queue.write_buffer(&self.status_buf, 0, &status_init_bytes());
+        let mut host_timer = TypeCheckRecordHostTimer::new();
+        host_timer.stamp("params");
 
         let pass = &self.passes.tokens;
         let uses_hir_control = hir_node_capacity > 0;
         let uses_hir_items = hir_items.is_some();
-        let input_fingerprint = buffer_fingerprint(&[
+        let mut fingerprint_buffers = vec![
             token_buf,
             token_count_buf,
             token_file_id_buf,
@@ -211,13 +252,22 @@ impl GpuTypeChecker {
             hir_token_end_buf,
             hir_token_file_id_buf,
             hir_status_buf,
-        ]);
+        ];
+        if let Some(items) = hir_items {
+            fingerprint_buffers.push(items.semantic_dense_node);
+            fingerprint_buffers.push(items.semantic_count);
+        }
+        let input_fingerprint = buffer_fingerprint(&fingerprint_buffers);
         let control_pass = if uses_hir_control {
             &self.passes.control_hir
         } else {
             &self.passes.control
         };
-        let scope_pass = &self.passes.scope;
+        let scope_pass = if uses_hir_control {
+            &self.passes.scope_hir
+        } else {
+            &self.passes.scope
+        };
 
         {
             let mut bind_group_guard = self
@@ -228,6 +278,7 @@ impl GpuTypeChecker {
                 .as_ref()
                 .map(|groups| {
                     source_len != groups.source_len
+                        || source_file_capacity != groups.source_file_capacity
                         || token_capacity > groups.token_capacity
                         || hir_node_capacity > groups.hir_node_capacity
                         || input_fingerprint != groups.input_fingerprint
@@ -235,10 +286,12 @@ impl GpuTypeChecker {
                         || uses_hir_items != groups.uses_hir_items
                 })
                 .unwrap_or(true);
+            let rebuilt = needs_rebuild;
             if needs_rebuild {
                 *bind_group_guard = Some(self.create_bind_groups(
                     device,
                     source_len,
+                    source_file_capacity,
                     token_capacity,
                     token_buf,
                     token_count_buf,
@@ -260,10 +313,27 @@ impl GpuTypeChecker {
                     uses_hir_items,
                 )?);
             }
+            host_timer.stamp(if rebuilt {
+                "bind_groups_rebuilt"
+            } else {
+                "bind_groups_reused"
+            });
             let bind_groups = bind_group_guard
                 .as_ref()
                 .expect("resident type checker bind groups must exist");
 
+            queue.write_buffer(
+                &bind_groups.name_bind_groups.name_max_len,
+                0,
+                &0u32.to_le_bytes(),
+            );
+            record_compute(
+                encoder,
+                &self.passes.hir_active_dispatch_args,
+                &bind_groups.hir_active_dispatch,
+                "type_check.hir_active_dispatch_args",
+                1,
+            )?;
             record_loop_depth_passes_with_passes(&self.passes, encoder, bind_groups)?;
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.loop_depth.done");
@@ -279,11 +349,13 @@ impl GpuTypeChecker {
                 encoder,
                 bind_groups.token_capacity,
                 bind_groups.name_capacity,
+                &bind_groups.token_active_dispatch_args,
                 &bind_groups.name_bind_groups,
             )?;
             record_language_decl_bind_groups_with_passes(
                 &self.passes,
                 encoder,
+                bind_groups.name_capacity,
                 &bind_groups.language_name_bind_groups,
             )?;
             if let Some(timer) = timer.as_deref_mut() {
@@ -292,63 +364,104 @@ impl GpuTypeChecker {
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.language_decls.done");
             }
+            host_timer.stamp("loop_names_language_decls");
             if let Some(module_path) = &bind_groups.module_path {
-                record_module_path_state_with_passes(&self.passes, encoder, module_path)?;
+                record_module_path_state_with_passes(
+                    &self.passes,
+                    encoder,
+                    module_path,
+                    &bind_groups.hir_active_dispatch_args,
+                    timer.as_deref_mut(),
+                )?;
                 if let Some(timer) = timer.as_deref_mut() {
                     timer.stamp(encoder, "typecheck.module_paths.done");
                 }
             }
+            host_timer.stamp("module_paths");
             record_compute(
                 encoder,
                 &self.passes.type_instances_clear,
                 &bind_groups.type_instances_clear,
                 "type_check.resident.type_instances_clear.pass",
-                token_capacity,
+                token_capacity.max(hir_node_capacity),
             )?;
-            record_compute(
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.type_instances.clear.done");
+            }
+            record_compute_indirect(
                 encoder,
                 &self.passes.type_instances_decl_generic_params,
                 &bind_groups.type_instances_decl_generic_params,
                 "type_check.resident.type_instances_decl_generic_params.pass",
-                hir_node_capacity.max(1),
+                &bind_groups.hir_active_dispatch_args,
             )?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.type_instances.decl_generic_params.done");
+            }
+            record_compute_indirect(
+                encoder,
+                &self.passes.type_instances_generic_param_use_slots,
+                &bind_groups.type_instances_generic_param_use_slots,
+                "type_check.resident.type_instances_generic_param_use_slots.pass",
+                &bind_groups.hir_active_dispatch_args,
+            )?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(
+                    encoder,
+                    "typecheck.type_instances.generic_param_use_slots.done",
+                );
+            }
             record_type_instance_collection_passes_with_passes(
                 &self.passes,
                 encoder,
                 bind_groups,
-                hir_node_capacity,
+                &bind_groups.hir_active_dispatch_args,
+                &super::record::TYPE_INSTANCE_COLLECTION_INITIAL_LABELS,
+                timer.as_deref_mut(),
             )?;
             if let Some(module_path) = &bind_groups.module_path {
-                record_compute(
+                record_compute_indirect(
                     encoder,
                     &self.passes.modules_project_type_aliases,
                     &module_path.bind_groups.project_type_aliases,
                     "type_check.modules.project_type_aliases",
-                    module_path.n_blocks.saturating_mul(256).max(1),
+                    &module_path.decl_key_radix_dispatch_args,
                 )?;
-                record_compute(
+                if let Some(timer) = timer.as_deref_mut() {
+                    timer.stamp(encoder, "typecheck.modules.project_type_aliases.done");
+                }
+                record_compute_indirect(
                     encoder,
                     &self.passes.modules_project_type_paths,
                     &module_path.bind_groups.project_type_paths,
                     "type_check.modules.project_type_paths.after_aliases",
-                    module_path.n_blocks.saturating_mul(256).max(1),
+                    &module_path.path_dispatch_args,
                 )?;
+                if let Some(timer) = timer.as_deref_mut() {
+                    timer.stamp(
+                        encoder,
+                        "typecheck.modules.project_type_paths.after_aliases.done",
+                    );
+                }
                 record_type_instance_collection_passes_with_passes(
                     &self.passes,
                     encoder,
                     bind_groups,
-                    hir_node_capacity,
+                    &bind_groups.hir_active_dispatch_args,
+                    &super::record::TYPE_INSTANCE_COLLECTION_PROJECTED_LABELS,
+                    timer.as_deref_mut(),
                 )?;
             }
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.type_instances_collect.done");
             }
+            host_timer.stamp("type_instances_collect");
             let n_work = token_capacity.max(hir_node_capacity).max(512);
             record_fn_context_bind_groups_with_passes(
                 &self.passes,
                 encoder,
                 token_capacity,
-                hir_node_capacity,
+                &bind_groups.hir_active_dispatch_args,
                 bind_groups.fn_n_blocks,
                 &bind_groups.fn_context_bind_groups,
             )?;
@@ -360,6 +473,8 @@ impl GpuTypeChecker {
                 encoder,
                 token_capacity,
                 n_work,
+                &bind_groups.token_active_dispatch_args,
+                &bind_groups.hir_active_dispatch_args,
                 &bind_groups.calls,
             )?;
             if let Some(timer) = timer.as_deref_mut() {
@@ -369,127 +484,135 @@ impl GpuTypeChecker {
                 &self.passes,
                 encoder,
                 token_capacity,
-                hir_node_capacity,
                 &bind_groups.visible_bind_groups,
+                timer.as_deref_mut(),
             )?;
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.visible.done");
             }
+            host_timer.stamp("fn_context_calls_visible");
 
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.type_instances.done");
             }
             if let Some(module_path) = &bind_groups.module_path {
-                record_compute(
+                record_compute_indirect(
                     encoder,
                     &self.passes.modules_project_type_instances,
                     &module_path.bind_groups.project_type_instances,
                     "type_check.modules.project_type_instances",
-                    module_path.n_blocks.saturating_mul(256).max(1),
+                    &module_path.path_dispatch_args,
                 )?;
+                if let Some(timer) = timer.as_deref_mut() {
+                    timer.stamp(encoder, "typecheck.type_instances_project.done");
+                }
             }
-            record_compute(
+            record_compute_indirect(
                 encoder,
                 &self.passes.type_instances_collect_named_arg_refs,
                 &bind_groups.type_instances_collect_named_arg_refs,
                 "type_check.resident.type_instances_collect_named_arg_refs.pass",
-                hir_node_capacity.max(1),
+                &bind_groups.hir_active_dispatch_args,
             )?;
-            record_compute(
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.type_instances_named_arg_refs.done");
+            }
+            record_compute_indirect(
                 encoder,
                 &self.passes.type_instances_decl_refs,
                 &bind_groups.type_instances_decl_refs,
                 "type_check.resident.type_instances_decl_refs.pass",
-                hir_node_capacity.max(1),
+                &bind_groups.hir_active_dispatch_args,
             )?;
-            let method_lookup_work = token_capacity.saturating_mul(2).max(n_work);
-            record_compute(
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.type_instances_decl_refs.done");
+            }
+            record_method_bind_groups_with_passes(
+                &self.passes,
                 encoder,
-                &self.passes.methods_clear,
-                &bind_groups.methods.clear,
-                "type_check.resident.methods.decls.clear",
-                method_lookup_work,
+                token_capacity,
+                &bind_groups.token_active_dispatch_args,
+                &bind_groups.hir_active_dispatch_args,
+                &bind_groups.methods,
             )?;
-            record_compute(
-                encoder,
-                &self.passes.methods_collect,
-                &bind_groups.methods.collect,
-                "type_check.resident.methods.decls.collect",
-                hir_node_capacity.max(1),
-            )?;
-            record_compute(
-                encoder,
-                &self.passes.methods_attach_metadata,
-                &bind_groups.methods.attach_metadata,
-                "type_check.resident.methods.decls.attach_metadata",
-                method_lookup_work,
-            )?;
-            record_compute(
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.methods.done");
+            }
+            record_compute_indirect(
                 encoder,
                 &self.passes.type_instances_member_receivers,
                 &bind_groups.type_instances_member_receivers,
                 "type_check.resident.type_instances_member_receivers.pass",
-                token_capacity,
+                &bind_groups.hir_active_dispatch_args,
             )?;
-            record_compute(
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.member_receivers.done");
+            }
+            record_compute_indirect(
                 encoder,
                 &self.passes.type_instances_member_results,
                 &bind_groups.type_instances_member_results,
                 "type_check.resident.type_instances_member_results.pass",
-                token_capacity,
+                &bind_groups.hir_active_dispatch_args,
             )?;
-            record_compute(
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.member_results.done");
+            }
+            record_compute_indirect(
                 encoder,
                 &self.passes.type_instances_member_substitute,
                 &bind_groups.type_instances_member_substitute,
                 "type_check.resident.type_instances_member_substitute.pass",
-                token_capacity,
+                &bind_groups.token_active_dispatch_args,
             )?;
-            record_compute(
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.member_substitute.done");
+            }
+            record_compute_indirect(
                 encoder,
                 &self.passes.type_instances_struct_init_clear,
                 &bind_groups.type_instances_struct_init_clear,
                 "type_check.resident.type_instances_struct_init_clear.pass",
-                token_capacity,
+                &bind_groups.token_active_dispatch_args,
             )?;
-            record_compute(
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.struct_init_clear.done");
+            }
+            record_compute_indirect(
                 encoder,
                 &self.passes.type_instances_struct_init_fields,
                 &bind_groups.type_instances_struct_init_fields,
                 "type_check.resident.type_instances_struct_init_fields.pass",
-                n_work,
+                &bind_groups.hir_active_dispatch_args,
             )?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.struct_init_fields.done");
+            }
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.type_instance_fields.done");
             }
+            host_timer.stamp("methods_member_struct_fields");
             if let Some(module_path) = &bind_groups.module_path {
-                record_compute(
+                record_compute_indirect(
                     encoder,
                     &self.passes.modules_consume_value_calls,
                     &module_path.bind_groups.consume_value_calls,
                     "type_check.modules.consume_value_calls",
-                    module_path.n_blocks.saturating_mul(256).max(1),
+                    &module_path.path_dispatch_args,
                 )?;
-                record_compute(
+                record_compute_indirect(
                     encoder,
                     &self.passes.modules_bind_match_patterns,
                     &module_path.bind_groups.bind_match_patterns,
                     "type_check.modules.bind_match_patterns",
-                    module_path.n_blocks.saturating_mul(256).max(1),
+                    &bind_groups.hir_active_dispatch_args,
                 )?;
-                record_compute(
+                record_compute_indirect(
                     encoder,
                     &self.passes.modules_type_match_payloads,
                     &module_path.bind_groups.type_match_payloads,
                     "type_check.modules.type_match_payloads",
-                    n_work,
-                )?;
-                record_compute(
-                    encoder,
-                    &self.passes.modules_type_match_exprs,
-                    &module_path.bind_groups.type_match_exprs,
-                    "type_check.modules.type_match_exprs",
-                    n_work,
+                    &bind_groups.hir_active_dispatch_args,
                 )?;
             }
             record_call_erase_generic_params_with_passes(
@@ -501,136 +624,140 @@ impl GpuTypeChecker {
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.calls_erased.done");
             }
-            record_method_bind_groups_with_passes(
-                &self.passes,
-                encoder,
-                token_capacity,
-                hir_node_capacity,
-                n_work,
-                &bind_groups.methods,
-            )?;
-            if let Some(timer) = timer.as_deref_mut() {
-                timer.stamp(encoder, "typecheck.methods.done");
-            }
-            record_compute(
+            record_compute_indirect(
                 encoder,
                 scope_pass,
-                &bind_groups.scope,
+                if uses_hir_control {
+                    &bind_groups.scope_hir
+                } else {
+                    &bind_groups.scope
+                },
                 "type_check.resident.scope.pass",
-                n_work,
+                &bind_groups.token_hir_active_dispatch_args,
             )?;
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.scope.done");
             }
             if let Some(module_path) = &bind_groups.module_path {
-                record_compute(
+                record_compute_indirect(
+                    encoder,
+                    &self.passes.modules_type_match_exprs,
+                    &module_path.bind_groups.type_match_exprs,
+                    "type_check.modules.type_match_exprs",
+                    &bind_groups.hir_active_dispatch_args,
+                )?;
+                record_compute_indirect(
                     encoder,
                     &self.passes.modules_consume_value_consts,
                     &module_path.bind_groups.consume_value_consts,
                     "type_check.modules.consume_value_consts",
-                    module_path.n_blocks.saturating_mul(256).max(1),
+                    &module_path.path_dispatch_args,
                 )?;
-                record_compute(
+                record_compute_indirect(
                     encoder,
                     &self.passes.modules_consume_value_enum_units,
                     &module_path.bind_groups.consume_value_enum_units,
                     "type_check.modules.consume_value_enum_units",
-                    module_path.n_blocks.saturating_mul(256).max(1),
+                    &module_path.path_dispatch_args,
                 )?;
             }
-            record_compute(
+            record_compute_indirect(
                 encoder,
                 &self.passes.methods_resolve,
                 &bind_groups.methods.resolve,
                 "type_check.resident.methods.resolve",
-                token_capacity.max(hir_node_capacity).max(1),
+                &bind_groups.token_hir_active_dispatch_args,
             )?;
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.methods_resolve.done");
             }
-            record_compute(
+            record_compute_indirect(
                 encoder,
                 &self.passes.type_instances_array_index_results,
                 &bind_groups.type_instances_array_index_results,
                 "type_check.resident.type_instances_array_index_results.pass",
-                hir_node_capacity.max(1),
+                &bind_groups.hir_active_dispatch_args,
             )?;
-            record_compute(
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.array_index_results.done");
+            }
+            record_compute_indirect(
                 encoder,
                 &self.passes.type_instances_array_return_refs,
                 &bind_groups.type_instances_array_return_refs,
                 "type_check.resident.type_instances_array_return_refs.pass",
-                hir_node_capacity.max(1),
+                &bind_groups.hir_active_dispatch_args,
             )?;
-            record_compute(
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.array_return_refs.done");
+            }
+            record_compute_indirect(
                 encoder,
                 &self.passes.type_instances_array_literal_return_refs,
                 &bind_groups.type_instances_array_literal_return_refs,
                 "type_check.resident.type_instances_array_literal_return_refs.pass",
-                hir_node_capacity.max(1),
+                &bind_groups.hir_active_dispatch_args,
             )?;
-            record_compute(
-                encoder,
-                &self.passes.type_instances_enum_ctors,
-                &bind_groups.type_instances_enum_ctors,
-                "type_check.resident.type_instances_enum_ctors.pass",
-                token_capacity,
-            )?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.array_literal_return_refs.done");
+            }
+            // The old generic enum-constructor pass is token-neighborhood based.
+            // Keep it out of the resident compiler path; enum-call semantics
+            // should be expressed through HIR/module records.
             if let Some(module_path) = &bind_groups.module_path {
-                record_compute(
+                record_compute_indirect(
                     encoder,
                     &self.passes.modules_consume_value_enum_calls,
                     &module_path.bind_groups.consume_value_enum_calls,
                     "type_check.modules.consume_value_enum_calls",
-                    module_path.n_blocks.saturating_mul(256).max(1),
+                    &module_path.path_dispatch_args,
                 )?;
             }
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.type_instances_late_consumers.done");
             }
-            record_compute(
+            host_timer.stamp("late_value_consumers");
+            record_compute_indirect(
                 encoder,
                 &self.passes.type_instances_struct_init_substitute,
                 &bind_groups.type_instances_struct_init_substitute,
                 "type_check.resident.type_instances_struct_init_substitute.pass",
-                token_capacity,
+                &bind_groups.token_active_dispatch_args,
             )?;
-            record_compute(
+            record_compute_indirect(
                 encoder,
                 &self.passes.type_instances_validate_aggregate_access,
                 &bind_groups.type_instances_validate_aggregate_access,
                 "type_check.resident.type_instances_validate_aggregate_access.pass",
-                hir_node_capacity.max(1),
+                &bind_groups.hir_active_dispatch_args,
             )?;
-            record_compute(
+            record_compute_indirect(
                 encoder,
                 &self.passes.conditions_hir,
                 &bind_groups.conditions_hir,
                 "type_check.resident.conditions_hir.pass",
-                hir_node_capacity.max(1),
-            )?;
-            record_compute(
-                encoder,
-                pass,
-                &bind_groups.tokens,
-                "type_check.resident.tokens.pass",
-                n_work,
+                &bind_groups.hir_active_dispatch_args,
             )?;
             if let Some(timer) = timer.as_deref_mut() {
-                timer.stamp(encoder, "typecheck.tokens.done");
+                timer.stamp(encoder, "typecheck.conditions_hir.done");
             }
-            record_compute(
+            // Do not run the legacy token validator in the resident compiler
+            // path. Type checking needs to be rebuilt over HIR/fact tables
+            // rather than whole-token syntax scans.
+            record_compute_indirect(
                 encoder,
                 control_pass,
                 &bind_groups.control,
                 "type_check.resident.control.pass",
-                n_work,
+                &bind_groups.token_hir_active_dispatch_args,
             )?;
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.control.done");
             }
+            host_timer.stamp("aggregate_conditions_control");
         }
         encoder.copy_buffer_to_buffer(&self.status_buf, 0, &self.status_readback, 0, 16);
+        host_timer.stamp("status_readback_recorded");
         Ok(RecordedTypeCheck)
     }
 
@@ -640,12 +767,7 @@ impl GpuTypeChecker {
         _recorded: &RecordedTypeCheck,
     ) -> Result<(), GpuTypeCheckError> {
         let slice = self.status_readback.slice(..);
-        crate::gpu::passes_core::map_readback_for_progress(&slice, "type_check.status");
-        crate::gpu::passes_core::wait_for_map_progress(
-            device,
-            "type_check.status",
-            wgpu::PollType::Wait,
-        );
+        crate::gpu::passes_core::map_readback_blocking(device, &slice, "type_check.status")?;
         let mapped = slice.get_mapped_range();
         let words = read_status_words(&mapped)?;
         drop(mapped);
@@ -708,46 +830,72 @@ impl GpuTypeChecker {
             .bind_groups
             .lock()
             .expect("GpuTypeChecker.bind_groups poisoned");
-        guard.as_ref().map(|bind_groups| {
-            consume(GpuCodegenBuffers {
-                name_id_by_token: &bind_groups.name_id_by_token,
-                visible_decl: &bind_groups.visible_decl,
-                visible_type: &bind_groups.visible_type,
-                type_expr_ref_tag: &bind_groups.type_expr_ref_tag,
-                type_expr_ref_payload: &bind_groups.type_expr_ref_payload,
-                module_value_path_call_head: &bind_groups.module_value_path_call_head,
-                module_value_path_call_open: &bind_groups.module_value_path_call_open,
-                module_value_path_const_head: &bind_groups.module_value_path_const_head,
-                module_value_path_const_end: &bind_groups.module_value_path_const_end,
-                call_fn_index: &bind_groups.call_fn_index,
-                call_intrinsic_tag: &bind_groups.call_intrinsic_tag,
-                fn_entrypoint_tag: &bind_groups.fn_entrypoint_tag,
-                call_return_type: &bind_groups.call_return_type,
-                call_return_type_token: &bind_groups.call_return_type_token,
-                call_param_count: &bind_groups.call_param_count,
-                call_param_type: &bind_groups.call_param_type,
-                method_decl_receiver_ref_tag: &bind_groups.method_decl_receiver_ref_tag,
-                method_decl_receiver_ref_payload: &bind_groups.method_decl_receiver_ref_payload,
-                method_decl_param_offset: &bind_groups.method_decl_param_offset,
-                method_decl_receiver_mode: &bind_groups.method_decl_receiver_mode,
-                method_call_receiver_ref_tag: &bind_groups.method_call_receiver_ref_tag,
-                method_call_receiver_ref_payload: &bind_groups.method_call_receiver_ref_payload,
-                type_instance_decl_token: &bind_groups.type_instance_decl_token,
-                type_instance_arg_start: &bind_groups.type_instance_arg_start,
-                type_instance_arg_count: &bind_groups.type_instance_arg_count,
-                type_instance_arg_ref_tag: &bind_groups.type_instance_arg_ref_tag,
-                type_instance_arg_ref_payload: &bind_groups.type_instance_arg_ref_payload,
-                fn_return_ref_tag: &bind_groups.fn_return_ref_tag,
-                fn_return_ref_payload: &bind_groups.fn_return_ref_payload,
-                member_result_ref_tag: &bind_groups.member_result_ref_tag,
-                member_result_ref_payload: &bind_groups.member_result_ref_payload,
-                member_result_field_ordinal: &bind_groups.member_result_field_ordinal,
-                struct_init_field_expected_ref_tag: &bind_groups.struct_init_field_expected_ref_tag,
-                struct_init_field_expected_ref_payload: &bind_groups
-                    .struct_init_field_expected_ref_payload,
-                struct_init_field_ordinal: &bind_groups.struct_init_field_ordinal,
-            })
-        })
+        let bind_groups = guard.as_ref()?;
+        let module_path = bind_groups.module_path.as_ref()?;
+        Some(consume(GpuCodegenBuffers {
+            name_id_by_token: &bind_groups.name_id_by_token,
+            enclosing_fn: &bind_groups.enclosing_fn,
+            visible_decl: &bind_groups.visible_decl,
+            visible_type: &bind_groups.visible_type,
+            path_count_out: &module_path.path_count_out,
+            path_owner_token: &module_path.path_owner_token,
+            path_id_by_owner_hir: &module_path.path_id_by_owner_hir,
+            resolved_value_decl: &module_path.resolved_value_decl,
+            resolved_value_status: &module_path.resolved_value_status,
+            decl_count_out: &module_path.decl_count_out,
+            decl_kind: &module_path.decl_kind,
+            decl_name_token: &module_path.decl_name_token,
+            decl_id_by_name_token: &module_path.decl_id_by_name_token,
+            decl_hir_node: &module_path.decl_hir_node,
+            decl_parent_type_decl: &module_path.decl_parent_type_decl,
+            decl_type_ref_tag: &bind_groups.decl_type_ref_tag,
+            decl_type_ref_payload: &bind_groups.decl_type_ref_payload,
+            type_expr_ref_tag: &bind_groups.type_expr_ref_tag,
+            type_expr_ref_payload: &bind_groups.type_expr_ref_payload,
+            module_value_path_call_head: &bind_groups.module_value_path_call_head,
+            module_value_path_call_open: &bind_groups.module_value_path_call_open,
+            module_value_path_const_head: &bind_groups.module_value_path_const_head,
+            module_value_path_const_end: &bind_groups.module_value_path_const_end,
+            call_fn_index: &bind_groups.call_fn_index,
+            call_intrinsic_tag: &bind_groups.call_intrinsic_tag,
+            fn_entrypoint_tag: &bind_groups.fn_entrypoint_tag,
+            call_return_type: &bind_groups.call_return_type,
+            call_return_type_token: &bind_groups.call_return_type_token,
+            call_param_count: &bind_groups.call_param_count,
+            call_param_type: &bind_groups.call_param_type,
+            method_decl_module_id: &bind_groups.method_decl_module_id,
+            method_decl_name_token: &bind_groups.method_decl_name_token,
+            method_decl_name_id: &bind_groups.method_decl_name_id,
+            method_decl_receiver_ref_tag: &bind_groups.method_decl_receiver_ref_tag,
+            method_decl_receiver_ref_payload: &bind_groups.method_decl_receiver_ref_payload,
+            method_decl_param_offset: &bind_groups.method_decl_param_offset,
+            method_decl_receiver_mode: &bind_groups.method_decl_receiver_mode,
+            method_decl_visibility: &bind_groups.method_decl_visibility,
+            method_key_to_fn_token: &bind_groups.method_key_to_fn_token,
+            method_key_status: &bind_groups.method_key_status,
+            method_call_receiver_ref_tag: &bind_groups.method_call_receiver_ref_tag,
+            method_call_receiver_ref_payload: &bind_groups.method_call_receiver_ref_payload,
+            method_call_name_id: &bind_groups.method_call_name_id,
+            method_call_site_module_id: &bind_groups.method_call_site_module_id,
+            type_instance_kind: &bind_groups.type_instance_kind,
+            type_instance_decl_token: &bind_groups.type_instance_decl_token,
+            type_instance_arg_start: &bind_groups.type_instance_arg_start,
+            type_instance_arg_count: &bind_groups.type_instance_arg_count,
+            type_instance_arg_ref_tag: &bind_groups.type_instance_arg_ref_tag,
+            type_instance_arg_ref_payload: &bind_groups.type_instance_arg_ref_payload,
+            type_instance_len_kind: &bind_groups.type_instance_len_kind,
+            type_instance_len_payload: &bind_groups.type_instance_len_payload,
+            fn_return_ref_tag: &bind_groups.fn_return_ref_tag,
+            fn_return_ref_payload: &bind_groups.fn_return_ref_payload,
+            member_result_ref_tag: &bind_groups.member_result_ref_tag,
+            member_result_ref_payload: &bind_groups.member_result_ref_payload,
+            member_result_field_ordinal: &bind_groups.member_result_field_ordinal,
+            struct_init_field_expected_ref_tag: &bind_groups.struct_init_field_expected_ref_tag,
+            struct_init_field_expected_ref_payload: &bind_groups
+                .struct_init_field_expected_ref_payload,
+            struct_init_field_ordinal: &bind_groups.struct_init_field_ordinal,
+            struct_init_field_ordinal_by_node: &bind_groups.struct_init_field_ordinal_by_node,
+        }))
     }
 
     #[allow(clippy::too_many_arguments)]

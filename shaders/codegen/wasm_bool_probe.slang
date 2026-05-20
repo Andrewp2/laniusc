@@ -1,3 +1,5 @@
+import atomics;
+
 struct Params
 {
     uint n_tokens;
@@ -38,5 +40,5 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     uint kind = token_words[i].kind;
     if (kind == TK_ANDAND || kind == TK_OROR || kind == TK_NOT)
-        InterlockedOr(bool_probe_status[1u], 1u);
+        atomic_u32_or(bool_probe_status, 1u, 1u);
 }

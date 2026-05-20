@@ -1,3 +1,5 @@
+import status;
+
 struct Params
 {
     uint n_tokens;
@@ -128,14 +130,7 @@ bool is_array_type(uint ty)
 
 void record_error(uint token_i, uint code, uint detail)
 {
-    uint old;
-    InterlockedMin(status[1], token_i, old);
-    if (token_i <= old)
-    {
-        status[0] = 0u;
-        status[2] = code;
-        status[3] = detail;
-    }
+    record_min_token_error(status, token_i, code, detail);
 }
 
 bool is_open_block_token(uint kind)

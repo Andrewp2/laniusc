@@ -1,9 +1,10 @@
 // Pre-resolution GPU path segment metadata foundation.
 //
 // Scheduling contract:
-// - Dispatch after type_check_modules_01_scatter_paths.slang.
+// - Dispatch after type_check_modules_01b_count_path_segments.slang and a GPU
+//   counted prefix scan over path_segment_count.
 // - This pass reads compact path spans and scatters path segment ids from
-//   name_id_by_token into fixed-width segment slots.
+//   name_id_by_token into packed segment slots.
 // - It does not perform module lookup, import resolution, declaration lookup,
 //   visibility checks, same-source shortcuts, hash-only lookup, or CPU path
 //   lookup.
@@ -29,18 +30,19 @@ StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_start;
 StructuredBuffer<uint> path_len;
 StructuredBuffer<uint> path_segment_base;
-StructuredBuffer<uint> path_owner_token;
+StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_kind;
 StructuredBuffer<uint> name_id_by_token;
 
-RWStructuredBuffer<uint> path_segment_count;
 RWStructuredBuffer<uint> path_segment_name_id;
 RWStructuredBuffer<uint> path_segment_token;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint MAX_PATH_SEGMENTS = 64u;
+static const uint SORT_PATH_SEGMENTS = 8u;
+static const uint PATH_SEGMENT_ROW_WIDTH = SORT_PATH_SEGMENTS + 1u;
+static const uint PATH_SEGMENT_OVERFLOW_COUNT = PATH_SEGMENT_ROW_WIDTH + 1u;
 
 static const uint PATH_RECORD_KIND_HIR_PATH_EXPR = 3u;
 static const uint PATH_RECORD_KIND_HIR_TYPE_EXPR = 4u;
@@ -79,7 +81,8 @@ uint qualified_path_head_end(uint start, uint limit)
 
     uint end = start + 1u;
     [loop]
-    for (uint guard = 0u; guard < MAX_PATH_SEGMENTS && end + 2u < limit; guard += 1u)
+    for (uint guard = 0u; guard < PATH_SEGMENT_OVERFLOW_COUNT && end + 2u < limit;
+         guard += 1u)
     {
         if (token_kind(end) != TK_COLON || token_kind(end + 1u) != TK_COLON ||
             !is_path_segment(token_kind(end + 2u)))
@@ -98,22 +101,12 @@ uint path_segment_end(uint path_slot)
     return end_exclusive;
 }
 
-uint count_segments(uint start, uint len)
-{
-    uint count = 0u;
-    uint end_exclusive = min(start + len, gParams.n_tokens);
-    for (uint token_i = start; token_i < end_exclusive && count < MAX_PATH_SEGMENTS; token_i += 1u)
-    {
-        if (name_id_by_token[token_i] != INVALID)
-            count += 1u;
-    }
-    return count;
-}
-
 void write_segment(uint path_slot, uint segment_i)
 {
     uint base = path_segment_base[path_slot];
     uint dst = base + segment_i;
+    if (dst >= gParams.n_tokens)
+        return;
     path_segment_name_id[dst] = INVALID;
     path_segment_token[dst] = INVALID;
 
@@ -141,18 +134,14 @@ void write_segment(uint path_slot, uint segment_i)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
-    uint path_slot = i / MAX_PATH_SEGMENTS;
-    uint segment_i = i - path_slot * MAX_PATH_SEGMENTS;
+    uint path_slot = i / PATH_SEGMENT_ROW_WIDTH;
+    uint segment_i = i - path_slot * PATH_SEGMENT_ROW_WIDTH;
     if (path_slot >= active_path_count())
         return;
 
-    if (segment_i == 0u)
-    {
-        uint start = path_start[path_slot];
-        uint end_exclusive = path_segment_end(path_slot);
-        uint count = start < end_exclusive ? count_segments(start, end_exclusive - start) : 0u;
-        path_segment_count[path_slot] = count;
-    }
+    uint count = min(path_segment_count[path_slot], PATH_SEGMENT_ROW_WIDTH);
+    if (segment_i >= count)
+        return;
 
     write_segment(path_slot, segment_i);
 }

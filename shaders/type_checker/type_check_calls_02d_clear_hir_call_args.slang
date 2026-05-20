@@ -15,6 +15,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 RWStructuredBuffer<uint4> call_arg_record;
+RWStructuredBuffer<uint> call_arg_node;
 
 static const uint INVALID = 0xffffffffu;
 static const uint PARAM_CACHE_STRIDE = 16u;
@@ -31,8 +32,8 @@ uint linear_thread_id(uint3 dtid)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
-    if (i >= gParams.n_tokens * PARAM_CACHE_STRIDE)
-        return;
-
-    call_arg_record[i] = uint4(INVALID, INVALID, INVALID, 0u);
+    if (i < gParams.n_tokens)
+        call_arg_record[i] = uint4(INVALID, INVALID, INVALID, 0u);
+    if (i < gParams.n_tokens * PARAM_CACHE_STRIDE)
+        call_arg_node[i] = INVALID;
 }

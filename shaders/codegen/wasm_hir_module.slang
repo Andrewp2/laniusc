@@ -4,6 +4,10 @@
 // resolver records. It does not read token records, source bytes, token
 // spelling, helper names, or function-body text shapes.
 
+import gpu_index;
+import hir_records;
+import tree_walk;
+
 struct Params
 {
     uint n_tokens;
@@ -84,6 +88,12 @@ static const uint MAX_CALL_ARGS = 8u;
 static const uint MAX_PRINTS = 16u;
 static const uint ERR_MULTI_FUNCTION_MODULE_BASE = 700u;
 
+bool module_already_emitted()
+{
+    return status[1u] == 1u || status[1u] == 2u || status[1u] == 3u ||
+           status[1u] == 5u;
+}
+
 uint linear_dispatch_id(uint3 tid)
 {
     return tid.x + tid.y * DISPATCH_X_STRIDE;
@@ -104,14 +114,46 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
+uint parent_node(uint node)
+{
+    return valid_node(node) ? parent[node] : INVALID;
+}
+
+public struct WasmModuleWalkGraph : ITreeWalkGraph
+{
+    public static bool valid(uint node)
+    {
+        return valid_node(node);
+    }
+
+    public static uint parent(uint node)
+    {
+        return parent_node(node);
+    }
+}
+
 uint stmt_record(uint node, uint slot)
 {
-    return valid_node(node) ? hir_stmt_record[node * STMT_RECORD_STRIDE + slot] : INVALID;
+    return valid_node(node)
+               ? row_major_load<uint>(
+                     hir_stmt_record,
+                     node,
+                     STMT_RECORD_STRIDE,
+                     slot,
+                     INVALID)
+               : INVALID;
 }
 
 uint expr_slot(uint node, uint slot)
 {
-    return valid_node(node) ? hir_expr_record[node * EXPR_RECORD_STRIDE + slot] : INVALID;
+    return valid_node(node)
+               ? row_major_load<uint>(
+                     hir_expr_record,
+                     node,
+                     EXPR_RECORD_STRIDE,
+                     slot,
+                     INVALID)
+               : INVALID;
 }
 
 uint expr_form(uint node)
@@ -210,19 +252,7 @@ uint next_function_pos(uint fn_node)
 
 bool node_in_function(uint node, uint fn_node)
 {
-    if (!valid_node(node) || !valid_node(fn_node))
-        return false;
-    uint cur = node;
-    [loop]
-    for (uint guard = 0u; guard < 128u; guard += 1u)
-    {
-        if (cur == fn_node)
-            return true;
-        if (!valid_node(cur))
-            return false;
-        cur = parent[cur];
-    }
-    return false;
+    return has_self_or_ancestor_node<WasmModuleWalkGraph>(node, fn_node, 128u);
 }
 
 uint function_node_for_decl_token(uint decl_token)
@@ -459,7 +489,7 @@ uint call_arg_node(uint call_node, uint ordinal)
     [loop]
     for (uint node = 0u; node < n; node += 1u)
     {
-        if (hir_call_arg_parent_call[node] != call_node)
+        if (hir_node_ordinal_node(hir_call_arg_parent_call[node]) != call_node)
             continue;
         if (seen == ordinal)
             return node;
@@ -475,7 +505,7 @@ uint call_arg_count_for_call(uint call_node)
     [loop]
     for (uint node = 0u; node < n; node += 1u)
     {
-        if (hir_call_arg_parent_call[node] == call_node)
+        if (hir_node_ordinal_node(hir_call_arg_parent_call[node]) == call_node)
             count += 1u;
     }
     return count;
@@ -950,6 +980,9 @@ void record_reject(uint detail, uint value, uint target)
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
 {
+    if (module_already_emitted())
+        return;
+
     uint target = linear_dispatch_id(tid);
     uint target_limit = min(gParams.out_capacity, HIR_MODULE_OUTPUT_TARGET_LIMIT);
     if (target >= target_limit && target != 0u)

@@ -2,54 +2,135 @@
 //
 // This pass applies the scanned offsets from execution-order slots back to
 // sparse per-node range records:
-// x86_node_inst_range_record[node] = (start, count, local-kind, payload).
+// x86_node_inst_range_record[node] = (start, packed count/kind). The canonical
+// per-node instruction-count record retains payload metadata.
+//
+// x86_node_inst_order_status[3] is the compact order slot count. The total
+// virtual instruction row count is computed here from the scanned per-slot
+// instruction counts.
+
+import gpu_index;
+import prefix_scan;
 
 struct ScanParams
 {
     uint n_items;
     uint n_blocks;
     uint scan_step;
+    uint inst_capacity;
 };
 
 ConstantBuffer<ScanParams> gScan;
 
-StructuredBuffer<uint4> x86_node_inst_order_record;
+StructuredBuffer<uint> x86_node_inst_order_record;
+StructuredBuffer<uint> x86_node_inst_count_record;
 StructuredBuffer<uint> x86_node_inst_order_status;
 StructuredBuffer<uint> x86_node_inst_scan_local_prefix;
 StructuredBuffer<uint> x86_node_inst_scan_block_prefix;
 
-RWStructuredBuffer<uint4> x86_node_inst_range_record;
+RWStructuredBuffer<uint2> x86_node_inst_range_record;
 RWStructuredBuffer<uint> x86_node_inst_range_status;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint WG_SIZE = 256u;
 static const uint INVALID = 0xffffffffu;
-static const uint MAX_X86_INSTS = 256u;
 static const uint X86_NODE_INST_ORDER_OK = 1u;
 static const uint X86_NODE_INST_RANGE_OK = 1u;
 static const uint X86_ERR_NODE_INST_ORDER = 12u;
+static const uint X86_NODE_INST_COUNT_STRIDE = 3u;
+static const uint X86_NODE_INST_COUNT_KIND_SHIFT = 28u;
+static const uint X86_NODE_INST_COUNT_COUNT_MASK = 0x0fffffffu;
+static const uint X86_NODE_INST_RANGE_KIND_SHIFT = 28u;
+static const uint X86_NODE_INST_RANGE_COUNT_MASK = 0x0fffffffu;
+static const uint X86_NODE_INST_ORDER_STRIDE = 3u;
+static const uint X86_NODE_INST_ORDER_KIND_SHIFT = 28u;
+static const uint X86_NODE_INST_ORDER_COUNT_MASK = 0x0fffffffu;
+
+uint order_record_word(uint slot, uint field)
+{
+    return row_major_load<uint>(
+        x86_node_inst_order_record,
+        slot,
+        X86_NODE_INST_ORDER_STRIDE,
+        field,
+        INVALID);
+}
+
+uint4 order_record(uint slot)
+{
+    uint node = order_record_word(slot, 0u);
+    uint info = order_record_word(slot, 1u);
+    uint payload = order_record_word(slot, 2u);
+    uint count = info == INVALID ? INVALID : info & X86_NODE_INST_ORDER_COUNT_MASK;
+    uint kind = info == INVALID ? INVALID : info >> X86_NODE_INST_ORDER_KIND_SHIFT;
+    return uint4(node, count, kind, payload);
+}
+
+uint node_inst_count_word(uint node, uint field)
+{
+    return row_major_load<uint>(
+        x86_node_inst_count_record,
+        node,
+        X86_NODE_INST_COUNT_STRIDE,
+        field,
+        INVALID);
+}
+
+uint4 node_inst_count_record(uint node)
+{
+    uint id = node_inst_count_word(node, 0u);
+    uint info = node_inst_count_word(node, 1u);
+    uint payload = node_inst_count_word(node, 2u);
+    uint count = info == INVALID ? INVALID : info & X86_NODE_INST_COUNT_COUNT_MASK;
+    uint kind = info == INVALID ? INVALID : info >> X86_NODE_INST_COUNT_KIND_SHIFT;
+    return uint4(id, count, kind, payload);
+}
 
 uint linear_dispatch_id(uint3 tid)
 {
-    return tid.x + tid.y * DISPATCH_X_STRIDE;
+    return linear_dispatch_thread_id_2d(tid, DISPATCH_X_STRIDE);
 }
 
-bool count_status_ok()
+bool order_status_ok()
 {
     return x86_node_inst_order_status[0u] == X86_NODE_INST_ORDER_OK &&
            x86_node_inst_order_status[1u] == 0u;
 }
 
-uint scan_total()
+uint saturating_sum_or_oob(uint left, uint right)
 {
-    return gScan.n_blocks == 0u ? 0u : x86_node_inst_scan_block_prefix[gScan.n_blocks - 1u];
+    uint sum = left + right;
+    return sum < left ? gScan.inst_capacity + 1u : sum;
 }
 
-uint scanned_prefix_for_node(uint node)
+uint scan_total()
 {
-    uint block_i = node / WG_SIZE;
-    uint prior_blocks = block_i == 0u ? 0u : x86_node_inst_scan_block_prefix[block_i - 1u];
-    return prior_blocks + x86_node_inst_scan_local_prefix[node];
+    uint order_count = min(x86_node_inst_order_status[3u], gScan.n_items);
+    if (order_count == 0u)
+        return 0u;
+
+    uint last_slot = order_count - 1u;
+    uint4 last = order_record(last_slot);
+    if (last.y == INVALID)
+        return gScan.inst_capacity + 1u;
+    return saturating_sum_or_oob(scanned_prefix_for_slot(last_slot), last.y);
+}
+
+uint scanned_prefix_for_slot(uint slot)
+{
+    return global_exclusive_prefix(
+        slot,
+        WG_SIZE,
+        x86_node_inst_scan_local_prefix,
+        x86_node_inst_scan_block_prefix);
+}
+
+uint pack_range_info(uint count, uint local_kind)
+{
+    if (count > X86_NODE_INST_RANGE_COUNT_MASK)
+        return INVALID;
+    return (local_kind << X86_NODE_INST_RANGE_KIND_SHIFT) |
+           (count & X86_NODE_INST_RANGE_COUNT_MASK);
 }
 
 void publish_status(bool ok, uint total)
@@ -72,7 +153,7 @@ void main(uint3 tid: SV_DispatchThreadID)
 {
     uint slot = linear_dispatch_id(tid);
     uint total = scan_total();
-    bool ok = count_status_ok() && total <= MAX_X86_INSTS;
+    bool ok = order_status_ok() && total <= gScan.inst_capacity;
 
     if (slot == 0u)
         publish_status(ok, total);
@@ -80,12 +161,22 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (!ok || slot >= gScan.n_items)
         return;
 
-    uint4 count = x86_node_inst_order_record[slot];
+    uint4 count = order_record(slot);
     uint node = count.x;
     if (node == INVALID || count.y == INVALID)
         return;
+    if (node >= gScan.n_items)
+        return;
 
-    uint start_inst = scanned_prefix_for_node(slot);
-    if (start_inst + count.y <= MAX_X86_INSTS)
-        x86_node_inst_range_record[node] = uint4(start_inst, count.y, count.z, count.w);
+    uint4 canonical = node_inst_count_record(node);
+    if (canonical.x != count.x ||
+        canonical.y != count.y ||
+        canonical.z != count.z ||
+        canonical.w != count.w)
+        return;
+
+    uint start_inst = scanned_prefix_for_slot(slot);
+    uint packed_info = pack_range_info(count.y, count.z);
+    if (packed_info != INVALID && start_inst + count.y <= gScan.inst_capacity)
+        x86_node_inst_range_record[node] = uint2(start_inst, packed_info);
 }

@@ -19,6 +19,8 @@ struct Params
     uint emit_stride;
     uint max_steps;
     uint fill_production;
+    uint emit_scan_step;
+    uint emit_capacity;
 };
 
 ConstantBuffer<Params> gParams;
@@ -40,6 +42,7 @@ static const uint SUMMARY_WORDS = 4u;
 static const uint INVALID = 0xFFFFFFFFu;
 
 static const uint ERR_NONE = 0u;
+static const uint ERR_STACK_OVERFLOW = 3u;
 
 uint block_emit_len(uint block_idx)
 {
@@ -72,17 +75,24 @@ void write_compat_status(uint lane)
 {
     uint active_blocks = active_block_count();
     uint emit_len = total_emit_len(active_blocks);
+    uint reported_emit_len = min(emit_len, gParams.emit_capacity);
     uint summary_base = (active_blocks - 1u) * SUMMARY_WORDS;
     uint steps = block_status_summary_prefix[summary_base + 0u];
     uint seed_count = block_status_summary_prefix[summary_base + 1u];
     uint max_depth = block_status_summary_prefix[summary_base + 2u];
     uint first_error = block_status_summary_prefix[summary_base + 3u];
 
-    uint accepted = first_error == INVALID ? 1u : 0u;
+    bool emit_overflow = emit_len > gParams.emit_capacity;
+    uint accepted = first_error == INVALID && !emit_overflow ? 1u : 0u;
     uint pos = actual_input_end();
     uint code = ERR_NONE;
     uint detail = 0u;
-    if (accepted == 0u)
+    if (emit_overflow)
+    {
+        code = ERR_STACK_OVERFLOW;
+        detail = emit_len;
+    }
+    else if (accepted == 0u)
     {
         uint base = first_error * STATUS_WORDS;
         pos = seeded_status[base + 3u];
@@ -117,13 +127,13 @@ void write_compat_status(uint lane)
     }
     if (lane == 5u)
     {
-        ll1_status[5u] = emit_len;
+        ll1_status[5u] = reported_emit_len;
         seed_plan_status[5u] = seed_count;
     }
     if (lane == 6u)
         seed_plan_status[6u] = max_depth;
     if (lane == 7u)
-        seed_plan_status[7u] = emit_len;
+        seed_plan_status[7u] = reported_emit_len;
 }
 
 [shader("compute")]
@@ -144,12 +154,13 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     uint dst_base = block_emit_offset(block_idx);
     uint emit_len = block_emit_len(block_idx);
     uint total_len = total_emit_len(active_blocks);
+    uint copy_limit = min(total_len, gParams.emit_capacity);
 
     [loop]
     for (uint i = lane; i < emit_len; i += 256u)
     {
         uint dst = dst_base + i;
-        if (dst < total_len)
+        if (dst < copy_limit)
         {
             ll1_emit[dst] = seeded_emit[src_base + i];
             ll1_emit_pos[dst] = seeded_emit_pos[src_base + i];

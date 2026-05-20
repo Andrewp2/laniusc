@@ -4,6 +4,8 @@
 // x86 value consumers can resolve a name through visible_decl and read this
 // table directly instead of scanning all HIR statements to rediscover consts.
 
+import gpu_index;
+import status;
 struct Params
 {
     uint n_tokens;
@@ -16,15 +18,15 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint> x86_expr_resolved_node;
 StructuredBuffer<uint> hir_expr_int_value;
 StructuredBuffer<uint> hir_stmt_record;
 
-RWStructuredBuffer<uint4> x86_const_value_record;
+RWStructuredBuffer<uint2> x86_const_value_record;
 RWStructuredBuffer<uint> x86_const_value_status;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
-static const uint HIR_EXPR_FORWARD = 1u;
 static const uint HIR_EXPR_INT = 3u;
 static const uint HIR_EXPR_TRUE = 4u;
 static const uint HIR_EXPR_FALSE = 5u;
@@ -40,32 +42,42 @@ static const uint X86_CONST_VALUES_OK = 1u;
 
 uint linear_dispatch_id(uint3 tid)
 {
-    return tid.x + tid.y * DISPATCH_X_STRIDE;
+    return linear_dispatch_thread_id_2d(tid, DISPATCH_X_STRIDE);
 }
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return active_count_from_status(gParams.n_hir_nodes, hir_status, 5u);
 }
 
 bool valid_node(uint node)
 {
-    return node != INVALID && node < active_hir_node_count();
+    return valid_index_or_invalid(node, active_hir_node_count(), INVALID);
 }
 
 bool valid_token(uint token)
 {
-    return token != INVALID && token < gParams.n_tokens;
+    return valid_index_or_invalid(token, gParams.n_tokens, INVALID);
 }
 
 uint stmt_record_slot(uint node, uint slot)
 {
-    return hir_stmt_record[node * STMT_RECORD_STRIDE + slot];
+    return row_major_load<uint>(
+        hir_stmt_record,
+        node,
+        STMT_RECORD_STRIDE,
+        slot,
+        INVALID);
 }
 
 uint expr_record_slot(uint node, uint slot)
 {
-    return hir_expr_record[node * EXPR_RECORD_STRIDE + slot];
+    return row_major_load<uint>(
+        hir_expr_record,
+        node,
+        EXPR_RECORD_STRIDE,
+        slot,
+        INVALID);
 }
 
 uint expr_form(uint node)
@@ -80,16 +92,7 @@ uint expr_left(uint node)
 
 uint resolve_expr(uint node)
 {
-    [loop]
-    for (uint guard = 0u; guard < 64u; guard += 1u)
-    {
-        if (!valid_node(node))
-            return INVALID;
-        if (expr_form(node) != HIR_EXPR_FORWARD)
-            return node;
-        node = expr_left(node);
-    }
-    return INVALID;
+    return valid_node(node) ? x86_expr_resolved_node[node] : INVALID;
 }
 
 bool literal_leaf_value(uint value_node, out uint value)
@@ -169,7 +172,5 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (!literal_expr_value(expr_node, value))
         return;
 
-    x86_const_value_record[decl_i] = uint4(X86_CONST_VALUE_LITERAL, value, node_i, expr_node);
-    uint old_count = 0u;
-    InterlockedAdd(x86_const_value_status[3u], 1u, old_count);
+    x86_const_value_record[decl_i] = uint2(X86_CONST_VALUE_LITERAL, value);
 }

@@ -1,3 +1,6 @@
+import byte_packing;
+import gpu_index;
+
 struct Params
 {
     uint n_tokens;
@@ -16,7 +19,7 @@ static const uint DISPATCH_X_STRIDE = 16776960u;
 
 uint linear_dispatch_id(uint3 tid)
 {
-    return tid.x + tid.y * DISPATCH_X_STRIDE;
+    return linear_dispatch_thread_id_2d(tid, DISPATCH_X_STRIDE);
 }
 
 [shader("compute")]
@@ -33,9 +36,5 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     uint pos = word_i * 4u;
-    uint b0 = pos + 0u < len ? (unpacked_words[pos + 0u] & 0xffu) : 0u;
-    uint b1 = pos + 1u < len ? (unpacked_words[pos + 1u] & 0xffu) : 0u;
-    uint b2 = pos + 2u < len ? (unpacked_words[pos + 2u] & 0xffu) : 0u;
-    uint b3 = pos + 3u < len ? (unpacked_words[pos + 3u] & 0xffu) : 0u;
-    packed_words[word_i] = b0 | (b1 << 8u) | (b2 << 16u) | (b3 << 24u);
+    packed_words[word_i] = packed_u8_word_from_unpacked(unpacked_words, pos, len);
 }

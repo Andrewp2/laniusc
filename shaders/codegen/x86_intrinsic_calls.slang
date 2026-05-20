@@ -3,8 +3,11 @@
 // This pass consumes type-check intrinsic tags plus parser/backend call records
 // and scatters a stable per-call-node record for intrinsic expression
 // statements. It does not inspect source text, token spelling, or token
-// neighborhoods; later instruction-count and instruction-generation passes can
-// consume these rows as ordinary body statement records.
+// neighborhoods, and it consumes a pointer-jumped enclosing-statement record
+// instead of walking parent chains in this projection.
+
+import gpu_index;
+import status;
 
 struct Params
 {
@@ -18,17 +21,13 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> parent;
-StructuredBuffer<uint> hir_call_arg_parent_call;
-StructuredBuffer<uint> hir_call_arg_ordinal;
+StructuredBuffer<uint> x86_enclosing_stmt_node;
 StructuredBuffer<uint4> x86_call_record;
-StructuredBuffer<uint4> x86_call_type_record;
+StructuredBuffer<uint> x86_call_type_record;
 StructuredBuffer<uint> call_record_status;
-StructuredBuffer<uint4> x86_call_arg_lookup_record;
-StructuredBuffer<uint> call_arg_lookup_status;
 StructuredBuffer<uint> call_intrinsic_tag;
 
-RWStructuredBuffer<uint4> x86_intrinsic_call_record;
+RWStructuredBuffer<uint> x86_intrinsic_call_record;
 RWStructuredBuffer<uint> x86_intrinsic_call_status;
 
 static const uint INVALID = 0xffffffffu;
@@ -36,40 +35,45 @@ static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint HIR_STMT = 7u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint X86_CALL_RECORDS_OK = 1u;
-static const uint X86_CALL_ARG_LOOKUP_OK = 1u;
 static const uint X86_INTRINSIC_CALLS_OK = 1u;
-static const uint X86_SYSV_MAX_INTEGER_ARGS = 6u;
+static const uint X86_ERR_INTRINSIC_CALLS = 21u;
+static const uint X86_INTRINSIC_TAG_BITS = 4u;
+static const uint X86_INTRINSIC_TAG_MASK = 0x0fu;
+static const uint X86_INTRINSIC_CALL_BASE_MAX = 0x0fffffffu;
+static const uint X86_CALL_TYPE_STRIDE = 3u;
 static const uint INTRINSIC_NONE = 0u;
 
 uint linear_dispatch_id(uint3 tid)
 {
-    return tid.x + tid.y * DISPATCH_X_STRIDE;
+    return linear_dispatch_thread_id_2d(tid, DISPATCH_X_STRIDE);
 }
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return active_count_from_status(gParams.n_hir_nodes, hir_status, 5u);
 }
 
 bool valid_node(uint node)
 {
-    return node != INVALID && node < active_hir_node_count();
+    return valid_index_or_invalid(node, active_hir_node_count(), INVALID);
 }
 
 bool valid_token(uint token)
 {
-    return token != INVALID && token < gParams.n_tokens;
+    return valid_index_or_invalid(token, gParams.n_tokens, INVALID);
+}
+
+uint call_lookup_base(uint call_node)
+{
+    if (!valid_node(call_node))
+        return INVALID;
+    uint token = x86_call_record[call_node].z;
+    return valid_token(token) ? token : INVALID;
 }
 
 bool call_records_ok()
 {
-    return call_record_status[0u] == X86_CALL_RECORDS_OK && call_record_status[1u] == 0u;
-}
-
-bool call_arg_lookup_ok()
-{
-    return call_arg_lookup_status[0u] == X86_CALL_ARG_LOOKUP_OK &&
-           call_arg_lookup_status[1u] == 0u;
+    return stage_status4_ok(call_record_status, X86_CALL_RECORDS_OK);
 }
 
 bool has_call_record(uint call_node)
@@ -78,26 +82,22 @@ bool has_call_record(uint call_node)
         return false;
 
     uint4 record = x86_call_record[call_node];
-    return record.x != INVALID || record.y != INVALID ||
-           record.z != INVALID || record.w != INVALID;
+    return uint4_any_not_equal(record, INVALID);
 }
 
-uint parent_node(uint node)
+uint call_type_word(uint call_node, uint slot)
 {
-    uint p = valid_node(node) ? parent[node] : INVALID;
-    return valid_node(p) ? p : INVALID;
+    return row_major_load<uint>(
+        x86_call_type_record,
+        call_node,
+        X86_CALL_TYPE_STRIDE,
+        slot,
+        INVALID);
 }
 
 uint nearest_hir_statement(uint node)
 {
-    [loop]
-    for (uint guard = 0u; guard < 128u && valid_node(node); guard += 1u)
-    {
-        if (hir_kind[node] == HIR_STMT)
-            return node;
-        node = parent_node(node);
-    }
-    return INVALID;
+    return valid_node(node) ? x86_enclosing_stmt_node[node] : INVALID;
 }
 
 bool intrinsic_call_statement(uint call_node, out uint intrinsic_tag)
@@ -108,10 +108,10 @@ bool intrinsic_call_statement(uint call_node, out uint intrinsic_tag)
         return false;
 
     uint stmt = nearest_hir_statement(call_node);
-    if (!valid_node(stmt))
+    if (!valid_node(stmt) || hir_kind[stmt] != HIR_STMT)
         return false;
 
-    uint callee_token = x86_call_type_record[call_node].z;
+    uint callee_token = call_type_word(call_node, 2u);
     if (!valid_token(callee_token))
         return false;
 
@@ -119,24 +119,14 @@ bool intrinsic_call_statement(uint call_node, out uint intrinsic_tag)
     return intrinsic_tag != INTRINSIC_NONE;
 }
 
-uint first_arg_node_for_call(uint call_node)
+uint pack_intrinsic_call_record(uint base, uint intrinsic_tag)
 {
-    if (!valid_node(call_node) || x86_call_record[call_node].w == 0u)
+    if (!valid_token(base) ||
+        base > X86_INTRINSIC_CALL_BASE_MAX ||
+        intrinsic_tag > X86_INTRINSIC_TAG_MASK)
         return INVALID;
-
-    uint active_nodes = active_hir_node_count();
-    [loop]
-    for (uint node = 0u; node < active_nodes; node += 1u)
-    {
-        if (hir_call_arg_parent_call[node] == call_node &&
-            hir_call_arg_ordinal[node] == 0u)
-            return node;
-    }
-
-    uint4 lookup = x86_call_arg_lookup_record[call_node * X86_SYSV_MAX_INTEGER_ARGS];
-    if (lookup.x != call_node || lookup.y != 0u)
-        return INVALID;
-    return valid_node(lookup.z) ? lookup.z : INVALID;
+    return (base << X86_INTRINSIC_TAG_BITS) |
+           (intrinsic_tag & X86_INTRINSIC_TAG_MASK);
 }
 
 [shader("compute")]
@@ -144,30 +134,40 @@ uint first_arg_node_for_call(uint call_node)
 void main(uint3 tid: SV_DispatchThreadID)
 {
     uint node_i = linear_dispatch_id(tid);
-    bool upstream_ok = call_records_ok() && call_arg_lookup_ok();
     if (node_i == 0u)
-    {
-        x86_intrinsic_call_status[0u] = upstream_ok ? X86_INTRINSIC_CALLS_OK : 0u;
-        x86_intrinsic_call_status[1u] = upstream_ok ? 0u :
-                                        (call_records_ok() ? call_arg_lookup_status[1u] :
-                                         call_record_status[1u]);
-        x86_intrinsic_call_status[2u] = upstream_ok ? INVALID :
-                                        (call_records_ok() ? call_arg_lookup_status[2u] :
-                                         call_record_status[2u]);
-        x86_intrinsic_call_status[3u] = 0u;
-    }
+        write_stage_status4_from_upstream1(
+            x86_intrinsic_call_status,
+            call_records_ok(),
+            X86_INTRINSIC_CALLS_OK,
+            INVALID,
+            0u,
+            call_record_status,
+            0u,
+            INVALID);
 
-    if (!upstream_ok || node_i >= active_hir_node_count())
+    if (!call_records_ok() || node_i >= active_hir_node_count())
+        return;
+
+    if (!has_call_record(node_i))
         return;
 
     uint intrinsic_tag = INTRINSIC_NONE;
-    if (!intrinsic_call_statement(node_i, intrinsic_tag))
+    bool is_intrinsic = intrinsic_call_statement(node_i, intrinsic_tag);
+    uint base = call_lookup_base(node_i);
+    if (base == INVALID)
         return;
 
-    uint owner_fn = x86_call_record[node_i].x;
-    uint arg0_node = first_arg_node_for_call(node_i);
-    x86_intrinsic_call_record[node_i] = uint4(owner_fn, node_i, arg0_node, intrinsic_tag);
+    uint packed = pack_intrinsic_call_record(
+        base,
+        is_intrinsic ? intrinsic_tag : INTRINSIC_NONE);
+    if (packed == INVALID)
+    {
+        publish_stage_error_min_detail4(
+            x86_intrinsic_call_status,
+            X86_ERR_INTRINSIC_CALLS,
+            node_i);
+        return;
+    }
 
-    uint old_count = 0u;
-    InterlockedAdd(x86_intrinsic_call_status[3u], 1u, old_count);
+    x86_intrinsic_call_record[node_i] = packed;
 }

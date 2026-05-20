@@ -19,11 +19,10 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_type_form;
+StructuredBuffer<uint> hir_type_path_leaf_node;
 StructuredBuffer<uint> module_type_path_type;
 StructuredBuffer<uint> name_id_by_token;
-StructuredBuffer<uint> language_decl_name_id;
-StructuredBuffer<uint> language_decl_kind;
-StructuredBuffer<uint> language_decl_tag;
+StructuredBuffer<uint> language_type_code_by_name_id;
 
 RWStructuredBuffer<uint> type_expr_ref_tag;
 RWStructuredBuffer<uint> type_expr_ref_payload;
@@ -31,7 +30,6 @@ RWStructuredBuffer<uint> type_expr_ref_payload;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-
 static const uint HIR_TYPE = 5u;
 
 static const uint HIR_TYPE_FORM_NONE = 0u;
@@ -43,8 +41,7 @@ static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint TYPE_REF_ERROR = 4u;
 
 static const uint TY_UNKNOWN = 0u;
-static const uint LANGUAGE_DECL_COUNT = 18u;
-static const uint LANGUAGE_DECL_KIND_PRIMITIVE_TYPE = 3u;
+static const uint LANGUAGE_SYMBOL_COUNT = 19u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -77,17 +74,10 @@ uint language_type_code_for_token(uint token)
     if (!valid_token(token))
         return TY_UNKNOWN;
     uint name_id = name_id_by_token[token];
-    if (name_id == INVALID)
+    if (name_id == INVALID || name_id >= gParams.n_tokens + LANGUAGE_SYMBOL_COUNT)
         return TY_UNKNOWN;
 
-    [loop]
-    for (uint decl_i = 0u; decl_i < LANGUAGE_DECL_COUNT; decl_i += 1u)
-    {
-        if (language_decl_kind[decl_i] == LANGUAGE_DECL_KIND_PRIMITIVE_TYPE &&
-            language_decl_name_id[decl_i] == name_id)
-            return language_decl_tag[decl_i];
-    }
-    return TY_UNKNOWN;
+    return language_type_code_by_name_id[name_id];
 }
 
 void publish_path_ref(uint token)
@@ -107,6 +97,12 @@ void publish_path_ref(uint token)
     }
 }
 
+uint path_leaf_token_for_type_node(uint node)
+{
+    uint leaf_node = valid_node(node) ? hir_type_path_leaf_node[node] : INVALID;
+    return valid_node(leaf_node) ? hir_token_pos[leaf_node] : INVALID;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -116,7 +112,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint token = hir_token_pos[node];
-    if (!valid_token(token))
+    uint leaf_token = path_leaf_token_for_type_node(node);
+    if (!valid_token(token) && !valid_token(leaf_token))
     {
         if (valid_node(node))
         {
@@ -130,5 +127,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
 
-    publish_path_ref(token);
+    if (valid_token(token))
+        publish_path_ref(token);
+
+    if (valid_token(leaf_token) && leaf_token != token)
+        publish_path_ref(leaf_token);
 }

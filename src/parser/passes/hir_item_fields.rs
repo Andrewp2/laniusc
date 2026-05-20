@@ -83,8 +83,16 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirItemFieldsPas
             ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
             ("hir_token_end".into(), b.hir_token_end.as_entire_binding()),
             (
-                "hir_token_file_id".into(),
-                b.hir_token_file_id.as_entire_binding(),
+                "hir_variant_parent_enum".into(),
+                b.hir_variant_parent_enum.as_entire_binding(),
+            ),
+            (
+                "hir_semantic_dense_node".into(),
+                b.hir_semantic_dense_node.as_entire_binding(),
+            ),
+            (
+                "hir_semantic_count".into(),
+                b.hir_semantic_count.as_entire_binding(),
             ),
             ("hir_item_kind".into(), b.hir_item_kind.as_entire_binding()),
             (
@@ -106,10 +114,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirItemFieldsPas
             (
                 "hir_item_path_end".into(),
                 b.hir_item_path_end.as_entire_binding(),
-            ),
-            (
-                "hir_item_file_id".into(),
-                b.hir_item_file_id.as_entire_binding(),
             ),
             (
                 "hir_item_import_target_kind".into(),

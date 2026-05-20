@@ -8,6 +8,7 @@
 #define N_STATES 80
 #define CHUNK_COUNT 3
 
+import gpu_index;
 import utils; // PF_* bits, load helpers, etc.
 
 struct Params
@@ -144,10 +145,10 @@ void dfa_03_apply_block_prefix(uint3 tid: SV_GroupThreadID,
         f |= keep_emit ? PF_KEEP_EMIT : 0u;
         f |= keep_eof ? PF_KEEP_EOF : 0u;
 
-        const uint emit16 = (keep_emit && valid_emit) ? (tk_emit & 0xFFFFu) : 0xFFFFu;
-        const uint eof16 = (keep_eof && valid_eof) ? (tk_eof & 0xFFFFu) : 0xFFFFu;
+        const uint emit16 = (keep_emit && valid_emit) ? unpack_u16_pair_low(tk_emit) : 0xFFFFu;
+        const uint eof16 = (keep_eof && valid_eof) ? unpack_u16_pair_low(tk_eof) : 0xFFFFu;
         if ((f & (PF_EMIT | PF_EOF)) != 0u)
-            tok_types[i_abs] = (eof16 << 16) | emit16;
+            tok_types[i_abs] = pack_u16_pair(emit16, eof16);
     }
 
     flags_packed[i_abs] = f;

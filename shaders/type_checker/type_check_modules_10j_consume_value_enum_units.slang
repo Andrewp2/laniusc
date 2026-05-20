@@ -36,6 +36,7 @@ StructuredBuffer<uint> decl_hir_node;
 StructuredBuffer<uint> decl_parent_type_decl;
 StructuredBuffer<uint> hir_variant_payload_count;
 StructuredBuffer<uint> module_value_path_call_head;
+StructuredBuffer<uint> module_value_path_expr_head;
 
 RWStructuredBuffer<uint> module_value_path_status;
 RWStructuredBuffer<uint> visible_decl;
@@ -47,6 +48,8 @@ static const uint MAX_GROUPS_X = 65535u;
 
 static const uint PATH_RECORD_KIND_HIR_PATH_EXPR = 3u;
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
+static const uint PATH_RESOLVE_STATUS_UNRESOLVED_DECL = 6u;
+static const uint PATH_RESOLVE_STATUS_INVALID = 0xffffffffu;
 
 static const uint HIR_ITEM_KIND_ENUM = 7u;
 static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
@@ -105,8 +108,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint path_i = linear_thread_id(dtid);
     if (path_i >= active_path_count())
-        return;
-    if (path_kind[path_i] != PATH_RECORD_KIND_HIR_PATH_EXPR)
         return;
     uint owner_token = path_owner_token[path_i];
     if (owner_token >= gParams.n_tokens)

@@ -9,6 +9,10 @@
 // - It does not inspect source bytes, hash token text, compare names by
 //   spelling, perform CPU lookup, or use the legacy direct method hash table.
 
+import fixed_key;
+import gpu_index;
+import range_query;
+
 struct Params
 {
     uint n_tokens;
@@ -18,6 +22,7 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+StructuredBuffer<uint> token_count;
 StructuredBuffer<uint> method_call_receiver_ref_tag;
 StructuredBuffer<uint> method_call_receiver_ref_payload;
 StructuredBuffer<uint> method_call_name_id;
@@ -51,27 +56,17 @@ static const uint MAX_GROUPS_X = 65535u;
 
 uint linear_thread_id(uint3 dtid)
 {
-    return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
+    return linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
 }
 
 uint active_token_count()
 {
-    return gParams.n_tokens;
+    return min(token_count[0], gParams.n_tokens);
 }
 
 uint active_module_count()
 {
     return max(1u, min(module_count_out[0], gParams.n_hir_nodes));
-}
-
-uint encoded_id(uint value)
-{
-    return value == INVALID ? 0u : value + 1u;
-}
-
-uint encoded_type_ref_tag(uint value)
-{
-    return value == TYPE_REF_INVALID ? 0u : value + 1u;
 }
 
 uint decl_token_from_type_code(uint ty)
@@ -110,40 +105,60 @@ uint receiver_payload_key(uint receiver_tag, uint receiver_payload)
     return receiver_payload;
 }
 
-int compare_encoded(uint left, uint right)
+public struct MethodLookupKey
 {
-    if (left < right)
-        return -1;
-    if (left > right)
-        return 1;
-    return 0;
+    uint module_id;
+    uint receiver_tag;
+    uint receiver_payload;
+    uint name_id;
 }
 
-int compare_method_key(uint row, uint module_id, uint receiver_tag, uint receiver_payload,
-                       uint name_id)
+public struct MethodFixedKey : IFixedU32RowKey<MethodLookupKey>
 {
-    uint fn_i = row < gParams.n_tokens ? sorted_method_key_order[row] : INVALID;
-    uint row_module = fn_i < gParams.n_tokens ? method_decl_module_id[fn_i] : INVALID;
-    int cmp = compare_encoded(encoded_id(row_module), encoded_id(module_id));
-    if (cmp != 0)
-        return cmp;
+    public static uint row_lane(uint row, uint lane)
+    {
+        uint active_tokens = active_token_count();
+        uint fn_i = row < active_tokens ? sorted_method_key_order[row] : INVALID;
+        if (fn_i >= active_tokens)
+            return 0u;
+        if (lane == 0u)
+            return fixed_key_encode_nullable_u32(method_decl_module_id[fn_i], INVALID);
+        if (lane == 1u)
+            return fixed_key_encode_nullable_u32(
+                method_decl_receiver_ref_tag[fn_i],
+                TYPE_REF_INVALID);
+        if (lane == 2u)
+            return fixed_key_encode_nullable_u32(
+                receiver_payload_key(
+                    method_decl_receiver_ref_tag[fn_i],
+                    method_decl_receiver_ref_payload[fn_i]),
+                INVALID);
+        return fixed_key_encode_nullable_u32(method_decl_name_id[fn_i], INVALID);
+    }
 
-    uint row_tag = fn_i < gParams.n_tokens ? method_decl_receiver_ref_tag[fn_i] : TYPE_REF_INVALID;
-    cmp = compare_encoded(encoded_type_ref_tag(row_tag), encoded_type_ref_tag(receiver_tag));
-    if (cmp != 0)
-        return cmp;
+    public static uint key_lane(MethodLookupKey key, uint lane)
+    {
+        if (lane == 0u)
+            return fixed_key_encode_nullable_u32(key.module_id, INVALID);
+        if (lane == 1u)
+            return fixed_key_encode_nullable_u32(key.receiver_tag, TYPE_REF_INVALID);
+        if (lane == 2u)
+            return fixed_key_encode_nullable_u32(
+                receiver_payload_key(key.receiver_tag, key.receiver_payload),
+                INVALID);
+        return fixed_key_encode_nullable_u32(key.name_id, INVALID);
+    }
+}
 
-    uint row_payload = fn_i < gParams.n_tokens ? receiver_payload_key(
-                                                      method_decl_receiver_ref_tag[fn_i],
-                                                      method_decl_receiver_ref_payload[fn_i])
-                                                : INVALID;
-    cmp = compare_encoded(encoded_id(row_payload),
-                          encoded_id(receiver_payload_key(receiver_tag, receiver_payload)));
-    if (cmp != 0)
-        return cmp;
-
-    uint row_name = fn_i < gParams.n_tokens ? method_decl_name_id[fn_i] : INVALID;
-    return compare_encoded(encoded_id(row_name), encoded_id(name_id));
+public struct MethodKeyCompare : IRowQueryCompare<MethodLookupKey>
+{
+    public static int compare(uint row, MethodLookupKey key)
+    {
+        return fixed_u32_row_key_compare<MethodLookupKey, MethodFixedKey>(
+            row,
+            key,
+            4u);
+    }
 }
 
 uint find_method(uint module_id, uint receiver_tag, uint receiver_payload, uint name_id)
@@ -152,25 +167,17 @@ uint find_method(uint module_id, uint receiver_tag, uint receiver_payload, uint 
         name_id == INVALID)
         return INVALID;
 
-    uint lo = 0u;
-    uint hi = gParams.n_tokens;
-    [loop]
-    for (uint guard = 0u; guard < 32u && lo < hi; guard += 1u)
-    {
-        uint mid = lo + ((hi - lo) >> 1u);
-        int cmp = compare_method_key(mid, module_id, receiver_tag, receiver_payload, name_id);
-        if (cmp < 0)
-            lo = mid + 1u;
-        else
-            hi = mid;
-    }
-
-    if (lo >= gParams.n_tokens ||
-        compare_method_key(lo, module_id, receiver_tag, receiver_payload, name_id) != 0)
+    MethodLookupKey key;
+    key.module_id = module_id;
+    key.receiver_tag = receiver_tag;
+    key.receiver_payload = receiver_payload;
+    key.name_id = name_id;
+    uint row = find_equal_query<MethodLookupKey, MethodKeyCompare>(active_token_count(), key);
+    if (row == INVALID)
         return INVALID;
 
-    uint fn_i = sorted_method_key_order[lo];
-    if (fn_i >= gParams.n_tokens)
+    uint fn_i = sorted_method_key_order[row];
+    if (fn_i >= active_token_count())
         return INVALID;
 
     uint status = method_key_status[fn_i];
@@ -195,7 +202,7 @@ uint find_visible_method(uint method_i, uint receiver_tag, uint receiver_payload
 
 uint visibility_checked_method(uint method_i, uint fn_i)
 {
-    if (fn_i >= gParams.n_tokens)
+    if (fn_i >= active_token_count())
         return INVALID;
 
     uint status = method_key_status[fn_i];
