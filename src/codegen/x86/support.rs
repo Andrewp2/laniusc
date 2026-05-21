@@ -1,4 +1,9 @@
-use std::{sync::OnceLock, time::Duration};
+use std::{
+    collections::HashMap,
+    ops::Deref,
+    sync::{Mutex, OnceLock},
+    time::Duration,
+};
 
 use anyhow::{Result, bail};
 use log::warn;
@@ -6,6 +11,151 @@ use wgpu::util::DeviceExt;
 
 use super::{RecordedX86Codegen, X86Params, X86RegallocParams, X86ScanParams};
 use crate::gpu::passes_core::{PassData, bind_group};
+
+const UNIFORM_BINDING_ARRAY_STRIDE: u64 = 256;
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct PooledStorageBufferKey {
+    device: usize,
+    size: u64,
+    usage_bits: u64,
+}
+
+pub(super) struct PooledStorageBuffer {
+    buffer: Option<wgpu::Buffer>,
+    key: PooledStorageBufferKey,
+}
+
+impl PooledStorageBuffer {
+    fn new(buffer: wgpu::Buffer, key: PooledStorageBufferKey) -> Self {
+        Self {
+            buffer: Some(buffer),
+            key,
+        }
+    }
+
+    fn buffer(&self) -> &wgpu::Buffer {
+        self.buffer
+            .as_ref()
+            .expect("pooled x86 storage buffer was already returned")
+    }
+}
+
+impl Deref for PooledStorageBuffer {
+    type Target = wgpu::Buffer;
+
+    fn deref(&self) -> &Self::Target {
+        self.buffer()
+    }
+}
+
+impl Drop for PooledStorageBuffer {
+    fn drop(&mut self) {
+        let Some(buffer) = self.buffer.take() else {
+            return;
+        };
+        match storage_buffer_pool().lock() {
+            Ok(mut pool) => {
+                pool.entry(self.key).or_default().push(buffer);
+            }
+            Err(err) => warn!("failed to return x86 storage buffer to pool: {err}"),
+        }
+    }
+}
+
+pub(super) struct PooledReadbackBuffer {
+    buffer: Option<wgpu::Buffer>,
+    key: PooledStorageBufferKey,
+}
+
+impl PooledReadbackBuffer {
+    fn new(buffer: wgpu::Buffer, key: PooledStorageBufferKey) -> Self {
+        Self {
+            buffer: Some(buffer),
+            key,
+        }
+    }
+
+    fn buffer(&self) -> &wgpu::Buffer {
+        self.buffer
+            .as_ref()
+            .expect("pooled x86 readback buffer was already returned")
+    }
+}
+
+impl Deref for PooledReadbackBuffer {
+    type Target = wgpu::Buffer;
+
+    fn deref(&self) -> &Self::Target {
+        self.buffer()
+    }
+}
+
+impl Drop for PooledReadbackBuffer {
+    fn drop(&mut self) {
+        let Some(buffer) = self.buffer.take() else {
+            return;
+        };
+        match storage_buffer_pool().lock() {
+            Ok(mut pool) => {
+                pool.entry(self.key).or_default().push(buffer);
+            }
+            Err(err) => warn!("failed to return x86 readback buffer to pool: {err}"),
+        }
+    }
+}
+
+#[allow(dead_code)]
+pub(super) enum RetainedX86Buffer {
+    Plain(wgpu::Buffer),
+    Pooled(PooledStorageBuffer),
+}
+
+impl From<wgpu::Buffer> for RetainedX86Buffer {
+    fn from(buffer: wgpu::Buffer) -> Self {
+        Self::Plain(buffer)
+    }
+}
+
+impl From<PooledStorageBuffer> for RetainedX86Buffer {
+    fn from(buffer: PooledStorageBuffer) -> Self {
+        Self::Pooled(buffer)
+    }
+}
+
+pub(super) struct UniformBindingArray {
+    buffer: wgpu::Buffer,
+    item_size: u64,
+    len: usize,
+}
+
+impl UniformBindingArray {
+    pub(super) fn len(&self) -> usize {
+        self.len
+    }
+
+    pub(super) fn binding(&self, index: usize) -> wgpu::BindingResource<'_> {
+        let offset = uniform_binding_array_offset(index);
+        wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+            buffer: &self.buffer,
+            offset,
+            size: wgpu::BufferSize::new(self.item_size),
+        })
+    }
+
+    pub(super) fn dynamic_offset(&self, index: usize) -> u32 {
+        let offset = uniform_binding_array_offset(index);
+        u32::try_from(offset).expect("x86 uniform dynamic offset exceeded u32")
+    }
+
+    pub(super) fn into_buffer(self) -> wgpu::Buffer {
+        self.buffer
+    }
+}
+
+fn uniform_binding_array_offset(index: usize) -> u64 {
+    (index as u64).saturating_mul(UNIFORM_BINDING_ARRAY_STRIDE)
+}
 
 fn x86_trace_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
@@ -156,6 +306,42 @@ pub(super) fn uniform_u32_words(device: &wgpu::Device, label: &str, words: &[u32
     uniform_u32_struct(device, label, &u32_words_bytes(words))
 }
 
+pub(super) fn uniform_u32_struct_array(
+    device: &wgpu::Device,
+    label: &str,
+    items: &[Vec<u8>],
+) -> UniformBindingArray {
+    let len = items.len().max(1);
+    let item_size = items
+        .first()
+        .map(|bytes| bytes.len().max(1) as u64)
+        .unwrap_or(4);
+    assert!(
+        item_size <= UNIFORM_BINDING_ARRAY_STRIDE,
+        "x86 uniform binding item is larger than the fixed aligned stride"
+    );
+    let mut contents = vec![0u8; (UNIFORM_BINDING_ARRAY_STRIDE as usize).saturating_mul(len)];
+    for (index, bytes) in items.iter().enumerate() {
+        assert_eq!(
+            bytes.len() as u64,
+            item_size,
+            "x86 uniform binding array items must have identical encoded sizes"
+        );
+        let start = uniform_binding_array_offset(index) as usize;
+        contents[start..start + bytes.len()].copy_from_slice(bytes);
+    }
+    let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some(label),
+        contents: &contents,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+    });
+    UniformBindingArray {
+        buffer,
+        item_size,
+        len,
+    }
+}
+
 pub(super) fn storage_u32_rw(
     device: &wgpu::Device,
     label: &str,
@@ -172,6 +358,81 @@ pub(super) fn storage_u32_rw(
 
 pub(super) fn storage_u32_copy(device: &wgpu::Device, label: &str, count: usize) -> wgpu::Buffer {
     storage_u32_rw(device, label, count, wgpu::BufferUsages::COPY_SRC)
+}
+
+pub(super) fn pooled_storage_u32_rw(
+    device: &wgpu::Device,
+    label: &str,
+    count: usize,
+    extra_usage: wgpu::BufferUsages,
+) -> PooledStorageBuffer {
+    let size = (count.max(1) * 4) as u64;
+    let usage = wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | extra_usage;
+    let key = PooledStorageBufferKey {
+        device: device as *const wgpu::Device as usize,
+        size,
+        usage_bits: usage.bits() as u64,
+    };
+    let reused = match storage_buffer_pool().lock() {
+        Ok(mut pool) => pool.get_mut(&key).and_then(Vec::pop),
+        Err(err) => {
+            warn!("failed to take x86 storage buffer from pool: {err}");
+            None
+        }
+    };
+    let buffer = reused.unwrap_or_else(|| {
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size,
+            usage,
+            mapped_at_creation: false,
+        })
+    });
+    PooledStorageBuffer::new(buffer, key)
+}
+
+pub(super) fn pooled_storage_u32_copy(
+    device: &wgpu::Device,
+    label: &str,
+    count: usize,
+) -> PooledStorageBuffer {
+    pooled_storage_u32_rw(device, label, count, wgpu::BufferUsages::COPY_SRC)
+}
+
+pub(super) fn pooled_readback_bytes(
+    device: &wgpu::Device,
+    label: &str,
+    bytes: u64,
+) -> PooledReadbackBuffer {
+    let size = bytes.max(1);
+    let usage = wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ;
+    let key = PooledStorageBufferKey {
+        device: device as *const wgpu::Device as usize,
+        size,
+        usage_bits: usage.bits() as u64,
+    };
+    let reused = match storage_buffer_pool().lock() {
+        Ok(mut pool) => pool.get_mut(&key).and_then(Vec::pop),
+        Err(err) => {
+            warn!("failed to take x86 readback buffer from pool: {err}");
+            None
+        }
+    };
+    let buffer = reused.unwrap_or_else(|| {
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size,
+            usage,
+            mapped_at_creation: false,
+        })
+    });
+    PooledReadbackBuffer::new(buffer, key)
+}
+
+fn storage_buffer_pool() -> &'static Mutex<HashMap<PooledStorageBufferKey, Vec<wgpu::Buffer>>> {
+    static POOL: OnceLock<Mutex<HashMap<PooledStorageBufferKey, Vec<wgpu::Buffer>>>> =
+        OnceLock::new();
+    POOL.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 pub(super) fn readback_u32s(device: &wgpu::Device, label: &str, count: usize) -> wgpu::Buffer {
@@ -205,6 +466,19 @@ pub(super) fn pointer_jump_steps_for_items(n_items: usize) -> Vec<u32> {
         value >>= 1;
     }
     steps
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn uniform_binding_array_offsets_are_webgpu_aligned() {
+        assert_eq!(uniform_binding_array_offset(0), 0);
+        assert_eq!(uniform_binding_array_offset(1), 256);
+        assert_eq!(uniform_binding_array_offset(7), 1792);
+        assert_eq!(uniform_binding_array_offset(3) % 256, 0);
+    }
 }
 
 pub(super) fn dispatch_compute_pass(
@@ -256,6 +530,28 @@ pub(super) fn dispatch_compute_pass_indirect_offset(
     indirect_buffer: &wgpu::Buffer,
     indirect_offset: u64,
 ) {
+    dispatch_compute_pass_indirect_offset_with_dynamic_offsets(
+        encoder,
+        trace_stage,
+        label,
+        pass,
+        bind_group,
+        indirect_buffer,
+        indirect_offset,
+        &[],
+    );
+}
+
+pub(super) fn dispatch_compute_pass_indirect_offset_with_dynamic_offsets(
+    encoder: &mut wgpu::CommandEncoder,
+    trace_stage: &str,
+    label: &str,
+    pass: &PassData,
+    bind_group: &wgpu::BindGroup,
+    indirect_buffer: &wgpu::Buffer,
+    indirect_offset: u64,
+    dynamic_offsets: &[u32],
+) {
     trace_x86_codegen_event(trace_stage, "record.start");
     {
         let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -263,10 +559,140 @@ pub(super) fn dispatch_compute_pass_indirect_offset(
             timestamp_writes: None,
         });
         compute.set_pipeline(&pass.pipeline);
-        compute.set_bind_group(0, bind_group, &[]);
+        compute.set_bind_group(0, bind_group, dynamic_offsets);
         compute.dispatch_workgroups_indirect(indirect_buffer, indirect_offset);
     }
     trace_x86_codegen_event(trace_stage, "record.done");
+}
+
+pub(super) fn dispatch_compute_pass_indirect_offsets_with_dynamic_uniform_offsets(
+    encoder: &mut wgpu::CommandEncoder,
+    trace_stage: &str,
+    label: &str,
+    pass: &PassData,
+    bind_group: &wgpu::BindGroup,
+    indirect_buffer: &wgpu::Buffer,
+    indirect_offsets: &[u64],
+    uniform_dynamic_offsets: &[u32],
+) {
+    assert_eq!(
+        indirect_offsets.len(),
+        uniform_dynamic_offsets.len(),
+        "x86 indirect dispatch offsets and dynamic uniform offsets must match"
+    );
+    trace_x86_codegen_event(trace_stage, "record.start");
+    {
+        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some(label),
+            timestamp_writes: None,
+        });
+        compute.set_pipeline(&pass.pipeline);
+        for (&indirect_offset, &dynamic_offset) in
+            indirect_offsets.iter().zip(uniform_dynamic_offsets)
+        {
+            compute.set_bind_group(0, bind_group, &[dynamic_offset]);
+            compute.dispatch_workgroups_indirect(indirect_buffer, indirect_offset);
+        }
+    }
+    trace_x86_codegen_event(trace_stage, "record.done");
+}
+
+pub(super) fn dispatch_compute_pass_indirect_offsets_with_bind_groups_and_dynamic_uniform_offsets(
+    encoder: &mut wgpu::CommandEncoder,
+    trace_stage: &str,
+    label: &str,
+    pass: &PassData,
+    bind_groups: &[&wgpu::BindGroup],
+    indirect_buffer: &wgpu::Buffer,
+    indirect_offsets: &[u64],
+    uniform_dynamic_offsets: &[u32],
+) {
+    assert_eq!(
+        bind_groups.len(),
+        indirect_offsets.len(),
+        "x86 bind group sequence and indirect dispatch offsets must match"
+    );
+    assert_eq!(
+        indirect_offsets.len(),
+        uniform_dynamic_offsets.len(),
+        "x86 indirect dispatch offsets and dynamic uniform offsets must match"
+    );
+    trace_x86_codegen_event(trace_stage, "record.start");
+    {
+        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some(label),
+            timestamp_writes: None,
+        });
+        compute.set_pipeline(&pass.pipeline);
+        for ((bind_group, &indirect_offset), &dynamic_offset) in bind_groups
+            .iter()
+            .zip(indirect_offsets)
+            .zip(uniform_dynamic_offsets)
+        {
+            compute.set_bind_group(0, *bind_group, &[dynamic_offset]);
+            compute.dispatch_workgroups_indirect(indirect_buffer, indirect_offset);
+        }
+    }
+    trace_x86_codegen_event(trace_stage, "record.done");
+}
+
+pub(super) fn dispatch_compute_pass_indirect_ping_pong_scan_steps(
+    encoder: &mut wgpu::CommandEncoder,
+    trace_stage: &str,
+    label: &str,
+    pass: &PassData,
+    bind_groups: &[wgpu::BindGroup],
+    scan_params: &UniformBindingArray,
+    indirect_buffer: &wgpu::Buffer,
+) {
+    assert_eq!(
+        bind_groups.len(),
+        2,
+        "x86 ping-pong scan dispatch requires even and odd bind groups"
+    );
+    let step_count = scan_params.len();
+    let indirect_offsets = vec![0u64; step_count];
+    let dynamic_offsets = (0..step_count)
+        .map(|step_i| scan_params.dynamic_offset(step_i))
+        .collect::<Vec<_>>();
+    let bind_group_sequence = (0..step_count)
+        .map(|step_i| &bind_groups[step_i & 1])
+        .collect::<Vec<_>>();
+    dispatch_compute_pass_indirect_offsets_with_bind_groups_and_dynamic_uniform_offsets(
+        encoder,
+        trace_stage,
+        label,
+        pass,
+        &bind_group_sequence,
+        indirect_buffer,
+        &indirect_offsets,
+        &dynamic_offsets,
+    );
+}
+
+pub(super) fn dispatch_compute_pass_indirect_bind_group_steps(
+    encoder: &mut wgpu::CommandEncoder,
+    trace_stage_prefix: &str,
+    label: &str,
+    pass: &PassData,
+    bind_groups: &[wgpu::BindGroup],
+    indirect_buffer: &wgpu::Buffer,
+) {
+    if bind_groups.is_empty() {
+        return;
+    }
+    let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        label: Some(label),
+        timestamp_writes: None,
+    });
+    compute.set_pipeline(&pass.pipeline);
+    for (step_i, bind_group) in bind_groups.iter().enumerate() {
+        let trace_stage = format!("{trace_stage_prefix}.{step_i}");
+        trace_x86_codegen_event(&trace_stage, "record.start");
+        compute.set_bind_group(0, bind_group, &[]);
+        compute.dispatch_workgroups_indirect(indirect_buffer, 0);
+        trace_x86_codegen_event(&trace_stage, "record.done");
+    }
 }
 
 pub(super) fn dispatch_x86_stages(
@@ -362,32 +788,28 @@ pub(super) fn reflected_bind_group(
 
 pub(super) fn read_x86_output(
     device: &wgpu::Device,
-    _queue: &wgpu::Queue,
+    queue: &wgpu::Queue,
     recorded: &RecordedX86Codegen,
 ) -> Result<Vec<u8>> {
-    let readback_slice = recorded.output_readback.slice(..);
+    let status_start = recorded.output_status_offset;
+    let status_end = status_start.saturating_add(16);
+    let total_readback_bytes = status_end;
+    let readback_slice = recorded.output_readback.slice(0..total_readback_bytes);
     crate::gpu::passes_core::wait_for_readback_map(
         device,
         &readback_slice,
-        "codegen.x86.output_status",
+        "codegen.x86.output_readback",
         x86_readback_timeout(),
     )?;
 
-    let bytes = {
-        let data = recorded.output_readback.slice(..).get_mapped_range();
-        let status_offset = recorded.output_status_offset as usize;
-        let status_end = status_offset.saturating_add(16);
-        let status_words = if status_end <= data.len() {
-            crate::gpu::readback::read_u32_words(
-                &data[status_offset..status_end],
-                "x86 codegen status",
-            )
-        } else {
-            Err(anyhow::anyhow!(
-                "x86 codegen status readback was truncated: expected status at bytes {status_offset}..{status_end}, got {} bytes",
-                data.len()
-            ))
-        };
+    let (status, bytes) = {
+        let data = readback_slice.get_mapped_range();
+        let status_start = status_start as usize;
+        let status_end = status_end as usize;
+        let status_words = crate::gpu::readback::read_u32_words(
+            &data[status_start..status_end],
+            "x86 codegen status",
+        );
         let [len, mode, error_code, error_detail] = match status_words {
             Ok(status_words) => status_words,
             Err(err) => {
@@ -397,50 +819,128 @@ pub(super) fn read_x86_output(
             }
         };
         let len = len as usize;
-
-        if error_code != 0 {
-            if let Some(status_trace_readback) = &recorded.status_trace_readback {
-                if let Err(err) = dump_x86_status_trace(device, status_trace_readback) {
-                    warn!("failed to read x86 status trace: {err:#}");
-                }
-            }
-            let error_name = match error_code {
-                2 => "missing main entrypoint",
-                3 => "unsupported return expression",
-                4 => "output capacity too small",
-                5 => "register allocation failure",
-                6 => "instruction sizing failure",
-                7 => "ELF layout failure",
-                15 => "virtual register allocation failure",
-                17 => "instruction selection failure",
-                _ => "unsupported source shape",
-            };
-            drop(data);
-            recorded.output_readback.unmap();
-            return Err(anyhow::anyhow!(
-                "GPU x86 emitter rejected {error_name} (code {error_code}) at token {error_detail}"
-            ));
-        }
-        if mode != 1 || len > recorded.output_capacity {
-            drop(data);
-            recorded.output_readback.unmap();
-            return Err(anyhow::anyhow!(
-                "GPU x86 emitter produced {} bytes for capacity {}",
+        let bytes = if error_code == 0
+            && mode == 1
+            && len <= recorded.output_capacity
+            && len <= status_start
+        {
+            Some(data[..len].to_vec())
+        } else {
+            None
+        };
+        drop(data);
+        recorded.output_readback.unmap();
+        (
+            [
                 len,
-                recorded.output_capacity
-            ));
+                mode as usize,
+                error_code as usize,
+                error_detail as usize,
+            ],
+            bytes,
+        )
+    };
+    let [len, mode, error_code, error_detail] = status;
+    if crate::gpu::trace::enabled() {
+        let now = std::time::Instant::now();
+        for (name, value) in [
+            ("x86.output_len_bytes", len),
+            ("x86.output_status_mode", mode),
+            ("x86.output_error_code", error_code),
+            (
+                "x86.output_initial_readback_hit",
+                usize::from(bytes.is_some()),
+            ),
+        ] {
+            crate::gpu::trace::record_counter("host.x86.output", name, now, value as f64);
         }
+    }
+
+    if error_code != 0 {
         if let Some(status_trace_readback) = &recorded.status_trace_readback {
             if let Err(err) = dump_x86_status_trace(device, status_trace_readback) {
                 warn!("failed to read x86 status trace: {err:#}");
             }
         }
+        let error_name = match error_code {
+            2 => "missing main entrypoint",
+            3 => "unsupported return expression",
+            4 => "output capacity too small",
+            5 => "register allocation failure",
+            6 => "instruction sizing failure",
+            7 => "ELF layout failure",
+            15 => "virtual register allocation failure",
+            17 => "instruction selection failure",
+            _ => "unsupported source shape",
+        };
+        return Err(anyhow::anyhow!(
+            "GPU x86 emitter rejected {error_name} (code {error_code}) at token {error_detail}"
+        ));
+    }
+    if mode != 1 || len > recorded.output_capacity {
+        return Err(anyhow::anyhow!(
+            "GPU x86 emitter produced {} bytes for capacity {}",
+            len,
+            recorded.output_capacity
+        ));
+    }
+    if let Some(status_trace_readback) = &recorded.status_trace_readback {
+        if let Err(err) = dump_x86_status_trace(device, status_trace_readback) {
+            warn!("failed to read x86 status trace: {err:#}");
+        }
+    }
+    if let Some(bytes) = bytes {
+        return Ok(bytes);
+    }
+    if len > recorded.output_status_offset as usize && len <= recorded.output_capacity {
+        if crate::gpu::trace::enabled() {
+            crate::gpu::trace::record_counter(
+                "host.x86.output",
+                "x86.output_exact_readback_bytes",
+                std::time::Instant::now(),
+                len as f64,
+            );
+        }
+        return read_exact_x86_output_bytes(device, queue, recorded, len);
+    }
+    Err(anyhow::anyhow!(
+        "GPU x86 emitter output bytes were unavailable"
+    ))
+}
+
+fn read_exact_x86_output_bytes(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    recorded: &RecordedX86Codegen,
+    len: usize,
+) -> Result<Vec<u8>> {
+    let copy_bytes = len.div_ceil(4).saturating_mul(4) as u64;
+    let exact_readback =
+        pooled_readback_bytes(device, "rb.codegen.x86.out_words.exact", copy_bytes);
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("codegen.x86.output_readback.exact.encoder"),
+    });
+    encoder.copy_buffer_to_buffer(&recorded.out_buf, 0, &exact_readback, 0, copy_bytes);
+    crate::gpu::passes_core::submit_with_progress(
+        queue,
+        "codegen.x86.output-readback-exact",
+        encoder.finish(),
+    );
+
+    let readback_slice = exact_readback.slice(0..copy_bytes);
+    crate::gpu::passes_core::wait_for_readback_map(
+        device,
+        &readback_slice,
+        "codegen.x86.output_readback.exact",
+        x86_readback_timeout(),
+    )?;
+    let bytes = {
+        let data = readback_slice.get_mapped_range();
         let bytes = data[..len].to_vec();
         drop(data);
-        recorded.output_readback.unmap();
+        exact_readback.unmap();
         bytes
     };
-
     Ok(bytes)
 }
 
@@ -453,12 +953,27 @@ fn dump_x86_status_trace(device: &wgpu::Device, readback: &wgpu::Buffer) -> Resu
         x86_readback_timeout(),
     )?;
     let data = readback.slice(..).get_mapped_range();
-    let words: [u32; 84] = crate::gpu::readback::read_u32_words(&data, "x86 status trace")?;
+    let words: [u32; 92] = crate::gpu::readback::read_u32_words(&data, "x86 status trace")?;
     drop(data);
     readback.unmap();
 
+    if crate::gpu::trace::enabled() {
+        let now = std::time::Instant::now();
+        for (name, value) in [
+            ("x86.func_count", words[0]),
+            ("x86.main_count", words[1]),
+            ("x86.main_node", words[4]),
+            ("x86.max_virtual_func_rows", words[5]),
+            ("x86.regalloc_active_chunks", words[6]),
+            ("x86.regalloc_recorded_chunks", words[7]),
+        ] {
+            crate::gpu::trace::record_counter("host.x86.gpu_meta", name, now, value as f64);
+        }
+    }
+
     let mut offset = 0usize;
     for (name, len) in [
+        ("func_meta", 8usize),
         ("enum_records", 4usize),
         ("struct_records", 4),
         ("decl_layout", 4),

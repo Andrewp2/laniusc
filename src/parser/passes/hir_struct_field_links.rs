@@ -89,6 +89,30 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirStructFieldLi
                 "hir_struct_lit_field_previous".into(),
                 b.hir_struct_lit_field_previous.as_entire_binding(),
             ),
+            (
+                "hir_struct_field_owner_b".into(),
+                b.hir_struct_field_owner_b.as_entire_binding(),
+            ),
+            (
+                "hir_struct_field_link_b".into(),
+                b.hir_struct_field_link_b.as_entire_binding(),
+            ),
+            (
+                "hir_struct_field_rank_b".into(),
+                b.hir_struct_field_rank_b.as_entire_binding(),
+            ),
+            (
+                "hir_struct_lit_field_owner_b".into(),
+                b.hir_struct_lit_field_owner_b.as_entire_binding(),
+            ),
+            (
+                "hir_struct_lit_field_link_b".into(),
+                b.hir_struct_lit_field_link_b.as_entire_binding(),
+            ),
+            (
+                "hir_struct_lit_field_rank_b".into(),
+                b.hir_struct_lit_field_rank_b.as_entire_binding(),
+            ),
         ])
     }
 }

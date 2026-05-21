@@ -72,6 +72,30 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirEnumVariantLi
                 "hir_variant_payload_rank_a".into(),
                 b.hir_variant_payload_rank_a.as_entire_binding(),
             ),
+            (
+                "hir_variant_owner_b".into(),
+                b.hir_variant_owner_b.as_entire_binding(),
+            ),
+            (
+                "hir_variant_link_b".into(),
+                b.hir_variant_link_b.as_entire_binding(),
+            ),
+            (
+                "hir_variant_rank_b".into(),
+                b.hir_variant_rank_b.as_entire_binding(),
+            ),
+            (
+                "hir_variant_payload_owner_b".into(),
+                b.hir_variant_payload_owner_b.as_entire_binding(),
+            ),
+            (
+                "hir_variant_payload_link_b".into(),
+                b.hir_variant_payload_link_b.as_entire_binding(),
+            ),
+            (
+                "hir_variant_payload_rank_b".into(),
+                b.hir_variant_payload_rank_b.as_entire_binding(),
+            ),
         ])
     }
 }

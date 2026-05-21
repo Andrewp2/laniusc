@@ -261,7 +261,9 @@ fn read_u32s(device: &wgpu::Device, buffer: &wgpu::Buffer, count: usize) -> Vec<
     slice.map_async(wgpu::MapMode::Read, move |result| {
         tx.send(result).expect("send map result");
     });
-    device.poll(wgpu::PollType::Wait).expect("poll readback");
+    device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .expect("poll readback");
     rx.recv()
         .expect("receive map result")
         .expect("map readback");

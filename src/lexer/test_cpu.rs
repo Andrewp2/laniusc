@@ -180,6 +180,8 @@ fn retag_calls_and_arrays_in_test_oracle(kinds: &mut [TokenKind]) {
     let mut expect_let_name = false;
     let mut in_let_decl = false;
     let mut let_can_init = false;
+    let mut expect_type_alias_name = false;
+    let mut in_type_alias_decl = false;
     let mut expect_type = false;
     let mut param_depth = 0usize;
     let mut type_array_depth = 0usize;
@@ -192,6 +194,7 @@ fn retag_calls_and_arrays_in_test_oracle(kinds: &mut [TokenKind]) {
         let raw = *k;
         let next = match raw {
             Ident if expect_let_name => LetIdent,
+            Ident if expect_type_alias_name => TypeAliasNameIdent,
             Ident if expect_type => TypeIdent,
             Ident if param_depth > 0 && matches!(prev_sig, Some(ParamLParen | ParamComma)) => {
                 ParamIdent
@@ -229,6 +232,7 @@ fn retag_calls_and_arrays_in_test_oracle(kinds: &mut [TokenKind]) {
                 }
             }
             Assign if in_let_decl && let_can_init => LetAssign,
+            Assign if in_type_alias_decl => TypeAliasAssign,
             Comma => match top_open {
                 Some(ParamLParen) => ParamComma,
                 Some(CallLParen) => ArgComma,
@@ -236,6 +240,7 @@ fn retag_calls_and_arrays_in_test_oracle(kinds: &mut [TokenKind]) {
                 _ => Comma,
             },
             Semicolon if top_open == Some(TypeArrayLBracket) => TypeSemicolon,
+            Semicolon if in_type_alias_decl => TypeAliasSemicolon,
             LBrace
                 if matches!(prev_sig, Some(RParen | GroupRParen))
                     && last_closed_group_owner == GroupOwner::If =>
@@ -254,6 +259,14 @@ fn retag_calls_and_arrays_in_test_oracle(kinds: &mut [TokenKind]) {
                 expect_let_name = true;
                 in_let_decl = false;
                 let_can_init = false;
+            }
+            Type => {
+                expect_type_alias_name = true;
+                in_type_alias_decl = false;
+            }
+            TypeAliasNameIdent => {
+                expect_type_alias_name = false;
+                in_type_alias_decl = true;
             }
             LetIdent => {
                 expect_let_name = false;
@@ -279,9 +292,19 @@ fn retag_calls_and_arrays_in_test_oracle(kinds: &mut [TokenKind]) {
                 in_let_decl = false;
                 let_can_init = false;
             }
+            TypeAliasAssign => {
+                expect_type = true;
+            }
+            TypeAliasSemicolon => {
+                expect_type_alias_name = false;
+                in_type_alias_decl = false;
+                expect_type = false;
+            }
             Semicolon => {
                 in_let_decl = false;
                 let_can_init = false;
+                expect_type_alias_name = false;
+                in_type_alias_decl = false;
                 expect_type = false;
             }
             _ => {}

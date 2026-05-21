@@ -10,6 +10,7 @@ struct Params
     uint virtual_next_call_step_count;
     uint regalloc_rows_per_chunk;
     uint regalloc_chunk_count;
+    uint function_slot_capacity;
 };
 
 ConstantBuffer<Params> gParams;
@@ -20,7 +21,6 @@ StructuredBuffer<uint> x86_func_meta;
 RWStructuredBuffer<uint> active_function_dispatch_args;
 RWStructuredBuffer<uint> active_virtual_inst_dispatch_args;
 RWStructuredBuffer<uint> active_virtual_next_call_dispatch_args;
-RWStructuredBuffer<uint> active_virtual_regalloc_dispatch_args;
 RWStructuredBuffer<uint> active_selected_inst_dispatch_args;
 RWStructuredBuffer<uint> active_selected_scan_block_dispatch_args;
 
@@ -81,20 +81,13 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     uint count = virtual_inst_count();
-    uint func_count = min(x86_func_meta[FUNC_META_FUNC_COUNT], gParams.n_tokens);
+    uint func_count = min(x86_func_meta[FUNC_META_FUNC_COUNT], gParams.function_slot_capacity);
     uint item_i = tid.x;
     if (item_i < gParams.virtual_next_call_step_count)
     {
         uint scan_step = scan_step_for_index(item_i);
         uint active_rows = (scan_step == 0u || scan_step < count) ? count : 1u;
         write_indexed_dispatch_args(active_virtual_next_call_dispatch_args, item_i, active_rows);
-    }
-    if (item_i < gParams.regalloc_chunk_count)
-    {
-        uint rows_per_chunk = max(gParams.regalloc_rows_per_chunk, 1u);
-        uint chunk_start = item_i * rows_per_chunk;
-        uint active_functions = chunk_start < count ? func_count : 1u;
-        write_indexed_dispatch_args(active_virtual_regalloc_dispatch_args, item_i, active_functions);
     }
 
     if (tid.x != 0u)

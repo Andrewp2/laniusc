@@ -26,18 +26,21 @@ use crate::{
         device,
         passes_core::{
             BindGroupCache,
+            ComputePassBatch,
             DispatchDim,
             InputElements,
             Pass,
             PassContext,
             PassData,
             bind_group,
+            compute_pass_batching_enabled,
             plan_workgroups,
+            validation_scopes_enabled,
         },
         timer::{GpuTimer, MINIMUM_TIME_TO_NOT_ELIDE_MS},
     },
     parser::{
-        buffers::{ActionHeader, ParserBuffers},
+        buffers::{ActionHeader, ParserBuffers, resident_projected_tree_capacity_for_tables},
         debug::DebugOutput,
         passes::{self, ParserPasses},
         readback,
@@ -62,8 +65,14 @@ pub struct GpuParser {
     token_delimiters_02: PassData,
     token_delimiters_03_owner_local: PassData,
     tokens_brace_context: PassData,
+    tokens_bracket_match_01_depth_blocks: PassData,
+    tokens_brace_match_01_depth_blocks: PassData,
+    tokens_brace_match_02_build_min_tree: PassData,
+    tokens_bracket_match_03_pair_pse: PassData,
+    tokens_brace_match_03_pair_pse: PassData,
     active_pair_dispatch_args: PassData,
     tree_active_dispatch_args: PassData,
+    tree_feature_dispatch_args: PassData,
     tokens_to_kinds: PassData,
     passes: ParserPasses,
 
@@ -141,6 +150,14 @@ pub struct ParseResult {
     pub next_sibling: Vec<u32>,
     pub subtree_end: Vec<u32>,
     pub hir_kind: Vec<u32>,
+    pub hir_semantic_prefix_before_node: Vec<u32>,
+    pub hir_semantic_dense_node: Vec<u32>,
+    pub hir_semantic_subtree_end: Vec<u32>,
+    pub hir_semantic_parent: Vec<u32>,
+    pub hir_semantic_first_child: Vec<u32>,
+    pub hir_semantic_next_sibling: Vec<u32>,
+    pub hir_semantic_depth: Vec<u32>,
+    pub hir_semantic_child_index: Vec<u32>,
     pub hir_token_pos: Vec<u32>,
     pub hir_token_end: Vec<u32>,
     pub hir_type_form: Vec<u32>,
@@ -152,6 +169,8 @@ pub struct ParseResult {
     pub hir_type_arg_start: Vec<u32>,
     pub hir_type_arg_count: Vec<u32>,
     pub hir_type_arg_next: Vec<u32>,
+    pub hir_type_alias_target_node: Vec<u32>,
+    pub hir_fn_return_type_node: Vec<u32>,
     pub hir_item_kind: Vec<u32>,
     pub hir_item_name_token: Vec<u32>,
     pub hir_item_decl_token: Vec<u32>,
@@ -217,6 +236,14 @@ pub struct ResidentParseResult {
     pub next_sibling: Vec<u32>,
     pub subtree_end: Vec<u32>,
     pub hir_kind: Vec<u32>,
+    pub hir_semantic_prefix_before_node: Vec<u32>,
+    pub hir_semantic_dense_node: Vec<u32>,
+    pub hir_semantic_subtree_end: Vec<u32>,
+    pub hir_semantic_parent: Vec<u32>,
+    pub hir_semantic_first_child: Vec<u32>,
+    pub hir_semantic_next_sibling: Vec<u32>,
+    pub hir_semantic_depth: Vec<u32>,
+    pub hir_semantic_child_index: Vec<u32>,
     pub hir_token_pos: Vec<u32>,
     pub hir_token_end: Vec<u32>,
     pub hir_type_form: Vec<u32>,
@@ -228,6 +255,8 @@ pub struct ResidentParseResult {
     pub hir_type_arg_start: Vec<u32>,
     pub hir_type_arg_count: Vec<u32>,
     pub hir_type_arg_next: Vec<u32>,
+    pub hir_type_alias_target_node: Vec<u32>,
+    pub hir_fn_return_type_node: Vec<u32>,
     pub hir_item_kind: Vec<u32>,
     pub hir_item_name_token: Vec<u32>,
     pub hir_item_decl_token: Vec<u32>,
@@ -292,6 +321,7 @@ struct ResidentParserBufferCache {
     token_capacity: u32,
     tree_capacity_override: Option<u32>,
     table_fingerprint: u64,
+    retain_debug_hir_buffers: bool,
     buffers: ParserBuffers,
 }
 
@@ -320,8 +350,22 @@ impl GpuParser {
                 &ctx.device,
             )?,
             tokens_brace_context: make_tokens_brace_context_pass(&ctx.device)?,
+            tokens_bracket_match_01_depth_blocks: make_tokens_bracket_match_01_depth_blocks_pass(
+                &ctx.device,
+            )?,
+            tokens_brace_match_01_depth_blocks: make_tokens_brace_match_01_depth_blocks_pass(
+                &ctx.device,
+            )?,
+            tokens_brace_match_02_build_min_tree: make_tokens_brace_match_02_build_min_tree_pass(
+                &ctx.device,
+            )?,
+            tokens_bracket_match_03_pair_pse: make_tokens_bracket_match_03_pair_pse_pass(
+                &ctx.device,
+            )?,
+            tokens_brace_match_03_pair_pse: make_tokens_brace_match_03_pair_pse_pass(&ctx.device)?,
             active_pair_dispatch_args: make_active_pair_dispatch_args_pass(&ctx.device)?,
             tree_active_dispatch_args: make_tree_active_dispatch_args_pass(&ctx.device)?,
+            tree_feature_dispatch_args: make_tree_feature_dispatch_args_pass(&ctx.device)?,
             tokens_to_kinds: make_tokens_to_kinds_pass(&ctx.device)?,
             passes: ParserPasses::new(&ctx.device)?,
             bg_cache: std::sync::Mutex::new(BindGroupCache::new()),
@@ -359,7 +403,7 @@ impl GpuParser {
             .resident_buffers
             .lock()
             .expect("parser.resident_buffers poisoned");
-        let bufs = self.resident_buffers_for(&mut resident_guard, token_capacity, tables);
+        let bufs = self.resident_debug_buffers_for(&mut resident_guard, token_capacity, tables);
 
         let mut encoder = self
             .device
@@ -386,21 +430,14 @@ impl GpuParser {
         encoder.copy_buffer_to_buffer(&bufs.ll1_status, 0, &status_readback, 0, 24);
 
         let use_scopes = bool_from_env("LANIUS_VALIDATION_SCOPES", false);
-        if use_scopes {
-            self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-        }
-        crate::gpu::passes_core::submit_with_progress(
+        crate::gpu::passes_core::submit_with_optional_validation(
+            &self.device,
             &self.queue,
             "parser.resident-ll1",
             encoder.finish(),
+            use_scopes,
+            "resident parser batch",
         );
-        if use_scopes {
-            if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
-                eprintln!(
-                    "[wgpu submit] validation while submitting resident parser batch: {err:#?}"
-                );
-            }
-        }
 
         let slice = status_readback.slice(..);
         crate::gpu::passes_core::map_readback_blocking(
@@ -488,7 +525,14 @@ impl GpuParser {
             tree_capacity_override,
         );
 
-        self.record_tokens_to_kinds(encoder, token_capacity, token_buf, token_count_buf, bufs)?;
+        self.record_tokens_to_kinds_timed(
+            encoder,
+            token_capacity,
+            token_buf,
+            token_count_buf,
+            bufs,
+            timer_ref,
+        )?;
         if let Some(token_file_id_buf) = token_file_id_buf {
             let copy_bytes = (token_capacity as u64).saturating_mul(4);
             if copy_bytes > 0 {
@@ -592,6 +636,14 @@ impl GpuParser {
         Ok(emit_capacity.max(1))
     }
 
+    pub fn projected_resident_tree_capacity(
+        &self,
+        token_capacity: u32,
+        tables: &PrecomputedParseTables,
+    ) -> u32 {
+        resident_projected_tree_capacity_for_tables(token_capacity.max(1), tables)
+    }
+
     pub fn record_hir_semantic_count_readback(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -650,7 +702,7 @@ impl GpuParser {
             .resident_buffers
             .lock()
             .expect("parser.resident_buffers poisoned");
-        let bufs = self.resident_buffers_for(&mut resident_guard, token_capacity, tables);
+        let bufs = self.resident_debug_buffers_for(&mut resident_guard, token_capacity, tables);
 
         let mut encoder = self
             .device
@@ -683,21 +735,14 @@ impl GpuParser {
         };
 
         let use_scopes = bool_from_env("LANIUS_VALIDATION_SCOPES", false);
-        if use_scopes {
-            self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-        }
-        crate::gpu::passes_core::submit_with_progress(
+        crate::gpu::passes_core::submit_with_optional_validation(
+            &self.device,
             &self.queue,
             "parser.recorded-ll1-hir",
             encoder.finish(),
+            use_scopes,
+            "recorded LL(1) HIR batch",
         );
-        if use_scopes {
-            if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
-                eprintln!(
-                    "[wgpu submit] validation while submitting recorded LL(1) HIR batch: {err:#?}"
-                );
-            }
-        }
 
         self.finish_recorded_resident_ll1_hir_check(&recorded_parser)?;
         Ok(consume_after_submit(bufs, recorded_more))
@@ -793,7 +838,7 @@ impl GpuParser {
             .resident_buffers
             .lock()
             .expect("parser.resident_buffers poisoned");
-        let bufs = self.resident_buffers_for(&mut resident_guard, token_capacity, tables);
+        let bufs = self.resident_debug_buffers_for(&mut resident_guard, token_capacity, tables);
 
         let mut encoder = self
             .device
@@ -821,6 +866,26 @@ impl GpuParser {
         token_count_buf: &wgpu::Buffer,
         bufs: &ParserBuffers,
     ) -> Result<()> {
+        let mut timer_ref: Option<&mut GpuTimer> = None;
+        self.record_tokens_to_kinds_timed(
+            encoder,
+            token_capacity,
+            token_buf,
+            token_count_buf,
+            bufs,
+            &mut timer_ref,
+        )
+    }
+
+    fn record_tokens_to_kinds_timed(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        token_capacity: u32,
+        token_buf: &wgpu::Buffer,
+        token_count_buf: &wgpu::Buffer,
+        bufs: &ParserBuffers,
+        timer_ref: &mut Option<&mut GpuTimer>,
+    ) -> Result<()> {
         let pass = &self.tokens_to_kinds;
         let mut bind_guard = self
             .resident_token_kind_bind_groups
@@ -835,29 +900,34 @@ impl GpuParser {
         let bind_groups = bind_guard
             .as_ref()
             .expect("resident token-kind parser bind groups allocated");
-        self.record_token_delimiters(encoder, token_buf, token_count_buf, bufs)?;
+        self.record_token_delimiters_timed(encoder, token_buf, token_count_buf, bufs, timer_ref)?;
+        encoder.clear_buffer(&bufs.token_feature_flags.buffer, 0, Some(4));
         write_uniform(
             &self.queue,
             &bind_groups.tokens_to_kinds_params,
             &TokensToKindsParams { token_capacity },
         );
 
-        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("parser.tokens_to_kinds.pass"),
-            timestamp_writes: None,
-        });
-        compute.set_pipeline(&pass.pipeline);
-        compute.set_bind_group(0, Some(&bind_groups.tokens_to_kinds), &[]);
-        compute.dispatch_workgroups((token_capacity + 2).div_ceil(256).max(1), 1, 1);
+        {
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("parser.tokens_to_kinds.pass"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(&pass.pipeline);
+            compute.set_bind_group(0, Some(&bind_groups.tokens_to_kinds), &[]);
+            compute.dispatch_workgroups((token_capacity + 2).div_ceil(256).max(1), 1, 1);
+        }
+        stamp_timer(timer_ref, encoder, "parser.tokens_to_kinds.done");
         Ok(())
     }
 
-    fn record_token_delimiters(
+    fn record_token_delimiters_timed(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         token_buf: &wgpu::Buffer,
         token_count_buf: &wgpu::Buffer,
         bufs: &ParserBuffers,
+        timer_ref: &mut Option<&mut GpuTimer>,
     ) -> Result<()> {
         let local_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
             (
@@ -874,12 +944,24 @@ impl GpuParser {
                 bufs.token_depth_brace_inblock.as_entire_binding(),
             ),
             (
+                "depth_bracket_inblock".into(),
+                bufs.token_depth_bracket_inblock.as_entire_binding(),
+            ),
+            (
                 "block_sum_brace".into(),
                 bufs.token_block_sum_brace.as_entire_binding(),
             ),
             (
+                "block_sum_bracket".into(),
+                bufs.token_block_sum_bracket.as_entire_binding(),
+            ),
+            (
                 "top_brace_owner_block".into(),
                 bufs.token_top_brace_owner_block.as_entire_binding(),
+            ),
+            (
+                "statement_event_block".into(),
+                bufs.token_statement_event_block.as_entire_binding(),
             ),
         ]);
         let local_bind_group = bind_group::create_bind_group_from_reflection(
@@ -897,18 +979,34 @@ impl GpuParser {
             "parser.tokens.delimiters.local",
             bufs.token_delimiter_n_blocks.saturating_mul(256),
         )?;
+        stamp_timer(timer_ref, encoder, "parser.tokens.delimiters.local.done");
 
         self.record_token_delimiter_scan_steps(
             encoder,
             bufs,
             "parser.tokens.delimiters.scan.depth",
         )?;
+        stamp_timer(
+            timer_ref,
+            encoder,
+            "parser.tokens.delimiters.depth_scan.done",
+        );
         self.record_token_delimiter_owner_local(encoder, token_buf, token_count_buf, bufs)?;
+        stamp_timer(
+            timer_ref,
+            encoder,
+            "parser.tokens.delimiters.owner_local.done",
+        );
         self.record_token_delimiter_scan_steps(
             encoder,
             bufs,
             "parser.tokens.delimiters.scan.owner",
         )?;
+        stamp_timer(
+            timer_ref,
+            encoder,
+            "parser.tokens.delimiters.owner_scan.done",
+        );
 
         let context_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
             (
@@ -925,16 +1023,32 @@ impl GpuParser {
                 bufs.token_depth_brace_inblock.as_entire_binding(),
             ),
             (
+                "depth_bracket_inblock".into(),
+                bufs.token_depth_bracket_inblock.as_entire_binding(),
+            ),
+            (
                 "block_prefix_brace".into(),
                 bufs.token_block_prefix_brace.as_entire_binding(),
+            ),
+            (
+                "block_prefix_bracket".into(),
+                bufs.token_block_prefix_bracket.as_entire_binding(),
             ),
             (
                 "top_brace_owner_block_prefix".into(),
                 bufs.token_top_brace_owner_block_prefix.as_entire_binding(),
             ),
             (
+                "statement_event_block_prefix".into(),
+                bufs.token_statement_event_block_prefix.as_entire_binding(),
+            ),
+            (
                 "brace_semantic_kind".into(),
                 bufs.token_brace_semantic_kind.as_entire_binding(),
+            ),
+            (
+                "statement_context_kind".into(),
+                bufs.token_statement_context_kind.as_entire_binding(),
             ),
         ]);
         let context_bind_group = bind_group::create_bind_group_from_reflection(
@@ -952,7 +1066,262 @@ impl GpuParser {
             "parser.tokens.brace_context",
             bufs.token_delimiter_n_blocks.saturating_mul(256),
         )?;
+        stamp_timer(timer_ref, encoder, "parser.tokens.brace_context.done");
 
+        self.record_token_bracket_matching(encoder, token_buf, token_count_buf, bufs)?;
+        stamp_timer(timer_ref, encoder, "parser.tokens.bracket_match.done");
+
+        self.record_token_brace_matching(encoder, token_buf, token_count_buf, bufs)?;
+        stamp_timer(timer_ref, encoder, "parser.tokens.brace_match.done");
+
+        Ok(())
+    }
+
+    fn record_token_bracket_matching(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        token_buf: &wgpu::Buffer,
+        token_count_buf: &wgpu::Buffer,
+        bufs: &ParserBuffers,
+    ) -> Result<()> {
+        let n_tokens = bufs.token_input_capacity.max(1);
+
+        let depth_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
+            (
+                "gParams".into(),
+                bufs.token_brace_match_params.as_entire_binding(),
+            ),
+            ("token_words".into(), token_buf.as_entire_binding()),
+            (
+                "lexer_token_count".into(),
+                token_count_buf.as_entire_binding(),
+            ),
+            (
+                "depth_bracket_inblock".into(),
+                bufs.token_depth_bracket_inblock.as_entire_binding(),
+            ),
+            (
+                "block_prefix_bracket".into(),
+                bufs.token_block_prefix_bracket.as_entire_binding(),
+            ),
+            (
+                "bracket_semantic_kind".into(),
+                bufs.token_bracket_semantic_kind.as_entire_binding(),
+            ),
+            (
+                "brace_match_depth".into(),
+                bufs.token_brace_match_depth.as_entire_binding(),
+            ),
+            (
+                "brace_match_block_min".into(),
+                bufs.token_brace_match_block_min.as_entire_binding(),
+            ),
+        ]);
+        let depth_bind_group = bind_group::create_bind_group_from_reflection(
+            &self.device,
+            Some("parser_tokens_bracket_match_01_depth_blocks"),
+            &self.tokens_bracket_match_01_depth_blocks.bind_group_layouts[0],
+            &self.tokens_bracket_match_01_depth_blocks.reflection,
+            0,
+            &depth_resources,
+        )?;
+        record_parser_compute(
+            encoder,
+            &self.tokens_bracket_match_01_depth_blocks,
+            &depth_bind_group,
+            "parser.tokens.bracket_match.depth_blocks",
+            bufs.token_delimiter_n_blocks.saturating_mul(256),
+        )?;
+
+        self.record_token_brace_match_min_tree_build(encoder, bufs)?;
+
+        let pair_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
+            (
+                "gParams".into(),
+                bufs.token_brace_match_params.as_entire_binding(),
+            ),
+            ("token_words".into(), token_buf.as_entire_binding()),
+            (
+                "lexer_token_count".into(),
+                token_count_buf.as_entire_binding(),
+            ),
+            (
+                "depth_bracket_inblock".into(),
+                bufs.token_depth_bracket_inblock.as_entire_binding(),
+            ),
+            (
+                "block_prefix_bracket".into(),
+                bufs.token_block_prefix_bracket.as_entire_binding(),
+            ),
+            (
+                "brace_match_depth".into(),
+                bufs.token_brace_match_depth.as_entire_binding(),
+            ),
+            (
+                "brace_match_block_min".into(),
+                bufs.token_brace_match_block_min.as_entire_binding(),
+            ),
+            (
+                "brace_match_min_tree".into(),
+                bufs.token_brace_match_min_tree.as_entire_binding(),
+            ),
+            (
+                "bracket_semantic_kind".into(),
+                bufs.token_bracket_semantic_kind.as_entire_binding(),
+            ),
+        ]);
+        let pair_bind_group = bind_group::create_bind_group_from_reflection(
+            &self.device,
+            Some("parser_tokens_bracket_match_03_pair_pse"),
+            &self.tokens_bracket_match_03_pair_pse.bind_group_layouts[0],
+            &self.tokens_bracket_match_03_pair_pse.reflection,
+            0,
+            &pair_resources,
+        )?;
+        record_parser_compute(
+            encoder,
+            &self.tokens_bracket_match_03_pair_pse,
+            &pair_bind_group,
+            "parser.tokens.bracket_match.pair_pse",
+            n_tokens,
+        )?;
+
+        Ok(())
+    }
+
+    fn record_token_brace_matching(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        token_buf: &wgpu::Buffer,
+        token_count_buf: &wgpu::Buffer,
+        bufs: &ParserBuffers,
+    ) -> Result<()> {
+        let n_tokens = bufs.token_input_capacity.max(1);
+
+        let depth_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
+            (
+                "gParams".into(),
+                bufs.token_brace_match_params.as_entire_binding(),
+            ),
+            ("token_words".into(), token_buf.as_entire_binding()),
+            (
+                "lexer_token_count".into(),
+                token_count_buf.as_entire_binding(),
+            ),
+            (
+                "depth_brace_inblock".into(),
+                bufs.token_depth_brace_inblock.as_entire_binding(),
+            ),
+            (
+                "block_prefix_brace".into(),
+                bufs.token_block_prefix_brace.as_entire_binding(),
+            ),
+            (
+                "brace_match_depth".into(),
+                bufs.token_brace_match_depth.as_entire_binding(),
+            ),
+            (
+                "brace_match_block_min".into(),
+                bufs.token_brace_match_block_min.as_entire_binding(),
+            ),
+        ]);
+        let depth_bind_group = bind_group::create_bind_group_from_reflection(
+            &self.device,
+            Some("parser_tokens_brace_match_01_depth_blocks"),
+            &self.tokens_brace_match_01_depth_blocks.bind_group_layouts[0],
+            &self.tokens_brace_match_01_depth_blocks.reflection,
+            0,
+            &depth_resources,
+        )?;
+        record_parser_compute(
+            encoder,
+            &self.tokens_brace_match_01_depth_blocks,
+            &depth_bind_group,
+            "parser.tokens.brace_match.depth_blocks",
+            bufs.token_delimiter_n_blocks.saturating_mul(256),
+        )?;
+
+        self.record_token_brace_match_min_tree_build(encoder, bufs)?;
+
+        let pair_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
+            (
+                "gParams".into(),
+                bufs.token_brace_match_params.as_entire_binding(),
+            ),
+            ("token_words".into(), token_buf.as_entire_binding()),
+            (
+                "lexer_token_count".into(),
+                token_count_buf.as_entire_binding(),
+            ),
+            (
+                "brace_match_depth".into(),
+                bufs.token_brace_match_depth.as_entire_binding(),
+            ),
+            (
+                "brace_match_block_min".into(),
+                bufs.token_brace_match_block_min.as_entire_binding(),
+            ),
+            (
+                "brace_match_min_tree".into(),
+                bufs.token_brace_match_min_tree.as_entire_binding(),
+            ),
+            (
+                "brace_semantic_kind".into(),
+                bufs.token_brace_semantic_kind.as_entire_binding(),
+            ),
+        ]);
+        let pair_bind_group = bind_group::create_bind_group_from_reflection(
+            &self.device,
+            Some("parser_tokens_brace_match_03_pair_pse"),
+            &self.tokens_brace_match_03_pair_pse.bind_group_layouts[0],
+            &self.tokens_brace_match_03_pair_pse.reflection,
+            0,
+            &pair_resources,
+        )?;
+        record_parser_compute(
+            encoder,
+            &self.tokens_brace_match_03_pair_pse,
+            &pair_bind_group,
+            "parser.tokens.brace_match.pair_pse",
+            n_tokens,
+        )?;
+
+        Ok(())
+    }
+
+    fn record_token_brace_match_min_tree_build(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        bufs: &ParserBuffers,
+    ) -> Result<()> {
+        for step in &bufs.token_brace_match_min_tree_steps {
+            let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
+                ("gMinTree".into(), step.params.as_entire_binding()),
+                (
+                    "brace_match_block_min".into(),
+                    bufs.token_brace_match_block_min.as_entire_binding(),
+                ),
+                (
+                    "brace_match_min_tree".into(),
+                    bufs.token_brace_match_min_tree.as_entire_binding(),
+                ),
+            ]);
+            let bind_group = bind_group::create_bind_group_from_reflection(
+                &self.device,
+                Some("parser_tokens_brace_match_02_build_min_tree"),
+                &self.tokens_brace_match_02_build_min_tree.bind_group_layouts[0],
+                &self.tokens_brace_match_02_build_min_tree.reflection,
+                0,
+                &resources,
+            )?;
+            record_parser_compute(
+                encoder,
+                &self.tokens_brace_match_02_build_min_tree,
+                &bind_group,
+                "parser.tokens.brace_match.build_min_tree",
+                step.work_items,
+            )?;
+        }
         Ok(())
     }
 
@@ -973,6 +1342,16 @@ impl GpuParser {
             } else {
                 &bufs.token_prefix_brace_b
             };
+            let prefix_bracket_in = if step.read_from_a {
+                &bufs.token_prefix_bracket_a
+            } else {
+                &bufs.token_prefix_bracket_b
+            };
+            let prefix_bracket_out = if step.write_to_a {
+                &bufs.token_prefix_bracket_a
+            } else {
+                &bufs.token_prefix_bracket_b
+            };
             let top_owner_prefix_in = if step.read_from_a {
                 &bufs.token_top_brace_owner_prefix_a
             } else {
@@ -983,6 +1362,16 @@ impl GpuParser {
             } else {
                 &bufs.token_top_brace_owner_prefix_b
             };
+            let statement_event_prefix_in = if step.read_from_a {
+                &bufs.token_statement_event_prefix_a
+            } else {
+                &bufs.token_statement_event_prefix_b
+            };
+            let statement_event_prefix_out = if step.write_to_a {
+                &bufs.token_statement_event_prefix_a
+            } else {
+                &bufs.token_statement_event_prefix_b
+            };
             let scan_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
                 ("gParams".into(), step.params.as_entire_binding()),
                 (
@@ -990,8 +1379,16 @@ impl GpuParser {
                     bufs.token_block_sum_brace.as_entire_binding(),
                 ),
                 (
+                    "block_sum_bracket".into(),
+                    bufs.token_block_sum_bracket.as_entire_binding(),
+                ),
+                (
                     "prefix_brace_in".into(),
                     prefix_brace_in.as_entire_binding(),
+                ),
+                (
+                    "prefix_bracket_in".into(),
+                    prefix_bracket_in.as_entire_binding(),
                 ),
                 (
                     "top_brace_owner_block".into(),
@@ -1002,12 +1399,28 @@ impl GpuParser {
                     top_owner_prefix_in.as_entire_binding(),
                 ),
                 (
+                    "statement_event_block".into(),
+                    bufs.token_statement_event_block.as_entire_binding(),
+                ),
+                (
+                    "statement_event_prefix_in".into(),
+                    statement_event_prefix_in.as_entire_binding(),
+                ),
+                (
                     "prefix_brace_out".into(),
                     prefix_brace_out.as_entire_binding(),
                 ),
                 (
+                    "prefix_bracket_out".into(),
+                    prefix_bracket_out.as_entire_binding(),
+                ),
+                (
                     "block_prefix_brace".into(),
                     bufs.token_block_prefix_brace.as_entire_binding(),
+                ),
+                (
+                    "block_prefix_bracket".into(),
+                    bufs.token_block_prefix_bracket.as_entire_binding(),
                 ),
                 (
                     "top_brace_owner_prefix_out".into(),
@@ -1016,6 +1429,14 @@ impl GpuParser {
                 (
                     "top_brace_owner_block_prefix".into(),
                     bufs.token_top_brace_owner_block_prefix.as_entire_binding(),
+                ),
+                (
+                    "statement_event_prefix_out".into(),
+                    statement_event_prefix_out.as_entire_binding(),
+                ),
+                (
+                    "statement_event_block_prefix".into(),
+                    bufs.token_statement_event_block_prefix.as_entire_binding(),
                 ),
             ]);
             let scan_bind_group = bind_group::create_bind_group_from_reflection(
@@ -1059,8 +1480,16 @@ impl GpuParser {
                 bufs.token_depth_brace_inblock.as_entire_binding(),
             ),
             (
+                "depth_bracket_inblock".into(),
+                bufs.token_depth_bracket_inblock.as_entire_binding(),
+            ),
+            (
                 "block_prefix_brace".into(),
                 bufs.token_block_prefix_brace.as_entire_binding(),
+            ),
+            (
+                "block_prefix_bracket".into(),
+                bufs.token_block_prefix_bracket.as_entire_binding(),
             ),
             (
                 "top_brace_owner_block".into(),
@@ -1069,6 +1498,10 @@ impl GpuParser {
             (
                 "brace_semantic_kind".into(),
                 bufs.token_brace_semantic_kind.as_entire_binding(),
+            ),
+            (
+                "statement_event_block".into(),
+                bufs.token_statement_event_block.as_entire_binding(),
             ),
         ]);
         let bind_group = bind_group::create_bind_group_from_reflection(
@@ -1171,6 +1604,60 @@ impl GpuParser {
         Ok(words)
     }
 
+    #[doc(hidden)]
+    pub fn debug_token_feature_flags_for_resident_tokens(
+        &self,
+        token_capacity: u32,
+        token_buf: &wgpu::Buffer,
+        token_count_buf: &wgpu::Buffer,
+        tables: &PrecomputedParseTables,
+    ) -> Result<u32> {
+        let mut resident_guard = self
+            .resident_buffers
+            .lock()
+            .expect("parser.resident_buffers poisoned");
+        let bufs = self.resident_buffers_for(&mut resident_guard, token_capacity, tables);
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("parser.token_feature_flags.debug.encoder"),
+            });
+        self.record_tokens_to_kinds(
+            &mut encoder,
+            token_capacity,
+            token_buf,
+            token_count_buf,
+            bufs,
+        )?;
+
+        let flags_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rb.parser.token_feature_flags"),
+            size: 4,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        encoder.copy_buffer_to_buffer(&bufs.token_feature_flags, 0, &flags_readback, 0, 4);
+
+        crate::gpu::passes_core::submit_with_progress(
+            &self.queue,
+            "parser.token-feature-flags.debug",
+            encoder.finish(),
+        );
+
+        let flags_slice = flags_readback.slice(..);
+        crate::gpu::passes_core::map_readback_blocking(
+            &self.device,
+            &flags_slice,
+            "parser.token_feature_flags",
+        )?;
+        let flags_mapped = flags_slice.get_mapped_range();
+        let words = read_u32_words(&flags_mapped, 1)?;
+        drop(flags_mapped);
+        flags_readback.unmap();
+        Ok(words[0])
+    }
+
     fn ensure_resident_token_kind_bind_groups(
         &self,
         slot: &mut Option<ResidentTokenKindBindGroups>,
@@ -1182,7 +1669,15 @@ impl GpuParser {
             token_buf,
             token_count_buf,
             &bufs.semantic_token_kinds,
+            &bufs.token_depth_brace_inblock,
+            &bufs.token_block_prefix_brace,
             &bufs.token_brace_semantic_kind,
+            &bufs.token_bracket_semantic_kind,
+            &bufs.token_statement_context_kind,
+            &bufs.token_brace_match_depth,
+            &bufs.token_brace_match_block_min,
+            &bufs.token_brace_match_min_tree,
+            &bufs.token_feature_flags,
             &bufs.token_count,
         ]);
         if slot
@@ -1221,12 +1716,44 @@ impl GpuParser {
                     token_count_buf.as_entire_binding(),
                 ),
                 (
+                    "depth_brace_inblock".into(),
+                    bufs.token_depth_brace_inblock.as_entire_binding(),
+                ),
+                (
+                    "block_prefix_brace".into(),
+                    bufs.token_block_prefix_brace.as_entire_binding(),
+                ),
+                (
+                    "brace_match_depth".into(),
+                    bufs.token_brace_match_depth.as_entire_binding(),
+                ),
+                (
+                    "brace_match_block_min".into(),
+                    bufs.token_brace_match_block_min.as_entire_binding(),
+                ),
+                (
+                    "brace_match_min_tree".into(),
+                    bufs.token_brace_match_min_tree.as_entire_binding(),
+                ),
+                (
                     "semantic_token_kinds".into(),
                     bufs.semantic_token_kinds.as_entire_binding(),
                 ),
                 (
                     "brace_semantic_kind".into(),
                     bufs.token_brace_semantic_kind.as_entire_binding(),
+                ),
+                (
+                    "bracket_semantic_kind".into(),
+                    bufs.token_bracket_semantic_kind.as_entire_binding(),
+                ),
+                (
+                    "statement_context_kind".into(),
+                    bufs.token_statement_context_kind.as_entire_binding(),
+                ),
+                (
+                    "token_feature_flags".into(),
+                    bufs.token_feature_flags.as_entire_binding(),
                 ),
                 (
                     "parser_token_count".into(),
@@ -1275,6 +1802,48 @@ impl GpuParser {
             &self.tree_active_dispatch_args,
             &bind_group,
             "parser.tree_active_dispatch_args",
+            1,
+        )
+    }
+
+    fn record_tree_feature_dispatch_args(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        bufs: &ParserBuffers,
+    ) -> Result<()> {
+        let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
+            ("gTree".into(), bufs.tree_prefix_params.as_entire_binding()),
+            ("ll1_status".into(), bufs.ll1_status.as_entire_binding()),
+            (
+                "token_feature_flags".into(),
+                bufs.token_feature_flags.as_entire_binding(),
+            ),
+            (
+                "tree_enum_dispatch_args".into(),
+                bufs.tree_enum_dispatch_args.as_entire_binding(),
+            ),
+            (
+                "tree_match_dispatch_args".into(),
+                bufs.tree_match_dispatch_args.as_entire_binding(),
+            ),
+            (
+                "tree_struct_dispatch_args".into(),
+                bufs.tree_struct_dispatch_args.as_entire_binding(),
+            ),
+        ]);
+        let bind_group = bind_group::create_bind_group_from_reflection(
+            &self.device,
+            Some("parser_tree_feature_dispatch_args"),
+            &self.tree_feature_dispatch_args.bind_group_layouts[0],
+            &self.tree_feature_dispatch_args.reflection,
+            0,
+            &resources,
+        )?;
+        record_parser_compute(
+            encoder,
+            &self.tree_feature_dispatch_args,
+            &bind_group,
+            "parser.tree_feature_dispatch_args",
             1,
         )
     }
@@ -1340,18 +1909,15 @@ impl GpuParser {
         self.passes
             .llp_pairs
             .record_pass_indirect(&mut ctx, &bufs.active_pair_thread_dispatch_args)?;
-        self.passes.pack_offsets.record_scan_indirect(
-            ctx.device,
-            ctx.encoder,
-            ctx.buffers,
-            &bufs.active_pair_thread_dispatch_args,
-        )?;
-        self.passes.pack_offsets_status.record_pass_indirect(
-            ctx.device,
-            ctx.encoder,
-            ctx.buffers,
-            &bufs.active_pair_thread_dispatch_args,
-        )?;
+        self.passes
+            .pack_totals_blocks
+            .record_pass(ctx.device, ctx.encoder, ctx.buffers)?;
+        self.passes
+            .pack_totals_reduce
+            .record_reduce(ctx.device, ctx.encoder, ctx.buffers)?;
+        self.passes
+            .pack_totals_status
+            .record_pass(ctx.device, ctx.encoder, ctx.buffers)?;
         Ok(())
     }
 
@@ -1434,6 +2000,8 @@ impl GpuParser {
         if include_tree {
             self.record_tree_active_dispatch_args(ctx.encoder, bufs)?;
             stamp_timer(timer_ref, ctx.encoder, "parser.tree_active_dispatch_args");
+            self.record_tree_feature_dispatch_args(ctx.encoder, bufs)?;
+            stamp_timer(timer_ref, ctx.encoder, "parser.tree_feature_dispatch_args");
             self.passes.tree_prefix_01.record_pass(
                 &mut ctx,
                 crate::gpu::passes_core::InputElements::Elements1D(
@@ -1456,26 +2024,69 @@ impl GpuParser {
                 .tree_prefix_04
                 .record_build(ctx.device, ctx.encoder, ctx.buffers)?;
             stamp_timer(timer_ref, ctx.encoder, "parser.tree_prefix_04");
-            self.passes
-                .tree_parent
-                .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-            stamp_timer(timer_ref, ctx.encoder, "parser.tree_parent");
-            self.passes
-                .tree_spans
-                .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-            stamp_timer(timer_ref, ctx.encoder, "parser.tree_spans");
-            self.passes
-                .tree_prev_sibling_clear
-                .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-            stamp_timer(timer_ref, ctx.encoder, "parser.tree_prev_sibling_clear");
-            self.passes
-                .tree_prev_sibling_scatter
-                .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-            stamp_timer(timer_ref, ctx.encoder, "parser.tree_prev_sibling_scatter");
-            self.passes
-                .hir_nodes
-                .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-            stamp_timer(timer_ref, ctx.encoder, "parser.hir_nodes");
+            if parser_compute_pass_batching_enabled(timer_ref) {
+                let bg_cache = ctx
+                    .bg_cache
+                    .as_deref_mut()
+                    .expect("parser batching requires bind-group cache");
+                let mut batch = ComputePassBatch::begin(ctx.encoder, "parser.tree-records.batch");
+                batch.record_pass_indirect_cached(
+                    ctx.device,
+                    ctx.buffers,
+                    bg_cache,
+                    &self.passes.tree_parent,
+                    &bufs.tree_active_dispatch_args,
+                )?;
+                batch.record_pass_indirect_cached(
+                    ctx.device,
+                    ctx.buffers,
+                    bg_cache,
+                    &self.passes.tree_spans,
+                    &bufs.tree_active_dispatch_args,
+                )?;
+                batch.record_pass_indirect_cached(
+                    ctx.device,
+                    ctx.buffers,
+                    bg_cache,
+                    &self.passes.tree_prev_sibling_clear,
+                    &bufs.tree_active_dispatch_args,
+                )?;
+                batch.record_pass_indirect_cached(
+                    ctx.device,
+                    ctx.buffers,
+                    bg_cache,
+                    &self.passes.tree_prev_sibling_scatter,
+                    &bufs.tree_active_dispatch_args,
+                )?;
+                batch.record_pass_indirect_cached(
+                    ctx.device,
+                    ctx.buffers,
+                    bg_cache,
+                    &self.passes.hir_nodes,
+                    &bufs.tree_active_dispatch_args,
+                )?;
+            } else {
+                self.passes
+                    .tree_parent
+                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.tree_parent");
+                self.passes
+                    .tree_spans
+                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.tree_spans");
+                self.passes
+                    .tree_prev_sibling_clear
+                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.tree_prev_sibling_clear");
+                self.passes
+                    .tree_prev_sibling_scatter
+                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.tree_prev_sibling_scatter");
+                self.passes
+                    .hir_nodes
+                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_nodes");
+            }
             self.passes.hir_semantic_prefix_local.record_pass(
                 &mut ctx,
                 crate::gpu::passes_core::InputElements::Elements1D(
@@ -1500,19 +2111,180 @@ impl GpuParser {
                 ctx.encoder,
                 "parser.hir_semantic_compact_scatter",
             );
-            self.passes
-                .hir_semantic_dispatch_args
-                .record_pass(&mut ctx, crate::gpu::passes_core::InputElements::Elements1D(1))?;
+            self.passes.hir_semantic_dispatch_args.record_pass(
+                &mut ctx,
+                crate::gpu::passes_core::InputElements::Elements1D(1),
+            )?;
             stamp_timer(timer_ref, ctx.encoder, "parser.hir_semantic_dispatch_args");
+            self.passes
+                .hir_semantic_subtree_end
+                .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
+            stamp_timer(timer_ref, ctx.encoder, "parser.hir_semantic_subtree_end");
+            self.passes.hir_semantic_parent_init.record_pass(
+                &mut ctx,
+                crate::gpu::passes_core::InputElements::Elements1D(bufs.tree_capacity),
+            )?;
+            stamp_timer(timer_ref, ctx.encoder, "parser.hir_semantic_parent_init");
+            self.passes.hir_semantic_parent_step.record_steps(
+                ctx.device,
+                ctx.encoder,
+                ctx.buffers,
+            )?;
+            stamp_timer(timer_ref, ctx.encoder, "parser.hir_semantic_parent_step");
+            if parser_compute_pass_batching_enabled(timer_ref) {
+                let bg_cache = ctx
+                    .bg_cache
+                    .as_deref_mut()
+                    .expect("parser batching requires bind-group cache");
+                let mut batch = ComputePassBatch::begin(ctx.encoder, "parser.semantic-nav.batch");
+                batch.record_pass_indirect_cached(
+                    ctx.device,
+                    ctx.buffers,
+                    bg_cache,
+                    &self.passes.hir_semantic_parent_scatter,
+                    &bufs.hir_semantic_dispatch_args,
+                )?;
+                batch.record_pass_indirect_cached(
+                    ctx.device,
+                    ctx.buffers,
+                    bg_cache,
+                    &self.passes.hir_semantic_nav,
+                    &bufs.hir_semantic_dispatch_args,
+                )?;
+                batch.record_pass_indirect_cached(
+                    ctx.device,
+                    ctx.buffers,
+                    bg_cache,
+                    &self.passes.hir_semantic_depth_init,
+                    &bufs.hir_semantic_dispatch_args,
+                )?;
+            } else {
+                self.passes
+                    .hir_semantic_parent_scatter
+                    .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_semantic_parent_scatter");
+                self.passes
+                    .hir_semantic_nav
+                    .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_semantic_nav");
+                self.passes
+                    .hir_semantic_depth_init
+                    .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_semantic_depth_init");
+            }
+            self.passes.hir_semantic_depth_step.record_steps_indirect(
+                ctx.device,
+                ctx.encoder,
+                ctx.buffers,
+                &bufs.hir_semantic_dispatch_args,
+            )?;
+            stamp_timer(timer_ref, ctx.encoder, "parser.hir_semantic_depth_step");
+            if parser_compute_pass_batching_enabled(timer_ref) {
+                let bg_cache = ctx
+                    .bg_cache
+                    .as_deref_mut()
+                    .expect("parser batching requires bind-group cache");
+                let mut batch =
+                    ComputePassBatch::begin(ctx.encoder, "parser.semantic-child-index.batch");
+                batch.record_pass_indirect_cached(
+                    ctx.device,
+                    ctx.buffers,
+                    bg_cache,
+                    &self.passes.hir_semantic_child_index_clear,
+                    &bufs.hir_semantic_dispatch_args,
+                )?;
+                batch.record_pass_indirect_cached(
+                    ctx.device,
+                    ctx.buffers,
+                    bg_cache,
+                    &self.passes.hir_semantic_child_index_links,
+                    &bufs.hir_semantic_dispatch_args,
+                )?;
+            } else {
+                self.passes
+                    .hir_semantic_child_index_clear
+                    .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
+                stamp_timer(
+                    timer_ref,
+                    ctx.encoder,
+                    "parser.hir_semantic_child_index_clear",
+                );
+                self.passes
+                    .hir_semantic_child_index_links
+                    .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
+                stamp_timer(
+                    timer_ref,
+                    ctx.encoder,
+                    "parser.hir_semantic_child_index_links",
+                );
+            }
+            self.passes
+                .hir_semantic_child_index_rank_step
+                .record_steps_indirect(
+                    ctx.device,
+                    ctx.encoder,
+                    ctx.buffers,
+                    &bufs.hir_semantic_dispatch_args,
+                )?;
+            stamp_timer(
+                timer_ref,
+                ctx.encoder,
+                "parser.hir_semantic_child_index_rank_step",
+            );
             if include_hir_spans {
-                self.passes
-                    .hir_type_fields
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_type_fields");
-                self.passes
-                    .hir_type_path_leaf_links
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_type_path_leaf_links");
+                if parser_compute_pass_batching_enabled(timer_ref) {
+                    let bg_cache = ctx
+                        .bg_cache
+                        .as_deref_mut()
+                        .expect("parser batching requires bind-group cache");
+                    let mut batch =
+                        ComputePassBatch::begin(ctx.encoder, "parser.hir-type-records.batch");
+                    batch.record_pass_indirect_cached(
+                        ctx.device,
+                        ctx.buffers,
+                        bg_cache,
+                        &self.passes.hir_record_clear_base,
+                        &bufs.tree_active_dispatch_args,
+                    )?;
+                    batch.record_pass_indirect_cached(
+                        ctx.device,
+                        ctx.buffers,
+                        bg_cache,
+                        &self.passes.hir_record_clear_calls,
+                        &bufs.tree_active_dispatch_args,
+                    )?;
+                    batch.record_pass_indirect_cached(
+                        ctx.device,
+                        ctx.buffers,
+                        bg_cache,
+                        &self.passes.hir_type_fields,
+                        &bufs.tree_active_dispatch_args,
+                    )?;
+                    batch.record_pass_indirect_cached(
+                        ctx.device,
+                        ctx.buffers,
+                        bg_cache,
+                        &self.passes.hir_type_path_leaf_links,
+                        &bufs.tree_active_dispatch_args,
+                    )?;
+                } else {
+                    self.passes
+                        .hir_record_clear_base
+                        .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                    stamp_timer(timer_ref, ctx.encoder, "parser.hir_record_clear_base");
+                    self.passes
+                        .hir_record_clear_calls
+                        .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                    stamp_timer(timer_ref, ctx.encoder, "parser.hir_record_clear_calls");
+                    self.passes
+                        .hir_type_fields
+                        .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                    stamp_timer(timer_ref, ctx.encoder, "parser.hir_type_fields");
+                    self.passes
+                        .hir_type_path_leaf_links
+                        .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                    stamp_timer(timer_ref, ctx.encoder, "parser.hir_type_path_leaf_links");
+                }
                 self.passes.hir_type_path_leaf_step.record_steps_indirect(
                     ctx.device,
                     ctx.encoder,
@@ -1525,44 +2297,156 @@ impl GpuParser {
                     0,
                     Some(u64::from(bufs.tree_capacity) * 4),
                 );
+                if parser_compute_pass_batching_enabled(timer_ref) {
+                    let bg_cache = ctx
+                        .bg_cache
+                        .as_deref_mut()
+                        .expect("parser batching requires bind-group cache");
+                    let mut batch =
+                        ComputePassBatch::begin(ctx.encoder, "parser.hir-type-links.batch");
+                    batch.record_pass_indirect_cached(
+                        ctx.device,
+                        ctx.buffers,
+                        bg_cache,
+                        &self.passes.hir_type_path_leaf_scatter,
+                        &bufs.tree_active_dispatch_args,
+                    )?;
+                    batch.record_pass_indirect_cached(
+                        ctx.device,
+                        ctx.buffers,
+                        bg_cache,
+                        &self.passes.hir_spans,
+                        &bufs.tree_active_dispatch_args,
+                    )?;
+                    batch.record_pass_indirect_cached(
+                        ctx.device,
+                        ctx.buffers,
+                        bg_cache,
+                        &self.passes.hir_type_arg_links,
+                        &bufs.tree_active_dispatch_args,
+                    )?;
+                } else {
+                    self.passes
+                        .hir_type_path_leaf_scatter
+                        .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                    stamp_timer(timer_ref, ctx.encoder, "parser.hir_type_path_leaf_scatter");
+                    self.passes
+                        .hir_spans
+                        .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                    stamp_timer(timer_ref, ctx.encoder, "parser.hir_spans");
+                    self.passes
+                        .hir_type_arg_links
+                        .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                    stamp_timer(timer_ref, ctx.encoder, "parser.hir_type_arg_links");
+                }
+                clear_type_arg_rank_b(ctx.encoder, bufs);
                 self.passes
-                    .hir_type_path_leaf_scatter
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_type_path_leaf_scatter");
+                    .hir_list_rank_prefix_local
+                    .record_for_owner_link(
+                        ctx.device,
+                        ctx.encoder,
+                        ctx.buffers,
+                        &bufs.hir_type_fields_params,
+                        &bufs.hir_type_arg_owner_a,
+                        &bufs.hir_type_arg_link_a,
+                    )?;
+                stamp_timer(
+                    timer_ref,
+                    ctx.encoder,
+                    "parser.hir_type_arg_rank_prefix_local",
+                );
                 self.passes
-                    .hir_spans
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_spans");
+                    .hir_semantic_prefix_blocks
+                    .record_list_rank_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+                stamp_timer(
+                    timer_ref,
+                    ctx.encoder,
+                    "parser.hir_type_arg_rank_prefix_blocks",
+                );
                 self.passes
-                    .hir_type_arg_links
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_type_arg_links");
+                    .hir_list_rank_compact_scatter
+                    .record_for_params(
+                        ctx.device,
+                        ctx.encoder,
+                        ctx.buffers,
+                        &bufs.hir_type_fields_params,
+                    )?;
+                stamp_timer(
+                    timer_ref,
+                    ctx.encoder,
+                    "parser.hir_type_arg_rank_compact_scatter",
+                );
                 self.passes.hir_type_arg_rank_step.record_steps_indirect(
                     ctx.device,
                     ctx.encoder,
                     ctx.buffers,
-                    &bufs.tree_active_dispatch_args,
+                    &bufs.hir_list_rank_dispatch_args,
                 )?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_type_arg_rank_step");
                 self.passes
                     .hir_type_arg_scatter
                     .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_type_arg_scatter");
+                if parser_compute_pass_batching_enabled(timer_ref) {
+                    let bg_cache = ctx
+                        .bg_cache
+                        .as_deref_mut()
+                        .expect("parser batching requires bind-group cache");
+                    let mut batch =
+                        ComputePassBatch::begin(ctx.encoder, "parser.hir-enum-links.batch");
+                    batch.record_pass_indirect_cached(
+                        ctx.device,
+                        ctx.buffers,
+                        bg_cache,
+                        &self.passes.hir_enum_match_fields,
+                        &bufs.tree_active_dispatch_args,
+                    )?;
+                    batch.record_pass_indirect_cached(
+                        ctx.device,
+                        ctx.buffers,
+                        bg_cache,
+                        &self.passes.hir_enum_variant_links,
+                        &bufs.tree_active_dispatch_args,
+                    )?;
+                } else {
+                    self.passes
+                        .hir_enum_match_fields
+                        .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                    stamp_timer(timer_ref, ctx.encoder, "parser.hir_enum_match_fields");
+                    self.passes
+                        .hir_enum_variant_links
+                        .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                    stamp_timer(timer_ref, ctx.encoder, "parser.hir_enum_variant_links");
+                }
+                self.passes.hir_enum_rank_prefix_local.record_pass(
+                    &mut ctx,
+                    crate::gpu::passes_core::InputElements::Elements1D(
+                        bufs.tree_n_node_blocks.saturating_mul(256),
+                    ),
+                )?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_enum_rank_prefix_local");
                 self.passes
-                    .hir_enum_match_fields
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_enum_match_fields");
-                self.passes
-                    .hir_enum_variant_links
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_enum_variant_links");
+                    .hir_semantic_prefix_blocks
+                    .record_enum_rank_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_enum_rank_prefix_blocks");
+                self.passes.hir_enum_rank_compact_scatter.record_pass(
+                    &mut ctx,
+                    crate::gpu::passes_core::InputElements::Elements1D(
+                        bufs.tree_n_node_blocks.saturating_mul(256),
+                    ),
+                )?;
+                stamp_timer(
+                    timer_ref,
+                    ctx.encoder,
+                    "parser.hir_enum_rank_compact_scatter",
+                );
                 self.passes
                     .hir_enum_variant_rank_step
                     .record_steps_indirect(
                         ctx.device,
                         ctx.encoder,
                         ctx.buffers,
-                        &bufs.tree_active_dispatch_args,
+                        &bufs.hir_enum_rank_dispatch_args,
                     )?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_enum_variant_rank_step");
                 self.passes
@@ -1574,32 +2458,135 @@ impl GpuParser {
                     .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_item_fields");
                 self.passes
+                    .hir_type_alias_owner_init
+                    .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_type_alias_owner_init");
+                self.passes
+                    .hir_type_alias_owner_step
+                    .record_steps_indirect(
+                        ctx.device,
+                        ctx.encoder,
+                        ctx.buffers,
+                        &bufs.hir_semantic_dispatch_args,
+                    )?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_type_alias_owner_step");
+                self.passes
+                    .hir_type_alias_target
+                    .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_type_alias_target");
+                self.passes
+                    .hir_fn_signature_owner_init
+                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_fn_signature_owner_init");
+                self.passes
+                    .hir_fn_signature_owner_step
+                    .record_steps_indirect(
+                        ctx.device,
+                        ctx.encoder,
+                        ctx.buffers,
+                        &bufs.tree_active_dispatch_args,
+                    )?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_fn_signature_owner_step");
+                self.passes
+                    .hir_fn_return_type
+                    .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_fn_return_type");
+                self.passes
                     .hir_param_links
                     .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_param_links");
+                self.passes
+                    .hir_list_rank_prefix_local
+                    .record_for_owner_link(
+                        ctx.device,
+                        ctx.encoder,
+                        ctx.buffers,
+                        &bufs.hir_param_fields_params,
+                        &bufs.hir_param_owner_a,
+                        &bufs.hir_param_link_a,
+                    )?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_param_rank_prefix_local");
+                self.passes
+                    .hir_semantic_prefix_blocks
+                    .record_list_rank_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+                stamp_timer(
+                    timer_ref,
+                    ctx.encoder,
+                    "parser.hir_param_rank_prefix_blocks",
+                );
+                self.passes
+                    .hir_list_rank_compact_scatter
+                    .record_for_params(
+                        ctx.device,
+                        ctx.encoder,
+                        ctx.buffers,
+                        &bufs.hir_param_fields_params,
+                    )?;
+                stamp_timer(
+                    timer_ref,
+                    ctx.encoder,
+                    "parser.hir_param_rank_compact_scatter",
+                );
                 self.passes.hir_param_rank_step.record_steps_indirect(
                     ctx.device,
                     ctx.encoder,
                     ctx.buffers,
-                    &bufs.tree_active_dispatch_args,
+                    &bufs.hir_list_rank_dispatch_args,
                 )?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_param_rank_step");
-                self.passes
-                    .hir_param_fields
-                    .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_param_fields");
-                self.passes
-                    .hir_expr_fields
-                    .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_expr_fields");
-                self.passes
-                    .hir_member_fields
-                    .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_member_fields");
-                self.passes
-                    .hir_stmt_fields
-                    .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_stmt_fields");
+                if parser_compute_pass_batching_enabled(timer_ref) {
+                    let bg_cache = ctx
+                        .bg_cache
+                        .as_deref_mut()
+                        .expect("parser batching requires bind-group cache");
+                    let mut batch =
+                        ComputePassBatch::begin(ctx.encoder, "parser.hir-core-fields.batch");
+                    batch.record_pass_indirect_cached(
+                        ctx.device,
+                        ctx.buffers,
+                        bg_cache,
+                        &self.passes.hir_param_fields,
+                        &bufs.hir_semantic_dispatch_args,
+                    )?;
+                    batch.record_pass_indirect_cached(
+                        ctx.device,
+                        ctx.buffers,
+                        bg_cache,
+                        &self.passes.hir_expr_fields,
+                        &bufs.hir_semantic_dispatch_args,
+                    )?;
+                    batch.record_pass_indirect_cached(
+                        ctx.device,
+                        ctx.buffers,
+                        bg_cache,
+                        &self.passes.hir_member_fields,
+                        &bufs.hir_semantic_dispatch_args,
+                    )?;
+                    batch.record_pass_indirect_cached(
+                        ctx.device,
+                        ctx.buffers,
+                        bg_cache,
+                        &self.passes.hir_stmt_fields,
+                        &bufs.hir_semantic_dispatch_args,
+                    )?;
+                } else {
+                    self.passes
+                        .hir_param_fields
+                        .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
+                    stamp_timer(timer_ref, ctx.encoder, "parser.hir_param_fields");
+                    self.passes
+                        .hir_expr_fields
+                        .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
+                    stamp_timer(timer_ref, ctx.encoder, "parser.hir_expr_fields");
+                    self.passes
+                        .hir_member_fields
+                        .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
+                    stamp_timer(timer_ref, ctx.encoder, "parser.hir_member_fields");
+                    self.passes
+                        .hir_stmt_fields
+                        .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
+                    stamp_timer(timer_ref, ctx.encoder, "parser.hir_stmt_fields");
+                }
                 if let Some((source_len, token_buf, source_buf)) = literal_source {
                     self.passes.hir_literal_values.record_with_source(
                         &self.device,
@@ -1621,12 +2608,48 @@ impl GpuParser {
                     .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_call_arg_links");
                 self.passes
+                    .hir_list_rank_prefix_local
+                    .record_for_owner_link(
+                        ctx.device,
+                        ctx.encoder,
+                        ctx.buffers,
+                        &bufs.hir_call_fields_params,
+                        &bufs.hir_call_arg_owner_a,
+                        &bufs.hir_call_arg_link_a,
+                    )?;
+                stamp_timer(
+                    timer_ref,
+                    ctx.encoder,
+                    "parser.hir_call_arg_rank_prefix_local",
+                );
+                self.passes
+                    .hir_semantic_prefix_blocks
+                    .record_list_rank_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+                stamp_timer(
+                    timer_ref,
+                    ctx.encoder,
+                    "parser.hir_call_arg_rank_prefix_blocks",
+                );
+                self.passes
+                    .hir_list_rank_compact_scatter
+                    .record_for_params(
+                        ctx.device,
+                        ctx.encoder,
+                        ctx.buffers,
+                        &bufs.hir_call_fields_params,
+                    )?;
+                stamp_timer(
+                    timer_ref,
+                    ctx.encoder,
+                    "parser.hir_call_arg_rank_compact_scatter",
+                );
+                self.passes
                     .hir_call_arg_ordinal_step
                     .record_steps_indirect(
                         ctx.device,
                         ctx.encoder,
                         ctx.buffers,
-                        &bufs.tree_active_dispatch_args,
+                        &bufs.hir_list_rank_dispatch_args,
                     )?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_call_arg_ordinal_step");
                 self.passes
@@ -1646,12 +2669,48 @@ impl GpuParser {
                     .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_array_element_links");
                 self.passes
+                    .hir_list_rank_prefix_local
+                    .record_for_owner_link(
+                        ctx.device,
+                        ctx.encoder,
+                        ctx.buffers,
+                        &bufs.hir_array_fields_params,
+                        &bufs.hir_array_element_owner_a,
+                        &bufs.hir_array_element_link_a,
+                    )?;
+                stamp_timer(
+                    timer_ref,
+                    ctx.encoder,
+                    "parser.hir_array_element_rank_prefix_local",
+                );
+                self.passes
+                    .hir_semantic_prefix_blocks
+                    .record_list_rank_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+                stamp_timer(
+                    timer_ref,
+                    ctx.encoder,
+                    "parser.hir_array_element_rank_prefix_blocks",
+                );
+                self.passes
+                    .hir_list_rank_compact_scatter
+                    .record_for_params(
+                        ctx.device,
+                        ctx.encoder,
+                        ctx.buffers,
+                        &bufs.hir_array_fields_params,
+                    )?;
+                stamp_timer(
+                    timer_ref,
+                    ctx.encoder,
+                    "parser.hir_array_element_rank_compact_scatter",
+                );
+                self.passes
                     .hir_array_element_rank_step
                     .record_steps_indirect(
                         ctx.device,
                         ctx.encoder,
                         ctx.buffers,
-                        &bufs.tree_active_dispatch_args,
+                        &bufs.hir_list_rank_dispatch_args,
                     )?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_array_element_rank_step");
                 self.passes
@@ -1662,11 +2721,37 @@ impl GpuParser {
                     .hir_match_arm_links
                     .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_match_arm_links");
+                self.passes.hir_match_rank_prefix_local.record_pass(
+                    &mut ctx,
+                    crate::gpu::passes_core::InputElements::Elements1D(
+                        bufs.tree_n_node_blocks.saturating_mul(256),
+                    ),
+                )?;
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_match_rank_prefix_local");
+                self.passes
+                    .hir_semantic_prefix_blocks
+                    .record_match_rank_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+                stamp_timer(
+                    timer_ref,
+                    ctx.encoder,
+                    "parser.hir_match_rank_prefix_blocks",
+                );
+                self.passes.hir_match_rank_compact_scatter.record_pass(
+                    &mut ctx,
+                    crate::gpu::passes_core::InputElements::Elements1D(
+                        bufs.tree_n_node_blocks.saturating_mul(256),
+                    ),
+                )?;
+                stamp_timer(
+                    timer_ref,
+                    ctx.encoder,
+                    "parser.hir_match_rank_compact_scatter",
+                );
                 self.passes.hir_match_arm_rank_step.record_steps_indirect(
                     ctx.device,
                     ctx.encoder,
                     ctx.buffers,
-                    &bufs.tree_active_dispatch_args,
+                    &bufs.hir_match_rank_dispatch_args,
                 )?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_match_arm_rank_step");
                 self.passes
@@ -1681,13 +2766,43 @@ impl GpuParser {
                     .hir_struct_field_links
                     .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_struct_field_links");
+                self.passes.hir_struct_rank_prefix_local.record_pass(
+                    &mut ctx,
+                    crate::gpu::passes_core::InputElements::Elements1D(
+                        bufs.tree_n_node_blocks.saturating_mul(256),
+                    ),
+                )?;
+                stamp_timer(
+                    timer_ref,
+                    ctx.encoder,
+                    "parser.hir_struct_rank_prefix_local",
+                );
+                self.passes
+                    .hir_semantic_prefix_blocks
+                    .record_struct_rank_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+                stamp_timer(
+                    timer_ref,
+                    ctx.encoder,
+                    "parser.hir_struct_rank_prefix_blocks",
+                );
+                self.passes.hir_struct_rank_compact_scatter.record_pass(
+                    &mut ctx,
+                    crate::gpu::passes_core::InputElements::Elements1D(
+                        bufs.tree_n_node_blocks.saturating_mul(256),
+                    ),
+                )?;
+                stamp_timer(
+                    timer_ref,
+                    ctx.encoder,
+                    "parser.hir_struct_rank_compact_scatter",
+                );
                 self.passes
                     .hir_struct_field_rank_step
                     .record_steps_indirect(
                         ctx.device,
                         ctx.encoder,
                         ctx.buffers,
-                        &bufs.tree_active_dispatch_args,
+                        &bufs.hir_struct_rank_dispatch_args,
                     )?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_struct_field_rank_step");
                 self.passes
@@ -1717,7 +2832,28 @@ impl GpuParser {
         token_capacity: u32,
         tables: &PrecomputedParseTables,
     ) -> &'a ParserBuffers {
-        self.resident_buffers_for_with_tree_capacity(slot, token_capacity, tables, None)
+        self.resident_buffers_for_with_tree_capacity_and_debug(
+            slot,
+            token_capacity,
+            tables,
+            None,
+            false,
+        )
+    }
+
+    fn resident_debug_buffers_for<'a>(
+        &self,
+        slot: &'a mut Option<ResidentParserBufferCache>,
+        token_capacity: u32,
+        tables: &PrecomputedParseTables,
+    ) -> &'a ParserBuffers {
+        self.resident_buffers_for_with_tree_capacity_and_debug(
+            slot,
+            token_capacity,
+            tables,
+            None,
+            true,
+        )
     }
 
     fn resident_buffers_for_with_tree_capacity<'a>(
@@ -1727,11 +2863,29 @@ impl GpuParser {
         tables: &PrecomputedParseTables,
         tree_capacity_override: Option<u32>,
     ) -> &'a ParserBuffers {
+        self.resident_buffers_for_with_tree_capacity_and_debug(
+            slot,
+            token_capacity,
+            tables,
+            tree_capacity_override,
+            false,
+        )
+    }
+
+    fn resident_buffers_for_with_tree_capacity_and_debug<'a>(
+        &self,
+        slot: &'a mut Option<ResidentParserBufferCache>,
+        token_capacity: u32,
+        tables: &PrecomputedParseTables,
+        tree_capacity_override: Option<u32>,
+        retain_debug_hir_buffers: bool,
+    ) -> &'a ParserBuffers {
         let fingerprint = table_fingerprint(tables);
         let wanted_capacity = token_capacity.max(1);
         let needs_allocate = slot.as_ref().is_none_or(|cached| {
             cached.table_fingerprint != fingerprint
                 || cached.token_capacity < wanted_capacity
+                || cached.retain_debug_hir_buffers != retain_debug_hir_buffers
                 || match (cached.tree_capacity_override, tree_capacity_override) {
                     (None, None) => false,
                     (Some(_), None) | (None, Some(_)) => true,
@@ -1751,13 +2905,15 @@ impl GpuParser {
                 token_capacity: allocated_capacity,
                 tree_capacity_override,
                 table_fingerprint: fingerprint,
-                buffers: ParserBuffers::new_resident_capacity_with_tree_capacity(
+                retain_debug_hir_buffers,
+                buffers: ParserBuffers::new_resident_capacity_with_tree_capacity_and_debug(
                     &self.device,
                     wanted_capacity,
                     tables.n_kinds,
                     &action_table_bytes,
                     tables,
                     tree_capacity_override,
+                    retain_debug_hir_buffers,
                 ),
             });
             self.bg_cache
@@ -1874,19 +3030,14 @@ impl GpuParser {
         }
 
         let use_scopes = bool_from_env("LANIUS_VALIDATION_SCOPES", false);
-        if use_scopes {
-            self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-        }
-        crate::gpu::passes_core::submit_with_progress(
+        crate::gpu::passes_core::submit_with_optional_validation(
+            &self.device,
             &self.queue,
             "parser.batch",
             encoder.finish(),
+            use_scopes,
+            "parser batch",
         );
-        if use_scopes {
-            if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
-                eprintln!("[wgpu submit] validation while submitting parser batch: {err:#?}");
-            }
-        }
 
         // If readback is off, return empty result shells (timers still print).
         if !rb_enabled {
@@ -1948,6 +3099,14 @@ impl GpuParser {
                 next_sibling: Vec::new(),
                 subtree_end: Vec::new(),
                 hir_kind: Vec::new(),
+                hir_semantic_prefix_before_node: Vec::new(),
+                hir_semantic_dense_node: Vec::new(),
+                hir_semantic_subtree_end: Vec::new(),
+                hir_semantic_parent: Vec::new(),
+                hir_semantic_first_child: Vec::new(),
+                hir_semantic_next_sibling: Vec::new(),
+                hir_semantic_depth: Vec::new(),
+                hir_semantic_child_index: Vec::new(),
                 hir_token_pos: Vec::new(),
                 hir_token_end: Vec::new(),
                 hir_type_form: Vec::new(),
@@ -1959,6 +3118,8 @@ impl GpuParser {
                 hir_type_arg_start: Vec::new(),
                 hir_type_arg_count: Vec::new(),
                 hir_type_arg_next: Vec::new(),
+                hir_type_alias_target_node: Vec::new(),
+                hir_fn_return_type_node: Vec::new(),
                 hir_item_kind: Vec::new(),
                 hir_item_name_token: Vec::new(),
                 hir_item_decl_token: Vec::new(),
@@ -2082,6 +3243,14 @@ impl GpuParser {
             next_sibling: decoded.next_sibling,
             subtree_end: decoded.subtree_end,
             hir_kind: decoded.hir_kind,
+            hir_semantic_prefix_before_node: decoded.hir_semantic_prefix_before_node,
+            hir_semantic_dense_node: decoded.hir_semantic_dense_node,
+            hir_semantic_subtree_end: decoded.hir_semantic_subtree_end,
+            hir_semantic_parent: decoded.hir_semantic_parent,
+            hir_semantic_first_child: decoded.hir_semantic_first_child,
+            hir_semantic_next_sibling: decoded.hir_semantic_next_sibling,
+            hir_semantic_depth: decoded.hir_semantic_depth,
+            hir_semantic_child_index: decoded.hir_semantic_child_index,
             hir_token_pos: decoded.hir_token_pos,
             hir_token_end: decoded.hir_token_end,
             hir_type_form: decoded.hir_type_form,
@@ -2093,6 +3262,8 @@ impl GpuParser {
             hir_type_arg_start: decoded.hir_type_arg_start,
             hir_type_arg_count: decoded.hir_type_arg_count,
             hir_type_arg_next: decoded.hir_type_arg_next,
+            hir_type_alias_target_node: decoded.hir_type_alias_target_node,
+            hir_fn_return_type_node: decoded.hir_fn_return_type_node,
             hir_item_kind: decoded.hir_item_kind,
             hir_item_name_token: decoded.hir_item_name_token,
             hir_item_decl_token: decoded.hir_item_decl_token,
@@ -2154,6 +3325,21 @@ fn plan_parser_compute(pass: &PassData, n_elements: u32) -> Result<(u32, u32, u3
         InputElements::Elements1D(n_elements),
         [tgsx, tgsy, 1],
     )
+}
+
+fn parser_compute_pass_batching_enabled(timer_ref: &mut Option<&mut GpuTimer>) -> bool {
+    timer_ref.is_none() && compute_pass_batching_enabled() && !validation_scopes_enabled()
+}
+
+fn clear_type_arg_rank_b(encoder: &mut wgpu::CommandEncoder, buffers: &ParserBuffers) {
+    let bytes = u64::from(buffers.tree_capacity) * 4;
+    for buffer in [
+        &buffers.hir_type_arg_owner_b,
+        &buffers.hir_type_arg_link_b,
+        &buffers.hir_type_arg_rank_b,
+    ] {
+        encoder.clear_buffer(&buffer.buffer, 0, Some(bytes));
+    }
 }
 
 fn record_parser_compute(

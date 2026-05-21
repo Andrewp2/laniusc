@@ -64,6 +64,18 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirParamLinksPas
                 "hir_param_previous".into(),
                 b.hir_param_previous.as_entire_binding(),
             ),
+            (
+                "hir_param_owner_b".into(),
+                b.hir_param_owner_b.as_entire_binding(),
+            ),
+            (
+                "hir_param_link_b".into(),
+                b.hir_param_link_b.as_entire_binding(),
+            ),
+            (
+                "hir_param_rank_b".into(),
+                b.hir_param_rank_b.as_entire_binding(),
+            ),
         ])
     }
 }

@@ -8,6 +8,7 @@ use laniusc::{
 };
 
 struct MemberResultReadbacks {
+    name_id_by_token: wgpu::Buffer,
     tag: wgpu::Buffer,
     payload: wgpu::Buffer,
     ordinal: wgpu::Buffer,
@@ -43,6 +44,7 @@ struct MemberResultReadbacks {
 }
 
 struct MemberResultSnapshot {
+    name_id_by_token: Vec<u32>,
     tag: Vec<u32>,
     payload: Vec<u32>,
     ordinal: Vec<u32>,
@@ -156,6 +158,22 @@ fn qualified_range_type_tokens(texts: &[String]) -> (usize, usize) {
         .unwrap_or_else(|| panic!("missing qualified core::range::Range type: {texts:?}"))
 }
 
+fn qualified_path_leaf_token(texts: &[String], segments: &[&str]) -> usize {
+    texts
+        .windows(segments.len() * 3 - 2)
+        .position(|window| {
+            segments.iter().enumerate().all(|(index, segment)| {
+                let base = index * 3;
+                if window[base] != *segment {
+                    return false;
+                }
+                index + 1 == segments.len() || (window[base + 1] == ":" && window[base + 2] == ":")
+            })
+        })
+        .map(|index| index + (segments.len() - 1) * 3)
+        .unwrap_or_else(|| panic!("missing qualified path {segments:?}: {texts:?}"))
+}
+
 fn snapshot_word(words: &[u32], index: u32) -> u32 {
     words.get(index as usize).copied().unwrap_or(u32::MAX)
 }
@@ -163,7 +181,7 @@ fn snapshot_word(words: &[u32], index: u32) -> u32 {
 fn read_words(device: &wgpu::Device, buffer: &wgpu::Buffer, count: usize) -> Vec<u32> {
     let slice = buffer.slice(0..(count * 4) as u64);
     slice.map_async(wgpu::MapMode::Read, |_| {});
-    let _ = device.poll(wgpu::PollType::Wait);
+    let _ = device.poll(wgpu::PollType::wait_indefinitely());
     let bytes = slice.get_mapped_range();
     let words = bytes
         .chunks_exact(4)
@@ -188,6 +206,7 @@ fn copy_member_result_readbacks(
             mapped_at_creation: false,
         })
     };
+    let name_id_by_token = mk("rb.test.name_id_by_token");
     let tag = mk("rb.test.member_result.tag");
     let payload = mk("rb.test.member_result.payload");
     let ordinal = mk("rb.test.member_result.ordinal");
@@ -222,6 +241,7 @@ fn copy_member_result_readbacks(
     let struct_init_field_ordinal = mk("rb.test.struct_init.ordinal");
 
     for (src, dst) in [
+        (codegen.name_id_by_token, &name_id_by_token),
         (codegen.member_result_ref_tag, &tag),
         (codegen.member_result_ref_payload, &payload),
         (codegen.member_result_field_ordinal, &ordinal),
@@ -283,6 +303,7 @@ fn copy_member_result_readbacks(
     }
 
     MemberResultReadbacks {
+        name_id_by_token,
         tag,
         payload,
         ordinal,
@@ -325,6 +346,7 @@ fn read_snapshot(
     type_error: Option<String>,
 ) -> MemberResultSnapshot {
     MemberResultSnapshot {
+        name_id_by_token: read_words(device, &readbacks.name_id_by_token, count),
         tag: read_words(device, &readbacks.tag, count),
         payload: read_words(device, &readbacks.payload, count),
         ordinal: read_words(device, &readbacks.ordinal, count),
@@ -448,6 +470,10 @@ fn gpu_member_result_snapshot(src: &'static str, count: usize) -> MemberResultSn
                                             type_arg_start: &parse_bufs.hir_type_arg_start,
                                             type_arg_count: &parse_bufs.hir_type_arg_count,
                                             type_arg_next: &parse_bufs.hir_type_arg_next,
+                                            type_alias_target_node: &parse_bufs
+                                                .hir_type_alias_target_node,
+                                            fn_return_type_node: &parse_bufs
+                                                .hir_fn_return_type_node,
                                             param_record: &parse_bufs.hir_param_record,
                                             expr_record: &parse_bufs.hir_expr_record,
                                             expr_int_value: &parse_bufs.hir_expr_int_value,
@@ -623,6 +649,10 @@ fn gpu_member_result_source_pack_snapshot(
                                             type_arg_start: &parse_bufs.hir_type_arg_start,
                                             type_arg_count: &parse_bufs.hir_type_arg_count,
                                             type_arg_next: &parse_bufs.hir_type_arg_next,
+                                            type_alias_target_node: &parse_bufs
+                                                .hir_type_alias_target_node,
+                                            fn_return_type_node: &parse_bufs
+                                                .hir_fn_return_type_node,
                                             param_record: &parse_bufs.hir_param_record,
                                             expr_record: &parse_bufs.hir_expr_record,
                                             expr_int_value: &parse_bufs.hir_expr_int_value,
@@ -863,6 +893,86 @@ fn main() {
 }
 
 #[test]
+fn gpu_member_result_records_same_module_qualified_param_fields() {
+    let src = r#"
+module app::main;
+
+struct Point {
+    x: i32,
+}
+
+fn x_of(point: app::main::Point) -> i32 {
+    return point.x;
+}
+
+fn main() {
+    return 0;
+}
+"#;
+    let texts = token_texts(src);
+    let point_decl_token = struct_name_token(&texts, "Point");
+    let point_param_token = texts
+        .windows(2)
+        .position(|window| window[0] == "(" && window[1] == "point")
+        .map(|index| index + 1)
+        .expect("point parameter token");
+    let qualified_point_leaf = qualified_path_leaf_token(&texts, &["app", "main", "Point"]);
+    let qualified_point_head = qualified_point_leaf - 6;
+    let member_x_token = member_token(&texts, "point", "x");
+    let x_of_fn_token = fn_token(&texts, "x_of");
+
+    let snapshot = gpu_member_result_snapshot(src, texts.len());
+    let expected_point_type = 4096 + point_decl_token as u32;
+
+    assert_eq!(
+        snapshot.type_expr_ref_payload[qualified_point_head],
+        expected_point_type,
+        "qualified same-module type head should resolve to the struct declaration; head={} head_ref={}:{} leaf={} leaf_ref={}:{} expected={} decl_token={} param_visible={} fn_ret_ref={}:{} fn_ret={} member_tag={} member_payload={} member_ordinal={} type_error={:?}",
+        qualified_point_head,
+        snapshot.type_expr_ref_tag[qualified_point_head],
+        snapshot.type_expr_ref_payload[qualified_point_head],
+        qualified_point_leaf,
+        snapshot.type_expr_ref_tag[qualified_point_leaf],
+        snapshot.type_expr_ref_payload[qualified_point_leaf],
+        expected_point_type,
+        point_decl_token,
+        snapshot.visible_type[point_param_token],
+        snapshot.fn_return_ref_tag[x_of_fn_token],
+        snapshot.fn_return_ref_payload[x_of_fn_token],
+        snapshot.call_return_type[x_of_fn_token],
+        snapshot.tag[member_x_token],
+        snapshot.payload[member_x_token],
+        snapshot.ordinal[member_x_token],
+        snapshot.type_error,
+    );
+    assert_eq!(
+        snapshot.visible_type[point_param_token], expected_point_type,
+        "qualified parameter type should publish a visible struct type"
+    );
+    assert_eq!(
+        snapshot.call_return_type[x_of_fn_token],
+        3,
+        "x_of function declaration should publish its i32 return type; fn_ret_ref={}:{} type_error={:?}",
+        snapshot.fn_return_ref_tag[x_of_fn_token],
+        snapshot.fn_return_ref_payload[x_of_fn_token],
+        snapshot.type_error,
+    );
+    assert_eq!(
+        snapshot.ordinal[member_x_token], 0,
+        "point.x should project field ordinal 0"
+    );
+    assert_eq!(
+        snapshot.visible_type[member_x_token], 3,
+        "point.x should publish i32 as the visible member type"
+    );
+    assert!(
+        snapshot.type_error.is_none(),
+        "type checker rejected same-module qualified member fixture: {:?}",
+        snapshot.type_error
+    );
+}
+
+#[test]
 fn gpu_visible_decl_resolves_struct_literal_field_values_to_scope_decls() {
     let src = r#"
 struct Pair {
@@ -930,6 +1040,61 @@ fn main() {
         i32_field_type,
         snapshot.type_expr_ref_tag[i32_field_type],
         snapshot.type_expr_ref_payload[i32_field_type],
+    );
+}
+
+#[test]
+fn gpu_call_records_resolve_zero_arg_direct_calls_from_hir_call_records() {
+    let src = r#"
+fn value() -> i32 {
+    return 7;
+}
+
+fn main() {
+    return value();
+}
+"#;
+    let texts = token_texts(src);
+    let value_fn_token = fn_token(&texts, "value");
+    let value_call_token = last_call_name_token(&texts, "value");
+
+    let snapshot = gpu_member_result_snapshot(src, texts.len());
+
+    assert_eq!(
+        snapshot.name_id_by_token[value_fn_token + 1],
+        snapshot.name_id_by_token[value_call_token],
+        "name interning should assign duplicate identifier lexemes the same semantic name id"
+    );
+    assert_eq!(
+        snapshot.call_return_type[value_fn_token],
+        3,
+        "zero-arg function declaration should publish its return type; fn={} call={} fn_index_at_fn={} fn_name_id={} call_name_id={}",
+        value_fn_token,
+        value_call_token,
+        snapshot.call_fn_index[value_fn_token],
+        snapshot.name_id_by_token[value_fn_token + 1],
+        snapshot.name_id_by_token[value_call_token],
+    );
+    assert_eq!(
+        snapshot.call_fn_index[value_call_token],
+        value_fn_token as u32,
+        "zero-arg direct calls should resolve through parser-owned HIR call records; call={} fn={} return_ty={} fn_name_id={} call_name_id={} visible_decl={} type_error={:?}",
+        value_call_token,
+        value_fn_token,
+        snapshot.call_return_type[value_call_token],
+        snapshot.name_id_by_token[value_fn_token + 1],
+        snapshot.name_id_by_token[value_call_token],
+        snapshot.visible_decl[value_call_token],
+        snapshot.type_error,
+    );
+    assert_eq!(
+        snapshot.call_return_type[value_call_token], 3,
+        "zero-arg direct call should publish the callee return type"
+    );
+    assert!(
+        snapshot.type_error.is_none(),
+        "type checker rejected zero-arg direct call fixture: {:?}",
+        snapshot.type_error
     );
 }
 

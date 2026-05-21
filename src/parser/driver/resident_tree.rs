@@ -51,6 +51,14 @@ struct ResidentTreeReadbacks {
     next_sibling: U32Readback,
     subtree_end: U32Readback,
     hir_kind: U32Readback,
+    hir_semantic_prefix_before_node: U32Readback,
+    hir_semantic_dense_node: U32Readback,
+    hir_semantic_subtree_end: U32Readback,
+    hir_semantic_parent: U32Readback,
+    hir_semantic_first_child: U32Readback,
+    hir_semantic_next_sibling: U32Readback,
+    hir_semantic_depth: U32Readback,
+    hir_semantic_child_index: U32Readback,
     hir_token_pos: U32Readback,
     hir_token_end: U32Readback,
     hir_type_form: U32Readback,
@@ -62,6 +70,8 @@ struct ResidentTreeReadbacks {
     hir_type_arg_start: U32Readback,
     hir_type_arg_count: U32Readback,
     hir_type_arg_next: U32Readback,
+    hir_type_alias_target_node: U32Readback,
+    hir_fn_return_type_node: U32Readback,
     hir_item_kind: U32Readback,
     hir_item_name_token: U32Readback,
     hir_item_decl_token: U32Readback,
@@ -161,6 +171,46 @@ impl ResidentTreeReadbacks {
                 "rb.parser.resident_tree.hir_kind",
                 bufs.hir_kind.byte_size,
             ),
+            hir_semantic_prefix_before_node: rb(
+                device,
+                "rb.parser.resident_tree.hir_semantic_prefix_before_node",
+                bufs.hir_semantic_prefix_before_node.byte_size,
+            ),
+            hir_semantic_dense_node: rb(
+                device,
+                "rb.parser.resident_tree.hir_semantic_dense_node",
+                bufs.hir_semantic_dense_node.byte_size,
+            ),
+            hir_semantic_subtree_end: rb(
+                device,
+                "rb.parser.resident_tree.hir_semantic_subtree_end",
+                bufs.hir_semantic_subtree_end.byte_size,
+            ),
+            hir_semantic_parent: rb(
+                device,
+                "rb.parser.resident_tree.hir_semantic_parent",
+                bufs.hir_semantic_parent.byte_size,
+            ),
+            hir_semantic_first_child: rb(
+                device,
+                "rb.parser.resident_tree.hir_semantic_first_child",
+                bufs.hir_semantic_first_child.byte_size,
+            ),
+            hir_semantic_next_sibling: rb(
+                device,
+                "rb.parser.resident_tree.hir_semantic_next_sibling",
+                bufs.hir_semantic_next_sibling.byte_size,
+            ),
+            hir_semantic_depth: rb(
+                device,
+                "rb.parser.resident_tree.hir_semantic_depth",
+                bufs.hir_semantic_depth.byte_size,
+            ),
+            hir_semantic_child_index: rb(
+                device,
+                "rb.parser.resident_tree.hir_semantic_child_index",
+                bufs.hir_semantic_child_index.byte_size,
+            ),
             hir_token_pos: rb(
                 device,
                 "rb.parser.resident_tree.hir_token_pos",
@@ -215,6 +265,16 @@ impl ResidentTreeReadbacks {
                 device,
                 "rb.parser.resident_tree.hir_type_arg_next",
                 bufs.hir_type_arg_next.byte_size,
+            ),
+            hir_type_alias_target_node: rb(
+                device,
+                "rb.parser.resident_tree.hir_type_alias_target_node",
+                bufs.hir_type_alias_target_node.byte_size,
+            ),
+            hir_fn_return_type_node: rb(
+                device,
+                "rb.parser.resident_tree.hir_fn_return_type_node",
+                bufs.hir_fn_return_type_node.byte_size,
             ),
             hir_item_kind: rb(
                 device,
@@ -495,6 +555,46 @@ impl ResidentTreeReadbacks {
         );
         self.hir_kind
             .copy_from(encoder, &bufs.hir_kind, bufs.hir_kind.byte_size as u64);
+        self.hir_semantic_prefix_before_node.copy_from(
+            encoder,
+            &bufs.hir_semantic_prefix_before_node,
+            bufs.hir_semantic_prefix_before_node.byte_size as u64,
+        );
+        self.hir_semantic_dense_node.copy_from(
+            encoder,
+            &bufs.hir_semantic_dense_node,
+            bufs.hir_semantic_dense_node.byte_size as u64,
+        );
+        self.hir_semantic_subtree_end.copy_from(
+            encoder,
+            &bufs.hir_semantic_subtree_end,
+            bufs.hir_semantic_subtree_end.byte_size as u64,
+        );
+        self.hir_semantic_parent.copy_from(
+            encoder,
+            &bufs.hir_semantic_parent,
+            bufs.hir_semantic_parent.byte_size as u64,
+        );
+        self.hir_semantic_first_child.copy_from(
+            encoder,
+            &bufs.hir_semantic_first_child,
+            bufs.hir_semantic_first_child.byte_size as u64,
+        );
+        self.hir_semantic_next_sibling.copy_from(
+            encoder,
+            &bufs.hir_semantic_next_sibling,
+            bufs.hir_semantic_next_sibling.byte_size as u64,
+        );
+        self.hir_semantic_depth.copy_from(
+            encoder,
+            &bufs.hir_semantic_depth,
+            bufs.hir_semantic_depth.byte_size as u64,
+        );
+        self.hir_semantic_child_index.copy_from(
+            encoder,
+            &bufs.hir_semantic_child_index,
+            bufs.hir_semantic_child_index.byte_size as u64,
+        );
         self.hir_token_pos.copy_from(
             encoder,
             &bufs.hir_token_pos,
@@ -549,6 +649,16 @@ impl ResidentTreeReadbacks {
             encoder,
             &bufs.hir_type_arg_next,
             bufs.hir_type_arg_next.byte_size as u64,
+        );
+        self.hir_type_alias_target_node.copy_from(
+            encoder,
+            &bufs.hir_type_alias_target_node,
+            bufs.hir_type_alias_target_node.byte_size as u64,
+        );
+        self.hir_fn_return_type_node.copy_from(
+            encoder,
+            &bufs.hir_fn_return_type_node,
+            bufs.hir_fn_return_type_node.byte_size as u64,
         );
         self.hir_item_kind.copy_from(
             encoder,
@@ -807,6 +917,14 @@ impl ResidentTreeReadbacks {
         self.next_sibling.map();
         self.subtree_end.map();
         self.hir_kind.map();
+        self.hir_semantic_prefix_before_node.map();
+        self.hir_semantic_dense_node.map();
+        self.hir_semantic_subtree_end.map();
+        self.hir_semantic_parent.map();
+        self.hir_semantic_first_child.map();
+        self.hir_semantic_next_sibling.map();
+        self.hir_semantic_depth.map();
+        self.hir_semantic_child_index.map();
         self.hir_token_pos.map();
         self.hir_token_end.map();
         self.hir_type_form.map();
@@ -818,6 +936,8 @@ impl ResidentTreeReadbacks {
         self.hir_type_arg_start.map();
         self.hir_type_arg_count.map();
         self.hir_type_arg_next.map();
+        self.hir_type_alias_target_node.map();
+        self.hir_fn_return_type_node.map();
         self.hir_item_kind.map();
         self.hir_item_name_token.map();
         self.hir_item_decl_token.map();
@@ -910,6 +1030,16 @@ impl ResidentTreeReadbacks {
             next_sibling: self.next_sibling.read_words(tree_len)?,
             subtree_end: self.subtree_end.read_words(tree_len)?,
             hir_kind: self.hir_kind.read_words(tree_len)?,
+            hir_semantic_prefix_before_node: self
+                .hir_semantic_prefix_before_node
+                .read_words(tree_len)?,
+            hir_semantic_dense_node: self.hir_semantic_dense_node.read_words(tree_len)?,
+            hir_semantic_subtree_end: self.hir_semantic_subtree_end.read_words(tree_len)?,
+            hir_semantic_parent: self.hir_semantic_parent.read_words(tree_len)?,
+            hir_semantic_first_child: self.hir_semantic_first_child.read_words(tree_len)?,
+            hir_semantic_next_sibling: self.hir_semantic_next_sibling.read_words(tree_len)?,
+            hir_semantic_depth: self.hir_semantic_depth.read_words(tree_len)?,
+            hir_semantic_child_index: self.hir_semantic_child_index.read_words(tree_len)?,
             hir_token_pos: self.hir_token_pos.read_words(tree_len)?,
             hir_token_end: self.hir_token_end.read_words(tree_len)?,
             hir_type_form: self.hir_type_form.read_words(tree_len)?,
@@ -921,6 +1051,8 @@ impl ResidentTreeReadbacks {
             hir_type_arg_start: self.hir_type_arg_start.read_words(tree_len)?,
             hir_type_arg_count: self.hir_type_arg_count.read_words(tree_len)?,
             hir_type_arg_next: self.hir_type_arg_next.read_words(tree_len)?,
+            hir_type_alias_target_node: self.hir_type_alias_target_node.read_words(tree_len)?,
+            hir_fn_return_type_node: self.hir_fn_return_type_node.read_words(tree_len)?,
             hir_item_kind: self.hir_item_kind.read_words(tree_len)?,
             hir_item_name_token: self.hir_item_name_token.read_words(tree_len)?,
             hir_item_decl_token: self.hir_item_decl_token.read_words(tree_len)?,
@@ -990,27 +1122,20 @@ impl GpuParser {
         readbacks.encode_copies(&mut encoder, bufs);
 
         let use_scopes = bool_from_env("LANIUS_VALIDATION_SCOPES", false);
-        if use_scopes {
-            self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-        }
-        crate::gpu::passes_core::submit_with_progress(
+        crate::gpu::passes_core::submit_with_optional_validation(
+            &self.device,
             &self.queue,
             "parser.resident-tree",
             encoder.finish(),
+            use_scopes,
+            "resident parser tree batch",
         );
-        if use_scopes {
-            if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
-                eprintln!(
-                    "[wgpu submit] validation while submitting resident parser tree batch: {err:#?}"
-                );
-            }
-        }
 
         readbacks.map_all();
         crate::gpu::passes_core::wait_for_map_progress(
             &self.device,
             "parser.resident-tree",
-            wgpu::PollType::Wait,
+            wgpu::PollType::wait_indefinitely(),
         );
         readbacks.decode(bufs)
     }

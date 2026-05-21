@@ -1,12 +1,15 @@
 use std::{env, fs, io::Write, path::PathBuf};
 
-use laniusc::compiler::{
-    compile_explicit_source_pack_paths_to_wasm_with_gpu_codegen,
-    compile_explicit_source_pack_paths_to_x86_64_with_gpu_codegen,
-    compile_source_to_wasm_with_gpu_codegen,
-    compile_source_to_wasm_with_gpu_codegen_from_path,
-    compile_source_to_x86_64_with_gpu_codegen,
-    compile_source_to_x86_64_with_gpu_codegen_from_path,
+use laniusc::{
+    compiler::{
+        compile_explicit_source_pack_paths_to_wasm_with_gpu_codegen,
+        compile_explicit_source_pack_paths_to_x86_64_with_gpu_codegen,
+        compile_source_to_wasm_with_gpu_codegen,
+        compile_source_to_wasm_with_gpu_codegen_from_path,
+        compile_source_to_x86_64_with_gpu_codegen,
+        compile_source_to_x86_64_with_gpu_codegen_from_path,
+    },
+    gpu::device,
 };
 
 fn main() {
@@ -105,6 +108,7 @@ fn run() -> Result<(), String> {
         ))
         .map_err(|err| err.to_string())?
     };
+    device::persist_pipeline_cache();
     if let Some(output) = output {
         fs::write(&output, emitted).map_err(|err| format!("write {}: {err}", output.display()))?;
         #[cfg(unix)]

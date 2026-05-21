@@ -1,5 +1,7 @@
 // Pointer-jump enum variant and payload links.
 
+import token_features;
+
 struct Params
 {
     uint n;
@@ -15,6 +17,8 @@ StructuredBuffer<uint> hir_variant_rank_in;
 StructuredBuffer<uint> hir_variant_payload_owner_in;
 StructuredBuffer<uint> hir_variant_payload_link_in;
 StructuredBuffer<uint> hir_variant_payload_rank_in;
+StructuredBuffer<uint> token_feature_flags;
+StructuredBuffer<uint> hir_enum_rank_node;
 
 RWStructuredBuffer<uint> hir_variant_owner_out;
 RWStructuredBuffer<uint> hir_variant_link_out;
@@ -102,9 +106,24 @@ void jump_payload(uint node)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = linear_thread_id(dtid);
+    uint row = linear_thread_id(dtid);
+    if (row >= gHirEnum.n)
+        return;
+
+    uint node = hir_enum_rank_node[row];
     if (node >= gHirEnum.n)
         return;
+
+    if (!parser_feature_enabled(token_feature_flags, PARSER_FEATURE_ENUMS))
+    {
+        hir_variant_owner_out[node] = INVALID;
+        hir_variant_link_out[node] = INVALID;
+        hir_variant_rank_out[node] = 0u;
+        hir_variant_payload_owner_out[node] = INVALID;
+        hir_variant_payload_link_out[node] = INVALID;
+        hir_variant_payload_rank_out[node] = 0u;
+        return;
+    }
 
     if (!valid_node(node))
     {

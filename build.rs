@@ -14,6 +14,7 @@ use anyhow::{Context, Result, anyhow};
 
 fn main() -> Result<()> {
     println!("cargo:rustc-check-cfg=cfg(has_prebuilt_tables)");
+    println!("cargo:rerun-if-env-changed=SLANGC");
     println!("cargo:rerun-if-env-changed=LANIUS_SHADER_DEBUG");
     println!("cargo:rerun-if-env-changed=LANIUS_SHADER_OPT_LEVEL");
     println!("cargo:rerun-if-env-changed=SLANGC_EXTRA_FLAGS");
@@ -21,12 +22,26 @@ fn main() -> Result<()> {
 
     let slangc = find_slangc()
         .context("could not locate `slangc` binary. Set $SLANGC or add it to PATH.")?;
+    let slangc_version = slangc_version(&slangc);
+    println!("cargo:rerun-if-changed=Cargo.lock");
+    println!("cargo:rerun-if-changed=Cargo.toml");
+    println!("cargo:rustc-env=LANIUS_SLANGC_VERSION={slangc_version}");
+    println!(
+        "cargo:rustc-env=LANIUS_WGPU_VERSION={}",
+        cargo_lock_package_version("wgpu").unwrap_or_else(|| "unknown".to_string())
+    );
+    println!(
+        "cargo:rustc-env=LANIUS_BUILD_PROFILE={}",
+        env::var("PROFILE").unwrap_or_else(|_| "unknown".to_string())
+    );
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR not set"));
     let shader_out_dir = out_dir.join("shaders");
     fs::create_dir_all(&shader_out_dir).context("create OUT_DIR/shaders")?;
 
-    let sources =
+    let mut sources =
         collect_slang_sources(Path::new("shaders")).context("walk shaders/ for .slang files")?;
+    sources.sort();
+    let mut shader_artifacts = Vec::new();
 
     // Only compile files that contain an entrypoint attribute, e.g. [shader("compute")]
     for ep in sources {
@@ -55,10 +70,11 @@ fn main() -> Result<()> {
         let opt_level = shader_opt_level();
         let stamp_out = shader_out_dir.join(format!("{file_stem}.stamp"));
         let compile_stamp = format!(
-            "slangc={}\nopt={opt_level}\nextra={extra}\n",
-            slangc.display()
+            "slangc={}\nslangc_version={slangc_version}\nopt={opt_level}\nextra={extra}\n",
+            slangc.display(),
         );
         if shader_outputs_fresh(&ep, &spv_out, &refl_out, &stamp_out, &compile_stamp)? {
+            shader_artifacts.push((file_stem.to_string(), spv_out, refl_out));
             continue;
         }
 
@@ -117,7 +133,10 @@ fn main() -> Result<()> {
         }
         fs::write(&stamp_out, compile_stamp)
             .with_context(|| format!("write shader stamp {}", stamp_out.display()))?;
+        shader_artifacts.push((file_stem.to_string(), spv_out, refl_out));
     }
+    let shader_digest = shader_artifact_digest(&shader_artifacts)?;
+    println!("cargo:rustc-env=LANIUS_SHADER_ARTIFACT_DIGEST={shader_digest}");
 
     // Prefer a compact .bin; fall back to .json
     let bin_prebuilt = PathBuf::from("tables/lexer_tables.bin");
@@ -164,6 +183,98 @@ fn env_truthy(name: &str) -> bool {
 
 fn shader_opt_level() -> String {
     env::var("LANIUS_SHADER_OPT_LEVEL").unwrap_or_else(|_| "1".into())
+}
+
+fn slangc_version(slangc: &Path) -> String {
+    Command::new(slangc)
+        .arg("-version")
+        .output()
+        .ok()
+        .and_then(|out| {
+            if !out.status.success() {
+                return None;
+            }
+            let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !stdout.is_empty() {
+                return Some(stdout);
+            }
+            let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            (!stderr.is_empty()).then_some(stderr)
+        })
+        .filter(|version| !version.is_empty())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn cargo_lock_package_version(package_name: &str) -> Option<String> {
+    let text = fs::read_to_string("Cargo.lock").ok()?;
+    let mut in_package = false;
+    let mut saw_name = false;
+    for line in text.lines() {
+        let line = line.trim();
+        if line == "[[package]]" {
+            in_package = true;
+            saw_name = false;
+            continue;
+        }
+        if !in_package {
+            continue;
+        }
+        if let Some(name) = quoted_field(line, "name") {
+            saw_name = name == package_name;
+            continue;
+        }
+        if saw_name && let Some(version) = quoted_field(line, "version") {
+            return Some(version.to_string());
+        }
+    }
+    None
+}
+
+fn quoted_field<'a>(line: &'a str, key: &str) -> Option<&'a str> {
+    let rest = line.strip_prefix(key)?.trim_start();
+    let rest = rest.strip_prefix('=')?.trim_start();
+    rest.strip_prefix('"')?.split('"').next()
+}
+
+fn shader_artifact_digest(artifacts: &[(String, PathBuf, PathBuf)]) -> Result<String> {
+    let mut hash = StableHasher::new();
+    for (name, spv, refl) in artifacts {
+        hash.update(name.as_bytes());
+        hash.update(&[0]);
+        hash.update(
+            &fs::read(spv).with_context(|| format!("read shader artifact {}", spv.display()))?,
+        );
+        hash.update(&[0]);
+        hash.update(
+            &fs::read(refl)
+                .with_context(|| format!("read shader reflection artifact {}", refl.display()))?,
+        );
+        hash.update(&[0xff]);
+    }
+    Ok(hash.finish_hex())
+}
+
+struct StableHasher {
+    value: u64,
+}
+
+impl StableHasher {
+    fn new() -> Self {
+        Self {
+            value: 0xcbf29ce484222325,
+        }
+    }
+
+    fn update(&mut self, bytes: &[u8]) {
+        for byte in bytes {
+            self.value ^= u64::from(*byte);
+            self.value = self.value.wrapping_mul(0x100000001b3);
+        }
+    }
+
+    fn finish_hex(&self) -> String {
+        format!("{:016x}", self.value)
+    }
 }
 
 fn is_unwired_shader_entrypoint(path: &Path) -> bool {

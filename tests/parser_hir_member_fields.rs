@@ -3,7 +3,7 @@ mod common;
 use laniusc::{
     lexer::{
         driver::GpuLexer,
-        test_cpu::{lex_on_test_cpu, TestCpuToken},
+        test_cpu::{TestCpuToken, lex_on_test_cpu},
     },
     parser::{driver::GpuParser, tables::PrecomputedParseTables},
 };

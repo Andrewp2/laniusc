@@ -1,6 +1,15 @@
 {
-    let mut retained_buffers = vec![
+    macro_rules! retain_x86_buffers {
+        ($($buffer:expr),+ $(,)?) => {{
+            let mut buffers = Vec::<RetainedX86Buffer>::new();
+            $(buffers.push(RetainedX86Buffer::from($buffer));)+
+            buffers
+        }};
+    }
+
+    let mut retained_buffers = retain_x86_buffers![
         params_buf,
+        active_hir_count_dispatch_args_buf,
         active_hir_plus_one_dispatch_args_buf,
         active_hir_scan_block_dispatch_args_buf,
         active_node_order_scan_dispatch_args_buf,
@@ -40,6 +49,8 @@
         match_pattern_first_payload_node_buf,
         enclosing_return_node_a_buf,
         enclosing_return_node_b_buf,
+        expr_semantic_type_a_storage_buf,
+        expr_semantic_type_b_storage_buf,
         enclosing_let_node_a_buf,
         enclosing_let_node_b_buf,
         struct_type_record_buf,
@@ -82,6 +93,7 @@
         virtual_inst_args_buf,
         virtual_inst_status_buf,
         virtual_func_first_row_status_buf,
+        virtual_func_slot_buf,
         virtual_live_start_buf,
         virtual_live_end_buf,
         virtual_liveness_status_buf,
@@ -89,7 +101,11 @@
         virtual_next_call_b_buf,
         virtual_next_call_status_buf,
         func_param_reg_mask_status_buf,
+        virtual_value_def_flag_buf,
+        virtual_value_def_row_buf,
+        virtual_regalloc_param_rank_mask_buf,
         virtual_phys_reg_buf,
+        virtual_call_live_reg_mask_buf,
         virtual_regalloc_status_buf,
         select_status_buf,
         size_status_buf,
@@ -103,11 +119,21 @@
         layout_status_buf,
         status_buf,
     ];
-    retained_buffers.extend(func_owner_scan_params_bufs);
-    retained_buffers.extend(node_inst_scan_params_bufs);
-    retained_buffers.extend(text_scan_params_bufs);
-    retained_buffers.extend(virtual_next_call_params_bufs);
-    retained_buffers.extend(virtual_regalloc_params_bufs);
+    retained_buffers.push(RetainedX86Buffer::from(
+        func_owner_scan_params_buf.into_buffer(),
+    ));
+    retained_buffers.push(RetainedX86Buffer::from(
+        node_inst_scan_params_buf.into_buffer(),
+    ));
+    retained_buffers.push(RetainedX86Buffer::from(
+        text_scan_params_buf.into_buffer(),
+    ));
+    retained_buffers.push(RetainedX86Buffer::from(
+        virtual_next_call_params_buf.into_buffer(),
+    ));
+    retained_buffers.push(RetainedX86Buffer::from(
+        virtual_regalloc_params_buf.into_buffer(),
+    ));
     host_timer.stamp("retained_buffers_collected");
 
     let mut retained_bind_groups = vec![
@@ -158,8 +184,14 @@
         virtual_inst_clear_dispatch_args_bind_group,
         virtual_inst_clear_bind_group,
         node_inst_gen_bind_group,
+        aggregate_literal_return_copy_bind_group,
+        node_inst_gen_aggregate_copy_bind_group,
         virtual_func_rows_init_bind_group,
         virtual_func_first_row_bind_group,
+        virtual_func_span_max_bind_group,
+        virtual_regalloc_dispatch_args_bind_group,
+        virtual_regalloc_bind_group,
+        virtual_spans_fixed_barrier_bind_group,
         virtual_param_masks_bind_group,
         virtual_liveness_init_bind_group,
         virtual_liveness_bind_group,
@@ -185,7 +217,6 @@
     retained_bind_groups.extend(enclosing_loop_step_bind_groups);
     retained_bind_groups.extend(node_inst_scan_block_bind_groups);
     retained_bind_groups.extend(virtual_next_call_bind_groups);
-    retained_bind_groups.extend(virtual_regalloc_bind_groups);
     retained_bind_groups.extend(text_scan_block_bind_groups);
     host_timer.stamp("retained_bind_groups_collected");
 
@@ -194,7 +225,7 @@
         output_status_offset,
         _retained_buffers: retained_buffers,
         _retained_bind_groups: retained_bind_groups,
-        _out_buf: out_buf,
+        out_buf,
         output_readback,
         status_trace_readback,
     };

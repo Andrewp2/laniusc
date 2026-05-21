@@ -8,6 +8,7 @@ use crate::{
     gpu::passes_core::{
         DispatchDim,
         bind_group::create_bind_group_from_reflection,
+        compute_pass_batching_enabled,
         validation_scopes_enabled,
     },
     lexer::{buffers::GpuBuffers, debug::DebugOutput, passes::ScanParams, util::compute_rounds},
@@ -57,9 +58,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
 
         let use_scopes = validation_scopes_enabled();
 
-        if use_scopes {
-            device.push_error_scope(wgpu::ErrorFilter::Validation);
-        }
+        let validation_scope = crate::gpu::passes_core::validation_scope(device, use_scopes);
 
         let n = match input {
             super::InputElements::Elements1D(n) => n,
@@ -78,47 +77,110 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
             dbg.gpu.pair_scan_rounds.clear();
         }
 
-        for r in 0..rounds {
-            let stride = 1u32 << r;
-            let use_ping_as_src = if r % 2 == 0 { 1u32 } else { 0u32 };
+        let can_batch = maybe_timer.is_none()
+            && maybe_dbg.is_none()
+            && compute_pass_batching_enabled()
+            && !use_scopes;
+        let mut retained_scan_params = Vec::with_capacity(rounds as usize);
+        let mut retained_bind_groups = Vec::with_capacity(rounds as usize);
 
-            let mut ub = UniformBuffer::new(Vec::new());
-            ub.write(&ScanParams {
-                stride,
-                use_ping_as_src,
-            })
-            .expect("write ScanParams");
-            let scan_params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some(&format!("ScanParams[PAIR-BLOCKS][{r}]")),
-                contents: ub.as_ref(),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        if can_batch {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some(Self::NAME),
+                timestamp_writes: None,
             });
+            for r in 0..rounds {
+                let stride = 1u32 << r;
+                let use_ping_as_src = if r % 2 == 0 { 1u32 } else { 0u32 };
 
-            let res = HashMap::from([
-                (
-                    "gParams".into(),
-                    wgpu::BindingResource::Buffer(b.params.as_entire_buffer_binding()),
-                ),
-                (
-                    "gScan".into(),
-                    wgpu::BindingResource::Buffer(scan_params.as_entire_buffer_binding()),
-                ),
-                // Reuse DFA ping/pong for pair scan
-                ("block_pair_ping".into(), b.dfa_02_ping.as_entire_binding()),
-                ("block_pair_pong".into(), b.dfa_02_pong.as_entire_binding()),
-            ]);
+                let mut ub = UniformBuffer::new(Vec::new());
+                ub.write(&ScanParams {
+                    stride,
+                    use_ping_as_src,
+                })
+                .expect("write ScanParams");
+                let scan_params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some(&format!("ScanParams[PAIR-BLOCKS][{r}]")),
+                    contents: ub.as_ref(),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                });
 
-            let bg = create_bind_group_from_reflection(
-                device,
-                Some(&format!("pair_blocks_bg[{r}]")),
-                layout0,
-                reflection,
-                0,
-                &res,
-            )
-            .expect("pair_blocks_bg reflection");
+                let res = HashMap::from([
+                    (
+                        "gParams".into(),
+                        wgpu::BindingResource::Buffer(b.params.as_entire_buffer_binding()),
+                    ),
+                    (
+                        "gScan".into(),
+                        wgpu::BindingResource::Buffer(scan_params.as_entire_buffer_binding()),
+                    ),
+                    // Reuse DFA ping/pong for pair scan
+                    ("block_pair_ping".into(), b.dfa_02_ping.as_entire_binding()),
+                    ("block_pair_pong".into(), b.dfa_02_pong.as_entire_binding()),
+                ]);
 
-            {
+                let bg = create_bind_group_from_reflection(
+                    device,
+                    Some(&format!("pair_blocks_bg[{r}]")),
+                    layout0,
+                    reflection,
+                    0,
+                    &res,
+                )
+                .expect("pair_blocks_bg reflection");
+
+                let (gx, gy, gz) = crate::gpu::passes_core::plan_workgroups(
+                    crate::gpu::passes_core::DispatchDim::D1,
+                    crate::gpu::passes_core::InputElements::Elements1D(n),
+                    [256, 1, 1],
+                )?;
+                pass.set_pipeline(pipeline);
+                pass.set_bind_group(0, &bg, &[]);
+                pass.dispatch_workgroups(gx, gy, gz);
+                retained_scan_params.push(scan_params);
+                retained_bind_groups.push(bg);
+            }
+        } else {
+            for r in 0..rounds {
+                let stride = 1u32 << r;
+                let use_ping_as_src = if r % 2 == 0 { 1u32 } else { 0u32 };
+
+                let mut ub = UniformBuffer::new(Vec::new());
+                ub.write(&ScanParams {
+                    stride,
+                    use_ping_as_src,
+                })
+                .expect("write ScanParams");
+                let scan_params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some(&format!("ScanParams[PAIR-BLOCKS][{r}]")),
+                    contents: ub.as_ref(),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                });
+
+                let res = HashMap::from([
+                    (
+                        "gParams".into(),
+                        wgpu::BindingResource::Buffer(b.params.as_entire_buffer_binding()),
+                    ),
+                    (
+                        "gScan".into(),
+                        wgpu::BindingResource::Buffer(scan_params.as_entire_buffer_binding()),
+                    ),
+                    // Reuse DFA ping/pong for pair scan
+                    ("block_pair_ping".into(), b.dfa_02_ping.as_entire_binding()),
+                    ("block_pair_pong".into(), b.dfa_02_pong.as_entire_binding()),
+                ]);
+
+                let bg = create_bind_group_from_reflection(
+                    device,
+                    Some(&format!("pair_blocks_bg[{r}]")),
+                    layout0,
+                    reflection,
+                    0,
+                    &res,
+                )
+                .expect("pair_blocks_bg reflection");
+
                 // One workgroup per PAIR block; planner must not divide by tgsx.
                 let (gx, gy, gz) = crate::gpu::passes_core::plan_workgroups(
                     crate::gpu::passes_core::DispatchDim::D1,
@@ -132,26 +194,29 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
                 pass.set_pipeline(pipeline);
                 pass.set_bind_group(0, &bg, &[]);
                 pass.dispatch_workgroups(gx, gy, gz);
-            }
 
-            #[cfg(feature = "gpu-debug")]
-            if let Some(dbg) = maybe_dbg.as_deref_mut() {
-                use crate::lexer::debug::make_staging;
-                let per_round_bytes_u64 = (n as usize * 2 * std::mem::size_of::<u32>()) as u64;
-                // Debug: snapshot reused DFA block ping/pong
-                let last_writer = if use_ping_as_src != 0 {
-                    &b.dfa_02_pong
-                } else {
-                    &b.dfa_02_ping
-                };
-                let staging =
-                    make_staging(device, "dbg.pair_scan_round", per_round_bytes_u64 as usize);
-                encoder.copy_buffer_to_buffer(last_writer, 0, &staging, 0, per_round_bytes_u64);
-                dbg.gpu.pair_scan_rounds.push(crate::lexer::DebugBuffer {
-                    label: "dbg.pair_scan_round",
-                    buffer: Some(staging),
-                    byte_len: per_round_bytes_u64 as usize,
-                });
+                retained_scan_params.push(scan_params);
+                retained_bind_groups.push(bg);
+
+                #[cfg(feature = "gpu-debug")]
+                if let Some(dbg) = maybe_dbg.as_deref_mut() {
+                    use crate::lexer::debug::make_staging;
+                    let per_round_bytes_u64 = (n as usize * 2 * std::mem::size_of::<u32>()) as u64;
+                    // Debug: snapshot reused DFA block ping/pong
+                    let last_writer = if use_ping_as_src != 0 {
+                        &b.dfa_02_pong
+                    } else {
+                        &b.dfa_02_ping
+                    };
+                    let staging =
+                        make_staging(device, "dbg.pair_scan_round", per_round_bytes_u64 as usize);
+                    encoder.copy_buffer_to_buffer(last_writer, 0, &staging, 0, per_round_bytes_u64);
+                    dbg.gpu.pair_scan_rounds.push(crate::lexer::DebugBuffer {
+                        label: "dbg.pair_scan_round",
+                        buffer: Some(staging),
+                        byte_len: per_round_bytes_u64 as usize,
+                    });
+                }
             }
         }
 
@@ -159,14 +224,12 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
             t.stamp(encoder, Self::NAME.to_string());
         }
 
-        if use_scopes {
-            if let Some(err) = pollster::block_on(device.pop_error_scope()) {
-                return Err(anyhow::anyhow!(
-                    "validation in pass {}: {:?}",
-                    Self::NAME,
-                    err
-                ));
-            }
+        if let Some(err) = crate::gpu::passes_core::pop_validation_scope(validation_scope) {
+            return Err(anyhow::anyhow!(
+                "validation in pass {}: {:?}",
+                Self::NAME,
+                err
+            ));
         }
 
         if let Some(d) = maybe_dbg.as_deref_mut() {

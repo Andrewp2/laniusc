@@ -277,8 +277,7 @@ impl GpuTypeChecker {
             let needs_rebuild = bind_group_guard
                 .as_ref()
                 .map(|groups| {
-                    source_len != groups.source_len
-                        || source_file_capacity != groups.source_file_capacity
+                    source_file_capacity != groups.source_file_capacity
                         || token_capacity > groups.token_capacity
                         || hir_node_capacity > groups.hir_node_capacity
                         || input_fingerprint != groups.input_fingerprint
@@ -473,8 +472,8 @@ impl GpuTypeChecker {
                 encoder,
                 token_capacity,
                 n_work,
-                &bind_groups.token_active_dispatch_args,
                 &bind_groups.hir_active_dispatch_args,
+                &bind_groups.token_hir_active_dispatch_args,
                 &bind_groups.calls,
             )?;
             if let Some(timer) = timer.as_deref_mut() {

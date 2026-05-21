@@ -1,9 +1,10 @@
 // x86_64 node-local virtual instruction generation.
 //
 // This is the Pareas-style instruction generation counterpart to
-// x86_node_inst_counts: each HIR node owns instruction rows assigned by prefix
-// ranges, with x86_node_inst_location_record carrying corrected branch/loop
-// slots. This pass fills those rows with virtual instruction records from
+// x86_node_inst_counts: generation-capable HIR nodes are compacted after
+// location assignment, their instruction rows are assigned by prefix ranges,
+// and x86_node_inst_location_record carries corrected branch/loop slots. This
+// pass walks that compact worklist and fills the virtual instruction rows from
 // attributed HIR/backend records only.
 
 import gpu_index;
@@ -143,6 +144,9 @@ static const uint X86_VINST_ERROR_ASSIGN_LHS = 2903u;
 static const uint X86_VINST_ERROR_ASSIGN_LOCATION = 2904u;
 static const uint X86_VINST_ERROR_LET_INIT_VALUE = 3001u;
 static const uint X86_VINST_ERROR_LET_SLOT = 3002u;
+static const uint X86_VINST_ERROR_AGG_COPY_WIDTH = 3011u;
+static const uint X86_AGG_COPY_MAX_WIDTH = 32u;
+static const uint X86_VINST_ERROR_AGG_RET_COPY_WIDTH = 2623u;
 
 static const uint HIR_STMT = 7u;
 static const uint HIR_PARAM = 4u;
@@ -736,6 +740,21 @@ bool row_after_subtree(uint root, out uint row)
     return subtree_instruction_bounds(root, first_row, row);
 }
 
+uint gen_worklist_base()
+{
+    return gParams.n_hir_nodes + 1u;
+}
+
+uint gen_worklist_count()
+{
+    return min(x86_node_inst_gen_input_status[4u], active_hir_node_count());
+}
+
+uint gen_worklist_node(uint order_row)
+{
+    return x86_node_inst_subtree_bounds_record[gen_worklist_base() + order_row].x;
+}
+
 bool enclosing_while_for_node(uint node, out uint loop_node)
 {
     loop_node = valid_node(node) ? x86_enclosing_loop_node[node] : INVALID;
@@ -1007,7 +1026,7 @@ bool aggregate_return_width(uint return_node, out uint width)
     return name_expr_aggregate_width(expr_node, width);
 }
 
-bool emit_array_literal_to_ret_ptr(uint node, uint expr_node, uint width)
+bool validate_array_literal_to_ret_ptr(uint expr_node, uint width)
 {
     if (width == 0u || width > 32u)
         return false;
@@ -1020,47 +1039,7 @@ bool emit_array_literal_to_ret_ptr(uint node, uint expr_node, uint width)
         struct_access_payload0(array_node) != width)
         return false;
 
-    uint cur = struct_access_payload1(array_node);
-    uint seen_elements = 0u;
-    uint seen_mask = 0u;
-    [loop]
-    for (uint step = 0u; step < width; step += 1u)
-    {
-        if (!valid_node(cur))
-            return false;
-
-        if (struct_access_kind(cur) != X86_STRUCT_ACCESS_ARRAY_ELEMENT ||
-            struct_access_payload0(cur) != array_node)
-            return false;
-
-        uint ordinal = struct_access_payload1(cur);
-        if (ordinal >= width || ordinal >= 32u)
-            return false;
-        uint ordinal_bit = 1u << ordinal;
-        if ((seen_mask & ordinal_bit) != 0u)
-            return false;
-        seen_mask |= ordinal_bit;
-
-        uint src = INVALID;
-        uint row = INVALID;
-        if (!value_vreg_for_node(cur, src))
-        {
-            write_status_error_detail(node, X86_VINST_ERROR_AGG_RET_ARRAY_VALUE);
-            return false;
-        }
-        if (!location_for_node_local(node, ordinal, row))
-        {
-            write_status_error_detail(node, X86_VINST_ERROR_AGG_RET_ARRAY_LOCATION);
-            return false;
-        }
-        write_inst(row, node, ordinal, X86_VINST_STORE_RET_PTR, INVALID, uint4(src, ordinal, 0u, 0u));
-
-        cur = struct_access_payload2(cur);
-        seen_elements += 1u;
-    }
-
-    uint expected_mask = width == 32u ? 0xffffffffu : ((1u << width) - 1u);
-    return seen_elements == width && seen_mask == expected_mask;
+    return true;
 }
 
 void write_mixed_arg_payloads(uint payload_row, uint node, uint arg_count, uint arg0, uint arg1, uint arg2, uint arg3)
@@ -1968,24 +1947,10 @@ bool emit_aggregate_let_copy(uint node)
     if (!aggregate_source_for_expr(init_expr, x86_node_func[node], source_kind, source_payload, source_width) ||
         source_width < dest_width)
         return false;
-
-    [loop]
-    for (uint ordinal = 0u; ordinal < dest_width; ordinal += 1u)
+    if (dest_width > X86_AGG_COPY_MAX_WIDTH)
     {
-        uint load_row = INVALID;
-        uint store_row = INVALID;
-        if (!location_for_node_local(node, ordinal * 2u, load_row) ||
-            !location_for_node_local(node, ordinal * 2u + 1u, store_row))
-            return false;
-
-        if (source_kind == X86_AGG_SOURCE_LOCAL)
-            write_inst(load_row, node, ordinal * 2u, X86_VINST_LOAD_LOCAL, load_row, uint4(source_payload + ordinal, 0u, 0u, 0u));
-        else if (source_kind == X86_AGG_SOURCE_PARAM)
-            write_inst(load_row, node, ordinal * 2u, X86_VINST_LOAD_PARAM_SLOT, load_row, uint4(source_payload, ordinal, 0u, 0u));
-        else
-            return false;
-
-        write_inst(store_row, node, ordinal * 2u + 1u, X86_VINST_STORE_LOCAL, INVALID, uint4(dest_slot + ordinal, load_row, 0u, 0u));
+        write_status_error_detail(node, X86_VINST_ERROR_AGG_COPY_WIDTH);
+        return false;
     }
 
     write_node_value(node, X86_NODE_VALUE_NONE, INVALID, 0u, 0u);
@@ -2362,7 +2327,7 @@ bool emit_enum_value_to_ret_ptr(uint return_node, uint value_node, uint width)
     return true;
 }
 
-bool emit_struct_literal_to_ret_ptr(uint node, uint expr_node, uint width)
+bool validate_struct_literal_to_ret_ptr(uint expr_node, uint width)
 {
     if (width == 0u || width > 32u)
         return false;
@@ -2376,48 +2341,7 @@ bool emit_struct_literal_to_ret_ptr(uint node, uint expr_node, uint width)
         !valid_node(struct_access_payload1(literal_node)))
         return false;
 
-    uint cur = struct_access_payload1(literal_node);
-    uint seen_fields = 0u;
-    uint seen_mask = 0u;
-    [loop]
-    for (uint step = 0u; step < width; step += 1u)
-    {
-        if (!valid_node(cur))
-            return false;
-
-        uint4 record = x86_struct_store_record[cur];
-        uint element = record.x;
-        uint ordinal = record.y;
-        if (record.z != literal_node ||
-            !valid_node(element) ||
-            ordinal >= width ||
-            ordinal >= 32u)
-            return false;
-        uint ordinal_bit = 1u << ordinal;
-        if ((seen_mask & ordinal_bit) != 0u)
-            return false;
-        seen_mask |= ordinal_bit;
-
-        uint src = INVALID;
-        uint row = INVALID;
-        if (!value_vreg_for_node(element, src))
-        {
-            write_status_error_detail(node, X86_VINST_ERROR_AGG_RET_STRUCT_VALUE);
-            return false;
-        }
-        if (!location_for_node_local(node, ordinal, row))
-        {
-            write_status_error_detail(node, X86_VINST_ERROR_AGG_RET_STRUCT_LOCATION);
-            return false;
-        }
-        write_inst(row, node, ordinal, X86_VINST_STORE_RET_PTR, INVALID, uint4(src, ordinal, 0u, 0u));
-
-        cur = record.w;
-        seen_fields += 1u;
-    }
-
-    uint expected_mask = width == 32u ? 0xffffffffu : ((1u << width) - 1u);
-    return seen_fields == width && seen_mask == expected_mask;
+    return true;
 }
 
 bool emit_aggregate_return(uint node, uint width)
@@ -2429,6 +2353,7 @@ bool emit_aggregate_return(uint node, uint width)
         return enum_width == width && emit_enum_value_to_ret_ptr(node, enum_value_node, width);
 
     uint struct_width = 0u;
+    uint array_width = 0u;
     if (struct_literal_width(expr_node, struct_width))
     {
         if (struct_width != width)
@@ -2436,23 +2361,20 @@ bool emit_aggregate_return(uint node, uint width)
             write_status_error_detail(node, X86_VINST_ERROR_AGG_RET_STRUCT_WIDTH);
             return false;
         }
-        if (!emit_struct_literal_to_ret_ptr(node, expr_node, width))
+        if (!validate_struct_literal_to_ret_ptr(expr_node, width))
         {
             write_status_error_detail(node, X86_VINST_ERROR_AGG_RET_STRUCT_FIELD);
             return false;
         }
     }
-    else
-    {
-    uint array_width = 0u;
-    if (array_literal_width(expr_node, array_width))
+    else if (array_literal_width(expr_node, array_width))
     {
         if (array_width != width)
         {
             write_status_error_detail(node, X86_VINST_ERROR_AGG_RET_ARRAY_WIDTH);
             return false;
         }
-        if (!emit_array_literal_to_ret_ptr(node, expr_node, width))
+        if (!validate_array_literal_to_ret_ptr(expr_node, width))
         {
             write_status_error_detail(node, X86_VINST_ERROR_AGG_RET_ARRAY_FIELD);
             return false;
@@ -2469,18 +2391,11 @@ bool emit_aggregate_return(uint node, uint width)
             write_status_error_detail(node, X86_VINST_ERROR_AGG_RET_SOURCE);
             return false;
         }
-        [loop]
-        for (uint ordinal = 0u; ordinal < width; ordinal += 1u)
+        if (width > X86_AGG_COPY_MAX_WIDTH)
         {
-            uint row = INVALID;
-            if (!location_for_node_local(node, ordinal, row))
-            {
-                write_status_error_detail(node, X86_VINST_ERROR_AGG_RET_SOURCE_LOCATION);
-                return false;
-            }
-            write_inst(row, node, ordinal, X86_VINST_COPY_AGG_RET, INVALID, uint4(source_kind, payload, ordinal, 0u));
+            write_status_error_detail(node, X86_VINST_ERROR_AGG_RET_COPY_WIDTH);
+            return false;
         }
-    }
     }
 
     uint return_row = INVALID;
@@ -2811,9 +2726,9 @@ bool emit_stmt(uint node, uint2 range)
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
 {
-    uint node = linear_dispatch_id(tid);
+    uint order_row = linear_dispatch_id(tid);
     bool ok = upstream_ok();
-    if (node == 0u)
+    if (order_row == 0u)
     {
         x86_virtual_inst_status[0u] = ok ? X86_VIRTUAL_INST_OK : 0u;
         x86_virtual_inst_status[1u] = ok ? 0u :
@@ -2823,7 +2738,11 @@ void main(uint3 tid: SV_DispatchThreadID)
         x86_virtual_inst_status[3u] = ok ? x86_node_inst_gen_input_status[3u] : 0u;
     }
 
-    if (!ok || !valid_node(node))
+    if (!ok || order_row >= gen_worklist_count())
+        return;
+
+    uint node = gen_worklist_node(order_row);
+    if (!valid_node(node))
         return;
 
     uint2 range = uint2(INVALID, 0u);

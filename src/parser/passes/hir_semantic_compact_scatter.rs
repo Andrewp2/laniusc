@@ -58,6 +58,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirSemanticCompa
                 b.hir_node_dense_id.as_entire_binding(),
             ),
             (
+                "hir_semantic_prefix_before_node".into(),
+                b.hir_semantic_prefix_before_node.as_entire_binding(),
+            ),
+            (
                 "hir_semantic_dense_node".into(),
                 b.hir_semantic_dense_node.as_entire_binding(),
             ),

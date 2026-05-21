@@ -141,11 +141,67 @@ pub(super) fn make_tokens_brace_context_pass(device: &wgpu::Device) -> Result<Pa
     )
 }
 
+pub(super) fn make_tokens_brace_match_01_depth_blocks_pass(
+    device: &wgpu::Device,
+) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_brace_match_01_depth_blocks",
+        shader: "tokens_brace_match_01_depth_blocks"
+    )
+}
+
+pub(super) fn make_tokens_bracket_match_01_depth_blocks_pass(
+    device: &wgpu::Device,
+) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_bracket_match_01_depth_blocks",
+        shader: "tokens_bracket_match_01_depth_blocks"
+    )
+}
+
+pub(super) fn make_tokens_brace_match_02_build_min_tree_pass(
+    device: &wgpu::Device,
+) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_brace_match_02_build_min_tree",
+        shader: "tokens_brace_match_02_build_min_tree"
+    )
+}
+
+pub(super) fn make_tokens_bracket_match_03_pair_pse_pass(
+    device: &wgpu::Device,
+) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_bracket_match_03_pair_pse",
+        shader: "tokens_bracket_match_03_pair_pse"
+    )
+}
+
+pub(super) fn make_tokens_brace_match_03_pair_pse_pass(device: &wgpu::Device) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_brace_match_03_pair_pse",
+        shader: "tokens_brace_match_03_pair_pse"
+    )
+}
+
 pub(super) fn make_tree_active_dispatch_args_pass(device: &wgpu::Device) -> Result<PassData> {
     crate::gpu::passes_core::make_main_pass!(
         device,
         "parser_tree_active_dispatch_args",
         shader: "tree_active_dispatch_args"
+    )
+}
+
+pub(super) fn make_tree_feature_dispatch_args_pass(device: &wgpu::Device) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tree_feature_dispatch_args",
+        shader: "tree_feature_dispatch_args"
     )
 }
 

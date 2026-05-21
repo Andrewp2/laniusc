@@ -2557,3 +2557,3259 @@ fn main() {
 2026-05-18T03:01:22-05:00 SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 90s cargo test -p laniusc --test codegen_x86 x86_source_pack_codegen_emits_direct_elf_for_module_main_literal_return -- --nocapture
 2026-05-18T03:03:35-05:00 SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 60s cargo test -p laniusc --test gpu_audit source_pack_compile_paths_use_scalar_count_boundaries -- --nocapture
 2026-05-18T03:08:44-05:00 SLANGC=/home/andrew-peterson/tools/bin/slangc timeout 60s cargo test -p laniusc --test gpu_audit parse_benchmark_uses_live_count_and_projected_tree_capacity -- --nocapture
+
+- 2026-05-20T19:12:36-05:00 `cargo fmt --check`
+
+- 2026-05-20T19:12:41-05:00 `cargo check -p laniusc`
+
+- 2026-05-20T19:12:48-05:00 `cargo build --release -p laniusc --bin gpu_compile_bench`
+
+- 2026-05-20T19:13:26-05:00 `LANIUS_PERFETTO_TRACE=traces/pipeline_cache_regenerated_seed_release_x86_varied_10k.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large`
+
+- 2026-05-20T19:13:39-05:00 `LANIUS_PERFETTO_TRACE=traces/pipeline_cache_regenerated_warm_release_x86_varied_10k.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large`
+
+- 2026-05-20T19:14:14-05:00 `git diff --check`
+
+- 2026-05-20T19:14:14-05:00 `git diff -- AGENTS.MD AGENTS.md`
+
+- 2026-05-20T19:18:53-05:00 `cargo fmt --check`
+
+- 2026-05-20T19:18:59-05:00 `cargo check -p laniusc`
+
+- 2026-05-20T19:20:29-05:00 `cargo fmt --check`
+
+- 2026-05-20T19:20:34-05:00 `cargo fmt`
+
+- 2026-05-20T19:20:39-05:00 `cargo check -p laniusc`
+
+- 2026-05-20T19:20:44-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch x86_regalloc_dispatch_uses_function_span_not_global_instruction_count -- --nocapture`
+
+- 2026-05-20T19:21:00-05:00 `cargo fmt --check`
+
+- 2026-05-20T19:21:05-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch x86_regalloc_dispatch_uses_function_span_not_global_instruction_count -- --nocapture`
+
+- 2026-05-20T19:21:13-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86 x86_source_codegen_emits_direct_elf_for_integer_add_return -- --nocapture`
+
+- 2026-05-20T19:21:23-05:00 `cargo build --release -p laniusc --bin gpu_compile_bench`
+
+- 2026-05-20T19:22:00-05:00 `LANIUS_PERFETTO_TRACE=traces/regalloc_function_span_warm_release_x86_varied_10k.json LANIUS_GPU_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large`
+
+- 2026-05-20T19:22:41-05:00 `git diff --check`
+
+- 2026-05-20T19:22:41-05:00 `git diff -- AGENTS.MD AGENTS.md`
+
+- 2026-05-20T19:22:41-05:00 `cargo fmt --check`
+
+- 2026-05-20T19:24:32-05:00 `target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --estimate-live --allow-large`
+
+- 2026-05-20T19:26:34-05:00 `cargo fmt --check`
+
+- 2026-05-20T19:26:44-05:00 `cargo check -p laniusc`
+
+- 2026-05-20T19:26:50-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch x86_regalloc_dispatch_uses_function_span_not_global_instruction_count -- --nocapture`
+
+- 2026-05-20T19:26:59-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86 x86_source_codegen_emits_direct_elf_for_integer_add_return -- --nocapture`
+
+- 2026-05-20T19:27:13-05:00 `cargo build --release -p laniusc --bin gpu_compile_bench`
+
+- 2026-05-20T19:27:39-05:00 `LANIUS_PERFETTO_TRACE=traces/regalloc_function_span_clean_warm_release_x86_varied_10k.json LANIUS_GPU_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large`
+
+- 2026-05-20T19:31:03-05:00 `cargo fmt --check`
+
+- 2026-05-20T19:31:11-05:00 `cargo build --release -p laniusc --bin gpu_compile_bench`
+
+- 2026-05-20T19:31:57-05:00 `rm -rf target/wgpu-pipeline-cache`
+
+- 2026-05-20T19:31:57-05:00 `LANIUS_PERFETTO_TRACE=traces/pipeline_cache_regenerated_seed_20260520_193157.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large`
+
+- 2026-05-20T19:31:59-05:00 `LANIUS_PERFETTO_TRACE=traces/pipeline_cache_regenerated_warm_20260520_193157.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large`
+
+- 2026-05-20T19:32:28-05:00 `git diff --check`
+
+- 2026-05-20T19:32:28-05:00 `git diff -- AGENTS.MD AGENTS.md`
+
+- 2026-05-20T19:38:42-05:00 `cargo fmt --check`
+
+- 2026-05-20T19:38:47-05:00 `cargo fmt`
+
+- 2026-05-20T19:38:52-05:00 `cargo check -p laniusc`
+
+- 2026-05-20T19:39:45-05:00 `cargo fmt --check`
+
+- 2026-05-20T19:39:50-05:00 `cargo fmt`
+
+- 2026-05-20T19:39:54-05:00 `cargo check -p laniusc`
+
+- 2026-05-20T19:40:08-05:00 `timeout 120s cargo test -p laniusc reflection::tests:: -- --nocapture`
+
+- 2026-05-20T19:40:27-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86 x86_source_codegen_emits_direct_elf_for_integer_add_return -- --nocapture`
+
+- 2026-05-20T19:40:40-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch x86_regalloc_dispatch_uses_function_span_not_global_instruction_count -- --nocapture`
+
+- 2026-05-20T19:40:53-05:00 `cargo build --release -p laniusc --bin gpu_compile_bench`
+
+- 2026-05-20T19:41:21-05:00 `LANIUS_PERFETTO_TRACE=traces/regalloc_dynamic_offsets_warm_release_x86_varied_10k.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large`
+
+- 2026-05-20T19:41:43-05:00 `cargo fmt --check`
+
+- 2026-05-20T19:41:43-05:00 `git diff --check`
+
+- 2026-05-20T19:41:44-05:00 `git diff -- AGENTS.MD AGENTS.md`
+
+- 2026-05-20T19:46:04-05:00 `cargo fmt --check`
+
+- 2026-05-20T19:46:10-05:00 `cargo check -p laniusc`
+
+- 2026-05-20T19:46:19-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86 x86_source_codegen_emits_direct_elf_for_integer_add_return -- --nocapture`
+
+- 2026-05-20T19:46:30-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch x86_regalloc_dispatch_uses_function_span_not_global_instruction_count -- --nocapture`
+
+- 2026-05-20T19:46:46-05:00 `cargo build --release -p laniusc --bin gpu_compile_bench`
+
+- 2026-05-20T19:47:12-05:00 `LANIUS_PERFETTO_TRACE=traces/regalloc_single_pass_warm_release_x86_varied_10k.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large`
+
+- 2026-05-20T19:47:29-05:00 `cargo fmt --check`
+
+- 2026-05-20T19:47:30-05:00 `cargo check -p laniusc`
+
+- 2026-05-20T19:47:41-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86 x86_source_codegen_emits_direct_elf_for_integer_add_return -- --nocapture`
+
+- 2026-05-20T19:47:56-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch x86_regalloc_dispatch_uses_function_span_not_global_instruction_count -- --nocapture`
+
+- 2026-05-20T19:48:11-05:00 `cargo build --release -p laniusc --bin gpu_compile_bench`
+
+- 2026-05-20T19:48:41-05:00 `LANIUS_PERFETTO_TRACE=traces/regalloc_single_pass_chunk64_warm_release_x86_varied_10k.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large`
+
+- 2026-05-20T19:51:16-05:00 | cargo fmt --check
+
+- 2026-05-20T19:51:25-05:00 | cargo check -p laniusc
+
+- 2026-05-20T19:51:37-05:00 | cargo build --release -p laniusc --bin gpu_compile_bench
+
+- 2026-05-20T19:52:08-05:00 `rm -rf target/wgpu-pipeline-cache`
+
+- 2026-05-20T19:52:22-05:00 `LANIUS_PERFETTO_TRACE=traces/pipeline_cache_fresh_seed_20260520_195222.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large`
+
+- 2026-05-20T19:52:35-05:00 `LANIUS_PERFETTO_TRACE=traces/pipeline_cache_fresh_warm_20260520_195222.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large`
+
+- 2026-05-20T19:52:50-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch x86_regalloc_dispatch_uses_function_span_not_global_instruction_count -- --nocapture`
+
+- 2026-05-20T19:53:01-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86 x86_source_codegen_emits_direct_elf_for_integer_add_return -- --nocapture`
+
+- 2026-05-20T19:53:13-05:00 `git diff --check`
+
+- 2026-05-20T19:53:19-05:00 `git diff -- AGENTS.MD AGENTS.md`
+
+- 2026-05-20T19:56:43-05:00 `target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --estimate-live --allow-large`
+
+- 2026-05-20T20:01:22-05:00 `cargo fmt`
+
+- 2026-05-20T20:01:31-05:00 `cargo check -p laniusc`
+
+- 2026-05-20T20:01:45-05:00 `timeout 120s cargo test -p laniusc reflection::tests:: -- --nocapture`
+
+- 2026-05-20T20:02:19-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture`
+
+- 2026-05-20T20:02:32-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86 x86_source_codegen_emits_direct_elf_for_integer_add_return -- --nocapture`
+
+- 2026-05-20T20:02:45-05:00 `cargo fmt --check`
+
+- 2026-05-20T20:02:54-05:00 `cargo build --release -p laniusc --bin gpu_compile_bench`
+
+- 2026-05-20T20:03:25-05:00 `LANIUS_PERFETTO_TRACE=traces/next_call_dynamic_scan_warm_release_x86_varied_10k.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large`
+
+- 2026-05-20T20:03:38-05:00 `git diff --check`
+
+- 2026-05-20T20:03:48-05:00 `git diff -- AGENTS.MD AGENTS.md`
+
+- 2026-05-20T20:10:04-05:00 `cargo fmt`
+
+- 2026-05-20T20:10:16-05:00 `cargo check -p laniusc`
+
+- 2026-05-20T20:10:34-05:00 `timeout 120s cargo test -p laniusc reflection::tests:: -- --nocapture`
+
+- 2026-05-20T20:11:05-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture`
+
+- 2026-05-20T20:11:27-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86 x86_source_codegen_emits_direct_elf_for_integer_add_return -- --nocapture`
+
+- 2026-05-20T20:11:49-05:00 `cargo fmt --check`
+
+- 2026-05-20T20:11:58-05:00 `cargo build --release -p laniusc --bin gpu_compile_bench`
+
+- 2026-05-20T20:12:29-05:00 `LANIUS_PERFETTO_TRACE=traces/x86_scan_block_dynamic_warm_release_x86_varied_10k.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large`
+
+- 2026-05-20T20:15:23-05:00 `LANIUS_PERFETTO_TRACE=traces/pipeline_cache_clean_seed_20260520_201523.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large`
+
+- 2026-05-20T20:15:46-05:00 `LANIUS_PERFETTO_TRACE=traces/pipeline_cache_clean_warm_20260520_201546.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large`
+
+- 2026-05-20T20:15:59-05:00 `git diff --check`
+
+- 2026-05-20T20:15:59-05:00 `git diff -- AGENTS.MD AGENTS.md`
+
+- 2026-05-20T20:26:05-05:00 `cargo fmt`
+
+- 2026-05-20T20:26:06-05:00 `cargo check -p laniusc`
+
+- 2026-05-20T20:27:47-05:00 `cargo fmt`
+
+- 2026-05-20T20:27:48-05:00 `cargo check -p laniusc`
+
+- 2026-05-20T20:27:59-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture`
+
+- 2026-05-20T20:28:16-05:00 `timeout 180s cargo test -p laniusc --test codegen_x86 x86_source_codegen_emits_direct_elf_for -- --nocapture`
+
+- 2026-05-20T20:28:40-05:00 `cargo build --release -p laniusc --bin gpu_compile_bench`
+
+- 2026-05-20T20:29:18-05:00 `LANIUS_PERFETTO_TRACE=traces/call_save_mask_warm_release_x86_varied_10k_20260520_202918.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large`
+
+- 2026-05-20T20:29:34-05:00 `LANIUS_PERFETTO_TRACE=traces/call_save_mask_warm2_release_x86_varied_10k_20260520_202934.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large`
+
+- 2026-05-20T20:30:09-05:00 `cargo fmt`
+
+- 2026-05-20T20:30:09-05:00 `timeout 180s cargo test -p laniusc --test codegen_x86 x86_source_codegen_emits_direct_elf_for -- --nocapture`
+
+- 2026-05-20T20:30:45-05:00 `git diff --check`
+
+- 2026-05-20T20:30:45-05:00 `cargo fmt --check`
+
+- 2026-05-20T20:30:45-05:00 `git diff -- AGENTS.MD AGENTS.md`
+
+- 2026-05-20T20:34:55-05:00 `cargo fmt`
+
+- 2026-05-20T20:34:56-05:00 `cargo check -p laniusc`
+
+- 2026-05-20T20:35:06-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture`
+
+- 2026-05-20T20:35:19-05:00 `timeout 180s cargo test -p laniusc --test codegen_x86 x86_source_codegen_emits_direct_elf_for -- --nocapture`
+
+- 2026-05-20T20:38:23-05:00 `rm -f target/wgpu-pipeline-cache/*`
+
+- 2026-05-20T20:38:35-05:00 `cargo build --release -p laniusc --bin gpu_compile_bench`
+
+- 2026-05-20T20:39:18-05:00 `LANIUS_PERFETTO_TRACE=traces/pipeline_cache_reseed_seed_20260520_203911.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large`
+
+- 2026-05-20T20:39:34-05:00 `LANIUS_PERFETTO_TRACE=traces/pipeline_cache_reseed_warm_20260520_203911.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large`
+
+- 2026-05-20T20:40:27-05:00 `cargo fmt --check`
+
+- 2026-05-20T20:40:27-05:00 `git diff --check`
+
+- 2026-05-20T20:40:27-05:00 `git diff -- AGENTS.MD AGENTS.md`
+
+- 2026-05-20T20:49:42-05:00 `cargo fmt`
+
+- 2026-05-20T20:49:52-05:00 `cargo check -p laniusc`
+
+- 2026-05-20T20:50:09-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture`
+
+- 2026-05-20T20:50:39-05:00 `timeout 180s cargo test -p laniusc --test codegen_x86 x86_source_codegen_emits_direct_elf_for -- --nocapture`
+
+- 2026-05-20T20:51:12-05:00 `cargo build --release -p laniusc --bin gpu_compile_bench`
+
+- 2026-05-20T20:51:53-05:00 `LANIUS_PERFETTO_TRACE=traces/compact_stack_warm_release_x86_varied_10k_20260520_205146.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large`
+
+- 2026-05-20T20:52:28-05:00 `cargo fmt --check`
+
+- 2026-05-20T20:52:28-05:00 `git diff --check`
+
+- 2026-05-20T20:52:28-05:00 `git diff -- AGENTS.MD AGENTS.md`
+
+- 2026-05-20T20:57:00-05:00 `cargo fmt`
+
+- 2026-05-20T20:57:12-05:00 `cargo check -p laniusc`
+
+- 2026-05-20T20:57:30-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture`
+
+- 2026-05-20T20:57:46-05:00 `timeout 180s cargo test -p laniusc --test codegen_x86 x86_source_codegen_emits_direct_elf_for -- --nocapture`
+
+- 2026-05-20T20:58:13-05:00 `cargo build --release -p laniusc --bin gpu_compile_bench`
+
+- 2026-05-20T20:58:53-05:00 `LANIUS_PERFETTO_TRACE=traces/compact_imm_warm_release_x86_varied_10k_20260520_205843.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large`
+
+- 2026-05-20T20:59:25-05:00 `cargo fmt --check`
+
+- 2026-05-20T20:59:25-05:00 `git diff --check`
+
+- 2026-05-20T20:59:25-05:00 `git diff -- AGENTS.MD AGENTS.md`
+
+- 2026-05-20T21:08:28-05:00 `cargo fmt`
+
+- 2026-05-20T21:08:33-05:00 `cargo check -p laniusc`
+
+- 2026-05-20T21:08:43-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture`
+
+- 2026-05-20T21:08:57-05:00 `timeout 180s cargo test -p laniusc --test codegen_x86 x86_source_codegen_emits_direct_elf_for -- --nocapture`
+
+- 2026-05-20T21:09:20-05:00 `cargo build --release -p laniusc --bin gpu_compile_bench`
+
+- 2026-05-20T21:09:48-05:00 `find target/wgpu-pipeline-cache -type f -delete`
+
+- 2026-05-20T21:10:03-05:00 `LANIUS_PERFETTO_TRACE=traces/pipeline_cache_deleted_seed_20260520_211003.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 0 --allow-large`
+
+- 2026-05-20T21:10:18-05:00 `LANIUS_PERFETTO_TRACE=traces/pipeline_cache_deleted_warm_20260520_211018.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large`
+
+- 2026-05-20T21:10:37-05:00 `cargo fmt --check`
+
+- 2026-05-20T21:10:44-05:00 `git diff --check`
+
+- 2026-05-20T21:10:48-05:00 `git diff -- AGENTS.MD AGENTS.md`
+
+- 2026-05-20T21:14:20-05:00 `timeout 120s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --estimate-live --allow-large`
+
+- 2026-05-20T21:17:16-05:00 `cargo fmt`
+
+- 2026-05-20T21:17:20-05:00 `cargo check -p laniusc`
+
+- 2026-05-20T21:17:30-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture`
+
+- 2026-05-20T21:17:42-05:00 `timeout 180s cargo test -p laniusc --test codegen_x86 x86_source_codegen_emits_direct_elf_for -- --nocapture`
+
+- 2026-05-20T21:18:10-05:00 `cargo build --release -p laniusc --bin gpu_compile_bench`
+
+- 2026-05-20T21:18:37-05:00 `LANIUS_PERFETTO_TRACE=traces/regalloc_param_mask_warm_release_x86_varied_10k_20260520_211837.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large`
+
+- 2026-05-20T21:18:55-05:00 `LANIUS_PERFETTO_TRACE=traces/regalloc_param_mask_hotcache_release_x86_varied_10k_20260520_211855.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large`
+
+- 2026-05-20T21:19:31-05:00 `cargo fmt`
+
+- 2026-05-20T21:19:36-05:00 `cargo check -p laniusc`
+
+- 2026-05-20T21:19:45-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture`
+
+- 2026-05-20T21:19:58-05:00 `timeout 90s cargo test -p laniusc --test codegen_x86 param -- --nocapture`
+
+- 2026-05-20T21:20:12-05:00 `cargo build --release -p laniusc --bin gpu_compile_bench`
+
+- 2026-05-20T21:20:36-05:00 `LANIUS_PERFETTO_TRACE=traces/regalloc_param_mask_fastpath_release_x86_varied_10k_20260520_212036.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large`
+
+- 2026-05-20T21:20:50-05:00 `LANIUS_PERFETTO_TRACE=traces/regalloc_param_mask_fastpath_hotcache_release_x86_varied_10k_20260520_212050.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large`
+
+- 2026-05-20T21:21:00-05:00 `cargo fmt --check`
+
+- 2026-05-20T21:21:04-05:00 `git diff --check`
+
+- 2026-05-20T21:21:09-05:00 `git diff -- AGENTS.MD AGENTS.md`
+- 2026-05-20T21:29:55-05:00 `cargo fmt --check`
+- 2026-05-20T21:30:08-05:00 `cargo build --release -p laniusc --bin gpu_compile_bench`
+- 2026-05-20T21:30:40-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch x86_inst_size_uses_compact_stack_frame_adjustments_from_layout_records -- --nocapture`
+- 2026-05-20T21:31:01-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86 x86_source_codegen_emits_direct_elf_for_integer_literal_return -- --nocapture`
+- 2026-05-20T21:31:40-05:00 `LANIUS_PERFETTO_TRACE=traces/zero_imm_xor_seed_20260520_2130.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 0 --allow-large`
+- 2026-05-20T21:31:56-05:00 `LANIUS_PERFETTO_TRACE=traces/zero_imm_xor_warm_20260520_2130.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large`
+- 2026-05-20T21:32:13-05:00 `LANIUS_PERFETTO_TRACE=traces/zero_imm_xor_hot_20260520_2130.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large`
+- 2026-05-20T21:32:46-05:00 `git diff --check -- shaders/codegen/x86_inst_size.slang shaders/codegen/x86_encode.slang tests/codegen_x86_regalloc_dispatch.rs TEST_RUN_LOG.md`
+- 2026-05-20T21:36:58-05:00 `cargo fmt --check`
+- 2026-05-20T21:37:07-05:00 `cargo build --release -p laniusc --bin gpu_compile_bench`
+- 2026-05-20T21:37:39-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch x86_inst_size_uses_compact_stack_frame_adjustments_from_layout_records -- --nocapture`
+- 2026-05-20T21:37:56-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86 x86_source_codegen_emits_direct_elf_for_integer_literal_return -- --nocapture`
+- 2026-05-20T21:38:23-05:00 `LANIUS_PERFETTO_TRACE=traces/zero_store_compact_seed_20260520_2140.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 0 --allow-large`
+- 2026-05-20T21:38:56-05:00 `LANIUS_PERFETTO_TRACE=traces/zero_store_compact_warm_20260520_2140.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large`
+- 2026-05-20T21:39:44-05:00 `timeout 180s cargo test -p laniusc --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --nocapture`
+- 2026-05-20T21:40:20-05:00 `git diff --check -- shaders/codegen/x86_inst_size.slang shaders/codegen/x86_encode.slang tests/codegen_x86_regalloc_dispatch.rs TEST_RUN_LOG.md`
+- 2026-05-20T21:43:43-05:00 `cargo build --release -p laniusc --bin gpu_compile_bench`
+- 2026-05-20T21:44:20-05:00 `cargo fmt --check`
+- 2026-05-20T21:44:29-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture`
+- 2026-05-20T21:44:48-05:00 `timeout 180s cargo test -p laniusc --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --nocapture`
+- 2026-05-20T21:45:21-05:00 `LANIUS_PERFETTO_TRACE=traces/regalloc_rank_mask_seed_20260520_2150.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 0 --allow-large`
+- 2026-05-20T21:45:40-05:00 `LANIUS_PERFETTO_TRACE=traces/regalloc_rank_mask_warm_20260520_2150.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large`
+- 2026-05-20T21:48:47-05:00 `cargo build --release -p laniusc --bin gpu_compile_bench`
+- 2026-05-20T21:49:22-05:00 `cargo fmt --check`
+- 2026-05-20T21:49:30-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture`
+- 2026-05-20T21:49:44-05:00 `timeout 180s cargo test -p laniusc --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --nocapture`
+- 2026-05-20T21:50:11-05:00 `find target/wgpu-pipeline-cache -type f -delete`
+- 2026-05-20T21:50:26-05:00 `LANIUS_PERFETTO_TRACE=traces/pipeline_cache_reseed_seed_20260520_2150.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 0 --allow-large`
+- 2026-05-20T21:50:44-05:00 `LANIUS_PERFETTO_TRACE=traces/pipeline_cache_reseed_warm_20260520_2150.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large`
+- 2026-05-20T21:51:37-05:00 `git diff --check`
+- 2026-05-20T21:51:50-05:00 `git diff -- AGENTS.MD AGENTS.md`
+- 2026-05-20T21:54:00-05:00 `timeout 120s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --estimate-live --allow-large`
+- 2026-05-20T21:56:45-05:00 `cargo fmt`
+- 2026-05-20T21:56:58-05:00 `cargo build --release -p laniusc --bin gpu_compile_bench`
+- 2026-05-20T21:57:40-05:00 `find target/wgpu-pipeline-cache -type f -delete`
+- 2026-05-20T21:57:54-05:00 `LANIUS_PERFETTO_TRACE=traces/pipeline_cache_skip_seed_20260520_2157.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 0 --allow-large`
+- 2026-05-20T21:58:15-05:00 `LANIUS_PERFETTO_TRACE=traces/pipeline_cache_skip_warm_20260520_2157.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large`
+- 2026-05-20T21:58:52-05:00 `cargo fmt --check`
+- 2026-05-20T21:58:52-05:00 `cargo check -p laniusc`
+- 2026-05-20T21:58:52-05:00 `git diff --check`
+- 2026-05-20T21:58:52-05:00 `git diff -- AGENTS.MD AGENTS.md`
+- 2026-05-20T22:00:25-05:00 `cargo build --release -p laniusc --bin gpu_compile_bench`
+- 2026-05-20T22:00:25-05:00 `timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture`
+- 2026-05-20T22:00:25-05:00 `timeout 180s cargo test -p laniusc --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --nocapture`
+- 2026-05-20T22:01:33-05:00 `find target/wgpu-pipeline-cache -type f -delete`
+- 2026-05-20T22:01:33-05:00 `LANIUS_PERFETTO_TRACE=traces/regalloc_span_records_seed_20260520_2204.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 0 --allow-large`
+- 2026-05-20T22:01:33-05:00 `LANIUS_PERFETTO_TRACE=traces/regalloc_span_records_warm_20260520_2204.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large`
+- 2026-05-20T22:02:20-05:00 `cargo fmt --check`
+- 2026-05-20T22:02:20-05:00 `git diff --check`
+- 2026-05-20T22:02:20-05:00 `git diff -- AGENTS.MD AGENTS.md`
+2026-05-20T22:08:02-05:00 | cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-20T22:08:29-05:00 | timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture
+2026-05-20T22:08:42-05:00 | timeout 180s cargo test -p laniusc --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --nocapture
+2026-05-20T22:09:08-05:00 | find target/wgpu-pipeline-cache -type f -delete
+2026-05-20T22:09:17-05:00 | LANIUS_PERFETTO_TRACE=traces/regalloc_no_node_func_seed_20260520_220917.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 0 --allow-large
+2026-05-20T22:09:29-05:00 | LANIUS_PERFETTO_TRACE=traces/regalloc_no_node_func_warm_20260520_220929.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large
+2026-05-20T22:14:36-05:00 | cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-20T22:15:08-05:00 | timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture
+2026-05-20T22:15:25-05:00 | find target/wgpu-pipeline-cache -type f -delete
+2026-05-20T22:15:30-05:00 | LANIUS_PERFETTO_TRACE=traces/regalloc_skip_inactive_state_seed_20260520_221530.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 0 --allow-large
+2026-05-20T22:15:41-05:00 | LANIUS_PERFETTO_TRACE=traces/regalloc_skip_inactive_state_warm_20260520_221541.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large
+2026-05-20T22:18:05-05:00 | cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-20T22:18:34-05:00 | timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture
+2026-05-20T22:18:47-05:00 | find target/wgpu-pipeline-cache -type f -delete
+2026-05-20T22:18:52-05:00 | LANIUS_PERFETTO_TRACE=traces/regalloc_hoist_next_call_seed_20260520_221852.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 0 --allow-large
+2026-05-20T22:19:03-05:00 | LANIUS_PERFETTO_TRACE=traces/regalloc_hoist_next_call_warm_20260520_221903.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large
+2026-05-20T22:19:27-05:00 | timeout 180s cargo test -p laniusc --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --nocapture
+2026-05-20T22:21:38-05:00 | cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-20T22:22:09-05:00 | find target/wgpu-pipeline-cache -type f -delete
+2026-05-20T22:22:15-05:00 | LANIUS_PERFETTO_TRACE=traces/regalloc_chunk128_seed_20260520_222215.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 0 --allow-large
+2026-05-20T22:22:25-05:00 | LANIUS_PERFETTO_TRACE=traces/regalloc_chunk128_warm_20260520_222225.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large
+2026-05-20T22:24:48-05:00 | cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-20T22:25:18-05:00 | timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture
+2026-05-20T22:25:34-05:00 | find target/wgpu-pipeline-cache -type f -delete
+2026-05-20T22:25:41-05:00 | LANIUS_PERFETTO_TRACE=traces/regalloc_rank_bitmask_seed_20260520_222541.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 0 --allow-large
+2026-05-20T22:25:54-05:00 | LANIUS_PERFETTO_TRACE=traces/regalloc_rank_bitmask_warm_20260520_222554.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large
+2026-05-20T22:26:23-05:00 | timeout 180s cargo test -p laniusc --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --nocapture
+2026-05-20T22:29:06-05:00 | cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-20T22:29:46-05:00 | LANIUS_PERFETTO_TRACE=traces/x86_metadata_split_warm_20260520_222946.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large
+
+- 2026-05-20T22:34:22-05:00
+  command: cargo build --release -p laniusc --bin gpu_compile_bench
+
+- 2026-05-20T22:34:37-05:00
+  command: rm -f target/wgpu-pipeline-cache/*
+
+- 2026-05-20T22:34:42-05:00
+  command: LANIUS_PERFETTO_TRACE=traces/pipeline_cache_seed_20260520_223442.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 0 --allow-large
+
+- 2026-05-20T22:35:07-05:00
+  command: LANIUS_PERFETTO_TRACE=traces/fresh_pipeline_cache_warm_20260520_223507.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large
+
+- 2026-05-20T22:36:10-05:00
+  command: cargo fmt --check
+
+- 2026-05-20T22:36:10-05:00
+  command: git diff --check
+
+- 2026-05-20T22:36:50-05:00
+  command: timeout 180s cargo test -p laniusc --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --nocapture
+
+- 2026-05-20T22:39:26-05:00
+  command: target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --estimate-live --allow-large
+
+- 2026-05-20T22:45:13-05:00
+  command: cargo build --release -p laniusc --bin gpu_compile_bench
+
+- 2026-05-20T22:45:39-05:00
+  command: timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture
+
+- 2026-05-20T22:45:52-05:00
+  command: timeout 180s cargo test -p laniusc --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --nocapture
+
+- 2026-05-20T22:46:13-05:00
+  command: rm -f target/wgpu-pipeline-cache/*
+
+- 2026-05-20T22:46:19-05:00
+  command: LANIUS_PERFETTO_TRACE=traces/regalloc_merged_rank_walk_seed_20260520_224619.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 0 --allow-large
+
+- 2026-05-20T22:46:29-05:00
+  command: LANIUS_PERFETTO_TRACE=traces/regalloc_merged_rank_walk_warm_20260520_224629.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large
+
+- 2026-05-20T22:46:58-05:00
+  command: cargo fmt --check
+
+- 2026-05-20T22:46:58-05:00
+  command: git diff --check
+
+- 2026-05-20T22:50:31-05:00
+  command: cargo build --release -p laniusc --bin gpu_compile_bench
+
+- 2026-05-20T22:50:58-05:00
+  command: timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture
+
+- 2026-05-20T22:51:10-05:00
+  command: timeout 180s cargo test -p laniusc --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --nocapture
+
+- 2026-05-20T22:51:35-05:00
+  command: rm -f target/wgpu-pipeline-cache/*
+
+- 2026-05-20T22:51:42-05:00
+  command: LANIUS_PERFETTO_TRACE=traces/regalloc_final_next_call_seed_20260520_225142.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 0 --allow-large
+
+- 2026-05-20T22:51:54-05:00
+  command: LANIUS_PERFETTO_TRACE=traces/regalloc_final_next_call_warm_20260520_225154.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large
+
+- 2026-05-20T22:52:41-05:00
+  command: cargo build --release -p laniusc --bin gpu_compile_bench
+
+- 2026-05-20T22:53:14-05:00
+  command: timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture
+
+- 2026-05-20T22:53:26-05:00
+  command: timeout 180s cargo test -p laniusc --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --nocapture
+
+- 2026-05-20T22:53:46-05:00
+  command: rm -f target/wgpu-pipeline-cache/*
+
+- 2026-05-20T22:53:53-05:00
+  command: LANIUS_PERFETTO_TRACE=traces/regalloc_final_next_call_inline_seed_20260520_225353.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 0 --allow-large
+
+- 2026-05-20T22:54:07-05:00
+  command: LANIUS_PERFETTO_TRACE=traces/regalloc_final_next_call_inline_warm_20260520_225407.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large
+
+- 2026-05-20T22:55:41-05:00
+  command: cargo build --release -p laniusc --bin gpu_compile_bench
+
+- 2026-05-20T22:56:10-05:00
+  command: timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture
+
+- 2026-05-20T22:56:21-05:00
+  command: timeout 180s cargo test -p laniusc --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --nocapture
+
+- 2026-05-20T22:56:47-05:00
+  command: rm -f target/wgpu-pipeline-cache/*
+
+- 2026-05-20T22:56:55-05:00
+  command: LANIUS_PERFETTO_TRACE=traces/regalloc_merged_rank_walk_final_seed_20260520_225655.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 0 --allow-large
+
+- 2026-05-20T22:57:05-05:00
+  command: LANIUS_PERFETTO_TRACE=traces/regalloc_merged_rank_walk_final_warm_20260520_225705.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large
+
+- 2026-05-20T22:57:35-05:00
+  command: cargo fmt --check
+
+- 2026-05-20T22:57:35-05:00
+  command: git diff --check
+2026-05-20T23:00:17-05:00	target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --estimate-live --allow-large
+2026-05-20T23:02:17-05:00	cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-20T23:02:43-05:00	LANIUS_PERFETTO_TRACE=traces/regalloc_chunk128_warm_20260520_230243.json LANIUS_GPU_COMPILE_TIMING=1 target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+2026-05-20T23:05:16-05:00	cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-20T23:05:47-05:00	LANIUS_PERFETTO_TRACE=traces/x86_capacity_func_meta_20260520_230547.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_X86_STATUS_TRACE=1 target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 1 --allow-large
+2026-05-20T23:08:12-05:00	timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture
+2026-05-20T23:08:25-05:00	cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-20T23:08:54-05:00	LANIUS_PERFETTO_TRACE=traces/regalloc_no_hir_bindings_warm_20260520_230854.json LANIUS_GPU_COMPILE_TIMING=1 target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+2026-05-20T23:09:23-05:00	timeout 180s cargo test -p laniusc --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --nocapture
+2026-05-20T23:09:23-05:00	cargo fmt --check
+2026-05-20T23:09:58-05:00	cargo fmt --check
+2026-05-20T23:14:36-05:00	timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch x86_regalloc_dispatch_uses_function_span_not_global_instruction_count -- --nocapture
+2026-05-20T23:14:51-05:00	cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-20T23:15:21-05:00	LANIUS_PERFETTO_TRACE=traces/regalloc_chunk_counters_20260520_231521.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_X86_STATUS_TRACE=1 target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 1 --allow-large
+2026-05-20T23:16:11-05:00	timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture
+2026-05-20T23:16:11-05:00	cargo fmt --check
+2026-05-20T23:16:11-05:00	timeout 180s cargo test -p laniusc --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --nocapture
+2026-05-20T23:18:55-05:00	timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture
+2026-05-20T23:19:09-05:00	timeout 180s cargo test -p laniusc --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --nocapture
+2026-05-20T23:19:28-05:00	cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-20T23:19:46-05:00	rm -f target/wgpu-pipeline-cache/*
+2026-05-20T23:19:59-05:00	LANIUS_PERFETTO_TRACE=traces/pipeline_cache_regen_20260520_231959.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+2026-05-20T23:20:17-05:00	LANIUS_PERFETTO_TRACE=traces/fresh_pipeline_cache_profile_20260520_232017.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+2026-05-20T23:20:45-05:00	cargo fmt --check
+2026-05-20T23:20:45-05:00	git diff --check
+2026-05-20T23:30:02-05:00	timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture
+2026-05-20T23:30:15-05:00	timeout 180s cargo test -p laniusc --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --nocapture
+2026-05-20T23:30:35-05:00	cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-20T23:31:03-05:00	rm -f target/wgpu-pipeline-cache/*
+2026-05-20T23:31:13-05:00	LANIUS_PERFETTO_TRACE=traces/spans_fixed_barrier_cache_regen_20260520_233113.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+2026-05-20T23:31:32-05:00	LANIUS_PERFETTO_TRACE=traces/spans_fixed_barrier_profile_20260520_233132.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+2026-05-20T23:33:04-05:00	timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture
+2026-05-20T23:33:17-05:00	cargo fmt --check
+2026-05-20T23:33:17-05:00	git diff --check
+2026-05-20T23:33:23-05:00	cargo fmt
+2026-05-20T23:33:30-05:00	cargo fmt --check
+2026-05-20T23:33:30-05:00	git diff --check
+2026-05-20T23:34:15-05:00	cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-20T23:34:58-05:00	timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture
+2026-05-20T23:35:11-05:00	git diff --check
+2026-05-20T23:35:11-05:00	cargo fmt --check
+2026-05-20T23:35:17-05:00	cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-20T23:35:48-05:00	rm -f target/wgpu-pipeline-cache/*
+2026-05-20T23:35:56-05:00	LANIUS_PERFETTO_TRACE=traces/spans_fixed_barrier_current_cache_regen_20260520_233556.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+2026-05-20T23:36:08-05:00	LANIUS_PERFETTO_TRACE=traces/spans_fixed_barrier_current_profile_20260520_233608.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+2026-05-20T23:36:24-05:00	git diff --check
+2026-05-20T23:40:20-05:00  timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture
+2026-05-20T23:40:31-05:00  timeout 180s cargo test -p laniusc --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --nocapture
+2026-05-20T23:41:07-05:00  cargo fmt --check
+2026-05-20T23:41:15-05:00  timeout 300s cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-20T23:41:47-05:00  rm -f target/wgpu-pipeline-cache/*
+2026-05-20T23:42:13-05:00  env LANIUS_PERFETTO_TRACE=traces/call_live_span_reuse_cache_regen_20260520_234142.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+2026-05-20T23:42:26-05:00  env LANIUS_PERFETTO_TRACE=traces/call_live_span_reuse_profile_20260520_234142.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+2026-05-20T23:47:10-05:00  timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture
+2026-05-20T23:47:20-05:00  timeout 180s cargo test -p laniusc --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --nocapture
+2026-05-20T23:47:40-05:00  timeout 300s cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-20T23:48:17-05:00  env LANIUS_PERFETTO_TRACE=traces/regalloc_chunk1024_profile_20260520_234811.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+2026-05-20T23:50:10-05:00  timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture
+2026-05-20T23:50:19-05:00  timeout 180s cargo test -p laniusc --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --nocapture
+2026-05-20T23:50:36-05:00  timeout 300s cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-20T23:51:02-05:00  env LANIUS_PERFETTO_TRACE=traces/regalloc_chunk2048_profile_20260520_235125.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+2026-05-20T23:51:35-05:00  cargo fmt --check
+2026-05-21T00:00:26-05:00 | cargo fmt
+2026-05-21T00:00:35-05:00 | cargo fmt --check
+2026-05-21T00:00:42-05:00 | timeout 120s cargo test -p laniusc --test type_checker_name_radix -- --nocapture
+2026-05-21T00:01:00-05:00 | timeout 180s cargo test -p laniusc --test type_checker_modules -- --nocapture
+2026-05-21T00:01:47-05:00 | LANIUS_GPU_TEST_TIMEOUT_MS=60000 LANIUS_GPU_PIPELINE_PROGRESS=1 timeout 90s cargo test -p laniusc --test type_checker_modules stdlib_module_seed_headers_are_valid_gpu_metadata -- --nocapture
+2026-05-21T00:03:01-05:00 | timeout 300s cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-21T00:03:44-05:00 | rm -f target/wgpu-pipeline-cache/*
+2026-05-21T00:03:52-05:00 | env LANIUS_PERFETTO_TRACE=traces/name_radix_active_cache_regen_20260521_000339.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+2026-05-21T00:04:09-05:00 | env LANIUS_PERFETTO_TRACE=traces/name_radix_active_profile_20260521_000339.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+2026-05-21T00:05:12-05:00 | git diff --check
+2026-05-21T00:05:18-05:00 | git diff -- AGENTS.MD AGENTS.md
+2026-05-21T00:11:37-05:00 | cargo fmt --check
+2026-05-21T00:11:44-05:00 | timeout 120s cargo test -p laniusc --test gpu_algorithms -- --nocapture
+2026-05-21T00:12:02-05:00 | timeout 120s cargo test -p laniusc --test type_checker_name_radix -- --nocapture
+2026-05-21T00:12:18-05:00 | timeout 300s cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-21T00:12:55-05:00 | rm -f target/wgpu-pipeline-cache/*
+2026-05-21T00:13:04-05:00 | env LANIUS_PERFETTO_TRACE=traces/stable_radix_bitset_cache_regen_20260521_001251.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+2026-05-21T00:13:23-05:00 | env LANIUS_PERFETTO_TRACE=traces/stable_radix_bitset_profile_20260521_001251.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+2026-05-21T00:17:11-05:00 | cargo fmt
+2026-05-21T00:17:19-05:00 | timeout 120s cargo test -p laniusc --test type_checker_name_radix -- --nocapture
+2026-05-21T00:17:40-05:00 | timeout 300s cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-21T00:18:17-05:00 | rm -f target/wgpu-pipeline-cache/*
+2026-05-21T00:18:26-05:00 | env LANIUS_PERFETTO_TRACE=traces/name_radix_no_inactive_copy_cache_regen_20260521_001812.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+2026-05-21T00:18:42-05:00 | env LANIUS_PERFETTO_TRACE=traces/name_radix_no_inactive_copy_profile_20260521_001812.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+2026-05-21T00:20:59-05:00 | cargo fmt
+2026-05-21T00:21:07-05:00 | timeout 120s cargo test -p laniusc --test type_checker_name_radix -- --nocapture
+2026-05-21T00:21:23-05:00 | timeout 300s cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-21T00:21:57-05:00 | rm -f target/wgpu-pipeline-cache/*
+2026-05-21T00:22:06-05:00 | env LANIUS_PERFETTO_TRACE=traces/name_radix_byte_dispatch_cache_regen_20260521_002152.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+2026-05-21T00:22:24-05:00 | env LANIUS_PERFETTO_TRACE=traces/name_radix_byte_dispatch_profile_20260521_002152.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+2026-05-21T00:23:01-05:00 | cargo fmt --check
+2026-05-21T00:23:12-05:00 | git diff --check
+2026-05-21T00:23:21-05:00 | git diff -- AGENTS.MD AGENTS.md
+2026-05-21T00:27:44-05:00 | cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-21T00:27:49-05:00 | rm -f target/wgpu-pipeline-cache/*
+2026-05-21T00:27:55-05:00 | env LANIUS_PERFETTO_TRACE=traces/fresh_pipeline_cache_seed_20260521_002755.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+2026-05-21T00:28:09-05:00 | env LANIUS_PERFETTO_TRACE=traces/fresh_pipeline_cache_profile_20260521_002809.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+2026-05-21T00:28:44-05:00 | git diff --check
+2026-05-21T00:28:44-05:00 | git diff -- AGENTS.MD AGENTS.md
+2026-05-21T00:31:22-05:00 | cargo fmt
+2026-05-21T00:31:27-05:00 | timeout 120s cargo test -p laniusc --test type_checker_name_radix -- --nocapture
+2026-05-21T00:31:39-05:00 | cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-21T00:32:04-05:00 | rm -f target/wgpu-pipeline-cache/*
+2026-05-21T00:32:10-05:00 | env LANIUS_PERFETTO_TRACE=traces/name_radix_indirect_prefix_base_cache_regen_20260521_003210.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+2026-05-21T00:32:26-05:00 | env LANIUS_PERFETTO_TRACE=traces/name_radix_indirect_prefix_base_profile_20260521_003226.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+2026-05-21T00:34:32-05:00 | cargo fmt
+2026-05-21T00:34:42-05:00 | timeout 120s cargo test -p laniusc --test type_checker_name_radix -- --nocapture
+2026-05-21T00:34:42-05:00 | timeout 120s cargo test -p laniusc --test parser_tree -- --nocapture
+2026-05-21T00:35:31-05:00 | cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-21T00:35:56-05:00 | rm -f target/wgpu-pipeline-cache/*
+2026-05-21T00:36:02-05:00 | env LANIUS_PERFETTO_TRACE=traces/parser_timer_boundary_cache_regen_20260521_003602.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+2026-05-21T00:36:16-05:00 | env LANIUS_PERFETTO_TRACE=traces/parser_timer_boundary_profile_20260521_003616.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+2026-05-21T00:36:47-05:00 | cargo fmt --check
+2026-05-21T00:36:47-05:00 | git diff -- AGENTS.MD AGENTS.md
+2026-05-21T00:36:47-05:00 | git diff --check
+2026-05-21T00:39:34-05:00 | cargo fmt
+2026-05-21T00:39:45-05:00 | timeout 120s cargo test -p laniusc --test parser_tree -- --nocapture
+2026-05-21T00:40:03-05:00 | cargo fmt
+2026-05-21T00:40:08-05:00 | timeout 120s cargo test -p laniusc --test parser_tree -- --nocapture
+2026-05-21T00:41:02-05:00 | cargo fmt
+2026-05-21T00:41:09-05:00 | cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-21T00:41:40-05:00 | env LANIUS_PERFETTO_TRACE=traces/parser_token_prelude_breakdown_profile_20260521_004140.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+2026-05-21T00:43:55-05:00 | cargo fmt
+2026-05-21T00:44:00-05:00 | timeout 120s cargo test -p laniusc --test parser_tree -- --nocapture
+2026-05-21T00:44:32-05:00 | cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-21T00:45:10-05:00 | rm -f target/wgpu-pipeline-cache/*
+2026-05-21T00:45:16-05:00 | env LANIUS_PERFETTO_TRACE=traces/tokens_to_kinds_lazy_prev_cache_regen_20260521_004516.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+2026-05-21T00:45:41-05:00 | env LANIUS_PERFETTO_TRACE=traces/tokens_to_kinds_lazy_prev_profile_20260521_004541.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+2026-05-21T00:46:13-05:00 | git diff -- AGENTS.MD AGENTS.md
+2026-05-21T00:46:13-05:00 | cargo fmt --check
+2026-05-21T00:46:13-05:00 | git diff --check
+2026-05-21T00:50:35-05:00 | cargo fmt --check
+2026-05-21T00:50:41-05:00 | timeout 180s cargo check -p laniusc
+2026-05-21T00:50:54-05:00 | timeout 300s cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-21T00:51:23-05:00 | rm -f target/wgpu-pipeline-cache/*
+2026-05-21T00:51:36-05:00 | env LANIUS_PERFETTO_TRACE=traces/pipeline_cache_detail_cache_regen_20260521_005136.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+2026-05-21T00:51:56-05:00 | env LANIUS_PERFETTO_TRACE=traces/pipeline_cache_detail_profile_20260521_005156.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+2026-05-21T00:52:27-05:00 | git diff --check
+2026-05-21T00:52:27-05:00 | git diff -- AGENTS.MD AGENTS.md
+2026-05-21T00:57:32-05:00 | cargo fmt --check
+2026-05-21T00:57:36-05:00 | timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture
+2026-05-21T00:57:49-05:00 | timeout 300s cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-21T00:58:24-05:00 | env LANIUS_PERFETTO_TRACE=traces/regalloc_chunk8192_profile_20260521_005824.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+2026-05-21T01:00:31-05:00 | cargo fmt --check
+2026-05-21T01:00:37-05:00 | timeout 120s cargo test -p laniusc --test lexer_retag gpu_parser_boundary -- --nocapture
+2026-05-21T01:01:21-05:00 | timeout 120s cargo test -p laniusc --test lexer_retag gpu_parser_boundary -- --nocapture
+2026-05-21T01:01:46-05:00 | timeout 300s cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-21T01:02:14-05:00 | env LANIUS_PERFETTO_TRACE=traces/brace_records_regalloc8192_profile_20260521_010214.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+2026-05-21T01:02:42-05:00 | env LANIUS_PERFETTO_TRACE=traces/brace_records_regalloc8192_warm_profile_20260521_010242.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+2026-05-21T01:05:12-05:00 | timeout 300s cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-21T01:05:20-05:00 | rm -f target/wgpu-pipeline-cache/*
+2026-05-21T01:05:34-05:00 | env LANIUS_PERFETTO_TRACE=traces/fresh_cache_seed_20260521_010527.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+2026-05-21T01:06:04-05:00 | env LANIUS_PERFETTO_TRACE=traces/fresh_cache_warm_profile_20260521_010558.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+2026-05-21T01:06:25-05:00 | git diff --check
+2026-05-21T01:06:25-05:00 | git diff -- AGENTS.MD AGENTS.md
+2026-05-21T01:14:46-05:00 | cargo fmt
+2026-05-21T01:14:53-05:00 | timeout 180s cargo check -p laniusc
+2026-05-21T01:15:23-05:00 | timeout 180s cargo test -p laniusc --test parser_tree -- --nocapture
+2026-05-21T01:16:09-05:00 | timeout 120s cargo test -p laniusc --test lexer_retag gpu_parser_boundary -- --nocapture
+2026-05-21T01:16:33-05:00 | timeout 300s cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-21T01:17:10-05:00 | env LANIUS_PERFETTO_TRACE=traces/parser_projection_cache_split_profile_20260521_011703.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+2026-05-21T01:18:58-05:00 | cargo fmt
+2026-05-21T01:19:09-05:00 | timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture
+2026-05-21T01:19:28-05:00 | timeout 300s cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-21T01:20:02-05:00 | env LANIUS_PERFETTO_TRACE=traces/regalloc_chunk16384_projection_cache_split_profile_20260521_011956.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+2026-05-21T01:21:38-05:00 | cargo fmt
+2026-05-21T01:21:46-05:00 | timeout 180s cargo check -p laniusc
+2026-05-21T01:22:07-05:00 | timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture
+2026-05-21T01:22:45-05:00 | timeout 300s cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-21T01:23:23-05:00 | env LANIUS_PERFETTO_TRACE=traces/regalloc_chunk16384_profile_20260521_012314.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+
+[2026-05-21T01:24:51-05:00] cargo fmt --check
+
+[2026-05-21T01:24:58-05:00] git diff --check
+
+[2026-05-21T01:24:58-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T01:25:44-05:00] rm -f target/wgpu-pipeline-cache/wgpu_pipeline_cache_vulkan_4318_8708_laniusc-0.1.0_release_wgpu-29.0.3_slang-2026.3.1_shader-d5ba32088f0ec629_key-f137cdf55f0e4e06
+
+[2026-05-21T01:25:57-05:00] env LANIUS_PERFETTO_TRACE=traces/fresh_cache_seed_after_delete_20260521_$(date +
+seed_trace=traces/fresh_cache_seed_after_delete_20260521_012557.json
+2026-05-21T01:26:32-05:00 | find target/wgpu-pipeline-cache -maxdepth 1 -type f -delete && find target/wgpu-pipeline-cache -maxdepth 1 -type f -print
+2026-05-21T01:26:44-05:00 | env LANIUS_PERFETTO_TRACE=traces/fresh_cache_seed_after_delete_20260521_012644.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+seed_trace=traces/fresh_cache_seed_after_delete_20260521_012644.json
+2026-05-21T01:27:07-05:00 | env LANIUS_PERFETTO_TRACE=traces/fresh_cache_after_delete_warm_profile_20260521_012707.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+warm_trace=traces/fresh_cache_after_delete_warm_profile_20260521_012707.json
+
+[2026-05-21T01:28:13-05:00] cargo fmt --check
+
+[2026-05-21T01:28:13-05:00] git diff --check
+
+[2026-05-21T01:28:13-05:00] git diff -- AGENTS.MD AGENTS.md
+2026-05-21T01:32:28-05:00 | timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source all --lines 10000 --seed 3235782381 --warmups 0 --iters 1 --allow-large
+2026-05-21T01:32:45-05:00 | env LANIUS_PERFETTO_TRACE=traces/mixed_10k_profile_20260521_013245.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source mixed --lines 10000 --seed 3235782381 --warmups 1 --iters 2 --allow-large
+mixed_trace=traces/mixed_10k_profile_20260521_013245.json
+2026-05-21T01:33:45-05:00 | cargo fmt
+2026-05-21T01:33:52-05:00 | timeout 180s cargo check -p laniusc
+2026-05-21T01:33:52-05:00 | timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture
+2026-05-21T01:34:05-05:00 | timeout 300s cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-21T01:34:33-05:00 | env LANIUS_PERFETTO_TRACE=traces/mixed_10k_regalloc65536_profile_20260521_013433.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source mixed --lines 10000 --seed 3235782381 --warmups 1 --iters 2 --allow-large
+mixed_regalloc65536_trace=traces/mixed_10k_regalloc65536_profile_20260521_013433.json
+2026-05-21T01:35:48-05:00 | cargo fmt
+2026-05-21T01:35:54-05:00 | timeout 180s cargo check -p laniusc
+2026-05-21T01:35:54-05:00 | timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture
+2026-05-21T01:36:12-05:00 | timeout 300s cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-21T01:36:47-05:00 | env LANIUS_PERFETTO_TRACE=traces/mixed_10k_regalloc_linear_fastpath_20260521_013647.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source mixed --lines 10000 --seed 3235782381 --warmups 1 --iters 2 --allow-large
+mixed_regalloc_linear_fastpath_trace=traces/mixed_10k_regalloc_linear_fastpath_20260521_013647.json
+2026-05-21T01:39:02-05:00 | cargo fmt
+2026-05-21T01:39:14-05:00 | timeout 120s cargo test -p laniusc --bin gpu_compile_bench mixed_source_is_deterministic_and_diverse mixed_stdout_oracle_is_deterministic_and_nonempty target_bytes_generates_at_least_requested_size -- --nocapture
+2026-05-21T01:39:14-05:00 | timeout 180s cargo check -p laniusc
+2026-05-21T01:39:27-05:00 | timeout 120s cargo test -p laniusc --bin gpu_compile_bench mixed_ -- --nocapture
+2026-05-21T01:39:27-05:00 | timeout 120s cargo test -p laniusc --bin gpu_compile_bench target_bytes_generates_at_least_requested_size -- --nocapture
+2026-05-21T01:39:46-05:00 | cargo fmt
+2026-05-21T01:39:46-05:00 | timeout 120s cargo test -p laniusc --bin gpu_compile_bench mixed_source_is_deterministic_and_diverse -- --nocapture
+2026-05-21T01:39:55-05:00 | timeout 300s cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-21T01:40:24-05:00 | timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source mixed --lines 10000 --seed 3235782381 --warmups 0 --iters 1 --allow-large
+2026-05-21T01:40:39-05:00 | timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source mixed --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+2026-05-21T01:40:51-05:00 | env LANIUS_PERFETTO_TRACE=traces/mixed_helpers_10k_profile_20260521_014051.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source mixed --lines 10000 --seed 3235782381 --warmups 1 --iters 2 --allow-large
+mixed_helpers_trace=traces/mixed_helpers_10k_profile_20260521_014051.json
+2026-05-21T01:41:00-05:00 | timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source all --lines 10000 --seed 3235782381 --warmups 0 --iters 1 --allow-large
+2026-05-21T01:41:30-05:00 | timeout 180s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source mixed --lines 1000 --seed 3235782381 --warmups 0 --iters 1 --allow-large --run-x86-output
+
+[2026-05-21T01:41:53-05:00] cargo fmt --check
+
+[2026-05-21T01:41:53-05:00] git diff --check
+
+[2026-05-21T01:41:53-05:00] git diff -- AGENTS.MD AGENTS.md
+2026-05-21T01:42:27-05:00 | timeout 120s cargo test -p laniusc --test codegen_x86_regalloc_dispatch -- --nocapture
+
+[2026-05-21T01:42:40-05:00] cargo fmt --check
+
+[2026-05-21T01:42:40-05:00] git diff --check
+
+[2026-05-21T01:42:40-05:00] git diff -- AGENTS.MD AGENTS.md
+2026-05-21T01:44:32-05:00 | env LANIUS_PERFETTO_TRACE=traces/expr_dense_10k_profile_20260521_014432.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source expr-dense --lines 10000 --seed 3235782381 --warmups 1 --iters 2 --allow-large
+expr_dense_trace=traces/expr_dense_10k_profile_20260521_014432.json
+2026-05-21T01:45:57-05:00 | cargo fmt
+2026-05-21T01:46:04-05:00 | timeout 120s cargo test -p laniusc --bin gpu_compile_bench expr_dense_ -- --nocapture
+2026-05-21T01:46:04-05:00 | timeout 180s cargo check -p laniusc
+2026-05-21T01:46:13-05:00 | timeout 300s cargo build --release -p laniusc --bin gpu_compile_bench
+2026-05-21T01:46:21-05:00 | timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source expr-dense --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+2026-05-21T01:46:31-05:00 | env LANIUS_PERFETTO_TRACE=traces/expr_dense_print_blocks_10k_profile_20260521_014631.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source expr-dense --lines 10000 --seed 3235782381 --warmups 1 --iters 2 --allow-large
+expr_dense_print_blocks_trace=traces/expr_dense_print_blocks_10k_profile_20260521_014631.json
+2026-05-21T01:46:45-05:00 | timeout 180s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source expr-dense --lines 1000 --seed 3235782381 --warmups 0 --iters 1 --allow-large --run-x86-output
+2026-05-21T01:46:45-05:00 | timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source all --lines 10000 --seed 3235782381 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T01:47:14-05:00] cargo fmt --check
+
+[2026-05-21T01:47:14-05:00] git diff --check
+
+[2026-05-21T01:47:14-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T01:49:33-05:00] env LANIUS_PERFETTO_TRACE=traces/simple_lets_10k_profile_$(date +%Y%m%d_%H%M%S).json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source simple-lets --lines 10000 --seed 3235782381 --warmups 1 --iters 2 --allow-large
+
+[2026-05-21T01:51:12-05:00] timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source all --lines 10000 --seed 3235782381 --warmups 1 --iters 2 --allow-large
+
+[2026-05-21T02:01:38-05:00] timeout 180s cargo check -p laniusc
+
+[2026-05-21T02:02:00-05:00] timeout 300s cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T02:02:38-05:00] timeout 180s cargo test -p laniusc --test parser_hir_array_fields --test parser_hir_enum_match_fields --test parser_hir_struct_fields --test parser_hir_call_fields --test parser_hir_member_fields --bin gpu_compile_bench expr_dense_ -- --nocapture
+
+[2026-05-21T02:03:00-05:00] timeout 180s cargo test -p laniusc --test parser_hir_array_fields --test parser_hir_enum_match_fields --test parser_hir_struct_fields --test parser_hir_call_fields --test parser_hir_member_fields -- --nocapture
+
+[2026-05-21T02:03:51-05:00] env LANIUS_PERFETTO_TRACE=traces/expr_dense_feature_flags_10k_profile_20260521_020351.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source expr-dense --lines 10000 --seed 3235782381 --warmups 1 --iters 2 --allow-large
+
+[2026-05-21T02:04:17-05:00] timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source expr-dense --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+
+[2026-05-21T02:04:39-05:00] timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source all --lines 10000 --seed 3235782381 --warmups 1 --iters 2 --allow-large
+
+[2026-05-21T02:04:53-05:00] timeout 180s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source expr-dense --lines 1000 --seed 3235782381 --warmups 0 --iters 1 --allow-large --run-x86-output
+
+[2026-05-21T02:06:47-05:00] cargo fmt
+
+[2026-05-21T02:06:53-05:00] timeout 180s cargo check -p laniusc
+
+[2026-05-21T02:07:04-05:00] timeout 180s cargo test -p laniusc --test lexer_retag gpu_parser_boundary_ -- --nocapture
+
+[2026-05-21T02:07:45-05:00] timeout 180s cargo test -p laniusc --test parser_hir_type_fields -- --nocapture
+
+[2026-05-21T02:08:21-05:00] timeout 300s cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T02:08:47-05:00] timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source expr-dense --lines 10000 --seed 3235782381 --warmups 1 --iters 2 --allow-large
+
+[2026-05-21T02:09:02-05:00] cargo fmt --check
+
+[2026-05-21T02:09:09-05:00] git diff --check
+
+[2026-05-21T02:09:14-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T02:12:34-05:00] cargo check -p laniusc
+
+[2026-05-21T02:12:41-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T02:13:05-05:00] env LANIUS_PERFETTO_TRACE=traces/pipeline_cache_fresh_seed_varied_10k_20260521_021305.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase x86 --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T02:13:31-05:00] env LANIUS_PERFETTO_TRACE=traces/pipeline_cache_regenerated_warm_varied_10k_20260521_021331.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase x86 --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 2 --allow-large
+
+[2026-05-21T02:14:05-05:00] cargo fmt --check
+
+[2026-05-21T02:14:10-05:00] git diff --check
+
+[2026-05-21T02:15:39-05:00] target/release/gpu_compile_bench --source varied --lines 10000 --seed 3235782381 --estimate-live --allow-large
+
+[2026-05-21T02:17:27-05:00] cargo check -p laniusc
+
+[2026-05-21T02:17:57-05:00] cargo fmt
+
+[2026-05-21T02:18:06-05:00] cargo test -p laniusc --test codegen_x86 x86_single_source_codegen_matches_one_file_source_pack -- --nocapture
+
+[2026-05-21T02:18:31-05:00] cargo check -p laniusc
+
+[2026-05-21T02:18:36-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T02:19:03-05:00] env LANIUS_PERFETTO_TRACE=traces/single_source_staged_x86_varied_10k_20260521_021903.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase x86 --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 2 --allow-large
+
+[2026-05-21T02:19:18-05:00] cargo fmt --check
+
+[2026-05-21T02:19:23-05:00] git diff --check
+
+[2026-05-21T02:21:37-05:00] target/release/gpu_compile_bench --emit x86_64-elf --phase x86 --source all --lines 10000 --seed 3235782381 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T02:22:33-05:00] target/release/gpu_compile_bench --source all --lines 10000 --seed 3235782381 --estimate-live --allow-large
+
+[2026-05-21T02:25:58-05:00] cargo check -p laniusc
+
+[2026-05-21T02:27:38-05:00] cargo fmt
+
+[2026-05-21T02:27:44-05:00] cargo test -p laniusc --test codegen_x86 x86_source_codegen_emits_direct_elf_for_integer_literal_return -- --nocapture
+
+[2026-05-21T02:28:30-05:00] cargo fmt
+
+[2026-05-21T02:28:38-05:00] cargo test -p laniusc --test codegen_x86 x86_source_codegen_emits_direct_elf_for_integer_literal_return -- --nocapture
+
+[2026-05-21T02:29:02-05:00] cargo test -p laniusc --test codegen_x86 x86_single_source_codegen_matches_one_file_source_pack -- --nocapture
+
+[2026-05-21T02:29:20-05:00] cargo check -p laniusc
+
+[2026-05-21T02:29:30-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T02:30:01-05:00] env LANIUS_PERFETTO_TRACE=traces/x86_exact_output_readback_varied_10k_20260521_023001.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase x86 --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 2 --allow-large
+
+[2026-05-21T02:31:52-05:00] cargo fmt
+
+[2026-05-21T02:31:57-05:00] cargo check -p laniusc
+
+[2026-05-21T02:32:10-05:00] cargo test -p laniusc --test codegen_x86 x86_source_codegen_emits_direct_elf_for_integer_literal_return -- --nocapture
+
+[2026-05-21T02:32:34-05:00] cargo test -p laniusc --test codegen_x86 x86_single_source_codegen_matches_one_file_source_pack -- --nocapture
+
+[2026-05-21T02:32:55-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T02:33:29-05:00] env LANIUS_PERFETTO_TRACE=traces/x86_exact_mapped_slices_varied_10k_20260521_023329.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s target/release/gpu_compile_bench --emit x86_64-elf --phase x86 --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 2 --allow-large
+
+[2026-05-21T02:33:46-05:00] target/release/gpu_compile_bench --emit x86_64-elf --phase x86 --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+
+[2026-05-21T02:33:56-05:00] cargo fmt --check
+
+[2026-05-21T02:34:03-05:00] git diff --check
+
+[2026-05-21T02:38:20-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T02:38:48-05:00] LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_PERFETTO_TRACE=traces/pipeline_cache_regenerated_seed_varied_10k_20260521_023848.json target/release/gpu_compile_bench --emit x86_64-elf --phase x86 --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T02:39:17-05:00] LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_PERFETTO_TRACE=traces/pipeline_cache_regenerated_warm_varied_10k_20260521_023917.json target/release/gpu_compile_bench --emit x86_64-elf --phase x86 --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+
+[2026-05-21T02:40:00-05:00] target/release/gpu_compile_bench --emit x86_64-elf --phase x86 --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+
+[2026-05-21T02:48:06-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_generic_impl_receiver_type -- --nocapture
+
+[2026-05-21T02:48:27-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_long_function_close_from_delimiter_records gpu_parser_boundary_retags_adjacent_function_closes_across_blocks -- --nocapture
+
+[2026-05-21T02:48:40-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_long_function_close_from_delimiter_records -- --nocapture
+
+[2026-05-21T02:48:51-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_adjacent_function_closes_across_blocks -- --nocapture
+
+[2026-05-21T02:49:06-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T02:49:47-05:00] target/release/gpu_compile_bench --emit x86_64-elf --phase x86 --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 3 --allow-large
+
+[2026-05-21T02:50:06-05:00] LANIUS_PERFETTO_TRACE=traces/brace_recorded_open_retaging_varied_10k_20260521_025006.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 target/release/gpu_compile_bench --emit x86_64-elf --phase x86 --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 2 --allow-large
+
+[2026-05-21T02:50:41-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_tuple_match_arm_arrow_as_match_arrow -- --nocapture
+
+[2026-05-21T02:50:52-05:00] cargo fmt --check
+
+[2026-05-21T02:50:57-05:00] git diff --check
+
+[2026-05-21T02:52:20-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_impl_method_open_from_owner_prefix_records -- --nocapture
+
+[2026-05-21T02:52:32-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_impl_method_open_from_owner_prefix_records -- --nocapture
+
+[2026-05-21T02:52:49-05:00] cargo fmt --check
+
+[2026-05-21T02:52:54-05:00] cargo fmt
+
+[2026-05-21T02:52:59-05:00] cargo fmt --check
+
+[2026-05-21T02:53:04-05:00] git diff --check
+
+[2026-05-21T02:57:41-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T02:57:55-05:00] target/release/gpu_compile_bench --emit x86_64-elf --phase x86 --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T02:58:14-05:00] LANIUS_PERFETTO_TRACE=traces/pipeline_cache_fresh_warm_varied_10k_20260521_025814.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 target/release/gpu_compile_bench --emit x86_64-elf --phase x86 --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 2 --allow-large
+
+[2026-05-21T02:58:25-05:00] ls -lh traces/pipeline_cache_fresh_warm_varied_10k_20260521_025814.json target/wgpu-pipeline-cache && jq -r 'select(.traceEvents) | .traceEvents[] | select(.ph == "X") | [.dur, .cat, .name] | @tsv' traces/pipeline_cache_fresh_warm_varied_10k_20260521_025814.json | sort -nr | head -40
+
+[2026-05-21T02:58:36-05:00] printf "Top GPU spans (ms)\n"; jq -r 'select(.traceEvents) | .traceEvents[] | select(.ph == "X" and .cat == "gpu") | [(.dur/1000), .name] | @tsv' traces/pipeline_cache_fresh_warm_varied_10k_20260521_025814.json | sort -nr | head -25; printf "\nPipeline cache spans (ms)\n"; jq -r 'select(.traceEvents) | .traceEvents[] | select(.ph == "X" and (.name | startswith("pipeline_cache."))) | [(.dur/1000), .name] | @tsv' traces/pipeline_cache_fresh_warm_varied_10k_20260521_025814.json | sort -nr
+
+[2026-05-21T02:58:45-05:00] jq -r 'select(.traceEvents) | .traceEvents[] | select(.ph == "C") | [.name, (.args | tostring)] | @tsv' traces/pipeline_cache_fresh_warm_varied_10k_20260521_025814.json
+
+[2026-05-21T02:58:58-05:00] git diff --check && git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T03:05:23-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_impl_method_close_from_owner_depth_records -- --nocapture
+
+[2026-05-21T03:05:49-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_generic_impl_receiver_type -- --nocapture
+
+[2026-05-21T03:06:10-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_nested_if_condition_block_as_block -- --nocapture
+
+[2026-05-21T03:06:20-05:00] cargo fmt --check
+
+[2026-05-21T03:06:31-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T03:06:57-05:00] target/release/gpu_compile_bench --emit x86_64-elf --phase x86 --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T03:07:17-05:00] LANIUS_PERFETTO_TRACE=traces/brace_depth_method_close_varied_10k_20260521_030717.json target/release/gpu_compile_bench --emit x86_64-elf --phase x86 --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T03:07:28-05:00] printf "Top GPU spans (ms)\n"; jq -r 'select(.traceEvents) | .traceEvents[] | select(.ph == "X" and .cat == "gpu") | [(.dur/1000), .name] | @tsv' traces/brace_depth_method_close_varied_10k_20260521_030717.json | sort -nr | head -20; printf "\nTop host spans (ms)\n"; jq -r 'select(.traceEvents) | .traceEvents[] | select(.ph == "X" and .cat == "host") | [(.dur/1000), .name] | @tsv' traces/brace_depth_method_close_varied_10k_20260521_030717.json | sort -nr | head -20
+
+[2026-05-21T03:07:37-05:00] git diff --check && git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T03:17:10-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_long_let_semicolon_from_statement_prefix_records -- --nocapture
+
+[2026-05-21T03:17:47-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_builds_param_and_type_context_tokens_on_gpu -- --nocapture
+
+[2026-05-21T03:18:01-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_builds_semantic_context_tokens_on_gpu -- --nocapture
+
+[2026-05-21T03:18:14-05:00] cargo fmt --check
+
+[2026-05-21T03:18:29-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T03:18:54-05:00] target/release/gpu_compile_bench --emit x86_64-elf --phase x86 --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T03:19:16-05:00] LANIUS_PERFETTO_TRACE=traces/statement_prefix_semicolon_varied_10k_20260521_031916.json target/release/gpu_compile_bench --emit x86_64-elf --phase x86 --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T03:19:26-05:00] printf "Parser delimiter/token spans (ms)\n"; jq -r 'select(.traceEvents) | .traceEvents[] | select(.ph == "X" and .cat == "gpu" and (.name | startswith("parser.tokens"))) | [(.dur/1000), .name] | @tsv' traces/statement_prefix_semicolon_varied_10k_20260521_031916.json | sort -nr; printf "\nTop GPU spans (ms)\n"; jq -r 'select(.traceEvents) | .traceEvents[] | select(.ph == "X" and .cat == "gpu") | [(.dur/1000), .name] | @tsv' traces/statement_prefix_semicolon_varied_10k_20260521_031916.json | sort -nr | head -25
+
+[2026-05-21T03:19:34-05:00] git diff --check && git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T03:20:01-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T03:20:31-05:00] git diff --check && git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T03:24:15-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_import_string_from_cross_block_statement_context_records -- --nocapture
+
+[2026-05-21T03:24:48-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_long_let_semicolon_from_statement_prefix_records -- --nocapture
+
+[2026-05-21T03:25:04-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_builds_semantic_context_tokens_on_gpu -- --nocapture
+
+[2026-05-21T03:25:17-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_builds_param_and_type_context_tokens_on_gpu -- --nocapture
+
+[2026-05-21T03:25:48-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_builds_param_and_type_context_tokens_on_gpu -- --nocapture
+
+[2026-05-21T03:26:02-05:00] cargo fmt --check
+
+[2026-05-21T03:26:20-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T03:26:49-05:00] target/release/gpu_compile_bench --emit x86_64-elf --phase x86 --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T03:27:04-05:00] LANIUS_PERFETTO_TRACE=traces/statement_context_no_semicolon_scan_varied_10k_20260521_032704.json target/release/gpu_compile_bench --emit x86_64-elf --phase x86 --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T03:27:12-05:00] printf "Parser delimiter/token spans (ms)\n"; jq -r 'select(.traceEvents) | .traceEvents[] | select(.ph == "X" and .cat == "gpu" and (.name | startswith("parser.tokens"))) | [(.dur/1000), .name] | @tsv' traces/statement_context_no_semicolon_scan_varied_10k_20260521_032704.json | sort -nr; printf "\nTop GPU spans (ms)\n"; jq -r 'select(.traceEvents) | .traceEvents[] | select(.ph == "X" and .cat == "gpu") | [(.dur/1000), .name] | @tsv' traces/statement_context_no_semicolon_scan_varied_10k_20260521_032704.json | sort -nr | head -25
+
+[2026-05-21T03:27:21-05:00] git diff --check && git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T03:31:18-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T03:31:26-05:00] find target/wgpu-pipeline-cache -maxdepth 1 -type f -delete
+
+[2026-05-21T03:31:39-05:00] LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 target/release/gpu_compile_bench --emit x86 --phase x86 --source varied --lines 10000 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T03:32:09-05:00] LANIUS_PERFETTO_TRACE=traces/pipeline_cache_regenerated_warm_varied_10k_20260521_033209.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 target/release/gpu_compile_bench --emit x86 --phase x86 --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T03:32:18-05:00] jq -r '.traceEvents[] | select(.ph=="X") | [.dur, .cat, .name, .args.lane] | @tsv' traces/pipeline_cache_regenerated_warm_varied_10k_20260521_033209.json | sort -nr | head -40
+
+[2026-05-21T03:32:30-05:00] jq -r '.traceEvents[] | select(.ph=="X") | [.ts, .dur, .cat, .name, .args.lane] | @tsv' traces/pipeline_cache_regenerated_warm_varied_10k_20260521_033209.json | head -60
+
+[2026-05-21T03:32:45-05:00] LANIUS_PERFETTO_TRACE=traces/pipeline_cache_regenerated_single_varied_10k_20260521_033245.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 target/release/gpu_compile_bench --emit x86 --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T03:33:00-05:00] jq -r '.traceEvents[] | select(.ph=="X") | [.dur, .cat, .name, .args.lane] | @tsv' traces/pipeline_cache_regenerated_single_varied_10k_20260521_033245.json | sort -nr | head -40
+
+[2026-05-21T03:33:00-05:00] jq -r '.traceEvents[] | select(.ph=="X") | [.ts, .dur, .cat, .name, .args.lane] | @tsv' traces/pipeline_cache_regenerated_single_varied_10k_20260521_033245.json | head -70
+
+[2026-05-21T03:36:21-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_long_decl_assign_from_statement_prefix_records -- --nocapture
+
+[2026-05-21T03:36:49-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_long_let_semicolon_from_statement_prefix_records -- --nocapture
+
+[2026-05-21T03:37:00-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_type_alias_rhs_as_type_context -- --nocapture
+
+[2026-05-21T03:37:14-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_builds_param_and_type_context_tokens_on_gpu -- --nocapture
+
+[2026-05-21T03:37:25-05:00] cargo fmt --check
+
+[2026-05-21T03:37:38-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T03:38:05-05:00] find target/wgpu-pipeline-cache -maxdepth 1 -type f -delete
+
+[2026-05-21T03:38:11-05:00] LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 target/release/gpu_compile_bench --emit x86 --phase x86 --source varied --lines 10000 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T03:38:29-05:00] LANIUS_PERFETTO_TRACE=traces/statement_assign_prefix_warm_varied_10k_20260521_033829.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 target/release/gpu_compile_bench --emit x86 --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T03:38:42-05:00] jq -r '.traceEvents[] | select(.ph=="X") | [.dur, .cat, .name, .args.lane] | @tsv' traces/statement_assign_prefix_warm_varied_10k_20260521_033829.json | sort -nr | head -40
+
+[2026-05-21T03:38:42-05:00] jq -r '.traceEvents[] | select(.ph=="X" and (.name|test("parser.tokens_to_kinds|x86.regalloc|typecheck.names|x86.inst_locations|compile.finish|compile.submit"))) | [.ts, .dur, .cat, .name, .args.lane] | @tsv' traces/statement_assign_prefix_warm_varied_10k_20260521_033829.json
+
+[2026-05-21T03:40:55-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_impl_method_close_from_owner_depth_records -- --nocapture
+
+[2026-05-21T03:41:12-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_long_function_close_from_delimiter_records -- --nocapture
+
+[2026-05-21T03:41:31-05:00] cargo fmt --check
+
+[2026-05-21T03:41:41-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T03:42:08-05:00] find target/wgpu-pipeline-cache -maxdepth 1 -type f -delete
+
+[2026-05-21T03:42:15-05:00] LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 target/release/gpu_compile_bench --emit x86 --phase x86 --source varied --lines 10000 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T03:42:31-05:00] LANIUS_PERFETTO_TRACE=traces/statement_assign_brace_record_warm_varied_10k_20260521_034231.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 target/release/gpu_compile_bench --emit x86 --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T03:42:58-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T03:43:32-05:00] find target/wgpu-pipeline-cache -maxdepth 1 -type f -delete
+
+[2026-05-21T03:43:41-05:00] LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 target/release/gpu_compile_bench --emit x86 --phase x86 --source varied --lines 10000 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T03:43:54-05:00] LANIUS_PERFETTO_TRACE=traces/statement_assign_prefix_restored_warm_varied_10k_20260521_034354.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 target/release/gpu_compile_bench --emit x86 --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T03:44:17-05:00] jq -r '.traceEvents[] | select(.ph=="X") | [.dur, .cat, .name, .args.lane] | @tsv' traces/statement_assign_prefix_restored_warm_varied_10k_20260521_034354.json | sort -nr | head -40
+
+[2026-05-21T03:44:17-05:00] jq -r '.traceEvents[] | select(.ph=="X" and (.name|test("parser.tokens_to_kinds|x86.regalloc|typecheck.names|x86.inst_locations|compile.finish|compile.submit|pipeline_cache.create"))) | [.ts, .dur, .cat, .name, .args.lane] | @tsv' traces/statement_assign_prefix_restored_warm_varied_10k_20260521_034354.json
+
+[2026-05-21T03:52:04-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_impl_method_close_from_owner_depth_records -- --nocapture
+
+[2026-05-21T03:53:06-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_impl_method_close_from_owner_depth_records -- --nocapture
+
+[2026-05-21T03:53:26-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_long_function_close_from_delimiter_records -- --nocapture
+
+[2026-05-21T03:53:42-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_match_call_args_inside_arm -- --nocapture
+
+[2026-05-21T03:53:51-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_tuple_match_arm_arrow_as_match_arrow -- --nocapture
+
+[2026-05-21T03:54:43-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_long_struct_literal_close_from_brace_pair_records -- --nocapture
+
+[2026-05-21T03:54:58-05:00] cargo fmt --check
+
+[2026-05-21T03:55:08-05:00] cargo fmt
+
+[2026-05-21T03:55:13-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_long_struct_literal_close_from_brace_pair_records -- --nocapture
+
+[2026-05-21T03:55:37-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T03:56:12-05:00] LANIUS_PERFETTO_TRACE=traces/token_brace_pair_warm_varied_10k_20260521_035612.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 target/release/gpu_compile_bench --emit x86 --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T04:01:12-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_long_struct_literal_close_from_brace_pair_records -- --nocapture
+
+[2026-05-21T04:03:24-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_long_struct_literal_close_from_brace_pair_records -- --nocapture
+
+[2026-05-21T04:05:02-05:00] cargo fmt
+
+[2026-05-21T04:05:11-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_long_struct_literal_close_from_brace_pair_records -- --nocapture
+
+[2026-05-21T04:05:31-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_impl_method_close_from_owner_depth_records gpu_parser_boundary_retags_tuple_match_arm_arrow_as_match_arrow -- --nocapture
+
+[2026-05-21T04:05:38-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_impl_method_close_from_owner_depth_records -- --nocapture
+
+[2026-05-21T04:05:49-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_tuple_match_arm_arrow_as_match_arrow -- --nocapture
+
+[2026-05-21T04:06:02-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T04:06:56-05:00] LANIUS_PERFETTO_TRACE=traces/fresh_cache_varied_10k_20260521_040656.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 target/release/gpu_compile_bench --emit x86 --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T04:07:16-05:00] LANIUS_PERFETTO_TRACE=traces/new_cache_warm_varied_10k_20260521_040716.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 target/release/gpu_compile_bench --emit x86 --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T04:08:52-05:00] cargo fmt --check
+
+[2026-05-21T04:08:58-05:00] git diff --check
+
+[2026-05-21T04:09:02-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T04:15:07-05:00] cargo fmt
+
+[2026-05-21T04:15:12-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_long_array_literal_close_from_bracket_pair_records -- --nocapture
+
+[2026-05-21T04:15:42-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_builds_semantic_context_tokens_on_gpu -- --nocapture
+
+[2026-05-21T04:15:53-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_builds_param_and_type_context_tokens_on_gpu -- --nocapture
+
+[2026-05-21T04:16:07-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T04:16:42-05:00] LANIUS_PERFETTO_TRACE=traces/bracket_pair_records_varied_10k_20260521_041642.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 target/release/gpu_compile_bench --emit x86 --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T04:17:06-05:00] LANIUS_PERFETTO_TRACE=traces/bracket_pair_records_warm_varied_10k_20260521_041706.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 target/release/gpu_compile_bench --emit x86 --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T04:17:19-05:00] cargo fmt --check
+
+[2026-05-21T04:17:19-05:00] git diff --check
+
+[2026-05-21T04:17:58-05:00] cargo test -p laniusc --test codegen_x86_regalloc_dispatch x86_regalloc_dispatch_uses_function_span_not_global_instruction_count -- --nocapture
+
+[2026-05-21T04:18:09-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T04:18:39-05:00] LANIUS_PERFETTO_TRACE=traces/regalloc_4k_warm_varied_10k_20260521_041839.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 target/release/gpu_compile_bench --emit x86 --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T04:19:17-05:00] cargo fmt --check
+
+[2026-05-21T04:19:17-05:00] git diff --check
+
+[2026-05-21T04:19:17-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T04:19:39-05:00] git diff --check
+
+[2026-05-21T04:19:39-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T04:20:03-05:00] LANIUS_PERFETTO_TRACE=traces/regalloc_4k_warm2_varied_10k_20260521_042003.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 target/release/gpu_compile_bench --emit x86 --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T04:20:35-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T04:21:06-05:00] LANIUS_PERFETTO_TRACE=traces/regalloc_8k_warm_varied_10k_20260521_042106.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 target/release/gpu_compile_bench --emit x86 --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T04:21:40-05:00] cargo test -p laniusc --test codegen_x86_regalloc_dispatch x86_regalloc_dispatch_uses_function_span_not_global_instruction_count -- --nocapture
+
+[2026-05-21T04:22:03-05:00] cargo fmt --check
+
+[2026-05-21T04:22:03-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T04:22:03-05:00] git diff --check
+
+[2026-05-21T04:22:33-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T04:23:08-05:00] git diff --check
+
+[2026-05-21T04:23:08-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T04:28:37-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T04:28:53-05:00] rm -f target/wgpu-pipeline-cache/*
+
+[2026-05-21T04:29:13-05:00] LANIUS_PERFETTO_TRACE=traces/cache_regen_cold_varied_10k_20260521_042913.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 ./target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T04:29:29-05:00] LANIUS_PERFETTO_TRACE=traces/cache_regen_warm_varied_10k_20260521_042929.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 ./target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T04:33:01-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_long_type_array_semicolon_from_bracket_pair_records -- --nocapture
+
+[2026-05-21T04:33:22-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_long_array_literal_close_from_bracket_pair_records -- --nocapture
+
+[2026-05-21T04:33:41-05:00] cargo fmt --check
+
+[2026-05-21T04:33:48-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T04:34:35-05:00] ./target/release/gpu_compile_bench --help | sed -n '1,18p'
+
+[2026-05-21T04:35:41-05:00] rm -f target/wgpu-pipeline-cache/*
+
+[2026-05-21T04:35:48-05:00] LANIUS_PERFETTO_TRACE=traces/type_semicolon_records_cold_varied_10k_20260521_043548.json LANIUS_GPU_COMPILE_HOST_TIMING=1 ./target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T04:36:03-05:00] LANIUS_PERFETTO_TRACE=traces/type_semicolon_records_warm_varied_10k_20260521_043603.json LANIUS_GPU_COMPILE_HOST_TIMING=1 ./target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T04:36:12-05:00] jq -r '.traceEvents[] | select(.ph=="X" and (.cat=="gpu")) | [.dur, .name] | @tsv' traces/type_semicolon_records_warm_varied_10k_20260521_043536.json | sort -nr | head -20
+
+[2026-05-21T04:36:27-05:00] jq -r '.traceEvents[] | select(.ph=="X" and (.cat=="host")) | [.dur, .name] | @tsv' traces/type_semicolon_records_warm_varied_10k_20260521_043603.json | sort -nr | head -25
+
+[2026-05-21T04:36:27-05:00] jq -r '.traceEvents[] | select(.ph=="X" and (.cat=="gpu")) | [.dur, .name] | @tsv' traces/type_semicolon_records_warm_varied_10k_20260521_043603.json | sort -nr | head -20
+
+[2026-05-21T04:36:27-05:00] find target/wgpu-pipeline-cache -maxdepth 1 -type f -printf '%p %s bytes %TY-%Tm-%Td %TH:%TM:%TS\n' 2>/dev/null | sort
+
+[2026-05-21T04:36:37-05:00] git diff --check
+
+[2026-05-21T04:36:37-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T04:39:44-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_long_array_literal_close_from_bracket_pair_records -- --nocapture
+
+[2026-05-21T04:40:03-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_long_type_array_semicolon_from_bracket_pair_records -- --nocapture
+
+[2026-05-21T04:40:14-05:00] cargo fmt --check
+
+[2026-05-21T04:40:18-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T04:40:49-05:00] rm -f target/wgpu-pipeline-cache/*
+
+[2026-05-21T04:40:58-05:00] LANIUS_PERFETTO_TRACE=traces/array_comma_records_cold_varied_10k_20260521_044058.json LANIUS_GPU_COMPILE_HOST_TIMING=1 ./target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T04:41:11-05:00] LANIUS_PERFETTO_TRACE=traces/array_comma_records_warm_varied_10k_20260521_044111.json LANIUS_GPU_COMPILE_HOST_TIMING=1 ./target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T04:41:22-05:00] jq -r '.traceEvents[] | select(.ph=="X" and (.cat=="gpu")) | [.dur, .name] | @tsv' traces/array_comma_records_warm_varied_10k_20260521_044111.json | sort -nr | head -20
+
+[2026-05-21T04:41:22-05:00] find target/wgpu-pipeline-cache -maxdepth 1 -type f -printf '%p %s bytes %TY-%Tm-%Td %TH:%TM:%TS\n' 2>/dev/null | sort
+
+[2026-05-21T04:41:32-05:00] git diff --check
+
+[2026-05-21T04:41:32-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T04:42:47-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_long_array_literal_close_from_bracket_pair_records -- --nocapture
+
+[2026-05-21T04:43:03-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_long_type_array_semicolon_from_bracket_pair_records -- --nocapture
+
+[2026-05-21T04:43:17-05:00] cargo fmt --check
+
+[2026-05-21T04:43:23-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T04:43:54-05:00] rm -f target/wgpu-pipeline-cache/*
+
+[2026-05-21T04:44:00-05:00] LANIUS_PERFETTO_TRACE=traces/bracket_close_records_cold_varied_10k_20260521_044400.json LANIUS_GPU_COMPILE_HOST_TIMING=1 ./target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T04:44:15-05:00] LANIUS_PERFETTO_TRACE=traces/bracket_close_records_warm_varied_10k_20260521_044415.json LANIUS_GPU_COMPILE_HOST_TIMING=1 ./target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T04:44:28-05:00] jq -r '.traceEvents[] | select(.ph=="X" and (.cat=="gpu")) | [.dur, .name] | @tsv' traces/bracket_close_records_warm_varied_10k_20260521_044415.json | sort -nr | head -20
+
+[2026-05-21T04:44:28-05:00] find target/wgpu-pipeline-cache -maxdepth 1 -type f -printf '%p %s bytes %TY-%Tm-%Td %TH:%TM:%TS\n' 2>/dev/null | sort
+
+[2026-05-21T04:44:49-05:00] git diff --check
+
+[2026-05-21T04:44:49-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T04:46:41-05:00] LANIUS_PERFETTO_TRACE=traces/regalloc_status_warm_varied_10k_20260521_044641.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_X86_STATUS_TRACE=1 ./target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T04:52:48-05:00] cargo fmt --check
+
+[2026-05-21T04:52:54-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T04:53:17-05:00] LANIUS_PERFETTO_TRACE=traces/pipeline_cache_regen_cold_varied_10k_20260521_045317.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 ./target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T04:53:30-05:00] LANIUS_PERFETTO_TRACE=traces/pipeline_cache_regen_warm_varied_10k_20260521_045330.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 ./target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T04:54:09-05:00] git diff --check
+
+[2026-05-21T04:54:44-05:00] LANIUS_PERFETTO_TRACE=traces/pipeline_cache_regen_warm_clean_varied_10k_20260521_045444.json LANIUS_GPU_COMPILE_HOST_TIMING=1 ./target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T04:59:11-05:00] cargo fmt --check
+
+[2026-05-21T04:59:18-05:00] cargo fmt
+
+[2026-05-21T04:59:26-05:00] cargo test -p laniusc x86_function_slot_capacity -- --nocapture
+
+[2026-05-21T04:59:47-05:00] cargo test -p laniusc --test codegen_x86_regalloc_dispatch x86_func_discover_consumes_hir_function_records_and_caps_slot_list -- --nocapture
+
+[2026-05-21T04:59:56-05:00] cargo fmt --check
+
+[2026-05-21T05:00:02-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T05:00:34-05:00] LANIUS_PERFETTO_TRACE=traces/function_slot_capacity_warm_status_varied_10k_20260521_050034.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_X86_STATUS_TRACE=1 ./target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T05:01:33-05:00] LANIUS_PERFETTO_TRACE=traces/function_slot_capacity_warm_clean_varied_10k_20260521_050133.json LANIUS_GPU_COMPILE_HOST_TIMING=1 ./target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T05:01:50-05:00] git diff --check
+
+[2026-05-21T05:05:36-05:00] cargo test -p laniusc --test codegen_x86_regalloc_dispatch x86_regalloc_consumes_function_param_register_masks -- --nocapture
+
+[2026-05-21T05:05:45-05:00] cargo test -p laniusc --test codegen_x86_regalloc_dispatch x86_regalloc_records_call_live_save_mask_from_virtual_liveness -- --nocapture
+
+[2026-05-21T05:05:52-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T05:06:19-05:00] LANIUS_PERFETTO_TRACE=traces/regalloc_param_rank_mask_warm_status_varied_10k_20260521_050619.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_X86_STATUS_TRACE=1 ./target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T05:06:42-05:00] cargo fmt --check
+
+[2026-05-21T05:06:51-05:00] git diff --check
+
+[2026-05-21T05:10:35-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T05:10:39-05:00] rm -f target/wgpu-pipeline-cache/*
+
+[2026-05-21T05:10:58-05:00] LANIUS_PERFETTO_TRACE=traces/pipeline_cache_best_practice_cold_seed_varied_10k_20260521_051058.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 ./target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T05:11:23-05:00] LANIUS_PERFETTO_TRACE=traces/pipeline_cache_best_practice_warm_profile_varied_10k_20260521_051123.json LANIUS_GPU_COMPILE_HOST_TIMING=1 ./target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T05:11:31-05:00] find target/wgpu-pipeline-cache -maxdepth 1 -type f -printf "%p %s bytes %TY-%Tm-%Td %TH:%TM:%TS\n" 2>/dev/null | sort
+
+[2026-05-21T05:11:41-05:00] jq -r '.traceEvents[] | select(.ph=="X") | [.dur, .cat, .name] | @tsv' traces/pipeline_cache_best_practice_warm_profile_varied_10k_20260521_051123.json | sort -nr | head -30
+
+[2026-05-21T05:11:47-05:00] jq -r '.traceEvents[] | select(.ph=="X" and .cat=="gpu") | [.dur, .name] | @tsv' traces/pipeline_cache_best_practice_warm_profile_varied_10k_20260521_051123.json | sort -nr | head -20
+
+[2026-05-21T05:11:52-05:00] jq -r '.traceEvents[] | select(.ph=="X" and (.name|startswith("pipeline_cache"))) | [.ts,.dur,.name] | @tsv' traces/pipeline_cache_best_practice_warm_profile_varied_10k_20260521_051123.json
+
+[2026-05-21T05:11:56-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T05:17:26-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_long_match_arm_comma_from_brace_records -- --nocapture
+
+[2026-05-21T05:17:55-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_long -- --nocapture
+
+[2026-05-21T05:18:07-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_tuple_match_arm_arrow_as_match_arrow -- --nocapture
+
+[2026-05-21T05:18:20-05:00] cargo fmt --check
+
+[2026-05-21T05:18:24-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T05:18:53-05:00] rm -f target/wgpu-pipeline-cache/*
+
+[2026-05-21T05:18:58-05:00] LANIUS_PERFETTO_TRACE=traces/brace_range_query_cold_seed_varied_10k_20260521_051858.json LANIUS_GPU_COMPILE_HOST_TIMING=1 ./target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T05:19:13-05:00] LANIUS_PERFETTO_TRACE=traces/brace_range_query_warm_profile_varied_10k_20260521_051913.json LANIUS_GPU_COMPILE_HOST_TIMING=1 ./target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T05:19:19-05:00] jq -r '.traceEvents[] | select(.ph=="X" and .cat=="gpu") | [.dur, .name] | @tsv' traces/brace_range_query_warm_profile_varied_10k_20260521_051913.json | sort -nr | head -30
+
+[2026-05-21T05:19:25-05:00] jq -r '.traceEvents[] | select(.ph=="X" and .cat=="host") | [.dur, .name] | @tsv' traces/brace_range_query_warm_profile_varied_10k_20260521_051913.json | sort -nr | head -30
+
+[2026-05-21T05:19:30-05:00] git diff --check
+
+[2026-05-21T05:19:33-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T05:19:54-05:00] cargo test -p laniusc --test lexer_retag gpu_parser_boundary_retags_long_match_arm_comma_from_brace_records -- --nocapture
+
+[2026-05-21T05:20:16-05:00] cargo fmt --check
+
+[2026-05-21T05:20:20-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T05:20:47-05:00] rm -f target/wgpu-pipeline-cache/*
+
+[2026-05-21T05:20:52-05:00] LANIUS_PERFETTO_TRACE=traces/brace_range_query_final_cold_seed_varied_10k_20260521_052052.json LANIUS_GPU_COMPILE_HOST_TIMING=1 ./target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T05:21:07-05:00] LANIUS_PERFETTO_TRACE=traces/brace_range_query_final_warm_profile_varied_10k_20260521_052107.json LANIUS_GPU_COMPILE_HOST_TIMING=1 ./target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T05:21:14-05:00] jq -r '.traceEvents[] | select(.ph=="X" and .cat=="gpu") | [.dur, .name] | @tsv' traces/brace_range_query_final_warm_profile_varied_10k_20260521_052107.json | sort -nr | head -30
+
+[2026-05-21T05:21:18-05:00] git diff --check
+
+[2026-05-21T05:21:22-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T05:23:48-05:00] LANIUS_PERFETTO_TRACE=traces/regalloc_status_after_brace_range_varied_10k_20260521_052348.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_X86_STATUS_TRACE=1 ./target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T05:25:37-05:00] cargo test -p laniusc --test codegen_x86 x86_source_codegen_emits_direct_elf_for_zero_arg_direct_call_return -- --nocapture
+
+[2026-05-21T05:25:56-05:00] cargo fmt --check
+
+[2026-05-21T05:26:02-05:00] cargo fmt
+
+[2026-05-21T05:26:06-05:00] cargo fmt --check
+
+[2026-05-21T05:26:11-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T05:26:39-05:00] LANIUS_PERFETTO_TRACE=traces/x86_single_readback_warm_profile_varied_10k_20260521_052639.json LANIUS_GPU_COMPILE_HOST_TIMING=1 ./target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T05:26:45-05:00] jq -r '.traceEvents[] | select(.ph=="X" and (.name|test("output_|readback|finish_x86"))) | [.dur,.cat,.name] | @tsv' traces/x86_single_readback_warm_profile_varied_10k_20260521_052639.json | sort -nr
+
+[2026-05-21T05:31:20-05:00] cargo fmt
+
+[2026-05-21T05:31:24-05:00] cargo test -p laniusc pipeline_cache_file --lib
+
+[2026-05-21T05:31:31-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T05:32:33-05:00] rm -f target/wgpu-pipeline-cache/*
+
+[2026-05-21T05:32:41-05:00] env LANIUS_PERFETTO_TRACE=traces/pipeline_cache_header_seed_20260521_053241.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T05:32:56-05:00] find target/wgpu-pipeline-cache -maxdepth 1 -type f -printf "%p %s bytes %TY-%Tm-%Td %TH:%TM:%TS\n" 2>/dev/null | sort
+
+[2026-05-21T05:33:00-05:00] xxd -l 40 target/wgpu-pipeline-cache/*
+
+[2026-05-21T05:33:06-05:00] env LANIUS_PERFETTO_TRACE=traces/pipeline_cache_header_warm_profile_20260521_053306.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T05:33:16-05:00] ls -t traces/pipeline_cache_header_seed_*.json traces/pipeline_cache_header_warm_profile_*.json | head -4
+
+[2026-05-21T05:33:21-05:00] jq -r '.traceEvents[] | select(.ph=="X") | [.dur, .cat, .name] | @tsv' traces/pipeline_cache_header_warm_profile_20260521_053306.json | sort -nr | head -35
+
+[2026-05-21T05:33:25-05:00] jq -r '.traceEvents[] | select(.ph=="X" and (.name|startswith("pipeline_cache"))) | [.ts,.dur,.cat,.name] | @tsv' traces/pipeline_cache_header_warm_profile_20260521_053306.json
+
+[2026-05-21T05:33:30-05:00] jq -r '.traceEvents[] | select(.ph=="X" and .cat=="gpu") | [.dur,.name] | @tsv' traces/pipeline_cache_header_warm_profile_20260521_053306.json | sort -nr | head -25
+
+[2026-05-21T05:34:02-05:00] cargo fmt
+
+[2026-05-21T05:34:09-05:00] cargo test -p laniusc pipeline_cache_file --lib
+
+[2026-05-21T05:34:21-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T05:34:45-05:00] rm -f target/wgpu-pipeline-cache/*
+
+[2026-05-21T05:34:54-05:00] env LANIUS_PERFETTO_TRACE=traces/pipeline_cache_header_fast_seed_20260521_053454.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T05:35:08-05:00] env LANIUS_PERFETTO_TRACE=traces/pipeline_cache_header_fast_warm_profile_20260521_053508.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T05:35:13-05:00] ls -t traces/pipeline_cache_header_fast_seed_*.json traces/pipeline_cache_header_fast_warm_profile_*.json | head -4
+
+[2026-05-21T05:35:17-05:00] jq -r '.traceEvents[] | select(.ph=="X") | [.dur, .cat, .name] | @tsv' traces/pipeline_cache_header_fast_warm_profile_20260521_053508.json | sort -nr | head -35
+
+[2026-05-21T05:35:22-05:00] jq -r '.traceEvents[] | select(.ph=="X" and (.name|startswith("pipeline_cache"))) | [.ts,.dur,.cat,.name] | @tsv' traces/pipeline_cache_header_fast_warm_profile_20260521_053508.json
+
+[2026-05-21T05:35:26-05:00] jq -r '.traceEvents[] | select(.ph=="X" and .cat=="gpu") | [.dur,.name] | @tsv' traces/pipeline_cache_header_fast_warm_profile_20260521_053508.json | sort -nr | head -25
+
+[2026-05-21T05:35:31-05:00] find target/wgpu-pipeline-cache -maxdepth 1 -type f -printf "%p %s bytes %TY-%Tm-%Td %TH:%TM:%TS\n" 2>/dev/null | sort && xxd -l 16 target/wgpu-pipeline-cache/*
+
+[2026-05-21T05:35:41-05:00] cargo fmt --check
+
+[2026-05-21T05:35:48-05:00] git diff --check
+
+[2026-05-21T05:35:53-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T05:38:20-05:00] env LANIUS_PERFETTO_TRACE=traces/steady_state_warmup1_varied_10k_20260521_053820.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T05:43:39-05:00] cargo test -p laniusc pipeline_cache_file --lib
+
+[2026-05-21T05:43:43-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T05:43:48-05:00] rm -f target/wgpu-pipeline-cache/*
+
+[2026-05-21T05:43:53-05:00] find target/wgpu-pipeline-cache -maxdepth 1 -type f -printf "%f %s bytes\n" 2>/dev/null | sort
+
+[2026-05-21T05:44:06-05:00] env LANIUS_PERFETTO_TRACE=traces/pipeline_cache_bestpractice_seed_20260521_054406.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T05:44:25-05:00] env LANIUS_PERFETTO_TRACE=traces/pipeline_cache_bestpractice_warm_profile_20260521_054425.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T05:44:46-05:00] jq -r '.traceEvents[] | select(.ph=="X" and (.name|startswith("pipeline_cache"))) | [.ts,.dur,.cat,.name] | @tsv' traces/pipeline_cache_bestpractice_warm_profile_20260521_054425.json
+
+[2026-05-21T05:44:46-05:00] jq -r '.traceEvents[] | select(.ph=="X") | [.dur,.cat,.name] | @tsv' traces/pipeline_cache_bestpractice_warm_profile_20260521_054425.json | sort -nr | head -40
+
+[2026-05-21T05:44:46-05:00] jq -r '.traceEvents[] | select(.ph=="X" and .cat=="gpu") | [.dur,.name] | @tsv' traces/pipeline_cache_bestpractice_warm_profile_20260521_054425.json | sort -nr | head -30
+
+[2026-05-21T05:44:46-05:00] find target/wgpu-pipeline-cache -maxdepth 1 -type f -printf "%p %s bytes %TY-%Tm-%Td %TH:%TM:%TS\n" 2>/dev/null | sort && xxd -l 16 target/wgpu-pipeline-cache/*
+
+[2026-05-21T05:44:58-05:00] cargo fmt --check
+
+[2026-05-21T05:44:58-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T05:44:58-05:00] git diff --check
+
+[2026-05-21T05:50:33-05:00] cargo test -p laniusc --test codegen_x86_regalloc_dispatch x86_regalloc_keeps_continuation_records_dead_on_final_chunk
+
+[2026-05-21T05:50:46-05:00] cargo fmt
+
+[2026-05-21T05:50:52-05:00] cargo test -p laniusc --test codegen_x86_regalloc_dispatch
+
+[2026-05-21T05:51:03-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T05:51:39-05:00] env LANIUS_PERFETTO_TRACE=traces/regalloc_16k_final_state_seed_20260521_055139.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T05:51:54-05:00] env LANIUS_PERFETTO_TRACE=traces/regalloc_16k_final_state_steady_varied_10k_20260521_055154.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T05:53:03-05:00] env LANIUS_PERFETTO_TRACE=traces/generated_suite_x86_1200_after_regalloc_20260521_055303.json LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 300s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source all --lines 1200 --seed 3235782381 --warmups 0 --iters 1 --validate-output --allow-large
+
+[2026-05-21T05:55:19-05:00] cargo fmt --check
+
+[2026-05-21T05:55:23-05:00] git diff --check
+
+[2026-05-21T05:55:26-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T05:56:29-05:00] rm -f target/wgpu-pipeline-cache/*
+
+[2026-05-21T05:56:34-05:00] env LANIUS_PERFETTO_TRACE=traces/current_cache_clean_seed_varied_10k_20260521_060000.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T05:56:50-05:00] env LANIUS_PERFETTO_TRACE=traces/current_cache_clean_warm_profile_varied_10k_20260521_060010.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T05:56:57-05:00] git diff --check
+
+[2026-05-21T05:57:01-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T06:03:18-05:00] cargo test -p laniusc compiler::tests::x86_only_compiler_does_not_initialize_wasm_backend
+
+[2026-05-21T06:04:17-05:00] cargo test -p laniusc --test codegen_x86_properties generated_x86_prints_nested_call_results_from_hir_arguments
+
+[2026-05-21T06:04:52-05:00] env LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 120s cargo run -q -p laniusc -- --emit x86_64 -o /tmp/laniusc_x86_smoke
+
+[2026-05-21T06:05:35-05:00] cargo fmt --check
+
+[2026-05-21T06:05:41-05:00] cargo fmt
+
+[2026-05-21T06:05:45-05:00] cargo fmt --check
+
+[2026-05-21T06:05:52-05:00] git diff --check
+
+[2026-05-21T06:05:57-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T06:15:34-05:00] cargo test -p laniusc --test parser_feature_dispatch_args
+
+[2026-05-21T06:16:57-05:00] cargo test -p laniusc --test parser_feature_dispatch_args
+
+[2026-05-21T06:17:14-05:00] cargo test -p laniusc --test parser_hir_enum_match_fields --test parser_hir_struct_fields
+
+[2026-05-21T06:17:44-05:00] cargo fmt
+
+[2026-05-21T06:17:50-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T06:18:26-05:00] rm -f target/wgpu-pipeline-cache/*_release_*
+
+[2026-05-21T06:18:42-05:00] env LANIUS_PERFETTO_TRACE=traces/feature_dispatch_clean_seed_varied_10k_20260521_061842.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T06:18:58-05:00] env LANIUS_PERFETTO_TRACE=traces/feature_dispatch_clean_warm_profile_varied_10k_20260521_061858.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T06:19:11-05:00] jq -r '.traceEvents[] | select(.ph=="X") | [.cat,.name,(.dur/1000)] | @tsv' traces/feature_dispatch_clean_warm_profile_varied_10k_20260521_061858.json | sort -k3,3nr | head -n 30
+
+[2026-05-21T06:19:53-05:00] cargo fmt --check
+
+[2026-05-21T06:19:53-05:00] git diff --check
+
+[2026-05-21T06:19:53-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T06:25:46-05:00] cargo check -p laniusc
+
+[2026-05-21T06:25:57-05:00] cargo test -p laniusc --test parser_hir_struct_fields
+
+[2026-05-21T06:27:18-05:00] cargo fmt
+
+[2026-05-21T06:27:23-05:00] cargo test -p laniusc --test parser_feature_dispatch_args
+
+[2026-05-21T06:27:40-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T06:28:08-05:00] rm -f target/wgpu-pipeline-cache/*_release_*
+
+[2026-05-21T06:28:18-05:00] env LANIUS_PERFETTO_TRACE=traces/struct_rank_compact_seed_varied_10k_20260521_062818.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T06:28:42-05:00] env LANIUS_PERFETTO_TRACE=traces/struct_rank_compact_warm_profile_varied_10k_20260521_062842.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T06:32:27-05:00] cargo fmt
+
+[2026-05-21T06:32:32-05:00] cargo check -p laniusc
+
+[2026-05-21T06:32:42-05:00] cargo test -p laniusc --test parser_feature_dispatch_args --test parser_hir_struct_fields
+
+[2026-05-21T06:33:03-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T06:33:27-05:00] rm -f target/wgpu-pipeline-cache/*_release_*
+
+[2026-05-21T06:33:35-05:00] env LANIUS_PERFETTO_TRACE=traces/struct_rank_compact_dedicated_seed_varied_10k_20260521_063335.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T06:33:51-05:00] env LANIUS_PERFETTO_TRACE=traces/struct_rank_compact_dedicated_warm_profile_varied_10k_20260521_063351.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T06:34:22-05:00] cargo fmt --check
+
+[2026-05-21T06:34:22-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T06:34:22-05:00] git diff --check
+
+[2026-05-21T06:37:56-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T06:38:14-05:00] env LANIUS_PERFETTO_TRACE=traces/cache_clean_seed_varied_10k_20260521_063814.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T06:38:40-05:00] env LANIUS_PERFETTO_TRACE=traces/cache_clean_warm_profile_varied_10k_20260521_063840.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T06:39:10-05:00] cargo test -p laniusc gpu::device::tests::pipeline_cache_file --lib -- --nocapture
+
+[2026-05-21T06:39:20-05:00] git diff --check
+
+[2026-05-21T06:46:51-05:00] cargo fmt
+
+[2026-05-21T06:46:56-05:00] cargo check -p laniusc
+
+[2026-05-21T06:47:04-05:00] cargo test -p laniusc --test parser_feature_dispatch_args --test parser_hir_enum_match_fields --test parser_hir_struct_fields
+
+[2026-05-21T06:47:40-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T06:48:13-05:00] env LANIUS_PERFETTO_TRACE=traces/enum_match_rank_compact_seed_varied_10k_20260521_064813.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T06:48:28-05:00] env LANIUS_PERFETTO_TRACE=traces/enum_match_rank_compact_warm_profile_varied_10k_20260521_064828.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T06:48:57-05:00] cargo fmt --check
+
+[2026-05-21T06:49:05-05:00] git diff --check
+
+[2026-05-21T06:49:09-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T06:53:37-05:00] cargo fmt
+
+[2026-05-21T06:53:42-05:00] cargo check -p laniusc
+
+[2026-05-21T06:53:50-05:00] cargo test -p laniusc --test parser_feature_dispatch_args --test parser_hir_enum_match_fields --test parser_hir_struct_fields
+
+[2026-05-21T06:54:20-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T06:54:46-05:00] env LANIUS_PERFETTO_TRACE=traces/rank_scratch_shared_warm_profile_varied_10k_20260521_065446.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T06:55:12-05:00] cargo fmt --check
+
+[2026-05-21T06:55:18-05:00] git diff --check
+
+[2026-05-21T06:55:23-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T06:57:13-05:00] cargo fmt
+
+[2026-05-21T06:57:28-05:00] cargo check -p laniusc
+
+[2026-05-21T06:57:38-05:00] cargo test -p laniusc --test codegen_x86_regalloc_dispatch
+
+[2026-05-21T06:57:50-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T06:58:19-05:00] env LANIUS_PERFETTO_TRACE=traces/regalloc_chunk256_warm_profile_varied_10k_20260521_065819.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T07:01:17-05:00] cargo test -p laniusc gpu::device::tests::pipeline_cache_file --lib -- --nocapture
+
+[2026-05-21T07:01:24-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T07:01:52-05:00] rm -f target/wgpu-pipeline-cache/*
+
+[2026-05-21T07:02:04-05:00] env LANIUS_PERFETTO_TRACE=traces/fresh_pipeline_cache_seed_varied_10k_20260521_070204.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T07:02:21-05:00] env LANIUS_PERFETTO_TRACE=traces/fresh_pipeline_cache_warm_profile_varied_10k_20260521_070221.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T07:02:36-05:00] cargo fmt --check
+
+[2026-05-21T07:02:40-05:00] git diff --check
+
+[2026-05-21T07:02:45-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T07:11:01-05:00] cargo fmt
+
+[2026-05-21T07:11:12-05:00] cargo check -p laniusc
+
+[2026-05-21T07:11:30-05:00] cargo fmt
+
+[2026-05-21T07:11:35-05:00] cargo check -p laniusc
+
+[2026-05-21T07:11:48-05:00] cargo test -p laniusc --test parser_hir_type_fields --test parser_hir_call_fields --test parser_hir_array_fields --test parser_hir_struct_fields --test parser_hir_enum_match_fields
+
+[2026-05-21T07:13:38-05:00] cargo fmt
+
+[2026-05-21T07:13:43-05:00] cargo check -p laniusc
+
+[2026-05-21T07:13:49-05:00] cargo test -p laniusc --test parser_hir_type_fields --test parser_hir_call_fields --test parser_hir_array_fields --test parser_hir_struct_fields --test parser_hir_enum_match_fields
+
+[2026-05-21T07:16:21-05:00] cargo fmt
+
+[2026-05-21T07:16:26-05:00] cargo test -p laniusc --test parser_feature_dispatch_args
+
+[2026-05-21T07:16:43-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T07:17:12-05:00] rm -f target/wgpu-pipeline-cache/*
+
+[2026-05-21T07:17:18-05:00] env LANIUS_PERFETTO_TRACE=traces/list_rank_compact_seed_varied_10k_20260521_071718.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T07:17:34-05:00] env LANIUS_PERFETTO_TRACE=traces/list_rank_compact_warm_profile_varied_10k_20260521_071734.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T07:18:03-05:00] env LANIUS_PERFETTO_TRACE=traces/list_rank_compact_warm_profile2_varied_10k_20260521_071803.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_X86_STATUS_TRACE=1 timeout 300s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T07:18:26-05:00] cargo fmt --check
+
+[2026-05-21T07:18:34-05:00] git diff --check
+
+[2026-05-21T07:18:39-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T07:22:53-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T07:23:29-05:00] LANIUS_PERFETTO_TRACE=traces/cold_cache_seed_varied_10k_20260521_072329.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_GPU_COMPILE_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_PIPELINE_CACHE_PERSIST_ALWAYS=1 target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T07:23:53-05:00] LANIUS_PERFETTO_TRACE=traces/warm_cache_profile_varied_10k_20260521_072353.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_GPU_COMPILE_TIMING=1 target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T07:24:34-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T07:29:25-05:00] cargo fmt
+
+[2026-05-21T07:29:32-05:00] cargo check -p laniusc
+
+[2026-05-21T07:29:51-05:00] cargo fmt
+
+[2026-05-21T07:29:55-05:00] cargo check -p laniusc
+
+[2026-05-21T07:30:11-05:00] cargo fmt
+
+[2026-05-21T07:30:16-05:00] cargo check -p laniusc
+
+[2026-05-21T07:30:25-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T07:30:50-05:00] target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 250 --warmups 0 --iters 1 --allow-large --validate-output
+
+[2026-05-21T07:31:01-05:00] LANIUS_PERFETTO_TRACE=traces/fused_x86_warm_profile_varied_10k_20260521_073101.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_GPU_COMPILE_TIMING=1 target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T07:31:17-05:00] LANIUS_PERFETTO_TRACE=traces/fused_x86_warm_profile2_varied_10k_20260521_073117.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_GPU_COMPILE_TIMING=1 target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T07:33:50-05:00] cargo fmt
+
+[2026-05-21T07:33:59-05:00] cargo check -p laniusc
+
+[2026-05-21T07:34:40-05:00] cargo fmt
+
+[2026-05-21T07:34:47-05:00] cargo check -p laniusc
+
+[2026-05-21T07:34:55-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T07:35:22-05:00] LANIUS_PERFETTO_TRACE=traces/regalloc_8192_warm_profile_varied_10k_20260521_073522.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_GPU_COMPILE_TIMING=1 LANIUS_X86_STATUS_TRACE=1 target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T07:36:22-05:00] cargo fmt
+
+[2026-05-21T07:36:30-05:00] cargo check -p laniusc
+
+[2026-05-21T07:36:43-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T07:37:14-05:00] LANIUS_PERFETTO_TRACE=traces/regalloc_32768_warm_profile_varied_10k_20260521_073714.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_GPU_COMPILE_TIMING=1 LANIUS_X86_STATUS_TRACE=1 target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T07:37:26-05:00] LANIUS_PERFETTO_TRACE=traces/regalloc_32768_warm_profile_no_status_varied_10k_20260521_073726.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_GPU_COMPILE_TIMING=1 target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T07:37:54-05:00] cargo fmt
+
+[2026-05-21T07:37:58-05:00] cargo check -p laniusc
+
+[2026-05-21T07:38:24-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T07:38:53-05:00] git diff --check
+
+[2026-05-21T07:39:02-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T07:39:28-05:00] LANIUS_PERFETTO_TRACE=traces/current_16k_regalloc_warm_profile_varied_10k_20260521_073928.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_GPU_COMPILE_TIMING=1 target/release/gpu_compile_bench --emit x86_64-elf --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T07:39:33-05:00] git diff --check
+
+[2026-05-21T07:39:37-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T07:49:04-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T07:49:24-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T07:50:18-05:00] env LANIUS_PERFETTO_TRACE=traces/rebuilt_pipeline_cache_seed_varied_10k_20260521_075018.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T07:51:10-05:00] env LANIUS_PERFETTO_TRACE=traces/rebuilt_pipeline_cache_warm_profile_varied_10k_20260521_075110.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 300s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T07:52:50-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T07:53:34-05:00] env LANIUS_PERFETTO_TRACE=traces/rebuilt_pipeline_cache_seed_fixed_regalloc_varied_10k_20260521_075334.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T07:53:50-05:00] env LANIUS_PERFETTO_TRACE=traces/rebuilt_pipeline_cache_warm_profile_fixed_regalloc_varied_10k_20260521_075350.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 300s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T07:56:58-05:00] cargo fmt --check
+
+[2026-05-21T07:57:07-05:00] cargo fmt
+
+[2026-05-21T07:57:18-05:00] timeout 120s cargo test --test codegen_x86_regalloc_dispatch x86_regalloc -- --nocapture
+
+[2026-05-21T07:57:42-05:00] cargo fmt --check
+
+[2026-05-21T07:57:51-05:00] cargo check -p laniusc
+
+[2026-05-21T07:58:01-05:00] git diff --check
+
+[2026-05-21T07:58:01-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T08:01:49-05:00] timeout 120s cargo test --test codegen_x86_regalloc_dispatch x86_regalloc -- --nocapture
+
+[2026-05-21T08:02:05-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T08:02:38-05:00] env LANIUS_PERFETTO_TRACE=traces/value_def_compact_slim_seed_varied_10k_20260521_080238.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T08:03:03-05:00] env LANIUS_PERFETTO_TRACE=traces/value_def_compact_slim_warm_profile_varied_10k_20260521_080303.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 300s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T08:03:38-05:00] env LANIUS_PERFETTO_TRACE=traces/value_def_compact_slim_clean_warm_profile_varied_10k_20260521_080338.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 300s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T08:04:58-05:00] cargo fmt
+
+[2026-05-21T08:05:05-05:00] cargo check -p laniusc
+
+[2026-05-21T08:05:21-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T08:05:54-05:00] env LANIUS_PERFETTO_TRACE=traces/encoder_finish_split_warm_profile_varied_10k_20260521_080554.json LANIUS_GPU_COMPILE_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 300s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T08:06:12-05:00] cargo fmt --check
+
+[2026-05-21T08:06:12-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T08:06:12-05:00] git diff --check
+
+[2026-05-21T08:07:16-05:00] env LANIUS_PERFETTO_TRACE=traces/host_only_trace_varied_10k_20260521_080716.json LANIUS_PERFETTO_GPU_TIMERS=0 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 300s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T08:07:44-05:00] env LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 300s ./target/release/gpu_compile_bench --emit x86_64-elf --phase compile --source varied --lines 10000 --seed 3235782381 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T08:10:33-05:00] cargo fmt
+
+[2026-05-21T08:10:38-05:00] cargo check -p laniusc
+
+[2026-05-21T08:10:49-05:00] timeout 120s cargo test --test codegen_x86 x86_source_codegen_emits_direct_elf_for_two_binary_arg_param_add_return -- --exact --nocapture
+
+[2026-05-21T08:13:50-05:00] cargo fmt --check
+
+[2026-05-21T08:13:54-05:00] timeout 120s cargo test --test codegen_x86 x86_source_codegen_emits_direct_elf_for_two_binary_arg_param_add_return -- --exact --nocapture
+
+[2026-05-21T08:14:32-05:00] cargo fmt --check
+
+[2026-05-21T08:14:40-05:00] timeout 120s cargo test --test codegen_x86 x86_source_codegen_emits_direct_elf_for_two_binary_arg_param_add_return -- --exact --nocapture
+
+[2026-05-21T08:15:03-05:00] RUST_MIN_STACK=16777216 timeout 120s cargo test --test codegen_x86 x86_source_codegen_emits_direct_elf_for_two_binary_arg_param_add_return -- --exact --nocapture
+
+[2026-05-21T08:15:32-05:00] timeout 180s gdb -q -batch -ex "set pagination off" -ex "run" -ex "thread apply all bt 40" --args target/debug/deps/codegen_x86-c5dda98505b6542c x86_source_codegen_emits_direct_elf_for_two_binary_arg_param_add_return --exact --nocapture
+
+[2026-05-21T08:15:58-05:00] cargo fmt --check
+
+[2026-05-21T08:16:05-05:00] timeout 120s cargo test --test codegen_x86 x86_source_codegen_emits_direct_elf_for_two_binary_arg_param_add_return -- --exact --nocapture
+
+[2026-05-21T08:17:41-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T08:18:20-05:00] LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 180s target/release/gpu_compile_bench --phase x86 --source varied --lines 1 --warmups 0 --iters 0
+
+[2026-05-21T08:18:53-05:00] LANIUS_PERFETTO_TRACE=traces/fresh_cache_profile_varied_10k_20260521_081853.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_GPU_COMPILE_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T08:19:38-05:00] cargo check -p laniusc
+
+[2026-05-21T08:19:47-05:00] git diff --check
+
+[2026-05-21T08:19:51-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T08:26:09-05:00] cargo fmt --check
+
+[2026-05-21T08:26:14-05:00] cargo fmt
+
+[2026-05-21T08:26:19-05:00] cargo fmt --check
+
+[2026-05-21T08:26:25-05:00] cargo check -p laniusc
+
+[2026-05-21T08:26:40-05:00] cargo fmt --check
+
+[2026-05-21T08:26:49-05:00] cargo check -p laniusc
+
+[2026-05-21T08:27:12-05:00] timeout 90s cargo test --test lexer_retag gpu_lexer_emits_raw_local_syntax_tokens -- --exact --nocapture
+
+[2026-05-21T08:28:06-05:00] cargo fmt --check
+
+[2026-05-21T08:28:15-05:00] cargo fmt
+
+[2026-05-21T08:28:22-05:00] cargo check -p laniusc
+
+[2026-05-21T08:28:32-05:00] timeout 90s cargo test --test lexer_retag gpu_lexer_emits_raw_local_syntax_tokens -- --exact --nocapture
+
+[2026-05-21T08:28:48-05:00] timeout 90s cargo test --test lexer_retag gpu_lexer_retags_keywords -- --exact --nocapture
+
+[2026-05-21T08:28:54-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T08:29:29-05:00] LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T08:30:43-05:00] cargo fmt --check
+
+[2026-05-21T08:30:51-05:00] cargo check -p laniusc
+
+[2026-05-21T08:32:44-05:00] cargo fmt --check
+
+[2026-05-21T08:32:49-05:00] cargo fmt
+
+[2026-05-21T08:32:54-05:00] cargo check -p laniusc
+
+[2026-05-21T08:33:07-05:00] timeout 90s cargo test --test lexer_retag gpu_lexer_emits_raw_local_syntax_tokens -- --exact --nocapture
+
+[2026-05-21T08:33:17-05:00] timeout 90s cargo test --test lexer_retag gpu_lexer_retags_keywords -- --exact --nocapture
+
+[2026-05-21T08:33:24-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T08:33:51-05:00] LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T08:34:40-05:00] cargo fmt --check
+
+[2026-05-21T08:34:45-05:00] cargo check -p laniusc
+
+[2026-05-21T08:35:02-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T08:35:26-05:00] LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase lex --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T08:35:32-05:00] LANIUS_BATCH_COMPUTE_PASSES=0 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase lex --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T08:36:36-05:00] cargo fmt --check
+
+[2026-05-21T08:36:44-05:00] cargo check -p laniusc
+
+[2026-05-21T08:36:54-05:00] timeout 120s cargo test --test type_checker_modules -- --nocapture
+
+[2026-05-21T08:38:00-05:00] timeout 120s cargo test --test codegen_x86 x86_source_codegen_emits_direct_elf_for_two_binary_arg_param_add_return -- --exact --nocapture
+
+[2026-05-21T08:38:22-05:00] timeout 60s cargo test --test type_checker_modules type_checker_accepts_leading_module_metadata -- --exact --nocapture
+
+[2026-05-21T08:38:50-05:00] git diff --check
+
+[2026-05-21T08:38:57-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T08:42:28-05:00] cargo fmt --check
+
+[2026-05-21T08:42:33-05:00] cargo fmt
+
+[2026-05-21T08:42:37-05:00] cargo check -p laniusc
+
+[2026-05-21T08:42:53-05:00] cargo test --test parser_tree -- --list | sed -n '1,120p'
+
+[2026-05-21T08:43:03-05:00] timeout 90s cargo test --test parser_tree gpu_parser_builds_tree_from_resident_lexer_tokens -- --exact --nocapture
+
+[2026-05-21T08:44:37-05:00] cargo fmt --check
+
+[2026-05-21T08:44:44-05:00] cargo check -p laniusc
+
+[2026-05-21T08:45:21-05:00] timeout 90s cargo test --test parser_tree gpu_parser_builds_tree_from_resident_lexer_tokens -- --exact --nocapture
+
+[2026-05-21T08:45:42-05:00] timeout 120s cargo test --test parser_tree gpu_ll1_hir_item_fields_are_ast_derived_and_exclude_methods -- --exact --nocapture
+
+[2026-05-21T08:46:04-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T08:46:42-05:00] LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase parse --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T08:49:06-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T08:49:58-05:00] LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase parse --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T08:50:03-05:00] LANIUS_BATCH_COMPUTE_PASSES=0 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase parse --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T08:50:22-05:00] LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_PERFETTO_TRACE=traces/fresh_cache_seed_after_delete_20260521_085022.json timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T08:50:43-05:00] LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 LANIUS_PERFETTO_TRACE=traces/fresh_cache_profile_after_regen_20260521_085043.json timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T08:51:27-05:00] cargo fmt --check
+
+[2026-05-21T08:51:27-05:00] git diff --check
+
+[2026-05-21T08:51:27-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T08:51:32-05:00] cargo check -p laniusc
+
+[2026-05-21T08:54:19-05:00] cargo fmt --check
+
+[2026-05-21T08:54:24-05:00] cargo fmt
+
+[2026-05-21T08:54:29-05:00] cargo check -p laniusc
+
+[2026-05-21T08:54:53-05:00] timeout 120s cargo test --test codegen_x86 x86_source_codegen_executes_nested_hir_expression_return -- --exact --nocapture
+
+[2026-05-21T08:55:11-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T08:55:36-05:00] LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PERFETTO_TRACE=traces/x86_step_batch_profile_varied_10k_20260521_085536.json timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T08:55:56-05:00] LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T08:56:25-05:00] cargo fmt
+
+[2026-05-21T08:56:29-05:00] cargo check -p laniusc
+
+[2026-05-21T08:56:38-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T08:57:05-05:00] LANIUS_X86_BATCH_STEP_PASSES=0 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T08:57:14-05:00] LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T08:57:29-05:00] timeout 120s cargo test --test codegen_x86 x86_source_codegen_executes_nested_hir_expression_return -- --exact --nocapture
+
+[2026-05-21T08:57:53-05:00] cargo fmt --check
+
+[2026-05-21T08:57:53-05:00] cargo check -p laniusc
+
+[2026-05-21T08:57:53-05:00] git diff --check
+
+[2026-05-21T08:57:53-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T08:58:35-05:00] cargo fmt --check
+
+[2026-05-21T08:58:35-05:00] cargo check -p laniusc
+
+[2026-05-21T08:58:45-05:00] timeout 120s cargo test --test codegen_x86 x86_source_codegen_executes_nested_hir_expression_return -- --exact --nocapture
+
+[2026-05-21T08:59:06-05:00] git diff --check
+
+[2026-05-21T08:59:06-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T09:02:21-05:00] cargo fmt --check
+
+[2026-05-21T09:02:28-05:00] cargo fmt
+
+[2026-05-21T09:02:33-05:00] cargo check -p laniusc
+
+[2026-05-21T09:02:49-05:00] timeout 120s cargo test --test codegen_x86 x86_source_codegen_executes_nested_hir_expression_return -- --exact --nocapture
+
+[2026-05-21T09:03:10-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T09:03:36-05:00] LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PERFETTO_TRACE=traces/x86_exact_output_readback_varied_10k_20260521_090336.json timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T09:04:33-05:00] cargo fmt --check
+
+[2026-05-21T09:04:33-05:00] cargo check -p laniusc
+
+[2026-05-21T09:07:44-05:00] cargo fmt --check
+
+[2026-05-21T09:07:51-05:00] cargo check -p laniusc
+
+[2026-05-21T09:08:01-05:00] timeout 120s cargo test --test codegen_x86 x86_source_codegen_executes_nested_hir_expression_return -- --exact --nocapture
+
+[2026-05-21T09:08:23-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T09:08:50-05:00] LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PERFETTO_TRACE=traces/x86_pooled_output_readback_varied_10k_20260521_090850.json timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T09:09:04-05:00] LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T09:10:06-05:00] git diff --check
+
+[2026-05-21T09:10:14-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T09:12:14-05:00] rm -rf target/wgpu-pipeline-cache && mkdir -p target/wgpu-pipeline-cache
+
+[2026-05-21T09:12:21-05:00] LANIUS_PERFETTO_TRACE=traces/pipeline_cache_rebuilt_seed_varied_10k_20260521_091221.json timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T09:12:38-05:00] LANIUS_PERFETTO_TRACE=traces/pipeline_cache_rebuilt_warm_profile_varied_10k_20260521_091238.json timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T09:13:11-05:00] git diff --check
+
+[2026-05-21T09:13:15-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T09:15:10-05:00] timeout 120s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --allow-large --estimate-live
+
+[2026-05-21T09:18:30-05:00] cargo fmt
+
+[2026-05-21T09:18:35-05:00] cargo check -p laniusc
+
+[2026-05-21T09:19:07-05:00] cargo fmt
+
+[2026-05-21T09:19:12-05:00] cargo check -p laniusc
+
+[2026-05-21T09:19:19-05:00] timeout 120s cargo test --test codegen_x86 x86_single_source_codegen_matches_one_file_source_pack -- --exact --nocapture
+
+[2026-05-21T09:19:37-05:00] timeout 120s cargo test --test codegen_x86 x86_source_codegen_executes_generated_name_independent_call_shape -- --exact --nocapture
+
+[2026-05-21T09:19:54-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T09:20:21-05:00] LANIUS_PERFETTO_TRACE=traces/x86_cosubmit_frontend_backend_varied_10k_20260521_092021.json timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T09:22:31-05:00] cargo fmt
+
+[2026-05-21T09:22:37-05:00] cargo check -p laniusc
+
+[2026-05-21T09:22:45-05:00] timeout 120s cargo test --test codegen_x86 x86_source_codegen_executes_generated_name_independent_call_shape -- --exact --nocapture
+
+[2026-05-21T09:23:14-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T09:23:41-05:00] timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T09:26:16-05:00] cargo fmt
+
+[2026-05-21T09:26:21-05:00] cargo check -p laniusc
+
+[2026-05-21T09:26:30-05:00] timeout 120s cargo test --test codegen_x86 x86_source_codegen_executes_generated_name_independent_call_shape -- --exact --nocapture
+
+[2026-05-21T09:26:53-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T09:27:25-05:00] timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T09:27:44-05:00] cargo fmt
+
+[2026-05-21T09:27:51-05:00] cargo check -p laniusc
+
+[2026-05-21T09:29:07-05:00] cargo fmt
+
+[2026-05-21T09:29:15-05:00] cargo check -p laniusc
+
+[2026-05-21T09:29:24-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T09:29:55-05:00] LANIUS_PERFETTO_TRACE=traces/bench_iteration_spans_varied_10k_20260521_092955.json timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 2 --allow-large
+
+[2026-05-21T09:30:20-05:00] cargo fmt --check
+
+[2026-05-21T09:30:34-05:00] git diff --check
+
+[2026-05-21T09:30:45-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T09:39:27-05:00] cargo fmt
+
+[2026-05-21T09:39:34-05:00] cargo check -p laniusc
+
+[2026-05-21T09:41:52-05:00] timeout 120s cargo test --test type_checker_modules -- --nocapture
+
+[2026-05-21T09:44:20-05:00] cargo fmt
+
+[2026-05-21T09:44:24-05:00] cargo check -p laniusc
+
+[2026-05-21T09:44:32-05:00] timeout 80s cargo test --test type_checker_modules type_checker_accepts_array_i32_4_seed_files -- --exact --nocapture
+
+[2026-05-21T09:45:37-05:00] timeout 120s cargo test --test codegen_x86 x86_source_codegen_executes_generated_name_independent_call_shape -- --exact --nocapture
+
+[2026-05-21T09:45:55-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T09:46:38-05:00] LANIUS_PERFETTO_TRACE=traces/fresh_cache_seed_after_delete_20260521_094638.json timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T09:47:20-05:00] LANIUS_PERFETTO_TRACE=traces/fresh_cache_warm_profile_varied_10k_20260521_094720.json timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T09:47:49-05:00] cargo fmt --check
+
+[2026-05-21T09:47:55-05:00] git diff --check
+
+[2026-05-21T09:47:59-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T09:51:28-05:00] cargo fmt
+
+[2026-05-21T09:51:35-05:00] cargo check -p laniusc
+
+[2026-05-21T09:51:43-05:00] timeout 120s cargo test --test codegen_x86 x86_source_codegen_executes_generated_name_independent_call_shape -- --exact --nocapture
+
+[2026-05-21T09:52:03-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T09:52:34-05:00] LANIUS_PERFETTO_TRACE=traces/x86_exact_status_then_output_varied_10k_20260521_095234.json timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T09:54:28-05:00] cargo fmt
+
+[2026-05-21T09:55:50-05:00] cargo fmt
+
+[2026-05-21T09:55:57-05:00] cargo check -p laniusc
+
+[2026-05-21T09:56:06-05:00] timeout 120s cargo test --test type_checker_name_radix -- --nocapture
+
+[2026-05-21T09:56:20-05:00] timeout 120s cargo test --test codegen_x86 x86_source_codegen_executes_generated_name_independent_call_shape -- --exact --nocapture
+
+[2026-05-21T09:56:38-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T09:57:06-05:00] LANIUS_PERFETTO_TRACE=traces/name_radix_bucket_indirect_varied_10k_20260521_095706.json timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T09:57:54-05:00] LANIUS_PERFETTO_TRACE=traces/name_radix_bucket_indirect_hot_varied_10k_20260521_095754.json timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T09:59:44-05:00] cargo fmt --check
+
+[2026-05-21T09:59:51-05:00] git diff --check
+
+[2026-05-21T09:59:55-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T10:04:54-05:00] cargo fmt
+
+[2026-05-21T10:05:03-05:00] cargo check -p laniusc
+
+[2026-05-21T10:05:12-05:00] timeout 120s cargo test --test type_checker_name_radix -- --nocapture
+
+[2026-05-21T10:05:29-05:00] timeout 120s cargo test --test type_checker_modules type_checker_source_pack_accepts_module_metadata_and_resolved_path_imports -- --exact --nocapture
+
+[2026-05-21T10:05:59-05:00] timeout 120s cargo test --test codegen_x86 x86_source_codegen_executes_generated_name_independent_call_shape -- --exact --nocapture
+
+[2026-05-21T10:06:19-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T10:06:48-05:00] LANIUS_PERFETTO_TRACE=traces/module_key_active_depth_varied_10k_20260521_100648.json timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T10:07:10-05:00] LANIUS_PERFETTO_TRACE=traces/module_key_active_depth_hot_varied_10k_20260521_100710.json timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T10:10:53-05:00] cargo fmt
+
+[2026-05-21T10:10:58-05:00] cargo check -p laniusc
+
+[2026-05-21T10:11:09-05:00] cargo fmt
+
+[2026-05-21T10:11:13-05:00] cargo check -p laniusc
+
+[2026-05-21T10:11:23-05:00] timeout 120s cargo test --test type_checker_name_radix -- --nocapture
+
+[2026-05-21T10:11:37-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T10:12:45-05:00] LANIUS_PERFETTO_TRACE=traces/fresh_cache_seed_after_delete_20260521_101245.json LANIUS_GPU_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T10:13:17-05:00] LANIUS_PERFETTO_TRACE=traces/fresh_cache_warm_profile_after_regen_20260521_101317.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_TIMING_MIN_MS=2 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T10:13:50-05:00] cargo fmt --check
+
+[2026-05-21T10:13:58-05:00] git diff --check
+
+[2026-05-21T10:14:01-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T10:14:36-05:00] cargo fmt
+
+[2026-05-21T10:14:40-05:00] cargo check -p laniusc
+
+[2026-05-21T10:14:50-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T10:15:31-05:00] LANIUS_PERFETTO_TRACE=traces/fresh_cache_seed_after_clone_timing_20260521_101531.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_TIMING_MIN_MS=2 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T10:15:59-05:00] LANIUS_PERFETTO_TRACE=traces/fresh_cache_warm_profile_after_clone_timing_20260521_101559.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_TIMING_MIN_MS=2 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T10:16:56-05:00] cargo fmt --check
+
+[2026-05-21T10:17:01-05:00] git diff --check
+
+[2026-05-21T10:17:04-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T10:19:10-05:00] timeout 120s target/release/gpu_compile_bench --phase x86 --source all --lines 1000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T10:19:23-05:00] target/release/gpu_compile_bench --phase x86 --source all --lines 10000 --estimate-only --allow-large
+
+[2026-05-21T10:19:44-05:00] timeout 180s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --estimate-live --allow-large
+
+[2026-05-21T10:20:05-05:00] timeout 180s target/release/gpu_compile_bench --phase x86 --source all --lines 10000 --estimate-live --allow-large
+
+[2026-05-21T10:24:16-05:00] cargo fmt
+
+[2026-05-21T10:24:21-05:00] cargo check -p laniusc
+
+[2026-05-21T10:24:40-05:00] cargo fmt
+
+[2026-05-21T10:24:45-05:00] cargo check -p laniusc
+
+[2026-05-21T10:24:57-05:00] timeout 120s cargo test -p laniusc x86_initial_output_readback --lib -- --nocapture
+
+[2026-05-21T10:25:12-05:00] timeout 180s cargo test --test codegen_x86 x86_source_codegen_executes_generated_name_independent_call_shape -- --exact --nocapture
+
+[2026-05-21T10:25:34-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T10:26:02-05:00] LANIUS_PERFETTO_TRACE=traces/x86_output_readback_window_varied_10k_20260521_102602.json timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T10:27:02-05:00] cargo fmt
+
+[2026-05-21T10:27:06-05:00] timeout 120s cargo test -p laniusc x86_initial_output_readback --lib -- --nocapture
+
+[2026-05-21T10:27:14-05:00] cargo check -p laniusc
+
+[2026-05-21T10:27:23-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T10:27:48-05:00] LANIUS_PERFETTO_TRACE=traces/x86_output_readback_window2_varied_10k_20260521_102748.json timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T10:28:22-05:00] timeout 120s target/release/gpu_compile_bench --phase x86 --source all --lines 1000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T10:28:31-05:00] cargo fmt --check
+
+[2026-05-21T10:28:36-05:00] git diff --check
+
+[2026-05-21T10:28:43-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T10:30:53-05:00] cargo fmt
+
+[2026-05-21T10:31:05-05:00] cargo check -p laniusc
+
+[2026-05-21T10:31:15-05:00] timeout 120s cargo test -p laniusc pipeline_cache_file --lib -- --nocapture
+
+[2026-05-21T10:31:27-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T10:32:00-05:00] LANIUS_PERFETTO_TRACE=traces/pipeline_cache_no_clone_warm_varied_10k_20260521_103200.json timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T10:33:10-05:00] LANIUS_PERFETTO_TRACE=<generated> timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T10:33:29-05:00] CORRECTION exact prior command: LANIUS_PERFETTO_TRACE=traces/pipeline_cache_borrowed_data_varied_10k_20260521_103310.json timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T10:34:52-05:00] LANIUS_PERFETTO_TRACE=traces/pipeline_cache_regenerate_cold_varied_10k_20260521_103452.json timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T10:35:07-05:00] LANIUS_PERFETTO_TRACE=traces/pipeline_cache_regenerated_warm_varied_10k_20260521_103507.json timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T10:36:24-05:00] cargo fmt --check
+
+[2026-05-21T10:36:24-05:00] git diff --check
+
+[2026-05-21T10:36:24-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T10:39:43-05:00] timeout 120s target/release/gpu_compile_bench --phase x86 --source all --lines 1000 --estimate-live --allow-large
+
+[2026-05-21T10:42:53-05:00] cargo fmt
+
+[2026-05-21T10:43:07-05:00] timeout 120s cargo test -p laniusc resident_tree_capacity --lib -- --nocapture
+
+[2026-05-21T10:43:07-05:00] cargo check -p laniusc
+
+[2026-05-21T10:43:25-05:00] cargo fmt
+
+[2026-05-21T10:43:26-05:00] timeout 120s cargo test -p laniusc resident_tree_capacity --lib -- --nocapture
+
+[2026-05-21T10:43:36-05:00] cargo check -p laniusc
+
+[2026-05-21T10:43:37-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T10:44:03-05:00] timeout 180s target/release/gpu_compile_bench --phase x86 --source all --lines 1000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T10:44:11-05:00] LANIUS_PERFETTO_TRACE=traces/x86_projected_tree_no_prepass_varied_10k_20260521_104411.json timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T10:44:46-05:00] timeout 180s cargo test --test codegen_x86 x86_source_codegen_executes_generated_name_independent_call_shape -- --exact --nocapture
+
+[2026-05-21T10:45:27-05:00] cargo fmt --check
+
+[2026-05-21T10:45:28-05:00] git diff --check
+
+[2026-05-21T10:45:28-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T10:53:53-05:00] cargo fmt
+
+[2026-05-21T10:53:54-05:00] timeout 120s cargo test -p laniusc module_pack_source --bin gpu_compile_bench -- --nocapture
+
+[2026-05-21T10:54:11-05:00] cargo fmt
+
+[2026-05-21T10:54:12-05:00] timeout 120s cargo test -p laniusc module_pack_source --bin gpu_compile_bench -- --nocapture
+
+[2026-05-21T10:54:28-05:00] cargo check -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T10:54:29-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T10:54:52-05:00] timeout 180s target/release/gpu_compile_bench --phase x86 --source module-pack --lines 240 --warmups 0 --iters 1 --run-x86-output --allow-large
+
+[2026-05-21T10:55:05-05:00] target/release/gpu_compile_bench --source module-pack --lines 40 --dump-source
+
+[2026-05-21T10:55:21-05:00] timeout 180s target/release/gpu_compile_bench --phase x86 --source module-pack --lines 40 --warmups 0 --iters 1 --run-x86-output --allow-large
+
+[2026-05-21T10:55:38-05:00] timeout 180s target/release/gpu_compile_bench --phase x86 --source module-pack --lines 80 --warmups 0 --iters 1 --run-x86-output --allow-large
+
+[2026-05-21T10:55:39-05:00] timeout 180s target/release/gpu_compile_bench --phase x86 --source module-pack --lines 120 --warmups 0 --iters 1 --run-x86-output --allow-large
+
+[2026-05-21T10:56:24-05:00] LANIUS_PERFETTO_TRACE=traces/module_pack_120_x86_20260521_105624.json timeout 180s target/release/gpu_compile_bench --phase x86 --source module-pack --lines 120 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T10:56:49-05:00] LANIUS_X86_STATUS_TRACE=1 LANIUS_PERFETTO_TRACE=traces/module_pack_120_x86_status_20260521_105649.json timeout 180s target/release/gpu_compile_bench --phase x86 --source module-pack --lines 120 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T11:00:13-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T11:00:23-05:00] LANIUS_PERFETTO_TRACE=traces/pipeline_cache_bestpractice_fresh_seed_varied_10k_20260521_110023.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T11:00:45-05:00] LANIUS_PERFETTO_TRACE=traces/pipeline_cache_bestpractice_regenerated_warm_varied_10k_20260521_110045.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 5 --allow-large
+
+[2026-05-21T11:01:35-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T11:05:32-05:00] cargo build --release --bin laniusc --bin gpu_compile_bench
+
+[2026-05-21T11:05:42-05:00] target/release/gpu_compile_bench --source module-pack --lines 120 --dump-source > /tmp/laniusc-module-pack-Cff4Eu/pack.lani
+
+[2026-05-21T11:05:42-05:00] target/release/laniusc --emit x86_64 -o /tmp/laniusc-module-pack-Cff4Eu/a.out /tmp/laniusc-module-pack-Cff4Eu/0.lani /tmp/laniusc-module-pack-Cff4Eu/1.lani /tmp/laniusc-module-pack-Cff4Eu/2.lani
+
+[2026-05-21T11:08:42-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T11:11:12-05:00] timeout 180s target/release/gpu_compile_bench --phase x86 --source module-pack --lines 120 --warmups 0 --iters 1 --run-x86-output --allow-large
+
+[2026-05-21T11:12:40-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T11:12:53-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T11:13:17-05:00] timeout 180s target/release/gpu_compile_bench --phase x86 --source module-pack --lines 120 --warmups 0 --iters 1 --run-x86-output --allow-large
+
+[2026-05-21T11:13:25-05:00] LANIUS_X86_STATUS_TRACE=1 LANIUS_PERFETTO_TRACE=traces/module_pack_120_x86_after_phys_flag_split_$(date +%Y%m%d_%H%M%S).json timeout 180s target/release/gpu_compile_bench --phase x86 --source module-pack --lines 120 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T11:16:36-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T11:17:03-05:00] LANIUS_X86_STATUS_TRACE=1 LANIUS_X86_DEBUG_ROW=255 timeout 180s target/release/gpu_compile_bench --phase x86 --source module-pack --lines 120 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T11:17:18-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T11:17:44-05:00] LANIUS_X86_STATUS_TRACE=1 LANIUS_X86_DEBUG_ROW=255 timeout 180s target/release/gpu_compile_bench --phase x86 --source module-pack --lines 120 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T11:18:22-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T11:18:52-05:00] LANIUS_X86_STATUS_TRACE=1 LANIUS_X86_DEBUG_ROW=255 timeout 180s target/release/gpu_compile_bench --phase x86 --source module-pack --lines 120 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T11:19:02-05:00] LANIUS_X86_STATUS_TRACE=1 LANIUS_X86_DEBUG_ROW=255 LANIUS_X86_DEBUG_NODE=2949 timeout 180s target/release/gpu_compile_bench --phase x86 --source module-pack --lines 120 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T11:19:09-05:00] LANIUS_X86_STATUS_TRACE=1 LANIUS_X86_DEBUG_ROW=255 LANIUS_X86_DEBUG_NODE=2856 timeout 180s target/release/gpu_compile_bench --phase x86 --source module-pack --lines 120 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T11:19:41-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T11:20:10-05:00] LANIUS_X86_STATUS_TRACE=1 LANIUS_X86_DEBUG_ROW=255 LANIUS_X86_DEBUG_NODE=2856 LANIUS_X86_DEBUG_SLOT=629 timeout 180s target/release/gpu_compile_bench --phase x86 --source module-pack --lines 120 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T11:21:53-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T11:22:20-05:00] LANIUS_X86_STATUS_TRACE=1 LANIUS_X86_DEBUG_ROW=255 LANIUS_X86_DEBUG_NODE=2856 LANIUS_X86_DEBUG_SLOT=629 timeout 180s target/release/gpu_compile_bench --phase x86 --source module-pack --lines 120 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T11:22:43-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T11:23:14-05:00] timeout 180s target/release/gpu_compile_bench --phase x86 --source module-pack --lines 120 --warmups 0 --iters 1 --run-x86-output --allow-large
+
+[2026-05-21T11:23:41-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T11:24:09-05:00] LANIUS_X86_STATUS_TRACE=1 LANIUS_X86_DEBUG_ROW=255 LANIUS_X86_DEBUG_NODE=2856 LANIUS_X86_DEBUG_SLOT=629 LANIUS_X86_DEBUG_VALUE_DEFS=1 timeout 180s target/release/gpu_compile_bench --phase x86 --source module-pack --lines 120 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T11:25:18-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T11:25:47-05:00] LANIUS_X86_STATUS_TRACE=1 timeout 180s target/release/gpu_compile_bench --phase x86 --source module-pack --lines 120 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T11:27:53-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T11:28:21-05:00] timeout 180s target/release/gpu_compile_bench --phase x86 --source module-pack --lines 120 --warmups 0 --iters 1 --run-x86-output --allow-large
+
+[2026-05-21T11:31:21-05:00] cargo fmt
+
+[2026-05-21T11:31:29-05:00] timeout 120s cargo test --test codegen_x86_regalloc_dispatch x86_regalloc_walks_function_virtual_row_span_without_compact_value_def_list -- --exact --nocapture
+
+[2026-05-21T11:31:41-05:00] timeout 180s cargo test --test codegen_x86 x86_source_pack_codegen_executes_generated_module_bridge_fanout -- --exact --nocapture
+
+[2026-05-21T11:31:59-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T11:32:29-05:00] timeout 180s target/release/gpu_compile_bench --phase x86 --source module-pack --lines 120 --warmups 0 --iters 1 --run-x86-output --allow-large
+
+[2026-05-21T11:32:37-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch -- --nocapture
+
+[2026-05-21T11:32:50-05:00] timeout 240s cargo test --test codegen_x86 -- --nocapture
+
+[2026-05-21T11:33:44-05:00] cargo fmt --check
+
+[2026-05-21T11:33:44-05:00] git diff --check
+
+[2026-05-21T11:33:44-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T11:33:44-05:00] cargo check -p laniusc
+
+[2026-05-21T11:34:34-05:00] timeout 180s target/release/gpu_compile_bench --phase x86 --source varied --lines 1000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T11:36:50-05:00] LANIUS_X86_STATUS_TRACE=1 timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T11:39:21-05:00] timeout 120s cargo test --test parser_tree gpu_parser_builds_valid_root_span_for_compound_assignment_statements -- --exact --nocapture
+
+[2026-05-21T11:43:50-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T11:44:09-05:00] LANIUS_PERFETTO_TRACE=traces/pipeline_cache_fresh_seed_bestpractice_20260521_114409.json LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T11:44:28-05:00] LANIUS_PERFETTO_TRACE=traces/pipeline_cache_bestpractice_regenerated_warm_varied_10k_20260521_114428.json LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T11:45:17-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T11:47:56-05:00] LANIUS_X86_STATUS_TRACE=1 timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T11:53:07-05:00] timeout 120s cargo test --test parser_tree gpu_parser_production_capacity_builds_valid_root_span_for_compound_assignment_statements -- --exact --nocapture
+
+[2026-05-21T11:54:06-05:00] timeout 120s cargo test --test parser_tree gpu_parser_production_capacity_builds_valid_root_span_for_compound_assignment_statements -- --exact --nocapture
+
+[2026-05-21T11:54:25-05:00] LANIUS_X86_STATUS_TRACE=1 timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T11:54:49-05:00] timeout 180s cargo test --test codegen_x86_properties generated_x86_compound_assignments_preserve_call_results -- --exact --nocapture
+
+[2026-05-21T11:56:23-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T11:56:47-05:00] rm -rf target/wgpu-pipeline-cache && mkdir -p traces
+
+[2026-05-21T11:57:00-05:00] LANIUS_PERFETTO_TRACE=traces/parser_capacity_table_bound_cold_seed_varied_10k_20260521_115700.json LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T11:57:16-05:00] LANIUS_PERFETTO_TRACE=traces/parser_capacity_table_bound_warm_varied_10k_20260521_115716.json LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T11:57:30-05:00] cargo fmt --check
+
+[2026-05-21T11:57:37-05:00] cargo fmt
+
+[2026-05-21T11:57:48-05:00] cargo fmt --check
+
+[2026-05-21T11:57:55-05:00] cargo check -p laniusc
+
+[2026-05-21T11:58:02-05:00] git diff --check
+
+[2026-05-21T11:58:05-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T11:59:13-05:00] cargo test -p laniusc resident_tree_capacity_from_tables_is_bounded_by_table_projection -- --exact
+
+[2026-05-21T11:59:36-05:00] cargo test -p laniusc resident_tree_capacity -- --nocapture
+
+[2026-05-21T12:01:52-05:00] LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 120s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --estimate-live --allow-large
+
+[2026-05-21T12:03:39-05:00] cargo fmt --check
+
+[2026-05-21T12:03:45-05:00] cargo check -p laniusc
+
+[2026-05-21T12:03:55-05:00] LANIUS_X86_STATUS_TRACE=1 timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T12:04:22-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T12:04:52-05:00] LANIUS_PERFETTO_TRACE=traces/x86_live_projected_capacity_warm_varied_10k_20260521_120452.json LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T12:05:13-05:00] LANIUS_X86_STATUS_TRACE=1 LANIUS_PERFETTO_TRACE=traces/x86_live_projected_capacity_status_varied_10k_20260521_120513.json LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T12:05:46-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T12:06:11-05:00] LANIUS_PERFETTO_TRACE=traces/x86_regalloc_chunk4096_warm_varied_10k_20260521_120611.json LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T12:06:50-05:00] timeout 120s cargo test --test codegen_x86 x86_single_source_codegen_matches_one_file_source_pack -- --exact --nocapture
+
+[2026-05-21T12:07:07-05:00] timeout 120s cargo test --test codegen_x86 x86_source_pack_codegen_executes_generated_module_bridge_fanout -- --exact --nocapture
+
+[2026-05-21T12:07:23-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T12:07:52-05:00] cargo fmt --check
+
+[2026-05-21T12:07:57-05:00] cargo check -p laniusc
+
+[2026-05-21T12:08:05-05:00] git diff --check
+
+[2026-05-21T12:08:10-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T12:08:33-05:00] timeout 180s cargo test --test codegen_x86_properties generated_x86_compound_assignments_preserve_call_results -- --exact --nocapture
+
+[2026-05-21T12:09:05-05:00] git diff --check
+
+[2026-05-21T12:09:09-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T12:12:16-05:00] cargo fmt --check
+
+[2026-05-21T12:12:21-05:00] cargo fmt
+
+[2026-05-21T12:12:26-05:00] cargo check -p laniusc
+
+[2026-05-21T12:12:37-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T12:13:00-05:00] cargo build --release --bin gpu_compile_bench
+
+[2026-05-21T12:13:28-05:00] LANIUS_PERFETTO_TRACE=traces/x86_inline_backend_warm_varied_10k_20260521_121328.json LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 300s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T12:17:14-05:00] cargo test -p laniusc pipeline_cache_file
+
+[2026-05-21T12:17:30-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T12:18:03-05:00] rm -f target/wgpu-pipeline-cache/*
+
+[2026-05-21T12:18:11-05:00] LANIUS_PERFETTO_TRACE=traces/pipeline_cache_bestpractice_regenerated_seed_20260521_121811.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T12:18:31-05:00] LANIUS_PERFETTO_TRACE=traces/pipeline_cache_bestpractice_regenerated_warm_20260521_121831.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large
+
+[2026-05-21T12:18:46-05:00] ls -lh target/wgpu-pipeline-cache traces/pipeline_cache_bestpractice_regenerated_seed_20260521_121811.json traces/pipeline_cache_bestpractice_regenerated_warm_20260521_121831.json
+
+[2026-05-21T12:18:56-05:00] jq -r '[.traceEvents[] | select(.ph=="X") | {name, cat, tid, ts, dur, lane:(.args.lane // "")} ] | sort_by(-.dur) | .[:30] | .[] | "\(.dur/1000 | tostring) ms\t\(.lane)\t\(.name)"' traces/pipeline_cache_bestpractice_regenerated_warm_20260521_121831.json
+
+[2026-05-21T12:19:03-05:00] jq -r '.traceEvents[] | select((.name|startswith("pipeline_cache.")) or (.name=="pipeline_cache_bytes") or (.name|startswith("compiler.init.")) or (.name|startswith("bench."))) | [.ts/1000, ((.dur // 0)/1000), .args.lane, .name, (.args["pipeline_cache_bytes"] // .args["pipeline_cache.create.input_file_bytes"] // .args["pipeline_cache.create.input_cache_bytes"] // .args["pipeline_cache.persist.bytes"] // .args["pipeline_cache.persist.file_bytes"] // "")] | @tsv' traces/pipeline_cache_bestpractice_regenerated_warm_20260521_121831.json | head -80
+
+[2026-05-21T12:19:09-05:00] jq -r '.traceEvents[] | select((.name|startswith("pipeline_cache.")) or (.name=="pipeline_cache_bytes") or (.name|startswith("compiler.init.")) or (.name|startswith("bench."))) | [.ts/1000, ((.dur // 0)/1000), .args.lane, .name, (.args["pipeline_cache_bytes"] // .args["pipeline_cache.create.input_file_bytes"] // .args["pipeline_cache.create.input_cache_bytes"] // .args["pipeline_cache.persist.bytes"] // .args["pipeline_cache.persist.file_bytes"] // "")] | @tsv' traces/pipeline_cache_bestpractice_regenerated_seed_20260521_121811.json | head -100
+
+[2026-05-21T12:19:16-05:00] cargo fmt --check
+
+[2026-05-21T12:19:25-05:00] git diff --check
+
+[2026-05-21T12:19:28-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T12:25:57-05:00] cargo fmt --check
+
+[2026-05-21T12:26:02-05:00] cargo check -p laniusc
+
+[2026-05-21T12:27:14-05:00] cargo fmt --check
+
+[2026-05-21T12:27:21-05:00] cargo fmt
+
+[2026-05-21T12:27:25-05:00] cargo check -p laniusc
+
+[2026-05-21T12:27:30-05:00] timeout 120s cargo test --test parser_tree gpu_parser_projected_capacity_reduces_llp_headers_without_spelling_dependency -- --exact --nocapture
+
+[2026-05-21T12:28:28-05:00] cargo fmt
+
+[2026-05-21T12:28:33-05:00] timeout 120s cargo test --test parser_tree gpu_parser_projected_capacity_reduces_llp_headers_without_spelling_dependency -- --exact --nocapture
+
+[2026-05-21T12:28:54-05:00] cargo check -p laniusc
+
+[2026-05-21T12:28:58-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T12:29:31-05:00] LANIUS_PERFETTO_TRACE=traces/pack_total_reduce_capacity_warm_varied_10k_20260521_122931.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large
+
+[2026-05-21T12:29:51-05:00] LANIUS_PERFETTO_TRACE=traces/pack_total_reduce_capacity_cache_warm_varied_10k_20260521_122951.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large
+
+[2026-05-21T12:30:01-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T12:30:27-05:00] jq -r '[.traceEvents[] | select(.ph=="X") | {name, lane:(.args.lane // ""), dur:(.dur // 0)}] | sort_by(-.dur) | .[:20] | .[] | "\(.dur/1000 | tostring) ms\t\(.lane)\t\(.name)"' traces/pack_total_reduce_capacity_cache_warm_varied_10k_20260521_122951.json
+
+[2026-05-21T12:30:42-05:00] jq -r '.traceEvents[] | select(.name=="compiler.x86.record.projected_tree_capacity" or .name=="bench.measured.0" or .name=="bench.measured.1" or .name=="bench.measured.2") | [.name, ((.dur // 0)/1000)] | @tsv' traces/pack_total_reduce_capacity_cache_warm_varied_10k_20260521_122951.json
+
+[2026-05-21T12:31:02-05:00] cargo fmt --check
+
+[2026-05-21T12:31:27-05:00] git diff --check
+
+[2026-05-21T12:31:49-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T12:35:38-05:00] cargo fmt --check
+
+[2026-05-21T12:35:49-05:00] cargo fmt
+
+[2026-05-21T12:35:53-05:00] cargo check -p laniusc
+
+[2026-05-21T12:36:02-05:00] timeout 120s cargo test --test codegen_x86_regalloc_dispatch x86_regalloc_consumes_compact_value_def_rows_as_worklist -- --exact --nocapture
+
+[2026-05-21T12:36:30-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch -- --nocapture
+
+[2026-05-21T12:36:42-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T12:37:14-05:00] LANIUS_PERFETTO_TRACE=traces/regalloc_value_def_worklist_warm_varied_10k_20260521_123714.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large
+
+[2026-05-21T12:37:46-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T12:40:08-05:00] timeout 120s target/release/gpu_compile_bench --phase x86 --source varied --lines 120 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T12:41:34-05:00] timeout 120s cargo test --test codegen_x86_regalloc_dispatch x86_regalloc_allocates_value_defs_across_function_row_span -- --exact --nocapture
+
+[2026-05-21T12:41:47-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T12:42:24-05:00] timeout 120s target/release/gpu_compile_bench --phase x86 --source varied --lines 120 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T12:43:12-05:00] LANIUS_PERFETTO_TRACE=traces/pipeline_cache_clean_seed_after_delete_20260521_124312.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T12:43:40-05:00] LANIUS_PERFETTO_TRACE=traces/pipeline_cache_fresh_warm_profile_varied_10k_20260521_124340.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large
+
+[2026-05-21T12:44:33-05:00] cargo fmt --check
+
+[2026-05-21T12:44:41-05:00] git diff --check
+
+[2026-05-21T12:44:45-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T12:49:16-05:00] cargo check -p laniusc
+
+[2026-05-21T12:50:09-05:00] cargo check -p laniusc
+
+[2026-05-21T12:50:20-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T12:50:48-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T12:51:17-05:00] LANIUS_PERFETTO_TRACE=traces/x86_inline_same_submission_warm_varied_10k_20260521_125117.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large
+
+[2026-05-21T12:51:54-05:00] timeout 180s cargo test --test codegen_x86 x86_single_source_codegen_matches_one_file_source_pack -- --exact --nocapture
+
+[2026-05-21T12:52:13-05:00] cargo fmt --check
+
+[2026-05-21T12:52:20-05:00] cargo fmt
+
+[2026-05-21T12:52:25-05:00] cargo fmt --check
+
+[2026-05-21T12:52:29-05:00] cargo check -p laniusc
+
+[2026-05-21T12:52:40-05:00] git diff --check
+
+[2026-05-21T12:52:45-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T12:54:43-05:00] timeout 120s cargo test -p laniusc x86_initial_output_readback --lib -- --nocapture
+
+[2026-05-21T12:55:02-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T12:55:29-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T12:56:00-05:00] LANIUS_PERFETTO_TRACE=traces/x86_readback_window_128k_warm_varied_10k_20260521_125600.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large
+
+[2026-05-21T12:56:25-05:00] timeout 240s target/release/gpu_compile_bench --phase x86 --source all --lines 1200 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T12:57:01-05:00] LANIUS_PERFETTO_TRACE=traces/x86_readback_window_128k_mixed_10k_20260521_125701.json LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source mixed --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T12:58:24-05:00] rg -n "output_readback\.exact|output-readback-exact|exact|x86\.initial_output_readback_bytes|x86\.output_capacity_bytes" traces/x86_readback_window_128k_mixed_10k_20260521_125701.json
+
+[2026-05-21T12:59:17-05:00] jq -r '.traceEvents[] | select(.ph=="C" and (.name|test("x86\\.(output_capacity_bytes|initial_output_readback_bytes|inst_capacity|function_slot_capacity)"))) | [.name, (.args[.name]|tostring)] | @tsv' traces/x86_readback_window_128k_warm_varied_10k_20260521_125600.json | sort -u
+
+[2026-05-21T13:00:34-05:00] cargo fmt --check
+
+[2026-05-21T13:00:42-05:00] cargo fmt
+
+[2026-05-21T13:00:46-05:00] timeout 120s cargo test -p laniusc x86_initial_output_readback --lib -- --nocapture
+
+[2026-05-21T13:00:53-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T13:01:18-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T13:02:20-05:00] rm -f target/wgpu-pipeline-cache/* && find target/wgpu-pipeline-cache -maxdepth 1 -type f -printf "%f %s\\n" | sort
+
+[2026-05-21T13:02:32-05:00] LANIUS_PERFETTO_TRACE=traces/pipeline_cache_reseed_after_readback_formula_seed_varied_10k_20260521_130232.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T13:02:49-05:00] LANIUS_PERFETTO_TRACE=traces/pipeline_cache_reseed_after_readback_formula_warm_varied_10k_20260521_130249.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_PIPELINE_CACHE_BREAKDOWN=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large
+
+[2026-05-21T13:02:58-05:00] ls -t traces/pipeline_cache_reseed_after_readback_formula_* | head -5 && rg -n "output-readback-exact|output_readback.exact|x86.output_(len_bytes|initial_readback_hit|exact_readback_bytes)|x86.initial_output_readback_bytes|x86.output_capacity_bytes" $(ls -t traces/pipeline_cache_reseed_after_readback_formula_warm_varied_10k_*.json | head -1)
+
+[2026-05-21T13:03:06-05:00] LANIUS_PERFETTO_TRACE=traces/x86_readback_capacity_floor_mixed_10k_20260521_130306.json LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source mixed --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T13:03:14-05:00] latest=$(ls -t traces/x86_readback_capacity_floor_mixed_10k_*.json | head -1); echo "$latest"; rg -n "output-readback-exact|output_readback\.exact|x86.output_(len_bytes|initial_readback_hit|exact_readback_bytes)|x86.initial_output_readback_bytes|x86.output_capacity_bytes" "$latest"
+
+[2026-05-21T13:03:19-05:00] cargo fmt --check
+
+[2026-05-21T13:03:24-05:00] cargo check -p laniusc
+
+[2026-05-21T13:03:30-05:00] git diff --check
+
+[2026-05-21T13:03:34-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T13:03:54-05:00] find target/wgpu-pipeline-cache -maxdepth 1 -type f -printf "%f %s\\n" | sort && jq -r '.traceEvents[] | select(.ph=="X" and (.name|test("pipeline_cache\\.(create|persist)"))) | [.name, ((.dur//0)/1000|tostring)] | @tsv' traces/pipeline_cache_reseed_after_readback_formula_seed_varied_10k_20260521_130232.json | head -80 && jq -r '.traceEvents[] | select(.ph=="X" and (.name|test("pipeline_cache\\.(create|persist)"))) | [.name, ((.dur//0)/1000|tostring)] | @tsv' traces/pipeline_cache_reseed_after_readback_formula_warm_varied_10k_20260521_130249.json | head -80
+
+[2026-05-21T13:05:36-05:00] cargo fmt --check
+
+[2026-05-21T13:05:41-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch x86_regalloc_allocates_value_defs_across_function_row_span -- --exact --nocapture
+
+[2026-05-21T13:05:52-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T13:06:43-05:00] LANIUS_X86_STATUS_TRACE=1 timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture option_result_helpers
+
+[2026-05-21T13:08:48-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T13:10:41-05:00] cargo fmt --check
+
+[2026-05-21T13:10:47-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T13:11:23-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch x86_regalloc_allocates_value_defs_across_function_row_span -- --exact --nocapture
+
+[2026-05-21T13:11:32-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T13:12:02-05:00] LANIUS_PERFETTO_TRACE=traces/x86_regalloc_compact_value_defs_warm_varied_10k_20260521_131202.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large
+
+[2026-05-21T13:12:21-05:00] LANIUS_PERFETTO_TRACE=traces/x86_regalloc_compact_value_defs_clean_warm_varied_10k_20260521_131221.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large
+
+[2026-05-21T13:12:36-05:00] timeout 240s target/release/gpu_compile_bench --phase x86 --source all --lines 1200 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T13:12:49-05:00] LANIUS_PERFETTO_TRACE=traces/x86_regalloc_compact_value_defs_mixed_10k_20260521_131249.json LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source mixed --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T13:12:57-05:00] latest=$(ls -t traces/x86_regalloc_compact_value_defs_mixed_10k_*.json | head -1); echo "$latest"; rg -n "output-readback-exact|output_readback\.exact|x86.output_(len_bytes|initial_readback_hit|exact_readback_bytes)|x86.initial_output_readback_bytes|x86.output_capacity_bytes" "$latest"
+
+[2026-05-21T13:13:11-05:00] cargo check -p laniusc
+
+[2026-05-21T13:13:21-05:00] cargo fmt --check
+
+[2026-05-21T13:13:26-05:00] git diff --check
+
+[2026-05-21T13:13:33-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T13:14:50-05:00] jq -r '.traceEvents[] | select(.ph=="X") | [.cat, .name, ((.dur//0)/1000)] | @tsv' traces/x86_regalloc_compact_value_defs_clean_warm_varied_10k_20260521_131221.json | sort -k3,3nr | head -80
+
+[2026-05-21T13:17:02-05:00] cargo fmt --check
+
+[2026-05-21T13:17:07-05:00] cargo fmt
+
+[2026-05-21T13:17:12-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch x86_virtual_value_def_flags_writes_full_scanned_domain -- --exact --nocapture
+
+[2026-05-21T13:17:26-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch x86_regalloc_allocates_value_defs_across_function_row_span -- --exact --nocapture
+
+[2026-05-21T13:17:32-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T13:17:55-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T13:18:29-05:00] LANIUS_PERFETTO_TRACE=traces/x86_value_def_flags_no_capacity_clear_warm_varied_10k_20260521_131829.json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large
+
+[2026-05-21T13:18:51-05:00] timeout 240s target/release/gpu_compile_bench --phase x86 --source all --lines 1200 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T13:21:24-05:00] rm -f target/wgpu-pipeline-cache/* && find target/wgpu-pipeline-cache -maxdepth 1 -type f -printf "%f %s\\n" | sort
+
+[2026-05-21T13:21:32-05:00] LANIUS_PERFETTO_TRACE=traces/pipeline_cache_clean_seed_varied_10k_20260521_$(date +%H%M%S).json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T13:21:53-05:00] LANIUS_PERFETTO_TRACE=traces/pipeline_cache_clean_warm_varied_10k_20260521_$(date +%H%M%S).json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large
+
+[2026-05-21T13:22:20-05:00] seed=$(ls -t traces/pipeline_cache_clean_seed_varied_10k_*.json | head -1); warm=$(ls -t traces/pipeline_cache_clean_warm_varied_10k_*.json | head -1); echo "seed=$seed"; echo "warm=$warm"; echo "cache_files:"; find target/wgpu-pipeline-cache -maxdepth 1 -type f -printf "%f %s\\n" | sort; echo "seed pipeline cache spans:"; jq -r '.traceEvents[] | select(.ph=="X" and (.name|test("pipeline_cache\\.(create|persist)"))) | [.name, (((.dur//0)/1000)|tostring)] | @tsv' "$seed"; echo "warm pipeline cache spans:"; jq -r '.traceEvents[] | select(.ph=="X" and (.name|test("pipeline_cache\\.(create|persist)"))) | [.name, (((.dur//0)/1000)|tostring)] | @tsv' "$warm"; echo "warm top host grouped:"; jq -r '.traceEvents | map(select(.ph=="X" and .cat=="host")) | group_by(.name)[] | {name:.[0].name, count:length, avg_ms:((map(.dur//0)|add)/length/1000), max_ms:((map(.dur//0)|max)/1000)} | [.name, .count, (.avg_ms|tostring), (.max_ms|tostring)] | @tsv' "$warm" | sort -k3,3nr | head -30; echo "warm top gpu grouped:"; jq -r '.traceEvents | map(select(.ph=="X" and .cat=="gpu")) | group_by(.name)[] | {name:.[0].name, count:length, avg_ms:((map(.dur//0)|add)/length/1000), max_ms:((map(.dur//0)|max)/1000)} | [.name, .count, (.avg_ms|tostring), (.max_ms|tostring)] | @tsv' "$warm" | sort -k3,3nr | head -30
+
+[2026-05-21T13:22:34-05:00] cargo fmt --check
+
+[2026-05-21T13:22:45-05:00] cargo check -p laniusc
+
+[2026-05-21T13:22:54-05:00] git diff --check
+
+[2026-05-21T13:22:58-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T13:25:56-05:00] LANIUS_X86_STATUS_TRACE=1 LANIUS_PERFETTO_TRACE=traces/x86_status_meta_varied_10k_20260521_$(date +%H%M%S).json LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T13:26:23-05:00] cargo fmt --check
+
+[2026-05-21T13:26:30-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T13:27:04-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T13:27:35-05:00] LANIUS_PERFETTO_TRACE=traces/x86_regalloc_chunk8192_warm_varied_10k_20260521_$(date +%H%M%S).json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large
+
+[2026-05-21T13:27:52-05:00] latest=$(ls -t traces/x86_regalloc_chunk8192_warm_varied_10k_*.json | head -1); echo "$latest"; jq -r '.traceEvents | map(select(.ph=="X" and (.cat=="gpu" or .cat=="host"))) | group_by(.name)[] | {name:.[0].name, cat:.[0].cat, count:length, avg_ms:((map(.dur//0)|add)/length/1000), max_ms:((map(.dur//0)|max)/1000), min_ms:((map(.dur//0)|min)/1000)} | select(.name=="x86.regalloc.done" or .name=="compile.encoder_finish" or .name=="compiler.x86.finish.parser_finish" or .name=="bench.measured.0" or .name=="bench.measured.1" or .name=="bench.measured.2") | [.cat, .name, .count, (.min_ms|tostring), (.avg_ms|tostring), (.max_ms|tostring)] | @tsv' "$latest"; jq -r '.traceEvents[] | select(.ph=="C" and (.name|test("x86[.](regalloc_recorded_chunks|regalloc_rows_per_chunk|inst_capacity|output_len_bytes)"))) | [.name, (.args[.name]//"?")] | @tsv' "$latest" | sort | uniq -c
+
+[2026-05-21T13:33:03-05:00] cargo fmt --check
+
+[2026-05-21T13:33:11-05:00] cargo fmt
+
+[2026-05-21T13:33:21-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch x86_regalloc_allocates_value_defs_across_function_row_span -- --exact --nocapture
+
+[2026-05-21T13:33:34-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch -- --nocapture
+
+[2026-05-21T13:33:48-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T13:34:08-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T13:34:39-05:00] LANIUS_PERFETTO_TRACE=traces/x86_virtual_func_slot_seed_varied_10k_20260521_$(date +%H%M%S).json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T13:34:59-05:00] LANIUS_PERFETTO_TRACE=traces/x86_virtual_func_slot_warm_varied_10k_20260521_$(date +%H%M%S).json LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large
+
+[2026-05-21T13:35:11-05:00] base=traces/pipeline_cache_clean_warm_varied_10k_20260521_132153.json; latest=$(ls -t traces/x86_virtual_func_slot_warm_varied_10k_*.json | head -1); echo "base=$base"; echo "latest=$latest"; for trace in "$base" "$latest"; do echo "trace=$trace"; jq -r '.traceEvents | map(select(.ph=="X" and (.cat=="gpu" or .cat=="host"))) | group_by(.name)[] | {name:.[0].name, cat:.[0].cat, count:length, avg_ms:((map(.dur//0)|add)/length/1000), max_ms:((map(.dur//0)|max)/1000), min_ms:((map(.dur//0)|min)/1000)} | select(.name=="x86.regalloc.done" or .name=="x86.inst_gen.done" or .name=="compile.encoder_finish" or .name=="compiler.x86.finish.parser_finish" or (.name|test("bench.measured"))) | [.cat, .name, .count, (.min_ms|tostring), (.avg_ms|tostring), (.max_ms|tostring)] | @tsv' "$trace" | sort; done
+
+[2026-05-21T13:35:23-05:00] cargo fmt --check
+
+[2026-05-21T13:35:32-05:00] cargo check -p laniusc
+
+[2026-05-21T13:35:42-05:00] git diff --check
+
+[2026-05-21T13:35:46-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T13:36:56-05:00] git diff -- AGENTS.MD AGENTS.md
+
+[2026-05-21T13:43:52-05:00] cargo fmt
+
+[2026-05-21T13:43:58-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch x86_func_discover_consumes_hir_function_records_and_caps_slot_list -- --exact --nocapture
+
+[2026-05-21T13:44:10-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch x86_select_records_only_clobbered_call_argument_save_masks -- --exact --nocapture
+
+[2026-05-21T13:44:27-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T13:44:53-05:00] cargo build --release -p laniusc --bin gpu_compile_bench
+
+[2026-05-21T13:45:34-05:00] LANIUS_PERFETTO_TRACE=traces/x86_select_func_slot_warm_varied_10k_20260521_134534.json LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 240s target/release/gpu_compile_bench --phase x86 --source varied --lines 10000 --warmups 1 --iters 3 --allow-large
+
+[2026-05-21T13:46:29-05:00] cargo fmt --check
+
+[2026-05-21T13:46:35-05:00] cargo check -p laniusc
+
+[2026-05-21T13:46:45-05:00] git diff --check
+
+[2026-05-21T13:51:21-05:00] cargo fmt
+
+[2026-05-21T13:51:26-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch x86_virtual_next_calls_uses_dynamic_scan_params_and_record_arrays -- --exact --nocapture
+
+[2026-05-21T13:51:36-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T13:52:57-05:00] cargo fmt
+
+[2026-05-21T13:53:05-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T13:53:34-05:00] cargo fmt --check
+
+[2026-05-21T13:53:39-05:00] cargo check -p laniusc
+
+[2026-05-21T13:53:47-05:00] git diff --check
+
+[2026-05-21T13:58:00-05:00] cargo fmt
+
+[2026-05-21T13:58:04-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T13:58:14-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T14:00:14-05:00] cargo fmt
+
+[2026-05-21T14:00:18-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch x86_func_discover_consumes_hir_function_records_and_caps_slot_list -- --exact --nocapture
+
+[2026-05-21T14:00:27-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T14:00:56-05:00] git diff --check
+
+[2026-05-21T14:02:19-05:00] cargo fmt
+
+[2026-05-21T14:02:27-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T14:04:41-05:00] cargo check -p laniusc
+
+[2026-05-21T14:06:18-05:00] git diff --check
+
+[2026-05-21T14:16:02-05:00] cargo fmt
+
+[2026-05-21T14:16:10-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch x86_func_slot_scan_scatters_hir_order_slots_without_atomics -- --exact --nocapture
+
+[2026-05-21T14:17:53-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch x86_func_discover_consumes_hir_function_records_without_slot_append -- --exact --nocapture
+
+[2026-05-21T14:18:00-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T14:18:33-05:00] git diff --check
+
+[2026-05-21T14:18:38-05:00] cargo check -p laniusc
+
+[2026-05-21T14:19:21-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch x86_func_discover_consumes_hir_function_records_without_slot_append -- --exact --nocapture
+
+[2026-05-21T14:19:33-05:00] git diff --check
+
+[2026-05-21T14:23:46-05:00] cargo fmt
+
+[2026-05-21T14:23:53-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch x86_regalloc_consumes_row_ordered_value_def_records_with_hir_function_slots -- --exact --nocapture
+
+[2026-05-21T14:24:12-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch -- --nocapture
+
+[2026-05-21T14:24:22-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T14:26:09-05:00] LANIUS_GPU_COMPILE_HOST_TIMING=1 LANIUS_X86_STATUS_TRACE=1 timeout 60s cargo run -- --emit x86_64 sample_programs/arithmetic_precedence.lani -o /tmp/laniusc_arithmetic_precedence
+
+[2026-05-21T14:27:41-05:00] LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=60000 timeout 240s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T14:27:54-05:00] cargo check -p laniusc
+
+[2026-05-21T14:28:01-05:00] git diff --check
+
+[2026-05-21T14:28:47-05:00] cargo fmt
+
+[2026-05-21T14:28:52-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch -- --nocapture
+
+[2026-05-21T14:29:06-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T14:29:22-05:00] cargo check -p laniusc
+
+[2026-05-21T14:29:29-05:00] git diff --check
+
+[2026-05-21T14:35:13-05:00] cargo fmt
+
+[2026-05-21T14:35:18-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T14:35:40-05:00] cargo check -p laniusc
+
+[2026-05-21T14:35:50-05:00] git diff --check
+
+[2026-05-21T14:43:56-05:00] cargo fmt
+
+[2026-05-21T14:44:01-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T14:44:48-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T14:45:10-05:00] cargo check -p laniusc
+
+[2026-05-21T14:45:16-05:00] git diff --check
+
+[2026-05-21T14:45:24-05:00] rg -n "\\[loop\\]|while \\(" shaders/codegen/x86_node_inst_gen.slang shaders/codegen/x86_node_inst_gen_aggregate_copy.slang shaders/codegen/x86_virtual_regalloc.slang
+
+[2026-05-21T14:49:01-05:00] cargo fmt
+
+[2026-05-21T14:49:06-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T14:49:24-05:00] cargo check -p laniusc
+
+[2026-05-21T14:49:35-05:00] git diff --check
+
+[2026-05-21T14:49:35-05:00] rg -n "\\[loop\\]|while \\(" shaders/codegen/x86_node_inst_gen.slang shaders/codegen/x86_node_inst_gen_aggregate_copy.slang shaders/codegen/x86_virtual_regalloc.slang
+
+[2026-05-21T14:55:10-05:00] cargo fmt
+
+[2026-05-21T14:55:15-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch -- --nocapture
+
+[2026-05-21T14:55:30-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T14:55:51-05:00] rg -n "\\[loop\\]|while \\(" shaders/codegen/x86_node_inst_gen.slang shaders/codegen/x86_node_inst_gen_aggregate_copy.slang shaders/codegen/x86_virtual_regalloc.slang
+
+[2026-05-21T14:55:51-05:00] cargo check -p laniusc
+
+[2026-05-21T14:55:51-05:00] git diff --check
+
+[2026-05-21T14:56:00-05:00] rg -n "\\[loop\\]|while \\(" shaders/codegen/x86_node_inst_gen.slang shaders/codegen/x86_node_inst_gen_aggregate_copy.slang shaders/codegen/x86_virtual_regalloc.slang || true
+
+[2026-05-21T14:56:52-05:00] rg -n "\\[loop\\]|while \\(" shaders/codegen/x86*.slang || true
+
+[2026-05-21T15:01:29-05:00] cargo fmt
+
+[2026-05-21T15:01:37-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T15:02:29-05:00] cargo fmt
+
+[2026-05-21T15:02:36-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T15:03:03-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch -- --nocapture
+
+[2026-05-21T15:03:03-05:00] cargo check -p laniusc
+
+[2026-05-21T15:03:03-05:00] rg -n "\\[loop\\]|while \\(" shaders/codegen/x86*.slang || true
+
+[2026-05-21T15:03:03-05:00] git diff --check
+
+[2026-05-21T15:07:43-05:00] cargo fmt
+
+[2026-05-21T15:07:48-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch -- --nocapture
+
+[2026-05-21T15:09:36-05:00] cargo fmt
+
+[2026-05-21T15:09:41-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch -- --nocapture
+
+[2026-05-21T15:09:52-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T15:10:14-05:00] cargo check -p laniusc
+
+[2026-05-21T15:10:19-05:00] git diff --check
+
+[2026-05-21T15:10:23-05:00] rg -n "\[loop\]|while \(" shaders/codegen/x86*.slang || true
+
+[2026-05-21T15:11:37-05:00] timeout 300s env LANIUS_PIPELINE_CACHE_DIR=target/wgpu-pipeline-cache-regalloc-budget LANIUS_PERFETTO_TRACE=traces/x86_regalloc_budget_seed_varied_10k_20260521_151137.json cargo run --release --bin gpu_compile_bench -- --emit x86_64-elf --source varied --lines 10000 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T15:14:29-05:00] timeout 300s env LANIUS_PIPELINE_CACHE_DIR=target/wgpu-pipeline-cache-regalloc-budget LANIUS_PERFETTO_TRACE=traces/x86_regalloc_budget_warm_varied_10k_20260521_151429.json cargo run --release --bin gpu_compile_bench -- --emit x86_64-elf --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T15:15:32-05:00] timeout 300s env LANIUS_PIPELINE_CACHE_DIR=target/wgpu-pipeline-cache-regalloc-budget LANIUS_PERFETTO_TRACE=traces/x86_regalloc_budget_status_varied_10k_20260521_151532.json LANIUS_X86_STATUS_TRACE=1 cargo run --release --bin gpu_compile_bench -- --emit x86_64-elf --source varied --lines 10000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T15:17:47-05:00] cargo fmt
+
+[2026-05-21T15:17:55-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch -- --nocapture
+
+[2026-05-21T15:18:13-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T15:18:46-05:00] cargo check -p laniusc
+
+[2026-05-21T15:19:04-05:00] git diff --check
+
+[2026-05-21T15:19:10-05:00] rg -n "\[loop\]|while \(" shaders/codegen/x86*.slang || true
+
+[2026-05-21T15:19:27-05:00] timeout 300s env LANIUS_PIPELINE_CACHE_DIR=target/wgpu-pipeline-cache-regalloc-chunk16 LANIUS_PERFETTO_TRACE=traces/x86_regalloc_chunk16_seed_varied_10k_20260521_151927.json cargo run --release --bin gpu_compile_bench -- --emit x86_64-elf --source varied --lines 10000 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T15:20:06-05:00] timeout 300s env LANIUS_PIPELINE_CACHE_DIR=target/wgpu-pipeline-cache-regalloc-chunk16 LANIUS_PERFETTO_TRACE=traces/x86_regalloc_chunk16_warm_varied_10k_20260521_152006.json cargo run --release --bin gpu_compile_bench -- --emit x86_64-elf --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T15:22:55-05:00] cargo fmt
+
+[2026-05-21T15:23:01-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch -- --nocapture
+
+[2026-05-21T15:23:18-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T15:23:37-05:00] timeout 300s env LANIUS_PIPELINE_CACHE_DIR=target/wgpu-pipeline-cache-regalloc-chunk32 LANIUS_PERFETTO_TRACE=traces/x86_regalloc_chunk32_seed_varied_10k_20260521_152337.json cargo run --release --bin gpu_compile_bench -- --emit x86_64-elf --source varied --lines 10000 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T15:24:23-05:00] timeout 300s env LANIUS_PIPELINE_CACHE_DIR=target/wgpu-pipeline-cache-regalloc-chunk32 LANIUS_PERFETTO_TRACE=traces/x86_regalloc_chunk32_warm_varied_10k_20260521_152423.json cargo run --release --bin gpu_compile_bench -- --emit x86_64-elf --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T15:25:03-05:00] cargo fmt
+
+[2026-05-21T15:25:10-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch -- --nocapture
+
+[2026-05-21T15:25:26-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T15:25:46-05:00] timeout 300s env LANIUS_PIPELINE_CACHE_DIR=target/wgpu-pipeline-cache-regalloc-chunk64 LANIUS_PERFETTO_TRACE=traces/x86_regalloc_chunk64_seed_varied_10k_20260521_152546.json cargo run --release --bin gpu_compile_bench -- --emit x86_64-elf --source varied --lines 10000 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T15:26:22-05:00] timeout 300s env LANIUS_PIPELINE_CACHE_DIR=target/wgpu-pipeline-cache-regalloc-chunk64 LANIUS_PERFETTO_TRACE=traces/x86_regalloc_chunk64_warm_varied_10k_20260521_152622.json cargo run --release --bin gpu_compile_bench -- --emit x86_64-elf --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T15:27:34-05:00] cargo fmt
+
+[2026-05-21T15:27:41-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch -- --nocapture
+
+[2026-05-21T15:27:57-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T15:28:18-05:00] timeout 300s env LANIUS_PIPELINE_CACHE_DIR=target/wgpu-pipeline-cache-regalloc-chunk128 LANIUS_PERFETTO_TRACE=traces/x86_regalloc_chunk128_seed_varied_10k_20260521_152818.json cargo run --release --bin gpu_compile_bench -- --emit x86_64-elf --source varied --lines 10000 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T15:28:56-05:00] timeout 300s env LANIUS_PIPELINE_CACHE_DIR=target/wgpu-pipeline-cache-regalloc-chunk128 LANIUS_PERFETTO_TRACE=traces/x86_regalloc_chunk128_warm_varied_10k_20260521_152856.json cargo run --release --bin gpu_compile_bench -- --emit x86_64-elf --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T15:29:08-05:00] cargo check -p laniusc
+
+[2026-05-21T15:29:20-05:00] git diff --check
+
+[2026-05-21T15:29:25-05:00] rg -n "\[loop\]|while \(" shaders/codegen/x86*.slang || true
+
+[2026-05-21T15:31:39-05:00] cargo fmt
+
+[2026-05-21T15:31:43-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch -- --nocapture
+
+[2026-05-21T15:31:58-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T15:32:17-05:00] timeout 300s env LANIUS_PIPELINE_CACHE_DIR=target/wgpu-pipeline-cache-regalloc-chunk256 LANIUS_PERFETTO_TRACE=traces/x86_regalloc_chunk256_seed_varied_10k_20260521_153217.json cargo run --release --bin gpu_compile_bench -- --emit x86_64-elf --source varied --lines 10000 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T15:32:58-05:00] timeout 300s env LANIUS_PIPELINE_CACHE_DIR=target/wgpu-pipeline-cache-regalloc-chunk256 LANIUS_PERFETTO_TRACE=traces/x86_regalloc_chunk256_warm_varied_10k_20260521_153258.json cargo run --release --bin gpu_compile_bench -- --emit x86_64-elf --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T15:33:10-05:00] cargo check -p laniusc
+
+[2026-05-21T15:33:21-05:00] git diff --check
+
+[2026-05-21T15:33:28-05:00] rg -n "\[loop\]|while \(" shaders/codegen/x86*.slang || true
+
+[2026-05-21T15:36:57-05:00] cargo fmt
+
+[2026-05-21T15:37:05-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch -- --nocapture
+
+[2026-05-21T15:37:27-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T15:37:47-05:00] cargo check -p laniusc
+
+[2026-05-21T15:37:56-05:00] timeout 300s env LANIUS_PIPELINE_CACHE_DIR=target/wgpu-pipeline-cache-regalloc-split256 LANIUS_PERFETTO_TRACE=traces/x86_regalloc_split256_seed_varied_10k_20260521_153756.json cargo run --release --bin gpu_compile_bench -- --emit x86_64-elf --source varied --lines 10000 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T15:38:39-05:00] timeout 300s env LANIUS_PIPELINE_CACHE_DIR=target/wgpu-pipeline-cache-regalloc-split256 LANIUS_PERFETTO_TRACE=traces/x86_regalloc_split256_warm_varied_10k_20260521_153839.json cargo run --release --bin gpu_compile_bench -- --emit x86_64-elf --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T15:39:56-05:00] cargo fmt
+
+[2026-05-21T15:40:02-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch -- --nocapture
+
+[2026-05-21T15:40:20-05:00] cargo check -p laniusc
+
+[2026-05-21T15:40:27-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T15:41:43-05:00] cargo fmt
+
+[2026-05-21T15:41:48-05:00] timeout 180s cargo test --test codegen_x86_regalloc_dispatch -- --nocapture
+
+[2026-05-21T15:42:04-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T15:42:24-05:00] timeout 300s env LANIUS_PIPELINE_CACHE_DIR=target/wgpu-pipeline-cache-regalloc-chunk512 LANIUS_PERFETTO_TRACE=traces/x86_regalloc_chunk512_seed_varied_10k_20260521_154224.json cargo run --release --bin gpu_compile_bench -- --emit x86_64-elf --source varied --lines 10000 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T15:43:04-05:00] timeout 300s env LANIUS_PIPELINE_CACHE_DIR=target/wgpu-pipeline-cache-regalloc-chunk512 LANIUS_PERFETTO_TRACE=traces/x86_regalloc_chunk512_warm_varied_10k_20260521_154304.json cargo run --release --bin gpu_compile_bench -- --emit x86_64-elf --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T15:43:28-05:00] cargo fmt
+
+[2026-05-21T15:43:33-05:00] cargo check -p laniusc
+
+[2026-05-21T15:43:39-05:00] git diff --check
+
+[2026-05-21T15:43:47-05:00] rg -n "\[loop\]|while \(" shaders/codegen/x86*.slang || true
+
+[2026-05-21T15:52:27-05:00] cargo fmt
+
+[2026-05-21T15:52:32-05:00] timeout 180s cargo check -p laniusc
+
+[2026-05-21T15:52:45-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T15:54:50-05:00] cargo fmt
+
+[2026-05-21T15:54:55-05:00] timeout 180s cargo check -p laniusc
+
+[2026-05-21T15:55:02-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T15:55:25-05:00] timeout 180s env LANIUS_X86_STATUS_TRACE=1 cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T15:55:58-05:00] cargo fmt
+
+[2026-05-21T15:56:02-05:00] timeout 180s cargo check -p laniusc
+
+[2026-05-21T15:56:11-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T15:56:28-05:00] timeout 180s env LANIUS_X86_STATUS_TRACE=1 cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T15:56:53-05:00] timeout 180s cargo check -p laniusc
+
+[2026-05-21T15:57:02-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T15:57:39-05:00] timeout 300s env LANIUS_PIPELINE_CACHE_DIR=target/wgpu-pipeline-cache-semantic-node-counts LANIUS_PERFETTO_TRACE=traces/x86_semantic_node_counts_seed_varied_10k_20260521_155739.json cargo run --release --bin gpu_compile_bench -- --emit x86_64-elf --source varied --lines 10000 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T15:58:16-05:00] timeout 300s env LANIUS_PIPELINE_CACHE_DIR=target/wgpu-pipeline-cache-semantic-node-counts LANIUS_PERFETTO_TRACE=traces/x86_semantic_node_counts_warm_varied_10k_20260521_155816.json cargo run --release --bin gpu_compile_bench -- --emit x86_64-elf --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T15:58:44-05:00] timeout 300s env LANIUS_PIPELINE_CACHE_DIR=target/wgpu-pipeline-cache-semantic-node-counts LANIUS_PERFETTO_TRACE=traces/x86_semantic_node_counts_warm2_varied_10k_20260521_155844.json cargo run --release --bin gpu_compile_bench -- --emit x86_64-elf --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T15:59:07-05:00] git diff --check
+
+[2026-05-21T16:01:35-05:00] cargo fmt
+
+[2026-05-21T16:01:42-05:00] timeout 180s cargo check -p laniusc
+
+[2026-05-21T16:01:51-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T16:02:37-05:00] cargo fmt
+
+[2026-05-21T16:02:42-05:00] timeout 180s cargo check -p laniusc
+
+[2026-05-21T16:02:57-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T16:03:26-05:00] timeout 300s env LANIUS_PIPELINE_CACHE_DIR=target/wgpu-pipeline-cache-semantic-end-counts LANIUS_PERFETTO_TRACE=traces/x86_semantic_end_counts_seed_varied_10k_20260521_160326.json cargo run --release --bin gpu_compile_bench -- --emit x86_64-elf --source varied --lines 10000 --warmups 0 --iters 0 --allow-large
+
+[2026-05-21T16:04:08-05:00] timeout 300s env LANIUS_PIPELINE_CACHE_DIR=target/wgpu-pipeline-cache-semantic-end-counts LANIUS_PERFETTO_TRACE=traces/x86_semantic_end_counts_warm_varied_10k_20260521_160408.json cargo run --release --bin gpu_compile_bench -- --emit x86_64-elf --source varied --lines 10000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T16:04:28-05:00] git diff --check
+
+[2026-05-21T16:06:38-05:00] cargo fmt
+
+[2026-05-21T16:06:43-05:00] timeout 180s cargo check -p laniusc
+
+[2026-05-21T16:06:54-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T16:07:12-05:00] timeout 180s env LANIUS_X86_STATUS_TRACE=1 cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T16:08:04-05:00] cargo fmt
+
+[2026-05-21T16:08:09-05:00] timeout 180s cargo check -p laniusc
+
+[2026-05-21T16:08:18-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T16:08:38-05:00] git diff --check
+
+[2026-05-21T16:14:01-05:00] timeout 180s cargo check -p laniusc
+
+[2026-05-21T16:14:10-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T16:17:54-05:00] timeout 180s cargo check -p laniusc
+
+[2026-05-21T16:18:03-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T16:18:48-05:00] timeout 180s cargo check -p laniusc
+
+[2026-05-21T16:18:56-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T16:23:52-05:00] timeout 180s cargo check -p laniusc
+
+[2026-05-21T16:24:02-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T16:24:32-05:00] cargo fmt
+
+[2026-05-21T16:24:36-05:00] git diff --check
+
+[2026-05-21T16:24:46-05:00] timeout 300s cargo run --release --bin gpu_compile_bench -- --emit x86_64-elf --source varied --lines 1000 --warmups 0 --iters 1 --allow-large
+
+[2026-05-21T16:25:25-05:00] timeout 300s cargo run --release --bin gpu_compile_bench -- --emit x86_64-elf --source varied --lines 1000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T16:26:10-05:00] timeout 180s cargo check -p laniusc
+
+[2026-05-21T16:26:20-05:00] git diff --check
+
+[2026-05-21T16:26:31-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T16:29:51-05:00] timeout 180s cargo check -p laniusc
+
+[2026-05-21T16:30:08-05:00] timeout 180s cargo check -p laniusc
+
+[2026-05-21T16:30:18-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T16:30:38-05:00] cargo fmt
+
+[2026-05-21T16:30:45-05:00] git diff --check
+
+[2026-05-21T16:30:51-05:00] timeout 300s cargo run --release --bin gpu_compile_bench -- --emit x86_64-elf --source varied --lines 1000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T16:32:37-05:00] timeout 180s cargo check -p laniusc
+
+[2026-05-21T16:32:47-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T16:33:34-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T16:34:13-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T16:34:34-05:00] cargo fmt
+
+[2026-05-21T16:34:38-05:00] git diff --check
+
+[2026-05-21T16:38:08-05:00] timeout 180s cargo check -p laniusc
+
+[2026-05-21T16:38:16-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T16:38:44-05:00] cargo fmt
+
+[2026-05-21T16:38:48-05:00] git diff --check
+
+[2026-05-21T16:38:53-05:00] timeout 300s cargo run --release --bin gpu_compile_bench -- --emit x86_64-elf --source varied --lines 1000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T16:39:34-05:00] timeout 300s cargo run --release --bin gpu_compile_bench -- --emit x86_64-elf --source varied --lines 1000 --warmups 1 --iters 1 --allow-large
+
+[2026-05-21T16:42:51-05:00] timeout 180s cargo check -p laniusc
+
+[2026-05-21T16:43:02-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T16:44:08-05:00] timeout 180s cargo check -p laniusc
+
+[2026-05-21T16:44:27-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T16:44:55-05:00] timeout 180s env LANIUS_X86_STATUS_TRACE=1 cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T16:48:42-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T16:50:18-05:00] cargo check -p laniusc
+
+[2026-05-21T16:50:27-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T16:51:41-05:00] cargo check -p laniusc
+
+[2026-05-21T16:51:48-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T16:52:37-05:00] LANIUS_X86_STATUS_TRACE=1 timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T16:53:19-05:00] LANIUS_X86_STATUS_TRACE=1 timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T16:56:51-05:00] cargo run --bin dump_arith_hir
+
+[2026-05-21T16:57:03-05:00] cargo run --bin dump_arith_hir
+
+[2026-05-21T16:58:02-05:00] LANIUS_X86_STATUS_TRACE=1 timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T16:58:33-05:00] LANIUS_X86_STATUS_TRACE=1 timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T16:59:49-05:00] LANIUS_X86_STATUS_TRACE=1 timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T17:00:19-05:00] LANIUS_X86_STATUS_TRACE=1 timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T17:00:48-05:00] LANIUS_X86_STATUS_TRACE=1 timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T17:02:16-05:00] LANIUS_X86_STATUS_TRACE=1 timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T17:04:34-05:00] LANIUS_X86_STATUS_TRACE=1 timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T17:05:07-05:00] LANIUS_X86_STATUS_TRACE=1 timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T17:06:46-05:00] cargo check -p laniusc
+
+[2026-05-21T17:06:58-05:00] LANIUS_X86_STATUS_TRACE=1 timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T17:07:34-05:00] LANIUS_X86_STATUS_TRACE=1 timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T17:12:16-05:00] cargo check -p laniusc
+
+[2026-05-21T17:12:24-05:00] LANIUS_X86_STATUS_TRACE=1 timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T17:14:18-05:00] timeout 120s cargo run --bin gpu_compile_bench -- --phase x86 --emit x86_64-elf --source varied --lines 1000 --warmups 0 --iters 1
+
+[2026-05-21T17:14:48-05:00] LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 120s target/debug/gpu_compile_bench --phase x86 --emit x86_64-elf --source varied --lines 1000 --warmups 0 --iters 1
+
+[2026-05-21T17:15:13-05:00] timeout 120s target/debug/gpu_compile_bench --phase x86 --emit x86_64-elf --source varied --lines 1000 --warmups 1 --iters 1
+
+[2026-05-21T17:15:20-05:00] LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 120s target/debug/gpu_compile_bench --phase x86 --emit x86_64-elf --source varied --lines 1000 --warmups 1 --iters 1
+
+[2026-05-21T17:16:51-05:00] cargo fmt --check
+
+[2026-05-21T17:16:56-05:00] git diff --check
+
+[2026-05-21T17:17:09-05:00] timeout 120s target/debug/gpu_compile_bench --phase x86 --emit x86_64-elf --source varied --lines 1000 --estimate-live
+
+[2026-05-21T17:22:52-05:00] cargo check -p laniusc
+
+[2026-05-21T17:22:59-05:00] timeout 180s cargo test --test codegen_x86 x86_sample_programs_execute_expected_stdout -- --exact --nocapture
+
+[2026-05-21T17:23:20-05:00] timeout 120s target/debug/gpu_compile_bench --phase x86 --emit x86_64-elf --source varied --lines 1000 --warmups 1 --iters 1
+
+[2026-05-21T17:23:46-05:00] LANIUS_GPU_COMPILE_HOST_TIMING=1 timeout 120s target/debug/gpu_compile_bench --phase x86 --emit x86_64-elf --source varied --lines 1000 --warmups 1 --iters 1

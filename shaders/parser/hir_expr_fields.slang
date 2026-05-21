@@ -390,7 +390,13 @@ uint postfix_value_node(uint postfix)
         is_value_postfix_production(node_kind[final_operator]))
         return final_operator;
 
-    return first_child_node(postfix);
+    uint value = first_child_node(postfix);
+    if (valid_node(value) && node_kind[value] == PROD_GROUP)
+    {
+        uint grouped_expr = first_child_node(value);
+        return valid_node(grouped_expr) ? grouped_expr : INVALID;
+    }
+    return value;
 }
 
 uint index_base_node(uint index_node)

@@ -25,13 +25,19 @@ struct ScanParams
     uint inst_capacity;
 };
 
+[__AttributeUsage(_AttributeTargets.Var)]
+struct DynamicOffsetAttribute
+{
+};
+
 ConstantBuffer<Params> gParams;
-ConstantBuffer<ScanParams> gScan;
+[DynamicOffset]
+ConstantBuffer<ScanParams> gNextCallScan;
 
 StructuredBuffer<uint4> x86_virtual_inst_record;
 StructuredBuffer<uint4> x86_virtual_inst_args;
 StructuredBuffer<uint> x86_virtual_inst_status;
-StructuredBuffer<uint> x86_node_func;
+StructuredBuffer<uint> x86_virtual_func_slot;
 StructuredBuffer<uint> x86_virtual_next_call_in;
 
 RWStructuredBuffer<uint> x86_virtual_next_call_out;
@@ -56,46 +62,32 @@ uint linear_dispatch_id(uint3 tid)
 
 uint virtual_inst_count()
 {
-    return min(x86_virtual_inst_status[3u], min(gScan.n_items, gParams.inst_capacity));
+    return min(x86_virtual_inst_status[3u], min(gNextCallScan.n_items, gParams.inst_capacity));
 }
 
 bool upstream_ok()
 {
     return x86_virtual_inst_status[0u] == X86_VIRTUAL_INST_OK &&
            x86_virtual_inst_status[1u] == 0u &&
-           x86_virtual_inst_status[3u] <= gScan.n_items &&
-           gScan.n_items <= gParams.inst_capacity &&
-           gScan.inst_capacity == gParams.inst_capacity;
+           x86_virtual_inst_status[3u] <= gNextCallScan.n_items &&
+           gNextCallScan.n_items <= gParams.inst_capacity &&
+           gNextCallScan.inst_capacity == gParams.inst_capacity;
 }
 
-bool valid_node(uint node)
-{
-    return node != INVALID && node < gParams.n_hir_nodes;
-}
-
-uint row_function(uint row, uint inst_count)
+uint row_function_slot(uint row, uint inst_count)
 {
     if (row >= inst_count)
         return INVALID;
-    uint node = x86_virtual_inst_record[row].x;
-    if (!valid_node(node))
-        return INVALID;
-    uint fn_node = x86_node_func[node];
-    return valid_node(fn_node) ? fn_node : INVALID;
-}
-
-bool same_function_rows(uint left_row, uint right_row, uint inst_count)
-{
-    uint left_fn = row_function(left_row, inst_count);
-    return left_fn != INVALID && left_fn == row_function(right_row, inst_count);
+    uint slot = x86_virtual_func_slot[row];
+    return slot < gParams.n_tokens ? slot : INVALID;
 }
 
 bool call_belongs_to_row_function(uint row, uint call_row, uint inst_count)
 {
-    uint row_fn = row_function(row, inst_count);
-    if (row_fn == INVALID)
+    uint row_slot = row_function_slot(row, inst_count);
+    if (row_slot == INVALID)
         return true;
-    return call_row < inst_count && row_fn == row_function(call_row, inst_count);
+    return call_row < inst_count && row_slot == row_function_slot(call_row, inst_count);
 }
 
 bool row_has_fixed_register_barrier(uint row, uint inst_count)
@@ -124,11 +116,11 @@ uint next_call_scan_value(uint row, uint inst_count)
     if (row >= inst_count)
         return INVALID;
 
-    if (gScan.scan_step == 0u)
+    if (gNextCallScan.scan_step == 0u)
         return row_has_fixed_register_barrier(row, inst_count) ? row : INVALID;
 
     uint current = x86_virtual_next_call_in[row];
-    uint right_row = row + gScan.scan_step;
+    uint right_row = row + gNextCallScan.scan_step;
     uint right = right_row < inst_count ? x86_virtual_next_call_in[right_row] : INVALID;
 
     uint next = nearest_valid_call(current, right);
@@ -160,10 +152,10 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (row == 0u)
         publish_status(ok, count);
 
-    if (row >= gScan.n_items)
+    if (row >= gNextCallScan.n_items)
         return;
 
-    if (gScan.scan_step >= count && gScan.scan_step != 0u)
+    if (gNextCallScan.scan_step >= count && gNextCallScan.scan_step != 0u)
         return;
 
     x86_virtual_next_call_out[row] = ok ? next_call_scan_value(row, count) : INVALID;

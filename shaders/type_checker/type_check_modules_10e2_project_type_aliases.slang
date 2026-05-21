@@ -1,10 +1,10 @@
 // GPU type-alias projection from HIR type-reference records.
 //
 // This pass runs after parser/HIR type metadata and type-expression refs have
-// been built. It projects each type alias declaration by reading the alias
-// item's target type child from the parse tree and consuming the semantic
-// type-ref record on that child. It does not inspect source bytes, token
-// spellings, token kinds, or token neighborhoods.
+// been built. It projects each type alias declaration by consuming the parser's
+// explicit alias-target type record and the semantic type-ref record on that
+// node. It does not inspect source bytes, token spellings, token kinds, token
+// neighborhoods, or parse-tree child/sibling walks.
 
 struct Params
 {
@@ -16,11 +16,8 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> first_child;
-StructuredBuffer<uint> next_sibling;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_type_form;
+StructuredBuffer<uint> hir_type_alias_target_node;
 StructuredBuffer<uint> decl_count_out;
 StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> decl_namespace;
@@ -38,10 +35,6 @@ static const uint MAX_GROUPS_X = 65535u;
 
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint PATH_RESOLVE_STATUS_UNSUPPORTED_ALIAS = 8u;
-
-static const uint HIR_TYPE = 5u;
-
-static const uint HIR_TYPE_FORM_NONE = 0u;
 
 static const uint HIR_ITEM_KIND_TYPE_ALIAS = 8u;
 static const uint HIR_ITEM_NAMESPACE_TYPE = 3u;
@@ -76,28 +69,12 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
-uint next_sibling_node(uint node)
-{
-    if (!valid_node(node))
-        return INVALID;
-    uint sibling = next_sibling[node];
-    return valid_node(sibling) ? sibling : INVALID;
-}
-
 uint alias_target_type_node(uint alias_node)
 {
     if (!valid_node(alias_node))
         return INVALID;
-
-    uint child = first_child[alias_node];
-    [loop]
-    for (uint guard = 0u; guard < 16u && valid_node(child); guard += 1u)
-    {
-        if (hir_kind[child] == HIR_TYPE && hir_type_form[child] != HIR_TYPE_FORM_NONE)
-            return child;
-        child = next_sibling_node(child);
-    }
-    return INVALID;
+    uint target = hir_type_alias_target_node[alias_node];
+    return valid_node(target) ? target : INVALID;
 }
 
 uint alias_target_type_code(uint alias_node)

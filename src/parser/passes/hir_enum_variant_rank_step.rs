@@ -142,6 +142,14 @@ impl HirEnumVariantRankStepPass {
                 },
             ),
             (
+                "token_feature_flags".into(),
+                buffers.token_feature_flags.as_entire_binding(),
+            ),
+            (
+                "hir_enum_rank_node".into(),
+                buffers.hir_enum_rank_node.as_entire_binding(),
+            ),
+            (
                 "hir_variant_owner_in".into(),
                 variant_owner_in.as_entire_binding(),
             ),

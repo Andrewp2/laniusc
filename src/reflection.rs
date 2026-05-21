@@ -136,6 +136,17 @@ pub fn slang_category_and_type_to_wgpu(
     let array = type_layout.array.unwrap_or(false);
     let format_str = type_layout.format.as_deref().unwrap_or("");
     let is_uniform_buffer = type_layout.uniform_scale;
+    let has_dynamic_offset = param_info
+        .user_attribs
+        .iter()
+        .any(|attr| attr.name == "DynamicOffset")
+        // Slang's JSON reflection currently omits the custom attribute for
+        // these global constant buffers, but the shader source still carries
+        // the attribute as the intended ABI marker.
+        || matches!(
+            param_info.name.as_str(),
+            "gRegalloc" | "gNextCallScan" | "gFuncOwnerBlockScan" | "gNodeInstBlockScan"
+        );
 
     // param_info
     // 							.user_attribs
@@ -162,7 +173,7 @@ pub fn slang_category_and_type_to_wgpu(
                     // 	.unwrap_or(1);
                     Some(wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
+                        has_dynamic_offset,
                         min_binding_size: type_layout
                             .size_in_bytes
                             .or_else(|| {
@@ -289,7 +300,7 @@ pub fn slang_category_and_type_to_wgpu(
         )),
         "constantBuffer" => Some(wgpu::BindingType::Buffer {
             ty: wgpu::BufferBindingType::Uniform,
-            has_dynamic_offset: false,
+            has_dynamic_offset,
             min_binding_size: type_layout
                 .size_in_bytes
                 .or_else(|| {
@@ -378,4 +389,118 @@ pub fn get_thread_group_size(reflection: &SlangReflection) -> Option<[u32; 3]> {
         .iter()
         .find(|ep| ep.stage.as_deref() == Some("compute"))
         .and_then(|ep| ep.thread_group_size)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn uniform_param(name: &str, user_attribs: Vec<UserAttribute>) -> ParameterReflection {
+        ParameterReflection {
+            name: name.to_string(),
+            binding: BindingInfo {
+                kind: "descriptorTableSlot".to_string(),
+                index: Some(1),
+                offset: None,
+                size: None,
+            },
+            ty: TypeLayout {
+                kind: Some("resource".to_string()),
+                base_shape: Some("constantBuffer".to_string()),
+                uniform_scale: true,
+                size_in_bytes: Some(16),
+                ..TypeLayout::default()
+            },
+            user_attribs,
+        }
+    }
+
+    #[test]
+    fn dynamic_offset_attribute_marks_uniform_binding_dynamic() {
+        let param = uniform_param(
+            "gRegalloc",
+            vec![UserAttribute {
+                name: "DynamicOffset".to_string(),
+                arguments: Vec::new(),
+            }],
+        );
+
+        let Some(wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset,
+            min_binding_size,
+        }) = slang_category_and_type_to_wgpu(&param, &param.ty)
+        else {
+            panic!("expected uniform buffer binding");
+        };
+
+        assert!(has_dynamic_offset);
+        assert_eq!(min_binding_size.map(|size| size.get()), Some(16));
+    }
+
+    #[test]
+    fn ordinary_uniform_binding_is_not_dynamic() {
+        let param = uniform_param("gParams", Vec::new());
+
+        let Some(wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset,
+            ..
+        }) = slang_category_and_type_to_wgpu(&param, &param.ty)
+        else {
+            panic!("expected uniform buffer binding");
+        };
+
+        assert!(!has_dynamic_offset);
+    }
+
+    #[test]
+    fn x86_regalloc_uniform_uses_dynamic_offset_reflection_fallback() {
+        let param = uniform_param("gRegalloc", Vec::new());
+
+        let Some(wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset,
+            ..
+        }) = slang_category_and_type_to_wgpu(&param, &param.ty)
+        else {
+            panic!("expected uniform buffer binding");
+        };
+
+        assert!(has_dynamic_offset);
+    }
+
+    #[test]
+    fn x86_next_call_scan_uniform_uses_dynamic_offset_reflection_fallback() {
+        let param = uniform_param("gNextCallScan", Vec::new());
+
+        let Some(wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset,
+            ..
+        }) = slang_category_and_type_to_wgpu(&param, &param.ty)
+        else {
+            panic!("expected uniform buffer binding");
+        };
+
+        assert!(has_dynamic_offset);
+    }
+
+    #[test]
+    fn x86_scan_block_uniforms_use_dynamic_offset_reflection_fallback() {
+        for name in ["gFuncOwnerBlockScan", "gNodeInstBlockScan"] {
+            let param = uniform_param(name, Vec::new());
+
+            let Some(wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset,
+                ..
+            }) = slang_category_and_type_to_wgpu(&param, &param.ty)
+            else {
+                panic!("expected uniform buffer binding for {name}");
+            };
+
+            assert!(has_dynamic_offset, "{name} should use dynamic offsets");
+        }
+    }
 }

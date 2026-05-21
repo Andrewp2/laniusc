@@ -26,6 +26,12 @@ RWStructuredBuffer<uint> hir_variant_rank_a;
 RWStructuredBuffer<uint> hir_variant_payload_owner_a;
 RWStructuredBuffer<uint> hir_variant_payload_link_a;
 RWStructuredBuffer<uint> hir_variant_payload_rank_a;
+RWStructuredBuffer<uint> hir_variant_owner_b;
+RWStructuredBuffer<uint> hir_variant_link_b;
+RWStructuredBuffer<uint> hir_variant_rank_b;
+RWStructuredBuffer<uint> hir_variant_payload_owner_b;
+RWStructuredBuffer<uint> hir_variant_payload_link_b;
+RWStructuredBuffer<uint> hir_variant_payload_rank_b;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -194,6 +200,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_variant_payload_owner_a[node] = INVALID;
     hir_variant_payload_link_a[node] = INVALID;
     hir_variant_payload_rank_a[node] = 0u;
+    hir_variant_owner_b[node] = INVALID;
+    hir_variant_link_b[node] = INVALID;
+    hir_variant_rank_b[node] = 0u;
+    hir_variant_payload_owner_b[node] = INVALID;
+    hir_variant_payload_link_b[node] = INVALID;
+    hir_variant_payload_rank_b[node] = 0u;
 
     if (!valid_node(node))
         return;

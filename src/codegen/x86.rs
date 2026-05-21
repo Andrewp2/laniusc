@@ -10,7 +10,7 @@ mod finish;
 mod record;
 mod support;
 
-use support::trace_x86_codegen;
+use support::{PooledReadbackBuffer, PooledStorageBuffer, RetainedX86Buffer, trace_x86_codegen};
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
@@ -23,6 +23,7 @@ struct X86Params {
     virtual_next_call_step_count: u32,
     regalloc_rows_per_chunk: u32,
     regalloc_chunk_count: u32,
+    function_slot_capacity: u32,
 }
 
 #[repr(C)]
@@ -145,17 +146,22 @@ const X86_INST_CAPACITY_MIN: usize = 256;
 const X86_INST_CAPACITY_SLACK: usize = 1_024;
 const X86_INSTS_PER_HIR_NODE_CAPACITY: usize = 8;
 const X86_INSTS_PER_TOKEN_CAPACITY: usize = 1;
-// Keep each register-allocation dispatch bounded so a single shader invocation
-// does not serially walk a long function and monopolize the GPU. The host
-// records one chunked pass per row block while the shader carries per-function
-// active-register state between blocks. A workgroup-sized chunk keeps the
-// current sequential slice bounded while staying close to Pareas' row-step map
-// shape.
+const X86_FUNCTION_SLOT_TOKEN_DENSITY_DIVISOR: usize = 3;
+const X86_FUNCTION_SLOT_CAPACITY_SLACK: usize = 64;
+const X86_INITIAL_OUTPUT_READBACK_SOURCE_MULTIPLIER: usize = 3;
+const X86_INITIAL_OUTPUT_READBACK_SLACK_BYTES: usize = 64 * 1024;
+const X86_INITIAL_OUTPUT_READBACK_LARGE_SOURCE_SLACK_BYTES: usize = 128 * 1024;
+const X86_INITIAL_OUTPUT_READBACK_CAPACITY_DIVISOR: usize = 2;
+// Mirror Pareas' lockstep register-allocation shape: each dispatch step
+// advances a small fixed row chunk for every function, carrying per-function
+// active state between chunks. This avoids serial full-function walks inside a
+// single shader invocation while keeping host command recording bounded.
 const X86_REGALLOC_ROWS_PER_CHUNK: usize = 256;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct X86CapacityEstimate {
     pub hir_words: usize,
+    pub inst_basis_words: usize,
     pub requested_inst_capacity: usize,
     pub inst_capacity: usize,
     pub inst_capacity_capped: bool,
@@ -170,24 +176,50 @@ pub fn x86_capacity_estimate_for_hir_and_tokens(
     hir_words: usize,
     token_capacity: usize,
 ) -> X86CapacityEstimate {
+    x86_capacity_estimate_for_hir_tokens_and_inst_basis(hir_words, token_capacity, hir_words)
+}
+
+pub fn x86_capacity_estimate_for_hir_tokens_and_inst_basis(
+    hir_words: usize,
+    token_capacity: usize,
+    inst_basis_words: usize,
+) -> X86CapacityEstimate {
     let token_scaled_limit = token_capacity
         .max(1)
         .saturating_mul(X86_INSTS_PER_TOKEN_CAPACITY)
         .saturating_add(X86_INST_CAPACITY_SLACK)
         .min(MAX_X86_INSTS);
-    x86_capacity_estimate_for_hir_with_limit(hir_words, token_scaled_limit)
+    x86_capacity_estimate_for_hir_with_limit_and_inst_basis(
+        hir_words,
+        token_scaled_limit,
+        inst_basis_words,
+    )
 }
 
 fn x86_capacity_estimate_for_hir_with_limit(
     hir_words: usize,
     inst_capacity_limit: usize,
 ) -> X86CapacityEstimate {
+    x86_capacity_estimate_for_hir_with_limit_and_inst_basis(
+        hir_words,
+        inst_capacity_limit,
+        hir_words,
+    )
+}
+
+fn x86_capacity_estimate_for_hir_with_limit_and_inst_basis(
+    hir_words: usize,
+    inst_capacity_limit: usize,
+    inst_basis_words: usize,
+) -> X86CapacityEstimate {
     let hir_words = hir_words.max(1);
+    let inst_basis_words = inst_basis_words.max(1);
     let inst_capacity_limit = inst_capacity_limit.clamp(X86_INST_CAPACITY_MIN, MAX_X86_INSTS);
-    let requested_inst_capacity = x86_requested_inst_capacity_for_hir(hir_words);
+    let requested_inst_capacity = x86_requested_inst_capacity_for_hir(inst_basis_words);
     let inst_capacity = requested_inst_capacity.clamp(X86_INST_CAPACITY_MIN, inst_capacity_limit);
     X86CapacityEstimate {
         hir_words,
+        inst_basis_words,
         requested_inst_capacity,
         inst_capacity,
         inst_capacity_capped: requested_inst_capacity > inst_capacity,
@@ -208,6 +240,21 @@ fn x86_output_capacity_for_inst_capacity(inst_capacity: usize) -> usize {
         .max(4096)
 }
 
+fn x86_initial_output_readback_bytes(output_capacity: usize, source_len: usize) -> usize {
+    let scaled_window = source_len
+        .saturating_mul(X86_INITIAL_OUTPUT_READBACK_SOURCE_MULTIPLIER)
+        .saturating_add(X86_INITIAL_OUTPUT_READBACK_SLACK_BYTES);
+    let large_source_window =
+        source_len.saturating_add(X86_INITIAL_OUTPUT_READBACK_LARGE_SOURCE_SLACK_BYTES);
+    let source_window = scaled_window.min(large_source_window);
+    let capacity_window = output_capacity.div_ceil(X86_INITIAL_OUTPUT_READBACK_CAPACITY_DIVISOR);
+    let wanted = source_window.max(capacity_window).max(4096);
+    wanted
+        .min(output_capacity.max(1))
+        .div_ceil(4)
+        .saturating_mul(4)
+}
+
 pub fn x86_node_inst_order_rows(hir_words: usize, inst_capacity: usize) -> usize {
     inst_capacity.min(hir_words.max(1)).saturating_add(1)
 }
@@ -215,21 +262,46 @@ pub fn x86_node_inst_order_rows(hir_words: usize, inst_capacity: usize) -> usize
 pub fn x86_node_inst_order_record_words(
     hir_words: usize,
     inst_capacity: usize,
-    token_capacity: usize,
+    function_slot_capacity: usize,
 ) -> usize {
-    x86_node_inst_order_rows(hir_words, inst_capacity)
+    let order_rows = x86_node_inst_order_rows(hir_words, inst_capacity);
+    order_rows
         .saturating_mul(3)
         .max(hir_words.max(1).saturating_mul(2))
-        .max(token_capacity.max(1).saturating_mul(14))
+        .max(function_slot_capacity.max(1).saturating_mul(14))
+}
+
+pub fn x86_function_slot_capacity(
+    inst_hir_node_count: usize,
+    hir_words: usize,
+    token_capacity: usize,
+) -> usize {
+    let structural_limit = inst_hir_node_count
+        .max(1)
+        .min(hir_words.max(1))
+        .min(token_capacity.max(1));
+    // Valid function records require multiple lexed tokens. Use a divisor below
+    // the grammar minimum so this stays a conservative allocation bound, not a
+    // semantic classifier.
+    let token_density_bound = token_capacity
+        .max(1)
+        .div_ceil(X86_FUNCTION_SLOT_TOKEN_DENSITY_DIVISOR)
+        .saturating_add(X86_FUNCTION_SLOT_CAPACITY_SLACK);
+    structural_limit.min(token_density_bound).max(1)
+}
+
+pub fn x86_regalloc_recorded_step_count(inst_capacity: usize, inst_basis_words: usize) -> usize {
+    let _ = inst_basis_words;
+    inst_capacity.max(1)
 }
 
 pub struct RecordedX86Codegen {
     output_capacity: usize,
     output_status_offset: u64,
-    _retained_buffers: Vec<wgpu::Buffer>,
+    _retained_buffers: Vec<RetainedX86Buffer>,
     _retained_bind_groups: Vec<wgpu::BindGroup>,
-    _out_buf: wgpu::Buffer,
-    output_readback: wgpu::Buffer,
+    out_buf: PooledStorageBuffer,
+    output_readback: PooledReadbackBuffer,
     status_trace_readback: Option<wgpu::Buffer>,
 }
 
@@ -241,6 +313,8 @@ pub struct GpuX86CodeGenerator {
     output_dispatch_args_pass: PassData,
     node_tree_info_pass: PassData,
     func_discover_pass: PassData,
+    func_slot_flags_pass: PassData,
+    func_slot_scatter_pass: PassData,
     func_owner_scan_local_pass: PassData,
     func_owner_scan_blocks_pass: PassData,
     func_assign_nodes_pass: PassData,
@@ -289,19 +363,29 @@ pub struct GpuX86CodeGenerator {
     node_inst_prefix_scan_pass: PassData,
     node_inst_subtree_bounds_pass: PassData,
     node_inst_locations_pass: PassData,
+    node_inst_gen_worklist_scatter_pass: PassData,
+    node_inst_gen_worklist_dispatch_args_pass: PassData,
     enclosing_loop_init_pass: PassData,
     enclosing_loop_step_pass: PassData,
     node_inst_gen_inputs_pass: PassData,
     virtual_inst_clear_dispatch_args_pass: PassData,
     virtual_inst_clear_pass: PassData,
     node_inst_gen_pass: PassData,
+    aggregate_literal_return_copy_flags_pass: PassData,
+    aggregate_literal_return_copy_pass: PassData,
+    node_inst_gen_aggregate_copy_pass: PassData,
     virtual_liveness_init_pass: PassData,
     virtual_liveness_pass: PassData,
     virtual_next_calls_pass: PassData,
+    virtual_spans_fixed_barrier_pass: PassData,
+    virtual_value_def_flags_pass: PassData,
+    virtual_value_def_compact_pass: PassData,
     virtual_param_masks_pass: PassData,
     virtual_regalloc_pass: PassData,
     virtual_func_rows_init_pass: PassData,
     virtual_func_first_row_pass: PassData,
+    virtual_func_span_max_pass: PassData,
+    virtual_regalloc_dispatch_args_pass: PassData,
     select_pass: PassData,
     inst_size_pass: PassData,
     text_scan_local_pass: PassData,
@@ -356,6 +440,16 @@ impl GpuX86CodeGenerator {
             "func_discover",
             "x86_func_discover.spv",
             "x86_func_discover.reflect.json"
+        );
+        let func_slot_flags_pass = load_x86_pass!(
+            "func_slot_flags",
+            "x86_func_slot_flags.spv",
+            "x86_func_slot_flags.reflect.json"
+        );
+        let func_slot_scatter_pass = load_x86_pass!(
+            "func_slot_scatter",
+            "x86_func_slot_scatter.spv",
+            "x86_func_slot_scatter.reflect.json"
         );
         let func_owner_scan_local_pass = load_x86_pass!(
             "func_owner_scan_local",
@@ -594,6 +688,16 @@ impl GpuX86CodeGenerator {
             "x86_node_inst_locations.spv",
             "x86_node_inst_locations.reflect.json"
         );
+        let node_inst_gen_worklist_scatter_pass = load_x86_pass!(
+            "node_inst_gen_worklist_scatter",
+            "x86_node_inst_gen_worklist_scatter.spv",
+            "x86_node_inst_gen_worklist_scatter.reflect.json"
+        );
+        let node_inst_gen_worklist_dispatch_args_pass = load_x86_pass!(
+            "node_inst_gen_worklist_dispatch_args",
+            "x86_node_inst_gen_worklist_dispatch_args.spv",
+            "x86_node_inst_gen_worklist_dispatch_args.reflect.json"
+        );
         let enclosing_loop_init_pass = load_x86_pass!(
             "enclosing_loop_init",
             "x86_enclosing_loop_init.spv",
@@ -624,6 +728,21 @@ impl GpuX86CodeGenerator {
             "x86_node_inst_gen.spv",
             "x86_node_inst_gen.reflect.json"
         );
+        let aggregate_literal_return_copy_flags_pass = load_x86_pass!(
+            "aggregate_literal_return_copy_flags",
+            "x86_aggregate_literal_return_copy_flags.spv",
+            "x86_aggregate_literal_return_copy_flags.reflect.json"
+        );
+        let aggregate_literal_return_copy_pass = load_x86_pass!(
+            "aggregate_literal_return_copy",
+            "x86_aggregate_literal_return_copy.spv",
+            "x86_aggregate_literal_return_copy.reflect.json"
+        );
+        let node_inst_gen_aggregate_copy_pass = load_x86_pass!(
+            "node_inst_gen_aggregate_copy",
+            "x86_node_inst_gen_aggregate_copy.spv",
+            "x86_node_inst_gen_aggregate_copy.reflect.json"
+        );
         let virtual_liveness_init_pass = load_x86_pass!(
             "virtual_liveness_init",
             "x86_virtual_liveness_init.spv",
@@ -638,6 +757,21 @@ impl GpuX86CodeGenerator {
             "virtual_next_calls",
             "x86_virtual_next_calls.spv",
             "x86_virtual_next_calls.reflect.json"
+        );
+        let virtual_spans_fixed_barrier_pass = load_x86_pass!(
+            "virtual_spans_fixed_barrier",
+            "x86_virtual_spans_fixed_barrier.spv",
+            "x86_virtual_spans_fixed_barrier.reflect.json"
+        );
+        let virtual_value_def_flags_pass = load_x86_pass!(
+            "virtual_value_def_flags",
+            "x86_virtual_value_def_flags.spv",
+            "x86_virtual_value_def_flags.reflect.json"
+        );
+        let virtual_value_def_compact_pass = load_x86_pass!(
+            "virtual_value_def_compact",
+            "x86_virtual_value_def_compact.spv",
+            "x86_virtual_value_def_compact.reflect.json"
         );
         let virtual_param_masks_pass = load_x86_pass!(
             "virtual_param_masks",
@@ -658,6 +792,16 @@ impl GpuX86CodeGenerator {
             "virtual_func_first_row",
             "x86_virtual_func_first_row.spv",
             "x86_virtual_func_first_row.reflect.json"
+        );
+        let virtual_func_span_max_pass = load_x86_pass!(
+            "virtual_func_span_max",
+            "x86_virtual_func_span_max.spv",
+            "x86_virtual_func_span_max.reflect.json"
+        );
+        let virtual_regalloc_dispatch_args_pass = load_x86_pass!(
+            "virtual_regalloc_dispatch_args",
+            "x86_virtual_regalloc_dispatch_args.spv",
+            "x86_virtual_regalloc_dispatch_args.reflect.json"
         );
         let select_pass = load_x86_pass!("select", "x86_select.spv", "x86_select.reflect.json");
         let inst_size_pass = load_x86_pass!(
@@ -694,6 +838,8 @@ impl GpuX86CodeGenerator {
             output_dispatch_args_pass,
             node_tree_info_pass,
             func_discover_pass,
+            func_slot_flags_pass,
+            func_slot_scatter_pass,
             func_owner_scan_local_pass,
             func_owner_scan_blocks_pass,
             func_assign_nodes_pass,
@@ -742,19 +888,29 @@ impl GpuX86CodeGenerator {
             node_inst_prefix_scan_pass,
             node_inst_subtree_bounds_pass,
             node_inst_locations_pass,
+            node_inst_gen_worklist_scatter_pass,
+            node_inst_gen_worklist_dispatch_args_pass,
             enclosing_loop_init_pass,
             enclosing_loop_step_pass,
             node_inst_gen_inputs_pass,
             virtual_inst_clear_dispatch_args_pass,
             virtual_inst_clear_pass,
             node_inst_gen_pass,
+            aggregate_literal_return_copy_flags_pass,
+            aggregate_literal_return_copy_pass,
+            node_inst_gen_aggregate_copy_pass,
             virtual_liveness_init_pass,
             virtual_liveness_pass,
             virtual_next_calls_pass,
+            virtual_spans_fixed_barrier_pass,
+            virtual_value_def_flags_pass,
+            virtual_value_def_compact_pass,
             virtual_param_masks_pass,
             virtual_regalloc_pass,
             virtual_func_rows_init_pass,
             virtual_func_first_row_pass,
+            virtual_func_span_max_pass,
+            virtual_regalloc_dispatch_args_pass,
             select_pass,
             inst_size_pass,
             text_scan_local_pass,
@@ -763,5 +919,62 @@ impl GpuX86CodeGenerator {
             elf_layout_pass,
             elf_write_pass,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn x86_function_slot_capacity_shrinks_sparse_token_sized_slots() {
+        let capacity = x86_function_slot_capacity(424_994, 424_994, 92_102);
+        assert_eq!(capacity, 30_765);
+        assert!(
+            capacity < 92_102,
+            "function-slot scratch should not default to one slot per token"
+        );
+    }
+
+    #[test]
+    fn x86_function_slot_capacity_keeps_structural_limits_when_smaller() {
+        assert_eq!(x86_function_slot_capacity(20, 10_000, 100_000), 20);
+        assert_eq!(x86_function_slot_capacity(10_000, 20, 100_000), 20);
+        assert_eq!(x86_function_slot_capacity(10_000, 100_000, 20), 20);
+    }
+
+    #[test]
+    fn x86_function_slot_capacity_keeps_at_least_one_slot() {
+        assert_eq!(x86_function_slot_capacity(0, 0, 0), 1);
+        assert_eq!(x86_function_slot_capacity(0, 100, 100), 1);
+    }
+
+    #[test]
+    fn x86_initial_output_readback_uses_source_and_capacity_sized_window() {
+        let output_capacity = 1_493_000;
+        let source_len = 308_800;
+        let readback = x86_initial_output_readback_bytes(output_capacity, source_len);
+
+        assert_eq!(readback % 4, 0);
+        assert!(readback < output_capacity);
+        assert!(readback >= source_len);
+        assert!(readback >= output_capacity / 2);
+    }
+
+    #[test]
+    fn x86_initial_output_readback_covers_output_dense_generated_programs() {
+        let output_capacity = 1_877_808;
+        let source_len = 305_424;
+        let observed_mixed_output_len = 830_683;
+        let readback = x86_initial_output_readback_bytes(output_capacity, source_len);
+
+        assert!(readback >= observed_mixed_output_len);
+        assert!(readback < output_capacity);
+    }
+
+    #[test]
+    fn x86_initial_output_readback_keeps_small_outputs_whole() {
+        assert_eq!(x86_initial_output_readback_bytes(4096, 10), 4096);
+        assert_eq!(x86_initial_output_readback_bytes(1024, 0), 1024);
     }
 }

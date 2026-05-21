@@ -31,6 +31,12 @@ RWStructuredBuffer<uint> hir_struct_lit_field_owner_a;
 RWStructuredBuffer<uint> hir_struct_lit_field_link_a;
 RWStructuredBuffer<uint> hir_struct_lit_field_rank_a;
 RWStructuredBuffer<uint> hir_struct_lit_field_previous;
+RWStructuredBuffer<uint> hir_struct_field_owner_b;
+RWStructuredBuffer<uint> hir_struct_field_link_b;
+RWStructuredBuffer<uint> hir_struct_field_rank_b;
+RWStructuredBuffer<uint> hir_struct_lit_field_owner_b;
+RWStructuredBuffer<uint> hir_struct_lit_field_link_b;
+RWStructuredBuffer<uint> hir_struct_lit_field_rank_b;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -216,6 +222,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_struct_lit_field_link_a[node] = INVALID;
     hir_struct_lit_field_rank_a[node] = 0u;
     hir_struct_lit_field_previous[node] = INVALID;
+    hir_struct_field_owner_b[node] = INVALID;
+    hir_struct_field_link_b[node] = INVALID;
+    hir_struct_field_rank_b[node] = 0u;
+    hir_struct_lit_field_owner_b[node] = INVALID;
+    hir_struct_lit_field_link_b[node] = INVALID;
+    hir_struct_lit_field_rank_b[node] = 0u;
 
     if (!valid_node(node))
         return;

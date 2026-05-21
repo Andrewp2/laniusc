@@ -24,13 +24,13 @@ StructuredBuffer<uint4> x86_virtual_inst_record;
 StructuredBuffer<uint4> x86_virtual_inst_args;
 StructuredBuffer<uint> x86_virtual_inst_status;
 StructuredBuffer<uint> x86_virtual_phys_reg;
+StructuredBuffer<uint> x86_virtual_call_live_reg_mask;
 StructuredBuffer<uint> x86_virtual_regalloc_status;
 StructuredBuffer<uint> x86_func_first_virtual_row;
 StructuredBuffer<uint> x86_func_first_virtual_row_status;
 StructuredBuffer<uint> x86_decl_layout_status;
 StructuredBuffer<uint> x86_func_meta;
-StructuredBuffer<uint> x86_node_func;
-StructuredBuffer<uint> hir_node_decl_token;
+StructuredBuffer<uint> x86_virtual_func_slot;
 
 RWStructuredBuffer<uint> x86_inst_kind;
 RWStructuredBuffer<uint> x86_inst_arg0;
@@ -118,7 +118,17 @@ static const uint X86_OP_BIT_AND_I32 = 8u;
 static const uint X86_OP_BIT_OR_I32 = 9u;
 static const uint X86_OP_BIT_XOR = 10u;
 
-static const uint FUNC_META_MAIN_NODE = 4u;
+static const uint FUNC_META_MAIN_SLOT = 2u;
+static const uint MIN_X86_STACK_FRAME_BYTES = 16u;
+
+static const uint X86_REG_ECX = 1u;
+static const uint X86_REG_EDX = 2u;
+static const uint X86_REG_ESI = 6u;
+static const uint X86_REG_EDI = 7u;
+static const uint X86_REG_R8D = 8u;
+static const uint X86_REG_R9D = 9u;
+static const uint X86_REG_R10D = 10u;
+static const uint X86_REG_R11D = 11u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -133,7 +143,7 @@ uint virtual_inst_count()
 uint entry_frame_size()
 {
     uint local_slots = x86_decl_layout_status[3u];
-    uint bytes = max((local_slots + 3u) * 4u, 128u);
+    uint bytes = max((local_slots + 3u) * 4u, MIN_X86_STACK_FRAME_BYTES);
     return (bytes + 15u) & 0xfffffff0u;
 }
 
@@ -196,11 +206,7 @@ uint selected_target(uint virtual_target, uint inst_count)
 bool main_entry_target(uint inst_count, out uint target)
 {
     target = INVALID;
-    uint main_node = x86_func_meta[FUNC_META_MAIN_NODE];
-    if (main_node == INVALID || main_node >= gParams.n_hir_nodes)
-        return false;
-
-    uint main_slot = hir_node_decl_token[main_node];
+    uint main_slot = x86_func_meta[FUNC_META_MAIN_SLOT];
     if (main_slot >= gParams.n_tokens)
         return false;
 
@@ -243,6 +249,112 @@ uint mixed_arg_kind(uint info, uint ordinal)
     if (ordinal < 4u)
         return packed_u2_at_offset(info, 12u, ordinal);
     return 0u;
+}
+
+uint call_saved_reg_slot(uint reg)
+{
+    if (reg == X86_REG_ECX) return 0u;
+    if (reg == X86_REG_EDX) return 1u;
+    if (reg == X86_REG_ESI) return 2u;
+    if (reg == X86_REG_EDI) return 3u;
+    if (reg == X86_REG_R8D) return 4u;
+    if (reg == X86_REG_R9D) return 5u;
+    if (reg == X86_REG_R10D) return 6u;
+    if (reg == X86_REG_R11D) return 7u;
+    return INVALID;
+}
+
+uint call_saved_reg_mask_bit(uint reg)
+{
+    uint slot = call_saved_reg_slot(reg);
+    return slot == INVALID ? 0u : (1u << slot);
+}
+
+uint mixed_target_reg(uint ordinal, bool aggregate_return)
+{
+    uint shifted = ordinal + (aggregate_return ? 1u : 0u);
+    if (shifted == 0u) return X86_REG_EDI;
+    if (shifted == 1u) return X86_REG_ESI;
+    if (shifted == 2u) return X86_REG_EDX;
+    if (shifted == 3u) return X86_REG_ECX;
+    if (shifted == 4u) return X86_REG_R8D;
+    if (shifted == 5u) return X86_REG_R9D;
+    return INVALID;
+}
+
+uint call_arg_payload_at(uint ordinal, uint arg0, uint arg1, uint arg2, uint arg3)
+{
+    return ordinal == 0u
+        ? arg0
+        : (ordinal == 1u ? arg1 : (ordinal == 2u ? arg2 : arg3));
+}
+
+bool call_arg_move_writes_target(uint kind, uint payload, uint target)
+{
+    if (kind == X86_ARG_SCALAR || kind == X86_ARG_PARAM_PTR)
+        return payload != target;
+    return kind == X86_ARG_LOCAL_PTR;
+}
+
+uint call_arg_clobber_mask_before(
+    uint info,
+    uint ordinal,
+    uint arg_count,
+    uint arg0,
+    uint arg1,
+    uint arg2,
+    uint arg3,
+    bool aggregate_return)
+{
+    uint mask = aggregate_return ? call_saved_reg_mask_bit(X86_REG_EDI) : 0u;
+    [unroll]
+    for (uint prev = 0u; prev < 4u; prev += 1u)
+    {
+        if (prev >= ordinal || prev >= arg_count)
+            continue;
+        uint target = mixed_target_reg(prev, aggregate_return);
+        uint payload = call_arg_payload_at(prev, arg0, arg1, arg2, arg3);
+        if (call_arg_move_writes_target(mixed_arg_kind(info, prev), payload, target))
+            mask |= call_saved_reg_mask_bit(target);
+    }
+    return mask;
+}
+
+uint call_arg_save_mask(
+    uint info,
+    uint arg_count,
+    uint arg0,
+    uint arg1,
+    uint arg2,
+    uint arg3,
+    bool aggregate_return)
+{
+    uint mask = 0u;
+    [unroll]
+    for (uint ordinal = 0u; ordinal < 4u; ordinal += 1u)
+    {
+        if (ordinal >= arg_count || mixed_arg_kind(info, ordinal) != X86_ARG_SCALAR)
+            continue;
+        uint payload_bit = call_saved_reg_mask_bit(
+            call_arg_payload_at(ordinal, arg0, arg1, arg2, arg3));
+        uint clobbered_before = call_arg_clobber_mask_before(
+            info,
+            ordinal,
+            arg_count,
+            arg0,
+            arg1,
+            arg2,
+            arg3,
+            aggregate_return);
+        if ((payload_bit & clobbered_before) != 0u)
+            mask |= payload_bit;
+    }
+    return mask;
+}
+
+uint pack_kind_with_call_save_mask(uint kind, uint save_mask)
+{
+    return kind | ((save_mask & 0xffu) << 8u);
 }
 
 uint mixed_arg_payload(uint row, uint ordinal)
@@ -387,7 +499,11 @@ bool select_virtual_inst(uint row, uint inst_count)
             !selected_mixed_arg_payload(row, info, 3u, inst_count, arg3))
             return false;
 
-        x86_inst_kind[out_row] = X86_INST_V_CALL_MIXED_DIRECT;
+        uint save_mask = x86_virtual_call_live_reg_mask[row] |
+                         call_arg_save_mask(info, arg_count, arg0, arg1, arg2, arg3, aggregate_return);
+        x86_inst_kind[out_row] = pack_kind_with_call_save_mask(
+            X86_INST_V_CALL_MIXED_DIRECT,
+            save_mask);
         x86_inst_arg0[out_row] = selected_target(args.x, inst_count);
         x86_inst_arg1[out_row] = pack_u8x4(
                                      aggregate_return ? 1u : 0u,
@@ -561,9 +677,9 @@ bool select_virtual_inst(uint row, uint inst_count)
         uint src = INVALID;
         if (!phys_reg_for_value(args.x, inst_count, src))
             return false;
-        uint owner_fn = inst.x == INVALID ? INVALID : x86_node_func[inst.x];
-        uint main_node = x86_func_meta[FUNC_META_MAIN_NODE];
-        x86_inst_kind[out_row] = owner_fn == main_node ?
+        uint owner_slot = x86_virtual_func_slot[row];
+        uint main_slot = x86_func_meta[FUNC_META_MAIN_SLOT];
+        x86_inst_kind[out_row] = owner_slot == main_slot ?
                                  X86_INST_V_RETURN_R32 :
                                  X86_INST_V_RETURN_FUNC_R32;
         x86_inst_arg0[out_row] = src;

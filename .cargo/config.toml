@@ -1,8 +1,8 @@
 # .cargo/config.toml
 [env]
 # 🤖 Ensure build.rs can dlopen libslang.so at runtime
-SLANGC = { value = "/home/andrew-peterson/Downloads/crap/slang-2025.10.4-linux-x86_64/bin/slangc", force = true }
-LD_LIBRARY_PATH = { value = "/home/andrew-peterson/Downloads/crap/slang-2025.10.4-linux-x86_64/lib", force = true }
+SLANGC = { value = "/home/andrew-peterson/tools/bin/slangc", force = true }
+LD_LIBRARY_PATH = { value = "/home/andrew-peterson/tools/lib", force = true }
 # Most integration tests touch the shared GPU frontend and already serialize in
 # the test helper. Running libtest serially avoids scheduler contention that can
 # trip the short watchdog and makes plain `cargo test` the fast path.
@@ -12,5 +12,5 @@ RUST_TEST_THREADS = { value = "1" }
 # 🤖 Embed an rpath so the final binary can run without LD_LIBRARY_PATH
 rustflags = [
   "-C",
-  "link-args=-Wl,-rpath,/home/andrew-peterson/Downloads/crap/slang-2025.10.4-linux-x86_64/lib",
+    "link-args=-Wl,-rpath,/home/andrew-peterson/tools/lib",
 ]

@@ -92,7 +92,13 @@
             "func_slot_by_index",
             &func_slot_by_index_buf,
             &[u32::MAX],
-            token_words,
+            function_slot_capacity,
+        );
+        init_repeated!(
+            "func_slot_by_node",
+            &func_slot_by_node_buf,
+            &[u32::MAX],
+            hir_words,
         );
         init_repeated!("call_record", &call_record_buf, &[u32::MAX; 4], hir_words);
         init_repeated!("call_type_record", &call_type_record_buf, &[u32::MAX; 3], hir_words);
@@ -193,10 +199,10 @@
         // x86_node_inst_gen then overwrites semantic rows while padding rows
         // remain X86_VINST_NONE without requiring a capacity-wide clear.
         write_u32_words(queue, &virtual_inst_status_buf, &[0, 0, u32::MAX, 0]);
-        // x86_virtual_func_rows_init initializes only HIR function slots before
-        // virtual_func_first_row scatters virtual-row bounds. Later stages read
-        // these buffers through function slots only, so token-capacity clears
-        // are unnecessary.
+        // x86_virtual_func_rows_init initializes only discovered function slots
+        // before virtual_func_first_row scatters virtual-row bounds. Later
+        // stages read these buffers through function slots only, so
+        // token-capacity clears are unnecessary.
         write_u32_words(
             queue,
             &virtual_func_first_row_status_buf,

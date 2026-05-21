@@ -50,6 +50,7 @@ static const uint TY_FLOAT = 5u;
 static const uint TY_CHAR = 6u;
 static const uint TY_STRING = 7u;
 static const uint TY_GENERIC_BASE = 8192u;
+static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint LANGUAGE_DECL_COUNT = 18u;
@@ -103,6 +104,11 @@ uint active_token_count()
 bool valid_node(uint node)
 {
     return node != INVALID && node < gParams.n_hir_nodes;
+}
+
+bool valid_token(uint token)
+{
+    return token != INVALID && token < active_token_count();
 }
 
 uint lookup_capacity()
@@ -274,7 +280,7 @@ uint type_code_for_type_expr(uint type_i)
 
 uint call_node_for_callee_token(uint callee_i)
 {
-    if (callee_i >= active_token_count())
+    if (!valid_token(callee_i))
         return INVALID;
     return call_arg_record[callee_i].z;
 }
@@ -297,6 +303,19 @@ bool call_record_is_qualified_path_call(uint call_node)
     uint start = hir_token_pos[callee_node];
     uint end = hir_token_end[callee_node];
     return start != INVALID && end != INVALID && end > start + 1u;
+}
+
+uint callee_token_for_hir_call(uint call_node)
+{
+    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+        return INVALID;
+
+    uint callee_node = hir_call_callee_node[call_node];
+    if (!valid_node(callee_node))
+        return INVALID;
+
+    uint callee_token = hir_token_pos[callee_node];
+    return valid_token(callee_token) ? callee_token : INVALID;
 }
 
 uint call_arg_count_for_callee(uint callee_i)
@@ -406,6 +425,14 @@ uint find_function_decl_by_name(uint name_i)
     if (name_i >= active_token_count() || token_kind(name_i) != TK_IDENT)
         return INVALID;
 
+    return find_function_decl_by_name_id(name_i);
+}
+
+uint find_function_decl_by_name_id(uint name_i)
+{
+    if (name_i >= active_token_count())
+        return INVALID;
+
     uint cap = lookup_capacity();
     uint key = name_id_by_token[name_i];
     if (key == INVALID)
@@ -502,7 +529,7 @@ uint inferred_generic_return_type_direct(uint callee_i, uint fn_i, uint ret_ty)
 
 uint direct_call_return_type_direct(uint callee_i)
 {
-    uint fn_i = find_function_decl_by_name(callee_i);
+    uint fn_i = find_function_decl_by_name_id(callee_i);
     if (fn_i == INVALID)
         return TY_UNKNOWN;
 
@@ -510,6 +537,53 @@ uint direct_call_return_type_direct(uint callee_i)
     if (!is_generic_type(ret_ty))
         return ret_ty;
     return inferred_generic_return_type_direct(callee_i, fn_i, ret_ty);
+}
+
+void resolve_callee_token(uint callee_i, bool is_call)
+{
+    if (!valid_token(callee_i))
+        return;
+
+    if (call_intrinsic_tag[callee_i] != INTRINSIC_NONE)
+        return;
+
+    uint cap = lookup_capacity();
+    uint key = name_id_by_token[callee_i];
+    if (key == INVALID)
+    {
+        call_return_type[callee_i] = TY_UNKNOWN;
+        return;
+    }
+    uint start_slot = key % cap;
+    [loop]
+    for (uint probe = 0u; probe < cap; probe += 1u)
+    {
+        uint slot = (start_slot + probe) % cap;
+        uint fn_i = function_lookup_fn[slot];
+        if (fn_i == INVALID)
+            return;
+        if (function_lookup_key[slot] == key)
+        {
+            call_fn_index[callee_i] = fn_i;
+            if (is_call)
+            {
+                uint ret_ty = call_return_type[fn_i];
+                if (!check_generic_argument_consistency(callee_i, fn_i))
+                    return;
+                if (is_generic_type(ret_ty))
+                {
+                    uint inferred = inferred_generic_return_type(callee_i, fn_i, ret_ty);
+                    if (inferred != TY_UNKNOWN)
+                        ret_ty = inferred;
+                }
+                call_return_type[callee_i] = ret_ty;
+                call_return_type_token[callee_i] = call_return_type_token[fn_i];
+            }
+            return;
+        }
+    }
+
+    call_return_type[callee_i] = TY_UNKNOWN;
 }
 
 uint literal_or_identifier_arg_type(uint arg_start_i, uint arg_end_i)
@@ -628,11 +702,22 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
     uint n_active = active_token_count();
-    if (i >= n_active || token_kind(i) != TK_IDENT)
+    if (i < gParams.n_hir_nodes && hir_kind[i] == HIR_CALL_EXPR)
+    {
+        if (!call_record_is_member_call(i) && !call_record_is_qualified_path_call(i))
+        {
+            uint callee_token = callee_token_for_hir_call(i);
+            resolve_callee_token(callee_token, true);
+        }
+    }
+
+    if (i >= n_active)
         return;
 
     uint call_node = call_node_for_callee_token(i);
     bool is_call = call_node != INVALID;
+    if (!is_call && token_kind(i) != TK_IDENT)
+        return;
     if (is_call && call_record_is_member_call(call_node))
         return;
     if (is_call && call_record_is_qualified_path_call(call_node))
@@ -643,41 +728,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
 
-    uint cap = lookup_capacity();
-    uint key = name_id_by_token[i];
-    if (key == INVALID)
-    {
-        call_return_type[i] = TY_UNKNOWN;
-        return;
-    }
-    uint start_slot = key % cap;
-    [loop]
-    for (uint probe = 0u; probe < cap; probe += 1u)
-    {
-        uint slot = (start_slot + probe) % cap;
-        uint fn_i = function_lookup_fn[slot];
-        if (fn_i == INVALID)
-            return;
-        if (function_lookup_key[slot] == key)
-        {
-            call_fn_index[i] = fn_i;
-            if (is_call)
-            {
-                uint ret_ty = call_return_type[fn_i];
-                if (!check_generic_argument_consistency(i, fn_i))
-                    return;
-                if (is_generic_type(ret_ty))
-                {
-                    uint inferred = inferred_generic_return_type(i, fn_i, ret_ty);
-                    if (inferred != TY_UNKNOWN)
-                        ret_ty = inferred;
-                }
-                call_return_type[i] = ret_ty;
-                call_return_type_token[i] = call_return_type_token[fn_i];
-            }
-            return;
-        }
-    }
-
-    call_return_type[i] = TY_UNKNOWN;
+    resolve_callee_token(i, is_call);
 }

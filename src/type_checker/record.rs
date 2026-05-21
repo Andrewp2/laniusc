@@ -196,39 +196,48 @@ pub(super) fn record_name_bind_groups_with_passes(
     )?;
     record_compute(
         encoder,
-        &passes.names_radix_dispatch_args,
+        &passes.names_radix_byte_dispatch_args,
         &groups.radix_dispatch,
         "type_check.names.radix_dispatch_args",
-        1,
+        NAME_RADIX_MAX_BYTES,
     )?;
     for i in 0..groups.radix_scatter.len() {
-        record_compute_indirect(
+        let radix_byte_dispatch_offset = ((1 + i) * 3 * std::mem::size_of::<u32>()) as u64;
+        let radix_prefix_dispatch_offset =
+            ((1 + NAME_RADIX_MAX_BYTES as usize + i) * 3 * std::mem::size_of::<u32>()) as u64;
+        let radix_bases_dispatch_offset =
+            ((1 + 2 * NAME_RADIX_MAX_BYTES as usize + i) * 3 * std::mem::size_of::<u32>()) as u64;
+        record_compute_indirect_offset(
             encoder,
             &passes.names_radix_histogram,
             &groups.radix_histogram[i],
             "type_check.names.radix_histogram",
             &groups.radix_dispatch_args,
+            radix_byte_dispatch_offset,
         )?;
-        record_compute(
+        record_compute_indirect_offset(
             encoder,
-            &passes.names_radix_bucket_prefix,
+            &passes.names_radix_bucket_prefix_active,
             &groups.radix_bucket_prefix[i],
             "type_check.names.radix_bucket_prefix",
-            NAME_RADIX_BUCKETS.saturating_mul(256),
+            &groups.radix_dispatch_args,
+            radix_prefix_dispatch_offset,
         )?;
-        record_compute(
+        record_compute_indirect_offset(
             encoder,
-            &passes.names_radix_bucket_bases,
+            &passes.names_radix_bucket_bases_active,
             &groups.radix_bucket_bases[i],
             "type_check.names.radix_bucket_bases",
-            256,
+            &groups.radix_dispatch_args,
+            radix_bases_dispatch_offset,
         )?;
-        record_compute_indirect(
+        record_compute_indirect_offset(
             encoder,
             &passes.names_radix_scatter,
             &groups.radix_scatter[i],
             "type_check.names.radix_scatter",
             &groups.radix_dispatch_args,
+            radix_byte_dispatch_offset,
         )?;
     }
     record_compute_indirect(
@@ -315,7 +324,7 @@ pub(super) fn record_module_path_state_with_passes(
     mut timer: Option<&mut crate::gpu::timer::GpuTimer>,
 ) -> Result<()> {
     let hir_work = state.n_blocks.saturating_mul(256).max(1);
-    let record_n_blocks = state.n_blocks.max(1);
+    let record_n_blocks = state.record_n_blocks.max(1);
     let file_map_clear_work = hir_work;
 
     record_compute_indirect(
@@ -372,7 +381,7 @@ pub(super) fn record_module_path_state_with_passes(
     record_hir_counted_u32_scan_bind_groups_with_passes(
         passes,
         encoder,
-        state.n_blocks,
+        record_n_blocks,
         &state.path_dispatch_args,
         &state.bind_groups.path_segment_scan,
         "type_check.modules.path_segment_scan",
@@ -1524,8 +1533,8 @@ pub(super) fn record_call_bind_groups_with_passes(
     encoder: &mut wgpu::CommandEncoder,
     token_capacity: u32,
     n_work: u32,
-    token_active_dispatch_args: &wgpu::Buffer,
     hir_active_dispatch_args: &wgpu::Buffer,
+    token_hir_active_dispatch_args: &wgpu::Buffer,
     groups: &CallBindGroups,
 ) -> Result<()> {
     let lookup_work = token_capacity.saturating_mul(2).max(n_work);
@@ -1592,7 +1601,7 @@ pub(super) fn record_call_bind_groups_with_passes(
         &passes.calls_resolve,
         &groups.resolve,
         "type_check.calls.resolve",
-        token_active_dispatch_args,
+        token_hir_active_dispatch_args,
     )
 }
 
@@ -1801,5 +1810,23 @@ pub(super) fn record_compute_indirect(
     compute.set_pipeline(&pass.pipeline);
     compute.set_bind_group(0, Some(bind_group), &[]);
     compute.dispatch_workgroups_indirect(dispatch_args, 0);
+    Ok(())
+}
+
+pub(super) fn record_compute_indirect_offset(
+    encoder: &mut wgpu::CommandEncoder,
+    pass: &PassData,
+    bind_group: &wgpu::BindGroup,
+    label: &'static str,
+    dispatch_args: &wgpu::Buffer,
+    dispatch_args_offset: u64,
+) -> Result<()> {
+    let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        label: Some(label),
+        timestamp_writes: None,
+    });
+    compute.set_pipeline(&pass.pipeline);
+    compute.set_bind_group(0, Some(bind_group), &[]);
+    compute.dispatch_workgroups_indirect(dispatch_args, dispatch_args_offset);
     Ok(())
 }

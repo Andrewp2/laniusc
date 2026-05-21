@@ -4,6 +4,7 @@
 // preceding passes. Outputs form the phase-boundary map used to move later
 // stages off sparse parse-tree capacity:
 //   - hir_node_dense_id[parse_node] = dense semantic row or INVALID
+//   - hir_semantic_prefix_before_node[parse_node] = semantic rows before parse_node
 //   - hir_semantic_dense_node[dense_row] = original parse node
 //   - hir_semantic_count[0] = dense semantic row count
 
@@ -23,6 +24,7 @@ StructuredBuffer<uint> hir_semantic_local_prefix;
 StructuredBuffer<uint> hir_semantic_block_prefix;
 
 RWStructuredBuffer<uint> hir_node_dense_id;
+RWStructuredBuffer<uint> hir_semantic_prefix_before_node;
 RWStructuredBuffer<uint> hir_semantic_dense_node;
 RWStructuredBuffer<uint> hir_semantic_count;
 
@@ -60,6 +62,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint active = active_node_count();
+    uint block_i = node / WG_SIZE;
+    uint block_base = block_i == 0u ? 0u : hir_semantic_block_prefix[block_i - 1u];
+    uint prefix_before = node < active ? block_base + hir_semantic_local_prefix[node] : semantic_count;
+    hir_semantic_prefix_before_node[node] = prefix_before;
+
     uint flag = node < active ? hir_semantic_flag[node] : 0u;
     if (flag == 0u)
     {
@@ -67,9 +74,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
 
-    uint block_i = node / WG_SIZE;
-    uint block_base = block_i == 0u ? 0u : hir_semantic_block_prefix[block_i - 1u];
-    uint dense_row = block_base + hir_semantic_local_prefix[node];
+    uint dense_row = prefix_before;
     hir_node_dense_id[node] = dense_row;
     if (dense_row < gHirSemantic.n)
         hir_semantic_dense_node[dense_row] = node;

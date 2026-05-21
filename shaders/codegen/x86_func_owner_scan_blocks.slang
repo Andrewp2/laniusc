@@ -11,7 +11,13 @@ struct ScanParams
     uint inst_capacity;
 };
 
-ConstantBuffer<ScanParams> gScan;
+[__AttributeUsage(_AttributeTargets.Var)]
+struct DynamicOffsetAttribute
+{
+};
+
+[DynamicOffset]
+ConstantBuffer<ScanParams> gFuncOwnerBlockScan;
 
 StructuredBuffer<uint> x86_func_owner_scan_block_sum;
 StructuredBuffer<uint> x86_func_owner_scan_block_prefix_in;
@@ -31,13 +37,13 @@ uint linear_thread_id(uint3 dtid)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
-    if (i >= gScan.n_blocks)
+    if (i >= gFuncOwnerBlockScan.n_blocks)
         return;
 
     x86_func_owner_scan_block_prefix_out[i] =
         block_prefix_scan_step<uint, PrefixScanU32Max>(
             i,
-            gScan.scan_step,
+            gFuncOwnerBlockScan.scan_step,
             x86_func_owner_scan_block_sum,
             x86_func_owner_scan_block_prefix_in);
 }

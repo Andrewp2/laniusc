@@ -45,9 +45,21 @@ impl TypeCheckPasses {
                 "type_check_names_radix_dispatch_args",
                 "type_check_names_radix_dispatch_args"
             ),
+            names_radix_byte_dispatch_args: pass!(
+                "type_check_names_radix_byte_dispatch_args",
+                "type_check_names_radix_byte_dispatch_args"
+            ),
             names_radix_histogram: pass!(
                 "type_check_names_radix_00_histogram",
                 "type_check_names_radix_00_histogram"
+            ),
+            names_radix_bucket_prefix_active: pass!(
+                "type_check_names_radix_00b_bucket_prefix_active",
+                "type_check_names_radix_00b_bucket_prefix_active"
+            ),
+            names_radix_bucket_bases_active: pass!(
+                "type_check_names_radix_00c_bucket_bases_active",
+                "type_check_names_radix_00c_bucket_bases_active"
             ),
             names_radix_bucket_prefix: pass!(
                 "type_check_names_radix_00b_bucket_prefix",

@@ -29,15 +29,15 @@ use std::{
     path::PathBuf,
 };
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use laniusc::{
-    lexer::tables::tokens::{TokenKind, N_KINDS},
+    lexer::tables::tokens::{N_KINDS, TokenKind},
     parser::tables::{
+        INVALID_TABLE_ENTRY,
+        PrecomputedParseTables,
         build_mvp_precomputed_tables,
         encode_pop,
         encode_push,
-        PrecomputedParseTables,
-        INVALID_TABLE_ENTRY,
     },
 };
 use serde::Serialize;

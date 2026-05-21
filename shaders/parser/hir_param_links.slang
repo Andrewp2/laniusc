@@ -24,6 +24,9 @@ RWStructuredBuffer<uint> hir_param_owner_a;
 RWStructuredBuffer<uint> hir_param_link_a;
 RWStructuredBuffer<uint> hir_param_rank_a;
 RWStructuredBuffer<uint> hir_param_previous;
+RWStructuredBuffer<uint> hir_param_owner_b;
+RWStructuredBuffer<uint> hir_param_link_b;
+RWStructuredBuffer<uint> hir_param_rank_b;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -108,6 +111,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_param_link_a[node] = INVALID;
     hir_param_rank_a[node] = 0u;
     hir_param_previous[node] = INVALID;
+    hir_param_owner_b[node] = INVALID;
+    hir_param_link_b[node] = INVALID;
+    hir_param_rank_b[node] = 0u;
 
     if (!valid_node(node) || hir_kind[node] != HIR_PARAM)
         return;

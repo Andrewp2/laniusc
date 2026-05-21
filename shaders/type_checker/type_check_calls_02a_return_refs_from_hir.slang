@@ -1,12 +1,11 @@
 // HIR function return type-reference projection.
 //
-// This pass consumes parser-owned function item/type records and writes
+// This pass consumes parser-owned function return-type records and writes
 // declaration-token keyed return references for regular and extern functions.
 // It does not inspect token spelling, source bytes, value names, or function
 // bodies.
 
 import generated_parse_production_ids;
-import tree_walk;
 
 struct Params
 {
@@ -19,11 +18,10 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> first_child;
-StructuredBuffer<uint> next_sibling;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_item_kind;
 StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_fn_return_type_node;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 
@@ -56,11 +54,6 @@ bool valid_node(uint node)
     return node != INVALID && node < active_hir_node_count();
 }
 
-bool valid_token(uint token)
-{
-    return token != INVALID && token < gParams.n_tokens;
-}
-
 bool function_item_kind(uint item_kind)
 {
     return item_kind == HIR_ITEM_KIND_FN || item_kind == HIR_ITEM_KIND_EXTERN_FN;
@@ -72,70 +65,17 @@ bool function_decl_node(uint node)
            (hir_kind[node] == HIR_FN && node_kind[node] == PROD_IMPL_FN);
 }
 
-uint return_ref_first_child_record(uint node)
-{
-    return first_child[node];
-}
-
-uint return_ref_next_sibling_record(uint node)
-{
-    return next_sibling[node];
-}
-
-public struct ReturnRefChildGraph : ITreeChildGraph
-{
-    public static bool valid(uint node)
-    {
-        return valid_node(node);
-    }
-
-    public static uint first_child(uint node)
-    {
-        return return_ref_first_child_record(node);
-    }
-
-    public static uint next_sibling(uint node)
-    {
-        return return_ref_next_sibling_record(node);
-    }
-}
-
-public struct ReturnRefProductionPredicate : ITreeWalkKeyPredicate
-{
-    public static bool matches(uint node, uint key)
-    {
-        return node_kind[node] == key;
-    }
-}
-
-uint first_child_node(uint node)
-{
-    uint child;
-    return tree_child_first<ReturnRefChildGraph>(node, child) ? child : INVALID;
-}
-
-uint next_sibling_node(uint node)
-{
-    uint sibling;
-    return tree_child_next<ReturnRefChildGraph>(node, sibling) ? sibling : INVALID;
-}
-
-uint direct_child_with_production(uint node, uint prod)
-{
-    uint child;
-    return tree_child_first_matching_key<
-        ReturnRefChildGraph,
-        ReturnRefProductionPredicate>(
-        node,
-        prod,
-        32u,
-        child) ? child : INVALID;
-}
-
 uint return_type_node(uint fn_node)
 {
-    uint ret_node = direct_child_with_production(fn_node, PROD_RET_TYPE);
-    return first_child_node(ret_node);
+    if (!valid_node(fn_node))
+        return INVALID;
+    uint type_node = hir_fn_return_type_node[fn_node];
+    return valid_node(type_node) ? type_node : INVALID;
+}
+
+bool valid_token(uint token)
+{
+    return token != INVALID && token < gParams.n_tokens;
 }
 
 void publish_function_return_ref(uint fn_node)
@@ -164,9 +104,10 @@ void publish_function_return_ref(uint fn_node)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
-    if (node >= active_hir_node_count())
+    if (!valid_node(node))
         return;
-    if (!function_decl_node(node))
+
+    if (!function_decl_node(node) && !valid_node(return_type_node(node)))
         return;
 
     publish_function_return_ref(node);

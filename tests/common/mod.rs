@@ -11,30 +11,30 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, ExitStatus, Output, Stdio},
     sync::{
-        atomic::{AtomicU64, Ordering},
-        mpsc,
         Mutex,
         MutexGuard,
+        atomic::{AtomicU64, Ordering},
+        mpsc,
     },
     thread,
     time::{Duration, Instant},
 };
 
 use laniusc::compiler::{
+    CompileError,
     compile_source_pack_to_wasm_with_gpu_codegen,
     compile_source_to_wasm_with_gpu_codegen,
     compile_source_to_wasm_with_gpu_codegen_from_path,
     type_check_source_pack_with_gpu,
     type_check_source_with_gpu,
     type_check_source_with_gpu_from_path,
-    CompileError,
 };
 use log::warn;
 
 static TEMP_ARTIFACT_COUNTER: AtomicU64 = AtomicU64::new(0);
 // libtest runs cases concurrently; start GPU timeouts after queued work gets the device.
 static GPU_TEST_LOCK: Mutex<()> = Mutex::new(());
-const DEFAULT_GPU_TEST_TIMEOUT_MS: u64 = 20_000;
+const DEFAULT_GPU_TEST_TIMEOUT_MS: u64 = 30_000;
 // The default codegen coverage now includes small source-pack GPU fixtures.
 // Pipeline setup can exceed a couple of seconds on cold runs, so keep this
 // below the outer command watchdog while avoiding false timeout failures.

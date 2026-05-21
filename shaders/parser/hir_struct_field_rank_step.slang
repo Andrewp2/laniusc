@@ -1,5 +1,7 @@
 // Pointer-jump struct declaration and literal field links.
 
+import token_features;
+
 struct Params
 {
     uint n;
@@ -15,6 +17,8 @@ StructuredBuffer<uint> hir_struct_field_rank_in;
 StructuredBuffer<uint> hir_struct_lit_field_owner_in;
 StructuredBuffer<uint> hir_struct_lit_field_link_in;
 StructuredBuffer<uint> hir_struct_lit_field_rank_in;
+StructuredBuffer<uint> token_feature_flags;
+StructuredBuffer<uint> hir_struct_rank_node;
 
 RWStructuredBuffer<uint> hir_struct_field_owner_out;
 RWStructuredBuffer<uint> hir_struct_field_link_out;
@@ -79,9 +83,24 @@ void jump_one(
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = linear_thread_id(dtid);
+    uint row = linear_thread_id(dtid);
+    if (row >= gHirStruct.n)
+        return;
+
+    uint node = hir_struct_rank_node[row];
     if (node >= gHirStruct.n)
         return;
+
+    if (!parser_feature_enabled(token_feature_flags, PARSER_FEATURE_STRUCTS))
+    {
+        hir_struct_field_owner_out[node] = INVALID;
+        hir_struct_field_link_out[node] = INVALID;
+        hir_struct_field_rank_out[node] = 0u;
+        hir_struct_lit_field_owner_out[node] = INVALID;
+        hir_struct_lit_field_link_out[node] = INVALID;
+        hir_struct_lit_field_rank_out[node] = 0u;
+        return;
+    }
 
     if (!valid_node(node))
     {

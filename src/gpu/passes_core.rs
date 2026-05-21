@@ -22,6 +22,45 @@ pub fn validation_scopes_enabled() -> bool {
     crate::gpu::env::env_bool_truthy("LANIUS_VALIDATION_SCOPES", false)
 }
 
+pub fn compute_pass_batching_enabled() -> bool {
+    match std::env::var("LANIUS_BATCH_COMPUTE_PASSES") {
+        Ok(value) => !matches!(value.trim().to_ascii_lowercase().as_str(), "0" | "false"),
+        Err(_) => true,
+    }
+}
+
+pub(crate) fn validation_scope(
+    device: &wgpu::Device,
+    enabled: bool,
+) -> Option<wgpu::ErrorScopeGuard> {
+    enabled.then(|| device.push_error_scope(wgpu::ErrorFilter::Validation))
+}
+
+pub(crate) fn pop_validation_scope(scope: Option<wgpu::ErrorScopeGuard>) -> Option<wgpu::Error> {
+    scope.and_then(|scope| pollster::block_on(scope.pop()))
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct SubmitTiming {
+    pub gpu_anchor: Instant,
+}
+
+pub(crate) fn submit_with_optional_validation(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    label: &str,
+    command_buffer: wgpu::CommandBuffer,
+    validation_enabled: bool,
+    validation_label: &str,
+) -> SubmitTiming {
+    let scope = validation_scope(device, validation_enabled);
+    let timing = submit_with_progress(queue, label, command_buffer);
+    if let Some(err) = pop_validation_scope(scope) {
+        eprintln!("[wgpu submit] validation while submitting {validation_label}: {err:#?}");
+    }
+    timing
+}
+
 pub struct PassData {
     pub pipeline: Arc<wgpu::ComputePipeline>,
     pub bind_group_layouts: Vec<Arc<wgpu::BindGroupLayout>>,
@@ -116,14 +155,14 @@ pub fn pipeline_from_spirv_and_bgls(
             source: wgpu::util::make_spirv(spirv),
         })
     } else {
-        // SAFETY: YOLO
+        // SAFETY: Slang produced this SPIR-V module for the selected backend;
+        // Lanius intentionally bypasses Naga translation for shader modules.
         unsafe {
-            device.create_shader_module_passthrough(wgpu::ShaderModuleDescriptorPassthrough::SpirV(
-                wgpu::ShaderModuleDescriptorSpirV {
-                    label: Some(label),
-                    source: wgpu::util::make_spirv_raw(spirv),
-                },
-            ))
+            device.create_shader_module_passthrough(wgpu::ShaderModuleDescriptorPassthrough {
+                label: Some(label),
+                spirv: Some(wgpu::util::make_spirv_raw(spirv)),
+                ..Default::default()
+            })
         }
     };
     trace_pipeline(label, "shader_module.done");
@@ -132,10 +171,11 @@ pub fn pipeline_from_spirv_and_bgls(
     //     label: Some(label),
     //     source: wgpu::util::make_spirv(spirv),
     // });
+    let bind_group_layouts: Vec<_> = bgls.iter().copied().map(Some).collect();
     let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some(&format!("pl_{label}")),
-        bind_group_layouts: bgls,
-        push_constant_ranges: &[],
+        bind_group_layouts: &bind_group_layouts,
+        immediate_size: 0,
     });
     trace_pipeline(label, "pipeline_layout.done");
     trace_pipeline(label, "compute_pipeline.start");
@@ -184,15 +224,24 @@ pub(crate) fn submit_with_progress(
     queue: &wgpu::Queue,
     label: &str,
     command_buffer: wgpu::CommandBuffer,
-) {
+) -> SubmitTiming {
     trace_gpu_progress(&format!("submit.start :: {label}"));
+    let start = Instant::now();
     queue.submit(Some(command_buffer));
+    let end = Instant::now();
+    crate::gpu::trace::record_host_span("host.submit", label, start, end);
     trace_gpu_progress(&format!("submit.done :: {label}"));
+    SubmitTiming { gpu_anchor: end }
 }
 
 pub(crate) fn map_readback_for_progress(slice: &wgpu::BufferSlice<'_>, label: &str) {
     trace_gpu_progress(&format!("map.start :: {label}"));
     slice.map_async(wgpu::MapMode::Read, |_| {});
+    crate::gpu::trace::record_instant(
+        "host.readback",
+        &format!("{label}.map_queued"),
+        Instant::now(),
+    );
     trace_gpu_progress(&format!("map.queued :: {label}"));
 }
 
@@ -239,6 +288,7 @@ pub(crate) fn wait_for_readback_map(
             .map_err(|err| anyhow!("{label} readback poll failed: {err}"))?;
         match rx.try_recv() {
             Ok(Ok(())) => {
+                crate::gpu::trace::record_host_span("host.readback", &label, start, Instant::now());
                 trace_gpu_progress(&format!(
                     "map.done :: {label} elapsed_ms={}",
                     start.elapsed().as_millis()
@@ -437,6 +487,26 @@ pub mod bind_group {
 
     use super::*;
 
+    fn reflected_parameters_for_set(
+        reflection: &SlangReflection,
+        set_index: usize,
+    ) -> &[ParameterReflection] {
+        if let Some(pl) = reflection
+            .entry_points
+            .iter()
+            .find(|e| e.stage.as_deref() == Some("compute"))
+            .and_then(|ep| ep.program_layout.as_ref())
+        {
+            return pl
+                .parameters
+                .get(set_index)
+                .map(|set| set.parameters.as_slice())
+                .unwrap_or_default();
+        }
+
+        reflection.parameters.as_slice()
+    }
+
     pub fn create_bind_group_from_reflection<'a>(
         device: &wgpu::Device,
         label: Option<&str>,
@@ -445,22 +515,8 @@ pub mod bind_group {
         set_index: usize,
         resources: &HashMap<String, wgpu::BindingResource<'a>>,
     ) -> Result<wgpu::BindGroup> {
-        let params: Vec<ParameterReflection> = if let Some(pl) = reflection
-            .entry_points
-            .iter()
-            .find(|e| e.stage.as_deref() == Some("compute"))
-            .and_then(|ep| ep.program_layout.clone())
-        {
-            pl.parameters
-                .get(set_index)
-                .map(|s| s.parameters.clone())
-                .unwrap_or_default()
-        } else {
-            reflection.parameters.clone()
-        };
-
         let mut entries = Vec::<wgpu::BindGroupEntry>::new();
-        for p in &params {
+        for p in reflected_parameters_for_set(reflection, set_index) {
             if let (Some(idx), Some(_ty)) = (p.binding.index, p.ty.kind.as_ref()) {
                 if let Some(res) = resources.get(&p.name) {
                     entries.push(wgpu::BindGroupEntry {
@@ -487,18 +543,112 @@ pub mod bind_group {
         set_index: usize,
         bindings: &[(&str, wgpu::BindingResource<'a>)],
     ) -> Result<wgpu::BindGroup> {
-        let resources = bindings
-            .iter()
-            .map(|(name, binding)| ((*name).into(), binding.clone()))
-            .collect::<HashMap<_, _>>();
-        create_bind_group_from_reflection(
-            device,
+        let params = reflected_parameters_for_set(&pass.reflection, set_index);
+        let mut entries = Vec::<wgpu::BindGroupEntry>::with_capacity(params.len());
+
+        let mut ordered_bindings = bindings.iter();
+        let mut in_reflected_order = true;
+        for p in params {
+            if let (Some(idx), Some(_ty)) = (p.binding.index, p.ty.kind.as_ref()) {
+                let Some((name, resource)) = ordered_bindings.next() else {
+                    in_reflected_order = false;
+                    break;
+                };
+                if *name != p.name {
+                    in_reflected_order = false;
+                    break;
+                }
+                entries.push(wgpu::BindGroupEntry {
+                    binding: idx,
+                    resource: resource.clone(),
+                });
+            }
+        }
+
+        if !in_reflected_order {
+            entries.clear();
+            for p in params {
+                if let (Some(idx), Some(_ty)) = (p.binding.index, p.ty.kind.as_ref()) {
+                    let Some((_, resource)) = bindings.iter().find(|(name, _)| *name == p.name)
+                    else {
+                        return Err(anyhow!("no resource provided for '{}'", p.name));
+                    };
+                    entries.push(wgpu::BindGroupEntry {
+                        binding: idx,
+                        resource: resource.clone(),
+                    });
+                };
+            }
+        }
+
+        Ok(device.create_bind_group(&wgpu::BindGroupDescriptor {
             label,
-            &pass.bind_group_layouts[set_index],
-            &pass.reflection,
-            set_index,
-            &resources,
-        )
+            layout: &pass.bind_group_layouts[set_index],
+            entries: &entries,
+        }))
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use crate::reflection::{
+            BindingInfo,
+            EntryPointReflection,
+            ParameterReflection,
+            ParameterSetReflection,
+            ProgramLayoutReflection,
+            TypeLayout,
+        };
+
+        fn parameter(name: &str, binding: u32) -> ParameterReflection {
+            ParameterReflection {
+                name: name.to_string(),
+                binding: BindingInfo {
+                    kind: "descriptorTableSlot".to_string(),
+                    index: Some(binding),
+                    offset: None,
+                    size: None,
+                },
+                ty: TypeLayout {
+                    kind: Some("resource".to_string()),
+                    base_shape: Some("structuredBuffer".to_string()),
+                    access: Some("Read".to_string()),
+                    ..TypeLayout::default()
+                },
+                user_attribs: Vec::new(),
+            }
+        }
+
+        #[test]
+        fn reflected_parameters_borrow_program_layout_set_without_flattening() {
+            let reflection = SlangReflection {
+                parameters: vec![parameter("flat", 9)],
+                entry_points: vec![EntryPointReflection {
+                    stage: Some("compute".to_string()),
+                    program_layout: Some(ProgramLayoutReflection {
+                        parameters: vec![
+                            ParameterSetReflection {
+                                parameters: vec![parameter("set0", 0)],
+                                space: 0,
+                            },
+                            ParameterSetReflection {
+                                parameters: vec![parameter("set1a", 1), parameter("set1b", 2)],
+                                space: 1,
+                            },
+                        ],
+                    }),
+                    ..EntryPointReflection::default()
+                }],
+                ..SlangReflection::default()
+            };
+
+            let params = reflected_parameters_for_set(&reflection, 1);
+            let names = params
+                .iter()
+                .map(|param| param.name.as_str())
+                .collect::<Vec<_>>();
+            assert_eq!(names, vec!["set1a", "set1b"]);
+        }
     }
 }
 
@@ -578,6 +728,120 @@ impl BindGroupCache {
     }
 }
 
+fn bind_groups_for_pass<P, Buffers, DebugOutput>(
+    device: &wgpu::Device,
+    pass: &P,
+    buffers: &Buffers,
+    cache: Option<&mut BindGroupCache>,
+) -> Result<Vec<Arc<wgpu::BindGroup>>, anyhow::Error>
+where
+    P: Pass<Buffers, DebugOutput> + ?Sized,
+{
+    let pd = pass.data();
+    let resources = pass.create_resource_map(buffers);
+    let mut cached_entries: Option<Vec<Arc<wgpu::BindGroup>>> = None;
+    if let Some(cache) = cache.as_ref()
+        && let Some(v) = cache.map.get(&pd.shader_id)
+        && v.len() == pd.bind_group_layouts.len()
+    {
+        cached_entries = Some(v.clone());
+    }
+    if let Some(v) = cached_entries {
+        return Ok(v);
+    }
+
+    let mut bind_groups = Vec::with_capacity(pd.bind_group_layouts.len());
+    for (set_idx, bgl) in pd.bind_group_layouts.iter().enumerate() {
+        let bg = bind_group::create_bind_group_from_reflection(
+            device,
+            Some(P::NAME),
+            bgl,
+            &pd.reflection,
+            set_idx,
+            &resources,
+        )?;
+        bind_groups.push(Arc::new(bg));
+    }
+    if let Some(cache) = cache {
+        cache.map.insert(pd.shader_id.clone(), bind_groups.clone());
+    }
+    Ok(bind_groups)
+}
+
+pub struct ComputePassBatch<'encoder> {
+    pass: wgpu::ComputePass<'encoder>,
+    retained_bind_groups: Vec<Vec<Arc<wgpu::BindGroup>>>,
+}
+
+impl<'encoder> ComputePassBatch<'encoder> {
+    pub fn begin(encoder: &'encoder mut wgpu::CommandEncoder, label: &'static str) -> Self {
+        let pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some(label),
+            timestamp_writes: None,
+        });
+        Self {
+            pass,
+            retained_bind_groups: Vec::new(),
+        }
+    }
+
+    pub fn record_pass_cached<P, Buffers, DebugOutput>(
+        &mut self,
+        device: &wgpu::Device,
+        buffers: &Buffers,
+        cache: &mut BindGroupCache,
+        pass: &P,
+        input: InputElements,
+    ) -> Result<(), anyhow::Error>
+    where
+        P: Pass<Buffers, DebugOutput>,
+    {
+        let pd = pass.data();
+        let bind_groups =
+            bind_groups_for_pass::<P, Buffers, DebugOutput>(device, pass, buffers, Some(cache))?;
+        let [tgsx, tgsy, _tgsz] = pd.thread_group_size;
+        let (gx, gy, gz) = plan_workgroups(P::DIM, input, [tgsx, tgsy, 1])?;
+        assert!(gx <= MAX_GROUPS_PER_DIM);
+        assert!(gy <= MAX_GROUPS_PER_DIM);
+        debug_assert!(
+            gx >= 1 && gy >= 1 && gz >= 1,
+            "dispatch must issue at least one group"
+        );
+        self.pass.set_pipeline(&pd.pipeline);
+        for (i, bg) in bind_groups.iter().enumerate() {
+            self.pass
+                .set_bind_group(i as u32, Option::<&wgpu::BindGroup>::Some(&*bg), &[]);
+        }
+        self.pass.dispatch_workgroups(gx, gy, gz);
+        self.retained_bind_groups.push(bind_groups);
+        Ok(())
+    }
+
+    pub fn record_pass_indirect_cached<P, Buffers, DebugOutput>(
+        &mut self,
+        device: &wgpu::Device,
+        buffers: &Buffers,
+        cache: &mut BindGroupCache,
+        pass: &P,
+        dispatch_args: &wgpu::Buffer,
+    ) -> Result<(), anyhow::Error>
+    where
+        P: Pass<Buffers, DebugOutput>,
+    {
+        let pd = pass.data();
+        let bind_groups =
+            bind_groups_for_pass::<P, Buffers, DebugOutput>(device, pass, buffers, Some(cache))?;
+        self.pass.set_pipeline(&pd.pipeline);
+        for (i, bg) in bind_groups.iter().enumerate() {
+            self.pass
+                .set_bind_group(i as u32, Option::<&wgpu::BindGroup>::Some(&*bg), &[]);
+        }
+        self.pass.dispatch_workgroups_indirect(dispatch_args, 0);
+        self.retained_bind_groups.push(bind_groups);
+        Ok(())
+    }
+}
+
 pub trait Pass<Buffers, DebugOutput> {
     const NAME: &'static str;
 
@@ -603,41 +867,15 @@ pub trait Pass<Buffers, DebugOutput> {
     ) -> Result<(), anyhow::Error> {
         let use_scopes = validation_scopes_enabled(); // enable per-pass validation only when asked
 
-        if use_scopes {
-            ctx.device.push_error_scope(wgpu::ErrorFilter::Validation);
-        }
+        let validation_scope = validation_scope(ctx.device, use_scopes);
 
         let pd = self.data();
-        let resources = self.create_resource_map(ctx.buffers);
-        // Try cache first if provided
-        let mut cached_entries: Option<Vec<Arc<wgpu::BindGroup>>> = None;
-        if let Some(cache) = ctx.bg_cache.as_mut() {
-            if let Some(v) = cache.map.get(&pd.shader_id) {
-                if v.len() == pd.bind_group_layouts.len() {
-                    cached_entries = Some(v.clone());
-                }
-            }
-        }
-        let bind_groups: Vec<Arc<wgpu::BindGroup>> = if let Some(v) = cached_entries {
-            v
-        } else {
-            let mut v = Vec::with_capacity(pd.bind_group_layouts.len());
-            for (set_idx, bgl) in pd.bind_group_layouts.iter().enumerate() {
-                let bg = bind_group::create_bind_group_from_reflection(
-                    ctx.device,
-                    Some(Self::NAME),
-                    bgl,
-                    &pd.reflection,
-                    set_idx,
-                    &resources,
-                )?;
-                v.push(Arc::new(bg));
-            }
-            if let Some(cache) = ctx.bg_cache.as_mut() {
-                cache.map.insert(pd.shader_id.clone(), v.clone());
-            }
-            v
-        };
+        let bind_groups = bind_groups_for_pass::<Self, Buffers, DebugOutput>(
+            ctx.device,
+            self,
+            ctx.buffers,
+            ctx.bg_cache.as_deref_mut(),
+        )?;
 
         let [tgsx, tgsy, _tgsz] = pd.thread_group_size;
         let (gx, gy, gz) = plan_workgroups(Self::DIM, input, [tgsx, tgsy, 1])?;
@@ -666,10 +904,8 @@ pub trait Pass<Buffers, DebugOutput> {
             t.stamp(ctx.encoder, Self::NAME.to_string());
         }
 
-        if use_scopes {
-            if let Some(err) = pollster::block_on(ctx.device.pop_error_scope()) {
-                return Err(anyhow!("validation in pass {}: {err:?}", Self::NAME));
-            }
+        if let Some(err) = pop_validation_scope(validation_scope) {
+            return Err(anyhow!("validation in pass {}: {err:?}", Self::NAME));
         }
 
         if let Some(d) = ctx.maybe_dbg.as_deref_mut() {
@@ -685,39 +921,15 @@ pub trait Pass<Buffers, DebugOutput> {
     ) -> Result<(), anyhow::Error> {
         let use_scopes = validation_scopes_enabled();
 
-        if use_scopes {
-            ctx.device.push_error_scope(wgpu::ErrorFilter::Validation);
-        }
+        let validation_scope = validation_scope(ctx.device, use_scopes);
 
         let pd = self.data();
-        let resources = self.create_resource_map(ctx.buffers);
-        let mut cached_entries: Option<Vec<Arc<wgpu::BindGroup>>> = None;
-        if let Some(cache) = ctx.bg_cache.as_mut()
-            && let Some(v) = cache.map.get(&pd.shader_id)
-            && v.len() == pd.bind_group_layouts.len()
-        {
-            cached_entries = Some(v.clone());
-        }
-        let bind_groups: Vec<Arc<wgpu::BindGroup>> = if let Some(v) = cached_entries {
-            v
-        } else {
-            let mut v = Vec::with_capacity(pd.bind_group_layouts.len());
-            for (set_idx, bgl) in pd.bind_group_layouts.iter().enumerate() {
-                let bg = bind_group::create_bind_group_from_reflection(
-                    ctx.device,
-                    Some(Self::NAME),
-                    bgl,
-                    &pd.reflection,
-                    set_idx,
-                    &resources,
-                )?;
-                v.push(Arc::new(bg));
-            }
-            if let Some(cache) = ctx.bg_cache.as_mut() {
-                cache.map.insert(pd.shader_id.clone(), v.clone());
-            }
-            v
-        };
+        let bind_groups = bind_groups_for_pass::<Self, Buffers, DebugOutput>(
+            ctx.device,
+            self,
+            ctx.buffers,
+            ctx.bg_cache.as_deref_mut(),
+        )?;
 
         let mut pass = ctx
             .encoder
@@ -736,10 +948,8 @@ pub trait Pass<Buffers, DebugOutput> {
             t.stamp(ctx.encoder, Self::NAME.to_string());
         }
 
-        if use_scopes {
-            if let Some(err) = pollster::block_on(ctx.device.pop_error_scope()) {
-                return Err(anyhow!("validation in pass {}: {err:?}", Self::NAME));
-            }
+        if let Some(err) = pop_validation_scope(validation_scope) {
+            return Err(anyhow!("validation in pass {}: {err:?}", Self::NAME));
         }
 
         if let Some(d) = ctx.maybe_dbg.as_deref_mut() {

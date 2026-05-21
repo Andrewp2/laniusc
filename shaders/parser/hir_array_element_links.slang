@@ -24,6 +24,9 @@ RWStructuredBuffer<uint> hir_array_element_owner_a;
 RWStructuredBuffer<uint> hir_array_element_link_a;
 RWStructuredBuffer<uint> hir_array_element_rank_a;
 RWStructuredBuffer<uint> hir_array_element_previous;
+RWStructuredBuffer<uint> hir_array_element_owner_b;
+RWStructuredBuffer<uint> hir_array_element_link_b;
+RWStructuredBuffer<uint> hir_array_element_rank_b;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -106,6 +109,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_array_element_link_a[node] = INVALID;
     hir_array_element_rank_a[node] = 0u;
     hir_array_element_previous[node] = INVALID;
+    hir_array_element_owner_b[node] = INVALID;
+    hir_array_element_link_b[node] = INVALID;
+    hir_array_element_rank_b[node] = 0u;
 
     if (!valid_node(node) || hir_kind[node] != HIR_EXPR)
         return;

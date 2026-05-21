@@ -141,6 +141,28 @@ fn test_cpu_lexer_oracle_retags_const_keyword() {
 }
 
 #[test]
+fn test_cpu_lexer_oracle_retags_type_alias_rhs_as_type_context() {
+    use TokenKind::*;
+
+    let kinds = lex_on_test_cpu("type Count = i32;")
+        .expect("test CPU oracle lex")
+        .into_iter()
+        .map(|token| token.kind)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        kinds,
+        vec![
+            Type,
+            TypeAliasNameIdent,
+            TypeAliasAssign,
+            TypeIdent,
+            TypeAliasSemicolon,
+        ]
+    );
+}
+
+#[test]
 fn test_cpu_lexer_oracle_retags_enum_keyword() {
     use TokenKind::*;
 
@@ -399,7 +421,17 @@ fn test_cpu_lexer_oracle_retags_type_keyword() {
         .map(|token| token.kind)
         .collect::<Vec<_>>();
 
-    assert_eq!(kinds, vec![Pub, Type, Ident, Assign, Ident, Semicolon]);
+    assert_eq!(
+        kinds,
+        vec![
+            Pub,
+            Type,
+            TypeAliasNameIdent,
+            TypeAliasAssign,
+            TypeIdent,
+            TypeAliasSemicolon,
+        ]
+    );
 }
 
 #[test]
@@ -620,6 +652,58 @@ fn gpu_parser_boundary_builds_semantic_context_tokens_on_gpu() {
 }
 
 #[test]
+fn gpu_parser_boundary_emits_language_feature_flags_on_gpu() {
+    const FEATURE_TYPE_ARGS: u32 = 0x00000001;
+    const FEATURE_ARRAYS: u32 = 0x00000002;
+    const FEATURE_ENUMS: u32 = 0x00000004;
+    const FEATURE_MATCHES: u32 = 0x00000008;
+    const FEATURE_STRUCTS: u32 = 0x00000010;
+    const ALL_FEATURES: u32 =
+        FEATURE_TYPE_ARGS | FEATURE_ARRAYS | FEATURE_ENUMS | FEATURE_MATCHES | FEATURE_STRUCTS;
+
+    common::block_on_gpu_with_timeout("GPU parser token feature flags", async move {
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let parser = GpuParser::new().await.expect("GPU parser init");
+        let tables =
+            PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+                .expect("parse tables");
+
+        let plain = "fn main() { let x = 1 + 2; return x; }";
+        let plain_flags = lexer
+            .with_resident_tokens(plain, |_, _, bufs| {
+                parser.debug_token_feature_flags_for_resident_tokens(
+                    bufs.n,
+                    &bufs.tokens_out,
+                    &bufs.token_count,
+                    &tables,
+                )
+            })
+            .await
+            .expect("plain resident lex")
+            .expect("plain token feature flags");
+        assert_eq!(plain_flags & ALL_FEATURES, 0);
+
+        let featured = "\
+struct Box<T> { value: [i32; 2] }\n\
+enum Choice { A, B(i32) }\n\
+fn main() { let b = Box { value: [1, 2] }; match (Choice::A) { Choice::A => 1, Choice::B(v) => v, }; return 0; }";
+        let featured_flags = lexer
+            .with_resident_tokens(featured, |_, _, bufs| {
+                parser.debug_token_feature_flags_for_resident_tokens(
+                    bufs.n,
+                    &bufs.tokens_out,
+                    &bufs.token_count,
+                    &tables,
+                )
+            })
+            .await
+            .expect("featured resident lex")
+            .expect("featured token feature flags");
+        assert_eq!(featured_flags & ALL_FEATURES, ALL_FEATURES);
+    });
+}
+
+#[test]
 fn gpu_parser_boundary_retags_nested_if_condition_block_as_block() {
     use TokenKind::*;
 
@@ -735,6 +819,49 @@ fn gpu_parser_boundary_retags_tuple_match_arm_arrow_as_match_arrow() {
 }
 
 #[test]
+fn gpu_parser_boundary_retags_long_match_arm_comma_from_brace_records() {
+    use TokenKind::*;
+
+    common::block_on_gpu_with_timeout(
+        "GPU parser long match arm comma from brace records",
+        async move {
+            let lexer = GpuLexer::new().await.expect("GPU lexer init");
+            let parser = GpuParser::new().await.expect("GPU parser init");
+            let tables = PrecomputedParseTables::load_bin_bytes(include_bytes!(
+                "../tables/parse_tables.bin"
+            ))
+            .expect("parse tables");
+            let mut src = std::string::String::from(
+                "fn main(value: i32) -> i32 { return match value { 0 -> 0",
+            );
+            for i in 0..700 {
+                src.push_str(&format!(" + {i}"));
+            }
+            src.push_str(", 1 -> 1, }; }");
+
+            let semantic = lexer
+                .with_resident_tokens(&src, |_, _, bufs| {
+                    parser.debug_semantic_token_kinds_for_resident_tokens(
+                        bufs.n,
+                        &bufs.tokens_out,
+                        &bufs.token_count,
+                        &tables,
+                    )
+                })
+                .await
+                .expect("resident lex")
+                .expect("semantic token kinds");
+
+            let arm_commas = semantic
+                .iter()
+                .filter(|&&kind| kind == MatchArmComma as u32)
+                .count();
+            assert_eq!(arm_commas, 2);
+        },
+    );
+}
+
+#[test]
 fn gpu_parser_boundary_retags_enum_payload_fields_as_type_names() {
     use TokenKind::*;
 
@@ -844,6 +971,321 @@ fn gpu_parser_boundary_retags_generic_impl_receiver_type() {
 }
 
 #[test]
+fn gpu_parser_boundary_retags_impl_method_open_from_owner_prefix_records() {
+    use TokenKind::*;
+
+    common::block_on_gpu_with_timeout(
+        "GPU parser impl method brace owner prefix records",
+        async move {
+            let lexer = GpuLexer::new().await.expect("GPU lexer init");
+            let parser = GpuParser::new().await.expect("GPU parser init");
+            let tables = PrecomputedParseTables::load_bin_bytes(include_bytes!(
+                "../tables/parse_tables.bin"
+            ))
+            .expect("parse tables");
+            let mut src = std::string::String::from("impl Range<i32> {\n");
+            for i in 0..80 {
+                src.push_str(&format!("fn filler{i}() -> i32 {{ return {i}; }}\n"));
+            }
+            let target_start = src.len();
+            src.push_str("fn target() -> i32 { return 7; }\n}\n");
+
+            let tokens = lexer.lex(&src).await.expect("tokens");
+            let semantic = lexer
+                .with_resident_tokens(&src, |_, _, bufs| {
+                    parser.debug_semantic_token_kinds_for_resident_tokens(
+                        bufs.n,
+                        &bufs.tokens_out,
+                        &bufs.token_count,
+                        &tables,
+                    )
+                })
+                .await
+                .expect("resident lex")
+                .expect("semantic token kinds");
+
+            let target_fn = tokens
+                .iter()
+                .position(|token| token.kind == Fn && token.start >= target_start)
+                .expect("target method token");
+            let target_open = tokens
+                .iter()
+                .enumerate()
+                .skip(target_fn)
+                .find(|(_, token)| token.kind == LBrace)
+                .map(|(i, _)| i)
+                .expect("target method opening brace");
+
+            assert!(
+                target_open > 256,
+                "target method should be past the first delimiter block"
+            );
+            assert_eq!(
+                semantic[target_open + 1],
+                ImplFnBlockLBrace as u32,
+                "impl method opening brace should come from brace-owner prefix records"
+            );
+        },
+    );
+}
+
+#[test]
+fn gpu_parser_boundary_retags_impl_method_close_from_owner_depth_records() {
+    use TokenKind::*;
+
+    common::block_on_gpu_with_timeout(
+        "GPU parser impl method close owner depth records",
+        async move {
+            let lexer = GpuLexer::new().await.expect("GPU lexer init");
+            let parser = GpuParser::new().await.expect("GPU parser init");
+            let tables = PrecomputedParseTables::load_bin_bytes(include_bytes!(
+                "../tables/parse_tables.bin"
+            ))
+            .expect("parse tables");
+            let mut src = std::string::String::from("impl Range<i32> {\nfn target() -> i32 {\n");
+            for i in 0..320 {
+                src.push_str(&format!("let v{i} = {i};\n"));
+            }
+            src.push_str("return 7;\n}\n}\n");
+
+            let tokens = lexer.lex(&src).await.expect("tokens");
+            let semantic = lexer
+                .with_resident_tokens(&src, |_, _, bufs| {
+                    parser.debug_semantic_token_kinds_for_resident_tokens(
+                        bufs.n,
+                        &bufs.tokens_out,
+                        &bufs.token_count,
+                        &tables,
+                    )
+                })
+                .await
+                .expect("resident lex")
+                .expect("semantic token kinds");
+
+            let method_open = tokens
+                .iter()
+                .position(|token| token.kind == LBrace && token.start > "impl Range<i32> {".len())
+                .expect("method opening brace");
+            let method_close = tokens
+                .iter()
+                .enumerate()
+                .skip(method_open + 1)
+                .find(|(_, token)| token.kind == RBrace)
+                .map(|(i, _)| i)
+                .expect("method closing brace");
+
+            assert!(
+                method_close - method_open > 1024,
+                "fixture should exceed the old bounded matching scan"
+            );
+            assert_eq!(semantic[method_open + 1], ImplFnBlockLBrace as u32);
+            assert_eq!(
+                semantic[method_close + 1],
+                ImplFnBlockRBrace as u32,
+                "impl method closing brace should come from owner/depth records"
+            );
+        },
+    );
+}
+
+#[test]
+fn gpu_parser_boundary_retags_long_let_semicolon_from_statement_prefix_records() {
+    use TokenKind::*;
+
+    common::block_on_gpu_with_timeout(
+        "GPU parser long let semicolon statement prefix records",
+        async move {
+            let lexer = GpuLexer::new().await.expect("GPU lexer init");
+            let parser = GpuParser::new().await.expect("GPU parser init");
+            let tables = PrecomputedParseTables::load_bin_bytes(include_bytes!(
+                "../tables/parse_tables.bin"
+            ))
+            .expect("parse tables");
+            let mut src = std::string::String::from("fn main() { let value: i32 = 0");
+            for i in 0..320 {
+                src.push_str(&format!(" + {i}"));
+            }
+            src.push_str("; return value; }");
+
+            let tokens = lexer.lex(&src).await.expect("tokens");
+            let semantic = lexer
+                .with_resident_tokens(&src, |_, _, bufs| {
+                    parser.debug_semantic_token_kinds_for_resident_tokens(
+                        bufs.n,
+                        &bufs.tokens_out,
+                        &bufs.token_count,
+                        &tables,
+                    )
+                })
+                .await
+                .expect("resident lex")
+                .expect("semantic token kinds");
+
+            let let_i = tokens
+                .iter()
+                .position(|token| token.kind == Let)
+                .expect("let token");
+            let semicolon_i = tokens
+                .iter()
+                .enumerate()
+                .skip(let_i)
+                .find(|(_, token)| token.kind == Semicolon)
+                .map(|(i, _)| i)
+                .expect("let semicolon");
+
+            assert!(
+                semicolon_i - let_i > 512,
+                "fixture should exceed the old bounded semicolon scan"
+            );
+            assert_eq!(
+                semantic[semicolon_i + 1],
+                LetSemicolon as u32,
+                "let semicolon should come from statement-prefix records"
+            );
+        },
+    );
+}
+
+#[test]
+fn gpu_parser_boundary_retags_long_decl_assign_from_statement_prefix_records() {
+    use TokenKind::*;
+
+    common::block_on_gpu_with_timeout(
+        "GPU parser long declaration assign statement prefix records",
+        async move {
+            let lexer = GpuLexer::new().await.expect("GPU lexer init");
+            let parser = GpuParser::new().await.expect("GPU parser init");
+            let tables = PrecomputedParseTables::load_bin_bytes(include_bytes!(
+                "../tables/parse_tables.bin"
+            ))
+            .expect("parse tables");
+            let mut src = std::string::String::from("fn main() { let value: ");
+            for i in 0..180 {
+                if i != 0 {
+                    src.push_str("::");
+                }
+                src.push_str(&format!("LocalType{i}"));
+            }
+            src.push_str(" = 0; }\nconst GLOBAL: ");
+            for i in 0..180 {
+                if i != 0 {
+                    src.push_str("::");
+                }
+                src.push_str(&format!("ConstType{i}"));
+            }
+            src.push_str(" = 1;");
+
+            let tokens = lexer.lex(&src).await.expect("tokens");
+            let semantic = lexer
+                .with_resident_tokens(&src, |_, _, bufs| {
+                    parser.debug_semantic_token_kinds_for_resident_tokens(
+                        bufs.n,
+                        &bufs.tokens_out,
+                        &bufs.token_count,
+                        &tables,
+                    )
+                })
+                .await
+                .expect("resident lex")
+                .expect("semantic token kinds");
+
+            let let_i = tokens
+                .iter()
+                .position(|token| token.kind == Let)
+                .expect("let token");
+            let let_assign_i = tokens
+                .iter()
+                .enumerate()
+                .skip(let_i)
+                .find(|(_, token)| token.kind == Assign)
+                .map(|(i, _)| i)
+                .expect("let assign token");
+            let const_i = tokens
+                .iter()
+                .position(|token| token.kind == Const)
+                .expect("const token");
+            let const_assign_i = tokens
+                .iter()
+                .enumerate()
+                .skip(const_i)
+                .find(|(_, token)| token.kind == Assign)
+                .map(|(i, _)| i)
+                .expect("const assign token");
+
+            assert!(
+                let_assign_i - let_i > 128,
+                "let fixture should exceed the old bounded assignment scan"
+            );
+            assert!(
+                const_assign_i - const_i > 256,
+                "const fixture should exceed the old bounded declaration assignment scan"
+            );
+            assert_eq!(
+                semantic[let_assign_i + 1],
+                LetAssign as u32,
+                "let assignment should come from statement-prefix records"
+            );
+            assert_eq!(
+                semantic[const_assign_i + 1],
+                ConstAssign as u32,
+                "const assignment should come from statement-prefix records"
+            );
+        },
+    );
+}
+
+#[test]
+fn gpu_parser_boundary_retags_import_string_from_cross_block_statement_context_records() {
+    use TokenKind::*;
+
+    common::block_on_gpu_with_timeout(
+        "GPU parser import string statement context records",
+        async move {
+            let lexer = GpuLexer::new().await.expect("GPU lexer init");
+            let parser = GpuParser::new().await.expect("GPU parser init");
+            let tables = PrecomputedParseTables::load_bin_bytes(include_bytes!(
+                "../tables/parse_tables.bin"
+            ))
+            .expect("parse tables");
+            let mut src = std::string::String::new();
+            for i in 0..85 {
+                src.push_str(&format!("module filler{i};\n"));
+            }
+            src.push_str("import \"stdlib/core.lani\";\n");
+
+            let tokens = lexer.lex(&src).await.expect("tokens");
+            let semantic = lexer
+                .with_resident_tokens(&src, |_, _, bufs| {
+                    parser.debug_semantic_token_kinds_for_resident_tokens(
+                        bufs.n,
+                        &bufs.tokens_out,
+                        &bufs.token_count,
+                        &tables,
+                    )
+                })
+                .await
+                .expect("resident lex")
+                .expect("semantic token kinds");
+
+            let import_i = tokens
+                .iter()
+                .position(|token| token.kind == Import)
+                .expect("import token");
+            let string_i = import_i + 1;
+
+            assert_eq!(import_i % 256, 255, "import should end a delimiter block");
+            assert_eq!(tokens[string_i].kind, String);
+            assert_eq!(
+                semantic[string_i + 1],
+                ImportString as u32,
+                "import string should come from cross-block statement context records"
+            );
+            assert_eq!(semantic[string_i + 2], ImportSemicolon as u32);
+        },
+    );
+}
+
+#[test]
 fn gpu_parser_boundary_retags_long_function_close_from_delimiter_records() {
     use TokenKind::*;
 
@@ -875,6 +1317,213 @@ fn gpu_parser_boundary_retags_long_function_close_from_delimiter_records() {
         assert_eq!(semantic[5], FnBlockLBrace as u32);
         assert_eq!(semantic[semantic.len() - 2], FnBlockRBrace as u32);
     });
+}
+
+#[test]
+fn gpu_parser_boundary_retags_long_struct_literal_close_from_brace_pair_records() {
+    use TokenKind::*;
+
+    common::block_on_gpu_with_timeout(
+        "GPU parser long struct literal brace pair records",
+        async move {
+            let lexer = GpuLexer::new().await.expect("GPU lexer init");
+            let parser = GpuParser::new().await.expect("GPU parser init");
+            let tables = PrecomputedParseTables::load_bin_bytes(include_bytes!(
+                "../tables/parse_tables.bin"
+            ))
+            .expect("parse tables");
+            let mut src = std::string::String::from(
+                "struct Pair { left: i32, right: i32 }\nfn main() { let p = Pair { left: 0",
+            );
+            for i in 0..360 {
+                src.push_str(&format!(" + {i}"));
+            }
+            src.push_str(", right: 1 }; return p.left; }");
+
+            let tokens = lexer.lex(&src).await.expect("tokens");
+            let semantic = lexer
+                .with_resident_tokens(&src, |_, _, bufs| {
+                    parser.debug_semantic_token_kinds_for_resident_tokens(
+                        bufs.n,
+                        &bufs.tokens_out,
+                        &bufs.token_count,
+                        &tables,
+                    )
+                })
+                .await
+                .expect("resident lex")
+                .expect("semantic token kinds");
+
+            let literal_open = tokens
+                .iter()
+                .enumerate()
+                .filter(|(_, token)| token.kind == LBrace)
+                .nth(2)
+                .map(|(i, _)| i)
+                .expect("struct literal opening brace");
+            let literal_close = tokens
+                .iter()
+                .enumerate()
+                .skip(literal_open + 1)
+                .find(|(_, token)| token.kind == RBrace)
+                .map(|(i, _)| i)
+                .expect("struct literal closing brace");
+
+            assert!(
+                literal_close - literal_open > 512,
+                "fixture should exceed the old bounded brace-close matching scan"
+            );
+            assert_eq!(semantic[literal_open + 1], StructLitLBrace as u32);
+            assert_eq!(
+                semantic[literal_close + 1],
+                StructLitRBrace as u32,
+                "struct literal closing brace should come from brace pair records"
+            );
+        },
+    );
+}
+
+#[test]
+fn gpu_parser_boundary_retags_long_array_literal_close_from_bracket_pair_records() {
+    use TokenKind::*;
+
+    common::block_on_gpu_with_timeout(
+        "GPU parser long array literal bracket pair records",
+        async move {
+            let lexer = GpuLexer::new().await.expect("GPU lexer init");
+            let parser = GpuParser::new().await.expect("GPU parser init");
+            let tables = PrecomputedParseTables::load_bin_bytes(include_bytes!(
+                "../tables/parse_tables.bin"
+            ))
+            .expect("parse tables");
+            let mut src = std::string::String::from("fn main() { let xs = [0");
+            for i in 0..360 {
+                src.push_str(&format!(" + {i}"));
+            }
+            src.push_str(", 1]; return 0; }");
+
+            let tokens = lexer.lex(&src).await.expect("tokens");
+            let semantic = lexer
+                .with_resident_tokens(&src, |_, _, bufs| {
+                    parser.debug_semantic_token_kinds_for_resident_tokens(
+                        bufs.n,
+                        &bufs.tokens_out,
+                        &bufs.token_count,
+                        &tables,
+                    )
+                })
+                .await
+                .expect("resident lex")
+                .expect("semantic token kinds");
+
+            let array_open = tokens
+                .iter()
+                .enumerate()
+                .find(|(_, token)| token.kind == LBracket)
+                .map(|(i, _)| i)
+                .expect("array literal opening bracket");
+            let array_close = tokens
+                .iter()
+                .enumerate()
+                .skip(array_open + 1)
+                .find(|(_, token)| token.kind == RBracket)
+                .map(|(i, _)| i)
+                .expect("array literal closing bracket");
+            let array_comma = tokens
+                .iter()
+                .enumerate()
+                .skip(array_open + 1)
+                .find(|(_, token)| token.kind == Comma)
+                .map(|(i, _)| i)
+                .expect("array literal comma");
+
+            assert!(
+                array_close - array_open > 512,
+                "fixture should exceed the old bounded bracket-close matching scan"
+            );
+            assert!(
+                array_comma - array_open > 512,
+                "fixture should exceed the old bounded bracket-comma matching scan"
+            );
+            assert_eq!(semantic[array_open + 1], ArrayLBracket as u32);
+            assert_eq!(
+                semantic[array_comma + 1],
+                ArrayComma as u32,
+                "array literal comma should come from bracket pair records"
+            );
+            assert_eq!(
+                semantic[array_close + 1],
+                ArrayRBracket as u32,
+                "array literal closing bracket should come from bracket pair records"
+            );
+        },
+    );
+}
+
+#[test]
+fn gpu_parser_boundary_retags_long_type_array_semicolon_from_bracket_pair_records() {
+    use TokenKind::*;
+
+    common::block_on_gpu_with_timeout(
+        "GPU parser long type-array semicolon bracket pair records",
+        async move {
+            let lexer = GpuLexer::new().await.expect("GPU lexer init");
+            let parser = GpuParser::new().await.expect("GPU parser init");
+            let tables = PrecomputedParseTables::load_bin_bytes(include_bytes!(
+                "../tables/parse_tables.bin"
+            ))
+            .expect("parse tables");
+
+            for case_i in 0..3 {
+                let fn_name = format!("shape_fn_{case_i}");
+                let param_name = format!("buffer_{case_i}");
+                let mut src = format!("fn {fn_name}({param_name}: [TypeHead{case_i}");
+                for term_i in 0..360 {
+                    src.push_str(&format!(" + Segment{case_i}_{term_i}"));
+                }
+                src.push_str("; 4]) { return; }");
+
+                let tokens = lexer.lex(&src).await.expect("tokens");
+                let semantic = lexer
+                    .with_resident_tokens(&src, |_, _, bufs| {
+                        parser.debug_semantic_token_kinds_for_resident_tokens(
+                            bufs.n,
+                            &bufs.tokens_out,
+                            &bufs.token_count,
+                            &tables,
+                        )
+                    })
+                    .await
+                    .expect("resident lex")
+                    .expect("semantic token kinds");
+
+                let array_open = tokens
+                    .iter()
+                    .enumerate()
+                    .find(|(_, token)| token.kind == LBracket)
+                    .map(|(i, _)| i)
+                    .expect("type-array opening bracket");
+                let semicolon_i = tokens
+                    .iter()
+                    .enumerate()
+                    .skip(array_open + 1)
+                    .find(|(_, token)| token.kind == Semicolon)
+                    .map(|(i, _)| i)
+                    .expect("type-array semicolon");
+
+                assert!(
+                    semicolon_i - array_open > 512,
+                    "fixture should exceed the old bounded type-array semicolon scan"
+                );
+                assert_eq!(semantic[array_open + 1], TypeArrayLBracket as u32);
+                assert_eq!(
+                    semantic[semicolon_i + 1],
+                    TypeSemicolon as u32,
+                    "type-array semicolon should come from bracket pair records"
+                );
+            }
+        },
+    );
 }
 
 #[test]
@@ -1026,6 +1675,45 @@ fn gpu_parser_boundary_builds_param_and_type_context_tokens_on_gpu() {
 }
 
 #[test]
+fn gpu_parser_boundary_retags_type_alias_rhs_as_type_context() {
+    use TokenKind::*;
+
+    common::block_on_gpu_with_timeout("GPU parser type alias semantic boundary", async move {
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let parser = GpuParser::new().await.expect("GPU parser init");
+        let tables =
+            PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+                .expect("parse tables");
+        let src = "type Count = i32;";
+
+        let semantic = lexer
+            .with_resident_tokens(src, |_, _, bufs| {
+                parser.debug_semantic_token_kinds_for_resident_tokens(
+                    bufs.n,
+                    &bufs.tokens_out,
+                    &bufs.token_count,
+                    &tables,
+                )
+            })
+            .await
+            .expect("resident lex")
+            .expect("semantic token kinds");
+
+        let expected = [
+            0u32,
+            Type as u32,
+            TypeAliasNameIdent as u32,
+            TypeAliasAssign as u32,
+            TypeIdent as u32,
+            TypeAliasSemicolon as u32,
+            0u32,
+        ];
+
+        assert_eq!(semantic, expected);
+    });
+}
+
+#[test]
 fn gpu_parser_boundary_retags_generic_function_params_on_gpu() {
     use TokenKind::*;
 
@@ -1169,7 +1857,7 @@ fn gpu_lexer_records_single_source_token_file_ids_on_gpu() {
 
                 let count_slice = count_readback.slice(..);
                 count_slice.map_async(wgpu::MapMode::Read, |_| {});
-                let _ = device.poll(wgpu::PollType::Wait);
+                let _ = device.poll(wgpu::PollType::wait_indefinitely());
                 let count_bytes = count_slice.get_mapped_range();
                 let count = u32::from_le_bytes(count_bytes[0..4].try_into().unwrap()) as usize;
                 drop(count_bytes);
@@ -1177,7 +1865,7 @@ fn gpu_lexer_records_single_source_token_file_ids_on_gpu() {
 
                 let ids_slice = ids_readback.slice(0..(count * 4) as u64);
                 ids_slice.map_async(wgpu::MapMode::Read, |_| {});
-                let _ = device.poll(wgpu::PollType::Wait);
+                let _ = device.poll(wgpu::PollType::wait_indefinitely());
                 let ids_bytes = ids_slice.get_mapped_range();
                 let ids = ids_bytes
                     .chunks_exact(4)
@@ -1250,7 +1938,7 @@ fn gpu_lexer_records_source_pack_token_file_ids_on_gpu() {
 
                 let count_slice = count_readback.slice(..);
                 count_slice.map_async(wgpu::MapMode::Read, |_| {});
-                let _ = device.poll(wgpu::PollType::Wait);
+                let _ = device.poll(wgpu::PollType::wait_indefinitely());
                 let count_bytes = count_slice.get_mapped_range();
                 let count = u32::from_le_bytes(count_bytes[0..4].try_into().unwrap()) as usize;
                 drop(count_bytes);
@@ -1259,7 +1947,7 @@ fn gpu_lexer_records_source_pack_token_file_ids_on_gpu() {
                 let token_bytes_len = (count * std::mem::size_of::<GpuToken>()) as u64;
                 let tokens_slice = tokens_readback.slice(0..token_bytes_len);
                 tokens_slice.map_async(wgpu::MapMode::Read, |_| {});
-                let _ = device.poll(wgpu::PollType::Wait);
+                let _ = device.poll(wgpu::PollType::wait_indefinitely());
                 let token_bytes = tokens_slice.get_mapped_range();
                 let tokens =
                     read_tokens_from_mapped(&token_bytes, count).expect("source pack tokens");
@@ -1268,7 +1956,7 @@ fn gpu_lexer_records_source_pack_token_file_ids_on_gpu() {
 
                 let ids_slice = ids_readback.slice(0..(count * 4) as u64);
                 ids_slice.map_async(wgpu::MapMode::Read, |_| {});
-                let _ = device.poll(wgpu::PollType::Wait);
+                let _ = device.poll(wgpu::PollType::wait_indefinitely());
                 let ids_bytes = ids_slice.get_mapped_range();
                 let ids = ids_bytes
                     .chunks_exact(4)

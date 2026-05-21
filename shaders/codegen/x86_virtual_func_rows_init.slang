@@ -9,13 +9,16 @@ struct Params
     uint out_capacity;
     uint n_hir_nodes;
     uint inst_capacity;
+    uint virtual_next_call_step_count;
+    uint regalloc_rows_per_chunk;
+    uint regalloc_chunk_count;
+    uint function_slot_capacity;
 };
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_node_decl_token;
-StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> x86_func_meta;
+StructuredBuffer<uint> x86_func_slot_by_index;
 
 RWStructuredBuffer<uint> x86_func_first_virtual_row;
 RWStructuredBuffer<uint> x86_func_last_virtual_row;
@@ -23,32 +26,24 @@ RWStructuredBuffer<uint> x86_func_param_reg_mask;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint INVALID = 0xffffffffu;
-static const uint HIR_FN = 3u;
+static const uint FUNC_META_FUNC_COUNT = 0u;
 
 uint linear_dispatch_id(uint3 tid)
 {
     return linear_dispatch_thread_id_2d(tid, DISPATCH_X_STRIDE);
 }
 
-uint function_slot_key(uint node)
-{
-    uint slot = hir_node_decl_token[node];
-    if (slot < gParams.n_tokens)
-        return slot;
-    slot = hir_token_pos[node];
-    return slot < gParams.n_tokens ? slot : INVALID;
-}
-
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
 {
-    uint node = linear_dispatch_id(tid);
-    if (node >= gParams.n_hir_nodes || hir_kind[node] != HIR_FN)
+    uint func_i = linear_dispatch_id(tid);
+    uint func_count = min(x86_func_meta[FUNC_META_FUNC_COUNT], gParams.function_slot_capacity);
+    if (func_i >= func_count)
         return;
 
-    uint slot = function_slot_key(node);
-    if (slot == INVALID)
+    uint slot = x86_func_slot_by_index[func_i];
+    if (slot >= gParams.n_tokens)
         return;
 
     x86_func_first_virtual_row[slot] = INVALID;

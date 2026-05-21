@@ -24,6 +24,14 @@ pub struct ParserReadbacks {
     pub next_sibling: wgpu::Buffer,
     pub subtree_end: wgpu::Buffer,
     pub hir_kind: wgpu::Buffer,
+    pub hir_semantic_prefix_before_node: wgpu::Buffer,
+    pub hir_semantic_dense_node: wgpu::Buffer,
+    pub hir_semantic_subtree_end: wgpu::Buffer,
+    pub hir_semantic_parent: wgpu::Buffer,
+    pub hir_semantic_first_child: wgpu::Buffer,
+    pub hir_semantic_next_sibling: wgpu::Buffer,
+    pub hir_semantic_depth: wgpu::Buffer,
+    pub hir_semantic_child_index: wgpu::Buffer,
     pub hir_token_pos: wgpu::Buffer,
     pub hir_token_end: wgpu::Buffer,
     pub hir_type_form: wgpu::Buffer,
@@ -35,6 +43,8 @@ pub struct ParserReadbacks {
     pub hir_type_arg_start: wgpu::Buffer,
     pub hir_type_arg_count: wgpu::Buffer,
     pub hir_type_arg_next: wgpu::Buffer,
+    pub hir_type_alias_target_node: wgpu::Buffer,
+    pub hir_fn_return_type_node: wgpu::Buffer,
     pub hir_item_kind: wgpu::Buffer,
     pub hir_item_name_token: wgpu::Buffer,
     pub hir_item_decl_token: wgpu::Buffer,
@@ -132,6 +142,38 @@ impl ParserReadbacks {
         let next_sibling = mk("rb.parser.next_sibling", bufs.next_sibling.byte_size as u64);
         let subtree_end = mk("rb.parser.subtree_end", bufs.subtree_end.byte_size as u64);
         let hir_kind = mk("rb.parser.hir_kind", bufs.hir_kind.byte_size as u64);
+        let hir_semantic_prefix_before_node = mk(
+            "rb.parser.hir_semantic_prefix_before_node",
+            bufs.hir_semantic_prefix_before_node.byte_size as u64,
+        );
+        let hir_semantic_dense_node = mk(
+            "rb.parser.hir_semantic_dense_node",
+            bufs.hir_semantic_dense_node.byte_size as u64,
+        );
+        let hir_semantic_subtree_end = mk(
+            "rb.parser.hir_semantic_subtree_end",
+            bufs.hir_semantic_subtree_end.byte_size as u64,
+        );
+        let hir_semantic_parent = mk(
+            "rb.parser.hir_semantic_parent",
+            bufs.hir_semantic_parent.byte_size as u64,
+        );
+        let hir_semantic_first_child = mk(
+            "rb.parser.hir_semantic_first_child",
+            bufs.hir_semantic_first_child.byte_size as u64,
+        );
+        let hir_semantic_next_sibling = mk(
+            "rb.parser.hir_semantic_next_sibling",
+            bufs.hir_semantic_next_sibling.byte_size as u64,
+        );
+        let hir_semantic_depth = mk(
+            "rb.parser.hir_semantic_depth",
+            bufs.hir_semantic_depth.byte_size as u64,
+        );
+        let hir_semantic_child_index = mk(
+            "rb.parser.hir_semantic_child_index",
+            bufs.hir_semantic_child_index.byte_size as u64,
+        );
         let hir_token_pos = mk(
             "rb.parser.hir_token_pos",
             bufs.hir_token_pos.byte_size as u64,
@@ -175,6 +217,14 @@ impl ParserReadbacks {
         let hir_type_arg_next = mk(
             "rb.parser.hir_type_arg_next",
             bufs.hir_type_arg_next.byte_size as u64,
+        );
+        let hir_type_alias_target_node = mk(
+            "rb.parser.hir_type_alias_target_node",
+            bufs.hir_type_alias_target_node.byte_size as u64,
+        );
+        let hir_fn_return_type_node = mk(
+            "rb.parser.hir_fn_return_type_node",
+            bufs.hir_fn_return_type_node.byte_size as u64,
         );
         let hir_item_kind = mk(
             "rb.parser.hir_item_kind",
@@ -393,6 +443,14 @@ impl ParserReadbacks {
             next_sibling,
             subtree_end,
             hir_kind,
+            hir_semantic_prefix_before_node,
+            hir_semantic_dense_node,
+            hir_semantic_subtree_end,
+            hir_semantic_parent,
+            hir_semantic_first_child,
+            hir_semantic_next_sibling,
+            hir_semantic_depth,
+            hir_semantic_child_index,
             hir_token_pos,
             hir_token_end,
             hir_type_form,
@@ -404,6 +462,8 @@ impl ParserReadbacks {
             hir_type_arg_start,
             hir_type_arg_count,
             hir_type_arg_next,
+            hir_type_alias_target_node,
+            hir_fn_return_type_node,
             hir_item_kind,
             hir_item_name_token,
             hir_item_decl_token,
@@ -568,6 +628,62 @@ impl ParserReadbacks {
             bufs.hir_kind.byte_size as u64,
         );
         encoder.copy_buffer_to_buffer(
+            &bufs.hir_semantic_prefix_before_node,
+            0,
+            &self.hir_semantic_prefix_before_node,
+            0,
+            bufs.hir_semantic_prefix_before_node.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_semantic_dense_node,
+            0,
+            &self.hir_semantic_dense_node,
+            0,
+            bufs.hir_semantic_dense_node.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_semantic_subtree_end,
+            0,
+            &self.hir_semantic_subtree_end,
+            0,
+            bufs.hir_semantic_subtree_end.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_semantic_parent,
+            0,
+            &self.hir_semantic_parent,
+            0,
+            bufs.hir_semantic_parent.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_semantic_first_child,
+            0,
+            &self.hir_semantic_first_child,
+            0,
+            bufs.hir_semantic_first_child.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_semantic_next_sibling,
+            0,
+            &self.hir_semantic_next_sibling,
+            0,
+            bufs.hir_semantic_next_sibling.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_semantic_depth,
+            0,
+            &self.hir_semantic_depth,
+            0,
+            bufs.hir_semantic_depth.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_semantic_child_index,
+            0,
+            &self.hir_semantic_child_index,
+            0,
+            bufs.hir_semantic_child_index.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
             &bufs.hir_token_pos,
             0,
             &self.hir_token_pos,
@@ -643,6 +759,20 @@ impl ParserReadbacks {
             &self.hir_type_arg_next,
             0,
             bufs.hir_type_arg_next.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_type_alias_target_node,
+            0,
+            &self.hir_type_alias_target_node,
+            0,
+            bufs.hir_type_alias_target_node.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_fn_return_type_node,
+            0,
+            &self.hir_fn_return_type_node,
+            0,
+            bufs.hir_fn_return_type_node.byte_size as u64,
         );
         encoder.copy_buffer_to_buffer(
             &bufs.hir_item_kind,
@@ -1028,6 +1158,14 @@ pub struct DecodedParserReadbacks {
     pub next_sibling: Vec<u32>,
     pub subtree_end: Vec<u32>,
     pub hir_kind: Vec<u32>,
+    pub hir_semantic_prefix_before_node: Vec<u32>,
+    pub hir_semantic_dense_node: Vec<u32>,
+    pub hir_semantic_subtree_end: Vec<u32>,
+    pub hir_semantic_parent: Vec<u32>,
+    pub hir_semantic_first_child: Vec<u32>,
+    pub hir_semantic_next_sibling: Vec<u32>,
+    pub hir_semantic_depth: Vec<u32>,
+    pub hir_semantic_child_index: Vec<u32>,
     pub hir_token_pos: Vec<u32>,
     pub hir_token_end: Vec<u32>,
     pub hir_type_form: Vec<u32>,
@@ -1039,6 +1177,8 @@ pub struct DecodedParserReadbacks {
     pub hir_type_arg_start: Vec<u32>,
     pub hir_type_arg_count: Vec<u32>,
     pub hir_type_arg_next: Vec<u32>,
+    pub hir_type_alias_target_node: Vec<u32>,
+    pub hir_fn_return_type_node: Vec<u32>,
     pub hir_item_kind: Vec<u32>,
     pub hir_item_name_token: Vec<u32>,
     pub hir_item_decl_token: Vec<u32>,
@@ -1123,6 +1263,17 @@ impl DecodedParserReadbacks {
         map("next_sibling", &rb.next_sibling);
         map("subtree_end", &rb.subtree_end);
         map("hir_kind", &rb.hir_kind);
+        map(
+            "hir_semantic_prefix_before_node",
+            &rb.hir_semantic_prefix_before_node,
+        );
+        map("hir_semantic_dense_node", &rb.hir_semantic_dense_node);
+        map("hir_semantic_subtree_end", &rb.hir_semantic_subtree_end);
+        map("hir_semantic_parent", &rb.hir_semantic_parent);
+        map("hir_semantic_first_child", &rb.hir_semantic_first_child);
+        map("hir_semantic_next_sibling", &rb.hir_semantic_next_sibling);
+        map("hir_semantic_depth", &rb.hir_semantic_depth);
+        map("hir_semantic_child_index", &rb.hir_semantic_child_index);
         map("hir_token_pos", &rb.hir_token_pos);
         map("hir_token_end", &rb.hir_token_end);
         map("hir_type_form", &rb.hir_type_form);
@@ -1134,6 +1285,8 @@ impl DecodedParserReadbacks {
         map("hir_type_arg_start", &rb.hir_type_arg_start);
         map("hir_type_arg_count", &rb.hir_type_arg_count);
         map("hir_type_arg_next", &rb.hir_type_arg_next);
+        map("hir_type_alias_target_node", &rb.hir_type_alias_target_node);
+        map("hir_fn_return_type_node", &rb.hir_fn_return_type_node);
         map("hir_item_kind", &rb.hir_item_kind);
         map("hir_item_name_token", &rb.hir_item_name_token);
         map("hir_item_decl_token", &rb.hir_item_decl_token);
@@ -1226,7 +1379,7 @@ impl DecodedParserReadbacks {
         crate::gpu::passes_core::wait_for_map_progress(
             device,
             "parser.readback",
-            wgpu::PollType::Wait,
+            wgpu::PollType::wait_indefinitely(),
         );
 
         let ll1_status = read_u32_array::<6>(&rb.ll1_status, "ll1_status")?;
@@ -1290,6 +1443,15 @@ impl DecodedParserReadbacks {
         let next_sibling = read_u32_vec(&rb.next_sibling, tree_len);
         let subtree_end = read_u32_vec(&rb.subtree_end, tree_len);
         let hir_kind = read_u32_vec(&rb.hir_kind, tree_len);
+        let hir_semantic_prefix_before_node =
+            read_u32_vec(&rb.hir_semantic_prefix_before_node, tree_len);
+        let hir_semantic_dense_node = read_u32_vec(&rb.hir_semantic_dense_node, tree_len);
+        let hir_semantic_subtree_end = read_u32_vec(&rb.hir_semantic_subtree_end, tree_len);
+        let hir_semantic_parent = read_u32_vec(&rb.hir_semantic_parent, tree_len);
+        let hir_semantic_first_child = read_u32_vec(&rb.hir_semantic_first_child, tree_len);
+        let hir_semantic_next_sibling = read_u32_vec(&rb.hir_semantic_next_sibling, tree_len);
+        let hir_semantic_depth = read_u32_vec(&rb.hir_semantic_depth, tree_len);
+        let hir_semantic_child_index = read_u32_vec(&rb.hir_semantic_child_index, tree_len);
         let hir_token_pos = read_u32_vec(&rb.hir_token_pos, tree_len);
         let hir_token_end = read_u32_vec(&rb.hir_token_end, tree_len);
         let hir_type_form = read_u32_vec(&rb.hir_type_form, tree_len);
@@ -1301,6 +1463,8 @@ impl DecodedParserReadbacks {
         let hir_type_arg_start = read_u32_vec(&rb.hir_type_arg_start, tree_len);
         let hir_type_arg_count = read_u32_vec(&rb.hir_type_arg_count, tree_len);
         let hir_type_arg_next = read_u32_vec(&rb.hir_type_arg_next, tree_len);
+        let hir_type_alias_target_node = read_u32_vec(&rb.hir_type_alias_target_node, tree_len);
+        let hir_fn_return_type_node = read_u32_vec(&rb.hir_fn_return_type_node, tree_len);
         let hir_item_kind = read_u32_vec(&rb.hir_item_kind, tree_len);
         let hir_item_name_token = read_u32_vec(&rb.hir_item_name_token, tree_len);
         let hir_item_decl_token = read_u32_vec(&rb.hir_item_decl_token, tree_len);
@@ -1382,6 +1546,14 @@ impl DecodedParserReadbacks {
             next_sibling,
             subtree_end,
             hir_kind,
+            hir_semantic_prefix_before_node,
+            hir_semantic_dense_node,
+            hir_semantic_subtree_end,
+            hir_semantic_parent,
+            hir_semantic_first_child,
+            hir_semantic_next_sibling,
+            hir_semantic_depth,
+            hir_semantic_child_index,
             hir_token_pos,
             hir_token_end,
             hir_type_form,
@@ -1393,6 +1565,8 @@ impl DecodedParserReadbacks {
             hir_type_arg_start,
             hir_type_arg_count,
             hir_type_arg_next,
+            hir_type_alias_target_node,
+            hir_fn_return_type_node,
             hir_item_kind,
             hir_item_name_token,
             hir_item_decl_token,

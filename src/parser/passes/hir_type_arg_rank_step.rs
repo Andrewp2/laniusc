@@ -104,6 +104,14 @@ impl HirTypeArgRankStepPass {
                     buffers.ll1_status.as_entire_binding()
                 },
             ),
+            (
+                "token_feature_flags".into(),
+                buffers.token_feature_flags.as_entire_binding(),
+            ),
+            (
+                "hir_list_rank_node".into(),
+                buffers.hir_list_rank_node.as_entire_binding(),
+            ),
             ("hir_type_arg_owner_in".into(), owner_in.as_entire_binding()),
             ("hir_type_arg_link_in".into(), link_in.as_entire_binding()),
             ("hir_type_arg_rank_in".into(), rank_in.as_entire_binding()),

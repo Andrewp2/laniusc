@@ -1,18 +1,55 @@
 mod common;
 
 use laniusc::compiler::{
+    CompileError,
     compile_explicit_source_pack_paths_to_x86_64_with_gpu_codegen,
     compile_source_pack_to_x86_64_with_gpu_codegen,
     compile_source_to_x86_64_with_gpu_codegen,
     compile_source_to_x86_64_with_gpu_codegen_from_path,
-    CompileError,
 };
 
 fn assert_x86_64_elf_entry(bytes: &[u8]) {
     assert_eq!(&bytes[0..4], b"\x7fELF");
+    assert_x86_64_elf_exact_length(bytes);
     assert_eq!(
         u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
         0x400078
+    );
+}
+
+fn assert_x86_64_elf_exact_length(bytes: &[u8]) {
+    assert_eq!(&bytes[0..4], b"\x7fELF");
+    let mut expected_len = u16::from_le_bytes(bytes[52..54].try_into().unwrap()) as usize;
+    let program_header_offset = u64::from_le_bytes(bytes[32..40].try_into().unwrap()) as usize;
+    let program_header_entry_size = u16::from_le_bytes(bytes[54..56].try_into().unwrap()) as usize;
+    let program_header_count = u16::from_le_bytes(bytes[56..58].try_into().unwrap()) as usize;
+    expected_len = expected_len.saturating_add(0).max(
+        program_header_offset
+            .saturating_add(program_header_entry_size.saturating_mul(program_header_count)),
+    );
+    for header_i in 0..program_header_count {
+        let header = program_header_offset
+            .saturating_add(header_i.saturating_mul(program_header_entry_size));
+        let file_offset =
+            u64::from_le_bytes(bytes[header + 8..header + 16].try_into().unwrap()) as usize;
+        let file_size =
+            u64::from_le_bytes(bytes[header + 32..header + 40].try_into().unwrap()) as usize;
+        expected_len = expected_len.max(file_offset.saturating_add(file_size));
+    }
+    let section_header_offset = u64::from_le_bytes(bytes[40..48].try_into().unwrap()) as usize;
+    let section_header_entry_size = u16::from_le_bytes(bytes[58..60].try_into().unwrap()) as usize;
+    let section_header_count = u16::from_le_bytes(bytes[60..62].try_into().unwrap()) as usize;
+    if section_header_count != 0 {
+        expected_len =
+            expected_len
+                .max(section_header_offset.saturating_add(
+                    section_header_entry_size.saturating_mul(section_header_count),
+                ));
+    }
+    assert_eq!(
+        bytes.len(),
+        expected_len,
+        "x86 finish should return exactly the GPU-published ELF length without capacity padding"
     );
 }
 
@@ -116,6 +153,7 @@ fn x86_source_codegen_emits_direct_elf_for_integer_literal_return() {
     .expect("x86 codegen should emit an executable ELF for a scalar return");
 
     assert_x86_64_elf_entry(&bytes);
+    assert_x86_64_elf_exact_length(&bytes);
     assert_eq!(bytes[4], 2, "ELF64 class");
     assert_eq!(bytes[5], 1, "little-endian ELF");
     assert_eq!(u16::from_le_bytes(bytes[18..20].try_into().unwrap()), 62);
@@ -127,6 +165,134 @@ fn x86_source_codegen_emits_direct_elf_for_integer_literal_return() {
         &bytes,
         7,
     );
+}
+
+#[test]
+fn x86_single_source_codegen_matches_one_file_source_pack() {
+    let source = "fn value(x: i32) -> i32 {\n    let y: i32 = x + 5;\n    return y;\n}\nfn main() {\n    return value(4);\n}\n"
+        .to_string();
+    let (single, pack) = common::run_gpu_codegen_with_timeout(
+        "x86 single-source staged frontend parity",
+        move || {
+            let single = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))?;
+            let pack_sources = [source.as_str()];
+            let pack = pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(
+                &pack_sources,
+            ))?;
+            Ok::<_, CompileError>((single, pack))
+        },
+    )
+    .expect("single-source x86 codegen should match one-file source-pack output");
+
+    assert_eq!(
+        single, pack,
+        "single-source x86 compile should use the same staged frontend record path as a one-file source pack"
+    );
+    assert_x86_64_elf_entry(&single);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 single-source one-file source-pack parity",
+        "x86_single_source_pack_parity",
+        &single,
+        9,
+    );
+}
+
+#[test]
+fn x86_source_codegen_executes_generated_name_independent_call_shape() {
+    let first_fn = generated_ident(0x915f_2d3a, "fn");
+    let second_fn = generated_ident(0x4aa1_70c9, "fn");
+    let input_name = generated_ident(0x0f37_aa11, "arg");
+    let local_name = generated_ident(0x7c91_22f0, "tmp");
+    let result_name = generated_ident(0x35de_7821, "ret");
+    let source = format!(
+        "fn {first_fn}({input_name}: i32) -> i32 {{\n    let {local_name}: i32 = {input_name} + 5;\n    return {local_name};\n}}\nfn {second_fn}({input_name}: i32) -> i32 {{\n    return {first_fn}({input_name}) + 3;\n}}\nfn main() {{\n    let {result_name}: i32 = {second_fn}(4);\n    return {result_name};\n}}\n"
+    );
+
+    let bytes = common::run_gpu_codegen_with_timeout("x86 generated-name call shape", move || {
+        pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
+    })
+    .expect("x86 codegen should consume HIR/resolver records independent of source names");
+
+    assert_x86_64_elf_entry(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 generated-name call shape",
+        "x86_generated_name_call_shape",
+        &bytes,
+        12,
+    );
+}
+
+#[test]
+#[cfg(all(unix, target_arch = "x86_64"))]
+fn x86_source_pack_codegen_executes_generated_module_bridge_fanout() {
+    let pkg = generated_ident(0x8c9d_4211, "pkg");
+    let math_mod = generated_ident(0x1974_aa31, "math");
+    let bridge_mod = generated_ident(0x5d21_00f3, "bridge");
+
+    let mut math_source = format!("module {pkg}::{math_mod};\n");
+    let mut bridge_source = format!("module {pkg}::{bridge_mod};\nimport {pkg}::{math_mod};\n");
+    let mut main_source = format!("module app::main;\nimport {pkg}::{bridge_mod};\nfn main() {{\n");
+    let mut expected_stdout = String::new();
+
+    for i in 0..9u32 {
+        let math_fn = generated_ident(0x4100_1000 + i * 17, "mf");
+        let bridge_fn = generated_ident(0x5200_2000 + i * 31, "bf");
+        let threshold = 9 + ((i * 7 + 3) % 23) as i32;
+        let bias = 1 + ((i * 5 + 4) % 13) as i32;
+        let right = 2 + ((i * 11 + 1) % 17) as i32;
+        let bonus = 3 + ((i * 13 + 2) % 19) as i32;
+        let input = 6 + ((i * 19 + 4) % 31) as i32;
+        let total = input + right;
+        let math_value = if total > threshold {
+            total - bias
+        } else {
+            total + bias
+        };
+        let bridge_value = math_value + bonus;
+        expected_stdout.push_str(&format!("{bridge_value}\n"));
+
+        math_source.push_str(&format!(
+            "pub fn {math_fn}(left: i32, right: i32) -> i32 {{\n    let total: i32 = left + right;\n    if (total > {threshold}) {{\n        return total - {bias};\n    }} else {{\n        return total + {bias};\n    }}\n}}\n"
+        ));
+        bridge_source.push_str(&format!(
+            "pub fn {bridge_fn}(value: i32) -> i32 {{\n    return {pkg}::{math_mod}::{math_fn}(value, {right}) + {bonus};\n}}\n"
+        ));
+        main_source.push_str(&format!(
+            "    print({pkg}::{bridge_mod}::{bridge_fn}({input}));\n"
+        ));
+    }
+    main_source.push_str("    return 0;\n}\n");
+
+    let bytes =
+        common::run_gpu_codegen_with_timeout("x86 generated module bridge fanout", move || {
+            pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&[
+                math_source.as_str(),
+                bridge_source.as_str(),
+                main_source.as_str(),
+            ]))
+        })
+        .expect("x86 source-pack codegen should allocate bridge call temporaries from HIR records");
+
+    assert_x86_64_elf_entry(&bytes);
+    let stdout = common::run_x86_64_elf(
+        "x86 generated module bridge fanout",
+        "x86_generated_module_bridge_fanout",
+        &bytes,
+    );
+    assert_eq!(stdout, expected_stdout);
+}
+
+fn generated_ident(seed: u32, prefix: &str) -> String {
+    let mut state = seed;
+    let mut ident = String::from(prefix);
+    for _ in 0..8 {
+        state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        let ch = b'a' + ((state >> 24) % 26) as u8;
+        ident.push(ch as char);
+    }
+    ident
 }
 
 #[test]
@@ -208,6 +374,24 @@ fn x86_source_codegen_emits_direct_elf_for_local_call_arg_return() {
         "x86_local_arg_direct_call_return",
         &bytes,
         7,
+    );
+}
+
+#[test]
+fn x86_source_codegen_emits_direct_elf_for_local_live_across_direct_call_return() {
+    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
+        "fn id(x: i32) -> i32 {\n    return x;\n}\nfn main() {\n    let left: i32 = 7 + 5;\n    let right: i32 = id(3);\n    return left + right;\n}\n",
+    ))
+    .expect("x86 codegen should preserve live local values across direct calls through call-save masks");
+
+    assert_x86_64_elf_entry(&bytes);
+    assert_x86_text_contains_direct_call(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 local live across direct call return",
+        "x86_local_live_across_direct_call_return",
+        &bytes,
+        15,
     );
 }
 
@@ -890,7 +1074,7 @@ fn x86_source_pack_codegen_executes_core_bool_unary_and_conversion_helpers() {
         ),
     ];
 
-    for (name, main_body, arg_bits, setcc_opcode, expected_status) in cases {
+    for (name, main_body, _arg_bits, _setcc_opcode, expected_status) in cases {
         let user_source = format!("module app::main;\nimport core::bool;\n{main_body}");
         let sources = [
             include_str!("../stdlib/core/bool.lani"),
@@ -902,18 +1086,6 @@ fn x86_source_pack_codegen_executes_core_bool_unary_and_conversion_helpers() {
             });
 
         assert_eq!(&bytes[0..4], b"\x7fELF");
-        assert_eq!(bytes[0x78], 0xbf, "main should load unary arg into edi");
-        assert_eq!(&bytes[0x79..0x7d], &arg_bits.to_le_bytes());
-        assert_eq!(bytes[0x7d], 0xe8, "main should call rel32 after arg setup");
-        assert_eq!(&bytes[0x7e..0x82], &9u32.to_le_bytes());
-        assert_eq!(&bytes[0x82..0x84], &[0x89, 0xc7]);
-        assert_eq!(&bytes[0x84..0x89], &[0xb8, 0x3c, 0, 0, 0]);
-        assert_eq!(&bytes[0x89..0x8b], &[0x0f, 0x05]);
-        assert_eq!(&bytes[0x8b..0x8d], &[0x89, 0xf8]);
-        assert_eq!(&bytes[0x8d..0x92], &[0x3d, 0, 0, 0, 0]);
-        assert_eq!(&bytes[0x92..0x95], &[0x0f, setcc_opcode, 0xc0]);
-        assert_eq!(&bytes[0x95..0x98], &[0x0f, 0xb6, 0xc0]);
-        assert_eq!(bytes[0x98], 0xc3);
 
         #[cfg(all(unix, target_arch = "x86_64"))]
         {
@@ -974,7 +1146,7 @@ fn x86_source_pack_codegen_executes_core_bool_terminal_param_branches() {
         ("to_i32_false", "false", 0u32, Some(0)),
     ];
 
-    for (name, arg_source, arg_bits, expected_status) in to_i32_cases {
+    for (name, arg_source, _arg_bits, expected_status) in to_i32_cases {
         let user_source = format!(
             "module app::main;\nimport core::bool;\nfn main() {{\n    return core::bool::to_i32({arg_source});\n}}\n"
         );
@@ -988,20 +1160,6 @@ fn x86_source_pack_codegen_executes_core_bool_terminal_param_branches() {
             });
 
         assert_eq!(&bytes[0..4], b"\x7fELF");
-        assert_eq!(bytes[0x78], 0xbf, "main should load condition into edi");
-        assert_eq!(&bytes[0x79..0x7d], &arg_bits.to_le_bytes());
-        assert_eq!(bytes[0x7d], 0xe8, "main should call rel32 after arg setup");
-        assert_eq!(&bytes[0x7e..0x82], &9u32.to_le_bytes());
-        assert_eq!(&bytes[0x82..0x84], &[0x89, 0xc7]);
-        assert_eq!(&bytes[0x84..0x89], &[0xb8, 0x3c, 0, 0, 0]);
-        assert_eq!(&bytes[0x89..0x8b], &[0x0f, 0x05]);
-        assert_eq!(&bytes[0x8b..0x8d], &[0x89, 0xf8]);
-        assert_eq!(&bytes[0x8d..0x92], &[0x3d, 0, 0, 0, 0]);
-        assert_eq!(&bytes[0x92..0x98], &[0x0f, 0x84, 0x0a, 0, 0, 0]);
-        assert_eq!(&bytes[0x98..0x9d], &[0xb8, 1, 0, 0, 0]);
-        assert_eq!(&bytes[0x9d..0xa2], &[0xe9, 5, 0, 0, 0]);
-        assert_eq!(&bytes[0xa2..0xa7], &[0xb8, 0, 0, 0, 0]);
-        assert_eq!(bytes[0xa7], 0xc3);
 
         #[cfg(all(unix, target_arch = "x86_64"))]
         {
@@ -1019,7 +1177,7 @@ fn x86_source_pack_codegen_executes_core_bool_terminal_param_branches() {
         ("select_false", "false", 0u32, Some(3)),
     ];
 
-    for (name, condition_source, condition_bits, expected_status) in select_cases {
+    for (name, condition_source, _condition_bits, expected_status) in select_cases {
         let user_source = format!(
             "module app::main;\nimport core::bool;\nfn main() {{\n    return core::bool::select_i32({condition_source}, 7, 3);\n}}\n"
         );
@@ -1033,24 +1191,6 @@ fn x86_source_pack_codegen_executes_core_bool_terminal_param_branches() {
             });
 
         assert_eq!(&bytes[0..4], b"\x7fELF");
-        assert_eq!(bytes[0x78], 0xbf, "main should load condition into edi");
-        assert_eq!(&bytes[0x79..0x7d], &condition_bits.to_le_bytes());
-        assert_eq!(bytes[0x7d], 0xbe, "main should load when_true into esi");
-        assert_eq!(&bytes[0x7e..0x82], &7u32.to_le_bytes());
-        assert_eq!(bytes[0x82], 0xba, "main should load when_false into edx");
-        assert_eq!(&bytes[0x83..0x87], &3u32.to_le_bytes());
-        assert_eq!(bytes[0x87], 0xe8, "main should call after three args");
-        assert_eq!(&bytes[0x88..0x8c], &9u32.to_le_bytes());
-        assert_eq!(&bytes[0x8c..0x8e], &[0x89, 0xc7]);
-        assert_eq!(&bytes[0x8e..0x93], &[0xb8, 0x3c, 0, 0, 0]);
-        assert_eq!(&bytes[0x93..0x95], &[0x0f, 0x05]);
-        assert_eq!(&bytes[0x95..0x97], &[0x89, 0xf8]);
-        assert_eq!(&bytes[0x97..0x9c], &[0x3d, 0, 0, 0, 0]);
-        assert_eq!(&bytes[0x9c..0xa2], &[0x0f, 0x84, 7, 0, 0, 0]);
-        assert_eq!(&bytes[0xa2..0xa4], &[0x89, 0xf0]);
-        assert_eq!(&bytes[0xa4..0xa9], &[0xe9, 2, 0, 0, 0]);
-        assert_eq!(&bytes[0xa9..0xab], &[0x89, 0xd0]);
-        assert_eq!(bytes[0xab], 0xc3);
 
         #[cfg(all(unix, target_arch = "x86_64"))]
         {
@@ -1090,10 +1230,13 @@ fn x86_explicit_source_pack_paths_emit_direct_elf_for_qualified_scalar_const_ret
     .expect("x86 explicit source-pack path codegen should use the GPU source-pack pipeline");
 
     assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(&bytes[0x78..0x7d], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(bytes[0x7d], 0xbf);
-    assert_eq!(&bytes[0x7e..0x82], &2_147_483_647u32.to_le_bytes());
-    assert_eq!(&bytes[0x82..0x84], &[0x0f, 0x05]);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 explicit source-pack qualified const return",
+        "x86_explicit_source_pack_const_return",
+        &bytes,
+        255,
+    );
 }
 
 #[test]
@@ -1154,16 +1297,14 @@ fn x86_source_codegen_emits_direct_elf_for_integer_add_return() {
     ))
     .expect("x86 codegen should emit direct ELF bytes for the first binary HIR slice");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(
-        u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-        0x400078
+    assert_x86_64_elf_entry(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 integer add return",
+        "x86_integer_add_return",
+        &bytes,
+        3,
     );
-    assert_eq!(&bytes[0x78..0x7d], &[0xb8, 1, 0, 0, 0]);
-    assert_eq!(&bytes[0x7d..0x82], &[0x05, 2, 0, 0, 0]);
-    assert_eq!(&bytes[0x82..0x84], &[0x89, 0xc7]);
-    assert_eq!(&bytes[0x84..0x89], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(&bytes[0x89..0x8b], &[0x0f, 0x05]);
 }
 
 #[test]
@@ -1220,11 +1361,14 @@ fn x86_source_codegen_emits_direct_elf_for_negative_integer_literal_return() {
     ))
     .expect("x86 codegen should lower a HIR unary signed literal into direct ELF bytes");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(&bytes[0x78..0x7d], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(bytes[0x7d], 0xbf);
-    assert_eq!(&bytes[0x7e..0x82], &u32::MAX.to_le_bytes());
-    assert_eq!(&bytes[0x82..0x84], &[0x0f, 0x05]);
+    assert_x86_64_elf_entry(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 negative integer literal return",
+        "x86_negative_integer_literal_return",
+        &bytes,
+        255,
+    );
 }
 
 #[test]
@@ -1234,11 +1378,14 @@ fn x86_source_codegen_emits_direct_elf_for_negative_local_return() {
     ))
     .expect("x86 codegen should lower a scalar local initialized from a HIR unary signed literal");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(&bytes[0x78..0x7d], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(bytes[0x7d], 0xbf);
-    assert_eq!(&bytes[0x7e..0x82], &(0u32.wrapping_sub(3)).to_le_bytes());
-    assert_eq!(&bytes[0x82..0x84], &[0x0f, 0x05]);
+    assert_x86_64_elf_entry(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 negative local return",
+        "x86_negative_local_return",
+        &bytes,
+        253,
+    );
 }
 
 #[test]
@@ -1248,11 +1395,14 @@ fn x86_source_codegen_emits_direct_elf_for_negated_local_return() {
     ))
     .expect("x86 codegen should lower HIR unary negation of a scalar local");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(&bytes[0x78..0x7d], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(bytes[0x7d], 0xbf);
-    assert_eq!(&bytes[0x7e..0x82], &(0u32.wrapping_sub(3)).to_le_bytes());
-    assert_eq!(&bytes[0x82..0x84], &[0x0f, 0x05]);
+    assert_x86_64_elf_entry(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 negated local return",
+        "x86_negated_local_return",
+        &bytes,
+        253,
+    );
 }
 
 #[test]
@@ -1262,16 +1412,14 @@ fn x86_source_codegen_emits_direct_elf_for_local_integer_add_return() {
     ))
     .expect("x86 codegen should lower one scalar local binary return into direct ELF bytes");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(
-        u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-        0x400078
+    assert_x86_64_elf_entry(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 local integer add return",
+        "x86_local_integer_add_return",
+        &bytes,
+        9,
     );
-    assert_eq!(&bytes[0x78..0x7d], &[0xb8, 7, 0, 0, 0]);
-    assert_eq!(&bytes[0x7d..0x82], &[0x05, 2, 0, 0, 0]);
-    assert_eq!(&bytes[0x82..0x84], &[0x89, 0xc7]);
-    assert_eq!(&bytes[0x84..0x89], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(&bytes[0x89..0x8b], &[0x0f, 0x05]);
 }
 
 #[test]
@@ -1281,12 +1429,9 @@ fn x86_source_codegen_emits_direct_elf_for_bool_and_return() {
     ))
     .expect("x86 codegen should lower bounded boolean and returns");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(&bytes[0x78..0x7d], &[0xb8, 1, 0, 0, 0]);
-    assert_eq!(&bytes[0x7d..0x82], &[0x25, 0, 0, 0, 0]);
-    assert_eq!(&bytes[0x82..0x84], &[0x89, 0xc7]);
-    assert_eq!(&bytes[0x84..0x89], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(&bytes[0x89..0x8b], &[0x0f, 0x05]);
+    assert_x86_64_elf_entry(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code("x86 bool and return", "x86_bool_and_return", &bytes, 0);
 }
 
 #[test]
@@ -1296,12 +1441,9 @@ fn x86_source_codegen_emits_direct_elf_for_bool_or_return() {
     ))
     .expect("x86 codegen should lower bounded boolean or returns");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(&bytes[0x78..0x7d], &[0xb8, 0, 0, 0, 0]);
-    assert_eq!(&bytes[0x7d..0x82], &[0x0d, 1, 0, 0, 0]);
-    assert_eq!(&bytes[0x82..0x84], &[0x89, 0xc7]);
-    assert_eq!(&bytes[0x84..0x89], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(&bytes[0x89..0x8b], &[0x0f, 0x05]);
+    assert_x86_64_elf_entry(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code("x86 bool or return", "x86_bool_or_return", &bytes, 1);
 }
 
 #[test]
@@ -1311,13 +1453,14 @@ fn x86_source_codegen_emits_direct_elf_for_negated_local_binary_return() {
     ))
     .expect("x86 codegen should lower HIR unary local atoms in binary returns");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(bytes[0x78], 0xb8);
-    assert_eq!(&bytes[0x79..0x7d], &(0u32.wrapping_sub(3)).to_le_bytes());
-    assert_eq!(&bytes[0x7d..0x82], &[0x05, 5, 0, 0, 0]);
-    assert_eq!(&bytes[0x82..0x84], &[0x89, 0xc7]);
-    assert_eq!(&bytes[0x84..0x89], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(&bytes[0x89..0x8b], &[0x0f, 0x05]);
+    assert_x86_64_elf_entry(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 negated local binary return",
+        "x86_negated_local_binary_return",
+        &bytes,
+        2,
+    );
 }
 
 #[test]
@@ -1327,16 +1470,14 @@ fn x86_source_codegen_emits_direct_elf_for_two_local_integer_add_return() {
     ))
     .expect("x86 codegen should lower two scalar literal locals into direct ELF bytes");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(
-        u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-        0x400078
+    assert_x86_64_elf_entry(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 two local integer add return",
+        "x86_two_local_integer_add_return",
+        &bytes,
+        9,
     );
-    assert_eq!(&bytes[0x78..0x7d], &[0xb8, 7, 0, 0, 0]);
-    assert_eq!(&bytes[0x7d..0x82], &[0x05, 2, 0, 0, 0]);
-    assert_eq!(&bytes[0x82..0x84], &[0x89, 0xc7]);
-    assert_eq!(&bytes[0x84..0x89], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(&bytes[0x89..0x8b], &[0x0f, 0x05]);
 }
 
 #[test]
@@ -1346,19 +1487,14 @@ fn x86_source_codegen_emits_direct_elf_for_terminal_if_else_return() {
     ))
     .expect("x86 codegen should lower one scalar terminal if/else into direct ELF bytes");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(
-        u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-        0x400078
+    assert_x86_64_elf_entry(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 terminal if else return",
+        "x86_terminal_if_else_return",
+        &bytes,
+        0,
     );
-    assert_eq!(&bytes[0x78..0x7d], &[0xb8, 4, 0, 0, 0]);
-    assert_eq!(&bytes[0x7d..0x82], &[0x3d, 3, 0, 0, 0]);
-    assert_eq!(&bytes[0x82..0x88], &[0x0f, 0x8e, 10, 0, 0, 0]);
-    assert_eq!(&bytes[0x88..0x8d], &[0xbf, 0, 0, 0, 0]);
-    assert_eq!(&bytes[0x8d..0x92], &[0xe9, 5, 0, 0, 0]);
-    assert_eq!(&bytes[0x92..0x97], &[0xbf, 1, 0, 0, 0]);
-    assert_eq!(&bytes[0x97..0x9c], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(&bytes[0x9c..0x9e], &[0x0f, 0x05]);
 }
 
 #[test]
@@ -1368,15 +1504,14 @@ fn x86_source_codegen_emits_direct_elf_for_terminal_if_else_bool_returns() {
     ))
     .expect("x86 codegen should lower HIR boolean literals in terminal branch arms");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(&bytes[0x78..0x7d], &[0xb8, 4, 0, 0, 0]);
-    assert_eq!(&bytes[0x7d..0x82], &[0x3d, 3, 0, 0, 0]);
-    assert_eq!(&bytes[0x82..0x88], &[0x0f, 0x8e, 10, 0, 0, 0]);
-    assert_eq!(&bytes[0x88..0x8d], &[0xbf, 1, 0, 0, 0]);
-    assert_eq!(&bytes[0x8d..0x92], &[0xe9, 5, 0, 0, 0]);
-    assert_eq!(&bytes[0x92..0x97], &[0xbf, 0, 0, 0, 0]);
-    assert_eq!(&bytes[0x97..0x9c], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(&bytes[0x9c..0x9e], &[0x0f, 0x05]);
+    assert_x86_64_elf_entry(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 terminal if else bool returns",
+        "x86_terminal_if_else_bool_returns",
+        &bytes,
+        1,
+    );
 }
 
 #[test]
@@ -1386,15 +1521,14 @@ fn x86_source_codegen_emits_direct_elf_for_terminal_if_else_negative_return() {
     ))
     .expect("x86 codegen should lower signed scalar atoms in terminal if/else arms");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(&bytes[0x78..0x7d], &[0xb8, 4, 0, 0, 0]);
-    assert_eq!(&bytes[0x7d..0x82], &[0x3d, 3, 0, 0, 0]);
-    assert_eq!(&bytes[0x82..0x88], &[0x0f, 0x8e, 10, 0, 0, 0]);
-    assert_eq!(&bytes[0x88..0x8d], &[0xbf, 0xff, 0xff, 0xff, 0xff]);
-    assert_eq!(&bytes[0x8d..0x92], &[0xe9, 5, 0, 0, 0]);
-    assert_eq!(&bytes[0x92..0x97], &[0xbf, 0, 0, 0, 0]);
-    assert_eq!(&bytes[0x97..0x9c], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(&bytes[0x9c..0x9e], &[0x0f, 0x05]);
+    assert_x86_64_elf_entry(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 terminal if else negative return",
+        "x86_terminal_if_else_negative_return",
+        &bytes,
+        255,
+    );
 }
 
 #[test]
@@ -1404,16 +1538,14 @@ fn x86_source_codegen_emits_direct_elf_for_abs_shaped_negated_local_branch() {
     ))
     .expect("x86 codegen should lower an abs-shaped terminal branch over a scalar local");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(bytes[0x78], 0xb8);
-    assert_eq!(&bytes[0x79..0x7d], &(0u32.wrapping_sub(4)).to_le_bytes());
-    assert_eq!(&bytes[0x7d..0x82], &[0x3d, 0, 0, 0, 0]);
-    assert_eq!(&bytes[0x82..0x88], &[0x0f, 0x8d, 10, 0, 0, 0]);
-    assert_eq!(&bytes[0x88..0x8d], &[0xbf, 4, 0, 0, 0]);
-    assert_eq!(&bytes[0x8d..0x92], &[0xe9, 5, 0, 0, 0]);
-    assert_eq!(&bytes[0x92..0x97], &[0xbf, 0xfc, 0xff, 0xff, 0xff]);
-    assert_eq!(&bytes[0x97..0x9c], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(&bytes[0x9c..0x9e], &[0x0f, 0x05]);
+    assert_x86_64_elf_entry(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 abs-shaped negated local branch",
+        "x86_abs_shaped_negated_local_branch",
+        &bytes,
+        4,
+    );
 }
 
 #[test]
@@ -1423,17 +1555,9 @@ fn x86_source_codegen_emits_direct_elf_for_comparison_return() {
     ))
     .expect("x86 codegen should lower one scalar comparison return into direct ELF bytes");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(
-        u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-        0x400078
-    );
-    assert_eq!(&bytes[0x78..0x7d], &[0xb8, 4, 0, 0, 0]);
-    assert_eq!(&bytes[0x7d..0x82], &[0x3d, 3, 0, 0, 0]);
-    assert_eq!(&bytes[0x82..0x85], &[0x0f, 0x9f, 0xc0]);
-    assert_eq!(&bytes[0x85..0x88], &[0x0f, 0xb6, 0xf8]);
-    assert_eq!(&bytes[0x88..0x8d], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(&bytes[0x8d..0x8f], &[0x0f, 0x05]);
+    assert_x86_64_elf_entry(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code("x86 comparison return", "x86_comparison_return", &bytes, 1);
 }
 
 #[test]
@@ -1443,14 +1567,14 @@ fn x86_source_codegen_emits_direct_elf_for_negated_local_comparison_return() {
     ))
     .expect("x86 codegen should lower HIR unary local atoms in comparison returns");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(bytes[0x78], 0xb8);
-    assert_eq!(&bytes[0x79..0x7d], &(0u32.wrapping_sub(3)).to_le_bytes());
-    assert_eq!(&bytes[0x7d..0x82], &[0x3d, 0, 0, 0, 0]);
-    assert_eq!(&bytes[0x82..0x85], &[0x0f, 0x9c, 0xc0]);
-    assert_eq!(&bytes[0x85..0x88], &[0x0f, 0xb6, 0xf8]);
-    assert_eq!(&bytes[0x88..0x8d], &[0xb8, 0x3c, 0, 0, 0]);
-    assert_eq!(&bytes[0x8d..0x8f], &[0x0f, 0x05]);
+    assert_x86_64_elf_entry(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 negated local comparison return",
+        "x86_negated_local_comparison_return",
+        &bytes,
+        1,
+    );
 }
 
 #[test]
@@ -1499,5 +1623,11 @@ fn x86_path_codegen_reads_existing_input_and_emits_elf() {
     .expect("x86 path codegen should read source and emit direct ELF bytes");
 
     assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(&bytes[0x7e..0x82], &0u32.to_le_bytes());
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 path codegen reads input",
+        "x86_path_codegen_reads_input",
+        &bytes,
+        0,
+    );
 }

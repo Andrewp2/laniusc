@@ -339,6 +339,7 @@ struct U32ScanBindGroups {
 #[allow(dead_code)]
 struct ModulePathState {
     n_blocks: u32,
+    record_n_blocks: u32,
     token_capacity: u32,
     record_family_bits: wgpu::Buffer,
     record_family_flag: wgpu::Buffer,
@@ -674,6 +675,8 @@ pub struct GpuTypeCheckHirItemBuffers<'a> {
     pub type_arg_start: &'a wgpu::Buffer,
     pub type_arg_count: &'a wgpu::Buffer,
     pub type_arg_next: &'a wgpu::Buffer,
+    pub type_alias_target_node: &'a wgpu::Buffer,
+    pub fn_return_type_node: &'a wgpu::Buffer,
     pub param_record: &'a wgpu::Buffer,
     pub expr_record: &'a wgpu::Buffer,
     pub expr_int_value: &'a wgpu::Buffer,
@@ -770,7 +773,10 @@ struct TypeCheckPasses {
     count_pair_max_dispatch_args: PassData,
     names_scatter_lexemes: PassData,
     names_radix_dispatch_args: PassData,
+    names_radix_byte_dispatch_args: PassData,
     names_radix_histogram: PassData,
+    names_radix_bucket_prefix_active: PassData,
+    names_radix_bucket_bases_active: PassData,
     names_radix_bucket_prefix: PassData,
     names_radix_bucket_bases: PassData,
     names_radix_scatter: PassData,

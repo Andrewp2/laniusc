@@ -2,7 +2,14 @@ use anyhow::Result;
 use encase::ShaderType;
 
 use crate::{
-    gpu::passes_core::{DispatchDim, InputElements, PassData},
+    gpu::passes_core::{
+        ComputePassBatch,
+        DispatchDim,
+        InputElements,
+        PassData,
+        compute_pass_batching_enabled,
+        validation_scopes_enabled,
+    },
     lexer::{Pass, buffers::GpuBuffers},
 };
 
@@ -66,6 +73,55 @@ pub fn record_all_passes(
     // Ensure flags_packed is zeroed so dfa_03 can write flags only at boundaries
     // and leave non-boundaries as 0 without per-byte stores.
     ctx.encoder.clear_buffer(&ctx.buffers.flags_packed, 0, None);
+
+    let can_batch = ctx.maybe_timer.is_none()
+        && ctx.maybe_dbg.is_none()
+        && ctx.bg_cache.is_some()
+        && compute_pass_batching_enabled()
+        && !validation_scopes_enabled();
+    if can_batch {
+        {
+            let bg_cache = ctx
+                .bg_cache
+                .as_deref_mut()
+                .expect("batching requires bind-group cache");
+            let mut batch = ComputePassBatch::begin(ctx.encoder, "lexer.dfa-local.batch");
+            batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.dfa_01, E1(n))?;
+        }
+        p.dfa_02.record_pass(&mut ctx, E1(nb_dfa))?;
+        {
+            let bg_cache = ctx
+                .bg_cache
+                .as_deref_mut()
+                .expect("batching requires bind-group cache");
+            bg_cache.remove(&p.dfa_03.data().shader_id);
+            let mut batch = ComputePassBatch::begin(ctx.encoder, "lexer.dfa-pair-local.batch");
+            batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.dfa_03, E1(n))?;
+            batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.pair_01, E1(n))?;
+        }
+        p.pair_02.record_pass(&mut ctx, E1(nb_sum))?;
+        {
+            let bg_cache = ctx
+                .bg_cache
+                .as_deref_mut()
+                .expect("batching requires bind-group cache");
+            bg_cache.remove(&p.pair_03.data().shader_id);
+            let mut batch = ComputePassBatch::begin(ctx.encoder, "lexer.emit.batch");
+            batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.pair_03, E1(n))?;
+            batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.compact_kept, E1(n))?;
+            batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.compact_all, E1(n))?;
+            batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.tokens_build, E1(n))?;
+            batch.record_pass_cached(
+                ctx.device,
+                ctx.buffers,
+                bg_cache,
+                &p.tokens_file_ids,
+                E1(n),
+            )?;
+        }
+        return Ok(());
+    }
+
     p.dfa_01.record_pass(&mut ctx, E1(n))?;
     p.dfa_02.record_pass(&mut ctx, E1(nb_dfa))?;
     if let Some(cache) = ctx.bg_cache.as_deref_mut() {

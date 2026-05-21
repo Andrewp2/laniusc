@@ -135,6 +135,7 @@ static const uint X86_ARG_PARAM_PTR = 3u;
 static const uint X86_AGG_SOURCE_LOCAL = 1u;
 static const uint X86_AGG_SOURCE_PARAM = 2u;
 static const uint MAX_X86_LOCAL_SLOTS = 65536u;
+static const uint MIN_X86_STACK_FRAME_BYTES = 16u;
 static const uint X86_CMP_LT = 1u;
 static const uint X86_CMP_GT = 2u;
 static const uint X86_CMP_LE = 3u;
@@ -161,6 +162,7 @@ static const uint X86_REG_EAX = 0u;
 static const uint X86_REG_ECX = 1u;
 static const uint X86_REG_EDX = 2u;
 static const uint X86_REG_EBX = 3u;
+static const uint X86_REG_ESP = 4u;
 static const uint X86_REG_ESI = 6u;
 static const uint X86_REG_EDI = 7u;
 static const uint X86_REG_R8D = 8u;
@@ -367,6 +369,31 @@ uint mov_r32_imm32_byte(uint dst, uint imm, uint byte_i)
     return 0u;
 }
 
+bool signed_i8_immediate(uint imm)
+{
+    return imm <= 127u || imm >= 0xffffff80u;
+}
+
+uint push_imm8_byte(uint imm, uint byte_i)
+{
+    if (byte_i == 0u) return 0x6au;
+    if (byte_i == 1u) return imm & 0xffu;
+    return 0u;
+}
+
+uint mov_r32_imm_compact_byte(uint dst, uint imm, uint byte_i)
+{
+    if (valid_reg(dst) && imm == 0u)
+        return xor_r32_r32_byte(dst, byte_i);
+    if (dst != X86_REG_ESP && signed_i8_immediate(imm))
+    {
+        if (byte_i < 2u)
+            return push_imm8_byte(imm, byte_i);
+        return pop_r64_byte(dst, byte_i - 2u);
+    }
+    return mov_r32_imm32_byte(dst, imm, byte_i);
+}
+
 uint mov_r32_r32_byte(uint dst, uint src, uint byte_i)
 {
     bool rex = needs_rex_modrm(src, dst);
@@ -399,11 +426,38 @@ uint local_mem_r32_size(uint reg, uint slot)
     return (disp <= 127u ? 4u : 7u) + (needs_rex_modrm(reg, 4u) ? 1u : 0u);
 }
 
-uint local_imm32_size(uint slot)
+uint local_zero_size(uint slot)
 {
     if (!valid_local_slot(slot))
         return 0u;
+    return local_slot_disp(slot) <= 127u ? 5u : 8u;
+}
+
+uint local_imm32_size(uint slot, uint imm)
+{
+    if (!valid_local_slot(slot))
+        return 0u;
+    if (imm == 0u)
+        return local_zero_size(slot);
     return local_slot_disp(slot) <= 127u ? 8u : 11u;
+}
+
+uint cmp_local_imm_size(uint slot, uint imm)
+{
+    if (!valid_local_slot(slot))
+        return 0u;
+    uint disp = local_slot_disp(slot);
+    if (signed_i8_immediate(imm))
+        return disp <= 127u ? 5u : 8u;
+    return disp <= 127u ? 8u : 11u;
+}
+
+uint cmp_ptr_slot_imm_size(uint base, uint ordinal, uint imm)
+{
+    uint disp = ordinal * 4u;
+    if (!valid_reg(base) || disp > 127u)
+        return 0u;
+    return (signed_i8_immediate(imm) ? 4u : 7u) + (needs_rex_modrm(7u, base) ? 1u : 0u);
 }
 
 uint load_local_r32_byte(uint dst, uint slot, uint byte_i)
@@ -542,6 +596,22 @@ uint store_ptr_slot_imm32_byte(uint base, uint ordinal, uint imm, uint byte_i)
     return 0u;
 }
 
+uint store_ptr_slot_zero_byte(uint base, uint ordinal, uint byte_i)
+{
+    bool rex = needs_rex_modrm(4u, base);
+    uint cursor = 0u;
+    if (rex)
+    {
+        if (byte_i == cursor) return rex_modrm(4u, base);
+        cursor += 1u;
+    }
+    if (byte_i == cursor) return 0x83u;
+    if (byte_i == cursor + 1u) return 0x60u | (base & 7u);
+    if (byte_i == cursor + 2u) return (ordinal * 4u) & 0xffu;
+    if (byte_i == cursor + 3u) return 0u;
+    return 0u;
+}
+
 uint cmp_ptr_slot_imm32_byte(uint base, uint ordinal, uint imm, uint byte_i)
 {
     bool rex = needs_rex_modrm(7u, base);
@@ -555,6 +625,24 @@ uint cmp_ptr_slot_imm32_byte(uint base, uint ordinal, uint imm, uint byte_i)
     if (byte_i == cursor + 1u) return 0x78u | (base & 7u);
     if (byte_i == cursor + 2u) return (ordinal * 4u) & 0xffu;
     if (byte_i < cursor + 7u) return le32_byte(imm, byte_i - cursor - 3u);
+    return 0u;
+}
+
+uint cmp_ptr_slot_imm_byte(uint base, uint ordinal, uint imm, uint byte_i)
+{
+    bool rex = needs_rex_modrm(7u, base);
+    bool imm8 = signed_i8_immediate(imm);
+    uint cursor = 0u;
+    if (rex)
+    {
+        if (byte_i == cursor) return rex_modrm(7u, base);
+        cursor += 1u;
+    }
+    if (byte_i == cursor) return imm8 ? 0x83u : 0x81u;
+    if (byte_i == cursor + 1u) return 0x78u | (base & 7u);
+    if (byte_i == cursor + 2u) return (ordinal * 4u) & 0xffu;
+    if (imm8 && byte_i == cursor + 3u) return imm & 0xffu;
+    if (!imm8 && byte_i < cursor + 7u) return le32_byte(imm, byte_i - cursor - 3u);
     return 0u;
 }
 
@@ -592,6 +680,20 @@ uint store_local_imm32_byte(uint slot, uint imm, uint byte_i)
     return 0u;
 }
 
+uint store_local_zero_byte(uint slot, uint byte_i)
+{
+    uint disp = local_slot_disp(slot);
+    bool disp8 = disp <= 127u;
+    if (byte_i == 0u) return 0x83u;
+    if (byte_i == 1u) return disp8 ? 0x64u : 0xa4u;
+    if (byte_i == 2u) return 0x24u;
+    if (disp8 && byte_i == 3u) return disp & 0xffu;
+    if (disp8 && byte_i == 4u) return 0u;
+    if (!disp8 && byte_i >= 3u && byte_i < 7u) return le32_byte(disp, byte_i - 3u);
+    if (!disp8 && byte_i == 7u) return 0u;
+    return 0u;
+}
+
 uint cmp_local_imm32_byte(uint slot, uint imm, uint byte_i)
 {
     uint disp = local_slot_disp(slot);
@@ -603,6 +705,23 @@ uint cmp_local_imm32_byte(uint slot, uint imm, uint byte_i)
     if (disp8 && byte_i < 8u) return le32_byte(imm, byte_i - 4u);
     if (!disp8 && byte_i >= 3u && byte_i < 7u) return le32_byte(disp, byte_i - 3u);
     if (!disp8 && byte_i < 11u) return le32_byte(imm, byte_i - 7u);
+    return 0u;
+}
+
+uint cmp_local_imm_byte(uint slot, uint imm, uint byte_i)
+{
+    uint disp = local_slot_disp(slot);
+    bool disp8 = disp <= 127u;
+    bool imm8 = signed_i8_immediate(imm);
+    if (byte_i == 0u) return imm8 ? 0x83u : 0x81u;
+    if (byte_i == 1u) return disp8 ? 0x7cu : 0xbcu;
+    if (byte_i == 2u) return 0x24u;
+    if (disp8 && byte_i == 3u) return disp & 0xffu;
+    if (disp8 && imm8 && byte_i == 4u) return imm & 0xffu;
+    if (disp8 && !imm8 && byte_i < 8u) return le32_byte(imm, byte_i - 4u);
+    if (!disp8 && byte_i >= 3u && byte_i < 7u) return le32_byte(disp, byte_i - 3u);
+    if (!disp8 && imm8 && byte_i == 7u) return imm & 0xffu;
+    if (!disp8 && !imm8 && byte_i < 11u) return le32_byte(imm, byte_i - 7u);
     return 0u;
 }
 
@@ -656,9 +775,9 @@ uint jge_target_from_byte(uint source_next, uint target, uint byte_i)
 
 uint for_array_branch_byte(uint inst_i, uint index_slot, uint len, uint target, uint byte_i)
 {
-    uint cmp_size = local_imm32_size(index_slot);
+    uint cmp_size = cmp_local_imm_size(index_slot, len);
     if (byte_i < cmp_size)
-        return cmp_local_imm32_byte(index_slot, len, byte_i);
+        return cmp_local_imm_byte(index_slot, len, byte_i);
     return jge_target_from_byte(
         x86_inst_byte_offset[inst_i] + cmp_size + 6u,
         target,
@@ -672,15 +791,15 @@ uint match_tag_branch_byte(uint inst_i, uint packed_source, uint payload, uint t
     uint cmp_size = 0u;
     if (source_kind == X86_AGG_SOURCE_LOCAL)
     {
-        cmp_size = local_imm32_size(payload);
+        cmp_size = cmp_local_imm_size(payload, tag);
         if (byte_i < cmp_size)
-            return cmp_local_imm32_byte(payload, tag, byte_i);
+            return cmp_local_imm_byte(payload, tag, byte_i);
     }
     else if (source_kind == X86_AGG_SOURCE_PARAM)
     {
-        cmp_size = 7u + (needs_rex_modrm(7u, payload) ? 1u : 0u);
+        cmp_size = cmp_ptr_slot_imm_size(payload, 0u, tag);
         if (byte_i < cmp_size)
-            return cmp_ptr_slot_imm32_byte(payload, 0u, tag, byte_i);
+            return cmp_ptr_slot_imm_byte(payload, 0u, tag, byte_i);
     }
     else
     {
@@ -752,6 +871,15 @@ uint sub_r64_rsp_imm32_byte(uint imm, uint byte_i)
     return 0u;
 }
 
+uint sub_r64_rsp_imm8_byte(uint imm, uint byte_i)
+{
+    if (byte_i == 0u) return 0x48u;
+    if (byte_i == 1u) return 0x83u;
+    if (byte_i == 2u) return 0xecu;
+    if (byte_i == 3u) return imm & 0xffu;
+    return 0u;
+}
+
 uint add_r64_rsp_imm32_byte(uint imm, uint byte_i)
 {
     if (byte_i == 0u) return 0x48u;
@@ -761,11 +889,40 @@ uint add_r64_rsp_imm32_byte(uint imm, uint byte_i)
     return 0u;
 }
 
+uint add_r64_rsp_imm8_byte(uint imm, uint byte_i)
+{
+    if (byte_i == 0u) return 0x48u;
+    if (byte_i == 1u) return 0x83u;
+    if (byte_i == 2u) return 0xc4u;
+    if (byte_i == 3u) return imm & 0xffu;
+    return 0u;
+}
+
+uint stack_frame_adjust_size(uint frame_size)
+{
+    if (frame_size == 0u)
+        return 0u;
+    return frame_size <= 127u ? 4u : 7u;
+}
+
+uint sub_r64_rsp_frame_byte(uint frame_size, uint byte_i)
+{
+    return frame_size <= 127u ? sub_r64_rsp_imm8_byte(frame_size, byte_i)
+                              : sub_r64_rsp_imm32_byte(frame_size, byte_i);
+}
+
+uint add_r64_rsp_frame_byte(uint frame_size, uint byte_i)
+{
+    return frame_size <= 127u ? add_r64_rsp_imm8_byte(frame_size, byte_i)
+                              : add_r64_rsp_imm32_byte(frame_size, byte_i);
+}
+
 uint entry_stack_jmp_byte(uint inst_i, uint target, uint frame_size, uint byte_i)
 {
-    if (byte_i < 7u)
-        return sub_r64_rsp_imm32_byte(frame_size, byte_i);
-    return jmp_target_byte(inst_i, target, byte_i - 7u);
+    uint adjust_size = stack_frame_adjust_size(frame_size);
+    if (byte_i < adjust_size)
+        return sub_r64_rsp_frame_byte(frame_size, byte_i);
+    return jmp_target_byte(inst_i, target, byte_i - adjust_size);
 }
 
 uint alu_opcode(uint op)
@@ -997,6 +1154,22 @@ uint mov_r32_imm32_size(uint dst)
     return 5u + (needs_rex_opcode_reg(dst) ? 1u : 0u);
 }
 
+uint xor_r32_self_size(uint reg)
+{
+    return valid_reg(reg) ? 2u + (needs_rex_modrm(reg, reg) ? 1u : 0u) : 0u;
+}
+
+uint mov_r32_imm_compact_size(uint dst, uint imm)
+{
+    if (!valid_reg(dst))
+        return 0u;
+    if (imm == 0u)
+        return xor_r32_self_size(dst);
+    if (dst != X86_REG_ESP && signed_i8_immediate(imm))
+        return 3u + (needs_rex_opcode_reg(dst) ? 1u : 0u);
+    return mov_r32_imm32_size(dst);
+}
+
 uint unary_macro_byte(uint op, uint dst, uint src, uint byte_i)
 {
     if (op == X86_OP_NEG_I32)
@@ -1089,9 +1262,10 @@ uint return_macro_byte(uint src, uint byte_i)
     if (byte_i < move_size)
         return mov_r32_r32_byte(X86_REG_EDI, src, byte_i);
     byte_i -= move_size;
-    if (byte_i < 5u)
-        return mov_r32_imm32_byte(X86_REG_EAX, 60u, byte_i);
-    byte_i -= 5u;
+    uint syscall_number_size = mov_r32_imm_compact_size(X86_REG_EAX, 60u);
+    if (byte_i < syscall_number_size)
+        return mov_r32_imm_compact_byte(X86_REG_EAX, 60u, byte_i);
+    byte_i -= syscall_number_size;
     if (byte_i == 0u) return 0x0fu;
     if (byte_i == 1u) return 0x05u;
     return 0u;
@@ -1099,12 +1273,14 @@ uint return_macro_byte(uint src, uint byte_i)
 
 uint exit_zero_macro_byte(uint byte_i)
 {
-    if (byte_i < 5u)
-        return mov_r32_imm32_byte(X86_REG_EDI, 0u, byte_i);
-    byte_i -= 5u;
-    if (byte_i < 5u)
-        return mov_r32_imm32_byte(X86_REG_EAX, 60u, byte_i);
-    byte_i -= 5u;
+    uint exit_code_size = mov_r32_imm_compact_size(X86_REG_EDI, 0u);
+    if (byte_i < exit_code_size)
+        return mov_r32_imm_compact_byte(X86_REG_EDI, 0u, byte_i);
+    byte_i -= exit_code_size;
+    uint syscall_number_size = mov_r32_imm_compact_size(X86_REG_EAX, 60u);
+    if (byte_i < syscall_number_size)
+        return mov_r32_imm_compact_byte(X86_REG_EAX, 60u, byte_i);
+    byte_i -= syscall_number_size;
     if (byte_i == 0u) return 0x0fu;
     if (byte_i == 1u) return 0x05u;
     return 0u;
@@ -1160,6 +1336,11 @@ uint call_saved_reg_for_slot(uint slot)
     return 0xffffffffu;
 }
 
+bool call_save_mask_has_slot(uint save_mask, uint slot)
+{
+    return ((save_mask >> slot) & 1u) != 0u;
+}
+
 uint print_saved_reg_for_slot(uint slot)
 {
     if (slot == 0u) return X86_REG_EAX;
@@ -1174,34 +1355,32 @@ uint print_saved_reg_for_slot(uint slot)
     return 0xffffffffu;
 }
 
-uint call_save_restore_size()
+uint call_save_restore_size(uint save_mask)
 {
     uint size = 0u;
     [unroll]
     for (uint slot = 0u; slot < 8u; slot += 1u)
-        size += push_pop_reg_size(call_saved_reg_for_slot(slot));
+        if (call_save_mask_has_slot(save_mask, slot))
+            size += push_pop_reg_size(call_saved_reg_for_slot(slot));
     return size;
 }
 
-uint call_save_stack_size()
+uint call_save_stack_size(uint save_mask)
 {
     uint size = 0u;
     [unroll]
     for (uint slot = 0u; slot < 8u; slot += 1u)
-        size += 8u;
+        if (call_save_mask_has_slot(save_mask, slot))
+            size += 8u;
     return size;
 }
 
-uint call_frame_size()
+uint call_frame_size(uint save_stack)
 {
     uint local_slots = x86_decl_layout_status[3u];
-    uint bytes = max((local_slots + 3u) * 4u, 128u);
-    return (bytes + 15u) & 0xfffffff0u;
-}
-
-uint stack_frame_adjust_size(uint frame_size)
-{
-    return frame_size == 0u ? 0u : 7u;
+    uint bytes = max((local_slots + 3u) * 4u, MIN_X86_STACK_FRAME_BYTES);
+    bytes = (bytes + 15u) & 0xfffffff0u;
+    return (save_stack & 8u) != 0u ? bytes + 8u : bytes;
 }
 
 bool call_saved_reg_slot(uint reg, out uint slot)
@@ -1219,30 +1398,31 @@ bool call_saved_reg_slot(uint reg, out uint slot)
     return false;
 }
 
-uint saved_call_reg_disp(uint slot)
+uint saved_call_reg_disp(uint slot, uint save_mask)
 {
     uint saved_after = 0u;
     [unroll]
     for (uint candidate = 0u; candidate < 8u; candidate += 1u)
     {
-        if (candidate > slot)
+        if (candidate > slot && call_save_mask_has_slot(save_mask, candidate))
             saved_after += 1u;
     }
     return saved_after * 8u;
 }
 
-uint load_saved_call_reg_r32_size(uint dst, uint src)
+uint load_saved_call_reg_r32_size(uint dst, uint src, uint save_mask)
 {
     uint slot = 0xffffffffu;
-    if (!valid_reg(dst) || !call_saved_reg_slot(src, slot))
+    if (!valid_reg(dst) || !call_saved_reg_slot(src, slot) ||
+        !call_save_mask_has_slot(save_mask, slot))
         return 0u;
     return 4u + (needs_rex_modrm(dst, 4u) ? 1u : 0u);
 }
 
-uint load_saved_call_reg_r32_byte(uint dst, uint src, uint byte_i)
+uint load_saved_call_reg_r32_byte(uint dst, uint src, uint save_mask, uint byte_i)
 {
     uint slot = 0xffffffffu;
-    if (!call_saved_reg_slot(src, slot))
+    if (!call_saved_reg_slot(src, slot) || !call_save_mask_has_slot(save_mask, slot))
         return 0u;
     bool rex = needs_rex_modrm(dst, 4u);
     uint cursor = 0u;
@@ -1254,7 +1434,7 @@ uint load_saved_call_reg_r32_byte(uint dst, uint src, uint byte_i)
     if (byte_i == cursor) return 0x8bu;
     if (byte_i == cursor + 1u) return 0x44u | ((dst & 7u) << 3u);
     if (byte_i == cursor + 2u) return 0x24u;
-    if (byte_i == cursor + 3u) return saved_call_reg_disp(slot) & 0xffu;
+    if (byte_i == cursor + 3u) return saved_call_reg_disp(slot, save_mask) & 0xffu;
     return 0u;
 }
 
@@ -1267,11 +1447,13 @@ uint print_save_restore_size()
     return size;
 }
 
-uint call_save_regs_byte(uint byte_i)
+uint call_save_regs_byte(uint save_mask, uint byte_i)
 {
     [unroll]
     for (uint slot = 0u; slot < 8u; slot += 1u)
     {
+        if (!call_save_mask_has_slot(save_mask, slot))
+            continue;
         uint reg = call_saved_reg_for_slot(slot);
         uint size = push_pop_reg_size(reg);
         if (byte_i < size)
@@ -1309,12 +1491,15 @@ uint print_restore_regs_byte(uint byte_i)
     return 0u;
 }
 
-uint call_restore_regs_byte(uint byte_i)
+uint call_restore_regs_byte(uint save_mask, uint byte_i)
 {
     [unroll]
     for (uint slot = 0u; slot < 8u; slot += 1u)
     {
-        uint reg = call_saved_reg_for_slot(7u - slot);
+        uint restore_slot = 7u - slot;
+        if (!call_save_mask_has_slot(save_mask, restore_slot))
+            continue;
+        uint reg = call_saved_reg_for_slot(restore_slot);
         uint size = push_pop_reg_size(reg);
         if (byte_i < size)
             return pop_r64_byte(reg, byte_i);
@@ -1453,13 +1638,13 @@ uint lea_arg_local_ptr_size(uint target, uint slot, uint stack_adjust)
     return disp <= 127u ? 5u : 8u;
 }
 
-uint mixed_arg_move_size(uint target, uint kind, uint payload, uint stack_adjust)
+uint mixed_arg_move_size(uint target, uint kind, uint payload, uint save_mask, uint stack_adjust)
 {
     if (kind == X86_ARG_SCALAR)
     {
         if (payload == target)
             return 0u;
-        uint saved_load_size = load_saved_call_reg_r32_size(target, payload);
+        uint saved_load_size = load_saved_call_reg_r32_size(target, payload, save_mask);
         return saved_load_size != 0u ? saved_load_size : mov_r32_r32_size(target, payload);
     }
     if (kind == X86_ARG_LOCAL_PTR)
@@ -1469,14 +1654,14 @@ uint mixed_arg_move_size(uint target, uint kind, uint payload, uint stack_adjust
     return 0u;
 }
 
-uint mixed_arg_move_byte(uint target, uint kind, uint payload, uint frame_adjust, uint byte_i)
+uint mixed_arg_move_byte(uint target, uint kind, uint payload, uint save_mask, uint frame_adjust, uint byte_i)
 {
     if (kind == X86_ARG_SCALAR)
     {
         if (payload == target)
             return 0u;
-        uint saved_load_size = load_saved_call_reg_r32_size(target, payload);
-        return saved_load_size != 0u ? load_saved_call_reg_r32_byte(target, payload, byte_i)
+        uint saved_load_size = load_saved_call_reg_r32_size(target, payload, save_mask);
+        return saved_load_size != 0u ? load_saved_call_reg_r32_byte(target, payload, save_mask, byte_i)
                                     : mov_r32_r32_byte(target, payload, byte_i);
     }
     if (kind == X86_ARG_LOCAL_PTR)
@@ -1486,18 +1671,18 @@ uint mixed_arg_move_byte(uint target, uint kind, uint payload, uint frame_adjust
     return 0u;
 }
 
-uint call_mixed_macro_byte(uint inst_i, uint target, uint info, uint packed, uint byte_i)
+uint call_mixed_macro_byte(uint inst_i, uint target, uint info, uint packed, uint save_mask, uint byte_i)
 {
     bool aggregate_return = (info & 1u) != 0u;
     uint dest = packed_u8_at(info, 1u);
     uint arg_count = packed_u8_at(info, 2u);
-    uint save_size = call_save_restore_size();
-    uint save_stack = call_save_stack_size();
-    uint frame_size = call_frame_size();
+    uint save_size = call_save_restore_size(save_mask);
+    uint save_stack = call_save_stack_size(save_mask);
+    uint frame_size = call_frame_size(save_stack);
     uint frame_adjust_size = stack_frame_adjust_size(frame_size);
 
     if (byte_i < save_size)
-        return call_save_regs_byte(byte_i);
+        return call_save_regs_byte(save_mask, byte_i);
     byte_i -= save_size;
 
     if (aggregate_return)
@@ -1516,15 +1701,15 @@ uint call_mixed_macro_byte(uint inst_i, uint target, uint info, uint packed, uin
             uint target_reg = mixed_target_reg(ordinal, aggregate_return);
             uint payload = selected_mixed_arg_payload(packed, ordinal);
             uint kind = selected_mixed_arg_kind(info, ordinal);
-            uint move_size = mixed_arg_move_size(target_reg, kind, payload, save_stack);
+            uint move_size = mixed_arg_move_size(target_reg, kind, payload, save_mask, save_stack);
             if (byte_i < move_size)
-                return mixed_arg_move_byte(target_reg, kind, payload, save_stack, byte_i);
+                return mixed_arg_move_byte(target_reg, kind, payload, save_mask, save_stack, byte_i);
             byte_i -= move_size;
         }
     }
 
     if (byte_i < frame_adjust_size)
-        return sub_r64_rsp_imm32_byte(frame_size, byte_i);
+        return sub_r64_rsp_frame_byte(frame_size, byte_i);
     byte_i -= frame_adjust_size;
 
     if (byte_i < 5u)
@@ -1539,11 +1724,11 @@ uint call_mixed_macro_byte(uint inst_i, uint target, uint info, uint packed, uin
     byte_i -= 5u;
 
     if (byte_i < frame_adjust_size)
-        return add_r64_rsp_imm32_byte(frame_size, byte_i);
+        return add_r64_rsp_frame_byte(frame_size, byte_i);
     byte_i -= frame_adjust_size;
 
     if (byte_i < save_size)
-        return call_restore_regs_byte(byte_i);
+        return call_restore_regs_byte(save_mask, byte_i);
     byte_i -= save_size;
 
     if (aggregate_return || dest == X86_REG_EAX)
@@ -1702,9 +1887,19 @@ uint print_i32_macro_byte(uint src, uint byte_i)
     return 0u;
 }
 
+uint inst_kind_tag(uint inst_i)
+{
+    return x86_inst_kind[inst_i] & 0xffu;
+}
+
+uint inst_call_save_mask(uint inst_i)
+{
+    return (x86_inst_kind[inst_i] >> 8u) & 0xffu;
+}
+
 uint instruction_byte(uint inst_i, uint byte_i)
 {
-    uint kind = x86_inst_kind[inst_i];
+    uint kind = inst_kind_tag(inst_i);
     if (kind == X86_INST_MOV_EAX_IMM32)
     {
         if (byte_i == 0u) return 0xb8u;
@@ -1956,7 +2151,7 @@ uint instruction_byte(uint inst_i, uint byte_i)
         if (byte_i == 1u) return 0xd6u;
     }
     if (kind == X86_INST_V_MOV_R32_IMM32)
-        return mov_r32_imm32_byte(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], byte_i);
+        return mov_r32_imm_compact_byte(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], byte_i);
     if (kind == X86_INST_V_MOV_R32_R32)
         return mov_r32_r32_byte(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], byte_i);
     if (kind == X86_INST_V_UNARY_R32)
@@ -2000,13 +2195,17 @@ uint instruction_byte(uint inst_i, uint byte_i)
             x86_inst_arg2[inst_i],
             byte_i);
     if (kind == X86_INST_V_STORE_LOCAL_IMM32)
-        return store_local_imm32_byte(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], byte_i);
+        return x86_inst_arg1[inst_i] == 0u
+                   ? store_local_zero_byte(x86_inst_arg0[inst_i], byte_i)
+                   : store_local_imm32_byte(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], byte_i);
     if (kind == X86_INST_V_STORE_RET_PTR_R32)
         return store_ptr_slot_r32_byte(X86_REG_EDI, x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], byte_i);
     if (kind == X86_INST_V_COPY_AGG_RET)
         return copy_agg_ret_byte(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i], byte_i);
     if (kind == X86_INST_V_STORE_RET_PTR_IMM32)
-        return store_ptr_slot_imm32_byte(X86_REG_EDI, x86_inst_arg1[inst_i], x86_inst_arg0[inst_i], byte_i);
+        return x86_inst_arg0[inst_i] == 0u
+                   ? store_ptr_slot_zero_byte(X86_REG_EDI, x86_inst_arg1[inst_i], byte_i)
+                   : store_ptr_slot_imm32_byte(X86_REG_EDI, x86_inst_arg1[inst_i], x86_inst_arg0[inst_i], byte_i);
     if (kind == X86_INST_V_LOAD_PTR_SLOT_R32)
         return load_ptr_slot_r32_byte(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i], byte_i);
     if (kind == X86_INST_V_MATCH_TAG_BRANCH)
@@ -2048,7 +2247,13 @@ uint instruction_byte(uint inst_i, uint byte_i)
             x86_inst_arg1[inst_i],
             byte_i);
     if (kind == X86_INST_V_CALL_MIXED_DIRECT)
-        return call_mixed_macro_byte(inst_i, x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i], byte_i);
+        return call_mixed_macro_byte(
+            inst_i,
+            x86_inst_arg0[inst_i],
+            x86_inst_arg1[inst_i],
+            x86_inst_arg2[inst_i],
+            inst_call_save_mask(inst_i),
+            byte_i);
     if (kind == X86_INST_V_ENTRY_STACK_JMP)
         return entry_stack_jmp_byte(inst_i, x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], byte_i);
     if (kind == X86_INST_V_EXIT_ZERO)

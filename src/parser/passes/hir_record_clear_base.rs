@@ -1,0 +1,91 @@
+use std::collections::HashMap;
+
+use crate::{
+    gpu::passes_core::{DispatchDim, Pass, PassData},
+    parser::buffers::ParserBuffers,
+};
+
+pub struct HirRecordClearBasePass {
+    data: PassData,
+}
+
+crate::gpu::passes_core::impl_static_shader_pass!(
+    HirRecordClearBasePass,
+    label: "hir_record_clear_base",
+    shader: "hir_record_clear_base"
+);
+
+impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirRecordClearBasePass {
+    const NAME: &'static str = "hir_record_clear_base";
+    const DIM: DispatchDim = DispatchDim::D1;
+
+    fn from_data(data: PassData) -> Self {
+        Self { data }
+    }
+
+    fn data(&self) -> &PassData {
+        &self.data
+    }
+
+    fn create_resource_map<'a>(
+        &self,
+        b: &'a ParserBuffers,
+    ) -> HashMap<String, wgpu::BindingResource<'a>> {
+        HashMap::from([
+            ("gClear".into(), b.hir_params.as_entire_binding()),
+            (
+                "ll1_status".into(),
+                if b.tree_count_uses_status && !b.tree_stream_uses_ll1 {
+                    b.projected_status.as_entire_binding()
+                } else {
+                    b.ll1_status.as_entire_binding()
+                },
+            ),
+            ("hir_item_kind".into(), b.hir_item_kind.as_entire_binding()),
+            (
+                "hir_item_name_token".into(),
+                b.hir_item_name_token.as_entire_binding(),
+            ),
+            (
+                "hir_item_namespace".into(),
+                b.hir_item_namespace.as_entire_binding(),
+            ),
+            (
+                "hir_item_visibility".into(),
+                b.hir_item_visibility.as_entire_binding(),
+            ),
+            (
+                "hir_item_path_start".into(),
+                b.hir_item_path_start.as_entire_binding(),
+            ),
+            (
+                "hir_item_path_end".into(),
+                b.hir_item_path_end.as_entire_binding(),
+            ),
+            (
+                "hir_item_import_target_kind".into(),
+                b.hir_item_import_target_kind.as_entire_binding(),
+            ),
+            (
+                "hir_type_alias_target_node".into(),
+                b.hir_type_alias_target_node.as_entire_binding(),
+            ),
+            (
+                "hir_fn_return_type_node".into(),
+                b.hir_fn_return_type_node.as_entire_binding(),
+            ),
+            (
+                "hir_param_record".into(),
+                b.hir_param_record.as_entire_binding(),
+            ),
+            (
+                "hir_expr_record".into(),
+                b.hir_expr_record.as_entire_binding(),
+            ),
+            (
+                "hir_stmt_record".into(),
+                b.hir_stmt_record.as_entire_binding(),
+            ),
+        ])
+    }
+}

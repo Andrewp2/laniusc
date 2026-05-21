@@ -124,12 +124,7 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     uint block_idx = linear_group_id(gid);
     uint lane = ltid.x;
     if (gParams.radix_byte_offset >= name_max_len_in[0u])
-    {
-        uint order_i = block_idx * 256u + lane;
-        if (order_i < active_name_count())
-            name_order_out[order_i] = name_order_in[order_i];
         return;
-    }
     stable_radix_scatter_block<uint, NameRadixScatterSource, NameOrderOutSink, 256>(
         block_idx,
         lane,

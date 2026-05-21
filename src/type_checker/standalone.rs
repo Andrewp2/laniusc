@@ -1085,6 +1085,14 @@ pub fn check_token_buffer_with_hir_on_gpu(
         empty_node_kind.as_entire_binding(),
     );
     resources.insert("hir_type_arg_next".into(), empty_parent.as_entire_binding());
+    resources.insert(
+        "hir_type_alias_target_node".into(),
+        empty_parent.as_entire_binding(),
+    );
+    resources.insert(
+        "hir_fn_return_type_node".into(),
+        empty_parent.as_entire_binding(),
+    );
     resources.insert("hir_param_record".into(), empty_parent.as_entire_binding());
     resources.insert("hir_expr_record".into(), empty_parent.as_entire_binding());
     resources.insert(

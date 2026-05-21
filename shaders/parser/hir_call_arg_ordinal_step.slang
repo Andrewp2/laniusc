@@ -16,6 +16,7 @@ StructuredBuffer<uint> ll1_status;
 StructuredBuffer<uint> hir_call_arg_owner_in;
 StructuredBuffer<uint> hir_call_arg_link_in;
 StructuredBuffer<uint> hir_call_arg_rank_in;
+StructuredBuffer<uint> hir_list_rank_node;
 
 RWStructuredBuffer<uint> hir_call_arg_owner_out;
 RWStructuredBuffer<uint> hir_call_arg_link_out;
@@ -44,7 +45,11 @@ bool valid_node(uint node)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = linear_thread_id(dtid);
+    uint row = linear_thread_id(dtid);
+    if (row >= gHirCall.n)
+        return;
+
+    uint node = hir_list_rank_node[row];
     if (node >= gHirCall.n)
         return;
 

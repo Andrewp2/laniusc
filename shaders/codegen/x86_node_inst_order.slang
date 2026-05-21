@@ -36,6 +36,7 @@ StructuredBuffer<uint> x86_node_inst_scan_block_prefix;
 RWStructuredBuffer<uint> x86_node_inst_order_record;
 RWStructuredBuffer<uint> x86_node_inst_same_end_bucket_count;
 RWStructuredBuffer<uint4> x86_node_inst_subtree_slot_bounds;
+RWStructuredBuffer<uint2> x86_node_inst_range_record;
 RWStructuredBuffer<uint> x86_node_inst_scan_input;
 RWStructuredBuffer<uint> x86_node_inst_order_status;
 
@@ -254,5 +255,6 @@ void main(uint3 tid: SV_DispatchThreadID)
         x86_node_tree_record[node].w,
         compact_order_count,
         n);
+    x86_node_inst_range_record[node] = uint2(slot, count.y);
     x86_node_inst_scan_input[slot] = count.y;
 }

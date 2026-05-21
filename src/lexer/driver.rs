@@ -321,8 +321,9 @@ impl GpuLexer {
 
         let use_scopes = crate::gpu::env::env_bool_truthy("LANIUS_VALIDATION_SCOPES", false);
 
-        let timers_on =
-            self.timers_supported && crate::gpu::env::env_bool_truthy("LANIUS_GPU_TIMING", false);
+        let timers_on = self.timers_supported
+            && (crate::gpu::env::env_bool_truthy("LANIUS_GPU_TIMING", false)
+                || crate::gpu::trace::enabled());
 
         let mut maybe_timer = if timers_on {
             Some(GpuTimer::new(&self.device, &self.queue, 128))
@@ -392,19 +393,14 @@ impl GpuLexer {
                 timer.resolve(&mut enc);
             }
 
-            if use_scopes {
-                self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-            }
-            crate::gpu::passes_core::submit_with_progress(
+            crate::gpu::passes_core::submit_with_optional_validation(
+                &self.device,
                 &self.queue,
                 "lex.batch-with-count",
                 enc.finish(),
+                use_scopes,
+                "lex batch",
             );
-            if use_scopes {
-                if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
-                    eprintln!("[wgpu submit] validation while submitting lex batch: {err:#?}");
-                }
-            }
 
             crate::gpu::passes_core::map_readback_for_progress(
                 &readback_tokens_count.slice(..),
@@ -413,7 +409,7 @@ impl GpuLexer {
             crate::gpu::passes_core::wait_for_map_progress(
                 &self.device,
                 "lex.count",
-                wgpu::PollType::Wait,
+                wgpu::PollType::wait_indefinitely(),
             );
             let count_bytes = readback_tokens_count.slice(..).get_mapped_range();
             let token_count_u32 = u32_from_first_4(&count_bytes) as usize;
@@ -434,19 +430,14 @@ impl GpuLexer {
                 // No count copy; still resolve timer queries for printing later.
                 timer.resolve(&mut enc);
             }
-            if use_scopes {
-                self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-            }
-            crate::gpu::passes_core::submit_with_progress(
+            crate::gpu::passes_core::submit_with_optional_validation(
+                &self.device,
                 &self.queue,
                 "lex.batch-without-count",
                 enc.finish(),
+                use_scopes,
+                "lex batch",
             );
-            if use_scopes {
-                if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
-                    eprintln!("[wgpu submit] validation while submitting lex batch: {err:#?}");
-                }
-            }
             // We intentionally skip token-count readback when readback is disabled.
             0usize
         };
@@ -508,7 +499,7 @@ impl GpuLexer {
         crate::gpu::passes_core::wait_for_map_progress(
             &self.device,
             "lex.tokens",
-            wgpu::PollType::Wait,
+            wgpu::PollType::wait_indefinitely(),
         );
 
         let mapped = readback_tokens_buffer
@@ -600,15 +591,14 @@ impl GpuLexer {
             record_all_passes(bufs.n, bufs.nb_dfa, bufs.nb_sum, ctx, &self.passes)?;
         }
 
-        if use_scopes {
-            self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-        }
-        crate::gpu::passes_core::submit_with_progress(&self.queue, "lex.resident", enc.finish());
-        if use_scopes {
-            if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
-                eprintln!("[wgpu submit] validation while submitting resident lex batch: {err:#?}");
-            }
-        }
+        crate::gpu::passes_core::submit_with_optional_validation(
+            &self.device,
+            &self.queue,
+            "lex.resident",
+            enc.finish(),
+            use_scopes,
+            "resident lex batch",
+        );
 
         let result = consume(&self.device, &self.queue, bufs);
 
@@ -680,19 +670,14 @@ impl GpuLexer {
             record_all_passes(bufs.n, bufs.nb_dfa, bufs.nb_sum, ctx, &self.passes)?;
         }
 
-        if use_scopes {
-            self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-        }
-        crate::gpu::passes_core::submit_with_progress(
+        crate::gpu::passes_core::submit_with_optional_validation(
+            &self.device,
             &self.queue,
             "lex.source-pack.resident",
             enc.finish(),
+            use_scopes,
+            "source-pack resident lex batch",
         );
-        if use_scopes && let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
-            eprintln!(
-                "[wgpu submit] validation while submitting source-pack resident lex batch: {err:#?}"
-            );
-        }
 
         let result = consume(&self.device, &self.queue, bufs);
 
@@ -756,7 +741,8 @@ impl GpuLexer {
                 label: Some("lex-source-pack-resident-recorded-enc"),
             });
         let timers_on = self.timers_supported
-            && crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_TIMING", false);
+            && (crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_TIMING", false)
+                || crate::gpu::trace::enabled());
         let mut maybe_timer = if timers_on {
             Some(GpuTimer::new(&self.device, &self.queue, 512))
         } else {
@@ -802,19 +788,14 @@ impl GpuLexer {
             timer.resolve(&mut enc);
         }
 
-        if use_scopes {
-            self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-        }
-        crate::gpu::passes_core::submit_with_progress(
+        let submit_timing = crate::gpu::passes_core::submit_with_optional_validation(
+            &self.device,
             &self.queue,
             "lex.source-pack.recorded-with-code",
             enc.finish(),
+            use_scopes,
+            "recorded source-pack resident lex batch",
         );
-        if use_scopes && let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
-            eprintln!(
-                "[wgpu submit] validation while submitting recorded source-pack resident lex batch: {err:#?}"
-            );
-        }
 
         let result = consume_after_submit(&self.device, &self.queue, bufs, recorded_more);
         if let Some(timer) = maybe_timer
@@ -824,6 +805,7 @@ impl GpuLexer {
             print_timer_trace(
                 &timer,
                 maybe_timer.as_ref().expect("timer exists").period_ns(),
+                submit_timing.gpu_anchor,
             );
         }
 
@@ -915,19 +897,14 @@ impl GpuLexer {
         });
         lex_encoder.copy_buffer_to_buffer(&bufs.token_count, 0, &token_count_readback, 0, 4);
 
-        if use_scopes {
-            self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-        }
-        crate::gpu::passes_core::submit_with_progress(
+        crate::gpu::passes_core::submit_with_optional_validation(
+            &self.device,
             &self.queue,
             "lex.source-pack.resident-count-boundary",
             lex_encoder.finish(),
+            use_scopes,
+            "source-pack resident lex count boundary",
         );
-        if use_scopes && let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
-            eprintln!(
-                "[wgpu submit] validation while submitting source-pack resident lex count boundary: {err:#?}"
-            );
-        }
 
         let count_slice = token_count_readback.slice(..);
         crate::gpu::passes_core::map_readback_for_progress(
@@ -937,7 +914,7 @@ impl GpuLexer {
         crate::gpu::passes_core::wait_for_map_progress(
             &self.device,
             "lex.source-pack.resident.count",
-            wgpu::PollType::Wait,
+            wgpu::PollType::wait_indefinitely(),
         );
         let count_bytes = count_slice.get_mapped_range();
         let token_count = u32_from_first_4(&count_bytes);
@@ -958,7 +935,8 @@ impl GpuLexer {
                     label: Some("compile-source-pack-after-token-count-enc"),
                 });
         let timers_on = self.timers_supported
-            && crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_TIMING", false);
+            && (crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_TIMING", false)
+                || crate::gpu::trace::enabled());
         let mut maybe_timer = if timers_on {
             Some(GpuTimer::new(&self.device, &self.queue, 512))
         } else {
@@ -984,19 +962,14 @@ impl GpuLexer {
             timer.resolve(&mut code_encoder);
         }
 
-        if use_scopes {
-            self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-        }
-        crate::gpu::passes_core::submit_with_progress(
+        let submit_timing = crate::gpu::passes_core::submit_with_optional_validation(
+            &self.device,
             &self.queue,
             "compile.source-pack.after-token-count",
             code_encoder.finish(),
+            use_scopes,
+            "source-pack compile after token count",
         );
-        if use_scopes && let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
-            eprintln!(
-                "[wgpu submit] validation while submitting source-pack compile after token count: {err:#?}"
-            );
-        }
         host_timer.stamp("compile.source-pack.submit");
 
         let result = consume_after_submit(&self.device, &self.queue, bufs, recorded_more);
@@ -1008,6 +981,7 @@ impl GpuLexer {
             print_timer_trace(
                 &stamps,
                 maybe_timer.as_ref().expect("timer exists").period_ns(),
+                submit_timing.gpu_anchor,
             );
         }
         host_timer.stamp("compile.source-pack.timer_readback");
@@ -1069,7 +1043,8 @@ impl GpuLexer {
                 label: Some("lex-resident-recorded-enc"),
             });
         let timers_on = self.timers_supported
-            && crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_TIMING", false);
+            && (crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_TIMING", false)
+                || crate::gpu::trace::enabled());
         let mut maybe_timer = if timers_on {
             Some(GpuTimer::new(&self.device, &self.queue, 512))
         } else {
@@ -1115,21 +1090,14 @@ impl GpuLexer {
             timer.resolve(&mut enc);
         }
 
-        if use_scopes {
-            self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-        }
-        crate::gpu::passes_core::submit_with_progress(
+        let submit_timing = crate::gpu::passes_core::submit_with_optional_validation(
+            &self.device,
             &self.queue,
             "lex.recorded-with-code",
             enc.finish(),
+            use_scopes,
+            "recorded resident lex batch",
         );
-        if use_scopes {
-            if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
-                eprintln!(
-                    "[wgpu submit] validation while submitting recorded resident lex batch: {err:#?}"
-                );
-            }
-        }
 
         let result = consume_after_submit(&self.device, &self.queue, bufs, recorded_more);
         if let Some(timer) = maybe_timer
@@ -1139,6 +1107,7 @@ impl GpuLexer {
             print_timer_trace(
                 &timer,
                 maybe_timer.as_ref().expect("timer exists").period_ns(),
+                submit_timing.gpu_anchor,
             );
         }
 
@@ -1227,28 +1196,21 @@ impl GpuLexer {
         });
         lex_encoder.copy_buffer_to_buffer(&bufs.token_count, 0, &token_count_readback, 0, 4);
 
-        if use_scopes {
-            self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-        }
-        crate::gpu::passes_core::submit_with_progress(
+        crate::gpu::passes_core::submit_with_optional_validation(
+            &self.device,
             &self.queue,
             "lex.resident-count-boundary",
             lex_encoder.finish(),
+            use_scopes,
+            "resident lex count boundary",
         );
-        if use_scopes {
-            if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
-                eprintln!(
-                    "[wgpu submit] validation while submitting resident lex count boundary: {err:#?}"
-                );
-            }
-        }
 
         let count_slice = token_count_readback.slice(..);
         crate::gpu::passes_core::map_readback_for_progress(&count_slice, "lex.resident.count");
         crate::gpu::passes_core::wait_for_map_progress(
             &self.device,
             "lex.resident.count",
-            wgpu::PollType::Wait,
+            wgpu::PollType::wait_indefinitely(),
         );
         let count_bytes = count_slice.get_mapped_range();
         let token_count = u32_from_first_4(&count_bytes);
@@ -1269,7 +1231,8 @@ impl GpuLexer {
                     label: Some("compile-after-token-count-enc"),
                 });
         let timers_on = self.timers_supported
-            && crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_TIMING", false);
+            && (crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_TIMING", false)
+                || crate::gpu::trace::enabled());
         let mut maybe_timer = if timers_on {
             Some(GpuTimer::new(&self.device, &self.queue, 512))
         } else {
@@ -1295,21 +1258,16 @@ impl GpuLexer {
             timer.resolve(&mut code_encoder);
         }
 
-        if use_scopes {
-            self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-        }
-        crate::gpu::passes_core::submit_with_progress(
+        let code_command_buffer = code_encoder.finish();
+        host_timer.stamp("compile.encoder_finish");
+        let submit_timing = crate::gpu::passes_core::submit_with_optional_validation(
+            &self.device,
             &self.queue,
             "compile.after-token-count",
-            code_encoder.finish(),
+            code_command_buffer,
+            use_scopes,
+            "compile after token count",
         );
-        if use_scopes {
-            if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
-                eprintln!(
-                    "[wgpu submit] validation while submitting compile after token count: {err:#?}"
-                );
-            }
-        }
         host_timer.stamp("compile.submit");
 
         let result = consume_after_submit(&self.device, &self.queue, bufs, recorded_more);
@@ -1321,6 +1279,7 @@ impl GpuLexer {
             print_timer_trace(
                 &stamps,
                 maybe_timer.as_ref().expect("timer exists").period_ns(),
+                submit_timing.gpu_anchor,
             );
         }
         host_timer.stamp("compile.timer_readback");
@@ -1659,7 +1618,7 @@ fn read_resident_tokens(
     crate::gpu::passes_core::wait_for_map_progress(
         device,
         "lex.source-pack.count",
-        wgpu::PollType::Wait,
+        wgpu::PollType::wait_indefinitely(),
     );
     let count_bytes = count_slice.get_mapped_range();
     let token_count = u32_from_first_4(&count_bytes) as usize;
@@ -1691,7 +1650,7 @@ fn read_resident_tokens(
     crate::gpu::passes_core::wait_for_map_progress(
         device,
         "lex.source-pack.tokens",
-        wgpu::PollType::Wait,
+        wgpu::PollType::wait_indefinitely(),
     );
     let mapped = tokens_slice.get_mapped_range();
     let tokens = read_tokens_from_mapped(&mapped, token_count).map_err(anyhow::Error::msg)?;
@@ -1700,7 +1659,7 @@ fn read_resident_tokens(
     Ok(tokens)
 }
 
-fn print_timer_trace(stamps: &[(String, u64)], period_ns: f32) {
+fn print_timer_trace(stamps: &[(String, u64)], period_ns: f32, gpu_anchor: std::time::Instant) {
     if stamps.len() < 2 {
         return;
     }
@@ -1708,20 +1667,30 @@ fn print_timer_trace(stamps: &[(String, u64)], period_ns: f32) {
         .ok()
         .and_then(|value| value.parse::<f64>().ok())
         .unwrap_or(MINIMUM_TIME_TO_NOT_ELIDE_MS);
+    let print_enabled = crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_TIMING", false)
+        || crate::gpu::env::env_bool_truthy("LANIUS_GPU_TIMING", false);
     let mut last = stamps[0].1;
     let mut total = 0.0f64;
     for (label, value) in stamps.iter().skip(1) {
         let dt_ms = value.saturating_sub(last) as f64 * period_ns as f64 / 1_000_000.0;
+        let start_ms = total;
         total += dt_ms;
-        if dt_ms >= min_ms {
+        if print_enabled && dt_ms >= min_ms {
             println!("[gpu_compile_timer] {label}: {dt_ms:.3}ms (total {total:.3}ms)");
         }
+        let lane = if label.starts_with("x86.") {
+            "gpu.x86"
+        } else {
+            "gpu.frontend"
+        };
+        crate::gpu::trace::record_gpu_span(lane, label, gpu_anchor, start_ms, dt_ms);
         last = *value;
     }
 }
 
 struct HostCompileTimer {
-    enabled: bool,
+    print_enabled: bool,
+    trace_enabled: bool,
     start: std::time::Instant,
     last: std::time::Instant,
 }
@@ -1730,20 +1699,29 @@ impl HostCompileTimer {
     fn new() -> Self {
         let now = std::time::Instant::now();
         Self {
-            enabled: crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false),
+            print_enabled: crate::gpu::env::env_bool_truthy(
+                "LANIUS_GPU_COMPILE_HOST_TIMING",
+                false,
+            ),
+            trace_enabled: crate::gpu::trace::enabled(),
             start: now,
             last: now,
         }
     }
 
     fn stamp(&mut self, label: &str) {
-        if !self.enabled {
+        if !self.print_enabled && !self.trace_enabled {
             return;
         }
         let now = std::time::Instant::now();
         let dt_ms = now.duration_since(self.last).as_secs_f64() * 1000.0;
         let total_ms = now.duration_since(self.start).as_secs_f64() * 1000.0;
-        println!("[gpu_compile_host_timer] {label}: {dt_ms:.3}ms (total {total_ms:.3}ms)");
+        if self.print_enabled {
+            println!("[gpu_compile_host_timer] {label}: {dt_ms:.3}ms (total {total_ms:.3}ms)");
+        }
+        if self.trace_enabled {
+            crate::gpu::trace::record_host_span("host.lexer", label, self.last, now);
+        }
         self.last = now;
     }
 }

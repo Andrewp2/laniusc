@@ -5,7 +5,7 @@ edition = "2024"
 default-run = "laniusc"
 
 [dependencies]
-wgpu = { version = "26.0.1", features = ["spirv"] }
+wgpu = { version = "29.0.3", features = ["spirv"] }
 
 anyhow = "1.0"
 encase = "0.11.1"

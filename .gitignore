@@ -1,3 +1,4 @@
 /target
 /fuzz-cases
 .VSCodeCounter/
+/traces/

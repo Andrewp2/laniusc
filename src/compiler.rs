@@ -6,7 +6,7 @@ use crate::{
     codegen::{wasm, x86},
     gpu::{
         device::{self, GpuDevice},
-        timer::{GpuTimer, MINIMUM_TIME_TO_NOT_ELIDE_MS},
+        timer::GpuTimer,
     },
     lexer::driver::GpuLexer,
     parser::{
@@ -52,6 +52,42 @@ pub struct GpuLiveCapacityEstimateResult {
     pub semantic_hir_count: u32,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct GpuCompilerBackends {
+    pub wasm: bool,
+    pub x86: bool,
+}
+
+impl GpuCompilerBackends {
+    pub const fn all() -> Self {
+        Self {
+            wasm: true,
+            x86: true,
+        }
+    }
+
+    pub const fn frontend_only() -> Self {
+        Self {
+            wasm: false,
+            x86: false,
+        }
+    }
+
+    pub const fn wasm_only() -> Self {
+        Self {
+            wasm: true,
+            x86: false,
+        }
+    }
+
+    pub const fn x86_only() -> Self {
+        Self {
+            wasm: false,
+            x86: true,
+        }
+    }
+}
+
 pub struct GpuCompiler<'gpu> {
     gpu: &'gpu GpuDevice,
     lexer: GpuLexer,
@@ -59,8 +95,8 @@ pub struct GpuCompiler<'gpu> {
     parse_tables: PrecomputedParseTables,
     type_checker: gpu_type_checker::GpuTypeChecker,
     resident_pipeline_lock: Mutex<()>,
-    wasm_generator: OnceLock<Result<wasm::GpuWasmCodeGenerator, String>>,
-    x86_generator: OnceLock<Result<x86::GpuX86CodeGenerator, String>>,
+    wasm_generator: Result<Box<wasm::GpuWasmCodeGenerator>, String>,
+    x86_generator: Result<Box<x86::GpuX86CodeGenerator>, String>,
 }
 
 impl GpuCompiler<'static> {
@@ -71,22 +107,69 @@ impl GpuCompiler<'static> {
 
 impl<'gpu> GpuCompiler<'gpu> {
     pub async fn new_with_device(gpu: &'gpu GpuDevice) -> Result<Self, CompileError> {
+        Self::new_with_device_and_backends(gpu, GpuCompilerBackends::all()).await
+    }
+
+    pub async fn new_with_device_and_backends(
+        gpu: &'gpu GpuDevice,
+        backends: GpuCompilerBackends,
+    ) -> Result<Self, CompileError> {
+        let mut host_timer = CompilerHostTimer::new("compiler.init");
+        host_timer.pipeline_cache_size(gpu, "start");
         let lexer = GpuLexer::new_with_device(gpu)
             .await
             .map_err(|err| CompileError::GpuFrontend(format!("initialize GPU lexer: {err}")))?;
+        host_timer.stamp("lexer");
+        host_timer.pipeline_cache_size(gpu, "after_lexer");
         let parser = GpuParser::new_with_device(gpu)
             .await
             .map_err(|err| CompileError::GpuFrontend(format!("initialize GPU parser: {err}")))?;
+        host_timer.stamp("parser");
+        host_timer.pipeline_cache_size(gpu, "after_parser");
         let parse_tables =
             PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
                 .map_err(|err| {
                     CompileError::GpuFrontend(format!("load GPU parse tables: {err}"))
                 })?;
+        host_timer.stamp("parse_tables");
         let type_checker =
             gpu_type_checker::GpuTypeChecker::new_with_device(gpu).map_err(|err| {
                 CompileError::GpuFrontend(format!("initialize GPU type checker: {err}"))
             })?;
-        gpu.persist_pipeline_cache();
+        host_timer.stamp("type_checker");
+        host_timer.pipeline_cache_size(gpu, "after_type_checker");
+        let wasm_generator = if backends.wasm {
+            let generator = wasm::GpuWasmCodeGenerator::new_with_device(gpu)
+                .map(Box::new)
+                .map_err(|err| err.to_string());
+            if let Err(err) = &generator {
+                log::warn!(
+                    "preinitializing GPU WASM code generator failed; WASM compilation will report this error when used: {err}"
+                );
+            }
+            host_timer.stamp("wasm_generator");
+            host_timer.pipeline_cache_size(gpu, "after_wasm_generator");
+            generator
+        } else {
+            host_timer.stamp("wasm_generator.skipped");
+            Err("GPU WASM code generator was not initialized for this compiler".into())
+        };
+        let x86_generator = if backends.x86 {
+            let generator = x86::GpuX86CodeGenerator::new_with_device(gpu)
+                .map(Box::new)
+                .map_err(|err| err.to_string());
+            if let Err(err) = &generator {
+                log::warn!(
+                    "preinitializing GPU x86 code generator failed; x86 compilation will report this error when used: {err}"
+                );
+            }
+            host_timer.stamp("x86_generator");
+            host_timer.pipeline_cache_size(gpu, "after_x86_generator");
+            generator
+        } else {
+            host_timer.stamp("x86_generator.skipped");
+            Err("GPU x86 code generator was not initialized for this compiler".into())
+        };
         Ok(Self {
             gpu,
             lexer,
@@ -94,8 +177,8 @@ impl<'gpu> GpuCompiler<'gpu> {
             parse_tables,
             type_checker,
             resident_pipeline_lock: Mutex::new((), false),
-            wasm_generator: OnceLock::new(),
-            x86_generator: OnceLock::new(),
+            wasm_generator,
+            x86_generator,
         })
     }
 
@@ -289,6 +372,10 @@ impl<'gpu> GpuCompiler<'gpu> {
                                             type_arg_start: &parse_bufs.hir_type_arg_start,
                                             type_arg_count: &parse_bufs.hir_type_arg_count,
                                             type_arg_next: &parse_bufs.hir_type_arg_next,
+                                            type_alias_target_node: &parse_bufs
+                                                .hir_type_alias_target_node,
+                                            fn_return_type_node: &parse_bufs
+                                                .hir_fn_return_type_node,
                                             param_record: &parse_bufs.hir_param_record,
                                             expr_record: &parse_bufs.hir_expr_record,
                                             expr_int_value: &parse_bufs.hir_expr_int_value,
@@ -465,6 +552,10 @@ impl<'gpu> GpuCompiler<'gpu> {
                                             type_arg_start: &parse_bufs.hir_type_arg_start,
                                             type_arg_count: &parse_bufs.hir_type_arg_count,
                                             type_arg_next: &parse_bufs.hir_type_arg_next,
+                                            type_alias_target_node: &parse_bufs
+                                                .hir_type_alias_target_node,
+                                            fn_return_type_node: &parse_bufs
+                                                .hir_fn_return_type_node,
                                             param_record: &parse_bufs.hir_param_record,
                                             expr_record: &parse_bufs.hir_expr_record,
                                             expr_int_value: &parse_bufs.hir_expr_int_value,
@@ -658,6 +749,10 @@ impl<'gpu> GpuCompiler<'gpu> {
                                             type_arg_start: &parse_bufs.hir_type_arg_start,
                                             type_arg_count: &parse_bufs.hir_type_arg_count,
                                             type_arg_next: &parse_bufs.hir_type_arg_next,
+                                            type_alias_target_node: &parse_bufs
+                                                .hir_type_alias_target_node,
+                                            fn_return_type_node: &parse_bufs
+                                                .hir_fn_return_type_node,
                                             param_record: &parse_bufs.hir_param_record,
                                             expr_record: &parse_bufs.hir_expr_record,
                                             expr_int_value: &parse_bufs.hir_expr_int_value,
@@ -966,6 +1061,10 @@ impl<'gpu> GpuCompiler<'gpu> {
                                             type_arg_start: &parse_bufs.hir_type_arg_start,
                                             type_arg_count: &parse_bufs.hir_type_arg_count,
                                             type_arg_next: &parse_bufs.hir_type_arg_next,
+                                            type_alias_target_node: &parse_bufs
+                                                .hir_type_alias_target_node,
+                                            fn_return_type_node: &parse_bufs
+                                                .hir_fn_return_type_node,
                                             param_record: &parse_bufs.hir_param_record,
                                             expr_record: &parse_bufs.hir_expr_record,
                                             expr_int_value: &parse_bufs.hir_expr_int_value,
@@ -1189,31 +1288,15 @@ impl<'gpu> GpuCompiler<'gpu> {
 
     fn wasm_generator(&self) -> Result<&wasm::GpuWasmCodeGenerator, CompileError> {
         trace_wasm_compile("wasm.generator");
-        self.wasm_generator
-            .get_or_init(|| {
-                let generator = wasm::GpuWasmCodeGenerator::new_with_device(self.gpu)
-                    .map_err(|err| err.to_string())?;
-                self.gpu.persist_pipeline_cache();
-                Ok(generator)
-            })
-            .as_ref()
-            .map_err(|err| {
-                CompileError::GpuCodegen(format!("initialize GPU WASM code generator: {err}"))
-            })
+        self.wasm_generator.as_deref().map_err(|err| {
+            CompileError::GpuCodegen(format!("initialize GPU WASM code generator: {err}"))
+        })
     }
 
     fn x86_generator(&self) -> Result<&x86::GpuX86CodeGenerator, CompileError> {
-        self.x86_generator
-            .get_or_init(|| {
-                let generator = x86::GpuX86CodeGenerator::new_with_device(self.gpu)
-                    .map_err(|err| err.to_string())?;
-                self.gpu.persist_pipeline_cache();
-                Ok(generator)
-            })
-            .as_ref()
-            .map_err(|err| {
-                CompileError::GpuCodegen(format!("initialize GPU x86 code generator: {err}"))
-            })
+        self.x86_generator.as_deref().map_err(|err| {
+            CompileError::GpuCodegen(format!("initialize GPU x86 code generator: {err}"))
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1225,6 +1308,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         source_len: u32,
         token_capacity: u32,
         x86_hir_node_count: u32,
+        x86_inst_hir_node_count: u32,
         parse_bufs: &ParserBuffers,
         mut timer: Option<&mut GpuTimer>,
     ) -> Result<x86::RecordedX86Codegen, CompileError> {
@@ -1239,6 +1323,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         source_len,
                         token_capacity,
                         x86_hir_node_count,
+                        x86_inst_hir_node_count,
                         hir_status,
                         &parse_bufs.tree_active_dispatch_args,
                         &parse_bufs.hir_kind,
@@ -1343,95 +1428,6 @@ impl<'gpu> GpuCompiler<'gpu> {
             .ok_or_else(|| CompileError::GpuCodegen("GPU type metadata buffers missing".into()))?
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn record_and_finish_x86_after_frontend(
-        &self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        source_len: u32,
-        token_capacity: u32,
-        parser_tree_capacity: u32,
-        parser_emit_len: u32,
-        encoder_label: &'static str,
-        submit_label: &'static str,
-        validation_label: &'static str,
-    ) -> Result<Vec<u8>, CompileError> {
-        let x86_hir_node_count = parser_emit_len.max(1).min(parser_tree_capacity);
-        let mut host_timer = CompilerHostTimer::new("compiler.x86.second_submission");
-        let timers_on = self.gpu.timers_supported
-            && crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_TIMING", false);
-        let mut x86_timer = if timers_on {
-            Some(GpuTimer::new(device, queue, 128))
-        } else {
-            None
-        };
-        host_timer.stamp("timer_setup");
-        let x86_check = self
-            .parser
-            .with_current_resident_buffers_with_tree_capacity(
-                token_capacity,
-                &self.parse_tables,
-                parser_tree_capacity,
-                |parse_bufs| {
-                    let mut x86_encoder =
-                        device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some(encoder_label),
-                        });
-                    if let Some(timer) = x86_timer.as_mut() {
-                        timer.stamp(&mut x86_encoder, "x86.submit.start");
-                    }
-                    let x86_check = self.record_x86_from_parse_buffers(
-                        device,
-                        queue,
-                        &mut x86_encoder,
-                        source_len,
-                        token_capacity,
-                        x86_hir_node_count,
-                        parse_bufs,
-                        x86_timer.as_mut(),
-                    )?;
-                    host_timer.stamp("record_x86");
-                    if let Some(timer) = x86_timer.as_mut() {
-                        timer.stamp(&mut x86_encoder, "x86.recorded");
-                        timer.resolve(&mut x86_encoder);
-                    }
-                    host_timer.stamp("resolve_timer");
-                    let use_scopes =
-                        crate::gpu::env::env_bool_truthy("LANIUS_VALIDATION_SCOPES", false);
-                    if use_scopes {
-                        device.push_error_scope(wgpu::ErrorFilter::Validation);
-                    }
-                    crate::gpu::passes_core::submit_with_progress(
-                        queue,
-                        submit_label,
-                        x86_encoder.finish(),
-                    );
-                    if use_scopes && let Some(err) = pollster::block_on(device.pop_error_scope()) {
-                        eprintln!(
-                            "[wgpu submit] validation while submitting {validation_label}: {err:#?}"
-                        );
-                    }
-                    host_timer.stamp("submit_x86");
-                    Ok::<_, CompileError>(x86_check)
-                },
-            );
-        host_timer.stamp("resident_reborrow");
-        x86_check.and_then(|x86_check| {
-            let out = self
-                .x86_generator()?
-                .finish_recorded_x86(device, queue, &x86_check)
-                .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
-            host_timer.stamp("finish_x86_output");
-            if let Some(timer) = x86_timer.as_ref()
-                && let Some(stamps) = timer.try_read(device)
-            {
-                print_compiler_timer_trace(&stamps, timer.period_ns());
-            }
-            host_timer.stamp("read_x86_timer");
-            Ok(out)
-        })
-    }
-
     pub async fn compile_source_to_x86_64(&self, src: &str) -> Result<Vec<u8>, CompileError> {
         let src = prepare_source_for_gpu_codegen(src)?;
         self.compile_expanded_source_to_x86_64(&src).await
@@ -1522,6 +1518,10 @@ impl<'gpu> GpuCompiler<'gpu> {
                                             type_arg_start: &parse_bufs.hir_type_arg_start,
                                             type_arg_count: &parse_bufs.hir_type_arg_count,
                                             type_arg_next: &parse_bufs.hir_type_arg_next,
+                                            type_alias_target_node: &parse_bufs
+                                                .hir_type_alias_target_node,
+                                            fn_return_type_node: &parse_bufs
+                                                .hir_fn_return_type_node,
                                             param_record: &parse_bufs.hir_param_record,
                                             expr_record: &parse_bufs.hir_expr_record,
                                             expr_int_value: &parse_bufs.hir_expr_int_value,
@@ -1606,29 +1606,32 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 if let Some(timer) = timer.as_deref_mut() {
                                     timer.stamp(encoder, "typecheck.done");
                                 }
-                                Ok::<_, CompileError>(recorded)
+                                let x86_hir_node_count = parser_tree_capacity.max(1);
+                                let x86_check = self.record_x86_from_parse_buffers(
+                                    device,
+                                    queue,
+                                    encoder,
+                                    bufs.n,
+                                    token_capacity,
+                                    x86_hir_node_count,
+                                    x86_hir_node_count,
+                                    parse_bufs,
+                                    timer.as_deref_mut(),
+                                )?;
+                                host_timer.stamp("x86_recorded");
+                                Ok::<_, CompileError>((recorded, x86_check))
                             },
                         )
                         .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
                     host_timer.stamp("parser_typecheck_recorded");
-                    let type_check = type_check?;
-                    Ok((
-                        parser_check,
-                        type_check,
-                        token_capacity,
-                        parser_tree_capacity,
-                        bufs.n,
-                    ))
+                    let (type_check, x86_check) = type_check?;
+                    Ok((parser_check, type_check, x86_check))
                 },
-                |device,
-                 queue,
-                 _bufs,
-                 (parser_check, type_check, token_capacity, parser_tree_capacity, source_len)| {
+                |device, queue, _bufs, (parser_check, type_check, x86_check)| {
                     let mut host_timer = CompilerHostTimer::new("compiler.x86.source_pack.finish");
                     self.x86_generator()?;
                     host_timer.stamp("x86_generator_ready");
-                    let parser_result = self
-                        .parser
+                    self.parser
                         .finish_recorded_resident_ll1_hir_check_result(&parser_check)
                         .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
                     host_timer.stamp("parser_finish");
@@ -1636,17 +1639,10 @@ impl<'gpu> GpuCompiler<'gpu> {
                         .finish_recorded_check(device, &type_check)
                         .map_err(|err| CompileError::GpuTypeCheck(err.to_string()))?;
                     host_timer.stamp("typecheck_finish");
-                    let result = self.record_and_finish_x86_after_frontend(
-                        device,
-                        queue,
-                        source_len,
-                        token_capacity,
-                        parser_tree_capacity,
-                        parser_result.emit_len,
-                        "compile-source-pack-x86-after-parser-typecheck-enc",
-                        "compile.source-pack.x86-after-parser-typecheck",
-                        "source-pack x86 after parser/typecheck",
-                    );
+                    let result = self
+                        .x86_generator()?
+                        .finish_recorded_x86(device, queue, &x86_check)
+                        .map_err(|err| CompileError::GpuCodegen(err.to_string()));
                     host_timer.stamp("x86_finish");
                     result
                 },
@@ -1742,6 +1738,10 @@ impl<'gpu> GpuCompiler<'gpu> {
                                             type_arg_start: &parse_bufs.hir_type_arg_start,
                                             type_arg_count: &parse_bufs.hir_type_arg_count,
                                             type_arg_next: &parse_bufs.hir_type_arg_next,
+                                            type_alias_target_node: &parse_bufs
+                                                .hir_type_alias_target_node,
+                                            fn_return_type_node: &parse_bufs
+                                                .hir_fn_return_type_node,
                                             param_record: &parse_bufs.hir_param_record,
                                             expr_record: &parse_bufs.hir_expr_record,
                                             expr_int_value: &parse_bufs.hir_expr_int_value,
@@ -1826,29 +1826,32 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 if let Some(timer) = timer.as_deref_mut() {
                                     timer.stamp(encoder, "typecheck.done");
                                 }
-                                Ok::<_, CompileError>(recorded)
+                                let x86_hir_node_count = parser_tree_capacity.max(1);
+                                let x86_check = self.record_x86_from_parse_buffers(
+                                    device,
+                                    queue,
+                                    encoder,
+                                    bufs.n,
+                                    token_capacity,
+                                    x86_hir_node_count,
+                                    x86_hir_node_count,
+                                    parse_bufs,
+                                    timer.as_deref_mut(),
+                                )?;
+                                host_timer.stamp("x86_recorded");
+                                Ok::<_, CompileError>((recorded, x86_check))
                             },
                         )
                         .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
                     host_timer.stamp("parser_typecheck_recorded");
-                    let type_check = type_check?;
-                    Ok((
-                        parser_check,
-                        type_check,
-                        token_capacity,
-                        parser_tree_capacity,
-                        bufs.n,
-                    ))
+                    let (type_check, x86_check) = type_check?;
+                    Ok((parser_check, type_check, x86_check))
                 },
-                |device,
-                 queue,
-                 _bufs,
-                 (parser_check, type_check, token_capacity, parser_tree_capacity, source_len)| {
+                |device, queue, _bufs, (parser_check, type_check, x86_check)| {
                     let mut host_timer = CompilerHostTimer::new("compiler.x86.finish");
                     self.x86_generator()?;
                     host_timer.stamp("x86_generator_ready");
-                    let parser_result = self
-                        .parser
+                    self.parser
                         .finish_recorded_resident_ll1_hir_check_result(&parser_check)
                         .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
                     host_timer.stamp("parser_finish");
@@ -1856,17 +1859,10 @@ impl<'gpu> GpuCompiler<'gpu> {
                         .finish_recorded_check(device, &type_check)
                         .map_err(|err| CompileError::GpuTypeCheck(err.to_string()))?;
                     host_timer.stamp("typecheck_finish");
-                    let result = self.record_and_finish_x86_after_frontend(
-                        device,
-                        queue,
-                        source_len,
-                        token_capacity,
-                        parser_tree_capacity,
-                        parser_result.emit_len,
-                        "compile-x86-after-parser-typecheck-enc",
-                        "compile.x86-after-parser-typecheck",
-                        "x86 after parser/typecheck",
-                    );
+                    let result = self
+                        .x86_generator()?
+                        .finish_recorded_x86(device, queue, &x86_check)
+                        .map_err(|err| CompileError::GpuCodegen(err.to_string()));
                     host_timer.stamp("x86_finish");
                     result
                 },
@@ -1884,7 +1880,8 @@ fn trace_wasm_compile(stage: &str) {
 
 struct CompilerHostTimer {
     label: &'static str,
-    enabled: bool,
+    print_enabled: bool,
+    trace_enabled: bool,
     start: std::time::Instant,
     last: std::time::Instant,
 }
@@ -1894,44 +1891,67 @@ impl CompilerHostTimer {
         let now = std::time::Instant::now();
         Self {
             label,
-            enabled: crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false),
+            print_enabled: crate::gpu::env::env_bool_truthy(
+                "LANIUS_GPU_COMPILE_HOST_TIMING",
+                false,
+            ),
+            trace_enabled: crate::gpu::trace::enabled(),
             start: now,
             last: now,
         }
     }
 
     fn stamp(&mut self, stage: &str) {
-        if !self.enabled {
+        if !self.print_enabled && !self.trace_enabled {
             return;
         }
         let now = std::time::Instant::now();
         let dt_ms = now.duration_since(self.last).as_secs_f64() * 1000.0;
         let total_ms = now.duration_since(self.start).as_secs_f64() * 1000.0;
-        println!(
-            "[gpu_compile_host_timer] {}.{stage}: {dt_ms:.3}ms (total {total_ms:.3}ms)",
-            self.label
-        );
+        let name = format!("{}.{stage}", self.label);
+        if self.print_enabled {
+            println!("[gpu_compile_host_timer] {name}: {dt_ms:.3}ms (total {total_ms:.3}ms)");
+        }
+        if self.trace_enabled {
+            crate::gpu::trace::record_host_span("host.compiler", &name, self.last, now);
+        }
         self.last = now;
     }
-}
 
-fn print_compiler_timer_trace(stamps: &[(String, u64)], period_ns: f32) {
-    if stamps.len() < 2 {
-        return;
-    }
-    let min_ms = std::env::var("LANIUS_GPU_COMPILE_TIMING_MIN_MS")
-        .ok()
-        .and_then(|value| value.parse::<f64>().ok())
-        .unwrap_or(MINIMUM_TIME_TO_NOT_ELIDE_MS);
-    let mut last = stamps[0].1;
-    let mut total = 0.0f64;
-    for (label, value) in stamps.iter().skip(1) {
-        let dt_ms = value.saturating_sub(last) as f64 * period_ns as f64 / 1_000_000.0;
-        total += dt_ms;
-        if dt_ms >= min_ms {
-            println!("[gpu_compile_timer] {label}: {dt_ms:.3}ms (total {total:.3}ms)");
+    fn pipeline_cache_size(&self, gpu: &GpuDevice, stage: &str) {
+        if !crate::gpu::env::env_bool_truthy("LANIUS_PIPELINE_CACHE_BREAKDOWN", false) {
+            return;
         }
-        last = *value;
+        let start = std::time::Instant::now();
+        let size = gpu.pipeline_cache_data_len();
+        let end = std::time::Instant::now();
+        let sample_ms = end.duration_since(start).as_secs_f64() * 1000.0;
+        match size {
+            Some(bytes) => {
+                eprintln!(
+                    "[pipeline_cache_breakdown] stage={stage} bytes={bytes} sample_ms={sample_ms:.3}"
+                );
+                if self.trace_enabled {
+                    crate::gpu::trace::record_host_span(
+                        "host.pipeline_cache",
+                        &format!("pipeline_cache.sample.{stage}"),
+                        start,
+                        end,
+                    );
+                    crate::gpu::trace::record_counter(
+                        "host.pipeline_cache.size",
+                        "pipeline_cache_bytes",
+                        end,
+                        bytes as f64,
+                    );
+                }
+            }
+            None => {
+                eprintln!(
+                    "[pipeline_cache_breakdown] stage={stage} bytes=unavailable sample_ms={sample_ms:.3}"
+                );
+            }
+        }
     }
 }
 
@@ -2002,24 +2022,52 @@ fn prepare_source_for_gpu_type_check_from_path(
     prepare_source_for_gpu_from_path(path)
 }
 
-fn global_gpu_compiler() -> Result<&'static GpuCompiler<'static>, CompileError> {
-    static GPU_COMPILER: OnceLock<Result<GpuCompiler<'static>, String>> = OnceLock::new();
-    GPU_COMPILER
-        .get_or_init(|| pollster::block_on(GpuCompiler::new()).map_err(|err| err.to_string()))
+fn global_gpu_compiler_for(
+    compiler: &'static OnceLock<Result<GpuCompiler<'static>, String>>,
+    backends: GpuCompilerBackends,
+    label: &'static str,
+) -> Result<&'static GpuCompiler<'static>, CompileError> {
+    compiler
+        .get_or_init(|| {
+            pollster::block_on(GpuCompiler::new_with_device_and_backends(
+                device::global(),
+                backends,
+            ))
+            .map_err(|err| err.to_string())
+        })
         .as_ref()
-        .map_err(|err| CompileError::GpuFrontend(format!("initialize GPU compiler: {err}")))
+        .map_err(|err| CompileError::GpuFrontend(format!("initialize {label} GPU compiler: {err}")))
+}
+
+fn global_frontend_gpu_compiler() -> Result<&'static GpuCompiler<'static>, CompileError> {
+    static GPU_FRONTEND_COMPILER: OnceLock<Result<GpuCompiler<'static>, String>> = OnceLock::new();
+    global_gpu_compiler_for(
+        &GPU_FRONTEND_COMPILER,
+        GpuCompilerBackends::frontend_only(),
+        "frontend",
+    )
+}
+
+fn global_wasm_gpu_compiler() -> Result<&'static GpuCompiler<'static>, CompileError> {
+    static GPU_WASM_COMPILER: OnceLock<Result<GpuCompiler<'static>, String>> = OnceLock::new();
+    global_gpu_compiler_for(&GPU_WASM_COMPILER, GpuCompilerBackends::wasm_only(), "WASM")
+}
+
+fn global_x86_gpu_compiler() -> Result<&'static GpuCompiler<'static>, CompileError> {
+    static GPU_X86_COMPILER: OnceLock<Result<GpuCompiler<'static>, String>> = OnceLock::new();
+    global_gpu_compiler_for(&GPU_X86_COMPILER, GpuCompilerBackends::x86_only(), "x86")
 }
 
 pub async fn compile_source_to_wasm_with_gpu_codegen(src: &str) -> Result<Vec<u8>, CompileError> {
     let src = prepare_source_for_gpu_codegen(src)?;
-    global_gpu_compiler()?
+    global_wasm_gpu_compiler()?
         .compile_expanded_source_to_wasm(&src)
         .await
 }
 
 pub async fn type_check_source_with_gpu(src: &str) -> Result<(), CompileError> {
     let src = prepare_source_for_gpu_type_check(src)?;
-    global_gpu_compiler()?
+    global_frontend_gpu_compiler()?
         .type_check_expanded_source(&src)
         .await
 }
@@ -2027,7 +2075,7 @@ pub async fn type_check_source_with_gpu(src: &str) -> Result<(), CompileError> {
 pub async fn type_check_source_pack_with_gpu<S: AsRef<str>>(
     sources: &[S],
 ) -> Result<(), CompileError> {
-    global_gpu_compiler()?
+    global_frontend_gpu_compiler()?
         .type_check_explicit_source_pack(sources)
         .await
 }
@@ -2036,7 +2084,7 @@ pub async fn type_check_source_with_gpu_from_path(
     path: impl AsRef<Path>,
 ) -> Result<(), CompileError> {
     let src = prepare_source_for_gpu_type_check_from_path(path)?;
-    global_gpu_compiler()?
+    global_frontend_gpu_compiler()?
         .type_check_expanded_source(&src)
         .await
 }
@@ -2059,7 +2107,7 @@ pub async fn type_check_source_pack_with_gpu_using<S: AsRef<str>>(
 pub async fn compile_source_pack_to_wasm_with_gpu_codegen<S: AsRef<str>>(
     sources: &[S],
 ) -> Result<Vec<u8>, CompileError> {
-    global_gpu_compiler()?
+    global_wasm_gpu_compiler()?
         .compile_source_pack_to_wasm(sources)
         .await
 }
@@ -2080,7 +2128,7 @@ where
     UP: AsRef<Path>,
 {
     let sources = load_explicit_source_pack_from_paths(stdlib_paths, user_paths)?;
-    global_gpu_compiler()?
+    global_wasm_gpu_compiler()?
         .compile_source_pack_to_wasm(&sources)
         .await
 }
@@ -2111,7 +2159,7 @@ pub async fn compile_source_to_wasm_with_gpu_codegen_from_path(
     path: impl AsRef<Path>,
 ) -> Result<Vec<u8>, CompileError> {
     let src = prepare_source_for_gpu_codegen_from_path(path)?;
-    global_gpu_compiler()?
+    global_wasm_gpu_compiler()?
         .compile_expanded_source_to_wasm(&src)
         .await
 }
@@ -2134,7 +2182,7 @@ pub async fn compile_source_to_wasm_with_gpu_codegen_using_path(
 
 pub async fn compile_source_to_x86_64_with_gpu_codegen(src: &str) -> Result<Vec<u8>, CompileError> {
     let src = prepare_source_for_gpu_codegen(src)?;
-    global_gpu_compiler()?
+    global_x86_gpu_compiler()?
         .compile_expanded_source_to_x86_64(&src)
         .await
 }
@@ -2143,7 +2191,7 @@ pub async fn compile_source_to_x86_64_with_gpu_codegen_from_path(
     path: impl AsRef<Path>,
 ) -> Result<Vec<u8>, CompileError> {
     let src = prepare_source_for_gpu_codegen_from_path(path)?;
-    global_gpu_compiler()?
+    global_x86_gpu_compiler()?
         .compile_expanded_source_to_x86_64(&src)
         .await
 }
@@ -2151,7 +2199,7 @@ pub async fn compile_source_to_x86_64_with_gpu_codegen_from_path(
 pub async fn compile_source_pack_to_x86_64_with_gpu_codegen<S: AsRef<str>>(
     sources: &[S],
 ) -> Result<Vec<u8>, CompileError> {
-    global_gpu_compiler()?
+    global_x86_gpu_compiler()?
         .compile_source_pack_to_x86_64(sources)
         .await
 }
@@ -2165,7 +2213,7 @@ where
     UP: AsRef<Path>,
 {
     let sources = load_explicit_source_pack_from_paths(stdlib_paths, user_paths)?;
-    global_gpu_compiler()?
+    global_x86_gpu_compiler()?
         .compile_source_pack_to_x86_64(&sources)
         .await
 }
@@ -2205,4 +2253,27 @@ pub async fn compile_source_to_x86_64_with_gpu_codegen_using_path(
 ) -> Result<Vec<u8>, CompileError> {
     let src = prepare_source_for_gpu_codegen_from_path(path)?;
     compiler.compile_expanded_source_to_x86_64(&src).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn x86_only_compiler_does_not_initialize_wasm_backend() {
+        let compiler = pollster::block_on(GpuCompiler::new_with_device_and_backends(
+            device::global(),
+            GpuCompilerBackends::x86_only(),
+        ))
+        .expect("initialize x86-only GPU compiler");
+
+        assert!(
+            compiler.wasm_generator.is_err(),
+            "x86-only global compiler path must not initialize legacy WASM backend pipelines"
+        );
+        assert!(
+            compiler.x86_generator.is_ok(),
+            "x86-only global compiler path should initialize x86 backend pipelines"
+        );
+    }
 }

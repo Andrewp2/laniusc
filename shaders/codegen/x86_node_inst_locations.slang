@@ -36,6 +36,7 @@ StructuredBuffer<uint> x86_node_inst_range_status;
 
 RWStructuredBuffer<uint4> x86_node_inst_location_record;
 RWStructuredBuffer<uint> x86_node_inst_location_status;
+RWStructuredBuffer<uint> x86_node_inst_gen_flag;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint INVALID = 0xffffffffu;
@@ -72,6 +73,14 @@ static const uint X86_NODE_INST_RANGE_COUNT_MASK = 0x0fffffffu;
 static const uint X86_LOCATION_META_KIND_MASK = 0xf0000000u;
 static const uint X86_LOCATION_META_EXPR_SEMANTIC_TYPE = 0xe0000000u;
 static const uint X86_LOCATION_META_PAYLOAD_MASK = 0x0fffffffu;
+static const uint X86_NODE_INST_LOCATION_ERR_BRANCH = 1u;
+static const uint X86_NODE_INST_LOCATION_ERR_MATCH = 2u;
+static const uint X86_NODE_INST_LOCATION_ERR_LOOP = 3u;
+static const uint X86_NODE_INST_LOCATION_ERR_FOR = 4u;
+static const uint X86_NODE_INST_LOCATION_ERR_RANGE = 5u;
+static const uint X86_NODE_INST_LOCATION_ERR_RANGE_COUNT_NODE = 51u;
+static const uint X86_NODE_INST_LOCATION_ERR_RANGE_START = 52u;
+static const uint X86_NODE_INST_LOCATION_ERR_RANGE_CAPACITY = 53u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -155,12 +164,13 @@ uint range_count(uint2 range)
     return range.y & X86_NODE_INST_RANGE_COUNT_MASK;
 }
 
-void publish_error(uint detail)
+void publish_error(uint detail, uint extra)
 {
-    publish_stage_error_min_detail4(
+    publish_stage_error_min_detail_extra4(
         x86_node_inst_location_status,
         X86_ERR_NODE_INST_LOCATIONS,
-        detail);
+        detail,
+        extra);
 }
 
 uint4 default_locations(uint start, uint count)
@@ -171,6 +181,31 @@ uint4 default_locations(uint start, uint count)
     if (count > 2u) locations.z = start + 2u;
     if (count > 3u) locations.w = start + 3u;
     return locations;
+}
+
+bool range_generates(uint2 range)
+{
+    uint count = range_count(range);
+    return range.x != INVALID &&
+           range.y != INVALID &&
+           range.x + count <= gParams.inst_capacity;
+}
+
+bool locations_generate(uint4 locations)
+{
+    return (locations.x != INVALID && locations.x < gParams.inst_capacity) ||
+           (locations.y != INVALID && locations.y < gParams.inst_capacity) ||
+           (locations.z != INVALID && locations.z < gParams.inst_capacity) ||
+           ((locations.w & X86_LOCATION_META_KIND_MASK) != X86_LOCATION_META_EXPR_SEMANTIC_TYPE &&
+            locations.w != INVALID &&
+            locations.w < gParams.inst_capacity);
+}
+
+void store_locations_and_gen_flag(uint node, uint4 locations, uint2 range)
+{
+    x86_node_inst_location_record[node] = locations;
+    x86_node_inst_gen_flag[node] =
+        range_generates(range) || locations_generate(locations) ? 1u : 0u;
 }
 
 bool padding_location_for_node(uint node, out uint location)
@@ -387,6 +422,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     bool ok = upstream_ok();
     if (node == 0u)
     {
+        x86_node_inst_gen_flag[active_hir_node_count()] = 0u;
         x86_node_inst_location_status[0u] = ok ? X86_NODE_INST_LOCATIONS_OK : 0u;
         x86_node_inst_location_status[1u] = ok ? 0u :
                                           (x86_node_inst_range_status[1u] == 0u ?
@@ -399,20 +435,29 @@ void main(uint3 tid: SV_DispatchThreadID)
         x86_node_inst_location_status[3u] = ok ? x86_node_inst_range_status[3u] : 0u;
     }
 
+    if (node < gParams.n_hir_nodes)
+        x86_node_inst_gen_flag[node] = 0u;
+
     if (!ok || !valid_node(node))
         return;
 
     uint4 count_record = node_inst_count_record(node);
     uint2 range = x86_node_inst_range_record[node];
+    if (count_record.x != node || count_record.y == INVALID)
+    {
+        store_locations_and_gen_flag(node, uint4_fill(INVALID), range);
+        return;
+    }
+
     if (hir_kind[node] == HIR_IF_STMT && count_record.z == X86_NODE_INST_BRANCH)
     {
         uint4 branch_locations = uint4_fill(INVALID);
         if (corrected_branch_locations(node, branch_locations))
         {
-            x86_node_inst_location_record[node] = branch_locations;
+            store_locations_and_gen_flag(node, branch_locations, range);
             return;
         }
-        publish_error(node);
+        publish_error(node, X86_NODE_INST_LOCATION_ERR_BRANCH);
         return;
     }
 
@@ -421,10 +466,10 @@ void main(uint3 tid: SV_DispatchThreadID)
         uint4 match_locations = uint4_fill(INVALID);
         if (corrected_match_return_locations(node, match_locations))
         {
-            x86_node_inst_location_record[node] = match_locations;
+            store_locations_and_gen_flag(node, match_locations, range);
             return;
         }
-        publish_error(node);
+        publish_error(node, X86_NODE_INST_LOCATION_ERR_MATCH);
         return;
     }
 
@@ -433,10 +478,10 @@ void main(uint3 tid: SV_DispatchThreadID)
         uint4 loop_locations = uint4_fill(INVALID);
         if (corrected_loop_locations(node, loop_locations))
         {
-            x86_node_inst_location_record[node] = loop_locations;
+            store_locations_and_gen_flag(node, loop_locations, range);
             return;
         }
-        publish_error(node);
+        publish_error(node, X86_NODE_INST_LOCATION_ERR_LOOP);
         return;
     }
 
@@ -445,35 +490,46 @@ void main(uint3 tid: SV_DispatchThreadID)
         uint4 for_locations = uint4_fill(INVALID);
         if (corrected_for_locations(node, for_locations))
         {
-            x86_node_inst_location_record[node] = for_locations;
+            store_locations_and_gen_flag(node, for_locations, range);
             return;
         }
-        publish_error(node);
+        publish_error(node, X86_NODE_INST_LOCATION_ERR_FOR);
         return;
     }
 
     if (count_record.x == node && count_record.y == 0u)
     {
-        x86_node_inst_location_record[node] = uint4_fill(INVALID);
+        store_locations_and_gen_flag(node, uint4_fill(INVALID), range);
         return;
     }
     uint count = range_count(range);
 
     if (count_record.x != node || range.x == INVALID || range.x + count > gParams.inst_capacity)
     {
-        x86_node_inst_location_record[node] = uint4_fill(INVALID);
-        publish_error(node);
+        store_locations_and_gen_flag(node, uint4_fill(INVALID), range);
+        uint reason = count_record.x != node
+                          ? X86_NODE_INST_LOCATION_ERR_RANGE_COUNT_NODE
+                          : (range.x == INVALID
+                                 ? X86_NODE_INST_LOCATION_ERR_RANGE_START +
+                                       min(x86_node_inst_same_end_bucket_count[node], 99u) * 100u +
+                                       min(x86_node_inst_same_end_rank[node], 99u) * 10000u
+                                 : X86_NODE_INST_LOCATION_ERR_RANGE_CAPACITY);
+        publish_error(node, reason);
         return;
     }
 
     uint4 binary_locations = uint4_fill(INVALID);
     if (corrected_binary_expr_location(node, binary_locations))
     {
-        x86_node_inst_location_record[node] =
-            attach_expr_semantic_type_metadata(node, binary_locations);
+        store_locations_and_gen_flag(
+            node,
+            attach_expr_semantic_type_metadata(node, binary_locations),
+            range);
         return;
     }
 
-    x86_node_inst_location_record[node] =
-        attach_expr_semantic_type_metadata(node, default_locations(range.x, count));
+    store_locations_and_gen_flag(
+        node,
+        attach_expr_semantic_type_metadata(node, default_locations(range.x, count)),
+        range);
 }

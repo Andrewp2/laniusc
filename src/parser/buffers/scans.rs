@@ -6,6 +6,7 @@ use super::{
     HirSemanticPrefixScanStep,
     LL1EmitPrefixScanStep,
     PackOffsetScanStep,
+    PackTotalReduceStep,
     TokenDelimiterScanStep,
     TreePrefixMaxBuildStep,
     TreePrefixScanStep,
@@ -74,6 +75,33 @@ pub(super) fn make_pack_offset_scan_steps(
             }
         })
         .collect()
+}
+
+pub(super) fn make_pack_total_reduce_steps(
+    device: &wgpu::Device,
+    n_pairs: u32,
+) -> Vec<PackTotalReduceStep> {
+    let mut steps = Vec::new();
+    let mut item_count = n_pairs.div_ceil(256).max(1);
+    let mut read_from_a = true;
+    let mut write_to_a = false;
+    while item_count > 1 {
+        let label = "pack.total_reduce.params";
+        steps.push(PackTotalReduceStep {
+            params: uniform_from_val(
+                device,
+                label,
+                &super::super::passes::pack_totals_reduce::Params { item_count },
+            ),
+            item_count,
+            read_from_a,
+            write_to_a,
+        });
+        item_count = item_count.div_ceil(256).max(1);
+        read_from_a = write_to_a;
+        write_to_a = !write_to_a;
+    }
+    steps
 }
 
 pub(super) fn make_token_delimiter_scan_steps(

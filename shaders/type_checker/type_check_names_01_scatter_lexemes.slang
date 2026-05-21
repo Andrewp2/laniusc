@@ -44,6 +44,7 @@ StructuredBuffer<uint> language_symbol_len;
 
 RWStructuredBuffer<NameSpan> name_spans;
 RWStructuredBuffer<uint> name_order_in;
+RWStructuredBuffer<uint> name_order_tmp;
 RWStructuredBuffer<uint> name_id_by_token;
 RWStructuredBuffer<uint> name_count_out;
 RWStructuredBuffer<uint> name_max_len_out;
@@ -152,6 +153,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             atomic_u32_max(name_max_len_out, 0u, span.len);
             name_spans[slot] = span;
             name_order_in[slot] = slot;
+            name_order_tmp[slot] = slot;
         }
         name_count_out[0] = total_name_count;
     }
@@ -170,5 +172,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
         atomic_u32_max(name_max_len_out, 0u, span.len);
         name_spans[slot.dst] = span;
         name_order_in[slot.dst] = slot.dst;
+        name_order_tmp[slot.dst] = slot.dst;
     }
 }

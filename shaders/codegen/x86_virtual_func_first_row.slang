@@ -23,12 +23,12 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint4> x86_virtual_inst_record;
 StructuredBuffer<uint> x86_virtual_inst_status;
 StructuredBuffer<uint> x86_node_func;
-StructuredBuffer<uint> hir_node_decl_token;
-StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> x86_func_slot_by_node;
 
 RWStructuredBuffer<uint> x86_func_first_virtual_row;
 RWStructuredBuffer<uint> x86_func_last_virtual_row;
 RWStructuredBuffer<uint> x86_func_first_virtual_row_status;
+RWStructuredBuffer<uint> x86_virtual_func_slot;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint INVALID = 0xffffffffu;
@@ -56,17 +56,6 @@ bool upstream_ok()
 bool valid_node(uint node)
 {
     return node != INVALID && node < gParams.n_hir_nodes;
-}
-
-uint function_row_slot(uint fn_node)
-{
-    if (!valid_node(fn_node))
-        return INVALID;
-    uint slot = hir_node_decl_token[fn_node];
-    if (slot < gParams.n_tokens)
-        return slot;
-    slot = hir_token_pos[fn_node];
-    return slot < gParams.n_tokens ? slot : INVALID;
 }
 
 void publish_status(bool ok, uint count)
@@ -97,6 +86,8 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (!ok || row >= count)
         return;
 
+    x86_virtual_func_slot[row] = INVALID;
+
     uint node = x86_virtual_inst_record[row].x;
     if (!valid_node(node))
         return;
@@ -105,10 +96,11 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (!valid_node(fn_node))
         return;
 
-    uint slot = function_row_slot(fn_node);
-    if (slot == INVALID)
+    uint slot = x86_func_slot_by_node[fn_node];
+    if (slot >= gParams.n_tokens)
         return;
 
+    x86_virtual_func_slot[row] = slot;
     atomic_u32_min(x86_func_first_virtual_row, slot, row);
     atomic_u32_max(x86_func_last_virtual_row, slot, row);
 }

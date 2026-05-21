@@ -1,7 +1,7 @@
 mod common;
 
 use laniusc::{
-    compiler::{type_check_source_pack_with_gpu_using, CompileError, GpuCompiler},
+    compiler::{CompileError, GpuCompiler, type_check_source_pack_with_gpu_using},
     lexer::test_cpu::lex_on_test_cpu,
 };
 

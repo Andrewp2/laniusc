@@ -103,7 +103,7 @@ impl GpuTimer {
         crate::gpu::passes_core::wait_for_map_progress(
             device,
             "gpu.timer.readback",
-            wgpu::PollType::Wait,
+            wgpu::PollType::wait_indefinitely(),
         );
 
         if let Ok(Ok(())) = receiver.try_recv() {

@@ -1,6 +1,5 @@
 import gpu_index;
 import atomics;
-import scatter;
 
 // Direct x86_64 function discovery.
 //
@@ -15,6 +14,11 @@ struct Params
     uint source_len;
     uint out_capacity;
     uint n_hir_nodes;
+    uint inst_capacity;
+    uint virtual_next_call_step_count;
+    uint regalloc_rows_per_chunk;
+    uint regalloc_chunk_count;
+    uint function_slot_capacity;
 };
 
 ConstantBuffer<Params> gParams;
@@ -31,7 +35,7 @@ StructuredBuffer<uint> fn_entrypoint_tag;
 RWStructuredBuffer<uint> x86_func_meta;
 RWStructuredBuffer<uint> x86_node_func;
 RWStructuredBuffer<uint> x86_decl_node_by_token;
-RWStructuredBuffer<uint> x86_func_slot_by_index;
+RWStructuredBuffer<uint> x86_func_slot_by_node;
 
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_FN = 3u;
@@ -39,8 +43,8 @@ static const uint ENTRYPOINT_MAIN = 1u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint X86_NODE_TREE_OK = 1u;
 
-static const uint FUNC_META_FUNC_COUNT = 0u;
 static const uint FUNC_META_MAIN_COUNT = 1u;
+static const uint FUNC_META_MAIN_SLOT = 2u;
 static const uint FUNC_META_MAIN_NODE = 4u;
 
 uint linear_dispatch_id(uint3 tid)
@@ -110,11 +114,8 @@ uint function_slot_key(uint node_i)
 
 void publish_function_slot(uint node_i)
 {
-    uint func_i = atomic_counter_add(x86_func_meta, FUNC_META_FUNC_COUNT, 1u);
-    if (func_i >= gParams.n_tokens)
-        return;
-
-    x86_func_slot_by_index[func_i] = function_slot_key(node_i);
+    uint slot = function_slot_key(node_i);
+    x86_func_slot_by_node[node_i] = slot;
 }
 
 [shader("compute")]
@@ -135,6 +136,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (!is_main_function_node(node_i))
         return;
 
-    atomic_counter_add(x86_func_meta, FUNC_META_MAIN_COUNT, 1u);
+    atomic_u32_add(x86_func_meta, FUNC_META_MAIN_COUNT, 1u);
+    atomic_u32_min(x86_func_meta, FUNC_META_MAIN_SLOT, function_slot_key(node_i));
     atomic_u32_min(x86_func_meta, FUNC_META_MAIN_NODE, node_i);
 }

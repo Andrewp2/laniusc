@@ -8,3 +8,4 @@ pub mod passes_core;
 pub mod readback;
 pub mod scan;
 pub mod timer;
+pub mod trace;

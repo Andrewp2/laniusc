@@ -221,7 +221,7 @@ impl GpuTypeChecker {
         let name_scan_local_prefix = storage_u32_rw(
             device,
             "type_check.resident.name_scan_local_prefix",
-            token_capacity as usize,
+            name_capacity as usize,
             wgpu::BufferUsages::empty(),
         );
         let name_scan_block_sum = storage_u32_rw(
@@ -355,7 +355,7 @@ impl GpuTypeChecker {
         let radix_dispatch_args = storage_u32_rw(
             device,
             "type_check.resident.radix_dispatch_args",
-            3,
+            (1 + 3 * NAME_RADIX_MAX_BYTES as usize) * 3,
             wgpu::BufferUsages::INDIRECT,
         );
         let run_head_mask = storage_u32_rw(
@@ -1077,6 +1077,14 @@ impl GpuTypeChecker {
                 hir_items.type_arg_next.as_entire_binding(),
             );
             resources.insert(
+                "hir_type_alias_target_node".into(),
+                hir_items.type_alias_target_node.as_entire_binding(),
+            );
+            resources.insert(
+                "hir_fn_return_type_node".into(),
+                hir_items.fn_return_type_node.as_entire_binding(),
+            );
+            resources.insert(
                 "hir_param_record".into(),
                 hir_items.param_record.as_entire_binding(),
             );
@@ -1256,6 +1264,14 @@ impl GpuTypeChecker {
                 node_kind_empty.as_entire_binding(),
             );
             resources.insert("hir_type_arg_next".into(), parent_empty.as_entire_binding());
+            resources.insert(
+                "hir_type_alias_target_node".into(),
+                parent_empty.as_entire_binding(),
+            );
+            resources.insert(
+                "hir_fn_return_type_node".into(),
+                parent_empty.as_entire_binding(),
+            );
             resources.insert("hir_param_record".into(), parent_empty.as_entire_binding());
             resources.insert("hir_expr_record".into(), parent_empty.as_entire_binding());
             resources.insert(

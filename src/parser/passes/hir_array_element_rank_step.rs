@@ -114,6 +114,14 @@ impl HirArrayElementRankStepPass {
                 },
             ),
             (
+                "token_feature_flags".into(),
+                buffers.token_feature_flags.as_entire_binding(),
+            ),
+            (
+                "hir_list_rank_node".into(),
+                buffers.hir_list_rank_node.as_entire_binding(),
+            ),
+            (
                 "hir_array_element_owner_in".into(),
                 owner_in.as_entire_binding(),
             ),

@@ -106,7 +106,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint target_inst = x86_reloc_target_inst[reloc_i];
     bool record_ok = site_inst < inst_count &&
                      target_inst < inst_count;
-    uint site_kind = record_ok ? x86_inst_kind[site_inst] : 0u;
+    uint site_kind = record_ok ? (x86_inst_kind[site_inst] & 0xffu) : 0u;
     record_ok = record_ok && reloc_kind_matches_inst(kind, site_kind);
     uint imm_offset = record_ok ? rel32_imm_offset(site_kind) : 0xffffffffu;
     record_ok = record_ok && imm_offset != 0xffffffffu &&

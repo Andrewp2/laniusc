@@ -66,6 +66,18 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCallArgLinksP
                 "hir_call_arg_rank_a".into(),
                 b.hir_call_arg_rank_a.as_entire_binding(),
             ),
+            (
+                "hir_call_arg_owner_b".into(),
+                b.hir_call_arg_owner_b.as_entire_binding(),
+            ),
+            (
+                "hir_call_arg_link_b".into(),
+                b.hir_call_arg_link_b.as_entire_binding(),
+            ),
+            (
+                "hir_call_arg_rank_b".into(),
+                b.hir_call_arg_rank_b.as_entire_binding(),
+            ),
         ])
     }
 }

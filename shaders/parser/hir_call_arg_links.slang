@@ -26,6 +26,9 @@ RWStructuredBuffer<uint> hir_call_arg_end;
 RWStructuredBuffer<uint> hir_call_arg_owner_a;
 RWStructuredBuffer<uint> hir_call_arg_link_a;
 RWStructuredBuffer<uint> hir_call_arg_rank_a;
+RWStructuredBuffer<uint> hir_call_arg_owner_b;
+RWStructuredBuffer<uint> hir_call_arg_link_b;
+RWStructuredBuffer<uint> hir_call_arg_rank_b;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -140,6 +143,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_call_arg_owner_a[node] = INVALID;
     hir_call_arg_link_a[node] = INVALID;
     hir_call_arg_rank_a[node] = 0u;
+    hir_call_arg_owner_b[node] = INVALID;
+    hir_call_arg_link_b[node] = INVALID;
+    hir_call_arg_rank_b[node] = 0u;
 
     if (!valid_node(node) || hir_kind[node] != HIR_EXPR)
         return;

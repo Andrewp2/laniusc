@@ -1,5 +1,7 @@
 // Pointer-jump array literal element links.
 
+import token_features;
+
 struct Params
 {
     uint n;
@@ -12,6 +14,8 @@ StructuredBuffer<uint> ll1_status;
 StructuredBuffer<uint> hir_array_element_owner_in;
 StructuredBuffer<uint> hir_array_element_link_in;
 StructuredBuffer<uint> hir_array_element_rank_in;
+StructuredBuffer<uint> token_feature_flags;
+StructuredBuffer<uint> hir_list_rank_node;
 
 RWStructuredBuffer<uint> hir_array_element_owner_out;
 RWStructuredBuffer<uint> hir_array_element_link_out;
@@ -41,9 +45,21 @@ bool valid_node(uint node)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = linear_thread_id(dtid);
+    uint row = linear_thread_id(dtid);
+    if (row >= gHirArray.n)
+        return;
+
+    uint node = hir_list_rank_node[row];
     if (node >= gHirArray.n)
         return;
+
+    if (!parser_feature_enabled(token_feature_flags, PARSER_FEATURE_ARRAYS))
+    {
+        hir_array_element_owner_out[node] = INVALID;
+        hir_array_element_link_out[node] = INVALID;
+        hir_array_element_rank_out[node] = 0u;
+        return;
+    }
 
     if (!valid_node(node))
     {

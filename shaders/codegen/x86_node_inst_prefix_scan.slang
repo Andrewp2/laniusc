@@ -151,28 +151,23 @@ void publish_status(bool ok, uint total)
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
 {
-    uint slot = linear_dispatch_id(tid);
+    uint node = linear_dispatch_id(tid);
     uint total = scan_total();
     bool ok = order_status_ok() && total <= gScan.inst_capacity;
 
-    if (slot == 0u)
+    if (node == 0u)
         publish_status(ok, total);
 
-    if (!ok || slot >= gScan.n_items)
+    if (!ok || node >= gScan.n_items)
         return;
 
-    uint4 count = order_record(slot);
-    uint node = count.x;
-    if (node == INVALID || count.y == INVALID)
-        return;
-    if (node >= gScan.n_items)
+    uint2 staged = x86_node_inst_range_record[node];
+    uint slot = staged.x;
+    if (slot == INVALID || slot >= x86_node_inst_order_status[3u])
         return;
 
-    uint4 canonical = node_inst_count_record(node);
-    if (canonical.x != count.x ||
-        canonical.y != count.y ||
-        canonical.z != count.z ||
-        canonical.w != count.w)
+    uint4 count = node_inst_count_record(node);
+    if (count.x != node || count.y == 0u || count.y == INVALID)
         return;
 
     uint start_inst = scanned_prefix_for_slot(slot);

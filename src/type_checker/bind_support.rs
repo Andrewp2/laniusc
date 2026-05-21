@@ -817,6 +817,7 @@ pub(super) fn create_name_bind_groups_with_passes(
         ),
         ("name_spans".into(), name_spans.as_entire_binding()),
         ("name_order_in".into(), name_order_in.as_entire_binding()),
+        ("name_order_tmp".into(), name_order_tmp.as_entire_binding()),
         (
             "name_id_by_token".into(),
             name_id_by_token.as_entire_binding(),
@@ -853,6 +854,7 @@ pub(super) fn create_name_bind_groups_with_passes(
     let radix_dispatch_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
         ("gParams".into(), radix_dispatch_params.as_entire_binding()),
         ("name_count_in".into(), name_scan_total.as_entire_binding()),
+        ("name_max_len_in".into(), name_max_len.as_entire_binding()),
         (
             "radix_dispatch_args".into(),
             radix_dispatch_args.as_entire_binding(),
@@ -860,9 +862,9 @@ pub(super) fn create_name_bind_groups_with_passes(
     ]);
     let radix_dispatch = bind_group::create_bind_group_from_reflection(
         device,
-        Some("type_check_names_radix_dispatch_args"),
-        &passes.names_radix_dispatch_args.bind_group_layouts[0],
-        &passes.names_radix_dispatch_args.reflection,
+        Some("type_check_names_radix_byte_dispatch_args"),
+        &passes.names_radix_byte_dispatch_args.bind_group_layouts[0],
+        &passes.names_radix_byte_dispatch_args.reflection,
         0,
         &radix_dispatch_resources,
     )?;
@@ -921,6 +923,7 @@ pub(super) fn create_name_bind_groups_with_passes(
         let bucket_prefix_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
             ("gParams".into(), step_params.as_entire_binding()),
             ("name_count_in".into(), name_scan_total.as_entire_binding()),
+            ("name_max_len_in".into(), name_max_len.as_entire_binding()),
             (
                 "radix_block_histogram".into(),
                 radix_block_histogram.as_entire_binding(),
@@ -936,15 +939,16 @@ pub(super) fn create_name_bind_groups_with_passes(
         ]);
         radix_bucket_prefix.push(bind_group::create_bind_group_from_reflection(
             device,
-            Some("type_check_names_radix_00b_bucket_prefix"),
-            &passes.names_radix_bucket_prefix.bind_group_layouts[0],
-            &passes.names_radix_bucket_prefix.reflection,
+            Some("type_check_names_radix_00b_bucket_prefix_active"),
+            &passes.names_radix_bucket_prefix_active.bind_group_layouts[0],
+            &passes.names_radix_bucket_prefix_active.reflection,
             0,
             &bucket_prefix_resources,
         )?);
 
         let bucket_bases_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
             ("gParams".into(), step_params.as_entire_binding()),
+            ("name_max_len_in".into(), name_max_len.as_entire_binding()),
             (
                 "radix_bucket_total".into(),
                 radix_bucket_total.as_entire_binding(),
@@ -956,9 +960,9 @@ pub(super) fn create_name_bind_groups_with_passes(
         ]);
         radix_bucket_bases.push(bind_group::create_bind_group_from_reflection(
             device,
-            Some("type_check_names_radix_00c_bucket_bases"),
-            &passes.names_radix_bucket_bases.bind_group_layouts[0],
-            &passes.names_radix_bucket_bases.reflection,
+            Some("type_check_names_radix_00c_bucket_bases_active"),
+            &passes.names_radix_bucket_bases_active.bind_group_layouts[0],
+            &passes.names_radix_bucket_bases_active.reflection,
             0,
             &bucket_bases_resources,
         )?);

@@ -32,22 +32,111 @@ impl HirSemanticPrefixBlocksPass {
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
     ) -> Result<()> {
+        self.record_scan_inner(
+            device,
+            encoder,
+            buffers,
+            &buffers.hir_semantic_block_count,
+            &buffers.hir_semantic_block_prefix_a,
+            &buffers.hir_semantic_block_prefix_b,
+            "hir_semantic_prefix_01_blocks",
+        )
+    }
+
+    pub fn record_struct_rank_scan(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        buffers: &ParserBuffers,
+    ) -> Result<()> {
+        self.record_scan_inner(
+            device,
+            encoder,
+            buffers,
+            &buffers.hir_struct_rank_block_sum,
+            &buffers.hir_struct_rank_block_prefix_a,
+            &buffers.hir_struct_rank_block_prefix_b,
+            "hir_struct_rank_prefix_01_blocks",
+        )
+    }
+
+    pub fn record_list_rank_scan(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        buffers: &ParserBuffers,
+    ) -> Result<()> {
+        self.record_scan_inner(
+            device,
+            encoder,
+            buffers,
+            &buffers.hir_list_rank_block_sum,
+            &buffers.hir_list_rank_block_prefix_a,
+            &buffers.hir_list_rank_block_prefix_b,
+            "hir_list_rank_prefix_01_blocks",
+        )
+    }
+
+    pub fn record_enum_rank_scan(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        buffers: &ParserBuffers,
+    ) -> Result<()> {
+        self.record_scan_inner(
+            device,
+            encoder,
+            buffers,
+            &buffers.hir_enum_rank_block_sum,
+            &buffers.hir_enum_rank_block_prefix_a,
+            &buffers.hir_enum_rank_block_prefix_b,
+            "hir_enum_rank_prefix_01_blocks",
+        )
+    }
+
+    pub fn record_match_rank_scan(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        buffers: &ParserBuffers,
+    ) -> Result<()> {
+        self.record_scan_inner(
+            device,
+            encoder,
+            buffers,
+            &buffers.hir_match_rank_block_sum,
+            &buffers.hir_match_rank_block_prefix_a,
+            &buffers.hir_match_rank_block_prefix_b,
+            "hir_match_rank_prefix_01_blocks",
+        )
+    }
+
+    fn record_scan_inner(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        buffers: &ParserBuffers,
+        block_sum: &crate::gpu::buffers::LaniusBuffer<u32>,
+        block_prefix_a: &crate::gpu::buffers::LaniusBuffer<u32>,
+        block_prefix_b: &crate::gpu::buffers::LaniusBuffer<u32>,
+        label: &'static str,
+    ) -> Result<()> {
         for step in &buffers.hir_semantic_prefix_scan_steps {
             let prefix_in = if step.read_from_a {
-                &buffers.hir_semantic_block_prefix_a
+                block_prefix_a
             } else {
-                &buffers.hir_semantic_block_prefix_b
+                block_prefix_b
             };
             let prefix_out = if step.write_to_a {
-                &buffers.hir_semantic_block_prefix_a
+                block_prefix_a
             } else {
-                &buffers.hir_semantic_block_prefix_b
+                block_prefix_b
             };
             let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
                 ("gHirSemanticBlocks".into(), step.params.as_entire_binding()),
                 (
                     "hir_semantic_block_sum".into(),
-                    buffers.hir_semantic_block_count.as_entire_binding(),
+                    block_sum.as_entire_binding(),
                 ),
                 (
                     "hir_semantic_block_prefix_in".into(),
@@ -60,7 +149,7 @@ impl HirSemanticPrefixBlocksPass {
             ]);
             let bind_group = bind_group::create_bind_group_from_reflection(
                 device,
-                Some("hir_semantic_prefix_01_blocks"),
+                Some(label),
                 &self.data.bind_group_layouts[0],
                 &self.data.reflection,
                 0,
@@ -74,7 +163,7 @@ impl HirSemanticPrefixBlocksPass {
                 [tgsx, tgsy, 1],
             )?;
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("hir_semantic_prefix_01_blocks"),
+                label: Some(label),
                 timestamp_writes: None,
             });
             pass.set_pipeline(&self.data.pipeline);

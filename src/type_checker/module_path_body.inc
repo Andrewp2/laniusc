@@ -25,7 +25,12 @@
         scan_step: 0,
     };
     let scan_steps = make_name_scan_steps(device, scan_params);
-    let record_scan_steps = make_name_scan_steps(device, scan_params);
+    let record_scan_params = NameScanParams {
+        n_items: record_capacity_u32,
+        n_blocks: record_n_blocks,
+        scan_step: 0,
+    };
+    let record_scan_steps = make_name_scan_steps(device, record_scan_params);
 
     let record_family_bits = storage_u32_rw(
         device,
@@ -1106,7 +1111,7 @@
         passes,
         device,
         "type_check_modules.module_records",
-        &record_scan_steps,
+        &scan_steps,
         hir_active_count_buf,
         &module_record_flag,
         &module_record_prefix,
@@ -1120,7 +1125,7 @@
         passes,
         device,
         "type_check_modules.import_records",
-        &record_scan_steps,
+        &scan_steps,
         hir_active_count_buf,
         &import_record_flag,
         &import_record_prefix,
@@ -1134,7 +1139,7 @@
         passes,
         device,
         "type_check_modules.decl_records",
-        &record_scan_steps,
+        &scan_steps,
         hir_active_count_buf,
         &decl_record_flag,
         &decl_record_prefix,
@@ -3650,14 +3655,11 @@
         HashMap::from([
             ("gParams".into(), params.as_entire_binding()),
             ("hir_status".into(), hir_status_buf.as_entire_binding()),
-            ("hir_kind".into(), hir_kind_buf.as_entire_binding()),
-            ("first_child".into(), hir_items.first_child.as_entire_binding()),
             (
-                "next_sibling".into(),
-                hir_items.next_sibling.as_entire_binding(),
+                "hir_type_alias_target_node".into(),
+                hir_items.type_alias_target_node.as_entire_binding(),
             ),
             ("hir_token_pos".into(), hir_token_pos_buf.as_entire_binding()),
-            ("hir_type_form".into(), hir_items.type_form.as_entire_binding()),
             ("decl_count_out".into(), decl_count_out.as_entire_binding()),
             ("decl_kind".into(), decl_kind.as_entire_binding()),
             ("decl_namespace".into(), decl_namespace.as_entire_binding()),
@@ -4608,6 +4610,7 @@
 
     Ok(ModulePathState {
         n_blocks,
+        record_n_blocks,
         token_capacity,
         record_family_bits,
         record_family_flag,

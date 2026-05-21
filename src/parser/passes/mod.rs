@@ -23,31 +23,57 @@ pub mod hir_call_arg_ordinal_scatter;
 pub mod hir_call_arg_ordinal_step;
 pub mod hir_call_fields;
 pub mod hir_enum_match_fields;
+pub mod hir_enum_rank_compact_scatter;
+pub mod hir_enum_rank_prefix_local;
 pub mod hir_enum_variant_links;
 pub mod hir_enum_variant_rank_step;
 pub mod hir_enum_variant_scatter;
 pub mod hir_expr_fields;
+pub mod hir_fn_return_type;
+pub mod hir_fn_signature_owner_init;
+pub mod hir_fn_signature_owner_step;
 pub mod hir_item_decl_tokens;
 pub mod hir_item_fields;
+pub mod hir_list_rank_compact_scatter;
+pub mod hir_list_rank_prefix_local;
 pub mod hir_literal_values;
 pub mod hir_match_arm_links;
 pub mod hir_match_arm_rank_step;
 pub mod hir_match_arm_scatter;
+pub mod hir_match_rank_compact_scatter;
+pub mod hir_match_rank_prefix_local;
 pub mod hir_member_fields;
 pub mod hir_nodes;
 pub mod hir_param_fields;
 pub mod hir_param_links;
 pub mod hir_param_rank_step;
+pub mod hir_record_clear_base;
+pub mod hir_record_clear_calls;
+pub mod hir_semantic_child_index_clear;
+pub mod hir_semantic_child_index_links;
+pub mod hir_semantic_child_index_rank_step;
 pub mod hir_semantic_compact_scatter;
+pub mod hir_semantic_depth_init;
+pub mod hir_semantic_depth_step;
 pub mod hir_semantic_dispatch_args;
+pub mod hir_semantic_nav;
+pub mod hir_semantic_parent_init;
+pub mod hir_semantic_parent_scatter;
+pub mod hir_semantic_parent_step;
 pub mod hir_semantic_prefix_blocks;
 pub mod hir_semantic_prefix_local;
+pub mod hir_semantic_subtree_end;
 pub mod hir_spans;
 pub mod hir_stmt_fields;
 pub mod hir_struct_field_links;
 pub mod hir_struct_field_rank_step;
 pub mod hir_struct_field_scatter;
 pub mod hir_struct_fields;
+pub mod hir_struct_rank_compact_scatter;
+pub mod hir_struct_rank_prefix_local;
+pub mod hir_type_alias_owner_init;
+pub mod hir_type_alias_owner_step;
+pub mod hir_type_alias_target;
 pub mod hir_type_arg_links;
 pub mod hir_type_arg_rank_step;
 pub mod hir_type_arg_scatter;
@@ -63,6 +89,9 @@ pub mod ll1_blocks_04_scan;
 pub mod llp_pairs;
 pub mod pack_offsets;
 pub mod pack_offsets_status;
+pub mod pack_totals_blocks;
+pub mod pack_totals_reduce;
+pub mod pack_totals_status;
 pub mod pack_varlen;
 pub mod tree_parent;
 pub mod tree_prefix_01;
@@ -82,6 +111,9 @@ pub struct ParserPasses {
     pub llp_pairs: llp_pairs::LLPPairsPass,
     pub pack_offsets: pack_offsets::PackOffsetsScanPass,
     pub pack_offsets_status: pack_offsets_status::PackOffsetsStatusPass,
+    pub pack_totals_blocks: pack_totals_blocks::PackTotalsBlocksPass,
+    pub pack_totals_reduce: pack_totals_reduce::PackTotalsReducePass,
+    pub pack_totals_status: pack_totals_status::PackTotalsStatusPass,
     pub pack_varlen: pack_varlen::PackVarlenPass,
 
     // Bracket matching passes
@@ -109,14 +141,37 @@ pub struct ParserPasses {
     pub hir_semantic_prefix_blocks: hir_semantic_prefix_blocks::HirSemanticPrefixBlocksPass,
     pub hir_semantic_compact_scatter: hir_semantic_compact_scatter::HirSemanticCompactScatterPass,
     pub hir_semantic_dispatch_args: hir_semantic_dispatch_args::HirSemanticDispatchArgsPass,
+    pub hir_semantic_subtree_end: hir_semantic_subtree_end::HirSemanticSubtreeEndPass,
+    pub hir_semantic_parent_init: hir_semantic_parent_init::HirSemanticParentInitPass,
+    pub hir_semantic_parent_step: hir_semantic_parent_step::HirSemanticParentStepPass,
+    pub hir_semantic_parent_scatter: hir_semantic_parent_scatter::HirSemanticParentScatterPass,
+    pub hir_semantic_nav: hir_semantic_nav::HirSemanticNavPass,
+    pub hir_semantic_depth_init: hir_semantic_depth_init::HirSemanticDepthInitPass,
+    pub hir_semantic_depth_step: hir_semantic_depth_step::HirSemanticDepthStepPass,
+    pub hir_semantic_child_index_clear:
+        hir_semantic_child_index_clear::HirSemanticChildIndexClearPass,
+    pub hir_semantic_child_index_links:
+        hir_semantic_child_index_links::HirSemanticChildIndexLinksPass,
+    pub hir_semantic_child_index_rank_step:
+        hir_semantic_child_index_rank_step::HirSemanticChildIndexRankStepPass,
+    pub hir_record_clear_base: hir_record_clear_base::HirRecordClearBasePass,
+    pub hir_record_clear_calls: hir_record_clear_calls::HirRecordClearCallsPass,
     pub hir_spans: hir_spans::HirSpansPass,
     pub hir_type_fields: hir_type_fields::HirTypeFieldsPass,
     pub hir_type_path_leaf_links: hir_type_path_leaf_links::HirTypePathLeafLinksPass,
     pub hir_type_path_leaf_step: hir_type_path_leaf_step::HirTypePathLeafStepPass,
     pub hir_type_path_leaf_scatter: hir_type_path_leaf_scatter::HirTypePathLeafScatterPass,
+    pub hir_list_rank_prefix_local: hir_list_rank_prefix_local::HirListRankPrefixLocalPass,
+    pub hir_list_rank_compact_scatter: hir_list_rank_compact_scatter::HirListRankCompactScatterPass,
     pub hir_type_arg_links: hir_type_arg_links::HirTypeArgLinksPass,
     pub hir_type_arg_rank_step: hir_type_arg_rank_step::HirTypeArgRankStepPass,
     pub hir_type_arg_scatter: hir_type_arg_scatter::HirTypeArgScatterPass,
+    pub hir_type_alias_owner_init: hir_type_alias_owner_init::HirTypeAliasOwnerInitPass,
+    pub hir_type_alias_owner_step: hir_type_alias_owner_step::HirTypeAliasOwnerStepPass,
+    pub hir_type_alias_target: hir_type_alias_target::HirTypeAliasTargetPass,
+    pub hir_fn_signature_owner_init: hir_fn_signature_owner_init::HirFnSignatureOwnerInitPass,
+    pub hir_fn_signature_owner_step: hir_fn_signature_owner_step::HirFnSignatureOwnerStepPass,
+    pub hir_fn_return_type: hir_fn_return_type::HirFnReturnTypePass,
     pub hir_item_fields: hir_item_fields::HirItemFieldsPass,
     pub hir_item_decl_tokens: hir_item_decl_tokens::HirItemDeclTokensPass,
     pub hir_param_links: hir_param_links::HirParamLinksPass,
@@ -136,13 +191,21 @@ pub struct ParserPasses {
     pub hir_array_element_scatter: hir_array_element_scatter::HirArrayElementScatterPass,
     pub hir_enum_match_fields: hir_enum_match_fields::HirEnumMatchFieldsPass,
     pub hir_enum_variant_links: hir_enum_variant_links::HirEnumVariantLinksPass,
+    pub hir_enum_rank_prefix_local: hir_enum_rank_prefix_local::HirEnumRankPrefixLocalPass,
+    pub hir_enum_rank_compact_scatter: hir_enum_rank_compact_scatter::HirEnumRankCompactScatterPass,
     pub hir_enum_variant_rank_step: hir_enum_variant_rank_step::HirEnumVariantRankStepPass,
     pub hir_enum_variant_scatter: hir_enum_variant_scatter::HirEnumVariantScatterPass,
     pub hir_match_arm_links: hir_match_arm_links::HirMatchArmLinksPass,
+    pub hir_match_rank_prefix_local: hir_match_rank_prefix_local::HirMatchRankPrefixLocalPass,
+    pub hir_match_rank_compact_scatter:
+        hir_match_rank_compact_scatter::HirMatchRankCompactScatterPass,
     pub hir_match_arm_rank_step: hir_match_arm_rank_step::HirMatchArmRankStepPass,
     pub hir_match_arm_scatter: hir_match_arm_scatter::HirMatchArmScatterPass,
     pub hir_struct_fields: hir_struct_fields::HirStructFieldsPass,
     pub hir_struct_field_links: hir_struct_field_links::HirStructFieldLinksPass,
+    pub hir_struct_rank_prefix_local: hir_struct_rank_prefix_local::HirStructRankPrefixLocalPass,
+    pub hir_struct_rank_compact_scatter:
+        hir_struct_rank_compact_scatter::HirStructRankCompactScatterPass,
     pub hir_struct_field_rank_step: hir_struct_field_rank_step::HirStructFieldRankStepPass,
     pub hir_struct_field_scatter: hir_struct_field_scatter::HirStructFieldScatterPass,
 }
@@ -157,6 +220,9 @@ impl ParserPasses {
             llp_pairs: llp_pairs::LLPPairsPass::new(device)?,
             pack_offsets: pack_offsets::PackOffsetsScanPass::new(device)?,
             pack_offsets_status: pack_offsets_status::PackOffsetsStatusPass::new(device)?,
+            pack_totals_blocks: pack_totals_blocks::PackTotalsBlocksPass::new(device)?,
+            pack_totals_reduce: pack_totals_reduce::PackTotalsReducePass::new(device)?,
+            pack_totals_status: pack_totals_status::PackTotalsStatusPass::new(device)?,
             pack_varlen: pack_varlen::PackVarlenPass::new(device)?,
 
             b01: brackets_01::BracketsScanInblockPass::new(device)?,
@@ -189,6 +255,32 @@ impl ParserPasses {
                 hir_semantic_compact_scatter::HirSemanticCompactScatterPass::new(device)?,
             hir_semantic_dispatch_args:
                 hir_semantic_dispatch_args::HirSemanticDispatchArgsPass::new(device)?,
+            hir_semantic_subtree_end: hir_semantic_subtree_end::HirSemanticSubtreeEndPass::new(
+                device,
+            )?,
+            hir_semantic_parent_init: hir_semantic_parent_init::HirSemanticParentInitPass::new(
+                device,
+            )?,
+            hir_semantic_parent_step: hir_semantic_parent_step::HirSemanticParentStepPass::new(
+                device,
+            )?,
+            hir_semantic_parent_scatter:
+                hir_semantic_parent_scatter::HirSemanticParentScatterPass::new(device)?,
+            hir_semantic_nav: hir_semantic_nav::HirSemanticNavPass::new(device)?,
+            hir_semantic_depth_init: hir_semantic_depth_init::HirSemanticDepthInitPass::new(
+                device,
+            )?,
+            hir_semantic_depth_step: hir_semantic_depth_step::HirSemanticDepthStepPass::new(
+                device,
+            )?,
+            hir_semantic_child_index_clear:
+                hir_semantic_child_index_clear::HirSemanticChildIndexClearPass::new(device)?,
+            hir_semantic_child_index_links:
+                hir_semantic_child_index_links::HirSemanticChildIndexLinksPass::new(device)?,
+            hir_semantic_child_index_rank_step:
+                hir_semantic_child_index_rank_step::HirSemanticChildIndexRankStepPass::new(device)?,
+            hir_record_clear_base: hir_record_clear_base::HirRecordClearBasePass::new(device)?,
+            hir_record_clear_calls: hir_record_clear_calls::HirRecordClearCallsPass::new(device)?,
             hir_spans: hir_spans::HirSpansPass::new(device)?,
             hir_type_fields: hir_type_fields::HirTypeFieldsPass::new(device)?,
             hir_type_path_leaf_links: hir_type_path_leaf_links::HirTypePathLeafLinksPass::new(
@@ -197,9 +289,25 @@ impl ParserPasses {
             hir_type_path_leaf_step: hir_type_path_leaf_step::HirTypePathLeafStepPass::new(device)?,
             hir_type_path_leaf_scatter:
                 hir_type_path_leaf_scatter::HirTypePathLeafScatterPass::new(device)?,
+            hir_list_rank_prefix_local:
+                hir_list_rank_prefix_local::HirListRankPrefixLocalPass::new(device)?,
+            hir_list_rank_compact_scatter:
+                hir_list_rank_compact_scatter::HirListRankCompactScatterPass::new(device)?,
             hir_type_arg_links: hir_type_arg_links::HirTypeArgLinksPass::new(device)?,
             hir_type_arg_rank_step: hir_type_arg_rank_step::HirTypeArgRankStepPass::new(device)?,
             hir_type_arg_scatter: hir_type_arg_scatter::HirTypeArgScatterPass::new(device)?,
+            hir_type_alias_owner_init: hir_type_alias_owner_init::HirTypeAliasOwnerInitPass::new(
+                device,
+            )?,
+            hir_type_alias_owner_step: hir_type_alias_owner_step::HirTypeAliasOwnerStepPass::new(
+                device,
+            )?,
+            hir_type_alias_target: hir_type_alias_target::HirTypeAliasTargetPass::new(device)?,
+            hir_fn_signature_owner_init:
+                hir_fn_signature_owner_init::HirFnSignatureOwnerInitPass::new(device)?,
+            hir_fn_signature_owner_step:
+                hir_fn_signature_owner_step::HirFnSignatureOwnerStepPass::new(device)?,
+            hir_fn_return_type: hir_fn_return_type::HirFnReturnTypePass::new(device)?,
             hir_item_fields: hir_item_fields::HirItemFieldsPass::new(device)?,
             hir_item_decl_tokens: hir_item_decl_tokens::HirItemDeclTokensPass::new(device)?,
             hir_param_links: hir_param_links::HirParamLinksPass::new(device)?,
@@ -227,16 +335,28 @@ impl ParserPasses {
             )?,
             hir_enum_match_fields: hir_enum_match_fields::HirEnumMatchFieldsPass::new(device)?,
             hir_enum_variant_links: hir_enum_variant_links::HirEnumVariantLinksPass::new(device)?,
+            hir_enum_rank_prefix_local:
+                hir_enum_rank_prefix_local::HirEnumRankPrefixLocalPass::new(device)?,
+            hir_enum_rank_compact_scatter:
+                hir_enum_rank_compact_scatter::HirEnumRankCompactScatterPass::new(device)?,
             hir_enum_variant_rank_step:
                 hir_enum_variant_rank_step::HirEnumVariantRankStepPass::new(device)?,
             hir_enum_variant_scatter: hir_enum_variant_scatter::HirEnumVariantScatterPass::new(
                 device,
             )?,
             hir_match_arm_links: hir_match_arm_links::HirMatchArmLinksPass::new(device)?,
+            hir_match_rank_prefix_local:
+                hir_match_rank_prefix_local::HirMatchRankPrefixLocalPass::new(device)?,
+            hir_match_rank_compact_scatter:
+                hir_match_rank_compact_scatter::HirMatchRankCompactScatterPass::new(device)?,
             hir_match_arm_rank_step: hir_match_arm_rank_step::HirMatchArmRankStepPass::new(device)?,
             hir_match_arm_scatter: hir_match_arm_scatter::HirMatchArmScatterPass::new(device)?,
             hir_struct_fields: hir_struct_fields::HirStructFieldsPass::new(device)?,
             hir_struct_field_links: hir_struct_field_links::HirStructFieldLinksPass::new(device)?,
+            hir_struct_rank_prefix_local:
+                hir_struct_rank_prefix_local::HirStructRankPrefixLocalPass::new(device)?,
+            hir_struct_rank_compact_scatter:
+                hir_struct_rank_compact_scatter::HirStructRankCompactScatterPass::new(device)?,
             hir_struct_field_rank_step:
                 hir_struct_field_rank_step::HirStructFieldRankStepPass::new(device)?,
             hir_struct_field_scatter: hir_struct_field_scatter::HirStructFieldScatterPass::new(
@@ -328,6 +448,39 @@ pub fn record_all_passes(
         .record_pass(&mut ctx, E1D(n_tree_node_threads))?;
     p.hir_semantic_dispatch_args.record_pass(&mut ctx, E1D(1))?;
     let hir_semantic_dispatch_args = ctx.buffers.hir_semantic_dispatch_args.buffer.clone();
+    p.hir_semantic_subtree_end
+        .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
+    p.hir_semantic_parent_init
+        .record_pass(&mut ctx, E1D(n_tree))?;
+    p.hir_semantic_parent_step
+        .record_steps(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_semantic_parent_scatter
+        .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
+    p.hir_semantic_nav
+        .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
+    p.hir_semantic_depth_init
+        .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
+    p.hir_semantic_depth_step.record_steps_indirect(
+        ctx.device,
+        ctx.encoder,
+        ctx.buffers,
+        &hir_semantic_dispatch_args,
+    )?;
+    p.hir_semantic_child_index_clear
+        .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
+    p.hir_semantic_child_index_links
+        .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
+    p.hir_semantic_child_index_rank_step.record_steps_indirect(
+        ctx.device,
+        ctx.encoder,
+        ctx.buffers,
+        &hir_semantic_dispatch_args,
+    )?;
+    let tree_active_dispatch_args = ctx.buffers.tree_active_dispatch_args.buffer.clone();
+    p.hir_record_clear_base
+        .record_pass_indirect(&mut ctx, &tree_active_dispatch_args)?;
+    p.hir_record_clear_calls
+        .record_pass_indirect(&mut ctx, &tree_active_dispatch_args)?;
     p.hir_type_fields.record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_type_path_leaf_links
         .record_pass(&mut ctx, E1D(n_tree))?;
@@ -342,21 +495,92 @@ pub fn record_all_passes(
         .record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_spans.record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_type_arg_links.record_pass(&mut ctx, E1D(n_tree))?;
-    p.hir_type_arg_rank_step
-        .record_steps(ctx.device, ctx.encoder, ctx.buffers)?;
+    clear_type_arg_rank_b(ctx.encoder, ctx.buffers);
+    p.hir_list_rank_prefix_local.record_for_owner_link(
+        ctx.device,
+        ctx.encoder,
+        ctx.buffers,
+        &ctx.buffers.hir_type_fields_params,
+        &ctx.buffers.hir_type_arg_owner_a,
+        &ctx.buffers.hir_type_arg_link_a,
+    )?;
+    p.hir_semantic_prefix_blocks
+        .record_list_rank_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_list_rank_compact_scatter.record_for_params(
+        ctx.device,
+        ctx.encoder,
+        ctx.buffers,
+        &ctx.buffers.hir_type_fields_params,
+    )?;
+    p.hir_type_arg_rank_step.record_steps_indirect(
+        ctx.device,
+        ctx.encoder,
+        ctx.buffers,
+        &ctx.buffers.hir_list_rank_dispatch_args,
+    )?;
     p.hir_type_arg_scatter.record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_enum_match_fields.record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_enum_variant_links
         .record_pass(&mut ctx, E1D(n_tree))?;
-    p.hir_enum_variant_rank_step
-        .record_steps(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_enum_rank_prefix_local
+        .record_pass(&mut ctx, E1D(n_tree_node_threads))?;
+    p.hir_semantic_prefix_blocks
+        .record_enum_rank_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_enum_rank_compact_scatter
+        .record_pass(&mut ctx, E1D(n_tree_node_threads))?;
+    p.hir_enum_variant_rank_step.record_steps_indirect(
+        ctx.device,
+        ctx.encoder,
+        ctx.buffers,
+        &ctx.buffers.hir_enum_rank_dispatch_args,
+    )?;
     p.hir_enum_variant_scatter
         .record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_item_fields
         .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
+    p.hir_type_alias_owner_init
+        .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
+    p.hir_type_alias_owner_step.record_steps_indirect(
+        ctx.device,
+        ctx.encoder,
+        ctx.buffers,
+        &hir_semantic_dispatch_args,
+    )?;
+    p.hir_type_alias_target
+        .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
+    p.hir_fn_signature_owner_init
+        .record_pass_indirect(&mut ctx, &tree_active_dispatch_args)?;
+    p.hir_fn_signature_owner_step.record_steps_indirect(
+        ctx.device,
+        ctx.encoder,
+        ctx.buffers,
+        &tree_active_dispatch_args,
+    )?;
+    p.hir_fn_return_type
+        .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
     p.hir_param_links.record_pass(&mut ctx, E1D(n_tree))?;
-    p.hir_param_rank_step
-        .record_steps(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_list_rank_prefix_local.record_for_owner_link(
+        ctx.device,
+        ctx.encoder,
+        ctx.buffers,
+        &ctx.buffers.hir_param_fields_params,
+        &ctx.buffers.hir_param_owner_a,
+        &ctx.buffers.hir_param_link_a,
+    )?;
+    p.hir_semantic_prefix_blocks
+        .record_list_rank_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_list_rank_compact_scatter.record_for_params(
+        ctx.device,
+        ctx.encoder,
+        ctx.buffers,
+        &ctx.buffers.hir_param_fields_params,
+    )?;
+    p.hir_param_rank_step.record_steps_indirect(
+        ctx.device,
+        ctx.encoder,
+        ctx.buffers,
+        &ctx.buffers.hir_list_rank_dispatch_args,
+    )?;
     p.hir_param_fields
         .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
     p.hir_expr_fields
@@ -368,26 +592,86 @@ pub fn record_all_passes(
     p.hir_call_fields
         .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
     p.hir_call_arg_links.record_pass(&mut ctx, E1D(n_tree))?;
-    p.hir_call_arg_ordinal_step
-        .record_steps(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_list_rank_prefix_local.record_for_owner_link(
+        ctx.device,
+        ctx.encoder,
+        ctx.buffers,
+        &ctx.buffers.hir_call_fields_params,
+        &ctx.buffers.hir_call_arg_owner_a,
+        &ctx.buffers.hir_call_arg_link_a,
+    )?;
+    p.hir_semantic_prefix_blocks
+        .record_list_rank_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_list_rank_compact_scatter.record_for_params(
+        ctx.device,
+        ctx.encoder,
+        ctx.buffers,
+        &ctx.buffers.hir_call_fields_params,
+    )?;
+    p.hir_call_arg_ordinal_step.record_steps_indirect(
+        ctx.device,
+        ctx.encoder,
+        ctx.buffers,
+        &ctx.buffers.hir_list_rank_dispatch_args,
+    )?;
     p.hir_call_arg_ordinal_scatter
         .record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_array_fields.record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_array_element_links
         .record_pass(&mut ctx, E1D(n_tree))?;
-    p.hir_array_element_rank_step
-        .record_steps(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_list_rank_prefix_local.record_for_owner_link(
+        ctx.device,
+        ctx.encoder,
+        ctx.buffers,
+        &ctx.buffers.hir_array_fields_params,
+        &ctx.buffers.hir_array_element_owner_a,
+        &ctx.buffers.hir_array_element_link_a,
+    )?;
+    p.hir_semantic_prefix_blocks
+        .record_list_rank_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_list_rank_compact_scatter.record_for_params(
+        ctx.device,
+        ctx.encoder,
+        ctx.buffers,
+        &ctx.buffers.hir_array_fields_params,
+    )?;
+    p.hir_array_element_rank_step.record_steps_indirect(
+        ctx.device,
+        ctx.encoder,
+        ctx.buffers,
+        &ctx.buffers.hir_list_rank_dispatch_args,
+    )?;
     p.hir_array_element_scatter
         .record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_match_arm_links.record_pass(&mut ctx, E1D(n_tree))?;
-    p.hir_match_arm_rank_step
-        .record_steps(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_match_rank_prefix_local
+        .record_pass(&mut ctx, E1D(n_tree_node_threads))?;
+    p.hir_semantic_prefix_blocks
+        .record_match_rank_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_match_rank_compact_scatter
+        .record_pass(&mut ctx, E1D(n_tree_node_threads))?;
+    p.hir_match_arm_rank_step.record_steps_indirect(
+        ctx.device,
+        ctx.encoder,
+        ctx.buffers,
+        &ctx.buffers.hir_match_rank_dispatch_args,
+    )?;
     p.hir_match_arm_scatter.record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_struct_fields.record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_struct_field_links
         .record_pass(&mut ctx, E1D(n_tree))?;
-    p.hir_struct_field_rank_step
-        .record_steps(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_struct_rank_prefix_local
+        .record_pass(&mut ctx, E1D(n_tree_node_threads))?;
+    p.hir_semantic_prefix_blocks
+        .record_struct_rank_scan(ctx.device, ctx.encoder, ctx.buffers)?;
+    p.hir_struct_rank_compact_scatter
+        .record_pass(&mut ctx, E1D(n_tree_node_threads))?;
+    p.hir_struct_field_rank_step.record_steps_indirect(
+        ctx.device,
+        ctx.encoder,
+        ctx.buffers,
+        &ctx.buffers.hir_struct_rank_dispatch_args,
+    )?;
     p.tree_prev_sibling_clear
         .record_pass(&mut ctx, E1D(n_tree))?;
     p.hir_struct_field_scatter
@@ -396,4 +680,15 @@ pub fn record_all_passes(
         .record_pass_indirect(&mut ctx, &hir_semantic_dispatch_args)?;
 
     Ok(())
+}
+
+fn clear_type_arg_rank_b(encoder: &mut wgpu::CommandEncoder, buffers: &ParserBuffers) {
+    let bytes = u64::from(buffers.tree_capacity) * 4;
+    for buffer in [
+        &buffers.hir_type_arg_owner_b,
+        &buffers.hir_type_arg_link_b,
+        &buffers.hir_type_arg_rank_b,
+    ] {
+        encoder.clear_buffer(&buffer.buffer, 0, Some(bytes));
+    }
 }

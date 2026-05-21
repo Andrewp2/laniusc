@@ -145,6 +145,14 @@ impl HirMatchArmRankStepPass {
                 },
             ),
             (
+                "token_feature_flags".into(),
+                buffers.token_feature_flags.as_entire_binding(),
+            ),
+            (
+                "hir_match_rank_node".into(),
+                buffers.hir_match_rank_node.as_entire_binding(),
+            ),
+            (
                 "hir_match_arm_owner_in".into(),
                 arm_owner_in.as_entire_binding(),
             ),

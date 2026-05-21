@@ -11,19 +11,22 @@ use laniusc::{
     codegen::x86::{
         X86CapacityEstimate,
         x86_capacity_estimate_for_hir_and_tokens,
+        x86_capacity_estimate_for_hir_tokens_and_inst_basis,
+        x86_function_slot_capacity,
         x86_node_inst_order_record_words,
     },
     compiler::{
         GpuCompiler,
+        GpuCompilerBackends,
         GpuLiveCapacityEstimateResult,
         compile_source_to_wasm_with_gpu_codegen_using,
         compile_source_to_x86_64_with_gpu_codegen_using,
     },
-    gpu::device,
+    gpu::{device, trace},
     parser::tables::PrecomputedParseTables,
 };
 
-const RESIDENT_TREE_PRODUCTION_CAPACITY_PER_TOKEN: usize = 4;
+const RESIDENT_TREE_PRODUCTION_CAPACITY_PER_TOKEN: usize = 10;
 const TYPECHECK_CALL_PARAM_CACHE_STRIDE: usize = 16;
 const TYPECHECK_TYPE_INSTANCE_ARG_REF_STRIDE: usize = 4;
 const TYPECHECK_NAME_RADIX_BUCKETS: usize = 257;
@@ -157,7 +160,7 @@ async fn run() -> Result<(), String> {
     }
 
     let generated = make_source_artifact(source_mode, lines, target_bytes, seed);
-    let src = generated.source;
+    let src = generated.source.as_str();
     let source_lines = src.lines().count();
     if dump_source {
         print!("{src}");
@@ -168,9 +171,20 @@ async fn run() -> Result<(), String> {
         return Ok(());
     }
     if estimate_live {
-        let compiler = GpuCompiler::new_with_device(device::global())
-            .await
-            .map_err(|err| err.to_string())?;
+        if generated.sources.len() > 1 {
+            print_capacity_estimate(source_lines, src.len(), parse_tables.as_ref());
+            println!(
+                "estimate_live source_pack=skipped note=live parse estimate currently reports single-source parser metrics"
+            );
+            return Ok(());
+        }
+        let compiler = GpuCompiler::new_with_device_and_backends(
+            device::global(),
+            GpuCompilerBackends::frontend_only(),
+        )
+        .await
+        .map_err(|err| err.to_string())?;
+        device::persist_pipeline_cache();
         let live = compiler
             .benchmark_live_capacity_estimate(&src)
             .await
@@ -185,39 +199,59 @@ async fn run() -> Result<(), String> {
         allow_large,
         parse_tables.as_ref(),
     )?;
-    let compiler = GpuCompiler::new_with_device(device::global())
-        .await
-        .map_err(|err| err.to_string())?;
+    let compiler = GpuCompiler::new_with_device_and_backends(
+        device::global(),
+        compiler_backends_for_phase(phase),
+    )
+    .await
+    .map_err(|err| err.to_string())?;
+    device::persist_pipeline_cache();
 
-    for _ in 0..warmups {
-        run_phase(
+    for warmup_i in 0..warmups {
+        let start = Instant::now();
+        let result = run_phase(
             phase,
-            &src,
+            &generated,
             &compiler,
             validate_output,
             run_x86_output,
             generated.expected_stdout.as_deref(),
             "warmup",
         )
-        .await?;
+        .await;
+        trace::record_host_span(
+            "host.bench",
+            &format!("bench.warmup.{warmup_i}"),
+            start,
+            Instant::now(),
+        );
+        result?;
     }
 
     let mut best_ms = f64::INFINITY;
     let mut total_ms = 0.0f64;
     let mut output_bytes = 0usize;
-    for _ in 0..iters {
+    for iter_i in 0..iters {
         let start = Instant::now();
-        let emitted = run_phase(
+        let result = run_phase(
             phase,
-            &src,
+            &generated,
             &compiler,
             validate_output,
             run_x86_output,
             generated.expected_stdout.as_deref(),
             "measured",
         )
-        .await?;
-        let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
+        .await;
+        let end = Instant::now();
+        trace::record_host_span(
+            "host.bench",
+            &format!("bench.measured.{iter_i}"),
+            start,
+            end,
+        );
+        let emitted = result?;
+        let elapsed_ms = end.duration_since(start).as_secs_f64() * 1000.0;
         best_ms = best_ms.min(elapsed_ms);
         total_ms += elapsed_ms;
         output_bytes = emitted.len();
@@ -235,6 +269,7 @@ async fn run() -> Result<(), String> {
         source_mode.name(),
         src.len()
     );
+    trace::flush();
     Ok(())
 }
 
@@ -262,9 +297,9 @@ async fn run_source_suite(
     let mut suite_avg_ms_total = 0.0f64;
     let mut suite_slowest_source = SourceMode::SimpleLets;
     let mut suite_slowest_avg_ms = 0.0f64;
-    for source_mode in GENERATED_SOURCE_MODES {
+    for source_mode in generated_source_modes_for_phase(phase).iter().copied() {
         let generated = make_source_artifact(source_mode, lines, target_bytes, seed);
-        let src = generated.source;
+        let src = generated.source.as_str();
         let source_lines = src.lines().count();
 
         if estimate_only {
@@ -274,12 +309,24 @@ async fn run_source_suite(
         }
 
         if estimate_live {
+            if generated.sources.len() > 1 {
+                println!("source={}", source_mode.name());
+                print_capacity_estimate(source_lines, src.len(), parse_tables);
+                println!(
+                    "estimate_live source_pack=skipped note=live parse estimate currently reports single-source parser metrics"
+                );
+                continue;
+            }
             if compiler.is_none() {
                 compiler = Some(
-                    GpuCompiler::new_with_device(device::global())
-                        .await
-                        .map_err(|err| err.to_string())?,
+                    GpuCompiler::new_with_device_and_backends(
+                        device::global(),
+                        GpuCompilerBackends::frontend_only(),
+                    )
+                    .await
+                    .map_err(|err| err.to_string())?,
                 );
+                device::persist_pipeline_cache();
             }
             let compiler = compiler.as_ref().expect("suite compiler initialized");
             let live = compiler
@@ -294,42 +341,62 @@ async fn run_source_suite(
         reject_large_interactive_run(phase, source_lines, src.len(), allow_large, parse_tables)?;
         if compiler.is_none() {
             compiler = Some(
-                GpuCompiler::new_with_device(device::global())
-                    .await
-                    .map_err(|err| err.to_string())?,
+                GpuCompiler::new_with_device_and_backends(
+                    device::global(),
+                    compiler_backends_for_phase(phase),
+                )
+                .await
+                .map_err(|err| err.to_string())?,
             );
+            device::persist_pipeline_cache();
         }
         let compiler = compiler.as_ref().expect("suite compiler initialized");
 
-        for _ in 0..warmups {
-            run_phase(
+        for warmup_i in 0..warmups {
+            let start = Instant::now();
+            let result = run_phase(
                 phase,
-                &src,
+                &generated,
                 compiler,
                 validate_output,
                 run_x86_output,
                 generated.expected_stdout.as_deref(),
                 "warmup",
             )
-            .await?;
+            .await;
+            trace::record_host_span(
+                "host.bench",
+                &format!("bench.{}.warmup.{warmup_i}", source_mode.name()),
+                start,
+                Instant::now(),
+            );
+            result?;
         }
 
         let mut best_ms = f64::INFINITY;
         let mut total_ms = 0.0f64;
         let mut output_bytes = 0usize;
-        for _ in 0..iters {
+        for iter_i in 0..iters {
             let start = Instant::now();
-            let emitted = run_phase(
+            let result = run_phase(
                 phase,
-                &src,
+                &generated,
                 compiler,
                 validate_output,
                 run_x86_output,
                 generated.expected_stdout.as_deref(),
                 "measured",
             )
-            .await?;
-            let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
+            .await;
+            let end = Instant::now();
+            trace::record_host_span(
+                "host.bench",
+                &format!("bench.{}.measured.{iter_i}", source_mode.name()),
+                start,
+                end,
+            );
+            let emitted = result?;
+            let elapsed_ms = end.duration_since(start).as_secs_f64() * 1000.0;
             best_ms = best_ms.min(elapsed_ms);
             total_ms += elapsed_ms;
             output_bytes = emitted.len();
@@ -365,7 +432,15 @@ async fn run_source_suite(
             suite_slowest_source.name(),
         );
     }
+    trace::flush();
     Ok(())
+}
+
+fn generated_source_modes_for_phase(phase: Phase) -> &'static [SourceMode] {
+    match phase {
+        Phase::Lex | Phase::Parse => &GENERATED_SINGLE_SOURCE_MODES,
+        Phase::TypeCheck | Phase::Wasm | Phase::X86 => &GENERATED_COMPILE_SOURCE_MODES,
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -397,6 +472,14 @@ impl Phase {
     }
 }
 
+fn compiler_backends_for_phase(phase: Phase) -> GpuCompilerBackends {
+    match phase {
+        Phase::Wasm => GpuCompilerBackends::wasm_only(),
+        Phase::X86 => GpuCompilerBackends::x86_only(),
+        Phase::Lex | Phase::Parse | Phase::TypeCheck => GpuCompilerBackends::frontend_only(),
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SourceMode {
     SimpleLets,
@@ -406,10 +489,11 @@ enum SourceMode {
     AbiCalls,
     Varied,
     LongFunction,
+    ModulePack,
     All,
 }
 
-const GENERATED_SOURCE_MODES: [SourceMode; 7] = [
+const GENERATED_SINGLE_SOURCE_MODES: [SourceMode; 7] = [
     SourceMode::SimpleLets,
     SourceMode::Mixed,
     SourceMode::CallGraph,
@@ -419,15 +503,40 @@ const GENERATED_SOURCE_MODES: [SourceMode; 7] = [
     SourceMode::LongFunction,
 ];
 
+const GENERATED_COMPILE_SOURCE_MODES: [SourceMode; 8] = [
+    SourceMode::SimpleLets,
+    SourceMode::Mixed,
+    SourceMode::CallGraph,
+    SourceMode::ExprDense,
+    SourceMode::AbiCalls,
+    SourceMode::Varied,
+    SourceMode::LongFunction,
+    SourceMode::ModulePack,
+];
+
 async fn run_phase(
     phase: Phase,
-    src: &str,
+    generated: &SourceArtifact,
     compiler: &GpuCompiler<'_>,
     validate_output: bool,
     run_x86_output: bool,
     expected_stdout: Option<&str>,
     phase_name: &str,
 ) -> Result<Vec<u8>, String> {
+    let src = generated.source.as_str();
+    let sources = generated.sources.as_slice();
+    if sources.len() > 1 {
+        return run_source_pack_phase(
+            phase,
+            sources,
+            compiler,
+            validate_output,
+            run_x86_output,
+            expected_stdout,
+            phase_name,
+        )
+        .await;
+    }
     match phase {
         Phase::Lex => {
             compiler
@@ -477,6 +586,49 @@ async fn run_phase(
     }
 }
 
+async fn run_source_pack_phase(
+    phase: Phase,
+    sources: &[String],
+    compiler: &GpuCompiler<'_>,
+    validate_output: bool,
+    run_x86_output: bool,
+    expected_stdout: Option<&str>,
+    phase_name: &str,
+) -> Result<Vec<u8>, String> {
+    match phase {
+        Phase::Lex | Phase::Parse => Err(format!(
+            "--source {} is a source-pack generator; use --phase typecheck, wasm, or x86",
+            SourceMode::ModulePack.name()
+        )),
+        Phase::TypeCheck => {
+            compiler
+                .type_check_source_pack(sources)
+                .await
+                .map_err(|err| err.to_string())?;
+            Ok(Vec::new())
+        }
+        Phase::Wasm => {
+            let wasm = compiler
+                .compile_source_pack_to_wasm(sources)
+                .await
+                .map_err(|err| err.to_string())?;
+            validate_wasm_output(validate_output, &wasm, phase_name)?;
+            Ok(wasm)
+        }
+        Phase::X86 => {
+            let elf = compiler
+                .compile_source_pack_to_x86_64(sources)
+                .await
+                .map_err(|err| err.to_string())?;
+            validate_x86_output(validate_output, &elf, phase_name)?;
+            if run_x86_output {
+                run_x86_output_zero_exit(&elf, phase_name, expected_stdout)?;
+            }
+            Ok(elf)
+        }
+    }
+}
+
 impl SourceMode {
     fn name(self) -> &'static str {
         match self {
@@ -487,6 +639,7 @@ impl SourceMode {
             SourceMode::AbiCalls => "abi-calls",
             SourceMode::Varied => "varied",
             SourceMode::LongFunction => "long-function",
+            SourceMode::ModulePack => "module-pack",
             SourceMode::All => "all",
         }
     }
@@ -559,9 +712,10 @@ fn parse_source_mode(value: Option<String>) -> Result<SourceMode, String> {
         "long-function" | "long-fn" | "single-function" | "single-fn" => {
             Ok(SourceMode::LongFunction)
         }
+        "module-pack" | "modules" | "source-pack" | "pack" => Ok(SourceMode::ModulePack),
         "all" | "suite" | "generated-suite" => Ok(SourceMode::All),
         other => Err(format!(
-            "unsupported --source {other:?}; expected simple-lets, mixed, call-graph, expr-dense, abi-calls, varied, long-function, or all"
+            "unsupported --source {other:?}; expected simple-lets, mixed, call-graph, expr-dense, abi-calls, varied, long-function, module-pack, or all"
         )),
     }
 }
@@ -783,12 +937,23 @@ fn print_live_capacity_estimate(
         live.token_count, live.parser_emit_len, live.semantic_hir_count
     );
     let x86_hir_words = (live.parser_emit_len as usize).max(1);
-    print_capacity_floors(token_capacity, &parse_capacity, Some(x86_hir_words));
+    let semantic_hir_words = (live.semantic_hir_count as usize).max(1);
+    print_capacity_floors(
+        token_capacity,
+        &parse_capacity,
+        Some((x86_hir_words, semantic_hir_words)),
+    );
     if x86_hir_words < parse_capacity.tree_capacity {
-        let projected_x86_capacity =
-            x86_capacity_estimate_for_hir_and_tokens(parse_capacity.tree_capacity, token_capacity);
-        let current_x86_capacity =
-            x86_capacity_estimate_for_hir_and_tokens(x86_hir_words, token_capacity);
+        let projected_x86_capacity = x86_capacity_estimate_for_hir_tokens_and_inst_basis(
+            parse_capacity.tree_capacity,
+            token_capacity,
+            semantic_hir_words,
+        );
+        let current_x86_capacity = x86_capacity_estimate_for_hir_tokens_and_inst_basis(
+            x86_hir_words,
+            token_capacity,
+            semantic_hir_words,
+        );
         let projected_x86_floor =
             x86_allocation_floor_bytes(token_capacity, &projected_x86_capacity);
         let current_x86_floor = x86_allocation_floor_bytes(token_capacity, &current_x86_capacity);
@@ -803,19 +968,24 @@ fn print_live_capacity_estimate(
             human_bytes(saved)
         );
     }
-    let semantic_hir_words = (live.semantic_hir_count as usize).max(1);
     if semantic_hir_words < x86_hir_words {
-        let current_x86_capacity =
-            x86_capacity_estimate_for_hir_and_tokens(x86_hir_words, token_capacity);
-        let dense_x86_capacity =
-            x86_capacity_estimate_for_hir_and_tokens(semantic_hir_words, token_capacity);
+        let current_x86_capacity = x86_capacity_estimate_for_hir_tokens_and_inst_basis(
+            x86_hir_words,
+            token_capacity,
+            semantic_hir_words,
+        );
+        let dense_x86_capacity = x86_capacity_estimate_for_hir_tokens_and_inst_basis(
+            semantic_hir_words,
+            token_capacity,
+            semantic_hir_words,
+        );
         let current_x86_floor = x86_allocation_floor_bytes(token_capacity, &current_x86_capacity);
         let dense_x86_floor = x86_allocation_floor_bytes(token_capacity, &dense_x86_capacity);
         let saved = current_x86_floor
             .hir_scaled
             .saturating_sub(dense_x86_floor.hir_scaled);
         println!(
-            "estimate_live x86_semantic_dense_hypothesis semantic_hir_words={semantic_hir_words} current_hir_words={x86_hir_words} current_x86_hir_scaled={} dense_x86_hir_scaled={} possible_hir_scaled_savings={} note=diagnostic-only-backend-records-are-still-original-hir-keyed",
+            "estimate_live x86_semantic_dense_hypothesis semantic_hir_words={semantic_hir_words} current_hir_words={x86_hir_words} current_x86_hir_scaled={} dense_x86_hir_scaled={} possible_hir_scaled_savings={} note=diagnostic-only-HIR-records-are-still-original-node-keyed",
             human_bytes(current_x86_floor.hir_scaled),
             human_bytes(dense_x86_floor.hir_scaled),
             human_bytes(saved)
@@ -829,7 +999,7 @@ fn print_live_capacity_estimate(
 fn print_capacity_floors(
     token_capacity: usize,
     parse_capacity: &ParserCapacityEstimate,
-    x86_hir_words_override: Option<usize>,
+    x86_words_override: Option<(usize, usize)>,
 ) {
     let allocation_floor = parser_allocation_floor_bytes(parse_capacity);
     let typecheck_floor =
@@ -866,20 +1036,26 @@ fn print_capacity_floors(
         "estimate frontend_allocation_floor parser_plus_typecheck={}",
         human_bytes(allocation_floor.total.saturating_add(typecheck_floor.total))
     );
-    let x86_hir_words = x86_hir_words_override
-        .unwrap_or(parse_capacity.tree_capacity)
-        .max(1);
-    let x86_hir_basis = if x86_hir_words_override.is_some() {
-        "parser_emit_len"
-    } else {
-        "parser_tree_capacity"
+    let (x86_hir_words, x86_inst_basis_words) =
+        x86_words_override.unwrap_or((parse_capacity.tree_capacity, parse_capacity.tree_capacity));
+    let x86_hir_words = x86_hir_words.max(1);
+    let x86_inst_basis_words = x86_inst_basis_words.max(1);
+    let x86_hir_basis = match x86_words_override {
+        Some(_) if x86_inst_basis_words < x86_hir_words => "parser_emit_len+semantic_hir_count",
+        Some(_) => "parser_emit_len",
+        None => "parser_tree_capacity",
     };
-    let x86_capacity = x86_capacity_estimate_for_hir_and_tokens(x86_hir_words, token_capacity);
+    let x86_capacity = x86_capacity_estimate_for_hir_tokens_and_inst_basis(
+        x86_hir_words,
+        token_capacity,
+        x86_inst_basis_words,
+    );
     let x86_dynamic = x86_dynamic_buffer_estimate_bytes(&x86_capacity);
     let x86_floor = x86_allocation_floor_bytes(token_capacity, &x86_capacity);
     println!(
-        "estimate x86_dynamic_caps hir_basis={x86_hir_basis} hir_words={} requested_inst_capacity={} inst_capacity={} inst_capacity_capped={} output_capacity={}",
+        "estimate x86_dynamic_caps hir_basis={x86_hir_basis} hir_words={} inst_basis_words={} requested_inst_capacity={} inst_capacity={} inst_capacity_capped={} output_capacity={}",
         x86_capacity.hir_words,
+        x86_capacity.inst_basis_words,
         x86_capacity.requested_inst_capacity,
         x86_capacity.inst_capacity,
         x86_capacity.inst_capacity_capped,
@@ -965,7 +1141,7 @@ fn x86_allocation_floor_bytes(
     const STATUS_WORDS: usize = 4;
     const FUNC_META_WORDS: usize = 8;
     const ELF_LAYOUT_WORDS: usize = 8;
-    const TRACE_STATUS_WORDS: usize = 84;
+    const TRACE_STATUS_WORDS: usize = 92;
 
     let token_words = token_capacity.max(1);
     let hir_words = capacity.hir_words.max(1);
@@ -1055,11 +1231,11 @@ fn x86_allocation_floor_bytes(
         // x86 calls resolve function targets through the token-indexed
         // declaration table rather than a second open-address function table,
         // and const values are token-row sized.
-        // Register allocation keeps active-end register state in token-scaled
+        // Register allocation keeps active-end register state in compact
         // function slots and uses a compact function-slot list for active
         // dispatch.
     )
-    .saturating_sub(83usize);
+    .saturating_sub(91usize);
     let hir_scaled_words = hir_words.saturating_mul(hir_scaled_words_per_node);
     let token_scaled_words_per_token = {
         // Token-sized metadata and the token half of compact backend lookup
@@ -1070,7 +1246,6 @@ fn x86_allocation_floor_bytes(
         let struct_type_record = 1usize;
         let decl_layout_record = 4usize;
         let decl_node_by_token = 1usize;
-        let func_slot_by_index = 1usize;
         let const_value_record = 2usize;
         let param_reg_record = 5usize;
         let local_literal_record = 3usize;
@@ -1080,20 +1255,23 @@ fn x86_allocation_floor_bytes(
             + struct_type_record
             + decl_layout_record
             + decl_node_by_token
-            + func_slot_by_index
             + const_value_record
             + param_reg_record
             + local_literal_record
             + call_arg_lookup_record
             + call_abi_record
     };
-    let virtual_regalloc_active_end_words = token_words.saturating_mul(10);
+    let function_slot_words =
+        x86_function_slot_capacity(capacity.inst_basis_words, hir_words, token_words);
+    let virtual_regalloc_active_end_words = function_slot_words.saturating_mul(14);
     let legacy_node_inst_order_reuse_words = node_inst_scan_words.saturating_mul(3);
     let node_inst_order_reuse_words =
-        x86_node_inst_order_record_words(hir_words, inst, token_words);
-    let hir_scaled_words = hir_scaled_words.saturating_sub(
-        legacy_node_inst_order_reuse_words.saturating_sub(node_inst_order_reuse_words),
-    );
+        x86_node_inst_order_record_words(hir_words, inst, function_slot_words);
+    let hir_scaled_words = hir_scaled_words
+        .saturating_sub(
+            legacy_node_inst_order_reuse_words.saturating_sub(node_inst_order_reuse_words),
+        )
+        .saturating_add(function_slot_words);
     let active_end_extra_words =
         virtual_regalloc_active_end_words.saturating_sub(node_inst_order_reuse_words);
     let token_scaled_words = token_words
@@ -1101,10 +1279,12 @@ fn x86_allocation_floor_bytes(
         .saturating_add(active_end_extra_words);
     let inst_scaled_words = inst.saturating_mul(
         // Virtual instruction records plus the inst-sized scratch that remains
-        // live after lifetime reuse. Selected instruction fields and
-        // instruction sizes reuse dead backend scratch records; byte offsets
-        // and text-scan local prefixes are retained as compact inst-sized
-        // rows after virtual use-edge materialization was removed.
+        // live after lifetime reuse. Fixed-barrier spans reuse the future
+        // call-live-mask table before register allocation writes the final
+        // masks. Selected instruction fields and instruction sizes reuse dead
+        // backend scratch records; byte offsets and text-scan local prefixes
+        // are retained as compact inst-sized rows after virtual use-edge
+        // materialization was removed.
         4 + 4 + 1 + 1 + 1 + 1 + 1 + 1 + 1,
     );
     let scan_words = func_owner_scan_blocks
@@ -1309,7 +1489,7 @@ fn parser_allocation_floor_bytes(estimate: &ParserCapacityEstimate) -> ParserAll
 fn parser_tree_floor_bytes(tree_capacity: usize) -> usize {
     // Resident parser/HIR tree-capacity allocations after shared pointer-jump
     // list scratch. This counts actual allocations, not alias views.
-    const PARSER_TREE_SCALAR_U32_BUFFERS: usize = 76;
+    const PARSER_TREE_SCALAR_U32_BUFFERS: usize = 79;
     const PARSER_TREE_U32X4_RECORD_BUFFERS: usize = 3;
     let parser_tree_scalar_floor_bytes = PARSER_TREE_SCALAR_U32_BUFFERS
         .saturating_mul(tree_capacity)
@@ -1442,7 +1622,27 @@ fn human_bytes(bytes: usize) -> String {
 
 struct SourceArtifact {
     source: String,
+    sources: Vec<String>,
     expected_stdout: Option<String>,
+}
+
+impl SourceArtifact {
+    fn single(source: String, expected_stdout: Option<String>) -> Self {
+        Self {
+            sources: vec![source.clone()],
+            source,
+            expected_stdout,
+        }
+    }
+
+    fn source_pack(sources: Vec<String>, expected_stdout: Option<String>) -> Self {
+        let source = sources.join("");
+        Self {
+            source,
+            sources,
+            expected_stdout,
+        }
+    }
 }
 
 fn make_source_artifact(
@@ -1460,6 +1660,7 @@ fn make_source_artifact(
             let SourceArtifact {
                 source,
                 expected_stdout,
+                ..
             } = make_mixed_source_artifact(lines, target_bytes, seed);
             (source, expected_stdout)
         }
@@ -1467,6 +1668,7 @@ fn make_source_artifact(
             let SourceArtifact {
                 source,
                 expected_stdout,
+                ..
             } = make_call_graph_source_artifact(lines, target_bytes, seed);
             (source, expected_stdout)
         }
@@ -1474,6 +1676,7 @@ fn make_source_artifact(
             let SourceArtifact {
                 source,
                 expected_stdout,
+                ..
             } = make_expr_dense_source_artifact(lines, target_bytes, seed);
             (source, expected_stdout)
         }
@@ -1481,6 +1684,7 @@ fn make_source_artifact(
             let SourceArtifact {
                 source,
                 expected_stdout,
+                ..
             } = make_abi_call_source_artifact(lines, target_bytes, seed);
             (source, expected_stdout)
         }
@@ -1488,6 +1692,7 @@ fn make_source_artifact(
             let SourceArtifact {
                 source,
                 expected_stdout,
+                ..
             } = make_varied_source_artifact(lines, target_bytes, seed);
             (source, expected_stdout)
         }
@@ -1495,15 +1700,16 @@ fn make_source_artifact(
             let SourceArtifact {
                 source,
                 expected_stdout,
+                ..
             } = make_long_function_source_artifact(lines, target_bytes, seed);
             (source, expected_stdout)
         }
+        SourceMode::ModulePack => {
+            return make_module_pack_source_artifact(lines, target_bytes, seed);
+        }
         SourceMode::All => unreachable!("suite mode expands before source generation"),
     };
-    SourceArtifact {
-        source,
-        expected_stdout,
-    }
+    SourceArtifact::single(source, expected_stdout)
 }
 
 #[cfg(test)]
@@ -1546,6 +1752,91 @@ fn make_simple_let_source(lines: usize, target_bytes: Option<usize>) -> String {
     src
 }
 
+fn make_module_pack_source_artifact(
+    lines: usize,
+    target_bytes: Option<usize>,
+    seed: u64,
+) -> SourceArtifact {
+    let mut rng = DeterministicRng::new(seed ^ 0x9e37_79b9);
+    let root = varied_short_ident("pkg", 0, &mut rng);
+    let math_segment = varied_short_ident("math", 1, &mut rng);
+    let bridge_segment = varied_short_ident("bridge", 2, &mut rng);
+    let math_module = format!("{root}::{math_segment}");
+    let bridge_module = format!("{root}::{bridge_segment}");
+    let mut math_src = format!("module {math_module};\n");
+    let mut bridge_src = format!("module {bridge_module};\nimport {math_module};\n");
+    let mut main_src = format!("module app::main;\nimport {bridge_module};\nfn main() {{\n");
+    let mut expected_stdout = String::new();
+    let mut line_count = 5usize;
+    let mut chunk = 0usize;
+
+    loop {
+        let projected_len = math_src
+            .len()
+            .saturating_add(bridge_src.len())
+            .saturating_add(main_src.len())
+            .saturating_add(32);
+        if target_bytes.is_some_and(|target| projected_len >= target)
+            || target_bytes.is_none() && line_count >= lines
+        {
+            break;
+        }
+
+        let math_fn = varied_short_ident("mf", chunk, &mut rng);
+        let bridge_fn = varied_short_ident("bf", chunk, &mut rng);
+        let extra = (rng.small_int() % 23) as i32;
+        let threshold = (rng.small_int() % 31 + 8) as i32;
+        let bias = (rng.small_int() % 11 + 1) as i32;
+        let tail = (rng.small_int() % 17) as i32;
+        let arg = (rng.small_int() % 37) as i32;
+        let total = arg + extra;
+        let math_value = if total > threshold {
+            total - bias
+        } else {
+            total + bias
+        };
+        append_expected_print(&mut expected_stdout, math_value + tail);
+
+        math_src.push_str("pub fn ");
+        math_src.push_str(&math_fn);
+        math_src.push_str("(left: i32, right: i32) -> i32 {\n");
+        math_src.push_str("    let total: i32 = left + right;\n");
+        math_src.push_str("    if (total > ");
+        math_src.push_str(&threshold.to_string());
+        math_src.push_str(") {\n        return total - ");
+        math_src.push_str(&bias.to_string());
+        math_src.push_str(";\n    } else {\n        return total + ");
+        math_src.push_str(&bias.to_string());
+        math_src.push_str(";\n    }\n}\n");
+
+        bridge_src.push_str("pub fn ");
+        bridge_src.push_str(&bridge_fn);
+        bridge_src.push_str("(value: i32) -> i32 {\n    return ");
+        bridge_src.push_str(&math_module);
+        bridge_src.push_str("::");
+        bridge_src.push_str(&math_fn);
+        bridge_src.push_str("(value, ");
+        bridge_src.push_str(&extra.to_string());
+        bridge_src.push_str(") + ");
+        bridge_src.push_str(&tail.to_string());
+        bridge_src.push_str(";\n}\n");
+
+        main_src.push_str("    print(");
+        main_src.push_str(&bridge_module);
+        main_src.push_str("::");
+        main_src.push_str(&bridge_fn);
+        main_src.push('(');
+        main_src.push_str(&arg.to_string());
+        main_src.push_str("));\n");
+
+        line_count += 13;
+        chunk += 1;
+    }
+
+    main_src.push_str("    return 0;\n}\n");
+    SourceArtifact::source_pack(vec![math_src, bridge_src, main_src], Some(expected_stdout))
+}
+
 fn push_simple_let_line(src: &mut String, i: usize) {
     src.push_str("let x");
     src.push_str(&i.to_string());
@@ -1559,24 +1850,63 @@ fn make_mixed_source_artifact(
     target_bytes: Option<usize>,
     seed: u64,
 ) -> SourceArtifact {
-    let mut src = String::with_capacity(target_bytes.unwrap_or(lines.saturating_mul(48)));
+    const MIXED_CHUNKS_PER_HELPER: usize = 32;
+
+    let mut functions = String::with_capacity(target_bytes.unwrap_or(lines.saturating_mul(48)));
+    let mut main_body = String::new();
     let mut rng = DeterministicRng::new(seed);
     let mut expected_stdout = String::new();
     let mut line_count = 0usize;
     let mut chunk = 0usize;
+    let mut helper_i = 0usize;
     loop {
-        if target_bytes.is_some_and(|target| src.len() >= target)
+        let generated_len = functions.len().saturating_add(main_body.len());
+        if target_bytes.is_some_and(|target| generated_len >= target)
             || target_bytes.is_none() && line_count >= lines
         {
             break;
         }
-        line_count += push_mixed_chunk(&mut src, chunk, &mut rng, &mut expected_stdout);
-        chunk += 1;
+
+        let mut helper_body = String::new();
+        let mut helper_chunks = 0usize;
+        while helper_chunks < MIXED_CHUNKS_PER_HELPER
+            && target_bytes.is_none_or(|target| {
+                functions
+                    .len()
+                    .saturating_add(main_body.len())
+                    .saturating_add(helper_body.len())
+                    < target
+            })
+            && (target_bytes.is_some() || line_count < lines)
+        {
+            line_count += push_mixed_chunk(&mut helper_body, chunk, &mut rng, &mut expected_stdout);
+            chunk += 1;
+            helper_chunks += 1;
+        }
+
+        if helper_chunks == 0 {
+            break;
+        }
+
+        functions.push_str("fn mix_helper");
+        functions.push_str(&helper_i.to_string());
+        functions.push_str("() -> i32 {\n");
+        functions.push_str(&helper_body);
+        if !helper_body.ends_with('\n') {
+            functions.push('\n');
+        }
+        functions.push_str("    return 0;\n}\n");
+
+        main_body.push_str("let mix_result");
+        main_body.push_str(&helper_i.to_string());
+        main_body.push_str(" = mix_helper");
+        main_body.push_str(&helper_i.to_string());
+        main_body.push_str("();\n");
+        helper_i += 1;
     }
-    SourceArtifact {
-        source: wrap_body_in_main(&src),
-        expected_stdout: Some(expected_stdout),
-    }
+    let mut source = functions;
+    source.push_str(&wrap_body_in_main(&main_body));
+    SourceArtifact::single(source, Some(expected_stdout))
 }
 
 fn push_mixed_chunk(
@@ -1679,10 +2009,7 @@ fn make_long_function_source_artifact(
     }
 
     src.push_str("    return 0;\n}\n");
-    SourceArtifact {
-        source: src,
-        expected_stdout: Some(sim.expected_stdout),
-    }
+    SourceArtifact::single(src, Some(sim.expected_stdout))
 }
 
 fn push_long_function_chunk(
@@ -2234,10 +2561,7 @@ fn make_call_graph_source_artifact(
     src.push_str(&main_body);
     src.push_str("    return 0;\n");
     src.push_str("}\n");
-    SourceArtifact {
-        source: src,
-        expected_stdout: Some(expected_stdout),
-    }
+    SourceArtifact::single(src, Some(expected_stdout))
 }
 
 fn push_call_graph_function(
@@ -2494,17 +2818,25 @@ fn make_expr_dense_source_artifact(
     target_bytes: Option<usize>,
     seed: u64,
 ) -> SourceArtifact {
+    const EXPR_DENSE_PRINTS_PER_BLOCK: usize = 32;
+
     let mut functions = String::with_capacity(target_bytes.unwrap_or(lines.saturating_mul(96)));
     let mut main_body = String::with_capacity(lines.saturating_mul(32).min(96 * 1024));
+    let mut print_functions = String::new();
+    let mut print_block_body = String::new();
     let mut rng = DeterministicRng::new(seed ^ 0x0e95_dede_5eed);
     let mut generated = Vec::<GeneratedFunction>::new();
     let mut expected_stdout = String::new();
     let mut line_count = 3usize;
     let mut chunk = 0usize;
+    let mut print_block_i = 0usize;
+    let mut prints_in_block = 0usize;
 
     loop {
         let projected_len = functions
             .len()
+            .saturating_add(print_functions.len())
+            .saturating_add(print_block_body.len())
             .saturating_add(main_body.len())
             .saturating_add(32);
         if target_bytes.is_some_and(|target| projected_len >= target)
@@ -2523,30 +2855,75 @@ fn make_expr_dense_source_artifact(
 
         let call = generated_call_expr(&function, chunk + 97, &mut rng);
         append_expected_print(&mut expected_stdout, call.eval(&[]));
-        main_body.push_str("    print(");
-        main_body.push_str(&call.source(&[]));
-        main_body.push_str(");\n");
+        print_block_body.push_str("    print(");
+        print_block_body.push_str(&call.source(&[]));
+        print_block_body.push_str(");\n");
         line_count += 1;
+        prints_in_block += 1;
+
+        if prints_in_block == EXPR_DENSE_PRINTS_PER_BLOCK {
+            line_count += flush_expr_dense_print_block(
+                &mut print_functions,
+                &mut main_body,
+                &mut print_block_body,
+                print_block_i,
+            );
+            print_block_i += 1;
+            prints_in_block = 0;
+        }
 
         generated.push(function);
         chunk += 1;
+    }
+    if !print_block_body.is_empty() {
+        flush_expr_dense_print_block(
+            &mut print_functions,
+            &mut main_body,
+            &mut print_block_body,
+            print_block_i,
+        );
     }
 
     let mut src = String::with_capacity(
         functions
             .len()
+            .saturating_add(print_functions.len())
             .saturating_add(main_body.len())
             .saturating_add(32),
     );
     src.push_str(&functions);
+    src.push_str(&print_functions);
     src.push_str("fn main() {\n");
     src.push_str(&main_body);
     src.push_str("    return 0;\n");
     src.push_str("}\n");
-    SourceArtifact {
-        source: src,
-        expected_stdout: Some(expected_stdout),
+    SourceArtifact::single(src, Some(expected_stdout))
+}
+
+fn flush_expr_dense_print_block(
+    print_functions: &mut String,
+    main_body: &mut String,
+    print_block_body: &mut String,
+    block_i: usize,
+) -> usize {
+    if print_block_body.is_empty() {
+        return 0;
     }
+
+    print_functions.push_str("fn xd_print_block");
+    print_functions.push_str(&block_i.to_string());
+    print_functions.push_str("() -> i32 {\n");
+    print_functions.push_str(print_block_body);
+    print_functions.push_str("    return 0;\n}\n");
+    print_block_body.clear();
+
+    main_body.push_str("    let xd_print_result");
+    main_body.push_str(&block_i.to_string());
+    main_body.push_str(" = xd_print_block");
+    main_body.push_str(&block_i.to_string());
+    main_body.push_str("();\n");
+
+    4
 }
 
 fn push_expr_dense_function(
@@ -2559,11 +2936,7 @@ fn push_expr_dense_function(
     let name = varied_short_ident("xd", chunk, rng);
     let params = (0..arity)
         .map(|param_i| {
-            varied_short_ident(
-                "xp",
-                chunk.saturating_mul(8).saturating_add(param_i),
-                rng,
-            )
+            varied_short_ident("xp", chunk.saturating_mul(8).saturating_add(param_i), rng)
         })
         .collect::<Vec<_>>();
 
@@ -2689,24 +3062,84 @@ fn expr_dense_generated_expr(
 
     match (rng.small_int() as usize + salt + depth) % 7 {
         0 => GeneratedExpr::Add(
-            Box::new(expr_dense_generated_expr(salt + 1, depth - 1, arity, prior, rng)),
-            Box::new(expr_dense_generated_expr(salt + 9, depth - 1, arity, prior, rng)),
+            Box::new(expr_dense_generated_expr(
+                salt + 1,
+                depth - 1,
+                arity,
+                prior,
+                rng,
+            )),
+            Box::new(expr_dense_generated_expr(
+                salt + 9,
+                depth - 1,
+                arity,
+                prior,
+                rng,
+            )),
         ),
         1 => GeneratedExpr::Sub(
-            Box::new(expr_dense_generated_expr(salt + 1, depth - 1, arity, prior, rng)),
-            Box::new(expr_dense_generated_expr(salt + 9, depth - 1, arity, prior, rng)),
+            Box::new(expr_dense_generated_expr(
+                salt + 1,
+                depth - 1,
+                arity,
+                prior,
+                rng,
+            )),
+            Box::new(expr_dense_generated_expr(
+                salt + 9,
+                depth - 1,
+                arity,
+                prior,
+                rng,
+            )),
         ),
         2 => GeneratedExpr::Mul(
-            Box::new(expr_dense_generated_expr(salt + 1, depth - 1, arity, prior, rng)),
-            Box::new(expr_dense_generated_expr(salt + 9, depth - 1, arity, prior, rng)),
+            Box::new(expr_dense_generated_expr(
+                salt + 1,
+                depth - 1,
+                arity,
+                prior,
+                rng,
+            )),
+            Box::new(expr_dense_generated_expr(
+                salt + 9,
+                depth - 1,
+                arity,
+                prior,
+                rng,
+            )),
         ),
         3 => GeneratedExpr::BitAnd(
-            Box::new(expr_dense_generated_expr(salt + 1, depth - 1, arity, prior, rng)),
-            Box::new(expr_dense_generated_expr(salt + 9, depth - 1, arity, prior, rng)),
+            Box::new(expr_dense_generated_expr(
+                salt + 1,
+                depth - 1,
+                arity,
+                prior,
+                rng,
+            )),
+            Box::new(expr_dense_generated_expr(
+                salt + 9,
+                depth - 1,
+                arity,
+                prior,
+                rng,
+            )),
         ),
         4 => GeneratedExpr::BitOr(
-            Box::new(expr_dense_generated_expr(salt + 1, depth - 1, arity, prior, rng)),
-            Box::new(expr_dense_generated_expr(salt + 9, depth - 1, arity, prior, rng)),
+            Box::new(expr_dense_generated_expr(
+                salt + 1,
+                depth - 1,
+                arity,
+                prior,
+                rng,
+            )),
+            Box::new(expr_dense_generated_expr(
+                salt + 9,
+                depth - 1,
+                arity,
+                prior,
+                rng,
+            )),
         ),
         5 => GeneratedExpr::Shl1(Box::new(expr_dense_generated_expr(
             salt + 1,
@@ -2816,10 +3249,7 @@ fn make_abi_call_source_artifact(
     src.push_str(&main_body);
     src.push_str("    return 0;\n");
     src.push_str("}\n");
-    SourceArtifact {
-        source: src,
-        expected_stdout: Some(expected_stdout),
-    }
+    SourceArtifact::single(src, Some(expected_stdout))
 }
 
 fn push_abi_call_function(
@@ -3024,10 +3454,7 @@ fn make_varied_source_artifact(
     src.push_str(&main_body);
     src.push_str("    return 0;\n");
     src.push_str("}\n");
-    SourceArtifact {
-        source: src,
-        expected_stdout: Some(expected_stdout),
-    }
+    SourceArtifact::single(src, Some(expected_stdout))
 }
 
 struct VariedNames {
@@ -3698,8 +4125,9 @@ impl DeterministicRng {
 
 fn print_help() {
     eprintln!(
-        "Usage: gpu_compile_bench [--emit wasm|x86_64-elf] [--source simple-lets|mixed|call-graph|expr-dense|abi-calls|varied|long-function|all] [--lines N] [--target-bytes N] [--seed N] [--warmups N] [--iters N] [--validate-output] [--run-x86-output] [--allow-large] [--estimate-only|--estimate-live] [--dump-source]\n\
+        "Usage: gpu_compile_bench [--emit wasm|x86_64-elf] [--source simple-lets|mixed|call-graph|expr-dense|abi-calls|varied|long-function|module-pack|all] [--lines N] [--target-bytes N] [--seed N] [--warmups N] [--iters N] [--validate-output] [--run-x86-output] [--allow-large] [--estimate-only|--estimate-live] [--dump-source]\n\
          Optional phases: --phase lex|parse|typecheck|wasm|x86.\n\
+         Set LANIUS_PERFETTO_TRACE=path.json to write Perfetto-compatible trace-event JSON.\n\
          Measures reused GpuCompiler runtime after construction."
     );
 }
@@ -3719,6 +4147,8 @@ mod tests {
         assert!(a.contains("!("));
         assert!(a.contains(": bool"));
         assert!(a.contains("print("));
+        assert!(a.matches("fn mix_helper").count() > 1);
+        assert!(a.contains("fn main()"));
         assert!(a.contains("return 0;"));
     }
 
@@ -3776,6 +4206,7 @@ mod tests {
         let b = make_source(SourceMode::ExprDense, 120, None, 789);
         assert_eq!(a, b);
         assert!(a.matches("fn xd").count() > 12);
+        assert!(a.contains("fn xd_print_block"));
         assert!(a.contains("fn main()"));
         assert!(a.contains("print(xd"));
         assert!(a.contains(") -> i32"));
@@ -3906,14 +4337,67 @@ mod tests {
     }
 
     #[test]
+    fn compiler_backend_selection_matches_requested_phase() {
+        assert_eq!(
+            compiler_backends_for_phase(Phase::X86),
+            GpuCompilerBackends::x86_only()
+        );
+        assert_eq!(
+            compiler_backends_for_phase(Phase::Wasm),
+            GpuCompilerBackends::wasm_only()
+        );
+        assert_eq!(
+            compiler_backends_for_phase(Phase::Lex),
+            GpuCompilerBackends::frontend_only()
+        );
+        assert_eq!(
+            compiler_backends_for_phase(Phase::Parse),
+            GpuCompilerBackends::frontend_only()
+        );
+        assert_eq!(
+            compiler_backends_for_phase(Phase::TypeCheck),
+            GpuCompilerBackends::frontend_only()
+        );
+    }
+
+    #[test]
+    fn module_pack_source_is_deterministic_and_uses_source_pack_modules() {
+        let a = make_source_artifact(SourceMode::ModulePack, 120, None, 975);
+        let b = make_source_artifact(SourceMode::ModulePack, 120, None, 975);
+        assert_eq!(a.source, b.source);
+        assert_eq!(a.sources, b.sources);
+        assert_eq!(a.expected_stdout, b.expected_stdout);
+        assert_eq!(a.sources.len(), 3);
+        assert!(a.sources[0].starts_with("module pkg"));
+        assert!(a.sources[1].contains("\nimport pkg"));
+        assert!(a.sources[2].starts_with("module app::main;"));
+        assert!(a.source.contains("pub fn mf"));
+        assert!(a.source.contains("pub fn bf"));
+        assert!(a.source.contains("::mf"));
+        assert!(a.source.contains("::bf"));
+        let expected_stdout = a.expected_stdout.expect("module-pack stdout oracle");
+        assert!(expected_stdout.lines().count() > 5);
+        assert!(expected_stdout.ends_with('\n'));
+    }
+
+    #[test]
     fn source_all_selects_generated_suite() {
         assert_eq!(
             parse_source_mode(Some("all".to_string())).unwrap(),
             SourceMode::All
         );
-        assert_eq!(GENERATED_SOURCE_MODES.len(), 7);
-        assert!(!GENERATED_SOURCE_MODES.contains(&SourceMode::All));
-        let mut names = GENERATED_SOURCE_MODES
+        assert_eq!(GENERATED_SINGLE_SOURCE_MODES.len(), 7);
+        assert_eq!(GENERATED_COMPILE_SOURCE_MODES.len(), 8);
+        assert!(!GENERATED_COMPILE_SOURCE_MODES.contains(&SourceMode::All));
+        assert_eq!(
+            generated_source_modes_for_phase(Phase::Parse),
+            &GENERATED_SINGLE_SOURCE_MODES
+        );
+        assert_eq!(
+            generated_source_modes_for_phase(Phase::X86),
+            &GENERATED_COMPILE_SOURCE_MODES
+        );
+        let mut names = GENERATED_COMPILE_SOURCE_MODES
             .iter()
             .map(|mode| mode.name())
             .collect::<Vec<_>>();
@@ -3926,6 +4410,7 @@ mod tests {
                 "expr-dense",
                 "long-function",
                 "mixed",
+                "module-pack",
                 "simple-lets",
                 "varied"
             ]
@@ -3998,25 +4483,50 @@ mod tests {
     }
 
     #[test]
+    fn x86_instruction_capacity_can_use_semantic_hir_basis() {
+        let sparse = x86_capacity_estimate_for_hir_and_tokens(31_041, 100_000);
+        let semantic = x86_capacity_estimate_for_hir_tokens_and_inst_basis(31_041, 100_000, 3_000);
+
+        assert_eq!(semantic.hir_words, sparse.hir_words);
+        assert_eq!(semantic.inst_basis_words, 3_000);
+        assert_eq!(semantic.requested_inst_capacity, 3_000 * 8 + 1_024);
+        assert!(semantic.inst_capacity < sparse.inst_capacity);
+    }
+
+    #[test]
     fn x86_order_record_capacity_is_bounded_by_compact_instruction_rows() {
         let hir_words = 687_089;
         let inst_capacity = 93_126;
-        let token_capacity = 92_102;
+        let function_slot_capacity = 7_401;
         let compact_words =
-            x86_node_inst_order_record_words(hir_words, inst_capacity, token_capacity);
+            x86_node_inst_order_record_words(hir_words, inst_capacity, function_slot_capacity);
         let legacy_hir_order_words = hir_words.saturating_add(1).saturating_mul(3);
 
         assert!(compact_words < legacy_hir_order_words);
         assert!(compact_words >= hir_words * 2);
-        assert!(compact_words >= token_capacity * 10);
+        assert!(compact_words >= function_slot_capacity * 14);
         assert!(compact_words >= (inst_capacity + 1) * 3);
+    }
+
+    #[test]
+    fn x86_order_record_capacity_is_not_token_slot_scaled() {
+        let hir_words = 20_000;
+        let inst_capacity = 8_000;
+        let function_slot_capacity = 512;
+        let token_capacity = 90_000;
+
+        let compact_words =
+            x86_node_inst_order_record_words(hir_words, inst_capacity, function_slot_capacity);
+
+        assert!(compact_words < token_capacity * 14);
+        assert!(compact_words >= function_slot_capacity * 14);
     }
 
     #[test]
     fn parser_tree_floor_accounts_for_shared_hir_list_scratch() {
         assert_eq!(
             parser_tree_floor_bytes(10),
-            77usize
+            79usize
                 .saturating_mul(10)
                 .saturating_mul(4)
                 .saturating_add(3usize.saturating_mul(10).saturating_mul(16))
