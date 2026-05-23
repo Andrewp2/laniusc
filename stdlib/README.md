@@ -52,11 +52,16 @@ ownership metadata. The older direct-HIR helper still mirrors the sideband, but
 it is not the semantic path to extend.
 
 Module-form helpers live under `stdlib/core/` and use module names such as
-`core::i32::abs`, but the normal compiler path does not resolve those imports
-yet. The leading module header is metadata for source-shape seeds, not a
-visibility or lookup boundary. Legacy flat files keep the `lstd_` prefix so
-copied or manually concatenated helpers are less likely to collide with
-application functions.
+`core::i32::abs`. The normal single-file compiler path does not load imports
+from the filesystem. Explicit source-pack inputs can type-check module-qualified
+helpers, and the current x86 path can execute bounded direct scalar helper calls
+such as `core::i32::abs`. The active WASM source-pack execution slice is
+narrower: selected linear scalar helpers, the `core::bool` helper subset, and
+the direct terminal `if`/`else` `core::i32::abs` helper. Broader branchy,
+array, aggregate, method, assertion, and enum-helper execution tests remain
+ignored until rebuilt on the record pipeline. Legacy flat files keep the
+`lstd_` prefix so copied or manually concatenated helpers are less likely to
+collide with application functions.
 
 The GPU parser now preserves early HIR evidence for module items, import items,
 and complete qualified path spans. Those records feed the current GPU
@@ -69,8 +74,11 @@ metadata from production ids and AST ancestry. It records top-level item facts
 for modules, imports, consts, functions, extern functions, structs, enums, and
 type aliases while excluding impl methods from top-level function declarations.
 Bounded scalar type aliases now have semantic effect through a GPU alias
-projection pass that consumes those records and the sorted module/type resolver;
-generic aliases and alias chains remain unsupported.
+projection pass that consumes those records and the sorted module/type resolver.
+Direct generic aliases such as `type Alias<T> = T;`, one-hop generic aliases
+such as `type Id<T> = Alias<T>;`, and bounded multi-hop scalar alias chains have
+GPU type-ref coverage; recursive aliases, deeper generic alias chains,
+const-generic alias substitution, and broad alias targets remain unsupported.
 
 Current scope is intentionally small. Module-form seeds below are parser and
 source-pack frontend evidence; regular/extern qualified calls, top-level
@@ -91,33 +99,43 @@ value lookup, runtime services, or backend lowering:
   parseable float literals, comparisons, and arithmetic.
 - `core/char.lani` seeds ASCII classification helpers using currently parseable
   char literals and boolean expressions. `core/char.lani`, `core/u32.lani`, and
-  `core/ordering.lani` are parser/source-shape evidence while module headers
-  remain blocked in GPU type checking.
+  `core/ordering.lani` can type-check as explicitly supplied source-pack seeds;
+  backend execution remains limited to the active narrow slices.
 - `core/bool.lani` has module-form boolean combinators and conversions built on
   the current bool expression surface, including `true` and `false` literals.
-  `core/bool.lani` and `test/assert.lani` remain parser/source-shape seeds
-  until module headers type-check through the future resolver.
+  `core/bool.lani` can type-check as an explicitly supplied source-pack seed,
+  and the active WASM source-pack slice executes `core::bool::not`,
+  `core::bool::and`, `core::bool::or`, `core::bool::xor`, `core::bool::eq`,
+  and `core::bool::from_i32`. `test/assert.lani` is frontend/type-check
+  evidence only; assertion-helper WASM execution remains ignored.
 - `core/array_i32_4.lani` has module-form fixed-size `[i32; 4]` helper seeds
   for length, first/last element access, lookup, counting, min/max, sum, copy,
   fill, and reverse. It is still a concrete stopgap for helpers that need a
   known length value, but the flat and module-form seed files now type-check on
   the GPU. They rely on bounded concrete i32 array signatures, HIR-backed array
   returns, HIR index expressions, while/if control typing, and compound scalar
-  assignments. Backend lowering has a bounded GPU WASM slice for `first`,
-  `last`, the nested-conditional `get_or` shape, and fixed-scan scalar shapes
-  for `contains`, `count`, `index_of_or`, `sum`, `min`, and `max` when a local
-  `[i32; 4]` array literal is passed to the resolver-selected helper; broader
-  array helpers, loops, and array returns are still not implemented.
+  assignments. Array-helper WASM execution is not an active claim right now:
+  the legacy full-source-pack array execution tests are ignored until rebuilt
+  on the record pipeline. Broader array helper lowering, loops, and
+  array-valued backend lowering are still not implemented.
 - `core/array_i32.lani` has early const-generic `[i32; N]` helpers such as
-  `first()` and `get_unchecked()`. The full module-form seed now rejects with
-  the rest of module headers, but direct fixtures still validate named array
-  lengths in frontend type checking for concrete `i32` elements. A bounded GPU slice now accepts generic
-  array/slice declarations and indexed element returns such as
+  `first()` and `get_unchecked()`. The full module-form seed can pass GPU
+  source-pack type checking as module metadata, while direct fixtures still
+  validate named array lengths in frontend type checking for concrete `i32`
+  elements. A bounded GPU slice now accepts generic array/slice declarations
+  and indexed element returns such as
   `fn first<T, const N: usize>(values: [T; N]) -> T { return values[0]; }`,
-  plus `ArrayVec<T, const N: usize>` field declarations. Generic array/slice
-  calls, generic array returns, local generic array annotations, full const
-  evaluation, slice ABI, and array-valued
-  backend lowering are still missing.
+  plus `ArrayVec<T, const N: usize>` field declarations. Bounded direct
+  generic array/slice calls can infer an element return `T` from one
+  declaration-backed actual array or slice argument, and local generic array
+  annotations can feed indexed element returns. Bounded generic identifier
+  array returns such as returning a `[T; N]` parameter from a `[T; N]` function
+  now type-check through GPU type-instance records, and an annotated local can
+  receive a bounded generic array-valued call result when the actual argument
+  declaration has the same concrete array instance. The same bounded check now
+  covers returning that array-valued call from a function with the matching
+  array return type. Full const evaluation, slice ABI, broader array-valued
+  calls, and array-valued backend lowering are still missing.
 - Generic function declarations, generic type annotations, and simple generic
   function-call substitution now have GPU type-check coverage for direct calls
   inferred from arguments, including generic forwarding from one generic
@@ -144,24 +162,29 @@ value lookup, runtime services, or backend lowering:
   calls such as `core::option::is_some(value)`,
   `core::option::unwrap_or(value, fallback)`, `core::result::is_ok(value)`, and
   `core::result::unwrap_or(value, 3)` now type-check in an explicitly supplied
-  source pack. Bounded backend execution exists for tag-only predicates such as
-  `core::option::is_some(value)` / `core::result::is_ok(value)` by consuming HIR
-  match metadata, resolver-selected helper calls, and variant ordinals. Payload
-  projection helpers such as `unwrap_or` remain blocked until backend lowering
-  consumes parser-owned call/constructor argument records and typed payload value
-  records instead of token-shaped call syntax. Package/import loading,
+  source pack. Backend execution for tag-only predicates such as
+  `core::option::is_some(value)` / `core::result::is_ok(value)` is not active
+  while the legacy tests are ignored. Payload projection helpers such as
+  `unwrap_or` remain blocked until backend lowering consumes parser-owned
+  call/constructor argument records and typed payload value records instead of
+  token-shaped call syntax. Package/import loading,
   exhaustive match semantics,
   non-constructor symbolic generic returns, full monomorphization, and general
   enum layout remain unsupported.
 - `core/cmp.lani` has declaration seeds for generic `Eq<T>` and `Ord<T>`
   traits plus bounded `i32` trait impls. `core/hash.lani` similarly seeds a
-  generic `Hash<T>` trait and an `i32` impl. This validates trait and impl
-  parsing on the GPU path. `where` clauses now have GPU frontend parser
-  coverage for generic item declarations, but they do not yet drive trait
-  solving, method lookup, dictionaries, or backend lowering. Associated items,
-  full trait solving, and backend lowering are not implemented yet. The full
-  `core/cmp.lani` and `core/hash.lani` seed files remain rejected by GPU
-  type-check module tests.
+  generic `Hash<T>` trait and an `i32` impl. These seed files now type-check
+  together in the GPU source-pack path, including trait impl header resolution,
+  required-method presence validation, required-method parameter-count
+  validation, and bounded structural parameter and return signature validation
+  for scalar/path, reference, array/slice, and generic-instance type forms, with
+  trait generic arguments substituted from the impl header. `where` clauses now
+  have bounded GPU semantic coverage for direct calls whose generic trait
+  obligation can be proven by exactly one concrete one- or two-argument impl row;
+  missing and ambiguous candidates reject. General trait solving, method lookup
+  through traits, dictionaries, associated items,
+  const-generic argument substitution in trait signatures, and backend lowering
+  are not implemented yet.
 - `core/range.lani` has declaration seeds for `Range<T>`,
   `RangeInclusive<T>`, `RangeFrom<T>`, `RangeTo<T>`, and `RangeFull`, plus
   source-level `i32` helpers for exclusive and inclusive construction,
@@ -178,12 +201,10 @@ value lookup, runtime services, or backend lowering:
   annotations, and bounded `Range<i32>` / `RangeInclusive<i32>` method calls on
   annotated receivers through parser/HIR-derived method declaration, call, and
   argument-list records.
-  The bounded WASM aggregate path can execute `core::range::range_i32`,
-  `start_i32`, and `contains_i32`, plus `Range<i32>` and
-  `RangeInclusive<i32>` method bodies for `.start()`, `.end()`, `.is_empty()`,
-  and `.contains(value)` when the receiver is an annotated local or a direct
-  constructor call result. That lowering consumes GPU aggregate/method metadata
-  and does not recognize helper names.
+  Aggregate and method execution is not an active WASM claim right now: the
+  legacy execution tests are ignored until rebuilt on the record pipeline. The
+  current useful evidence here is frontend/type-check metadata, not executable
+  `core::range` helper lowering.
   `&self` does not yet imply a general reference or borrow model. General range
   operators, slicing integration, trait/generic method lookup, private/public
   method visibility enforcement, full monomorphization, and general backend
@@ -203,10 +224,10 @@ value lookup, runtime services, or backend lowering:
   locations are not implemented yet.
 - `core/target.lani` has source-level target capability constants and helpers
   intended to become paths such as `core::target::has_filesystem()` and
-  `core::target::is_wasm()` once module resolution exists. The module-form seed
-  now rejects with the module header. These are static defaults for the current
-  host-backed test environment; real target configuration and compile-time
-  capability evaluation are still missing.
+  `core::target::is_wasm()`. The module-form seed can type-check as an
+  explicitly supplied source-pack seed. These are static defaults for the
+  current host-backed test environment; real target configuration, compile-time
+  capability evaluation, and backend execution are still missing.
 - `alloc/allocator.lani` has source-level allocator ABI declarations for
   allocation, growth, deallocation, and allocation failure hooks. Direct extern
   signatures can type-check as calls in direct single-file fixtures, and bounded
@@ -224,46 +245,38 @@ value lookup, runtime services, or backend lowering:
   gating, string/slice ABI, or native/backend lowering exists yet.
 - `std/process.lani` and `std/env.lani` seed source-level host ABI declarations
   for process args, exit codes, and environment variables. Their raw extern
-  declarations can type-check in direct no-module fixtures and match the direct
-  single-file WASM import shape, but these module files now reject with module
-  headers until GPU module/import resolution exists. Stable string,
+  declarations can type-check in direct no-module fixtures, and the module
+  files can type-check as explicitly supplied source-pack seeds. Stable string,
   byte-slice, error, capability, and runtime initialization models are still
   missing.
 - `std/time.lani` and `std/fs.lani` seed source-level host ABI declarations for
   clocks, sleeping, and basic file operations. Their raw extern declarations
-  can type-check in direct no-module fixtures and match the direct single-file
-  WASM import shape, but these module files now reject with module headers.
+  can type-check in direct no-module fixtures, and the module files can
+  type-check as explicitly supplied source-pack seeds.
   Stable path/string/byte-slice
   representations, handle ownership, concrete error types, capability gating,
   native lowering, and host services remain future work.
 - `std/net.lani` seeds source-level host ABI declarations for basic TCP and UDP
   operations using opaque handles and raw pointer/length buffers. Its raw
-  extern declarations can type-check in direct no-module fixtures and match the
-  direct single-file WASM import shape, but this module file now rejects with
-  the module header. Stable socket address
+  extern declarations can type-check in direct no-module fixtures, and the
+  module file can type-check as an explicitly supplied source-pack seed. Stable
+  socket address
   types, DNS, blocking mode, error reporting, capability gating, native
   lowering, and host services remain future work.
 - `test/assert.lani` has source-level assertion helpers built on the current
   `assert(bool)` builtin. It type-checks as an explicitly supplied source-pack
-  seed, and a bounded HIR-driven GPU WASM pass can execute resolver-selected
-  void helpers such as `test::assert::eq_i32` by lowering true assertions to
-  normal return and false assertions to a deterministic trap. Importing it
-  automatically remains blocked until a real package model exists. A real test
-  harness, formatted assertion messages, source locations, and panic reporting
-  are not implemented yet.
+  seed, but assertion-helper WASM execution is not active while the legacy tests
+  are ignored. Importing it automatically remains blocked until a real package
+  model exists. A real test harness, formatted assertion messages, source
+  locations, and panic reporting are not implemented yet.
 - `i32.lani`, `bool.lani`, and `array_i32_4.lani` keep the older `lstd_`
   compatibility helpers. The flat `i32.lani` and `bool.lani` seeds type-check
   as direct single-file GPU inputs. The flat `array_i32_4.lani` seed also
   type-checks directly, and `core/array_i32_4.lani` type-checks as an explicit
   source-pack module seed. Const-generic array parameters have limited frontend
   coverage for `[i32; N]`; generic array APIs and backend lowering for
-  array-returning helpers are still incomplete. The WASM backend can execute the
-  bounded local-literal projection and scalar scan shapes used by
-  `core::array_i32_4::first`, `core::array_i32_4::last`,
-  `core::array_i32_4::get_or`, `core::array_i32_4::contains`,
-  `core::array_i32_4::count`, `core::array_i32_4::index_of_or`, and
-  `core::array_i32_4::sum`, `core::array_i32_4::min`, and
-  `core::array_i32_4::max` from an explicit source pack.
+  array-returning helpers are still incomplete. Array-helper WASM execution is
+  not active while the legacy full-source-pack tests are ignored.
 
 Import declarations remain explicit metadata: path imports resolve only for
 already supplied source-pack modules, and quoted import loading is not

@@ -11,7 +11,7 @@ RWStructuredBuffer<uint> call_param_type;
 
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_GENERIC_BASE = 8192u;
-static const uint PARAM_CACHE_STRIDE = 16u;
+static const uint PARAM_CACHE_STRIDE = 4u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 

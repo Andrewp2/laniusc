@@ -29,6 +29,8 @@ StructuredBuffer<uint> decl_name_token;
 
 RWStructuredBuffer<uint> module_type_path_type;
 RWStructuredBuffer<uint> module_type_path_status;
+RWStructuredBuffer<uint> type_expr_ref_tag;
+RWStructuredBuffer<uint> type_expr_ref_payload;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -45,6 +47,8 @@ static const uint HIR_ITEM_NAMESPACE_TYPE = 3u;
 
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
+
+static const uint TYPE_REF_INVALID = 0u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -77,6 +81,28 @@ uint projected_type_code(uint decl_i)
     return 0u;
 }
 
+bool copy_alias_type_ref(uint decl_i, uint owner_token)
+{
+    if (decl_i == INVALID || owner_token >= gParams.n_tokens)
+        return false;
+    if (decl_namespace[decl_i] != HIR_ITEM_NAMESPACE_TYPE ||
+        decl_kind[decl_i] != HIR_ITEM_KIND_TYPE_ALIAS)
+        return false;
+
+    uint alias_token = decl_name_token[decl_i];
+    if (alias_token == INVALID || alias_token >= gParams.n_tokens)
+        return false;
+
+    uint tag = type_expr_ref_tag[alias_token];
+    if (tag == TYPE_REF_INVALID)
+        return false;
+
+    type_expr_ref_tag[owner_token] = tag;
+    type_expr_ref_payload[owner_token] = type_expr_ref_payload[alias_token];
+    module_type_path_status[owner_token] = PATH_RESOLVE_STATUS_OK;
+    return true;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -99,10 +125,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
 
-    uint ty = projected_type_code(resolved_type_decl[path_i]);
+    uint decl_i = resolved_type_decl[path_i];
+    bool copied_alias_ref = copy_alias_type_ref(decl_i, owner_token);
+    uint ty = projected_type_code(decl_i);
     if (ty != 0u)
     {
         module_type_path_type[owner_token] = ty;
+        module_type_path_status[owner_token] = PATH_RESOLVE_STATUS_OK;
+    }
+    else if (copied_alias_ref)
+    {
         module_type_path_status[owner_token] = PATH_RESOLVE_STATUS_OK;
     }
 }

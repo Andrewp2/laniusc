@@ -27,7 +27,7 @@ StructuredBuffer<uint> x86_expr_resolved_node;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> x86_decl_layout_record;
 StructuredBuffer<uint> x86_param_reg_record;
-StructuredBuffer<uint2> x86_node_inst_range_record;
+StructuredBuffer<uint> x86_node_inst_range_info;
 StructuredBuffer<uint4> x86_node_inst_location_record;
 StructuredBuffer<uint> x86_node_inst_gen_input_status;
 StructuredBuffer<uint2> x86_node_inst_gen_node_record;
@@ -84,12 +84,14 @@ uint aggregate_ordinal(uint3 tid)
 
 uint gen_worklist_base()
 {
-    return gParams.n_hir_nodes + 1u;
+    return 0u;
 }
 
 uint gen_worklist_count()
 {
-    return min(x86_node_inst_gen_input_status[4u], gParams.n_hir_nodes);
+    return min(
+        x86_node_inst_gen_input_status[4u],
+        min(gParams.n_hir_nodes, gParams.inst_capacity));
 }
 
 uint gen_worklist_node(uint order_row)
@@ -346,7 +348,7 @@ bool range_for_node(uint node, out uint2 range)
     range = uint2(INVALID, 0u);
     if (!valid_node(node))
         return false;
-    range = x86_node_inst_range_record[node];
+    range = uint2(x86_node_inst_location_record[node].x, x86_node_inst_range_info[node]);
     return range.x != INVALID && range.y != INVALID;
 }
 

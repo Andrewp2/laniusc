@@ -7,6 +7,12 @@
     let module_capacity = source_file_capacity as usize;
     let module_capacity_u32 = source_file_capacity;
     let module_n_blocks = module_capacity_u32.div_ceil(256).max(1);
+    let import_record_capacity = if source_file_capacity <= 1 {
+        1usize
+    } else {
+        record_capacity
+    };
+    let import_record_capacity_u32 = import_record_capacity as u32;
     let import_visible_capacity = if source_file_capacity <= 1 {
         1usize
     } else {
@@ -31,40 +37,57 @@
         scan_step: 0,
     };
     let record_scan_steps = make_name_scan_steps(device, record_scan_params);
+    let scratch_or_storage_u32 =
+        |candidate: Option<&wgpu::Buffer>, label: &str, count: usize| -> wgpu::Buffer {
+            let byte_count = count.max(1).saturating_mul(4) as u64;
+            if let Some(buffer) = candidate.filter(|buffer| buffer.size() >= byte_count) {
+                alias_storage_buffer(buffer)
+            } else {
+                storage_u32_rw(device, label, count, wgpu::BufferUsages::empty())
+            }
+        };
 
-    let record_family_bits = storage_u32_rw(
-        device,
-        "type_check.resident.record_family_bits",
-        hir_node_capacity as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let record_family_flag = storage_u32_rw(
-        device,
-        "type_check.resident.record_family_flag",
-        hir_node_capacity as usize,
-        wgpu::BufferUsages::empty(),
-    );
+    // Module/path family bits are dead before type-instance passes reuse this
+    // HIR-indexed storage for const-generic declaration counts and, later,
+    // function entrypoint tags.
+    let record_family_bits = alias_storage_buffer(record_family_bits_scratch);
+    // Record-family flags feed module/path scans and resident visible-decl
+    // scans. Struct-init by-node ordinals are recorded later, after those scans.
+    let record_family_flag = alias_storage_buffer(record_family_flag_scratch);
     let module_record_flag = alias_storage_buffer(&record_family_flag);
     let import_record_flag = alias_storage_buffer(&record_family_flag);
     let decl_record_flag = alias_storage_buffer(&record_family_flag);
     let path_record_flag = alias_storage_buffer(&record_family_flag);
-    let module_record_prefix = storage_u32_rw(
-        device,
-        "type_check.resident.module_record_prefix",
-        hir_node_capacity as usize,
-        wgpu::BufferUsages::empty(),
-    );
+    let module_record_prefix = if let Some(scratch) = external_scratch {
+        // Parser list-workspace buffers are dead before typecheck starts.
+        // Use one as the shared HIR-keyed module/import/decl/path prefix
+        // scratch instead of allocating a second max-capacity buffer.
+        alias_storage_buffer(scratch.module_record_prefix)
+    } else {
+        storage_u32_rw(
+            device,
+            "type_check.resident.module_record_prefix",
+            hir_node_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        )
+    };
     // Module, import, and declaration record prefixes are consumed by their
     // scatter passes before the next record-family scan runs, so one prefix
     // buffer is enough.
     let import_record_prefix = alias_storage_buffer(&module_record_prefix);
     let decl_record_prefix = alias_storage_buffer(&module_record_prefix);
-    let record_scan_local_prefix = storage_u32_rw(
-        device,
-        "type_check.resident.record_scan_local_prefix",
-        hir_node_capacity as usize,
-        wgpu::BufferUsages::empty(),
-    );
+    let record_scan_local_prefix = if let Some(scratch) = external_scratch {
+        // The counted-scan local prefix is scratch for module/path and visible
+        // declaration scans. Reuse a dead parser list-workspace buffer.
+        alias_storage_buffer(scratch.record_scan_local_prefix)
+    } else {
+        storage_u32_rw(
+            device,
+            "type_check.resident.record_scan_local_prefix",
+            hir_node_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        )
+    };
     let record_scan_block_sum = storage_u32_rw(
         device,
         "type_check.resident.record_scan_block_sum",
@@ -83,17 +106,18 @@
         n_blocks as usize,
         wgpu::BufferUsages::empty(),
     );
-    let key_radix_block_histogram = storage_u32_rw(
-        device,
+    // Module/import/decl key radix histograms are phase-local scratch. Borrow
+    // dead parser delimiter workspaces when they are large enough; very small
+    // tests still need the 256-bucket minimum allocation.
+    let key_radix_block_histogram = scratch_or_storage_u32(
+        external_scratch.map(|scratch| scratch.module_path_key_radix_block_histogram),
         "type_check.resident.module_path_key_radix_block_histogram",
         key_radix_histogram_len,
-        wgpu::BufferUsages::empty(),
     );
-    let key_radix_block_bucket_prefix = storage_u32_rw(
-        device,
+    let key_radix_block_bucket_prefix = scratch_or_storage_u32(
+        external_scratch.map(|scratch| scratch.module_path_key_radix_block_bucket_prefix),
         "type_check.resident.module_path_key_radix_block_bucket_prefix",
         key_radix_histogram_len,
-        wgpu::BufferUsages::empty(),
     );
     let key_radix_bucket_total = storage_u32_rw(
         device,
@@ -201,128 +225,121 @@
     let import_module_file_id = storage_u32_rw(
         device,
         "type_check.resident.import_module_file_id",
-        record_capacity,
+        import_record_capacity,
         wgpu::BufferUsages::empty(),
     );
     let import_path_id = storage_u32_rw(
         device,
         "type_check.resident.import_path_id",
-        record_capacity,
+        import_record_capacity,
         wgpu::BufferUsages::empty(),
     );
     let import_kind = storage_u32_rw(
         device,
         "type_check.resident.import_kind",
-        record_capacity,
+        import_record_capacity,
         wgpu::BufferUsages::empty(),
     );
     let import_owner_hir = storage_u32_rw(
         device,
         "type_check.resident.import_owner_hir",
-        record_capacity,
+        import_record_capacity,
         wgpu::BufferUsages::empty(),
     );
     let import_module_id = storage_u32_rw(
         device,
         "type_check.resident.import_module_id",
-        record_capacity,
+        import_record_capacity,
         wgpu::BufferUsages::empty(),
     );
     let import_target_module_id = storage_u32_rw(
         device,
         "type_check.resident.import_target_module_id",
-        record_capacity,
+        import_record_capacity,
         wgpu::BufferUsages::empty(),
     );
     let import_status = storage_u32_rw(
         device,
         "type_check.resident.import_status",
-        record_capacity,
+        import_record_capacity,
         wgpu::BufferUsages::empty(),
     );
-    let decl_module_file_id = storage_u32_rw(
-        device,
+    // Declaration tables are retained through module/path resolution, but they
+    // are not part of the x86 handoff. Use parser token/tree workspaces that
+    // are dead after HIR construction.
+    let decl_module_file_id = scratch_or_storage_u32(
+        external_scratch.map(|scratch| scratch.decl_module_file_id),
         "type_check.resident.decl_module_file_id",
         record_capacity,
-        wgpu::BufferUsages::empty(),
     );
-    let decl_module_id = storage_u32_rw(
-        device,
+    let decl_module_id = scratch_or_storage_u32(
+        external_scratch.map(|scratch| scratch.decl_module_id),
         "type_check.resident.decl_module_id",
         record_capacity,
-        wgpu::BufferUsages::empty(),
     );
-    let decl_name_id = storage_u32_rw(
-        device,
+    let decl_name_id = scratch_or_storage_u32(
+        external_scratch.map(|scratch| scratch.decl_name_id),
         "type_check.resident.decl_name_id",
         record_capacity,
-        wgpu::BufferUsages::empty(),
     );
-    let decl_name_token = storage_u32_rw(
-        device,
+    // Name-radix scratch is dead before module/path recording runs. These
+    // declaration metadata buffers are retained for x86, so keep them in
+    // typechecker-owned scratch rather than parser scratch that backend passes
+    // may later borrow for their own phase-local work.
+    let decl_name_token = scratch_or_storage_u32(
+        Some(decl_name_token_scratch),
         "type_check.resident.decl_name_token",
         record_capacity,
-        wgpu::BufferUsages::empty(),
     );
-    let decl_id_by_name_token = storage_u32_rw(
-        device,
+    let decl_id_by_name_token = scratch_or_storage_u32(
+        Some(decl_id_by_name_token_scratch),
         "type_check.resident.decl_id_by_name_token",
         token_capacity.max(1) as usize,
-        wgpu::BufferUsages::empty(),
     );
-    let decl_kind = storage_u32_rw(
-        device,
+    let decl_kind = scratch_or_storage_u32(
+        Some(decl_kind_scratch),
         "type_check.resident.decl_kind",
         record_capacity,
-        wgpu::BufferUsages::empty(),
     );
-    let decl_namespace = storage_u32_rw(
-        device,
+    let decl_namespace = scratch_or_storage_u32(
+        external_scratch.map(|scratch| scratch.decl_namespace),
         "type_check.resident.decl_namespace",
         record_capacity,
-        wgpu::BufferUsages::empty(),
     );
-    let decl_visibility = storage_u32_rw(
-        device,
+    let decl_visibility = scratch_or_storage_u32(
+        external_scratch.map(|scratch| scratch.decl_visibility),
         "type_check.resident.decl_visibility",
         record_capacity,
-        wgpu::BufferUsages::empty(),
     );
-    let decl_hir_node = storage_u32_rw(
-        device,
+    let decl_hir_node = scratch_or_storage_u32(
+        Some(decl_hir_node_scratch),
         "type_check.resident.decl_hir_node",
         record_capacity,
-        wgpu::BufferUsages::empty(),
     );
-    let decl_parent_type_decl = storage_u32_rw(
-        device,
+    let decl_parent_type_decl = scratch_or_storage_u32(
+        Some(decl_parent_type_decl_scratch),
         "type_check.resident.decl_parent_type_decl",
         record_capacity,
-        wgpu::BufferUsages::empty(),
     );
-    let decl_token_start = storage_u32_rw(
-        device,
+    let decl_token_start = scratch_or_storage_u32(
+        external_scratch.map(|scratch| scratch.decl_token_start),
         "type_check.resident.decl_token_start",
         record_capacity,
-        wgpu::BufferUsages::empty(),
     );
-    let decl_token_end = storage_u32_rw(
-        device,
+    let decl_token_end = scratch_or_storage_u32(
+        external_scratch.map(|scratch| scratch.decl_token_end),
         "type_check.resident.decl_token_end",
         record_capacity,
-        wgpu::BufferUsages::empty(),
     );
-    let decl_key_to_decl_id = storage_u32_rw(
-        device,
+    let decl_key_to_decl_id = scratch_or_storage_u32(
+        external_scratch.map(|scratch| scratch.decl_key_to_decl_id),
         "type_check.resident.decl_key_to_decl_id",
         record_capacity,
-        wgpu::BufferUsages::empty(),
     );
-    let decl_key_order_tmp = storage_u32_rw(
-        device,
+    let decl_key_order_tmp = scratch_or_storage_u32(
+        external_scratch.map(|scratch| scratch.decl_key_order_tmp),
         "type_check.resident.decl_key_order_tmp",
         record_capacity,
-        wgpu::BufferUsages::empty(),
     );
     let decl_key_radix_dispatch_args = storage_u32_rw(
         device,
@@ -335,42 +352,69 @@
         alias_storage_buffer(&key_radix_block_bucket_prefix);
     let decl_key_radix_bucket_total = alias_storage_buffer(&key_radix_bucket_total);
     let decl_key_radix_bucket_base = alias_storage_buffer(&key_radix_bucket_base);
-    let decl_status = storage_u32_rw(
-        device,
+    let decl_status = scratch_or_storage_u32(
+        external_scratch.map(|scratch| scratch.decl_status),
         "type_check.resident.decl_status",
         record_capacity,
-        wgpu::BufferUsages::empty(),
     );
-    let decl_duplicate_of = storage_u32_rw(
-        device,
-        "type_check.resident.decl_duplicate_of",
-        record_capacity,
-        wgpu::BufferUsages::empty(),
-    );
-    let decl_type_key_flag = storage_u32_rw(
-        device,
-        "type_check.resident.decl_type_key_flag",
-        record_capacity,
-        wgpu::BufferUsages::empty(),
-    );
-    let decl_value_key_flag = storage_u32_rw(
-        device,
-        "type_check.resident.decl_value_key_flag",
-        record_capacity,
-        wgpu::BufferUsages::empty(),
-    );
-    let decl_type_key_prefix = storage_u32_rw(
-        device,
-        "type_check.resident.decl_type_key_prefix",
-        record_capacity,
-        wgpu::BufferUsages::empty(),
-    );
-    let decl_value_key_prefix = storage_u32_rw(
-        device,
-        "type_check.resident.decl_value_key_prefix",
-        record_capacity,
-        wgpu::BufferUsages::empty(),
-    );
+    let decl_duplicate_of = if let Some(scratch) = external_scratch {
+        // Duplicate rows are consumed before type-instance passes populate the
+        // HIR-keyed generic-param count table.
+        alias_storage_buffer(scratch.type_decl_generic_param_count_by_node)
+    } else {
+        storage_u32_rw(
+            device,
+            "type_check.resident.decl_duplicate_of",
+            record_capacity,
+            wgpu::BufferUsages::empty(),
+        )
+    };
+    let decl_type_key_flag = if let Some(scratch) = external_scratch {
+        // Declaration namespace/public flags are consumed during module-path
+        // visibility setup, before type-instance argument tag/payload tables are
+        // written by later typecheck passes.
+        alias_storage_buffer(scratch.type_instance_arg_ref_tag)
+    } else {
+        storage_u32_rw(
+            device,
+            "type_check.resident.decl_type_key_flag",
+            record_capacity,
+            wgpu::BufferUsages::empty(),
+        )
+    };
+    let decl_value_key_flag = if let Some(scratch) = external_scratch {
+        alias_storage_buffer(scratch.type_instance_arg_ref_payload)
+    } else {
+        storage_u32_rw(
+            device,
+            "type_check.resident.decl_value_key_flag",
+            record_capacity,
+            wgpu::BufferUsages::empty(),
+        )
+    };
+    let decl_type_key_prefix = if let Some(scratch) = external_scratch {
+        // Declaration key prefixes are consumed before import-visible key scans
+        // populate their prefixes, so both families can share the same external
+        // token-capacity prefix workspaces.
+        alias_storage_buffer(scratch.import_visible_type_prefix)
+    } else {
+        storage_u32_rw(
+            device,
+            "type_check.resident.decl_type_key_prefix",
+            record_capacity,
+            wgpu::BufferUsages::empty(),
+        )
+    };
+    let decl_value_key_prefix = if let Some(scratch) = external_scratch {
+        alias_storage_buffer(scratch.import_visible_value_prefix)
+    } else {
+        storage_u32_rw(
+            device,
+            "type_check.resident.decl_value_key_prefix",
+            record_capacity,
+            wgpu::BufferUsages::empty(),
+        )
+    };
     let decl_type_key_count_out = storage_u32_rw(
         device,
         "type_check.resident.decl_type_key_count_out",
@@ -383,42 +427,71 @@
         1,
         wgpu::BufferUsages::empty(),
     );
-    let decl_type_key_to_decl_id = storage_u32_rw(
-        device,
-        "type_check.resident.decl_type_key_to_decl_id",
-        record_capacity,
-        wgpu::BufferUsages::empty(),
-    );
-    let decl_value_key_to_decl_id = storage_u32_rw(
-        device,
-        "type_check.resident.decl_value_key_to_decl_id",
-        record_capacity,
-        wgpu::BufferUsages::empty(),
-    );
-    let import_visible_type_count = storage_u32_rw(
-        device,
-        "type_check.resident.import_visible_type_count",
-        record_capacity,
-        wgpu::BufferUsages::empty(),
-    );
-    let import_visible_value_count = storage_u32_rw(
-        device,
-        "type_check.resident.import_visible_value_count",
-        record_capacity,
-        wgpu::BufferUsages::empty(),
-    );
-    let import_visible_type_prefix = storage_u32_rw(
-        device,
-        "type_check.resident.import_visible_type_prefix",
-        record_capacity,
-        wgpu::BufferUsages::empty(),
-    );
-    let import_visible_value_prefix = storage_u32_rw(
-        device,
-        "type_check.resident.import_visible_value_prefix",
-        record_capacity,
-        wgpu::BufferUsages::empty(),
-    );
+    let decl_type_key_to_decl_id = if let Some(scratch) = external_scratch {
+        // Type declaration-key lookup is retained by module/path consumers, but
+        // lexer DFA summary scratch is dead after tokenization and is not part
+        // of the typecheck or x86 input surface.
+        alias_storage_buffer(scratch.decl_type_key_to_decl_id)
+    } else {
+        storage_u32_rw(
+            device,
+            "type_check.resident.decl_type_key_to_decl_id",
+            record_capacity,
+            wgpu::BufferUsages::empty(),
+        )
+    };
+    let decl_value_key_to_decl_id = if let Some(scratch) = external_scratch {
+        // Module-path value-key lookup is consumed inside typecheck and is not
+        // retained by the x86 handoff. Reuse dead parser list-workspace rows.
+        alias_storage_buffer(scratch.decl_value_key_to_decl_id)
+    } else {
+        storage_u32_rw(
+            device,
+            "type_check.resident.decl_value_key_to_decl_id",
+            record_capacity,
+            wgpu::BufferUsages::empty(),
+        )
+    };
+    let import_visible_type_count = if let Some(scratch) = external_scratch {
+        alias_storage_buffer(scratch.import_visible_type_count)
+    } else {
+        storage_u32_rw(
+            device,
+            "type_check.resident.import_visible_type_count",
+            record_capacity,
+            wgpu::BufferUsages::empty(),
+        )
+    };
+    let import_visible_value_count = if let Some(scratch) = external_scratch {
+        alias_storage_buffer(scratch.import_visible_value_count)
+    } else {
+        storage_u32_rw(
+            device,
+            "type_check.resident.import_visible_value_count",
+            record_capacity,
+            wgpu::BufferUsages::empty(),
+        )
+    };
+    let import_visible_type_prefix = if let Some(scratch) = external_scratch {
+        alias_storage_buffer(scratch.import_visible_type_prefix)
+    } else {
+        storage_u32_rw(
+            device,
+            "type_check.resident.import_visible_type_prefix",
+            record_capacity,
+            wgpu::BufferUsages::empty(),
+        )
+    };
+    let import_visible_value_prefix = if let Some(scratch) = external_scratch {
+        alias_storage_buffer(scratch.import_visible_value_prefix)
+    } else {
+        storage_u32_rw(
+            device,
+            "type_check.resident.import_visible_value_prefix",
+            record_capacity,
+            wgpu::BufferUsages::empty(),
+        )
+    };
     let import_visible_type_count_out = storage_u32_rw(
         device,
         "type_check.resident.import_visible_type_count_out",
@@ -575,113 +648,174 @@
         alias_storage_buffer(&key_radix_block_bucket_prefix);
     let import_visible_key_radix_bucket_total = alias_storage_buffer(&key_radix_bucket_total);
     let import_visible_key_radix_bucket_base = alias_storage_buffer(&key_radix_bucket_base);
-    let resolved_type_decl = storage_u32_rw(
-        device,
-        "type_check.resident.resolved_type_decl",
-        record_capacity,
-        wgpu::BufferUsages::empty(),
-    );
-    let resolved_value_decl = storage_u32_rw(
-        device,
-        "type_check.resident.resolved_value_decl",
-        record_capacity,
-        wgpu::BufferUsages::empty(),
-    );
-    let resolved_type_status = storage_u32_rw(
-        device,
-        "type_check.resident.resolved_type_status",
-        record_capacity,
-        wgpu::BufferUsages::empty(),
-    );
-    let resolved_value_status = storage_u32_rw(
-        device,
-        "type_check.resident.resolved_value_status",
-        record_capacity,
-        wgpu::BufferUsages::empty(),
-    );
-    let path_record_prefix = storage_u32_rw(
-        device,
-        "type_check.resident.path_record_prefix",
-        hir_node_capacity as usize,
-        wgpu::BufferUsages::empty(),
-    );
+    let resolved_type_decl = if let Some(scratch) = external_scratch {
+        alias_storage_buffer(scratch.resolved_type_decl)
+    } else {
+        storage_u32_rw(
+            device,
+            "type_check.resident.resolved_type_decl",
+            record_capacity,
+            wgpu::BufferUsages::empty(),
+        )
+    };
+    let resolved_value_decl = if let Some(scratch) = external_scratch {
+        alias_storage_buffer(scratch.resolved_value_decl)
+    } else {
+        storage_u32_rw(
+            device,
+            "type_check.resident.resolved_value_decl",
+            record_capacity,
+            wgpu::BufferUsages::empty(),
+        )
+    };
+    let resolved_type_status = if let Some(scratch) = external_scratch {
+        alias_storage_buffer(scratch.resolved_type_status)
+    } else {
+        storage_u32_rw(
+            device,
+            "type_check.resident.resolved_type_status",
+            record_capacity,
+            wgpu::BufferUsages::empty(),
+        )
+    };
+    let resolved_value_status = if let Some(scratch) = external_scratch {
+        alias_storage_buffer(scratch.resolved_value_status)
+    } else {
+        storage_u32_rw(
+            device,
+            "type_check.resident.resolved_value_status",
+            record_capacity,
+            wgpu::BufferUsages::empty(),
+        )
+    };
+    // Path prefixes are only needed until path records have been scattered.
+    // Later module/import scatters read the retained path_id_by_owner_hir table,
+    // so this prefix can share the module/import/decl prefix scratch.
+    let path_record_prefix = alias_storage_buffer(&module_record_prefix);
     let path_scan_local_prefix = alias_storage_buffer(&record_scan_local_prefix);
     let path_scan_block_sum = alias_storage_buffer(&record_scan_block_sum);
     let path_scan_prefix_a = alias_storage_buffer(&record_scan_prefix_a);
     let path_scan_prefix_b = alias_storage_buffer(&record_scan_prefix_b);
-    let path_start = storage_u32_rw(
-        device,
-        "type_check.resident.path_start",
-        record_capacity,
-        wgpu::BufferUsages::empty(),
-    );
-    let path_len = storage_u32_rw(
-        device,
-        "type_check.resident.path_len",
-        record_capacity,
-        wgpu::BufferUsages::empty(),
-    );
-    let path_segment_count = storage_u32_rw(
-        device,
-        "type_check.resident.path_segment_count",
-        record_capacity,
-        wgpu::BufferUsages::empty(),
-    );
-    let path_segment_base = storage_u32_rw(
-        device,
-        "type_check.resident.path_segment_base",
-        record_capacity,
-        wgpu::BufferUsages::empty(),
-    );
+    let path_start = if let Some(scratch) = external_scratch {
+        alias_storage_buffer(scratch.path_start)
+    } else {
+        storage_u32_rw(
+            device,
+            "type_check.resident.path_start",
+            record_capacity,
+            wgpu::BufferUsages::empty(),
+        )
+    };
+    let path_len = if let Some(scratch) = external_scratch {
+        alias_storage_buffer(scratch.path_len)
+    } else {
+        storage_u32_rw(
+            device,
+            "type_check.resident.path_len",
+            record_capacity,
+            wgpu::BufferUsages::empty(),
+        )
+    };
+    let path_segment_count = if let Some(scratch) = external_scratch {
+        alias_storage_buffer(scratch.path_segment_count)
+    } else {
+        storage_u32_rw(
+            device,
+            "type_check.resident.path_segment_count",
+            record_capacity,
+            wgpu::BufferUsages::empty(),
+        )
+    };
+    let path_segment_base = if let Some(scratch) = external_scratch {
+        alias_storage_buffer(scratch.path_segment_base)
+    } else {
+        storage_u32_rw(
+            device,
+            "type_check.resident.path_segment_base",
+            record_capacity,
+            wgpu::BufferUsages::empty(),
+        )
+    };
     let path_segment_capacity = token_capacity.max(1) as usize;
-    let path_segment_name_id = storage_u32_rw(
-        device,
-        "type_check.resident.path_segment_name_id",
-        path_segment_capacity,
-        wgpu::BufferUsages::empty(),
-    );
-    let path_segment_token = storage_u32_rw(
-        device,
-        "type_check.resident.path_segment_token",
-        path_segment_capacity,
-        wgpu::BufferUsages::empty(),
-    );
+    let path_segment_name_id = if let Some(scratch) = external_scratch {
+        alias_storage_buffer(scratch.path_segment_name_id)
+    } else {
+        storage_u32_rw(
+            device,
+            "type_check.resident.path_segment_name_id",
+            path_segment_capacity,
+            wgpu::BufferUsages::empty(),
+        )
+    };
+    let path_segment_token = if let Some(scratch) = external_scratch {
+        alias_storage_buffer(scratch.path_segment_token)
+    } else {
+        storage_u32_rw(
+            device,
+            "type_check.resident.path_segment_token",
+            path_segment_capacity,
+            wgpu::BufferUsages::empty(),
+        )
+    };
     let path_segment_count_out = storage_u32_rw(
         device,
         "type_check.resident.path_segment_count_out",
         1,
         wgpu::BufferUsages::empty(),
     );
-    let path_owner_hir = storage_u32_rw(
-        device,
-        "type_check.resident.path_owner_hir",
-        record_capacity,
-        wgpu::BufferUsages::empty(),
-    );
-    let path_owner_token = storage_u32_rw(
-        device,
-        "type_check.resident.path_owner_token",
-        record_capacity,
-        wgpu::BufferUsages::empty(),
-    );
-    let path_id_by_owner_hir = storage_u32_rw(
-        device,
-        "type_check.resident.path_id_by_owner_hir",
-        hir_node_capacity.max(1) as usize,
-        wgpu::BufferUsages::empty(),
-    );
-    let path_owner_module_id = storage_u32_rw(
-        device,
-        "type_check.resident.path_owner_module_id",
-        record_capacity,
-        wgpu::BufferUsages::empty(),
-    );
-    let path_kind = storage_u32_rw(
-        device,
-        "type_check.resident.path_kind",
-        record_capacity,
-        wgpu::BufferUsages::empty(),
-    );
+    let path_owner_hir = if let Some(scratch) = external_scratch {
+        alias_storage_buffer(scratch.path_owner_hir)
+    } else {
+        storage_u32_rw(
+            device,
+            "type_check.resident.path_owner_hir",
+            record_capacity,
+            wgpu::BufferUsages::empty(),
+        )
+    };
+    let path_owner_token = if let Some(scratch) = external_scratch {
+        alias_storage_buffer(scratch.path_owner_token)
+    } else {
+        storage_u32_rw(
+            device,
+            "type_check.resident.path_owner_token",
+            record_capacity,
+            wgpu::BufferUsages::empty(),
+        )
+    };
+    let path_id_by_owner_hir = if let Some(scratch) = external_scratch {
+        // Path ids are retained for later typecheck and x86 lowering, but the
+        // parser list workspace is no longer read after HIR construction, so
+        // it can carry this owner-HIR map.
+        alias_storage_buffer(scratch.path_id_by_owner_hir)
+    } else {
+        storage_u32_rw(
+            device,
+            "type_check.resident.path_id_by_owner_hir",
+            hir_node_capacity.max(1) as usize,
+            wgpu::BufferUsages::empty(),
+        )
+    };
+    let path_owner_module_id = if let Some(scratch) = external_scratch {
+        alias_storage_buffer(scratch.path_owner_module_id)
+    } else {
+        storage_u32_rw(
+            device,
+            "type_check.resident.path_owner_module_id",
+            record_capacity,
+            wgpu::BufferUsages::empty(),
+        )
+    };
+    let path_kind = if let Some(scratch) = external_scratch {
+        alias_storage_buffer(scratch.path_kind)
+    } else {
+        storage_u32_rw(
+            device,
+            "type_check.resident.path_kind",
+            record_capacity,
+            wgpu::BufferUsages::empty(),
+        )
+    };
     let path_count_out = storage_u32_rw(
         device,
         "type_check.resident.path_count_out",
@@ -1175,8 +1309,8 @@
             hir_items.file_id.as_entire_binding(),
         ),
         (
-            "path_record_prefix".into(),
-            path_record_prefix.as_entire_binding(),
+            "path_id_by_owner_hir".into(),
+            path_id_by_owner_hir.as_entire_binding(),
         ),
         ("module_file_id".into(), module_file_id.as_entire_binding()),
         ("module_path_id".into(), module_path_id.as_entire_binding()),
@@ -1544,8 +1678,8 @@
             hir_items.import_target_kind.as_entire_binding(),
         ),
         (
-            "path_record_prefix".into(),
-            path_record_prefix.as_entire_binding(),
+            "path_id_by_owner_hir".into(),
+            path_id_by_owner_hir.as_entire_binding(),
         ),
         (
             "import_module_file_id".into(),
@@ -1571,7 +1705,7 @@
         device,
         "type_check.modules.resolve_imports.params",
         &ModuleKeyRadixParams {
-            module_capacity: record_capacity_u32,
+            module_capacity: import_record_capacity_u32,
             reserved: module_capacity_u32,
             n_blocks,
             key_step: 0,
@@ -3293,6 +3427,10 @@
                 path_segment_name_id.as_entire_binding(),
             ),
             (
+                "path_owner_module_id".into(),
+                path_owner_module_id.as_entire_binding(),
+            ),
+            (
                 "module_count_out".into(),
                 module_count_out.as_entire_binding(),
             ),
@@ -3321,6 +3459,10 @@
                 decl_type_key_to_decl_id.as_entire_binding(),
             ),
             ("decl_module_id".into(), decl_module_id.as_entire_binding()),
+            (
+                "decl_visibility".into(),
+                decl_visibility.as_entire_binding(),
+            ),
             ("decl_name_id".into(), decl_name_id.as_entire_binding()),
             (
                 "resolved_decl".into(),
@@ -3361,6 +3503,10 @@
                 path_segment_name_id.as_entire_binding(),
             ),
             (
+                "path_owner_module_id".into(),
+                path_owner_module_id.as_entire_binding(),
+            ),
+            (
                 "module_count_out".into(),
                 module_count_out.as_entire_binding(),
             ),
@@ -3389,6 +3535,10 @@
                 decl_value_key_to_decl_id.as_entire_binding(),
             ),
             ("decl_module_id".into(), decl_module_id.as_entire_binding()),
+            (
+                "decl_visibility".into(),
+                decl_visibility.as_entire_binding(),
+            ),
             ("decl_name_id".into(), decl_name_id.as_entire_binding()),
             (
                 "resolved_decl".into(),
@@ -3604,6 +3754,14 @@
             "module_type_path_status".into(),
             module_type_path_status.as_entire_binding(),
         ),
+        (
+            "type_expr_ref_tag".into(),
+            type_expr_ref_tag.as_entire_binding(),
+        ),
+        (
+            "type_expr_ref_payload".into(),
+            type_expr_ref_payload.as_entire_binding(),
+        ),
     ]);
     let project_type_paths = bind_group::create_bind_group_from_reflection(
         device,
@@ -3668,6 +3826,14 @@
                 decl_name_token.as_entire_binding(),
             ),
             ("decl_hir_node".into(), decl_hir_node.as_entire_binding()),
+            (
+                "path_id_by_owner_hir".into(),
+                path_id_by_owner_hir.as_entire_binding(),
+            ),
+            (
+                "resolved_type_decl".into(),
+                resolved_type_decl.as_entire_binding(),
+            ),
             (
                 "type_expr_ref_tag".into(),
                 type_expr_ref_tag.as_entire_binding(),
@@ -3908,6 +4074,19 @@
                 "decl_token_start".into(),
                 decl_token_start.as_entire_binding(),
             ),
+            ("parent".into(), hir_items.parent.as_entire_binding()),
+            (
+                "hir_param_record".into(),
+                hir_items.param_record.as_entire_binding(),
+            ),
+            (
+                "hir_expr_record".into(),
+                hir_items.expr_record.as_entire_binding(),
+            ),
+            (
+                "hir_stmt_record".into(),
+                hir_items.stmt_record.as_entire_binding(),
+            ),
             (
                 "call_arg_record".into(),
                 call_arg_record.as_entire_binding(),
@@ -3938,9 +4117,59 @@
                 call_param_type.as_entire_binding(),
             ),
             (
+                "call_param_ref_tag".into(),
+                call_param_ref_tag.as_entire_binding(),
+            ),
+            (
+                "call_param_ref_payload".into(),
+                call_param_ref_payload.as_entire_binding(),
+            ),
+            ("visible_decl".into(), visible_decl.as_entire_binding()),
+            (
+                "decl_type_ref_tag".into(),
+                decl_type_ref_tag.as_entire_binding(),
+            ),
+            (
+                "decl_type_ref_payload".into(),
+                decl_type_ref_payload.as_entire_binding(),
+            ),
+            (
+                "fn_return_ref_tag".into(),
+                fn_return_ref_tag.as_entire_binding(),
+            ),
+            (
+                "fn_return_ref_payload".into(),
+                fn_return_ref_payload.as_entire_binding(),
+            ),
+            (
+                "type_generic_param_slot_by_token".into(),
+                type_generic_param_slot_by_token.as_entire_binding(),
+            ),
+            (
+                "type_instance_decl_token".into(),
+                type_instance_decl_token.as_entire_binding(),
+            ),
+            (
+                "type_instance_arg_start".into(),
+                type_instance_arg_start.as_entire_binding(),
+            ),
+            (
+                "type_instance_arg_count".into(),
+                type_instance_arg_count.as_entire_binding(),
+            ),
+            (
+                "type_instance_arg_ref_tag".into(),
+                type_instance_arg_ref_tag.as_entire_binding(),
+            ),
+            (
+                "type_instance_arg_ref_payload".into(),
+                type_instance_arg_ref_payload.as_entire_binding(),
+            ),
+            (
                 "module_value_path_status".into(),
                 module_value_path_status.as_entire_binding(),
             ),
+            ("enclosing_fn".into(), enclosing_fn.as_entire_binding()),
             ("call_fn_index".into(), call_fn_index.as_entire_binding()),
             (
                 "call_return_type".into(),
@@ -3960,6 +4189,40 @@
         0,
         &consume_value_calls_resources,
     )?;
+    let mirror_value_call_leaf_resources: HashMap<String, wgpu::BindingResource<'_>> =
+        HashMap::from([
+            ("gParams".into(), params.as_entire_binding()),
+            ("path_count_out".into(), path_count_out.as_entire_binding()),
+            (
+                "path_segment_count".into(),
+                path_segment_count.as_entire_binding(),
+            ),
+            (
+                "path_segment_base".into(),
+                path_segment_base.as_entire_binding(),
+            ),
+            (
+                "path_segment_token".into(),
+                path_segment_token.as_entire_binding(),
+            ),
+            (
+                "path_owner_token".into(),
+                path_owner_token.as_entire_binding(),
+            ),
+            ("call_fn_index".into(), call_fn_index.as_entire_binding()),
+            (
+                "call_return_type".into(),
+                call_return_type.as_entire_binding(),
+            ),
+        ]);
+    let mirror_value_call_leaf = bind_group::create_bind_group_from_reflection(
+        device,
+        Some("type_check_modules_10h2_mirror_value_call_leaf"),
+        &passes.modules_mirror_value_call_leaf.bind_group_layouts[0],
+        &passes.modules_mirror_value_call_leaf.reflection,
+        0,
+        &mirror_value_call_leaf_resources,
+    )?;
     let consume_value_consts_resources: HashMap<String, wgpu::BindingResource<'_>> =
         HashMap::from([
             ("gParams".into(), params.as_entire_binding()),
@@ -3976,6 +4239,10 @@
             (
                 "hir_stmt_record".into(),
                 hir_items.stmt_record.as_entire_binding(),
+            ),
+            (
+                "hir_call_arg_parent_call".into(),
+                hir_items.call_arg_parent_call.as_entire_binding(),
             ),
             (
                 "hir_variant_payload_start".into(),
@@ -4125,6 +4392,10 @@
                 hir_items.stmt_record.as_entire_binding(),
             ),
             (
+                "hir_call_arg_parent_call".into(),
+                hir_items.call_arg_parent_call.as_entire_binding(),
+            ),
+            (
                 "hir_variant_payload_start".into(),
                 hir_items.variant_payload_start.as_entire_binding(),
             ),
@@ -4241,7 +4512,6 @@
                 "call_arg_record".into(),
                 call_arg_record.as_entire_binding(),
             ),
-            ("call_arg_node".into(), call_arg_node.as_entire_binding()),
             (
                 "module_value_path_status".into(),
                 module_value_path_status.as_entire_binding(),
@@ -4475,17 +4745,25 @@
     )?;
     let type_match_exprs_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
         ("gParams".into(), params.as_entire_binding()),
-        ("token_words".into(), token_buf.as_entire_binding()),
         ("token_count".into(), token_count_buf.as_entire_binding()),
         ("hir_status".into(), hir_status_buf.as_entire_binding()),
+        ("node_kind".into(), hir_items.node_kind.as_entire_binding()),
         ("hir_kind".into(), hir_kind_buf.as_entire_binding()),
         (
             "hir_token_pos".into(),
             hir_token_pos_buf.as_entire_binding(),
         ),
         (
-            "hir_token_end".into(),
-            hir_token_end_buf.as_entire_binding(),
+            "hir_expr_record".into(),
+            hir_items.expr_record.as_entire_binding(),
+        ),
+        (
+            "hir_member_name_token".into(),
+            hir_items.member_name_token.as_entire_binding(),
+        ),
+        (
+            "hir_struct_lit_head_node".into(),
+            hir_items.struct_lit_head_node.as_entire_binding(),
         ),
         (
             "hir_match_arm_start".into(),
@@ -4505,18 +4783,6 @@
         ),
         ("visible_decl".into(), visible_decl.as_entire_binding()),
         ("visible_type".into(), visible_type.as_entire_binding()),
-        (
-            "type_expr_ref_tag".into(),
-            type_expr_ref_tag.as_entire_binding(),
-        ),
-        (
-            "type_expr_ref_payload".into(),
-            type_expr_ref_payload.as_entire_binding(),
-        ),
-        (
-            "type_generic_param_slot_by_token".into(),
-            type_generic_param_slot_by_token.as_entire_binding(),
-        ),
         (
             "call_return_type".into(),
             call_return_type.as_entire_binding(),
@@ -4577,6 +4843,7 @@
     drop(mark_value_call_paths_resources);
     drop(project_value_paths_resources);
     drop(consume_value_calls_resources);
+    drop(mirror_value_call_leaf_resources);
     drop(consume_value_consts_resources);
     drop(consume_value_enum_units_resources);
     drop(consume_value_enum_calls_resources);
@@ -4836,6 +5103,7 @@
             mark_value_call_paths,
             project_value_paths,
             consume_value_calls,
+            mirror_value_call_leaf,
             consume_value_consts,
             consume_value_enum_units,
             consume_value_enum_calls,

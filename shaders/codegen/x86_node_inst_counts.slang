@@ -19,20 +19,31 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+struct FeatureParams
+{
+    uint mask;
+    uint enum_count;
+    uint match_count;
+    uint aggregate_count;
+};
+
+ConstantBuffer<FeatureParams> gX86Features;
+
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint4> hir_param_record;
 StructuredBuffer<uint> x86_expr_resolved_node;
 StructuredBuffer<uint> x86_node_func;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> x86_decl_layout_record;
 StructuredBuffer<uint> x86_decl_layout_status;
 StructuredBuffer<uint> x86_param_reg_record;
-StructuredBuffer<uint4> x86_node_tree_record;
+StructuredBuffer<uint> x86_tree_parent;
+StructuredBuffer<uint> x86_tree_subtree_end;
 StructuredBuffer<uint> x86_node_tree_status;
 StructuredBuffer<uint> x86_enclosing_return_node;
-StructuredBuffer<uint> x86_return_match_node;
 StructuredBuffer<uint> x86_match_return_node;
 StructuredBuffer<uint4> x86_call_record;
 StructuredBuffer<uint> x86_call_callee_owner_call;
@@ -48,8 +59,8 @@ StructuredBuffer<uint> x86_struct_access_record;
 StructuredBuffer<uint4> x86_struct_store_record;
 StructuredBuffer<uint> x86_struct_record_status;
 
-RWStructuredBuffer<uint> x86_node_inst_count_record;
-RWStructuredBuffer<uint> x86_node_inst_scan_input;
+RWStructuredBuffer<uint> x86_node_inst_count_info;
+RWStructuredBuffer<uint> x86_node_inst_count_payload;
 RWStructuredBuffer<uint> x86_node_inst_count_status;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -62,6 +73,9 @@ static const uint X86_ENUM_RECORDS_OK = 1u;
 static const uint X86_STRUCT_RECORDS_OK = 1u;
 static const uint X86_NODE_INST_COUNTS_OK = 1u;
 static const uint X86_ERR_NODE_INST_COUNTS = 10u;
+static const uint X86_FEATURE_ENUM = 1u << 0u;
+static const uint X86_FEATURE_MATCH = 1u << 1u;
+static const uint X86_FEATURE_AGGREGATE = 1u << 2u;
 
 static const uint HIR_PARAM = 4u;
 static const uint HIR_LET_STMT = 8u;
@@ -84,6 +98,8 @@ static const uint HIR_ARRAY_EXPR = 24u;
 static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 static const uint HIR_FOR_STMT = 30u;
 static const uint HIR_MATCH_EXPR = 34u;
+static const uint HIR_PARAM_RECORD_NAME_TOKEN = 2u;
+static const uint HIR_PARAM_RECORD_NODE = 3u;
 
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint X86_DECL_LAYOUT_STRIDE = 4u;
@@ -94,7 +110,7 @@ static const uint X86_STRUCT_ACCESS_STRIDE = 3u;
 static const uint X86_STRUCT_ACCESS_KIND_BITS = 4u;
 static const uint X86_STRUCT_ACCESS_KIND_MASK = 0x0fu;
 static const uint X86_PARAM_REG_STRIDE = 5u;
-static const uint X86_NODE_INST_COUNT_STRIDE = 3u;
+static const uint X86_NODE_INST_COUNT_STRIDE = 2u;
 static const uint X86_NODE_INST_COUNT_KIND_SHIFT = 28u;
 static const uint X86_NODE_INST_COUNT_COUNT_MASK = 0x0fffffffu;
 static const uint X86_INTRINSIC_TAG_MASK = 0x0fu;
@@ -173,24 +189,47 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
+bool has_enum_feature()
+{
+    return (gX86Features.mask & X86_FEATURE_ENUM) != 0u;
+}
+
+bool has_match_feature()
+{
+    return (gX86Features.mask & X86_FEATURE_MATCH) != 0u;
+}
+
+bool has_aggregate_feature()
+{
+    return (gX86Features.mask & X86_FEATURE_AGGREGATE) != 0u;
+}
+
 uint tree_parent_record(uint node)
 {
-    return x86_node_tree_record[node].x;
-}
-
-uint tree_first_child_record(uint node)
-{
-    return x86_node_tree_record[node].y;
-}
-
-uint tree_next_sibling_record(uint node)
-{
-    return x86_node_tree_record[node].z;
+    return valid_node(node) ? x86_tree_parent[node] : INVALID;
 }
 
 uint tree_subtree_end_record(uint node)
 {
-    return x86_node_tree_record[node].w;
+    return valid_node(node) ? x86_tree_subtree_end[node] : INVALID;
+}
+
+uint tree_first_child_record(uint node)
+{
+    uint child = node + 1u;
+    uint end = tree_subtree_end_record(node);
+    return valid_node(child) && child < end && tree_parent_record(child) == node
+        ? child
+        : INVALID;
+}
+
+uint tree_next_sibling_record(uint node)
+{
+    uint sibling = tree_subtree_end_record(node);
+    uint parent = tree_parent_record(node);
+    return valid_node(sibling) && tree_parent_record(sibling) == parent
+        ? sibling
+        : INVALID;
 }
 
 public struct X86NodeChildGraph : ITreeChildGraph
@@ -265,6 +304,8 @@ uint decl_layout_kind(uint row)
 
 uint struct_access_word(uint row, uint slot)
 {
+    if (!has_aggregate_feature())
+        return INVALID;
     return row_major_load<uint>(
         x86_struct_access_record,
         row,
@@ -303,8 +344,10 @@ uint param_node_decl_token(uint param_node)
 {
     if (!valid_node(param_node))
         return INVALID;
-    uint key = gParams.n_tokens * X86_PARAM_REG_STRIDE + param_node;
-    uint decl_token = x86_param_reg_record[key];
+    uint4 record = hir_param_record[param_node];
+    if (record[HIR_PARAM_RECORD_NODE] != param_node)
+        return INVALID;
+    uint decl_token = record[HIR_PARAM_RECORD_NAME_TOKEN];
     return valid_token(decl_token) ? decl_token : INVALID;
 }
 
@@ -427,7 +470,7 @@ bool has_intrinsic_call_record(uint node)
 
 bool has_enum_value_record(uint node)
 {
-    if (!valid_node(node))
+    if (!has_enum_feature() || !valid_node(node))
         return false;
     uint2 record = x86_enum_value_record[node];
     uint kind = record.x & X86_ENUM_VALUE_KIND_MASK;
@@ -485,7 +528,7 @@ uint first_child_node(uint node)
 
 uint nth_match_arm_node(uint match_node, uint ordinal)
 {
-    if (!valid_node(match_node))
+    if (!has_match_feature() || !valid_node(match_node))
         return INVALID;
     uint4 record = x86_match_record[match_node];
     if (ordinal == 0u)
@@ -509,10 +552,11 @@ bool match_expr_is_return_value(uint match_node, out uint return_node)
 
 bool supported_return_match(uint match_node)
 {
+    if (!has_match_feature() || !valid_node(match_node))
+        return false;
     uint4 record = x86_match_record[match_node];
     uint return_node = INVALID;
-    return valid_node(match_node) &&
-           hir_kind[match_node] == HIR_MATCH_EXPR &&
+    return hir_kind[match_node] == HIR_MATCH_EXPR &&
            valid_node(record.x) &&
            valid_node(record.y) &&
            record.z == 2u &&
@@ -521,9 +565,12 @@ bool supported_return_match(uint match_node)
 
 uint return_stmt_match_node(uint return_node)
 {
+    if (!has_match_feature())
+        return INVALID;
     if (!valid_node(return_node) || stmt_slot(return_node, 0u) != STMT_RECORD_KIND_RETURN)
         return INVALID;
-    uint expr_node = x86_return_match_node[return_node];
+    uint return_expr = stmt_slot(return_node, 1u);
+    uint expr_node = resolve_expr(return_expr);
     return supported_return_match(expr_node) ? expr_node : INVALID;
 }
 
@@ -534,12 +581,14 @@ bool return_stmt_has_supported_match(uint return_node)
 
 bool node_belongs_to_match_pattern(uint node)
 {
-    return valid_node(node) && valid_node(x86_match_pattern_node_owner[node]);
+    return has_match_feature() && valid_node(node) &&
+           valid_node(x86_match_pattern_node_owner[node]);
 }
 
 bool match_return_arm_value_node(uint node)
 {
-    return valid_node(node) && valid_node(x86_match_result_value_owner[node]);
+    return has_match_feature() && valid_node(node) &&
+           valid_node(x86_match_result_value_owner[node]);
 }
 
 bool node_precedes_struct_literal(uint node)
@@ -655,8 +704,9 @@ bool aggregate_let_copy_width(uint node, out uint width)
 {
     width = 0u;
     uint stmt_kind = stmt_slot(node, 0u);
-    if (!((hir_kind[node] == HIR_LET_STMT && stmt_kind == STMT_RECORD_KIND_LET) ||
-          stmt_kind == STMT_RECORD_KIND_CONST))
+    if (!((hir_kind[node] == HIR_LET_STMT || hir_kind[node] == HIR_STMT) &&
+          (stmt_kind == STMT_RECORD_KIND_LET ||
+           stmt_kind == STMT_RECORD_KIND_CONST)))
         return false;
 
     uint dest_width = 0u;
@@ -741,7 +791,7 @@ bool array_element_store_for_value_node(uint node, out uint decl_token, out uint
     ordinal = INVALID;
 
     uint value_node = resolve_expr(node);
-    if (!valid_node(value_node))
+    if (!has_aggregate_feature() || !valid_node(value_node))
         return false;
 
     uint4 record = x86_struct_store_record[value_node];
@@ -763,7 +813,7 @@ bool struct_field_store_for_value_node(uint node, out uint decl_token, out uint 
     ordinal = INVALID;
 
     uint value_node = resolve_expr(node);
-    if (!valid_node(value_node))
+    if (!has_aggregate_feature() || !valid_node(value_node))
         return false;
     uint4 record = x86_struct_store_record[value_node];
     if (record.w != 0u)
@@ -793,7 +843,7 @@ bool is_call_callee_node(uint node)
         return false;
     if (x86_call_callee_owner_call[node] != 0u)
         return true;
-    uint first_child = x86_node_tree_record[node].y;
+    uint first_child = tree_first_child_record(node);
     if (valid_node(first_child) && x86_call_callee_owner_call[first_child] != 0u)
         return true;
     uint resolved = resolve_expr(node);
@@ -811,7 +861,7 @@ bool member_field_expr_has_value(uint node)
 
 uint branch_padding_count(uint node)
 {
-    uint parent = x86_node_tree_record[node].x;
+    uint parent = tree_parent_record(node);
     uint match_padding = 0u;
     if (match_return_arm_value_node(node))
         match_padding += 1u;
@@ -841,7 +891,7 @@ uint branch_padding_count(uint node)
     }
     if (parent_kind == HIR_FOR_STMT && stmt_slot(parent, 0u) == STMT_RECORD_KIND_FOR)
     {
-        if (x86_node_tree_record[parent].y == node)
+        if (tree_first_child_record(parent) == node)
             return match_padding + 3u;
         if (stmt_slot(parent, 3u) == node)
             return match_padding + 1u;
@@ -868,25 +918,10 @@ void write_count(uint node, uint count, uint kind, uint payload)
             node);
         return;
     }
-    row_major_store<uint>(
-        x86_node_inst_count_record,
-        node,
-        X86_NODE_INST_COUNT_STRIDE,
-        0u,
-        node);
-    row_major_store<uint>(
-        x86_node_inst_count_record,
-        node,
-        X86_NODE_INST_COUNT_STRIDE,
-        1u,
+    x86_node_inst_count_info[node] =
         (kind << X86_NODE_INST_COUNT_KIND_SHIFT) |
-            (count & X86_NODE_INST_COUNT_COUNT_MASK));
-    row_major_store<uint>(
-        x86_node_inst_count_record,
-        node,
-        X86_NODE_INST_COUNT_STRIDE,
-        2u,
-        payload);
+        (count & X86_NODE_INST_COUNT_COUNT_MASK);
+    x86_node_inst_count_payload[node] = payload;
     if (count != 0u)
         increment_stage_count4(x86_node_inst_count_status, 1u);
 }
@@ -906,7 +941,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (!valid_node(node))
         return;
 
-    uint tree_parent = x86_node_tree_record[node].x;
+    uint tree_parent = tree_parent_record(node);
     if (!valid_node(x86_node_func[node]))
     {
         write_count(node, 0u, X86_NODE_INST_NONE, tree_parent);

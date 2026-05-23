@@ -265,6 +265,10 @@ impl TypeCheckPasses {
                 "type_check_modules_10h_consume_value_calls",
                 "type_check_modules_10h_consume_value_calls"
             ),
+            modules_mirror_value_call_leaf: pass!(
+                "type_check_modules_10h2_mirror_value_call_leaf",
+                "type_check_modules_10h2_mirror_value_call_leaf"
+            ),
             modules_consume_value_consts: pass!(
                 "type_check_modules_10i_consume_value_consts",
                 "type_check_modules_10i_consume_value_consts"
@@ -369,6 +373,14 @@ impl TypeCheckPasses {
                 "type_check_type_instances_08_validate_aggregate_access",
                 "type_check_type_instances_08_validate_aggregate_access"
             ),
+            predicates_collect: pass!(
+                "type_check_predicates_01_collect",
+                "type_check_predicates_01_collect"
+            ),
+            predicates_obligations: pass!(
+                "type_check_predicates_02_obligations",
+                "type_check_predicates_02_obligations"
+            ),
             conditions_hir: pass!("type_check_conditions_hir", "type_check_conditions_hir"),
             tokens: pass!("type_check_tokens", "type_check_tokens_min"),
             control: pass!("type_check_control", "type_check_control"),
@@ -405,6 +417,14 @@ impl TypeCheckPasses {
                 "type_check_calls_02e_pack_hir_call_args"
             ),
             calls_resolve: pass!("type_check_calls_03_resolve", "type_check_calls_03_resolve"),
+            calls_infer_array_generics: pass!(
+                "type_check_calls_03b_infer_array_generics",
+                "type_check_calls_03b_infer_array_generics"
+            ),
+            calls_validate_array_results: pass!(
+                "type_check_calls_03c_validate_array_results",
+                "type_check_calls_03c_validate_array_results"
+            ),
             calls_erase_generic_params: pass!(
                 "type_check_calls_04_erase_generic_params",
                 "type_check_calls_04_erase_generic_params"
@@ -674,6 +694,20 @@ crate::gpu::passes_core::impl_cached_main_pass_getter!(
 );
 
 crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    #[allow(dead_code)]
+    pub(super) fn type_check_predicates_collect_pass(device),
+    label: "type_check_predicates_01_collect",
+    shader: "type_check_predicates_01_collect"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    #[allow(dead_code)]
+    pub(super) fn type_check_predicates_obligations_pass(device),
+    label: "type_check_predicates_02_obligations",
+    shader: "type_check_predicates_02_obligations"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
     pub(super) fn type_check_conditions_hir_pass(device),
     label: "type_check_conditions_hir",
     shader: "type_check_conditions_hir"
@@ -803,6 +837,18 @@ crate::gpu::passes_core::impl_cached_main_pass_getter!(
     pub(super) fn type_check_calls_resolve_pass(device),
     label: "type_check_calls_03_resolve",
     shader: "type_check_calls_03_resolve"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    pub(super) fn type_check_calls_infer_array_generics_pass(device),
+    label: "type_check_calls_03b_infer_array_generics",
+    shader: "type_check_calls_03b_infer_array_generics"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    pub(super) fn type_check_calls_validate_array_results_pass(device),
+    label: "type_check_calls_03c_validate_array_results",
+    shader: "type_check_calls_03c_validate_array_results"
 );
 
 crate::gpu::passes_core::impl_cached_main_pass_getter!(

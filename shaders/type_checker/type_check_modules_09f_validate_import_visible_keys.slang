@@ -2,15 +2,14 @@
 //
 // Scheduling contract:
 // - Dispatch after final sorted imported-visibility key tables have been built.
-// - Adjacent equal keys are ambiguous imported declarations for the same
-//   importing module and namespace. This pass records row-local status only; a
-//   later status reduction pass can translate these rows into the compiler-wide
-//   type-check status buffer.
+// - Equal keys with different declarations are ambiguous imported declarations
+//   for the same importing module and namespace. Every row in that equal-key
+//   run is marked ambiguous so lower-bound lookup cannot accept the first row.
+//   Equal keys that name the same declaration are harmless re-imports.
 // - It does not resolve paths, scan source bytes, use hashes, perform CPU
 //   lookup, or apply same-source shortcuts.
 
 import fixed_key;
-import sorted_runs;
 
 struct Params
 {
@@ -128,20 +127,70 @@ bool same_value_key(uint left_i, uint right_i)
                2u);
 }
 
-public struct ImportVisibleTypeKeyEquality : ISortedRunEquality
+bool type_key_has_distinct_decl_in_run(uint i, uint count, out uint duplicate_of)
 {
-    public static bool equal(uint left_item, uint right_item)
+    duplicate_of = INVALID;
+    uint decl_i = import_visible_type_key_to_decl_id[i];
+
+    [loop]
+    for (uint cursor = i; cursor > 0u;)
     {
-        return same_type_key(left_item, right_item);
+        cursor -= 1u;
+        if (!same_type_key(cursor, i))
+            break;
+        if (import_visible_type_key_to_decl_id[cursor] != decl_i)
+        {
+            duplicate_of = cursor;
+            return true;
+        }
     }
+
+    [loop]
+    for (uint cursor = i + 1u; cursor < count; cursor += 1u)
+    {
+        if (!same_type_key(i, cursor))
+            break;
+        if (import_visible_type_key_to_decl_id[cursor] != decl_i)
+        {
+            duplicate_of = cursor;
+            return true;
+        }
+    }
+
+    return false;
 }
 
-public struct ImportVisibleValueKeyEquality : ISortedRunEquality
+bool value_key_has_distinct_decl_in_run(uint i, uint count, out uint duplicate_of)
 {
-    public static bool equal(uint left_item, uint right_item)
+    duplicate_of = INVALID;
+    uint decl_i = import_visible_value_key_to_decl_id[i];
+
+    [loop]
+    for (uint cursor = i; cursor > 0u;)
     {
-        return same_value_key(left_item, right_item);
+        cursor -= 1u;
+        if (!same_value_key(cursor, i))
+            break;
+        if (import_visible_value_key_to_decl_id[cursor] != decl_i)
+        {
+            duplicate_of = cursor;
+            return true;
+        }
     }
+
+    [loop]
+    for (uint cursor = i + 1u; cursor < count; cursor += 1u)
+    {
+        if (!same_value_key(i, cursor))
+            break;
+        if (import_visible_value_key_to_decl_id[cursor] != decl_i)
+        {
+            duplicate_of = cursor;
+            return true;
+        }
+    }
+
+    return false;
 }
 
 [shader("compute")]
@@ -162,17 +211,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         }
         else
         {
-            uint item;
-            uint previous_item;
-            if (sorted_identity_adjacent_duplicate<ImportVisibleTypeKeyEquality>(
-                i,
-                active_type_count(),
-                visible_capacity(),
-                item,
-                previous_item))
+            uint duplicate_of;
+            if (type_key_has_distinct_decl_in_run(i, active_type_count(), duplicate_of))
             {
                 import_visible_type_status[i] = IMPORT_VISIBLE_STATUS_AMBIGUOUS;
-                import_visible_type_duplicate_of[i] = previous_item;
+                import_visible_type_duplicate_of[i] = duplicate_of;
             }
         }
     }
@@ -187,17 +230,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         }
         else
         {
-            uint item;
-            uint previous_item;
-            if (sorted_identity_adjacent_duplicate<ImportVisibleValueKeyEquality>(
-                i,
-                active_value_count(),
-                visible_capacity(),
-                item,
-                previous_item))
+            uint duplicate_of;
+            if (value_key_has_distinct_decl_in_run(i, active_value_count(), duplicate_of))
             {
                 import_visible_value_status[i] = IMPORT_VISIBLE_STATUS_AMBIGUOUS;
-                import_visible_value_duplicate_of[i] = previous_item;
+                import_visible_value_duplicate_of[i] = duplicate_of;
             }
         }
     }

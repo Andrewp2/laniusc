@@ -17,6 +17,10 @@ struct Params
     uint out_capacity;
     uint n_hir_nodes;
     uint inst_capacity;
+    uint virtual_next_call_step_count;
+    uint regalloc_rows_per_chunk;
+    uint regalloc_chunk_count;
+    uint function_slot_capacity;
 };
 
 ConstantBuffer<Params> gParams;
@@ -85,7 +89,7 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     uint fn_slot = x86_virtual_func_slot[row];
-    if (fn_slot >= gParams.n_tokens)
+    if (fn_slot >= gParams.function_slot_capacity)
         return;
 
     uint reg = x86_virtual_inst_args[row].z;

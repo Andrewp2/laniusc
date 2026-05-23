@@ -83,8 +83,10 @@ fn name_radix_bucket_prefix_and_bases_respect_gpu_max_name_length() {
             queue,
             &byte_dispatch_pass,
         );
+        assert_byte_dispatch_args_cover_large_name_counts(device, queue, &byte_dispatch_pass);
         assert_prefix_inactive_leaves_records_untouched(device, queue, &prefix_pass);
         assert_prefix_active_uses_histogram_records(device, queue, &prefix_pass);
+        assert_prefix_active_covers_more_than_2048_name_blocks(device, queue, &prefix_pass);
         assert_bases_inactive_leaves_records_untouched(device, queue, &bases_pass);
         assert_bases_active_uses_bucket_total_records(device, queue, &bases_pass);
         assert_scatter_inactive_leaves_output_order_untouched(device, queue, &scatter_pass);
@@ -358,6 +360,92 @@ fn assert_byte_dispatch_args_disable_inactive_radix_offsets(
     );
 }
 
+fn assert_byte_dispatch_args_cover_large_name_counts(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    pass: &laniusc::gpu::passes_core::PassData,
+) {
+    const NAME_RADIX_MAX_BYTES: usize = 64;
+    const DISPATCH_WORDS: usize = (1 + NAME_RADIX_MAX_BYTES * 3) * 3;
+    const NAME_COUNT: u32 = 600_000;
+    const NAME_BLOCKS: u32 = (NAME_COUNT + 255) / 256;
+    let params = uniform_words(
+        device,
+        "tests.name_radix.byte_dispatch.large.params",
+        &[NAME_COUNT, 0, NAME_BLOCKS, 0],
+    );
+    let name_count = storage_buffer(
+        device,
+        "tests.name_radix.byte_dispatch.large.name_count",
+        &[NAME_COUNT],
+    );
+    let name_max_len = storage_buffer(
+        device,
+        "tests.name_radix.byte_dispatch.large.name_max_len",
+        &[3],
+    );
+    let dispatch_args = storage_buffer(
+        device,
+        "tests.name_radix.byte_dispatch.large.args",
+        &vec![99; DISPATCH_WORDS],
+    );
+    let readback = readback_buffer(
+        device,
+        "tests.name_radix.byte_dispatch.large.readback",
+        DISPATCH_WORDS,
+    );
+    let resources = HashMap::from([
+        ("gParams".to_string(), params.as_entire_binding()),
+        ("name_count_in".to_string(), name_count.as_entire_binding()),
+        (
+            "name_max_len_in".to_string(),
+            name_max_len.as_entire_binding(),
+        ),
+        (
+            "radix_dispatch_args".to_string(),
+            dispatch_args.as_entire_binding(),
+        ),
+    ]);
+    let bind_group = bind_group::create_bind_group_from_reflection(
+        device,
+        Some("tests.type_checker.name_radix.byte_dispatch.large.bind_group"),
+        &pass.bind_group_layouts[0],
+        &pass.reflection,
+        0,
+        &resources,
+    )
+    .expect("create large byte-dispatch bind group");
+
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("tests.type_checker.name_radix.byte_dispatch.large.encoder"),
+    });
+    {
+        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("tests.type_checker.name_radix.byte_dispatch.large.pass"),
+            timestamp_writes: None,
+        });
+        compute.set_pipeline(&pass.pipeline);
+        compute.set_bind_group(0, &bind_group, &[]);
+        compute.dispatch_workgroups(1, 1, 1);
+    }
+    encoder.copy_buffer_to_buffer(&dispatch_args, 0, &readback, 0, (DISPATCH_WORDS * 4) as u64);
+    queue.submit(Some(encoder.finish()));
+
+    let args = read_u32s(device, &readback, DISPATCH_WORDS);
+    assert_eq!(
+        &args[0..3],
+        &[NAME_BLOCKS, 1, 1],
+        "slot zero should cover name counts above the old 2048-block cap"
+    );
+    let first_active = 1 + (NAME_RADIX_MAX_BYTES - 3);
+    let active_base = first_active * 3;
+    assert_eq!(
+        &args[active_base..active_base + 3],
+        &[NAME_BLOCKS, 1, 1],
+        "active radix byte passes should cover all compact name blocks"
+    );
+}
+
 fn assert_prefix_inactive_leaves_records_untouched(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -502,6 +590,91 @@ fn assert_prefix_active_uses_histogram_records(
         "active pass must total bucket 7 from histogram records"
     );
     assert_eq!(totals[0], 0, "active pass must clear empty bucket totals");
+}
+
+fn assert_prefix_active_covers_more_than_2048_name_blocks(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    pass: &laniusc::gpu::passes_core::PassData,
+) {
+    const ACTIVE_BLOCKS: usize = 2050;
+    const BUCKET: usize = 7;
+    const NAME_COUNT: u32 = (ACTIVE_BLOCKS as u32) * 256;
+    let params = uniform_words(
+        device,
+        "tests.name_radix.prefix_large.params",
+        &[NAME_COUNT, 0, ACTIVE_BLOCKS as u32, 0],
+    );
+    let name_count = storage_buffer(
+        device,
+        "tests.name_radix.prefix_large.name_count",
+        &[NAME_COUNT],
+    );
+    let name_max_len = storage_buffer(device, "tests.name_radix.prefix_large.name_max_len", &[1]);
+    let mut histogram_words = vec![0; ACTIVE_BLOCKS * RADIX_BUCKETS];
+    for block in 0..ACTIVE_BLOCKS {
+        histogram_words[block * RADIX_BUCKETS + BUCKET] = 1;
+    }
+    let histogram = storage_buffer(
+        device,
+        "tests.name_radix.prefix_large.histogram",
+        &histogram_words,
+    );
+    let prefix = storage_buffer(
+        device,
+        "tests.name_radix.prefix_large.prefix",
+        &vec![77; ACTIVE_BLOCKS * RADIX_BUCKETS],
+    );
+    let total = storage_buffer(
+        device,
+        "tests.name_radix.prefix_large.total",
+        &vec![88; RADIX_BUCKETS],
+    );
+    let prefix_readback = readback_buffer(
+        device,
+        "tests.name_radix.prefix_large.prefix_readback",
+        ACTIVE_BLOCKS * RADIX_BUCKETS,
+    );
+    let total_readback = readback_buffer(
+        device,
+        "tests.name_radix.prefix_large.total_readback",
+        RADIX_BUCKETS,
+    );
+
+    dispatch_prefix_pass(
+        device,
+        queue,
+        pass,
+        PrefixBindings {
+            params: &params,
+            name_count: &name_count,
+            name_max_len: &name_max_len,
+            histogram: &histogram,
+            prefix: &prefix,
+            total: &total,
+        },
+        &[
+            (&prefix, &prefix_readback, ACTIVE_BLOCKS * RADIX_BUCKETS),
+            (&total, &total_readback, RADIX_BUCKETS),
+        ],
+    );
+
+    let prefixes = read_u32s(device, &prefix_readback, ACTIVE_BLOCKS * RADIX_BUCKETS);
+    let totals = read_u32s(device, &total_readback, RADIX_BUCKETS);
+    assert_eq!(
+        prefixes[2048 * RADIX_BUCKETS + BUCKET],
+        2048,
+        "bucket-prefix pass must consume histogram records past the old 2048-block ceiling"
+    );
+    assert_eq!(
+        prefixes[2049 * RADIX_BUCKETS + BUCKET],
+        2049,
+        "bucket-prefix pass must preserve per-block prefixes for every active name block"
+    );
+    assert_eq!(
+        totals[BUCKET], ACTIVE_BLOCKS as u32,
+        "bucket total should include all active compact-name histogram blocks"
+    );
 }
 
 fn assert_bases_inactive_leaves_records_untouched(

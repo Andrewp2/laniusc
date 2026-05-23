@@ -4,9 +4,8 @@ import atomics;
 // Direct x86_64 function discovery.
 //
 // This pass maps GPU HIR function nodes and owning-function records for the
-// native backend. It consumes the backend tree projection, not parser parent
-// pointers directly, so later stages can converge on the same Pareas-style node
-// property record.
+// native backend. x86_node_tree_info runs before this pass, so the function
+// discovery status can still fail fast on invalid parser tree records.
 
 struct Params
 {
@@ -25,7 +24,6 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint4> x86_node_tree_record;
 StructuredBuffer<uint> x86_node_tree_status;
 StructuredBuffer<uint> hir_node_decl_token;
 StructuredBuffer<uint> hir_node_name_token;
@@ -44,7 +42,6 @@ static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint X86_NODE_TREE_OK = 1u;
 
 static const uint FUNC_META_MAIN_COUNT = 1u;
-static const uint FUNC_META_MAIN_SLOT = 2u;
 static const uint FUNC_META_MAIN_NODE = 4u;
 
 uint linear_dispatch_id(uint3 tid)
@@ -123,6 +120,9 @@ void publish_function_slot(uint node_i)
 void main(uint3 tid: SV_DispatchThreadID)
 {
     uint node_i = linear_dispatch_id(tid);
+    if (!node_tree_ok())
+        return;
+
     if (node_i >= active_hir_node_count())
         return;
 
@@ -137,6 +137,5 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     atomic_u32_add(x86_func_meta, FUNC_META_MAIN_COUNT, 1u);
-    atomic_u32_min(x86_func_meta, FUNC_META_MAIN_SLOT, function_slot_key(node_i));
     atomic_u32_min(x86_func_meta, FUNC_META_MAIN_NODE, node_i);
 }

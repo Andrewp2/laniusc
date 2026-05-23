@@ -5,7 +5,8 @@
 //   sorted and materialized.
 // - Multi-segment HIR path expressions resolve by looking up the prefix as a
 //   module path and then looking up the leaf in that module's declaration
-//   table. One-segment paths are handled by local/imported lookup passes.
+//   table. Private declarations are visible only from the owning module.
+//   One-segment paths are handled by local/imported lookup passes.
 // - It does not scan source bytes, use hashes, perform CPU lookup, or apply
 //   same-source shortcuts.
 
@@ -29,6 +30,7 @@ StructuredBuffer<uint> path_kind;
 StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_name_id;
+StructuredBuffer<uint> path_owner_module_id;
 StructuredBuffer<uint> module_count_out;
 StructuredBuffer<uint> sorted_module_key_order;
 StructuredBuffer<uint> module_key_segment_count;
@@ -37,6 +39,7 @@ StructuredBuffer<uint> module_key_segment_name_id;
 StructuredBuffer<uint> decl_key_count_out;
 StructuredBuffer<uint> decl_key_to_decl_id;
 StructuredBuffer<uint> decl_module_id;
+StructuredBuffer<uint> decl_visibility;
 StructuredBuffer<uint> decl_name_id;
 
 RWStructuredBuffer<uint> resolved_decl;
@@ -55,6 +58,7 @@ static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint PATH_RESOLVE_STATUS_UNRESOLVED_MODULE = 5u;
 static const uint PATH_RESOLVE_STATUS_UNRESOLVED_DECL = 6u;
 static const uint PATH_RESOLVE_STATUS_PATH_TOO_DEEP = 7u;
+static const uint HIR_ITEM_VIS_PUBLIC = 1u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -222,6 +226,19 @@ uint find_decl(uint module_id, uint name_id)
         INVALID);
 }
 
+bool decl_visible_from_path(uint path_i, uint decl_i)
+{
+    if (decl_i >= gParams.capacity)
+        return false;
+
+    uint owner_module = path_owner_module_id[path_i];
+    uint decl_module = decl_module_id[decl_i];
+    if (owner_module != INVALID && decl_module != INVALID && owner_module == decl_module)
+        return true;
+
+    return decl_visibility[decl_i] == HIR_ITEM_VIS_PUBLIC;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -252,6 +269,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint leaf_name_id = path_segment_name_id[path_segment_base[path_i] + count - 1u];
     uint decl_i = find_decl(module_i, leaf_name_id);
     if (decl_i == INVALID)
+    {
+        resolved_decl[path_i] = INVALID;
+        resolved_status[path_i] = PATH_RESOLVE_STATUS_UNRESOLVED_DECL;
+        return;
+    }
+    if (!decl_visible_from_path(path_i, decl_i))
     {
         resolved_decl[path_i] = INVALID;
         resolved_status[path_i] = PATH_RESOLVE_STATUS_UNRESOLVED_DECL;

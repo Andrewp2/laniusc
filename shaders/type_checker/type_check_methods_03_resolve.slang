@@ -7,6 +7,7 @@
 
 import gpu_index;
 import generated_parse_production_ids;
+import hir_records;
 import status;
 
 struct Params
@@ -26,7 +27,7 @@ StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_member_receiver_token;
 StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint4> call_arg_record;
-StructuredBuffer<uint> call_arg_node;
+StructuredBuffer<uint> hir_call_arg_parent_call;
 StructuredBuffer<uint> method_decl_receiver_mode;
 StructuredBuffer<uint> method_call_name_id;
 StructuredBuffer<uint> call_param_count;
@@ -61,7 +62,7 @@ static const uint METHOD_RECEIVER_EXPLICIT = 3u;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint PARAM_CACHE_STRIDE = 16u;
+static const uint PARAM_CACHE_STRIDE = 4u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -221,12 +222,18 @@ uint call_arg_node_for_method_token(uint method_i, uint ordinal)
 {
     if (method_i >= active_token_count() || ordinal >= PARAM_CACHE_STRIDE)
         return INVALID;
-    return row_major_load<uint>(
-        call_arg_node,
-        method_i,
-        PARAM_CACHE_STRIDE,
-        ordinal,
-        INVALID);
+    uint call_node = call_arg_record[method_i].z;
+    if (!valid_node(call_node))
+        return INVALID;
+    [loop]
+    for (uint node = 0u; node < active_hir_node_count(); node += 1u)
+    {
+        uint packed = hir_call_arg_parent_call[node];
+        if (hir_node_ordinal_node(packed) == call_node &&
+            hir_node_ordinal_ordinal(packed) == ordinal)
+            return node;
+    }
+    return INVALID;
 }
 
 uint receiver_token_for_member(uint member_node)

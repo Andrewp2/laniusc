@@ -33,6 +33,7 @@ static const uint HIR_ITEM_KIND_STRUCT = 6u;
 static const uint HIR_ITEM_KIND_ENUM = 7u;
 static const uint HIR_ITEM_KIND_TYPE_ALIAS = 8u;
 static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
+static const uint HIR_ITEM_KIND_TRAIT = 10u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -65,7 +66,8 @@ bool has_declaration_target(uint item_kind)
            item_kind == HIR_ITEM_KIND_STRUCT ||
            item_kind == HIR_ITEM_KIND_ENUM ||
            item_kind == HIR_ITEM_KIND_TYPE_ALIAS ||
-           item_kind == HIR_ITEM_KIND_ENUM_VARIANT;
+           item_kind == HIR_ITEM_KIND_ENUM_VARIANT ||
+           item_kind == HIR_ITEM_KIND_TRAIT;
 }
 
 [shader("compute")]

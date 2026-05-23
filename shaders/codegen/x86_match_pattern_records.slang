@@ -19,9 +19,20 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+struct FeatureParams
+{
+    uint mask;
+    uint enum_count;
+    uint match_count;
+    uint aggregate_count;
+};
+
+ConstantBuffer<FeatureParams> gX86Features;
+
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> x86_expr_resolved_node;
 StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> visible_decl;
@@ -46,6 +57,7 @@ RWStructuredBuffer<uint> x86_match_pattern_first_payload_node;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint INVALID = 0xffffffffu;
+static const uint X86_FEATURE_MATCH = 1u << 1u;
 static const uint MATCH_ARM_VARIANT_UNKNOWN = 0xffffu;
 
 static const uint HIR_CALL_EXPR = 19u;
@@ -79,6 +91,11 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
+bool has_match_feature()
+{
+    return (gX86Features.mask & X86_FEATURE_MATCH) != 0u;
+}
+
 uint active_decl_count()
 {
     return min(decl_count_out[0u], gParams.n_hir_nodes);
@@ -102,6 +119,14 @@ uint expr_slot(uint node, uint slot)
 uint expr_value_token(uint node)
 {
     return valid_node(node) ? expr_slot(node, EXPR_RECORD_VALUE_TOKEN) : INVALID;
+}
+
+uint node_token(uint node)
+{
+    if (!valid_node(node))
+        return INVALID;
+    uint token = hir_token_pos[node];
+    return valid_token(token) ? token : INVALID;
 }
 
 uint resolve_expr(uint node)
@@ -131,9 +156,20 @@ uint path_node_for_pattern_node(uint node)
 uint semantic_use_token_for_pattern_node(uint node)
 {
     if (hir_kind[node] == HIR_NAME_EXPR)
-        return expr_value_token(node);
+    {
+        uint token = expr_value_token(node);
+        return valid_token(token) ? token : node_token(node);
+    }
+    if (hir_kind[node] == HIR_PATH_EXPR)
+        return node_token(node);
     if (hir_kind[node] == HIR_CALL_EXPR)
-        return callee_token_for_call(node);
+    {
+        uint token = callee_token_for_call(node);
+        if (valid_token(token))
+            return token;
+        uint callee_node = resolve_expr(hir_call_callee_node[node]);
+        return node_token(callee_node);
+    }
     return INVALID;
 }
 
@@ -195,7 +231,10 @@ bool pattern_node_variant_ordinal(uint node, out uint ordinal, out bool found_us
     if (valid_node(path_node))
     {
         found_use_token = true;
-        return variant_ordinal_for_path_node(path_node, ordinal);
+        if (variant_ordinal_for_path_node(path_node, ordinal))
+            return true;
+        uint use_token = semantic_use_token_for_pattern_node(path_node);
+        return variant_ordinal_for_use_token(use_token, ordinal);
     }
 
     uint use_token = semantic_use_token_for_pattern_node(node);
@@ -225,6 +264,8 @@ void main(uint3 tid: SV_DispatchThreadID)
 {
     uint node = linear_dispatch_id(tid);
     if (!valid_node(node))
+        return;
+    if (!has_match_feature())
         return;
 
     x86_match_pattern_node_variant[node] = MATCH_ARM_VARIANT_UNKNOWN;

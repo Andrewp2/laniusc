@@ -560,6 +560,60 @@ bool is_group_close_kind(uint kind)
     return kind == TK_GROUP_RPAREN || kind == TK_RPAREN || kind == TK_CALL_RPAREN;
 }
 
+bool is_real_call_return_type(uint ty)
+{
+    return ty != TY_UNKNOWN && ty != ARRAY_RETURN_OK && ty != GENERIC_ENUM_CTOR_OK;
+}
+
+uint top_level_method_chain_return_type(uint expr_i, uint limit_i)
+{
+    uint n = active_token_count();
+    uint group_depth = 0u;
+    uint bracket_depth = 0u;
+    uint brace_depth = 0u;
+    bool saw_top_level_call = false;
+    uint method_result = TY_UNKNOWN;
+
+    [loop]
+    for (uint guard = 0u; guard < 64u; guard += 1u)
+    {
+        uint j = expr_i + guard;
+        if (j >= limit_i || j >= n)
+            break;
+        uint kind = token_kind(j);
+        bool top_level = group_depth == 0u && bracket_depth == 0u && brace_depth == 0u;
+
+        if (top_level && (kind == TK_IDENT || kind == TK_TYPE_IDENT || kind == TK_SELF_VALUE))
+        {
+            uint ret = call_return_type[j];
+            if (is_real_call_return_type(ret))
+                saw_top_level_call = true;
+        }
+        else if (top_level && kind == TK_DOT && saw_top_level_call && j + 1u < limit_i)
+        {
+            uint ret = call_return_type[j + 1u];
+            if (is_real_call_return_type(ret))
+                method_result = ret;
+        }
+
+        if (is_group_open_kind(kind))
+            group_depth += 1u;
+        else if (is_group_close_kind(kind) && group_depth > 0u)
+            group_depth -= 1u;
+        else if (kind == TK_LBRACKET || kind == TK_ARRAY_LBRACKET || kind == TK_INDEX_LBRACKET)
+            bracket_depth += 1u;
+        else if ((kind == TK_RBRACKET || kind == TK_ARRAY_RBRACKET || kind == TK_INDEX_RBRACKET) &&
+                 bracket_depth > 0u)
+            bracket_depth -= 1u;
+        else if (kind == TK_LBRACE)
+            brace_depth += 1u;
+        else if (kind == TK_RBRACE && brace_depth > 0u)
+            brace_depth -= 1u;
+    }
+
+    return method_result;
+}
+
 uint simple_expr_type(uint expr_i, uint limit_i)
 {
     bool saw_float = false;
@@ -602,6 +656,9 @@ uint simple_expr_type(uint expr_i, uint limit_i)
             return call_return_type[cur];
         if (kind == TK_IDENT || kind == TK_TYPE_IDENT || kind == TK_SELF_VALUE)
         {
+            uint method_chain_ty = top_level_method_chain_return_type(cur, limit_i);
+            if (method_chain_ty != TY_UNKNOWN)
+                return method_chain_ty;
             if (cur + 1u < limit_i && token_kind(cur + 1u) == TK_LBRACE)
                 return struct_type_code_for_name(cur);
             if (kind == TK_IDENT || kind == TK_TYPE_IDENT)

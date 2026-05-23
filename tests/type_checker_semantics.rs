@@ -3,6 +3,23 @@ mod common;
 use laniusc::compiler::CompileError;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
+const CONDITIONS_HIR_SHADER: &str =
+    include_str!("../shaders/type_checker/type_check_conditions_hir.slang");
+const CONTROL_HIR_SHADER: &str =
+    include_str!("../shaders/type_checker/type_check_control_hir.slang");
+const MODULE_ENUM_CALLS_SHADER: &str =
+    include_str!("../shaders/type_checker/type_check_modules_10l_consume_value_enum_calls.slang");
+const LEGACY_ENUM_CTORS_SHADER: &str =
+    include_str!("../shaders/type_checker/type_check_type_instances_06_enum_ctors.slang");
+const CALLS_FUNCTIONS_SHADER: &str =
+    include_str!("../shaders/type_checker/type_check_calls_02_functions.slang");
+const CALLS_PARAM_TYPES_SHADER: &str =
+    include_str!("../shaders/type_checker/type_check_calls_02f_params_from_hir.slang");
+const CALLS_RESOLVE_SHADER: &str =
+    include_str!("../shaders/type_checker/type_check_calls_03_resolve.slang");
+const MATCH_EXPRS_SHADER: &str =
+    include_str!("../shaders/type_checker/type_check_modules_10n_type_match_exprs.slang");
+
 fn assert_gpu_type_check_ok(src: &str) {
     common::type_check_source_with_timeout(src).expect("source should pass GPU type checking");
 }
@@ -104,6 +121,261 @@ fn main() -> i32 {
     );
 }
 
+#[test]
+fn type_checker_condition_hir_stage_consumes_records_not_source_text() {
+    for required in [
+        "StructuredBuffer<uint> hir_stmt_record;",
+        "StructuredBuffer<uint> hir_expr_record;",
+        "StructuredBuffer<uint> visible_decl;",
+        "StructuredBuffer<uint> visible_type;",
+        "StructuredBuffer<uint> call_return_type;",
+        "RWStructuredBuffer<uint> status;",
+    ] {
+        assert!(
+            CONDITIONS_HIR_SHADER.contains(required),
+            "type_check_conditions_hir must consume/produce record buffer {required}"
+        );
+    }
+
+    for banned in [
+        "ByteAddressBuffer source_bytes",
+        "source_bytes",
+        "token_text",
+        "token_spelling",
+        "token_kind(",
+    ] {
+        assert!(
+            !CONDITIONS_HIR_SHADER.contains(banned),
+            "type_check_conditions_hir must not inspect {banned}"
+        );
+    }
+}
+
+#[test]
+fn type_checker_control_hir_stage_consumes_records_not_source_text() {
+    for required in [
+        "StructuredBuffer<uint> hir_expr_record;",
+        "StructuredBuffer<uint> visible_decl;",
+        "StructuredBuffer<uint> visible_type;",
+        "StructuredBuffer<uint> call_return_type;",
+        "StructuredBuffer<int> loop_depth;",
+        "RWStructuredBuffer<uint> status;",
+    ] {
+        assert!(
+            CONTROL_HIR_SHADER.contains(required),
+            "type_check_control_hir must consume/produce record buffer {required}"
+        );
+    }
+
+    for banned in [
+        "struct TokenIn",
+        "token_words",
+        "token_kind(",
+        "TK_",
+        "ByteAddressBuffer source_bytes",
+        "source_bytes",
+        "token_text",
+        "token_spelling",
+    ] {
+        assert!(
+            !CONTROL_HIR_SHADER.contains(banned),
+            "type_check_control_hir must not inspect {banned}"
+        );
+    }
+}
+
+#[test]
+fn type_checker_enum_constructor_stage_consumes_records_not_source_text() {
+    for required in [
+        "StructuredBuffer<uint> hir_call_arg_parent_call;",
+        "StructuredBuffer<uint> hir_variant_payload_start;",
+        "StructuredBuffer<uint> hir_variant_payload_count;",
+        "StructuredBuffer<uint> resolved_value_decl;",
+        "StructuredBuffer<uint> decl_hir_node;",
+        "StructuredBuffer<uint> type_instance_arg_ref_tag;",
+        "StructuredBuffer<uint4> call_arg_record;",
+        "RWStructuredBuffer<uint> module_value_path_status;",
+        "RWStructuredBuffer<uint> call_return_type;",
+    ] {
+        assert!(
+            MODULE_ENUM_CALLS_SHADER.contains(required),
+            "enum constructor validation must consume/produce record buffer {required}"
+        );
+    }
+
+    for banned in [
+        "struct TokenIn",
+        "token_words",
+        "token_kind(",
+        "is_type_name_token",
+        "TK_",
+        "ByteAddressBuffer source_bytes",
+        "source_bytes",
+        "token_text",
+        "token_spelling",
+    ] {
+        assert!(
+            !MODULE_ENUM_CALLS_SHADER.contains(banned),
+            "enum constructor validation must not inspect {banned}"
+        );
+        assert!(
+            !LEGACY_ENUM_CTORS_SHADER.contains(banned),
+            "retired enum constructor shader must not preserve {banned}"
+        );
+    }
+}
+
+#[test]
+fn type_checker_call_signature_stages_consume_records_not_source_text() {
+    for required in [
+        "StructuredBuffer<uint> hir_item_kind;",
+        "StructuredBuffer<uint> hir_item_name_token;",
+        "StructuredBuffer<uint> fn_return_ref_tag;",
+        "StructuredBuffer<uint> type_expr_ref_tag;",
+        "StructuredBuffer<uint> type_instance_decl_token;",
+        "RWStructuredBuffer<uint> call_fn_index;",
+        "RWStructuredBuffer<uint> call_return_type;",
+        "RWStructuredBuffer<uint> call_return_type_token;",
+    ] {
+        assert!(
+            CALLS_FUNCTIONS_SHADER.contains(required),
+            "call function metadata must consume/produce record buffer {required}"
+        );
+    }
+
+    for required in [
+        "StructuredBuffer<uint4> hir_param_record;",
+        "StructuredBuffer<uint> hir_type_form;",
+        "StructuredBuffer<uint> type_expr_ref_tag;",
+        "StructuredBuffer<uint> type_instance_arg_ref_tag;",
+        "RWStructuredBuffer<uint> call_param_count;",
+        "RWStructuredBuffer<uint> call_param_type;",
+    ] {
+        assert!(
+            CALLS_PARAM_TYPES_SHADER.contains(required),
+            "call parameter metadata must consume/produce record buffer {required}"
+        );
+    }
+
+    for banned in [
+        "struct TokenIn",
+        "token_words",
+        "token_kind(",
+        "TK_",
+        "ByteAddressBuffer source_bytes",
+        "source_bytes",
+        "token_text",
+        "token_spelling",
+    ] {
+        assert!(
+            !CALLS_FUNCTIONS_SHADER.contains(banned),
+            "call function metadata must not inspect {banned}"
+        );
+        assert!(
+            !CALLS_PARAM_TYPES_SHADER.contains(banned),
+            "call parameter metadata must not inspect {banned}"
+        );
+    }
+}
+
+#[test]
+fn type_checker_call_resolution_stage_consumes_records_not_source_text() {
+    for required in [
+        "StructuredBuffer<uint> hir_expr_record;",
+        "StructuredBuffer<uint> hir_call_callee_node;",
+        "StructuredBuffer<uint> hir_call_arg_start;",
+        "StructuredBuffer<uint> hir_call_arg_parent_call;",
+        "StructuredBuffer<uint> visible_decl;",
+        "StructuredBuffer<uint> visible_type;",
+        "StructuredBuffer<uint> call_param_type;",
+        "RWStructuredBuffer<uint> call_fn_index;",
+        "RWStructuredBuffer<uint> call_return_type;",
+    ] {
+        assert!(
+            CALLS_RESOLVE_SHADER.contains(required),
+            "call resolution must consume/produce record buffer {required}"
+        );
+    }
+
+    for banned in [
+        "struct TokenIn",
+        "token_words",
+        "token_kind(",
+        "TK_",
+        "ByteAddressBuffer source_bytes",
+        "source_bytes",
+        "token_text",
+        "token_spelling",
+        "language_decl_name_id",
+        "generic_param_list_open",
+        "local_identifier_type",
+    ] {
+        assert!(
+            !CALLS_RESOLVE_SHADER.contains(banned),
+            "call resolution must not inspect {banned}"
+        );
+    }
+}
+
+#[test]
+fn type_checker_match_result_stage_consumes_records_not_source_text() {
+    for required in [
+        "StructuredBuffer<uint> hir_expr_record;",
+        "StructuredBuffer<uint> hir_match_arm_start;",
+        "StructuredBuffer<uint> hir_match_arm_count;",
+        "StructuredBuffer<uint> hir_match_arm_result_node;",
+        "StructuredBuffer<uint> visible_decl;",
+        "StructuredBuffer<uint> visible_type;",
+        "RWStructuredBuffer<uint> call_return_type;",
+    ] {
+        assert!(
+            MATCH_EXPRS_SHADER.contains(required),
+            "match result typing must consume/produce record buffer {required}"
+        );
+    }
+
+    for banned in [
+        "struct TokenIn",
+        "token_words",
+        "token_kind(",
+        "TK_",
+        "ByteAddressBuffer source_bytes",
+        "source_bytes",
+        "token_text",
+        "token_spelling",
+    ] {
+        assert!(
+            !MATCH_EXPRS_SHADER.contains(banned),
+            "match result typing must not inspect {banned}"
+        );
+    }
+}
+
+#[test]
+fn type_checker_accepts_boolean_logical_operands_from_hir_records() {
+    assert_gpu_type_check_ok(
+        r#"
+fn gate(left: bool, value: i32) -> bool {
+    let low: bool = value >= 1;
+    let high: bool = value < 9;
+    let combined: bool = (low && high) || !left;
+    if (combined && true) {
+        return true;
+    }
+    return false;
+}
+
+fn main() {
+    let flag: bool = gate(false, 3);
+    if (flag || false) {
+        return 1;
+    }
+    return 0;
+}
+"#,
+    );
+}
+
 fn random_ident(rng: &mut StdRng) -> String {
     const FIRST: &[u8] = b"abcdefghijklmnopqrstuvwxyz";
     const REST: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
@@ -134,15 +406,167 @@ fn main() {
 }
 
 #[test]
-fn type_checker_rejects_unsupported_generic_type_aliases_on_gpu() {
+fn type_checker_accepts_bounded_scalar_type_alias_chains_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+type Raw = i32;
+type Base = Raw;
+type Count = Base;
+
+fn keep(value: Count) -> Count {
+    return value;
+}
+
+fn main() {
+    let value: Count = keep(7);
+    return value;
+}
+"#,
+    );
     assert_gpu_type_check_rejects(
         r#"
+type A = B;
+type B = A;
+
+fn main() {
+    let value: A = 1;
+    return value;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_accepts_bounded_nominal_type_aliases_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+struct Pair {
+    left: i32,
+    flag: bool,
+}
+
+type PairAlias = Pair;
+
+fn keep(value: PairAlias) -> PairAlias {
+    return value;
+}
+
+fn main() {
+    let pair: PairAlias = Pair { left: 7, flag: true };
+    let copied: Pair = keep(pair);
+    return copied.left;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_accepts_bounded_array_type_aliases_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+type Four = [i32; 4];
+
+fn first(values: Four) -> i32 {
+    return values[0];
+}
+
+fn main(values: Four) {
+    let value: i32 = first(values);
+    return value;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_accepts_bounded_generic_type_alias_declarations_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
 type Alias<T> = T;
+type Buffer<T, const N: usize> = [T; N];
 
 fn main() {
     return 0;
 }
 "#,
+    );
+}
+
+#[test]
+fn type_checker_accepts_bounded_generic_type_alias_annotations_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+type Alias<T> = T;
+
+fn keep<T>(value: Alias<T>) -> Alias<T> {
+    let copied: Alias<T> = value;
+    return copied;
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_substitutes_bounded_generic_type_aliases_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+type Alias<T> = T;
+
+fn keep_i32(value: Alias<i32>) -> Alias<i32> {
+    return value;
+}
+
+fn main() {
+    let value: Alias<i32> = keep_i32(7);
+    return value;
+}
+"#,
+    );
+    assert_gpu_type_check_rejects_with_code(
+        r#"
+type Alias<T> = T;
+
+fn main() {
+    let value: Alias<i32> = true;
+    return 0;
+}
+"#,
+        "AssignMismatch",
+    );
+}
+
+#[test]
+fn type_checker_substitutes_bounded_generic_type_alias_chains_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+type Alias<T> = T;
+type Id<T> = Alias<T>;
+
+fn keep(value: Id<i32>) -> Id<i32> {
+    return value;
+}
+
+fn main() {
+    let value: Id<i32> = keep(7);
+    return value;
+}
+"#,
+    );
+    assert_gpu_type_check_rejects_with_code(
+        r#"
+type Alias<T> = T;
+type Id<T> = Alias<T>;
+
+fn main() {
+    let value: Id<i32> = true;
+    return 0;
+}
+"#,
+        "AssignMismatch",
     );
 }
 
@@ -290,6 +714,7 @@ fn keep<T>(value: T) -> T {
 
 fn main() {
     let value: i32 = keep(7);
+    let nested: i32 = keep(keep(7));
     let flag: bool = keep(true);
     return value;
 }
@@ -312,6 +737,36 @@ fn main() {
     );
     assert_gpu_type_check_rejects_with_code(
         r#"
+fn keep<T>(value: T) -> T {
+    return value;
+}
+
+fn outer<T>(value: T) -> T {
+    return keep(value);
+}
+
+fn main() {
+    let flag: bool = outer(1);
+    return 0;
+}
+"#,
+        "AssignMismatch",
+    );
+    assert_gpu_type_check_rejects_with_code(
+        r#"
+fn keep<T>(value: T) -> T {
+    return value;
+}
+
+fn main() {
+    let flag: bool = keep(1);
+    return 0;
+}
+"#,
+        "AssignMismatch",
+    );
+    assert_gpu_type_check_rejects_with_code(
+        r#"
 fn choose<T>(left: T, right: T) -> T {
     return left;
 }
@@ -330,6 +785,44 @@ fn choose<T>(left: T, right: T) -> T {
 
 fn main() {
     choose(1, true);
+    return 0;
+}
+"#,
+        "AssignMismatch",
+    );
+}
+
+#[test]
+fn type_checker_rejects_direct_generic_aggregate_call_returns_until_substituted_refs_exist() {
+    assert_gpu_type_check_rejects_with_code(
+        r#"
+struct Wrapper<T> {
+    value: T,
+}
+
+fn wrap<T>(value: T) -> Wrapper<T> {
+    return Wrapper { value: value };
+}
+
+fn main() {
+    let wrapped: Wrapper<i32> = wrap(1);
+    return 0;
+}
+"#,
+        "AssignMismatch",
+    );
+    assert_gpu_type_check_rejects_with_code(
+        r#"
+struct Wrapper<T> {
+    value: T,
+}
+
+fn wrap<T>(value: T) -> Wrapper<T> {
+    return Wrapper { value: value };
+}
+
+fn main() {
+    let wrapped: Wrapper<bool> = wrap(1);
     return 0;
 }
 "#,
@@ -400,7 +893,49 @@ fn main() {
 }
 
 #[test]
-fn type_checker_rejects_generic_bounds_until_gpu_predicate_semantics_exist() {
+fn type_checker_accepts_trait_generic_bounds_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+trait Bound<T> {
+    fn check(value: T) -> bool;
+}
+
+fn keep<T: Bound<T> >(value: T) -> T {
+    return value;
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_accepts_multiple_trait_generic_bounds_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+trait Rel<T, U> {
+    fn check(left: T, right: U) -> bool;
+}
+
+trait CopyLike<T> {
+    fn check(value: T) -> bool;
+}
+
+fn keep<T, U>(value: T, other: U) -> T where T: Rel<T, U> + CopyLike<T>, U: CopyLike<U>, {
+    return value;
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_rejects_bounds_that_do_not_resolve_to_traits_on_gpu() {
     assert_gpu_type_check_rejects(
         r#"
 struct Bound<T> {
@@ -408,6 +943,25 @@ struct Bound<T> {
 }
 
 fn keep<T: Bound<T> >(value: T) -> T {
+    return value;
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_rejects_unknown_bound_type_arguments_on_gpu() {
+    assert_gpu_type_check_rejects(
+        r#"
+trait Rel<T, U> {
+    fn check(left: T, right: U) -> bool;
+}
+
+fn keep<T>(value: T) -> T where T: Rel<T, Missing> {
     return value;
 }
 
@@ -443,7 +997,87 @@ fn first<T, const N: usize>(values: [T; N]) -> T {
 }
 
 fn main() {
+    let values: [i32; 4] = [3, 1, 4, 1];
+    let value: i32 = first(values);
+    return value;
+}
+"#,
+    );
+    assert_gpu_type_check_ok(
+        r#"
+fn first_copy<T, const N: usize>(values: [T; N]) -> T {
+    let copy: [T; N] = values;
+    return copy[0];
+}
+
+fn main() {
+    let values: [i32; 4] = [3, 1, 4, 1];
+    let value: i32 = first_copy(values);
+    return value;
+}
+"#,
+    );
+    assert_gpu_type_check_ok(
+        r#"
+fn copy_generic<T, const N: usize>(values: [T; N]) -> [T; N] {
+    return values;
+}
+
+fn main() {
     return 0;
+}
+"#,
+    );
+    assert_gpu_type_check_ok(
+        r#"
+fn copy_generic<T, const N: usize>(values: [T; N]) -> [T; N] {
+    return values;
+}
+
+fn main() {
+    let values: [i32; 4] = [3, 1, 4, 1];
+    let copied: [i32; 4] = copy_generic(values);
+    return copied[0];
+}
+"#,
+    );
+    assert_gpu_type_check_ok(
+        r#"
+fn copy_generic<T, const N: usize>(values: [T; N]) -> [T; N] {
+    return values;
+}
+
+fn copy_i32(values: [i32; 4]) -> [i32; 4] {
+    return copy_generic(values);
+}
+
+fn main() {
+    let values: [i32; 4] = [3, 1, 4, 1];
+    let copied: [i32; 4] = copy_i32(values);
+    return copied[0];
+}
+"#,
+    );
+    assert_gpu_type_check_ok(
+        r#"
+fn first<T, const N: usize>(values: [T; N]) -> T {
+    return values[0];
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+    assert_gpu_type_check_ok(
+        r#"
+fn first_slice<T>(values: [T]) -> T {
+    return values[0];
+}
+
+fn main(values: [i32]) {
+    let value: i32 = first_slice(values);
+    return value;
 }
 "#,
     );
@@ -470,6 +1104,44 @@ fn main() {
 }
 "#,
     );
+    assert_gpu_type_check_ok(
+        r#"
+struct ArrayVec<T, const N: usize> {
+    values: [T; N],
+    len: usize,
+}
+
+fn first_vec(vec: ArrayVec<i32, 4>) -> i32 {
+    return vec.values[0];
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_rejects_generic_struct_literal_array_fields_until_const_substitution() {
+    assert_gpu_type_check_rejects_with_code(
+        r#"
+struct ArrayVec<T, const N: usize> {
+    values: [T; N],
+    len: usize,
+}
+
+fn first_vec(vec: ArrayVec<i32, 4>) -> i32 {
+    return vec.values[0];
+}
+
+fn main() {
+    let vec: ArrayVec<i32, 4> = ArrayVec { values: [3, 1, 4, 1], len: 4 };
+    return first_vec(vec);
+}
+"#,
+        "AssignMismatch",
+    );
 }
 
 #[test]
@@ -485,17 +1157,32 @@ fn main() {
 }
 "#,
     );
-    assert_gpu_type_check_rejects(
+    assert_gpu_type_check_rejects_with_code(
         r#"
-fn bad_call<T, const N: usize>(values: [T; N]) -> T {
+fn first<T, const N: usize>(values: [T; N]) -> T {
     return values[0];
 }
 
 fn main() {
     let values: [i32; 4] = [3, 1, 4, 1];
-    return bad_call(values);
+    let flag: bool = first(values);
+    return 0;
 }
 "#,
+        "AssignMismatch",
+    );
+    assert_gpu_type_check_rejects_with_code(
+        r#"
+fn first_slice<T>(values: [T]) -> T {
+    return values[0];
+}
+
+fn main(values: [i32]) {
+    let flag: bool = first_slice(values);
+    return 0;
+}
+"#,
+        "AssignMismatch",
     );
     assert_gpu_type_check_rejects(
         r#"
@@ -727,6 +1414,22 @@ enum Maybe<T> {
     None,
 }
 
+fn wrong<T>(value: T) -> Maybe<T> {
+    return value;
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+    assert_gpu_type_check_rejects(
+        r#"
+enum Maybe<T> {
+    Some(T),
+    None,
+}
+
 fn wrong<T>(value: bool) -> Maybe<T> {
     return Some(value);
 }
@@ -820,6 +1523,27 @@ fn main() {
 }
 
 #[test]
+fn type_checker_accepts_concrete_declared_array_call_results_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+fn pair(left: i32, right: i32) -> [i32; 2] {
+    return [left, right];
+}
+
+fn filled(value: i32) -> [i32; 4] {
+    return [value, value, value, value];
+}
+
+fn main() {
+    let pair_values: [i32; 2] = pair(1, 2);
+    let filled_values: [i32; 4] = filled(pair_values[0]);
+    return filled_values[1];
+}
+"#,
+    );
+}
+
+#[test]
 fn type_checker_rejects_array_returns_outside_bounded_gpu_slice() {
     assert_gpu_type_check_rejects(
         r#"
@@ -889,8 +1613,59 @@ fn main() {
     );
     assert_gpu_type_check_rejects(
         r#"
+fn copy_wrong_generic_elem<T, const N: usize>(values: [T; N]) -> [bool; N] {
+    return values;
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+    assert_gpu_type_check_rejects(
+        r#"
+fn copy_wrong_generic_len<T, const N: usize, const M: usize>(values: [T; N]) -> [T; M] {
+    return values;
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+    assert_gpu_type_check_rejects(
+        r#"
+fn pair(left: i32, right: i32) -> [i32; 2] {
+    return [left, right];
+}
+
+fn main() {
+    let values: [i32; 3] = pair(1, 2);
+    return values[0];
+}
+"#,
+    );
+    assert_gpu_type_check_rejects(
+        r#"
 fn copy_generic<T, const N: usize>(values: [T; N]) -> [T; N] {
     return values;
+}
+
+fn main() {
+    let values: [i32; 4] = [3, 1, 4, 1];
+    let copied: [i32; 5] = copy_generic(values);
+    return copied[0];
+}
+"#,
+    );
+    assert_gpu_type_check_rejects(
+        r#"
+fn copy_generic<T, const N: usize>(values: [T; N]) -> [T; N] {
+    return values;
+}
+
+fn copy_wrong_call_return(values: [i32; 4]) -> [i32; 5] {
+    return copy_generic(values);
 }
 
 fn main() {
@@ -916,6 +1691,14 @@ fn main() {
     if (1) {
         return 1;
     }
+    return 0;
+}
+"#,
+    );
+    assert_gpu_type_check_rejects(
+        r#"
+fn main() {
+    let flag: bool = 1 || false;
     return 0;
 }
 "#,
@@ -1103,11 +1886,11 @@ fn main() {
 }
 
 #[test]
-fn type_checker_rejects_traits_until_gpu_trait_semantics_exist() {
-    assert_gpu_type_check_rejects(
+fn type_checker_accepts_trait_declarations_on_gpu() {
+    assert_gpu_type_check_ok(
         r#"
-trait Eq {
-    fn eq(left: i32, right: i32) -> bool;
+pub trait Eq<T> {
+    pub fn eq(left: T, right: T) -> bool;
 }
 
 fn main() {
@@ -1115,8 +1898,16 @@ fn main() {
 }
 "#,
     );
-    assert_gpu_type_check_rejects(
+}
+
+#[test]
+fn type_checker_accepts_trait_impl_declarations_on_gpu() {
+    assert_gpu_type_check_ok(
         r#"
+trait Eq<T> {
+    fn eq(left: T, right: T) -> bool;
+}
+
 struct Target {
     value: i32,
 }
@@ -1135,14 +1926,429 @@ fn main() {
 }
 
 #[test]
-fn type_checker_rejects_where_clauses_until_gpu_predicate_semantics_exist() {
+fn type_checker_rejects_trait_impls_whose_trait_does_not_resolve_on_gpu() {
+    assert_gpu_type_check_rejects(
+        r#"
+struct Eq<T> {
+    value: T,
+}
+
+struct Target {
+    value: i32,
+}
+
+impl Eq<Target> for Target {
+    fn eq(left: Target, right: Target) -> bool {
+        return true;
+    }
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_rejects_trait_impls_missing_required_methods_on_gpu() {
+    assert_gpu_type_check_rejects(
+        r#"
+trait Eq<T> {
+    fn eq(left: T, right: T) -> bool;
+    fn ne(left: T, right: T) -> bool;
+}
+
+struct Target {
+    value: i32,
+}
+
+impl Eq<Target> for Target {
+    fn eq(left: Target, right: Target) -> bool {
+        return true;
+    }
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_rejects_trait_impl_methods_with_wrong_arity_on_gpu() {
+    assert_gpu_type_check_rejects(
+        r#"
+trait Eq<T> {
+    fn eq(left: T, right: T) -> bool;
+}
+
+struct Target {
+    value: i32,
+}
+
+impl Eq<Target> for Target {
+    fn eq(left: Target) -> bool {
+        return true;
+    }
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_rejects_trait_impl_methods_with_wrong_parameter_type_on_gpu() {
+    assert_gpu_type_check_rejects(
+        r#"
+trait Eq<T> {
+    fn eq(left: T, right: T) -> bool;
+}
+
+struct Target {
+    value: i32,
+}
+
+impl Eq<Target> for Target {
+    fn eq(left: Target, right: i32) -> bool {
+        return true;
+    }
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_rejects_trait_impl_methods_with_wrong_return_type_on_gpu() {
+    assert_gpu_type_check_rejects(
+        r#"
+trait Measure<T> {
+    fn get(value: T) -> bool;
+}
+
+struct Target {
+    value: i32,
+}
+
+impl Measure<Target> for Target {
+    fn get(value: Target) -> i32 {
+        return 1;
+    }
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_validates_trait_impl_reference_signatures_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+trait Borrow<T> {
+    fn borrow(value: &T) -> &T;
+}
+
+struct Target {
+    value: i32,
+}
+
+impl Borrow<Target> for Target {
+    fn borrow(value: &Target) -> &Target {
+        return value;
+    }
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+
+    assert_gpu_type_check_rejects(
+        r#"
+trait Borrow<T> {
+    fn borrow(value: &T) -> &T;
+}
+
+struct Target {
+    value: i32,
+}
+
+impl Borrow<Target> for Target {
+    fn borrow(value: &i32) -> &Target {
+        return value;
+    }
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_validates_trait_impl_array_signatures_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+trait First<T> {
+    fn first(values: [T; 4]) -> T;
+}
+
+struct Target {
+    value: i32,
+}
+
+impl First<i32> for Target {
+    fn first(values: [i32; 4]) -> i32 {
+        return values[0];
+    }
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+
+    assert_gpu_type_check_rejects(
+        r#"
+trait First<T> {
+    fn first(values: [T; 4]) -> T;
+}
+
+struct Target {
+    value: i32,
+}
+
+impl First<i32> for Target {
+    fn first(values: [i32; 3]) -> i32 {
+        return values[0];
+    }
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_validates_trait_impl_generic_instance_signatures_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+struct Boxed<T> {
+    value: T,
+}
+
+trait Unbox<T> {
+    fn unbox(value: Boxed<T>) -> T;
+}
+
+struct Target {
+    value: i32,
+}
+
+impl Unbox<i32> for Target {
+    fn unbox(value: Boxed<i32>) -> i32 {
+        return 0;
+    }
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+
     assert_gpu_type_check_rejects(
         r#"
 struct Boxed<T> {
     value: T,
 }
 
+trait Unbox<T> {
+    fn unbox(value: Boxed<T>) -> T;
+}
+
+struct Target {
+    value: i32,
+}
+
+impl Unbox<i32> for Target {
+    fn unbox(value: Boxed<bool>) -> i32 {
+        return 0;
+    }
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_accepts_trait_where_clauses_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+trait Boxed<T> {
+    fn check(value: T) -> bool;
+}
+
 fn keep<T>(value: T) -> T where T: Boxed<T> {
+    return value;
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_enforces_called_trait_where_clauses_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+trait Boxed<T> {
+    fn check(value: T) -> bool;
+}
+
+impl Boxed<i32> for i32 {
+    fn check(value: i32) -> bool {
+        return true;
+    }
+}
+
+fn keep<T>(value: T) -> T where T: Boxed<T> {
+    return value;
+}
+
+fn main() {
+    let value: i32 = keep(7);
+    return value;
+}
+"#,
+    );
+
+    assert_gpu_type_check_rejects(
+        r#"
+trait Boxed<T> {
+    fn check(value: T) -> bool;
+}
+
+fn keep<T>(value: T) -> T where T: Boxed<T> {
+    return value;
+}
+
+fn main() {
+    let value: i32 = keep(7);
+    return value;
+}
+"#,
+    );
+
+    assert_gpu_type_check_rejects(
+        r#"
+trait Boxed<T> {
+    fn check(value: T) -> bool;
+}
+
+impl Boxed<i32> for i32 {
+    fn check(value: i32) -> bool {
+        return true;
+    }
+}
+
+impl Boxed<i32> for i32 {
+    fn check(value: i32) -> bool {
+        return false;
+    }
+}
+
+fn keep<T>(value: T) -> T where T: Boxed<T> {
+    return value;
+}
+
+fn main() {
+    let value: i32 = keep(7);
+    return value;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_enforces_two_arg_called_trait_where_clauses_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+trait Rel<T, U> {
+    fn check(left: T, right: U) -> bool;
+}
+
+impl Rel<i32, bool> for i32 {
+    fn check(left: i32, right: bool) -> bool {
+        return right;
+    }
+}
+
+fn keep<T, U>(left: T, right: U) -> T where T: Rel<T, U> {
+    return left;
+}
+
+fn main() {
+    let value: i32 = keep(1, true);
+    return value;
+}
+"#,
+    );
+
+    assert_gpu_type_check_rejects(
+        r#"
+trait Rel<T, U> {
+    fn check(left: T, right: U) -> bool;
+}
+
+impl Rel<i32, i32> for i32 {
+    fn check(left: i32, right: i32) -> bool {
+        return true;
+    }
+}
+
+fn keep<T, U>(left: T, right: U) -> T where T: Rel<T, U> {
+    return left;
+}
+
+fn main() {
+    let value: i32 = keep(1, true);
+    return value;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_rejects_where_clause_subjects_outside_generic_params_on_gpu() {
+    assert_gpu_type_check_rejects(
+        r#"
+trait Boxed<T> {
+    fn check(value: T) -> bool;
+}
+
+fn keep<T>(value: T) -> T where U: Boxed<T> {
     return value;
 }
 

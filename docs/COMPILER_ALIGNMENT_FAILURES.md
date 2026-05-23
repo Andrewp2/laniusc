@@ -97,21 +97,16 @@ control-flow rules, and finally constructs an attributed AST for the backend.
 Late semantic passes should consume those attributed records. They should not
 rediscover syntax by walking token neighborhoods.
 
-Remaining examples to remove are not small one-off bugs. They are semantic
-slices that still need to be rebuilt around parser/HIR records:
-
-- `shaders/type_checker/type_check_calls_02_functions.slang` still binds
-  function signatures by scanning token kinds and has `source_bytes` wired in.
-- `shaders/type_checker/type_check_type_instances_06_enum_ctors.slang` still
-  has `is_type_name_token` and token-neighborhood checks for type arguments and
-  constructor payloads.
-- `shaders/type_checker/type_check_control_hir.slang` still validates several
-  expression/control cases with token-kind walks instead of only HIR expression
-  and statement records.
-
-Those should be replaced by the paper shape: parser-owned records, name ids,
-resolver arrays, type-instance arrays, per-node type ids, and validation over
-those arrays. They should not be "fixed" by adding more token predicates.
+The remaining token-level examples in this section have been removed from the
+active HIR type-checker path. The call metadata projection now consumes
+parser-owned HIR function and parameter records plus type-reference records,
+direct call resolution consumes HIR call/argument/expression records plus
+visible type records, the enum-constructor token scanner has been retired,
+match-result typing consumes parser-owned arm/result expression records, and
+the HIR control validator consumes expression/type records. Future fixes should
+keep this paper shape: parser-owned records, name ids, resolver arrays,
+type-instance arrays, per-node type ids, and validation over those arrays. They
+should not be "fixed" by adding more token predicates.
 
 ## Treating Tests As Permission To Add Cases
 

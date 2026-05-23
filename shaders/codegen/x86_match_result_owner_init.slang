@@ -14,15 +14,27 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+struct FeatureParams
+{
+    uint mask;
+    uint enum_count;
+    uint match_count;
+    uint aggregate_count;
+};
+
+ConstantBuffer<FeatureParams> gX86Features;
+
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> x86_match_result_root_owner;
-StructuredBuffer<uint4> x86_node_tree_record;
+StructuredBuffer<uint> x86_tree_parent;
+StructuredBuffer<uint> x86_tree_subtree_end;
 
 RWStructuredBuffer<uint> x86_match_result_owner;
 RWStructuredBuffer<uint> x86_match_result_owner_link;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint INVALID = 0xffffffffu;
+static const uint X86_FEATURE_MATCH = 1u << 1u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -39,11 +51,18 @@ bool valid_node(uint node)
     return valid_index_or_invalid(node, active_hir_node_count(), INVALID);
 }
 
+bool has_match_feature()
+{
+    return (gX86Features.mask & X86_FEATURE_MATCH) != 0u;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
 {
     uint node = linear_dispatch_id(tid);
+    if (!has_match_feature())
+        return;
     if (!valid_node(node))
         return;
 
@@ -55,7 +74,7 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
     }
 
-    uint parent = x86_node_tree_record[node].x;
+    uint parent = x86_tree_parent[node];
     uint parent_owner = valid_node(parent) ? x86_match_result_root_owner[parent] : INVALID;
     if (valid_node(parent_owner))
     {

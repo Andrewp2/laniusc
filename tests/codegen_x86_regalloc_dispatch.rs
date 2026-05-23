@@ -21,7 +21,29 @@ const TOKEN_WORDS: usize = 8;
 const CHUNK_COUNT: usize = 8;
 const ROWS_PER_CHUNK: u32 = 16;
 const HIR_FN: u32 = 3;
+const HIR_PARAM: u32 = 4;
+const HIR_STMT: u32 = 7;
+const HIR_IF_STMT: u32 = 10;
+const HIR_CALL_EXPR: u32 = 19;
+const HIR_NAME_EXPR: u32 = 22;
+const HIR_LITERAL_EXPR: u32 = 23;
+const HIR_ARRAY_EXPR: u32 = 24;
+const HIR_ENUM_ITEM: u32 = 26;
+const HIR_STRUCT_ITEM: u32 = 27;
+const HIR_FOR_STMT: u32 = 30;
+const HIR_MATCH_EXPR: u32 = 34;
+const STMT_RECORD_KIND_RETURN: u32 = 2;
+const STMT_RECORD_KIND_IF: u32 = 3;
+const STMT_RECORD_KIND_ASSIGN: u32 = 5;
+const STMT_RECORD_KIND_FOR: u32 = 7;
+const HIR_EXPR_NAME: u32 = 2;
+const HIR_EXPR_INT: u32 = 3;
 const ENTRYPOINT_MAIN: u32 = 1;
+const X86_FEATURE_ENUM: u32 = 1 << 0;
+const X86_FEATURE_MATCH: u32 = 1 << 1;
+const X86_FEATURE_AGGREGATE: u32 = 1 << 2;
+const X86_FEATURE_CALL: u32 = 1 << 3;
+const X86_NODE_INST_EXPR_VALUE: u32 = 1;
 const X86_VINST_IMM_I32: u32 = 1;
 const X86_VINST_PARAM: u32 = 2;
 const X86_VINST_BINARY: u32 = 4;
@@ -43,6 +65,169 @@ const X86_REG_ESI: u32 = 6;
 const X86_REG_EDI: u32 = 7;
 const X86_REG_R8D: u32 = 8;
 const X86_REG_R10D: u32 = 10;
+const X86_NODE_INST_RANGE_KIND_SHIFT: u32 = 28;
+const X86_LOCATION_META_PARAM_DECL: u32 = 0xd000_0000;
+
+#[test]
+fn x86_feature_counts_consumes_hir_kind_records() {
+    common::block_on_gpu_with_timeout("x86 feature counts consume HIR records", async move {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let artifacts = compile_shader(&root, "x86_feature_counts");
+
+        let gpu = device::global();
+        let device = gpu.device.as_ref();
+        let queue = gpu.queue.as_ref();
+        let pass = make_pass_data(
+            device,
+            "tests.x86.feature_counts",
+            "main",
+            leak_bytes(artifacts.0),
+            leak_bytes(artifacts.1),
+        )
+        .expect("create feature-counts pass");
+
+        let params = input_uniform(device, "tests.x86.feature_counts.params", &[64, 0, 0, 15]);
+        let hir_status = storage_buffer(
+            device,
+            "tests.x86.feature_counts.hir_status",
+            &[0, 0, INVALID, 0, 0, 14],
+        );
+        let hir_kind = storage_buffer(
+            device,
+            "tests.x86.feature_counts.hir_kind",
+            &[
+                HIR_PARAM,
+                HIR_CALL_EXPR,
+                HIR_STMT,
+                HIR_STMT,
+                HIR_IF_STMT,
+                HIR_NAME_EXPR,
+                HIR_FOR_STMT,
+                HIR_LITERAL_EXPR,
+                HIR_NAME_EXPR,
+                HIR_ENUM_ITEM,
+                HIR_MATCH_EXPR,
+                HIR_ARRAY_EXPR,
+                HIR_STRUCT_ITEM,
+                HIR_CALL_EXPR,
+                HIR_ENUM_ITEM,
+            ],
+        );
+        let mut hir_stmt_record_words = vec![INVALID; 15 * 4];
+        hir_stmt_record_words[2 * 4] = STMT_RECORD_KIND_RETURN;
+        hir_stmt_record_words[3 * 4] = STMT_RECORD_KIND_ASSIGN;
+        hir_stmt_record_words[3 * 4 + 3] = 2;
+        hir_stmt_record_words[4 * 4] = STMT_RECORD_KIND_IF;
+        hir_stmt_record_words[4 * 4 + 1] = 5;
+        hir_stmt_record_words[6 * 4] = STMT_RECORD_KIND_FOR;
+        hir_stmt_record_words[6 * 4 + 3] = 8;
+        let hir_stmt_record = storage_buffer(
+            device,
+            "tests.x86.feature_counts.hir_stmt_record",
+            &hir_stmt_record_words,
+        );
+        let mut hir_expr_record_words = vec![INVALID; 15 * 4];
+        hir_expr_record_words[5 * 4] = HIR_EXPR_NAME;
+        hir_expr_record_words[7 * 4] = HIR_EXPR_INT;
+        hir_expr_record_words[8 * 4] = HIR_EXPR_NAME;
+        let hir_expr_record = storage_buffer(
+            device,
+            "tests.x86.feature_counts.hir_expr_record",
+            &hir_expr_record_words,
+        );
+        let hir_token_pos = storage_buffer(
+            device,
+            "tests.x86.feature_counts.hir_token_pos",
+            &[
+                10, 11, 12, 13, 14, 15, 16, 17, INVALID, INVALID, INVALID, INVALID, INVALID, 30,
+                INVALID,
+            ],
+        );
+        let parent = storage_buffer(
+            device,
+            "tests.x86.feature_counts.parent",
+            &[
+                INVALID, INVALID, INVALID, INVALID, INVALID, 4, INVALID, 6, 6, INVALID, INVALID,
+                INVALID, INVALID, INVALID, INVALID,
+            ],
+        );
+        let first_child = storage_buffer(
+            device,
+            "tests.x86.feature_counts.first_child",
+            &[
+                INVALID, INVALID, INVALID, INVALID, INVALID, INVALID, 7, INVALID, INVALID, INVALID,
+                INVALID, INVALID, INVALID, INVALID, INVALID,
+            ],
+        );
+        let mut enclosing_fn_words = vec![0; 64];
+        for token in 10..=18 {
+            enclosing_fn_words[token] = 1;
+        }
+        let enclosing_fn = storage_buffer(
+            device,
+            "tests.x86.feature_counts.enclosing_fn",
+            &enclosing_fn_words,
+        );
+        let feature_record = storage_buffer(
+            device,
+            "tests.x86.feature_counts.record",
+            &[0, 0, 0, 0, 0, 0, 0, 0],
+        );
+        let readback = readback_buffer(device, "tests.x86.feature_counts.readback", 8);
+        let bind_group = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("tests.x86.feature_counts.bind_group"),
+            &pass.bind_group_layouts[0],
+            &pass.reflection,
+            0,
+            &binding_map(&[
+                ("gParams", params.as_entire_binding()),
+                ("hir_status", hir_status.as_entire_binding()),
+                ("hir_kind", hir_kind.as_entire_binding()),
+                ("hir_stmt_record", hir_stmt_record.as_entire_binding()),
+                ("hir_expr_record", hir_expr_record.as_entire_binding()),
+                ("hir_token_pos", hir_token_pos.as_entire_binding()),
+                ("parent", parent.as_entire_binding()),
+                ("first_child", first_child.as_entire_binding()),
+                ("enclosing_fn", enclosing_fn.as_entire_binding()),
+                ("x86_feature_record", feature_record.as_entire_binding()),
+            ]),
+        )
+        .expect("create feature-counts bind group");
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("tests.x86.feature_counts.encoder"),
+        });
+        {
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("tests.x86.feature_counts.pass"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(&pass.pipeline);
+            compute.set_bind_group(0, &bind_group, &[]);
+            compute.dispatch_workgroups(1, 1, 1);
+        }
+        encoder.copy_buffer_to_buffer(&feature_record, 0, &readback, 0, 32);
+        queue.submit(Some(encoder.finish()));
+
+        let words = read_u32s(device, &readback, 8);
+        assert_eq!(
+            words[0],
+            X86_FEATURE_ENUM | X86_FEATURE_MATCH | X86_FEATURE_AGGREGATE | X86_FEATURE_CALL,
+            "feature mask must be derived from active HIR kind rows"
+        );
+        assert_eq!(words[1], 1, "inactive enum row must not be counted");
+        assert_eq!(words[2], 1, "match expressions should be counted");
+        assert_eq!(words[3], 2, "aggregate HIR shapes should be counted");
+        assert_eq!(
+            words[4], 16,
+            "scalar instruction estimate must consume stmt, expr, token-position, function-context, parent, and first-child records"
+        );
+        assert_eq!(words[5], 2, "call expressions should be counted");
+        assert_eq!(words[6], 1, "param nodes should be counted");
+        assert_eq!(words[7], 0, "reserved feature words stay zero");
+    });
+}
 
 #[test]
 fn x86_regalloc_dispatch_uses_function_span_not_global_instruction_count() {
@@ -224,6 +409,84 @@ fn x86_regalloc_dispatch_uses_function_span_not_global_instruction_count() {
 }
 
 #[test]
+fn x86_node_tree_projection_keeps_parent_and_subtree_end_only() {
+    common::block_on_gpu_with_timeout("x86 compact node tree projection", async move {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let artifacts = compile_shader(&root, "x86_node_tree_info");
+
+        let gpu = device::global();
+        let device = gpu.device.as_ref();
+        let queue = gpu.queue.as_ref();
+        let pass = make_pass_data(
+            device,
+            "tests.x86.node_tree_info",
+            "main",
+            leak_bytes(artifacts.0),
+            leak_bytes(artifacts.1),
+        )
+        .expect("create node_tree_info pass");
+
+        let params = input_uniform(device, "tests.x86.node_tree_info.params", &[0, 0, 0, 5]);
+        let hir_status = storage_buffer(
+            device,
+            "tests.x86.node_tree_info.hir_status",
+            &[0, 0, INVALID, 0, 0, 5],
+        );
+        let parent = storage_buffer(
+            device,
+            "tests.x86.node_tree_info.parent",
+            &[INVALID, 0, 0, 2, 2],
+        );
+        let subtree_end = storage_buffer(
+            device,
+            "tests.x86.node_tree_info.subtree_end",
+            &[5, 2, 5, 4, 5],
+        );
+        let node_tree_status = storage_buffer(
+            device,
+            "tests.x86.node_tree_info.node_tree_status",
+            &[1, 0, INVALID, 0],
+        );
+        let status_readback =
+            readback_buffer(device, "tests.x86.node_tree_info.status.readback", 4);
+
+        let bind_group = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("tests.x86.node_tree_info.bind_group"),
+            &pass.bind_group_layouts[0],
+            &pass.reflection,
+            0,
+            &binding_map(&[
+                ("gParams", params.as_entire_binding()),
+                ("hir_status", hir_status.as_entire_binding()),
+                ("parent", parent.as_entire_binding()),
+                ("subtree_end", subtree_end.as_entire_binding()),
+                ("x86_node_tree_status", node_tree_status.as_entire_binding()),
+            ]),
+        )
+        .expect("create node_tree_info bind group");
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("tests.x86.node_tree_info.encoder"),
+        });
+        {
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("tests.x86.node_tree_info.pass"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(&pass.pipeline);
+            compute.set_bind_group(0, &bind_group, &[]);
+            compute.dispatch_workgroups(1, 1, 1);
+        }
+        encoder.copy_buffer_to_buffer(&node_tree_status, 0, &status_readback, 0, 4 * 4);
+        queue.submit(Some(encoder.finish()));
+
+        let status = read_u32s(device, &status_readback, 4);
+        assert_eq!(&status[0..4], &[1, 0, INVALID, 5]);
+    });
+}
+
+#[test]
 fn x86_func_discover_consumes_hir_function_records_without_slot_append() {
     common::block_on_gpu_with_timeout("x86 function discovery records", async move {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -256,8 +519,6 @@ fn x86_func_discover_consumes_hir_function_records_without_slot_append() {
             "tests.x86.func_discover.hir_kind",
             &[HIR_FN, 0, HIR_FN, HIR_FN, 0, 0],
         );
-        let node_tree_record =
-            storage_buffer(device, "tests.x86.func_discover.node_tree_record", &[0; 24]);
         let node_tree_status =
             storage_buffer(device, "tests.x86.func_discover.node_tree_status", &[1, 0]);
         let decl_token = storage_buffer(
@@ -313,7 +574,6 @@ fn x86_func_discover_consumes_hir_function_records_without_slot_append() {
                 ("gParams", params.as_entire_binding()),
                 ("hir_status", hir_status.as_entire_binding()),
                 ("hir_kind", hir_kind.as_entire_binding()),
-                ("x86_node_tree_record", node_tree_record.as_entire_binding()),
                 ("x86_node_tree_status", node_tree_status.as_entire_binding()),
                 ("hir_node_decl_token", decl_token.as_entire_binding()),
                 ("hir_node_name_token", name_token.as_entire_binding()),
@@ -358,8 +618,8 @@ fn x86_func_discover_consumes_hir_function_records_without_slot_append() {
             "main-entry count should come from entrypoint tags"
         );
         assert_eq!(
-            meta[2], 4,
-            "main slot should come from the tagged HIR function key"
+            meta[2], INVALID,
+            "compact main slot is owned by the later function-slot scatter pass"
         );
         assert_eq!(
             meta[4], 2,
@@ -381,7 +641,429 @@ fn x86_func_discover_consumes_hir_function_records_without_slot_append() {
         assert_eq!(
             read_u32s(device, &slot_by_node_readback, 6),
             vec![0, INVALID, 4, 8, INVALID, INVALID],
-            "function-slot-by-node should preserve every discovered function key"
+            "function discovery keeps provisional function keys until the scan scatter compacts them"
+        );
+    });
+}
+
+#[test]
+fn x86_param_instruction_records_use_hir_param_records_without_reverse_tail() {
+    common::block_on_gpu_with_timeout("x86 param instruction metadata records", async move {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let counts_artifacts = compile_shader(&root, "x86_node_inst_counts");
+        let locations_artifacts = compile_shader(&root, "x86_node_inst_locations");
+
+        let gpu = device::global();
+        let device = gpu.device.as_ref();
+        let queue = gpu.queue.as_ref();
+        let counts_pass = make_pass_data(
+            device,
+            "tests.x86.param_records.counts",
+            "main",
+            leak_bytes(counts_artifacts.0),
+            leak_bytes(counts_artifacts.1),
+        )
+        .expect("create node-inst-counts pass");
+        let locations_pass = make_pass_data(
+            device,
+            "tests.x86.param_records.locations",
+            "main",
+            leak_bytes(locations_artifacts.0),
+            leak_bytes(locations_artifacts.1),
+        )
+        .expect("create node-inst-locations pass");
+
+        let params = input_uniform(device, "tests.x86.param_records.params", &[12, 0, 0, 4]);
+        let location_params = input_uniform(
+            device,
+            "tests.x86.param_records.location_params",
+            &[12, 0, 0, 4, 16],
+        );
+        let hir_status = storage_buffer(
+            device,
+            "tests.x86.param_records.hir_status",
+            &[0, 0, INVALID, 0, 0, 4],
+        );
+        let hir_kind = storage_buffer(
+            device,
+            "tests.x86.param_records.hir_kind",
+            &[0, HIR_PARAM, 0, 0],
+        );
+        let hir_stmt_record = storage_buffer(
+            device,
+            "tests.x86.param_records.stmt_record",
+            &[INVALID; 16],
+        );
+        let hir_expr_record = storage_buffer(
+            device,
+            "tests.x86.param_records.expr_record",
+            &[INVALID; 16],
+        );
+        let hir_param_record = storage_buffer(
+            device,
+            "tests.x86.param_records.hir_param_record",
+            &[
+                INVALID, INVALID, INVALID, INVALID, 3, 0, 7, 1, INVALID, INVALID, INVALID, INVALID,
+                INVALID, INVALID, INVALID, INVALID,
+            ],
+        );
+        let expr_resolved = storage_buffer(
+            device,
+            "tests.x86.param_records.expr_resolved",
+            &[INVALID; 4],
+        );
+        let node_func = storage_buffer(
+            device,
+            "tests.x86.param_records.node_func",
+            &[INVALID, 3, INVALID, INVALID],
+        );
+        let visible_decl = storage_buffer(
+            device,
+            "tests.x86.param_records.visible_decl",
+            &[INVALID; 12],
+        );
+        let mut decl_layout_words = vec![INVALID; 12 * 4];
+        decl_layout_words[7 * 4] = 42;
+        decl_layout_words[7 * 4 + 1] = 1;
+        decl_layout_words[7 * 4 + 2] = 0;
+        let decl_layout = storage_buffer(
+            device,
+            "tests.x86.param_records.decl_layout",
+            &decl_layout_words,
+        );
+        let decl_layout_status = storage_buffer(
+            device,
+            "tests.x86.param_records.decl_layout_status",
+            &[1, 0, INVALID, 0],
+        );
+        let mut param_reg_words = vec![INVALID; 12 * 5];
+        param_reg_words[7 * 5] = 3;
+        param_reg_words[7 * 5 + 1] = 1;
+        param_reg_words[7 * 5 + 2] = 0;
+        param_reg_words[7 * 5 + 3] = 4;
+        param_reg_words[7 * 5 + 4] = 7;
+        let param_reg = storage_buffer(
+            device,
+            "tests.x86.param_records.param_reg",
+            &param_reg_words,
+        );
+        let tree_parent = storage_buffer(
+            device,
+            "tests.x86.param_records.tree_parent",
+            &[INVALID, 0, INVALID, INVALID],
+        );
+        let tree_subtree_end = storage_buffer(
+            device,
+            "tests.x86.param_records.tree_subtree_end",
+            &[4, 2, INVALID, INVALID],
+        );
+        let node_tree_status = storage_buffer(
+            device,
+            "tests.x86.param_records.node_tree_status",
+            &[1, 0, INVALID, 0],
+        );
+        let enclosing_return = storage_buffer(
+            device,
+            "tests.x86.param_records.enclosing_return",
+            &[INVALID; 4],
+        );
+        let match_return = storage_buffer(
+            device,
+            "tests.x86.param_records.match_return",
+            &[INVALID; 4],
+        );
+        let call_record = storage_buffer(
+            device,
+            "tests.x86.param_records.call_record",
+            &[INVALID; 16],
+        );
+        let call_callee_owner =
+            storage_buffer(device, "tests.x86.param_records.call_callee_owner", &[0; 4]);
+        let ok_status = storage_buffer(device, "tests.x86.param_records.ok_status", &[1, 0]);
+        let intrinsic_record =
+            storage_buffer(device, "tests.x86.param_records.intrinsic_record", &[0; 12]);
+        let enum_value_record = storage_buffer(
+            device,
+            "tests.x86.param_records.enum_value_record",
+            &[INVALID; 8],
+        );
+        let feature_record = input_uniform(
+            device,
+            "tests.x86.param_records.feature_record",
+            &[0, 0, 0, 0],
+        );
+        let match_record = storage_buffer(
+            device,
+            "tests.x86.param_records.match_record",
+            &[INVALID; 16],
+        );
+        let match_pattern_owner = storage_buffer(
+            device,
+            "tests.x86.param_records.match_pattern_owner",
+            &[INVALID; 4],
+        );
+        let match_result_owner = storage_buffer(
+            device,
+            "tests.x86.param_records.match_result_owner",
+            &[INVALID; 4],
+        );
+        let struct_access = storage_buffer(
+            device,
+            "tests.x86.param_records.struct_access",
+            &[INVALID; 36],
+        );
+        let struct_store = storage_buffer(
+            device,
+            "tests.x86.param_records.struct_store",
+            &[INVALID; 16],
+        );
+        let count_info =
+            storage_buffer(device, "tests.x86.param_records.count_info", &[INVALID; 4]);
+        let count_payload = storage_buffer(
+            device,
+            "tests.x86.param_records.count_payload",
+            &[INVALID; 4],
+        );
+        let count_status = storage_buffer(
+            device,
+            "tests.x86.param_records.count_status",
+            &[1, 0, INVALID, 0],
+        );
+        let count_info_readback =
+            readback_buffer(device, "tests.x86.param_records.count_info.readback", 4);
+        let count_payload_readback =
+            readback_buffer(device, "tests.x86.param_records.count_payload.readback", 4);
+
+        let counts_bind_group = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("tests.x86.param_records.counts.bind_group"),
+            &counts_pass.bind_group_layouts[0],
+            &counts_pass.reflection,
+            0,
+            &binding_map(&[
+                ("gParams", params.as_entire_binding()),
+                ("hir_status", hir_status.as_entire_binding()),
+                ("hir_kind", hir_kind.as_entire_binding()),
+                ("hir_stmt_record", hir_stmt_record.as_entire_binding()),
+                ("hir_expr_record", hir_expr_record.as_entire_binding()),
+                ("hir_param_record", hir_param_record.as_entire_binding()),
+                ("x86_expr_resolved_node", expr_resolved.as_entire_binding()),
+                ("x86_node_func", node_func.as_entire_binding()),
+                ("visible_decl", visible_decl.as_entire_binding()),
+                ("x86_decl_layout_record", decl_layout.as_entire_binding()),
+                (
+                    "x86_decl_layout_status",
+                    decl_layout_status.as_entire_binding(),
+                ),
+                ("x86_param_reg_record", param_reg.as_entire_binding()),
+                ("x86_tree_parent", tree_parent.as_entire_binding()),
+                ("x86_tree_subtree_end", tree_subtree_end.as_entire_binding()),
+                ("x86_node_tree_status", node_tree_status.as_entire_binding()),
+                (
+                    "x86_enclosing_return_node",
+                    enclosing_return.as_entire_binding(),
+                ),
+                ("x86_match_return_node", match_return.as_entire_binding()),
+                ("x86_call_record", call_record.as_entire_binding()),
+                (
+                    "x86_call_callee_owner_call",
+                    call_callee_owner.as_entire_binding(),
+                ),
+                ("call_record_status", ok_status.as_entire_binding()),
+                (
+                    "x86_intrinsic_call_record",
+                    intrinsic_record.as_entire_binding(),
+                ),
+                ("x86_intrinsic_call_status", ok_status.as_entire_binding()),
+                (
+                    "x86_enum_value_record",
+                    enum_value_record.as_entire_binding(),
+                ),
+                ("x86_enum_record_status", ok_status.as_entire_binding()),
+                ("gX86Features", feature_record.as_entire_binding()),
+                ("x86_match_record", match_record.as_entire_binding()),
+                (
+                    "x86_match_pattern_node_owner",
+                    match_pattern_owner.as_entire_binding(),
+                ),
+                (
+                    "x86_match_result_value_owner",
+                    match_result_owner.as_entire_binding(),
+                ),
+                (
+                    "x86_struct_access_record",
+                    struct_access.as_entire_binding(),
+                ),
+                ("x86_struct_store_record", struct_store.as_entire_binding()),
+                ("x86_struct_record_status", ok_status.as_entire_binding()),
+                ("x86_node_inst_count_info", count_info.as_entire_binding()),
+                (
+                    "x86_node_inst_count_payload",
+                    count_payload.as_entire_binding(),
+                ),
+                (
+                    "x86_node_inst_count_status",
+                    count_status.as_entire_binding(),
+                ),
+            ]),
+        )
+        .expect("create node-inst-counts bind group");
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("tests.x86.param_records.counts.encoder"),
+        });
+        {
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("tests.x86.param_records.counts.pass"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(&counts_pass.pipeline);
+            compute.set_bind_group(0, &counts_bind_group, &[]);
+            compute.dispatch_workgroups(1, 1, 1);
+        }
+        encoder.copy_buffer_to_buffer(&count_info, 0, &count_info_readback, 0, 4 * 4);
+        encoder.copy_buffer_to_buffer(&count_payload, 0, &count_payload_readback, 0, 4 * 4);
+        queue.submit(Some(encoder.finish()));
+
+        let counts = read_u32s(device, &count_info_readback, 4);
+        let payload = read_u32s(device, &count_payload_readback, 4);
+        assert_eq!(
+            counts[1] & 0x0fff_ffff,
+            2,
+            "scalar param count must come from HIR param records plus param-reg records"
+        );
+        assert_eq!(
+            counts[1] >> X86_NODE_INST_RANGE_KIND_SHIFT,
+            X86_NODE_INST_EXPR_VALUE,
+            "scalar params should produce expression-value instruction rows"
+        );
+        assert_eq!(
+            payload[1], 0,
+            "compact count payload should come from the two-word x86 tree parent"
+        );
+
+        let range_start = storage_buffer(
+            device,
+            "tests.x86.param_records.range_start",
+            &[INVALID, 2, INVALID, INVALID],
+        );
+        let range_info = storage_buffer(
+            device,
+            "tests.x86.param_records.range_info",
+            &[
+                INVALID,
+                (X86_NODE_INST_EXPR_VALUE << X86_NODE_INST_RANGE_KIND_SHIFT) | 2,
+                INVALID,
+                INVALID,
+            ],
+        );
+        let range_status = storage_buffer(
+            device,
+            "tests.x86.param_records.range_status",
+            &[1, 0, INVALID, 4],
+        );
+        let same_end_rank =
+            storage_buffer(device, "tests.x86.param_records.same_end_rank", &[0; 4]);
+        let same_end_bucket_count = storage_buffer(
+            device,
+            "tests.x86.param_records.same_end_bucket_count",
+            &[0; 4],
+        );
+        let expr_semantic_type = storage_buffer(
+            device,
+            "tests.x86.param_records.expr_semantic_type",
+            &[0; 4],
+        );
+        let location_record = storage_buffer(
+            device,
+            "tests.x86.param_records.location_record",
+            &[INVALID; 16],
+        );
+        let location_status = storage_buffer(
+            device,
+            "tests.x86.param_records.location_status",
+            &[0, 0, INVALID, 0],
+        );
+        let gen_flag = storage_buffer(device, "tests.x86.param_records.gen_flag", &[0; 5]);
+        let location_readback =
+            readback_buffer(device, "tests.x86.param_records.location.readback", 16);
+        let gen_flag_readback =
+            readback_buffer(device, "tests.x86.param_records.gen_flag.readback", 5);
+
+        let locations_bind_group = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("tests.x86.param_records.locations.bind_group"),
+            &locations_pass.bind_group_layouts[0],
+            &locations_pass.reflection,
+            0,
+            &binding_map(&[
+                ("gParams", location_params.as_entire_binding()),
+                ("hir_status", hir_status.as_entire_binding()),
+                ("hir_kind", hir_kind.as_entire_binding()),
+                ("hir_param_record", hir_param_record.as_entire_binding()),
+                ("hir_stmt_record", hir_stmt_record.as_entire_binding()),
+                ("hir_expr_record", hir_expr_record.as_entire_binding()),
+                ("x86_expr_resolved_node", expr_resolved.as_entire_binding()),
+                (
+                    "x86_expr_semantic_type",
+                    expr_semantic_type.as_entire_binding(),
+                ),
+                ("gX86Features", feature_record.as_entire_binding()),
+                ("x86_match_record", match_record.as_entire_binding()),
+                ("x86_tree_parent", tree_parent.as_entire_binding()),
+                ("x86_tree_subtree_end", tree_subtree_end.as_entire_binding()),
+                ("x86_node_inst_range_start", range_start.as_entire_binding()),
+                ("x86_node_inst_range_info", range_info.as_entire_binding()),
+                (
+                    "x86_node_inst_same_end_rank",
+                    same_end_rank.as_entire_binding(),
+                ),
+                (
+                    "x86_node_inst_same_end_bucket_count",
+                    same_end_bucket_count.as_entire_binding(),
+                ),
+                (
+                    "x86_node_inst_range_status",
+                    range_status.as_entire_binding(),
+                ),
+                (
+                    "x86_node_inst_location_record",
+                    location_record.as_entire_binding(),
+                ),
+                (
+                    "x86_node_inst_location_status",
+                    location_status.as_entire_binding(),
+                ),
+                ("x86_node_inst_gen_flag", gen_flag.as_entire_binding()),
+            ]),
+        )
+        .expect("create node-inst-locations bind group");
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("tests.x86.param_records.locations.encoder"),
+        });
+        {
+            let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("tests.x86.param_records.locations.pass"),
+                timestamp_writes: None,
+            });
+            compute.set_pipeline(&locations_pass.pipeline);
+            compute.set_bind_group(0, &locations_bind_group, &[]);
+            compute.dispatch_workgroups(1, 1, 1);
+        }
+        encoder.copy_buffer_to_buffer(&location_record, 0, &location_readback, 0, 16 * 4);
+        encoder.copy_buffer_to_buffer(&gen_flag, 0, &gen_flag_readback, 0, 5 * 4);
+        queue.submit(Some(encoder.finish()));
+
+        let locations = read_u32s(device, &location_readback, 16);
+        assert_eq!(
+            &locations[4..8],
+            &[2, 3, INVALID, X86_LOCATION_META_PARAM_DECL | 7]
+        );
+        assert_eq!(
+            read_u32s(device, &gen_flag_readback, 5)[1],
+            1,
+            "param metadata must not suppress generation for the param node"
         );
     });
 }
@@ -605,8 +1287,8 @@ fn x86_func_slot_scan_scatters_hir_order_slots_without_atomics() {
         );
         assert_eq!(
             read_u32s(device, &slot_readback, 2),
-            vec![0, 4],
-            "capped function slots should preserve HIR order"
+            vec![0, 1],
+            "capped function slots should use compact HIR-order ordinals"
         );
     });
 }
@@ -878,7 +1560,7 @@ fn x86_regalloc_records_call_live_save_mask_from_virtual_liveness() {
             &[1, 0, INVALID, 0, INVALID, 3, 0, 0],
         );
         let func_slot_by_index =
-            storage_buffer(device, "tests.x86.regalloc.func_slot_by_index", &[1]);
+            storage_buffer(device, "tests.x86.regalloc.func_slot_by_index", &[0]);
         let virtual_inst_record = storage_buffer(
             device,
             "tests.x86.regalloc.virtual_inst_record",
@@ -926,13 +1608,13 @@ fn x86_regalloc_records_call_live_save_mask_from_virtual_liveness() {
             device,
             "tests.x86.regalloc.first_row",
             &[
-                INVALID, 0, INVALID, INVALID, INVALID, INVALID, INVALID, INVALID,
+                0, INVALID, INVALID, INVALID, INVALID, INVALID, INVALID, INVALID,
             ],
         );
         let last_row = storage_buffer(
             device,
             "tests.x86.regalloc.last_row",
-            &[0, 2, 0, 0, 0, 0, 0, 0],
+            &[2, 0, 0, 0, 0, 0, 0, 0],
         );
         let first_row_status = storage_buffer(
             device,
@@ -944,7 +1626,7 @@ fn x86_regalloc_records_call_live_save_mask_from_virtual_liveness() {
             "tests.x86.regalloc",
             &[0, 1, 2, INVALID],
             3,
-            &[1, 1, 1, INVALID],
+            &[0, 0, 0, INVALID],
         );
         let active_end = storage_buffer(device, "tests.x86.regalloc.active_end", &[INVALID; 14]);
         let param_rank_mask = storage_buffer(device, "tests.x86.regalloc.param_rank_mask", &[0; 1]);
@@ -1107,7 +1789,7 @@ fn x86_regalloc_allocates_value_defs_across_function_row_span() {
         let func_slot_by_index = storage_buffer(
             device,
             "tests.x86.regalloc_value_def_rows.func_slot_by_index",
-            &[1],
+            &[0],
         );
         let virtual_inst_record = storage_buffer(
             device,
@@ -1170,13 +1852,13 @@ fn x86_regalloc_allocates_value_defs_across_function_row_span() {
             device,
             "tests.x86.regalloc_value_def_rows.first_row",
             &[
-                INVALID, 0, INVALID, INVALID, INVALID, INVALID, INVALID, INVALID,
+                0, INVALID, INVALID, INVALID, INVALID, INVALID, INVALID, INVALID,
             ],
         );
         let last_row = storage_buffer(
             device,
             "tests.x86.regalloc_value_def_rows.last_row",
-            &[0, 2, 0, 0, 0, 0, 0, 0],
+            &[2, 0, 0, 0, 0, 0, 0, 0],
         );
         let first_row_status = storage_buffer(
             device,
@@ -1188,7 +1870,7 @@ fn x86_regalloc_allocates_value_defs_across_function_row_span() {
             "tests.x86.regalloc_value_def_rows",
             &[0, 1, 2, INVALID],
             3,
-            &[1, 1, 1, INVALID],
+            &[0, 0, 0, INVALID],
         );
         let active_end = storage_buffer(
             device,
@@ -1373,7 +2055,7 @@ fn x86_regalloc_consumes_function_param_register_masks() {
         let func_slot_by_index = storage_buffer(
             device,
             "tests.x86.regalloc_param_mask.func_slot_by_index",
-            &[1],
+            &[0],
         );
         let virtual_inst_record = storage_buffer(
             device,
@@ -1408,7 +2090,7 @@ fn x86_regalloc_consumes_function_param_register_masks() {
         let param_mask = storage_buffer(
             device,
             "tests.x86.regalloc_param_mask.param_mask",
-            &[0, 1u32 << X86_REG_EAX, 0, 0],
+            &[1u32 << X86_REG_EAX, 0, 0, 0],
         );
         let param_mask_status = storage_buffer(
             device,
@@ -1419,7 +2101,7 @@ fn x86_regalloc_consumes_function_param_register_masks() {
             device,
             "tests.x86.regalloc_param_mask.first_row",
             &[
-                INVALID, 0, INVALID, INVALID, INVALID, INVALID, INVALID, INVALID,
+                0, INVALID, INVALID, INVALID, INVALID, INVALID, INVALID, INVALID,
             ],
         );
         let last_row = storage_buffer(
@@ -1437,7 +2119,7 @@ fn x86_regalloc_consumes_function_param_register_masks() {
             "tests.x86.regalloc_param_mask",
             &[0, INVALID, INVALID, INVALID],
             1,
-            &[1, INVALID, INVALID, INVALID],
+            &[0, INVALID, INVALID, INVALID],
         );
         let active_end = storage_buffer(
             device,
@@ -1619,7 +2301,7 @@ fn x86_regalloc_keeps_continuation_records_dead_on_final_chunk() {
             let func_slot_by_index = storage_buffer(
                 device,
                 "tests.x86.regalloc_final_chunk.func_slot_by_index",
-                &[1],
+                &[0],
             );
             let virtual_inst_record = storage_buffer(
                 device,
@@ -1679,13 +2361,13 @@ fn x86_regalloc_keeps_continuation_records_dead_on_final_chunk() {
                 device,
                 "tests.x86.regalloc_final_chunk.first_row",
                 &[
-                    INVALID, 0, INVALID, INVALID, INVALID, INVALID, INVALID, INVALID,
+                    0, INVALID, INVALID, INVALID, INVALID, INVALID, INVALID, INVALID,
                 ],
             );
             let last_row = storage_buffer(
                 device,
                 "tests.x86.regalloc_final_chunk.last_row",
-                &[0, 2, 0, 0, 0, 0, 0, 0],
+                &[2, 0, 0, 0, 0, 0, 0, 0],
             );
             let first_row_status = storage_buffer(
                 device,
@@ -1697,7 +2379,7 @@ fn x86_regalloc_keeps_continuation_records_dead_on_final_chunk() {
                 "tests.x86.regalloc_final_chunk",
                 &[0, 1, 2, INVALID],
                 3,
-                &[1, 1, 1, INVALID],
+                &[0, 0, 0, INVALID],
             );
             let active_end_seed = vec![INVALID; 14];
             let active_end = storage_buffer(
@@ -1875,7 +2557,7 @@ fn x86_select_records_only_clobbered_call_argument_save_masks() {
         let params = input_uniform(
             device,
             "tests.x86.select.params",
-            &[TOKEN_WORDS as u32, 0, 0, 4, 8],
+            &[TOKEN_WORDS as u32, 0, 0, 4, 8, 0, ROWS_PER_CHUNK, 1, 1],
         );
         let call_info = 2 | (X86_ARG_SCALAR << 12) | (X86_ARG_SCALAR << 14);
         let virtual_inst_record = storage_buffer(
@@ -1927,7 +2609,7 @@ fn x86_select_records_only_clobbered_call_argument_save_masks() {
             device,
             "tests.x86.select.first_row",
             &[
-                INVALID, 0, INVALID, INVALID, INVALID, INVALID, INVALID, INVALID,
+                0, INVALID, INVALID, INVALID, INVALID, INVALID, INVALID, INVALID,
             ],
         );
         let first_row_status = storage_buffer(
@@ -1943,12 +2625,12 @@ fn x86_select_records_only_clobbered_call_argument_save_masks() {
         let func_meta = storage_buffer(
             device,
             "tests.x86.select.func_meta",
-            &[1, 0, 1, 0, 0, 0, 0, 0],
+            &[1, 0, 0, 0, 0, 0, 0, 0],
         );
         let virtual_func_slot = storage_buffer(
             device,
             "tests.x86.select.virtual_func_slot",
-            &[1, 1, 1, INVALID],
+            &[0, 0, 0, INVALID],
         );
         let inst_kind = storage_buffer(device, "tests.x86.select.inst_kind", &[0; 8]);
         let inst_arg0 = storage_buffer(device, "tests.x86.select.inst_arg0", &[0; 8]);
@@ -2434,7 +3116,7 @@ fn x86_regalloc_consumes_row_ordered_value_def_records_with_hir_function_slots()
         let func_slot_by_index = storage_buffer(
             device,
             "tests.x86.regalloc_compact_defs.func_slot_by_index",
-            &[1, 2],
+            &[0, 1],
         );
         let virtual_inst_record = storage_buffer(
             device,
@@ -2486,7 +3168,7 @@ fn x86_regalloc_consumes_row_ordered_value_def_records_with_hir_function_slots()
         let param_mask = storage_buffer(
             device,
             "tests.x86.regalloc_compact_defs.param_mask",
-            &[0; TOKEN_WORDS],
+            &[0; 2],
         );
         let param_mask_status = storage_buffer(
             device,
@@ -2496,12 +3178,12 @@ fn x86_regalloc_consumes_row_ordered_value_def_records_with_hir_function_slots()
         let first_row = storage_buffer(
             device,
             "tests.x86.regalloc_compact_defs.first_row",
-            &[INVALID, 0, 1, INVALID, INVALID, INVALID, INVALID, INVALID],
+            &[0, 1, INVALID, INVALID, INVALID, INVALID, INVALID, INVALID],
         );
         let last_row = storage_buffer(
             device,
             "tests.x86.regalloc_compact_defs.last_row",
-            &[0, 2, 3, 0, 0, 0, 0, 0],
+            &[2, 3, 0, 0, 0, 0, 0, 0],
         );
         let first_row_status = storage_buffer(
             device,
@@ -2513,7 +3195,7 @@ fn x86_regalloc_consumes_row_ordered_value_def_records_with_hir_function_slots()
             "tests.x86.regalloc_compact_defs",
             &[0, 1, 2, 3],
             4,
-            &[1, 2, 1, 2],
+            &[0, 1, 0, 1],
         );
         let active_end = storage_buffer(
             device,

@@ -44,6 +44,7 @@ static const uint HIR_ITEM_KIND_EXTERN_FN = 5u;
 static const uint HIR_ITEM_KIND_STRUCT = 6u;
 static const uint HIR_ITEM_KIND_ENUM = 7u;
 static const uint HIR_ITEM_KIND_TYPE_ALIAS = 8u;
+static const uint HIR_ITEM_KIND_TRAIT = 10u;
 
 static const uint HIR_TYPE = 5u;
 static const uint HIR_TYPE_FORM_PATH = 1u;
@@ -94,7 +95,8 @@ bool generic_decl_item_kind(uint item_kind)
            item_kind == HIR_ITEM_KIND_EXTERN_FN ||
            item_kind == HIR_ITEM_KIND_STRUCT ||
            item_kind == HIR_ITEM_KIND_ENUM ||
-           item_kind == HIR_ITEM_KIND_TYPE_ALIAS;
+           item_kind == HIR_ITEM_KIND_TYPE_ALIAS ||
+           item_kind == HIR_ITEM_KIND_TRAIT;
 }
 
 public struct GenericParamUseOwnerPredicate : ITreeWalkPredicate

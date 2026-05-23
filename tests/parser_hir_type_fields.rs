@@ -7,11 +7,14 @@ use laniusc::{
     },
     parser::{
         driver::GpuParser,
-        passes::hir_type_fields::{
-            HIR_TYPE_FORM_ARRAY,
-            HIR_TYPE_FORM_PATH,
-            HIR_TYPE_FORM_REF,
-            HIR_TYPE_FORM_SLICE,
+        passes::{
+            hir_item_fields::HIR_ITEM_KIND_TYPE_ALIAS,
+            hir_type_fields::{
+                HIR_TYPE_FORM_ARRAY,
+                HIR_TYPE_FORM_PATH,
+                HIR_TYPE_FORM_REF,
+                HIR_TYPE_FORM_SLICE,
+            },
         },
         tables::PrecomputedParseTables,
     },
@@ -133,6 +136,111 @@ fn gpu_resident_ll1_hir_type_fields_are_exposed_to_downstream_passes() {
             "expected pointer-jumped qualified type path leaf metadata, got {type_records:?}"
         );
     });
+}
+
+#[test]
+fn gpu_resident_ll1_hir_type_fields_include_array_type_alias_targets() {
+    common::block_on_gpu_with_timeout(
+        "GPU resident parser array type-alias target metadata",
+        async move {
+            let lexer = GpuLexer::new().await.expect("GPU lexer init");
+            let parser = GpuParser::new().await.expect("GPU parser init");
+            let tables = PrecomputedParseTables::load_bin_bytes(include_bytes!(
+                "../tables/parse_tables.bin"
+            ))
+            .expect("load generated parse tables");
+            let src = "type Four = [i32; 4]; fn main(values: Four) { return; }";
+            let tokens = lex_on_test_cpu(src).expect("test CPU oracle lex fixture");
+
+            let res = lexer
+                .with_resident_tokens(src, |_, _, bufs| {
+                    parser.parse_resident_tokens(
+                        bufs.n,
+                        &bufs.tokens_out,
+                        &bufs.token_count,
+                        &tables,
+                    )
+                })
+                .await
+                .expect("resident GPU lex")
+                .expect("resident GPU parse");
+
+            assert!(res.ll1.accepted, "resident LL(1) parser rejected fixture");
+            let records = res
+                .hir_type_form
+                .iter()
+                .enumerate()
+                .filter_map(|(i, &form)| {
+                    if form == 0 {
+                        return None;
+                    }
+                    let snippet = hir_node_snippet(
+                        src,
+                        &tokens,
+                        &res.hir_token_pos,
+                        &res.hir_token_end,
+                        i as u32,
+                    )
+                    .unwrap_or_else(|| "<bad-span>".to_string());
+                    let value_form = res
+                        .hir_type_value_node
+                        .get(i)
+                        .and_then(|&value_node| res.hir_type_form.get(value_node as usize))
+                        .copied()
+                        .unwrap_or(0);
+                    let value_snippet = res.hir_type_value_node.get(i).and_then(|&value_node| {
+                        hir_node_snippet(
+                            src,
+                            &tokens,
+                            &res.hir_token_pos,
+                            &res.hir_token_end,
+                            value_node,
+                        )
+                    });
+                    Some((form, snippet, value_form, value_snippet))
+                })
+                .collect::<Vec<_>>();
+            let array_node = res
+                .hir_type_form
+                .iter()
+                .enumerate()
+                .find_map(|(i, &form)| {
+                    if form != HIR_TYPE_FORM_ARRAY {
+                        return None;
+                    }
+                    let snippet = hir_node_snippet(
+                        src,
+                        &tokens,
+                        &res.hir_token_pos,
+                        &res.hir_token_end,
+                        i as u32,
+                    )?;
+                    snippet.starts_with("[i32;").then_some(i as u32)
+                })
+                .expect("array type-alias target node");
+            let alias_node = res
+                .hir_item_kind
+                .iter()
+                .position(|&kind| kind == HIR_ITEM_KIND_TYPE_ALIAS)
+                .expect("type alias item node");
+
+            assert!(
+                records.iter().any(|(form, snippet, value_form, value)| {
+                    *form == HIR_TYPE_FORM_ARRAY
+                        && snippet.starts_with("[i32;")
+                        && *value_form == HIR_TYPE_FORM_PATH
+                        && value
+                            .as_deref()
+                            .is_some_and(|snippet| snippet.starts_with("i32"))
+                }),
+                "expected array type-alias target metadata, got {records:?}"
+            );
+            assert_eq!(
+                res.hir_type_alias_target_node[alias_node], array_node,
+                "type alias item should publish its array target node"
+            );
+        },
+    );
 }
 
 #[test]

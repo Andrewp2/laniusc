@@ -16,6 +16,10 @@ struct Params
     uint out_capacity;
     uint n_hir_nodes;
     uint inst_capacity;
+    uint virtual_next_call_step_count;
+    uint regalloc_rows_per_chunk;
+    uint regalloc_chunk_count;
+    uint function_slot_capacity;
 };
 
 ConstantBuffer<Params> gParams;
@@ -207,7 +211,7 @@ bool main_entry_target(uint inst_count, out uint target)
 {
     target = INVALID;
     uint main_slot = x86_func_meta[FUNC_META_MAIN_SLOT];
-    if (main_slot >= gParams.n_tokens)
+    if (main_slot >= gParams.function_slot_capacity)
         return false;
 
     uint main_row = x86_func_first_virtual_row[main_slot];

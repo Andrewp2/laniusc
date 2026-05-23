@@ -74,6 +74,26 @@ pub struct GpuLexer {
     bg_cache: std::sync::Mutex<crate::gpu::passes_core::BindGroupCache>,
 }
 
+pub struct ResidentLexerParserInputs {
+    pub source_len: u32,
+    pub in_bytes: wgpu::Buffer,
+    pub tokens_out: wgpu::Buffer,
+    pub token_count: wgpu::Buffer,
+    pub token_file_id: wgpu::Buffer,
+}
+
+impl ResidentLexerParserInputs {
+    fn from_buffers(bufs: &buffers::GpuBuffers) -> Self {
+        Self {
+            source_len: bufs.n,
+            in_bytes: bufs.in_bytes.buffer.clone(),
+            tokens_out: bufs.tokens_out.buffer.clone(),
+            token_count: bufs.token_count.buffer.clone(),
+            token_file_id: bufs.token_file_id.buffer.clone(),
+        }
+    }
+}
+
 impl GpuLexer {
     pub async fn new() -> Result<Self> {
         Self::new_with_device(crate::gpu::device::global()).await
@@ -234,17 +254,17 @@ impl GpuLexer {
         let nb_sum_needed = n.div_ceil(BLOCK_WIDTH_SUM);
 
         // Current capacities
+        let desired_cap = (aligned_len_usize as u32).max(n).max(1);
         let cap_n = bufs.in_bytes.count as u32;
+        let cap_bytes = bufs.in_bytes.byte_size as u32;
         let cap_nb_dfa = (bufs.dfa_02_ping.count / crate::lexer::tables::dfa::N_STATES) as u32;
 
         // Pair scans reuse DFA block buffers; ensuring DFA capacity is sufficient implies pair capacity
-        let needs_grow = (aligned_len_usize as u32) > (bufs.in_bytes.byte_size as u32)
-            || nb_dfa_needed > cap_nb_dfa
-            || n > cap_n;
-        if needs_grow {
+        let needs_resize = desired_cap != cap_bytes || nb_dfa_needed != cap_nb_dfa || n > cap_n;
+        if needs_resize {
             // Keep resident capacity exact; doubling here can create multi-GiB
             // parser/typechecker over-allocation when benchmarks grow input size.
-            let new_cap = (aligned_len_usize as u32).max(n).max(1);
+            let new_cap = desired_cap;
             let mut new_bufs = recreate(new_cap);
             // Adjust dynamic sizes and params to the actual input n
             new_bufs.n = n;
@@ -828,12 +848,7 @@ impl GpuLexer {
             &mut wgpu::CommandEncoder,
             Option<&mut GpuTimer>,
         ) -> std::result::Result<T, E>,
-        consume_after_submit: impl FnOnce(
-            &wgpu::Device,
-            &wgpu::Queue,
-            &buffers::GpuBuffers,
-            T,
-        ) -> std::result::Result<R, E>,
+        consume_after_submit: impl FnOnce(&wgpu::Device, &wgpu::Queue, T) -> std::result::Result<R, E>,
     ) -> Result<std::result::Result<R, E>>
     where
         S: AsRef<str>,
@@ -972,7 +987,16 @@ impl GpuLexer {
         );
         host_timer.stamp("compile.source-pack.submit");
 
-        let result = consume_after_submit(&self.device, &self.queue, bufs, recorded_more);
+        *guard = None;
+        drop(guard);
+        if let Ok(mut cache) = self.bg_cache.lock() {
+            cache.clear();
+        } else {
+            warn!("failed to clear source-pack lexer bind-group cache (poisoned mutex)");
+        }
+        host_timer.stamp("lex.source-pack.resident.released");
+
+        let result = consume_after_submit(&self.device, &self.queue, recorded_more);
         host_timer.stamp("compile.source-pack.finish");
         if let Some(stamps) = maybe_timer
             .as_ref()
@@ -1292,6 +1316,368 @@ impl GpuLexer {
         Ok(result)
     }
 
+    pub async fn with_recorded_resident_parser_inputs_after_count_releasing_lexer<S, R, E>(
+        &self,
+        input: &str,
+        record_more: impl FnOnce(
+            &wgpu::Device,
+            &wgpu::Queue,
+            &ResidentLexerParserInputs,
+            u32,
+            &mut wgpu::CommandEncoder,
+            Option<&mut GpuTimer>,
+        ) -> std::result::Result<S, E>,
+        consume_after_submit: impl FnOnce(
+            &wgpu::Device,
+            &wgpu::Queue,
+            &ResidentLexerParserInputs,
+            S,
+        ) -> std::result::Result<R, E>,
+    ) -> Result<std::result::Result<R, E>> {
+        #[cfg(feature = "graphics_debugger")]
+        unsafe {
+            self.device.start_graphics_debugger_capture()
+        };
+
+        let start_state = 0u32;
+        let skip_kinds = [
+            TokenKind::White as u32,
+            TokenKind::LineComment as u32,
+            TokenKind::BlockComment as u32,
+            u32::MAX,
+        ];
+        let mut guard = self.prepare_buffers_for_input(input, start_state, skip_kinds)?;
+        let bufs = guard
+            .as_mut()
+            .expect("GpuLexer buffers must exist after preparation");
+
+        let use_scopes = crate::gpu::env::env_bool_truthy("LANIUS_VALIDATION_SCOPES", false);
+        let mut host_timer = HostCompileTimer::new();
+
+        #[cfg(feature = "gpu-debug")]
+        let mut debug_output = crate::lexer::debug::DebugOutput::default();
+        #[cfg(feature = "gpu-debug")]
+        let maybe_dbg: Option<&mut crate::lexer::debug::DebugOutput> = Some(&mut debug_output);
+        #[cfg(not(feature = "gpu-debug"))]
+        let maybe_dbg: Option<&mut crate::lexer::debug::DebugOutput> = None;
+
+        let mut lex_encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("lex-resident-count-boundary-enc"),
+            });
+
+        {
+            let mut timer_ref: Option<&mut GpuTimer> = None;
+            let mut dbg_ref = maybe_dbg;
+            let mut cache_guard = self
+                .bg_cache
+                .lock()
+                .expect("GpuLexer.bg_cache mutex poisoned");
+            let ctx = crate::gpu::passes_core::PassContext {
+                device: &self.device,
+                encoder: &mut lex_encoder,
+                buffers: &*bufs,
+                maybe_timer: &mut timer_ref,
+                maybe_dbg: &mut dbg_ref,
+                bg_cache: Some(&mut *cache_guard),
+            };
+            record_all_passes(bufs.n, bufs.nb_dfa, bufs.nb_sum, ctx, &self.passes)?;
+        }
+
+        let token_count_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rb.lex.resident.token_count"),
+            size: 4,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        lex_encoder.copy_buffer_to_buffer(&bufs.token_count, 0, &token_count_readback, 0, 4);
+
+        crate::gpu::passes_core::submit_with_optional_validation(
+            &self.device,
+            &self.queue,
+            "lex.resident-count-boundary",
+            lex_encoder.finish(),
+            use_scopes,
+            "resident lex count boundary",
+        );
+
+        let count_slice = token_count_readback.slice(..);
+        crate::gpu::passes_core::map_readback_for_progress(&count_slice, "lex.resident.count");
+        crate::gpu::passes_core::wait_for_map_progress(
+            &self.device,
+            "lex.resident.count",
+            wgpu::PollType::wait_indefinitely(),
+        );
+        let count_bytes = count_slice.get_mapped_range();
+        let token_count = u32_from_first_4(&count_bytes);
+        drop(count_bytes);
+        token_count_readback.unmap();
+        if token_count > bufs.n {
+            anyhow::bail!(
+                "GPU lexer token_count unexpectedly exceeds byte capacity: count={}, capacity={}",
+                token_count,
+                bufs.n
+            );
+        }
+        host_timer.stamp("lex.resident.count_boundary");
+
+        let parser_inputs = ResidentLexerParserInputs::from_buffers(bufs);
+        *guard = None;
+        drop(guard);
+        if let Ok(mut cache) = self.bg_cache.lock() {
+            cache.clear();
+        } else {
+            warn!("failed to clear lexer bind-group cache (poisoned mutex)");
+        }
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        host_timer.stamp("lex.resident.released_before_parser");
+
+        let mut code_encoder =
+            self.device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("compile-after-token-count-enc"),
+                });
+        let timers_on = self.timers_supported
+            && (crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_TIMING", false)
+                || crate::gpu::trace::enabled());
+        let mut maybe_timer = if timers_on {
+            Some(GpuTimer::new(&self.device, &self.queue, 512))
+        } else {
+            None
+        };
+        if let Some(timer) = maybe_timer.as_mut() {
+            timer.stamp(&mut code_encoder, "compile.after_count.start");
+        }
+        let recorded_more = match record_more(
+            &self.device,
+            &self.queue,
+            &parser_inputs,
+            token_count,
+            &mut code_encoder,
+            maybe_timer.as_mut(),
+        ) {
+            Ok(recorded) => recorded,
+            Err(err) => return Ok(Err(err)),
+        };
+        host_timer.stamp("compile.record_more");
+        if let Some(timer) = maybe_timer.as_mut() {
+            timer.stamp(&mut code_encoder, "compile.after_count.recorded");
+            timer.resolve(&mut code_encoder);
+        }
+
+        let code_command_buffer = code_encoder.finish();
+        host_timer.stamp("compile.encoder_finish");
+        let submit_timing = crate::gpu::passes_core::submit_with_optional_validation(
+            &self.device,
+            &self.queue,
+            "compile.after-token-count",
+            code_command_buffer,
+            use_scopes,
+            "compile after token count",
+        );
+        host_timer.stamp("compile.submit");
+
+        let result =
+            consume_after_submit(&self.device, &self.queue, &parser_inputs, recorded_more);
+        host_timer.stamp("compile.finish");
+        if let Some(stamps) = maybe_timer
+            .as_ref()
+            .and_then(|timer| timer.try_read(&self.device))
+        {
+            print_timer_trace(
+                &stamps,
+                maybe_timer.as_ref().expect("timer exists").period_ns(),
+                submit_timing.gpu_anchor,
+            );
+        }
+        host_timer.stamp("compile.timer_readback");
+
+        #[cfg(feature = "graphics_debugger")]
+        unsafe {
+            self.device.stop_graphics_debugger_capture()
+        };
+
+        Ok(result)
+    }
+
+    pub async fn with_recorded_resident_tokens_after_count_releasing_lexer<S, R, E>(
+        &self,
+        input: &str,
+        record_more: impl FnOnce(
+            &wgpu::Device,
+            &wgpu::Queue,
+            &buffers::GpuBuffers,
+            u32,
+            &mut wgpu::CommandEncoder,
+            Option<&mut GpuTimer>,
+        ) -> std::result::Result<S, E>,
+        consume_after_submit: impl FnOnce(&wgpu::Device, &wgpu::Queue, S) -> std::result::Result<R, E>,
+    ) -> Result<std::result::Result<R, E>> {
+        #[cfg(feature = "graphics_debugger")]
+        unsafe {
+            self.device.start_graphics_debugger_capture()
+        };
+
+        let start_state = 0u32;
+        let skip_kinds = [
+            TokenKind::White as u32,
+            TokenKind::LineComment as u32,
+            TokenKind::BlockComment as u32,
+            u32::MAX,
+        ];
+        let mut guard = self.prepare_buffers_for_input(input, start_state, skip_kinds)?;
+        let bufs = guard
+            .as_mut()
+            .expect("GpuLexer buffers must exist after preparation");
+
+        let use_scopes = crate::gpu::env::env_bool_truthy("LANIUS_VALIDATION_SCOPES", false);
+        let mut host_timer = HostCompileTimer::new();
+
+        #[cfg(feature = "gpu-debug")]
+        let mut debug_output = crate::lexer::debug::DebugOutput::default();
+        #[cfg(feature = "gpu-debug")]
+        let maybe_dbg: Option<&mut crate::lexer::debug::DebugOutput> = Some(&mut debug_output);
+        #[cfg(not(feature = "gpu-debug"))]
+        let maybe_dbg: Option<&mut crate::lexer::debug::DebugOutput> = None;
+
+        let mut lex_encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("lex-resident-count-boundary-enc"),
+            });
+
+        {
+            let mut timer_ref: Option<&mut GpuTimer> = None;
+            let mut dbg_ref = maybe_dbg;
+            let mut cache_guard = self
+                .bg_cache
+                .lock()
+                .expect("GpuLexer.bg_cache mutex poisoned");
+            let ctx = crate::gpu::passes_core::PassContext {
+                device: &self.device,
+                encoder: &mut lex_encoder,
+                buffers: &*bufs,
+                maybe_timer: &mut timer_ref,
+                maybe_dbg: &mut dbg_ref,
+                bg_cache: Some(&mut *cache_guard),
+            };
+            record_all_passes(bufs.n, bufs.nb_dfa, bufs.nb_sum, ctx, &self.passes)?;
+        }
+
+        let token_count_readback = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rb.lex.resident.token_count"),
+            size: 4,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        lex_encoder.copy_buffer_to_buffer(&bufs.token_count, 0, &token_count_readback, 0, 4);
+
+        crate::gpu::passes_core::submit_with_optional_validation(
+            &self.device,
+            &self.queue,
+            "lex.resident-count-boundary",
+            lex_encoder.finish(),
+            use_scopes,
+            "resident lex count boundary",
+        );
+
+        let count_slice = token_count_readback.slice(..);
+        crate::gpu::passes_core::map_readback_for_progress(&count_slice, "lex.resident.count");
+        crate::gpu::passes_core::wait_for_map_progress(
+            &self.device,
+            "lex.resident.count",
+            wgpu::PollType::wait_indefinitely(),
+        );
+        let count_bytes = count_slice.get_mapped_range();
+        let token_count = u32_from_first_4(&count_bytes);
+        drop(count_bytes);
+        token_count_readback.unmap();
+        if token_count > bufs.n {
+            anyhow::bail!(
+                "GPU lexer token_count unexpectedly exceeds byte capacity: count={}, capacity={}",
+                token_count,
+                bufs.n
+            );
+        }
+        host_timer.stamp("lex.resident.count_boundary");
+
+        let mut code_encoder =
+            self.device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("compile-after-token-count-enc"),
+                });
+        let timers_on = self.timers_supported
+            && (crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_TIMING", false)
+                || crate::gpu::trace::enabled());
+        let mut maybe_timer = if timers_on {
+            Some(GpuTimer::new(&self.device, &self.queue, 512))
+        } else {
+            None
+        };
+        if let Some(timer) = maybe_timer.as_mut() {
+            timer.stamp(&mut code_encoder, "compile.after_count.start");
+        }
+        let recorded_more = match record_more(
+            &self.device,
+            &self.queue,
+            bufs,
+            token_count,
+            &mut code_encoder,
+            maybe_timer.as_mut(),
+        ) {
+            Ok(recorded) => recorded,
+            Err(err) => return Ok(Err(err)),
+        };
+        host_timer.stamp("compile.record_more");
+        if let Some(timer) = maybe_timer.as_mut() {
+            timer.stamp(&mut code_encoder, "compile.after_count.recorded");
+            timer.resolve(&mut code_encoder);
+        }
+
+        let code_command_buffer = code_encoder.finish();
+        host_timer.stamp("compile.encoder_finish");
+        let submit_timing = crate::gpu::passes_core::submit_with_optional_validation(
+            &self.device,
+            &self.queue,
+            "compile.after-token-count",
+            code_command_buffer,
+            use_scopes,
+            "compile after token count",
+        );
+        host_timer.stamp("compile.submit");
+
+        *guard = None;
+        drop(guard);
+        if let Ok(mut cache) = self.bg_cache.lock() {
+            cache.clear();
+        } else {
+            warn!("failed to clear lexer bind-group cache (poisoned mutex)");
+        }
+        host_timer.stamp("lex.resident.released");
+
+        let result = consume_after_submit(&self.device, &self.queue, recorded_more);
+        host_timer.stamp("compile.finish");
+        if let Some(stamps) = maybe_timer
+            .as_ref()
+            .and_then(|timer| timer.try_read(&self.device))
+        {
+            print_timer_trace(
+                &stamps,
+                maybe_timer.as_ref().expect("timer exists").period_ns(),
+                submit_timing.gpu_anchor,
+            );
+        }
+        host_timer.stamp("compile.timer_readback");
+
+        #[cfg(feature = "graphics_debugger")]
+        unsafe {
+            self.device.stop_graphics_debugger_capture()
+        };
+
+        Ok(result)
+    }
+
     fn prepare_buffers_for_input<'a>(
         &'a self,
         input: &str,
@@ -1335,16 +1721,16 @@ impl GpuLexer {
 
             let nb_dfa_needed = n.div_ceil(BLOCK_WIDTH_DFA);
             let nb_sum_needed = n.div_ceil(BLOCK_WIDTH_SUM);
+            let desired_cap = (aligned_len_usize as u32).max(n).max(1);
             let cap_n = bufs.in_bytes.count as u32;
+            let cap_bytes = bufs.in_bytes.byte_size as u32;
             let cap_nb_dfa = (bufs.dfa_02_ping.count / crate::lexer::tables::dfa::N_STATES) as u32;
 
-            let needs_grow = (aligned_len_usize as u32) > (bufs.in_bytes.byte_size as u32)
-                || nb_dfa_needed > cap_nb_dfa
-                || n > cap_n;
-            if needs_grow {
+            let needs_resize = desired_cap != cap_bytes || nb_dfa_needed != cap_nb_dfa || n > cap_n;
+            if needs_resize {
                 // Keep resident capacity exact; downstream parser/HIR capacities
                 // are derived from this byte capacity.
-                let new_cap = (aligned_len_usize as u32).max(n).max(1);
+                let new_cap = desired_cap;
                 let mut new_bufs = recreate(new_cap);
                 self.write_current_lex_inputs(
                     &mut new_bufs,
@@ -1422,18 +1808,20 @@ impl GpuLexer {
 
             let nb_dfa_needed = n.div_ceil(BLOCK_WIDTH_DFA);
             let nb_sum_needed = n.div_ceil(BLOCK_WIDTH_SUM);
+            let desired_cap = (aligned_len_usize as u32).max(n).max(1);
             let cap_n = bufs.in_bytes.count as u32;
+            let cap_bytes = bufs.in_bytes.byte_size as u32;
             let cap_files = bufs.source_file_start.count as u32;
             let cap_nb_dfa = (bufs.dfa_02_ping.count / crate::lexer::tables::dfa::N_STATES) as u32;
 
-            let needs_grow = (aligned_len_usize as u32) > (bufs.in_bytes.byte_size as u32)
-                || nb_dfa_needed > cap_nb_dfa
+            let needs_resize = desired_cap != cap_bytes
+                || nb_dfa_needed != cap_nb_dfa
                 || n > cap_n
-                || source_file_capacity > cap_files;
-            if needs_grow {
+                || source_file_capacity != cap_files;
+            if needs_resize {
                 // Keep resident capacity exact; downstream parser/HIR capacities
                 // are derived from this byte capacity.
-                let new_cap = (aligned_len_usize as u32).max(n).max(1);
+                let new_cap = desired_cap;
                 let new_file_cap = source_file_capacity.max(1);
                 let mut new_bufs = recreate(new_cap, new_file_cap);
                 self.write_source_pack_lex_inputs(

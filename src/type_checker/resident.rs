@@ -156,6 +156,55 @@ impl GpuTypeChecker {
             hir_token_file_id_buf,
             hir_status_buf,
             Some(hir_items),
+            None,
+            timer,
+        )
+    }
+
+    /// Records resident type checking with parser-owned HIR item metadata and
+    /// parser-owned scratch buffers whose parser lifetimes have ended.
+    #[allow(clippy::too_many_arguments)]
+    pub fn record_resident_token_buffer_with_hir_items_and_scratch_on_gpu(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        source_len: u32,
+        source_file_capacity: u32,
+        token_capacity: u32,
+        token_buf: &wgpu::Buffer,
+        token_count_buf: &wgpu::Buffer,
+        token_file_id_buf: &wgpu::Buffer,
+        source_buf: &wgpu::Buffer,
+        hir_node_capacity: u32,
+        hir_kind_buf: &wgpu::Buffer,
+        hir_token_pos_buf: &wgpu::Buffer,
+        hir_token_end_buf: &wgpu::Buffer,
+        hir_token_file_id_buf: &wgpu::Buffer,
+        hir_status_buf: &wgpu::Buffer,
+        hir_items: GpuTypeCheckHirItemBuffers<'_>,
+        external_scratch: GpuTypeCheckExternalScratchBuffers<'_>,
+        timer: Option<&mut crate::gpu::timer::GpuTimer>,
+    ) -> Result<RecordedTypeCheck, GpuTypeCheckError> {
+        self.record_resident_token_buffer_with_hir_impl_on_gpu(
+            device,
+            queue,
+            encoder,
+            source_len,
+            source_file_capacity,
+            token_capacity,
+            token_buf,
+            token_count_buf,
+            token_file_id_buf,
+            source_buf,
+            hir_node_capacity,
+            hir_kind_buf,
+            hir_token_pos_buf,
+            hir_token_end_buf,
+            hir_token_file_id_buf,
+            hir_status_buf,
+            Some(hir_items),
+            Some(external_scratch),
             timer,
         )
     }
@@ -202,6 +251,7 @@ impl GpuTypeChecker {
             hir_token_file_id_buf,
             hir_status_buf,
             None,
+            None,
             timer,
         )
     }
@@ -226,6 +276,7 @@ impl GpuTypeChecker {
         hir_token_file_id_buf: &wgpu::Buffer,
         hir_status_buf: &wgpu::Buffer,
         hir_items: Option<GpuTypeCheckHirItemBuffers<'_>>,
+        external_scratch: Option<GpuTypeCheckExternalScratchBuffers<'_>>,
         mut timer: Option<&mut crate::gpu::timer::GpuTimer>,
     ) -> Result<RecordedTypeCheck, GpuTypeCheckError> {
         let params = TypeCheckParams {
@@ -256,6 +307,72 @@ impl GpuTypeChecker {
         if let Some(items) = hir_items {
             fingerprint_buffers.push(items.semantic_dense_node);
             fingerprint_buffers.push(items.semantic_count);
+        }
+        if let Some(scratch) = external_scratch {
+            fingerprint_buffers.push(scratch.fn_entrypoint_tag);
+            fingerprint_buffers.push(scratch.type_expr_ref_tag);
+            fingerprint_buffers.push(scratch.type_expr_ref_payload);
+            fingerprint_buffers.push(scratch.type_generic_param_slot_by_token);
+            fingerprint_buffers.push(scratch.type_const_param_slot_by_token);
+            fingerprint_buffers.push(scratch.record_family_flag);
+            fingerprint_buffers.push(scratch.module_record_prefix);
+            fingerprint_buffers.push(scratch.record_scan_local_prefix);
+            fingerprint_buffers.push(scratch.path_id_by_owner_hir);
+            fingerprint_buffers.push(scratch.call_param_count);
+            fingerprint_buffers.push(scratch.call_param_type);
+            fingerprint_buffers.push(scratch.call_arg_record);
+            fingerprint_buffers.push(scratch.function_lookup_key);
+            fingerprint_buffers.push(scratch.function_lookup_fn);
+            fingerprint_buffers.push(scratch.type_decl_generic_param_count);
+            fingerprint_buffers.push(scratch.type_decl_generic_param_count_by_node);
+            fingerprint_buffers.push(scratch.type_instance_arg_start);
+            fingerprint_buffers.push(scratch.type_instance_arg_count);
+            fingerprint_buffers.push(scratch.type_instance_arg_ref_tag);
+            fingerprint_buffers.push(scratch.type_instance_arg_ref_payload);
+            fingerprint_buffers.push(scratch.type_instance_len_kind);
+            fingerprint_buffers.push(scratch.type_instance_len_payload);
+            fingerprint_buffers.push(scratch.type_instance_state);
+            fingerprint_buffers.push(scratch.decl_type_key_to_decl_id);
+            fingerprint_buffers.push(scratch.decl_value_key_to_decl_id);
+            fingerprint_buffers.push(scratch.method_decl_module_id);
+            fingerprint_buffers.push(scratch.method_decl_impl_node);
+            fingerprint_buffers.push(scratch.method_decl_name_token);
+            fingerprint_buffers.push(scratch.method_decl_name_id);
+            fingerprint_buffers.push(scratch.method_decl_param_offset);
+            fingerprint_buffers.push(scratch.method_decl_receiver_mode);
+            fingerprint_buffers.push(scratch.method_decl_visibility);
+            fingerprint_buffers.push(scratch.method_key_to_fn_token);
+            fingerprint_buffers.push(scratch.method_key_status);
+            fingerprint_buffers.push(scratch.method_key_radix_block_histogram);
+            fingerprint_buffers.push(scratch.method_key_radix_block_bucket_prefix);
+            fingerprint_buffers.push(scratch.method_call_receiver_ref_tag);
+            fingerprint_buffers.push(scratch.method_call_receiver_ref_payload);
+            fingerprint_buffers.push(scratch.method_call_name_id);
+            fingerprint_buffers.push(scratch.method_call_site_module_id);
+            fingerprint_buffers.push(scratch.import_visible_type_count);
+            fingerprint_buffers.push(scratch.import_visible_value_count);
+            fingerprint_buffers.push(scratch.import_visible_type_prefix);
+            fingerprint_buffers.push(scratch.import_visible_value_prefix);
+            fingerprint_buffers.push(scratch.resolved_type_decl);
+            fingerprint_buffers.push(scratch.resolved_value_decl);
+            fingerprint_buffers.push(scratch.resolved_type_status);
+            fingerprint_buffers.push(scratch.resolved_value_status);
+            fingerprint_buffers.push(scratch.member_result_ref_payload);
+            fingerprint_buffers.push(scratch.member_result_field_ordinal);
+            fingerprint_buffers.push(scratch.struct_init_field_expected_ref_tag);
+            fingerprint_buffers.push(scratch.struct_init_field_expected_ref_payload);
+            fingerprint_buffers.push(scratch.struct_init_field_context_instance);
+            fingerprint_buffers.push(scratch.struct_init_field_ordinal);
+            fingerprint_buffers.push(scratch.path_start);
+            fingerprint_buffers.push(scratch.path_len);
+            fingerprint_buffers.push(scratch.path_segment_count);
+            fingerprint_buffers.push(scratch.path_segment_base);
+            fingerprint_buffers.push(scratch.path_segment_name_id);
+            fingerprint_buffers.push(scratch.path_segment_token);
+            fingerprint_buffers.push(scratch.path_owner_hir);
+            fingerprint_buffers.push(scratch.path_owner_token);
+            fingerprint_buffers.push(scratch.path_owner_module_id);
+            fingerprint_buffers.push(scratch.path_kind);
         }
         let input_fingerprint = buffer_fingerprint(&fingerprint_buffers);
         let control_pass = if uses_hir_control {
@@ -310,6 +427,7 @@ impl GpuTypeChecker {
                     input_fingerprint,
                     uses_hir_control,
                     uses_hir_items,
+                    external_scratch,
                 )?);
             }
             host_timer.stamp(if rebuilt {
@@ -450,6 +568,57 @@ impl GpuTypeChecker {
                     &super::record::TYPE_INSTANCE_COLLECTION_PROJECTED_LABELS,
                     timer.as_deref_mut(),
                 )?;
+                record_compute_indirect(
+                    encoder,
+                    &self.passes.modules_project_type_aliases,
+                    &module_path.bind_groups.project_type_aliases,
+                    "type_check.modules.project_type_aliases.after_projected_refs",
+                    &module_path.decl_key_radix_dispatch_args,
+                )?;
+                if let Some(timer) = timer.as_deref_mut() {
+                    timer.stamp(
+                        encoder,
+                        "typecheck.modules.project_type_aliases.after_projected_refs.done",
+                    );
+                }
+                record_compute_indirect(
+                    encoder,
+                    &self.passes.modules_project_type_paths,
+                    &module_path.bind_groups.project_type_paths,
+                    "type_check.modules.project_type_paths.after_projected_aliases",
+                    &module_path.path_dispatch_args,
+                )?;
+                if let Some(timer) = timer.as_deref_mut() {
+                    timer.stamp(
+                        encoder,
+                        "typecheck.modules.project_type_paths.after_projected_aliases.done",
+                    );
+                }
+            }
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.type_instances.done");
+            }
+            if let Some(module_path) = &bind_groups.module_path {
+                record_compute_indirect(
+                    encoder,
+                    &self.passes.modules_project_type_instances,
+                    &module_path.bind_groups.project_type_instances,
+                    "type_check.modules.project_type_instances",
+                    &module_path.path_dispatch_args,
+                )?;
+                if let Some(timer) = timer.as_deref_mut() {
+                    timer.stamp(encoder, "typecheck.type_instances_project.done");
+                }
+            }
+            record_compute_indirect(
+                encoder,
+                &self.passes.type_instances_collect_named_arg_refs,
+                &bind_groups.type_instances_collect_named_arg_refs,
+                "type_check.resident.type_instances_collect_named_arg_refs.pass",
+                &bind_groups.hir_active_dispatch_args,
+            )?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.type_instances_named_arg_refs.done");
             }
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.type_instances_collect.done");
@@ -491,31 +660,6 @@ impl GpuTypeChecker {
             }
             host_timer.stamp("fn_context_calls_visible");
 
-            if let Some(timer) = timer.as_deref_mut() {
-                timer.stamp(encoder, "typecheck.type_instances.done");
-            }
-            if let Some(module_path) = &bind_groups.module_path {
-                record_compute_indirect(
-                    encoder,
-                    &self.passes.modules_project_type_instances,
-                    &module_path.bind_groups.project_type_instances,
-                    "type_check.modules.project_type_instances",
-                    &module_path.path_dispatch_args,
-                )?;
-                if let Some(timer) = timer.as_deref_mut() {
-                    timer.stamp(encoder, "typecheck.type_instances_project.done");
-                }
-            }
-            record_compute_indirect(
-                encoder,
-                &self.passes.type_instances_collect_named_arg_refs,
-                &bind_groups.type_instances_collect_named_arg_refs,
-                "type_check.resident.type_instances_collect_named_arg_refs.pass",
-                &bind_groups.hir_active_dispatch_args,
-            )?;
-            if let Some(timer) = timer.as_deref_mut() {
-                timer.stamp(encoder, "typecheck.type_instances_named_arg_refs.done");
-            }
             record_compute_indirect(
                 encoder,
                 &self.passes.type_instances_decl_refs,
@@ -525,6 +669,22 @@ impl GpuTypeChecker {
             )?;
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.type_instances_decl_refs.done");
+            }
+            if let Some(module_path) = &bind_groups.module_path {
+                record_compute_indirect(
+                    encoder,
+                    &self.passes.modules_consume_value_calls,
+                    &module_path.bind_groups.consume_value_calls,
+                    "type_check.modules.consume_value_calls",
+                    &module_path.path_dispatch_args,
+                )?;
+                record_compute_indirect(
+                    encoder,
+                    &self.passes.modules_mirror_value_call_leaf,
+                    &module_path.bind_groups.mirror_value_call_leaf,
+                    "type_check.modules.mirror_value_call_leaf",
+                    &module_path.path_dispatch_args,
+                )?;
             }
             record_method_bind_groups_with_passes(
                 &self.passes,
@@ -594,13 +754,6 @@ impl GpuTypeChecker {
             if let Some(module_path) = &bind_groups.module_path {
                 record_compute_indirect(
                     encoder,
-                    &self.passes.modules_consume_value_calls,
-                    &module_path.bind_groups.consume_value_calls,
-                    "type_check.modules.consume_value_calls",
-                    &module_path.path_dispatch_args,
-                )?;
-                record_compute_indirect(
-                    encoder,
                     &self.passes.modules_bind_match_patterns,
                     &module_path.bind_groups.bind_match_patterns,
                     "type_check.modules.bind_match_patterns",
@@ -614,15 +767,6 @@ impl GpuTypeChecker {
                     &bind_groups.hir_active_dispatch_args,
                 )?;
             }
-            record_call_erase_generic_params_with_passes(
-                &self.passes,
-                encoder,
-                token_capacity,
-                &bind_groups.calls,
-            )?;
-            if let Some(timer) = timer.as_deref_mut() {
-                timer.stamp(encoder, "typecheck.calls_erased.done");
-            }
             record_compute_indirect(
                 encoder,
                 scope_pass,
@@ -632,10 +776,49 @@ impl GpuTypeChecker {
                     &bind_groups.scope
                 },
                 "type_check.resident.scope.pass",
-                &bind_groups.token_hir_active_dispatch_args,
+                &bind_groups.token_active_dispatch_args,
             )?;
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.scope.done");
+            }
+            record_compute_indirect(
+                encoder,
+                &self.passes.calls_resolve,
+                &bind_groups.calls.resolve,
+                "type_check.resident.calls_resolve.pass",
+                &bind_groups.hir_active_dispatch_args,
+            )?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.calls_resolve.done");
+            }
+            record_compute(
+                encoder,
+                &self.passes.calls_infer_array_generics,
+                &bind_groups.calls.infer_array_generics,
+                "type_check.resident.calls_infer_array_generics.pass",
+                n_work,
+            )?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.calls_infer_array_generics.done");
+            }
+            record_compute(
+                encoder,
+                &self.passes.calls_validate_array_results,
+                &bind_groups.calls.validate_array_results,
+                "type_check.resident.calls_validate_array_results.pass",
+                n_work,
+            )?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.calls_validate_array_results.done");
+            }
+            record_call_erase_generic_params_with_passes(
+                &self.passes,
+                encoder,
+                token_capacity,
+                &bind_groups.calls,
+            )?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.calls_erased.done");
             }
             if let Some(module_path) = &bind_groups.module_path {
                 record_compute_indirect(
@@ -700,9 +883,9 @@ impl GpuTypeChecker {
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.array_literal_return_refs.done");
             }
-            // The old generic enum-constructor pass is token-neighborhood based.
-            // Keep it out of the resident compiler path; enum-call semantics
-            // should be expressed through HIR/module records.
+            // Enum-call semantics are expressed through HIR/module records.
+            // The legacy token-neighborhood enum-constructor shader is retired
+            // and intentionally not part of the resident compiler path.
             if let Some(module_path) = &bind_groups.module_path {
                 record_compute_indirect(
                     encoder,
@@ -730,6 +913,28 @@ impl GpuTypeChecker {
                 "type_check.resident.type_instances_validate_aggregate_access.pass",
                 &bind_groups.hir_active_dispatch_args,
             )?;
+            if let Some(predicates) = &bind_groups.predicates {
+                record_compute_indirect(
+                    encoder,
+                    &self.passes.predicates_collect,
+                    &predicates.collect,
+                    "type_check.resident.predicates_collect.pass",
+                    &bind_groups.hir_active_dispatch_args,
+                )?;
+                if let Some(timer) = timer.as_deref_mut() {
+                    timer.stamp(encoder, "typecheck.predicates_collect.done");
+                }
+                record_compute_indirect(
+                    encoder,
+                    &self.passes.predicates_obligations,
+                    &predicates.obligations,
+                    "type_check.resident.predicates_obligations.pass",
+                    &bind_groups.hir_active_dispatch_args,
+                )?;
+                if let Some(timer) = timer.as_deref_mut() {
+                    timer.stamp(encoder, "typecheck.predicates_obligations.done");
+                }
+            }
             record_compute_indirect(
                 encoder,
                 &self.passes.conditions_hir,
@@ -895,6 +1100,226 @@ impl GpuTypeChecker {
             struct_init_field_ordinal: &bind_groups.struct_init_field_ordinal,
             struct_init_field_ordinal_by_node: &bind_groups.struct_init_field_ordinal_by_node,
         }))
+    }
+
+    pub fn take_codegen_buffers(&self) -> Option<OwnedGpuCodegenBuffers> {
+        let mut guard = self
+            .bind_groups
+            .lock()
+            .expect("GpuTypeChecker.bind_groups poisoned");
+        let bind_groups = guard.take()?;
+        let ResidentTypeCheckBindGroups {
+            name_id_by_token,
+            enclosing_fn,
+            visible_decl,
+            visible_type,
+            module_path,
+            module_value_path_call_head,
+            module_value_path_call_open,
+            module_value_path_const_head,
+            module_value_path_const_end,
+            call_fn_index,
+            call_intrinsic_tag,
+            fn_entrypoint_tag,
+            call_return_type,
+            call_return_type_token,
+            call_param_count,
+            call_param_type,
+            method_decl_module_id,
+            method_decl_name_token,
+            method_decl_name_id,
+            method_decl_receiver_ref_tag,
+            method_decl_receiver_ref_payload,
+            method_decl_param_offset,
+            method_decl_receiver_mode,
+            method_decl_visibility,
+            method_key_to_fn_token,
+            method_key_status,
+            method_call_receiver_ref_tag,
+            method_call_receiver_ref_payload,
+            method_call_name_id,
+            method_call_site_module_id,
+            type_instance_kind,
+            type_instance_decl_token,
+            type_instance_arg_start,
+            type_instance_arg_count,
+            type_instance_arg_ref_tag,
+            type_instance_arg_ref_payload,
+            type_instance_len_kind,
+            type_instance_len_payload,
+            fn_return_ref_tag,
+            fn_return_ref_payload,
+            decl_type_ref_tag,
+            decl_type_ref_payload,
+            type_expr_ref_tag,
+            type_expr_ref_payload,
+            member_result_ref_tag,
+            member_result_ref_payload,
+            member_result_field_ordinal,
+            struct_init_field_expected_ref_tag,
+            struct_init_field_expected_ref_payload,
+            struct_init_field_ordinal,
+            struct_init_field_ordinal_by_node,
+            ..
+        } = bind_groups;
+        let ModulePathState {
+            path_count_out,
+            path_owner_token,
+            path_id_by_owner_hir,
+            resolved_value_decl,
+            resolved_value_status,
+            decl_count_out,
+            decl_kind,
+            decl_name_token,
+            decl_id_by_name_token,
+            decl_hir_node,
+            decl_parent_type_decl,
+            ..
+        } = module_path?;
+
+        Some(OwnedGpuCodegenBuffers {
+            name_id_by_token,
+            enclosing_fn,
+            visible_decl,
+            visible_type,
+            path_count_out,
+            path_owner_token,
+            path_id_by_owner_hir,
+            resolved_value_decl,
+            resolved_value_status,
+            decl_count_out,
+            decl_kind,
+            decl_name_token,
+            decl_id_by_name_token,
+            decl_hir_node,
+            decl_parent_type_decl,
+            decl_type_ref_tag,
+            decl_type_ref_payload,
+            type_expr_ref_tag,
+            type_expr_ref_payload,
+            module_value_path_call_head,
+            module_value_path_call_open,
+            module_value_path_const_head,
+            module_value_path_const_end,
+            call_fn_index,
+            call_intrinsic_tag,
+            fn_entrypoint_tag,
+            call_return_type,
+            call_return_type_token,
+            call_param_count,
+            call_param_type,
+            method_decl_module_id,
+            method_decl_name_token,
+            method_decl_name_id,
+            method_decl_receiver_ref_tag,
+            method_decl_receiver_ref_payload,
+            method_decl_param_offset,
+            method_decl_receiver_mode,
+            method_decl_visibility,
+            method_key_to_fn_token,
+            method_key_status,
+            method_call_receiver_ref_tag,
+            method_call_receiver_ref_payload,
+            method_call_name_id,
+            method_call_site_module_id,
+            type_instance_kind,
+            type_instance_decl_token,
+            type_instance_arg_start,
+            type_instance_arg_count,
+            type_instance_arg_ref_tag,
+            type_instance_arg_ref_payload,
+            type_instance_len_kind,
+            type_instance_len_payload,
+            fn_return_ref_tag,
+            fn_return_ref_payload,
+            member_result_ref_tag,
+            member_result_ref_payload,
+            member_result_field_ordinal,
+            struct_init_field_expected_ref_tag,
+            struct_init_field_expected_ref_payload,
+            struct_init_field_ordinal,
+            struct_init_field_ordinal_by_node,
+        })
+    }
+
+    pub fn take_x86_codegen_buffers(&self) -> Option<OwnedGpuX86CodegenBuffers> {
+        let mut guard = self
+            .bind_groups
+            .lock()
+            .expect("GpuTypeChecker.bind_groups poisoned");
+        let bind_groups = guard.take()?;
+        let ResidentTypeCheckBindGroups {
+            enclosing_fn,
+            visible_decl,
+            visible_type,
+            module_path,
+            call_fn_index,
+            call_intrinsic_tag,
+            fn_entrypoint_tag,
+            call_return_type,
+            call_return_type_token,
+            call_param_type,
+            method_decl_receiver_ref_tag,
+            method_decl_receiver_ref_payload,
+            method_decl_param_offset,
+            type_instance_kind,
+            type_instance_decl_token,
+            type_instance_len_kind,
+            type_instance_len_payload,
+            decl_type_ref_tag,
+            decl_type_ref_payload,
+            member_result_field_ordinal,
+            struct_init_field_ordinal,
+            struct_init_field_ordinal_by_node,
+            ..
+        } = bind_groups;
+        let ModulePathState {
+            path_count_out,
+            path_id_by_owner_hir,
+            resolved_value_decl,
+            resolved_value_status,
+            decl_count_out,
+            decl_kind,
+            decl_name_token,
+            decl_id_by_name_token,
+            decl_hir_node,
+            decl_parent_type_decl,
+            ..
+        } = module_path?;
+
+        Some(OwnedGpuX86CodegenBuffers {
+            enclosing_fn,
+            visible_decl,
+            visible_type,
+            path_count_out,
+            path_id_by_owner_hir,
+            resolved_value_decl,
+            resolved_value_status,
+            decl_count_out,
+            decl_kind,
+            decl_name_token,
+            decl_id_by_name_token,
+            decl_hir_node,
+            decl_parent_type_decl,
+            decl_type_ref_tag,
+            decl_type_ref_payload,
+            call_fn_index,
+            call_intrinsic_tag,
+            fn_entrypoint_tag,
+            call_return_type,
+            call_return_type_token,
+            call_param_type,
+            method_decl_receiver_ref_tag,
+            method_decl_receiver_ref_payload,
+            method_decl_param_offset,
+            type_instance_kind,
+            type_instance_decl_token,
+            type_instance_len_kind,
+            type_instance_len_payload,
+            member_result_field_ordinal,
+            struct_init_field_ordinal,
+            struct_init_field_ordinal_by_node,
+        })
     }
 
     #[allow(clippy::too_many_arguments)]

@@ -21,8 +21,10 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> parent;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_token_end;
 StructuredBuffer<uint> fn_entrypoint_tag;
 StructuredBuffer<uint> visible_decl;
+StructuredBuffer<uint2> wasm_const_value_record;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_int_value;
@@ -109,6 +111,7 @@ static const uint HIR_EXPR_SHR = 25u;
 static const uint MAX_LOCAL_COUNT = 16u;
 static const uint MAX_BODY_STATEMENTS = 64u;
 static const uint MAX_EXPR_STACK = 96u;
+static const uint WASM_CONST_VALUE_LITERAL = 1u;
 
 static const uint NEXT_STATEMENT_LET = 1u;
 static const uint NEXT_STATEMENT_ASSIGN = 2u;
@@ -180,6 +183,14 @@ public struct WasmStatementAncestorPredicate : ITreeWalkPredicate
     }
 }
 
+public struct WasmBlockAncestorPredicate : ITreeWalkPredicate
+{
+    public static bool matches(uint node)
+    {
+        return hir_kind[node] == HIR_BLOCK;
+    }
+}
+
 uint nearest_control_ancestor(uint node)
 {
     uint found;
@@ -198,6 +209,15 @@ uint nearest_hir_statement(uint node)
 {
     uint found;
     return find_self_or_ancestor<WasmBodyWalkGraph, WasmStatementAncestorPredicate>(
+        node,
+        96u,
+        found) ? found : INVALID;
+}
+
+uint nearest_hir_block(uint node)
+{
+    uint found;
+    return find_self_or_ancestor<WasmBodyWalkGraph, WasmBlockAncestorPredicate>(
         node,
         96u,
         found) ? found : INVALID;
@@ -295,22 +315,25 @@ void put_u32_leb(inout uint cursor, uint value, bool write, uint target)
     }
 }
 
-void put_u32_leb5(inout uint cursor, uint value, bool write, uint target)
+uint i32_leb5_byte(uint value, uint i)
+{
+    uint byte_value = (value >> (i * 7u)) & 0x7fu;
+    if (i < 4u)
+        return byte_value | 0x80u;
+    return (value & 0x80000000u) != 0u ? byte_value | 0x70u : byte_value;
+}
+
+void put_i32_leb5(inout uint cursor, uint value, bool write, uint target)
 {
     [unroll]
     for (uint i = 0u; i < 5u; i += 1u)
-    {
-        uint byte_value = (value >> (i * 7u)) & 0x7fu;
-        if (i < 4u)
-            byte_value |= 0x80u;
-        put_byte(cursor, byte_value, write, target);
-    }
+        put_byte(cursor, i32_leb5_byte(value, i), write, target);
 }
 
 void emit_i32_const(inout uint cursor, uint value, bool write, uint target)
 {
     put_byte(cursor, 0x41u, write, target);
-    put_u32_leb5(cursor, value, write, target);
+    put_i32_leb5(cursor, value, write, target);
 }
 
 void emit_local_get(inout uint cursor, uint local_i, bool write, uint target)
@@ -347,9 +370,7 @@ uint find_main_fn_node()
     {
         if (hir_kind[i] != HIR_FN)
             continue;
-        uint fn_token = hir_token_pos[i];
-        bool tagged = fn_entrypoint_tag[i] == ENTRYPOINT_MAIN ||
-                      (valid_token(fn_token) && fn_entrypoint_tag[fn_token] == ENTRYPOINT_MAIN);
+        bool tagged = fn_entrypoint_tag[i] == ENTRYPOINT_MAIN;
         if (!tagged)
             continue;
         if (found != INVALID)
@@ -619,10 +640,23 @@ bool emit_expr_node(inout uint cursor, uint root,
             uint value_token = expr_value_token(node);
             uint decl_token = valid_token(value_token) ? visible_decl[value_token] : INVALID;
             uint local_i = local_index_for_decl_token(decl_token, local_decl_tokens, local_count);
-            if (local_i == INVALID)
-                return false;
-            emit_local_get(cursor, local_i, write, target);
-            continue;
+            if (local_i != INVALID)
+            {
+                emit_local_get(cursor, local_i, write, target);
+                continue;
+            }
+
+            if (valid_token(decl_token))
+            {
+                uint2 const_record = wasm_const_value_record[decl_token];
+                if (const_record.x == WASM_CONST_VALUE_LITERAL)
+                {
+                    emit_i32_const(cursor, const_record.y, write, target);
+                    continue;
+                }
+            }
+
+            return false;
         }
         if (form == HIR_EXPR_NOT)
         {
@@ -733,17 +767,25 @@ bool candidate_in_top_sequence(uint candidate, uint fn_node)
     uint stmt = nearest_hir_statement(candidate);
     if (!valid_node(stmt))
         return false;
-    return nearest_control_ancestor(stmt) == INVALID;
+    uint block = nearest_hir_block(stmt);
+    return valid_node(block) && parent_node(block) == fn_node;
 }
 
 bool candidate_in_if_branch(uint candidate, uint if_node, uint branch_block)
 {
-    if (!valid_node(branch_block) || !has_ancestor(candidate, branch_block))
+    if (!valid_node(branch_block))
+        return false;
+    uint candidate_pos = hir_token_pos[candidate];
+    uint block_pos = hir_token_pos[branch_block];
+    uint block_end = hir_token_end[branch_block];
+    if (candidate_pos == INVALID || block_pos == INVALID || block_end == INVALID ||
+        candidate_pos <= block_pos || candidate_pos >= block_end)
         return false;
     uint stmt = nearest_hir_statement(candidate);
     if (!valid_node(stmt))
         return false;
-    return nearest_control_ancestor(stmt) == if_node;
+    uint control = nearest_control_ancestor(stmt);
+    return control == INVALID || control == if_node;
 }
 
 bool next_top_statement(uint fn_node, uint boundary_pos, uint after_pos,

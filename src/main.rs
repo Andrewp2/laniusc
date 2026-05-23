@@ -66,7 +66,7 @@ fn run() -> Result<(), String> {
 
     if emit != "wasm" && emit != "x86_64" {
         return Err(format!(
-            "unsupported emit target {emit:?}; accepted targets: wasm, x86_64 (x86_64 currently supports only the LL(1) GPU HIR main-return and resolver-backed scalar-const source-pack slices)"
+            "unsupported emit target {emit:?}; accepted targets: wasm, x86_64 (x86_64 currently supports bounded GPU HIR main-return, resolver-backed scalar-const, and direct scalar helper-call source-pack slices)"
         ));
     }
 
@@ -134,7 +134,7 @@ fn print_help() {
         "Usage: laniusc [--emit x86_64|wasm] [--stdlib path]... [-o output] <input.lani> [more-input.lani...]\n\
          Emits the selected target using GPU lexing, GPU parsing, GPU type checking, and GPU emission.\n\
          Repeating --stdlib adds explicitly supplied source-pack files before positional user files; imports are not loaded from the filesystem.\n\
-         x86_64 currently supports only the LL(1) GPU HIR main-return and resolver-backed scalar-const source-pack slices and rejects unsupported source shapes through GPU status.\n\
+         x86_64 currently supports bounded GPU HIR main-return, resolver-backed scalar-const, and direct scalar helper-call source-pack slices and rejects unsupported source shapes through GPU status.\n\
          Without an input file, compiles a tiny built-in sample to stdout."
     );
 }

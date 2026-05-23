@@ -1,3 +1,5 @@
+import gpu_index;
+
 struct TokenOut
 {
     uint kind;
@@ -14,12 +16,13 @@ RWStructuredBuffer<uint> token_file_id;
 
 static const uint INVALID = 0xffffffffu;
 static const uint MAX_FILES_SCAN = 1024u;
+static const uint DISPATCH_X_STRIDE = 16776960u;
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void tokens_file_ids(uint3 tid: SV_DispatchThreadID)
 {
-    uint k = tid.x;
+    uint k = linear_dispatch_thread_id_2d(tid, DISPATCH_X_STRIDE);
     uint total = token_count[0];
     if (k >= total)
         return;

@@ -18,6 +18,11 @@ pub(super) fn create_module_path_state_with_passes(
     hir_items: GpuTypeCheckHirItemBuffers<'_>,
     name_id_by_token: &wgpu::Buffer,
     language_name_id: &wgpu::Buffer,
+    decl_name_token_scratch: &wgpu::Buffer,
+    decl_id_by_name_token_scratch: &wgpu::Buffer,
+    decl_kind_scratch: &wgpu::Buffer,
+    decl_hir_node_scratch: &wgpu::Buffer,
+    decl_parent_type_decl_scratch: &wgpu::Buffer,
     module_type_path_type: &wgpu::Buffer,
     module_type_path_status: &wgpu::Buffer,
     module_value_path_expr_head: &wgpu::Buffer,
@@ -34,8 +39,10 @@ pub(super) fn create_module_path_state_with_passes(
     call_return_type_token: &wgpu::Buffer,
     call_param_count: &wgpu::Buffer,
     call_param_type: &wgpu::Buffer,
+    call_param_ref_tag: &wgpu::Buffer,
+    call_param_ref_payload: &wgpu::Buffer,
     call_arg_record: &wgpu::Buffer,
-    call_arg_node: &wgpu::Buffer,
+    _call_arg_node: &wgpu::Buffer,
     type_expr_ref_tag: &wgpu::Buffer,
     type_expr_ref_payload: &wgpu::Buffer,
     type_instance_kind: &wgpu::Buffer,
@@ -51,6 +58,9 @@ pub(super) fn create_module_path_state_with_passes(
     decl_type_ref_payload: &wgpu::Buffer,
     fn_return_ref_tag: &wgpu::Buffer,
     fn_return_ref_payload: &wgpu::Buffer,
+    record_family_bits_scratch: &wgpu::Buffer,
+    record_family_flag_scratch: &wgpu::Buffer,
+    external_scratch: Option<GpuTypeCheckExternalScratchBuffers<'_>>,
 ) -> Result<ModulePathState> {
     include!("module_path_body.inc")
 }

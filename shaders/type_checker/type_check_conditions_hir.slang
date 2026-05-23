@@ -47,6 +47,7 @@ StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> type_const_param_slot_by_token;
 StructuredBuffer<uint> type_instance_len_kind;
 StructuredBuffer<uint> type_instance_len_payload;
+StructuredBuffer<uint> predicate_status;
 
 RWStructuredBuffer<uint> status;
 
@@ -55,6 +56,8 @@ static const uint INVALID = 0xffffffffu;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint ERR_UNKNOWN_TYPE = 1u;
 static const uint ERR_UNRESOLVED_IDENT = 2u;
+static const uint ERR_BAD_HIR = 6u;
+static const uint ERR_INVALID_ARRAY_RETURN = 9u;
 
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_LET = 1u;
@@ -62,7 +65,12 @@ static const uint STMT_RECORD_KIND_RETURN = 2u;
 static const uint STMT_RECORD_KIND_IF = 3u;
 static const uint STMT_RECORD_KIND_CONST = 4u;
 
+static const uint HIR_FILE = 1u;
+static const uint HIR_FN = 3u;
 static const uint HIR_TYPE = 5u;
+static const uint HIR_BLOCK = 6u;
+static const uint HIR_STMT = 7u;
+static const uint HIR_EXPR = 14u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_MEMBER_EXPR = 21u;
@@ -79,6 +87,7 @@ static const uint HIR_TYPE_FORM_ARRAY = 2u;
 static const uint EXPR_RECORD_STRIDE = 4u;
 static const uint EXPR_RECORD_FORM = 0u;
 static const uint EXPR_RECORD_LEFT = 1u;
+static const uint EXPR_RECORD_RIGHT = 2u;
 static const uint EXPR_RECORD_VALUE_TOKEN = 3u;
 
 static const uint HIR_EXPR_NONE = 0u;
@@ -119,6 +128,7 @@ static const uint TY_ARRAY_BASE = 128u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
 static const uint TY_GENERIC_BASE = 8192u;
+static const uint ARRAY_RETURN_OK = 0xfffffffeu;
 
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
 
@@ -127,8 +137,15 @@ static const uint TYPE_LEN_CONST_PARAM = 2u;
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint PATH_RESOLVE_STATUS_INVALID = 0xffffffffu;
 
+static const uint PREDICATE_STATUS_OK = 0u;
+static const uint PREDICATE_STATUS_INVALID_SUBJECT = 1u;
+static const uint PREDICATE_STATUS_MISSING_METHOD = 6u;
+static const uint PREDICATE_STATUS_METHOD_ARITY_MISMATCH = 7u;
+static const uint PREDICATE_STATUS_METHOD_SIGNATURE_MISMATCH = 8u;
+
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
+static const uint MAX_PARENT_WALK = 128u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -208,6 +225,11 @@ uint expr_left(uint node)
     return valid_node(node) ? expr_record_slot(node, EXPR_RECORD_LEFT) : INVALID;
 }
 
+uint expr_right(uint node)
+{
+    return valid_node(node) ? expr_record_slot(node, EXPR_RECORD_RIGHT) : INVALID;
+}
+
 uint expr_value_token(uint node)
 {
     return valid_node(node) ? expr_record_slot(node, EXPR_RECORD_VALUE_TOKEN) : INVALID;
@@ -268,6 +290,12 @@ bool assignable(uint dst, uint src)
     return false;
 }
 
+bool is_array_type(uint ty)
+{
+    return (ty >= TY_ARRAY_BASE && ty < TY_STRUCT_BASE) ||
+           ty >= TY_ARRAY_BASE + TY_GENERIC_BASE;
+}
+
 bool is_generic_type(uint ty)
 {
     return ty >= TY_GENERIC_BASE;
@@ -286,7 +314,7 @@ bool call_has_array_argument(uint call_node)
             continue;
         uint value_token = INVALID;
         uint ty = first_value_type_from_node(node, value_token);
-        if (ty >= TY_ARRAY_BASE && ty < TY_STRUCT_BASE)
+        if (is_array_type(ty))
             return true;
     }
     return false;
@@ -322,6 +350,37 @@ bool match_pattern_ancestor(uint node)
         if (prod == PROD_MATCH_ARM)
             return false;
         node = parent[node];
+    }
+    return false;
+}
+
+bool type_syntax_ancestor(uint node)
+{
+    uint cur = condition_parent_record(node);
+    [loop]
+    for (uint step = 0u; step < MAX_PARENT_WALK && valid_node(cur); step += 1u)
+    {
+        if (hir_kind[cur] == HIR_TYPE)
+            return true;
+
+        uint kind = node_kind[cur];
+        if (kind == PROD_TYPE_IDENT ||
+            kind == PROD_TYPE_PATH ||
+            kind == PROD_TYPE_PATH_IDENT ||
+            kind == PROD_TYPE_PATH_MORE ||
+            kind == PROD_TYPE_ARGS_SOME ||
+            kind == PROD_TYPE_ARGS_MORE ||
+            kind == PROD_TYPE_ARGS_AFTER_COMMA_MORE)
+            return true;
+
+        if (hir_kind[cur] == HIR_EXPR ||
+            hir_kind[cur] == HIR_STMT ||
+            hir_kind[cur] == HIR_BLOCK ||
+            hir_kind[cur] == HIR_FN ||
+            hir_kind[cur] == HIR_FILE)
+            return false;
+
+        cur = condition_parent_record(cur);
     }
     return false;
 }
@@ -584,7 +643,7 @@ bool has_contextual_aggregate_literal_node(uint root)
 
 bool is_contextual_aggregate_type(uint ty)
 {
-    return (ty >= TY_ARRAY_BASE && ty < TY_STRUCT_BASE) ||
+    return is_array_type(ty) ||
            (ty >= TY_STRUCT_BASE && ty < TY_ENUM_BASE);
 }
 
@@ -683,7 +742,18 @@ void validate_return_node(uint node)
     uint expr_node = hir_stmt_record[stmt_slot(node, 1u)];
     uint value_token = INVALID;
     uint actual = TY_UNKNOWN;
-    if (is_contextual_aggregate_type(expected) && has_contextual_aggregate_literal_node(node))
+    if (is_array_type(expected))
+    {
+        if (valid_token(return_token) && call_return_type[return_token] == ARRAY_RETURN_OK)
+            actual = expected;
+        else
+        {
+            uint error_token = valid_token(return_token) ? return_token : 0u;
+            record_error(error_token, ERR_INVALID_ARRAY_RETURN, expected);
+            return;
+        }
+    }
+    else if (is_contextual_aggregate_type(expected) && has_contextual_aggregate_literal_node(node))
         actual = expected;
     else
         actual = first_struct_literal_type_from_node(node, value_token);
@@ -714,6 +784,8 @@ void validate_value_path_status_node(uint node)
     if (!valid_token(token_i))
         return;
     if (match_pattern_ancestor(node))
+        return;
+    if (type_syntax_ancestor(node))
         return;
 
     uint path_status = module_value_path_status[token_i];
@@ -767,6 +839,33 @@ void validate_if_node(uint node)
     }
 }
 
+void validate_logical_expr_node(uint node)
+{
+    uint form = expr_form(node);
+    if (form != HIR_EXPR_NOT && form != HIR_EXPR_AND && form != HIR_EXPR_OR)
+        return;
+
+    uint left = expr_left(node);
+    uint left_ty = direct_expr_record_type(left);
+    if (left_ty != TY_UNKNOWN && left_ty != TY_BOOL)
+    {
+        uint token_i = valid_node(left) ? hir_token_pos[left] : hir_token_pos[node];
+        record_error(token_i, ERR_ASSIGN_MISMATCH, TY_BOOL * 256u + left_ty);
+        return;
+    }
+
+    if (form == HIR_EXPR_NOT)
+        return;
+
+    uint right = expr_right(node);
+    uint right_ty = direct_expr_record_type(right);
+    if (right_ty != TY_UNKNOWN && right_ty != TY_BOOL)
+    {
+        uint token_i = valid_node(right) ? hir_token_pos[right] : hir_token_pos[node];
+        record_error(token_i, ERR_ASSIGN_MISMATCH, TY_BOOL * 256u + right_ty);
+    }
+}
+
 void validate_generic_type_ref_node(uint node)
 {
     if (hir_kind[node] != HIR_TYPE)
@@ -796,19 +895,62 @@ void validate_generic_type_ref_node(uint node)
 
 void validate_unsupported_generic_decl_node(uint node)
 {
-    if (hir_item_kind[node] == HIR_ITEM_KIND_TYPE_ALIAS &&
-        type_decl_generic_param_count_by_node[node] != 0u)
+    uint kind = node_kind[node];
+    if (kind != PROD_BOUND_TYPE_IDENT && kind != PROD_BOUND_TYPE_REF)
+        return;
+
+    uint cur = condition_parent_record(node);
+    bool top_level_predicate = false;
+    [loop]
+    for (uint step = 0u; step < MAX_PARENT_WALK && valid_node(cur); step += 1u)
     {
-        uint token_i = hir_token_pos[node];
-        record_error(valid_token(token_i) ? token_i : 0u, ERR_UNKNOWN_TYPE, 0u);
+        uint cur_kind = node_kind[cur];
+        if (cur_kind == PROD_BOUND_TYPE_ARGS_SOME)
+            break;
+        if (cur_kind == PROD_BOUND_TYPE_IDENT || cur_kind == PROD_BOUND_TYPE_REF)
+            break;
+        if (cur_kind == PROD_TYPE_PARAM_BOUND_LIST)
+        {
+            top_level_predicate = true;
+            break;
+        }
+        if (cur_kind == PROD_TYPE_PARAM_BOUND || cur_kind == PROD_WHERE_TYPE_BOUND)
+            break;
+        cur = condition_parent_record(cur);
     }
 
-    if (node_kind[node] == PROD_TYPE_PARAM_BOUND_LIST ||
-        node_kind[node] == PROD_WHERE_SOME ||
-        node_kind[node] == PROD_WHERE_TYPE_BOUND)
+    if (!top_level_predicate)
+        return;
+
+    uint status_value = predicate_status[node];
+    if (status_value != PREDICATE_STATUS_OK)
     {
         uint token_i = hir_token_pos[node];
-        record_error(valid_token(token_i) ? token_i : 0u, ERR_UNKNOWN_TYPE, node_kind[node]);
+        uint code = status_value == PREDICATE_STATUS_INVALID_SUBJECT
+            ? ERR_UNRESOLVED_IDENT
+            : ERR_UNKNOWN_TYPE;
+        record_error(valid_token(token_i) ? token_i : 0u, code, status_value);
+    }
+}
+
+void validate_unsupported_trait_node(uint node)
+{
+    uint prod = node_kind[node];
+    if (prod == PROD_IMPL_TRAIT)
+    {
+        uint status_value = predicate_status[node];
+        if (status_value != PREDICATE_STATUS_OK)
+        {
+            uint token_i = hir_token_pos[node];
+            uint code = status_value == PREDICATE_STATUS_INVALID_SUBJECT
+                ? ERR_UNRESOLVED_IDENT
+                : (status_value == PREDICATE_STATUS_MISSING_METHOD ||
+                           status_value == PREDICATE_STATUS_METHOD_ARITY_MISMATCH ||
+                           status_value == PREDICATE_STATUS_METHOD_SIGNATURE_MISMATCH
+                    ? ERR_BAD_HIR
+                    : ERR_UNKNOWN_TYPE);
+            record_error(valid_token(token_i) ? token_i : 0u, code, status_value);
+        }
     }
 }
 
@@ -820,9 +962,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_node(node))
         return;
     validate_if_node(node);
+    validate_logical_expr_node(node);
     validate_decl_initializer_node(node);
     validate_return_node(node);
     validate_value_path_status_node(node);
     validate_generic_type_ref_node(node);
     validate_unsupported_generic_decl_node(node);
+    validate_unsupported_trait_node(node);
 }

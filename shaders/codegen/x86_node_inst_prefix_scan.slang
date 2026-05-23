@@ -2,7 +2,7 @@
 //
 // This pass applies the scanned offsets from execution-order slots back to
 // sparse per-node range records:
-// x86_node_inst_range_record[node] = (start, packed count/kind). The canonical
+// x86_node_inst_range_start/info[node] = (start, packed count/kind). The canonical
 // per-node instruction-count record retains payload metadata.
 //
 // x86_node_inst_order_status[3] is the compact order slot count. The total
@@ -23,12 +23,14 @@ struct ScanParams
 ConstantBuffer<ScanParams> gScan;
 
 StructuredBuffer<uint> x86_node_inst_order_record;
-StructuredBuffer<uint> x86_node_inst_count_record;
+StructuredBuffer<uint> x86_node_inst_count_info;
+StructuredBuffer<uint> x86_node_inst_count_payload;
 StructuredBuffer<uint> x86_node_inst_order_status;
 StructuredBuffer<uint> x86_node_inst_scan_local_prefix;
 StructuredBuffer<uint> x86_node_inst_scan_block_prefix;
 
-RWStructuredBuffer<uint2> x86_node_inst_range_record;
+RWStructuredBuffer<uint> x86_node_inst_range_start;
+RWStructuredBuffer<uint> x86_node_inst_range_info;
 RWStructuredBuffer<uint> x86_node_inst_range_status;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -37,7 +39,7 @@ static const uint INVALID = 0xffffffffu;
 static const uint X86_NODE_INST_ORDER_OK = 1u;
 static const uint X86_NODE_INST_RANGE_OK = 1u;
 static const uint X86_ERR_NODE_INST_ORDER = 12u;
-static const uint X86_NODE_INST_COUNT_STRIDE = 3u;
+static const uint X86_NODE_INST_COUNT_STRIDE = 2u;
 static const uint X86_NODE_INST_COUNT_KIND_SHIFT = 28u;
 static const uint X86_NODE_INST_COUNT_COUNT_MASK = 0x0fffffffu;
 static const uint X86_NODE_INST_RANGE_KIND_SHIFT = 28u;
@@ -68,22 +70,20 @@ uint4 order_record(uint slot)
 
 uint node_inst_count_word(uint node, uint field)
 {
-    return row_major_load<uint>(
-        x86_node_inst_count_record,
-        node,
-        X86_NODE_INST_COUNT_STRIDE,
-        field,
-        INVALID);
+    if (field == 0u)
+        return x86_node_inst_count_info[node];
+    if (field == 1u)
+        return x86_node_inst_count_payload[node];
+    return INVALID;
 }
 
 uint4 node_inst_count_record(uint node)
 {
-    uint id = node_inst_count_word(node, 0u);
-    uint info = node_inst_count_word(node, 1u);
-    uint payload = node_inst_count_word(node, 2u);
+    uint info = node_inst_count_word(node, 0u);
+    uint payload = node_inst_count_word(node, 1u);
     uint count = info == INVALID ? INVALID : info & X86_NODE_INST_COUNT_COUNT_MASK;
     uint kind = info == INVALID ? INVALID : info >> X86_NODE_INST_COUNT_KIND_SHIFT;
-    return uint4(id, count, kind, payload);
+    return uint4(node, count, kind, payload);
 }
 
 uint linear_dispatch_id(uint3 tid)
@@ -161,17 +161,30 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (!ok || node >= gScan.n_items)
         return;
 
-    uint2 staged = x86_node_inst_range_record[node];
-    uint slot = staged.x;
-    if (slot == INVALID || slot >= x86_node_inst_order_status[3u])
+    uint4 count = node_inst_count_record(node);
+    if (count.x != node || count.y == INVALID)
         return;
 
-    uint4 count = node_inst_count_record(node);
-    if (count.x != node || count.y == 0u || count.y == INVALID)
+    if (count.y == 0u)
+    {
+        uint packed_zero_info = pack_range_info(0u, count.z);
+        if (packed_zero_info != INVALID)
+        {
+            x86_node_inst_range_start[node] = INVALID;
+            x86_node_inst_range_info[node] = packed_zero_info;
+        }
+        return;
+    }
+
+    uint slot = x86_node_inst_range_start[node];
+    if (slot == INVALID || slot >= x86_node_inst_order_status[3u])
         return;
 
     uint start_inst = scanned_prefix_for_slot(slot);
     uint packed_info = pack_range_info(count.y, count.z);
     if (packed_info != INVALID && start_inst + count.y <= gScan.inst_capacity)
-        x86_node_inst_range_record[node] = uint2(start_inst, packed_info);
+    {
+        x86_node_inst_range_start[node] = start_inst;
+        x86_node_inst_range_info[node] = packed_info;
+    }
 }

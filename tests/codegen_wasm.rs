@@ -1,8 +1,58 @@
-use std::{fs, process::Command};
+use std::{fs, path::Path, process::Command};
 
 use laniusc::compiler::compile_explicit_source_pack_paths_to_wasm_with_gpu_codegen;
 
 mod common;
+
+#[test]
+fn wasm_hir_module_codegen_consumes_records_not_source_text() {
+    let shader =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("shaders/codegen/wasm_hir_module.slang");
+    let contents = fs::read_to_string(&shader)
+        .unwrap_or_else(|err| panic!("read {}: {err}", shader.display()));
+
+    for required in [
+        "hir_param_record",
+        "hir_stmt_record",
+        "hir_expr_record",
+        "hir_call_callee_node",
+        "call_fn_index",
+        "fn_entrypoint_tag",
+        "is_emittable_function",
+    ] {
+        assert!(
+            contents.contains(required),
+            "WASM HIR module codegen should consume {required} records"
+        );
+    }
+
+    for banned in ["source_bytes", "token_words", "name_id_by_token"] {
+        assert!(
+            !contents.contains(banned),
+            "WASM HIR module codegen must not consume {banned}"
+        );
+    }
+}
+
+#[test]
+fn wasm_hir_module_codegen_writes_bounded_module_from_single_lane() {
+    let shader =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("shaders/codegen/wasm_hir_module.slang");
+    let contents = fs::read_to_string(&shader)
+        .unwrap_or_else(|err| panic!("read {}: {err}", shader.display()));
+
+    let single_lane_guard = contents
+        .find("if (target != 0u)\n        return;")
+        .expect("WASM module codegen should return from nonzero lanes");
+    let bounded_write = contents
+        .find("emit_module(module_len, fail_stage, true, INVALID)")
+        .expect("WASM module codegen should write the bounded module from one lane");
+
+    assert!(
+        single_lane_guard < bounded_write,
+        "WASM module codegen should reject nonzero lanes before writing module bytes"
+    );
+}
 
 #[test]
 fn gpu_codegen_executes_record_driven_arithmetic_sample() {
@@ -240,7 +290,48 @@ fn gpu_codegen_executes_source_pack_selected_helper_with_unused_helpers() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
+fn gpu_codegen_executes_source_pack_selected_branchy_helper() {
+    let sources = [
+        "module core::math;\npub fn abs(value: i32) -> i32 {\n    if (value < 0) {\n        return -value;\n    } else {\n        return value;\n    }\n}\n",
+        "module app::main;\nimport core::math;\nfn main() {\n    return core::math::abs(-7) - 7;\n}\n",
+    ];
+    let wasm = common::compile_source_pack_to_wasm_with_timeout(&sources).expect("compile WASM");
+
+    assert_lanius_wasm(&wasm);
+    run_wasm_main_if_node_available(&wasm, "");
+}
+
+#[test]
+fn gpu_codegen_executes_selected_helper_with_unused_unemittable_helpers() {
+    let sources = [
+        r#"
+module core::math;
+
+pub fn choose(condition: bool, when_true: i32, when_false: i32) -> i32 {
+    return when_true;
+}
+
+pub fn branchy(value: i32) -> i32 {
+    if (value < 0) {
+        return -value;
+    } else {
+        return value;
+    }
+}
+
+pub fn add_one(value: i32) -> i32 {
+    return value + 1;
+}
+"#,
+        "module app::main;\nimport core::math;\nfn main() {\n    return core::math::add_one(-1);\n}\n",
+    ];
+    let wasm = common::compile_source_pack_to_wasm_with_timeout(&sources).expect("compile WASM");
+
+    assert_lanius_wasm(&wasm);
+    run_wasm_main_if_node_available(&wasm, "");
+}
+
+#[test]
 fn gpu_codegen_executes_core_bool_not_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/bool.lani"),
@@ -253,7 +344,6 @@ fn gpu_codegen_executes_core_bool_not_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_bool_and_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/bool.lani"),
@@ -266,7 +356,6 @@ fn gpu_codegen_executes_core_bool_and_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_bool_or_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/bool.lani"),
@@ -279,7 +368,6 @@ fn gpu_codegen_executes_core_bool_or_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_bool_xor_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/bool.lani"),
@@ -292,7 +380,6 @@ fn gpu_codegen_executes_core_bool_xor_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_bool_eq_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/bool.lani"),
@@ -305,7 +392,6 @@ fn gpu_codegen_executes_core_bool_eq_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_bool_from_i32_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/bool.lani"),
@@ -318,7 +404,6 @@ fn gpu_codegen_executes_core_bool_from_i32_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_i32_abs_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/i32.lani"),
@@ -331,7 +416,6 @@ fn gpu_codegen_executes_core_i32_abs_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_i32_min_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/i32.lani"),
@@ -344,7 +428,6 @@ fn gpu_codegen_executes_core_i32_min_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_i32_max_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/i32.lani"),
@@ -357,7 +440,6 @@ fn gpu_codegen_executes_core_i32_max_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_i32_is_zero_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/i32.lani"),
@@ -370,7 +452,6 @@ fn gpu_codegen_executes_core_i32_is_zero_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_i32_is_negative_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/i32.lani"),
@@ -383,7 +464,6 @@ fn gpu_codegen_executes_core_i32_is_negative_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_i32_is_positive_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/i32.lani"),
@@ -422,7 +502,6 @@ fn gpu_codegen_executes_core_i32_between_inclusive_false_from_full_source_pack()
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_i32_wrapping_add_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/i32.lani"),
@@ -435,7 +514,6 @@ fn gpu_codegen_executes_core_i32_wrapping_add_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_i32_wrapping_sub_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/i32.lani"),
@@ -448,7 +526,6 @@ fn gpu_codegen_executes_core_i32_wrapping_sub_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_i32_wrapping_mul_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/i32.lani"),
@@ -552,7 +629,6 @@ fn gpu_codegen_executes_core_i32_compare_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_u32_max_const_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/u32.lani"),
@@ -565,7 +641,6 @@ fn gpu_codegen_executes_core_u32_max_const_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_u32_min_const_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/u32.lani"),
@@ -578,7 +653,6 @@ fn gpu_codegen_executes_core_u32_min_const_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_u32_min_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/u32.lani"),
@@ -591,7 +665,6 @@ fn gpu_codegen_executes_core_u32_min_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_u32_max_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/u32.lani"),
@@ -630,7 +703,6 @@ fn gpu_codegen_executes_core_u32_wrapping_add_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_u32_wrapping_sub_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/u32.lani"),
@@ -708,7 +780,6 @@ fn gpu_codegen_executes_core_u32_next_power_of_two_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_u32_is_zero_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/u32.lani"),
@@ -734,7 +805,6 @@ fn gpu_codegen_executes_core_u32_is_power_of_two_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_u8_ascii_digit_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/u8.lani"),
@@ -747,7 +817,6 @@ fn gpu_codegen_executes_core_u8_ascii_digit_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_u8_max_const_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/u8.lani"),
@@ -760,7 +829,6 @@ fn gpu_codegen_executes_core_u8_max_const_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_u8_min_const_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/u8.lani"),
@@ -773,7 +841,6 @@ fn gpu_codegen_executes_core_u8_min_const_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_u8_min_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/u8.lani"),
@@ -786,7 +853,6 @@ fn gpu_codegen_executes_core_u8_min_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_u8_max_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/u8.lani"),
@@ -838,7 +904,6 @@ fn gpu_codegen_executes_core_u8_wrapping_sub_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_u8_wrapping_mul_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/u8.lani"),
@@ -903,7 +968,6 @@ fn gpu_codegen_executes_core_u8_between_inclusive_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_u8_is_zero_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/u8.lani"),
@@ -942,7 +1006,6 @@ fn gpu_codegen_executes_core_u8_next_power_of_two_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_u8_ascii_lowercase_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/u8.lani"),
@@ -955,7 +1018,6 @@ fn gpu_codegen_executes_core_u8_ascii_lowercase_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_u8_ascii_uppercase_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/u8.lani"),
@@ -968,7 +1030,6 @@ fn gpu_codegen_executes_core_u8_ascii_uppercase_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_u8_ascii_alphabetic_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/u8.lani"),
@@ -981,7 +1042,6 @@ fn gpu_codegen_executes_core_u8_ascii_alphabetic_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_u8_ascii_alphanumeric_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/u8.lani"),
@@ -994,7 +1054,6 @@ fn gpu_codegen_executes_core_u8_ascii_alphanumeric_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_u8_ascii_hexdigit_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/u8.lani"),
@@ -1007,7 +1066,6 @@ fn gpu_codegen_executes_core_u8_ascii_hexdigit_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_u8_ascii_hexdigit_false_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/u8.lani"),
@@ -1020,7 +1078,6 @@ fn gpu_codegen_executes_core_u8_ascii_hexdigit_false_from_full_source_pack() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_u8_ascii_whitespace_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/u8.lani"),
@@ -1549,7 +1606,6 @@ fn main() -> bool {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_ordering_unit_enum_match_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/ordering.lani"),
@@ -1575,7 +1631,6 @@ fn main() {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_option_is_some_tag_match_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/option.lani"),
@@ -1597,7 +1652,6 @@ fn main() -> bool {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_option_is_some_unit_tag_match_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/option.lani"),
@@ -1619,7 +1673,6 @@ fn main() -> bool {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_core_result_is_ok_err_tag_match_from_full_source_pack() {
     let sources = [
         include_str!("../stdlib/core/result.lani"),
@@ -1641,7 +1694,6 @@ fn main() -> bool {
 }
 
 #[test]
-#[ignore = "legacy WASM execution test depended on removed token/source-shape emitters; rebuild as record-pipeline test"]
 fn gpu_codegen_executes_source_pack_qualified_scalar_const() {
     let sources = [
         "module core::limits;\npub const ZERO: i32 = 0;\n",

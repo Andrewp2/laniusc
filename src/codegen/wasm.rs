@@ -8,7 +8,7 @@ use support::*;
 
 use crate::gpu::{
     device,
-    passes_core::{PassData, bind_group, make_traced_main_pass},
+    passes_core::{bind_group, make_traced_main_pass, PassData},
 };
 
 const HIR_MODULE_OUTPUT_TARGET_LIMIT: u32 = 512;
@@ -85,6 +85,7 @@ struct ResidentWasmBuffers {
     _struct_init_field_index_buf: wgpu::Buffer,
     _member_result_field_index_buf: wgpu::Buffer,
     _hir_enum_match_record_buf: wgpu::Buffer,
+    wasm_const_value_record_buf: wgpu::Buffer,
     out_buf: wgpu::Buffer,
     packed_out_buf: wgpu::Buffer,
     status_buf: wgpu::Buffer,
@@ -101,6 +102,7 @@ struct ResidentWasmBuffers {
     hir_assert_module_bind_group: wgpu::BindGroup,
     hir_enum_match_records_bind_group: wgpu::BindGroup,
     hir_enum_match_module_bind_group: wgpu::BindGroup,
+    wasm_const_values_bind_group: wgpu::BindGroup,
     bind_group: wgpu::BindGroup,
     pack_bind_group: wgpu::BindGroup,
 }
@@ -117,6 +119,7 @@ pub struct GpuWasmCodeGenerator {
     hir_assert_module_pass: PassData,
     hir_enum_match_records_pass: PassData,
     hir_enum_match_module_pass: PassData,
+    wasm_const_values_pass: PassData,
     pass: PassData,
     pack_pass: PassData,
     buffers: Mutex<Option<ResidentWasmBuffers>>,
@@ -202,6 +205,12 @@ impl GpuWasmCodeGenerator {
             "wasm_hir_enum_match_module.spv",
             "wasm_hir_enum_match_module.reflect.json"
         );
+        let wasm_const_values_pass = wasm_pass!(
+            "const_values",
+            "codegen_wasm_const_values",
+            "wasm_const_values.spv",
+            "wasm_const_values.reflect.json"
+        );
         let pass = wasm_pass!(
             "module",
             "codegen_wasm_module",
@@ -226,6 +235,7 @@ impl GpuWasmCodeGenerator {
             hir_assert_module_pass,
             hir_enum_match_records_pass,
             hir_enum_match_module_pass,
+            wasm_const_values_pass,
             pass,
             pack_pass,
             buffers: Mutex::new(None),
@@ -440,6 +450,8 @@ impl GpuWasmCodeGenerator {
         queue.write_buffer(&bufs.params_buf, 0, &wasm_params_bytes(&params));
         queue.write_buffer(&bufs.body_status_buf, 0, &fast_path_status_init_bytes());
         queue.write_buffer(&bufs.status_buf, 0, &fast_path_status_init_bytes());
+        let const_value_clear = vec![0u8; bufs.token_capacity as usize * 2 * 4];
+        queue.write_buffer(&bufs.wasm_const_value_record_buf, 0, &const_value_clear);
         // The simple-let validator expands this to the packed-output fallback
         // grid only when the source is not handled by the fast path.
         queue.write_buffer(&bufs.body_dispatch_buf, 0, &dispatch_args_bytes(1, 1, 1));
@@ -476,6 +488,17 @@ impl GpuWasmCodeGenerator {
         compute.dispatch_workgroups(agg_layout_groups_x, agg_layout_groups_y, 1);
         drop(compute);
         trace_wasm_codegen("record.dispatch.agg_layout.done");
+
+        trace_wasm_codegen("record.dispatch.const_values.start");
+        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("codegen.wasm.const_values"),
+            timestamp_writes: None,
+        });
+        compute.set_pipeline(&self.wasm_const_values_pass.pipeline);
+        compute.set_bind_group(0, Some(&bufs.wasm_const_values_bind_group), &[]);
+        compute.dispatch_workgroups(agg_layout_groups_x, agg_layout_groups_y, 1);
+        drop(compute);
+        trace_wasm_codegen("record.dispatch.const_values.done");
 
         trace_wasm_codegen("record.dispatch.simple_lets.start");
         let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -521,6 +544,28 @@ impl GpuWasmCodeGenerator {
         drop(compute);
         trace_wasm_codegen("record.dispatch.hir_agg_body.done");
 
+        trace_wasm_codegen("record.dispatch.hir_enum_match_records.start");
+        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("codegen.wasm.hir_enum_match_records"),
+            timestamp_writes: None,
+        });
+        compute.set_pipeline(&self.hir_enum_match_records_pass.pipeline);
+        compute.set_bind_group(0, Some(&bufs.hir_enum_match_records_bind_group), &[]);
+        compute.dispatch_workgroups(agg_layout_groups_x, agg_layout_groups_y, 1);
+        drop(compute);
+        trace_wasm_codegen("record.dispatch.hir_enum_match_records.done");
+
+        trace_wasm_codegen("record.dispatch.hir_enum_match_module.start");
+        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("codegen.wasm.hir_enum_match_module"),
+            timestamp_writes: None,
+        });
+        compute.set_pipeline(&self.hir_enum_match_module_pass.pipeline);
+        compute.set_bind_group(0, Some(&bufs.hir_enum_match_module_bind_group), &[]);
+        compute.dispatch_workgroups(hir_module_output_groups_x, hir_module_output_groups_y, 1);
+        drop(compute);
+        trace_wasm_codegen("record.dispatch.hir_enum_match_module.done");
+
         trace_wasm_codegen("record.dispatch.module.start");
         let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("codegen.wasm.module"),
@@ -553,28 +598,6 @@ impl GpuWasmCodeGenerator {
         compute.dispatch_workgroups(hir_module_output_groups_x, hir_module_output_groups_y, 1);
         drop(compute);
         trace_wasm_codegen("record.dispatch.hir_assert_module.done");
-
-        trace_wasm_codegen("record.dispatch.hir_enum_match_records.start");
-        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("codegen.wasm.hir_enum_match_records"),
-            timestamp_writes: None,
-        });
-        compute.set_pipeline(&self.hir_enum_match_records_pass.pipeline);
-        compute.set_bind_group(0, Some(&bufs.hir_enum_match_records_bind_group), &[]);
-        compute.dispatch_workgroups(agg_layout_groups_x, agg_layout_groups_y, 1);
-        drop(compute);
-        trace_wasm_codegen("record.dispatch.hir_enum_match_records.done");
-
-        trace_wasm_codegen("record.dispatch.hir_enum_match_module.start");
-        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("codegen.wasm.hir_enum_match_module"),
-            timestamp_writes: None,
-        });
-        compute.set_pipeline(&self.hir_enum_match_module_pass.pipeline);
-        compute.set_bind_group(0, Some(&bufs.hir_enum_match_module_bind_group), &[]);
-        compute.dispatch_workgroups(hir_module_output_groups_x, hir_module_output_groups_y, 1);
-        drop(compute);
-        trace_wasm_codegen("record.dispatch.hir_enum_match_module.done");
 
         trace_wasm_codegen("record.dispatch.hir_array_body.start");
         let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -939,6 +962,12 @@ impl GpuWasmCodeGenerator {
             hir_node_capacity as usize * 4,
             wgpu::BufferUsages::empty(),
         );
+        let wasm_const_value_record_buf = storage_u32_rw(
+            device,
+            "codegen.wasm.const_value_record",
+            token_capacity as usize * 2,
+            wgpu::BufferUsages::empty(),
+        );
         let status_buf = storage_u32_rw(
             device,
             "codegen.wasm.status",
@@ -990,6 +1019,35 @@ impl GpuWasmCodeGenerator {
             &self.arrays_pass.reflection,
             0,
             &arrays_resources,
+        )?;
+        let wasm_const_values_resources: HashMap<String, wgpu::BindingResource<'_>> =
+            HashMap::from([
+                ("gParams".into(), params_buf.as_entire_binding()),
+                ("hir_status".into(), hir_status_buf.as_entire_binding()),
+                (
+                    "hir_expr_record".into(),
+                    expr_metadata.record.as_entire_binding(),
+                ),
+                (
+                    "hir_expr_int_value".into(),
+                    expr_metadata.int_value.as_entire_binding(),
+                ),
+                (
+                    "hir_stmt_record".into(),
+                    expr_metadata.stmt_record.as_entire_binding(),
+                ),
+                (
+                    "wasm_const_value_record".into(),
+                    wasm_const_value_record_buf.as_entire_binding(),
+                ),
+            ]);
+        let wasm_const_values_bind_group = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("codegen_wasm_const_values"),
+            &self.wasm_const_values_pass.bind_group_layouts[0],
+            &self.wasm_const_values_pass.reflection,
+            0,
+            &wasm_const_values_resources,
         )?;
 
         macro_rules! add_codegen_metadata_resources {
@@ -1185,10 +1243,18 @@ impl GpuWasmCodeGenerator {
                 hir_token_pos_buf.as_entire_binding(),
             ),
             (
+                "hir_token_end".into(),
+                hir_token_end_buf.as_entire_binding(),
+            ),
+            (
                 "fn_entrypoint_tag".into(),
                 fn_entrypoint_tag_buf.as_entire_binding(),
             ),
             ("visible_decl".into(), visible_decl_buf.as_entire_binding()),
+            (
+                "wasm_const_value_record".into(),
+                wasm_const_value_record_buf.as_entire_binding(),
+            ),
             (
                 "hir_stmt_record".into(),
                 expr_metadata.stmt_record.as_entire_binding(),
@@ -1630,6 +1696,7 @@ impl GpuWasmCodeGenerator {
             _struct_init_field_index_buf: struct_init_field_index_buf,
             _member_result_field_index_buf: member_result_field_index_buf,
             _hir_enum_match_record_buf: hir_enum_match_record_buf,
+            wasm_const_value_record_buf,
             out_buf,
             packed_out_buf,
             status_buf,
@@ -1646,6 +1713,7 @@ impl GpuWasmCodeGenerator {
             hir_assert_module_bind_group,
             hir_enum_match_records_bind_group,
             hir_enum_match_module_bind_group,
+            wasm_const_values_bind_group,
             bind_group,
             pack_bind_group,
         })

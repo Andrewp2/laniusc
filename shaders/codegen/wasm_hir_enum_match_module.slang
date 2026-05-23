@@ -83,6 +83,7 @@ static const uint TK_MATCH = 95u;
 
 static const uint MAX_PARAM_COUNT = 8u;
 static const uint MAX_MATCH_ARMS = 8u;
+static const uint MAX_STATEMENT_SCAN_TOKENS = 96u;
 static const uint HIR_MODULE_OUTPUT_TARGET_LIMIT = 512u;
 static const uint ERR_ENUM_MODULE_BASE = 900u;
 
@@ -214,10 +215,25 @@ void write_u32_leb5_at(uint pos, uint value, bool write, uint target)
     }
 }
 
+uint i32_leb5_byte(uint value, uint i)
+{
+    uint byte_value = (value >> (i * 7u)) & 0x7fu;
+    if (i < 4u)
+        return byte_value | 0x80u;
+    return (value & 0x80000000u) != 0u ? byte_value | 0x70u : byte_value;
+}
+
+void put_i32_leb5(inout uint cursor, uint value, bool write, uint target)
+{
+    [unroll]
+    for (uint i = 0u; i < 5u; i += 1u)
+        put_byte(cursor, i32_leb5_byte(value, i), write, target);
+}
+
 void emit_i32_const_u32(inout uint cursor, uint value, bool write, uint target)
 {
     put_byte(cursor, 0x41u, write, target);
-    put_u32_leb(cursor, value, write, target);
+    put_i32_leb5(cursor, value, write, target);
 }
 
 void emit_local_get(inout uint cursor, uint local_i, bool write, uint target)
@@ -916,19 +932,27 @@ bool emit_if_function_body(
     uint fn_node,
     out uint body_len,
     out uint param_count,
+    out uint fail_stage,
+    out uint fail_detail,
     bool write,
     uint target)
 {
     body_len = 0u;
+    fail_stage = 600u;
+    fail_detail = hir_token_pos[fn_node];
     param_count = min(call_param_count[hir_token_pos[fn_node]], MAX_PARAM_COUNT);
     uint body_open = find_fn_body_open(fn_node);
     uint body_close = matching_brace(body_open, hir_token_end[fn_node]);
+    fail_stage = 601u;
+    fail_detail = body_open;
     if (body_open == INVALID || body_close == INVALID || body_open + 1u >= body_close)
         return false;
 
     uint if_i = body_open + 1u;
     uint if_node = hir_node_starting_at(if_i, HIR_IF_STMT);
-    if (if_node == INVALID || hir_token_end[if_node] != body_close)
+    fail_stage = 602u;
+    fail_detail = if_i;
+    if (if_node == INVALID)
         return false;
 
     uint cond_start;
@@ -950,10 +974,14 @@ bool emit_if_function_body(
 
     uint body_start = cursor;
     put_u32_leb(cursor, 0u, write, target);
+    fail_stage = 603u;
+    fail_detail = cond_start;
     if (!emit_compare_expr(cursor, cond_start, cond_end, fn_node, write, target))
         return false;
     put_byte(cursor, 0x04u, write, target);
     put_byte(cursor, 0x7fu, write, target);
+    fail_stage = 604u;
+    fail_detail = then_start;
     if (!emit_return_variant_from_block(cursor, then_start, then_end, write, target))
         return false;
     put_byte(cursor, 0x05u, write, target);
@@ -961,13 +989,17 @@ bool emit_if_function_body(
     uint else_first = else_start + 1u;
     if (token_kind(else_first) == TK_RETURN)
     {
+        fail_stage = 605u;
+        fail_detail = else_start;
         if (!emit_return_variant_from_block(cursor, else_start, else_end, write, target))
             return false;
     }
     else if (token_kind(else_first) == TK_IF)
     {
         uint nested_node = hir_node_starting_at(else_first, HIR_IF_STMT);
-        if (nested_node == INVALID || hir_token_end[nested_node] != else_end)
+        fail_stage = 606u;
+        fail_detail = else_first;
+        if (nested_node == INVALID)
             return false;
         uint nested_cond_start;
         uint nested_cond_end;
@@ -985,23 +1017,35 @@ bool emit_if_function_body(
                 nested_else_start,
                 nested_else_end))
             return false;
+        fail_stage = 607u;
+        fail_detail = nested_cond_start;
         if (!emit_compare_expr(cursor, nested_cond_start, nested_cond_end, fn_node, write, target))
             return false;
         put_byte(cursor, 0x04u, write, target);
         put_byte(cursor, 0x7fu, write, target);
+        fail_stage = 608u;
+        fail_detail = nested_then_start;
         if (!emit_return_variant_from_block(cursor, nested_then_start, nested_then_end, write, target))
             return false;
         put_byte(cursor, 0x05u, write, target);
+        fail_stage = 609u;
+        fail_detail = nested_else_start;
         if (!emit_return_variant_from_block(cursor, nested_else_start, nested_else_end, write, target))
             return false;
         put_byte(cursor, 0x0bu, write, target);
     }
     else
+    {
+        fail_stage = 610u;
+        fail_detail = else_first;
         return false;
+    }
 
     put_byte(cursor, 0x0bu, write, target);
     put_byte(cursor, 0x0bu, write, target);
     body_len = cursor - body_start;
+    fail_stage = 0u;
+    fail_detail = INVALID;
     return true;
 }
 
@@ -1045,6 +1089,26 @@ bool emit_call_args_and_call(
     return true;
 }
 
+uint find_statement_semicolon(uint start_i, uint end_i)
+{
+    uint paren_depth = 0u;
+    [loop]
+    for (uint guard = 0u; guard < MAX_STATEMENT_SCAN_TOKENS; guard += 1u)
+    {
+        uint i = start_i + guard;
+        if (i >= end_i || i >= active_token_count())
+            break;
+        uint kind = token_kind(i);
+        if (is_open_paren(kind))
+            paren_depth += 1u;
+        else if (is_close_paren(kind) && paren_depth > 0u)
+            paren_depth -= 1u;
+        else if (kind == TK_SEMICOLON && paren_depth == 0u)
+            return i;
+    }
+    return INVALID;
+}
+
 bool find_main_let_and_return(uint fn_node, out uint let_node, out uint return_node)
 {
     let_node = INVALID;
@@ -1057,9 +1121,12 @@ bool find_main_let_and_return(uint fn_node, out uint let_node, out uint return_n
     if (token_kind(let_i) != TK_LET)
         return false;
     let_node = hir_node_starting_at(let_i, HIR_LET_STMT);
-    if (let_node == INVALID || hir_token_end[let_node] == INVALID)
+    if (let_node == INVALID)
         return false;
-    uint ret_i = hir_token_end[let_node];
+    uint let_semi_i = find_statement_semicolon(let_i, body_close);
+    if (let_semi_i == INVALID || let_semi_i + 1u >= body_close)
+        return false;
+    uint ret_i = let_semi_i + 1u;
     if (ret_i >= body_close || token_kind(ret_i) != TK_RETURN)
         return false;
     return_node = hir_node_starting_at(ret_i, HIR_RETURN_STMT);
@@ -1559,14 +1626,25 @@ bool emit_module(out uint module_len, out uint fail_stage, out uint fail_detail,
             return false;
         }
     }
-    else if (!emit_if_function_body(
-                 cursor,
-                 helper_node,
-                 body_len,
-                 emitted_param_count,
-                 write,
-                 target))
-        return false;
+    else
+    {
+        uint helper_fail_stage = 0u;
+        uint helper_fail_detail = INVALID;
+        if (!emit_if_function_body(
+                cursor,
+                helper_node,
+                body_len,
+                emitted_param_count,
+                helper_fail_stage,
+                helper_fail_detail,
+                write,
+                target))
+        {
+            fail_stage = helper_fail_stage;
+            fail_detail = helper_fail_detail;
+            return false;
+        }
+    }
     fail_stage = 21u;
     fail_detail = body_len;
     if (emitted_param_count != helper_param_count || body_len != cursor - body_start)
@@ -1651,6 +1729,8 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint fail_detail = INVALID;
     if (!emit_module(module_len, fail_stage, fail_detail, true, target))
     {
+        if (fail_stage == 40u && fail_detail == 0u)
+            return;
         record_enum_reject(fail_stage, fail_detail, target);
         return;
     }

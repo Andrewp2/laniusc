@@ -24,7 +24,7 @@ StructuredBuffer<uint> import_record_flag;
 StructuredBuffer<uint> import_record_prefix;
 StructuredBuffer<uint> hir_item_file_id;
 StructuredBuffer<uint> hir_item_import_target_kind;
-StructuredBuffer<uint> path_record_prefix;
+StructuredBuffer<uint> path_id_by_owner_hir;
 
 RWStructuredBuffer<uint> import_module_file_id;
 RWStructuredBuffer<uint> import_path_id;
@@ -57,7 +57,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint kind = hir_item_import_target_kind[i];
     import_module_file_id[slot.dst] = hir_item_file_id[i];
     import_path_id[slot.dst] =
-        kind == HIR_ITEM_IMPORT_TARGET_PATH ? path_record_prefix[i] : INVALID;
+        kind == HIR_ITEM_IMPORT_TARGET_PATH ? path_id_by_owner_hir[i] : INVALID;
     import_kind[slot.dst] = kind;
     import_owner_hir[slot.dst] = i;
 }

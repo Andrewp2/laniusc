@@ -2,7 +2,10 @@
 // Ping/pong buffers are provided; after the final round the host copies
 // the last writer (ping or pong) into block_prefix_pair.
 
+import gpu_index;
+
 static const uint PAIR_BLOCK_WIDTH = 256u; // must match pair_01
+static const uint DISPATCH_X_STRIDE = 16776960u;
 
 struct Params
 {
@@ -27,7 +30,7 @@ RWStructuredBuffer<uint2> block_pair_pong; // length nb
 void pair_02_scan_block_totals(uint3 tid: SV_DispatchThreadID)
 {
     const uint nb = (gParams.n + (PAIR_BLOCK_WIDTH - 1u)) / PAIR_BLOCK_WIDTH;
-    const uint i = tid.x;
+    const uint i = linear_dispatch_thread_id_2d(tid, DISPATCH_X_STRIDE);
 
     if (i >= nb)
         return;

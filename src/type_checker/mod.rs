@@ -322,6 +322,7 @@ struct ModulePathBindGroups {
     mark_value_call_paths: wgpu::BindGroup,
     project_value_paths: wgpu::BindGroup,
     consume_value_calls: wgpu::BindGroup,
+    mirror_value_call_leaf: wgpu::BindGroup,
     consume_value_consts: wgpu::BindGroup,
     consume_value_enum_units: wgpu::BindGroup,
     consume_value_enum_calls: wgpu::BindGroup,
@@ -495,6 +496,8 @@ struct CallBindGroups {
     clear_hir_call_args: wgpu::BindGroup,
     pack_hir_call_args: wgpu::BindGroup,
     resolve: wgpu::BindGroup,
+    infer_array_generics: wgpu::BindGroup,
+    validate_array_results: wgpu::BindGroup,
     erase_generic_params: wgpu::BindGroup,
 }
 
@@ -520,8 +523,28 @@ struct MethodKeyBindGroups {
     validate_keys: wgpu::BindGroup,
 }
 
-const CALL_PARAM_CACHE_STRIDE: usize = 16;
+struct PredicateBindGroups {
+    collect: wgpu::BindGroup,
+    obligations: wgpu::BindGroup,
+}
+
+const CALL_PARAM_CACHE_STRIDE: usize = 4;
 pub const TYPE_INSTANCE_ARG_REF_STRIDE: usize = 4;
+
+pub(crate) fn call_arg_node_capacity_words() -> usize {
+    1
+}
+
+#[cfg(test)]
+mod capacity_tests {
+    use super::*;
+
+    #[test]
+    fn call_arg_node_cache_is_not_token_or_hir_scaled() {
+        assert_eq!(call_arg_node_capacity_words(), 1);
+    }
+}
+
 const NAME_RADIX_BUCKETS: u32 = 257;
 const NAME_RADIX_MAX_BYTES: u32 = 64;
 const LANGUAGE_SYMBOL_COUNT: u32 = 19;
@@ -727,6 +750,89 @@ pub struct GpuTypeCheckHirItemBuffers<'a> {
     pub semantic_count: &'a wgpu::Buffer,
 }
 
+#[derive(Clone, Copy)]
+pub struct GpuTypeCheckExternalScratchBuffers<'a> {
+    pub fn_entrypoint_tag: &'a wgpu::Buffer,
+    pub type_expr_ref_tag: &'a wgpu::Buffer,
+    pub type_expr_ref_payload: &'a wgpu::Buffer,
+    pub type_generic_param_slot_by_token: &'a wgpu::Buffer,
+    pub type_const_param_slot_by_token: &'a wgpu::Buffer,
+    pub record_family_flag: &'a wgpu::Buffer,
+    pub module_record_prefix: &'a wgpu::Buffer,
+    pub record_scan_local_prefix: &'a wgpu::Buffer,
+    pub module_path_key_radix_block_histogram: &'a wgpu::Buffer,
+    pub module_path_key_radix_block_bucket_prefix: &'a wgpu::Buffer,
+    pub path_id_by_owner_hir: &'a wgpu::Buffer,
+    pub decl_module_file_id: &'a wgpu::Buffer,
+    pub decl_module_id: &'a wgpu::Buffer,
+    pub decl_name_id: &'a wgpu::Buffer,
+    pub decl_namespace: &'a wgpu::Buffer,
+    pub decl_visibility: &'a wgpu::Buffer,
+    pub decl_token_start: &'a wgpu::Buffer,
+    pub decl_token_end: &'a wgpu::Buffer,
+    pub decl_key_to_decl_id: &'a wgpu::Buffer,
+    pub decl_key_order_tmp: &'a wgpu::Buffer,
+    pub decl_status: &'a wgpu::Buffer,
+    pub call_param_count: &'a wgpu::Buffer,
+    pub call_param_type: &'a wgpu::Buffer,
+    pub call_arg_record: &'a wgpu::Buffer,
+    pub function_lookup_key: &'a wgpu::Buffer,
+    pub function_lookup_fn: &'a wgpu::Buffer,
+    pub type_decl_generic_param_count: &'a wgpu::Buffer,
+    pub type_decl_generic_param_count_by_node: &'a wgpu::Buffer,
+    pub type_instance_head_token: &'a wgpu::Buffer,
+    pub type_instance_arg_start: &'a wgpu::Buffer,
+    pub type_instance_arg_count: &'a wgpu::Buffer,
+    pub type_instance_arg_ref_tag: &'a wgpu::Buffer,
+    pub type_instance_arg_ref_payload: &'a wgpu::Buffer,
+    pub type_instance_elem_ref_tag: &'a wgpu::Buffer,
+    pub type_instance_elem_ref_payload: &'a wgpu::Buffer,
+    pub type_instance_len_kind: &'a wgpu::Buffer,
+    pub type_instance_len_payload: &'a wgpu::Buffer,
+    pub type_instance_state: &'a wgpu::Buffer,
+    pub decl_type_key_to_decl_id: &'a wgpu::Buffer,
+    pub decl_value_key_to_decl_id: &'a wgpu::Buffer,
+    pub method_decl_module_id: &'a wgpu::Buffer,
+    pub method_decl_impl_node: &'a wgpu::Buffer,
+    pub method_decl_name_token: &'a wgpu::Buffer,
+    pub method_decl_name_id: &'a wgpu::Buffer,
+    pub method_decl_param_offset: &'a wgpu::Buffer,
+    pub method_decl_receiver_mode: &'a wgpu::Buffer,
+    pub method_decl_visibility: &'a wgpu::Buffer,
+    pub method_key_to_fn_token: &'a wgpu::Buffer,
+    pub method_key_status: &'a wgpu::Buffer,
+    pub method_key_radix_block_histogram: &'a wgpu::Buffer,
+    pub method_key_radix_block_bucket_prefix: &'a wgpu::Buffer,
+    pub method_call_receiver_ref_tag: &'a wgpu::Buffer,
+    pub method_call_receiver_ref_payload: &'a wgpu::Buffer,
+    pub method_call_name_id: &'a wgpu::Buffer,
+    pub method_call_site_module_id: &'a wgpu::Buffer,
+    pub import_visible_type_count: &'a wgpu::Buffer,
+    pub import_visible_value_count: &'a wgpu::Buffer,
+    pub import_visible_type_prefix: &'a wgpu::Buffer,
+    pub import_visible_value_prefix: &'a wgpu::Buffer,
+    pub resolved_type_decl: &'a wgpu::Buffer,
+    pub resolved_value_decl: &'a wgpu::Buffer,
+    pub resolved_type_status: &'a wgpu::Buffer,
+    pub resolved_value_status: &'a wgpu::Buffer,
+    pub member_result_ref_payload: &'a wgpu::Buffer,
+    pub member_result_field_ordinal: &'a wgpu::Buffer,
+    pub struct_init_field_expected_ref_tag: &'a wgpu::Buffer,
+    pub struct_init_field_expected_ref_payload: &'a wgpu::Buffer,
+    pub struct_init_field_context_instance: &'a wgpu::Buffer,
+    pub struct_init_field_ordinal: &'a wgpu::Buffer,
+    pub path_start: &'a wgpu::Buffer,
+    pub path_len: &'a wgpu::Buffer,
+    pub path_segment_count: &'a wgpu::Buffer,
+    pub path_segment_base: &'a wgpu::Buffer,
+    pub path_segment_name_id: &'a wgpu::Buffer,
+    pub path_segment_token: &'a wgpu::Buffer,
+    pub path_owner_hir: &'a wgpu::Buffer,
+    pub path_owner_token: &'a wgpu::Buffer,
+    pub path_owner_module_id: &'a wgpu::Buffer,
+    pub path_kind: &'a wgpu::Buffer,
+}
+
 impl std::fmt::Display for GpuTypeCheckError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -828,6 +934,7 @@ struct TypeCheckPasses {
     modules_mark_value_call_paths: PassData,
     modules_project_value_paths: PassData,
     modules_consume_value_calls: PassData,
+    modules_mirror_value_call_leaf: PassData,
     modules_consume_value_consts: PassData,
     modules_consume_value_enum_units: PassData,
     modules_consume_value_enum_calls: PassData,
@@ -854,6 +961,8 @@ struct TypeCheckPasses {
     type_instances_enum_ctors: PassData,
     type_instances_array_index_results: PassData,
     type_instances_validate_aggregate_access: PassData,
+    predicates_collect: PassData,
+    predicates_obligations: PassData,
     conditions_hir: PassData,
     tokens: PassData,
     control: PassData,
@@ -869,6 +978,8 @@ struct TypeCheckPasses {
     calls_clear_hir_call_args: PassData,
     calls_pack_hir_call_args: PassData,
     calls_resolve: PassData,
+    calls_infer_array_generics: PassData,
+    calls_validate_array_results: PassData,
     calls_erase_generic_params: PassData,
     methods_clear: PassData,
     methods_collect: PassData,
@@ -1011,6 +1122,8 @@ struct ResidentTypeCheckBindGroups {
     call_return_type_token: wgpu::Buffer,
     call_param_count: wgpu::Buffer,
     call_param_type: wgpu::Buffer,
+    call_param_ref_tag: wgpu::Buffer,
+    call_param_ref_payload: wgpu::Buffer,
     call_arg_record: wgpu::Buffer,
     call_arg_node: wgpu::Buffer,
     function_lookup_key: wgpu::Buffer,
@@ -1057,6 +1170,13 @@ struct ResidentTypeCheckBindGroups {
     type_instance_len_kind: wgpu::Buffer,
     type_instance_len_payload: wgpu::Buffer,
     type_instance_state: wgpu::Buffer,
+    predicate_owner_node: wgpu::Buffer,
+    predicate_subject_token: wgpu::Buffer,
+    predicate_bound_token: wgpu::Buffer,
+    predicate_bound_arg_count: wgpu::Buffer,
+    predicate_bound_first_arg_token: wgpu::Buffer,
+    predicate_bound_second_arg_token: wgpu::Buffer,
+    predicate_status: wgpu::Buffer,
     fn_return_ref_tag: wgpu::Buffer,
     fn_return_ref_payload: wgpu::Buffer,
     decl_type_ref_tag: wgpu::Buffer,
@@ -1082,6 +1202,7 @@ struct ResidentTypeCheckBindGroups {
     visible_bind_groups: VisibleBindGroups,
     calls: CallBindGroups,
     methods: MethodBindGroups,
+    predicates: Option<PredicateBindGroups>,
     type_instances_clear: wgpu::BindGroup,
     type_instances_decl_generic_params: wgpu::BindGroup,
     type_instances_generic_param_use_slots: wgpu::BindGroup,
@@ -1171,4 +1292,326 @@ pub struct GpuCodegenBuffers<'a> {
     pub struct_init_field_expected_ref_payload: &'a wgpu::Buffer,
     pub struct_init_field_ordinal: &'a wgpu::Buffer,
     pub struct_init_field_ordinal_by_node: &'a wgpu::Buffer,
+}
+
+pub struct OwnedGpuCodegenBuffers {
+    name_id_by_token: wgpu::Buffer,
+    enclosing_fn: wgpu::Buffer,
+    visible_decl: wgpu::Buffer,
+    visible_type: wgpu::Buffer,
+    path_count_out: wgpu::Buffer,
+    path_owner_token: wgpu::Buffer,
+    path_id_by_owner_hir: wgpu::Buffer,
+    resolved_value_decl: wgpu::Buffer,
+    resolved_value_status: wgpu::Buffer,
+    decl_count_out: wgpu::Buffer,
+    decl_kind: wgpu::Buffer,
+    decl_name_token: wgpu::Buffer,
+    decl_id_by_name_token: wgpu::Buffer,
+    decl_hir_node: wgpu::Buffer,
+    decl_parent_type_decl: wgpu::Buffer,
+    decl_type_ref_tag: wgpu::Buffer,
+    decl_type_ref_payload: wgpu::Buffer,
+    type_expr_ref_tag: wgpu::Buffer,
+    type_expr_ref_payload: wgpu::Buffer,
+    module_value_path_call_head: wgpu::Buffer,
+    module_value_path_call_open: wgpu::Buffer,
+    module_value_path_const_head: wgpu::Buffer,
+    module_value_path_const_end: wgpu::Buffer,
+    call_fn_index: wgpu::Buffer,
+    call_intrinsic_tag: wgpu::Buffer,
+    fn_entrypoint_tag: wgpu::Buffer,
+    call_return_type: wgpu::Buffer,
+    call_return_type_token: wgpu::Buffer,
+    call_param_count: wgpu::Buffer,
+    call_param_type: wgpu::Buffer,
+    method_decl_module_id: wgpu::Buffer,
+    method_decl_name_token: wgpu::Buffer,
+    method_decl_name_id: wgpu::Buffer,
+    method_decl_receiver_ref_tag: wgpu::Buffer,
+    method_decl_receiver_ref_payload: wgpu::Buffer,
+    method_decl_param_offset: wgpu::Buffer,
+    method_decl_receiver_mode: wgpu::Buffer,
+    method_decl_visibility: wgpu::Buffer,
+    method_key_to_fn_token: wgpu::Buffer,
+    method_key_status: wgpu::Buffer,
+    method_call_receiver_ref_tag: wgpu::Buffer,
+    method_call_receiver_ref_payload: wgpu::Buffer,
+    method_call_name_id: wgpu::Buffer,
+    method_call_site_module_id: wgpu::Buffer,
+    type_instance_kind: wgpu::Buffer,
+    type_instance_decl_token: wgpu::Buffer,
+    type_instance_arg_start: wgpu::Buffer,
+    type_instance_arg_count: wgpu::Buffer,
+    type_instance_arg_ref_tag: wgpu::Buffer,
+    type_instance_arg_ref_payload: wgpu::Buffer,
+    type_instance_len_kind: wgpu::Buffer,
+    type_instance_len_payload: wgpu::Buffer,
+    fn_return_ref_tag: wgpu::Buffer,
+    fn_return_ref_payload: wgpu::Buffer,
+    member_result_ref_tag: wgpu::Buffer,
+    member_result_ref_payload: wgpu::Buffer,
+    member_result_field_ordinal: wgpu::Buffer,
+    struct_init_field_expected_ref_tag: wgpu::Buffer,
+    struct_init_field_expected_ref_payload: wgpu::Buffer,
+    struct_init_field_ordinal: wgpu::Buffer,
+    struct_init_field_ordinal_by_node: wgpu::Buffer,
+}
+
+#[derive(Clone, Copy)]
+pub struct GpuX86CodegenBuffers<'a> {
+    pub enclosing_fn: &'a wgpu::Buffer,
+    pub visible_decl: &'a wgpu::Buffer,
+    pub visible_type: &'a wgpu::Buffer,
+    pub path_count_out: &'a wgpu::Buffer,
+    pub path_id_by_owner_hir: &'a wgpu::Buffer,
+    pub resolved_value_decl: &'a wgpu::Buffer,
+    pub resolved_value_status: &'a wgpu::Buffer,
+    pub decl_count_out: &'a wgpu::Buffer,
+    pub decl_kind: &'a wgpu::Buffer,
+    pub decl_name_token: &'a wgpu::Buffer,
+    pub decl_id_by_name_token: &'a wgpu::Buffer,
+    pub decl_hir_node: &'a wgpu::Buffer,
+    pub decl_parent_type_decl: &'a wgpu::Buffer,
+    pub decl_type_ref_tag: &'a wgpu::Buffer,
+    pub decl_type_ref_payload: &'a wgpu::Buffer,
+    pub call_fn_index: &'a wgpu::Buffer,
+    pub call_intrinsic_tag: &'a wgpu::Buffer,
+    pub fn_entrypoint_tag: &'a wgpu::Buffer,
+    pub call_return_type: &'a wgpu::Buffer,
+    pub call_return_type_token: &'a wgpu::Buffer,
+    pub call_param_type: &'a wgpu::Buffer,
+    pub method_decl_receiver_ref_tag: &'a wgpu::Buffer,
+    pub method_decl_receiver_ref_payload: &'a wgpu::Buffer,
+    pub method_decl_param_offset: &'a wgpu::Buffer,
+    pub type_instance_kind: &'a wgpu::Buffer,
+    pub type_instance_decl_token: &'a wgpu::Buffer,
+    pub type_instance_len_kind: &'a wgpu::Buffer,
+    pub type_instance_len_payload: &'a wgpu::Buffer,
+    pub member_result_field_ordinal: &'a wgpu::Buffer,
+    pub struct_init_field_ordinal: &'a wgpu::Buffer,
+    pub struct_init_field_ordinal_by_node: &'a wgpu::Buffer,
+}
+
+pub struct OwnedGpuX86CodegenBuffers {
+    enclosing_fn: wgpu::Buffer,
+    visible_decl: wgpu::Buffer,
+    visible_type: wgpu::Buffer,
+    path_count_out: wgpu::Buffer,
+    path_id_by_owner_hir: wgpu::Buffer,
+    resolved_value_decl: wgpu::Buffer,
+    resolved_value_status: wgpu::Buffer,
+    decl_count_out: wgpu::Buffer,
+    decl_kind: wgpu::Buffer,
+    decl_name_token: wgpu::Buffer,
+    decl_id_by_name_token: wgpu::Buffer,
+    decl_hir_node: wgpu::Buffer,
+    decl_parent_type_decl: wgpu::Buffer,
+    decl_type_ref_tag: wgpu::Buffer,
+    decl_type_ref_payload: wgpu::Buffer,
+    call_fn_index: wgpu::Buffer,
+    call_intrinsic_tag: wgpu::Buffer,
+    fn_entrypoint_tag: wgpu::Buffer,
+    call_return_type: wgpu::Buffer,
+    call_return_type_token: wgpu::Buffer,
+    call_param_type: wgpu::Buffer,
+    method_decl_receiver_ref_tag: wgpu::Buffer,
+    method_decl_receiver_ref_payload: wgpu::Buffer,
+    method_decl_param_offset: wgpu::Buffer,
+    type_instance_kind: wgpu::Buffer,
+    type_instance_decl_token: wgpu::Buffer,
+    type_instance_len_kind: wgpu::Buffer,
+    type_instance_len_payload: wgpu::Buffer,
+    member_result_field_ordinal: wgpu::Buffer,
+    struct_init_field_ordinal: wgpu::Buffer,
+    struct_init_field_ordinal_by_node: wgpu::Buffer,
+}
+
+impl OwnedGpuX86CodegenBuffers {
+    fn copy_buffer_for_backend(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        label: &str,
+        src: &wgpu::Buffer,
+        words: u32,
+    ) -> wgpu::Buffer {
+        let byte_len = u64::from(words.max(1)).saturating_mul(4);
+        let byte_len = byte_len.min(src.size());
+        let copy = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size: byte_len.max(4),
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("type_check.codegen.backend_copy.encoder"),
+        });
+        encoder.copy_buffer_to_buffer(src, 0, &copy, 0, byte_len);
+        queue.submit(Some(encoder.finish()));
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        copy
+    }
+
+    pub fn copy_backend_metadata_before_parser_replay(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        words: u32,
+    ) {
+        self.fn_entrypoint_tag = Self::copy_buffer_for_backend(
+            device,
+            queue,
+            "type_check.codegen.fn_entrypoint_tag.backend_copy",
+            &self.fn_entrypoint_tag,
+            words,
+        );
+        self.decl_type_ref_tag = Self::copy_buffer_for_backend(
+            device,
+            queue,
+            "type_check.codegen.decl_type_ref_tag.backend_copy",
+            &self.decl_type_ref_tag,
+            words,
+        );
+        self.decl_type_ref_payload = Self::copy_buffer_for_backend(
+            device,
+            queue,
+            "type_check.codegen.decl_type_ref_payload.backend_copy",
+            &self.decl_type_ref_payload,
+            words,
+        );
+        self.type_instance_kind = Self::copy_buffer_for_backend(
+            device,
+            queue,
+            "type_check.codegen.type_instance_kind.backend_copy",
+            &self.type_instance_kind,
+            words,
+        );
+        self.type_instance_decl_token = Self::copy_buffer_for_backend(
+            device,
+            queue,
+            "type_check.codegen.type_instance_decl_token.backend_copy",
+            &self.type_instance_decl_token,
+            words,
+        );
+        self.type_instance_len_kind = Self::copy_buffer_for_backend(
+            device,
+            queue,
+            "type_check.codegen.type_instance_len_kind.backend_copy",
+            &self.type_instance_len_kind,
+            words,
+        );
+        self.type_instance_len_payload = Self::copy_buffer_for_backend(
+            device,
+            queue,
+            "type_check.codegen.type_instance_len_payload.backend_copy",
+            &self.type_instance_len_payload,
+            words,
+        );
+    }
+
+    pub fn as_ref(&self) -> GpuX86CodegenBuffers<'_> {
+        GpuX86CodegenBuffers {
+            enclosing_fn: &self.enclosing_fn,
+            visible_decl: &self.visible_decl,
+            visible_type: &self.visible_type,
+            path_count_out: &self.path_count_out,
+            path_id_by_owner_hir: &self.path_id_by_owner_hir,
+            resolved_value_decl: &self.resolved_value_decl,
+            resolved_value_status: &self.resolved_value_status,
+            decl_count_out: &self.decl_count_out,
+            decl_kind: &self.decl_kind,
+            decl_name_token: &self.decl_name_token,
+            decl_id_by_name_token: &self.decl_id_by_name_token,
+            decl_hir_node: &self.decl_hir_node,
+            decl_parent_type_decl: &self.decl_parent_type_decl,
+            decl_type_ref_tag: &self.decl_type_ref_tag,
+            decl_type_ref_payload: &self.decl_type_ref_payload,
+            call_fn_index: &self.call_fn_index,
+            call_intrinsic_tag: &self.call_intrinsic_tag,
+            fn_entrypoint_tag: &self.fn_entrypoint_tag,
+            call_return_type: &self.call_return_type,
+            call_return_type_token: &self.call_return_type_token,
+            call_param_type: &self.call_param_type,
+            method_decl_receiver_ref_tag: &self.method_decl_receiver_ref_tag,
+            method_decl_receiver_ref_payload: &self.method_decl_receiver_ref_payload,
+            method_decl_param_offset: &self.method_decl_param_offset,
+            type_instance_kind: &self.type_instance_kind,
+            type_instance_decl_token: &self.type_instance_decl_token,
+            type_instance_len_kind: &self.type_instance_len_kind,
+            type_instance_len_payload: &self.type_instance_len_payload,
+            member_result_field_ordinal: &self.member_result_field_ordinal,
+            struct_init_field_ordinal: &self.struct_init_field_ordinal,
+            struct_init_field_ordinal_by_node: &self.struct_init_field_ordinal_by_node,
+        }
+    }
+}
+
+impl OwnedGpuCodegenBuffers {
+    pub fn as_ref(&self) -> GpuCodegenBuffers<'_> {
+        GpuCodegenBuffers {
+            name_id_by_token: &self.name_id_by_token,
+            enclosing_fn: &self.enclosing_fn,
+            visible_decl: &self.visible_decl,
+            visible_type: &self.visible_type,
+            path_count_out: &self.path_count_out,
+            path_owner_token: &self.path_owner_token,
+            path_id_by_owner_hir: &self.path_id_by_owner_hir,
+            resolved_value_decl: &self.resolved_value_decl,
+            resolved_value_status: &self.resolved_value_status,
+            decl_count_out: &self.decl_count_out,
+            decl_kind: &self.decl_kind,
+            decl_name_token: &self.decl_name_token,
+            decl_id_by_name_token: &self.decl_id_by_name_token,
+            decl_hir_node: &self.decl_hir_node,
+            decl_parent_type_decl: &self.decl_parent_type_decl,
+            decl_type_ref_tag: &self.decl_type_ref_tag,
+            decl_type_ref_payload: &self.decl_type_ref_payload,
+            type_expr_ref_tag: &self.type_expr_ref_tag,
+            type_expr_ref_payload: &self.type_expr_ref_payload,
+            module_value_path_call_head: &self.module_value_path_call_head,
+            module_value_path_call_open: &self.module_value_path_call_open,
+            module_value_path_const_head: &self.module_value_path_const_head,
+            module_value_path_const_end: &self.module_value_path_const_end,
+            call_fn_index: &self.call_fn_index,
+            call_intrinsic_tag: &self.call_intrinsic_tag,
+            fn_entrypoint_tag: &self.fn_entrypoint_tag,
+            call_return_type: &self.call_return_type,
+            call_return_type_token: &self.call_return_type_token,
+            call_param_count: &self.call_param_count,
+            call_param_type: &self.call_param_type,
+            method_decl_module_id: &self.method_decl_module_id,
+            method_decl_name_token: &self.method_decl_name_token,
+            method_decl_name_id: &self.method_decl_name_id,
+            method_decl_receiver_ref_tag: &self.method_decl_receiver_ref_tag,
+            method_decl_receiver_ref_payload: &self.method_decl_receiver_ref_payload,
+            method_decl_param_offset: &self.method_decl_param_offset,
+            method_decl_receiver_mode: &self.method_decl_receiver_mode,
+            method_decl_visibility: &self.method_decl_visibility,
+            method_key_to_fn_token: &self.method_key_to_fn_token,
+            method_key_status: &self.method_key_status,
+            method_call_receiver_ref_tag: &self.method_call_receiver_ref_tag,
+            method_call_receiver_ref_payload: &self.method_call_receiver_ref_payload,
+            method_call_name_id: &self.method_call_name_id,
+            method_call_site_module_id: &self.method_call_site_module_id,
+            type_instance_kind: &self.type_instance_kind,
+            type_instance_decl_token: &self.type_instance_decl_token,
+            type_instance_arg_start: &self.type_instance_arg_start,
+            type_instance_arg_count: &self.type_instance_arg_count,
+            type_instance_arg_ref_tag: &self.type_instance_arg_ref_tag,
+            type_instance_arg_ref_payload: &self.type_instance_arg_ref_payload,
+            type_instance_len_kind: &self.type_instance_len_kind,
+            type_instance_len_payload: &self.type_instance_len_payload,
+            fn_return_ref_tag: &self.fn_return_ref_tag,
+            fn_return_ref_payload: &self.fn_return_ref_payload,
+            member_result_ref_tag: &self.member_result_ref_tag,
+            member_result_ref_payload: &self.member_result_ref_payload,
+            member_result_field_ordinal: &self.member_result_field_ordinal,
+            struct_init_field_expected_ref_tag: &self.struct_init_field_expected_ref_tag,
+            struct_init_field_expected_ref_payload: &self.struct_init_field_expected_ref_payload,
+            struct_init_field_ordinal: &self.struct_init_field_ordinal,
+            struct_init_field_ordinal_by_node: &self.struct_init_field_ordinal_by_node,
+        }
+    }
 }

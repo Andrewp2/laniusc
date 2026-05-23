@@ -2,6 +2,11 @@
 
 mod common;
 
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+
 use laniusc::compiler::compile_source_to_x86_64_with_gpu_codegen;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -12,6 +17,36 @@ struct GeneratedProgram {
     label: String,
     source: String,
     expected_status: i32,
+}
+
+#[test]
+fn x86_codegen_does_not_restore_whole_function_shape_recognizers() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let checked_files = x86_codegen_source_files(root);
+    assert!(
+        !checked_files.is_empty(),
+        "x86 architecture guard must inspect source files"
+    );
+
+    for path in checked_files {
+        let contents = fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
+        for banned in [
+            "RETURN_EVAL",
+            "extract_return_",
+            "extract_terminal_",
+            "PARAM_IMM_COMPARE",
+            "COMPARE_OR_CHAIN",
+            "MOD_POW2",
+            "PAIR_BINARY_LIMIT_BRANCH",
+        ] {
+            assert!(
+                !contents.contains(banned),
+                "{} must not restore whole-function x86 recognizer marker {banned}",
+                path.display()
+            );
+        }
+    }
 }
 
 #[test]
@@ -346,6 +381,57 @@ fn generated_x86_return_match_allows_call_commas_in_arm_results() {
 }
 
 #[test]
+fn generated_x86_enum_match_patterns_survive_later_hir_volume() {
+    let mut rng = StdRng::seed_from_u64(0x7867_7075_6d61_766f);
+    let [
+        enum_name,
+        left_variant,
+        right_variant,
+        target_fn,
+        value_local,
+        value_param,
+        dead0,
+        dead1,
+        dead2,
+        dead3,
+        dead4,
+        dead5,
+        dead6,
+        dead7,
+    ] = random_distinct_idents::<14>(&mut rng);
+    let dead_fns = [dead0, dead1, dead2, dead3, dead4, dead5, dead6, dead7]
+        .into_iter()
+        .enumerate()
+        .map(|(index, name)| {
+            format!(
+                "fn {name}(x: i32) -> i32 {{\n    return x + {};\n}}\n",
+                i32_lit((index % 7) as i32)
+            )
+        })
+        .collect::<String>();
+    let source = format!(
+        "enum {enum_name} {{\n    {left_variant},\n    {right_variant},\n}}\n\
+         fn {target_fn}({value_param}: i32) -> i32 {{\n    let {value_local}: {enum_name} = {right_variant};\n    return match ({value_local}) {{\n        {left_variant} -> (({value_param} << 1) + 49),\n        {right_variant} -> {value_param},\n    }};\n}}\n\
+         {dead_fns}\
+         fn main() {{\n    return {target_fn}({});\n}}\n",
+        i32_lit(5),
+    );
+
+    let bytes = common::run_gpu_codegen_with_timeout(
+        &format!("GPU x86 enum match later-HIR-volume property\nsource:\n{source}"),
+        move || pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source)),
+    )
+    .unwrap_or_else(|err| panic!("enum match later-HIR-volume property should compile: {err}"));
+
+    let output = common::run_x86_64_elf_output(
+        "enum match later-HIR-volume property",
+        "enum_match_later_hir_volume",
+        &bytes,
+    );
+    assert_eq!(output.status.code(), Some(5));
+}
+
+#[test]
 fn generated_x86_struct_copy_member_assignment_and_abi_are_name_independent() {
     let mut rng = StdRng::seed_from_u64(0x7867_7075_7374_7275);
 
@@ -488,17 +574,18 @@ fn generated_x86_compound_assignments_preserve_call_results() {
 #[test]
 fn generated_x86_array_for_loop_is_name_independent() {
     let mut rng = StdRng::seed_from_u64(0x7867_7075_666f_7261);
-    let [values_name, value_name, total_name] = random_distinct_idents::<3>(&mut rng);
+    let [values_name, value_name, total_name, seed_name] = random_distinct_idents::<4>(&mut rng);
+    let seed = rng.random_range(1..=9);
     let values = [
-        rng.random_range(1..=9),
+        seed,
         rng.random_range(1..=9),
         rng.random_range(1..=9),
         rng.random_range(1..=9),
     ];
     let expected: i32 = values.iter().sum();
     let source = format!(
-        "fn main() {{\n    let {values_name}: [i32; 4] = [{}, {}, {}, {}];\n    let {total_name}: i32 = 0;\n    for {value_name} in {values_name} {{\n        {total_name} += {value_name};\n    }}\n    print({total_name});\n    return 0;\n}}\n",
-        i32_lit(values[0]),
+        "fn main() {{\n    let {seed_name}: i32 = {};\n    let {values_name}: [i32; 4] = [{seed_name}, {}, {}, {}];\n    let {total_name}: i32 = 0;\n    for {value_name} in {values_name} {{\n        {total_name} += {value_name};\n    }}\n    print({total_name});\n    return 0;\n}}\n",
+        i32_lit(seed),
         i32_lit(values[1]),
         i32_lit(values[2]),
         i32_lit(values[3]),
@@ -515,6 +602,62 @@ fn generated_x86_array_for_loop_is_name_independent() {
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
         format!("{expected}\n")
+    );
+}
+
+#[test]
+fn generated_x86_param_array_literal_elements_feed_indexing_and_for_loops() {
+    let mut rng = StdRng::seed_from_u64(0x7867_7075_7061_7261);
+    let [
+        sum_fn,
+        call_fn,
+        loop_fn,
+        sum_param,
+        call_param,
+        loop_param,
+        call_values,
+        loop_values,
+        total_name,
+        value_name,
+    ] = random_distinct_idents::<10>(&mut rng);
+    let call_tail = [1, 24, 28];
+    let loop_tail = [12, 10, 8];
+    let call_seed = 5;
+    let loop_seed = 61;
+    let call_bonus = 3;
+    let call_expected = call_seed + call_tail.iter().sum::<i32>() + call_bonus;
+    let loop_expected = loop_seed + loop_tail.iter().sum::<i32>();
+    let source = format!(
+        "fn {sum_fn}({sum_param}: [i32; 4]) -> i32 {{\n    return {sum_param}[0] + {sum_param}[1] + {sum_param}[2] + {sum_param}[3];\n}}\n\
+         fn {call_fn}({call_param}: i32) -> i32 {{\n    let {call_values}: [i32; 4] = [{call_param}, {}, {}, {}];\n    return {sum_fn}({call_values}) + {};\n}}\n\
+         fn {loop_fn}({loop_param}: i32) -> i32 {{\n    let {loop_values}: [i32; 4] = [{loop_param}, {}, {}, {}];\n    let {total_name}: i32 = 0;\n    for {value_name} in {loop_values} {{\n        {total_name} += {value_name};\n    }}\n    return {total_name};\n}}\n\
+         fn main() {{\n    print({call_fn}({}));\n    print({loop_fn}({}));\n    return 0;\n}}\n",
+        i32_lit(call_tail[0]),
+        i32_lit(call_tail[1]),
+        i32_lit(call_tail[2]),
+        i32_lit(call_bonus),
+        i32_lit(loop_tail[0]),
+        i32_lit(loop_tail[1]),
+        i32_lit(loop_tail[2]),
+        i32_lit(call_seed),
+        i32_lit(loop_seed),
+    );
+
+    let bytes = common::run_gpu_codegen_with_timeout(
+        &format!("GPU x86 param-array-literal property\nsource:\n{source}"),
+        move || pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source)),
+    )
+    .unwrap_or_else(|err| panic!("param-array-literal property should compile: {err}"));
+
+    let output = common::run_x86_64_elf_output(
+        "param-array-literal property",
+        "param_array_literal_property",
+        &bytes,
+    );
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        format!("{call_expected}\n{loop_expected}\n")
     );
 }
 
@@ -1306,6 +1449,38 @@ fn generated_virtual_liveness_boundary_program(rng: &mut StdRng) -> (String, Str
 
 fn exit_status(value: i32) -> i32 {
     (value as u32 & 0xff) as i32
+}
+
+fn x86_codegen_source_files(root: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    collect_rs_files(&root.join("src/codegen/x86"), &mut files);
+    files.push(root.join("src/codegen/x86.rs"));
+
+    let shader_dir = root.join("shaders/codegen");
+    for entry in fs::read_dir(&shader_dir)
+        .unwrap_or_else(|err| panic!("read {}: {err}", shader_dir.display()))
+    {
+        let path = entry.expect("read shader dir entry").path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if name.starts_with("x86_") && name.ends_with(".slang") {
+            files.push(path);
+        }
+    }
+    files.sort();
+    files
+}
+
+fn collect_rs_files(dir: &Path, files: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(dir).unwrap_or_else(|err| panic!("read {}: {err}", dir.display())) {
+        let path = entry.expect("read source dir entry").path();
+        if path.is_dir() {
+            collect_rs_files(&path, files);
+        } else if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
+            files.push(path);
+        }
+    }
 }
 
 fn factorial(value: i32) -> i32 {

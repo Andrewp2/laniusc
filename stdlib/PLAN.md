@@ -153,11 +153,10 @@ broad generic callees, and general qualified value paths still fail until a
 broader GPU-compatible module/package model exists. Bounded
 module-qualified generic helpers such as `core::option::unwrap_or(value,
 fallback)` can type-check when their scalar return is inferred from literal or
-annotated local arguments, but this is not full monomorphization. A bounded
-WASM enum/match module can execute explicit source-pack `Option`/`Result` tag
-predicate helpers by consuming HIR match scrutinee, arm, payload-boundary, and
-result metadata compacted into a GPU record table, resolver-selected calls, and
-variant ordinals. Payload projection helpers such as `unwrap_or` remain blocked
+annotated local arguments, but this is not full monomorphization. Backend
+execution for tag-only `Option`/`Result` predicate helpers is not an active
+claim right now; the legacy WASM tests are ignored until rebuilt on the active
+record pipeline. Payload projection helpers such as `unwrap_or` remain blocked
 until backend lowering consumes parser-owned call/constructor argument records
 and typed payload value records instead of token-shaped call syntax. The older
 flat files still use an `lstd_` prefix so copied or
@@ -1106,8 +1105,11 @@ Requires module/import support.
 - Define explicit prelude.
 - Define visibility and package boundaries.
 - Resolve type aliases through GPU module/type metadata. The current compiler
-  has only a bounded scalar alias projection; generic aliases and wrapper-style
-  aliases still belong with the later generics work.
+  has bounded scalar alias projection, direct generic alias substitution, and
+  one-hop generic alias targets plus bounded multi-hop scalar alias chains;
+  recursive aliases, deeper generic alias chains, const-generic alias
+  substitution, and wrapper-style aliases still belong with the later generics
+  work.
 
 ### Phase 3: Generics And Traits/Interfaces
 

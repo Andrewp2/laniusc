@@ -79,17 +79,21 @@ The syntax surface is ahead of semantic support:
   lowering remain rejected.
 - Bounded generic array and slice element declarations now have GPU semantic
   coverage. `type_checker_accepts_generic_array_and_slice_elements_on_gpu`
-  covers `[T; N]`, `[T]`, and `ArrayVec<T, const N: usize>` declarations, while
-  `type_checker_rejects_invalid_generic_array_element_returns_on_gpu` keeps
-  generic array calls, whole-array returns, invalid generic length/name
-  ownership, and mismatched element returns rejected.
-- Bounds and where predicates parse. `tests/parser_tree.rs` includes parser
-  coverage for type parameter bounds, multiple bounds, and where clauses such as
-  `where T: core::cmp::Eq<T>`.
-- Bounds and where predicates are rejected semantically. The type checker
-  rejection tests are
-  `type_checker_rejects_generic_bounds_until_gpu_predicate_semantics_exist` and
-  `type_checker_rejects_where_clauses_until_gpu_predicate_semantics_exist`.
+  covers `[T; N]`, `[T]`, and `ArrayVec<T, const N: usize>` declarations plus
+  bounded direct calls whose element return `T` is inferred from one
+  declaration-backed actual array or slice argument. The rejection coverage keeps
+  whole-array returns, invalid generic length/name ownership, mismatched element
+  returns, and unsupported broader generic array calls rejected.
+- Bounds and where predicates have bounded GPU semantic coverage. Parser
+  coverage still includes type parameter bounds, multiple bounds, and where
+  clauses such as `where T: core::cmp::Eq<T>`. The GPU type checker now records
+  predicate rows for inline bounds, where clauses, qualified trait bounds, and
+  trait impl headers, then validates simple call obligations against concrete
+  impl predicate records. The acceptance and rejection tests cover multiple
+  trait bounds, qualified bounds, missing bounds, subjects outside generic
+  parameters, and one/two-argument called trait predicates. Broader trait
+  solving, associated types, recursive obligations, dictionaries/static
+  dispatch, and trait-method lookup remain future work.
 - The LL(1) parser/HIR path in `shaders/parser/hir_nodes.slang` classifies
   coarse HIR nodes, but most type-checking still relies on resident token
   buffers plus HIR spans rather than a fully lowered semantic AST.
@@ -198,6 +202,10 @@ Failure behavior:
   `AssignMismatch` or a new GPU error code such as `GenericSubstitutionMismatch`.
 - If the substituted call type contains unsupported shapes such as symbolic
   `Range<T>`, `[T; N]`, or `[T]`, reject on GPU.
+- Module-qualified generic aggregate returns must fail closed until the call
+  site has a substituted type-ref result. Comparing only the outer struct/enum
+  declaration code is not enough because `Wrapper<i32>` and `Wrapper<bool>`
+  would otherwise look identical to scalar assignment checks.
 
 ## Next Slice: GPU Type-Instance Metadata
 
@@ -304,12 +312,22 @@ Minimal passes:
    consumes those buffers.
 5. `type_instances_05_publish_array_uses`
    publishes array/slice element and length refs for parameters, locals, fields,
-   and returns. The first consumer accepts matching concrete `[i32; literal]`
-   identifier returns and HIR-backed i32 value array returns while continuing
-   to reject `[T; N]`, `[T]`, call returns, and mismatched concrete lengths until
-   the existing checks compare broader records directly. Indexed array literal
-   elements are bounded to HIR index expressions whose base is a concrete i32
-   array and whose index is an i32 scalar atom.
+   and returns. The current consumers accept matching concrete `[i32; literal]`
+   identifier returns, HIR-backed i32 value array returns, and bounded generic
+   identifier returns such as `[T; N]` by comparing generic element and const
+   length slots from type-instance records. The call consumers also accept a
+   bounded annotated-local call result such as
+   `let copied: [i32; 4] = copy(values)` when the array-valued callee result is
+   inferred from the declaration-backed actual array argument, concrete declared
+   array-return calls such as `let pair: [i32; 2] = make_pair(1, 2);` when the
+   destination matches the callee's `fn_return_ref_*` instance, and a bounded
+   return-call such as `return copy(values);` when the enclosing function return
+   has the same array instance. They reject mismatched concrete/generic lengths
+   through the same records. They continue to reject broader generic array
+   identities until the existing checks compare broader records directly.
+   Indexed array literal elements are bounded to HIR index
+   expressions whose base is a concrete i32 array and whose index is an i32
+   scalar atom.
 6. `type_instances_06_enum_ctors`
    consumes contextual concrete generic enum instances from annotated locals,
    substitutes payload generic refs through the instance argument pool, validates
@@ -389,15 +407,17 @@ Data structures:
 Passes:
 
 1. Replace the blanket generic array/slice rejection in `type_check_scope.slang`
-   with a bounded declaration validator: `[T; N]` and `[T]` are accepted only
-   in parameter and struct-field positions when `T` resolves to an owning type
-   parameter and `N` resolves to an owning const parameter.
+   with a bounded declaration validator: `[T; N]` and `[T]` are accepted in
+   parameter, local annotation, and struct-field positions when `T` resolves to
+   an owning type parameter and `N` resolves to an owning const parameter.
 2. Substitute array/slice element types through a dedicated GPU index-result
    consumer, `type_check_type_instances_07_array_index_results.slang`, which
    publishes the precomputed result type for `values[0]`.
 3. Preserve existing concrete `[i32; N]` behavior.
-4. Keep generic array/slice calls rejected until type-instance unification can
-   infer both element and length arguments at call sites.
+4. Keep broad generic array/slice calls rejected until type-instance
+   unification can infer both element and length arguments at call sites. The
+   current bounded call slice infers only an element return `T` from one
+   declaration-backed actual array or slice argument.
 5. Add return checking by comparing `fn_return_ref_*` and expression refs only
    after element and length records are precomputed. Do not reintroduce a
    return-node shader that reparses array spans.
@@ -407,12 +427,18 @@ Passes:
 Acceptance targets:
 
 - `fn first<T, const N: usize>(values: [T; N]) -> T { return values[0]; }`
-  type-checks as a generic declaration.
-- Calls to `first_i32` continue to pass, while generic array/slice calls remain
-  rejected.
+  type-checks as a generic declaration, including a local `let copy: [T; N]`
+  annotation before returning `copy[0]`.
+- Calls to `first_i32` continue to pass, and bounded direct calls to `first`
+  / `first_slice` infer `T` from one declaration-backed actual array or slice
+  argument. Broader generic array/slice calls remain rejected.
 - `ArrayVec<T, const N: usize> { values: [T; N], len: usize }` type-checks as a
   declaration after generic struct fields and generic array elements are both
   represented.
+- Constructing a concrete `ArrayVec<i32, 4>` with an inline `values: [..]`
+  struct-literal field remains rejected until named generic instances carry
+  substitutable const argument values. Accepting it before then would verify the
+  element type at best while losing the `N = 4` length requirement.
 
 ## Stage 4: Bounds And Where Predicates
 
@@ -431,16 +457,17 @@ Data structures:
 
 Passes:
 
-1. Replace the current `TK_WHERE` and bound-colon rejection guardrails with
-   predicate extraction for parseable predicates.
-2. Validate that predicate subjects name in-scope generic parameters.
-3. Validate that bound names resolve to traits after trait declaration semantics
-   exist.
-4. For method lookup, intersect receiver type with inherent impls and available
+1. Predicate extraction for parseable inline bounds and `where` predicates is
+   implemented for the bounded supported forms.
+2. Predicate subjects are validated against in-scope generic parameters.
+3. Bound names are validated as traits, including qualified trait paths through
+   module records.
+4. Simple call obligations are checked against concrete impl predicate records.
+5. For method lookup, intersect receiver type with inherent impls and available
    trait predicates. Reject ambiguity on GPU.
 
-Bounds should not be treated as comments. Until a predicate is represented and
-checked by these GPU records, the source must continue to fail with a GPU
+Bounds should not be treated as comments. Predicate forms outside the current
+GPU predicate records and obligation checker must continue to fail with a GPU
 type-check error.
 
 ## Minimal First Implementation Slice
@@ -530,8 +557,8 @@ fn main() {
 Tests that must remain rejecting while their GPU consumers are missing:
 
 - `type_checker_rejects_invalid_generic_array_element_returns_on_gpu`
-- `type_checker_rejects_generic_bounds_until_gpu_predicate_semantics_exist`
-- `type_checker_rejects_where_clauses_until_gpu_predicate_semantics_exist`
+- broader trait solving cases that cannot be represented by the current
+  predicate records or validated by the current obligation checker
 
 ## No-CPU-Fallback Guardrails
 
@@ -548,10 +575,10 @@ Tests that must remain rejecting while their GPU consumers are missing:
 - Parser-only coverage must never be documented as semantic support. Each
   accepted generic feature needs a GPU type-check test, and codegen support must
   be documented separately.
-- Existing syntax rejections for modules/imports, qualified value paths, general
-  references, traits, methods, match, for loops, generic arrays/slices, and
-  predicates should stay in place until their corresponding GPU data structures
-  and passes exist.
+- Existing rejections for unsupported forms within modules/imports, qualified
+  value paths, general references, traits, methods, match, for loops, generic
+  arrays/slices, and predicates should stay in place until their corresponding
+  GPU data structures and passes exist.
 - If a future backend needs specialized bodies, monomorphization must be a GPU
   body/type-instance expansion pass that emits GPU-resident codegen metadata. It
   must not resurrect CPU erasure or CPU specialization.

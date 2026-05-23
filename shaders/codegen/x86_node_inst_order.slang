@@ -25,9 +25,11 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint4> x86_node_tree_record;
+StructuredBuffer<uint> x86_tree_parent;
+StructuredBuffer<uint> x86_tree_subtree_end;
 StructuredBuffer<uint> x86_node_tree_status;
-StructuredBuffer<uint> x86_node_inst_count_record;
+StructuredBuffer<uint> x86_node_inst_count_info;
+StructuredBuffer<uint> x86_node_inst_count_payload;
 StructuredBuffer<uint> x86_node_inst_count_status;
 StructuredBuffer<uint> x86_node_inst_same_end_rank;
 StructuredBuffer<uint> x86_node_inst_scan_local_prefix;
@@ -36,7 +38,8 @@ StructuredBuffer<uint> x86_node_inst_scan_block_prefix;
 RWStructuredBuffer<uint> x86_node_inst_order_record;
 RWStructuredBuffer<uint> x86_node_inst_same_end_bucket_count;
 RWStructuredBuffer<uint4> x86_node_inst_subtree_slot_bounds;
-RWStructuredBuffer<uint2> x86_node_inst_range_record;
+RWStructuredBuffer<uint> x86_node_inst_range_start;
+RWStructuredBuffer<uint> x86_node_inst_range_info;
 RWStructuredBuffer<uint> x86_node_inst_scan_input;
 RWStructuredBuffer<uint> x86_node_inst_order_status;
 
@@ -47,7 +50,7 @@ static const uint X86_NODE_INST_COUNTS_OK = 1u;
 static const uint X86_NODE_INST_ORDER_OK = 1u;
 static const uint X86_ERR_NODE_INST_ORDER = 12u;
 static const uint WG_SIZE = 256u;
-static const uint X86_NODE_INST_COUNT_STRIDE = 3u;
+static const uint X86_NODE_INST_COUNT_STRIDE = 2u;
 static const uint X86_NODE_INST_COUNT_KIND_SHIFT = 28u;
 static const uint X86_NODE_INST_COUNT_COUNT_MASK = 0x0fffffffu;
 static const uint X86_NODE_INST_ORDER_STRIDE = 3u;
@@ -100,7 +103,7 @@ uint bucket_count_for_end(uint end, uint compact_order_count, uint active_nodes)
 
 uint execution_slot_for_node(uint node, uint active_nodes)
 {
-    uint end = x86_node_tree_record[node].w;
+    uint end = x86_tree_subtree_end[node];
     uint compact_order_count = x86_node_inst_count_status[3u];
     uint base = scanned_prefix_for_index(end);
     uint bucket_count = bucket_count_for_end(end, compact_order_count, active_nodes);
@@ -117,7 +120,7 @@ uint first_slot_for_subtree(uint node, uint active_nodes)
 
 uint after_slot_for_subtree(uint node, uint active_nodes)
 {
-    uint end = x86_node_tree_record[node].w;
+    uint end = x86_tree_subtree_end[node];
     if (end == INVALID || end <= node || end > active_nodes)
         return INVALID;
 
@@ -132,22 +135,22 @@ uint after_slot_for_subtree(uint node, uint active_nodes)
 
 uint node_inst_count_word(uint node, uint slot)
 {
-    return row_major_load<uint>(
-        x86_node_inst_count_record,
-        node,
-        X86_NODE_INST_COUNT_STRIDE,
-        slot,
-        INVALID);
+    if (!valid_node(node))
+        return INVALID;
+    if (slot == 0u)
+        return x86_node_inst_count_info[node];
+    if (slot == 1u)
+        return x86_node_inst_count_payload[node];
+    return INVALID;
 }
 
 uint4 node_inst_count_record(uint node)
 {
-    uint id = node_inst_count_word(node, 0u);
-    uint info = node_inst_count_word(node, 1u);
-    uint payload = node_inst_count_word(node, 2u);
+    uint info = node_inst_count_word(node, 0u);
+    uint payload = node_inst_count_word(node, 1u);
     uint count = info == INVALID ? INVALID : info & X86_NODE_INST_COUNT_COUNT_MASK;
     uint kind = info == INVALID ? INVALID : info >> X86_NODE_INST_COUNT_KIND_SHIFT;
-    return uint4(id, count, kind, payload);
+    return uint4(node, count, kind, payload);
 }
 
 void publish_error(uint detail)
@@ -223,8 +226,8 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint after_slot = after_slot_for_subtree(node, n);
     x86_node_inst_subtree_slot_bounds[node] =
         (after_slot != INVALID && after_slot >= first_slot)
-            ? uint4(first_slot, after_slot, x86_node_tree_record[node].w, 0u)
-            : uint4(INVALID, INVALID, x86_node_tree_record[node].w, 0u);
+            ? uint4(first_slot, after_slot, x86_tree_subtree_end[node], 0u)
+            : uint4(INVALID, INVALID, x86_tree_subtree_end[node], 0u);
 
     uint4 count = node_inst_count_record(node);
     if (count.x != node || count.y == INVALID)
@@ -252,9 +255,10 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
     }
     x86_node_inst_same_end_bucket_count[node] = bucket_count_for_end(
-        x86_node_tree_record[node].w,
+        x86_tree_subtree_end[node],
         compact_order_count,
         n);
-    x86_node_inst_range_record[node] = uint2(slot, count.y);
+    x86_node_inst_range_start[node] = slot;
+    x86_node_inst_range_info[node] = count.y;
     x86_node_inst_scan_input[slot] = count.y;
 }

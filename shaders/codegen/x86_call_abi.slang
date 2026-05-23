@@ -19,6 +19,10 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
+StructuredBuffer<uint> hir_kind;
+StructuredBuffer<uint> hir_fn_return_type_node;
+StructuredBuffer<uint> hir_type_form;
+StructuredBuffer<uint> hir_type_len_value;
 StructuredBuffer<uint> x86_decl_node_by_token;
 StructuredBuffer<uint4> x86_call_record;
 StructuredBuffer<uint> x86_call_type_record;
@@ -49,6 +53,8 @@ static const uint X86_CALL_ABI_ARG_COUNT_MASK = 0xffu;
 static const uint X86_CALL_ABI_RETURN_WIDTH_MAX = 0x00ffffffu;
 
 static const uint X86_SYSV_MAX_INTEGER_ARGS = 6u;
+static const uint HIR_TYPE = 5u;
+static const uint HIR_TYPE_FORM_ARRAY = 2u;
 static const uint TYPE_INSTANCE_ARRAY = 2u;
 static const uint TYPE_LEN_LITERAL = 1u;
 static const uint TY_STRUCT_BASE = 4096u;
@@ -151,6 +157,27 @@ uint call_return_width(uint semantic_ty, uint type_token)
     return max(semantic_type_width(semantic_ty), type_instance_width(type_token));
 }
 
+bool array_type_width_for_type_node(uint type_node, out uint width)
+{
+    width = 0u;
+    if (!valid_node(type_node) ||
+        hir_kind[type_node] != HIR_TYPE ||
+        hir_type_form[type_node] != HIR_TYPE_FORM_ARRAY)
+        return false;
+    uint len = hir_type_len_value[type_node];
+    if (len == INVALID || len <= 1u)
+        return false;
+    width = len;
+    return true;
+}
+
+uint function_return_hir_width(uint fn_node)
+{
+    uint width = 0u;
+    uint type_node = valid_node(fn_node) ? hir_fn_return_type_node[fn_node] : INVALID;
+    return array_type_width_for_type_node(type_node, width) ? width : 1u;
+}
+
 uint function_node_for_resolver_target(uint resolver_fn_token)
 {
     if (!valid_token(resolver_fn_token))
@@ -181,7 +208,9 @@ void project_call_record(uint call_node)
     uint return_ty = call_type_word(call_node, 0u);
     uint return_ty_token = call_type_word(call_node, 1u);
 
-    uint return_width = call_return_width(return_ty, return_ty_token);
+    uint return_width = max(
+        call_return_width(return_ty, return_ty_token),
+        function_return_hir_width(target_fn));
     uint abi_register_count = arg_count + (return_width > 1u ? 1u : 0u);
     if (abi_register_count > X86_SYSV_MAX_INTEGER_ARGS)
         mark_call_abi_error(call_node);

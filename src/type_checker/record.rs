@@ -1145,9 +1145,7 @@ pub(super) fn record_call_bind_groups(
         type_check_calls_clear_hir_call_args_pass(device)?,
         &groups.clear_hir_call_args,
         "type_check.calls.clear_hir_call_args",
-        token_capacity
-            .saturating_mul(CALL_PARAM_CACHE_STRIDE as u32)
-            .max(1),
+        token_capacity.max(1),
     )?;
     record_compute(
         encoder,
@@ -1534,7 +1532,7 @@ pub(super) fn record_call_bind_groups_with_passes(
     token_capacity: u32,
     n_work: u32,
     hir_active_dispatch_args: &wgpu::Buffer,
-    token_hir_active_dispatch_args: &wgpu::Buffer,
+    _token_hir_active_dispatch_args: &wgpu::Buffer,
     groups: &CallBindGroups,
 ) -> Result<()> {
     let lookup_work = token_capacity.saturating_mul(2).max(n_work);
@@ -1566,12 +1564,12 @@ pub(super) fn record_call_bind_groups_with_passes(
         "type_check.calls.functions",
         hir_active_dispatch_args,
     )?;
-    record_compute_indirect(
+    record_compute(
         encoder,
         &passes.calls_param_types,
         &groups.param_types,
         "type_check.calls.param_types",
-        hir_active_dispatch_args,
+        n_work,
     )?;
     record_compute_indirect(
         encoder,
@@ -1585,23 +1583,14 @@ pub(super) fn record_call_bind_groups_with_passes(
         &passes.calls_clear_hir_call_args,
         &groups.clear_hir_call_args,
         "type_check.calls.clear_hir_call_args",
-        token_capacity
-            .saturating_mul(CALL_PARAM_CACHE_STRIDE as u32)
-            .max(1),
+        token_capacity.max(1),
     )?;
-    record_compute_indirect(
+    record_compute(
         encoder,
         &passes.calls_pack_hir_call_args,
         &groups.pack_hir_call_args,
         "type_check.calls.pack_hir_call_args",
-        hir_active_dispatch_args,
-    )?;
-    record_compute_indirect(
-        encoder,
-        &passes.calls_resolve,
-        &groups.resolve,
-        "type_check.calls.resolve",
-        token_hir_active_dispatch_args,
+        n_work,
     )
 }
 

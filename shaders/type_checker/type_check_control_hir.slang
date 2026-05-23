@@ -1,3 +1,10 @@
+// HIR control and scalar expression validation.
+//
+// This pass consumes parser-owned HIR expression records and type fact buffers.
+// It intentionally does not inspect token spelling, token neighborhoods, source
+// bytes, helper names, or function-body shapes.
+
+import generated_parse_production_ids;
 import status;
 
 struct Params
@@ -9,19 +16,14 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-struct TokenIn
-{
-    uint kind;
-    uint start;
-    uint len;
-};
-
-StructuredBuffer<TokenIn> token_words;
-StructuredBuffer<uint> token_count;
+StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_status;
+StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
+StructuredBuffer<uint> call_return_type;
 StructuredBuffer<int> loop_depth;
 
 RWStructuredBuffer<uint> status;
@@ -29,57 +31,46 @@ RWStructuredBuffer<uint> status;
 static const uint INVALID = 0xffffffffu;
 
 static const uint ERR_ASSIGN_MISMATCH = 3u;
-static const uint ERR_COND_TYPE = 5u;
 static const uint ERR_BAD_HIR = 6u;
 static const uint ERR_LOOP_CONTROL = 7u;
 
 static const uint HIR_BREAK_STMT = 12u;
 static const uint HIR_CONTINUE_STMT = 13u;
+static const uint HIR_INDEX_EXPR = 20u;
 
-static const uint TK_IDENT = 1u;
-static const uint TK_INT = 2u;
-static const uint TK_RPAREN = 5u;
-static const uint TK_PLUS = 6u;
-static const uint TK_STAR = 7u;
-static const uint TK_SLASH = 9u;
-static const uint TK_LT = 12u;
-static const uint TK_GT = 13u;
-static const uint TK_LE = 14u;
-static const uint TK_GE = 15u;
-static const uint TK_EQEQ = 16u;
-static const uint TK_ANDAND = 17u;
-static const uint TK_OROR = 18u;
-static const uint TK_LPAREN = 4u;
-static const uint TK_NOT = 19u;
-static const uint TK_LBRACKET = 20u;
-static const uint TK_RBRACKET = 21u;
-static const uint TK_CALL_LPAREN = 28u;
-static const uint TK_GROUP_LPAREN = 29u;
-static const uint TK_INDEX_LBRACKET = 30u;
-static const uint TK_ARRAY_LBRACKET = 31u;
-static const uint TK_STRING = 32u;
-static const uint TK_FLOAT = 33u;
-static const uint TK_CHAR = 34u;
-static const uint TK_NOT_EQUAL = 40u;
-static const uint TK_PERCENT = 41u;
-static const uint TK_CARET = 42u;
-static const uint TK_SHL = 43u;
-static const uint TK_SHR = 44u;
-static const uint TK_TILDE = 45u;
-static const uint TK_INC = 56u;
-static const uint TK_DEC = 57u;
-static const uint TK_PREFIX_PLUS = 58u;
-static const uint TK_INFIX_PLUS = 59u;
-static const uint TK_PREFIX_MINUS = 60u;
-static const uint TK_INFIX_MINUS = 61u;
-static const uint TK_MINUS = 27u;
-static const uint TK_GROUP_RPAREN = 62u;
-static const uint TK_ARRAY_RBRACKET = 64u;
-static const uint TK_INDEX_RBRACKET = 65u;
-static const uint TK_BREAK = 73u;
-static const uint TK_CONTINUE = 74u;
-static const uint TK_TRUE = 90u;
-static const uint TK_FALSE = 91u;
+static const uint HIR_EXPR_RECORD_STRIDE = 4u;
+static const uint HIR_EXPR_RECORD_FORM = 0u;
+static const uint HIR_EXPR_RECORD_LEFT = 1u;
+static const uint HIR_EXPR_RECORD_RIGHT = 2u;
+static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
+
+static const uint HIR_EXPR_NONE = 0u;
+static const uint HIR_EXPR_FORWARD = 1u;
+static const uint HIR_EXPR_NAME = 2u;
+static const uint HIR_EXPR_INT = 3u;
+static const uint HIR_EXPR_TRUE = 4u;
+static const uint HIR_EXPR_FALSE = 5u;
+static const uint HIR_EXPR_NOT = 6u;
+static const uint HIR_EXPR_EQ = 7u;
+static const uint HIR_EXPR_NE = 8u;
+static const uint HIR_EXPR_LT = 9u;
+static const uint HIR_EXPR_GT = 10u;
+static const uint HIR_EXPR_LE = 11u;
+static const uint HIR_EXPR_GE = 12u;
+static const uint HIR_EXPR_NEG = 13u;
+static const uint HIR_EXPR_ADD = 14u;
+static const uint HIR_EXPR_SUB = 15u;
+static const uint HIR_EXPR_MUL = 16u;
+static const uint HIR_EXPR_AND = 17u;
+static const uint HIR_EXPR_OR = 18u;
+static const uint HIR_EXPR_MOD = 19u;
+static const uint HIR_EXPR_DIV = 20u;
+static const uint HIR_EXPR_BIT_OR = 21u;
+static const uint HIR_EXPR_BIT_XOR = 22u;
+static const uint HIR_EXPR_BIT_AND = 23u;
+static const uint HIR_EXPR_SHL = 24u;
+static const uint HIR_EXPR_SHR = 25u;
+static const uint HIR_EXPR_INDEX = 26u;
 
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_BOOL = 2u;
@@ -90,31 +81,66 @@ static const uint TY_CHAR = 6u;
 static const uint TY_STRING = 7u;
 static const uint TY_ARRAY_BASE = 128u;
 static const uint TY_STRUCT_BASE = 4096u;
-
-uint active_token_count()
-{
-    return min(token_count[0], gParams.n_tokens);
-}
+static const uint TY_GENERIC_BASE = 8192u;
 
 uint active_hir_node_count()
 {
     return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
 }
 
-uint token_kind(uint i)
+bool valid_node(uint node)
 {
-    uint n = active_token_count();
-    return i < n ? token_words[i].kind : 0u;
+    return node != INVALID && node < active_hir_node_count();
 }
 
-uint visible_type_for(uint i)
+bool valid_token(uint token)
 {
-    return i < active_token_count() ? visible_type[i] : TY_UNKNOWN;
+    return token != INVALID && token < gParams.n_tokens;
 }
 
-bool is_array_type(uint ty)
+uint expr_record_slot(uint node, uint slot)
 {
-    return ty >= TY_ARRAY_BASE && ty < TY_STRUCT_BASE;
+    return hir_expr_record[node * HIR_EXPR_RECORD_STRIDE + slot];
+}
+
+uint expr_slot(uint node, uint slot)
+{
+    return valid_node(node) ? expr_record_slot(node, slot) : INVALID;
+}
+
+uint expr_form(uint node)
+{
+    return valid_node(node) ? expr_record_slot(node, HIR_EXPR_RECORD_FORM) : HIR_EXPR_NONE;
+}
+
+uint expr_left(uint node)
+{
+    return expr_slot(node, HIR_EXPR_RECORD_LEFT);
+}
+
+uint expr_right(uint node)
+{
+    return expr_slot(node, HIR_EXPR_RECORD_RIGHT);
+}
+
+uint expr_value_token(uint node)
+{
+    return expr_slot(node, HIR_EXPR_RECORD_VALUE_TOKEN);
+}
+
+uint resolve_expr(uint node)
+{
+    [loop]
+    for (uint guard = 0u; guard < 64u && valid_node(node); guard += 1u)
+    {
+        if (expr_form(node) != HIR_EXPR_FORWARD)
+            return node;
+        uint child = expr_left(node);
+        if (!valid_node(child))
+            return node;
+        node = child;
+    }
+    return node;
 }
 
 void record_error(uint token_i, uint code, uint detail)
@@ -122,187 +148,114 @@ void record_error(uint token_i, uint code, uint detail)
     record_min_token_error(status, token_i, code, detail);
 }
 
-void check_loop_control(uint pos, uint want)
+uint visible_type_for_token(uint token_i)
 {
-    if (token_kind(pos) != want)
+    if (!valid_token(token_i))
+        return TY_UNKNOWN;
+
+    uint ty = visible_type[token_i];
+    if (ty != TY_UNKNOWN)
+        return ty;
+
+    uint decl = visible_decl[token_i];
+    if (valid_token(decl))
     {
-        record_error(pos, ERR_BAD_HIR, want);
-        return;
-    }
-    if (pos >= active_token_count() || loop_depth[pos] <= 0)
-        record_error(pos, ERR_LOOP_CONTROL, want);
-}
-
-bool postfix_incdec_lvalue(uint i)
-{
-    if (i == 0u)
-        return false;
-    uint prev = token_kind(i - 1u);
-    return prev == TK_IDENT || prev == TK_INDEX_RBRACKET || prev == TK_RBRACKET;
-}
-
-bool prefix_incdec_lvalue(uint i)
-{
-    uint n_active = active_token_count();
-    if (i + 1u >= n_active)
-        return false;
-    if (token_kind(i + 1u) != TK_IDENT)
-        return false;
-    return i + 2u >= n_active ||
-           (token_kind(i + 2u) != TK_CALL_LPAREN && token_kind(i + 2u) != TK_LPAREN);
-}
-
-void check_incdec_lvalue(uint i)
-{
-    if (!prefix_incdec_lvalue(i) && !postfix_incdec_lvalue(i))
-        record_error(i, ERR_ASSIGN_MISMATCH, token_kind(i));
-}
-
-uint unary_operand_token(uint i)
-{
-    uint n_active = active_token_count();
-    uint cur = i + 1u;
-    for (uint guard = 0u; guard < 16u && cur < n_active; guard += 1u)
-    {
-        uint kind = token_kind(cur);
-        if (kind == TK_GROUP_LPAREN || kind == TK_LPAREN || kind == TK_PREFIX_PLUS ||
-            kind == TK_PLUS || kind == TK_PREFIX_MINUS || kind == TK_MINUS ||
-            kind == TK_NOT || kind == TK_TILDE)
-        {
-            cur += 1u;
-            continue;
-        }
-        return cur;
-    }
-    return INVALID;
-}
-
-void check_unary_operand(uint i, uint op)
-{
-    uint operand_i = unary_operand_token(i);
-    if (operand_i == INVALID)
-        return;
-
-    uint operand = token_kind(operand_i);
-    if (op == TK_NOT)
-    {
-        if (operand == TK_STRING || operand == TK_ARRAY_LBRACKET || operand == TK_LBRACKET)
-            record_error(i, ERR_COND_TYPE, operand);
-    }
-    else if (op == TK_TILDE)
-    {
-        if (operand == TK_STRING || operand == TK_FLOAT || operand == TK_ARRAY_LBRACKET ||
-            operand == TK_LBRACKET)
-            record_error(i, ERR_ASSIGN_MISMATCH, operand);
-    }
-}
-
-bool is_integer_binary_operator(uint op)
-{
-    return op == TK_PERCENT || op == TK_CARET || op == TK_SHL || op == TK_SHR;
-}
-
-bool is_numeric_binary_operator(uint op)
-{
-    return op == TK_INFIX_PLUS || op == TK_PLUS || op == TK_INFIX_MINUS || op == TK_MINUS ||
-           op == TK_STAR || op == TK_SLASH || is_integer_binary_operator(op);
-}
-
-bool is_checked_binary_operator(uint op)
-{
-    return is_numeric_binary_operator(op) || op == TK_LT || op == TK_GT || op == TK_LE ||
-           op == TK_GE || op == TK_EQEQ || op == TK_NOT_EQUAL || op == TK_ANDAND ||
-           op == TK_OROR;
-}
-
-uint binary_left_operand_token(uint i)
-{
-    if (i == 0u)
-        return INVALID;
-
-    uint cur = i - 1u;
-    if (token_kind(cur) == TK_RBRACKET || token_kind(cur) == TK_ARRAY_RBRACKET ||
-        token_kind(cur) == TK_INDEX_RBRACKET)
-    {
-        uint depth = 0u;
-        uint j = cur + 1u;
-        for (uint guard = 0u; guard < 32u && j > 0u; guard += 1u)
-        {
-            j -= 1u;
-            uint kind = token_kind(j);
-            if (kind == TK_RBRACKET || kind == TK_ARRAY_RBRACKET || kind == TK_INDEX_RBRACKET)
-            {
-                depth += 1u;
-                continue;
-            }
-            if (kind == TK_LBRACKET || kind == TK_ARRAY_LBRACKET || kind == TK_INDEX_LBRACKET)
-            {
-                if (depth == 0u)
-                    return INVALID;
-                depth -= 1u;
-                if (depth == 0u)
-                {
-                    if (j > 0u && token_kind(j - 1u) == TK_IDENT)
-                        return cur;
-                    return j;
-                }
-            }
-        }
-        return cur;
+        ty = visible_type[decl];
+        if (ty != TY_UNKNOWN)
+            return ty;
     }
 
-    if (token_kind(cur) != TK_GROUP_RPAREN && token_kind(cur) != TK_RPAREN)
-        return cur;
-
-    uint depth = 0u;
-    uint j = cur + 1u;
-    for (uint guard = 0u; guard < 32u && j > 0u; guard += 1u)
-    {
-        j -= 1u;
-        uint kind = token_kind(j);
-        if (kind == TK_GROUP_RPAREN || kind == TK_RPAREN)
-        {
-            depth += 1u;
-            continue;
-        }
-        if (kind == TK_GROUP_LPAREN || kind == TK_LPAREN)
-        {
-            if (depth == 0u)
-                return INVALID;
-            depth -= 1u;
-            if (depth == 0u && j + 1u < i)
-                return j + 1u;
-        }
-    }
-    return cur;
+    return call_return_type[token_i];
 }
 
-bool binary_operand_rejected(uint operand, uint op)
+uint scalar_type_for_literal_prod(uint prod)
 {
-    if (operand == TK_ARRAY_LBRACKET || operand == TK_LBRACKET)
-        return true;
-    if (operand == TK_STRING)
-        return true;
-    if ((is_numeric_binary_operator(op) || op == TK_LT || op == TK_GT || op == TK_LE ||
-         op == TK_GE) &&
-        (operand == TK_TRUE || operand == TK_FALSE))
-        return true;
-    if (is_integer_binary_operator(op) && operand == TK_FLOAT)
-        return true;
-    return false;
+    if (prod == PROD_TRUE || prod == PROD_FALSE)
+        return TY_BOOL;
+    if (prod == PROD_INT)
+        return TY_INT;
+    if (prod == PROD_FLOAT)
+        return TY_FLOAT;
+    if (prod == PROD_STRING)
+        return TY_STRING;
+    if (prod == PROD_CHAR)
+        return TY_CHAR;
+    return TY_UNKNOWN;
 }
 
-void check_binary_operands(uint i, uint op)
+uint direct_expr_record_type(uint node)
 {
-    uint left_i = binary_left_operand_token(i);
-    uint right_i = unary_operand_token(i);
-    if (left_i != INVALID && binary_operand_rejected(token_kind(left_i), op))
+    node = resolve_expr(node);
+    if (!valid_node(node))
+        return TY_UNKNOWN;
+
+    uint literal_ty = scalar_type_for_literal_prod(node_kind[node]);
+    if (literal_ty != TY_UNKNOWN)
+        return literal_ty;
+
+    uint form = expr_form(node);
+    if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
+        return TY_BOOL;
+    if (form == HIR_EXPR_INT)
+        return TY_INT;
+    if (form == HIR_EXPR_NAME)
     {
-        record_error(left_i, ERR_ASSIGN_MISMATCH, op);
-        return;
+        uint token_i = expr_value_token(node);
+        if (!valid_token(token_i))
+            token_i = hir_token_pos[node];
+        return visible_type_for_token(token_i);
     }
-    if (right_i != INVALID && binary_operand_rejected(token_kind(right_i), op))
-        record_error(right_i, ERR_ASSIGN_MISMATCH, op);
+    if (form == HIR_EXPR_INDEX)
+    {
+        uint token_i = hir_token_pos[node];
+        return valid_token(token_i) ? call_return_type[token_i] : TY_UNKNOWN;
+    }
+
+    if (form == HIR_EXPR_NOT ||
+        form == HIR_EXPR_EQ ||
+        form == HIR_EXPR_NE ||
+        form == HIR_EXPR_LT ||
+        form == HIR_EXPR_GT ||
+        form == HIR_EXPR_LE ||
+        form == HIR_EXPR_GE ||
+        form == HIR_EXPR_AND ||
+        form == HIR_EXPR_OR)
+        return TY_BOOL;
+
+    if (form == HIR_EXPR_NEG ||
+        form == HIR_EXPR_ADD ||
+        form == HIR_EXPR_SUB ||
+        form == HIR_EXPR_MUL ||
+        form == HIR_EXPR_MOD ||
+        form == HIR_EXPR_DIV ||
+        form == HIR_EXPR_BIT_OR ||
+        form == HIR_EXPR_BIT_XOR ||
+        form == HIR_EXPR_BIT_AND ||
+        form == HIR_EXPR_SHL ||
+        form == HIR_EXPR_SHR)
+        return TY_INT;
+
+    return TY_UNKNOWN;
+}
+
+uint expr_error_token(uint node)
+{
+    node = resolve_expr(node);
+    if (!valid_node(node))
+        return 0u;
+
+    uint token_i = expr_value_token(node);
+    if (valid_token(token_i))
+        return token_i;
+
+    token_i = hir_token_pos[node];
+    return valid_token(token_i) ? token_i : 0u;
+}
+
+bool is_array_type(uint ty)
+{
+    return (ty >= TY_ARRAY_BASE && ty < TY_STRUCT_BASE) ||
+           ty >= TY_ARRAY_BASE + TY_GENERIC_BASE;
 }
 
 bool assignable_to_int(uint ty)
@@ -310,163 +263,129 @@ bool assignable_to_int(uint ty)
     return ty == TY_UNKNOWN || ty == TY_INT || ty == TY_UINT || ty == TY_CHAR;
 }
 
-bool is_group_open_kind(uint kind)
+bool numeric_operand_ok(uint ty)
 {
-    return kind == TK_GROUP_LPAREN || kind == TK_LPAREN || kind == TK_CALL_LPAREN;
+    return ty == TY_UNKNOWN || ty == TY_INT || ty == TY_UINT ||
+           ty == TY_FLOAT || ty == TY_CHAR;
 }
 
-bool is_group_close_kind(uint kind)
+bool integer_operand_ok(uint ty)
 {
-    return kind == TK_GROUP_RPAREN || kind == TK_RPAREN;
+    return assignable_to_int(ty);
 }
 
-uint matching_group_open(uint close_i)
+bool equality_operand_ok(uint ty)
 {
-    uint depth = 0u;
-    uint j = close_i + 1u;
-    [loop]
-    for (uint guard = 0u; guard < 64u && j > 0u; guard += 1u)
-    {
-        j -= 1u;
-        uint kind = token_kind(j);
-        if (is_group_close_kind(kind))
-        {
-            depth += 1u;
-            continue;
-        }
-        if (!is_group_open_kind(kind))
-            continue;
-        if (depth == 0u)
-            return INVALID;
-        depth -= 1u;
-        if (depth == 0u)
-            return j;
-    }
-    return INVALID;
+    return ty == TY_UNKNOWN || (!is_array_type(ty) && ty != TY_STRING);
 }
 
-uint grouped_index_base_type(uint close_i)
+bool is_integer_binary_form(uint form)
 {
-    uint open_i = matching_group_open(close_i);
-    if (open_i == INVALID || open_i + 1u >= close_i)
-        return TY_UNKNOWN;
-
-    uint cur = open_i + 1u;
-    [loop]
-    for (uint guard = 0u; guard < 16u && cur < close_i; guard += 1u)
-    {
-        uint kind = token_kind(cur);
-        if (is_group_open_kind(kind) || kind == TK_PREFIX_PLUS || kind == TK_PREFIX_MINUS)
-        {
-            cur += 1u;
-            continue;
-        }
-        if (kind == TK_ARRAY_LBRACKET || kind == TK_LBRACKET)
-            return TY_ARRAY_BASE + TY_UNKNOWN;
-        if (kind == TK_IDENT)
-            return visible_type_for(cur);
-        if (kind == TK_TRUE || kind == TK_FALSE)
-            return TY_BOOL;
-        if (kind == TK_INT)
-            return TY_INT;
-        if (kind == TK_FLOAT)
-            return TY_FLOAT;
-        if (kind == TK_STRING)
-            return TY_STRING;
-        if (kind == TK_CHAR)
-            return TY_CHAR;
-        return TY_UNKNOWN;
-    }
-
-    return TY_UNKNOWN;
+    return form == HIR_EXPR_MOD ||
+           form == HIR_EXPR_BIT_OR ||
+           form == HIR_EXPR_BIT_XOR ||
+           form == HIR_EXPR_BIT_AND ||
+           form == HIR_EXPR_SHL ||
+           form == HIR_EXPR_SHR;
 }
 
-uint simple_index_expr_type(uint open_i)
+bool is_numeric_binary_form(uint form)
 {
-    uint operand_i = unary_operand_token(open_i);
-    if (operand_i == INVALID)
-        return TY_UNKNOWN;
-
-    uint kind = token_kind(operand_i);
-    if (kind == TK_TRUE || kind == TK_FALSE)
-        return TY_BOOL;
-    if (kind == TK_INT)
-        return TY_INT;
-    if (kind == TK_FLOAT)
-        return TY_FLOAT;
-    if (kind == TK_STRING)
-        return TY_STRING;
-    if (kind == TK_CHAR)
-        return TY_CHAR;
-    if (kind == TK_ARRAY_LBRACKET || kind == TK_LBRACKET)
-        return TY_ARRAY_BASE + TY_UNKNOWN;
-    if (kind == TK_IDENT)
-        return visible_type_for(operand_i);
-    return TY_UNKNOWN;
+    return form == HIR_EXPR_ADD ||
+           form == HIR_EXPR_SUB ||
+           form == HIR_EXPR_MUL ||
+           form == HIR_EXPR_DIV ||
+           form == HIR_EXPR_LT ||
+           form == HIR_EXPR_GT ||
+           form == HIR_EXPR_LE ||
+           form == HIR_EXPR_GE;
 }
 
-void check_index_operands(uint open_i)
+bool is_equality_binary_form(uint form)
 {
-    if (open_i == 0u)
+    return form == HIR_EXPR_EQ || form == HIR_EXPR_NE;
+}
+
+bool binary_operand_ok(uint form, uint ty)
+{
+    if (is_integer_binary_form(form))
+        return integer_operand_ok(ty);
+    if (is_numeric_binary_form(form))
+        return numeric_operand_ok(ty);
+    if (is_equality_binary_form(form))
+        return equality_operand_ok(ty);
+    return true;
+}
+
+void validate_binary_expr_node(uint node)
+{
+    if (resolve_expr(node) != node)
         return;
 
-    uint base_i = open_i - 1u;
-    uint base_ty = TY_UNKNOWN;
-    if (token_kind(base_i) == TK_IDENT)
-        base_ty = visible_type_for(base_i);
-    else if (is_group_close_kind(token_kind(base_i)))
-        base_ty = grouped_index_base_type(base_i);
+    uint form = expr_form(node);
+    if (!is_integer_binary_form(form) &&
+        !is_numeric_binary_form(form) &&
+        !is_equality_binary_form(form))
+        return;
 
+    uint left = expr_left(node);
+    uint left_ty = direct_expr_record_type(left);
+    if (!binary_operand_ok(form, left_ty))
+    {
+        record_error(expr_error_token(left), ERR_ASSIGN_MISMATCH, form);
+        return;
+    }
+
+    uint right = expr_right(node);
+    uint right_ty = direct_expr_record_type(right);
+    if (!binary_operand_ok(form, right_ty))
+        record_error(expr_error_token(right), ERR_ASSIGN_MISMATCH, form);
+}
+
+void validate_index_expr_node(uint node)
+{
+    if (hir_kind[node] != HIR_INDEX_EXPR && expr_form(node) != HIR_EXPR_INDEX)
+        return;
+
+    uint base = expr_left(node);
+    uint base_ty = direct_expr_record_type(base);
     if (base_ty != TY_UNKNOWN && !is_array_type(base_ty))
     {
-        record_error(open_i, ERR_ASSIGN_MISMATCH, base_ty);
+        record_error(expr_error_token(node), ERR_ASSIGN_MISMATCH, base_ty);
         return;
     }
 
-    uint idx_ty = simple_index_expr_type(open_i);
-    if (!assignable_to_int(idx_ty))
-        record_error(open_i + 1u, ERR_ASSIGN_MISMATCH, TY_INT * 256u + idx_ty);
+    uint index = expr_right(node);
+    uint index_ty = direct_expr_record_type(index);
+    if (!assignable_to_int(index_ty))
+        record_error(expr_error_token(index), ERR_ASSIGN_MISMATCH, TY_INT * 256u + index_ty);
 }
 
-bool raw_lbracket_is_index_open(uint open_i)
+void validate_loop_control_node(uint node)
 {
-    if (open_i == 0u || token_kind(open_i) != TK_LBRACKET)
-        return false;
+    uint kind = hir_kind[node];
+    if (kind != HIR_BREAK_STMT && kind != HIR_CONTINUE_STMT)
+        return;
 
-    uint prev = token_kind(open_i - 1u);
-    return prev == TK_IDENT || prev == TK_RPAREN || prev == TK_GROUP_RPAREN ||
-           prev == TK_RBRACKET || prev == TK_ARRAY_RBRACKET || prev == TK_INDEX_RBRACKET;
+    uint token_i = hir_token_pos[node];
+    if (!valid_token(token_i))
+    {
+        record_error(0u, ERR_BAD_HIR, kind);
+        return;
+    }
+    if (loop_depth[token_i] <= 0)
+        record_error(token_i, ERR_LOOP_CONTROL, kind);
 }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
 {
-    uint i = tid.x;
-    uint n_hir = active_hir_node_count();
-    if (i < n_hir)
-    {
-        uint kind = hir_kind[i];
-        if (kind == HIR_BREAK_STMT || kind == HIR_CONTINUE_STMT)
-        {
-            uint pos = hir_token_pos[i];
-            if (pos == INVALID || pos >= active_token_count())
-                record_error(active_token_count(), ERR_BAD_HIR, pos);
-            else
-                check_loop_control(pos, kind == HIR_BREAK_STMT ? TK_BREAK : TK_CONTINUE);
-        }
-    }
+    uint node = tid.x;
+    if (!valid_node(node))
+        return;
 
-    if (i < active_token_count())
-    {
-        uint token = token_kind(i);
-        if (token == TK_INC || token == TK_DEC)
-            check_incdec_lvalue(i);
-        else if (token == TK_NOT || token == TK_TILDE)
-            check_unary_operand(i, token);
-        else if (is_checked_binary_operator(token))
-            check_binary_operands(i, token);
-        else if (token == TK_INDEX_LBRACKET || raw_lbracket_is_index_open(i))
-            check_index_operands(i);
-    }
+    validate_loop_control_node(node);
+    validate_index_expr_node(node);
+    validate_binary_expr_node(node);
 }

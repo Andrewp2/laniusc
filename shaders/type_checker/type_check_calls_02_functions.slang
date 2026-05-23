@@ -30,8 +30,12 @@ StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> fn_entrypoint_tag;
 StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> fn_return_ref_payload;
+StructuredBuffer<uint> type_expr_ref_tag;
+StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_decl_token;
+StructuredBuffer<uint> type_instance_arg_ref_tag;
+StructuredBuffer<uint> type_instance_arg_ref_payload;
 StructuredBuffer<uint> type_instance_elem_ref_tag;
 StructuredBuffer<uint> type_instance_elem_ref_payload;
 
@@ -55,6 +59,7 @@ static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TYPE_INSTANCE_NAMED = 1u;
 static const uint TYPE_INSTANCE_ARRAY = 2u;
 static const uint TYPE_INSTANCE_SLICE = 3u;
+static const uint TYPE_INSTANCE_ARG_REF_STRIDE = 4u;
 static const uint TY_ARRAY_BASE = 128u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
@@ -90,6 +95,11 @@ bool valid_node(uint node)
 bool valid_token(uint token)
 {
     return token != INVALID && token < gParams.n_tokens;
+}
+
+uint arg_ref_index(uint instance_i, uint slot)
+{
+    return instance_i * TYPE_INSTANCE_ARG_REF_STRIDE + slot;
 }
 
 uint declaration_token_for_function(uint fn_node)
@@ -130,6 +140,85 @@ uint scalar_or_named_type_code_for_ref(uint tag, uint payload)
     return TY_UNKNOWN;
 }
 
+uint type_code_for_alias_arg_ref(uint tag, uint payload)
+{
+    if (tag == TYPE_REF_SCALAR)
+        return payload;
+    if (tag == TYPE_REF_GENERIC_PARAM)
+    {
+        uint slot = valid_token(payload) ? type_generic_param_slot_by_token[payload] : INVALID;
+        return slot == INVALID ? TY_UNKNOWN : TY_GENERIC_BASE + slot;
+    }
+    if (tag == TYPE_REF_INSTANCE)
+        return scalar_or_named_type_code_for_ref(tag, payload);
+    return TY_UNKNOWN;
+}
+
+uint alias_arg_type_code(uint outer_instance_i, uint tag, uint payload)
+{
+    if (tag == TYPE_REF_GENERIC_PARAM && valid_token(payload))
+    {
+        uint slot = type_generic_param_slot_by_token[payload];
+        if (slot == INVALID || slot >= TYPE_INSTANCE_ARG_REF_STRIDE)
+            return TY_UNKNOWN;
+        uint ref_i = arg_ref_index(outer_instance_i, slot);
+        return type_code_for_alias_arg_ref(
+            type_instance_arg_ref_tag[ref_i],
+            type_instance_arg_ref_payload[ref_i]);
+    }
+    return type_code_for_alias_arg_ref(tag, payload);
+}
+
+uint alias_target_instance_type_code(uint outer_instance_i, uint target_instance_i, uint target_decl_token)
+{
+    uint target_tag = type_expr_ref_tag[target_decl_token];
+    uint target_payload = type_expr_ref_payload[target_decl_token];
+    if (target_tag == TYPE_REF_INVALID)
+        return TY_UNKNOWN;
+    if (target_tag == TYPE_REF_GENERIC_PARAM && valid_token(target_payload))
+    {
+        uint slot = type_generic_param_slot_by_token[target_payload];
+        if (slot == INVALID || slot >= TYPE_INSTANCE_ARG_REF_STRIDE)
+            return TY_UNKNOWN;
+        uint ref_i = arg_ref_index(target_instance_i, slot);
+        return alias_arg_type_code(
+            outer_instance_i,
+            type_instance_arg_ref_tag[ref_i],
+            type_instance_arg_ref_payload[ref_i]);
+    }
+    return type_code_for_alias_arg_ref(target_tag, target_payload);
+}
+
+uint alias_instance_type_code(uint instance_i, uint decl_token)
+{
+    uint target_tag = type_expr_ref_tag[decl_token];
+    uint target_payload = type_expr_ref_payload[decl_token];
+    if (target_tag == TYPE_REF_INVALID)
+        return TY_UNKNOWN;
+    if (target_tag == TYPE_REF_GENERIC_PARAM && valid_token(target_payload))
+    {
+        uint slot = type_generic_param_slot_by_token[target_payload];
+        if (slot == INVALID || slot >= TYPE_INSTANCE_ARG_REF_STRIDE)
+            return TY_UNKNOWN;
+        uint ref_i = arg_ref_index(instance_i, slot);
+        return type_code_for_alias_arg_ref(
+            type_instance_arg_ref_tag[ref_i],
+            type_instance_arg_ref_payload[ref_i]);
+    }
+    if (target_tag == TYPE_REF_INSTANCE && valid_token(target_payload) &&
+        type_instance_kind[target_payload] == TYPE_INSTANCE_NAMED)
+    {
+        uint target_decl = type_instance_decl_token[target_payload];
+        if (valid_token(target_decl) && type_expr_ref_tag[target_decl] != TYPE_REF_INVALID)
+        {
+            uint target_ty = alias_target_instance_type_code(instance_i, target_payload, target_decl);
+            if (target_ty != TY_UNKNOWN)
+                return target_ty;
+        }
+    }
+    return type_code_for_alias_arg_ref(target_tag, target_payload);
+}
+
 uint semantic_type_code_for_ref(uint tag, uint payload)
 {
     if (tag == TYPE_REF_SCALAR)
@@ -158,6 +247,9 @@ uint semantic_type_code_for_ref(uint tag, uint payload)
             uint decl_token = type_instance_decl_token[payload];
             if (valid_token(decl_token))
             {
+                uint alias_ty = alias_instance_type_code(payload, decl_token);
+                if (alias_ty != TY_UNKNOWN)
+                    return alias_ty;
                 uint named_ty = module_type_path_type[payload];
                 if (named_ty != TY_UNKNOWN)
                     return named_ty;
@@ -186,8 +278,7 @@ uint return_type_for_function(uint fn_node, uint fn_decl_token)
     uint payload = fn_return_ref_payload[fn_decl_token];
     if (tag != TYPE_REF_INVALID)
         return semantic_type_code_for_ref(tag, payload);
-    if (fn_entrypoint_tag[fn_node] == ENTRYPOINT_MAIN ||
-        (valid_token(fn_decl_token) && fn_entrypoint_tag[fn_decl_token] == ENTRYPOINT_MAIN))
+    if (fn_entrypoint_tag[fn_node] == ENTRYPOINT_MAIN)
         return TY_INT;
     return TY_VOID;
 }

@@ -1030,6 +1030,72 @@ fn gpu_parser_boundary_retags_impl_method_open_from_owner_prefix_records() {
 }
 
 #[test]
+fn gpu_parser_retags_trait_impl_method_braces_from_impl_owner_records() {
+    use TokenKind::*;
+
+    common::block_on_gpu_with_timeout("GPU parser trait impl brace owner records", async move {
+        let lexer = GpuLexer::new().await.expect("GPU lexer init");
+        let parser = GpuParser::new().await.expect("GPU parser init");
+        let tables =
+            PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
+                .expect("parse tables");
+        let src = "trait Eq<T> { fn eq(left: T, right: T) -> bool; } impl Eq<i32> for i32 { fn eq(left: i32, right: i32) -> bool { return left == right; } }";
+
+        let tokens = lexer.lex(src).await.expect("tokens");
+        let semantic = lexer
+            .with_resident_tokens(src, |_, _, bufs| {
+                parser.debug_semantic_token_kinds_for_resident_tokens(
+                    bufs.n,
+                    &bufs.tokens_out,
+                    &bufs.token_count,
+                    &tables,
+                )
+            })
+            .await
+            .expect("resident lex")
+            .expect("semantic token kinds");
+
+        let impl_token = tokens
+            .iter()
+            .position(|token| token.kind == Impl)
+            .expect("impl token");
+        let impl_open = tokens
+            .iter()
+            .enumerate()
+            .skip(impl_token)
+            .find(|(_, token)| token.kind == LBrace)
+            .map(|(i, _)| i)
+            .expect("impl opening brace");
+        let method_open = tokens
+            .iter()
+            .enumerate()
+            .skip(impl_open + 1)
+            .find(|(_, token)| token.kind == LBrace)
+            .map(|(i, _)| i)
+            .expect("method opening brace");
+        let method_close = tokens
+            .iter()
+            .enumerate()
+            .skip(method_open + 1)
+            .find(|(_, token)| token.kind == RBrace)
+            .map(|(i, _)| i)
+            .expect("method closing brace");
+        let impl_close = tokens
+            .iter()
+            .enumerate()
+            .skip(method_close + 1)
+            .find(|(_, token)| token.kind == RBrace)
+            .map(|(i, _)| i)
+            .expect("impl closing brace");
+
+        assert_eq!(semantic[impl_open + 1], ImplLBrace as u32);
+        assert_eq!(semantic[method_open + 1], ImplFnBlockLBrace as u32);
+        assert_eq!(semantic[method_close + 1], ImplFnBlockRBrace as u32);
+        assert_eq!(semantic[impl_close + 1], ImplRBrace as u32);
+    });
+}
+
+#[test]
 fn gpu_parser_boundary_retags_impl_method_close_from_owner_depth_records() {
     use TokenKind::*;
 
@@ -1711,6 +1777,53 @@ fn gpu_parser_boundary_retags_type_alias_rhs_as_type_context() {
 
         assert_eq!(semantic, expected);
     });
+}
+
+#[test]
+fn gpu_parser_boundary_retags_type_alias_array_rhs_from_statement_context() {
+    use TokenKind::*;
+
+    common::block_on_gpu_with_timeout(
+        "GPU parser type alias array semantic boundary",
+        async move {
+            let lexer = GpuLexer::new().await.expect("GPU lexer init");
+            let parser = GpuParser::new().await.expect("GPU parser init");
+            let tables = PrecomputedParseTables::load_bin_bytes(include_bytes!(
+                "../tables/parse_tables.bin"
+            ))
+            .expect("parse tables");
+            let src = "type Four = [i32; 4];";
+
+            let semantic = lexer
+                .with_resident_tokens(src, |_, _, bufs| {
+                    parser.debug_semantic_token_kinds_for_resident_tokens(
+                        bufs.n,
+                        &bufs.tokens_out,
+                        &bufs.token_count,
+                        &tables,
+                    )
+                })
+                .await
+                .expect("resident lex")
+                .expect("semantic token kinds");
+
+            let expected = [
+                0u32,
+                Type as u32,
+                TypeAliasNameIdent as u32,
+                TypeAliasAssign as u32,
+                TypeArrayLBracket as u32,
+                TypeIdent as u32,
+                TypeSemicolon as u32,
+                Int as u32,
+                TypeArrayRBracket as u32,
+                TypeAliasSemicolon as u32,
+                0u32,
+            ];
+
+            assert_eq!(semantic, expected);
+        },
+    );
 }
 
 #[test]

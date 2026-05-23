@@ -20,6 +20,7 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_token_end;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint4> hir_param_record;
 StructuredBuffer<uint> hir_stmt_record;
@@ -42,6 +43,7 @@ static const uint HIR_MODULE_OUTPUT_TARGET_LIMIT = 512u;
 
 static const uint HIR_FN = 3u;
 static const uint HIR_RETURN_STMT = 9u;
+static const uint HIR_IF_STMT = 10u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint ENTRYPOINT_MAIN = 1u;
 static const uint INTRINSIC_PRINT = 1u;
@@ -49,6 +51,7 @@ static const uint INTRINSIC_PRINT = 1u;
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND = 0u;
 static const uint STMT_RECORD_A = 1u;
+static const uint STMT_RECORD_B = 2u;
 static const uint STMT_RECORD_KIND_RETURN = 2u;
 
 static const uint EXPR_RECORD_STRIDE = 4u;
@@ -86,7 +89,11 @@ static const uint HIR_EXPR_SHR = 25u;
 static const uint MAX_EXPR_STACK = 96u;
 static const uint MAX_CALL_ARGS = 8u;
 static const uint MAX_PRINTS = 16u;
+static const uint MAX_BRANCH_RETURN_STACK = 16u;
 static const uint ERR_MULTI_FUNCTION_MODULE_BASE = 700u;
+static const uint RETURN_CONSTRUCT_NONE = 0u;
+static const uint RETURN_CONSTRUCT_RETURN = 1u;
+static const uint RETURN_CONSTRUCT_IF = 2u;
 
 bool module_already_emitted()
 {
@@ -197,7 +204,7 @@ uint function_count()
     [loop]
     for (uint node = 0u; node < n; node += 1u)
     {
-        if (hir_kind[node] == HIR_FN && valid_token(hir_token_pos[node]))
+        if (is_emittable_function(node))
             count += 1u;
     }
     return count;
@@ -210,7 +217,7 @@ uint nth_function_node(uint ordinal)
     [loop]
     for (uint node = 0u; node < n; node += 1u)
     {
-        if (hir_kind[node] != HIR_FN || !valid_token(hir_token_pos[node]))
+        if (!is_emittable_function(node))
             continue;
         if (seen == ordinal)
             return node;
@@ -226,28 +233,13 @@ uint function_ordinal(uint fn_node)
     [loop]
     for (uint node = 0u; node < n; node += 1u)
     {
+        if (!is_emittable_function(node))
+            continue;
         if (node == fn_node)
             return ordinal;
-        if (hir_kind[node] == HIR_FN && valid_token(hir_token_pos[node]))
-            ordinal += 1u;
+        ordinal += 1u;
     }
     return INVALID;
-}
-
-uint next_function_pos(uint fn_node)
-{
-    uint start = hir_token_pos[fn_node];
-    uint best = INVALID;
-    uint n = active_hir_node_count();
-    [loop]
-    for (uint node = 0u; node < n; node += 1u)
-    {
-        uint pos = hir_token_pos[node];
-        if (hir_kind[node] == HIR_FN && pos != INVALID && pos > start &&
-            (best == INVALID || pos < best))
-            best = pos;
-    }
-    return best;
 }
 
 bool node_in_function(uint node, uint fn_node)
@@ -288,6 +280,33 @@ uint function_param_count(uint fn_node)
     return count;
 }
 
+bool function_has_call_reference(uint fn_node)
+{
+    uint decl_token = valid_node(fn_node) ? hir_token_pos[fn_node] : INVALID;
+    if (!valid_token(decl_token))
+        return false;
+
+    uint n = active_hir_node_count();
+    [loop]
+    for (uint node = 0u; node < n; node += 1u)
+    {
+        if (hir_kind[node] != HIR_CALL_EXPR)
+            continue;
+        uint callee_token = callee_token_for_call(node);
+        if (valid_token(callee_token) && call_fn_index[callee_token] == decl_token)
+            return true;
+    }
+    return false;
+}
+
+bool is_emittable_function(uint node)
+{
+    if (!valid_node(node) || hir_kind[node] != HIR_FN || !valid_token(hir_token_pos[node]) ||
+        function_param_count(node) > 2u)
+        return false;
+    return fn_entrypoint_tag[node] == ENTRYPOINT_MAIN || function_has_call_reference(node);
+}
+
 uint param_index_for_name(uint fn_node, uint decl_token, uint use_token)
 {
     uint n = active_hir_node_count();
@@ -312,39 +331,60 @@ uint find_main_fn_node()
     {
         if (hir_kind[node] != HIR_FN)
             continue;
-        uint decl_token = hir_token_pos[node];
-        bool tagged = fn_entrypoint_tag[node] == ENTRYPOINT_MAIN ||
-                      (valid_token(decl_token) && fn_entrypoint_tag[decl_token] == ENTRYPOINT_MAIN);
+        bool tagged = fn_entrypoint_tag[node] == ENTRYPOINT_MAIN;
         if (!tagged)
             continue;
-        if (found != INVALID)
-            return INVALID;
-        found = node;
+        if (found == INVALID)
+            found = node;
     }
     return found;
 }
 
-uint find_return_node(uint fn_node)
+bool node_in_scope_span(uint node, uint scope_node)
 {
-    uint found = INVALID;
+    if (!valid_node(node) || !valid_node(scope_node))
+        return false;
+    uint pos = hir_token_pos[node];
+    uint scope_start = hir_token_pos[scope_node];
+    uint scope_end = hir_token_end[scope_node];
+    return pos != INVALID && scope_start != INVALID && scope_end != INVALID &&
+           pos >= scope_start && pos < scope_end;
+}
+
+bool find_return_construct_in_scope(uint scope_node, out uint found, out uint construct_kind)
+{
+    found = INVALID;
+    construct_kind = RETURN_CONSTRUCT_NONE;
+    uint found_pos = INVALID;
     uint n = active_hir_node_count();
     [loop]
     for (uint node = 0u; node < n; node += 1u)
     {
-        if (hir_kind[node] != HIR_RETURN_STMT || !node_in_function(node, fn_node))
+        uint kind = hir_kind[node];
+        bool supported = kind == HIR_IF_STMT ||
+                         (kind == HIR_RETURN_STMT &&
+                          stmt_record(node, STMT_RECORD_KIND) == STMT_RECORD_KIND_RETURN);
+        if (!supported || !node_in_scope_span(node, scope_node))
             continue;
-        if (stmt_record(node, STMT_RECORD_KIND) != STMT_RECORD_KIND_RETURN)
+        uint pos = hir_token_pos[node];
+        if (pos == INVALID)
             continue;
-        if (found != INVALID)
-            return INVALID;
-        found = node;
+        bool take = found == INVALID || pos < found_pos ||
+                    (pos == found_pos && kind == HIR_IF_STMT);
+        if (take)
+        {
+            found = node;
+            found_pos = pos;
+            construct_kind = kind == HIR_IF_STMT ? RETURN_CONSTRUCT_IF
+                                                 : RETURN_CONSTRUCT_RETURN;
+        }
     }
-    return found;
+    return found != INVALID;
 }
 
 void put_module(uint pos, uint value, bool write, uint target)
 {
-    if (write && pos < gParams.out_capacity && pos == target)
+    if (write && pos < gParams.out_capacity && (target == INVALID || pos == target))
         out_words[pos] = value & 0xffu;
 }
 
@@ -733,6 +773,108 @@ bool emit_print_call(inout uint cursor, uint base, uint call_node, uint fn_node,
     return true;
 }
 
+bool push_branch_task(inout uint stack_top,
+                      inout uint scope_stack[MAX_BRANCH_RETURN_STACK],
+                      inout uint task_stack[MAX_BRANCH_RETURN_STACK],
+                      uint scope,
+                      uint task)
+{
+    if (stack_top >= MAX_BRANCH_RETURN_STACK)
+        return false;
+    scope_stack[stack_top] = scope;
+    task_stack[stack_top] = task;
+    stack_top += 1u;
+    return true;
+}
+
+bool emit_return_value_from_scope(inout uint cursor, uint base, uint root_scope, uint fn_node,
+                                  out uint fail_detail, bool write, uint target)
+{
+    fail_detail = 0u;
+    uint scope_stack[MAX_BRANCH_RETURN_STACK];
+    uint task_stack[MAX_BRANCH_RETURN_STACK];
+    uint stack_top = 0u;
+    if (!push_branch_task(stack_top, scope_stack, task_stack, root_scope, 0u))
+    {
+        fail_detail = 16u;
+        return false;
+    }
+
+    [loop]
+    for (uint guard = 0u; guard < MAX_BRANCH_RETURN_STACK; guard += 1u)
+    {
+        if (stack_top == 0u)
+            return true;
+
+        stack_top -= 1u;
+        uint scope = scope_stack[stack_top];
+        uint task = task_stack[stack_top];
+        if (task == 1u)
+        {
+            put_body_byte(cursor, base, 0x05u, write, target);
+            continue;
+        }
+        if (task == 2u)
+        {
+            put_body_byte(cursor, base, 0x0bu, write, target);
+            continue;
+        }
+
+        uint construct_node = INVALID;
+        uint construct_kind = RETURN_CONSTRUCT_NONE;
+        if (!find_return_construct_in_scope(scope, construct_node, construct_kind))
+        {
+            fail_detail = 12u;
+            return false;
+        }
+        if (construct_kind == RETURN_CONSTRUCT_IF)
+        {
+            uint cond_expr = stmt_record(construct_node, STMT_RECORD_A);
+            uint then_block = stmt_record(construct_node, STMT_RECORD_B);
+            uint else_block = stmt_record(construct_node, 3u);
+            if (!valid_node(cond_expr) || !valid_node(then_block) || !valid_node(else_block))
+            {
+                fail_detail = 14u;
+                return false;
+            }
+            uint expr_fail = 0u;
+            if (!emit_expr_node(cursor, base, cond_expr, fn_node, expr_fail, write, target))
+            {
+                fail_detail = expr_fail;
+                return false;
+            }
+            put_body_byte(cursor, base, 0x04u, write, target);
+            put_body_byte(cursor, base, 0x7fu, write, target);
+            if (!push_branch_task(stack_top, scope_stack, task_stack, INVALID, 2u) ||
+                !push_branch_task(stack_top, scope_stack, task_stack, else_block, 0u) ||
+                !push_branch_task(stack_top, scope_stack, task_stack, INVALID, 1u) ||
+                !push_branch_task(stack_top, scope_stack, task_stack, then_block, 0u))
+            {
+                fail_detail = 16u;
+                return false;
+            }
+            continue;
+        }
+        if (construct_kind == RETURN_CONSTRUCT_RETURN)
+        {
+            uint ret_expr = stmt_record(construct_node, STMT_RECORD_A);
+            uint expr_fail = 0u;
+            if (!emit_expr_node(cursor, base, ret_expr, fn_node, expr_fail, write, target))
+            {
+                fail_detail = expr_fail;
+                return false;
+            }
+            continue;
+        }
+
+        fail_detail = 12u;
+        return false;
+    }
+
+    fail_detail = 16u;
+    return false;
+}
+
 bool emit_function_body(uint fn_node, out uint body_len, out uint fail_detail, bool write,
                         uint target, uint base)
 {
@@ -743,37 +885,39 @@ bool emit_function_body(uint fn_node, out uint body_len, out uint fail_detail, b
         fail_detail = 1u;
         return false;
     }
-    uint return_node = find_return_node(fn_node);
-    uint return_pos = valid_node(return_node) ? hir_token_pos[return_node] : INVALID;
-    if (!valid_node(return_node) || return_pos == INVALID)
-    {
-        fail_detail = 2u;
-        return false;
-    }
+    uint root_construct = INVALID;
+    uint root_construct_kind = RETURN_CONSTRUCT_NONE;
+    bool has_root_construct =
+        find_return_construct_in_scope(fn_node, root_construct, root_construct_kind);
+    uint return_pos = has_root_construct && root_construct_kind == RETURN_CONSTRUCT_RETURN
+                          ? hir_token_pos[root_construct]
+                          : INVALID;
 
     uint cursor = 0u;
     put_body_u32_leb(cursor, base, 0u, write, target);
 
-    uint after_pos = 0u;
-    [loop]
-    for (uint i = 0u; i < MAX_PRINTS; i += 1u)
+    if (return_pos != INVALID)
     {
-        uint print_node = next_print_call(fn_node, return_pos, after_pos);
-        if (!valid_node(print_node))
-            break;
-        if (!emit_print_call(cursor, base, print_node, fn_node, write, target))
+        uint after_pos = 0u;
+        [loop]
+        for (uint i = 0u; i < MAX_PRINTS; i += 1u)
         {
-            fail_detail = 3u;
-            return false;
+            uint print_node = next_print_call(fn_node, return_pos, after_pos);
+            if (!valid_node(print_node))
+                break;
+            if (!emit_print_call(cursor, base, print_node, fn_node, write, target))
+            {
+                fail_detail = 3u;
+                return false;
+            }
+            after_pos = hir_token_pos[print_node];
         }
-        after_pos = hir_token_pos[print_node];
     }
 
-    uint ret_expr = stmt_record(return_node, STMT_RECORD_A);
-    uint expr_fail = 0u;
-    if (!emit_expr_node(cursor, base, ret_expr, fn_node, expr_fail, write, target))
+    uint value_fail = 0u;
+    if (!emit_return_value_from_scope(cursor, base, fn_node, fn_node, value_fail, write, target))
     {
-        fail_detail = expr_fail;
+        fail_detail = value_fail;
         return false;
     }
     put_body_byte(cursor, base, 0x0bu, write, target);
@@ -987,6 +1131,8 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint target_limit = min(gParams.out_capacity, HIR_MODULE_OUTPUT_TARGET_LIMIT);
     if (target >= target_limit && target != 0u)
         return;
+    if (target != 0u)
+        return;
 
     uint fn_count = function_count();
     if (fn_count <= 1u)
@@ -1005,7 +1151,7 @@ void main(uint3 tid: SV_DispatchThreadID)
         record_reject(2u, module_len, target);
         return;
     }
-    if (!emit_module(module_len, fail_stage, true, target))
+    if (!emit_module(module_len, fail_stage, true, INVALID))
     {
         record_reject(10u + fail_stage, module_len, target);
         return;

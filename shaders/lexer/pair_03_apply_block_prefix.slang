@@ -21,13 +21,15 @@ StructuredBuffer<uint2> block_prefix_pair; // length nb (inclusive per block)
 RWStructuredBuffer<uint> s_all_final;  // length n
 RWStructuredBuffer<uint> s_keep_final; // length n
 
+static const uint MAX_GROUPS_X = 65535u;
+
 [shader("compute")]
 [numthreads(WORKGROUP_SIZE, 1, 1)]
 void pair_03_apply_block_prefix(uint3 tid: SV_GroupThreadID,
                                 uint3 gid: SV_DispatchThreadID,
                                 uint3 ggrp: SV_GroupID)
 {
-    const uint block = ggrp.x;
+    const uint block = ggrp.y * MAX_GROUPS_X + ggrp.x;
     const uint base = block * WORKGROUP_SIZE;
     const uint i = base + tid.x;
 

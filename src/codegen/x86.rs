@@ -44,16 +44,99 @@ struct X86RegallocParams {
     reserved: u32,
 }
 
+pub const X86_FEATURE_ENUM: u32 = 1 << 0;
+pub const X86_FEATURE_MATCH: u32 = 1 << 1;
+pub const X86_FEATURE_AGGREGATE: u32 = 1 << 2;
+pub const X86_FEATURE_CALL: u32 = 1 << 3;
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct X86FeatureSummary {
+    pub mask: u32,
+    pub enum_count: u32,
+    pub match_count: u32,
+    pub aggregate_count: u32,
+    pub scalar_inst_capacity: u32,
+    pub call_count: u32,
+    pub param_count: u32,
+}
+
+impl X86FeatureSummary {
+    fn from_record_words(words: [u32; 8]) -> Self {
+        Self {
+            mask: words[0],
+            enum_count: words[1],
+            match_count: words[2],
+            aggregate_count: words[3],
+            scalar_inst_capacity: words[4],
+            call_count: words[5],
+            param_count: words[6],
+        }
+    }
+
+    fn record_words(self) -> [u32; 8] {
+        [
+            self.mask,
+            self.enum_count,
+            self.match_count,
+            self.aggregate_count,
+            self.scalar_inst_capacity,
+            self.call_count,
+            self.param_count,
+            0,
+        ]
+    }
+
+    pub fn has_enum(self) -> bool {
+        self.mask & X86_FEATURE_ENUM != 0
+    }
+
+    pub fn has_match(self) -> bool {
+        self.mask & X86_FEATURE_MATCH != 0
+    }
+
+    #[allow(dead_code)]
+    pub fn has_aggregate(self) -> bool {
+        self.mask & X86_FEATURE_AGGREGATE != 0
+    }
+
+    pub fn has_call(self) -> bool {
+        self.mask & X86_FEATURE_CALL != 0
+    }
+
+    pub fn has_param(self) -> bool {
+        self.param_count != 0
+    }
+
+    fn scalar_inst_capacity_limit(self) -> Option<usize> {
+        if self.has_enum() || self.has_match() || self.has_aggregate() || self.has_call() {
+            return None;
+        }
+        let estimate = self.scalar_inst_capacity as usize;
+        if estimate == 0 {
+            return None;
+        }
+        Some(
+            estimate
+                .saturating_add(estimate.div_ceil(4))
+                .saturating_add(X86_INST_CAPACITY_SLACK)
+                .max(X86_INST_CAPACITY_MIN),
+        )
+    }
+}
+
 pub struct GpuX86ExprMetadataBuffers<'a> {
     pub record: &'a wgpu::Buffer,
     pub int_value: &'a wgpu::Buffer,
     pub stmt_record: &'a wgpu::Buffer,
+    pub type_form: &'a wgpu::Buffer,
+    pub type_len_value: &'a wgpu::Buffer,
 }
 
 pub struct GpuX86FunctionMetadataBuffers<'a> {
     pub node_decl_token: &'a wgpu::Buffer,
     pub node_name_token: &'a wgpu::Buffer,
     pub hir_token_pos: &'a wgpu::Buffer,
+    pub fn_return_type_node: &'a wgpu::Buffer,
     pub param_record: &'a wgpu::Buffer,
     pub enclosing_fn: &'a wgpu::Buffer,
     pub method_decl_param_offset: &'a wgpu::Buffer,
@@ -135,17 +218,86 @@ pub struct GpuX86TypeMetadataBuffers<'a> {
     pub type_instance_len_payload: &'a wgpu::Buffer,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct GpuX86ExternalScratchBuffers<'a> {
+    pub expr_resolved_final: Option<&'a wgpu::Buffer>,
+    pub node_func: Option<&'a wgpu::Buffer>,
+    pub func_owner_scan_local_prefix: Option<&'a wgpu::Buffer>,
+    pub func_slot_by_node: Option<&'a wgpu::Buffer>,
+    pub match_pattern_owner: Option<&'a wgpu::Buffer>,
+    pub match_pattern_node_owner: Option<&'a wgpu::Buffer>,
+    pub match_pattern_node_variant: Option<&'a wgpu::Buffer>,
+    pub match_pattern_node_payload_decl: Option<&'a wgpu::Buffer>,
+    pub match_pattern_first_use_node: Option<&'a wgpu::Buffer>,
+    pub enclosing_let_node_a: Option<&'a wgpu::Buffer>,
+    pub enclosing_let_node_b: Option<&'a wgpu::Buffer>,
+    pub node_inst_same_end_link_a: Option<&'a wgpu::Buffer>,
+    pub node_inst_same_end_link_b: Option<&'a wgpu::Buffer>,
+    pub node_inst_scan_local_prefix: Option<&'a wgpu::Buffer>,
+    pub call_record: Option<&'a wgpu::Buffer>,
+    pub call_type_record: Option<&'a wgpu::Buffer>,
+    pub node_inst_count_info: Option<&'a wgpu::Buffer>,
+    pub node_inst_count_payload: Option<&'a wgpu::Buffer>,
+    pub node_inst_range_start: Option<&'a wgpu::Buffer>,
+    pub node_inst_range_info: Option<&'a wgpu::Buffer>,
+    pub node_inst_subtree_bound_start: Option<&'a wgpu::Buffer>,
+    pub node_inst_subtree_bound_end: Option<&'a wgpu::Buffer>,
+    pub node_inst_gen_node_record: Option<&'a wgpu::Buffer>,
+    pub decl_layout_record: Option<&'a wgpu::Buffer>,
+    pub const_value_record: Option<&'a wgpu::Buffer>,
+    pub param_reg_record: Option<&'a wgpu::Buffer>,
+    pub local_literal_record: Option<&'a wgpu::Buffer>,
+}
+
+impl GpuX86ExternalScratchBuffers<'_> {
+    pub fn borrowed_buffer_count(&self) -> usize {
+        [
+            self.expr_resolved_final,
+            self.node_func,
+            self.func_owner_scan_local_prefix,
+            self.func_slot_by_node,
+            self.match_pattern_owner,
+            self.match_pattern_node_owner,
+            self.match_pattern_node_variant,
+            self.match_pattern_node_payload_decl,
+            self.match_pattern_first_use_node,
+            self.enclosing_let_node_a,
+            self.enclosing_let_node_b,
+            self.node_inst_same_end_link_a,
+            self.node_inst_same_end_link_b,
+            self.node_inst_scan_local_prefix,
+            self.call_record,
+            self.call_type_record,
+            self.node_inst_count_info,
+            self.node_inst_count_payload,
+            self.node_inst_range_start,
+            self.node_inst_range_info,
+            self.node_inst_subtree_bound_start,
+            self.node_inst_subtree_bound_end,
+            self.node_inst_gen_node_record,
+            self.decl_layout_record,
+            self.const_value_record,
+            self.param_reg_record,
+            self.local_literal_record,
+        ]
+        .into_iter()
+        .flatten()
+        .count()
+    }
+}
+
 // Host-side conservative capacity estimate before GPU instruction counts are
 // exact. The HIR-only path keeps a conservative floor; the live-token path uses
 // measured token count plus slack so small/medium programs do not allocate a
 // fixed 16k instruction rows when the frontend already knows the real token
 // count.
 const X86_INST_CAPACITY_HIR_ESTIMATE_CAP: usize = 16_384;
-const MAX_X86_INSTS: usize = 1_048_576;
+const MAX_X86_INSTS: usize = 2_097_152;
 const X86_INST_CAPACITY_MIN: usize = 256;
 const X86_INST_CAPACITY_SLACK: usize = 1_024;
 const X86_INSTS_PER_HIR_NODE_CAPACITY: usize = 8;
 const X86_INSTS_PER_TOKEN_CAPACITY: usize = 1;
+const X86_SCALAR_INST_BASIS_DIVISOR: usize = 12;
 const X86_FUNCTION_SLOT_TOKEN_DENSITY_DIVISOR: usize = 3;
 const X86_FUNCTION_SLOT_CAPACITY_SLACK: usize = 64;
 const X86_INITIAL_OUTPUT_READBACK_SOURCE_MULTIPLIER: usize = 3;
@@ -184,14 +336,53 @@ pub fn x86_capacity_estimate_for_hir_tokens_and_inst_basis(
     token_capacity: usize,
     inst_basis_words: usize,
 ) -> X86CapacityEstimate {
+    x86_capacity_estimate_for_hir_tokens_inst_basis_and_inst_limit(
+        hir_words,
+        token_capacity,
+        inst_basis_words,
+        None,
+    )
+}
+
+pub fn x86_capacity_estimate_for_hir_tokens_inst_basis_and_feature_summary(
+    hir_words: usize,
+    token_capacity: usize,
+    inst_basis_words: usize,
+    feature_summary: X86FeatureSummary,
+) -> X86CapacityEstimate {
+    let scalar_inst_capacity_limit = feature_summary.scalar_inst_capacity_limit().map(|limit| {
+        let semantic_floor = inst_basis_words
+            .max(1)
+            .div_ceil(X86_SCALAR_INST_BASIS_DIVISOR)
+            .saturating_add(X86_INST_CAPACITY_SLACK)
+            .max(X86_INST_CAPACITY_MIN);
+        limit.max(semantic_floor)
+    });
+    x86_capacity_estimate_for_hir_tokens_inst_basis_and_inst_limit(
+        hir_words,
+        token_capacity,
+        inst_basis_words,
+        scalar_inst_capacity_limit,
+    )
+}
+
+fn x86_capacity_estimate_for_hir_tokens_inst_basis_and_inst_limit(
+    hir_words: usize,
+    token_capacity: usize,
+    inst_basis_words: usize,
+    inst_capacity_limit_override: Option<usize>,
+) -> X86CapacityEstimate {
     let token_scaled_limit = token_capacity
         .max(1)
         .saturating_mul(X86_INSTS_PER_TOKEN_CAPACITY)
         .saturating_add(X86_INST_CAPACITY_SLACK)
         .min(MAX_X86_INSTS);
+    let inst_capacity_limit = inst_capacity_limit_override
+        .map(|limit| limit.min(token_scaled_limit))
+        .unwrap_or(token_scaled_limit);
     x86_capacity_estimate_for_hir_with_limit_and_inst_basis(
         hir_words,
-        token_scaled_limit,
+        inst_capacity_limit,
         inst_basis_words,
     )
 }
@@ -259,6 +450,26 @@ pub fn x86_node_inst_order_rows(hir_words: usize, inst_capacity: usize) -> usize
     inst_capacity.min(hir_words.max(1)).saturating_add(1)
 }
 
+pub fn x86_node_inst_worklist_rows(hir_words: usize, inst_capacity: usize) -> usize {
+    inst_capacity.max(1).min(hir_words.max(1))
+}
+
+pub fn x86_call_type_record_words(hir_words: usize, has_call: bool) -> usize {
+    if has_call {
+        hir_words.saturating_mul(3)
+    } else {
+        1
+    }
+}
+
+pub fn x86_node_inst_count_record_words(hir_words: usize) -> usize {
+    hir_words.saturating_mul(2)
+}
+
+pub fn x86_node_inst_gen_node_record_words(hir_words: usize, inst_capacity: usize) -> usize {
+    x86_node_inst_worklist_rows(hir_words, inst_capacity).saturating_mul(2)
+}
+
 pub fn x86_node_inst_order_record_words(
     hir_words: usize,
     inst_capacity: usize,
@@ -267,7 +478,6 @@ pub fn x86_node_inst_order_record_words(
     let order_rows = x86_node_inst_order_rows(hir_words, inst_capacity);
     order_rows
         .saturating_mul(3)
-        .max(hir_words.max(1).saturating_mul(2))
         .max(function_slot_capacity.max(1).saturating_mul(14))
 }
 
@@ -311,6 +521,7 @@ pub struct GpuX86CodeGenerator {
     active_scan_dispatch_args_pass: PassData,
     virtual_dispatch_args_pass: PassData,
     output_dispatch_args_pass: PassData,
+    feature_counts_pass: PassData,
     node_tree_info_pass: PassData,
     func_discover_pass: PassData,
     func_slot_flags_pass: PassData,
@@ -430,6 +641,11 @@ impl GpuX86CodeGenerator {
             "output_dispatch_args",
             "x86_output_dispatch_args.spv",
             "x86_output_dispatch_args.reflect.json"
+        );
+        let feature_counts_pass = load_x86_pass!(
+            "feature_counts",
+            "x86_feature_counts.spv",
+            "x86_feature_counts.reflect.json"
         );
         let node_tree_info_pass = load_x86_pass!(
             "node_tree_info",
@@ -836,6 +1052,7 @@ impl GpuX86CodeGenerator {
             active_scan_dispatch_args_pass,
             virtual_dispatch_args_pass,
             output_dispatch_args_pass,
+            feature_counts_pass,
             node_tree_info_pass,
             func_discover_pass,
             func_slot_flags_pass,
@@ -947,6 +1164,27 @@ mod tests {
     fn x86_function_slot_capacity_keeps_at_least_one_slot() {
         assert_eq!(x86_function_slot_capacity(0, 0, 0), 1);
         assert_eq!(x86_function_slot_capacity(0, 100, 100), 1);
+    }
+
+    #[test]
+    fn x86_node_inst_gen_worklist_is_compact_instruction_bounded() {
+        let hir_words = 18_260_036;
+        let inst_capacity = 1_048_576;
+        let worklist_words = x86_node_inst_gen_node_record_words(hir_words, inst_capacity);
+        let legacy_words = hir_words.saturating_add(1).saturating_mul(2);
+
+        assert_eq!(worklist_words, inst_capacity.saturating_mul(2));
+        assert!(worklist_words < legacy_words);
+    }
+
+    #[test]
+    fn x86_node_inst_gen_worklist_does_not_grow_small_programs() {
+        let hir_words = 512;
+        let inst_capacity = 8_000;
+        let worklist_words = x86_node_inst_gen_node_record_words(hir_words, inst_capacity);
+        let legacy_words = hir_words.saturating_add(1).saturating_mul(2);
+
+        assert!(worklist_words <= legacy_words);
     }
 
     #[test]

@@ -22,7 +22,7 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> module_record_flag;
 StructuredBuffer<uint> module_record_prefix;
 StructuredBuffer<uint> hir_item_file_id;
-StructuredBuffer<uint> path_record_prefix;
+StructuredBuffer<uint> path_id_by_owner_hir;
 
 RWStructuredBuffer<uint> module_file_id;
 RWStructuredBuffer<uint> module_path_id;
@@ -49,6 +49,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     module_file_id[slot.dst] = hir_item_file_id[i];
-    module_path_id[slot.dst] = path_record_prefix[i];
+    module_path_id[slot.dst] = path_id_by_owner_hir[i];
     module_owner_hir[slot.dst] = i;
 }

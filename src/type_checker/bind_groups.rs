@@ -26,6 +26,7 @@ impl GpuTypeChecker {
         input_fingerprint: u64,
         uses_hir_control: bool,
         uses_hir_items: bool,
+        external_scratch: Option<GpuTypeCheckExternalScratchBuffers<'_>>,
     ) -> Result<ResidentTypeCheckBindGroups> {
         let visible_decl = storage_u32_rw(
             device,
@@ -534,12 +535,20 @@ impl GpuTypeChecker {
             token_capacity as usize,
             wgpu::BufferUsages::empty(),
         );
-        let fn_entrypoint_tag = storage_u32_rw(
-            device,
-            "type_check.resident.fn_entrypoint_tag",
-            token_capacity.max(hir_node_capacity) as usize,
-            wgpu::BufferUsages::empty(),
-        );
+        let fn_entrypoint_tag_len = token_capacity.max(hir_node_capacity) as usize;
+        let fn_entrypoint_tag = if let Some(scratch) = external_scratch
+            .map(|scratch| scratch.fn_entrypoint_tag)
+            .filter(|buffer| buffer.size() >= (fn_entrypoint_tag_len.max(1) * 4) as u64)
+        {
+            alias_storage_buffer(scratch)
+        } else {
+            storage_u32_rw(
+                device,
+                "type_check.resident.fn_entrypoint_tag",
+                fn_entrypoint_tag_len,
+                wgpu::BufferUsages::empty(),
+            )
+        };
         let call_return_type = storage_u32_rw(
             device,
             "type_check.resident.call_return_type",
@@ -552,42 +561,61 @@ impl GpuTypeChecker {
             token_capacity as usize,
             wgpu::BufferUsages::empty(),
         );
-        let call_param_count = storage_u32_rw(
-            device,
+        let scratch_or_storage_u32 =
+            |label: &str, count: usize, scratch: Option<&wgpu::Buffer>| -> wgpu::Buffer {
+                if let Some(buffer) =
+                    scratch.filter(|buffer| buffer.size() >= (count.max(1) * 4) as u64)
+                {
+                    alias_storage_buffer(buffer)
+                } else {
+                    storage_u32_rw(device, label, count, wgpu::BufferUsages::empty())
+                }
+            };
+        let call_param_count = scratch_or_storage_u32(
             "type_check.resident.call_param_count",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.call_param_count),
         );
-        let call_param_type = storage_u32_rw(
-            device,
+        let call_param_type = scratch_or_storage_u32(
             "type_check.resident.call_param_type",
+            (token_capacity as usize).max(1) * CALL_PARAM_CACHE_STRIDE,
+            external_scratch.map(|scratch| scratch.call_param_type),
+        );
+        let call_param_ref_tag = storage_u32_rw(
+            device,
+            "type_check.resident.call_param_ref_tag",
             (token_capacity as usize).max(1) * CALL_PARAM_CACHE_STRIDE,
             wgpu::BufferUsages::empty(),
         );
-        let call_arg_record = storage_u32_rw(
+        let call_param_ref_payload = storage_u32_rw(
             device,
-            "type_check.resident.call_arg_record",
-            (token_capacity as usize).max(1) * 4,
+            "type_check.resident.call_param_ref_payload",
+            (token_capacity as usize).max(1) * CALL_PARAM_CACHE_STRIDE,
             wgpu::BufferUsages::empty(),
         );
+        let call_arg_record = scratch_or_storage_u32(
+            "type_check.resident.call_arg_record",
+            (token_capacity as usize).max(1) * 4,
+            external_scratch.map(|scratch| scratch.call_arg_record),
+        );
+        // Resident consumers use parser-owned HIR argument records directly;
+        // keep this as a one-word compatibility buffer for old resource maps.
         let call_arg_node = storage_u32_rw(
             device,
             "type_check.resident.call_arg_node",
-            (token_capacity as usize).max(1) * CALL_PARAM_CACHE_STRIDE,
+            call_arg_node_capacity_words(),
             wgpu::BufferUsages::empty(),
         );
         let function_lookup_capacity = token_capacity.saturating_mul(2).max(1) as usize;
-        let function_lookup_key = storage_u32_rw(
-            device,
+        let function_lookup_key = scratch_or_storage_u32(
             "type_check.resident.function_lookup_key",
             function_lookup_capacity,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.function_lookup_key),
         );
-        let function_lookup_fn = storage_u32_rw(
-            device,
+        let function_lookup_fn = scratch_or_storage_u32(
             "type_check.resident.function_lookup_fn",
             function_lookup_capacity,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.function_lookup_fn),
         );
         let method_decl_receiver_ref_tag = storage_u32_rw(
             device,
@@ -601,47 +629,40 @@ impl GpuTypeChecker {
             token_capacity as usize,
             wgpu::BufferUsages::empty(),
         );
-        let method_decl_module_id = storage_u32_rw(
-            device,
+        let method_decl_module_id = scratch_or_storage_u32(
             "type_check.resident.method_decl_module_id",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.method_decl_module_id),
         );
-        let method_decl_impl_node = storage_u32_rw(
-            device,
+        let method_decl_impl_node = scratch_or_storage_u32(
             "type_check.resident.method_decl_impl_node",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.method_decl_impl_node),
         );
-        let method_decl_name_token = storage_u32_rw(
-            device,
+        let method_decl_name_token = scratch_or_storage_u32(
             "type_check.resident.method_decl_name_token",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.method_decl_name_token),
         );
-        let method_decl_name_id = storage_u32_rw(
-            device,
+        let method_decl_name_id = scratch_or_storage_u32(
             "type_check.resident.method_decl_name_id",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.method_decl_name_id),
         );
-        let method_decl_param_offset = storage_u32_rw(
-            device,
+        let method_decl_param_offset = scratch_or_storage_u32(
             "type_check.resident.method_decl_param_offset",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.method_decl_param_offset),
         );
-        let method_decl_receiver_mode = storage_u32_rw(
-            device,
+        let method_decl_receiver_mode = scratch_or_storage_u32(
             "type_check.resident.method_decl_receiver_mode",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.method_decl_receiver_mode),
         );
-        let method_decl_visibility = storage_u32_rw(
-            device,
+        let method_decl_visibility = scratch_or_storage_u32(
             "type_check.resident.method_decl_visibility",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.method_decl_visibility),
         );
         let method_module_id_by_file_id_implicit_root = storage_u32_fill_rw(
             device,
@@ -657,43 +678,32 @@ impl GpuTypeChecker {
             1,
             wgpu::BufferUsages::empty(),
         );
-        let method_key_to_fn_token = storage_u32_rw(
-            device,
+        let method_key_to_fn_token = scratch_or_storage_u32(
             "type_check.resident.method_key_to_fn_token",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.method_key_to_fn_token),
         );
-        let method_key_order_tmp = storage_u32_rw(
-            device,
-            "type_check.resident.method_key_order_tmp",
-            token_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let method_key_status = storage_u32_rw(
-            device,
+        // Method key sorting starts after call resolution has consumed the
+        // function lookup table, so reuse the two lookup rows as method-key
+        // scratch instead of keeping additional token-sized buffers resident.
+        let method_key_order_tmp = alias_storage_buffer(&function_lookup_key);
+        let method_key_status = scratch_or_storage_u32(
             "type_check.resident.method_key_status",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.method_key_status),
         );
-        let method_key_duplicate_of = storage_u32_rw(
-            device,
-            "type_check.resident.method_key_duplicate_of",
-            token_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
+        let method_key_duplicate_of = alias_storage_buffer(&function_lookup_fn);
         let method_key_radix_histogram_len =
             (name_n_blocks as usize).max(1) * NAME_RADIX_BUCKETS as usize;
-        let method_key_radix_block_histogram = storage_u32_rw(
-            device,
+        let method_key_radix_block_histogram = scratch_or_storage_u32(
             "type_check.resident.method_key_radix_block_histogram",
             method_key_radix_histogram_len,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.method_key_radix_block_histogram),
         );
-        let method_key_radix_block_bucket_prefix = storage_u32_rw(
-            device,
+        let method_key_radix_block_bucket_prefix = scratch_or_storage_u32(
             "type_check.resident.method_key_radix_block_bucket_prefix",
             method_key_radix_histogram_len,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.method_key_radix_block_bucket_prefix),
         );
         let method_key_radix_bucket_total = storage_u32_rw(
             device,
@@ -707,228 +717,242 @@ impl GpuTypeChecker {
             NAME_RADIX_BUCKETS as usize,
             wgpu::BufferUsages::empty(),
         );
-        let method_call_receiver_ref_tag = storage_u32_rw(
-            device,
+        let method_call_receiver_ref_tag = scratch_or_storage_u32(
             "type_check.resident.method_call_receiver_ref_tag",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.method_call_receiver_ref_tag),
         );
-        let method_call_receiver_ref_payload = storage_u32_rw(
-            device,
+        let method_call_receiver_ref_payload = scratch_or_storage_u32(
             "type_check.resident.method_call_receiver_ref_payload",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.method_call_receiver_ref_payload),
         );
-        let method_call_name_id = storage_u32_rw(
-            device,
+        let method_call_name_id = scratch_or_storage_u32(
             "type_check.resident.method_call_name_id",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.method_call_name_id),
         );
-        let method_call_site_module_id = storage_u32_rw(
-            device,
+        let method_call_site_module_id = scratch_or_storage_u32(
             "type_check.resident.method_call_site_module_id",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.method_call_site_module_id),
         );
-        let type_expr_ref_tag = storage_u32_rw(
-            device,
+        let type_expr_ref_tag = scratch_or_storage_u32(
             "type_check.resident.type_expr_ref_tag",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.type_expr_ref_tag),
         );
-        let type_expr_ref_payload = storage_u32_rw(
-            device,
+        let type_expr_ref_payload = scratch_or_storage_u32(
             "type_check.resident.type_expr_ref_payload",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.type_expr_ref_payload),
         );
-        let type_instance_kind = storage_u32_rw(
-            device,
-            "type_check.resident.type_instance_kind",
-            token_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let type_instance_head_token = storage_u32_rw(
-            device,
+        // Type-instance rows are populated after the name-radix pipeline and
+        // remain live for later typecheck/codegen consumers. Reuse name scratch
+        // that is not retained as module-path declaration metadata.
+        let type_instance_kind = alias_storage_buffer(&name_scan_local_prefix);
+        let type_instance_head_token = scratch_or_storage_u32(
             "type_check.resident.type_instance_head_token",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.type_instance_head_token),
         );
-        let type_decl_generic_param_count = storage_u32_rw(
-            device,
+        let type_decl_generic_param_count = scratch_or_storage_u32(
             "type_check.resident.type_decl_generic_param_count",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.type_decl_generic_param_count),
         );
-        let type_decl_generic_param_count_by_node = storage_u32_rw(
-            device,
-            "type_check.resident.type_decl_generic_param_count_by_node",
-            hir_node_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let type_decl_const_param_count_by_node = storage_u32_rw(
-            device,
-            "type_check.resident.type_decl_const_param_count_by_node",
-            hir_node_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let type_decl_hir_node_by_token = storage_u32_rw(
-            device,
-            "type_check.resident.type_decl_hir_node_by_token",
-            token_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let type_generic_param_slot_by_token = storage_u32_rw(
-            device,
+        let type_decl_generic_param_count_by_node = if let Some(scratch) = external_scratch {
+            // Type-instance generic-param counts are HIR-keyed scratch. Parser
+            // HIR type workspaces are dead after parser HIR construction and
+            // are not part of the typecheck input surface consumed here.
+            alias_storage_buffer(scratch.type_decl_generic_param_count_by_node)
+        } else {
+            storage_u32_rw(
+                device,
+                "type_check.resident.type_decl_generic_param_count_by_node",
+                hir_node_capacity as usize,
+                wgpu::BufferUsages::empty(),
+            )
+        };
+        // Const-generic declaration counts are consumed before the calls
+        // pipeline clears and publishes function entrypoint tags.
+        let type_decl_const_param_count_by_node = alias_storage_buffer(&fn_entrypoint_tag);
+        let type_decl_hir_node_by_token = alias_storage_buffer(&name_spans);
+        let type_generic_param_slot_by_token = scratch_or_storage_u32(
             "type_check.resident.type_generic_param_slot_by_token",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.type_generic_param_slot_by_token),
         );
-        let type_const_param_slot_by_token = storage_u32_rw(
-            device,
+        let type_const_param_slot_by_token = scratch_or_storage_u32(
             "type_check.resident.type_const_param_slot_by_token",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.type_const_param_slot_by_token),
         );
-        let type_instance_decl_token = storage_u32_rw(
-            device,
-            "type_check.resident.type_instance_decl_token",
-            token_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let type_instance_arg_start = storage_u32_rw(
-            device,
+        let type_instance_decl_token = alias_storage_buffer(&radix_block_histogram);
+        let type_instance_arg_start = scratch_or_storage_u32(
             "type_check.resident.type_instance_arg_start",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.type_instance_arg_start),
         );
-        let type_instance_arg_count = storage_u32_rw(
-            device,
+        let type_instance_arg_count = scratch_or_storage_u32(
             "type_check.resident.type_instance_arg_count",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.type_instance_arg_count),
         );
-        let type_instance_arg_ref_tag = storage_u32_rw(
-            device,
-            "type_check.resident.type_instance_arg_ref_tag",
-            (token_capacity as usize).max(1) * TYPE_INSTANCE_ARG_REF_STRIDE,
-            wgpu::BufferUsages::empty(),
-        );
-        let type_instance_arg_ref_payload = storage_u32_rw(
-            device,
-            "type_check.resident.type_instance_arg_ref_payload",
-            (token_capacity as usize).max(1) * TYPE_INSTANCE_ARG_REF_STRIDE,
-            wgpu::BufferUsages::empty(),
-        );
-        let type_instance_elem_ref_tag = storage_u32_rw(
-            device,
+        let type_instance_arg_ref_tag = if let Some(scratch) = external_scratch {
+            // Token-strided type-instance argument tags are rebuilt by
+            // typecheck. Parser list-rank scratch is dead after HIR list
+            // construction and has resident tree capacity.
+            alias_storage_buffer(scratch.type_instance_arg_ref_tag)
+        } else {
+            storage_u32_rw(
+                device,
+                "type_check.resident.type_instance_arg_ref_tag",
+                (token_capacity as usize).max(1) * TYPE_INSTANCE_ARG_REF_STRIDE,
+                wgpu::BufferUsages::empty(),
+            )
+        };
+        let type_instance_arg_ref_payload = if let Some(scratch) = external_scratch {
+            // The parser list1 workspace is dead after HIR list construction.
+            // Reuse that tree-capacity row for token-keyed type-instance
+            // argument payloads; resident projected tree capacity is larger
+            // than the fixed four-argument-per-token table used here.
+            alias_storage_buffer(scratch.type_instance_arg_ref_payload)
+        } else {
+            storage_u32_rw(
+                device,
+                "type_check.resident.type_instance_arg_ref_payload",
+                (token_capacity as usize).max(1) * TYPE_INSTANCE_ARG_REF_STRIDE,
+                wgpu::BufferUsages::empty(),
+            )
+        };
+        let type_instance_elem_ref_tag = scratch_or_storage_u32(
             "type_check.resident.type_instance_elem_ref_tag",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.type_instance_elem_ref_tag),
         );
-        let type_instance_elem_ref_payload = storage_u32_rw(
-            device,
+        let type_instance_elem_ref_payload = scratch_or_storage_u32(
             "type_check.resident.type_instance_elem_ref_payload",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.type_instance_elem_ref_payload),
         );
-        let type_instance_len_kind = storage_u32_rw(
-            device,
+        let type_instance_len_kind = scratch_or_storage_u32(
             "type_check.resident.type_instance_len_kind",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.type_instance_len_kind),
         );
-        let type_instance_len_payload = storage_u32_rw(
-            device,
+        let type_instance_len_payload = scratch_or_storage_u32(
             "type_check.resident.type_instance_len_payload",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.type_instance_len_payload),
         );
-        let type_instance_state = storage_u32_rw(
-            device,
+        let type_instance_state = scratch_or_storage_u32(
             "type_check.resident.type_instance_state",
             token_capacity as usize,
+            external_scratch.map(|scratch| scratch.type_instance_state),
+        );
+        let predicate_capacity = hir_node_capacity.max(1) as usize;
+        let predicate_owner_node = storage_u32_fill_rw(
+            device,
+            "type_check.resident.predicate_owner_node",
+            predicate_capacity,
+            u32::MAX,
             wgpu::BufferUsages::empty(),
         );
-        let fn_return_ref_tag = storage_u32_rw(
+        let predicate_subject_token = storage_u32_fill_rw(
             device,
-            "type_check.resident.fn_return_ref_tag",
-            token_capacity as usize,
+            "type_check.resident.predicate_subject_token",
+            predicate_capacity,
+            u32::MAX,
             wgpu::BufferUsages::empty(),
         );
-        let fn_return_ref_payload = storage_u32_rw(
+        let predicate_bound_token = storage_u32_fill_rw(
             device,
-            "type_check.resident.fn_return_ref_payload",
-            token_capacity as usize,
+            "type_check.resident.predicate_bound_token",
+            predicate_capacity,
+            u32::MAX,
             wgpu::BufferUsages::empty(),
         );
-        let decl_type_ref_tag = storage_u32_rw(
+        let predicate_bound_arg_count = storage_u32_rw(
             device,
-            "type_check.resident.decl_type_ref_tag",
-            token_capacity as usize,
+            "type_check.resident.predicate_bound_arg_count",
+            predicate_capacity,
             wgpu::BufferUsages::empty(),
         );
-        let decl_type_ref_payload = storage_u32_rw(
+        let predicate_bound_first_arg_token = storage_u32_fill_rw(
             device,
-            "type_check.resident.decl_type_ref_payload",
-            token_capacity as usize,
+            "type_check.resident.predicate_bound_first_arg_token",
+            predicate_capacity,
+            u32::MAX,
             wgpu::BufferUsages::empty(),
         );
-        let member_result_context_instance = storage_u32_rw(
+        let predicate_bound_second_arg_token = storage_u32_fill_rw(
             device,
-            "type_check.resident.member_result_context_instance",
-            token_capacity as usize,
+            "type_check.resident.predicate_bound_second_arg_token",
+            predicate_capacity,
+            u32::MAX,
             wgpu::BufferUsages::empty(),
         );
-        let member_result_ref_tag = storage_u32_rw(
+        let predicate_status = storage_u32_fill_rw(
             device,
-            "type_check.resident.member_result_ref_tag",
-            token_capacity as usize,
+            "type_check.resident.predicate_status",
+            predicate_capacity,
+            u32::MAX,
             wgpu::BufferUsages::empty(),
         );
-        let member_result_ref_payload = storage_u32_rw(
-            device,
+        // Function return refs are populated after the name-radix pipeline has
+        // assigned stable name ids. Reuse dead name-dedup scratch for these
+        // token-indexed rows rather than borrowing parser rows that later
+        // typecheck passes may still consume.
+        let fn_return_ref_tag = alias_storage_buffer(&run_head_mask);
+        let fn_return_ref_payload = alias_storage_buffer(&adjacent_equal_mask);
+        let decl_type_ref_tag = alias_storage_buffer(&radix_block_bucket_prefix);
+        let decl_type_ref_payload = alias_storage_buffer(&run_head_prefix);
+        let member_result_context_instance = alias_storage_buffer(&sorted_name_id);
+        let member_result_ref_tag = alias_storage_buffer(&name_id_by_input);
+        let member_result_ref_payload = scratch_or_storage_u32(
             "type_check.resident.member_result_ref_payload",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.member_result_ref_payload),
         );
-        let member_result_field_ordinal = storage_u32_rw(
-            device,
+        let member_result_field_ordinal = scratch_or_storage_u32(
             "type_check.resident.member_result_field_ordinal",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.member_result_field_ordinal),
         );
-        let struct_init_field_expected_ref_tag = storage_u32_rw(
-            device,
+        let struct_init_field_expected_ref_tag = scratch_or_storage_u32(
             "type_check.resident.struct_init_field_expected_ref_tag",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.struct_init_field_expected_ref_tag),
         );
-        let struct_init_field_expected_ref_payload = storage_u32_rw(
-            device,
+        let struct_init_field_expected_ref_payload = scratch_or_storage_u32(
             "type_check.resident.struct_init_field_expected_ref_payload",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.struct_init_field_expected_ref_payload),
         );
-        let struct_init_field_context_instance = storage_u32_rw(
-            device,
+        let struct_init_field_context_instance = scratch_or_storage_u32(
             "type_check.resident.struct_init_field_context_instance",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.struct_init_field_context_instance),
         );
-        let struct_init_field_ordinal = storage_u32_rw(
-            device,
+        let struct_init_field_ordinal = scratch_or_storage_u32(
             "type_check.resident.struct_init_field_ordinal",
             token_capacity as usize,
-            wgpu::BufferUsages::empty(),
+            external_scratch.map(|scratch| scratch.struct_init_field_ordinal),
         );
-        let struct_init_field_ordinal_by_node = storage_u32_rw(
-            device,
-            "type_check.resident.struct_init_field_ordinal_by_node",
-            hir_node_capacity.max(1) as usize,
-            wgpu::BufferUsages::empty(),
-        );
+        let struct_init_field_ordinal_by_node = if let Some(scratch) = external_scratch {
+            // Parser list-workspace scratch is dead once HIR records have been
+            // constructed. Reuse it for the HIR-keyed struct-init ordinal table
+            // and, earlier, for module/path record-family flags.
+            alias_storage_buffer(scratch.record_family_flag)
+        } else {
+            storage_u32_rw(
+                device,
+                "type_check.resident.struct_init_field_ordinal_by_node",
+                hir_node_capacity.max(1) as usize,
+                wgpu::BufferUsages::empty(),
+            )
+        };
         let token_active_dispatch_args = storage_u32_rw(
             device,
             "type_check.resident.token_active_dispatch_args",
@@ -1489,6 +1513,14 @@ impl GpuTypeChecker {
             call_param_type.as_entire_binding(),
         );
         resources.insert(
+            "call_param_ref_tag".into(),
+            call_param_ref_tag.as_entire_binding(),
+        );
+        resources.insert(
+            "call_param_ref_payload".into(),
+            call_param_ref_payload.as_entire_binding(),
+        );
+        resources.insert(
             "call_arg_record".into(),
             call_arg_record.as_entire_binding(),
         );
@@ -1688,6 +1720,34 @@ impl GpuTypeChecker {
         resources.insert(
             "type_instance_state".into(),
             type_instance_state.as_entire_binding(),
+        );
+        resources.insert(
+            "predicate_owner_node".into(),
+            predicate_owner_node.as_entire_binding(),
+        );
+        resources.insert(
+            "predicate_subject_token".into(),
+            predicate_subject_token.as_entire_binding(),
+        );
+        resources.insert(
+            "predicate_bound_token".into(),
+            predicate_bound_token.as_entire_binding(),
+        );
+        resources.insert(
+            "predicate_bound_arg_count".into(),
+            predicate_bound_arg_count.as_entire_binding(),
+        );
+        resources.insert(
+            "predicate_bound_first_arg_token".into(),
+            predicate_bound_first_arg_token.as_entire_binding(),
+        );
+        resources.insert(
+            "predicate_bound_second_arg_token".into(),
+            predicate_bound_second_arg_token.as_entire_binding(),
+        );
+        resources.insert(
+            "predicate_status".into(),
+            predicate_status.as_entire_binding(),
         );
         resources.insert(
             "fn_return_ref_tag".into(),
@@ -2006,6 +2066,22 @@ impl GpuTypeChecker {
             0,
             &resources,
         )?;
+        let calls_infer_array_generics = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("type_check_resident_calls_infer_array_generics"),
+            &passes.calls_infer_array_generics.bind_group_layouts[0],
+            &passes.calls_infer_array_generics.reflection,
+            0,
+            &resources,
+        )?;
+        let calls_validate_array_results = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("type_check_resident_calls_validate_array_results"),
+            &passes.calls_validate_array_results.bind_group_layouts[0],
+            &passes.calls_validate_array_results.reflection,
+            0,
+            &resources,
+        )?;
         let calls_erase_generic_params = bind_group::create_bind_group_from_reflection(
             device,
             Some("type_check_resident_calls_erase_generic_params"),
@@ -2024,6 +2100,8 @@ impl GpuTypeChecker {
             clear_hir_call_args: calls_clear_hir_call_args,
             pack_hir_call_args: calls_pack_hir_call_args,
             resolve: calls_resolve,
+            infer_array_generics: calls_infer_array_generics,
+            validate_array_results: calls_validate_array_results,
             erase_generic_params: calls_erase_generic_params,
         };
         let language_names_clear = bind_group::create_bind_group_from_reflection(
@@ -2125,6 +2203,11 @@ impl GpuTypeChecker {
                 hir_items,
                 &name_id_by_token,
                 &language_name_id,
+                &name_lexeme_flag,
+                &name_lexeme_kind,
+                &name_lexeme_prefix,
+                &name_order_in,
+                &name_order_tmp,
                 &module_type_path_type,
                 &module_type_path_status,
                 &module_value_path_expr_head,
@@ -2141,6 +2224,8 @@ impl GpuTypeChecker {
                 &call_return_type_token,
                 &call_param_count,
                 &call_param_type,
+                &call_param_ref_tag,
+                &call_param_ref_payload,
                 &call_arg_record,
                 &call_arg_node,
                 &type_expr_ref_tag,
@@ -2158,7 +2243,148 @@ impl GpuTypeChecker {
                 &decl_type_ref_payload,
                 &fn_return_ref_tag,
                 &fn_return_ref_payload,
+                &fn_entrypoint_tag,
+                &struct_init_field_ordinal_by_node,
+                external_scratch,
             )?)
+        } else {
+            None
+        };
+        let predicates = if let Some(module_path) = &module_path {
+            let hir_items = hir_items.expect("predicate collection requires HIR item buffers");
+            let predicate_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
+                ("gParams".into(), self.params_buf.as_entire_binding()),
+                ("hir_status".into(), hir_status_buf.as_entire_binding()),
+                ("node_kind".into(), hir_items.node_kind.as_entire_binding()),
+                ("parent".into(), hir_items.parent.as_entire_binding()),
+                (
+                    "first_child".into(),
+                    hir_items.first_child.as_entire_binding(),
+                ),
+                (
+                    "subtree_end".into(),
+                    hir_items.subtree_end.as_entire_binding(),
+                ),
+                (
+                    "hir_token_pos".into(),
+                    hir_token_pos_buf.as_entire_binding(),
+                ),
+                (
+                    "hir_type_len_value".into(),
+                    hir_items.type_len_value.as_entire_binding(),
+                ),
+                ("hir_item_kind".into(), hir_items.kind.as_entire_binding()),
+                (
+                    "name_id_by_token".into(),
+                    name_id_by_token.as_entire_binding(),
+                ),
+                (
+                    "type_decl_generic_param_count_by_node".into(),
+                    type_decl_generic_param_count_by_node.as_entire_binding(),
+                ),
+                (
+                    "language_type_code_by_name_id".into(),
+                    language_type_code_by_name_id.as_entire_binding(),
+                ),
+                (
+                    "decl_count_out".into(),
+                    module_path.decl_count_out.as_entire_binding(),
+                ),
+                (
+                    "decl_name_id".into(),
+                    module_path.decl_name_id.as_entire_binding(),
+                ),
+                (
+                    "decl_kind".into(),
+                    module_path.decl_kind.as_entire_binding(),
+                ),
+                (
+                    "decl_namespace".into(),
+                    module_path.decl_namespace.as_entire_binding(),
+                ),
+                (
+                    "decl_hir_node".into(),
+                    module_path.decl_hir_node.as_entire_binding(),
+                ),
+                (
+                    "module_count_out".into(),
+                    module_path.module_count_out.as_entire_binding(),
+                ),
+                (
+                    "sorted_module_key_order".into(),
+                    module_path.module_key_to_module_id.as_entire_binding(),
+                ),
+                (
+                    "module_key_segment_count".into(),
+                    module_path.module_key_segment_count.as_entire_binding(),
+                ),
+                (
+                    "module_key_segment_base".into(),
+                    module_path.module_key_segment_base.as_entire_binding(),
+                ),
+                (
+                    "module_key_segment_name_id".into(),
+                    module_path.module_key_segment_name_id.as_entire_binding(),
+                ),
+                (
+                    "decl_type_key_count_out".into(),
+                    module_path.decl_type_key_count_out.as_entire_binding(),
+                ),
+                (
+                    "decl_type_key_to_decl_id".into(),
+                    module_path.decl_type_key_to_decl_id.as_entire_binding(),
+                ),
+                (
+                    "decl_module_id".into(),
+                    module_path.decl_module_id.as_entire_binding(),
+                ),
+                (
+                    "predicate_owner_node".into(),
+                    predicate_owner_node.as_entire_binding(),
+                ),
+                (
+                    "predicate_subject_token".into(),
+                    predicate_subject_token.as_entire_binding(),
+                ),
+                (
+                    "predicate_bound_token".into(),
+                    predicate_bound_token.as_entire_binding(),
+                ),
+                (
+                    "predicate_bound_arg_count".into(),
+                    predicate_bound_arg_count.as_entire_binding(),
+                ),
+                (
+                    "predicate_bound_first_arg_token".into(),
+                    predicate_bound_first_arg_token.as_entire_binding(),
+                ),
+                (
+                    "predicate_bound_second_arg_token".into(),
+                    predicate_bound_second_arg_token.as_entire_binding(),
+                ),
+                (
+                    "predicate_status".into(),
+                    predicate_status.as_entire_binding(),
+                ),
+            ]);
+            Some(PredicateBindGroups {
+                collect: bind_group::create_bind_group_from_reflection(
+                    device,
+                    Some("type_check_resident_predicates_collect"),
+                    &passes.predicates_collect.bind_group_layouts[0],
+                    &passes.predicates_collect.reflection,
+                    0,
+                    &predicate_resources,
+                )?,
+                obligations: bind_group::create_bind_group_from_reflection(
+                    device,
+                    Some("type_check_resident_predicates_obligations"),
+                    &passes.predicates_obligations.bind_group_layouts[0],
+                    &passes.predicates_obligations.reflection,
+                    0,
+                    &resources,
+                )?,
+            })
         } else {
             None
         };
@@ -2562,6 +2788,8 @@ impl GpuTypeChecker {
             call_return_type_token,
             call_param_count,
             call_param_type,
+            call_param_ref_tag,
+            call_param_ref_payload,
             call_arg_record,
             call_arg_node,
             function_lookup_key,
@@ -2608,6 +2836,13 @@ impl GpuTypeChecker {
             type_instance_len_kind,
             type_instance_len_payload,
             type_instance_state,
+            predicate_owner_node,
+            predicate_subject_token,
+            predicate_bound_token,
+            predicate_bound_arg_count,
+            predicate_bound_first_arg_token,
+            predicate_bound_second_arg_token,
+            predicate_status,
             fn_return_ref_tag,
             fn_return_ref_payload,
             decl_type_ref_tag,
@@ -2633,6 +2868,7 @@ impl GpuTypeChecker {
             visible_bind_groups,
             calls,
             methods,
+            predicates,
             type_instances_clear,
             type_instances_decl_generic_params,
             type_instances_generic_param_use_slots,

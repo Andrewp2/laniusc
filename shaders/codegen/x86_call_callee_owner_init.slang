@@ -21,7 +21,8 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint4> x86_node_tree_record;
+StructuredBuffer<uint> x86_tree_parent;
+StructuredBuffer<uint> x86_tree_subtree_end;
 StructuredBuffer<uint> hir_member_receiver_node;
 StructuredBuffer<uint> x86_call_callee_root_call;
 
@@ -71,7 +72,7 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
     }
 
-    uint parent = x86_node_tree_record[node].x;
+    uint parent = x86_tree_parent[node];
     x86_call_callee_owner_call[node] = 0u;
     x86_call_callee_owner_link[node] =
         valid_node(parent) && !is_member_receiver_child(parent, node) ? parent : INVALID;

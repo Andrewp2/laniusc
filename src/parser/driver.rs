@@ -827,6 +827,21 @@ impl GpuParser {
         consume(bufs)
     }
 
+    pub fn release_current_resident_buffers(&self) {
+        *self
+            .resident_buffers
+            .lock()
+            .expect("parser.resident_buffers poisoned") = None;
+        self.bg_cache
+            .lock()
+            .expect("parser.bg_cache poisoned")
+            .clear();
+        *self
+            .resident_token_kind_bind_groups
+            .lock()
+            .expect("parser.resident_token_kind_bind_groups poisoned") = None;
+    }
+
     pub fn parse_resident_tokens(
         &self,
         token_capacity: u32,
@@ -1103,6 +1118,10 @@ impl GpuParser {
             (
                 "block_prefix_bracket".into(),
                 bufs.token_block_prefix_bracket.as_entire_binding(),
+            ),
+            (
+                "statement_context_kind".into(),
+                bufs.token_statement_context_kind.as_entire_binding(),
             ),
             (
                 "bracket_semantic_kind".into(),
@@ -2884,18 +2903,29 @@ impl GpuParser {
         let wanted_capacity = token_capacity.max(1);
         let needs_allocate = slot.as_ref().is_none_or(|cached| {
             cached.table_fingerprint != fingerprint
-                || cached.token_capacity < wanted_capacity
+                || cached.token_capacity != wanted_capacity
                 || cached.retain_debug_hir_buffers != retain_debug_hir_buffers
                 || match (cached.tree_capacity_override, tree_capacity_override) {
                     (None, None) => false,
                     (Some(_), None) | (None, Some(_)) => true,
                     (Some(_), Some(wanted_tree_capacity)) => {
-                        cached.buffers.tree_capacity < wanted_tree_capacity.max(1)
+                        cached.buffers.tree_capacity != wanted_tree_capacity.max(1)
                     }
                 }
         });
 
         if needs_allocate {
+            *slot = None;
+            self.bg_cache
+                .lock()
+                .expect("parser.bg_cache poisoned")
+                .clear();
+            *self
+                .resident_token_kind_bind_groups
+                .lock()
+                .expect("parser.resident_token_kind_bind_groups poisoned") = None;
+            let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+
             // Resident parser buffers dominate VRAM because tree/HIR scratch scales
             // from token capacity. Allocate the exact required capacity instead of
             // doubling across increasing benchmark sizes.
@@ -2920,10 +2950,6 @@ impl GpuParser {
                 .lock()
                 .expect("parser.bg_cache poisoned")
                 .clear();
-            *self
-                .resident_token_kind_bind_groups
-                .lock()
-                .expect("parser.resident_token_kind_bind_groups poisoned") = None;
         }
         &slot
             .as_ref()

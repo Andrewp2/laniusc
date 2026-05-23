@@ -539,6 +539,18 @@ pub fn check_token_buffer_with_hir_on_gpu(
         (token_capacity as usize).max(1) * CALL_PARAM_CACHE_STRIDE,
         wgpu::BufferUsages::empty(),
     );
+    let call_param_ref_tag_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.call_param_ref_tag",
+        (token_capacity as usize).max(1) * CALL_PARAM_CACHE_STRIDE,
+        wgpu::BufferUsages::empty(),
+    );
+    let call_param_ref_payload_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.call_param_ref_payload",
+        (token_capacity as usize).max(1) * CALL_PARAM_CACHE_STRIDE,
+        wgpu::BufferUsages::empty(),
+    );
     let call_arg_record_buf = storage_u32_rw(
         device,
         "type_check.tokens.call_arg_record",
@@ -548,7 +560,7 @@ pub fn check_token_buffer_with_hir_on_gpu(
     let call_arg_node_buf = storage_u32_rw(
         device,
         "type_check.tokens.call_arg_node",
-        (token_capacity as usize).max(1) * CALL_PARAM_CACHE_STRIDE,
+        call_arg_node_capacity_words(),
         wgpu::BufferUsages::empty(),
     );
     let function_lookup_capacity = token_capacity.saturating_mul(2).max(1) as usize;
@@ -913,6 +925,8 @@ pub fn check_token_buffer_with_hir_on_gpu(
     let calls_clear_hir_call_args_pass = type_check_calls_clear_hir_call_args_pass(device)?;
     let calls_pack_hir_call_args_pass = type_check_calls_pack_hir_call_args_pass(device)?;
     let calls_resolve_pass = type_check_calls_resolve_pass(device)?;
+    let calls_infer_array_generics_pass = type_check_calls_infer_array_generics_pass(device)?;
+    let calls_validate_array_results_pass = type_check_calls_validate_array_results_pass(device)?;
     let calls_erase_generic_params_pass = type_check_calls_erase_generic_params_pass(device)?;
     let methods_clear_pass = type_check_methods_clear_pass(device)?;
     let methods_collect_pass = type_check_methods_collect_pass(device)?;
@@ -1217,6 +1231,31 @@ pub fn check_token_buffer_with_hir_on_gpu(
     resources.insert("visible_decl".into(), visible_decl_buf.as_entire_binding());
     resources.insert("visible_type".into(), visible_type_buf.as_entire_binding());
     resources.insert(
+        "predicate_owner_node".into(),
+        empty_parent.as_entire_binding(),
+    );
+    resources.insert(
+        "predicate_subject_token".into(),
+        empty_parent.as_entire_binding(),
+    );
+    resources.insert(
+        "predicate_bound_token".into(),
+        empty_parent.as_entire_binding(),
+    );
+    resources.insert(
+        "predicate_bound_arg_count".into(),
+        empty_node_kind.as_entire_binding(),
+    );
+    resources.insert(
+        "predicate_bound_first_arg_token".into(),
+        empty_parent.as_entire_binding(),
+    );
+    resources.insert(
+        "predicate_bound_second_arg_token".into(),
+        empty_parent.as_entire_binding(),
+    );
+    resources.insert("predicate_status".into(), empty_parent.as_entire_binding());
+    resources.insert(
         "hir_value_decl_name_present".into(),
         hir_value_decl_name_present_buf.as_entire_binding(),
     );
@@ -1311,6 +1350,14 @@ pub fn check_token_buffer_with_hir_on_gpu(
     resources.insert(
         "call_param_type".into(),
         call_param_type_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "call_param_ref_tag".into(),
+        call_param_ref_tag_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "call_param_ref_payload".into(),
+        call_param_ref_payload_buf.as_entire_binding(),
     );
     resources.insert(
         "call_arg_record".into(),
@@ -1781,6 +1828,22 @@ pub fn check_token_buffer_with_hir_on_gpu(
         0,
         &resources,
     )?;
+    let calls_infer_array_generics_bind_group = bind_group::create_bind_group_from_reflection(
+        device,
+        Some("type_check_calls_infer_array_generics"),
+        &calls_infer_array_generics_pass.bind_group_layouts[0],
+        &calls_infer_array_generics_pass.reflection,
+        0,
+        &resources,
+    )?;
+    let calls_validate_array_results_bind_group = bind_group::create_bind_group_from_reflection(
+        device,
+        Some("type_check_calls_validate_array_results"),
+        &calls_validate_array_results_pass.bind_group_layouts[0],
+        &calls_validate_array_results_pass.reflection,
+        0,
+        &resources,
+    )?;
     let calls_erase_generic_params_bind_group = bind_group::create_bind_group_from_reflection(
         device,
         Some("type_check_calls_erase_generic_params"),
@@ -1799,6 +1862,8 @@ pub fn check_token_buffer_with_hir_on_gpu(
         clear_hir_call_args: calls_clear_hir_call_args_bind_group,
         pack_hir_call_args: calls_pack_hir_call_args_bind_group,
         resolve: calls_resolve_bind_group,
+        infer_array_generics: calls_infer_array_generics_bind_group,
+        validate_array_results: calls_validate_array_results_bind_group,
         erase_generic_params: calls_erase_generic_params_bind_group,
     };
     let language_names_clear_bind_group = bind_group::create_bind_group_from_reflection(

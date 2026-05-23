@@ -1,3 +1,4 @@
+import gpu_index;
 import utils;
 
 ByteAddressBuffer in_bytes;
@@ -45,6 +46,7 @@ static const uint TK_TYPE = 103;
 static const uint TK_WHERE = 104;
 static const uint TK_SELF_VALUE = 105;
 static const uint MAX_FILES_SCAN = 1024u;
+static const uint DISPATCH_X_STRIDE = 16776960u;
 
 uint file_start_for_token_end(uint end_excl)
 {
@@ -194,7 +196,7 @@ inline uint retag_compact_kind(uint token_index)
 [numthreads(256, 1, 1)]
 void tokens_build(uint3 tid: SV_DispatchThreadID)
 {
-    uint k = tid.x;
+    uint k = linear_dispatch_thread_id_2d(tid, DISPATCH_X_STRIDE);
     uint total = token_count[0];
 
     if (k >= total)

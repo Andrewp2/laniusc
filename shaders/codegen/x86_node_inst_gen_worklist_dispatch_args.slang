@@ -34,7 +34,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (tid.x != 0u || tid.y != 0u || tid.z != 0u)
         return;
 
-    uint count = min(x86_node_inst_gen_input_status[4u], gParams.n_hir_nodes);
+    uint count = min(x86_node_inst_gen_input_status[4u], min(gParams.n_hir_nodes, gParams.inst_capacity));
     write_dispatch_args(active_node_inst_gen_dispatch_args, count, 1u);
     write_dispatch_args(active_node_inst_gen_aggregate_copy_dispatch_args, count, 32u);
 }

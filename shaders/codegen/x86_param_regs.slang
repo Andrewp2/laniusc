@@ -17,8 +17,13 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
+StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_node_decl_token;
 StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_fn_return_type_node;
+StructuredBuffer<uint> hir_type_form;
+StructuredBuffer<uint> hir_type_len_value;
+StructuredBuffer<uint> x86_tree_subtree_end;
 StructuredBuffer<uint> method_decl_param_offset;
 StructuredBuffer<uint> method_decl_receiver_ref_tag;
 StructuredBuffer<uint> method_decl_receiver_ref_payload;
@@ -52,8 +57,10 @@ static const uint HIR_PARAM_RECORD_ORDINAL = 1u;
 static const uint HIR_PARAM_RECORD_NAME_TOKEN = 2u;
 static const uint HIR_PARAM_RECORD_NODE = 3u;
 
+static const uint HIR_TYPE = 5u;
+static const uint HIR_TYPE_FORM_ARRAY = 2u;
 static const uint X86_SYSV_MAX_INTEGER_ARGS = 6u;
-static const uint PARAM_CACHE_STRIDE = 16u;
+static const uint PARAM_CACHE_STRIDE = 4u;
 static const uint X86_REG_EDI = 7u;
 static const uint X86_REG_ESI = 6u;
 static const uint X86_REG_EDX = 2u;
@@ -152,6 +159,44 @@ uint semantic_type_width(uint ty)
     return 1u;
 }
 
+bool array_type_width_for_type_node(uint type_node, out uint width)
+{
+    width = 0u;
+    if (!valid_node(type_node) ||
+        hir_kind[type_node] != HIR_TYPE ||
+        hir_type_form[type_node] != HIR_TYPE_FORM_ARRAY)
+        return false;
+    uint len = hir_type_len_value[type_node];
+    if (len == INVALID || len <= 1u)
+        return false;
+    width = len;
+    return true;
+}
+
+bool first_array_type_width_in_subtree(uint root, out uint width)
+{
+    width = 0u;
+    if (!valid_node(root))
+        return false;
+    uint end = x86_tree_subtree_end[root];
+    if (end == INVALID || end <= root || end > active_hir_node_count())
+        end = active_hir_node_count();
+    [loop]
+    for (uint cursor = root + 1u; cursor < end && cursor < active_hir_node_count(); cursor += 1u)
+    {
+        if (array_type_width_for_type_node(cursor, width))
+            return true;
+    }
+    return false;
+}
+
+uint function_return_hir_width(uint fn_node)
+{
+    uint width = 0u;
+    uint type_node = valid_node(fn_node) ? hir_fn_return_type_node[fn_node] : INVALID;
+    return array_type_width_for_type_node(type_node, width) ? width : 1u;
+}
+
 bool upstream_ok()
 {
     return x86_enum_record_status[0u] == X86_ENUM_RECORDS_OK &&
@@ -203,13 +248,6 @@ uint pack_param_reg_info(uint ordinal, uint arg_reg)
     return ordinal | (arg_reg << X86_PARAM_REG_ORDINAL_BITS);
 }
 
-uint param_node_decl_token_index(uint param_node)
-{
-    return valid_node(param_node)
-               ? gParams.n_tokens * X86_PARAM_REG_STRIDE + param_node
-               : INVALID;
-}
-
 void write_param_reg_record_at(
     uint record_key,
     uint fn_node,
@@ -249,9 +287,6 @@ void write_param_reg_record(
     uint semantic_ty)
 {
     write_param_reg_record_at(decl_token, fn_node, param_node, ordinal, arg_reg, width, semantic_ty);
-    uint node_key = param_node_decl_token_index(param_node);
-    if (node_key != INVALID)
-        x86_param_reg_record[node_key] = decl_token;
 }
 
 void scatter_param_reg(uint param_node)
@@ -274,9 +309,11 @@ void scatter_param_reg(uint param_node)
     uint fn_return_width = valid_token(fn_decl_token)
                                ? max(
                                      max(
-                                         semantic_type_width(call_return_type[fn_decl_token]),
-                                         type_width(call_return_type_token[fn_decl_token])),
-                                     decl_type_width(fn_decl_token))
+                                         max(
+                                             semantic_type_width(call_return_type[fn_decl_token]),
+                                             type_width(call_return_type_token[fn_decl_token])),
+                                         decl_type_width(fn_decl_token)),
+                                     function_return_hir_width(fn_node))
                                : 1u;
     uint abi_ordinal = ordinal + (fn_return_width > 1u ? 1u : 0u);
     uint arg_reg = sysv_integer_arg_reg(abi_ordinal);
@@ -289,11 +326,15 @@ void scatter_param_reg(uint param_node)
         PARAM_CACHE_STRIDE,
         ordinal,
         TY_UNKNOWN);
-    uint width = decl_is_unsized_array(decl_token)
+    uint hir_array_width = 0u;
+    bool has_hir_array_width = first_array_type_width_in_subtree(source_param_node, hir_array_width);
+    uint width = !has_hir_array_width && decl_is_unsized_array(decl_token)
                      ? 0u
                      : max(
-                           max(decl_type_width(decl_token), semantic_type_width(param_type)),
-                           method_receiver_width(fn_decl_token, decl_token));
+                           max(
+                               max(decl_type_width(decl_token), semantic_type_width(param_type)),
+                               method_receiver_width(fn_decl_token, decl_token)),
+                           has_hir_array_width ? hir_array_width : 1u);
     uint semantic_ty = param_type != TY_UNKNOWN ? param_type : visible_type[decl_token];
     write_param_reg_record(decl_token, fn_node, source_param_node, ordinal, arg_reg, width, semantic_ty);
 }

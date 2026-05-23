@@ -46,6 +46,7 @@ static const uint HIR_ITEM_KIND_STRUCT = 6u;
 static const uint HIR_ITEM_KIND_ENUM = 7u;
 static const uint HIR_ITEM_KIND_TYPE_ALIAS = 8u;
 static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
+static const uint HIR_ITEM_KIND_TRAIT = 10u;
 
 static const uint HIR_ITEM_NAMESPACE_NONE = 0u;
 static const uint HIR_ITEM_NAMESPACE_MODULE = 1u;
@@ -107,7 +108,8 @@ uint grandparent_kind(uint i)
 bool is_public_wrapper(uint kind)
 {
     return kind == PROD_PUB_FN || kind == PROD_PUB_EXTERN_FN || kind == PROD_PUB_CONST ||
-           kind == PROD_PUB_TYPE_ALIAS || kind == PROD_PUB_ENUM || kind == PROD_PUB_STRUCT;
+           kind == PROD_PUB_TYPE_ALIAS || kind == PROD_PUB_ENUM || kind == PROD_PUB_STRUCT ||
+           kind == PROD_PUB_TRAIT;
 }
 
 uint expected_hir_kind_for_item_production(uint prod)
@@ -147,6 +149,8 @@ bool is_private_top_level_child(uint kind, uint parent_prod)
         return parent_prod == PROD_ITEM_ENUM;
     if (kind == PROD_STRUCT)
         return parent_prod == PROD_ITEM_STRUCT;
+    if (kind == PROD_TRAIT)
+        return parent_prod == PROD_ITEM_TRAIT;
     return false;
 }
 
@@ -166,6 +170,8 @@ bool is_public_top_level_child(uint kind, uint parent_prod, uint grandparent_pro
         return parent_prod == PROD_PUB_ENUM;
     if (kind == PROD_STRUCT)
         return parent_prod == PROD_PUB_STRUCT;
+    if (kind == PROD_TRAIT)
+        return parent_prod == PROD_PUB_TRAIT;
     return false;
 }
 
@@ -189,6 +195,8 @@ uint item_kind_for_production(uint prod)
         return HIR_ITEM_KIND_TYPE_ALIAS;
     if (prod == PROD_ENUM_VARIANT)
         return HIR_ITEM_KIND_ENUM_VARIANT;
+    if (prod == PROD_TRAIT)
+        return HIR_ITEM_KIND_TRAIT;
     return HIR_ITEM_KIND_NONE;
 }
 
@@ -200,7 +208,7 @@ uint namespace_for_item(uint item_kind)
         item_kind == HIR_ITEM_KIND_EXTERN_FN || item_kind == HIR_ITEM_KIND_ENUM_VARIANT)
         return HIR_ITEM_NAMESPACE_VALUE;
     if (item_kind == HIR_ITEM_KIND_STRUCT || item_kind == HIR_ITEM_KIND_ENUM ||
-        item_kind == HIR_ITEM_KIND_TYPE_ALIAS)
+        item_kind == HIR_ITEM_KIND_TYPE_ALIAS || item_kind == HIR_ITEM_KIND_TRAIT)
         return HIR_ITEM_NAMESPACE_TYPE;
     return HIR_ITEM_NAMESPACE_NONE;
 }
@@ -218,7 +226,7 @@ uint name_token_for_item(uint i, uint prod, uint start)
     if (start == INVALID)
         return INVALID;
     if (prod == PROD_FN || prod == PROD_CONST || prod == PROD_STRUCT || prod == PROD_ENUM ||
-        prod == PROD_TYPE_ALIAS)
+        prod == PROD_TYPE_ALIAS || prod == PROD_TRAIT)
         return start + 1u;
     if (prod == PROD_ENUM_VARIANT)
         return start;

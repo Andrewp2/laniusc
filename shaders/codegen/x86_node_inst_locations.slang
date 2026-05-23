@@ -20,16 +20,28 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+struct FeatureParams
+{
+    uint mask;
+    uint enum_count;
+    uint match_count;
+    uint aggregate_count;
+};
+
+ConstantBuffer<FeatureParams> gX86Features;
+
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
+StructuredBuffer<uint4> hir_param_record;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> x86_expr_resolved_node;
 StructuredBuffer<uint> x86_expr_semantic_type;
 StructuredBuffer<uint4> x86_match_record;
-StructuredBuffer<uint4> x86_node_tree_record;
-StructuredBuffer<uint> x86_node_inst_count_record;
-StructuredBuffer<uint2> x86_node_inst_range_record;
+StructuredBuffer<uint> x86_tree_parent;
+StructuredBuffer<uint> x86_tree_subtree_end;
+StructuredBuffer<uint> x86_node_inst_range_start;
+StructuredBuffer<uint> x86_node_inst_range_info;
 StructuredBuffer<uint> x86_node_inst_same_end_rank;
 StructuredBuffer<uint> x86_node_inst_same_end_bucket_count;
 StructuredBuffer<uint> x86_node_inst_range_status;
@@ -43,11 +55,15 @@ static const uint INVALID = 0xffffffffu;
 static const uint X86_NODE_INST_RANGE_OK = 1u;
 static const uint X86_NODE_INST_LOCATIONS_OK = 1u;
 static const uint X86_ERR_NODE_INST_LOCATIONS = 16u;
+static const uint X86_FEATURE_MATCH = 1u << 1u;
+static const uint HIR_PARAM = 4u;
 static const uint HIR_MATCH_EXPR = 34u;
 static const uint HIR_BINARY_EXPR = 16u;
 static const uint HIR_IF_STMT = 10u;
 static const uint HIR_WHILE_STMT = 11u;
 static const uint HIR_FOR_STMT = 30u;
+static const uint HIR_PARAM_RECORD_NAME_TOKEN = 2u;
+static const uint HIR_PARAM_RECORD_NODE = 3u;
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_IF = 3u;
 static const uint STMT_RECORD_KIND_WHILE = 6u;
@@ -66,19 +82,20 @@ static const uint X86_NODE_INST_BRANCH = 4u;
 static const uint X86_NODE_INST_LOOP = 5u;
 static const uint X86_NODE_INST_EXPR_VALUE = 1u;
 static const uint X86_NODE_INST_PADDING = 7u;
-static const uint X86_NODE_INST_COUNT_STRIDE = 3u;
-static const uint X86_NODE_INST_COUNT_KIND_SHIFT = 28u;
-static const uint X86_NODE_INST_COUNT_COUNT_MASK = 0x0fffffffu;
+static const uint X86_NODE_INST_RANGE_KIND_SHIFT = 28u;
 static const uint X86_NODE_INST_RANGE_COUNT_MASK = 0x0fffffffu;
 static const uint X86_LOCATION_META_KIND_MASK = 0xf0000000u;
 static const uint X86_LOCATION_META_EXPR_SEMANTIC_TYPE = 0xe0000000u;
+static const uint X86_LOCATION_META_PARAM_DECL = 0xd0000000u;
 static const uint X86_LOCATION_META_PAYLOAD_MASK = 0x0fffffffu;
+static const uint TY_UNKNOWN = 0u;
+static const uint TY_UINT = 4u;
+static const uint EXPR_SEMANTIC_UINT_FLAG = 0x40000000u;
 static const uint X86_NODE_INST_LOCATION_ERR_BRANCH = 1u;
 static const uint X86_NODE_INST_LOCATION_ERR_MATCH = 2u;
 static const uint X86_NODE_INST_LOCATION_ERR_LOOP = 3u;
 static const uint X86_NODE_INST_LOCATION_ERR_FOR = 4u;
 static const uint X86_NODE_INST_LOCATION_ERR_RANGE = 5u;
-static const uint X86_NODE_INST_LOCATION_ERR_RANGE_COUNT_NODE = 51u;
 static const uint X86_NODE_INST_LOCATION_ERR_RANGE_START = 52u;
 static const uint X86_NODE_INST_LOCATION_ERR_RANGE_CAPACITY = 53u;
 
@@ -95,6 +112,16 @@ uint active_hir_node_count()
 bool valid_node(uint node)
 {
     return node != INVALID && node < active_hir_node_count();
+}
+
+bool valid_token(uint token)
+{
+    return token != INVALID && token < gParams.n_tokens;
+}
+
+bool has_match_feature()
+{
+    return (gX86Features.mask & X86_FEATURE_MATCH) != 0u;
 }
 
 bool upstream_ok()
@@ -139,29 +166,38 @@ uint resolve_expr(uint node)
     return valid_node(node) ? x86_expr_resolved_node[node] : INVALID;
 }
 
-uint node_inst_count_word(uint node, uint field)
+uint tree_parent_record(uint node)
 {
-    return row_major_load<uint>(
-        x86_node_inst_count_record,
-        node,
-        X86_NODE_INST_COUNT_STRIDE,
-        field,
-        INVALID);
+    return valid_node(node) ? x86_tree_parent[node] : INVALID;
 }
 
-uint4 node_inst_count_record(uint node)
+uint tree_subtree_end_record(uint node)
 {
-    uint id = node_inst_count_word(node, 0u);
-    uint info = node_inst_count_word(node, 1u);
-    uint payload = node_inst_count_word(node, 2u);
-    uint count = info == INVALID ? INVALID : info & X86_NODE_INST_COUNT_COUNT_MASK;
-    uint kind = info == INVALID ? INVALID : info >> X86_NODE_INST_COUNT_KIND_SHIFT;
-    return uint4(id, count, kind, payload);
+    return valid_node(node) ? x86_tree_subtree_end[node] : INVALID;
+}
+
+uint tree_first_child_record(uint node)
+{
+    uint child = node + 1u;
+    uint end = tree_subtree_end_record(node);
+    return valid_node(child) && child < end && tree_parent_record(child) == node
+        ? child
+        : INVALID;
 }
 
 uint range_count(uint2 range)
 {
     return range.y & X86_NODE_INST_RANGE_COUNT_MASK;
+}
+
+uint range_kind(uint2 range)
+{
+    return range.y == INVALID ? INVALID : range.y >> X86_NODE_INST_RANGE_KIND_SHIFT;
+}
+
+uint2 node_inst_range_record(uint node)
+{
+    return uint2(x86_node_inst_range_start[node], x86_node_inst_range_info[node]);
 }
 
 void publish_error(uint detail, uint extra)
@@ -197,6 +233,7 @@ bool locations_generate(uint4 locations)
            (locations.y != INVALID && locations.y < gParams.inst_capacity) ||
            (locations.z != INVALID && locations.z < gParams.inst_capacity) ||
            ((locations.w & X86_LOCATION_META_KIND_MASK) != X86_LOCATION_META_EXPR_SEMANTIC_TYPE &&
+            (locations.w & X86_LOCATION_META_KIND_MASK) != X86_LOCATION_META_PARAM_DECL &&
             locations.w != INVALID &&
             locations.w < gParams.inst_capacity);
 }
@@ -214,10 +251,9 @@ bool padding_location_for_node(uint node, out uint location)
     if (!valid_node(node))
         return false;
 
-    uint4 count_record = node_inst_count_record(node);
-    uint2 range = x86_node_inst_range_record[node];
+    uint2 range = node_inst_range_record(node);
     uint count = range_count(range);
-    if (count_record.x != node || range.x == INVALID || count == 0u ||
+    if (range.x == INVALID || range.y == INVALID || count == 0u ||
         range.x + count > gParams.inst_capacity)
         return false;
 
@@ -231,10 +267,9 @@ bool trailing_padding_start_for_node(uint node, uint padding_count, out uint loc
     if (!valid_node(node) || padding_count == 0u)
         return false;
 
-    uint4 count_record = node_inst_count_record(node);
-    uint2 range = x86_node_inst_range_record[node];
+    uint2 range = node_inst_range_record(node);
     uint count = range_count(range);
-    if (count_record.x != node || range.x == INVALID || count < padding_count ||
+    if (range.x == INVALID || range.y == INVALID || count < padding_count ||
         range.x + count > gParams.inst_capacity)
         return false;
 
@@ -244,7 +279,7 @@ bool trailing_padding_start_for_node(uint node, uint padding_count, out uint loc
 
 uint nth_match_arm_node(uint match_node, uint ordinal)
 {
-    if (!valid_node(match_node))
+    if (!has_match_feature() || !valid_node(match_node))
         return INVALID;
     uint4 record = x86_match_record[match_node];
     if (ordinal == 0u)
@@ -304,7 +339,7 @@ bool corrected_for_locations(uint node, out uint4 locations)
         stmt_slot(node, 0u) != STMT_RECORD_KIND_FOR)
         return false;
 
-    uint iterable_node = x86_node_tree_record[node].y;
+    uint iterable_node = tree_first_child_record(node);
     uint body_node = stmt_slot(node, 3u);
     uint iterable_padding = INVALID;
     uint body_location = INVALID;
@@ -320,7 +355,7 @@ bool corrected_for_locations(uint node, out uint4 locations)
 bool corrected_match_return_locations(uint node, out uint4 locations)
 {
     locations = uint4_fill(INVALID);
-    if (!valid_node(node) || hir_kind[node] != HIR_MATCH_EXPR)
+    if (!has_match_feature() || !valid_node(node) || hir_kind[node] != HIR_MATCH_EXPR)
         return false;
 
     uint4 match_record = x86_match_record[node];
@@ -365,13 +400,51 @@ uint pack_expr_semantic_type_metadata(uint ty)
            (ty & X86_LOCATION_META_PAYLOAD_MASK);
 }
 
+uint pack_param_decl_metadata(uint decl_token)
+{
+    return X86_LOCATION_META_PARAM_DECL |
+           (decl_token & X86_LOCATION_META_PAYLOAD_MASK);
+}
+
+uint param_node_decl_token(uint node)
+{
+    if (!valid_node(node) || hir_kind[node] != HIR_PARAM)
+        return INVALID;
+    uint4 record = hir_param_record[node];
+    if (record[HIR_PARAM_RECORD_NODE] != node)
+        return INVALID;
+    uint decl_token = record[HIR_PARAM_RECORD_NAME_TOKEN];
+    return valid_token(decl_token) ? decl_token : INVALID;
+}
+
+uint4 attach_param_decl_metadata(uint node, uint4 locations)
+{
+    if (!valid_node(node) || hir_kind[node] != HIR_PARAM || locations.w != INVALID)
+        return locations;
+
+    uint decl_token = param_node_decl_token(node);
+    if (!valid_token(decl_token) || decl_token > X86_LOCATION_META_PAYLOAD_MASK)
+        return locations;
+
+    locations.w = pack_param_decl_metadata(decl_token);
+    return locations;
+}
+
+uint expr_semantic_compare_type(uint node)
+{
+    if (!valid_node(node))
+        return TY_UNKNOWN;
+    uint record = x86_expr_semantic_type[node];
+    return (record & EXPR_SEMANTIC_UINT_FLAG) != 0u ? TY_UINT : TY_UNKNOWN;
+}
+
 uint4 attach_expr_semantic_type_metadata(uint node, uint4 locations)
 {
     if (!valid_node(node) || hir_kind[node] != HIR_BINARY_EXPR ||
         !compare_expr_form(expr_form(node)) || locations.w != INVALID)
         return locations;
 
-    uint ty = x86_expr_semantic_type[node];
+    uint ty = expr_semantic_compare_type(node);
     if (ty == INVALID)
         return locations;
 
@@ -388,13 +461,10 @@ bool corrected_binary_expr_location(uint node, out uint4 locations)
         !binary_expr_form(form))
         return false;
 
-    uint4 count_record = node_inst_count_record(node);
-    uint2 range = x86_node_inst_range_record[node];
-    if (count_record.x != node ||
-        count_record.z != X86_NODE_INST_EXPR_VALUE ||
-        count_record.y != 1u ||
-        range.x == INVALID ||
-        range_count(range) != 1u)
+    uint2 range = node_inst_range_record(node);
+    if (range_kind(range) != X86_NODE_INST_EXPR_VALUE ||
+        range_count(range) != 1u ||
+        range.x == INVALID)
         return false;
 
     uint bucket_count = x86_node_inst_same_end_bucket_count[node];
@@ -441,15 +511,16 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (!ok || !valid_node(node))
         return;
 
-    uint4 count_record = node_inst_count_record(node);
-    uint2 range = x86_node_inst_range_record[node];
-    if (count_record.x != node || count_record.y == INVALID)
+    uint2 range = node_inst_range_record(node);
+    if (range.y == INVALID)
     {
         store_locations_and_gen_flag(node, uint4_fill(INVALID), range);
         return;
     }
+    uint count = range_count(range);
+    uint kind = range_kind(range);
 
-    if (hir_kind[node] == HIR_IF_STMT && count_record.z == X86_NODE_INST_BRANCH)
+    if (hir_kind[node] == HIR_IF_STMT && kind == X86_NODE_INST_BRANCH)
     {
         uint4 branch_locations = uint4_fill(INVALID);
         if (corrected_branch_locations(node, branch_locations))
@@ -461,7 +532,7 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
     }
 
-    if (hir_kind[node] == HIR_MATCH_EXPR && count_record.z == X86_NODE_INST_BRANCH)
+    if (has_match_feature() && hir_kind[node] == HIR_MATCH_EXPR && kind == X86_NODE_INST_BRANCH)
     {
         uint4 match_locations = uint4_fill(INVALID);
         if (corrected_match_return_locations(node, match_locations))
@@ -473,7 +544,7 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
     }
 
-    if (hir_kind[node] == HIR_WHILE_STMT && count_record.z == X86_NODE_INST_LOOP)
+    if (hir_kind[node] == HIR_WHILE_STMT && kind == X86_NODE_INST_LOOP)
     {
         uint4 loop_locations = uint4_fill(INVALID);
         if (corrected_loop_locations(node, loop_locations))
@@ -485,7 +556,7 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
     }
 
-    if (hir_kind[node] == HIR_FOR_STMT && count_record.z == X86_NODE_INST_LOOP)
+    if (hir_kind[node] == HIR_FOR_STMT && kind == X86_NODE_INST_LOOP)
     {
         uint4 for_locations = uint4_fill(INVALID);
         if (corrected_for_locations(node, for_locations))
@@ -497,23 +568,23 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
     }
 
-    if (count_record.x == node && count_record.y == 0u)
+    if (count == 0u)
     {
-        store_locations_and_gen_flag(node, uint4_fill(INVALID), range);
+        store_locations_and_gen_flag(
+            node,
+            attach_param_decl_metadata(node, uint4_fill(INVALID)),
+            range);
         return;
     }
-    uint count = range_count(range);
 
-    if (count_record.x != node || range.x == INVALID || range.x + count > gParams.inst_capacity)
+    if (range.x == INVALID || range.y == INVALID || range.x + count > gParams.inst_capacity)
     {
         store_locations_and_gen_flag(node, uint4_fill(INVALID), range);
-        uint reason = count_record.x != node
-                          ? X86_NODE_INST_LOCATION_ERR_RANGE_COUNT_NODE
-                          : (range.x == INVALID
-                                 ? X86_NODE_INST_LOCATION_ERR_RANGE_START +
-                                       min(x86_node_inst_same_end_bucket_count[node], 99u) * 100u +
-                                       min(x86_node_inst_same_end_rank[node], 99u) * 10000u
-                                 : X86_NODE_INST_LOCATION_ERR_RANGE_CAPACITY);
+        uint reason = range.x == INVALID || range.y == INVALID
+                          ? X86_NODE_INST_LOCATION_ERR_RANGE_START +
+                                min(x86_node_inst_same_end_bucket_count[node], 99u) * 100u +
+                                min(x86_node_inst_same_end_rank[node], 99u) * 10000u
+                          : X86_NODE_INST_LOCATION_ERR_RANGE_CAPACITY;
         publish_error(node, reason);
         return;
     }
@@ -528,8 +599,8 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
     }
 
-    store_locations_and_gen_flag(
-        node,
-        attach_expr_semantic_type_metadata(node, default_locations(range.x, count)),
-        range);
+    uint4 locations = default_locations(range.x, count);
+    locations = attach_expr_semantic_type_metadata(node, locations);
+    locations = attach_param_decl_metadata(node, locations);
+    store_locations_and_gen_flag(node, locations, range);
 }

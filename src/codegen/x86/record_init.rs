@@ -9,8 +9,8 @@
             &func_meta_uniform_buf,
             &[0, 0, u32::MAX, 0, u32::MAX, 0, 0, 0],
         );
-        // x86_node_tree_info projects every active HIR tree row before later
-        // backend passes consume x86_node_tree_record.
+        // x86_node_tree_info validates every active HIR tree row before later
+        // backend passes consume the parser parent/subtree records directly.
         write_u32_words(queue, &node_tree_status_buf, &[1, 0, u32::MAX, 0]);
         // Owning-function seed/step passes overwrite active owner/link rows
         // before later backend passes consume x86_node_func.
@@ -19,20 +19,29 @@
             "enum_value_record",
             &enum_value_record_buf,
             &[u32::MAX; 2],
-            hir_words,
+            enum_value_record_rows,
         );
         write_u32_words(queue, &enum_record_status_buf, &[0, 0, u32::MAX, 0]);
-        // x86_match_records writes a default active row for every HIR node,
+        // x86_match_records writes default rows only when match HIR records exist,
         // then fills match-expression and match-arm rows with metadata.
-        init_repeated!("match_arm_owner", &match_arm_owner_buf, &[u32::MAX], hir_words);
-        init_repeated!("return_match_node", &return_match_node_buf, &[u32::MAX], hir_words);
-        init_repeated!("match_return_node", &match_return_node_buf, &[u32::MAX], hir_words);
+        init_repeated!(
+            "match_arm_owner",
+            &match_arm_owner_buf,
+            &[u32::MAX],
+            match_record_rows,
+        );
+        init_repeated!(
+            "match_return_node",
+            &match_return_node_buf,
+            &[u32::MAX],
+            match_record_rows,
+        );
         init_repeated!("match_pattern_owner", &match_pattern_owner_buf, &[u32::MAX], hir_words);
         init_repeated!(
             "match_result_value_owner",
             &match_result_value_owner_buf,
             &[u32::MAX],
-            hir_words,
+            match_record_rows,
         );
         init_repeated!(
             "match_pattern_node_owner",
@@ -50,19 +59,19 @@
             "match_pattern_node_payload_decl",
             &match_pattern_node_payload_decl_buf,
             &[u32::MAX],
-            hir_words,
+            match_record_rows,
         );
         // Match-result owner seed/step passes overwrite active rows in their
         // ping-pong owner/link scratch before later consumers read them.
         init_repeated!(
             "match_pattern_first_variant_node",
-            &match_pattern_first_variant_node_buf,
+            match_pattern_first_variant_node_buf,
             &[u32::MAX],
             hir_words,
         );
         init_repeated!(
             "match_pattern_first_payload_node",
-            &match_pattern_first_payload_node_buf,
+            match_pattern_first_payload_node_buf,
             &[u32::MAX],
             hir_words,
         );
@@ -71,13 +80,13 @@
             "struct_access_record",
             &struct_access_record_buf,
             &[u32::MAX; 3],
-            hir_words,
+            aggregate_record_rows,
         );
         init_repeated!(
             "struct_store_record",
             &struct_store_record_buf,
             &[u32::MAX; 4],
-            hir_words,
+            aggregate_record_rows,
         );
         write_u32_words(queue, &struct_record_status_buf, &[0, 0, u32::MAX, 0]);
         init_repeated!(
@@ -101,7 +110,14 @@
             hir_words,
         );
         init_repeated!("call_record", &call_record_buf, &[u32::MAX; 4], hir_words);
-        init_repeated!("call_type_record", &call_type_record_buf, &[u32::MAX; 3], hir_words);
+        if feature_summary.has_call() {
+            init_repeated!(
+                "call_type_record",
+                &call_type_record_buf,
+                &[u32::MAX; 3],
+                hir_words,
+            );
+        }
         write_u32_words(queue, &call_record_status_buf, &[0, 0, u32::MAX, 0]);
         init_repeated!(
             "const_value_record",
@@ -164,9 +180,15 @@
         // Node scan local/block passes overwrite the active local-prefix,
         // block-sum, and ping-pong prefix rows before consumers read them.
         init_repeated!(
-            "node_inst_range_record",
-            &node_inst_range_record_buf,
-            &[u32::MAX; 2],
+            "node_inst_range_start",
+            &node_inst_range_start_buf,
+            &[u32::MAX],
+            hir_words,
+        );
+        init_repeated!(
+            "node_inst_range_info",
+            &node_inst_range_info_buf,
+            &[u32::MAX],
             hir_words,
         );
         write_u32_words(queue, &node_inst_range_status_buf, &[0, 0, u32::MAX, 0]);

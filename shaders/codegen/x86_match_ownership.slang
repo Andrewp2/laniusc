@@ -17,11 +17,22 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+struct FeatureParams
+{
+    uint mask;
+    uint enum_count;
+    uint match_count;
+    uint aggregate_count;
+};
+
+ConstantBuffer<FeatureParams> gX86Features;
+
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> x86_expr_resolved_node;
-StructuredBuffer<uint4> x86_node_tree_record;
+StructuredBuffer<uint> x86_tree_parent;
+StructuredBuffer<uint> x86_tree_subtree_end;
 StructuredBuffer<uint> x86_match_return_node;
 StructuredBuffer<uint4> x86_match_record;
 
@@ -30,6 +41,7 @@ RWStructuredBuffer<uint> x86_match_result_value_owner;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint INVALID = 0xffffffffu;
+static const uint X86_FEATURE_MATCH = 1u << 1u;
 
 static const uint HIR_RETURN_STMT = 9u;
 static const uint HIR_MATCH_EXPR = 34u;
@@ -51,9 +63,14 @@ bool valid_node(uint node)
     return node != INVALID && node < active_hir_node_count();
 }
 
+bool has_match_feature()
+{
+    return (gX86Features.mask & X86_FEATURE_MATCH) != 0u;
+}
+
 uint parent_node(uint node)
 {
-    return valid_node(node) ? x86_node_tree_record[node].x : INVALID;
+    return valid_node(node) ? x86_tree_parent[node] : INVALID;
 }
 
 uint stmt_slot(uint node, uint slot)
@@ -75,7 +92,7 @@ bool node_span_contains(uint ancestor, uint node)
 {
     if (!valid_node(node) || !valid_node(ancestor))
         return false;
-    uint end = x86_node_tree_record[ancestor].w;
+    uint end = x86_tree_subtree_end[ancestor];
     return end != INVALID && ancestor <= node && node < end;
 }
 
@@ -89,9 +106,10 @@ bool match_expr_is_return_value(uint match_node)
 
 bool supported_return_match(uint match_node)
 {
+    if (!has_match_feature() || !valid_node(match_node))
+        return false;
     uint4 record = x86_match_record[match_node];
-    return valid_node(match_node) &&
-           hir_kind[match_node] == HIR_MATCH_EXPR &&
+    return hir_kind[match_node] == HIR_MATCH_EXPR &&
            valid_node(record.x) &&
            valid_node(record.y) &&
            record.z == 2u &&
@@ -127,6 +145,8 @@ void main(uint3 tid: SV_DispatchThreadID)
 {
     uint node = linear_dispatch_id(tid);
     if (!valid_node(node))
+        return;
+    if (!has_match_feature())
         return;
 
     uint4 record = x86_match_record[node];

@@ -28,8 +28,7 @@ StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> x86_decl_layout_record;
 StructuredBuffer<uint> x86_param_reg_record;
 
-RWStructuredBuffer<uint> x86_expr_semantic_type;
-RWStructuredBuffer<uint> x86_expr_semantic_type_link;
+RWStructuredBuffer<uint> x86_expr_semantic_record;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint INVALID = 0xffffffffu;
@@ -73,6 +72,9 @@ static const uint HIR_EXPR_SHR = 25u;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_BOOL = 2u;
 static const uint TY_INT = 3u;
+static const uint TY_UINT = 4u;
+static const uint EXPR_SEMANTIC_LINK_MASK = 0x3fffffffu;
+static const uint EXPR_SEMANTIC_UINT_FLAG = 0x40000000u;
 
 static const uint X86_DECL_LAYOUT_STRIDE = 4u;
 static const uint X86_PARAM_REG_STRIDE = 5u;
@@ -95,6 +97,21 @@ bool valid_node(uint node)
 bool valid_token(uint token)
 {
     return valid_index_or_invalid(token, gParams.n_tokens, INVALID);
+}
+
+uint compare_type(uint ty)
+{
+    return ty == TY_UINT ? TY_UINT : TY_UNKNOWN;
+}
+
+uint pack_expr_semantic_record(uint ty, uint link)
+{
+    uint packed_link =
+        valid_node(link) && link < EXPR_SEMANTIC_LINK_MASK
+            ? link
+            : EXPR_SEMANTIC_LINK_MASK;
+    uint type_bits = compare_type(ty) == TY_UINT ? EXPR_SEMANTIC_UINT_FLAG : 0u;
+    return type_bits | packed_link;
 }
 
 uint expr_slot(uint node, uint slot)
@@ -247,24 +264,21 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint resolved = resolve_expr(node);
     if (!valid_node(resolved))
     {
-        x86_expr_semantic_type[node] = TY_UNKNOWN;
-        x86_expr_semantic_type_link[node] = INVALID;
+        x86_expr_semantic_record[node] = pack_expr_semantic_record(TY_UNKNOWN, INVALID);
         return;
     }
 
     uint ty = direct_expr_numeric_type(resolved);
     if (ty != TY_UNKNOWN)
     {
-        x86_expr_semantic_type[node] = ty;
-        x86_expr_semantic_type_link[node] = INVALID;
+        x86_expr_semantic_record[node] = pack_expr_semantic_record(ty, INVALID);
         return;
     }
 
     uint form = expr_form(resolved);
     uint left = expr_left(resolved);
-    x86_expr_semantic_type[node] = TY_UNKNOWN;
-    x86_expr_semantic_type_link[node] =
-        inherited_numeric_form(form) && valid_node(left)
-            ? resolve_expr(left)
-            : INVALID;
+    uint link = inherited_numeric_form(form) && valid_node(left)
+                    ? resolve_expr(left)
+                    : INVALID;
+    x86_expr_semantic_record[node] = pack_expr_semantic_record(TY_UNKNOWN, link);
 }

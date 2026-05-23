@@ -1,10 +1,9 @@
 // x86_64 backend HIR tree projection.
 //
-// Pareas codegen operates over node-property arrays: parent, child/sibling
-// links, subtree spans, and node data. The parser already owns the tree buffers,
-// but the x86 backend needs a stable attributed tree record so later
-// instruction counting and generation consume backend records instead of
-// reconstructing tree shape locally in each pass.
+// Pareas codegen operates over node-property arrays. The parser already owns
+// the full tree buffers. HIR nodes are in preorder, so parent plus subtree_end
+// is enough for later passes to derive first-child and next-sibling links
+// without retaining a duplicate backend tree record.
 
 import gpu_index;
 import status;
@@ -20,11 +19,8 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> parent;
-StructuredBuffer<uint> first_child;
-StructuredBuffer<uint> next_sibling;
 StructuredBuffer<uint> subtree_end;
 
-RWStructuredBuffer<uint4> x86_node_tree_record;
 RWStructuredBuffer<uint> x86_node_tree_status;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -76,16 +72,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     bool ok = p != node && (valid_node(end) || end == active_nodes);
     if (!ok)
     {
-        x86_node_tree_record[node] = uint4(INVALID, INVALID, INVALID, INVALID);
         publish_error(node);
         return;
     }
-
-    uint next = next_sibling[node];
-    uint child = first_child[node];
-    x86_node_tree_record[node] = uint4(
-        p,
-        valid_node(child) ? child : INVALID,
-        valid_node(next) ? next : INVALID,
-        end);
 }

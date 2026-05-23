@@ -16,6 +16,8 @@ RWStructuredBuffer<uint> call_return_type;
 RWStructuredBuffer<uint> call_return_type_token;
 RWStructuredBuffer<uint> call_param_count;
 RWStructuredBuffer<uint> call_param_type;
+RWStructuredBuffer<uint> call_param_ref_tag;
+RWStructuredBuffer<uint> call_param_ref_payload;
 RWStructuredBuffer<uint> function_lookup_key;
 RWStructuredBuffer<uint> function_lookup_fn;
 
@@ -29,7 +31,8 @@ static const uint TY_UINT = 4u;
 static const uint TY_FLOAT = 5u;
 static const uint TY_CHAR = 6u;
 static const uint TY_ARRAY_BASE = 128u;
-static const uint PARAM_CACHE_STRIDE = 16u;
+static const uint TYPE_REF_INVALID = 0u;
+static const uint PARAM_CACHE_STRIDE = 4u;
 
 static const uint TK_IDENT = 1u;
 static const uint TK_LBRACKET = 20u;
@@ -69,12 +72,26 @@ void main(uint3 dtid: SV_DispatchThreadID)
         call_param_count[i] = 0u;
         [loop]
         for (uint param_i = 0u; param_i < PARAM_CACHE_STRIDE; param_i += 1u)
+        {
             row_major_store<uint>(
                 call_param_type,
                 i,
                 PARAM_CACHE_STRIDE,
                 param_i,
                 TY_UNKNOWN);
+            row_major_store<uint>(
+                call_param_ref_tag,
+                i,
+                PARAM_CACHE_STRIDE,
+                param_i,
+                TYPE_REF_INVALID);
+            row_major_store<uint>(
+                call_param_ref_payload,
+                i,
+                PARAM_CACHE_STRIDE,
+                param_i,
+                INVALID);
+        }
     }
 
     if (i < gParams.n_hir_nodes)

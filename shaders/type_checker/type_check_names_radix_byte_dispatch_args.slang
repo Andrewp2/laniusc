@@ -23,7 +23,7 @@ RWStructuredBuffer<uint> radix_dispatch_args;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint MAX_RADIX_BLOCKS = 1024u;
+static const uint MAX_RADIX_BLOCKS = 4096u;
 static const uint NAME_RADIX_MAX_BYTES = 64u;
 static const uint RADIX_BUCKETS = RADIX_U8_SENTINEL_BUCKETS;
 

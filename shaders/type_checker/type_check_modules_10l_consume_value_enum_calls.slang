@@ -6,6 +6,7 @@
 
 import generated_parse_production_ids;
 import gpu_index;
+import hir_records;
 
 struct Params
 {
@@ -20,6 +21,7 @@ StructuredBuffer<uint> parent;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_stmt_record;
+StructuredBuffer<uint> hir_call_arg_parent_call;
 StructuredBuffer<uint> hir_variant_payload_start;
 StructuredBuffer<uint> hir_variant_payload_count;
 StructuredBuffer<uint> path_count_out;
@@ -45,7 +47,6 @@ StructuredBuffer<uint> fn_return_ref_payload;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint4> call_arg_record;
-StructuredBuffer<uint> call_arg_node;
 
 RWStructuredBuffer<uint> module_value_path_status;
 RWStructuredBuffer<uint> call_return_type;
@@ -53,7 +54,7 @@ RWStructuredBuffer<uint> call_return_type;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint PARAM_CACHE_STRIDE = 16u;
+static const uint PARAM_CACHE_STRIDE = 4u;
 
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint PATH_RESOLVE_STATUS_UNRESOLVED_DECL = 6u;
@@ -354,6 +355,21 @@ bool valid_enum_variant_decl(uint decl_i, out uint enum_decl_i, out uint enum_to
     return valid_token(enum_token) && valid_node(variant_node);
 }
 
+uint call_arg_node_for_call(uint call_node, uint ordinal)
+{
+    if (!valid_node(call_node) || ordinal >= PARAM_CACHE_STRIDE)
+        return INVALID;
+    [loop]
+    for (uint node = 0u; node < gParams.n_hir_nodes; node += 1u)
+    {
+        uint packed = hir_call_arg_parent_call[node];
+        if (hir_node_ordinal_node(packed) == call_node &&
+            hir_node_ordinal_ordinal(packed) == ordinal)
+            return node;
+    }
+    return INVALID;
+}
+
 bool validate_enum_constructor_payloads(
     uint owner_token,
     uint enum_token,
@@ -366,6 +382,8 @@ bool validate_enum_constructor_payloads(
     uint actual_count = min(arg_record.w, PARAM_CACHE_STRIDE);
     uint expected_count = hir_variant_payload_count[variant_node];
     if (actual_count != expected_count)
+        return false;
+    if (expected_count > 0u && !valid_node(call_node))
         return false;
 
     uint context_instance = contextual_instance_for_call(owner_token, call_node);
@@ -399,12 +417,7 @@ bool validate_enum_constructor_payloads(
             return false;
         }
 
-        uint arg_node = row_major_load<uint>(
-            call_arg_node,
-            owner_token,
-            PARAM_CACHE_STRIDE,
-            ordinal,
-            INVALID);
+        uint arg_node = call_arg_node_for_call(call_node, ordinal);
         uint actual_ty = direct_expr_type(arg_node);
         if (!assignable(expected_ty, actual_ty))
             return false;
@@ -412,7 +425,6 @@ bool validate_enum_constructor_payloads(
 
     return true;
 }
-
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)

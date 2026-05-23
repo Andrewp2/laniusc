@@ -798,7 +798,7 @@ impl ParserBuffers {
         let token_depth_bracket_inblock = storage_rw_for_array::<i32>(
             device,
             "parser.token_depth_bracket_inblock",
-            token_input_capacity as usize,
+            n_tokens.max(1) as usize,
         );
         let token_block_sum_brace = storage_rw_for_array::<i32>(
             device,
@@ -883,7 +883,7 @@ impl ParserBuffers {
         let token_brace_semantic_kind = storage_rw_for_array::<u32>(
             device,
             "parser.token_brace_semantic_kind",
-            token_input_capacity as usize,
+            n_tokens.max(1) as usize,
         );
         let token_bracket_semantic_kind = storage_rw_for_array::<u32>(
             device,
@@ -955,7 +955,7 @@ impl ParserBuffers {
         let out_headers: LaniusBuffer<ActionHeader> = storage_rw_for_array::<ActionHeader>(
             device,
             "parser.out_headers",
-            legacy_pair_capacity,
+            legacy_pair_capacity.saturating_add(1),
         );
 
         // ---------- Pack varlen ----------
@@ -2131,11 +2131,12 @@ impl ParserBuffers {
             "parser.hir_struct_lit_field_parent_lit",
             tree_capacity as usize,
         );
-        let hir_struct_lit_field_value_node = storage_rw_for_array::<u32>(
-            device,
-            "parser.hir_struct_lit_field_value_node",
-            tree_capacity as usize,
-        );
+        // Struct declaration fields and struct literal fields are disjoint HIR
+        // node kinds. Store their per-field type/value child links in one
+        // tree-capacity row and expose context-specific views to downstream
+        // consumers.
+        let hir_struct_lit_field_value_node =
+            alias_storage_buffer::<u32, u32>(&hir_struct_field_type_node, tree_capacity as usize);
         // `prev_sibling` is consumed for the last time by
         // `hir_struct_field_links`. The following rank/scatter passes do not
         // read it, so the final struct-literal next-link output can reuse that

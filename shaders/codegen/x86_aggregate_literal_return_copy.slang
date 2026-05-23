@@ -24,7 +24,8 @@ StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> x86_expr_resolved_node;
-StructuredBuffer<uint4> x86_node_tree_record;
+StructuredBuffer<uint> x86_tree_parent;
+StructuredBuffer<uint> x86_tree_subtree_end;
 StructuredBuffer<uint> x86_struct_access_record;
 StructuredBuffer<uint> hir_array_element_parent_lit;
 StructuredBuffer<uint> hir_array_element_ordinal;
@@ -32,7 +33,7 @@ StructuredBuffer<uint> hir_struct_lit_field_parent_lit;
 StructuredBuffer<uint> hir_struct_lit_field_value_node;
 StructuredBuffer<uint> struct_init_field_ordinal_by_node;
 StructuredBuffer<uint> x86_enclosing_return_node;
-StructuredBuffer<uint2> x86_node_inst_range_record;
+StructuredBuffer<uint> x86_node_inst_range_info;
 StructuredBuffer<uint4> x86_node_inst_location_record;
 StructuredBuffer<uint> x86_node_inst_gen_input_status;
 StructuredBuffer<uint2> x86_node_inst_gen_node_record;
@@ -85,12 +86,14 @@ bool upstream_ok()
 
 uint gen_worklist_base()
 {
-    return gParams.n_hir_nodes + 1u;
+    return 0u;
 }
 
 uint gen_worklist_count()
 {
-    return min(x86_node_inst_gen_input_status[4u], gParams.n_hir_nodes);
+    return min(
+        x86_node_inst_gen_input_status[4u],
+        min(gParams.n_hir_nodes, gParams.inst_capacity));
 }
 
 uint gen_worklist_node(uint order_row)
@@ -130,14 +133,32 @@ uint resolve_expr(uint node)
     return valid_node(node) ? x86_expr_resolved_node[node] : INVALID;
 }
 
-uint next_sibling_node(uint node)
+uint tree_parent_record(uint node)
 {
-    return valid_node(node) ? x86_node_tree_record[node].z : INVALID;
+    return valid_node(node) ? x86_tree_parent[node] : INVALID;
+}
+
+uint tree_subtree_end_record(uint node)
+{
+    return valid_node(node) ? x86_tree_subtree_end[node] : INVALID;
 }
 
 uint first_child_node(uint node)
 {
-    return valid_node(node) ? x86_node_tree_record[node].y : INVALID;
+    uint child = node + 1u;
+    uint end = tree_subtree_end_record(node);
+    return valid_node(child) && child < end && tree_parent_record(child) == node
+        ? child
+        : INVALID;
+}
+
+uint next_sibling_node(uint node)
+{
+    uint sibling = tree_subtree_end_record(node);
+    uint parent = tree_parent_record(node);
+    return valid_node(sibling) && tree_parent_record(sibling) == parent
+        ? sibling
+        : INVALID;
 }
 
 uint struct_access_word(uint row, uint slot)
@@ -188,7 +209,7 @@ bool range_for_node(uint node, out uint2 range)
     range = uint2(INVALID, 0u);
     if (!valid_node(node))
         return false;
-    range = x86_node_inst_range_record[node];
+    range = uint2(x86_node_inst_location_record[node].x, x86_node_inst_range_info[node]);
     return range.x != INVALID && range.y != INVALID;
 }
 

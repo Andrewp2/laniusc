@@ -41,19 +41,14 @@ fn hir_node_snippet(
 }
 
 #[test]
-fn gpu_resident_ll1_hir_array_fields_are_tree_derived() {
-    common::block_on_gpu_with_timeout("GPU parser HIR array metadata", async move {
+fn gpu_resident_ll1_hir_array_fields_rank_all_literal_elements() {
+    common::block_on_gpu_with_timeout("GPU resident parser HIR array metadata", async move {
         let lexer = GpuLexer::new().await.expect("GPU lexer init");
         let parser = GpuParser::new().await.expect("GPU parser init");
         let tables =
             PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
                 .expect("load generated parse tables");
-        let src = r#"
-fn main() {
-    let values = [1, 2 + 3, 4,];
-    return;
-}
-"#;
+        let src = "fn sample(seed: i32) -> i32 { let values: [i32; 4] = [seed, 1, 24, 28]; return values[2]; }";
         let tokens = lex_on_test_cpu(src).expect("test CPU oracle lex fixture");
 
         let res = lexer
@@ -65,109 +60,48 @@ fn main() {
             .expect("resident GPU parse");
 
         assert!(res.ll1.accepted, "resident LL(1) parser rejected fixture");
-        for field_len in [
-            res.hir_array_lit_first_element.len(),
-            res.hir_array_lit_element_count.len(),
-            res.hir_array_element_parent_lit.len(),
-            res.hir_array_element_ordinal.len(),
-            res.hir_array_element_next.len(),
-        ] {
-            assert_eq!(field_len, res.node_kind.len());
-        }
 
-        let arrays = res
+        let array_node = res
             .hir_array_lit_element_count
             .iter()
             .enumerate()
-            .filter_map(|(i, &element_count)| {
-                if element_count == 0 {
+            .find_map(|(node, &count)| {
+                if count != 4 {
                     return None;
                 }
-                Some((
-                    i as u32,
-                    hir_node_snippet(
-                        src,
-                        &tokens,
-                        &res.hir_token_pos,
-                        &res.hir_token_end,
-                        i as u32,
-                    )
-                    .unwrap(),
-                    hir_node_snippet(
-                        src,
-                        &tokens,
-                        &res.hir_token_pos,
-                        &res.hir_token_end,
-                        res.hir_array_lit_first_element[i],
-                    )
-                    .unwrap(),
-                    element_count,
-                ))
+                let snippet = hir_node_snippet(
+                    src,
+                    &tokens,
+                    &res.hir_token_pos,
+                    &res.hir_token_end,
+                    node as u32,
+                )?;
+                (snippet == "[seed, 1, 24, 28]").then_some(node as u32)
             })
-            .collect::<Vec<_>>();
+            .expect("expected four-element array literal metadata");
 
-        let (array_node, _array_span, _first_element, count) = arrays
-            .iter()
-            .find(|(_, span, first, count)| {
-                span.starts_with("[1, 2 + 3, 4") && first.starts_with("1") && *count == 3
-            })
-            .unwrap_or_else(|| panic!("missing array literal metadata: {arrays:?}"));
+        let mut node = res.hir_array_lit_first_element[array_node as usize];
+        let mut elements = Vec::new();
+        while node != INVALID {
+            let snippet =
+                hir_node_snippet(src, &tokens, &res.hir_token_pos, &res.hir_token_end, node)
+                    .expect("array element snippet");
+            elements.push((
+                snippet.trim_end_matches([',', ']']).to_string(),
+                res.hir_array_element_parent_lit[node as usize],
+                res.hir_array_element_ordinal[node as usize],
+            ));
+            node = res.hir_array_element_next[node as usize];
+        }
 
-        let elements = res
-            .hir_array_element_parent_lit
-            .iter()
-            .enumerate()
-            .filter_map(|(i, &parent_array)| {
-                if parent_array != *array_node {
-                    return None;
-                }
-                Some((
-                    hir_node_snippet(
-                        src,
-                        &tokens,
-                        &res.hir_token_pos,
-                        &res.hir_token_end,
-                        i as u32,
-                    )
-                    .unwrap(),
-                    res.hir_array_element_ordinal[i],
-                    hir_node_snippet(
-                        src,
-                        &tokens,
-                        &res.hir_token_pos,
-                        &res.hir_token_end,
-                        res.hir_array_element_next[i],
-                    ),
-                ))
-            })
-            .collect::<Vec<_>>();
-
-        assert_eq!(*count, 3);
-        assert!(
-            elements.iter().any(|(span, ordinal, next)| {
-                span.starts_with("1")
-                    && *ordinal == 0
-                    && next
-                        .as_deref()
-                        .is_some_and(|next| next.starts_with("2 + 3"))
-            }),
-            "missing first array element metadata: {elements:?}"
-        );
-        assert!(
-            elements.iter().any(|(span, ordinal, next)| {
-                span.starts_with("2 + 3")
-                    && *ordinal == 1
-                    && next.as_deref().is_some_and(|next| next.starts_with("4"))
-            }),
-            "missing second array element metadata: {elements:?}"
-        );
-        assert!(
-            elements
-                .iter()
-                .any(|(span, ordinal, next)| span.starts_with("4")
-                    && *ordinal == 2
-                    && next.is_none()),
-            "missing third array element metadata: {elements:?}"
+        assert_eq!(
+            elements,
+            vec![
+                ("seed".to_string(), array_node, 0),
+                ("1".to_string(), array_node, 1),
+                ("24".to_string(), array_node, 2),
+                ("28".to_string(), array_node, 3),
+            ]
         );
     });
 }

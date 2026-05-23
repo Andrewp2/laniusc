@@ -21,7 +21,8 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint4> x86_node_tree_record;
+StructuredBuffer<uint> x86_tree_parent;
+StructuredBuffer<uint> x86_tree_subtree_end;
 StructuredBuffer<uint> x86_node_tree_status;
 StructuredBuffer<uint> x86_func_owner_scan_local_prefix;
 StructuredBuffer<uint> x86_func_owner_scan_block_prefix;
@@ -79,7 +80,7 @@ bool owner_subtree_contains_node(uint owner, uint node_i)
     if (!valid_node(owner) || !valid_node(node_i))
         return false;
 
-    uint end = x86_node_tree_record[owner].w;
+    uint end = x86_tree_subtree_end[owner];
     return end != INVALID && owner <= node_i && node_i < end;
 }
 
@@ -98,7 +99,7 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
     }
 
-    uint parent = node_tree_ok() ? x86_node_tree_record[node_i].x : INVALID;
+    uint parent = node_tree_ok() ? x86_tree_parent[node_i] : INVALID;
     uint scanned_owner = owner_from_hir_order_scan(node_i);
     uint owner = owner_subtree_contains_node(scanned_owner, node_i)
                      ? scanned_owner

@@ -7,16 +7,19 @@ use super::{
     GpuX86CodeGenerator,
     GpuX86EnumMetadataBuffers,
     GpuX86ExprMetadataBuffers,
+    GpuX86ExternalScratchBuffers,
     GpuX86FunctionMetadataBuffers,
     GpuX86StructMetadataBuffers,
     GpuX86TypeMetadataBuffers,
     RecordedX86Codegen,
     X86_REGALLOC_ROWS_PER_CHUNK,
+    X86FeatureSummary,
     X86Params,
     X86RegallocParams,
     X86ScanParams,
     support::{
         RetainedX86Buffer,
+        dispatch_compute_pass,
         dispatch_compute_pass_indirect,
         dispatch_compute_pass_indirect_bind_group_steps,
         dispatch_compute_pass_indirect_offsets_with_bind_groups_and_dynamic_uniform_offsets,
@@ -26,11 +29,14 @@ use super::{
         dispatch_x86_stage_indirect,
         dispatch_x86_stages,
         dispatch_x86_stages_indirect,
+        external_or_storage_u32_copy,
         init_repeated_u32_words,
         pointer_jump_steps_for_items,
         pooled_readback_bytes,
         pooled_storage_u32_copy,
         pooled_storage_u32_rw,
+        pop_allocation_error_scope,
+        push_allocation_error_scope,
         readback_u32s,
         reflected_bind_group,
         scan_steps_for_blocks,
@@ -45,9 +51,11 @@ use super::{
         x86_scan_params_bytes,
         zero_u32_words,
     },
-    x86_capacity_estimate_for_hir_tokens_and_inst_basis,
+    x86_call_type_record_words,
+    x86_capacity_estimate_for_hir_tokens_inst_basis_and_feature_summary,
     x86_function_slot_capacity,
     x86_initial_output_readback_bytes,
+    x86_node_inst_gen_node_record_words,
     x86_node_inst_order_record_words,
     x86_node_inst_order_rows,
     x86_regalloc_recorded_step_count,
@@ -103,6 +111,86 @@ fn stamp_x86_timer(
 }
 
 impl GpuX86CodeGenerator {
+    pub fn measure_x86_features(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        token_capacity: u32,
+        n_hir_nodes: u32,
+        hir_status_buf: &wgpu::Buffer,
+        hir_kind_buf: &wgpu::Buffer,
+        hir_stmt_record_buf: &wgpu::Buffer,
+        hir_expr_record_buf: &wgpu::Buffer,
+        hir_token_pos_buf: &wgpu::Buffer,
+        parent_buf: &wgpu::Buffer,
+        first_child_buf: &wgpu::Buffer,
+        enclosing_fn_buf: &wgpu::Buffer,
+    ) -> Result<X86FeatureSummary> {
+        let params_buf = uniform_u32_words(
+            device,
+            "codegen.x86.feature_counts.params",
+            &[token_capacity, 0, 0, n_hir_nodes],
+        );
+        let feature_record_buf = storage_u32_copy(device, "codegen.x86.feature_counts.record", 8);
+        let readback_buf = readback_u32s(device, "codegen.x86.feature_counts.readback", 8);
+        let bind_group = reflected_bind_group(
+            device,
+            Some("codegen.x86.feature_counts.bind_group"),
+            &self.feature_counts_pass,
+            0,
+            &[
+                ("gParams", params_buf.as_entire_binding()),
+                ("hir_status", hir_status_buf.as_entire_binding()),
+                ("hir_kind", hir_kind_buf.as_entire_binding()),
+                ("hir_stmt_record", hir_stmt_record_buf.as_entire_binding()),
+                ("hir_expr_record", hir_expr_record_buf.as_entire_binding()),
+                ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
+                ("parent", parent_buf.as_entire_binding()),
+                ("first_child", first_child_buf.as_entire_binding()),
+                ("enclosing_fn", enclosing_fn_buf.as_entire_binding()),
+                ("x86_feature_record", feature_record_buf.as_entire_binding()),
+            ],
+        )?;
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("codegen.x86.feature_counts.encoder"),
+        });
+        zero_u32_words(queue, &mut encoder, &feature_record_buf, 8);
+        let groups = workgroup_grid_1d(n_hir_nodes.div_ceil(256).max(1));
+        dispatch_compute_pass(
+            &mut encoder,
+            "feature_counts",
+            "codegen.x86.feature_counts",
+            &self.feature_counts_pass,
+            &bind_group,
+            groups,
+        );
+        encoder.copy_buffer_to_buffer(&feature_record_buf, 0, &readback_buf, 0, 32);
+        crate::gpu::passes_core::submit_with_progress(
+            queue,
+            "codegen.x86.feature-counts",
+            encoder.finish(),
+        );
+
+        let readback_slice = readback_buf.slice(..);
+        crate::gpu::passes_core::wait_for_readback_map(
+            device,
+            &readback_slice,
+            "codegen.x86.feature_counts.readback",
+            std::time::Duration::from_millis(crate::gpu::env::env_u64(
+                "LANIUS_X86_READBACK_TIMEOUT_MS",
+                3_000,
+            )),
+        )?;
+        let words = {
+            let data = readback_slice.get_mapped_range();
+            let words = crate::gpu::readback::read_u32_words(&data, "x86 feature counts")?;
+            drop(data);
+            words
+        };
+        readback_buf.unmap();
+        Ok(X86FeatureSummary::from_record_words(words))
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn record_x86_elf_from_gpu_hir(
         &self,
@@ -117,8 +205,8 @@ impl GpuX86CodeGenerator {
         active_hir_dispatch_args_buf: &wgpu::Buffer,
         hir_kind_buf: &wgpu::Buffer,
         parent_buf: &wgpu::Buffer,
-        first_child_buf: &wgpu::Buffer,
-        next_sibling_buf: &wgpu::Buffer,
+        _first_child_buf: &wgpu::Buffer,
+        _next_sibling_buf: &wgpu::Buffer,
         subtree_end_buf: &wgpu::Buffer,
         function_metadata: GpuX86FunctionMetadataBuffers<'_>,
         expr_metadata: GpuX86ExprMetadataBuffers<'_>,
@@ -129,13 +217,16 @@ impl GpuX86CodeGenerator {
         type_metadata: GpuX86TypeMetadataBuffers<'_>,
         visible_decl_buf: &wgpu::Buffer,
         fn_entrypoint_tag_buf: &wgpu::Buffer,
+        feature_summary: X86FeatureSummary,
+        external_scratch: GpuX86ExternalScratchBuffers<'_>,
         mut timer: Option<&mut crate::gpu::timer::GpuTimer>,
     ) -> Result<RecordedX86Codegen> {
         let mut host_timer = X86RecordHostTimer::new();
-        let capacity = x86_capacity_estimate_for_hir_tokens_and_inst_basis(
+        let capacity = x86_capacity_estimate_for_hir_tokens_inst_basis_and_feature_summary(
             n_hir_nodes as usize,
             token_capacity as usize,
             inst_hir_node_count as usize,
+            feature_summary,
         );
         let hir_words = capacity.hir_words;
         let inst_capacity = capacity.inst_capacity;
@@ -205,14 +296,37 @@ impl GpuX86CodeGenerator {
                 ("x86.regalloc_recorded_steps", regalloc_recorded_steps),
                 ("x86.regalloc_rows_per_chunk", X86_REGALLOC_ROWS_PER_CHUNK),
                 ("x86.node_inst_order_rows", node_inst_order_rows),
+                ("x86.feature_mask", feature_summary.mask as usize),
+                (
+                    "x86.feature_scalar_inst_capacity",
+                    feature_summary.scalar_inst_capacity as usize,
+                ),
+                (
+                    "x86.feature_call_count",
+                    feature_summary.call_count as usize,
+                ),
+                (
+                    "x86.feature_param_count",
+                    feature_summary.param_count as usize,
+                ),
             ] {
                 crate::gpu::trace::record_counter("host.x86.capacity", name, now, value as f64);
             }
         }
         host_timer.stamp("capacity");
 
+        let mut allocation_error_scope = push_allocation_error_scope(device);
+        macro_rules! checkpoint_allocation_scope {
+            ($scope:ident, $stage:literal) => {{
+                pop_allocation_error_scope($scope, $stage)?;
+                $scope = push_allocation_error_scope(device);
+            }};
+        }
         let params_bytes = x86_params_bytes(&params);
         let params_buf = uniform_u32_struct(device, "codegen.x86.params", &params_bytes);
+        let feature_record_words = feature_summary.record_words();
+        let feature_params_buf =
+            uniform_u32_words(device, "codegen.x86.feature_params", &feature_record_words);
         let decl_layout_words = token_words;
         let node_inst_scan_words = hir_words + 1;
         let node_inst_scan_blocks = node_inst_scan_words.div_ceil(256).max(1);
@@ -233,13 +347,13 @@ impl GpuX86CodeGenerator {
             device,
             "codegen.x86.active_hir_count_dispatch_args",
             4,
-            wgpu::BufferUsages::INDIRECT,
+            wgpu::BufferUsages::INDIRECT | wgpu::BufferUsages::COPY_SRC,
         );
         let active_hir_plus_one_dispatch_args_buf = pooled_storage_u32_rw(
             device,
             "codegen.x86.active_hir_plus_one_dispatch_args",
             4,
-            wgpu::BufferUsages::INDIRECT,
+            wgpu::BufferUsages::INDIRECT | wgpu::BufferUsages::COPY_SRC,
         );
         let active_hir_scan_block_dispatch_args_buf = pooled_storage_u32_rw(
             device,
@@ -312,17 +426,29 @@ impl GpuX86CodeGenerator {
             "codegen.x86.func_meta.uniform",
             &[0, 0, u32::MAX, 0, u32::MAX, 0, 0, 0],
         );
-        let node_tree_record_buf =
-            storage_u32_copy(device, "codegen.x86.node_tree_record", hir_words * 4);
         let node_tree_status_buf =
             pooled_storage_u32_copy(device, "codegen.x86.node_tree_status", 4);
-        let expr_resolved_final_buf =
-            storage_u32_copy(device, "codegen.x86.expr_resolved_node", hir_words);
-        let node_func_buf = storage_u32_copy(device, "codegen.x86.node_func", hir_words);
-        let func_owner_scan_local_prefix_buf = storage_u32_copy(
+        // In the compiler pipeline these one-word HIR scratch rows can borrow
+        // parser/type-HIR buffers that are dead after typecheck. That keeps the
+        // x86 backend from stacking another resident arena on top of the parser
+        // arena while preserving the GPU-record based interface.
+        let expr_resolved_final_buf = external_or_storage_u32_copy(
+            device,
+            "codegen.x86.expr_resolved_node",
+            hir_words,
+            external_scratch.expr_resolved_final,
+        );
+        let node_func_buf = external_or_storage_u32_copy(
+            device,
+            "codegen.x86.node_func",
+            hir_words,
+            external_scratch.node_func,
+        );
+        let func_owner_scan_local_prefix_buf = external_or_storage_u32_copy(
             device,
             "codegen.x86.func_owner_scan_local_prefix",
             node_inst_scan_words,
+            external_scratch.func_owner_scan_local_prefix,
         );
         let func_owner_scan_block_sum_buf = storage_u32_copy(
             device,
@@ -339,36 +465,76 @@ impl GpuX86CodeGenerator {
             "codegen.x86.func_owner_scan_prefix_b",
             node_inst_scan_blocks,
         );
+        checkpoint_allocation_scope!(
+            allocation_error_scope,
+            "metadata tree/function buffer allocation"
+        );
         let enum_type_record_buf =
             storage_u32_copy(device, "codegen.x86.enum_type_record", token_words);
-        let enum_value_record_buf =
-            storage_u32_copy(device, "codegen.x86.enum_value_record", hir_words * 2);
+        let enum_value_record_rows = if feature_summary.has_enum() {
+            hir_words
+        } else {
+            1
+        };
+        let enum_value_record_buf = storage_u32_copy(
+            device,
+            "codegen.x86.enum_value_record",
+            enum_value_record_rows * 2,
+        );
         let enum_record_status_buf =
             pooled_storage_u32_copy(device, "codegen.x86.enum_record_status", 4);
-        let match_record_buf = storage_u32_copy(device, "codegen.x86.match_record", hir_words * 4);
+        let match_record_rows = if feature_summary.has_match() {
+            hir_words
+        } else {
+            1
+        };
+        let match_record_buf =
+            storage_u32_copy(device, "codegen.x86.match_record", match_record_rows * 4);
         let match_arm_owner_buf =
-            storage_u32_copy(device, "codegen.x86.match_arm_owner", hir_words);
-        let return_match_node_buf =
-            storage_u32_copy(device, "codegen.x86.return_match_node", hir_words);
+            storage_u32_copy(device, "codegen.x86.match_arm_owner", match_record_rows);
         let match_return_node_buf =
-            storage_u32_copy(device, "codegen.x86.match_return_node", hir_words);
-        let match_pattern_owner_buf =
-            storage_u32_copy(device, "codegen.x86.match_pattern_owner", hir_words);
-        let match_result_value_owner_buf =
-            storage_u32_copy(device, "codegen.x86.match_result_value_owner", hir_words);
-        let match_pattern_node_owner_buf =
-            storage_u32_copy(device, "codegen.x86.match_pattern_node_owner", hir_words);
-        let match_pattern_node_variant_buf =
-            storage_u32_copy(device, "codegen.x86.match_pattern_node_variant", hir_words);
-        let match_pattern_node_payload_decl_buf = storage_u32_copy(
+            storage_u32_copy(device, "codegen.x86.match_return_node", match_record_rows);
+        let match_pattern_owner_buf = external_or_storage_u32_copy(
+            device,
+            "codegen.x86.match_pattern_owner",
+            hir_words,
+            external_scratch.match_pattern_owner,
+        );
+        let match_result_value_owner_buf = storage_u32_copy(
+            device,
+            "codegen.x86.match_result_value_owner",
+            match_record_rows,
+        );
+        let match_pattern_node_owner_buf = external_or_storage_u32_copy(
+            device,
+            "codegen.x86.match_pattern_node_owner",
+            hir_words,
+            external_scratch.match_pattern_node_owner,
+        );
+        let match_pattern_node_variant_buf = external_or_storage_u32_copy(
+            device,
+            "codegen.x86.match_pattern_node_variant",
+            hir_words,
+            external_scratch.match_pattern_node_variant,
+        );
+        let match_pattern_node_payload_decl_buf = external_or_storage_u32_copy(
             device,
             "codegen.x86.match_pattern_node_payload_decl",
-            hir_words,
+            match_record_rows,
+            external_scratch.match_pattern_node_payload_decl,
         );
-        let node_inst_same_end_link_a_buf =
-            storage_u32_copy(device, "codegen.x86.node_inst_same_end_link_a", hir_words);
-        let node_inst_same_end_link_b_buf =
-            storage_u32_copy(device, "codegen.x86.node_inst_same_end_link_b", hir_words);
+        let node_inst_same_end_link_a_buf = external_or_storage_u32_copy(
+            device,
+            "codegen.x86.node_inst_same_end_link_a",
+            hir_words,
+            external_scratch.node_inst_same_end_link_a,
+        );
+        let node_inst_same_end_link_b_buf = external_or_storage_u32_copy(
+            device,
+            "codegen.x86.node_inst_same_end_link_b",
+            hir_words,
+            external_scratch.node_inst_same_end_link_b,
+        );
         // Expression resolution copies its final output before match-result
         // owner propagation starts. Match-pattern owner propagation starts
         // after match-result owners have been copied to the stable value-owner
@@ -377,45 +543,95 @@ impl GpuX86CodeGenerator {
         let match_result_owner_b_buf = &match_pattern_node_variant_buf;
         let match_result_owner_link_a_buf = &node_inst_same_end_link_a_buf;
         let match_result_owner_link_b_buf = &node_inst_same_end_link_b_buf;
-        let match_pattern_first_use_node_buf = storage_u32_copy(
+        let match_pattern_first_use_node_buf = external_or_storage_u32_copy(
             device,
             "codegen.x86.match_pattern_first_use_node",
             hir_words,
+            external_scratch.match_pattern_first_use_node,
         );
         // Function-owner pointer jumping completes before match-pattern
         // candidate projection. Copy an odd-step result back to node_func and
         // reuse this HIR-sized storage for the later first-use candidate rows.
         let node_func_owner_b_buf = &match_pattern_first_use_node_buf;
-        let match_pattern_first_variant_node_buf = storage_u32_copy(
+        let needs_enclosing_return_records = feature_summary.has_enum()
+            || feature_summary.has_match()
+            || feature_summary.has_aggregate();
+        let enclosing_return_record_rows = if needs_enclosing_return_records {
+            hir_words
+        } else {
+            1
+        };
+        let enclosing_return_node_a_buf = storage_u32_copy(
             device,
-            "codegen.x86.match_pattern_first_variant_node",
-            hir_words,
+            "codegen.x86.enclosing_return_node.a",
+            enclosing_return_record_rows,
         );
-        let match_pattern_first_payload_node_buf = storage_u32_copy(
+        let enclosing_return_node_b_buf = storage_u32_copy(
             device,
-            "codegen.x86.match_pattern_first_payload_node",
-            hir_words,
+            "codegen.x86.enclosing_return_node.b",
+            enclosing_return_record_rows,
         );
-        let enclosing_return_node_a_buf =
-            storage_u32_copy(device, "codegen.x86.enclosing_return_node.a", hir_words);
-        let enclosing_return_node_b_buf =
-            storage_u32_copy(device, "codegen.x86.enclosing_return_node.b", hir_words);
-        let enclosing_let_node_a_buf =
-            storage_u32_copy(device, "codegen.x86.enclosing_let_node.a", hir_words);
-        let enclosing_let_node_b_buf =
-            storage_u32_copy(device, "codegen.x86.enclosing_let_node.b", hir_words);
+        let enclosing_let_node_a_buf = external_or_storage_u32_copy(
+            device,
+            "codegen.x86.enclosing_let_node.a",
+            hir_words,
+            external_scratch.enclosing_let_node_a,
+        );
+        let enclosing_let_node_b_buf = external_or_storage_u32_copy(
+            device,
+            "codegen.x86.enclosing_let_node.b",
+            hir_words,
+            external_scratch.enclosing_let_node_b,
+        );
+        let match_pattern_first_variant_node_storage_buf = feature_summary.has_match().then(|| {
+            storage_u32_copy(
+                device,
+                "codegen.x86.match_pattern_first_variant_node",
+                hir_words,
+            )
+        });
+        let match_pattern_first_payload_node_storage_buf = feature_summary.has_match().then(|| {
+            storage_u32_copy(
+                device,
+                "codegen.x86.match_pattern_first_payload_node",
+                hir_words,
+            )
+        });
+        // No-match programs skip the pattern-record/finalize reads. Reuse
+        // already allocated HIR scratch for later enclosing-stmt/callee-owner
+        // pointer jumping instead of retaining two extra match-only tables.
+        let match_pattern_first_variant_node_buf: &wgpu::Buffer =
+            match_pattern_first_variant_node_storage_buf
+                .as_ref()
+                .unwrap_or(&match_pattern_node_owner_buf);
+        let match_pattern_first_payload_node_buf: &wgpu::Buffer =
+            match_pattern_first_payload_node_storage_buf
+                .as_ref()
+                .unwrap_or(&match_pattern_node_variant_buf);
         let struct_type_record_buf =
             storage_u32_copy(device, "codegen.x86.struct_type_record", token_words);
-        let struct_access_record_buf =
-            storage_u32_copy(device, "codegen.x86.struct_access_record", hir_words * 3);
-        let struct_store_record_buf =
-            storage_u32_copy(device, "codegen.x86.struct_store_record", hir_words * 4);
+        let aggregate_record_rows = if feature_summary.has_aggregate() {
+            hir_words
+        } else {
+            1
+        };
+        let struct_access_record_buf = storage_u32_copy(
+            device,
+            "codegen.x86.struct_access_record",
+            aggregate_record_rows * 3,
+        );
+        let struct_store_record_buf = storage_u32_copy(
+            device,
+            "codegen.x86.struct_store_record",
+            aggregate_record_rows * 4,
+        );
         let struct_record_status_buf =
             pooled_storage_u32_copy(device, "codegen.x86.struct_record_status", 4);
-        let decl_layout_record_buf = storage_u32_copy(
+        let decl_layout_record_buf = external_or_storage_u32_copy(
             device,
             "codegen.x86.decl_layout_record",
             decl_layout_words * 4,
+            external_scratch.decl_layout_record,
         );
         let decl_layout_status_buf =
             pooled_storage_u32_copy(device, "codegen.x86.decl_layout_status", 4);
@@ -426,19 +642,52 @@ impl GpuX86CodeGenerator {
             "codegen.x86.func_slot_by_index",
             function_slot_capacity,
         );
-        let func_slot_by_node_buf =
-            storage_u32_copy(device, "codegen.x86.func_slot_by_node", hir_words);
-        let call_record_buf = storage_u32_copy(device, "codegen.x86.call_record", hir_words * 4);
-        let call_type_record_buf =
-            storage_u32_copy(device, "codegen.x86.call_type_record", hir_words * 3);
+        let func_slot_by_node_buf = external_or_storage_u32_copy(
+            device,
+            "codegen.x86.func_slot_by_node",
+            hir_words,
+            external_scratch.func_slot_by_node,
+        );
+        let call_record_buf = external_or_storage_u32_copy(
+            device,
+            "codegen.x86.call_record",
+            hir_words * 4,
+            external_scratch.call_record,
+        );
+        checkpoint_allocation_scope!(allocation_error_scope, "call record buffer allocation");
+        let call_type_record_words =
+            x86_call_type_record_words(hir_words, feature_summary.has_call());
+        let call_type_record_buf = external_or_storage_u32_copy(
+            device,
+            "codegen.x86.call_type_record",
+            call_type_record_words,
+            external_scratch.call_type_record,
+        );
+        let node_inst_count_info_buf = external_or_storage_u32_copy(
+            device,
+            "codegen.x86.node_inst_count_info",
+            hir_words,
+            external_scratch.node_inst_count_info,
+        );
+        let node_inst_count_payload_buf = external_or_storage_u32_copy(
+            device,
+            "codegen.x86.node_inst_count_payload",
+            hir_words,
+            external_scratch.node_inst_count_payload,
+        );
+        checkpoint_allocation_scope!(allocation_error_scope, "node count buffer allocation");
         // Enclosing-let propagation is copied back to the stable A buffer
         // before call-record projection. Reuse the alternate ping-pong storage
         // for call-callee-root markers produced by call_records.
         let call_callee_root_call_buf = &enclosing_let_node_b_buf;
         let call_record_status_buf =
             pooled_storage_u32_copy(device, "codegen.x86.call_record_status", 4);
-        let const_value_record_buf =
-            storage_u32_copy(device, "codegen.x86.const_value_record", token_words * 2);
+        let const_value_record_buf = external_or_storage_u32_copy(
+            device,
+            "codegen.x86.const_value_record",
+            token_words * 2,
+            external_scratch.const_value_record,
+        );
         let const_value_status_buf =
             pooled_storage_u32_copy(device, "codegen.x86.const_value_status", 4);
         let const_value_status_uniform_buf = uniform_u32_words(
@@ -446,11 +695,12 @@ impl GpuX86CodeGenerator {
             "codegen.x86.const_value_status.uniform",
             &[1, 0, u32::MAX, 0],
         );
-        let param_reg_record_words = token_words.saturating_mul(5).saturating_add(hir_words);
-        let param_reg_record_buf = storage_u32_copy(
+        let param_reg_record_words = token_words.saturating_mul(5);
+        let param_reg_record_buf = external_or_storage_u32_copy(
             device,
             "codegen.x86.param_reg_record",
             param_reg_record_words,
+            external_scratch.param_reg_record,
         );
         let param_reg_status_buf =
             pooled_storage_u32_copy(device, "codegen.x86.param_reg_status", 4);
@@ -459,8 +709,12 @@ impl GpuX86CodeGenerator {
             "codegen.x86.param_reg_status.uniform",
             &[1, 0, u32::MAX, 0],
         );
-        let local_literal_record_buf =
-            storage_u32_copy(device, "codegen.x86.local_literal_record", token_words * 3);
+        let local_literal_record_buf = external_or_storage_u32_copy(
+            device,
+            "codegen.x86.local_literal_record",
+            token_words * 3,
+            external_scratch.local_literal_record,
+        );
         let local_literal_status_buf =
             pooled_storage_u32_copy(device, "codegen.x86.local_literal_status", 4);
         let local_literal_status_uniform_buf = uniform_u32_words(
@@ -468,6 +722,12 @@ impl GpuX86CodeGenerator {
             "codegen.x86.local_literal_status.uniform",
             &[1, 0, u32::MAX, 0],
         );
+        let empty_param_record_buf = (!feature_summary.has_param())
+            .then(|| storage_u32_copy(device, "codegen.x86.empty_param_record", 4));
+        let hir_param_record_buf = empty_param_record_buf
+            .as_ref()
+            .unwrap_or(function_metadata.param_record);
+        checkpoint_allocation_scope!(allocation_error_scope, "metadata record buffer allocation");
         let node_inst_order_record_words =
             x86_node_inst_order_record_words(hir_words, inst_capacity, function_slot_capacity);
         let node_inst_order_record_buf = storage_u32_copy(
@@ -475,33 +735,46 @@ impl GpuX86CodeGenerator {
             "codegen.x86.node_inst_order_record",
             node_inst_order_record_words,
         );
+        checkpoint_allocation_scope!(
+            allocation_error_scope,
+            "node instruction order buffer allocation"
+        );
+        let call_arg_lookup_record_words = if feature_summary.has_call() {
+            token_words * 4
+        } else {
+            function_slot_capacity.max(4)
+        };
         let call_arg_lookup_record_buf = storage_u32_copy(
             device,
             "codegen.x86.call_arg_lookup_record",
-            token_words * 4,
+            call_arg_lookup_record_words,
         );
         // Match-pattern owner records are consumed before call projection.
         // Reuse that HIR-sized table for per-call intrinsic metadata.
         let intrinsic_call_record_buf = &match_pattern_owner_buf;
         let intrinsic_call_status_buf =
             pooled_storage_u32_copy(device, "codegen.x86.intrinsic_call_status", 4);
+        let call_abi_record_words = if feature_summary.has_call() {
+            token_words * 2
+        } else {
+            function_slot_capacity.max(2)
+        };
         let call_abi_record_buf =
-            storage_u32_copy(device, "codegen.x86.call_abi_record", token_words * 2);
+            storage_u32_copy(device, "codegen.x86.call_abi_record", call_abi_record_words);
         let call_abi_status_buf = pooled_storage_u32_copy(device, "codegen.x86.call_abi_status", 4);
         let call_abi_status_uniform_buf = uniform_u32_words(
             device,
             "codegen.x86.call_abi_status.uniform",
             &[1, 0, u32::MAX, 0],
         );
-        // Call type records are consumed by call ABI classification before
-        // instruction planning begins. Reuse that HIR-sized table for node
-        // instruction counts, then for virtual parameter masks after location
-        // planning consumes the counts.
-        let node_inst_count_record_buf = &call_type_record_buf;
+        checkpoint_allocation_scope!(
+            allocation_error_scope,
+            "call argument planning buffer allocation"
+        );
         // Node instruction counts are consumed before virtual parameter mask
-        // materialization. Reuse this HIR-sized table once instruction
+        // materialization. Reuse the info table once instruction
         // location planning has finished.
-        let func_param_reg_mask_buf = &node_inst_count_record_buf;
+        let func_param_reg_mask_buf = &node_inst_count_info_buf;
         // Function-owner propagation completes before same-end rank init, so
         // reuse that stage's link ping-pong buffers instead of allocating a
         // separate pair of HIR-sized temporaries.
@@ -521,17 +794,11 @@ impl GpuX86CodeGenerator {
         } else {
             expr_resolved_b_buf
         };
-        // Aggregate-literal return emission still needs enclosing-return records
-        // after expression semantic types are built, so keep semantic types in
-        // their own compact ping-pong rows instead of reusing return ownership.
-        let expr_semantic_type_a_storage_buf =
-            storage_u32_copy(device, "codegen.x86.expr_semantic_type.a", hir_words);
-        let expr_semantic_type_b_storage_buf =
-            storage_u32_copy(device, "codegen.x86.expr_semantic_type.b", hir_words);
-        let expr_semantic_type_a_buf = &expr_semantic_type_a_storage_buf;
-        let expr_semantic_type_b_buf = &expr_semantic_type_b_storage_buf;
-        let expr_semantic_type_link_a_buf = &node_inst_same_end_link_a_buf;
-        let expr_semantic_type_link_b_buf = &node_inst_same_end_link_b_buf;
+        // Expression semantic compare mode and pointer-jump links are packed
+        // into the same ping-pong scratch rows. node_inst_locations consumes
+        // the final record before enclosing-loop propagation reuses the links.
+        let expr_semantic_type_a_buf = &node_inst_same_end_link_a_buf;
+        let expr_semantic_type_b_buf = &node_inst_same_end_link_b_buf;
         let expr_semantic_type_final_buf = if expr_semantic_type_steps.len() % 2 == 0 {
             expr_semantic_type_a_buf
         } else {
@@ -553,8 +820,8 @@ impl GpuX86CodeGenerator {
         } else {
             match_result_owner_b_buf
         };
-        let enclosing_stmt_node_a_buf = &match_pattern_first_variant_node_buf;
-        let enclosing_stmt_node_b_buf = &match_pattern_first_payload_node_buf;
+        let enclosing_stmt_node_a_buf = match_pattern_first_variant_node_buf;
+        let enclosing_stmt_node_b_buf = match_pattern_first_payload_node_buf;
         let enclosing_stmt_link_a_buf = &node_inst_same_end_link_a_buf;
         let enclosing_stmt_link_b_buf = &node_inst_same_end_link_b_buf;
         let enclosing_stmt_step_final_buf = if enclosing_stmt_steps.len() % 2 == 0 {
@@ -562,8 +829,8 @@ impl GpuX86CodeGenerator {
         } else {
             enclosing_stmt_node_b_buf
         };
-        let call_callee_owner_call_a_buf = &match_pattern_first_variant_node_buf;
-        let call_callee_owner_call_b_buf = &match_pattern_first_payload_node_buf;
+        let call_callee_owner_call_a_buf = match_pattern_first_variant_node_buf;
+        let call_callee_owner_call_b_buf = match_pattern_first_payload_node_buf;
         let call_callee_owner_link_a_buf = &node_inst_same_end_link_a_buf;
         let call_callee_owner_link_b_buf = &node_inst_same_end_link_b_buf;
         let call_callee_owner_step_final_buf = if call_callee_owner_steps.len() % 2 == 0 {
@@ -606,29 +873,55 @@ impl GpuX86CodeGenerator {
             pooled_storage_u32_copy(device, "codegen.x86.node_inst_count_status", 4);
         let node_inst_order_status_buf =
             pooled_storage_u32_copy(device, "codegen.x86.node_inst_order_status", 4);
-        let node_inst_scan_local_prefix_buf = storage_u32_copy(
+        let node_inst_scan_local_prefix_buf = external_or_storage_u32_copy(
             device,
             "codegen.x86.node_inst_scan_local_prefix",
             node_inst_scan_words,
+            external_scratch.node_inst_scan_local_prefix,
         );
         let node_inst_scan_block_sum_buf = &func_owner_scan_block_sum_buf;
         let node_inst_scan_prefix_a_buf = &func_owner_scan_prefix_a_buf;
         let node_inst_scan_prefix_b_buf = &func_owner_scan_prefix_b_buf;
-        let node_inst_range_record_buf =
-            storage_u32_copy(device, "codegen.x86.node_inst_range_record", hir_words * 2);
+        let node_inst_range_start_buf = external_or_storage_u32_copy(
+            device,
+            "codegen.x86.node_inst_range_start",
+            hir_words,
+            external_scratch.node_inst_range_start,
+        );
+        let node_inst_range_info_buf = external_or_storage_u32_copy(
+            device,
+            "codegen.x86.node_inst_range_info",
+            hir_words,
+            external_scratch.node_inst_range_info,
+        );
         let node_inst_range_status_buf =
             pooled_storage_u32_copy(device, "codegen.x86.node_inst_range_status", 4);
-        // Subtree bounds now also carry the compact generation worklist in the
-        // tail. Keep this separate from the order table because prefix-scan
-        // reads the order table while writing the worklist.
-        let node_inst_subtree_bounds_words = hir_words.saturating_add(1).saturating_mul(4);
-        let node_inst_subtree_bounds_buf = storage_u32_copy(
+        let node_inst_subtree_bound_start_buf = external_or_storage_u32_copy(
             device,
-            "codegen.x86.node_inst_subtree_bounds",
-            node_inst_subtree_bounds_words,
+            "codegen.x86.node_inst_subtree_bound_start",
+            hir_words,
+            external_scratch.node_inst_subtree_bound_start,
+        );
+        let node_inst_subtree_bound_end_buf = external_or_storage_u32_copy(
+            device,
+            "codegen.x86.node_inst_subtree_bound_end",
+            hir_words,
+            external_scratch.node_inst_subtree_bound_end,
+        );
+        let node_inst_gen_node_record_words =
+            x86_node_inst_gen_node_record_words(hir_words, inst_capacity);
+        let node_inst_gen_node_record_buf = external_or_storage_u32_copy(
+            device,
+            "codegen.x86.node_inst_gen_node_record",
+            node_inst_gen_node_record_words,
+            external_scratch.node_inst_gen_node_record,
         );
         let node_inst_subtree_bounds_status_buf =
             pooled_storage_u32_copy(device, "codegen.x86.node_inst_subtree_bounds_status", 4);
+        checkpoint_allocation_scope!(
+            allocation_error_scope,
+            "node instruction scan/range buffer allocation"
+        );
         let node_inst_location_record_buf = &call_record_buf;
         let node_inst_location_status_buf =
             pooled_storage_u32_copy(device, "codegen.x86.node_inst_location_status", 4);
@@ -640,6 +933,10 @@ impl GpuX86CodeGenerator {
             storage_u32_copy(device, "codegen.x86.virtual_inst_args", inst_capacity * 4);
         let virtual_inst_status_buf =
             pooled_storage_u32_copy(device, "codegen.x86.virtual_inst_status", 4);
+        checkpoint_allocation_scope!(
+            allocation_error_scope,
+            "virtual instruction buffer allocation"
+        );
         // Call argument lookup and ABI records are dead after instruction
         // generation. Reuse their token-indexed storage for virtual row bounds,
         // initialized immediately before the row-bound scatter pass.
@@ -727,7 +1024,7 @@ impl GpuX86CodeGenerator {
             "rb.codegen.x86.out_words_and_status",
             output_readback_bytes + 16,
         );
-        let trace_status_words = 92usize;
+        let trace_status_words = 110usize;
         let status_trace_readback = if std::env::var("LANIUS_X86_STATUS_TRACE").is_ok_and(|value| {
             let value = value.trim();
             matches!(value, "1" | "true" | "TRUE" | "True")
@@ -740,6 +1037,7 @@ impl GpuX86CodeGenerator {
         } else {
             None
         };
+        pop_allocation_error_scope(allocation_error_scope, "virtual/output buffer allocation")?;
         host_timer.stamp("scratch_buffers");
         let func_owner_scan_steps = scan_steps_for_blocks(func_owner_scan_blocks);
         let func_owner_scan_param_bytes = func_owner_scan_steps
@@ -998,13 +1296,7 @@ impl GpuX86CodeGenerator {
                 ("gParams", params_buf.as_entire_binding()),
                 ("hir_status", hir_status_buf.as_entire_binding()),
                 ("parent", parent_buf.as_entire_binding()),
-                ("first_child", first_child_buf.as_entire_binding()),
-                ("next_sibling", next_sibling_buf.as_entire_binding()),
                 ("subtree_end", subtree_end_buf.as_entire_binding()),
-                (
-                    "x86_node_tree_record",
-                    node_tree_record_buf.as_entire_binding(),
-                ),
                 (
                     "x86_node_tree_status",
                     node_tree_status_buf.as_entire_binding(),
@@ -1020,10 +1312,6 @@ impl GpuX86CodeGenerator {
                 ("gParams", params_buf.as_entire_binding()),
                 ("hir_status", hir_status_buf.as_entire_binding()),
                 ("hir_kind", hir_kind_buf.as_entire_binding()),
-                (
-                    "x86_node_tree_record",
-                    node_tree_record_buf.as_entire_binding(),
-                ),
                 (
                     "x86_node_tree_status",
                     node_tree_status_buf.as_entire_binding(),
@@ -1130,10 +1418,8 @@ impl GpuX86CodeGenerator {
                 ("gParams", params_buf.as_entire_binding()),
                 ("hir_status", hir_status_buf.as_entire_binding()),
                 ("hir_kind", hir_kind_buf.as_entire_binding()),
-                (
-                    "x86_node_tree_record",
-                    node_tree_record_buf.as_entire_binding(),
-                ),
+                ("x86_tree_parent", parent_buf.as_entire_binding()),
+                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
                 (
                     "x86_node_tree_status",
                     node_tree_status_buf.as_entire_binding(),
@@ -1424,6 +1710,7 @@ impl GpuX86CodeGenerator {
                     "hir_token_pos",
                     enum_metadata.hir_token_pos.as_entire_binding(),
                 ),
+                ("gX86Features", feature_params_buf.as_entire_binding()),
                 ("x86_match_record", match_record_buf.as_entire_binding()),
                 (
                     "x86_match_result_value_owner",
@@ -1445,6 +1732,10 @@ impl GpuX86CodeGenerator {
                 ("hir_status", hir_status_buf.as_entire_binding()),
                 ("hir_kind", hir_kind_buf.as_entire_binding()),
                 ("hir_expr_record", expr_metadata.record.as_entire_binding()),
+                (
+                    "hir_token_pos",
+                    enum_metadata.hir_token_pos.as_entire_binding(),
+                ),
                 (
                     "x86_expr_resolved_node",
                     expr_resolved_final_buf.as_entire_binding(),
@@ -1495,6 +1786,7 @@ impl GpuX86CodeGenerator {
                     "hir_variant_ordinal",
                     enum_metadata.variant_ordinal.as_entire_binding(),
                 ),
+                ("gX86Features", feature_params_buf.as_entire_binding()),
                 ("x86_match_record", match_record_buf.as_entire_binding()),
                 (
                     "x86_match_pattern_node_owner",
@@ -1535,10 +1827,8 @@ impl GpuX86CodeGenerator {
                     "hir_stmt_record",
                     expr_metadata.stmt_record.as_entire_binding(),
                 ),
-                (
-                    "x86_node_tree_record",
-                    node_tree_record_buf.as_entire_binding(),
-                ),
+                ("x86_tree_parent", parent_buf.as_entire_binding()),
+                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
                 (
                     "x86_enclosing_return_node",
                     enclosing_return_node_a_buf.as_entire_binding(),
@@ -1603,10 +1893,8 @@ impl GpuX86CodeGenerator {
                     "hir_stmt_record",
                     expr_metadata.stmt_record.as_entire_binding(),
                 ),
-                (
-                    "x86_node_tree_record",
-                    node_tree_record_buf.as_entire_binding(),
-                ),
+                ("x86_tree_parent", parent_buf.as_entire_binding()),
+                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
                 (
                     "x86_enclosing_let_node",
                     enclosing_let_node_a_buf.as_entire_binding(),
@@ -1661,10 +1949,8 @@ impl GpuX86CodeGenerator {
                 ("gParams", params_buf.as_entire_binding()),
                 ("hir_status", hir_status_buf.as_entire_binding()),
                 ("hir_kind", hir_kind_buf.as_entire_binding()),
-                (
-                    "x86_node_tree_record",
-                    node_tree_record_buf.as_entire_binding(),
-                ),
+                ("x86_tree_parent", parent_buf.as_entire_binding()),
+                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
                 (
                     "x86_enclosing_stmt_node",
                     enclosing_stmt_node_a_buf.as_entire_binding(),
@@ -1727,14 +2013,7 @@ impl GpuX86CodeGenerator {
                     "x86_expr_resolved_node",
                     expr_resolved_final_buf.as_entire_binding(),
                 ),
-                (
-                    "x86_node_tree_record",
-                    node_tree_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_return_match_node",
-                    return_match_node_buf.as_entire_binding(),
-                ),
+                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
                 (
                     "x86_match_return_node",
                     match_return_node_buf.as_entire_binding(),
@@ -1748,15 +2027,14 @@ impl GpuX86CodeGenerator {
             0,
             &[
                 ("gParams", params_buf.as_entire_binding()),
+                ("gX86Features", feature_params_buf.as_entire_binding()),
                 ("hir_status", hir_status_buf.as_entire_binding()),
                 (
                     "x86_match_result_root_owner",
                     match_result_value_owner_buf.as_entire_binding(),
                 ),
-                (
-                    "x86_node_tree_record",
-                    node_tree_record_buf.as_entire_binding(),
-                ),
+                ("x86_tree_parent", parent_buf.as_entire_binding()),
+                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
                 (
                     "x86_match_result_owner",
                     match_result_owner_a_buf.as_entire_binding(),
@@ -1825,14 +2103,13 @@ impl GpuX86CodeGenerator {
                     "x86_expr_resolved_node",
                     expr_resolved_final_buf.as_entire_binding(),
                 ),
-                (
-                    "x86_node_tree_record",
-                    node_tree_record_buf.as_entire_binding(),
-                ),
+                ("x86_tree_parent", parent_buf.as_entire_binding()),
+                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
                 (
                     "x86_match_return_node",
                     match_return_node_buf.as_entire_binding(),
                 ),
+                ("gX86Features", feature_params_buf.as_entire_binding()),
                 ("x86_match_record", match_record_buf.as_entire_binding()),
                 (
                     "x86_match_pattern_owner",
@@ -1852,10 +2129,9 @@ impl GpuX86CodeGenerator {
             &[
                 ("gParams", params_buf.as_entire_binding()),
                 ("hir_status", hir_status_buf.as_entire_binding()),
-                (
-                    "x86_node_tree_record",
-                    node_tree_record_buf.as_entire_binding(),
-                ),
+                ("x86_tree_parent", parent_buf.as_entire_binding()),
+                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
+                ("gX86Features", feature_params_buf.as_entire_binding()),
                 ("x86_match_record", match_record_buf.as_entire_binding()),
                 (
                     "x86_match_pattern_owner",
@@ -1947,6 +2223,7 @@ impl GpuX86CodeGenerator {
                     "x86_match_pattern_first_payload_node",
                     match_pattern_first_payload_node_buf.as_entire_binding(),
                 ),
+                ("gX86Features", feature_params_buf.as_entire_binding()),
                 ("x86_match_record", match_record_buf.as_entire_binding()),
             ],
         )?;
@@ -1968,6 +2245,10 @@ impl GpuX86CodeGenerator {
                     expr_metadata.stmt_record.as_entire_binding(),
                 ),
                 ("hir_expr_record", expr_metadata.record.as_entire_binding()),
+                (
+                    "hir_node_decl_token",
+                    function_metadata.node_decl_token.as_entire_binding(),
+                ),
                 (
                     "x86_expr_resolved_node",
                     expr_resolved_final_buf.as_entire_binding(),
@@ -2020,10 +2301,8 @@ impl GpuX86CodeGenerator {
                         .struct_init_field_ordinal_by_node
                         .as_entire_binding(),
                 ),
-                (
-                    "x86_node_tree_record",
-                    node_tree_record_buf.as_entire_binding(),
-                ),
+                ("x86_tree_parent", parent_buf.as_entire_binding()),
+                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
                 (
                     "x86_node_tree_status",
                     node_tree_status_buf.as_entire_binding(),
@@ -2065,6 +2344,10 @@ impl GpuX86CodeGenerator {
                 ),
                 ("hir_expr_record", expr_metadata.record.as_entire_binding()),
                 (
+                    "hir_node_decl_token",
+                    function_metadata.node_decl_token.as_entire_binding(),
+                ),
+                (
                     "x86_expr_resolved_node",
                     expr_resolved_final_buf.as_entire_binding(),
                 ),
@@ -2088,10 +2371,8 @@ impl GpuX86CodeGenerator {
                     "hir_array_element_next",
                     array_metadata.element_next.as_entire_binding(),
                 ),
-                (
-                    "x86_node_tree_record",
-                    node_tree_record_buf.as_entire_binding(),
-                ),
+                ("x86_tree_parent", parent_buf.as_entire_binding()),
+                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
                 (
                     "x86_node_tree_status",
                     node_tree_status_buf.as_entire_binding(),
@@ -2124,18 +2405,18 @@ impl GpuX86CodeGenerator {
                     expr_metadata.stmt_record.as_entire_binding(),
                 ),
                 ("hir_expr_record", expr_metadata.record.as_entire_binding()),
+                ("hir_type_form", expr_metadata.type_form.as_entire_binding()),
                 (
-                    "hir_param_record",
-                    function_metadata.param_record.as_entire_binding(),
+                    "hir_type_len_value",
+                    expr_metadata.type_len_value.as_entire_binding(),
                 ),
+                ("hir_param_record", hir_param_record_buf.as_entire_binding()),
                 (
                     "x86_expr_resolved_node",
                     expr_resolved_final_buf.as_entire_binding(),
                 ),
-                (
-                    "x86_node_tree_record",
-                    node_tree_record_buf.as_entire_binding(),
-                ),
+                ("x86_tree_parent", parent_buf.as_entire_binding()),
+                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
                 (
                     "x86_struct_access_record",
                     struct_access_record_buf.as_entire_binding(),
@@ -2208,19 +2489,19 @@ impl GpuX86CodeGenerator {
                     expr_metadata.stmt_record.as_entire_binding(),
                 ),
                 ("hir_expr_record", expr_metadata.record.as_entire_binding()),
+                ("hir_type_form", expr_metadata.type_form.as_entire_binding()),
                 (
-                    "hir_param_record",
-                    function_metadata.param_record.as_entire_binding(),
+                    "hir_type_len_value",
+                    expr_metadata.type_len_value.as_entire_binding(),
                 ),
+                ("hir_param_record", hir_param_record_buf.as_entire_binding()),
                 (
                     "x86_expr_resolved_node",
                     expr_resolved_final_buf.as_entire_binding(),
                 ),
                 ("x86_node_func", final_node_func_buf.as_entire_binding()),
-                (
-                    "x86_node_tree_record",
-                    node_tree_record_buf.as_entire_binding(),
-                ),
+                ("x86_tree_parent", parent_buf.as_entire_binding()),
+                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
                 (
                     "x86_struct_access_record",
                     struct_access_record_buf.as_entire_binding(),
@@ -2362,10 +2643,8 @@ impl GpuX86CodeGenerator {
                 ("gParams", params_buf.as_entire_binding()),
                 ("hir_status", hir_status_buf.as_entire_binding()),
                 ("hir_kind", hir_kind_buf.as_entire_binding()),
-                (
-                    "x86_node_tree_record",
-                    node_tree_record_buf.as_entire_binding(),
-                ),
+                ("x86_tree_parent", parent_buf.as_entire_binding()),
+                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
                 (
                     "hir_member_receiver_node",
                     call_metadata.member_receiver_node.as_entire_binding(),
@@ -2468,10 +2747,8 @@ impl GpuX86CodeGenerator {
             &[
                 ("gParams", params_buf.as_entire_binding()),
                 ("hir_status", hir_status_buf.as_entire_binding()),
-                (
-                    "hir_param_record",
-                    function_metadata.param_record.as_entire_binding(),
-                ),
+                ("hir_kind", hir_kind_buf.as_entire_binding()),
+                ("hir_param_record", hir_param_record_buf.as_entire_binding()),
                 (
                     "hir_node_decl_token",
                     function_metadata.node_decl_token.as_entire_binding(),
@@ -2480,6 +2757,16 @@ impl GpuX86CodeGenerator {
                     "hir_token_pos",
                     function_metadata.hir_token_pos.as_entire_binding(),
                 ),
+                (
+                    "hir_fn_return_type_node",
+                    function_metadata.fn_return_type_node.as_entire_binding(),
+                ),
+                ("hir_type_form", expr_metadata.type_form.as_entire_binding()),
+                (
+                    "hir_type_len_value",
+                    expr_metadata.type_len_value.as_entire_binding(),
+                ),
+                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
                 (
                     "method_decl_param_offset",
                     function_metadata
@@ -2690,6 +2977,16 @@ impl GpuX86CodeGenerator {
             &[
                 ("gParams", params_buf.as_entire_binding()),
                 ("hir_status", hir_status_buf.as_entire_binding()),
+                ("hir_kind", hir_kind_buf.as_entire_binding()),
+                (
+                    "hir_fn_return_type_node",
+                    function_metadata.fn_return_type_node.as_entire_binding(),
+                ),
+                ("hir_type_form", expr_metadata.type_form.as_entire_binding()),
+                (
+                    "hir_type_len_value",
+                    expr_metadata.type_len_value.as_entire_binding(),
+                ),
                 (
                     "x86_decl_node_by_token",
                     decl_node_by_token_buf.as_entire_binding(),
@@ -2756,6 +3053,7 @@ impl GpuX86CodeGenerator {
                     expr_metadata.stmt_record.as_entire_binding(),
                 ),
                 ("hir_expr_record", expr_metadata.record.as_entire_binding()),
+                ("hir_param_record", hir_param_record_buf.as_entire_binding()),
                 (
                     "x86_expr_resolved_node",
                     expr_resolved_final_buf.as_entire_binding(),
@@ -2774,10 +3072,8 @@ impl GpuX86CodeGenerator {
                     "x86_param_reg_record",
                     param_reg_record_buf.as_entire_binding(),
                 ),
-                (
-                    "x86_node_tree_record",
-                    node_tree_record_buf.as_entire_binding(),
-                ),
+                ("x86_tree_parent", parent_buf.as_entire_binding()),
+                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
                 (
                     "x86_node_tree_status",
                     node_tree_status_buf.as_entire_binding(),
@@ -2785,10 +3081,6 @@ impl GpuX86CodeGenerator {
                 (
                     "x86_enclosing_return_node",
                     enclosing_return_step_final_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_return_match_node",
-                    return_match_node_buf.as_entire_binding(),
                 ),
                 (
                     "x86_match_return_node",
@@ -2819,6 +3111,7 @@ impl GpuX86CodeGenerator {
                     "x86_enum_record_status",
                     enum_record_status_buf.as_entire_binding(),
                 ),
+                ("gX86Features", feature_params_buf.as_entire_binding()),
                 ("x86_match_record", match_record_buf.as_entire_binding()),
                 (
                     "x86_match_pattern_node_owner",
@@ -2841,12 +3134,12 @@ impl GpuX86CodeGenerator {
                     struct_record_status_buf.as_entire_binding(),
                 ),
                 (
-                    "x86_node_inst_count_record",
-                    node_inst_count_record_buf.as_entire_binding(),
+                    "x86_node_inst_count_info",
+                    node_inst_count_info_buf.as_entire_binding(),
                 ),
                 (
-                    "x86_node_inst_scan_input",
-                    node_inst_scan_input_buf.as_entire_binding(),
+                    "x86_node_inst_count_payload",
+                    node_inst_count_payload_buf.as_entire_binding(),
                 ),
                 (
                     "x86_node_inst_count_status",
@@ -2862,17 +3155,19 @@ impl GpuX86CodeGenerator {
             &[
                 ("gParams", params_buf.as_entire_binding()),
                 ("hir_status", hir_status_buf.as_entire_binding()),
-                (
-                    "x86_node_tree_record",
-                    node_tree_record_buf.as_entire_binding(),
-                ),
+                ("x86_tree_parent", parent_buf.as_entire_binding()),
+                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
                 (
                     "x86_node_tree_status",
                     node_tree_status_buf.as_entire_binding(),
                 ),
                 (
-                    "x86_node_inst_count_record",
-                    node_inst_count_record_buf.as_entire_binding(),
+                    "x86_node_inst_count_info",
+                    node_inst_count_info_buf.as_entire_binding(),
+                ),
+                (
+                    "x86_node_inst_count_payload",
+                    node_inst_count_payload_buf.as_entire_binding(),
                 ),
                 (
                     "x86_node_inst_count_status",
@@ -2943,17 +3238,19 @@ impl GpuX86CodeGenerator {
             &[
                 ("gParams", params_buf.as_entire_binding()),
                 ("hir_status", hir_status_buf.as_entire_binding()),
-                (
-                    "x86_node_tree_record",
-                    node_tree_record_buf.as_entire_binding(),
-                ),
+                ("x86_tree_parent", parent_buf.as_entire_binding()),
+                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
                 (
                     "x86_node_tree_status",
                     node_tree_status_buf.as_entire_binding(),
                 ),
                 (
-                    "x86_node_inst_count_record",
-                    node_inst_count_record_buf.as_entire_binding(),
+                    "x86_node_inst_count_info",
+                    node_inst_count_info_buf.as_entire_binding(),
+                ),
+                (
+                    "x86_node_inst_count_payload",
+                    node_inst_count_payload_buf.as_entire_binding(),
                 ),
                 (
                     "x86_node_inst_count_status",
@@ -2973,17 +3270,19 @@ impl GpuX86CodeGenerator {
             &[
                 ("gParams", params_buf.as_entire_binding()),
                 ("hir_status", hir_status_buf.as_entire_binding()),
-                (
-                    "x86_node_tree_record",
-                    node_tree_record_buf.as_entire_binding(),
-                ),
+                ("x86_tree_parent", parent_buf.as_entire_binding()),
+                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
                 (
                     "x86_node_tree_status",
                     node_tree_status_buf.as_entire_binding(),
                 ),
                 (
-                    "x86_node_inst_count_record",
-                    node_inst_count_record_buf.as_entire_binding(),
+                    "x86_node_inst_count_info",
+                    node_inst_count_info_buf.as_entire_binding(),
+                ),
+                (
+                    "x86_node_inst_count_payload",
+                    node_inst_count_payload_buf.as_entire_binding(),
                 ),
                 (
                     "x86_node_inst_count_status",
@@ -3014,8 +3313,12 @@ impl GpuX86CodeGenerator {
                     node_inst_subtree_slot_bounds_buf.as_entire_binding(),
                 ),
                 (
-                    "x86_node_inst_range_record",
-                    node_inst_range_record_buf.as_entire_binding(),
+                    "x86_node_inst_range_start",
+                    node_inst_range_start_buf.as_entire_binding(),
+                ),
+                (
+                    "x86_node_inst_range_info",
+                    node_inst_range_info_buf.as_entire_binding(),
                 ),
                 (
                     "x86_node_inst_scan_input",
@@ -3106,8 +3409,12 @@ impl GpuX86CodeGenerator {
                     node_inst_order_record_buf.as_entire_binding(),
                 ),
                 (
-                    "x86_node_inst_count_record",
-                    node_inst_count_record_buf.as_entire_binding(),
+                    "x86_node_inst_count_info",
+                    node_inst_count_info_buf.as_entire_binding(),
+                ),
+                (
+                    "x86_node_inst_count_payload",
+                    node_inst_count_payload_buf.as_entire_binding(),
                 ),
                 (
                     "x86_node_inst_order_status",
@@ -3122,8 +3429,12 @@ impl GpuX86CodeGenerator {
                     final_node_inst_scan_prefix_buf.as_entire_binding(),
                 ),
                 (
-                    "x86_node_inst_range_record",
-                    node_inst_range_record_buf.as_entire_binding(),
+                    "x86_node_inst_range_start",
+                    node_inst_range_start_buf.as_entire_binding(),
+                ),
+                (
+                    "x86_node_inst_range_info",
+                    node_inst_range_info_buf.as_entire_binding(),
                 ),
                 (
                     "x86_node_inst_range_status",
@@ -3155,8 +3466,12 @@ impl GpuX86CodeGenerator {
                     final_node_inst_scan_prefix_buf.as_entire_binding(),
                 ),
                 (
-                    "x86_node_inst_subtree_bounds_record",
-                    node_inst_subtree_bounds_buf.as_entire_binding(),
+                    "x86_node_inst_subtree_bound_start",
+                    node_inst_subtree_bound_start_buf.as_entire_binding(),
+                ),
+                (
+                    "x86_node_inst_subtree_bound_end",
+                    node_inst_subtree_bound_end_buf.as_entire_binding(),
                 ),
                 (
                     "x86_node_inst_subtree_bounds_status",
@@ -3200,12 +3515,8 @@ impl GpuX86CodeGenerator {
                     param_reg_record_buf.as_entire_binding(),
                 ),
                 (
-                    "x86_expr_semantic_type",
+                    "x86_expr_semantic_record",
                     expr_semantic_type_a_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_expr_semantic_type_link",
-                    expr_semantic_type_link_a_buf.as_entire_binding(),
                 ),
             ],
         )?;
@@ -3213,20 +3524,10 @@ impl GpuX86CodeGenerator {
             .iter()
             .enumerate()
             .map(|(step_i, _step)| {
-                let (type_in, link_in, type_out, link_out) = if step_i % 2 == 0 {
-                    (
-                        expr_semantic_type_a_buf,
-                        expr_semantic_type_link_a_buf,
-                        expr_semantic_type_b_buf,
-                        expr_semantic_type_link_b_buf,
-                    )
+                let (record_in, record_out) = if step_i % 2 == 0 {
+                    (expr_semantic_type_a_buf, expr_semantic_type_b_buf)
                 } else {
-                    (
-                        expr_semantic_type_b_buf,
-                        expr_semantic_type_link_b_buf,
-                        expr_semantic_type_a_buf,
-                        expr_semantic_type_link_a_buf,
-                    )
+                    (expr_semantic_type_b_buf, expr_semantic_type_a_buf)
                 };
                 reflected_bind_group(
                     device,
@@ -3236,15 +3537,10 @@ impl GpuX86CodeGenerator {
                     &[
                         ("gParams", params_buf.as_entire_binding()),
                         ("hir_status", hir_status_buf.as_entire_binding()),
-                        ("x86_expr_semantic_type_in", type_in.as_entire_binding()),
+                        ("x86_expr_semantic_record_in", record_in.as_entire_binding()),
                         (
-                            "x86_expr_semantic_type_link_in",
-                            link_in.as_entire_binding(),
-                        ),
-                        ("x86_expr_semantic_type_out", type_out.as_entire_binding()),
-                        (
-                            "x86_expr_semantic_type_link_out",
-                            link_out.as_entire_binding(),
+                            "x86_expr_semantic_record_out",
+                            record_out.as_entire_binding(),
                         ),
                     ],
                 )
@@ -3264,6 +3560,7 @@ impl GpuX86CodeGenerator {
                     expr_metadata.stmt_record.as_entire_binding(),
                 ),
                 ("hir_expr_record", expr_metadata.record.as_entire_binding()),
+                ("hir_param_record", hir_param_record_buf.as_entire_binding()),
                 (
                     "x86_expr_resolved_node",
                     expr_resolved_final_buf.as_entire_binding(),
@@ -3272,18 +3569,17 @@ impl GpuX86CodeGenerator {
                     "x86_expr_semantic_type",
                     expr_semantic_type_final_buf.as_entire_binding(),
                 ),
+                ("gX86Features", feature_params_buf.as_entire_binding()),
                 ("x86_match_record", match_record_buf.as_entire_binding()),
+                ("x86_tree_parent", parent_buf.as_entire_binding()),
+                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
                 (
-                    "x86_node_tree_record",
-                    node_tree_record_buf.as_entire_binding(),
+                    "x86_node_inst_range_start",
+                    node_inst_range_start_buf.as_entire_binding(),
                 ),
                 (
-                    "x86_node_inst_count_record",
-                    node_inst_count_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_range_record",
-                    node_inst_range_record_buf.as_entire_binding(),
+                    "x86_node_inst_range_info",
+                    node_inst_range_info_buf.as_entire_binding(),
                 ),
                 (
                     "x86_node_inst_same_end_rank",
@@ -3332,7 +3628,7 @@ impl GpuX86CodeGenerator {
                 ),
                 (
                     "x86_node_inst_gen_node_record",
-                    node_inst_subtree_bounds_buf.as_entire_binding(),
+                    node_inst_gen_node_record_buf.as_entire_binding(),
                 ),
                 (
                     "x86_node_inst_gen_input_status",
@@ -3374,10 +3670,8 @@ impl GpuX86CodeGenerator {
                     "hir_stmt_record",
                     expr_metadata.stmt_record.as_entire_binding(),
                 ),
-                (
-                    "x86_node_tree_record",
-                    node_tree_record_buf.as_entire_binding(),
-                ),
+                ("x86_tree_parent", parent_buf.as_entire_binding()),
+                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
                 (
                     "x86_enclosing_loop_node",
                     enclosing_loop_node_a_buf.as_entire_binding(),
@@ -3458,6 +3752,10 @@ impl GpuX86CodeGenerator {
                 (
                     "x86_node_inst_gen_input_status",
                     node_inst_gen_input_status_buf.as_entire_binding(),
+                ),
+                (
+                    "x86_virtual_inst_status",
+                    virtual_inst_status_buf.as_entire_binding(),
                 ),
             ],
         )?;
@@ -3553,6 +3851,7 @@ impl GpuX86CodeGenerator {
                     "x86_enum_value_record",
                     enum_value_record_buf.as_entire_binding(),
                 ),
+                ("gX86Features", feature_params_buf.as_entire_binding()),
                 ("x86_match_record", match_record_buf.as_entire_binding()),
                 (
                     "x86_match_arm_owner",
@@ -3571,32 +3870,26 @@ impl GpuX86CodeGenerator {
                     struct_store_record_buf.as_entire_binding(),
                 ),
                 (
-                    "x86_node_inst_range_record",
-                    node_inst_range_record_buf.as_entire_binding(),
+                    "x86_node_inst_range_info",
+                    node_inst_range_info_buf.as_entire_binding(),
                 ),
                 (
                     "x86_node_inst_location_record",
                     node_inst_location_record_buf.as_entire_binding(),
                 ),
                 (
-                    "x86_node_inst_gen_input_status",
-                    node_inst_gen_input_status_buf.as_entire_binding(),
+                    "x86_node_inst_subtree_bound_start",
+                    node_inst_subtree_bound_start_buf.as_entire_binding(),
                 ),
                 (
-                    "x86_node_inst_subtree_bounds_record",
-                    node_inst_subtree_bounds_buf.as_entire_binding(),
+                    "x86_node_inst_subtree_bound_end",
+                    node_inst_subtree_bound_end_buf.as_entire_binding(),
                 ),
-                (
-                    "x86_node_tree_record",
-                    node_tree_record_buf.as_entire_binding(),
-                ),
+                ("x86_tree_parent", parent_buf.as_entire_binding()),
+                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
                 (
                     "x86_enclosing_loop_node",
                     enclosing_loop_step_final_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_return_match_node",
-                    return_match_node_buf.as_entire_binding(),
                 ),
                 (
                     "x86_match_return_node",
@@ -3665,10 +3958,8 @@ impl GpuX86CodeGenerator {
                     "x86_expr_resolved_node",
                     expr_resolved_final_buf.as_entire_binding(),
                 ),
-                (
-                    "x86_node_tree_record",
-                    node_tree_record_buf.as_entire_binding(),
-                ),
+                ("x86_tree_parent", parent_buf.as_entire_binding()),
+                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
                 (
                     "x86_struct_access_record",
                     struct_access_record_buf.as_entire_binding(),
@@ -3704,8 +3995,8 @@ impl GpuX86CodeGenerator {
                     enclosing_return_step_final_buf.as_entire_binding(),
                 ),
                 (
-                    "x86_node_inst_range_record",
-                    node_inst_range_record_buf.as_entire_binding(),
+                    "x86_node_inst_range_info",
+                    node_inst_range_info_buf.as_entire_binding(),
                 ),
                 (
                     "x86_node_inst_location_record",
@@ -3717,7 +4008,7 @@ impl GpuX86CodeGenerator {
                 ),
                 (
                     "x86_node_inst_gen_node_record",
-                    node_inst_subtree_bounds_buf.as_entire_binding(),
+                    node_inst_gen_node_record_buf.as_entire_binding(),
                 ),
                 (
                     "x86_virtual_inst_record",
@@ -3760,8 +4051,8 @@ impl GpuX86CodeGenerator {
                     param_reg_record_buf.as_entire_binding(),
                 ),
                 (
-                    "x86_node_inst_range_record",
-                    node_inst_range_record_buf.as_entire_binding(),
+                    "x86_node_inst_range_info",
+                    node_inst_range_info_buf.as_entire_binding(),
                 ),
                 (
                     "x86_node_inst_location_record",
@@ -3773,7 +4064,7 @@ impl GpuX86CodeGenerator {
                 ),
                 (
                     "x86_node_inst_gen_node_record",
-                    node_inst_subtree_bounds_buf.as_entire_binding(),
+                    node_inst_gen_node_record_buf.as_entire_binding(),
                 ),
                 ("x86_node_func", final_node_func_buf.as_entire_binding()),
                 (
@@ -4712,24 +5003,26 @@ impl GpuX86CodeGenerator {
             0,
             &match_result_value_owner_buf,
             0,
-            (hir_words * 4) as u64,
+            (match_record_rows * 4) as u64,
         );
         stamp_x86_timer(&mut timer, encoder, "x86.metadata.match_result.done");
-        dispatch_x86_stage_indirect(
-            encoder,
-            "enclosing_return_init",
-            &self.enclosing_return_init_pass,
-            &enclosing_return_init_bind_group,
-            active_hir_dispatch_args_buf,
-        );
-        dispatch_compute_pass_indirect_bind_group_steps(
-            encoder,
-            "enclosing_return_step",
-            "codegen.x86.enclosing_return_step",
-            &self.enclosing_return_step_pass,
-            &enclosing_return_step_bind_groups,
-            active_hir_dispatch_args_buf,
-        );
+        if needs_enclosing_return_records {
+            dispatch_x86_stage_indirect(
+                encoder,
+                "enclosing_return_init",
+                &self.enclosing_return_init_pass,
+                &enclosing_return_init_bind_group,
+                active_hir_dispatch_args_buf,
+            );
+            dispatch_compute_pass_indirect_bind_group_steps(
+                encoder,
+                "enclosing_return_step",
+                "codegen.x86.enclosing_return_step",
+                &self.enclosing_return_step_pass,
+                &enclosing_return_step_bind_groups,
+                active_hir_dispatch_args_buf,
+            );
+        }
         dispatch_x86_stage_indirect(
             encoder,
             "enclosing_let_init",
@@ -4799,19 +5092,27 @@ impl GpuX86CodeGenerator {
             hir_words,
         )?;
         stamp_x86_timer(&mut timer, encoder, "x86.metadata.match_pattern_owner.done");
+        if feature_summary.has_match() {
+            dispatch_x86_stages_indirect(
+                encoder,
+                &[
+                    (
+                        "match_pattern_records",
+                        &self.match_pattern_records_pass,
+                        &match_pattern_records_bind_group,
+                    ),
+                    (
+                        "match_pattern_finalize",
+                        &self.match_pattern_finalize_pass,
+                        &match_pattern_finalize_bind_group,
+                    ),
+                ],
+                active_hir_dispatch_args_buf,
+            );
+        }
         dispatch_x86_stages_indirect(
             encoder,
             &[
-                (
-                    "match_pattern_records",
-                    &self.match_pattern_records_pass,
-                    &match_pattern_records_bind_group,
-                ),
-                (
-                    "match_pattern_finalize",
-                    &self.match_pattern_finalize_pass,
-                    &match_pattern_finalize_bind_group,
-                ),
                 (
                     "struct_records",
                     &self.struct_records_pass,
@@ -5164,7 +5465,7 @@ impl GpuX86CodeGenerator {
             "node_inst_gen",
             &self.node_inst_gen_pass,
             &node_inst_gen_bind_group,
-            &active_node_order_scan_dispatch_args_buf,
+            active_hir_dispatch_args_buf,
         );
         dispatch_x86_stage_indirect(
             encoder,
@@ -5173,50 +5474,52 @@ impl GpuX86CodeGenerator {
             &node_inst_gen_aggregate_copy_bind_group,
             &active_node_order_scan_block_dispatch_args_buf,
         );
-        dispatch_x86_stage_indirect(
-            encoder,
-            "aggregate_literal_return_copy_flags",
-            &self.aggregate_literal_return_copy_flags_pass,
-            &aggregate_literal_return_copy_flags_bind_group,
-            active_hir_dispatch_args_buf,
-        );
-        dispatch_x86_stage_indirect(
-            encoder,
-            "aggregate_literal_return_copy_scan_local",
-            &self.node_inst_scan_local_pass,
-            &node_inst_scan_local_bind_group,
-            &active_hir_plus_one_dispatch_args_buf,
-        );
-        dispatch_compute_pass_indirect_ping_pong_scan_steps(
-            encoder,
-            "aggregate_literal_return_copy_scan_blocks",
-            "codegen.x86.node_inst_scan_blocks",
-            &self.node_inst_scan_blocks_pass,
-            &node_inst_scan_block_bind_groups,
-            &node_inst_scan_params_buf,
-            &active_hir_scan_block_dispatch_args_buf,
-        );
-        dispatch_x86_stage_indirect(
-            encoder,
-            "aggregate_literal_return_copy_worklist_scatter",
-            &self.node_inst_gen_worklist_scatter_pass,
-            &node_inst_gen_worklist_scatter_bind_group,
-            &active_hir_plus_one_dispatch_args_buf,
-        );
-        dispatch_x86_stage(
-            encoder,
-            "aggregate_literal_return_copy_dispatch_args",
-            &self.node_inst_gen_worklist_dispatch_args_pass,
-            &node_inst_gen_worklist_dispatch_args_bind_group,
-            (1, 1),
-        );
-        dispatch_x86_stage_indirect(
-            encoder,
-            "aggregate_literal_return_copy",
-            &self.aggregate_literal_return_copy_pass,
-            &aggregate_literal_return_copy_bind_group,
-            &active_node_order_scan_dispatch_args_buf,
-        );
+        if feature_summary.has_aggregate() {
+            dispatch_x86_stage_indirect(
+                encoder,
+                "aggregate_literal_return_copy_flags",
+                &self.aggregate_literal_return_copy_flags_pass,
+                &aggregate_literal_return_copy_flags_bind_group,
+                active_hir_dispatch_args_buf,
+            );
+            dispatch_x86_stage_indirect(
+                encoder,
+                "aggregate_literal_return_copy_scan_local",
+                &self.node_inst_scan_local_pass,
+                &node_inst_scan_local_bind_group,
+                &active_hir_plus_one_dispatch_args_buf,
+            );
+            dispatch_compute_pass_indirect_ping_pong_scan_steps(
+                encoder,
+                "aggregate_literal_return_copy_scan_blocks",
+                "codegen.x86.node_inst_scan_blocks",
+                &self.node_inst_scan_blocks_pass,
+                &node_inst_scan_block_bind_groups,
+                &node_inst_scan_params_buf,
+                &active_hir_scan_block_dispatch_args_buf,
+            );
+            dispatch_x86_stage_indirect(
+                encoder,
+                "aggregate_literal_return_copy_worklist_scatter",
+                &self.node_inst_gen_worklist_scatter_pass,
+                &node_inst_gen_worklist_scatter_bind_group,
+                &active_hir_plus_one_dispatch_args_buf,
+            );
+            dispatch_x86_stage(
+                encoder,
+                "aggregate_literal_return_copy_dispatch_args",
+                &self.node_inst_gen_worklist_dispatch_args_pass,
+                &node_inst_gen_worklist_dispatch_args_bind_group,
+                (1, 1),
+            );
+            dispatch_x86_stage_indirect(
+                encoder,
+                "aggregate_literal_return_copy",
+                &self.aggregate_literal_return_copy_pass,
+                &aggregate_literal_return_copy_bind_group,
+                &active_node_order_scan_dispatch_args_buf,
+            );
+        }
         stamp_x86_timer(&mut timer, encoder, "x86.inst_gen.done");
         dispatch_x86_stage(
             encoder,
@@ -5431,7 +5734,11 @@ impl GpuX86CodeGenerator {
         if let Some(status_trace_readback) = &status_trace_readback {
             let mut offset = 0u64;
             for (buffer, words) in [
+                (hir_status_buf, 6),
+                (&active_hir_count_dispatch_args_buf, 4),
+                (&active_hir_plus_one_dispatch_args_buf, 4),
                 (&func_meta_buf, 8),
+                (&node_tree_status_buf, 4),
                 (&enum_record_status_buf, 4),
                 (&struct_record_status_buf, 4),
                 (&decl_layout_status_buf, 4),

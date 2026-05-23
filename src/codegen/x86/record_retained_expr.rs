@@ -24,7 +24,6 @@
         active_elf_header_word_dispatch_args_buf,
         func_meta_buf,
         func_meta_uniform_buf,
-        node_tree_record_buf,
         node_tree_status_buf,
         expr_resolved_final_buf,
         node_func_buf,
@@ -37,7 +36,6 @@
         enum_record_status_buf,
         match_record_buf,
         match_arm_owner_buf,
-        return_match_node_buf,
         match_return_node_buf,
         match_pattern_owner_buf,
         match_result_value_owner_buf,
@@ -45,12 +43,8 @@
         match_pattern_node_variant_buf,
         match_pattern_node_payload_decl_buf,
         match_pattern_first_use_node_buf,
-        match_pattern_first_variant_node_buf,
-        match_pattern_first_payload_node_buf,
         enclosing_return_node_a_buf,
         enclosing_return_node_b_buf,
-        expr_semantic_type_a_storage_buf,
-        expr_semantic_type_b_storage_buf,
         enclosing_let_node_a_buf,
         enclosing_let_node_b_buf,
         struct_type_record_buf,
@@ -84,7 +78,8 @@
         node_inst_count_status_buf,
         node_inst_order_status_buf,
         node_inst_scan_local_prefix_buf,
-        node_inst_range_record_buf,
+        node_inst_range_start_buf,
+        node_inst_range_info_buf,
         node_inst_range_status_buf,
         node_inst_subtree_bounds_status_buf,
         node_inst_location_status_buf,
@@ -119,6 +114,15 @@
         layout_status_buf,
         status_buf,
     ];
+    if let Some(buffer) = match_pattern_first_variant_node_storage_buf {
+        retained_buffers.push(RetainedX86Buffer::from(buffer));
+    }
+    if let Some(buffer) = match_pattern_first_payload_node_storage_buf {
+        retained_buffers.push(RetainedX86Buffer::from(buffer));
+    }
+    if let Some(buffer) = empty_param_record_buf {
+        retained_buffers.push(RetainedX86Buffer::from(buffer));
+    }
     retained_buffers.push(RetainedX86Buffer::from(
         func_owner_scan_params_buf.into_buffer(),
     ));

@@ -68,9 +68,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint entrypoint_tag = entrypoint_tag_for_name_id(fn_name_id);
     if (entrypoint_tag == ENTRYPOINT_MAIN)
     {
+        // HIR node keyed. Token-keyed writes alias unrelated node rows in large modules.
         fn_entrypoint_tag[i] = entrypoint_tag;
-        uint fn_token = hir_token_pos[i];
-        if (fn_token != INVALID && fn_token < gParams.n_tokens)
-            fn_entrypoint_tag[fn_token] = entrypoint_tag;
     }
 }

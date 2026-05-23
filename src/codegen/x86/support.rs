@@ -360,6 +360,28 @@ pub(super) fn storage_u32_copy(device: &wgpu::Device, label: &str, count: usize)
     storage_u32_rw(device, label, count, wgpu::BufferUsages::COPY_SRC)
 }
 
+pub(super) fn external_or_storage_u32_copy(
+    device: &wgpu::Device,
+    label: &str,
+    count: usize,
+    external: Option<&wgpu::Buffer>,
+) -> wgpu::Buffer {
+    external
+        .cloned()
+        .unwrap_or_else(|| storage_u32_copy(device, label, count))
+}
+
+pub(super) fn push_allocation_error_scope(device: &wgpu::Device) -> wgpu::ErrorScopeGuard {
+    device.push_error_scope(wgpu::ErrorFilter::OutOfMemory)
+}
+
+pub(super) fn pop_allocation_error_scope(scope: wgpu::ErrorScopeGuard, stage: &str) -> Result<()> {
+    if let Some(err) = pollster::block_on(scope.pop()) {
+        bail!("GPU x86 buffer allocation failed during {stage}: {err}");
+    }
+    Ok(())
+}
+
 pub(super) fn pooled_storage_u32_rw(
     device: &wgpu::Device,
     label: &str,
@@ -953,19 +975,20 @@ fn dump_x86_status_trace(device: &wgpu::Device, readback: &wgpu::Buffer) -> Resu
         x86_readback_timeout(),
     )?;
     let data = readback.slice(..).get_mapped_range();
-    let words: [u32; 92] = crate::gpu::readback::read_u32_words(&data, "x86 status trace")?;
+    let words: [u32; 110] = crate::gpu::readback::read_u32_words(&data, "x86 status trace")?;
     drop(data);
     readback.unmap();
 
     if crate::gpu::trace::enabled() {
         let now = std::time::Instant::now();
+        let func_meta_offset = 14usize;
         for (name, value) in [
-            ("x86.func_count", words[0]),
-            ("x86.main_count", words[1]),
-            ("x86.main_node", words[4]),
-            ("x86.max_virtual_func_rows", words[5]),
-            ("x86.regalloc_active_chunks", words[6]),
-            ("x86.regalloc_recorded_chunks", words[7]),
+            ("x86.func_count", words[func_meta_offset]),
+            ("x86.main_count", words[func_meta_offset + 1]),
+            ("x86.main_node", words[func_meta_offset + 4]),
+            ("x86.max_virtual_func_rows", words[func_meta_offset + 5]),
+            ("x86.regalloc_active_chunks", words[func_meta_offset + 6]),
+            ("x86.regalloc_recorded_chunks", words[func_meta_offset + 7]),
         ] {
             crate::gpu::trace::record_counter("host.x86.gpu_meta", name, now, value as f64);
         }
@@ -973,7 +996,11 @@ fn dump_x86_status_trace(device: &wgpu::Device, readback: &wgpu::Buffer) -> Resu
 
     let mut offset = 0usize;
     for (name, len) in [
+        ("hir_status", 6usize),
+        ("active_hir_dispatch", 4usize),
+        ("active_hir_plus_one_dispatch", 4usize),
         ("func_meta", 8usize),
+        ("node_tree", 4usize),
         ("enum_records", 4usize),
         ("struct_records", 4),
         ("decl_layout", 4),

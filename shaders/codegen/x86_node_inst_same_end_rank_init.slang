@@ -20,9 +20,11 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint4> x86_node_tree_record;
+StructuredBuffer<uint> x86_tree_parent;
+StructuredBuffer<uint> x86_tree_subtree_end;
 StructuredBuffer<uint> x86_node_tree_status;
-StructuredBuffer<uint> x86_node_inst_count_record;
+StructuredBuffer<uint> x86_node_inst_count_info;
+StructuredBuffer<uint> x86_node_inst_count_payload;
 StructuredBuffer<uint> x86_node_inst_count_status;
 
 RWStructuredBuffer<uint> x86_node_inst_same_end_link;
@@ -32,7 +34,7 @@ static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint INVALID = 0xffffffffu;
 static const uint X86_NODE_TREE_OK = 1u;
 static const uint X86_NODE_INST_COUNTS_OK = 1u;
-static const uint X86_NODE_INST_COUNT_STRIDE = 3u;
+static const uint X86_NODE_INST_COUNT_STRIDE = 2u;
 static const uint X86_NODE_INST_COUNT_KIND_SHIFT = 28u;
 static const uint X86_NODE_INST_COUNT_COUNT_MASK = 0x0fffffffu;
 
@@ -61,22 +63,22 @@ bool upstream_ok()
 
 uint node_inst_count_word(uint node, uint field)
 {
-    return row_major_load<uint>(
-        x86_node_inst_count_record,
-        node,
-        X86_NODE_INST_COUNT_STRIDE,
-        field,
-        INVALID);
+    if (!valid_node(node))
+        return INVALID;
+    if (field == 0u)
+        return x86_node_inst_count_info[node];
+    if (field == 1u)
+        return x86_node_inst_count_payload[node];
+    return INVALID;
 }
 
 uint4 node_inst_count_record(uint node)
 {
-    uint id = node_inst_count_word(node, 0u);
-    uint info = node_inst_count_word(node, 1u);
-    uint payload = node_inst_count_word(node, 2u);
+    uint info = node_inst_count_word(node, 0u);
+    uint payload = node_inst_count_word(node, 1u);
     uint count = info == INVALID ? INVALID : info & X86_NODE_INST_COUNT_COUNT_MASK;
     uint kind = info == INVALID ? INVALID : info >> X86_NODE_INST_COUNT_KIND_SHIFT;
-    return uint4(id, count, kind, payload);
+    return uint4(node, count, kind, payload);
 }
 
 bool produces_instruction(uint node)
@@ -102,9 +104,9 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
     }
 
-    uint end = x86_node_tree_record[node].w;
-    uint parent = x86_node_tree_record[node].x;
-    bool same_end_parent = valid_node(parent) && x86_node_tree_record[parent].w == end;
+    uint end = x86_tree_subtree_end[node];
+    uint parent = x86_tree_parent[node];
+    bool same_end_parent = valid_node(parent) && x86_tree_subtree_end[parent] == end;
     x86_node_inst_same_end_link[node] = same_end_parent ? parent : INVALID;
     x86_node_inst_same_end_rank[node] =
         same_end_parent && produces_instruction(parent) ? 1u : 0u;

@@ -134,7 +134,9 @@ static const uint X86_ARG_LOCAL_PTR = 2u;
 static const uint X86_ARG_PARAM_PTR = 3u;
 static const uint X86_AGG_SOURCE_LOCAL = 1u;
 static const uint X86_AGG_SOURCE_PARAM = 2u;
-static const uint MAX_X86_LOCAL_SLOTS = 65536u;
+// Keep local-slot displacements within x86 signed disp32 while allowing large
+// generated functions to exceed the old 16-bit-era guard.
+static const uint MAX_X86_LOCAL_SLOTS = 1000000u;
 static const uint MIN_X86_STACK_FRAME_BYTES = 16u;
 static const uint X86_CMP_LT = 1u;
 static const uint X86_CMP_GT = 2u;

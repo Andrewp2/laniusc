@@ -24,6 +24,7 @@ pub const HIR_ITEM_KIND_STRUCT: u32 = 6;
 pub const HIR_ITEM_KIND_ENUM: u32 = 7;
 pub const HIR_ITEM_KIND_TYPE_ALIAS: u32 = 8;
 pub const HIR_ITEM_KIND_ENUM_VARIANT: u32 = 9;
+pub const HIR_ITEM_KIND_TRAIT: u32 = 10;
 
 pub const HIR_ITEM_NAMESPACE_NONE: u32 = 0;
 pub const HIR_ITEM_NAMESPACE_MODULE: u32 = 1;

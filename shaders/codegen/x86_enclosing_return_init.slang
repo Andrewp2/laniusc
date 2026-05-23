@@ -21,7 +21,8 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_stmt_record;
-StructuredBuffer<uint4> x86_node_tree_record;
+StructuredBuffer<uint> x86_tree_parent;
+StructuredBuffer<uint> x86_tree_subtree_end;
 
 RWStructuredBuffer<uint> x86_enclosing_return_node;
 RWStructuredBuffer<uint> x86_enclosing_return_link;
@@ -77,7 +78,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (!valid_node(node))
         return;
 
-    uint parent = x86_node_tree_record[node].x;
+    uint parent = x86_tree_parent[node];
     if (is_return_node(parent))
     {
         x86_enclosing_return_node[node] = parent;

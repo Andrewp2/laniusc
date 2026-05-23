@@ -4,6 +4,7 @@
 // scan gives each HIR_FN node a stable ordinal, then this pass writes the dense
 // function-slot table and publishes the total function count.
 
+import atomics;
 import gpu_index;
 import prefix_scan;
 
@@ -24,16 +25,19 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> x86_func_slot_flags;
-StructuredBuffer<uint> x86_func_slot_by_node;
 StructuredBuffer<uint> x86_func_slot_scan_local_prefix;
 StructuredBuffer<uint> x86_func_slot_scan_block_prefix;
 
 RWStructuredBuffer<uint> x86_func_meta;
+RWStructuredBuffer<uint> x86_func_slot_by_node;
 RWStructuredBuffer<uint> x86_func_slot_by_index;
 
 static const uint WG_SIZE = 256u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint FUNC_META_FUNC_COUNT = 0u;
+static const uint FUNC_META_MAIN_SLOT = 2u;
+static const uint FUNC_META_MAIN_NODE = 4u;
+static const uint INVALID = 0xffffffffu;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -75,5 +79,14 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     uint ordinal = slot_prefix(row);
     if (ordinal < gParams.function_slot_capacity)
-        x86_func_slot_by_index[ordinal] = x86_func_slot_by_node[row];
+    {
+        x86_func_slot_by_node[row] = ordinal;
+        x86_func_slot_by_index[ordinal] = ordinal;
+        if (row == x86_func_meta[FUNC_META_MAIN_NODE])
+            atomic_u32_min(x86_func_meta, FUNC_META_MAIN_SLOT, ordinal);
+    }
+    else
+    {
+        x86_func_slot_by_node[row] = INVALID;
+    }
 }

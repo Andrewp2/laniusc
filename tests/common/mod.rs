@@ -11,23 +11,23 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, ExitStatus, Output, Stdio},
     sync::{
-        Mutex,
-        MutexGuard,
         atomic::{AtomicU64, Ordering},
         mpsc,
+        Mutex,
+        MutexGuard,
     },
     thread,
     time::{Duration, Instant},
 };
 
 use laniusc::compiler::{
-    CompileError,
     compile_source_pack_to_wasm_with_gpu_codegen,
     compile_source_to_wasm_with_gpu_codegen,
     compile_source_to_wasm_with_gpu_codegen_from_path,
     type_check_source_pack_with_gpu,
     type_check_source_with_gpu,
     type_check_source_with_gpu_from_path,
+    CompileError,
 };
 use log::warn;
 

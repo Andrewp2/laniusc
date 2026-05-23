@@ -90,6 +90,10 @@ void publish_path_ref(uint token)
         type_expr_ref_tag[token] = TYPE_REF_SCALAR;
         type_expr_ref_payload[token] = resolved;
     }
+    else if (type_expr_ref_tag[token] != TYPE_REF_INVALID)
+    {
+        return;
+    }
     else
     {
         type_expr_ref_tag[token] = TYPE_REF_GENERIC_PARAM;

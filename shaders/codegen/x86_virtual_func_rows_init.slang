@@ -43,7 +43,7 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     uint slot = x86_func_slot_by_index[func_i];
-    if (slot >= gParams.n_tokens)
+    if (slot >= gParams.function_slot_capacity)
         return;
 
     x86_func_first_virtual_row[slot] = INVALID;

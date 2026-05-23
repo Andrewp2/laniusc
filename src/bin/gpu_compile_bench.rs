@@ -7,12 +7,22 @@ use std::{
 
 #[cfg(test)]
 use laniusc::codegen::x86::x86_capacity_estimate_for_hir;
+#[cfg(test)]
+use laniusc::codegen::x86::{
+    X86_FEATURE_CALL,
+    X86_FEATURE_ENUM,
+    X86FeatureSummary,
+    x86_capacity_estimate_for_hir_tokens_inst_basis_and_feature_summary,
+};
 use laniusc::{
     codegen::x86::{
         X86CapacityEstimate,
+        x86_call_type_record_words,
         x86_capacity_estimate_for_hir_and_tokens,
         x86_capacity_estimate_for_hir_tokens_and_inst_basis,
         x86_function_slot_capacity,
+        x86_node_inst_count_record_words,
+        x86_node_inst_gen_node_record_words,
         x86_node_inst_order_record_words,
     },
     compiler::{
@@ -23,15 +33,18 @@ use laniusc::{
         compile_source_to_x86_64_with_gpu_codegen_using,
     },
     gpu::{device, trace},
+    lexer::test_cpu::lex_on_test_cpu,
     parser::tables::PrecomputedParseTables,
 };
 
 const RESIDENT_TREE_PRODUCTION_CAPACITY_PER_TOKEN: usize = 10;
-const TYPECHECK_CALL_PARAM_CACHE_STRIDE: usize = 16;
+#[cfg(test)]
+const TYPECHECK_CALL_PARAM_CACHE_STRIDE: usize = 4;
 const TYPECHECK_TYPE_INSTANCE_ARG_REF_STRIDE: usize = 4;
 const TYPECHECK_NAME_RADIX_BUCKETS: usize = 257;
 const TYPECHECK_LANGUAGE_SYMBOL_COUNT: usize = 19;
 const TYPECHECK_HIR_VISIBLE_DECL_ROW_BLOCK_SIZE: usize = 64;
+const DEFAULT_BENCH_LINES: usize = 20_000;
 
 fn main() {
     if let Err(err) = pollster::block_on(run()) {
@@ -41,7 +54,7 @@ fn main() {
 }
 
 async fn run() -> Result<(), String> {
-    let mut lines = 100_000usize;
+    let mut lines = DEFAULT_BENCH_LINES;
     let mut target_bytes: Option<usize> = None;
     let mut iters = 3usize;
     let mut warmups = 1usize;
@@ -167,12 +180,22 @@ async fn run() -> Result<(), String> {
         return Ok(());
     }
     if estimate_only {
-        print_capacity_estimate(source_lines, src.len(), parse_tables.as_ref());
+        print_capacity_estimate(
+            source_lines,
+            src,
+            generated.sources.len(),
+            parse_tables.as_ref(),
+        );
         return Ok(());
     }
     if estimate_live {
         if generated.sources.len() > 1 {
-            print_capacity_estimate(source_lines, src.len(), parse_tables.as_ref());
+            print_capacity_estimate(
+                source_lines,
+                src,
+                generated.sources.len(),
+                parse_tables.as_ref(),
+            );
             println!(
                 "estimate_live source_pack=skipped note=live parse estimate currently reports single-source parser metrics"
             );
@@ -195,7 +218,8 @@ async fn run() -> Result<(), String> {
     reject_large_interactive_run(
         phase,
         source_lines,
-        src.len(),
+        src,
+        generated.sources.len(),
         allow_large,
         parse_tables.as_ref(),
     )?;
@@ -304,14 +328,14 @@ async fn run_source_suite(
 
         if estimate_only {
             println!("source={}", source_mode.name());
-            print_capacity_estimate(source_lines, src.len(), parse_tables);
+            print_capacity_estimate(source_lines, src, generated.sources.len(), parse_tables);
             continue;
         }
 
         if estimate_live {
             if generated.sources.len() > 1 {
                 println!("source={}", source_mode.name());
-                print_capacity_estimate(source_lines, src.len(), parse_tables);
+                print_capacity_estimate(source_lines, src, generated.sources.len(), parse_tables);
                 println!(
                     "estimate_live source_pack=skipped note=live parse estimate currently reports single-source parser metrics"
                 );
@@ -338,7 +362,14 @@ async fn run_source_suite(
             continue;
         }
 
-        reject_large_interactive_run(phase, source_lines, src.len(), allow_large, parse_tables)?;
+        reject_large_interactive_run(
+            phase,
+            source_lines,
+            src,
+            generated.sources.len(),
+            allow_large,
+            parse_tables,
+        )?;
         if compiler.is_none() {
             compiler = Some(
                 GpuCompiler::new_with_device_and_backends(
@@ -350,14 +381,14 @@ async fn run_source_suite(
             );
             device::persist_pipeline_cache();
         }
-        let compiler = compiler.as_ref().expect("suite compiler initialized");
+        let compiler_ref = compiler.as_ref().expect("suite compiler initialized");
 
         for warmup_i in 0..warmups {
             let start = Instant::now();
             let result = run_phase(
                 phase,
                 &generated,
-                compiler,
+                compiler_ref,
                 validate_output,
                 run_x86_output,
                 generated.expected_stdout.as_deref(),
@@ -381,7 +412,7 @@ async fn run_source_suite(
             let result = run_phase(
                 phase,
                 &generated,
-                compiler,
+                compiler_ref,
                 validate_output,
                 run_x86_output,
                 generated.expected_stdout.as_deref(),
@@ -422,6 +453,12 @@ async fn run_source_suite(
         if avg_ms >= suite_slowest_avg_ms {
             suite_slowest_avg_ms = avg_ms;
             suite_slowest_source = source_mode;
+        }
+        if allow_large {
+            compiler = None;
+            let _ = device::global()
+                .device
+                .poll(wgpu::PollType::wait_indefinitely());
         }
     }
     if suite_sources != 0 && !estimate_only && !estimate_live {
@@ -834,7 +871,8 @@ fn unique_x86_output_path(phase: &str) -> PathBuf {
 fn reject_large_interactive_run(
     phase: Phase,
     source_lines: usize,
-    source_bytes: usize,
+    src: &str,
+    source_file_capacity: usize,
     allow_large: bool,
     tables: Option<&PrecomputedParseTables>,
 ) -> Result<(), String> {
@@ -847,26 +885,36 @@ fn reject_large_interactive_run(
         return Ok(());
     }
 
-    let estimate = parser_capacity_estimate_for_source(source_bytes, tables);
+    let source_bytes = src.len();
+    let token_capacity = token_capacity_estimate_for_source(src);
+    let estimate =
+        parser_capacity_estimate_for_token_capacity(token_capacity.parser_token_capacity, tables);
     let floor_bytes = parser_tree_floor_bytes(estimate.tree_capacity);
-    let lexer_byte_capacity = source_bytes.div_ceil(4).saturating_mul(4).max(1);
     let parser_floor = parser_allocation_floor_bytes(&estimate);
-    let typecheck_floor =
-        typecheck_allocation_floor_bytes(lexer_byte_capacity, estimate.tree_capacity, true, 1);
+    let typecheck_floor = typecheck_allocation_floor_bytes(
+        token_capacity.lexer_token_capacity,
+        estimate.tree_capacity,
+        true,
+        source_file_capacity,
+    );
     let frontend_floor = parser_floor.total.saturating_add(typecheck_floor.total);
     if phase == Phase::X86 {
-        let x86_capacity =
-            x86_capacity_estimate_for_hir_and_tokens(estimate.tree_capacity, lexer_byte_capacity);
-        let x86_floor = x86_allocation_floor_bytes(lexer_byte_capacity, &x86_capacity);
+        let x86_capacity = x86_capacity_estimate_for_hir_and_tokens(
+            estimate.tree_capacity,
+            token_capacity.lexer_token_capacity,
+        );
+        let x86_floor =
+            x86_allocation_floor_bytes(token_capacity.lexer_token_capacity, &x86_capacity);
         let compile_floor = frontend_floor.saturating_add(x86_floor.total);
         if compile_floor > MAX_INTERACTIVE_COMPILE_FLOOR_BYTES {
             return Err(format!(
-                "refusing large interactive GPU benchmark: lines={source_lines} bytes={source_bytes}; estimated compile allocation floor={} (parser={} typecheck={} x86={}) via {}; pass --allow-large to run it intentionally",
+                "refusing large interactive GPU benchmark: lines={source_lines} bytes={source_bytes}; estimated compile allocation floor={} (parser={} typecheck={} x86={}) via {} token_capacity_basis={}; pass --allow-large to run it intentionally",
                 human_bytes(compile_floor),
                 human_bytes(parser_floor.total),
                 human_bytes(typecheck_floor.total),
                 human_bytes(x86_floor.total),
-                estimate.path
+                estimate.path,
+                token_capacity.basis
             ));
         }
     }
@@ -874,11 +922,12 @@ fn reject_large_interactive_run(
         && frontend_floor > MAX_INTERACTIVE_FRONTEND_FLOOR_BYTES
     {
         return Err(format!(
-            "refusing large interactive GPU benchmark: lines={source_lines} bytes={source_bytes}; estimated frontend allocation floor={} (parser={} typecheck={}) via {}; pass --allow-large to run it intentionally",
+            "refusing large interactive GPU benchmark: lines={source_lines} bytes={source_bytes}; estimated frontend allocation floor={} (parser={} typecheck={}) via {} token_capacity_basis={}; pass --allow-large to run it intentionally",
             human_bytes(frontend_floor),
             human_bytes(parser_floor.total),
             human_bytes(typecheck_floor.total),
-            estimate.path
+            estimate.path,
+            token_capacity.basis
         ));
     }
 
@@ -888,9 +937,10 @@ fn reject_large_interactive_run(
     ) && floor_bytes > MAX_INTERACTIVE_PARSER_TREE_FLOOR_BYTES
     {
         return Err(format!(
-            "refusing large interactive GPU benchmark: lines={source_lines} bytes={source_bytes}; estimated parser tree floor={} via {}; pass --allow-large to run it intentionally",
+            "refusing large interactive GPU benchmark: lines={source_lines} bytes={source_bytes}; estimated parser tree floor={} via {} token_capacity_basis={}; pass --allow-large to run it intentionally",
             human_bytes(floor_bytes),
-            estimate.path
+            estimate.path,
+            token_capacity.basis
         ));
     }
 
@@ -899,24 +949,37 @@ fn reject_large_interactive_run(
     }
 
     Err(format!(
-        "refusing large interactive GPU benchmark: lines={source_lines} bytes={source_bytes}; estimated parser tree floor={} via {}; pass --allow-large to run it intentionally",
+        "refusing large interactive GPU benchmark: lines={source_lines} bytes={source_bytes}; estimated parser tree floor={} via {} token_capacity_basis={}; pass --allow-large to run it intentionally",
         human_bytes(floor_bytes),
-        estimate.path
+        estimate.path,
+        token_capacity.basis
     ))
 }
 
 fn print_capacity_estimate(
     source_lines: usize,
-    source_bytes: usize,
+    src: &str,
+    source_file_capacity: usize,
     tables: Option<&PrecomputedParseTables>,
 ) {
-    let lexer_byte_capacity = source_bytes.div_ceil(4).saturating_mul(4).max(1);
-    let parser_token_capacity = lexer_byte_capacity.saturating_add(2);
-    let parse_capacity = parser_capacity_estimate_for_source(source_bytes, tables);
+    let source_bytes = src.len();
+    let token_capacity = token_capacity_estimate_for_source(src);
+    let parse_capacity =
+        parser_capacity_estimate_for_token_capacity(token_capacity.parser_token_capacity, tables);
     println!(
-        "estimate lines={source_lines} source_bytes={source_bytes} lexer_byte_capacity={lexer_byte_capacity} parser_token_capacity={parser_token_capacity}"
+        "estimate lines={source_lines} source_bytes={source_bytes} source_file_capacity={} lexer_byte_capacity={} lexer_token_capacity={} parser_token_capacity={} token_capacity_basis={}",
+        source_file_capacity.max(1),
+        token_capacity.lexer_byte_capacity,
+        token_capacity.lexer_token_capacity,
+        token_capacity.parser_token_capacity,
+        token_capacity.basis,
     );
-    print_capacity_floors(lexer_byte_capacity, &parse_capacity, None);
+    print_capacity_floors(
+        token_capacity.lexer_token_capacity,
+        &parse_capacity,
+        None,
+        source_file_capacity,
+    );
     println!("estimate ll1_seed_path=inactive note=capacity-derived; no GPU work was submitted");
 }
 
@@ -942,6 +1005,7 @@ fn print_live_capacity_estimate(
         token_capacity,
         &parse_capacity,
         Some((x86_hir_words, semantic_hir_words)),
+        1,
     );
     if x86_hir_words < parse_capacity.tree_capacity {
         let projected_x86_capacity = x86_capacity_estimate_for_hir_tokens_and_inst_basis(
@@ -1000,10 +1064,15 @@ fn print_capacity_floors(
     token_capacity: usize,
     parse_capacity: &ParserCapacityEstimate,
     x86_words_override: Option<(usize, usize)>,
+    source_file_capacity: usize,
 ) {
     let allocation_floor = parser_allocation_floor_bytes(parse_capacity);
-    let typecheck_floor =
-        typecheck_allocation_floor_bytes(token_capacity, parse_capacity.tree_capacity, true, 1);
+    let typecheck_floor = typecheck_allocation_floor_bytes(
+        token_capacity,
+        parse_capacity.tree_capacity,
+        true,
+        source_file_capacity,
+    );
 
     println!(
         "estimate parser_path={} parser_tree_capacity={} one_tree_u32_buffer={} parser_tree_buffer_floor={}",
@@ -1078,14 +1147,13 @@ fn print_capacity_floors(
         human_bytes(x86_floor.output_and_readback),
         human_bytes(x86_floor.small),
     );
+    let compile_floor_bytes = allocation_floor
+        .total
+        .saturating_add(typecheck_floor.total)
+        .saturating_add(x86_floor.total);
     println!(
-        "estimate compile_allocation_floor parser_plus_typecheck_plus_x86={}",
-        human_bytes(
-            allocation_floor
-                .total
-                .saturating_add(typecheck_floor.total)
-                .saturating_add(x86_floor.total)
-        )
+        "estimate compile_allocation_floor parser_plus_typecheck_plus_x86={} compile_floor_bytes={compile_floor_bytes}",
+        human_bytes(compile_floor_bytes)
     );
     if parse_capacity.path.starts_with("llp-") {
         println!(
@@ -1141,7 +1209,7 @@ fn x86_allocation_floor_bytes(
     const STATUS_WORDS: usize = 4;
     const FUNC_META_WORDS: usize = 8;
     const ELF_LAYOUT_WORDS: usize = 8;
-    const TRACE_STATUS_WORDS: usize = 92;
+    const TRACE_STATUS_WORDS: usize = 110;
 
     let token_words = token_capacity.max(1);
     let hir_words = capacity.hir_words.max(1);
@@ -1153,8 +1221,7 @@ fn x86_allocation_floor_bytes(
 
     let hir_scaled_words_per_node = (
         // Keep this in sync with `record_x86_elf_from_gpu_hir` HIR-sized buffers.
-        4 + 4
-            + 1
+        4 + 1
             + 1
             + 1
             + 1
@@ -1206,8 +1273,8 @@ fn x86_allocation_floor_bytes(
         // word per call/ordinal slot, and the call ABI record stores only the
         // target plus packed argument count/return width. One resolved-expression
         // table was added so backend shaders do not each walk HIR_EXPR_FORWARD
-        // chains locally. Node instruction ranges retain only packed
-        // start/count/kind data. Enum value records retain only packed
+        // chains locally. Node instruction ranges reuse dead parser HIR
+        // workspaces as separate start/info words. Enum value records retain only packed
         // kind/payload-count data plus ordinal. Struct/array access rows and
         // declaration layout rows pack their small kind fields into three-word
         // flat records. Node instruction order rows use a compact three-word
@@ -1216,7 +1283,8 @@ fn x86_allocation_floor_bytes(
         // counts, instruction-order rows, subtree slot bounds, node
         // instruction locations, and virtual row bounds reuse existing backend
         // scratch instead of adding HIR-sized buffers. Call type and node
-        // instruction count records share one flat three-word row table.
+        // instruction count records share one compact row table sized to also
+        // carry the later subtree-bounds worklist tail.
         // Match-result owner pointer-jump rows reuse the later match-pattern
         // owner scratch and same-end link scratch.
         // Function-owner pointer-jump output reuses match-pattern first-use
@@ -1234,8 +1302,15 @@ fn x86_allocation_floor_bytes(
         // Register allocation keeps active-end register state in compact
         // function slots and uses a compact function-slot list for active
         // dispatch.
+        // Backend tree projection keeps parent/subtree_end only; first-child
+        // and next-sibling links are derived from preorder spans in x86
+        // shaders. Expression semantic compare type and links are packed into the
+        // existing same-end link scratch instead of retaining two HIR-sized
+        // type ping-pong buffers.
+        // Parameter-node decl lookup is carried in existing HIR metadata and
+        // per-node location metadata instead of a HIR-sized param-reg tail.
     )
-    .saturating_sub(91usize);
+    .saturating_sub(96usize);
     let hir_scaled_words = hir_words.saturating_mul(hir_scaled_words_per_node);
     let token_scaled_words_per_token = {
         // Token-sized metadata and the token half of compact backend lookup
@@ -1267,10 +1342,21 @@ fn x86_allocation_floor_bytes(
     let legacy_node_inst_order_reuse_words = node_inst_scan_words.saturating_mul(3);
     let node_inst_order_reuse_words =
         x86_node_inst_order_record_words(hir_words, inst, function_slot_words);
+    let legacy_node_inst_subtree_bounds_words = hir_words.saturating_add(1).saturating_mul(4);
+    let call_type_record_words = x86_call_type_record_words(hir_words, true);
+    let node_inst_count_words = x86_node_inst_count_record_words(hir_words);
+    let node_inst_subtree_bounds_words = hir_words.saturating_mul(2);
+    let node_inst_gen_node_record_words = x86_node_inst_gen_node_record_words(hir_words, inst);
+    let split_node_inst_planning_words = call_type_record_words
+        .saturating_add(node_inst_count_words)
+        .saturating_add(node_inst_subtree_bounds_words)
+        .saturating_add(node_inst_gen_node_record_words);
     let hir_scaled_words = hir_scaled_words
         .saturating_sub(
             legacy_node_inst_order_reuse_words.saturating_sub(node_inst_order_reuse_words),
         )
+        .saturating_sub(legacy_node_inst_subtree_bounds_words)
+        .saturating_add(split_node_inst_planning_words)
         .saturating_add(function_slot_words);
     let active_end_extra_words =
         virtual_regalloc_active_end_words.saturating_sub(node_inst_order_reuse_words);
@@ -1352,6 +1438,8 @@ fn typecheck_allocation_floor_bytes(
     } else {
         token_capacity
     };
+    let import_record_capacity =
+        typecheck_import_record_capacity(token_capacity, source_file_capacity);
     let module_blocks = module_capacity.div_ceil(256).max(1);
     let import_visible_blocks = import_visible_capacity.div_ceil(256).max(1);
     let module_radix_histogram_len = module_blocks.saturating_mul(TYPECHECK_NAME_RADIX_BUCKETS);
@@ -1384,42 +1472,78 @@ fn typecheck_allocation_floor_bytes(
         .saturating_mul(token_capacity)
         .saturating_add(8usize.saturating_mul(token_blocks))
         .saturating_add(4);
-    let call_param_cache_u32 = TYPECHECK_CALL_PARAM_CACHE_STRIDE.saturating_mul(token_capacity);
-    let call_arg_record_u32 = 4usize.saturating_mul(token_capacity);
-    let call_arg_node_u32 = TYPECHECK_CALL_PARAM_CACHE_STRIDE.saturating_mul(token_capacity);
-    let calls_u32 = 9usize
+    let call_param_cache_u32 = 0usize;
+    let call_param_count_u32 = if hir_node_capacity >= token_capacity {
+        0
+    } else {
+        token_capacity
+    };
+    let function_lookup_u32 = if hir_node_capacity >= 2usize.saturating_mul(token_capacity) {
+        0
+    } else {
+        4usize.saturating_mul(token_capacity)
+    };
+    let call_arg_record_u32 = if hir_node_capacity >= 4usize.saturating_mul(token_capacity) {
+        0
+    } else {
+        4usize.saturating_mul(token_capacity)
+    };
+    let call_arg_node_u32 = typecheck_call_arg_node_words();
+    let calls_u32 = 4usize
         .saturating_mul(token_capacity)
+        .saturating_add(call_param_count_u32)
+        .saturating_add(function_lookup_u32)
         .saturating_add(call_param_cache_u32)
         .saturating_add(call_arg_record_u32)
-        .saturating_add(call_arg_node_u32)
-        .saturating_add(token_capacity.max(hir_node_capacity));
-    let methods_u32 = 17usize
+        .saturating_add(call_arg_node_u32);
+    let method_key_radix_scratch_u32 = if hir_node_capacity >= name_radix_histogram_len {
+        0
+    } else {
+        2usize.saturating_mul(name_radix_histogram_len)
+    };
+    let methods_u32 = 2usize
         .saturating_mul(token_capacity)
         .saturating_add(source_file_capacity)
-        .saturating_add(2usize.saturating_mul(name_radix_histogram_len))
+        .saturating_add(method_key_radix_scratch_u32)
         .saturating_add(2usize.saturating_mul(TYPECHECK_NAME_RADIX_BUCKETS))
         .saturating_add(1);
-    let type_metadata_u32 = 26usize.saturating_mul(token_capacity).saturating_add(
-        2usize
-            .saturating_mul(TYPECHECK_TYPE_INSTANCE_ARG_REF_STRIDE)
-            .saturating_mul(token_capacity),
-    );
+    let type_metadata_u32 = 2usize
+        .saturating_mul(TYPECHECK_TYPE_INSTANCE_ARG_REF_STRIDE)
+        .saturating_mul(token_capacity);
     let empty_hir_u32 = if uses_hir_items {
         4
     } else {
         4usize.saturating_mul(hir_node_capacity)
     };
-    let module_paths_u32 = 70usize
+    let module_path_radix_scratch_u32 = if hir_node_capacity >= module_path_key_radix_histogram_len
+    {
+        0
+    } else {
+        2usize.saturating_mul(module_path_key_radix_histogram_len)
+    };
+    let module_path_decl_tree_scratch_u32 = if hir_node_capacity >= token_capacity {
+        0
+    } else {
+        2usize.saturating_mul(token_capacity)
+    };
+    let module_paths_u32 = 48usize
         .saturating_mul(token_capacity)
+        .saturating_add(7usize.saturating_mul(import_record_capacity))
         .saturating_add(source_file_capacity)
         .saturating_add(16usize.saturating_mul(module_capacity))
         .saturating_add(20usize.saturating_mul(import_visible_capacity))
         .saturating_add(2usize.saturating_mul(token_capacity))
-        // HIR-indexed module/path scratch: packed family bits, reusable family
-        // flag, shared record prefix/local scan, path prefix, and owner map.
-        .saturating_add(6usize.saturating_mul(hir_node_capacity))
+        // HIR-indexed module/path scratch: shared record prefix/local scan and
+        // owner map. Family bits/flags reuse later typecheck/codegen records;
+        // path prefixes reuse the shared prefix and are retained through
+        // path_id_by_owner_hir. Module-key radix scratch and ten declaration
+        // record tables borrow dead parser workspaces when those workspaces
+        // are large enough. The five x86-retained declaration metadata tables
+        // borrow typecheck name-radix scratch after the name pipeline records.
+        .saturating_add(3usize.saturating_mul(hir_node_capacity))
         .saturating_add(3usize.saturating_mul(hir_blocks))
-        .saturating_add(2usize.saturating_mul(module_path_key_radix_histogram_len))
+        .saturating_add(module_path_radix_scratch_u32)
+        .saturating_add(module_path_decl_tree_scratch_u32)
         .saturating_add(2usize.saturating_mul(TYPECHECK_NAME_RADIX_BUCKETS))
         .saturating_add(33);
     let visible_hir_decl_scan_scratch_u32 = if uses_hir_items {
@@ -1461,6 +1585,18 @@ fn typecheck_allocation_floor_bytes(
     }
 }
 
+fn typecheck_call_arg_node_words() -> usize {
+    1
+}
+
+fn typecheck_import_record_capacity(token_capacity: usize, source_file_capacity: usize) -> usize {
+    if source_file_capacity <= 1 {
+        1
+    } else {
+        token_capacity.max(1)
+    }
+}
+
 fn u32_words_to_bytes(words: usize) -> usize {
     words.saturating_mul(4)
 }
@@ -1489,7 +1625,7 @@ fn parser_allocation_floor_bytes(estimate: &ParserCapacityEstimate) -> ParserAll
 fn parser_tree_floor_bytes(tree_capacity: usize) -> usize {
     // Resident parser/HIR tree-capacity allocations after shared pointer-jump
     // list scratch. This counts actual allocations, not alias views.
-    const PARSER_TREE_SCALAR_U32_BUFFERS: usize = 79;
+    const PARSER_TREE_SCALAR_U32_BUFFERS: usize = 78;
     const PARSER_TREE_U32X4_RECORD_BUFFERS: usize = 3;
     let parser_tree_scalar_floor_bytes = PARSER_TREE_SCALAR_U32_BUFFERS
         .saturating_mul(tree_capacity)
@@ -1518,12 +1654,32 @@ fn parser_pack_stream_floor_bytes(estimate: &ParserCapacityEstimate) -> usize {
         .saturating_mul(U32_SIZE)
 }
 
-fn parser_capacity_estimate_for_source(
-    source_bytes: usize,
+struct TokenCapacityEstimate {
+    lexer_byte_capacity: usize,
+    lexer_token_capacity: usize,
+    parser_token_capacity: usize,
+    basis: &'static str,
+}
+
+fn token_capacity_estimate_for_source(src: &str) -> TokenCapacityEstimate {
+    let lexer_byte_capacity = src.len().div_ceil(4).saturating_mul(4).max(1);
+    let (lexer_token_capacity, basis) = match lex_on_test_cpu(src) {
+        Ok(tokens) => (tokens.len().max(1), "test_cpu_token_count"),
+        Err(_) => (lexer_byte_capacity, "source_byte_capacity_fallback"),
+    };
+    TokenCapacityEstimate {
+        lexer_byte_capacity,
+        lexer_token_capacity,
+        parser_token_capacity: lexer_token_capacity.saturating_add(2),
+        basis,
+    }
+}
+
+fn parser_capacity_estimate_for_token_capacity(
+    parser_token_capacity: usize,
     tables: Option<&PrecomputedParseTables>,
 ) -> ParserCapacityEstimate {
-    let lexer_byte_capacity = source_bytes.div_ceil(4).saturating_mul(4).max(1);
-    let parser_token_capacity = lexer_byte_capacity.saturating_add(2);
+    let parser_token_capacity = parser_token_capacity.max(1);
     let parser_pair_capacity = parser_token_capacity.saturating_sub(1);
     tables
         .map(|tables| {
@@ -4127,6 +4283,7 @@ fn print_help() {
     eprintln!(
         "Usage: gpu_compile_bench [--emit wasm|x86_64-elf] [--source simple-lets|mixed|call-graph|expr-dense|abi-calls|varied|long-function|module-pack|all] [--lines N] [--target-bytes N] [--seed N] [--warmups N] [--iters N] [--validate-output] [--run-x86-output] [--allow-large] [--estimate-only|--estimate-live] [--dump-source]\n\
          Optional phases: --phase lex|parse|typecheck|wasm|x86.\n\
+         Defaults to --lines 20000; use --allow-large for intentional large live runs.\n\
          Set LANIUS_PERFETTO_TRACE=path.json to write Perfetto-compatible trace-event JSON.\n\
          Measures reused GpuCompiler runtime after construction."
     );
@@ -4418,31 +4575,34 @@ mod tests {
     }
 
     #[test]
-    fn interactive_guard_is_phase_aware() {
+    fn interactive_guard_uses_no_gpu_token_capacity_for_generated_x86() {
         let tables =
             PrecomputedParseTables::load_bin_bytes(include_bytes!("../../tables/parse_tables.bin"))
                 .expect("parse tables");
-        let source_lines = 39_345;
-        let source_bytes = 1_300_261;
+        let generated = make_source_artifact(SourceMode::ExprDense, 20_000, None, 975);
+        let source_lines = generated.source.lines().count();
 
         reject_large_interactive_run(
             Phase::Parse,
             source_lines,
-            source_bytes,
+            &generated.source,
+            generated.sources.len(),
             false,
             Some(&tables),
         )
-        .expect("parse benchmark should not be rejected by x86 allocation estimates");
+        .expect("20k parse benchmark should not be rejected by allocation estimates");
 
-        let err = reject_large_interactive_run(
+        reject_large_interactive_run(
             Phase::X86,
             source_lines,
-            source_bytes,
+            &generated.source,
+            generated.sources.len(),
             false,
             Some(&tables),
         )
-        .expect_err("x86 benchmark should still guard large source-capacity estimates");
-        assert!(err.contains("compile allocation floor"));
+        .expect(
+            "20k x86 benchmark should use exact token capacity instead of source-byte capacity",
+        );
     }
 
     #[test]
@@ -4494,6 +4654,46 @@ mod tests {
     }
 
     #[test]
+    fn x86_instruction_capacity_can_use_scalar_feature_summary() {
+        let semantic =
+            x86_capacity_estimate_for_hir_tokens_and_inst_basis(100_000, 100_000, 50_000);
+        let scalar = x86_capacity_estimate_for_hir_tokens_inst_basis_and_feature_summary(
+            100_000,
+            100_000,
+            50_000,
+            X86FeatureSummary {
+                scalar_inst_capacity: 1_200,
+                ..X86FeatureSummary::default()
+            },
+        );
+        let complex = x86_capacity_estimate_for_hir_tokens_inst_basis_and_feature_summary(
+            100_000,
+            100_000,
+            50_000,
+            X86FeatureSummary {
+                mask: X86_FEATURE_ENUM,
+                scalar_inst_capacity: 1_200,
+                ..X86FeatureSummary::default()
+            },
+        );
+        let call = x86_capacity_estimate_for_hir_tokens_inst_basis_and_feature_summary(
+            100_000,
+            100_000,
+            50_000,
+            X86FeatureSummary {
+                mask: X86_FEATURE_CALL,
+                scalar_inst_capacity: 1_200,
+                ..X86FeatureSummary::default()
+            },
+        );
+
+        assert!(scalar.inst_capacity < semantic.inst_capacity);
+        assert_eq!(scalar.inst_capacity, 50_000usize.div_ceil(12) + 1_024);
+        assert_eq!(complex.inst_capacity, semantic.inst_capacity);
+        assert_eq!(call.inst_capacity, semantic.inst_capacity);
+    }
+
+    #[test]
     fn x86_order_record_capacity_is_bounded_by_compact_instruction_rows() {
         let hir_words = 687_089;
         let inst_capacity = 93_126;
@@ -4501,9 +4701,10 @@ mod tests {
         let compact_words =
             x86_node_inst_order_record_words(hir_words, inst_capacity, function_slot_capacity);
         let legacy_hir_order_words = hir_words.saturating_add(1).saturating_mul(3);
+        let stale_subtree_reuse_words = hir_words.saturating_mul(2);
 
         assert!(compact_words < legacy_hir_order_words);
-        assert!(compact_words >= hir_words * 2);
+        assert!(compact_words < stale_subtree_reuse_words);
         assert!(compact_words >= function_slot_capacity * 14);
         assert!(compact_words >= (inst_capacity + 1) * 3);
     }
@@ -4523,13 +4724,108 @@ mod tests {
     }
 
     #[test]
+    fn x86_instruction_planning_capacity_is_split_by_record_lifetime() {
+        let hir_words = 36_500_110;
+        let inst_capacity = 2_097_152;
+        let call_type_words = x86_call_type_record_words(hir_words, true);
+        let compact_count_words = x86_node_inst_count_record_words(hir_words);
+        let subtree_words = hir_words * 2;
+        let worklist_words = x86_node_inst_gen_node_record_words(hir_words, inst_capacity);
+
+        assert_eq!(call_type_words, hir_words * 3);
+        assert_eq!(compact_count_words, hir_words * 2);
+        assert_eq!(subtree_words, hir_words * 2);
+        assert_eq!(worklist_words, inst_capacity * 2);
+    }
+
+    #[test]
     fn parser_tree_floor_accounts_for_shared_hir_list_scratch() {
         assert_eq!(
             parser_tree_floor_bytes(10),
-            79usize
+            78usize
                 .saturating_mul(10)
                 .saturating_mul(4)
                 .saturating_add(3usize.saturating_mul(10).saturating_mul(16))
+        );
+    }
+
+    #[test]
+    fn typecheck_floor_does_not_scale_call_arg_node_cache() {
+        assert_eq!(typecheck_call_arg_node_words(), 1);
+    }
+
+    #[test]
+    fn typecheck_floor_uses_single_import_record_for_single_source() {
+        assert_eq!(typecheck_import_record_capacity(25, 1), 1);
+        assert_eq!(typecheck_import_record_capacity(25, 2), 25);
+    }
+
+    #[test]
+    fn typecheck_floor_borrows_module_path_decl_and_radix_scratch() {
+        let token_capacity = 100_000usize;
+        let radix_scratch_words =
+            token_capacity.div_ceil(256).max(1) * TYPECHECK_NAME_RADIX_BUCKETS;
+        let with_tree_scratch =
+            typecheck_allocation_floor_bytes(token_capacity, radix_scratch_words, true, 1);
+        let without_tree_scratch =
+            typecheck_allocation_floor_bytes(token_capacity, token_capacity, true, 1);
+
+        assert!(with_tree_scratch.module_paths < without_tree_scratch.module_paths);
+    }
+
+    #[test]
+    fn typecheck_floor_borrows_type_instance_temporary_records() {
+        let token_capacity = 4_400_009usize;
+        let before_words = 26usize.saturating_mul(token_capacity).saturating_add(
+            2usize
+                .saturating_mul(TYPECHECK_TYPE_INSTANCE_ARG_REF_STRIDE)
+                .saturating_mul(token_capacity),
+        );
+        let after_words = 2usize
+            .saturating_mul(TYPECHECK_TYPE_INSTANCE_ARG_REF_STRIDE)
+            .saturating_mul(token_capacity);
+
+        assert_eq!(before_words - after_words, 26 * token_capacity);
+    }
+
+    #[test]
+    fn typecheck_floor_borrows_call_staging_from_parser_scratch() {
+        let token_capacity = 100_000usize;
+        let hir_node_capacity = token_capacity * 4;
+        let with_parser_scratch =
+            typecheck_allocation_floor_bytes(token_capacity, hir_node_capacity, true, 1);
+        let old_call_words = 9usize
+            .saturating_mul(token_capacity)
+            .saturating_add(TYPECHECK_CALL_PARAM_CACHE_STRIDE.saturating_mul(token_capacity))
+            .saturating_add(4usize.saturating_mul(token_capacity))
+            .saturating_add(typecheck_call_arg_node_words())
+            .saturating_add(token_capacity.max(hir_node_capacity));
+
+        assert_eq!(
+            u32_words_to_bytes(old_call_words) - with_parser_scratch.calls,
+            17usize.saturating_mul(token_capacity).saturating_mul(4)
+        );
+    }
+
+    #[test]
+    fn typecheck_floor_borrows_method_workspaces_by_lifetime() {
+        let token_capacity = 100_000usize;
+        let name_radix_histogram_len =
+            token_capacity.div_ceil(256).max(1) * TYPECHECK_NAME_RADIX_BUCKETS;
+        let old_method_words = 17usize
+            .saturating_mul(token_capacity)
+            .saturating_add(1)
+            .saturating_add(2usize.saturating_mul(name_radix_histogram_len))
+            .saturating_add(2usize.saturating_mul(TYPECHECK_NAME_RADIX_BUCKETS))
+            .saturating_add(1);
+        let floor = typecheck_allocation_floor_bytes(token_capacity, token_capacity * 4, true, 1);
+
+        assert_eq!(
+            u32_words_to_bytes(old_method_words) - floor.methods,
+            (15usize
+                .saturating_mul(token_capacity)
+                .saturating_add(2usize.saturating_mul(name_radix_histogram_len)))
+            .saturating_mul(4)
         );
     }
 
@@ -4545,5 +4841,17 @@ mod tests {
         assert_eq!(estimate.tree_capacity, 321);
         assert!(estimate.total_emit >= 127);
         assert!(floor.total < typecheck_allocation_floor_bytes(1024, 321, true, 1).total);
+    }
+
+    #[test]
+    fn no_gpu_capacity_estimate_uses_test_cpu_token_count_when_available() {
+        let token_capacity = token_capacity_estimate_for_source("fn main() -> i32 { return 0; }\n");
+
+        assert_eq!(token_capacity.basis, "test_cpu_token_count");
+        assert!(token_capacity.lexer_token_capacity < token_capacity.lexer_byte_capacity);
+        assert_eq!(
+            token_capacity.parser_token_capacity,
+            token_capacity.lexer_token_capacity + 2
+        );
     }
 }

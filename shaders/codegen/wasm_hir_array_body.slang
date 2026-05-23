@@ -243,22 +243,25 @@ void put_u32_leb(inout uint cursor, uint value, bool write, uint target)
     }
 }
 
-void put_u32_leb5(inout uint cursor, uint value, bool write, uint target)
+uint i32_leb5_byte(uint value, uint i)
+{
+    uint byte_value = (value >> (i * 7u)) & 0x7fu;
+    if (i < 4u)
+        return byte_value | 0x80u;
+    return (value & 0x80000000u) != 0u ? byte_value | 0x70u : byte_value;
+}
+
+void put_i32_leb5(inout uint cursor, uint value, bool write, uint target)
 {
     [unroll]
     for (uint i = 0u; i < 5u; i += 1u)
-    {
-        uint byte_value = (value >> (i * 7u)) & 0x7fu;
-        if (i < 4u)
-            byte_value |= 0x80u;
-        put_byte(cursor, byte_value, write, target);
-    }
+        put_byte(cursor, i32_leb5_byte(value, i), write, target);
 }
 
 void emit_i32_const_u32(inout uint cursor, uint value, bool write, uint target)
 {
     put_byte(cursor, 0x41u, write, target);
-    put_u32_leb5(cursor, value, write, target);
+    put_i32_leb5(cursor, value, write, target);
 }
 
 bool emit_local_decls(inout uint cursor, uint local_count, bool write, uint target)

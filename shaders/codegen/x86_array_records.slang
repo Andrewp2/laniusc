@@ -27,7 +27,8 @@ StructuredBuffer<uint> hir_array_lit_element_count;
 StructuredBuffer<uint> hir_array_element_parent_lit;
 StructuredBuffer<uint> hir_array_element_ordinal;
 StructuredBuffer<uint> hir_array_element_next;
-StructuredBuffer<uint4> x86_node_tree_record;
+StructuredBuffer<uint> x86_tree_parent;
+StructuredBuffer<uint> x86_tree_subtree_end;
 StructuredBuffer<uint> x86_node_tree_status;
 StructuredBuffer<uint> x86_enclosing_let_node;
 
@@ -38,7 +39,6 @@ static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint INVALID = 0xffffffffu;
 
 static const uint X86_NODE_TREE_OK = 1u;
-static const uint HIR_EXPR = 14u;
 static const uint HIR_ARRAY_EXPR = 24u;
 
 static const uint STMT_RECORD_STRIDE = 4u;
@@ -109,7 +109,7 @@ bool node_span_contains(uint ancestor, uint node)
 {
     if (!valid_node(ancestor) || !valid_node(node))
         return false;
-    uint end = x86_node_tree_record[ancestor].w;
+    uint end = x86_tree_subtree_end[ancestor];
     return end != INVALID && ancestor <= node && node < end;
 }
 
@@ -205,7 +205,7 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     if (hir_kind[node] == HIR_ARRAY_EXPR)
         publish_literal_record(node);
-    if (hir_kind[node] == HIR_EXPR && valid_node(hir_array_element_parent_lit[node]))
+    if (valid_node(hir_array_element_parent_lit[node]))
     {
         publish_element_record(node);
         publish_element_store_record(node);

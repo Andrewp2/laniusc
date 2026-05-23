@@ -24,7 +24,8 @@ StructuredBuffer<uint> x86_node_inst_range_status;
 StructuredBuffer<uint> x86_node_inst_scan_local_prefix;
 StructuredBuffer<uint> x86_node_inst_scan_block_prefix;
 
-RWStructuredBuffer<uint2> x86_node_inst_subtree_bounds_record;
+RWStructuredBuffer<uint> x86_node_inst_subtree_bound_start;
+RWStructuredBuffer<uint> x86_node_inst_subtree_bound_end;
 RWStructuredBuffer<uint> x86_node_inst_subtree_bounds_status;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -101,7 +102,8 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint4 slots = x86_node_inst_subtree_slot_bounds[node];
     if (slots.x == INVALID || slots.y == INVALID || slots.x >= slots.y)
     {
-        x86_node_inst_subtree_bounds_record[node] = uint2(INVALID, INVALID);
+        x86_node_inst_subtree_bound_start[node] = INVALID;
+        x86_node_inst_subtree_bound_end[node] = INVALID;
         return;
     }
 
@@ -113,7 +115,8 @@ void main(uint3 tid: SV_DispatchThreadID)
         after_row == INVALID ||
         first_row >= after_row)
     {
-        x86_node_inst_subtree_bounds_record[node] = uint2(INVALID, INVALID);
+        x86_node_inst_subtree_bound_start[node] = INVALID;
+        x86_node_inst_subtree_bound_end[node] = INVALID;
         publish_stage_error_min_detail4(
             x86_node_inst_subtree_bounds_status,
             X86_ERR_NODE_INST_SUBTREE_BOUNDS,
@@ -121,5 +124,6 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
     }
 
-    x86_node_inst_subtree_bounds_record[node] = uint2(first_row, after_row);
+    x86_node_inst_subtree_bound_start[node] = first_row;
+    x86_node_inst_subtree_bound_end[node] = after_row;
 }

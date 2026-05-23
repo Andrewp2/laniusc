@@ -14,6 +14,16 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+struct FeatureParams
+{
+    uint mask;
+    uint enum_count;
+    uint match_count;
+    uint aggregate_count;
+};
+
+ConstantBuffer<FeatureParams> gX86Features;
+
 StructuredBuffer<uint> hir_match_scrutinee_node;
 StructuredBuffer<uint> hir_match_arm_start;
 StructuredBuffer<uint> hir_match_arm_count;
@@ -30,6 +40,7 @@ RWStructuredBuffer<uint> x86_match_arm_owner;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint INVALID = 0xffffffffu;
+static const uint X86_FEATURE_MATCH = 1u << 1u;
 static const uint MATCH_ARM_VARIANT_UNKNOWN = 0xffffu;
 
 uint linear_dispatch_id(uint3 tid)
@@ -47,6 +58,11 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
+bool has_match_feature()
+{
+    return (gX86Features.mask & X86_FEATURE_MATCH) != 0u;
+}
+
 uint token_for_node(uint node)
 {
     if (!valid_node(node))
@@ -61,6 +77,8 @@ void main(uint3 tid: SV_DispatchThreadID)
 {
     uint node = linear_dispatch_id(tid);
     if (node >= gParams.n_hir_nodes)
+        return;
+    if (!has_match_feature())
         return;
 
     x86_match_record[node] = uint4(INVALID, INVALID, 0u, INVALID);

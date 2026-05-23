@@ -22,6 +22,7 @@ use laniusc::{
                 HIR_ITEM_KIND_MODULE,
                 HIR_ITEM_KIND_NONE,
                 HIR_ITEM_KIND_STRUCT,
+                HIR_ITEM_KIND_TRAIT,
                 HIR_ITEM_KIND_TYPE_ALIAS,
                 HIR_ITEM_NAMESPACE_MODULE,
                 HIR_ITEM_NAMESPACE_TYPE,
@@ -1343,6 +1344,7 @@ fn point_x(point: core::numbers::Point) -> i32 { return point.x; }
 pub struct Range<T> { start: T, end: T }
 enum Maybe { Some(i32), None }
 type Alias = i32;
+pub trait Printable<T> { fn print(value: T) -> i32; }
 
 impl Point {
     pub fn method(self: Point) { return; }
@@ -1482,6 +1484,12 @@ impl Point {
                 HIR_ITEM_NAMESPACE_TYPE,
                 HIR_ITEM_VIS_PRIVATE,
                 "Alias",
+            ),
+            (
+                HIR_ITEM_KIND_TRAIT,
+                HIR_ITEM_NAMESPACE_TYPE,
+                HIR_ITEM_VIS_PUBLIC,
+                "Printable",
             ),
         ] {
             let found = res.hir_item_kind.iter().enumerate().any(|(i, &kind)| {

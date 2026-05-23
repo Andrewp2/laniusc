@@ -1,8 +1,10 @@
-// Pack parser-owned HIR call argument records into a token-indexed table.
+// Pack parser-owned HIR call argument records into GPU call caches.
 //
 // Input records come from `hir_call_fields.slang`, which is derived from
 // production ids and inverted tree arrays. This pass preserves that structure
-// for type checking without requiring call resolvers to scan comma/parens.
+// for type checking without requiring call resolvers to scan comma/parens. The
+// summary record is keyed by callee token; argument nodes stay in parser-owned
+// HIR call-argument records.
 
 import gpu_index;
 import hir_records;
@@ -26,11 +28,10 @@ StructuredBuffer<uint> hir_call_arg_count;
 StructuredBuffer<uint> hir_call_arg_parent_call;
 
 RWStructuredBuffer<uint4> call_arg_record;
-RWStructuredBuffer<uint> call_arg_node;
 
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_MEMBER_EXPR = 21u;
-static const uint PARAM_CACHE_STRIDE = 16u;
+static const uint PARAM_CACHE_STRIDE = 4u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -41,7 +42,7 @@ uint linear_thread_id(uint3 dtid)
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+    return gParams.n_hir_nodes;
 }
 
 bool valid_node(uint node, uint n)
@@ -81,7 +82,6 @@ void publish_arg_record(uint callee_token, uint call_node, uint arg_node, uint a
 
     uint arg_start = hir_token_pos[arg_node];
     uint arg_end = hir_call_arg_end[arg_node];
-    row_major_store<uint>(call_arg_node, callee_token, PARAM_CACHE_STRIDE, ordinal, arg_node);
     if (ordinal == 0u)
     {
         if (arg_start == INVALID || arg_end == INVALID || arg_start >= arg_end)

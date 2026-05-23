@@ -496,7 +496,7 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     uint fn_slot = x86_func_slot_by_index[func_i];
-    if (fn_slot >= gParams.n_tokens)
+    if (fn_slot >= gParams.function_slot_capacity)
         return;
 
     if (!allocation_status_inputs_valid(inst_count))

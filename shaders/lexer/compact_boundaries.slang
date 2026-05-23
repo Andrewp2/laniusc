@@ -27,10 +27,12 @@ RWStructuredBuffer<uint> types_compact;     // compacted kinds         (CURRENT 
 RWStructuredBuffer<uint> all_index_compact; // for each *kept* token: 1-based index in ALL stream
 RWStructuredBuffer<uint> token_count;       // [0] = total compacted (CURRENT)
 
+static const uint DISPATCH_X_STRIDE = 16776960u;
+
 // -------- shared implementation (predicate parameterized) --------
 inline void compact_impl(bool use_kept_pred, uint3 tid)
 {
-    uint i = tid.x;
+    uint i = linear_dispatch_thread_id_2d(tid, DISPATCH_X_STRIDE);
     if (i >= gParams.n)
         return;
 

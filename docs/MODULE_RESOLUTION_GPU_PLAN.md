@@ -361,11 +361,13 @@ enum constructors when the GPU module/import resolver produces an OK declaration
 and the matching HIR consumer identifies that declaration in its use context.
 Unresolved module prefixes, missing qualified callees/constants/variants,
 non-function call targets, non-constructor symbolic generic enum returns,
-trait methods, broad generic callees, and general qualified values still reject.
-Bounded module-qualified generic helpers such as `core::option::unwrap_or(value,
-fallback)` can type-check when the HIR call consumer infers the scalar return
-from literal or annotated local arguments using GPU type-ref metadata; this is
-not full monomorphization or package loading.
+trait methods, module-qualified generic callees outside the bounded
+scalar/literal inference slice, and general qualified values still reject.
+Bounded module-qualified generic helpers such as `core::id::keep(1)` and
+`core::option::unwrap_or(value, fallback)` can type-check when the HIR call
+consumer infers the scalar return from literal or annotated local arguments
+using GPU type-ref metadata; this is not full monomorphization or package
+loading.
 Bounded module-form inherent method calls can type-check when the receiver is
 either an annotated concrete type ref or a GPU-resolved call result with a
 concrete `fn_return_ref_*`, as in `core::range::range_i32(1, 4).start()`.
@@ -374,10 +376,10 @@ concrete `fn_return_ref_*`, as in `core::range::range_i32(1, 4).start()`.
 
 Goal: one source pack can contain multiple module-declared files, path imports,
 qualified type paths, and qualified value paths for public top-level consts,
-functions, structs, enums, enum variants, bounded inherent method calls, and
-bounded scalar type aliases. No string imports, import aliases, globs, traits,
-trait method lookup, broad type aliases, or generics beyond existing parsed
-shape.
+functions, structs, enums, enum variants, bounded inherent method calls, bounded
+scalar type aliases, and bounded multi-hop scalar alias chains. No string
+imports, import aliases, globs, traits, trait method lookup, broad type aliases,
+or generics beyond existing parsed shape.
 
 This slice starts from parser/HIR arrays. It must not resurrect the deleted
 resolver slice, and it must not treat source text rewriting, CPU import

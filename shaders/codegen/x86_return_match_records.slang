@@ -1,4 +1,4 @@
-// x86_64 return-match ownership projection.
+// x86_64 match-to-return ownership projection.
 //
 // This pass materializes direct return-statement/match-expression relations
 // from HIR statement records and expression-forward resolution. Later x86
@@ -24,9 +24,8 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> x86_expr_resolved_node;
-StructuredBuffer<uint4> x86_node_tree_record;
+StructuredBuffer<uint> x86_tree_subtree_end;
 
-RWStructuredBuffer<uint> x86_return_match_node;
 RWStructuredBuffer<uint> x86_match_return_node;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -73,7 +72,7 @@ bool node_span_contains(uint ancestor, uint node)
 {
     if (!valid_node(ancestor) || !valid_node(node))
         return false;
-    uint end = x86_node_tree_record[ancestor].w;
+    uint end = x86_tree_subtree_end[ancestor];
     return end != INVALID && ancestor <= node && node < end;
 }
 
@@ -100,6 +99,5 @@ void main(uint3 tid: SV_DispatchThreadID)
         !node_span_contains(return_expr, match_node))
         return;
 
-    x86_return_match_node[return_node] = match_node;
     atomic_u32_min(x86_match_return_node, match_node, return_node);
 }

@@ -120,6 +120,23 @@ bool raw_kind_starts_item(uint kind)
            kind == TK_IMPL || kind == TK_TRAIT;
 }
 
+bool raw_impl_context_before(uint parser_i, uint count)
+{
+    uint j = parser_i;
+    [loop]
+    for (uint guard = 0u; guard < 512u && j > 0u; guard += 1u)
+    {
+        j -= 1u;
+        uint kind = raw_kind_at(j, count);
+        if (kind == TK_IMPL)
+            return true;
+        if (kind == TK_SEMICOLON || kind == TK_LBRACE || kind == TK_RBRACE ||
+            raw_kind_starts_item(kind))
+            return false;
+    }
+    return false;
+}
+
 uint top_level_brace_open_kind_for(uint parser_i, uint count)
 {
     uint prev_raw = raw_kind_at(parser_i - 1u, count);
@@ -207,7 +224,9 @@ uint top_level_brace_open_kind_for(uint parser_i, uint count)
             return TK_ENUM_LBRACE;
         if (kind == TK_MATCH)
             return TK_MATCH_LBRACE;
-        if (kind == TK_IF || kind == TK_ELSE || kind == TK_WHILE || kind == TK_FOR)
+        if (kind == TK_FOR)
+            return raw_impl_context_before(j, count) ? TK_IMPL_LBRACE : TK_LBRACE;
+        if (kind == TK_IF || kind == TK_ELSE || kind == TK_WHILE)
             return TK_LBRACE;
         if (kind == TK_SEMICOLON || kind == TK_LBRACE || raw_kind_starts_item(kind))
             break;

@@ -20,9 +20,12 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint> hir_type_form;
+StructuredBuffer<uint> hir_type_len_value;
 StructuredBuffer<uint4> hir_param_record;
 StructuredBuffer<uint> x86_expr_resolved_node;
-StructuredBuffer<uint4> x86_node_tree_record;
+StructuredBuffer<uint> x86_tree_parent;
+StructuredBuffer<uint> x86_tree_subtree_end;
 StructuredBuffer<uint> x86_struct_access_record;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
@@ -46,11 +49,14 @@ static const uint X86_ENUM_RECORDS_OK = 1u;
 static const uint X86_STRUCT_RECORDS_OK = 1u;
 
 static const uint HIR_PARAM = 4u;
+static const uint HIR_TYPE = 5u;
 static const uint HIR_STMT = 7u;
 static const uint HIR_LET_STMT = 8u;
 static const uint HIR_NAME_EXPR = 22u;
+static const uint HIR_ARRAY_EXPR = 24u;
 static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 static const uint HIR_FOR_STMT = 30u;
+static const uint HIR_TYPE_FORM_ARRAY = 2u;
 
 static const uint HIR_PARAM_RECORD_NAME_TOKEN = 2u;
 static const uint HIR_PARAM_RECORD_NODE = 3u;
@@ -70,6 +76,7 @@ static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
 static const uint TY_GENERIC_BASE = 8192u;
 static const uint X86_STRUCT_ACCESS_LITERAL = 2u;
+static const uint X86_STRUCT_ACCESS_ARRAY_LITERAL = 3u;
 static const uint EXPR_RECORD_STRIDE = 4u;
 static const uint X86_STRUCT_ACCESS_STRIDE = 3u;
 static const uint X86_STRUCT_ACCESS_KIND_BITS = 4u;
@@ -97,17 +104,30 @@ bool valid_token(uint token)
 
 uint tree_parent_record(uint node)
 {
-    return x86_node_tree_record[node].x;
+    return valid_node(node) ? x86_tree_parent[node] : INVALID;
+}
+
+uint tree_subtree_end_record(uint node)
+{
+    return valid_node(node) ? x86_tree_subtree_end[node] : INVALID;
 }
 
 uint tree_first_child_record(uint node)
 {
-    return x86_node_tree_record[node].y;
+    uint child = node + 1u;
+    uint end = tree_subtree_end_record(node);
+    return valid_node(child) && child < end && tree_parent_record(child) == node
+        ? child
+        : INVALID;
 }
 
 uint tree_next_sibling_record(uint node)
 {
-    return x86_node_tree_record[node].z;
+    uint sibling = tree_subtree_end_record(node);
+    uint parent = tree_parent_record(node);
+    return valid_node(sibling) && tree_parent_record(sibling) == parent
+        ? sibling
+        : INVALID;
 }
 
 uint stmt_slot(uint node, uint slot)
@@ -183,6 +203,12 @@ uint struct_literal_node_for_expr(uint expr_node)
     uint child = first_child_node(node);
     sibling = next_sibling_node(child);
     return valid_node(sibling) && hir_kind[sibling] == HIR_STRUCT_LITERAL_EXPR ? sibling : INVALID;
+}
+
+uint array_literal_node_for_expr(uint expr_node)
+{
+    uint node = resolve_expr(expr_node);
+    return valid_node(node) && hir_kind[node] == HIR_ARRAY_EXPR ? node : INVALID;
 }
 
 bool is_local_decl_node(uint node)
@@ -348,6 +374,50 @@ bool struct_literal_width_for_decl_node(uint node, out uint width)
     return true;
 }
 
+bool array_literal_width_for_decl_node(uint node, out uint width)
+{
+    width = 0u;
+    if (!is_local_decl_node(node))
+        return false;
+
+    uint init_expr = stmt_slot(node, 2u);
+    uint literal_node = array_literal_node_for_expr(init_expr);
+    if (!valid_node(literal_node))
+        return false;
+
+    uint literal_width = struct_access_payload0(literal_node);
+    if (struct_access_kind(literal_node) != X86_STRUCT_ACCESS_ARRAY_LITERAL || literal_width == 0u)
+        return false;
+
+    width = literal_width;
+    return true;
+}
+
+bool array_type_width_for_decl_node(uint node, out uint width)
+{
+    width = 0u;
+    if (!is_local_decl_node(node) && hir_kind[node] != HIR_PARAM)
+        return false;
+
+    uint end = tree_subtree_end_record(node);
+    if (end == INVALID || end <= node || end > active_hir_node_count())
+        end = active_hir_node_count();
+
+    [loop]
+    for (uint cursor = node + 1u; cursor < end && cursor < active_hir_node_count(); cursor += 1u)
+    {
+        if (hir_kind[cursor] != HIR_TYPE || hir_type_form[cursor] != HIR_TYPE_FORM_ARRAY)
+            continue;
+        uint len = hir_type_len_value[cursor];
+        if (len != INVALID && len > 1u)
+        {
+            width = len;
+            return true;
+        }
+    }
+    return false;
+}
+
 bool is_scalar_param_node(uint node)
 {
     uint decl_token = param_decl_token_for_node(node);
@@ -364,9 +434,17 @@ uint local_width_for_node(uint node)
         return 1u;
     if (is_local_decl_node(node))
     {
+        uint type_width = 0u;
+        if (array_type_width_for_decl_node(node, type_width))
+            return type_width;
+
         uint width = width_for_decl(stmt_slot(node, 1u));
         if (width > 1u)
             return width;
+
+        uint array_width = 0u;
+        if (array_literal_width_for_decl_node(node, array_width))
+            return array_width;
 
         uint literal_width = 0u;
         if (struct_literal_width_for_decl_node(node, literal_width))

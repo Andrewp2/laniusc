@@ -26,10 +26,12 @@ StructuredBuffer<uint> call_abi_status;
 StructuredBuffer<uint> x86_struct_record_status;
 
 RWStructuredBuffer<uint> x86_node_inst_gen_input_status;
+RWStructuredBuffer<uint> x86_virtual_inst_status;
 
 static const uint INVALID = 0xffffffffu;
 static const uint X86_ERR_NODE_VIRTUAL_INST = 11u;
 static const uint X86_NODE_INST_GEN_INPUTS_OK = 1u;
+static const uint X86_VIRTUAL_INST_OK = 1u;
 static const uint X86_NODE_INST_LOCATIONS_OK = 1u;
 static const uint X86_CONST_VALUES_OK = 1u;
 static const uint X86_DECL_LAYOUT_OK = 1u;
@@ -83,4 +85,8 @@ void main(uint3 tid: SV_DispatchThreadID)
     x86_node_inst_gen_input_status[1u] = ok ? 0u : error;
     x86_node_inst_gen_input_status[2u] = ok ? INVALID : detail;
     x86_node_inst_gen_input_status[3u] = ok ? total_rows : 0u;
+    x86_virtual_inst_status[0u] = ok ? X86_VIRTUAL_INST_OK : 0u;
+    x86_virtual_inst_status[1u] = ok ? 0u : error;
+    x86_virtual_inst_status[2u] = ok ? INVALID : detail;
+    x86_virtual_inst_status[3u] = ok ? total_rows : 0u;
 }

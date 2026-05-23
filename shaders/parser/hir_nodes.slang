@@ -88,7 +88,8 @@ uint classify(uint prod)
         prod == PROD_ITEM_CONST || prod == PROD_ITEM_ENUM || prod == PROD_ITEM_STRUCT ||
         prod == PROD_PUB_FN || prod == PROD_PUB_EXTERN_FN || prod == PROD_PUB_CONST ||
         prod == PROD_PUB_TYPE_ALIAS || prod == PROD_PUB_ENUM || prod == PROD_PUB_STRUCT ||
-        prod == PROD_PUB_IMPL || prod == PROD_PUB_TRAIT || prod == PROD_ENUM_VARIANT)
+        prod == PROD_PUB_IMPL || prod == PROD_PUB_TRAIT || prod == PROD_ENUM_VARIANT ||
+        prod == PROD_TRAIT)
         return HIR_ITEM;
     if (prod == PROD_FN || prod == PROD_EXTERN_FN || prod == PROD_IMPL_FN)
         return HIR_FN;

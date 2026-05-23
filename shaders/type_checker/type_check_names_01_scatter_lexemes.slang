@@ -54,7 +54,6 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint INVALID = 0xffffffffu;
 static const uint MAX_NAME_RADIX_BYTES = 64u;
-static const uint MAX_NAME_RADIX_ITEMS = 262144u;
 static const uint ERR_NAME_LIMIT = 11u;
 static const uint LANGUAGE_SYMBOL_COUNT = 19u;
 
@@ -125,6 +124,11 @@ uint compact_token_name_count()
     return name_lexeme_prefix[last] + name_lexeme_flag[last];
 }
 
+uint name_radix_item_capacity()
+{
+    return gParams.n_tokens + LANGUAGE_SYMBOL_COUNT;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -140,7 +144,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i == 0u)
     {
         uint total_name_count = token_name_count + LANGUAGE_SYMBOL_COUNT;
-        if (total_name_count > MAX_NAME_RADIX_ITEMS)
+        if (total_name_count > name_radix_item_capacity())
             record_error(0u, ERR_NAME_LIMIT, total_name_count);
 
         [unroll]

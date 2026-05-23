@@ -33,7 +33,8 @@ StructuredBuffer<uint> hir_struct_lit_field_value_node;
 StructuredBuffer<uint> hir_struct_lit_field_next;
 StructuredBuffer<uint> member_result_field_ordinal;
 StructuredBuffer<uint> struct_init_field_ordinal_by_node;
-StructuredBuffer<uint4> x86_node_tree_record;
+StructuredBuffer<uint> x86_tree_parent;
+StructuredBuffer<uint> x86_tree_subtree_end;
 StructuredBuffer<uint> x86_node_tree_status;
 StructuredBuffer<uint> x86_enclosing_let_node;
 
@@ -122,7 +123,7 @@ bool node_span_contains(uint ancestor, uint node)
 {
     if (!valid_node(ancestor) || !valid_node(node))
         return false;
-    uint end = x86_node_tree_record[ancestor].w;
+    uint end = x86_tree_subtree_end[ancestor];
     return end != INVALID && ancestor <= node && node < end;
 }
 
