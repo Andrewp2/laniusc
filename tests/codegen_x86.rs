@@ -2,7 +2,7 @@ mod common;
 
 use laniusc::compiler::{
     CompileError,
-    compile_explicit_source_pack_paths_to_x86_64_with_gpu_codegen,
+    compile_explicit_source_pack_paths_legacy_in_memory_to_x86_64_with_gpu_codegen,
     compile_source_pack_to_x86_64_with_gpu_codegen,
     compile_source_to_x86_64_with_gpu_codegen,
     compile_source_to_x86_64_with_gpu_codegen_from_path,
@@ -1220,7 +1220,7 @@ fn x86_explicit_source_pack_paths_emit_direct_elf_for_qualified_scalar_const_ret
         "GPU explicit source-pack path x86 compile",
         move || {
             pollster::block_on(
-                compile_explicit_source_pack_paths_to_x86_64_with_gpu_codegen(
+                compile_explicit_source_pack_paths_legacy_in_memory_to_x86_64_with_gpu_codegen(
                     &stdlib_paths,
                     &user_paths,
                 ),

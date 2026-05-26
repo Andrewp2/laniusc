@@ -1,6 +1,6 @@
 use std::{fs, path::Path, process::Command};
 
-use laniusc::compiler::compile_explicit_source_pack_paths_to_wasm_with_gpu_codegen;
+use laniusc::compiler::compile_explicit_source_pack_paths_legacy_in_memory_to_wasm_with_gpu_codegen;
 
 mod common;
 
@@ -265,10 +265,12 @@ fn gpu_codegen_executes_explicit_source_pack_path_surface() {
     let wasm = common::run_gpu_codegen_with_timeout(
         "GPU explicit source-pack path WASM compile",
         move || {
-            pollster::block_on(compile_explicit_source_pack_paths_to_wasm_with_gpu_codegen(
-                &stdlib_paths,
-                &user_paths,
-            ))
+            pollster::block_on(
+                compile_explicit_source_pack_paths_legacy_in_memory_to_wasm_with_gpu_codegen(
+                    &stdlib_paths,
+                    &user_paths,
+                ),
+            )
         },
     )
     .expect("compile WASM from explicit source-pack path lists");

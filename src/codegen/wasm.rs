@@ -8,7 +8,7 @@ use support::*;
 
 use crate::gpu::{
     device,
-    passes_core::{bind_group, make_traced_main_pass, PassData},
+    passes_core::{PassData, bind_group, make_traced_main_pass},
 };
 
 const HIR_MODULE_OUTPUT_TARGET_LIMIT: u32 = 512;

@@ -1,10 +1,14 @@
 use std::{
-    path::PathBuf,
+    collections::BTreeMap,
+    fs,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     rc::Rc,
-    time::Instant,
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
+#[cfg(test)]
+use laniusc::codegen::unit::CodegenUnitPlan;
 #[cfg(test)]
 use laniusc::codegen::x86::x86_capacity_estimate_for_hir;
 #[cfg(test)]
@@ -15,22 +19,37 @@ use laniusc::codegen::x86::{
     x86_capacity_estimate_for_hir_tokens_inst_basis_and_feature_summary,
 };
 use laniusc::{
-    codegen::x86::{
-        X86CapacityEstimate,
-        x86_call_type_record_words,
-        x86_capacity_estimate_for_hir_and_tokens,
-        x86_capacity_estimate_for_hir_tokens_and_inst_basis,
-        x86_function_slot_capacity,
-        x86_node_inst_count_record_words,
-        x86_node_inst_gen_node_record_words,
-        x86_node_inst_order_record_words,
+    codegen::{
+        unit::{
+            CodegenUnitLimits,
+            SourcePackArtifactTarget,
+            SourcePackBuildShardLimits,
+            SourcePackJobBatchLimits,
+            SourcePackJobPlan,
+            SourcePackLibraryDependency,
+        },
+        x86::{
+            X86CapacityEstimate,
+            x86_call_type_record_words,
+            x86_capacity_estimate_for_hir_and_tokens,
+            x86_capacity_estimate_for_hir_tokens_and_inst_basis,
+            x86_function_slot_capacity,
+            x86_node_inst_count_record_words,
+            x86_node_inst_gen_node_record_words,
+            x86_node_inst_order_record_words,
+        },
     },
     compiler::{
+        ExplicitSourceLibraryPathDependencyStream,
         GpuCompiler,
         GpuCompilerBackends,
         GpuLiveCapacityEstimateResult,
+        SourcePackFilesystemArtifactStore,
+        SourcePackFilesystemPreparedArtifactBuild,
         compile_source_to_wasm_with_gpu_codegen_using,
         compile_source_to_x86_64_with_gpu_codegen_using,
+        prepare_ordered_explicit_source_library_path_dependency_streams_filesystem_metadata_chunk_from_progress_for_target,
+        prepare_source_pack_filesystem_artifact_build_from_metadata_chunk_with_shard_limits_for_target,
     },
     gpu::{device, trace},
     lexer::test_cpu::lex_on_test_cpu,
@@ -45,6 +64,38 @@ const TYPECHECK_NAME_RADIX_BUCKETS: usize = 257;
 const TYPECHECK_LANGUAGE_SYMBOL_COUNT: usize = 19;
 const TYPECHECK_HIR_VISIBLE_DECL_ROW_BLOCK_SIZE: usize = 64;
 const DEFAULT_BENCH_LINES: usize = 20_000;
+const DEFAULT_SOURCE_PACK_DESCRIPTOR_MAX_ITEMS: usize = 1;
+const DEFAULT_SOURCE_PACK_DESCRIPTOR_MAX_READY_ITEMS: usize = 64;
+const SOURCE_PACK_DESCRIPTOR_MAX_CHUNK_ITEMS: usize = 64;
+
+#[derive(Clone, Debug)]
+struct SourcePackDescriptorRunConfig {
+    artifact_root: Option<PathBuf>,
+    max_items: usize,
+    max_ready_items: usize,
+}
+
+impl SourcePackDescriptorRunConfig {
+    fn new(artifact_root: Option<PathBuf>, max_items: usize, max_ready_items: usize) -> Self {
+        Self {
+            artifact_root,
+            max_items,
+            max_ready_items,
+        }
+    }
+
+    fn bounded_max_items(&self) -> usize {
+        self.max_items
+            .max(1)
+            .min(SOURCE_PACK_DESCRIPTOR_MAX_CHUNK_ITEMS)
+    }
+
+    fn bounded_max_ready_items(&self) -> usize {
+        self.max_ready_items
+            .max(1)
+            .min(DEFAULT_SOURCE_PACK_DESCRIPTOR_MAX_READY_ITEMS)
+    }
+}
 
 fn main() {
     if let Err(err) = pollster::block_on(run()) {
@@ -68,6 +119,11 @@ async fn run() -> Result<(), String> {
     let mut estimate_live = false;
     let mut dump_source = false;
     let mut run_x86_output = false;
+    let mut source_pack_descriptors = false;
+    let mut source_pack_artifact_root: Option<PathBuf> = None;
+    let mut source_pack_max_items = DEFAULT_SOURCE_PACK_DESCRIPTOR_MAX_ITEMS;
+    let mut source_pack_max_ready_items = DEFAULT_SOURCE_PACK_DESCRIPTOR_MAX_READY_ITEMS;
+    let mut source_pack_legacy_in_memory = false;
 
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -117,6 +173,54 @@ async fn run() -> Result<(), String> {
             "--dump-source" => {
                 dump_source = true;
             }
+            "--source-pack-descriptors" => {
+                source_pack_descriptors = true;
+            }
+            "--source-pack-legacy-in-memory" => {
+                source_pack_legacy_in_memory = true;
+            }
+            "--source-pack-artifact-root" => {
+                source_pack_descriptors = true;
+                source_pack_artifact_root =
+                    Some(PathBuf::from(args.next().ok_or_else(|| {
+                        "--source-pack-artifact-root requires a value".to_string()
+                    })?));
+            }
+            flag if flag.starts_with("--source-pack-artifact-root=") => {
+                source_pack_descriptors = true;
+                source_pack_artifact_root = Some(PathBuf::from(
+                    flag.trim_start_matches("--source-pack-artifact-root="),
+                ));
+            }
+            "--source-pack-max-items" => {
+                source_pack_descriptors = true;
+                source_pack_max_items = parse_usize("--source-pack-max-items", args.next())?;
+            }
+            flag if flag.starts_with("--source-pack-max-items=") => {
+                source_pack_descriptors = true;
+                source_pack_max_items = parse_usize(
+                    "--source-pack-max-items",
+                    Some(
+                        flag.trim_start_matches("--source-pack-max-items=")
+                            .to_string(),
+                    ),
+                )?;
+            }
+            "--source-pack-max-ready-items" => {
+                source_pack_descriptors = true;
+                source_pack_max_ready_items =
+                    parse_usize("--source-pack-max-ready-items", args.next())?;
+            }
+            flag if flag.starts_with("--source-pack-max-ready-items=") => {
+                source_pack_descriptors = true;
+                source_pack_max_ready_items = parse_usize(
+                    "--source-pack-max-ready-items",
+                    Some(
+                        flag.trim_start_matches("--source-pack-max-ready-items=")
+                            .to_string(),
+                    ),
+                )?;
+            }
             "--phase" => {
                 phase = parse_phase(args.next(), emit_phase)?;
             }
@@ -146,11 +250,36 @@ async fn run() -> Result<(), String> {
     if estimate_only && estimate_live {
         return Err("--estimate-only and --estimate-live are mutually exclusive".into());
     }
+    if source_pack_descriptors && source_pack_legacy_in_memory {
+        return Err(
+            "--source-pack-descriptors and --source-pack-legacy-in-memory are mutually exclusive"
+                .into(),
+        );
+    }
+    if source_pack_descriptors && source_pack_max_ready_items == 0 {
+        return Err("--source-pack-max-ready-items must be greater than zero".into());
+    }
+    let source_pack_descriptor_config = source_pack_descriptors.then(|| {
+        SourcePackDescriptorRunConfig::new(
+            source_pack_artifact_root,
+            source_pack_max_items,
+            source_pack_max_ready_items,
+        )
+    });
     let parse_tables = PrecomputedParseTables::load_bin_bytes(include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tables/parse_tables.bin"
     )))
     .ok();
+    if source_mode == SourceMode::All
+        && matches!(phase, Phase::TypeCheck | Phase::Wasm | Phase::X86)
+        && !estimate_only
+        && !estimate_live
+        && source_pack_descriptor_config.is_none()
+        && !source_pack_legacy_in_memory
+    {
+        return Err(source_pack_execution_mode_required_error("--source all"));
+    }
     if source_mode == SourceMode::All {
         if dump_source {
             return Err("--dump-source requires a concrete --source, not --source all".into());
@@ -167,6 +296,8 @@ async fn run() -> Result<(), String> {
             allow_large,
             estimate_only,
             estimate_live,
+            source_pack_descriptor_config.as_ref(),
+            source_pack_legacy_in_memory,
             parse_tables.as_ref(),
         )
         .await;
@@ -183,7 +314,9 @@ async fn run() -> Result<(), String> {
         print_capacity_estimate(
             source_lines,
             src,
-            generated.sources.len(),
+            &generated.sources,
+            &generated.library_ids,
+            &generated.library_dependencies,
             parse_tables.as_ref(),
         );
         return Ok(());
@@ -193,7 +326,9 @@ async fn run() -> Result<(), String> {
             print_capacity_estimate(
                 source_lines,
                 src,
-                generated.sources.len(),
+                &generated.sources,
+                &generated.library_ids,
+                &generated.library_dependencies,
                 parse_tables.as_ref(),
             );
             println!(
@@ -214,6 +349,14 @@ async fn run() -> Result<(), String> {
             .map_err(|err| err.to_string())?;
         print_live_capacity_estimate(source_lines, src.len(), live, parse_tables.as_ref());
         return Ok(());
+    }
+    if generated.sources.len() > 1
+        && source_pack_descriptor_config.is_none()
+        && !source_pack_legacy_in_memory
+    {
+        return Err(source_pack_execution_mode_required_error(
+            "--source module-pack",
+        ));
     }
     reject_large_interactive_run(
         phase,
@@ -241,6 +384,8 @@ async fn run() -> Result<(), String> {
             run_x86_output,
             generated.expected_stdout.as_deref(),
             "warmup",
+            source_pack_descriptor_config.as_ref(),
+            source_pack_legacy_in_memory,
         )
         .await;
         trace::record_host_span(
@@ -265,6 +410,8 @@ async fn run() -> Result<(), String> {
             run_x86_output,
             generated.expected_stdout.as_deref(),
             "measured",
+            source_pack_descriptor_config.as_ref(),
+            source_pack_legacy_in_memory,
         )
         .await;
         let end = Instant::now();
@@ -310,6 +457,8 @@ async fn run_source_suite(
     allow_large: bool,
     estimate_only: bool,
     estimate_live: bool,
+    source_pack_descriptor_config: Option<&SourcePackDescriptorRunConfig>,
+    source_pack_legacy_in_memory: bool,
     parse_tables: Option<&PrecomputedParseTables>,
 ) -> Result<(), String> {
     let mut compiler = None;
@@ -328,14 +477,28 @@ async fn run_source_suite(
 
         if estimate_only {
             println!("source={}", source_mode.name());
-            print_capacity_estimate(source_lines, src, generated.sources.len(), parse_tables);
+            print_capacity_estimate(
+                source_lines,
+                src,
+                &generated.sources,
+                &generated.library_ids,
+                &generated.library_dependencies,
+                parse_tables,
+            );
             continue;
         }
 
         if estimate_live {
             if generated.sources.len() > 1 {
                 println!("source={}", source_mode.name());
-                print_capacity_estimate(source_lines, src, generated.sources.len(), parse_tables);
+                print_capacity_estimate(
+                    source_lines,
+                    src,
+                    &generated.sources,
+                    &generated.library_ids,
+                    &generated.library_dependencies,
+                    parse_tables,
+                );
                 println!(
                     "estimate_live source_pack=skipped note=live parse estimate currently reports single-source parser metrics"
                 );
@@ -362,6 +525,14 @@ async fn run_source_suite(
             continue;
         }
 
+        if generated.sources.len() > 1
+            && source_pack_descriptor_config.is_none()
+            && !source_pack_legacy_in_memory
+        {
+            return Err(source_pack_execution_mode_required_error(
+                source_mode.name(),
+            ));
+        }
         reject_large_interactive_run(
             phase,
             source_lines,
@@ -393,6 +564,8 @@ async fn run_source_suite(
                 run_x86_output,
                 generated.expected_stdout.as_deref(),
                 "warmup",
+                source_pack_descriptor_config,
+                source_pack_legacy_in_memory,
             )
             .await;
             trace::record_host_span(
@@ -417,6 +590,8 @@ async fn run_source_suite(
                 run_x86_output,
                 generated.expected_stdout.as_deref(),
                 "measured",
+                source_pack_descriptor_config,
+                source_pack_legacy_in_memory,
             )
             .await;
             let end = Instant::now();
@@ -559,10 +734,29 @@ async fn run_phase(
     run_x86_output: bool,
     expected_stdout: Option<&str>,
     phase_name: &str,
+    source_pack_descriptor_config: Option<&SourcePackDescriptorRunConfig>,
+    source_pack_legacy_in_memory: bool,
 ) -> Result<Vec<u8>, String> {
     let src = generated.source.as_str();
     let sources = generated.sources.as_slice();
     if sources.len() > 1 {
+        if let Some(config) = source_pack_descriptor_config {
+            return run_source_pack_descriptor_phase(
+                phase,
+                generated,
+                compiler,
+                validate_output,
+                run_x86_output,
+                phase_name,
+                config,
+            )
+            .await;
+        }
+        if !source_pack_legacy_in_memory {
+            return Err(source_pack_execution_mode_required_error(
+                "--source module-pack",
+            ));
+        }
         return run_source_pack_phase(
             phase,
             sources,
@@ -664,6 +858,253 @@ async fn run_source_pack_phase(
             Ok(elf)
         }
     }
+}
+
+async fn run_source_pack_descriptor_phase(
+    phase: Phase,
+    generated: &SourceArtifact,
+    compiler: &GpuCompiler<'_>,
+    validate_output: bool,
+    run_x86_output: bool,
+    phase_name: &str,
+    config: &SourcePackDescriptorRunConfig,
+) -> Result<Vec<u8>, String> {
+    if validate_output || run_x86_output {
+        return Err(
+            "--source-pack-descriptors writes persisted descriptor artifacts; output validation requires the legacy in-memory source-pack path"
+                .to_string(),
+        );
+    }
+    let target = source_pack_artifact_target_for_phase(phase)?;
+    let artifact_root = source_pack_descriptor_artifact_root(config, phase, phase_name)?;
+    let limits = CodegenUnitLimits::default();
+    let batch_limits = SourcePackJobBatchLimits::from_codegen_unit_limits(limits);
+    let max_items = config.bounded_max_items();
+    let max_ready_items = config.bounded_max_ready_items();
+    let store = SourcePackFilesystemArtifactStore::new(&artifact_root);
+
+    if !store
+        .library_partition_index_path_for_target(target)
+        .is_file()
+    {
+        let source_root = artifact_root.join("generated-sources");
+        let libraries = materialize_generated_source_pack_paths(generated, &source_root)?;
+        let total_library_count = libraries.len();
+        let prepared_library_count = if store
+            .library_metadata_prepare_progress_path_for_target(target)
+            .is_file()
+        {
+            store
+                .load_library_metadata_prepare_progress_for_target(target)
+                .map_err(|err| err.to_string())?
+                .library_count
+        } else {
+            0
+        };
+        if prepared_library_count > total_library_count {
+            return Err(format!(
+                "source-pack descriptor metadata progress records {prepared_library_count} libraries but generated pack has {total_library_count}"
+            ));
+        }
+        let library_chunk = libraries
+            .into_iter()
+            .skip(prepared_library_count)
+            .take(max_items)
+            .collect::<Vec<_>>();
+        let manifest_complete_after_input =
+            prepared_library_count.saturating_add(library_chunk.len()) >= total_library_count;
+        let metadata =
+            prepare_ordered_explicit_source_library_path_dependency_streams_filesystem_metadata_chunk_from_progress_for_target(
+                library_chunk,
+                &artifact_root,
+                target,
+                max_items,
+                manifest_complete_after_input,
+            )
+            .map_err(|err| err.to_string())?;
+        println!(
+            "source_pack_descriptors phase={} target={target:?} root={} prepare_stage=metadata complete={} libraries={} new_libraries={} source_files={}",
+            phase.name(),
+            artifact_root.display(),
+            metadata.complete,
+            metadata.library_count,
+            metadata.new_library_count,
+            metadata.source_file_count,
+        );
+        if !metadata.complete {
+            return Ok(Vec::new());
+        }
+    }
+
+    if !store.build_state_path_for_target(target).is_file() {
+        let build_step =
+            prepare_source_pack_filesystem_artifact_build_from_metadata_chunk_with_shard_limits_for_target(
+            &artifact_root,
+            limits,
+            batch_limits,
+            SourcePackBuildShardLimits::default(),
+            target,
+            max_items,
+        )
+            .map_err(|err| err.to_string())?;
+        println!(
+            "source_pack_descriptors phase={} target={target:?} root={} prepare_stage={:?} next_stage={:?} complete={} new_items={}",
+            phase.name(),
+            artifact_root.display(),
+            build_step.stage,
+            build_step.next_stage,
+            build_step.complete,
+            build_step.new_item_count,
+        );
+        if !build_step.complete {
+            return Ok(Vec::new());
+        }
+    }
+
+    let worker_id = format!("gpu_compile_bench-{phase_name}-{}", std::process::id());
+    let prepared = SourcePackFilesystemPreparedArtifactBuild::new(&artifact_root, target);
+    let mut progress = prepared
+        .work_queue_progress_snapshot(max_ready_items)
+        .map_err(|err| err.to_string())?;
+    let mut executed_item_count = 0usize;
+    for _ in 0..max_items {
+        let step = prepared
+            .submit_gpu_descriptor_work_queue_step_using(
+                worker_id.clone(),
+                None,
+                max_ready_items,
+                compiler,
+            )
+            .await
+            .map_err(|err| err.to_string())?;
+        if step.executed_item.is_some() {
+            executed_item_count += 1;
+        }
+        let claimed = step.claimed_item_index.is_some();
+        progress = step.progress;
+        if !claimed || progress.complete {
+            break;
+        }
+    }
+
+    println!(
+        "source_pack_descriptors phase={} target={target:?} root={} executed_items={executed_item_count} completed_items={} work_items={} ready_items={} complete={}",
+        phase.name(),
+        artifact_root.display(),
+        progress.completed_item_count,
+        progress.work_item_count,
+        progress.ready_item_count,
+        progress.complete,
+    );
+    Ok(Vec::new())
+}
+
+fn source_pack_artifact_target_for_phase(phase: Phase) -> Result<SourcePackArtifactTarget, String> {
+    match phase {
+        Phase::TypeCheck => Ok(SourcePackArtifactTarget::Generic),
+        Phase::Wasm => Ok(SourcePackArtifactTarget::Wasm),
+        Phase::X86 => Ok(SourcePackArtifactTarget::X86_64),
+        Phase::Lex | Phase::Parse => Err(format!(
+            "--source {} is a source-pack generator; use --phase typecheck, wasm, or x86",
+            SourceMode::ModulePack.name()
+        )),
+    }
+}
+
+fn source_pack_execution_mode_required_error(source_name: &str) -> String {
+    format!(
+        "{source_name} uses source-pack inputs; pass --source-pack-descriptors for the persisted bounded work queue or --source-pack-legacy-in-memory for the old whole-pack path"
+    )
+}
+
+fn source_pack_descriptor_artifact_root(
+    config: &SourcePackDescriptorRunConfig,
+    phase: Phase,
+    phase_name: &str,
+) -> Result<PathBuf, String> {
+    if let Some(root) = &config.artifact_root {
+        return Ok(root.clone());
+    }
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|err| format!("source-pack descriptor artifact clock error: {err}"))?
+        .as_nanos();
+    Ok(std::env::temp_dir().join(format!(
+        "laniusc-source-pack-descriptors-{}-{}-{}-{nanos}",
+        phase.name(),
+        phase_name,
+        std::process::id()
+    )))
+}
+
+fn materialize_generated_source_pack_paths(
+    generated: &SourceArtifact,
+    source_root: &Path,
+) -> Result<Vec<ExplicitSourceLibraryPathDependencyStream<Vec<PathBuf>, Vec<u32>>>, String> {
+    if generated.sources.len() != generated.library_ids.len() {
+        return Err(format!(
+            "source-pack source count {} does not match library id count {}",
+            generated.sources.len(),
+            generated.library_ids.len()
+        ));
+    }
+
+    let mut source_paths_by_library: BTreeMap<u32, Vec<PathBuf>> = BTreeMap::new();
+    fs::create_dir_all(source_root).map_err(|err| {
+        format!(
+            "create generated source-pack source root {}: {err}",
+            source_root.display()
+        )
+    })?;
+    for (source_index, (source, library_id)) in generated
+        .sources
+        .iter()
+        .zip(generated.library_ids.iter().copied())
+        .enumerate()
+    {
+        let library_root = source_root.join(format!("library-{library_id}"));
+        fs::create_dir_all(&library_root).map_err(|err| {
+            format!(
+                "create generated source-pack library source root {}: {err}",
+                library_root.display()
+            )
+        })?;
+        let path = library_root.join(format!("source-{source_index}.lanius"));
+        fs::write(&path, source.as_bytes()).map_err(|err| {
+            format!(
+                "write generated source-pack source {}: {err}",
+                path.display()
+            )
+        })?;
+        source_paths_by_library
+            .entry(library_id)
+            .or_default()
+            .push(path);
+    }
+
+    let mut dependencies_by_library: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
+    for dependency in &generated.library_dependencies {
+        dependencies_by_library
+            .entry(dependency.library_id)
+            .or_default()
+            .push(dependency.depends_on_library_id);
+    }
+
+    Ok(source_paths_by_library
+        .into_iter()
+        .map(|(library_id, paths)| {
+            let dependency_library_ids = dependencies_by_library
+                .remove(&library_id)
+                .unwrap_or_default();
+            ExplicitSourceLibraryPathDependencyStream {
+                library_id,
+                source_file_count: paths.len(),
+                paths,
+                dependency_library_count: dependency_library_ids.len(),
+                dependency_library_ids,
+            }
+        })
+        .collect())
 }
 
 impl SourceMode {
@@ -959,10 +1400,13 @@ fn reject_large_interactive_run(
 fn print_capacity_estimate(
     source_lines: usize,
     src: &str,
-    source_file_capacity: usize,
+    sources: &[String],
+    library_ids: &[u32],
+    library_dependencies: &[SourcePackLibraryDependency],
     tables: Option<&PrecomputedParseTables>,
 ) {
     let source_bytes = src.len();
+    let source_file_capacity = sources.len().max(1);
     let token_capacity = token_capacity_estimate_for_source(src);
     let parse_capacity =
         parser_capacity_estimate_for_token_capacity(token_capacity.parser_token_capacity, tables);
@@ -980,7 +1424,139 @@ fn print_capacity_estimate(
         None,
         source_file_capacity,
     );
+    print_codegen_unit_estimate(sources, library_ids, library_dependencies);
     println!("estimate ll1_seed_path=inactive note=capacity-derived; no GPU work was submitted");
+}
+
+fn print_codegen_unit_estimate(
+    sources: &[String],
+    library_ids: &[u32],
+    library_dependencies: &[SourcePackLibraryDependency],
+) {
+    let limits = CodegenUnitLimits::default();
+    let plan = SourcePackJobPlan::from_source_pack_with_libraries_and_dependencies(
+        sources,
+        library_ids,
+        library_dependencies,
+        limits,
+    );
+    let codegen_units = &plan.codegen_units;
+    println!(
+        "estimate codegen_units unit_count={} max_unit_source_bytes={} max_unit_source_files={} oversized_units={} unit_max_source_bytes_limit={} unit_max_source_files_limit={} split_policy=file-and-library-boundaries",
+        codegen_units.unit_count(),
+        codegen_units.max_unit_source_bytes(),
+        codegen_units.max_unit_source_files(),
+        codegen_units.oversized_unit_count(),
+        limits.max_source_bytes,
+        limits.max_source_files,
+    );
+    println!(
+        "estimate library_units unit_count={} max_library_source_bytes={} max_library_source_files={} split_policy=contiguous-library-boundaries",
+        plan.libraries.library_count(),
+        plan.libraries.max_library_source_bytes(),
+        plan.libraries.max_library_source_files(),
+    );
+    let schedule = plan.bounded_frontend_job_schedule();
+    println!(
+        "estimate scheduled_jobs total={} frontend_jobs={} codegen_jobs={} link_jobs={} max_job_source_bytes={} max_job_source_files={} order=dependency-topological-jobs",
+        schedule.jobs.len(),
+        schedule.frontend_job_count(),
+        schedule.codegen_job_count(),
+        schedule.link_job_count(),
+        schedule.max_job_source_bytes(),
+        schedule.max_job_source_files(),
+    );
+    let waves = schedule
+        .try_execution_wave_summary()
+        .expect("generated source-pack schedule should be acyclic");
+    println!(
+        "estimate schedule_waves wave_count={} max_ready_jobs={} max_wave_source_bytes={} max_wave_source_files={} policy=dependency-ready-waves",
+        waves.wave_count(),
+        waves.max_wave_job_count(),
+        waves.max_wave_source_bytes(),
+        waves.max_wave_source_files(),
+    );
+    let batch_limits = SourcePackJobBatchLimits::from_codegen_unit_limits(limits);
+    let batches = schedule
+        .try_execution_batch_summary(batch_limits)
+        .expect("generated source-pack schedule should produce bounded batches");
+    println!(
+        "estimate schedule_batches batch_count={} max_batch_jobs={} max_batch_source_bytes={} max_batch_source_files={} batch_max_source_bytes_limit={} batch_max_source_files_limit={} policy=bounded-ready-wave-batches",
+        batches.batch_count(),
+        batches.max_batch_job_count(),
+        batches.max_batch_source_bytes(),
+        batches.max_batch_source_files(),
+        batch_limits.max_source_bytes_per_batch,
+        batch_limits.max_source_files_per_batch,
+    );
+    let batch_dependencies = schedule
+        .try_execution_batch_dependency_summary(batch_limits)
+        .expect("generated source-pack batches should have dependency records");
+    println!(
+        "estimate batch_dependencies batch_count={} dependency_edges={} max_dependencies={} initial_ready_batches={} policy=persisted-batch-dag",
+        batch_dependencies.batch_count(),
+        batch_dependencies.dependency_edge_count(),
+        batch_dependencies.max_dependency_count(),
+        batch_dependencies.initial_ready_batch_count(),
+    );
+    let artifact_estimate = plan.build_artifact_estimate_summary_for_schedule(
+        &schedule,
+        batch_limits,
+        SourcePackArtifactTarget::Generic,
+    );
+    let artifact_manifest = artifact_estimate.artifact_manifest;
+    let artifact_lifetimes = artifact_estimate.artifact_lifetimes;
+    let job_artifacts = artifact_estimate.job_artifacts;
+    let job_artifact_manifest = artifact_estimate.job_artifact_manifest;
+    let link_interface_batches = artifact_estimate.link_interface_batches;
+    let link_object_batches = artifact_estimate.link_object_batches;
+    println!(
+        "estimate job_dependencies library_edges={} scheduled_edges={} max_job_dependencies={}",
+        library_dependencies.len(),
+        schedule.dependency_edge_count(),
+        schedule.max_job_dependency_count(),
+    );
+    println!(
+        "estimate job_artifact_io max_input_interfaces={} max_input_objects={} max_input_artifacts={} max_output_artifacts={} policy=explicit-artifact-graph",
+        job_artifacts.max_input_interface_count(),
+        job_artifacts.max_input_object_count(),
+        job_artifacts.max_input_artifact_count(),
+        job_artifacts.max_output_artifact_count(),
+    );
+    println!(
+        "estimate artifact_manifest artifacts={} max_key_len={} max_manifest_job_inputs={} key_policy=stable-kind-library-job-source-range",
+        artifact_manifest.artifact_count(),
+        artifact_manifest.max_key_len(),
+        job_artifact_manifest.max_input_artifact_count(),
+    );
+    println!(
+        "estimate artifact_lifetimes artifacts={} artifacts_without_consumers={} release_policy=dense-last-consumer-index",
+        artifact_estimate.artifact_use_count,
+        artifact_lifetimes.artifacts_without_consumers(),
+    );
+    println!(
+        "estimate link_interface_batches batch_count={} max_batch_interfaces={} max_batch_source_bytes={} max_batch_source_files={} policy=bounded-interface-inputs",
+        link_interface_batches.batch_count(),
+        link_interface_batches.max_batch_interface_count(),
+        link_interface_batches.max_batch_source_bytes(),
+        link_interface_batches.max_batch_source_files(),
+    );
+    println!(
+        "estimate link_object_batches batch_count={} max_batch_objects={} max_batch_source_bytes={} max_batch_source_files={} policy=bounded-object-inputs",
+        link_object_batches.batch_count(),
+        link_object_batches.max_batch_object_count(),
+        link_object_batches.max_batch_source_bytes(),
+        link_object_batches.max_batch_source_files(),
+    );
+    println!(
+        "estimate planned_artifacts total={} library_interfaces={} codegen_objects={} linked_outputs={} link_object_inputs={} link_interface_inputs={}",
+        artifact_estimate.total_artifacts,
+        artifact_estimate.interface_artifacts,
+        artifact_estimate.object_artifacts,
+        artifact_estimate.linked_output_artifacts,
+        artifact_estimate.link_object_inputs,
+        artifact_estimate.link_interface_inputs,
+    );
 }
 
 fn print_live_capacity_estimate(
@@ -1779,6 +2355,8 @@ fn human_bytes(bytes: usize) -> String {
 struct SourceArtifact {
     source: String,
     sources: Vec<String>,
+    library_ids: Vec<u32>,
+    library_dependencies: Vec<SourcePackLibraryDependency>,
     expected_stdout: Option<String>,
 }
 
@@ -1786,16 +2364,30 @@ impl SourceArtifact {
     fn single(source: String, expected_stdout: Option<String>) -> Self {
         Self {
             sources: vec![source.clone()],
+            library_ids: vec![0],
+            library_dependencies: Vec::new(),
             source,
             expected_stdout,
         }
     }
 
-    fn source_pack(sources: Vec<String>, expected_stdout: Option<String>) -> Self {
+    fn source_pack_with_libraries(
+        sources: Vec<String>,
+        library_ids: Vec<u32>,
+        library_dependencies: Vec<SourcePackLibraryDependency>,
+        expected_stdout: Option<String>,
+    ) -> Self {
+        assert_eq!(
+            sources.len(),
+            library_ids.len(),
+            "source-pack library id count must match source count"
+        );
         let source = sources.join("");
         Self {
             source,
             sources,
+            library_ids,
+            library_dependencies,
             expected_stdout,
         }
     }
@@ -1990,7 +2582,21 @@ fn make_module_pack_source_artifact(
     }
 
     main_src.push_str("    return 0;\n}\n");
-    SourceArtifact::source_pack(vec![math_src, bridge_src, main_src], Some(expected_stdout))
+    SourceArtifact::source_pack_with_libraries(
+        vec![math_src, bridge_src, main_src],
+        vec![0, 1, 2],
+        vec![
+            SourcePackLibraryDependency {
+                library_id: 1,
+                depends_on_library_id: 0,
+            },
+            SourcePackLibraryDependency {
+                library_id: 2,
+                depends_on_library_id: 1,
+            },
+        ],
+        Some(expected_stdout),
+    )
 }
 
 fn push_simple_let_line(src: &mut String, i: usize) {
@@ -4281,9 +4887,10 @@ impl DeterministicRng {
 
 fn print_help() {
     eprintln!(
-        "Usage: gpu_compile_bench [--emit wasm|x86_64-elf] [--source simple-lets|mixed|call-graph|expr-dense|abi-calls|varied|long-function|module-pack|all] [--lines N] [--target-bytes N] [--seed N] [--warmups N] [--iters N] [--validate-output] [--run-x86-output] [--allow-large] [--estimate-only|--estimate-live] [--dump-source]\n\
+        "Usage: gpu_compile_bench [--emit wasm|x86_64-elf] [--source simple-lets|mixed|call-graph|expr-dense|abi-calls|varied|long-function|module-pack|all] [--lines N] [--target-bytes N] [--seed N] [--warmups N] [--iters N] [--validate-output] [--run-x86-output] [--allow-large] [--estimate-only|--estimate-live] [--dump-source] [--source-pack-descriptors] [--source-pack-max-items N] [--source-pack-max-ready-items N] [--source-pack-artifact-root PATH] [--source-pack-legacy-in-memory]\n\
          Optional phases: --phase lex|parse|typecheck|wasm|x86.\n\
          Defaults to --lines 20000; use --allow-large for intentional large live runs.\n\
+         --source-pack-descriptors prepares module-pack filesystem artifacts and advances the persisted queue with bounded one-item submits; --source-pack-legacy-in-memory is required for the old whole-pack module-pack path.\n\
          Set LANIUS_PERFETTO_TRACE=path.json to write Perfetto-compatible trace-event JSON.\n\
          Measures reused GpuCompiler runtime after construction."
     );
@@ -4523,11 +5130,109 @@ mod tests {
         let b = make_source_artifact(SourceMode::ModulePack, 120, None, 975);
         assert_eq!(a.source, b.source);
         assert_eq!(a.sources, b.sources);
+        assert_eq!(a.library_ids, b.library_ids);
+        assert_eq!(a.library_dependencies, b.library_dependencies);
         assert_eq!(a.expected_stdout, b.expected_stdout);
         assert_eq!(a.sources.len(), 3);
+        assert_eq!(a.library_ids, vec![0, 1, 2]);
+        assert_eq!(
+            a.library_dependencies,
+            vec![
+                SourcePackLibraryDependency {
+                    library_id: 1,
+                    depends_on_library_id: 0,
+                },
+                SourcePackLibraryDependency {
+                    library_id: 2,
+                    depends_on_library_id: 1,
+                },
+            ]
+        );
         assert!(a.sources[0].starts_with("module pkg"));
         assert!(a.sources[1].contains("\nimport pkg"));
         assert!(a.sources[2].starts_with("module app::main;"));
+        let plan = CodegenUnitPlan::from_source_pack_with_libraries(
+            &a.sources,
+            &a.library_ids,
+            CodegenUnitLimits::default(),
+        );
+        assert_eq!(plan.unit_count(), 3);
+        let job_plan = SourcePackJobPlan::from_source_pack_with_libraries_and_dependencies(
+            &a.sources,
+            &a.library_ids,
+            &a.library_dependencies,
+            CodegenUnitLimits::default(),
+        );
+        assert_eq!(job_plan.libraries.library_count(), 3);
+        assert_eq!(job_plan.codegen_units, plan);
+        let schedule = job_plan.job_schedule();
+        assert_eq!(schedule.frontend_job_count(), 3);
+        assert_eq!(schedule.codegen_job_count(), 3);
+        assert_eq!(schedule.link_job_count(), 1);
+        assert_eq!(schedule.dependency_edge_count(), 10);
+        assert_eq!(schedule.max_job_dependency_count(), 3);
+        let waves = schedule
+            .try_execution_waves()
+            .expect("module-pack schedule waves");
+        assert_eq!(
+            waves
+                .waves
+                .iter()
+                .map(|wave| wave.job_indices.clone())
+                .collect::<Vec<_>>(),
+            vec![vec![0], vec![1, 3], vec![2, 4], vec![5], vec![6]]
+        );
+        let build_plan = job_plan.build_plan();
+        assert_eq!(build_plan.interface_artifact_count(), 3);
+        assert_eq!(build_plan.object_artifact_count(), 3);
+        assert_eq!(build_plan.linked_output_artifact_count(), 1);
+        let artifact_manifest = build_plan.artifact_manifest();
+        assert_eq!(artifact_manifest.artifact_count(), 7);
+        assert_eq!(
+            artifact_manifest
+                .artifacts
+                .last()
+                .expect("linked output artifact")
+                .key,
+            "linked-output/job-6/src-0-3"
+        );
+        let job_artifacts = build_plan.job_artifact_io_plan();
+        assert_eq!(job_artifacts.max_input_interface_count(), 3);
+        assert_eq!(job_artifacts.max_input_object_count(), 3);
+        assert_eq!(job_artifacts.max_input_artifact_count(), 6);
+        assert_eq!(job_artifacts.max_output_artifact_count(), 1);
+        assert_eq!(
+            build_plan
+                .job_artifact_manifest_plan()
+                .max_input_artifact_count(),
+            6
+        );
+        let compact_manifest = build_plan.compact_build_artifact_manifest(
+            SourcePackJobBatchLimits::from_codegen_unit_limits(CodegenUnitLimits::default()),
+        );
+        assert_eq!(compact_manifest.artifact_use_count, 7);
+        assert_eq!(
+            build_plan
+                .artifact_last_use_index()
+                .artifacts_without_consumers(),
+            1
+        );
+        assert_eq!(
+            build_plan
+                .link_interface_batches(SourcePackJobBatchLimits::from_codegen_unit_limits(
+                    CodegenUnitLimits::default()
+                ))
+                .batch_count(),
+            1
+        );
+        assert_eq!(
+            build_plan
+                .link_object_batches(SourcePackJobBatchLimits::from_codegen_unit_limits(
+                    CodegenUnitLimits::default()
+                ))
+                .batch_count(),
+            1
+        );
         assert!(a.source.contains("pub fn mf"));
         assert!(a.source.contains("pub fn bf"));
         assert!(a.source.contains("::mf"));
@@ -4535,6 +5240,46 @@ mod tests {
         let expected_stdout = a.expected_stdout.expect("module-pack stdout oracle");
         assert!(expected_stdout.lines().count() > 5);
         assert!(expected_stdout.ends_with('\n'));
+    }
+
+    #[test]
+    fn module_pack_descriptor_paths_preserve_library_dependencies() {
+        let generated = make_source_artifact(SourceMode::ModulePack, 120, None, 975);
+        let root = std::env::temp_dir().join(format!(
+            "laniusc-bench-source-pack-paths-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+
+        let libraries =
+            materialize_generated_source_pack_paths(&generated, &root).expect("materialize paths");
+
+        assert_eq!(libraries.len(), 3);
+        assert_eq!(
+            libraries
+                .iter()
+                .map(|library| library.library_id)
+                .collect::<Vec<_>>(),
+            vec![0, 1, 2]
+        );
+        assert_eq!(libraries[0].dependency_library_ids, Vec::<u32>::new());
+        assert_eq!(libraries[1].dependency_library_ids, vec![0]);
+        assert_eq!(libraries[2].dependency_library_ids, vec![1]);
+        assert_eq!(
+            libraries
+                .iter()
+                .map(|library| library.source_file_count)
+                .collect::<Vec<_>>(),
+            vec![1, 1, 1]
+        );
+        for library in &libraries {
+            assert_eq!(library.paths.len(), library.source_file_count);
+            for path in &library.paths {
+                assert!(path.is_file(), "materialized source {}", path.display());
+            }
+        }
+
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

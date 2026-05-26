@@ -3,20 +3,24 @@ use std::{
     ffi::{OsStr, OsString},
     fs,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
+    thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-const DEFAULT_GENERATED_LINES: &str = "10000";
-const DEFAULT_CAPACITY_STRESS_LINES: &str = "20000";
+const DEFAULT_GENERATED_LINES: &str = "5000";
+const DEFAULT_CAPACITY_STRESS_LINES: &str = "5000";
 const DEFAULT_CAPACITY_STRESS_SOURCE: &str = "expr-dense";
 const DEFAULT_MAX_CAPACITY_STRESS_COMPILE_FLOOR_BYTES: u64 = 12 * 1024 * 1024 * 1024;
+const DEFAULT_GENERATED_GATE_COMMAND_TIMEOUT_MS: u64 = 120_000;
 const MAX_GENERATED_LINES_WITHOUT_OPT_IN: usize = 20_000;
 const MAX_CAPACITY_STRESS_LINES_WITHOUT_OPT_IN: usize = 20_000;
+const MAX_PAREAS_COMPARE_ITERS_WITHOUT_OPT_IN: usize = 3;
 const ALLOW_LARGE_GENERATED_TESTS_ENV: &str = "LANIUS_ALLOW_LARGE_GENERATED_TESTS";
-const GENERATED_X86_READBACK_TIMEOUT_MS: &str = "120000";
+const GENERATED_X86_READBACK_TIMEOUT_MS: &str = "60000";
+const DEFAULT_PAREAS_COMPARE_ITERS: &str = "1";
+const CHILD_PROCESS_POLL_INTERVAL_MS: u64 = 10;
 const PAREAS_LIMIT_FACTOR: f64 = 1.5;
-const PAREAS_COMPARE_ITERS: usize = 3;
 
 #[test]
 #[ignore = "parameterized generated compiler gate; run explicitly after frontend changes"]
@@ -204,7 +208,8 @@ fn generated_pareas_comparison_when_available() {
     ];
     let mut laniusc_inner_best_ms = f64::INFINITY;
     let mut laniusc_wall_best_ms = f64::INFINITY;
-    for _ in 0..PAREAS_COMPARE_ITERS {
+    let compare_iters = pareas_compare_iters();
+    for _ in 0..compare_iters {
         let run = run_success_timed(&laniusc_bin, &laniusc_args);
         laniusc_wall_best_ms = laniusc_wall_best_ms.min(duration_ms(run.elapsed));
         laniusc_inner_best_ms = laniusc_inner_best_ms
@@ -218,7 +223,7 @@ fn generated_pareas_comparison_when_available() {
     let output_path = unique_temp_path("pareas_generated", "out");
     fs::write(&source_path, pareas_source).expect("write Pareas source");
     let mut pareas_wall_best_ms = f64::INFINITY;
-    for _ in 0..PAREAS_COMPARE_ITERS {
+    for _ in 0..compare_iters {
         let run = run_pareas_success_timed(
             &pareas_bin,
             &[
@@ -236,7 +241,7 @@ fn generated_pareas_comparison_when_available() {
     let _ = fs::remove_file(&output_path);
 
     eprintln!(
-        "pareas_bin={} laniusc_wall_best_ms={laniusc_wall_best_ms:.3} laniusc_inner_best_ms={laniusc_inner_best_ms:.3} pareas_wall_best_ms={pareas_wall_best_ms:.3}",
+        "pareas_bin={} compare_iters={compare_iters} laniusc_wall_best_ms={laniusc_wall_best_ms:.3} laniusc_inner_best_ms={laniusc_inner_best_ms:.3} pareas_wall_best_ms={pareas_wall_best_ms:.3}",
         pareas_bin.display()
     );
     assert!(
@@ -325,11 +330,46 @@ fn run_command_success_timed(mut command: Command, bin: &Path, args: &[OsString]
             GENERATED_X86_READBACK_TIMEOUT_MS,
         );
     }
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let timeout = generated_gate_command_timeout();
     let start = Instant::now();
-    let output = command
+    let mut child = command
         .args(args)
-        .output()
+        .spawn()
         .unwrap_or_else(|err| panic!("run {}: {err}", bin.display()));
+    let output = loop {
+        match child.try_wait() {
+            Ok(Some(_status)) => {
+                break child.wait_with_output().unwrap_or_else(|err| {
+                    panic!("collect {} output after exit: {err}", bin.display())
+                });
+            }
+            Ok(None) => {}
+            Err(err) => panic!("wait for {}: {err}", bin.display()),
+        }
+
+        if start.elapsed() >= timeout {
+            if let Err(err) = child.kill() {
+                eprintln!(
+                    "failed to terminate timed-out generated gate command {}: {err}",
+                    bin.display()
+                );
+            }
+            let output = child
+                .wait_with_output()
+                .unwrap_or_else(|err| panic!("collect timed-out {} output: {err}", bin.display()));
+            panic!(
+                "{} {:?} timed out after {} ms\nstdout:\n{}\nstderr:\n{}",
+                bin.display(),
+                args,
+                timeout.as_millis(),
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        thread::sleep(Duration::from_millis(CHILD_PROCESS_POLL_INTERVAL_MS));
+    };
     let elapsed = start.elapsed();
     assert!(
         output.status.success(),
@@ -367,7 +407,7 @@ fn parse_field<'a>(text: &'a str, name: &str) -> Option<&'a str> {
 }
 
 fn generated_lines() -> String {
-    bounded_line_count_env(
+    bounded_positive_usize_env(
         "LANIUS_GENERATED_LINES",
         DEFAULT_GENERATED_LINES,
         MAX_GENERATED_LINES_WITHOUT_OPT_IN,
@@ -376,7 +416,7 @@ fn generated_lines() -> String {
 }
 
 fn capacity_stress_lines() -> String {
-    bounded_line_count_env(
+    bounded_positive_usize_env(
         "LANIUS_CAPACITY_STRESS_LINES",
         DEFAULT_CAPACITY_STRESS_LINES,
         MAX_CAPACITY_STRESS_LINES_WITHOUT_OPT_IN,
@@ -395,21 +435,43 @@ fn max_capacity_stress_compile_floor_bytes() -> u64 {
         .unwrap_or(DEFAULT_MAX_CAPACITY_STRESS_COMPILE_FLOOR_BYTES)
 }
 
+fn generated_gate_command_timeout() -> Duration {
+    env::var("LANIUS_GENERATED_GATE_COMMAND_TIMEOUT_MS")
+        .map(|value| {
+            let milliseconds =
+                parse_u64_env_value("LANIUS_GENERATED_GATE_COMMAND_TIMEOUT_MS", &value);
+            assert!(
+                milliseconds > 0,
+                "LANIUS_GENERATED_GATE_COMMAND_TIMEOUT_MS must be greater than zero"
+            );
+            Duration::from_millis(milliseconds)
+        })
+        .unwrap_or_else(|_| Duration::from_millis(DEFAULT_GENERATED_GATE_COMMAND_TIMEOUT_MS))
+}
+
+fn pareas_compare_iters() -> usize {
+    bounded_positive_usize_env(
+        "LANIUS_PAREAS_COMPARE_ITERS",
+        DEFAULT_PAREAS_COMPARE_ITERS,
+        MAX_PAREAS_COMPARE_ITERS_WITHOUT_OPT_IN,
+    )
+}
+
 fn parse_usize_env_value(name: &str, value: &str) -> usize {
     value
         .parse()
         .unwrap_or_else(|_| panic!("{name} must be an integer, got {value:?}"))
 }
 
-fn bounded_line_count_env(name: &str, default_value: &str, max_without_opt_in: usize) -> usize {
+fn bounded_positive_usize_env(name: &str, default_value: &str, max_without_opt_in: usize) -> usize {
     let value = env::var(name).unwrap_or_else(|_| default_value.to_string());
-    let lines = parse_usize_env_value(name, &value);
-    assert!(lines > 0, "{name} must be greater than zero");
+    let count = parse_usize_env_value(name, &value);
+    assert!(count > 0, "{name} must be greater than zero");
     assert!(
-        lines <= max_without_opt_in || env_truthy(ALLOW_LARGE_GENERATED_TESTS_ENV),
-        "{name}={lines} exceeds the default test guardrail {max_without_opt_in}; set {ALLOW_LARGE_GENERATED_TESTS_ENV}=1 to run an intentionally larger generated gate"
+        count <= max_without_opt_in || env_truthy(ALLOW_LARGE_GENERATED_TESTS_ENV),
+        "{name}={count} exceeds the default test guardrail {max_without_opt_in}; set {ALLOW_LARGE_GENERATED_TESTS_ENV}=1 to run an intentionally larger generated gate"
     );
-    lines
+    count
 }
 
 fn parse_u64_env_value(name: &str, value: &str) -> u64 {

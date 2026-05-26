@@ -427,31 +427,6 @@ bool array_literal_width_for_decl_node(uint node, out uint width)
     return true;
 }
 
-bool array_type_width_for_decl_node(uint node, out uint width)
-{
-    width = 0u;
-    if (!is_local_decl_node(node) && hir_kind[node] != HIR_PARAM)
-        return false;
-
-    uint end = tree_subtree_end_record(node);
-    if (end == INVALID || end <= node || end > active_hir_node_count())
-        end = active_hir_node_count();
-
-    [loop]
-    for (uint cursor = node + 1u; cursor < end && cursor < active_hir_node_count(); cursor += 1u)
-    {
-        if (hir_kind[cursor] != HIR_TYPE || hir_type_form[cursor] != HIR_TYPE_FORM_ARRAY)
-            continue;
-        uint len = hir_type_len_value[cursor];
-        if (len != INVALID && len > 1u)
-        {
-            width = len;
-            return true;
-        }
-    }
-    return false;
-}
-
 bool is_scalar_param_node(uint node)
 {
     uint decl_token = param_decl_token_for_node(node);
@@ -475,10 +450,6 @@ uint local_width_for_node(uint node)
         return 1u;
     if (is_local_decl_node(node))
     {
-        uint type_width = 0u;
-        if (array_type_width_for_decl_node(node, type_width))
-            return type_width;
-
         uint width = width_for_decl(stmt_slot(node, 1u));
         if (width > 1u)
             return width;
@@ -616,8 +587,6 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint enum_width = 0u;
     uint struct_width = 0u;
     uint agg_kind = array_len_for_decl(decl_token, array_len) ? X86_DECL_AGG_ARRAY : 0u;
-    if (agg_kind == 0u && array_type_width_for_decl_node(node, array_len))
-        agg_kind = X86_DECL_AGG_ARRAY;
     if (agg_kind == 0u && array_literal_width_for_decl_node(node, array_len))
         agg_kind = X86_DECL_AGG_ARRAY;
     if (agg_kind == 0u && enum_width_for_decl(decl_token, enum_width))
