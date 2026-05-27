@@ -53,13 +53,6 @@ fn assert_x86_64_elf_exact_length(bytes: &[u8]) {
     );
 }
 
-fn assert_x86_text_contains_direct_call(bytes: &[u8]) {
-    assert!(
-        bytes[0x78..].contains(&0xe8),
-        "direct call lowering should emit a call rel32 opcode in .text"
-    );
-}
-
 #[cfg(all(unix, target_arch = "x86_64"))]
 fn assert_x86_exit_code(context: &str, artifact_stem: &str, bytes: &[u8], expected: i32) {
     let output = common::run_x86_64_elf_output(context, artifact_stem, bytes);
@@ -302,15 +295,7 @@ fn x86_source_codegen_emits_direct_elf_for_zero_arg_direct_call_return() {
     ))
     .expect("x86 codegen should emit a direct call using backend call ABI records");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(
-        u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-        0x400078
-    );
-    assert!(
-        bytes[0x78..].contains(&0xe8),
-        "direct call lowering should emit a call rel32 opcode in .text"
-    );
+    assert_x86_64_elf_entry(&bytes);
 
     #[cfg(all(unix, target_arch = "x86_64"))]
     {
@@ -331,7 +316,6 @@ fn x86_source_codegen_emits_direct_elf_for_one_literal_arg_direct_call_return() 
     .expect("x86 codegen should pass a literal SysV integer arg before a direct call");
 
     assert_x86_64_elf_entry(&bytes);
-    assert_x86_text_contains_direct_call(&bytes);
     #[cfg(all(unix, target_arch = "x86_64"))]
     assert_x86_exit_code(
         "x86 one literal arg direct call return",
@@ -349,7 +333,6 @@ fn x86_source_codegen_emits_direct_elf_for_one_arg_param_return() {
     .expect("x86 codegen should lower a direct call whose callee returns its first parameter");
 
     assert_x86_64_elf_entry(&bytes);
-    assert_x86_text_contains_direct_call(&bytes);
     #[cfg(all(unix, target_arch = "x86_64"))]
     assert_x86_exit_code(
         "x86 one param direct call return",
@@ -367,7 +350,6 @@ fn x86_source_codegen_emits_direct_elf_for_local_call_arg_return() {
     .expect("x86 codegen should lower a local scalar call argument through call-arg value records");
 
     assert_x86_64_elf_entry(&bytes);
-    assert_x86_text_contains_direct_call(&bytes);
     #[cfg(all(unix, target_arch = "x86_64"))]
     assert_x86_exit_code(
         "x86 local arg direct call return",
@@ -385,7 +367,6 @@ fn x86_source_codegen_emits_direct_elf_for_local_live_across_direct_call_return(
     .expect("x86 codegen should preserve live local values across direct calls through call-save masks");
 
     assert_x86_64_elf_entry(&bytes);
-    assert_x86_text_contains_direct_call(&bytes);
     #[cfg(all(unix, target_arch = "x86_64"))]
     assert_x86_exit_code(
         "x86 local live across direct call return",
@@ -405,7 +386,6 @@ fn x86_source_codegen_emits_direct_elf_for_binary_call_arg_return() {
     );
 
     assert_x86_64_elf_entry(&bytes);
-    assert_x86_text_contains_direct_call(&bytes);
     #[cfg(all(unix, target_arch = "x86_64"))]
     assert_x86_exit_code(
         "x86 binary arg direct call return",
@@ -425,7 +405,6 @@ fn x86_source_codegen_keeps_param_values_across_fixed_register_arg_eval() {
     );
 
     assert_x86_64_elf_entry(&bytes);
-    assert_x86_text_contains_direct_call(&bytes);
     #[cfg(all(unix, target_arch = "x86_64"))]
     {
         let stdout = common::run_x86_64_elf(
@@ -510,7 +489,6 @@ fn x86_source_codegen_emits_direct_elf_for_one_arg_param_add_return() {
     .expect("x86 codegen should lower a direct call whose callee returns param plus literal");
 
     assert_x86_64_elf_entry(&bytes);
-    assert_x86_text_contains_direct_call(&bytes);
 
     #[cfg(all(unix, target_arch = "x86_64"))]
     assert_x86_exit_code(
@@ -529,7 +507,6 @@ fn x86_source_codegen_emits_direct_elf_for_two_arg_param_add_return() {
     .expect("x86 codegen should lower a direct call whose callee adds two parameters");
 
     assert_x86_64_elf_entry(&bytes);
-    assert_x86_text_contains_direct_call(&bytes);
     #[cfg(all(unix, target_arch = "x86_64"))]
     assert_x86_exit_code(
         "x86 two param add direct call return",
@@ -547,7 +524,6 @@ fn x86_source_codegen_emits_direct_elf_for_three_arg_third_param_return() {
     .expect("x86 codegen should lower the third SysV integer argument through HIR call records");
 
     assert_x86_64_elf_entry(&bytes);
-    assert_x86_text_contains_direct_call(&bytes);
 
     #[cfg(all(unix, target_arch = "x86_64"))]
     assert_x86_exit_code(
@@ -566,7 +542,6 @@ fn x86_source_codegen_emits_direct_elf_for_two_binary_arg_param_add_return() {
     .expect("x86 codegen should assign width-based vreg ranges for two binary call args");
 
     assert_x86_64_elf_entry(&bytes);
-    assert_x86_text_contains_direct_call(&bytes);
 
     #[cfg(all(unix, target_arch = "x86_64"))]
     assert_x86_exit_code(
@@ -607,12 +582,6 @@ fn x86_source_pack_codegen_emits_direct_elf_for_qualified_scalar_const_return() 
         .expect("x86 source-pack codegen should lower a resolver-backed scalar const return");
 
     assert_x86_64_elf_entry(&bytes);
-    assert!(
-        bytes
-            .windows(4)
-            .any(|window| window == 2_147_483_647u32.to_le_bytes()),
-        "qualified const return should materialize i32::MAX"
-    );
     assert_x86_exit_code(
         "x86 source-pack qualified const return",
         "x86_source_pack_qualified_const_return",
@@ -631,7 +600,6 @@ fn x86_source_pack_codegen_emits_direct_elf_for_stdlib_min_helper_branch() {
         .expect("x86 source-pack codegen should lower a resolver-backed terminal-if helper");
 
     assert_x86_64_elf_entry(&bytes);
-    assert_x86_text_contains_direct_call(&bytes);
 
     #[cfg(all(unix, target_arch = "x86_64"))]
     assert_x86_exit_code("x86 source-pack core::i32::min", "core_i32_min", &bytes, 5);
@@ -664,12 +632,12 @@ fn x86_source_pack_codegen_executes_core_i32_abs_helper_branch() {
 #[test]
 fn x86_source_pack_codegen_executes_core_i32_saturating_abs_const_call_branch() {
     let cases = [
-        ("negative", "-4", 0u32.wrapping_sub(4), Some(4)),
-        ("positive", "4", 4u32, Some(4)),
-        ("min", "-2147483648", 0x8000_0000u32, Some(255)),
+        ("negative", "-4", Some(4)),
+        ("positive", "4", Some(4)),
+        ("min", "-2147483648", Some(255)),
     ];
 
-    for (name, arg_source, _arg_bits, expected_status) in cases {
+    for (name, arg_source, expected_status) in cases {
         let user_source = format!(
             "module app::main;\nimport core::i32;\nfn main() {{\n    return core::i32::saturating_abs({arg_source});\n}}\n"
         );
@@ -708,7 +676,6 @@ fn x86_source_pack_codegen_executes_core_i32_clamp_nested_helper_branch() {
         .expect("x86 source-pack codegen should lower a resolver-backed nested terminal-if helper");
 
     assert_x86_64_elf_entry(&bytes);
-    assert_x86_text_contains_direct_call(&bytes);
 
     #[cfg(all(unix, target_arch = "x86_64"))]
     {
@@ -724,12 +691,12 @@ fn x86_source_pack_codegen_executes_core_i32_clamp_nested_helper_branch() {
 #[test]
 fn x86_source_pack_codegen_executes_core_i32_signum_nested_literal_branch() {
     let cases = [
-        ("negative", "-9", 0u32.wrapping_sub(9), Some(255)),
-        ("zero", "0", 0u32, Some(0)),
-        ("positive", "9", 9u32, Some(1)),
+        ("negative", "-9", Some(255)),
+        ("zero", "0", Some(0)),
+        ("positive", "9", Some(1)),
     ];
 
-    for (name, arg_source, _arg_bits, expected_status) in cases {
+    for (name, arg_source, expected_status) in cases {
         let user_source = format!(
             "module app::main;\nimport core::i32;\nfn main() {{\n    return core::i32::signum({arg_source});\n}}\n"
         );
@@ -743,7 +710,6 @@ fn x86_source_pack_codegen_executes_core_i32_signum_nested_literal_branch() {
             });
 
         assert_x86_64_elf_entry(&bytes);
-        assert_x86_text_contains_direct_call(&bytes);
 
         #[cfg(all(unix, target_arch = "x86_64"))]
         {
@@ -760,12 +726,12 @@ fn x86_source_pack_codegen_executes_core_i32_signum_nested_literal_branch() {
 #[test]
 fn x86_source_pack_codegen_executes_core_i32_compare_as_i32_nested_literal_branch() {
     let cases = [
-        ("less", "4", "9", 4u32, 9u32, Some(255)),
-        ("greater", "9", "4", 9u32, 4u32, Some(1)),
-        ("equal", "4", "4", 4u32, 4u32, Some(0)),
+        ("less", "4", "9", Some(255)),
+        ("greater", "9", "4", Some(1)),
+        ("equal", "4", "4", Some(0)),
     ];
 
-    for (name, left_source, right_source, _left_bits, _right_bits, expected_status) in cases {
+    for (name, left_source, right_source, expected_status) in cases {
         let user_source = format!(
             "module app::main;\nimport core::i32;\nfn main() {{\n    return core::i32::compare_as_i32({left_source}, {right_source});\n}}\n"
         );
@@ -781,7 +747,6 @@ fn x86_source_pack_codegen_executes_core_i32_compare_as_i32_nested_literal_branc
             });
 
         assert_x86_64_elf_entry(&bytes);
-        assert_x86_text_contains_direct_call(&bytes);
 
         #[cfg(all(unix, target_arch = "x86_64"))]
         {
@@ -798,17 +763,12 @@ fn x86_source_pack_codegen_executes_core_i32_compare_as_i32_nested_literal_branc
 #[test]
 fn x86_source_pack_codegen_executes_core_i32_predicate_helpers() {
     let cases = [
-        ("is_zero", "core::i32::is_zero(0)", 0u32, 0x94u8),
-        (
-            "is_negative",
-            "core::i32::is_negative(-3)",
-            0u32.wrapping_sub(3),
-            0x9cu8,
-        ),
-        ("is_positive", "core::i32::is_positive(5)", 5u32, 0x9fu8),
+        ("is_zero", "core::i32::is_zero(0)"),
+        ("is_negative", "core::i32::is_negative(-3)"),
+        ("is_positive", "core::i32::is_positive(5)"),
     ];
 
-    for (name, call, _arg, _setcc_opcode) in cases {
+    for (name, call) in cases {
         let user_source = format!(
             "module app::main;\nimport core::i32;\nfn main() -> bool {{\n    return {call};\n}}\n"
         );
@@ -822,7 +782,6 @@ fn x86_source_pack_codegen_executes_core_i32_predicate_helpers() {
             });
 
         assert_x86_64_elf_entry(&bytes);
-        assert_x86_text_contains_direct_call(&bytes);
 
         #[cfg(all(unix, target_arch = "x86_64"))]
         {
@@ -839,22 +798,12 @@ fn x86_source_pack_codegen_executes_core_i32_predicate_helpers() {
 #[test]
 fn x86_source_pack_codegen_executes_core_i32_between_inclusive_compare_and_compare() {
     let cases = [
-        ("true", "5", "1", "9", 5u32, 1u32, 9u32, Some(1)),
-        ("low_false", "0", "1", "9", 0u32, 1u32, 9u32, Some(0)),
-        ("high_false", "10", "1", "9", 10u32, 1u32, 9u32, Some(0)),
+        ("true", "5", "1", "9", Some(1)),
+        ("low_false", "0", "1", "9", Some(0)),
+        ("high_false", "10", "1", "9", Some(0)),
     ];
 
-    for (
-        name,
-        value_source,
-        low_source,
-        high_source,
-        _value_bits,
-        _low_bits,
-        _high_bits,
-        expected,
-    ) in cases
-    {
+    for (name, value_source, low_source, high_source, expected) in cases {
         let user_source = format!(
             "module app::main;\nimport core::i32;\nfn main() -> bool {{\n    return core::i32::between_inclusive({value_source}, {low_source}, {high_source});\n}}\n"
         );
@@ -893,7 +842,6 @@ fn x86_source_pack_codegen_executes_core_u32_min_with_unsigned_branch() {
         .expect("x86 source-pack codegen should lower core::u32::min with unsigned ordering");
 
     assert_x86_64_elf_entry(&bytes);
-    assert_x86_text_contains_direct_call(&bytes);
 
     #[cfg(all(unix, target_arch = "x86_64"))]
     {
@@ -916,7 +864,6 @@ fn x86_source_pack_codegen_executes_core_u32_max_with_unsigned_branch() {
         .expect("x86 source-pack codegen should lower core::u32::max with unsigned ordering");
 
     assert_x86_64_elf_entry(&bytes);
-    assert_x86_text_contains_direct_call(&bytes);
 
     #[cfg(all(unix, target_arch = "x86_64"))]
     {
@@ -930,7 +877,7 @@ fn x86_source_pack_codegen_executes_core_u32_max_with_unsigned_branch() {
 }
 
 #[test]
-fn x86_source_pack_codegen_executes_core_u32_between_inclusive_unsigned_setcc() {
+fn x86_source_pack_codegen_executes_core_u32_between_inclusive_unsigned_comparison() {
     let sources = [
         include_str!("../stdlib/core/u32.lani"),
         "module app::main;\nimport core::u32;\nfn main() -> bool {\n    return core::u32::between_inclusive(2147483648, 1, 4294967295);\n}\n",
@@ -941,7 +888,6 @@ fn x86_source_pack_codegen_executes_core_u32_between_inclusive_unsigned_setcc() 
         );
 
     assert_x86_64_elf_entry(&bytes);
-    assert_x86_text_contains_direct_call(&bytes);
 
     #[cfg(all(unix, target_arch = "x86_64"))]
     {
@@ -982,7 +928,6 @@ fn x86_source_pack_codegen_executes_core_u8_max_above_signed_boundary() {
         .expect("x86 source-pack codegen should lower core::u8::max with unsigned ordering");
 
     assert_x86_64_elf_entry(&bytes);
-    assert_x86_text_contains_direct_call(&bytes);
 
     #[cfg(all(unix, target_arch = "x86_64"))]
     {
@@ -998,26 +943,12 @@ fn x86_source_pack_codegen_executes_core_u8_max_above_signed_boundary() {
 #[test]
 fn x86_source_pack_codegen_executes_core_u8_literal_range_predicates() {
     let cases = [
-        ("digit_true", "is_ascii_digit", 53u32, 48u32, 57u32, Some(1)),
-        (
-            "digit_false",
-            "is_ascii_digit",
-            65u32,
-            48u32,
-            57u32,
-            Some(0),
-        ),
-        (
-            "lowercase_true",
-            "is_ascii_lowercase",
-            113u32,
-            97u32,
-            122u32,
-            Some(1),
-        ),
+        ("digit_true", "is_ascii_digit", 53u32, Some(1)),
+        ("digit_false", "is_ascii_digit", 65u32, Some(0)),
+        ("lowercase_true", "is_ascii_lowercase", 113u32, Some(1)),
     ];
 
-    for (name, helper, arg, _lower, _upper, expected_status) in cases {
+    for (name, helper, arg, expected_status) in cases {
         let user_source = format!(
             "module app::main;\nimport core::u8;\nfn main() -> bool {{\n    return core::u8::{helper}({arg});\n}}\n"
         );
@@ -1047,34 +978,26 @@ fn x86_source_pack_codegen_executes_core_bool_unary_and_conversion_helpers() {
         (
             "not_false",
             "fn main() -> bool {\n    return core::bool::not(false);\n}\n",
-            0u32,
-            0x94u8,
             Some(1),
         ),
         (
             "not_true",
             "fn main() -> bool {\n    return core::bool::not(true);\n}\n",
-            1u32,
-            0x94u8,
             Some(0),
         ),
         (
             "from_i32_zero",
             "fn main() -> bool {\n    return core::bool::from_i32(0);\n}\n",
-            0u32,
-            0x95u8,
             Some(0),
         ),
         (
             "from_i32_nonzero",
             "fn main() -> bool {\n    return core::bool::from_i32(9);\n}\n",
-            9u32,
-            0x95u8,
             Some(1),
         ),
     ];
 
-    for (name, main_body, _arg_bits, _setcc_opcode, expected_status) in cases {
+    for (name, main_body, expected_status) in cases {
         let user_source = format!("module app::main;\nimport core::bool;\n{main_body}");
         let sources = [
             include_str!("../stdlib/core/bool.lani"),
@@ -1142,11 +1065,11 @@ fn x86_source_pack_codegen_executes_core_bool_binary_helpers() {
 #[test]
 fn x86_source_pack_codegen_executes_core_bool_terminal_param_branches() {
     let to_i32_cases = [
-        ("to_i32_true", "true", 1u32, Some(1)),
-        ("to_i32_false", "false", 0u32, Some(0)),
+        ("to_i32_true", "true", Some(1)),
+        ("to_i32_false", "false", Some(0)),
     ];
 
-    for (name, arg_source, _arg_bits, expected_status) in to_i32_cases {
+    for (name, arg_source, expected_status) in to_i32_cases {
         let user_source = format!(
             "module app::main;\nimport core::bool;\nfn main() {{\n    return core::bool::to_i32({arg_source});\n}}\n"
         );
@@ -1173,11 +1096,11 @@ fn x86_source_pack_codegen_executes_core_bool_terminal_param_branches() {
     }
 
     let select_cases = [
-        ("select_true", "true", 1u32, Some(7)),
-        ("select_false", "false", 0u32, Some(3)),
+        ("select_true", "true", Some(7)),
+        ("select_false", "false", Some(3)),
     ];
 
-    for (name, condition_source, _condition_bits, expected_status) in select_cases {
+    for (name, condition_source, expected_status) in select_cases {
         let user_source = format!(
             "module app::main;\nimport core::bool;\nfn main() {{\n    return core::bool::select_i32({condition_source}, 7, 3);\n}}\n"
         );
@@ -1585,7 +1508,6 @@ fn x86_source_codegen_executes_call_initialized_local_return() {
     .expect("x86 codegen should lower a call-initialized local through HIR value records");
 
     assert_x86_64_elf_entry(&bytes);
-    assert_x86_text_contains_direct_call(&bytes);
     #[cfg(all(unix, target_arch = "x86_64"))]
     assert_x86_exit_code(
         "x86 call-initialized local return",

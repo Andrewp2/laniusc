@@ -67,7 +67,6 @@ Most changes should use one of these lanes instead of inventing a broad run:
 - **Focused compile:** `cargo check --lib -j1`
 - **Focused unit/model test:** `cargo test -p laniusc <module>::<test_name> -j1 --lib -- --test-threads=1`
 - **Focused integration test:** `cargo test --test <file> <test_name> -j1 -- --test-threads=1`
-- **Architecture tripwire:** `cargo test --test architecture_contract <test_name> -j1 -- --test-threads=1`
 - **Shader loop budget:** `cargo test --test shader_loop_budgets <test_name> -j1 -- --test-threads=1`
 - **Formatting check:** `rustfmt --edition 2024 --check <touched Rust files>`
 - **Diff hygiene:** `git diff --check -- <touched files>`

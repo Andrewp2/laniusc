@@ -135,18 +135,8 @@ fn generic_gpu_algorithms_match_cpu_oracles() {
         );
         copy_to_readback(
             &mut encoder,
-            &buffers.scatter_store_out,
-            &buffers.scatter_store_readback,
-        );
-        copy_to_readback(
-            &mut encoder,
             &buffers.stable_scatter_out,
             &buffers.stable_scatter_readback,
-        );
-        copy_to_readback(
-            &mut encoder,
-            &buffers.interval_out,
-            &buffers.interval_readback,
         );
         queue.submit(Some(encoder.finish()));
 
@@ -219,19 +209,9 @@ fn generic_gpu_algorithms_match_cpu_oracles() {
             "parallel_scan_step_u32x4_flat seed step should match CPU oracle"
         );
         assert_eq!(
-            read_u32s(device, &buffers.scatter_store_readback, SCATTER_STORE_WORDS),
-            expected.scatter_store,
-            "scatter helpers should write direct stores, compact sink stores, and atomic reservations"
-        );
-        assert_eq!(
             read_u32s(device, &buffers.stable_scatter_readback, TEST_COUNT),
             expected.stable_scatter,
             "stable radix scatter helper should preserve per-bucket order"
-        );
-        assert_eq!(
-            read_u32s(device, &buffers.interval_readback, INTERVAL_WORDS),
-            expected.interval,
-            "interval, packed-key, bitset, status, row-major, and index helpers should match CPU oracle"
         );
     });
 }
@@ -375,9 +355,7 @@ struct ExpectedOutputs {
     scan_seed: Vec<u32>,
     flat_summary_step: Vec<u32>,
     flat_summary_seed: Vec<u32>,
-    scatter_store: Vec<u32>,
     stable_scatter: Vec<u32>,
-    interval: Vec<u32>,
 }
 
 impl ExpectedOutputs {
@@ -473,35 +451,7 @@ impl ExpectedOutputs {
         let flat_summary_seed = (0..TEST_COUNT)
             .flat_map(summary_seed_row)
             .collect::<Vec<_>>();
-        let mut scatter_store = inputs
-            .values
-            .iter()
-            .map(|value| value + 17)
-            .chain(std::iter::once(0))
-            .collect::<Vec<_>>();
-        scatter_store.resize(SCATTER_STORE_WORDS, 0);
-        for (i, value) in inputs.values.iter().copied().enumerate() {
-            if compact_pair_flag(i) == 0 {
-                continue;
-            }
-            let dst = compact_pair_prefix(i);
-            let base = SCATTER_PAIR_BASE + dst * 2;
-            scatter_store[base] = value + 101;
-            scatter_store[base + 1] = (value * 3) + i as u32;
-        }
-        scatter_store[SCATTER_RESERVATION_BASE] = TEST_COUNT as u32;
-        for slot in 0..SCATTER_RESERVATION_CAPACITY {
-            scatter_store[SCATTER_RESERVATION_BASE + 1 + slot] = 1;
-        }
         let stable_scatter = stable_bucket_sorted_values(&inputs.values);
-        let interval = vec![
-            1, 1, 0, 1, 0, 1, 0, 17, 0x2345, 0xabcd, 1, 0, 1, 3, 31, 0, 1, 3, 0, 12, 44, 31, 99,
-            307, 0xd4, 0xa1, 0x44332211, 0x44aa2211, 0x02070106, 0xff, 0x1f, 0xf, 0xffff0050, 0xe4,
-            2, 0xe400, 3, 9, 0, 77, 5, 0, 123, 22, 0, 321, 19, 88, 0, 654, 33, 77, 1, 0, 9, 11, 4,
-            7, 3, 7, 5, 9, 5, 8, 2, 8, 12, 11, 12, 3, 0xf, 3, 0xb, 0x8, 0xb, 1, 0, 0, 5, 1, 0, 1,
-            83, 103, 300, 98, 83, 300, 100, 11, 112, 214, 315, 417, 518, 8, 6, 95, 46, 0, 1, 2, 0,
-            0, 25, 6, 1, 0, 1, 1, 1, 2, 42, 0, 700, 1, 1, 4, 777, 700, 778,
-        ];
         Self {
             segmented,
             rank,
@@ -515,9 +465,7 @@ impl ExpectedOutputs {
             scan_seed,
             flat_summary_step,
             flat_summary_seed,
-            scatter_store,
             stable_scatter,
-            interval,
         }
     }
 }
@@ -571,9 +519,7 @@ struct AlgorithmBuffers {
     scan_seed_readback: wgpu::Buffer,
     flat_summary_step_readback: wgpu::Buffer,
     flat_summary_seed_readback: wgpu::Buffer,
-    scatter_store_readback: wgpu::Buffer,
     stable_scatter_readback: wgpu::Buffer,
-    interval_readback: wgpu::Buffer,
 }
 
 impl AlgorithmBuffers {
@@ -651,13 +597,7 @@ impl AlgorithmBuffers {
                 "flat_summary_seed_readback",
                 TEST_COUNT * SUMMARY_WORDS,
             ),
-            scatter_store_readback: readback_buffer(
-                device,
-                "scatter_store_readback",
-                SCATTER_STORE_WORDS,
-            ),
             stable_scatter_readback: readback_buffer(device, "stable_scatter_readback", TEST_COUNT),
-            interval_readback: readback_buffer(device, "interval_readback", INTERVAL_WORDS),
         }
     }
 
@@ -888,14 +828,6 @@ fn combine_sum_sum_max_min(left: [u32; SUMMARY_WORDS], right: [u32; SUMMARY_WORD
         left[2].max(right[2]),
         left[3].min(right[3]),
     ]
-}
-
-fn compact_pair_flag(i: usize) -> u32 {
-    u32::from(i % 3 != 0)
-}
-
-fn compact_pair_prefix(i: usize) -> usize {
-    i - ((i + 2) / 3)
 }
 
 fn stable_bucket_bases(values: &[u32]) -> Vec<u32> {

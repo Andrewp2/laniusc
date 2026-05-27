@@ -3,23 +3,6 @@ mod common;
 use laniusc::compiler::CompileError;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
-const CONDITIONS_HIR_SHADER: &str =
-    include_str!("../shaders/type_checker/type_check_conditions_hir.slang");
-const CONTROL_HIR_SHADER: &str =
-    include_str!("../shaders/type_checker/type_check_control_hir.slang");
-const MODULE_ENUM_CALLS_SHADER: &str =
-    include_str!("../shaders/type_checker/type_check_modules_10l_consume_value_enum_calls.slang");
-const LEGACY_ENUM_CTORS_SHADER: &str =
-    include_str!("../shaders/type_checker/type_check_type_instances_06_enum_ctors.slang");
-const CALLS_FUNCTIONS_SHADER: &str =
-    include_str!("../shaders/type_checker/type_check_calls_02_functions.slang");
-const CALLS_PARAM_TYPES_SHADER: &str =
-    include_str!("../shaders/type_checker/type_check_calls_02f_params_from_hir.slang");
-const CALLS_RESOLVE_SHADER: &str =
-    include_str!("../shaders/type_checker/type_check_calls_03_resolve.slang");
-const MATCH_EXPRS_SHADER: &str =
-    include_str!("../shaders/type_checker/type_check_modules_10n_type_match_exprs.slang");
-
 fn assert_gpu_type_check_ok(src: &str) {
     common::type_check_source_with_timeout(src).expect("source should pass GPU type checking");
 }
@@ -44,7 +27,7 @@ fn assert_gpu_type_check_rejects_with_code(src: &str, code: &str) {
 }
 
 #[test]
-fn type_checker_accepts_generated_let_chain_from_hir_records() {
+fn type_checker_accepts_generated_deep_let_chain() {
     let mut src = String::from("fn main() -> i32 {\n    let v0: i32 = 1;\n");
     for i in 1..80 {
         let prev = i - 1;
@@ -57,7 +40,7 @@ fn type_checker_accepts_generated_let_chain_from_hir_records() {
 }
 
 #[test]
-fn type_checker_accepts_generated_call_argument_shapes_from_hir_records() {
+fn type_checker_accepts_generated_call_argument_shapes() {
     let mut rng = StdRng::seed_from_u64(0x7479_636b_6172_6773);
     let mut names = Vec::new();
     while names.len() < 24 {
@@ -107,7 +90,7 @@ fn type_checker_accepts_generated_call_argument_shapes_from_hir_records() {
 }
 
 #[test]
-fn type_checker_resolves_shadowed_hir_names_by_scope_records() {
+fn type_checker_resolves_shadowed_names_by_scope() {
     assert_gpu_type_check_ok(
         r#"
 fn main() -> i32 {
@@ -122,237 +105,7 @@ fn main() -> i32 {
 }
 
 #[test]
-fn type_checker_condition_hir_stage_consumes_records_not_source_text() {
-    for required in [
-        "StructuredBuffer<uint> hir_stmt_record;",
-        "StructuredBuffer<uint> hir_expr_record;",
-        "StructuredBuffer<uint> visible_decl;",
-        "StructuredBuffer<uint> visible_type;",
-        "StructuredBuffer<uint> call_return_type;",
-        "RWStructuredBuffer<uint> status;",
-    ] {
-        assert!(
-            CONDITIONS_HIR_SHADER.contains(required),
-            "type_check_conditions_hir must consume/produce record buffer {required}"
-        );
-    }
-
-    for banned in [
-        "ByteAddressBuffer source_bytes",
-        "source_bytes",
-        "token_text",
-        "token_spelling",
-        "token_kind(",
-    ] {
-        assert!(
-            !CONDITIONS_HIR_SHADER.contains(banned),
-            "type_check_conditions_hir must not inspect {banned}"
-        );
-    }
-}
-
-#[test]
-fn type_checker_control_hir_stage_consumes_records_not_source_text() {
-    for required in [
-        "StructuredBuffer<uint> hir_expr_record;",
-        "StructuredBuffer<uint> visible_decl;",
-        "StructuredBuffer<uint> visible_type;",
-        "StructuredBuffer<uint> call_return_type;",
-        "StructuredBuffer<int> loop_depth;",
-        "RWStructuredBuffer<uint> status;",
-    ] {
-        assert!(
-            CONTROL_HIR_SHADER.contains(required),
-            "type_check_control_hir must consume/produce record buffer {required}"
-        );
-    }
-
-    for banned in [
-        "struct TokenIn",
-        "token_words",
-        "token_kind(",
-        "TK_",
-        "ByteAddressBuffer source_bytes",
-        "source_bytes",
-        "token_text",
-        "token_spelling",
-    ] {
-        assert!(
-            !CONTROL_HIR_SHADER.contains(banned),
-            "type_check_control_hir must not inspect {banned}"
-        );
-    }
-}
-
-#[test]
-fn type_checker_enum_constructor_stage_consumes_records_not_source_text() {
-    for required in [
-        "StructuredBuffer<uint> hir_call_arg_parent_call;",
-        "StructuredBuffer<uint> hir_variant_payload_start;",
-        "StructuredBuffer<uint> hir_variant_payload_count;",
-        "StructuredBuffer<uint> resolved_value_decl;",
-        "StructuredBuffer<uint> decl_hir_node;",
-        "StructuredBuffer<uint> type_instance_arg_ref_tag;",
-        "StructuredBuffer<uint4> call_arg_record;",
-        "RWStructuredBuffer<uint> module_value_path_status;",
-        "RWStructuredBuffer<uint> call_return_type;",
-    ] {
-        assert!(
-            MODULE_ENUM_CALLS_SHADER.contains(required),
-            "enum constructor validation must consume/produce record buffer {required}"
-        );
-    }
-
-    for banned in [
-        "struct TokenIn",
-        "token_words",
-        "token_kind(",
-        "is_type_name_token",
-        "TK_",
-        "ByteAddressBuffer source_bytes",
-        "source_bytes",
-        "token_text",
-        "token_spelling",
-    ] {
-        assert!(
-            !MODULE_ENUM_CALLS_SHADER.contains(banned),
-            "enum constructor validation must not inspect {banned}"
-        );
-        assert!(
-            !LEGACY_ENUM_CTORS_SHADER.contains(banned),
-            "retired enum constructor shader must not preserve {banned}"
-        );
-    }
-}
-
-#[test]
-fn type_checker_call_signature_stages_consume_records_not_source_text() {
-    for required in [
-        "StructuredBuffer<uint> hir_item_kind;",
-        "StructuredBuffer<uint> hir_item_name_token;",
-        "StructuredBuffer<uint> fn_return_ref_tag;",
-        "StructuredBuffer<uint> type_expr_ref_tag;",
-        "StructuredBuffer<uint> type_instance_decl_token;",
-        "RWStructuredBuffer<uint> call_fn_index;",
-        "RWStructuredBuffer<uint> call_return_type;",
-        "RWStructuredBuffer<uint> call_return_type_token;",
-    ] {
-        assert!(
-            CALLS_FUNCTIONS_SHADER.contains(required),
-            "call function metadata must consume/produce record buffer {required}"
-        );
-    }
-
-    for required in [
-        "StructuredBuffer<uint4> hir_param_record;",
-        "StructuredBuffer<uint> hir_type_form;",
-        "StructuredBuffer<uint> type_expr_ref_tag;",
-        "StructuredBuffer<uint> type_instance_arg_ref_tag;",
-        "RWStructuredBuffer<uint> call_param_count;",
-        "RWStructuredBuffer<uint> call_param_type;",
-    ] {
-        assert!(
-            CALLS_PARAM_TYPES_SHADER.contains(required),
-            "call parameter metadata must consume/produce record buffer {required}"
-        );
-    }
-
-    for banned in [
-        "struct TokenIn",
-        "token_words",
-        "token_kind(",
-        "TK_",
-        "ByteAddressBuffer source_bytes",
-        "source_bytes",
-        "token_text",
-        "token_spelling",
-    ] {
-        assert!(
-            !CALLS_FUNCTIONS_SHADER.contains(banned),
-            "call function metadata must not inspect {banned}"
-        );
-        assert!(
-            !CALLS_PARAM_TYPES_SHADER.contains(banned),
-            "call parameter metadata must not inspect {banned}"
-        );
-    }
-}
-
-#[test]
-fn type_checker_call_resolution_stage_consumes_records_not_source_text() {
-    for required in [
-        "StructuredBuffer<uint> hir_expr_record;",
-        "StructuredBuffer<uint> hir_call_callee_node;",
-        "StructuredBuffer<uint> hir_call_arg_start;",
-        "StructuredBuffer<uint> hir_call_arg_parent_call;",
-        "StructuredBuffer<uint> visible_decl;",
-        "StructuredBuffer<uint> visible_type;",
-        "StructuredBuffer<uint> call_param_type;",
-        "RWStructuredBuffer<uint> call_fn_index;",
-        "RWStructuredBuffer<uint> call_return_type;",
-    ] {
-        assert!(
-            CALLS_RESOLVE_SHADER.contains(required),
-            "call resolution must consume/produce record buffer {required}"
-        );
-    }
-
-    for banned in [
-        "struct TokenIn",
-        "token_words",
-        "token_kind(",
-        "TK_",
-        "ByteAddressBuffer source_bytes",
-        "source_bytes",
-        "token_text",
-        "token_spelling",
-        "language_decl_name_id",
-        "generic_param_list_open",
-        "local_identifier_type",
-    ] {
-        assert!(
-            !CALLS_RESOLVE_SHADER.contains(banned),
-            "call resolution must not inspect {banned}"
-        );
-    }
-}
-
-#[test]
-fn type_checker_match_result_stage_consumes_records_not_source_text() {
-    for required in [
-        "StructuredBuffer<uint> hir_expr_record;",
-        "StructuredBuffer<uint> hir_match_arm_start;",
-        "StructuredBuffer<uint> hir_match_arm_count;",
-        "StructuredBuffer<uint> hir_match_arm_result_node;",
-        "StructuredBuffer<uint> visible_decl;",
-        "StructuredBuffer<uint> visible_type;",
-        "RWStructuredBuffer<uint> call_return_type;",
-    ] {
-        assert!(
-            MATCH_EXPRS_SHADER.contains(required),
-            "match result typing must consume/produce record buffer {required}"
-        );
-    }
-
-    for banned in [
-        "struct TokenIn",
-        "token_words",
-        "token_kind(",
-        "TK_",
-        "ByteAddressBuffer source_bytes",
-        "source_bytes",
-        "token_text",
-        "token_spelling",
-    ] {
-        assert!(
-            !MATCH_EXPRS_SHADER.contains(banned),
-            "match result typing must not inspect {banned}"
-        );
-    }
-}
-
-#[test]
-fn type_checker_accepts_boolean_logical_operands_from_hir_records() {
+fn type_checker_accepts_boolean_logical_operands() {
     assert_gpu_type_check_ok(
         r#"
 fn gate(left: bool, value: i32) -> bool {

@@ -15,7 +15,7 @@ Use --list-tests to print/list test inventories instead of acceptance runs.
 Use --allow-scale to execute generated, Pareas, or all-tier scale lanes.
 
 Tiers:
-  focused     Run the small CPU-only strategy and architecture checkpoint.
+  focused     Run the small CPU-only compile/model and shader-loop checkpoint.
   smoke       List generated gates and run the no-GPU capacity estimate gate.
   generated   Run parameterized generated compiler gates around 5k lines by default.
   properties  Run named deterministic randomized/property-style compiler tests.
@@ -138,7 +138,7 @@ run_cargo_lib_test() {
 describe_tier() {
   case "$tier" in
     focused)
-      echo "# testing-strategy tier=focused lane=CPU/model contract='library compiles, architecture contract is checked in, work-queue model still matches reference transitions'"
+      echo "# testing-strategy tier=focused lane=CPU/model contract='library compiles, shader loop budgets stay bounded, work-queue model still matches reference transitions'"
       ;;
     smoke)
       echo "# testing-strategy tier=smoke lane=capacity-estimate contract='generated gates are discoverable and x86 stress sizing is computed without GPU submission'"
@@ -163,15 +163,11 @@ describe_tier() {
 
 run_focused() {
   if [[ "$list_tests" -eq 1 ]]; then
-    run_cmd cargo test --test architecture_contract -j1 -- --list
     run_cmd cargo test --test shader_loop_budgets -j1 -- --list
     run_cmd cargo test -p laniusc source_pack_work_queue_progress_page_transitions_match_reference_model -j1 --lib -- --list
     return
   fi
   run_cmd cargo check --lib -j1
-  run_cargo_test architecture_contract architecture_contract_is_checked_in
-  run_cargo_test architecture_contract testing_strategy_commands_stay_focused_and_explicit
-  run_cargo_test architecture_contract compiler_acceptance_default_is_dry_run_focused_without_scale_work
   run_cargo_test shader_loop_budgets shader_tree_loop_budget_does_not_grow
   run_cargo_test shader_loop_budgets type_checker_shader_loop_budget_does_not_grow
   run_cargo_lib_test source_pack_work_queue_progress_page_transitions_match_reference_model

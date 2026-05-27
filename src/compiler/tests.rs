@@ -3229,16 +3229,15 @@ fn ordered_dependency_stream_schedule_rejects_invalid_dependency_records() {
         std::fs::write(&app_path, b"app\n").expect("write app source");
 
         let store = SourcePackFilesystemArtifactStore::new(&artifact_root);
-        let result =
-                source_pack_prepare_ordered_library_schedule_pages_from_explicit_source_library_path_dependency_streams(
-                    build_libraries(core_path, app_path),
-                    &store,
-                    SourcePackArtifactTarget::X86_64,
-                    CodegenUnitLimits {
-                        max_source_bytes: 8,
-                        max_source_files: 4,
-                    },
-                );
+        let result = prepare_library_schedule_pages(
+            build_libraries(core_path, app_path),
+            &store,
+            SourcePackArtifactTarget::X86_64,
+            CodegenUnitLimits {
+                max_source_bytes: 8,
+                max_source_files: 4,
+            },
+        );
         std::fs::remove_dir_all(&root).expect("remove temp dependency-stream dir");
         match result {
             Ok(_) => panic!("{case_name} dependency stream should be rejected"),
@@ -5492,9 +5491,10 @@ fn source_pack_stored_job_batch_dependency_writes_dependency_pages_directly() {
     };
     let first_codegen_job = codegen_job(first_codegen_job_index);
     let second_codegen_job = codegen_job(second_codegen_job_index);
-    store_source_pack_library_schedule_job_page_with_dependency_writer(
+    store_schedule_job_page_with_dependencies(
         &store,
-        &schedule_index,
+        schedule_index.target,
+        schedule_index.job_count,
         &first_codegen_job,
         |writer| {
             for dependency_job_index in 0..dependency_count {
@@ -5504,9 +5504,10 @@ fn source_pack_stored_job_batch_dependency_writes_dependency_pages_directly() {
         },
     )
     .expect("store first paged schedule-job dependencies");
-    store_source_pack_library_schedule_job_page_with_dependency_writer(
+    store_schedule_job_page_with_dependencies(
         &store,
-        &schedule_index,
+        schedule_index.target,
+        schedule_index.job_count,
         &second_codegen_job,
         |writer| {
             for dependency_job_index in 0..dependency_count {
@@ -5901,7 +5902,7 @@ fn source_pack_artifact_shards_from_stored_batches_chunk_resumes() {
         max_source_bytes_per_batch: 4,
         max_source_files_per_batch: 1,
     };
-    let schedule_pages = source_pack_prepare_library_schedule_pages_from_stored_metadata(
+    let schedule_pages = prepare_library_schedule_pages_from_metadata(
         &store,
         SourcePackArtifactTarget::Wasm,
         limits,
@@ -10304,7 +10305,7 @@ fn source_pack_schedule_from_metadata_reconstructs_multi_unit_libraries_without_
     }
 
     let store = SourcePackFilesystemArtifactStore::new(&artifact_root);
-    let prepared_pages = source_pack_prepare_library_schedule_pages_from_stored_metadata(
+    let prepared_pages = prepare_library_schedule_pages_from_metadata(
         &store,
         SourcePackArtifactTarget::Wasm,
         CodegenUnitLimits {
@@ -10649,7 +10650,7 @@ fn source_pack_artifact_refs_from_schedule_chunk_prepares_bounded_libraries_with
     std::fs::remove_file(&app_path).expect("remove app source after metadata");
 
     let store = SourcePackFilesystemArtifactStore::new(&artifact_root);
-    source_pack_prepare_library_schedule_pages_from_stored_metadata(
+    prepare_library_schedule_pages_from_metadata(
         &store,
         SourcePackArtifactTarget::Wasm,
         CodegenUnitLimits {
@@ -10804,7 +10805,7 @@ fn source_pack_job_batches_from_schedule_chunk_resumes_from_progress_without_pat
     std::fs::remove_file(&app_path).expect("remove app source after metadata");
 
     let store = SourcePackFilesystemArtifactStore::new(&artifact_root);
-    source_pack_prepare_library_schedule_pages_from_stored_metadata(
+    prepare_library_schedule_pages_from_metadata(
         &store,
         SourcePackArtifactTarget::Wasm,
         CodegenUnitLimits {
@@ -10960,7 +10961,7 @@ fn source_pack_link_batches_from_artifact_refs_chunk_resumes_from_progress_witho
     std::fs::remove_file(&app_path).expect("remove app source after metadata");
 
     let store = SourcePackFilesystemArtifactStore::new(&artifact_root);
-    let schedule_pages = source_pack_prepare_library_schedule_pages_from_stored_metadata(
+    let schedule_pages = prepare_library_schedule_pages_from_metadata(
         &store,
         SourcePackArtifactTarget::Wasm,
         CodegenUnitLimits {
@@ -11128,7 +11129,7 @@ fn source_pack_hierarchical_link_leaf_groups_from_schedule_chunk_resumes_without
     std::fs::remove_file(&app_path).expect("remove app source after metadata");
 
     let store = SourcePackFilesystemArtifactStore::new(&artifact_root);
-    source_pack_prepare_library_schedule_pages_from_stored_metadata(
+    prepare_library_schedule_pages_from_metadata(
         &store,
         SourcePackArtifactTarget::Wasm,
         CodegenUnitLimits {
@@ -11270,7 +11271,7 @@ fn source_pack_hierarchical_link_plan_reduce_groups_from_schedule_chunk_resumes_
     std::fs::remove_file(&app_path).expect("remove app source after metadata");
 
     let store = SourcePackFilesystemArtifactStore::new(&artifact_root);
-    source_pack_prepare_library_schedule_pages_from_stored_metadata(
+    prepare_library_schedule_pages_from_metadata(
         &store,
         SourcePackArtifactTarget::Wasm,
         CodegenUnitLimits {
@@ -11443,7 +11444,7 @@ fn source_pack_hierarchical_link_execution_from_plan_chunk_resumes_without_paths
     std::fs::remove_file(&app_path).expect("remove app source after metadata");
 
     let store = SourcePackFilesystemArtifactStore::new(&artifact_root);
-    let schedule_pages = source_pack_prepare_library_schedule_pages_from_stored_metadata(
+    let schedule_pages = prepare_library_schedule_pages_from_metadata(
         &store,
         SourcePackArtifactTarget::Wasm,
         CodegenUnitLimits {
@@ -11619,7 +11620,7 @@ fn source_pack_work_queue_pages_from_schedule_chunk_resumes_without_paths() {
     std::fs::remove_file(&app_path).expect("remove app source after metadata");
 
     let store = SourcePackFilesystemArtifactStore::new(&artifact_root);
-    let schedule_pages = source_pack_prepare_library_schedule_pages_from_stored_metadata(
+    let schedule_pages = prepare_library_schedule_pages_from_metadata(
         &store,
         SourcePackArtifactTarget::Wasm,
         CodegenUnitLimits {

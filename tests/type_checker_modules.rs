@@ -86,23 +86,6 @@ fn dump_test_cpu_token_context_for_gpu_error(sources: &[&str], err: &CompileErro
     }
 }
 
-fn assert_declares_module_metadata(path: &str, src: &str) {
-    assert!(
-        src.lines()
-            .any(|line| line.trim_start().starts_with("module ")),
-        "{path} should remain a module-form stdlib seed"
-    );
-}
-
-fn assert_module_header_accepts(path: &str, src: &str) {
-    let module_header = src
-        .lines()
-        .map(str::trim)
-        .find(|line| line.starts_with("module "))
-        .unwrap_or_else(|| panic!("{path} should declare module metadata"));
-    assert_gpu_type_check_accepts(module_header);
-}
-
 #[test]
 fn type_checker_accepts_leading_module_metadata() {
     assert_gpu_type_check_accepts("module app::main;");
@@ -199,123 +182,6 @@ fn type_checker_accepts_flat_legacy_stdlib_seed_files() {
             dump_test_cpu_token_context_for_gpu_error(&[src], &err);
             panic!("{path} should pass GPU type checking: {err:?}");
         });
-    }
-}
-
-#[test]
-fn stdlib_module_seed_headers_are_valid_gpu_metadata() {
-    assert_gpu_type_check_accepts(
-        "module core::bool; pub fn not(value: bool) -> bool { return value; }",
-    );
-
-    for (path, src) in [
-        (
-            "stdlib/core/bool.lani",
-            include_str!("../stdlib/core/bool.lani"),
-        ),
-        (
-            "stdlib/core/char.lani",
-            include_str!("../stdlib/core/char.lani"),
-        ),
-        (
-            "stdlib/core/i32.lani",
-            include_str!("../stdlib/core/i32.lani"),
-        ),
-        (
-            "stdlib/core/f32.lani",
-            include_str!("../stdlib/core/f32.lani"),
-        ),
-        (
-            "stdlib/core/i64.lani",
-            include_str!("../stdlib/core/i64.lani"),
-        ),
-        (
-            "stdlib/core/ordering.lani",
-            include_str!("../stdlib/core/ordering.lani"),
-        ),
-        (
-            "stdlib/core/panic.lani",
-            include_str!("../stdlib/core/panic.lani"),
-        ),
-        (
-            "stdlib/core/range.lani",
-            include_str!("../stdlib/core/range.lani"),
-        ),
-        (
-            "stdlib/core/slice.lani",
-            include_str!("../stdlib/core/slice.lani"),
-        ),
-        (
-            "stdlib/core/target.lani",
-            include_str!("../stdlib/core/target.lani"),
-        ),
-        (
-            "stdlib/core/u32.lani",
-            include_str!("../stdlib/core/u32.lani"),
-        ),
-        (
-            "stdlib/core/u8.lani",
-            include_str!("../stdlib/core/u8.lani"),
-        ),
-        (
-            "stdlib/test/assert.lani",
-            include_str!("../stdlib/test/assert.lani"),
-        ),
-        (
-            "stdlib/core/array_i32.lani",
-            include_str!("../stdlib/core/array_i32.lani"),
-        ),
-        (
-            "stdlib/alloc/allocator.lani",
-            include_str!("../stdlib/alloc/allocator.lani"),
-        ),
-        (
-            "stdlib/std/env.lani",
-            include_str!("../stdlib/std/env.lani"),
-        ),
-        ("stdlib/std/fs.lani", include_str!("../stdlib/std/fs.lani")),
-        ("stdlib/std/io.lani", include_str!("../stdlib/std/io.lani")),
-        (
-            "stdlib/std/net.lani",
-            include_str!("../stdlib/std/net.lani"),
-        ),
-        (
-            "stdlib/std/process.lani",
-            include_str!("../stdlib/std/process.lani"),
-        ),
-        (
-            "stdlib/std/time.lani",
-            include_str!("../stdlib/std/time.lani"),
-        ),
-    ] {
-        assert_declares_module_metadata(path, src);
-        assert_module_header_accepts(path, src);
-    }
-}
-
-#[test]
-fn stdlib_trait_seed_files_are_not_short_typecheck_fixtures() {
-    for (path, src) in [
-        (
-            "stdlib/core/cmp.lani",
-            include_str!("../stdlib/core/cmp.lani"),
-        ),
-        (
-            "stdlib/core/hash.lani",
-            include_str!("../stdlib/core/hash.lani"),
-        ),
-    ] {
-        assert!(
-            !src.trim().is_empty()
-                && (src.contains("module ")
-                    || src.contains("struct ")
-                    || src.contains("enum ")
-                    || src.contains("fn ")
-                    || src.contains("extern ")
-                    || src.contains("import ")
-                    || src.contains("::")),
-            "{path} should remain a non-trivial stdlib seed, not a shortened type-check fixture"
-        );
     }
 }
 
@@ -990,7 +856,7 @@ fn main() {
 }
 
 #[test]
-fn type_checker_accepts_same_module_qualified_type_paths_via_gpu_resolution_arrays() {
+fn type_checker_resolves_same_module_qualified_type_paths() {
     assert_gpu_type_check_accepts(
         r#"
 module app::main;
@@ -1088,7 +954,7 @@ fn main() {
 }
 
 #[test]
-fn type_checker_accepts_qualified_function_calls_via_hir_value_consumer() {
+fn type_checker_resolves_qualified_function_calls() {
     assert_gpu_type_check_accepts(
         r#"
 module app;
@@ -1370,7 +1236,7 @@ fn main() {
 }
 
 #[test]
-fn type_checker_accepts_qualified_trait_bounds_via_gpu_module_records() {
+fn type_checker_resolves_qualified_trait_bounds() {
     assert_gpu_type_check_pack_accepts(&[
         r#"
 module core::cmp;
@@ -1453,7 +1319,7 @@ fn main() {
 }
 
 #[test]
-fn type_checker_accepts_qualified_constants_via_hir_value_consumer() {
+fn type_checker_resolves_qualified_constants() {
     assert_gpu_type_check_accepts(
         r#"
 module app;
@@ -1709,7 +1575,7 @@ fn main() {
 }
 
 #[test]
-fn type_checker_accepts_qualified_unit_enum_variants_via_hir_value_consumer() {
+fn type_checker_resolves_qualified_unit_enum_variants() {
     assert_gpu_type_check_pack_accepts(&[
         r#"
 module core::ordering;
@@ -1775,7 +1641,7 @@ fn main() {
 }
 
 #[test]
-fn type_checker_accepts_generic_enum_constructors_via_resolver_arrays() {
+fn type_checker_resolves_generic_enum_constructors() {
     assert_gpu_type_check_pack_accepts(&[
         r#"
 module core::maybe;

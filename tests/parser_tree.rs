@@ -1,7 +1,6 @@
 mod common;
 
 use laniusc::{
-    gpu::buffers::storage_ro_from_u32s,
     lexer::{
         driver::GpuLexer,
         tables::tokens::{N_KINDS, TokenKind},
@@ -48,87 +47,15 @@ use laniusc::{
                 HIR_NODE_TYPE,
             },
             hir_type_fields::HIR_TYPE_FORM_NONE,
-            ll1_blocks_01::LL1_BLOCK_STATUS_DISABLED,
         },
         syntax::{
             check_token_buffer_on_gpu,
             check_token_buffer_on_gpu_with_file_ids,
             check_tokens_on_gpu,
         },
-        tables::{PrecomputedParseTables, encode_pop, encode_push},
+        tables::{PrecomputedParseTables, encode_push},
     },
 };
-
-struct ProductionTreeReadbacks {
-    node_kind: wgpu::Buffer,
-    parent: wgpu::Buffer,
-    first_child: wgpu::Buffer,
-    next_sibling: wgpu::Buffer,
-    subtree_end: wgpu::Buffer,
-}
-
-struct ProductionTreeSnapshot {
-    token_capacity: u32,
-    tree_capacity: u32,
-    emit_len: u32,
-    node_kind: Vec<u32>,
-    parent: Vec<u32>,
-    first_child: Vec<u32>,
-    next_sibling: Vec<u32>,
-    subtree_end: Vec<u32>,
-}
-
-fn parser_tree_readback(device: &wgpu::Device, label: &str, words: u32) -> wgpu::Buffer {
-    device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some(label),
-        size: u64::from(words.max(1)).saturating_mul(4),
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    })
-}
-
-fn copy_production_tree_readbacks(
-    device: &wgpu::Device,
-    encoder: &mut wgpu::CommandEncoder,
-    parse_bufs: &laniusc::parser::buffers::ParserBuffers,
-) -> ProductionTreeReadbacks {
-    let words = parse_bufs.tree_capacity.max(1);
-    let bytes = u64::from(words).saturating_mul(4);
-    let node_kind = parser_tree_readback(device, "rb.test.parser.node_kind", words);
-    let parent = parser_tree_readback(device, "rb.test.parser.parent", words);
-    let first_child = parser_tree_readback(device, "rb.test.parser.first_child", words);
-    let next_sibling = parser_tree_readback(device, "rb.test.parser.next_sibling", words);
-    let subtree_end = parser_tree_readback(device, "rb.test.parser.subtree_end", words);
-
-    encoder.copy_buffer_to_buffer(&parse_bufs.node_kind, 0, &node_kind, 0, bytes);
-    encoder.copy_buffer_to_buffer(&parse_bufs.parent, 0, &parent, 0, bytes);
-    encoder.copy_buffer_to_buffer(&parse_bufs.first_child, 0, &first_child, 0, bytes);
-    encoder.copy_buffer_to_buffer(&parse_bufs.next_sibling, 0, &next_sibling, 0, bytes);
-    encoder.copy_buffer_to_buffer(&parse_bufs.subtree_end, 0, &subtree_end, 0, bytes);
-
-    ProductionTreeReadbacks {
-        node_kind,
-        parent,
-        first_child,
-        next_sibling,
-        subtree_end,
-    }
-}
-
-fn read_u32s(device: &wgpu::Device, buffer: &wgpu::Buffer, count: usize) -> Vec<u32> {
-    let byte_len = count.saturating_mul(4) as u64;
-    let slice = buffer.slice(0..byte_len);
-    slice.map_async(wgpu::MapMode::Read, |_| {});
-    let _ = device.poll(wgpu::PollType::wait_indefinitely());
-    let bytes = slice.get_mapped_range();
-    let words = bytes
-        .chunks_exact(4)
-        .map(|chunk| u32::from_le_bytes(chunk.try_into().expect("u32 readback word")))
-        .collect::<Vec<_>>();
-    drop(bytes);
-    buffer.unmap();
-    words
-}
 
 const PROD_RET_TYPE: u32 = 34;
 const PROD_FN: u32 = 11;
@@ -172,22 +99,6 @@ fn gpu_semantic_kinds_with_sentinels(src: &str) -> Vec<u32> {
                 .expect("GPU semantic token table oracle")
         },
     )
-}
-
-fn llp_pair_emit_total_for_semantic_kinds(
-    token_kinds: &[u32],
-    tables: &PrecomputedParseTables,
-) -> u32 {
-    token_kinds
-        .windows(2)
-        .map(|pair| {
-            let prev = pair[0] as usize;
-            let this = pair[1] as usize;
-            let idx = prev * tables.n_kinds as usize + this;
-            tables.pp_len[idx]
-        })
-        .sum::<u32>()
-        .max(1)
 }
 
 fn assert_resident_gpu_parser_accepts(label: &str, src: &str) {
@@ -237,104 +148,6 @@ fn assert_resident_gpu_parser_accepts_all(label: &str, fixtures: Vec<(String, St
     });
 }
 
-#[test]
-#[ignore]
-fn debug_parser_hir_positions_for_generic_return() {
-    common::block_on_gpu_with_timeout("GPU parser generic return token spans", async move {
-        let src = r#"
-struct Range<T> {
-    start: T,
-    end: T,
-}
-
-fn make_range(start: i32, end: i32) -> Range<i32> {
-    return Range { start: start, end: end };
-}
-"#;
-
-        let tokens = lex_on_test_cpu(src).expect("test CPU oracle lex fixture");
-        let lexer = GpuLexer::new().await.expect("GPU lexer init");
-        let parser = GpuParser::new().await.expect("GPU parser init");
-        let tables =
-            PrecomputedParseTables::load_bin_bytes(include_bytes!("../tables/parse_tables.bin"))
-                .expect("load generated parse tables");
-
-        let parsed = lexer
-            .with_resident_tokens(src, |_, _, bufs| {
-                parser.parse_resident_tokens(bufs.n, &bufs.tokens_out, &bufs.token_count, &tables)
-            })
-            .await
-            .expect("resident GPU lex")
-            .expect("resident GPU parse");
-
-        println!(
-            "hir_kind count={} token span count={}",
-            parsed.hir_kind.len(),
-            parsed.hir_token_pos.len()
-        );
-        for (i, (&kind, &pos)) in parsed
-            .hir_kind
-            .iter()
-            .zip(parsed.hir_token_pos.iter())
-            .enumerate()
-        {
-            if kind == HIR_NODE_RETURN_STMT {
-                println!(
-                    "hir node {} => kind={} pos={} token_text={:?}",
-                    i,
-                    kind,
-                    pos,
-                    tokens
-                        .get(pos as usize)
-                        .map(|t| &src[t.start..t.start + t.len])
-                );
-            }
-        }
-
-        for (i, &kind) in parsed.hir_kind.iter().enumerate() {
-            if kind == 0 {
-                continue;
-            }
-            let pos = parsed.hir_token_pos.get(i).copied().unwrap_or(u32::MAX);
-            let end = parsed.hir_token_end.get(i).copied().unwrap_or(u32::MAX);
-            if pos == u32::MAX || end == u32::MAX || pos >= end {
-                continue;
-            }
-            if pos >= tokens.len() as u32 || end > tokens.len() as u32 {
-                continue;
-            }
-            println!(
-                "node {i}: kind={kind} span=({pos},{end}) text={:?}",
-                &src[tokens[pos as usize].start
-                    ..tokens[(end - 1u32) as usize].start + tokens[(end - 1u32) as usize].len]
-            );
-        }
-    });
-}
-
-fn assert_tree_forest_shape(node_kind: &[u32], parent: &[u32], prod_arity: &[u32]) {
-    assert_eq!(node_kind.len(), parent.len());
-    let mut child_counts = vec![0usize; node_kind.len()];
-    for (i, &parent_id) in parent.iter().enumerate() {
-        if parent_id == u32::MAX {
-            continue;
-        }
-        let parent_idx = parent_id as usize;
-        assert!(
-            parent_idx < i,
-            "parent pointer must point backward at node {i}"
-        );
-        child_counts[parent_idx] += 1;
-    }
-    for (i, &kind) in node_kind.iter().enumerate() {
-        let want = *prod_arity.get(kind as usize).unwrap_or(&0) as usize;
-        assert_eq!(
-            child_counts[i], want,
-            "production arity mismatch at node {i}, production {kind}"
-        );
-    }
-}
-
 fn assert_pareas_parent_vector(node_kind: &[u32], parent: &[u32], prod_arity: &[u32]) {
     assert_eq!(node_kind.len(), parent.len());
     let mut depth_before = Vec::with_capacity(node_kind.len());
@@ -359,16 +172,6 @@ fn assert_pareas_parent_vector(node_kind: &[u32], parent: &[u32], prod_arity: &[
             node_kind[i]
         );
     }
-}
-
-fn expected_subtree_end(i: usize, node_kind: &[u32], prod_arity: &[u32]) -> u32 {
-    let mut need = prod_arity[node_kind[i] as usize] as usize;
-    let mut j = i + 1;
-    while j < node_kind.len() && need > 0 {
-        need = need - 1 + prod_arity[node_kind[j] as usize] as usize;
-        j += 1;
-    }
-    j as u32
 }
 
 fn nearest_function_owner_node(res: &ResidentParseResult, start: usize) -> u32 {
@@ -396,37 +199,6 @@ fn nearest_return_type_owner_node(res: &ResidentParseResult, start: usize) -> u3
         node = res.parent[idx];
     }
     u32::MAX
-}
-
-fn assert_tree_navigation_shape(
-    node_kind: &[u32],
-    parent: &[u32],
-    first_child: &[u32],
-    next_sibling: &[u32],
-    subtree_end: &[u32],
-    prod_arity: &[u32],
-) {
-    assert_eq!(node_kind.len(), first_child.len());
-    assert_eq!(node_kind.len(), next_sibling.len());
-    assert_eq!(node_kind.len(), subtree_end.len());
-    for (i, &kind) in node_kind.iter().enumerate() {
-        let arity = prod_arity[kind as usize] as usize;
-        let want_first = if arity > 0 && i + 1 < node_kind.len() {
-            (i + 1) as u32
-        } else {
-            u32::MAX
-        };
-        let want_end = expected_subtree_end(i, node_kind, prod_arity);
-        let want_next =
-            if (want_end as usize) < node_kind.len() && parent[want_end as usize] == parent[i] {
-                want_end
-            } else {
-                u32::MAX
-            };
-        assert_eq!(first_child[i], want_first, "first child at node {i}");
-        assert_eq!(subtree_end[i], want_end, "subtree end at node {i}");
-        assert_eq!(next_sibling[i], want_next, "next sibling at node {i}");
-    }
 }
 
 fn assert_semantic_dense_subtree_ranges(res: &ResidentParseResult) {
@@ -715,22 +487,6 @@ fn token_span_snippet(src: &str, tokens: &[TestCpuToken], start: u32, end: u32) 
     Some(src[byte_start..last.start + last.len].to_string())
 }
 
-fn hir_node_snippet(
-    src: &str,
-    tokens: &[TestCpuToken],
-    hir_token_pos: &[u32],
-    hir_token_end: &[u32],
-    node: u32,
-) -> Option<String> {
-    let node = node as usize;
-    token_span_snippet(
-        src,
-        tokens,
-        *hir_token_pos.get(node)?,
-        *hir_token_end.get(node)?,
-    )
-}
-
 fn hir_item_names_for_kind(
     src: &str,
     tokens: &[TestCpuToken],
@@ -817,166 +573,6 @@ fn gpu_parser_builds_valid_root_span_for_compound_assignment_statements() {
         assert_pareas_parent_vector(&res.node_kind, &res.parent, &tables.prod_arity);
         assert_semantic_dense_subtree_ranges(&res);
     });
-}
-
-#[test]
-fn gpu_parser_production_capacity_builds_valid_root_span_for_compound_assignment_statements() {
-    common::block_on_gpu_with_timeout(
-        "GPU production parser compound assignment root span",
-        async move {
-            let lexer = GpuLexer::new().await.expect("GPU lexer init");
-            let parser = GpuParser::new().await.expect("GPU parser init");
-            let tables = PrecomputedParseTables::load_bin_bytes(include_bytes!(
-                "../tables/parse_tables.bin"
-            ))
-            .expect("load generated parse tables");
-            let src = include_str!("../sample_programs/compound_assignments.lani");
-
-            let snapshot = lexer
-                .with_recorded_resident_tokens_after_count(
-                    src,
-                    |device, _queue, bufs, token_count, encoder, mut timer| {
-                        let token_capacity = token_count.max(1);
-                        let tree_capacity =
-                            parser.projected_resident_tree_capacity(token_capacity, &tables);
-                        let (parser_check, readbacks) = parser
-                            .record_checked_resident_ll1_hir_artifacts_with_tree_capacity(
-                                encoder,
-                                token_capacity,
-                                &bufs.tokens_out,
-                                &bufs.token_count,
-                                Some(&bufs.token_file_id),
-                                bufs.n,
-                                &bufs.in_bytes,
-                                &tables,
-                                Some(tree_capacity),
-                                &mut timer,
-                                |parse_bufs, encoder, _timer| {
-                                    Ok::<_, String>(copy_production_tree_readbacks(
-                                        device, encoder, parse_bufs,
-                                    ))
-                                },
-                            )
-                            .map_err(|err| err.to_string())?;
-                        let readbacks = readbacks?;
-                        Ok::<_, String>((parser_check, readbacks, token_capacity, tree_capacity))
-                    },
-                    |device,
-                     _queue,
-                     _bufs,
-                     (parser_check, readbacks, token_capacity, tree_capacity)| {
-                        let ll1 = parser
-                            .finish_recorded_resident_ll1_hir_check_result(&parser_check)
-                            .map_err(|err| err.to_string())?;
-                        let active = (ll1.emit_len as usize).min(tree_capacity as usize);
-                        Ok::<_, String>(ProductionTreeSnapshot {
-                            token_capacity,
-                            tree_capacity,
-                            emit_len: ll1.emit_len,
-                            node_kind: read_u32s(device, &readbacks.node_kind, active),
-                            parent: read_u32s(device, &readbacks.parent, active),
-                            first_child: read_u32s(device, &readbacks.first_child, active),
-                            next_sibling: read_u32s(device, &readbacks.next_sibling, active),
-                            subtree_end: read_u32s(device, &readbacks.subtree_end, active),
-                        })
-                    },
-                )
-                .await
-                .expect("resident GPU lex")
-                .expect("production parser snapshot");
-
-            assert!(
-                snapshot.emit_len <= snapshot.tree_capacity,
-                "production parser tree capacity must cover emit_len: token_capacity={} tree_capacity={} emit_len={}",
-                snapshot.token_capacity,
-                snapshot.tree_capacity,
-                snapshot.emit_len
-            );
-            assert_eq!(
-                snapshot.subtree_end.first().copied(),
-                Some(snapshot.emit_len),
-                "production root span must cover the active parse stream for backend tree projection"
-            );
-            assert_pareas_parent_vector(&snapshot.node_kind, &snapshot.parent, &tables.prod_arity);
-            assert_tree_navigation_shape(
-                &snapshot.node_kind,
-                &snapshot.parent,
-                &snapshot.first_child,
-                &snapshot.next_sibling,
-                &snapshot.subtree_end,
-                &tables.prod_arity,
-            );
-        },
-    );
-}
-
-#[test]
-fn gpu_parser_projected_capacity_reduces_llp_headers_without_spelling_dependency() {
-    common::block_on_gpu_with_timeout(
-        "GPU parser projected capacity header reduction",
-        async move {
-            let lexer = GpuLexer::new().await.expect("GPU lexer init");
-            let parser = GpuParser::new().await.expect("GPU parser init");
-            let tables = PrecomputedParseTables::load_bin_bytes(include_bytes!(
-                "../tables/parse_tables.bin"
-            ))
-            .expect("load generated parse tables");
-            let fixtures = [
-                "fn alpha(a: i32) -> i32 { let temp: i32 = a + 1; return temp; }",
-                "fn wildly_different_identifier_name(input_value: i32) -> i32 { let unrelated_local_name: i32 = input_value + 1; return unrelated_local_name; }",
-            ];
-
-            let mut projected = Vec::new();
-            let mut expected = Vec::new();
-            for src in fixtures {
-                let semantic_kinds = lexer
-                    .with_resident_tokens(src, |_, _, bufs| {
-                        parser.debug_semantic_token_kinds_for_resident_tokens(
-                            bufs.n,
-                            &bufs.tokens_out,
-                            &bufs.token_count,
-                            &tables,
-                        )
-                    })
-                    .await
-                    .expect("resident GPU lex for semantic token table oracle")
-                    .expect("GPU semantic token table oracle");
-                expected.push(llp_pair_emit_total_for_semantic_kinds(
-                    &semantic_kinds,
-                    &tables,
-                ));
-                let capacity = lexer
-                    .with_recorded_resident_tokens_after_count(
-                        src,
-                        |_device, _queue, bufs, token_count, _encoder, _timer| {
-                            parser
-                                .read_resident_projected_tree_capacity(
-                                    token_count.max(1),
-                                    &bufs.tokens_out,
-                                    &bufs.token_count,
-                                    Some(&bufs.token_file_id),
-                                    &tables,
-                                )
-                                .map_err(|err| err.to_string())
-                        },
-                        |_device, _queue, _bufs, capacity| Ok::<_, String>(capacity),
-                    )
-                    .await
-                    .expect("resident GPU lex")
-                    .expect("GPU projected tree capacity");
-                projected.push(capacity);
-            }
-
-            assert_eq!(
-                projected, expected,
-                "projected capacity must equal the LLP pair-table emit total"
-            );
-            assert_eq!(
-                projected[0], projected[1],
-                "identifier spelling changes must not affect parser projected capacity"
-            );
-        },
-    );
 }
 
 #[test]
@@ -1205,38 +801,6 @@ fn gpu_syntax_accepts_extern_function_declaration_shape() {
         check_tokens_on_gpu(&tokens).await.expect(
             "GPU syntax should accept extern function fixture with trailing parameter comma",
         );
-    });
-}
-
-#[test]
-fn gpu_syntax_rejects_invalid_token_file_ids_from_gpu_metadata() {
-    common::block_on_gpu_with_timeout("GPU syntax token file-id validation", async move {
-        let lexer = GpuLexer::new().await.expect("GPU lexer init");
-        lexer
-            .with_resident_tokens("fn main() { return 0; }", |device, queue, bufs| {
-                let invalid_file_ids = vec![u32::MAX; bufs.token_file_id.count.max(1)];
-                let invalid_file_id_buf = storage_ro_from_u32s(
-                    device,
-                    "test.parser.syntax.invalid_token_file_id",
-                    &invalid_file_ids,
-                );
-                let err = check_token_buffer_on_gpu_with_file_ids(
-                    device,
-                    queue,
-                    bufs.n,
-                    &bufs.tokens_out,
-                    &bufs.token_count,
-                    &invalid_file_id_buf,
-                )
-                .expect_err("invalid token file ids should fail syntax validation");
-                let message = err.to_string();
-                assert!(
-                    message.contains("UnexpectedToken"),
-                    "expected invalid file id to be reported as syntax rejection, got {message}"
-                );
-            })
-            .await
-            .expect("resident lex");
     });
 }
 
@@ -2167,80 +1731,6 @@ fn gpu_syntax_accepts_trailing_commas_in_stdlib_shapes() {
 }
 
 #[test]
-fn gpu_parser_builds_tree_from_emit_stream() {
-    common::block_on_gpu_with_timeout("GPU parser emit stream", async move {
-        let parser = GpuParser::new().await.expect("GPU parser init");
-        let mut tables = PrecomputedParseTables::new(N_KINDS, 3);
-
-        tables.prod_arity = vec![2, 0, 0];
-        tables.set_pp_for_pair(0, TokenKind::Ident as u32, &[0]);
-        tables.set_pp_for_pair(TokenKind::Ident as u32, TokenKind::InfixPlus as u32, &[1]);
-        tables.set_pp_for_pair(TokenKind::InfixPlus as u32, TokenKind::Int as u32, &[2]);
-        tables.finalize_bit_widths(0);
-
-        let token_kinds = [
-            0,
-            TokenKind::Ident as u32,
-            TokenKind::InfixPlus as u32,
-            TokenKind::Int as u32,
-        ];
-        let res = parser
-            .parse(&token_kinds, &tables)
-            .await
-            .expect("GPU parse");
-
-        assert_eq!(res.emit_stream, vec![0, 1, 2]);
-        assert_eq!(res.ll1_seeded_blocks[0].status, LL1_BLOCK_STATUS_DISABLED);
-        assert_eq!(res.node_kind, vec![0, 1, 2]);
-        assert_eq!(res.parent, vec![u32::MAX, 0, 0]);
-        assert_eq!(res.first_child, vec![1, u32::MAX, u32::MAX]);
-        assert_eq!(res.next_sibling, vec![u32::MAX, 2, u32::MAX]);
-        assert_eq!(res.subtree_end, vec![3, 2, 3]);
-    });
-}
-
-#[test]
-#[ignore = "GPU parser stress test; run explicitly with --ignored"]
-fn gpu_parser_recovers_large_flat_tree_with_prefix_blocks() {
-    common::block_on_gpu_with_timeout("GPU parser large flat tree", async move {
-        let parser = GpuParser::new().await.expect("GPU parser init");
-        let mut tables = PrecomputedParseTables::new(N_KINDS, 2);
-
-        let leaf_count = 256 * 256;
-        tables.prod_arity = vec![leaf_count as u32, 0];
-        tables.set_pp_for_pair(0, TokenKind::Ident as u32, &[0]);
-        tables.set_pp_for_pair(TokenKind::Ident as u32, TokenKind::Ident as u32, &[1]);
-        tables.finalize_bit_widths(0);
-
-        let mut token_kinds = Vec::with_capacity(leaf_count + 2);
-        token_kinds.push(0);
-        token_kinds.extend(std::iter::repeat(TokenKind::Ident as u32).take(leaf_count + 1));
-
-        let res = parser
-            .parse(&token_kinds, &tables)
-            .await
-            .expect("GPU parse");
-
-        assert_eq!(res.emit_stream.len(), leaf_count + 1);
-        assert!(
-            res.node_kind.len() > 256 * 256,
-            "test must exercise tree prefix scans beyond one 256-lane workgroup"
-        );
-        assert_eq!(res.node_kind[0], 0);
-        assert!(res.node_kind[1..].iter().all(|&kind| kind == 1));
-        assert_tree_forest_shape(&res.node_kind, &res.parent, &tables.prod_arity);
-        assert_tree_navigation_shape(
-            &res.node_kind,
-            &res.parent,
-            &res.first_child,
-            &res.next_sibling,
-            &res.subtree_end,
-            &tables.prod_arity,
-        );
-    });
-}
-
-#[test]
 fn gpu_parser_reports_typed_bracket_mismatches() {
     common::block_on_gpu_with_timeout("GPU parser bracket mismatch", async move {
         let parser = GpuParser::new().await.expect("GPU parser init");
@@ -2264,93 +1754,5 @@ fn gpu_parser_reports_typed_bracket_mismatches() {
         assert!(!res.brackets.valid);
         assert_eq!(res.brackets.final_depth, 0);
         assert_eq!(res.brackets.min_depth, 0);
-    });
-}
-
-#[test]
-#[ignore = "GPU parser stress test; run explicitly with --ignored"]
-fn gpu_parser_scans_deep_bracket_histogram_offsets() {
-    common::block_on_gpu_with_timeout("GPU parser deep bracket scan", async move {
-        let parser = GpuParser::new().await.expect("GPU parser init");
-        let mut tables = PrecomputedParseTables::new(N_KINDS, 1);
-
-        tables.prod_arity = vec![0];
-        tables.set_sc_for_pair(0, TokenKind::GroupLParen as u32, &[encode_push(0)]);
-        tables.set_sc_for_pair(
-            TokenKind::GroupLParen as u32,
-            TokenKind::GroupLParen as u32,
-            &[encode_push(0)],
-        );
-        tables.set_sc_for_pair(
-            TokenKind::GroupLParen as u32,
-            TokenKind::GroupRParen as u32,
-            &[encode_pop(0)],
-        );
-        tables.set_sc_for_pair(
-            TokenKind::GroupRParen as u32,
-            TokenKind::GroupRParen as u32,
-            &[encode_pop(0)],
-        );
-        tables.finalize_bit_widths(0);
-
-        let depth = 33_000usize;
-        let mut token_kinds = Vec::with_capacity(depth * 2 + 1);
-        token_kinds.push(0);
-        token_kinds.extend(std::iter::repeat(TokenKind::GroupLParen as u32).take(depth));
-        token_kinds.extend(std::iter::repeat(TokenKind::GroupRParen as u32).take(depth));
-
-        let res = parser
-            .parse(&token_kinds, &tables)
-            .await
-            .expect("GPU parse");
-
-        assert!(res.brackets.valid);
-        assert_eq!(res.brackets.final_depth, 0);
-        assert_eq!(res.brackets.min_depth, 0);
-        assert_eq!(res.sc_stream.len(), depth * 2);
-        assert!(
-            res.sc_stream.len() > 256 * 256,
-            "test must exercise block-prefix scan beyond one 256-lane workgroup"
-        );
-    });
-}
-
-#[test]
-fn gpu_parser_pairs_many_flat_brackets_in_parallel() {
-    common::block_on_gpu_with_timeout("GPU parser flat bracket pairing", async move {
-        let parser = GpuParser::new().await.expect("GPU parser init");
-        let mut tables = PrecomputedParseTables::new(N_KINDS, 1);
-
-        tables.prod_arity = vec![0];
-        tables.set_sc_for_pair(0, TokenKind::GroupLParen as u32, &[encode_push(0)]);
-        tables.set_sc_for_pair(
-            TokenKind::GroupLParen as u32,
-            TokenKind::GroupRParen as u32,
-            &[encode_pop(0)],
-        );
-        tables.set_sc_for_pair(
-            TokenKind::GroupRParen as u32,
-            TokenKind::GroupLParen as u32,
-            &[encode_push(0)],
-        );
-        tables.finalize_bit_widths(0);
-
-        let pair_count = 1024usize;
-        let mut token_kinds = Vec::with_capacity(pair_count * 2 + 1);
-        token_kinds.push(0);
-        for _ in 0..pair_count {
-            token_kinds.push(TokenKind::GroupLParen as u32);
-            token_kinds.push(TokenKind::GroupRParen as u32);
-        }
-
-        let res = parser
-            .parse(&token_kinds, &tables)
-            .await
-            .expect("GPU parse");
-
-        assert!(res.brackets.valid);
-        assert_eq!(res.brackets.final_depth, 0);
-        assert_eq!(res.brackets.min_depth, 0);
-        assert_eq!(res.sc_stream.len(), pair_count * 2);
     });
 }

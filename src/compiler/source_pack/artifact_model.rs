@@ -1,0 +1,459 @@
+use super::*;
+
+pub const SOURCE_PACK_BUILD_ARTIFACT_EXECUTION_SHARD_VERSION: u32 = 1;
+pub const SOURCE_PACK_BUILD_BATCH_SHARD_LOCATOR_VERSION: u32 = 1;
+pub const SOURCE_PACK_BUILD_ARTIFACT_SHARD_PREPARE_PROGRESS_VERSION: u32 = 1;
+pub const SOURCE_PACK_BUILD_JOB_BATCH_PAGE_VERSION: u32 = 1;
+pub const SOURCE_PACK_BUILD_JOB_BATCH_PAGE_INDEX_VERSION: u32 = 1;
+pub const SOURCE_PACK_BUILD_JOB_BATCH_PREPARE_PROGRESS_VERSION: u32 = 1;
+pub const SOURCE_PACK_BUILD_JOB_BATCH_JOB_LOCATOR_PAGE_VERSION: u32 = 1;
+pub const SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENCY_PAGE_VERSION: u32 = 1;
+pub const SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENCY_RANGE_PAGE_VERSION: u32 = 1;
+pub const SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENTS_PAGE_VERSION: u32 = 1;
+pub const SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENT_BATCH_PAGE_VERSION: u32 = 1;
+pub const SOURCE_PACK_BUILD_JOB_BATCH_INLINE_JOB_DEFAULT_RECORD_CAP: usize =
+    DEFAULT_CODEGEN_UNIT_MAX_SOURCE_FILES;
+pub const SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENCY_DEFAULT_PAGE_SIZE: usize = 64;
+pub const SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENCY_RANGE_DEFAULT_PAGE_SIZE: usize = 64;
+pub const SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENTS_DEFAULT_PAGE_SIZE: usize = 64;
+pub const SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENTS_PREPARE_PROGRESS_VERSION: u32 = 1;
+pub const SOURCE_PACK_BUILD_ARTIFACT_REF_INDEX_VERSION: u32 = 1;
+pub const SOURCE_PACK_BUILD_ARTIFACT_REF_PAGE_VERSION: u32 = 1;
+pub const SOURCE_PACK_BUILD_ARTIFACT_REF_PREPARE_PROGRESS_VERSION: u32 = 1;
+pub const SOURCE_PACK_BUILD_LINK_BATCH_PAGE_INDEX_VERSION: u32 = 1;
+pub const SOURCE_PACK_BUILD_LINK_BATCH_PREPARE_PROGRESS_VERSION: u32 = 1;
+pub const SOURCE_PACK_BUILD_LINK_INTERFACE_BATCH_PAGE_VERSION: u32 = 1;
+pub const SOURCE_PACK_BUILD_LINK_OBJECT_BATCH_PAGE_VERSION: u32 = 1;
+pub const SOURCE_PACK_BUILD_LINK_INPUT_SHARD_INDEX_VERSION: u32 = 1;
+pub const SOURCE_PACK_JOB_ARTIFACT_INPUT_INTERFACE_PAGE_VERSION: u32 = 1;
+pub const SOURCE_PACK_JOB_ARTIFACT_INPUT_INTERFACE_DEFAULT_PAGE_SIZE: usize = 64;
+pub const SOURCE_PACK_EXECUTION_SHARD_SOURCE_FILE_DEFAULT_RECORD_CAP: usize =
+    DEFAULT_SOURCE_PACK_BUILD_SHARD_MAX_BATCHES * DEFAULT_CODEGEN_UNIT_MAX_SOURCE_FILES;
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourcePackShardSourceFile {
+    pub source_index: usize,
+    pub file: ExplicitSourcePathFile,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourcePackBuildBatchShardLocator {
+    pub version: u32,
+    pub target: SourcePackArtifactTarget,
+    pub batch_index: usize,
+    pub shard_index: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourcePackBuildJobBatchPageIndex {
+    pub version: u32,
+    pub target: SourcePackArtifactTarget,
+    pub batch_count: usize,
+    pub scheduled_job_count: usize,
+    pub dependency_edge_count: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourcePackBuildJobBatchPage {
+    pub version: u32,
+    pub target: SourcePackArtifactTarget,
+    pub batch_index: usize,
+    pub batch: SourcePackJobBatch,
+    pub dependency: SourcePackJobBatchDependency,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourcePackBuildJobBatchDependencyPage {
+    pub version: u32,
+    pub target: SourcePackArtifactTarget,
+    pub batch_index: usize,
+    pub page_index: usize,
+    pub first_dependency_position: usize,
+    pub dependency_count: usize,
+    pub dependency_batch_indices: Vec<usize>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourcePackBuildJobBatchDependencyRangePage {
+    pub version: u32,
+    pub target: SourcePackArtifactTarget,
+    pub batch_index: usize,
+    pub page_index: usize,
+    pub first_range_position: usize,
+    pub range_count: usize,
+    pub dependency_batch_count: usize,
+    pub dependency_batch_ranges: Vec<SourcePackJobBatchDependencyRange>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourcePackBuildJobBatchJobLocatorPage {
+    pub version: u32,
+    pub target: SourcePackArtifactTarget,
+    pub job_index: usize,
+    pub batch_index: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourcePackBuildArtifactRefIndex {
+    pub version: u32,
+    pub target: SourcePackArtifactTarget,
+    pub artifact_count: usize,
+    pub interface_artifact_count: usize,
+    pub object_artifact_count: usize,
+    pub final_output_artifact_index: usize,
+    pub final_output_key: String,
+    pub total_source_file_count: usize,
+    pub total_source_byte_count: usize,
+    #[serde(default)]
+    pub total_source_line_count: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourcePackBuildArtifactRefPage {
+    pub version: u32,
+    pub target: SourcePackArtifactTarget,
+    pub artifact_index: usize,
+    pub artifact_ref: SourcePackArtifactRef,
+    pub source_bytes: usize,
+    pub source_file_count: usize,
+    #[serde(default)]
+    pub source_lines: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourcePackBuildLinkBatchPageIndex {
+    pub version: u32,
+    pub target: SourcePackArtifactTarget,
+    pub link_interface_batch_count: usize,
+    pub link_object_batch_count: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourcePackBuildLinkInterfaceBatchPage {
+    pub version: u32,
+    pub target: SourcePackArtifactTarget,
+    pub batch_index: usize,
+    pub batch: SourcePackLinkInterfaceBatch,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourcePackBuildLinkObjectBatchPage {
+    pub version: u32,
+    pub target: SourcePackArtifactTarget,
+    pub batch_index: usize,
+    pub batch: SourcePackLinkObjectBatch,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourcePackLinkInputShardRange {
+    pub first_shard_index: usize,
+    pub shard_count: usize,
+}
+
+impl SourcePackLinkInputShardRange {
+    pub fn end_shard_index(&self) -> Option<usize> {
+        self.first_shard_index.checked_add(self.shard_count)
+    }
+
+    pub fn contains(&self, shard_index: usize) -> bool {
+        self.end_shard_index()
+            .is_some_and(|end| self.first_shard_index <= shard_index && shard_index < end)
+    }
+
+    pub fn iter(&self) -> Option<std::ops::Range<usize>> {
+        self.end_shard_index()
+            .map(|end| self.first_shard_index..end)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourcePackBuildLinkInputShardIndex {
+    pub version: u32,
+    pub target: SourcePackArtifactTarget,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link_interface_shard_range: Option<SourcePackLinkInputShardRange>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link_object_shard_range: Option<SourcePackLinkInputShardRange>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourcePackJobBatchDependents {
+    pub batch_index: usize,
+    pub dependent_batch_indices: Vec<usize>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourcePackBuildJobBatchDependentsPage {
+    pub version: u32,
+    pub target: SourcePackArtifactTarget,
+    pub batch_count: usize,
+    pub batch_index: usize,
+    pub dependents: SourcePackJobBatchDependents,
+    #[serde(default)]
+    pub dependent_batch_count: usize,
+    #[serde(default)]
+    pub dependent_page_count: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourcePackBuildJobBatchDependentBatchPage {
+    pub version: u32,
+    pub target: SourcePackArtifactTarget,
+    pub batch_count: usize,
+    pub batch_index: usize,
+    pub page_index: usize,
+    pub first_dependent_position: usize,
+    pub dependent_count: usize,
+    pub dependent_batch_indices: Vec<usize>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourcePackBuildArtifactExecutionShard {
+    pub version: u32,
+    pub target: SourcePackArtifactTarget,
+    pub shard: SourcePackBuildArtifactShard,
+    pub source_files: Vec<SourcePackShardSourceFile>,
+    pub job_batches: Vec<SourcePackJobBatch>,
+    pub batch_dependencies: Vec<SourcePackJobBatchDependency>,
+    #[serde(default)]
+    pub batch_dependents: Vec<SourcePackJobBatchDependents>,
+    pub jobs: Vec<SourcePackJob>,
+    pub job_artifacts: Vec<SourcePackJobArtifactManifest>,
+    pub artifact_refs: Vec<SourcePackArtifactRef>,
+    pub link_interface_batches: Vec<SourcePackLinkInterfaceBatch>,
+    pub link_object_batches: Vec<SourcePackLinkObjectBatch>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourcePackJobArtifactInputInterfacePage {
+    pub version: u32,
+    pub target: SourcePackArtifactTarget,
+    pub job_index: usize,
+    pub page_index: usize,
+    pub first_input_position: usize,
+    pub input_count: usize,
+    pub input_interfaces: Vec<SourcePackArtifactRef>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourcePackFilesystemArtifactBuildExecutionResult {
+    pub linked_output_key: String,
+    pub linked_output_path: PathBuf,
+    pub build_manifest_path: PathBuf,
+    pub artifact_manifest_path: PathBuf,
+    pub build_state_path: PathBuf,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourcePackFilesystemArtifactBatchExecutionResult {
+    pub batch_index: usize,
+    pub job_count: usize,
+    pub linked_output_key: Option<String>,
+    pub linked_output_path: Option<PathBuf>,
+    pub build_manifest_path: PathBuf,
+    pub artifact_manifest_path: PathBuf,
+    pub build_state_path: PathBuf,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourcePackFilesystemArtifactBatchClaimResult {
+    pub claimed_batch_index: Option<usize>,
+    pub worker_id: String,
+    pub completed_batch_count: usize,
+    pub claimed_batch_count: usize,
+    pub build_manifest_path: PathBuf,
+    pub artifact_manifest_path: PathBuf,
+    pub build_state_path: PathBuf,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourcePackFilesystemArtifactProgressSnapshot {
+    pub target: SourcePackArtifactTarget,
+    pub job_batch_count: usize,
+    pub completed_batch_count: usize,
+    pub ready_batch_count: usize,
+    pub claimed_batch_count: usize,
+    pub ready_claimed_batch_count: usize,
+    pub earliest_claim_lease_expires_unix_nanos: Option<u128>,
+    pub first_ready_batch_index: Option<usize>,
+    pub ready_batch_indices: Vec<usize>,
+    pub linked_output_key: Option<String>,
+    pub linked_output_path: Option<PathBuf>,
+    pub complete: bool,
+    pub build_manifest_path: PathBuf,
+    pub artifact_manifest_path: PathBuf,
+    pub build_state_path: PathBuf,
+    pub progress_summary_path: PathBuf,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourcePackFilesystemArtifactProgressPage {
+    pub target: SourcePackArtifactTarget,
+    pub shard_index: usize,
+    pub batch_indices: Vec<usize>,
+    pub completed_batch_indices: Vec<usize>,
+    pub ready_batch_indices: Vec<usize>,
+    pub claimed_batch_indices: Vec<usize>,
+    pub claimed_batches: Vec<SourcePackBuildBatchClaim>,
+    pub linked_output_key: Option<String>,
+    pub progress_shard_path: PathBuf,
+    pub progress_summary_path: PathBuf,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourcePackFilesystemArtifactBatchClaimProgressResult {
+    pub claimed_batch_index: Option<usize>,
+    pub worker_id: String,
+    pub progress: SourcePackFilesystemArtifactProgressSnapshot,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourcePackFilesystemArtifactWorkerStepProgressExecutionResult {
+    pub worker_id: String,
+    pub claimed_batch_index: Option<usize>,
+    pub executed_batch: Option<SourcePackFilesystemArtifactBatchExecutionResult>,
+    pub progress: SourcePackFilesystemArtifactProgressSnapshot,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourcePackFilesystemArtifactWorkerRunProgressExecutionResult {
+    pub worker_id: String,
+    pub executed_batch_count: usize,
+    pub progress: SourcePackFilesystemArtifactProgressSnapshot,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourcePackFilesystemArtifactWorkerStepExecutionResult {
+    pub worker_id: String,
+    pub claimed_batch_index: Option<usize>,
+    pub executed_batch: Option<SourcePackFilesystemArtifactBatchExecutionResult>,
+    pub completed_batch_count: usize,
+    pub ready_batch_count: usize,
+    pub linked_output_key: Option<String>,
+    pub linked_output_path: Option<PathBuf>,
+    pub complete: bool,
+    pub build_manifest_path: PathBuf,
+    pub artifact_manifest_path: PathBuf,
+    pub build_state_path: PathBuf,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourcePackFilesystemArtifactWorkerRunExecutionResult {
+    pub worker_id: String,
+    pub executed_batch_count: usize,
+    pub completed_batch_count: usize,
+    pub ready_batch_count: usize,
+    pub linked_output_key: Option<String>,
+    pub linked_output_path: Option<PathBuf>,
+    pub complete: bool,
+    pub build_manifest_path: PathBuf,
+    pub artifact_manifest_path: PathBuf,
+    pub build_state_path: PathBuf,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourcePackFilesystemArtifactResumeExecutionResult {
+    pub executed_batch_count: usize,
+    pub completed_batch_count: usize,
+    pub ready_batch_count: usize,
+    pub linked_output_key: Option<String>,
+    pub linked_output_path: Option<PathBuf>,
+    pub complete: bool,
+    pub build_manifest_path: PathBuf,
+    pub artifact_manifest_path: PathBuf,
+    pub build_state_path: PathBuf,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourcePackFilesystemWorkQueueProgressSnapshot {
+    pub target: SourcePackArtifactTarget,
+    pub work_item_count: usize,
+    pub completed_item_count: usize,
+    pub ready_item_count: usize,
+    pub claimed_item_count: usize,
+    pub first_ready_item_index: Option<usize>,
+    pub ready_item_indices: Vec<usize>,
+    pub complete: bool,
+    pub work_queue_index_path: PathBuf,
+    pub progress_index_path: PathBuf,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourcePackFilesystemWorkQueueItemClaimResult {
+    pub claimed_item_index: Option<usize>,
+    pub worker_id: String,
+    pub progress: SourcePackFilesystemWorkQueueProgressSnapshot,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourcePackFilesystemWorkQueueItemCompletionResult {
+    pub completed_item_index: usize,
+    pub worker_id: String,
+    pub newly_completed: bool,
+    pub newly_ready_item_count: usize,
+    pub progress: SourcePackFilesystemWorkQueueProgressSnapshot,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourcePackFilesystemWorkQueueArtifactItemExecutionResult {
+    pub item_index: usize,
+    pub worker_id: String,
+    pub executed_batch: SourcePackFilesystemArtifactBatchExecutionResult,
+    pub completion: SourcePackFilesystemWorkQueueItemCompletionResult,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourcePackFilesystemHierarchicalLinkGroupExecutionResult {
+    pub group_index: usize,
+    pub job_index: usize,
+    pub kind: SourcePackHierarchicalLinkGroupKind,
+    pub input_interface_count: usize,
+    pub input_object_count: usize,
+    pub input_group_count: usize,
+    pub output_key: String,
+    pub output_path: PathBuf,
+    pub final_output: bool,
+    pub linked_output_key: Option<String>,
+    pub linked_output_path: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourcePackFilesystemWorkQueueLinkItemExecutionResult {
+    pub item_index: usize,
+    pub worker_id: String,
+    pub executed_link_group: SourcePackFilesystemHierarchicalLinkGroupExecutionResult,
+    pub completion: SourcePackFilesystemWorkQueueItemCompletionResult,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SourcePackFilesystemWorkQueueExecutedItem {
+    ArtifactBatch(SourcePackFilesystemArtifactBatchExecutionResult),
+    HierarchicalLinkGroup(SourcePackFilesystemHierarchicalLinkGroupExecutionResult),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourcePackFilesystemWorkQueueItemExecutionResult {
+    pub item_index: usize,
+    pub worker_id: String,
+    pub executed: SourcePackFilesystemWorkQueueExecutedItem,
+    pub completion: SourcePackFilesystemWorkQueueItemCompletionResult,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourcePackFilesystemWorkQueueWorkerStepExecutionResult {
+    pub worker_id: String,
+    pub claimed_item_index: Option<usize>,
+    pub executed_item: Option<SourcePackFilesystemWorkQueueItemExecutionResult>,
+    pub progress: SourcePackFilesystemWorkQueueProgressSnapshot,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourcePackFilesystemWorkQueueWorkerRunExecutionResult {
+    pub worker_id: String,
+    pub executed_item_count: usize,
+    pub executed_artifact_batch_count: usize,
+    pub executed_link_group_count: usize,
+    pub linked_output_key: Option<String>,
+    pub linked_output_path: Option<PathBuf>,
+    pub progress: SourcePackFilesystemWorkQueueProgressSnapshot,
+}

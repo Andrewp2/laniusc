@@ -439,7 +439,7 @@ pub enum SourcePackWorkQueueItemKind {
     LinkReduce,
 }
 
-pub(super) fn source_pack_work_queue_item_kind_is_artifact_backed(
+pub(in crate::compiler) fn source_pack_work_queue_item_kind_is_artifact_backed(
     kind: SourcePackWorkQueueItemKind,
 ) -> bool {
     matches!(
@@ -668,19 +668,19 @@ pub struct SourcePackWorkQueueProgressPage {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct ExplicitSourceLibraryManifestEntry {
-    pub(super) library_id: u32,
-    pub(super) source_file_count: usize,
-    pub(super) dependency_library_ids: Vec<u32>,
+pub(in crate::compiler) struct ExplicitSourceLibraryManifestEntry {
+    pub(in crate::compiler) library_id: u32,
+    pub(in crate::compiler) source_file_count: usize,
+    pub(in crate::compiler) dependency_library_ids: Vec<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct SourcePackPreparedLibrarySchedulePages {
-    pub(super) library_partition_index: SourcePackLibraryPartitionIndex,
-    pub(super) library_partition_index_path: PathBuf,
-    pub(super) library_source_file_page_count: usize,
-    pub(super) library_build_unit_page_count: usize,
-    pub(super) library_schedule_index: SourcePackLibraryScheduleIndex,
-    pub(super) library_schedule_index_path: PathBuf,
-    pub(super) library_schedule_page_count: usize,
+pub(in crate::compiler) struct SourcePackPreparedLibrarySchedulePages {
+    pub(in crate::compiler) library_partition_index: SourcePackLibraryPartitionIndex,
+    pub(in crate::compiler) library_partition_index_path: PathBuf,
+    pub(in crate::compiler) library_source_file_page_count: usize,
+    pub(in crate::compiler) library_build_unit_page_count: usize,
+    pub(in crate::compiler) library_schedule_index: SourcePackLibraryScheduleIndex,
+    pub(in crate::compiler) library_schedule_index_path: PathBuf,
+    pub(in crate::compiler) library_schedule_page_count: usize,
 }

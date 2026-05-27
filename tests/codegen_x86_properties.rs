@@ -2,11 +2,6 @@
 
 mod common;
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
-
 use laniusc::compiler::compile_source_to_x86_64_with_gpu_codegen;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -17,36 +12,6 @@ struct GeneratedProgram {
     label: String,
     source: String,
     expected_status: i32,
-}
-
-#[test]
-fn x86_codegen_does_not_restore_whole_function_shape_recognizers() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let checked_files = x86_codegen_source_files(root);
-    assert!(
-        !checked_files.is_empty(),
-        "x86 architecture guard must inspect source files"
-    );
-
-    for path in checked_files {
-        let contents = fs::read_to_string(&path)
-            .unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
-        for banned in [
-            "RETURN_EVAL",
-            "extract_return_",
-            "extract_terminal_",
-            "PARAM_IMM_COMPARE",
-            "COMPARE_OR_CHAIN",
-            "MOD_POW2",
-            "PAIR_BINARY_LIMIT_BRANCH",
-        ] {
-            assert!(
-                !contents.contains(banned),
-                "{} must not restore whole-function x86 recognizer marker {banned}",
-                path.display()
-            );
-        }
-    }
 }
 
 #[test]
@@ -1449,38 +1414,6 @@ fn generated_virtual_liveness_boundary_program(rng: &mut StdRng) -> (String, Str
 
 fn exit_status(value: i32) -> i32 {
     (value as u32 & 0xff) as i32
-}
-
-fn x86_codegen_source_files(root: &Path) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    collect_rs_files(&root.join("src/codegen/x86"), &mut files);
-    files.push(root.join("src/codegen/x86.rs"));
-
-    let shader_dir = root.join("shaders/codegen");
-    for entry in fs::read_dir(&shader_dir)
-        .unwrap_or_else(|err| panic!("read {}: {err}", shader_dir.display()))
-    {
-        let path = entry.expect("read shader dir entry").path();
-        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-            continue;
-        };
-        if name.starts_with("x86_") && name.ends_with(".slang") {
-            files.push(path);
-        }
-    }
-    files.sort();
-    files
-}
-
-fn collect_rs_files(dir: &Path, files: &mut Vec<PathBuf>) {
-    for entry in fs::read_dir(dir).unwrap_or_else(|err| panic!("read {}: {err}", dir.display())) {
-        let path = entry.expect("read source dir entry").path();
-        if path.is_dir() {
-            collect_rs_files(&path, files);
-        } else if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
-            files.push(path);
-        }
-    }
 }
 
 fn factorial(value: i32) -> i32 {

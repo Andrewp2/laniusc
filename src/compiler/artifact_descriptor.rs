@@ -97,7 +97,7 @@ impl GpuSourcePackDependencyInterfaceSummary {
 }
 
 impl GpuSourcePackArtifactDescriptor {
-    fn combined_record_arrays(
+    pub(super) fn combined_record_arrays(
         input_record_arrays: &[GpuSourcePackRecordArrayDescriptor],
         output_record_arrays: &[GpuSourcePackRecordArrayDescriptor],
     ) -> Vec<GpuSourcePackRecordArrayDescriptor> {
