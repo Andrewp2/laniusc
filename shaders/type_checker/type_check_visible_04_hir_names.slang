@@ -6,13 +6,14 @@
 // - For each HIR name use, this pass performs sorted range queries over the
 //   declaration table and a max-scope segment-tree query to find the latest
 //   declaration before the use whose scope still contains it.
-// - It consumes HIR expression records, interned name ids, function context
-//   records, and compact declaration records. It does not scan
-//   all HIR nodes per use, inspect source text, inspect token spelling, match
-//   helper names, or recognize function-body shapes.
+// - It consumes HIR expression and statement records, interned name ids,
+//   function context records, and compact declaration records. It does not
+//   inspect source text, inspect token spelling, match helper names, or
+//   recognize function-body shapes.
 
 import range_query;
 import segment_tree;
+import status;
 
 struct Params
 {
@@ -27,7 +28,10 @@ StructuredBuffer<uint> token_count;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_semantic_count;
+StructuredBuffer<uint> hir_kind;
+StructuredBuffer<uint> parent_record;
 StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> hir_value_decl_name_present;
 StructuredBuffer<uint> enclosing_fn;
@@ -39,6 +43,7 @@ StructuredBuffer<uint> hir_visible_decl_scope_end;
 StructuredBuffer<uint> hir_visible_decl_key_order;
 StructuredBuffer<uint> hir_visible_decl_scope_tree;
 
+RWStructuredBuffer<uint> status;
 RWStructuredBuffer<uint> visible_decl;
 
 static const uint INVALID = 0xffffffffu;
@@ -47,10 +52,19 @@ static const uint MAX_GROUPS_X = 65535u;
 static const uint LANGUAGE_SYMBOL_COUNT = 19u;
 static const uint HIR_VISIBLE_DECL_ROW_BLOCK_SIZE = 64u;
 
+static const uint ERR_UNRESOLVED_IDENT = 2u;
+
+static const uint HIR_STMT = 7u;
+static const uint HIR_LET_STMT = 8u;
+
 static const uint EXPR_RECORD_STRIDE = 4u;
 static const uint EXPR_RECORD_FORM = 0u;
 static const uint EXPR_RECORD_VALUE_TOKEN = 3u;
 static const uint HIR_EXPR_NAME = 2u;
+
+static const uint STMT_RECORD_STRIDE = 4u;
+static const uint STMT_RECORD_KIND_LET = 1u;
+static const uint STMT_RECORD_KIND_CONST = 4u;
 
 public struct HirVisibleDeclLookupKey
 {
@@ -116,9 +130,57 @@ uint expr_slot(uint node, uint slot)
     return hir_expr_record[node * EXPR_RECORD_STRIDE + slot];
 }
 
+uint stmt_slot(uint node, uint slot)
+{
+    return hir_stmt_record[node * STMT_RECORD_STRIDE + slot];
+}
+
 uint encoded_owner_fn(uint token)
 {
     return valid_token(token) ? enclosing_fn[token] : 0u;
+}
+
+void record_error(uint token_i, uint code, uint detail)
+{
+    record_min_token_error(status, token_i, code, detail);
+}
+
+bool node_descends_from(uint node, uint ancestor)
+{
+    if (!valid_node(node) || !valid_node(ancestor))
+        return false;
+
+    [loop]
+    for (uint guard = 0u; guard < 128u && valid_node(node); guard += 1u)
+    {
+        if (node == ancestor)
+            return true;
+        node = parent_record[node];
+    }
+    return false;
+}
+
+bool own_let_initializer_reference(uint node, uint decl_token)
+{
+    if (!valid_node(node) || !valid_token(decl_token))
+        return false;
+
+    uint current = node;
+    [loop]
+    for (uint guard = 0u; guard < 128u && valid_node(current); guard += 1u)
+    {
+        uint kind = hir_kind[current];
+        uint stmt_kind = stmt_slot(current, 0u);
+        if ((kind == HIR_STMT || kind == HIR_LET_STMT) &&
+            (stmt_kind == STMT_RECORD_KIND_LET ||
+             stmt_kind == STMT_RECORD_KIND_CONST) &&
+            stmt_slot(current, 1u) == decl_token)
+        {
+            return node_descends_from(node, stmt_slot(current, 2u));
+        }
+        current = parent_record[current];
+    }
+    return false;
 }
 
 int compare_u32(uint left, uint right)
@@ -287,5 +349,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint owner_encoded = encoded_owner_fn(use_token);
     uint decl_token = best_hir_decl_from_table(use_token, owner_encoded, use_name);
     if (valid_token(decl_token))
+    {
+        if (own_let_initializer_reference(node, decl_token))
+        {
+            record_error(use_token, ERR_UNRESOLVED_IDENT, 0u);
+            return;
+        }
         visible_decl[use_token] = decl_token;
+    }
 }

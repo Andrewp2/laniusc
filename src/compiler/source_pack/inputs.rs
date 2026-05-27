@@ -241,14 +241,14 @@ impl ExplicitSourcePack {
         limits: CodegenUnitLimits,
         executor: &mut E,
     ) -> Result<
-        SourcePackBuildExecutionResult<E::LibraryInterface, E::CodegenObject, E::LinkedOutput>,
+        BuildExecutionResult<E::LibraryInterface, E::CodegenObject, E::LinkedOutput>,
         CompileError,
     >
     where
-        E: SourcePackBuildExecutor,
+        E: BuildExecutor,
     {
         let build_plan = self.bounded_frontend_build_plan(limits);
-        execute_source_pack_build(
+        execute_build(
             self,
             &build_plan,
             SourcePackJobBatchLimits::from_codegen_unit_limits(limits),
@@ -262,14 +262,14 @@ impl ExplicitSourcePack {
         batch_limits: SourcePackJobBatchLimits,
         executor: &mut E,
     ) -> Result<
-        SourcePackBuildExecutionResult<E::LibraryInterface, E::CodegenObject, E::LinkedOutput>,
+        BuildExecutionResult<E::LibraryInterface, E::CodegenObject, E::LinkedOutput>,
         CompileError,
     >
     where
-        E: SourcePackBuildExecutor,
+        E: BuildExecutor,
     {
         let build_plan = self.bounded_frontend_build_plan(limits);
-        execute_source_pack_build(self, &build_plan, batch_limits, executor)
+        execute_build(self, &build_plan, batch_limits, executor)
     }
 }
 
@@ -424,7 +424,7 @@ impl ExplicitSourcePackPathManifest {
         &self,
         target: SourcePackArtifactTarget,
     ) -> Result<SourcePackLibraryPartitionIndex, CompileError> {
-        source_pack_library_partition_index(self, target)
+        Ok(library_partition_plan(self, target)?.index)
     }
 
     pub fn source_files_for_job(&self, job: &SourcePackJob) -> &[ExplicitSourcePathFile] {
@@ -447,14 +447,14 @@ impl ExplicitSourcePackPathManifest {
         limits: CodegenUnitLimits,
         executor: &mut E,
     ) -> Result<
-        SourcePackBuildExecutionResult<E::LibraryInterface, E::CodegenObject, E::LinkedOutput>,
+        BuildExecutionResult<E::LibraryInterface, E::CodegenObject, E::LinkedOutput>,
         CompileError,
     >
     where
-        E: SourcePackPathBuildExecutor,
+        E: PathBuildExecutor,
     {
         let build_plan = self.bounded_frontend_build_plan(limits);
-        execute_source_pack_path_build(
+        execute_path_build(
             self,
             &build_plan,
             SourcePackJobBatchLimits::from_codegen_unit_limits(limits),
@@ -468,14 +468,14 @@ impl ExplicitSourcePackPathManifest {
         batch_limits: SourcePackJobBatchLimits,
         executor: &mut E,
     ) -> Result<
-        SourcePackBuildExecutionResult<E::LibraryInterface, E::CodegenObject, E::LinkedOutput>,
+        BuildExecutionResult<E::LibraryInterface, E::CodegenObject, E::LinkedOutput>,
         CompileError,
     >
     where
-        E: SourcePackPathBuildExecutor,
+        E: PathBuildExecutor,
     {
         let build_plan = self.bounded_frontend_build_plan(limits);
-        execute_source_pack_path_build(self, &build_plan, batch_limits, executor)
+        execute_path_build(self, &build_plan, batch_limits, executor)
     }
 
     pub fn execute_build_plan_with_handles<E>(
@@ -483,12 +483,12 @@ impl ExplicitSourcePackPathManifest {
         limits: CodegenUnitLimits,
         batch_limits: SourcePackJobBatchLimits,
         executor: &mut E,
-    ) -> Result<SourcePackHandleBuildExecutionResult<E::LinkedOutput>, CompileError>
+    ) -> Result<HandleBuildExecutionResult<E::LinkedOutput>, CompileError>
     where
-        E: SourcePackPathHandleBuildExecutor,
+        E: PathHandleBuildExecutor,
     {
         let build_plan = self.bounded_frontend_build_plan(limits);
-        execute_source_pack_path_handle_build(self, &build_plan, batch_limits, executor)
+        execute_path_handle_build(self, &build_plan, batch_limits, executor)
     }
 
     pub fn execute_build_plan_with_batched_link_handles<E>(
@@ -496,12 +496,12 @@ impl ExplicitSourcePackPathManifest {
         limits: CodegenUnitLimits,
         batch_limits: SourcePackJobBatchLimits,
         executor: &mut E,
-    ) -> Result<SourcePackHandleBuildExecutionResult<E::LinkedOutput>, CompileError>
+    ) -> Result<HandleBuildExecutionResult<E::LinkedOutput>, CompileError>
     where
-        E: SourcePackPathHandleBatchedLinkBuildExecutor,
+        E: PathHandleBatchedLinkBuildExecutor,
     {
         let build_plan = self.bounded_frontend_build_plan(limits);
-        execute_source_pack_path_batched_link_build(self, &build_plan, batch_limits, executor)
+        execute_path_batched_link_build(self, &build_plan, batch_limits, executor)
     }
 
     pub fn execute_build_plan_with_artifact_store<E, S>(
@@ -510,23 +510,17 @@ impl ExplicitSourcePackPathManifest {
         batch_limits: SourcePackJobBatchLimits,
         executor: &mut E,
         store: &mut S,
-    ) -> Result<SourcePackArtifactStoreBuildExecutionResult, CompileError>
+    ) -> Result<ArtifactStoreBuildExecutionResult, CompileError>
     where
-        E: SourcePackPathArtifactBuildExecutor<
+        E: ArtifactBuildExecutor<
                 LibraryInterfaceArtifact = S::LibraryInterfaceArtifact,
                 CodegenObjectArtifact = S::CodegenObjectArtifact,
                 LinkedOutputArtifact = S::LinkedOutputArtifact,
             >,
-        S: SourcePackPathArtifactStore,
+        S: ArtifactStore,
     {
         let build_plan = self.bounded_frontend_build_plan(limits);
-        execute_source_pack_path_artifact_store_build(
-            self,
-            &build_plan,
-            batch_limits,
-            executor,
-            store,
-        )
+        execute_build_plan_with_store(self, &build_plan, batch_limits, executor, store)
     }
 }
 

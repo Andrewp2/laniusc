@@ -10,6 +10,7 @@ mod finish;
 mod record;
 mod support;
 
+pub use record::RecordElfInputs;
 use support::{PooledReadbackBuffer, PooledStorageBuffer, RetainedX86Buffer, trace_x86_codegen};
 
 #[repr(C)]
@@ -500,8 +501,7 @@ pub fn x86_function_slot_capacity(
     structural_limit.min(token_density_bound).max(1)
 }
 
-pub fn x86_regalloc_recorded_step_count(inst_capacity: usize, inst_basis_words: usize) -> usize {
-    let _ = inst_basis_words;
+pub fn regalloc_recorded_step_count(inst_capacity: usize) -> usize {
     inst_capacity.max(1)
 }
 

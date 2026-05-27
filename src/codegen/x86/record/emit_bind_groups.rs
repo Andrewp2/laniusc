@@ -1,0 +1,289 @@
+use anyhow::Result;
+
+use super::{
+    super::{
+        GpuX86CodeGenerator,
+        support::{UniformBindingArray, reflected_bind_group},
+    },
+    bind_helpers::scan_block_groups,
+    scan::final_ping_pong_scan_prefix,
+};
+
+pub(super) struct EmitBindGroups {
+    pub(super) select: wgpu::BindGroup,
+    pub(super) inst_size: wgpu::BindGroup,
+    pub(super) text_scan_local: wgpu::BindGroup,
+    pub(super) text_scan_block: Vec<wgpu::BindGroup>,
+    pub(super) text_offsets: wgpu::BindGroup,
+    pub(super) encode: wgpu::BindGroup,
+    pub(super) elf_layout: wgpu::BindGroup,
+    pub(super) elf: wgpu::BindGroup,
+}
+
+pub(super) struct EmitBindGroupInputs<'a> {
+    pub(super) params: &'a wgpu::Buffer,
+    pub(super) text_scan_params: &'a UniformBindingArray,
+    pub(super) func_meta: &'a wgpu::Buffer,
+    pub(super) decl_layout_status: &'a wgpu::Buffer,
+    pub(super) virtual_inst_record: &'a wgpu::Buffer,
+    pub(super) virtual_inst_args: &'a wgpu::Buffer,
+    pub(super) virtual_inst_status: &'a wgpu::Buffer,
+    pub(super) virtual_phys_reg: &'a wgpu::Buffer,
+    pub(super) virtual_call_live_reg_mask: &'a wgpu::Buffer,
+    pub(super) virtual_regalloc_status: &'a wgpu::Buffer,
+    pub(super) virtual_func_first_row: &'a wgpu::Buffer,
+    pub(super) virtual_func_first_row_status: &'a wgpu::Buffer,
+    pub(super) virtual_func_slot: &'a wgpu::Buffer,
+    pub(super) inst_kind: &'a wgpu::Buffer,
+    pub(super) inst_arg0: &'a wgpu::Buffer,
+    pub(super) inst_arg1: &'a wgpu::Buffer,
+    pub(super) inst_arg2: &'a wgpu::Buffer,
+    pub(super) inst_size: &'a wgpu::Buffer,
+    pub(super) inst_byte_offset: &'a wgpu::Buffer,
+    pub(super) select_status: &'a wgpu::Buffer,
+    pub(super) size_status: &'a wgpu::Buffer,
+    pub(super) text_scan_local_prefix: &'a wgpu::Buffer,
+    pub(super) text_scan_block_sum: &'a wgpu::Buffer,
+    pub(super) text_scan_prefix_a: &'a wgpu::Buffer,
+    pub(super) text_scan_prefix_b: &'a wgpu::Buffer,
+    pub(super) text_len: &'a wgpu::Buffer,
+    pub(super) text_status: &'a wgpu::Buffer,
+    pub(super) out: &'a wgpu::Buffer,
+    pub(super) encode_status: &'a wgpu::Buffer,
+    pub(super) elf_layout: &'a wgpu::Buffer,
+    pub(super) layout_status: &'a wgpu::Buffer,
+    pub(super) status: &'a wgpu::Buffer,
+}
+
+pub(super) fn create_emit_bind_groups(
+    generator: &GpuX86CodeGenerator,
+    device: &wgpu::Device,
+    inputs: EmitBindGroupInputs<'_>,
+) -> Result<EmitBindGroups> {
+    let EmitBindGroupInputs {
+        params,
+        text_scan_params,
+        func_meta,
+        decl_layout_status,
+        virtual_inst_record,
+        virtual_inst_args,
+        virtual_inst_status,
+        virtual_phys_reg,
+        virtual_call_live_reg_mask,
+        virtual_regalloc_status,
+        virtual_func_first_row,
+        virtual_func_first_row_status,
+        virtual_func_slot,
+        inst_kind,
+        inst_arg0,
+        inst_arg1,
+        inst_arg2,
+        inst_size,
+        inst_byte_offset,
+        select_status,
+        size_status,
+        text_scan_local_prefix,
+        text_scan_block_sum,
+        text_scan_prefix_a,
+        text_scan_prefix_b,
+        text_len,
+        text_status,
+        out,
+        encode_status,
+        elf_layout,
+        layout_status,
+        status,
+    } = inputs;
+
+    let select = reflected_bind_group(
+        device,
+        Some("codegen.x86.select.bind_group"),
+        &generator.select_pass,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            (
+                "x86_virtual_inst_record",
+                virtual_inst_record.as_entire_binding(),
+            ),
+            (
+                "x86_virtual_inst_args",
+                virtual_inst_args.as_entire_binding(),
+            ),
+            (
+                "x86_virtual_inst_status",
+                virtual_inst_status.as_entire_binding(),
+            ),
+            ("x86_virtual_phys_reg", virtual_phys_reg.as_entire_binding()),
+            (
+                "x86_virtual_call_live_reg_mask",
+                virtual_call_live_reg_mask.as_entire_binding(),
+            ),
+            (
+                "x86_virtual_regalloc_status",
+                virtual_regalloc_status.as_entire_binding(),
+            ),
+            (
+                "x86_func_first_virtual_row",
+                virtual_func_first_row.as_entire_binding(),
+            ),
+            (
+                "x86_func_first_virtual_row_status",
+                virtual_func_first_row_status.as_entire_binding(),
+            ),
+            (
+                "x86_decl_layout_status",
+                decl_layout_status.as_entire_binding(),
+            ),
+            ("x86_func_meta", func_meta.as_entire_binding()),
+            (
+                "x86_virtual_func_slot",
+                virtual_func_slot.as_entire_binding(),
+            ),
+            ("x86_inst_kind", inst_kind.as_entire_binding()),
+            ("x86_inst_arg0", inst_arg0.as_entire_binding()),
+            ("x86_inst_arg1", inst_arg1.as_entire_binding()),
+            ("x86_inst_arg2", inst_arg2.as_entire_binding()),
+            ("select_status", select_status.as_entire_binding()),
+        ],
+    )?;
+    let inst_size_bind_group = reflected_bind_group(
+        device,
+        Some("codegen.x86.inst_size.bind_group"),
+        &generator.inst_size_pass,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("x86_inst_kind", inst_kind.as_entire_binding()),
+            ("x86_inst_arg0", inst_arg0.as_entire_binding()),
+            ("x86_inst_arg1", inst_arg1.as_entire_binding()),
+            ("x86_inst_arg2", inst_arg2.as_entire_binding()),
+            (
+                "x86_decl_layout_status",
+                decl_layout_status.as_entire_binding(),
+            ),
+            ("select_status", select_status.as_entire_binding()),
+            ("x86_inst_size", inst_size.as_entire_binding()),
+            ("size_status", size_status.as_entire_binding()),
+        ],
+    )?;
+    let text_scan_local = reflected_bind_group(
+        device,
+        Some("codegen.x86.text_scan_local.bind_group"),
+        &generator.text_scan_local_pass,
+        0,
+        &[
+            ("gScan", text_scan_params.binding(0)),
+            ("select_status", select_status.as_entire_binding()),
+            ("x86_inst_size", inst_size.as_entire_binding()),
+            (
+                "x86_text_scan_local_prefix",
+                text_scan_local_prefix.as_entire_binding(),
+            ),
+            (
+                "x86_text_scan_block_sum",
+                text_scan_block_sum.as_entire_binding(),
+            ),
+        ],
+    )?;
+    let text_scan_block = scan_block_groups(
+        device,
+        [
+            "codegen.x86.text_scan_blocks.even.bind_group",
+            "codegen.x86.text_scan_blocks.odd.bind_group",
+        ],
+        &generator.node_inst_scan_blocks_pass,
+        text_scan_params,
+        "gNodeInstBlockScan",
+        "x86_node_inst_scan_block_sum",
+        "x86_node_inst_scan_block_prefix_in",
+        "x86_node_inst_scan_block_prefix_out",
+        text_scan_block_sum,
+        text_scan_prefix_a,
+        text_scan_prefix_b,
+    )?;
+    let final_text_scan_prefix =
+        final_ping_pong_scan_prefix(text_scan_params, text_scan_prefix_a, text_scan_prefix_b);
+    let text_offsets = reflected_bind_group(
+        device,
+        Some("codegen.x86.text_offsets.bind_group"),
+        &generator.text_offsets_pass,
+        0,
+        &[
+            ("gScan", text_scan_params.binding(0)),
+            ("x86_inst_size", inst_size.as_entire_binding()),
+            ("size_status", size_status.as_entire_binding()),
+            (
+                "x86_text_scan_local_prefix",
+                text_scan_local_prefix.as_entire_binding(),
+            ),
+            (
+                "x86_text_scan_block_prefix",
+                final_text_scan_prefix.as_entire_binding(),
+            ),
+            ("x86_inst_byte_offset", inst_byte_offset.as_entire_binding()),
+            ("x86_text_len", text_len.as_entire_binding()),
+            ("text_status", text_status.as_entire_binding()),
+        ],
+    )?;
+    let encode = reflected_bind_group(
+        device,
+        Some("codegen.x86.encode.bind_group"),
+        &generator.encode_pass,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("x86_inst_kind", inst_kind.as_entire_binding()),
+            ("x86_inst_arg0", inst_arg0.as_entire_binding()),
+            ("x86_inst_arg1", inst_arg1.as_entire_binding()),
+            ("x86_inst_arg2", inst_arg2.as_entire_binding()),
+            ("x86_inst_size", inst_size.as_entire_binding()),
+            ("x86_inst_byte_offset", inst_byte_offset.as_entire_binding()),
+            (
+                "x86_decl_layout_status",
+                decl_layout_status.as_entire_binding(),
+            ),
+            ("x86_text_len", text_len.as_entire_binding()),
+            ("text_status", text_status.as_entire_binding()),
+            ("out_words", out.as_entire_binding()),
+            ("encode_status", encode_status.as_entire_binding()),
+        ],
+    )?;
+    let elf_layout_bind_group = reflected_bind_group(
+        device,
+        Some("codegen.x86.elf_layout.bind_group"),
+        &generator.elf_layout_pass,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("x86_text_len", text_len.as_entire_binding()),
+            ("encode_status", encode_status.as_entire_binding()),
+            ("x86_elf_layout", elf_layout.as_entire_binding()),
+            ("layout_status", layout_status.as_entire_binding()),
+        ],
+    )?;
+    let elf = reflected_bind_group(
+        device,
+        Some("codegen.x86.elf_write.bind_group"),
+        &generator.elf_write_pass,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("x86_elf_layout", elf_layout.as_entire_binding()),
+            ("layout_status", layout_status.as_entire_binding()),
+            ("out_words", out.as_entire_binding()),
+            ("status", status.as_entire_binding()),
+        ],
+    )?;
+
+    Ok(EmitBindGroups {
+        select,
+        inst_size: inst_size_bind_group,
+        text_scan_local,
+        text_scan_block,
+        text_offsets,
+        encode,
+        elf_layout: elf_layout_bind_group,
+        elf,
+    })
+}

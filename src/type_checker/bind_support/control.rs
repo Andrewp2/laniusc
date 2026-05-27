@@ -1,0 +1,431 @@
+use super::super::*;
+
+pub(in crate::type_checker) fn create_fn_context_bind_groups(
+    device: &wgpu::Device,
+    params: &LaniusBuffer<FnContextParams>,
+    scan_steps: &[FnContextScanStep],
+    hir_kind_buf: &wgpu::Buffer,
+    hir_token_pos_buf: &wgpu::Buffer,
+    hir_token_end_buf: &wgpu::Buffer,
+    hir_status_buf: &wgpu::Buffer,
+    enclosing_fn: &wgpu::Buffer,
+    enclosing_fn_end: &wgpu::Buffer,
+    fn_event_value: &wgpu::Buffer,
+    fn_event_end: &wgpu::Buffer,
+    fn_event_index: &wgpu::Buffer,
+    fn_event_inblock: &wgpu::Buffer,
+    fn_block_sum: &wgpu::Buffer,
+    fn_prefix_a: &wgpu::Buffer,
+    fn_prefix_b: &wgpu::Buffer,
+    fn_block_prefix: &wgpu::Buffer,
+) -> Result<FnContextBindGroups> {
+    let clear_pass = type_check_fn_context_clear_pass(device)?;
+    let mark_pass = type_check_fn_context_mark_pass(device)?;
+    let local_pass = type_check_fn_context_local_pass(device)?;
+    let scan_pass = type_check_fn_context_scan_pass(device)?;
+    let apply_pass = type_check_fn_context_apply_pass(device)?;
+    create_fn_context_bind_groups_from_passes(
+        device,
+        &clear_pass,
+        &mark_pass,
+        &local_pass,
+        &scan_pass,
+        &apply_pass,
+        params,
+        scan_steps,
+        hir_kind_buf,
+        hir_token_pos_buf,
+        hir_token_end_buf,
+        hir_status_buf,
+        enclosing_fn,
+        enclosing_fn_end,
+        fn_event_value,
+        fn_event_end,
+        fn_event_index,
+        fn_event_inblock,
+        fn_block_sum,
+        fn_prefix_a,
+        fn_prefix_b,
+        fn_block_prefix,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(in crate::type_checker) fn create_fn_context_bind_groups_with_passes(
+    passes: &TypeCheckPasses,
+    device: &wgpu::Device,
+    params: &LaniusBuffer<FnContextParams>,
+    scan_steps: &[FnContextScanStep],
+    hir_kind_buf: &wgpu::Buffer,
+    hir_token_pos_buf: &wgpu::Buffer,
+    hir_token_end_buf: &wgpu::Buffer,
+    hir_status_buf: &wgpu::Buffer,
+    enclosing_fn: &wgpu::Buffer,
+    enclosing_fn_end: &wgpu::Buffer,
+    fn_event_value: &wgpu::Buffer,
+    fn_event_end: &wgpu::Buffer,
+    fn_event_index: &wgpu::Buffer,
+    fn_event_inblock: &wgpu::Buffer,
+    fn_block_sum: &wgpu::Buffer,
+    fn_prefix_a: &wgpu::Buffer,
+    fn_prefix_b: &wgpu::Buffer,
+    fn_block_prefix: &wgpu::Buffer,
+) -> Result<FnContextBindGroups> {
+    create_fn_context_bind_groups_from_passes(
+        device,
+        &passes.fn_context_clear,
+        &passes.fn_context_mark,
+        &passes.fn_context_local,
+        &passes.fn_context_scan,
+        &passes.fn_context_apply,
+        params,
+        scan_steps,
+        hir_kind_buf,
+        hir_token_pos_buf,
+        hir_token_end_buf,
+        hir_status_buf,
+        enclosing_fn,
+        enclosing_fn_end,
+        fn_event_value,
+        fn_event_end,
+        fn_event_index,
+        fn_event_inblock,
+        fn_block_sum,
+        fn_prefix_a,
+        fn_prefix_b,
+        fn_block_prefix,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(in crate::type_checker) fn create_fn_context_bind_groups_from_passes(
+    device: &wgpu::Device,
+    clear_pass: &PassData,
+    mark_pass: &PassData,
+    local_pass: &PassData,
+    scan_pass: &PassData,
+    apply_pass: &PassData,
+    params: &LaniusBuffer<FnContextParams>,
+    scan_steps: &[FnContextScanStep],
+    hir_kind_buf: &wgpu::Buffer,
+    hir_token_pos_buf: &wgpu::Buffer,
+    hir_token_end_buf: &wgpu::Buffer,
+    hir_status_buf: &wgpu::Buffer,
+    enclosing_fn: &wgpu::Buffer,
+    enclosing_fn_end: &wgpu::Buffer,
+    fn_event_value: &wgpu::Buffer,
+    fn_event_end: &wgpu::Buffer,
+    fn_event_index: &wgpu::Buffer,
+    fn_event_inblock: &wgpu::Buffer,
+    fn_block_sum: &wgpu::Buffer,
+    fn_prefix_a: &wgpu::Buffer,
+    fn_prefix_b: &wgpu::Buffer,
+    fn_block_prefix: &wgpu::Buffer,
+) -> Result<FnContextBindGroups> {
+    let clear = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_fn_context_01_clear"),
+        clear_pass,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("enclosing_fn", enclosing_fn.as_entire_binding()),
+            ("enclosing_fn_end", enclosing_fn_end.as_entire_binding()),
+            ("fn_event_value", fn_event_value.as_entire_binding()),
+            ("fn_event_end", fn_event_end.as_entire_binding()),
+            ("fn_event_index", fn_event_index.as_entire_binding()),
+            ("fn_event_inblock", fn_event_inblock.as_entire_binding()),
+            ("block_sum", fn_block_sum.as_entire_binding()),
+            ("block_prefix", fn_block_prefix.as_entire_binding()),
+        ],
+    )?;
+
+    let mark = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_fn_context_02_mark"),
+        mark_pass,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("hir_kind", hir_kind_buf.as_entire_binding()),
+            ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
+            ("hir_token_end", hir_token_end_buf.as_entire_binding()),
+            ("hir_status", hir_status_buf.as_entire_binding()),
+            ("fn_event_value", fn_event_value.as_entire_binding()),
+            ("fn_event_end", fn_event_end.as_entire_binding()),
+            ("fn_event_index", fn_event_index.as_entire_binding()),
+        ],
+    )?;
+
+    let local = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_fn_context_03_local"),
+        local_pass,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("fn_event_index", fn_event_index.as_entire_binding()),
+            ("fn_event_inblock", fn_event_inblock.as_entire_binding()),
+            ("block_sum", fn_block_sum.as_entire_binding()),
+        ],
+    )?;
+
+    let mut scan = Vec::with_capacity(scan_steps.len());
+    for step in scan_steps {
+        let prefix_in = if step.read_from_a {
+            fn_prefix_a
+        } else {
+            fn_prefix_b
+        };
+        let prefix_out = if step.write_to_a {
+            fn_prefix_a
+        } else {
+            fn_prefix_b
+        };
+        scan.push(bind_group::create_bind_group_from_bindings(
+            device,
+            Some("type_check_fn_context_04_scan_blocks"),
+            scan_pass,
+            0,
+            &[
+                ("gParams", step.params.as_entire_binding()),
+                ("block_sum", fn_block_sum.as_entire_binding()),
+                ("prefix_in", prefix_in.as_entire_binding()),
+                ("prefix_out", prefix_out.as_entire_binding()),
+                ("block_prefix", fn_block_prefix.as_entire_binding()),
+            ],
+        )?);
+    }
+
+    let apply = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_fn_context_05_apply"),
+        apply_pass,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("fn_event_value", fn_event_value.as_entire_binding()),
+            ("fn_event_end", fn_event_end.as_entire_binding()),
+            ("fn_event_inblock", fn_event_inblock.as_entire_binding()),
+            ("block_prefix", fn_block_prefix.as_entire_binding()),
+            ("enclosing_fn", enclosing_fn.as_entire_binding()),
+            ("enclosing_fn_end", enclosing_fn_end.as_entire_binding()),
+        ],
+    )?;
+
+    Ok(FnContextBindGroups {
+        clear,
+        mark,
+        local,
+        scan,
+        apply,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(in crate::type_checker) fn create_loop_depth_bind_groups(
+    device: &wgpu::Device,
+    params: &LaniusBuffer<LoopDepthParams>,
+    scan_steps: &[LoopDepthScanStep],
+    token_buf: &wgpu::Buffer,
+    token_count_buf: &wgpu::Buffer,
+    hir_kind_buf: &wgpu::Buffer,
+    hir_token_pos_buf: &wgpu::Buffer,
+    hir_token_end_buf: &wgpu::Buffer,
+    hir_status_buf: &wgpu::Buffer,
+    loop_delta: &wgpu::Buffer,
+    loop_depth_inblock: &wgpu::Buffer,
+    loop_block_sum: &wgpu::Buffer,
+    loop_prefix_a: &wgpu::Buffer,
+    loop_prefix_b: &wgpu::Buffer,
+    loop_block_prefix: &wgpu::Buffer,
+    loop_depth: &wgpu::Buffer,
+) -> Result<LoopDepthBindGroups> {
+    let clear_pass = loop_depth_01_clear_pass(device)?;
+    let mark_pass = loop_depth_02_mark_pass(device)?;
+    let local_pass = loop_depth_03_local_pass(device)?;
+    let scan_pass = loop_depth_04_scan_pass(device)?;
+    let apply_pass = loop_depth_05_apply_pass(device)?;
+    create_loop_depth_bind_groups_from_passes(
+        device,
+        &clear_pass,
+        &mark_pass,
+        &local_pass,
+        &scan_pass,
+        &apply_pass,
+        params,
+        scan_steps,
+        token_buf,
+        token_count_buf,
+        hir_kind_buf,
+        hir_token_pos_buf,
+        hir_token_end_buf,
+        hir_status_buf,
+        loop_delta,
+        loop_depth_inblock,
+        loop_block_sum,
+        loop_prefix_a,
+        loop_prefix_b,
+        loop_block_prefix,
+        loop_depth,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(in crate::type_checker) fn create_loop_depth_bind_groups_with_passes(
+    passes: &TypeCheckPasses,
+    device: &wgpu::Device,
+    params: &LaniusBuffer<LoopDepthParams>,
+    scan_steps: &[LoopDepthScanStep],
+    token_buf: &wgpu::Buffer,
+    token_count_buf: &wgpu::Buffer,
+    hir_kind_buf: &wgpu::Buffer,
+    hir_token_pos_buf: &wgpu::Buffer,
+    hir_token_end_buf: &wgpu::Buffer,
+    hir_status_buf: &wgpu::Buffer,
+    loop_delta: &wgpu::Buffer,
+    loop_depth_inblock: &wgpu::Buffer,
+    loop_block_sum: &wgpu::Buffer,
+    loop_prefix_a: &wgpu::Buffer,
+    loop_prefix_b: &wgpu::Buffer,
+    loop_block_prefix: &wgpu::Buffer,
+    loop_depth: &wgpu::Buffer,
+) -> Result<LoopDepthBindGroups> {
+    create_loop_depth_bind_groups_from_passes(
+        device,
+        &passes.loop_depth_clear,
+        &passes.loop_depth_mark,
+        &passes.loop_depth_local,
+        &passes.loop_depth_scan,
+        &passes.loop_depth_apply,
+        params,
+        scan_steps,
+        token_buf,
+        token_count_buf,
+        hir_kind_buf,
+        hir_token_pos_buf,
+        hir_token_end_buf,
+        hir_status_buf,
+        loop_delta,
+        loop_depth_inblock,
+        loop_block_sum,
+        loop_prefix_a,
+        loop_prefix_b,
+        loop_block_prefix,
+        loop_depth,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(in crate::type_checker) fn create_loop_depth_bind_groups_from_passes(
+    device: &wgpu::Device,
+    clear_pass: &PassData,
+    mark_pass: &PassData,
+    local_pass: &PassData,
+    scan_pass: &PassData,
+    apply_pass: &PassData,
+    params: &LaniusBuffer<LoopDepthParams>,
+    scan_steps: &[LoopDepthScanStep],
+    token_buf: &wgpu::Buffer,
+    token_count_buf: &wgpu::Buffer,
+    hir_kind_buf: &wgpu::Buffer,
+    hir_token_pos_buf: &wgpu::Buffer,
+    hir_token_end_buf: &wgpu::Buffer,
+    hir_status_buf: &wgpu::Buffer,
+    loop_delta: &wgpu::Buffer,
+    loop_depth_inblock: &wgpu::Buffer,
+    loop_block_sum: &wgpu::Buffer,
+    loop_prefix_a: &wgpu::Buffer,
+    loop_prefix_b: &wgpu::Buffer,
+    loop_block_prefix: &wgpu::Buffer,
+    loop_depth: &wgpu::Buffer,
+) -> Result<LoopDepthBindGroups> {
+    let clear = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_loop_depth_01_clear"),
+        clear_pass,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("loop_delta", loop_delta.as_entire_binding()),
+        ],
+    )?;
+
+    let mark = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_loop_depth_02_mark"),
+        mark_pass,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("hir_kind", hir_kind_buf.as_entire_binding()),
+            ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
+            ("hir_token_end", hir_token_end_buf.as_entire_binding()),
+            ("hir_status", hir_status_buf.as_entire_binding()),
+            ("token_words", token_buf.as_entire_binding()),
+            ("token_count", token_count_buf.as_entire_binding()),
+            ("loop_delta", loop_delta.as_entire_binding()),
+        ],
+    )?;
+
+    let local = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_loop_depth_03_local"),
+        local_pass,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("loop_delta", loop_delta.as_entire_binding()),
+            ("loop_depth_inblock", loop_depth_inblock.as_entire_binding()),
+            ("block_sum", loop_block_sum.as_entire_binding()),
+        ],
+    )?;
+
+    let mut scan = Vec::with_capacity(scan_steps.len());
+    for step in scan_steps {
+        let prefix_in = if step.read_from_a {
+            loop_prefix_a
+        } else {
+            loop_prefix_b
+        };
+        let prefix_out = if step.write_to_a {
+            loop_prefix_a
+        } else {
+            loop_prefix_b
+        };
+        scan.push(bind_group::create_bind_group_from_bindings(
+            device,
+            Some("type_check_loop_depth_04_scan_blocks"),
+            scan_pass,
+            0,
+            &[
+                ("gParams", step.params.as_entire_binding()),
+                ("block_sum", loop_block_sum.as_entire_binding()),
+                ("prefix_in", prefix_in.as_entire_binding()),
+                ("prefix_out", prefix_out.as_entire_binding()),
+                ("block_prefix", loop_block_prefix.as_entire_binding()),
+            ],
+        )?);
+    }
+
+    let apply = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_loop_depth_05_apply"),
+        apply_pass,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("loop_depth_inblock", loop_depth_inblock.as_entire_binding()),
+            ("block_prefix", loop_block_prefix.as_entire_binding()),
+            ("loop_depth", loop_depth.as_entire_binding()),
+        ],
+    )?;
+
+    Ok(LoopDepthBindGroups {
+        clear,
+        mark,
+        local,
+        scan,
+        apply,
+    })
+}

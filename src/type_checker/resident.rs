@@ -498,7 +498,7 @@ impl GpuTypeChecker {
             record_compute(
                 encoder,
                 &self.passes.type_instances_clear,
-                &bind_groups.type_instances_clear,
+                &bind_groups.type_instances.clear,
                 "type_check.resident.type_instances_clear.pass",
                 token_capacity.max(hir_node_capacity),
             )?;
@@ -508,7 +508,7 @@ impl GpuTypeChecker {
             record_compute_indirect(
                 encoder,
                 &self.passes.type_instances_decl_generic_params,
-                &bind_groups.type_instances_decl_generic_params,
+                &bind_groups.type_instances.decl_generic_params,
                 "type_check.resident.type_instances_decl_generic_params.pass",
                 &bind_groups.hir_active_dispatch_args,
             )?;
@@ -518,7 +518,7 @@ impl GpuTypeChecker {
             record_compute_indirect(
                 encoder,
                 &self.passes.type_instances_generic_param_use_slots,
-                &bind_groups.type_instances_generic_param_use_slots,
+                &bind_groups.type_instances.generic_param_use_slots,
                 "type_check.resident.type_instances_generic_param_use_slots.pass",
                 &bind_groups.hir_active_dispatch_args,
             )?;
@@ -613,7 +613,7 @@ impl GpuTypeChecker {
             record_compute_indirect(
                 encoder,
                 &self.passes.type_instances_collect_named_arg_refs,
-                &bind_groups.type_instances_collect_named_arg_refs,
+                &bind_groups.type_instances.collect_named_arg_refs,
                 "type_check.resident.type_instances_collect_named_arg_refs.pass",
                 &bind_groups.hir_active_dispatch_args,
             )?;
@@ -663,7 +663,7 @@ impl GpuTypeChecker {
             record_compute_indirect(
                 encoder,
                 &self.passes.type_instances_decl_refs,
-                &bind_groups.type_instances_decl_refs,
+                &bind_groups.type_instances.decl_refs,
                 "type_check.resident.type_instances_decl_refs.pass",
                 &bind_groups.hir_active_dispatch_args,
             )?;
@@ -700,7 +700,7 @@ impl GpuTypeChecker {
             record_compute_indirect(
                 encoder,
                 &self.passes.type_instances_member_receivers,
-                &bind_groups.type_instances_member_receivers,
+                &bind_groups.type_instances.member_receivers,
                 "type_check.resident.type_instances_member_receivers.pass",
                 &bind_groups.hir_active_dispatch_args,
             )?;
@@ -710,7 +710,7 @@ impl GpuTypeChecker {
             record_compute_indirect(
                 encoder,
                 &self.passes.type_instances_member_results,
-                &bind_groups.type_instances_member_results,
+                &bind_groups.type_instances.member_results,
                 "type_check.resident.type_instances_member_results.pass",
                 &bind_groups.hir_active_dispatch_args,
             )?;
@@ -720,7 +720,7 @@ impl GpuTypeChecker {
             record_compute_indirect(
                 encoder,
                 &self.passes.type_instances_member_substitute,
-                &bind_groups.type_instances_member_substitute,
+                &bind_groups.type_instances.member_substitute,
                 "type_check.resident.type_instances_member_substitute.pass",
                 &bind_groups.token_active_dispatch_args,
             )?;
@@ -730,7 +730,7 @@ impl GpuTypeChecker {
             record_compute_indirect(
                 encoder,
                 &self.passes.type_instances_struct_init_clear,
-                &bind_groups.type_instances_struct_init_clear,
+                &bind_groups.type_instances.struct_init_clear,
                 "type_check.resident.type_instances_struct_init_clear.pass",
                 &bind_groups.token_active_dispatch_args,
             )?;
@@ -740,7 +740,7 @@ impl GpuTypeChecker {
             record_compute_indirect(
                 encoder,
                 &self.passes.type_instances_struct_init_fields,
-                &bind_groups.type_instances_struct_init_fields,
+                &bind_groups.type_instances.struct_init_fields,
                 "type_check.resident.type_instances_struct_init_fields.pass",
                 &bind_groups.hir_active_dispatch_args,
             )?;
@@ -856,7 +856,7 @@ impl GpuTypeChecker {
             record_compute_indirect(
                 encoder,
                 &self.passes.type_instances_array_index_results,
-                &bind_groups.type_instances_array_index_results,
+                &bind_groups.type_instances.array_index_results,
                 "type_check.resident.type_instances_array_index_results.pass",
                 &bind_groups.hir_active_dispatch_args,
             )?;
@@ -866,7 +866,7 @@ impl GpuTypeChecker {
             record_compute_indirect(
                 encoder,
                 &self.passes.type_instances_array_return_refs,
-                &bind_groups.type_instances_array_return_refs,
+                &bind_groups.type_instances.array_return_refs,
                 "type_check.resident.type_instances_array_return_refs.pass",
                 &bind_groups.hir_active_dispatch_args,
             )?;
@@ -876,7 +876,7 @@ impl GpuTypeChecker {
             record_compute_indirect(
                 encoder,
                 &self.passes.type_instances_array_literal_return_refs,
-                &bind_groups.type_instances_array_literal_return_refs,
+                &bind_groups.type_instances.array_literal_return_refs,
                 "type_check.resident.type_instances_array_literal_return_refs.pass",
                 &bind_groups.hir_active_dispatch_args,
             )?;
@@ -902,14 +902,14 @@ impl GpuTypeChecker {
             record_compute_indirect(
                 encoder,
                 &self.passes.type_instances_struct_init_substitute,
-                &bind_groups.type_instances_struct_init_substitute,
+                &bind_groups.type_instances.struct_init_substitute,
                 "type_check.resident.type_instances_struct_init_substitute.pass",
                 &bind_groups.token_active_dispatch_args,
             )?;
             record_compute_indirect(
                 encoder,
                 &self.passes.type_instances_validate_aggregate_access,
-                &bind_groups.type_instances_validate_aggregate_access,
+                &bind_groups.type_instances.validate_aggregate_access,
                 "type_check.resident.type_instances_validate_aggregate_access.pass",
                 &bind_groups.hir_active_dispatch_args,
             )?;

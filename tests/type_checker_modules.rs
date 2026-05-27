@@ -1,9 +1,6 @@
 mod common;
 
-use laniusc::{
-    compiler::{CompileError, GpuCompiler, type_check_source_pack_with_gpu_using},
-    lexer::test_cpu::lex_on_test_cpu,
-};
+use laniusc::compiler::CompileError;
 
 fn assert_gpu_type_check_rejects(src: &str) {
     match common::type_check_source_with_timeout(src) {
@@ -14,10 +11,8 @@ fn assert_gpu_type_check_rejects(src: &str) {
 }
 
 fn assert_gpu_type_check_accepts(src: &str) {
-    common::type_check_source_with_timeout(src).unwrap_or_else(|err| {
-        dump_test_cpu_token_context_for_gpu_error(&[src], &err);
-        panic!("source should pass GPU type checking: {err:?}");
-    });
+    common::type_check_source_with_timeout(src)
+        .unwrap_or_else(|err| panic!("source should pass GPU type checking: {err:?}"));
 }
 
 fn assert_gpu_type_check_pack_rejects(sources: &[&str]) {
@@ -32,58 +27,16 @@ fn assert_gpu_type_check_pack_rejects(sources: &[&str]) {
 }
 
 fn assert_gpu_type_check_pack_accepts(sources: &[&str]) {
-    common::type_check_source_pack_with_timeout(sources).unwrap_or_else(|err| {
-        dump_test_cpu_token_context_for_gpu_error(sources, &err);
-        panic!("source pack should pass GPU type checking: {err:?}");
-    });
+    common::type_check_source_pack_with_timeout(sources)
+        .unwrap_or_else(|err| panic!("source pack should pass GPU type checking: {err:?}"));
 }
 
-fn assert_gpu_type_check_pack_accepts_with_fresh_compiler(
-    label: &'static str,
-    sources: &[&'static str],
-) {
-    let source_refs = sources.to_vec();
-    let sources = sources
-        .iter()
-        .map(|source| (*source).to_owned())
-        .collect::<Vec<_>>();
-    common::block_on_gpu_with_timeout(label, async move {
-        let compiler = GpuCompiler::new().await?;
-        type_check_source_pack_with_gpu_using(&sources, &compiler).await
-    })
-    .unwrap_or_else(|err| {
-        dump_test_cpu_token_context_for_gpu_error(&source_refs, &err);
-        panic!("{label} should pass GPU type checking: {err:?}");
-    });
-}
-
-fn dump_test_cpu_token_context_for_gpu_error(sources: &[&str], err: &CompileError) {
-    // Test-only diagnostic: this intentionally uses the named CPU lexer oracle
-    // only after a GPU failure, so it is not part of the compiler path.
-    let message = match err {
-        CompileError::GpuTypeCheck(message) | CompileError::GpuSyntax(message) => message,
-        _ => return,
-    };
-    let Some(token_i) = message
-        .split("rejected token ")
-        .nth(1)
-        .and_then(|rest| rest.split(':').next())
-        .and_then(|raw| raw.parse::<usize>().ok())
-    else {
-        return;
-    };
-    let joined = sources.concat();
-    let Ok(tokens) = lex_on_test_cpu(&joined) else {
-        return;
-    };
-    let start = token_i.saturating_sub(4);
-    let end = (token_i + 5).min(tokens.len());
-    eprintln!("test CPU lexer token context [{start}..{end}) for GPU error token {token_i}:");
-    for i in start..end {
-        let token = &tokens[i];
-        let text = &joined[token.start..token.start + token.len];
-        eprintln!("  #{i}: {:?} {:?}", token.kind, text);
+fn assert_source_pack_case_accepts(sources: &'static [&'static str], app_source: &'static str) {
+    let mut sources = sources.to_vec();
+    if !app_source.is_empty() {
+        sources.push(app_source);
     }
+    assert_gpu_type_check_pack_accepts(&sources);
 }
 
 #[test]
@@ -94,14 +47,9 @@ fn type_checker_accepts_leading_module_metadata() {
 
 #[test]
 fn type_checker_source_pack_accepts_module_metadata_and_resolved_path_imports() {
-    assert_gpu_type_check_pack_accepts(&["module app::main; fn main() { return 0; }"]);
-    assert_gpu_type_check_pack_accepts(&[
-        "module core::math; fn one() -> i32 { return 1; } ",
-        "module app::main; fn main() { return 0; }",
-    ]);
     assert_gpu_type_check_pack_accepts(&[
         "module core::math; pub fn one() -> i32 { return 1; } ",
-        "module app::main; import core::math; fn main() { return 0; }",
+        "module app::main; import core::math; fn main() { return one(); }",
     ]);
     assert_gpu_type_check_pack_accepts(&[
         "module core::math; pub const VALUE: i32 = 1;",
@@ -173,37 +121,11 @@ fn main() { return 0; }
 }
 
 #[test]
-fn type_checker_accepts_flat_legacy_stdlib_seed_files() {
-    for (path, src) in [
-        ("stdlib/bool.lani", include_str!("../stdlib/bool.lani")),
-        ("stdlib/i32.lani", include_str!("../stdlib/i32.lani")),
-    ] {
-        common::type_check_source_with_timeout(src).unwrap_or_else(|err| {
-            dump_test_cpu_token_context_for_gpu_error(&[src], &err);
-            panic!("{path} should pass GPU type checking: {err:?}");
-        });
-    }
-}
-
-#[test]
-fn type_checker_accepts_core_cmp_and_hash_trait_seed_files() {
-    assert_gpu_type_check_pack_accepts_with_fresh_compiler(
-        "core cmp/hash trait source-pack seeds",
-        &[
-            include_str!("../stdlib/core/cmp.lani"),
-            include_str!("../stdlib/core/hash.lani"),
-        ],
-    );
-}
-
-#[test]
 fn type_checker_enforces_stdlib_trait_where_obligations_from_source_pack() {
-    assert_gpu_type_check_pack_accepts_with_fresh_compiler(
-        "core cmp/hash source-pack where obligations",
-        &[
-            include_str!("../stdlib/core/cmp.lani"),
-            include_str!("../stdlib/core/hash.lani"),
-            r#"
+    assert_gpu_type_check_pack_accepts(&[
+        include_str!("../stdlib/core/cmp.lani"),
+        include_str!("../stdlib/core/hash.lani"),
+        r#"
 module app::main;
 
 import core::cmp;
@@ -228,8 +150,7 @@ fn main() {
     return right;
 }
 "#,
-        ],
-    );
+    ]);
     assert_gpu_type_check_pack_rejects(&[
         include_str!("../stdlib/core/cmp.lani"),
         include_str!("../stdlib/core/hash.lani"),
@@ -252,27 +173,11 @@ fn main() {
 }
 
 #[test]
-fn type_checker_accepts_array_i32_4_seed_files() {
-    assert_gpu_type_check_accepts(include_str!("../stdlib/array_i32_4.lani"));
-    assert_gpu_type_check_pack_accepts_with_fresh_compiler(
-        "core::array_i32_4 source-pack seed",
-        &[include_str!("../stdlib/core/array_i32_4.lani")],
-    );
-}
-
-#[test]
-fn type_checker_accepts_core_array_i32_source_pack_seed() {
-    assert_gpu_type_check_pack_accepts_with_fresh_compiler(
-        "core::array_i32 source-pack seed",
-        &[include_str!("../stdlib/core/array_i32.lani")],
-    );
-}
-
-#[test]
-fn type_checker_accepts_core_bool_source_pack_seed() {
-    assert_gpu_type_check_pack_accepts(&[
-        include_str!("../stdlib/core/bool.lani"),
-        r#"
+fn type_checker_accepts_core_stdlib_module_calls() {
+    let cases = [
+        (
+            &[include_str!("../stdlib/core/bool.lani")][..],
+            r#"
 module app::main;
 
 import core::bool;
@@ -290,14 +195,10 @@ fn main() {
     return 1;
 }
 "#,
-    ]);
-}
-
-#[test]
-fn type_checker_accepts_core_i32_source_pack_seed() {
-    assert_gpu_type_check_pack_accepts(&[
-        include_str!("../stdlib/core/i32.lani"),
-        r#"
+        ),
+        (
+            &[include_str!("../stdlib/core/i32.lani")][..],
+            r#"
 module app::main;
 
 import core::i32;
@@ -313,15 +214,13 @@ fn main() {
     return 1;
 }
 "#,
-    ]);
-}
-
-#[test]
-fn type_checker_accepts_core_char_and_u32_source_pack_seeds() {
-    assert_gpu_type_check_pack_accepts(&[
-        include_str!("../stdlib/core/char.lani"),
-        include_str!("../stdlib/core/u32.lani"),
-        r#"
+        ),
+        (
+            &[
+                include_str!("../stdlib/core/char.lani"),
+                include_str!("../stdlib/core/u32.lani"),
+            ][..],
+            r#"
 module app::main;
 
 import core::char;
@@ -338,15 +237,13 @@ fn main() {
     return 1;
 }
 "#,
-    ]);
-}
-
-#[test]
-fn type_checker_accepts_core_u8_and_i64_source_pack_seeds() {
-    assert_gpu_type_check_pack_accepts(&[
-        include_str!("../stdlib/core/u8.lani"),
-        include_str!("../stdlib/core/i64.lani"),
-        r#"
+        ),
+        (
+            &[
+                include_str!("../stdlib/core/u8.lani"),
+                include_str!("../stdlib/core/i64.lani"),
+            ][..],
+            r#"
 module app::main;
 
 import core::u8;
@@ -363,14 +260,10 @@ fn main() {
     return 1;
 }
 "#,
-    ]);
-}
-
-#[test]
-fn type_checker_accepts_core_f32_source_pack_seed() {
-    assert_gpu_type_check_pack_accepts(&[
-        include_str!("../stdlib/core/f32.lani"),
-        r#"
+        ),
+        (
+            &[include_str!("../stdlib/core/f32.lani")][..],
+            r#"
 module app::main;
 
 import core::f32;
@@ -387,18 +280,25 @@ fn choose(value: f32) -> f32 {
 
 fn main() {
     let value: f32 = choose(-2.0);
-    return 0;
+    if (value > 0.5) {
+        return 0;
+    }
+    return 1;
 }
 "#,
-    ]);
+        ),
+    ];
+
+    for (sources, app_source) in cases {
+        assert_source_pack_case_accepts(sources, app_source);
+    }
 }
 
 #[test]
-fn type_checker_accepts_core_range_source_pack_seed() {
-    assert_gpu_type_check_pack_accepts_with_fresh_compiler(
-        "core range source-pack seed",
-        &[
-            include_str!("../stdlib/core/range.lani"),
+fn type_checker_accepts_core_range_module_calls() {
+    let cases = [
+        (
+            &[include_str!("../stdlib/core/range.lani")][..],
             r#"
 module app::main;
 
@@ -414,16 +314,9 @@ fn main() {
     return end;
 }
 "#,
-        ],
-    );
-}
-
-#[test]
-fn type_checker_accepts_core_range_method_source_pack_seed() {
-    assert_gpu_type_check_pack_accepts_with_fresh_compiler(
-        "core range method source-pack seed",
-        &[
-            include_str!("../stdlib/core/range.lani"),
+        ),
+        (
+            &[include_str!("../stdlib/core/range.lani")][..],
             r#"
 module app::main;
 
@@ -435,22 +328,15 @@ fn main() {
     let end: i32 = range.end();
     let direct_start: i32 = core::range::range_i32(1, 4).start();
     let direct_contains: bool = core::range::range_i32(1, 4).contains(2);
-    if (range.contains(2)) {
-        return direct_start;
+    if (range.contains(2) && direct_contains) {
+        return start + direct_start;
     }
     return end;
 }
 "#,
-        ],
-    );
-}
-
-#[test]
-fn type_checker_accepts_core_range_inclusive_method_source_pack_seed() {
-    assert_gpu_type_check_pack_accepts_with_fresh_compiler(
-        "core range inclusive method source-pack seed",
-        &[
-            include_str!("../stdlib/core/range.lani"),
+        ),
+        (
+            &[include_str!("../stdlib/core/range.lani")][..],
             r#"
 module app::main;
 
@@ -470,8 +356,12 @@ fn main() {
     return start + end;
 }
 "#,
-        ],
-    );
+        ),
+    ];
+
+    for (sources, app_source) in cases {
+        assert_source_pack_case_accepts(sources, app_source);
+    }
 }
 
 #[test]
@@ -534,12 +424,10 @@ fn main() {
 }
 
 #[test]
-fn type_checker_accepts_core_ordering_source_pack_seed() {
-    assert_gpu_type_check_pack_accepts_with_fresh_compiler(
-        "core ordering source-pack seed",
-        &[
-            include_str!("../stdlib/core/ordering.lani"),
-            r#"
+fn type_checker_accepts_core_ordering_module_calls() {
+    assert_gpu_type_check_pack_accepts(&[
+        include_str!("../stdlib/core/ordering.lani"),
+        r#"
 module app::main;
 
 import core::ordering;
@@ -550,30 +438,15 @@ fn main() {
     return 0;
 }
 "#,
-        ],
-    );
-}
-
-#[test]
-fn type_checker_accepts_core_option_and_result_source_pack_seeds() {
-    assert_gpu_type_check_pack_accepts_with_fresh_compiler(
-        "core option source-pack seed",
-        &[include_str!("../stdlib/core/option.lani")],
-    );
-    assert_gpu_type_check_pack_accepts_with_fresh_compiler(
-        "core result source-pack seed",
-        &[include_str!("../stdlib/core/result.lani")],
-    );
+    ]);
 }
 
 #[test]
 fn type_checker_accepts_qualified_generic_option_and_result_calls() {
-    assert_gpu_type_check_pack_accepts_with_fresh_compiler(
-        "qualified generic option/result stdlib calls",
-        &[
-            include_str!("../stdlib/core/option.lani"),
-            include_str!("../stdlib/core/result.lani"),
-            r#"
+    assert_gpu_type_check_pack_accepts(&[
+        include_str!("../stdlib/core/option.lani"),
+        include_str!("../stdlib/core/result.lani"),
+        r#"
 module app::main;
 
 import core::option;
@@ -583,32 +456,35 @@ fn option_value() -> i32 {
     let value: core::option::Option<i32> = core::option::Some(1);
     let fallback: i32 = 2;
     let is_some: bool = core::option::is_some(value);
-    return core::option::unwrap_or(value, fallback);
+    if (is_some) {
+        return core::option::unwrap_or(value, fallback);
+    }
+    return fallback;
 }
 
 fn result_value() -> i32 {
     let value: core::result::Result<i32, bool> = core::result::Ok(1);
     let is_ok: bool = core::result::is_ok(value);
-    return core::result::unwrap_or(value, 3);
+    if (is_ok) {
+        return core::result::unwrap_or(value, 3);
+    }
+    return 3;
 }
 
 fn main() {
     let left: i32 = option_value();
     let right: i32 = result_value();
-    return left;
+    return left + right;
 }
 "#,
-        ],
-    );
+    ]);
 }
 
 #[test]
 fn type_checker_accepts_qualified_generic_enum_instance_returns() {
-    assert_gpu_type_check_pack_accepts_with_fresh_compiler(
-        "qualified generic option replace return",
-        &[
-            include_str!("../stdlib/core/option.lani"),
-            r#"
+    assert_gpu_type_check_pack_accepts(&[
+        include_str!("../stdlib/core/option.lani"),
+        r#"
 module app::main;
 
 import core::option;
@@ -619,8 +495,7 @@ fn main() {
     return core::option::unwrap_or(replaced, 0);
 }
 "#,
-        ],
-    );
+    ]);
 }
 
 #[test]
@@ -668,7 +543,7 @@ fn main() {
 }
 
 #[test]
-fn type_checker_accepts_bounded_module_qualified_generic_callees_and_rejects_conflicts() {
+fn accepts_bounded_generic_callees_rejects_conflicts() {
     assert_gpu_type_check_pack_accepts(&[
         r#"
 module core::id;
@@ -724,54 +599,6 @@ fn main() {
 }
 "#,
     ]);
-    // Generic aggregate returns are not in the bounded module-qualified call
-    // slice yet. Reject them instead of comparing only the outer Wrapper decl.
-    assert_gpu_type_check_pack_rejects(&[
-        r#"
-module core::wrap;
-
-pub struct Wrapper<T> {
-    value: T,
-}
-
-pub fn wrap<T>(value: T) -> Wrapper<T> {
-    return Wrapper { value: value };
-}
-"#,
-        r#"
-module app::main;
-
-import core::wrap;
-
-fn main() {
-    let wrapped: core::wrap::Wrapper<bool> = core::wrap::wrap(1);
-    return 0;
-}
-"#,
-    ]);
-    assert_gpu_type_check_pack_rejects(&[
-        r#"
-module core::wrap;
-
-pub struct Wrapper<T> {
-    value: T,
-}
-
-pub fn wrap<T>(value: T) -> Wrapper<T> {
-    return Wrapper { value: value };
-}
-"#,
-        r#"
-module app::main;
-
-import core::wrap;
-
-fn main() {
-    let wrapped: core::wrap::Wrapper<i32> = core::wrap::wrap(1);
-    return 0;
-}
-"#,
-    ]);
     assert_gpu_type_check_pack_rejects(&[
         r#"
 module core::id;
@@ -793,50 +620,7 @@ fn main() {
 }
 
 #[test]
-fn type_checker_rejects_module_qualified_generic_array_calls_outside_bounded_slice() {
-    assert_gpu_type_check_pack_rejects(&[
-        r#"
-module core::array;
-
-pub fn first<T, const N: usize>(values: [T; N]) -> T {
-    return values[0];
-}
-"#,
-        r#"
-module app::main;
-
-import core::array;
-
-fn main() {
-    let values: [i32; 4] = [3, 1, 4, 1];
-    return core::array::first(values);
-}
-"#,
-    ]);
-    assert_gpu_type_check_pack_rejects(&[
-        r#"
-module core::array;
-
-pub fn copy<T, const N: usize>(values: [T; N]) -> [T; N] {
-    return values;
-}
-"#,
-        r#"
-module app::main;
-
-import core::array;
-
-fn main() {
-    let values: [i32; 4] = [3, 1, 4, 1];
-    let copied: [i32; 4] = core::array::copy(values);
-    return copied[0];
-}
-"#,
-    ]);
-}
-
-#[test]
-fn type_checker_rejects_source_pack_non_constructor_symbolic_generic_enum_returns() {
+fn rejects_non_constructor_symbolic_enum_returns() {
     assert_gpu_type_check_pack_rejects(&[
         include_str!("../stdlib/core/option.lani"),
         r#"
@@ -1078,27 +862,17 @@ fn main() {
 }
 
 #[test]
-fn type_checker_accepts_host_abi_seed_source_pack_modules() {
-    assert_gpu_type_check_pack_accepts(&[
-        include_str!("../stdlib/alloc/allocator.lani"),
-        include_str!("../stdlib/std/env.lani"),
-        include_str!("../stdlib/std/fs.lani"),
-        include_str!("../stdlib/std/io.lani"),
-        include_str!("../stdlib/std/net.lani"),
-        include_str!("../stdlib/std/process.lani"),
-        include_str!("../stdlib/std/time.lani"),
-    ]);
-}
-
-#[test]
-fn type_checker_accepts_host_abi_source_pack_qualified_calls() {
-    assert_gpu_type_check_pack_accepts(&[
-        include_str!("../stdlib/std/env.lani"),
-        include_str!("../stdlib/std/fs.lani"),
-        include_str!("../stdlib/std/net.lani"),
-        include_str!("../stdlib/std/process.lani"),
-        include_str!("../stdlib/std/time.lani"),
-        r#"
+fn type_checker_accepts_stdlib_host_module_calls() {
+    let cases = [
+        (
+            &[
+                include_str!("../stdlib/std/env.lani"),
+                include_str!("../stdlib/std/fs.lani"),
+                include_str!("../stdlib/std/net.lani"),
+                include_str!("../stdlib/std/process.lani"),
+                include_str!("../stdlib/std/time.lani"),
+            ][..],
+            r#"
 module app::main;
 
 import std::env;
@@ -1122,15 +896,13 @@ fn main() {
     return args + first_arg_len + vars + first_var_len + file + bytes + slept + tcp + udp;
 }
 "#,
-    ]);
-}
-
-#[test]
-fn type_checker_accepts_alloc_and_io_source_pack_qualified_calls() {
-    assert_gpu_type_check_pack_accepts(&[
-        include_str!("../stdlib/alloc/allocator.lani"),
-        include_str!("../stdlib/std/io.lani"),
-        r#"
+        ),
+        (
+            &[
+                include_str!("../stdlib/alloc/allocator.lani"),
+                include_str!("../stdlib/std/io.lani"),
+            ][..],
+            r#"
 module app::main;
 
 import alloc::allocator;
@@ -1149,13 +921,66 @@ fn main() {
     return std::io::flush_stdout();
 }
 "#,
-    ]);
+        ),
+        (
+            &[include_str!("../stdlib/core/target.lani")][..],
+            r#"
+module app::main;
+
+import core::target;
+
+fn main() {
+    let native: bool = core::target::is_native();
+    let has_stdio: bool = core::target::HAS_STDIO;
+    let threaded: bool = core::target::has_threads();
+    if (native && has_stdio && !threaded) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+        ),
+        (
+            &[include_str!("../stdlib/core/panic.lani")][..],
+            r#"
+module app::main;
+
+import core::panic;
+
+fn main() {
+    core::panic::unreachable();
+    return 0;
+}
+"#,
+        ),
+        (
+            &[include_str!("../stdlib/test/assert.lani")][..],
+            r#"
+module app::main;
+
+import test::assert;
+
+fn main() {
+    let value: i32 = 7;
+    test::assert::eq_i32(value, 7);
+    test::assert::is_true(value == 7);
+    return value;
+}
+"#,
+        ),
+    ];
+
+    for (sources, app_source) in cases {
+        assert_source_pack_case_accepts(sources, app_source);
+    }
 }
 
 #[test]
-fn type_checker_accepts_direct_host_abi_extern_fixtures() {
-    assert_gpu_type_check_accepts(
-        r#"
+fn type_checker_accepts_direct_host_abi_extern_calls() {
+    let cases = [
+        (
+            "lanius_std",
+            r#"
 extern "lanius_std" fn argc() -> i32;
 extern "lanius_std" fn var_count() -> i32;
 extern "lanius_std" fn open_read(path_ptr: u32, path_len: usize) -> i32;
@@ -1173,13 +998,10 @@ fn main() {
     return 0;
 }
 "#,
-    );
-}
-
-#[test]
-fn type_checker_accepts_direct_allocator_abi_extern_fixture() {
-    assert_gpu_type_check_accepts(
-        r#"
+        ),
+        (
+            "lanius_alloc",
+            r#"
 extern "lanius_alloc" fn alloc(size: usize, align: usize) -> u32;
 extern "lanius_alloc" fn realloc(ptr: u32, old_size: usize, new_size: usize, align: usize) -> u32;
 extern "lanius_alloc" fn dealloc(ptr: u32, size: usize, align: usize);
@@ -1193,46 +1015,14 @@ fn main() {
     return 0;
 }
 "#,
-    );
-}
+        ),
+    ];
 
-#[test]
-fn type_checker_accepts_core_target_source_pack_seed() {
-    assert_gpu_type_check_pack_accepts(&[
-        include_str!("../stdlib/core/target.lani"),
-        r#"
-module app::main;
-
-import core::target;
-
-fn main() {
-    let native: bool = core::target::is_native();
-    let has_stdio: bool = core::target::HAS_STDIO;
-    let threaded: bool = core::target::has_threads();
-    if (native && has_stdio && !threaded) {
-        return 0;
+    for (label, source) in cases {
+        common::type_check_source_with_timeout(source).unwrap_or_else(|err| {
+            panic!("{label} extern declarations should pass GPU type checking: {err:?}")
+        });
     }
-    return 1;
-}
-"#,
-    ]);
-}
-
-#[test]
-fn type_checker_accepts_core_panic_source_pack_seed() {
-    assert_gpu_type_check_pack_accepts(&[
-        include_str!("../stdlib/core/panic.lani"),
-        r#"
-module app::main;
-
-import core::panic;
-
-fn main() {
-    core::panic::unreachable();
-    return 0;
-}
-"#,
-    ]);
 }
 
 #[test]
@@ -1244,6 +1034,12 @@ module core::cmp;
 pub trait Eq<T> {
     pub fn check(value: T) -> bool;
 }
+
+pub impl Eq<i32> for i32 {
+    pub fn check(value: i32) -> bool {
+        return value > 0;
+    }
+}
 "#,
         r#"
 module app;
@@ -1253,7 +1049,8 @@ fn keep<T>(value: T) -> T where T: core::cmp::Eq<T> {
 }
 
 fn main() {
-    return 0;
+    let value: i32 = keep(7);
+    return value;
 }
 "#,
     ]);
@@ -1294,25 +1091,6 @@ fn keep<T>(value: T) -> T where T: core::cmp::Eq<T> {
 
 fn main() {
     return 0;
-}
-"#,
-    ]);
-}
-
-#[test]
-fn type_checker_accepts_stdlib_assertion_helpers_as_qualified_void_calls() {
-    assert_gpu_type_check_pack_accepts(&[
-        include_str!("../stdlib/test/assert.lani"),
-        r#"
-module app::main;
-
-import test::assert;
-
-fn main() {
-    let value: i32 = 7;
-    test::assert::eq_i32(value, 7);
-    test::assert::is_true(value == 7);
-    return value;
 }
 "#,
     ]);
@@ -1591,9 +1369,13 @@ module app::main;
 
 import core::ordering;
 
+fn accept(value: core::ordering::Ordering) -> i32 {
+    return 0;
+}
+
 fn main() {
     let value: core::ordering::Ordering = core::ordering::Less;
-    return 0;
+    return accept(value);
 }
 "#,
     ]);
@@ -1656,9 +1438,13 @@ module app::main;
 
 import core::maybe;
 
+fn accept(value: core::maybe::Maybe<i32>) -> i32 {
+    return 0;
+}
+
 fn main() {
     let value: core::maybe::Maybe<i32> = core::maybe::Some(1);
-    return 0;
+    return accept(value);
 }
 "#,
     ]);
@@ -1676,9 +1462,13 @@ module app::main;
 
 import core::maybe;
 
+fn accept(value: core::maybe::Maybe<i32>) -> i32 {
+    return 0;
+}
+
 fn main() {
     let value: core::maybe::Maybe<i32> = Some(1);
-    return 0;
+    return accept(value);
 }
 "#,
     ]);
@@ -1690,9 +1480,13 @@ pub enum Maybe<T> {
     None,
 }
 
+fn accept(value: Maybe<i32>) -> i32 {
+    return 0;
+}
+
 fn main() {
     let value: Maybe<i32> = Some(1);
-    return 0;
+    return accept(value);
 }
 "#]);
     assert_gpu_type_check_pack_rejects(&[

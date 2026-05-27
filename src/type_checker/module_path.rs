@@ -1,66 +1,13 @@
-use super::*;
+mod bind_helpers;
+mod buffers;
+mod create;
+mod inputs;
+mod layout;
+mod module_index;
+mod projection;
+mod record_discovery;
+mod state;
 
-pub(super) fn create_module_path_state_with_passes(
-    passes: &TypeCheckPasses,
-    device: &wgpu::Device,
-    params: &LaniusBuffer<TypeCheckParams>,
-    source_file_capacity: u32,
-    token_capacity: u32,
-    hir_node_capacity: u32,
-    token_buf: &wgpu::Buffer,
-    token_count_buf: &wgpu::Buffer,
-    hir_status_buf: &wgpu::Buffer,
-    hir_kind_buf: &wgpu::Buffer,
-    hir_token_pos_buf: &wgpu::Buffer,
-    hir_token_end_buf: &wgpu::Buffer,
-    status_buf: &wgpu::Buffer,
-    hir_active_count_buf: &wgpu::Buffer,
-    hir_items: GpuTypeCheckHirItemBuffers<'_>,
-    name_id_by_token: &wgpu::Buffer,
-    language_name_id: &wgpu::Buffer,
-    decl_name_token_scratch: &wgpu::Buffer,
-    decl_id_by_name_token_scratch: &wgpu::Buffer,
-    decl_kind_scratch: &wgpu::Buffer,
-    decl_hir_node_scratch: &wgpu::Buffer,
-    decl_parent_type_decl_scratch: &wgpu::Buffer,
-    module_type_path_type: &wgpu::Buffer,
-    module_type_path_status: &wgpu::Buffer,
-    module_value_path_expr_head: &wgpu::Buffer,
-    module_value_path_call_head: &wgpu::Buffer,
-    module_value_path_call_open: &wgpu::Buffer,
-    module_value_path_const_head: &wgpu::Buffer,
-    module_value_path_const_end: &wgpu::Buffer,
-    module_value_path_status: &wgpu::Buffer,
-    visible_decl: &wgpu::Buffer,
-    visible_type: &wgpu::Buffer,
-    enclosing_fn: &wgpu::Buffer,
-    call_fn_index: &wgpu::Buffer,
-    call_return_type: &wgpu::Buffer,
-    call_return_type_token: &wgpu::Buffer,
-    call_param_count: &wgpu::Buffer,
-    call_param_type: &wgpu::Buffer,
-    call_param_ref_tag: &wgpu::Buffer,
-    call_param_ref_payload: &wgpu::Buffer,
-    call_arg_record: &wgpu::Buffer,
-    _call_arg_node: &wgpu::Buffer,
-    type_expr_ref_tag: &wgpu::Buffer,
-    type_expr_ref_payload: &wgpu::Buffer,
-    type_instance_kind: &wgpu::Buffer,
-    type_instance_decl_token: &wgpu::Buffer,
-    type_instance_arg_start: &wgpu::Buffer,
-    type_instance_arg_count: &wgpu::Buffer,
-    type_instance_arg_ref_tag: &wgpu::Buffer,
-    type_instance_arg_ref_payload: &wgpu::Buffer,
-    type_decl_generic_param_count: &wgpu::Buffer,
-    type_generic_param_slot_by_token: &wgpu::Buffer,
-    type_instance_state: &wgpu::Buffer,
-    decl_type_ref_tag: &wgpu::Buffer,
-    decl_type_ref_payload: &wgpu::Buffer,
-    fn_return_ref_tag: &wgpu::Buffer,
-    fn_return_ref_payload: &wgpu::Buffer,
-    record_family_bits_scratch: &wgpu::Buffer,
-    record_family_flag_scratch: &wgpu::Buffer,
-    external_scratch: Option<GpuTypeCheckExternalScratchBuffers<'_>>,
-) -> Result<ModulePathState> {
-    include!("module_path_body.inc")
-}
+pub(super) use create::create_with_passes as create_module_path_state_with_passes;
+pub(super) use inputs::CreateInputs as ModulePathCreateInputs;
+pub(super) use state::State as ModulePathState;

@@ -298,6 +298,19 @@ pub struct SourcePackLibraryScheduleJobPage {
     pub dependency_job_ranges: Vec<SourcePackJobIndexRange>,
 }
 
+pub(in crate::compiler) fn schedule_job_explicit_dependency_count(
+    page: &SourcePackLibraryScheduleJobPage,
+) -> usize {
+    page.dependency_job_count
+        .max(page.job.dependency_job_indices.len())
+}
+
+pub(in crate::compiler) fn job_index_range_dependency_count(
+    ranges: &[SourcePackJobIndexRange],
+) -> usize {
+    ranges.iter().map(|range| range.job_count).sum()
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourcePackLibraryScheduleJobDependencyPage {
     pub version: u32,
@@ -439,7 +452,7 @@ pub enum SourcePackWorkQueueItemKind {
     LinkReduce,
 }
 
-pub(in crate::compiler) fn source_pack_work_queue_item_kind_is_artifact_backed(
+pub(in crate::compiler) fn work_queue_item_kind_is_artifact_backed(
     kind: SourcePackWorkQueueItemKind,
 ) -> bool {
     matches!(
@@ -675,7 +688,7 @@ pub(in crate::compiler) struct ExplicitSourceLibraryManifestEntry {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(in crate::compiler) struct SourcePackPreparedLibrarySchedulePages {
+pub(in crate::compiler) struct PreparedLibrarySchedulePages {
     pub(in crate::compiler) library_partition_index: SourcePackLibraryPartitionIndex,
     pub(in crate::compiler) library_partition_index_path: PathBuf,
     pub(in crate::compiler) library_source_file_page_count: usize,

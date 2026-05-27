@@ -1,0 +1,477 @@
+use super::{
+    super::*,
+    bind_helpers::{
+        create_count_dispatch,
+        create_radix_bucket_bases,
+        create_radix_bucket_prefix,
+        create_radix_dispatch,
+    },
+    buffers::Buffers,
+    inputs::CreateInputs,
+    layout::Layout,
+};
+
+pub(in crate::type_checker) struct ModuleIndex {
+    pub(in crate::type_checker) scatter_module_records: wgpu::BindGroup,
+    pub(in crate::type_checker) build_module_keys: wgpu::BindGroup,
+    pub(in crate::type_checker) module_key_segment_dispatch_params:
+        LaniusBuffer<CountDispatchParams>,
+    pub(in crate::type_checker) module_key_segment_dispatch: wgpu::BindGroup,
+    pub(in crate::type_checker) module_key_radix_dispatch_params:
+        LaniusBuffer<ModuleKeyRadixParams>,
+    pub(in crate::type_checker) module_key_radix_dispatch: wgpu::BindGroup,
+    pub(in crate::type_checker) sort_module_key_histogram: Vec<wgpu::BindGroup>,
+    pub(in crate::type_checker) sort_module_key_bucket_prefix: Vec<wgpu::BindGroup>,
+    pub(in crate::type_checker) sort_module_key_bucket_bases: Vec<wgpu::BindGroup>,
+    pub(in crate::type_checker) sort_module_key_scatter: Vec<wgpu::BindGroup>,
+    pub(in crate::type_checker) validate_modules: wgpu::BindGroup,
+    pub(in crate::type_checker) scatter_import_records: wgpu::BindGroup,
+    pub(in crate::type_checker) resolve_imports: wgpu::BindGroup,
+    pub(in crate::type_checker) retained_key_params: Vec<ModuleKeyRadixStep>,
+}
+
+pub(in crate::type_checker) fn create_module_index(
+    passes: &TypeCheckPasses,
+    device: &wgpu::Device,
+    layout: Layout,
+    inputs: &CreateInputs<'_>,
+    buffers: &Buffers,
+) -> Result<ModuleIndex> {
+    let module_record_params = uniform_from_val(
+        device,
+        "type_check.modules.module_records.params",
+        &ModuleKeyRadixParams {
+            module_capacity: inputs.hir_node_capacity,
+            reserved: layout.module_capacity_u32,
+            n_blocks: layout.n_blocks,
+            key_step: 0,
+        },
+    );
+    let scatter_module_records = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_modules_02_scatter_module_records"),
+        &passes.modules_scatter_module_records,
+        0,
+        &[
+            ("gParams", module_record_params.as_entire_binding()),
+            (
+                "module_record_flag",
+                buffers.module_record_flag.as_entire_binding(),
+            ),
+            (
+                "module_record_prefix",
+                buffers.module_record_prefix.as_entire_binding(),
+            ),
+            (
+                "hir_item_file_id",
+                inputs.hir_items.file_id.as_entire_binding(),
+            ),
+            (
+                "path_id_by_owner_hir",
+                buffers.path_id_by_owner_hir.as_entire_binding(),
+            ),
+            ("module_file_id", buffers.module_file_id.as_entire_binding()),
+            ("module_path_id", buffers.module_path_id.as_entire_binding()),
+            (
+                "module_owner_hir",
+                buffers.module_owner_hir.as_entire_binding(),
+            ),
+        ],
+    )?;
+
+    let module_key_build_params = uniform_from_val(
+        device,
+        "type_check.modules.module_key_build.params",
+        &ModuleKeyRadixParams {
+            module_capacity: layout.record_capacity_u32,
+            reserved: layout.module_capacity_u32,
+            n_blocks: layout.module_n_blocks,
+            key_step: 0,
+        },
+    );
+    let build_module_keys = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_modules_02e_build_module_keys"),
+        &passes.modules_build_module_keys,
+        0,
+        &[
+            ("gParams", module_key_build_params.as_entire_binding()),
+            (
+                "module_count_out",
+                buffers.module_count_out.as_entire_binding(),
+            ),
+            ("module_path_id", buffers.module_path_id.as_entire_binding()),
+            (
+                "path_segment_count",
+                buffers.path_segment_count.as_entire_binding(),
+            ),
+            (
+                "path_segment_base",
+                buffers.path_segment_base.as_entire_binding(),
+            ),
+            (
+                "path_segment_name_id",
+                buffers.path_segment_name_id.as_entire_binding(),
+            ),
+            (
+                "path_owner_token",
+                buffers.path_owner_token.as_entire_binding(),
+            ),
+            ("status", inputs.status_buf.as_entire_binding()),
+            ("module_status", buffers.module_status.as_entire_binding()),
+            (
+                "module_key_segment_count",
+                buffers.module_key_segment_count.as_entire_binding(),
+            ),
+            (
+                "module_key_segment_base",
+                buffers.module_key_segment_base.as_entire_binding(),
+            ),
+            (
+                "module_key_segment_name_id",
+                buffers.module_key_segment_name_id.as_entire_binding(),
+            ),
+            (
+                "module_key_to_module_id",
+                buffers.module_key_to_module_id.as_entire_binding(),
+            ),
+        ],
+    )?;
+
+    let (module_key_segment_dispatch_params, module_key_segment_dispatch) = create_count_dispatch(
+        device,
+        &passes.count_dispatch_args,
+        "type_check.modules.module_key_segment_dispatch.params",
+        "type_check.modules.module_key_segment_dispatch",
+        layout.module_capacity_u32,
+        MODULE_KEY_SEGMENT_ROW_WIDTH as u32,
+        &buffers.module_count_out,
+        &buffers.module_key_radix_dispatch_args,
+    )?;
+
+    let module_key_radix_dispatch_params = uniform_from_val(
+        device,
+        "type_check.modules.module_key_radix.dispatch_params",
+        &ModuleKeyRadixParams {
+            module_capacity: layout.module_capacity_u32,
+            reserved: 0,
+            n_blocks: layout.module_n_blocks,
+            key_step: 0,
+        },
+    );
+    let module_key_radix_dispatch = create_radix_dispatch(
+        device,
+        &passes.names_radix_dispatch_args,
+        "type_check.modules.module_key_radix_dispatch",
+        &module_key_radix_dispatch_params,
+        &buffers.module_count_out,
+        &buffers.module_key_radix_dispatch_args,
+    )?;
+
+    let mut retained_key_params = Vec::with_capacity(MODULE_KEY_RADIX_STEPS as usize + 3);
+    let mut sort_module_key_histogram = Vec::with_capacity(MODULE_KEY_RADIX_STEPS as usize);
+    let mut sort_module_key_bucket_prefix = Vec::with_capacity(MODULE_KEY_RADIX_STEPS as usize);
+    let mut sort_module_key_bucket_bases = Vec::with_capacity(MODULE_KEY_RADIX_STEPS as usize);
+    let mut sort_module_key_scatter = Vec::with_capacity(MODULE_KEY_RADIX_STEPS as usize);
+    for key_step in 0..MODULE_KEY_RADIX_STEPS {
+        let step_params = uniform_from_val(
+            device,
+            &format!("type_check.modules.module_key_radix.params.{key_step}"),
+            &ModuleKeyRadixParams {
+                module_capacity: layout.module_capacity_u32,
+                reserved: 0,
+                n_blocks: layout.module_n_blocks,
+                key_step,
+            },
+        );
+        let read_order = if key_step % 2 == 0 {
+            &buffers.module_key_to_module_id
+        } else {
+            &buffers.module_key_order_tmp
+        };
+        let write_order = if key_step % 2 == 0 {
+            &buffers.module_key_order_tmp
+        } else {
+            &buffers.module_key_to_module_id
+        };
+
+        sort_module_key_histogram.push(bind_group::create_bind_group_from_bindings(
+            device,
+            Some("type_check_modules_03_sort_module_keys_histogram"),
+            &passes.modules_sort_module_keys_histogram,
+            0,
+            &[
+                ("gParams", step_params.as_entire_binding()),
+                (
+                    "module_count_out",
+                    buffers.module_count_out.as_entire_binding(),
+                ),
+                (
+                    "module_key_segment_count",
+                    buffers.module_key_segment_count.as_entire_binding(),
+                ),
+                (
+                    "module_key_segment_base",
+                    buffers.module_key_segment_base.as_entire_binding(),
+                ),
+                (
+                    "module_key_segment_name_id",
+                    buffers.module_key_segment_name_id.as_entire_binding(),
+                ),
+                ("module_key_order_in", read_order.as_entire_binding()),
+                (
+                    "radix_block_histogram",
+                    buffers.module_key_radix_block_histogram.as_entire_binding(),
+                ),
+            ],
+        )?);
+
+        sort_module_key_bucket_prefix.push(create_radix_bucket_prefix(
+            device,
+            &passes.names_radix_bucket_prefix,
+            "type_check_modules.module_key_radix_bucket_prefix",
+            &step_params,
+            &buffers.module_count_out,
+            &buffers.module_key_radix_block_histogram,
+            &buffers.module_key_radix_block_bucket_prefix,
+            &buffers.module_key_radix_bucket_total,
+        )?);
+
+        sort_module_key_bucket_bases.push(create_radix_bucket_bases(
+            device,
+            &passes.names_radix_bucket_bases,
+            "type_check_modules.module_key_radix_bucket_bases",
+            &step_params,
+            &buffers.module_key_radix_bucket_total,
+            &buffers.module_key_radix_bucket_base,
+        )?);
+
+        sort_module_key_scatter.push(bind_group::create_bind_group_from_bindings(
+            device,
+            Some("type_check_modules_03b_sort_module_keys_scatter"),
+            &passes.modules_sort_module_keys_scatter,
+            0,
+            &[
+                ("gParams", step_params.as_entire_binding()),
+                (
+                    "module_count_out",
+                    buffers.module_count_out.as_entire_binding(),
+                ),
+                (
+                    "module_key_segment_count",
+                    buffers.module_key_segment_count.as_entire_binding(),
+                ),
+                (
+                    "module_key_segment_base",
+                    buffers.module_key_segment_base.as_entire_binding(),
+                ),
+                (
+                    "module_key_segment_name_id",
+                    buffers.module_key_segment_name_id.as_entire_binding(),
+                ),
+                ("module_key_order_in", read_order.as_entire_binding()),
+                (
+                    "radix_bucket_base",
+                    buffers.module_key_radix_bucket_base.as_entire_binding(),
+                ),
+                (
+                    "radix_block_bucket_prefix",
+                    buffers
+                        .module_key_radix_block_bucket_prefix
+                        .as_entire_binding(),
+                ),
+                ("module_key_order_out", write_order.as_entire_binding()),
+            ],
+        )?);
+
+        retained_key_params.push(ModuleKeyRadixStep {
+            _params: step_params,
+        });
+    }
+
+    let validate_module_params = uniform_from_val(
+        device,
+        "type_check.modules.module_key_radix.params.validate",
+        &ModuleKeyRadixParams {
+            module_capacity: layout.module_capacity_u32,
+            reserved: layout.record_capacity_u32,
+            n_blocks: layout.module_n_blocks,
+            key_step: 0,
+        },
+    );
+    let validate_modules = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_modules_04_validate_modules"),
+        &passes.modules_validate_modules,
+        0,
+        &[
+            ("gParams", validate_module_params.as_entire_binding()),
+            (
+                "module_count_out",
+                buffers.module_count_out.as_entire_binding(),
+            ),
+            (
+                "sorted_module_key_order",
+                buffers.module_key_to_module_id.as_entire_binding(),
+            ),
+            (
+                "module_key_segment_count",
+                buffers.module_key_segment_count.as_entire_binding(),
+            ),
+            (
+                "module_key_segment_base",
+                buffers.module_key_segment_base.as_entire_binding(),
+            ),
+            (
+                "module_key_segment_name_id",
+                buffers.module_key_segment_name_id.as_entire_binding(),
+            ),
+            ("module_path_id", buffers.module_path_id.as_entire_binding()),
+            (
+                "path_owner_token",
+                buffers.path_owner_token.as_entire_binding(),
+            ),
+            ("status", inputs.status_buf.as_entire_binding()),
+            ("module_status", buffers.module_status.as_entire_binding()),
+        ],
+    )?;
+
+    retained_key_params.push(ModuleKeyRadixStep {
+        _params: validate_module_params,
+    });
+
+    let scatter_import_records = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_modules_02b_scatter_import_records"),
+        &passes.modules_scatter_import_records,
+        0,
+        &[
+            ("gParams", inputs.params.as_entire_binding()),
+            (
+                "import_record_flag",
+                buffers.import_record_flag.as_entire_binding(),
+            ),
+            (
+                "import_record_prefix",
+                buffers.import_record_prefix.as_entire_binding(),
+            ),
+            (
+                "hir_item_file_id",
+                inputs.hir_items.file_id.as_entire_binding(),
+            ),
+            (
+                "hir_item_import_target_kind",
+                inputs.hir_items.import_target_kind.as_entire_binding(),
+            ),
+            (
+                "path_id_by_owner_hir",
+                buffers.path_id_by_owner_hir.as_entire_binding(),
+            ),
+            (
+                "import_module_file_id",
+                buffers.import_module_file_id.as_entire_binding(),
+            ),
+            ("import_path_id", buffers.import_path_id.as_entire_binding()),
+            ("import_kind", buffers.import_kind.as_entire_binding()),
+            (
+                "import_owner_hir",
+                buffers.import_owner_hir.as_entire_binding(),
+            ),
+        ],
+    )?;
+
+    let resolve_import_params = uniform_from_val(
+        device,
+        "type_check.modules.resolve_imports.params",
+        &ModuleKeyRadixParams {
+            module_capacity: layout.import_record_capacity_u32,
+            reserved: layout.module_capacity_u32,
+            n_blocks: layout.n_blocks,
+            key_step: 0,
+        },
+    );
+    let resolve_imports = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_modules_05_resolve_imports"),
+        &passes.modules_resolve_imports,
+        0,
+        &[
+            ("gParams", resolve_import_params.as_entire_binding()),
+            (
+                "import_count_out",
+                buffers.import_count_out.as_entire_binding(),
+            ),
+            ("import_kind", buffers.import_kind.as_entire_binding()),
+            ("import_path_id", buffers.import_path_id.as_entire_binding()),
+            (
+                "path_segment_count",
+                buffers.path_segment_count.as_entire_binding(),
+            ),
+            (
+                "path_segment_base",
+                buffers.path_segment_base.as_entire_binding(),
+            ),
+            (
+                "path_segment_name_id",
+                buffers.path_segment_name_id.as_entire_binding(),
+            ),
+            (
+                "path_owner_token",
+                buffers.path_owner_token.as_entire_binding(),
+            ),
+            (
+                "module_count_out",
+                buffers.module_count_out.as_entire_binding(),
+            ),
+            (
+                "sorted_module_key_order",
+                buffers.module_key_to_module_id.as_entire_binding(),
+            ),
+            (
+                "module_key_segment_count",
+                buffers.module_key_segment_count.as_entire_binding(),
+            ),
+            (
+                "module_key_segment_base",
+                buffers.module_key_segment_base.as_entire_binding(),
+            ),
+            (
+                "module_key_segment_name_id",
+                buffers.module_key_segment_name_id.as_entire_binding(),
+            ),
+            ("status", inputs.status_buf.as_entire_binding()),
+            (
+                "import_target_module_id",
+                buffers.import_target_module_id.as_entire_binding(),
+            ),
+            ("import_status", buffers.import_status.as_entire_binding()),
+        ],
+    )?;
+
+    retained_key_params.push(ModuleKeyRadixStep {
+        _params: resolve_import_params,
+    });
+    retained_key_params.push(ModuleKeyRadixStep {
+        _params: module_record_params,
+    });
+    retained_key_params.push(ModuleKeyRadixStep {
+        _params: module_key_build_params,
+    });
+
+    Ok(ModuleIndex {
+        scatter_module_records,
+        build_module_keys,
+        module_key_segment_dispatch_params,
+        module_key_segment_dispatch,
+        module_key_radix_dispatch_params,
+        module_key_radix_dispatch,
+        sort_module_key_histogram,
+        sort_module_key_bucket_prefix,
+        sort_module_key_bucket_bases,
+        sort_module_key_scatter,
+        validate_modules,
+        scatter_import_records,
+        resolve_imports,
+        retained_key_params,
+    })
+}

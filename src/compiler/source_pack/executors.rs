@@ -1,6 +1,6 @@
 use super::*;
 
-pub trait SourcePackBuildExecutor {
+pub trait BuildExecutor {
     type LibraryInterface;
     type CodegenObject;
     type LinkedOutput;
@@ -28,7 +28,7 @@ pub trait SourcePackBuildExecutor {
     ) -> Result<Self::LinkedOutput, CompileError>;
 }
 
-pub trait SourcePackPathBuildExecutor {
+pub trait PathBuildExecutor {
     type LibraryInterface;
     type CodegenObject;
     type LinkedOutput;
@@ -56,7 +56,7 @@ pub trait SourcePackPathBuildExecutor {
     ) -> Result<Self::LinkedOutput, CompileError>;
 }
 
-pub trait SourcePackPathHandleBuildExecutor {
+pub trait PathHandleBuildExecutor {
     type LibraryInterfaceHandle: Clone;
     type CodegenObjectHandle: Clone;
     type LinkedOutput;
@@ -98,7 +98,7 @@ pub trait SourcePackPathHandleBuildExecutor {
     }
 }
 
-pub trait SourcePackPathHandleBatchedLinkBuildExecutor {
+pub trait PathHandleBatchedLinkBuildExecutor {
     type LibraryInterfaceHandle: Clone;
     type CodegenObjectHandle: Clone;
     type LinkHandle;
@@ -161,7 +161,7 @@ pub trait SourcePackPathHandleBatchedLinkBuildExecutor {
     }
 }
 
-pub trait SourcePackPathArtifactBuildExecutor {
+pub trait ArtifactBuildExecutor {
     type LibraryInterfaceArtifact;
     type CodegenObjectArtifact;
     type LinkHandle;
@@ -210,7 +210,7 @@ pub trait SourcePackPathArtifactBuildExecutor {
     ) -> Result<Self::LinkedOutputArtifact, CompileError>;
 }
 
-pub trait SourcePackPathPagedArtifactBuildExecutor: SourcePackPathArtifactBuildExecutor {
+pub trait PagedArtifactBuildExecutor: ArtifactBuildExecutor {
     type LibraryInterfaceBuildHandle;
     type CodegenObjectBuildHandle;
 
@@ -257,7 +257,7 @@ pub trait SourcePackPathPagedArtifactBuildExecutor: SourcePackPathArtifactBuildE
 pub type SourcePackBoxFuture<'a, T> =
     std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, CompileError>> + 'a>>;
 
-pub trait SourcePackPathAsyncPagedArtifactBuildExecutor {
+pub trait AsyncPagedArtifactBuildExecutor {
     type LibraryInterfaceArtifact;
     type CodegenObjectArtifact;
     type LinkHandle;
@@ -332,7 +332,7 @@ pub trait SourcePackPathAsyncPagedArtifactBuildExecutor {
     ) -> SourcePackBoxFuture<'a, Self::LinkedOutputArtifact>;
 }
 
-pub trait SourcePackPathHierarchicalLinkExecutor: SourcePackPathArtifactBuildExecutor {
+pub trait HierarchicalLinkExecutor: ArtifactBuildExecutor {
     type PartialLinkArtifact;
 
     fn begin_hierarchical_link_group(
@@ -374,19 +374,17 @@ pub trait SourcePackPathHierarchicalLinkExecutor: SourcePackPathArtifactBuildExe
     ) -> Result<Self::LinkedOutputArtifact, CompileError>;
 }
 
-pub trait SourcePackPathPagedHierarchicalLinkExecutor:
-    SourcePackPathPagedArtifactBuildExecutor + SourcePackPathHierarchicalLinkExecutor
+pub trait PagedHierarchicalLinkExecutor:
+    PagedArtifactBuildExecutor + HierarchicalLinkExecutor
 {
 }
 
-impl<T> SourcePackPathPagedHierarchicalLinkExecutor for T where
-    T: SourcePackPathPagedArtifactBuildExecutor + SourcePackPathHierarchicalLinkExecutor
+impl<T> PagedHierarchicalLinkExecutor for T where
+    T: PagedArtifactBuildExecutor + HierarchicalLinkExecutor
 {
 }
 
-pub trait SourcePackPathAsyncHierarchicalLinkExecutor:
-    SourcePackPathAsyncPagedArtifactBuildExecutor
-{
+pub trait AsyncHierarchicalLinkExecutor: AsyncPagedArtifactBuildExecutor {
     type PartialLinkArtifact;
 
     fn begin_hierarchical_link_group<'a>(
@@ -428,17 +426,17 @@ pub trait SourcePackPathAsyncHierarchicalLinkExecutor:
     ) -> SourcePackBoxFuture<'a, Self::LinkedOutputArtifact>;
 }
 
-pub trait SourcePackPathAsyncPagedHierarchicalLinkExecutor:
-    SourcePackPathAsyncPagedArtifactBuildExecutor + SourcePackPathAsyncHierarchicalLinkExecutor
+pub trait AsyncPagedHierarchicalLinkExecutor:
+    AsyncPagedArtifactBuildExecutor + AsyncHierarchicalLinkExecutor
 {
 }
 
-impl<T> SourcePackPathAsyncPagedHierarchicalLinkExecutor for T where
-    T: SourcePackPathAsyncPagedArtifactBuildExecutor + SourcePackPathAsyncHierarchicalLinkExecutor
+impl<T> AsyncPagedHierarchicalLinkExecutor for T where
+    T: AsyncPagedArtifactBuildExecutor + AsyncHierarchicalLinkExecutor
 {
 }
 
-pub trait SourcePackPathArtifactStore {
+pub trait ArtifactStore {
     type LibraryInterfaceArtifact;
     type CodegenObjectArtifact;
     type LinkedOutputArtifact;
@@ -482,7 +480,7 @@ pub trait SourcePackPathArtifactStore {
     ) -> Result<(), CompileError>;
 }
 
-pub trait SourcePackPathHierarchicalLinkArtifactStore: SourcePackPathArtifactStore {
+pub trait HierarchicalLinkArtifactStore: ArtifactStore {
     type PartialLinkArtifact;
 
     fn load_partial_link_output(
@@ -503,7 +501,7 @@ pub trait SourcePackPathHierarchicalLinkArtifactStore: SourcePackPathArtifactSto
     ) -> Result<(), CompileError>;
 }
 
-pub trait SourcePackFilesystemExecutionShardLoader {
+pub trait ExecutionShardLoader {
     fn load_execution_shard(
         &self,
         target: SourcePackArtifactTarget,
@@ -579,24 +577,24 @@ pub trait SourcePackFilesystemExecutionShardLoader {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackBuildExecutionResult<LibraryInterface, CodegenObject, LinkedOutput> {
+pub struct BuildExecutionResult<LibraryInterface, CodegenObject, LinkedOutput> {
     pub library_interfaces: Vec<LibraryInterface>,
     pub codegen_objects: Vec<CodegenObject>,
     pub linked_output: LinkedOutput,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackHandleBuildExecutionResult<LinkedOutput> {
+pub struct HandleBuildExecutionResult<LinkedOutput> {
     pub linked_output: LinkedOutput,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackArtifactStoreBuildExecutionResult {
+pub struct ArtifactStoreBuildExecutionResult {
     pub linked_output_key: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackArtifactStoreBatchExecutionResult {
+pub struct ArtifactStoreBatchExecutionResult {
     pub batch_index: usize,
     pub job_count: usize,
     pub linked_output_key: Option<String>,

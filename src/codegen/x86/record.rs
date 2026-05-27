@@ -1,540 +1,222 @@
 use anyhow::Result;
-use log::warn;
 
 use super::{
-    GpuX86ArrayMetadataBuffers,
-    GpuX86CallMetadataBuffers,
     GpuX86CodeGenerator,
-    GpuX86EnumMetadataBuffers,
-    GpuX86ExprMetadataBuffers,
-    GpuX86ExternalScratchBuffers,
-    GpuX86FunctionMetadataBuffers,
-    GpuX86StructMetadataBuffers,
-    GpuX86TypeMetadataBuffers,
     RecordedX86Codegen,
-    X86_REGALLOC_ROWS_PER_CHUNK,
-    X86FeatureSummary,
-    X86Params,
-    X86RegallocParams,
-    X86ScanParams,
-    support::{
-        RetainedX86Buffer,
-        dispatch_compute_pass,
-        dispatch_compute_pass_indirect,
-        dispatch_compute_pass_indirect_bind_group_steps,
-        dispatch_compute_pass_indirect_offsets_with_bind_groups_and_dynamic_uniform_offsets,
-        dispatch_compute_pass_indirect_offsets_with_dynamic_uniform_offsets,
-        dispatch_compute_pass_indirect_ping_pong_scan_steps,
-        dispatch_x86_stage,
-        dispatch_x86_stage_indirect,
-        dispatch_x86_stages,
-        dispatch_x86_stages_indirect,
-        external_or_storage_u32_copy,
-        init_repeated_u32_words,
-        pointer_jump_steps_for_items,
-        pooled_readback_bytes,
-        pooled_storage_u32_copy,
-        pooled_storage_u32_rw,
-        pop_allocation_error_scope,
-        push_allocation_error_scope,
-        readback_u32s,
-        reflected_bind_group,
-        scan_steps_for_blocks,
-        storage_u32_copy,
-        uniform_u32_struct,
-        uniform_u32_struct_array,
-        uniform_u32_words,
-        workgroup_grid_1d,
-        write_u32_words,
-        x86_params_bytes,
-        x86_regalloc_params_bytes,
-        x86_scan_params_bytes,
-        zero_u32_words,
-    },
-    x86_call_type_record_words,
-    x86_capacity_estimate_for_hir_tokens_inst_basis_and_feature_summary,
-    x86_function_slot_capacity,
-    x86_initial_output_readback_bytes,
-    x86_node_inst_gen_node_record_words,
-    x86_node_inst_order_record_words,
-    x86_node_inst_order_rows,
-    x86_regalloc_recorded_step_count,
+    support::{RetainedX86Buffer, zero_u32_words},
 };
 
-struct X86RecordHostTimer {
-    print_enabled: bool,
-    trace_enabled: bool,
-    start: std::time::Instant,
-    last: std::time::Instant,
-}
+mod allocation;
+mod bind_helpers;
+mod buffers;
+mod calls;
+mod capacity;
+mod dispatch_args;
+mod dispatch_recording;
+mod emit_bind_groups;
+mod enum_match_bind_groups;
+mod features;
+mod indirect;
+mod init;
+mod inputs;
+mod inst_gen_bind_groups;
+mod inst_plan_bind_groups;
+mod metadata_bind_groups;
+mod metadata_dispatch;
+mod retained;
+mod scan;
+mod semantic_bind_groups;
+mod status_trace;
+mod timing;
+mod virtual_bind_groups;
 
-impl X86RecordHostTimer {
-    fn new() -> Self {
-        let now = std::time::Instant::now();
-        Self {
-            print_enabled: crate::gpu::env::env_bool_truthy(
-                "LANIUS_GPU_COMPILE_HOST_TIMING",
-                false,
-            ),
-            trace_enabled: crate::gpu::trace::enabled(),
-            start: now,
-            last: now,
-        }
-    }
-
-    fn stamp(&mut self, stage: &str) {
-        if !self.print_enabled && !self.trace_enabled {
-            return;
-        }
-        let now = std::time::Instant::now();
-        let dt_ms = now.duration_since(self.last).as_secs_f64() * 1000.0;
-        let total_ms = now.duration_since(self.start).as_secs_f64() * 1000.0;
-        let name = format!("codegen.x86.record.{stage}");
-        if self.print_enabled {
-            println!("[gpu_compile_host_timer] {name}: {dt_ms:.3}ms (total {total_ms:.3}ms)");
-        }
-        if self.trace_enabled {
-            crate::gpu::trace::record_host_span("host.x86.record", &name, self.last, now);
-        }
-        self.last = now;
-    }
-}
-
-fn stamp_x86_timer(
-    timer: &mut Option<&mut crate::gpu::timer::GpuTimer>,
-    encoder: &mut wgpu::CommandEncoder,
-    label: &'static str,
-) {
-    if let Some(timer) = timer.as_deref_mut() {
-        timer.stamp(encoder, label);
-    }
-}
+use allocation::AllocationScope;
+use buffers::{
+    InitialRecordBufferInputs,
+    InitialRecordBuffers,
+    InstructionRecordBufferInputs,
+    InstructionRecordBuffers,
+    MetadataRecordBufferInputs,
+    MetadataRecordBuffers,
+    create_initial_record_buffers,
+    create_instruction_record_buffers,
+    create_metadata_record_buffers,
+};
+use calls::{CallRecordBindGroups, CallRecordInputs, create_call_record_bind_groups};
+use capacity::RecordCapacity;
+use dispatch_args::ActiveDispatchArgBuffers;
+use dispatch_recording::{
+    InstructionDispatchInputs,
+    VirtualEmitDispatchInputs,
+    record_instruction_dispatches,
+    record_virtual_emit_dispatches,
+};
+use emit_bind_groups::{EmitBindGroupInputs, EmitBindGroups, create_emit_bind_groups};
+use enum_match_bind_groups::{
+    EnumMatchBindGroupInputs,
+    EnumMatchBindGroups,
+    create_enum_match_bind_groups,
+};
+use init::{InitializerInputs, record_initializers};
+pub use inputs::RecordElfInputs;
+use inst_gen_bind_groups::{
+    InstGenBindGroupInputs,
+    InstGenBindGroups,
+    create_inst_gen_bind_groups,
+};
+use inst_plan_bind_groups::{
+    InstPlanBindGroupInputs,
+    InstPlanBindGroups,
+    create_inst_plan_bind_groups,
+};
+use metadata_bind_groups::{
+    DispatchSetupBindGroups,
+    DispatchSetupInputs,
+    FunctionDiscoveryBindGroups,
+    FunctionDiscoveryInputs,
+    create_dispatch_setup_bind_groups,
+    create_function_discovery_bind_groups,
+};
+use metadata_dispatch::{MetadataCallDispatchInputs, record_metadata_and_call_dispatches};
+use retained::RetainedRecording;
+use scan::{final_ping_pong_scan_prefix, regalloc_params, scan_params, scan_params_for_steps};
+use semantic_bind_groups::{
+    SemanticRecordBindGroups,
+    SemanticRecordInputs,
+    create_semantic_record_bind_groups,
+};
+use status_trace::{StatusTraceSources, record_status_trace_readback};
+use timing::HostTimer;
+use virtual_bind_groups::{VirtualBindGroupInputs, VirtualBindGroups, create_virtual_bind_groups};
 
 impl GpuX86CodeGenerator {
-    pub fn measure_x86_features(
-        &self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        token_capacity: u32,
-        n_hir_nodes: u32,
-        hir_status_buf: &wgpu::Buffer,
-        hir_kind_buf: &wgpu::Buffer,
-        hir_stmt_record_buf: &wgpu::Buffer,
-        hir_expr_record_buf: &wgpu::Buffer,
-        hir_token_pos_buf: &wgpu::Buffer,
-        parent_buf: &wgpu::Buffer,
-        first_child_buf: &wgpu::Buffer,
-        enclosing_fn_buf: &wgpu::Buffer,
-    ) -> Result<X86FeatureSummary> {
-        let params_buf = uniform_u32_words(
-            device,
-            "codegen.x86.feature_counts.params",
-            &[token_capacity, 0, 0, n_hir_nodes],
-        );
-        let feature_record_buf = storage_u32_copy(device, "codegen.x86.feature_counts.record", 8);
-        let readback_buf = readback_u32s(device, "codegen.x86.feature_counts.readback", 8);
-        let bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.feature_counts.bind_group"),
-            &self.feature_counts_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                ("hir_stmt_record", hir_stmt_record_buf.as_entire_binding()),
-                ("hir_expr_record", hir_expr_record_buf.as_entire_binding()),
-                ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
-                ("parent", parent_buf.as_entire_binding()),
-                ("first_child", first_child_buf.as_entire_binding()),
-                ("enclosing_fn", enclosing_fn_buf.as_entire_binding()),
-                ("x86_feature_record", feature_record_buf.as_entire_binding()),
-            ],
-        )?;
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("codegen.x86.feature_counts.encoder"),
-        });
-        zero_u32_words(queue, &mut encoder, &feature_record_buf, 8);
-        let groups = workgroup_grid_1d(n_hir_nodes.div_ceil(256).max(1));
-        dispatch_compute_pass(
-            &mut encoder,
-            "feature_counts",
-            "codegen.x86.feature_counts",
-            &self.feature_counts_pass,
-            &bind_group,
-            groups,
-        );
-        encoder.copy_buffer_to_buffer(&feature_record_buf, 0, &readback_buf, 0, 32);
-        crate::gpu::passes_core::submit_with_progress(
-            queue,
-            "codegen.x86.feature-counts",
-            encoder.finish(),
-        );
-
-        let readback_slice = readback_buf.slice(..);
-        crate::gpu::passes_core::wait_for_readback_map(
-            device,
-            &readback_slice,
-            "codegen.x86.feature_counts.readback",
-            std::time::Duration::from_millis(crate::gpu::env::env_u64(
-                "LANIUS_X86_READBACK_TIMEOUT_MS",
-                3_000,
-            )),
-        )?;
-        let words = {
-            let data = readback_slice.get_mapped_range();
-            let words = crate::gpu::readback::read_u32_words(&data, "x86 feature counts")?;
-            drop(data);
-            words
-        };
-        readback_buf.unmap();
-        Ok(X86FeatureSummary::from_record_words(words))
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn record_x86_elf_from_gpu_hir(
+    pub fn record_elf_from_hir(
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
-        source_len: u32,
-        token_capacity: u32,
-        n_hir_nodes: u32,
-        inst_hir_node_count: u32,
-        hir_status_buf: &wgpu::Buffer,
-        active_hir_dispatch_args_buf: &wgpu::Buffer,
-        hir_kind_buf: &wgpu::Buffer,
-        parent_buf: &wgpu::Buffer,
-        _first_child_buf: &wgpu::Buffer,
-        _next_sibling_buf: &wgpu::Buffer,
-        subtree_end_buf: &wgpu::Buffer,
-        function_metadata: GpuX86FunctionMetadataBuffers<'_>,
-        expr_metadata: GpuX86ExprMetadataBuffers<'_>,
-        call_metadata: GpuX86CallMetadataBuffers<'_>,
-        array_metadata: GpuX86ArrayMetadataBuffers<'_>,
-        enum_metadata: GpuX86EnumMetadataBuffers<'_>,
-        struct_metadata: GpuX86StructMetadataBuffers<'_>,
-        type_metadata: GpuX86TypeMetadataBuffers<'_>,
-        visible_decl_buf: &wgpu::Buffer,
-        fn_entrypoint_tag_buf: &wgpu::Buffer,
-        feature_summary: X86FeatureSummary,
-        external_scratch: GpuX86ExternalScratchBuffers<'_>,
-        mut timer: Option<&mut crate::gpu::timer::GpuTimer>,
+        inputs: RecordElfInputs<'_, '_>,
     ) -> Result<RecordedX86Codegen> {
-        let mut host_timer = X86RecordHostTimer::new();
-        let capacity = x86_capacity_estimate_for_hir_tokens_inst_basis_and_feature_summary(
-            n_hir_nodes as usize,
-            token_capacity as usize,
+        let RecordElfInputs {
+            source_len,
+            token_capacity,
+            n_hir_nodes,
+            inst_hir_node_count,
+            hir_status_buf,
+            active_hir_dispatch_args_buf,
+            hir_kind_buf,
+            parent_buf,
+            subtree_end_buf,
+            function_metadata,
+            expr_metadata,
+            call_metadata,
+            array_metadata,
+            enum_metadata,
+            struct_metadata,
+            type_metadata,
+            visible_decl_buf,
+            fn_entrypoint_tag_buf,
+            feature_summary,
+            external_scratch,
+            mut timer,
+        } = inputs;
+        let mut host_timer = HostTimer::new();
+        let RecordCapacity {
+            hir_words,
+            inst_capacity,
+            output_capacity,
+            output_words,
+            output_readback_bytes,
+            node_inst_scan_words,
+            node_inst_scan_blocks,
+            node_func_owner_steps,
+            expr_resolve_steps,
+            expr_semantic_type_steps,
+            enclosing_return_steps,
+            enclosing_let_steps,
+            enclosing_stmt_steps,
+            call_callee_owner_steps,
+            match_result_owner_steps,
+            match_pattern_owner_steps,
+            node_inst_same_end_rank_steps,
+            enclosing_loop_steps,
+            func_owner_scan_blocks,
+            node_inst_order_rows,
+            virtual_next_call_steps,
+            virtual_regalloc_chunk_count,
+            token_words,
+            function_slot_capacity,
+            virtual_dispatch_arg_groups,
+            params,
+        } = RecordCapacity::for_hir(
+            source_len,
+            token_capacity,
+            n_hir_nodes,
             inst_hir_node_count as usize,
             feature_summary,
         );
-        let hir_words = capacity.hir_words;
-        let inst_capacity = capacity.inst_capacity;
-        let output_capacity = capacity.output_capacity;
-        if capacity.inst_capacity_capped {
-            warn!(
-                "x86 instruction capacity estimate hit cap: requested={} cap={} hir_words={} inst_basis_words={} token_capacity={}; exact GPU instruction-count projection is required for larger programs",
-                capacity.requested_inst_capacity,
-                capacity.inst_capacity,
-                capacity.hir_words,
-                capacity.inst_basis_words,
-                token_capacity
-            );
-        }
-        let output_words = output_capacity.div_ceil(4);
-        let output_readback_bytes =
-            x86_initial_output_readback_bytes(output_capacity, source_len as usize) as u64;
-        let virtual_next_call_steps = scan_steps_for_blocks(inst_capacity);
-        let regalloc_recorded_steps =
-            x86_regalloc_recorded_step_count(inst_capacity, capacity.inst_basis_words);
-        let virtual_regalloc_chunk_count = regalloc_recorded_steps
-            .div_ceil(X86_REGALLOC_ROWS_PER_CHUNK)
-            .max(1);
-        let token_words = (token_capacity as usize).max(1);
-        let function_slot_capacity =
-            x86_function_slot_capacity(inst_hir_node_count as usize, hir_words, token_words);
-        let virtual_dispatch_arg_task_count = virtual_next_call_steps
-            .len()
-            .max(virtual_regalloc_chunk_count)
-            .max(1);
-        let virtual_dispatch_arg_groups = workgroup_grid_1d(
-            (virtual_dispatch_arg_task_count as u32)
-                .div_ceil(256)
-                .max(1),
-        );
-        let node_inst_order_rows = x86_node_inst_order_rows(hir_words, inst_capacity);
-        let params = X86Params {
-            n_tokens: token_capacity,
-            source_len,
-            out_capacity: output_capacity as u32,
-            n_hir_nodes,
-            inst_capacity: inst_capacity as u32,
-            virtual_next_call_step_count: virtual_next_call_steps.len().min(u32::MAX as usize)
-                as u32,
-            regalloc_rows_per_chunk: X86_REGALLOC_ROWS_PER_CHUNK as u32,
-            regalloc_chunk_count: virtual_regalloc_chunk_count.min(u32::MAX as usize) as u32,
-            function_slot_capacity: function_slot_capacity.min(u32::MAX as usize) as u32,
-        };
-        if crate::gpu::trace::enabled() {
-            let now = std::time::Instant::now();
-            for (name, value) in [
-                ("x86.hir_words", hir_words),
-                ("x86.inst_basis_words", capacity.inst_basis_words),
-                (
-                    "x86.requested_inst_capacity",
-                    capacity.requested_inst_capacity,
-                ),
-                ("x86.inst_capacity", inst_capacity),
-                ("x86.output_capacity_bytes", output_capacity),
-                (
-                    "x86.initial_output_readback_bytes",
-                    output_readback_bytes as usize,
-                ),
-                ("x86.function_slot_capacity", function_slot_capacity),
-                ("x86.virtual_next_call_steps", virtual_next_call_steps.len()),
-                ("x86.regalloc_recorded_chunks", virtual_regalloc_chunk_count),
-                ("x86.regalloc_recorded_steps", regalloc_recorded_steps),
-                ("x86.regalloc_rows_per_chunk", X86_REGALLOC_ROWS_PER_CHUNK),
-                ("x86.node_inst_order_rows", node_inst_order_rows),
-                ("x86.feature_mask", feature_summary.mask as usize),
-                (
-                    "x86.feature_scalar_inst_capacity",
-                    feature_summary.scalar_inst_capacity as usize,
-                ),
-                (
-                    "x86.feature_call_count",
-                    feature_summary.call_count as usize,
-                ),
-                (
-                    "x86.feature_param_count",
-                    feature_summary.param_count as usize,
-                ),
-            ] {
-                crate::gpu::trace::record_counter("host.x86.capacity", name, now, value as f64);
-            }
-        }
         host_timer.stamp("capacity");
 
-        let mut allocation_error_scope = push_allocation_error_scope(device);
-        macro_rules! checkpoint_allocation_scope {
-            ($scope:ident, $stage:literal) => {{
-                pop_allocation_error_scope($scope, $stage)?;
-                $scope = push_allocation_error_scope(device);
-            }};
-        }
-        let params_bytes = x86_params_bytes(&params);
-        let params_buf = uniform_u32_struct(device, "codegen.x86.params", &params_bytes);
-        let feature_record_words = feature_summary.record_words();
-        let feature_params_buf =
-            uniform_u32_words(device, "codegen.x86.feature_params", &feature_record_words);
+        let mut allocation_scope = AllocationScope::new(device);
         let decl_layout_words = token_words;
-        let node_inst_scan_words = hir_words + 1;
-        let node_inst_scan_blocks = node_inst_scan_words.div_ceil(256).max(1);
-        let node_func_owner_steps = pointer_jump_steps_for_items(hir_words);
-        let expr_resolve_steps = pointer_jump_steps_for_items(hir_words);
-        let expr_semantic_type_steps = pointer_jump_steps_for_items(hir_words);
-        let enclosing_return_steps = pointer_jump_steps_for_items(hir_words);
-        let enclosing_let_steps = pointer_jump_steps_for_items(hir_words);
-        let enclosing_stmt_steps = pointer_jump_steps_for_items(hir_words);
-        let call_callee_owner_steps = pointer_jump_steps_for_items(hir_words);
-        let match_result_owner_steps = pointer_jump_steps_for_items(hir_words);
-        let match_pattern_owner_steps = pointer_jump_steps_for_items(hir_words);
-        let node_inst_same_end_rank_steps = pointer_jump_steps_for_items(hir_words);
-        let enclosing_loop_steps = pointer_jump_steps_for_items(hir_words);
-        let func_owner_scan_blocks = hir_words.div_ceil(256).max(1);
-        let func_meta_buf = pooled_storage_u32_copy(device, "codegen.x86.func_meta", 8);
-        let active_hir_count_dispatch_args_buf = pooled_storage_u32_rw(
-            device,
-            "codegen.x86.active_hir_count_dispatch_args",
-            4,
-            wgpu::BufferUsages::INDIRECT | wgpu::BufferUsages::COPY_SRC,
-        );
-        let active_hir_plus_one_dispatch_args_buf = pooled_storage_u32_rw(
-            device,
-            "codegen.x86.active_hir_plus_one_dispatch_args",
-            4,
-            wgpu::BufferUsages::INDIRECT | wgpu::BufferUsages::COPY_SRC,
-        );
-        let active_hir_scan_block_dispatch_args_buf = pooled_storage_u32_rw(
-            device,
-            "codegen.x86.active_hir_scan_block_dispatch_args",
-            4,
-            wgpu::BufferUsages::INDIRECT,
-        );
-        let active_node_order_scan_dispatch_args_buf = pooled_storage_u32_rw(
-            device,
-            "codegen.x86.active_node_order_scan_dispatch_args",
-            3,
-            wgpu::BufferUsages::INDIRECT,
-        );
-        let active_node_order_scan_block_dispatch_args_buf = pooled_storage_u32_rw(
-            device,
-            "codegen.x86.active_node_order_scan_block_dispatch_args",
-            3,
-            wgpu::BufferUsages::INDIRECT,
-        );
-        let active_function_dispatch_args_buf = pooled_storage_u32_rw(
-            device,
-            "codegen.x86.active_function_dispatch_args",
-            3,
-            wgpu::BufferUsages::INDIRECT,
-        );
-        let active_virtual_inst_dispatch_args_buf = pooled_storage_u32_rw(
-            device,
-            "codegen.x86.active_virtual_inst_dispatch_args",
-            3,
-            wgpu::BufferUsages::INDIRECT,
-        );
-        let active_virtual_next_call_dispatch_args_buf = pooled_storage_u32_rw(
-            device,
-            "codegen.x86.active_virtual_next_call_dispatch_args",
-            virtual_next_call_steps.len().max(1) * 3,
-            wgpu::BufferUsages::INDIRECT,
-        );
-        let active_virtual_regalloc_dispatch_args_buf = pooled_storage_u32_rw(
-            device,
-            "codegen.x86.active_virtual_regalloc_dispatch_args",
-            virtual_regalloc_chunk_count * 3,
-            wgpu::BufferUsages::INDIRECT,
-        );
-        let active_selected_inst_dispatch_args_buf = pooled_storage_u32_rw(
-            device,
-            "codegen.x86.active_selected_inst_dispatch_args",
-            3,
-            wgpu::BufferUsages::INDIRECT,
-        );
-        let active_selected_scan_block_dispatch_args_buf = pooled_storage_u32_rw(
-            device,
-            "codegen.x86.active_selected_scan_block_dispatch_args",
-            3,
-            wgpu::BufferUsages::INDIRECT,
-        );
-        let active_text_word_dispatch_args_buf = pooled_storage_u32_rw(
-            device,
-            "codegen.x86.active_text_word_dispatch_args",
-            3,
-            wgpu::BufferUsages::INDIRECT,
-        );
-        let active_elf_header_word_dispatch_args_buf = pooled_storage_u32_rw(
-            device,
-            "codegen.x86.active_elf_header_word_dispatch_args",
-            3,
-            wgpu::BufferUsages::INDIRECT,
-        );
-        let func_meta_uniform_buf = uniform_u32_words(
-            device,
-            "codegen.x86.func_meta.uniform",
-            &[0, 0, u32::MAX, 0, u32::MAX, 0, 0, 0],
-        );
-        let node_tree_status_buf =
-            pooled_storage_u32_copy(device, "codegen.x86.node_tree_status", 4);
-        // In the compiler pipeline these one-word HIR scratch rows can borrow
-        // parser/type-HIR buffers that are dead after typecheck. That keeps the
-        // x86 backend from stacking another resident arena on top of the parser
-        // arena while preserving the GPU-record based interface.
-        let expr_resolved_final_buf = external_or_storage_u32_copy(
-            device,
-            "codegen.x86.expr_resolved_node",
-            hir_words,
-            external_scratch.expr_resolved_final,
-        );
-        let node_func_buf = external_or_storage_u32_copy(
-            device,
-            "codegen.x86.node_func",
-            hir_words,
-            external_scratch.node_func,
-        );
-        let func_owner_scan_local_prefix_buf = external_or_storage_u32_copy(
-            device,
-            "codegen.x86.func_owner_scan_local_prefix",
-            node_inst_scan_words,
-            external_scratch.func_owner_scan_local_prefix,
-        );
-        let func_owner_scan_block_sum_buf = storage_u32_copy(
-            device,
-            "codegen.x86.func_owner_scan_block_sum",
-            node_inst_scan_blocks,
-        );
-        let func_owner_scan_prefix_a_buf = storage_u32_copy(
-            device,
-            "codegen.x86.func_owner_scan_prefix_a",
-            node_inst_scan_blocks,
-        );
-        let func_owner_scan_prefix_b_buf = storage_u32_copy(
-            device,
-            "codegen.x86.func_owner_scan_prefix_b",
-            node_inst_scan_blocks,
-        );
-        checkpoint_allocation_scope!(
-            allocation_error_scope,
-            "metadata tree/function buffer allocation"
-        );
-        let enum_type_record_buf =
-            storage_u32_copy(device, "codegen.x86.enum_type_record", token_words);
-        let enum_value_record_rows = if feature_summary.has_enum() {
-            hir_words
-        } else {
-            1
-        };
-        let enum_value_record_buf = storage_u32_copy(
-            device,
-            "codegen.x86.enum_value_record",
-            enum_value_record_rows * 2,
-        );
-        let enum_record_status_buf =
-            pooled_storage_u32_copy(device, "codegen.x86.enum_record_status", 4);
-        let match_record_rows = if feature_summary.has_match() {
-            hir_words
-        } else {
-            1
-        };
-        let match_record_buf =
-            storage_u32_copy(device, "codegen.x86.match_record", match_record_rows * 4);
-        let match_arm_owner_buf =
-            storage_u32_copy(device, "codegen.x86.match_arm_owner", match_record_rows);
-        let match_return_node_buf =
-            storage_u32_copy(device, "codegen.x86.match_return_node", match_record_rows);
-        let match_pattern_owner_buf = external_or_storage_u32_copy(
-            device,
-            "codegen.x86.match_pattern_owner",
-            hir_words,
-            external_scratch.match_pattern_owner,
-        );
-        let match_result_value_owner_buf = storage_u32_copy(
-            device,
-            "codegen.x86.match_result_value_owner",
+        let InitialRecordBuffers {
+            params_buf,
+            feature_params_buf,
+            func_meta_buf,
+            active_dispatch_args,
+            func_meta_uniform_buf,
+            node_tree_status_buf,
+            expr_resolved_final_buf,
+            node_func_buf,
+            func_owner_scan_local_prefix_buf,
+            func_owner_scan_block_sum_buf,
+            func_owner_scan_prefix_a_buf,
+            func_owner_scan_prefix_b_buf,
+            enum_value_record_rows,
+            enum_type_record_buf,
+            enum_value_record_buf,
+            enum_record_status_buf,
             match_record_rows,
-        );
-        let match_pattern_node_owner_buf = external_or_storage_u32_copy(
+            match_record_buf,
+            match_arm_owner_buf,
+            match_return_node_buf,
+            match_pattern_owner_buf,
+            match_result_value_owner_buf,
+            match_pattern_node_owner_buf,
+            match_pattern_node_variant_buf,
+            match_pattern_node_payload_decl_buf,
+            node_inst_same_end_link_a_buf,
+            node_inst_same_end_link_b_buf,
+        } = create_initial_record_buffers(
             device,
-            "codegen.x86.match_pattern_node_owner",
-            hir_words,
-            external_scratch.match_pattern_node_owner,
-        );
-        let match_pattern_node_variant_buf = external_or_storage_u32_copy(
-            device,
-            "codegen.x86.match_pattern_node_variant",
-            hir_words,
-            external_scratch.match_pattern_node_variant,
-        );
-        let match_pattern_node_payload_decl_buf = external_or_storage_u32_copy(
-            device,
-            "codegen.x86.match_pattern_node_payload_decl",
-            match_record_rows,
-            external_scratch.match_pattern_node_payload_decl,
-        );
-        let node_inst_same_end_link_a_buf = external_or_storage_u32_copy(
-            device,
-            "codegen.x86.node_inst_same_end_link_a",
-            hir_words,
-            external_scratch.node_inst_same_end_link_a,
-        );
-        let node_inst_same_end_link_b_buf = external_or_storage_u32_copy(
-            device,
-            "codegen.x86.node_inst_same_end_link_b",
-            hir_words,
-            external_scratch.node_inst_same_end_link_b,
-        );
+            &mut allocation_scope,
+            InitialRecordBufferInputs {
+                params: &params,
+                feature_summary,
+                hir_words,
+                node_inst_scan_words,
+                node_inst_scan_blocks,
+                token_words,
+                virtual_next_call_step_count: virtual_next_call_steps.len(),
+                virtual_regalloc_chunk_count,
+                external_scratch: &external_scratch,
+            },
+        )?;
+        let ActiveDispatchArgBuffers {
+            hir_count,
+            hir_plus_one,
+            hir_scan_block,
+            node_order_scan,
+            node_order_scan_block,
+            function_dispatch,
+            virtual_inst,
+            virtual_next_call,
+            virtual_regalloc,
+            selected_inst,
+            selected_scan_block,
+            text_word,
+            elf_header_word,
+        } = active_dispatch_args;
         // Expression resolution copies its final output before match-result
         // owner propagation starts. Match-pattern owner propagation starts
         // after match-result owners have been copied to the stable value-owner
@@ -543,60 +225,64 @@ impl GpuX86CodeGenerator {
         let match_result_owner_b_buf = &match_pattern_node_variant_buf;
         let match_result_owner_link_a_buf = &node_inst_same_end_link_a_buf;
         let match_result_owner_link_b_buf = &node_inst_same_end_link_b_buf;
-        let match_pattern_first_use_node_buf = external_or_storage_u32_copy(
+        let MetadataRecordBuffers {
+            match_pattern_first_use_node_buf,
+            needs_enclosing_return_records,
+            enclosing_return_node_a_buf,
+            enclosing_return_node_b_buf,
+            enclosing_let_node_a_buf,
+            enclosing_let_node_b_buf,
+            match_pattern_first_variant_node_storage_buf,
+            match_pattern_first_payload_node_storage_buf,
+            aggregate_record_rows,
+            struct_type_record_buf,
+            struct_access_record_buf,
+            struct_store_record_buf,
+            struct_record_status_buf,
+            decl_layout_record_buf,
+            decl_layout_status_buf,
+            decl_node_by_token_buf,
+            func_slot_by_index_buf,
+            func_slot_by_node_buf,
+            call_record_buf,
+            call_type_record_buf,
+            node_inst_count_info_buf,
+            node_inst_count_payload_buf,
+            call_record_status_buf,
+            const_value_record_buf,
+            const_value_status_buf,
+            const_value_status_uniform_buf,
+            param_reg_record_words,
+            param_reg_record_buf,
+            param_reg_status_buf,
+            param_reg_status_uniform_buf,
+            local_literal_record_buf,
+            local_literal_status_buf,
+            local_literal_status_uniform_buf,
+            empty_param_record_buf,
+            node_inst_order_record_buf,
+            call_arg_lookup_record_buf,
+            intrinsic_call_status_buf,
+            call_abi_record_buf,
+            call_abi_status_buf,
+            call_abi_status_uniform_buf,
+        } = create_metadata_record_buffers(
             device,
-            "codegen.x86.match_pattern_first_use_node",
-            hir_words,
-            external_scratch.match_pattern_first_use_node,
-        );
+            &mut allocation_scope,
+            MetadataRecordBufferInputs {
+                feature_summary,
+                hir_words,
+                token_words,
+                decl_layout_words,
+                inst_capacity,
+                function_slot_capacity,
+                external_scratch: &external_scratch,
+            },
+        )?;
         // Function-owner pointer jumping completes before match-pattern
         // candidate projection. Copy an odd-step result back to node_func and
         // reuse this HIR-sized storage for the later first-use candidate rows.
         let node_func_owner_b_buf = &match_pattern_first_use_node_buf;
-        let needs_enclosing_return_records = feature_summary.has_enum()
-            || feature_summary.has_match()
-            || feature_summary.has_aggregate();
-        let enclosing_return_record_rows = if needs_enclosing_return_records {
-            hir_words
-        } else {
-            1
-        };
-        let enclosing_return_node_a_buf = storage_u32_copy(
-            device,
-            "codegen.x86.enclosing_return_node.a",
-            enclosing_return_record_rows,
-        );
-        let enclosing_return_node_b_buf = storage_u32_copy(
-            device,
-            "codegen.x86.enclosing_return_node.b",
-            enclosing_return_record_rows,
-        );
-        let enclosing_let_node_a_buf = external_or_storage_u32_copy(
-            device,
-            "codegen.x86.enclosing_let_node.a",
-            hir_words,
-            external_scratch.enclosing_let_node_a,
-        );
-        let enclosing_let_node_b_buf = external_or_storage_u32_copy(
-            device,
-            "codegen.x86.enclosing_let_node.b",
-            hir_words,
-            external_scratch.enclosing_let_node_b,
-        );
-        let match_pattern_first_variant_node_storage_buf = feature_summary.has_match().then(|| {
-            storage_u32_copy(
-                device,
-                "codegen.x86.match_pattern_first_variant_node",
-                hir_words,
-            )
-        });
-        let match_pattern_first_payload_node_storage_buf = feature_summary.has_match().then(|| {
-            storage_u32_copy(
-                device,
-                "codegen.x86.match_pattern_first_payload_node",
-                hir_words,
-            )
-        });
         // No-match programs skip the pattern-record/finalize reads. Reuse
         // already allocated HIR scratch for later enclosing-stmt/callee-owner
         // pointer jumping instead of retaining two extra match-only tables.
@@ -608,169 +294,16 @@ impl GpuX86CodeGenerator {
             match_pattern_first_payload_node_storage_buf
                 .as_ref()
                 .unwrap_or(&match_pattern_node_variant_buf);
-        let struct_type_record_buf =
-            storage_u32_copy(device, "codegen.x86.struct_type_record", token_words);
-        let aggregate_record_rows = if feature_summary.has_aggregate() {
-            hir_words
-        } else {
-            1
-        };
-        let struct_access_record_buf = storage_u32_copy(
-            device,
-            "codegen.x86.struct_access_record",
-            aggregate_record_rows * 3,
-        );
-        let struct_store_record_buf = storage_u32_copy(
-            device,
-            "codegen.x86.struct_store_record",
-            aggregate_record_rows * 4,
-        );
-        let struct_record_status_buf =
-            pooled_storage_u32_copy(device, "codegen.x86.struct_record_status", 4);
-        let decl_layout_record_buf = external_or_storage_u32_copy(
-            device,
-            "codegen.x86.decl_layout_record",
-            decl_layout_words * 4,
-            external_scratch.decl_layout_record,
-        );
-        let decl_layout_status_buf =
-            pooled_storage_u32_copy(device, "codegen.x86.decl_layout_status", 4);
-        let decl_node_by_token_buf =
-            storage_u32_copy(device, "codegen.x86.decl_node_by_token", token_words);
-        let func_slot_by_index_buf = storage_u32_copy(
-            device,
-            "codegen.x86.func_slot_by_index",
-            function_slot_capacity,
-        );
-        let func_slot_by_node_buf = external_or_storage_u32_copy(
-            device,
-            "codegen.x86.func_slot_by_node",
-            hir_words,
-            external_scratch.func_slot_by_node,
-        );
-        let call_record_buf = external_or_storage_u32_copy(
-            device,
-            "codegen.x86.call_record",
-            hir_words * 4,
-            external_scratch.call_record,
-        );
-        checkpoint_allocation_scope!(allocation_error_scope, "call record buffer allocation");
-        let call_type_record_words =
-            x86_call_type_record_words(hir_words, feature_summary.has_call());
-        let call_type_record_buf = external_or_storage_u32_copy(
-            device,
-            "codegen.x86.call_type_record",
-            call_type_record_words,
-            external_scratch.call_type_record,
-        );
-        let node_inst_count_info_buf = external_or_storage_u32_copy(
-            device,
-            "codegen.x86.node_inst_count_info",
-            hir_words,
-            external_scratch.node_inst_count_info,
-        );
-        let node_inst_count_payload_buf = external_or_storage_u32_copy(
-            device,
-            "codegen.x86.node_inst_count_payload",
-            hir_words,
-            external_scratch.node_inst_count_payload,
-        );
-        checkpoint_allocation_scope!(allocation_error_scope, "node count buffer allocation");
         // Enclosing-let propagation is copied back to the stable A buffer
         // before call-record projection. Reuse the alternate ping-pong storage
         // for call-callee-root markers produced by call_records.
         let call_callee_root_call_buf = &enclosing_let_node_b_buf;
-        let call_record_status_buf =
-            pooled_storage_u32_copy(device, "codegen.x86.call_record_status", 4);
-        let const_value_record_buf = external_or_storage_u32_copy(
-            device,
-            "codegen.x86.const_value_record",
-            token_words * 2,
-            external_scratch.const_value_record,
-        );
-        let const_value_status_buf =
-            pooled_storage_u32_copy(device, "codegen.x86.const_value_status", 4);
-        let const_value_status_uniform_buf = uniform_u32_words(
-            device,
-            "codegen.x86.const_value_status.uniform",
-            &[1, 0, u32::MAX, 0],
-        );
-        let param_reg_record_words = token_words.saturating_mul(5);
-        let param_reg_record_buf = external_or_storage_u32_copy(
-            device,
-            "codegen.x86.param_reg_record",
-            param_reg_record_words,
-            external_scratch.param_reg_record,
-        );
-        let param_reg_status_buf =
-            pooled_storage_u32_copy(device, "codegen.x86.param_reg_status", 4);
-        let param_reg_status_uniform_buf = uniform_u32_words(
-            device,
-            "codegen.x86.param_reg_status.uniform",
-            &[1, 0, u32::MAX, 0],
-        );
-        let local_literal_record_buf = external_or_storage_u32_copy(
-            device,
-            "codegen.x86.local_literal_record",
-            token_words * 3,
-            external_scratch.local_literal_record,
-        );
-        let local_literal_status_buf =
-            pooled_storage_u32_copy(device, "codegen.x86.local_literal_status", 4);
-        let local_literal_status_uniform_buf = uniform_u32_words(
-            device,
-            "codegen.x86.local_literal_status.uniform",
-            &[1, 0, u32::MAX, 0],
-        );
-        let empty_param_record_buf = (!feature_summary.has_param())
-            .then(|| storage_u32_copy(device, "codegen.x86.empty_param_record", 4));
         let hir_param_record_buf = empty_param_record_buf
             .as_ref()
             .unwrap_or(function_metadata.param_record);
-        checkpoint_allocation_scope!(allocation_error_scope, "metadata record buffer allocation");
-        let node_inst_order_record_words =
-            x86_node_inst_order_record_words(hir_words, inst_capacity, function_slot_capacity);
-        let node_inst_order_record_buf = storage_u32_copy(
-            device,
-            "codegen.x86.node_inst_order_record",
-            node_inst_order_record_words,
-        );
-        checkpoint_allocation_scope!(
-            allocation_error_scope,
-            "node instruction order buffer allocation"
-        );
-        let call_arg_lookup_record_words = if feature_summary.has_call() {
-            token_words * 4
-        } else {
-            function_slot_capacity.max(4)
-        };
-        let call_arg_lookup_record_buf = storage_u32_copy(
-            device,
-            "codegen.x86.call_arg_lookup_record",
-            call_arg_lookup_record_words,
-        );
         // Match-pattern owner records are consumed before call projection.
         // Reuse that HIR-sized table for per-call intrinsic metadata.
         let intrinsic_call_record_buf = &match_pattern_owner_buf;
-        let intrinsic_call_status_buf =
-            pooled_storage_u32_copy(device, "codegen.x86.intrinsic_call_status", 4);
-        let call_abi_record_words = if feature_summary.has_call() {
-            token_words * 2
-        } else {
-            function_slot_capacity.max(2)
-        };
-        let call_abi_record_buf =
-            storage_u32_copy(device, "codegen.x86.call_abi_record", call_abi_record_words);
-        let call_abi_status_buf = pooled_storage_u32_copy(device, "codegen.x86.call_abi_status", 4);
-        let call_abi_status_uniform_buf = uniform_u32_words(
-            device,
-            "codegen.x86.call_abi_status.uniform",
-            &[1, 0, u32::MAX, 0],
-        );
-        checkpoint_allocation_scope!(
-            allocation_error_scope,
-            "call argument planning buffer allocation"
-        );
         // Node instruction counts are consumed before virtual parameter mask
         // materialization. Reuse the info table once instruction
         // location planning has finished.
@@ -869,117 +402,80 @@ impl GpuX86CodeGenerator {
         // they can reuse the same HIR-sized storage.
         let node_inst_subtree_slot_bounds_buf = &call_record_buf;
         let node_inst_scan_input_buf = &func_owner_scan_local_prefix_buf;
-        let node_inst_count_status_buf =
-            pooled_storage_u32_copy(device, "codegen.x86.node_inst_count_status", 4);
-        let node_inst_order_status_buf =
-            pooled_storage_u32_copy(device, "codegen.x86.node_inst_order_status", 4);
-        let node_inst_scan_local_prefix_buf = external_or_storage_u32_copy(
+        let InstructionRecordBuffers {
+            node_inst_count_status_buf,
+            node_inst_order_status_buf,
+            node_inst_scan_local_prefix_buf,
+            node_inst_range_start_buf,
+            node_inst_range_info_buf,
+            node_inst_range_status_buf,
+            node_inst_subtree_bound_start_buf,
+            node_inst_subtree_bound_end_buf,
+            node_inst_gen_node_record_buf,
+            node_inst_subtree_bounds_status_buf,
+            node_inst_location_status_buf,
+            node_inst_gen_input_status_buf,
+            virtual_inst_record_buf,
+            virtual_inst_args_buf,
+            virtual_inst_status_buf,
+            virtual_func_first_row_status_buf,
+            virtual_func_slot_buf,
+            virtual_value_def_status_buf,
+            virtual_live_start_buf,
+            virtual_live_end_buf,
+            virtual_liveness_status_buf,
+            virtual_next_call_a_buf,
+            virtual_next_call_b_buf,
+            virtual_next_call_status_buf,
+            func_param_reg_mask_status_buf,
+            virtual_regalloc_param_rank_mask_buf,
+            virtual_phys_reg_buf,
+            virtual_call_live_reg_mask_buf,
+            virtual_regalloc_status_buf,
+            select_status_buf,
+            size_status_buf,
+            text_len_buf,
+            text_status_buf,
+            text_scan_words,
+            text_scan_blocks,
+            text_scan_block_sum_buf,
+            text_scan_prefix_a_buf,
+            text_scan_prefix_b_buf,
+            virtual_value_def_flag_buf,
+            virtual_value_def_row_buf,
+            encode_status_buf,
+            elf_layout_buf,
+            layout_status_buf,
+            status_buf,
+            out_buf,
+            output_status_offset,
+            output_readback,
+        } = create_instruction_record_buffers(
             device,
-            "codegen.x86.node_inst_scan_local_prefix",
-            node_inst_scan_words,
-            external_scratch.node_inst_scan_local_prefix,
-        );
+            allocation_scope,
+            InstructionRecordBufferInputs {
+                hir_words,
+                node_inst_scan_words,
+                inst_capacity,
+                function_slot_capacity,
+                output_words,
+                output_readback_bytes,
+                external_scratch: &external_scratch,
+            },
+        )?;
         let node_inst_scan_block_sum_buf = &func_owner_scan_block_sum_buf;
         let node_inst_scan_prefix_a_buf = &func_owner_scan_prefix_a_buf;
         let node_inst_scan_prefix_b_buf = &func_owner_scan_prefix_b_buf;
-        let node_inst_range_start_buf = external_or_storage_u32_copy(
-            device,
-            "codegen.x86.node_inst_range_start",
-            hir_words,
-            external_scratch.node_inst_range_start,
-        );
-        let node_inst_range_info_buf = external_or_storage_u32_copy(
-            device,
-            "codegen.x86.node_inst_range_info",
-            hir_words,
-            external_scratch.node_inst_range_info,
-        );
-        let node_inst_range_status_buf =
-            pooled_storage_u32_copy(device, "codegen.x86.node_inst_range_status", 4);
-        let node_inst_subtree_bound_start_buf = external_or_storage_u32_copy(
-            device,
-            "codegen.x86.node_inst_subtree_bound_start",
-            hir_words,
-            external_scratch.node_inst_subtree_bound_start,
-        );
-        let node_inst_subtree_bound_end_buf = external_or_storage_u32_copy(
-            device,
-            "codegen.x86.node_inst_subtree_bound_end",
-            hir_words,
-            external_scratch.node_inst_subtree_bound_end,
-        );
-        let node_inst_gen_node_record_words =
-            x86_node_inst_gen_node_record_words(hir_words, inst_capacity);
-        let node_inst_gen_node_record_buf = external_or_storage_u32_copy(
-            device,
-            "codegen.x86.node_inst_gen_node_record",
-            node_inst_gen_node_record_words,
-            external_scratch.node_inst_gen_node_record,
-        );
-        let node_inst_subtree_bounds_status_buf =
-            pooled_storage_u32_copy(device, "codegen.x86.node_inst_subtree_bounds_status", 4);
-        checkpoint_allocation_scope!(
-            allocation_error_scope,
-            "node instruction scan/range buffer allocation"
-        );
         let node_inst_location_record_buf = &call_record_buf;
-        let node_inst_location_status_buf =
-            pooled_storage_u32_copy(device, "codegen.x86.node_inst_location_status", 4);
-        let node_inst_gen_input_status_buf =
-            pooled_storage_u32_copy(device, "codegen.x86.node_inst_gen_input_status", 5);
-        let virtual_inst_record_buf =
-            storage_u32_copy(device, "codegen.x86.virtual_inst_record", inst_capacity * 4);
-        let virtual_inst_args_buf =
-            storage_u32_copy(device, "codegen.x86.virtual_inst_args", inst_capacity * 4);
-        let virtual_inst_status_buf =
-            pooled_storage_u32_copy(device, "codegen.x86.virtual_inst_status", 4);
-        checkpoint_allocation_scope!(
-            allocation_error_scope,
-            "virtual instruction buffer allocation"
-        );
         // Call argument lookup and ABI records are dead after instruction
         // generation. Reuse their token-indexed storage for virtual row bounds,
         // initialized immediately before the row-bound scatter pass.
         let virtual_func_first_row_buf = &call_arg_lookup_record_buf;
         let virtual_func_last_row_buf = &call_abi_record_buf;
-        let virtual_func_first_row_status_buf =
-            pooled_storage_u32_copy(device, "codegen.x86.virtual_func_first_row_status", 4);
-        let virtual_func_slot_buf =
-            storage_u32_copy(device, "codegen.x86.virtual_func_slot", inst_capacity);
-        let virtual_value_def_status_buf =
-            pooled_storage_u32_copy(device, "codegen.x86.virtual_value_def_status", 4);
-        let virtual_live_start_buf =
-            storage_u32_copy(device, "codegen.x86.virtual_live_start", inst_capacity);
-        let virtual_live_end_buf =
-            storage_u32_copy(device, "codegen.x86.virtual_live_end", inst_capacity);
-        let virtual_liveness_status_buf =
-            pooled_storage_u32_copy(device, "codegen.x86.virtual_liveness_status", 4);
-        let virtual_next_call_a_buf =
-            storage_u32_copy(device, "codegen.x86.virtual_next_call.a", inst_capacity);
-        let virtual_next_call_b_buf =
-            storage_u32_copy(device, "codegen.x86.virtual_next_call.b", inst_capacity);
-        let virtual_next_call_status_buf =
-            pooled_storage_u32_copy(device, "codegen.x86.virtual_next_call_status", 4);
-        let func_param_reg_mask_status_buf =
-            pooled_storage_u32_copy(device, "codegen.x86.func_param_reg_mask_status", 4);
         // The node-order/subtree-bounds scratch is dead after instruction
         // generation. Register allocation reuses it for per-function active
         // register ends.
         let virtual_regalloc_active_end_buf = &node_inst_order_record_buf;
-        let virtual_regalloc_param_rank_mask_buf = storage_u32_copy(
-            device,
-            "codegen.x86.virtual_regalloc_param_rank_mask",
-            function_slot_capacity,
-        );
-        let virtual_phys_reg_buf =
-            storage_u32_copy(device, "codegen.x86.virtual_phys_reg", inst_capacity);
-        let virtual_call_live_reg_mask_buf = storage_u32_copy(
-            device,
-            "codegen.x86.virtual_call_live_reg_mask",
-            inst_capacity,
-        );
-        let virtual_regalloc_status_buf =
-            pooled_storage_u32_copy(device, "codegen.x86.virtual_regalloc_status", 4);
         // Register allocation is the last consumer of liveness and next-call
         // scratch records. Selection overwrites every selected instruction row,
         // so reuse those inst-sized buffers for final instruction fields.
@@ -987,175 +483,142 @@ impl GpuX86CodeGenerator {
         let inst_arg0_buf = &virtual_live_end_buf;
         let inst_arg1_buf = &virtual_next_call_a_buf;
         let inst_arg2_buf = &virtual_next_call_b_buf;
-        let select_status_buf = pooled_storage_u32_copy(device, "codegen.x86.select_status", 4);
         let inst_size_buf = &virtual_phys_reg_buf;
-        let size_status_buf = pooled_storage_u32_copy(device, "codegen.x86.size_status", 4);
         // Selection is the final consumer of virtual instruction records and
         // args. Text emission reuses those inst-sized tables for byte offsets
         // and scan-local prefixes.
         let inst_byte_offset_buf = &virtual_inst_record_buf;
-        let text_len_buf = storage_u32_copy(device, "codegen.x86.text_len", 1);
-        let text_status_buf = pooled_storage_u32_copy(device, "codegen.x86.text_status", 4);
-        let text_scan_words = inst_capacity;
-        let text_scan_blocks = text_scan_words.div_ceil(256).max(1);
         let text_scan_local_prefix_buf = &virtual_inst_args_buf;
-        let text_scan_block_sum_buf =
-            storage_u32_copy(device, "codegen.x86.text_scan_block_sum", text_scan_blocks);
-        let text_scan_prefix_a_buf =
-            storage_u32_copy(device, "codegen.x86.text_scan_prefix_a", text_scan_blocks);
-        let text_scan_prefix_b_buf =
-            storage_u32_copy(device, "codegen.x86.text_scan_prefix_b", text_scan_blocks);
-        let virtual_value_def_flag_buf =
-            storage_u32_copy(device, "codegen.x86.virtual_value_def_flag", inst_capacity);
         let virtual_value_def_scan_local_prefix_buf = &virtual_next_call_a_buf;
-        let virtual_value_def_row_buf =
-            storage_u32_copy(device, "codegen.x86.virtual_value_def_row", inst_capacity);
         let virtual_value_def_scan_block_sum_buf = &text_scan_block_sum_buf;
         let virtual_value_def_scan_prefix_a_buf = &text_scan_prefix_a_buf;
         let virtual_value_def_scan_prefix_b_buf = &text_scan_prefix_b_buf;
-        let encode_status_buf = pooled_storage_u32_copy(device, "codegen.x86.encode_status", 4);
-        let elf_layout_buf = storage_u32_copy(device, "codegen.x86.elf_layout", 8);
-        let layout_status_buf = pooled_storage_u32_copy(device, "codegen.x86.layout_status", 4);
-        let status_buf = pooled_storage_u32_copy(device, "codegen.x86.status", 4);
-        let out_buf = pooled_storage_u32_copy(device, "codegen.x86.out_words", output_words);
-        let output_status_offset = output_readback_bytes;
-        let output_readback = pooled_readback_bytes(
-            device,
-            "rb.codegen.x86.out_words_and_status",
-            output_readback_bytes + 16,
-        );
-        let trace_status_words = 110usize;
-        let status_trace_readback = if std::env::var("LANIUS_X86_STATUS_TRACE").is_ok_and(|value| {
-            let value = value.trim();
-            matches!(value, "1" | "true" | "TRUE" | "True")
-        }) {
-            Some(readback_u32s(
-                device,
-                "rb.codegen.x86.status_trace",
-                trace_status_words,
-            ))
-        } else {
-            None
-        };
-        pop_allocation_error_scope(allocation_error_scope, "virtual/output buffer allocation")?;
         host_timer.stamp("scratch_buffers");
-        let func_owner_scan_steps = scan_steps_for_blocks(func_owner_scan_blocks);
-        let func_owner_scan_param_bytes = func_owner_scan_steps
-            .iter()
-            .map(|step| {
-                let params = X86ScanParams {
-                    n_items: hir_words as u32,
-                    n_blocks: func_owner_scan_blocks as u32,
-                    scan_step: *step,
-                    inst_capacity: inst_capacity as u32,
-                };
-                x86_scan_params_bytes(&params)
-            })
-            .collect::<Vec<_>>();
-        let func_owner_scan_params_buf = uniform_u32_struct_array(
+        let func_owner_scan_params_buf = scan_params(
             device,
             "codegen.x86.func_owner_scan.params",
-            &func_owner_scan_param_bytes,
+            hir_words,
+            func_owner_scan_blocks,
+            inst_capacity,
         );
-        let final_func_owner_scan_prefix_buf = if (func_owner_scan_params_buf.len() - 1) % 2 == 0 {
-            &func_owner_scan_prefix_a_buf
-        } else {
-            &func_owner_scan_prefix_b_buf
-        };
-        let node_inst_scan_steps = scan_steps_for_blocks(node_inst_scan_blocks);
-        let node_inst_scan_param_bytes = node_inst_scan_steps
-            .iter()
-            .map(|step| {
-                let params = X86ScanParams {
-                    n_items: node_inst_scan_words as u32,
-                    n_blocks: node_inst_scan_blocks as u32,
-                    scan_step: *step,
-                    inst_capacity: inst_capacity as u32,
-                };
-                x86_scan_params_bytes(&params)
-            })
-            .collect::<Vec<_>>();
-        let node_inst_scan_params_buf = uniform_u32_struct_array(
+        let final_func_owner_scan_prefix_buf = final_ping_pong_scan_prefix(
+            &func_owner_scan_params_buf,
+            &func_owner_scan_prefix_a_buf,
+            &func_owner_scan_prefix_b_buf,
+        );
+        let node_inst_scan_params_buf = scan_params(
             device,
             "codegen.x86.node_inst_scan.params",
-            &node_inst_scan_param_bytes,
+            node_inst_scan_words,
+            node_inst_scan_blocks,
+            inst_capacity,
         );
-        let final_node_inst_scan_prefix_buf = if (node_inst_scan_params_buf.len() - 1) % 2 == 0 {
-            &node_inst_scan_prefix_a_buf
-        } else {
-            &node_inst_scan_prefix_b_buf
-        };
-        let text_scan_steps = scan_steps_for_blocks(text_scan_blocks);
-        let text_scan_param_bytes = text_scan_steps
-            .iter()
-            .map(|step| {
-                let params = X86ScanParams {
-                    n_items: text_scan_words as u32,
-                    n_blocks: text_scan_blocks as u32,
-                    scan_step: *step,
-                    inst_capacity: inst_capacity as u32,
-                };
-                x86_scan_params_bytes(&params)
-            })
-            .collect::<Vec<_>>();
-        let text_scan_params_buf = uniform_u32_struct_array(
+        let final_node_inst_scan_prefix_buf = final_ping_pong_scan_prefix(
+            &node_inst_scan_params_buf,
+            &node_inst_scan_prefix_a_buf,
+            &node_inst_scan_prefix_b_buf,
+        );
+        let text_scan_params_buf = scan_params(
             device,
             "codegen.x86.text_scan.params",
-            &text_scan_param_bytes,
+            text_scan_words,
+            text_scan_blocks,
+            inst_capacity,
         );
-        let virtual_next_call_param_bytes = virtual_next_call_steps
-            .iter()
-            .map(|step| {
-                let params = X86ScanParams {
-                    n_items: inst_capacity as u32,
-                    n_blocks: 0,
-                    scan_step: *step,
-                    inst_capacity: inst_capacity as u32,
-                };
-                x86_scan_params_bytes(&params)
-            })
-            .collect::<Vec<_>>();
-        let virtual_next_call_params_buf = uniform_u32_struct_array(
+        let virtual_next_call_params_buf = scan_params_for_steps(
             device,
             "codegen.x86.virtual_next_call.params",
-            &virtual_next_call_param_bytes,
+            &virtual_next_call_steps,
+            inst_capacity,
+            0,
+            inst_capacity,
         );
-        let virtual_regalloc_param_bytes = (0..virtual_regalloc_chunk_count)
-            .map(|chunk_i| {
-                let params = X86RegallocParams {
-                    chunk_start: chunk_i
-                        .saturating_mul(X86_REGALLOC_ROWS_PER_CHUNK)
-                        .min(u32::MAX as usize) as u32,
-                    chunk_len: X86_REGALLOC_ROWS_PER_CHUNK as u32,
-                    init_status: u32::from(chunk_i == 0),
-                    reserved: 0,
-                };
-                x86_regalloc_params_bytes(&params)
-            })
-            .collect::<Vec<_>>();
-        let virtual_regalloc_params_buf = uniform_u32_struct_array(
+        let virtual_regalloc_params_buf = regalloc_params(
             device,
             "codegen.x86.virtual_regalloc.params",
-            &virtual_regalloc_param_bytes,
+            virtual_regalloc_chunk_count,
         );
         host_timer.stamp("scan_params");
 
         host_timer.stamp("uniform_buffers_initialized");
-        macro_rules! init_repeated {
-            ($label:literal, $buffer:expr, $pattern:expr, $repeats:expr $(,)?) => {
-                init_repeated_u32_words(
-                    device,
-                    queue,
-                    encoder,
-                    &self.fill_u32_pass,
-                    $label,
-                    $buffer,
-                    $pattern,
-                    $repeats,
-                )?
-            };
-        }
-        include!("record_init.rs");
+        record_initializers(InitializerInputs {
+            device,
+            queue,
+            encoder,
+            fill_u32_pass: &self.fill_u32_pass,
+            feature_summary,
+            token_words,
+            hir_words,
+            enum_value_record_rows,
+            match_record_rows,
+            aggregate_record_rows,
+            decl_layout_words,
+            function_slot_capacity,
+            param_reg_record_words,
+            node_inst_order_rows,
+            func_meta_buf: &func_meta_buf,
+            func_meta_uniform_buf: &func_meta_uniform_buf,
+            node_tree_status_buf: &node_tree_status_buf,
+            enum_type_record_buf: &enum_type_record_buf,
+            enum_value_record_buf: &enum_value_record_buf,
+            enum_record_status_buf: &enum_record_status_buf,
+            match_arm_owner_buf: &match_arm_owner_buf,
+            match_return_node_buf: &match_return_node_buf,
+            match_pattern_owner_buf: &match_pattern_owner_buf,
+            match_result_value_owner_buf: &match_result_value_owner_buf,
+            match_pattern_node_owner_buf: &match_pattern_node_owner_buf,
+            match_pattern_node_variant_buf: &match_pattern_node_variant_buf,
+            match_pattern_node_payload_decl_buf: &match_pattern_node_payload_decl_buf,
+            match_pattern_first_variant_node_buf,
+            match_pattern_first_payload_node_buf,
+            struct_type_record_buf: &struct_type_record_buf,
+            struct_access_record_buf: &struct_access_record_buf,
+            struct_store_record_buf: &struct_store_record_buf,
+            struct_record_status_buf: &struct_record_status_buf,
+            decl_layout_record_buf: &decl_layout_record_buf,
+            decl_layout_status_buf: &decl_layout_status_buf,
+            decl_node_by_token_buf: &decl_node_by_token_buf,
+            func_slot_by_index_buf: &func_slot_by_index_buf,
+            func_slot_by_node_buf: &func_slot_by_node_buf,
+            call_record_buf: &call_record_buf,
+            call_type_record_buf: &call_type_record_buf,
+            call_record_status_buf: &call_record_status_buf,
+            const_value_record_buf: &const_value_record_buf,
+            const_value_status_buf: &const_value_status_buf,
+            param_reg_record_buf: &param_reg_record_buf,
+            param_reg_status_buf: &param_reg_status_buf,
+            local_literal_record_buf: &local_literal_record_buf,
+            local_literal_status_buf: &local_literal_status_buf,
+            local_literal_status_uniform_buf: &local_literal_status_uniform_buf,
+            node_inst_order_record_buf: &node_inst_order_record_buf,
+            call_arg_lookup_record_buf: &call_arg_lookup_record_buf,
+            intrinsic_call_status_buf: &intrinsic_call_status_buf,
+            call_abi_record_buf: &call_abi_record_buf,
+            call_abi_status_buf: &call_abi_status_buf,
+            node_inst_count_status_buf: &node_inst_count_status_buf,
+            node_inst_order_status_buf: &node_inst_order_status_buf,
+            node_inst_range_start_buf: &node_inst_range_start_buf,
+            node_inst_range_info_buf: &node_inst_range_info_buf,
+            node_inst_range_status_buf: &node_inst_range_status_buf,
+            node_inst_subtree_bounds_status_buf: &node_inst_subtree_bounds_status_buf,
+            node_inst_location_record_buf: &node_inst_location_record_buf,
+            node_inst_location_status_buf: &node_inst_location_status_buf,
+            node_inst_gen_input_status_buf: &node_inst_gen_input_status_buf,
+            virtual_inst_status_buf: &virtual_inst_status_buf,
+            virtual_func_first_row_status_buf: &virtual_func_first_row_status_buf,
+            virtual_liveness_status_buf: &virtual_liveness_status_buf,
+            virtual_next_call_status_buf: &virtual_next_call_status_buf,
+            func_param_reg_mask_status_buf: &func_param_reg_mask_status_buf,
+            virtual_regalloc_status_buf: &virtual_regalloc_status_buf,
+            select_status_buf: &select_status_buf,
+            size_status_buf: &size_status_buf,
+            text_len_buf: &text_len_buf,
+            text_status_buf: &text_status_buf,
+            encode_status_buf: &encode_status_buf,
+            elf_layout_buf: &elf_layout_buf,
+            layout_status_buf: &layout_status_buf,
+            status_buf: &status_buf,
+        })?;
         zero_u32_words(
             queue,
             encoder,
@@ -1164,4615 +627,966 @@ impl GpuX86CodeGenerator {
         );
         host_timer.stamp("initializers_recorded");
 
-        let active_scan_dispatch_args_bind_group = reflected_bind_group(
+        let DispatchSetupBindGroups {
+            active_scan_dispatch_args: active_scan_dispatch_args_bind_group,
+            node_inst_scan_input_clear: node_inst_scan_input_clear_bind_group,
+            call_callee_root_call_clear: call_callee_root_call_clear_bind_group,
+            node_order_dispatch_args: node_order_dispatch_args_bind_group,
+            virtual_dispatch_args: virtual_dispatch_args_bind_group,
+            output_dispatch_args: output_dispatch_args_bind_group,
+        } = create_dispatch_setup_bind_groups(
+            self,
             device,
-            Some("codegen.x86.active_scan_dispatch_args.bind_group"),
-            &self.active_scan_dispatch_args_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                (
-                    "active_hir_count_dispatch_args",
-                    active_hir_count_dispatch_args_buf.as_entire_binding(),
-                ),
-                (
-                    "active_hir_plus_one_dispatch_args",
-                    active_hir_plus_one_dispatch_args_buf.as_entire_binding(),
-                ),
-                (
-                    "active_hir_scan_block_dispatch_args",
-                    active_hir_scan_block_dispatch_args_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let node_inst_scan_input_clear_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.node_inst_scan_input.active_clear.bind_group"),
-            &self.active_clear_u32_pass,
-            0,
-            &[
-                (
-                    "active_dispatch_args",
-                    active_hir_plus_one_dispatch_args_buf.as_entire_binding(),
-                ),
-                ("target", node_inst_scan_input_buf.as_entire_binding()),
-            ],
-        )?;
-        let call_callee_root_call_clear_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.call_callee_root_call.active_clear.bind_group"),
-            &self.active_clear_u32_pass,
-            0,
-            &[
-                (
-                    "active_dispatch_args",
-                    active_hir_count_dispatch_args_buf.as_entire_binding(),
-                ),
-                ("target", call_callee_root_call_buf.as_entire_binding()),
-            ],
-        )?;
-        let node_order_dispatch_args_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.node_order_dispatch_args.bind_group"),
-            &self.node_order_dispatch_args_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                (
-                    "x86_node_inst_order_status",
-                    node_inst_order_status_buf.as_entire_binding(),
-                ),
-                (
-                    "active_node_order_scan_dispatch_args",
-                    active_node_order_scan_dispatch_args_buf.as_entire_binding(),
-                ),
-                (
-                    "active_node_order_scan_block_dispatch_args",
-                    active_node_order_scan_block_dispatch_args_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let virtual_dispatch_args_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.virtual_dispatch_args.bind_group"),
-            &self.virtual_dispatch_args_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                (
-                    "x86_virtual_inst_status",
-                    virtual_inst_status_buf.as_entire_binding(),
-                ),
-                ("x86_func_meta", func_meta_buf.as_entire_binding()),
-                (
-                    "active_function_dispatch_args",
-                    active_function_dispatch_args_buf.as_entire_binding(),
-                ),
-                (
-                    "active_virtual_inst_dispatch_args",
-                    active_virtual_inst_dispatch_args_buf.as_entire_binding(),
-                ),
-                (
-                    "active_virtual_next_call_dispatch_args",
-                    active_virtual_next_call_dispatch_args_buf.as_entire_binding(),
-                ),
-                (
-                    "active_selected_inst_dispatch_args",
-                    active_selected_inst_dispatch_args_buf.as_entire_binding(),
-                ),
-                (
-                    "active_selected_scan_block_dispatch_args",
-                    active_selected_scan_block_dispatch_args_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let output_dispatch_args_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.output_dispatch_args.bind_group"),
-            &self.output_dispatch_args_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("x86_text_len", text_len_buf.as_entire_binding()),
-                ("text_status", text_status_buf.as_entire_binding()),
-                (
-                    "active_text_word_dispatch_args",
-                    active_text_word_dispatch_args_buf.as_entire_binding(),
-                ),
-                (
-                    "active_elf_header_word_dispatch_args",
-                    active_elf_header_word_dispatch_args_buf.as_entire_binding(),
-                ),
-            ],
+            DispatchSetupInputs {
+                params: &params_buf,
+                hir_status: hir_status_buf,
+                hir_count: &hir_count,
+                hir_plus_one: &hir_plus_one,
+                hir_scan_block: &hir_scan_block,
+                node_inst_scan_input: node_inst_scan_input_buf,
+                call_callee_root_call: call_callee_root_call_buf,
+                node_inst_order_status: &node_inst_order_status_buf,
+                node_order_scan: &node_order_scan,
+                node_order_scan_block: &node_order_scan_block,
+                virtual_inst_status: &virtual_inst_status_buf,
+                func_meta: &func_meta_buf,
+                function_dispatch: &function_dispatch,
+                virtual_inst: &virtual_inst,
+                virtual_next_call: &virtual_next_call,
+                selected_inst: &selected_inst,
+                selected_scan_block: &selected_scan_block,
+                text_len: &text_len_buf,
+                text_status: &text_status_buf,
+                text_word: &text_word,
+                elf_header_word: &elf_header_word,
+            },
         )?;
 
-        let node_tree_info_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.node_tree_info.bind_group"),
-            &self.node_tree_info_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("parent", parent_buf.as_entire_binding()),
-                ("subtree_end", subtree_end_buf.as_entire_binding()),
-                (
-                    "x86_node_tree_status",
-                    node_tree_status_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let func_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.func_discover.bind_group"),
-            &self.func_discover_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                (
-                    "x86_node_tree_status",
-                    node_tree_status_buf.as_entire_binding(),
-                ),
-                (
-                    "hir_node_decl_token",
-                    function_metadata.node_decl_token.as_entire_binding(),
-                ),
-                (
-                    "hir_node_name_token",
-                    function_metadata.node_name_token.as_entire_binding(),
-                ),
-                (
-                    "hir_token_pos",
-                    function_metadata.hir_token_pos.as_entire_binding(),
-                ),
-                (
-                    "fn_entrypoint_tag",
-                    fn_entrypoint_tag_buf.as_entire_binding(),
-                ),
-                ("x86_func_meta", func_meta_buf.as_entire_binding()),
-                ("x86_node_func", node_func_buf.as_entire_binding()),
-                (
-                    "x86_decl_node_by_token",
-                    decl_node_by_token_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_func_slot_by_node",
-                    func_slot_by_node_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let func_owner_scan_local_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.func_owner_scan_local.bind_group"),
-            &self.func_owner_scan_local_pass,
-            0,
-            &[
-                ("gScan", func_owner_scan_params_buf.binding(0)),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                (
-                    "x86_func_owner_scan_local_prefix",
-                    func_owner_scan_local_prefix_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_func_owner_scan_block_sum",
-                    func_owner_scan_block_sum_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let func_owner_scan_block_even_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.func_owner_scan_blocks.even.bind_group"),
-            &self.func_owner_scan_blocks_pass,
-            0,
-            &[
-                ("gFuncOwnerBlockScan", func_owner_scan_params_buf.binding(0)),
-                (
-                    "x86_func_owner_scan_block_sum",
-                    func_owner_scan_block_sum_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_func_owner_scan_block_prefix_in",
-                    func_owner_scan_prefix_b_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_func_owner_scan_block_prefix_out",
-                    func_owner_scan_prefix_a_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let func_owner_scan_block_odd_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.func_owner_scan_blocks.odd.bind_group"),
-            &self.func_owner_scan_blocks_pass,
-            0,
-            &[
-                ("gFuncOwnerBlockScan", func_owner_scan_params_buf.binding(0)),
-                (
-                    "x86_func_owner_scan_block_sum",
-                    func_owner_scan_block_sum_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_func_owner_scan_block_prefix_in",
-                    func_owner_scan_prefix_a_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_func_owner_scan_block_prefix_out",
-                    func_owner_scan_prefix_b_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let func_owner_scan_block_bind_groups = vec![
-            func_owner_scan_block_even_bind_group,
-            func_owner_scan_block_odd_bind_group,
-        ];
-        let func_assign_nodes_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.func_assign_nodes.bind_group"),
-            &self.func_assign_nodes_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                ("x86_tree_parent", parent_buf.as_entire_binding()),
-                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
-                (
-                    "x86_node_tree_status",
-                    node_tree_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_func_owner_scan_local_prefix",
-                    func_owner_scan_local_prefix_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_func_owner_scan_block_prefix",
-                    final_func_owner_scan_prefix_buf.as_entire_binding(),
-                ),
-                ("x86_node_func", node_func_buf.as_entire_binding()),
-                (
-                    "x86_func_owner_link",
-                    node_func_owner_link_a_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let func_assign_nodes_step_bind_groups = node_func_owner_steps
-            .iter()
-            .enumerate()
-            .map(|(step_i, _step)| {
-                let (link_in, owner_in, link_out, owner_out) = if step_i % 2 == 0 {
-                    (
-                        node_func_owner_link_a_buf,
-                        &node_func_buf,
-                        node_func_owner_link_b_buf,
-                        node_func_owner_b_buf,
-                    )
-                } else {
-                    (
-                        node_func_owner_link_b_buf,
-                        node_func_owner_b_buf,
-                        node_func_owner_link_a_buf,
-                        &node_func_buf,
-                    )
-                };
-                reflected_bind_group(
-                    device,
-                    Some("codegen.x86.func_assign_nodes_step.bind_group"),
-                    &self.func_assign_nodes_step_pass,
-                    0,
-                    &[
-                        ("gParams", params_buf.as_entire_binding()),
-                        ("hir_status", hir_status_buf.as_entire_binding()),
-                        (
-                            "x86_node_tree_status",
-                            node_tree_status_buf.as_entire_binding(),
-                        ),
-                        ("x86_func_owner_link_in", link_in.as_entire_binding()),
-                        ("x86_node_func_in", owner_in.as_entire_binding()),
-                        ("x86_func_owner_link_out", link_out.as_entire_binding()),
-                        ("x86_node_func_out", owner_out.as_entire_binding()),
-                    ],
-                )
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let func_slot_flags_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.func_slot_flags.bind_group"),
-            &self.func_slot_flags_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                (
-                    "x86_func_slot_flags",
-                    node_inst_scan_input_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let func_slot_scatter_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.func_slot_scatter.bind_group"),
-            &self.func_slot_scatter_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                (
-                    "x86_func_slot_flags",
-                    node_inst_scan_input_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_func_slot_by_node",
-                    func_slot_by_node_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_func_slot_scan_local_prefix",
-                    node_inst_scan_local_prefix_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_func_slot_scan_block_prefix",
-                    final_node_inst_scan_prefix_buf.as_entire_binding(),
-                ),
-                ("x86_func_meta", func_meta_buf.as_entire_binding()),
-                (
-                    "x86_func_slot_by_index",
-                    func_slot_by_index_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let expr_resolve_init_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.expr_resolve_init.bind_group"),
-            &self.expr_resolve_init_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_expr_record", expr_metadata.record.as_entire_binding()),
-                (
-                    "x86_expr_resolved_node",
-                    expr_resolved_a_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_expr_resolve_link",
-                    expr_resolve_link_a_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let expr_resolve_step_bind_groups = expr_resolve_steps
-            .iter()
-            .enumerate()
-            .map(|(step_i, _step)| {
-                let (resolved_in, link_in, resolved_out, link_out) = if step_i % 2 == 0 {
-                    (
-                        expr_resolved_a_buf,
-                        expr_resolve_link_a_buf,
-                        expr_resolved_b_buf,
-                        expr_resolve_link_b_buf,
-                    )
-                } else {
-                    (
-                        expr_resolved_b_buf,
-                        expr_resolve_link_b_buf,
-                        expr_resolved_a_buf,
-                        expr_resolve_link_a_buf,
-                    )
-                };
-                reflected_bind_group(
-                    device,
-                    Some("codegen.x86.expr_resolve_step.bind_group"),
-                    &self.expr_resolve_step_pass,
-                    0,
-                    &[
-                        ("gParams", params_buf.as_entire_binding()),
-                        ("hir_status", hir_status_buf.as_entire_binding()),
-                        ("x86_expr_resolved_node_in", resolved_in.as_entire_binding()),
-                        ("x86_expr_resolve_link_in", link_in.as_entire_binding()),
-                        (
-                            "x86_expr_resolved_node_out",
-                            resolved_out.as_entire_binding(),
-                        ),
-                        ("x86_expr_resolve_link_out", link_out.as_entire_binding()),
-                    ],
-                )
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let enum_records_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.enum_records.bind_group"),
-            &self.enum_records_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                ("hir_expr_record", expr_metadata.record.as_entire_binding()),
-                (
-                    "x86_expr_resolved_node",
-                    expr_resolved_final_buf.as_entire_binding(),
-                ),
-                (
-                    "hir_item_decl_token",
-                    enum_metadata.item_decl_token.as_entire_binding(),
-                ),
-                (
-                    "hir_variant_parent_enum",
-                    enum_metadata.variant_parent_enum.as_entire_binding(),
-                ),
-                (
-                    "hir_variant_ordinal",
-                    enum_metadata.variant_ordinal.as_entire_binding(),
-                ),
-                (
-                    "hir_variant_payload_count",
-                    enum_metadata.variant_payload_count.as_entire_binding(),
-                ),
-                (
-                    "hir_call_callee_node",
-                    call_metadata.callee_node.as_entire_binding(),
-                ),
-                (
-                    "path_count_out",
-                    enum_metadata.path_count_out.as_entire_binding(),
-                ),
-                (
-                    "path_id_by_owner_hir",
-                    enum_metadata.path_id_by_owner_hir.as_entire_binding(),
-                ),
-                (
-                    "resolved_value_decl",
-                    enum_metadata.resolved_value_decl.as_entire_binding(),
-                ),
-                (
-                    "resolved_value_status",
-                    enum_metadata.resolved_value_status.as_entire_binding(),
-                ),
-                (
-                    "decl_count_out",
-                    enum_metadata.decl_count_out.as_entire_binding(),
-                ),
-                ("visible_decl", visible_decl_buf.as_entire_binding()),
-                ("decl_kind", enum_metadata.decl_kind.as_entire_binding()),
-                (
-                    "decl_name_token",
-                    enum_metadata.decl_name_token.as_entire_binding(),
-                ),
-                (
-                    "decl_id_by_name_token",
-                    enum_metadata.decl_id_by_name_token.as_entire_binding(),
-                ),
-                (
-                    "decl_hir_node",
-                    enum_metadata.decl_hir_node.as_entire_binding(),
-                ),
-                (
-                    "decl_parent_type_decl",
-                    enum_metadata.decl_parent_type_decl.as_entire_binding(),
-                ),
-                (
-                    "x86_enum_type_record",
-                    enum_type_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_enum_value_record",
-                    enum_value_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_enum_record_status",
-                    enum_record_status_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let match_records_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.match_records.bind_group"),
-            &self.match_records_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                (
-                    "hir_match_scrutinee_node",
-                    enum_metadata.match_scrutinee_node.as_entire_binding(),
-                ),
-                (
-                    "hir_match_arm_start",
-                    enum_metadata.match_arm_start.as_entire_binding(),
-                ),
-                (
-                    "hir_match_arm_count",
-                    enum_metadata.match_arm_count.as_entire_binding(),
-                ),
-                (
-                    "hir_match_arm_next",
-                    enum_metadata.match_arm_next.as_entire_binding(),
-                ),
-                (
-                    "hir_match_arm_pattern_node",
-                    enum_metadata.match_arm_pattern_node.as_entire_binding(),
-                ),
-                (
-                    "hir_match_arm_payload_start",
-                    enum_metadata.match_arm_payload_start.as_entire_binding(),
-                ),
-                (
-                    "hir_match_arm_payload_count",
-                    enum_metadata.match_arm_payload_count.as_entire_binding(),
-                ),
-                (
-                    "hir_match_arm_result_node",
-                    enum_metadata.match_arm_result_node.as_entire_binding(),
-                ),
-                (
-                    "hir_token_pos",
-                    enum_metadata.hir_token_pos.as_entire_binding(),
-                ),
-                ("gX86Features", feature_params_buf.as_entire_binding()),
-                ("x86_match_record", match_record_buf.as_entire_binding()),
-                (
-                    "x86_match_result_value_owner",
-                    match_result_value_owner_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_match_arm_owner",
-                    match_arm_owner_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let match_pattern_records_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.match_pattern_records.bind_group"),
-            &self.match_pattern_records_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                ("hir_expr_record", expr_metadata.record.as_entire_binding()),
-                (
-                    "hir_token_pos",
-                    enum_metadata.hir_token_pos.as_entire_binding(),
-                ),
-                (
-                    "x86_expr_resolved_node",
-                    expr_resolved_final_buf.as_entire_binding(),
-                ),
-                (
-                    "hir_call_callee_node",
-                    call_metadata.callee_node.as_entire_binding(),
-                ),
-                ("visible_decl", visible_decl_buf.as_entire_binding()),
-                (
-                    "path_count_out",
-                    enum_metadata.path_count_out.as_entire_binding(),
-                ),
-                (
-                    "path_id_by_owner_hir",
-                    enum_metadata.path_id_by_owner_hir.as_entire_binding(),
-                ),
-                (
-                    "resolved_value_decl",
-                    enum_metadata.resolved_value_decl.as_entire_binding(),
-                ),
-                (
-                    "resolved_value_status",
-                    enum_metadata.resolved_value_status.as_entire_binding(),
-                ),
-                (
-                    "decl_count_out",
-                    enum_metadata.decl_count_out.as_entire_binding(),
-                ),
-                ("decl_kind", enum_metadata.decl_kind.as_entire_binding()),
-                (
-                    "decl_name_token",
-                    enum_metadata.decl_name_token.as_entire_binding(),
-                ),
-                (
-                    "decl_id_by_name_token",
-                    enum_metadata.decl_id_by_name_token.as_entire_binding(),
-                ),
-                (
-                    "decl_hir_node",
-                    enum_metadata.decl_hir_node.as_entire_binding(),
-                ),
-                (
-                    "decl_parent_type_decl",
-                    enum_metadata.decl_parent_type_decl.as_entire_binding(),
-                ),
-                (
-                    "hir_variant_ordinal",
-                    enum_metadata.variant_ordinal.as_entire_binding(),
-                ),
-                ("gX86Features", feature_params_buf.as_entire_binding()),
-                ("x86_match_record", match_record_buf.as_entire_binding()),
-                (
-                    "x86_match_pattern_node_owner",
-                    match_pattern_node_owner_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_match_pattern_node_variant",
-                    match_pattern_node_variant_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_match_pattern_node_payload_decl",
-                    match_pattern_node_payload_decl_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_match_pattern_first_use_node",
-                    match_pattern_first_use_node_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_match_pattern_first_variant_node",
-                    match_pattern_first_variant_node_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_match_pattern_first_payload_node",
-                    match_pattern_first_payload_node_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let enclosing_return_init_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.enclosing_return_init.bind_group"),
-            &self.enclosing_return_init_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                (
-                    "hir_stmt_record",
-                    expr_metadata.stmt_record.as_entire_binding(),
-                ),
-                ("x86_tree_parent", parent_buf.as_entire_binding()),
-                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
-                (
-                    "x86_enclosing_return_node",
-                    enclosing_return_node_a_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_enclosing_return_link",
-                    enclosing_return_link_a_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let enclosing_return_step_bind_groups = enclosing_return_steps
-            .iter()
-            .enumerate()
-            .map(|(step_i, _step)| {
-                let (node_in, link_in, node_out, link_out) = if step_i % 2 == 0 {
-                    (
-                        &enclosing_return_node_a_buf,
-                        enclosing_return_link_a_buf,
-                        &enclosing_return_node_b_buf,
-                        enclosing_return_link_b_buf,
-                    )
-                } else {
-                    (
-                        &enclosing_return_node_b_buf,
-                        enclosing_return_link_b_buf,
-                        &enclosing_return_node_a_buf,
-                        enclosing_return_link_a_buf,
-                    )
-                };
-                reflected_bind_group(
-                    device,
-                    Some("codegen.x86.enclosing_return_step.bind_group"),
-                    &self.enclosing_return_step_pass,
-                    0,
-                    &[
-                        ("gParams", params_buf.as_entire_binding()),
-                        ("hir_status", hir_status_buf.as_entire_binding()),
-                        ("x86_enclosing_return_node_in", node_in.as_entire_binding()),
-                        ("x86_enclosing_return_link_in", link_in.as_entire_binding()),
-                        (
-                            "x86_enclosing_return_node_out",
-                            node_out.as_entire_binding(),
-                        ),
-                        (
-                            "x86_enclosing_return_link_out",
-                            link_out.as_entire_binding(),
-                        ),
-                    ],
-                )
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let enclosing_let_init_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.enclosing_let_init.bind_group"),
-            &self.enclosing_let_init_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                (
-                    "hir_stmt_record",
-                    expr_metadata.stmt_record.as_entire_binding(),
-                ),
-                ("x86_tree_parent", parent_buf.as_entire_binding()),
-                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
-                (
-                    "x86_enclosing_let_node",
-                    enclosing_let_node_a_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_enclosing_let_link",
-                    enclosing_let_link_a_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let enclosing_let_step_bind_groups = enclosing_let_steps
-            .iter()
-            .enumerate()
-            .map(|(step_i, _step)| {
-                let (node_in, link_in, node_out, link_out) = if step_i % 2 == 0 {
-                    (
-                        &enclosing_let_node_a_buf,
-                        enclosing_let_link_a_buf,
-                        &enclosing_let_node_b_buf,
-                        enclosing_let_link_b_buf,
-                    )
-                } else {
-                    (
-                        &enclosing_let_node_b_buf,
-                        enclosing_let_link_b_buf,
-                        &enclosing_let_node_a_buf,
-                        enclosing_let_link_a_buf,
-                    )
-                };
-                reflected_bind_group(
-                    device,
-                    Some("codegen.x86.enclosing_let_step.bind_group"),
-                    &self.enclosing_let_step_pass,
-                    0,
-                    &[
-                        ("gParams", params_buf.as_entire_binding()),
-                        ("hir_status", hir_status_buf.as_entire_binding()),
-                        ("x86_enclosing_let_node_in", node_in.as_entire_binding()),
-                        ("x86_enclosing_let_link_in", link_in.as_entire_binding()),
-                        ("x86_enclosing_let_node_out", node_out.as_entire_binding()),
-                        ("x86_enclosing_let_link_out", link_out.as_entire_binding()),
-                    ],
-                )
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let enclosing_stmt_init_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.enclosing_stmt_init.bind_group"),
-            &self.enclosing_stmt_init_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                ("x86_tree_parent", parent_buf.as_entire_binding()),
-                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
-                (
-                    "x86_enclosing_stmt_node",
-                    enclosing_stmt_node_a_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_enclosing_stmt_link",
-                    enclosing_stmt_link_a_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let enclosing_stmt_step_bind_groups = enclosing_stmt_steps
-            .iter()
-            .enumerate()
-            .map(|(step_i, _step)| {
-                let (node_in, link_in, node_out, link_out) = if step_i % 2 == 0 {
-                    (
-                        enclosing_stmt_node_a_buf,
-                        enclosing_stmt_link_a_buf,
-                        enclosing_stmt_node_b_buf,
-                        enclosing_stmt_link_b_buf,
-                    )
-                } else {
-                    (
-                        enclosing_stmt_node_b_buf,
-                        enclosing_stmt_link_b_buf,
-                        enclosing_stmt_node_a_buf,
-                        enclosing_stmt_link_a_buf,
-                    )
-                };
-                reflected_bind_group(
-                    device,
-                    Some("codegen.x86.enclosing_stmt_step.bind_group"),
-                    &self.enclosing_stmt_step_pass,
-                    0,
-                    &[
-                        ("gParams", params_buf.as_entire_binding()),
-                        ("hir_status", hir_status_buf.as_entire_binding()),
-                        ("x86_enclosing_stmt_node_in", node_in.as_entire_binding()),
-                        ("x86_enclosing_stmt_link_in", link_in.as_entire_binding()),
-                        ("x86_enclosing_stmt_node_out", node_out.as_entire_binding()),
-                        ("x86_enclosing_stmt_link_out", link_out.as_entire_binding()),
-                    ],
-                )
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let return_match_records_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.return_match_records.bind_group"),
-            &self.return_match_records_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                (
-                    "hir_stmt_record",
-                    expr_metadata.stmt_record.as_entire_binding(),
-                ),
-                (
-                    "x86_expr_resolved_node",
-                    expr_resolved_final_buf.as_entire_binding(),
-                ),
-                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
-                (
-                    "x86_match_return_node",
-                    match_return_node_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let match_result_owner_init_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.match_result_owner_init.bind_group"),
-            &self.match_result_owner_init_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("gX86Features", feature_params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                (
-                    "x86_match_result_root_owner",
-                    match_result_value_owner_buf.as_entire_binding(),
-                ),
-                ("x86_tree_parent", parent_buf.as_entire_binding()),
-                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
-                (
-                    "x86_match_result_owner",
-                    match_result_owner_a_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_match_result_owner_link",
-                    match_result_owner_link_a_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let match_result_owner_step_bind_groups = match_result_owner_steps
-            .iter()
-            .enumerate()
-            .map(|(step_i, _step)| {
-                let (owner_in, link_in, owner_out, link_out) = if step_i % 2 == 0 {
-                    (
-                        match_result_owner_a_buf,
-                        match_result_owner_link_a_buf,
-                        match_result_owner_b_buf,
-                        match_result_owner_link_b_buf,
-                    )
-                } else {
-                    (
-                        match_result_owner_b_buf,
-                        match_result_owner_link_b_buf,
-                        match_result_owner_a_buf,
-                        match_result_owner_link_a_buf,
-                    )
-                };
-                reflected_bind_group(
-                    device,
-                    Some("codegen.x86.match_result_owner_step.bind_group"),
-                    &self.match_result_owner_step_pass,
-                    0,
-                    &[
-                        ("gParams", params_buf.as_entire_binding()),
-                        ("hir_status", hir_status_buf.as_entire_binding()),
-                        ("x86_match_result_owner_in", owner_in.as_entire_binding()),
-                        (
-                            "x86_match_result_owner_link_in",
-                            link_in.as_entire_binding(),
-                        ),
-                        ("x86_match_result_owner_out", owner_out.as_entire_binding()),
-                        (
-                            "x86_match_result_owner_link_out",
-                            link_out.as_entire_binding(),
-                        ),
-                    ],
-                )
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let match_ownership_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.match_ownership.bind_group"),
-            &self.match_ownership_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                (
-                    "hir_stmt_record",
-                    expr_metadata.stmt_record.as_entire_binding(),
-                ),
-                (
-                    "x86_expr_resolved_node",
-                    expr_resolved_final_buf.as_entire_binding(),
-                ),
-                ("x86_tree_parent", parent_buf.as_entire_binding()),
-                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
-                (
-                    "x86_match_return_node",
-                    match_return_node_buf.as_entire_binding(),
-                ),
-                ("gX86Features", feature_params_buf.as_entire_binding()),
-                ("x86_match_record", match_record_buf.as_entire_binding()),
-                (
-                    "x86_match_pattern_owner",
-                    match_pattern_owner_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_match_result_value_owner",
-                    match_result_value_owner_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let match_pattern_owner_init_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.match_pattern_owner_init.bind_group"),
-            &self.match_pattern_owner_init_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("x86_tree_parent", parent_buf.as_entire_binding()),
-                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
-                ("gX86Features", feature_params_buf.as_entire_binding()),
-                ("x86_match_record", match_record_buf.as_entire_binding()),
-                (
-                    "x86_match_pattern_owner",
-                    match_pattern_owner_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_match_pattern_node_owner",
-                    match_pattern_owner_a_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_match_pattern_owner_link",
-                    match_pattern_owner_link_a_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let match_pattern_owner_step_bind_groups = match_pattern_owner_steps
-            .iter()
-            .enumerate()
-            .map(|(step_i, _step)| {
-                let (owner_in, link_in, owner_out, link_out) = if step_i % 2 == 0 {
-                    (
-                        match_pattern_owner_a_buf,
-                        match_pattern_owner_link_a_buf,
-                        match_pattern_owner_b_buf,
-                        match_pattern_owner_link_b_buf,
-                    )
-                } else {
-                    (
-                        match_pattern_owner_b_buf,
-                        match_pattern_owner_link_b_buf,
-                        match_pattern_owner_a_buf,
-                        match_pattern_owner_link_a_buf,
-                    )
-                };
-                reflected_bind_group(
-                    device,
-                    Some("codegen.x86.match_pattern_owner_step.bind_group"),
-                    &self.match_pattern_owner_step_pass,
-                    0,
-                    &[
-                        ("gParams", params_buf.as_entire_binding()),
-                        ("hir_status", hir_status_buf.as_entire_binding()),
-                        (
-                            "x86_match_pattern_node_owner_in",
-                            owner_in.as_entire_binding(),
-                        ),
-                        (
-                            "x86_match_pattern_owner_link_in",
-                            link_in.as_entire_binding(),
-                        ),
-                        (
-                            "x86_match_pattern_node_owner_out",
-                            owner_out.as_entire_binding(),
-                        ),
-                        (
-                            "x86_match_pattern_owner_link_out",
-                            link_out.as_entire_binding(),
-                        ),
-                    ],
-                )
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let match_pattern_finalize_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.match_pattern_finalize.bind_group"),
-            &self.match_pattern_finalize_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                (
-                    "x86_match_pattern_node_variant",
-                    match_pattern_node_variant_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_match_pattern_node_payload_decl",
-                    match_pattern_node_payload_decl_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_match_pattern_first_use_node",
-                    match_pattern_first_use_node_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_match_pattern_first_variant_node",
-                    match_pattern_first_variant_node_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_match_pattern_first_payload_node",
-                    match_pattern_first_payload_node_buf.as_entire_binding(),
-                ),
-                ("gX86Features", feature_params_buf.as_entire_binding()),
-                ("x86_match_record", match_record_buf.as_entire_binding()),
-            ],
-        )?;
-        let struct_records_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.struct_records.bind_group"),
-            &self.struct_records_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                (
-                    "hir_item_name_token",
-                    struct_metadata.item_name_token.as_entire_binding(),
-                ),
-                (
-                    "hir_stmt_record",
-                    expr_metadata.stmt_record.as_entire_binding(),
-                ),
-                ("hir_expr_record", expr_metadata.record.as_entire_binding()),
-                (
-                    "hir_node_decl_token",
-                    function_metadata.node_decl_token.as_entire_binding(),
-                ),
-                (
-                    "x86_expr_resolved_node",
-                    expr_resolved_final_buf.as_entire_binding(),
-                ),
-                (
-                    "hir_member_receiver_node",
-                    call_metadata.member_receiver_node.as_entire_binding(),
-                ),
-                (
-                    "hir_member_name_token",
-                    call_metadata.member_name_token.as_entire_binding(),
-                ),
-                (
-                    "hir_struct_lit_field_parent_lit",
-                    struct_metadata
-                        .struct_lit_field_parent_lit
-                        .as_entire_binding(),
-                ),
-                (
-                    "hir_struct_lit_field_count",
-                    struct_metadata.struct_lit_field_count.as_entire_binding(),
-                ),
-                (
-                    "hir_struct_lit_field_start",
-                    struct_metadata.struct_lit_field_start.as_entire_binding(),
-                ),
-                (
-                    "hir_struct_decl_field_count",
-                    struct_metadata.struct_decl_field_count.as_entire_binding(),
-                ),
-                (
-                    "hir_struct_lit_field_value_node",
-                    struct_metadata
-                        .struct_lit_field_value_node
-                        .as_entire_binding(),
-                ),
-                (
-                    "hir_struct_lit_field_next",
-                    struct_metadata.struct_lit_field_next.as_entire_binding(),
-                ),
-                (
-                    "member_result_field_ordinal",
-                    struct_metadata
-                        .member_result_field_ordinal
-                        .as_entire_binding(),
-                ),
-                (
-                    "struct_init_field_ordinal_by_node",
-                    struct_metadata
-                        .struct_init_field_ordinal_by_node
-                        .as_entire_binding(),
-                ),
-                ("x86_tree_parent", parent_buf.as_entire_binding()),
-                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
-                (
-                    "x86_node_tree_status",
-                    node_tree_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_enclosing_let_node",
-                    enclosing_let_step_final_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_struct_type_record",
-                    struct_type_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_struct_access_record",
-                    struct_access_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_struct_store_record",
-                    struct_store_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_struct_record_status",
-                    struct_record_status_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let array_records_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.array_records.bind_group"),
-            &self.array_records_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                (
-                    "hir_stmt_record",
-                    expr_metadata.stmt_record.as_entire_binding(),
-                ),
-                ("hir_expr_record", expr_metadata.record.as_entire_binding()),
-                (
-                    "hir_node_decl_token",
-                    function_metadata.node_decl_token.as_entire_binding(),
-                ),
-                (
-                    "x86_expr_resolved_node",
-                    expr_resolved_final_buf.as_entire_binding(),
-                ),
-                (
-                    "hir_array_lit_first_element",
-                    array_metadata.lit_first_element.as_entire_binding(),
-                ),
-                (
-                    "hir_array_lit_element_count",
-                    array_metadata.lit_element_count.as_entire_binding(),
-                ),
-                (
-                    "hir_array_element_parent_lit",
-                    array_metadata.element_parent_lit.as_entire_binding(),
-                ),
-                (
-                    "hir_array_element_ordinal",
-                    array_metadata.element_ordinal.as_entire_binding(),
-                ),
-                (
-                    "hir_array_element_next",
-                    array_metadata.element_next.as_entire_binding(),
-                ),
-                ("x86_tree_parent", parent_buf.as_entire_binding()),
-                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
-                (
-                    "x86_node_tree_status",
-                    node_tree_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_enclosing_let_node",
-                    enclosing_let_step_final_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_struct_access_record",
-                    struct_access_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_struct_store_record",
-                    struct_store_record_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let decl_widths_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.decl_widths.bind_group"),
-            &self.decl_widths_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                (
-                    "hir_stmt_record",
-                    expr_metadata.stmt_record.as_entire_binding(),
-                ),
-                ("hir_expr_record", expr_metadata.record.as_entire_binding()),
-                ("hir_type_form", expr_metadata.type_form.as_entire_binding()),
-                (
-                    "hir_type_len_value",
-                    expr_metadata.type_len_value.as_entire_binding(),
-                ),
-                ("hir_param_record", hir_param_record_buf.as_entire_binding()),
-                (
-                    "x86_expr_resolved_node",
-                    expr_resolved_final_buf.as_entire_binding(),
-                ),
-                ("x86_tree_parent", parent_buf.as_entire_binding()),
-                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
-                (
-                    "x86_struct_access_record",
-                    struct_access_record_buf.as_entire_binding(),
-                ),
-                (
-                    "decl_type_ref_tag",
-                    type_metadata.decl_type_ref_tag.as_entire_binding(),
-                ),
-                (
-                    "decl_type_ref_payload",
-                    type_metadata.decl_type_ref_payload.as_entire_binding(),
-                ),
-                (
-                    "visible_type",
-                    type_metadata.visible_type.as_entire_binding(),
-                ),
-                (
-                    "type_instance_kind",
-                    type_metadata.type_instance_kind.as_entire_binding(),
-                ),
-                (
-                    "type_instance_decl_token",
-                    type_metadata.type_instance_decl_token.as_entire_binding(),
-                ),
-                (
-                    "type_instance_len_kind",
-                    type_metadata.type_instance_len_kind.as_entire_binding(),
-                ),
-                (
-                    "type_instance_len_payload",
-                    type_metadata.type_instance_len_payload.as_entire_binding(),
-                ),
-                (
-                    "x86_struct_type_record",
-                    struct_type_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_struct_record_status",
-                    struct_record_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_enum_type_record",
-                    enum_type_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_enum_record_status",
-                    enum_record_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_decl_width_by_node",
-                    node_inst_scan_input_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_decl_node_by_token",
-                    decl_node_by_token_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let decl_layout_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.decl_layout.bind_group"),
-            &self.decl_layout_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                (
-                    "hir_stmt_record",
-                    expr_metadata.stmt_record.as_entire_binding(),
-                ),
-                ("hir_expr_record", expr_metadata.record.as_entire_binding()),
-                ("hir_type_form", expr_metadata.type_form.as_entire_binding()),
-                (
-                    "hir_type_len_value",
-                    expr_metadata.type_len_value.as_entire_binding(),
-                ),
-                ("hir_param_record", hir_param_record_buf.as_entire_binding()),
-                (
-                    "x86_expr_resolved_node",
-                    expr_resolved_final_buf.as_entire_binding(),
-                ),
-                ("x86_node_func", final_node_func_buf.as_entire_binding()),
-                ("x86_tree_parent", parent_buf.as_entire_binding()),
-                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
-                (
-                    "x86_struct_access_record",
-                    struct_access_record_buf.as_entire_binding(),
-                ),
-                (
-                    "decl_type_ref_tag",
-                    type_metadata.decl_type_ref_tag.as_entire_binding(),
-                ),
-                (
-                    "decl_type_ref_payload",
-                    type_metadata.decl_type_ref_payload.as_entire_binding(),
-                ),
-                (
-                    "visible_type",
-                    type_metadata.visible_type.as_entire_binding(),
-                ),
-                (
-                    "type_instance_kind",
-                    type_metadata.type_instance_kind.as_entire_binding(),
-                ),
-                (
-                    "type_instance_decl_token",
-                    type_metadata.type_instance_decl_token.as_entire_binding(),
-                ),
-                (
-                    "type_instance_len_kind",
-                    type_metadata.type_instance_len_kind.as_entire_binding(),
-                ),
-                (
-                    "type_instance_len_payload",
-                    type_metadata.type_instance_len_payload.as_entire_binding(),
-                ),
-                (
-                    "x86_struct_type_record",
-                    struct_type_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_struct_record_status",
-                    struct_record_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_enum_type_record",
-                    enum_type_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_enum_record_status",
-                    enum_record_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_decl_width_by_node",
-                    node_inst_scan_input_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_decl_node_by_token",
-                    decl_node_by_token_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_decl_scan_local_prefix",
-                    node_inst_scan_local_prefix_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_decl_scan_block_prefix",
-                    final_node_inst_scan_prefix_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_decl_layout_record",
-                    decl_layout_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_decl_layout_status",
-                    decl_layout_status_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let call_records_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.call_records.bind_group"),
-            &self.call_records_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                ("hir_expr_record", expr_metadata.record.as_entire_binding()),
-                (
-                    "x86_expr_resolved_node",
-                    expr_resolved_final_buf.as_entire_binding(),
-                ),
-                ("x86_node_func", final_node_func_buf.as_entire_binding()),
-                (
-                    "hir_call_callee_node",
-                    call_metadata.callee_node.as_entire_binding(),
-                ),
-                (
-                    "hir_token_pos",
-                    function_metadata.hir_token_pos.as_entire_binding(),
-                ),
-                (
-                    "hir_call_arg_count",
-                    call_metadata.arg_count.as_entire_binding(),
-                ),
-                (
-                    "hir_member_name_token",
-                    call_metadata.member_name_token.as_entire_binding(),
-                ),
-                (
-                    "call_fn_index",
-                    call_metadata.call_fn_index.as_entire_binding(),
-                ),
-                (
-                    "call_return_type",
-                    call_metadata.call_return_type.as_entire_binding(),
-                ),
-                (
-                    "call_return_type_token",
-                    call_metadata.call_return_type_token.as_entire_binding(),
-                ),
-                ("x86_call_record", call_record_buf.as_entire_binding()),
-                (
-                    "x86_call_type_record",
-                    call_type_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_call_callee_root_call",
-                    call_callee_root_call_buf.as_entire_binding(),
-                ),
-                (
-                    "call_record_status",
-                    call_record_status_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let call_callee_owner_init_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.call_callee_owner_init.bind_group"),
-            &self.call_callee_owner_init_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                ("x86_tree_parent", parent_buf.as_entire_binding()),
-                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
-                (
-                    "hir_member_receiver_node",
-                    call_metadata.member_receiver_node.as_entire_binding(),
-                ),
-                (
-                    "x86_call_callee_root_call",
-                    call_callee_root_call_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_call_callee_owner_call",
-                    call_callee_owner_call_a_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_call_callee_owner_link",
-                    call_callee_owner_link_a_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let call_callee_owner_step_bind_groups = call_callee_owner_steps
-            .iter()
-            .enumerate()
-            .map(|(step_i, _step)| {
-                let (owner_in, link_in, owner_out, link_out) = if step_i % 2 == 0 {
-                    (
-                        call_callee_owner_call_a_buf,
-                        call_callee_owner_link_a_buf,
-                        call_callee_owner_call_b_buf,
-                        call_callee_owner_link_b_buf,
-                    )
-                } else {
-                    (
-                        call_callee_owner_call_b_buf,
-                        call_callee_owner_link_b_buf,
-                        call_callee_owner_call_a_buf,
-                        call_callee_owner_link_a_buf,
-                    )
-                };
-                reflected_bind_group(
-                    device,
-                    Some("codegen.x86.call_callee_owner_step.bind_group"),
-                    &self.call_callee_owner_step_pass,
-                    0,
-                    &[
-                        ("gParams", params_buf.as_entire_binding()),
-                        ("hir_status", hir_status_buf.as_entire_binding()),
-                        (
-                            "x86_call_callee_owner_call_in",
-                            owner_in.as_entire_binding(),
-                        ),
-                        ("x86_call_callee_owner_link_in", link_in.as_entire_binding()),
-                        (
-                            "x86_call_callee_owner_call_out",
-                            owner_out.as_entire_binding(),
-                        ),
-                        (
-                            "x86_call_callee_owner_link_out",
-                            link_out.as_entire_binding(),
-                        ),
-                    ],
-                )
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let const_values_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.const_values.bind_group"),
-            &self.const_values_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                ("hir_expr_record", expr_metadata.record.as_entire_binding()),
-                (
-                    "x86_expr_resolved_node",
-                    expr_resolved_final_buf.as_entire_binding(),
-                ),
-                (
-                    "hir_expr_int_value",
-                    expr_metadata.int_value.as_entire_binding(),
-                ),
-                (
-                    "hir_stmt_record",
-                    expr_metadata.stmt_record.as_entire_binding(),
-                ),
-                (
-                    "x86_const_value_record",
-                    const_value_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_const_value_status",
-                    const_value_status_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let param_regs_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.param_regs.bind_group"),
-            &self.param_regs_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                ("hir_param_record", hir_param_record_buf.as_entire_binding()),
-                (
-                    "hir_node_decl_token",
-                    function_metadata.node_decl_token.as_entire_binding(),
-                ),
-                (
-                    "hir_token_pos",
-                    function_metadata.hir_token_pos.as_entire_binding(),
-                ),
-                (
-                    "hir_fn_return_type_node",
-                    function_metadata.fn_return_type_node.as_entire_binding(),
-                ),
-                ("hir_type_form", expr_metadata.type_form.as_entire_binding()),
-                (
-                    "hir_type_len_value",
-                    expr_metadata.type_len_value.as_entire_binding(),
-                ),
-                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
-                (
-                    "method_decl_param_offset",
-                    function_metadata
-                        .method_decl_param_offset
-                        .as_entire_binding(),
-                ),
-                (
-                    "method_decl_receiver_ref_tag",
-                    function_metadata
-                        .method_decl_receiver_ref_tag
-                        .as_entire_binding(),
-                ),
-                (
-                    "method_decl_receiver_ref_payload",
-                    function_metadata
-                        .method_decl_receiver_ref_payload
-                        .as_entire_binding(),
-                ),
-                (
-                    "call_return_type",
-                    call_metadata.call_return_type.as_entire_binding(),
-                ),
-                (
-                    "call_return_type_token",
-                    call_metadata.call_return_type_token.as_entire_binding(),
-                ),
-                (
-                    "call_param_type",
-                    call_metadata.call_param_type.as_entire_binding(),
-                ),
-                (
-                    "decl_type_ref_tag",
-                    type_metadata.decl_type_ref_tag.as_entire_binding(),
-                ),
-                (
-                    "decl_type_ref_payload",
-                    type_metadata.decl_type_ref_payload.as_entire_binding(),
-                ),
-                (
-                    "visible_type",
-                    type_metadata.visible_type.as_entire_binding(),
-                ),
-                (
-                    "type_instance_kind",
-                    type_metadata.type_instance_kind.as_entire_binding(),
-                ),
-                (
-                    "type_instance_decl_token",
-                    type_metadata.type_instance_decl_token.as_entire_binding(),
-                ),
-                (
-                    "type_instance_len_kind",
-                    type_metadata.type_instance_len_kind.as_entire_binding(),
-                ),
-                (
-                    "type_instance_len_payload",
-                    type_metadata.type_instance_len_payload.as_entire_binding(),
-                ),
-                (
-                    "x86_struct_type_record",
-                    struct_type_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_struct_record_status",
-                    struct_record_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_enum_type_record",
-                    enum_type_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_enum_record_status",
-                    enum_record_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_param_reg_record",
-                    param_reg_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_param_reg_status",
-                    param_reg_status_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let local_literals_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.local_literals.bind_group"),
-            &self.local_literals_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                ("x86_node_func", final_node_func_buf.as_entire_binding()),
-                ("hir_expr_record", expr_metadata.record.as_entire_binding()),
-                (
-                    "x86_expr_resolved_node",
-                    expr_resolved_final_buf.as_entire_binding(),
-                ),
-                (
-                    "hir_expr_int_value",
-                    expr_metadata.int_value.as_entire_binding(),
-                ),
-                (
-                    "hir_stmt_record",
-                    expr_metadata.stmt_record.as_entire_binding(),
-                ),
-                ("visible_decl", visible_decl_buf.as_entire_binding()),
-                (
-                    "x86_const_value_record",
-                    const_value_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_const_value_status",
-                    const_value_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_local_literal_record",
-                    local_literal_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_local_literal_status",
-                    local_literal_status_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let call_arg_values_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.call_arg_values.bind_group"),
-            &self.call_arg_values_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                (
-                    "x86_expr_resolved_node",
-                    expr_resolved_final_buf.as_entire_binding(),
-                ),
-                ("x86_call_record", call_record_buf.as_entire_binding()),
-                (
-                    "hir_call_arg_parent_call",
-                    call_metadata.arg_parent_call.as_entire_binding(),
-                ),
-                (
-                    "hir_call_arg_ordinal",
-                    call_metadata.arg_ordinal.as_entire_binding(),
-                ),
-                (
-                    "hir_call_callee_node",
-                    call_metadata.callee_node.as_entire_binding(),
-                ),
-                (
-                    "hir_member_receiver_node",
-                    call_metadata.member_receiver_node.as_entire_binding(),
-                ),
-                (
-                    "call_record_status",
-                    call_record_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_call_arg_lookup_record",
-                    call_arg_lookup_record_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let intrinsic_calls_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.intrinsic_calls.bind_group"),
-            &self.intrinsic_calls_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                (
-                    "x86_enclosing_stmt_node",
-                    enclosing_stmt_step_final_buf.as_entire_binding(),
-                ),
-                ("x86_call_record", call_record_buf.as_entire_binding()),
-                (
-                    "x86_call_type_record",
-                    call_type_record_buf.as_entire_binding(),
-                ),
-                (
-                    "call_record_status",
-                    call_record_status_buf.as_entire_binding(),
-                ),
-                (
-                    "call_intrinsic_tag",
-                    call_metadata.call_intrinsic_tag.as_entire_binding(),
-                ),
-                (
-                    "x86_intrinsic_call_record",
-                    intrinsic_call_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_intrinsic_call_status",
-                    intrinsic_call_status_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let call_abi_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.call_abi.bind_group"),
-            &self.call_abi_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                (
-                    "hir_fn_return_type_node",
-                    function_metadata.fn_return_type_node.as_entire_binding(),
-                ),
-                ("hir_type_form", expr_metadata.type_form.as_entire_binding()),
-                (
-                    "hir_type_len_value",
-                    expr_metadata.type_len_value.as_entire_binding(),
-                ),
-                (
-                    "x86_decl_node_by_token",
-                    decl_node_by_token_buf.as_entire_binding(),
-                ),
-                ("x86_call_record", call_record_buf.as_entire_binding()),
-                (
-                    "x86_call_type_record",
-                    call_type_record_buf.as_entire_binding(),
-                ),
-                (
-                    "call_record_status",
-                    call_record_status_buf.as_entire_binding(),
-                ),
-                (
-                    "type_instance_kind",
-                    type_metadata.type_instance_kind.as_entire_binding(),
-                ),
-                (
-                    "type_instance_decl_token",
-                    type_metadata.type_instance_decl_token.as_entire_binding(),
-                ),
-                (
-                    "type_instance_len_kind",
-                    type_metadata.type_instance_len_kind.as_entire_binding(),
-                ),
-                (
-                    "type_instance_len_payload",
-                    type_metadata.type_instance_len_payload.as_entire_binding(),
-                ),
-                (
-                    "x86_struct_type_record",
-                    struct_type_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_struct_record_status",
-                    struct_record_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_enum_type_record",
-                    enum_type_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_enum_record_status",
-                    enum_record_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_call_abi_record",
-                    call_abi_record_buf.as_entire_binding(),
-                ),
-                ("call_abi_status", call_abi_status_buf.as_entire_binding()),
-            ],
-        )?;
-        let node_inst_counts_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.node_inst_counts.bind_group"),
-            &self.node_inst_counts_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                (
-                    "hir_stmt_record",
-                    expr_metadata.stmt_record.as_entire_binding(),
-                ),
-                ("hir_expr_record", expr_metadata.record.as_entire_binding()),
-                ("hir_param_record", hir_param_record_buf.as_entire_binding()),
-                (
-                    "x86_expr_resolved_node",
-                    expr_resolved_final_buf.as_entire_binding(),
-                ),
-                ("x86_node_func", final_node_func_buf.as_entire_binding()),
-                ("visible_decl", visible_decl_buf.as_entire_binding()),
-                (
-                    "x86_decl_layout_record",
-                    decl_layout_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_decl_layout_status",
-                    decl_layout_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_param_reg_record",
-                    param_reg_record_buf.as_entire_binding(),
-                ),
-                ("x86_tree_parent", parent_buf.as_entire_binding()),
-                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
-                (
-                    "x86_node_tree_status",
-                    node_tree_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_enclosing_return_node",
-                    enclosing_return_step_final_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_match_return_node",
-                    match_return_node_buf.as_entire_binding(),
-                ),
-                ("x86_call_record", call_record_buf.as_entire_binding()),
-                (
-                    "x86_call_callee_owner_call",
-                    call_callee_owner_step_final_buf.as_entire_binding(),
-                ),
-                (
-                    "call_record_status",
-                    call_record_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_intrinsic_call_record",
-                    intrinsic_call_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_intrinsic_call_status",
-                    intrinsic_call_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_enum_value_record",
-                    enum_value_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_enum_record_status",
-                    enum_record_status_buf.as_entire_binding(),
-                ),
-                ("gX86Features", feature_params_buf.as_entire_binding()),
-                ("x86_match_record", match_record_buf.as_entire_binding()),
-                (
-                    "x86_match_pattern_node_owner",
-                    match_pattern_node_owner_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_match_result_value_owner",
-                    match_result_value_owner_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_struct_access_record",
-                    struct_access_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_struct_store_record",
-                    struct_store_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_struct_record_status",
-                    struct_record_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_count_info",
-                    node_inst_count_info_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_count_payload",
-                    node_inst_count_payload_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_count_status",
-                    node_inst_count_status_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let node_inst_same_end_rank_init_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.node_inst_same_end_rank_init.bind_group"),
-            &self.node_inst_same_end_rank_init_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("x86_tree_parent", parent_buf.as_entire_binding()),
-                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
-                (
-                    "x86_node_tree_status",
-                    node_tree_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_count_info",
-                    node_inst_count_info_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_count_payload",
-                    node_inst_count_payload_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_count_status",
-                    node_inst_count_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_same_end_link",
-                    node_inst_same_end_link_a_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_same_end_rank",
-                    node_inst_same_end_rank_a_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let node_inst_same_end_rank_step_bind_groups = node_inst_same_end_rank_steps
-            .iter()
-            .enumerate()
-            .map(|(step_i, _step)| {
-                let (link_in, rank_in, link_out, rank_out) = if step_i % 2 == 0 {
-                    (
-                        &node_inst_same_end_link_a_buf,
-                        &node_inst_same_end_rank_a_buf,
-                        &node_inst_same_end_link_b_buf,
-                        &node_inst_same_end_rank_b_buf,
-                    )
-                } else {
-                    (
-                        &node_inst_same_end_link_b_buf,
-                        &node_inst_same_end_rank_b_buf,
-                        &node_inst_same_end_link_a_buf,
-                        &node_inst_same_end_rank_a_buf,
-                    )
-                };
-                reflected_bind_group(
-                    device,
-                    Some("codegen.x86.node_inst_same_end_rank_step.bind_group"),
-                    &self.node_inst_same_end_rank_step_pass,
-                    0,
-                    &[
-                        ("gParams", params_buf.as_entire_binding()),
-                        ("hir_status", hir_status_buf.as_entire_binding()),
-                        (
-                            "x86_node_inst_same_end_link_in",
-                            link_in.as_entire_binding(),
-                        ),
-                        (
-                            "x86_node_inst_same_end_rank_in",
-                            rank_in.as_entire_binding(),
-                        ),
-                        (
-                            "x86_node_inst_same_end_link_out",
-                            link_out.as_entire_binding(),
-                        ),
-                        (
-                            "x86_node_inst_same_end_rank_out",
-                            rank_out.as_entire_binding(),
-                        ),
-                    ],
-                )
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let node_inst_end_counts_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.node_inst_end_counts.bind_group"),
-            &self.node_inst_end_counts_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("x86_tree_parent", parent_buf.as_entire_binding()),
-                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
-                (
-                    "x86_node_tree_status",
-                    node_tree_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_count_info",
-                    node_inst_count_info_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_count_payload",
-                    node_inst_count_payload_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_count_status",
-                    node_inst_count_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_scan_input",
-                    node_inst_scan_input_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let node_inst_order_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.node_inst_order.bind_group"),
-            &self.node_inst_order_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("x86_tree_parent", parent_buf.as_entire_binding()),
-                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
-                (
-                    "x86_node_tree_status",
-                    node_tree_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_count_info",
-                    node_inst_count_info_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_count_payload",
-                    node_inst_count_payload_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_count_status",
-                    node_inst_count_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_same_end_rank",
-                    node_inst_same_end_rank_final_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_scan_local_prefix",
-                    node_inst_scan_local_prefix_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_scan_block_prefix",
-                    final_node_inst_scan_prefix_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_order_record",
-                    node_inst_order_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_same_end_bucket_count",
-                    node_inst_same_end_bucket_count_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_subtree_slot_bounds",
-                    node_inst_subtree_slot_bounds_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_range_start",
-                    node_inst_range_start_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_range_info",
-                    node_inst_range_info_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_scan_input",
-                    node_inst_scan_input_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_order_status",
-                    node_inst_order_status_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let node_inst_scan_local_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.node_inst_scan_local.bind_group"),
-            &self.node_inst_scan_local_pass,
-            0,
-            &[
-                ("gScan", node_inst_scan_params_buf.binding(0)),
-                (
-                    "x86_node_inst_scan_input",
-                    node_inst_scan_input_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_scan_local_prefix",
-                    node_inst_scan_local_prefix_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_scan_block_sum",
-                    node_inst_scan_block_sum_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let node_inst_scan_block_even_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.node_inst_scan_blocks.even.bind_group"),
-            &self.node_inst_scan_blocks_pass,
-            0,
-            &[
-                ("gNodeInstBlockScan", node_inst_scan_params_buf.binding(0)),
-                (
-                    "x86_node_inst_scan_block_sum",
-                    node_inst_scan_block_sum_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_scan_block_prefix_in",
-                    node_inst_scan_prefix_b_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_scan_block_prefix_out",
-                    node_inst_scan_prefix_a_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let node_inst_scan_block_odd_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.node_inst_scan_blocks.odd.bind_group"),
-            &self.node_inst_scan_blocks_pass,
-            0,
-            &[
-                ("gNodeInstBlockScan", node_inst_scan_params_buf.binding(0)),
-                (
-                    "x86_node_inst_scan_block_sum",
-                    node_inst_scan_block_sum_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_scan_block_prefix_in",
-                    node_inst_scan_prefix_a_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_scan_block_prefix_out",
-                    node_inst_scan_prefix_b_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let node_inst_scan_block_bind_groups = vec![
-            node_inst_scan_block_even_bind_group,
-            node_inst_scan_block_odd_bind_group,
-        ];
-        let node_inst_prefix_scan_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.node_inst_prefix_scan.bind_group"),
-            &self.node_inst_prefix_scan_pass,
-            0,
-            &[
-                ("gScan", node_inst_scan_params_buf.binding(0)),
-                (
-                    "x86_node_inst_order_record",
-                    node_inst_order_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_count_info",
-                    node_inst_count_info_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_count_payload",
-                    node_inst_count_payload_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_order_status",
-                    node_inst_order_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_scan_local_prefix",
-                    node_inst_scan_local_prefix_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_scan_block_prefix",
-                    final_node_inst_scan_prefix_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_range_start",
-                    node_inst_range_start_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_range_info",
-                    node_inst_range_info_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_range_status",
-                    node_inst_range_status_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let node_inst_subtree_bounds_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.node_inst_subtree_bounds.bind_group"),
-            &self.node_inst_subtree_bounds_pass,
-            0,
-            &[
-                ("gScan", node_inst_scan_params_buf.binding(0)),
-                (
-                    "x86_node_inst_subtree_slot_bounds",
-                    node_inst_subtree_slot_bounds_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_range_status",
-                    node_inst_range_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_scan_local_prefix",
-                    node_inst_scan_local_prefix_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_scan_block_prefix",
-                    final_node_inst_scan_prefix_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_subtree_bound_start",
-                    node_inst_subtree_bound_start_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_subtree_bound_end",
-                    node_inst_subtree_bound_end_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_subtree_bounds_status",
-                    node_inst_subtree_bounds_status_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let expr_semantic_type_init_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.expr_semantic_type_init.bind_group"),
-            &self.expr_semantic_type_init_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                (
-                    "hir_token_pos",
-                    function_metadata.hir_token_pos.as_entire_binding(),
-                ),
-                ("hir_expr_record", expr_metadata.record.as_entire_binding()),
-                (
-                    "x86_expr_resolved_node",
-                    expr_resolved_final_buf.as_entire_binding(),
-                ),
-                ("visible_decl", visible_decl_buf.as_entire_binding()),
-                (
-                    "visible_type",
-                    type_metadata.visible_type.as_entire_binding(),
-                ),
-                (
-                    "call_return_type",
-                    call_metadata.call_return_type.as_entire_binding(),
-                ),
-                (
-                    "x86_decl_layout_record",
-                    decl_layout_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_param_reg_record",
-                    param_reg_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_expr_semantic_record",
-                    expr_semantic_type_a_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let expr_semantic_type_step_bind_groups = expr_semantic_type_steps
-            .iter()
-            .enumerate()
-            .map(|(step_i, _step)| {
-                let (record_in, record_out) = if step_i % 2 == 0 {
-                    (expr_semantic_type_a_buf, expr_semantic_type_b_buf)
-                } else {
-                    (expr_semantic_type_b_buf, expr_semantic_type_a_buf)
-                };
-                reflected_bind_group(
-                    device,
-                    Some("codegen.x86.expr_semantic_type_step.bind_group"),
-                    &self.expr_semantic_type_step_pass,
-                    0,
-                    &[
-                        ("gParams", params_buf.as_entire_binding()),
-                        ("hir_status", hir_status_buf.as_entire_binding()),
-                        ("x86_expr_semantic_record_in", record_in.as_entire_binding()),
-                        (
-                            "x86_expr_semantic_record_out",
-                            record_out.as_entire_binding(),
-                        ),
-                    ],
-                )
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let node_inst_locations_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.node_inst_locations.bind_group"),
-            &self.node_inst_locations_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                (
-                    "hir_stmt_record",
-                    expr_metadata.stmt_record.as_entire_binding(),
-                ),
-                ("hir_expr_record", expr_metadata.record.as_entire_binding()),
-                ("hir_param_record", hir_param_record_buf.as_entire_binding()),
-                (
-                    "x86_expr_resolved_node",
-                    expr_resolved_final_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_expr_semantic_type",
-                    expr_semantic_type_final_buf.as_entire_binding(),
-                ),
-                ("gX86Features", feature_params_buf.as_entire_binding()),
-                ("x86_match_record", match_record_buf.as_entire_binding()),
-                ("x86_tree_parent", parent_buf.as_entire_binding()),
-                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
-                (
-                    "x86_node_inst_range_start",
-                    node_inst_range_start_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_range_info",
-                    node_inst_range_info_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_same_end_rank",
-                    node_inst_same_end_rank_final_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_same_end_bucket_count",
-                    node_inst_same_end_bucket_count_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_range_status",
-                    node_inst_range_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_location_record",
-                    node_inst_location_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_location_status",
-                    node_inst_location_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_gen_flag",
-                    node_inst_scan_input_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let node_inst_gen_worklist_scatter_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.node_inst_gen_worklist_scatter.bind_group"),
-            &self.node_inst_gen_worklist_scatter_pass,
-            0,
-            &[
-                ("gScan", node_inst_scan_params_buf.binding(0)),
-                (
-                    "x86_node_inst_gen_flag",
-                    node_inst_scan_input_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_scan_local_prefix",
-                    node_inst_scan_local_prefix_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_scan_block_prefix",
-                    final_node_inst_scan_prefix_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_gen_node_record",
-                    node_inst_gen_node_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_gen_input_status",
-                    node_inst_gen_input_status_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let node_inst_gen_worklist_dispatch_args_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.node_inst_gen_worklist_dispatch_args.bind_group"),
-            &self.node_inst_gen_worklist_dispatch_args_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                (
-                    "x86_node_inst_gen_input_status",
-                    node_inst_gen_input_status_buf.as_entire_binding(),
-                ),
-                (
-                    "active_node_inst_gen_dispatch_args",
-                    active_node_order_scan_dispatch_args_buf.as_entire_binding(),
-                ),
-                (
-                    "active_node_inst_gen_aggregate_copy_dispatch_args",
-                    active_node_order_scan_block_dispatch_args_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let enclosing_loop_init_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.enclosing_loop_init.bind_group"),
-            &self.enclosing_loop_init_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                (
-                    "hir_stmt_record",
-                    expr_metadata.stmt_record.as_entire_binding(),
-                ),
-                ("x86_tree_parent", parent_buf.as_entire_binding()),
-                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
-                (
-                    "x86_enclosing_loop_node",
-                    enclosing_loop_node_a_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_enclosing_loop_link",
-                    enclosing_loop_link_a_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let enclosing_loop_step_bind_groups = enclosing_loop_steps
-            .iter()
-            .enumerate()
-            .map(|(step_i, _step)| {
-                let (node_in, link_in, node_out, link_out) = if step_i % 2 == 0 {
-                    (
-                        enclosing_loop_node_a_buf,
-                        enclosing_loop_link_a_buf,
-                        enclosing_loop_node_b_buf,
-                        enclosing_loop_link_b_buf,
-                    )
-                } else {
-                    (
-                        enclosing_loop_node_b_buf,
-                        enclosing_loop_link_b_buf,
-                        enclosing_loop_node_a_buf,
-                        enclosing_loop_link_a_buf,
-                    )
-                };
-                reflected_bind_group(
-                    device,
-                    Some("codegen.x86.enclosing_loop_step.bind_group"),
-                    &self.enclosing_loop_step_pass,
-                    0,
-                    &[
-                        ("gParams", params_buf.as_entire_binding()),
-                        ("hir_status", hir_status_buf.as_entire_binding()),
-                        ("x86_enclosing_loop_node_in", node_in.as_entire_binding()),
-                        ("x86_enclosing_loop_link_in", link_in.as_entire_binding()),
-                        ("x86_enclosing_loop_node_out", node_out.as_entire_binding()),
-                        ("x86_enclosing_loop_link_out", link_out.as_entire_binding()),
-                    ],
-                )
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let node_inst_gen_inputs_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.node_inst_gen_inputs.bind_group"),
-            &self.node_inst_gen_inputs_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                (
-                    "x86_node_inst_location_status",
-                    node_inst_location_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_const_value_status",
-                    const_value_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_decl_layout_status",
-                    decl_layout_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_local_literal_status",
-                    local_literal_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_param_reg_status",
-                    param_reg_status_buf.as_entire_binding(),
-                ),
-                ("call_abi_status", call_abi_status_buf.as_entire_binding()),
-                (
-                    "x86_struct_record_status",
-                    struct_record_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_gen_input_status",
-                    node_inst_gen_input_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_status",
-                    virtual_inst_status_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let virtual_inst_clear_dispatch_args_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.virtual_inst_clear_dispatch_args.bind_group"),
-            &self.virtual_inst_clear_dispatch_args_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                (
-                    "x86_node_inst_gen_input_status",
-                    node_inst_gen_input_status_buf.as_entire_binding(),
-                ),
-                (
-                    "active_virtual_inst_dispatch_args",
-                    active_virtual_inst_dispatch_args_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let virtual_inst_clear_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.virtual_inst_clear.bind_group"),
-            &self.virtual_inst_clear_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                (
-                    "x86_node_inst_gen_input_status",
-                    node_inst_gen_input_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_record",
-                    virtual_inst_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_args",
-                    virtual_inst_args_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let node_inst_gen_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.node_inst_gen.bind_group"),
-            &self.node_inst_gen_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                (
-                    "hir_stmt_record",
-                    expr_metadata.stmt_record.as_entire_binding(),
-                ),
-                ("hir_expr_record", expr_metadata.record.as_entire_binding()),
-                (
-                    "x86_expr_resolved_node",
-                    expr_resolved_final_buf.as_entire_binding(),
-                ),
-                (
-                    "hir_expr_int_value",
-                    expr_metadata.int_value.as_entire_binding(),
-                ),
-                ("visible_decl", visible_decl_buf.as_entire_binding()),
-                (
-                    "x86_decl_layout_record",
-                    decl_layout_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_const_value_record",
-                    const_value_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_local_literal_record",
-                    local_literal_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_param_reg_record",
-                    param_reg_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_call_abi_record",
-                    call_abi_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_call_arg_lookup_record",
-                    call_arg_lookup_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_intrinsic_call_record",
-                    intrinsic_call_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_enum_value_record",
-                    enum_value_record_buf.as_entire_binding(),
-                ),
-                ("gX86Features", feature_params_buf.as_entire_binding()),
-                ("x86_match_record", match_record_buf.as_entire_binding()),
-                (
-                    "x86_match_arm_owner",
-                    match_arm_owner_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_match_result_value_owner",
-                    match_result_value_owner_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_struct_access_record",
-                    struct_access_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_struct_store_record",
-                    struct_store_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_range_info",
-                    node_inst_range_info_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_location_record",
-                    node_inst_location_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_subtree_bound_start",
-                    node_inst_subtree_bound_start_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_subtree_bound_end",
-                    node_inst_subtree_bound_end_buf.as_entire_binding(),
-                ),
-                ("x86_tree_parent", parent_buf.as_entire_binding()),
-                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
-                (
-                    "x86_enclosing_loop_node",
-                    enclosing_loop_step_final_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_match_return_node",
-                    match_return_node_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_enclosing_let_node",
-                    enclosing_let_step_final_buf.as_entire_binding(),
-                ),
-                ("x86_node_func", final_node_func_buf.as_entire_binding()),
-                (
-                    "x86_virtual_inst_record",
-                    virtual_inst_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_args",
-                    virtual_inst_args_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_status",
-                    virtual_inst_status_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let aggregate_literal_return_copy_flags_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.aggregate_literal_return_copy_flags.bind_group"),
-            &self.aggregate_literal_return_copy_flags_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                (
-                    "hir_array_element_parent_lit",
-                    array_metadata.element_parent_lit.as_entire_binding(),
-                ),
-                (
-                    "hir_struct_lit_field_parent_lit",
-                    struct_metadata
-                        .struct_lit_field_parent_lit
-                        .as_entire_binding(),
-                ),
-                (
-                    "x86_enclosing_return_node",
-                    enclosing_return_step_final_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_gen_flag",
-                    node_inst_scan_input_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let aggregate_literal_return_copy_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.aggregate_literal_return_copy.bind_group"),
-            &self.aggregate_literal_return_copy_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                (
-                    "hir_stmt_record",
-                    expr_metadata.stmt_record.as_entire_binding(),
-                ),
-                ("hir_expr_record", expr_metadata.record.as_entire_binding()),
-                (
-                    "x86_expr_resolved_node",
-                    expr_resolved_final_buf.as_entire_binding(),
-                ),
-                ("x86_tree_parent", parent_buf.as_entire_binding()),
-                ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
-                (
-                    "x86_struct_access_record",
-                    struct_access_record_buf.as_entire_binding(),
-                ),
-                (
-                    "hir_array_element_parent_lit",
-                    array_metadata.element_parent_lit.as_entire_binding(),
-                ),
-                (
-                    "hir_array_element_ordinal",
-                    array_metadata.element_ordinal.as_entire_binding(),
-                ),
-                (
-                    "hir_struct_lit_field_parent_lit",
-                    struct_metadata
-                        .struct_lit_field_parent_lit
-                        .as_entire_binding(),
-                ),
-                (
-                    "hir_struct_lit_field_value_node",
-                    struct_metadata
-                        .struct_lit_field_value_node
-                        .as_entire_binding(),
-                ),
-                (
-                    "struct_init_field_ordinal_by_node",
-                    struct_metadata
-                        .struct_init_field_ordinal_by_node
-                        .as_entire_binding(),
-                ),
-                (
-                    "x86_enclosing_return_node",
-                    enclosing_return_step_final_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_range_info",
-                    node_inst_range_info_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_location_record",
-                    node_inst_location_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_gen_input_status",
-                    node_inst_gen_input_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_gen_node_record",
-                    node_inst_gen_node_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_record",
-                    virtual_inst_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_args",
-                    virtual_inst_args_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_status",
-                    virtual_inst_status_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let node_inst_gen_aggregate_copy_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.node_inst_gen_aggregate_copy.bind_group"),
-            &self.node_inst_gen_aggregate_copy_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                (
-                    "hir_stmt_record",
-                    expr_metadata.stmt_record.as_entire_binding(),
-                ),
-                ("hir_expr_record", expr_metadata.record.as_entire_binding()),
-                (
-                    "x86_expr_resolved_node",
-                    expr_resolved_final_buf.as_entire_binding(),
-                ),
-                ("visible_decl", visible_decl_buf.as_entire_binding()),
-                (
-                    "x86_decl_layout_record",
-                    decl_layout_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_param_reg_record",
-                    param_reg_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_range_info",
-                    node_inst_range_info_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_location_record",
-                    node_inst_location_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_gen_input_status",
-                    node_inst_gen_input_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_gen_node_record",
-                    node_inst_gen_node_record_buf.as_entire_binding(),
-                ),
-                ("x86_node_func", final_node_func_buf.as_entire_binding()),
-                (
-                    "x86_virtual_inst_record",
-                    virtual_inst_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_args",
-                    virtual_inst_args_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_status",
-                    virtual_inst_status_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let virtual_liveness_init_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.virtual_liveness_init.bind_group"),
-            &self.virtual_liveness_init_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                (
-                    "x86_virtual_inst_record",
-                    virtual_inst_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_status",
-                    virtual_inst_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_live_start",
-                    virtual_live_start_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_live_end",
-                    virtual_live_end_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_phys_reg",
-                    virtual_phys_reg_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let virtual_liveness_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.virtual_liveness.bind_group"),
-            &self.virtual_liveness_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                (
-                    "x86_virtual_inst_record",
-                    virtual_inst_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_args",
-                    virtual_inst_args_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_status",
-                    virtual_inst_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_live_end",
-                    virtual_live_end_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_liveness_status",
-                    virtual_liveness_status_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let virtual_next_call_even_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.virtual_next_calls.even.bind_group"),
-            &self.virtual_next_calls_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("gNextCallScan", virtual_next_call_params_buf.binding(0)),
-                (
-                    "x86_virtual_inst_record",
-                    virtual_inst_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_args",
-                    virtual_inst_args_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_status",
-                    virtual_inst_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_func_slot",
-                    virtual_func_slot_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_next_call_in",
-                    virtual_next_call_b_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_next_call_out",
-                    virtual_next_call_a_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_next_call_status",
-                    virtual_next_call_status_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let virtual_next_call_odd_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.virtual_next_calls.odd.bind_group"),
-            &self.virtual_next_calls_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("gNextCallScan", virtual_next_call_params_buf.binding(0)),
-                (
-                    "x86_virtual_inst_record",
-                    virtual_inst_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_args",
-                    virtual_inst_args_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_status",
-                    virtual_inst_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_func_slot",
-                    virtual_func_slot_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_next_call_in",
-                    virtual_next_call_a_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_next_call_out",
-                    virtual_next_call_b_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_next_call_status",
-                    virtual_next_call_status_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let virtual_next_call_bind_groups = vec![
-            virtual_next_call_even_bind_group,
-            virtual_next_call_odd_bind_group,
-        ];
-        let virtual_param_masks_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.virtual_param_masks.bind_group"),
-            &self.virtual_param_masks_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                (
-                    "x86_virtual_inst_record",
-                    virtual_inst_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_args",
-                    virtual_inst_args_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_status",
-                    virtual_inst_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_func_slot",
-                    virtual_func_slot_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_func_param_reg_mask",
-                    func_param_reg_mask_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_func_param_reg_mask_status",
-                    func_param_reg_mask_status_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let virtual_spans_fixed_barrier_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.virtual_spans_fixed_barrier.bind_group"),
-            &self.virtual_spans_fixed_barrier_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                (
-                    "x86_virtual_inst_record",
-                    virtual_inst_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_status",
-                    virtual_inst_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_live_start",
-                    virtual_live_start_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_live_end",
-                    virtual_live_end_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_liveness_status",
-                    virtual_liveness_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_next_call_a",
-                    virtual_next_call_a_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_next_call_b",
-                    virtual_next_call_b_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_next_call_status",
-                    virtual_next_call_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_spans_fixed_barrier",
-                    virtual_call_live_reg_mask_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let virtual_value_def_flags_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.virtual_value_def_flags.bind_group"),
-            &self.virtual_value_def_flags_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                (
-                    "x86_virtual_inst_record",
-                    virtual_inst_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_status",
-                    virtual_inst_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_value_def_flag",
-                    virtual_value_def_flag_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let virtual_value_def_scan_local_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.virtual_value_def_scan_local.bind_group"),
-            &self.node_inst_scan_local_pass,
-            0,
-            &[
-                ("gScan", text_scan_params_buf.binding(0)),
-                (
-                    "x86_node_inst_scan_input",
-                    virtual_value_def_flag_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_scan_local_prefix",
-                    virtual_value_def_scan_local_prefix_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_scan_block_sum",
-                    virtual_value_def_scan_block_sum_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let virtual_value_def_scan_block_bind_groups = (0..2)
-            .map(|step_i| {
-                let (prefix_in, prefix_out) = if step_i == 0 {
-                    (
-                        virtual_value_def_scan_prefix_b_buf,
-                        virtual_value_def_scan_prefix_a_buf,
-                    )
-                } else {
-                    (
-                        virtual_value_def_scan_prefix_a_buf,
-                        virtual_value_def_scan_prefix_b_buf,
-                    )
-                };
-                reflected_bind_group(
-                    device,
-                    Some("codegen.x86.virtual_value_def_scan_blocks.bind_group"),
-                    &self.node_inst_scan_blocks_pass,
-                    0,
-                    &[
-                        ("gNodeInstBlockScan", text_scan_params_buf.binding(0)),
-                        (
-                            "x86_node_inst_scan_block_sum",
-                            virtual_value_def_scan_block_sum_buf.as_entire_binding(),
-                        ),
-                        (
-                            "x86_node_inst_scan_block_prefix_in",
-                            prefix_in.as_entire_binding(),
-                        ),
-                        (
-                            "x86_node_inst_scan_block_prefix_out",
-                            prefix_out.as_entire_binding(),
-                        ),
-                    ],
-                )
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let final_virtual_value_def_scan_prefix_buf = if (text_scan_params_buf.len() - 1) % 2 == 0 {
-            virtual_value_def_scan_prefix_a_buf
-        } else {
-            virtual_value_def_scan_prefix_b_buf
-        };
-        let virtual_value_def_compact_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.virtual_value_def_compact.bind_group"),
-            &self.virtual_value_def_compact_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                (
-                    "x86_virtual_inst_record",
-                    virtual_inst_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_status",
-                    virtual_inst_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_value_def_flag",
-                    virtual_value_def_flag_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_value_def_scan_local_prefix",
-                    virtual_value_def_scan_local_prefix_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_value_def_scan_block_prefix",
-                    final_virtual_value_def_scan_prefix_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_value_def_row",
-                    virtual_value_def_row_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_value_def_status",
-                    virtual_value_def_status_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let virtual_regalloc_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.virtual_regalloc.bind_group"),
-            &self.virtual_regalloc_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("gRegalloc", virtual_regalloc_params_buf.binding(0)),
-                ("x86_func_meta", func_meta_buf.as_entire_binding()),
-                (
-                    "x86_func_slot_by_index",
-                    func_slot_by_index_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_record",
-                    virtual_inst_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_args",
-                    virtual_inst_args_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_live_start",
-                    virtual_live_start_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_live_end",
-                    virtual_live_end_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_liveness_status",
-                    virtual_liveness_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_next_call_status",
-                    virtual_next_call_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_func_param_reg_mask",
-                    func_param_reg_mask_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_func_param_reg_mask_status",
-                    func_param_reg_mask_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_func_first_virtual_row",
-                    virtual_func_first_row_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_func_last_virtual_row",
-                    virtual_func_last_row_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_func_first_virtual_row_status",
-                    virtual_func_first_row_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_value_def_row",
-                    virtual_value_def_row_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_value_def_scan_local_prefix",
-                    virtual_value_def_scan_local_prefix_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_value_def_scan_block_prefix",
-                    final_virtual_value_def_scan_prefix_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_value_def_status",
-                    virtual_value_def_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_func_slot",
-                    virtual_func_slot_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_regalloc_active_end",
-                    virtual_regalloc_active_end_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_regalloc_param_rank_mask",
-                    virtual_regalloc_param_rank_mask_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_phys_reg",
-                    virtual_phys_reg_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_call_live_reg_mask",
-                    virtual_call_live_reg_mask_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_regalloc_status",
-                    virtual_regalloc_status_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let virtual_func_rows_init_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.virtual_func_rows_init.bind_group"),
-            &self.virtual_func_rows_init_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("x86_func_meta", func_meta_buf.as_entire_binding()),
-                (
-                    "x86_func_slot_by_index",
-                    func_slot_by_index_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_func_first_virtual_row",
-                    virtual_func_first_row_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_func_last_virtual_row",
-                    virtual_func_last_row_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_func_param_reg_mask",
-                    func_param_reg_mask_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let virtual_func_first_row_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.virtual_func_first_row.bind_group"),
-            &self.virtual_func_first_row_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                (
-                    "x86_virtual_inst_record",
-                    virtual_inst_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_status",
-                    virtual_inst_status_buf.as_entire_binding(),
-                ),
-                ("x86_node_func", final_node_func_buf.as_entire_binding()),
-                (
-                    "x86_func_slot_by_node",
-                    func_slot_by_node_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_func_first_virtual_row",
-                    virtual_func_first_row_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_func_last_virtual_row",
-                    virtual_func_last_row_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_func_first_virtual_row_status",
-                    virtual_func_first_row_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_func_slot",
-                    virtual_func_slot_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let virtual_func_span_max_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.virtual_func_span_max.bind_group"),
-            &self.virtual_func_span_max_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                (
-                    "x86_func_slot_by_index",
-                    func_slot_by_index_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_func_first_virtual_row",
-                    virtual_func_first_row_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_func_last_virtual_row",
-                    virtual_func_last_row_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_func_first_virtual_row_status",
-                    virtual_func_first_row_status_buf.as_entire_binding(),
-                ),
-                ("x86_func_meta", func_meta_buf.as_entire_binding()),
-            ],
-        )?;
-        let virtual_regalloc_dispatch_args_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.virtual_regalloc_dispatch_args.bind_group"),
-            &self.virtual_regalloc_dispatch_args_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                (
-                    "x86_virtual_inst_status",
-                    virtual_inst_status_buf.as_entire_binding(),
-                ),
-                ("x86_func_meta", func_meta_buf.as_entire_binding()),
-                (
-                    "active_virtual_regalloc_dispatch_args",
-                    active_virtual_regalloc_dispatch_args_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let select_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.select.bind_group"),
-            &self.select_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                (
-                    "x86_virtual_inst_record",
-                    virtual_inst_record_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_args",
-                    virtual_inst_args_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_inst_status",
-                    virtual_inst_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_phys_reg",
-                    virtual_phys_reg_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_call_live_reg_mask",
-                    virtual_call_live_reg_mask_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_virtual_regalloc_status",
-                    virtual_regalloc_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_func_first_virtual_row",
-                    virtual_func_first_row_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_func_first_virtual_row_status",
-                    virtual_func_first_row_status_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_decl_layout_status",
-                    decl_layout_status_buf.as_entire_binding(),
-                ),
-                ("x86_func_meta", func_meta_buf.as_entire_binding()),
-                (
-                    "x86_virtual_func_slot",
-                    virtual_func_slot_buf.as_entire_binding(),
-                ),
-                ("x86_inst_kind", inst_kind_buf.as_entire_binding()),
-                ("x86_inst_arg0", inst_arg0_buf.as_entire_binding()),
-                ("x86_inst_arg1", inst_arg1_buf.as_entire_binding()),
-                ("x86_inst_arg2", inst_arg2_buf.as_entire_binding()),
-                ("select_status", select_status_buf.as_entire_binding()),
-            ],
-        )?;
-        let inst_size_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.inst_size.bind_group"),
-            &self.inst_size_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("x86_inst_kind", inst_kind_buf.as_entire_binding()),
-                ("x86_inst_arg0", inst_arg0_buf.as_entire_binding()),
-                ("x86_inst_arg1", inst_arg1_buf.as_entire_binding()),
-                ("x86_inst_arg2", inst_arg2_buf.as_entire_binding()),
-                (
-                    "x86_decl_layout_status",
-                    decl_layout_status_buf.as_entire_binding(),
-                ),
-                ("select_status", select_status_buf.as_entire_binding()),
-                ("x86_inst_size", inst_size_buf.as_entire_binding()),
-                ("size_status", size_status_buf.as_entire_binding()),
-            ],
-        )?;
-        let text_scan_local_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.text_scan_local.bind_group"),
-            &self.text_scan_local_pass,
-            0,
-            &[
-                ("gScan", text_scan_params_buf.binding(0)),
-                ("select_status", select_status_buf.as_entire_binding()),
-                ("x86_inst_size", inst_size_buf.as_entire_binding()),
-                (
-                    "x86_text_scan_local_prefix",
-                    text_scan_local_prefix_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_text_scan_block_sum",
-                    text_scan_block_sum_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let text_scan_block_even_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.text_scan_blocks.even.bind_group"),
-            &self.node_inst_scan_blocks_pass,
-            0,
-            &[
-                ("gNodeInstBlockScan", text_scan_params_buf.binding(0)),
-                (
-                    "x86_node_inst_scan_block_sum",
-                    text_scan_block_sum_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_scan_block_prefix_in",
-                    text_scan_prefix_b_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_scan_block_prefix_out",
-                    text_scan_prefix_a_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let text_scan_block_odd_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.text_scan_blocks.odd.bind_group"),
-            &self.node_inst_scan_blocks_pass,
-            0,
-            &[
-                ("gNodeInstBlockScan", text_scan_params_buf.binding(0)),
-                (
-                    "x86_node_inst_scan_block_sum",
-                    text_scan_block_sum_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_scan_block_prefix_in",
-                    text_scan_prefix_a_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_node_inst_scan_block_prefix_out",
-                    text_scan_prefix_b_buf.as_entire_binding(),
-                ),
-            ],
-        )?;
-        let text_scan_block_bind_groups = vec![
-            text_scan_block_even_bind_group,
-            text_scan_block_odd_bind_group,
-        ];
-        let final_text_scan_prefix_buf = if (text_scan_params_buf.len() - 1) % 2 == 0 {
-            &text_scan_prefix_a_buf
-        } else {
-            &text_scan_prefix_b_buf
-        };
-        let text_offsets_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.text_offsets.bind_group"),
-            &self.text_offsets_pass,
-            0,
-            &[
-                ("gScan", text_scan_params_buf.binding(0)),
-                ("x86_inst_size", inst_size_buf.as_entire_binding()),
-                ("size_status", size_status_buf.as_entire_binding()),
-                (
-                    "x86_text_scan_local_prefix",
-                    text_scan_local_prefix_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_text_scan_block_prefix",
-                    final_text_scan_prefix_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_inst_byte_offset",
-                    inst_byte_offset_buf.as_entire_binding(),
-                ),
-                ("x86_text_len", text_len_buf.as_entire_binding()),
-                ("text_status", text_status_buf.as_entire_binding()),
-            ],
-        )?;
-        let encode_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.encode.bind_group"),
-            &self.encode_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("x86_inst_kind", inst_kind_buf.as_entire_binding()),
-                ("x86_inst_arg0", inst_arg0_buf.as_entire_binding()),
-                ("x86_inst_arg1", inst_arg1_buf.as_entire_binding()),
-                ("x86_inst_arg2", inst_arg2_buf.as_entire_binding()),
-                ("x86_inst_size", inst_size_buf.as_entire_binding()),
-                (
-                    "x86_inst_byte_offset",
-                    inst_byte_offset_buf.as_entire_binding(),
-                ),
-                (
-                    "x86_decl_layout_status",
-                    decl_layout_status_buf.as_entire_binding(),
-                ),
-                ("x86_text_len", text_len_buf.as_entire_binding()),
-                ("text_status", text_status_buf.as_entire_binding()),
-                ("out_words", out_buf.as_entire_binding()),
-                ("encode_status", encode_status_buf.as_entire_binding()),
-            ],
-        )?;
-        let elf_layout_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.elf_layout.bind_group"),
-            &self.elf_layout_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("x86_text_len", text_len_buf.as_entire_binding()),
-                ("encode_status", encode_status_buf.as_entire_binding()),
-                ("x86_elf_layout", elf_layout_buf.as_entire_binding()),
-                ("layout_status", layout_status_buf.as_entire_binding()),
-            ],
-        )?;
-        let elf_bind_group = reflected_bind_group(
-            device,
-            Some("codegen.x86.elf_write.bind_group"),
-            &self.elf_write_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("x86_elf_layout", elf_layout_buf.as_entire_binding()),
-                ("layout_status", layout_status_buf.as_entire_binding()),
-                ("out_words", out_buf.as_entire_binding()),
-                ("status", status_buf.as_entire_binding()),
-            ],
+        let FunctionDiscoveryBindGroups {
+            node_tree_info: node_tree_info_bind_group,
+            func: func_bind_group,
+            func_owner_scan_local: func_owner_scan_local_bind_group,
+            func_owner_scan_block: func_owner_scan_block_bind_groups,
+            func_assign_nodes: func_assign_nodes_bind_group,
+            func_assign_nodes_step: func_assign_nodes_step_bind_groups,
+            func_slot_flags: func_slot_flags_bind_group,
+            func_slot_scatter: func_slot_scatter_bind_group,
+            expr_resolve_init: expr_resolve_init_bind_group,
+            expr_resolve_step: expr_resolve_step_bind_groups,
+        } = create_function_discovery_bind_groups(
+            self,
+            device,
+            FunctionDiscoveryInputs {
+                params: &params_buf,
+                hir_status: hir_status_buf,
+                hir_kind: hir_kind_buf,
+                parent: parent_buf,
+                subtree_end: subtree_end_buf,
+                function_metadata: &function_metadata,
+                expr_metadata: &expr_metadata,
+                fn_entrypoint_tag: fn_entrypoint_tag_buf,
+                node_tree_status: &node_tree_status_buf,
+                func_meta: &func_meta_buf,
+                node_func: &node_func_buf,
+                decl_node_by_token: &decl_node_by_token_buf,
+                func_slot_by_node: &func_slot_by_node_buf,
+                func_owner_scan_params: &func_owner_scan_params_buf,
+                func_owner_scan_local_prefix: &func_owner_scan_local_prefix_buf,
+                func_owner_scan_block_sum: &func_owner_scan_block_sum_buf,
+                func_owner_scan_prefix_a: &func_owner_scan_prefix_a_buf,
+                func_owner_scan_prefix_b: &func_owner_scan_prefix_b_buf,
+                final_func_owner_scan_prefix: final_func_owner_scan_prefix_buf,
+                node_func_owner_steps: &node_func_owner_steps,
+                node_func_owner_link_a: node_func_owner_link_a_buf,
+                node_func_owner_link_b: node_func_owner_link_b_buf,
+                node_func_owner_b: node_func_owner_b_buf,
+                node_inst_scan_input: node_inst_scan_input_buf,
+                node_inst_scan_local_prefix: &node_inst_scan_local_prefix_buf,
+                final_node_inst_scan_prefix: final_node_inst_scan_prefix_buf,
+                func_slot_by_index: &func_slot_by_index_buf,
+                expr_resolve_steps: &expr_resolve_steps,
+                expr_resolved_a: expr_resolved_a_buf,
+                expr_resolved_b: expr_resolved_b_buf,
+                expr_resolve_link_a: expr_resolve_link_a_buf,
+                expr_resolve_link_b: expr_resolve_link_b_buf,
+            },
+        )?;
+        let EnumMatchBindGroups {
+            enum_records: enum_records_bind_group,
+            match_records: match_records_bind_group,
+            match_patterns: match_pattern_records_bind_group,
+        } = create_enum_match_bind_groups(
+            self,
+            device,
+            EnumMatchBindGroupInputs {
+                params: &params_buf,
+                feature_params: &feature_params_buf,
+                hir_status: hir_status_buf,
+                hir_kind: hir_kind_buf,
+                expr_metadata: &expr_metadata,
+                enum_metadata: &enum_metadata,
+                call_metadata: &call_metadata,
+                expr_resolved_final: &expr_resolved_final_buf,
+                visible_decl: visible_decl_buf,
+                enum_type_record: &enum_type_record_buf,
+                enum_value_record: &enum_value_record_buf,
+                enum_record_status: &enum_record_status_buf,
+                match_record: &match_record_buf,
+                match_result_value_owner: &match_result_value_owner_buf,
+                match_arm_owner: &match_arm_owner_buf,
+                match_pattern_node_owner: &match_pattern_node_owner_buf,
+                match_pattern_node_variant: &match_pattern_node_variant_buf,
+                match_pattern_node_payload_decl: &match_pattern_node_payload_decl_buf,
+                match_pattern_first_use_node: &match_pattern_first_use_node_buf,
+                match_pattern_first_variant_node: match_pattern_first_variant_node_buf,
+                match_pattern_first_payload_node: match_pattern_first_payload_node_buf,
+            },
+        )?;
+        let SemanticRecordBindGroups {
+            enclosing_return_init: enclosing_return_init_bind_group,
+            enclosing_return_step: enclosing_return_step_bind_groups,
+            enclosing_let_init: enclosing_let_init_bind_group,
+            enclosing_let_step: enclosing_let_step_bind_groups,
+            enclosing_stmt_init: enclosing_stmt_init_bind_group,
+            enclosing_stmt_step: enclosing_stmt_step_bind_groups,
+            return_match_records: return_match_records_bind_group,
+            match_result_owner_init: match_result_owner_init_bind_group,
+            match_result_owner_step: match_result_owner_step_bind_groups,
+            match_ownership: match_ownership_bind_group,
+            match_pattern_owner_init: match_pattern_owner_init_bind_group,
+            match_pattern_owner_step: match_pattern_owner_step_bind_groups,
+            match_pattern_finalize: match_pattern_finalize_bind_group,
+            struct_records: struct_records_bind_group,
+            array_records: array_records_bind_group,
+            decl_widths: decl_widths_bind_group,
+            decl_layout: decl_layout_bind_group,
+        } = create_semantic_record_bind_groups(
+            self,
+            device,
+            SemanticRecordInputs {
+                params_buf: &params_buf,
+                feature_params_buf: &feature_params_buf,
+                hir_status_buf,
+                hir_kind_buf,
+                parent_buf,
+                subtree_end_buf,
+                function_metadata: &function_metadata,
+                expr_metadata: &expr_metadata,
+                call_metadata: &call_metadata,
+                array_metadata: &array_metadata,
+                struct_metadata: &struct_metadata,
+                type_metadata: &type_metadata,
+                expr_resolved_final_buf: &expr_resolved_final_buf,
+                node_tree_status_buf: &node_tree_status_buf,
+                match_record_buf: &match_record_buf,
+                match_return_node_buf: &match_return_node_buf,
+                match_pattern_owner_buf: &match_pattern_owner_buf,
+                match_result_value_owner_buf: &match_result_value_owner_buf,
+                match_pattern_node_variant_buf: &match_pattern_node_variant_buf,
+                match_pattern_node_payload_decl_buf: &match_pattern_node_payload_decl_buf,
+                match_pattern_first_use_node_buf: &match_pattern_first_use_node_buf,
+                match_pattern_first_variant_node_buf,
+                match_pattern_first_payload_node_buf,
+                enclosing_return_node_a_buf: &enclosing_return_node_a_buf,
+                enclosing_return_node_b_buf: &enclosing_return_node_b_buf,
+                enclosing_return_link_a_buf,
+                enclosing_return_link_b_buf,
+                enclosing_return_steps: &enclosing_return_steps,
+                enclosing_let_node_a_buf: &enclosing_let_node_a_buf,
+                enclosing_let_node_b_buf: &enclosing_let_node_b_buf,
+                enclosing_let_link_a_buf,
+                enclosing_let_link_b_buf,
+                enclosing_let_steps: &enclosing_let_steps,
+                enclosing_let_step_final_buf,
+                enclosing_stmt_node_a_buf,
+                enclosing_stmt_node_b_buf,
+                enclosing_stmt_link_a_buf,
+                enclosing_stmt_link_b_buf,
+                enclosing_stmt_steps: &enclosing_stmt_steps,
+                match_result_owner_a_buf,
+                match_result_owner_b_buf,
+                match_result_owner_link_a_buf,
+                match_result_owner_link_b_buf,
+                match_result_owner_steps: &match_result_owner_steps,
+                match_pattern_owner_a_buf,
+                match_pattern_owner_b_buf,
+                match_pattern_owner_link_a_buf,
+                match_pattern_owner_link_b_buf,
+                match_pattern_owner_steps: &match_pattern_owner_steps,
+                struct_type_record_buf: &struct_type_record_buf,
+                struct_access_record_buf: &struct_access_record_buf,
+                struct_store_record_buf: &struct_store_record_buf,
+                struct_record_status_buf: &struct_record_status_buf,
+                enum_type_record_buf: &enum_type_record_buf,
+                enum_record_status_buf: &enum_record_status_buf,
+                hir_param_record_buf,
+                final_node_func_buf,
+                node_inst_scan_input_buf,
+                decl_node_by_token_buf: &decl_node_by_token_buf,
+                node_inst_scan_local_prefix_buf: &node_inst_scan_local_prefix_buf,
+                final_node_inst_scan_prefix_buf,
+                decl_layout_record_buf: &decl_layout_record_buf,
+                decl_layout_status_buf: &decl_layout_status_buf,
+            },
+        )?;
+        let CallRecordBindGroups {
+            call_records: call_records_bind_group,
+            call_callee_owner_init: call_callee_owner_init_bind_group,
+            call_callee_owner_step: call_callee_owner_step_bind_groups,
+            const_values: const_values_bind_group,
+            param_regs: param_regs_bind_group,
+            local_literals: local_literals_bind_group,
+            call_arg_values: call_arg_values_bind_group,
+            intrinsic_calls: intrinsic_calls_bind_group,
+            call_abi: call_abi_bind_group,
+        } = create_call_record_bind_groups(
+            self,
+            device,
+            CallRecordInputs {
+                params_buf: &params_buf,
+                hir_status_buf,
+                hir_kind_buf,
+                parent_buf,
+                subtree_end_buf,
+                function_metadata: &function_metadata,
+                expr_metadata: &expr_metadata,
+                call_metadata: &call_metadata,
+                type_metadata: &type_metadata,
+                visible_decl_buf,
+                expr_resolved_final_buf: &expr_resolved_final_buf,
+                final_node_func_buf,
+                call_record_buf: &call_record_buf,
+                call_type_record_buf: &call_type_record_buf,
+                call_callee_root_call_buf,
+                call_record_status_buf: &call_record_status_buf,
+                call_callee_owner_call_a_buf,
+                call_callee_owner_call_b_buf,
+                call_callee_owner_link_a_buf,
+                call_callee_owner_link_b_buf,
+                call_callee_owner_steps: &call_callee_owner_steps,
+                const_value_record_buf: &const_value_record_buf,
+                const_value_status_buf: &const_value_status_buf,
+                hir_param_record_buf,
+                decl_node_by_token_buf: &decl_node_by_token_buf,
+                struct_type_record_buf: &struct_type_record_buf,
+                struct_record_status_buf: &struct_record_status_buf,
+                enum_type_record_buf: &enum_type_record_buf,
+                enum_record_status_buf: &enum_record_status_buf,
+                param_reg_record_buf: &param_reg_record_buf,
+                param_reg_status_buf: &param_reg_status_buf,
+                local_literal_record_buf: &local_literal_record_buf,
+                local_literal_status_buf: &local_literal_status_buf,
+                enclosing_stmt_step_final_buf,
+                call_arg_lookup_record_buf: &call_arg_lookup_record_buf,
+                intrinsic_call_record_buf,
+                intrinsic_call_status_buf: &intrinsic_call_status_buf,
+                call_abi_record_buf: &call_abi_record_buf,
+                call_abi_status_buf: &call_abi_status_buf,
+            },
+        )?;
+        let InstPlanBindGroups {
+            counts: node_inst_counts_bind_group,
+            same_end_rank_init: node_inst_same_end_rank_init_bind_group,
+            same_end_rank_step: node_inst_same_end_rank_step_bind_groups,
+            end_counts: node_inst_end_counts_bind_group,
+            order: node_inst_order_bind_group,
+            scan_local: node_inst_scan_local_bind_group,
+            scan_block: node_inst_scan_block_bind_groups,
+            prefix_scan: node_inst_prefix_scan_bind_group,
+            subtree_bounds: node_inst_subtree_bounds_bind_group,
+            semantic_type_init: expr_semantic_type_init_bind_group,
+            semantic_type_step: expr_semantic_type_step_bind_groups,
+            locations: node_inst_locations_bind_group,
+            worklist_scatter: node_inst_gen_worklist_scatter_bind_group,
+            worklist_dispatch_args: node_inst_gen_worklist_dispatch_args_bind_group,
+            enclosing_loop_init: enclosing_loop_init_bind_group,
+            enclosing_loop_step: enclosing_loop_step_bind_groups,
+        } = create_inst_plan_bind_groups(
+            self,
+            device,
+            InstPlanBindGroupInputs {
+                params: &params_buf,
+                feature_params: &feature_params_buf,
+                node_inst_scan_params: &node_inst_scan_params_buf,
+                hir_status: hir_status_buf,
+                hir_kind: hir_kind_buf,
+                parent: parent_buf,
+                subtree_end: subtree_end_buf,
+                function_metadata: &function_metadata,
+                expr_metadata: &expr_metadata,
+                call_metadata: &call_metadata,
+                type_metadata: &type_metadata,
+                hir_param_record: hir_param_record_buf,
+                expr_resolved_final: &expr_resolved_final_buf,
+                final_node_func: final_node_func_buf,
+                visible_decl: visible_decl_buf,
+                decl_layout_record: &decl_layout_record_buf,
+                decl_layout_status: &decl_layout_status_buf,
+                param_reg_record: &param_reg_record_buf,
+                node_tree_status: &node_tree_status_buf,
+                enclosing_return_step_final: enclosing_return_step_final_buf,
+                match_return_node: &match_return_node_buf,
+                call_record: &call_record_buf,
+                call_callee_owner_step_final: call_callee_owner_step_final_buf,
+                call_record_status: &call_record_status_buf,
+                intrinsic_call_record: intrinsic_call_record_buf,
+                intrinsic_call_status: &intrinsic_call_status_buf,
+                enum_value_record: &enum_value_record_buf,
+                enum_record_status: &enum_record_status_buf,
+                match_record: &match_record_buf,
+                match_pattern_node_owner: &match_pattern_node_owner_buf,
+                match_result_value_owner: &match_result_value_owner_buf,
+                struct_access_record: &struct_access_record_buf,
+                struct_store_record: &struct_store_record_buf,
+                struct_record_status: &struct_record_status_buf,
+                node_inst_count_info: &node_inst_count_info_buf,
+                node_inst_count_payload: &node_inst_count_payload_buf,
+                node_inst_count_status: &node_inst_count_status_buf,
+                node_inst_same_end_link_a: &node_inst_same_end_link_a_buf,
+                node_inst_same_end_link_b: &node_inst_same_end_link_b_buf,
+                node_inst_same_end_rank_a: node_inst_same_end_rank_a_buf,
+                node_inst_same_end_rank_b: node_inst_same_end_rank_b_buf,
+                node_inst_same_end_rank_final: node_inst_same_end_rank_final_buf,
+                node_inst_same_end_rank_steps: &node_inst_same_end_rank_steps,
+                node_inst_scan_input: node_inst_scan_input_buf,
+                node_inst_order_record: &node_inst_order_record_buf,
+                node_inst_same_end_bucket_count: node_inst_same_end_bucket_count_buf,
+                node_inst_subtree_slot_bounds: node_inst_subtree_slot_bounds_buf,
+                node_inst_range_start: &node_inst_range_start_buf,
+                node_inst_range_info: &node_inst_range_info_buf,
+                node_inst_range_status: &node_inst_range_status_buf,
+                node_inst_order_status: &node_inst_order_status_buf,
+                node_inst_scan_local_prefix: &node_inst_scan_local_prefix_buf,
+                node_inst_scan_block_sum: node_inst_scan_block_sum_buf,
+                node_inst_scan_prefix_a: node_inst_scan_prefix_a_buf,
+                node_inst_scan_prefix_b: node_inst_scan_prefix_b_buf,
+                final_node_inst_scan_prefix: final_node_inst_scan_prefix_buf,
+                node_inst_subtree_bound_start: &node_inst_subtree_bound_start_buf,
+                node_inst_subtree_bound_end: &node_inst_subtree_bound_end_buf,
+                node_inst_subtree_bounds_status: &node_inst_subtree_bounds_status_buf,
+                expr_semantic_type_a: expr_semantic_type_a_buf,
+                expr_semantic_type_b: expr_semantic_type_b_buf,
+                expr_semantic_type_final: expr_semantic_type_final_buf,
+                expr_semantic_type_steps: &expr_semantic_type_steps,
+                node_inst_location_record: node_inst_location_record_buf,
+                node_inst_location_status: &node_inst_location_status_buf,
+                node_inst_gen_node_record: &node_inst_gen_node_record_buf,
+                node_inst_gen_input_status: &node_inst_gen_input_status_buf,
+                active_node_inst_gen_dispatch_args: &node_order_scan,
+                active_node_inst_gen_aggregate_copy_dispatch_args: &node_order_scan_block,
+                enclosing_loop_node_a: enclosing_loop_node_a_buf,
+                enclosing_loop_node_b: enclosing_loop_node_b_buf,
+                enclosing_loop_link_a: enclosing_loop_link_a_buf,
+                enclosing_loop_link_b: enclosing_loop_link_b_buf,
+                enclosing_loop_steps: &enclosing_loop_steps,
+            },
+        )?;
+        let InstGenBindGroups {
+            input_status: node_inst_gen_inputs_bind_group,
+            clear_dispatch_args: virtual_inst_clear_dispatch_args_bind_group,
+            clear_virtual_insts: virtual_inst_clear_bind_group,
+            generate: node_inst_gen_bind_group,
+            aggregate_return_flags: aggregate_literal_return_copy_flags_bind_group,
+            aggregate_return_copy: aggregate_literal_return_copy_bind_group,
+            aggregate_copy: node_inst_gen_aggregate_copy_bind_group,
+        } = create_inst_gen_bind_groups(
+            self,
+            device,
+            InstGenBindGroupInputs {
+                params: &params_buf,
+                feature_params: &feature_params_buf,
+                hir_kind: hir_kind_buf,
+                parent: parent_buf,
+                subtree_end: subtree_end_buf,
+                expr_metadata: &expr_metadata,
+                array_metadata: &array_metadata,
+                struct_metadata: &struct_metadata,
+                expr_resolved_final: &expr_resolved_final_buf,
+                visible_decl: visible_decl_buf,
+                decl_layout_record: &decl_layout_record_buf,
+                decl_layout_status: &decl_layout_status_buf,
+                const_value_record: &const_value_record_buf,
+                const_value_status: &const_value_status_buf,
+                local_literal_record: &local_literal_record_buf,
+                local_literal_status: &local_literal_status_buf,
+                param_reg_record: &param_reg_record_buf,
+                param_reg_status: &param_reg_status_buf,
+                call_abi_record: &call_abi_record_buf,
+                call_abi_status: &call_abi_status_buf,
+                call_arg_lookup_record: &call_arg_lookup_record_buf,
+                intrinsic_call_record: intrinsic_call_record_buf,
+                enum_value_record: &enum_value_record_buf,
+                match_record: &match_record_buf,
+                match_arm_owner: &match_arm_owner_buf,
+                match_return_node: &match_return_node_buf,
+                match_result_value_owner: &match_result_value_owner_buf,
+                struct_access_record: &struct_access_record_buf,
+                struct_store_record: &struct_store_record_buf,
+                struct_record_status: &struct_record_status_buf,
+                node_inst_range_info: &node_inst_range_info_buf,
+                node_inst_location_record: node_inst_location_record_buf,
+                node_inst_location_status: &node_inst_location_status_buf,
+                node_inst_subtree_bound_start: &node_inst_subtree_bound_start_buf,
+                node_inst_subtree_bound_end: &node_inst_subtree_bound_end_buf,
+                node_inst_scan_input: node_inst_scan_input_buf,
+                node_inst_gen_input_status: &node_inst_gen_input_status_buf,
+                node_inst_gen_node_record: &node_inst_gen_node_record_buf,
+                active_virtual_inst_dispatch_args: &virtual_inst,
+                enclosing_return_step_final: enclosing_return_step_final_buf,
+                enclosing_let_step_final: enclosing_let_step_final_buf,
+                enclosing_loop_step_final: enclosing_loop_step_final_buf,
+                final_node_func: final_node_func_buf,
+                virtual_inst_record: &virtual_inst_record_buf,
+                virtual_inst_args: &virtual_inst_args_buf,
+                virtual_inst_status: &virtual_inst_status_buf,
+            },
+        )?;
+        let VirtualBindGroups {
+            liveness_init: virtual_liveness_init_bind_group,
+            liveness: virtual_liveness_bind_group,
+            next_call: virtual_next_call_bind_groups,
+            param_masks: virtual_param_masks_bind_group,
+            spans_fixed_barrier: virtual_spans_fixed_barrier_bind_group,
+            value_def_flags: virtual_value_def_flags_bind_group,
+            value_def_scan_local: virtual_value_def_scan_local_bind_group,
+            value_def_scan_block: virtual_value_def_scan_block_bind_groups,
+            value_def_compact: virtual_value_def_compact_bind_group,
+            regalloc: virtual_regalloc_bind_group,
+            func_rows_init: virtual_func_rows_init_bind_group,
+            func_first_row: virtual_func_first_row_bind_group,
+            func_span_max: virtual_func_span_max_bind_group,
+            regalloc_dispatch_args: virtual_regalloc_dispatch_args_bind_group,
+        } = create_virtual_bind_groups(
+            self,
+            device,
+            VirtualBindGroupInputs {
+                params: &params_buf,
+                text_scan_params: &text_scan_params_buf,
+                next_call_params: &virtual_next_call_params_buf,
+                regalloc_params: &virtual_regalloc_params_buf,
+                func_meta: &func_meta_buf,
+                func_slot_by_index: &func_slot_by_index_buf,
+                func_slot_by_node: &func_slot_by_node_buf,
+                final_node_func: final_node_func_buf,
+                func_param_reg_mask: func_param_reg_mask_buf,
+                func_param_reg_mask_status: &func_param_reg_mask_status_buf,
+                virtual_inst_record: &virtual_inst_record_buf,
+                virtual_inst_args: &virtual_inst_args_buf,
+                virtual_inst_status: &virtual_inst_status_buf,
+                virtual_func_slot: &virtual_func_slot_buf,
+                virtual_next_call_a: &virtual_next_call_a_buf,
+                virtual_next_call_b: &virtual_next_call_b_buf,
+                virtual_next_call_status: &virtual_next_call_status_buf,
+                virtual_live_start: &virtual_live_start_buf,
+                virtual_live_end: &virtual_live_end_buf,
+                virtual_liveness_status: &virtual_liveness_status_buf,
+                virtual_phys_reg: &virtual_phys_reg_buf,
+                virtual_call_live_reg_mask: &virtual_call_live_reg_mask_buf,
+                virtual_func_first_row: virtual_func_first_row_buf,
+                virtual_func_last_row: virtual_func_last_row_buf,
+                virtual_func_first_row_status: &virtual_func_first_row_status_buf,
+                virtual_value_def_flag: &virtual_value_def_flag_buf,
+                virtual_value_def_scan_local_prefix: virtual_value_def_scan_local_prefix_buf,
+                virtual_value_def_scan_block_sum: virtual_value_def_scan_block_sum_buf,
+                virtual_value_def_scan_prefix_a: virtual_value_def_scan_prefix_a_buf,
+                virtual_value_def_scan_prefix_b: virtual_value_def_scan_prefix_b_buf,
+                virtual_value_def_row: &virtual_value_def_row_buf,
+                virtual_value_def_status: &virtual_value_def_status_buf,
+                virtual_regalloc_active_end: virtual_regalloc_active_end_buf,
+                virtual_regalloc_param_rank_mask: &virtual_regalloc_param_rank_mask_buf,
+                virtual_regalloc_status: &virtual_regalloc_status_buf,
+                virtual_regalloc_dispatch_args: &virtual_regalloc,
+            },
+        )?;
+        let EmitBindGroups {
+            select: select_bind_group,
+            inst_size: inst_size_bind_group,
+            text_scan_local: text_scan_local_bind_group,
+            text_scan_block: text_scan_block_bind_groups,
+            text_offsets: text_offsets_bind_group,
+            encode: encode_bind_group,
+            elf_layout: elf_layout_bind_group,
+            elf: elf_bind_group,
+        } = create_emit_bind_groups(
+            self,
+            device,
+            EmitBindGroupInputs {
+                params: &params_buf,
+                text_scan_params: &text_scan_params_buf,
+                func_meta: &func_meta_buf,
+                decl_layout_status: &decl_layout_status_buf,
+                virtual_inst_record: &virtual_inst_record_buf,
+                virtual_inst_args: &virtual_inst_args_buf,
+                virtual_inst_status: &virtual_inst_status_buf,
+                virtual_phys_reg: &virtual_phys_reg_buf,
+                virtual_call_live_reg_mask: &virtual_call_live_reg_mask_buf,
+                virtual_regalloc_status: &virtual_regalloc_status_buf,
+                virtual_func_first_row: virtual_func_first_row_buf,
+                virtual_func_first_row_status: &virtual_func_first_row_status_buf,
+                virtual_func_slot: &virtual_func_slot_buf,
+                inst_kind: inst_kind_buf,
+                inst_arg0: inst_arg0_buf,
+                inst_arg1: inst_arg1_buf,
+                inst_arg2: inst_arg2_buf,
+                inst_size: inst_size_buf,
+                inst_byte_offset: inst_byte_offset_buf,
+                select_status: &select_status_buf,
+                size_status: &size_status_buf,
+                text_scan_local_prefix: text_scan_local_prefix_buf,
+                text_scan_block_sum: &text_scan_block_sum_buf,
+                text_scan_prefix_a: &text_scan_prefix_a_buf,
+                text_scan_prefix_b: &text_scan_prefix_b_buf,
+                text_len: &text_len_buf,
+                text_status: &text_status_buf,
+                out: &out_buf,
+                encode_status: &encode_status_buf,
+                elf_layout: &elf_layout_buf,
+                layout_status: &layout_status_buf,
+                status: &status_buf,
+            },
         )?;
         host_timer.stamp("bind_groups");
 
-        dispatch_x86_stage(
-            encoder,
-            "active_scan_dispatch_args",
-            &self.active_scan_dispatch_args_pass,
-            &active_scan_dispatch_args_bind_group,
-            (1, 1),
-        );
-        stamp_x86_timer(&mut timer, encoder, "x86.metadata.active_dispatch.done");
-        dispatch_x86_stages_indirect(
-            encoder,
-            &[
-                (
-                    "node_tree_info",
-                    &self.node_tree_info_pass,
-                    &node_tree_info_bind_group,
-                ),
-                ("func_discover", &self.func_discover_pass, &func_bind_group),
-            ],
-            active_hir_dispatch_args_buf,
-        );
-        dispatch_x86_stage_indirect(
-            encoder,
-            "func_owner_scan_local",
-            &self.func_owner_scan_local_pass,
-            &func_owner_scan_local_bind_group,
-            active_hir_dispatch_args_buf,
-        );
-        dispatch_compute_pass_indirect_ping_pong_scan_steps(
-            encoder,
-            "func_owner_scan_blocks",
-            "codegen.x86.func_owner_scan_blocks",
-            &self.func_owner_scan_blocks_pass,
-            &func_owner_scan_block_bind_groups,
-            &func_owner_scan_params_buf,
-            &active_hir_scan_block_dispatch_args_buf,
-        );
-        dispatch_x86_stage_indirect(
-            encoder,
-            "func_assign_nodes",
-            &self.func_assign_nodes_pass,
-            &func_assign_nodes_bind_group,
-            active_hir_dispatch_args_buf,
-        );
-        dispatch_compute_pass_indirect_bind_group_steps(
-            encoder,
-            "func_assign_nodes_step",
-            "codegen.x86.func_assign_nodes_step",
-            &self.func_assign_nodes_step_pass,
-            &func_assign_nodes_step_bind_groups,
-            active_hir_dispatch_args_buf,
-        );
-        if node_func_owner_needs_copyback {
-            encoder.copy_buffer_to_buffer(
+        record_metadata_and_call_dispatches(
+            self,
+            MetadataCallDispatchInputs {
+                device,
+                queue,
+                encoder,
+                timer: &mut timer,
+                hir_words,
+                match_record_rows,
+                has_match: feature_summary.has_match(),
+                needs_enclosing_return_records,
+                node_func_owner_needs_copyback,
+                enclosing_let_needs_copyback,
+                match_pattern_owner_needs_copyback: match_pattern_owner_steps.len() % 2 != 0,
+                active_hir_dispatch_args_buf,
+                hir_count: &hir_count,
+                hir_plus_one: &hir_plus_one,
+                hir_scan_block: &hir_scan_block,
+                func_owner_scan_params_buf: &func_owner_scan_params_buf,
+                node_inst_scan_params_buf: &node_inst_scan_params_buf,
                 node_func_owner_b_buf,
-                0,
-                &node_func_buf,
-                0,
-                (hir_words * 4) as u64,
-            );
-        }
-        dispatch_x86_stages_indirect(
-            encoder,
-            &[
-                (
-                    "func_slot_flags",
-                    &self.func_slot_flags_pass,
-                    &func_slot_flags_bind_group,
-                ),
-                (
-                    "func_slot_scan_local",
-                    &self.node_inst_scan_local_pass,
-                    &node_inst_scan_local_bind_group,
-                ),
-            ],
-            &active_hir_plus_one_dispatch_args_buf,
-        );
-        dispatch_compute_pass_indirect_ping_pong_scan_steps(
-            encoder,
-            "func_slot_scan_blocks",
-            "codegen.x86.node_inst_scan_blocks",
-            &self.node_inst_scan_blocks_pass,
-            &node_inst_scan_block_bind_groups,
-            &node_inst_scan_params_buf,
-            &active_hir_scan_block_dispatch_args_buf,
-        );
-        dispatch_x86_stage_indirect(
-            encoder,
-            "func_slot_scatter",
-            &self.func_slot_scatter_pass,
-            &func_slot_scatter_bind_group,
-            &active_hir_plus_one_dispatch_args_buf,
-        );
-        stamp_x86_timer(&mut timer, encoder, "x86.metadata.func_owner.done");
-        dispatch_x86_stage_indirect(
-            encoder,
-            "expr_resolve_init",
-            &self.expr_resolve_init_pass,
-            &expr_resolve_init_bind_group,
-            active_hir_dispatch_args_buf,
-        );
-        dispatch_compute_pass_indirect_bind_group_steps(
-            encoder,
-            "expr_resolve_step",
-            "codegen.x86.expr_resolve_step",
-            &self.expr_resolve_step_pass,
-            &expr_resolve_step_bind_groups,
-            active_hir_dispatch_args_buf,
-        );
-        encoder.copy_buffer_to_buffer(
-            expr_resolved_step_final_buf,
-            0,
-            &expr_resolved_final_buf,
-            0,
-            (hir_words * 4) as u64,
-        );
-        stamp_x86_timer(&mut timer, encoder, "x86.metadata.expr_resolve.done");
-        dispatch_x86_stages_indirect(
-            encoder,
-            &[
-                (
-                    "enum_records",
-                    &self.enum_records_pass,
-                    &enum_records_bind_group,
-                ),
-                (
-                    "match_records",
-                    &self.match_records_pass,
-                    &match_records_bind_group,
-                ),
-                (
-                    "return_match_records",
-                    &self.return_match_records_pass,
-                    &return_match_records_bind_group,
-                ),
-                (
-                    "match_result_owner_init",
-                    &self.match_result_owner_init_pass,
-                    &match_result_owner_init_bind_group,
-                ),
-            ],
-            active_hir_dispatch_args_buf,
-        );
-        dispatch_compute_pass_indirect_bind_group_steps(
-            encoder,
-            "match_result_owner_step",
-            "codegen.x86.match_result_owner_step",
-            &self.match_result_owner_step_pass,
-            &match_result_owner_step_bind_groups,
-            active_hir_dispatch_args_buf,
-        );
-        encoder.copy_buffer_to_buffer(
-            match_result_owner_step_final_buf,
-            0,
-            &match_result_value_owner_buf,
-            0,
-            (match_record_rows * 4) as u64,
-        );
-        stamp_x86_timer(&mut timer, encoder, "x86.metadata.match_result.done");
-        if needs_enclosing_return_records {
-            dispatch_x86_stage_indirect(
-                encoder,
-                "enclosing_return_init",
-                &self.enclosing_return_init_pass,
-                &enclosing_return_init_bind_group,
-                active_hir_dispatch_args_buf,
-            );
-            dispatch_compute_pass_indirect_bind_group_steps(
-                encoder,
-                "enclosing_return_step",
-                "codegen.x86.enclosing_return_step",
-                &self.enclosing_return_step_pass,
-                &enclosing_return_step_bind_groups,
-                active_hir_dispatch_args_buf,
-            );
-        }
-        dispatch_x86_stage_indirect(
-            encoder,
-            "enclosing_let_init",
-            &self.enclosing_let_init_pass,
-            &enclosing_let_init_bind_group,
-            active_hir_dispatch_args_buf,
-        );
-        dispatch_compute_pass_indirect_bind_group_steps(
-            encoder,
-            "enclosing_let_step",
-            "codegen.x86.enclosing_let_step",
-            &self.enclosing_let_step_pass,
-            &enclosing_let_step_bind_groups,
-            active_hir_dispatch_args_buf,
-        );
-        if enclosing_let_needs_copyback {
-            encoder.copy_buffer_to_buffer(
-                &enclosing_let_node_b_buf,
-                0,
-                &enclosing_let_node_a_buf,
-                0,
-                (hir_words * 4) as u64,
-            );
-        }
-        stamp_x86_timer(&mut timer, encoder, "x86.metadata.enclosing_flow.done");
-        dispatch_x86_stages_indirect(
-            encoder,
-            &[
-                (
-                    "match_ownership",
-                    &self.match_ownership_pass,
-                    &match_ownership_bind_group,
-                ),
-                (
-                    "match_pattern_owner_init",
-                    &self.match_pattern_owner_init_pass,
-                    &match_pattern_owner_init_bind_group,
-                ),
-            ],
-            active_hir_dispatch_args_buf,
-        );
-        dispatch_compute_pass_indirect_bind_group_steps(
-            encoder,
-            "match_pattern_owner_step",
-            "codegen.x86.match_pattern_owner_step",
-            &self.match_pattern_owner_step_pass,
-            &match_pattern_owner_step_bind_groups,
-            active_hir_dispatch_args_buf,
-        );
-        if match_pattern_owner_steps.len() % 2 != 0 {
-            encoder.copy_buffer_to_buffer(
+                node_func_buf: &node_func_buf,
+                expr_resolved_step_final_buf,
+                expr_resolved_final_buf: &expr_resolved_final_buf,
+                match_result_owner_step_final_buf,
+                match_result_value_owner_buf: &match_result_value_owner_buf,
+                enclosing_let_node_b_buf: &enclosing_let_node_b_buf,
+                enclosing_let_node_a_buf: &enclosing_let_node_a_buf,
                 match_pattern_owner_step_final_buf,
-                0,
-                &match_pattern_node_owner_buf,
-                0,
-                (hir_words * 4) as u64,
-            );
-        }
-        init_repeated_u32_words(
-            device,
-            queue,
-            encoder,
-            &self.fill_u32_pass,
-            "match_pattern_first_use_node",
-            &match_pattern_first_use_node_buf,
-            &[u32::MAX],
-            hir_words,
+                match_pattern_node_owner_buf: &match_pattern_node_owner_buf,
+                match_pattern_first_use_node_buf: &match_pattern_first_use_node_buf,
+                func_meta_buf: &func_meta_buf,
+                func_meta_uniform_buf: &func_meta_uniform_buf,
+                const_value_status_buf: &const_value_status_buf,
+                const_value_status_uniform_buf: &const_value_status_uniform_buf,
+                param_reg_status_buf: &param_reg_status_buf,
+                param_reg_status_uniform_buf: &param_reg_status_uniform_buf,
+                local_literal_status_buf: &local_literal_status_buf,
+                local_literal_status_uniform_buf: &local_literal_status_uniform_buf,
+                intrinsic_call_record_buf,
+                call_abi_status_buf: &call_abi_status_buf,
+                call_abi_status_uniform_buf: &call_abi_status_uniform_buf,
+                active_scan_dispatch_args_bind_group: &active_scan_dispatch_args_bind_group,
+                node_tree_info_bind_group: &node_tree_info_bind_group,
+                func_bind_group: &func_bind_group,
+                func_owner_scan_local_bind_group: &func_owner_scan_local_bind_group,
+                func_owner_scan_block_bind_groups: &func_owner_scan_block_bind_groups,
+                func_assign_nodes_bind_group: &func_assign_nodes_bind_group,
+                func_assign_nodes_step_bind_groups: &func_assign_nodes_step_bind_groups,
+                func_slot_flags_bind_group: &func_slot_flags_bind_group,
+                func_slot_scatter_bind_group: &func_slot_scatter_bind_group,
+                expr_resolve_init_bind_group: &expr_resolve_init_bind_group,
+                expr_resolve_step_bind_groups: &expr_resolve_step_bind_groups,
+                enum_records_bind_group: &enum_records_bind_group,
+                match_records_bind_group: &match_records_bind_group,
+                return_match_records_bind_group: &return_match_records_bind_group,
+                match_result_owner_init_bind_group: &match_result_owner_init_bind_group,
+                match_result_owner_step_bind_groups: &match_result_owner_step_bind_groups,
+                enclosing_return_init_bind_group: &enclosing_return_init_bind_group,
+                enclosing_return_step_bind_groups: &enclosing_return_step_bind_groups,
+                enclosing_let_init_bind_group: &enclosing_let_init_bind_group,
+                enclosing_let_step_bind_groups: &enclosing_let_step_bind_groups,
+                match_ownership_bind_group: &match_ownership_bind_group,
+                match_pattern_owner_init_bind_group: &match_pattern_owner_init_bind_group,
+                match_pattern_owner_step_bind_groups: &match_pattern_owner_step_bind_groups,
+                match_pattern_records_bind_group: &match_pattern_records_bind_group,
+                match_pattern_finalize_bind_group: &match_pattern_finalize_bind_group,
+                struct_records_bind_group: &struct_records_bind_group,
+                array_records_bind_group: &array_records_bind_group,
+                enclosing_stmt_init_bind_group: &enclosing_stmt_init_bind_group,
+                enclosing_stmt_step_bind_groups: &enclosing_stmt_step_bind_groups,
+                decl_widths_bind_group: &decl_widths_bind_group,
+                decl_layout_bind_group: &decl_layout_bind_group,
+                node_inst_scan_local_bind_group: &node_inst_scan_local_bind_group,
+                node_inst_scan_block_bind_groups: &node_inst_scan_block_bind_groups,
+                node_inst_scan_input_clear_bind_group: &node_inst_scan_input_clear_bind_group,
+                call_callee_root_call_clear_bind_group: &call_callee_root_call_clear_bind_group,
+                call_records_bind_group: &call_records_bind_group,
+                const_values_bind_group: &const_values_bind_group,
+                param_regs_bind_group: &param_regs_bind_group,
+                local_literals_bind_group: &local_literals_bind_group,
+                call_arg_values_bind_group: &call_arg_values_bind_group,
+                intrinsic_calls_bind_group: &intrinsic_calls_bind_group,
+                call_abi_bind_group: &call_abi_bind_group,
+                call_callee_owner_init_bind_group: &call_callee_owner_init_bind_group,
+                call_callee_owner_step_bind_groups: &call_callee_owner_step_bind_groups,
+            },
         )?;
-        stamp_x86_timer(&mut timer, encoder, "x86.metadata.match_pattern_owner.done");
-        if feature_summary.has_match() {
-            dispatch_x86_stages_indirect(
+        record_instruction_dispatches(
+            self,
+            InstructionDispatchInputs {
                 encoder,
-                &[
-                    (
-                        "match_pattern_records",
-                        &self.match_pattern_records_pass,
-                        &match_pattern_records_bind_group,
-                    ),
-                    (
-                        "match_pattern_finalize",
-                        &self.match_pattern_finalize_pass,
-                        &match_pattern_finalize_bind_group,
-                    ),
-                ],
-                active_hir_dispatch_args_buf,
-            );
-        }
-        dispatch_x86_stages_indirect(
-            encoder,
-            &[
-                (
-                    "struct_records",
-                    &self.struct_records_pass,
-                    &struct_records_bind_group,
-                ),
-                (
-                    "array_records",
-                    &self.array_records_pass,
-                    &array_records_bind_group,
-                ),
-            ],
-            active_hir_dispatch_args_buf,
+                timer: &mut timer,
+                has_aggregate: feature_summary.has_aggregate(),
+                active_hir_dispatch_args: active_hir_dispatch_args_buf,
+                hir_plus_one: &hir_plus_one,
+                hir_scan_block: &hir_scan_block,
+                node_order_scan: &node_order_scan,
+                node_order_scan_block: &node_order_scan_block,
+                virtual_inst: &virtual_inst,
+                node_inst_scan_params: &node_inst_scan_params_buf,
+                node_inst_counts: &node_inst_counts_bind_group,
+                node_inst_same_end_rank_init: &node_inst_same_end_rank_init_bind_group,
+                node_inst_same_end_rank_step: &node_inst_same_end_rank_step_bind_groups,
+                node_inst_end_counts: &node_inst_end_counts_bind_group,
+                node_inst_scan_local: &node_inst_scan_local_bind_group,
+                node_inst_scan_block: &node_inst_scan_block_bind_groups,
+                node_inst_order: &node_inst_order_bind_group,
+                node_order_dispatch_args: &node_order_dispatch_args_bind_group,
+                node_inst_prefix_scan: &node_inst_prefix_scan_bind_group,
+                node_inst_subtree_bounds: &node_inst_subtree_bounds_bind_group,
+                expr_semantic_type_init: &expr_semantic_type_init_bind_group,
+                expr_semantic_type_step: &expr_semantic_type_step_bind_groups,
+                node_inst_locations: &node_inst_locations_bind_group,
+                node_inst_gen_worklist_scatter: &node_inst_gen_worklist_scatter_bind_group,
+                node_inst_gen_worklist_dispatch_args:
+                    &node_inst_gen_worklist_dispatch_args_bind_group,
+                enclosing_loop_init: &enclosing_loop_init_bind_group,
+                enclosing_loop_step: &enclosing_loop_step_bind_groups,
+                node_inst_gen_inputs: &node_inst_gen_inputs_bind_group,
+                virtual_inst_clear_dispatch_args: &virtual_inst_clear_dispatch_args_bind_group,
+                virtual_inst_clear: &virtual_inst_clear_bind_group,
+                node_inst_gen: &node_inst_gen_bind_group,
+                node_inst_gen_aggregate_copy: &node_inst_gen_aggregate_copy_bind_group,
+                aggregate_literal_return_copy_flags:
+                    &aggregate_literal_return_copy_flags_bind_group,
+                aggregate_literal_return_copy: &aggregate_literal_return_copy_bind_group,
+            },
         );
-        stamp_x86_timer(&mut timer, encoder, "x86.metadata.aggregate_records.done");
-        dispatch_x86_stage_indirect(
-            encoder,
-            "enclosing_stmt_init",
-            &self.enclosing_stmt_init_pass,
-            &enclosing_stmt_init_bind_group,
-            active_hir_dispatch_args_buf,
-        );
-        dispatch_compute_pass_indirect_bind_group_steps(
-            encoder,
-            "enclosing_stmt_step",
-            "codegen.x86.enclosing_stmt_step",
-            &self.enclosing_stmt_step_pass,
-            &enclosing_stmt_step_bind_groups,
-            active_hir_dispatch_args_buf,
-        );
-        stamp_x86_timer(&mut timer, encoder, "x86.metadata.enclosing_stmt.done");
-        dispatch_x86_stages_indirect(
-            encoder,
-            &[
-                (
-                    "decl_widths",
-                    &self.decl_widths_pass,
-                    &decl_widths_bind_group,
-                ),
-                (
-                    "decl_width_scan_local",
-                    &self.node_inst_scan_local_pass,
-                    &node_inst_scan_local_bind_group,
-                ),
-            ],
-            active_hir_dispatch_args_buf,
-        );
-        dispatch_compute_pass_indirect_ping_pong_scan_steps(
-            encoder,
-            "decl_width_scan_blocks",
-            "codegen.x86.node_inst_scan_blocks",
-            &self.node_inst_scan_blocks_pass,
-            &node_inst_scan_block_bind_groups,
-            &node_inst_scan_params_buf,
-            &active_hir_scan_block_dispatch_args_buf,
-        );
-        dispatch_x86_stage_indirect(
-            encoder,
-            "decl_layout",
-            &self.decl_layout_pass,
-            &decl_layout_bind_group,
-            active_hir_dispatch_args_buf,
-        );
-        stamp_x86_timer(&mut timer, encoder, "x86.metadata.decl_layout.done");
-        dispatch_compute_pass_indirect(
-            encoder,
-            "node_inst_scan_input.active_clear",
-            "codegen.x86.node_inst_scan_input.active_clear",
-            &self.active_clear_u32_pass,
-            &node_inst_scan_input_clear_bind_group,
-            &active_hir_plus_one_dispatch_args_buf,
-        );
-        dispatch_compute_pass_indirect(
-            encoder,
-            "call_callee_root_call.active_clear",
-            "codegen.x86.call_callee_root_call.active_clear",
-            &self.active_clear_u32_pass,
-            &call_callee_root_call_clear_bind_group,
-            &active_hir_count_dispatch_args_buf,
-        );
-        dispatch_x86_stages_indirect(
-            encoder,
-            &[
-                (
-                    "call_records",
-                    &self.call_records_pass,
-                    &call_records_bind_group,
-                ),
-                (
-                    "const_values",
-                    &self.const_values_pass,
-                    &const_values_bind_group,
-                ),
-                ("param_regs", &self.param_regs_pass, &param_regs_bind_group),
-                (
-                    "local_literals",
-                    &self.local_literals_pass,
-                    &local_literals_bind_group,
-                ),
-            ],
-            active_hir_dispatch_args_buf,
-        );
-        encoder.copy_buffer_to_buffer(&func_meta_buf, 0, &func_meta_uniform_buf, 0, 32);
-        encoder.copy_buffer_to_buffer(
-            &const_value_status_buf,
-            0,
-            &const_value_status_uniform_buf,
-            0,
-            16,
-        );
-        encoder.copy_buffer_to_buffer(
-            &param_reg_status_buf,
-            0,
-            &param_reg_status_uniform_buf,
-            0,
-            16,
-        );
-        encoder.copy_buffer_to_buffer(
-            &local_literal_status_buf,
-            0,
-            &local_literal_status_uniform_buf,
-            0,
-            16,
-        );
-        init_repeated_u32_words(
-            device,
-            queue,
-            encoder,
-            &self.fill_u32_pass,
-            "intrinsic_call_record",
-            intrinsic_call_record_buf,
-            &[u32::MAX],
-            hir_words,
-        )?;
-        dispatch_x86_stages_indirect(
-            encoder,
-            &[
-                (
-                    "call_arg_values",
-                    &self.call_arg_values_pass,
-                    &call_arg_values_bind_group,
-                ),
-                (
-                    "intrinsic_calls",
-                    &self.intrinsic_calls_pass,
-                    &intrinsic_calls_bind_group,
-                ),
-                ("call_abi", &self.call_abi_pass, &call_abi_bind_group),
-                (
-                    "call_callee_owner_init",
-                    &self.call_callee_owner_init_pass,
-                    &call_callee_owner_init_bind_group,
-                ),
-            ],
-            active_hir_dispatch_args_buf,
-        );
-        dispatch_compute_pass_indirect_bind_group_steps(
-            encoder,
-            "call_callee_owner_step",
-            "codegen.x86.call_callee_owner_step",
-            &self.call_callee_owner_step_pass,
-            &call_callee_owner_step_bind_groups,
-            active_hir_dispatch_args_buf,
-        );
-        encoder.copy_buffer_to_buffer(&call_abi_status_buf, 0, &call_abi_status_uniform_buf, 0, 16);
-        stamp_x86_timer(&mut timer, encoder, "x86.calls.done");
-        dispatch_x86_stages_indirect(
-            encoder,
-            &[
-                (
-                    "node_inst_counts",
-                    &self.node_inst_counts_pass,
-                    &node_inst_counts_bind_group,
-                ),
-                (
-                    "node_inst_same_end_rank_init",
-                    &self.node_inst_same_end_rank_init_pass,
-                    &node_inst_same_end_rank_init_bind_group,
-                ),
-            ],
-            active_hir_dispatch_args_buf,
-        );
-        dispatch_compute_pass_indirect_bind_group_steps(
-            encoder,
-            "node_inst_same_end_rank_step",
-            "codegen.x86.node_inst_same_end_rank_step",
-            &self.node_inst_same_end_rank_step_pass,
-            &node_inst_same_end_rank_step_bind_groups,
-            active_hir_dispatch_args_buf,
-        );
-        dispatch_x86_stage_indirect(
-            encoder,
-            "node_inst_end_counts",
-            &self.node_inst_end_counts_pass,
-            &node_inst_end_counts_bind_group,
-            active_hir_dispatch_args_buf,
-        );
-        dispatch_x86_stage_indirect(
-            encoder,
-            "node_inst_scan_local",
-            &self.node_inst_scan_local_pass,
-            &node_inst_scan_local_bind_group,
-            &active_hir_plus_one_dispatch_args_buf,
-        );
-        dispatch_compute_pass_indirect_ping_pong_scan_steps(
-            encoder,
-            "node_inst_scan_blocks",
-            "codegen.x86.node_inst_scan_blocks",
-            &self.node_inst_scan_blocks_pass,
-            &node_inst_scan_block_bind_groups,
-            &node_inst_scan_params_buf,
-            &active_hir_scan_block_dispatch_args_buf,
-        );
-        dispatch_x86_stage_indirect(
-            encoder,
-            "node_inst_order",
-            &self.node_inst_order_pass,
-            &node_inst_order_bind_group,
-            active_hir_dispatch_args_buf,
-        );
-        dispatch_x86_stage(
-            encoder,
-            "node_order_dispatch_args",
-            &self.node_order_dispatch_args_pass,
-            &node_order_dispatch_args_bind_group,
-            (1, 1),
-        );
-        dispatch_x86_stage_indirect(
-            encoder,
-            "node_inst_scan_local",
-            &self.node_inst_scan_local_pass,
-            &node_inst_scan_local_bind_group,
-            &active_node_order_scan_dispatch_args_buf,
-        );
-        dispatch_compute_pass_indirect_ping_pong_scan_steps(
-            encoder,
-            "node_inst_scan_blocks.order",
-            "codegen.x86.node_inst_scan_blocks",
-            &self.node_inst_scan_blocks_pass,
-            &node_inst_scan_block_bind_groups,
-            &node_inst_scan_params_buf,
-            &active_node_order_scan_block_dispatch_args_buf,
-        );
-        dispatch_x86_stage_indirect(
-            encoder,
-            "node_inst_prefix_scan",
-            &self.node_inst_prefix_scan_pass,
-            &node_inst_prefix_scan_bind_group,
-            active_hir_dispatch_args_buf,
-        );
-        dispatch_x86_stage_indirect(
-            encoder,
-            "node_inst_subtree_bounds",
-            &self.node_inst_subtree_bounds_pass,
-            &node_inst_subtree_bounds_bind_group,
-            &active_hir_plus_one_dispatch_args_buf,
-        );
-        dispatch_x86_stage_indirect(
-            encoder,
-            "expr_semantic_type_init",
-            &self.expr_semantic_type_init_pass,
-            &expr_semantic_type_init_bind_group,
-            active_hir_dispatch_args_buf,
-        );
-        dispatch_compute_pass_indirect_bind_group_steps(
-            encoder,
-            "expr_semantic_type_step",
-            "codegen.x86.expr_semantic_type_step",
-            &self.expr_semantic_type_step_pass,
-            &expr_semantic_type_step_bind_groups,
-            active_hir_dispatch_args_buf,
-        );
-        dispatch_x86_stage_indirect(
-            encoder,
-            "node_inst_locations",
-            &self.node_inst_locations_pass,
-            &node_inst_locations_bind_group,
-            active_hir_dispatch_args_buf,
-        );
-        dispatch_x86_stage_indirect(
-            encoder,
-            "node_inst_gen_flag_scan_local",
-            &self.node_inst_scan_local_pass,
-            &node_inst_scan_local_bind_group,
-            &active_hir_plus_one_dispatch_args_buf,
-        );
-        dispatch_compute_pass_indirect_ping_pong_scan_steps(
-            encoder,
-            "node_inst_gen_flag_scan_blocks",
-            "codegen.x86.node_inst_scan_blocks",
-            &self.node_inst_scan_blocks_pass,
-            &node_inst_scan_block_bind_groups,
-            &node_inst_scan_params_buf,
-            &active_hir_scan_block_dispatch_args_buf,
-        );
-        dispatch_x86_stage_indirect(
-            encoder,
-            "node_inst_gen_worklist_scatter",
-            &self.node_inst_gen_worklist_scatter_pass,
-            &node_inst_gen_worklist_scatter_bind_group,
-            &active_hir_plus_one_dispatch_args_buf,
-        );
-        dispatch_x86_stage(
-            encoder,
-            "node_inst_gen_worklist_dispatch_args",
-            &self.node_inst_gen_worklist_dispatch_args_pass,
-            &node_inst_gen_worklist_dispatch_args_bind_group,
-            (1, 1),
-        );
-        stamp_x86_timer(&mut timer, encoder, "x86.inst_locations.done");
-        dispatch_x86_stage_indirect(
-            encoder,
-            "enclosing_loop_init",
-            &self.enclosing_loop_init_pass,
-            &enclosing_loop_init_bind_group,
-            active_hir_dispatch_args_buf,
-        );
-        dispatch_compute_pass_indirect_bind_group_steps(
-            encoder,
-            "enclosing_loop_step",
-            "codegen.x86.enclosing_loop_step",
-            &self.enclosing_loop_step_pass,
-            &enclosing_loop_step_bind_groups,
-            active_hir_dispatch_args_buf,
-        );
-        dispatch_x86_stages(
-            encoder,
-            &[
-                (
-                    "node_inst_gen_inputs",
-                    &self.node_inst_gen_inputs_pass,
-                    &node_inst_gen_inputs_bind_group,
-                ),
-                (
-                    "virtual_inst_clear_dispatch_args",
-                    &self.virtual_inst_clear_dispatch_args_pass,
-                    &virtual_inst_clear_dispatch_args_bind_group,
-                ),
-            ],
-            (1, 1),
-        );
-        dispatch_x86_stage_indirect(
-            encoder,
-            "virtual_inst_clear",
-            &self.virtual_inst_clear_pass,
-            &virtual_inst_clear_bind_group,
-            &active_virtual_inst_dispatch_args_buf,
-        );
-        dispatch_x86_stage_indirect(
-            encoder,
-            "node_inst_gen",
-            &self.node_inst_gen_pass,
-            &node_inst_gen_bind_group,
-            active_hir_dispatch_args_buf,
-        );
-        dispatch_x86_stage_indirect(
-            encoder,
-            "node_inst_gen_aggregate_copy",
-            &self.node_inst_gen_aggregate_copy_pass,
-            &node_inst_gen_aggregate_copy_bind_group,
-            &active_node_order_scan_block_dispatch_args_buf,
-        );
-        if feature_summary.has_aggregate() {
-            dispatch_x86_stage_indirect(
+        record_virtual_emit_dispatches(
+            self,
+            VirtualEmitDispatchInputs {
                 encoder,
-                "aggregate_literal_return_copy_flags",
-                &self.aggregate_literal_return_copy_flags_pass,
-                &aggregate_literal_return_copy_flags_bind_group,
-                active_hir_dispatch_args_buf,
-            );
-            dispatch_x86_stage_indirect(
-                encoder,
-                "aggregate_literal_return_copy_scan_local",
-                &self.node_inst_scan_local_pass,
-                &node_inst_scan_local_bind_group,
-                &active_hir_plus_one_dispatch_args_buf,
-            );
-            dispatch_compute_pass_indirect_ping_pong_scan_steps(
-                encoder,
-                "aggregate_literal_return_copy_scan_blocks",
-                "codegen.x86.node_inst_scan_blocks",
-                &self.node_inst_scan_blocks_pass,
-                &node_inst_scan_block_bind_groups,
-                &node_inst_scan_params_buf,
-                &active_hir_scan_block_dispatch_args_buf,
-            );
-            dispatch_x86_stage_indirect(
-                encoder,
-                "aggregate_literal_return_copy_worklist_scatter",
-                &self.node_inst_gen_worklist_scatter_pass,
-                &node_inst_gen_worklist_scatter_bind_group,
-                &active_hir_plus_one_dispatch_args_buf,
-            );
-            dispatch_x86_stage(
-                encoder,
-                "aggregate_literal_return_copy_dispatch_args",
-                &self.node_inst_gen_worklist_dispatch_args_pass,
-                &node_inst_gen_worklist_dispatch_args_bind_group,
-                (1, 1),
-            );
-            dispatch_x86_stage_indirect(
-                encoder,
-                "aggregate_literal_return_copy",
-                &self.aggregate_literal_return_copy_pass,
-                &aggregate_literal_return_copy_bind_group,
-                &active_node_order_scan_dispatch_args_buf,
-            );
-        }
-        stamp_x86_timer(&mut timer, encoder, "x86.inst_gen.done");
-        dispatch_x86_stage(
-            encoder,
-            "virtual_dispatch_args",
-            &self.virtual_dispatch_args_pass,
-            &virtual_dispatch_args_bind_group,
-            virtual_dispatch_arg_groups,
+                timer: &mut timer,
+                virtual_dispatch_arg_groups,
+                virtual_next_call_params: &virtual_next_call_params_buf,
+                virtual_regalloc_params: &virtual_regalloc_params_buf,
+                text_scan_params: &text_scan_params_buf,
+                function_dispatch: &function_dispatch,
+                virtual_inst: &virtual_inst,
+                virtual_next_call_dispatch: &virtual_next_call,
+                virtual_regalloc: &virtual_regalloc,
+                selected_inst: &selected_inst,
+                selected_scan_block: &selected_scan_block,
+                text_word: &text_word,
+                elf_header_word: &elf_header_word,
+                virtual_dispatch_args: &virtual_dispatch_args_bind_group,
+                virtual_func_rows_init: &virtual_func_rows_init_bind_group,
+                virtual_func_first_row: &virtual_func_first_row_bind_group,
+                virtual_func_span_max: &virtual_func_span_max_bind_group,
+                virtual_regalloc_dispatch_args: &virtual_regalloc_dispatch_args_bind_group,
+                virtual_next_call_bind_groups: &virtual_next_call_bind_groups,
+                virtual_param_masks: &virtual_param_masks_bind_group,
+                virtual_liveness_init: &virtual_liveness_init_bind_group,
+                virtual_liveness: &virtual_liveness_bind_group,
+                virtual_spans_fixed_barrier: &virtual_spans_fixed_barrier_bind_group,
+                virtual_value_def_flags: &virtual_value_def_flags_bind_group,
+                virtual_value_def_scan_local: &virtual_value_def_scan_local_bind_group,
+                virtual_value_def_scan_block: &virtual_value_def_scan_block_bind_groups,
+                virtual_value_def_compact: &virtual_value_def_compact_bind_group,
+                virtual_regalloc_bind_group: &virtual_regalloc_bind_group,
+                select: &select_bind_group,
+                inst_size: &inst_size_bind_group,
+                text_scan_local: &text_scan_local_bind_group,
+                text_scan_block: &text_scan_block_bind_groups,
+                text_offsets: &text_offsets_bind_group,
+                output_dispatch_args: &output_dispatch_args_bind_group,
+                encode: &encode_bind_group,
+                elf_layout: &elf_layout_bind_group,
+                elf: &elf_bind_group,
+            },
         );
-        dispatch_x86_stage_indirect(
-            encoder,
-            "virtual_func_rows_init",
-            &self.virtual_func_rows_init_pass,
-            &virtual_func_rows_init_bind_group,
-            &active_function_dispatch_args_buf,
-        );
-        dispatch_x86_stage_indirect(
-            encoder,
-            "virtual_func_first_row",
-            &self.virtual_func_first_row_pass,
-            &virtual_func_first_row_bind_group,
-            &active_virtual_inst_dispatch_args_buf,
-        );
-        dispatch_x86_stage_indirect(
-            encoder,
-            "virtual_func_span_max",
-            &self.virtual_func_span_max_pass,
-            &virtual_func_span_max_bind_group,
-            &active_function_dispatch_args_buf,
-        );
-        dispatch_x86_stage(
-            encoder,
-            "virtual_regalloc_dispatch_args",
-            &self.virtual_regalloc_dispatch_args_pass,
-            &virtual_regalloc_dispatch_args_bind_group,
-            virtual_dispatch_arg_groups,
-        );
-        stamp_x86_timer(&mut timer, encoder, "x86.virtual_rows.done");
-        let virtual_next_call_indirect_offsets = (0..virtual_next_call_params_buf.len())
-            .map(|step_i| (step_i * 3 * std::mem::size_of::<u32>()) as u64)
-            .collect::<Vec<_>>();
-        let virtual_next_call_dynamic_offsets = (0..virtual_next_call_params_buf.len())
-            .map(|step_i| virtual_next_call_params_buf.dynamic_offset(step_i))
-            .collect::<Vec<_>>();
-        let virtual_next_call_bind_group_sequence = (0..virtual_next_call_params_buf.len())
-            .map(|step_i| &virtual_next_call_bind_groups[step_i & 1])
-            .collect::<Vec<_>>();
-        dispatch_compute_pass_indirect_offsets_with_bind_groups_and_dynamic_uniform_offsets(
-            encoder,
-            "virtual_next_calls",
-            "codegen.x86.virtual_next_calls",
-            &self.virtual_next_calls_pass,
-            &virtual_next_call_bind_group_sequence,
-            &active_virtual_next_call_dispatch_args_buf,
-            &virtual_next_call_indirect_offsets,
-            &virtual_next_call_dynamic_offsets,
-        );
-        stamp_x86_timer(&mut timer, encoder, "x86.virtual_next_calls.done");
-        dispatch_x86_stage_indirect(
-            encoder,
-            "virtual_param_masks",
-            &self.virtual_param_masks_pass,
-            &virtual_param_masks_bind_group,
-            &active_virtual_inst_dispatch_args_buf,
-        );
-        stamp_x86_timer(&mut timer, encoder, "x86.virtual_param_masks.done");
-        dispatch_x86_stages_indirect(
-            encoder,
-            &[
-                (
-                    "virtual_liveness_init",
-                    &self.virtual_liveness_init_pass,
-                    &virtual_liveness_init_bind_group,
-                ),
-                (
-                    "virtual_liveness",
-                    &self.virtual_liveness_pass,
-                    &virtual_liveness_bind_group,
-                ),
-            ],
-            &active_virtual_inst_dispatch_args_buf,
-        );
-        stamp_x86_timer(&mut timer, encoder, "x86.virtual_liveness.done");
-        dispatch_x86_stage_indirect(
-            encoder,
-            "virtual_spans_fixed_barrier",
-            &self.virtual_spans_fixed_barrier_pass,
-            &virtual_spans_fixed_barrier_bind_group,
-            &active_virtual_inst_dispatch_args_buf,
-        );
-        stamp_x86_timer(&mut timer, encoder, "x86.virtual_spans_fixed_barrier.done");
-        dispatch_x86_stage_indirect(
-            encoder,
-            "virtual_value_def_flags",
-            &self.virtual_value_def_flags_pass,
-            &virtual_value_def_flags_bind_group,
-            &active_selected_inst_dispatch_args_buf,
-        );
-        dispatch_x86_stage_indirect(
-            encoder,
-            "virtual_value_def_scan_local",
-            &self.node_inst_scan_local_pass,
-            &virtual_value_def_scan_local_bind_group,
-            &active_selected_inst_dispatch_args_buf,
-        );
-        dispatch_compute_pass_indirect_ping_pong_scan_steps(
-            encoder,
-            "virtual_value_def_scan_blocks",
-            "codegen.x86.virtual_value_def_scan_blocks",
-            &self.node_inst_scan_blocks_pass,
-            &virtual_value_def_scan_block_bind_groups,
-            &text_scan_params_buf,
-            &active_selected_scan_block_dispatch_args_buf,
-        );
-        dispatch_x86_stage_indirect(
-            encoder,
-            "virtual_value_def_compact",
-            &self.virtual_value_def_compact_pass,
-            &virtual_value_def_compact_bind_group,
-            &active_virtual_inst_dispatch_args_buf,
-        );
-        stamp_x86_timer(&mut timer, encoder, "x86.virtual_value_defs.done");
-        let virtual_regalloc_indirect_offsets = (0..virtual_regalloc_params_buf.len())
-            .map(|chunk_i| (chunk_i * 3 * std::mem::size_of::<u32>()) as u64)
-            .collect::<Vec<_>>();
-        let virtual_regalloc_dynamic_offsets = (0..virtual_regalloc_params_buf.len())
-            .map(|chunk_i| virtual_regalloc_params_buf.dynamic_offset(chunk_i))
-            .collect::<Vec<_>>();
-        dispatch_compute_pass_indirect_offsets_with_dynamic_uniform_offsets(
-            encoder,
-            "virtual_regalloc",
-            "codegen.x86.virtual_regalloc",
-            &self.virtual_regalloc_pass,
-            &virtual_regalloc_bind_group,
-            &active_virtual_regalloc_dispatch_args_buf,
-            &virtual_regalloc_indirect_offsets,
-            &virtual_regalloc_dynamic_offsets,
-        );
-        stamp_x86_timer(&mut timer, encoder, "x86.regalloc.done");
-
-        dispatch_compute_pass_indirect(
-            encoder,
-            "select",
-            "codegen.x86.select",
-            &self.select_pass,
-            &select_bind_group,
-            &active_virtual_inst_dispatch_args_buf,
-        );
-
-        dispatch_x86_stages_indirect(
-            encoder,
-            &[
-                ("inst_size", &self.inst_size_pass, &inst_size_bind_group),
-                (
-                    "text_scan_local",
-                    &self.text_scan_local_pass,
-                    &text_scan_local_bind_group,
-                ),
-            ],
-            &active_selected_inst_dispatch_args_buf,
-        );
-        dispatch_compute_pass_indirect_ping_pong_scan_steps(
-            encoder,
-            "text_scan_blocks",
-            "codegen.x86.text_scan_blocks",
-            &self.node_inst_scan_blocks_pass,
-            &text_scan_block_bind_groups,
-            &text_scan_params_buf,
-            &active_selected_scan_block_dispatch_args_buf,
-        );
-        dispatch_x86_stage_indirect(
-            encoder,
-            "text_offsets",
-            &self.text_offsets_pass,
-            &text_offsets_bind_group,
-            &active_selected_inst_dispatch_args_buf,
-        );
-        dispatch_x86_stage(
-            encoder,
-            "output_dispatch_args",
-            &self.output_dispatch_args_pass,
-            &output_dispatch_args_bind_group,
-            (1, 1),
-        );
-
-        dispatch_compute_pass_indirect(
-            encoder,
-            "encode",
-            "codegen.x86.encode",
-            &self.encode_pass,
-            &encode_bind_group,
-            &active_text_word_dispatch_args_buf,
-        );
-
-        let (layout_groups_x, layout_groups_y) = workgroup_grid_1d(1);
-        dispatch_x86_stages(
-            encoder,
-            &[("elf_layout", &self.elf_layout_pass, &elf_layout_bind_group)],
-            (layout_groups_x, layout_groups_y),
-        );
-
-        dispatch_compute_pass_indirect(
-            encoder,
-            "elf_write",
-            "codegen.x86.elf_write",
-            &self.elf_write_pass,
-            &elf_bind_group,
-            &active_elf_header_word_dispatch_args_buf,
-        );
-        stamp_x86_timer(&mut timer, encoder, "x86.emit.done");
         encoder.copy_buffer_to_buffer(&out_buf, 0, &output_readback, 0, output_readback_bytes);
         encoder.copy_buffer_to_buffer(&status_buf, 0, &output_readback, output_status_offset, 16);
-        if let Some(status_trace_readback) = &status_trace_readback {
-            let mut offset = 0u64;
-            for (buffer, words) in [
-                (hir_status_buf, 6),
-                (&active_hir_count_dispatch_args_buf, 4),
-                (&active_hir_plus_one_dispatch_args_buf, 4),
-                (&func_meta_buf, 8),
-                (&node_tree_status_buf, 4),
-                (&enum_record_status_buf, 4),
-                (&struct_record_status_buf, 4),
-                (&decl_layout_status_buf, 4),
-                (&node_inst_count_status_buf, 4),
-                (&node_inst_order_status_buf, 4),
-                (&node_inst_range_status_buf, 4),
-                (&node_inst_subtree_bounds_status_buf, 4),
-                (&node_inst_location_status_buf, 4),
-                (&node_inst_gen_input_status_buf, 4),
-                (&virtual_inst_status_buf, 4),
-                (&virtual_func_first_row_status_buf, 4),
-                (&virtual_next_call_status_buf, 4),
-                (&func_param_reg_mask_status_buf, 4),
-                (&virtual_liveness_status_buf, 4),
-                (&virtual_regalloc_status_buf, 4),
-                (&select_status_buf, 4),
-                (&size_status_buf, 4),
-                (&text_status_buf, 4),
-                (&encode_status_buf, 4),
-                (&layout_status_buf, 4),
-                (&status_buf, 4),
-            ] {
-                encoder.copy_buffer_to_buffer(
-                    buffer,
-                    0,
-                    status_trace_readback,
-                    offset * 4,
-                    words * 4,
-                );
-                offset += words;
-            }
-        }
+        let status_trace_readback = record_status_trace_readback(
+            device,
+            encoder,
+            StatusTraceSources {
+                hir_status: hir_status_buf,
+                hir_count: &hir_count,
+                hir_plus_one: &hir_plus_one,
+                func_meta: &func_meta_buf,
+                node_tree_status: &node_tree_status_buf,
+                enum_record_status: &enum_record_status_buf,
+                struct_record_status: &struct_record_status_buf,
+                decl_layout_status: &decl_layout_status_buf,
+                node_inst_count_status: &node_inst_count_status_buf,
+                node_inst_order_status: &node_inst_order_status_buf,
+                node_inst_range_status: &node_inst_range_status_buf,
+                node_inst_subtree_bounds_status: &node_inst_subtree_bounds_status_buf,
+                node_inst_location_status: &node_inst_location_status_buf,
+                node_inst_gen_input_status: &node_inst_gen_input_status_buf,
+                virtual_inst_status: &virtual_inst_status_buf,
+                virtual_func_first_row_status: &virtual_func_first_row_status_buf,
+                virtual_next_call_status: &virtual_next_call_status_buf,
+                func_param_reg_mask_status: &func_param_reg_mask_status_buf,
+                virtual_liveness_status: &virtual_liveness_status_buf,
+                virtual_regalloc_status: &virtual_regalloc_status_buf,
+                select_status: &select_status_buf,
+                size_status: &size_status_buf,
+                text_status: &text_status_buf,
+                encode_status: &encode_status_buf,
+                layout_status: &layout_status_buf,
+                status: &status_buf,
+            },
+        );
         host_timer.stamp("dispatch_and_readbacks_recorded");
 
-        Ok(include!("record_retained_expr.rs"))
+        macro_rules! retain_x86_buffers {
+            ($($buffer:expr),+ $(,)?) => {{
+                let mut buffers = Vec::<RetainedX86Buffer>::new();
+                $(buffers.push(RetainedX86Buffer::from($buffer));)+
+                buffers
+            }};
+        }
+
+        let mut retained_buffers = retain_x86_buffers![
+            params_buf,
+            hir_count,
+            hir_plus_one,
+            hir_scan_block,
+            node_order_scan,
+            node_order_scan_block,
+            function_dispatch,
+            virtual_inst,
+            virtual_next_call,
+            virtual_regalloc,
+            selected_inst,
+            selected_scan_block,
+            text_word,
+            elf_header_word,
+            func_meta_buf,
+            func_meta_uniform_buf,
+            node_tree_status_buf,
+            expr_resolved_final_buf,
+            node_func_buf,
+            func_owner_scan_local_prefix_buf,
+            func_owner_scan_block_sum_buf,
+            func_owner_scan_prefix_a_buf,
+            func_owner_scan_prefix_b_buf,
+            enum_type_record_buf,
+            enum_value_record_buf,
+            enum_record_status_buf,
+            match_record_buf,
+            match_arm_owner_buf,
+            match_return_node_buf,
+            match_pattern_owner_buf,
+            match_result_value_owner_buf,
+            match_pattern_node_owner_buf,
+            match_pattern_node_variant_buf,
+            match_pattern_node_payload_decl_buf,
+            match_pattern_first_use_node_buf,
+            enclosing_return_node_a_buf,
+            enclosing_return_node_b_buf,
+            enclosing_let_node_a_buf,
+            enclosing_let_node_b_buf,
+            struct_type_record_buf,
+            struct_access_record_buf,
+            struct_store_record_buf,
+            struct_record_status_buf,
+            decl_layout_record_buf,
+            decl_layout_status_buf,
+            decl_node_by_token_buf,
+            func_slot_by_index_buf,
+            call_record_buf,
+            call_type_record_buf,
+            call_record_status_buf,
+            const_value_record_buf,
+            const_value_status_buf,
+            const_value_status_uniform_buf,
+            param_reg_record_buf,
+            param_reg_status_buf,
+            param_reg_status_uniform_buf,
+            local_literal_record_buf,
+            local_literal_status_buf,
+            local_literal_status_uniform_buf,
+            node_inst_order_record_buf,
+            call_arg_lookup_record_buf,
+            intrinsic_call_status_buf,
+            call_abi_record_buf,
+            call_abi_status_buf,
+            call_abi_status_uniform_buf,
+            node_inst_same_end_link_a_buf,
+            node_inst_same_end_link_b_buf,
+            node_inst_count_status_buf,
+            node_inst_order_status_buf,
+            node_inst_scan_local_prefix_buf,
+            node_inst_range_start_buf,
+            node_inst_range_info_buf,
+            node_inst_range_status_buf,
+            node_inst_subtree_bounds_status_buf,
+            node_inst_location_status_buf,
+            node_inst_gen_input_status_buf,
+            virtual_inst_record_buf,
+            virtual_inst_args_buf,
+            virtual_inst_status_buf,
+            virtual_func_first_row_status_buf,
+            virtual_func_slot_buf,
+            virtual_live_start_buf,
+            virtual_live_end_buf,
+            virtual_liveness_status_buf,
+            virtual_next_call_a_buf,
+            virtual_next_call_b_buf,
+            virtual_next_call_status_buf,
+            func_param_reg_mask_status_buf,
+            virtual_value_def_flag_buf,
+            virtual_value_def_row_buf,
+            virtual_regalloc_param_rank_mask_buf,
+            virtual_phys_reg_buf,
+            virtual_call_live_reg_mask_buf,
+            virtual_regalloc_status_buf,
+            select_status_buf,
+            size_status_buf,
+            text_len_buf,
+            text_status_buf,
+            text_scan_block_sum_buf,
+            text_scan_prefix_a_buf,
+            text_scan_prefix_b_buf,
+            encode_status_buf,
+            elf_layout_buf,
+            layout_status_buf,
+            status_buf,
+        ];
+        if let Some(buffer) = match_pattern_first_variant_node_storage_buf {
+            retained_buffers.push(RetainedX86Buffer::from(buffer));
+        }
+        if let Some(buffer) = match_pattern_first_payload_node_storage_buf {
+            retained_buffers.push(RetainedX86Buffer::from(buffer));
+        }
+        if let Some(buffer) = empty_param_record_buf {
+            retained_buffers.push(RetainedX86Buffer::from(buffer));
+        }
+        retained_buffers.push(RetainedX86Buffer::from(
+            func_owner_scan_params_buf.into_buffer(),
+        ));
+        retained_buffers.push(RetainedX86Buffer::from(
+            node_inst_scan_params_buf.into_buffer(),
+        ));
+        retained_buffers.push(RetainedX86Buffer::from(text_scan_params_buf.into_buffer()));
+        retained_buffers.push(RetainedX86Buffer::from(
+            virtual_next_call_params_buf.into_buffer(),
+        ));
+        retained_buffers.push(RetainedX86Buffer::from(
+            virtual_regalloc_params_buf.into_buffer(),
+        ));
+        host_timer.stamp("retained_buffers_collected");
+
+        let mut retained_bind_groups = vec![
+            active_scan_dispatch_args_bind_group,
+            node_inst_scan_input_clear_bind_group,
+            node_order_dispatch_args_bind_group,
+            virtual_dispatch_args_bind_group,
+            output_dispatch_args_bind_group,
+            node_tree_info_bind_group,
+            func_bind_group,
+            func_owner_scan_local_bind_group,
+            func_assign_nodes_bind_group,
+            expr_resolve_init_bind_group,
+            enum_records_bind_group,
+            match_records_bind_group,
+            match_pattern_records_bind_group,
+            enclosing_return_init_bind_group,
+            enclosing_let_init_bind_group,
+            enclosing_stmt_init_bind_group,
+            return_match_records_bind_group,
+            match_result_owner_init_bind_group,
+            match_ownership_bind_group,
+            match_pattern_owner_init_bind_group,
+            match_pattern_finalize_bind_group,
+            struct_records_bind_group,
+            array_records_bind_group,
+            expr_semantic_type_init_bind_group,
+            decl_layout_bind_group,
+            decl_widths_bind_group,
+            const_values_bind_group,
+            param_regs_bind_group,
+            local_literals_bind_group,
+            call_records_bind_group,
+            call_callee_owner_init_bind_group,
+            call_arg_values_bind_group,
+            intrinsic_calls_bind_group,
+            call_abi_bind_group,
+            node_inst_same_end_rank_init_bind_group,
+            node_inst_end_counts_bind_group,
+            node_inst_counts_bind_group,
+            enclosing_loop_init_bind_group,
+            node_inst_scan_local_bind_group,
+            node_inst_prefix_scan_bind_group,
+            node_inst_order_bind_group,
+            node_inst_subtree_bounds_bind_group,
+            node_inst_locations_bind_group,
+            node_inst_gen_inputs_bind_group,
+            virtual_inst_clear_dispatch_args_bind_group,
+            virtual_inst_clear_bind_group,
+            node_inst_gen_bind_group,
+            aggregate_literal_return_copy_bind_group,
+            node_inst_gen_aggregate_copy_bind_group,
+            virtual_func_rows_init_bind_group,
+            virtual_func_first_row_bind_group,
+            virtual_func_span_max_bind_group,
+            virtual_regalloc_dispatch_args_bind_group,
+            virtual_regalloc_bind_group,
+            virtual_spans_fixed_barrier_bind_group,
+            virtual_param_masks_bind_group,
+            virtual_liveness_init_bind_group,
+            virtual_liveness_bind_group,
+            select_bind_group,
+            inst_size_bind_group,
+            text_scan_local_bind_group,
+            text_offsets_bind_group,
+            encode_bind_group,
+            elf_layout_bind_group,
+            elf_bind_group,
+        ];
+        retained_bind_groups.extend(func_owner_scan_block_bind_groups);
+        retained_bind_groups.extend(func_assign_nodes_step_bind_groups);
+        retained_bind_groups.extend(expr_resolve_step_bind_groups);
+        retained_bind_groups.extend(enclosing_return_step_bind_groups);
+        retained_bind_groups.extend(enclosing_let_step_bind_groups);
+        retained_bind_groups.extend(match_result_owner_step_bind_groups);
+        retained_bind_groups.extend(enclosing_stmt_step_bind_groups);
+        retained_bind_groups.extend(call_callee_owner_step_bind_groups);
+        retained_bind_groups.extend(match_pattern_owner_step_bind_groups);
+        retained_bind_groups.extend(node_inst_same_end_rank_step_bind_groups);
+        retained_bind_groups.extend(expr_semantic_type_step_bind_groups);
+        retained_bind_groups.extend(enclosing_loop_step_bind_groups);
+        retained_bind_groups.extend(node_inst_scan_block_bind_groups);
+        retained_bind_groups.extend(virtual_next_call_bind_groups);
+        retained_bind_groups.extend(text_scan_block_bind_groups);
+        host_timer.stamp("retained_bind_groups_collected");
+
+        Ok(RetainedRecording::new(
+            output_capacity,
+            output_status_offset,
+            retained_buffers,
+            retained_bind_groups,
+            out_buf,
+            output_readback,
+            status_trace_readback,
+        )
+        .into_recorded(&mut host_timer))
     }
 }

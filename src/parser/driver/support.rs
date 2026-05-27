@@ -1,4 +1,5 @@
 use super::*;
+use crate::gpu::buffers::LaniusBuffer;
 
 pub(super) fn bool_from_env(name: &str, default_true: bool) -> bool {
     if default_true {

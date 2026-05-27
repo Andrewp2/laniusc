@@ -35,7 +35,7 @@ static TEMP_ARTIFACT_COUNTER: AtomicU64 = AtomicU64::new(0);
 // libtest runs cases concurrently; start GPU timeouts after queued work gets the device.
 static GPU_TEST_LOCK: Mutex<()> = Mutex::new(());
 const DEFAULT_GPU_TEST_TIMEOUT_MS: u64 = 30_000;
-// The default codegen coverage now includes small source-pack GPU fixtures.
+// The default codegen coverage includes small source-pack programs.
 // Pipeline setup can exceed a couple of seconds on cold runs, so keep this
 // below the outer command watchdog while avoiding false timeout failures.
 const DEFAULT_GPU_CODEGEN_TEST_TIMEOUT_MS: u64 = 30_000;

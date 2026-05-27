@@ -1,17 +1,17 @@
 use super::*;
 
-pub(in crate::compiler) fn prepare_library_metadata_pages<I, PI, DI, P>(
+pub(in crate::compiler) fn prepare_metadata<I, PI, DI, P>(
     libraries: I,
-    store: &SourcePackFilesystemArtifactStore,
+    store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
-) -> Result<SourcePackFilesystemLibraryMetadataPrepareResult, CompileError>
+) -> Result<FilesystemLibraryMetadataPrepareResult, CompileError>
 where
     I: IntoIterator<Item = ExplicitSourceLibraryPathDependencyStream<PI, DI>>,
     PI: IntoIterator<Item = P>,
     DI: IntoIterator<Item = u32>,
     P: AsRef<Path>,
 {
-    let step = prepare_library_metadata_pages_chunk(
+    let step = prepare_metadata_chunk(
         libraries,
         store,
         target,
@@ -19,15 +19,15 @@ where
     )?;
     if !step.complete {
         return Err(CompileError::GpuFrontend(format!(
-            "source-pack metadata prepare did not complete within {SOURCE_PACK_LIBRARY_METADATA_FULL_PREPARE_DEFAULT_LIBRARY_LIMIT} bounded library records; use prepare_ordered_explicit_source_library_path_dependency_streams_filesystem_metadata_chunk_for_target or the progress-based metadata chunk API to continue persisted preparation"
+            "source-pack metadata prepare did not complete within {SOURCE_PACK_LIBRARY_METADATA_FULL_PREPARE_DEFAULT_LIBRARY_LIMIT} bounded library records; use prepare_metadata_chunk_for_target or the progress-based metadata chunk API to continue persisted preparation"
         )));
     }
     let library_partition_index_path = step.library_partition_index_path.ok_or_else(|| {
-        source_pack_library_partition_contract_error(
+        library_partition_contract_error(
             "complete source-pack metadata prepare did not write a compact library partition index",
         )
     })?;
-    Ok(SourcePackFilesystemLibraryMetadataPrepareResult {
+    Ok(FilesystemLibraryMetadataPrepareResult {
         target: step.target,
         source_file_count: step.source_file_count,
         source_byte_count: step.source_byte_count,
@@ -39,12 +39,12 @@ where
     })
 }
 
-pub(in crate::compiler) fn prepare_library_metadata_pages_chunk<I, PI, DI, P>(
+pub(in crate::compiler) fn prepare_metadata_chunk<I, PI, DI, P>(
     libraries: I,
-    store: &SourcePackFilesystemArtifactStore,
+    store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
     max_new_libraries: Option<usize>,
-) -> Result<SourcePackFilesystemLibraryMetadataPrepareStepResult, CompileError>
+) -> Result<FilesystemLibraryMetadataPrepareStepResult, CompileError>
 where
     I: IntoIterator<Item = ExplicitSourceLibraryPathDependencyStream<PI, DI>>,
     PI: IntoIterator<Item = P>,
@@ -56,7 +56,7 @@ where
         .is_file()
     {
         let index = store.load_library_partition_index_for_target(target)?;
-        return Ok(SourcePackFilesystemLibraryMetadataPrepareStepResult {
+        return Ok(FilesystemLibraryMetadataPrepareStepResult {
             target,
             complete: true,
             source_file_count: index.source_file_count,
@@ -99,7 +99,7 @@ where
             let locator =
                 store.load_library_partition_locator_page_for_target(target, library_id)?;
             if locator.partition_index != partition_count {
-                return Err(source_pack_library_partition_contract_error(format!(
+                return Err(library_partition_contract_error(format!(
                     "cannot resume source-pack metadata from non-prefix library {library_id}: locator points to partition {} but next resumable partition is {partition_count}",
                     locator.partition_index
                 )));
@@ -107,24 +107,24 @@ where
             let partition =
                 store.load_library_partition_for_target(target, locator.partition_index)?;
             if partition.library_id != library_id {
-                return Err(source_pack_library_partition_contract_error(format!(
+                return Err(library_partition_contract_error(format!(
                     "source-pack metadata locator for library {library_id} points to partition {} for library {}",
                     locator.partition_index, partition.library_id
                 )));
             }
             if partition.source_file_count != partition_source_file_count {
-                return Err(source_pack_library_partition_contract_error(format!(
+                return Err(library_partition_contract_error(format!(
                     "source-pack metadata for library {library_id} stored {} source files but manifest declares {partition_source_file_count}",
                     partition.source_file_count
                 )));
             }
             if partition.dependency_library_count != dependency_library_count {
-                return Err(source_pack_library_partition_contract_error(format!(
+                return Err(library_partition_contract_error(format!(
                     "source-pack metadata for library {library_id} stored {} dependencies but manifest declares {dependency_library_count}",
                     partition.dependency_library_count
                 )));
             }
-            source_pack_verify_stored_library_dependency_pages_match_ids(
+            verify_stored_dependency_ids(
                 store,
                 &partition,
                 dependency_library_count,
@@ -133,21 +133,21 @@ where
             source_byte_count = source_byte_count
                 .checked_add(partition.source_byte_count)
                 .ok_or_else(|| {
-                    source_pack_library_partition_contract_error(format!(
+                    library_partition_contract_error(format!(
                         "library {library_id} source byte count overflows while resuming metadata"
                     ))
                 })?;
             source_line_count = source_line_count
                 .checked_add(partition.source_line_count)
                 .ok_or_else(|| {
-                    source_pack_library_partition_contract_error(format!(
+                    library_partition_contract_error(format!(
                         "library {library_id} source line count overflows while resuming metadata"
                     ))
                 })?;
             source_file_count = source_file_count
                 .checked_add(partition.source_file_count)
                 .ok_or_else(|| {
-                    source_pack_library_partition_contract_error(format!(
+                    library_partition_contract_error(format!(
                         "library {library_id} global source file count overflows while resuming metadata"
                     ))
                 })?;
@@ -160,46 +160,44 @@ where
             break;
         }
         if max_new_libraries.is_some() {
-            source_pack_validate_metadata_chunk_new_library_counts(
+            validate_metadata_chunk_limits(
                 library_id,
                 partition_source_file_count,
                 dependency_library_count,
             )?;
         }
-        let (dependency_library_count, dependency_page_count) =
-            store_source_pack_library_dependency_pages_from_ids(
-                store,
-                target,
-                partition_count,
-                library_id,
-                dependency_library_count,
-                declared_dependency_library_ids,
-            )?;
+        let (dependency_library_count, dependency_page_count) = store_library_dependencies(
+            store,
+            target,
+            partition_count,
+            library_id,
+            dependency_library_count,
+            declared_dependency_library_ids,
+        )?;
 
         let first_source_index = source_file_count;
-        let partition_source_totals =
-            store_source_pack_library_source_file_record_pages_from_paths(
-                store,
-                target,
-                partition_count,
-                library_id,
-                first_source_index,
-                partition_source_file_count,
-                paths,
-            )?;
+        let partition_source_totals = store_source_file_records(
+            store,
+            target,
+            partition_count,
+            library_id,
+            first_source_index,
+            partition_source_file_count,
+            paths,
+        )?;
         let partition_source_byte_count = partition_source_totals.source_byte_count;
         let partition_source_line_count = partition_source_totals.source_line_count;
         source_byte_count = source_byte_count
             .checked_add(partition_source_byte_count)
             .ok_or_else(|| {
-                source_pack_library_partition_contract_error(format!(
+                library_partition_contract_error(format!(
                     "library {library_id} source byte count overflows"
                 ))
             })?;
         source_line_count = source_line_count
             .checked_add(partition_source_line_count)
             .ok_or_else(|| {
-                source_pack_library_partition_contract_error(format!(
+                library_partition_contract_error(format!(
                     "library {library_id} source line count overflows"
                 ))
             })?;
@@ -216,14 +214,9 @@ where
             dependency_library_count,
             dependency_page_count,
         };
-        validate_source_pack_library_partition(
-            &partition,
-            target,
-            Some(partition.partition_index),
-        )?;
+        validate_library_partition(&partition, target, Some(partition.partition_index))?;
         store.store_library_partition_page(&partition)?;
-        let compact_source_file_page =
-            source_pack_compact_library_source_file_page_from_partition(&partition)?;
+        let compact_source_file_page = compact_source_file_page(&partition)?;
         store.store_library_source_file_page(&compact_source_file_page)?;
         store.store_library_partition_locator_page(&SourcePackLibraryPartitionLocatorPage {
             version: SOURCE_PACK_LIBRARY_PARTITION_LOCATOR_PAGE_VERSION,
@@ -234,7 +227,7 @@ where
         source_file_count = source_file_count
             .checked_add(partition.source_file_count)
             .ok_or_else(|| {
-                source_pack_library_partition_contract_error(format!(
+                library_partition_contract_error(format!(
                     "library {library_id} global source file count overflows"
                 ))
             })?;
@@ -244,7 +237,7 @@ where
     }
 
     if !complete {
-        return Ok(SourcePackFilesystemLibraryMetadataPrepareStepResult {
+        return Ok(FilesystemLibraryMetadataPrepareStepResult {
             target,
             complete: false,
             source_file_count,
@@ -266,10 +259,10 @@ where
         source_byte_count,
         source_line_count,
     };
-    validate_source_pack_library_partition_index(&index, target)?;
+    validate_library_partition_index(&index, target)?;
     let library_partition_index_path = store.store_library_partition_compact_index(&index)?;
 
-    Ok(SourcePackFilesystemLibraryMetadataPrepareStepResult {
+    Ok(FilesystemLibraryMetadataPrepareStepResult {
         target,
         complete: true,
         source_file_count,
@@ -283,10 +276,10 @@ where
     })
 }
 
-pub(in crate::compiler) fn source_pack_empty_library_metadata_prepare_progress(
+pub(in crate::compiler) fn empty_metadata_prepare_progress(
     target: SourcePackArtifactTarget,
-) -> SourcePackFilesystemLibraryMetadataPrepareProgress {
-    SourcePackFilesystemLibraryMetadataPrepareProgress {
+) -> FilesystemLibraryMetadataPrepareProgress {
+    FilesystemLibraryMetadataPrepareProgress {
         version: SOURCE_PACK_LIBRARY_METADATA_PREPARE_PROGRESS_VERSION,
         target,
         source_file_count: 0,
@@ -298,21 +291,21 @@ pub(in crate::compiler) fn source_pack_empty_library_metadata_prepare_progress(
     }
 }
 
-pub(in crate::compiler) fn source_pack_load_library_metadata_prepare_progress_or_default(
-    store: &SourcePackFilesystemArtifactStore,
+pub(in crate::compiler) fn load_metadata_prepare_progress_or_default(
+    store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
-) -> Result<SourcePackFilesystemLibraryMetadataPrepareProgress, CompileError> {
+) -> Result<FilesystemLibraryMetadataPrepareProgress, CompileError> {
     if store
         .library_metadata_prepare_progress_path_for_target(target)
         .is_file()
     {
         store.load_library_metadata_prepare_progress_for_target(target)
     } else {
-        Ok(source_pack_empty_library_metadata_prepare_progress(target))
+        Ok(empty_metadata_prepare_progress(target))
     }
 }
 
-pub(in crate::compiler) fn source_pack_validate_metadata_chunk_new_library_counts(
+pub(in crate::compiler) fn validate_metadata_chunk_limits(
     library_id: u32,
     source_file_count: usize,
     dependency_library_count: usize,
@@ -330,13 +323,13 @@ pub(in crate::compiler) fn source_pack_validate_metadata_chunk_new_library_count
     Ok(())
 }
 
-pub(in crate::compiler) fn resume_library_metadata_pages_chunk<I, PI, DI, P>(
+pub(in crate::compiler) fn resume_metadata_chunk<I, PI, DI, P>(
     libraries: I,
-    store: &SourcePackFilesystemArtifactStore,
+    store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
     max_new_libraries: usize,
     manifest_complete_after_input: bool,
-) -> Result<SourcePackFilesystemLibraryMetadataPrepareStepResult, CompileError>
+) -> Result<FilesystemLibraryMetadataPrepareStepResult, CompileError>
 where
     I: IntoIterator<Item = ExplicitSourceLibraryPathDependencyStream<PI, DI>>,
     PI: IntoIterator<Item = P>,
@@ -348,7 +341,7 @@ where
         .is_file()
     {
         let index = store.load_library_partition_index_for_target(target)?;
-        return Ok(SourcePackFilesystemLibraryMetadataPrepareStepResult {
+        return Ok(FilesystemLibraryMetadataPrepareStepResult {
             target,
             complete: true,
             source_file_count: index.source_file_count,
@@ -364,7 +357,7 @@ where
         });
     }
 
-    let progress = source_pack_load_library_metadata_prepare_progress_or_default(store, target)?;
+    let progress = load_metadata_prepare_progress_or_default(store, target)?;
     let mut partition_count = progress.library_partition_count;
     let mut source_file_count = progress.source_file_count;
     let mut source_byte_count = progress.source_byte_count;
@@ -394,50 +387,48 @@ where
             .library_partition_locator_page_path_for_target(target, library_id)
             .is_file()
         {
-            return Err(source_pack_library_partition_contract_error(format!(
+            return Err(library_partition_contract_error(format!(
                 "resumable source-pack metadata stream started at already persisted library {library_id}; expected next partition {partition_count}"
             )));
         }
-        source_pack_validate_metadata_chunk_new_library_counts(
+        validate_metadata_chunk_limits(
             library_id,
             partition_source_file_count,
             dependency_library_count,
         )?;
 
-        let (dependency_library_count, dependency_page_count) =
-            store_source_pack_library_dependency_pages_from_ids(
-                store,
-                target,
-                partition_count,
-                library_id,
-                dependency_library_count,
-                declared_dependency_library_ids,
-            )?;
+        let (dependency_library_count, dependency_page_count) = store_library_dependencies(
+            store,
+            target,
+            partition_count,
+            library_id,
+            dependency_library_count,
+            declared_dependency_library_ids,
+        )?;
 
         let first_source_index = source_file_count;
-        let partition_source_totals =
-            store_source_pack_library_source_file_record_pages_from_paths(
-                store,
-                target,
-                partition_count,
-                library_id,
-                first_source_index,
-                partition_source_file_count,
-                paths,
-            )?;
+        let partition_source_totals = store_source_file_records(
+            store,
+            target,
+            partition_count,
+            library_id,
+            first_source_index,
+            partition_source_file_count,
+            paths,
+        )?;
         let partition_source_byte_count = partition_source_totals.source_byte_count;
         let partition_source_line_count = partition_source_totals.source_line_count;
         source_byte_count = source_byte_count
             .checked_add(partition_source_byte_count)
             .ok_or_else(|| {
-                source_pack_library_partition_contract_error(format!(
+                library_partition_contract_error(format!(
                     "library {library_id} source byte count overflows"
                 ))
             })?;
         source_line_count = source_line_count
             .checked_add(partition_source_line_count)
             .ok_or_else(|| {
-                source_pack_library_partition_contract_error(format!(
+                library_partition_contract_error(format!(
                     "library {library_id} source line count overflows"
                 ))
             })?;
@@ -454,14 +445,9 @@ where
             dependency_library_count,
             dependency_page_count,
         };
-        validate_source_pack_library_partition(
-            &partition,
-            target,
-            Some(partition.partition_index),
-        )?;
+        validate_library_partition(&partition, target, Some(partition.partition_index))?;
         store.store_library_partition_page(&partition)?;
-        let compact_source_file_page =
-            source_pack_compact_library_source_file_page_from_partition(&partition)?;
+        let compact_source_file_page = compact_source_file_page(&partition)?;
         store.store_library_source_file_page(&compact_source_file_page)?;
         store.store_library_partition_locator_page(&SourcePackLibraryPartitionLocatorPage {
             version: SOURCE_PACK_LIBRARY_PARTITION_LOCATOR_PAGE_VERSION,
@@ -472,7 +458,7 @@ where
         source_file_count = source_file_count
             .checked_add(partition.source_file_count)
             .ok_or_else(|| {
-                source_pack_library_partition_contract_error(format!(
+                library_partition_contract_error(format!(
                     "library {library_id} global source file count overflows"
                 ))
             })?;
@@ -482,7 +468,7 @@ where
     }
 
     if !complete {
-        let progress = SourcePackFilesystemLibraryMetadataPrepareProgress {
+        let progress = FilesystemLibraryMetadataPrepareProgress {
             version: SOURCE_PACK_LIBRARY_METADATA_PREPARE_PROGRESS_VERSION,
             target,
             source_file_count,
@@ -493,7 +479,7 @@ where
             library_source_file_page_count,
         };
         store.store_library_metadata_prepare_progress(&progress)?;
-        return Ok(SourcePackFilesystemLibraryMetadataPrepareStepResult {
+        return Ok(FilesystemLibraryMetadataPrepareStepResult {
             target,
             complete: false,
             source_file_count,
@@ -515,10 +501,10 @@ where
         source_byte_count,
         source_line_count,
     };
-    validate_source_pack_library_partition_index(&index, target)?;
+    validate_library_partition_index(&index, target)?;
     let library_partition_index_path = store.store_library_partition_compact_index(&index)?;
 
-    Ok(SourcePackFilesystemLibraryMetadataPrepareStepResult {
+    Ok(FilesystemLibraryMetadataPrepareStepResult {
         target,
         complete: true,
         source_file_count,
@@ -532,8 +518,8 @@ where
     })
 }
 
-pub(in crate::compiler) fn source_pack_verify_stored_library_dependency_pages_match_ids<I>(
-    store: &SourcePackFilesystemArtifactStore,
+pub(in crate::compiler) fn verify_stored_dependency_ids<I>(
+    store: &FilesystemArtifactStore,
     partition: &SourcePackLibraryPartition,
     expected_dependency_library_count: usize,
     dependency_library_ids: I,
@@ -541,11 +527,7 @@ pub(in crate::compiler) fn source_pack_verify_stored_library_dependency_pages_ma
 where
     I: IntoIterator<Item = u32>,
 {
-    validate_source_pack_library_partition(
-        partition,
-        partition.target,
-        Some(partition.partition_index),
-    )?;
+    validate_library_partition(partition, partition.target, Some(partition.partition_index))?;
 
     let stored_dependency_count = if partition.dependency_library_ids.is_empty() {
         partition.dependency_library_count
@@ -553,7 +535,7 @@ where
         partition.dependency_library_ids.len()
     };
     if stored_dependency_count != expected_dependency_library_count {
-        return Err(source_pack_library_partition_contract_error(format!(
+        return Err(library_partition_contract_error(format!(
             "source-pack metadata for library {} stored {} dependencies but manifest declares {expected_dependency_library_count}",
             partition.library_id, stored_dependency_count
         )));
@@ -564,7 +546,7 @@ where
     let mut dependency_position = 0usize;
 
     for &stored_dependency_library_id in &partition.dependency_library_ids {
-        source_pack_verify_next_stored_library_dependency_id(
+        verify_next_stored_dependency_id(
             partition,
             &mut expected_dependency_library_ids,
             &mut previous_expected_dependency_library_id,
@@ -581,7 +563,7 @@ where
             page_index,
         )?;
         if dependency_page.first_dependency_position != dependency_position {
-            return Err(source_pack_library_partition_contract_error(format!(
+            return Err(library_partition_contract_error(format!(
                 "partition {} dependency page {} starts at {} but loaded {} dependencies",
                 partition.partition_index,
                 page_index,
@@ -590,7 +572,7 @@ where
             )));
         }
         for stored_dependency_library_id in dependency_page.dependency_library_ids {
-            source_pack_verify_next_stored_library_dependency_id(
+            verify_next_stored_dependency_id(
                 partition,
                 &mut expected_dependency_library_ids,
                 &mut previous_expected_dependency_library_id,
@@ -602,13 +584,13 @@ where
     }
 
     if let Some(extra_dependency_library_id) = expected_dependency_library_ids.next() {
-        return Err(source_pack_library_partition_contract_error(format!(
+        return Err(library_partition_contract_error(format!(
             "source-pack metadata for library {} manifest declares extra dependency {} after {} stored dependencies",
             partition.library_id, extra_dependency_library_id, dependency_position
         )));
     }
     if dependency_position != expected_dependency_library_count {
-        return Err(source_pack_library_partition_contract_error(format!(
+        return Err(library_partition_contract_error(format!(
             "source-pack metadata for library {} loaded {} dependencies but manifest declares {expected_dependency_library_count}",
             partition.library_id, dependency_position
         )));
@@ -616,7 +598,7 @@ where
     Ok(())
 }
 
-pub(in crate::compiler) fn source_pack_verify_next_stored_library_dependency_id<I>(
+pub(in crate::compiler) fn verify_next_stored_dependency_id<I>(
     partition: &SourcePackLibraryPartition,
     expected_dependency_library_ids: &mut I,
     previous_expected_dependency_library_id: &mut Option<u32>,
@@ -627,7 +609,7 @@ where
     I: Iterator<Item = u32>,
 {
     let expected_dependency_library_id = expected_dependency_library_ids.next().ok_or_else(|| {
-        source_pack_library_partition_contract_error(format!(
+        library_partition_contract_error(format!(
             "source-pack metadata for library {} stores dependency {} at position {} but manifest ended early",
             partition.library_id, stored_dependency_library_id, dependency_position
         ))
@@ -650,7 +632,7 @@ where
         )));
     }
     if stored_dependency_library_id != expected_dependency_library_id {
-        return Err(source_pack_library_partition_contract_error(format!(
+        return Err(library_partition_contract_error(format!(
             "source-pack metadata for library {} stored dependency {} at position {} but manifest declares {}",
             partition.library_id,
             stored_dependency_library_id,

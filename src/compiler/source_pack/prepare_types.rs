@@ -1,7 +1,7 @@
 use super::*;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemArtifactPrepareResult {
+pub struct PrepareResult {
     pub target: SourcePackArtifactTarget,
     pub artifact_root: PathBuf,
     pub source_file_count: usize,
@@ -37,7 +37,7 @@ pub struct SourcePackFilesystemArtifactPrepareResult {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SourcePackFilesystemArtifactBuildPrepareStage {
+pub enum BuildPrepareStage {
     LibrarySchedule,
     ArtifactRefs,
     JobBatches,
@@ -55,17 +55,17 @@ pub enum SourcePackFilesystemArtifactBuildPrepareStage {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemArtifactBuildPrepareStepResult {
+pub struct BuildPrepareStepResult {
     pub target: SourcePackArtifactTarget,
     pub complete: bool,
-    pub stage: SourcePackFilesystemArtifactBuildPrepareStage,
-    pub next_stage: SourcePackFilesystemArtifactBuildPrepareStage,
+    pub stage: BuildPrepareStage,
+    pub next_stage: BuildPrepareStage,
     pub new_item_count: usize,
-    pub prepared: Option<SourcePackFilesystemArtifactPrepareResult>,
+    pub prepared: Option<PrepareResult>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemPreparedArtifactBuildSummary {
+pub struct PreparedBuildSummary {
     pub target: SourcePackArtifactTarget,
     pub artifact_root: PathBuf,
     pub source_file_count: usize,
@@ -85,16 +85,16 @@ pub struct SourcePackFilesystemPreparedArtifactBuildSummary {
     pub final_output_key: String,
     pub work_queue_item_count: usize,
     pub work_queue_progress_page_count: usize,
-    pub progress: SourcePackFilesystemWorkQueueProgressSnapshot,
+    pub progress: FilesystemWorkQueueProgressSnapshot,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemPreparedArtifactBuild {
+pub struct PreparedBuild {
     pub(in crate::compiler) artifact_root: PathBuf,
     pub(in crate::compiler) target: SourcePackArtifactTarget,
 }
 
-impl SourcePackFilesystemPreparedArtifactBuild {
+impl PreparedBuild {
     pub fn new(artifact_root: impl Into<PathBuf>, target: SourcePackArtifactTarget) -> Self {
         Self {
             artifact_root: artifact_root.into(),
@@ -117,8 +117,8 @@ impl SourcePackFilesystemPreparedArtifactBuild {
     pub fn bounded_summary(
         &self,
         max_ready_items: usize,
-    ) -> Result<SourcePackFilesystemPreparedArtifactBuildSummary, CompileError> {
-        let store = SourcePackFilesystemArtifactStore::new(&self.artifact_root);
+    ) -> Result<PreparedBuildSummary, CompileError> {
+        let store = FilesystemArtifactStore::new(&self.artifact_root);
         let library_partitions = store.load_library_partition_index_for_target(self.target)?;
         let schedule = store.load_library_schedule_index_for_target(self.target)?;
         let job_batches = store.load_build_job_batch_page_index_for_target(self.target)?;
@@ -130,7 +130,7 @@ impl SourcePackFilesystemPreparedArtifactBuild {
         let progress = self.work_queue_progress_snapshot(max_ready_items)?;
 
         if library_partitions.partition_count != schedule.partition_count {
-            return Err(source_pack_library_partition_contract_error(format!(
+            return Err(library_partition_contract_error(format!(
                 "prepared source-pack summary partition count mismatch: library index {} schedule {}",
                 library_partitions.partition_count, schedule.partition_count
             )));
@@ -138,19 +138,19 @@ impl SourcePackFilesystemPreparedArtifactBuild {
         if schedule.job_count != job_batches.scheduled_job_count
             || schedule.job_count != artifact_shards.job_count
         {
-            return Err(source_pack_library_partition_contract_error(format!(
+            return Err(library_partition_contract_error(format!(
                 "prepared source-pack summary job count mismatch: schedule {} job batches {} shards {}",
                 schedule.job_count, job_batches.scheduled_job_count, artifact_shards.job_count
             )));
         }
         if job_batches.batch_count != artifact_shards.job_batch_count {
-            return Err(source_pack_artifact_shard_contract_error(format!(
+            return Err(artifact_shard_contract_error(format!(
                 "prepared source-pack summary batch count mismatch: job batches {} shards {}",
                 job_batches.batch_count, artifact_shards.job_batch_count
             )));
         }
         if artifact_refs.artifact_count != artifact_shards.artifact_count {
-            return Err(source_pack_artifact_shard_contract_error(format!(
+            return Err(artifact_shard_contract_error(format!(
                 "prepared source-pack summary artifact count mismatch: artifact refs {} shards {}",
                 artifact_refs.artifact_count, artifact_shards.artifact_count
             )));
@@ -159,7 +159,7 @@ impl SourcePackFilesystemPreparedArtifactBuild {
             || library_partitions.source_byte_count != artifact_refs.total_source_byte_count
             || library_partitions.source_line_count != artifact_refs.total_source_line_count
         {
-            return Err(source_pack_artifact_shard_contract_error(format!(
+            return Err(artifact_shard_contract_error(format!(
                 "prepared source-pack summary source totals mismatch: library index files/bytes/lines {}/{}/{} artifact refs {}/{}/{}",
                 library_partitions.source_file_count,
                 library_partitions.source_byte_count,
@@ -170,13 +170,13 @@ impl SourcePackFilesystemPreparedArtifactBuild {
             )));
         }
         if progress_index.work_item_count != progress.work_item_count {
-            return Err(source_pack_library_partition_contract_error(format!(
+            return Err(library_partition_contract_error(format!(
                 "prepared source-pack summary work item count mismatch: progress index {} snapshot {}",
                 progress_index.work_item_count, progress.work_item_count
             )));
         }
 
-        Ok(SourcePackFilesystemPreparedArtifactBuildSummary {
+        Ok(PreparedBuildSummary {
             target: self.target,
             artifact_root: self.artifact_root.clone(),
             source_file_count: library_partitions.source_file_count,
@@ -207,16 +207,16 @@ impl SourcePackFilesystemPreparedArtifactBuild {
         lease_expires_unix_nanos: Option<u128>,
         max_ready_items: usize,
         executor: &mut E,
-    ) -> Result<SourcePackFilesystemWorkQueueWorkerRunExecutionResult, CompileError>
+    ) -> Result<FilesystemWorkQueueWorkerRunExecutionResult, CompileError>
     where
-        E: SourcePackPathPagedHierarchicalLinkExecutor<
-                LibraryInterfaceArtifact = SourcePackFilesystemArtifactPath,
-                CodegenObjectArtifact = SourcePackFilesystemArtifactPath,
-                LinkedOutputArtifact = SourcePackFilesystemArtifactPath,
-                PartialLinkArtifact = SourcePackFilesystemArtifactPath,
+        E: PagedHierarchicalLinkExecutor<
+                LibraryInterfaceArtifact = ArtifactPath,
+                CodegenObjectArtifact = ArtifactPath,
+                LinkedOutputArtifact = ArtifactPath,
+                PartialLinkArtifact = ArtifactPath,
             >,
     {
-        execute_source_pack_filesystem_work_queue_worker_run_with_path_artifacts_for_target(
+        run_path_work_queue(
             &self.artifact_root,
             self.target,
             worker_id,
@@ -233,22 +233,22 @@ impl SourcePackFilesystemPreparedArtifactBuild {
         lease_expires_unix_nanos: Option<u128>,
         max_ready_items: usize,
         executor: &mut E,
-    ) -> Result<SourcePackFilesystemWorkQueueWorkerStepExecutionResult, CompileError>
+    ) -> Result<FilesystemWorkQueueWorkerStepExecutionResult, CompileError>
     where
-        E: SourcePackPathPagedHierarchicalLinkExecutor<
-                LibraryInterfaceArtifact = SourcePackFilesystemArtifactPath,
-                CodegenObjectArtifact = SourcePackFilesystemArtifactPath,
-                LinkedOutputArtifact = SourcePackFilesystemArtifactPath,
-                PartialLinkArtifact = SourcePackFilesystemArtifactPath,
+        E: PagedHierarchicalLinkExecutor<
+                LibraryInterfaceArtifact = ArtifactPath,
+                CodegenObjectArtifact = ArtifactPath,
+                LinkedOutputArtifact = ArtifactPath,
+                PartialLinkArtifact = ArtifactPath,
             >,
     {
-        execute_source_pack_filesystem_work_queue_worker_step_with_path_artifacts_for_target_at(
+        step_path_work_queue(
             &self.artifact_root,
             self.target,
             worker_id,
             lease_expires_unix_nanos,
             max_ready_items,
-            Some(source_pack_build_now_unix_nanos()?),
+            Some(current_unix_nanos()?),
             executor,
         )
     }
@@ -260,16 +260,16 @@ impl SourcePackFilesystemPreparedArtifactBuild {
         lease_expires_unix_nanos: Option<u128>,
         max_ready_items: usize,
         executor: &mut E,
-    ) -> Result<SourcePackFilesystemWorkQueueWorkerRunExecutionResult, CompileError>
+    ) -> Result<FilesystemWorkQueueWorkerRunExecutionResult, CompileError>
     where
-        E: SourcePackPathAsyncPagedHierarchicalLinkExecutor<
-                LibraryInterfaceArtifact = SourcePackFilesystemArtifactPath,
-                CodegenObjectArtifact = SourcePackFilesystemArtifactPath,
-                LinkedOutputArtifact = SourcePackFilesystemArtifactPath,
-                PartialLinkArtifact = SourcePackFilesystemArtifactPath,
+        E: AsyncPagedHierarchicalLinkExecutor<
+                LibraryInterfaceArtifact = ArtifactPath,
+                CodegenObjectArtifact = ArtifactPath,
+                LinkedOutputArtifact = ArtifactPath,
+                PartialLinkArtifact = ArtifactPath,
             >,
     {
-        execute_source_pack_filesystem_work_queue_worker_run_async_with_path_artifacts_for_target(
+        run_path_work_queue_async(
             &self.artifact_root,
             self.target,
             worker_id,
@@ -287,22 +287,22 @@ impl SourcePackFilesystemPreparedArtifactBuild {
         lease_expires_unix_nanos: Option<u128>,
         max_ready_items: usize,
         executor: &mut E,
-    ) -> Result<SourcePackFilesystemWorkQueueWorkerStepExecutionResult, CompileError>
+    ) -> Result<FilesystemWorkQueueWorkerStepExecutionResult, CompileError>
     where
-        E: SourcePackPathAsyncPagedHierarchicalLinkExecutor<
-                LibraryInterfaceArtifact = SourcePackFilesystemArtifactPath,
-                CodegenObjectArtifact = SourcePackFilesystemArtifactPath,
-                LinkedOutputArtifact = SourcePackFilesystemArtifactPath,
-                PartialLinkArtifact = SourcePackFilesystemArtifactPath,
+        E: AsyncPagedHierarchicalLinkExecutor<
+                LibraryInterfaceArtifact = ArtifactPath,
+                CodegenObjectArtifact = ArtifactPath,
+                LinkedOutputArtifact = ArtifactPath,
+                PartialLinkArtifact = ArtifactPath,
             >,
     {
-        execute_source_pack_filesystem_work_queue_worker_step_async_with_path_artifacts_for_target_at(
+        step_path_work_queue_async(
             &self.artifact_root,
             self.target,
             worker_id,
             lease_expires_unix_nanos,
             max_ready_items,
-            Some(source_pack_build_now_unix_nanos()?),
+            Some(current_unix_nanos()?),
             executor,
         )
         .await
@@ -311,24 +311,20 @@ impl SourcePackFilesystemPreparedArtifactBuild {
     pub fn work_queue_progress_snapshot(
         &self,
         max_ready_items: usize,
-    ) -> Result<SourcePackFilesystemWorkQueueProgressSnapshot, CompileError> {
-        source_pack_filesystem_work_queue_progress_snapshot_for_target(
-            &self.artifact_root,
-            self.target,
-            max_ready_items,
-        )
+    ) -> Result<FilesystemWorkQueueProgressSnapshot, CompileError> {
+        work_queue_progress_snapshot(&self.artifact_root, self.target, max_ready_items)
     }
 
-    pub async fn submit_gpu_descriptor_work_queue_chunk_using(
+    pub async fn submit_gpu_descriptor_work_queue_chunk(
         &self,
         worker_id: impl Into<String>,
         max_items: usize,
         lease_expires_unix_nanos: Option<u128>,
         max_ready_items: usize,
         compiler: &GpuCompiler<'_>,
-    ) -> Result<SourcePackFilesystemWorkQueueWorkerRunExecutionResult, CompileError> {
+    ) -> Result<FilesystemWorkQueueWorkerRunExecutionResult, CompileError> {
         compiler
-            .execute_prepared_source_pack_filesystem_work_queue_worker_run_with_gpu_descriptors_for_target(
+            .run_descriptor_work_queue(
                 &self.artifact_root,
                 self.target,
                 worker_id,
@@ -339,15 +335,15 @@ impl SourcePackFilesystemPreparedArtifactBuild {
             .await
     }
 
-    pub async fn submit_gpu_descriptor_work_queue_step_using(
+    pub async fn submit_gpu_descriptor_work_queue_step(
         &self,
         worker_id: impl Into<String>,
         lease_expires_unix_nanos: Option<u128>,
         max_ready_items: usize,
         compiler: &GpuCompiler<'_>,
-    ) -> Result<SourcePackFilesystemWorkQueueWorkerStepExecutionResult, CompileError> {
+    ) -> Result<FilesystemWorkQueueWorkerStepExecutionResult, CompileError> {
         compiler
-            .execute_prepared_source_pack_filesystem_work_queue_worker_step_with_gpu_descriptors_for_target(
+            .step_descriptor_work_queue(
                 &self.artifact_root,
                 self.target,
                 worker_id,
@@ -358,165 +354,14 @@ impl SourcePackFilesystemPreparedArtifactBuild {
     }
 }
 
-impl SourcePackFilesystemArtifactPrepareResult {
-    pub fn prepared_build(&self) -> SourcePackFilesystemPreparedArtifactBuild {
-        SourcePackFilesystemPreparedArtifactBuild::new(&self.artifact_root, self.target)
-    }
-
-    pub fn bounded_summary(
-        &self,
-        max_ready_items: usize,
-    ) -> Result<SourcePackFilesystemPreparedArtifactBuildSummary, CompileError> {
-        self.prepared_build().bounded_summary(max_ready_items)
-    }
-
-    pub fn submit_path_artifact_work_queue_chunk<E>(
-        &self,
-        worker_id: impl Into<String>,
-        max_items: usize,
-        lease_expires_unix_nanos: Option<u128>,
-        max_ready_items: usize,
-        executor: &mut E,
-    ) -> Result<SourcePackFilesystemWorkQueueWorkerRunExecutionResult, CompileError>
-    where
-        E: SourcePackPathPagedHierarchicalLinkExecutor<
-                LibraryInterfaceArtifact = SourcePackFilesystemArtifactPath,
-                CodegenObjectArtifact = SourcePackFilesystemArtifactPath,
-                LinkedOutputArtifact = SourcePackFilesystemArtifactPath,
-                PartialLinkArtifact = SourcePackFilesystemArtifactPath,
-            >,
-    {
-        self.prepared_build().submit_path_artifact_work_queue_chunk(
-            worker_id,
-            max_items,
-            lease_expires_unix_nanos,
-            max_ready_items,
-            executor,
-        )
-    }
-
-    pub fn submit_path_artifact_work_queue_step<E>(
-        &self,
-        worker_id: impl Into<String>,
-        lease_expires_unix_nanos: Option<u128>,
-        max_ready_items: usize,
-        executor: &mut E,
-    ) -> Result<SourcePackFilesystemWorkQueueWorkerStepExecutionResult, CompileError>
-    where
-        E: SourcePackPathPagedHierarchicalLinkExecutor<
-                LibraryInterfaceArtifact = SourcePackFilesystemArtifactPath,
-                CodegenObjectArtifact = SourcePackFilesystemArtifactPath,
-                LinkedOutputArtifact = SourcePackFilesystemArtifactPath,
-                PartialLinkArtifact = SourcePackFilesystemArtifactPath,
-            >,
-    {
-        self.prepared_build().submit_path_artifact_work_queue_step(
-            worker_id,
-            lease_expires_unix_nanos,
-            max_ready_items,
-            executor,
-        )
-    }
-
-    pub async fn submit_path_artifact_work_queue_chunk_async<E>(
-        &self,
-        worker_id: impl Into<String>,
-        max_items: usize,
-        lease_expires_unix_nanos: Option<u128>,
-        max_ready_items: usize,
-        executor: &mut E,
-    ) -> Result<SourcePackFilesystemWorkQueueWorkerRunExecutionResult, CompileError>
-    where
-        E: SourcePackPathAsyncPagedHierarchicalLinkExecutor<
-                LibraryInterfaceArtifact = SourcePackFilesystemArtifactPath,
-                CodegenObjectArtifact = SourcePackFilesystemArtifactPath,
-                LinkedOutputArtifact = SourcePackFilesystemArtifactPath,
-                PartialLinkArtifact = SourcePackFilesystemArtifactPath,
-            >,
-    {
-        self.prepared_build()
-            .submit_path_artifact_work_queue_chunk_async(
-                worker_id,
-                max_items,
-                lease_expires_unix_nanos,
-                max_ready_items,
-                executor,
-            )
-            .await
-    }
-
-    pub async fn submit_path_artifact_work_queue_step_async<E>(
-        &self,
-        worker_id: impl Into<String>,
-        lease_expires_unix_nanos: Option<u128>,
-        max_ready_items: usize,
-        executor: &mut E,
-    ) -> Result<SourcePackFilesystemWorkQueueWorkerStepExecutionResult, CompileError>
-    where
-        E: SourcePackPathAsyncPagedHierarchicalLinkExecutor<
-                LibraryInterfaceArtifact = SourcePackFilesystemArtifactPath,
-                CodegenObjectArtifact = SourcePackFilesystemArtifactPath,
-                LinkedOutputArtifact = SourcePackFilesystemArtifactPath,
-                PartialLinkArtifact = SourcePackFilesystemArtifactPath,
-            >,
-    {
-        self.prepared_build()
-            .submit_path_artifact_work_queue_step_async(
-                worker_id,
-                lease_expires_unix_nanos,
-                max_ready_items,
-                executor,
-            )
-            .await
-    }
-
-    pub fn work_queue_progress_snapshot(
-        &self,
-        max_ready_items: usize,
-    ) -> Result<SourcePackFilesystemWorkQueueProgressSnapshot, CompileError> {
-        self.prepared_build()
-            .work_queue_progress_snapshot(max_ready_items)
-    }
-
-    pub async fn submit_gpu_descriptor_work_queue_chunk_using(
-        &self,
-        worker_id: impl Into<String>,
-        max_items: usize,
-        lease_expires_unix_nanos: Option<u128>,
-        max_ready_items: usize,
-        compiler: &GpuCompiler<'_>,
-    ) -> Result<SourcePackFilesystemWorkQueueWorkerRunExecutionResult, CompileError> {
-        self.prepared_build()
-            .submit_gpu_descriptor_work_queue_chunk_using(
-                worker_id,
-                max_items,
-                lease_expires_unix_nanos,
-                max_ready_items,
-                compiler,
-            )
-            .await
-    }
-
-    pub async fn submit_gpu_descriptor_work_queue_step_using(
-        &self,
-        worker_id: impl Into<String>,
-        lease_expires_unix_nanos: Option<u128>,
-        max_ready_items: usize,
-        compiler: &GpuCompiler<'_>,
-    ) -> Result<SourcePackFilesystemWorkQueueWorkerStepExecutionResult, CompileError> {
-        self.prepared_build()
-            .submit_gpu_descriptor_work_queue_step_using(
-                worker_id,
-                lease_expires_unix_nanos,
-                max_ready_items,
-                compiler,
-            )
-            .await
+impl PrepareResult {
+    pub fn prepared_build(&self) -> PreparedBuild {
+        PreparedBuild::new(&self.artifact_root, self.target)
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemLibraryMetadataPrepareResult {
+pub struct FilesystemLibraryMetadataPrepareResult {
     pub target: SourcePackArtifactTarget,
     pub source_file_count: usize,
     pub source_byte_count: usize,
@@ -528,7 +373,7 @@ pub struct SourcePackFilesystemLibraryMetadataPrepareResult {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemLibraryMetadataPrepareStepResult {
+pub struct FilesystemLibraryMetadataPrepareStepResult {
     pub target: SourcePackArtifactTarget,
     pub complete: bool,
     pub source_file_count: usize,
@@ -542,7 +387,7 @@ pub struct SourcePackFilesystemLibraryMetadataPrepareStepResult {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SourcePackFilesystemLibraryMetadataPrepareProgress {
+pub struct FilesystemLibraryMetadataPrepareProgress {
     pub version: u32,
     pub target: SourcePackArtifactTarget,
     pub source_file_count: usize,
@@ -554,17 +399,17 @@ pub struct SourcePackFilesystemLibraryMetadataPrepareProgress {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum SourcePackFilesystemLibrarySchedulePreparePhase {
+pub enum FilesystemLibrarySchedulePreparePhase {
     BuildUnitPages,
     SchedulePages,
     Complete,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SourcePackFilesystemLibrarySchedulePrepareProgress {
+pub struct FilesystemLibrarySchedulePrepareProgress {
     pub version: u32,
     pub target: SourcePackArtifactTarget,
-    pub phase: SourcePackFilesystemLibrarySchedulePreparePhase,
+    pub phase: FilesystemLibrarySchedulePreparePhase,
     pub next_partition_index: usize,
     pub source_file_count: usize,
     pub source_byte_count: usize,
@@ -581,7 +426,7 @@ pub struct SourcePackFilesystemLibrarySchedulePrepareProgress {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemLibrarySchedulePrepareStepResult {
+pub struct FilesystemLibrarySchedulePrepareStepResult {
     pub target: SourcePackArtifactTarget,
     pub complete: bool,
     pub source_file_count: usize,
@@ -601,7 +446,7 @@ pub struct SourcePackFilesystemLibrarySchedulePrepareStepResult {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemArtifactRefPrepareStepResult {
+pub struct FilesystemArtifactRefPrepareStepResult {
     pub target: SourcePackArtifactTarget,
     pub complete: bool,
     pub artifact_count: usize,
@@ -618,7 +463,7 @@ pub struct SourcePackFilesystemArtifactRefPrepareStepResult {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(in crate::compiler) struct SourcePackBuildArtifactRefPrepareProgress {
+pub(in crate::compiler) struct ArtifactRefPrepareProgress {
     pub(in crate::compiler) version: u32,
     pub(in crate::compiler) target: SourcePackArtifactTarget,
     pub(in crate::compiler) partition_count: usize,
@@ -633,7 +478,7 @@ pub(in crate::compiler) struct SourcePackBuildArtifactRefPrepareProgress {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemJobBatchPrepareStepResult {
+pub struct FilesystemJobBatchPrepareStepResult {
     pub target: SourcePackArtifactTarget,
     pub complete: bool,
     pub scheduled_job_count: usize,
@@ -645,7 +490,7 @@ pub struct SourcePackFilesystemJobBatchPrepareStepResult {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemJobBatchDependentsPrepareStepResult {
+pub struct FilesystemJobBatchDependentsPrepareStepResult {
     pub target: SourcePackArtifactTarget,
     pub complete: bool,
     pub batch_count: usize,
@@ -655,7 +500,7 @@ pub struct SourcePackFilesystemJobBatchDependentsPrepareStepResult {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemArtifactShardPrepareStepResult {
+pub struct FilesystemArtifactShardPrepareStepResult {
     pub target: SourcePackArtifactTarget,
     pub complete: bool,
     pub shard_count: usize,
@@ -680,7 +525,7 @@ pub struct SourcePackFilesystemArtifactShardPrepareStepResult {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemLinkBatchPrepareStepResult {
+pub struct FilesystemLinkBatchPrepareStepResult {
     pub target: SourcePackArtifactTarget,
     pub complete: bool,
     pub link_interface_batch_count: usize,
@@ -692,7 +537,7 @@ pub struct SourcePackFilesystemLinkBatchPrepareStepResult {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemHierarchicalLinkLeafPrepareStepResult {
+pub struct FilesystemHierarchicalLinkLeafPrepareStepResult {
     pub target: SourcePackArtifactTarget,
     pub complete: bool,
     pub schedule_partition_count: usize,
@@ -702,7 +547,7 @@ pub struct SourcePackFilesystemHierarchicalLinkLeafPrepareStepResult {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemHierarchicalLinkPlanPrepareStepResult {
+pub struct FilesystemHierarchicalLinkPlanPrepareStepResult {
     pub target: SourcePackArtifactTarget,
     pub complete: bool,
     pub input_partition_count: usize,
@@ -717,7 +562,7 @@ pub struct SourcePackFilesystemHierarchicalLinkPlanPrepareStepResult {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemHierarchicalLinkExecutionPrepareStepResult {
+pub struct FilesystemHierarchicalLinkExecutionPrepareStepResult {
     pub target: SourcePackArtifactTarget,
     pub complete: bool,
     pub link_group_count: usize,
@@ -729,7 +574,7 @@ pub struct SourcePackFilesystemHierarchicalLinkExecutionPrepareStepResult {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemWorkQueuePrepareStepResult {
+pub struct FilesystemWorkQueuePrepareStepResult {
     pub target: SourcePackArtifactTarget,
     pub complete: bool,
     pub work_item_count: usize,
@@ -740,7 +585,7 @@ pub struct SourcePackFilesystemWorkQueuePrepareStepResult {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemWorkQueueProgressPrepareStepResult {
+pub struct FilesystemWorkQueueProgressPrepareStepResult {
     pub target: SourcePackArtifactTarget,
     pub complete: bool,
     pub work_item_count: usize,
@@ -757,28 +602,23 @@ pub struct SourcePackFilesystemWorkQueueProgressPrepareStepResult {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemLibraryPartitionStoreResult {
+pub struct FilesystemLibraryPartitionStoreResult {
     pub library_partition_index_path: PathBuf,
     pub library_partition_count: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemLibrarySourceFilePageStoreResult {
+pub struct FilesystemLibrarySourceFilePageStoreResult {
     pub library_source_file_page_count: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemLibraryBuildUnitPageStoreResult {
-    pub library_build_unit_page_count: usize,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemLibrarySchedulePageStoreResult {
+pub struct FilesystemLibrarySchedulePageStoreResult {
     pub library_schedule_page_count: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemArtifactShardStoreResult {
+pub struct FilesystemArtifactShardStoreResult {
     pub artifact_shard_index_path: PathBuf,
     pub link_input_shard_index_path: PathBuf,
     pub artifact_shard_count: usize,
@@ -787,24 +627,11 @@ pub struct SourcePackFilesystemArtifactShardStoreResult {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemArtifactExecutionShardStoreResult {
+pub struct FilesystemArtifactExecutionShardStoreResult {
     pub artifact_execution_shard_count: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemBuildProgressShardStoreResult {
+pub struct FilesystemBuildProgressShardStoreResult {
     pub build_progress_shard_count: usize,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemArtifactLinkInputReleaseResult {
-    pub target: SourcePackArtifactTarget,
-    pub shard_index: usize,
-    pub shard_kind: SourcePackBuildArtifactShardKind,
-    pub released_interface_count: usize,
-    pub released_object_count: usize,
-    pub linked_output_key: String,
-    pub linked_output_path: PathBuf,
-    pub artifact_shard_index_path: PathBuf,
-    pub artifact_execution_shard_path: PathBuf,
 }

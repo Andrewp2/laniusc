@@ -236,7 +236,7 @@ pub struct SourcePackJobArtifactInputInterfacePage {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemArtifactBuildExecutionResult {
+pub struct FilesystemArtifactBuildExecutionResult {
     pub linked_output_key: String,
     pub linked_output_path: PathBuf,
     pub build_manifest_path: PathBuf,
@@ -245,7 +245,7 @@ pub struct SourcePackFilesystemArtifactBuildExecutionResult {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemArtifactBatchExecutionResult {
+pub struct FilesystemArtifactBatchExecutionResult {
     pub batch_index: usize,
     pub job_count: usize,
     pub linked_output_key: Option<String>,
@@ -256,7 +256,7 @@ pub struct SourcePackFilesystemArtifactBatchExecutionResult {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemArtifactBatchClaimResult {
+pub struct FilesystemArtifactBatchClaimResult {
     pub claimed_batch_index: Option<usize>,
     pub worker_id: String,
     pub completed_batch_count: usize,
@@ -267,7 +267,7 @@ pub struct SourcePackFilesystemArtifactBatchClaimResult {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemArtifactProgressSnapshot {
+pub struct FilesystemArtifactProgressSnapshot {
     pub target: SourcePackArtifactTarget,
     pub job_batch_count: usize,
     pub completed_batch_count: usize,
@@ -287,7 +287,7 @@ pub struct SourcePackFilesystemArtifactProgressSnapshot {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemArtifactProgressPage {
+pub struct FilesystemArtifactProgressPage {
     pub target: SourcePackArtifactTarget,
     pub shard_index: usize,
     pub batch_indices: Vec<usize>,
@@ -301,32 +301,32 @@ pub struct SourcePackFilesystemArtifactProgressPage {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemArtifactBatchClaimProgressResult {
+pub struct FilesystemArtifactBatchClaimProgressResult {
     pub claimed_batch_index: Option<usize>,
     pub worker_id: String,
-    pub progress: SourcePackFilesystemArtifactProgressSnapshot,
+    pub progress: FilesystemArtifactProgressSnapshot,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemArtifactWorkerStepProgressExecutionResult {
+pub struct FilesystemArtifactWorkerStepProgressExecutionResult {
     pub worker_id: String,
     pub claimed_batch_index: Option<usize>,
-    pub executed_batch: Option<SourcePackFilesystemArtifactBatchExecutionResult>,
-    pub progress: SourcePackFilesystemArtifactProgressSnapshot,
+    pub executed_batch: Option<FilesystemArtifactBatchExecutionResult>,
+    pub progress: FilesystemArtifactProgressSnapshot,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemArtifactWorkerRunProgressExecutionResult {
+pub struct FilesystemArtifactWorkerRunProgressExecutionResult {
     pub worker_id: String,
     pub executed_batch_count: usize,
-    pub progress: SourcePackFilesystemArtifactProgressSnapshot,
+    pub progress: FilesystemArtifactProgressSnapshot,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemArtifactWorkerStepExecutionResult {
+pub struct FilesystemArtifactWorkerStepExecutionResult {
     pub worker_id: String,
     pub claimed_batch_index: Option<usize>,
-    pub executed_batch: Option<SourcePackFilesystemArtifactBatchExecutionResult>,
+    pub executed_batch: Option<FilesystemArtifactBatchExecutionResult>,
     pub completed_batch_count: usize,
     pub ready_batch_count: usize,
     pub linked_output_key: Option<String>,
@@ -338,21 +338,8 @@ pub struct SourcePackFilesystemArtifactWorkerStepExecutionResult {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemArtifactWorkerRunExecutionResult {
+pub struct FilesystemArtifactWorkerRunExecutionResult {
     pub worker_id: String,
-    pub executed_batch_count: usize,
-    pub completed_batch_count: usize,
-    pub ready_batch_count: usize,
-    pub linked_output_key: Option<String>,
-    pub linked_output_path: Option<PathBuf>,
-    pub complete: bool,
-    pub build_manifest_path: PathBuf,
-    pub artifact_manifest_path: PathBuf,
-    pub build_state_path: PathBuf,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemArtifactResumeExecutionResult {
     pub executed_batch_count: usize,
     pub completed_batch_count: usize,
     pub ready_batch_count: usize,
@@ -365,7 +352,20 @@ pub struct SourcePackFilesystemArtifactResumeExecutionResult {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemWorkQueueProgressSnapshot {
+pub struct FilesystemArtifactResumeExecutionResult {
+    pub executed_batch_count: usize,
+    pub completed_batch_count: usize,
+    pub ready_batch_count: usize,
+    pub linked_output_key: Option<String>,
+    pub linked_output_path: Option<PathBuf>,
+    pub complete: bool,
+    pub build_manifest_path: PathBuf,
+    pub artifact_manifest_path: PathBuf,
+    pub build_state_path: PathBuf,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FilesystemWorkQueueProgressSnapshot {
     pub target: SourcePackArtifactTarget,
     pub work_item_count: usize,
     pub completed_item_count: usize,
@@ -379,31 +379,31 @@ pub struct SourcePackFilesystemWorkQueueProgressSnapshot {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemWorkQueueItemClaimResult {
+pub struct FilesystemWorkQueueItemClaimResult {
     pub claimed_item_index: Option<usize>,
     pub worker_id: String,
-    pub progress: SourcePackFilesystemWorkQueueProgressSnapshot,
+    pub progress: FilesystemWorkQueueProgressSnapshot,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemWorkQueueItemCompletionResult {
+pub struct FilesystemWorkQueueItemCompletionResult {
     pub completed_item_index: usize,
     pub worker_id: String,
     pub newly_completed: bool,
     pub newly_ready_item_count: usize,
-    pub progress: SourcePackFilesystemWorkQueueProgressSnapshot,
+    pub progress: FilesystemWorkQueueProgressSnapshot,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemWorkQueueArtifactItemExecutionResult {
+pub struct FilesystemWorkQueueArtifactItemExecutionResult {
     pub item_index: usize,
     pub worker_id: String,
-    pub executed_batch: SourcePackFilesystemArtifactBatchExecutionResult,
-    pub completion: SourcePackFilesystemWorkQueueItemCompletionResult,
+    pub executed_batch: FilesystemArtifactBatchExecutionResult,
+    pub completion: FilesystemWorkQueueItemCompletionResult,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemHierarchicalLinkGroupExecutionResult {
+pub struct FilesystemHierarchicalLinkGroupExecutionResult {
     pub group_index: usize,
     pub job_index: usize,
     pub kind: SourcePackHierarchicalLinkGroupKind,
@@ -418,42 +418,42 @@ pub struct SourcePackFilesystemHierarchicalLinkGroupExecutionResult {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemWorkQueueLinkItemExecutionResult {
+pub struct FilesystemWorkQueueLinkItemExecutionResult {
     pub item_index: usize,
     pub worker_id: String,
-    pub executed_link_group: SourcePackFilesystemHierarchicalLinkGroupExecutionResult,
-    pub completion: SourcePackFilesystemWorkQueueItemCompletionResult,
+    pub executed_link_group: FilesystemHierarchicalLinkGroupExecutionResult,
+    pub completion: FilesystemWorkQueueItemCompletionResult,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum SourcePackFilesystemWorkQueueExecutedItem {
-    ArtifactBatch(SourcePackFilesystemArtifactBatchExecutionResult),
-    HierarchicalLinkGroup(SourcePackFilesystemHierarchicalLinkGroupExecutionResult),
+pub enum FilesystemWorkQueueExecutedItem {
+    ArtifactBatch(FilesystemArtifactBatchExecutionResult),
+    HierarchicalLinkGroup(FilesystemHierarchicalLinkGroupExecutionResult),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemWorkQueueItemExecutionResult {
+pub struct FilesystemWorkQueueItemExecutionResult {
     pub item_index: usize,
     pub worker_id: String,
-    pub executed: SourcePackFilesystemWorkQueueExecutedItem,
-    pub completion: SourcePackFilesystemWorkQueueItemCompletionResult,
+    pub executed: FilesystemWorkQueueExecutedItem,
+    pub completion: FilesystemWorkQueueItemCompletionResult,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemWorkQueueWorkerStepExecutionResult {
+pub struct FilesystemWorkQueueWorkerStepExecutionResult {
     pub worker_id: String,
     pub claimed_item_index: Option<usize>,
-    pub executed_item: Option<SourcePackFilesystemWorkQueueItemExecutionResult>,
-    pub progress: SourcePackFilesystemWorkQueueProgressSnapshot,
+    pub executed_item: Option<FilesystemWorkQueueItemExecutionResult>,
+    pub progress: FilesystemWorkQueueProgressSnapshot,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourcePackFilesystemWorkQueueWorkerRunExecutionResult {
+pub struct FilesystemWorkQueueWorkerRunExecutionResult {
     pub worker_id: String,
     pub executed_item_count: usize,
     pub executed_artifact_batch_count: usize,
     pub executed_link_group_count: usize,
     pub linked_output_key: Option<String>,
     pub linked_output_path: Option<PathBuf>,
-    pub progress: SourcePackFilesystemWorkQueueProgressSnapshot,
+    pub progress: FilesystemWorkQueueProgressSnapshot,
 }

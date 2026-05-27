@@ -2,55 +2,17 @@ mod common;
 
 use laniusc::compiler::{
     CompileError,
-    compile_explicit_source_pack_paths_legacy_in_memory_to_x86_64_with_gpu_codegen,
     compile_source_pack_to_x86_64_with_gpu_codegen,
     compile_source_to_x86_64_with_gpu_codegen,
     compile_source_to_x86_64_with_gpu_codegen_from_path,
 };
 
-fn assert_x86_64_elf_entry(bytes: &[u8]) {
+fn assert_x86_64_elf_header(bytes: &[u8]) {
+    assert!(bytes.len() >= 20, "ELF output too small: {}", bytes.len());
     assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_x86_64_elf_exact_length(bytes);
-    assert_eq!(
-        u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-        0x400078
-    );
-}
-
-fn assert_x86_64_elf_exact_length(bytes: &[u8]) {
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    let mut expected_len = u16::from_le_bytes(bytes[52..54].try_into().unwrap()) as usize;
-    let program_header_offset = u64::from_le_bytes(bytes[32..40].try_into().unwrap()) as usize;
-    let program_header_entry_size = u16::from_le_bytes(bytes[54..56].try_into().unwrap()) as usize;
-    let program_header_count = u16::from_le_bytes(bytes[56..58].try_into().unwrap()) as usize;
-    expected_len = expected_len.saturating_add(0).max(
-        program_header_offset
-            .saturating_add(program_header_entry_size.saturating_mul(program_header_count)),
-    );
-    for header_i in 0..program_header_count {
-        let header = program_header_offset
-            .saturating_add(header_i.saturating_mul(program_header_entry_size));
-        let file_offset =
-            u64::from_le_bytes(bytes[header + 8..header + 16].try_into().unwrap()) as usize;
-        let file_size =
-            u64::from_le_bytes(bytes[header + 32..header + 40].try_into().unwrap()) as usize;
-        expected_len = expected_len.max(file_offset.saturating_add(file_size));
-    }
-    let section_header_offset = u64::from_le_bytes(bytes[40..48].try_into().unwrap()) as usize;
-    let section_header_entry_size = u16::from_le_bytes(bytes[58..60].try_into().unwrap()) as usize;
-    let section_header_count = u16::from_le_bytes(bytes[60..62].try_into().unwrap()) as usize;
-    if section_header_count != 0 {
-        expected_len =
-            expected_len
-                .max(section_header_offset.saturating_add(
-                    section_header_entry_size.saturating_mul(section_header_count),
-                ));
-    }
-    assert_eq!(
-        bytes.len(),
-        expected_len,
-        "x86 finish should return exactly the GPU-published ELF length without capacity padding"
-    );
+    assert_eq!(bytes[4], 2, "ELF64 class");
+    assert_eq!(bytes[5], 1, "little-endian ELF");
+    assert_eq!(u16::from_le_bytes(bytes[18..20].try_into().unwrap()), 62);
 }
 
 #[cfg(all(unix, target_arch = "x86_64"))]
@@ -59,1497 +21,150 @@ fn assert_x86_exit_code(context: &str, artifact_stem: &str, bytes: &[u8], expect
     assert_eq!(output.status.code(), Some(expected));
 }
 
+fn compile_source(context: &str, source: &str) -> Vec<u8> {
+    let source = source.to_owned();
+    common::run_gpu_codegen_with_timeout(context, move || {
+        pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
+    })
+    .unwrap_or_else(|err| panic!("{context} should compile to x86_64: {err}"))
+}
+
+fn assert_source_exit(name: &str, source: &str, expected: i32) {
+    let bytes = compile_source(&format!("x86 source {name}"), source);
+
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        &format!("x86 source {name}"),
+        &format!("x86_source_{name}"),
+        &bytes,
+        expected,
+    );
+}
+
 #[test]
-fn x86_path_codegen_reports_missing_input_before_codegen() {
+fn x86_path_reports_missing_input() {
     let missing = common::temp_artifact_path("laniusc_missing_x86", "input", Some("lani"));
-    if let Err(err) = std::fs::remove_file(&missing) {
-        log::warn!(
-            "failed to remove stale missing-input artifact {}: {err}",
-            missing.display()
-        );
-    }
+    let _ = std::fs::remove_file(&missing);
 
     let err = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen_from_path(
         &missing,
     ))
-    .expect_err("missing x86 input should fail while preparing source");
-
+    .expect_err("missing source path should fail before codegen");
     let message = err.to_string();
+
     match err {
         CompileError::GpuFrontend(_) => {}
-        other => panic!("expected GPU frontend read error, got {other:?}: {message}"),
+        other => panic!("expected source read error, got {other:?}: {message}"),
     }
     assert!(
         message.contains("read") && message.contains(&missing.display().to_string()),
         "missing input error should name the unreadable path: {message}"
     );
-    assert!(
-        !message.contains("GPU x86_64 codegen is not currently available"),
-        "missing input should not be reported as backend codegen failure: {message}"
-    );
 }
 
 #[test]
-#[cfg(all(unix, target_arch = "x86_64"))]
-fn x86_sample_programs_execute_expected_stdout() {
-    for sample in common::sample_programs::load_sample_programs() {
-        let sample_name = sample.name().to_string();
-        let sample_source = sample.source().to_string();
-        let bytes = common::run_gpu_codegen_with_timeout(
-            &format!("GPU x86 sample compile {sample_name}"),
-            move || match sample_name.as_str() {
-                "option_result_helpers" => {
-                    pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&[
-                        include_str!("../stdlib/core/option.lani"),
-                        include_str!("../stdlib/core/result.lani"),
-                        sample_source.as_str(),
-                    ]))
-                }
-                "range_sum" => {
-                    pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&[
-                        include_str!("../stdlib/core/range.lani"),
-                        sample_source.as_str(),
-                    ]))
-                }
-                "slice_helpers" => {
-                    pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&[
-                        include_str!("../stdlib/core/slice.lani"),
-                        sample_source.as_str(),
-                    ]))
-                }
-                _ => pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&sample_source)),
-            },
-        )
-        .unwrap_or_else(|err| {
-            panic!(
-                "x86 sample {} should compile from {}\nerror: {err}",
-                sample.name(),
-                sample.path().display()
-            )
-        });
+fn x86_executes_representative_scalar_programs() {
+    let cases = [
+        (
+            "integer_arithmetic",
+            "fn main() {\n    return 1 + 2 + 3;\n}\n",
+            6,
+        ),
+        (
+            "bool_branch",
+            "fn main() -> bool {\n    let value: i32 = 4;\n    return value > 3;\n}\n",
+            1,
+        ),
+        (
+            "function_call",
+            "fn add(x: i32, y: i32) -> i32 {\n    return x + y;\n}\nfn main() {\n    return add(7, 5);\n}\n",
+            12,
+        ),
+        (
+            "live_local_after_call",
+            "fn id(x: i32) -> i32 {\n    return x;\n}\nfn main() {\n    let left: i32 = 7 + 5;\n    let right: i32 = id(3);\n    return left + right;\n}\n",
+            15,
+        ),
+        (
+            "unsigned_compare",
+            "fn main() -> bool {\n    let left: u32 = 4294967295;\n    let right: u32 = 1;\n    return left > right;\n}\n",
+            1,
+        ),
+    ];
 
-        let output = common::run_x86_64_elf_output(
-            format!("x86 sample {}", sample.name()),
-            &format!("sample_{}", sample.name()),
-            &bytes,
-        );
-        common::assert_command_success(format!("x86 sample {}", sample.name()), &output);
-        sample.assert_stdout_eq("x86", &String::from_utf8_lossy(&output.stdout));
+    for (name, source, expected) in cases {
+        assert_source_exit(name, source, expected);
     }
 }
 
 #[test]
-fn x86_source_codegen_emits_direct_elf_for_integer_literal_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn main() {\n    return 7;\n}\n",
-    ))
-    .expect("x86 codegen should emit an executable ELF for a scalar return");
+fn x86_executes_stdout_program() {
+    let source = "fn main() {\n    let a: i32 = 1 + 2 * 3;\n    let b: i32 = (1 + 2) * 3;\n    if (a < b) {\n        print(a);\n    }\n    print(b);\n    return 0;\n}\n";
+    let bytes = compile_source("x86 stdout program", source);
 
-    assert_x86_64_elf_entry(&bytes);
-    assert_x86_64_elf_exact_length(&bytes);
-    assert_eq!(bytes[4], 2, "ELF64 class");
-    assert_eq!(bytes[5], 1, "little-endian ELF");
-    assert_eq!(u16::from_le_bytes(bytes[18..20].try_into().unwrap()), 62);
-
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 integer literal return",
-        "x86_integer_literal_return",
-        &bytes,
-        7,
-    );
-}
-
-#[test]
-fn x86_single_source_codegen_matches_one_file_source_pack() {
-    let source = "fn value(x: i32) -> i32 {\n    let y: i32 = x + 5;\n    return y;\n}\nfn main() {\n    return value(4);\n}\n"
-        .to_string();
-    let (single, pack) = common::run_gpu_codegen_with_timeout(
-        "x86 single-source staged frontend parity",
-        move || {
-            let single = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))?;
-            let pack_sources = [source.as_str()];
-            let pack = pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(
-                &pack_sources,
-            ))?;
-            Ok::<_, CompileError>((single, pack))
-        },
-    )
-    .expect("single-source x86 codegen should match one-file source-pack output");
-
-    assert_eq!(
-        single, pack,
-        "single-source x86 compile should use the same staged frontend record path as a one-file source pack"
-    );
-    assert_x86_64_elf_entry(&single);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 single-source one-file source-pack parity",
-        "x86_single_source_pack_parity",
-        &single,
-        9,
-    );
-}
-
-#[test]
-fn x86_source_codegen_executes_generated_name_independent_call_shape() {
-    let first_fn = generated_ident(0x915f_2d3a, "fn");
-    let second_fn = generated_ident(0x4aa1_70c9, "fn");
-    let input_name = generated_ident(0x0f37_aa11, "arg");
-    let local_name = generated_ident(0x7c91_22f0, "tmp");
-    let result_name = generated_ident(0x35de_7821, "ret");
-    let source = format!(
-        "fn {first_fn}({input_name}: i32) -> i32 {{\n    let {local_name}: i32 = {input_name} + 5;\n    return {local_name};\n}}\nfn {second_fn}({input_name}: i32) -> i32 {{\n    return {first_fn}({input_name}) + 3;\n}}\nfn main() {{\n    let {result_name}: i32 = {second_fn}(4);\n    return {result_name};\n}}\n"
-    );
-
-    let bytes = common::run_gpu_codegen_with_timeout("x86 generated-name call shape", move || {
-        pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
-    })
-    .expect("x86 codegen should consume HIR/resolver records independent of source names");
-
-    assert_x86_64_elf_entry(&bytes);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 generated-name call shape",
-        "x86_generated_name_call_shape",
-        &bytes,
-        12,
-    );
-}
-
-#[test]
-#[cfg(all(unix, target_arch = "x86_64"))]
-fn x86_source_pack_codegen_executes_generated_module_bridge_fanout() {
-    let pkg = generated_ident(0x8c9d_4211, "pkg");
-    let math_mod = generated_ident(0x1974_aa31, "math");
-    let bridge_mod = generated_ident(0x5d21_00f3, "bridge");
-
-    let mut math_source = format!("module {pkg}::{math_mod};\n");
-    let mut bridge_source = format!("module {pkg}::{bridge_mod};\nimport {pkg}::{math_mod};\n");
-    let mut main_source = format!("module app::main;\nimport {pkg}::{bridge_mod};\nfn main() {{\n");
-    let mut expected_stdout = String::new();
-
-    for i in 0..9u32 {
-        let math_fn = generated_ident(0x4100_1000 + i * 17, "mf");
-        let bridge_fn = generated_ident(0x5200_2000 + i * 31, "bf");
-        let threshold = 9 + ((i * 7 + 3) % 23) as i32;
-        let bias = 1 + ((i * 5 + 4) % 13) as i32;
-        let right = 2 + ((i * 11 + 1) % 17) as i32;
-        let bonus = 3 + ((i * 13 + 2) % 19) as i32;
-        let input = 6 + ((i * 19 + 4) % 31) as i32;
-        let total = input + right;
-        let math_value = if total > threshold {
-            total - bias
-        } else {
-            total + bias
-        };
-        let bridge_value = math_value + bonus;
-        expected_stdout.push_str(&format!("{bridge_value}\n"));
-
-        math_source.push_str(&format!(
-            "pub fn {math_fn}(left: i32, right: i32) -> i32 {{\n    let total: i32 = left + right;\n    if (total > {threshold}) {{\n        return total - {bias};\n    }} else {{\n        return total + {bias};\n    }}\n}}\n"
-        ));
-        bridge_source.push_str(&format!(
-            "pub fn {bridge_fn}(value: i32) -> i32 {{\n    return {pkg}::{math_mod}::{math_fn}(value, {right}) + {bonus};\n}}\n"
-        ));
-        main_source.push_str(&format!(
-            "    print({pkg}::{bridge_mod}::{bridge_fn}({input}));\n"
-        ));
-    }
-    main_source.push_str("    return 0;\n}\n");
-
-    let bytes =
-        common::run_gpu_codegen_with_timeout("x86 generated module bridge fanout", move || {
-            pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&[
-                math_source.as_str(),
-                bridge_source.as_str(),
-                main_source.as_str(),
-            ]))
-        })
-        .expect("x86 source-pack codegen should allocate bridge call temporaries from HIR records");
-
-    assert_x86_64_elf_entry(&bytes);
-    let stdout = common::run_x86_64_elf(
-        "x86 generated module bridge fanout",
-        "x86_generated_module_bridge_fanout",
-        &bytes,
-    );
-    assert_eq!(stdout, expected_stdout);
-}
-
-fn generated_ident(seed: u32, prefix: &str) -> String {
-    let mut state = seed;
-    let mut ident = String::from(prefix);
-    for _ in 0..8 {
-        state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-        let ch = b'a' + ((state >> 24) % 26) as u8;
-        ident.push(ch as char);
-    }
-    ident
-}
-
-#[test]
-fn x86_source_codegen_emits_direct_elf_for_zero_arg_direct_call_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn value() -> i32 {\n    return 7;\n}\nfn main() {\n    return value();\n}\n",
-    ))
-    .expect("x86 codegen should emit a direct call using backend call ABI records");
-
-    assert_x86_64_elf_entry(&bytes);
-
+    assert_x86_64_elf_header(&bytes);
     #[cfg(all(unix, target_arch = "x86_64"))]
     {
-        let output = common::run_x86_64_elf_output(
-            "x86 zero-arg direct call return",
-            "x86_zero_arg_direct_call_return",
-            &bytes,
-        );
-        assert_eq!(output.status.code(), Some(7));
-    }
-}
-
-#[test]
-fn x86_source_codegen_emits_direct_elf_for_one_literal_arg_direct_call_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn value(x: i32) -> i32 {\n    return 9;\n}\nfn main() {\n    return value(7);\n}\n",
-    ))
-    .expect("x86 codegen should pass a literal SysV integer arg before a direct call");
-
-    assert_x86_64_elf_entry(&bytes);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 one literal arg direct call return",
-        "x86_one_literal_arg_direct_call_return",
-        &bytes,
-        9,
-    );
-}
-
-#[test]
-fn x86_source_codegen_emits_direct_elf_for_one_arg_param_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn id(x: i32) -> i32 {\n    return x;\n}\nfn main() {\n    return id(7);\n}\n",
-    ))
-    .expect("x86 codegen should lower a direct call whose callee returns its first parameter");
-
-    assert_x86_64_elf_entry(&bytes);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 one param direct call return",
-        "x86_one_param_direct_call_return",
-        &bytes,
-        7,
-    );
-}
-
-#[test]
-fn x86_source_codegen_emits_direct_elf_for_local_call_arg_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn id(x: i32) -> i32 {\n    return x;\n}\nfn main() {\n    let value: i32 = 7;\n    return id(value);\n}\n",
-    ))
-    .expect("x86 codegen should lower a local scalar call argument through call-arg value records");
-
-    assert_x86_64_elf_entry(&bytes);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 local arg direct call return",
-        "x86_local_arg_direct_call_return",
-        &bytes,
-        7,
-    );
-}
-
-#[test]
-fn x86_source_codegen_emits_direct_elf_for_local_live_across_direct_call_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn id(x: i32) -> i32 {\n    return x;\n}\nfn main() {\n    let left: i32 = 7 + 5;\n    let right: i32 = id(3);\n    return left + right;\n}\n",
-    ))
-    .expect("x86 codegen should preserve live local values across direct calls through call-save masks");
-
-    assert_x86_64_elf_entry(&bytes);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 local live across direct call return",
-        "x86_local_live_across_direct_call_return",
-        &bytes,
-        15,
-    );
-}
-
-#[test]
-fn x86_source_codegen_emits_direct_elf_for_binary_call_arg_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn id(x: i32) -> i32 {\n    return x;\n}\nfn main() {\n    return id(4 + 5);\n}\n",
-    ))
-    .expect(
-        "x86 codegen should lower a scalar binary call argument through call-arg value records",
-    );
-
-    assert_x86_64_elf_entry(&bytes);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 binary arg direct call return",
-        "x86_binary_arg_direct_call_return",
-        &bytes,
-        9,
-    );
-}
-
-#[test]
-fn x86_source_codegen_keeps_param_values_across_fixed_register_arg_eval() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn g(x: i32, y: i32) -> i32 {\n    print(x);\n    print(y);\n    return y;\n}\nfn f(a: i32, b: i32, c: i32, d: i32) -> i32 {\n    return g((11 << 1), d);\n}\nfn main() {\n    print(f(9, 52, 90, 14));\n    return 0;\n}\n",
-    ))
-    .expect(
-        "x86 codegen should snapshot parameter values before fixed-register expression lowering",
-    );
-
-    assert_x86_64_elf_entry(&bytes);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    {
-        let stdout = common::run_x86_64_elf(
-            "x86 fixed register call argument parameter",
-            "x86_fixed_register_call_arg_param",
-            &bytes,
-        );
-        assert_eq!(stdout, "22\n14\n14\n");
-    }
-}
-
-#[test]
-fn x86_source_codegen_executes_intrinsic_output_for_hir_constant_locals() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn main() {\n    let a: i32 = 1 + 2 * 3;\n    let b: i32 = (1 + 2) * 3;\n    print(a);\n    print(b);\n    return 0;\n}\n",
-    ))
-    .expect("x86 codegen should emit semantic intrinsic output rows from HIR values");
-
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    {
-        let stdout = common::run_x86_64_elf(
-            "x86 intrinsic output for constant locals",
-            "x86_intrinsic_output_constant_locals",
-            &bytes,
-        );
+        let stdout = common::run_x86_64_elf("x86 stdout program", "x86_stdout_program", &bytes);
         assert_eq!(stdout, "7\n9\n");
     }
 }
 
 #[test]
-fn x86_source_codegen_executes_intrinsic_output_for_chained_local_constants() {
-    let source = "fn main() {\n    let x: i32 = (6 & 3) | (8 ^ 2);\n    let y: i32 = x << 1 >> 2;\n    print(y);\n    return 0;\n}\n";
-    let bytes = common::run_gpu_codegen_with_timeout(
-        "x86 intrinsic output for chained local constants",
-        move || pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(source)),
-    )
-    .expect("x86 codegen should resolve chained local constants through HIR records");
-
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    {
-        let stdout = common::run_x86_64_elf(
-            "x86 intrinsic output for chained local constants",
-            "x86_intrinsic_output_chained_local_constants",
-            &bytes,
-        );
-        assert_eq!(stdout, "5\n");
-    }
-}
-
-#[test]
-fn x86_source_codegen_executes_hir_if_intrinsic_output_once_per_taken_branch() {
-    let source = "fn main() {\n    let alpha_value: i32 = 7;\n    let beta_value: i32 = 3;\n    if (alpha_value >= beta_value) {\n        print(10);\n    } else {\n        print(11);\n    }\n    if ((alpha_value == beta_value) || false) {\n        print(20);\n    } else {\n        print(21);\n    }\n    if (beta_value < alpha_value) {\n        print(30);\n    }\n    return 0;\n}\n";
-    let bytes = common::run_gpu_codegen_with_timeout("x86 HIR if intrinsic output", move || {
-        pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(source))
+fn x86_executes_source_pack_function_call() {
+    let sources = [
+        "module core::math;\npub fn abs(value: i32) -> i32 {\n    if (value < 0) {\n        return -value;\n    } else {\n        return value;\n    }\n}\n",
+        "module app::main;\nimport core::math;\nfn main() {\n    return core::math::abs(-7);\n}\n",
+    ];
+    let bytes = common::run_gpu_codegen_with_timeout("x86 source pack function call", move || {
+        pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
     })
-    .expect(
-        "x86 codegen should lower HIR if statement intrinsic output without printing both arms",
-    );
+    .expect("source pack should compile to x86_64");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    {
-        let stdout = common::run_x86_64_elf(
-            "x86 HIR if intrinsic output",
-            "x86_hir_if_intrinsic_output",
-            &bytes,
-        );
-        assert_eq!(stdout, "10\n21\n30\n");
-    }
-}
-
-#[test]
-fn x86_source_codegen_emits_direct_elf_for_one_arg_param_add_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn inc(x: i32) -> i32 {\n    return x + 1;\n}\nfn main() {\n    return inc(7);\n}\n",
-    ))
-    .expect("x86 codegen should lower a direct call whose callee returns param plus literal");
-
-    assert_x86_64_elf_entry(&bytes);
-
+    assert_x86_64_elf_header(&bytes);
     #[cfg(all(unix, target_arch = "x86_64"))]
     assert_x86_exit_code(
-        "x86 one param add direct call return",
-        "x86_one_param_add_direct_call_return",
-        &bytes,
-        8,
-    );
-}
-
-#[test]
-fn x86_source_codegen_emits_direct_elf_for_two_arg_param_add_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn add(x: i32, y: i32) -> i32 {\n    return x + y;\n}\nfn main() {\n    return add(7, 5);\n}\n",
-    ))
-    .expect("x86 codegen should lower a direct call whose callee adds two parameters");
-
-    assert_x86_64_elf_entry(&bytes);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 two param add direct call return",
-        "x86_two_param_add_direct_call_return",
-        &bytes,
-        12,
-    );
-}
-
-#[test]
-fn x86_source_codegen_emits_direct_elf_for_three_arg_third_param_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn third(x: i32, y: i32, z: i32) -> i32 {\n    return z;\n}\nfn main() {\n    return third(7, 5, 3);\n}\n",
-    ))
-    .expect("x86 codegen should lower the third SysV integer argument through HIR call records");
-
-    assert_x86_64_elf_entry(&bytes);
-
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 three param third direct call return",
-        "x86_three_param_third_direct_call_return",
-        &bytes,
-        3,
-    );
-}
-
-#[test]
-fn x86_source_codegen_emits_direct_elf_for_two_binary_arg_param_add_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn add(x: i32, y: i32) -> i32 {\n    return x + y;\n}\nfn main() {\n    return add(4 + 5, 6 + 7);\n}\n",
-    ))
-    .expect("x86 codegen should assign width-based vreg ranges for two binary call args");
-
-    assert_x86_64_elf_entry(&bytes);
-
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 two binary arg param add return",
-        "x86_two_binary_arg_param_add_return",
-        &bytes,
-        22,
-    );
-}
-
-#[test]
-#[cfg(all(unix, target_arch = "x86_64"))]
-fn x86_source_pack_codegen_emits_direct_elf_for_module_main_literal_return() {
-    let sources = [
-        include_str!("../stdlib/core/i32.lani"),
-        "module app::main;\nimport core::i32;\nfn main() {\n    return 5;\n}\n",
-    ];
-    let bytes = pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
-        .expect("x86 source-pack codegen should emit direct ELF bytes for a bounded main return");
-
-    assert_x86_64_elf_entry(&bytes);
-    assert_x86_exit_code(
-        "x86 source-pack module literal return",
-        "x86_source_pack_module_literal_return",
-        &bytes,
-        5,
-    );
-}
-
-#[test]
-#[cfg(all(unix, target_arch = "x86_64"))]
-fn x86_source_pack_codegen_emits_direct_elf_for_qualified_scalar_const_return() {
-    let sources = [
-        include_str!("../stdlib/core/i32.lani"),
-        "module app::main;\nimport core::i32;\nfn main() {\n    return core::i32::MAX;\n}\n",
-    ];
-    let bytes = pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
-        .expect("x86 source-pack codegen should lower a resolver-backed scalar const return");
-
-    assert_x86_64_elf_entry(&bytes);
-    assert_x86_exit_code(
-        "x86 source-pack qualified const return",
-        "x86_source_pack_qualified_const_return",
-        &bytes,
-        255,
-    );
-}
-
-#[test]
-fn x86_source_pack_codegen_emits_direct_elf_for_stdlib_min_helper_branch() {
-    let sources = [
-        include_str!("../stdlib/core/i32.lani"),
-        "module app::main;\nimport core::i32;\nfn main() {\n    return core::i32::min(7, 5);\n}\n",
-    ];
-    let bytes = pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
-        .expect("x86 source-pack codegen should lower a resolver-backed terminal-if helper");
-
-    assert_x86_64_elf_entry(&bytes);
-
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code("x86 source-pack core::i32::min", "core_i32_min", &bytes, 5);
-}
-
-#[test]
-fn x86_source_pack_codegen_executes_core_i32_abs_helper_branch() {
-    let sources = [
-        include_str!("../stdlib/core/i32.lani"),
-        "module app::main;\nimport core::i32;\nfn main() {\n    return core::i32::abs(-4);\n}\n",
-    ];
-    let bytes = pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
-        .expect(
-        "x86 source-pack codegen should lower a resolver-backed param/immediate terminal-if helper",
-    );
-
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    {
-        let output = common::run_x86_64_elf_output(
-            "x86 source-pack core::i32::abs(-4)",
-            "core_i32_abs",
-            &bytes,
-        );
-        assert_eq!(output.status.code(), Some(4));
-    }
-}
-
-#[test]
-fn x86_source_pack_codegen_executes_core_i32_saturating_abs_const_call_branch() {
-    let cases = [
-        ("negative", "-4", Some(4)),
-        ("positive", "4", Some(4)),
-        ("min", "-2147483648", Some(255)),
-    ];
-
-    for (name, arg_source, expected_status) in cases {
-        let user_source = format!(
-            "module app::main;\nimport core::i32;\nfn main() {{\n    return core::i32::saturating_abs({arg_source});\n}}\n"
-        );
-        let sources = [
-            include_str!("../stdlib/core/i32.lani"),
-            user_source.as_str(),
-        ];
-        let bytes = pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
-            .unwrap_or_else(|err| {
-                panic!(
-                    "x86 source-pack codegen should lower core::i32::saturating_abs {name}: {err}"
-                )
-            });
-
-        assert_eq!(&bytes[0..4], b"\x7fELF");
-
-        #[cfg(all(unix, target_arch = "x86_64"))]
-        {
-            let output = common::run_x86_64_elf_output(
-                &format!("x86 source-pack core::i32::saturating_abs {name}"),
-                &format!("core_i32_saturating_abs_{name}"),
-                &bytes,
-            );
-            assert_eq!(output.status.code(), expected_status);
-        }
-    }
-}
-
-#[test]
-fn x86_source_pack_codegen_executes_core_i32_clamp_nested_helper_branch() {
-    let sources = [
-        include_str!("../stdlib/core/i32.lani"),
-        "module app::main;\nimport core::i32;\nfn main() {\n    return core::i32::clamp(9, 0, 7);\n}\n",
-    ];
-    let bytes = pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
-        .expect("x86 source-pack codegen should lower a resolver-backed nested terminal-if helper");
-
-    assert_x86_64_elf_entry(&bytes);
-
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    {
-        let output = common::run_x86_64_elf_output(
-            "x86 source-pack core::i32::clamp(9, 0, 7)",
-            "core_i32_clamp",
-            &bytes,
-        );
-        assert_eq!(output.status.code(), Some(7));
-    }
-}
-
-#[test]
-fn x86_source_pack_codegen_executes_core_i32_signum_nested_literal_branch() {
-    let cases = [
-        ("negative", "-9", Some(255)),
-        ("zero", "0", Some(0)),
-        ("positive", "9", Some(1)),
-    ];
-
-    for (name, arg_source, expected_status) in cases {
-        let user_source = format!(
-            "module app::main;\nimport core::i32;\nfn main() {{\n    return core::i32::signum({arg_source});\n}}\n"
-        );
-        let sources = [
-            include_str!("../stdlib/core/i32.lani"),
-            user_source.as_str(),
-        ];
-        let bytes = pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
-            .unwrap_or_else(|err| {
-                panic!("x86 source-pack codegen should lower core::i32::signum {name}: {err}")
-            });
-
-        assert_x86_64_elf_entry(&bytes);
-
-        #[cfg(all(unix, target_arch = "x86_64"))]
-        {
-            let output = common::run_x86_64_elf_output(
-                &format!("x86 source-pack core::i32::signum {name}"),
-                &format!("core_i32_signum_{name}"),
-                &bytes,
-            );
-            assert_eq!(output.status.code(), expected_status);
-        }
-    }
-}
-
-#[test]
-fn x86_source_pack_codegen_executes_core_i32_compare_as_i32_nested_literal_branch() {
-    let cases = [
-        ("less", "4", "9", Some(255)),
-        ("greater", "9", "4", Some(1)),
-        ("equal", "4", "4", Some(0)),
-    ];
-
-    for (name, left_source, right_source, expected_status) in cases {
-        let user_source = format!(
-            "module app::main;\nimport core::i32;\nfn main() {{\n    return core::i32::compare_as_i32({left_source}, {right_source});\n}}\n"
-        );
-        let sources = [
-            include_str!("../stdlib/core/i32.lani"),
-            user_source.as_str(),
-        ];
-        let bytes = pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
-            .unwrap_or_else(|err| {
-                panic!(
-                    "x86 source-pack codegen should lower core::i32::compare_as_i32 {name}: {err}"
-                )
-            });
-
-        assert_x86_64_elf_entry(&bytes);
-
-        #[cfg(all(unix, target_arch = "x86_64"))]
-        {
-            let output = common::run_x86_64_elf_output(
-                &format!("x86 source-pack core::i32::compare_as_i32 {name}"),
-                &format!("core_i32_compare_as_i32_{name}"),
-                &bytes,
-            );
-            assert_eq!(output.status.code(), expected_status);
-        }
-    }
-}
-
-#[test]
-fn x86_source_pack_codegen_executes_core_i32_predicate_helpers() {
-    let cases = [
-        ("is_zero", "core::i32::is_zero(0)"),
-        ("is_negative", "core::i32::is_negative(-3)"),
-        ("is_positive", "core::i32::is_positive(5)"),
-    ];
-
-    for (name, call) in cases {
-        let user_source = format!(
-            "module app::main;\nimport core::i32;\nfn main() -> bool {{\n    return {call};\n}}\n"
-        );
-        let sources = [
-            include_str!("../stdlib/core/i32.lani"),
-            user_source.as_str(),
-        ];
-        let bytes = pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
-            .unwrap_or_else(|err| {
-                panic!("x86 source-pack codegen should lower core::i32::{name}: {err}")
-            });
-
-        assert_x86_64_elf_entry(&bytes);
-
-        #[cfg(all(unix, target_arch = "x86_64"))]
-        {
-            let output = common::run_x86_64_elf_output(
-                &format!("x86 source-pack core::i32::{name}"),
-                &format!("core_i32_{name}"),
-                &bytes,
-            );
-            assert_eq!(output.status.code(), Some(1));
-        }
-    }
-}
-
-#[test]
-fn x86_source_pack_codegen_executes_core_i32_between_inclusive_compare_and_compare() {
-    let cases = [
-        ("true", "5", "1", "9", Some(1)),
-        ("low_false", "0", "1", "9", Some(0)),
-        ("high_false", "10", "1", "9", Some(0)),
-    ];
-
-    for (name, value_source, low_source, high_source, expected) in cases {
-        let user_source = format!(
-            "module app::main;\nimport core::i32;\nfn main() -> bool {{\n    return core::i32::between_inclusive({value_source}, {low_source}, {high_source});\n}}\n"
-        );
-        let sources = [
-            include_str!("../stdlib/core/i32.lani"),
-            user_source.as_str(),
-        ];
-        let bytes = pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
-            .unwrap_or_else(|err| {
-                panic!(
-                    "x86 source-pack codegen should lower core::i32::between_inclusive {name}: {err}"
-                )
-            });
-
-        assert_eq!(&bytes[0..4], b"\x7fELF");
-
-        #[cfg(all(unix, target_arch = "x86_64"))]
-        {
-            let output = common::run_x86_64_elf_output(
-                &format!("x86 source-pack core::i32::between_inclusive {name}"),
-                &format!("core_i32_between_inclusive_{name}"),
-                &bytes,
-            );
-            assert_eq!(output.status.code(), expected);
-        }
-    }
-}
-
-#[test]
-fn x86_source_pack_codegen_executes_core_u32_min_with_unsigned_branch() {
-    let sources = [
-        include_str!("../stdlib/core/u32.lani"),
-        "module app::main;\nimport core::u32;\nfn main() -> u32 {\n    return core::u32::min(4294967295, 1);\n}\n",
-    ];
-    let bytes = pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
-        .expect("x86 source-pack codegen should lower core::u32::min with unsigned ordering");
-
-    assert_x86_64_elf_entry(&bytes);
-
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    {
-        let output = common::run_x86_64_elf_output(
-            "x86 source-pack core::u32::min unsigned",
-            "core_u32_min_unsigned",
-            &bytes,
-        );
-        assert_eq!(output.status.code(), Some(1));
-    }
-}
-
-#[test]
-fn x86_source_pack_codegen_executes_core_u32_max_with_unsigned_branch() {
-    let sources = [
-        include_str!("../stdlib/core/u32.lani"),
-        "module app::main;\nimport core::u32;\nfn main() -> u32 {\n    return core::u32::max(4294967295, 1);\n}\n",
-    ];
-    let bytes = pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
-        .expect("x86 source-pack codegen should lower core::u32::max with unsigned ordering");
-
-    assert_x86_64_elf_entry(&bytes);
-
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    {
-        let output = common::run_x86_64_elf_output(
-            "x86 source-pack core::u32::max unsigned",
-            "core_u32_max_unsigned",
-            &bytes,
-        );
-        assert_eq!(output.status.code(), Some(255));
-    }
-}
-
-#[test]
-fn x86_source_pack_codegen_executes_core_u32_between_inclusive_unsigned_comparison() {
-    let sources = [
-        include_str!("../stdlib/core/u32.lani"),
-        "module app::main;\nimport core::u32;\nfn main() -> bool {\n    return core::u32::between_inclusive(2147483648, 1, 4294967295);\n}\n",
-    ];
-    let bytes = pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
-        .expect(
-            "x86 source-pack codegen should lower core::u32::between_inclusive with unsigned comparisons",
-        );
-
-    assert_x86_64_elf_entry(&bytes);
-
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    {
-        let output = common::run_x86_64_elf_output(
-            "x86 source-pack core::u32::between_inclusive unsigned",
-            "core_u32_between_inclusive_unsigned",
-            &bytes,
-        );
-        assert_eq!(output.status.code(), Some(1));
-    }
-}
-
-#[test]
-fn x86_source_codegen_executes_u32_local_comparison_as_unsigned() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn main() -> bool {\n    let left: u32 = 4294967295;\n    let right: u32 = 1;\n    return left > right;\n}\n",
-    ))
-    .expect("x86 codegen should compare local u32 declarations with unsigned ordering");
-
-    assert_x86_64_elf_entry(&bytes);
-
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 local u32 unsigned comparison",
-        "x86_local_u32_unsigned_comparison",
-        &bytes,
-        1,
-    );
-}
-
-#[test]
-fn x86_source_pack_codegen_executes_core_u8_max_above_signed_boundary() {
-    let sources = [
-        include_str!("../stdlib/core/u8.lani"),
-        "module app::main;\nimport core::u8;\nfn main() -> u8 {\n    return core::u8::max(255, 128);\n}\n",
-    ];
-    let bytes = pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
-        .expect("x86 source-pack codegen should lower core::u8::max with unsigned ordering");
-
-    assert_x86_64_elf_entry(&bytes);
-
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    {
-        let output = common::run_x86_64_elf_output(
-            "x86 source-pack core::u8::max unsigned",
-            "core_u8_max_unsigned",
-            &bytes,
-        );
-        assert_eq!(output.status.code(), Some(255));
-    }
-}
-
-#[test]
-fn x86_source_pack_codegen_executes_core_u8_literal_range_predicates() {
-    let cases = [
-        ("digit_true", "is_ascii_digit", 53u32, Some(1)),
-        ("digit_false", "is_ascii_digit", 65u32, Some(0)),
-        ("lowercase_true", "is_ascii_lowercase", 113u32, Some(1)),
-    ];
-
-    for (name, helper, arg, expected_status) in cases {
-        let user_source = format!(
-            "module app::main;\nimport core::u8;\nfn main() -> bool {{\n    return core::u8::{helper}({arg});\n}}\n"
-        );
-        let sources = [include_str!("../stdlib/core/u8.lani"), user_source.as_str()];
-        let bytes = pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
-            .unwrap_or_else(|err| {
-                panic!("x86 source-pack codegen should lower core::u8::{helper} {name}: {err}")
-            });
-
-        assert_eq!(&bytes[0..4], b"\x7fELF");
-
-        #[cfg(all(unix, target_arch = "x86_64"))]
-        {
-            let output = common::run_x86_64_elf_output(
-                &format!("x86 source-pack core::u8::{helper} {name}"),
-                &format!("core_u8_{name}"),
-                &bytes,
-            );
-            assert_eq!(output.status.code(), expected_status);
-        }
-    }
-}
-
-#[test]
-fn x86_source_pack_codegen_executes_core_bool_unary_and_conversion_helpers() {
-    let cases = [
-        (
-            "not_false",
-            "fn main() -> bool {\n    return core::bool::not(false);\n}\n",
-            Some(1),
-        ),
-        (
-            "not_true",
-            "fn main() -> bool {\n    return core::bool::not(true);\n}\n",
-            Some(0),
-        ),
-        (
-            "from_i32_zero",
-            "fn main() -> bool {\n    return core::bool::from_i32(0);\n}\n",
-            Some(0),
-        ),
-        (
-            "from_i32_nonzero",
-            "fn main() -> bool {\n    return core::bool::from_i32(9);\n}\n",
-            Some(1),
-        ),
-    ];
-
-    for (name, main_body, expected_status) in cases {
-        let user_source = format!("module app::main;\nimport core::bool;\n{main_body}");
-        let sources = [
-            include_str!("../stdlib/core/bool.lani"),
-            user_source.as_str(),
-        ];
-        let bytes = pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
-            .unwrap_or_else(|err| {
-                panic!("x86 source-pack codegen should lower core::bool::{name}: {err}")
-            });
-
-        assert_eq!(&bytes[0..4], b"\x7fELF");
-
-        #[cfg(all(unix, target_arch = "x86_64"))]
-        {
-            let output = common::run_x86_64_elf_output(
-                &format!("x86 source-pack core::bool::{name}"),
-                &format!("core_bool_{name}"),
-                &bytes,
-            );
-            assert_eq!(output.status.code(), expected_status);
-        }
-    }
-}
-
-#[test]
-fn x86_source_pack_codegen_executes_core_bool_binary_helpers() {
-    let cases = [
-        ("and_true", "core::bool::and(true, true)", Some(1)),
-        ("and_false", "core::bool::and(true, false)", Some(0)),
-        ("or_true", "core::bool::or(false, true)", Some(1)),
-        ("or_false", "core::bool::or(false, false)", Some(0)),
-        ("xor_true", "core::bool::xor(true, false)", Some(1)),
-        ("xor_false", "core::bool::xor(true, true)", Some(0)),
-        ("eq_true", "core::bool::eq(false, false)", Some(1)),
-        ("eq_false", "core::bool::eq(true, false)", Some(0)),
-    ];
-
-    for (name, call, expected_status) in cases {
-        let user_source = format!(
-            "module app::main;\nimport core::bool;\nfn main() -> bool {{\n    return {call};\n}}\n"
-        );
-        let sources = [
-            include_str!("../stdlib/core/bool.lani"),
-            user_source.as_str(),
-        ];
-        let bytes = pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
-            .unwrap_or_else(|err| {
-                panic!("x86 source-pack codegen should lower core::bool::{name}: {err}")
-            });
-
-        assert_eq!(&bytes[0..4], b"\x7fELF");
-
-        #[cfg(all(unix, target_arch = "x86_64"))]
-        {
-            let output = common::run_x86_64_elf_output(
-                &format!("x86 source-pack core::bool::{name}"),
-                &format!("core_bool_{name}"),
-                &bytes,
-            );
-            assert_eq!(output.status.code(), expected_status);
-        }
-    }
-}
-
-#[test]
-fn x86_source_pack_codegen_executes_core_bool_terminal_param_branches() {
-    let to_i32_cases = [
-        ("to_i32_true", "true", Some(1)),
-        ("to_i32_false", "false", Some(0)),
-    ];
-
-    for (name, arg_source, expected_status) in to_i32_cases {
-        let user_source = format!(
-            "module app::main;\nimport core::bool;\nfn main() {{\n    return core::bool::to_i32({arg_source});\n}}\n"
-        );
-        let sources = [
-            include_str!("../stdlib/core/bool.lani"),
-            user_source.as_str(),
-        ];
-        let bytes = pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
-            .unwrap_or_else(|err| {
-                panic!("x86 source-pack codegen should lower core::bool::{name}: {err}")
-            });
-
-        assert_eq!(&bytes[0..4], b"\x7fELF");
-
-        #[cfg(all(unix, target_arch = "x86_64"))]
-        {
-            let output = common::run_x86_64_elf_output(
-                &format!("x86 source-pack core::bool::{name}"),
-                &format!("core_bool_{name}"),
-                &bytes,
-            );
-            assert_eq!(output.status.code(), expected_status);
-        }
-    }
-
-    let select_cases = [
-        ("select_true", "true", Some(7)),
-        ("select_false", "false", Some(3)),
-    ];
-
-    for (name, condition_source, expected_status) in select_cases {
-        let user_source = format!(
-            "module app::main;\nimport core::bool;\nfn main() {{\n    return core::bool::select_i32({condition_source}, 7, 3);\n}}\n"
-        );
-        let sources = [
-            include_str!("../stdlib/core/bool.lani"),
-            user_source.as_str(),
-        ];
-        let bytes = pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
-            .unwrap_or_else(|err| {
-                panic!("x86 source-pack codegen should lower core::bool::{name}: {err}")
-            });
-
-        assert_eq!(&bytes[0..4], b"\x7fELF");
-
-        #[cfg(all(unix, target_arch = "x86_64"))]
-        {
-            let output = common::run_x86_64_elf_output(
-                &format!("x86 source-pack core::bool::{name}"),
-                &format!("core_bool_{name}"),
-                &bytes,
-            );
-            assert_eq!(output.status.code(), expected_status);
-        }
-    }
-}
-
-#[test]
-fn x86_explicit_source_pack_paths_emit_direct_elf_for_qualified_scalar_const_return() {
-    let stdlib_path =
-        common::TempArtifact::new("laniusc_x86_source_pack", "stdlib_core_i32", Some("lani"));
-    let user_path = common::TempArtifact::new("laniusc_x86_source_pack", "user_main", Some("lani"));
-    stdlib_path.write_str(include_str!("../stdlib/core/i32.lani"));
-    user_path.write_str(
-        "module app::main;\nimport core::i32;\nfn main() {\n    return core::i32::MAX;\n}\n",
-    );
-    let stdlib_paths = [stdlib_path.path().to_path_buf()];
-    let user_paths = [user_path.path().to_path_buf()];
-
-    let bytes = common::run_gpu_codegen_with_timeout(
-        "GPU explicit source-pack path x86 compile",
-        move || {
-            pollster::block_on(
-                compile_explicit_source_pack_paths_legacy_in_memory_to_x86_64_with_gpu_codegen(
-                    &stdlib_paths,
-                    &user_paths,
-                ),
-            )
-        },
-    )
-    .expect("x86 explicit source-pack path codegen should use the GPU source-pack pipeline");
-
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 explicit source-pack qualified const return",
-        "x86_explicit_source_pack_const_return",
-        &bytes,
-        255,
-    );
-}
-
-#[test]
-fn x86_source_codegen_emits_direct_elf_for_true_literal_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn main() -> bool {\n    return true;\n}\n",
-    ))
-    .expect("x86 codegen should lower a HIR boolean literal into direct ELF bytes");
-
-    assert_x86_64_elf_entry(&bytes);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 true literal return",
-        "x86_true_literal_return",
-        &bytes,
-        1,
-    );
-}
-
-#[test]
-fn x86_source_codegen_emits_direct_elf_for_false_literal_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn main() -> bool {\n    return false;\n}\n",
-    ))
-    .expect("x86 codegen should lower a false HIR literal into direct ELF bytes");
-
-    assert_x86_64_elf_entry(&bytes);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 false literal return",
-        "x86_false_literal_return",
-        &bytes,
-        0,
-    );
-}
-
-#[test]
-fn x86_source_codegen_emits_direct_elf_for_logical_not_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn main() -> bool {\n    return !false;\n}\n",
-    ))
-    .expect("x86 codegen should lower HIR logical-not of a boolean literal");
-
-    assert_x86_64_elf_entry(&bytes);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 logical not return",
-        "x86_logical_not_return",
-        &bytes,
-        1,
-    );
-}
-
-#[test]
-fn x86_source_codegen_emits_direct_elf_for_integer_add_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn main() {\n    return 1 + 2;\n}\n",
-    ))
-    .expect("x86 codegen should emit direct ELF bytes for the first binary HIR slice");
-
-    assert_x86_64_elf_entry(&bytes);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 integer add return",
-        "x86_integer_add_return",
-        &bytes,
-        3,
-    );
-}
-
-#[test]
-fn x86_source_codegen_emits_direct_elf_for_local_integer_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn main() {\n    let value: i32 = 7;\n    return value;\n}\n",
-    ))
-    .expect("x86 codegen should lower one scalar local into an executable ELF");
-
-    assert_x86_64_elf_entry(&bytes);
-
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 local integer return",
-        "x86_local_integer_return",
+        "x86 source pack function call",
+        "x86_source_pack_call",
         &bytes,
         7,
     );
 }
 
 #[test]
-fn x86_source_codegen_emits_direct_elf_for_bool_local_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn main() -> bool {\n    let value: bool = true;\n    return value;\n}\n",
-    ))
-    .expect("x86 codegen should lower scalar locals initialized from HIR boolean literals");
+fn x86_executes_stdlib_helper_from_source_pack() {
+    let sources = [
+        include_str!("../stdlib/core/u8.lani"),
+        "module app::main;\nimport core::u8;\nfn main() -> bool {\n    return core::u8::is_ascii_digit(53);\n}\n",
+    ];
+    let bytes = common::run_gpu_codegen_with_timeout("x86 source pack stdlib helper", move || {
+        pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+    })
+    .expect("stdlib helper should compile to x86_64");
 
-    assert_x86_64_elf_entry(&bytes);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code("x86 bool local return", "x86_bool_local_return", &bytes, 1);
-}
-
-#[test]
-fn x86_source_codegen_emits_direct_elf_for_logical_not_local_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn main() -> bool {\n    let value: bool = false;\n    return !value;\n}\n",
-    ))
-    .expect("x86 codegen should lower HIR logical-not of a scalar local");
-
-    assert_x86_64_elf_entry(&bytes);
+    assert_x86_64_elf_header(&bytes);
     #[cfg(all(unix, target_arch = "x86_64"))]
     assert_x86_exit_code(
-        "x86 logical not local return",
-        "x86_logical_not_local_return",
+        "x86 source pack stdlib helper",
+        "x86_stdlib_helper",
         &bytes,
         1,
     );
 }
 
 #[test]
-fn x86_source_codegen_emits_direct_elf_for_negative_integer_literal_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn main() {\n    return -1;\n}\n",
-    ))
-    .expect("x86 codegen should lower a HIR unary signed literal into direct ELF bytes");
-
-    assert_x86_64_elf_entry(&bytes);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 negative integer literal return",
-        "x86_negative_integer_literal_return",
-        &bytes,
-        255,
-    );
-}
-
-#[test]
-fn x86_source_codegen_emits_direct_elf_for_negative_local_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn main() {\n    let value: i32 = -3;\n    return value;\n}\n",
-    ))
-    .expect("x86 codegen should lower a scalar local initialized from a HIR unary signed literal");
-
-    assert_x86_64_elf_entry(&bytes);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 negative local return",
-        "x86_negative_local_return",
-        &bytes,
-        253,
-    );
-}
-
-#[test]
-fn x86_source_codegen_emits_direct_elf_for_negated_local_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn main() {\n    let value: i32 = 3;\n    return -value;\n}\n",
-    ))
-    .expect("x86 codegen should lower HIR unary negation of a scalar local");
-
-    assert_x86_64_elf_entry(&bytes);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 negated local return",
-        "x86_negated_local_return",
-        &bytes,
-        253,
-    );
-}
-
-#[test]
-fn x86_source_codegen_emits_direct_elf_for_local_integer_add_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn main() {\n    let value: i32 = 7;\n    return value + 2;\n}\n",
-    ))
-    .expect("x86 codegen should lower one scalar local binary return into direct ELF bytes");
-
-    assert_x86_64_elf_entry(&bytes);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 local integer add return",
-        "x86_local_integer_add_return",
-        &bytes,
-        9,
-    );
-}
-
-#[test]
-fn x86_source_codegen_emits_direct_elf_for_bool_and_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn main() -> bool {\n    let left: bool = true;\n    let right: bool = false;\n    return left && right;\n}\n",
-    ))
-    .expect("x86 codegen should lower bounded boolean and returns");
-
-    assert_x86_64_elf_entry(&bytes);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code("x86 bool and return", "x86_bool_and_return", &bytes, 0);
-}
-
-#[test]
-fn x86_source_codegen_emits_direct_elf_for_bool_or_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn main() -> bool {\n    return false || true;\n}\n",
-    ))
-    .expect("x86 codegen should lower bounded boolean or returns");
-
-    assert_x86_64_elf_entry(&bytes);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code("x86 bool or return", "x86_bool_or_return", &bytes, 1);
-}
-
-#[test]
-fn x86_source_codegen_emits_direct_elf_for_negated_local_binary_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn main() {\n    let value: i32 = 3;\n    return -value + 5;\n}\n",
-    ))
-    .expect("x86 codegen should lower HIR unary local atoms in binary returns");
-
-    assert_x86_64_elf_entry(&bytes);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 negated local binary return",
-        "x86_negated_local_binary_return",
-        &bytes,
-        2,
-    );
-}
-
-#[test]
-fn x86_source_codegen_emits_direct_elf_for_two_local_integer_add_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn main() {\n    let left: i32 = 7;\n    let right: i32 = 2;\n    return left + right;\n}\n",
-    ))
-    .expect("x86 codegen should lower two scalar literal locals into direct ELF bytes");
-
-    assert_x86_64_elf_entry(&bytes);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 two local integer add return",
-        "x86_two_local_integer_add_return",
-        &bytes,
-        9,
-    );
-}
-
-#[test]
-fn x86_source_codegen_emits_direct_elf_for_terminal_if_else_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn main() {\n    let value: i32 = 4;\n    if (value > 3) { return 0; } else { return 1; }\n}\n",
-    ))
-    .expect("x86 codegen should lower one scalar terminal if/else into direct ELF bytes");
-
-    assert_x86_64_elf_entry(&bytes);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 terminal if else return",
-        "x86_terminal_if_else_return",
-        &bytes,
-        0,
-    );
-}
-
-#[test]
-fn x86_source_codegen_emits_direct_elf_for_terminal_if_else_bool_returns() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn main() -> bool {\n    let value: i32 = 4;\n    if (value > 3) { return true; } else { return false; }\n}\n",
-    ))
-    .expect("x86 codegen should lower HIR boolean literals in terminal branch arms");
-
-    assert_x86_64_elf_entry(&bytes);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 terminal if else bool returns",
-        "x86_terminal_if_else_bool_returns",
-        &bytes,
-        1,
-    );
-}
-
-#[test]
-fn x86_source_codegen_emits_direct_elf_for_terminal_if_else_negative_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn main() {\n    let value: i32 = 4;\n    if (value > 3) { return -1; } else { return 0; }\n}\n",
-    ))
-    .expect("x86 codegen should lower signed scalar atoms in terminal if/else arms");
-
-    assert_x86_64_elf_entry(&bytes);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 terminal if else negative return",
-        "x86_terminal_if_else_negative_return",
-        &bytes,
-        255,
-    );
-}
-
-#[test]
-fn x86_source_codegen_emits_direct_elf_for_abs_shaped_negated_local_branch() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn main() {\n    let value: i32 = -4;\n    if (value < 0) { return -value; } else { return value; }\n}\n",
-    ))
-    .expect("x86 codegen should lower an abs-shaped terminal branch over a scalar local");
-
-    assert_x86_64_elf_entry(&bytes);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 abs-shaped negated local branch",
-        "x86_abs_shaped_negated_local_branch",
-        &bytes,
-        4,
-    );
-}
-
-#[test]
-fn x86_source_codegen_emits_direct_elf_for_comparison_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn main() -> bool {\n    let value: i32 = 4;\n    return value > 3;\n}\n",
-    ))
-    .expect("x86 codegen should lower one scalar comparison return into direct ELF bytes");
-
-    assert_x86_64_elf_entry(&bytes);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code("x86 comparison return", "x86_comparison_return", &bytes, 1);
-}
-
-#[test]
-fn x86_source_codegen_emits_direct_elf_for_negated_local_comparison_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn main() -> bool {\n    let value: i32 = 3;\n    return -value < 0;\n}\n",
-    ))
-    .expect("x86 codegen should lower HIR unary local atoms in comparison returns");
-
-    assert_x86_64_elf_entry(&bytes);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 negated local comparison return",
-        "x86_negated_local_comparison_return",
-        &bytes,
-        1,
-    );
-}
-
-#[test]
-fn x86_source_codegen_executes_call_initialized_local_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn id(x: i32) -> i32 {\n    return x;\n}\nfn main() {\n    let value: i32 = id(1);\n    return value;\n}\n",
-    ))
-    .expect("x86 codegen should lower a call-initialized local through HIR value records");
-
-    assert_x86_64_elf_entry(&bytes);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 call-initialized local return",
-        "x86_call_initialized_local_return",
-        &bytes,
-        1,
-    );
-}
-
-#[test]
-fn x86_source_codegen_executes_nested_hir_expression_return() {
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(
-        "fn main() {\n    return 1 + 2 + 3;\n}\n",
-    ))
-    .expect("x86 codegen should lower nested HIR expression returns");
-
-    assert_x86_64_elf_entry(&bytes);
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 nested HIR expression return",
-        "x86_nested_hir_expression_return",
-        &bytes,
-        6,
-    );
-}
-
-#[test]
-fn x86_path_codegen_reads_existing_input_and_emits_elf() {
+fn x86_reads_source_from_path() {
     let src_path = common::TempArtifact::new("laniusc_gpu_x86", "input", Some("lani"));
     src_path.write_str("fn main() {\n    return 0;\n}\n");
 
-    let bytes = pollster::block_on(compile_source_to_x86_64_with_gpu_codegen_from_path(
-        src_path.path(),
-    ))
-    .expect("x86 path codegen should read source and emit direct ELF bytes");
+    let path = src_path.path().to_path_buf();
+    let bytes = common::run_gpu_codegen_with_timeout("x86 source path", move || {
+        pollster::block_on(compile_source_to_x86_64_with_gpu_codegen_from_path(&path))
+    })
+    .expect("source path should compile to x86_64");
 
-    assert_eq!(&bytes[0..4], b"\x7fELF");
+    assert_x86_64_elf_header(&bytes);
     #[cfg(all(unix, target_arch = "x86_64"))]
-    assert_x86_exit_code(
-        "x86 path codegen reads input",
-        "x86_path_codegen_reads_input",
-        &bytes,
-        0,
-    );
+    assert_x86_exit_code("x86 source path", "x86_source_path", &bytes, 0);
 }

@@ -1,0 +1,47 @@
+use super::*;
+
+pub(in crate::compiler) fn compact_path_build_manifest_from_stored_indexes(
+    limits: CodegenUnitLimits,
+    batch_limits: SourcePackJobBatchLimits,
+    target: SourcePackArtifactTarget,
+    schedule_index: &SourcePackLibraryScheduleIndex,
+    artifact_ref_index: &SourcePackBuildArtifactRefIndex,
+    job_batch_page_index: &SourcePackBuildJobBatchPageIndex,
+    link_batch_page_index: &SourcePackBuildLinkBatchPageIndex,
+    source_file_count: usize,
+    source_byte_count: usize,
+    source_line_count: usize,
+) -> SourcePackPathBuildManifest {
+    SourcePackPathBuildManifest {
+        version: SOURCE_PACK_PATH_BUILD_MANIFEST_VERSION,
+        source_file_count,
+        source_byte_count,
+        source_line_count,
+        source_files: Vec::new(),
+        library_dependencies: Vec::new(),
+        limits,
+        batch_limits,
+        artifacts: SourcePackBuildArtifactManifest {
+            version: SOURCE_PACK_BUILD_ARTIFACT_MANIFEST_VERSION,
+            target,
+            job_count: schedule_index.job_count,
+            job_batch_count: job_batch_page_index.batch_count,
+            batch_dependency_count: job_batch_page_index.batch_count,
+            artifact_count: artifact_ref_index.artifact_count,
+            job_artifact_count: schedule_index.job_count,
+            job_artifact_io_count: schedule_index.job_count,
+            artifact_use_count: artifact_ref_index.artifact_count,
+            link_interface_batch_count: link_batch_page_index.link_interface_batch_count,
+            link_object_batch_count: link_batch_page_index.link_object_batch_count,
+            job_schedule: Default::default(),
+            job_batches: Default::default(),
+            batch_dependencies: Default::default(),
+            artifacts: Default::default(),
+            job_artifacts: Default::default(),
+            job_artifact_io: Default::default(),
+            artifact_uses: Default::default(),
+            link_interface_batches: Default::default(),
+            link_object_batches: Default::default(),
+        },
+    }
+}

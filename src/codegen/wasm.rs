@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Mutex};
+use std::sync::Mutex;
 
 use anyhow::Result;
 use encase::ShaderType;
@@ -981,697 +981,573 @@ impl GpuWasmCodeGenerator {
         );
         let status_readback = readback_u32s(device, "rb.codegen.wasm.status", 4);
 
-        let arrays_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-            ("gParams".into(), params_buf.as_entire_binding()),
-            ("token_words".into(), token_buf.as_entire_binding()),
-            ("token_count".into(), token_count_buf.as_entire_binding()),
-            ("source_bytes".into(), source_buf.as_entire_binding()),
-            ("array_len".into(), array_len_buf.as_entire_binding()),
-            ("array_values".into(), array_values_buf.as_entire_binding()),
-            ("body_status".into(), body_status_buf.as_entire_binding()),
-        ]);
-        let simple_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-            ("gParams".into(), params_buf.as_entire_binding()),
-            ("token_words".into(), token_buf.as_entire_binding()),
-            ("token_count".into(), token_count_buf.as_entire_binding()),
-            ("source_bytes".into(), source_buf.as_entire_binding()),
-            ("body_words".into(), body_buf.as_entire_binding()),
-            ("body_status".into(), body_status_buf.as_entire_binding()),
-            (
-                "body_dispatch_args".into(),
-                body_dispatch_buf.as_entire_binding(),
-            ),
-            ("out_words".into(), out_buf.as_entire_binding()),
-            ("status".into(), status_buf.as_entire_binding()),
-        ]);
-        let simple_bind_group = bind_group::create_bind_group_from_reflection(
+        let simple_bind_group = bind_group::create_bind_group_from_bindings(
             device,
             Some("codegen_wasm_simple_lets"),
-            &self.simple_pass.bind_group_layouts[0],
-            &self.simple_pass.reflection,
+            &self.simple_pass,
             0,
-            &simple_resources,
+            &[
+                ("gParams", params_buf.as_entire_binding()),
+                ("token_words", token_buf.as_entire_binding()),
+                ("token_count", token_count_buf.as_entire_binding()),
+                ("source_bytes", source_buf.as_entire_binding()),
+                ("body_words", body_buf.as_entire_binding()),
+                ("body_status", body_status_buf.as_entire_binding()),
+                ("body_dispatch_args", body_dispatch_buf.as_entire_binding()),
+                ("out_words", out_buf.as_entire_binding()),
+                ("status", status_buf.as_entire_binding()),
+            ],
         )?;
-        let arrays_bind_group = bind_group::create_bind_group_from_reflection(
+        let arrays_bind_group = bind_group::create_bind_group_from_bindings(
             device,
             Some("codegen_wasm_arrays"),
-            &self.arrays_pass.bind_group_layouts[0],
-            &self.arrays_pass.reflection,
+            &self.arrays_pass,
             0,
-            &arrays_resources,
+            &[
+                ("gParams", params_buf.as_entire_binding()),
+                ("token_words", token_buf.as_entire_binding()),
+                ("token_count", token_count_buf.as_entire_binding()),
+                ("source_bytes", source_buf.as_entire_binding()),
+                ("array_len", array_len_buf.as_entire_binding()),
+                ("array_values", array_values_buf.as_entire_binding()),
+                ("body_status", body_status_buf.as_entire_binding()),
+            ],
         )?;
-        let wasm_const_values_resources: HashMap<String, wgpu::BindingResource<'_>> =
-            HashMap::from([
-                ("gParams".into(), params_buf.as_entire_binding()),
-                ("hir_status".into(), hir_status_buf.as_entire_binding()),
+        let wasm_const_values_bind_group = bind_group::create_bind_group_from_bindings(
+            device,
+            Some("codegen_wasm_const_values"),
+            &self.wasm_const_values_pass,
+            0,
+            &[
+                ("gParams", params_buf.as_entire_binding()),
+                ("hir_status", hir_status_buf.as_entire_binding()),
+                ("hir_expr_record", expr_metadata.record.as_entire_binding()),
                 (
-                    "hir_expr_record".into(),
-                    expr_metadata.record.as_entire_binding(),
-                ),
-                (
-                    "hir_expr_int_value".into(),
+                    "hir_expr_int_value",
                     expr_metadata.int_value.as_entire_binding(),
                 ),
                 (
-                    "hir_stmt_record".into(),
+                    "hir_stmt_record",
                     expr_metadata.stmt_record.as_entire_binding(),
                 ),
                 (
-                    "wasm_const_value_record".into(),
+                    "wasm_const_value_record",
                     wasm_const_value_record_buf.as_entire_binding(),
                 ),
-            ]);
-        let wasm_const_values_bind_group = bind_group::create_bind_group_from_reflection(
-            device,
-            Some("codegen_wasm_const_values"),
-            &self.wasm_const_values_pass.bind_group_layouts[0],
-            &self.wasm_const_values_pass.reflection,
-            0,
-            &wasm_const_values_resources,
+            ],
         )?;
 
-        macro_rules! add_codegen_metadata_resources {
-            ($resources:expr) => {{
-                $resources.insert(
-                    "name_id_by_token".into(),
-                    name_id_by_token_buf.as_entire_binding(),
-                );
-                $resources.insert(
-                    "type_expr_ref_tag".into(),
-                    type_expr_ref_tag_buf.as_entire_binding(),
-                );
-                $resources.insert(
-                    "type_expr_ref_payload".into(),
-                    type_expr_ref_payload_buf.as_entire_binding(),
-                );
-                $resources.insert(
-                    "method_decl_receiver_ref_tag".into(),
-                    method_decl_receiver_ref_tag_buf.as_entire_binding(),
-                );
-                $resources.insert(
-                    "method_decl_receiver_ref_payload".into(),
-                    method_decl_receiver_ref_payload_buf.as_entire_binding(),
-                );
-                $resources.insert(
-                    "method_decl_param_offset".into(),
-                    method_decl_param_offset_buf.as_entire_binding(),
-                );
-                $resources.insert(
-                    "method_decl_receiver_mode".into(),
-                    method_decl_receiver_mode_buf.as_entire_binding(),
-                );
-                $resources.insert(
-                    "method_call_receiver_ref_tag".into(),
-                    method_call_receiver_ref_tag_buf.as_entire_binding(),
-                );
-                $resources.insert(
-                    "method_call_receiver_ref_payload".into(),
-                    method_call_receiver_ref_payload_buf.as_entire_binding(),
-                );
-                $resources.insert(
-                    "type_instance_decl_token".into(),
-                    type_instance_decl_token_buf.as_entire_binding(),
-                );
-                $resources.insert(
-                    "type_instance_arg_start".into(),
-                    type_instance_arg_start_buf.as_entire_binding(),
-                );
-                $resources.insert(
-                    "type_instance_arg_count".into(),
-                    type_instance_arg_count_buf.as_entire_binding(),
-                );
-                $resources.insert(
-                    "type_instance_arg_ref_tag".into(),
-                    type_instance_arg_ref_tag_buf.as_entire_binding(),
-                );
-                $resources.insert(
-                    "type_instance_arg_ref_payload".into(),
-                    type_instance_arg_ref_payload_buf.as_entire_binding(),
-                );
-                $resources.insert(
-                    "fn_return_ref_tag".into(),
-                    fn_return_ref_tag_buf.as_entire_binding(),
-                );
-                $resources.insert(
-                    "fn_return_ref_payload".into(),
-                    fn_return_ref_payload_buf.as_entire_binding(),
-                );
-                $resources.insert(
-                    "member_result_ref_tag".into(),
-                    member_result_ref_tag_buf.as_entire_binding(),
-                );
-                $resources.insert(
-                    "member_result_ref_payload".into(),
-                    member_result_ref_payload_buf.as_entire_binding(),
-                );
-                $resources.insert(
-                    "struct_init_field_expected_ref_tag".into(),
-                    struct_init_field_expected_ref_tag_buf.as_entire_binding(),
-                );
-                $resources.insert(
-                    "struct_init_field_expected_ref_payload".into(),
-                    struct_init_field_expected_ref_payload_buf.as_entire_binding(),
-                );
+        macro_rules! add_codegen_metadata_bindings {
+            ($bindings:expr) => {{
+                $bindings.extend([
+                    ("name_id_by_token", name_id_by_token_buf.as_entire_binding()),
+                    (
+                        "type_expr_ref_tag",
+                        type_expr_ref_tag_buf.as_entire_binding(),
+                    ),
+                    (
+                        "type_expr_ref_payload",
+                        type_expr_ref_payload_buf.as_entire_binding(),
+                    ),
+                    (
+                        "method_decl_receiver_ref_tag",
+                        method_decl_receiver_ref_tag_buf.as_entire_binding(),
+                    ),
+                    (
+                        "method_decl_receiver_ref_payload",
+                        method_decl_receiver_ref_payload_buf.as_entire_binding(),
+                    ),
+                    (
+                        "method_decl_param_offset",
+                        method_decl_param_offset_buf.as_entire_binding(),
+                    ),
+                    (
+                        "method_decl_receiver_mode",
+                        method_decl_receiver_mode_buf.as_entire_binding(),
+                    ),
+                    (
+                        "method_call_receiver_ref_tag",
+                        method_call_receiver_ref_tag_buf.as_entire_binding(),
+                    ),
+                    (
+                        "method_call_receiver_ref_payload",
+                        method_call_receiver_ref_payload_buf.as_entire_binding(),
+                    ),
+                    (
+                        "type_instance_decl_token",
+                        type_instance_decl_token_buf.as_entire_binding(),
+                    ),
+                    (
+                        "type_instance_arg_start",
+                        type_instance_arg_start_buf.as_entire_binding(),
+                    ),
+                    (
+                        "type_instance_arg_count",
+                        type_instance_arg_count_buf.as_entire_binding(),
+                    ),
+                    (
+                        "type_instance_arg_ref_tag",
+                        type_instance_arg_ref_tag_buf.as_entire_binding(),
+                    ),
+                    (
+                        "type_instance_arg_ref_payload",
+                        type_instance_arg_ref_payload_buf.as_entire_binding(),
+                    ),
+                    (
+                        "fn_return_ref_tag",
+                        fn_return_ref_tag_buf.as_entire_binding(),
+                    ),
+                    (
+                        "fn_return_ref_payload",
+                        fn_return_ref_payload_buf.as_entire_binding(),
+                    ),
+                    (
+                        "member_result_ref_tag",
+                        member_result_ref_tag_buf.as_entire_binding(),
+                    ),
+                    (
+                        "member_result_ref_payload",
+                        member_result_ref_payload_buf.as_entire_binding(),
+                    ),
+                    (
+                        "struct_init_field_expected_ref_tag",
+                        struct_init_field_expected_ref_tag_buf.as_entire_binding(),
+                    ),
+                    (
+                        "struct_init_field_expected_ref_payload",
+                        struct_init_field_expected_ref_payload_buf.as_entire_binding(),
+                    ),
+                ]);
             }};
         }
 
-        macro_rules! add_aggregate_layout_outputs {
-            ($resources:expr) => {{
-                $resources.insert(
-                    "struct_field_count_by_decl_token".into(),
-                    struct_field_count_by_decl_token_buf.as_entire_binding(),
-                );
-                $resources.insert(
-                    "struct_field_index_by_token".into(),
-                    struct_field_index_by_token_buf.as_entire_binding(),
-                );
-                $resources.insert(
-                    "struct_field_decl_by_token".into(),
-                    struct_field_decl_by_token_buf.as_entire_binding(),
-                );
-                $resources.insert(
-                    "struct_field_name_id".into(),
-                    struct_field_name_id_buf.as_entire_binding(),
-                );
-                $resources.insert(
-                    "struct_field_ref_tag".into(),
-                    struct_field_ref_tag_buf.as_entire_binding(),
-                );
-                $resources.insert(
-                    "struct_field_ref_payload".into(),
-                    struct_field_ref_payload_buf.as_entire_binding(),
-                );
-                $resources.insert(
-                    "struct_field_scalar_offset".into(),
-                    struct_field_scalar_offset_buf.as_entire_binding(),
-                );
-                $resources.insert(
-                    "struct_field_scalar_width".into(),
-                    struct_field_scalar_width_buf.as_entire_binding(),
-                );
-                $resources.insert(
-                    "struct_init_field_index".into(),
-                    struct_init_field_index_buf.as_entire_binding(),
-                );
-                $resources.insert(
-                    "member_result_field_index".into(),
-                    member_result_field_index_buf.as_entire_binding(),
-                );
+        macro_rules! add_aggregate_layout_output_bindings {
+            ($bindings:expr) => {{
+                $bindings.extend([
+                    (
+                        "struct_field_count_by_decl_token",
+                        struct_field_count_by_decl_token_buf.as_entire_binding(),
+                    ),
+                    (
+                        "struct_field_index_by_token",
+                        struct_field_index_by_token_buf.as_entire_binding(),
+                    ),
+                    (
+                        "struct_field_decl_by_token",
+                        struct_field_decl_by_token_buf.as_entire_binding(),
+                    ),
+                    (
+                        "struct_field_name_id",
+                        struct_field_name_id_buf.as_entire_binding(),
+                    ),
+                    (
+                        "struct_field_ref_tag",
+                        struct_field_ref_tag_buf.as_entire_binding(),
+                    ),
+                    (
+                        "struct_field_ref_payload",
+                        struct_field_ref_payload_buf.as_entire_binding(),
+                    ),
+                    (
+                        "struct_field_scalar_offset",
+                        struct_field_scalar_offset_buf.as_entire_binding(),
+                    ),
+                    (
+                        "struct_field_scalar_width",
+                        struct_field_scalar_width_buf.as_entire_binding(),
+                    ),
+                    (
+                        "struct_init_field_index",
+                        struct_init_field_index_buf.as_entire_binding(),
+                    ),
+                    (
+                        "member_result_field_index",
+                        member_result_field_index_buf.as_entire_binding(),
+                    ),
+                ]);
             }};
         }
 
-        let mut agg_layout_clear_resources: HashMap<String, wgpu::BindingResource<'_>> =
-            HashMap::from([("gParams".into(), params_buf.as_entire_binding())]);
-        add_aggregate_layout_outputs!(agg_layout_clear_resources);
-        let agg_layout_clear_bind_group = bind_group::create_bind_group_from_reflection(
+        let mut agg_layout_clear_bindings = vec![("gParams", params_buf.as_entire_binding())];
+        add_aggregate_layout_output_bindings!(agg_layout_clear_bindings);
+        let agg_layout_clear_bind_group = bind_group::create_bind_group_from_bindings(
             device,
             Some("codegen_wasm_agg_layout_clear"),
-            &self.agg_layout_clear_pass.bind_group_layouts[0],
-            &self.agg_layout_clear_pass.reflection,
+            &self.agg_layout_clear_pass,
             0,
-            &agg_layout_clear_resources,
+            &agg_layout_clear_bindings,
         )?;
 
-        let mut agg_layout_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-            ("gParams".into(), params_buf.as_entire_binding()),
-            ("hir_status".into(), hir_status_buf.as_entire_binding()),
-            ("node_kind".into(), node_kind_buf.as_entire_binding()),
-            ("parent".into(), parent_buf.as_entire_binding()),
-            ("first_child".into(), first_child_buf.as_entire_binding()),
-            ("next_sibling".into(), next_sibling_buf.as_entire_binding()),
-            ("hir_kind".into(), hir_kind_buf.as_entire_binding()),
+        let mut agg_layout_bindings = vec![
+            ("gParams", params_buf.as_entire_binding()),
+            ("hir_status", hir_status_buf.as_entire_binding()),
+            ("node_kind", node_kind_buf.as_entire_binding()),
+            ("parent", parent_buf.as_entire_binding()),
+            ("first_child", first_child_buf.as_entire_binding()),
+            ("next_sibling", next_sibling_buf.as_entire_binding()),
+            ("hir_kind", hir_kind_buf.as_entire_binding()),
+            ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
             (
-                "hir_token_pos".into(),
-                hir_token_pos_buf.as_entire_binding(),
-            ),
-            (
-                "hir_struct_field_parent_struct".into(),
+                "hir_struct_field_parent_struct",
                 struct_metadata.field_parent_struct.as_entire_binding(),
             ),
             (
-                "hir_struct_field_ordinal".into(),
+                "hir_struct_field_ordinal",
                 struct_metadata.field_ordinal.as_entire_binding(),
             ),
             (
-                "hir_struct_lit_field_parent_lit".into(),
+                "hir_struct_lit_field_parent_lit",
                 struct_metadata.lit_field_parent_lit.as_entire_binding(),
             ),
-            ("visible_decl".into(), visible_decl_buf.as_entire_binding()),
-            (
-                "call_fn_index".into(),
-                call_fn_index_buf.as_entire_binding(),
-            ),
-        ]);
-        add_codegen_metadata_resources!(agg_layout_resources);
-        add_aggregate_layout_outputs!(agg_layout_resources);
-        let agg_layout_bind_group = bind_group::create_bind_group_from_reflection(
+            ("visible_decl", visible_decl_buf.as_entire_binding()),
+            ("call_fn_index", call_fn_index_buf.as_entire_binding()),
+        ];
+        add_codegen_metadata_bindings!(agg_layout_bindings);
+        add_aggregate_layout_output_bindings!(agg_layout_bindings);
+        let agg_layout_bind_group = bind_group::create_bind_group_from_bindings(
             device,
             Some("codegen_wasm_agg_layout"),
-            &self.agg_layout_pass.bind_group_layouts[0],
-            &self.agg_layout_pass.reflection,
+            &self.agg_layout_pass,
             0,
-            &agg_layout_resources,
+            &agg_layout_bindings,
         )?;
 
-        let hir_body_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-            ("gParams".into(), params_buf.as_entire_binding()),
-            ("hir_status".into(), hir_status_buf.as_entire_binding()),
-            ("parent".into(), parent_buf.as_entire_binding()),
-            ("hir_kind".into(), hir_kind_buf.as_entire_binding()),
-            (
-                "hir_token_pos".into(),
-                hir_token_pos_buf.as_entire_binding(),
-            ),
-            (
-                "hir_token_end".into(),
-                hir_token_end_buf.as_entire_binding(),
-            ),
-            (
-                "fn_entrypoint_tag".into(),
-                fn_entrypoint_tag_buf.as_entire_binding(),
-            ),
-            ("visible_decl".into(), visible_decl_buf.as_entire_binding()),
-            (
-                "wasm_const_value_record".into(),
-                wasm_const_value_record_buf.as_entire_binding(),
-            ),
-            (
-                "hir_stmt_record".into(),
-                expr_metadata.stmt_record.as_entire_binding(),
-            ),
-            (
-                "hir_expr_record".into(),
-                expr_metadata.record.as_entire_binding(),
-            ),
-            (
-                "hir_expr_int_value".into(),
-                expr_metadata.int_value.as_entire_binding(),
-            ),
-            (
-                "hir_call_callee_node".into(),
-                call_metadata.callee_node.as_entire_binding(),
-            ),
-            (
-                "hir_call_arg_start".into(),
-                call_metadata.arg_start.as_entire_binding(),
-            ),
-            (
-                "hir_call_arg_count".into(),
-                call_metadata.arg_count.as_entire_binding(),
-            ),
-            (
-                "call_intrinsic_tag".into(),
-                call_intrinsic_tag_buf.as_entire_binding(),
-            ),
-            ("body_words".into(), body_buf.as_entire_binding()),
-            ("body_status".into(), body_status_buf.as_entire_binding()),
-            ("status".into(), status_buf.as_entire_binding()),
-        ]);
-        let hir_body_bind_group = bind_group::create_bind_group_from_reflection(
+        let hir_body_bind_group = bind_group::create_bind_group_from_bindings(
             device,
             Some("codegen_wasm_hir_body"),
-            &self.hir_body_pass.bind_group_layouts[0],
-            &self.hir_body_pass.reflection,
+            &self.hir_body_pass,
             0,
-            &hir_body_resources,
-        )?;
-
-        let mut hir_agg_body_resources: HashMap<String, wgpu::BindingResource<'_>> =
-            HashMap::from([
-                ("gParams".into(), params_buf.as_entire_binding()),
-                ("token_words".into(), token_buf.as_entire_binding()),
-                ("token_count".into(), token_count_buf.as_entire_binding()),
-                ("source_bytes".into(), source_buf.as_entire_binding()),
-                ("hir_status".into(), hir_status_buf.as_entire_binding()),
-                ("parent".into(), parent_buf.as_entire_binding()),
-                ("hir_kind".into(), hir_kind_buf.as_entire_binding()),
+            &[
+                ("gParams", params_buf.as_entire_binding()),
+                ("hir_status", hir_status_buf.as_entire_binding()),
+                ("parent", parent_buf.as_entire_binding()),
+                ("hir_kind", hir_kind_buf.as_entire_binding()),
+                ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
+                ("hir_token_end", hir_token_end_buf.as_entire_binding()),
                 (
-                    "hir_token_pos".into(),
-                    hir_token_pos_buf.as_entire_binding(),
+                    "fn_entrypoint_tag",
+                    fn_entrypoint_tag_buf.as_entire_binding(),
+                ),
+                ("visible_decl", visible_decl_buf.as_entire_binding()),
+                (
+                    "wasm_const_value_record",
+                    wasm_const_value_record_buf.as_entire_binding(),
                 ),
                 (
-                    "hir_token_end".into(),
-                    hir_token_end_buf.as_entire_binding(),
+                    "hir_stmt_record",
+                    expr_metadata.stmt_record.as_entire_binding(),
                 ),
+                ("hir_expr_record", expr_metadata.record.as_entire_binding()),
                 (
-                    "name_id_by_token".into(),
-                    name_id_by_token_buf.as_entire_binding(),
-                ),
-                ("visible_decl".into(), visible_decl_buf.as_entire_binding()),
-                (
-                    "call_fn_index".into(),
-                    call_fn_index_buf.as_entire_binding(),
-                ),
-                ("body_words".into(), body_buf.as_entire_binding()),
-                ("body_status".into(), body_status_buf.as_entire_binding()),
-                ("status".into(), status_buf.as_entire_binding()),
-            ]);
-        add_aggregate_layout_outputs!(hir_agg_body_resources);
-        let hir_agg_body_bind_group = bind_group::create_bind_group_from_reflection(
-            device,
-            Some("codegen_wasm_hir_agg_body"),
-            &self.hir_agg_body_pass.bind_group_layouts[0],
-            &self.hir_agg_body_pass.reflection,
-            0,
-            &hir_agg_body_resources,
-        )?;
-
-        let hir_array_body_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-            ("gParams".into(), params_buf.as_entire_binding()),
-            ("token_words".into(), token_buf.as_entire_binding()),
-            ("token_count".into(), token_count_buf.as_entire_binding()),
-            ("source_bytes".into(), source_buf.as_entire_binding()),
-            ("hir_status".into(), hir_status_buf.as_entire_binding()),
-            ("hir_kind".into(), hir_kind_buf.as_entire_binding()),
-            (
-                "hir_token_pos".into(),
-                hir_token_pos_buf.as_entire_binding(),
-            ),
-            (
-                "hir_token_end".into(),
-                hir_token_end_buf.as_entire_binding(),
-            ),
-            ("visible_decl".into(), visible_decl_buf.as_entire_binding()),
-            (
-                "call_fn_index".into(),
-                call_fn_index_buf.as_entire_binding(),
-            ),
-            ("array_len".into(), array_len_buf.as_entire_binding()),
-            ("array_values".into(), array_values_buf.as_entire_binding()),
-            ("body_words".into(), body_buf.as_entire_binding()),
-            ("body_status".into(), body_status_buf.as_entire_binding()),
-            ("status".into(), status_buf.as_entire_binding()),
-        ]);
-        let hir_array_body_bind_group = bind_group::create_bind_group_from_reflection(
-            device,
-            Some("codegen_wasm_hir_array_body"),
-            &self.hir_array_body_pass.bind_group_layouts[0],
-            &self.hir_array_body_pass.reflection,
-            0,
-            &hir_array_body_resources,
-        )?;
-
-        let mut hir_module_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-            ("gParams".into(), params_buf.as_entire_binding()),
-            ("token_words".into(), token_buf.as_entire_binding()),
-            ("token_count".into(), token_count_buf.as_entire_binding()),
-            ("source_bytes".into(), source_buf.as_entire_binding()),
-            ("node_kind".into(), node_kind_buf.as_entire_binding()),
-            ("parent".into(), parent_buf.as_entire_binding()),
-            ("first_child".into(), first_child_buf.as_entire_binding()),
-            ("next_sibling".into(), next_sibling_buf.as_entire_binding()),
-            ("hir_status".into(), hir_status_buf.as_entire_binding()),
-            ("hir_kind".into(), hir_kind_buf.as_entire_binding()),
-            (
-                "hir_token_pos".into(),
-                hir_token_pos_buf.as_entire_binding(),
-            ),
-            (
-                "hir_token_end".into(),
-                hir_token_end_buf.as_entire_binding(),
-            ),
-            (
-                "hir_call_callee_node".into(),
-                call_metadata.callee_node.as_entire_binding(),
-            ),
-            (
-                "hir_call_arg_start".into(),
-                call_metadata.arg_start.as_entire_binding(),
-            ),
-            (
-                "hir_call_arg_parent_call".into(),
-                call_metadata.arg_parent_call.as_entire_binding(),
-            ),
-            (
-                "hir_call_arg_end".into(),
-                call_metadata.arg_end.as_entire_binding(),
-            ),
-            (
-                "hir_call_arg_count".into(),
-                call_metadata.arg_count.as_entire_binding(),
-            ),
-            (
-                "hir_param_record".into(),
-                hir_param_record_buf.as_entire_binding(),
-            ),
-            (
-                "hir_stmt_record".into(),
-                expr_metadata.stmt_record.as_entire_binding(),
-            ),
-            (
-                "hir_expr_record".into(),
-                expr_metadata.record.as_entire_binding(),
-            ),
-            (
-                "hir_expr_int_value".into(),
-                expr_metadata.int_value.as_entire_binding(),
-            ),
-            ("visible_decl".into(), visible_decl_buf.as_entire_binding()),
-            (
-                "module_value_path_call_head".into(),
-                module_value_path_call_head_buf.as_entire_binding(),
-            ),
-            (
-                "module_value_path_call_open".into(),
-                module_value_path_call_open_buf.as_entire_binding(),
-            ),
-            (
-                "module_value_path_const_head".into(),
-                module_value_path_const_head_buf.as_entire_binding(),
-            ),
-            (
-                "module_value_path_const_end".into(),
-                module_value_path_const_end_buf.as_entire_binding(),
-            ),
-            (
-                "call_fn_index".into(),
-                call_fn_index_buf.as_entire_binding(),
-            ),
-            (
-                "call_intrinsic_tag".into(),
-                call_intrinsic_tag_buf.as_entire_binding(),
-            ),
-            (
-                "fn_entrypoint_tag".into(),
-                fn_entrypoint_tag_buf.as_entire_binding(),
-            ),
-            (
-                "call_return_type".into(),
-                call_return_type_buf.as_entire_binding(),
-            ),
-            (
-                "call_param_count".into(),
-                call_param_count_buf.as_entire_binding(),
-            ),
-            (
-                "call_param_type".into(),
-                call_param_type_buf.as_entire_binding(),
-            ),
-            ("out_words".into(), out_buf.as_entire_binding()),
-            ("status".into(), status_buf.as_entire_binding()),
-        ]);
-        add_codegen_metadata_resources!(hir_module_resources);
-        let hir_module_bind_group = bind_group::create_bind_group_from_reflection(
-            device,
-            Some("codegen_wasm_hir_module"),
-            &self.hir_module_pass.bind_group_layouts[0],
-            &self.hir_module_pass.reflection,
-            0,
-            &hir_module_resources,
-        )?;
-
-        let mut hir_assert_module_resources: HashMap<String, wgpu::BindingResource<'_>> =
-            HashMap::from([
-                ("gParams".into(), params_buf.as_entire_binding()),
-                ("hir_kind".into(), hir_kind_buf.as_entire_binding()),
-                (
-                    "hir_token_pos".into(),
-                    hir_token_pos_buf.as_entire_binding(),
-                ),
-                (
-                    "hir_token_end".into(),
-                    hir_token_end_buf.as_entire_binding(),
-                ),
-                (
-                    "hir_call_callee_node".into(),
-                    call_metadata.callee_node.as_entire_binding(),
-                ),
-                (
-                    "hir_call_arg_parent_call".into(),
-                    call_metadata.arg_parent_call.as_entire_binding(),
-                ),
-                (
-                    "hir_call_arg_end".into(),
-                    call_metadata.arg_end.as_entire_binding(),
-                ),
-                (
-                    "hir_expr_record".into(),
-                    expr_metadata.record.as_entire_binding(),
-                ),
-                (
-                    "hir_expr_int_value".into(),
+                    "hir_expr_int_value",
                     expr_metadata.int_value.as_entire_binding(),
                 ),
                 (
-                    "call_fn_index".into(),
-                    call_fn_index_buf.as_entire_binding(),
+                    "hir_call_callee_node",
+                    call_metadata.callee_node.as_entire_binding(),
                 ),
                 (
-                    "call_intrinsic_tag".into(),
+                    "hir_call_arg_start",
+                    call_metadata.arg_start.as_entire_binding(),
+                ),
+                (
+                    "hir_call_arg_count",
+                    call_metadata.arg_count.as_entire_binding(),
+                ),
+                (
+                    "call_intrinsic_tag",
                     call_intrinsic_tag_buf.as_entire_binding(),
                 ),
-                (
-                    "fn_entrypoint_tag".into(),
-                    fn_entrypoint_tag_buf.as_entire_binding(),
-                ),
-                ("out_words".into(), out_buf.as_entire_binding()),
-                ("status".into(), status_buf.as_entire_binding()),
-            ]);
-        add_codegen_metadata_resources!(hir_assert_module_resources);
-        let hir_assert_module_bind_group = bind_group::create_bind_group_from_reflection(
-            device,
-            Some("codegen_wasm_hir_assert_module"),
-            &self.hir_assert_module_pass.bind_group_layouts[0],
-            &self.hir_assert_module_pass.reflection,
-            0,
-            &hir_assert_module_resources,
+                ("body_words", body_buf.as_entire_binding()),
+                ("body_status", body_status_buf.as_entire_binding()),
+                ("status", status_buf.as_entire_binding()),
+            ],
         )?;
 
-        let hir_enum_match_records_resources: HashMap<String, wgpu::BindingResource<'_>> =
-            HashMap::from([
-                ("gParams".into(), params_buf.as_entire_binding()),
+        let mut hir_agg_body_bindings = vec![
+            ("gParams", params_buf.as_entire_binding()),
+            ("token_words", token_buf.as_entire_binding()),
+            ("token_count", token_count_buf.as_entire_binding()),
+            ("source_bytes", source_buf.as_entire_binding()),
+            ("hir_status", hir_status_buf.as_entire_binding()),
+            ("parent", parent_buf.as_entire_binding()),
+            ("hir_kind", hir_kind_buf.as_entire_binding()),
+            ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
+            ("hir_token_end", hir_token_end_buf.as_entire_binding()),
+            ("name_id_by_token", name_id_by_token_buf.as_entire_binding()),
+            ("visible_decl", visible_decl_buf.as_entire_binding()),
+            ("call_fn_index", call_fn_index_buf.as_entire_binding()),
+            ("body_words", body_buf.as_entire_binding()),
+            ("body_status", body_status_buf.as_entire_binding()),
+            ("status", status_buf.as_entire_binding()),
+        ];
+        add_aggregate_layout_output_bindings!(hir_agg_body_bindings);
+        let hir_agg_body_bind_group = bind_group::create_bind_group_from_bindings(
+            device,
+            Some("codegen_wasm_hir_agg_body"),
+            &self.hir_agg_body_pass,
+            0,
+            &hir_agg_body_bindings,
+        )?;
+
+        let hir_array_body_bind_group = bind_group::create_bind_group_from_bindings(
+            device,
+            Some("codegen_wasm_hir_array_body"),
+            &self.hir_array_body_pass,
+            0,
+            &[
+                ("gParams", params_buf.as_entire_binding()),
+                ("token_words", token_buf.as_entire_binding()),
+                ("token_count", token_count_buf.as_entire_binding()),
+                ("source_bytes", source_buf.as_entire_binding()),
+                ("hir_status", hir_status_buf.as_entire_binding()),
+                ("hir_kind", hir_kind_buf.as_entire_binding()),
+                ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
+                ("hir_token_end", hir_token_end_buf.as_entire_binding()),
+                ("visible_decl", visible_decl_buf.as_entire_binding()),
+                ("call_fn_index", call_fn_index_buf.as_entire_binding()),
+                ("array_len", array_len_buf.as_entire_binding()),
+                ("array_values", array_values_buf.as_entire_binding()),
+                ("body_words", body_buf.as_entire_binding()),
+                ("body_status", body_status_buf.as_entire_binding()),
+                ("status", status_buf.as_entire_binding()),
+            ],
+        )?;
+
+        let mut hir_module_bindings = vec![
+            ("gParams", params_buf.as_entire_binding()),
+            ("token_words", token_buf.as_entire_binding()),
+            ("token_count", token_count_buf.as_entire_binding()),
+            ("source_bytes", source_buf.as_entire_binding()),
+            ("node_kind", node_kind_buf.as_entire_binding()),
+            ("parent", parent_buf.as_entire_binding()),
+            ("first_child", first_child_buf.as_entire_binding()),
+            ("next_sibling", next_sibling_buf.as_entire_binding()),
+            ("hir_status", hir_status_buf.as_entire_binding()),
+            ("hir_kind", hir_kind_buf.as_entire_binding()),
+            ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
+            ("hir_token_end", hir_token_end_buf.as_entire_binding()),
+            (
+                "hir_call_callee_node",
+                call_metadata.callee_node.as_entire_binding(),
+            ),
+            (
+                "hir_call_arg_start",
+                call_metadata.arg_start.as_entire_binding(),
+            ),
+            (
+                "hir_call_arg_parent_call",
+                call_metadata.arg_parent_call.as_entire_binding(),
+            ),
+            (
+                "hir_call_arg_end",
+                call_metadata.arg_end.as_entire_binding(),
+            ),
+            (
+                "hir_call_arg_count",
+                call_metadata.arg_count.as_entire_binding(),
+            ),
+            ("hir_param_record", hir_param_record_buf.as_entire_binding()),
+            (
+                "hir_stmt_record",
+                expr_metadata.stmt_record.as_entire_binding(),
+            ),
+            ("hir_expr_record", expr_metadata.record.as_entire_binding()),
+            (
+                "hir_expr_int_value",
+                expr_metadata.int_value.as_entire_binding(),
+            ),
+            ("visible_decl", visible_decl_buf.as_entire_binding()),
+            (
+                "module_value_path_call_head",
+                module_value_path_call_head_buf.as_entire_binding(),
+            ),
+            (
+                "module_value_path_call_open",
+                module_value_path_call_open_buf.as_entire_binding(),
+            ),
+            (
+                "module_value_path_const_head",
+                module_value_path_const_head_buf.as_entire_binding(),
+            ),
+            (
+                "module_value_path_const_end",
+                module_value_path_const_end_buf.as_entire_binding(),
+            ),
+            ("call_fn_index", call_fn_index_buf.as_entire_binding()),
+            (
+                "call_intrinsic_tag",
+                call_intrinsic_tag_buf.as_entire_binding(),
+            ),
+            (
+                "fn_entrypoint_tag",
+                fn_entrypoint_tag_buf.as_entire_binding(),
+            ),
+            ("call_return_type", call_return_type_buf.as_entire_binding()),
+            ("call_param_count", call_param_count_buf.as_entire_binding()),
+            ("call_param_type", call_param_type_buf.as_entire_binding()),
+            ("out_words", out_buf.as_entire_binding()),
+            ("status", status_buf.as_entire_binding()),
+        ];
+        add_codegen_metadata_bindings!(hir_module_bindings);
+        let hir_module_bind_group = bind_group::create_bind_group_from_bindings(
+            device,
+            Some("codegen_wasm_hir_module"),
+            &self.hir_module_pass,
+            0,
+            &hir_module_bindings,
+        )?;
+
+        let mut hir_assert_module_bindings = vec![
+            ("gParams", params_buf.as_entire_binding()),
+            ("hir_kind", hir_kind_buf.as_entire_binding()),
+            ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
+            ("hir_token_end", hir_token_end_buf.as_entire_binding()),
+            (
+                "hir_call_callee_node",
+                call_metadata.callee_node.as_entire_binding(),
+            ),
+            (
+                "hir_call_arg_parent_call",
+                call_metadata.arg_parent_call.as_entire_binding(),
+            ),
+            (
+                "hir_call_arg_end",
+                call_metadata.arg_end.as_entire_binding(),
+            ),
+            ("hir_expr_record", expr_metadata.record.as_entire_binding()),
+            (
+                "hir_expr_int_value",
+                expr_metadata.int_value.as_entire_binding(),
+            ),
+            ("call_fn_index", call_fn_index_buf.as_entire_binding()),
+            (
+                "call_intrinsic_tag",
+                call_intrinsic_tag_buf.as_entire_binding(),
+            ),
+            (
+                "fn_entrypoint_tag",
+                fn_entrypoint_tag_buf.as_entire_binding(),
+            ),
+            ("out_words", out_buf.as_entire_binding()),
+            ("status", status_buf.as_entire_binding()),
+        ];
+        add_codegen_metadata_bindings!(hir_assert_module_bindings);
+        let hir_assert_module_bind_group = bind_group::create_bind_group_from_bindings(
+            device,
+            Some("codegen_wasm_hir_assert_module"),
+            &self.hir_assert_module_pass,
+            0,
+            &hir_assert_module_bindings,
+        )?;
+
+        let hir_enum_match_records_bind_group = bind_group::create_bind_group_from_bindings(
+            device,
+            Some("codegen_wasm_hir_enum_match_records"),
+            &self.hir_enum_match_records_pass,
+            0,
+            &[
+                ("gParams", params_buf.as_entire_binding()),
                 (
-                    "hir_match_scrutinee_node".into(),
+                    "hir_match_scrutinee_node",
                     enum_match_metadata.match_scrutinee_node.as_entire_binding(),
                 ),
                 (
-                    "hir_match_arm_start".into(),
+                    "hir_match_arm_start",
                     enum_match_metadata.match_arm_start.as_entire_binding(),
                 ),
                 (
-                    "hir_match_arm_count".into(),
+                    "hir_match_arm_count",
                     enum_match_metadata.match_arm_count.as_entire_binding(),
                 ),
                 (
-                    "hir_match_arm_pattern_node".into(),
+                    "hir_match_arm_pattern_node",
                     enum_match_metadata
                         .match_arm_pattern_node
                         .as_entire_binding(),
                 ),
                 (
-                    "hir_match_arm_payload_start".into(),
+                    "hir_match_arm_payload_start",
                     enum_match_metadata
                         .match_arm_payload_start
                         .as_entire_binding(),
                 ),
                 (
-                    "hir_match_arm_payload_count".into(),
+                    "hir_match_arm_payload_count",
                     enum_match_metadata
                         .match_arm_payload_count
                         .as_entire_binding(),
                 ),
                 (
-                    "hir_match_arm_result_node".into(),
+                    "hir_match_arm_result_node",
                     enum_match_metadata
                         .match_arm_result_node
                         .as_entire_binding(),
                 ),
                 (
-                    "hir_enum_match_record".into(),
+                    "hir_enum_match_record",
                     hir_enum_match_record_buf.as_entire_binding(),
                 ),
-            ]);
-        let hir_enum_match_records_bind_group = bind_group::create_bind_group_from_reflection(
-            device,
-            Some("codegen_wasm_hir_enum_match_records"),
-            &self.hir_enum_match_records_pass.bind_group_layouts[0],
-            &self.hir_enum_match_records_pass.reflection,
-            0,
-            &hir_enum_match_records_resources,
+            ],
         )?;
 
-        let hir_enum_match_module_resources: HashMap<String, wgpu::BindingResource<'_>> =
-            HashMap::from([
-                ("gParams".into(), params_buf.as_entire_binding()),
-                ("token_words".into(), token_buf.as_entire_binding()),
-                ("token_count".into(), token_count_buf.as_entire_binding()),
-                ("source_bytes".into(), source_buf.as_entire_binding()),
-                ("hir_status".into(), hir_status_buf.as_entire_binding()),
-                ("hir_kind".into(), hir_kind_buf.as_entire_binding()),
+        let hir_enum_match_module_bind_group = bind_group::create_bind_group_from_bindings(
+            device,
+            Some("codegen_wasm_hir_enum_match_module"),
+            &self.hir_enum_match_module_pass,
+            0,
+            &[
+                ("gParams", params_buf.as_entire_binding()),
+                ("token_words", token_buf.as_entire_binding()),
+                ("token_count", token_count_buf.as_entire_binding()),
+                ("source_bytes", source_buf.as_entire_binding()),
+                ("hir_status", hir_status_buf.as_entire_binding()),
+                ("hir_kind", hir_kind_buf.as_entire_binding()),
+                ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
+                ("hir_token_end", hir_token_end_buf.as_entire_binding()),
                 (
-                    "hir_token_pos".into(),
-                    hir_token_pos_buf.as_entire_binding(),
-                ),
-                (
-                    "hir_token_end".into(),
-                    hir_token_end_buf.as_entire_binding(),
-                ),
-                (
-                    "hir_variant_ordinal".into(),
+                    "hir_variant_ordinal",
                     enum_match_metadata.variant_ordinal.as_entire_binding(),
                 ),
                 (
-                    "hir_enum_match_record".into(),
+                    "hir_enum_match_record",
                     hir_enum_match_record_buf.as_entire_binding(),
                 ),
-                ("visible_decl".into(), visible_decl_buf.as_entire_binding()),
-                (
-                    "name_id_by_token".into(),
-                    name_id_by_token_buf.as_entire_binding(),
-                ),
-                (
-                    "call_fn_index".into(),
-                    call_fn_index_buf.as_entire_binding(),
-                ),
-                (
-                    "call_param_count".into(),
-                    call_param_count_buf.as_entire_binding(),
-                ),
-                (
-                    "call_return_type".into(),
-                    call_return_type_buf.as_entire_binding(),
-                ),
-                ("out_words".into(), out_buf.as_entire_binding()),
-                ("status".into(), status_buf.as_entire_binding()),
-            ]);
-        let hir_enum_match_module_bind_group = bind_group::create_bind_group_from_reflection(
-            device,
-            Some("codegen_wasm_hir_enum_match_module"),
-            &self.hir_enum_match_module_pass.bind_group_layouts[0],
-            &self.hir_enum_match_module_pass.reflection,
-            0,
-            &hir_enum_match_module_resources,
+                ("visible_decl", visible_decl_buf.as_entire_binding()),
+                ("name_id_by_token", name_id_by_token_buf.as_entire_binding()),
+                ("call_fn_index", call_fn_index_buf.as_entire_binding()),
+                ("call_param_count", call_param_count_buf.as_entire_binding()),
+                ("call_return_type", call_return_type_buf.as_entire_binding()),
+                ("out_words", out_buf.as_entire_binding()),
+                ("status", status_buf.as_entire_binding()),
+            ],
         )?;
 
-        let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-            ("gParams".into(), params_buf.as_entire_binding()),
-            ("body_words".into(), body_buf.as_entire_binding()),
-            ("body_status".into(), body_status_buf.as_entire_binding()),
-            ("out_words".into(), out_buf.as_entire_binding()),
-            ("status".into(), status_buf.as_entire_binding()),
-        ]);
-        let bind_group = bind_group::create_bind_group_from_reflection(
+        let bind_group = bind_group::create_bind_group_from_bindings(
             device,
             Some("codegen_wasm_module"),
-            &self.pass.bind_group_layouts[0],
-            &self.pass.reflection,
+            &self.pass,
             0,
-            &resources,
+            &[
+                ("gParams", params_buf.as_entire_binding()),
+                ("body_words", body_buf.as_entire_binding()),
+                ("body_status", body_status_buf.as_entire_binding()),
+                ("out_words", out_buf.as_entire_binding()),
+                ("status", status_buf.as_entire_binding()),
+            ],
         )?;
 
-        let pack_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-            ("gParams".into(), params_buf.as_entire_binding()),
-            ("unpacked_words".into(), out_buf.as_entire_binding()),
-            ("packed_words".into(), packed_out_buf.as_entire_binding()),
-            ("status".into(), status_buf.as_entire_binding()),
-        ]);
-        let pack_bind_group = bind_group::create_bind_group_from_reflection(
+        let pack_bind_group = bind_group::create_bind_group_from_bindings(
             device,
             Some("codegen_wasm_pack_output"),
-            &self.pack_pass.bind_group_layouts[0],
-            &self.pack_pass.reflection,
+            &self.pack_pass,
             0,
-            &pack_resources,
+            &[
+                ("gParams", params_buf.as_entire_binding()),
+                ("unpacked_words", out_buf.as_entire_binding()),
+                ("packed_words", packed_out_buf.as_entire_binding()),
+                ("status", status_buf.as_entire_binding()),
+            ],
         )?;
 
         Ok(ResidentWasmBuffers {

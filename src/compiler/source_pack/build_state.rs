@@ -18,6 +18,25 @@ impl SourcePackBuildBatchClaim {
     }
 }
 
+pub(in crate::compiler) fn current_unix_nanos() -> Result<u128, CompileError> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .map_err(|err| CompileError::GpuFrontend(format!("system clock is before epoch: {err}")))
+}
+
+pub(in crate::compiler) fn earliest_lease_expiry(
+    existing: Option<u128>,
+    candidate: Option<u128>,
+) -> Option<u128> {
+    match (existing, candidate) {
+        (Some(existing), Some(candidate)) => Some(existing.min(candidate)),
+        (Some(existing), None) => Some(existing),
+        (None, Some(candidate)) => Some(candidate),
+        (None, None) => None,
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourcePackBuildState {
     pub version: u32,
@@ -68,32 +87,26 @@ pub const SOURCE_PACK_LIBRARY_METADATA_PREPARE_DEFAULT_SOURCE_FILE_LIMIT: usize 
         * DEFAULT_CODEGEN_UNIT_MAX_SOURCE_FILES;
 pub const SOURCE_PACK_LIBRARY_METADATA_PREPARE_DEFAULT_DEPENDENCY_LIMIT: usize =
     SOURCE_PACK_LIBRARY_METADATA_PREPARE_DEFAULT_CHUNK_LIMIT;
-pub const SOURCE_PACK_FILESYSTEM_ARTIFACT_BUILD_PREPARE_DEFAULT_CHUNK_LIMIT: usize = 64;
-pub const SOURCE_PACK_FILESYSTEM_ARTIFACT_BUILD_FULL_PREPARE_DEFAULT_STEP_LIMIT: usize = 64;
+pub const ARTIFACT_BUILD_PREPARE_DEFAULT_CHUNK_LIMIT: usize = 64;
+pub const ARTIFACT_BUILD_FULL_PREPARE_DEFAULT_STEP_LIMIT: usize = 64;
 
-pub(in crate::compiler) fn source_pack_limit_ready_state_batches(max_batches: usize) -> usize {
+pub(in crate::compiler) fn limit_ready_state_batches(max_batches: usize) -> usize {
     max_batches.min(SOURCE_PACK_READY_STATE_BATCH_DEFAULT_LIMIT)
 }
 
-pub(in crate::compiler) fn source_pack_limit_ready_state_items(max_items: usize) -> usize {
+pub(in crate::compiler) fn limit_ready_state_items(max_items: usize) -> usize {
     max_items.min(SOURCE_PACK_READY_STATE_ITEM_DEFAULT_LIMIT)
 }
 
-pub(in crate::compiler) fn source_pack_limit_artifact_worker_run_batches(
-    max_batches: usize,
-) -> usize {
+pub(in crate::compiler) fn limit_artifact_worker_run_batches(max_batches: usize) -> usize {
     max_batches.min(SOURCE_PACK_ARTIFACT_MANIFEST_WORKER_RUN_DEFAULT_BATCH_LIMIT)
 }
 
-pub(in crate::compiler) fn source_pack_limit_artifact_manifest_full_build_batches(
-    max_batches: usize,
-) -> usize {
+pub(in crate::compiler) fn limit_artifact_manifest_full_build_batches(max_batches: usize) -> usize {
     max_batches.min(SOURCE_PACK_ARTIFACT_MANIFEST_FULL_BUILD_DEFAULT_BATCH_LIMIT)
 }
 
-pub(in crate::compiler) fn source_pack_limit_work_queue_worker_run_items(
-    max_items: usize,
-) -> usize {
+pub(in crate::compiler) fn limit_work_queue_worker_run_items(max_items: usize) -> usize {
     max_items.min(SOURCE_PACK_WORK_QUEUE_WORKER_RUN_DEFAULT_ITEM_LIMIT)
 }
 
@@ -228,7 +241,7 @@ impl SourcePackBuildProgressShard {
         &self,
         now_unix_nanos: Option<u128>,
     ) -> Result<Vec<usize>, CompileError> {
-        validate_source_pack_build_progress_shard(self)?;
+        validate_build_progress_shard(self)?;
         let completed_batch_indices = self
             .completed_batch_indices
             .iter()
@@ -253,7 +266,7 @@ impl SourcePackBuildProgressShard {
         batch_index: usize,
         now_unix_nanos: Option<u128>,
     ) -> Result<bool, CompileError> {
-        validate_source_pack_build_progress_shard(self)?;
+        validate_build_progress_shard(self)?;
         if self.is_batch_completed(batch_index) {
             return Ok(false);
         }
@@ -268,7 +281,7 @@ impl SourcePackBuildProgressShard {
     }
 
     pub fn record_batch_ready(&mut self, batch_index: usize) -> Result<(), CompileError> {
-        validate_source_pack_build_progress_shard(self)?;
+        validate_build_progress_shard(self)?;
         if !self.batch_indices.contains(&batch_index) {
             return Err(CompileError::GpuFrontend(format!(
                 "source-pack progress shard {} cannot ready batch {batch_index}; shard batches are {:?}",
@@ -287,7 +300,7 @@ impl SourcePackBuildProgressShard {
     }
 
     pub fn remove_ready_batch(&mut self, batch_index: usize) -> Result<bool, CompileError> {
-        validate_source_pack_build_progress_shard(self)?;
+        validate_build_progress_shard(self)?;
         let before = self.ready_batch_indices.len();
         self.ready_batch_indices
             .retain(|ready_batch_index| *ready_batch_index != batch_index);
@@ -300,7 +313,7 @@ impl SourcePackBuildProgressShard {
         worker_id: &str,
         now_unix_nanos: Option<u128>,
     ) -> Result<(), CompileError> {
-        validate_source_pack_build_progress_shard(self)?;
+        validate_build_progress_shard(self)?;
         let Some(claim) = self
             .claimed_batches
             .iter()
@@ -323,7 +336,7 @@ impl SourcePackBuildProgressShard {
         &mut self,
         now_unix_nanos: Option<u128>,
     ) -> Result<bool, CompileError> {
-        validate_source_pack_build_progress_shard(self)?;
+        validate_build_progress_shard(self)?;
         Ok(self.prune_inactive_batch_claims_unchecked(now_unix_nanos))
     }
 
@@ -334,7 +347,7 @@ impl SourcePackBuildProgressShard {
         lease_expires_unix_nanos: Option<u128>,
         now_unix_nanos: Option<u128>,
     ) -> Result<(), CompileError> {
-        validate_source_pack_build_progress_shard(self)?;
+        validate_build_progress_shard(self)?;
         if !self.batch_indices.contains(&batch_index) {
             return Err(CompileError::GpuFrontend(format!(
                 "source-pack progress shard {} cannot claim batch {batch_index}; shard batches are {:?}",
@@ -386,9 +399,9 @@ impl SourcePackBuildProgressShard {
 
     pub fn record_batch_result(
         &mut self,
-        result: &SourcePackArtifactStoreBatchExecutionResult,
+        result: &ArtifactStoreBatchExecutionResult,
     ) -> Result<(), CompileError> {
-        validate_source_pack_build_progress_shard(self)?;
+        validate_build_progress_shard(self)?;
         if !self.batch_indices.contains(&result.batch_index) {
             return Err(CompileError::GpuFrontend(format!(
                 "source-pack progress shard {} cannot record batch {}; shard batches are {:?}",

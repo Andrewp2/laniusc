@@ -39,6 +39,18 @@ Do not add a test that cannot answer the plausible-bug question. Rewrite or
 delete tests whose main failure signal would be "the implementation changed"
 rather than "the contract broke."
 
+When a positive test bundles several language features, split the cases before
+changing expectations. A supported case should still pass when run by itself.
+If isolating a case exposes unsupported behavior, delete the misleading
+positive or move it to an explicit future-work note instead of hiding it inside
+a broad "accepts" test.
+
+For stdlib and source-pack coverage, do not add parse/type-check-only seed
+tests that merely include a library file. The test should exercise a public
+module contract from a caller, such as an imported function, type alias, trait
+obligation, method, constant, host ABI declaration, or a rejection at that
+boundary.
+
 ## Test Ladder
 
 Use this order by default:

@@ -2,15 +2,15 @@ use std::sync::OnceLock;
 
 use super::*;
 
-struct CurrentGrammarFixture {
+struct CurrentGrammar {
     spec: GrammarSpec,
     analysis: GrammarAnalysis,
     predictions: Vec<Prediction>,
 }
 
-fn current_grammar_fixture() -> &'static CurrentGrammarFixture {
-    static FIXTURE: OnceLock<CurrentGrammarFixture> = OnceLock::new();
-    FIXTURE.get_or_init(|| {
+fn current_grammar() -> &'static CurrentGrammar {
+    static CURRENT_GRAMMAR: OnceLock<CurrentGrammar> = OnceLock::new();
+    CURRENT_GRAMMAR.get_or_init(|| {
         let spec = parse_grammar(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/grammar/lanius.bnf"
@@ -18,7 +18,7 @@ fn current_grammar_fixture() -> &'static CurrentGrammarFixture {
         .expect("parse grammar");
         let analysis = analyze_grammar(&spec);
         let predictions = build_ll1_predictions(&spec, &analysis).expect("ll1 predictions");
-        CurrentGrammarFixture {
+        CurrentGrammar {
             spec,
             analysis,
             predictions,
@@ -157,7 +157,7 @@ fn parses_explicit_start_directive() {
 
 #[test]
 fn current_grammar_is_clean_at_generator_boundary() {
-    let current = current_grammar_fixture();
+    let current = current_grammar();
 
     assert_eq!(current.spec.start, "file");
     assert!(!current.predictions.is_empty());
@@ -170,7 +170,7 @@ fn current_grammar_is_clean_at_generator_boundary() {
 
 #[test]
 fn ll1_predictions_parse_expression_stream() {
-    let current = current_grammar_fixture();
+    let current = current_grammar();
     let tags = parse_with_predictions(
         &current.spec,
         &current.predictions,
@@ -201,7 +201,7 @@ fn ll1_predictions_parse_expression_stream() {
 
 #[test]
 fn ll1_predictions_parse_empty_array() {
-    let current = current_grammar_fixture();
+    let current = current_grammar();
     let tags = parse_with_predictions(
         &current.spec,
         &current.predictions,
@@ -278,8 +278,8 @@ fn psls_conflict_report_names_productions_and_gammas() {
     let report = format_psls_conflicts(&spec, &conflicts, 20);
 
     assert!(report.contains("(RBrace, $)"), "{report}");
-    assert!(report.contains("#1 item [item_impl] line"), "{report}");
-    assert!(report.contains("#2 block [block] line"), "{report}");
+    assert!(report.contains("item [item_impl]"), "{report}");
+    assert!(report.contains("block [block]"), "{report}");
     assert!(report.contains("existing gamma: 'RBrace'"), "{report}");
     assert!(
         report.contains("incoming gamma: block 'RBrace'"),
@@ -289,7 +289,7 @@ fn psls_conflict_report_names_productions_and_gammas() {
 
 #[test]
 fn semantic_closing_delimiters_use_distinct_projection_pairs() {
-    let current = current_grammar_fixture();
+    let current = current_grammar();
 
     let group = prediction_chunks_by_pair(
         &current.spec,

@@ -9,6 +9,8 @@ use std::{
 use futures_intrusive::sync::Mutex;
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
+use crate::codegen::unit::artifact_key_for_output as source_pack_artifact_key_for_output;
 use crate::{
     codegen::{
         unit::{
@@ -35,7 +37,6 @@ use crate::{
             SourcePackBuildArtifactShard,
             SourcePackBuildArtifactShardIndex,
             SourcePackBuildArtifactShardKind,
-            SourcePackBuildArtifactShardPlan,
             SourcePackBuildPlan,
             SourcePackBuildShardLimits,
             SourcePackJob,
@@ -54,8 +55,6 @@ use crate::{
             SourcePackLinkInterfaceBatch,
             SourcePackLinkObjectBatch,
             SourcePackScheduleError,
-            source_pack_artifact_key_for_output,
-            source_pack_link_batch_input_limit,
         },
         wasm,
         x86,
@@ -141,5 +140,7 @@ pub use public_execution_api::*;
 mod gpu_public_api;
 pub use gpu_public_api::*;
 
+#[cfg(test)]
+mod test_support;
 #[cfg(test)]
 mod tests;

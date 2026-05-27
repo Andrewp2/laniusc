@@ -619,7 +619,7 @@ pub(super) fn dispatch_compute_pass_indirect_offsets_with_dynamic_uniform_offset
     trace_x86_codegen_event(trace_stage, "record.done");
 }
 
-pub(super) fn dispatch_compute_pass_indirect_offsets_with_bind_groups_and_dynamic_uniform_offsets(
+pub(super) fn dispatch_indirect_dynamic_sequence(
     encoder: &mut wgpu::CommandEncoder,
     trace_stage: &str,
     label: &str,
@@ -680,7 +680,7 @@ pub(super) fn dispatch_compute_pass_indirect_ping_pong_scan_steps(
     let bind_group_sequence = (0..step_count)
         .map(|step_i| &bind_groups[step_i & 1])
         .collect::<Vec<_>>();
-    dispatch_compute_pass_indirect_offsets_with_bind_groups_and_dynamic_uniform_offsets(
+    dispatch_indirect_dynamic_sequence(
         encoder,
         trace_stage,
         label,

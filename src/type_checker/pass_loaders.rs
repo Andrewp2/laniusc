@@ -361,10 +361,6 @@ impl TypeCheckPasses {
                 "type_check_type_instances_05b_array_literal_return_refs",
                 "type_check_type_instances_05b_array_literal_return_refs"
             ),
-            type_instances_enum_ctors: pass!(
-                "type_check_type_instances_06_enum_ctors",
-                "type_check_type_instances_06_enum_ctors"
-            ),
             type_instances_array_index_results: pass!(
                 "type_check_type_instances_07_array_index_results",
                 "type_check_type_instances_07_array_index_results"

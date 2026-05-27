@@ -44,6 +44,33 @@ pub(super) fn alias_storage_buffer(source: &wgpu::Buffer) -> wgpu::Buffer {
     source.clone()
 }
 
+pub(super) fn reuse_storage_u32(
+    device: &wgpu::Device,
+    label: &str,
+    count: usize,
+    candidate: Option<&wgpu::Buffer>,
+) -> wgpu::Buffer {
+    let byte_count = count.max(1).saturating_mul(4) as u64;
+    if let Some(buffer) = candidate.filter(|buffer| buffer.size() >= byte_count) {
+        alias_storage_buffer(buffer)
+    } else {
+        storage_u32_rw(device, label, count, wgpu::BufferUsages::empty())
+    }
+}
+
+pub(super) fn alias_or_storage_u32(
+    device: &wgpu::Device,
+    label: &str,
+    count: usize,
+    candidate: Option<&wgpu::Buffer>,
+) -> wgpu::Buffer {
+    if let Some(buffer) = candidate {
+        alias_storage_buffer(buffer)
+    } else {
+        storage_u32_rw(device, label, count, wgpu::BufferUsages::empty())
+    }
+}
+
 pub(super) fn storage_u32_fill_rw(
     device: &wgpu::Device,
     label: &str,
