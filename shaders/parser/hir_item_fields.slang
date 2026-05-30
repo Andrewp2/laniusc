@@ -30,6 +30,7 @@ RWStructuredBuffer<uint> hir_item_namespace;
 RWStructuredBuffer<uint> hir_item_visibility;
 RWStructuredBuffer<uint> hir_item_path_start;
 RWStructuredBuffer<uint> hir_item_path_end;
+RWStructuredBuffer<uint> hir_item_path_node;
 RWStructuredBuffer<uint> hir_item_import_target_kind;
 
 static const uint INVALID = 0xffffffffu;
@@ -60,6 +61,7 @@ static const uint HIR_ITEM_IMPORT_TARGET_NONE = 0u;
 static const uint HIR_ITEM_IMPORT_TARGET_PATH = 1u;
 static const uint HIR_ITEM_IMPORT_TARGET_STRING = 2u;
 
+static const uint HIR_ITEM = 2u;
 static const uint HIR_CONST_ITEM = 25u;
 static const uint HIR_ENUM_ITEM = 26u;
 static const uint HIR_STRUCT_ITEM = 27u;
@@ -126,6 +128,8 @@ uint expected_hir_kind_for_item_production(uint prod)
         return HIR_ENUM_ITEM;
     if (prod == PROD_TYPE_ALIAS)
         return HIR_TYPE_ALIAS_ITEM;
+    if (prod == PROD_TRAIT)
+        return HIR_ITEM;
     return 0u;
 }
 
@@ -243,6 +247,7 @@ void clear_item(uint i)
     hir_item_visibility[i] = HIR_ITEM_VIS_PRIVATE;
     hir_item_path_start[i] = INVALID;
     hir_item_path_end[i] = INVALID;
+    hir_item_path_node[i] = INVALID;
     hir_item_import_target_kind[i] = HIR_ITEM_IMPORT_TARGET_NONE;
 }
 
@@ -315,6 +320,7 @@ void publish_module_or_import(uint i, uint prod)
     hir_item_namespace[i] = namespace_for_item(item_kind);
     hir_item_visibility[i] = HIR_ITEM_VIS_PRIVATE;
     hir_item_name_token[i] = INVALID;
+    hir_item_path_node[i] = module_or_import_path_node(i, prod, target_kind);
     hir_item_path_start[i] = module_or_import_path_start(i, prod, target_kind);
     hir_item_path_end[i] = module_or_import_path_end(i, prod, target_kind);
     hir_item_import_target_kind[i] = target_kind;
@@ -329,6 +335,7 @@ void publish_decl(uint i, uint prod, uint start, uint visibility)
     hir_item_name_token[i] = name_token_for_item(i, prod, start);
     hir_item_path_start[i] = INVALID;
     hir_item_path_end[i] = INVALID;
+    hir_item_path_node[i] = INVALID;
 }
 
 uint enum_item_visibility(uint enum_i)

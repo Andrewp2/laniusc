@@ -185,7 +185,6 @@ pub(super) fn create_semantic_record_bind_groups(
                 expr_metadata.stmt_record.as_entire_binding(),
             ),
             ("x86_tree_parent", parent_buf.as_entire_binding()),
-            ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
             (
                 "x86_enclosing_return_node",
                 enclosing_return_node_a_buf.as_entire_binding(),
@@ -217,6 +216,11 @@ pub(super) fn create_semantic_record_bind_groups(
             second_b: enclosing_return_link_b_buf,
         },
     )?;
+    let enclosing_return_step_final_buf = if enclosing_return_steps.len() % 2 == 0 {
+        enclosing_return_node_a_buf
+    } else {
+        enclosing_return_node_b_buf
+    };
     let enclosing_let_init = reflected_bind_group(
         device,
         Some("codegen.x86.enclosing_let_init.bind_group"),
@@ -231,7 +235,6 @@ pub(super) fn create_semantic_record_bind_groups(
                 expr_metadata.stmt_record.as_entire_binding(),
             ),
             ("x86_tree_parent", parent_buf.as_entire_binding()),
-            ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
             (
                 "x86_enclosing_let_node",
                 enclosing_let_node_a_buf.as_entire_binding(),
@@ -273,7 +276,6 @@ pub(super) fn create_semantic_record_bind_groups(
             ("hir_status", hir_status_buf.as_entire_binding()),
             ("hir_kind", hir_kind_buf.as_entire_binding()),
             ("x86_tree_parent", parent_buf.as_entire_binding()),
-            ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
             (
                 "x86_enclosing_stmt_node",
                 enclosing_stmt_node_a_buf.as_entire_binding(),
@@ -322,7 +324,10 @@ pub(super) fn create_semantic_record_bind_groups(
                 "x86_expr_resolved_node",
                 expr_resolved_final_buf.as_entire_binding(),
             ),
-            ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
+            (
+                "x86_enclosing_return_node",
+                enclosing_return_step_final_buf.as_entire_binding(),
+            ),
             (
                 "x86_match_return_node",
                 match_return_node_buf.as_entire_binding(),
@@ -343,7 +348,6 @@ pub(super) fn create_semantic_record_bind_groups(
                 match_result_value_owner_buf.as_entire_binding(),
             ),
             ("x86_tree_parent", parent_buf.as_entire_binding()),
-            ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
             (
                 "x86_match_result_owner",
                 match_result_owner_a_buf.as_entire_binding(),
@@ -392,8 +396,6 @@ pub(super) fn create_semantic_record_bind_groups(
                 "x86_expr_resolved_node",
                 expr_resolved_final_buf.as_entire_binding(),
             ),
-            ("x86_tree_parent", parent_buf.as_entire_binding()),
-            ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
             (
                 "x86_match_return_node",
                 match_return_node_buf.as_entire_binding(),
@@ -419,7 +421,6 @@ pub(super) fn create_semantic_record_bind_groups(
             ("gParams", params_buf.as_entire_binding()),
             ("hir_status", hir_status_buf.as_entire_binding()),
             ("x86_tree_parent", parent_buf.as_entire_binding()),
-            ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
             ("gX86Features", feature_params_buf.as_entire_binding()),
             ("x86_match_record", match_record_buf.as_entire_binding()),
             (
@@ -507,11 +508,6 @@ pub(super) fn create_semantic_record_bind_groups(
                 "hir_stmt_record",
                 expr_metadata.stmt_record.as_entire_binding(),
             ),
-            ("hir_expr_record", expr_metadata.record.as_entire_binding()),
-            (
-                "hir_node_decl_token",
-                function_metadata.node_decl_token.as_entire_binding(),
-            ),
             (
                 "x86_expr_resolved_node",
                 expr_resolved_final_buf.as_entire_binding(),
@@ -529,6 +525,10 @@ pub(super) fn create_semantic_record_bind_groups(
                 struct_metadata
                     .struct_lit_field_parent_lit
                     .as_entire_binding(),
+            ),
+            (
+                "hir_struct_lit_head_node",
+                struct_metadata.struct_lit_head_node.as_entire_binding(),
             ),
             (
                 "hir_struct_lit_field_count",
@@ -564,8 +564,6 @@ pub(super) fn create_semantic_record_bind_groups(
                     .struct_init_field_ordinal_by_node
                     .as_entire_binding(),
             ),
-            ("x86_tree_parent", parent_buf.as_entire_binding()),
-            ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
             (
                 "x86_node_tree_status",
                 node_tree_status_buf.as_entire_binding(),
@@ -634,8 +632,6 @@ pub(super) fn create_semantic_record_bind_groups(
                 "hir_array_element_next",
                 array_metadata.element_next.as_entire_binding(),
             ),
-            ("x86_tree_parent", parent_buf.as_entire_binding()),
-            ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
             (
                 "x86_node_tree_status",
                 node_tree_status_buf.as_entire_binding(),

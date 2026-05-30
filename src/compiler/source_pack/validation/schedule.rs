@@ -607,6 +607,11 @@ pub(in crate::compiler) fn validate_schedule_job_page(
         &page.job.dependency_job_indices,
         &format!("schedule job page {} dependencies", page.job_index),
     )?;
+    validate_usize_values_strictly_ascending(
+        &page.job.dependency_job_indices,
+        &format!("schedule job page {} dependencies", page.job_index),
+        |message| library_partition_contract_error(message),
+    )?;
     validate_job_dependency_ranges(
         &page.dependency_job_ranges,
         &explicit_dependencies,
@@ -702,6 +707,14 @@ pub(in crate::compiler) fn validate_schedule_job_dependency_page(
             "schedule job dependency page {} for job {} dependencies",
             page.page_index, page.job_index
         ),
+    )?;
+    validate_usize_values_strictly_ascending(
+        &page.dependency_job_indices,
+        &format!(
+            "schedule job dependency page {} for job {} dependencies",
+            page.page_index, page.job_index
+        ),
+        |message| library_partition_contract_error(message),
     )?;
     for &dependency_job_index in &page.dependency_job_indices {
         if dependency_job_index >= page.job_index || dependency_job_index >= job_count {

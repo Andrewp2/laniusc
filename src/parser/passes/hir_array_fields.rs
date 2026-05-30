@@ -54,6 +54,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirArrayFieldsPa
                 b.hir_array_lit_element_count.as_entire_binding(),
             ),
             (
+                "hir_array_lit_context_stmt_node".into(),
+                b.hir_array_lit_context_stmt_node.as_entire_binding(),
+            ),
+            (
                 "hir_array_element_parent_lit".into(),
                 b.hir_array_element_parent_lit.as_entire_binding(),
             ),

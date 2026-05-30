@@ -41,7 +41,8 @@ static const uint MODULE_STATUS_OK = 0u;
 static const uint MODULE_STATUS_EMPTY_PATH = 1u;
 static const uint MODULE_STATUS_PATH_TOO_DEEP = 3u;
 
-static const uint ERR_BAD_HIR = 6u;
+static const uint ERR_MODULE_PATH_TOO_DEEP = 19u;
+static const uint ERR_INVALID_MODULE_PATH = 20u;
 static const uint SORT_PATH_SEGMENTS = 8u;
 static const uint MODULE_KEY_SEGMENT_ROW_WIDTH = SORT_PATH_SEGMENTS;
 
@@ -89,13 +90,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (count == 0u)
         {
             uint token_i = path_id == INVALID ? gParams.record_capacity : path_owner_token[path_id];
-            record_error(token_i, ERR_BAD_HIR, MODULE_STATUS_EMPTY_PATH);
+            record_error(token_i, ERR_INVALID_MODULE_PATH, MODULE_STATUS_EMPTY_PATH);
         }
         else if (count > SORT_PATH_SEGMENTS)
         {
             module_status[module_i] = MODULE_STATUS_PATH_TOO_DEEP;
             uint token_i = path_id == INVALID ? gParams.record_capacity : path_owner_token[path_id];
-            record_error(token_i, ERR_BAD_HIR, MODULE_STATUS_PATH_TOO_DEEP);
+            record_error(token_i, ERR_MODULE_PATH_TOO_DEEP, MODULE_STATUS_PATH_TOO_DEEP);
         }
     }
 

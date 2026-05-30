@@ -4,8 +4,10 @@
 // array-valued call results length-aware by comparing the annotated destination
 // declaration's array instance with either the callee's declared return array
 // instance or the declaration-backed actual array argument instance. It consumes
-// HIR statement/call records and type-instance refs; it does not inspect source
-// bytes, token spelling, helper names, or callee function bodies.
+// HIR statement/call records, parser-published expression-result roots, and
+// type-instance refs; it does not inspect source bytes, token spelling, helper
+// names, or callee function bodies. Over-width call/parameter windows fail
+// closed before bounded cache slots are consumed.
 
 import hir_records;
 import status;
@@ -22,14 +24,19 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> subtree_end;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_call_callee_node;
-StructuredBuffer<uint> hir_call_arg_parent_call;
+StructuredBuffer<uint> hir_call_arg_count;
+StructuredBuffer<uint4> call_arg_record;
+StructuredBuffer<uint> call_arg_node;
 StructuredBuffer<uint> call_fn_index;
-StructuredBuffer<uint> call_return_type;
+StructuredBuffer<uint> call_param_count;
+StructuredBuffer<uint> call_param_ref_tag;
+StructuredBuffer<uint> call_param_ref_payload;
 StructuredBuffer<uint> visible_decl;
+StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> fn_return_ref_tag;
@@ -43,10 +50,12 @@ StructuredBuffer<uint> type_instance_len_kind;
 StructuredBuffer<uint> type_instance_len_payload;
 
 RWStructuredBuffer<uint> status;
+RWStructuredBuffer<uint> call_return_type;
 
 static const uint INVALID = 0xffffffffu;
 
 static const uint ERR_ASSIGN_MISMATCH = 3u;
+static const uint ERR_CALL_MISMATCH = 10u;
 
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_NAME_EXPR = 22u;
@@ -55,12 +64,7 @@ static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_LET = 1u;
 
 static const uint HIR_EXPR_RECORD_STRIDE = 4u;
-static const uint HIR_EXPR_RECORD_FORM = 0u;
-static const uint HIR_EXPR_RECORD_LEFT = 1u;
 static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
-
-static const uint HIR_EXPR_FORWARD = 1u;
-static const uint HIR_EXPR_NAME = 2u;
 
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
@@ -75,6 +79,7 @@ static const uint TY_UNKNOWN = 0u;
 static const uint TY_ARRAY_BASE = 128u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_GENERIC_BASE = 8192u;
+static const uint PARAM_CACHE_STRIDE = 4u;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -109,24 +114,12 @@ uint expr_slot(uint node, uint slot)
     return valid_node(node) ? hir_expr_record[node * HIR_EXPR_RECORD_STRIDE + slot] : INVALID;
 }
 
-uint expr_form(uint node)
-{
-    return expr_slot(node, HIR_EXPR_RECORD_FORM);
-}
-
 uint resolve_expr(uint node)
 {
-    [loop]
-    for (uint guard = 0u; guard < 64u && valid_node(node); guard += 1u)
-    {
-        if (expr_form(node) != HIR_EXPR_FORWARD)
-            return node;
-        uint child = expr_slot(node, HIR_EXPR_RECORD_LEFT);
-        if (!valid_node(child))
-            return node;
-        node = child;
-    }
-    return node;
+    if (!valid_node(node))
+        return INVALID;
+    uint root = hir_expr_result_root_node[node];
+    return valid_node(root) ? root : node;
 }
 
 uint name_token_for_expr(uint root)
@@ -145,6 +138,12 @@ bool is_array_type(uint ty)
            ty >= TY_ARRAY_BASE + TY_GENERIC_BASE;
 }
 
+bool is_symbolic_array_type(uint ty)
+{
+    return ty == TY_ARRAY_BASE + TY_UNKNOWN ||
+           ty >= TY_ARRAY_BASE + TY_GENERIC_BASE;
+}
+
 uint call_callee_token(uint call_node)
 {
     if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
@@ -158,41 +157,58 @@ uint call_callee_token(uint call_node)
     return valid_token(token) ? token : INVALID;
 }
 
-uint first_array_call_node(uint root)
+uint call_arg_node_for_call(uint call_node, uint ordinal)
 {
-    if (!valid_node(root))
+    if (!valid_node(call_node) || ordinal >= PARAM_CACHE_STRIDE)
         return INVALID;
+    return call_arg_node[call_node * PARAM_CACHE_STRIDE + ordinal];
+}
 
-    uint end = min(subtree_end[root], active_hir_node_count());
-    if (end <= root)
-        end = active_hir_node_count();
-    [loop]
-    for (uint node = root; node < end; node += 1u)
+uint first_call_arg_name_token(uint callee_token, uint call_node)
+{
+    uint arg_node = call_arg_node_for_call(call_node, 0u);
+    uint arg_node_token = name_token_for_expr(arg_node);
+    if (valid_token(arg_node_token))
+        return arg_node_token;
+
+    if (valid_token(callee_token))
     {
-        if (hir_kind[node] != HIR_CALL_EXPR)
-            continue;
-        uint callee_token = call_callee_token(node);
-        if (valid_token(callee_token) && is_array_type(call_return_type[callee_token]))
-            return node;
+        uint arg_token = call_arg_record[callee_token].x;
+        if (valid_token(arg_token))
+            return arg_token;
     }
+
     return INVALID;
 }
 
-uint call_arg_node_for_call(uint call_node, uint ordinal)
+uint call_arg_count_for_callee(uint callee_token, uint call_node)
 {
+    if (!valid_token(callee_token))
+        return 0u;
+    uint record_count = call_arg_record[callee_token].w;
     if (!valid_node(call_node))
-        return INVALID;
+        return record_count;
+    return max(record_count, hir_call_arg_count[call_node]);
+}
 
-    uint end = min(subtree_end[call_node], active_hir_node_count());
-    [loop]
-    for (uint node = call_node + 1u; node < end; node += 1u)
-    {
-        uint packed = hir_call_arg_parent_call[node];
-        if (hir_node_ordinal_node(packed) == call_node &&
-            hir_node_ordinal_ordinal(packed) == ordinal)
-            return node;
-    }
-    return INVALID;
+bool call_window_fits_cache(uint callee_token, uint call_node)
+{
+    uint fn_token = valid_token(callee_token) ? call_fn_index[callee_token] : INVALID;
+    if (!valid_token(fn_token))
+        return true;
+
+    uint param_count = call_param_count[fn_token];
+    uint arg_count = call_arg_count_for_callee(callee_token, call_node);
+    if (param_count <= PARAM_CACHE_STRIDE && arg_count <= PARAM_CACHE_STRIDE)
+        return true;
+
+    call_return_type[callee_token] = TY_UNKNOWN;
+    record_min_token_error(
+        status,
+        callee_token,
+        ERR_CALL_MISMATCH,
+        param_count * 256u + arg_count);
+    return false;
 }
 
 uint bounded_array_instance_from_ref(uint tag, uint payload)
@@ -239,6 +255,24 @@ uint array_instance_from_callee_return(uint callee_token)
         fn_return_ref_payload[decl_token]);
 }
 
+uint param_cache_index(uint fn_token, uint ordinal)
+{
+    return fn_token * PARAM_CACHE_STRIDE + ordinal;
+}
+
+uint array_instance_from_call_param(uint callee_token, uint ordinal)
+{
+    if (!valid_token(callee_token) || ordinal >= PARAM_CACHE_STRIDE)
+        return INVALID;
+    uint fn_token = call_fn_index[callee_token];
+    if (!valid_token(fn_token) || ordinal >= call_param_count[fn_token])
+        return INVALID;
+    uint ref_i = param_cache_index(fn_token, ordinal);
+    return bounded_array_instance_from_ref(
+        call_param_ref_tag[ref_i],
+        call_param_ref_payload[ref_i]);
+}
+
 bool same_type_ref(uint lhs_tag, uint lhs_payload, uint rhs_tag, uint rhs_payload)
 {
     if (lhs_tag == TYPE_REF_SCALAR || rhs_tag == TYPE_REF_SCALAR)
@@ -250,6 +284,37 @@ bool same_type_ref(uint lhs_tag, uint lhs_payload, uint rhs_tag, uint rhs_payloa
         return lhs_slot != INVALID && lhs_slot == rhs_slot;
     }
     return lhs_tag == rhs_tag && lhs_payload == rhs_payload;
+}
+
+bool concrete_array_elem_ref(uint tag, uint payload)
+{
+    if (tag == TYPE_REF_SCALAR)
+        return true;
+    if (tag == TYPE_REF_GENERIC_PARAM)
+        return false;
+    return tag == TYPE_REF_INSTANCE && valid_token(payload);
+}
+
+uint type_code_for_ref(uint tag, uint payload)
+{
+    if (tag == TYPE_REF_SCALAR)
+        return payload;
+    if (tag == TYPE_REF_GENERIC_PARAM)
+    {
+        uint slot = valid_token(payload) ? type_generic_param_slot_by_token[payload] : INVALID;
+        return slot == INVALID ? TY_UNKNOWN : TY_GENERIC_BASE + slot;
+    }
+    return TY_UNKNOWN;
+}
+
+uint array_type_code_from_instance(uint instance)
+{
+    if (!valid_token(instance) || type_instance_kind[instance] != TYPE_INSTANCE_ARRAY)
+        return TY_UNKNOWN;
+    uint elem_ty = type_code_for_ref(
+        type_instance_elem_ref_tag[instance],
+        type_instance_elem_ref_payload[instance]);
+    return elem_ty == TY_UNKNOWN ? TY_UNKNOWN : TY_ARRAY_BASE + elem_ty;
 }
 
 bool same_array_len(uint lhs, uint rhs)
@@ -271,6 +336,17 @@ bool same_array_len(uint lhs, uint rhs)
     return false;
 }
 
+bool concrete_bounded_array_instance(uint instance)
+{
+    if (!valid_token(instance) || type_instance_kind[instance] != TYPE_INSTANCE_ARRAY)
+        return false;
+    if (type_instance_len_kind[instance] != TYPE_LEN_LITERAL)
+        return false;
+    return concrete_array_elem_ref(
+        type_instance_elem_ref_tag[instance],
+        type_instance_elem_ref_payload[instance]);
+}
+
 bool same_bounded_array_instance(uint lhs, uint rhs)
 {
     if (!valid_token(lhs) || !valid_token(rhs))
@@ -287,6 +363,82 @@ bool same_bounded_array_instance(uint lhs, uint rhs)
         type_instance_elem_ref_payload[rhs]);
 }
 
+uint prior_matching_generic_array_arg_instance(
+    uint callee_token,
+    uint call_node,
+    uint ordinal,
+    uint expected_instance)
+{
+    [loop]
+    for (uint prior = 0u; prior < PARAM_CACHE_STRIDE; prior += 1u)
+    {
+        if (prior >= ordinal)
+            break;
+
+        uint prior_expected = array_instance_from_call_param(callee_token, prior);
+        if (!same_bounded_array_instance(expected_instance, prior_expected))
+            continue;
+
+        uint prior_arg_node = call_arg_node_for_call(call_node, prior);
+        uint prior_actual =
+            array_instance_from_name_token(name_token_for_expr(prior_arg_node));
+        if (concrete_bounded_array_instance(prior_actual))
+            return prior_actual;
+    }
+
+    return INVALID;
+}
+
+void validate_array_call_arg_slot(uint slot)
+{
+    uint call_node = slot / PARAM_CACHE_STRIDE;
+    uint ordinal = slot - call_node * PARAM_CACHE_STRIDE;
+    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+        return;
+
+    uint callee_token = call_callee_token(call_node);
+    if (!valid_token(callee_token))
+        return;
+    if (!call_window_fits_cache(callee_token, call_node))
+        return;
+
+    uint expected_instance = array_instance_from_call_param(callee_token, ordinal);
+    if (expected_instance == INVALID)
+        return;
+
+    uint arg_node = call_arg_node_for_call(call_node, ordinal);
+    uint actual_instance = array_instance_from_name_token(name_token_for_expr(arg_node));
+    if (concrete_bounded_array_instance(expected_instance))
+    {
+        if (same_bounded_array_instance(expected_instance, actual_instance))
+            return;
+
+        record_min_token_error(
+            status,
+            callee_token,
+            ERR_ASSIGN_MISMATCH,
+            TY_ARRAY_BASE * 256u + TY_UNKNOWN);
+        return;
+    }
+
+    uint prior_instance = prior_matching_generic_array_arg_instance(
+        callee_token,
+        call_node,
+        ordinal,
+        expected_instance);
+    if (prior_instance == INVALID)
+        return;
+    if (concrete_bounded_array_instance(actual_instance) &&
+        same_bounded_array_instance(prior_instance, actual_instance))
+        return;
+
+    record_min_token_error(
+        status,
+        callee_token,
+        ERR_ASSIGN_MISMATCH,
+        TY_ARRAY_BASE * 256u + TY_UNKNOWN);
+}
+
 void validate_array_call_let(uint node)
 {
     if (!valid_node(node) ||
@@ -294,28 +446,64 @@ void validate_array_call_let(uint node)
         return;
 
     uint decl_token = hir_stmt_record[stmt_slot(node, 1u)];
+    uint expected_ty = valid_token(decl_token) ? visible_type[decl_token] : TY_UNKNOWN;
     uint expected_instance = array_instance_from_decl_token(decl_token);
-    if (expected_instance == INVALID)
+    if (expected_instance != INVALID)
+    {
+        uint instance_ty = array_type_code_from_instance(expected_instance);
+        if (instance_ty != TY_UNKNOWN)
+            expected_ty = instance_ty;
+    }
+    if (expected_instance == INVALID && !is_array_type(expected_ty))
         return;
 
     uint expr_node = hir_stmt_record[stmt_slot(node, 2u)];
-    uint call_node = first_array_call_node(expr_node);
-    if (!valid_node(call_node))
+    uint call_node = resolve_expr(expr_node);
+    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
         return;
 
     uint callee_token = call_callee_token(call_node);
+    if (!valid_token(callee_token))
+        return;
+    if (!call_window_fits_cache(callee_token, call_node))
+        return;
+    if (!is_array_type(call_return_type[callee_token]))
+        return;
+
+    uint actual_ty = call_return_type[callee_token];
+    bool specialize_symbolic_result = is_symbolic_array_type(actual_ty);
+    if (specialize_symbolic_result && expected_ty != TY_UNKNOWN)
+        call_return_type[callee_token] = expected_ty;
+    if (expected_instance == INVALID)
+        return;
+
     uint declared_instance = array_instance_from_callee_return(callee_token);
     if (declared_instance != INVALID &&
         same_bounded_array_instance(expected_instance, declared_instance))
+    {
         return;
+    }
 
-    uint arg_node = call_arg_node_for_call(call_node, 0u);
-    uint actual_instance = array_instance_from_name_token(name_token_for_expr(arg_node));
+    uint actual_instance = INVALID;
+    if (declared_instance != INVALID)
+    {
+        actual_instance = prior_matching_generic_array_arg_instance(
+            callee_token,
+            call_node,
+            PARAM_CACHE_STRIDE,
+            declared_instance);
+    }
+    else if (specialize_symbolic_result)
+    {
+        actual_instance =
+            array_instance_from_name_token(first_call_arg_name_token(callee_token, call_node));
+    }
     if (actual_instance != INVALID &&
         same_bounded_array_instance(expected_instance, actual_instance))
+    {
         return;
+    }
 
-    uint actual_ty = valid_token(callee_token) ? call_return_type[callee_token] : TY_UNKNOWN;
     record_min_token_error(
         status,
         valid_token(callee_token) ? callee_token : decl_token,
@@ -329,4 +517,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
     validate_array_call_let(node);
+    validate_array_call_arg_slot(node);
 }

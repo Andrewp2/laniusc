@@ -50,6 +50,7 @@ pub struct ExplicitSourcePackPathManifest {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExplicitSourcePack {
     pub sources: Vec<String>,
+    pub source_paths: Vec<Option<PathBuf>>,
     pub library_ids: Vec<u32>,
     pub library_dependencies: Vec<SourcePackLibraryDependency>,
 }
@@ -69,10 +70,26 @@ impl ExplicitSourcePack {
             )));
         }
         Ok(Self {
+            source_paths: vec![None; sources.len()],
             sources,
             library_ids,
             library_dependencies: Vec::new(),
         })
+    }
+
+    pub fn with_source_paths(
+        mut self,
+        source_paths: Vec<Option<PathBuf>>,
+    ) -> Result<Self, CompileError> {
+        if source_paths.len() != self.sources.len() {
+            return Err(CompileError::GpuFrontend(format!(
+                "explicit source pack has {} source files but {} source paths",
+                self.sources.len(),
+                source_paths.len()
+            )));
+        }
+        self.source_paths = source_paths;
+        Ok(self)
     }
 
     pub fn in_single_library(sources: Vec<String>) -> Result<Self, CompileError> {
@@ -92,8 +109,7 @@ impl ExplicitSourcePack {
                 dependency_library_ids: library.dependency_library_ids.clone(),
             })
             .collect::<Vec<_>>();
-        let (topological_library_ids, library_dependencies) =
-            validate_explicit_source_library_entries(&library_entries)?;
+        let (_, library_dependencies) = validate_explicit_source_library_entries(&library_entries)?;
         let source_count = library_entries
             .iter()
             .map(|library| library.source_file_count)
@@ -101,19 +117,7 @@ impl ExplicitSourcePack {
         let mut sources = Vec::with_capacity(source_count);
         let mut library_ids = Vec::with_capacity(source_count);
 
-        let mut remaining_libraries = libraries.into_iter().map(Some).collect::<Vec<_>>();
-        for library_id in topological_library_ids {
-            let library_index = remaining_libraries
-                .iter()
-                .position(|library| {
-                    library
-                        .as_ref()
-                        .is_some_and(|library| library.library_id == library_id)
-                })
-                .expect("topological library id must come from manifest");
-            let library = remaining_libraries[library_index]
-                .take()
-                .expect("topological library should be unconsumed");
+        for library in libraries {
             for source in library.sources {
                 sources.push(source);
                 library_ids.push(library.library_id);
@@ -130,6 +134,7 @@ impl ExplicitSourcePack {
         library_dependencies: Vec<SourcePackLibraryDependency>,
     ) -> Result<Self, CompileError> {
         let library_id_set = self.library_ids.iter().copied().collect::<BTreeSet<_>>();
+        let mut seen_dependencies = BTreeSet::new();
         for dependency in &library_dependencies {
             if dependency.library_id == dependency.depends_on_library_id {
                 return Err(CompileError::GpuFrontend(format!(
@@ -147,6 +152,13 @@ impl ExplicitSourcePack {
                 return Err(CompileError::GpuFrontend(format!(
                     "explicit source pack dependency references missing library {}",
                     dependency.depends_on_library_id
+                )));
+            }
+            if !seen_dependencies.insert((dependency.library_id, dependency.depends_on_library_id))
+            {
+                return Err(CompileError::GpuFrontend(format!(
+                    "explicit source pack duplicate library dependency {} -> {}",
+                    dependency.library_id, dependency.depends_on_library_id
                 )));
             }
         }
@@ -536,6 +548,7 @@ pub(in crate::compiler) fn validate_explicit_source_library_entries(
     let mut library_id_order = Vec::with_capacity(libraries.len());
     let mut library_id_set = BTreeSet::new();
     let mut library_dependencies = Vec::new();
+    let mut seen_dependencies = BTreeSet::new();
 
     for library in libraries {
         if library.source_file_count == 0 {
@@ -564,6 +577,12 @@ pub(in crate::compiler) fn validate_explicit_source_library_entries(
             if !library_id_set.contains(&dependency_library_id) {
                 return Err(CompileError::GpuFrontend(format!(
                     "explicit source pack library {} depends on missing library {}",
+                    library.library_id, dependency_library_id
+                )));
+            }
+            if !seen_dependencies.insert((library.library_id, dependency_library_id)) {
+                return Err(CompileError::GpuFrontend(format!(
+                    "explicit source pack duplicate library dependency {} -> {}",
                     library.library_id, dependency_library_id
                 )));
             }

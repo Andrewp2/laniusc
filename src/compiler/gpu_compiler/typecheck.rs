@@ -1,18 +1,28 @@
 // src/compiler/gpu_compiler/typecheck.rs
 
 use super::*;
+use crate::{
+    lexer::{
+        types::{GpuToken, Token},
+        util::read_tokens_from_mapped,
+    },
+    type_checker::{GpuTypeCheckCode, GpuTypeCheckError},
+};
 
 impl<'gpu> GpuCompiler<'gpu> {
     pub async fn type_check_source(&self, src: &str) -> Result<(), CompileError> {
         let src = prepare_source_for_gpu(src)?;
-        self.type_check_expanded_source(&src).await
+        self.type_check_expanded_source_with_diagnostic_path(&src, PathBuf::from("<source>"))
+            .await
     }
     pub async fn type_check_source_from_path(
         &self,
         path: impl AsRef<Path>,
     ) -> Result<(), CompileError> {
+        let path = path.as_ref();
         let src = prepare_source_for_gpu_from_path(path)?;
-        self.type_check_expanded_source(&src).await
+        self.type_check_expanded_source_with_diagnostic_path(&src, path.to_path_buf())
+            .await
     }
     pub async fn type_check_source_pack<S: AsRef<str>>(
         &self,
@@ -28,11 +38,27 @@ impl<'gpu> GpuCompiler<'gpu> {
         &self,
         source_pack: &ExplicitSourcePack,
     ) -> Result<(), CompileError> {
-        self.type_check_source_pack(&source_pack.sources).await
+        validate_in_memory_source_pack_fits_default_codegen_unit(
+            "type check source pack",
+            &source_pack.sources,
+        )?;
+        self.type_check_explicit_source_pack_with_paths(
+            &source_pack.sources,
+            Some(&source_pack.source_paths),
+        )
+        .await
     }
     pub(in crate::compiler) async fn type_check_expanded_source(
         &self,
         src: &str,
+    ) -> Result<(), CompileError> {
+        self.type_check_expanded_source_with_diagnostic_path(src, PathBuf::from("<source>"))
+            .await
+    }
+    pub(super) async fn type_check_expanded_source_with_diagnostic_path(
+        &self,
+        src: &str,
+        diagnostic_path: PathBuf,
     ) -> Result<(), CompileError> {
         let _resident_guard = self.resident_pipeline_lock.lock().await;
         self.lexer
@@ -82,10 +108,19 @@ impl<'gpu> GpuCompiler<'gpu> {
                         "compiler.typecheck.parser-boundary",
                         parser_encoder.finish(),
                     );
-                    let ll1 = self
-                        .parser
-                        .finish_recorded_resident_ll1_hir_check_result(&parser_check)
+                    let ll1 = parser_check
+                        .read_status_result(device)
                         .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
+                    if !ll1.accepted {
+                        return Err(parser_ll1_error_to_compile_error_for_source(
+                            device,
+                            queue,
+                            &bufs.tokens_out.buffer,
+                            src,
+                            &diagnostic_path,
+                            &ll1,
+                        ));
+                    }
                     let active_tree_capacity =
                         hir_node_capacity_for_parser_emit(parser_tree_capacity, ll1.emit_len);
                     let typecheck_parse = self
@@ -115,10 +150,19 @@ impl<'gpu> GpuCompiler<'gpu> {
                     }
                     Ok(type_check)
                 },
-                |device, _queue, _bufs, type_check| {
+                |device, queue, bufs, type_check| {
                     self.type_checker
                         .finish_recorded_check(device, &type_check)
-                        .map_err(|err| CompileError::GpuTypeCheck(err.to_string()))
+                        .map_err(|err| {
+                            type_check_error_to_compile_error_for_source(
+                                device,
+                                queue,
+                                bufs,
+                                src,
+                                &diagnostic_path,
+                                err,
+                            )
+                        })
                 },
             )
             .await
@@ -128,6 +172,16 @@ impl<'gpu> GpuCompiler<'gpu> {
         &self,
         sources: &[S],
     ) -> Result<(), CompileError> {
+        self.type_check_explicit_source_pack_with_paths(sources, None)
+            .await
+    }
+
+    pub(super) async fn type_check_explicit_source_pack_with_paths<S: AsRef<str>>(
+        &self,
+        sources: &[S],
+        source_paths: Option<&[Option<PathBuf>]>,
+    ) -> Result<(), CompileError> {
+        let diagnostic_files = source_pack_diagnostic_files(sources, source_paths);
         let _resident_guard = self.resident_pipeline_lock.lock().await;
         self.lexer
             .with_recorded_resident_source_pack_tokens_after_count(
@@ -176,10 +230,18 @@ impl<'gpu> GpuCompiler<'gpu> {
                         "compiler.typecheck.source_pack.parser-boundary",
                         parser_encoder.finish(),
                     );
-                    let ll1 = self
-                        .parser
-                        .finish_recorded_resident_ll1_hir_check_result(&parser_check)
+                    let ll1 = parser_check
+                        .read_status_result(device)
                         .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
+                    if !ll1.accepted {
+                        return Err(parser_ll1_error_to_compile_error_for_source_pack(
+                            device,
+                            queue,
+                            &bufs.tokens_out.buffer,
+                            &diagnostic_files,
+                            &ll1,
+                        ));
+                    }
                     let active_tree_capacity =
                         hir_node_capacity_for_parser_emit(parser_tree_capacity, ll1.emit_len);
                     let typecheck_parse = self
@@ -207,12 +269,23 @@ impl<'gpu> GpuCompiler<'gpu> {
                     if let Some(timer) = timer.as_deref_mut() {
                         timer.stamp(encoder, "typecheck.done");
                     }
-                    Ok(type_check)
+                    Ok(RecordedTypeCheckWithDiagnosticBuffers {
+                        type_check,
+                        diagnostic_tokens: DiagnosticTokenBuffer::from_lexer_buffers(bufs),
+                    })
                 },
-                |device, _queue, type_check| {
+                |device, queue, recorded| {
                     self.type_checker
-                        .finish_recorded_check(device, &type_check)
-                        .map_err(|err| CompileError::GpuTypeCheck(err.to_string()))
+                        .finish_recorded_check(device, &recorded.type_check)
+                        .map_err(|err| {
+                            type_check_error_to_compile_error_for_source_pack(
+                                device,
+                                queue,
+                                &recorded.diagnostic_tokens,
+                                &diagnostic_files,
+                                err,
+                            )
+                        })
                 },
             )
             .await
@@ -234,8 +307,8 @@ impl<'gpu> GpuCompiler<'gpu> {
     ) -> Result<gpu_type_checker::RecordedTypeCheck, CompileError> {
         // Typecheck metadata remains live across late module/generic/match
         // passes and is retained for x86 lowering. Keep it in typechecker-owned
-        // rows instead of parser scratch so source-pack parser workspaces can
-        // be replayed without corrupting semantic records.
+        // rows so backend codegen can consume semantic records after the parser
+        // resident cache has been released.
         self.type_checker
             .record_resident_token_buffer_with_hir_items_on_gpu(
                 device,
@@ -370,5 +443,1292 @@ impl<'gpu> GpuCompiler<'gpu> {
             path_owner_module_id: &parse_bufs.pack_emit_prefix_b,
             path_kind: &parse_bufs.hir_list_rank_flag,
         }
+    }
+}
+
+struct RecordedTypeCheckWithDiagnosticBuffers {
+    type_check: gpu_type_checker::RecordedTypeCheck,
+    diagnostic_tokens: DiagnosticTokenBuffer,
+}
+
+struct DiagnosticTokenBuffer {
+    buffer: wgpu::Buffer,
+    byte_size: usize,
+}
+
+impl DiagnosticTokenBuffer {
+    fn from_lexer_buffers(bufs: &crate::lexer::buffers::GpuBuffers) -> Self {
+        Self {
+            buffer: bufs.tokens_out.buffer.clone(),
+            byte_size: bufs.tokens_out.byte_size,
+        }
+    }
+}
+
+pub(super) fn type_check_error_to_compile_error_for_source(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    bufs: &crate::lexer::buffers::GpuBuffers,
+    src: &str,
+    diagnostic_path: &Path,
+    err: GpuTypeCheckError,
+) -> CompileError {
+    match &err {
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::ImportCycle,
+            ..
+        } => match read_single_token_for_diagnostic(device, queue, bufs, *token) {
+            Ok(token_record) => {
+                import_cycle_diagnostic(diagnostic_path, src, token_record.start, token_record.len)
+            }
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::UnresolvedImport,
+            ..
+        } => match read_single_token_for_diagnostic(device, queue, bufs, *token) {
+            Ok(token_record) => unresolved_import_diagnostic(
+                diagnostic_path,
+                src,
+                token_record.start,
+                token_record.len,
+            ),
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::UnsupportedImport,
+            ..
+        } => match read_single_token_for_diagnostic(device, queue, bufs, *token) {
+            Ok(token_record) => unsupported_import_diagnostic(
+                diagnostic_path,
+                src,
+                token_record.start,
+                token_record.len,
+            ),
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::ImportPathTooDeep,
+            ..
+        } => match read_single_token_for_diagnostic(device, queue, bufs, *token) {
+            Ok(token_record) => import_path_too_deep_diagnostic(
+                diagnostic_path,
+                src,
+                token_record.start,
+                token_record.len,
+            ),
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::DuplicateModule,
+            ..
+        } => match read_single_token_for_diagnostic(device, queue, bufs, *token) {
+            Ok(token_record) => duplicate_module_diagnostic(
+                diagnostic_path,
+                src,
+                token_record.start,
+                token_record.len,
+            ),
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::ModulePathTooDeep,
+            ..
+        } => match read_single_token_for_diagnostic(device, queue, bufs, *token) {
+            Ok(token_record) => module_path_too_deep_diagnostic(
+                diagnostic_path,
+                src,
+                token_record.start,
+                token_record.len,
+            ),
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::InvalidModulePath,
+            ..
+        } => match read_single_token_for_diagnostic(device, queue, bufs, *token) {
+            Ok(token_record) => invalid_module_path_diagnostic(
+                diagnostic_path,
+                src,
+                token_record.start,
+                token_record.len,
+            ),
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::BadHir,
+            detail,
+        } => match read_single_token_for_diagnostic(device, queue, bufs, *token) {
+            Ok(token_record) => {
+                if let Some(diagnostic) = trait_impl_diagnostic(
+                    diagnostic_path,
+                    src,
+                    token_record.start,
+                    token_record.len,
+                    *detail,
+                ) {
+                    diagnostic
+                } else if let Some(diagnostic) = generic_param_diagnostic(
+                    diagnostic_path,
+                    src,
+                    token_record.start,
+                    token_record.len,
+                    *detail,
+                ) {
+                    diagnostic
+                } else {
+                    syntax_error_to_compile_error_for_source_span(
+                        diagnostic_path,
+                        src,
+                        token_record.start,
+                        token_record.len,
+                    )
+                }
+            }
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        GpuTypeCheckError::Rejected {
+            token,
+            code,
+            detail,
+        } if matches!(
+            code,
+            GpuTypeCheckCode::TraitBoundUnsatisfied | GpuTypeCheckCode::TraitBoundAmbiguous
+        ) =>
+        {
+            match read_single_token_for_diagnostic(device, queue, bufs, *token) {
+                Ok(token_record) => trait_bound_diagnostic(
+                    diagnostic_path,
+                    src,
+                    token_record.start,
+                    token_record.len,
+                    *code,
+                    *detail,
+                ),
+                Err(read_err) => CompileError::GpuTypeCheck(format!(
+                    "{}; failed to read diagnostic token {}: {}",
+                    err, token, read_err
+                )),
+            }
+        }
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::UnresolvedIdent,
+            ..
+        } => match read_single_token_for_diagnostic(device, queue, bufs, *token) {
+            Ok(token_record) => unresolved_identifier_diagnostic(
+                diagnostic_path,
+                src,
+                token_record.start,
+                token_record.len,
+            ),
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::UnknownType,
+            ..
+        } => match read_single_token_for_diagnostic(device, queue, bufs, *token) {
+            Ok(token_record) => {
+                unknown_type_diagnostic(diagnostic_path, src, token_record.start, token_record.len)
+            }
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::AssignMismatch,
+            detail,
+        } => match read_single_token_for_diagnostic(device, queue, bufs, *token) {
+            Ok(token_record) => CompileError::Diagnostic(
+                Diagnostic::error("LNC0006", "type mismatch")
+                    .with_primary_label(diagnostic_label_from_source_span(
+                        diagnostic_path,
+                        src,
+                        token_record.start,
+                        token_record.len,
+                        type_mismatch_label(*detail),
+                    ))
+                    .with_note(type_mismatch_note(*detail)),
+            ),
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::CallMismatch,
+            ..
+        } => match read_single_token_for_diagnostic(device, queue, bufs, *token) {
+            Ok(token_record) => {
+                call_mismatch_diagnostic(diagnostic_path, src, token_record.start, token_record.len)
+            }
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        _ => CompileError::GpuTypeCheck(err.to_string()),
+    }
+}
+
+fn type_check_error_to_compile_error_for_source_pack(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    diagnostic_tokens: &DiagnosticTokenBuffer,
+    diagnostic_files: &[DiagnosticSourceFile],
+    err: GpuTypeCheckError,
+) -> CompileError {
+    match &err {
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::ImportCycle,
+            ..
+        } => match read_single_token_from_buffer(
+            device,
+            queue,
+            &diagnostic_tokens.buffer,
+            diagnostic_tokens.byte_size,
+            *token,
+        ) {
+            Ok(token_record) => {
+                let Some(file) =
+                    source_pack_file_for_global_span(diagnostic_files, token_record.start)
+                else {
+                    return CompileError::GpuTypeCheck(format!(
+                        "{}; failed to map diagnostic token {} at byte {} to a source-pack file",
+                        err, token, token_record.start
+                    ));
+                };
+                let local_start = file.local_start_for_global(token_record.start);
+                import_cycle_diagnostic(&file.path, &file.source, local_start, token_record.len)
+            }
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::UnresolvedImport,
+            ..
+        } => match read_single_token_from_buffer(
+            device,
+            queue,
+            &diagnostic_tokens.buffer,
+            diagnostic_tokens.byte_size,
+            *token,
+        ) {
+            Ok(token_record) => {
+                let Some(file) =
+                    source_pack_file_for_global_span(diagnostic_files, token_record.start)
+                else {
+                    return CompileError::GpuTypeCheck(format!(
+                        "{}; failed to map diagnostic token {} at byte {} to a source-pack file",
+                        err, token, token_record.start
+                    ));
+                };
+                let local_start = file.local_start_for_global(token_record.start);
+                unresolved_import_diagnostic(
+                    &file.path,
+                    &file.source,
+                    local_start,
+                    token_record.len,
+                )
+            }
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::UnsupportedImport,
+            ..
+        } => match read_single_token_from_buffer(
+            device,
+            queue,
+            &diagnostic_tokens.buffer,
+            diagnostic_tokens.byte_size,
+            *token,
+        ) {
+            Ok(token_record) => {
+                let Some(file) =
+                    source_pack_file_for_global_span(diagnostic_files, token_record.start)
+                else {
+                    return CompileError::GpuTypeCheck(format!(
+                        "{}; failed to map diagnostic token {} at byte {} to a source-pack file",
+                        err, token, token_record.start
+                    ));
+                };
+                let local_start = file.local_start_for_global(token_record.start);
+                unsupported_import_diagnostic(
+                    &file.path,
+                    &file.source,
+                    local_start,
+                    token_record.len,
+                )
+            }
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::ImportPathTooDeep,
+            ..
+        } => match read_single_token_from_buffer(
+            device,
+            queue,
+            &diagnostic_tokens.buffer,
+            diagnostic_tokens.byte_size,
+            *token,
+        ) {
+            Ok(token_record) => {
+                let Some(file) =
+                    source_pack_file_for_global_span(diagnostic_files, token_record.start)
+                else {
+                    return CompileError::GpuTypeCheck(format!(
+                        "{}; failed to map diagnostic token {} at byte {} to a source-pack file",
+                        err, token, token_record.start
+                    ));
+                };
+                let local_start = file.local_start_for_global(token_record.start);
+                import_path_too_deep_diagnostic(
+                    &file.path,
+                    &file.source,
+                    local_start,
+                    token_record.len,
+                )
+            }
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::DuplicateModule,
+            ..
+        } => match read_single_token_from_buffer(
+            device,
+            queue,
+            &diagnostic_tokens.buffer,
+            diagnostic_tokens.byte_size,
+            *token,
+        ) {
+            Ok(token_record) => {
+                let Some(file) =
+                    source_pack_file_for_global_span(diagnostic_files, token_record.start)
+                else {
+                    return CompileError::GpuTypeCheck(format!(
+                        "{}; failed to map diagnostic token {} at byte {} to a source-pack file",
+                        err, token, token_record.start
+                    ));
+                };
+                let local_start = file.local_start_for_global(token_record.start);
+                duplicate_module_diagnostic(&file.path, &file.source, local_start, token_record.len)
+            }
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::ModulePathTooDeep,
+            ..
+        } => match read_single_token_from_buffer(
+            device,
+            queue,
+            &diagnostic_tokens.buffer,
+            diagnostic_tokens.byte_size,
+            *token,
+        ) {
+            Ok(token_record) => {
+                let Some(file) =
+                    source_pack_file_for_global_span(diagnostic_files, token_record.start)
+                else {
+                    return CompileError::GpuTypeCheck(format!(
+                        "{}; failed to map diagnostic token {} at byte {} to a source-pack file",
+                        err, token, token_record.start
+                    ));
+                };
+                let local_start = file.local_start_for_global(token_record.start);
+                module_path_too_deep_diagnostic(
+                    &file.path,
+                    &file.source,
+                    local_start,
+                    token_record.len,
+                )
+            }
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::InvalidModulePath,
+            ..
+        } => match read_single_token_from_buffer(
+            device,
+            queue,
+            &diagnostic_tokens.buffer,
+            diagnostic_tokens.byte_size,
+            *token,
+        ) {
+            Ok(token_record) => {
+                let Some(file) =
+                    source_pack_file_for_global_span(diagnostic_files, token_record.start)
+                else {
+                    return CompileError::GpuTypeCheck(format!(
+                        "{}; failed to map diagnostic token {} at byte {} to a source-pack file",
+                        err, token, token_record.start
+                    ));
+                };
+                let local_start = file.local_start_for_global(token_record.start);
+                invalid_module_path_diagnostic(
+                    &file.path,
+                    &file.source,
+                    local_start,
+                    token_record.len,
+                )
+            }
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::UnresolvedIdent,
+            ..
+        } => match read_single_token_from_buffer(
+            device,
+            queue,
+            &diagnostic_tokens.buffer,
+            diagnostic_tokens.byte_size,
+            *token,
+        ) {
+            Ok(token_record) => {
+                let Some(file) =
+                    source_pack_file_for_global_span(diagnostic_files, token_record.start)
+                else {
+                    return CompileError::GpuTypeCheck(format!(
+                        "{}; failed to map diagnostic token {} at byte {} to a source-pack file",
+                        err, token, token_record.start
+                    ));
+                };
+                let local_start = file.local_start_for_global(token_record.start);
+                unresolved_identifier_diagnostic(
+                    &file.path,
+                    &file.source,
+                    local_start,
+                    token_record.len,
+                )
+            }
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::UnknownType,
+            ..
+        } => match read_single_token_from_buffer(
+            device,
+            queue,
+            &diagnostic_tokens.buffer,
+            diagnostic_tokens.byte_size,
+            *token,
+        ) {
+            Ok(token_record) => {
+                let Some(file) =
+                    source_pack_file_for_global_span(diagnostic_files, token_record.start)
+                else {
+                    return CompileError::GpuTypeCheck(format!(
+                        "{}; failed to map diagnostic token {} at byte {} to a source-pack file",
+                        err, token, token_record.start
+                    ));
+                };
+                let local_start = file.local_start_for_global(token_record.start);
+                unknown_type_diagnostic(&file.path, &file.source, local_start, token_record.len)
+            }
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::BadHir,
+            detail,
+        } => match read_single_token_from_buffer(
+            device,
+            queue,
+            &diagnostic_tokens.buffer,
+            diagnostic_tokens.byte_size,
+            *token,
+        ) {
+            Ok(token_record) => {
+                let Some(file) =
+                    source_pack_file_for_global_span(diagnostic_files, token_record.start)
+                else {
+                    return CompileError::GpuTypeCheck(format!(
+                        "{}; failed to map diagnostic token {} at byte {} to a source-pack file",
+                        err, token, token_record.start
+                    ));
+                };
+                let local_start = file.local_start_for_global(token_record.start);
+                if let Some(diagnostic) = trait_impl_diagnostic(
+                    &file.path,
+                    &file.source,
+                    local_start,
+                    token_record.len,
+                    *detail,
+                ) {
+                    diagnostic
+                } else if let Some(diagnostic) = generic_param_diagnostic(
+                    &file.path,
+                    &file.source,
+                    local_start,
+                    token_record.len,
+                    *detail,
+                ) {
+                    diagnostic
+                } else {
+                    syntax_error_to_compile_error_for_source_span(
+                        &file.path,
+                        &file.source,
+                        local_start,
+                        token_record.len,
+                    )
+                }
+            }
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        GpuTypeCheckError::Rejected {
+            token,
+            code,
+            detail,
+        } if matches!(
+            code,
+            GpuTypeCheckCode::TraitBoundUnsatisfied | GpuTypeCheckCode::TraitBoundAmbiguous
+        ) =>
+        {
+            match read_single_token_from_buffer(
+                device,
+                queue,
+                &diagnostic_tokens.buffer,
+                diagnostic_tokens.byte_size,
+                *token,
+            ) {
+                Ok(token_record) => {
+                    let Some(file) =
+                        source_pack_file_for_global_span(diagnostic_files, token_record.start)
+                    else {
+                        return CompileError::GpuTypeCheck(format!(
+                            "{}; failed to map diagnostic token {} at byte {} to a source-pack file",
+                            err, token, token_record.start
+                        ));
+                    };
+                    let local_start = file.local_start_for_global(token_record.start);
+                    trait_bound_diagnostic(
+                        &file.path,
+                        &file.source,
+                        local_start,
+                        token_record.len,
+                        *code,
+                        *detail,
+                    )
+                }
+                Err(read_err) => CompileError::GpuTypeCheck(format!(
+                    "{}; failed to read diagnostic token {}: {}",
+                    err, token, read_err
+                )),
+            }
+        }
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::AssignMismatch,
+            detail,
+        } => match read_single_token_from_buffer(
+            device,
+            queue,
+            &diagnostic_tokens.buffer,
+            diagnostic_tokens.byte_size,
+            *token,
+        ) {
+            Ok(token_record) => {
+                let Some(file) =
+                    source_pack_file_for_global_span(diagnostic_files, token_record.start)
+                else {
+                    return CompileError::GpuTypeCheck(format!(
+                        "{}; failed to map diagnostic token {} at byte {} to a source-pack file",
+                        err, token, token_record.start
+                    ));
+                };
+                let local_start = file.local_start_for_global(token_record.start);
+                CompileError::Diagnostic(
+                    Diagnostic::error("LNC0006", "type mismatch")
+                        .with_primary_label(diagnostic_label_from_source_span(
+                            &file.path,
+                            &file.source,
+                            local_start,
+                            token_record.len,
+                            type_mismatch_label(*detail),
+                        ))
+                        .with_note(type_mismatch_note(*detail)),
+                )
+            }
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::CallMismatch,
+            ..
+        } => match read_single_token_from_buffer(
+            device,
+            queue,
+            &diagnostic_tokens.buffer,
+            diagnostic_tokens.byte_size,
+            *token,
+        ) {
+            Ok(token_record) => {
+                let Some(file) =
+                    source_pack_file_for_global_span(diagnostic_files, token_record.start)
+                else {
+                    return CompileError::GpuTypeCheck(format!(
+                        "{}; failed to map diagnostic token {} at byte {} to a source-pack file",
+                        err, token, token_record.start
+                    ));
+                };
+                let local_start = file.local_start_for_global(token_record.start);
+                call_mismatch_diagnostic(&file.path, &file.source, local_start, token_record.len)
+            }
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        _ => CompileError::GpuTypeCheck(err.to_string()),
+    }
+}
+
+fn import_cycle_diagnostic(path: &Path, source: &str, start: usize, len: usize) -> CompileError {
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0002", "import cycle")
+            .with_primary_label(diagnostic_label_from_source_span(
+                path,
+                source,
+                start,
+                len,
+                "import participates in a module cycle",
+            ))
+            .with_note(
+                "remove the cycle or move shared declarations into a module that both sides can import without importing each other",
+            ),
+    )
+}
+
+fn unresolved_import_diagnostic(
+    path: &Path,
+    source: &str,
+    start: usize,
+    len: usize,
+) -> CompileError {
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0010", "unresolved import")
+            .with_primary_label(diagnostic_label_from_source_span(
+                path,
+                source,
+                start,
+                len,
+                "imported module not found",
+            ))
+            .with_note(
+                "the GPU module resolver could not match this import path to a loaded module declaration",
+            ),
+    )
+}
+
+fn unsupported_import_diagnostic(
+    path: &Path,
+    source: &str,
+    start: usize,
+    len: usize,
+) -> CompileError {
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0011", "unsupported import form")
+            .with_primary_label(diagnostic_label_from_source_span(
+                path,
+                source,
+                start,
+                len,
+                "only module-path imports are supported here",
+            ))
+            .with_note(
+                "quoted imports are not loaded by the GPU module resolver yet; use a module path such as import core::math",
+            ),
+    )
+}
+
+fn import_path_too_deep_diagnostic(
+    path: &Path,
+    source: &str,
+    start: usize,
+    len: usize,
+) -> CompileError {
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0012", "import path too deep")
+            .with_primary_label(diagnostic_label_from_source_span(
+                path,
+                source,
+                start,
+                len,
+                "import path exceeds the current resolver depth limit",
+            ))
+            .with_note(
+                "this compiler slice supports at most eight module path segments in an import",
+            ),
+    )
+}
+
+fn duplicate_module_diagnostic(
+    path: &Path,
+    source: &str,
+    start: usize,
+    len: usize,
+) -> CompileError {
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0013", "duplicate module declaration")
+            .with_primary_label(diagnostic_label_from_source_span(
+                path,
+                source,
+                start,
+                len,
+                "this module path is already declared in the source pack",
+            ))
+            .with_note(
+                "module identity comes from GPU-parsed module declarations; each loaded source pack must declare every module path at most once",
+            ),
+    )
+}
+
+fn module_path_too_deep_diagnostic(
+    path: &Path,
+    source: &str,
+    start: usize,
+    len: usize,
+) -> CompileError {
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0014", "module path too deep")
+            .with_primary_label(diagnostic_label_from_source_span(
+                path,
+                source,
+                start,
+                len,
+                "module path exceeds the current resolver depth limit",
+            ))
+            .with_note(
+                "this compiler slice supports at most eight module path segments in a module declaration",
+            ),
+    )
+}
+
+fn invalid_module_path_diagnostic(
+    path: &Path,
+    source: &str,
+    start: usize,
+    len: usize,
+) -> CompileError {
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0015", "invalid module path")
+            .with_primary_label(diagnostic_label_from_source_span(
+                path,
+                source,
+                start,
+                len,
+                "module declaration does not contain a valid module path",
+            ))
+            .with_note(
+                "module identity must come from a non-empty GPU-parsed module path declaration",
+            ),
+    )
+}
+
+fn unresolved_identifier_diagnostic(
+    path: &Path,
+    source: &str,
+    start: usize,
+    len: usize,
+) -> CompileError {
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0005", "unresolved identifier")
+            .with_primary_label(diagnostic_label_from_source_span(
+                path,
+                source,
+                start,
+                len,
+                "not found in this scope",
+            ))
+            .with_note("declare the value before using it or import its defining module"),
+    )
+}
+
+fn unknown_type_diagnostic(path: &Path, source: &str, start: usize, len: usize) -> CompileError {
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0007", "unknown type")
+            .with_primary_label(diagnostic_label_from_source_span(
+                path,
+                source,
+                start,
+                len,
+                "type not found",
+            ))
+            .with_note("declare the type before using it or import its defining module"),
+    )
+}
+
+fn trait_bound_diagnostic(
+    path: &Path,
+    source: &str,
+    start: usize,
+    len: usize,
+    code: GpuTypeCheckCode,
+    detail: u32,
+) -> CompileError {
+    const PREDICATE_STATUS_UNSUPPORTED_BOUND_WIDTH: u32 = 11;
+    const PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE: u32 = 12;
+    const PREDICATE_STATUS_BOUND_ARITY_MISMATCH: u32 = 13;
+    const PREDICATE_STATUS_UNSUPPORTED_NON_CALLABLE_BOUND: u32 = 18;
+    const PREDICATE_STATUS_UNSUPPORTED_OBLIGATION_WINDOW: u32 = 21;
+    const PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION: u32 = 22;
+
+    let (diagnostic_code, message, label, note) = match code {
+        GpuTypeCheckCode::TraitBoundUnsatisfied
+            if detail == PREDICATE_STATUS_UNSUPPORTED_BOUND_WIDTH =>
+        {
+            (
+                "LNC0008",
+                "unsatisfied trait bound",
+                "trait bound exceeds the current GPU predicate argument limit",
+                "this compiler slice records at most two trait type arguments per predicate row",
+            )
+        }
+        GpuTypeCheckCode::TraitBoundUnsatisfied
+            if detail == PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE =>
+        {
+            (
+                "LNC0008",
+                "unsatisfied trait bound",
+                "trait bound argument shape is not supported by the current GPU predicate row",
+                "predicate rows currently store scalar, generic, or concrete declaration leaves, not nested type-instance arguments",
+            )
+        }
+        GpuTypeCheckCode::TraitBoundUnsatisfied
+            if detail == PREDICATE_STATUS_BOUND_ARITY_MISMATCH =>
+        {
+            (
+                "LNC0008",
+                "unsatisfied trait bound",
+                "trait bound uses the wrong number of trait arguments",
+                "match the resolved trait declaration's generic parameter count before relying on the bound",
+            )
+        }
+        GpuTypeCheckCode::TraitBoundUnsatisfied
+            if detail == PREDICATE_STATUS_UNSUPPORTED_NON_CALLABLE_BOUND =>
+        {
+            (
+                "LNC0008",
+                "unsatisfied trait bound",
+                "trait bounds on this generic declaration are not enforced by the current GPU predicate solver",
+                "move the bound to a called function or add GPU instantiation obligation rows before relying on declaration-level trait bounds",
+            )
+        }
+        GpuTypeCheckCode::TraitBoundUnsatisfied
+            if detail == PREDICATE_STATUS_UNSUPPORTED_OBLIGATION_WINDOW =>
+        {
+            (
+                "LNC0008",
+                "unsatisfied trait bound",
+                "trait obligation exceeds the current GPU predicate solver window",
+                "this compiler slice matches call obligations only when call argument metadata and predicate-owner ranges fit in the bounded GPU records",
+            )
+        }
+        GpuTypeCheckCode::TraitBoundUnsatisfied
+            if detail == PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION =>
+        {
+            (
+                "LNC0008",
+                "unsatisfied trait bound",
+                "trait bound argument relation is outside the current GPU predicate row shape",
+                "do not widen predicate parent-chain walks; publish parser-owned bound-argument rows before accepting this shape",
+            )
+        }
+        GpuTypeCheckCode::TraitBoundUnsatisfied => (
+            "LNC0008",
+            "unsatisfied trait bound",
+            "no matching impl satisfies this call",
+            "the GPU predicate solver found no concrete impl for the call's inferred type arguments",
+        ),
+        GpuTypeCheckCode::TraitBoundAmbiguous => (
+            "LNC0009",
+            "ambiguous trait bound",
+            "multiple matching impls satisfy this call",
+            "remove overlapping impls or make the call's bound resolve to exactly one impl",
+        ),
+        _ => unreachable!("trait_bound_diagnostic called for non-trait-bound error"),
+    };
+
+    CompileError::Diagnostic(
+        Diagnostic::error(diagnostic_code, message)
+            .with_primary_label(diagnostic_label_from_source_span(
+                path, source, start, len, label,
+            ))
+            .with_note(note),
+    )
+}
+
+fn trait_impl_diagnostic(
+    path: &Path,
+    source: &str,
+    start: usize,
+    len: usize,
+    detail: u32,
+) -> Option<CompileError> {
+    let (label, note) = match detail {
+        6 => (
+            "trait impl is missing a required method",
+            "implement every method declared by the resolved trait",
+        ),
+        7 => (
+            "trait impl method has the wrong number of parameters",
+            "match each implemented method's parameter list to the trait declaration",
+        ),
+        8 => (
+            "trait impl method signature does not match the trait declaration",
+            "match each implemented method's parameter and return types to the resolved trait declaration",
+        ),
+        13 => (
+            "trait impl header uses the wrong number of trait arguments",
+            "match the resolved trait declaration's generic parameter count before implementing it",
+        ),
+        14 => (
+            "trait impl target type is outside the current GPU predicate row shape",
+            "trait impl predicate rows currently match only scalar and non-generic nominal targets; add target type-argument rows before implementing traits for generic instances",
+        ),
+        15 => (
+            "trait impl header contains an unknown trait argument type",
+            "resolve every recorded trait type argument to a scalar or nominal type before implementing the trait",
+        ),
+        16 => (
+            "trait method-level generics are outside the current GPU trait contract records",
+            "move the generic parameter to the trait or impl receiver type until method-level generic substitution is implemented on GPU",
+        ),
+        17 => (
+            "trait method where clauses are outside the current GPU trait contract records",
+            "move the bound to the trait, impl, or caller-visible where clause until method-level predicate solving is implemented on GPU",
+        ),
+        19 => (
+            "trait impl overlaps an existing impl for the same trait and target",
+            "make each supported trait impl key unique before relying on GPU trait solving",
+        ),
+        20 => (
+            "trait declares duplicate method contracts",
+            "give each method in a trait a unique name until GPU trait method overload resolution is implemented",
+        ),
+        _ => return None,
+    };
+
+    Some(CompileError::Diagnostic(
+        Diagnostic::error("LNC0021", "invalid trait implementation")
+            .with_primary_label(diagnostic_label_from_source_span(
+                path, source, start, len, label,
+            ))
+            .with_note(note),
+    ))
+}
+
+fn generic_param_diagnostic(
+    path: &Path,
+    source: &str,
+    start: usize,
+    len: usize,
+    detail: u32,
+) -> Option<CompileError> {
+    let (label, note) = match detail {
+        21 => (
+            "generic parameter name is already declared in this parameter list",
+            "give each type and const generic parameter in the declaration a unique name",
+        ),
+        22 => (
+            "generic parameter list exceeds the current GPU record limit",
+            "this compiler slice records at most 128 generic parameters per declaration",
+        ),
+        _ => return None,
+    };
+
+    Some(CompileError::Diagnostic(
+        Diagnostic::error("LNC0033", "invalid generic parameter list")
+            .with_primary_label(diagnostic_label_from_source_span(
+                path, source, start, len, label,
+            ))
+            .with_note(note),
+    ))
+}
+
+fn call_mismatch_diagnostic(path: &Path, source: &str, start: usize, len: usize) -> CompileError {
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0027", "call resolution failed")
+            .with_primary_label(diagnostic_label_from_source_span(
+                path,
+                source,
+                start,
+                len,
+                "call does not match a resolved function or method",
+            ))
+            .with_note(
+                "no supported function or method signature matches this receiver and argument list",
+            ),
+    )
+}
+
+fn type_mismatch_note(detail: u32) -> String {
+    if detail == 0 {
+        return "change the expression or the annotation so both sides have the same type"
+            .to_string();
+    }
+
+    let expected = detail / 256;
+    let actual = detail % 256;
+    if expected == 0 {
+        return format!(
+            "found {}, but this context requires another type; change the expression or the annotation so they agree",
+            type_code_note(actual)
+        );
+    }
+
+    format!(
+        "expected {}, found {}; change the expression or the annotation so they agree",
+        type_code_note(expected),
+        type_code_note(actual)
+    )
+}
+
+fn type_mismatch_label(detail: u32) -> String {
+    if detail == 0 {
+        return "value type does not match this context".to_string();
+    }
+
+    let expected = detail / 256;
+    let actual = detail % 256;
+    if expected == 0 {
+        return format!(
+            "value type is {}, which is not accepted here",
+            type_code_note(actual)
+        );
+    }
+
+    format!(
+        "value type is {} but this context expects {}",
+        type_code_note(actual),
+        type_code_note(expected)
+    )
+}
+
+fn type_code_note(code: u32) -> String {
+    const TY_UNKNOWN: u32 = 0;
+    const TY_VOID: u32 = 1;
+    const TY_BOOL: u32 = 2;
+    const TY_INT: u32 = 3;
+    const TY_UINT: u32 = 4;
+    const TY_FLOAT: u32 = 5;
+    const TY_CHAR: u32 = 6;
+    const TY_STRING: u32 = 7;
+    const TY_ARRAY_BASE: u32 = 128;
+    const TY_STRUCT_BASE: u32 = 4096;
+    const TY_ENUM_BASE: u32 = 6144;
+    const TY_GENERIC_BASE: u32 = 8192;
+
+    let description = match code {
+        TY_UNKNOWN => "unknown type".to_string(),
+        TY_VOID => "void".to_string(),
+        TY_BOOL => "bool".to_string(),
+        TY_INT => "i32".to_string(),
+        TY_UINT => "u32".to_string(),
+        TY_FLOAT => "float".to_string(),
+        TY_CHAR => "char".to_string(),
+        TY_STRING => "str".to_string(),
+        code if (TY_ARRAY_BASE..TY_STRUCT_BASE).contains(&code) => {
+            let element_code = code - TY_ARRAY_BASE;
+            if element_code == TY_UNKNOWN {
+                "array".to_string()
+            } else {
+                format!("array of {}", type_code_note_name(element_code))
+            }
+        }
+        code if (TY_STRUCT_BASE..TY_ENUM_BASE).contains(&code) => "struct".to_string(),
+        code if (TY_ENUM_BASE..TY_GENERIC_BASE).contains(&code) => "enum".to_string(),
+        code if code >= TY_GENERIC_BASE => {
+            format!("generic parameter {}", code - TY_GENERIC_BASE)
+        }
+        _ => "an unsupported type".to_string(),
+    };
+
+    description
+}
+
+fn type_code_note_name(code: u32) -> String {
+    type_code_note(code)
+}
+
+fn read_single_token_for_diagnostic(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    bufs: &crate::lexer::buffers::GpuBuffers,
+    token_index: u32,
+) -> Result<Token, String> {
+    read_single_token_from_buffer(
+        device,
+        queue,
+        &bufs.tokens_out.buffer,
+        bufs.tokens_out.byte_size,
+        token_index,
+    )
+}
+
+fn read_single_token_from_buffer(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    token_buffer: &wgpu::Buffer,
+    token_buffer_byte_size: usize,
+    token_index: u32,
+) -> Result<Token, String> {
+    let token_stride = std::mem::size_of::<GpuToken>() as u64;
+    let token_offset = u64::from(token_index)
+        .checked_mul(token_stride)
+        .ok_or_else(|| format!("token {token_index} byte offset overflow"))?;
+    let token_end = token_offset
+        .checked_add(token_stride)
+        .ok_or_else(|| format!("token {token_index} byte end overflow"))?;
+    if token_end > token_buffer_byte_size as u64 {
+        return Err(format!(
+            "token {token_index} byte range {token_offset}..{token_end} exceeds token buffer size {}",
+            token_buffer_byte_size
+        ));
+    }
+
+    let token_readback = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("rb.compiler.typecheck.diagnostic_token"),
+        size: token_stride,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("compiler.typecheck.diagnostic-token-readback.encoder"),
+    });
+    encoder.copy_buffer_to_buffer(token_buffer, token_offset, &token_readback, 0, token_stride);
+    crate::gpu::passes_core::submit_with_progress(
+        queue,
+        "compiler.typecheck.diagnostic-token-readback",
+        encoder.finish(),
+    );
+
+    let token_slice = token_readback.slice(0..token_stride);
+    crate::gpu::passes_core::map_readback_blocking(
+        device,
+        &token_slice,
+        "compiler.typecheck.diagnostic-token",
+    )
+    .map_err(|err| err.to_string())?;
+    let mapped = token_slice.get_mapped_range();
+    let mut tokens = read_tokens_from_mapped(&mapped, 1)?;
+    drop(mapped);
+    token_readback.unmap();
+    tokens
+        .pop()
+        .ok_or_else(|| format!("token {token_index} readback returned no rows"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn type_mismatch_note_decodes_scalar_type_code_record() {
+        let detail = 3 * 256 + 2;
+
+        let note = type_mismatch_note(detail);
+        assert!(note.contains("expected i32"));
+        assert!(note.contains("found bool"));
+        assert!(note.contains("change the expression or the annotation"));
+        assert!(!note.contains("type code"));
+
+        let label = type_mismatch_label(detail);
+        assert!(label.contains("value type is bool"));
+        assert!(label.contains("expects i32"));
+        assert!(!label.contains("type code"));
+    }
+
+    #[test]
+    fn type_mismatch_note_preserves_unknown_and_array_code_records() {
+        let array_expected = 128 * 256;
+        let array_note = type_mismatch_note(array_expected);
+        assert!(array_note.contains("expected array"));
+        assert!(array_note.contains("found unknown type"));
+        assert!(!array_note.contains("type code"));
+
+        let float_note = type_mismatch_note(5);
+        assert!(float_note.contains("found float"));
+        assert!(float_note.contains("requires another type"));
+        assert!(!float_note.contains("type code"));
     }
 }

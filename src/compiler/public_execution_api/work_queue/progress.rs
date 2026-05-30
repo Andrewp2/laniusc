@@ -69,12 +69,19 @@ pub(in crate::compiler) fn final_linked_output_for_progress(
     }
     let link_index = store.load_hierarchical_link_execution_index_for_target(target)?;
     let linked_output_key = link_index.final_output_key;
-    let linked_output_path = store.path_for_key(&linked_output_key)?;
-    if !linked_output_path.is_file() {
-        return Err(CompileError::GpuFrontend(format!(
-            "source-pack complete work queue has no linked output artifact {linked_output_key:?} at {}",
-            linked_output_path.display()
-        )));
-    }
+    let linked_output_path =
+        store.require_artifact_key_file(&linked_output_key, "complete linked output")?;
     Ok((Some(linked_output_key), Some(linked_output_path)))
+}
+
+pub(in crate::compiler) fn completed_hierarchical_link_output_path(
+    store: &FilesystemArtifactStore,
+    page: &SourcePackHierarchicalLinkExecutionPage,
+) -> Result<PathBuf, CompileError> {
+    let artifact_label = if page.final_output {
+        "completed linked output"
+    } else {
+        "completed partial link output"
+    };
+    store.require_artifact_key_file(&page.output_key, artifact_label)
 }

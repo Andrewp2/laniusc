@@ -31,11 +31,7 @@ impl Layout {
         let module_capacity = source_file_capacity as usize;
         let module_capacity_u32 = source_file_capacity;
         let module_n_blocks = module_capacity_u32.div_ceil(256).max(1);
-        let import_record_capacity = if source_file_capacity <= 1 {
-            1usize
-        } else {
-            record_capacity
-        };
+        let import_record_capacity = record_capacity;
         let import_record_capacity_u32 = import_record_capacity as u32;
         let import_visible_capacity = if source_file_capacity <= 1 {
             1usize

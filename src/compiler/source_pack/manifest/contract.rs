@@ -135,6 +135,11 @@ pub(in crate::compiler) fn validate_artifact_manifest_contract(
             &job.dependency_job_indices,
             &format!("job {} dependencies", job.job_index),
         )?;
+        validate_usize_values_strictly_ascending(
+            &job.dependency_job_indices,
+            &format!("job {} dependencies", job.job_index),
+            |message| manifest_contract_error(message),
+        )?;
         validate_job_dependency_ranges(
             manifest.job_schedule.dependency_job_ranges_for_job(job),
             &explicit_dependencies,
@@ -183,9 +188,10 @@ pub(in crate::compiler) fn validate_artifact_manifest_contract(
                 artifact.artifact_index
             )));
         }
-        validate_manifest_artifact_key(
+        validate_manifest_artifact_key_kind(
             manifest.target,
             &artifact.key,
+            artifact.kind,
             &format!("artifact {}", artifact.artifact_index),
         )?;
         let Some(producer_job) = manifest.job_schedule.jobs.get(artifact.producing_job_index)
@@ -249,6 +255,11 @@ pub(in crate::compiler) fn validate_manifest_job_batches(
         unique_usize_set(
             &batch.job_indices,
             &format!("job batch {} jobs", batch.batch_index),
+        )?;
+        validate_usize_values_strictly_ascending(
+            &batch.job_indices,
+            &format!("job batch {} jobs", batch.batch_index),
+            |message| manifest_contract_error(message),
         )?;
         let mut source_bytes = 0usize;
         let mut source_file_count = 0usize;
@@ -316,6 +327,11 @@ pub(in crate::compiler) fn validate_manifest_batch_dependencies(
         let mut listed = unique_usize_set(
             &dependency.dependency_batch_indices,
             &format!("batch {} dependencies", dependency.batch_index),
+        )?;
+        validate_usize_values_strictly_ascending(
+            &dependency.dependency_batch_indices,
+            &format!("batch {} dependencies", dependency.batch_index),
+            |message| manifest_contract_error(message),
         )?;
         for &dependency_batch_index in &dependency.dependency_batch_indices {
             if dependency_batch_index >= batch_count {
@@ -776,6 +792,20 @@ pub(in crate::compiler) fn validate_manifest_link_batches(
         &link_job_manifest.input_object_artifact_ranges,
         "link job inputs",
     )?;
+    validate_manifest_link_inputs_cover_artifact_kind(
+        manifest,
+        &expected_interface_indices,
+        SourcePackArtifactKind::LibraryInterface,
+        "interfaces",
+        "library-interface",
+    )?;
+    validate_manifest_link_inputs_cover_artifact_kind(
+        manifest,
+        &expected_object_indices,
+        SourcePackArtifactKind::CodegenObject,
+        "objects",
+        "codegen object",
+    )?;
 
     let mut batched_interface_indices = BTreeSet::new();
     for (batch_position, batch) in manifest.link_interface_batches.batches.iter().enumerate() {
@@ -798,6 +828,11 @@ pub(in crate::compiler) fn validate_manifest_link_batches(
         unique_usize_set(
             &batch.input_interface_artifact_indices,
             &format!("link interface batch {} inputs", batch.batch_index),
+        )?;
+        validate_usize_values_strictly_ascending(
+            &batch.input_interface_artifact_indices,
+            &format!("link interface batch {} inputs", batch.batch_index),
+            |message| manifest_contract_error(message),
         )?;
         let mut source_bytes = 0usize;
         let mut source_file_count = 0usize;
@@ -864,6 +899,11 @@ pub(in crate::compiler) fn validate_manifest_link_batches(
             &batch.input_object_artifact_indices,
             &format!("link object batch {} inputs", batch.batch_index),
         )?;
+        validate_usize_values_strictly_ascending(
+            &batch.input_object_artifact_indices,
+            &format!("link object batch {} inputs", batch.batch_index),
+            |message| manifest_contract_error(message),
+        )?;
         let mut source_bytes = 0usize;
         let mut source_file_count = 0usize;
         for &artifact_index in &batch.input_object_artifact_indices {
@@ -908,4 +948,36 @@ pub(in crate::compiler) fn validate_manifest_link_batches(
     }
 
     Ok(())
+}
+
+fn validate_manifest_link_inputs_cover_artifact_kind(
+    manifest: &SourcePackBuildArtifactManifest,
+    link_input_indices: &BTreeSet<usize>,
+    kind: SourcePackArtifactKind,
+    input_label: &str,
+    artifact_label: &str,
+) -> Result<(), CompileError> {
+    let expected_indices = manifest
+        .artifacts
+        .artifacts
+        .iter()
+        .filter(|artifact| artifact.kind == kind)
+        .map(|artifact| artifact.artifact_index)
+        .collect::<BTreeSet<_>>();
+    if link_input_indices == &expected_indices {
+        return Ok(());
+    }
+
+    let missing = expected_indices
+        .difference(link_input_indices)
+        .copied()
+        .collect::<Vec<_>>();
+    let unexpected = link_input_indices
+        .difference(&expected_indices)
+        .copied()
+        .collect::<Vec<_>>();
+    Err(manifest_contract_error(format!(
+        "link job input {input_label} do not cover all {artifact_label} artifacts: missing {:?}, unexpected {:?}",
+        missing, unexpected
+    )))
 }

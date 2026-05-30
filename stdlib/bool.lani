@@ -22,6 +22,10 @@ pub fn lstd_bool_eq(left: bool, right: bool) -> bool {
     return left == right;
 }
 
+pub fn lstd_bool_ne(left: bool, right: bool) -> bool {
+    return left != right;
+}
+
 pub fn lstd_bool_to_i32(value: bool) -> i32 {
     if (value) {
         return 1;

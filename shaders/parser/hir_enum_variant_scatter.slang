@@ -22,10 +22,12 @@ RWStructuredBuffer<uint> hir_variant_parent_enum;
 RWStructuredBuffer<uint> hir_variant_ordinal;
 RWStructuredBuffer<uint> hir_variant_payload_start;
 RWStructuredBuffer<uint> hir_variant_payload_count;
+RWStructuredBuffer<uint> hir_variant_payload_node;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
+static const uint VARIANT_PAYLOAD_SLOT_STRIDE = 4u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -59,11 +61,14 @@ void publish_payload_type(uint node)
     if (!valid_node(owner))
         return;
 
+    uint ordinal = hir_variant_payload_rank_a[node];
+    if (ordinal < VARIANT_PAYLOAD_SLOT_STRIDE)
+        hir_variant_payload_node[owner * VARIANT_PAYLOAD_SLOT_STRIDE + ordinal] = node;
     atomic_u32_min(hir_variant_payload_start, owner, node);
     atomic_u32_max(
         hir_variant_payload_count,
         owner,
-        hir_variant_payload_rank_a[node] + 1u);
+        ordinal + 1u);
 }
 
 [shader("compute")]

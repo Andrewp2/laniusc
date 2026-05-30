@@ -93,8 +93,31 @@ pub(in crate::type_checker) struct ModuleKeyRadixParams {
     pub(in crate::type_checker) key_step: u32,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, ShaderType)]
+pub(in crate::type_checker) struct PredicateKeyParams {
+    pub(in crate::type_checker) predicate_capacity: u32,
+    pub(in crate::type_checker) token_capacity: u32,
+    pub(in crate::type_checker) n_blocks: u32,
+    pub(in crate::type_checker) key_step: u32,
+    pub(in crate::type_checker) mode: u32,
+    pub(in crate::type_checker) reserved: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, ShaderType)]
+pub(in crate::type_checker) struct StructFieldKeyRadixParams {
+    pub(in crate::type_checker) hir_node_capacity: u32,
+    pub(in crate::type_checker) token_capacity: u32,
+    pub(in crate::type_checker) n_blocks: u32,
+    pub(in crate::type_checker) key_step: u32,
+    pub(in crate::type_checker) radix_bytes: u32,
+    pub(in crate::type_checker) reserved0: u32,
+    pub(in crate::type_checker) reserved1: u32,
+    pub(in crate::type_checker) reserved2: u32,
+}
+
 pub(in crate::type_checker) const CALL_PARAM_CACHE_STRIDE: usize = 4;
-pub(in crate::type_checker) const CALL_ARG_NODE_CAPACITY_WORDS: usize = 1;
 pub const TYPE_INSTANCE_ARG_REF_STRIDE: usize = 4;
 
 pub(in crate::type_checker) const NAME_RADIX_BUCKETS: u32 = 257;
@@ -163,8 +186,15 @@ pub(in crate::type_checker) const PATH_SEGMENT_ROW_WIDTH: usize =
     MODULE_KEY_SORT_SEGMENTS as usize + 1;
 pub(in crate::type_checker) const MODULE_KEY_RADIX_STEPS: u32 = MODULE_KEY_SORT_SEGMENTS * 4;
 pub(in crate::type_checker) const DECL_KEY_RADIX_STEPS: u32 = 12;
+pub(in crate::type_checker) const IMPORT_EDGE_KEY_RADIX_STEPS: u32 = 8;
 pub(in crate::type_checker) const IMPORT_VISIBLE_KEY_RADIX_STEPS: u32 = 8;
-pub(in crate::type_checker) const METHOD_KEY_RADIX_STEPS: u32 = 16;
+pub(in crate::type_checker) const METHOD_KEY_RADIX_STEPS: u32 = 52;
+pub(in crate::type_checker) const PREDICATE_KEY_MODE_OWNER: u32 = 0;
+pub(in crate::type_checker) const PREDICATE_KEY_MODE_IMPL: u32 = 1;
+pub(in crate::type_checker) const PREDICATE_KEY_MODE_METHOD_CONTRACT: u32 = 2;
+pub(in crate::type_checker) const PREDICATE_OWNER_KEY_RADIX_STEPS: u32 = 8;
+pub(in crate::type_checker) const PREDICATE_IMPL_KEY_RADIX_STEPS: u32 = 20;
+pub(in crate::type_checker) const PREDICATE_METHOD_CONTRACT_KEY_RADIX_STEPS: u32 = 12;
 const VISIBLE_DECL_KEY_FIELD_COUNT: u32 = 3;
 const VISIBLE_DECL_KEY_MAX_RADIX_STEPS: u32 = 12;
 pub(in crate::type_checker) const HIR_VISIBLE_DECL_ROW_BLOCK_SIZE: u32 = 64;

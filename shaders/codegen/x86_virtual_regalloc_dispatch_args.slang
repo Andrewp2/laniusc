@@ -17,6 +17,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> x86_virtual_inst_status;
+StructuredBuffer<uint> x86_virtual_value_def_status;
 RWStructuredBuffer<uint> x86_func_meta;
 
 RWStructuredBuffer<uint> active_virtual_regalloc_dispatch_args;
@@ -24,8 +25,8 @@ RWStructuredBuffer<uint> active_virtual_regalloc_dispatch_args;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint X86_VIRTUAL_INST_OK = 1u;
+static const uint X86_VIRTUAL_VALUE_DEFS_OK = 1u;
 static const uint FUNC_META_FUNC_COUNT = 0u;
-static const uint FUNC_META_MAX_VIRTUAL_FUNC_ROWS = 5u;
 static const uint FUNC_META_REGALLOC_ACTIVE_CHUNKS = 6u;
 static const uint FUNC_META_REGALLOC_RECORDED_CHUNKS = 7u;
 
@@ -35,6 +36,14 @@ uint virtual_inst_count()
               x86_virtual_inst_status[1u] == 0u &&
               x86_virtual_inst_status[3u] <= gParams.inst_capacity;
     return ok ? min(x86_virtual_inst_status[3u], gParams.inst_capacity) : 0u;
+}
+
+uint value_def_count(uint inst_count)
+{
+    bool ok = x86_virtual_value_def_status[0u] == X86_VIRTUAL_VALUE_DEFS_OK &&
+              x86_virtual_value_def_status[1u] == 0u &&
+              x86_virtual_value_def_status[3u] <= inst_count;
+    return ok ? x86_virtual_value_def_status[3u] : 0u;
 }
 
 void write_indexed_dispatch_args_allow_zero(RWStructuredBuffer<uint> args, uint step_i, uint active_records)
@@ -66,11 +75,10 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     uint count = virtual_inst_count();
+    uint value_defs = value_def_count(count);
     uint func_count = min(x86_func_meta[FUNC_META_FUNC_COUNT], gParams.function_slot_capacity);
-    uint max_func_span = min(x86_func_meta[FUNC_META_MAX_VIRTUAL_FUNC_ROWS], count);
     uint rows_per_chunk = max(gParams.regalloc_rows_per_chunk, 1u);
-    uint needed_chunks = max(1u, (max_func_span + rows_per_chunk - 1u) / rows_per_chunk);
-    uint active_chunks = min(needed_chunks, gParams.regalloc_chunk_count);
+    uint needed_chunks = max(1u, (value_defs + rows_per_chunk - 1u) / rows_per_chunk);
     if (item_i == 0u)
     {
         x86_func_meta[FUNC_META_REGALLOC_ACTIVE_CHUNKS] = needed_chunks;
@@ -80,7 +88,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint chunk_start = item_i * rows_per_chunk;
     uint active_functions = item_i == 0u
         ? max(func_count, 1u)
-        : (chunk_start < max_func_span ? func_count : 0u);
+        : (chunk_start < value_defs ? func_count : 0u);
     write_indexed_dispatch_args_allow_zero(
         active_virtual_regalloc_dispatch_args,
         item_i,

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{collections::BTreeSet, fs, path::PathBuf};
 
 use laniusc::codegen::unit::{DEFAULT_CODEGEN_UNIT_MAX_SOURCE_FILES, SourcePackArtifactTarget};
 
@@ -13,6 +13,7 @@ pub(crate) const DEFAULT_SOURCE_PACK_BUILD_MAX_ITEMS: usize = 64;
 pub(crate) struct SourcePackCliOptions {
     pub(crate) descriptors: bool,
     pub(crate) legacy_in_memory: bool,
+    pub(crate) emit_contract: bool,
     pub(crate) manifest: Option<PathBuf>,
     pub(crate) library_manifest: Option<PathBuf>,
     pub(crate) metadata_only: bool,
@@ -32,6 +33,7 @@ impl Default for SourcePackCliOptions {
         Self {
             descriptors: false,
             legacy_in_memory: false,
+            emit_contract: false,
             manifest: None,
             library_manifest: None,
             metadata_only: false,
@@ -48,15 +50,37 @@ impl Default for SourcePackCliOptions {
     }
 }
 
-pub(crate) fn parse_usize_arg(flag: &str, value: Option<String>) -> Result<usize, String> {
-    let value = value.ok_or_else(|| format!("{flag} requires a non-negative integer"))?;
-    parse_usize_value(flag, &value)
-}
-
 pub(crate) fn parse_usize_value(flag: &str, value: &str) -> Result<usize, String> {
     value
         .parse::<usize>()
         .map_err(|err| format!("{flag} requires a non-negative integer, got {value:?}: {err}"))
+}
+
+pub(crate) fn canonical_directory_path(label: &str, path: PathBuf) -> Result<PathBuf, String> {
+    let canonical = fs::canonicalize(&path)
+        .map_err(|err| format!("canonicalize {label} {}: {err}", path.display()))?;
+    if !canonical.is_dir() {
+        return Err(format!(
+            "{label} {} is not a directory",
+            canonical.display()
+        ));
+    }
+    Ok(canonical)
+}
+
+pub(crate) fn canonical_unique_directory_paths(
+    label: &str,
+    paths: Vec<PathBuf>,
+) -> Result<Vec<PathBuf>, String> {
+    let mut seen = BTreeSet::new();
+    let mut unique = Vec::with_capacity(paths.len());
+    for path in paths {
+        let canonical = canonical_directory_path(label, path)?;
+        if seen.insert(canonical.clone()) {
+            unique.push(canonical);
+        }
+    }
+    Ok(unique)
 }
 
 pub(crate) fn metadata_max_libraries(source_pack: &SourcePackCliOptions) -> usize {

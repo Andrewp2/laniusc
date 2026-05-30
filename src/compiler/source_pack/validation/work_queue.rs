@@ -174,6 +174,11 @@ pub(in crate::compiler) fn validate_work_queue_page_with_mode(
             &page.dependency_item_indices,
             &format!("work queue page {} dependencies", page.item_index),
         )?;
+        validate_usize_values_strictly_ascending(
+            &page.dependency_item_indices,
+            &format!("work queue page {} dependencies", page.item_index),
+            |message| library_partition_contract_error(message),
+        )?;
         for &dependency_item_index in &page.dependency_item_indices {
             if dependency_item_index >= page.item_index {
                 return Err(library_partition_contract_error(format!(
@@ -229,6 +234,11 @@ pub(in crate::compiler) fn validate_work_queue_page_with_mode(
         let explicit_dependents = unique_usize_set(
             &page.dependent_item_indices,
             &format!("work queue page {} dependents", page.item_index),
+        )?;
+        validate_usize_values_strictly_ascending(
+            &page.dependent_item_indices,
+            &format!("work queue page {} dependents", page.item_index),
+            |message| library_partition_contract_error(message),
         )?;
         for &dependent_item_index in &page.dependent_item_indices {
             if dependent_item_index <= page.item_index {
@@ -312,6 +322,16 @@ pub(in crate::compiler) fn validate_work_queue_page_with_mode(
         &page.input_link_group_indices,
         &format!("work queue page {} link-group inputs", page.item_index),
     )?;
+    if let Some(link_group_index) = page.link_group_index {
+        for &input_link_group_index in &page.input_link_group_indices {
+            if input_link_group_index >= link_group_index {
+                return Err(library_partition_contract_error(format!(
+                    "work queue page {} link group {} depends on non-prior link group {}",
+                    page.item_index, link_group_index, input_link_group_index
+                )));
+            }
+        }
+    }
     let partition_count = page.partition_count.max(page.partition_indices.len());
     let input_frontend_job_count = page
         .input_frontend_job_count
@@ -395,6 +415,36 @@ pub(in crate::compiler) fn validate_work_queue_page_with_mode(
                     page.item_index
                 )));
             }
+            if input_codegen_job_count != page.input_codegen_job_indices.len() {
+                return Err(library_partition_contract_error(format!(
+                    "work queue link leaf page {} records {} codegen input jobs but stores {}",
+                    page.item_index,
+                    input_codegen_job_count,
+                    page.input_codegen_job_indices.len()
+                )));
+            }
+            if input_frontend_job_count < input_codegen_job_count {
+                return Err(library_partition_contract_error(format!(
+                    "work queue link leaf page {} records {} frontend inputs for {} codegen inputs",
+                    page.item_index, input_frontend_job_count, input_codegen_job_count
+                )));
+            }
+            for &input_codegen_job_index in &page.input_codegen_job_indices {
+                if input_codegen_job_index >= page.item_index {
+                    return Err(library_partition_contract_error(format!(
+                        "work queue link leaf page {} has non-prior codegen input job {}",
+                        page.item_index, input_codegen_job_index
+                    )));
+                }
+            }
+            for &input_frontend_job_index in &page.input_frontend_job_indices {
+                if input_frontend_job_index >= page.item_index {
+                    return Err(library_partition_contract_error(format!(
+                        "work queue link leaf page {} has non-prior frontend input job {}",
+                        page.item_index, input_frontend_job_index
+                    )));
+                }
+            }
         }
         SourcePackWorkQueueItemKind::LinkReduce => {
             if page.link_group_index.is_none()
@@ -406,6 +456,14 @@ pub(in crate::compiler) fn validate_work_queue_page_with_mode(
                 return Err(library_partition_contract_error(format!(
                     "work queue link reduce page {} has invalid shape",
                     page.item_index
+                )));
+            }
+            if input_link_group_count != page.input_link_group_indices.len() {
+                return Err(library_partition_contract_error(format!(
+                    "work queue link reduce page {} records {} link-group inputs but stores {}",
+                    page.item_index,
+                    input_link_group_count,
+                    page.input_link_group_indices.len()
                 )));
             }
         }
@@ -443,8 +501,13 @@ pub(in crate::compiler) fn validate_work_queue_dependencies_page(
             page.page_index, page.item_index, expected_page_index
         )));
     }
-    let expected_first_position =
-        expected_page_index.saturating_mul(SOURCE_PACK_WORK_QUEUE_DEPENDENCIES_DEFAULT_PAGE_SIZE);
+    let expected_first_position = checked_first_record_position(
+        &format!(
+            "work queue dependencies page {expected_page_index} for item {expected_item_index}"
+        ),
+        expected_page_index,
+        SOURCE_PACK_WORK_QUEUE_DEPENDENCIES_DEFAULT_PAGE_SIZE,
+    )?;
     if page.first_dependency_position != expected_first_position {
         return Err(library_partition_contract_error(format!(
             "work queue dependencies page {} for item {} starts at {} but expected {}",
@@ -463,10 +526,12 @@ pub(in crate::compiler) fn validate_work_queue_dependencies_page(
             page.dependency_item_indices.len()
         )));
     }
-    if page.dependency_count > SOURCE_PACK_WORK_QUEUE_DEPENDENCIES_DEFAULT_PAGE_SIZE {
+    if page.dependency_count == 0
+        || page.dependency_count > SOURCE_PACK_WORK_QUEUE_DEPENDENCIES_DEFAULT_PAGE_SIZE
+    {
         return Err(library_partition_contract_error(format!(
-            "work queue dependencies page {} for item {} exceeds page size {}",
-            page.page_index, page.item_index, SOURCE_PACK_WORK_QUEUE_DEPENDENCIES_DEFAULT_PAGE_SIZE
+            "work queue dependencies page {} for item {} has invalid dependency count {}",
+            page.page_index, page.item_index, page.dependency_count
         )));
     }
     unique_usize_set(
@@ -475,6 +540,14 @@ pub(in crate::compiler) fn validate_work_queue_dependencies_page(
             "work queue dependencies page {} for item {} dependencies",
             page.page_index, page.item_index
         ),
+    )?;
+    validate_usize_values_strictly_ascending(
+        &page.dependency_item_indices,
+        &format!(
+            "work queue dependencies page {} for item {} dependencies",
+            page.page_index, page.item_index
+        ),
+        |message| library_partition_contract_error(message),
     )?;
     for &dependency_item_index in &page.dependency_item_indices {
         if dependency_item_index >= page.item_index {
@@ -517,8 +590,11 @@ pub(in crate::compiler) fn validate_work_queue_dependents_page(
             page.page_index, page.item_index, expected_page_index
         )));
     }
-    let expected_first_position =
-        expected_page_index.saturating_mul(SOURCE_PACK_WORK_QUEUE_DEPENDENTS_DEFAULT_PAGE_SIZE);
+    let expected_first_position = checked_first_record_position(
+        &format!("work queue dependents page {expected_page_index} for item {expected_item_index}"),
+        expected_page_index,
+        SOURCE_PACK_WORK_QUEUE_DEPENDENTS_DEFAULT_PAGE_SIZE,
+    )?;
     if page.first_dependent_position != expected_first_position {
         return Err(library_partition_contract_error(format!(
             "work queue dependents page {} for item {} starts at {} but expected {}",
@@ -537,10 +613,12 @@ pub(in crate::compiler) fn validate_work_queue_dependents_page(
             page.dependent_item_indices.len()
         )));
     }
-    if page.dependent_count > SOURCE_PACK_WORK_QUEUE_DEPENDENTS_DEFAULT_PAGE_SIZE {
+    if page.dependent_count == 0
+        || page.dependent_count > SOURCE_PACK_WORK_QUEUE_DEPENDENTS_DEFAULT_PAGE_SIZE
+    {
         return Err(library_partition_contract_error(format!(
-            "work queue dependents page {} for item {} exceeds page size {}",
-            page.page_index, page.item_index, SOURCE_PACK_WORK_QUEUE_DEPENDENTS_DEFAULT_PAGE_SIZE
+            "work queue dependents page {} for item {} has invalid dependent count {}",
+            page.page_index, page.item_index, page.dependent_count
         )));
     }
     unique_usize_set(
@@ -549,6 +627,14 @@ pub(in crate::compiler) fn validate_work_queue_dependents_page(
             "work queue dependents page {} for item {} dependents",
             page.page_index, page.item_index
         ),
+    )?;
+    validate_usize_values_strictly_ascending(
+        &page.dependent_item_indices,
+        &format!(
+            "work queue dependents page {} for item {} dependents",
+            page.page_index, page.item_index
+        ),
+        |message| library_partition_contract_error(message),
     )?;
     for &dependent_item_index in &page.dependent_item_indices {
         if dependent_item_index <= page.item_index {
@@ -559,4 +645,53 @@ pub(in crate::compiler) fn validate_work_queue_dependents_page(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn work_queue_sidecar_pages_reject_overflowed_first_record_positions() {
+        let target = SourcePackArtifactTarget::Generic;
+        let page_index = usize::MAX;
+
+        let dependency_page = SourcePackWorkQueueDependenciesPage {
+            version: SOURCE_PACK_WORK_QUEUE_DEPENDENCIES_PAGE_VERSION,
+            target,
+            item_index: 2,
+            page_index,
+            first_dependency_position: usize::MAX,
+            dependency_count: 1,
+            dependency_item_indices: vec![0],
+        };
+        let dependency_err =
+            validate_work_queue_dependencies_page(&dependency_page, target, 2, page_index)
+                .expect_err("overflowed dependency page positions must be rejected");
+        assert!(
+            dependency_err
+                .to_string()
+                .contains("overflows first record position"),
+            "unexpected dependency page validation error: {dependency_err}"
+        );
+
+        let dependent_page = SourcePackWorkQueueDependentsPage {
+            version: SOURCE_PACK_WORK_QUEUE_DEPENDENTS_PAGE_VERSION,
+            target,
+            item_index: 0,
+            page_index,
+            first_dependent_position: usize::MAX,
+            dependent_count: 1,
+            dependent_item_indices: vec![1],
+        };
+        let dependent_err =
+            validate_work_queue_dependents_page(&dependent_page, target, 0, page_index)
+                .expect_err("overflowed dependent page positions must be rejected");
+        assert!(
+            dependent_err
+                .to_string()
+                .contains("overflows first record position"),
+            "unexpected dependent page validation error: {dependent_err}"
+        );
+    }
 }

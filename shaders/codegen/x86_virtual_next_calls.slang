@@ -15,6 +15,10 @@ struct Params
     uint out_capacity;
     uint n_hir_nodes;
     uint inst_capacity;
+    uint virtual_next_call_step_count;
+    uint regalloc_rows_per_chunk;
+    uint regalloc_chunk_count;
+    uint function_slot_capacity;
 };
 
 struct ScanParams
@@ -55,6 +59,14 @@ static const uint X86_OP_DIV_I32 = 7u;
 static const uint X86_OP_SHL_I32 = 11u;
 static const uint X86_OP_SHR_I32 = 12u;
 
+bool row_has_virtual_instruction(uint row, uint inst_count)
+{
+    if (row >= inst_count)
+        return false;
+    uint4 inst = x86_virtual_inst_record[row];
+    return inst.x != INVALID && inst.z != 0u && inst.w == row;
+}
+
 uint linear_dispatch_id(uint3 tid)
 {
     return linear_dispatch_thread_id_2d(tid, DISPATCH_X_STRIDE);
@@ -79,7 +91,7 @@ uint row_function_slot(uint row, uint inst_count)
     if (row >= inst_count)
         return INVALID;
     uint slot = x86_virtual_func_slot[row];
-    return slot < gParams.n_tokens ? slot : INVALID;
+    return slot < gParams.function_slot_capacity ? slot : INVALID;
 }
 
 bool call_belongs_to_row_function(uint row, uint call_row, uint inst_count)
@@ -116,6 +128,16 @@ uint next_call_scan_value(uint row, uint inst_count)
     if (row >= inst_count)
         return INVALID;
 
+    if (row_has_virtual_instruction(row, inst_count) &&
+        row_function_slot(row, inst_count) == INVALID)
+    {
+        publish_stage_error_min_detail4(
+            x86_virtual_next_call_status,
+            X86_ERR_VIRTUAL_NEXT_CALLS,
+            row);
+        return INVALID;
+    }
+
     if (gNextCallScan.scan_step == 0u)
         return row_has_fixed_register_barrier(row, inst_count) ? row : INVALID;
 
@@ -129,9 +151,18 @@ uint next_call_scan_value(uint row, uint inst_count)
 
 void publish_status(bool ok, uint count)
 {
+    if (ok)
+    {
+        // Keep the error/detail slots untouched on successful scan steps so
+        // row-local fail-closed errors cannot be erased by the row-0 writer.
+        x86_virtual_next_call_status[0u] = X86_VIRTUAL_NEXT_CALLS_OK;
+        x86_virtual_next_call_status[3u] = count;
+        return;
+    }
+
     write_stage_status4_from_result(
         x86_virtual_next_call_status,
-        ok,
+        false,
         X86_VIRTUAL_NEXT_CALLS_OK,
         INVALID,
         X86_ERR_VIRTUAL_NEXT_CALLS,

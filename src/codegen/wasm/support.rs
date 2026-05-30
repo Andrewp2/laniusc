@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::Result;
 
-use super::WasmParams;
+use super::{WasmOutputError, WasmParams};
 
 pub(super) fn trace_wasm_codegen(stage: &str) {
     if crate::gpu::env::env_bool_strict("LANIUS_WASM_TRACE", false) {
@@ -20,10 +20,15 @@ pub(super) fn wasm_params_bytes(params: &WasmParams) -> Vec<u8> {
     ub.as_ref().to_vec()
 }
 
-pub(super) fn fast_path_status_init_bytes() -> [u8; 16] {
+pub(super) fn body_status_init_bytes() -> [u8; 16] {
     let mut bytes = [0u8; 16];
-    bytes[4..8].copy_from_slice(&2u32.to_le_bytes());
     bytes[12..16].copy_from_slice(&u32::MAX.to_le_bytes());
+    bytes
+}
+
+pub(super) fn unsupported_shape_status_init_bytes() -> [u8; 16] {
+    let mut bytes = body_status_init_bytes();
+    bytes[8..12].copy_from_slice(&1u32.to_le_bytes());
     bytes
 }
 
@@ -69,11 +74,15 @@ pub(super) fn read_wasm_output(
         if error_code != 0 {
             let error_name = match error_code {
                 2 => "unsupported for loop",
+                830 => "legacy array-helper body token budget",
+                831 => "legacy array-helper body HIR-node budget",
+                800..=899 => "unsupported legacy array-helper body shape",
+                902 => "retired enum-match module token budget",
+                903 => "retired enum-match module HIR-node budget",
+                900..=999 => "unsupported retired enum-match module shape",
                 _ => "unsupported source shape",
             };
-            return Err(anyhow::anyhow!(
-                "GPU WASM emitter rejected {error_name} (code {error_code}) at token {error_detail}"
-            ));
+            return Err(WasmOutputError::new(error_name, error_code, error_detail).into());
         }
         if !ok || len > output_capacity {
             return Err(anyhow::anyhow!(

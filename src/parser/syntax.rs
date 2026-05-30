@@ -29,10 +29,28 @@ struct DelimiterParams {
     scan_step: u32,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, ShaderType)]
+struct MinTreeParams {
+    n_blocks: u32,
+    leaf_base: u32,
+    start_node: u32,
+    node_count: u32,
+    mode: u32,
+    _pad0: u32,
+    _pad1: u32,
+    _pad2: u32,
+}
+
 struct DelimiterScanStep {
     params: LaniusBuffer<DelimiterParams>,
     read_from_a: bool,
     write_to_a: bool,
+}
+
+struct MinTreeBuildStep {
+    params: LaniusBuffer<MinTreeParams>,
+    work_items: u32,
 }
 
 pub struct GpuSyntaxChecker {
@@ -169,6 +187,29 @@ struct SyntaxBufferCache {
     block_prefix_paren: wgpu::Buffer,
     block_prefix_bracket: wgpu::Buffer,
     block_prefix_brace: wgpu::Buffer,
+    statement_context_event_block: wgpu::Buffer,
+    statement_context_event_prefix_a: wgpu::Buffer,
+    statement_context_event_prefix_b: wgpu::Buffer,
+    statement_context_event_block_prefix: wgpu::Buffer,
+    statement_context_kind: wgpu::Buffer,
+    statement_context_scan_steps: Vec<DelimiterScanStep>,
+    impl_context_event_block: wgpu::Buffer,
+    impl_context_event_prefix_a: wgpu::Buffer,
+    impl_context_event_prefix_b: wgpu::Buffer,
+    impl_context_event_block_prefix: wgpu::Buffer,
+    token_impl_header_kind: wgpu::Buffer,
+    token_impl_context_event: wgpu::Buffer,
+    impl_context_scan_steps: Vec<DelimiterScanStep>,
+    trait_context_event_block: wgpu::Buffer,
+    trait_context_event_prefix_a: wgpu::Buffer,
+    trait_context_event_prefix_b: wgpu::Buffer,
+    trait_context_event_block_prefix: wgpu::Buffer,
+    trait_context_event: wgpu::Buffer,
+    trait_context_scan_steps: Vec<DelimiterScanStep>,
+    paren_match_depth: wgpu::Buffer,
+    paren_match_block_min: wgpu::Buffer,
+    paren_match_min_tree: wgpu::Buffer,
+    paren_match_min_tree_steps: Vec<MinTreeBuildStep>,
     default_token_file_id: LaniusBuffer<u32>,
     status_buf: wgpu::Buffer,
     counters_buf: wgpu::Buffer,
@@ -186,6 +227,7 @@ impl SyntaxBufferCache {
             n_blocks: n_blocks_capacity,
             scan_step: 0,
         };
+        let paren_match_min_tree_leaf_base = next_power_of_two_u32(n_blocks_capacity).max(1);
         Self {
             token_capacity,
             n_blocks_capacity,
@@ -290,6 +332,140 @@ impl SyntaxBufferCache {
                 n_blocks_capacity as usize,
                 wgpu::BufferUsages::empty(),
             ),
+            statement_context_event_block: storage_u32_rw(
+                device,
+                "parser.syntax.statement_context_event_block",
+                n_blocks_capacity as usize,
+                wgpu::BufferUsages::empty(),
+            ),
+            statement_context_event_prefix_a: storage_u32_rw(
+                device,
+                "parser.syntax.statement_context_event_prefix_a",
+                n_blocks_capacity as usize,
+                wgpu::BufferUsages::empty(),
+            ),
+            statement_context_event_prefix_b: storage_u32_rw(
+                device,
+                "parser.syntax.statement_context_event_prefix_b",
+                n_blocks_capacity as usize,
+                wgpu::BufferUsages::empty(),
+            ),
+            statement_context_event_block_prefix: storage_u32_rw(
+                device,
+                "parser.syntax.statement_context_event_block_prefix",
+                n_blocks_capacity as usize,
+                wgpu::BufferUsages::empty(),
+            ),
+            statement_context_kind: storage_u32_rw(
+                device,
+                "parser.syntax.statement_context_kind",
+                token_capacity as usize,
+                wgpu::BufferUsages::COPY_DST,
+            ),
+            statement_context_scan_steps: make_delimiter_scan_steps(
+                device,
+                token_capacity,
+                n_blocks_capacity,
+            ),
+            impl_context_event_block: storage_u32_rw(
+                device,
+                "parser.syntax.impl_context_event_block",
+                n_blocks_capacity as usize,
+                wgpu::BufferUsages::empty(),
+            ),
+            impl_context_event_prefix_a: storage_u32_rw(
+                device,
+                "parser.syntax.impl_context_event_prefix_a",
+                n_blocks_capacity as usize,
+                wgpu::BufferUsages::empty(),
+            ),
+            impl_context_event_prefix_b: storage_u32_rw(
+                device,
+                "parser.syntax.impl_context_event_prefix_b",
+                n_blocks_capacity as usize,
+                wgpu::BufferUsages::empty(),
+            ),
+            impl_context_event_block_prefix: storage_u32_rw(
+                device,
+                "parser.syntax.impl_context_event_block_prefix",
+                n_blocks_capacity as usize,
+                wgpu::BufferUsages::empty(),
+            ),
+            token_impl_header_kind: storage_u32_rw(
+                device,
+                "parser.syntax.token_impl_header_kind",
+                token_capacity as usize,
+                wgpu::BufferUsages::empty(),
+            ),
+            token_impl_context_event: storage_u32_rw(
+                device,
+                "parser.syntax.token_impl_context_event",
+                token_capacity as usize,
+                wgpu::BufferUsages::empty(),
+            ),
+            impl_context_scan_steps: make_delimiter_scan_steps(
+                device,
+                token_capacity,
+                n_blocks_capacity,
+            ),
+            trait_context_event_block: storage_u32_rw(
+                device,
+                "parser.syntax.trait_context_event_block",
+                n_blocks_capacity as usize,
+                wgpu::BufferUsages::empty(),
+            ),
+            trait_context_event_prefix_a: storage_u32_rw(
+                device,
+                "parser.syntax.trait_context_event_prefix_a",
+                n_blocks_capacity as usize,
+                wgpu::BufferUsages::empty(),
+            ),
+            trait_context_event_prefix_b: storage_u32_rw(
+                device,
+                "parser.syntax.trait_context_event_prefix_b",
+                n_blocks_capacity as usize,
+                wgpu::BufferUsages::empty(),
+            ),
+            trait_context_event_block_prefix: storage_u32_rw(
+                device,
+                "parser.syntax.trait_context_event_block_prefix",
+                n_blocks_capacity as usize,
+                wgpu::BufferUsages::empty(),
+            ),
+            trait_context_event: storage_u32_rw(
+                device,
+                "parser.syntax.trait_context_event",
+                token_capacity as usize,
+                wgpu::BufferUsages::empty(),
+            ),
+            trait_context_scan_steps: make_delimiter_scan_steps(
+                device,
+                token_capacity,
+                n_blocks_capacity,
+            ),
+            paren_match_depth: storage_i32_rw(
+                device,
+                "parser.syntax.paren_match_depth",
+                token_capacity as usize,
+                wgpu::BufferUsages::empty(),
+            ),
+            paren_match_block_min: storage_i32_rw(
+                device,
+                "parser.syntax.paren_match_block_min",
+                n_blocks_capacity as usize,
+                wgpu::BufferUsages::empty(),
+            ),
+            paren_match_min_tree: storage_i32_rw(
+                device,
+                "parser.syntax.paren_match_min_tree",
+                paren_match_min_tree_leaf_base.saturating_mul(2) as usize,
+                wgpu::BufferUsages::empty(),
+            ),
+            paren_match_min_tree_steps: make_min_tree_build_steps(
+                device,
+                n_blocks_capacity,
+                paren_match_min_tree_leaf_base,
+            ),
             default_token_file_id: LaniusBuffer::new(
                 (
                     storage_u32_rw(
@@ -356,6 +532,12 @@ impl SyntaxBufferCache {
         };
         write_uniform(queue, &self.delimiter_params, &delimiter_params);
         self.delimiter_scan_steps = make_delimiter_scan_steps(device, token_capacity, n_blocks);
+        self.statement_context_scan_steps =
+            make_delimiter_scan_steps(device, token_capacity, n_blocks);
+        self.impl_context_scan_steps = make_delimiter_scan_steps(device, token_capacity, n_blocks);
+        self.trait_context_scan_steps = make_delimiter_scan_steps(device, token_capacity, n_blocks);
+        self.paren_match_min_tree_steps =
+            make_min_tree_build_steps(device, n_blocks, next_power_of_two_u32(n_blocks).max(1));
 
         queue.write_buffer(&self.status_buf, 0, &status_init_bytes());
         queue.write_buffer(&self.counters_buf, 0, &zero_i32_bytes(3));
@@ -576,6 +758,17 @@ fn record_token_buffer_check_with_cache_and_file_ids(
 
     let delimiter_local_pass = syntax_delimiters_01_pass(device)?;
     let delimiter_scan_pass = syntax_delimiters_02_pass(device)?;
+    let statement_context_local_pass = syntax_statement_context_01_pass(device)?;
+    let statement_context_scan_pass = syntax_statement_context_02_pass(device)?;
+    let statement_context_apply_pass = syntax_statement_context_03_pass(device)?;
+    let impl_context_local_pass = syntax_impl_context_01_pass(device)?;
+    let impl_context_scan_pass = syntax_impl_context_02_pass(device)?;
+    let impl_context_apply_pass = syntax_impl_context_03_pass(device)?;
+    let trait_context_local_pass = syntax_trait_context_01_pass(device)?;
+    let trait_context_scan_pass = syntax_trait_context_02_pass(device)?;
+    let trait_context_apply_pass = syntax_trait_context_03_pass(device)?;
+    let paren_match_pass = syntax_paren_match_01_pass(device)?;
+    let min_tree_pass = syntax_match_min_tree_pass(device)?;
     let pass = syntax_tokens_pass(device)?;
 
     let mut resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::new();
@@ -610,6 +803,30 @@ fn record_token_buffer_check_with_cache_and_file_ids(
     resources.insert(
         "block_prefix_brace".into(),
         buffers.block_prefix_brace.as_entire_binding(),
+    );
+    resources.insert(
+        "paren_match_depth".into(),
+        buffers.paren_match_depth.as_entire_binding(),
+    );
+    resources.insert(
+        "paren_match_block_min".into(),
+        buffers.paren_match_block_min.as_entire_binding(),
+    );
+    resources.insert(
+        "paren_match_min_tree".into(),
+        buffers.paren_match_min_tree.as_entire_binding(),
+    );
+    resources.insert(
+        "statement_context_kind".into(),
+        buffers.statement_context_kind.as_entire_binding(),
+    );
+    resources.insert(
+        "token_impl_context_event".into(),
+        buffers.token_impl_context_event.as_entire_binding(),
+    );
+    resources.insert(
+        "trait_context_event".into(),
+        buffers.trait_context_event.as_entire_binding(),
     );
     let bind_group = bind_group::create_bind_group_from_reflection(
         device,
@@ -768,6 +985,441 @@ fn record_token_buffer_check_with_cache_and_file_ids(
             n_blocks,
         )?;
     }
+    encoder.clear_buffer(&buffers.statement_context_kind, 0, None);
+    {
+        let local_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
+            (
+                "gParams".into(),
+                buffers.delimiter_params.as_entire_binding(),
+            ),
+            ("token_words".into(), token_buf.as_entire_binding()),
+            (
+                "lexer_token_count".into(),
+                token_count_buf.as_entire_binding(),
+            ),
+            (
+                "depth_bracket_inblock".into(),
+                buffers.depth_bracket_inblock.as_entire_binding(),
+            ),
+            (
+                "block_prefix_bracket".into(),
+                buffers.block_prefix_bracket.as_entire_binding(),
+            ),
+            (
+                "statement_context_kind".into(),
+                buffers.statement_context_kind.as_entire_binding(),
+            ),
+            (
+                "statement_event_block".into(),
+                buffers.statement_context_event_block.as_entire_binding(),
+            ),
+        ]);
+        let local_bind_group = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("parser_syntax_statement_context_01_local"),
+            &statement_context_local_pass.bind_group_layouts[0],
+            &statement_context_local_pass.reflection,
+            0,
+            &local_resources,
+        )?;
+        record_compute(
+            encoder,
+            statement_context_local_pass,
+            &local_bind_group,
+            "parser.syntax.statement_context.local",
+            n_blocks.saturating_mul(256),
+        )?;
+
+        for step in &buffers.statement_context_scan_steps {
+            let prefix_in = if step.read_from_a {
+                &buffers.statement_context_event_prefix_a
+            } else {
+                &buffers.statement_context_event_prefix_b
+            };
+            let prefix_out = if step.write_to_a {
+                &buffers.statement_context_event_prefix_a
+            } else {
+                &buffers.statement_context_event_prefix_b
+            };
+            let scan_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
+                ("gParams".into(), step.params.as_entire_binding()),
+                (
+                    "trait_context_event_block".into(),
+                    buffers.statement_context_event_block.as_entire_binding(),
+                ),
+                (
+                    "trait_context_event_prefix_in".into(),
+                    prefix_in.as_entire_binding(),
+                ),
+                (
+                    "trait_context_event_prefix_out".into(),
+                    prefix_out.as_entire_binding(),
+                ),
+                (
+                    "trait_context_event_block_prefix".into(),
+                    buffers
+                        .statement_context_event_block_prefix
+                        .as_entire_binding(),
+                ),
+            ]);
+            let scan_bind_group = bind_group::create_bind_group_from_reflection(
+                device,
+                Some("parser_syntax_statement_context_02_scan"),
+                &statement_context_scan_pass.bind_group_layouts[0],
+                &statement_context_scan_pass.reflection,
+                0,
+                &scan_resources,
+            )?;
+            record_compute(
+                encoder,
+                statement_context_scan_pass,
+                &scan_bind_group,
+                "parser.syntax.statement_context.scan",
+                n_blocks,
+            )?;
+        }
+
+        let apply_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
+            (
+                "gParams".into(),
+                buffers.delimiter_params.as_entire_binding(),
+            ),
+            ("token_words".into(), token_buf.as_entire_binding()),
+            (
+                "lexer_token_count".into(),
+                token_count_buf.as_entire_binding(),
+            ),
+            (
+                "depth_bracket_inblock".into(),
+                buffers.depth_bracket_inblock.as_entire_binding(),
+            ),
+            (
+                "block_prefix_bracket".into(),
+                buffers.block_prefix_bracket.as_entire_binding(),
+            ),
+            (
+                "statement_event_block_prefix".into(),
+                buffers
+                    .statement_context_event_block_prefix
+                    .as_entire_binding(),
+            ),
+            (
+                "statement_context_kind".into(),
+                buffers.statement_context_kind.as_entire_binding(),
+            ),
+        ]);
+        let apply_bind_group = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("parser_syntax_statement_context_03_apply"),
+            &statement_context_apply_pass.bind_group_layouts[0],
+            &statement_context_apply_pass.reflection,
+            0,
+            &apply_resources,
+        )?;
+        record_compute(
+            encoder,
+            statement_context_apply_pass,
+            &apply_bind_group,
+            "parser.syntax.statement_context.apply",
+            n_blocks.saturating_mul(256),
+        )?;
+    }
+    {
+        let local_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
+            (
+                "gParams".into(),
+                buffers.delimiter_params.as_entire_binding(),
+            ),
+            ("token_words".into(), token_buf.as_entire_binding()),
+            (
+                "lexer_token_count".into(),
+                token_count_buf.as_entire_binding(),
+            ),
+            (
+                "statement_event_block".into(),
+                buffers.impl_context_event_block.as_entire_binding(),
+            ),
+        ]);
+        let local_bind_group = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("parser_syntax_impl_context_01_local"),
+            &impl_context_local_pass.bind_group_layouts[0],
+            &impl_context_local_pass.reflection,
+            0,
+            &local_resources,
+        )?;
+        record_compute(
+            encoder,
+            impl_context_local_pass,
+            &local_bind_group,
+            "parser.syntax.impl_context.local",
+            n_blocks.saturating_mul(256),
+        )?;
+
+        for step in &buffers.impl_context_scan_steps {
+            let prefix_in = if step.read_from_a {
+                &buffers.impl_context_event_prefix_a
+            } else {
+                &buffers.impl_context_event_prefix_b
+            };
+            let prefix_out = if step.write_to_a {
+                &buffers.impl_context_event_prefix_a
+            } else {
+                &buffers.impl_context_event_prefix_b
+            };
+            let scan_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
+                ("gParams".into(), step.params.as_entire_binding()),
+                (
+                    "trait_context_event_block".into(),
+                    buffers.impl_context_event_block.as_entire_binding(),
+                ),
+                (
+                    "trait_context_event_prefix_in".into(),
+                    prefix_in.as_entire_binding(),
+                ),
+                (
+                    "trait_context_event_prefix_out".into(),
+                    prefix_out.as_entire_binding(),
+                ),
+                (
+                    "trait_context_event_block_prefix".into(),
+                    buffers.impl_context_event_block_prefix.as_entire_binding(),
+                ),
+            ]);
+            let scan_bind_group = bind_group::create_bind_group_from_reflection(
+                device,
+                Some("parser_syntax_impl_context_02_scan"),
+                &impl_context_scan_pass.bind_group_layouts[0],
+                &impl_context_scan_pass.reflection,
+                0,
+                &scan_resources,
+            )?;
+            record_compute(
+                encoder,
+                impl_context_scan_pass,
+                &scan_bind_group,
+                "parser.syntax.impl_context.scan",
+                n_blocks,
+            )?;
+        }
+
+        let apply_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
+            (
+                "gParams".into(),
+                buffers.delimiter_params.as_entire_binding(),
+            ),
+            ("token_words".into(), token_buf.as_entire_binding()),
+            (
+                "lexer_token_count".into(),
+                token_count_buf.as_entire_binding(),
+            ),
+            (
+                "statement_event_block_prefix".into(),
+                buffers.impl_context_event_block_prefix.as_entire_binding(),
+            ),
+            (
+                "token_impl_header_kind".into(),
+                buffers.token_impl_header_kind.as_entire_binding(),
+            ),
+            (
+                "token_impl_context_event".into(),
+                buffers.token_impl_context_event.as_entire_binding(),
+            ),
+        ]);
+        let apply_bind_group = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("parser_syntax_impl_context_03_apply"),
+            &impl_context_apply_pass.bind_group_layouts[0],
+            &impl_context_apply_pass.reflection,
+            0,
+            &apply_resources,
+        )?;
+        record_compute(
+            encoder,
+            impl_context_apply_pass,
+            &apply_bind_group,
+            "parser.syntax.impl_context.apply",
+            n_blocks.saturating_mul(256),
+        )?;
+    }
+    {
+        let local_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
+            (
+                "gParams".into(),
+                buffers.delimiter_params.as_entire_binding(),
+            ),
+            ("token_words".into(), token_buf.as_entire_binding()),
+            ("token_count".into(), token_count_buf.as_entire_binding()),
+            (
+                "trait_context_event_block".into(),
+                buffers.trait_context_event_block.as_entire_binding(),
+            ),
+        ]);
+        let local_bind_group = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("parser_syntax_trait_context_01_local"),
+            &trait_context_local_pass.bind_group_layouts[0],
+            &trait_context_local_pass.reflection,
+            0,
+            &local_resources,
+        )?;
+        record_compute(
+            encoder,
+            trait_context_local_pass,
+            &local_bind_group,
+            "parser.syntax.trait_context.local",
+            n_blocks.saturating_mul(256),
+        )?;
+
+        for step in &buffers.trait_context_scan_steps {
+            let prefix_in = if step.read_from_a {
+                &buffers.trait_context_event_prefix_a
+            } else {
+                &buffers.trait_context_event_prefix_b
+            };
+            let prefix_out = if step.write_to_a {
+                &buffers.trait_context_event_prefix_a
+            } else {
+                &buffers.trait_context_event_prefix_b
+            };
+            let scan_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
+                ("gParams".into(), step.params.as_entire_binding()),
+                (
+                    "trait_context_event_block".into(),
+                    buffers.trait_context_event_block.as_entire_binding(),
+                ),
+                (
+                    "trait_context_event_prefix_in".into(),
+                    prefix_in.as_entire_binding(),
+                ),
+                (
+                    "trait_context_event_prefix_out".into(),
+                    prefix_out.as_entire_binding(),
+                ),
+                (
+                    "trait_context_event_block_prefix".into(),
+                    buffers.trait_context_event_block_prefix.as_entire_binding(),
+                ),
+            ]);
+            let scan_bind_group = bind_group::create_bind_group_from_reflection(
+                device,
+                Some("parser_syntax_trait_context_02_scan"),
+                &trait_context_scan_pass.bind_group_layouts[0],
+                &trait_context_scan_pass.reflection,
+                0,
+                &scan_resources,
+            )?;
+            record_compute(
+                encoder,
+                trait_context_scan_pass,
+                &scan_bind_group,
+                "parser.syntax.trait_context.scan",
+                n_blocks,
+            )?;
+        }
+
+        let apply_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
+            (
+                "gParams".into(),
+                buffers.delimiter_params.as_entire_binding(),
+            ),
+            ("token_words".into(), token_buf.as_entire_binding()),
+            ("token_count".into(), token_count_buf.as_entire_binding()),
+            (
+                "trait_context_event_block_prefix".into(),
+                buffers.trait_context_event_block_prefix.as_entire_binding(),
+            ),
+            (
+                "trait_context_event".into(),
+                buffers.trait_context_event.as_entire_binding(),
+            ),
+        ]);
+        let apply_bind_group = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("parser_syntax_trait_context_03_apply"),
+            &trait_context_apply_pass.bind_group_layouts[0],
+            &trait_context_apply_pass.reflection,
+            0,
+            &apply_resources,
+        )?;
+        record_compute(
+            encoder,
+            trait_context_apply_pass,
+            &apply_bind_group,
+            "parser.syntax.trait_context.apply",
+            n_blocks.saturating_mul(256),
+        )?;
+    }
+    {
+        let paren_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
+            ("gParams".into(), buffers.params_buf.as_entire_binding()),
+            ("token_words".into(), token_buf.as_entire_binding()),
+            (
+                "lexer_token_count".into(),
+                token_count_buf.as_entire_binding(),
+            ),
+            (
+                "depth_paren_inblock".into(),
+                buffers.depth_paren_inblock.as_entire_binding(),
+            ),
+            (
+                "block_prefix_paren".into(),
+                buffers.block_prefix_paren.as_entire_binding(),
+            ),
+            (
+                "paren_match_depth".into(),
+                buffers.paren_match_depth.as_entire_binding(),
+            ),
+            (
+                "paren_match_block_min".into(),
+                buffers.paren_match_block_min.as_entire_binding(),
+            ),
+        ]);
+        let paren_bind_group = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("parser_syntax_paren_match_01_depth_blocks"),
+            &paren_match_pass.bind_group_layouts[0],
+            &paren_match_pass.reflection,
+            0,
+            &paren_resources,
+        )?;
+        record_compute(
+            encoder,
+            paren_match_pass,
+            &paren_bind_group,
+            "parser.syntax.paren_match.depth_blocks",
+            n_blocks.saturating_mul(256),
+        )?;
+
+        for step in &buffers.paren_match_min_tree_steps {
+            let tree_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
+                ("gMinTree".into(), step.params.as_entire_binding()),
+                (
+                    "brace_match_block_min".into(),
+                    buffers.paren_match_block_min.as_entire_binding(),
+                ),
+                (
+                    "brace_match_min_tree".into(),
+                    buffers.paren_match_min_tree.as_entire_binding(),
+                ),
+            ]);
+            let tree_bind_group = bind_group::create_bind_group_from_reflection(
+                device,
+                Some("parser_syntax_paren_match_02_build_min_tree"),
+                &min_tree_pass.bind_group_layouts[0],
+                &min_tree_pass.reflection,
+                0,
+                &tree_resources,
+            )?;
+            record_compute(
+                encoder,
+                min_tree_pass,
+                &tree_bind_group,
+                "parser.syntax.paren_match.build_min_tree",
+                step.work_items,
+            )?;
+        }
+    }
     {
         let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("parser.syntax.pass"),
@@ -881,6 +1533,160 @@ fn syntax_delimiters_02_pass(device: &wgpu::Device) -> Result<&'static PassData>
     .map_err(|err| anyhow!("{err}"))
 }
 
+fn syntax_statement_context_01_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+    static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
+    PASS.get_or_init(|| {
+        crate::gpu::passes_core::make_main_pass!(
+            device,
+            "parser_syntax_statement_context_01_local",
+            shader: "tokens_statement_phase_01_local"
+        )
+        .map_err(|err| err.to_string())
+    })
+    .as_ref()
+    .map_err(|err| anyhow!("{err}"))
+}
+
+fn syntax_statement_context_02_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+    static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
+    PASS.get_or_init(|| {
+        crate::gpu::passes_core::make_main_pass!(
+            device,
+            "parser_syntax_statement_context_02_scan",
+            shader: "tokens_trait_context_02_scan"
+        )
+        .map_err(|err| err.to_string())
+    })
+    .as_ref()
+    .map_err(|err| anyhow!("{err}"))
+}
+
+fn syntax_statement_context_03_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+    static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
+    PASS.get_or_init(|| {
+        crate::gpu::passes_core::make_main_pass!(
+            device,
+            "parser_syntax_statement_context_03_apply",
+            shader: "tokens_statement_phase_02_apply"
+        )
+        .map_err(|err| err.to_string())
+    })
+    .as_ref()
+    .map_err(|err| anyhow!("{err}"))
+}
+
+fn syntax_impl_context_01_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+    static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
+    PASS.get_or_init(|| {
+        crate::gpu::passes_core::make_main_pass!(
+            device,
+            "parser_syntax_impl_context_01_local",
+            shader: "tokens_impl_header_01_local"
+        )
+        .map_err(|err| err.to_string())
+    })
+    .as_ref()
+    .map_err(|err| anyhow!("{err}"))
+}
+
+fn syntax_impl_context_02_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+    static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
+    PASS.get_or_init(|| {
+        crate::gpu::passes_core::make_main_pass!(
+            device,
+            "parser_syntax_impl_context_02_scan",
+            shader: "tokens_trait_context_02_scan"
+        )
+        .map_err(|err| err.to_string())
+    })
+    .as_ref()
+    .map_err(|err| anyhow!("{err}"))
+}
+
+fn syntax_impl_context_03_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+    static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
+    PASS.get_or_init(|| {
+        crate::gpu::passes_core::make_main_pass!(
+            device,
+            "parser_syntax_impl_context_03_apply",
+            shader: "tokens_impl_header_02_apply"
+        )
+        .map_err(|err| err.to_string())
+    })
+    .as_ref()
+    .map_err(|err| anyhow!("{err}"))
+}
+
+fn syntax_trait_context_01_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+    static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
+    PASS.get_or_init(|| {
+        crate::gpu::passes_core::make_main_pass!(
+            device,
+            "parser_syntax_trait_context_01_local",
+            shader: "tokens_trait_context_01_local"
+        )
+        .map_err(|err| err.to_string())
+    })
+    .as_ref()
+    .map_err(|err| anyhow!("{err}"))
+}
+
+fn syntax_trait_context_02_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+    static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
+    PASS.get_or_init(|| {
+        crate::gpu::passes_core::make_main_pass!(
+            device,
+            "parser_syntax_trait_context_02_scan",
+            shader: "tokens_trait_context_02_scan"
+        )
+        .map_err(|err| err.to_string())
+    })
+    .as_ref()
+    .map_err(|err| anyhow!("{err}"))
+}
+
+fn syntax_trait_context_03_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+    static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
+    PASS.get_or_init(|| {
+        crate::gpu::passes_core::make_main_pass!(
+            device,
+            "parser_syntax_trait_context_03_apply",
+            shader: "tokens_trait_context_03_apply"
+        )
+        .map_err(|err| err.to_string())
+    })
+    .as_ref()
+    .map_err(|err| anyhow!("{err}"))
+}
+
+fn syntax_paren_match_01_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+    static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
+    PASS.get_or_init(|| {
+        crate::gpu::passes_core::make_main_pass!(
+            device,
+            "parser_syntax_paren_match_01_depth_blocks",
+            shader: "tokens_paren_match_01_depth_blocks"
+        )
+        .map_err(|err| err.to_string())
+    })
+    .as_ref()
+    .map_err(|err| anyhow!("{err}"))
+}
+
+fn syntax_match_min_tree_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+    static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
+    PASS.get_or_init(|| {
+        crate::gpu::passes_core::make_main_pass!(
+            device,
+            "parser_syntax_paren_match_02_build_min_tree",
+            shader: "tokens_brace_match_02_build_min_tree"
+        )
+        .map_err(|err| err.to_string())
+    })
+    .as_ref()
+    .map_err(|err| anyhow!("{err}"))
+}
+
 fn make_delimiter_scan_steps(
     device: &wgpu::Device,
     n_tokens: u32,
@@ -932,6 +1738,62 @@ fn make_delimiter_scan_steps(
         write_to_a: !read_from_a,
     });
     steps
+}
+
+fn make_min_tree_build_steps(
+    device: &wgpu::Device,
+    n_blocks: u32,
+    leaf_base: u32,
+) -> Vec<MinTreeBuildStep> {
+    let mut steps = Vec::new();
+    steps.push(MinTreeBuildStep {
+        params: uniform_from_val(
+            device,
+            "parser.syntax.paren_match_min_tree.params.leaves",
+            &MinTreeParams {
+                n_blocks,
+                leaf_base,
+                start_node: 0,
+                node_count: leaf_base,
+                mode: 0,
+                _pad0: 0,
+                _pad1: 0,
+                _pad2: 0,
+            },
+        ),
+        work_items: leaf_base,
+    });
+
+    let mut start_node = leaf_base / 2;
+    while start_node > 0 {
+        steps.push(MinTreeBuildStep {
+            params: uniform_from_val(
+                device,
+                "parser.syntax.paren_match_min_tree.params.combine",
+                &MinTreeParams {
+                    n_blocks,
+                    leaf_base,
+                    start_node,
+                    node_count: start_node,
+                    mode: 1,
+                    _pad0: 0,
+                    _pad1: 0,
+                    _pad2: 0,
+                },
+            ),
+            work_items: start_node,
+        });
+
+        if start_node == 1 {
+            break;
+        }
+        start_node >>= 1;
+    }
+    steps
+}
+
+fn next_power_of_two_u32(value: u32) -> u32 {
+    value.max(1).next_power_of_two()
 }
 
 fn plan_compute(pass: &PassData, n_elements: u32) -> Result<(u32, u32, u32)> {

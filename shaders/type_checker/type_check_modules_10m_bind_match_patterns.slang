@@ -4,6 +4,11 @@
 // publishes arm-local declaration links. Payload type substitution is handled by
 // the following payload pass so each shader stays within WebGPU's storage-buffer
 // limits.
+// It uses the compact path table's HIR-owner order as a sorted index; if the
+// lower-bound row is not the expected HIR path expression inside the pattern
+// subtree, binding fails closed instead of scanning the subtree.
+
+import range_query;
 
 struct Params
 {
@@ -21,6 +26,8 @@ StructuredBuffer<uint> subtree_end;
 StructuredBuffer<uint> hir_match_arm_pattern_node;
 StructuredBuffer<uint> hir_match_arm_payload_start;
 StructuredBuffer<uint> hir_match_arm_payload_count;
+StructuredBuffer<uint> path_count_out;
+StructuredBuffer<uint> path_owner_hir;
 StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> resolved_value_decl;
@@ -65,6 +72,11 @@ uint active_hir_node_count()
     return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
 }
 
+uint active_path_count()
+{
+    return min(path_count_out[0], gParams.n_hir_nodes);
+}
+
 bool valid_node(uint node)
 {
     return node != INVALID && node < active_hir_node_count();
@@ -81,19 +93,44 @@ bool token_is_wildcard(uint i)
            name_id_by_token[i] == language_name_id[LANGUAGE_SYMBOL_WILDCARD];
 }
 
+int compare_u32(uint left, uint right)
+{
+    if (left < right)
+        return -1;
+    if (left > right)
+        return 1;
+    return 0;
+}
+
+public struct PathOwnerCompare : IRowQueryCompare<uint>
+{
+    public static int compare(uint row, uint owner_hir)
+    {
+        return compare_u32(path_owner_hir[row], owner_hir);
+    }
+}
+
 uint first_pattern_path_node(uint pattern_node)
 {
     if (!valid_node(pattern_node))
         return INVALID;
 
     uint end = min(subtree_end[pattern_node], active_hir_node_count());
-    [loop]
-    for (uint node = pattern_node; node < end; node += 1u)
-    {
-        if (hir_kind[node] == HIR_PATH_EXPR && path_id_by_owner_hir[node] != INVALID)
-            return node;
-    }
-    return INVALID;
+    if (end <= pattern_node)
+        return INVALID;
+
+    uint row = lower_bound_query<uint, PathOwnerCompare>(active_path_count(), pattern_node);
+    if (row >= active_path_count())
+        return INVALID;
+
+    uint node = path_owner_hir[row];
+    if (node >= end || !valid_node(node))
+        return INVALID;
+    if (hir_kind[node] != HIR_PATH_EXPR)
+        return INVALID;
+    if (path_id_by_owner_hir[node] != row)
+        return INVALID;
+    return node;
 }
 
 bool enum_variant_decl(uint decl_i, out uint variant_token, out uint enum_token)

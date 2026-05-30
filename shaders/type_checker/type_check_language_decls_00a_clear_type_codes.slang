@@ -8,6 +8,8 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 RWStructuredBuffer<uint> language_type_code_by_name_id;
+RWStructuredBuffer<uint> language_entrypoint_tag_by_name_id;
+RWStructuredBuffer<uint> language_intrinsic_tag_by_name_id;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -27,4 +29,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     language_type_code_by_name_id[i] = 0u;
+    language_entrypoint_tag_by_name_id[i] = 0u;
+    language_intrinsic_tag_by_name_id[i] = 0u;
 }

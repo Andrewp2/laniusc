@@ -10,6 +10,10 @@ pub(in crate::type_checker) fn record_call_bind_groups(
     groups: &CallBindGroups,
 ) -> Result<()> {
     let lookup_work = token_capacity.saturating_mul(2).max(n_work);
+    let call_arg_slot_work = n_work
+        .saturating_mul(CALL_PARAM_CACHE_STRIDE as u32)
+        .max(token_capacity)
+        .max(1);
     record_compute(
         encoder,
         type_check_calls_clear_pass(device)?,
@@ -57,7 +61,7 @@ pub(in crate::type_checker) fn record_call_bind_groups(
         type_check_calls_clear_hir_call_args_pass(device)?,
         &groups.clear_hir_call_args,
         "type_check.calls.clear_hir_call_args",
-        token_capacity.max(1),
+        call_arg_slot_work,
     )?;
     record_compute(
         encoder,
@@ -94,6 +98,10 @@ pub(in crate::type_checker) fn record_call_bind_groups_with_passes(
     groups: &CallBindGroups,
 ) -> Result<()> {
     let lookup_work = token_capacity.saturating_mul(2).max(n_work);
+    let call_arg_slot_work = n_work
+        .saturating_mul(CALL_PARAM_CACHE_STRIDE as u32)
+        .max(token_capacity)
+        .max(1);
     record_compute(
         encoder,
         &passes.calls_clear,
@@ -141,7 +149,7 @@ pub(in crate::type_checker) fn record_call_bind_groups_with_passes(
         &passes.calls_clear_hir_call_args,
         &groups.clear_hir_call_args,
         "type_check.calls.clear_hir_call_args",
-        token_capacity.max(1),
+        call_arg_slot_work,
     )?;
     record_compute(
         encoder,

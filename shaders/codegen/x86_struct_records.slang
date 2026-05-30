@@ -21,10 +21,10 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_item_name_token;
 StructuredBuffer<uint> hir_stmt_record;
-StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> x86_expr_resolved_node;
 StructuredBuffer<uint> hir_member_receiver_node;
 StructuredBuffer<uint> hir_member_name_token;
+StructuredBuffer<uint> hir_struct_lit_head_node;
 StructuredBuffer<uint> hir_struct_lit_field_parent_lit;
 StructuredBuffer<uint> hir_struct_lit_field_start;
 StructuredBuffer<uint> hir_struct_lit_field_count;
@@ -33,8 +33,6 @@ StructuredBuffer<uint> hir_struct_lit_field_value_node;
 StructuredBuffer<uint> hir_struct_lit_field_next;
 StructuredBuffer<uint> member_result_field_ordinal;
 StructuredBuffer<uint> struct_init_field_ordinal_by_node;
-StructuredBuffer<uint> x86_tree_parent;
-StructuredBuffer<uint> x86_tree_subtree_end;
 StructuredBuffer<uint> x86_node_tree_status;
 StructuredBuffer<uint> x86_enclosing_let_node;
 
@@ -50,15 +48,12 @@ static const uint X86_NODE_TREE_OK = 1u;
 static const uint X86_STRUCT_RECORDS_OK = 1u;
 static const uint X86_ERR_STRUCT_RECORDS = 28u;
 
-static const uint HIR_EXPR = 14u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_STRUCT_ITEM = 27u;
 static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_LET = 1u;
-
-static const uint EXPR_RECORD_STRIDE = 4u;
 
 static const uint X86_STRUCT_ACCESS_NONE = 0u;
 static const uint X86_STRUCT_ACCESS_MEMBER = 1u;
@@ -104,27 +99,9 @@ uint stmt_slot(uint node, uint slot)
         INVALID);
 }
 
-uint expr_slot(uint node, uint slot)
-{
-    return row_major_load<uint>(
-        hir_expr_record,
-        node,
-        EXPR_RECORD_STRIDE,
-        slot,
-        INVALID);
-}
-
 uint resolve_expr(uint node)
 {
     return valid_node(node) ? x86_expr_resolved_node[node] : INVALID;
-}
-
-bool node_span_contains(uint ancestor, uint node)
-{
-    if (!valid_node(ancestor) || !valid_node(node))
-        return false;
-    uint end = x86_tree_subtree_end[ancestor];
-    return end != INVALID && ancestor <= node && node < end;
 }
 
 void publish_error(uint detail)
@@ -196,12 +173,24 @@ void publish_literal_access_record(uint node)
     if (width == 0u)
         return;
     uint first_field = hir_struct_lit_field_start[node];
-    write_struct_access_record(
-        node,
-        X86_STRUCT_ACCESS_LITERAL,
-        width,
-        first_field,
-        0u);
+    if (!write_struct_access_record(
+            node,
+            X86_STRUCT_ACCESS_LITERAL,
+            width,
+            first_field,
+            0u))
+        return;
+
+    uint head_node = hir_struct_lit_head_node[node];
+    if (valid_node(head_node) && head_node != node && hir_kind[head_node] != HIR_MEMBER_EXPR)
+    {
+        write_struct_access_record(
+            head_node,
+            X86_STRUCT_ACCESS_LITERAL,
+            width,
+            first_field,
+            0u);
+    }
 }
 
 void publish_store_record_for_value(uint value_node, uint decl_token, uint ordinal, uint literal_node)
@@ -209,6 +198,16 @@ void publish_store_record_for_value(uint value_node, uint decl_token, uint ordin
     if (!valid_node(value_node) || !valid_token(decl_token) || ordinal == INVALID)
         return;
     x86_struct_store_record[value_node] = uint4(decl_token, ordinal, literal_node, 0u);
+}
+
+bool let_initializer_is_struct_literal(uint let_node, uint literal_node)
+{
+    if (!valid_node(let_node) || !valid_node(literal_node))
+        return false;
+    // Nested aggregate ownership needs an explicit owner/path record; do not
+    // infer it from subtree spans in this backend projection.
+    uint init_expr = stmt_slot(let_node, 2u);
+    return resolve_expr(init_expr) == literal_node;
 }
 
 void publish_struct_field_store_record(uint field_node)
@@ -232,8 +231,7 @@ void publish_struct_field_store_record(uint field_node)
     if (!valid_node(let_node) || stmt_slot(let_node, 0u) != STMT_RECORD_KIND_LET)
         return;
 
-    uint init_expr = stmt_slot(let_node, 2u);
-    if (!node_span_contains(init_expr, literal_node))
+    if (!let_initializer_is_struct_literal(let_node, literal_node))
         return;
 
     uint decl_token = stmt_slot(let_node, 1u);

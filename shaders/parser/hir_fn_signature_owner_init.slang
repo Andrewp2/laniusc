@@ -53,7 +53,8 @@ bool function_decl_node(uint node)
     if (!valid_node(node) || hir_kind[node] != HIR_FN)
         return false;
     uint prod = node_kind[node];
-    return prod == PROD_FN || prod == PROD_EXTERN_FN || prod == PROD_IMPL_FN;
+    return prod == PROD_FN || prod == PROD_EXTERN_FN || prod == PROD_IMPL_FN ||
+           prod == PROD_TRAIT_METHOD || prod == PROD_TRAIT_METHOD_PUB;
 }
 
 [shader("compute")]

@@ -18,7 +18,7 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_expr_record;
-StructuredBuffer<uint> x86_expr_resolved_node;
+StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_expr_int_value;
 StructuredBuffer<uint> hir_stmt_record;
 
@@ -90,15 +90,15 @@ uint expr_left(uint node)
     return valid_node(node) ? expr_record_slot(node, EXPR_RECORD_LEFT) : INVALID;
 }
 
-uint resolve_expr(uint node)
+uint expr_root_node(uint node)
 {
-    return valid_node(node) ? x86_expr_resolved_node[node] : INVALID;
+    return valid_node(node) ? hir_expr_result_root_node[node] : INVALID;
 }
 
 bool literal_leaf_value(uint value_node, out uint value)
 {
     value = 0u;
-    value_node = resolve_expr(value_node);
+    value_node = expr_root_node(value_node);
     if (!valid_node(value_node))
         return false;
 
@@ -122,7 +122,7 @@ bool literal_expr_value(uint value_node, out uint value)
     if (literal_leaf_value(value_node, value))
         return true;
 
-    value_node = resolve_expr(value_node);
+    value_node = expr_root_node(value_node);
     if (!valid_node(value_node))
         return false;
 

@@ -77,6 +77,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirEnumVariantSc
                 "hir_variant_payload_count".into(),
                 b.hir_variant_payload_count.as_entire_binding(),
             ),
+            (
+                "hir_variant_payload_node".into(),
+                b.hir_variant_payload_node.as_entire_binding(),
+            ),
         ])
     }
 }

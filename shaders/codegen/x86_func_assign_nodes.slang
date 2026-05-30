@@ -1,11 +1,12 @@
 // x86_64 owning-function assignment seed.
 //
 // This pass consumes the backend HIR tree projection plus the HIR-order
-// function-owner prefix scan. The scan provides a candidate function owner, and
-// the subtree span validates that the node is actually inside that function.
-// The parent link then pointer-jumps any remaining unresolved nodes from the
-// tree relation. It works from HIR records only; it does not inspect token
-// spelling or source text.
+// function-owner prefix scan. The scan provides a candidate executable function
+// owner, and the subtree span validates that the node is actually inside that
+// function. The parent link then pointer-jumps any remaining unresolved nodes
+// from the tree relation. It works from HIR records only; it does not inspect
+// token spelling or source text. HIR_FN signature rows that are not function
+// items, such as trait methods, never own native backend nodes.
 
 import gpu_index;
 
@@ -21,6 +22,7 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
+StructuredBuffer<uint> hir_item_kind;
 StructuredBuffer<uint> x86_tree_parent;
 StructuredBuffer<uint> x86_tree_subtree_end;
 StructuredBuffer<uint> x86_node_tree_status;
@@ -32,6 +34,7 @@ RWStructuredBuffer<uint> x86_func_owner_link;
 
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_FN = 3u;
+static const uint HIR_ITEM_KIND_FN = 4u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint WG_SIZE = 256u;
 static const uint X86_NODE_TREE_OK = 1u;
@@ -61,7 +64,8 @@ bool is_owning_function_node(uint node_i)
 {
     if (!valid_node(node_i))
         return false;
-    return hir_kind[node_i] == HIR_FN;
+    return hir_kind[node_i] == HIR_FN &&
+           hir_item_kind[node_i] == HIR_ITEM_KIND_FN;
 }
 
 uint owner_from_hir_order_scan(uint node_i)

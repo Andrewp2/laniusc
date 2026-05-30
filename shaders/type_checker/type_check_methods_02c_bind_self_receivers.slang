@@ -3,10 +3,11 @@
 // This pass consumes method declaration metadata and parser-owned member
 // receiver records. It publishes visible-decl entries for `self` receiver uses
 // inside methods without inspecting token kinds, spelling, source bytes, or
-// token neighborhoods.
+// token neighborhoods. Function ownership is consumed from the token-level
+// enclosing_fn relation produced by the function-context scan, not rediscovered
+// by walking HIR parents.
 
 import generated_parse_production_ids;
-import tree_walk;
 
 struct Params
 {
@@ -19,18 +20,16 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> parent;
 StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_member_receiver_node;
 StructuredBuffer<uint> hir_member_receiver_token;
+StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> method_decl_param_offset;
 
 RWStructuredBuffer<uint> visible_decl;
 
 static const uint INVALID = 0xffffffffu;
 
-static const uint HIR_FN = 3u;
 static const uint HIR_MEMBER_EXPR = 21u;
 
 static const uint WG_SIZE = 256u;
@@ -56,40 +55,10 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
-uint parent_node(uint node)
+uint enclosing_function_token_for_receiver(uint receiver_token)
 {
-    uint p = valid_node(node) ? parent[node] : INVALID;
-    return valid_node(p) ? p : INVALID;
-}
-
-public struct MethodSelfReceiverWalkGraph : ITreeWalkGraph
-{
-    public static bool valid(uint node)
-    {
-        return valid_node(node);
-    }
-
-    public static uint parent(uint node)
-    {
-        return parent_node(node);
-    }
-}
-
-public struct MethodSelfReceiverFnPredicate : ITreeWalkPredicate
-{
-    public static bool matches(uint node)
-    {
-        return hir_kind[node] == HIR_FN;
-    }
-}
-
-uint enclosing_function_node(uint node)
-{
-    uint fn_node;
-    return find_self_or_ancestor<MethodSelfReceiverWalkGraph, MethodSelfReceiverFnPredicate>(
-        node,
-        128u,
-        fn_node) ? fn_node : INVALID;
+    uint encoded_fn = valid_token(receiver_token) ? enclosing_fn[receiver_token] : 0u;
+    return encoded_fn == 0u ? INVALID : encoded_fn - 1u;
 }
 
 void bind_self_receiver_for_member(uint member_node)
@@ -105,8 +74,7 @@ void bind_self_receiver_for_member(uint member_node)
     if (!valid_token(self_token))
         return;
 
-    uint fn_node = enclosing_function_node(member_node);
-    uint fn_token = valid_node(fn_node) ? hir_token_pos[fn_node] : INVALID;
+    uint fn_token = enclosing_function_token_for_receiver(self_token);
     if (!valid_token(fn_token))
         return;
 

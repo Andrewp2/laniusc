@@ -1,6 +1,103 @@
 // Source-level allocator ABI declarations.
+// The service contract below is intentionally conservative: the current
+// backends can type-check these declarations, but they do not bind heap
+// allocation.
 
 module alloc::allocator;
+
+pub type AllocatorCapability = bool;
+pub type AllocatorRuntimeAbiVersion = u32;
+pub type AllocatorServiceId = u32;
+pub type AllocatorServiceStatus = u32;
+
+pub const ALLOCATOR_RUNTIME_ABI_VERSION: AllocatorRuntimeAbiVersion = 1;
+pub const ALLOCATOR_SERVICE_ID: AllocatorServiceId = 1;
+pub const ALLOCATOR_SERVICE_STATUS_UNAVAILABLE: AllocatorServiceStatus = 1;
+pub const ALLOCATOR_HAS_RUNTIME_BINDING: AllocatorCapability = false;
+
+pub fn allocator_runtime_abi_version() -> AllocatorRuntimeAbiVersion {
+    return ALLOCATOR_RUNTIME_ABI_VERSION;
+}
+
+pub fn allocator_service_id() -> AllocatorServiceId {
+    return ALLOCATOR_SERVICE_ID;
+}
+
+pub fn allocator_service_is_known() -> AllocatorCapability {
+    return true;
+}
+
+pub fn allocator_contract_metadata_is_available() -> AllocatorCapability {
+    return allocator_service_is_known();
+}
+
+pub fn allocator_service_status() -> AllocatorServiceStatus {
+    return ALLOCATOR_SERVICE_STATUS_UNAVAILABLE;
+}
+
+pub fn allocator_is_available() -> AllocatorCapability {
+    return ALLOCATOR_HAS_RUNTIME_BINDING;
+}
+
+pub fn allocator_is_blocked() -> AllocatorCapability {
+    return !allocator_is_available();
+}
+
+pub fn allocator_requires_runtime_binding() -> AllocatorCapability {
+    return !ALLOCATOR_HAS_RUNTIME_BINDING;
+}
+
+pub fn allocator_host_abi_is_contract_only() -> AllocatorCapability {
+    return allocator_requires_runtime_binding();
+}
+
+pub fn alloc_is_executable() -> AllocatorCapability {
+    return ALLOCATOR_HAS_RUNTIME_BINDING;
+}
+
+pub fn alloc_is_blocked() -> AllocatorCapability {
+    return !alloc_is_executable();
+}
+
+pub fn alloc_requires_runtime_binding() -> AllocatorCapability {
+    return !alloc_is_executable();
+}
+
+pub fn realloc_is_executable() -> AllocatorCapability {
+    return ALLOCATOR_HAS_RUNTIME_BINDING;
+}
+
+pub fn realloc_is_blocked() -> AllocatorCapability {
+    return !realloc_is_executable();
+}
+
+pub fn realloc_requires_runtime_binding() -> AllocatorCapability {
+    return !realloc_is_executable();
+}
+
+pub fn dealloc_is_executable() -> AllocatorCapability {
+    return ALLOCATOR_HAS_RUNTIME_BINDING;
+}
+
+pub fn dealloc_is_blocked() -> AllocatorCapability {
+    return !dealloc_is_executable();
+}
+
+pub fn dealloc_requires_runtime_binding() -> AllocatorCapability {
+    return !dealloc_is_executable();
+}
+
+pub fn alloc_failed_is_executable() -> AllocatorCapability {
+    return ALLOCATOR_HAS_RUNTIME_BINDING;
+}
+
+pub fn alloc_failed_is_blocked() -> AllocatorCapability {
+    return !alloc_failed_is_executable();
+}
+
+pub fn alloc_failed_requires_runtime_binding() -> AllocatorCapability {
+    return !alloc_failed_is_executable();
+}
 
 pub extern "lanius_alloc" fn alloc(size: usize, align: usize) -> u32;
 pub extern "lanius_alloc" fn realloc(ptr: u32, old_size: usize, new_size: usize, align: usize) -> u32;

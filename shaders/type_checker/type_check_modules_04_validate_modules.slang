@@ -40,7 +40,7 @@ static const uint INVALID = 0xffffffffu;
 static const uint MODULE_STATUS_OK = 0u;
 static const uint MODULE_STATUS_DUPLICATE = 2u;
 
-static const uint ERR_BAD_HIR = 6u;
+static const uint ERR_DUPLICATE_MODULE = 18u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -140,5 +140,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
     module_status[module_i] = MODULE_STATUS_DUPLICATE;
     uint path_id = module_path_id[module_i];
     uint token_i = path_id < record_capacity() ? path_owner_token[path_id] : record_capacity();
-    record_error(token_i, ERR_BAD_HIR, MODULE_STATUS_DUPLICATE);
+    record_error(token_i, ERR_DUPLICATE_MODULE, MODULE_STATUS_DUPLICATE);
 }

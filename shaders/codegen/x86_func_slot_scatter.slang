@@ -1,8 +1,8 @@
 // Scatter function slots by prefix rank.
 //
 // This is the Pareas-style compaction counterpart to x86_func_slot_flags: the
-// scan gives each HIR_FN node a stable ordinal, then this pass writes the dense
-// function-slot table and publishes the total function count.
+// scan gives each executable function item a stable ordinal, then this pass
+// writes the dense function-slot table and publishes the total function count.
 
 import atomics;
 import gpu_index;

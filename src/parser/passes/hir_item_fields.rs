@@ -117,6 +117,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirItemFieldsPas
                 b.hir_item_path_end.as_entire_binding(),
             ),
             (
+                "hir_item_path_node".into(),
+                b.hir_item_path_node.as_entire_binding(),
+            ),
+            (
                 "hir_item_import_target_kind".into(),
                 b.hir_item_import_target_kind.as_entire_binding(),
             ),

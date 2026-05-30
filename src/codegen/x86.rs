@@ -1,3 +1,5 @@
+use std::fmt;
+
 use anyhow::Result;
 use encase::ShaderType;
 
@@ -12,6 +14,78 @@ mod support;
 
 pub use record::RecordElfInputs;
 use support::{PooledReadbackBuffer, PooledStorageBuffer, RetainedX86Buffer, trace_x86_codegen};
+
+#[derive(Debug)]
+pub struct X86OutputError {
+    error_name: &'static str,
+    error_code: u32,
+    error_detail: u32,
+}
+
+impl X86OutputError {
+    fn new(error_name: &'static str, error_code: u32, error_detail: u32) -> Self {
+        Self {
+            error_name,
+            error_code,
+            error_detail,
+        }
+    }
+
+    pub fn error_name(&self) -> &'static str {
+        self.error_name
+    }
+
+    pub fn error_code(&self) -> u32 {
+        self.error_code
+    }
+
+    pub fn error_detail(&self) -> u32 {
+        self.error_detail
+    }
+
+    pub fn detail_is_hir_node(&self) -> bool {
+        matches!(
+            self.error_code,
+            11 | 17
+                | 24
+                | 26
+                | 29
+                | 30
+                | 31
+                | 32
+                | 33
+                | 34
+                | 35
+                | 37
+                | 38
+                | 39
+                | 40
+                | 41
+                | 42
+                | 43
+                | 44
+                | 45
+                | 46
+                | 47
+        )
+    }
+
+    pub fn detail_is_token(&self) -> bool {
+        matches!(self.error_code, 9 | 25)
+    }
+}
+
+impl fmt::Display for X86OutputError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "GPU x86 emitter rejected {} (code {}) at detail {}",
+            self.error_name, self.error_code, self.error_detail
+        )
+    }
+}
+
+impl std::error::Error for X86OutputError {}
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
@@ -127,6 +201,7 @@ impl X86FeatureSummary {
 
 pub struct GpuX86ExprMetadataBuffers<'a> {
     pub record: &'a wgpu::Buffer,
+    pub expr_result_root_node: &'a wgpu::Buffer,
     pub int_value: &'a wgpu::Buffer,
     pub stmt_record: &'a wgpu::Buffer,
     pub type_form: &'a wgpu::Buffer,
@@ -199,6 +274,7 @@ pub struct GpuX86StructMetadataBuffers<'a> {
     pub item_name_token: &'a wgpu::Buffer,
     pub decl_hir_node: &'a wgpu::Buffer,
     pub struct_decl_field_count: &'a wgpu::Buffer,
+    pub struct_lit_head_node: &'a wgpu::Buffer,
     pub struct_lit_field_parent_lit: &'a wgpu::Buffer,
     pub struct_lit_field_start: &'a wgpu::Buffer,
     pub struct_lit_field_count: &'a wgpu::Buffer,
@@ -306,10 +382,42 @@ const X86_INITIAL_OUTPUT_READBACK_SLACK_BYTES: usize = 64 * 1024;
 const X86_INITIAL_OUTPUT_READBACK_LARGE_SOURCE_SLACK_BYTES: usize = 128 * 1024;
 const X86_INITIAL_OUTPUT_READBACK_CAPACITY_DIVISOR: usize = 2;
 // Mirror Pareas' lockstep register-allocation shape: each dispatch step
-// advances a small fixed row chunk for every function, carrying per-function
-// active state between chunks. This avoids serial full-function walks inside a
-// single shader invocation while keeping host command recording bounded.
-const X86_REGALLOC_ROWS_PER_CHUNK: usize = 256;
+// advances a small fixed chunk for every function, carrying per-function
+// active state between chunks. Regalloc consumes compact value-definition rows,
+// so this bound is over semantic defs rather than every virtual instruction.
+const X86_REGALLOC_ROWS_PER_CHUNK: usize = 32;
+
+const X86_REGALLOC_PASS_CONTRACT_SCHEMA: &str = "lanius.x86.regalloc-pass-contract.v1";
+const X86_REGALLOC_LOOP_STATUS: &str = "bounded";
+const X86_REGALLOC_FALLBACK_STATUS: &str = "fail-closed";
+const X86_REGALLOC_CLAIM_STATUS: &str = "blocked";
+const X86_REGALLOC_CLAIM_BLOCKERS: &str =
+    "bounded_value_def_chunk_loop,loop_carried_active_end,loop_carried_param_rank_mask";
+const X86_REGALLOC_REQUIRED_REPLACEMENT: &str =
+    "function_region_value_def_rows,segmented_state_composition,pressure_spill_stack_scans";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct X86RegallocPassContract {
+    pub schema: &'static str,
+    pub loop_status: &'static str,
+    pub fallback_status: &'static str,
+    pub claim_status: &'static str,
+    pub claim_blockers: &'static str,
+    pub required_replacement: &'static str,
+    pub rows_per_chunk: usize,
+}
+
+pub fn x86_regalloc_pass_contract() -> X86RegallocPassContract {
+    X86RegallocPassContract {
+        schema: X86_REGALLOC_PASS_CONTRACT_SCHEMA,
+        loop_status: X86_REGALLOC_LOOP_STATUS,
+        fallback_status: X86_REGALLOC_FALLBACK_STATUS,
+        claim_status: X86_REGALLOC_CLAIM_STATUS,
+        claim_blockers: X86_REGALLOC_CLAIM_BLOCKERS,
+        required_replacement: X86_REGALLOC_REQUIRED_REPLACEMENT,
+        rows_per_chunk: X86_REGALLOC_ROWS_PER_CHUNK,
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct X86CapacityEstimate {
@@ -379,7 +487,7 @@ fn x86_capacity_estimate_for_hir_tokens_inst_basis_and_inst_limit(
         .saturating_add(X86_INST_CAPACITY_SLACK)
         .min(MAX_X86_INSTS);
     let inst_capacity_limit = inst_capacity_limit_override
-        .map(|limit| limit.min(token_scaled_limit))
+        .map(|limit| limit.min(MAX_X86_INSTS))
         .unwrap_or(token_scaled_limit);
     x86_capacity_estimate_for_hir_with_limit_and_inst_basis(
         hir_words,
@@ -563,6 +671,9 @@ pub struct GpuX86CodeGenerator {
     call_arg_values_pass: PassData,
     intrinsic_calls_pass: PassData,
     call_abi_pass: PassData,
+    for_iterable_nodes_pass: PassData,
+    node_control_padding_pass: PassData,
+    postfix_operand_owner_pass: PassData,
     node_inst_counts_pass: PassData,
     node_inst_same_end_rank_init_pass: PassData,
     node_inst_same_end_rank_step_pass: PassData,
@@ -578,6 +689,10 @@ pub struct GpuX86CodeGenerator {
     node_inst_gen_worklist_dispatch_args_pass: PassData,
     enclosing_loop_init_pass: PassData,
     enclosing_loop_step_pass: PassData,
+    short_circuit_rhs_init_pass: PassData,
+    short_circuit_rhs_step_pass: PassData,
+    index_source_owner_init_pass: PassData,
+    index_source_owner_step_pass: PassData,
     node_inst_gen_inputs_pass: PassData,
     virtual_inst_clear_dispatch_args_pass: PassData,
     virtual_inst_clear_pass: PassData,
@@ -601,6 +716,9 @@ pub struct GpuX86CodeGenerator {
     inst_size_pass: PassData,
     text_scan_local_pass: PassData,
     text_offsets_pass: PassData,
+    reloc_scan_local_pass: PassData,
+    reloc_records_pass: PassData,
+    reloc_patch_pass: PassData,
     encode_pass: PassData,
     elf_layout_pass: PassData,
     elf_write_pass: PassData,
@@ -849,6 +967,21 @@ impl GpuX86CodeGenerator {
         );
         let call_abi_pass =
             load_x86_pass!("call_abi", "x86_call_abi.spv", "x86_call_abi.reflect.json");
+        let for_iterable_nodes_pass = load_x86_pass!(
+            "for_iterable_nodes",
+            "x86_for_iterable_nodes.spv",
+            "x86_for_iterable_nodes.reflect.json"
+        );
+        let node_control_padding_pass = load_x86_pass!(
+            "node_control_padding",
+            "x86_node_control_padding.spv",
+            "x86_node_control_padding.reflect.json"
+        );
+        let postfix_operand_owner_pass = load_x86_pass!(
+            "postfix_operand_owner",
+            "x86_postfix_operand_owner.spv",
+            "x86_postfix_operand_owner.reflect.json"
+        );
         let node_inst_counts_pass = load_x86_pass!(
             "node_inst_counts",
             "x86_node_inst_counts.spv",
@@ -923,6 +1056,26 @@ impl GpuX86CodeGenerator {
             "enclosing_loop_step",
             "x86_enclosing_loop_step.spv",
             "x86_enclosing_loop_step.reflect.json"
+        );
+        let short_circuit_rhs_init_pass = load_x86_pass!(
+            "short_circuit_rhs_init",
+            "x86_short_circuit_rhs_init.spv",
+            "x86_short_circuit_rhs_init.reflect.json"
+        );
+        let short_circuit_rhs_step_pass = load_x86_pass!(
+            "short_circuit_rhs_step",
+            "x86_short_circuit_rhs_step.spv",
+            "x86_short_circuit_rhs_step.reflect.json"
+        );
+        let index_source_owner_init_pass = load_x86_pass!(
+            "index_source_owner_init",
+            "x86_index_source_owner_init.spv",
+            "x86_index_source_owner_init.reflect.json"
+        );
+        let index_source_owner_step_pass = load_x86_pass!(
+            "index_source_owner_step",
+            "x86_index_source_owner_step.spv",
+            "x86_index_source_owner_step.reflect.json"
         );
         let node_inst_gen_inputs_pass = load_x86_pass!(
             "node_inst_gen_inputs",
@@ -1035,6 +1188,21 @@ impl GpuX86CodeGenerator {
             "x86_text_offsets.spv",
             "x86_text_offsets.reflect.json"
         );
+        let reloc_scan_local_pass = load_x86_pass!(
+            "reloc_scan_local",
+            "x86_reloc_scan_local.spv",
+            "x86_reloc_scan_local.reflect.json"
+        );
+        let reloc_records_pass = load_x86_pass!(
+            "reloc_records",
+            "x86_reloc_records.spv",
+            "x86_reloc_records.reflect.json"
+        );
+        let reloc_patch_pass = load_x86_pass!(
+            "reloc_patch",
+            "x86_reloc_patch.spv",
+            "x86_reloc_patch.reflect.json"
+        );
         let encode_pass = load_x86_pass!("encode", "x86_encode.spv", "x86_encode.reflect.json");
         let elf_layout_pass = load_x86_pass!(
             "elf_layout",
@@ -1094,6 +1262,9 @@ impl GpuX86CodeGenerator {
             call_arg_values_pass,
             intrinsic_calls_pass,
             call_abi_pass,
+            for_iterable_nodes_pass,
+            node_control_padding_pass,
+            postfix_operand_owner_pass,
             node_inst_counts_pass,
             node_inst_same_end_rank_init_pass,
             node_inst_same_end_rank_step_pass,
@@ -1109,6 +1280,10 @@ impl GpuX86CodeGenerator {
             node_inst_gen_worklist_dispatch_args_pass,
             enclosing_loop_init_pass,
             enclosing_loop_step_pass,
+            short_circuit_rhs_init_pass,
+            short_circuit_rhs_step_pass,
+            index_source_owner_init_pass,
+            index_source_owner_step_pass,
             node_inst_gen_inputs_pass,
             virtual_inst_clear_dispatch_args_pass,
             virtual_inst_clear_pass,
@@ -1132,6 +1307,9 @@ impl GpuX86CodeGenerator {
             inst_size_pass,
             text_scan_local_pass,
             text_offsets_pass,
+            reloc_scan_local_pass,
+            reloc_records_pass,
+            reloc_patch_pass,
             encode_pass,
             elf_layout_pass,
             elf_write_pass,
@@ -1214,5 +1392,24 @@ mod tests {
     fn x86_initial_output_readback_keeps_small_outputs_whole() {
         assert_eq!(x86_initial_output_readback_bytes(4096, 10), 4096);
         assert_eq!(x86_initial_output_readback_bytes(1024, 0), 1024);
+    }
+
+    #[test]
+    fn x86_scalar_feature_summary_can_exceed_token_scaled_limit() {
+        let feature_summary = X86FeatureSummary {
+            scalar_inst_capacity: 4_000,
+            ..Default::default()
+        };
+        let capacity = x86_capacity_estimate_for_hir_tokens_inst_basis_and_feature_summary(
+            600,
+            100,
+            600,
+            feature_summary,
+        );
+
+        assert!(
+            capacity.inst_capacity > 100usize.saturating_add(X86_INST_CAPACITY_SLACK),
+            "dense scalar programs should use the measured scalar instruction summary"
+        );
     }
 }

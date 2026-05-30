@@ -48,6 +48,21 @@ impl FilesystemArtifactStore {
     pub fn artifact_exists(&self, artifact: &SourcePackArtifactRef) -> Result<bool, CompileError> {
         Ok(self.path_for_key(&artifact.key)?.is_file())
     }
+
+    pub(in crate::compiler) fn require_artifact_key_file(
+        &self,
+        key: &str,
+        artifact_label: &str,
+    ) -> Result<PathBuf, CompileError> {
+        let path = self.path_for_key(key)?;
+        if !path.is_file() {
+            return Err(CompileError::GpuFrontend(format!(
+                "source-pack {artifact_label} artifact {key:?} is missing at {}",
+                path.display()
+            )));
+        }
+        Ok(path)
+    }
 }
 
 impl AsRef<FilesystemArtifactStore> for FilesystemArtifactStore {

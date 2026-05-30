@@ -158,6 +158,28 @@ pub(in crate::compiler) fn unique_usize_set(
     Ok(unique_values)
 }
 
+pub(in crate::compiler) fn validate_usize_values_strictly_ascending<F>(
+    values: &[usize],
+    label: &str,
+    make_error: F,
+) -> Result<(), CompileError>
+where
+    F: Fn(String) -> CompileError,
+{
+    let mut previous_value = None;
+    for &value in values {
+        if let Some(previous_value) = previous_value
+            && value <= previous_value
+        {
+            return Err(make_error(format!(
+                "{label} must be strictly ascending; index {value} follows {previous_value}"
+            )));
+        }
+        previous_value = Some(value);
+    }
+    Ok(())
+}
+
 pub(in crate::compiler) fn unique_usize_and_artifact_range_set(
     values: &[usize],
     artifact_ranges: &[SourcePackArtifactIndexRange],
@@ -249,7 +271,7 @@ pub(in crate::compiler) fn validate_artifact_index_ranges<F>(
 where
     F: Fn(String) -> CompileError,
 {
-    let mut ranges = Vec::<(usize, usize)>::new();
+    let mut previous_range_end = None;
     for (range_position, range) in artifact_ranges.iter().enumerate() {
         if range.artifact_count == 0 {
             return Err(make_error(format!(
@@ -261,6 +283,14 @@ where
                 "{context} range {range_position} overflows usize"
             )));
         };
+        if let Some(previous_range_end) = previous_range_end
+            && range.first_artifact_index < previous_range_end
+        {
+            return Err(make_error(format!(
+                "{context} ranges must be sorted and non-overlapping; range {}..{} follows previous end {}",
+                range.first_artifact_index, end_artifact_index, previous_range_end
+            )));
+        }
         if let Some(duplicate) = explicit_artifact_indices
             .iter()
             .copied()
@@ -271,16 +301,7 @@ where
                 range.first_artifact_index, end_artifact_index, duplicate
             )));
         }
-        if let Some(&(overlap_start, overlap_end)) = ranges
-            .iter()
-            .find(|&&(start, end)| range.first_artifact_index < end && start < end_artifact_index)
-        {
-            return Err(make_error(format!(
-                "{context} range {}..{} overlaps range {}..{}",
-                range.first_artifact_index, end_artifact_index, overlap_start, overlap_end
-            )));
-        }
-        ranges.push((range.first_artifact_index, end_artifact_index));
+        previous_range_end = Some(end_artifact_index);
     }
     Ok(())
 }
@@ -305,16 +326,61 @@ pub(in crate::compiler) fn validate_manifest_artifact_key(
     key: &str,
     label: &str,
 ) -> Result<(), CompileError> {
-    artifact_path(Path::new(""), key).map_err(|err| {
-        manifest_contract_error(format!("{label} has invalid key {key:?}: {err}"))
-    })?;
+    validate_artifact_key(target, key, label, manifest_contract_error)
+}
+
+pub(in crate::compiler) fn validate_artifact_key<F>(
+    target: SourcePackArtifactTarget,
+    key: &str,
+    label: &str,
+    make_error: F,
+) -> Result<(), CompileError>
+where
+    F: Fn(String) -> CompileError,
+{
+    artifact_path(Path::new(""), key)
+        .map_err(|err| make_error(format!("{label} has invalid key {key:?}: {err}")))?;
     if let Some(prefix) = target.key_prefix() {
         let target_prefix = format!("{prefix}/");
         if !key.starts_with(&target_prefix) {
-            return Err(manifest_contract_error(format!(
+            return Err(make_error(format!(
                 "{label} key {key:?} does not start with target prefix {target_prefix:?}"
             )));
         }
+    }
+    Ok(())
+}
+
+pub(in crate::compiler) fn validate_manifest_artifact_key_kind(
+    target: SourcePackArtifactTarget,
+    key: &str,
+    kind: SourcePackArtifactKind,
+    label: &str,
+) -> Result<(), CompileError> {
+    validate_artifact_key_kind(target, key, kind, label, manifest_contract_error)
+}
+
+pub(in crate::compiler) fn validate_artifact_key_kind<F>(
+    target: SourcePackArtifactTarget,
+    key: &str,
+    kind: SourcePackArtifactKind,
+    label: &str,
+    make_error: F,
+) -> Result<(), CompileError>
+where
+    F: Fn(String) -> CompileError,
+{
+    validate_artifact_key(target, key, label, &make_error)?;
+    let expected_segment = kind.key_segment();
+    let expected_prefix = match target.key_prefix() {
+        Some(prefix) => format!("{prefix}/{expected_segment}/"),
+        None => format!("{expected_segment}/"),
+    };
+    if !key.starts_with(&expected_prefix) {
+        return Err(make_error(format!(
+            "{label} key {key:?} does not identify a {:?} artifact; expected prefix {expected_prefix:?}",
+            kind
+        )));
     }
     Ok(())
 }

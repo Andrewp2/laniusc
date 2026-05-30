@@ -49,6 +49,17 @@ pub(in crate::compiler) fn validate_link_execution_prepare_progress(
             progress.next_group_index
         )));
     }
+    if progress.final_output_seen && progress.next_group_index < link_group_count {
+        return Err(library_partition_contract_error(format!(
+            "hierarchical link execution prepare progress records final output before all link groups are prepared; next group {} of {}",
+            progress.next_group_index, link_group_count
+        )));
+    }
+    if progress.next_group_index == link_group_count && !progress.final_output_seen {
+        return Err(library_partition_contract_error(
+            "hierarchical link execution prepare progress completed all link groups without recording a final output page",
+        ));
+    }
     Ok(())
 }
 
@@ -92,6 +103,8 @@ pub(in crate::compiler) fn store_hierarchical_link_execution_from_schedule_chunk
     {
         let index =
             store.load_hierarchical_link_execution_index_for_target(link_plan_index.target)?;
+        validate_link_execution_index_for_plan(&index, link_plan_index)?;
+        validate_completed_link_execution_index_evidence(store, &index)?;
         return Ok(FilesystemHierarchicalLinkExecutionPrepareStepResult {
             target: link_plan_index.target,
             complete: true,
@@ -137,9 +150,9 @@ pub(in crate::compiler) fn store_hierarchical_link_execution_from_schedule_chunk
             link_plan_index.target,
             progress.next_group_index,
         )?;
-        validate_link_group_page(
+        validate_link_group_page_for_plan(
             &group,
-            link_plan_index.target,
+            link_plan_index,
             Some(progress.next_group_index),
         )?;
         let page = execution_page_from_artifact_refs(
@@ -180,7 +193,7 @@ pub(in crate::compiler) fn store_hierarchical_link_execution_from_schedule_chunk
             link_group_count: link_plan_index.link_group_count,
             final_output_key: artifact_ref_index.final_output_key.clone(),
         };
-        validate_link_execution_index(&index, link_plan_index.target)?;
+        validate_link_execution_index_for_plan(&index, link_plan_index)?;
         hierarchical_link_execution_index_path =
             Some(store_hierarchical_link_execution_index(store, &index)?);
     }
@@ -246,7 +259,7 @@ pub(in crate::compiler) fn execution_page_from_artifact_refs(
     group: &SourcePackHierarchicalLinkGroupPage,
     artifact_ref_index: &SourcePackBuildArtifactRefIndex,
 ) -> Result<SourcePackHierarchicalLinkExecutionPage, CompileError> {
-    validate_link_group_page(group, link_plan_index.target, Some(group.group_index))?;
+    validate_link_group_page_for_plan(group, link_plan_index, Some(group.group_index))?;
     validate_artifact_ref_index(artifact_ref_index, link_plan_index.target)?;
     let final_output = group.group_index == link_plan_index.final_link_group_index;
     let output_key = if final_output {
@@ -338,6 +351,7 @@ pub(in crate::compiler) fn execution_page_from_artifact_refs(
         source_line_count: group.source_line_count,
         output_key,
         final_output,
+        descriptor_summary: SourcePackLinkDescriptorSummary::default(),
     };
     validate_link_execution_page(&page, link_plan_index.target, Some(group.group_index))?;
     Ok(page)
@@ -437,7 +451,7 @@ pub(in crate::compiler) fn store_leaf_interface_pages(
     group: &SourcePackHierarchicalLinkGroupPage,
     artifact_ref_index: &SourcePackBuildArtifactRefIndex,
 ) -> Result<(usize, usize, Vec<SourcePackJobIndexRange>), CompileError> {
-    validate_link_group_page(group, link_plan_index.target, Some(group.group_index))?;
+    validate_link_group_page_for_plan(group, link_plan_index, Some(group.group_index))?;
     if group.kind != SourcePackHierarchicalLinkGroupKind::Leaf {
         return Err(library_partition_contract_error(format!(
             "hierarchical link execution group {} is not a leaf group",
@@ -583,7 +597,7 @@ pub(in crate::compiler) fn store_leaf_object_pages(
     group: &SourcePackHierarchicalLinkGroupPage,
     artifact_ref_index: &SourcePackBuildArtifactRefIndex,
 ) -> Result<(usize, usize), CompileError> {
-    validate_link_group_page(group, link_plan_index.target, Some(group.group_index))?;
+    validate_link_group_page_for_plan(group, link_plan_index, Some(group.group_index))?;
     if group.kind != SourcePackHierarchicalLinkGroupKind::Leaf {
         return Err(library_partition_contract_error(format!(
             "hierarchical link execution group {} is not a leaf group",
@@ -717,13 +731,14 @@ pub(in crate::compiler) fn store_reduce_partial_pages(
     group: &SourcePackHierarchicalLinkGroupPage,
     artifact_ref_index: &SourcePackBuildArtifactRefIndex,
 ) -> Result<(usize, usize), CompileError> {
-    validate_link_group_page(group, link_plan_index.target, Some(group.group_index))?;
+    validate_link_group_page_for_plan(group, link_plan_index, Some(group.group_index))?;
     if group.kind != SourcePackHierarchicalLinkGroupKind::Reduce {
         return Err(library_partition_contract_error(format!(
             "hierarchical link execution group {} is not a reduce group",
             group.group_index
         )));
     }
+    validate_reduce_group_summary_from_inputs(store, link_plan_index, group)?;
     let mut writer = ExecutionPartialPageWriter::new(
         store,
         link_plan_index.target,
@@ -747,6 +762,101 @@ pub(in crate::compiler) fn store_reduce_partial_pages(
     Ok((input_group_count, input_group_page_count))
 }
 
+pub(in crate::compiler) fn validate_reduce_group_summary_from_inputs(
+    store: &FilesystemArtifactStore,
+    link_plan_index: &SourcePackHierarchicalLinkPlanIndex,
+    group: &SourcePackHierarchicalLinkGroupPage,
+) -> Result<(), CompileError> {
+    validate_link_group_page_for_plan(group, link_plan_index, Some(group.group_index))?;
+    if group.kind != SourcePackHierarchicalLinkGroupKind::Reduce {
+        return Err(library_partition_contract_error(format!(
+            "hierarchical link group {} is not a reduce group",
+            group.group_index
+        )));
+    }
+
+    let mut input_partition_count = 0usize;
+    let mut source_byte_count = 0usize;
+    let mut source_file_count = 0usize;
+    let mut source_line_count = 0usize;
+    let mut oversized_input = false;
+    for &input_group_index in &group.input_link_group_indices {
+        let input_group = store.load_hierarchical_link_group_page_for_target(
+            link_plan_index.target,
+            input_group_index,
+        )?;
+        validate_link_group_page_for_plan(&input_group, link_plan_index, Some(input_group_index))?;
+        let expected_level = input_group.level.checked_add(1).ok_or_else(|| {
+            library_partition_contract_error(format!(
+                "hierarchical link input group {} level overflows reduce group {}",
+                input_group_index, group.group_index
+            ))
+        })?;
+        if expected_level != group.level {
+            return Err(library_partition_contract_error(format!(
+                "hierarchical link reduce group {} level {} does not follow input group {} level {}",
+                group.group_index, group.level, input_group_index, input_group.level
+            )));
+        }
+        input_partition_count = input_partition_count
+            .checked_add(hierarchical_link_group_input_partition_count(&input_group))
+            .ok_or_else(|| {
+                library_partition_contract_error(format!(
+                    "hierarchical link reduce group {} input partition summary overflows",
+                    group.group_index
+                ))
+            })?;
+        source_byte_count = source_byte_count
+            .checked_add(input_group.source_byte_count)
+            .ok_or_else(|| {
+                library_partition_contract_error(format!(
+                    "hierarchical link reduce group {} source-byte summary overflows",
+                    group.group_index
+                ))
+            })?;
+        source_file_count = source_file_count
+            .checked_add(input_group.source_file_count)
+            .ok_or_else(|| {
+                library_partition_contract_error(format!(
+                    "hierarchical link reduce group {} source-file summary overflows",
+                    group.group_index
+                ))
+            })?;
+        source_line_count = source_line_count
+            .checked_add(input_group.source_line_count)
+            .ok_or_else(|| {
+                library_partition_contract_error(format!(
+                    "hierarchical link reduce group {} source-line summary overflows",
+                    group.group_index
+                ))
+            })?;
+        oversized_input |= input_group.oversized_input;
+    }
+
+    if group.input_partition_count != input_partition_count
+        || group.source_byte_count != source_byte_count
+        || group.source_file_count != source_file_count
+        || group.source_line_count != source_line_count
+        || group.oversized_input != oversized_input
+    {
+        return Err(library_partition_contract_error(format!(
+            "hierarchical link reduce group {} summary does not match input groups: got partitions={} bytes={} files={} lines={} oversized={}, expected partitions={} bytes={} files={} lines={} oversized={}",
+            group.group_index,
+            group.input_partition_count,
+            group.source_byte_count,
+            group.source_file_count,
+            group.source_line_count,
+            group.oversized_input,
+            input_partition_count,
+            source_byte_count,
+            source_file_count,
+            source_line_count,
+            oversized_input
+        )));
+    }
+    Ok(())
+}
+
 pub(in crate::compiler) fn hierarchical_link_execution_output_key_for_group(
     store: &FilesystemArtifactStore,
     link_plan_index: &SourcePackHierarchicalLinkPlanIndex,
@@ -759,6 +869,7 @@ pub(in crate::compiler) fn hierarchical_link_execution_output_key_for_group(
     }
     let group =
         store.load_hierarchical_link_group_page_for_target(link_plan_index.target, group_index)?;
+    validate_link_group_page_for_plan(&group, link_plan_index, Some(group_index))?;
     Ok(hierarchical_link_partial_output_key(
         link_plan_index.target,
         group.group_index,
@@ -771,6 +882,7 @@ pub(in crate::compiler) fn store_hierarchical_link_execution_index(
     index: &SourcePackHierarchicalLinkExecutionIndex,
 ) -> Result<PathBuf, CompileError> {
     validate_link_execution_index(index, index.target)?;
+    validate_completed_link_execution_index_evidence(store, index)?;
     let path = store.hierarchical_link_execution_index_path_for_target(index.target);
     let bytes = serde_json::to_vec_pretty(index).map_err(|err| {
         CompileError::GpuFrontend(format!(
@@ -783,6 +895,43 @@ pub(in crate::compiler) fn store_hierarchical_link_execution_index(
         "source-pack hierarchical link execution index",
     )?;
     Ok(path)
+}
+
+pub(in crate::compiler) fn validate_completed_link_execution_index_evidence(
+    store: &FilesystemArtifactStore,
+    index: &SourcePackHierarchicalLinkExecutionIndex,
+) -> Result<(), CompileError> {
+    validate_link_execution_index(index, index.target)?;
+    let final_page = store
+        .load_hierarchical_link_execution_page_for_target(
+            index.target,
+            index.final_link_group_index,
+        )
+        .map_err(|err| {
+            library_partition_contract_error(format!(
+                "completed source-pack link execution index requires final execution page evidence for group {}: {err}",
+                index.final_link_group_index
+            ))
+        })?;
+    if !final_page.final_output {
+        return Err(library_partition_contract_error(format!(
+            "completed source-pack link execution index final group {} is backed by a non-final execution page",
+            index.final_link_group_index
+        )));
+    }
+    if final_page.job_index != index.final_link_job_index {
+        return Err(library_partition_contract_error(format!(
+            "completed source-pack link execution index final job {} does not match final execution page job {}",
+            index.final_link_job_index, final_page.job_index
+        )));
+    }
+    if final_page.output_key != index.final_output_key {
+        return Err(library_partition_contract_error(format!(
+            "completed source-pack link execution index final output {:?} does not match final execution page output {:?}",
+            index.final_output_key, final_page.output_key
+        )));
+    }
+    Ok(())
 }
 
 pub(in crate::compiler) fn scheduled_job_output_ref(

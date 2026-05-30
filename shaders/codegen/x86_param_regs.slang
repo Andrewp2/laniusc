@@ -23,7 +23,6 @@ StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_fn_return_type_node;
 StructuredBuffer<uint> hir_type_form;
 StructuredBuffer<uint> hir_type_len_value;
-StructuredBuffer<uint> x86_tree_subtree_end;
 StructuredBuffer<uint> method_decl_param_offset;
 StructuredBuffer<uint> method_decl_receiver_ref_tag;
 StructuredBuffer<uint> method_decl_receiver_ref_payload;

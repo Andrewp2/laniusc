@@ -1,0 +1,132 @@
+// GPU struct-field key radix stable scatter.
+
+import gpu_index;
+import radix;
+import scatter;
+
+struct Params
+{
+    uint hir_node_capacity;
+    uint token_capacity;
+    uint n_blocks;
+    uint key_step;
+    uint radix_bytes;
+    uint reserved0;
+    uint reserved1;
+    uint reserved2;
+};
+
+ConstantBuffer<Params> gParams;
+
+StructuredBuffer<uint> hir_active_count;
+StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_struct_field_parent_struct;
+StructuredBuffer<uint> name_id_by_token;
+StructuredBuffer<uint> struct_field_key_order_in;
+StructuredBuffer<uint> radix_bucket_base;
+StructuredBuffer<uint> radix_block_bucket_prefix;
+
+RWStructuredBuffer<uint> struct_field_key_order_out;
+
+static const uint INVALID = 0xffffffffu;
+static const uint WG_SIZE = 256u;
+static const uint MAX_GROUPS_X = 65535u;
+static const uint RADIX_BUCKETS = RADIX_U8_SENTINEL_BUCKETS;
+
+groupshared uint local_radix_keys[256];
+
+uint linear_group_id(uint3 gid)
+{
+    return linear_group_id_2d(gid, MAX_GROUPS_X);
+}
+
+uint active_struct_field_order_count()
+{
+    return min(hir_active_count[0u], gParams.hir_node_capacity);
+}
+
+bool valid_hir_node(uint node)
+{
+    return node != INVALID && node < active_struct_field_order_count();
+}
+
+bool valid_field_key_node(uint node)
+{
+    if (!valid_hir_node(node))
+        return false;
+    uint owner = hir_struct_field_parent_struct[node];
+    if (!valid_hir_node(owner))
+        return false;
+    uint token = hir_token_pos[node];
+    return token != INVALID && token < gParams.token_capacity &&
+           name_id_by_token[token] != INVALID;
+}
+
+uint struct_field_key_field(uint node, uint field_i)
+{
+    if (!valid_field_key_node(node))
+        return 0u;
+    if (field_i == 0u)
+        return encode_nullable_id(node, INVALID);
+    if (field_i == 1u)
+        return encode_nullable_id(name_id_by_token[hir_token_pos[node]], INVALID);
+    return encode_nullable_id(hir_struct_field_parent_struct[node], INVALID);
+}
+
+uint struct_field_radix_key(uint node, uint key_step)
+{
+    uint bytes_per_field = clamp(gParams.radix_bytes, 1u, 4u);
+    uint field_i = min(key_step / bytes_per_field, 2u);
+    uint byte_i = key_step - field_i * bytes_per_field;
+    return radix_byte_key(struct_field_key_field(node, field_i), byte_i);
+}
+
+public struct StructFieldKeyScatterSource : IStableRadixScatterSource<uint>
+{
+    public static uint active_count()
+    {
+        return active_struct_field_order_count();
+    }
+
+    public static uint inactive_value()
+    {
+        return INVALID;
+    }
+
+    public static uint ordered_value(uint order_i)
+    {
+        return struct_field_key_order_in[order_i];
+    }
+
+    public static uint radix_key(uint value, uint key_step)
+    {
+        return struct_field_radix_key(value, key_step);
+    }
+}
+
+public struct StructFieldKeyOrderOutSink : IScatterSink<uint>
+{
+    public static void store(uint dst, uint value)
+    {
+        struct_field_key_order_out[dst] = value;
+    }
+}
+
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
+{
+    stable_radix_scatter_block<
+        uint,
+        StructFieldKeyScatterSource,
+        StructFieldKeyOrderOutSink,
+        256>(
+        linear_group_id(gid),
+        ltid.x,
+        gParams.n_blocks,
+        gParams.key_step,
+        RADIX_BUCKETS,
+        radix_bucket_base,
+        radix_block_bucket_prefix,
+        local_radix_keys);
+}

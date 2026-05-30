@@ -211,13 +211,6 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
     )?;
     record_compute_indirect(
         encoder,
-        &passes.modules_resolve_imports,
-        &state.bind_groups.resolve_imports,
-        "type_check.modules.resolve_imports",
-        &state.import_dispatch_args,
-    )?;
-    record_compute_indirect(
-        encoder,
         &passes.modules_extract_record_flag,
         &state.bind_groups.extract_decl_record_flag,
         "type_check.modules.extract_decl_record_flag",
@@ -258,6 +251,64 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
         &state.bind_groups.attach_record_modules,
         "type_check.modules.attach_record_modules",
         hir_active_dispatch_args,
+    )?;
+    record_compute_indirect(
+        encoder,
+        &passes.modules_resolve_imports,
+        &state.bind_groups.resolve_imports,
+        "type_check.modules.resolve_imports",
+        &state.import_dispatch_args,
+    )?;
+    record_compute(
+        encoder,
+        &passes.names_radix_dispatch_args,
+        &state.bind_groups.import_edge_key_radix_dispatch,
+        "type_check.modules.import_edge_key_radix_dispatch_args",
+        1,
+    )?;
+    record_compute_indirect(
+        encoder,
+        &passes.modules_seed_import_edge_key_order,
+        &state.bind_groups.seed_import_edge_key_order,
+        "type_check.modules.seed_import_edge_key_order",
+        &state.import_edge_key_radix_dispatch_args,
+    )?;
+    for i in 0..state.bind_groups.sort_import_edge_key_scatter.len() {
+        record_compute_indirect(
+            encoder,
+            &passes.modules_sort_import_edges,
+            &state.bind_groups.sort_import_edge_key_histogram[i],
+            "type_check.modules.sort_import_edges_histogram",
+            &state.import_edge_key_radix_dispatch_args,
+        )?;
+        record_compute(
+            encoder,
+            &passes.names_radix_bucket_prefix,
+            &state.bind_groups.sort_import_edge_key_bucket_prefix[i],
+            "type_check.modules.sort_import_edges_bucket_prefix",
+            NAME_RADIX_BUCKETS.saturating_mul(256),
+        )?;
+        record_compute(
+            encoder,
+            &passes.names_radix_bucket_bases,
+            &state.bind_groups.sort_import_edge_key_bucket_bases[i],
+            "type_check.modules.sort_import_edges_bucket_bases",
+            256,
+        )?;
+        record_compute_indirect(
+            encoder,
+            &passes.modules_sort_import_edges_scatter,
+            &state.bind_groups.sort_import_edge_key_scatter[i],
+            "type_check.modules.sort_import_edges_scatter",
+            &state.import_edge_key_radix_dispatch_args,
+        )?;
+    }
+    record_compute_indirect(
+        encoder,
+        &passes.modules_validate_import_cycles,
+        &state.bind_groups.validate_import_cycles,
+        "type_check.modules.validate_import_cycles",
+        &state.import_edge_key_radix_dispatch_args,
     )?;
     stamp_typecheck_timer(
         &mut timer,
@@ -526,6 +577,13 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
         &state.bind_groups.import_visible_validate_dispatch_args,
         "type_check.modules.import_visible_validate_dispatch_args",
         1,
+    )?;
+    record_compute_indirect(
+        encoder,
+        &passes.modules_validate_import_visible_keys,
+        &state.bind_groups.initialize_import_visible_keys,
+        "type_check.modules.initialize_import_visible_keys",
+        &state.import_visible_validate_dispatch_args,
     )?;
     record_compute_indirect(
         encoder,

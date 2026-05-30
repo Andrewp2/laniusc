@@ -1,6 +1,157 @@
 // Source-level process host ABI declarations.
+// The service contract below is intentionally conservative: the current
+// backends can type-check these declarations, but they do not bind process APIs.
 
 module std::process;
+
+pub type ProcessCapability = bool;
+pub type ProcessRuntimeAbiVersion = u32;
+pub type ProcessServiceId = u32;
+pub type ProcessServiceStatus = u32;
+pub type ExitCode = i32;
+
+pub const PROCESS_RUNTIME_ABI_VERSION: ProcessRuntimeAbiVersion = 1;
+pub const PROCESS_SERVICE_ID: ProcessServiceId = 11;
+pub const PROCESS_SERVICE_STATUS_UNAVAILABLE: ProcessServiceStatus = 1;
+pub const PROCESS_HAS_RUNTIME_BINDING: ProcessCapability = false;
+pub const EXIT_SUCCESS: ExitCode = 0;
+pub const EXIT_FAILURE: ExitCode = 1;
+
+pub fn process_runtime_abi_version() -> ProcessRuntimeAbiVersion {
+    return PROCESS_RUNTIME_ABI_VERSION;
+}
+
+pub fn process_service_id() -> ProcessServiceId {
+    return PROCESS_SERVICE_ID;
+}
+
+pub fn process_service_is_known() -> ProcessCapability {
+    return true;
+}
+
+pub fn process_contract_metadata_is_available() -> ProcessCapability {
+    return process_service_is_known();
+}
+
+pub fn process_service_status() -> ProcessServiceStatus {
+    return PROCESS_SERVICE_STATUS_UNAVAILABLE;
+}
+
+pub fn process_is_available() -> ProcessCapability {
+    return PROCESS_HAS_RUNTIME_BINDING;
+}
+
+pub fn process_is_blocked() -> ProcessCapability {
+    return !process_is_available();
+}
+
+pub fn process_requires_runtime_binding() -> ProcessCapability {
+    return !PROCESS_HAS_RUNTIME_BINDING;
+}
+
+pub fn process_host_abi_is_contract_only() -> ProcessCapability {
+    return process_requires_runtime_binding();
+}
+
+pub fn exit_success_code() -> ExitCode {
+    return EXIT_SUCCESS;
+}
+
+pub fn exit_failure_code() -> ExitCode {
+    return EXIT_FAILURE;
+}
+
+pub fn exit_code_is_success(code: ExitCode) -> ProcessCapability {
+    return code == EXIT_SUCCESS;
+}
+
+pub fn exit_code_is_failure(code: ExitCode) -> ProcessCapability {
+    return code != EXIT_SUCCESS;
+}
+
+pub fn process_args_is_executable() -> ProcessCapability {
+    return PROCESS_HAS_RUNTIME_BINDING;
+}
+
+pub fn process_args_is_blocked() -> ProcessCapability {
+    return !process_args_is_executable();
+}
+
+pub fn process_args_requires_runtime_binding() -> ProcessCapability {
+    return !process_args_is_executable();
+}
+
+pub fn argc_is_executable() -> ProcessCapability {
+    return process_args_is_executable();
+}
+
+pub fn argc_is_blocked() -> ProcessCapability {
+    return !argc_is_executable();
+}
+
+pub fn argc_requires_runtime_binding() -> ProcessCapability {
+    return !argc_is_executable();
+}
+
+pub fn arg_len_is_executable() -> ProcessCapability {
+    return process_args_is_executable();
+}
+
+pub fn arg_len_is_blocked() -> ProcessCapability {
+    return !arg_len_is_executable();
+}
+
+pub fn arg_len_requires_runtime_binding() -> ProcessCapability {
+    return !arg_len_is_executable();
+}
+
+pub fn arg_read_is_executable() -> ProcessCapability {
+    return process_args_is_executable();
+}
+
+pub fn arg_read_is_blocked() -> ProcessCapability {
+    return !arg_read_is_executable();
+}
+
+pub fn arg_read_requires_runtime_binding() -> ProcessCapability {
+    return !arg_read_is_executable();
+}
+
+pub fn process_exit_is_executable() -> ProcessCapability {
+    return PROCESS_HAS_RUNTIME_BINDING;
+}
+
+pub fn process_exit_is_blocked() -> ProcessCapability {
+    return !process_exit_is_executable();
+}
+
+pub fn process_exit_requires_runtime_binding() -> ProcessCapability {
+    return !process_exit_is_executable();
+}
+
+pub fn set_exit_code_is_executable() -> ProcessCapability {
+    return process_exit_is_executable();
+}
+
+pub fn set_exit_code_is_blocked() -> ProcessCapability {
+    return !set_exit_code_is_executable();
+}
+
+pub fn set_exit_code_requires_runtime_binding() -> ProcessCapability {
+    return !set_exit_code_is_executable();
+}
+
+pub fn exit_is_executable() -> ProcessCapability {
+    return process_exit_is_executable();
+}
+
+pub fn exit_is_blocked() -> ProcessCapability {
+    return !exit_is_executable();
+}
+
+pub fn exit_requires_runtime_binding() -> ProcessCapability {
+    return !exit_is_executable();
+}
 
 pub extern "lanius_std" fn argc() -> i32;
 

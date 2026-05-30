@@ -4,6 +4,8 @@
 // identity or ordinal from token neighborhoods. Owner and ordinal are produced
 // by the preceding linked-list passes, not by walking ancestors here.
 
+import generated_parse_production_ids;
+
 struct Params
 {
     uint n;
@@ -14,19 +16,25 @@ ConstantBuffer<Params> gHirParam;
 
 StructuredBuffer<uint> ll1_status;
 StructuredBuffer<uint> hir_kind;
+StructuredBuffer<uint> node_kind;
+StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_type_form;
 StructuredBuffer<uint> hir_param_owner_a;
 StructuredBuffer<uint> hir_param_rank_a;
 StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_semantic_count;
 
 RWStructuredBuffer<uint4> hir_param_record;
+RWStructuredBuffer<uint> hir_param_type_node;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
 static const uint HIR_PARAM = 4u;
+static const uint HIR_TYPE = 5u;
+static const uint HIR_TYPE_FORM_NONE = 0u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -56,6 +64,48 @@ uint semantic_row_node(uint row)
     return valid_node(node) ? node : INVALID;
 }
 
+uint first_child_node(uint node)
+{
+    if (!valid_node(node))
+        return INVALID;
+    uint child = first_child[node];
+    return valid_node(child) ? child : INVALID;
+}
+
+bool valid_type_node(uint node)
+{
+    return valid_node(node) && hir_kind[node] == HIR_TYPE &&
+           hir_type_form[node] != HIR_TYPE_FORM_NONE;
+}
+
+uint direct_type_child(uint root)
+{
+    uint child = first_child_node(root);
+    return valid_type_node(child) ? child : INVALID;
+}
+
+uint self_parameter_type_node(uint node)
+{
+    uint tail = first_child_node(node);
+    if (!valid_node(tail) || node_kind[tail] != PROD_SELF_PARAM_TYPED)
+        return INVALID;
+
+    return direct_type_child(tail);
+}
+
+uint parameter_type_node(uint node)
+{
+    if (!valid_node(node))
+        return INVALID;
+
+    uint prod = node_kind[node];
+    if (prod == PROD_PARAM_SELF_REF)
+        return INVALID;
+    if (prod == PROD_PARAM_SELF)
+        return self_parameter_type_node(node);
+    return direct_type_child(node);
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -82,4 +132,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
         hir_param_rank_a[node],
         name_token,
         node);
+    hir_param_type_node[node] = parameter_type_node(node);
 }

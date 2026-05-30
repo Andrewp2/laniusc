@@ -2,11 +2,16 @@ use super::super::*;
 
 mod core_bind_groups;
 mod empty_hir;
+mod generic_params;
 mod passes;
 mod status;
 
 use core_bind_groups::CoreBindGroups;
 use empty_hir::EmptyHirBuffers;
+use generic_params::{
+    create_standalone_generic_param_bind_groups,
+    record_standalone_generic_param_passes,
+};
 use passes::TokenTypeCheckPasses;
 use status::finish_with_status;
 
@@ -149,6 +154,13 @@ pub fn check_token_buffer_with_hir_on_gpu(
         hir_visible_decl_capacity as usize,
         wgpu::BufferUsages::empty(),
     );
+    let hir_visible_decl_node_buf = storage_u32_fill_rw(
+        device,
+        "type_check.tokens.hir_visible_decl_node",
+        hir_visible_decl_capacity as usize,
+        u32::MAX,
+        wgpu::BufferUsages::empty(),
+    );
     let hir_visible_decl_key_order_buf = storage_u32_rw(
         device,
         "type_check.tokens.hir_visible_decl_key_order",
@@ -193,10 +205,78 @@ pub fn check_token_buffer_with_hir_on_gpu(
         NAME_RADIX_BUCKETS as usize,
         wgpu::BufferUsages::empty(),
     );
+    let struct_field_key_order_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.struct_field_key_order",
+        hir_visible_decl_scan_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let struct_field_key_order_tmp_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.struct_field_key_order_tmp",
+        hir_visible_decl_scan_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let struct_field_key_radix_dispatch_args_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.struct_field_key_radix_dispatch_args",
+        3,
+        wgpu::BufferUsages::INDIRECT,
+    );
+    let struct_field_key_radix_histogram_len =
+        (hir_decl_scan_n_blocks as usize).max(1) * NAME_RADIX_BUCKETS as usize;
+    let struct_field_key_radix_block_histogram_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.struct_field_key_radix_block_histogram",
+        struct_field_key_radix_histogram_len,
+        wgpu::BufferUsages::empty(),
+    );
+    let struct_field_key_radix_block_bucket_prefix_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.struct_field_key_radix_block_bucket_prefix",
+        struct_field_key_radix_histogram_len,
+        wgpu::BufferUsages::empty(),
+    );
+    let struct_field_key_radix_bucket_total_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.struct_field_key_radix_bucket_total",
+        NAME_RADIX_BUCKETS as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let struct_field_key_radix_bucket_base_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.struct_field_key_radix_bucket_base",
+        NAME_RADIX_BUCKETS as usize,
+        wgpu::BufferUsages::empty(),
+    );
     let hir_visible_decl_scope_tree_buf = storage_u32_rw(
         device,
         "type_check.tokens.hir_visible_decl_scope_tree",
         hir_decl_tree_len,
+        wgpu::BufferUsages::empty(),
+    );
+    let generic_decl_owner_by_node_a_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.generic_decl_owner_by_node_a",
+        hir_visible_decl_scan_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let generic_decl_owner_by_node_b_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.generic_decl_owner_by_node_b",
+        hir_visible_decl_scan_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let generic_decl_parent_jump_a_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.generic_decl_parent_jump_a",
+        hir_visible_decl_scan_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let generic_decl_parent_jump_b_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.generic_decl_parent_jump_b",
+        hir_visible_decl_scan_capacity as usize,
         wgpu::BufferUsages::empty(),
     );
     let token_file_id_buf = storage_ro_from_u32s(
@@ -243,6 +323,18 @@ pub fn check_token_buffer_with_hir_on_gpu(
     let language_type_code_by_name_id_buf = storage_u32_rw(
         device,
         "type_check.tokens.language_type_code_by_name_id",
+        name_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let language_entrypoint_tag_by_name_id_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.language_entrypoint_tag_by_name_id",
+        name_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let language_intrinsic_tag_by_name_id_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.language_intrinsic_tag_by_name_id",
         name_capacity as usize,
         wgpu::BufferUsages::empty(),
     );
@@ -476,7 +568,7 @@ pub fn check_token_buffer_with_hir_on_gpu(
     let call_arg_node_buf = storage_u32_rw(
         device,
         "type_check.tokens.call_arg_node",
-        CALL_ARG_NODE_CAPACITY_WORDS,
+        (hir_node_capacity as usize).max(1) * CALL_PARAM_CACHE_STRIDE,
         wgpu::BufferUsages::empty(),
     );
     let function_lookup_capacity = token_capacity.saturating_mul(2).max(1) as usize;
@@ -502,6 +594,59 @@ pub fn check_token_buffer_with_hir_on_gpu(
         device,
         "type_check.tokens.method_decl_receiver_ref_payload",
         token_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let hir_method_impl_node_buf = storage_u32_fill_rw(
+        device,
+        "type_check.tokens.hir_method_impl_node",
+        hir_node_capacity.max(1) as usize,
+        u32::MAX,
+        wgpu::BufferUsages::empty(),
+    );
+    let hir_method_owner_node_buf = storage_u32_fill_rw(
+        device,
+        "type_check.tokens.hir_method_owner_node",
+        hir_node_capacity.max(1) as usize,
+        u32::MAX,
+        wgpu::BufferUsages::empty(),
+    );
+    let hir_method_name_token_buf = storage_u32_fill_rw(
+        device,
+        "type_check.tokens.hir_method_name_token",
+        hir_node_capacity.max(1) as usize,
+        u32::MAX,
+        wgpu::BufferUsages::empty(),
+    );
+    let hir_method_first_param_token_buf = storage_u32_fill_rw(
+        device,
+        "type_check.tokens.hir_method_first_param_token",
+        hir_node_capacity.max(1) as usize,
+        u32::MAX,
+        wgpu::BufferUsages::empty(),
+    );
+    let hir_method_receiver_mode_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.hir_method_receiver_mode",
+        hir_node_capacity.max(1) as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let hir_method_visibility_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.hir_method_visibility",
+        hir_node_capacity.max(1) as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let hir_method_signature_flags_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.hir_method_signature_flags",
+        hir_node_capacity.max(1) as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let hir_method_impl_receiver_type_node_buf = storage_u32_fill_rw(
+        device,
+        "type_check.tokens.hir_method_impl_receiver_type_node",
+        hir_node_capacity.max(1) as usize,
+        u32::MAX,
         wgpu::BufferUsages::empty(),
     );
     let method_decl_module_id_buf = storage_u32_rw(
@@ -680,6 +825,18 @@ pub fn check_token_buffer_with_hir_on_gpu(
         hir_node_capacity as usize,
         wgpu::BufferUsages::empty(),
     );
+    let type_decl_first_generic_param_row_by_node_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.type_decl_first_generic_param_row_by_node",
+        hir_node_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let type_decl_first_const_param_row_by_node_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.type_decl_first_const_param_row_by_node",
+        hir_node_capacity as usize,
+        wgpu::BufferUsages::empty(),
+    );
     let type_decl_hir_node_by_token_buf = storage_u32_rw(
         device,
         "type_check.tokens.type_decl_hir_node_by_token",
@@ -818,6 +975,18 @@ pub fn check_token_buffer_with_hir_on_gpu(
         hir_node_capacity.max(1) as usize,
         wgpu::BufferUsages::empty(),
     );
+    let struct_lit_context_decl_token_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.struct_lit_context_decl_token",
+        hir_node_capacity.max(1) as usize,
+        wgpu::BufferUsages::empty(),
+    );
+    let struct_lit_context_instance_buf = storage_u32_rw(
+        device,
+        "type_check.tokens.struct_lit_context_instance",
+        hir_node_capacity.max(1) as usize,
+        wgpu::BufferUsages::empty(),
+    );
     queue.write_buffer(&status_buf, 0, &status_init_bytes());
     let status_readback = readback_u32s(device, "rb.type_check.tokens.status", 4);
 
@@ -857,6 +1026,14 @@ pub fn check_token_buffer_with_hir_on_gpu(
     resources.insert(
         "language_type_code_by_name_id".into(),
         language_type_code_by_name_id_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "language_entrypoint_tag_by_name_id".into(),
+        language_entrypoint_tag_by_name_id_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "language_intrinsic_tag_by_name_id".into(),
+        language_intrinsic_tag_by_name_id_buf.as_entire_binding(),
     );
     resources.insert(
         "module_id_by_file_id".into(),
@@ -911,6 +1088,10 @@ pub fn check_token_buffer_with_hir_on_gpu(
         hir_active_count_buf.as_entire_binding(),
     );
     resources.insert(
+        "hir_active_count".into(),
+        hir_active_count_buf.as_entire_binding(),
+    );
+    resources.insert(
         "hir_visible_decl_owner_fn".into(),
         hir_visible_decl_owner_fn_buf.as_entire_binding(),
     );
@@ -927,8 +1108,136 @@ pub fn check_token_buffer_with_hir_on_gpu(
         hir_visible_decl_scope_end_buf.as_entire_binding(),
     );
     resources.insert(
+        "hir_visible_decl_node".into(),
+        hir_visible_decl_node_buf.as_entire_binding(),
+    );
+    resources.insert(
         "hir_visible_decl_key_order".into(),
         hir_visible_decl_key_order_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "generic_param_flag".into(),
+        hir_visible_decl_flag_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "generic_param_prefix".into(),
+        hir_visible_decl_prefix_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "generic_param_scan_local_prefix".into(),
+        hir_visible_decl_scan_local_prefix_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "generic_param_scan_block_sum".into(),
+        hir_visible_decl_scan_block_sum_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "generic_param_scan_prefix_a".into(),
+        hir_visible_decl_scan_prefix_a_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "generic_param_scan_prefix_b".into(),
+        hir_visible_decl_scan_prefix_b_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "generic_decl_owner_by_node_a".into(),
+        generic_decl_owner_by_node_a_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "generic_decl_owner_by_node_b".into(),
+        generic_decl_owner_by_node_b_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "generic_decl_parent_jump_a".into(),
+        generic_decl_parent_jump_a_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "generic_decl_parent_jump_b".into(),
+        generic_decl_parent_jump_b_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "generic_decl_owner_by_node".into(),
+        generic_decl_owner_by_node_a_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "generic_param_count_out".into(),
+        hir_visible_decl_count_out_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "generic_param_owner_node".into(),
+        hir_visible_decl_owner_fn_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "generic_param_name_id".into(),
+        hir_visible_decl_name_id_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "generic_param_token".into(),
+        hir_visible_decl_token_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "generic_param_node".into(),
+        hir_visible_decl_scope_end_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "generic_param_kind".into(),
+        type_instance_head_token_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "generic_param_key_order".into(),
+        hir_visible_decl_key_order_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "generic_param_key_order_tmp".into(),
+        hir_visible_decl_key_order_tmp_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "generic_param_key_radix_dispatch_args".into(),
+        hir_visible_decl_key_radix_dispatch_args_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "generic_param_key_radix_block_histogram".into(),
+        hir_visible_decl_key_radix_block_histogram_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "generic_param_key_radix_block_bucket_prefix".into(),
+        hir_visible_decl_key_radix_block_bucket_prefix_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "generic_param_key_radix_bucket_total".into(),
+        hir_visible_decl_key_radix_bucket_total_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "generic_param_key_radix_bucket_base".into(),
+        hir_visible_decl_key_radix_bucket_base_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "struct_field_key_order".into(),
+        struct_field_key_order_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "struct_field_key_order_tmp".into(),
+        struct_field_key_order_tmp_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "struct_field_key_radix_dispatch_args".into(),
+        struct_field_key_radix_dispatch_args_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "struct_field_key_radix_block_histogram".into(),
+        struct_field_key_radix_block_histogram_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "struct_field_key_radix_block_bucket_prefix".into(),
+        struct_field_key_radix_block_bucket_prefix_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "struct_field_key_radix_bucket_total".into(),
+        struct_field_key_radix_bucket_total_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "struct_field_key_radix_bucket_base".into(),
+        struct_field_key_radix_bucket_base_buf.as_entire_binding(),
     );
     resources.insert(
         "hir_visible_decl_scope_tree".into(),
@@ -1013,6 +1322,38 @@ pub fn check_token_buffer_with_hir_on_gpu(
     resources.insert(
         "method_decl_receiver_ref_payload".into(),
         method_decl_receiver_ref_payload_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "hir_method_owner_node".into(),
+        hir_method_owner_node_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "hir_method_impl_node".into(),
+        hir_method_impl_node_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "hir_method_name_token".into(),
+        hir_method_name_token_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "hir_method_first_param_token".into(),
+        hir_method_first_param_token_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "hir_method_receiver_mode".into(),
+        hir_method_receiver_mode_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "hir_method_visibility".into(),
+        hir_method_visibility_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "hir_method_signature_flags".into(),
+        hir_method_signature_flags_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "hir_method_impl_receiver_type_node".into(),
+        hir_method_impl_receiver_type_node_buf.as_entire_binding(),
     );
     resources.insert(
         "method_decl_module_id".into(),
@@ -1115,6 +1456,14 @@ pub fn check_token_buffer_with_hir_on_gpu(
         type_decl_const_param_count_by_node_buf.as_entire_binding(),
     );
     resources.insert(
+        "type_decl_first_generic_param_row_by_node".into(),
+        type_decl_first_generic_param_row_by_node_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "type_decl_first_const_param_row_by_node".into(),
+        type_decl_first_const_param_row_by_node_buf.as_entire_binding(),
+    );
+    resources.insert(
         "type_decl_hir_node_by_token".into(),
         type_decl_hir_node_by_token_buf.as_entire_binding(),
     );
@@ -1206,6 +1555,14 @@ pub fn check_token_buffer_with_hir_on_gpu(
         "struct_init_field_ordinal_by_node".into(),
         struct_init_field_ordinal_by_node_buf.as_entire_binding(),
     );
+    resources.insert(
+        "struct_lit_context_decl_token".into(),
+        struct_lit_context_decl_token_buf.as_entire_binding(),
+    );
+    resources.insert(
+        "struct_lit_context_instance".into(),
+        struct_lit_context_instance_buf.as_entire_binding(),
+    );
     let type_instances_clear_bind_group = bind_group::create_bind_group_from_reflection(
         device,
         Some("type_check_type_instances_clear"),
@@ -1214,26 +1571,16 @@ pub fn check_token_buffer_with_hir_on_gpu(
         0,
         &resources,
     )?;
-    let type_instances_decl_generic_params_bind_group =
-        bind_group::create_bind_group_from_reflection(
-            device,
-            Some("type_check_type_instances_decl_generic_params"),
-            &passes.type_instances_decl_generic_params.bind_group_layouts[0],
-            &passes.type_instances_decl_generic_params.reflection,
-            0,
-            &resources,
-        )?;
-    let type_instances_generic_param_use_slots_bind_group =
-        bind_group::create_bind_group_from_reflection(
-            device,
-            Some("type_check_type_instances_generic_param_use_slots"),
-            &passes
-                .type_instances_generic_param_use_slots
-                .bind_group_layouts[0],
-            &passes.type_instances_generic_param_use_slots.reflection,
-            0,
-            &resources,
-        )?;
+    let generic_param_bind_groups = create_standalone_generic_param_bind_groups(
+        device,
+        &passes,
+        &resources,
+        token_capacity,
+        hir_node_capacity,
+        &hir_decl_scan_steps,
+        &hir_visible_decl_key_radix_dispatch_args_buf,
+        &struct_field_key_radix_dispatch_args_buf,
+    )?;
     let type_instances_collect_bind_group = bind_group::create_bind_group_from_reflection(
         device,
         Some("type_check_type_instances_collect"),
@@ -1322,6 +1669,17 @@ pub fn check_token_buffer_with_hir_on_gpu(
             Some("type_check_type_instances_struct_init_clear"),
             &passes.type_instances_struct_init_clear.bind_group_layouts[0],
             &passes.type_instances_struct_init_clear.reflection,
+            0,
+            &resources,
+        )?;
+    let type_instances_struct_init_contexts_bind_group =
+        bind_group::create_bind_group_from_reflection(
+            device,
+            Some("type_check_type_instances_struct_init_contexts"),
+            &passes
+                .type_instances_struct_init_contexts
+                .bind_group_layouts[0],
+            &passes.type_instances_struct_init_contexts.reflection,
             0,
             &resources,
         )?;
@@ -1603,6 +1961,10 @@ pub fn check_token_buffer_with_hir_on_gpu(
         &method_decl_visibility_buf,
         &module_type_path_type_buf,
         &type_instance_decl_token_buf,
+        &type_instance_arg_start_buf,
+        &type_instance_arg_count_buf,
+        &type_instance_arg_ref_tag_buf,
+        &type_instance_arg_ref_payload_buf,
         &method_key_to_fn_token_buf,
         &method_key_order_tmp_buf,
         &method_key_status_buf,
@@ -1748,24 +2110,45 @@ pub fn check_token_buffer_with_hir_on_gpu(
     )?;
     record_compute(
         &mut encoder,
+        passes.language_names_clear,
+        &language_name_bind_groups.clear,
+        "type_check.language_names.clear",
+        LANGUAGE_SYMBOL_COUNT,
+    )?;
+    record_compute(
+        &mut encoder,
+        passes.language_names_mark,
+        &language_name_bind_groups.mark,
+        "type_check.language_names.mark",
+        token_capacity.max(1),
+    )?;
+    record_compute(
+        &mut encoder,
+        passes.language_type_codes_clear,
+        &language_name_bind_groups.type_codes_clear,
+        "type_check.language_type_codes.clear",
+        name_capacity,
+    )?;
+    record_compute(
+        &mut encoder,
+        passes.language_decls_materialize,
+        &language_name_bind_groups.decls_materialize,
+        "type_check.language_decls.materialize",
+        LANGUAGE_DECL_COUNT,
+    )?;
+    record_compute(
+        &mut encoder,
         passes.type_instances_clear,
         &type_instances_clear_bind_group,
         "type_check.type_instances_clear.pass",
         token_capacity.max(hir_node_capacity),
     )?;
-    record_compute(
+    record_standalone_generic_param_passes(
         &mut encoder,
-        passes.type_instances_decl_generic_params,
-        &type_instances_decl_generic_params_bind_group,
-        "type_check.type_instances_decl_generic_params.pass",
-        hir_node_capacity.max(1),
-    )?;
-    record_compute(
-        &mut encoder,
-        passes.type_instances_generic_param_use_slots,
-        &type_instances_generic_param_use_slots_bind_group,
-        "type_check.type_instances_generic_param_use_slots.pass",
-        hir_node_capacity.max(1),
+        &passes,
+        &generic_param_bind_groups,
+        hir_node_capacity,
+        hir_decl_scan_n_blocks,
     )?;
     record_compute(
         &mut encoder,
@@ -1795,6 +2178,13 @@ pub fn check_token_buffer_with_hir_on_gpu(
         "type_check.type_instances_collect_aggregate_details.pass",
         hir_node_capacity.max(1),
     )?;
+    record_compute(
+        &mut encoder,
+        passes.type_instances_collect_named_arg_refs,
+        &type_instances_collect_named_arg_refs_bind_group,
+        "type_check.type_instances_collect_named_arg_refs.pass",
+        hir_node_capacity.max(1),
+    )?;
     record_call_bind_groups(
         device,
         &mut encoder,
@@ -1808,13 +2198,6 @@ pub fn check_token_buffer_with_hir_on_gpu(
         token_capacity,
         hir_node_capacity,
         &visible_bind_groups,
-    )?;
-    record_compute(
-        &mut encoder,
-        passes.type_instances_collect_named_arg_refs,
-        &type_instances_collect_named_arg_refs_bind_group,
-        "type_check.type_instances_collect_named_arg_refs.pass",
-        hir_node_capacity.max(1),
     )?;
     record_compute(
         &mut encoder,
@@ -1871,7 +2254,14 @@ pub fn check_token_buffer_with_hir_on_gpu(
         passes.type_instances_struct_init_clear,
         &type_instances_struct_init_clear_bind_group,
         "type_check.type_instances_struct_init_clear.pass",
-        token_capacity,
+        token_capacity.max(hir_node_capacity),
+    )?;
+    record_compute(
+        &mut encoder,
+        passes.type_instances_struct_init_contexts,
+        &type_instances_struct_init_contexts_bind_group,
+        "type_check.type_instances_struct_init_contexts.pass",
+        hir_node_capacity.max(1),
     )?;
     record_compute(
         &mut encoder,
@@ -1879,34 +2269,6 @@ pub fn check_token_buffer_with_hir_on_gpu(
         &type_instances_struct_init_fields_bind_group,
         "type_check.type_instances_struct_init_fields.pass",
         n_work,
-    )?;
-    record_compute(
-        &mut encoder,
-        passes.language_names_clear,
-        &language_name_bind_groups.clear,
-        "type_check.language_names.clear",
-        LANGUAGE_SYMBOL_COUNT,
-    )?;
-    record_compute(
-        &mut encoder,
-        passes.language_names_mark,
-        &language_name_bind_groups.mark,
-        "type_check.language_names.mark",
-        token_capacity.max(1),
-    )?;
-    record_compute(
-        &mut encoder,
-        passes.language_type_codes_clear,
-        &language_name_bind_groups.type_codes_clear,
-        "type_check.language_type_codes.clear",
-        name_capacity,
-    )?;
-    record_compute(
-        &mut encoder,
-        passes.language_decls_materialize,
-        &language_name_bind_groups.decls_materialize,
-        "type_check.language_decls.materialize",
-        LANGUAGE_DECL_COUNT,
     )?;
     record_method_bind_groups(
         device,

@@ -22,7 +22,7 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_expr_record;
-StructuredBuffer<uint> x86_expr_resolved_node;
+StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> x86_node_func;
 StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_token_pos;
@@ -45,6 +45,7 @@ static const uint EXPR_RECORD_STRIDE = 4u;
 static const uint EXPR_RECORD_VALUE_TOKEN = 3u;
 static const uint X86_CALL_TYPE_STRIDE = 3u;
 static const uint X86_CALL_RECORDS_OK = 1u;
+static const uint X86_ERR_METHOD_CALL = 24u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -81,14 +82,14 @@ uint expr_value_token(uint node)
     return valid_node(node) ? expr_record_slot(node, EXPR_RECORD_VALUE_TOKEN) : INVALID;
 }
 
-uint resolve_expr(uint node)
+uint expr_root_node(uint node)
 {
-    return valid_node(node) ? x86_expr_resolved_node[node] : INVALID;
+    return valid_node(node) ? hir_expr_result_root_node[node] : INVALID;
 }
 
 uint callee_token_for_call(uint call_node)
 {
-    uint callee_node = resolve_expr(hir_call_callee_node[call_node]);
+    uint callee_node = expr_root_node(hir_call_callee_node[call_node]);
     if (valid_node(callee_node) && hir_kind[callee_node] == HIR_MEMBER_EXPR)
         return hir_member_name_token[callee_node];
     return valid_node(callee_node) ? expr_value_token(callee_node) : INVALID;
@@ -96,7 +97,7 @@ uint callee_token_for_call(uint call_node)
 
 bool is_method_call(uint call_node)
 {
-    uint callee_node = resolve_expr(hir_call_callee_node[call_node]);
+    uint callee_node = expr_root_node(hir_call_callee_node[call_node]);
     return valid_node(callee_node) && hir_kind[callee_node] == HIR_MEMBER_EXPR &&
            valid_token(hir_member_name_token[callee_node]);
 }
@@ -124,6 +125,11 @@ void write_call_type_record(uint call_node, uint return_ty, uint return_ty_token
         callee_token);
 }
 
+void mark_method_call_error(uint call_node)
+{
+    publish_stage_error_min_detail4(call_record_status, X86_ERR_METHOD_CALL, call_node);
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
@@ -140,8 +146,11 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     uint owner_fn = x86_node_func[node_i];
-    uint resolved_callee_node = resolve_expr(hir_call_callee_node[node_i]);
+    uint resolved_callee_node = expr_root_node(hir_call_callee_node[node_i]);
     uint callee_token = callee_token_for_call(node_i);
+    if (is_method_call(node_i))
+        mark_method_call_error(node_i);
+
     uint target_fn = valid_token(callee_token) ? call_fn_index[callee_token] : INVALID;
     uint return_ty = valid_token(callee_token) ? call_return_type[callee_token] : 0u;
     uint return_ty_token = valid_token(callee_token) ? call_return_type_token[callee_token] : INVALID;

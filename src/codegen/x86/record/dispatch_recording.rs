@@ -30,6 +30,9 @@ pub(super) struct InstructionDispatchInputs<'a, 'timer> {
     pub(super) node_order_scan_block: &'a wgpu::Buffer,
     pub(super) virtual_inst: &'a wgpu::Buffer,
     pub(super) node_inst_scan_params: &'a UniformBindingArray,
+    pub(super) for_iterable_nodes: &'a wgpu::BindGroup,
+    pub(super) control_padding: &'a wgpu::BindGroup,
+    pub(super) postfix_operand_owner: &'a wgpu::BindGroup,
     pub(super) node_inst_counts: &'a wgpu::BindGroup,
     pub(super) node_inst_same_end_rank_init: &'a wgpu::BindGroup,
     pub(super) node_inst_same_end_rank_step: &'a [wgpu::BindGroup],
@@ -47,6 +50,10 @@ pub(super) struct InstructionDispatchInputs<'a, 'timer> {
     pub(super) node_inst_gen_worklist_dispatch_args: &'a wgpu::BindGroup,
     pub(super) enclosing_loop_init: &'a wgpu::BindGroup,
     pub(super) enclosing_loop_step: &'a [wgpu::BindGroup],
+    pub(super) short_circuit_rhs_init: &'a wgpu::BindGroup,
+    pub(super) short_circuit_rhs_step: &'a [wgpu::BindGroup],
+    pub(super) index_source_owner_init: &'a wgpu::BindGroup,
+    pub(super) index_source_owner_step: &'a [wgpu::BindGroup],
     pub(super) node_inst_gen_inputs: &'a wgpu::BindGroup,
     pub(super) virtual_inst_clear_dispatch_args: &'a wgpu::BindGroup,
     pub(super) virtual_inst_clear: &'a wgpu::BindGroup,
@@ -71,6 +78,9 @@ pub(super) fn record_instruction_dispatches(
         node_order_scan_block,
         virtual_inst,
         node_inst_scan_params,
+        for_iterable_nodes,
+        control_padding,
+        postfix_operand_owner,
         node_inst_counts,
         node_inst_same_end_rank_init,
         node_inst_same_end_rank_step,
@@ -88,6 +98,10 @@ pub(super) fn record_instruction_dispatches(
         node_inst_gen_worklist_dispatch_args,
         enclosing_loop_init,
         enclosing_loop_step,
+        short_circuit_rhs_init,
+        short_circuit_rhs_step,
+        index_source_owner_init,
+        index_source_owner_step,
         node_inst_gen_inputs,
         virtual_inst_clear_dispatch_args,
         virtual_inst_clear,
@@ -100,6 +114,21 @@ pub(super) fn record_instruction_dispatches(
     dispatch_x86_stages_indirect(
         encoder,
         &[
+            (
+                "for_iterable_nodes",
+                &generator.for_iterable_nodes_pass,
+                for_iterable_nodes,
+            ),
+            (
+                "node_control_padding",
+                &generator.node_control_padding_pass,
+                control_padding,
+            ),
+            (
+                "postfix_operand_owner",
+                &generator.postfix_operand_owner_pass,
+                postfix_operand_owner,
+            ),
             (
                 "node_inst_counts",
                 &generator.node_inst_counts_pass,
@@ -256,6 +285,36 @@ pub(super) fn record_instruction_dispatches(
         enclosing_loop_step,
         active_hir_dispatch_args,
     );
+    dispatch_x86_stage_indirect(
+        encoder,
+        "short_circuit_rhs_init",
+        &generator.short_circuit_rhs_init_pass,
+        short_circuit_rhs_init,
+        active_hir_dispatch_args,
+    );
+    dispatch_compute_pass_indirect_bind_group_steps(
+        encoder,
+        "short_circuit_rhs_step",
+        "codegen.x86.short_circuit_rhs_step",
+        &generator.short_circuit_rhs_step_pass,
+        short_circuit_rhs_step,
+        active_hir_dispatch_args,
+    );
+    dispatch_x86_stage_indirect(
+        encoder,
+        "index_source_owner_init",
+        &generator.index_source_owner_init_pass,
+        index_source_owner_init,
+        active_hir_dispatch_args,
+    );
+    dispatch_compute_pass_indirect_bind_group_steps(
+        encoder,
+        "index_source_owner_step",
+        "codegen.x86.index_source_owner_step",
+        &generator.index_source_owner_step_pass,
+        index_source_owner_step,
+        active_hir_dispatch_args,
+    );
     dispatch_x86_stages(
         encoder,
         &[
@@ -284,7 +343,7 @@ pub(super) fn record_instruction_dispatches(
         "node_inst_gen",
         &generator.node_inst_gen_pass,
         node_inst_gen,
-        active_hir_dispatch_args,
+        node_order_scan,
     );
     dispatch_x86_stage_indirect(
         encoder,
@@ -355,7 +414,6 @@ pub(super) struct VirtualEmitDispatchInputs<'a, 'timer> {
     pub(super) virtual_regalloc: &'a wgpu::Buffer,
     pub(super) selected_inst: &'a wgpu::Buffer,
     pub(super) selected_scan_block: &'a wgpu::Buffer,
-    pub(super) text_word: &'a wgpu::Buffer,
     pub(super) elf_header_word: &'a wgpu::Buffer,
     pub(super) virtual_dispatch_args: &'a wgpu::BindGroup,
     pub(super) virtual_func_rows_init: &'a wgpu::BindGroup,
@@ -377,8 +435,12 @@ pub(super) struct VirtualEmitDispatchInputs<'a, 'timer> {
     pub(super) text_scan_local: &'a wgpu::BindGroup,
     pub(super) text_scan_block: &'a [wgpu::BindGroup],
     pub(super) text_offsets: &'a wgpu::BindGroup,
+    pub(super) reloc_scan_local: &'a wgpu::BindGroup,
+    pub(super) reloc_scan_block: &'a [wgpu::BindGroup],
+    pub(super) reloc_records: &'a wgpu::BindGroup,
     pub(super) output_dispatch_args: &'a wgpu::BindGroup,
     pub(super) encode: &'a wgpu::BindGroup,
+    pub(super) reloc_patch: &'a wgpu::BindGroup,
     pub(super) elf_layout: &'a wgpu::BindGroup,
     pub(super) elf: &'a wgpu::BindGroup,
 }
@@ -400,7 +462,6 @@ pub(super) fn record_virtual_emit_dispatches(
         virtual_regalloc,
         selected_inst,
         selected_scan_block,
-        text_word,
         elf_header_word,
         virtual_dispatch_args,
         virtual_func_rows_init,
@@ -422,8 +483,12 @@ pub(super) fn record_virtual_emit_dispatches(
         text_scan_local,
         text_scan_block,
         text_offsets,
+        reloc_scan_local,
+        reloc_scan_block,
+        reloc_records,
         output_dispatch_args,
         encode,
+        reloc_patch,
         elf_layout,
         elf,
     } = inputs;
@@ -455,13 +520,6 @@ pub(super) fn record_virtual_emit_dispatches(
         &generator.virtual_func_span_max_pass,
         virtual_func_span_max,
         function_dispatch,
-    );
-    dispatch_x86_stage(
-        encoder,
-        "virtual_regalloc_dispatch_args",
-        &generator.virtual_regalloc_dispatch_args_pass,
-        virtual_regalloc_dispatch_args,
-        virtual_dispatch_arg_groups,
     );
     stamp_timer(timer, encoder, "x86.virtual_rows.done");
 
@@ -544,6 +602,13 @@ pub(super) fn record_virtual_emit_dispatches(
         virtual_inst,
     );
     stamp_timer(timer, encoder, "x86.virtual_value_defs.done");
+    dispatch_x86_stage(
+        encoder,
+        "virtual_regalloc_dispatch_args",
+        &generator.virtual_regalloc_dispatch_args_pass,
+        virtual_regalloc_dispatch_args,
+        virtual_dispatch_arg_groups,
+    );
 
     let virtual_regalloc_offsets = IndirectUniformOffsets::for_params(virtual_regalloc_params);
     dispatch_compute_pass_indirect_offsets_with_dynamic_uniform_offsets(
@@ -594,6 +659,30 @@ pub(super) fn record_virtual_emit_dispatches(
         text_offsets,
         selected_inst,
     );
+    dispatch_x86_stage_indirect(
+        encoder,
+        "reloc_scan_local",
+        &generator.reloc_scan_local_pass,
+        reloc_scan_local,
+        selected_inst,
+    );
+    dispatch_compute_pass_indirect_ping_pong_scan_steps(
+        encoder,
+        "reloc_scan_blocks",
+        "codegen.x86.reloc_scan_blocks",
+        &generator.node_inst_scan_blocks_pass,
+        reloc_scan_block,
+        text_scan_params,
+        selected_scan_block,
+    );
+    dispatch_x86_stage_indirect(
+        encoder,
+        "reloc_records",
+        &generator.reloc_records_pass,
+        reloc_records,
+        selected_inst,
+    );
+    stamp_timer(timer, encoder, "x86.reloc_records.done");
     dispatch_x86_stage(
         encoder,
         "output_dispatch_args",
@@ -607,8 +696,17 @@ pub(super) fn record_virtual_emit_dispatches(
         "codegen.x86.encode",
         &generator.encode_pass,
         encode,
-        text_word,
+        selected_inst,
     );
+    dispatch_compute_pass_indirect(
+        encoder,
+        "reloc_patch",
+        "codegen.x86.reloc_patch",
+        &generator.reloc_patch_pass,
+        reloc_patch,
+        selected_inst,
+    );
+    stamp_timer(timer, encoder, "x86.reloc_patch.done");
 
     let (layout_groups_x, layout_groups_y) = workgroup_grid_1d(1);
     dispatch_x86_stages(

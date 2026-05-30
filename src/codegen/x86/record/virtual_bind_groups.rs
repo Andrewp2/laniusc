@@ -325,6 +325,11 @@ pub(super) fn create_virtual_bind_groups(
                 "x86_virtual_inst_status",
                 virtual_inst_status.as_entire_binding(),
             ),
+            ("x86_virtual_live_end", virtual_live_end.as_entire_binding()),
+            (
+                "x86_virtual_liveness_status",
+                virtual_liveness_status.as_entire_binding(),
+            ),
             (
                 "x86_virtual_value_def_flag",
                 virtual_value_def_flag.as_entire_binding(),
@@ -469,14 +474,6 @@ pub(super) fn create_virtual_bind_groups(
                 virtual_value_def_row.as_entire_binding(),
             ),
             (
-                "x86_virtual_value_def_scan_local_prefix",
-                virtual_value_def_scan_local_prefix.as_entire_binding(),
-            ),
-            (
-                "x86_virtual_value_def_scan_block_prefix",
-                final_value_def_scan_prefix.as_entire_binding(),
-            ),
-            (
                 "x86_virtual_value_def_status",
                 virtual_value_def_status.as_entire_binding(),
             ),
@@ -603,6 +600,10 @@ pub(super) fn create_virtual_bind_groups(
             (
                 "x86_virtual_inst_status",
                 virtual_inst_status.as_entire_binding(),
+            ),
+            (
+                "x86_virtual_value_def_status",
+                virtual_value_def_status.as_entire_binding(),
             ),
             ("x86_func_meta", func_meta.as_entire_binding()),
             (

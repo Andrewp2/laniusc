@@ -4,6 +4,7 @@ use super::{
     super::{
         GpuX86CallMetadataBuffers,
         GpuX86CodeGenerator,
+        GpuX86EnumMetadataBuffers,
         GpuX86ExprMetadataBuffers,
         GpuX86FunctionMetadataBuffers,
         GpuX86TypeMetadataBuffers,
@@ -21,6 +22,9 @@ use super::{
 };
 
 pub(super) struct InstPlanBindGroups {
+    pub(super) for_iterable_nodes: wgpu::BindGroup,
+    pub(super) control_padding: wgpu::BindGroup,
+    pub(super) postfix_operand_owner: wgpu::BindGroup,
     pub(super) counts: wgpu::BindGroup,
     pub(super) same_end_rank_init: wgpu::BindGroup,
     pub(super) same_end_rank_step: Vec<wgpu::BindGroup>,
@@ -37,6 +41,10 @@ pub(super) struct InstPlanBindGroups {
     pub(super) worklist_dispatch_args: wgpu::BindGroup,
     pub(super) enclosing_loop_init: wgpu::BindGroup,
     pub(super) enclosing_loop_step: Vec<wgpu::BindGroup>,
+    pub(super) short_circuit_rhs_init: wgpu::BindGroup,
+    pub(super) short_circuit_rhs_step: Vec<wgpu::BindGroup>,
+    pub(super) index_source_owner_init: wgpu::BindGroup,
+    pub(super) index_source_owner_step: Vec<wgpu::BindGroup>,
 }
 
 pub(super) struct InstPlanBindGroupInputs<'a> {
@@ -50,11 +58,13 @@ pub(super) struct InstPlanBindGroupInputs<'a> {
     pub(super) function_metadata: &'a GpuX86FunctionMetadataBuffers<'a>,
     pub(super) expr_metadata: &'a GpuX86ExprMetadataBuffers<'a>,
     pub(super) call_metadata: &'a GpuX86CallMetadataBuffers<'a>,
+    pub(super) enum_metadata: &'a GpuX86EnumMetadataBuffers<'a>,
     pub(super) type_metadata: &'a GpuX86TypeMetadataBuffers<'a>,
     pub(super) hir_param_record: &'a wgpu::Buffer,
     pub(super) expr_resolved_final: &'a wgpu::Buffer,
     pub(super) final_node_func: &'a wgpu::Buffer,
     pub(super) visible_decl: &'a wgpu::Buffer,
+    pub(super) const_value_record: &'a wgpu::Buffer,
     pub(super) decl_layout_record: &'a wgpu::Buffer,
     pub(super) decl_layout_status: &'a wgpu::Buffer,
     pub(super) param_reg_record: &'a wgpu::Buffer,
@@ -62,6 +72,7 @@ pub(super) struct InstPlanBindGroupInputs<'a> {
     pub(super) enclosing_return_step_final: &'a wgpu::Buffer,
     pub(super) match_return_node: &'a wgpu::Buffer,
     pub(super) call_record: &'a wgpu::Buffer,
+    pub(super) call_type_record: &'a wgpu::Buffer,
     pub(super) call_callee_owner_step_final: &'a wgpu::Buffer,
     pub(super) call_record_status: &'a wgpu::Buffer,
     pub(super) intrinsic_call_record: &'a wgpu::Buffer,
@@ -74,6 +85,9 @@ pub(super) struct InstPlanBindGroupInputs<'a> {
     pub(super) struct_access_record: &'a wgpu::Buffer,
     pub(super) struct_store_record: &'a wgpu::Buffer,
     pub(super) struct_record_status: &'a wgpu::Buffer,
+    pub(super) for_iterable_node: &'a wgpu::Buffer,
+    pub(super) node_control_padding: &'a wgpu::Buffer,
+    pub(super) postfix_operand_owner: &'a wgpu::Buffer,
     pub(super) node_inst_count_info: &'a wgpu::Buffer,
     pub(super) node_inst_count_payload: &'a wgpu::Buffer,
     pub(super) node_inst_count_status: &'a wgpu::Buffer,
@@ -114,6 +128,16 @@ pub(super) struct InstPlanBindGroupInputs<'a> {
     pub(super) enclosing_loop_link_a: &'a wgpu::Buffer,
     pub(super) enclosing_loop_link_b: &'a wgpu::Buffer,
     pub(super) enclosing_loop_steps: &'a [u32],
+    pub(super) short_circuit_rhs_node_a: &'a wgpu::Buffer,
+    pub(super) short_circuit_rhs_node_b: &'a wgpu::Buffer,
+    pub(super) short_circuit_rhs_link_a: &'a wgpu::Buffer,
+    pub(super) short_circuit_rhs_link_b: &'a wgpu::Buffer,
+    pub(super) short_circuit_rhs_steps: &'a [u32],
+    pub(super) index_source_owner_a: &'a wgpu::Buffer,
+    pub(super) index_source_owner_b: &'a wgpu::Buffer,
+    pub(super) index_source_link_a: &'a wgpu::Buffer,
+    pub(super) index_source_link_b: &'a wgpu::Buffer,
+    pub(super) index_source_owner_steps: &'a [u32],
 }
 
 pub(super) fn create_inst_plan_bind_groups(
@@ -132,11 +156,13 @@ pub(super) fn create_inst_plan_bind_groups(
         function_metadata,
         expr_metadata,
         call_metadata,
+        enum_metadata,
         type_metadata,
         hir_param_record,
         expr_resolved_final,
         final_node_func,
         visible_decl,
+        const_value_record,
         decl_layout_record,
         decl_layout_status,
         param_reg_record,
@@ -144,6 +170,7 @@ pub(super) fn create_inst_plan_bind_groups(
         enclosing_return_step_final,
         match_return_node,
         call_record,
+        call_type_record,
         call_callee_owner_step_final,
         call_record_status,
         intrinsic_call_record,
@@ -156,6 +183,9 @@ pub(super) fn create_inst_plan_bind_groups(
         struct_access_record,
         struct_store_record,
         struct_record_status,
+        for_iterable_node,
+        node_control_padding,
+        postfix_operand_owner,
         node_inst_count_info,
         node_inst_count_payload,
         node_inst_count_status,
@@ -196,8 +226,89 @@ pub(super) fn create_inst_plan_bind_groups(
         enclosing_loop_link_a,
         enclosing_loop_link_b,
         enclosing_loop_steps,
+        short_circuit_rhs_node_a,
+        short_circuit_rhs_node_b,
+        short_circuit_rhs_link_a,
+        short_circuit_rhs_link_b,
+        short_circuit_rhs_steps,
+        index_source_owner_a,
+        index_source_owner_b,
+        index_source_link_a,
+        index_source_link_b,
+        index_source_owner_steps,
     } = inputs;
 
+    let for_iterable_nodes = reflected_bind_group(
+        device,
+        Some("codegen.x86.for_iterable_nodes.bind_group"),
+        &generator.for_iterable_nodes_pass,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("hir_status", hir_status.as_entire_binding()),
+            ("hir_kind", hir_kind.as_entire_binding()),
+            (
+                "hir_stmt_record",
+                expr_metadata.stmt_record.as_entire_binding(),
+            ),
+            (
+                "x86_for_iterable_node",
+                for_iterable_node.as_entire_binding(),
+            ),
+        ],
+    )?;
+    let control_padding = reflected_bind_group(
+        device,
+        Some("codegen.x86.node_control_padding.bind_group"),
+        &generator.node_control_padding_pass,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("gX86Features", feature_params.as_entire_binding()),
+            ("hir_status", hir_status.as_entire_binding()),
+            ("hir_kind", hir_kind.as_entire_binding()),
+            (
+                "hir_stmt_record",
+                expr_metadata.stmt_record.as_entire_binding(),
+            ),
+            ("x86_match_record", match_record.as_entire_binding()),
+            (
+                "x86_match_return_node",
+                match_return_node.as_entire_binding(),
+            ),
+            (
+                "x86_match_result_value_owner",
+                match_result_value_owner.as_entire_binding(),
+            ),
+            (
+                "x86_for_iterable_node",
+                for_iterable_node.as_entire_binding(),
+            ),
+            (
+                "x86_node_control_padding",
+                node_control_padding.as_entire_binding(),
+            ),
+        ],
+    )?;
+    let postfix_operand_owner_bind_group = reflected_bind_group(
+        device,
+        Some("codegen.x86.postfix_operand_owner.bind_group"),
+        &generator.postfix_operand_owner_pass,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("hir_status", hir_status.as_entire_binding()),
+            ("hir_kind", hir_kind.as_entire_binding()),
+            (
+                "hir_expr_result_root_node",
+                expr_metadata.expr_result_root_node.as_entire_binding(),
+            ),
+            (
+                "x86_postfix_operand_owner",
+                postfix_operand_owner.as_entire_binding(),
+            ),
+        ],
+    )?;
     let counts = reflected_bind_group(
         device,
         Some("codegen.x86.node_inst_counts.bind_group"),
@@ -220,6 +331,26 @@ pub(super) fn create_inst_plan_bind_groups(
             ("x86_node_func", final_node_func.as_entire_binding()),
             ("visible_decl", visible_decl.as_entire_binding()),
             (
+                "path_count_out",
+                enum_metadata.path_count_out.as_entire_binding(),
+            ),
+            (
+                "path_id_by_owner_hir",
+                enum_metadata.path_id_by_owner_hir.as_entire_binding(),
+            ),
+            (
+                "resolved_value_decl",
+                enum_metadata.resolved_value_decl.as_entire_binding(),
+            ),
+            (
+                "resolved_value_status",
+                enum_metadata.resolved_value_status.as_entire_binding(),
+            ),
+            (
+                "decl_name_token",
+                enum_metadata.decl_name_token.as_entire_binding(),
+            ),
+            (
                 "x86_decl_layout_record",
                 decl_layout_record.as_entire_binding(),
             ),
@@ -227,10 +358,24 @@ pub(super) fn create_inst_plan_bind_groups(
                 "x86_decl_layout_status",
                 decl_layout_status.as_entire_binding(),
             ),
+            (
+                "x86_const_value_record",
+                const_value_record.as_entire_binding(),
+            ),
             ("x86_param_reg_record", param_reg_record.as_entire_binding()),
-            ("x86_tree_parent", parent.as_entire_binding()),
-            ("x86_tree_subtree_end", subtree_end.as_entire_binding()),
             ("x86_node_tree_status", node_tree_status.as_entire_binding()),
+            (
+                "x86_for_iterable_node",
+                for_iterable_node.as_entire_binding(),
+            ),
+            (
+                "x86_node_control_padding",
+                node_control_padding.as_entire_binding(),
+            ),
+            (
+                "x86_postfix_operand_owner",
+                postfix_operand_owner.as_entire_binding(),
+            ),
             (
                 "x86_enclosing_return_node",
                 enclosing_return_step_final.as_entire_binding(),
@@ -359,7 +504,6 @@ pub(super) fn create_inst_plan_bind_groups(
         &[
             ("gParams", params.as_entire_binding()),
             ("hir_status", hir_status.as_entire_binding()),
-            ("x86_tree_parent", parent.as_entire_binding()),
             ("x86_tree_subtree_end", subtree_end.as_entire_binding()),
             ("x86_node_tree_status", node_tree_status.as_entire_binding()),
             (
@@ -388,7 +532,6 @@ pub(super) fn create_inst_plan_bind_groups(
         &[
             ("gParams", params.as_entire_binding()),
             ("hir_status", hir_status.as_entire_binding()),
-            ("x86_tree_parent", parent.as_entire_binding()),
             ("x86_tree_subtree_end", subtree_end.as_entire_binding()),
             ("x86_node_tree_status", node_tree_status.as_entire_binding()),
             (
@@ -579,8 +722,8 @@ pub(super) fn create_inst_plan_bind_groups(
             ),
             ("hir_expr_record", expr_metadata.record.as_entire_binding()),
             (
-                "x86_expr_resolved_node",
-                expr_resolved_final.as_entire_binding(),
+                "hir_expr_result_root_node",
+                expr_metadata.expr_result_root_node.as_entire_binding(),
             ),
             ("visible_decl", visible_decl.as_entire_binding()),
             (
@@ -591,6 +734,7 @@ pub(super) fn create_inst_plan_bind_groups(
                 "call_return_type",
                 call_metadata.call_return_type.as_entire_binding(),
             ),
+            ("x86_call_type_record", call_type_record.as_entire_binding()),
             (
                 "x86_decl_layout_record",
                 decl_layout_record.as_entire_binding(),
@@ -643,8 +787,10 @@ pub(super) fn create_inst_plan_bind_groups(
             ),
             ("gX86Features", feature_params.as_entire_binding()),
             ("x86_match_record", match_record.as_entire_binding()),
-            ("x86_tree_parent", parent.as_entire_binding()),
-            ("x86_tree_subtree_end", subtree_end.as_entire_binding()),
+            (
+                "x86_for_iterable_node",
+                for_iterable_node.as_entire_binding(),
+            ),
             (
                 "x86_node_inst_range_start",
                 node_inst_range_start.as_entire_binding(),
@@ -743,7 +889,6 @@ pub(super) fn create_inst_plan_bind_groups(
                 expr_metadata.stmt_record.as_entire_binding(),
             ),
             ("x86_tree_parent", parent.as_entire_binding()),
-            ("x86_tree_subtree_end", subtree_end.as_entire_binding()),
             (
                 "x86_enclosing_loop_node",
                 enclosing_loop_node_a.as_entire_binding(),
@@ -775,8 +920,102 @@ pub(super) fn create_inst_plan_bind_groups(
             second_b: enclosing_loop_link_b,
         },
     )?;
+    let short_circuit_rhs_init = reflected_bind_group(
+        device,
+        Some("codegen.x86.short_circuit_rhs_init.bind_group"),
+        &generator.short_circuit_rhs_init_pass,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("hir_status", hir_status.as_entire_binding()),
+            ("hir_expr_record", expr_metadata.record.as_entire_binding()),
+            (
+                "x86_expr_resolved_node",
+                expr_resolved_final.as_entire_binding(),
+            ),
+            ("x86_tree_parent", parent.as_entire_binding()),
+            (
+                "x86_short_circuit_rhs_node",
+                short_circuit_rhs_node_a.as_entire_binding(),
+            ),
+            (
+                "x86_short_circuit_rhs_link",
+                short_circuit_rhs_link_a.as_entire_binding(),
+            ),
+        ],
+    )?;
+    let short_circuit_rhs_step = step_pair_groups(
+        device,
+        "codegen.x86.short_circuit_rhs_step.bind_group",
+        &generator.short_circuit_rhs_step_pass,
+        short_circuit_rhs_steps,
+        params,
+        hir_status,
+        &[],
+        StepNames {
+            first_in: "x86_short_circuit_rhs_node_in",
+            second_in: "x86_short_circuit_rhs_link_in",
+            first_out: "x86_short_circuit_rhs_node_out",
+            second_out: "x86_short_circuit_rhs_link_out",
+        },
+        StepPairs {
+            first_a: short_circuit_rhs_node_a,
+            first_b: short_circuit_rhs_node_b,
+            second_a: short_circuit_rhs_link_a,
+            second_b: short_circuit_rhs_link_b,
+        },
+    )?;
+    let index_source_owner_init = reflected_bind_group(
+        device,
+        Some("codegen.x86.index_source_owner_init.bind_group"),
+        &generator.index_source_owner_init_pass,
+        0,
+        &[
+            ("gParams", params.as_entire_binding()),
+            ("hir_status", hir_status.as_entire_binding()),
+            ("hir_kind", hir_kind.as_entire_binding()),
+            ("hir_expr_record", expr_metadata.record.as_entire_binding()),
+            (
+                "x86_expr_resolved_node",
+                expr_resolved_final.as_entire_binding(),
+            ),
+            ("x86_tree_parent", parent.as_entire_binding()),
+            (
+                "x86_index_source_owner",
+                index_source_owner_a.as_entire_binding(),
+            ),
+            (
+                "x86_index_source_link",
+                index_source_link_a.as_entire_binding(),
+            ),
+        ],
+    )?;
+    let index_source_owner_step = step_pair_groups(
+        device,
+        "codegen.x86.index_source_owner_step.bind_group",
+        &generator.index_source_owner_step_pass,
+        index_source_owner_steps,
+        params,
+        hir_status,
+        &[],
+        StepNames {
+            first_in: "x86_index_source_owner_in",
+            second_in: "x86_index_source_link_in",
+            first_out: "x86_index_source_owner_out",
+            second_out: "x86_index_source_link_out",
+        },
+        StepPairs {
+            first_a: index_source_owner_a,
+            first_b: index_source_owner_b,
+            second_a: index_source_link_a,
+            second_b: index_source_link_b,
+        },
+    )?;
 
     Ok(InstPlanBindGroups {
+        for_iterable_nodes,
+        control_padding,
+        postfix_operand_owner: postfix_operand_owner_bind_group,
         counts,
         same_end_rank_init,
         same_end_rank_step,
@@ -793,5 +1032,9 @@ pub(super) fn create_inst_plan_bind_groups(
         worklist_dispatch_args,
         enclosing_loop_init,
         enclosing_loop_step,
+        short_circuit_rhs_init,
+        short_circuit_rhs_step,
+        index_source_owner_init,
+        index_source_owner_step,
     })
 }

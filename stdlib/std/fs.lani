@@ -1,6 +1,151 @@
 // Source-level filesystem host ABI declarations.
+// The service contract below is intentionally conservative: the current
+// backends can type-check these declarations, but they do not bind filesystem
+// APIs.
 
 module std::fs;
+
+pub type FilesystemCapability = bool;
+pub type FilesystemRuntimeAbiVersion = u32;
+pub type FilesystemServiceId = u32;
+pub type FilesystemServiceStatus = u32;
+
+pub const FILESYSTEM_RUNTIME_ABI_VERSION: FilesystemRuntimeAbiVersion = 1;
+pub const FILESYSTEM_SERVICE_ID: FilesystemServiceId = 2;
+pub const FILESYSTEM_SERVICE_STATUS_UNAVAILABLE: FilesystemServiceStatus = 1;
+pub const FILESYSTEM_HAS_RUNTIME_BINDING: FilesystemCapability = false;
+
+pub fn filesystem_runtime_abi_version() -> FilesystemRuntimeAbiVersion {
+    return FILESYSTEM_RUNTIME_ABI_VERSION;
+}
+
+pub fn filesystem_service_id() -> FilesystemServiceId {
+    return FILESYSTEM_SERVICE_ID;
+}
+
+pub fn filesystem_service_is_known() -> FilesystemCapability {
+    return true;
+}
+
+pub fn filesystem_contract_metadata_is_available() -> FilesystemCapability {
+    return filesystem_service_is_known();
+}
+
+pub fn filesystem_service_status() -> FilesystemServiceStatus {
+    return FILESYSTEM_SERVICE_STATUS_UNAVAILABLE;
+}
+
+pub fn filesystem_is_available() -> FilesystemCapability {
+    return FILESYSTEM_HAS_RUNTIME_BINDING;
+}
+
+pub fn filesystem_is_blocked() -> FilesystemCapability {
+    return !filesystem_is_available();
+}
+
+pub fn filesystem_requires_runtime_binding() -> FilesystemCapability {
+    return !FILESYSTEM_HAS_RUNTIME_BINDING;
+}
+
+pub fn filesystem_host_abi_is_contract_only() -> FilesystemCapability {
+    return filesystem_requires_runtime_binding();
+}
+
+pub fn file_io_is_executable() -> FilesystemCapability {
+    return FILESYSTEM_HAS_RUNTIME_BINDING;
+}
+
+pub fn file_io_is_blocked() -> FilesystemCapability {
+    return !file_io_is_executable();
+}
+
+pub fn file_io_requires_runtime_binding() -> FilesystemCapability {
+    return !file_io_is_executable();
+}
+
+pub fn open_read_is_executable() -> FilesystemCapability {
+    return file_io_is_executable();
+}
+
+pub fn open_read_is_blocked() -> FilesystemCapability {
+    return !open_read_is_executable();
+}
+
+pub fn open_read_requires_runtime_binding() -> FilesystemCapability {
+    return !open_read_is_executable();
+}
+
+pub fn open_write_is_executable() -> FilesystemCapability {
+    return file_io_is_executable();
+}
+
+pub fn open_write_is_blocked() -> FilesystemCapability {
+    return !open_write_is_executable();
+}
+
+pub fn open_write_requires_runtime_binding() -> FilesystemCapability {
+    return !open_write_is_executable();
+}
+
+pub fn open_append_is_executable() -> FilesystemCapability {
+    return file_io_is_executable();
+}
+
+pub fn open_append_is_blocked() -> FilesystemCapability {
+    return !open_append_is_executable();
+}
+
+pub fn open_append_requires_runtime_binding() -> FilesystemCapability {
+    return !open_append_is_executable();
+}
+
+pub fn close_is_executable() -> FilesystemCapability {
+    return file_io_is_executable();
+}
+
+pub fn close_is_blocked() -> FilesystemCapability {
+    return !close_is_executable();
+}
+
+pub fn close_requires_runtime_binding() -> FilesystemCapability {
+    return !close_is_executable();
+}
+
+pub fn read_is_executable() -> FilesystemCapability {
+    return file_io_is_executable();
+}
+
+pub fn read_is_blocked() -> FilesystemCapability {
+    return !read_is_executable();
+}
+
+pub fn read_requires_runtime_binding() -> FilesystemCapability {
+    return !read_is_executable();
+}
+
+pub fn write_is_executable() -> FilesystemCapability {
+    return file_io_is_executable();
+}
+
+pub fn write_is_blocked() -> FilesystemCapability {
+    return !write_is_executable();
+}
+
+pub fn write_requires_runtime_binding() -> FilesystemCapability {
+    return !write_is_executable();
+}
+
+pub fn path_mutation_api_is_executable() -> FilesystemCapability {
+    return FILESYSTEM_HAS_RUNTIME_BINDING;
+}
+
+pub fn path_mutation_api_is_blocked() -> FilesystemCapability {
+    return !path_mutation_api_is_executable();
+}
+
+pub fn path_mutation_api_requires_runtime_binding() -> FilesystemCapability {
+    return !path_mutation_api_is_executable();
+}
 
 pub extern "lanius_std" fn open_read(path_ptr: u32, path_len: usize) -> i32;
 

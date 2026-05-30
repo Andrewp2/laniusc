@@ -4,9 +4,6 @@
 // constants, and named parameters. Later semantic passes consume these records
 // instead of deriving declaration type heads from token offsets.
 
-import generated_parse_production_ids;
-import tree_walk;
-
 struct Params
 {
     uint n_tokens;
@@ -17,15 +14,11 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> parent;
-StructuredBuffer<uint> first_child;
-StructuredBuffer<uint> next_sibling;
-StructuredBuffer<uint> subtree_end;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint4> hir_param_record;
+StructuredBuffer<uint> hir_param_type_node;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 
@@ -35,7 +28,6 @@ RWStructuredBuffer<uint> decl_type_ref_payload;
 static const uint INVALID = 0xffffffffu;
 
 static const uint HIR_PARAM = 4u;
-static const uint HIR_TYPE = 5u;
 
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_LET = 1u;
@@ -66,131 +58,22 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
-uint decl_type_ref_parent_node(uint node)
-{
-    return parent[node];
-}
-
-uint decl_type_ref_first_child_node(uint node)
-{
-    return first_child[node];
-}
-
-uint decl_type_ref_next_sibling_node(uint node)
-{
-    return next_sibling[node];
-}
-
-public struct DeclTypeRefGraph : ITreeWalkGraph
-{
-    public static bool valid(uint node)
-    {
-        return valid_node(node);
-    }
-
-    public static uint parent(uint node)
-    {
-        return decl_type_ref_parent_node(node);
-    }
-}
-
-public struct DeclTypeRefChildGraph : ITreeChildGraph
-{
-    public static bool valid(uint node)
-    {
-        return valid_node(node);
-    }
-
-    public static uint first_child(uint node)
-    {
-        return decl_type_ref_first_child_node(node);
-    }
-
-    public static uint next_sibling(uint node)
-    {
-        return decl_type_ref_next_sibling_node(node);
-    }
-}
-
 uint stmt_slot(uint node, uint slot)
 {
     return node * STMT_RECORD_STRIDE + slot;
 }
 
-bool has_ancestor_node(uint node, uint ancestor)
+uint stmt_type_node(uint stmt_node)
 {
-    return has_self_or_ancestor_node<DeclTypeRefGraph>(node, ancestor, 96u);
-}
-
-uint first_descendant_with_production(uint root, uint prod)
-{
-    if (!valid_node(root))
+    if (!valid_node(stmt_node))
         return INVALID;
-    uint n = min(subtree_end[root], active_hir_node_count());
-    [loop]
-    for (uint node = root + 1u; node < n; node += 1u)
-    {
-        if (node_kind[node] == prod)
-            return node;
-    }
-    return INVALID;
-}
-
-uint first_child_node(uint node)
-{
-    uint child;
-    return tree_child_first<DeclTypeRefChildGraph>(node, child) ? child : INVALID;
-}
-
-uint next_sibling_node(uint node)
-{
-    uint sibling;
-    return tree_child_next<DeclTypeRefChildGraph>(node, sibling) ? sibling : INVALID;
-}
-
-uint first_type_descendant(uint root)
-{
-    if (!valid_node(root))
-        return INVALID;
-    uint n = min(subtree_end[root], active_hir_node_count());
-    [loop]
-    for (uint node = root + 1u; node < n; node += 1u)
-    {
-        if (hir_kind[node] == HIR_TYPE)
-            return node;
-    }
-    return INVALID;
-}
-
-uint let_type_node(uint let_node)
-{
-    uint let_type = first_descendant_with_production(let_node, PROD_LET_TYPE);
-    return first_type_descendant(let_type);
-}
-
-uint const_type_node(uint const_node)
-{
-    return first_type_descendant(const_node);
+    uint type_node = hir_stmt_record[stmt_slot(stmt_node, 3u)];
+    return valid_node(type_node) ? type_node : INVALID;
 }
 
 uint param_type_node(uint param_node)
 {
-    uint param_prod = valid_node(param_node) ? node_kind[param_node] : INVALID;
-    if (param_prod == PROD_PARAM_SELF_REF)
-        return INVALID;
-    if (param_prod == PROD_PARAM_SELF)
-    {
-        uint child = first_child_node(param_node);
-        [loop]
-        for (uint guard = 0u; guard < 8u && child != INVALID; guard += 1u)
-        {
-            if (node_kind[child] == PROD_SELF_PARAM_TYPED)
-                return first_type_descendant(child);
-            child = next_sibling_node(child);
-        }
-        return INVALID;
-    }
-    return first_type_descendant(param_node);
+    return valid_node(param_node) ? hir_param_type_node[param_node] : INVALID;
 }
 
 void publish_decl_ref(uint decl_token, uint type_node)
@@ -218,9 +101,7 @@ void publish_stmt_decl_ref(uint node)
         return;
 
     uint decl_token = hir_stmt_record[stmt_slot(node, 1u)];
-    uint type_node = kind == STMT_RECORD_KIND_LET ? let_type_node(node)
-                                                  : const_type_node(node);
-    publish_decl_ref(decl_token, type_node);
+    publish_decl_ref(decl_token, stmt_type_node(node));
 }
 
 void publish_param_decl_ref(uint node)

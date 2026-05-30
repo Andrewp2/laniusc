@@ -1,4 +1,2092 @@
 use super::super::{test_support::*, *};
+use crate::compiler::artifact_descriptor::{
+    GpuSourcePackDescriptorRecord,
+    GpuSourcePackDescriptorRecordDomain,
+    GpuSourcePackDescriptorRecordFlow,
+    GpuSourcePackDescriptorRecordKind,
+};
+
+fn test_compile_work_queue_page(item_index: usize) -> SourcePackWorkQueuePage {
+    SourcePackWorkQueuePage {
+        version: SOURCE_PACK_WORK_QUEUE_PAGE_VERSION,
+        target: SourcePackArtifactTarget::Generic,
+        item_index,
+        kind: SourcePackWorkQueueItemKind::LibraryFrontend,
+        job_index: item_index,
+        dependency_item_indices: Vec::new(),
+        dependency_item_count: 0,
+        dependency_page_count: 0,
+        dependency_item_ranges: Vec::new(),
+        dependent_item_indices: Vec::new(),
+        dependent_item_count: 0,
+        dependent_page_count: 0,
+        dependent_item_ranges: Vec::new(),
+        artifact_batch_index: None,
+        partition_count: 1,
+        partition_indices: vec![item_index],
+        link_group_index: None,
+        input_frontend_job_count: 0,
+        input_frontend_job_indices: Vec::new(),
+        input_codegen_job_count: 0,
+        input_codegen_job_indices: Vec::new(),
+        input_link_group_count: 0,
+        input_link_group_indices: Vec::new(),
+        source_byte_count: 1,
+        source_file_count: 1,
+        source_line_count: 1,
+    }
+}
+
+fn test_link_reduce_work_queue_page(
+    item_index: usize,
+    link_group_index: usize,
+    input_link_group_indices: Vec<usize>,
+) -> SourcePackWorkQueuePage {
+    SourcePackWorkQueuePage {
+        version: SOURCE_PACK_WORK_QUEUE_PAGE_VERSION,
+        target: SourcePackArtifactTarget::Generic,
+        item_index,
+        kind: SourcePackWorkQueueItemKind::LinkReduce,
+        job_index: item_index,
+        dependency_item_indices: Vec::new(),
+        dependency_item_count: 0,
+        dependency_page_count: 0,
+        dependency_item_ranges: Vec::new(),
+        dependent_item_indices: Vec::new(),
+        dependent_item_count: 0,
+        dependent_page_count: 0,
+        dependent_item_ranges: Vec::new(),
+        artifact_batch_index: None,
+        partition_count: 1,
+        partition_indices: Vec::new(),
+        link_group_index: Some(link_group_index),
+        input_frontend_job_count: 0,
+        input_frontend_job_indices: Vec::new(),
+        input_codegen_job_count: 0,
+        input_codegen_job_indices: Vec::new(),
+        input_link_group_count: input_link_group_indices.len(),
+        input_link_group_indices,
+        source_byte_count: 1,
+        source_file_count: 1,
+        source_line_count: 1,
+    }
+}
+
+fn test_link_leaf_work_queue_page(
+    item_index: usize,
+    input_frontend_job_count: usize,
+    input_codegen_job_count: usize,
+) -> SourcePackWorkQueuePage {
+    SourcePackWorkQueuePage {
+        version: SOURCE_PACK_WORK_QUEUE_PAGE_VERSION,
+        target: SourcePackArtifactTarget::Generic,
+        item_index,
+        kind: SourcePackWorkQueueItemKind::LinkLeaf,
+        job_index: item_index,
+        dependency_item_indices: Vec::new(),
+        dependency_item_count: 0,
+        dependency_page_count: 0,
+        dependency_item_ranges: Vec::new(),
+        dependent_item_indices: Vec::new(),
+        dependent_item_count: 0,
+        dependent_page_count: 0,
+        dependent_item_ranges: Vec::new(),
+        artifact_batch_index: None,
+        partition_count: 1,
+        partition_indices: vec![0],
+        link_group_index: Some(0),
+        input_frontend_job_count,
+        input_frontend_job_indices: Vec::new(),
+        input_codegen_job_count,
+        input_codegen_job_indices: Vec::new(),
+        input_link_group_count: 0,
+        input_link_group_indices: Vec::new(),
+        source_byte_count: 1,
+        source_file_count: 1,
+        source_line_count: 1,
+    }
+}
+
+fn remaining_dependency_counts(page: &SourcePackWorkQueueProgressPage) -> Vec<(usize, usize)> {
+    page.remaining_dependency_counts
+        .iter()
+        .map(|remaining| (remaining.item_index, remaining.remaining_dependency_count))
+        .collect()
+}
+
+fn remaining_dependent_counts(page: &SourcePackWorkQueueProgressPage) -> Vec<(usize, usize)> {
+    page.remaining_dependent_counts
+        .iter()
+        .map(|remaining| (remaining.item_index, remaining.remaining_dependent_count))
+        .collect()
+}
+
+#[test]
+fn work_queue_sidecar_pages_reject_empty_records() {
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "laniusc-empty-work-queue-sidecar-test-{}-{suffix}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&root).expect("create temp artifact dir");
+    let store = FilesystemArtifactStore::new(&root);
+    let target = SourcePackArtifactTarget::Generic;
+
+    let empty_dependency_page = SourcePackWorkQueueDependenciesPage {
+        version: SOURCE_PACK_WORK_QUEUE_DEPENDENCIES_PAGE_VERSION,
+        target,
+        item_index: 1,
+        page_index: 0,
+        first_dependency_position: 0,
+        dependency_count: 0,
+        dependency_item_indices: Vec::new(),
+    };
+    let dependency_err = store
+        .store_work_queue_dependencies_page(&empty_dependency_page)
+        .expect_err("empty dependency sidecar pages should be rejected");
+    assert!(
+        dependency_err.to_string().contains("dependency count 0"),
+        "unexpected empty dependency page error: {dependency_err}"
+    );
+
+    let empty_dependent_page = SourcePackWorkQueueDependentsPage {
+        version: SOURCE_PACK_WORK_QUEUE_DEPENDENTS_PAGE_VERSION,
+        target,
+        item_index: 0,
+        page_index: 0,
+        first_dependent_position: 0,
+        dependent_count: 0,
+        dependent_item_indices: Vec::new(),
+    };
+    let dependent_err = store
+        .store_work_queue_dependents_page(&empty_dependent_page)
+        .expect_err("empty dependent sidecar pages should be rejected");
+    assert!(
+        dependent_err.to_string().contains("dependent count 0"),
+        "unexpected empty dependent page error: {dependent_err}"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove temp artifact dir");
+}
+
+#[test]
+fn link_reduce_work_queue_inputs_must_reference_prior_groups() {
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "laniusc-link-reduce-work-queue-input-test-{}-{suffix}",
+        std::process::id()
+    ));
+    let store = FilesystemArtifactStore::new(&root);
+    let target = SourcePackArtifactTarget::Generic;
+
+    let valid_page = test_link_reduce_work_queue_page(10, 3, vec![0, 2]);
+    store
+        .store_work_queue_page(&valid_page)
+        .expect("prior link-group inputs should persist");
+    let persisted = store
+        .load_work_queue_page_for_target(target, 10)
+        .expect("load persisted link-reduce work item");
+    assert_eq!(persisted.link_group_index, Some(3));
+    assert_eq!(persisted.input_link_group_count, 2);
+    assert_eq!(persisted.input_link_group_indices, vec![0, 2]);
+
+    let same_group_page = test_link_reduce_work_queue_page(11, 3, vec![3]);
+    assert!(
+        store.store_work_queue_page(&same_group_page).is_err(),
+        "a reduce work item must not consume its own group"
+    );
+    assert!(
+        !store.work_queue_page_path_for_target(target, 11).exists(),
+        "rejected same-group input must not leave a persisted work item"
+    );
+
+    let future_group_page = test_link_reduce_work_queue_page(12, 3, vec![4]);
+    assert!(
+        store.store_work_queue_page(&future_group_page).is_err(),
+        "a reduce work item must not consume a future group"
+    );
+    assert!(
+        !store.work_queue_page_path_for_target(target, 12).exists(),
+        "rejected future-group input must not leave a persisted work item"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove link-reduce work queue input test dir");
+}
+
+#[test]
+fn link_leaf_work_queue_requires_frontend_input_for_each_codegen_input() {
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "laniusc-link-leaf-work-queue-input-test-{}-{suffix}",
+        std::process::id()
+    ));
+    let store = FilesystemArtifactStore::new(&root);
+    let target = SourcePackArtifactTarget::Generic;
+
+    let valid_page = test_link_leaf_work_queue_page(10, 2, 2);
+    store
+        .store_work_queue_page(&valid_page)
+        .expect("matching leaf frontend/codegen inputs should persist");
+
+    let stale_page = test_link_leaf_work_queue_page(11, 1, 2);
+    let err = store
+        .store_work_queue_page(&stale_page)
+        .expect_err("leaf link pages must not claim fewer frontend than codegen inputs");
+    assert!(
+        err.to_string()
+            .contains("frontend inputs for 2 codegen inputs"),
+        "unexpected leaf input-count validation error: {err}"
+    );
+    assert!(
+        !store.work_queue_page_path_for_target(target, 11).exists(),
+        "rejected leaf work item must not be persisted"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove link-leaf work queue input test dir");
+}
+
+#[test]
+fn persisted_link_prepare_progress_rejects_early_final_output_marker() {
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "laniusc-link-prepare-progress-resume-test-{}-{suffix}",
+        std::process::id()
+    ));
+    let store = FilesystemArtifactStore::new(&root);
+    let target = SourcePackArtifactTarget::Wasm;
+    let progress_path = store.link_execution_prepare_progress_path_for_target(target);
+    std::fs::create_dir_all(progress_path.parent().expect("progress parent"))
+        .expect("create link progress dir");
+    std::fs::write(
+        &progress_path,
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "version": SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PREPARE_PROGRESS_VERSION,
+            "target": "Wasm",
+            "link_group_count": 3,
+            "next_group_index": 1,
+            "final_output_seen": true
+        }))
+        .expect("serialize malformed link progress"),
+    )
+    .expect("write malformed link progress");
+
+    let err = load_link_execution_prepare_progress(&store, target, 3)
+        .expect_err("resumed link progress must reject an early final-output marker");
+    let message = err.to_string();
+    assert!(
+        message.contains("final output") && message.contains("before all link groups"),
+        "unexpected link progress resume error: {message}"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove link progress resume test dir");
+}
+
+#[test]
+fn persisted_link_execution_index_requires_dense_final_output_slot() {
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "laniusc-link-execution-final-slot-test-{}-{suffix}",
+        std::process::id()
+    ));
+    let store = FilesystemArtifactStore::new(&root);
+    let target = SourcePackArtifactTarget::Wasm;
+    let first_link_job_index = 20;
+    let final_link_group_index = 2;
+    let final_link_job_index = first_link_job_index + final_link_group_index;
+    let index_path = store.hierarchical_link_execution_index_path_for_target(target);
+    std::fs::create_dir_all(index_path.parent().expect("link index parent"))
+        .expect("create link index dir");
+
+    let valid_output_key = source_pack_artifact_key_for_output(
+        target,
+        SourcePackArtifactKind::LinkedOutput,
+        0,
+        first_link_job_index,
+        0,
+        3,
+    );
+    let wrong_output_key = source_pack_artifact_key_for_output(
+        target,
+        SourcePackArtifactKind::LinkedOutput,
+        0,
+        final_link_job_index,
+        0,
+        3,
+    );
+    let mut index = SourcePackHierarchicalLinkExecutionIndex {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_INDEX_VERSION,
+        target,
+        first_link_job_index,
+        final_link_group_index,
+        final_link_job_index,
+        link_group_count: final_link_group_index + 1,
+        final_output_key: wrong_output_key,
+    };
+    std::fs::write(
+        &index_path,
+        serde_json::to_vec_pretty(&index).expect("serialize malformed link execution index"),
+    )
+    .expect("write malformed link execution index");
+
+    let err = store
+        .load_hierarchical_link_execution_index_for_target(target)
+        .expect_err("resumed link execution index must reject the wrong final output slot");
+    let message = err.to_string();
+    assert!(
+        message.contains("producer job 22") && message.contains("first link job 20"),
+        "unexpected final output slot validation error: {message}"
+    );
+
+    index.final_output_key = valid_output_key.clone();
+    std::fs::write(
+        &index_path,
+        serde_json::to_vec_pretty(&index).expect("serialize valid link execution index"),
+    )
+    .expect("write valid link execution index");
+    assert_eq!(
+        store
+            .load_hierarchical_link_execution_index_for_target(target)
+            .expect("link execution index should load with the dense final output slot")
+            .final_output_key,
+        valid_output_key
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove link execution final-slot test dir");
+}
+
+#[test]
+fn persisted_link_execution_index_requires_final_group_to_be_last() {
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "laniusc-link-execution-final-group-test-{}-{suffix}",
+        std::process::id()
+    ));
+    let store = FilesystemArtifactStore::new(&root);
+    let target = SourcePackArtifactTarget::Wasm;
+    let index_path = store.hierarchical_link_execution_index_path_for_target(target);
+    std::fs::create_dir_all(index_path.parent().expect("link index parent"))
+        .expect("create link index dir");
+
+    let index = SourcePackHierarchicalLinkExecutionIndex {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_INDEX_VERSION,
+        target,
+        first_link_job_index: 20,
+        final_link_group_index: 1,
+        final_link_job_index: 21,
+        link_group_count: 3,
+        final_output_key: source_pack_artifact_key_for_output(
+            target,
+            SourcePackArtifactKind::LinkedOutput,
+            0,
+            20,
+            0,
+            3,
+        ),
+    };
+    std::fs::write(
+        &index_path,
+        serde_json::to_vec_pretty(&index).expect("serialize malformed link execution index"),
+    )
+    .expect("write malformed link execution index");
+
+    let err = store
+        .load_hierarchical_link_execution_index_for_target(target)
+        .expect_err("resumed link execution index must reject a non-final dense group");
+    let message = err.to_string();
+    assert!(
+        message.contains("final group 1") && message.contains("group count 3"),
+        "unexpected final group validation error: {message}"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove link execution final group test dir");
+}
+
+#[test]
+fn final_link_work_queue_rejects_stale_dense_output_key() {
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "laniusc-final-link-stale-output-key-test-{}-{suffix}",
+        std::process::id()
+    ));
+    let store = FilesystemArtifactStore::new(&root);
+    let target = SourcePackArtifactTarget::Wasm;
+    let first_link_job_index = 20;
+    let group_index = 2;
+    let link_job_index = first_link_job_index + group_index;
+    let expected_output_key = source_pack_artifact_key_for_output(
+        target,
+        SourcePackArtifactKind::LinkedOutput,
+        0,
+        first_link_job_index,
+        0,
+        1,
+    );
+    let stale_output_key = source_pack_artifact_key_for_output(
+        target,
+        SourcePackArtifactKind::LinkedOutput,
+        0,
+        first_link_job_index + 1,
+        0,
+        1,
+    );
+    let link_page = SourcePackHierarchicalLinkExecutionPage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
+        target,
+        group_index,
+        kind: SourcePackHierarchicalLinkGroupKind::Reduce,
+        job_index: link_job_index,
+        input_interface_count: 0,
+        input_interface_page_count: 0,
+        input_interface_ranges: Vec::new(),
+        input_interfaces: Vec::new(),
+        input_object_count: 0,
+        input_object_page_count: 0,
+        input_objects: Vec::new(),
+        input_group_count: 1,
+        input_group_page_count: 1,
+        input_group_indices: Vec::new(),
+        input_group_output_keys: Vec::new(),
+        source_byte_count: 1,
+        source_file_count: 1,
+        source_line_count: 1,
+        output_key: stale_output_key.clone(),
+        final_output: true,
+        descriptor_summary: SourcePackLinkDescriptorSummary::default(),
+    };
+    let link_page_path =
+        store.hierarchical_link_execution_page_path_for_target(target, group_index);
+    std::fs::create_dir_all(link_page_path.parent().expect("link page parent"))
+        .expect("create persisted link page dir");
+    std::fs::write(
+        &link_page_path,
+        serde_json::to_vec_pretty(&link_page).expect("serialize stale final link page"),
+    )
+    .expect("write stale final link page");
+    store
+        .store_work_queue_page(&SourcePackWorkQueuePage {
+            version: SOURCE_PACK_WORK_QUEUE_PAGE_VERSION,
+            target,
+            item_index: link_job_index,
+            kind: SourcePackWorkQueueItemKind::LinkReduce,
+            job_index: link_job_index,
+            dependency_item_indices: Vec::new(),
+            dependency_item_count: 0,
+            dependency_page_count: 0,
+            dependency_item_ranges: Vec::new(),
+            dependent_item_indices: Vec::new(),
+            dependent_item_count: 0,
+            dependent_page_count: 0,
+            dependent_item_ranges: Vec::new(),
+            artifact_batch_index: None,
+            partition_count: 1,
+            partition_indices: Vec::new(),
+            link_group_index: Some(group_index),
+            input_frontend_job_count: 0,
+            input_frontend_job_indices: Vec::new(),
+            input_codegen_job_count: 0,
+            input_codegen_job_indices: Vec::new(),
+            input_link_group_count: 1,
+            input_link_group_indices: vec![0],
+            source_byte_count: 1,
+            source_file_count: 1,
+            source_line_count: 1,
+        })
+        .expect("store final reduce work item");
+
+    let mut executor = RecordingSourcePackByteArtifactExecutor::default();
+    let err = execute_claimed_link_work_queue_item(
+        &root,
+        link_job_index,
+        target,
+        "worker-a",
+        8,
+        Some(100),
+        &mut executor,
+    )
+    .expect_err("final link work item must reject a stale dense output key");
+    let message = err.to_string();
+    assert!(
+        message.contains("dense final output artifact") && message.contains("first link job 20"),
+        "unexpected final-link output-key validation error: {message}"
+    );
+    assert!(
+        !store
+            .path_for_key(&stale_output_key)
+            .expect("stale linked output path")
+            .exists(),
+        "rejected stale final output key must not leave linked-output bytes"
+    );
+    assert!(
+        !store
+            .path_for_key(&expected_output_key)
+            .expect("expected linked output path")
+            .exists(),
+        "rejected stale final output page must not write the expected linked output either"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove final link stale output key test dir");
+}
+
+#[test]
+fn store_link_execution_page_rejects_descriptor_only_paged_object_state() {
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "laniusc-descriptor-only-link-state-test-{}-{suffix}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&root).expect("create descriptor-only link state test dir");
+    let store = FilesystemArtifactStore::new(&root);
+    let target = SourcePackArtifactTarget::Wasm;
+    let group_index = 0;
+    let link_job_index = 7;
+    let link_page = SourcePackHierarchicalLinkExecutionPage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
+        target,
+        group_index,
+        kind: SourcePackHierarchicalLinkGroupKind::Leaf,
+        job_index: link_job_index,
+        input_interface_count: 1,
+        input_interface_page_count: 1,
+        input_interface_ranges: Vec::new(),
+        input_interfaces: Vec::new(),
+        input_object_count: 1,
+        input_object_page_count: 1,
+        input_objects: Vec::new(),
+        input_group_count: 0,
+        input_group_page_count: 0,
+        input_group_indices: Vec::new(),
+        input_group_output_keys: Vec::new(),
+        source_byte_count: 1,
+        source_file_count: 1,
+        source_line_count: 1,
+        output_key: hierarchical_link_partial_output_key(target, group_index, link_job_index),
+        final_output: false,
+        descriptor_summary: SourcePackLinkDescriptorSummary {
+            object_symbol_count: 1,
+            ..SourcePackLinkDescriptorSummary::default()
+        },
+    };
+
+    let err = store
+        .store_hierarchical_link_execution_page(&link_page)
+        .expect_err("descriptor rows without concrete object refs are not link evidence");
+    let message = err.to_string();
+    assert!(
+        message.contains("descriptor summary")
+            && message.contains("object artifact refs")
+            && message.contains("not link artifact evidence"),
+        "unexpected descriptor-only link state error: {message}"
+    );
+    assert!(
+        !store
+            .hierarchical_link_execution_page_path_for_target(target, group_index)
+            .exists(),
+        "rejected descriptor-only link state must not persist a link execution page"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove descriptor-only link state test dir");
+}
+
+#[test]
+fn store_link_execution_page_rejects_descriptor_summary_with_only_interface_ranges() {
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "laniusc-interface-range-descriptor-link-state-test-{}-{suffix}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&root).expect("create interface-range link state test dir");
+    let store = FilesystemArtifactStore::new(&root);
+    let target = SourcePackArtifactTarget::Wasm;
+    let group_index = 0;
+    let link_job_index = 7;
+    let link_page = SourcePackHierarchicalLinkExecutionPage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
+        target,
+        group_index,
+        kind: SourcePackHierarchicalLinkGroupKind::Leaf,
+        job_index: link_job_index,
+        input_interface_count: 1,
+        input_interface_page_count: 0,
+        input_interface_ranges: vec![SourcePackJobIndexRange {
+            first_job_index: 1,
+            job_count: 1,
+        }],
+        input_interfaces: Vec::new(),
+        input_object_count: 1,
+        input_object_page_count: 0,
+        input_objects: vec![SourcePackArtifactRef {
+            artifact_index: 0,
+            key: "wasm/codegen-object/lib-0/job-2/src-0-1".into(),
+            producing_job_index: 2,
+            kind: SourcePackArtifactKind::CodegenObject,
+        }],
+        input_group_count: 0,
+        input_group_page_count: 0,
+        input_group_indices: Vec::new(),
+        input_group_output_keys: Vec::new(),
+        source_byte_count: 1,
+        source_file_count: 1,
+        source_line_count: 1,
+        output_key: hierarchical_link_partial_output_key(target, group_index, link_job_index),
+        final_output: false,
+        descriptor_summary: SourcePackLinkDescriptorSummary {
+            interface_symbol_count: 1,
+            object_symbol_count: 1,
+            ..SourcePackLinkDescriptorSummary::default()
+        },
+    };
+
+    let err = store
+        .store_hierarchical_link_execution_page(&link_page)
+        .expect_err("interface dependency ranges alone are not persisted interface evidence");
+    let message = err.to_string();
+    assert!(
+        message.contains("interface artifact refs")
+            && message.contains("dependency ranges")
+            && message.contains("not link artifact evidence"),
+        "unexpected interface-range descriptor evidence error: {message}"
+    );
+    assert!(
+        !store
+            .hierarchical_link_execution_page_path_for_target(target, group_index)
+            .exists(),
+        "rejected interface-range descriptor state must not persist a link execution page"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove interface-range link state test dir");
+}
+
+#[test]
+fn store_link_execution_page_rejects_descriptor_counts_without_record_contracts() {
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "laniusc-link-record-contract-test-{}-{suffix}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&root).expect("create link record contract test dir");
+    let store = FilesystemArtifactStore::new(&root);
+    let target = SourcePackArtifactTarget::Wasm;
+    let group_index = 0;
+    let link_job_index = 7;
+    let link_page = SourcePackHierarchicalLinkExecutionPage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
+        target,
+        group_index,
+        kind: SourcePackHierarchicalLinkGroupKind::Leaf,
+        job_index: link_job_index,
+        input_interface_count: 0,
+        input_interface_page_count: 0,
+        input_interface_ranges: Vec::new(),
+        input_interfaces: vec![SourcePackArtifactRef {
+            artifact_index: 1,
+            key: "wasm/library-interface/lib-0/job-1/src-0-1".into(),
+            producing_job_index: 1,
+            kind: SourcePackArtifactKind::LibraryInterface,
+        }],
+        input_object_count: 0,
+        input_object_page_count: 0,
+        input_objects: vec![SourcePackArtifactRef {
+            artifact_index: 2,
+            key: "wasm/codegen-object/lib-0/job-2/src-0-1".into(),
+            producing_job_index: 2,
+            kind: SourcePackArtifactKind::CodegenObject,
+        }],
+        input_group_count: 0,
+        input_group_page_count: 0,
+        input_group_indices: Vec::new(),
+        input_group_output_keys: Vec::new(),
+        source_byte_count: 1,
+        source_file_count: 1,
+        source_line_count: 1,
+        output_key: hierarchical_link_partial_output_key(target, group_index, link_job_index),
+        final_output: false,
+        descriptor_summary: SourcePackLinkDescriptorSummary {
+            interface_symbol_count: 1,
+            object_section_count: 1,
+            object_symbol_count: 1,
+            relocation_count: 1,
+            ..SourcePackLinkDescriptorSummary::default()
+        },
+    };
+
+    let err = store
+        .store_hierarchical_link_execution_page(&link_page)
+        .expect_err("descriptor counts must be backed by explicit link record contracts");
+    let message = err.to_string();
+    assert!(
+        message.contains("descriptor counts")
+            && message
+                .contains("explicit interface/object/section/symbol/relocation record contracts"),
+        "unexpected missing link record contract error: {message}"
+    );
+    assert!(
+        !store
+            .hierarchical_link_execution_page_path_for_target(target, group_index)
+            .exists(),
+        "rejected descriptor counts must not persist as link execution evidence"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove link record contract test dir");
+}
+
+#[test]
+fn store_link_execution_page_rejects_duplicate_object_artifact_refs() {
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "laniusc-duplicate-link-object-ref-test-{}-{suffix}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&root).expect("create duplicate object ref test dir");
+    let store = FilesystemArtifactStore::new(&root);
+    let target = SourcePackArtifactTarget::Wasm;
+    let group_index = 0;
+    let link_job_index = 7;
+    let object_key = "wasm/codegen-object/lib-0/job-2/src-0-1".to_string();
+    let link_page = SourcePackHierarchicalLinkExecutionPage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
+        target,
+        group_index,
+        kind: SourcePackHierarchicalLinkGroupKind::Leaf,
+        job_index: link_job_index,
+        input_interface_count: 0,
+        input_interface_page_count: 0,
+        input_interface_ranges: Vec::new(),
+        input_interfaces: vec![SourcePackArtifactRef {
+            artifact_index: 1,
+            key: "wasm/library-interface/lib-0/job-1/src-0-1".into(),
+            producing_job_index: 1,
+            kind: SourcePackArtifactKind::LibraryInterface,
+        }],
+        input_object_count: 0,
+        input_object_page_count: 0,
+        input_objects: vec![
+            SourcePackArtifactRef {
+                artifact_index: 2,
+                key: object_key.clone(),
+                producing_job_index: 2,
+                kind: SourcePackArtifactKind::CodegenObject,
+            },
+            SourcePackArtifactRef {
+                artifact_index: 42,
+                key: object_key,
+                producing_job_index: 2,
+                kind: SourcePackArtifactKind::CodegenObject,
+            },
+        ],
+        input_group_count: 0,
+        input_group_page_count: 0,
+        input_group_indices: Vec::new(),
+        input_group_output_keys: Vec::new(),
+        source_byte_count: 1,
+        source_file_count: 1,
+        source_line_count: 1,
+        output_key: hierarchical_link_partial_output_key(target, group_index, link_job_index),
+        final_output: false,
+        descriptor_summary: SourcePackLinkDescriptorSummary::default(),
+    };
+
+    let err = store
+        .store_hierarchical_link_execution_page(&link_page)
+        .expect_err("duplicate object artifact refs must not persist as link input evidence");
+    let message = err.to_string();
+    assert!(
+        message.contains("producer job 2")
+            && message.contains("more than once")
+            && message.contains("CodegenObject"),
+        "unexpected duplicate object ref error: {message}"
+    );
+    assert!(
+        !store
+            .hierarchical_link_execution_page_path_for_target(target, group_index)
+            .exists(),
+        "rejected duplicate object refs must not persist a link execution page"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove duplicate object ref test dir");
+}
+
+#[test]
+fn final_link_work_queue_rejects_persisted_relocation_descriptor_summary() {
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "laniusc-final-link-relocation-summary-test-{}-{suffix}",
+        std::process::id()
+    ));
+    let store = FilesystemArtifactStore::new(&root);
+    let target = SourcePackArtifactTarget::Wasm;
+    let link_job_index = 7;
+    let group_index = 0;
+    let output_key = "wasm/linked-output/job-7/src-0-1".to_string();
+    let link_page = SourcePackHierarchicalLinkExecutionPage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
+        target,
+        group_index,
+        kind: SourcePackHierarchicalLinkGroupKind::Leaf,
+        job_index: link_job_index,
+        input_interface_count: 1,
+        input_interface_page_count: 1,
+        input_interface_ranges: Vec::new(),
+        input_interfaces: Vec::new(),
+        input_object_count: 1,
+        input_object_page_count: 1,
+        input_objects: Vec::new(),
+        input_group_count: 0,
+        input_group_page_count: 0,
+        input_group_indices: Vec::new(),
+        input_group_output_keys: Vec::new(),
+        source_byte_count: 1,
+        source_file_count: 1,
+        source_line_count: 1,
+        output_key: output_key.clone(),
+        final_output: true,
+        descriptor_summary: SourcePackLinkDescriptorSummary {
+            relocation_count: 1,
+            ..SourcePackLinkDescriptorSummary::default()
+        }
+        .with_record_contracts_from_counts(),
+    };
+    let link_page_path =
+        store.hierarchical_link_execution_page_path_for_target(target, group_index);
+    std::fs::create_dir_all(link_page_path.parent().expect("link page parent"))
+        .expect("create persisted link page dir");
+    std::fs::write(
+        &link_page_path,
+        serde_json::to_vec_pretty(&link_page).expect("serialize persisted link page"),
+    )
+    .expect("write persisted link page");
+    store
+        .store_work_queue_page(&SourcePackWorkQueuePage {
+            version: SOURCE_PACK_WORK_QUEUE_PAGE_VERSION,
+            target,
+            item_index: link_job_index,
+            kind: SourcePackWorkQueueItemKind::LinkLeaf,
+            job_index: link_job_index,
+            dependency_item_indices: vec![0, 1],
+            dependency_item_count: 0,
+            dependency_page_count: 0,
+            dependency_item_ranges: Vec::new(),
+            dependent_item_indices: Vec::new(),
+            dependent_item_count: 0,
+            dependent_page_count: 0,
+            dependent_item_ranges: Vec::new(),
+            artifact_batch_index: None,
+            partition_count: 1,
+            partition_indices: vec![0],
+            link_group_index: Some(group_index),
+            input_frontend_job_count: 1,
+            input_frontend_job_indices: Vec::new(),
+            input_codegen_job_count: 1,
+            input_codegen_job_indices: vec![1],
+            input_link_group_count: 0,
+            input_link_group_indices: Vec::new(),
+            source_byte_count: 1,
+            source_file_count: 1,
+            source_line_count: 1,
+        })
+        .expect("store link work item");
+
+    let mut executor = RecordingSourcePackByteArtifactExecutor::default();
+    let err = execute_claimed_link_work_queue_item(
+        &root,
+        link_job_index,
+        target,
+        "worker-a",
+        8,
+        Some(100),
+        &mut executor,
+    )
+    .expect_err("final link work item must reject unresolved relocation descriptors");
+    let message = err.to_string();
+    assert!(
+        message.contains("final linked output") && message.contains("relocation descriptors"),
+        "unexpected final-link descriptor error: {message}"
+    );
+    assert!(
+        !store
+            .path_for_key(&output_key)
+            .expect("linked output artifact path")
+            .exists(),
+        "rejected final link descriptor must not leave linked-output bytes"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove final link relocation summary test dir");
+}
+
+#[test]
+fn x86_link_work_queue_rejects_object_inputs_without_descriptor_metadata() {
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "laniusc-x86-link-object-metadata-test-{}-{suffix}",
+        std::process::id()
+    ));
+    let store = FilesystemArtifactStore::new(&root);
+    let target = SourcePackArtifactTarget::X86_64;
+    let link_job_index = 7;
+    let group_index = 0;
+    let output_key = "x86_64/linked-output/job-7/src-0-1".to_string();
+    let link_page = SourcePackHierarchicalLinkExecutionPage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
+        target,
+        group_index,
+        kind: SourcePackHierarchicalLinkGroupKind::Leaf,
+        job_index: link_job_index,
+        input_interface_count: 1,
+        input_interface_page_count: 1,
+        input_interface_ranges: Vec::new(),
+        input_interfaces: Vec::new(),
+        input_object_count: 1,
+        input_object_page_count: 1,
+        input_objects: Vec::new(),
+        input_group_count: 0,
+        input_group_page_count: 0,
+        input_group_indices: Vec::new(),
+        input_group_output_keys: Vec::new(),
+        source_byte_count: 1,
+        source_file_count: 1,
+        source_line_count: 1,
+        output_key: output_key.clone(),
+        final_output: true,
+        descriptor_summary: SourcePackLinkDescriptorSummary {
+            interface_symbol_count: 1,
+            ..SourcePackLinkDescriptorSummary::default()
+        }
+        .with_record_contracts_from_counts(),
+    };
+    let link_page_path =
+        store.hierarchical_link_execution_page_path_for_target(target, group_index);
+    std::fs::create_dir_all(link_page_path.parent().expect("link page parent"))
+        .expect("create persisted x86 link page dir");
+    std::fs::write(
+        &link_page_path,
+        serde_json::to_vec_pretty(&link_page).expect("serialize persisted x86 link page"),
+    )
+    .expect("write persisted x86 link page");
+    store
+        .store_work_queue_page(&SourcePackWorkQueuePage {
+            version: SOURCE_PACK_WORK_QUEUE_PAGE_VERSION,
+            target,
+            item_index: link_job_index,
+            kind: SourcePackWorkQueueItemKind::LinkLeaf,
+            job_index: link_job_index,
+            dependency_item_indices: vec![0, 1],
+            dependency_item_count: 0,
+            dependency_page_count: 0,
+            dependency_item_ranges: Vec::new(),
+            dependent_item_indices: Vec::new(),
+            dependent_item_count: 0,
+            dependent_page_count: 0,
+            dependent_item_ranges: Vec::new(),
+            artifact_batch_index: None,
+            partition_count: 1,
+            partition_indices: vec![0],
+            link_group_index: Some(group_index),
+            input_frontend_job_count: 1,
+            input_frontend_job_indices: Vec::new(),
+            input_codegen_job_count: 1,
+            input_codegen_job_indices: vec![1],
+            input_link_group_count: 0,
+            input_link_group_indices: Vec::new(),
+            source_byte_count: 1,
+            source_file_count: 1,
+            source_line_count: 1,
+        })
+        .expect("store x86 link work item");
+
+    let mut executor = RecordingSourcePackByteArtifactExecutor::default();
+    let err = execute_claimed_link_work_queue_item(
+        &root,
+        link_job_index,
+        target,
+        "worker-a",
+        8,
+        Some(100),
+        &mut executor,
+    )
+    .expect_err("x86 link work item must reject object inputs without metadata");
+    let message = err.to_string();
+    assert!(
+        message.contains("x86_64")
+            && message.contains("object inputs")
+            && message.contains("descriptor metadata"),
+        "unexpected x86 object metadata validation error: {message}"
+    );
+    assert!(
+        !store
+            .path_for_key(&output_key)
+            .expect("linked output artifact path")
+            .exists(),
+        "rejected x86 link page must not leave linked-output bytes"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove x86 link object metadata test dir");
+}
+
+#[test]
+fn x86_link_execution_rejects_object_symbol_metadata_without_sections() {
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "laniusc-x86-link-object-section-metadata-test-{}-{suffix}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&root).expect("create object section metadata test dir");
+    let store = FilesystemArtifactStore::new(&root);
+    let target = SourcePackArtifactTarget::X86_64;
+    let group_index = 0;
+    let link_job_index = 7;
+    let link_page = SourcePackHierarchicalLinkExecutionPage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
+        target,
+        group_index,
+        kind: SourcePackHierarchicalLinkGroupKind::Leaf,
+        job_index: link_job_index,
+        input_interface_count: 0,
+        input_interface_page_count: 0,
+        input_interface_ranges: Vec::new(),
+        input_interfaces: vec![SourcePackArtifactRef {
+            artifact_index: 1,
+            key: "x86_64/library-interface/lib-0/job-1/src-0-1".into(),
+            producing_job_index: 1,
+            kind: SourcePackArtifactKind::LibraryInterface,
+        }],
+        input_object_count: 0,
+        input_object_page_count: 0,
+        input_objects: vec![SourcePackArtifactRef {
+            artifact_index: 2,
+            key: "x86_64/codegen-object/lib-0/job-2/src-0-1".into(),
+            producing_job_index: 2,
+            kind: SourcePackArtifactKind::CodegenObject,
+        }],
+        input_group_count: 0,
+        input_group_page_count: 0,
+        input_group_indices: Vec::new(),
+        input_group_output_keys: Vec::new(),
+        source_byte_count: 1,
+        source_file_count: 1,
+        source_line_count: 1,
+        output_key: hierarchical_link_partial_output_key(target, group_index, link_job_index),
+        final_output: false,
+        descriptor_summary: SourcePackLinkDescriptorSummary {
+            interface_symbol_count: 1,
+            object_symbol_count: 1,
+            relocation_count: 1,
+            ..SourcePackLinkDescriptorSummary::default()
+        }
+        .with_record_contracts_from_counts(),
+    };
+
+    let err = store
+        .store_hierarchical_link_execution_page(&link_page)
+        .expect_err("x86 object link metadata must include object section rows");
+    let message = err.to_string();
+    assert!(
+        message.contains("object symbol, unresolved-symbol, or relocation contracts")
+            && message.contains("object section record contracts"),
+        "unexpected x86 object section metadata validation error: {message}"
+    );
+    assert!(
+        !store
+            .hierarchical_link_execution_page_path_for_target(target, group_index)
+            .exists(),
+        "rejected object-section metadata must not publish a link execution page"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove object section metadata test dir");
+}
+
+#[test]
+fn reduce_link_execution_rejects_carried_object_metadata_without_sections() {
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "laniusc-reduce-link-object-section-metadata-test-{}-{suffix}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&root).expect("create reduce object section metadata test dir");
+    let store = FilesystemArtifactStore::new(&root);
+    let target = SourcePackArtifactTarget::Wasm;
+    let group_index = 1;
+    let first_link_job_index = 7;
+    let link_job_index = first_link_job_index + group_index;
+    let link_page = SourcePackHierarchicalLinkExecutionPage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
+        target,
+        group_index,
+        kind: SourcePackHierarchicalLinkGroupKind::Reduce,
+        job_index: link_job_index,
+        input_interface_count: 0,
+        input_interface_page_count: 0,
+        input_interface_ranges: Vec::new(),
+        input_interfaces: Vec::new(),
+        input_object_count: 0,
+        input_object_page_count: 0,
+        input_objects: Vec::new(),
+        input_group_count: 0,
+        input_group_page_count: 0,
+        input_group_indices: vec![0],
+        input_group_output_keys: vec![hierarchical_link_partial_output_key(
+            target,
+            0,
+            first_link_job_index,
+        )],
+        source_byte_count: 1,
+        source_file_count: 1,
+        source_line_count: 1,
+        output_key: hierarchical_link_partial_output_key(target, group_index, link_job_index),
+        final_output: false,
+        descriptor_summary: SourcePackLinkDescriptorSummary {
+            object_symbol_count: 1,
+            relocation_count: 1,
+            ..SourcePackLinkDescriptorSummary::default()
+        }
+        .with_record_contracts_from_counts(),
+    };
+
+    let err = store
+        .store_hierarchical_link_execution_page(&link_page)
+        .expect_err("carried partial-link object metadata must include object section rows");
+    let message = err.to_string();
+    assert!(
+        message.contains("object symbol, unresolved-symbol, or relocation contracts")
+            && message.contains("object section record contracts"),
+        "unexpected reduce object section metadata validation error: {message}"
+    );
+    assert!(
+        !store
+            .hierarchical_link_execution_page_path_for_target(target, group_index)
+            .exists(),
+        "rejected reduce object metadata must not publish a link execution page"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove reduce object section metadata test dir");
+}
+
+#[test]
+fn partial_link_work_queue_rejects_mismatched_persisted_output_key() {
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "laniusc-partial-link-output-key-test-{}-{suffix}",
+        std::process::id()
+    ));
+    let store = FilesystemArtifactStore::new(&root);
+    let target = SourcePackArtifactTarget::Wasm;
+    let link_job_index = 8;
+    let group_index = 2;
+    let expected_output_key =
+        hierarchical_link_partial_output_key(target, group_index, link_job_index);
+    let wrong_output_key =
+        hierarchical_link_partial_output_key(target, group_index - 1, link_job_index);
+    let link_page = SourcePackHierarchicalLinkExecutionPage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
+        target,
+        group_index,
+        kind: SourcePackHierarchicalLinkGroupKind::Leaf,
+        job_index: link_job_index,
+        input_interface_count: 1,
+        input_interface_page_count: 1,
+        input_interface_ranges: Vec::new(),
+        input_interfaces: Vec::new(),
+        input_object_count: 1,
+        input_object_page_count: 1,
+        input_objects: Vec::new(),
+        input_group_count: 0,
+        input_group_page_count: 0,
+        input_group_indices: Vec::new(),
+        input_group_output_keys: Vec::new(),
+        source_byte_count: 1,
+        source_file_count: 1,
+        source_line_count: 1,
+        output_key: wrong_output_key.clone(),
+        final_output: false,
+        descriptor_summary: SourcePackLinkDescriptorSummary::default(),
+    };
+    let link_page_path =
+        store.hierarchical_link_execution_page_path_for_target(target, group_index);
+    std::fs::create_dir_all(link_page_path.parent().expect("link page parent"))
+        .expect("create persisted link page dir");
+    std::fs::write(
+        &link_page_path,
+        serde_json::to_vec_pretty(&link_page).expect("serialize persisted link page"),
+    )
+    .expect("write persisted link page");
+    store
+        .store_work_queue_page(&SourcePackWorkQueuePage {
+            version: SOURCE_PACK_WORK_QUEUE_PAGE_VERSION,
+            target,
+            item_index: link_job_index,
+            kind: SourcePackWorkQueueItemKind::LinkLeaf,
+            job_index: link_job_index,
+            dependency_item_indices: vec![0, 1],
+            dependency_item_count: 0,
+            dependency_page_count: 0,
+            dependency_item_ranges: Vec::new(),
+            dependent_item_indices: Vec::new(),
+            dependent_item_count: 0,
+            dependent_page_count: 0,
+            dependent_item_ranges: Vec::new(),
+            artifact_batch_index: None,
+            partition_count: 1,
+            partition_indices: vec![0],
+            link_group_index: Some(group_index),
+            input_frontend_job_count: 1,
+            input_frontend_job_indices: Vec::new(),
+            input_codegen_job_count: 1,
+            input_codegen_job_indices: vec![1],
+            input_link_group_count: 0,
+            input_link_group_indices: Vec::new(),
+            source_byte_count: 1,
+            source_file_count: 1,
+            source_line_count: 1,
+        })
+        .expect("store partial-link work item");
+
+    let mut executor = RecordingSourcePackByteArtifactExecutor::default();
+    let err = execute_claimed_link_work_queue_item(
+        &root,
+        link_job_index,
+        target,
+        "worker-a",
+        8,
+        Some(100),
+        &mut executor,
+    )
+    .expect_err("partial link work item must reject a mismatched persisted output key");
+    let message = err.to_string();
+    assert!(
+        message.contains("partial-link output key") && message.contains(&expected_output_key),
+        "unexpected partial-link output key error: {message}"
+    );
+    assert!(
+        !store
+            .path_for_key(&wrong_output_key)
+            .expect("wrong partial-link artifact path")
+            .exists(),
+        "rejected partial-link page must not write the mismatched output key"
+    );
+    assert!(
+        !store
+            .path_for_key(&expected_output_key)
+            .expect("expected partial-link artifact path")
+            .exists(),
+        "rejected partial-link page must not write the expected output key either"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove partial-link output key test dir");
+}
+
+#[test]
+fn persisted_partial_link_input_keys_reject_future_producer_jobs() {
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "laniusc-partial-link-input-key-test-{}-{suffix}",
+        std::process::id()
+    ));
+    let store = FilesystemArtifactStore::new(&root);
+    let target = SourcePackArtifactTarget::Wasm;
+    let group_index = 3;
+    let page_index = 0;
+    let partial_page_path = store.hierarchical_link_execution_partial_page_path_for_target(
+        target,
+        group_index,
+        page_index,
+    );
+    std::fs::create_dir_all(partial_page_path.parent().expect("partial page parent"))
+        .expect("create partial input page dir");
+    std::fs::write(
+        &partial_page_path,
+        serde_json::to_vec_pretty(&SourcePackHierarchicalLinkExecutionPartialPage {
+            version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PARTIAL_PAGE_VERSION,
+            target,
+            group_index,
+            job_index: 53,
+            page_index,
+            first_input_position: 0,
+            input_count: 1,
+            input_group_indices: vec![1],
+            input_group_output_keys: vec![hierarchical_link_partial_output_key(target, 1, 99)],
+        })
+        .expect("serialize malformed partial input page"),
+    )
+    .expect("write malformed partial input page");
+
+    let err = store
+        .load_hierarchical_link_execution_partial_page_for_target(target, group_index, page_index)
+        .expect_err("persisted partial-link input keys must not point at future producer jobs");
+    let message = err.to_string();
+    assert!(
+        message.contains("future producer job 99") && message.contains("consumer link job 53"),
+        "unexpected partial-link input key validation error: {message}"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove partial-link input key test dir");
+}
+
+#[test]
+fn linked_output_descriptor_rejects_partial_link_output_records() {
+    let target = SourcePackArtifactTarget::Wasm;
+    let page = SourcePackHierarchicalLinkExecutionPage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
+        target,
+        group_index: 2,
+        kind: SourcePackHierarchicalLinkGroupKind::Reduce,
+        job_index: 92,
+        input_interface_count: 0,
+        input_interface_page_count: 0,
+        input_interface_ranges: Vec::new(),
+        input_interfaces: Vec::new(),
+        input_object_count: 0,
+        input_object_page_count: 0,
+        input_objects: Vec::new(),
+        input_group_count: 1,
+        input_group_page_count: 1,
+        input_group_indices: Vec::new(),
+        input_group_output_keys: Vec::new(),
+        source_byte_count: 1,
+        source_file_count: 1,
+        source_line_count: 1,
+        output_key: "wasm/linked-output/job-92/src-0-1".into(),
+        final_output: true,
+        descriptor_summary: SourcePackLinkDescriptorSummary::default(),
+    };
+    let descriptor = GpuSourcePackArtifactDescriptor::hierarchical_linked_output_contract_for_page(
+        &page, 0, 0, 1,
+    );
+    descriptor
+        .validate_contract()
+        .expect("baseline final linked-output contract is valid");
+
+    let mut document =
+        serde_json::to_value(&descriptor).expect("serialize linked-output descriptor");
+    for arrays_key in ["output_record_arrays", "record_arrays"] {
+        let arrays = document
+            .get_mut(arrays_key)
+            .and_then(serde_json::Value::as_array_mut)
+            .unwrap_or_else(|| panic!("descriptor JSON should include {arrays_key}"));
+        arrays.push(serde_json::json!({
+            "name": "accidental_partial_link_relocation_records"
+        }));
+    }
+    document
+        .get_mut("descriptor_records")
+        .and_then(serde_json::Value::as_array_mut)
+        .expect("descriptor JSON should include descriptor records")
+        .push(serde_json::json!({
+            "name": "accidental_partial_link_relocations",
+            "domain": "PartialLink",
+            "kind": "Relocation",
+            "flow": "Output",
+            "record_array": "accidental_partial_link_relocation_records"
+        }));
+
+    let parsed = serde_json::from_value::<GpuSourcePackArtifactDescriptor>(document)
+        .expect("parse tampered linked-output descriptor JSON");
+    let err = parsed
+        .validate_contract()
+        .expect_err("final linked-output descriptor must not output partial-link records");
+    assert!(err.contains("must only output LinkedOutput records"));
+    assert!(err.contains("PartialLink"));
+}
+
+#[test]
+fn linked_output_descriptor_rejects_partial_link_inputs_without_group() {
+    let target = SourcePackArtifactTarget::Wasm;
+    let page = SourcePackHierarchicalLinkExecutionPage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
+        target,
+        group_index: 2,
+        kind: SourcePackHierarchicalLinkGroupKind::Reduce,
+        job_index: 92,
+        input_interface_count: 0,
+        input_interface_page_count: 0,
+        input_interface_ranges: Vec::new(),
+        input_interfaces: Vec::new(),
+        input_object_count: 0,
+        input_object_page_count: 0,
+        input_objects: Vec::new(),
+        input_group_count: 1,
+        input_group_page_count: 1,
+        input_group_indices: Vec::new(),
+        input_group_output_keys: Vec::new(),
+        source_byte_count: 1,
+        source_file_count: 1,
+        source_line_count: 1,
+        output_key: "wasm/linked-output/job-92/src-0-1".into(),
+        final_output: true,
+        descriptor_summary: SourcePackLinkDescriptorSummary::default(),
+    };
+    let descriptor = GpuSourcePackArtifactDescriptor::hierarchical_linked_output_contract_for_page(
+        &page, 0, 0, 1,
+    );
+    descriptor
+        .validate_contract()
+        .expect("baseline final linked-output descriptor is valid");
+
+    let mut document =
+        serde_json::to_value(&descriptor).expect("serialize linked-output descriptor");
+    document["group_index"] = serde_json::Value::Null;
+    let parsed = serde_json::from_value::<GpuSourcePackArtifactDescriptor>(document)
+        .expect("parse persisted linked-output descriptor without group identity");
+    assert_eq!(
+        parsed.group_index, None,
+        "persisted descriptor should retain the missing group identity"
+    );
+
+    let err = parsed
+        .validate_contract()
+        .expect_err("partial-link final outputs must keep hierarchical link group evidence");
+    assert!(err.contains("partial-link dependencies"));
+    assert!(err.contains("hierarchical link group"));
+}
+
+#[test]
+fn link_descriptors_track_unresolved_symbols_until_final_output() {
+    let target = SourcePackArtifactTarget::Wasm;
+    let partial_page = SourcePackHierarchicalLinkExecutionPage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
+        target,
+        group_index: 1,
+        kind: SourcePackHierarchicalLinkGroupKind::Leaf,
+        job_index: 91,
+        input_interface_count: 1,
+        input_interface_page_count: 1,
+        input_interface_ranges: Vec::new(),
+        input_interfaces: Vec::new(),
+        input_object_count: 1,
+        input_object_page_count: 1,
+        input_objects: Vec::new(),
+        input_group_count: 0,
+        input_group_page_count: 0,
+        input_group_indices: Vec::new(),
+        input_group_output_keys: Vec::new(),
+        source_byte_count: 1,
+        source_file_count: 1,
+        source_line_count: 1,
+        output_key: hierarchical_link_partial_output_key(target, 1, 91),
+        final_output: false,
+        descriptor_summary: SourcePackLinkDescriptorSummary::default(),
+    };
+    let partial_descriptor =
+        GpuSourcePackArtifactDescriptor::partial_link_contract_for_page(&partial_page, 1, 1, 0);
+    partial_descriptor
+        .validate_contract()
+        .expect("baseline partial-link descriptor contract is valid");
+    assert!(
+        partial_descriptor
+            .output_record_arrays
+            .iter()
+            .any(|array| array.name == "partial_link_unresolved_symbol_records"),
+        "partial-link output must reserve unresolved-symbol rows for resumable linking"
+    );
+    assert!(
+        partial_descriptor.descriptor_records.iter().any(|record| {
+            record.domain == GpuSourcePackDescriptorRecordDomain::PartialLink
+                && record.kind == GpuSourcePackDescriptorRecordKind::UnresolvedSymbol
+                && record.flow == GpuSourcePackDescriptorRecordFlow::Output
+        }),
+        "partial-link descriptor records must name unresolved-symbol output rows"
+    );
+
+    let mut missing_unresolved_symbols =
+        serde_json::to_value(&partial_descriptor).expect("serialize partial-link descriptor");
+    let descriptor_records = missing_unresolved_symbols
+        .get_mut("descriptor_records")
+        .and_then(serde_json::Value::as_array_mut)
+        .expect("descriptor JSON should include descriptor records");
+    descriptor_records.retain(|record| {
+        record.get("kind").and_then(serde_json::Value::as_str) != Some("UnresolvedSymbol")
+            || record.get("flow").and_then(serde_json::Value::as_str) != Some("Output")
+    });
+    let parsed_missing =
+        serde_json::from_value::<GpuSourcePackArtifactDescriptor>(missing_unresolved_symbols)
+            .expect("parse partial-link descriptor without unresolved-symbol rows");
+    let err = parsed_missing
+        .validate_contract()
+        .expect_err("partial-link descriptors must declare unresolved-symbol outputs");
+    assert!(err.contains("output unresolved symbols"));
+
+    let final_page = SourcePackHierarchicalLinkExecutionPage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
+        target,
+        group_index: 2,
+        kind: SourcePackHierarchicalLinkGroupKind::Reduce,
+        job_index: 92,
+        input_interface_count: 0,
+        input_interface_page_count: 0,
+        input_interface_ranges: Vec::new(),
+        input_interfaces: Vec::new(),
+        input_object_count: 0,
+        input_object_page_count: 0,
+        input_objects: Vec::new(),
+        input_group_count: 1,
+        input_group_page_count: 1,
+        input_group_indices: Vec::new(),
+        input_group_output_keys: Vec::new(),
+        source_byte_count: 1,
+        source_file_count: 1,
+        source_line_count: 1,
+        output_key: "wasm/linked-output/job-92/src-0-1".into(),
+        final_output: true,
+        descriptor_summary: SourcePackLinkDescriptorSummary::default(),
+    };
+    let final_descriptor =
+        GpuSourcePackArtifactDescriptor::hierarchical_linked_output_contract_for_page(
+            &final_page,
+            0,
+            0,
+            1,
+        );
+    final_descriptor
+        .validate_contract()
+        .expect("baseline linked-output descriptor contract is valid");
+    let mut unresolved_final =
+        serde_json::to_value(&final_descriptor).expect("serialize linked-output descriptor");
+    for arrays_key in ["output_record_arrays", "record_arrays"] {
+        unresolved_final
+            .get_mut(arrays_key)
+            .and_then(serde_json::Value::as_array_mut)
+            .unwrap_or_else(|| panic!("descriptor JSON should include {arrays_key}"))
+            .push(serde_json::json!({
+                "name": "linked_output_unresolved_symbol_records"
+            }));
+    }
+    unresolved_final
+        .get_mut("descriptor_records")
+        .and_then(serde_json::Value::as_array_mut)
+        .expect("descriptor JSON should include descriptor records")
+        .push(serde_json::json!({
+            "name": "linked_output_unresolved_symbols",
+            "domain": "LinkedOutput",
+            "kind": "UnresolvedSymbol",
+            "flow": "Output",
+            "record_array": "linked_output_unresolved_symbol_records"
+        }));
+    let parsed_final = serde_json::from_value::<GpuSourcePackArtifactDescriptor>(unresolved_final)
+        .expect("parse linked-output descriptor with unresolved-symbol output rows");
+    let err = parsed_final
+        .validate_contract()
+        .expect_err("final linked-output descriptors must not emit unresolved symbols");
+    assert!(err.contains("unresolved symbol descriptors"));
+}
+
+#[test]
+fn linked_output_descriptor_rejects_object_domain_output_arrays() {
+    let target = SourcePackArtifactTarget::Wasm;
+    let page = SourcePackHierarchicalLinkExecutionPage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
+        target,
+        group_index: 2,
+        kind: SourcePackHierarchicalLinkGroupKind::Reduce,
+        job_index: 92,
+        input_interface_count: 0,
+        input_interface_page_count: 0,
+        input_interface_ranges: Vec::new(),
+        input_interfaces: Vec::new(),
+        input_object_count: 0,
+        input_object_page_count: 0,
+        input_objects: Vec::new(),
+        input_group_count: 1,
+        input_group_page_count: 1,
+        input_group_indices: Vec::new(),
+        input_group_output_keys: Vec::new(),
+        source_byte_count: 1,
+        source_file_count: 1,
+        source_line_count: 1,
+        output_key: "wasm/linked-output/job-92/src-0-1".into(),
+        final_output: true,
+        descriptor_summary: SourcePackLinkDescriptorSummary::default(),
+    };
+    let descriptor = GpuSourcePackArtifactDescriptor::hierarchical_linked_output_contract_for_page(
+        &page, 0, 0, 1,
+    );
+    descriptor
+        .validate_contract()
+        .expect("baseline final linked-output contract is valid");
+
+    let mut document =
+        serde_json::to_value(&descriptor).expect("serialize linked-output descriptor");
+    for arrays_key in ["output_record_arrays", "record_arrays"] {
+        let arrays = document
+            .get_mut(arrays_key)
+            .and_then(serde_json::Value::as_array_mut)
+            .unwrap_or_else(|| panic!("descriptor JSON should include {arrays_key}"));
+        arrays.push(serde_json::json!({
+            "name": "object_symbol_records"
+        }));
+    }
+
+    let parsed = serde_json::from_value::<GpuSourcePackArtifactDescriptor>(document)
+        .expect("parse tampered linked-output descriptor JSON");
+    assert!(
+        parsed
+            .output_record_arrays
+            .iter()
+            .any(|array| array.name == "object_symbol_records"),
+        "persisted descriptor should retain the incoherent output array"
+    );
+    let err = parsed
+        .validate_contract()
+        .expect_err("final linked-output descriptor must not claim object output arrays");
+    assert!(err.contains("output record array \"object_symbol_records\""));
+    assert!(err.contains("LinkedOutput"));
+    assert!(err.contains("Object"));
+}
+
+#[test]
+fn persisted_descriptor_rejects_output_only_arrays_as_inputs() {
+    let target = SourcePackArtifactTarget::Wasm;
+    let page = SourcePackHierarchicalLinkExecutionPage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
+        target,
+        group_index: 1,
+        kind: SourcePackHierarchicalLinkGroupKind::Leaf,
+        job_index: 91,
+        input_interface_count: 1,
+        input_interface_page_count: 1,
+        input_interface_ranges: Vec::new(),
+        input_interfaces: Vec::new(),
+        input_object_count: 1,
+        input_object_page_count: 1,
+        input_objects: Vec::new(),
+        input_group_count: 0,
+        input_group_page_count: 0,
+        input_group_indices: Vec::new(),
+        input_group_output_keys: Vec::new(),
+        source_byte_count: 1,
+        source_file_count: 1,
+        source_line_count: 1,
+        output_key: hierarchical_link_partial_output_key(target, 1, 91),
+        final_output: false,
+        descriptor_summary: SourcePackLinkDescriptorSummary::default(),
+    };
+    let descriptor =
+        GpuSourcePackArtifactDescriptor::partial_link_contract_for_page(&page, 1, 1, 0);
+    descriptor
+        .validate_contract()
+        .expect("baseline partial-link descriptor contract is valid");
+
+    let mut document =
+        serde_json::to_value(&descriptor).expect("serialize partial-link descriptor");
+    document
+        .get_mut("input_record_arrays")
+        .and_then(serde_json::Value::as_array_mut)
+        .expect("descriptor JSON should include input record arrays")
+        .push(serde_json::json!({
+            "name": "linked_symbol_records"
+        }));
+    document
+        .get_mut("record_arrays")
+        .and_then(serde_json::Value::as_array_mut)
+        .expect("descriptor JSON should include combined record arrays")
+        .insert(
+            descriptor.input_record_arrays.len(),
+            serde_json::json!({
+                "name": "linked_symbol_records"
+            }),
+        );
+
+    let parsed = serde_json::from_value::<GpuSourcePackArtifactDescriptor>(document)
+        .expect("parse descriptor JSON with output-only rows in input arrays");
+    assert!(
+        parsed
+            .input_record_arrays
+            .iter()
+            .any(|array| array.name == "linked_symbol_records"),
+        "persisted descriptor should retain the incoherent input array"
+    );
+    let err = parsed
+        .validate_contract()
+        .expect_err("descriptor inputs must not claim output-only linked rows");
+    assert!(err.contains("output-only LinkedOutput record array"));
+    assert!(err.contains("linked_symbol_records"));
+}
+
+#[test]
+fn persisted_descriptor_record_arrays_reject_mixed_semantic_shapes() {
+    let descriptor = GpuSourcePackArtifactDescriptor::codegen_object_contract_for_job(
+        SourcePackArtifactTarget::Wasm,
+        &SourcePackJob {
+            job_index: 44,
+            phase: SourcePackJobPhase::Codegen,
+            phase_unit_index: 0,
+            library_job_index: Some(0),
+            library_id: 7,
+            first_source_index: 0,
+            source_file_count: 1,
+            source_bytes: 4,
+            source_lines: 1,
+            oversized_source_file: false,
+            dependency_job_indices: Vec::new(),
+        },
+        GpuSourcePackDependencyInterfaceSummary::default(),
+    );
+    descriptor
+        .validate_contract()
+        .expect("baseline codegen descriptor contract is valid");
+
+    let mut persisted_descriptor = descriptor;
+    persisted_descriptor
+        .descriptor_records
+        .push(GpuSourcePackDescriptorRecord::new(
+            "object_symbol_records_retyped_as_sections",
+            GpuSourcePackDescriptorRecordDomain::Object,
+            GpuSourcePackDescriptorRecordKind::Section,
+            GpuSourcePackDescriptorRecordFlow::Output,
+            "object_symbol_records",
+        ));
+
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "laniusc-descriptor-record-array-shape-test-{}-{suffix}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&root).expect("create temp descriptor dir");
+    let descriptor_path = root.join("codegen-object-descriptor.json");
+    std::fs::write(
+        &descriptor_path,
+        serde_json::to_vec_pretty(&persisted_descriptor).expect("serialize descriptor artifact"),
+    )
+    .expect("persist descriptor artifact");
+
+    let persisted = serde_json::from_slice::<GpuSourcePackArtifactDescriptor>(
+        &std::fs::read(&descriptor_path).expect("read persisted descriptor artifact"),
+    )
+    .expect("parse persisted descriptor artifact");
+    let object_symbol_record = persisted
+        .descriptor_records
+        .iter()
+        .find(|record| record.name == "object_symbols")
+        .expect("persisted descriptor should retain object symbol record");
+    assert_eq!(
+        (
+            object_symbol_record.domain,
+            object_symbol_record.kind,
+            object_symbol_record.flow,
+            object_symbol_record.record_array.as_str(),
+        ),
+        (
+            GpuSourcePackDescriptorRecordDomain::Object,
+            GpuSourcePackDescriptorRecordKind::Symbol,
+            GpuSourcePackDescriptorRecordFlow::Output,
+            "object_symbol_records",
+        )
+    );
+    let retyped_record = persisted
+        .descriptor_records
+        .iter()
+        .find(|record| record.name == "object_symbol_records_retyped_as_sections")
+        .expect("persisted descriptor should retain the incoherent record");
+    assert_eq!(
+        (
+            retyped_record.domain,
+            retyped_record.kind,
+            retyped_record.flow,
+            retyped_record.record_array.as_str(),
+        ),
+        (
+            GpuSourcePackDescriptorRecordDomain::Object,
+            GpuSourcePackDescriptorRecordKind::Section,
+            GpuSourcePackDescriptorRecordFlow::Output,
+            "object_symbol_records",
+        )
+    );
+
+    let err = persisted
+        .validate_contract()
+        .expect_err("one record array must not carry two descriptor shapes");
+    assert!(err.contains("record array \"object_symbol_records\""));
+    assert!(err.contains("Symbol"));
+    assert!(err.contains("Section"));
+
+    std::fs::remove_dir_all(&root).expect("remove descriptor record-array shape test dir");
+}
+
+#[test]
+fn parsed_descriptor_records_reject_duplicate_semantic_names() {
+    let target = SourcePackArtifactTarget::Wasm;
+    let page = SourcePackHierarchicalLinkExecutionPage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
+        target,
+        group_index: 2,
+        kind: SourcePackHierarchicalLinkGroupKind::Leaf,
+        job_index: 92,
+        input_interface_count: 0,
+        input_interface_page_count: 0,
+        input_interface_ranges: Vec::new(),
+        input_interfaces: Vec::new(),
+        input_object_count: 1,
+        input_object_page_count: 1,
+        input_objects: Vec::new(),
+        input_group_count: 0,
+        input_group_page_count: 0,
+        input_group_indices: Vec::new(),
+        input_group_output_keys: Vec::new(),
+        source_byte_count: 1,
+        source_file_count: 1,
+        source_line_count: 1,
+        output_key: "wasm/linked-output/job-92/src-0-1".into(),
+        final_output: true,
+        descriptor_summary: SourcePackLinkDescriptorSummary::default(),
+    };
+    let descriptor = GpuSourcePackArtifactDescriptor::hierarchical_linked_output_contract_for_page(
+        &page, 0, 1, 0,
+    );
+    descriptor
+        .validate_contract()
+        .expect("baseline linked-output descriptor contract is valid");
+
+    let mut document =
+        serde_json::to_value(&descriptor).expect("serialize linked-output descriptor");
+    let descriptor_records = document
+        .get_mut("descriptor_records")
+        .and_then(serde_json::Value::as_array_mut)
+        .expect("descriptor JSON should include descriptor records");
+    let linked_output_symbols = descriptor_records
+        .iter_mut()
+        .find(|record| {
+            record.get("name").and_then(serde_json::Value::as_str) == Some("linked_output_symbols")
+        })
+        .expect("descriptor JSON should include linked output symbols");
+    linked_output_symbols["name"] = serde_json::Value::String("object_symbols".into());
+
+    let parsed = serde_json::from_value::<GpuSourcePackArtifactDescriptor>(document)
+        .expect("parse linked-output descriptor with duplicate semantic names");
+    assert_eq!(
+        parsed
+            .descriptor_records
+            .iter()
+            .filter(|record| record.name == "object_symbols")
+            .count(),
+        2,
+        "parsed descriptor should retain both duplicated semantic records"
+    );
+    let err = parsed
+        .validate_contract()
+        .expect_err("descriptor records must have unique semantic names");
+    assert!(err.contains("descriptor record name \"object_symbols\""));
+    assert!(err.contains("listed more than once"));
+}
+
+#[test]
+fn persisted_work_queue_ready_frontier_uses_bounded_pages_and_ranges() {
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "laniusc-persisted-work-queue-readiness-test-{}-{suffix}",
+        std::process::id()
+    ));
+    let store = FilesystemArtifactStore::new(&root);
+    let target = SourcePackArtifactTarget::Generic;
+    let work_item_count = 4;
+
+    store_work_queue_page_with_dependency_writer(
+        &store,
+        &test_compile_work_queue_page(0),
+        work_item_count,
+        |_| Ok(()),
+    )
+    .expect("store independent work item 0");
+    store_work_queue_page_with_dependency_writer(
+        &store,
+        &test_compile_work_queue_page(1),
+        work_item_count,
+        |_| Ok(()),
+    )
+    .expect("store independent work item 1");
+    store_work_queue_page_with_dependency_writer(
+        &store,
+        &test_compile_work_queue_page(2),
+        work_item_count,
+        |writer| writer.push(0),
+    )
+    .expect("store item 2 with paged dependency on 0");
+    store_work_queue_page_with_dependency_writer(
+        &store,
+        &test_compile_work_queue_page(3),
+        work_item_count,
+        |writer| writer.push_range(0, 2),
+    )
+    .expect("store item 3 with ranged dependencies on 0..2");
+
+    let item_0 = store
+        .load_work_queue_page_for_target(target, 0)
+        .expect("load item 0");
+    let item_1 = store
+        .load_work_queue_page_for_target(target, 1)
+        .expect("load item 1");
+    let item_2 = store
+        .load_work_queue_page_for_target(target, 2)
+        .expect("load item 2");
+    let item_3 = store
+        .load_work_queue_page_for_target(target, 3)
+        .expect("load item 3");
+    assert_eq!(item_0.dependent_item_count, 1);
+    assert_eq!(item_0.dependent_page_count, 1);
+    assert_eq!(
+        store
+            .load_work_queue_dependents_page_for_target(target, 0, 0)
+            .expect("load item 0 paged dependents")
+            .dependent_item_indices,
+        vec![2]
+    );
+    assert_eq!(
+        item_0.dependent_item_ranges,
+        vec![SourcePackJobIndexRange {
+            first_job_index: 3,
+            job_count: 1,
+        }]
+    );
+    assert_eq!(
+        item_1.dependent_item_ranges,
+        vec![SourcePackJobIndexRange {
+            first_job_index: 3,
+            job_count: 1,
+        }]
+    );
+    assert_eq!(item_2.dependency_item_count, 1);
+    assert_eq!(item_2.dependency_page_count, 1);
+    assert_eq!(
+        store
+            .load_work_queue_dependencies_page_for_target(target, 2, 0)
+            .expect("load item 2 paged dependencies")
+            .dependency_item_indices,
+        vec![0]
+    );
+    assert_eq!(
+        item_3.dependency_item_ranges,
+        vec![SourcePackJobIndexRange {
+            first_job_index: 0,
+            job_count: 2,
+        }]
+    );
+
+    let queue = SourcePackWorkQueueIndex {
+        version: SOURCE_PACK_WORK_QUEUE_INDEX_VERSION,
+        target,
+        work_item_count,
+        artifact_item_count: work_item_count,
+        final_item_index: work_item_count - 1,
+        final_job_index: work_item_count - 1,
+    };
+    store_work_queue_compact_index(&store, &queue).expect("store compact work queue index");
+    let first_progress_chunk =
+        store_initial_progress_chunk(&store, &queue, 2, 1).expect("store first progress chunk");
+    assert!(!first_progress_chunk.complete);
+    assert_eq!(first_progress_chunk.next_page_index, 1);
+    assert_eq!(first_progress_chunk.ready_item_count, 2);
+    assert_eq!(first_progress_chunk.first_ready_item_index, Some(0));
+    let final_progress_chunk =
+        store_initial_progress_chunk(&store, &queue, 2, 1).expect("store second progress chunk");
+    assert!(final_progress_chunk.complete);
+    assert_eq!(final_progress_chunk.next_page_index, 2);
+    assert_eq!(final_progress_chunk.ready_item_count, 2);
+
+    let page_0 = store
+        .load_work_queue_progress_page_for_target(target, 0)
+        .expect("load first progress page");
+    let page_1 = store
+        .load_work_queue_progress_page_for_target(target, 1)
+        .expect("load second progress page");
+    assert_eq!(page_0.ready_item_indices, vec![0, 1]);
+    assert_eq!(remaining_dependent_counts(&page_0), vec![(0, 2), (1, 1)]);
+    assert_eq!(page_1.ready_item_indices, Vec::<usize>::new());
+    assert_eq!(remaining_dependency_counts(&page_1), vec![(2, 1), (3, 2)]);
+
+    let initial = work_queue_progress_snapshot_at(&root, target, 8, Some(0))
+        .expect("load initial work queue snapshot");
+    assert_eq!(initial.ready_item_indices, vec![0, 1]);
+
+    let claim_0 = claim_ready_work_queue_item(&root, target, "worker-a", Some(10), 8, Some(0))
+        .expect("claim first ready work item");
+    assert_eq!(claim_0.claimed_item_index, Some(0));
+    assert_eq!(claim_0.progress.ready_item_indices, vec![1]);
+
+    let complete_0 = complete_claimed_work_queue_item(&root, 0, target, "worker-a", 8, Some(1))
+        .expect("complete first ready work item");
+    assert_eq!(complete_0.newly_ready_item_count, 1);
+    assert_eq!(complete_0.progress.completed_item_count, 1);
+    assert_eq!(complete_0.progress.ready_item_indices, vec![1, 2]);
+    let page_1_after_item_0 = store
+        .load_work_queue_progress_page_for_target(target, 1)
+        .expect("load second progress page after item 0 completion");
+    assert_eq!(page_1_after_item_0.ready_item_indices, vec![2]);
+    assert_eq!(
+        remaining_dependency_counts(&page_1_after_item_0),
+        vec![(3, 1)]
+    );
+
+    let claim_1 = claim_ready_work_queue_item(&root, target, "worker-b", Some(20), 8, Some(2))
+        .expect("claim second independent work item");
+    assert_eq!(claim_1.claimed_item_index, Some(1));
+    let complete_1 = complete_claimed_work_queue_item(&root, 1, target, "worker-b", 8, Some(3))
+        .expect("complete second independent work item");
+    assert_eq!(complete_1.newly_ready_item_count, 1);
+    assert_eq!(complete_1.progress.completed_item_count, 2);
+    assert_eq!(complete_1.progress.ready_item_indices, vec![2, 3]);
+    let page_1_after_item_1 = store
+        .load_work_queue_progress_page_for_target(target, 1)
+        .expect("load second progress page after item 1 completion");
+    assert_eq!(page_1_after_item_1.ready_item_indices, vec![2, 3]);
+    assert_eq!(
+        remaining_dependency_counts(&page_1_after_item_1),
+        Vec::<(usize, usize)>::new()
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove temp persisted work queue readiness dir");
+}
 
 #[test]
 fn artifact_build_separates_target_manifests() {

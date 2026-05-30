@@ -1,8 +1,13 @@
 // x86_64 register allocation over virtual-instruction liveness intervals.
+//
+// This pass is the remaining x86 allocation scheduling boundary. It allocates a
+// compact value-definition chunk per function because active_end and
+// current_param_rank_mask are loop-carried allocator state. Do not raise the
+// chunk size to hide pressure; replace this with region/keyed allocation
+// records and segmented scan/scatter passes before claiming paper alignment.
 
 import bitset;
 import gpu_index;
-import linear_scan;
 import status;
 
 struct Params
@@ -48,6 +53,7 @@ StructuredBuffer<uint> x86_func_param_reg_mask_status;
 StructuredBuffer<uint> x86_func_first_virtual_row;
 StructuredBuffer<uint> x86_func_last_virtual_row;
 StructuredBuffer<uint> x86_func_first_virtual_row_status;
+StructuredBuffer<uint> x86_virtual_value_def_row;
 StructuredBuffer<uint> x86_virtual_value_def_status;
 StructuredBuffer<uint> x86_virtual_func_slot;
 
@@ -74,7 +80,9 @@ static const uint X86_OP_SHR_I32 = 12u;
 static const uint FUNC_META_FUNC_COUNT = 0u;
 static const uint FUNC_META_REGALLOC_ACTIVE_CHUNKS = 6u;
 static const uint FUNC_META_REGALLOC_RECORDED_CHUNKS = 7u;
-static const uint MAX_REGALLOC_ROWS_PER_CHUNK = 256u;
+// Transitional bound for the current serial value-definition chunk. This is
+// intentionally small and fail-closed; it is not the production allocator shape.
+static const uint MAX_REGALLOC_ROWS_PER_CHUNK = 32u;
 static const int X86_TEMP_REG_RANK_COUNT = 14;
 static const uint X86_TEMP_REG_RANK_MASK = 0x3fffu;
 static const uint X86_RANK_MASK_EAX = 0x0001u;
@@ -182,6 +190,24 @@ uint call_live_mask_for_rank(uint rank)
     return 0u;
 }
 
+uint active_rank_available_bit(uint start, uint active_end[X86_TEMP_REG_RANK_COUNT], uint rank)
+{
+    uint end = active_end[rank];
+    return (end == INVALID || end < start) ? (1u << rank) : 0u;
+}
+
+uint active_rank_call_live_bit(
+    uint start,
+    bool compute_call_live_mask,
+    uint active_end[X86_TEMP_REG_RANK_COUNT],
+    uint rank)
+{
+    uint end = active_end[rank];
+    return compute_call_live_mask && end != INVALID && end > start
+               ? call_live_mask_for_rank(rank)
+               : 0u;
+}
+
 void active_rank_masks(
     uint start,
     bool compute_call_live_mask,
@@ -189,21 +215,36 @@ void active_rank_masks(
     out uint available_mask,
     out uint call_live_mask)
 {
-    uint available = 0u;
-    uint live_across_call = 0u;
-    [unroll]
-    for (uint rank = 0u; rank < uint(X86_TEMP_REG_RANK_COUNT); rank += 1u)
-    {
-        uint end = active_end[rank];
-        if (end == INVALID || end < start)
-        {
-            available |= 1u << rank;
-        }
-        else if (compute_call_live_mask && end > start)
-        {
-            live_across_call |= call_live_mask_for_rank(rank);
-        }
-    }
+    uint available =
+        active_rank_available_bit(start, active_end, 0u) |
+        active_rank_available_bit(start, active_end, 1u) |
+        active_rank_available_bit(start, active_end, 2u) |
+        active_rank_available_bit(start, active_end, 3u) |
+        active_rank_available_bit(start, active_end, 4u) |
+        active_rank_available_bit(start, active_end, 5u) |
+        active_rank_available_bit(start, active_end, 6u) |
+        active_rank_available_bit(start, active_end, 7u) |
+        active_rank_available_bit(start, active_end, 8u) |
+        active_rank_available_bit(start, active_end, 9u) |
+        active_rank_available_bit(start, active_end, 10u) |
+        active_rank_available_bit(start, active_end, 11u) |
+        active_rank_available_bit(start, active_end, 12u) |
+        active_rank_available_bit(start, active_end, 13u);
+    uint live_across_call =
+        active_rank_call_live_bit(start, compute_call_live_mask, active_end, 0u) |
+        active_rank_call_live_bit(start, compute_call_live_mask, active_end, 1u) |
+        active_rank_call_live_bit(start, compute_call_live_mask, active_end, 2u) |
+        active_rank_call_live_bit(start, compute_call_live_mask, active_end, 3u) |
+        active_rank_call_live_bit(start, compute_call_live_mask, active_end, 4u) |
+        active_rank_call_live_bit(start, compute_call_live_mask, active_end, 5u) |
+        active_rank_call_live_bit(start, compute_call_live_mask, active_end, 6u) |
+        active_rank_call_live_bit(start, compute_call_live_mask, active_end, 7u) |
+        active_rank_call_live_bit(start, compute_call_live_mask, active_end, 8u) |
+        active_rank_call_live_bit(start, compute_call_live_mask, active_end, 9u) |
+        active_rank_call_live_bit(start, compute_call_live_mask, active_end, 10u) |
+        active_rank_call_live_bit(start, compute_call_live_mask, active_end, 11u) |
+        active_rank_call_live_bit(start, compute_call_live_mask, active_end, 12u) |
+        active_rank_call_live_bit(start, compute_call_live_mask, active_end, 13u);
     available_mask = available & X86_TEMP_REG_RANK_MASK;
     call_live_mask = live_across_call;
 }
@@ -212,6 +253,33 @@ uint first_rank_from_mask(uint mask)
 {
     mask &= X86_TEMP_REG_RANK_MASK;
     return mask == 0u ? INVALID : uint(firstbitlow(mask));
+}
+
+bool regalloc_chunk_shape_valid()
+{
+    uint rows_per_chunk = gParams.regalloc_rows_per_chunk;
+    if (rows_per_chunk == 0u ||
+        rows_per_chunk > MAX_REGALLOC_ROWS_PER_CHUNK ||
+        gParams.regalloc_chunk_count == 0u ||
+        gRegalloc.chunk_len != rows_per_chunk)
+        return false;
+
+    return gRegalloc.chunk_start % rows_per_chunk == 0u &&
+           gRegalloc.chunk_start / rows_per_chunk < gParams.regalloc_chunk_count;
+}
+
+uint required_regalloc_chunk_count(uint value_def_count)
+{
+    if (value_def_count == 0u)
+        return 1u;
+
+    uint rows_per_chunk = max(gParams.regalloc_rows_per_chunk, 1u);
+    return ((value_def_count - 1u) / rows_per_chunk) + 1u;
+}
+
+bool function_slice_recorded()
+{
+    return x86_func_meta[FUNC_META_FUNC_COUNT] <= gParams.function_slot_capacity;
 }
 
 bool allocation_status_inputs_valid(uint inst_count)
@@ -232,6 +300,20 @@ bool allocation_status_inputs_valid(uint inst_count)
            x86_virtual_value_def_status[1u] == 0u &&
            x86_virtual_value_def_status[3u] <= inst_count &&
            inst_count <= gParams.inst_capacity;
+}
+
+bool regalloc_recorded_span_valid(uint inst_count, out uint required_chunks)
+{
+    required_chunks = 1u;
+    if (!regalloc_chunk_shape_valid() ||
+        !function_slice_recorded() ||
+        !allocation_status_inputs_valid(inst_count))
+        return false;
+
+    required_chunks = required_regalloc_chunk_count(x86_virtual_value_def_status[3u]);
+    return x86_func_meta[FUNC_META_REGALLOC_RECORDED_CHUNKS] >= required_chunks &&
+           x86_func_meta[FUNC_META_REGALLOC_ACTIVE_CHUNKS] >= required_chunks &&
+           gParams.regalloc_chunk_count >= required_chunks;
 }
 
 bool inst_is_call_result(uint4 inst)
@@ -315,22 +397,47 @@ uint active_end_slot(uint func_i, uint rank)
     return func_i * uint(X86_TEMP_REG_RANK_COUNT) + rank;
 }
 
+uint load_active_end_rank(uint func_i, uint rank)
+{
+    return gRegalloc.chunk_start == 0u
+        ? INVALID
+        : x86_virtual_regalloc_active_end[active_end_slot(func_i, rank)];
+}
+
 void load_active_end(uint func_i, inout uint active_end[X86_TEMP_REG_RANK_COUNT])
 {
-    [unroll]
-    for (uint rank = 0u; rank < uint(X86_TEMP_REG_RANK_COUNT); rank += 1u)
-    {
-        active_end[rank] = gRegalloc.chunk_start == 0u
-            ? INVALID
-            : x86_virtual_regalloc_active_end[active_end_slot(func_i, rank)];
-    }
+    active_end[0u] = load_active_end_rank(func_i, 0u);
+    active_end[1u] = load_active_end_rank(func_i, 1u);
+    active_end[2u] = load_active_end_rank(func_i, 2u);
+    active_end[3u] = load_active_end_rank(func_i, 3u);
+    active_end[4u] = load_active_end_rank(func_i, 4u);
+    active_end[5u] = load_active_end_rank(func_i, 5u);
+    active_end[6u] = load_active_end_rank(func_i, 6u);
+    active_end[7u] = load_active_end_rank(func_i, 7u);
+    active_end[8u] = load_active_end_rank(func_i, 8u);
+    active_end[9u] = load_active_end_rank(func_i, 9u);
+    active_end[10u] = load_active_end_rank(func_i, 10u);
+    active_end[11u] = load_active_end_rank(func_i, 11u);
+    active_end[12u] = load_active_end_rank(func_i, 12u);
+    active_end[13u] = load_active_end_rank(func_i, 13u);
 }
 
 void store_active_end(uint func_i, uint active_end[X86_TEMP_REG_RANK_COUNT])
 {
-    [unroll]
-    for (uint rank = 0u; rank < uint(X86_TEMP_REG_RANK_COUNT); rank += 1u)
-        x86_virtual_regalloc_active_end[active_end_slot(func_i, rank)] = active_end[rank];
+    x86_virtual_regalloc_active_end[active_end_slot(func_i, 0u)] = active_end[0u];
+    x86_virtual_regalloc_active_end[active_end_slot(func_i, 1u)] = active_end[1u];
+    x86_virtual_regalloc_active_end[active_end_slot(func_i, 2u)] = active_end[2u];
+    x86_virtual_regalloc_active_end[active_end_slot(func_i, 3u)] = active_end[3u];
+    x86_virtual_regalloc_active_end[active_end_slot(func_i, 4u)] = active_end[4u];
+    x86_virtual_regalloc_active_end[active_end_slot(func_i, 5u)] = active_end[5u];
+    x86_virtual_regalloc_active_end[active_end_slot(func_i, 6u)] = active_end[6u];
+    x86_virtual_regalloc_active_end[active_end_slot(func_i, 7u)] = active_end[7u];
+    x86_virtual_regalloc_active_end[active_end_slot(func_i, 8u)] = active_end[8u];
+    x86_virtual_regalloc_active_end[active_end_slot(func_i, 9u)] = active_end[9u];
+    x86_virtual_regalloc_active_end[active_end_slot(func_i, 10u)] = active_end[10u];
+    x86_virtual_regalloc_active_end[active_end_slot(func_i, 11u)] = active_end[11u];
+    x86_virtual_regalloc_active_end[active_end_slot(func_i, 12u)] = active_end[12u];
+    x86_virtual_regalloc_active_end[active_end_slot(func_i, 13u)] = active_end[13u];
 }
 
 uint load_param_rank_mask(uint func_i, uint fn_slot)
@@ -338,6 +445,24 @@ uint load_param_rank_mask(uint func_i, uint fn_slot)
     return gRegalloc.chunk_start == 0u
         ? param_disallowed_rank_mask(x86_func_param_reg_mask[fn_slot])
         : x86_virtual_regalloc_param_rank_mask[func_i];
+}
+
+void activate_rank(uint selected_rank, uint end, inout uint active_end[X86_TEMP_REG_RANK_COUNT])
+{
+    if (selected_rank == 0u) active_end[0u] = end;
+    if (selected_rank == 1u) active_end[1u] = end;
+    if (selected_rank == 2u) active_end[2u] = end;
+    if (selected_rank == 3u) active_end[3u] = end;
+    if (selected_rank == 4u) active_end[4u] = end;
+    if (selected_rank == 5u) active_end[5u] = end;
+    if (selected_rank == 6u) active_end[6u] = end;
+    if (selected_rank == 7u) active_end[7u] = end;
+    if (selected_rank == 8u) active_end[8u] = end;
+    if (selected_rank == 9u) active_end[9u] = end;
+    if (selected_rank == 10u) active_end[10u] = end;
+    if (selected_rank == 11u) active_end[11u] = end;
+    if (selected_rank == 12u) active_end[12u] = end;
+    if (selected_rank == 13u) active_end[13u] = end;
 }
 
 bool allocate_virtual_row(
@@ -375,10 +500,7 @@ bool allocate_virtual_row(
             return false;
         uint selected_reg = temp_register_for_rank(selected_rank);
         x86_virtual_phys_reg[row] = selected_reg;
-        linear_scan_activate_rank<X86_TEMP_REG_RANK_COUNT>(
-            selected_rank,
-            end,
-            active_end);
+        activate_rank(selected_rank, end, active_end);
         if (inst_is_param_copy(inst))
             current_param_rank_mask &= ~rank_mask_for_register(x86_virtual_inst_args[row].z);
     }
@@ -394,8 +516,9 @@ bool allocate_function_row_offset(uint func_i, uint fn_slot, uint inst_count)
     if (end_row == INVALID)
         return false;
 
-    uint chunk_start_row = start_row + gRegalloc.chunk_start;
-    if (chunk_start_row >= end_row || chunk_start_row < start_row)
+    uint value_def_count = x86_virtual_value_def_status[3u];
+    uint chunk_start = gRegalloc.chunk_start;
+    if (chunk_start >= value_def_count)
         return true;
 
     uint active_end[X86_TEMP_REG_RANK_COUNT];
@@ -405,26 +528,35 @@ bool allocate_function_row_offset(uint func_i, uint fn_slot, uint inst_count)
     // After that copy, those ABI registers are ordinary allocatable temps.
     uint current_param_rank_mask = load_param_rank_mask(func_i, fn_slot);
     uint chunk_len = min(gRegalloc.chunk_len, MAX_REGALLOC_ROWS_PER_CHUNK);
-    uint last_processed_row = chunk_start_row;
-    bool processed_any = false;
+    uint chunk_end = chunk_start + chunk_len;
+    if (chunk_end < chunk_start)
+        chunk_end = value_def_count;
 
+    // Loop-carried active_end/current_param_rank_mask make this the exact
+    // blocker for a map/scan/scatter allocator. Splitting these rows into
+    // parallel threads without a new state-composition relation would race and
+    // produce non-deterministic register choices.
     [unroll]
     for (uint local_i = 0u; local_i < MAX_REGALLOC_ROWS_PER_CHUNK; local_i += 1u)
     {
         if (local_i < chunk_len)
         {
-            uint row = chunk_start_row + local_i;
-            if (row >= chunk_start_row && row < end_row)
+            uint value_def_i = chunk_start + local_i;
+            if (value_def_i >= chunk_start && value_def_i < value_def_count)
             {
-                if (!allocate_virtual_row(row, fn_slot, active_end, current_param_rank_mask))
+                uint row = x86_virtual_value_def_row[value_def_i];
+                if (row >= inst_count)
                     return false;
-                last_processed_row = row;
-                processed_any = true;
+                if (row >= start_row && row < end_row)
+                {
+                    if (!allocate_virtual_row(row, fn_slot, active_end, current_param_rank_mask))
+                        return false;
+                }
             }
         }
     }
 
-    if (processed_any && last_processed_row + 1u < end_row)
+    if (chunk_end < value_def_count)
     {
         store_active_end(func_i, active_end);
         x86_virtual_regalloc_param_rank_mask[func_i] = current_param_rank_mask;
@@ -432,36 +564,55 @@ bool allocate_function_row_offset(uint func_i, uint fn_slot, uint inst_count)
     return true;
 }
 
+uint first_allocation_upstream_error()
+{
+    if (x86_virtual_liveness_status[1u] != 0u)
+        return x86_virtual_liveness_status[1u];
+    if (x86_virtual_next_call_status[1u] != 0u)
+        return x86_virtual_next_call_status[1u];
+    if (x86_func_param_reg_mask_status[1u] != 0u)
+        return x86_func_param_reg_mask_status[1u];
+    if (x86_func_first_virtual_row_status[1u] != 0u)
+        return x86_func_first_virtual_row_status[1u];
+    return x86_virtual_value_def_status[1u];
+}
+
+uint first_allocation_upstream_detail()
+{
+    if (x86_virtual_liveness_status[1u] != 0u)
+        return x86_virtual_liveness_status[2u];
+    if (x86_virtual_next_call_status[1u] != 0u)
+        return x86_virtual_next_call_status[2u];
+    if (x86_func_param_reg_mask_status[1u] != 0u)
+        return x86_func_param_reg_mask_status[2u];
+    if (x86_func_first_virtual_row_status[1u] != 0u)
+        return x86_func_first_virtual_row_status[2u];
+    return x86_virtual_value_def_status[2u];
+}
+
 void initialize_status(uint inst_count)
 {
-    uint active_chunks = x86_func_meta[FUNC_META_REGALLOC_ACTIVE_CHUNKS];
-    uint recorded_chunks = x86_func_meta[FUNC_META_REGALLOC_RECORDED_CHUNKS];
-    bool recorded_span_ok = recorded_chunks >= active_chunks;
-    bool ok = allocation_status_inputs_valid(inst_count) && recorded_span_ok;
+    uint required_chunks = 1u;
+    bool chunk_shape_ok = regalloc_chunk_shape_valid();
+    bool function_slice_ok = function_slice_recorded();
+    bool inputs_ok = chunk_shape_ok && function_slice_ok && allocation_status_inputs_valid(inst_count);
+    bool recorded_span_ok = regalloc_recorded_span_valid(inst_count, required_chunks);
+    bool ok = inputs_ok && recorded_span_ok;
     if (!ok)
     {
-        uint upstream_error = !recorded_span_ok
+        bool chunk_shape_failed = !chunk_shape_ok;
+        bool function_slice_failed = chunk_shape_ok && !function_slice_ok;
+        bool span_failed = inputs_ok && !recorded_span_ok;
+        uint upstream_error = (chunk_shape_failed || function_slice_failed || span_failed)
             ? X86_ERR_VIRTUAL_REGALLOC
-            : (x86_virtual_liveness_status[1u] != 0u
-            ? x86_virtual_liveness_status[1u]
-            : (x86_virtual_next_call_status[1u] != 0u
-                ? x86_virtual_next_call_status[1u]
-                : (x86_func_param_reg_mask_status[1u] != 0u
-                    ? x86_func_param_reg_mask_status[1u]
-                    : (x86_func_first_virtual_row_status[1u] != 0u
-                        ? x86_func_first_virtual_row_status[1u]
-                        : x86_virtual_value_def_status[1u]))));
-        uint upstream_detail = !recorded_span_ok
-            ? active_chunks
-            : (x86_virtual_liveness_status[1u] != 0u
-            ? x86_virtual_liveness_status[2u]
-            : (x86_virtual_next_call_status[1u] != 0u
-                ? x86_virtual_next_call_status[2u]
-                : (x86_func_param_reg_mask_status[1u] != 0u
-                    ? x86_func_param_reg_mask_status[2u]
-                    : (x86_func_first_virtual_row_status[1u] != 0u
-                        ? x86_func_first_virtual_row_status[2u]
-                        : x86_virtual_value_def_status[2u]))));
+            : first_allocation_upstream_error();
+        uint upstream_detail = chunk_shape_failed
+            ? gParams.regalloc_rows_per_chunk
+            : (function_slice_failed
+                ? x86_func_meta[FUNC_META_FUNC_COUNT]
+                : (span_failed
+                ? required_chunks
+                : first_allocation_upstream_detail()));
         write_stage_status4_from_result(
             x86_virtual_regalloc_status,
             false,
@@ -488,7 +639,7 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     if (func_i == 0u && gRegalloc.init_status != 0u)
         initialize_status(inst_count);
-    if (gRegalloc.chunk_start >= inst_count)
+    if (gRegalloc.chunk_start >= x86_virtual_value_def_status[3u])
         return;
 
     uint func_count = min(x86_func_meta[FUNC_META_FUNC_COUNT], gParams.function_slot_capacity);
@@ -499,7 +650,8 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (fn_slot >= gParams.function_slot_capacity)
         return;
 
-    if (!allocation_status_inputs_valid(inst_count))
+    uint required_chunks = 1u;
+    if (!regalloc_recorded_span_valid(inst_count, required_chunks))
         return;
 
     if (!allocate_function_row_offset(func_i, fn_slot, inst_count))

@@ -12,9 +12,7 @@ StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> name_id_by_token;
-StructuredBuffer<uint> language_decl_name_id;
-StructuredBuffer<uint> language_decl_kind;
-StructuredBuffer<uint> language_decl_tag;
+StructuredBuffer<uint> language_intrinsic_tag_by_name_id;
 
 RWStructuredBuffer<uint> call_intrinsic_tag;
 RWStructuredBuffer<uint> call_return_type;
@@ -29,8 +27,7 @@ static const uint HIR_CALL_EXPR = 19u;
 static const uint TY_VOID = 1u;
 
 static const uint INTRINSIC_NONE = 0u;
-static const uint LANGUAGE_DECL_COUNT = 18u;
-static const uint LANGUAGE_DECL_INTRINSIC = 2u;
+static const uint LANGUAGE_SYMBOL_COUNT = 19u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -44,17 +41,9 @@ uint active_hir_node_count()
 
 uint intrinsic_tag_for_name_id(uint name_id)
 {
-    if (name_id == INVALID)
+    if (name_id == INVALID || name_id >= gParams.n_tokens + LANGUAGE_SYMBOL_COUNT)
         return INTRINSIC_NONE;
-
-    [unroll]
-    for (uint decl_i = 0u; decl_i < LANGUAGE_DECL_COUNT; decl_i += 1u)
-    {
-        if (language_decl_kind[decl_i] == LANGUAGE_DECL_INTRINSIC &&
-            language_decl_name_id[decl_i] == name_id)
-            return language_decl_tag[decl_i];
-    }
-    return INTRINSIC_NONE;
+    return language_intrinsic_tag_by_name_id[name_id];
 }
 
 [shader("compute")]

@@ -1,13 +1,12 @@
 // Final method-call result publication and argument validation.
 //
 // This pass consumes the sorted-table method resolution written at the method
-// name token plus parser-owned member/call-argument records. It does not
-// rediscover calls by scanning token neighborhoods or by matching
-// parentheses/commas in token ranges.
+// name token plus parser-owned member/call-argument and expression-result
+// records. It does not rediscover calls by scanning token neighborhoods,
+// matching parentheses/commas in token ranges, or walking child lists.
 
 import gpu_index;
 import generated_parse_production_ids;
-import hir_records;
 import status;
 
 struct Params
@@ -21,15 +20,26 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_expr_result_root_node;
+StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_member_receiver_token;
 StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint4> call_arg_record;
-StructuredBuffer<uint> hir_call_arg_parent_call;
+StructuredBuffer<uint> call_arg_node;
 StructuredBuffer<uint> method_decl_receiver_mode;
+StructuredBuffer<uint> method_decl_receiver_ref_tag;
+StructuredBuffer<uint> method_decl_receiver_ref_payload;
 StructuredBuffer<uint> method_call_name_id;
+StructuredBuffer<uint> method_call_receiver_ref_tag;
+StructuredBuffer<uint> method_call_receiver_ref_payload;
+StructuredBuffer<uint> fn_return_ref_tag;
+StructuredBuffer<uint> fn_return_ref_payload;
+StructuredBuffer<uint> type_instance_arg_start;
+StructuredBuffer<uint> type_instance_arg_count;
+StructuredBuffer<uint> type_instance_arg_ref_tag;
+StructuredBuffer<uint> type_instance_arg_ref_payload;
 StructuredBuffer<uint> call_param_count;
 StructuredBuffer<uint> call_param_type;
 
@@ -48,6 +58,10 @@ static const uint TY_UINT = 4u;
 static const uint TY_FLOAT = 5u;
 static const uint TY_CHAR = 6u;
 static const uint TY_STRING = 7u;
+static const uint TYPE_REF_INVALID = 0u;
+static const uint TYPE_REF_SCALAR = 1u;
+static const uint TYPE_REF_GENERIC_PARAM = 2u;
+static const uint TYPE_REF_INSTANCE = 3u;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint ERR_CALL_MISMATCH = 10u;
 
@@ -84,15 +98,9 @@ bool valid_node(uint i)
     return i != INVALID && i < active_hir_node_count();
 }
 
-uint method_resolve_first_child_record(uint i)
+bool valid_token(uint i)
 {
-    return first_child[i];
-}
-
-uint first_child_node(uint i)
-{
-    uint child = valid_node(i) ? method_resolve_first_child_record(i) : INVALID;
-    return valid_node(child) ? child : INVALID;
+    return i != INVALID && i < active_token_count();
 }
 
 void record_error(uint token_i, uint code, uint detail)
@@ -115,6 +123,88 @@ bool assignable(uint dst, uint src)
     return false;
 }
 
+uint type_code_for_ref(uint tag, uint payload)
+{
+    if (tag == TYPE_REF_SCALAR)
+        return payload;
+    if (tag == TYPE_REF_INSTANCE && valid_token(payload))
+        return visible_type[payload];
+    return TY_UNKNOWN;
+}
+
+uint receiver_arg_ref_index(uint method_i, uint slot)
+{
+    if (method_i >= active_token_count() || slot >= PARAM_CACHE_STRIDE)
+        return INVALID;
+
+    uint receiver_tag = method_call_receiver_ref_tag[method_i];
+    uint receiver_payload = method_call_receiver_ref_payload[method_i];
+    if (receiver_tag != TYPE_REF_INSTANCE || !valid_token(receiver_payload))
+        return INVALID;
+
+    uint arg_count = type_instance_arg_count[receiver_payload];
+    uint arg_start = type_instance_arg_start[receiver_payload];
+    if (slot >= arg_count || arg_start == INVALID)
+        return INVALID;
+
+    uint arg_i = arg_start + slot;
+    return arg_i < active_token_count() ? arg_i : INVALID;
+}
+
+uint receiver_decl_generic_slot(uint fn_i, uint generic_token)
+{
+    if (fn_i >= active_token_count() || !valid_token(generic_token))
+        return INVALID;
+
+    uint receiver_tag = method_decl_receiver_ref_tag[fn_i];
+    uint receiver_payload = method_decl_receiver_ref_payload[fn_i];
+    if (receiver_tag != TYPE_REF_INSTANCE || !valid_token(receiver_payload))
+        return INVALID;
+
+    uint arg_count = type_instance_arg_count[receiver_payload];
+    uint arg_start = type_instance_arg_start[receiver_payload];
+    if (arg_start == INVALID)
+        return INVALID;
+
+    [loop]
+    for (uint slot = 0u; slot < PARAM_CACHE_STRIDE; slot += 1u)
+    {
+        if (slot >= arg_count)
+            break;
+
+        uint arg_i = arg_start + slot;
+        if (arg_i >= active_token_count())
+            return INVALID;
+
+        if (type_instance_arg_ref_tag[arg_i] == TYPE_REF_GENERIC_PARAM &&
+            type_instance_arg_ref_payload[arg_i] == generic_token)
+            return slot;
+    }
+
+    return INVALID;
+}
+
+uint substituted_method_return_type(uint method_i, uint fn_i, uint fallback_ty)
+{
+    if (fn_i >= active_token_count())
+        return fallback_ty;
+
+    uint ret_tag = fn_return_ref_tag[fn_i];
+    uint ret_payload = fn_return_ref_payload[fn_i];
+    if (ret_tag != TYPE_REF_GENERIC_PARAM || !valid_token(ret_payload))
+        return fallback_ty;
+
+    uint slot = receiver_decl_generic_slot(fn_i, ret_payload);
+    uint arg_i = receiver_arg_ref_index(method_i, slot);
+    if (arg_i == INVALID)
+        return fallback_ty;
+
+    uint ty = type_code_for_ref(
+        type_instance_arg_ref_tag[arg_i],
+        type_instance_arg_ref_payload[arg_i]);
+    return ty == TY_UNKNOWN ? fallback_ty : ty;
+}
+
 uint scalar_type_for_literal_prod(uint prod)
 {
     if (prod == PROD_INT)
@@ -128,6 +218,25 @@ uint scalar_type_for_literal_prod(uint prod)
     if (prod == PROD_CHAR)
         return TY_CHAR;
     return TY_UNKNOWN;
+}
+
+uint call_callee_token(uint call_node)
+{
+    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+        return INVALID;
+
+    uint callee_node = hir_call_callee_node[call_node];
+    if (!valid_node(callee_node))
+        return INVALID;
+
+    if (hir_kind[callee_node] == HIR_MEMBER_EXPR)
+    {
+        uint member_token = hir_member_name_token[callee_node];
+        return valid_token(member_token) ? member_token : INVALID;
+    }
+
+    uint token = hir_token_pos[callee_node];
+    return valid_token(token) ? token : INVALID;
 }
 
 uint direct_node_type(uint node)
@@ -162,24 +271,25 @@ uint direct_node_type(uint node)
         return call_return_type[member_i];
     }
 
-    if (hir_kind[node] == HIR_CALL_EXPR && token_i > 0u)
-        return call_return_type[token_i - 1u];
+    if (hir_kind[node] == HIR_CALL_EXPR)
+    {
+        uint callee_token = call_callee_token(node);
+        return valid_token(callee_token) ? call_return_type[callee_token] : TY_UNKNOWN;
+    }
 
     return TY_UNKNOWN;
 }
 
 uint expr_type_from_hir(uint expr_node)
 {
-    uint cur = expr_node;
-    [loop]
-    for (uint guard = 0u; guard < 32u && valid_node(cur); guard += 1u)
-    {
-        uint ty = direct_node_type(cur);
-        if (ty != TY_UNKNOWN)
-            return ty;
-        cur = first_child_node(cur);
-    }
-    return TY_UNKNOWN;
+    if (!valid_node(expr_node))
+        return TY_UNKNOWN;
+
+    uint result = hir_expr_result_root_node[expr_node];
+    if (!valid_node(result))
+        return TY_UNKNOWN;
+
+    return direct_node_type(result);
 }
 
 bool method_has_self_receiver(uint fn_i)
@@ -225,15 +335,7 @@ uint call_arg_node_for_method_token(uint method_i, uint ordinal)
     uint call_node = call_arg_record[method_i].z;
     if (!valid_node(call_node))
         return INVALID;
-    [loop]
-    for (uint node = 0u; node < active_hir_node_count(); node += 1u)
-    {
-        uint packed = hir_call_arg_parent_call[node];
-        if (hir_node_ordinal_node(packed) == call_node &&
-            hir_node_ordinal_ordinal(packed) == ordinal)
-            return node;
-    }
-    return INVALID;
+    return call_arg_node[call_node * PARAM_CACHE_STRIDE + ordinal];
 }
 
 uint receiver_token_for_member(uint member_node)
@@ -314,7 +416,12 @@ void resolve_method_member_node(uint member_node)
     if (receiver_ty == TY_UNKNOWN)
         receiver_ty = call_return_type[receiver_i];
 
-    uint ret_ty = call_return_type[fn_i];
+    uint ret_ty = substituted_method_return_type(method_i, fn_i, call_return_type[fn_i]);
+    if (ret_ty == TY_UNKNOWN && fn_return_ref_tag[fn_i] != TYPE_REF_INVALID)
+    {
+        record_error(method_i, ERR_CALL_MISMATCH, method_call_name_id[method_i]);
+        return;
+    }
     call_fn_index[method_i] = fn_i;
     call_return_type[method_i] = ret_ty;
     call_return_type_token[method_i] = call_return_type_token[fn_i];

@@ -1,0 +1,259 @@
+// Conservative runtime capability contract for the active compiler slice.
+// Capability booleans remain false until a linker/runtime supplies executable
+// services. Numeric ids are stable descriptors for future compiler/linker
+// diagnostics and binding metadata; they do not imply support by themselves.
+// Artifact descriptors use the numeric ids as required_runtime_service_ids plus
+// flat required_runtime_services rows and a runtime_abi inventory metadata row,
+// and must remain contract-only while those services are unbound.
+
+module core::runtime;
+
+pub type Capability = bool;
+pub type RuntimeAbiMetadataVersion = u32;
+pub type RuntimeAbiVersion = u32;
+pub type RuntimeServiceCount = u32;
+pub type RuntimeServiceId = u32;
+pub type RuntimeServiceStatus = u32;
+
+pub const RUNTIME_ABI_METADATA_VERSION: RuntimeAbiMetadataVersion = 1;
+pub const UNKNOWN_RUNTIME_ABI_VERSION: RuntimeAbiVersion = 0;
+pub const RUNTIME_ABI_VERSION: RuntimeAbiVersion = 1;
+pub const RUNTIME_SERVICE_COUNT: RuntimeServiceCount = 13;
+pub const FIRST_RUNTIME_SERVICE_ID: RuntimeServiceId = 1;
+pub const LAST_RUNTIME_SERVICE_ID: RuntimeServiceId = 13;
+
+pub const SERVICE_STATUS_UNKNOWN: RuntimeServiceStatus = 0;
+pub const SERVICE_STATUS_UNAVAILABLE: RuntimeServiceStatus = 1;
+pub const SERVICE_STATUS_AVAILABLE: RuntimeServiceStatus = 2;
+
+pub const SERVICE_ALLOCATOR_ID: RuntimeServiceId = 1;
+pub const SERVICE_FILESYSTEM_ID: RuntimeServiceId = 2;
+pub const SERVICE_STDIO_ID: RuntimeServiceId = 3;
+pub const SERVICE_CLOCK_ID: RuntimeServiceId = 4;
+pub const SERVICE_NETWORK_ID: RuntimeServiceId = 5;
+pub const SERVICE_PANIC_HOOK_ID: RuntimeServiceId = 6;
+pub const SERVICE_HOST_SERVICES_ID: RuntimeServiceId = 7;
+pub const SERVICE_THREADS_ID: RuntimeServiceId = 8;
+pub const SERVICE_SECURE_RNG_ID: RuntimeServiceId = 9;
+pub const SERVICE_GPU_ID: RuntimeServiceId = 10;
+pub const SERVICE_PROCESS_ID: RuntimeServiceId = 11;
+pub const SERVICE_ENV_ID: RuntimeServiceId = 12;
+pub const SERVICE_TEST_HARNESS_ID: RuntimeServiceId = 13;
+
+pub const HAS_ALLOCATOR: Capability = false;
+pub const HAS_FILESYSTEM: Capability = false;
+pub const HAS_STDIO: Capability = false;
+pub const HAS_CLOCK: Capability = false;
+pub const HAS_NETWORK: Capability = false;
+pub const HAS_PANIC_HOOK: Capability = false;
+pub const HAS_HOST_SERVICES: Capability = false;
+pub const HAS_THREADS: Capability = false;
+pub const HAS_SECURE_RNG: Capability = false;
+pub const HAS_GPU: Capability = false;
+pub const HAS_PROCESS: Capability = false;
+pub const HAS_ENV: Capability = false;
+pub const HAS_TEST_HARNESS: Capability = false;
+pub const HAS_RUNTIME_SERVICES: Capability = false;
+
+pub fn has_allocator() -> Capability {
+    return HAS_ALLOCATOR;
+}
+
+pub fn has_filesystem() -> Capability {
+    return HAS_FILESYSTEM;
+}
+
+pub fn has_stdio() -> Capability {
+    return HAS_STDIO;
+}
+
+pub fn has_clock() -> Capability {
+    return HAS_CLOCK;
+}
+
+pub fn has_network() -> Capability {
+    return HAS_NETWORK;
+}
+
+pub fn has_panic_hook() -> Capability {
+    return HAS_PANIC_HOOK;
+}
+
+pub fn has_host_services() -> Capability {
+    return HAS_HOST_SERVICES;
+}
+
+pub fn has_threads() -> Capability {
+    return HAS_THREADS;
+}
+
+pub fn has_secure_rng() -> Capability {
+    return HAS_SECURE_RNG;
+}
+
+pub fn has_gpu() -> Capability {
+    return HAS_GPU;
+}
+
+pub fn has_process() -> Capability {
+    return HAS_PROCESS;
+}
+
+pub fn has_env() -> Capability {
+    return HAS_ENV;
+}
+
+pub fn has_test_harness() -> Capability {
+    return HAS_TEST_HARNESS;
+}
+
+pub fn has_runtime_services() -> Capability {
+    return HAS_RUNTIME_SERVICES;
+}
+
+pub fn runtime_services_are_contract_only() -> Capability {
+    return !HAS_RUNTIME_SERVICES;
+}
+
+pub fn runtime_abi_metadata_version() -> RuntimeAbiMetadataVersion {
+    return RUNTIME_ABI_METADATA_VERSION;
+}
+
+pub fn runtime_service_count() -> RuntimeServiceCount {
+    return RUNTIME_SERVICE_COUNT;
+}
+
+pub fn first_runtime_service_id() -> RuntimeServiceId {
+    return FIRST_RUNTIME_SERVICE_ID;
+}
+
+pub fn last_runtime_service_id() -> RuntimeServiceId {
+    return LAST_RUNTIME_SERVICE_ID;
+}
+
+pub fn service_id_in_descriptor_range(service_id: RuntimeServiceId) -> Capability {
+    return service_id >= FIRST_RUNTIME_SERVICE_ID && service_id <= LAST_RUNTIME_SERVICE_ID;
+}
+
+pub fn is_known_service(service_id: RuntimeServiceId) -> Capability {
+    return service_id == SERVICE_ALLOCATOR_ID
+        || service_id == SERVICE_FILESYSTEM_ID
+        || service_id == SERVICE_STDIO_ID
+        || service_id == SERVICE_CLOCK_ID
+        || service_id == SERVICE_NETWORK_ID
+        || service_id == SERVICE_PANIC_HOOK_ID
+        || service_id == SERVICE_HOST_SERVICES_ID
+        || service_id == SERVICE_THREADS_ID
+        || service_id == SERVICE_SECURE_RNG_ID
+        || service_id == SERVICE_GPU_ID
+        || service_id == SERVICE_PROCESS_ID
+        || service_id == SERVICE_ENV_ID
+        || service_id == SERVICE_TEST_HARNESS_ID;
+}
+
+pub fn service_descriptor_is_known(service_id: RuntimeServiceId) -> Capability {
+    return is_known_service(service_id);
+}
+
+pub fn has_service(service_id: RuntimeServiceId) -> Capability {
+    return (service_id == SERVICE_ALLOCATOR_ID && HAS_ALLOCATOR)
+        || (service_id == SERVICE_FILESYSTEM_ID && HAS_FILESYSTEM)
+        || (service_id == SERVICE_STDIO_ID && HAS_STDIO)
+        || (service_id == SERVICE_CLOCK_ID && HAS_CLOCK)
+        || (service_id == SERVICE_NETWORK_ID && HAS_NETWORK)
+        || (service_id == SERVICE_PANIC_HOOK_ID && HAS_PANIC_HOOK)
+        || (service_id == SERVICE_HOST_SERVICES_ID && HAS_HOST_SERVICES)
+        || (service_id == SERVICE_THREADS_ID && HAS_THREADS)
+        || (service_id == SERVICE_SECURE_RNG_ID && HAS_SECURE_RNG)
+        || (service_id == SERVICE_GPU_ID && HAS_GPU)
+        || (service_id == SERVICE_PROCESS_ID && HAS_PROCESS)
+        || (service_id == SERVICE_ENV_ID && HAS_ENV)
+        || (service_id == SERVICE_TEST_HARNESS_ID && HAS_TEST_HARNESS);
+}
+
+pub fn service_has_runtime_binding(service_id: RuntimeServiceId) -> Capability {
+    return has_service(service_id);
+}
+
+pub fn service_status(service_id: RuntimeServiceId) -> RuntimeServiceStatus {
+    if (has_service(service_id)) {
+        return SERVICE_STATUS_AVAILABLE;
+    } else {
+        if (is_known_service(service_id)) {
+            return SERVICE_STATUS_UNAVAILABLE;
+        } else {
+            return SERVICE_STATUS_UNKNOWN;
+        }
+    }
+}
+
+pub fn service_is_unknown(service_id: RuntimeServiceId) -> Capability {
+    let status: RuntimeServiceStatus = service_status(service_id);
+    return status == SERVICE_STATUS_UNKNOWN;
+}
+
+pub fn service_is_unavailable(service_id: RuntimeServiceId) -> Capability {
+    let status: RuntimeServiceStatus = service_status(service_id);
+    return status == SERVICE_STATUS_UNAVAILABLE;
+}
+
+pub fn service_is_unbound(service_id: RuntimeServiceId) -> Capability {
+    return service_is_unavailable(service_id);
+}
+
+pub fn service_is_available(service_id: RuntimeServiceId) -> Capability {
+    let status: RuntimeServiceStatus = service_status(service_id);
+    return status == SERVICE_STATUS_AVAILABLE;
+}
+
+pub fn service_is_contract_only(service_id: RuntimeServiceId) -> Capability {
+    return service_is_unavailable(service_id);
+}
+
+pub fn runtime_bound_api_is_executable(service_id: RuntimeServiceId) -> Capability {
+    return service_is_available(service_id);
+}
+
+pub fn runtime_bound_api_is_blocked(service_id: RuntimeServiceId) -> Capability {
+    return !runtime_bound_api_is_executable(service_id);
+}
+
+pub fn service_is_fail_closed(service_id: RuntimeServiceId) -> Capability {
+    return runtime_bound_api_is_blocked(service_id);
+}
+
+pub fn service_requires_runtime_binding(service_id: RuntimeServiceId) -> Capability {
+    return (service_id == SERVICE_ALLOCATOR_ID && !HAS_ALLOCATOR)
+        || (service_id == SERVICE_FILESYSTEM_ID && !HAS_FILESYSTEM)
+        || (service_id == SERVICE_STDIO_ID && !HAS_STDIO)
+        || (service_id == SERVICE_CLOCK_ID && !HAS_CLOCK)
+        || (service_id == SERVICE_NETWORK_ID && !HAS_NETWORK)
+        || (service_id == SERVICE_PANIC_HOOK_ID && !HAS_PANIC_HOOK)
+        || (service_id == SERVICE_HOST_SERVICES_ID && !HAS_HOST_SERVICES)
+        || (service_id == SERVICE_THREADS_ID && !HAS_THREADS)
+        || (service_id == SERVICE_SECURE_RNG_ID && !HAS_SECURE_RNG)
+        || (service_id == SERVICE_GPU_ID && !HAS_GPU)
+        || (service_id == SERVICE_PROCESS_ID && !HAS_PROCESS)
+        || (service_id == SERVICE_ENV_ID && !HAS_ENV)
+        || (service_id == SERVICE_TEST_HARNESS_ID && !HAS_TEST_HARNESS);
+}
+
+pub fn service_binding_diagnostic_is_lnc0038(service_id: RuntimeServiceId) -> Capability {
+    return service_requires_runtime_binding(service_id);
+}
+
+pub fn runtime_bound_api_requires_binding(service_id: RuntimeServiceId) -> Capability {
+    return service_requires_runtime_binding(service_id);
+}
+
+pub fn runtime_abi_version() -> RuntimeAbiVersion {
+    return RUNTIME_ABI_VERSION;
+}
+
+pub fn runtime_abi_version_for_service(service_id: RuntimeServiceId) -> RuntimeAbiVersion {
+    if (is_known_service(service_id)) {
+        return RUNTIME_ABI_VERSION;
+    } else {
+        return UNKNOWN_RUNTIME_ABI_VERSION;
+    }
+}

@@ -27,6 +27,7 @@ StructuredBuffer<uint> import_module_file_id;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_owner_hir;
 StructuredBuffer<uint> hir_item_file_id;
+StructuredBuffer<uint> module_count_out;
 StructuredBuffer<uint> module_id_by_file_id;
 
 RWStructuredBuffer<uint> decl_module_id;
@@ -72,12 +73,17 @@ uint active_path_count()
     return min(path_count_out[0], record_capacity());
 }
 
+uint active_module_count()
+{
+    return min(module_count_out[0], file_capacity());
+}
+
 uint owner_module_from_file(uint file_id)
 {
     uint module_id = file_id < file_capacity() ? module_id_by_file_id[file_id] : INVALID;
     if (module_id != INVALID)
         return module_id;
-    return file_id == 0u ? 0u : INVALID;
+    return file_id == 0u && active_module_count() == 0u ? 0u : INVALID;
 }
 
 [shader("compute")]

@@ -1,6 +1,10 @@
 // src/compiler/gpu_compiler/x86_codegen.rs
 
 use super::*;
+use crate::{
+    lexer::{GpuToken, Token, util::read_tokens_from_mapped},
+    type_checker::{GpuTypeCheckCode, GpuTypeCheckError},
+};
 
 impl<'gpu> GpuCompiler<'gpu> {
     pub(super) fn x86_generator(&self) -> Result<&x86::GpuX86CodeGenerator, CompileError> {
@@ -43,6 +47,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     hir_status_buf: hir_status,
                     active_hir_dispatch_args_buf: &parse_bufs.tree_active_dispatch_args,
                     hir_kind_buf: &parse_bufs.hir_kind,
+                    hir_item_kind_buf: &parse_bufs.hir_item_kind,
                     parent_buf: &parse_bufs.parent,
                     subtree_end_buf: &parse_bufs.subtree_end,
                     function_metadata: x86::GpuX86FunctionMetadataBuffers {
@@ -58,6 +63,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     },
                     expr_metadata: x86::GpuX86ExprMetadataBuffers {
                         record: &parse_bufs.hir_expr_record,
+                        expr_result_root_node: &parse_bufs.hir_expr_result_root_node,
                         int_value: &parse_bufs.hir_expr_int_value,
                         stmt_record: &parse_bufs.hir_stmt_record,
                         type_form: &parse_bufs.hir_type_form,
@@ -114,6 +120,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         item_name_token: &parse_bufs.hir_item_name_token,
                         decl_hir_node: codegen.decl_hir_node,
                         struct_decl_field_count: &parse_bufs.hir_struct_decl_field_count,
+                        struct_lit_head_node: &parse_bufs.hir_struct_lit_head_node,
                         struct_lit_field_parent_lit: &parse_bufs.hir_struct_lit_field_parent_lit,
                         struct_lit_field_start: &parse_bufs.hir_struct_lit_field_start,
                         struct_lit_field_count: &parse_bufs.hir_struct_lit_field_count,
@@ -202,23 +209,36 @@ impl<'gpu> GpuCompiler<'gpu> {
     }
     pub async fn compile_source_to_x86_64(&self, src: &str) -> Result<Vec<u8>, CompileError> {
         let src = prepare_source_for_gpu(src)?;
-        self.compile_expanded_source_to_x86_64(&src).await
+        self.compile_expanded_source_to_x86_64_with_diagnostic_path(&src, PathBuf::from("<source>"))
+            .await
     }
     pub async fn compile_source_to_x86_64_from_path(
         &self,
         path: impl AsRef<Path>,
     ) -> Result<Vec<u8>, CompileError> {
+        let path = path.as_ref();
         let src = prepare_source_for_gpu_from_path(path)?;
-        self.compile_expanded_source_to_x86_64(&src).await
+        self.compile_expanded_source_to_x86_64_with_diagnostic_path(&src, path.to_path_buf())
+            .await
     }
     pub async fn compile_source_pack_to_x86_64<S: AsRef<str>>(
         &self,
         sources: &[S],
     ) -> Result<Vec<u8>, CompileError> {
+        self.compile_source_pack_to_x86_64_with_paths(sources, None)
+            .await
+    }
+
+    async fn compile_source_pack_to_x86_64_with_paths<S: AsRef<str>>(
+        &self,
+        sources: &[S],
+        source_paths: Option<&[Option<PathBuf>]>,
+    ) -> Result<Vec<u8>, CompileError> {
         validate_in_memory_source_pack_fits_default_codegen_unit(
             "compile source pack to x86_64",
             sources,
         )?;
+        let diagnostic_files = source_pack_diagnostic_files(sources, source_paths);
         let _resident_guard = self.resident_pipeline_lock.lock().await;
         self.lexer
             .with_recorded_resident_source_pack_tokens_after_count(
@@ -272,10 +292,18 @@ impl<'gpu> GpuCompiler<'gpu> {
                         parser_encoder.finish(),
                     );
                     host_timer.stamp("parser_submitted");
-                    let ll1 = self
-                        .parser
-                        .finish_recorded_resident_ll1_hir_check_result(&parser_check)
+                    let ll1 = parser_check
+                        .read_status_result(device)
                         .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
+                    if !ll1.accepted {
+                        return Err(parser_ll1_error_to_compile_error_for_source_pack(
+                            device,
+                            queue,
+                            &bufs.tokens_out.buffer,
+                            &diagnostic_files,
+                            &ll1,
+                        ));
+                    }
                     let semantic_hir_count = self
                         .parser
                         .finish_recorded_hir_semantic_count(&semantic_count?)
@@ -291,10 +319,18 @@ impl<'gpu> GpuCompiler<'gpu> {
                             parser_tree_capacity,
                             OwnedTypecheckParserBuffers::from_parser_buffers,
                         );
+                    let x86_parse = self
+                        .parser
+                        .with_current_resident_buffers_with_tree_capacity(
+                            token_capacity,
+                            &self.parse_tables,
+                            parser_tree_capacity,
+                            OwnedX86ParserBuffers::from_parser_buffers,
+                        );
                     self.parser.release_current_resident_buffers();
                     let _ = device.poll(wgpu::PollType::wait_indefinitely());
                     host_timer.stamp("parser_cache_released");
-                    let lexer_parse_inputs = OwnedLexerParserInputBuffers::from_lexer_buffers(bufs);
+                    let x86_diagnostics = OwnedX86DiagnosticBuffers::from_lexer_buffers(bufs);
                     let type_check = self.record_typecheck_from_parse_buffers(
                         device,
                         queue,
@@ -316,8 +352,8 @@ impl<'gpu> GpuCompiler<'gpu> {
                         token_count,
                         active_tree_capacity,
                         semantic_hir_count,
-                        parser_tree_capacity,
-                        lexer_parse_inputs,
+                        x86_diagnostics,
+                        x86_parse,
                     ))
                 },
                 |device,
@@ -327,17 +363,25 @@ impl<'gpu> GpuCompiler<'gpu> {
                     token_count,
                     active_tree_capacity,
                     semantic_hir_count,
-                    parser_tree_capacity,
-                    lexer_parse_inputs,
+                    x86_diagnostics,
+                    x86_parse,
                 )| {
                     let mut host_timer = CompilerHostTimer::new("compiler.x86.source_pack.finish");
                     self.x86_generator()?;
                     host_timer.stamp("x86_generator_ready");
                     self.type_checker
                         .finish_recorded_check(device, &type_check)
-                        .map_err(|err| CompileError::GpuTypeCheck(err.to_string()))?;
+                        .map_err(|err| {
+                            type_check_error_to_compile_error_for_x86_source_pack(
+                                device,
+                                queue,
+                                &x86_diagnostics,
+                                &diagnostic_files,
+                                err,
+                            )
+                        })?;
                     host_timer.stamp("typecheck_finish");
-                    let mut codegen_buffers =
+                    let codegen_buffers =
                         self.type_checker
                             .take_x86_codegen_buffers()
                             .ok_or_else(|| {
@@ -352,30 +396,10 @@ impl<'gpu> GpuCompiler<'gpu> {
                         active_tree_capacity,
                         semantic_hir_count,
                     );
-                    codegen_buffers.copy_backend_metadata_before_parser_replay(
-                        device,
-                        queue,
-                        token_capacity.max(x86_hir_node_count),
-                    );
                     let mut x86_encoder =
                         device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                             label: Some("compiler.x86.source_pack.backend.encoder"),
                         });
-                    let (x86_parse, reparsed_active_tree_capacity, reparsed_semantic_hir_count) =
-                        self.reparse_x86_parser_buffers_from_lexer_inputs(
-                            device,
-                            queue,
-                            &lexer_parse_inputs,
-                            token_capacity,
-                            parser_tree_capacity,
-                        )?;
-                    if reparsed_active_tree_capacity != active_tree_capacity
-                        || reparsed_semantic_hir_count != semantic_hir_count
-                    {
-                        return Err(CompileError::GpuSyntax(format!(
-                            "source-pack backend parser replay changed HIR capacity/count: initial=({active_tree_capacity}, {semantic_hir_count}) replay=({reparsed_active_tree_capacity}, {reparsed_semantic_hir_count})"
-                        )));
-                    }
                     let feature_summary = self
                         .x86_generator()?
                         .measure_features(
@@ -387,17 +411,13 @@ impl<'gpu> GpuCompiler<'gpu> {
                             &x86_parse.hir_kind,
                             &x86_parse.hir_stmt_record,
                             &x86_parse.hir_expr_record,
-                            &x86_parse.hir_token_pos,
-                            &x86_parse.parent,
-                            &x86_parse.first_child,
-                            codegen_buffers.as_ref().enclosing_fn,
                         )
                         .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
                     let x86_check = self.record_x86_from_parse_buffers_with_codegen(
                         device,
                         queue,
                         &mut x86_encoder,
-                        lexer_parse_inputs.source_len,
+                        x86_diagnostics.source_len,
                         token_capacity,
                         x86_hir_node_count,
                         x86_inst_hir_node_count,
@@ -413,9 +433,16 @@ impl<'gpu> GpuCompiler<'gpu> {
                         x86_encoder.finish(),
                     );
                     host_timer.stamp("x86_submitted");
-                    let result = x86_check
-                        .read_output(device, queue)
-                        .map_err(|err| CompileError::GpuCodegen(err.to_string()));
+                    let result = x86_check.read_output(device, queue).map_err(|err| {
+                        x86_codegen_error_to_compile_error_for_source_pack(
+                            device,
+                            queue,
+                            &x86_diagnostics,
+                            &x86_parse,
+                            &diagnostic_files,
+                            &err,
+                        )
+                    });
                     host_timer.stamp("x86_finish");
                     result
                 },
@@ -427,71 +454,24 @@ impl<'gpu> GpuCompiler<'gpu> {
         &self,
         source_pack: &ExplicitSourcePack,
     ) -> Result<Vec<u8>, CompileError> {
-        self.compile_source_pack_to_x86_64(&source_pack.sources)
-            .await
-    }
-    fn reparse_x86_parser_buffers_from_lexer_inputs(
-        &self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        lexer_inputs: &OwnedLexerParserInputBuffers,
-        token_capacity: u32,
-        parser_tree_capacity: u32,
-    ) -> Result<(OwnedX86ParserBuffers, u32, u32), CompileError> {
-        let mut parser_encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("compiler.x86.backend-parser-boundary.encoder"),
-        });
-        let mut parser_timer: Option<&mut GpuTimer> = None;
-        let (parser_check, semantic_count) = self
-            .parser
-            .record_checked_resident_ll1_hir_artifacts_with_tree_capacity(
-                &mut parser_encoder,
-                token_capacity,
-                &lexer_inputs.tokens_out,
-                &lexer_inputs.token_count,
-                Some(&lexer_inputs.token_file_id),
-                lexer_inputs.source_len,
-                &lexer_inputs.in_bytes,
-                &self.parse_tables,
-                Some(parser_tree_capacity),
-                &mut parser_timer,
-                |parse_bufs, encoder, timer| {
-                    self.parser
-                        .record_hir_semantic_count_readback(encoder, parse_bufs, timer)
-                        .map_err(|err| CompileError::GpuSyntax(err.to_string()))
-                },
-            )
-            .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
-        crate::gpu::passes_core::submit_with_progress(
-            queue,
-            "compiler.x86.backend-parser-boundary",
-            parser_encoder.finish(),
-        );
-        let ll1 = self
-            .parser
-            .finish_recorded_resident_ll1_hir_check_result(&parser_check)
-            .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
-        let semantic_hir_count = self
-            .parser
-            .finish_recorded_hir_semantic_count(&semantic_count?)
-            .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
-        let active_tree_capacity =
-            hir_node_capacity_for_parser_emit(parser_tree_capacity, ll1.emit_len);
-        let x86_parse = self
-            .parser
-            .with_current_resident_buffers_with_tree_capacity(
-                token_capacity,
-                &self.parse_tables,
-                parser_tree_capacity,
-                OwnedX86ParserBuffers::from_parser_buffers,
-            );
-        self.parser.release_current_resident_buffers();
-        let _ = device.poll(wgpu::PollType::wait_indefinitely());
-        Ok((x86_parse, active_tree_capacity, semantic_hir_count))
+        self.compile_source_pack_to_x86_64_with_paths(
+            &source_pack.sources,
+            Some(&source_pack.source_paths),
+        )
+        .await
     }
     pub(in crate::compiler) async fn compile_expanded_source_to_x86_64(
         &self,
         src: &str,
+    ) -> Result<Vec<u8>, CompileError> {
+        self.compile_expanded_source_to_x86_64_with_diagnostic_path(src, PathBuf::from("<source>"))
+            .await
+    }
+
+    async fn compile_expanded_source_to_x86_64_with_diagnostic_path(
+        &self,
+        src: &str,
+        diagnostic_path: PathBuf,
     ) -> Result<Vec<u8>, CompileError> {
         let _resident_guard = self.resident_pipeline_lock.lock().await;
         self.lexer
@@ -543,10 +523,19 @@ impl<'gpu> GpuCompiler<'gpu> {
                         parser_encoder.finish(),
                     );
                     host_timer.stamp("parser_submitted");
-                    let ll1 = self
-                        .parser
-                        .finish_recorded_resident_ll1_hir_check_result(&parser_check)
+                    let ll1 = parser_check
+                        .read_status_result(device)
                         .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
+                    if !ll1.accepted {
+                        return Err(parser_ll1_error_to_compile_error_for_source(
+                            device,
+                            queue,
+                            &bufs.tokens_out.buffer,
+                            src,
+                            &diagnostic_path,
+                            &ll1,
+                        ));
+                    }
                     let semantic_hir_count = self
                         .parser
                         .finish_recorded_hir_semantic_count(&semantic_count?)
@@ -562,10 +551,18 @@ impl<'gpu> GpuCompiler<'gpu> {
                             parser_tree_capacity,
                             OwnedTypecheckParserBuffers::from_parser_buffers,
                         );
+                    let x86_parse = self
+                        .parser
+                        .with_current_resident_buffers_with_tree_capacity(
+                            token_capacity,
+                            &self.parse_tables,
+                            parser_tree_capacity,
+                            OwnedX86ParserBuffers::from_parser_buffers,
+                        );
                     self.parser.release_current_resident_buffers();
                     let _ = device.poll(wgpu::PollType::wait_indefinitely());
                     host_timer.stamp("parser_cache_released");
-                    let lexer_parse_inputs = OwnedLexerParserInputBuffers::from_lexer_buffers(bufs);
+                    let x86_diagnostics = OwnedX86DiagnosticBuffers::from_lexer_buffers(bufs);
                     let type_check = self.record_typecheck_from_parse_buffers(
                         device,
                         queue,
@@ -587,9 +584,8 @@ impl<'gpu> GpuCompiler<'gpu> {
                         token_count,
                         active_tree_capacity,
                         semantic_hir_count,
-                        bufs.n,
-                        parser_tree_capacity,
-                        lexer_parse_inputs,
+                        x86_diagnostics,
+                        x86_parse,
                     ))
                 },
                 |device,
@@ -599,23 +595,33 @@ impl<'gpu> GpuCompiler<'gpu> {
                     token_count,
                     active_tree_capacity,
                     semantic_hir_count,
-                    source_len,
-                    parser_tree_capacity,
-                    lexer_parse_inputs,
+                    x86_diagnostics,
+                    x86_parse,
                 )| {
                     let mut host_timer = CompilerHostTimer::new("compiler.x86.finish");
                     self.x86_generator()?;
                     host_timer.stamp("x86_generator_ready");
                     self.type_checker
                         .finish_recorded_check(device, &type_check)
-                        .map_err(|err| CompileError::GpuTypeCheck(err.to_string()))?;
-                    host_timer.stamp("typecheck_finish");
-                    let mut codegen_buffers = self
-                        .type_checker
-                        .take_x86_codegen_buffers()
-                        .ok_or_else(|| {
-                            CompileError::GpuCodegen("GPU x86 type metadata buffers missing".into())
+                        .map_err(|err| {
+                            type_check_error_to_compile_error_for_owned_source(
+                                device,
+                                queue,
+                                &x86_diagnostics,
+                                src,
+                                &diagnostic_path,
+                                err,
+                            )
                         })?;
+                    host_timer.stamp("typecheck_finish");
+                    let codegen_buffers =
+                        self.type_checker
+                            .take_x86_codegen_buffers()
+                            .ok_or_else(|| {
+                                CompileError::GpuCodegen(
+                                    "GPU x86 type metadata buffers missing".into(),
+                                )
+                            })?;
                     host_timer.stamp("typecheck_x86_codegen_buffers_retained");
                     let token_capacity = token_count.max(1);
                     let x86_hir_node_count = active_tree_capacity.max(1);
@@ -623,26 +629,6 @@ impl<'gpu> GpuCompiler<'gpu> {
                         active_tree_capacity,
                         semantic_hir_count,
                     );
-                    codegen_buffers.copy_backend_metadata_before_parser_replay(
-                        device,
-                        queue,
-                        token_capacity.max(x86_hir_node_count),
-                    );
-                    let (x86_parse, reparsed_active_tree_capacity, reparsed_semantic_hir_count) =
-                        self.reparse_x86_parser_buffers_from_lexer_inputs(
-                            device,
-                            queue,
-                            &lexer_parse_inputs,
-                            token_capacity,
-                            parser_tree_capacity,
-                        )?;
-                    if reparsed_active_tree_capacity != active_tree_capacity
-                        || reparsed_semantic_hir_count != semantic_hir_count
-                    {
-                        return Err(CompileError::GpuSyntax(format!(
-                            "backend parser replay changed HIR capacity/count: initial=({active_tree_capacity}, {semantic_hir_count}) replay=({reparsed_active_tree_capacity}, {reparsed_semantic_hir_count})"
-                        )));
-                    }
                     let mut x86_encoder =
                         device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                             label: Some("compiler.x86.backend.encoder"),
@@ -658,17 +644,13 @@ impl<'gpu> GpuCompiler<'gpu> {
                             &x86_parse.hir_kind,
                             &x86_parse.hir_stmt_record,
                             &x86_parse.hir_expr_record,
-                            &x86_parse.hir_token_pos,
-                            &x86_parse.parent,
-                            &x86_parse.first_child,
-                            codegen_buffers.as_ref().enclosing_fn,
                         )
                         .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
                     let x86_check = self.record_x86_from_parse_buffers_with_codegen(
                         device,
                         queue,
                         &mut x86_encoder,
-                        source_len,
+                        x86_diagnostics.source_len,
                         token_capacity,
                         x86_hir_node_count,
                         x86_inst_hir_node_count,
@@ -684,9 +666,17 @@ impl<'gpu> GpuCompiler<'gpu> {
                         x86_encoder.finish(),
                     );
                     host_timer.stamp("x86_submitted");
-                    let result = x86_check
-                        .read_output(device, queue)
-                        .map_err(|err| CompileError::GpuCodegen(err.to_string()));
+                    let result = x86_check.read_output(device, queue).map_err(|err| {
+                        x86_codegen_error_to_compile_error_for_source(
+                            device,
+                            queue,
+                            &x86_diagnostics,
+                            &x86_parse,
+                            src,
+                            &diagnostic_path,
+                            &err,
+                        )
+                    });
                     host_timer.stamp("x86_finish");
                     result
                 },
@@ -694,4 +684,447 @@ impl<'gpu> GpuCompiler<'gpu> {
             .await
             .map_err(|err| CompileError::GpuFrontend(format!("lex source: {err}")))?
     }
+}
+
+fn x86_codegen_error_to_compile_error_for_source(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    x86_diagnostics: &OwnedX86DiagnosticBuffers,
+    x86_parse: &OwnedX86ParserBuffers,
+    src: &str,
+    diagnostic_path: &Path,
+    err: &anyhow::Error,
+) -> CompileError {
+    let Some(x86_err) = err.downcast_ref::<x86::X86OutputError>() else {
+        return CompileError::GpuCodegen(err.to_string());
+    };
+
+    let diagnostic_token = x86_diagnostic_token_for_error(
+        device,
+        queue,
+        x86_parse,
+        x86_err,
+        "compiler.x86.diagnostic-hir-token-pos",
+        Some(0),
+    );
+
+    let token_index = match diagnostic_token {
+        Ok(token_index) => token_index,
+        Err(read_err) => {
+            return CompileError::GpuCodegen(format!(
+                "{}; failed to resolve diagnostic token: {}",
+                err, read_err
+            ));
+        }
+    };
+
+    match read_single_owned_token_for_diagnostic(device, queue, x86_diagnostics, token_index) {
+        Ok(token_record) => CompileError::Diagnostic(
+            Diagnostic::error("LNC0017", x86_err.error_name())
+                .with_primary_label(diagnostic_label_from_source_span(
+                    diagnostic_path,
+                    src,
+                    token_record.start,
+                    token_record.len,
+                    "not supported by the native x86 backend yet",
+                ))
+                .with_note(format!(
+                    "x86 backend error code {} detail {}",
+                    x86_err.error_code(),
+                    x86_err.error_detail()
+                )),
+        ),
+        Err(read_err) => CompileError::GpuCodegen(format!(
+            "{}; failed to read diagnostic token {}: {}",
+            err, token_index, read_err
+        )),
+    }
+}
+
+fn x86_codegen_error_to_compile_error_for_source_pack(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    x86_diagnostics: &OwnedX86DiagnosticBuffers,
+    x86_parse: &OwnedX86ParserBuffers,
+    diagnostic_files: &[DiagnosticSourceFile],
+    err: &anyhow::Error,
+) -> CompileError {
+    let Some(x86_err) = err.downcast_ref::<x86::X86OutputError>() else {
+        return CompileError::GpuCodegen(err.to_string());
+    };
+
+    let diagnostic_token = x86_diagnostic_token_for_error(
+        device,
+        queue,
+        x86_parse,
+        x86_err,
+        "compiler.x86.source-pack-diagnostic-hir-token-pos",
+        Some(0),
+    );
+
+    let token_index = match diagnostic_token {
+        Ok(token_index) => token_index,
+        Err(read_err) => {
+            return CompileError::GpuCodegen(format!(
+                "{}; failed to resolve diagnostic token: {}",
+                err, read_err
+            ));
+        }
+    };
+
+    match read_single_owned_token_for_diagnostic(device, queue, x86_diagnostics, token_index) {
+        Ok(token_record) => {
+            let Some(file) = source_pack_file_for_global_span(diagnostic_files, token_record.start)
+            else {
+                return CompileError::GpuCodegen(format!(
+                    "{}; failed to map diagnostic token {} at byte {} to a source-pack file",
+                    err, token_index, token_record.start
+                ));
+            };
+            CompileError::Diagnostic(
+                Diagnostic::error("LNC0017", x86_err.error_name())
+                    .with_primary_label(diagnostic_label_from_source_span(
+                        &file.path,
+                        &file.source,
+                        file.local_start_for_global(token_record.start),
+                        token_record.len,
+                        "not supported by the native x86 backend yet",
+                    ))
+                    .with_note(format!(
+                        "x86 backend error code {} detail {}",
+                        x86_err.error_code(),
+                        x86_err.error_detail()
+                    )),
+            )
+        }
+        Err(read_err) => CompileError::GpuCodegen(format!(
+            "{}; failed to read diagnostic token {}: {}",
+            err, token_index, read_err
+        )),
+    }
+}
+
+fn x86_diagnostic_token_for_error(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    x86_parse: &OwnedX86ParserBuffers,
+    x86_err: &x86::X86OutputError,
+    hir_token_pos_readback_label: &'static str,
+    invalid_select_anchor_token: Option<u32>,
+) -> Result<u32, String> {
+    if x86_err.error_code() == 2
+        || (x86_err.error_code() == 17 && x86_err.error_detail() == u32::MAX)
+    {
+        if let Some(token) = invalid_select_anchor_token {
+            return Ok(token);
+        }
+    }
+    if x86_err.detail_is_token() {
+        return Ok(x86_err.error_detail());
+    }
+    if x86_err.detail_is_hir_node() {
+        return read_u32_from_buffer_for_diagnostic(
+            device,
+            queue,
+            &x86_parse.hir_token_pos,
+            x86_err.error_detail(),
+            hir_token_pos_readback_label,
+        );
+    }
+    Err(format!(
+        "x86 error code {} detail {} is not source-addressable",
+        x86_err.error_code(),
+        x86_err.error_detail()
+    ))
+}
+
+fn type_check_error_to_compile_error_for_owned_source(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    x86_diagnostics: &OwnedX86DiagnosticBuffers,
+    src: &str,
+    diagnostic_path: &Path,
+    err: GpuTypeCheckError,
+) -> CompileError {
+    match &err {
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::BadHir,
+            ..
+        } => match read_single_owned_token_for_diagnostic(device, queue, x86_diagnostics, *token) {
+            Ok(token_record) => syntax_error_to_compile_error_for_source_span(
+                diagnostic_path,
+                src,
+                token_record.start,
+                token_record.len,
+            ),
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::AssignMismatch,
+            detail,
+        } => match read_single_owned_token_for_diagnostic(device, queue, x86_diagnostics, *token) {
+            Ok(token_record) => CompileError::Diagnostic(
+                Diagnostic::error("LNC0006", "type mismatch")
+                    .with_primary_label(diagnostic_label_from_source_span(
+                        diagnostic_path,
+                        src,
+                        token_record.start,
+                        token_record.len,
+                        "expected a different type here",
+                    ))
+                    .with_note(type_mismatch_note(*detail)),
+            ),
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::UnresolvedIdent,
+            ..
+        } => match read_single_owned_token_for_diagnostic(device, queue, x86_diagnostics, *token) {
+            Ok(token_record) => CompileError::Diagnostic(
+                Diagnostic::error("LNC0005", "unresolved identifier")
+                    .with_primary_label(diagnostic_label_from_source_span(
+                        diagnostic_path,
+                        src,
+                        token_record.start,
+                        token_record.len,
+                        "not found in this scope",
+                    ))
+                    .with_note("declare the value before using it or import its defining module"),
+            ),
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        _ => CompileError::GpuTypeCheck(err.to_string()),
+    }
+}
+
+fn type_check_error_to_compile_error_for_x86_source_pack(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    x86_diagnostics: &OwnedX86DiagnosticBuffers,
+    diagnostic_files: &[DiagnosticSourceFile],
+    err: GpuTypeCheckError,
+) -> CompileError {
+    match &err {
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::BadHir,
+            ..
+        } => match read_single_owned_token_for_diagnostic(device, queue, x86_diagnostics, *token) {
+            Ok(token_record) => {
+                let Some(file) =
+                    source_pack_file_for_global_span(diagnostic_files, token_record.start)
+                else {
+                    return CompileError::GpuTypeCheck(format!(
+                        "{}; failed to map diagnostic token {} at byte {} to a source-pack file",
+                        err, token, token_record.start
+                    ));
+                };
+                syntax_error_to_compile_error_for_source_span(
+                    &file.path,
+                    &file.source,
+                    file.local_start_for_global(token_record.start),
+                    token_record.len,
+                )
+            }
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::AssignMismatch,
+            detail,
+        } => match read_single_owned_token_for_diagnostic(device, queue, x86_diagnostics, *token) {
+            Ok(token_record) => {
+                let Some(file) =
+                    source_pack_file_for_global_span(diagnostic_files, token_record.start)
+                else {
+                    return CompileError::GpuTypeCheck(format!(
+                        "{}; failed to map diagnostic token {} at byte {} to a source-pack file",
+                        err, token, token_record.start
+                    ));
+                };
+                CompileError::Diagnostic(
+                    Diagnostic::error("LNC0006", "type mismatch")
+                        .with_primary_label(diagnostic_label_from_source_span(
+                            &file.path,
+                            &file.source,
+                            file.local_start_for_global(token_record.start),
+                            token_record.len,
+                            "expected a different type here",
+                        ))
+                        .with_note(type_mismatch_note(*detail)),
+                )
+            }
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::UnresolvedIdent,
+            ..
+        } => match read_single_owned_token_for_diagnostic(device, queue, x86_diagnostics, *token) {
+            Ok(token_record) => {
+                let Some(file) =
+                    source_pack_file_for_global_span(diagnostic_files, token_record.start)
+                else {
+                    return CompileError::GpuTypeCheck(format!(
+                        "{}; failed to map diagnostic token {} at byte {} to a source-pack file",
+                        err, token, token_record.start
+                    ));
+                };
+                CompileError::Diagnostic(
+                    Diagnostic::error("LNC0005", "unresolved identifier")
+                        .with_primary_label(diagnostic_label_from_source_span(
+                            &file.path,
+                            &file.source,
+                            file.local_start_for_global(token_record.start),
+                            token_record.len,
+                            "not found in this scope",
+                        ))
+                        .with_note(
+                            "declare the value before using it or import its defining module",
+                        ),
+                )
+            }
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        _ => CompileError::GpuTypeCheck(err.to_string()),
+    }
+}
+
+fn type_mismatch_note(detail: u32) -> String {
+    if detail == 0 {
+        return "the expression type does not match the required type".to_string();
+    }
+
+    let expected = detail / 256;
+    let actual = detail % 256;
+    if expected == 0 {
+        return format!("the expression resolved to incompatible type code {actual}");
+    }
+
+    format!("expected type code {expected}, found type code {actual}")
+}
+
+fn read_u32_from_buffer_for_diagnostic(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    buffer: &wgpu::Buffer,
+    index: u32,
+    label: &'static str,
+) -> Result<u32, String> {
+    let offset = u64::from(index)
+        .checked_mul(4)
+        .ok_or_else(|| format!("u32 index {index} byte offset overflow"))?;
+    let end = offset
+        .checked_add(4)
+        .ok_or_else(|| format!("u32 index {index} byte end overflow"))?;
+    if end > buffer.size() {
+        return Err(format!(
+            "u32 index {index} byte range {offset}..{end} exceeds buffer size {}",
+            buffer.size()
+        ));
+    }
+
+    let readback = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(label),
+        size: 4,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("compiler.x86.diagnostic-u32-readback.encoder"),
+    });
+    encoder.copy_buffer_to_buffer(buffer, offset, &readback, 0, 4);
+    crate::gpu::passes_core::submit_with_progress(
+        queue,
+        "compiler.x86.diagnostic-u32-readback",
+        encoder.finish(),
+    );
+
+    let slice = readback.slice(0..4);
+    crate::gpu::passes_core::map_readback_blocking(device, &slice, label)
+        .map_err(|err| err.to_string())?;
+    let mapped = slice.get_mapped_range();
+    let word = u32::from_le_bytes(mapped[0..4].try_into().expect("u32 diagnostic word"));
+    drop(mapped);
+    readback.unmap();
+    Ok(word)
+}
+
+fn read_single_owned_token_for_diagnostic(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    x86_diagnostics: &OwnedX86DiagnosticBuffers,
+    token_index: u32,
+) -> Result<Token, String> {
+    let token_stride = std::mem::size_of::<GpuToken>() as u64;
+    let token_offset = u64::from(token_index)
+        .checked_mul(token_stride)
+        .ok_or_else(|| format!("token {token_index} byte offset overflow"))?;
+    let token_end = token_offset
+        .checked_add(token_stride)
+        .ok_or_else(|| format!("token {token_index} byte end overflow"))?;
+    if token_end > x86_diagnostics.tokens_out.size() {
+        return Err(format!(
+            "token {token_index} byte range {token_offset}..{token_end} exceeds token buffer size {}",
+            x86_diagnostics.tokens_out.size()
+        ));
+    }
+
+    let token_readback = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("rb.compiler.x86.diagnostic_token"),
+        size: token_stride,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("compiler.x86.diagnostic-token-readback.encoder"),
+    });
+    encoder.copy_buffer_to_buffer(
+        &x86_diagnostics.tokens_out,
+        token_offset,
+        &token_readback,
+        0,
+        token_stride,
+    );
+    crate::gpu::passes_core::submit_with_progress(
+        queue,
+        "compiler.x86.diagnostic-token-readback",
+        encoder.finish(),
+    );
+
+    let token_slice = token_readback.slice(0..token_stride);
+    crate::gpu::passes_core::map_readback_blocking(
+        device,
+        &token_slice,
+        "compiler.x86.diagnostic-token",
+    )
+    .map_err(|err| err.to_string())?;
+    let mapped = token_slice.get_mapped_range();
+    let mut tokens = read_tokens_from_mapped(&mapped, 1)?;
+    drop(mapped);
+    token_readback.unmap();
+    tokens
+        .pop()
+        .ok_or_else(|| format!("token {token_index} readback returned no rows"))
 }

@@ -1,6 +1,78 @@
 // Source-level networking host ABI declarations.
+// The service contract below is intentionally conservative: the current
+// backends can type-check these declarations, but they do not bind networking.
 
 module std::net;
+
+pub type NetworkCapability = bool;
+pub type NetworkRuntimeAbiVersion = u32;
+pub type NetworkServiceId = u32;
+pub type NetworkServiceStatus = u32;
+
+pub const NETWORK_RUNTIME_ABI_VERSION: NetworkRuntimeAbiVersion = 1;
+pub const NETWORK_SERVICE_ID: NetworkServiceId = 5;
+pub const NETWORK_SERVICE_STATUS_UNAVAILABLE: NetworkServiceStatus = 1;
+pub const NETWORK_HAS_RUNTIME_BINDING: NetworkCapability = false;
+
+pub fn network_runtime_abi_version() -> NetworkRuntimeAbiVersion {
+    return NETWORK_RUNTIME_ABI_VERSION;
+}
+
+pub fn network_service_id() -> NetworkServiceId {
+    return NETWORK_SERVICE_ID;
+}
+
+pub fn network_service_is_known() -> NetworkCapability {
+    return true;
+}
+
+pub fn network_contract_metadata_is_available() -> NetworkCapability {
+    return network_service_is_known();
+}
+
+pub fn network_service_status() -> NetworkServiceStatus {
+    return NETWORK_SERVICE_STATUS_UNAVAILABLE;
+}
+
+pub fn network_is_available() -> NetworkCapability {
+    return NETWORK_HAS_RUNTIME_BINDING;
+}
+
+pub fn network_is_blocked() -> NetworkCapability {
+    return !network_is_available();
+}
+
+pub fn network_requires_runtime_binding() -> NetworkCapability {
+    return !NETWORK_HAS_RUNTIME_BINDING;
+}
+
+pub fn network_host_abi_is_contract_only() -> NetworkCapability {
+    return network_requires_runtime_binding();
+}
+
+pub fn tcp_api_is_executable() -> NetworkCapability {
+    return NETWORK_HAS_RUNTIME_BINDING;
+}
+
+pub fn tcp_api_is_blocked() -> NetworkCapability {
+    return !tcp_api_is_executable();
+}
+
+pub fn tcp_api_requires_runtime_binding() -> NetworkCapability {
+    return !tcp_api_is_executable();
+}
+
+pub fn udp_api_is_executable() -> NetworkCapability {
+    return NETWORK_HAS_RUNTIME_BINDING;
+}
+
+pub fn udp_api_is_blocked() -> NetworkCapability {
+    return !udp_api_is_executable();
+}
+
+pub fn udp_api_requires_runtime_binding() -> NetworkCapability {
+    return !udp_api_is_executable();
+}
 
 pub extern "lanius_std" fn tcp_connect(addr_ptr: u32, addr_len: usize, port: i32) -> i32;
 

@@ -326,6 +326,29 @@ pub(super) fn record_metadata_and_call_dispatches(
                 &generator.match_records_pass,
                 match_records_bind_group,
             ),
+        ],
+        active_hir_dispatch_args_buf,
+    );
+    if needs_enclosing_return_records {
+        dispatch_x86_stage_indirect(
+            encoder,
+            "enclosing_return_init",
+            &generator.enclosing_return_init_pass,
+            enclosing_return_init_bind_group,
+            active_hir_dispatch_args_buf,
+        );
+        dispatch_compute_pass_indirect_bind_group_steps(
+            encoder,
+            "enclosing_return_step",
+            "codegen.x86.enclosing_return_step",
+            &generator.enclosing_return_step_pass,
+            enclosing_return_step_bind_groups,
+            active_hir_dispatch_args_buf,
+        );
+    }
+    dispatch_x86_stages_indirect(
+        encoder,
+        &[
             (
                 "return_match_records",
                 &generator.return_match_records_pass,
@@ -355,23 +378,6 @@ pub(super) fn record_metadata_and_call_dispatches(
         (match_record_rows * 4) as u64,
     );
     stamp_timer(timer, encoder, "x86.metadata.match_result.done");
-    if needs_enclosing_return_records {
-        dispatch_x86_stage_indirect(
-            encoder,
-            "enclosing_return_init",
-            &generator.enclosing_return_init_pass,
-            enclosing_return_init_bind_group,
-            active_hir_dispatch_args_buf,
-        );
-        dispatch_compute_pass_indirect_bind_group_steps(
-            encoder,
-            "enclosing_return_step",
-            "codegen.x86.enclosing_return_step",
-            &generator.enclosing_return_step_pass,
-            enclosing_return_step_bind_groups,
-            active_hir_dispatch_args_buf,
-        );
-    }
     dispatch_x86_stage_indirect(
         encoder,
         "enclosing_let_init",

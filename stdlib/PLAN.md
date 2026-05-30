@@ -121,6 +121,7 @@ The current `stdlib/` directory contains plain `.lani` files:
 - `std/time.lani`
 - `std/fs.lani`
 - `std/net.lani`
+- `std/host.lani`
 - `test/assert.lani`
 - `i32.lani`
 - `bool.lani`
@@ -155,8 +156,10 @@ module-qualified generic helpers such as `core::option::unwrap_or(value,
 fallback)` can type-check when their scalar return is inferred from literal or
 annotated local arguments, but this is not full monomorphization. Backend
 execution for tag-only `Option`/`Result` predicate helpers is not an active
-claim right now; the legacy WASM tests are ignored until rebuilt on the active
-record pipeline. Payload projection helpers such as `unwrap_or` remain blocked
+claim right now; the guarded WASM execution test is ignored and the retired
+enum-match module emitter is not loaded until enum/match lowering is rebuilt on
+active record-driven passes. Payload projection helpers
+such as `unwrap_or` remain blocked
 until backend lowering consumes parser-owned call/constructor argument records
 and typed payload value records instead of token-shaped call syntax. The older
 flat files still use an `lstd_` prefix so copied or
@@ -349,8 +352,10 @@ Bool helpers:
 - `or`
 - `xor`
 - `eq`
+- `ne`
 - `to_i32`
 - `from_i32`
+- `select`
 - `then`
 - `then_some`
 
@@ -1041,8 +1046,12 @@ Examples:
 
 This keeps embedded and WASM use cases honest.
 The current `core::target` source seed exposes static defaults for the current
-host-backed test environment; real target configuration and compile-time
+compiler slice and reports runtime-backed services as unavailable until a real
+runtime/linker contract exists; real target configuration and compile-time
 capability evaluation are still future work.
+`std::host` exposes the aggregate host-service descriptor as contract metadata
+only, with fail-closed blocked and runtime-binding probes and no raw executable
+host ABI declarations.
 
 ## Naming Principles
 

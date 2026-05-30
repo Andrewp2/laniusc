@@ -10,7 +10,15 @@ use super::super::{
     x86_function_slot_capacity,
     x86_initial_output_readback_bytes,
     x86_node_inst_order_rows,
+    x86_regalloc_pass_contract,
 };
+
+// Bounded owner/placement relations that still bridge control-flow lowering into
+// virtual instruction generation before a full basic-block edge table exists.
+const X86_CONTROL_FLOW_BRIDGE_RELATIONS: usize = 4;
+const X86_CONTROL_FLOW_BRIDGE_LOOP_STATUS: &str = "bounded";
+const X86_CONTROL_FLOW_BRIDGE_FALLBACK_STATUS: &str = "fail-closed";
+const X86_CONTROL_FLOW_BRIDGE_CLAIM_STATUS: &str = "blocked";
 
 pub(super) struct RecordCapacity {
     pub(super) hir_words: usize,
@@ -31,6 +39,8 @@ pub(super) struct RecordCapacity {
     pub(super) match_pattern_owner_steps: Vec<u32>,
     pub(super) node_inst_same_end_rank_steps: Vec<u32>,
     pub(super) enclosing_loop_steps: Vec<u32>,
+    pub(super) short_circuit_rhs_steps: Vec<u32>,
+    pub(super) index_source_owner_steps: Vec<u32>,
     pub(super) func_owner_scan_blocks: usize,
     pub(super) node_inst_order_rows: usize,
     pub(super) virtual_next_call_steps: Vec<u32>,
@@ -84,6 +94,8 @@ impl RecordCapacity {
         let match_pattern_owner_steps = pointer_jump_steps_for_items(hir_words);
         let node_inst_same_end_rank_steps = pointer_jump_steps_for_items(hir_words);
         let enclosing_loop_steps = pointer_jump_steps_for_items(hir_words);
+        let short_circuit_rhs_steps = pointer_jump_steps_for_items(hir_words);
+        let index_source_owner_steps = pointer_jump_steps_for_items(hir_words);
         let func_owner_scan_blocks = hir_words.div_ceil(256).max(1);
         let virtual_next_call_steps = scan_steps_for_blocks(inst_capacity);
         let regalloc_recorded_steps = regalloc_recorded_step_count(inst_capacity);
@@ -123,6 +135,10 @@ impl RecordCapacity {
             virtual_regalloc_chunk_count,
             function_slot_capacity,
             node_inst_order_rows,
+            &node_inst_same_end_rank_steps,
+            &enclosing_loop_steps,
+            &short_circuit_rhs_steps,
+            &index_source_owner_steps,
             feature_summary,
         );
 
@@ -145,6 +161,8 @@ impl RecordCapacity {
             match_pattern_owner_steps,
             node_inst_same_end_rank_steps,
             enclosing_loop_steps,
+            short_circuit_rhs_steps,
+            index_source_owner_steps,
             func_owner_scan_blocks,
             node_inst_order_rows,
             virtual_next_call_steps,
@@ -165,6 +183,10 @@ fn trace_capacity(
     virtual_regalloc_chunk_count: usize,
     function_slot_capacity: usize,
     node_inst_order_rows: usize,
+    node_inst_same_end_rank_steps: &[u32],
+    enclosing_loop_steps: &[u32],
+    short_circuit_rhs_steps: &[u32],
+    index_source_owner_steps: &[u32],
     feature_summary: X86FeatureSummary,
 ) {
     if !crate::gpu::trace::enabled() {
@@ -172,6 +194,22 @@ fn trace_capacity(
     }
 
     let now = std::time::Instant::now();
+    let regalloc_contract = x86_regalloc_pass_contract();
+    let regalloc_readiness_blocked = regalloc_contract.loop_status == "bounded"
+        && regalloc_contract.fallback_status == "fail-closed"
+        && regalloc_contract.claim_status == "blocked";
+    let control_bridge_max_steps = [
+        node_inst_same_end_rank_steps.len(),
+        enclosing_loop_steps.len(),
+        short_circuit_rhs_steps.len(),
+        index_source_owner_steps.len(),
+    ]
+    .into_iter()
+    .max()
+    .unwrap_or(0);
+    let control_bridge_relation_words = capacity
+        .hir_words
+        .saturating_mul(X86_CONTROL_FLOW_BRIDGE_RELATIONS);
     for (name, value) in [
         ("x86.hir_words", capacity.hir_words),
         ("x86.inst_basis_words", capacity.inst_basis_words),
@@ -190,6 +228,66 @@ fn trace_capacity(
         ("x86.regalloc_recorded_chunks", virtual_regalloc_chunk_count),
         ("x86.regalloc_recorded_steps", regalloc_recorded_steps),
         ("x86.regalloc_rows_per_chunk", X86_REGALLOC_ROWS_PER_CHUNK),
+        (
+            "x86.regalloc_contract_rows_per_chunk",
+            regalloc_contract.rows_per_chunk,
+        ),
+        (
+            "x86.regalloc_contract_loop_status_bounded",
+            usize::from(regalloc_contract.loop_status == "bounded"),
+        ),
+        (
+            "x86.regalloc_contract_fallback_status_fail_closed",
+            usize::from(regalloc_contract.fallback_status == "fail-closed"),
+        ),
+        (
+            "x86.regalloc_contract_claim_status_blocked",
+            usize::from(regalloc_contract.claim_status == "blocked"),
+        ),
+        (
+            "x86.regalloc_contract_readiness_status_blocked",
+            usize::from(regalloc_readiness_blocked),
+        ),
+        (
+            "x86.control_bridge_contract_loop_status_bounded",
+            usize::from(X86_CONTROL_FLOW_BRIDGE_LOOP_STATUS == "bounded"),
+        ),
+        (
+            "x86.control_bridge_contract_fallback_status_fail_closed",
+            usize::from(X86_CONTROL_FLOW_BRIDGE_FALLBACK_STATUS == "fail-closed"),
+        ),
+        (
+            "x86.control_bridge_contract_claim_status_blocked",
+            usize::from(X86_CONTROL_FLOW_BRIDGE_CLAIM_STATUS == "blocked"),
+        ),
+        (
+            "x86.control_bridge_relation_count",
+            X86_CONTROL_FLOW_BRIDGE_RELATIONS,
+        ),
+        (
+            "x86.control_bridge_relation_words",
+            control_bridge_relation_words,
+        ),
+        (
+            "x86.control_bridge_node_inst_same_end_rank_steps",
+            node_inst_same_end_rank_steps.len(),
+        ),
+        (
+            "x86.control_bridge_enclosing_loop_steps",
+            enclosing_loop_steps.len(),
+        ),
+        (
+            "x86.control_bridge_short_circuit_rhs_steps",
+            short_circuit_rhs_steps.len(),
+        ),
+        (
+            "x86.control_bridge_index_source_owner_steps",
+            index_source_owner_steps.len(),
+        ),
+        (
+            "x86.control_bridge_max_pointer_jump_steps",
+            control_bridge_max_steps,
+        ),
         ("x86.node_inst_order_rows", node_inst_order_rows),
         ("x86.feature_mask", feature_summary.mask as usize),
         (

@@ -29,7 +29,6 @@ pub(super) struct CallRecordInputs<'a> {
     pub(super) hir_status_buf: &'a wgpu::Buffer,
     pub(super) hir_kind_buf: &'a wgpu::Buffer,
     pub(super) parent_buf: &'a wgpu::Buffer,
-    pub(super) subtree_end_buf: &'a wgpu::Buffer,
     pub(super) function_metadata: &'a GpuX86FunctionMetadataBuffers<'a>,
     pub(super) expr_metadata: &'a GpuX86ExprMetadataBuffers<'a>,
     pub(super) call_metadata: &'a GpuX86CallMetadataBuffers<'a>,
@@ -76,7 +75,6 @@ pub(super) fn create_call_record_bind_groups(
         hir_status_buf,
         hir_kind_buf,
         parent_buf,
-        subtree_end_buf,
         function_metadata,
         expr_metadata,
         call_metadata,
@@ -124,8 +122,8 @@ pub(super) fn create_call_record_bind_groups(
             ("hir_kind", hir_kind_buf.as_entire_binding()),
             ("hir_expr_record", expr_metadata.record.as_entire_binding()),
             (
-                "x86_expr_resolved_node",
-                expr_resolved_final_buf.as_entire_binding(),
+                "hir_expr_result_root_node",
+                expr_metadata.expr_result_root_node.as_entire_binding(),
             ),
             ("x86_node_func", final_node_func_buf.as_entire_binding()),
             (
@@ -181,7 +179,6 @@ pub(super) fn create_call_record_bind_groups(
             ("hir_status", hir_status_buf.as_entire_binding()),
             ("hir_kind", hir_kind_buf.as_entire_binding()),
             ("x86_tree_parent", parent_buf.as_entire_binding()),
-            ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
             (
                 "hir_member_receiver_node",
                 call_metadata.member_receiver_node.as_entire_binding(),
@@ -232,8 +229,8 @@ pub(super) fn create_call_record_bind_groups(
             ("hir_kind", hir_kind_buf.as_entire_binding()),
             ("hir_expr_record", expr_metadata.record.as_entire_binding()),
             (
-                "x86_expr_resolved_node",
-                expr_resolved_final_buf.as_entire_binding(),
+                "hir_expr_result_root_node",
+                expr_metadata.expr_result_root_node.as_entire_binding(),
             ),
             (
                 "hir_expr_int_value",
@@ -280,7 +277,6 @@ pub(super) fn create_call_record_bind_groups(
                 "hir_type_len_value",
                 expr_metadata.type_len_value.as_entire_binding(),
             ),
-            ("x86_tree_subtree_end", subtree_end_buf.as_entire_binding()),
             (
                 "method_decl_param_offset",
                 function_metadata
@@ -417,17 +413,13 @@ pub(super) fn create_call_record_bind_groups(
             ("hir_status", hir_status_buf.as_entire_binding()),
             ("hir_kind", hir_kind_buf.as_entire_binding()),
             (
-                "x86_expr_resolved_node",
-                expr_resolved_final_buf.as_entire_binding(),
+                "hir_expr_result_root_node",
+                expr_metadata.expr_result_root_node.as_entire_binding(),
             ),
             ("x86_call_record", call_record_buf.as_entire_binding()),
             (
                 "hir_call_arg_parent_call",
                 call_metadata.arg_parent_call.as_entire_binding(),
-            ),
-            (
-                "hir_call_arg_ordinal",
-                call_metadata.arg_ordinal.as_entire_binding(),
             ),
             (
                 "hir_call_callee_node",

@@ -57,6 +57,7 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for TokensBuildPass 
                 b.source_file_len.as_entire_binding(),
             ),
             ("tokens_out".into(), b.tokens_out.as_entire_binding()),
+            ("token_file_id".into(), b.token_file_id.as_entire_binding()),
         ])
     }
 

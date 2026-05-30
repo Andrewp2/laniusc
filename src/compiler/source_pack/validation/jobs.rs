@@ -10,7 +10,7 @@ pub(in crate::compiler) fn validate_job_dependency_ranges<F>(
 where
     F: Fn(String) -> CompileError,
 {
-    let mut ranges = Vec::<(usize, usize)>::new();
+    let mut previous_range_end = None;
     for (range_position, range) in dependency_job_ranges.iter().enumerate() {
         if range.job_count == 0 {
             return Err(make_error(format!(
@@ -28,6 +28,14 @@ where
                 range.first_job_index, end_job_index, max_dependency_job_index_exclusive
             )));
         }
+        if let Some(previous_range_end) = previous_range_end
+            && range.first_job_index < previous_range_end
+        {
+            return Err(make_error(format!(
+                "{context} dependency job ranges must be sorted and non-overlapping; range {}..{} follows previous end {}",
+                range.first_job_index, end_job_index, previous_range_end
+            )));
+        }
         if let Some(duplicate) = explicit_dependencies
             .iter()
             .copied()
@@ -38,16 +46,7 @@ where
                 range.first_job_index, end_job_index, duplicate
             )));
         }
-        if let Some(&(overlap_start, overlap_end)) = ranges
-            .iter()
-            .find(|&&(start, end)| range.first_job_index < end && start < end_job_index)
-        {
-            return Err(make_error(format!(
-                "{context} dependency job range {}..{} overlaps range {}..{}",
-                range.first_job_index, end_job_index, overlap_start, overlap_end
-            )));
-        }
-        ranges.push((range.first_job_index, end_job_index));
+        previous_range_end = Some(end_job_index);
     }
     Ok(())
 }
@@ -62,7 +61,7 @@ pub(in crate::compiler) fn validate_job_dependent_ranges<F>(
 where
     F: Fn(String) -> CompileError,
 {
-    let mut ranges = Vec::<(usize, usize)>::new();
+    let mut previous_range_end = None;
     for (range_position, range) in dependent_job_ranges.iter().enumerate() {
         if range.job_count == 0 {
             return Err(make_error(format!(
@@ -80,6 +79,14 @@ where
                 range.first_job_index, end_job_index, min_dependent_job_index_exclusive
             )));
         }
+        if let Some(previous_range_end) = previous_range_end
+            && range.first_job_index < previous_range_end
+        {
+            return Err(make_error(format!(
+                "{context} dependent job ranges must be sorted and non-overlapping; range {}..{} follows previous end {}",
+                range.first_job_index, end_job_index, previous_range_end
+            )));
+        }
         if let Some(duplicate) = explicit_dependents
             .iter()
             .copied()
@@ -90,16 +97,7 @@ where
                 range.first_job_index, end_job_index, duplicate
             )));
         }
-        if let Some(&(overlap_start, overlap_end)) = ranges
-            .iter()
-            .find(|&&(start, end)| range.first_job_index < end && start < end_job_index)
-        {
-            return Err(make_error(format!(
-                "{context} dependent job range {}..{} overlaps range {}..{}",
-                range.first_job_index, end_job_index, overlap_start, overlap_end
-            )));
-        }
-        ranges.push((range.first_job_index, end_job_index));
+        previous_range_end = Some(end_job_index);
     }
     Ok(())
 }

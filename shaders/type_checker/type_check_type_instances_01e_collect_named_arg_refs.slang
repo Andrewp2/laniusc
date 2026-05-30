@@ -22,13 +22,12 @@ StructuredBuffer<uint> hir_type_path_leaf_node;
 StructuredBuffer<uint> hir_type_arg_start;
 StructuredBuffer<uint> hir_type_arg_count;
 StructuredBuffer<uint> hir_type_arg_next;
-StructuredBuffer<uint> type_expr_ref_tag;
-StructuredBuffer<uint> type_expr_ref_payload;
-
 RWStructuredBuffer<uint> type_instance_arg_start;
 RWStructuredBuffer<uint> type_instance_arg_ref_tag;
 RWStructuredBuffer<uint> type_instance_arg_ref_payload;
 RWStructuredBuffer<uint> type_instance_state;
+RWStructuredBuffer<uint> type_expr_ref_tag;
+RWStructuredBuffer<uint> type_expr_ref_payload;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -85,13 +84,57 @@ uint arg_ref_index(uint instance_i, uint slot)
 void clear_arg_refs(uint instance_i)
 {
     type_instance_arg_start[instance_i] = INVALID;
-    [unroll]
-    for (uint slot = 0u; slot < TYPE_INSTANCE_ARG_REF_STRIDE; slot += 1u)
+    uint out_0 = arg_ref_index(instance_i, 0u);
+    uint out_1 = arg_ref_index(instance_i, 1u);
+    uint out_2 = arg_ref_index(instance_i, 2u);
+    uint out_3 = arg_ref_index(instance_i, 3u);
+    type_instance_arg_ref_tag[out_0] = TYPE_REF_INVALID;
+    type_instance_arg_ref_payload[out_0] = INVALID;
+    type_instance_arg_ref_tag[out_1] = TYPE_REF_INVALID;
+    type_instance_arg_ref_payload[out_1] = INVALID;
+    type_instance_arg_ref_tag[out_2] = TYPE_REF_INVALID;
+    type_instance_arg_ref_payload[out_2] = INVALID;
+    type_instance_arg_ref_tag[out_3] = TYPE_REF_INVALID;
+    type_instance_arg_ref_payload[out_3] = INVALID;
+}
+
+void mark_instance_unsupported(uint root, uint leaf_token)
+{
+    clear_arg_refs(leaf_token);
+    type_instance_state[leaf_token] = TYPE_INSTANCE_UNSUPPORTED;
+
+    uint owner_token = valid_node(root) ? hir_token_pos[root] : INVALID;
+    if (valid_token(owner_token))
     {
-        uint out_i = arg_ref_index(instance_i, slot);
-        type_instance_arg_ref_tag[out_i] = TYPE_REF_INVALID;
-        type_instance_arg_ref_payload[out_i] = INVALID;
+        type_expr_ref_tag[owner_token] = TYPE_REF_ERROR;
+        type_expr_ref_payload[owner_token] = leaf_token;
     }
+    if (valid_token(leaf_token))
+    {
+        type_expr_ref_tag[leaf_token] = TYPE_REF_ERROR;
+        type_expr_ref_payload[leaf_token] = leaf_token;
+    }
+}
+
+bool publish_arg_ref_slot(uint leaf_token, uint slot, uint node, out uint next_node)
+{
+    next_node = INVALID;
+    if (!valid_node(node))
+        return false;
+
+    uint arg_token = hir_token_pos[node];
+    uint out_i = arg_ref_index(leaf_token, slot);
+    if (!valid_token(arg_token) || type_expr_ref_tag[arg_token] == TYPE_REF_INVALID)
+    {
+        type_instance_arg_ref_tag[out_i] = TYPE_REF_ERROR;
+        type_instance_arg_ref_payload[out_i] = leaf_token;
+        return false;
+    }
+
+    type_instance_arg_ref_tag[out_i] = type_expr_ref_tag[arg_token];
+    type_instance_arg_ref_payload[out_i] = type_expr_ref_payload[arg_token];
+    next_node = hir_type_arg_next[node];
+    return true;
 }
 
 [shader("compute")]
@@ -113,38 +156,59 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint arg_count = hir_type_arg_count[root];
     if (arg_count > TYPE_INSTANCE_ARG_REF_STRIDE)
     {
-        type_instance_state[leaf_token] = TYPE_INSTANCE_UNSUPPORTED;
+        mark_instance_unsupported(root, leaf_token);
         return;
     }
 
     uint node = hir_type_arg_start[root];
-    [loop]
-    for (uint step = 0u;
-         step < TYPE_INSTANCE_ARG_REF_STRIDE && slot < arg_count && valid_node(node);
-         step += 1u)
+    uint next_node = INVALID;
+    if (arg_count > 0u)
     {
-        uint arg_token = hir_token_pos[node];
-        uint out_i = arg_ref_index(leaf_token, slot);
-        if (!valid_token(arg_token) || type_expr_ref_tag[arg_token] == TYPE_REF_INVALID)
+        if (!publish_arg_ref_slot(leaf_token, 0u, node, next_node))
         {
-            type_instance_arg_ref_tag[out_i] = TYPE_REF_ERROR;
-            type_instance_arg_ref_payload[out_i] = leaf_token;
-            type_instance_state[leaf_token] = TYPE_INSTANCE_UNSUPPORTED;
+            mark_instance_unsupported(root, leaf_token);
             return;
         }
-
-        type_instance_arg_ref_tag[out_i] = type_expr_ref_tag[arg_token];
-        type_instance_arg_ref_payload[out_i] = type_expr_ref_payload[arg_token];
         slot += 1u;
-        node = hir_type_arg_next[node];
+        node = next_node;
     }
-
-    if (slot != arg_count)
+    if (arg_count > 1u)
     {
-        type_instance_state[leaf_token] = TYPE_INSTANCE_UNSUPPORTED;
-        return;
+        if (!publish_arg_ref_slot(leaf_token, 1u, node, next_node))
+        {
+            mark_instance_unsupported(root, leaf_token);
+            return;
+        }
+        slot += 1u;
+        node = next_node;
+    }
+    if (arg_count > 2u)
+    {
+        if (!publish_arg_ref_slot(leaf_token, 2u, node, next_node))
+        {
+            mark_instance_unsupported(root, leaf_token);
+            return;
+        }
+        slot += 1u;
+        node = next_node;
+    }
+    if (arg_count > 3u)
+    {
+        if (!publish_arg_ref_slot(leaf_token, 3u, node, next_node))
+        {
+            mark_instance_unsupported(root, leaf_token);
+            return;
+        }
+        slot += 1u;
+        node = next_node;
     }
 
     if (arg_count == 0u)
         type_instance_arg_start[leaf_token] = INVALID;
+
+    if (slot != arg_count || valid_node(node))
+    {
+        mark_instance_unsupported(root, leaf_token);
+        return;
+    }
 }

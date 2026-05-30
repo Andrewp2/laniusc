@@ -19,6 +19,8 @@ RWStructuredBuffer<uint> type_instance_head_token;
 RWStructuredBuffer<uint> type_decl_generic_param_count;
 RWStructuredBuffer<uint> type_decl_generic_param_count_by_node;
 RWStructuredBuffer<uint> type_decl_const_param_count_by_node;
+RWStructuredBuffer<uint> type_decl_first_generic_param_row_by_node;
+RWStructuredBuffer<uint> type_decl_first_const_param_row_by_node;
 RWStructuredBuffer<uint> type_decl_hir_node_by_token;
 RWStructuredBuffer<uint> type_generic_param_slot_by_token;
 RWStructuredBuffer<uint> type_const_param_slot_by_token;
@@ -61,6 +63,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         type_decl_generic_param_count_by_node[i] = 0u;
         type_decl_const_param_count_by_node[i] = 0u;
+        type_decl_first_generic_param_row_by_node[i] = INVALID;
+        type_decl_first_const_param_row_by_node[i] = INVALID;
     }
 
     if (i >= gParams.n_tokens)

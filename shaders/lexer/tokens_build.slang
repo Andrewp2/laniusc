@@ -18,6 +18,7 @@ struct TokenOut
     uint len;
 };
 RWStructuredBuffer<TokenOut> tokens_out;
+RWStructuredBuffer<uint> token_file_id;
 
 static const uint TK_IDENT = 1;
 static const uint TK_PUB = 66;
@@ -45,25 +46,36 @@ static const uint TK_EXTERN = 102;
 static const uint TK_TYPE = 103;
 static const uint TK_WHERE = 104;
 static const uint TK_SELF_VALUE = 105;
-static const uint MAX_FILES_SCAN = 1024u;
+static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
-uint file_start_for_token_end(uint end_excl)
+uint2 file_start_and_id_for_token_end(uint end_excl)
 {
     if (end_excl == 0u)
-        return 0u;
+        return uint2(0u, INVALID);
 
     uint pos = end_excl - 1u;
-    uint files = min(source_file_count[0], MAX_FILES_SCAN);
-    [loop]
-    for (uint f = 0u; f < files; f += 1u)
+    uint count = source_file_count[0];
+    uint lo = 0u;
+    uint hi = count;
+    for (uint guard = 0u; guard < 32u && lo < hi; guard += 1u)
     {
-        uint start = source_file_start[f];
-        uint end = start + source_file_len[f];
-        if (pos >= start && pos < end)
-            return start;
+        uint mid = lo + ((hi - lo) >> 1u);
+        if (source_file_start[mid] <= pos)
+            lo = mid + 1u;
+        else
+            hi = mid;
     }
-    return 0u;
+
+    if (lo == 0u)
+        return uint2(0u, INVALID);
+
+    uint file_i = lo - 1u;
+    uint start = source_file_start[file_i];
+    uint end = start + source_file_len[file_i];
+    if (pos >= start && pos < end)
+        return uint2(start, file_i);
+    return uint2(0u, INVALID);
 }
 
 inline uint retag_keyword(uint kind, uint start, uint len)
@@ -179,14 +191,11 @@ inline uint compact_token_start(uint token_index)
     return (all_zero == 0u) ? 0u : end_positions_all[all_zero - 1u];
 }
 
-inline uint retag_compact_kind(uint token_index)
+inline uint retag_compact_kind(uint token_index, uint start, uint end_excl)
 {
     uint kind = types_compact[token_index];
     if (kind == TK_IDENT)
     {
-        uint end_excl = end_positions[token_index];
-        uint start = compact_token_start(token_index);
-        start = max(start, file_start_for_token_end(end_excl));
         kind = retag_keyword(kind, start, end_excl - start);
     }
     return kind;
@@ -203,9 +212,10 @@ void tokens_build(uint3 tid: SV_DispatchThreadID)
         return;
 
     uint end_excl = end_positions[k];
+    uint2 file_info = file_start_and_id_for_token_end(end_excl);
     uint start = compact_token_start(k);
-    start = max(start, file_start_for_token_end(end_excl));
-    uint kind = retag_compact_kind(k);
+    start = max(start, file_info.x);
+    uint kind = retag_compact_kind(k, start, end_excl);
 
     // Write final token
     TokenOut t;
@@ -213,4 +223,5 @@ void tokens_build(uint3 tid: SV_DispatchThreadID)
     t.start = start;
     t.len = end_excl - start;
     tokens_out[k] = t;
+    token_file_id[k] = file_info.y;
 }

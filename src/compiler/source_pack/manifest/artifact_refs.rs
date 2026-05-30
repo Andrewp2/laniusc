@@ -44,11 +44,13 @@ pub(in crate::compiler) fn validate_artifact_ref_index(
             index.artifact_count - 1
         )));
     }
-    if index.final_output_key.is_empty() {
-        return Err(artifact_shard_contract_error(
-            "artifact-ref index final output key is empty",
-        ));
-    }
+    validate_artifact_key_kind(
+        target,
+        &index.final_output_key,
+        SourcePackArtifactKind::LinkedOutput,
+        "artifact-ref index final output",
+        artifact_shard_contract_error,
+    )?;
     Ok(())
 }
 
@@ -96,12 +98,13 @@ pub(in crate::compiler) fn validate_artifact_ref_page(
             page.artifact_index, page.artifact_ref.producing_job_index
         )));
     }
-    if page.artifact_ref.key.is_empty() {
-        return Err(artifact_shard_contract_error(format!(
-            "artifact-ref page {} has an empty artifact key",
-            page.artifact_index
-        )));
-    }
+    validate_artifact_key_kind(
+        target,
+        &page.artifact_ref.key,
+        page.artifact_ref.kind,
+        &format!("artifact-ref page {}", page.artifact_index),
+        artifact_shard_contract_error,
+    )?;
     Ok(())
 }
 

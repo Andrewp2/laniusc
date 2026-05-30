@@ -27,8 +27,6 @@ StructuredBuffer<uint> hir_array_lit_element_count;
 StructuredBuffer<uint> hir_array_element_parent_lit;
 StructuredBuffer<uint> hir_array_element_ordinal;
 StructuredBuffer<uint> hir_array_element_next;
-StructuredBuffer<uint> x86_tree_parent;
-StructuredBuffer<uint> x86_tree_subtree_end;
 StructuredBuffer<uint> x86_node_tree_status;
 StructuredBuffer<uint> x86_enclosing_let_node;
 
@@ -105,14 +103,6 @@ uint resolve_expr(uint node)
     return valid_node(node) ? x86_expr_resolved_node[node] : INVALID;
 }
 
-bool node_span_contains(uint ancestor, uint node)
-{
-    if (!valid_node(ancestor) || !valid_node(node))
-        return false;
-    uint end = x86_tree_subtree_end[ancestor];
-    return end != INVALID && ancestor <= node && node < end;
-}
-
 uint pack_struct_access_info(uint kind, uint payload)
 {
     if (kind > X86_STRUCT_ACCESS_KIND_MASK || payload > X86_STRUCT_ACCESS_PAYLOAD_MAX)
@@ -174,6 +164,16 @@ void publish_store_record_for_value(uint value_node, uint decl_token, uint ordin
         X86_AGG_STORE_ARRAY);
 }
 
+bool let_initializer_is_array_literal(uint let_node, uint array_node)
+{
+    if (!valid_node(let_node) || !valid_node(array_node))
+        return false;
+    // Nested aggregate ownership needs an explicit owner/path record; do not
+    // infer it from subtree spans in this backend projection.
+    uint init_expr = stmt_slot(let_node, 2u);
+    return resolve_expr(init_expr) == array_node;
+}
+
 void publish_element_store_record(uint node)
 {
     uint array_node = hir_array_element_parent_lit[node];
@@ -185,8 +185,7 @@ void publish_element_store_record(uint node)
     if (!valid_node(let_node) || stmt_slot(let_node, 0u) != STMT_RECORD_KIND_LET)
         return;
 
-    uint init_expr = stmt_slot(let_node, 2u);
-    if (!node_span_contains(init_expr, array_node))
+    if (!let_initializer_is_array_literal(let_node, array_node))
         return;
 
     uint decl_token = stmt_slot(let_node, 1u);

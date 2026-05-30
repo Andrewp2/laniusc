@@ -24,9 +24,8 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 ByteAddressBuffer in_bytes;
-StructuredBuffer<uint> source_file_count;
-StructuredBuffer<uint> source_file_start;
-StructuredBuffer<uint> source_file_len;
+StructuredBuffer<uint> source_file_start_flags;
+StructuredBuffer<uint> source_file_end_flags;
 StructuredBuffer<uint> block_prefix;
 StructuredBuffer<uint> chunk_summaries;
 StructuredBuffer<uint> token_map;
@@ -34,8 +33,6 @@ StructuredBuffer<uint> next_emit; // u16 packed: next_state (low 15) | HIGH_BIT 
 
 RWStructuredBuffer<uint> flags_packed;
 RWStructuredBuffer<uint> tok_types;
-
-static const uint MAX_FILES_SCAN = 1024u;
 
 inline bool is_skip(uint tk)
 {
@@ -49,26 +46,12 @@ uint next_state_only(uint byte_value, uint state)
 
 bool is_file_start(uint i_abs)
 {
-    uint files = min(source_file_count[0], MAX_FILES_SCAN);
-    [loop]
-    for (uint f = 0u; f < files; f += 1u)
-    {
-        if (source_file_start[f] == i_abs)
-            return true;
-    }
-    return false;
+    return source_file_start_flags[i_abs] != 0u;
 }
 
 bool is_file_end(uint i_abs)
 {
-    uint files = min(source_file_count[0], MAX_FILES_SCAN);
-    [loop]
-    for (uint f = 0u; f < files; f += 1u)
-    {
-        if (source_file_start[f] + source_file_len[f] == i_abs)
-            return true;
-    }
-    return false;
+    return source_file_end_flags[i_abs] != 0u;
 }
 
 [shader("compute")]

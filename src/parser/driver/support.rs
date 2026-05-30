@@ -110,6 +110,14 @@ pub(super) fn make_tokens_to_kinds_pass(device: &wgpu::Device) -> Result<PassDat
     )
 }
 
+pub(super) fn make_tokens_to_identifier_kinds_pass(device: &wgpu::Device) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_to_identifier_kinds",
+        shader: "tokens_to_identifier_kinds"
+    )
+}
+
 pub(super) fn make_token_delimiters_01_pass(device: &wgpu::Device) -> Result<PassData> {
     crate::gpu::passes_core::make_main_pass!(
         device,
@@ -134,11 +142,93 @@ pub(super) fn make_token_delimiters_03_owner_local_pass(device: &wgpu::Device) -
     )
 }
 
+pub(super) fn make_token_delimiters_04_owner_apply_pass(device: &wgpu::Device) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_delimiters_04_owner_apply",
+        shader: "tokens_delimiters_04_owner_apply"
+    )
+}
+
 pub(super) fn make_tokens_brace_context_pass(device: &wgpu::Device) -> Result<PassData> {
     crate::gpu::passes_core::make_main_pass!(
         device,
         "parser_tokens_brace_context",
         shader: "tokens_brace_context"
+    )
+}
+
+pub(super) fn make_tokens_statement_phase_01_local_pass(device: &wgpu::Device) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_statement_phase_01_local",
+        shader: "tokens_statement_phase_01_local"
+    )
+}
+
+pub(super) fn make_tokens_statement_phase_02_apply_pass(device: &wgpu::Device) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_statement_phase_02_apply",
+        shader: "tokens_statement_phase_02_apply"
+    )
+}
+
+pub(super) fn make_tokens_impl_header_01_local_pass(device: &wgpu::Device) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_impl_header_01_local",
+        shader: "tokens_impl_header_01_local"
+    )
+}
+
+pub(super) fn make_tokens_impl_header_02_apply_pass(device: &wgpu::Device) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_impl_header_02_apply",
+        shader: "tokens_impl_header_02_apply"
+    )
+}
+
+pub(super) fn make_tokens_where_clause_01_local_pass(device: &wgpu::Device) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_where_clause_01_local",
+        shader: "tokens_where_clause_01_local"
+    )
+}
+
+pub(super) fn make_tokens_where_clause_02_apply_pass(device: &wgpu::Device) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_where_clause_02_apply",
+        shader: "tokens_where_clause_02_apply"
+    )
+}
+
+pub(super) fn make_tokens_match_pattern_01_local_pass(device: &wgpu::Device) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_match_pattern_01_local",
+        shader: "tokens_match_pattern_01_local"
+    )
+}
+
+pub(super) fn make_tokens_match_pattern_02_apply_pass(device: &wgpu::Device) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_match_pattern_02_apply",
+        shader: "tokens_match_pattern_02_apply"
+    )
+}
+
+pub(super) fn make_tokens_paren_match_01_depth_blocks_pass(
+    device: &wgpu::Device,
+) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_paren_match_01_depth_blocks",
+        shader: "tokens_paren_match_01_depth_blocks"
     )
 }
 
@@ -159,6 +249,16 @@ pub(super) fn make_tokens_bracket_match_01_depth_blocks_pass(
         device,
         "parser_tokens_bracket_match_01_depth_blocks",
         shader: "tokens_bracket_match_01_depth_blocks"
+    )
+}
+
+pub(super) fn make_tokens_angle_match_01_depth_blocks_pass(
+    device: &wgpu::Device,
+) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_angle_match_01_depth_blocks",
+        shader: "tokens_angle_match_01_depth_blocks"
     )
 }
 

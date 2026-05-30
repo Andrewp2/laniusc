@@ -18,9 +18,8 @@ StructuredBuffer<uint> ll1_status;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> parent;
 StructuredBuffer<uint> first_child;
-StructuredBuffer<uint> subtree_end;
 StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_token_end;
 
 RWStructuredBuffer<uint> hir_call_arg_end;
 RWStructuredBuffer<uint> hir_call_arg_owner_a;
@@ -105,30 +104,7 @@ uint end_token_for_arg_expr(uint expr_node)
 {
     if (!valid_node(expr_node))
         return INVALID;
-
-    uint arg_container = parent_node(expr_node);
-    if (!valid_node(arg_container))
-        return INVALID;
-
-    uint next = subtree_end[expr_node];
-    uint container_end = min(subtree_end[arg_container], active_node_count());
-    if (valid_node(next) && next < container_end && parent[next] == arg_container)
-    {
-        uint next_pos = hir_token_pos[next];
-        if (next_pos != INVALID)
-            return next_pos;
-    }
-
-    uint end_node = min(subtree_end[expr_node], active_node_count());
-    if (end_node > expr_node + 1u)
-    {
-        uint last_pos = hir_token_pos[end_node - 1u];
-        if (last_pos != INVALID)
-            return last_pos + 1u;
-    }
-
-    uint start = hir_token_pos[expr_node];
-    return start == INVALID ? INVALID : start + 1u;
+    return hir_token_end[expr_node];
 }
 
 [shader("compute")]

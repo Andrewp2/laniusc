@@ -3,9 +3,12 @@
 // This pass does not substitute generic arguments itself. It publishes the
 // declaration-side field ref plus the contextual type-instance token; the next
 // pass substitutes generic slots using the type-instance argument table.
+// Generic field refs use the precomputed generic-parameter slot table instead
+// of scanning declaration subtrees.
 
+import fixed_key;
 import generated_parse_production_ids;
-import tree_walk;
+import range_query;
 
 struct Params
 {
@@ -17,20 +20,23 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> parent;
-StructuredBuffer<uint> subtree_end;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_type_value_node;
+StructuredBuffer<uint> hir_type_path_leaf_node;
 StructuredBuffer<uint> hir_struct_field_parent_struct;
+StructuredBuffer<uint> hir_struct_field_ordinal;
 StructuredBuffer<uint> hir_struct_field_type_node;
 StructuredBuffer<uint> hir_struct_lit_head_node;
 StructuredBuffer<uint> hir_struct_lit_field_parent_lit;
+StructuredBuffer<uint> struct_field_key_order;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
-StructuredBuffer<uint> type_instance_decl_token;
+StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> type_decl_hir_node_by_token;
+StructuredBuffer<uint> struct_lit_context_decl_token;
+StructuredBuffer<uint> struct_lit_context_instance;
 
 RWStructuredBuffer<uint> struct_init_field_context_instance;
 RWStructuredBuffer<uint> struct_init_field_expected_ref_tag;
@@ -40,12 +46,7 @@ RWStructuredBuffer<uint> struct_init_field_ordinal_by_node;
 
 static const uint INVALID = 0xffffffffu;
 
-static const uint TYPE_REF_INVALID = 0u;
-static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
-static const uint TYPE_REF_INSTANCE = 3u;
-static const uint TY_STRUCT_BASE = 4096u;
-static const uint TY_ENUM_BASE = 6144u;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -75,165 +76,22 @@ bool valid_node(uint i)
     return i != INVALID && i < active_node_count();
 }
 
-uint node_subtree_end(uint node_i)
-{
-    if (!valid_node(node_i))
-        return INVALID;
-    uint end = subtree_end[node_i];
-    return end == INVALID ? active_node_count() : min(end, active_node_count());
-}
-
-uint struct_init_parent_node(uint node_i)
-{
-    return parent[node_i];
-}
-
-public struct StructInitGraph : ITreeWalkGraph
-{
-    public static bool valid(uint node)
-    {
-        return valid_node(node);
-    }
-
-    public static uint parent(uint node)
-    {
-        return struct_init_parent_node(node);
-    }
-}
-
-public struct StructInitProductionPredicate : ITreeWalkKeyPredicate
-{
-    public static bool matches(uint node, uint prod)
-    {
-        return node_kind[node] == prod;
-    }
-}
-
-bool is_item_decl_production(uint prod)
-{
-    return prod == PROD_FN || prod == PROD_EXTERN_FN || prod == PROD_TYPE_ALIAS ||
-           prod == PROD_IMPL_INHERENT || prod == PROD_IMPL_TRAIT || prod == PROD_TRAIT ||
-           prod == PROD_ENUM || prod == PROD_STRUCT;
-}
-
-bool is_function_like_production(uint prod)
-{
-    return prod == PROD_FN || prod == PROD_IMPL_METHOD || prod == PROD_IMPL_METHOD_PUB ||
-           prod == PROD_TRAIT_METHOD || prod == PROD_TRAIT_METHOD_PUB;
-}
-
-bool is_type_expr_production(uint prod)
-{
-    return prod == PROD_TYPE_IDENT || prod == PROD_TYPE_ARRAY || prod == PROD_TYPE_REF;
-}
-
-bool is_type_path_ident_production(uint prod)
-{
-    return prod == PROD_TYPE_PATH_IDENT || prod == PROD_PATH_IDENT;
-}
-
-public struct StructInitItemDeclPredicate : ITreeWalkPredicate
-{
-    public static bool matches(uint node)
-    {
-        return is_item_decl_production(node_kind[node]);
-    }
-}
-
-public struct StructInitFunctionLikePredicate : ITreeWalkPredicate
-{
-    public static bool matches(uint node)
-    {
-        return is_function_like_production(node_kind[node]);
-    }
-}
-
-bool has_ancestor_node(uint node_i, uint ancestor_i)
-{
-    return has_self_or_ancestor_node<StructInitGraph>(node_i, ancestor_i, 96u);
-}
-
-uint ancestor_with_production(uint node_i, uint prod)
-{
-    uint ancestor;
-    return find_ancestor_matching_key<
-        StructInitGraph,
-        StructInitProductionPredicate>(
-        node_i,
-        prod,
-        96u,
-        ancestor) ? ancestor : INVALID;
-}
-
-uint item_decl_ancestor(uint node_i)
-{
-    uint ancestor;
-    return find_self_or_ancestor<StructInitGraph, StructInitItemDeclPredicate>(
-        node_i,
-        96u,
-        ancestor) ? ancestor : INVALID;
-}
-
-uint function_like_ancestor(uint node_i)
-{
-    uint ancestor;
-    return find_self_or_ancestor<StructInitGraph, StructInitFunctionLikePredicate>(
-        node_i,
-        96u,
-        ancestor) ? ancestor : INVALID;
-}
-
-uint first_type_expr_descendant(uint root_i)
-{
-    if (!valid_node(root_i))
-        return INVALID;
-
-    uint n = node_subtree_end(root_i);
-    [loop]
-    for (uint j = root_i + 1u; j < n; j += 1u)
-    {
-        if (is_type_expr_production(node_kind[j]) && has_ancestor_node(j, root_i))
-            return j;
-    }
-    return INVALID;
-}
-
-uint return_type_node(uint fn_node)
-{
-    if (!valid_node(fn_node))
-        return INVALID;
-
-    uint n = node_subtree_end(fn_node);
-    [loop]
-    for (uint j = fn_node + 1u; j < n; j += 1u)
-    {
-        if (node_kind[j] == PROD_RET_TYPE && has_ancestor_node(j, fn_node))
-            return first_type_expr_descendant(j);
-    }
-    return INVALID;
-}
-
 uint type_head_token_for_node(uint type_node)
 {
     if (!valid_node(type_node))
         return INVALID;
 
-    uint value_node = hir_type_value_node[type_node];
-    uint search_root = valid_node(value_node) ? value_node : type_node;
-    uint leaf = INVALID;
-    uint n = node_subtree_end(search_root);
-    [loop]
-    for (uint j = search_root + 1u; j < n; j += 1u)
+    // Type-instance collection publishes the leaf of each parser-owned path
+    // type. Consumers use that record instead of rescanning the type subtree.
+    uint leaf_node = hir_type_path_leaf_node[type_node];
+    if (valid_node(leaf_node))
     {
-        if (!is_type_path_ident_production(node_kind[j]) || !has_ancestor_node(j, search_root))
-            continue;
-        uint token = hir_token_pos[j];
-        if (valid_token(token))
-            leaf = token;
+        uint leaf = hir_token_pos[leaf_node];
+        if (valid_token(leaf))
+            return leaf;
     }
-    if (valid_token(leaf))
-        return leaf;
 
+    uint value_node = hir_type_value_node[type_node];
     if (valid_node(value_node))
     {
         uint value_head = hir_token_pos[value_node];
@@ -244,59 +102,16 @@ uint type_head_token_for_node(uint type_node)
     return valid_token(type_head) ? type_head : INVALID;
 }
 
-bool context_for_type_node(uint type_node, out uint decl_token, out uint instance_i)
-{
-    decl_token = INVALID;
-    instance_i = INVALID;
-    uint type_head = type_head_token_for_node(type_node);
-    if (!valid_token(type_head))
-        return false;
-
-    uint tag = type_expr_ref_tag[type_head];
-    uint payload = type_expr_ref_payload[type_head];
-    if (tag == TYPE_REF_INSTANCE && valid_token(payload))
-    {
-        uint instance_decl = type_instance_decl_token[payload];
-        if (!valid_token(instance_decl))
-            return false;
-        decl_token = instance_decl;
-        instance_i = payload;
-        return true;
-    }
-    if (tag == TYPE_REF_SCALAR && payload >= TY_STRUCT_BASE && payload < TY_ENUM_BASE)
-    {
-        decl_token = payload - TY_STRUCT_BASE;
-        return valid_token(decl_token);
-    }
-    return false;
-}
-
-uint let_annotation_type_node(uint let_node)
-{
-    if (!valid_node(let_node))
-        return INVALID;
-
-    uint n = node_subtree_end(let_node);
-    [loop]
-    for (uint j = let_node + 1u; j < n; j += 1u)
-    {
-        if (node_kind[j] == PROD_LET_TYPE && has_ancestor_node(j, let_node))
-            return first_type_expr_descendant(j);
-    }
-    return INVALID;
-}
-
 bool context_for_struct_literal_node(uint literal_node, out uint decl_token, out uint instance_i)
 {
     decl_token = INVALID;
     instance_i = INVALID;
-    uint let_node = ancestor_with_production(literal_node, PROD_LET_STMT);
-    if (context_for_type_node(let_annotation_type_node(let_node), decl_token, instance_i))
-        return true;
+    if (!valid_node(literal_node))
+        return false;
 
-    uint return_node = ancestor_with_production(literal_node, PROD_RETURN_STMT);
-    uint fn_node = function_like_ancestor(return_node);
-    return context_for_type_node(return_type_node(fn_node), decl_token, instance_i);
+    decl_token = struct_lit_context_decl_token[literal_node];
+    instance_i = struct_lit_context_instance[literal_node];
+    return valid_token(decl_token);
 }
 
 uint struct_node_for_decl_token(uint decl_token)
@@ -324,6 +139,52 @@ bool literal_head_matches_decl(uint literal_node, uint decl_token)
     return same_name_id(hir_token_pos[head_node], decl_token);
 }
 
+public struct StructFieldLookupKey
+{
+    uint struct_node;
+    uint name_id;
+}
+
+public struct StructFieldFixedKey : IFixedU32RowKey<StructFieldLookupKey>
+{
+    public static uint row_lane(uint row, uint lane)
+    {
+        uint field_node = row < active_node_count() ? struct_field_key_order[row] : INVALID;
+        if (!valid_node(field_node) || node_kind[field_node] != PROD_STRUCT_FIELD)
+            return 0u;
+        uint owner = hir_struct_field_parent_struct[field_node];
+        uint token = hir_token_pos[field_node];
+        uint name_id = valid_token(token) ? name_id_by_token[token] : INVALID;
+        if (!valid_node(owner) || name_id == INVALID)
+            return 0u;
+        if (lane == 0u)
+            return fixed_key_encode_nullable_u32(owner, INVALID);
+        if (lane == 1u)
+            return fixed_key_encode_nullable_u32(name_id, INVALID);
+        return fixed_key_encode_nullable_u32(field_node, INVALID);
+    }
+
+    public static uint key_lane(StructFieldLookupKey key, uint lane)
+    {
+        if (lane == 0u)
+            return fixed_key_encode_nullable_u32(key.struct_node, INVALID);
+        if (lane == 1u)
+            return fixed_key_encode_nullable_u32(key.name_id, INVALID);
+        return 0u;
+    }
+}
+
+public struct StructFieldKeyCompare : IRowQueryCompare<StructFieldLookupKey>
+{
+    public static int compare(uint row, StructFieldLookupKey key)
+    {
+        return fixed_u32_row_key_compare<StructFieldLookupKey, StructFieldFixedKey>(
+            row,
+            key,
+            2u);
+    }
+}
+
 bool field_node_for_literal_field(uint struct_node, uint field_token, out uint field_node, out uint field_ordinal)
 {
     field_node = INVALID;
@@ -335,50 +196,22 @@ bool field_node_for_literal_field(uint struct_node, uint field_token, out uint f
     if (field_name == INVALID)
         return false;
 
-    uint ordinal = 0u;
-    uint n = node_subtree_end(struct_node);
-    [loop]
-    for (uint j = struct_node + 1u; j < n; j += 1u)
-    {
-        if (node_kind[j] != PROD_STRUCT_FIELD ||
-            hir_struct_field_parent_struct[j] != struct_node)
-            continue;
+    StructFieldLookupKey key;
+    key.struct_node = struct_node;
+    key.name_id = field_name;
+    QueryRange range = equal_range_query<StructFieldLookupKey, StructFieldKeyCompare>(
+        active_node_count(),
+        key);
+    if (range.end != range.begin + 1u)
+        return false;
 
-        uint decl_field_token = hir_token_pos[j];
-        if (valid_token(decl_field_token) && name_id_by_token[decl_field_token] == field_name)
-        {
-            field_node = j;
-            field_ordinal = ordinal;
-            return true;
-        }
-        ordinal += 1u;
-    }
-    return false;
-}
-
-uint generic_param_slot_for_name(uint decl_node, uint param_token)
-{
-    if (!valid_node(decl_node) || !valid_token(param_token))
-        return INVALID;
-
-    uint param_name = name_id_by_token[param_token];
-    if (param_name == INVALID)
-        return INVALID;
-
-    uint slot = 0u;
-    uint n = node_subtree_end(decl_node);
-    [loop]
-    for (uint j = decl_node + 1u; j < n; j += 1u)
-    {
-        if (node_kind[j] != PROD_ENUM_TYPE_PARAM || item_decl_ancestor(j) != decl_node)
-            continue;
-
-        uint decl_param_token = hir_token_pos[j];
-        if (valid_token(decl_param_token) && name_id_by_token[decl_param_token] == param_name)
-            return slot;
-        slot += 1u;
-    }
-    return INVALID;
+    field_node = struct_field_key_order[range.begin];
+    if (!valid_node(field_node) ||
+        node_kind[field_node] != PROD_STRUCT_FIELD ||
+        hir_struct_field_parent_struct[field_node] != struct_node)
+        return false;
+    field_ordinal = hir_struct_field_ordinal[field_node];
+    return field_ordinal != INVALID;
 }
 
 void publish_struct_init_field_node(uint field_node)
@@ -415,7 +248,13 @@ void publish_struct_init_field_node(uint field_node)
     uint tag = type_expr_ref_tag[type_head];
     uint payload = type_expr_ref_payload[type_head];
     if (tag == TYPE_REF_GENERIC_PARAM)
-        payload = generic_param_slot_for_name(struct_node, payload);
+    {
+        if (!valid_token(payload))
+            return;
+        payload = type_generic_param_slot_by_token[payload];
+        if (payload == INVALID)
+            return;
+    }
 
     struct_init_field_context_instance[field_token] = instance_i;
     struct_init_field_expected_ref_tag[field_token] = tag;

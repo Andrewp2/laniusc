@@ -149,7 +149,7 @@ where
         execute_hierarchical_link_page_async(&page, executor, &mut store).await?;
     }
 
-    let output_path = store.as_ref().path_for_key(&page.output_key)?;
+    let output_path = completed_hierarchical_link_output_path(store.as_ref(), &page)?;
     let linked_output_key = page.final_output.then(|| page.output_key.clone());
     let linked_output_path = page.final_output.then(|| output_path.clone());
     let executed_link_group = FilesystemHierarchicalLinkGroupExecutionResult {
@@ -159,6 +159,7 @@ where
         input_interface_count: hierarchical_link_execution_input_interface_count(&page),
         input_object_count: hierarchical_link_execution_input_object_count(&page),
         input_group_count: hierarchical_link_execution_input_group_count(&page),
+        descriptor_summary: page.descriptor_summary.clone(),
         output_key: page.output_key.clone(),
         output_path,
         final_output: page.final_output,

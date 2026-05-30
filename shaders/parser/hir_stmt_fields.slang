@@ -2,6 +2,9 @@
 //
 // This pass consumes tree arrays and HIR classifications. It does not inspect
 // token neighborhoods, source bytes, helper names, or stdlib names.
+// Statement-scope ends are derived from the parser's statement-list/block
+// records and fail closed to INVALID when the local grammar shape is not
+// present.
 
 import generated_parse_production_ids;
 
@@ -20,16 +23,22 @@ StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> next_sibling;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_token_end;
 StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint> hir_expr_result_root_node;
+StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_semantic_count;
 
 RWStructuredBuffer<uint> hir_stmt_record;
+RWStructuredBuffer<uint> hir_stmt_scope_end;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint HIR_EXPR = 14u;
+static const uint HIR_TYPE = 5u;
+static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_FOR_STMT = 30u;
 
 static const uint STMT_RECORD_STRIDE = 4u;
@@ -41,6 +50,8 @@ static const uint STMT_RECORD_KIND_CONST = 4u;
 static const uint STMT_RECORD_KIND_ASSIGN = 5u;
 static const uint STMT_RECORD_KIND_WHILE = 6u;
 static const uint STMT_RECORD_KIND_FOR = 7u;
+static const uint STMT_RECORD_KIND_BREAK = 8u;
+static const uint STMT_RECORD_KIND_CONTINUE = 9u;
 
 static const uint HIR_EXPR_RECORD_STRIDE = 4u;
 static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
@@ -90,9 +101,33 @@ uint stmt_slot(uint node, uint slot)
     return node * STMT_RECORD_STRIDE + slot;
 }
 
+uint valid_end_or_invalid(uint node)
+{
+    if (!valid_node(node))
+        return INVALID;
+    uint end = hir_token_end[node];
+    return end == 0u ? INVALID : end;
+}
+
 uint expr_slot(uint node, uint slot)
 {
     return valid_node(node) ? hir_expr_record[node * HIR_EXPR_RECORD_STRIDE + slot] : INVALID;
+}
+
+bool node_has_non_empty_span(uint node)
+{
+    return valid_node(node) &&
+           hir_token_pos[node] != INVALID &&
+           hir_token_end[node] != INVALID &&
+           hir_token_pos[node] < hir_token_end[node];
+}
+
+uint token_after_keyword(uint node)
+{
+    if (!node_has_non_empty_span(node))
+        return INVALID;
+    uint token = hir_token_pos[node] + 1u;
+    return token < hir_token_end[node] ? token : INVALID;
 }
 
 void clear_record(uint i)
@@ -101,6 +136,7 @@ void clear_record(uint i)
     hir_stmt_record[stmt_slot(i, 1u)] = INVALID;
     hir_stmt_record[stmt_slot(i, 2u)] = INVALID;
     hir_stmt_record[stmt_slot(i, 3u)] = INVALID;
+    hir_stmt_scope_end[i] = INVALID;
 }
 
 uint valid_child_or_invalid(uint node)
@@ -146,6 +182,13 @@ uint let_init_child(uint node)
     return sibling_if_production(let_type, PROD_LET_INIT);
 }
 
+uint let_type_node(uint node)
+{
+    uint let_type = valid_child_or_invalid(node);
+    uint type_node = valid_child_or_invalid(let_type);
+    return valid_node(type_node) && hir_kind[type_node] == HIR_TYPE ? type_node : INVALID;
+}
+
 uint return_value_child(uint node)
 {
     return child_if_production(node, PROD_RETURN_VALUE);
@@ -154,6 +197,25 @@ uint return_value_child(uint node)
 uint block_child(uint node)
 {
     return child_if_production(node, PROD_BLOCK);
+}
+
+uint lexical_statement_list_scope_end(uint node)
+{
+    uint p = valid_node(node) ? parent[node] : INVALID;
+    if (valid_node(p) && node_kind[p] == PROD_STMTS_MORE)
+        return valid_end_or_invalid(p);
+
+    uint pp = valid_node(p) ? parent[p] : INVALID;
+    if (valid_node(pp) && node_kind[pp] == PROD_STMTS_MORE)
+        return valid_end_or_invalid(pp);
+
+    if (valid_node(p) &&
+        (node_kind[p] == PROD_BLOCK ||
+         node_kind[p] == PROD_FN_BLOCK ||
+         node_kind[p] == PROD_IMPL_FN_BLOCK))
+        return valid_end_or_invalid(p);
+
+    return INVALID;
 }
 
 uint if_then_block(uint node)
@@ -167,16 +229,12 @@ uint else_block_for_if(uint node)
     uint sibling = valid_sibling_or_invalid(node);
     if (!valid_node(sibling))
         return INVALID;
-    if (node_kind[sibling] == PROD_BLOCK)
-        return sibling;
     if (node_kind[sibling] == PROD_ELSE_STMT)
         return block_child(sibling);
 
     uint child = valid_child_or_invalid(sibling);
     if (!valid_node(child))
         return INVALID;
-    if (node_kind[child] == PROD_BLOCK)
-        return child;
     if (node_kind[child] == PROD_ELSE_STMT)
         return block_child(child);
     return INVALID;
@@ -186,8 +244,15 @@ uint value_token_for_expr(uint node)
 {
     if (!valid_node(node))
         return INVALID;
-    uint token_i = expr_slot(node, HIR_EXPR_RECORD_VALUE_TOKEN);
-    return token_i != INVALID ? token_i : hir_token_pos[node];
+    uint result = hir_expr_result_root_node[node];
+    if (!valid_node(result))
+        return INVALID;
+    uint token_i = expr_slot(result, HIR_EXPR_RECORD_VALUE_TOKEN);
+    if (token_i != INVALID)
+        return token_i;
+    if (hir_kind[result] == HIR_MEMBER_EXPR && hir_member_name_token[result] != INVALID)
+        return hir_member_name_token[result];
+    return hir_token_pos[result];
 }
 
 bool is_assignment_tail_production(uint prod)
@@ -248,12 +313,16 @@ void publish_let(uint node)
 {
     uint init = let_init_child(node);
     uint init_expr = direct_expr_child(init);
+    uint type_node = let_type_node(node);
+    uint name_token = token_after_keyword(node);
+    if (name_token == INVALID)
+        return;
 
     hir_stmt_record[stmt_slot(node, 0u)] = STMT_RECORD_KIND_LET;
-    hir_stmt_record[stmt_slot(node, 1u)] = hir_token_pos[node] == INVALID ? INVALID
-                                                                          : hir_token_pos[node] + 1u;
+    hir_stmt_record[stmt_slot(node, 1u)] = name_token;
     hir_stmt_record[stmt_slot(node, 2u)] = init_expr;
-    hir_stmt_record[stmt_slot(node, 3u)] = INVALID;
+    hir_stmt_record[stmt_slot(node, 3u)] = type_node;
+    hir_stmt_scope_end[node] = lexical_statement_list_scope_end(node);
 }
 
 void publish_return(uint node)
@@ -314,25 +383,47 @@ void publish_while(uint node)
 void publish_for(uint node)
 {
     uint iterable = valid_child_or_invalid(node);
-    uint body = valid_sibling_or_invalid(iterable);
+    uint body = valid_node(iterable) && node_kind[iterable] == PROD_PATH
+        ? sibling_if_production(iterable, PROD_BLOCK)
+        : INVALID;
+    uint binding_token = token_after_keyword(node);
+    if (binding_token == INVALID)
+        return;
 
     hir_stmt_record[stmt_slot(node, 0u)] = STMT_RECORD_KIND_FOR;
-    hir_stmt_record[stmt_slot(node, 1u)] = hir_token_pos[node] == INVALID ? INVALID
-                                                                          : hir_token_pos[node] + 1u;
-    hir_stmt_record[stmt_slot(node, 2u)] = valid_node(iterable) ? hir_token_pos[iterable] : INVALID;
+    hir_stmt_record[stmt_slot(node, 1u)] = binding_token;
+    hir_stmt_record[stmt_slot(node, 2u)] = valid_node(iterable) && node_kind[iterable] == PROD_PATH
+        ? iterable
+        : INVALID;
     hir_stmt_record[stmt_slot(node, 3u)] = body;
+    hir_stmt_scope_end[node] = valid_end_or_invalid(body);
+}
+
+void publish_loop_control(uint node, uint kind)
+{
+    if (!node_has_non_empty_span(node))
+        return;
+    hir_stmt_record[stmt_slot(node, 0u)] = kind;
+    hir_stmt_record[stmt_slot(node, 1u)] = INVALID;
+    hir_stmt_record[stmt_slot(node, 2u)] = INVALID;
+    hir_stmt_record[stmt_slot(node, 3u)] = INVALID;
 }
 
 void publish_const(uint node)
 {
     uint type_node = valid_child_or_invalid(node);
     uint value_expr = valid_sibling_or_invalid(type_node);
+    uint name_token = token_after_keyword(node);
+    if (name_token == INVALID)
+        return;
 
     hir_stmt_record[stmt_slot(node, 0u)] = STMT_RECORD_KIND_CONST;
-    hir_stmt_record[stmt_slot(node, 1u)] = hir_token_pos[node] == INVALID ? INVALID
-                                                                          : hir_token_pos[node] + 1u;
+    hir_stmt_record[stmt_slot(node, 1u)] = name_token;
     hir_stmt_record[stmt_slot(node, 2u)] = value_expr;
-    hir_stmt_record[stmt_slot(node, 3u)] = INVALID;
+    hir_stmt_record[stmt_slot(node, 3u)] = valid_node(type_node) && hir_kind[type_node] == HIR_TYPE
+        ? type_node
+        : INVALID;
+    hir_stmt_scope_end[node] = lexical_statement_list_scope_end(node);
 }
 
 void publish_assignment(uint node)
@@ -377,6 +468,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         publish_while(i);
     else if (prod == PROD_FOR_STMT || hir_kind[i] == HIR_FOR_STMT)
         publish_for(i);
+    else if (prod == PROD_BREAK_STMT)
+        publish_loop_control(i, STMT_RECORD_KIND_BREAK);
+    else if (prod == PROD_CONTINUE_STMT)
+        publish_loop_control(i, STMT_RECORD_KIND_CONTINUE);
     else if (prod == PROD_CONST)
         publish_const(i);
     else if (prod == PROD_EXPR_STMT)

@@ -221,5 +221,62 @@ pub(in crate::compiler) fn validate_path_manifest_source_ranges(
             )));
         }
     }
+    validate_path_manifest_frontend_source_coverage(manifest, source_file_count)?;
+    Ok(())
+}
+
+fn validate_path_manifest_frontend_source_coverage(
+    manifest: &SourcePackPathBuildManifest,
+    source_file_count: usize,
+) -> Result<(), CompileError> {
+    if manifest.artifacts.job_schedule.jobs.is_empty() {
+        return Ok(());
+    }
+
+    let mut ranges = manifest
+        .artifacts
+        .job_schedule
+        .jobs
+        .iter()
+        .filter(|job| job.phase == SourcePackJobPhase::LibraryFrontend)
+        .map(|job| {
+            (
+                job.first_source_index,
+                job.first_source_index.saturating_add(job.source_file_count),
+                job.job_index,
+            )
+        })
+        .collect::<Vec<_>>();
+    ranges.sort_unstable();
+
+    if ranges.is_empty() {
+        return Err(manifest_contract_error(
+            "path build manifest has inline jobs but no library frontend source ranges",
+        ));
+    }
+
+    let mut next_source_index = 0usize;
+    for (first_source_index, source_end, job_index) in ranges {
+        if first_source_index < next_source_index {
+            return Err(manifest_contract_error(format!(
+                "library frontend job source ranges overlap at source file {first_source_index}; job {job_index} starts before expected source file {next_source_index}"
+            )));
+        }
+        if first_source_index > next_source_index {
+            return Err(manifest_contract_error(format!(
+                "library frontend job source ranges leave path manifest source files {}..{} uncovered",
+                next_source_index, first_source_index
+            )));
+        }
+        next_source_index = source_end;
+    }
+
+    if next_source_index != source_file_count {
+        return Err(manifest_contract_error(format!(
+            "library frontend job source ranges cover path manifest source files 0..{} but source_file_count is {}",
+            next_source_index, source_file_count
+        )));
+    }
+
     Ok(())
 }

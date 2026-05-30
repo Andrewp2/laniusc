@@ -20,11 +20,14 @@ StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> next_sibling;
 StructuredBuffer<uint> prev_sibling;
 StructuredBuffer<uint> subtree_end;
+StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_semantic_count;
 
 RWStructuredBuffer<uint> hir_expr_record;
+RWStructuredBuffer<uint> hir_expr_result_node;
+RWStructuredBuffer<uint> hir_expr_result_root_node;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -57,6 +60,16 @@ static const uint HIR_EXPR_BIT_AND = 23u;
 static const uint HIR_EXPR_SHL = 24u;
 static const uint HIR_EXPR_SHR = 25u;
 static const uint HIR_EXPR_INDEX = 26u;
+static const uint HIR_EXPR_FLOAT = 27u;
+static const uint HIR_EXPR_STRING = 28u;
+static const uint HIR_EXPR_CHAR = 29u;
+
+static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_INDEX_EXPR = 20u;
+static const uint HIR_MEMBER_EXPR = 21u;
+static const uint HIR_ARRAY_EXPR = 24u;
+static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
+static const uint HIR_MATCH_EXPR = 34u;
 
 static const uint HIR_EXPR_RECORD_STRIDE = 4u;
 static const uint HIR_EXPR_RECORD_FORM = 0u;
@@ -315,9 +328,18 @@ void write_expr_record(uint i, uint form, uint left, uint right, uint value_toke
     hir_expr_record[base + HIR_EXPR_RECORD_VALUE_TOKEN] = value_token;
 }
 
+void publish_expr_result(uint i, uint result)
+{
+    uint value = valid_node(result) ? result : INVALID;
+    hir_expr_result_node[i] = value;
+    hir_expr_result_root_node[i] = value;
+}
+
 void clear_expr(uint i)
 {
     write_expr_record(i, HIR_EXPR_NONE, INVALID, INVALID, INVALID);
+    hir_expr_result_node[i] = INVALID;
+    hir_expr_result_root_node[i] = INVALID;
 }
 
 void publish_forward(uint i, uint child)
@@ -325,6 +347,7 @@ void publish_forward(uint i, uint child)
     if (!valid_node(child))
         return;
     write_expr_record(i, HIR_EXPR_FORWARD, child, INVALID, INVALID);
+    publish_expr_result(i, child);
 }
 
 bool publish_binary_from_tail(uint i, uint left, uint tail)
@@ -345,6 +368,7 @@ bool publish_binary_from_tail(uint i, uint left, uint tail)
         return false;
 
     write_expr_record(i, form, left, right, INVALID);
+    publish_expr_result(i, i);
     return true;
 }
 
@@ -377,6 +401,7 @@ bool publish_binary_tail_expr(uint i)
         return false;
 
     write_expr_record(i, form, left, right, INVALID);
+    publish_expr_result(i, i);
     return true;
 }
 
@@ -389,6 +414,11 @@ uint postfix_value_node(uint postfix)
     if (valid_node(final_operator) &&
         is_value_postfix_production(node_kind[final_operator]))
         return final_operator;
+
+    uint previous_final_operator = previous_sibling_node(final_operator);
+    if (valid_node(previous_final_operator) &&
+        is_value_postfix_production(node_kind[previous_final_operator]))
+        return previous_final_operator;
 
     uint value = first_child_node(postfix);
     if (valid_node(value) && node_kind[value] == PROD_GROUP)
@@ -409,40 +439,74 @@ uint index_base_node(uint index_node)
     return valid_node(p) && node_kind[p] == PROD_POSTFIX ? p : INVALID;
 }
 
+bool is_direct_result_hir_kind(uint kind)
+{
+    return kind == HIR_CALL_EXPR || kind == HIR_INDEX_EXPR ||
+           kind == HIR_MEMBER_EXPR || kind == HIR_ARRAY_EXPR ||
+           kind == HIR_STRUCT_LITERAL_EXPR || kind == HIR_MATCH_EXPR;
+}
+
 void publish_expr(uint i)
 {
     uint prod = node_kind[i];
     uint child = first_child_node(i);
 
+    if (is_direct_result_hir_kind(hir_kind[i]))
+        publish_expr_result(i, i);
+
     if (prod == PROD_IDENT || prod == PROD_SELF_VALUE ||
         prod == PROD_PATH)
     {
         write_expr_record(i, HIR_EXPR_NAME, INVALID, INVALID, hir_token_pos[i]);
+        publish_expr_result(i, i);
         return;
     }
     if (prod == PROD_INT)
     {
         write_expr_record(i, HIR_EXPR_INT, INVALID, INVALID, hir_token_pos[i]);
+        publish_expr_result(i, i);
+        return;
+    }
+    if (prod == PROD_FLOAT)
+    {
+        write_expr_record(i, HIR_EXPR_FLOAT, INVALID, INVALID, hir_token_pos[i]);
+        publish_expr_result(i, i);
+        return;
+    }
+    if (prod == PROD_STRING)
+    {
+        write_expr_record(i, HIR_EXPR_STRING, INVALID, INVALID, hir_token_pos[i]);
+        publish_expr_result(i, i);
+        return;
+    }
+    if (prod == PROD_CHAR)
+    {
+        write_expr_record(i, HIR_EXPR_CHAR, INVALID, INVALID, hir_token_pos[i]);
+        publish_expr_result(i, i);
         return;
     }
     if (prod == PROD_TRUE)
     {
         write_expr_record(i, HIR_EXPR_TRUE, INVALID, INVALID, hir_token_pos[i]);
+        publish_expr_result(i, i);
         return;
     }
     if (prod == PROD_FALSE)
     {
         write_expr_record(i, HIR_EXPR_FALSE, INVALID, INVALID, hir_token_pos[i]);
+        publish_expr_result(i, i);
         return;
     }
     if (prod == PROD_NOT)
     {
         write_expr_record(i, HIR_EXPR_NOT, child, INVALID, INVALID);
+        publish_expr_result(i, i);
         return;
     }
     if (prod == PROD_NEG)
     {
         write_expr_record(i, HIR_EXPR_NEG, child, INVALID, INVALID);
+        publish_expr_result(i, i);
         return;
     }
 
@@ -454,13 +518,15 @@ void publish_expr(uint i)
 
     if (prod == PROD_POSTFIX)
     {
-        publish_forward(i, postfix_value_node(i));
+        uint result = postfix_value_node(i);
+        publish_forward(i, result);
         return;
     }
 
     if (prod == PROD_POSTFIX_INDEX)
     {
         write_expr_record(i, HIR_EXPR_INDEX, index_base_node(i), child, INVALID);
+        publish_expr_result(i, i);
         return;
     }
 

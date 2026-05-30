@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::{fmt, sync::Mutex};
 
 use anyhow::Result;
 use encase::ShaderType;
@@ -27,6 +27,54 @@ pub struct RecordedWasmCodegen {
     token_capacity: u32,
 }
 
+#[derive(Debug)]
+pub struct WasmOutputError {
+    error_name: &'static str,
+    error_code: u32,
+    error_detail: u32,
+}
+
+impl WasmOutputError {
+    pub(super) fn new(error_name: &'static str, error_code: u32, error_detail: u32) -> Self {
+        Self {
+            error_name,
+            error_code,
+            error_detail,
+        }
+    }
+
+    pub fn error_name(&self) -> &'static str {
+        self.error_name
+    }
+
+    pub fn error_code(&self) -> u32 {
+        self.error_code
+    }
+
+    pub fn error_detail(&self) -> u32 {
+        self.error_detail
+    }
+
+    pub fn detail_is_token(&self) -> bool {
+        self.error_detail != u32::MAX
+            && (self.error_code == 2
+                || ((800..=899).contains(&self.error_code)
+                    && !matches!(self.error_code, 830 | 831)))
+    }
+}
+
+impl fmt::Display for WasmOutputError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "GPU WASM emitter rejected {} (code {}) at detail {}",
+            self.error_name, self.error_code, self.error_detail
+        )
+    }
+}
+
+impl std::error::Error for WasmOutputError {}
+
 #[derive(Clone, Copy)]
 pub struct GpuWasmStructMetadataBuffers<'a> {
     pub field_parent_struct: &'a wgpu::Buffer,
@@ -40,6 +88,7 @@ pub struct GpuWasmEnumMatchMetadataBuffers<'a> {
     pub match_scrutinee_node: &'a wgpu::Buffer,
     pub match_arm_start: &'a wgpu::Buffer,
     pub match_arm_count: &'a wgpu::Buffer,
+    pub match_arm_next: &'a wgpu::Buffer,
     pub match_arm_pattern_node: &'a wgpu::Buffer,
     pub match_arm_payload_start: &'a wgpu::Buffer,
     pub match_arm_payload_count: &'a wgpu::Buffer,
@@ -49,6 +98,7 @@ pub struct GpuWasmEnumMatchMetadataBuffers<'a> {
 #[derive(Clone, Copy)]
 pub struct GpuWasmCallMetadataBuffers<'a> {
     pub callee_node: &'a wgpu::Buffer,
+    pub context_stmt: &'a wgpu::Buffer,
     pub arg_start: &'a wgpu::Buffer,
     pub arg_parent_call: &'a wgpu::Buffer,
     pub arg_end: &'a wgpu::Buffer,
@@ -59,8 +109,12 @@ pub struct GpuWasmCallMetadataBuffers<'a> {
 #[derive(Clone, Copy)]
 pub struct GpuWasmExprMetadataBuffers<'a> {
     pub record: &'a wgpu::Buffer,
+    pub result_root_node: &'a wgpu::Buffer,
     pub int_value: &'a wgpu::Buffer,
     pub stmt_record: &'a wgpu::Buffer,
+    pub nearest_stmt_node: &'a wgpu::Buffer,
+    pub nearest_block_node: &'a wgpu::Buffer,
+    pub nearest_enclosing_control_node: &'a wgpu::Buffer,
 }
 
 struct ResidentWasmBuffers {
@@ -69,8 +123,6 @@ struct ResidentWasmBuffers {
     token_capacity: u32,
     hir_node_capacity: u32,
     params_buf: wgpu::Buffer,
-    _array_len_buf: wgpu::Buffer,
-    _array_values_buf: wgpu::Buffer,
     body_dispatch_buf: wgpu::Buffer,
     _body_buf: wgpu::Buffer,
     body_status_buf: wgpu::Buffer,
@@ -91,34 +143,26 @@ struct ResidentWasmBuffers {
     status_buf: wgpu::Buffer,
     out_readback: wgpu::Buffer,
     status_readback: wgpu::Buffer,
-    simple_bind_group: wgpu::BindGroup,
-    arrays_bind_group: wgpu::BindGroup,
     agg_layout_clear_bind_group: wgpu::BindGroup,
     agg_layout_bind_group: wgpu::BindGroup,
     hir_body_bind_group: wgpu::BindGroup,
     hir_agg_body_bind_group: wgpu::BindGroup,
-    hir_array_body_bind_group: wgpu::BindGroup,
     hir_module_bind_group: wgpu::BindGroup,
     hir_assert_module_bind_group: wgpu::BindGroup,
     hir_enum_match_records_bind_group: wgpu::BindGroup,
-    hir_enum_match_module_bind_group: wgpu::BindGroup,
     wasm_const_values_bind_group: wgpu::BindGroup,
     bind_group: wgpu::BindGroup,
     pack_bind_group: wgpu::BindGroup,
 }
 
 pub struct GpuWasmCodeGenerator {
-    simple_pass: PassData,
-    arrays_pass: PassData,
     agg_layout_clear_pass: PassData,
     agg_layout_pass: PassData,
     hir_body_pass: PassData,
     hir_agg_body_pass: PassData,
-    hir_array_body_pass: PassData,
     hir_module_pass: PassData,
     hir_assert_module_pass: PassData,
     hir_enum_match_records_pass: PassData,
-    hir_enum_match_module_pass: PassData,
     wasm_const_values_pass: PassData,
     pass: PassData,
     pack_pass: PassData,
@@ -139,18 +183,6 @@ impl GpuWasmCodeGenerator {
             };
         }
 
-        let simple_pass = wasm_pass!(
-            "simple",
-            "codegen_wasm_simple_lets",
-            "wasm_simple_lets.spv",
-            "wasm_simple_lets.reflect.json"
-        );
-        let arrays_pass = wasm_pass!(
-            "arrays",
-            "codegen_wasm_arrays",
-            "wasm_arrays.spv",
-            "wasm_arrays.reflect.json"
-        );
         let agg_layout_clear_pass = wasm_pass!(
             "agg_layout_clear",
             "codegen_wasm_agg_layout_clear",
@@ -175,12 +207,6 @@ impl GpuWasmCodeGenerator {
             "wasm_hir_agg_body.spv",
             "wasm_hir_agg_body.reflect.json"
         );
-        let hir_array_body_pass = wasm_pass!(
-            "hir_array_body",
-            "codegen_wasm_hir_array_body",
-            "wasm_hir_array_body.spv",
-            "wasm_hir_array_body.reflect.json"
-        );
         let hir_module_pass = wasm_pass!(
             "hir_module",
             "codegen_wasm_hir_module",
@@ -198,12 +224,6 @@ impl GpuWasmCodeGenerator {
             "codegen_wasm_hir_enum_match_records",
             "wasm_hir_enum_match_records.spv",
             "wasm_hir_enum_match_records.reflect.json"
-        );
-        let hir_enum_match_module_pass = wasm_pass!(
-            "hir_enum_match_module",
-            "codegen_wasm_hir_enum_match_module",
-            "wasm_hir_enum_match_module.spv",
-            "wasm_hir_enum_match_module.reflect.json"
         );
         let wasm_const_values_pass = wasm_pass!(
             "const_values",
@@ -224,17 +244,13 @@ impl GpuWasmCodeGenerator {
             "pack_output.reflect.json"
         );
         Ok(Self {
-            simple_pass,
-            arrays_pass,
             agg_layout_clear_pass,
             agg_layout_pass,
             hir_body_pass,
             hir_agg_body_pass,
-            hir_array_body_pass,
             hir_module_pass,
             hir_assert_module_pass,
             hir_enum_match_records_pass,
-            hir_enum_match_module_pass,
             wasm_const_values_pass,
             pass,
             pack_pass,
@@ -264,6 +280,7 @@ impl GpuWasmCodeGenerator {
         visible_decl_buf: &wgpu::Buffer,
         visible_type_buf: &wgpu::Buffer,
         name_id_by_token_buf: &wgpu::Buffer,
+        enclosing_fn_buf: &wgpu::Buffer,
         struct_metadata: GpuWasmStructMetadataBuffers<'_>,
         enum_match_metadata: GpuWasmEnumMatchMetadataBuffers<'_>,
         call_metadata: GpuWasmCallMetadataBuffers<'_>,
@@ -321,6 +338,7 @@ impl GpuWasmCodeGenerator {
             visible_decl_buf,
             visible_type_buf,
             name_id_by_token_buf,
+            enclosing_fn_buf,
             struct_metadata.field_parent_struct,
             struct_metadata.field_ordinal,
             struct_metadata.lit_field_parent_lit,
@@ -328,17 +346,20 @@ impl GpuWasmCodeGenerator {
             enum_match_metadata.match_scrutinee_node,
             enum_match_metadata.match_arm_start,
             enum_match_metadata.match_arm_count,
+            enum_match_metadata.match_arm_next,
             enum_match_metadata.match_arm_pattern_node,
             enum_match_metadata.match_arm_payload_start,
             enum_match_metadata.match_arm_payload_count,
             enum_match_metadata.match_arm_result_node,
             call_metadata.callee_node,
+            call_metadata.context_stmt,
             call_metadata.arg_start,
             call_metadata.arg_parent_call,
             call_metadata.arg_end,
             call_metadata.arg_count,
             call_metadata.arg_ordinal,
             expr_metadata.record,
+            expr_metadata.result_root_node,
             expr_metadata.int_value,
             expr_metadata.stmt_record,
             hir_param_record_buf,
@@ -402,6 +423,7 @@ impl GpuWasmCodeGenerator {
             visible_decl_buf,
             visible_type_buf,
             name_id_by_token_buf,
+            enclosing_fn_buf,
             struct_metadata,
             enum_match_metadata,
             call_metadata,
@@ -448,16 +470,14 @@ impl GpuWasmCodeGenerator {
         };
         trace_wasm_codegen("record.write_params.start");
         queue.write_buffer(&bufs.params_buf, 0, &wasm_params_bytes(&params));
-        queue.write_buffer(&bufs.body_status_buf, 0, &fast_path_status_init_bytes());
-        queue.write_buffer(&bufs.status_buf, 0, &fast_path_status_init_bytes());
+        queue.write_buffer(&bufs.body_status_buf, 0, &body_status_init_bytes());
+        queue.write_buffer(&bufs.status_buf, 0, &unsupported_shape_status_init_bytes());
         let const_value_clear = vec![0u8; bufs.token_capacity as usize * 2 * 4];
         queue.write_buffer(&bufs.wasm_const_value_record_buf, 0, &const_value_clear);
-        // The simple-let validator expands this to the packed-output fallback
-        // grid only when the source is not handled by the fast path.
         queue.write_buffer(&bufs.body_dispatch_buf, 0, &dispatch_args_bytes(1, 1, 1));
         trace_wasm_codegen("record.write_params.done");
 
-        let simple_groups = token_capacity.div_ceil(256).max(1);
+        let token_groups = token_capacity.div_ceil(256).max(1);
         let agg_layout_groups = token_capacity.max(hir_node_capacity).div_ceil(256).max(1);
         let (agg_layout_groups_x, agg_layout_groups_y) = workgroup_grid_1d(agg_layout_groups);
         let hir_module_output_groups = ((output_capacity as u32)
@@ -500,27 +520,7 @@ impl GpuWasmCodeGenerator {
         drop(compute);
         trace_wasm_codegen("record.dispatch.const_values.done");
 
-        trace_wasm_codegen("record.dispatch.simple_lets.start");
-        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("codegen.wasm.simple_lets"),
-            timestamp_writes: None,
-        });
-        compute.set_pipeline(&self.simple_pass.pipeline);
-        compute.set_bind_group(0, Some(&bufs.simple_bind_group), &[]);
-        compute.dispatch_workgroups(simple_groups, 1, 1);
-        drop(compute);
-        trace_wasm_codegen("record.dispatch.simple_lets.done");
-
-        trace_wasm_codegen("record.dispatch.arrays.start");
-        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("codegen.wasm.arrays"),
-            timestamp_writes: None,
-        });
-        compute.set_pipeline(&self.arrays_pass.pipeline);
-        compute.set_bind_group(0, Some(&bufs.arrays_bind_group), &[]);
-        compute.dispatch_workgroups(simple_groups, 1, 1);
-        drop(compute);
-        trace_wasm_codegen("record.dispatch.arrays.done");
+        trace_wasm_codegen("record.dispatch.legacy_source_shape.skipped");
 
         trace_wasm_codegen("record.dispatch.hir_body.start");
         let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -529,7 +529,7 @@ impl GpuWasmCodeGenerator {
         });
         compute.set_pipeline(&self.hir_body_pass.pipeline);
         compute.set_bind_group(0, Some(&bufs.hir_body_bind_group), &[]);
-        compute.dispatch_workgroups(simple_groups, 1, 1);
+        compute.dispatch_workgroups(token_groups, 1, 1);
         drop(compute);
         trace_wasm_codegen("record.dispatch.hir_body.done");
 
@@ -540,7 +540,7 @@ impl GpuWasmCodeGenerator {
         });
         compute.set_pipeline(&self.hir_agg_body_pass.pipeline);
         compute.set_bind_group(0, Some(&bufs.hir_agg_body_bind_group), &[]);
-        compute.dispatch_workgroups(simple_groups, 1, 1);
+        compute.dispatch_workgroups(token_groups, 1, 1);
         drop(compute);
         trace_wasm_codegen("record.dispatch.hir_agg_body.done");
 
@@ -555,16 +555,7 @@ impl GpuWasmCodeGenerator {
         drop(compute);
         trace_wasm_codegen("record.dispatch.hir_enum_match_records.done");
 
-        trace_wasm_codegen("record.dispatch.hir_enum_match_module.start");
-        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("codegen.wasm.hir_enum_match_module"),
-            timestamp_writes: None,
-        });
-        compute.set_pipeline(&self.hir_enum_match_module_pass.pipeline);
-        compute.set_bind_group(0, Some(&bufs.hir_enum_match_module_bind_group), &[]);
-        compute.dispatch_workgroups(hir_module_output_groups_x, hir_module_output_groups_y, 1);
-        drop(compute);
-        trace_wasm_codegen("record.dispatch.hir_enum_match_module.done");
+        trace_wasm_codegen("record.dispatch.hir_enum_match_module.retired_not_loaded");
 
         trace_wasm_codegen("record.dispatch.module.start");
         let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -598,28 +589,6 @@ impl GpuWasmCodeGenerator {
         compute.dispatch_workgroups(hir_module_output_groups_x, hir_module_output_groups_y, 1);
         drop(compute);
         trace_wasm_codegen("record.dispatch.hir_assert_module.done");
-
-        trace_wasm_codegen("record.dispatch.hir_array_body.start");
-        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("codegen.wasm.hir_array_body"),
-            timestamp_writes: None,
-        });
-        compute.set_pipeline(&self.hir_array_body_pass.pipeline);
-        compute.set_bind_group(0, Some(&bufs.hir_array_body_bind_group), &[]);
-        compute.dispatch_workgroups(simple_groups, 1, 1);
-        drop(compute);
-        trace_wasm_codegen("record.dispatch.hir_array_body.done");
-
-        trace_wasm_codegen("record.dispatch.module_after_hir_array_body.start");
-        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("codegen.wasm.module.after_hir_array_body"),
-            timestamp_writes: None,
-        });
-        compute.set_pipeline(&self.pass.pipeline);
-        compute.set_bind_group(0, Some(&bufs.bind_group), &[]);
-        compute.dispatch_workgroups_indirect(&bufs.body_dispatch_buf, 0);
-        drop(compute);
-        trace_wasm_codegen("record.dispatch.module_after_hir_array_body.done");
 
         trace_wasm_codegen("record.dispatch.pack_output.start");
         let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -688,6 +657,7 @@ impl GpuWasmCodeGenerator {
         visible_decl_buf: &wgpu::Buffer,
         visible_type_buf: &wgpu::Buffer,
         name_id_by_token_buf: &wgpu::Buffer,
+        enclosing_fn_buf: &wgpu::Buffer,
         struct_metadata: GpuWasmStructMetadataBuffers<'_>,
         enum_match_metadata: GpuWasmEnumMatchMetadataBuffers<'_>,
         call_metadata: GpuWasmCallMetadataBuffers<'_>,
@@ -751,6 +721,7 @@ impl GpuWasmCodeGenerator {
                 visible_decl_buf,
                 visible_type_buf,
                 name_id_by_token_buf,
+                enclosing_fn_buf,
                 struct_metadata,
                 enum_match_metadata,
                 call_metadata,
@@ -812,6 +783,7 @@ impl GpuWasmCodeGenerator {
         visible_decl_buf: &wgpu::Buffer,
         _visible_type_buf: &wgpu::Buffer,
         name_id_by_token_buf: &wgpu::Buffer,
+        enclosing_fn_buf: &wgpu::Buffer,
         struct_metadata: GpuWasmStructMetadataBuffers<'_>,
         enum_match_metadata: GpuWasmEnumMatchMetadataBuffers<'_>,
         call_metadata: GpuWasmCallMetadataBuffers<'_>,
@@ -854,18 +826,6 @@ impl GpuWasmCodeGenerator {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let array_len_buf = storage_u32_rw(
-            device,
-            "codegen.wasm.array_len",
-            token_capacity as usize,
-            wgpu::BufferUsages::empty(),
-        );
-        let array_values_buf = storage_u32_rw(
-            device,
-            "codegen.wasm.array_values",
-            token_capacity as usize * 16,
-            wgpu::BufferUsages::empty(),
-        );
         let out_buf = storage_u32_rw(
             device,
             "codegen.wasm.out_words",
@@ -981,38 +941,6 @@ impl GpuWasmCodeGenerator {
         );
         let status_readback = readback_u32s(device, "rb.codegen.wasm.status", 4);
 
-        let simple_bind_group = bind_group::create_bind_group_from_bindings(
-            device,
-            Some("codegen_wasm_simple_lets"),
-            &self.simple_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("token_words", token_buf.as_entire_binding()),
-                ("token_count", token_count_buf.as_entire_binding()),
-                ("source_bytes", source_buf.as_entire_binding()),
-                ("body_words", body_buf.as_entire_binding()),
-                ("body_status", body_status_buf.as_entire_binding()),
-                ("body_dispatch_args", body_dispatch_buf.as_entire_binding()),
-                ("out_words", out_buf.as_entire_binding()),
-                ("status", status_buf.as_entire_binding()),
-            ],
-        )?;
-        let arrays_bind_group = bind_group::create_bind_group_from_bindings(
-            device,
-            Some("codegen_wasm_arrays"),
-            &self.arrays_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("token_words", token_buf.as_entire_binding()),
-                ("token_count", token_count_buf.as_entire_binding()),
-                ("source_bytes", source_buf.as_entire_binding()),
-                ("array_len", array_len_buf.as_entire_binding()),
-                ("array_values", array_values_buf.as_entire_binding()),
-                ("body_status", body_status_buf.as_entire_binding()),
-            ],
-        )?;
         let wasm_const_values_bind_group = bind_group::create_bind_group_from_bindings(
             device,
             Some("codegen_wasm_const_values"),
@@ -1022,6 +950,10 @@ impl GpuWasmCodeGenerator {
                 ("gParams", params_buf.as_entire_binding()),
                 ("hir_status", hir_status_buf.as_entire_binding()),
                 ("hir_expr_record", expr_metadata.record.as_entire_binding()),
+                (
+                    "hir_expr_result_root_node",
+                    expr_metadata.result_root_node.as_entire_binding(),
+                ),
                 (
                     "hir_expr_int_value",
                     expr_metadata.int_value.as_entire_binding(),
@@ -1224,10 +1156,12 @@ impl GpuWasmCodeGenerator {
                 ("hir_kind", hir_kind_buf.as_entire_binding()),
                 ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
                 ("hir_token_end", hir_token_end_buf.as_entire_binding()),
+                ("call_fn_index", call_fn_index_buf.as_entire_binding()),
                 (
                     "fn_entrypoint_tag",
                     fn_entrypoint_tag_buf.as_entire_binding(),
                 ),
+                ("enclosing_fn", enclosing_fn_buf.as_entire_binding()),
                 ("visible_decl", visible_decl_buf.as_entire_binding()),
                 (
                     "wasm_const_value_record",
@@ -1239,12 +1173,34 @@ impl GpuWasmCodeGenerator {
                 ),
                 ("hir_expr_record", expr_metadata.record.as_entire_binding()),
                 (
+                    "hir_expr_result_root_node",
+                    expr_metadata.result_root_node.as_entire_binding(),
+                ),
+                (
                     "hir_expr_int_value",
                     expr_metadata.int_value.as_entire_binding(),
                 ),
                 (
                     "hir_call_callee_node",
                     call_metadata.callee_node.as_entire_binding(),
+                ),
+                (
+                    "hir_call_context_stmt_node",
+                    call_metadata.context_stmt.as_entire_binding(),
+                ),
+                (
+                    "hir_nearest_stmt_node",
+                    expr_metadata.nearest_stmt_node.as_entire_binding(),
+                ),
+                (
+                    "hir_nearest_block_node",
+                    expr_metadata.nearest_block_node.as_entire_binding(),
+                ),
+                (
+                    "hir_nearest_enclosing_control_node",
+                    expr_metadata
+                        .nearest_enclosing_control_node
+                        .as_entire_binding(),
                 ),
                 (
                     "hir_call_arg_start",
@@ -1264,24 +1220,10 @@ impl GpuWasmCodeGenerator {
             ],
         )?;
 
-        let mut hir_agg_body_bindings = vec![
+        let hir_agg_body_bindings = [
             ("gParams", params_buf.as_entire_binding()),
-            ("token_words", token_buf.as_entire_binding()),
-            ("token_count", token_count_buf.as_entire_binding()),
-            ("source_bytes", source_buf.as_entire_binding()),
-            ("hir_status", hir_status_buf.as_entire_binding()),
-            ("parent", parent_buf.as_entire_binding()),
-            ("hir_kind", hir_kind_buf.as_entire_binding()),
-            ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
-            ("hir_token_end", hir_token_end_buf.as_entire_binding()),
-            ("name_id_by_token", name_id_by_token_buf.as_entire_binding()),
-            ("visible_decl", visible_decl_buf.as_entire_binding()),
-            ("call_fn_index", call_fn_index_buf.as_entire_binding()),
-            ("body_words", body_buf.as_entire_binding()),
-            ("body_status", body_status_buf.as_entire_binding()),
             ("status", status_buf.as_entire_binding()),
         ];
-        add_aggregate_layout_output_bindings!(hir_agg_body_bindings);
         let hir_agg_body_bind_group = bind_group::create_bind_group_from_bindings(
             device,
             Some("codegen_wasm_hir_agg_body"),
@@ -1290,37 +1232,12 @@ impl GpuWasmCodeGenerator {
             &hir_agg_body_bindings,
         )?;
 
-        let hir_array_body_bind_group = bind_group::create_bind_group_from_bindings(
-            device,
-            Some("codegen_wasm_hir_array_body"),
-            &self.hir_array_body_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("token_words", token_buf.as_entire_binding()),
-                ("token_count", token_count_buf.as_entire_binding()),
-                ("source_bytes", source_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
-                ("hir_token_end", hir_token_end_buf.as_entire_binding()),
-                ("visible_decl", visible_decl_buf.as_entire_binding()),
-                ("call_fn_index", call_fn_index_buf.as_entire_binding()),
-                ("array_len", array_len_buf.as_entire_binding()),
-                ("array_values", array_values_buf.as_entire_binding()),
-                ("body_words", body_buf.as_entire_binding()),
-                ("body_status", body_status_buf.as_entire_binding()),
-                ("status", status_buf.as_entire_binding()),
-            ],
-        )?;
-
         let mut hir_module_bindings = vec![
             ("gParams", params_buf.as_entire_binding()),
             ("token_words", token_buf.as_entire_binding()),
             ("token_count", token_count_buf.as_entire_binding()),
             ("source_bytes", source_buf.as_entire_binding()),
             ("node_kind", node_kind_buf.as_entire_binding()),
-            ("parent", parent_buf.as_entire_binding()),
             ("first_child", first_child_buf.as_entire_binding()),
             ("next_sibling", next_sibling_buf.as_entire_binding()),
             ("hir_status", hir_status_buf.as_entire_binding()),
@@ -1347,12 +1264,17 @@ impl GpuWasmCodeGenerator {
                 "hir_call_arg_count",
                 call_metadata.arg_count.as_entire_binding(),
             ),
+            ("enclosing_fn", enclosing_fn_buf.as_entire_binding()),
             ("hir_param_record", hir_param_record_buf.as_entire_binding()),
             (
                 "hir_stmt_record",
                 expr_metadata.stmt_record.as_entire_binding(),
             ),
             ("hir_expr_record", expr_metadata.record.as_entire_binding()),
+            (
+                "hir_expr_result_root_node",
+                expr_metadata.result_root_node.as_entire_binding(),
+            ),
             (
                 "hir_expr_int_value",
                 expr_metadata.int_value.as_entire_binding(),
@@ -1398,41 +1320,10 @@ impl GpuWasmCodeGenerator {
             &hir_module_bindings,
         )?;
 
-        let mut hir_assert_module_bindings = vec![
+        let hir_assert_module_bindings = [
             ("gParams", params_buf.as_entire_binding()),
-            ("hir_kind", hir_kind_buf.as_entire_binding()),
-            ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
-            ("hir_token_end", hir_token_end_buf.as_entire_binding()),
-            (
-                "hir_call_callee_node",
-                call_metadata.callee_node.as_entire_binding(),
-            ),
-            (
-                "hir_call_arg_parent_call",
-                call_metadata.arg_parent_call.as_entire_binding(),
-            ),
-            (
-                "hir_call_arg_end",
-                call_metadata.arg_end.as_entire_binding(),
-            ),
-            ("hir_expr_record", expr_metadata.record.as_entire_binding()),
-            (
-                "hir_expr_int_value",
-                expr_metadata.int_value.as_entire_binding(),
-            ),
-            ("call_fn_index", call_fn_index_buf.as_entire_binding()),
-            (
-                "call_intrinsic_tag",
-                call_intrinsic_tag_buf.as_entire_binding(),
-            ),
-            (
-                "fn_entrypoint_tag",
-                fn_entrypoint_tag_buf.as_entire_binding(),
-            ),
-            ("out_words", out_buf.as_entire_binding()),
             ("status", status_buf.as_entire_binding()),
         ];
-        add_codegen_metadata_bindings!(hir_assert_module_bindings);
         let hir_assert_module_bind_group = bind_group::create_bind_group_from_bindings(
             device,
             Some("codegen_wasm_hir_assert_module"),
@@ -1459,6 +1350,10 @@ impl GpuWasmCodeGenerator {
                 (
                     "hir_match_arm_count",
                     enum_match_metadata.match_arm_count.as_entire_binding(),
+                ),
+                (
+                    "hir_match_arm_next",
+                    enum_match_metadata.match_arm_next.as_entire_binding(),
                 ),
                 (
                     "hir_match_arm_pattern_node",
@@ -1488,38 +1383,6 @@ impl GpuWasmCodeGenerator {
                     "hir_enum_match_record",
                     hir_enum_match_record_buf.as_entire_binding(),
                 ),
-            ],
-        )?;
-
-        let hir_enum_match_module_bind_group = bind_group::create_bind_group_from_bindings(
-            device,
-            Some("codegen_wasm_hir_enum_match_module"),
-            &self.hir_enum_match_module_pass,
-            0,
-            &[
-                ("gParams", params_buf.as_entire_binding()),
-                ("token_words", token_buf.as_entire_binding()),
-                ("token_count", token_count_buf.as_entire_binding()),
-                ("source_bytes", source_buf.as_entire_binding()),
-                ("hir_status", hir_status_buf.as_entire_binding()),
-                ("hir_kind", hir_kind_buf.as_entire_binding()),
-                ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
-                ("hir_token_end", hir_token_end_buf.as_entire_binding()),
-                (
-                    "hir_variant_ordinal",
-                    enum_match_metadata.variant_ordinal.as_entire_binding(),
-                ),
-                (
-                    "hir_enum_match_record",
-                    hir_enum_match_record_buf.as_entire_binding(),
-                ),
-                ("visible_decl", visible_decl_buf.as_entire_binding()),
-                ("name_id_by_token", name_id_by_token_buf.as_entire_binding()),
-                ("call_fn_index", call_fn_index_buf.as_entire_binding()),
-                ("call_param_count", call_param_count_buf.as_entire_binding()),
-                ("call_return_type", call_return_type_buf.as_entire_binding()),
-                ("out_words", out_buf.as_entire_binding()),
-                ("status", status_buf.as_entire_binding()),
             ],
         )?;
 
@@ -1556,8 +1419,6 @@ impl GpuWasmCodeGenerator {
             token_capacity,
             hir_node_capacity,
             params_buf,
-            _array_len_buf: array_len_buf,
-            _array_values_buf: array_values_buf,
             body_dispatch_buf,
             _body_buf: body_buf,
             body_status_buf,
@@ -1578,17 +1439,13 @@ impl GpuWasmCodeGenerator {
             status_buf,
             out_readback,
             status_readback,
-            simple_bind_group,
-            arrays_bind_group,
             agg_layout_clear_bind_group,
             agg_layout_bind_group,
             hir_body_bind_group,
             hir_agg_body_bind_group,
-            hir_array_body_bind_group,
             hir_module_bind_group,
             hir_assert_module_bind_group,
             hir_enum_match_records_bind_group,
-            hir_enum_match_module_bind_group,
             wasm_const_values_bind_group,
             bind_group,
             pack_bind_group,

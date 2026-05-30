@@ -4,6 +4,8 @@ module core::i32;
 
 pub const MIN: i32 = -2147483648;
 pub const MAX: i32 = 2147483647;
+pub const BITS: u32 = 32;
+pub const BYTES: u32 = 4;
 
 pub fn abs(value: i32) -> i32 {
     if (value < 0) {

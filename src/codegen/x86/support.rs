@@ -9,7 +9,7 @@ use anyhow::{Result, bail};
 use log::warn;
 use wgpu::util::DeviceExt;
 
-use super::{RecordedX86Codegen, X86Params, X86RegallocParams, X86ScanParams};
+use super::{RecordedX86Codegen, X86OutputError, X86Params, X86RegallocParams, X86ScanParams};
 use crate::gpu::passes_core::{PassData, bind_group};
 
 const UNIFORM_BINDING_ARRAY_STRIDE: u64 = 256;
@@ -891,13 +891,36 @@ pub(super) fn read_x86_output(
             5 => "register allocation failure",
             6 => "instruction sizing failure",
             7 => "ELF layout failure",
+            8 => "x86 relocation failure",
+            9 => "unsupported x86 call ABI",
+            11 => "unsupported x86 virtual instruction",
             15 => "virtual register allocation failure",
+            17 if error_detail == u32::MAX as usize => "unsupported x86 entrypoint body",
             17 => "instruction selection failure",
+            24 => "unsupported x86 method call",
+            25 => "unsupported x86 recursive call",
+            26 => "unsupported x86 aggregate copy width",
+            29 => "unsupported x86 loop-contained call",
+            30 => "unsupported x86 postfix expression",
+            31 => "unsupported x86 indexed assignment",
+            32 => "unsupported x86 zero divisor",
+            33 => "unsupported x86 for iterable",
+            34 => "unsupported x86 nested loop",
+            35 => "unsupported x86 short-circuit call operand",
+            37 => "unsupported x86 parameter aggregate assignment",
+            38 => "unsupported x86 parameter aggregate indexed assignment",
+            39 => "unsupported x86 unary expression",
+            40 => "unsupported x86 array index bounds",
+            41 => "unsupported x86 dynamic divisor",
+            42 => "unsupported x86 short-circuit trapping operand",
+            43 => "unsupported x86 entrypoint body",
+            44 => "unsupported x86 match expression",
+            45 => "unsupported x86 aggregate temporary index",
+            46 => "unsupported x86 aggregate temporary member",
+            47 => "unsupported x86 dynamic array index",
             _ => "unsupported source shape",
         };
-        return Err(anyhow::anyhow!(
-            "GPU x86 emitter rejected {error_name} (code {error_code}) at token {error_detail}"
-        ));
+        return Err(X86OutputError::new(error_name, error_code as u32, error_detail as u32).into());
     }
     if mode != 1 || len > recorded.output_capacity {
         return Err(anyhow::anyhow!(
@@ -975,7 +998,7 @@ fn dump_x86_status_trace(device: &wgpu::Device, readback: &wgpu::Buffer) -> Resu
         x86_readback_timeout(),
     )?;
     let data = readback.slice(..).get_mapped_range();
-    let words: [u32; 110] = crate::gpu::readback::read_u32_words(&data, "x86 status trace")?;
+    let words: [u32; 114] = crate::gpu::readback::read_u32_words(&data, "x86 status trace")?;
     drop(data);
     readback.unmap();
 
@@ -1019,6 +1042,7 @@ fn dump_x86_status_trace(device: &wgpu::Device, readback: &wgpu::Buffer) -> Resu
         ("select", 4),
         ("size", 4),
         ("text", 4),
+        ("reloc", 4),
         ("encode", 4),
         ("elf_layout", 4),
         ("final", 4),

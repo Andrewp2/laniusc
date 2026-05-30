@@ -14,6 +14,37 @@ pub struct Params {
     pub uses_ll1: u32,
 }
 
+pub const HIR_EXPR_FORM_NONE: u32 = 0;
+pub const HIR_EXPR_FORM_FORWARD: u32 = 1;
+pub const HIR_EXPR_FORM_NAME: u32 = 2;
+pub const HIR_EXPR_FORM_INT: u32 = 3;
+pub const HIR_EXPR_FORM_TRUE: u32 = 4;
+pub const HIR_EXPR_FORM_FALSE: u32 = 5;
+pub const HIR_EXPR_FORM_NOT: u32 = 6;
+pub const HIR_EXPR_FORM_EQ: u32 = 7;
+pub const HIR_EXPR_FORM_NE: u32 = 8;
+pub const HIR_EXPR_FORM_LT: u32 = 9;
+pub const HIR_EXPR_FORM_GT: u32 = 10;
+pub const HIR_EXPR_FORM_LE: u32 = 11;
+pub const HIR_EXPR_FORM_GE: u32 = 12;
+pub const HIR_EXPR_FORM_NEG: u32 = 13;
+pub const HIR_EXPR_FORM_ADD: u32 = 14;
+pub const HIR_EXPR_FORM_SUB: u32 = 15;
+pub const HIR_EXPR_FORM_MUL: u32 = 16;
+pub const HIR_EXPR_FORM_AND: u32 = 17;
+pub const HIR_EXPR_FORM_OR: u32 = 18;
+pub const HIR_EXPR_FORM_MOD: u32 = 19;
+pub const HIR_EXPR_FORM_DIV: u32 = 20;
+pub const HIR_EXPR_FORM_BIT_OR: u32 = 21;
+pub const HIR_EXPR_FORM_BIT_XOR: u32 = 22;
+pub const HIR_EXPR_FORM_BIT_AND: u32 = 23;
+pub const HIR_EXPR_FORM_SHL: u32 = 24;
+pub const HIR_EXPR_FORM_SHR: u32 = 25;
+pub const HIR_EXPR_FORM_INDEX: u32 = 26;
+pub const HIR_EXPR_FORM_FLOAT: u32 = 27;
+pub const HIR_EXPR_FORM_STRING: u32 = 28;
+pub const HIR_EXPR_FORM_CHAR: u32 = 29;
+
 pub struct HirExprFieldsPass {
     data: PassData,
 }
@@ -59,6 +90,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirExprFieldsPas
             ("next_sibling".into(), b.next_sibling.as_entire_binding()),
             ("prev_sibling".into(), b.prev_sibling.as_entire_binding()),
             ("subtree_end".into(), b.subtree_end.as_entire_binding()),
+            ("hir_kind".into(), b.hir_kind.as_entire_binding()),
             ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
             (
                 "hir_semantic_dense_node".into(),
@@ -71,6 +103,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirExprFieldsPas
             (
                 "hir_expr_record".into(),
                 b.hir_expr_record.as_entire_binding(),
+            ),
+            (
+                "hir_expr_result_node".into(),
+                b.hir_expr_result_node.as_entire_binding(),
+            ),
+            (
+                "hir_expr_result_root_node".into(),
+                b.hir_expr_result_root_node.as_entire_binding(),
             ),
         ])
     }

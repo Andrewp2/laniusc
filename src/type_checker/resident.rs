@@ -37,16 +37,7 @@ impl GpuTypeChecker {
 
     pub fn new(device: &wgpu::Device) -> Result<Self> {
         let passes = TypeCheckPasses::new(device)?;
-        let params_buf = uniform_from_val(
-            device,
-            "type_check.resident.params",
-            &TypeCheckParams {
-                n_tokens: 0,
-                source_len: 0,
-                n_hir_nodes: 0,
-                n_source_files: 0,
-            },
-        );
+        let params_buf = zeroed_type_check_params_buffer(device, "type_check.resident.params");
         let status_buf = storage_u32_rw(
             device,
             "type_check.resident.status",
@@ -505,29 +496,14 @@ impl GpuTypeChecker {
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.type_instances.clear.done");
             }
-            record_compute_indirect(
+            record_generic_param_record_passes_with_passes(
+                &self.passes,
                 encoder,
-                &self.passes.type_instances_decl_generic_params,
-                &bind_groups.type_instances.decl_generic_params,
-                "type_check.resident.type_instances_decl_generic_params.pass",
+                &bind_groups.type_instances,
+                hir_node_capacity.max(1).div_ceil(256).max(1),
                 &bind_groups.hir_active_dispatch_args,
+                timer.as_deref_mut(),
             )?;
-            if let Some(timer) = timer.as_deref_mut() {
-                timer.stamp(encoder, "typecheck.type_instances.decl_generic_params.done");
-            }
-            record_compute_indirect(
-                encoder,
-                &self.passes.type_instances_generic_param_use_slots,
-                &bind_groups.type_instances.generic_param_use_slots,
-                "type_check.resident.type_instances_generic_param_use_slots.pass",
-                &bind_groups.hir_active_dispatch_args,
-            )?;
-            if let Some(timer) = timer.as_deref_mut() {
-                timer.stamp(
-                    encoder,
-                    "typecheck.type_instances.generic_param_use_slots.done",
-                );
-            }
             record_type_instance_collection_passes_with_passes(
                 &self.passes,
                 encoder,
@@ -707,6 +683,13 @@ impl GpuTypeChecker {
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.member_receivers.done");
             }
+            record_struct_field_key_passes_with_passes(
+                &self.passes,
+                encoder,
+                &bind_groups.type_instances,
+                &bind_groups.hir_active_dispatch_args,
+                timer.as_deref_mut(),
+            )?;
             record_compute_indirect(
                 encoder,
                 &self.passes.type_instances_member_results,
@@ -724,18 +707,49 @@ impl GpuTypeChecker {
                 "type_check.resident.type_instances_member_substitute.pass",
                 &bind_groups.token_active_dispatch_args,
             )?;
+            record_compute_indirect(
+                encoder,
+                &self.passes.methods_mark_call_keys,
+                &bind_groups.methods.mark_call_keys,
+                "type_check.resident.methods.mark_call_keys.after_member_results",
+                &bind_groups.hir_active_dispatch_args,
+            )?;
+            record_compute_indirect(
+                encoder,
+                &self.passes.methods_mark_call_return_keys,
+                &bind_groups.methods.mark_call_return_keys,
+                "type_check.resident.methods.mark_call_return_keys.after_member_results",
+                &bind_groups.hir_active_dispatch_args,
+            )?;
+            record_compute_indirect(
+                encoder,
+                &self.passes.methods_resolve_table,
+                &bind_groups.methods.resolve_table,
+                "type_check.resident.methods.resolve_table.after_member_results",
+                &bind_groups.token_active_dispatch_args,
+            )?;
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.member_substitute.done");
             }
-            record_compute_indirect(
+            record_compute(
                 encoder,
                 &self.passes.type_instances_struct_init_clear,
                 &bind_groups.type_instances.struct_init_clear,
                 "type_check.resident.type_instances_struct_init_clear.pass",
-                &bind_groups.token_active_dispatch_args,
+                token_capacity.max(hir_node_capacity),
             )?;
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.struct_init_clear.done");
+            }
+            record_compute_indirect(
+                encoder,
+                &self.passes.type_instances_struct_init_contexts,
+                &bind_groups.type_instances.struct_init_contexts,
+                "type_check.resident.type_instances_struct_init_contexts.pass",
+                &bind_groups.hir_active_dispatch_args,
+            )?;
+            if let Some(timer) = timer.as_deref_mut() {
+                timer.stamp(encoder, "typecheck.struct_init_contexts.done");
             }
             record_compute_indirect(
                 encoder,
@@ -806,7 +820,7 @@ impl GpuTypeChecker {
                 &self.passes.calls_validate_array_results,
                 &bind_groups.calls.validate_array_results,
                 "type_check.resident.calls_validate_array_results.pass",
-                n_work,
+                n_work.saturating_mul(CALL_PARAM_CACHE_STRIDE as u32).max(1),
             )?;
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.calls_validate_array_results.done");
@@ -894,6 +908,20 @@ impl GpuTypeChecker {
                     "type_check.modules.consume_value_enum_calls",
                     &module_path.path_dispatch_args,
                 )?;
+                record_compute(
+                    encoder,
+                    &self.passes.modules_validate_value_enum_call_payloads,
+                    &module_path.bind_groups.validate_value_enum_call_payloads,
+                    "type_check.modules.validate_value_enum_call_payloads",
+                    hir_node_capacity.saturating_mul(4).max(1),
+                )?;
+                record_compute_indirect(
+                    encoder,
+                    &self.passes.modules_finalize_value_enum_calls,
+                    &module_path.bind_groups.finalize_value_enum_calls,
+                    "type_check.modules.finalize_value_enum_calls",
+                    &module_path.path_dispatch_args,
+                )?;
             }
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.type_instances_late_consumers.done");
@@ -916,6 +944,42 @@ impl GpuTypeChecker {
             if let Some(predicates) = &bind_groups.predicates {
                 record_compute_indirect(
                     encoder,
+                    &self.passes.predicates_clear_bound_arg_facts,
+                    &predicates.clear_bound_arg_facts,
+                    "type_check.resident.predicates_clear_bound_arg_facts.pass",
+                    &bind_groups.hir_active_dispatch_args,
+                )?;
+                record_compute_indirect(
+                    encoder,
+                    &self.passes.predicates_collect_bound_arg_facts,
+                    &predicates.collect_bound_arg_facts,
+                    "type_check.resident.predicates_collect_bound_arg_facts.pass",
+                    &bind_groups.hir_active_dispatch_args,
+                )?;
+                if let Some(timer) = timer.as_deref_mut() {
+                    timer.stamp(encoder, "typecheck.predicates_bound_args.done");
+                }
+                record_compute_indirect(
+                    encoder,
+                    &self.passes.predicates_collect_method_contracts,
+                    &predicates.collect_method_contracts,
+                    "type_check.resident.predicates_collect_method_contracts.pass",
+                    &bind_groups.hir_active_dispatch_args,
+                )?;
+                if let Some(timer) = timer.as_deref_mut() {
+                    timer.stamp(encoder, "typecheck.predicates_method_contracts.done");
+                }
+                record_predicate_method_contract_keys_with_passes(
+                    &self.passes,
+                    encoder,
+                    &bind_groups.hir_active_dispatch_args,
+                    predicates,
+                )?;
+                if let Some(timer) = timer.as_deref_mut() {
+                    timer.stamp(encoder, "typecheck.predicates_method_contract_keys.done");
+                }
+                record_compute_indirect(
+                    encoder,
                     &self.passes.predicates_collect,
                     &predicates.collect,
                     "type_check.resident.predicates_collect.pass",
@@ -923,6 +987,15 @@ impl GpuTypeChecker {
                 )?;
                 if let Some(timer) = timer.as_deref_mut() {
                     timer.stamp(encoder, "typecheck.predicates_collect.done");
+                }
+                record_predicate_bind_groups_with_passes(
+                    &self.passes,
+                    encoder,
+                    &bind_groups.hir_active_dispatch_args,
+                    predicates,
+                )?;
+                if let Some(timer) = timer.as_deref_mut() {
+                    timer.stamp(encoder, "typecheck.predicates_keys.done");
                 }
                 record_compute_indirect(
                     encoder,

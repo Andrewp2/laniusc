@@ -1,0 +1,87 @@
+// Source-level test harness service contract.
+// This exposes descriptor metadata for future test discovery/execution without
+// binding or running a harness in the active compiler slice.
+
+module test::harness;
+
+pub type TestHarnessCapability = bool;
+pub type TestHarnessRuntimeAbiVersion = u32;
+pub type TestHarnessServiceId = u32;
+pub type TestHarnessServiceStatus = u32;
+
+pub const TEST_HARNESS_RUNTIME_ABI_VERSION: TestHarnessRuntimeAbiVersion = 1;
+pub const TEST_HARNESS_SERVICE_ID: TestHarnessServiceId = 13;
+pub const TEST_HARNESS_SERVICE_STATUS_UNAVAILABLE: TestHarnessServiceStatus = 1;
+pub const TEST_HARNESS_HAS_RUNTIME_BINDING: TestHarnessCapability = false;
+
+pub fn test_harness_runtime_abi_version() -> TestHarnessRuntimeAbiVersion {
+    return TEST_HARNESS_RUNTIME_ABI_VERSION;
+}
+
+pub fn test_harness_service_id() -> TestHarnessServiceId {
+    return TEST_HARNESS_SERVICE_ID;
+}
+
+pub fn test_harness_service_is_known() -> TestHarnessCapability {
+    return true;
+}
+
+pub fn test_harness_contract_metadata_is_available() -> TestHarnessCapability {
+    return test_harness_service_is_known();
+}
+
+pub fn test_harness_service_status() -> TestHarnessServiceStatus {
+    return TEST_HARNESS_SERVICE_STATUS_UNAVAILABLE;
+}
+
+pub fn test_harness_is_available() -> TestHarnessCapability {
+    return TEST_HARNESS_HAS_RUNTIME_BINDING;
+}
+
+pub fn test_harness_is_blocked() -> TestHarnessCapability {
+    return !test_harness_is_available();
+}
+
+pub fn test_harness_requires_runtime_binding() -> TestHarnessCapability {
+    return !TEST_HARNESS_HAS_RUNTIME_BINDING;
+}
+
+pub fn test_harness_abi_is_contract_only() -> TestHarnessCapability {
+    return test_harness_requires_runtime_binding();
+}
+
+pub fn test_registration_is_executable() -> TestHarnessCapability {
+    return TEST_HARNESS_HAS_RUNTIME_BINDING;
+}
+
+pub fn test_registration_is_blocked() -> TestHarnessCapability {
+    return !test_registration_is_executable();
+}
+
+pub fn test_registration_requires_runtime_binding() -> TestHarnessCapability {
+    return !test_registration_is_executable();
+}
+
+pub fn test_discovery_is_executable() -> TestHarnessCapability {
+    return TEST_HARNESS_HAS_RUNTIME_BINDING;
+}
+
+pub fn test_discovery_is_blocked() -> TestHarnessCapability {
+    return !test_discovery_is_executable();
+}
+
+pub fn test_discovery_requires_runtime_binding() -> TestHarnessCapability {
+    return !test_discovery_is_executable();
+}
+
+pub fn test_execution_is_executable() -> TestHarnessCapability {
+    return TEST_HARNESS_HAS_RUNTIME_BINDING;
+}
+
+pub fn test_execution_is_blocked() -> TestHarnessCapability {
+    return !test_execution_is_executable();
+}
+
+pub fn test_execution_requires_runtime_binding() -> TestHarnessCapability {
+    return !test_execution_is_executable();
+}

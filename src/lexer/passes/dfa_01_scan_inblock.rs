@@ -40,12 +40,8 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa01ScanInblock
             ),
             ("in_bytes".into(), b.in_bytes.as_entire_binding()),
             (
-                "source_file_count".into(),
-                b.source_file_count.as_entire_binding(),
-            ),
-            (
-                "source_file_start".into(),
-                b.source_file_start.as_entire_binding(),
+                "source_file_start_flags".into(),
+                b.source_file_start_flags.as_entire_binding(),
             ),
             ("next_u8".into(), b.next_u8.as_entire_binding()),
             ("block_summaries".into(), b.dfa_02_ping.as_entire_binding()),

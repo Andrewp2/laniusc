@@ -25,10 +25,6 @@ impl GpuX86CodeGenerator {
         hir_kind_buf: &wgpu::Buffer,
         hir_stmt_record_buf: &wgpu::Buffer,
         hir_expr_record_buf: &wgpu::Buffer,
-        hir_token_pos_buf: &wgpu::Buffer,
-        parent_buf: &wgpu::Buffer,
-        first_child_buf: &wgpu::Buffer,
-        enclosing_fn_buf: &wgpu::Buffer,
     ) -> Result<X86FeatureSummary> {
         let params_buf = uniform_u32_words(
             device,
@@ -48,10 +44,6 @@ impl GpuX86CodeGenerator {
                 ("hir_kind", hir_kind_buf.as_entire_binding()),
                 ("hir_stmt_record", hir_stmt_record_buf.as_entire_binding()),
                 ("hir_expr_record", hir_expr_record_buf.as_entire_binding()),
-                ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
-                ("parent", parent_buf.as_entire_binding()),
-                ("first_child", first_child_buf.as_entire_binding()),
-                ("enclosing_fn", enclosing_fn_buf.as_entire_binding()),
                 ("x86_feature_record", feature_record_buf.as_entire_binding()),
             ],
         )?;

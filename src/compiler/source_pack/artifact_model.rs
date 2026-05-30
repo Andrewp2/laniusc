@@ -410,6 +410,7 @@ pub struct FilesystemHierarchicalLinkGroupExecutionResult {
     pub input_interface_count: usize,
     pub input_object_count: usize,
     pub input_group_count: usize,
+    pub descriptor_summary: SourcePackLinkDescriptorSummary,
     pub output_key: String,
     pub output_path: PathBuf,
     pub final_output: bool,

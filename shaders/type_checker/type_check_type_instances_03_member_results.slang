@@ -3,10 +3,11 @@
 // The preceding member-receiver pass records the receiver type ref and receiver
 // instance for every HIR member expression. This pass projects the selected
 // struct field from parser-owned struct metadata and interned field-name ids.
-// It does not read source bytes, token spellings, or token kinds.
+// Generic field refs use the precomputed generic-parameter slot table instead
+// of scanning declaration subtrees.
 
-import generated_parse_production_ids;
-import tree_walk;
+import fixed_key;
+import range_query;
 
 struct Params
 {
@@ -18,20 +19,17 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> parent;
-StructuredBuffer<uint> subtree_end;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_member_name_token;
-StructuredBuffer<uint> hir_struct_decl_field_start;
-StructuredBuffer<uint> hir_struct_decl_field_count;
 StructuredBuffer<uint> hir_struct_field_parent_struct;
 StructuredBuffer<uint> hir_struct_field_ordinal;
 StructuredBuffer<uint> hir_struct_field_type_node;
+StructuredBuffer<uint> struct_field_key_order;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
+StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> type_instance_decl_token;
 StructuredBuffer<uint> type_decl_hir_node_by_token;
 
@@ -74,32 +72,6 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
-uint parent_node(uint node)
-{
-    return parent[node];
-}
-
-public struct MemberResultWalkGraph : ITreeWalkGraph
-{
-    public static bool valid(uint node)
-    {
-        return valid_node(node);
-    }
-
-    public static uint parent(uint node)
-    {
-        return parent_node(node);
-    }
-}
-
-public struct MemberResultStructPredicate : ITreeWalkPredicate
-{
-    public static bool matches(uint node)
-    {
-        return hir_kind[node] == HIR_STRUCT_ITEM;
-    }
-}
-
 uint scalar_struct_decl_token(uint payload)
 {
     if (payload >= TY_STRUCT_BASE && payload < TY_ENUM_BASE)
@@ -119,15 +91,6 @@ uint receiver_decl_token(uint tag, uint payload)
     return INVALID;
 }
 
-bool same_name_id(uint left_token, uint right_token)
-{
-    if (!valid_token(left_token) || !valid_token(right_token))
-        return false;
-    uint left = name_id_by_token[left_token];
-    uint right = name_id_by_token[right_token];
-    return left != INVALID && left == right;
-}
-
 uint struct_node_for_decl_token(uint decl_token)
 {
     if (!valid_token(decl_token))
@@ -136,29 +99,71 @@ uint struct_node_for_decl_token(uint decl_token)
     return valid_node(node) && hir_kind[node] == HIR_STRUCT_ITEM ? node : INVALID;
 }
 
+public struct StructFieldLookupKey
+{
+    uint struct_node;
+    uint name_id;
+}
+
+public struct StructFieldFixedKey : IFixedU32RowKey<StructFieldLookupKey>
+{
+    public static uint row_lane(uint row, uint lane)
+    {
+        uint field_node = row < active_hir_node_count() ? struct_field_key_order[row] : INVALID;
+        if (!valid_node(field_node))
+            return 0u;
+        uint owner = hir_struct_field_parent_struct[field_node];
+        uint token = hir_token_pos[field_node];
+        uint name_id = valid_token(token) ? name_id_by_token[token] : INVALID;
+        if (!valid_node(owner) || name_id == INVALID)
+            return 0u;
+        if (lane == 0u)
+            return fixed_key_encode_nullable_u32(owner, INVALID);
+        if (lane == 1u)
+            return fixed_key_encode_nullable_u32(name_id, INVALID);
+        return fixed_key_encode_nullable_u32(field_node, INVALID);
+    }
+
+    public static uint key_lane(StructFieldLookupKey key, uint lane)
+    {
+        if (lane == 0u)
+            return fixed_key_encode_nullable_u32(key.struct_node, INVALID);
+        if (lane == 1u)
+            return fixed_key_encode_nullable_u32(key.name_id, INVALID);
+        return 0u;
+    }
+}
+
+public struct StructFieldKeyCompare : IRowQueryCompare<StructFieldLookupKey>
+{
+    public static int compare(uint row, StructFieldLookupKey key)
+    {
+        return fixed_u32_row_key_compare<StructFieldLookupKey, StructFieldFixedKey>(
+            row,
+            key,
+            2u);
+    }
+}
+
 uint field_node_for_member(uint struct_node, uint member_token)
 {
     if (!valid_node(struct_node) || !valid_token(member_token))
         return INVALID;
 
-    uint start = hir_struct_decl_field_start[struct_node];
-    uint count = hir_struct_decl_field_count[struct_node];
-    if (!valid_node(start) || count == 0u)
+    uint name_id = name_id_by_token[member_token];
+    if (name_id == INVALID)
         return INVALID;
 
-    uint seen = 0u;
-    uint end = min(subtree_end[struct_node], active_hir_node_count());
-    [loop]
-    for (uint node = start; node < end && seen < count; node += 1u)
-    {
-        if (hir_struct_field_parent_struct[node] != struct_node)
-            continue;
-        seen += 1u;
-        uint field_token = hir_token_pos[node];
-        if (same_name_id(field_token, member_token))
-            return node;
-    }
-    return INVALID;
+    StructFieldLookupKey key;
+    key.struct_node = struct_node;
+    key.name_id = name_id;
+    QueryRange range = equal_range_query<StructFieldLookupKey, StructFieldKeyCompare>(
+        active_hir_node_count(),
+        key);
+    if (range.end != range.begin + 1u)
+        return INVALID;
+    uint field_node = struct_field_key_order[range.begin];
+    return valid_node(field_node) ? field_node : INVALID;
 }
 
 uint ordinal_for_field_node(uint struct_node, uint field_node)
@@ -168,40 +173,6 @@ uint ordinal_for_field_node(uint struct_node, uint field_node)
     return hir_struct_field_parent_struct[field_node] == struct_node
                ? hir_struct_field_ordinal[field_node]
                : INVALID;
-}
-
-uint generic_decl_ancestor(uint node)
-{
-    uint ancestor;
-    return find_ancestor<MemberResultWalkGraph, MemberResultStructPredicate>(
-        node,
-        128u,
-        ancestor) ? ancestor : INVALID;
-}
-
-uint generic_param_slot_for_name(uint decl_node, uint param_token)
-{
-    if (!valid_node(decl_node) || !valid_token(param_token))
-        return INVALID;
-
-    uint param_name = name_id_by_token[param_token];
-    if (param_name == INVALID)
-        return INVALID;
-
-    uint slot = 0u;
-    uint n = min(subtree_end[decl_node], active_hir_node_count());
-    [loop]
-    for (uint node = decl_node + 1u; node < n; node += 1u)
-    {
-        if (node_kind[node] != PROD_ENUM_TYPE_PARAM || generic_decl_ancestor(node) != decl_node)
-            continue;
-
-        uint decl_param_token = hir_token_pos[node];
-        if (valid_token(decl_param_token) && name_id_by_token[decl_param_token] == param_name)
-            return slot;
-        slot += 1u;
-    }
-    return INVALID;
 }
 
 void publish_member_field_ref_for_node(uint member_node)
@@ -223,7 +194,6 @@ void publish_member_field_ref_for_node(uint member_node)
     uint field_node = field_node_for_member(struct_node, member_token);
     if (!valid_node(field_node))
         return;
-    member_result_field_ordinal[member_token] = ordinal_for_field_node(struct_node, field_node);
 
     uint type_node = hir_struct_field_type_node[field_node];
     if (!valid_node(type_node))
@@ -234,9 +204,19 @@ void publish_member_field_ref_for_node(uint member_node)
 
     uint tag = type_expr_ref_tag[type_token];
     uint payload = type_expr_ref_payload[type_token];
-    if (tag == TYPE_REF_GENERIC_PARAM)
-        payload = generic_param_slot_for_name(struct_node, payload);
+    if (tag == TYPE_REF_INVALID || payload == INVALID)
+        return;
 
+    if (tag == TYPE_REF_GENERIC_PARAM)
+    {
+        if (!valid_token(payload))
+            return;
+        payload = type_generic_param_slot_by_token[payload];
+        if (payload == INVALID)
+            return;
+    }
+
+    member_result_field_ordinal[member_token] = ordinal_for_field_node(struct_node, field_node);
     member_result_ref_tag[member_token] = tag;
     member_result_ref_payload[member_token] = payload;
 }

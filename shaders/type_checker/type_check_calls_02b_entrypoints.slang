@@ -12,9 +12,7 @@ StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_item_kind;
 StructuredBuffer<uint> hir_item_name_token;
 StructuredBuffer<uint> name_id_by_token;
-StructuredBuffer<uint> language_decl_name_id;
-StructuredBuffer<uint> language_decl_kind;
-StructuredBuffer<uint> language_decl_tag;
+StructuredBuffer<uint> language_entrypoint_tag_by_name_id;
 
 RWStructuredBuffer<uint> fn_entrypoint_tag;
 
@@ -23,8 +21,7 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
 static const uint HIR_ITEM_KIND_FN = 4u;
-static const uint LANGUAGE_DECL_COUNT = 18u;
-static const uint LANGUAGE_DECL_ENTRYPOINT = 1u;
+static const uint LANGUAGE_SYMBOL_COUNT = 19u;
 static const uint ENTRYPOINT_MAIN = 1u;
 
 uint linear_thread_id(uint3 dtid)
@@ -39,17 +36,9 @@ uint active_hir_node_count()
 
 uint entrypoint_tag_for_name_id(uint name_id)
 {
-    if (name_id == INVALID)
+    if (name_id == INVALID || name_id >= gParams.n_tokens + LANGUAGE_SYMBOL_COUNT)
         return 0u;
-
-    [unroll]
-    for (uint decl_i = 0u; decl_i < LANGUAGE_DECL_COUNT; decl_i += 1u)
-    {
-        if (language_decl_kind[decl_i] == LANGUAGE_DECL_ENTRYPOINT &&
-            language_decl_name_id[decl_i] == name_id)
-            return language_decl_tag[decl_i];
-    }
-    return 0u;
+    return language_entrypoint_tag_by_name_id[name_id];
 }
 
 [shader("compute")]

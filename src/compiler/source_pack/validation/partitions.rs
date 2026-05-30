@@ -181,6 +181,24 @@ pub(in crate::compiler) fn validate_library_partition_records(
     Ok(())
 }
 
+fn validate_library_dependency_ids_strictly_ascending(
+    dependency_library_ids: &[u32],
+    context: &str,
+) -> Result<(), CompileError> {
+    let mut previous_dependency_library_id = None;
+    for &dependency_library_id in dependency_library_ids {
+        if let Some(previous_dependency_library_id) = previous_dependency_library_id
+            && dependency_library_id <= previous_dependency_library_id
+        {
+            return Err(library_partition_contract_error(format!(
+                "{context} dependency library ids must be strictly ascending; id {dependency_library_id} follows {previous_dependency_library_id}"
+            )));
+        }
+        previous_dependency_library_id = Some(dependency_library_id);
+    }
+    Ok(())
+}
+
 pub(in crate::compiler) fn validate_library_partition(
     partition: &SourcePackLibraryPartition,
     target: SourcePackArtifactTarget,
@@ -272,6 +290,10 @@ pub(in crate::compiler) fn validate_library_partition(
             )));
         }
     }
+    validate_library_dependency_ids_strictly_ascending(
+        &partition.dependency_library_ids,
+        &format!("partition {}", partition.partition_index),
+    )?;
     Ok(())
 }
 
@@ -335,6 +357,13 @@ pub(in crate::compiler) fn validate_library_dependency_page(
         &page.dependency_library_ids,
         &format!(
             "library dependency page {} for partition {} dependencies",
+            page.page_index, page.partition_index
+        ),
+    )?;
+    validate_library_dependency_ids_strictly_ascending(
+        &page.dependency_library_ids,
+        &format!(
+            "library dependency page {} for partition {}",
             page.page_index, page.partition_index
         ),
     )?;

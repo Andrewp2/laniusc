@@ -21,6 +21,7 @@ StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> call_return_type;
@@ -45,7 +46,6 @@ static const uint HIR_EXPR_RECORD_RIGHT = 2u;
 static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
 
 static const uint HIR_EXPR_NONE = 0u;
-static const uint HIR_EXPR_FORWARD = 1u;
 static const uint HIR_EXPR_NAME = 2u;
 static const uint HIR_EXPR_INT = 3u;
 static const uint HIR_EXPR_TRUE = 4u;
@@ -71,6 +71,7 @@ static const uint HIR_EXPR_BIT_AND = 23u;
 static const uint HIR_EXPR_SHL = 24u;
 static const uint HIR_EXPR_SHR = 25u;
 static const uint HIR_EXPR_INDEX = 26u;
+static const uint HIR_EXPR_FLOAT = 27u;
 
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_BOOL = 2u;
@@ -128,18 +129,13 @@ uint expr_value_token(uint node)
     return expr_slot(node, HIR_EXPR_RECORD_VALUE_TOKEN);
 }
 
-uint resolve_expr(uint node)
+uint expr_result_root(uint node)
 {
-    [loop]
-    for (uint guard = 0u; guard < 64u && valid_node(node); guard += 1u)
-    {
-        if (expr_form(node) != HIR_EXPR_FORWARD)
-            return node;
-        uint child = expr_left(node);
-        if (!valid_node(child))
-            return node;
-        node = child;
-    }
+    if (!valid_node(node))
+        return INVALID;
+    uint root = hir_expr_result_root_node[node];
+    if (valid_node(root))
+        return root;
     return node;
 }
 
@@ -185,7 +181,7 @@ uint scalar_type_for_literal_prod(uint prod)
 
 uint direct_expr_record_type(uint node)
 {
-    node = resolve_expr(node);
+    node = expr_result_root(node);
     if (!valid_node(node))
         return TY_UNKNOWN;
 
@@ -198,6 +194,8 @@ uint direct_expr_record_type(uint node)
         return TY_BOOL;
     if (form == HIR_EXPR_INT)
         return TY_INT;
+    if (form == HIR_EXPR_FLOAT)
+        return TY_FLOAT;
     if (form == HIR_EXPR_NAME)
     {
         uint token_i = expr_value_token(node);
@@ -240,7 +238,7 @@ uint direct_expr_record_type(uint node)
 
 uint expr_error_token(uint node)
 {
-    node = resolve_expr(node);
+    node = expr_result_root(node);
     if (!valid_node(node))
         return 0u;
 
@@ -319,7 +317,7 @@ bool binary_operand_ok(uint form, uint ty)
 
 void validate_binary_expr_node(uint node)
 {
-    if (resolve_expr(node) != node)
+    if (expr_result_root(node) != node)
         return;
 
     uint form = expr_form(node);

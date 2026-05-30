@@ -406,6 +406,28 @@ pub(in crate::compiler) fn validate_progress_index(
             index.work_item_count
         )));
     }
+    if index
+        .completed_item_count
+        .checked_add(index.ready_item_count)
+        .map_or(true, |accounted_item_count| {
+            accounted_item_count > index.work_item_count
+        })
+    {
+        return Err(library_partition_contract_error(format!(
+            "work queue progress index accounts for completed/ready counts {}/{} but only has {} items",
+            index.completed_item_count, index.ready_item_count, index.work_item_count
+        )));
+    }
+    if index.completed_item_count == index.work_item_count
+        && (index.ready_item_count != 0
+            || index.ready_artifact_item_count != 0
+            || index.claimed_item_count != 0)
+    {
+        return Err(library_partition_contract_error(format!(
+            "complete work queue progress index must not advertise ready or claimed work; ready={}, ready_artifact={}, claimed={}",
+            index.ready_item_count, index.ready_artifact_item_count, index.claimed_item_count
+        )));
+    }
     if let Some(first_ready_item_index) = index.first_ready_item_index {
         if first_ready_item_index >= index.work_item_count || index.ready_item_count == 0 {
             return Err(library_partition_contract_error(format!(
@@ -762,6 +784,12 @@ pub(in crate::compiler) fn validate_progress_page_summary(
         return Err(library_partition_contract_error(format!(
             "work queue progress page summary {} has inconsistent ready/artifact/claim counts",
             summary.page_index
+        )));
+    }
+    if summary.claimed_item_count != summary.ready_claimed_item_count {
+        return Err(library_partition_contract_error(format!(
+            "work queue progress page summary {} has {} claims but only {} ready claims; progress claims must refer to ready items",
+            summary.page_index, summary.claimed_item_count, summary.ready_claimed_item_count
         )));
     }
     if summary

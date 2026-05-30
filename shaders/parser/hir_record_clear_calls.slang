@@ -17,6 +17,7 @@ RWStructuredBuffer<uint> hir_member_receiver_node;
 RWStructuredBuffer<uint> hir_member_receiver_token;
 RWStructuredBuffer<uint> hir_member_name_token;
 RWStructuredBuffer<uint> hir_call_callee_node;
+RWStructuredBuffer<uint> hir_call_context_stmt_node;
 RWStructuredBuffer<uint> hir_call_arg_start;
 RWStructuredBuffer<uint> hir_call_arg_end;
 RWStructuredBuffer<uint> hir_call_arg_count;
@@ -49,6 +50,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_member_name_token[node] = INVALID;
 
     hir_call_callee_node[node] = INVALID;
+    hir_call_context_stmt_node[node] = INVALID;
     hir_call_arg_start[node] = INVALID;
     hir_call_arg_end[node] = INVALID;
     hir_call_arg_count[node] = 0u;

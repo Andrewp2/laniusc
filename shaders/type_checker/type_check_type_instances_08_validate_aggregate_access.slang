@@ -2,12 +2,11 @@
 //
 // This pass consumes parser/HIR member and struct-field metadata plus the
 // field-result records published by the type-instance passes. It reports invalid
-// field selections without scanning dot/brace token neighborhoods or comparing
-// source spelling.
+// field selections from materialized relations instead of walking expression or
+// call subtrees in this consumer.
 
 import generated_parse_production_ids;
 import status;
-import tree_walk;
 
 struct Params
 {
@@ -20,17 +19,17 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> parent;
-StructuredBuffer<uint> first_child;
-StructuredBuffer<uint> next_sibling;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint> hir_expr_result_root_node;
+StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> hir_struct_lit_field_value_node;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> call_return_type;
+StructuredBuffer<uint> method_call_name_id;
 StructuredBuffer<uint> member_result_ref_tag;
 StructuredBuffer<uint> member_result_field_ordinal;
 StructuredBuffer<uint> struct_init_field_ordinal;
@@ -51,17 +50,14 @@ static const uint TY_FLOAT = 5u;
 static const uint TY_CHAR = 6u;
 static const uint TY_STRING = 7u;
 
-static const uint HIR_EXPR = 14u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
 
 static const uint HIR_EXPR_RECORD_STRIDE = 4u;
 static const uint HIR_EXPR_RECORD_FORM = 0u;
-static const uint HIR_EXPR_RECORD_LEFT = 1u;
 static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
 
-static const uint HIR_EXPR_FORWARD = 1u;
 static const uint HIR_EXPR_NAME = 2u;
 static const uint HIR_EXPR_INT = 3u;
 static const uint HIR_EXPR_TRUE = 4u;
@@ -86,6 +82,7 @@ static const uint HIR_EXPR_BIT_XOR = 22u;
 static const uint HIR_EXPR_BIT_AND = 23u;
 static const uint HIR_EXPR_SHL = 24u;
 static const uint HIR_EXPR_SHR = 25u;
+static const uint HIR_EXPR_FLOAT = 27u;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -105,71 +102,9 @@ bool valid_node(uint node)
     return node != INVALID && node < active_hir_node_count();
 }
 
-uint aggregate_parent_record(uint node)
-{
-    return parent[node];
-}
-
-uint aggregate_first_child_record(uint node)
-{
-    return first_child[node];
-}
-
-uint aggregate_next_sibling_record(uint node)
-{
-    return next_sibling[node];
-}
-
-public struct AggregateAccessChildGraph : ITreeChildGraph
-{
-    public static bool valid(uint node)
-    {
-        return valid_node(node);
-    }
-
-    public static uint first_child(uint node)
-    {
-        return aggregate_first_child_record(node);
-    }
-
-    public static uint next_sibling(uint node)
-    {
-        return aggregate_next_sibling_record(node);
-    }
-}
-
-public struct AggregateAccessLinkedGraph : ITreeLinkedGraph
-{
-    public static bool valid(uint node)
-    {
-        return valid_node(node);
-    }
-
-    public static uint parent(uint node)
-    {
-        return aggregate_parent_record(node);
-    }
-
-    public static uint first_child(uint node)
-    {
-        return aggregate_first_child_record(node);
-    }
-
-    public static uint next_sibling(uint node)
-    {
-        return aggregate_next_sibling_record(node);
-    }
-}
-
 bool valid_token(uint token)
 {
     return token != INVALID && token < gParams.n_tokens;
-}
-
-uint first_child_node(uint node)
-{
-    uint child;
-    return tree_child_first<AggregateAccessChildGraph>(node, child) ? child : INVALID;
 }
 
 void record_error(uint token_i, uint code, uint detail)
@@ -237,24 +172,43 @@ uint expr_form(uint node)
     return expr_slot(node, HIR_EXPR_RECORD_FORM);
 }
 
-uint resolve_expr(uint node)
+uint result_expr(uint node)
 {
-    [loop]
-    for (uint guard = 0u; guard < 64u && valid_node(node); guard += 1u)
+    if (!valid_node(node))
+        return INVALID;
+    uint root = hir_expr_result_root_node[node];
+    return valid_node(root) ? root : node;
+}
+
+uint expr_value_token(uint node)
+{
+    return expr_slot(node, HIR_EXPR_RECORD_VALUE_TOKEN);
+}
+
+uint call_callee_token(uint call_node)
+{
+    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+        return INVALID;
+
+    uint callee_node = result_expr(hir_call_callee_node[call_node]);
+    if (!valid_node(callee_node))
+        return INVALID;
+
+    if (hir_kind[callee_node] == HIR_MEMBER_EXPR)
     {
-        if (expr_form(node) != HIR_EXPR_FORWARD)
-            return node;
-        uint child = expr_slot(node, HIR_EXPR_RECORD_LEFT);
-        if (!valid_node(child))
-            return node;
-        node = child;
+        uint member_token = hir_member_name_token[callee_node];
+        return valid_token(member_token) ? member_token : INVALID;
     }
-    return node;
+
+    uint token = expr_value_token(callee_node);
+    if (!valid_token(token))
+        token = hir_token_pos[callee_node];
+    return valid_token(token) ? token : INVALID;
 }
 
 uint direct_expr_record_type(uint node)
 {
-    node = resolve_expr(node);
+    node = result_expr(node);
     if (!valid_node(node))
         return TY_UNKNOWN;
 
@@ -263,6 +217,8 @@ uint direct_expr_record_type(uint node)
         return TY_BOOL;
     if (form == HIR_EXPR_INT)
         return TY_INT;
+    if (form == HIR_EXPR_FLOAT)
+        return TY_FLOAT;
     if (form == HIR_EXPR_NAME)
     {
         uint token_i = expr_slot(node, HIR_EXPR_RECORD_VALUE_TOKEN);
@@ -319,52 +275,13 @@ uint direct_value_type(uint node)
         return visible_type_for_token(member_token);
     }
 
-    if (hir_kind[node] == HIR_CALL_EXPR && valid_token(token_i))
-        return token_i == 0u ? call_return_type[token_i] : call_return_type[token_i - 1u];
+    if (hir_kind[node] == HIR_CALL_EXPR)
+    {
+        uint callee_token = call_callee_token(node);
+        return valid_token(callee_token) ? call_return_type[callee_token] : TY_UNKNOWN;
+    }
 
     return TY_UNKNOWN;
-}
-
-uint next_descendant_node(uint root, uint cur)
-{
-    uint next;
-    return tree_next_preorder_within<AggregateAccessLinkedGraph>(
-        root,
-        cur,
-        64u,
-        next) ? next : INVALID;
-}
-
-bool expression_result_node(uint node)
-{
-    if (!valid_node(node))
-        return false;
-    return hir_kind[node] == HIR_CALL_EXPR ||
-           hir_kind[node] == HIR_MEMBER_EXPR ||
-           node_kind[node] == PROD_STRUCT_LIT;
-}
-
-uint preferred_result_type_from_node(uint root, out uint value_token)
-{
-    value_token = INVALID;
-    uint result_ty = TY_UNKNOWN;
-    uint node = root;
-    [loop]
-    for (uint guard = 0u; node != INVALID && guard < 256u; guard += 1u)
-    {
-        if (expression_result_node(node))
-        {
-            uint ty = direct_value_type(node);
-            if (ty != TY_UNKNOWN)
-            {
-                uint token_i = hir_token_pos[node];
-                value_token = valid_token(token_i) ? token_i : INVALID;
-                return ty;
-            }
-        }
-        node = next_descendant_node(root, node);
-    }
-    return result_ty;
 }
 
 uint first_value_type_from_node(uint root, out uint value_token)
@@ -373,32 +290,13 @@ uint first_value_type_from_node(uint root, out uint value_token)
     if (!valid_node(root))
         return TY_UNKNOWN;
 
-    if (expression_result_node(root))
-    {
-        uint root_ty = direct_value_type(root);
-        if (root_ty != TY_UNKNOWN)
-        {
-            value_token = hir_token_pos[root];
-            return root_ty;
-        }
-    }
-
-    uint result_ty = preferred_result_type_from_node(root, value_token);
-    if (result_ty != TY_UNKNOWN)
-        return result_ty;
-
-    uint node = root;
-    [loop]
-    for (uint guard = 0u; node != INVALID && guard < 256u; guard += 1u)
+    uint node = result_expr(root);
+    uint ty = direct_value_type(node);
+    if (ty != TY_UNKNOWN)
     {
         uint token_i = hir_token_pos[node];
-        uint ty = direct_value_type(node);
-        if (ty != TY_UNKNOWN)
-        {
-            value_token = valid_token(token_i) ? token_i : INVALID;
-            return ty;
-        }
-        node = next_descendant_node(root, node);
+        value_token = valid_token(token_i) ? token_i : INVALID;
+        return ty;
     }
     return TY_UNKNOWN;
 }
@@ -436,17 +334,9 @@ void validate_struct_literal_field_node(uint node)
     }
 }
 
-bool member_expr_is_call(uint member_node)
+bool member_expr_is_marked_method_call(uint member_token)
 {
-    uint child = first_child_node(member_node);
-    [loop]
-    for (uint guard = 0u; guard < 96u && child != INVALID; guard += 1u)
-    {
-        if (hir_kind[child] == HIR_CALL_EXPR)
-            return true;
-        child = next_descendant_node(member_node, child);
-    }
-    return false;
+    return valid_token(member_token) && method_call_name_id[member_token] != INVALID;
 }
 
 void validate_member_expr_node(uint node)
@@ -455,7 +345,7 @@ void validate_member_expr_node(uint node)
     if (!valid_token(member_token))
         return;
 
-    if (member_expr_is_call(node))
+    if (member_expr_is_marked_method_call(member_token))
         return;
 
     if (member_result_field_ordinal[member_token] != INVALID)

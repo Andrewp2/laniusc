@@ -85,6 +85,12 @@ pub struct ParseResult {
     pub hir_type_arg_next: Vec<u32>,
     pub hir_type_alias_target_node: Vec<u32>,
     pub hir_fn_return_type_node: Vec<u32>,
+    pub hir_method_signature_flags: Vec<u32>,
+    pub hir_stmt_record_kind: Vec<u32>,
+    pub hir_stmt_record_operand0: Vec<u32>,
+    pub hir_stmt_record_operand1: Vec<u32>,
+    pub hir_stmt_record_operand2: Vec<u32>,
+    pub hir_stmt_scope_end: Vec<u32>,
     pub hir_item_kind: Vec<u32>,
     pub hir_item_name_token: Vec<u32>,
     pub hir_item_decl_token: Vec<u32>,
@@ -92,12 +98,14 @@ pub struct ParseResult {
     pub hir_item_visibility: Vec<u32>,
     pub hir_item_path_start: Vec<u32>,
     pub hir_item_path_end: Vec<u32>,
+    pub hir_item_path_node: Vec<u32>,
     pub hir_item_file_id: Vec<u32>,
     pub hir_item_import_target_kind: Vec<u32>,
     pub hir_variant_parent_enum: Vec<u32>,
     pub hir_variant_ordinal: Vec<u32>,
     pub hir_variant_payload_start: Vec<u32>,
     pub hir_variant_payload_count: Vec<u32>,
+    pub hir_variant_payload_node: Vec<u32>,
     pub hir_match_scrutinee_node: Vec<u32>,
     pub hir_match_arm_start: Vec<u32>,
     pub hir_match_arm_count: Vec<u32>,
@@ -170,6 +178,12 @@ pub struct ResidentParseResult {
     pub hir_type_arg_next: Vec<u32>,
     pub hir_type_alias_target_node: Vec<u32>,
     pub hir_fn_return_type_node: Vec<u32>,
+    pub hir_method_signature_flags: Vec<u32>,
+    pub hir_stmt_record_kind: Vec<u32>,
+    pub hir_stmt_record_operand0: Vec<u32>,
+    pub hir_stmt_record_operand1: Vec<u32>,
+    pub hir_stmt_record_operand2: Vec<u32>,
+    pub hir_stmt_scope_end: Vec<u32>,
     pub hir_item_kind: Vec<u32>,
     pub hir_item_name_token: Vec<u32>,
     pub hir_item_decl_token: Vec<u32>,
@@ -177,12 +191,14 @@ pub struct ResidentParseResult {
     pub hir_item_visibility: Vec<u32>,
     pub hir_item_path_start: Vec<u32>,
     pub hir_item_path_end: Vec<u32>,
+    pub hir_item_path_node: Vec<u32>,
     pub hir_item_file_id: Vec<u32>,
     pub hir_item_import_target_kind: Vec<u32>,
     pub hir_variant_parent_enum: Vec<u32>,
     pub hir_variant_ordinal: Vec<u32>,
     pub hir_variant_payload_start: Vec<u32>,
     pub hir_variant_payload_count: Vec<u32>,
+    pub hir_variant_payload_node: Vec<u32>,
     pub hir_match_scrutinee_node: Vec<u32>,
     pub hir_match_arm_start: Vec<u32>,
     pub hir_match_arm_count: Vec<u32>,
@@ -195,6 +211,7 @@ pub struct ResidentParseResult {
     pub hir_match_payload_match_node: Vec<u32>,
     pub hir_match_payload_ordinal: Vec<u32>,
     pub hir_call_callee_node: Vec<u32>,
+    pub hir_call_context_stmt_node: Vec<u32>,
     pub hir_call_arg_start: Vec<u32>,
     pub hir_call_arg_end: Vec<u32>,
     pub hir_call_arg_count: Vec<u32>,
@@ -202,18 +219,25 @@ pub struct ResidentParseResult {
     pub hir_call_arg_ordinal: Vec<u32>,
     pub hir_array_lit_first_element: Vec<u32>,
     pub hir_array_lit_element_count: Vec<u32>,
+    pub hir_array_lit_context_stmt_node: Vec<u32>,
     pub hir_array_element_parent_lit: Vec<u32>,
     pub hir_array_element_ordinal: Vec<u32>,
     pub hir_array_element_next: Vec<u32>,
+    pub hir_expr_result_root_node: Vec<u32>,
     pub hir_member_receiver_node: Vec<u32>,
     pub hir_member_receiver_token: Vec<u32>,
     pub hir_member_name_token: Vec<u32>,
+    pub hir_nearest_stmt_node: Vec<u32>,
+    pub hir_nearest_block_node: Vec<u32>,
+    pub hir_nearest_enclosing_control_node: Vec<u32>,
+    pub hir_nearest_fn_node: Vec<u32>,
     pub hir_struct_field_parent_struct: Vec<u32>,
     pub hir_struct_field_ordinal: Vec<u32>,
     pub hir_struct_field_type_node: Vec<u32>,
     pub hir_struct_decl_field_start: Vec<u32>,
     pub hir_struct_decl_field_count: Vec<u32>,
     pub hir_struct_lit_head_node: Vec<u32>,
+    pub hir_struct_lit_context_stmt_node: Vec<u32>,
     pub hir_struct_lit_field_start: Vec<u32>,
     pub hir_struct_lit_field_count: Vec<u32>,
     pub hir_struct_lit_field_parent_lit: Vec<u32>,
@@ -223,6 +247,34 @@ pub struct ResidentParseResult {
 
 pub struct RecordedResidentLl1HirCheck {
     pub(super) status_readback: wgpu::Buffer,
+}
+
+impl RecordedResidentLl1HirCheck {
+    pub(crate) fn read_status_result(
+        &self,
+        device: &wgpu::Device,
+    ) -> anyhow::Result<Ll1AcceptResult> {
+        let slice = self.status_readback.slice(..);
+        crate::gpu::passes_core::map_readback_blocking(
+            device,
+            &slice,
+            "parser.recorded-ll1-hir.status",
+        )?;
+        let mapped = slice.get_mapped_range();
+        let words =
+            crate::gpu::readback::read_u32_words::<6>(&mapped, "parser.recorded-ll1-hir.status")?;
+        drop(mapped);
+        self.status_readback.unmap();
+
+        Ok(Ll1AcceptResult {
+            accepted: words[0] != 0,
+            error_pos: words[1],
+            error_code: words[2],
+            detail: words[3],
+            steps: words[4],
+            emit_len: words[5],
+        })
+    }
 }
 
 pub struct RecordedHirSemanticCount {

@@ -56,6 +56,11 @@ bool valid_node(uint i)
     return i != INVALID && i < active_node_count();
 }
 
+bool valid_type_node(uint i)
+{
+    return valid_node(i) && hir_kind[i] == HIR_TYPE;
+}
+
 uint first_child_node(uint i)
 {
     if (!valid_node(i))
@@ -92,24 +97,33 @@ void publish_path_type(uint i)
 
 void publish_ref_type(uint i)
 {
+    uint target = first_child_node(i);
+    if (!valid_type_node(target))
+        return;
+
     hir_type_form[i] = HIR_TYPE_FORM_REF;
-    hir_type_value_node[i] = first_child_node(i);
+    hir_type_value_node[i] = target;
 }
 
 void publish_array_or_slice_type(uint i)
 {
     uint elem = first_child_node(i);
     uint tail = next_sibling_node(elem);
-    if (!valid_node(elem) || !valid_node(tail))
+    if (!valid_type_node(elem) || !valid_node(tail))
         return;
 
     uint tail_prod = node_kind[tail];
     if (tail_prod == PROD_TYPE_ARRAY_TAIL)
     {
         uint len_node = first_child_node(tail);
+        if (!valid_node(len_node) ||
+            (node_kind[len_node] != PROD_TYPE_ARRAY_LEN_INT &&
+             node_kind[len_node] != PROD_TYPE_ARRAY_LEN_NAME))
+            return;
+
         hir_type_form[i] = HIR_TYPE_FORM_ARRAY;
         hir_type_value_node[i] = elem;
-        hir_type_len_token[i] = valid_node(len_node) ? hir_token_pos[len_node] : INVALID;
+        hir_type_len_token[i] = hir_token_pos[len_node];
     }
     else if (tail_prod == PROD_TYPE_SLICE_TAIL)
     {

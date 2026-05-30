@@ -1,6 +1,90 @@
 // Source-level time host ABI declarations.
+// The service contract below is intentionally conservative: the current
+// backends can type-check these declarations, but they do not bind clocks.
 
 module std::time;
+
+pub type ClockCapability = bool;
+pub type ClockRuntimeAbiVersion = u32;
+pub type ClockServiceId = u32;
+pub type ClockServiceStatus = u32;
+
+pub const CLOCK_RUNTIME_ABI_VERSION: ClockRuntimeAbiVersion = 1;
+pub const CLOCK_SERVICE_ID: ClockServiceId = 4;
+pub const CLOCK_SERVICE_STATUS_UNAVAILABLE: ClockServiceStatus = 1;
+pub const CLOCK_HAS_RUNTIME_BINDING: ClockCapability = false;
+
+pub fn clock_runtime_abi_version() -> ClockRuntimeAbiVersion {
+    return CLOCK_RUNTIME_ABI_VERSION;
+}
+
+pub fn clock_service_id() -> ClockServiceId {
+    return CLOCK_SERVICE_ID;
+}
+
+pub fn clock_service_is_known() -> ClockCapability {
+    return true;
+}
+
+pub fn clock_contract_metadata_is_available() -> ClockCapability {
+    return clock_service_is_known();
+}
+
+pub fn clock_service_status() -> ClockServiceStatus {
+    return CLOCK_SERVICE_STATUS_UNAVAILABLE;
+}
+
+pub fn clock_is_available() -> ClockCapability {
+    return CLOCK_HAS_RUNTIME_BINDING;
+}
+
+pub fn clock_is_blocked() -> ClockCapability {
+    return !clock_is_available();
+}
+
+pub fn clock_requires_runtime_binding() -> ClockCapability {
+    return !CLOCK_HAS_RUNTIME_BINDING;
+}
+
+pub fn clock_host_abi_is_contract_only() -> ClockCapability {
+    return clock_requires_runtime_binding();
+}
+
+pub fn monotonic_now_ns_is_executable() -> ClockCapability {
+    return CLOCK_HAS_RUNTIME_BINDING;
+}
+
+pub fn monotonic_now_ns_is_blocked() -> ClockCapability {
+    return !monotonic_now_ns_is_executable();
+}
+
+pub fn monotonic_now_ns_requires_runtime_binding() -> ClockCapability {
+    return !monotonic_now_ns_is_executable();
+}
+
+pub fn system_now_unix_ms_is_executable() -> ClockCapability {
+    return CLOCK_HAS_RUNTIME_BINDING;
+}
+
+pub fn system_now_unix_ms_is_blocked() -> ClockCapability {
+    return !system_now_unix_ms_is_executable();
+}
+
+pub fn system_now_unix_ms_requires_runtime_binding() -> ClockCapability {
+    return !system_now_unix_ms_is_executable();
+}
+
+pub fn sleep_ms_is_executable() -> ClockCapability {
+    return CLOCK_HAS_RUNTIME_BINDING;
+}
+
+pub fn sleep_ms_is_blocked() -> ClockCapability {
+    return !sleep_ms_is_executable();
+}
+
+pub fn sleep_ms_requires_runtime_binding() -> ClockCapability {
+    return !sleep_ms_is_executable();
+}
 
 pub extern "lanius_std" fn monotonic_now_ns() -> i64;
 

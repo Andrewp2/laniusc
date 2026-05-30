@@ -2,53 +2,96 @@
 
 module core::target;
 
-pub const IS_WASM: bool = false;
-pub const IS_NATIVE: bool = true;
-pub const HAS_ALLOCATOR: bool = true;
-pub const HAS_FILESYSTEM: bool = true;
-pub const HAS_STDIO: bool = true;
-pub const HAS_THREADS: bool = false;
-pub const HAS_NETWORK: bool = false;
-pub const HAS_CLOCK: bool = true;
-pub const HAS_SECURE_RNG: bool = false;
-pub const HAS_GPU: bool = false;
+pub type Capability = bool;
 
-pub fn is_wasm() -> bool {
+pub const IS_WASM: Capability = false;
+pub const IS_NATIVE: Capability = true;
+pub const HAS_ALLOCATOR: Capability = false;
+pub const HAS_FILESYSTEM: Capability = false;
+pub const HAS_STDIO: Capability = false;
+pub const HAS_THREADS: Capability = false;
+pub const HAS_NETWORK: Capability = false;
+pub const HAS_CLOCK: Capability = false;
+pub const HAS_PANIC_HOOK: Capability = false;
+pub const HAS_HOST_SERVICES: Capability = false;
+pub const HAS_SECURE_RNG: Capability = false;
+pub const HAS_GPU: Capability = false;
+pub const HAS_PROCESS: Capability = false;
+pub const HAS_ENV: Capability = false;
+pub const HAS_TEST_HARNESS: Capability = false;
+
+pub fn is_wasm() -> Capability {
     return IS_WASM;
 }
 
-pub fn is_native() -> bool {
+pub fn is_native() -> Capability {
     return IS_NATIVE;
 }
 
-pub fn has_allocator() -> bool {
+pub fn has_allocator() -> Capability {
     return HAS_ALLOCATOR;
 }
 
-pub fn has_filesystem() -> bool {
+pub fn has_filesystem() -> Capability {
     return HAS_FILESYSTEM;
 }
 
-pub fn has_stdio() -> bool {
+pub fn has_stdio() -> Capability {
     return HAS_STDIO;
 }
 
-pub fn has_threads() -> bool {
+pub fn has_threads() -> Capability {
     return HAS_THREADS;
 }
 
-pub fn has_network() -> bool {
+pub fn has_network() -> Capability {
     return HAS_NETWORK;
 }
 
-pub fn has_clock() -> bool {
+pub fn has_clock() -> Capability {
     return HAS_CLOCK;
 }
 
-pub fn has_secure_rng() -> bool {
+pub fn has_panic_hook() -> Capability {
+    return HAS_PANIC_HOOK;
+}
+
+pub fn has_host_services() -> Capability {
+    return HAS_HOST_SERVICES;
+}
+
+pub fn has_secure_rng() -> Capability {
     return HAS_SECURE_RNG;
 }
 
-pub fn has_gpu() -> bool {
+pub fn has_gpu() -> Capability {
     return HAS_GPU;
+}
+
+pub fn has_process() -> Capability {
+    return HAS_PROCESS;
+}
+
+pub fn has_env() -> Capability {
+    return HAS_ENV;
+}
+
+pub fn has_test_harness() -> Capability {
+    return HAS_TEST_HARNESS;
+}
+
+pub fn is_freestanding() -> Capability {
+    return !HAS_ALLOCATOR
+        && !HAS_FILESYSTEM
+        && !HAS_STDIO
+        && !HAS_THREADS
+        && !HAS_NETWORK
+        && !HAS_CLOCK
+        && !HAS_PANIC_HOOK
+        && !HAS_HOST_SERVICES
+        && !HAS_SECURE_RNG
+        && !HAS_GPU
+        && !HAS_PROCESS
+        && !HAS_ENV
+        && !HAS_TEST_HARNESS;
 }

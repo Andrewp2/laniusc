@@ -23,6 +23,7 @@ StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_semantic_count;
 
 RWStructuredBuffer<uint> hir_call_callee_node;
+RWStructuredBuffer<uint> hir_call_context_stmt_node;
 RWStructuredBuffer<uint> hir_call_arg_start;
 RWStructuredBuffer<uint> hir_call_arg_end;
 RWStructuredBuffer<uint> hir_call_arg_count;
@@ -146,6 +147,7 @@ uint callee_for_call(uint call_node)
 void clear_fields(uint i)
 {
     hir_call_callee_node[i] = INVALID;
+    hir_call_context_stmt_node[i] = INVALID;
     hir_call_arg_start[i] = INVALID;
     hir_call_arg_end[i] = INVALID;
     hir_call_arg_count[i] = 0u;

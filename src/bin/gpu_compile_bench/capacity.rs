@@ -31,6 +31,120 @@ pub(super) const TYPECHECK_NAME_RADIX_BUCKETS: usize = 257;
 pub(super) const TYPECHECK_LANGUAGE_SYMBOL_COUNT: usize = 19;
 pub(super) const TYPECHECK_HIR_VISIBLE_DECL_ROW_BLOCK_SIZE: usize = 64;
 
+pub(super) const PARALLEL_PASS_CONTRACT_SCHEMA: &str = "lanius.parallel-pass-contracts.v1";
+pub(super) const PARALLEL_PASS_CONTRACT_POLICY: &str =
+    "scale-claims-require-map-scan-scatter-join-contracts";
+pub(super) const PARALLEL_PASS_CONTRACT_ORDER_POLICY: &str =
+    "paper-pass-order-record-boundary-sequence";
+pub(super) const PARALLEL_PASS_CONTRACT_EXECUTION_ORDER: &str = concat!(
+    "frontend_token_stream,",
+    "parser_tree_records,",
+    "semantic_record_joins,",
+    "x86_value_location_allocation,",
+    "optimization_record_boundary_gap,",
+    "x86_location_and_byte_emission"
+);
+pub(super) const PARALLEL_PASS_CONTRACT_STATUS_SCHEMA: &str =
+    "lanius.parallel-pass-contract-status.v1";
+pub(super) const PARALLEL_PASS_CONTRACT_LOOP_POLICY: &str =
+    "scale-claims-require-unbounded-pass-loops";
+pub(super) const PARALLEL_PASS_CONTRACT_LOOP_STATUS: &str = "bounded";
+pub(super) const PARALLEL_PASS_CONTRACT_FALLBACK_STATUS: &str = "fail-closed";
+pub(super) const PARALLEL_PASS_CONTRACT_CLAIM_STATUS: &str = "blocked";
+pub(super) const PARALLEL_PASS_CONTRACT_CLAIM_BLOCKERS: &str =
+    "bounded_pass_loops,fail_closed_passes";
+pub(super) const PARALLEL_PASS_CONTRACT_READINESS_STATUS: &str = "blocked";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct ParallelPassContract {
+    pub(super) pass_group: &'static str,
+    pub(super) record_boundary: &'static str,
+    pub(super) parallel_primitives: &'static str,
+    pub(super) evidence_shape: &'static str,
+    pub(super) claim_boundary: &'static str,
+}
+
+const PARALLEL_PASS_CONTRACTS: &[ParallelPassContract] = &[
+    ParallelPassContract {
+        pass_group: "frontend_token_stream",
+        record_boundary: "ordered_token_records",
+        parallel_primitives: "map,scan",
+        evidence_shape: "record-invariant",
+        claim_boundary: "no-host-semantic-fallback",
+    },
+    ParallelPassContract {
+        pass_group: "parser_tree_records",
+        record_boundary: "tree_and_span_records",
+        parallel_primitives: "map,scan,scatter",
+        evidence_shape: "record-invariant",
+        claim_boundary: "no-host-semantic-fallback",
+    },
+    ParallelPassContract {
+        pass_group: "semantic_record_joins",
+        record_boundary: "typed_identity_records",
+        parallel_primitives: "sort,join,scatter",
+        evidence_shape: "semantic-contract",
+        claim_boundary: "no-host-semantic-fallback",
+    },
+    ParallelPassContract {
+        pass_group: "x86_value_location_allocation",
+        record_boundary: "virtual_value_live_interval_and_location_records",
+        parallel_primitives: "map,scan,sort,join,scatter",
+        evidence_shape: "execution-contract",
+        claim_boundary: "no-serial-regalloc-replay",
+    },
+    ParallelPassContract {
+        pass_group: "optimization_record_boundary_gap",
+        record_boundary: "missing_optimization_records",
+        parallel_primitives: "planned-gap",
+        evidence_shape: "measurement-scaffold",
+        claim_boundary: "optimization-contract-absent",
+    },
+    ParallelPassContract {
+        pass_group: "x86_location_and_byte_emission",
+        record_boundary: "instruction_location_and_byte_records",
+        parallel_primitives: "map,scan,scatter",
+        evidence_shape: "execution-contract",
+        claim_boundary: "no-host-byte-patching",
+    },
+];
+
+pub(super) fn parallel_pass_contracts() -> &'static [ParallelPassContract] {
+    PARALLEL_PASS_CONTRACTS
+}
+
+pub(super) fn print_parallel_pass_contract_estimate() {
+    println!(
+        "estimate parallel_pass_contract_schema={} policy={} order_policy={} execution_order={}",
+        PARALLEL_PASS_CONTRACT_SCHEMA,
+        PARALLEL_PASS_CONTRACT_POLICY,
+        PARALLEL_PASS_CONTRACT_ORDER_POLICY,
+        PARALLEL_PASS_CONTRACT_EXECUTION_ORDER,
+    );
+    println!(
+        "estimate parallel_pass_contract_status_schema={} loop_policy={} loop_status={} fallback_status={} claim_status={} claim_blockers={} readiness_status={}",
+        PARALLEL_PASS_CONTRACT_STATUS_SCHEMA,
+        PARALLEL_PASS_CONTRACT_LOOP_POLICY,
+        PARALLEL_PASS_CONTRACT_LOOP_STATUS,
+        PARALLEL_PASS_CONTRACT_FALLBACK_STATUS,
+        PARALLEL_PASS_CONTRACT_CLAIM_STATUS,
+        PARALLEL_PASS_CONTRACT_CLAIM_BLOCKERS,
+        PARALLEL_PASS_CONTRACT_READINESS_STATUS,
+    );
+    for contract in parallel_pass_contracts() {
+        println!(
+            "estimate parallel_pass_contract pass_group={} record_boundary={} parallel_primitives={} evidence_shape={} loop_status={} fallback_status={} claim_boundary={}",
+            contract.pass_group,
+            contract.record_boundary,
+            contract.parallel_primitives,
+            contract.evidence_shape,
+            PARALLEL_PASS_CONTRACT_LOOP_STATUS,
+            PARALLEL_PASS_CONTRACT_FALLBACK_STATUS,
+            contract.claim_boundary,
+        );
+    }
+}
+
 pub(super) fn reject_large_interactive_run(
     phase: Phase,
     source_lines: usize,
@@ -39,7 +153,7 @@ pub(super) fn reject_large_interactive_run(
     allow_large: bool,
     tables: Option<&PrecomputedParseTables>,
 ) -> Result<(), String> {
-    const MAX_INTERACTIVE_LINES: usize = 100_000;
+    const MAX_INTERACTIVE_LINES: usize = 20_000;
     const MAX_INTERACTIVE_BYTES: usize = 2_000_000;
     const MAX_INTERACTIVE_PARSER_TREE_FLOOR_BYTES: usize = 2 * 1024 * 1024 * 1024;
     const MAX_INTERACTIVE_FRONTEND_FLOOR_BYTES: usize = 2 * 1024 * 1024 * 1024;
@@ -147,6 +261,7 @@ pub(super) fn print_capacity_estimate(
         source_file_capacity,
     );
     print_codegen_unit_estimate(sources, library_ids, library_dependencies);
+    print_parallel_pass_contract_estimate();
     println!("estimate ll1_seed_path=inactive note=capacity-derived; no GPU work was submitted");
 }
 
@@ -281,6 +396,57 @@ pub(super) fn print_codegen_unit_estimate(
     );
 }
 
+#[cfg(test)]
+#[derive(Clone, Copy, Debug)]
+pub(super) struct CompileCapacitySnapshot {
+    pub(super) source_bytes: usize,
+    pub(super) lexer_token_capacity: usize,
+    pub(super) parser_token_capacity: usize,
+    pub(super) parser_tree_capacity: usize,
+    pub(super) parser_floor_bytes: usize,
+    pub(super) frontend_floor_bytes: usize,
+    pub(super) x86_inst_capacity: usize,
+    pub(super) x86_floor_bytes: usize,
+    pub(super) compile_floor_bytes: usize,
+}
+
+#[cfg(test)]
+pub(super) fn compile_capacity_snapshot_for_source(
+    src: &str,
+    source_file_capacity: usize,
+    tables: Option<&PrecomputedParseTables>,
+) -> CompileCapacitySnapshot {
+    let token_capacity = token_capacity_estimate_for_source(src);
+    let parse_capacity =
+        parser_capacity_estimate_for_token_capacity(token_capacity.parser_token_capacity, tables);
+    let parser_floor = parser_allocation_floor_bytes(&parse_capacity);
+    let typecheck_floor = typecheck_allocation_floor_bytes(
+        token_capacity.lexer_token_capacity,
+        parse_capacity.tree_capacity,
+        true,
+        source_file_capacity,
+    );
+    let x86_capacity = x86_capacity_estimate_for_hir_and_tokens(
+        parse_capacity.tree_capacity,
+        token_capacity.lexer_token_capacity,
+    );
+    let x86_floor = x86_allocation_floor_bytes(token_capacity.lexer_token_capacity, &x86_capacity);
+    let frontend_floor_bytes = parser_floor.total.saturating_add(typecheck_floor.total);
+    let compile_floor_bytes = frontend_floor_bytes.saturating_add(x86_floor.total);
+
+    CompileCapacitySnapshot {
+        source_bytes: src.len(),
+        lexer_token_capacity: token_capacity.lexer_token_capacity,
+        parser_token_capacity: token_capacity.parser_token_capacity,
+        parser_tree_capacity: parse_capacity.tree_capacity,
+        parser_floor_bytes: parser_floor.total,
+        frontend_floor_bytes,
+        x86_inst_capacity: x86_capacity.inst_capacity,
+        x86_floor_bytes: x86_floor.total,
+        compile_floor_bytes,
+    }
+}
+
 pub(super) fn print_live_capacity_estimate(
     source_lines: usize,
     source_bytes: usize,
@@ -305,6 +471,7 @@ pub(super) fn print_live_capacity_estimate(
         Some((x86_hir_words, semantic_hir_words)),
         1,
     );
+    print_parallel_pass_contract_estimate();
     if x86_hir_words < parse_capacity.tree_capacity {
         let projected_x86_capacity = x86_capacity_estimate_for_hir_tokens_and_inst_basis(
             parse_capacity.tree_capacity,

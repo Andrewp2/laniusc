@@ -1,4 +1,8 @@
 // Publish pointer-jumped match arm and pattern-payload metadata.
+//
+// Arm rows and payload-pattern rows are disjoint HIR node kinds. The retained
+// match-node/ordinal rows therefore also carry arm owner/rank for match-arm
+// nodes so later semantic passes can work per arm instead of walking arm lists.
 
 import atomics;
 import generated_parse_production_ids;
@@ -60,6 +64,8 @@ void publish_arm(uint node)
     atomic_u32_max(hir_match_arm_count, owner, ordinal + 1u);
     if (valid_node(previous))
         hir_match_arm_next[previous] = node;
+    hir_match_payload_match_node[node] = owner;
+    hir_match_payload_ordinal[node] = ordinal;
 }
 
 void publish_payload(uint node)

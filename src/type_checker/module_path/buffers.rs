@@ -39,6 +39,9 @@ pub(super) struct Buffers {
     pub(super) import_module_id: wgpu::Buffer,
     pub(super) import_target_module_id: wgpu::Buffer,
     pub(super) import_status: wgpu::Buffer,
+    pub(super) import_edge_key_order: wgpu::Buffer,
+    pub(super) import_edge_key_order_tmp: wgpu::Buffer,
+    pub(super) import_edge_key_radix_dispatch_args: wgpu::Buffer,
     pub(super) decl_module_file_id: wgpu::Buffer,
     pub(super) decl_module_id: wgpu::Buffer,
     pub(super) decl_name_token: wgpu::Buffer,
@@ -369,6 +372,24 @@ impl Buffers {
             "type_check.resident.import_status",
             import_record_capacity,
             wgpu::BufferUsages::empty(),
+        );
+        let import_edge_key_order = storage_u32_rw(
+            device,
+            "type_check.resident.import_edge_key_order",
+            import_record_capacity,
+            wgpu::BufferUsages::empty(),
+        );
+        let import_edge_key_order_tmp = storage_u32_rw(
+            device,
+            "type_check.resident.import_edge_key_order_tmp",
+            import_record_capacity,
+            wgpu::BufferUsages::empty(),
+        );
+        let import_edge_key_radix_dispatch_args = storage_u32_rw(
+            device,
+            "type_check.resident.import_edge_key_radix_dispatch_args",
+            3,
+            wgpu::BufferUsages::INDIRECT,
         );
         // Declaration tables are retained through module/path resolution, but they
         // are not part of the x86 handoff. Use parser token/tree workspaces that
@@ -897,6 +918,9 @@ impl Buffers {
             import_module_id,
             import_target_module_id,
             import_status,
+            import_edge_key_order,
+            import_edge_key_order_tmp,
+            import_edge_key_radix_dispatch_args,
             decl_module_file_id,
             decl_module_id,
             decl_name_token,

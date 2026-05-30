@@ -9,9 +9,11 @@
 //   id). The resolver derives the receiver owner module from GPU type/module
 //   maps and uses the call-site module id for private method visibility.
 // - Receiver type refs are read from declaration-token keyed type-reference
-//   records. A follow-up pass handles receiver expressions that are already
-//   resolved calls. This pass does not inspect source bytes, hash token text,
-//   perform CPU lookup, or compare names by spelling.
+//   records, or from member-result type refs for chained field receivers whose
+//   receiver is not itself a declaration. A follow-up pass handles receiver
+//   expressions that are already resolved calls. This pass does not inspect
+//   source bytes, hash token text, perform CPU lookup, or compare names by
+//   spelling.
 
 struct Params
 {
@@ -27,6 +29,8 @@ StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
+StructuredBuffer<uint> member_result_ref_tag;
+StructuredBuffer<uint> member_result_ref_payload;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
@@ -80,11 +84,16 @@ bool receiver_decl_type_ref(uint receiver_i, out uint tag, out uint payload)
     payload = INVALID;
 
     uint decl_i = receiver_i < active_token_count() ? visible_decl[receiver_i] : INVALID;
-    if (decl_i == INVALID || decl_i >= active_token_count())
-        return false;
-
-    tag = decl_type_ref_tag[decl_i];
-    payload = decl_type_ref_payload[decl_i];
+    if (decl_i != INVALID && decl_i < active_token_count())
+    {
+        tag = decl_type_ref_tag[decl_i];
+        payload = decl_type_ref_payload[decl_i];
+    }
+    else if (receiver_i < active_token_count())
+    {
+        tag = member_result_ref_tag[receiver_i];
+        payload = member_result_ref_payload[receiver_i];
+    }
     return tag != TYPE_REF_INVALID && payload != INVALID;
 }
 

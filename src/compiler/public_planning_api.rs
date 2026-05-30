@@ -2,6 +2,17 @@ use super::*;
 
 mod inputs;
 pub use inputs::{
+    EntrySourceRoots,
+    load_entry_path_manifest_with_source_root,
+    load_entry_path_manifest_with_source_root_and_optional_stdlib,
+    load_entry_path_manifest_with_source_root_and_stdlib,
+    load_entry_path_manifest_with_source_roots,
+    load_entry_path_manifest_with_stdlib,
+    load_entry_with_source_root,
+    load_entry_with_source_root_and_optional_stdlib,
+    load_entry_with_source_root_and_stdlib,
+    load_entry_with_source_roots,
+    load_entry_with_stdlib,
     load_explicit_source_libraries_from_paths,
     load_explicit_source_pack_manifest_from_paths,
     load_explicit_source_pack_path_manifest_from_paths,

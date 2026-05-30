@@ -14,12 +14,22 @@ pub(crate) use config::{
 pub(crate) use config::{
     SourcePackCliOptions,
     build_max_items,
+    canonical_directory_path,
+    canonical_unique_directory_paths,
     max_items,
     max_ready_items,
     metadata_max_libraries,
     metadata_max_source_files,
-    parse_usize_arg,
     parse_usize_value,
     source_pack_artifact_target,
 };
 pub(crate) use output::{CliEmission, write_cli_emission};
+
+impl From<output::CliOutputError> for crate::CliError {
+    fn from(value: output::CliOutputError) -> Self {
+        match value {
+            output::CliOutputError::Diagnostic(diagnostic) => Self::Diagnostic(diagnostic),
+            output::CliOutputError::Message(message) => Self::Message(message),
+        }
+    }
+}

@@ -19,6 +19,7 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
@@ -44,6 +45,7 @@ static const uint TYPE_INSTANCE_RESOLVED = 1u;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_BOOL = 2u;
 static const uint TY_INT = 3u;
+static const uint TY_FLOAT = 5u;
 static const uint TY_GENERIC_BASE = 8192u;
 
 static const uint HIR_INDEX_EXPR = 20u;
@@ -57,7 +59,6 @@ static const uint HIR_EXPR_RECORD_LEFT = 1u;
 static const uint HIR_EXPR_RECORD_RIGHT = 2u;
 static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
 
-static const uint HIR_EXPR_FORWARD = 1u;
 static const uint HIR_EXPR_NAME = 2u;
 static const uint HIR_EXPR_INT = 3u;
 static const uint HIR_EXPR_TRUE = 4u;
@@ -82,6 +83,7 @@ static const uint HIR_EXPR_BIT_XOR = 22u;
 static const uint HIR_EXPR_BIT_AND = 23u;
 static const uint HIR_EXPR_SHL = 24u;
 static const uint HIR_EXPR_SHR = 25u;
+static const uint HIR_EXPR_FLOAT = 27u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -118,30 +120,25 @@ uint expr_form(uint node)
     return expr_slot(node, HIR_EXPR_RECORD_FORM);
 }
 
-uint resolve_expr(uint node)
+uint result_expr(uint node)
 {
-    [loop]
-    for (uint guard = 0u; guard < 64u && valid_node(node); guard += 1u)
-    {
-        if (expr_form(node) != HIR_EXPR_FORWARD)
-            return node;
-        uint child = expr_slot(node, HIR_EXPR_RECORD_LEFT);
-        if (!valid_node(child))
-            return node;
-        node = child;
-    }
-    return node;
+    if (!valid_node(node))
+        return INVALID;
+    uint root = hir_expr_result_root_node[node];
+    return valid_node(root) ? root : INVALID;
 }
 
 uint scalar_expr_type(uint node)
 {
-    node = resolve_expr(node);
+    node = result_expr(node);
     if (!valid_node(node))
         return TY_UNKNOWN;
 
     uint form = expr_form(node);
     if (form == HIR_EXPR_INT)
         return TY_INT;
+    if (form == HIR_EXPR_FLOAT)
+        return TY_FLOAT;
     if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
         return TY_BOOL;
     if (form == HIR_EXPR_NAME)
@@ -195,7 +192,7 @@ uint index_operand_scalar_type(uint index_node)
 
 uint name_token_for_expr(uint root)
 {
-    uint node = resolve_expr(root);
+    uint node = result_expr(root);
     if (!valid_node(node) || hir_kind[node] != HIR_NAME_EXPR)
         return INVALID;
 

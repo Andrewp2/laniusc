@@ -4,6 +4,8 @@ module core::i64;
 
 pub const MIN: i64 = -9223372036854775808;
 pub const MAX: i64 = 9223372036854775807;
+pub const BITS: u32 = 64;
+pub const BYTES: u32 = 8;
 
 pub fn abs(value: i64) -> i64 {
     if (value < 0) {

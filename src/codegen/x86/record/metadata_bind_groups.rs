@@ -195,6 +195,7 @@ pub(super) struct FunctionDiscoveryInputs<'a> {
     pub(super) params: &'a wgpu::Buffer,
     pub(super) hir_status: &'a wgpu::Buffer,
     pub(super) hir_kind: &'a wgpu::Buffer,
+    pub(super) hir_item_kind: &'a wgpu::Buffer,
     pub(super) parent: &'a wgpu::Buffer,
     pub(super) subtree_end: &'a wgpu::Buffer,
     pub(super) function_metadata: &'a GpuX86FunctionMetadataBuffers<'a>,
@@ -256,6 +257,7 @@ pub(super) fn create_function_discovery_bind_groups(
             ("gParams", inputs.params.as_entire_binding()),
             ("hir_status", inputs.hir_status.as_entire_binding()),
             ("hir_kind", inputs.hir_kind.as_entire_binding()),
+            ("hir_item_kind", inputs.hir_item_kind.as_entire_binding()),
             (
                 "x86_node_tree_status",
                 inputs.node_tree_status.as_entire_binding(),
@@ -263,14 +265,6 @@ pub(super) fn create_function_discovery_bind_groups(
             (
                 "hir_node_decl_token",
                 inputs.function_metadata.node_decl_token.as_entire_binding(),
-            ),
-            (
-                "hir_node_name_token",
-                inputs.function_metadata.node_name_token.as_entire_binding(),
-            ),
-            (
-                "hir_token_pos",
-                inputs.function_metadata.hir_token_pos.as_entire_binding(),
             ),
             (
                 "fn_entrypoint_tag",
@@ -281,10 +275,6 @@ pub(super) fn create_function_discovery_bind_groups(
             (
                 "x86_decl_node_by_token",
                 inputs.decl_node_by_token.as_entire_binding(),
-            ),
-            (
-                "x86_func_slot_by_node",
-                inputs.func_slot_by_node.as_entire_binding(),
             ),
         ],
     )?;
@@ -297,6 +287,7 @@ pub(super) fn create_function_discovery_bind_groups(
             ("gScan", inputs.func_owner_scan_params.binding(0)),
             ("hir_status", inputs.hir_status.as_entire_binding()),
             ("hir_kind", inputs.hir_kind.as_entire_binding()),
+            ("hir_item_kind", inputs.hir_item_kind.as_entire_binding()),
             (
                 "x86_func_owner_scan_local_prefix",
                 inputs.func_owner_scan_local_prefix.as_entire_binding(),
@@ -332,6 +323,7 @@ pub(super) fn create_function_discovery_bind_groups(
             ("gParams", inputs.params.as_entire_binding()),
             ("hir_status", inputs.hir_status.as_entire_binding()),
             ("hir_kind", inputs.hir_kind.as_entire_binding()),
+            ("hir_item_kind", inputs.hir_item_kind.as_entire_binding()),
             ("x86_tree_parent", inputs.parent.as_entire_binding()),
             (
                 "x86_tree_subtree_end",
@@ -386,6 +378,7 @@ pub(super) fn create_function_discovery_bind_groups(
             ("gParams", inputs.params.as_entire_binding()),
             ("hir_status", inputs.hir_status.as_entire_binding()),
             ("hir_kind", inputs.hir_kind.as_entire_binding()),
+            ("hir_item_kind", inputs.hir_item_kind.as_entire_binding()),
             (
                 "x86_func_slot_flags",
                 inputs.node_inst_scan_input.as_entire_binding(),

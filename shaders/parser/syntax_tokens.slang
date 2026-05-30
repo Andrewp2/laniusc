@@ -1,3 +1,4 @@
+import segment_tree;
 import status;
 
 struct Params
@@ -24,6 +25,12 @@ StructuredBuffer<int> depth_brace_inblock;
 StructuredBuffer<int> block_prefix_paren;
 StructuredBuffer<int> block_prefix_bracket;
 StructuredBuffer<int> block_prefix_brace;
+StructuredBuffer<int> paren_match_depth;
+StructuredBuffer<int> paren_match_block_min;
+StructuredBuffer<int> paren_match_min_tree;
+StructuredBuffer<uint> statement_context_kind;
+StructuredBuffer<uint> token_impl_context_event;
+StructuredBuffer<uint> trait_context_event;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -34,6 +41,9 @@ static const uint ERR_EXPECTED_TOKEN = 2u;
 static const uint ERR_MISSING_SEMICOLON = 3u;
 static const uint ERR_STMT_OVERLAP = 4u;
 static const uint ERR_UNBALANCED_DELIMITER = 5u;
+
+static const uint IMPL_HEADER_CONTEXT = 1u;
+static const uint TRAIT_BODY_CONTEXT = 1u;
 
 static const uint TK_IDENT = 1u;
 static const uint TK_INT = 2u;
@@ -256,26 +266,10 @@ bool same_delimiter_depth_before(uint a, uint b)
 
 bool is_impl_trait_for(uint i)
 {
-    if (token_kind(i) != TK_FOR || !is_type_start(token_kind(i + 1u)))
-        return false;
-
-    uint j = i;
-    [loop]
-    for (uint guard = 0u; guard < 256u && j > 0u; guard += 1u)
-    {
-        j -= 1u;
-        if (!same_delimiter_depth_before(i, j))
-            continue;
-
-        uint kind = token_kind(j);
-        if (kind == TK_IMPL)
-            return true;
-        if (kind == TK_SEMICOLON || kind == TK_LBRACE || kind == TK_IF_LBRACE ||
-            kind == TK_RBRACE || kind == TK_IF_RBRACE || kind == TK_ELSE ||
-            (is_stmt_keyword(kind) && kind != TK_IMPL))
-            return false;
-    }
-    return false;
+    return token_kind(i) == TK_FOR &&
+           is_type_start(token_kind(i + 1u)) &&
+           i < gParams.n_tokens &&
+           (token_impl_context_event[i] & 0xffu) == IMPL_HEADER_CONTEXT;
 }
 
 bool is_generic_name_kind(uint kind)
@@ -526,18 +520,10 @@ uint find_fn_param_open(uint fn_i)
 
 bool is_trait_method_fn(uint fn_i)
 {
-    uint j = fn_i;
-    [loop]
-    for (uint guard = 0u; guard < 512u && j > 0u; guard += 1u)
-    {
-        j -= 1u;
-        uint kind = token_kind(j);
-        if (kind == TK_TRAIT)
-            return true;
-        if (kind == TK_IMPL || kind == TK_RBRACE || kind == TK_IF_RBRACE)
-            return false;
-    }
-    return false;
+    return fn_i < active_token_count() &&
+           fn_i < gParams.n_tokens &&
+           brace_depth_before(fn_i) == 1 &&
+           (trait_context_event[fn_i] & 0xffu) == TRAIT_BODY_CONTEXT;
 }
 
 uint delimiter_class(uint kind)
@@ -825,27 +811,99 @@ bool is_close_paren_kind(uint kind)
            kind == TK_PARAM_RPAREN;
 }
 
+uint paren_match_n_blocks()
+{
+    return gParams.n_tokens == 0u ? 1u : (gParams.n_tokens + WG_SIZE - 1u) / WG_SIZE;
+}
+
+uint paren_match_leaf_base()
+{
+    uint n_blocks = paren_match_n_blocks();
+    uint base = 1u;
+    [loop]
+    while (base < n_blocks)
+        base <<= 1u;
+    return base;
+}
+
+public struct SyntaxParenDepthTree : IRangeSearchTree<int>
+{
+    public static uint n_blocks()
+    {
+        return paren_match_n_blocks();
+    }
+
+    public static uint leaf_base()
+    {
+        return paren_match_leaf_base();
+    }
+
+    public static int leaf_value(uint block)
+    {
+        return paren_match_block_min[block];
+    }
+
+    public static int tree_value(uint node)
+    {
+        return paren_match_min_tree[node];
+    }
+}
+
+public struct SyntaxParenDepthRows : IRangeSearchRows<int>
+{
+    public static uint item_count()
+    {
+        return min(active_token_count(), gParams.n_tokens);
+    }
+
+    public static uint block_size()
+    {
+        return WG_SIZE;
+    }
+
+    public static int row_value(uint row)
+    {
+        return paren_match_depth[row];
+    }
+}
+
+public struct SyntaxParenDepthAtMost : IRangeSearchPredicate<int, int>
+{
+    public static bool aggregate_may_match(int aggregate, int query)
+    {
+        return aggregate <= query;
+    }
+
+    public static bool leaf_matches(int leaf, int query)
+    {
+        return leaf <= query;
+    }
+}
+
 uint matching_open_paren_before(uint close_i)
 {
-    uint depth = 0u;
-    uint j = close_i;
-    [loop]
-    for (uint guard = 0u; guard < 512u && j > 0u; guard += 1u)
-    {
-        j -= 1u;
-        uint kind = token_kind(j);
-        if (is_close_paren_kind(kind))
-        {
-            depth += 1u;
-            continue;
-        }
-        if (!is_open_paren_kind(kind))
-            continue;
-        if (depth == 0u)
-            return j;
-        depth -= 1u;
-    }
-    return INVALID;
+    uint n_active = active_token_count();
+    if (close_i == 0u || close_i >= n_active || close_i >= gParams.n_tokens ||
+        !is_close_paren_kind(token_kind(close_i)))
+        return INVALID;
+
+    int depth_before = paren_depth_before(close_i);
+    int open_depth = depth_before - 1;
+    uint open_i;
+    if (!range_search_tree_last_index_before<
+            int,
+            int,
+            SyntaxParenDepthTree,
+            SyntaxParenDepthRows,
+            SyntaxParenDepthAtMost>(
+            close_i,
+            open_depth,
+            open_i))
+        return INVALID;
+
+    return is_open_paren_kind(token_kind(open_i)) && paren_match_depth[open_i] == open_depth ?
+        open_i :
+        INVALID;
 }
 
 bool is_fn_param_open_token(uint open_i)
@@ -1053,26 +1111,10 @@ bool token_in_leading_import_decl(uint i)
 
 bool token_may_be_in_import_decl(uint i)
 {
-    if (token_file(i) == INVALID)
-        return false;
-
-    uint j = i;
-    [loop]
-    for (uint guard = 0u; guard < 128u && j > 0u; guard += 1u)
-    {
-        j -= 1u;
-        if (!same_token_file(j, i))
-            return false;
-
-        uint kind = token_kind(j);
-        if (kind == TK_IMPORT)
-            return true;
-        if (kind == TK_SEMICOLON || kind == TK_LBRACE || kind == TK_IF_LBRACE ||
-            kind == TK_RBRACE || kind == TK_IF_RBRACE || kind == TK_ELSE ||
-            (is_stmt_keyword(kind) && kind != TK_IMPORT))
-            return false;
-    }
-    return false;
+    return i < active_token_count() &&
+           i < gParams.n_tokens &&
+           token_file(i) != INVALID &&
+           (statement_context_kind[i] & 0xffu) == TK_IMPORT;
 }
 
 uint qualified_path_start(uint first_colon_i)
@@ -1267,32 +1309,6 @@ void check_raw_plus_minus(uint i)
         record_error(i, ERR_EXPECTED_TOKEN, TK_IDENT);
 }
 
-bool is_for_iter_expr_end(uint i)
-{
-    if (token_kind(i + 1u) != TK_LBRACE)
-        return false;
-
-    bool saw_in = false;
-    [loop]
-    for (uint j = i; j > 0u; j -= 1u)
-    {
-        uint kind = token_kind(j - 1u);
-        if (kind == TK_IN)
-        {
-            saw_in = true;
-            continue;
-        }
-        if (saw_in && kind == TK_FOR)
-            return true;
-        if (kind == TK_SEMICOLON || kind == TK_RBRACE || kind == TK_IF_RBRACE ||
-            kind == TK_ELSE)
-            return false;
-        if (is_stmt_keyword(kind) && kind != TK_FOR)
-            return false;
-    }
-    return false;
-}
-
 void check_expr_end(uint i)
 {
     uint prev = i > 0u ? token_kind(i - 1u) : 0u;
@@ -1305,8 +1321,6 @@ void check_expr_end(uint i)
     if (next == TK_INDEX_LBRACKET || next == TK_LBRACKET)
         return;
     if (next == TK_INC || next == TK_DEC)
-        return;
-    if (is_for_iter_expr_end(i))
         return;
     if (is_expr_start(next))
         record_error(i + 1u, ERR_EXPECTED_TOKEN, TK_SEMICOLON);

@@ -63,6 +63,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirRecordClearBa
                 b.hir_item_path_end.as_entire_binding(),
             ),
             (
+                "hir_item_path_node".into(),
+                b.hir_item_path_node.as_entire_binding(),
+            ),
+            (
                 "hir_item_import_target_kind".into(),
                 b.hir_item_import_target_kind.as_entire_binding(),
             ),
@@ -79,12 +83,80 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirRecordClearBa
                 b.hir_param_record.as_entire_binding(),
             ),
             (
+                "hir_param_type_node".into(),
+                b.hir_param_type_node.as_entire_binding(),
+            ),
+            (
+                "hir_method_owner_node".into(),
+                b.hir_method_owner_node.as_entire_binding(),
+            ),
+            (
+                "hir_method_impl_node".into(),
+                b.hir_method_impl_node.as_entire_binding(),
+            ),
+            (
+                "hir_method_name_token".into(),
+                b.hir_method_name_token.as_entire_binding(),
+            ),
+            (
+                "hir_method_first_param_token".into(),
+                b.hir_method_first_param_token.as_entire_binding(),
+            ),
+            (
+                "hir_method_receiver_mode".into(),
+                b.hir_method_receiver_mode.as_entire_binding(),
+            ),
+            (
+                "hir_method_visibility".into(),
+                b.hir_method_visibility.as_entire_binding(),
+            ),
+            (
+                "hir_method_signature_flags".into(),
+                b.hir_method_signature_flags.as_entire_binding(),
+            ),
+            (
+                "hir_method_impl_receiver_type_node".into(),
+                b.hir_method_impl_receiver_type_node.as_entire_binding(),
+            ),
+            (
                 "hir_expr_record".into(),
                 b.hir_expr_record.as_entire_binding(),
             ),
             (
+                "hir_expr_result_node".into(),
+                b.hir_expr_result_node.as_entire_binding(),
+            ),
+            (
+                "hir_expr_result_root_node".into(),
+                b.hir_expr_result_root_node.as_entire_binding(),
+            ),
+            (
+                "hir_expr_result_root_scratch_node".into(),
+                b.hir_expr_result_root_scratch_node.as_entire_binding(),
+            ),
+            (
                 "hir_stmt_record".into(),
                 b.hir_stmt_record.as_entire_binding(),
+            ),
+            (
+                "hir_stmt_scope_end".into(),
+                b.hir_stmt_scope_end.as_entire_binding(),
+            ),
+            (
+                "hir_nearest_stmt_node".into(),
+                b.hir_nearest_stmt_node.as_entire_binding(),
+            ),
+            (
+                "hir_nearest_block_node".into(),
+                b.hir_nearest_block_node.as_entire_binding(),
+            ),
+            (
+                "hir_nearest_enclosing_control_node".into(),
+                b.hir_nearest_enclosing_control_node.as_entire_binding(),
+            ),
+            (
+                "hir_nearest_fn_node".into(),
+                b.hir_nearest_fn_node.as_entire_binding(),
             ),
         ])
     }

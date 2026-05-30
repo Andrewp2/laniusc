@@ -65,6 +65,7 @@ impl FilesystemArtifactStore {
             stored_page.partition_indices.clear();
         }
         validate_work_queue_page(&stored_page, page.target, Some(page.item_index))?;
+        self.validate_work_queue_page_sidecars(&stored_page)?;
         let path = self.work_queue_page_path_for_target(page.target, page.item_index);
         let bytes = serde_json::to_vec_pretty(&stored_page).map_err(|err| {
             CompileError::GpuFrontend(format!(
@@ -213,7 +214,164 @@ impl FilesystemArtifactStore {
             ))
         })?;
         validate_work_queue_page(&page, target, Some(item_index))?;
+        self.validate_work_queue_page_sidecars(&page)?;
         Ok(page)
+    }
+
+    fn validate_work_queue_page_sidecars(
+        &self,
+        page: &SourcePackWorkQueuePage,
+    ) -> Result<(), CompileError> {
+        self.validate_work_queue_dependency_sidecars(page)?;
+        self.validate_work_queue_dependent_sidecars(page)?;
+        Ok(())
+    }
+
+    fn validate_work_queue_dependency_sidecars(
+        &self,
+        page: &SourcePackWorkQueuePage,
+    ) -> Result<(), CompileError> {
+        let mut required_link_dependencies = required_link_dependency_items(page)?;
+
+        for &dependency_item_index in &page.dependency_item_indices {
+            required_link_dependencies.remove(&dependency_item_index);
+        }
+        for range in &page.dependency_item_ranges {
+            let Some(indices) = range.iter() else {
+                return Err(library_partition_contract_error(format!(
+                    "work queue page {} dependency range starting at {} overflows usize",
+                    page.item_index, range.first_job_index
+                )));
+            };
+            for dependency_item_index in indices {
+                required_link_dependencies.remove(&dependency_item_index);
+            }
+        }
+
+        let mut streamed_dependency_count = 0usize;
+        for page_index in 0..page.dependency_page_count {
+            let dependency_page = self.load_work_queue_dependencies_page_for_target(
+                page.target,
+                page.item_index,
+                page_index,
+            )?;
+            if dependency_page.first_dependency_position != streamed_dependency_count {
+                return Err(library_partition_contract_error(format!(
+                    "work queue dependencies page {} for item {} starts at {} but streamed {} dependencies",
+                    page_index,
+                    page.item_index,
+                    dependency_page.first_dependency_position,
+                    streamed_dependency_count
+                )));
+            }
+            let remaining_dependency_count = page
+                .dependency_item_count
+                .checked_sub(streamed_dependency_count)
+                .ok_or_else(|| {
+                    library_partition_contract_error(format!(
+                        "work queue page {} streamed too many dependencies before page {}",
+                        page.item_index, page_index
+                    ))
+                })?;
+            let expected_page_dependency_count = remaining_dependency_count
+                .min(SOURCE_PACK_WORK_QUEUE_DEPENDENCIES_DEFAULT_PAGE_SIZE);
+            if dependency_page.dependency_count != expected_page_dependency_count {
+                return Err(library_partition_contract_error(format!(
+                    "work queue dependencies page {} for item {} has {} dependencies but expected {}",
+                    page_index,
+                    page.item_index,
+                    dependency_page.dependency_count,
+                    expected_page_dependency_count
+                )));
+            }
+            for dependency_item_index in dependency_page.dependency_item_indices {
+                required_link_dependencies.remove(&dependency_item_index);
+            }
+            streamed_dependency_count = streamed_dependency_count
+                .checked_add(dependency_page.dependency_count)
+                .ok_or_else(|| {
+                    library_partition_contract_error(format!(
+                        "work queue page {} dependency stream count overflows",
+                        page.item_index
+                    ))
+                })?;
+        }
+        if streamed_dependency_count != page.dependency_item_count {
+            return Err(library_partition_contract_error(format!(
+                "work queue page {} streamed {} dependencies but expected {}",
+                page.item_index, streamed_dependency_count, page.dependency_item_count
+            )));
+        }
+        if !required_link_dependencies.is_empty() {
+            let label = match page.kind {
+                SourcePackWorkQueueItemKind::LinkLeaf => "codegen inputs",
+                SourcePackWorkQueueItemKind::LinkReduce => "link-group input items",
+                _ => "link inputs",
+            };
+            return Err(library_partition_contract_error(format!(
+                "work queue {:?} page {} {label} {:?} are not listed as dependencies",
+                page.kind, page.item_index, required_link_dependencies
+            )));
+        }
+        Ok(())
+    }
+
+    fn validate_work_queue_dependent_sidecars(
+        &self,
+        page: &SourcePackWorkQueuePage,
+    ) -> Result<(), CompileError> {
+        let mut streamed_dependent_count = 0usize;
+        for page_index in 0..page.dependent_page_count {
+            let dependent_page = self.load_work_queue_dependents_page_for_target(
+                page.target,
+                page.item_index,
+                page_index,
+            )?;
+            if dependent_page.first_dependent_position != streamed_dependent_count {
+                return Err(library_partition_contract_error(format!(
+                    "work queue dependents page {} for item {} starts at {} but streamed {} dependents",
+                    page_index,
+                    page.item_index,
+                    dependent_page.first_dependent_position,
+                    streamed_dependent_count
+                )));
+            }
+            let remaining_dependent_count = page
+                .dependent_item_count
+                .checked_sub(streamed_dependent_count)
+                .ok_or_else(|| {
+                    library_partition_contract_error(format!(
+                        "work queue page {} streamed too many dependents before page {}",
+                        page.item_index, page_index
+                    ))
+                })?;
+            let expected_page_dependent_count =
+                remaining_dependent_count.min(SOURCE_PACK_WORK_QUEUE_DEPENDENTS_DEFAULT_PAGE_SIZE);
+            if dependent_page.dependent_count != expected_page_dependent_count {
+                return Err(library_partition_contract_error(format!(
+                    "work queue dependents page {} for item {} has {} dependents but expected {}",
+                    page_index,
+                    page.item_index,
+                    dependent_page.dependent_count,
+                    expected_page_dependent_count
+                )));
+            }
+            streamed_dependent_count = streamed_dependent_count
+                .checked_add(dependent_page.dependent_count)
+                .ok_or_else(|| {
+                    library_partition_contract_error(format!(
+                        "work queue page {} dependent stream count overflows",
+                        page.item_index
+                    ))
+                })?;
+        }
+        if streamed_dependent_count != page.dependent_item_count {
+            return Err(library_partition_contract_error(format!(
+                "work queue page {} streamed {} dependents but expected {}",
+                page.item_index, streamed_dependent_count, page.dependent_item_count
+            )));
+        }
+        Ok(())
     }
 
     pub fn store_work_queue_dependencies_page(
@@ -541,5 +699,47 @@ impl FilesystemArtifactStore {
             })?;
         validate_progress_page(&page, target, Some(page_index))?;
         Ok(page)
+    }
+}
+
+fn required_link_dependency_items(
+    page: &SourcePackWorkQueuePage,
+) -> Result<BTreeSet<usize>, CompileError> {
+    match page.kind {
+        SourcePackWorkQueueItemKind::LinkLeaf => Ok(page
+            .input_codegen_job_indices
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>()),
+        SourcePackWorkQueueItemKind::LinkReduce => {
+            let link_group_index = page.link_group_index.ok_or_else(|| {
+                library_partition_contract_error(format!(
+                    "work queue link reduce page {} has no link group index",
+                    page.item_index
+                ))
+            })?;
+            let first_link_item_index = page.item_index.checked_sub(link_group_index).ok_or_else(
+                || {
+                    library_partition_contract_error(format!(
+                        "work queue link reduce page {} link group {} cannot derive first link item",
+                        page.item_index, link_group_index
+                    ))
+                },
+            )?;
+            let mut required = BTreeSet::new();
+            for &input_group_index in &page.input_link_group_indices {
+                let input_item_index = first_link_item_index
+                    .checked_add(input_group_index)
+                    .ok_or_else(|| {
+                        library_partition_contract_error(format!(
+                            "work queue link reduce page {} input link group {} overflows item index",
+                            page.item_index, input_group_index
+                        ))
+                    })?;
+                required.insert(input_item_index);
+            }
+            Ok(required)
+        }
+        _ => Ok(BTreeSet::new()),
     }
 }

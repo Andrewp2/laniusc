@@ -39,6 +39,7 @@ static const uint X86_VINST_LOAD_LOCAL_INDEX = 15u;
 static const uint X86_VINST_CALL_MIXED = 20u;
 static const uint X86_VINST_LOAD_PARAM_INDEX = 21u;
 static const uint X86_VINST_STORE_RET_PTR = 22u;
+static const uint X86_VINST_STORE_LOCAL_INDEX = 30u;
 static const uint X86_ARG_SCALAR = 1u;
 
 uint linear_dispatch_id(uint3 tid)
@@ -69,12 +70,10 @@ uint mixed_scalar_operand_count(uint row)
     uint info = x86_virtual_inst_args[row].w;
     uint count = 0u;
     uint arg_count = mixed_arg_count(info);
-    [unroll]
-    for (uint ordinal = 0u; ordinal < 4u; ordinal += 1u)
-    {
-        if (ordinal < arg_count && mixed_arg_kind(info, ordinal) == X86_ARG_SCALAR)
-            count += 1u;
-    }
+    if (arg_count > 0u && mixed_arg_kind(info, 0u) == X86_ARG_SCALAR) count += 1u;
+    if (arg_count > 1u && mixed_arg_kind(info, 1u) == X86_ARG_SCALAR) count += 1u;
+    if (arg_count > 2u && mixed_arg_kind(info, 2u) == X86_ARG_SCALAR) count += 1u;
+    if (arg_count > 3u && mixed_arg_kind(info, 3u) == X86_ARG_SCALAR) count += 1u;
     return count;
 }
 
@@ -97,7 +96,9 @@ uint operand_count_for_row(uint row)
         return 1u;
     if (op == X86_VINST_CALL_MIXED)
         return mixed_scalar_operand_count(row);
-    if (op == X86_VINST_BINARY || op == X86_VINST_COMPARE)
+    if (op == X86_VINST_BINARY ||
+        op == X86_VINST_COMPARE ||
+        op == X86_VINST_STORE_LOCAL_INDEX)
         return 2u;
     return 0u;
 }

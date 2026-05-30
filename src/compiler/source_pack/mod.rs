@@ -82,6 +82,10 @@ pub use records::{
     SourcePackLibrarySchedulePlan,
     SourcePackLibrarySourceFilePage,
     SourcePackLibrarySourceFileRecordPage,
+    SourcePackLinkDescriptorSummary,
+    SourcePackLinkRecordContract,
+    SourcePackLinkRecordDomain,
+    SourcePackLinkRecordKind,
     SourcePackWorkQueueDependenciesPage,
     SourcePackWorkQueueDependentsPage,
     SourcePackWorkQueueIndex,
@@ -107,6 +111,17 @@ pub use inputs::{
     ExplicitSourcePack,
     ExplicitSourcePackPathManifest,
     ExplicitSourcePathFile,
+};
+
+mod package_manifest;
+pub use package_manifest::{PACKAGE_MANIFEST_MAX_ROOTS, PackageManifest, ResolvedPackageManifest};
+
+mod package_lock;
+pub use package_lock::{
+    PACKAGE_LOCKFILE_LANGUAGE_EDITION,
+    PACKAGE_LOCKFILE_VERSION,
+    PackageLockfile,
+    PackageLockfileArtifact,
 };
 
 mod metadata;

@@ -1,6 +1,126 @@
 // Source-level standard I/O host ABI declarations.
+// The service contract below is intentionally conservative: the current
+// backends can type-check these declarations, but they do not bind stdio.
 
 module std::io;
+
+pub type StdioCapability = bool;
+pub type StdioRuntimeAbiVersion = u32;
+pub type StdioServiceId = u32;
+pub type StdioServiceStatus = u32;
+
+pub const STDIO_RUNTIME_ABI_VERSION: StdioRuntimeAbiVersion = 1;
+pub const STDIO_SERVICE_ID: StdioServiceId = 3;
+pub const STDIO_SERVICE_STATUS_UNAVAILABLE: StdioServiceStatus = 1;
+pub const STDIO_HAS_RUNTIME_BINDING: StdioCapability = false;
+
+pub fn stdio_runtime_abi_version() -> StdioRuntimeAbiVersion {
+    return STDIO_RUNTIME_ABI_VERSION;
+}
+
+pub fn stdio_service_id() -> StdioServiceId {
+    return STDIO_SERVICE_ID;
+}
+
+pub fn stdio_service_is_known() -> StdioCapability {
+    return true;
+}
+
+pub fn stdio_contract_metadata_is_available() -> StdioCapability {
+    return stdio_service_is_known();
+}
+
+pub fn stdio_service_status() -> StdioServiceStatus {
+    return STDIO_SERVICE_STATUS_UNAVAILABLE;
+}
+
+pub fn stdio_is_available() -> StdioCapability {
+    return STDIO_HAS_RUNTIME_BINDING;
+}
+
+pub fn stdio_is_blocked() -> StdioCapability {
+    return !stdio_is_available();
+}
+
+pub fn stdio_requires_runtime_binding() -> StdioCapability {
+    return !STDIO_HAS_RUNTIME_BINDING;
+}
+
+pub fn stdio_host_abi_is_contract_only() -> StdioCapability {
+    return stdio_requires_runtime_binding();
+}
+
+pub fn write_stdout_is_executable() -> StdioCapability {
+    return STDIO_HAS_RUNTIME_BINDING;
+}
+
+pub fn write_stdout_is_blocked() -> StdioCapability {
+    return !write_stdout_is_executable();
+}
+
+pub fn write_stdout_requires_runtime_binding() -> StdioCapability {
+    return !write_stdout_is_executable();
+}
+
+pub fn write_stderr_is_executable() -> StdioCapability {
+    return STDIO_HAS_RUNTIME_BINDING;
+}
+
+pub fn write_stderr_is_blocked() -> StdioCapability {
+    return !write_stderr_is_executable();
+}
+
+pub fn write_stderr_requires_runtime_binding() -> StdioCapability {
+    return !write_stderr_is_executable();
+}
+
+pub fn read_stdin_is_executable() -> StdioCapability {
+    return STDIO_HAS_RUNTIME_BINDING;
+}
+
+pub fn read_stdin_is_blocked() -> StdioCapability {
+    return !read_stdin_is_executable();
+}
+
+pub fn read_stdin_requires_runtime_binding() -> StdioCapability {
+    return !read_stdin_is_executable();
+}
+
+pub fn flush_stdout_is_executable() -> StdioCapability {
+    return STDIO_HAS_RUNTIME_BINDING;
+}
+
+pub fn flush_stdout_is_blocked() -> StdioCapability {
+    return !flush_stdout_is_executable();
+}
+
+pub fn flush_stdout_requires_runtime_binding() -> StdioCapability {
+    return !flush_stdout_is_executable();
+}
+
+pub fn flush_stderr_is_executable() -> StdioCapability {
+    return STDIO_HAS_RUNTIME_BINDING;
+}
+
+pub fn flush_stderr_is_blocked() -> StdioCapability {
+    return !flush_stderr_is_executable();
+}
+
+pub fn flush_stderr_requires_runtime_binding() -> StdioCapability {
+    return !flush_stderr_is_executable();
+}
+
+pub fn print_i32_is_executable() -> StdioCapability {
+    return STDIO_HAS_RUNTIME_BINDING;
+}
+
+pub fn print_i32_is_blocked() -> StdioCapability {
+    return !print_i32_is_executable();
+}
+
+pub fn print_i32_requires_runtime_binding() -> StdioCapability {
+    return !print_i32_is_executable();
+}
 
 pub extern "lanius_std" fn write_stdout(ptr: u32, len: usize) -> i32;
 

@@ -4,7 +4,8 @@
 // - Dispatch after the method key radix sort has produced
 //   sorted_method_key_order.
 // - Adjacent equal valid keys are duplicate inherent methods in the same module
-//   for the same receiver type-ref and interned method name.
+//   for the same receiver type-ref, bounded receiver type-argument refs, and
+//   interned method name.
 // - This pass writes per-method validation results and reduces invalid or
 //   duplicate method declarations into the compiler-wide type-check status. It
 //   does not resolve calls, inspect source bytes, hash token text, perform CPU
@@ -36,6 +37,10 @@ StructuredBuffer<uint> method_decl_name_id;
 StructuredBuffer<uint> method_decl_visibility;
 StructuredBuffer<uint> module_type_path_type;
 StructuredBuffer<uint> type_instance_decl_token;
+StructuredBuffer<uint> type_instance_arg_start;
+StructuredBuffer<uint> type_instance_arg_count;
+StructuredBuffer<uint> type_instance_arg_ref_tag;
+StructuredBuffer<uint> type_instance_arg_ref_payload;
 
 RWStructuredBuffer<uint> method_key_status;
 RWStructuredBuffer<uint> method_key_duplicate_of;
@@ -48,6 +53,7 @@ static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
 static const uint TY_GENERIC_BASE = 8192u;
+static const uint TYPE_INSTANCE_ARG_REF_STRIDE = 4u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -57,6 +63,7 @@ static const uint METHOD_KEY_STATUS_INVALID_MODULE = 2u;
 static const uint METHOD_KEY_STATUS_INVALID_RECEIVER = 3u;
 static const uint METHOD_KEY_STATUS_INVALID_NAME = 4u;
 static const uint METHOD_KEY_STATUS_PUBLIC_OK = 5u;
+static const uint METHOD_KEY_STATUS_INVALID_RECEIVER_ARG = 6u;
 static const uint METHOD_VIS_PUBLIC = 1u;
 static const uint ERR_BAD_HIR = 6u;
 
@@ -96,10 +103,11 @@ uint resolved_nominal_decl_token(uint token_i)
     return decl_token_from_type_code(module_type_path_type[token_i]);
 }
 
-uint receiver_payload_key(uint fn_i)
+uint type_ref_payload_key(uint tag, uint payload)
 {
-    uint payload = method_decl_receiver_ref_payload[fn_i];
-    uint tag = method_decl_receiver_ref_tag[fn_i];
+    if (tag == TYPE_REF_GENERIC_PARAM)
+        return INVALID;
+
     if (tag == TYPE_REF_INSTANCE && payload < gParams.method_capacity)
     {
         uint decl_token = type_instance_decl_token[payload];
@@ -109,13 +117,83 @@ uint receiver_payload_key(uint fn_i)
         if (decl_token != INVALID)
             return decl_token;
     }
-    if (tag == TYPE_REF_GENERIC_PARAM)
-    {
-        uint decl_token = resolved_nominal_decl_token(payload);
-        if (decl_token != INVALID)
-            return decl_token;
-    }
     return payload;
+}
+
+uint receiver_payload_key(uint fn_i)
+{
+    return type_ref_payload_key(
+        method_decl_receiver_ref_tag[fn_i],
+        method_decl_receiver_ref_payload[fn_i]);
+}
+
+uint receiver_arg_count(uint fn_i)
+{
+    uint tag = method_decl_receiver_ref_tag[fn_i];
+    uint payload = method_decl_receiver_ref_payload[fn_i];
+    if (tag != TYPE_REF_INSTANCE || payload >= active_method_capacity())
+        return 0u;
+    return min(type_instance_arg_count[payload], TYPE_INSTANCE_ARG_REF_STRIDE);
+}
+
+bool receiver_args_valid(uint fn_i)
+{
+    uint tag = method_decl_receiver_ref_tag[fn_i];
+    uint payload = method_decl_receiver_ref_payload[fn_i];
+    if (tag != TYPE_REF_INSTANCE)
+        return true;
+    if (payload >= active_method_capacity())
+        return false;
+    if (type_instance_decl_token[payload] == INVALID)
+        return false;
+
+    uint arg_count = type_instance_arg_count[payload];
+    if (arg_count > TYPE_INSTANCE_ARG_REF_STRIDE)
+        return false;
+    if (arg_count == 0u)
+        return true;
+
+    uint start = type_instance_arg_start[payload];
+    if (start == INVALID)
+        return false;
+
+    [loop]
+    for (uint slot = 0u; slot < TYPE_INSTANCE_ARG_REF_STRIDE && slot < arg_count; slot += 1u)
+    {
+        uint arg_i = start + slot;
+        if (type_instance_arg_ref_tag[arg_i] == TYPE_REF_INVALID ||
+            type_instance_arg_ref_payload[arg_i] == INVALID)
+            return false;
+    }
+    return true;
+}
+
+uint receiver_arg_ref_index(uint fn_i, uint slot)
+{
+    uint tag = method_decl_receiver_ref_tag[fn_i];
+    uint payload = method_decl_receiver_ref_payload[fn_i];
+    if (tag != TYPE_REF_INSTANCE || payload >= active_method_capacity())
+        return INVALID;
+    if (slot >= receiver_arg_count(fn_i))
+        return INVALID;
+    uint start = type_instance_arg_start[payload];
+    return start == INVALID ? INVALID : start + slot;
+}
+
+uint receiver_arg_ref_tag_key(uint fn_i, uint slot)
+{
+    uint arg_i = receiver_arg_ref_index(fn_i, slot);
+    return arg_i == INVALID ? TYPE_REF_INVALID : type_instance_arg_ref_tag[arg_i];
+}
+
+uint receiver_arg_ref_payload_key(uint fn_i, uint slot)
+{
+    uint arg_i = receiver_arg_ref_index(fn_i, slot);
+    if (arg_i == INVALID)
+        return INVALID;
+    return type_ref_payload_key(
+        type_instance_arg_ref_tag[arg_i],
+        type_instance_arg_ref_payload[arg_i]);
 }
 
 uint invalid_method_status(uint fn_i)
@@ -129,6 +207,8 @@ uint invalid_method_status(uint fn_i)
     if (method_decl_receiver_ref_tag[fn_i] == TYPE_REF_INVALID ||
         method_decl_receiver_ref_payload[fn_i] == INVALID)
         return METHOD_KEY_STATUS_INVALID_RECEIVER;
+    if (!receiver_args_valid(fn_i))
+        return METHOD_KEY_STATUS_INVALID_RECEIVER_ARG;
     if (method_decl_name_id[fn_i] == INVALID)
         return METHOD_KEY_STATUS_INVALID_NAME;
 
@@ -140,14 +220,48 @@ public struct MethodValidationFixedKey : IFixedU32RowKey<uint>
     public static uint row_lane(uint fn_i, uint lane)
     {
         if (lane == 0u)
-            return fixed_key_encode_nullable_u32(method_decl_module_id[fn_i], INVALID);
-        if (lane == 1u)
             return fixed_key_encode_nullable_u32(
                 method_decl_receiver_ref_tag[fn_i],
                 TYPE_REF_INVALID);
-        if (lane == 2u)
+        if (lane == 1u)
             return fixed_key_encode_nullable_u32(receiver_payload_key(fn_i), INVALID);
-        return fixed_key_encode_nullable_u32(method_decl_name_id[fn_i], INVALID);
+        if (lane == 2u)
+            return receiver_arg_count(fn_i) + 1u;
+        if (lane == 3u)
+            return fixed_key_encode_nullable_u32(
+                receiver_arg_ref_tag_key(fn_i, 0u),
+                TYPE_REF_INVALID);
+        if (lane == 4u)
+            return fixed_key_encode_nullable_u32(
+                receiver_arg_ref_payload_key(fn_i, 0u),
+                INVALID);
+        if (lane == 5u)
+            return fixed_key_encode_nullable_u32(
+                receiver_arg_ref_tag_key(fn_i, 1u),
+                TYPE_REF_INVALID);
+        if (lane == 6u)
+            return fixed_key_encode_nullable_u32(
+                receiver_arg_ref_payload_key(fn_i, 1u),
+                INVALID);
+        if (lane == 7u)
+            return fixed_key_encode_nullable_u32(
+                receiver_arg_ref_tag_key(fn_i, 2u),
+                TYPE_REF_INVALID);
+        if (lane == 8u)
+            return fixed_key_encode_nullable_u32(
+                receiver_arg_ref_payload_key(fn_i, 2u),
+                INVALID);
+        if (lane == 9u)
+            return fixed_key_encode_nullable_u32(
+                receiver_arg_ref_tag_key(fn_i, 3u),
+                TYPE_REF_INVALID);
+        if (lane == 10u)
+            return fixed_key_encode_nullable_u32(
+                receiver_arg_ref_payload_key(fn_i, 3u),
+                INVALID);
+        if (lane == 11u)
+            return fixed_key_encode_nullable_u32(method_decl_name_id[fn_i], INVALID);
+        return fixed_key_encode_nullable_u32(method_decl_module_id[fn_i], INVALID);
     }
 
     public static uint key_lane(uint fn_i, uint lane)
@@ -165,7 +279,7 @@ bool method_keys_equal(uint left_fn_i, uint right_fn_i)
     return fixed_u32_row_key_equal<uint, MethodValidationFixedKey>(
         left_fn_i,
         right_fn_i,
-        4u);
+        13u);
 }
 
 public struct MethodKeyEquality : ISortedRunEquality

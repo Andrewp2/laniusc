@@ -205,6 +205,11 @@ impl ParserBuffers {
         );
         let token_delimiter_scan_steps =
             make_token_delimiter_scan_steps(device, token_input_capacity, token_delimiter_n_blocks);
+        let token_depth_paren_inblock = storage_rw_for_array::<i32>(
+            device,
+            "parser.token_depth_paren_inblock",
+            token_input_capacity as usize,
+        );
         let token_depth_brace_inblock = storage_rw_for_array::<i32>(
             device,
             "parser.token_depth_brace_inblock",
@@ -215,6 +220,16 @@ impl ParserBuffers {
             "parser.token_depth_bracket_inblock",
             n_tokens.max(1) as usize,
         );
+        let token_depth_angle_inblock = storage_rw_for_array::<i32>(
+            device,
+            "parser.token_depth_angle_inblock",
+            token_input_capacity as usize,
+        );
+        let token_block_sum_paren = storage_rw_for_array::<i32>(
+            device,
+            "parser.token_block_sum_paren",
+            token_delimiter_n_blocks as usize,
+        );
         let token_block_sum_brace = storage_rw_for_array::<i32>(
             device,
             "parser.token_block_sum_brace",
@@ -223,6 +238,26 @@ impl ParserBuffers {
         let token_block_sum_bracket = storage_rw_for_array::<i32>(
             device,
             "parser.token_block_sum_bracket",
+            token_delimiter_n_blocks as usize,
+        );
+        let token_block_sum_angle = storage_rw_for_array::<i32>(
+            device,
+            "parser.token_block_sum_angle",
+            token_delimiter_n_blocks as usize,
+        );
+        let token_prefix_paren_a = storage_rw_for_array::<i32>(
+            device,
+            "parser.token_prefix_paren_a",
+            token_delimiter_n_blocks as usize,
+        );
+        let token_prefix_paren_b = storage_rw_for_array::<i32>(
+            device,
+            "parser.token_prefix_paren_b",
+            token_delimiter_n_blocks as usize,
+        );
+        let token_block_prefix_paren = storage_rw_for_array::<i32>(
+            device,
+            "parser.token_block_prefix_paren",
             token_delimiter_n_blocks as usize,
         );
         let token_prefix_brace_a = storage_rw_for_array::<i32>(
@@ -253,6 +288,21 @@ impl ParserBuffers {
         let token_block_prefix_bracket = storage_rw_for_array::<i32>(
             device,
             "parser.token_block_prefix_bracket",
+            token_delimiter_n_blocks as usize,
+        );
+        let token_prefix_angle_a = storage_rw_for_array::<i32>(
+            device,
+            "parser.token_prefix_angle_a",
+            token_delimiter_n_blocks as usize,
+        );
+        let token_prefix_angle_b = storage_rw_for_array::<i32>(
+            device,
+            "parser.token_prefix_angle_b",
+            token_delimiter_n_blocks as usize,
+        );
+        let token_block_prefix_angle = storage_rw_for_array::<i32>(
+            device,
+            "parser.token_block_prefix_angle",
             token_delimiter_n_blocks as usize,
         );
         let token_top_brace_owner_block = storage_rw_for_array::<u32>(
@@ -310,6 +360,26 @@ impl ParserBuffers {
             "parser.token_statement_context_kind",
             token_input_capacity as usize,
         );
+        let token_impl_header_kind = storage_rw_for_array::<u32>(
+            device,
+            "parser.token_impl_header_kind",
+            token_input_capacity as usize,
+        );
+        let token_impl_context_event = storage_rw_for_array::<u32>(
+            device,
+            "parser.token_impl_context_event",
+            token_input_capacity as usize,
+        );
+        let token_where_context_event = storage_rw_for_array::<u32>(
+            device,
+            "parser.token_where_context_event",
+            token_input_capacity as usize,
+        );
+        let token_match_pattern_context_event = storage_rw_for_array::<u32>(
+            device,
+            "parser.token_match_pattern_context_event",
+            token_input_capacity as usize,
+        );
         let token_brace_match_params = uniform_from_val(
             device,
             "parser.token_brace_match.params",
@@ -338,6 +408,36 @@ impl ParserBuffers {
             device,
             token_delimiter_n_blocks,
             token_brace_match_min_tree_base,
+        );
+        let token_paren_match_depth = storage_rw_for_array::<i32>(
+            device,
+            "parser.token_paren_match_depth",
+            token_input_capacity as usize,
+        );
+        let token_paren_match_block_min = storage_rw_for_array::<i32>(
+            device,
+            "parser.token_paren_match_block_min",
+            token_delimiter_n_blocks as usize,
+        );
+        let token_paren_match_min_tree = storage_rw_for_array::<i32>(
+            device,
+            "parser.token_paren_match_min_tree",
+            token_brace_match_min_tree_base.saturating_mul(2) as usize,
+        );
+        let token_angle_match_depth = storage_rw_for_array::<i32>(
+            device,
+            "parser.token_angle_match_depth",
+            token_input_capacity as usize,
+        );
+        let token_angle_match_block_min = storage_rw_for_array::<i32>(
+            device,
+            "parser.token_angle_match_block_min",
+            token_delimiter_n_blocks as usize,
+        );
+        let token_angle_match_min_tree = storage_rw_for_array::<i32>(
+            device,
+            "parser.token_angle_match_min_tree",
+            token_brace_match_min_tree_base.saturating_mul(2) as usize,
         );
         let token_feature_flags = if token_kinds_u32.is_some() {
             storage_ro_from_u32s(
@@ -800,6 +900,14 @@ impl ParserBuffers {
                 uses_ll1: u32::from(tree_count_uses_status),
             },
         );
+        let hir_method_fields_params = uniform_from_val(
+            device,
+            "parser.hir_method_fields.params",
+            &super::passes::hir_method_fields::Params {
+                n: tree_capacity,
+                uses_ll1: u32::from(tree_count_uses_status),
+            },
+        );
         let hir_expr_fields_params = uniform_from_val(
             device,
             "parser.hir_expr_fields.params",
@@ -1167,6 +1275,11 @@ impl ParserBuffers {
         );
         let hir_item_path_end =
             storage_rw_for_array::<u32>(device, "parser.hir_item_path_end", tree_capacity as usize);
+        let hir_item_path_node = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_item_path_node",
+            tree_capacity as usize,
+        );
         let hir_item_file_id =
             alias_storage_buffer::<u32, u32>(&hir_token_file_id, tree_capacity as usize);
         let hir_item_import_target_kind = storage_rw_for_array::<u32>(
@@ -1178,6 +1291,51 @@ impl ParserBuffers {
             device,
             "parser.hir_param_record",
             tree_capacity.saturating_mul(4) as usize,
+        );
+        let hir_param_type_node = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_param_type_node",
+            tree_capacity as usize,
+        );
+        let hir_method_owner_node = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_method_owner_node",
+            tree_capacity as usize,
+        );
+        let hir_method_impl_node = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_method_impl_node",
+            tree_capacity as usize,
+        );
+        let hir_method_name_token = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_method_name_token",
+            tree_capacity as usize,
+        );
+        let hir_method_first_param_token = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_method_first_param_token",
+            tree_capacity as usize,
+        );
+        let hir_method_receiver_mode = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_method_receiver_mode",
+            tree_capacity as usize,
+        );
+        let hir_method_visibility = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_method_visibility",
+            tree_capacity as usize,
+        );
+        let hir_method_signature_flags = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_method_signature_flags",
+            tree_capacity as usize,
+        );
+        let hir_method_impl_receiver_type_node = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_method_impl_receiver_type_node",
+            tree_capacity as usize,
         );
         let hir_param_owner_a =
             alias_storage_buffer::<u32, u32>(&hir_list0_owner_a, tree_capacity as usize);
@@ -1212,6 +1370,11 @@ impl ParserBuffers {
             device,
             "parser.hir_variant_payload_count",
             tree_capacity as usize,
+        );
+        let hir_variant_payload_node = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_variant_payload_node",
+            tree_capacity.saturating_mul(4) as usize,
         );
         let hir_variant_owner_a =
             alias_storage_buffer::<u32, u32>(&hir_list0_owner_a, tree_capacity as usize);
@@ -1394,6 +1557,11 @@ impl ParserBuffers {
             "parser.hir_call_callee_node",
             tree_capacity as usize,
         );
+        let hir_call_context_stmt_node = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_call_context_stmt_node",
+            tree_capacity as usize,
+        );
         let hir_call_arg_start = storage_rw_for_array::<u32>(
             device,
             "parser.hir_call_arg_start",
@@ -1433,6 +1601,11 @@ impl ParserBuffers {
         let hir_array_lit_element_count = storage_rw_for_array::<u32>(
             device,
             "parser.hir_array_lit_element_count",
+            tree_capacity as usize,
+        );
+        let hir_array_lit_context_stmt_node = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_array_lit_context_stmt_node",
             tree_capacity as usize,
         );
         let hir_array_element_parent_lit = storage_rw_for_array::<u32>(
@@ -1476,6 +1649,21 @@ impl ParserBuffers {
             "parser.hir_expr_record",
             tree_capacity.saturating_mul(4) as usize,
         );
+        let hir_expr_result_node = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_expr_result_node",
+            tree_capacity as usize,
+        );
+        let hir_expr_result_root_node = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_expr_result_root_node",
+            tree_capacity as usize,
+        );
+        let hir_expr_result_root_scratch_node = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_expr_result_root_scratch_node",
+            tree_capacity as usize,
+        );
         let hir_expr_int_value = storage_rw_for_array::<u32>(
             device,
             "parser.hir_expr_int_value",
@@ -1500,6 +1688,31 @@ impl ParserBuffers {
             device,
             "parser.hir_stmt_record",
             tree_capacity.saturating_mul(4) as usize,
+        );
+        let hir_stmt_scope_end = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_stmt_scope_end",
+            tree_capacity as usize,
+        );
+        let hir_nearest_stmt_node = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_nearest_stmt_node",
+            tree_capacity as usize,
+        );
+        let hir_nearest_block_node = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_nearest_block_node",
+            tree_capacity as usize,
+        );
+        let hir_nearest_enclosing_control_node = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_nearest_enclosing_control_node",
+            tree_capacity as usize,
+        );
+        let hir_nearest_fn_node = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_nearest_fn_node",
+            tree_capacity as usize,
         );
         let hir_struct_field_parent_struct = storage_rw_for_array::<u32>(
             device,
@@ -1529,6 +1742,11 @@ impl ParserBuffers {
         let hir_struct_lit_head_node = storage_rw_for_array::<u32>(
             device,
             "parser.hir_struct_lit_head_node",
+            tree_capacity as usize,
+        );
+        let hir_struct_lit_context_stmt_node = storage_rw_for_array::<u32>(
+            device,
+            "parser.hir_struct_lit_context_stmt_node",
             tree_capacity as usize,
         );
         let hir_struct_lit_field_start = storage_rw_for_array::<u32>(
@@ -1584,6 +1802,30 @@ impl ParserBuffers {
             alias_storage_buffer::<u32, u32>(&hir_list1_rank_b, tree_capacity as usize);
         let hir_struct_lit_field_previous =
             alias_storage_buffer::<u32, u32>(&hir_previous_scratch, tree_capacity as usize);
+        let hir_stmt_context_link_a =
+            alias_storage_buffer::<u32, u32>(&hir_list0_link_a, tree_capacity as usize);
+        let hir_stmt_context_link_b =
+            alias_storage_buffer::<u32, u32>(&hir_list0_link_b, tree_capacity as usize);
+        let hir_contextual_stmt_value_a =
+            alias_storage_buffer::<u32, u32>(&hir_list0_owner_a, tree_capacity as usize);
+        let hir_contextual_stmt_value_b =
+            alias_storage_buffer::<u32, u32>(&hir_list0_owner_b, tree_capacity as usize);
+        let hir_nearest_stmt_value_a =
+            alias_storage_buffer::<u32, u32>(&hir_list1_owner_a, tree_capacity as usize);
+        let hir_nearest_stmt_value_b =
+            alias_storage_buffer::<u32, u32>(&hir_list1_owner_b, tree_capacity as usize);
+        let hir_nearest_block_value_a =
+            alias_storage_buffer::<u32, u32>(&hir_list1_link_a, tree_capacity as usize);
+        let hir_nearest_block_value_b =
+            alias_storage_buffer::<u32, u32>(&hir_list1_link_b, tree_capacity as usize);
+        let hir_nearest_enclosing_control_value_a =
+            alias_storage_buffer::<u32, u32>(&hir_list0_rank_a, tree_capacity as usize);
+        let hir_nearest_enclosing_control_value_b =
+            alias_storage_buffer::<u32, u32>(&hir_list0_rank_b, tree_capacity as usize);
+        let hir_nearest_fn_value_a =
+            alias_storage_buffer::<u32, u32>(&hir_list1_rank_a, tree_capacity as usize);
+        let hir_nearest_fn_value_b =
+            alias_storage_buffer::<u32, u32>(&hir_list1_rank_b, tree_capacity as usize);
         let hir_struct_rank_flag =
             alias_storage_buffer::<u32, u32>(&hir_rank_flag, tree_capacity as usize);
         let hir_struct_rank_local_prefix =
@@ -1644,16 +1886,26 @@ impl ParserBuffers {
             token_delimiter_scan_steps,
             token_input_capacity,
             token_delimiter_n_blocks,
+            token_depth_paren_inblock,
             token_depth_brace_inblock,
             token_depth_bracket_inblock,
+            token_depth_angle_inblock,
+            token_block_sum_paren,
             token_block_sum_brace,
             token_block_sum_bracket,
+            token_block_sum_angle,
+            token_prefix_paren_a,
+            token_prefix_paren_b,
+            token_block_prefix_paren,
             token_prefix_brace_a,
             token_prefix_brace_b,
             token_block_prefix_brace,
             token_prefix_bracket_a,
             token_prefix_bracket_b,
             token_block_prefix_bracket,
+            token_prefix_angle_a,
+            token_prefix_angle_b,
+            token_block_prefix_angle,
             token_top_brace_owner_block,
             token_top_brace_owner_prefix_a,
             token_top_brace_owner_prefix_b,
@@ -1665,12 +1917,22 @@ impl ParserBuffers {
             token_brace_semantic_kind,
             token_bracket_semantic_kind,
             token_statement_context_kind,
+            token_impl_header_kind,
+            token_impl_context_event,
+            token_where_context_event,
+            token_match_pattern_context_event,
             token_brace_match_params,
             token_brace_match_depth,
             token_brace_match_block_min,
             token_brace_match_min_tree_base,
             token_brace_match_min_tree,
             token_brace_match_min_tree_steps,
+            token_paren_match_depth,
+            token_paren_match_block_min,
+            token_paren_match_min_tree,
+            token_angle_match_depth,
+            token_angle_match_block_min,
+            token_angle_match_min_tree,
             token_feature_flags,
             token_count,
             default_token_file_id,
@@ -1771,6 +2033,7 @@ impl ParserBuffers {
             hir_type_fields_params,
             hir_item_fields_params,
             hir_param_fields_params,
+            hir_method_fields_params,
             hir_expr_fields_params,
             hir_member_fields_params,
             hir_stmt_fields_params,
@@ -1849,9 +2112,19 @@ impl ParserBuffers {
             hir_item_visibility,
             hir_item_path_start,
             hir_item_path_end,
+            hir_item_path_node,
             hir_item_file_id,
             hir_item_import_target_kind,
             hir_param_record,
+            hir_param_type_node,
+            hir_method_owner_node,
+            hir_method_impl_node,
+            hir_method_name_token,
+            hir_method_first_param_token,
+            hir_method_receiver_mode,
+            hir_method_visibility,
+            hir_method_signature_flags,
+            hir_method_impl_receiver_type_node,
             hir_param_owner_a,
             hir_param_owner_b,
             hir_param_link_a,
@@ -1863,6 +2136,7 @@ impl ParserBuffers {
             hir_variant_ordinal,
             hir_variant_payload_start,
             hir_variant_payload_count,
+            hir_variant_payload_node,
             hir_variant_owner_a,
             hir_variant_owner_b,
             hir_variant_link_a,
@@ -1924,6 +2198,7 @@ impl ParserBuffers {
             hir_match_rank_count,
             hir_match_rank_dispatch_args,
             hir_call_callee_node,
+            hir_call_context_stmt_node,
             hir_call_arg_start,
             hir_call_arg_end,
             hir_call_arg_count,
@@ -1937,6 +2212,7 @@ impl ParserBuffers {
             hir_call_arg_rank_b,
             hir_array_lit_first_element,
             hir_array_lit_element_count,
+            hir_array_lit_context_stmt_node,
             hir_array_element_parent_lit,
             hir_array_element_ordinal,
             hir_array_element_next,
@@ -1952,17 +2228,26 @@ impl ParserBuffers {
             hir_expr_right_node,
             hir_expr_value_token,
             hir_expr_record,
+            hir_expr_result_node,
+            hir_expr_result_root_node,
+            hir_expr_result_root_scratch_node,
             hir_expr_int_value,
             hir_member_receiver_node,
             hir_member_receiver_token,
             hir_member_name_token,
             hir_stmt_record,
+            hir_stmt_scope_end,
+            hir_nearest_stmt_node,
+            hir_nearest_block_node,
+            hir_nearest_enclosing_control_node,
+            hir_nearest_fn_node,
             hir_struct_field_parent_struct,
             hir_struct_field_ordinal,
             hir_struct_field_type_node,
             hir_struct_decl_field_start,
             hir_struct_decl_field_count,
             hir_struct_lit_head_node,
+            hir_struct_lit_context_stmt_node,
             hir_struct_lit_field_start,
             hir_struct_lit_field_count,
             hir_struct_lit_field_parent_lit,
@@ -1981,6 +2266,18 @@ impl ParserBuffers {
             hir_struct_lit_field_rank_a,
             hir_struct_lit_field_rank_b,
             hir_struct_lit_field_previous,
+            hir_stmt_context_link_a,
+            hir_stmt_context_link_b,
+            hir_contextual_stmt_value_a,
+            hir_contextual_stmt_value_b,
+            hir_nearest_stmt_value_a,
+            hir_nearest_stmt_value_b,
+            hir_nearest_block_value_a,
+            hir_nearest_block_value_b,
+            hir_nearest_enclosing_control_value_a,
+            hir_nearest_enclosing_control_value_b,
+            hir_nearest_fn_value_a,
+            hir_nearest_fn_value_b,
             hir_struct_rank_flag,
             hir_struct_rank_local_prefix,
             hir_struct_rank_block_sum,

@@ -22,6 +22,10 @@ pub fn eq(left: bool, right: bool) -> bool {
     return left == right;
 }
 
+pub fn ne(left: bool, right: bool) -> bool {
+    return left != right;
+}
+
 pub fn to_i32(value: bool) -> i32 {
     if (value) {
         return 1;
@@ -35,6 +39,14 @@ pub fn from_i32(value: i32) -> bool {
 }
 
 pub fn select_i32(condition: bool, when_true: i32, when_false: i32) -> i32 {
+    if (condition) {
+        return when_true;
+    } else {
+        return when_false;
+    }
+}
+
+pub fn choose_i32(condition: bool, when_true: i32, when_false: i32) -> i32 {
     if (condition) {
         return when_true;
     } else {

@@ -2,14 +2,19 @@
 //
 // Scheduling contract:
 // - Dispatch after final sorted imported-visibility key tables have been built.
+// - Dispatch twice. key_step == 0 initializes row status; key_step != 0 marks
+//   adjacent distinct-declaration boundaries and the lower-bound row for that
+//   equal-key run.
 // - Equal keys with different declarations are ambiguous imported declarations
-//   for the same importing module and namespace. Every row in that equal-key
-//   run is marked ambiguous so lower-bound lookup cannot accept the first row.
+//   for the same importing module and namespace. The lower-bound row for a
+//   conflicting equal-key run is marked ambiguous so lookup cannot accept it.
 //   Equal keys that name the same declaration are harmless re-imports.
 // - It does not resolve paths, scan source bytes, use hashes, perform CPU
 //   lookup, or apply same-source shortcuts.
 
+import atomics;
 import fixed_key;
+import range_query;
 
 struct Params
 {
@@ -127,70 +132,179 @@ bool same_value_key(uint left_i, uint right_i)
                2u);
 }
 
-bool type_key_has_distinct_decl_in_run(uint i, uint count, out uint duplicate_of)
+int compare_encoded_u32(uint left, uint right)
 {
-    duplicate_of = INVALID;
-    uint decl_i = import_visible_type_key_to_decl_id[i];
-
-    [loop]
-    for (uint cursor = i; cursor > 0u;)
-    {
-        cursor -= 1u;
-        if (!same_type_key(cursor, i))
-            break;
-        if (import_visible_type_key_to_decl_id[cursor] != decl_i)
-        {
-            duplicate_of = cursor;
-            return true;
-        }
-    }
-
-    [loop]
-    for (uint cursor = i + 1u; cursor < count; cursor += 1u)
-    {
-        if (!same_type_key(i, cursor))
-            break;
-        if (import_visible_type_key_to_decl_id[cursor] != decl_i)
-        {
-            duplicate_of = cursor;
-            return true;
-        }
-    }
-
-    return false;
+    return fixed_u32_lane_compare(
+        fixed_key_encode_nullable_u32(left, INVALID),
+        fixed_key_encode_nullable_u32(right, INVALID));
 }
 
-bool value_key_has_distinct_decl_in_run(uint i, uint count, out uint duplicate_of)
+int compare_type_row_key(uint row, uint module_id, uint name_id)
 {
-    duplicate_of = INVALID;
+    int cmp = compare_encoded_u32(import_visible_type_key_module_id[row], module_id);
+    if (cmp != 0)
+        return cmp;
+    return compare_encoded_u32(import_visible_type_key_name_id[row], name_id);
+}
+
+int compare_value_row_key(uint row, uint module_id, uint name_id)
+{
+    int cmp = compare_encoded_u32(import_visible_value_key_module_id[row], module_id);
+    if (cmp != 0)
+        return cmp;
+    return compare_encoded_u32(import_visible_value_key_name_id[row], name_id);
+}
+
+public struct ImportVisibleLookupKey
+{
+    uint module_id;
+    uint name_id;
+}
+
+public struct ImportVisibleTypeCompare : IRowQueryCompare<ImportVisibleLookupKey>
+{
+    public static int compare(uint row, ImportVisibleLookupKey key)
+    {
+        return compare_type_row_key(row, key.module_id, key.name_id);
+    }
+}
+
+public struct ImportVisibleValueCompare : IRowQueryCompare<ImportVisibleLookupKey>
+{
+    public static int compare(uint row, ImportVisibleLookupKey key)
+    {
+        return compare_value_row_key(row, key.module_id, key.name_id);
+    }
+}
+
+QueryRange type_key_range(uint count, uint module_id, uint name_id)
+{
+    ImportVisibleLookupKey key;
+    key.module_id = module_id;
+    key.name_id = name_id;
+    return equal_range_query<ImportVisibleLookupKey, ImportVisibleTypeCompare>(count, key);
+}
+
+QueryRange value_key_range(uint count, uint module_id, uint name_id)
+{
+    ImportVisibleLookupKey key;
+    key.module_id = module_id;
+    key.name_id = name_id;
+    return equal_range_query<ImportVisibleLookupKey, ImportVisibleValueCompare>(count, key);
+}
+
+void mark_type_ambiguous(uint row, uint duplicate_of)
+{
+    atomic_u32_max(import_visible_type_status, row, IMPORT_VISIBLE_STATUS_AMBIGUOUS);
+    atomic_u32_min(import_visible_type_duplicate_of, row, duplicate_of);
+}
+
+void mark_value_ambiguous(uint row, uint duplicate_of)
+{
+    atomic_u32_max(import_visible_value_status, row, IMPORT_VISIBLE_STATUS_AMBIGUOUS);
+    atomic_u32_min(import_visible_value_duplicate_of, row, duplicate_of);
+}
+
+uint adjacent_distinct_type_decl(uint i, uint count)
+{
+    uint decl_i = import_visible_type_key_to_decl_id[i];
+    if (i > 0u &&
+        same_type_key(i - 1u, i) &&
+        import_visible_type_key_to_decl_id[i - 1u] != decl_i)
+        return i - 1u;
+    if (i + 1u < count &&
+        same_type_key(i, i + 1u) &&
+        import_visible_type_key_to_decl_id[i + 1u] != decl_i)
+        return i + 1u;
+    return INVALID;
+}
+
+uint adjacent_distinct_value_decl(uint i, uint count)
+{
     uint decl_i = import_visible_value_key_to_decl_id[i];
+    if (i > 0u &&
+        same_value_key(i - 1u, i) &&
+        import_visible_value_key_to_decl_id[i - 1u] != decl_i)
+        return i - 1u;
+    if (i + 1u < count &&
+        same_value_key(i, i + 1u) &&
+        import_visible_value_key_to_decl_id[i + 1u] != decl_i)
+        return i + 1u;
+    return INVALID;
+}
 
-    [loop]
-    for (uint cursor = i; cursor > 0u;)
-    {
-        cursor -= 1u;
-        if (!same_value_key(cursor, i))
-            break;
-        if (import_visible_value_key_to_decl_id[cursor] != decl_i)
-        {
-            duplicate_of = cursor;
-            return true;
-        }
-    }
+void mark_type_boundary(uint i, uint count)
+{
+    if (i >= count || !valid_type_key(i))
+        return;
 
-    [loop]
-    for (uint cursor = i + 1u; cursor < count; cursor += 1u)
-    {
-        if (!same_value_key(i, cursor))
-            break;
-        if (import_visible_value_key_to_decl_id[cursor] != decl_i)
-        {
-            duplicate_of = cursor;
-            return true;
-        }
-    }
+    uint duplicate_of = adjacent_distinct_type_decl(i, count);
+    if (duplicate_of == INVALID)
+        return;
 
-    return false;
+    mark_type_ambiguous(i, duplicate_of);
+
+    QueryRange range = type_key_range(
+        count,
+        import_visible_type_key_module_id[i],
+        import_visible_type_key_name_id[i]);
+    uint first = range.begin;
+    if (first < count && same_type_key(first, i))
+        mark_type_ambiguous(first, duplicate_of);
+}
+
+void mark_value_boundary(uint i, uint count)
+{
+    if (i >= count || !valid_value_key(i))
+        return;
+
+    uint duplicate_of = adjacent_distinct_value_decl(i, count);
+    if (duplicate_of == INVALID)
+        return;
+
+    mark_value_ambiguous(i, duplicate_of);
+
+    QueryRange range = value_key_range(
+        count,
+        import_visible_value_key_module_id[i],
+        import_visible_value_key_name_id[i]);
+    uint first = range.begin;
+    if (first < count && same_value_key(first, i))
+        mark_value_ambiguous(first, duplicate_of);
+}
+
+void initialize_type_row(uint i)
+{
+    if (i >= active_type_count())
+        return;
+
+    import_visible_type_status[i] = valid_type_key(i)
+        ? IMPORT_VISIBLE_STATUS_OK
+        : IMPORT_VISIBLE_STATUS_INVALID_KEY;
+    import_visible_type_duplicate_of[i] = INVALID;
+}
+
+void initialize_value_row(uint i)
+{
+    if (i >= active_value_count())
+        return;
+
+    import_visible_value_status[i] = valid_value_key(i)
+        ? IMPORT_VISIBLE_STATUS_OK
+        : IMPORT_VISIBLE_STATUS_INVALID_KEY;
+    import_visible_value_duplicate_of[i] = INVALID;
+}
+
+void mark_boundary_rows(uint i)
+{
+    mark_type_boundary(i, active_type_count());
+    mark_value_boundary(i, active_value_count());
+}
+
+void initialize_rows(uint i)
+{
+    initialize_type_row(i);
+    initialize_value_row(i);
 }
 
 [shader("compute")]
@@ -201,41 +315,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i >= visible_capacity())
         return;
 
-    if (i < active_type_count())
+    if (gParams.key_step == 0u)
     {
-        import_visible_type_status[i] = IMPORT_VISIBLE_STATUS_OK;
-        import_visible_type_duplicate_of[i] = INVALID;
-        if (!valid_type_key(i))
-        {
-            import_visible_type_status[i] = IMPORT_VISIBLE_STATUS_INVALID_KEY;
-        }
-        else
-        {
-            uint duplicate_of;
-            if (type_key_has_distinct_decl_in_run(i, active_type_count(), duplicate_of))
-            {
-                import_visible_type_status[i] = IMPORT_VISIBLE_STATUS_AMBIGUOUS;
-                import_visible_type_duplicate_of[i] = duplicate_of;
-            }
-        }
+        initialize_rows(i);
+        return;
     }
 
-    if (i < active_value_count())
-    {
-        import_visible_value_status[i] = IMPORT_VISIBLE_STATUS_OK;
-        import_visible_value_duplicate_of[i] = INVALID;
-        if (!valid_value_key(i))
-        {
-            import_visible_value_status[i] = IMPORT_VISIBLE_STATUS_INVALID_KEY;
-        }
-        else
-        {
-            uint duplicate_of;
-            if (value_key_has_distinct_decl_in_run(i, active_value_count(), duplicate_of))
-            {
-                import_visible_value_status[i] = IMPORT_VISIBLE_STATUS_AMBIGUOUS;
-                import_visible_value_duplicate_of[i] = duplicate_of;
-            }
-        }
-    }
+    mark_boundary_rows(i);
 }

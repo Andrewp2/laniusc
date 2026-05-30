@@ -75,30 +75,20 @@ extract_terminal_param_param_binary_limit_branch
 
 The failure report already identifies these as the wrong abstraction because they inspect a callee’s entire return expression or terminal branch instead of compiling nodes generically.  Keep them only behind a clearly failing migration test if removing them immediately breaks too much.
 
-Add grep-style CI checks before adding new functionality:
+Do not turn that quarantine into source-string tests. Tests should prove the
+architecture from public behavior, persisted artifacts, and record contracts:
+renamed helpers should compile the same way, equivalent source rewrites should
+not require new backend cases, and backend fixtures should run from serialized
+HIR or attributed-AST records without the original source file. Source-code
+audits can be useful during review, but they are not correctness evidence and
+must not become tests that freeze helper names, function names, loop spellings,
+or private implementation vocabulary.
 
-```text
-Reject backend identifiers containing:
-RETURN_EVAL
-CHAIN
-extract_return
-extract_terminal
-ASCII
-wrapping_mul
-saturating_mul
-stdlib
-helper
-
-Reject semantic passes after HIR construction that reference:
-token_text
-source_bytes
-lexeme_start
-lexeme_len
-raw_token
-is_type_name_token
-```
-
-This is blunt, but useful. The agent has already learned that it can make progress by adding narrow recognizers. You need mechanical barriers.
+This is less blunt than grep-based CI, but it is a better guardrail. The agent
+has already learned that it can make progress by adding narrow recognizers, so
+the durable barrier has to be behavioral: if a change is generic, renamed and
+reshaped programs still work through the same record pipeline; if it is a
+recognizer, those properties fail.
 
 ### Phase 1: freeze the compiler records
 
@@ -346,9 +336,14 @@ lower_node(node_kind, type_id, metadata) exists
 
 Do not allow a test to pass because a parent function matched a special case.
 
-### 6. Negative recognizer test
+### 6. Negative recognizer property
 
-Search the backend for banned names and fail CI. The failure report explicitly says avoiding helper names is necessary but insufficient, because a recognizer for a compare-chain is still not generic code generation. 
+Do not search backend source for banned names as a test. Instead, use programs
+that would be rejected by a recognizer but accepted by generic lowering: renamed
+helpers, non-stdlib copies of the same operations, and expression rewrites that
+exercise the same node kinds. The failure report explicitly says avoiding helper
+names is necessary but insufficient, because a recognizer for a compare-chain is
+still not generic code generation.
 
 ## How to prompt the coding agent
 
@@ -377,7 +372,8 @@ Required tests:
 - A renamed helper using the same operators compiles.
 - A non-stdlib user function using the same operators compiles.
 - Backend lowering works from serialized attributed AST without tokens or source text.
-- CI grep proves no new `extract_return`, `RETURN_EVAL`, helper-name, or stdlib-name logic was added.
+- A shape-variant program using the same supported node kinds compiles without a
+  new source-pattern-specific backend case.
 
 Deliverable:
 Before editing, state the exact record arrays this pass consumes and produces.
@@ -425,9 +421,9 @@ Required behavior:
 - Backend lowering consumes only attributed AST or HIR records.
 
 Required tests:
-- Grep test rejects the old recognizer names.
 - Backend can run from serialized attributed AST.
 - A renamed helper still compiles.
+- A non-stdlib equivalent of the affected helper still compiles.
 ```
 
 ## Review checklist for every agent diff
@@ -466,11 +462,66 @@ Require it.
 Require it.
 ```
 
+## Current pass-architecture blockers
+
+These are the concrete blockers from the current GPU pass audit. They are
+ordered by architectural risk, not by how easy they are to patch.
+
+1. Parser semantic retagging has moved much of the old bounded
+   backward/context scanning into prefix-scanned token relation rows:
+   `tokens_impl_header_*`, `tokens_delimiters_03_owner_local` plus
+   `tokens_delimiters_04_owner_apply`, `tokens_statement_phase_*`,
+   `tokens_match_pattern_*`, `tokens_where_clause_*`, and the paren/angle
+   matching records run before `tokens_to_kinds.slang`. Keep that pass order:
+   parser-owned context rows first, then token classification consumes those
+   rows. The remaining blocker is narrower: `tokens_to_kinds.slang` still has
+   source-neighborhood checks for function-parameter and generic syntax plus the
+   bounded `BOUND_PATH_SEGMENT_LIMIT` path-context walk for bound type
+   arguments. That walk reports `PARSER_STATUS_CONTEXT_SCAN_LIMIT` through the
+   parser token feature/status word when it exhausts its segment budget; this
+   is a fail-closed boundary, not production support for unbounded type-context
+   discovery. Promote the remaining path/generic context into parser-owned
+   type-context rows produced before retagging rather than widening local loops.
+2. Type-check name and type-instance passes still have local parent/subtree
+   walks, including HIR-name ancestry checks, member generic-parameter lookup,
+   predicate collection, and direct scalar call resolution. The recent
+   field-key, struct-literal context, and array-generic call-inference work is
+   the right ordering model: parser/type metadata is produced first, then
+   consumers range-query or read literal-keyed, call-argument, and
+   expression-root records instead of scanning declaration ranges or ancestors.
+   Keep moving remaining facts into compact arrays, inversion, segmented
+   relations, prefix/scan/scatter steps, and pointer-jump records before
+   downstream consumers run. The predicate-obligation call-result type path now
+   joins through HIR call-callee rows instead of call-token adjacency, and
+   `type_check_calls_03_resolve.slang` now consumes parser-owned
+   `hir_expr_result_root_node` rows for direct scalar call typing. The broader
+   name/type-instance/direct-call walks still need record tables.
+3. The backend is moving in the right direction with node-local counts, virtual
+   rows, liveness, and register allocation, but some bounded ABI/register loops
+   remain capacity-shaped rather than record-shaped. Keep these bounded only for
+   fixed ABI widths or documented chunking, and promote any data-sized pressure,
+   spill, or call-clobber logic to explicit virtual-register/spill records
+   before expanding executable x86 coverage.
+4. WASM codegen still contains token-window and source-shape walks. The legacy
+   enum-match module path is retired from the Rust generator, and the
+   array-helper body path is explicitly capped and fails closed beyond its small
+   token/HIR budgets. Do not use either path as evidence for production backend
+   architecture until it is rebuilt as compact records, byte counts,
+   prefix-summed byte locations, and byte scatters over parser-owned
+   HIR/type/call records.
+5. Acceptance evidence must stay behavioral, artifact, diagnostic, or
+   record-based. Do not add source-grep tests for these blockers; use record
+   readbacks, renamed-program properties, fail-closed diagnostics, and no-run
+   inventory checks. Performance/scaling evidence should remain unclaimable
+   until the no-run measurement summary schema reports complete local Lanius,
+   readback, VRAM, Pareas, responsiveness, resource-usage, and freshness
+   evidence through `lanius.measurement-claim-readiness.v1`.
+
 ## The next concrete sprint
 
 The next sprint should be deliberately small:
 
-1. Add the architecture contract and banned-pattern CI.
+1. Add the architecture contract and behavior/property guardrails.
 2. Add a serialized attributed-AST backend fixture for a tiny program.
 3. Implement generic node-level lowering for:
 

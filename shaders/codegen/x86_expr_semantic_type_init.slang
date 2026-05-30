@@ -21,10 +21,11 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_expr_record;
-StructuredBuffer<uint> x86_expr_resolved_node;
+StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> call_return_type;
+StructuredBuffer<uint> x86_call_type_record;
 StructuredBuffer<uint> x86_decl_layout_record;
 StructuredBuffer<uint> x86_param_reg_record;
 
@@ -43,7 +44,6 @@ static const uint EXPR_RECORD_FORM = 0u;
 static const uint EXPR_RECORD_LEFT = 1u;
 static const uint EXPR_RECORD_VALUE_TOKEN = 3u;
 
-static const uint HIR_EXPR_FORWARD = 1u;
 static const uint HIR_EXPR_NAME = 2u;
 static const uint HIR_EXPR_INT = 3u;
 static const uint HIR_EXPR_TRUE = 4u;
@@ -76,6 +76,7 @@ static const uint TY_UINT = 4u;
 static const uint EXPR_SEMANTIC_LINK_MASK = 0x3fffffffu;
 static const uint EXPR_SEMANTIC_UINT_FLAG = 0x40000000u;
 
+static const uint X86_CALL_TYPE_STRIDE = 3u;
 static const uint X86_DECL_LAYOUT_STRIDE = 4u;
 static const uint X86_PARAM_REG_STRIDE = 5u;
 
@@ -139,9 +140,19 @@ uint expr_value_token(uint node)
     return valid_node(node) ? expr_slot(node, EXPR_RECORD_VALUE_TOKEN) : INVALID;
 }
 
-uint resolve_expr(uint node)
+uint expr_root_node(uint node)
 {
-    return valid_node(node) ? x86_expr_resolved_node[node] : INVALID;
+    return valid_node(node) ? hir_expr_result_root_node[node] : INVALID;
+}
+
+uint call_type_word(uint call_node, uint slot)
+{
+    return row_major_load<uint>(
+        x86_call_type_record,
+        call_node,
+        X86_CALL_TYPE_STRIDE,
+        slot,
+        INVALID);
 }
 
 uint decl_layout_type(uint decl_token)
@@ -195,7 +206,7 @@ uint visible_type_for_token(uint token_i)
 
 uint direct_expr_numeric_type(uint node)
 {
-    node = resolve_expr(node);
+    node = expr_root_node(node);
     if (!valid_node(node))
         return TY_UNKNOWN;
 
@@ -222,7 +233,7 @@ uint direct_expr_numeric_type(uint node)
 
     if (hir_kind[node] == HIR_CALL_EXPR)
     {
-        uint ty = token_i > 0u ? call_return_type[token_i - 1u] : TY_UNKNOWN;
+        uint ty = call_type_word(node, 0u);
         if (ty != TY_UNKNOWN && ty != INVALID)
             return ty;
         return visible_type_for_token(token_i);
@@ -233,8 +244,7 @@ uint direct_expr_numeric_type(uint node)
 
 bool inherited_numeric_form(uint form)
 {
-    return form == HIR_EXPR_FORWARD ||
-           form == HIR_EXPR_NEG ||
+    return form == HIR_EXPR_NEG ||
            form == HIR_EXPR_ADD ||
            form == HIR_EXPR_SUB ||
            form == HIR_EXPR_MUL ||
@@ -261,7 +271,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (!valid_node(node))
         return;
 
-    uint resolved = resolve_expr(node);
+    uint resolved = expr_root_node(node);
     if (!valid_node(resolved))
     {
         x86_expr_semantic_record[node] = pack_expr_semantic_record(TY_UNKNOWN, INVALID);
@@ -278,7 +288,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint form = expr_form(resolved);
     uint left = expr_left(resolved);
     uint link = inherited_numeric_form(form) && valid_node(left)
-                    ? resolve_expr(left)
+                    ? expr_root_node(left)
                     : INVALID;
     x86_expr_semantic_record[node] = pack_expr_semantic_record(TY_UNKNOWN, link);
 }

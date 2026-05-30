@@ -6,7 +6,6 @@
 
 import gpu_index;
 import hir_records;
-import tree_walk;
 
 struct Params
 {
@@ -25,10 +24,11 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint4> hir_param_record;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_expr_int_value;
 StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_call_arg_parent_call;
-StructuredBuffer<uint> parent;
+StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> call_intrinsic_tag;
@@ -94,11 +94,13 @@ static const uint ERR_MULTI_FUNCTION_MODULE_BASE = 700u;
 static const uint RETURN_CONSTRUCT_NONE = 0u;
 static const uint RETURN_CONSTRUCT_RETURN = 1u;
 static const uint RETURN_CONSTRUCT_IF = 2u;
+static const uint ERR_UNSUPPORTED_SOURCE_SHAPE = 1u;
 
 bool module_already_emitted()
 {
     return status[1u] == 1u || status[1u] == 2u || status[1u] == 3u ||
-           status[1u] == 5u;
+           status[1u] == 5u ||
+           (status[2u] != 0u && status[2u] != ERR_UNSUPPORTED_SOURCE_SHAPE);
 }
 
 uint linear_dispatch_id(uint3 tid)
@@ -121,22 +123,15 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
-uint parent_node(uint node)
+bool function_decl_token_has_record(uint decl_token)
 {
-    return valid_node(node) ? parent[node] : INVALID;
+    return valid_token(decl_token) && call_fn_index[decl_token] == decl_token;
 }
 
-public struct WasmModuleWalkGraph : ITreeWalkGraph
+bool is_function_record_node(uint node)
 {
-    public static bool valid(uint node)
-    {
-        return valid_node(node);
-    }
-
-    public static uint parent(uint node)
-    {
-        return parent_node(node);
-    }
+    return valid_node(node) && hir_kind[node] == HIR_FN &&
+           function_decl_token_has_record(hir_token_pos[node]);
 }
 
 uint stmt_record(uint node, uint slot)
@@ -185,16 +180,12 @@ uint expr_value_token(uint node)
 
 uint resolve_expr(uint node)
 {
-    [loop]
-    for (uint guard = 0u; guard < 64u; guard += 1u)
-    {
-        if (!valid_node(node))
-            return INVALID;
-        if (expr_form(node) != HIR_EXPR_FORWARD)
-            return node;
-        node = expr_left(node);
-    }
-    return INVALID;
+    if (!valid_node(node))
+        return INVALID;
+    uint root = hir_expr_result_root_node[node];
+    if (valid_node(root))
+        return root;
+    return expr_form(node) == HIR_EXPR_FORWARD ? INVALID : node;
 }
 
 uint function_count()
@@ -244,7 +235,14 @@ uint function_ordinal(uint fn_node)
 
 bool node_in_function(uint node, uint fn_node)
 {
-    return has_self_or_ancestor_node<WasmModuleWalkGraph>(node, fn_node, 128u);
+    if (!valid_node(node) || !valid_node(fn_node))
+        return false;
+    uint node_token = hir_token_pos[node];
+    uint fn_token = hir_token_pos[fn_node];
+    if (!valid_token(node_token) || !valid_token(fn_token))
+        return false;
+    uint encoded_fn = enclosing_fn[node_token];
+    return encoded_fn != 0u && encoded_fn - 1u == fn_token;
 }
 
 uint function_node_for_decl_token(uint decl_token)
@@ -253,7 +251,7 @@ uint function_node_for_decl_token(uint decl_token)
     [loop]
     for (uint node = 0u; node < n; node += 1u)
     {
-        if (hir_kind[node] == HIR_FN && hir_token_pos[node] == decl_token)
+        if (is_function_record_node(node) && hir_token_pos[node] == decl_token)
             return node;
     }
     return INVALID;
@@ -301,8 +299,7 @@ bool function_has_call_reference(uint fn_node)
 
 bool is_emittable_function(uint node)
 {
-    if (!valid_node(node) || hir_kind[node] != HIR_FN || !valid_token(hir_token_pos[node]) ||
-        function_param_count(node) > 2u)
+    if (!is_function_record_node(node) || function_param_count(node) > 2u)
         return false;
     return fn_entrypoint_tag[node] == ENTRYPOINT_MAIN || function_has_call_reference(node);
 }
@@ -329,7 +326,7 @@ uint find_main_fn_node()
     [loop]
     for (uint node = 0u; node < n; node += 1u)
     {
-        if (hir_kind[node] != HIR_FN)
+        if (!is_function_record_node(node))
             continue;
         bool tagged = fn_entrypoint_tag[node] == ENTRYPOINT_MAIN;
         if (!tagged)

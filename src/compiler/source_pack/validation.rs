@@ -1,5 +1,17 @@
 use super::*;
 
+fn checked_first_record_position(
+    label: &str,
+    page_index: usize,
+    page_size: usize,
+) -> Result<usize, CompileError> {
+    page_index.checked_mul(page_size).ok_or_else(|| {
+        library_partition_contract_error(format!(
+            "{label} page index {page_index} overflows first record position with page size {page_size}"
+        ))
+    })
+}
+
 mod partitions;
 pub(in crate::compiler) use partitions::*;
 

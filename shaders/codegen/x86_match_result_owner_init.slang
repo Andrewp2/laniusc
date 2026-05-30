@@ -27,7 +27,6 @@ ConstantBuffer<FeatureParams> gX86Features;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> x86_match_result_root_owner;
 StructuredBuffer<uint> x86_tree_parent;
-StructuredBuffer<uint> x86_tree_subtree_end;
 
 RWStructuredBuffer<uint> x86_match_result_owner;
 RWStructuredBuffer<uint> x86_match_result_owner_link;

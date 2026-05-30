@@ -1,8 +1,14 @@
 // GPU HIR-qualified value call consumer.
 //
-// This pass consumes resolver rows, HIR call records, and function return
-// metadata. It does not inspect token kinds, source bytes, helper names, or
-// function-body shapes to decide whether a resolved declaration is callable.
+// This pass consumes resolver rows, HIR call records, parser-published
+// expression roots / call contexts, and function return metadata. It does not
+// inspect token kinds, source bytes, helper names, or function-body shapes to
+// decide whether a resolved declaration is callable.
+//
+// Remaining bounded-record blocker: stateful generic binding across call and
+// type-instance argument rows is still limited by the four-slot cache. The
+// replacement is a compact argument row relation plus prefix-summed validation
+// rows, not a larger in-shader loop.
 
 import hir_records;
 import status;
@@ -21,12 +27,14 @@ StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> resolved_value_decl;
 StructuredBuffer<uint> resolved_value_status;
 StructuredBuffer<uint> decl_token_start;
-StructuredBuffer<uint> parent;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_stmt_record;
-StructuredBuffer<uint> hir_call_arg_parent_call;
+StructuredBuffer<uint> hir_call_context_stmt_node;
+StructuredBuffer<uint> hir_call_arg_count;
 StructuredBuffer<uint4> call_arg_record;
+StructuredBuffer<uint> call_arg_node;
 StructuredBuffer<uint> call_param_count;
 StructuredBuffer<uint> call_param_type;
 StructuredBuffer<uint> call_param_ref_tag;
@@ -61,6 +69,9 @@ static const uint PATH_RESOLVE_STATUS_UNRESOLVED_DECL = 6u;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_BOOL = 2u;
 static const uint TY_INT = 3u;
+static const uint TY_UINT = 4u;
+static const uint TY_FLOAT = 5u;
+static const uint TY_CHAR = 6u;
 static const uint TY_ARRAY_BASE = 128u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
@@ -71,11 +82,31 @@ static const uint HIR_EXPR_RECORD_FORM = 0u;
 static const uint HIR_EXPR_RECORD_LEFT = 1u;
 static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
 
-static const uint HIR_EXPR_FORWARD = 1u;
 static const uint HIR_EXPR_NAME = 2u;
 static const uint HIR_EXPR_INT = 3u;
 static const uint HIR_EXPR_TRUE = 4u;
 static const uint HIR_EXPR_FALSE = 5u;
+static const uint HIR_EXPR_NOT = 6u;
+static const uint HIR_EXPR_EQ = 7u;
+static const uint HIR_EXPR_NE = 8u;
+static const uint HIR_EXPR_LT = 9u;
+static const uint HIR_EXPR_GT = 10u;
+static const uint HIR_EXPR_LE = 11u;
+static const uint HIR_EXPR_GE = 12u;
+static const uint HIR_EXPR_NEG = 13u;
+static const uint HIR_EXPR_ADD = 14u;
+static const uint HIR_EXPR_SUB = 15u;
+static const uint HIR_EXPR_MUL = 16u;
+static const uint HIR_EXPR_AND = 17u;
+static const uint HIR_EXPR_OR = 18u;
+static const uint HIR_EXPR_MOD = 19u;
+static const uint HIR_EXPR_DIV = 20u;
+static const uint HIR_EXPR_BIT_OR = 21u;
+static const uint HIR_EXPR_BIT_XOR = 22u;
+static const uint HIR_EXPR_BIT_AND = 23u;
+static const uint HIR_EXPR_SHL = 24u;
+static const uint HIR_EXPR_SHR = 25u;
+static const uint HIR_EXPR_FLOAT = 27u;
 
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_LET = 1u;
@@ -87,6 +118,7 @@ static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint TYPE_REF_INSTANCE = 3u;
 
 static const uint ERR_ASSIGN_MISMATCH = 3u;
+static const uint ERR_CALL_MISMATCH = 10u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -148,31 +180,12 @@ uint stmt_slot(uint node, uint slot)
     return node * STMT_RECORD_STRIDE + slot;
 }
 
-uint resolve_expr(uint node)
+uint result_expr(uint node)
 {
-    [loop]
-    for (uint guard = 0u; guard < 64u && valid_node(node); guard += 1u)
-    {
-        if (expr_form(node) != HIR_EXPR_FORWARD)
-            return node;
-        uint child = expr_slot(node, HIR_EXPR_RECORD_LEFT);
-        if (!valid_node(child))
-            return node;
-        node = child;
-    }
-    return node;
-}
-
-uint ancestor_with_stmt_kind(uint node, uint target_kind)
-{
-    [loop]
-    for (uint guard = 0u; guard < 128u && valid_node(node); guard += 1u)
-    {
-        if (hir_stmt_record[stmt_slot(node, 0u)] == target_kind)
-            return node;
-        node = parent[node];
-    }
-    return INVALID;
+    if (!valid_node(node))
+        return INVALID;
+    uint root = hir_expr_result_root_node[node];
+    return valid_node(root) ? root : INVALID;
 }
 
 uint call_node_for_callee_token(uint callee_i)
@@ -182,19 +195,19 @@ uint call_node_for_callee_token(uint callee_i)
     return call_arg_record[callee_i].z;
 }
 
+uint call_arg_count_for_call(uint owner_token, uint call_node)
+{
+    uint record_count = valid_token(owner_token) ? call_arg_record[owner_token].w : 0u;
+    if (!valid_node(call_node))
+        return record_count;
+    return max(record_count, hir_call_arg_count[call_node]);
+}
+
 uint call_arg_node_for_call(uint call_node, uint ordinal)
 {
     if (!valid_node(call_node) || ordinal >= PARAM_CACHE_STRIDE)
         return INVALID;
-    [loop]
-    for (uint node = 0u; node < gParams.n_hir_nodes; node += 1u)
-    {
-        uint packed = hir_call_arg_parent_call[node];
-        if (hir_node_ordinal_node(packed) == call_node &&
-            hir_node_ordinal_ordinal(packed) == ordinal)
-            return node;
-    }
-    return INVALID;
+    return call_arg_node[call_node * PARAM_CACHE_STRIDE + ordinal];
 }
 
 uint param_cache_index(uint fn_token, uint ordinal)
@@ -236,8 +249,14 @@ uint type_code_for_ref(uint tag, uint payload)
 bool assignable(uint dst, uint src)
 {
     if (dst == TY_UNKNOWN || src == TY_UNKNOWN)
-        return false;
-    return dst == src;
+        return true;
+    if (dst == src)
+        return true;
+    if (dst == TY_INT)
+        return src == TY_UINT || src == TY_CHAR;
+    if (dst == TY_UINT)
+        return src == TY_INT || src == TY_CHAR;
+    return false;
 }
 
 bool is_struct_type(uint ty)
@@ -245,26 +264,57 @@ bool is_struct_type(uint ty)
     return ty >= TY_STRUCT_BASE && ty < TY_ENUM_BASE;
 }
 
-bool actual_ref_for_arg_node(uint arg_node, out uint tag, out uint payload)
+bool is_concrete_array_type(uint ty)
+{
+    return ty >= TY_ARRAY_BASE && ty < TY_STRUCT_BASE;
+}
+
+uint scalar_type_for_expr_form(uint form)
+{
+    if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
+        return TY_BOOL;
+    if (form == HIR_EXPR_INT)
+        return TY_INT;
+    if (form == HIR_EXPR_FLOAT)
+        return TY_FLOAT;
+    if (form == HIR_EXPR_NOT ||
+        form == HIR_EXPR_EQ ||
+        form == HIR_EXPR_NE ||
+        form == HIR_EXPR_LT ||
+        form == HIR_EXPR_GT ||
+        form == HIR_EXPR_LE ||
+        form == HIR_EXPR_GE ||
+        form == HIR_EXPR_AND ||
+        form == HIR_EXPR_OR)
+        return TY_BOOL;
+    if (form == HIR_EXPR_NEG ||
+        form == HIR_EXPR_ADD ||
+        form == HIR_EXPR_SUB ||
+        form == HIR_EXPR_MUL ||
+        form == HIR_EXPR_MOD ||
+        form == HIR_EXPR_DIV ||
+        form == HIR_EXPR_BIT_OR ||
+        form == HIR_EXPR_BIT_XOR ||
+        form == HIR_EXPR_BIT_AND ||
+        form == HIR_EXPR_SHL ||
+        form == HIR_EXPR_SHR)
+        return TY_INT;
+    return TY_UNKNOWN;
+}
+
+bool direct_ref_for_resolved_expr_node(uint node, out uint tag, out uint payload)
 {
     tag = TYPE_REF_INVALID;
     payload = INVALID;
-
-    uint node = resolve_expr(arg_node);
     if (!valid_node(node))
         return false;
 
     uint form = expr_form(node);
-    if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
+    uint scalar_ty = scalar_type_for_expr_form(form);
+    if (scalar_ty != TY_UNKNOWN)
     {
         tag = TYPE_REF_SCALAR;
-        payload = TY_BOOL;
-        return true;
-    }
-    if (form == HIR_EXPR_INT)
-    {
-        tag = TYPE_REF_SCALAR;
-        payload = TY_INT;
+        payload = scalar_ty;
         return true;
     }
 
@@ -287,24 +337,27 @@ bool actual_ref_for_arg_node(uint arg_node, out uint tag, out uint payload)
     return tag != TYPE_REF_INVALID;
 }
 
-bool actual_ref_for_token(uint token, out uint tag, out uint payload)
+bool actual_ref_for_arg_node(uint arg_node, out uint tag, out uint payload)
 {
     tag = TYPE_REF_INVALID;
     payload = INVALID;
-    if (!valid_token(token))
+
+    uint node = result_expr(arg_node);
+    if (!valid_node(node))
         return false;
 
-    uint decl = visible_decl[token];
-    if (valid_token(decl))
+    if (expr_form(node) == HIR_EXPR_NEG)
     {
-        tag = decl_type_ref_tag[decl];
-        payload = decl_type_ref_payload[decl];
-        return tag != TYPE_REF_INVALID;
+        uint child = result_expr(expr_slot(node, HIR_EXPR_RECORD_LEFT));
+        if (direct_ref_for_resolved_expr_node(child, tag, payload))
+            return true;
+
+        tag = TYPE_REF_SCALAR;
+        payload = TY_INT;
+        return true;
     }
 
-    tag = decl_type_ref_tag[token];
-    payload = decl_type_ref_payload[token];
-    return tag != TYPE_REF_INVALID;
+    return direct_ref_for_resolved_expr_node(node, tag, payload);
 }
 
 uint bound_tag_for_slot(
@@ -384,6 +437,14 @@ bool refs_equal(uint left_tag, uint left_payload, uint right_tag, uint right_pay
         return false;
     if (left_tag == right_tag && left_payload == right_payload)
         return true;
+    if (left_tag == TYPE_REF_GENERIC_PARAM && right_tag == TYPE_REF_GENERIC_PARAM)
+    {
+        uint left_slot = valid_token(left_payload) ? type_generic_param_slot_by_token[left_payload]
+                                                   : INVALID;
+        uint right_slot = valid_token(right_payload) ? type_generic_param_slot_by_token[right_payload]
+                                                     : INVALID;
+        return left_slot != INVALID && left_slot == right_slot;
+    }
     uint left_ty = type_code_for_ref(left_tag, left_payload);
     uint right_ty = type_code_for_ref(right_tag, right_payload);
     return left_ty != TY_UNKNOWN && left_ty == right_ty;
@@ -486,6 +547,7 @@ bool unify_leaf_param_ref_with_actual(
 }
 
 bool unify_param_ref_with_actual(
+    uint param_ty,
     uint param_tag,
     uint param_payload,
     uint actual_tag,
@@ -539,12 +601,18 @@ bool unify_param_ref_with_actual(
         return false;
     }
 
+    if (is_concrete_array_type(param_ty))
+        return true;
+
     uint param_decl = type_instance_decl_token[param_payload];
     uint actual_decl = type_instance_decl_token[actual_payload];
-    if (!valid_token(param_decl) || param_decl != actual_decl)
+    if (valid_token(param_decl) || valid_token(actual_decl))
     {
-        record_error(error_token, ERR_ASSIGN_MISMATCH, type_code_for_ref(param_tag, param_payload));
-        return false;
+        if (!valid_token(param_decl) || param_decl != actual_decl)
+        {
+            record_error(error_token, ERR_ASSIGN_MISMATCH, type_code_for_ref(param_tag, param_payload));
+            return false;
+        }
     }
 
     uint param_count = type_instance_arg_count[param_payload];
@@ -560,6 +628,11 @@ bool unify_param_ref_with_actual(
         return true;
     if (param_start == INVALID || actual_start == INVALID)
         return true;
+    if (param_count > PARAM_CACHE_STRIDE || actual_count > PARAM_CACHE_STRIDE)
+    {
+        record_error(error_token, ERR_ASSIGN_MISMATCH, type_code_for_ref(param_tag, param_payload));
+        return false;
+    }
 
     [loop]
     for (uint arg_i = 0u; arg_i < PARAM_CACHE_STRIDE; arg_i += 1u)
@@ -599,7 +672,9 @@ bool ref_contains_generic(uint tag, uint payload)
     if (tag != TYPE_REF_INSTANCE || !valid_token(payload))
         return false;
 
-    uint arg_count = min(type_instance_arg_count[payload], PARAM_CACHE_STRIDE);
+    uint arg_count = type_instance_arg_count[payload];
+    if (arg_count > PARAM_CACHE_STRIDE)
+        return true;
     uint arg_start = type_instance_arg_start[payload];
     if (arg_count == 0u || arg_start == INVALID)
         return false;
@@ -634,7 +709,9 @@ bool ref_generics_are_bound(
     if (tag != TYPE_REF_INSTANCE || !valid_token(payload))
         return true;
 
-    uint arg_count = min(type_instance_arg_count[payload], PARAM_CACHE_STRIDE);
+    uint arg_count = type_instance_arg_count[payload];
+    if (arg_count > PARAM_CACHE_STRIDE)
+        return false;
     uint arg_start = type_instance_arg_start[payload];
     if (arg_count == 0u)
         return true;
@@ -674,10 +751,14 @@ bool contextual_return_ref_for_call(
     tag = TYPE_REF_INVALID;
     payload = INVALID;
 
-    uint let_node = ancestor_with_stmt_kind(call_node, STMT_RECORD_KIND_LET);
-    if (valid_node(let_node))
+    uint context_node = valid_node(call_node) ? hir_call_context_stmt_node[call_node] : INVALID;
+    if (!valid_node(context_node))
+        return false;
+
+    uint context_kind = hir_stmt_record[stmt_slot(context_node, 0u)];
+    if (context_kind == STMT_RECORD_KIND_LET)
     {
-        uint decl_token = hir_stmt_record[stmt_slot(let_node, 1u)];
+        uint decl_token = hir_stmt_record[stmt_slot(context_node, 1u)];
         if (valid_token(decl_token))
         {
             tag = decl_type_ref_tag[decl_token];
@@ -687,8 +768,7 @@ bool contextual_return_ref_for_call(
         }
     }
 
-    uint return_node = ancestor_with_stmt_kind(call_node, STMT_RECORD_KIND_RETURN);
-    if (valid_node(return_node) && valid_token(owner_token))
+    if (context_kind == STMT_RECORD_KIND_RETURN && valid_token(owner_token))
     {
         uint encoded_fn = enclosing_fn[owner_token];
         uint fn_token = encoded_fn == 0u ? INVALID : encoded_fn - 1u;
@@ -797,14 +877,14 @@ bool unify_return_ref_with_context(
 
     uint ret_decl = type_instance_decl_token[ret_payload];
     uint context_decl = type_instance_decl_token[context_payload];
+    uint ret_count = type_instance_arg_count[ret_payload];
+    uint context_count = type_instance_arg_count[context_payload];
     if (!valid_token(ret_decl) || ret_decl != context_decl)
     {
         record_error(error_token, ERR_ASSIGN_MISMATCH, type_code_for_ref(context_tag, context_payload));
         return false;
     }
 
-    uint ret_count = type_instance_arg_count[ret_payload];
-    uint context_count = type_instance_arg_count[context_payload];
     uint ret_start = type_instance_arg_start[ret_payload];
     uint context_start = type_instance_arg_start[context_payload];
     if (ret_count != context_count)
@@ -816,12 +896,16 @@ bool unify_return_ref_with_context(
         return true;
     if (ret_start == INVALID || context_start == INVALID)
         return false;
+    if (ret_count > PARAM_CACHE_STRIDE || context_count > PARAM_CACHE_STRIDE)
+    {
+        record_error(error_token, ERR_ASSIGN_MISMATCH, type_code_for_ref(context_tag, context_payload));
+        return false;
+    }
 
-    uint count = min(ret_count, PARAM_CACHE_STRIDE);
     [loop]
     for (uint arg_i = 0u; arg_i < PARAM_CACHE_STRIDE; arg_i += 1u)
     {
-        if (arg_i >= count)
+        if (arg_i >= ret_count)
             break;
         uint ret_arg_i = ret_start + arg_i;
         uint context_arg_i = context_start + arg_i;
@@ -845,25 +929,22 @@ bool unify_return_ref_with_context(
     return true;
 }
 
-bool function_needs_generic_validation(uint fn_token)
+bool bounded_call_window(
+    uint owner_token,
+    uint call_node,
+    uint fn_token,
+    out uint expected_count,
+    out uint actual_count)
 {
-    if (!valid_token(fn_token))
-        return false;
-    if (is_generic_type(call_return_type[fn_token]) ||
-        ref_contains_generic(fn_return_ref_tag[fn_token], fn_return_ref_payload[fn_token]))
+    expected_count = valid_token(fn_token) ? call_param_count[fn_token] : 0u;
+    actual_count = call_arg_count_for_call(owner_token, call_node);
+    if (expected_count <= PARAM_CACHE_STRIDE &&
+        actual_count <= PARAM_CACHE_STRIDE &&
+        expected_count == actual_count)
         return true;
 
-    uint expected_count = min(call_param_count[fn_token], PARAM_CACHE_STRIDE);
-    [loop]
-    for (uint ordinal = 0u; ordinal < PARAM_CACHE_STRIDE; ordinal += 1u)
-    {
-        if (ordinal >= expected_count)
-            break;
-        uint ref_i = param_cache_index(fn_token, ordinal);
-        if (ref_contains_generic(call_param_ref_tag[ref_i], call_param_ref_payload[ref_i]))
-            return true;
-    }
-
+    call_return_type[owner_token] = TY_UNKNOWN;
+    record_error(owner_token, ERR_CALL_MISMATCH, expected_count * 256u + actual_count);
     return false;
 }
 
@@ -873,13 +954,10 @@ bool validate_and_infer_call(uint owner_token, uint fn_token, bool reject_array_
     if (!valid_node(call_node))
         return true;
 
-    uint expected_count = min(call_param_count[fn_token], PARAM_CACHE_STRIDE);
-    uint actual_count = min(call_arg_record[owner_token].w, PARAM_CACHE_STRIDE);
-    if (expected_count != actual_count)
-    {
-        record_error(owner_token, ERR_ASSIGN_MISMATCH, expected_count);
+    uint expected_count = 0u;
+    uint actual_count = 0u;
+    if (!bounded_call_window(owner_token, call_node, fn_token, expected_count, actual_count))
         return false;
-    }
 
     uint b0_tag = TYPE_REF_INVALID;
     uint b0_payload = INVALID;
@@ -897,10 +975,11 @@ bool validate_and_infer_call(uint owner_token, uint fn_token, bool reject_array_
             break;
 
         uint param_ref_i = param_cache_index(fn_token, ordinal);
+        uint param_ty = call_param_type[param_ref_i];
         if (reject_array_generic_call &&
-            array_or_slice_generic_slot(call_param_type[param_ref_i]) != INVALID)
+            array_or_slice_generic_slot(param_ty) != INVALID)
         {
-            record_error(owner_token, ERR_ASSIGN_MISMATCH, call_param_type[param_ref_i]);
+            record_error(owner_token, ERR_ASSIGN_MISMATCH, param_ty);
             return false;
         }
 
@@ -909,19 +988,14 @@ bool validate_and_infer_call(uint owner_token, uint fn_token, bool reject_array_
         if (param_tag == TYPE_REF_INVALID)
             continue;
 
-        uint arg_node = call_arg_node_for_call(call_node, ordinal);
         uint actual_tag = TYPE_REF_INVALID;
         uint actual_payload = INVALID;
-        if (ordinal == 0u)
-        {
-            uint first_arg_token = call_arg_record[owner_token].x;
-            actual_ref_for_token(first_arg_token, actual_tag, actual_payload);
-        }
-        if (actual_tag == TYPE_REF_INVALID &&
-            !actual_ref_for_arg_node(arg_node, actual_tag, actual_payload))
+        uint arg_node = call_arg_node_for_call(call_node, ordinal);
+        if (!actual_ref_for_arg_node(arg_node, actual_tag, actual_payload))
             continue;
 
         if (!unify_param_ref_with_actual(
+                param_ty,
                 param_tag,
                 param_payload,
                 actual_tag,
@@ -1024,16 +1098,18 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_node(call_node_for_callee_token(owner_token)))
         return;
     if (resolved_value_status[path_i] != PATH_RESOLVE_STATUS_OK)
+    {
+        module_value_path_status[owner_token] = resolved_value_status[path_i];
         return;
+    }
 
     uint fn_token;
     if (!valid_function_decl(resolved_value_decl[path_i], fn_token))
         return;
 
     uint ret_ty = call_return_type[owner_token];
-    bool qualified_call = true;
-    if (function_needs_generic_validation(fn_token) &&
-        !validate_and_infer_call(owner_token, fn_token, qualified_call))
+    bool reject_array_generic_call = true;
+    if (!validate_and_infer_call(owner_token, fn_token, reject_array_generic_call))
     {
         module_value_path_status[owner_token] = INVALID;
         return;

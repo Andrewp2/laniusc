@@ -38,8 +38,7 @@ StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> x86_expr_resolved_node;
 StructuredBuffer<uint> x86_expr_semantic_type;
 StructuredBuffer<uint4> x86_match_record;
-StructuredBuffer<uint> x86_tree_parent;
-StructuredBuffer<uint> x86_tree_subtree_end;
+StructuredBuffer<uint> x86_for_iterable_node;
 StructuredBuffer<uint> x86_node_inst_range_start;
 StructuredBuffer<uint> x86_node_inst_range_info;
 StructuredBuffer<uint> x86_node_inst_same_end_rank;
@@ -164,25 +163,6 @@ uint expr_left(uint node)
 uint resolve_expr(uint node)
 {
     return valid_node(node) ? x86_expr_resolved_node[node] : INVALID;
-}
-
-uint tree_parent_record(uint node)
-{
-    return valid_node(node) ? x86_tree_parent[node] : INVALID;
-}
-
-uint tree_subtree_end_record(uint node)
-{
-    return valid_node(node) ? x86_tree_subtree_end[node] : INVALID;
-}
-
-uint tree_first_child_record(uint node)
-{
-    uint child = node + 1u;
-    uint end = tree_subtree_end_record(node);
-    return valid_node(child) && child < end && tree_parent_record(child) == node
-        ? child
-        : INVALID;
 }
 
 uint range_count(uint2 range)
@@ -339,7 +319,7 @@ bool corrected_for_locations(uint node, out uint4 locations)
         stmt_slot(node, 0u) != STMT_RECORD_KIND_FOR)
         return false;
 
-    uint iterable_node = tree_first_child_record(node);
+    uint iterable_node = valid_node(node) ? x86_for_iterable_node[node] : INVALID;
     uint body_node = stmt_slot(node, 3u);
     uint iterable_padding = INVALID;
     uint body_location = INVALID;

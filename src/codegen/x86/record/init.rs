@@ -60,6 +60,9 @@ pub(super) struct InitializerInputs<'a> {
     pub intrinsic_call_status_buf: &'a wgpu::Buffer,
     pub call_abi_record_buf: &'a wgpu::Buffer,
     pub call_abi_status_buf: &'a wgpu::Buffer,
+    pub for_iterable_node_buf: &'a wgpu::Buffer,
+    pub node_control_padding_buf: &'a wgpu::Buffer,
+    pub postfix_operand_owner_buf: &'a wgpu::Buffer,
     pub node_inst_count_status_buf: &'a wgpu::Buffer,
     pub node_inst_order_status_buf: &'a wgpu::Buffer,
     pub node_inst_range_start_buf: &'a wgpu::Buffer,
@@ -140,6 +143,9 @@ pub(super) fn record_initializers(inputs: InitializerInputs<'_>) -> Result<()> {
         intrinsic_call_status_buf,
         call_abi_record_buf,
         call_abi_status_buf,
+        for_iterable_node_buf,
+        node_control_padding_buf,
+        postfix_operand_owner_buf,
         node_inst_count_status_buf,
         node_inst_order_status_buf,
         node_inst_range_start_buf,
@@ -356,6 +362,24 @@ pub(super) fn record_initializers(inputs: InitializerInputs<'_>) -> Result<()> {
         token_words,
     );
     write_u32_words(queue, call_abi_status_buf, &[1, 0, u32::MAX, 0]);
+    init_repeated!(
+        "for_iterable_node",
+        for_iterable_node_buf,
+        &[u32::MAX],
+        hir_words,
+    );
+    init_repeated!(
+        "node_control_padding",
+        node_control_padding_buf,
+        &[0],
+        hir_words,
+    );
+    init_repeated!(
+        "postfix_operand_owner",
+        postfix_operand_owner_buf,
+        &[u32::MAX],
+        hir_words,
+    );
     // x86_node_inst_counts overwrites every active HIR node row before the count
     // records are consumed. Later passes only read active nodes or compact order
     // rows derived from those active records. Same-end rank seed/step passes

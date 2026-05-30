@@ -1,0 +1,91 @@
+// Source-level randomness host ABI declarations.
+// The service contract below is intentionally conservative: the current
+// backends can type-check these declarations, but they do not bind entropy.
+
+module std::random;
+
+pub type RandomCapability = bool;
+pub type RandomRuntimeAbiVersion = u32;
+pub type RandomServiceId = u32;
+pub type RandomServiceStatus = u32;
+
+pub const RANDOM_RUNTIME_ABI_VERSION: RandomRuntimeAbiVersion = 1;
+pub const RANDOM_SERVICE_ID: RandomServiceId = 9;
+pub const RANDOM_SERVICE_STATUS_UNAVAILABLE: RandomServiceStatus = 1;
+pub const RANDOM_HAS_RUNTIME_BINDING: RandomCapability = false;
+
+pub fn random_runtime_abi_version() -> RandomRuntimeAbiVersion {
+    return RANDOM_RUNTIME_ABI_VERSION;
+}
+
+pub fn random_service_id() -> RandomServiceId {
+    return RANDOM_SERVICE_ID;
+}
+
+pub fn random_service_is_known() -> RandomCapability {
+    return true;
+}
+
+pub fn random_contract_metadata_is_available() -> RandomCapability {
+    return random_service_is_known();
+}
+
+pub fn random_service_status() -> RandomServiceStatus {
+    return RANDOM_SERVICE_STATUS_UNAVAILABLE;
+}
+
+pub fn random_is_available() -> RandomCapability {
+    return RANDOM_HAS_RUNTIME_BINDING;
+}
+
+pub fn random_is_blocked() -> RandomCapability {
+    return !random_is_available();
+}
+
+pub fn random_requires_runtime_binding() -> RandomCapability {
+    return !RANDOM_HAS_RUNTIME_BINDING;
+}
+
+pub fn random_host_abi_is_contract_only() -> RandomCapability {
+    return random_requires_runtime_binding();
+}
+
+pub fn secure_rng_api_is_executable() -> RandomCapability {
+    return RANDOM_HAS_RUNTIME_BINDING;
+}
+
+pub fn secure_rng_api_is_blocked() -> RandomCapability {
+    return !secure_rng_api_is_executable();
+}
+
+pub fn secure_rng_api_requires_runtime_binding() -> RandomCapability {
+    return !secure_rng_api_is_executable();
+}
+
+pub fn fill_secure_bytes_is_executable() -> RandomCapability {
+    return secure_rng_api_is_executable();
+}
+
+pub fn fill_secure_bytes_is_blocked() -> RandomCapability {
+    return !fill_secure_bytes_is_executable();
+}
+
+pub fn fill_secure_bytes_requires_runtime_binding() -> RandomCapability {
+    return !fill_secure_bytes_is_executable();
+}
+
+pub fn secure_u32_is_executable() -> RandomCapability {
+    return secure_rng_api_is_executable();
+}
+
+pub fn secure_u32_is_blocked() -> RandomCapability {
+    return !secure_u32_is_executable();
+}
+
+pub fn secure_u32_requires_runtime_binding() -> RandomCapability {
+    return !secure_u32_is_executable();
+}
+
+pub extern "lanius_std" fn fill_secure_bytes(ptr: u32, len: usize) -> i32;
+
+pub extern "lanius_std" fn secure_u32() -> u32;

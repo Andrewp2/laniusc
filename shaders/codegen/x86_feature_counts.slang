@@ -21,10 +21,6 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
-StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> parent;
-StructuredBuffer<uint> first_child;
-StructuredBuffer<uint> enclosing_fn;
 
 RWStructuredBuffer<uint> x86_feature_record;
 
@@ -65,6 +61,7 @@ static const uint HIR_ENUM_ITEM = 26u;
 static const uint HIR_STRUCT_ITEM = 27u;
 static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 static const uint HIR_FOR_STMT = 30u;
+static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_MATCH_EXPR = 34u;
 
 static const uint STMT_RECORD_STRIDE = 4u;
@@ -118,32 +115,6 @@ bool valid_node(uint node)
     return node != INVALID && node < active_hir_node_count();
 }
 
-bool valid_token(uint token)
-{
-    return token != INVALID && token < gParams.n_tokens;
-}
-
-uint parent_node(uint node)
-{
-    return valid_node(node) ? parent[node] : INVALID;
-}
-
-bool node_in_function_context(uint node)
-{
-    uint cur = node;
-    [loop]
-    for (uint guard = 0u; guard < 32u; guard += 1u)
-    {
-        if (!valid_node(cur))
-            return false;
-        uint token = hir_token_pos[cur];
-        if (valid_token(token) && enclosing_fn[token] != 0u)
-            return true;
-        cur = parent_node(cur);
-    }
-    return false;
-}
-
 uint stmt_slot(uint node, uint slot)
 {
     return row_major_load<uint>(
@@ -152,11 +123,6 @@ uint stmt_slot(uint node, uint slot)
         STMT_RECORD_STRIDE,
         slot,
         INVALID);
-}
-
-uint first_child_node(uint node)
-{
-    return valid_node(node) ? first_child[node] : INVALID;
 }
 
 uint expr_form(uint node)
@@ -220,7 +186,7 @@ uint scalar_base_inst_count(uint node)
     }
     if (kind == HIR_BREAK_STMT || kind == HIR_CONTINUE_STMT)
         return 1u;
-    if (kind == HIR_INDEX_EXPR || kind == HIR_MEMBER_EXPR)
+    if (kind == HIR_INDEX_EXPR || kind == HIR_MEMBER_EXPR || kind == HIR_PATH_EXPR)
         return 1u;
     if (kind == HIR_ASSIGN_EXPR ||
         kind == HIR_BINARY_EXPR ||
@@ -231,35 +197,30 @@ uint scalar_base_inst_count(uint node)
     return 0u;
 }
 
-uint scalar_branch_padding(uint node)
+uint scalar_control_padding(uint node)
 {
-    uint p = parent_node(node);
-    if (!valid_node(p))
-        return 0u;
-
-    uint parent_kind = hir_kind[p];
-    uint parent_stmt_kind = stmt_slot(p, 0u);
-    if (parent_kind == HIR_IF_STMT && parent_stmt_kind == STMT_RECORD_KIND_IF)
+    uint stmt_kind = stmt_slot(node, 0u);
+    uint kind = hir_kind[node];
+    if (kind == HIR_IF_STMT && stmt_kind == STMT_RECORD_KIND_IF)
     {
-        if (stmt_slot(p, 1u) == node)
-            return 1u;
-        if (stmt_slot(p, 2u) == node && valid_node(stmt_slot(p, 3u)))
-            return 1u;
+        uint count = valid_node(stmt_slot(node, 1u)) ? 1u : 0u;
+        if (valid_node(stmt_slot(node, 2u)) && valid_node(stmt_slot(node, 3u)))
+            count += 1u;
+        return count;
     }
-    if (parent_kind == HIR_WHILE_STMT && parent_stmt_kind == STMT_RECORD_KIND_WHILE)
+    if (kind == HIR_WHILE_STMT && stmt_kind == STMT_RECORD_KIND_WHILE)
     {
-        if (stmt_slot(p, 1u) == node)
-            return 1u;
-        if (stmt_slot(p, 2u) == node)
-            return 1u;
+        uint count = valid_node(stmt_slot(node, 1u)) ? 1u : 0u;
+        if (valid_node(stmt_slot(node, 2u)))
+            count += 1u;
+        return count;
     }
-    if ((parent_kind == HIR_FOR_STMT || parent_kind == HIR_STMT) &&
-        parent_stmt_kind == STMT_RECORD_KIND_FOR)
+    if ((kind == HIR_FOR_STMT || kind == HIR_STMT) && stmt_kind == STMT_RECORD_KIND_FOR)
     {
-        if (first_child_node(p) == node)
-            return 3u;
-        if (stmt_slot(p, 3u) == node)
-            return 1u;
+        uint count = valid_node(stmt_slot(node, 2u)) ? 3u : 0u;
+        if (valid_node(stmt_slot(node, 3u)))
+            count += 1u;
+        return count;
     }
     return 0u;
 }
@@ -298,10 +259,7 @@ void main(uint3 tid: SV_DispatchThreadID)
         atomic_u32_add(x86_feature_record, FEATURE_RECORD_AGGREGATE_COUNT, 1u);
     }
 
-    if (node_in_function_context(node))
-    {
-        uint scalar_count = scalar_base_inst_count(node) + scalar_branch_padding(node);
-        if (scalar_count != 0u)
-            atomic_u32_add(x86_feature_record, FEATURE_RECORD_SCALAR_INST_CAPACITY, scalar_count);
-    }
+    uint scalar_count = scalar_base_inst_count(node) + scalar_control_padding(node);
+    if (scalar_count != 0u)
+        atomic_u32_add(x86_feature_record, FEATURE_RECORD_SCALAR_INST_CAPACITY, scalar_count);
 }

@@ -4,6 +4,8 @@ module core::u8;
 
 pub const MIN: u8 = 0;
 pub const MAX: u8 = 255;
+pub const BITS: u32 = 8;
+pub const BYTES: u32 = 1;
 
 pub fn min(left: u8, right: u8) -> u8 {
     if (left < right) {

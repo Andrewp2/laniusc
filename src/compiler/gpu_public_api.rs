@@ -260,12 +260,52 @@ pub async fn type_check_source_pack_manifest_with_gpu(
         .await
 }
 
+pub async fn type_check_entry_with_stdlib<EP, RP>(
+    entry_path: EP,
+    stdlib_root: RP,
+) -> Result<(), CompileError>
+where
+    EP: AsRef<Path>,
+    RP: AsRef<Path>,
+{
+    let source_pack = load_entry_with_stdlib(entry_path, stdlib_root)?;
+    global_frontend_gpu_compiler()?
+        .type_check_source_pack_manifest(&source_pack)
+        .await
+}
+
+pub async fn type_check_entry_with_source_root<EP, RP>(
+    entry_path: EP,
+    source_root: RP,
+) -> Result<(), CompileError>
+where
+    EP: AsRef<Path>,
+    RP: AsRef<Path>,
+{
+    let source_pack = load_entry_with_source_root(entry_path, source_root)?;
+    global_frontend_gpu_compiler()?
+        .type_check_source_pack_manifest(&source_pack)
+        .await
+}
+
+pub async fn type_check_entry_with_source_roots<EP>(
+    entry_path: EP,
+    roots: &EntrySourceRoots,
+) -> Result<(), CompileError>
+where
+    EP: AsRef<Path>,
+{
+    let source_pack = load_entry_with_source_roots(entry_path, roots)?;
+    global_frontend_gpu_compiler()?
+        .type_check_source_pack_manifest(&source_pack)
+        .await
+}
+
 pub async fn type_check_source_with_gpu_from_path(
     path: impl AsRef<Path>,
 ) -> Result<(), CompileError> {
-    let src = prepare_source_for_gpu_from_path(path)?;
     global_frontend_gpu_compiler()?
-        .type_check_expanded_source(&src)
+        .type_check_source_from_path(path)
         .await
 }
 
@@ -282,6 +322,47 @@ pub async fn compile_source_pack_manifest_to_wasm_with_gpu_codegen(
 ) -> Result<Vec<u8>, CompileError> {
     global_wasm_gpu_compiler()?
         .compile_source_pack_manifest_to_wasm(source_pack)
+        .await
+}
+
+pub async fn compile_entry_to_wasm_with_stdlib<EP, RP>(
+    entry_path: EP,
+    stdlib_root: RP,
+) -> Result<Vec<u8>, CompileError>
+where
+    EP: AsRef<Path>,
+    RP: AsRef<Path>,
+{
+    let source_pack = load_entry_with_stdlib(entry_path, stdlib_root)?;
+    global_wasm_gpu_compiler()?
+        .compile_source_pack_manifest_to_wasm(&source_pack)
+        .await
+}
+
+pub async fn compile_entry_to_wasm_with_source_root<EP, RP>(
+    entry_path: EP,
+    source_root: RP,
+) -> Result<Vec<u8>, CompileError>
+where
+    EP: AsRef<Path>,
+    RP: AsRef<Path>,
+{
+    let source_pack = load_entry_with_source_root(entry_path, source_root)?;
+    global_wasm_gpu_compiler()?
+        .compile_source_pack_manifest_to_wasm(&source_pack)
+        .await
+}
+
+pub async fn compile_entry_to_wasm_with_source_roots<EP>(
+    entry_path: EP,
+    roots: &EntrySourceRoots,
+) -> Result<Vec<u8>, CompileError>
+where
+    EP: AsRef<Path>,
+{
+    let source_pack = load_entry_with_source_roots(entry_path, roots)?;
+    global_wasm_gpu_compiler()?
+        .compile_source_pack_manifest_to_wasm(&source_pack)
         .await
 }
 
@@ -314,9 +395,8 @@ where
 pub async fn compile_source_to_wasm_with_gpu_codegen_from_path(
     path: impl AsRef<Path>,
 ) -> Result<Vec<u8>, CompileError> {
-    let src = prepare_source_for_gpu_from_path(path)?;
     global_wasm_gpu_compiler()?
-        .compile_expanded_source_to_wasm(&src)
+        .compile_source_to_wasm_from_path(path)
         .await
 }
 
@@ -330,9 +410,8 @@ pub async fn compile_source_to_x86_64_with_gpu_codegen(src: &str) -> Result<Vec<
 pub async fn compile_source_to_x86_64_with_gpu_codegen_from_path(
     path: impl AsRef<Path>,
 ) -> Result<Vec<u8>, CompileError> {
-    let src = prepare_source_for_gpu_from_path(path)?;
     global_x86_gpu_compiler()?
-        .compile_expanded_source_to_x86_64(&src)
+        .compile_source_to_x86_64_from_path(path)
         .await
 }
 
@@ -349,6 +428,47 @@ pub async fn compile_source_pack_manifest_to_x86_64_with_gpu_codegen(
 ) -> Result<Vec<u8>, CompileError> {
     global_x86_gpu_compiler()?
         .compile_source_pack_manifest_to_x86_64(source_pack)
+        .await
+}
+
+pub async fn compile_entry_to_x86_64_with_stdlib<EP, RP>(
+    entry_path: EP,
+    stdlib_root: RP,
+) -> Result<Vec<u8>, CompileError>
+where
+    EP: AsRef<Path>,
+    RP: AsRef<Path>,
+{
+    let source_pack = load_entry_with_stdlib(entry_path, stdlib_root)?;
+    global_x86_gpu_compiler()?
+        .compile_source_pack_manifest_to_x86_64(&source_pack)
+        .await
+}
+
+pub async fn compile_entry_to_x86_64_with_source_root<EP, RP>(
+    entry_path: EP,
+    source_root: RP,
+) -> Result<Vec<u8>, CompileError>
+where
+    EP: AsRef<Path>,
+    RP: AsRef<Path>,
+{
+    let source_pack = load_entry_with_source_root(entry_path, source_root)?;
+    global_x86_gpu_compiler()?
+        .compile_source_pack_manifest_to_x86_64(&source_pack)
+        .await
+}
+
+pub async fn compile_entry_to_x86_64_with_source_roots<EP>(
+    entry_path: EP,
+    roots: &EntrySourceRoots,
+) -> Result<Vec<u8>, CompileError>
+where
+    EP: AsRef<Path>,
+{
+    let source_pack = load_entry_with_source_roots(entry_path, roots)?;
+    global_x86_gpu_compiler()?
+        .compile_source_pack_manifest_to_x86_64(&source_pack)
         .await
 }
 

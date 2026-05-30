@@ -22,7 +22,6 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> x86_tree_parent;
-StructuredBuffer<uint> x86_tree_subtree_end;
 StructuredBuffer<uint> hir_member_receiver_node;
 StructuredBuffer<uint> x86_call_callee_root_call;
 

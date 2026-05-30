@@ -31,8 +31,6 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> x86_expr_resolved_node;
-StructuredBuffer<uint> x86_tree_parent;
-StructuredBuffer<uint> x86_tree_subtree_end;
 StructuredBuffer<uint> x86_match_return_node;
 StructuredBuffer<uint4> x86_match_record;
 
@@ -68,11 +66,6 @@ bool has_match_feature()
     return (gX86Features.mask & X86_FEATURE_MATCH) != 0u;
 }
 
-uint parent_node(uint node)
-{
-    return valid_node(node) ? x86_tree_parent[node] : INVALID;
-}
-
 uint stmt_slot(uint node, uint slot)
 {
     return row_major_load<uint>(
@@ -86,14 +79,6 @@ uint stmt_slot(uint node, uint slot)
 uint resolve_expr(uint node)
 {
     return valid_node(node) ? x86_expr_resolved_node[node] : INVALID;
-}
-
-bool node_span_contains(uint ancestor, uint node)
-{
-    if (!valid_node(node) || !valid_node(ancestor))
-        return false;
-    uint end = x86_tree_subtree_end[ancestor];
-    return end != INVALID && ancestor <= node && node < end;
 }
 
 bool match_expr_is_return_value(uint match_node)

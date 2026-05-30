@@ -22,11 +22,13 @@ ConstantBuffer<Params> gParams;
 RWStructuredBuffer<uint> status;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
+static const uint ERR_UNSUPPORTED_SOURCE_SHAPE = 1u;
 
 bool module_already_emitted()
 {
     return status[1u] == 1u || status[1u] == 2u || status[1u] == 3u ||
-           status[1u] == 5u;
+           status[1u] == 5u ||
+           (status[2u] != 0u && status[2u] != ERR_UNSUPPORTED_SOURCE_SHAPE);
 }
 
 uint linear_dispatch_id(uint3 tid)

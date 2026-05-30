@@ -232,6 +232,106 @@ fn phase_backend_selection_follows_compilation_boundary() {
 }
 
 #[test]
+fn capacity_estimates_publish_paper_ordered_parallel_pass_contracts() {
+    let contracts = super::capacity::parallel_pass_contracts();
+    let groups = contracts
+        .iter()
+        .map(|contract| contract.pass_group)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        groups,
+        vec![
+            "frontend_token_stream",
+            "parser_tree_records",
+            "semantic_record_joins",
+            "x86_value_location_allocation",
+            "optimization_record_boundary_gap",
+            "x86_location_and_byte_emission",
+        ],
+        "capacity and measurement estimates should keep the paper pipeline order"
+    );
+    assert_eq!(
+        super::capacity::PARALLEL_PASS_CONTRACT_EXECUTION_ORDER,
+        groups.join(","),
+        "execution-order field should be the same ordered pass-group list"
+    );
+    assert_eq!(
+        super::capacity::PARALLEL_PASS_CONTRACT_SCHEMA,
+        "lanius.parallel-pass-contracts.v1"
+    );
+    assert_eq!(
+        super::capacity::PARALLEL_PASS_CONTRACT_POLICY,
+        "scale-claims-require-map-scan-scatter-join-contracts"
+    );
+    assert_eq!(
+        super::capacity::PARALLEL_PASS_CONTRACT_ORDER_POLICY,
+        "paper-pass-order-record-boundary-sequence"
+    );
+    assert_eq!(
+        super::capacity::PARALLEL_PASS_CONTRACT_STATUS_SCHEMA,
+        "lanius.parallel-pass-contract-status.v1"
+    );
+    assert_eq!(
+        super::capacity::PARALLEL_PASS_CONTRACT_LOOP_POLICY,
+        "scale-claims-require-unbounded-pass-loops"
+    );
+    assert_eq!(
+        super::capacity::PARALLEL_PASS_CONTRACT_LOOP_STATUS,
+        "bounded"
+    );
+    assert_eq!(
+        super::capacity::PARALLEL_PASS_CONTRACT_FALLBACK_STATUS,
+        "fail-closed"
+    );
+    assert_eq!(
+        super::capacity::PARALLEL_PASS_CONTRACT_CLAIM_STATUS,
+        "blocked"
+    );
+    assert_eq!(
+        super::capacity::PARALLEL_PASS_CONTRACT_CLAIM_BLOCKERS,
+        "bounded_pass_loops,fail_closed_passes"
+    );
+    assert_eq!(
+        super::capacity::PARALLEL_PASS_CONTRACT_READINESS_STATUS,
+        "blocked"
+    );
+
+    let semantic = contracts
+        .iter()
+        .find(|contract| contract.pass_group == "semantic_record_joins")
+        .expect("semantic join contract");
+    assert_eq!(semantic.record_boundary, "typed_identity_records");
+    assert_eq!(semantic.parallel_primitives, "sort,join,scatter");
+    assert_eq!(semantic.claim_boundary, "no-host-semantic-fallback");
+
+    let optimization_gap = contracts
+        .iter()
+        .find(|contract| contract.pass_group == "optimization_record_boundary_gap")
+        .expect("optimization gap contract");
+    assert_eq!(
+        optimization_gap.record_boundary,
+        "missing_optimization_records"
+    );
+    assert_eq!(optimization_gap.parallel_primitives, "planned-gap");
+    assert_eq!(
+        optimization_gap.claim_boundary,
+        "optimization-contract-absent"
+    );
+
+    let x86_emit = contracts
+        .iter()
+        .find(|contract| contract.pass_group == "x86_location_and_byte_emission")
+        .expect("x86 emission contract");
+    assert_eq!(
+        x86_emit.record_boundary,
+        "instruction_location_and_byte_records"
+    );
+    assert_eq!(x86_emit.parallel_primitives, "map,scan,scatter");
+    assert_eq!(x86_emit.claim_boundary, "no-host-byte-patching");
+}
+
+#[test]
 fn module_pack_schedule_is_acyclic_and_covers_generated_libraries() {
     let generated = assert_generated_artifact_is_well_formed(SourceMode::ModulePack, 120, 975);
     let job_plan = SourcePackJobPlan::from_source_pack_with_libraries_and_dependencies(
@@ -328,4 +428,114 @@ fn interactive_guard_allows_synthetic_x86_source_by_token_count() {
         Some(&tables),
     )
     .expect("10k x86 benchmark should use token count instead of source-byte capacity");
+}
+
+#[test]
+fn interactive_guard_rejects_above_20k_lines_without_opt_in() {
+    let tables =
+        PrecomputedParseTables::load_bin_bytes(include_bytes!("../../../tables/parse_tables.bin"))
+            .expect("parse tables");
+    let source = "\n".repeat(20_001);
+    let err = reject_large_interactive_run(
+        Phase::Parse,
+        source.lines().count(),
+        &source,
+        1,
+        false,
+        Some(&tables),
+    )
+    .expect_err("interactive generated runs above 20k lines should require --allow-large");
+
+    assert!(
+        err.contains("lines=20001") && err.contains("pass --allow-large"),
+        "rejection should identify the line checkpoint and opt-in path: {err}"
+    );
+
+    reject_large_interactive_run(
+        Phase::Parse,
+        source.lines().count(),
+        &source,
+        1,
+        true,
+        Some(&tables),
+    )
+    .expect("--allow-large should be an explicit opt-in for above-20k generated runs");
+}
+
+#[test]
+fn generated_capacity_snapshots_scale_monotonically_without_gpu_work() {
+    let tables =
+        PrecomputedParseTables::load_bin_bytes(include_bytes!("../../../tables/parse_tables.bin"))
+            .expect("parse tables");
+    let modes = [
+        SourceMode::ExprDense,
+        SourceMode::LongFunction,
+        SourceMode::ModulePack,
+    ];
+
+    for mode in modes {
+        let mut previous: Option<super::capacity::CompileCapacitySnapshot> = None;
+        for lines in [64usize, 128, 256] {
+            let generated = assert_generated_artifact_is_well_formed(mode, lines, 0x5ca1e_u64);
+            let snapshot = super::capacity::compile_capacity_snapshot_for_source(
+                &generated.source,
+                generated.sources.len(),
+                Some(&tables),
+            );
+
+            assert!(
+                snapshot.source_bytes < 512 * 1024,
+                "{mode:?} lines={lines} should stay a small CPU-only scaling fixture"
+            );
+            assert_eq!(
+                snapshot.parser_token_capacity,
+                snapshot.lexer_token_capacity.saturating_add(2),
+                "{mode:?} lines={lines} parser capacity should include sentinel tokens"
+            );
+            assert!(
+                snapshot.parser_tree_capacity >= snapshot.parser_token_capacity,
+                "{mode:?} lines={lines} projected parser tree capacity should cover tokens"
+            );
+            assert!(
+                snapshot.frontend_floor_bytes >= snapshot.parser_floor_bytes,
+                "{mode:?} lines={lines} frontend floor should include parser allocations"
+            );
+            assert!(
+                snapshot.compile_floor_bytes
+                    >= snapshot
+                        .frontend_floor_bytes
+                        .saturating_add(snapshot.x86_floor_bytes),
+                "{mode:?} lines={lines} compile floor should include frontend plus x86"
+            );
+            assert!(
+                snapshot.x86_inst_capacity >= 256,
+                "{mode:?} lines={lines} x86 instruction capacity should keep the minimum planning floor"
+            );
+
+            if let Some(previous) = previous {
+                assert!(
+                    snapshot.source_bytes >= previous.source_bytes,
+                    "{mode:?} source bytes shrank between generated checkpoints"
+                );
+                assert!(
+                    snapshot.lexer_token_capacity >= previous.lexer_token_capacity,
+                    "{mode:?} token capacity shrank between generated checkpoints"
+                );
+                assert!(
+                    snapshot.parser_tree_capacity >= previous.parser_tree_capacity,
+                    "{mode:?} parser tree capacity shrank between generated checkpoints"
+                );
+                assert!(
+                    snapshot.x86_inst_capacity >= previous.x86_inst_capacity,
+                    "{mode:?} x86 instruction capacity shrank between generated checkpoints"
+                );
+                assert!(
+                    snapshot.compile_floor_bytes >= previous.compile_floor_bytes,
+                    "{mode:?} compile allocation floor shrank between generated checkpoints"
+                );
+            }
+
+            previous = Some(snapshot);
+        }
+    }
 }

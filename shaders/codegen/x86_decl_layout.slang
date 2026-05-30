@@ -29,8 +29,6 @@ StructuredBuffer<uint> hir_type_len_value;
 StructuredBuffer<uint4> hir_param_record;
 StructuredBuffer<uint> x86_expr_resolved_node;
 StructuredBuffer<uint> x86_node_func;
-StructuredBuffer<uint> x86_tree_parent;
-StructuredBuffer<uint> x86_tree_subtree_end;
 StructuredBuffer<uint> x86_struct_access_record;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
@@ -63,9 +61,7 @@ static const uint HIR_PARAM = 4u;
 static const uint HIR_TYPE = 5u;
 static const uint HIR_STMT = 7u;
 static const uint HIR_LET_STMT = 8u;
-static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_ARRAY_EXPR = 24u;
-static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 static const uint HIR_FOR_STMT = 30u;
 static const uint HIR_TYPE_FORM_ARRAY = 2u;
 
@@ -124,34 +120,6 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
-uint tree_parent_record(uint node)
-{
-    return valid_node(node) ? x86_tree_parent[node] : INVALID;
-}
-
-uint tree_subtree_end_record(uint node)
-{
-    return valid_node(node) ? x86_tree_subtree_end[node] : INVALID;
-}
-
-uint tree_first_child_record(uint node)
-{
-    uint child = node + 1u;
-    uint end = tree_subtree_end_record(node);
-    return valid_node(child) && child < end && tree_parent_record(child) == node
-        ? child
-        : INVALID;
-}
-
-uint tree_next_sibling_record(uint node)
-{
-    uint sibling = tree_subtree_end_record(node);
-    uint parent = tree_parent_record(node);
-    return valid_node(sibling) && tree_parent_record(sibling) == parent
-        ? sibling
-        : INVALID;
-}
-
 uint stmt_slot(uint node, uint slot)
 {
     return row_major_load<uint>(
@@ -196,35 +164,6 @@ uint struct_access_payload0(uint row)
 uint resolve_expr(uint node)
 {
     return valid_node(node) ? x86_expr_resolved_node[node] : INVALID;
-}
-
-uint first_child_node(uint node)
-{
-    return valid_node(node) ? tree_first_child_record(node) : INVALID;
-}
-
-uint next_sibling_node(uint node)
-{
-    return valid_node(node) ? tree_next_sibling_record(node) : INVALID;
-}
-
-uint struct_literal_node_for_expr(uint expr_node)
-{
-    uint node = resolve_expr(expr_node);
-    if (!valid_node(node))
-        return INVALID;
-    if (hir_kind[node] == HIR_STRUCT_LITERAL_EXPR)
-        return node;
-    if (hir_kind[node] != HIR_NAME_EXPR)
-        return INVALID;
-
-    uint sibling = next_sibling_node(node);
-    if (valid_node(sibling) && hir_kind[sibling] == HIR_STRUCT_LITERAL_EXPR)
-        return sibling;
-
-    uint child = first_child_node(node);
-    sibling = next_sibling_node(child);
-    return valid_node(sibling) && hir_kind[sibling] == HIR_STRUCT_LITERAL_EXPR ? sibling : INVALID;
 }
 
 uint array_literal_node_for_expr(uint expr_node)
@@ -396,12 +335,12 @@ bool struct_literal_width_for_decl_node(uint node, out uint width)
         return false;
 
     uint init_expr = stmt_slot(node, 2u);
-    uint literal_node = struct_literal_node_for_expr(init_expr);
-    if (!valid_node(literal_node))
+    uint literal_record_node = resolve_expr(init_expr);
+    if (!valid_node(literal_record_node))
         return false;
 
-    uint literal_width = struct_access_payload0(literal_node);
-    if (struct_access_kind(literal_node) != X86_STRUCT_ACCESS_LITERAL || literal_width == 0u)
+    uint literal_width = struct_access_payload0(literal_record_node);
+    if (struct_access_kind(literal_record_node) != X86_STRUCT_ACCESS_LITERAL || literal_width == 0u)
         return false;
 
     width = literal_width;

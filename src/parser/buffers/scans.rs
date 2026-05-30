@@ -13,7 +13,7 @@ use super::{
 };
 use crate::gpu::{
     buffers::uniform_from_val,
-    scan::{ScanFinalize, ping_pong_scan_steps},
+    scan::{ping_pong_scan_steps, ScanFinalize},
 };
 
 pub(super) fn make_ll1_emit_prefix_scan_steps(

@@ -1,6 +1,7 @@
 pub mod codegen;
 pub mod compiler;
 pub mod dev;
+pub mod formatter;
 pub mod gpu;
 pub mod lexer;
 pub mod parser;

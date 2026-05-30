@@ -70,6 +70,11 @@ pub(in crate::compiler) fn validate_link_interface_batch_page(
         &page.batch.input_interface_artifact_indices,
         &format!("link-interface batch page {} inputs", page.batch_index),
     )?;
+    validate_usize_values_strictly_ascending(
+        &page.batch.input_interface_artifact_indices,
+        &format!("link-interface batch page {} inputs", page.batch_index),
+        |message| artifact_shard_contract_error(message),
+    )?;
     Ok(())
 }
 
@@ -123,6 +128,11 @@ pub(in crate::compiler) fn validate_link_object_batch_page(
     unique_usize_set(
         &page.batch.input_object_artifact_indices,
         &format!("link-object batch page {} inputs", page.batch_index),
+    )?;
+    validate_usize_values_strictly_ascending(
+        &page.batch.input_object_artifact_indices,
+        &format!("link-object batch page {} inputs", page.batch_index),
+        |message| artifact_shard_contract_error(message),
     )?;
     Ok(())
 }

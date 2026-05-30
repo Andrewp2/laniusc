@@ -4,6 +4,8 @@ module core::u32;
 
 pub const MIN: u32 = 0;
 pub const MAX: u32 = 4294967295;
+pub const BITS: u32 = 32;
+pub const BYTES: u32 = 4;
 
 pub fn min(left: u32, right: u32) -> u32 {
     if (left < right) {

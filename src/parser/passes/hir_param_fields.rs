@@ -54,7 +54,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirParamFieldsPa
                 },
             ),
             ("hir_kind".into(), b.hir_kind.as_entire_binding()),
+            ("node_kind".into(), b.node_kind.as_entire_binding()),
+            ("first_child".into(), b.first_child.as_entire_binding()),
             ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
+            ("hir_type_form".into(), b.hir_type_form.as_entire_binding()),
             (
                 "hir_param_owner_a".into(),
                 b.hir_param_owner_a.as_entire_binding(),
@@ -74,6 +77,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirParamFieldsPa
             (
                 "hir_param_record".into(),
                 b.hir_param_record.as_entire_binding(),
+            ),
+            (
+                "hir_param_type_node".into(),
+                b.hir_param_type_node.as_entire_binding(),
             ),
         ])
     }

@@ -6,7 +6,6 @@
 // source-level names or function bodies.
 
 import atomics;
-import generated_parse_production_ids;
 import gpu_index;
 
 struct Params
@@ -19,14 +18,9 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> subtree_end;
-StructuredBuffer<uint> first_child;
-StructuredBuffer<uint> next_sibling;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_type_form;
 StructuredBuffer<uint4> hir_param_record;
+StructuredBuffer<uint> hir_param_type_node;
 StructuredBuffer<uint> module_type_path_type;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> type_expr_ref_tag;
@@ -59,12 +53,8 @@ static const uint TYPE_INSTANCE_ARG_REF_STRIDE = 4u;
 static const uint TY_ARRAY_BASE = 128u;
 static const uint TY_STRUCT_BASE = 4096u;
 
-static const uint HIR_TYPE_FORM_NONE = 0u;
-static const uint HIR_TYPE = 5u;
-
 static const uint HIR_PARAM_RECORD_FN = 0u;
 static const uint HIR_PARAM_RECORD_ORDINAL = 1u;
-static const uint HIR_PARAM_RECORD_NODE = 3u;
 
 static const uint PARAM_CACHE_STRIDE = 4u;
 static const uint WG_SIZE = 256u;
@@ -95,74 +85,9 @@ uint arg_ref_index(uint instance_i, uint slot)
     return instance_i * TYPE_INSTANCE_ARG_REF_STRIDE + slot;
 }
 
-uint child_node(uint node)
-{
-    if (!valid_node(node))
-        return INVALID;
-    uint child = first_child[node];
-    return valid_node(child) ? child : INVALID;
-}
-
-uint next_sibling_node(uint node)
-{
-    if (!valid_node(node))
-        return INVALID;
-    uint sibling = next_sibling[node];
-    return valid_node(sibling) ? sibling : INVALID;
-}
-
-uint first_type_child(uint root)
-{
-    uint child = child_node(root);
-    [loop]
-    for (uint guard = 0u; guard < 16u && valid_node(child); guard += 1u)
-    {
-        if (hir_type_form[child] != HIR_TYPE_FORM_NONE)
-            return child;
-        child = next_sibling_node(child);
-    }
-    return INVALID;
-}
-
-uint first_type_descendant(uint root)
-{
-    if (!valid_node(root))
-        return INVALID;
-    uint end = min(subtree_end[root], active_hir_node_count());
-    uint node = root + 1u;
-    [loop]
-    for (uint guard = 0u; guard < 32u; guard += 1u)
-    {
-        if (node >= end)
-            return INVALID;
-        if (hir_kind[node] == HIR_TYPE)
-            return node;
-        node += 1u;
-    }
-    return INVALID;
-}
-
 uint param_type_node(uint param_node)
 {
-    if (!valid_node(param_node))
-        return INVALID;
-
-    uint prod = node_kind[param_node];
-    if (prod == PROD_PARAM_SELF_REF)
-        return INVALID;
-    if (prod == PROD_PARAM_SELF)
-    {
-        uint child = child_node(param_node);
-        if (!valid_node(child))
-            return INVALID;
-        uint typed_child = first_type_child(child);
-        return valid_node(typed_child) && hir_type_form[typed_child] != HIR_TYPE_FORM_NONE
-                   ? typed_child
-                   : INVALID;
-    }
-
-    uint direct = first_type_child(param_node);
-    return valid_node(direct) ? direct : first_type_descendant(param_node);
+    return valid_node(param_node) ? hir_param_type_node[param_node] : INVALID;
 }
 
 uint scalar_or_named_type_code_for_ref(uint tag, uint payload)
@@ -347,8 +272,7 @@ void publish_param(uint param_node)
     uint4 record = hir_param_record[param_node];
     uint fn_node = record[HIR_PARAM_RECORD_FN];
     uint ordinal = record[HIR_PARAM_RECORD_ORDINAL];
-    uint source_param_node = record[HIR_PARAM_RECORD_NODE];
-    if (!valid_node(fn_node) || !valid_node(source_param_node) || ordinal >= PARAM_CACHE_STRIDE)
+    if (!valid_node(fn_node))
         return;
 
     uint fn_token = hir_token_pos[fn_node];
@@ -356,15 +280,18 @@ void publish_param(uint param_node)
         return;
 
     atomic_u32_max(call_param_count, fn_token, ordinal + 1u);
+    if (ordinal >= PARAM_CACHE_STRIDE)
+        return;
+
     uint tag;
     uint payload;
-    param_type_ref(source_param_node, tag, payload);
+    param_type_ref(param_node, tag, payload);
     row_major_store<uint>(
         call_param_type,
         fn_token,
         PARAM_CACHE_STRIDE,
         ordinal,
-        param_type_code(source_param_node));
+        param_type_code(param_node));
     row_major_store<uint>(
         call_param_ref_tag,
         fn_token,

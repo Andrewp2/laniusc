@@ -24,7 +24,7 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> x86_expr_resolved_node;
-StructuredBuffer<uint> x86_tree_subtree_end;
+StructuredBuffer<uint> x86_enclosing_return_node;
 
 RWStructuredBuffer<uint> x86_match_return_node;
 
@@ -68,14 +68,6 @@ uint resolve_expr(uint node)
     return valid_node(node) ? x86_expr_resolved_node[node] : INVALID;
 }
 
-bool node_span_contains(uint ancestor, uint node)
-{
-    if (!valid_node(ancestor) || !valid_node(node))
-        return false;
-    uint end = x86_tree_subtree_end[ancestor];
-    return end != INVALID && ancestor <= node && node < end;
-}
-
 bool is_return_stmt(uint node)
 {
     if (!valid_node(node) || stmt_slot(node, 0u) != STMT_RECORD_KIND_RETURN)
@@ -94,9 +86,11 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     uint return_expr = stmt_slot(return_node, 1u);
     uint match_node = resolve_expr(return_expr);
+    uint enclosing_return =
+        valid_node(match_node) ? x86_enclosing_return_node[match_node] : INVALID;
     if (!valid_node(match_node) ||
         hir_kind[match_node] != HIR_MATCH_EXPR ||
-        !node_span_contains(return_expr, match_node))
+        enclosing_return != return_node)
         return;
 
     atomic_u32_min(x86_match_return_node, match_node, return_node);

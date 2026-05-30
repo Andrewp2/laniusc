@@ -3,6 +3,10 @@ public static const uint PARSER_FEATURE_ARRAYS = 0x00000002u;
 public static const uint PARSER_FEATURE_ENUMS = 0x00000004u;
 public static const uint PARSER_FEATURE_MATCHES = 0x00000008u;
 public static const uint PARSER_FEATURE_STRUCTS = 0x00000010u;
+// High bits are status flags, not syntax feature claims. They make parser
+// retagging limits externally visible while those contexts are still being
+// promoted to first-class relation rows.
+public static const uint PARSER_STATUS_CONTEXT_SCAN_LIMIT = 0x80000000u;
 
 static const uint FEATURE_TK_LT = 12u;
 static const uint FEATURE_TK_GT = 13u;

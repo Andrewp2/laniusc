@@ -105,6 +105,7 @@ impl GpuX86CodeGenerator {
             hir_status_buf,
             active_hir_dispatch_args_buf,
             hir_kind_buf,
+            hir_item_kind_buf,
             parent_buf,
             subtree_end_buf,
             function_metadata,
@@ -140,6 +141,8 @@ impl GpuX86CodeGenerator {
             match_pattern_owner_steps,
             node_inst_same_end_rank_steps,
             enclosing_loop_steps,
+            short_circuit_rhs_steps,
+            index_source_owner_steps,
             func_owner_scan_blocks,
             node_inst_order_rows,
             virtual_next_call_steps,
@@ -266,6 +269,9 @@ impl GpuX86CodeGenerator {
             call_abi_record_buf,
             call_abi_status_buf,
             call_abi_status_uniform_buf,
+            for_iterable_node_buf,
+            node_control_padding_buf,
+            postfix_operand_owner_buf,
         } = create_metadata_record_buffers(
             device,
             &mut allocation_scope,
@@ -414,6 +420,10 @@ impl GpuX86CodeGenerator {
             node_inst_gen_node_record_buf,
             node_inst_subtree_bounds_status_buf,
             node_inst_location_status_buf,
+            short_circuit_rhs_node_a_buf,
+            short_circuit_rhs_node_b_buf,
+            short_circuit_rhs_link_a_buf,
+            short_circuit_rhs_link_b_buf,
             node_inst_gen_input_status_buf,
             virtual_inst_record_buf,
             virtual_inst_args_buf,
@@ -443,6 +453,8 @@ impl GpuX86CodeGenerator {
             text_scan_prefix_b_buf,
             virtual_value_def_flag_buf,
             virtual_value_def_row_buf,
+            reloc_count_buf,
+            reloc_status_buf,
             encode_status_buf,
             elf_layout_buf,
             layout_status_buf,
@@ -467,6 +479,23 @@ impl GpuX86CodeGenerator {
         let node_inst_scan_prefix_a_buf = &func_owner_scan_prefix_a_buf;
         let node_inst_scan_prefix_b_buf = &func_owner_scan_prefix_b_buf;
         let node_inst_location_record_buf = &call_record_buf;
+        let short_circuit_rhs_step_final_buf = if short_circuit_rhs_steps.len() % 2 == 0 {
+            &short_circuit_rhs_node_a_buf
+        } else {
+            &short_circuit_rhs_node_b_buf
+        };
+        // Short-circuit RHS propagation no longer needs its link buffers after
+        // the step sequence. Reuse those HIR-sized rows for index-base owner
+        // records consumed by virtual instruction generation.
+        let index_source_owner_a_buf = &short_circuit_rhs_link_a_buf;
+        let index_source_owner_b_buf = &short_circuit_rhs_link_b_buf;
+        let index_source_link_a_buf = &node_inst_same_end_link_a_buf;
+        let index_source_link_b_buf = &node_inst_same_end_link_b_buf;
+        let index_source_owner_step_final_buf = if index_source_owner_steps.len() % 2 == 0 {
+            index_source_owner_a_buf
+        } else {
+            index_source_owner_b_buf
+        };
         // Call argument lookup and ABI records are dead after instruction
         // generation. Reuse their token-indexed storage for virtual row bounds,
         // initialized immediately before the row-bound scatter pass.
@@ -493,6 +522,11 @@ impl GpuX86CodeGenerator {
         let virtual_value_def_scan_block_sum_buf = &text_scan_block_sum_buf;
         let virtual_value_def_scan_prefix_a_buf = &text_scan_prefix_a_buf;
         let virtual_value_def_scan_prefix_b_buf = &text_scan_prefix_b_buf;
+        // Relocation record scatter runs after selection and text offsets, so
+        // it reuses virtual scratch rows that are dead after regalloc/select.
+        let reloc_kind_buf = &virtual_func_slot_buf;
+        let reloc_site_inst_buf = &virtual_value_def_row_buf;
+        let reloc_target_inst_buf = &virtual_call_live_reg_mask_buf;
         host_timer.stamp("scratch_buffers");
         let func_owner_scan_params_buf = scan_params(
             device,
@@ -595,6 +629,9 @@ impl GpuX86CodeGenerator {
             intrinsic_call_status_buf: &intrinsic_call_status_buf,
             call_abi_record_buf: &call_abi_record_buf,
             call_abi_status_buf: &call_abi_status_buf,
+            for_iterable_node_buf: &for_iterable_node_buf,
+            node_control_padding_buf: &node_control_padding_buf,
+            postfix_operand_owner_buf: &postfix_operand_owner_buf,
             node_inst_count_status_buf: &node_inst_count_status_buf,
             node_inst_order_status_buf: &node_inst_order_status_buf,
             node_inst_range_start_buf: &node_inst_range_start_buf,
@@ -625,6 +662,7 @@ impl GpuX86CodeGenerator {
             &virtual_call_live_reg_mask_buf,
             inst_capacity,
         );
+        zero_u32_words(queue, encoder, &out_buf, output_words);
         host_timer.stamp("initializers_recorded");
 
         let DispatchSetupBindGroups {
@@ -680,6 +718,7 @@ impl GpuX86CodeGenerator {
                 params: &params_buf,
                 hir_status: hir_status_buf,
                 hir_kind: hir_kind_buf,
+                hir_item_kind: hir_item_kind_buf,
                 parent: parent_buf,
                 subtree_end: subtree_end_buf,
                 function_metadata: &function_metadata,
@@ -847,7 +886,6 @@ impl GpuX86CodeGenerator {
                 hir_status_buf,
                 hir_kind_buf,
                 parent_buf,
-                subtree_end_buf,
                 function_metadata: &function_metadata,
                 expr_metadata: &expr_metadata,
                 call_metadata: &call_metadata,
@@ -885,6 +923,9 @@ impl GpuX86CodeGenerator {
             },
         )?;
         let InstPlanBindGroups {
+            for_iterable_nodes: for_iterable_nodes_bind_group,
+            control_padding: control_padding_bind_group,
+            postfix_operand_owner: postfix_operand_owner_bind_group,
             counts: node_inst_counts_bind_group,
             same_end_rank_init: node_inst_same_end_rank_init_bind_group,
             same_end_rank_step: node_inst_same_end_rank_step_bind_groups,
@@ -901,6 +942,10 @@ impl GpuX86CodeGenerator {
             worklist_dispatch_args: node_inst_gen_worklist_dispatch_args_bind_group,
             enclosing_loop_init: enclosing_loop_init_bind_group,
             enclosing_loop_step: enclosing_loop_step_bind_groups,
+            short_circuit_rhs_init: short_circuit_rhs_init_bind_group,
+            short_circuit_rhs_step: short_circuit_rhs_step_bind_groups,
+            index_source_owner_init: index_source_owner_init_bind_group,
+            index_source_owner_step: index_source_owner_step_bind_groups,
         } = create_inst_plan_bind_groups(
             self,
             device,
@@ -915,11 +960,13 @@ impl GpuX86CodeGenerator {
                 function_metadata: &function_metadata,
                 expr_metadata: &expr_metadata,
                 call_metadata: &call_metadata,
+                enum_metadata: &enum_metadata,
                 type_metadata: &type_metadata,
                 hir_param_record: hir_param_record_buf,
                 expr_resolved_final: &expr_resolved_final_buf,
                 final_node_func: final_node_func_buf,
                 visible_decl: visible_decl_buf,
+                const_value_record: &const_value_record_buf,
                 decl_layout_record: &decl_layout_record_buf,
                 decl_layout_status: &decl_layout_status_buf,
                 param_reg_record: &param_reg_record_buf,
@@ -927,6 +974,7 @@ impl GpuX86CodeGenerator {
                 enclosing_return_step_final: enclosing_return_step_final_buf,
                 match_return_node: &match_return_node_buf,
                 call_record: &call_record_buf,
+                call_type_record: &call_type_record_buf,
                 call_callee_owner_step_final: call_callee_owner_step_final_buf,
                 call_record_status: &call_record_status_buf,
                 intrinsic_call_record: intrinsic_call_record_buf,
@@ -939,6 +987,9 @@ impl GpuX86CodeGenerator {
                 struct_access_record: &struct_access_record_buf,
                 struct_store_record: &struct_store_record_buf,
                 struct_record_status: &struct_record_status_buf,
+                for_iterable_node: &for_iterable_node_buf,
+                node_control_padding: &node_control_padding_buf,
+                postfix_operand_owner: &postfix_operand_owner_buf,
                 node_inst_count_info: &node_inst_count_info_buf,
                 node_inst_count_payload: &node_inst_count_payload_buf,
                 node_inst_count_status: &node_inst_count_status_buf,
@@ -979,6 +1030,16 @@ impl GpuX86CodeGenerator {
                 enclosing_loop_link_a: enclosing_loop_link_a_buf,
                 enclosing_loop_link_b: enclosing_loop_link_b_buf,
                 enclosing_loop_steps: &enclosing_loop_steps,
+                short_circuit_rhs_node_a: &short_circuit_rhs_node_a_buf,
+                short_circuit_rhs_node_b: &short_circuit_rhs_node_b_buf,
+                short_circuit_rhs_link_a: &short_circuit_rhs_link_a_buf,
+                short_circuit_rhs_link_b: &short_circuit_rhs_link_b_buf,
+                short_circuit_rhs_steps: &short_circuit_rhs_steps,
+                index_source_owner_a: index_source_owner_a_buf,
+                index_source_owner_b: index_source_owner_b_buf,
+                index_source_link_a: index_source_link_a_buf,
+                index_source_link_b: index_source_link_b_buf,
+                index_source_owner_steps: &index_source_owner_steps,
             },
         )?;
         let InstGenBindGroups {
@@ -996,10 +1057,9 @@ impl GpuX86CodeGenerator {
                 params: &params_buf,
                 feature_params: &feature_params_buf,
                 hir_kind: hir_kind_buf,
-                parent: parent_buf,
-                subtree_end: subtree_end_buf,
                 expr_metadata: &expr_metadata,
                 array_metadata: &array_metadata,
+                enum_metadata: &enum_metadata,
                 struct_metadata: &struct_metadata,
                 expr_resolved_final: &expr_resolved_final_buf,
                 visible_decl: visible_decl_buf,
@@ -1035,6 +1095,9 @@ impl GpuX86CodeGenerator {
                 enclosing_return_step_final: enclosing_return_step_final_buf,
                 enclosing_let_step_final: enclosing_let_step_final_buf,
                 enclosing_loop_step_final: enclosing_loop_step_final_buf,
+                for_iterable_node: &for_iterable_node_buf,
+                short_circuit_rhs_step_final: short_circuit_rhs_step_final_buf,
+                index_source_owner_step_final: index_source_owner_step_final_buf,
                 final_node_func: final_node_func_buf,
                 virtual_inst_record: &virtual_inst_record_buf,
                 virtual_inst_args: &virtual_inst_args_buf,
@@ -1104,7 +1167,11 @@ impl GpuX86CodeGenerator {
             text_scan_local: text_scan_local_bind_group,
             text_scan_block: text_scan_block_bind_groups,
             text_offsets: text_offsets_bind_group,
+            reloc_scan_local: reloc_scan_local_bind_group,
+            reloc_scan_block: reloc_scan_block_bind_groups,
+            reloc_records: reloc_records_bind_group,
             encode: encode_bind_group,
+            reloc_patch: reloc_patch_bind_group,
             elf_layout: elf_layout_bind_group,
             elf: elf_bind_group,
         } = create_emit_bind_groups(
@@ -1124,6 +1191,7 @@ impl GpuX86CodeGenerator {
                 virtual_func_first_row: virtual_func_first_row_buf,
                 virtual_func_first_row_status: &virtual_func_first_row_status_buf,
                 virtual_func_slot: &virtual_func_slot_buf,
+                virtual_value_def_flag: &virtual_value_def_flag_buf,
                 inst_kind: inst_kind_buf,
                 inst_arg0: inst_arg0_buf,
                 inst_arg1: inst_arg1_buf,
@@ -1138,6 +1206,11 @@ impl GpuX86CodeGenerator {
                 text_scan_prefix_b: &text_scan_prefix_b_buf,
                 text_len: &text_len_buf,
                 text_status: &text_status_buf,
+                reloc_count: &reloc_count_buf,
+                reloc_kind: reloc_kind_buf,
+                reloc_site_inst: reloc_site_inst_buf,
+                reloc_target_inst: reloc_target_inst_buf,
+                reloc_status: &reloc_status_buf,
                 out: &out_buf,
                 encode_status: &encode_status_buf,
                 elf_layout: &elf_layout_buf,
@@ -1248,6 +1321,9 @@ impl GpuX86CodeGenerator {
                 node_order_scan_block: &node_order_scan_block,
                 virtual_inst: &virtual_inst,
                 node_inst_scan_params: &node_inst_scan_params_buf,
+                for_iterable_nodes: &for_iterable_nodes_bind_group,
+                control_padding: &control_padding_bind_group,
+                postfix_operand_owner: &postfix_operand_owner_bind_group,
                 node_inst_counts: &node_inst_counts_bind_group,
                 node_inst_same_end_rank_init: &node_inst_same_end_rank_init_bind_group,
                 node_inst_same_end_rank_step: &node_inst_same_end_rank_step_bind_groups,
@@ -1266,6 +1342,10 @@ impl GpuX86CodeGenerator {
                     &node_inst_gen_worklist_dispatch_args_bind_group,
                 enclosing_loop_init: &enclosing_loop_init_bind_group,
                 enclosing_loop_step: &enclosing_loop_step_bind_groups,
+                short_circuit_rhs_init: &short_circuit_rhs_init_bind_group,
+                short_circuit_rhs_step: &short_circuit_rhs_step_bind_groups,
+                index_source_owner_init: &index_source_owner_init_bind_group,
+                index_source_owner_step: &index_source_owner_step_bind_groups,
                 node_inst_gen_inputs: &node_inst_gen_inputs_bind_group,
                 virtual_inst_clear_dispatch_args: &virtual_inst_clear_dispatch_args_bind_group,
                 virtual_inst_clear: &virtual_inst_clear_bind_group,
@@ -1291,7 +1371,6 @@ impl GpuX86CodeGenerator {
                 virtual_regalloc: &virtual_regalloc,
                 selected_inst: &selected_inst,
                 selected_scan_block: &selected_scan_block,
-                text_word: &text_word,
                 elf_header_word: &elf_header_word,
                 virtual_dispatch_args: &virtual_dispatch_args_bind_group,
                 virtual_func_rows_init: &virtual_func_rows_init_bind_group,
@@ -1313,8 +1392,12 @@ impl GpuX86CodeGenerator {
                 text_scan_local: &text_scan_local_bind_group,
                 text_scan_block: &text_scan_block_bind_groups,
                 text_offsets: &text_offsets_bind_group,
+                reloc_scan_local: &reloc_scan_local_bind_group,
+                reloc_scan_block: &reloc_scan_block_bind_groups,
+                reloc_records: &reloc_records_bind_group,
                 output_dispatch_args: &output_dispatch_args_bind_group,
                 encode: &encode_bind_group,
+                reloc_patch: &reloc_patch_bind_group,
                 elf_layout: &elf_layout_bind_group,
                 elf: &elf_bind_group,
             },
@@ -1348,6 +1431,7 @@ impl GpuX86CodeGenerator {
                 select_status: &select_status_buf,
                 size_status: &size_status_buf,
                 text_status: &text_status_buf,
+                reloc_status: &reloc_status_buf,
                 encode_status: &encode_status_buf,
                 layout_status: &layout_status_buf,
                 status: &status_buf,
@@ -1429,6 +1513,9 @@ impl GpuX86CodeGenerator {
             call_abi_record_buf,
             call_abi_status_buf,
             call_abi_status_uniform_buf,
+            for_iterable_node_buf,
+            node_control_padding_buf,
+            postfix_operand_owner_buf,
             node_inst_same_end_link_a_buf,
             node_inst_same_end_link_b_buf,
             node_inst_count_status_buf,
@@ -1439,6 +1526,10 @@ impl GpuX86CodeGenerator {
             node_inst_range_status_buf,
             node_inst_subtree_bounds_status_buf,
             node_inst_location_status_buf,
+            short_circuit_rhs_node_a_buf,
+            short_circuit_rhs_node_b_buf,
+            short_circuit_rhs_link_a_buf,
+            short_circuit_rhs_link_b_buf,
             node_inst_gen_input_status_buf,
             virtual_inst_record_buf,
             virtual_inst_args_buf,
@@ -1465,6 +1556,8 @@ impl GpuX86CodeGenerator {
             text_scan_block_sum_buf,
             text_scan_prefix_a_buf,
             text_scan_prefix_b_buf,
+            reloc_count_buf,
+            reloc_status_buf,
             encode_status_buf,
             elf_layout_buf,
             layout_status_buf,
@@ -1529,10 +1622,14 @@ impl GpuX86CodeGenerator {
             call_arg_values_bind_group,
             intrinsic_calls_bind_group,
             call_abi_bind_group,
+            for_iterable_nodes_bind_group,
+            control_padding_bind_group,
             node_inst_same_end_rank_init_bind_group,
             node_inst_end_counts_bind_group,
             node_inst_counts_bind_group,
             enclosing_loop_init_bind_group,
+            short_circuit_rhs_init_bind_group,
+            index_source_owner_init_bind_group,
             node_inst_scan_local_bind_group,
             node_inst_prefix_scan_bind_group,
             node_inst_order_bind_group,
@@ -1557,7 +1654,10 @@ impl GpuX86CodeGenerator {
             inst_size_bind_group,
             text_scan_local_bind_group,
             text_offsets_bind_group,
+            reloc_scan_local_bind_group,
+            reloc_records_bind_group,
             encode_bind_group,
+            reloc_patch_bind_group,
             elf_layout_bind_group,
             elf_bind_group,
         ];
@@ -1573,9 +1673,12 @@ impl GpuX86CodeGenerator {
         retained_bind_groups.extend(node_inst_same_end_rank_step_bind_groups);
         retained_bind_groups.extend(expr_semantic_type_step_bind_groups);
         retained_bind_groups.extend(enclosing_loop_step_bind_groups);
+        retained_bind_groups.extend(short_circuit_rhs_step_bind_groups);
+        retained_bind_groups.extend(index_source_owner_step_bind_groups);
         retained_bind_groups.extend(node_inst_scan_block_bind_groups);
         retained_bind_groups.extend(virtual_next_call_bind_groups);
         retained_bind_groups.extend(text_scan_block_bind_groups);
+        retained_bind_groups.extend(reloc_scan_block_bind_groups);
         host_timer.stamp("retained_bind_groups_collected");
 
         Ok(RetainedRecording::new(

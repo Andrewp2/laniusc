@@ -328,9 +328,22 @@ pub fn make_pass_data(
 ) -> Result<PassData> {
     let reflection: SlangReflection =
         parse_reflection_from_bytes(reflection_json).map_err(anyhow::Error::msg)?;
-    let owned_bgls = bgls_from_reflection(device, &reflection)?;
-    let bgl_refs: Vec<&wgpu::BindGroupLayout> = owned_bgls.iter().collect();
-    let pipeline = pipeline_from_spirv_and_bgls(device, label, entry, spirv, &bgl_refs);
+    let init_scope = validation_scope(device, validation_scopes_enabled());
+    let init_result = (|| {
+        let owned_bgls = bgls_from_reflection(device, &reflection)?;
+        let bgl_refs: Vec<&wgpu::BindGroupLayout> = owned_bgls.iter().collect();
+        let pipeline = pipeline_from_spirv_and_bgls(device, label, entry, spirv, &bgl_refs);
+        Ok::<_, anyhow::Error>((owned_bgls, pipeline))
+    })();
+    if init_scope.is_some() {
+        let _ = device.poll(wgpu::PollType::Poll);
+    }
+    if let Some(err) = pop_validation_scope(init_scope) {
+        return Err(anyhow!(
+            "validation while creating GPU pass {label}: {err:?}"
+        ));
+    }
+    let (owned_bgls, pipeline) = init_result?;
     let tgs = get_thread_group_size(&reflection).unwrap_or_else(|| {
         warn!("missing thread_group_size in reflection for {label}; defaulting to [1,1,1]");
         [1, 1, 1]
@@ -524,7 +537,11 @@ pub mod bind_group {
                         resource: res.clone(),
                     });
                 } else {
-                    return Err(anyhow!("no resource provided for '{}'", p.name));
+                    return Err(anyhow!(
+                        "no resource provided for '{}' in bind group '{}'",
+                        p.name,
+                        label.unwrap_or("<unnamed>")
+                    ));
                 }
             }
         }
@@ -571,7 +588,11 @@ pub mod bind_group {
                 if let (Some(idx), Some(_ty)) = (p.binding.index, p.ty.kind.as_ref()) {
                     let Some((_, resource)) = bindings.iter().find(|(name, _)| *name == p.name)
                     else {
-                        return Err(anyhow!("no resource provided for '{}'", p.name));
+                        return Err(anyhow!(
+                            "no resource provided for '{}' in bind group '{}'",
+                            p.name,
+                            label.unwrap_or("<unnamed>")
+                        ));
                     };
                     entries.push(wgpu::BindGroupEntry {
                         binding: idx,

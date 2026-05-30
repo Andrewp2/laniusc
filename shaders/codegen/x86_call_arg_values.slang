@@ -20,7 +20,7 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> x86_expr_resolved_node;
+StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_call_arg_parent_call;
 StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_member_receiver_node;
@@ -70,20 +70,20 @@ bool has_call_record(uint call_node)
     return uint4_any_not_equal(record, INVALID);
 }
 
-uint resolve_expr(uint node)
+uint expr_root_node(uint node)
 {
-    return valid_node(node) ? x86_expr_resolved_node[node] : INVALID;
+    return valid_node(node) ? hir_expr_result_root_node[node] : INVALID;
 }
 
 bool is_method_call(uint call_node)
 {
-    uint callee_node = resolve_expr(hir_call_callee_node[call_node]);
+    uint callee_node = expr_root_node(hir_call_callee_node[call_node]);
     return valid_node(callee_node) && hir_kind[callee_node] == HIR_MEMBER_EXPR;
 }
 
 uint method_receiver_node_for_call(uint call_node)
 {
-    uint callee_node = resolve_expr(hir_call_callee_node[call_node]);
+    uint callee_node = expr_root_node(hir_call_callee_node[call_node]);
     if (!valid_node(callee_node) || hir_kind[callee_node] != HIR_MEMBER_EXPR)
         return INVALID;
     return hir_member_receiver_node[callee_node];

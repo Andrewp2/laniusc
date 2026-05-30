@@ -21,8 +21,8 @@ pub mod dfa_03_apply_block_prefix;
 pub mod pair_01_sum_inblock;
 pub mod pair_02_scan_block_totals;
 pub mod pair_03_apply_block_prefix;
+pub mod source_file_boundaries;
 pub mod tokens_build;
-pub mod tokens_file_ids;
 
 #[derive(ShaderType, Debug, Clone, Copy)]
 pub(super) struct ScanParams {
@@ -34,6 +34,7 @@ pub struct LexerPasses {
     pub dfa_01: dfa_01_scan_inblock::Dfa01ScanInblockPass,
     pub dfa_02: dfa_02_scan_block_summaries::Dfa02ScanBlockSummariesPass,
     pub dfa_03: dfa_03_apply_block_prefix::Dfa03ApplyBlockPrefixPass,
+    pub source_file_boundaries: source_file_boundaries::SourceFileBoundariesPass,
 
     pub pair_01: pair_01_sum_inblock::Pair01SumInblockPass,
     pub pair_02: pair_02_scan_block_totals::Pair02ScanBlockTotalsPass,
@@ -42,7 +43,6 @@ pub struct LexerPasses {
     pub compact_all: compact_boundaries_all::CompactBoundariesAllPass,
     pub compact_kept: compact_boundaries_kept::CompactBoundariesKeptPass,
     pub tokens_build: tokens_build::TokensBuildPass,
-    pub tokens_file_ids: tokens_file_ids::TokensFileIdsPass,
 }
 
 impl LexerPasses {
@@ -51,13 +51,13 @@ impl LexerPasses {
             dfa_01: dfa_01_scan_inblock::Dfa01ScanInblockPass::new(&device)?,
             dfa_02: dfa_02_scan_block_summaries::Dfa02ScanBlockSummariesPass::new(&device)?,
             dfa_03: dfa_03_apply_block_prefix::Dfa03ApplyBlockPrefixPass::new(&device)?,
+            source_file_boundaries: source_file_boundaries::SourceFileBoundariesPass::new(&device)?,
             pair_01: pair_01_sum_inblock::Pair01SumInblockPass::new(&device)?,
             pair_02: pair_02_scan_block_totals::Pair02ScanBlockTotalsPass::new(&device)?,
             pair_03: pair_03_apply_block_prefix::Pair03ApplyBlockPrefixPass::new(&device)?,
             compact_all: compact_boundaries_all::CompactBoundariesAllPass::new(&device)?,
             compact_kept: compact_boundaries_kept::CompactBoundariesKeptPass::new(&device)?,
             tokens_build: tokens_build::TokensBuildPass::new(&device)?,
-            tokens_file_ids: tokens_file_ids::TokensFileIdsPass::new(&device)?,
         })
     }
 }
@@ -73,6 +73,11 @@ pub fn record_all_passes(
     // Ensure flags_packed is zeroed so dfa_03 can write flags only at boundaries
     // and leave non-boundaries as 0 without per-byte stores.
     ctx.encoder.clear_buffer(&ctx.buffers.flags_packed, 0, None);
+    ctx.encoder
+        .clear_buffer(&ctx.buffers.source_file_start_flags, 0, None);
+    ctx.encoder
+        .clear_buffer(&ctx.buffers.source_file_end_flags, 0, None);
+    let source_file_capacity = ctx.buffers.source_file_start.count as u32;
 
     let can_batch = ctx.maybe_timer.is_none()
         && ctx.maybe_dbg.is_none()
@@ -86,6 +91,13 @@ pub fn record_all_passes(
                 .as_deref_mut()
                 .expect("batching requires bind-group cache");
             let mut batch = ComputePassBatch::begin(ctx.encoder, "lexer.dfa-local.batch");
+            batch.record_pass_cached(
+                ctx.device,
+                ctx.buffers,
+                bg_cache,
+                &p.source_file_boundaries,
+                E1(source_file_capacity),
+            )?;
             batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.dfa_01, E1(n))?;
         }
         p.dfa_02.record_pass(&mut ctx, E1(nb_dfa))?;
@@ -111,17 +123,12 @@ pub fn record_all_passes(
             batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.compact_kept, E1(n))?;
             batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.compact_all, E1(n))?;
             batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.tokens_build, E1(n))?;
-            batch.record_pass_cached(
-                ctx.device,
-                ctx.buffers,
-                bg_cache,
-                &p.tokens_file_ids,
-                E1(n),
-            )?;
         }
         return Ok(());
     }
 
+    p.source_file_boundaries
+        .record_pass(&mut ctx, E1(source_file_capacity))?;
     p.dfa_01.record_pass(&mut ctx, E1(n))?;
     p.dfa_02.record_pass(&mut ctx, E1(nb_dfa))?;
     if let Some(cache) = ctx.bg_cache.as_deref_mut() {
@@ -138,6 +145,5 @@ pub fn record_all_passes(
     p.compact_kept.record_pass(&mut ctx, E1(n))?;
     p.compact_all.record_pass(&mut ctx, E1(n))?;
     p.tokens_build.record_pass(&mut ctx, E1(n))?;
-    p.tokens_file_ids.record_pass(&mut ctx, E1(n))?;
     Ok(())
 }

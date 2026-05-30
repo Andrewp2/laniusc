@@ -22,8 +22,8 @@ StructuredBuffer<uint> hir_match_arm_pattern_node;
 StructuredBuffer<uint> hir_match_payload_owner_arm;
 StructuredBuffer<uint> hir_match_payload_match_node;
 StructuredBuffer<uint> hir_match_payload_ordinal;
-StructuredBuffer<uint> hir_variant_payload_start;
 StructuredBuffer<uint> hir_variant_payload_count;
+StructuredBuffer<uint> hir_variant_payload_node;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> decl_id_by_name_token;
 StructuredBuffer<uint> decl_kind;
@@ -46,6 +46,7 @@ RWStructuredBuffer<uint> visible_type;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
+static const uint VARIANT_PAYLOAD_SLOT_STRIDE = 4u;
 
 static const uint HIR_ITEM_KIND_ENUM = 7u;
 static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
@@ -96,25 +97,36 @@ uint type_ref_to_type_code(uint tag, uint payload)
     return TY_UNKNOWN;
 }
 
-uint scrutinee_instance_for_match(uint match_node)
+bool scrutinee_context_for_match(uint match_node, uint enum_token, out uint instance_i)
 {
+    instance_i = INVALID;
     if (!valid_node(match_node))
-        return INVALID;
+        return false;
     uint scrutinee_node = hir_match_scrutinee_node[match_node];
     if (!valid_node(scrutinee_node))
-        return INVALID;
+        return false;
 
     uint expr_token = hir_token_pos[scrutinee_node];
     if (!valid_token(expr_token))
-        return INVALID;
+        return false;
 
     uint decl_token = visible_decl[expr_token];
     if (!valid_token(decl_token))
-        return INVALID;
+        return false;
 
-    if (decl_type_ref_tag[decl_token] != TYPE_REF_INSTANCE)
-        return INVALID;
-    return decl_type_ref_payload[decl_token];
+    if (decl_type_ref_tag[decl_token] == TYPE_REF_INSTANCE)
+    {
+        instance_i = decl_type_ref_payload[decl_token];
+        return instance_i != INVALID &&
+               type_instance_decl_token[instance_i] == enum_token;
+    }
+
+    uint scrutinee_ty = visible_type[decl_token];
+    if (scrutinee_ty == TY_UNKNOWN)
+        scrutinee_ty = type_ref_to_type_code(
+            decl_type_ref_tag[decl_token],
+            decl_type_ref_payload[decl_token]);
+    return scrutinee_ty == TY_ENUM_BASE + enum_token;
 }
 
 bool enum_variant_decl_for_pattern(
@@ -181,15 +193,17 @@ uint payload_type_for_node(uint payload_node, uint owner_arm, uint ordinal)
         return TY_UNKNOWN;
 
     uint match_node = valid_node(payload_node) ? hir_match_payload_match_node[payload_node] : INVALID;
-    uint instance_i = scrutinee_instance_for_match(match_node);
-    if (instance_i == INVALID || type_instance_decl_token[instance_i] != enum_token)
+    uint instance_i;
+    if (!scrutinee_context_for_match(match_node, enum_token, instance_i))
         return TY_UNKNOWN;
 
     uint payload_count = hir_variant_payload_count[variant_node];
     if (ordinal >= payload_count)
         return TY_UNKNOWN;
 
-    uint payload_type_node = hir_variant_payload_start[variant_node] + ordinal;
+    uint payload_type_node = ordinal < VARIANT_PAYLOAD_SLOT_STRIDE
+        ? hir_variant_payload_node[variant_node * VARIANT_PAYLOAD_SLOT_STRIDE + ordinal]
+        : INVALID;
     if (!valid_node(payload_type_node))
         return TY_UNKNOWN;
 

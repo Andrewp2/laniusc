@@ -33,11 +33,22 @@ pub(super) struct TokenTypeCheckPasses {
     pub(super) methods_mark_call_return_keys: &'static PassData,
     pub(super) methods_resolve_table: &'static PassData,
     pub(super) methods_resolve: &'static PassData,
+    pub(super) counted_scan_local: &'static PassData,
+    pub(super) counted_scan_blocks: &'static PassData,
+    pub(super) counted_scan_apply: &'static PassData,
+    pub(super) names_radix_dispatch_args: &'static PassData,
     pub(super) names_radix_bucket_prefix: &'static PassData,
     pub(super) names_radix_bucket_bases: &'static PassData,
     pub(super) type_instances_clear: &'static PassData,
+    pub(super) type_instances_mark_generic_param_records: &'static PassData,
+    pub(super) type_instances_propagate_generic_decl_owner: &'static PassData,
     pub(super) type_instances_decl_generic_params: &'static PassData,
+    pub(super) type_instances_sort_generic_param_keys: &'static PassData,
+    pub(super) type_instances_sort_generic_param_keys_scatter: &'static PassData,
     pub(super) type_instances_generic_param_use_slots: &'static PassData,
+    pub(super) type_instances_seed_struct_field_keys: &'static PassData,
+    pub(super) type_instances_sort_struct_field_keys: &'static PassData,
+    pub(super) type_instances_sort_struct_field_keys_scatter: &'static PassData,
     pub(super) type_instances_collect: &'static PassData,
     pub(super) type_instances_collect_named: &'static PassData,
     pub(super) type_instances_collect_aggregate_refs: &'static PassData,
@@ -48,6 +59,7 @@ pub(super) struct TokenTypeCheckPasses {
     pub(super) type_instances_member_results: &'static PassData,
     pub(super) type_instances_member_substitute: &'static PassData,
     pub(super) type_instances_struct_init_clear: &'static PassData,
+    pub(super) type_instances_struct_init_contexts: &'static PassData,
     pub(super) type_instances_struct_init_fields: &'static PassData,
     pub(super) type_instances_struct_init_substitute: &'static PassData,
     pub(super) type_instances_array_return_refs: &'static PassData,
@@ -99,14 +111,32 @@ impl TokenTypeCheckPasses {
             methods_mark_call_return_keys: type_check_methods_mark_call_return_keys_pass(device)?,
             methods_resolve_table: type_check_methods_resolve_table_pass(device)?,
             methods_resolve: type_check_methods_resolve_pass(device)?,
+            counted_scan_local: type_check_counted_scan_local_pass(device)?,
+            counted_scan_blocks: type_check_counted_scan_blocks_pass(device)?,
+            counted_scan_apply: type_check_counted_scan_apply_pass(device)?,
+            names_radix_dispatch_args: type_check_names_radix_dispatch_args_pass(device)?,
             names_radix_bucket_prefix: type_check_names_radix_bucket_prefix_pass(device)?,
             names_radix_bucket_bases: type_check_names_radix_bucket_bases_pass(device)?,
             type_instances_clear: type_check_type_instances_clear_pass(device)?,
+            type_instances_mark_generic_param_records:
+                type_check_type_instances_mark_generic_param_records_pass(device)?,
+            type_instances_propagate_generic_decl_owner:
+                type_check_type_instances_propagate_generic_decl_owner_pass(device)?,
             type_instances_decl_generic_params: type_check_type_instances_decl_generic_params_pass(
                 device,
             )?,
+            type_instances_sort_generic_param_keys:
+                type_check_type_instances_sort_generic_param_keys_pass(device)?,
+            type_instances_sort_generic_param_keys_scatter:
+                type_check_type_instances_sort_generic_param_keys_scatter_pass(device)?,
             type_instances_generic_param_use_slots:
                 type_check_type_instances_generic_param_use_slots_pass(device)?,
+            type_instances_seed_struct_field_keys:
+                type_check_type_instances_seed_struct_field_keys_pass(device)?,
+            type_instances_sort_struct_field_keys:
+                type_check_type_instances_sort_struct_field_keys_pass(device)?,
+            type_instances_sort_struct_field_keys_scatter:
+                type_check_type_instances_sort_struct_field_keys_scatter_pass(device)?,
             type_instances_collect: type_check_type_instances_collect_pass(device)?,
             type_instances_collect_named: type_check_type_instances_collect_named_pass(device)?,
             type_instances_collect_aggregate_refs:
@@ -126,6 +156,8 @@ impl TokenTypeCheckPasses {
             type_instances_struct_init_clear: type_check_type_instances_struct_init_clear_pass(
                 device,
             )?,
+            type_instances_struct_init_contexts:
+                type_check_type_instances_struct_init_contexts_pass(device)?,
             type_instances_struct_init_fields: type_check_type_instances_struct_init_fields_pass(
                 device,
             )?,

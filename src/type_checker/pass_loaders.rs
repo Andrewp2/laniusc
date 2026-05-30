@@ -3,9 +3,9 @@ use super::*;
 impl TypeCheckPasses {
     pub(super) fn new(device: &wgpu::Device) -> Result<Self> {
         macro_rules! pass {
-            ($label:literal, $file:literal) => {
+            ($label:literal, $file:literal) => {{
                 crate::gpu::passes_core::make_main_pass!(device, $label, shader: $file)?
-            };
+            }};
         }
 
         Ok(Self {
@@ -157,6 +157,22 @@ impl TypeCheckPasses {
                 "type_check_modules_05_resolve_imports",
                 "type_check_modules_05_resolve_imports"
             ),
+            modules_seed_import_edge_key_order: pass!(
+                "type_check_modules_05e_seed_import_edge_key_order",
+                "type_check_modules_05e_seed_import_edge_key_order"
+            ),
+            modules_sort_import_edges: pass!(
+                "type_check_modules_05f_sort_import_edges",
+                "type_check_modules_05f_sort_import_edges"
+            ),
+            modules_sort_import_edges_scatter: pass!(
+                "type_check_modules_05g_sort_import_edges_scatter",
+                "type_check_modules_05g_sort_import_edges_scatter"
+            ),
+            modules_validate_import_cycles: pass!(
+                "type_check_modules_05h_validate_import_cycles",
+                "type_check_modules_05h_validate_import_cycles"
+            ),
             modules_clear_file_module_map: pass!(
                 "type_check_modules_05b_clear_file_module_map",
                 "type_check_modules_05b_clear_file_module_map"
@@ -281,6 +297,14 @@ impl TypeCheckPasses {
                 "type_check_modules_10l_consume_value_enum_calls",
                 "type_check_modules_10l_consume_value_enum_calls"
             ),
+            modules_validate_value_enum_call_payloads: pass!(
+                "type_check_modules_10l2_validate_value_enum_call_payloads",
+                "type_check_modules_10l2_validate_value_enum_call_payloads"
+            ),
+            modules_finalize_value_enum_calls: pass!(
+                "type_check_modules_10l3_finalize_value_enum_calls",
+                "type_check_modules_10l3_finalize_value_enum_calls"
+            ),
             modules_bind_match_patterns: pass!(
                 "type_check_modules_10m_bind_match_patterns",
                 "type_check_modules_10m_bind_match_patterns"
@@ -297,13 +321,41 @@ impl TypeCheckPasses {
                 "type_check_type_instances_00_clear",
                 "type_check_type_instances_00_clear"
             ),
+            type_instances_mark_generic_param_records: pass!(
+                "type_check_type_instances_00a_mark_generic_param_records",
+                "type_check_type_instances_00a_mark_generic_param_records"
+            ),
+            type_instances_propagate_generic_decl_owner: pass!(
+                "type_check_type_instances_00a1_propagate_generic_decl_owner",
+                "type_check_type_instances_00a1_propagate_generic_decl_owner"
+            ),
             type_instances_decl_generic_params: pass!(
                 "type_check_type_instances_00b_decl_generic_params",
                 "type_check_type_instances_00b_decl_generic_params"
             ),
+            type_instances_sort_generic_param_keys: pass!(
+                "type_check_type_instances_00c_sort_generic_param_keys",
+                "type_check_type_instances_00c_sort_generic_param_keys"
+            ),
+            type_instances_sort_generic_param_keys_scatter: pass!(
+                "type_check_type_instances_00d_sort_generic_param_keys_scatter",
+                "type_check_type_instances_00d_sort_generic_param_keys_scatter"
+            ),
             type_instances_generic_param_use_slots: pass!(
-                "type_check_type_instances_00c_generic_param_use_slots",
-                "type_check_type_instances_00c_generic_param_use_slots"
+                "type_check_type_instances_00e_generic_param_use_slots",
+                "type_check_type_instances_00e_generic_param_use_slots"
+            ),
+            type_instances_seed_struct_field_keys: pass!(
+                "type_check_type_instances_02_seed_struct_field_keys",
+                "type_check_type_instances_02_seed_struct_field_keys"
+            ),
+            type_instances_sort_struct_field_keys: pass!(
+                "type_check_type_instances_02b_sort_struct_field_keys",
+                "type_check_type_instances_02b_sort_struct_field_keys"
+            ),
+            type_instances_sort_struct_field_keys_scatter: pass!(
+                "type_check_type_instances_02c_sort_struct_field_keys_scatter",
+                "type_check_type_instances_02c_sort_struct_field_keys_scatter"
             ),
             type_instances_collect: pass!(
                 "type_check_type_instances_01_collect",
@@ -345,6 +397,10 @@ impl TypeCheckPasses {
                 "type_check_type_instances_04a_struct_init_clear",
                 "type_check_type_instances_04a_struct_init_clear"
             ),
+            type_instances_struct_init_contexts: pass!(
+                "type_check_type_instances_04a2_struct_init_contexts",
+                "type_check_type_instances_04a2_struct_init_contexts"
+            ),
             type_instances_struct_init_fields: pass!(
                 "type_check_type_instances_04_struct_init_fields",
                 "type_check_type_instances_04_struct_init_fields"
@@ -369,9 +425,37 @@ impl TypeCheckPasses {
                 "type_check_type_instances_08_validate_aggregate_access",
                 "type_check_type_instances_08_validate_aggregate_access"
             ),
+            predicates_clear_bound_arg_facts: pass!(
+                "type_check_predicates_00_clear_bound_arg_facts",
+                "type_check_predicates_00_clear_bound_arg_facts"
+            ),
+            predicates_collect_bound_arg_facts: pass!(
+                "type_check_predicates_00b_collect_bound_arg_facts",
+                "type_check_predicates_00b_collect_bound_arg_facts"
+            ),
+            predicates_collect_method_contracts: pass!(
+                "type_check_predicates_00c_collect_method_contracts",
+                "type_check_predicates_00c_collect_method_contracts"
+            ),
             predicates_collect: pass!(
                 "type_check_predicates_01_collect",
                 "type_check_predicates_01_collect"
+            ),
+            predicates_seed_key_order: pass!(
+                "type_check_predicates_01b_seed_key_order",
+                "type_check_predicates_01b_seed_key_order"
+            ),
+            predicates_sort_keys: pass!(
+                "type_check_predicates_01c_sort_keys",
+                "type_check_predicates_01c_sort_keys"
+            ),
+            predicates_sort_keys_scatter: pass!(
+                "type_check_predicates_01d_sort_keys_scatter",
+                "type_check_predicates_01d_sort_keys_scatter"
+            ),
+            predicates_build_method_owner_ranges: pass!(
+                "type_check_predicates_01e_build_method_owner_ranges",
+                "type_check_predicates_01e_build_method_owner_ranges"
             ),
             predicates_obligations: pass!(
                 "type_check_predicates_02_obligations",
@@ -576,15 +660,57 @@ crate::gpu::passes_core::impl_cached_main_pass_getter!(
 );
 
 crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    pub(super) fn type_check_type_instances_mark_generic_param_records_pass(device),
+    label: "type_check_type_instances_00a_mark_generic_param_records",
+    shader: "type_check_type_instances_00a_mark_generic_param_records"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    pub(super) fn type_check_type_instances_propagate_generic_decl_owner_pass(device),
+    label: "type_check_type_instances_00a1_propagate_generic_decl_owner",
+    shader: "type_check_type_instances_00a1_propagate_generic_decl_owner"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
     pub(super) fn type_check_type_instances_decl_generic_params_pass(device),
     label: "type_check_type_instances_00b_decl_generic_params",
     shader: "type_check_type_instances_00b_decl_generic_params"
 );
 
 crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    pub(super) fn type_check_type_instances_sort_generic_param_keys_pass(device),
+    label: "type_check_type_instances_00c_sort_generic_param_keys",
+    shader: "type_check_type_instances_00c_sort_generic_param_keys"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    pub(super) fn type_check_type_instances_sort_generic_param_keys_scatter_pass(device),
+    label: "type_check_type_instances_00d_sort_generic_param_keys_scatter",
+    shader: "type_check_type_instances_00d_sort_generic_param_keys_scatter"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
     pub(super) fn type_check_type_instances_generic_param_use_slots_pass(device),
-    label: "type_check_type_instances_00c_generic_param_use_slots",
-    shader: "type_check_type_instances_00c_generic_param_use_slots"
+    label: "type_check_type_instances_00e_generic_param_use_slots",
+    shader: "type_check_type_instances_00e_generic_param_use_slots"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    pub(super) fn type_check_type_instances_seed_struct_field_keys_pass(device),
+    label: "type_check_type_instances_02_seed_struct_field_keys",
+    shader: "type_check_type_instances_02_seed_struct_field_keys"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    pub(super) fn type_check_type_instances_sort_struct_field_keys_pass(device),
+    label: "type_check_type_instances_02b_sort_struct_field_keys",
+    shader: "type_check_type_instances_02b_sort_struct_field_keys"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    pub(super) fn type_check_type_instances_sort_struct_field_keys_scatter_pass(device),
+    label: "type_check_type_instances_02c_sort_struct_field_keys_scatter",
+    shader: "type_check_type_instances_02c_sort_struct_field_keys_scatter"
 );
 
 crate::gpu::passes_core::impl_cached_main_pass_getter!(
@@ -642,15 +768,21 @@ crate::gpu::passes_core::impl_cached_main_pass_getter!(
 );
 
 crate::gpu::passes_core::impl_cached_main_pass_getter!(
-    pub(super) fn type_check_type_instances_struct_init_fields_pass(device),
-    label: "type_check_type_instances_04_struct_init_fields",
-    shader: "type_check_type_instances_04_struct_init_fields"
+    pub(super) fn type_check_type_instances_struct_init_contexts_pass(device),
+    label: "type_check_type_instances_04a2_struct_init_contexts",
+    shader: "type_check_type_instances_04a2_struct_init_contexts"
 );
 
 crate::gpu::passes_core::impl_cached_main_pass_getter!(
     pub(super) fn type_check_type_instances_struct_init_clear_pass(device),
     label: "type_check_type_instances_04a_struct_init_clear",
     shader: "type_check_type_instances_04a_struct_init_clear"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    pub(super) fn type_check_type_instances_struct_init_fields_pass(device),
+    label: "type_check_type_instances_04_struct_init_fields",
+    shader: "type_check_type_instances_04_struct_init_fields"
 );
 
 crate::gpu::passes_core::impl_cached_main_pass_getter!(
@@ -691,9 +823,44 @@ crate::gpu::passes_core::impl_cached_main_pass_getter!(
 
 crate::gpu::passes_core::impl_cached_main_pass_getter!(
     #[allow(dead_code)]
+    pub(super) fn type_check_predicates_collect_method_contracts_pass(device),
+    label: "type_check_predicates_00c_collect_method_contracts",
+    shader: "type_check_predicates_00c_collect_method_contracts"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    #[allow(dead_code)]
     pub(super) fn type_check_predicates_collect_pass(device),
     label: "type_check_predicates_01_collect",
     shader: "type_check_predicates_01_collect"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    #[allow(dead_code)]
+    pub(super) fn type_check_predicates_seed_key_order_pass(device),
+    label: "type_check_predicates_01b_seed_key_order",
+    shader: "type_check_predicates_01b_seed_key_order"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    #[allow(dead_code)]
+    pub(super) fn type_check_predicates_sort_keys_pass(device),
+    label: "type_check_predicates_01c_sort_keys",
+    shader: "type_check_predicates_01c_sort_keys"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    #[allow(dead_code)]
+    pub(super) fn type_check_predicates_sort_keys_scatter_pass(device),
+    label: "type_check_predicates_01d_sort_keys_scatter",
+    shader: "type_check_predicates_01d_sort_keys_scatter"
+);
+
+crate::gpu::passes_core::impl_cached_main_pass_getter!(
+    #[allow(dead_code)]
+    pub(super) fn type_check_predicates_build_method_owner_ranges_pass(device),
+    label: "type_check_predicates_01e_build_method_owner_ranges",
+    shader: "type_check_predicates_01e_build_method_owner_ranges"
 );
 
 crate::gpu::passes_core::impl_cached_main_pass_getter!(

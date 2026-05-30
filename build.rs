@@ -287,7 +287,6 @@ fn is_unwired_shader_entrypoint(path: &Path) -> bool {
             | Some("shaders/codegen/wasm_bool_scan.slang")
             | Some("shaders/codegen/wasm_functions.slang")
             | Some("shaders/codegen/wasm_functions_probe.slang")
-            | Some("shaders/codegen/x86_reloc_patch.slang")
             | Some("shaders/codegen/x86_virtual_liveness_dispatch_args.slang")
             | Some("shaders/codegen/x86_virtual_use_counts.slang")
             | Some("shaders/codegen/x86_virtual_use_edges.slang")

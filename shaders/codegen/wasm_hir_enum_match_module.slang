@@ -1,9 +1,17 @@
 import utils;
 
-// Bounded HIR-driven WASM emitter for unit-enum tags and match dispatch.
+// Retired bounded HIR-driven WASM emitter for unit-enum tags and match dispatch.
+//
+// The current Rust WASM generator does not load or dispatch this pass. Keep it
+// quarantined until enum/match lowering is rebuilt as byte-count, prefix-scan,
+// and byte-scatter passes over compact records.
 //
 // This pass consumes parser-owned HIR enum/match arrays plus existing GPU
-// resolver outputs. It does not recognize stdlib names or variant spellings.
+// resolver outputs. Match-arm order comes from the parser-published
+// hir_match_arm_next relation compacted by wasm_hir_enum_match_records, not by
+// rediscovering arm order from token/HIR ranges here. This is still not the
+// production-scale backend shape: the supported slice must stay fail-closed
+// until this is replaced by node-local records plus scan/scatter byte placement.
 
 struct Params
 {
@@ -35,6 +43,7 @@ StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> call_param_count;
+StructuredBuffer<uint> fn_entrypoint_tag;
 
 RWStructuredBuffer<uint> out_words;
 RWStructuredBuffer<uint> status;
@@ -81,10 +90,14 @@ static const uint TK_TRUE = 90u;
 static const uint TK_FALSE = 91u;
 static const uint TK_MATCH = 95u;
 
+static const uint ENTRYPOINT_MAIN = 1u;
+
 static const uint MAX_PARAM_COUNT = 8u;
 static const uint MAX_MATCH_ARMS = 8u;
-static const uint MAX_STATEMENT_SCAN_TOKENS = 96u;
+static const uint MAX_LEGACY_ENUM_MODULE_TOKENS = 512u;
+static const uint MAX_LEGACY_ENUM_MODULE_HIR_NODES = 512u;
 static const uint HIR_MODULE_OUTPUT_TARGET_LIMIT = 512u;
+static const uint ERR_UNSUPPORTED_SOURCE_SHAPE = 1u;
 static const uint ERR_ENUM_MODULE_BASE = 900u;
 
 uint linear_dispatch_id(uint3 tid)
@@ -100,6 +113,27 @@ uint active_token_count()
 uint active_hir_node_count()
 {
     return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+}
+
+bool valid_node(uint node)
+{
+    return node != INVALID && node < active_hir_node_count();
+}
+
+bool valid_token(uint token)
+{
+    return token != INVALID && token < active_token_count();
+}
+
+bool function_decl_token_has_record(uint decl_token)
+{
+    return valid_token(decl_token) && call_fn_index[decl_token] == decl_token;
+}
+
+bool is_function_record_node(uint node)
+{
+    return valid_node(node) && hir_kind[node] == HIR_FN &&
+           function_decl_token_has_record(hir_token_pos[node]);
 }
 
 uint token_kind(uint i)
@@ -361,16 +395,19 @@ uint find_fn_body_open(uint fn_node)
     return find_next_open_brace(start_i, end_i);
 }
 
-bool function_has_match(uint fn_node)
+bool function_has_enum_match_record(uint fn_node)
 {
     uint start_i = hir_token_pos[fn_node];
     uint end_i = hir_token_end[fn_node];
+    if (start_i == INVALID || end_i == INVALID)
+        return false;
     uint count = active_hir_node_count();
     [loop]
     for (uint i = 0u; i < count; i += 1u)
     {
-        if (hir_kind[i] == HIR_MATCH_EXPR && hir_token_pos[i] > start_i &&
-            hir_token_pos[i] < end_i)
+        uint4 record = hir_enum_match_record[i];
+        if (hir_kind[i] == HIR_MATCH_EXPR && record.x != INVALID && record.z != 0u &&
+            hir_token_pos[i] > start_i && hir_token_pos[i] < end_i)
             return true;
     }
     return false;
@@ -395,11 +432,10 @@ uint pattern_name_end_from_metadata(uint pattern_node, uint arm_node)
     if (pattern_node == INVALID || pattern_node >= active_hir_node_count())
         return INVALID;
     uint4 arm_record = hir_enum_match_record[arm_node];
-    uint payload_count = arm_record.z;
-    if (payload_count == 0u)
-        return hir_token_end[pattern_node];
     uint payload_node = arm_record.y;
-    if (payload_node == INVALID || payload_node >= active_hir_node_count())
+    if (payload_node == INVALID)
+        return hir_token_end[pattern_node];
+    if (payload_node >= active_hir_node_count())
         return INVALID;
     return hir_token_pos[payload_node];
 }
@@ -411,10 +447,11 @@ uint find_main_match_fn_node()
     [loop]
     for (uint i = 0u; i < count; i += 1u)
     {
-        if (hir_kind[i] != HIR_FN)
+        if (!is_function_record_node(i))
             continue;
         uint fn_i = hir_token_pos[i];
-        if (fn_i != INVALID && call_param_count[fn_i] == 0u && function_has_match(i))
+        if (fn_entrypoint_tag[i] == ENTRYPOINT_MAIN && fn_i != INVALID &&
+            call_param_count[fn_i] == 0u && function_has_enum_match_record(i))
         {
             if (found != INVALID)
                 return INVALID;
@@ -430,7 +467,7 @@ uint find_fn_node_for_token(uint fn_token)
     [loop]
     for (uint i = 0u; i < count; i += 1u)
     {
-        if (hir_kind[i] == HIR_FN && hir_token_pos[i] == fn_token)
+        if (is_function_record_node(i) && hir_token_pos[i] == fn_token)
             return i;
     }
     return INVALID;
@@ -478,10 +515,11 @@ bool find_tag_match_main_and_helper(out uint main_node, out uint helper_node, ou
     [loop]
     for (uint i = 0u; i < count; i += 1u)
     {
-        if (hir_kind[i] != HIR_FN)
+        if (!is_function_record_node(i))
             continue;
         uint fn_i = hir_token_pos[i];
-        if (fn_i == INVALID || call_param_count[fn_i] != 0u || function_has_match(i))
+        if (fn_entrypoint_tag[i] != ENTRYPOINT_MAIN || fn_i == INVALID ||
+            call_param_count[fn_i] != 0u || function_has_enum_match_record(i))
             continue;
         uint body_open = find_fn_body_open(i);
         uint body_close = matching_brace(body_open, hir_token_end[i]);
@@ -509,7 +547,7 @@ bool find_tag_match_main_and_helper(out uint main_node, out uint helper_node, ou
         if (target_fn == INVALID || target_fn == fn_i)
             continue;
         uint candidate_helper = find_fn_node_for_token(target_fn);
-        if (candidate_helper == INVALID || !function_has_match(candidate_helper))
+        if (candidate_helper == INVALID || !function_has_enum_match_record(candidate_helper))
         {
             last_rejected_helper_count = 1u;
             continue;
@@ -806,22 +844,24 @@ bool emit_tag_match_expr(
     if (arm_count == 0u || arm_count > MAX_MATCH_ARMS)
         return false;
 
-    uint after_token = match_i;
+    uint arm_node = hir_enum_match_record[match_node].y;
     uint emitted = 0u;
     [loop]
     for (uint guard = 0u; guard < MAX_MATCH_ARMS; guard += 1u)
     {
         if (emitted >= arm_count)
             break;
-        uint arm_node = next_match_arm_from_metadata(match_node, after_token);
         fail_stage = 510u;
-        fail_detail = after_token;
-        if (arm_node == INVALID)
+        fail_detail = arm_node;
+        if (arm_node == INVALID || arm_node >= active_hir_node_count())
             return false;
 
         uint4 arm_record = hir_enum_match_record[arm_node];
         uint pattern_node = arm_record.x;
         uint result_node = arm_record.w;
+        if (pattern_node == INVALID || pattern_node >= active_hir_node_count() ||
+            result_node == INVALID || result_node >= active_hir_node_count())
+            return false;
         uint pattern_i = hir_token_pos[pattern_node];
         uint result_i = INVALID;
         uint result_value = INVALID;
@@ -851,7 +891,7 @@ bool emit_tag_match_expr(
         if (!last)
             put_byte(cursor, 0x05u, write, target);
         emitted += 1u;
-        after_token = hir_token_pos[arm_node];
+        arm_node = arm_record.z;
     }
 
     fail_stage = 513u;
@@ -1089,26 +1129,6 @@ bool emit_call_args_and_call(
     return true;
 }
 
-uint find_statement_semicolon(uint start_i, uint end_i)
-{
-    uint paren_depth = 0u;
-    [loop]
-    for (uint guard = 0u; guard < MAX_STATEMENT_SCAN_TOKENS; guard += 1u)
-    {
-        uint i = start_i + guard;
-        if (i >= end_i || i >= active_token_count())
-            break;
-        uint kind = token_kind(i);
-        if (is_open_paren(kind))
-            paren_depth += 1u;
-        else if (is_close_paren(kind) && paren_depth > 0u)
-            paren_depth -= 1u;
-        else if (kind == TK_SEMICOLON && paren_depth == 0u)
-            return i;
-    }
-    return INVALID;
-}
-
 bool find_main_let_and_return(uint fn_node, out uint let_node, out uint return_node)
 {
     let_node = INVALID;
@@ -1123,11 +1143,10 @@ bool find_main_let_and_return(uint fn_node, out uint let_node, out uint return_n
     let_node = hir_node_starting_at(let_i, HIR_LET_STMT);
     if (let_node == INVALID)
         return false;
-    uint let_semi_i = find_statement_semicolon(let_i, body_close);
-    if (let_semi_i == INVALID || let_semi_i + 1u >= body_close)
+    uint ret_i = hir_token_end[let_node];
+    if (ret_i == INVALID || ret_i >= body_close)
         return false;
-    uint ret_i = let_semi_i + 1u;
-    if (ret_i >= body_close || token_kind(ret_i) != TK_RETURN)
+    if (token_kind(ret_i) != TK_RETURN)
         return false;
     return_node = hir_node_starting_at(ret_i, HIR_RETURN_STMT);
     return return_node != INVALID && hir_token_end[return_node] == body_close;
@@ -1251,52 +1270,11 @@ bool emit_tag_match_main_body(
     return true;
 }
 
-bool arm_node_in_match_span(uint node, uint match_i, uint match_end)
-{
-    uint4 arm_record = hir_enum_match_record[node];
-    uint pattern_node = arm_record.x;
-    uint result_node = arm_record.w;
-    if (pattern_node == INVALID || result_node == INVALID)
-        return false;
-    uint arm_start = hir_token_pos[node];
-    uint pattern_i = hir_token_pos[pattern_node];
-    uint result_i = hir_token_pos[result_node];
-    return arm_start > match_i && arm_start < match_end && pattern_i < match_end &&
-           result_i < match_end;
-}
-
 uint count_match_arms_from_metadata(uint match_node)
 {
     if (match_node == INVALID || match_node >= active_hir_node_count())
         return 0u;
     return hir_enum_match_record[match_node].z;
-}
-
-uint next_match_arm_from_metadata(uint match_node, uint after_token)
-{
-    if (match_node == INVALID || match_node >= active_hir_node_count())
-        return INVALID;
-    uint match_i = hir_token_pos[match_node];
-    uint match_end = hir_token_end[match_node];
-    uint best = INVALID;
-    uint best_pos = INVALID;
-    uint first_arm = hir_enum_match_record[match_node].y;
-    if (first_arm == INVALID || first_arm >= active_hir_node_count())
-        return INVALID;
-    uint count = active_hir_node_count();
-    [loop]
-    for (uint node = first_arm; node < count; node += 1u)
-    {
-        if (!arm_node_in_match_span(node, match_i, match_end))
-            continue;
-        uint pos = hir_token_pos[node];
-        if (pos > after_token && (best_pos == INVALID || pos < best_pos))
-        {
-            best = node;
-            best_pos = pos;
-        }
-    }
-    return best;
 }
 
 bool result_int_literal_token(uint result_node, out uint literal_i)
@@ -1345,22 +1323,24 @@ bool emit_match_expr(
     if (arm_count == 0u || arm_count > MAX_MATCH_ARMS)
         return false;
 
-    uint after_token = match_i;
+    uint arm_node = hir_enum_match_record[match_node].y;
     uint emitted = 0u;
     [loop]
     for (uint guard = 0u; guard < MAX_MATCH_ARMS; guard += 1u)
     {
         if (emitted >= arm_count)
             break;
-        uint arm_node = next_match_arm_from_metadata(match_node, after_token);
         fail_stage = 410u;
-        fail_detail = after_token;
-        if (arm_node == INVALID)
+        fail_detail = arm_node;
+        if (arm_node == INVALID || arm_node >= active_hir_node_count())
             return false;
 
         uint4 arm_record = hir_enum_match_record[arm_node];
         uint pattern_node = arm_record.x;
         uint result_node = arm_record.w;
+        if (pattern_node == INVALID || pattern_node >= active_hir_node_count() ||
+            result_node == INVALID || result_node >= active_hir_node_count())
+            return false;
         uint pattern_i = hir_token_pos[pattern_node];
         uint result_start = INVALID;
         fail_stage = 411u;
@@ -1390,7 +1370,7 @@ bool emit_match_expr(
             put_byte(cursor, 0x05u, write, target);
         }
         emitted += 1u;
-        after_token = hir_token_pos[arm_node];
+        arm_node = arm_record.z;
     }
     fail_stage = 413u;
     fail_detail = emitted;
@@ -1713,6 +1693,30 @@ void record_enum_reject(uint detail, uint value, uint target)
     }
 }
 
+bool legacy_enum_module_inputs_within_scan_budget(out uint detail, out uint value)
+{
+    detail = 0u;
+    value = 0u;
+
+    uint tokens = active_token_count();
+    if (tokens > MAX_LEGACY_ENUM_MODULE_TOKENS)
+    {
+        detail = 2u;
+        value = tokens;
+        return false;
+    }
+
+    uint hir_nodes = active_hir_node_count();
+    if (hir_nodes > MAX_LEGACY_ENUM_MODULE_HIR_NODES)
+    {
+        detail = 3u;
+        value = hir_nodes;
+        return false;
+    }
+
+    return true;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
@@ -1721,8 +1725,18 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint target_limit = min(gParams.out_capacity, HIR_MODULE_OUTPUT_TARGET_LIMIT);
     if (target >= target_limit && target != 0u)
         return;
-    if (status[1u] == 1u || status[1u] == 2u || status[1u] == 3u || status[1u] == 5u)
+    if (status[1u] == 1u || status[1u] == 2u || status[1u] == 3u ||
+        status[1u] == 5u ||
+        (status[2u] != 0u && status[2u] != ERR_UNSUPPORTED_SOURCE_SHAPE))
         return;
+
+    uint budget_detail = 0u;
+    uint budget_value = 0u;
+    if (!legacy_enum_module_inputs_within_scan_budget(budget_detail, budget_value))
+    {
+        record_enum_reject(budget_detail, budget_value, target);
+        return;
+    }
 
     uint module_len = 0u;
     uint fail_stage = 0u;

@@ -1,7 +1,5 @@
 use std::ops::Deref;
 
-use wgpu::util::DeviceExt;
-
 /// A thin wrapper around `wgpu::Buffer` that also tracks element count and byte size.
 /// Always create these via the helpers below so we respect WGSL/encase layout rules.
 pub struct LaniusBuffer<T> {
@@ -40,11 +38,35 @@ where
     ub.write(value)
         .expect("failed to write value into UniformBuffer");
     let bytes = ub.as_ref();
-    let raw = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+    let raw = create_buffer_init_checked(
+        device,
+        label,
+        bytes,
+        wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+    );
+    LaniusBuffer::new((raw, bytes.len() as u64), 1)
+}
+
+pub fn uniform_from_val_with_queue<T>(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    label: &str,
+    value: &T,
+) -> LaniusBuffer<T>
+where
+    T: encase::ShaderType + encase::internal::WriteInto,
+{
+    let mut ub = encase::UniformBuffer::new(Vec::<u8>::new());
+    ub.write(value)
+        .expect("failed to write value into UniformBuffer");
+    let bytes = ub.as_ref();
+    let raw = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
-        contents: bytes,
+        size: bytes.len() as u64,
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
     });
+    queue.write_buffer(&raw, 0, bytes);
     LaniusBuffer::new((raw, bytes.len() as u64), 1)
 }
 
@@ -55,14 +77,56 @@ pub fn storage_ro_from_bytes<T>(
     bytes: &[u8],
     count: usize,
 ) -> LaniusBuffer<T> {
-    let raw = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some(label),
-        contents: bytes,
-        usage: wgpu::BufferUsages::STORAGE
-            | wgpu::BufferUsages::COPY_DST
-            | wgpu::BufferUsages::COPY_SRC,
-    });
+    let raw = create_buffer_init_checked(
+        device,
+        label,
+        bytes,
+        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
+    );
     LaniusBuffer::new((raw, bytes.len() as u64), count)
+}
+
+fn create_buffer_init_checked(
+    device: &wgpu::Device,
+    label: &str,
+    contents: &[u8],
+    usage: wgpu::BufferUsages,
+) -> wgpu::Buffer {
+    if contents.is_empty() {
+        return device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size: 0,
+            usage,
+            mapped_at_creation: false,
+        });
+    }
+
+    let unpadded_size = contents.len() as wgpu::BufferAddress;
+    let align_mask = wgpu::COPY_BUFFER_ALIGNMENT - 1;
+    let padded_size = ((unpadded_size + align_mask) & !align_mask).max(wgpu::COPY_BUFFER_ALIGNMENT);
+    let oom_scope = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+    let internal_scope = device.push_error_scope(wgpu::ErrorFilter::Internal);
+    let validation_scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(label),
+        size: padded_size,
+        usage,
+        mapped_at_creation: true,
+    });
+    let _ = device.poll(wgpu::PollType::Poll);
+    let validation_error = pollster::block_on(validation_scope.pop());
+    let internal_error = pollster::block_on(internal_scope.pop());
+    let oom_error = pollster::block_on(oom_scope.pop());
+    if let Some(err) = validation_error.or(internal_error).or(oom_error) {
+        panic!("failed to create initialized GPU buffer {label}: {err:?}");
+    }
+
+    buffer
+        .get_mapped_range_mut(..)
+        .slice(..contents.len())
+        .copy_from_slice(contents);
+    buffer.unmap();
+    buffer
 }
 
 /// Create a STORAGE (read-only) buffer from `&[u32]`.
@@ -82,6 +146,37 @@ pub fn storage_ro_from_u32s(
         "storage_ro_from_u32s({label}): packing mismatch"
     );
     storage_ro_from_bytes::<u32>(device, label, &bytes, values.len())
+}
+
+pub fn storage_ro_from_u32s_with_queue(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    label: &str,
+    values: &[u32],
+) -> LaniusBuffer<u32> {
+    let mut bytes = Vec::with_capacity(values.len() * 4);
+
+    for &v in values {
+        bytes.extend_from_slice(&v.to_le_bytes());
+    }
+    debug_assert_eq!(
+        bytes.len(),
+        values.len() * 4,
+        "storage_ro_from_u32s_with_queue({label}): packing mismatch"
+    );
+    let byte_size = bytes.len();
+    let raw = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(label),
+        size: byte_size as u64,
+        usage: wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_DST
+            | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
+    if !bytes.is_empty() {
+        queue.write_buffer(&raw, 0, &bytes);
+    }
+    LaniusBuffer::new((raw, byte_size as u64), values.len())
 }
 
 pub fn readback_bytes(

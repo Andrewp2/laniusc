@@ -7,7 +7,6 @@
 
 import gpu_index;
 import status;
-import tree_walk;
 
 struct Params
 {
@@ -37,12 +36,19 @@ StructuredBuffer<uint4> hir_param_record;
 StructuredBuffer<uint> x86_expr_resolved_node;
 StructuredBuffer<uint> x86_node_func;
 StructuredBuffer<uint> visible_decl;
+StructuredBuffer<uint> path_count_out;
+StructuredBuffer<uint> path_id_by_owner_hir;
+StructuredBuffer<uint> resolved_value_decl;
+StructuredBuffer<uint> resolved_value_status;
+StructuredBuffer<uint> decl_name_token;
 StructuredBuffer<uint> x86_decl_layout_record;
 StructuredBuffer<uint> x86_decl_layout_status;
+StructuredBuffer<uint2> x86_const_value_record;
 StructuredBuffer<uint> x86_param_reg_record;
-StructuredBuffer<uint> x86_tree_parent;
-StructuredBuffer<uint> x86_tree_subtree_end;
 StructuredBuffer<uint> x86_node_tree_status;
+StructuredBuffer<uint> x86_for_iterable_node;
+StructuredBuffer<uint> x86_node_control_padding;
+StructuredBuffer<uint> x86_postfix_operand_owner;
 StructuredBuffer<uint> x86_enclosing_return_node;
 StructuredBuffer<uint> x86_match_return_node;
 StructuredBuffer<uint4> x86_call_record;
@@ -73,6 +79,12 @@ static const uint X86_ENUM_RECORDS_OK = 1u;
 static const uint X86_STRUCT_RECORDS_OK = 1u;
 static const uint X86_NODE_INST_COUNTS_OK = 1u;
 static const uint X86_ERR_NODE_INST_COUNTS = 10u;
+static const uint X86_ERR_AGG_COPY_WIDTH = 26u;
+static const uint X86_ERR_POSTFIX_EXPR = 30u;
+static const uint X86_ERR_FOR_ITERABLE = 33u;
+static const uint X86_ERR_UNSUPPORTED_UNARY_EXPR = 39u;
+static const uint X86_ERR_UNSUPPORTED_MATCH_EXPR = 44u;
+static const uint X86_ERR_AGGREGATE_TEMPORARY_MEMBER = 46u;
 static const uint X86_FEATURE_ENUM = 1u << 0u;
 static const uint X86_FEATURE_MATCH = 1u << 1u;
 static const uint X86_FEATURE_AGGREGATE = 1u << 2u;
@@ -89,6 +101,7 @@ static const uint HIR_EXPR = 14u;
 static const uint HIR_ASSIGN_EXPR = 15u;
 static const uint HIR_BINARY_EXPR = 16u;
 static const uint HIR_UNARY_EXPR = 17u;
+static const uint HIR_POSTFIX_EXPR = 18u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_MEMBER_EXPR = 21u;
@@ -97,6 +110,7 @@ static const uint HIR_LITERAL_EXPR = 23u;
 static const uint HIR_ARRAY_EXPR = 24u;
 static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 static const uint HIR_FOR_STMT = 30u;
+static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_MATCH_EXPR = 34u;
 static const uint HIR_PARAM_RECORD_NAME_TOKEN = 2u;
 static const uint HIR_PARAM_RECORD_NODE = 3u;
@@ -128,6 +142,7 @@ static const uint EXPR_RECORD_STRIDE = 4u;
 static const uint EXPR_RECORD_FORM = 0u;
 static const uint EXPR_RECORD_LEFT = 1u;
 static const uint EXPR_RECORD_VALUE_TOKEN = 3u;
+static const uint HIR_EXPR_NONE = 0u;
 static const uint HIR_EXPR_NAME = 2u;
 static const uint HIR_EXPR_INT = 3u;
 static const uint HIR_EXPR_TRUE = 4u;
@@ -152,6 +167,8 @@ static const uint HIR_EXPR_BIT_XOR = 22u;
 static const uint HIR_EXPR_BIT_AND = 23u;
 static const uint HIR_EXPR_SHL = 24u;
 static const uint HIR_EXPR_SHR = 25u;
+static const uint PATH_RESOLVE_STATUS_OK = 0u;
+static const uint X86_CONST_VALUE_LITERAL = 1u;
 
 static const uint X86_NODE_INST_NONE = 0u;
 static const uint X86_NODE_INST_EXPR_VALUE = 1u;
@@ -168,6 +185,7 @@ static const uint X86_STRUCT_ACCESS_MEMBER = 1u;
 static const uint X86_STRUCT_ACCESS_LITERAL = 2u;
 static const uint X86_STRUCT_ACCESS_ARRAY_LITERAL = 3u;
 static const uint X86_AGG_STORE_ARRAY = 2u;
+static const uint X86_AGG_COPY_MAX_WIDTH = 32u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -177,6 +195,11 @@ uint linear_dispatch_id(uint3 tid)
 uint active_hir_node_count()
 {
     return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+}
+
+uint active_path_count()
+{
+    return min(path_count_out[0u], gParams.n_hir_nodes);
 }
 
 bool valid_node(uint node)
@@ -204,50 +227,9 @@ bool has_aggregate_feature()
     return (gX86Features.mask & X86_FEATURE_AGGREGATE) != 0u;
 }
 
-uint tree_parent_record(uint node)
+uint control_role_padding(uint node)
 {
-    return valid_node(node) ? x86_tree_parent[node] : INVALID;
-}
-
-uint tree_subtree_end_record(uint node)
-{
-    return valid_node(node) ? x86_tree_subtree_end[node] : INVALID;
-}
-
-uint tree_first_child_record(uint node)
-{
-    uint child = node + 1u;
-    uint end = tree_subtree_end_record(node);
-    return valid_node(child) && child < end && tree_parent_record(child) == node
-        ? child
-        : INVALID;
-}
-
-uint tree_next_sibling_record(uint node)
-{
-    uint sibling = tree_subtree_end_record(node);
-    uint parent = tree_parent_record(node);
-    return valid_node(sibling) && tree_parent_record(sibling) == parent
-        ? sibling
-        : INVALID;
-}
-
-public struct X86NodeChildGraph : ITreeChildGraph
-{
-    public static bool valid(uint node)
-    {
-        return valid_node(node);
-    }
-
-    public static uint first_child(uint node)
-    {
-        return tree_first_child_record(node);
-    }
-
-    public static uint next_sibling(uint node)
-    {
-        return tree_next_sibling_record(node);
-    }
+    return valid_node(node) ? x86_node_control_padding[node] : 0u;
 }
 
 bool upstream_ok()
@@ -274,6 +256,20 @@ uint stmt_slot(uint node, uint slot)
         STMT_RECORD_STRIDE,
         slot,
         INVALID);
+}
+
+bool node_is_stmt_kind(uint node, uint stmt_kind)
+{
+    if (!valid_node(node))
+        return false;
+    uint kind = hir_kind[node];
+    return (kind == HIR_STMT ||
+            (stmt_kind == STMT_RECORD_KIND_IF && kind == HIR_IF_STMT) ||
+            (stmt_kind == STMT_RECORD_KIND_WHILE && kind == HIR_WHILE_STMT) ||
+            (stmt_kind == STMT_RECORD_KIND_FOR && kind == HIR_FOR_STMT) ||
+            (stmt_kind == STMT_RECORD_KIND_LET && kind == HIR_LET_STMT) ||
+            (stmt_kind == STMT_RECORD_KIND_RETURN && kind == HIR_RETURN_STMT)) &&
+           stmt_slot(node, 0u) == stmt_kind;
 }
 
 uint decl_layout_word(uint row, uint slot)
@@ -428,6 +424,27 @@ uint resolve_expr(uint node)
     return valid_node(node) ? x86_expr_resolved_node[node] : INVALID;
 }
 
+bool path_literal_value_node(uint node)
+{
+    if (!valid_node(node) || hir_kind[node] != HIR_PATH_EXPR)
+        return false;
+
+    uint path_i = path_id_by_owner_hir[node];
+    if (path_i >= active_path_count() ||
+        resolved_value_status[path_i] != PATH_RESOLVE_STATUS_OK)
+        return false;
+
+    uint decl_i = resolved_value_decl[path_i];
+    if (decl_i >= gParams.n_hir_nodes)
+        return false;
+
+    uint decl_token = decl_name_token[decl_i];
+    if (!valid_token(decl_token))
+        return false;
+
+    return x86_const_value_record[decl_token].x == X86_CONST_VALUE_LITERAL;
+}
+
 bool expression_form_has_value_instr(uint form)
 {
     return form == HIR_EXPR_NAME ||
@@ -468,13 +485,22 @@ bool has_intrinsic_call_record(uint node)
     return call != INVALID && (call & X86_INTRINSIC_TAG_MASK) != 0u;
 }
 
+bool enum_value_record_is_supported(uint2 record)
+{
+    if (record.x == INVALID || record.y == INVALID)
+        return false;
+
+    uint kind = record.x & X86_ENUM_VALUE_KIND_MASK;
+    uint payload_count = record.x >> X86_ENUM_VALUE_KIND_BITS;
+    return (kind == X86_ENUM_VALUE_UNIT_CTOR && payload_count == 0u) ||
+           (kind == X86_ENUM_VALUE_CALL_CTOR && payload_count == 1u);
+}
+
 bool has_enum_value_record(uint node)
 {
     if (!has_enum_feature() || !valid_node(node))
         return false;
-    uint2 record = x86_enum_value_record[node];
-    uint kind = record.x & X86_ENUM_VALUE_KIND_MASK;
-    return kind == X86_ENUM_VALUE_CALL_CTOR || kind == X86_ENUM_VALUE_UNIT_CTOR;
+    return enum_value_record_is_supported(x86_enum_value_record[node]);
 }
 
 uint enum_value_store_count(uint node)
@@ -506,26 +532,6 @@ bool enum_value_node_for_expr(uint expr_node, out uint value_node, out uint widt
     return false;
 }
 
-bool node_span_contains(uint ancestor, uint node)
-{
-    if (!valid_node(ancestor) || !valid_node(node))
-        return false;
-    uint end = tree_subtree_end_record(ancestor);
-    return end != INVALID && ancestor <= node && node < end;
-}
-
-uint next_sibling_node(uint node)
-{
-    uint sibling;
-    return tree_child_next<X86NodeChildGraph>(node, sibling) ? sibling : INVALID;
-}
-
-uint first_child_node(uint node)
-{
-    uint child;
-    return tree_child_first<X86NodeChildGraph>(node, child) ? child : INVALID;
-}
-
 uint nth_match_arm_node(uint match_node, uint ordinal)
 {
     if (!has_match_feature() || !valid_node(match_node))
@@ -544,10 +550,7 @@ bool match_expr_is_return_value(uint match_node, out uint return_node)
     if (!valid_node(match_node))
         return false;
     return_node = x86_match_return_node[match_node];
-    if (!valid_node(return_node) || stmt_slot(return_node, 0u) != STMT_RECORD_KIND_RETURN)
-        return false;
-    uint return_expr = stmt_slot(return_node, 1u);
-    return node_span_contains(return_expr, match_node);
+    return valid_node(return_node) && stmt_slot(return_node, 0u) == STMT_RECORD_KIND_RETURN;
 }
 
 bool supported_return_match(uint match_node)
@@ -591,12 +594,6 @@ bool match_return_arm_value_node(uint node)
            valid_node(x86_match_result_value_owner[node]);
 }
 
-bool node_precedes_struct_literal(uint node)
-{
-    uint sibling = next_sibling_node(node);
-    return valid_node(sibling) && hir_kind[sibling] == HIR_STRUCT_LITERAL_EXPR;
-}
-
 uint array_literal_node_for_expr(uint expr_node)
 {
     uint node = resolve_expr(expr_node);
@@ -605,23 +602,12 @@ uint array_literal_node_for_expr(uint expr_node)
     return INVALID;
 }
 
-uint struct_literal_node_for_expr(uint expr_node)
+uint struct_literal_record_node_for_expr(uint expr_node)
 {
     uint node = resolve_expr(expr_node);
-    if (!valid_node(node))
-        return INVALID;
-    if (hir_kind[node] == HIR_STRUCT_LITERAL_EXPR)
-        return node;
-    if (hir_kind[node] != HIR_NAME_EXPR)
-        return INVALID;
-
-    uint sibling = next_sibling_node(node);
-    if (valid_node(sibling) && hir_kind[sibling] == HIR_STRUCT_LITERAL_EXPR)
-        return sibling;
-
-    uint child = first_child_node(node);
-    sibling = next_sibling_node(child);
-    return valid_node(sibling) && hir_kind[sibling] == HIR_STRUCT_LITERAL_EXPR ? sibling : INVALID;
+    return valid_node(node) && struct_access_kind(node) == X86_STRUCT_ACCESS_LITERAL
+        ? node
+        : INVALID;
 }
 
 bool decl_array_len(uint decl_token, out uint len)
@@ -662,6 +648,26 @@ bool decl_is_aggregate(uint decl_token)
 {
     uint width = 0u;
     return decl_aggregate_width(decl_token, width);
+}
+
+bool for_iterable_has_array_layout(uint node)
+{
+    if (!node_is_stmt_kind(node, STMT_RECORD_KIND_FOR))
+        return false;
+
+    uint iterable_node = x86_for_iterable_node[node];
+    if (!valid_node(iterable_node))
+        return false;
+
+    uint iterable_token = expr_value_token(iterable_node);
+    if (!valid_token(iterable_token))
+        return false;
+
+    uint decl_token = visible_decl[iterable_token];
+    return valid_token(decl_token) &&
+           decl_layout_base(decl_token) != INVALID &&
+           decl_layout_kind(decl_token) == X86_DECL_AGG_ARRAY &&
+           decl_layout_width(decl_token) != 0u;
 }
 
 bool name_expr_is_aggregate_local(uint node)
@@ -738,12 +744,10 @@ bool array_literal_width(uint expr_node, out uint width)
 bool struct_literal_width(uint expr_node, out uint width)
 {
     width = 0u;
-    uint literal_node = struct_literal_node_for_expr(expr_node);
-    if (!valid_node(literal_node))
+    uint record_node = struct_literal_record_node_for_expr(expr_node);
+    if (!valid_node(record_node))
         return false;
-    if (struct_access_kind(literal_node) != X86_STRUCT_ACCESS_LITERAL)
-        return false;
-    width = struct_access_payload0(literal_node);
+    width = struct_access_payload0(record_node);
     return width > 1u;
 }
 
@@ -766,23 +770,13 @@ bool aggregate_return_width(uint return_node, out uint width)
 bool enum_value_belongs_to_aggregate_return(uint node)
 {
     uint return_node = valid_node(node) ? x86_enclosing_return_node[node] : INVALID;
-    if (!valid_node(return_node) || stmt_slot(return_node, 0u) != STMT_RECORD_KIND_RETURN)
-        return false;
-    uint expr_node = stmt_slot(return_node, 1u);
-    return node_span_contains(expr_node, node);
+    return valid_node(return_node) && stmt_slot(return_node, 0u) == STMT_RECORD_KIND_RETURN;
 }
 
 bool is_struct_literal_head_node(uint node)
 {
     node = resolve_expr(node);
-    if (!valid_node(node) || hir_kind[node] != HIR_NAME_EXPR)
-        return false;
-
-    if (node_precedes_struct_literal(node))
-        return true;
-
-    uint child = first_child_node(node);
-    return node_precedes_struct_literal(child);
+    return valid_node(node) && struct_access_kind(node) == X86_STRUCT_ACCESS_LITERAL;
 }
 
 bool array_element_store_for_value_node(uint node, out uint decl_token, out uint ordinal)
@@ -843,69 +837,106 @@ bool is_call_callee_node(uint node)
         return false;
     if (x86_call_callee_owner_call[node] != 0u)
         return true;
-    uint first_child = tree_first_child_record(node);
-    if (valid_node(first_child) && x86_call_callee_owner_call[first_child] != 0u)
-        return true;
     uint resolved = resolve_expr(node);
     return valid_node(resolved) && x86_call_callee_owner_call[resolved] != 0u;
+}
+
+bool member_receiver_has_supported_aggregate_source(uint member_node)
+{
+    if (!valid_node(member_node) || struct_access_kind(member_node) != X86_STRUCT_ACCESS_MEMBER)
+        return false;
+
+    uint receiver_node = struct_access_payload0(member_node);
+    uint ordinal = struct_access_payload1(member_node);
+    uint width = 0u;
+    return valid_node(receiver_node) &&
+           ordinal != INVALID &&
+           name_expr_aggregate_width(receiver_node, width) &&
+           ordinal < width;
 }
 
 bool member_field_expr_has_value(uint node)
 {
     if (!valid_node(node) || hir_kind[node] != HIR_MEMBER_EXPR || is_call_callee_node(node))
         return false;
-    return struct_access_kind(node) == X86_STRUCT_ACCESS_MEMBER &&
-           valid_node(struct_access_payload0(node)) &&
-           struct_access_payload1(node) != INVALID;
+    return member_receiver_has_supported_aggregate_source(node);
+}
+
+bool unsupported_aggregate_temporary_member(uint node)
+{
+    if (!valid_node(node) || hir_kind[node] != HIR_MEMBER_EXPR || is_call_callee_node(node))
+        return false;
+    if (struct_access_kind(node) != X86_STRUCT_ACCESS_MEMBER ||
+        !valid_node(struct_access_payload0(node)) ||
+        struct_access_payload1(node) == INVALID)
+        return false;
+    return !member_receiver_has_supported_aggregate_source(node);
+}
+
+uint aggregate_temporary_member_detail(uint member_node)
+{
+    uint receiver = valid_node(member_node) ? struct_access_payload0(member_node) : INVALID;
+    uint resolved = valid_node(receiver) ? resolve_expr(receiver) : INVALID;
+    if (valid_node(resolved))
+        return resolved;
+    if (valid_node(receiver))
+        return receiver;
+    return member_node;
+}
+
+void publish_aggregate_temporary_member_error(uint node)
+{
+    publish_stage_error_min_detail4(
+        x86_node_inst_count_status,
+        X86_ERR_AGGREGATE_TEMPORARY_MEMBER,
+        aggregate_temporary_member_detail(node));
 }
 
 uint branch_padding_count(uint node)
 {
-    uint parent = tree_parent_record(node);
-    uint match_padding = 0u;
-    if (match_return_arm_value_node(node))
-        match_padding += 1u;
-    if (!valid_node(parent))
-        return match_padding;
-
-    uint parent_kind = hir_kind[parent];
-    if (parent_kind == HIR_MATCH_EXPR && supported_return_match(parent))
-    {
-        uint4 match_record = x86_match_record[parent];
-        if (match_record.x == node)
-            match_padding += 1u;
-    }
-    if (parent_kind == HIR_IF_STMT && stmt_slot(parent, 0u) == STMT_RECORD_KIND_IF)
-    {
-        if (stmt_slot(parent, 1u) == node)
-            return match_padding + 1u;
-        if (stmt_slot(parent, 2u) == node && valid_node(stmt_slot(parent, 3u)))
-            return match_padding + 1u;
-    }
-    if (parent_kind == HIR_WHILE_STMT && stmt_slot(parent, 0u) == STMT_RECORD_KIND_WHILE)
-    {
-        if (stmt_slot(parent, 1u) == node)
-            return match_padding + 1u;
-        if (stmt_slot(parent, 2u) == node)
-            return match_padding + 1u;
-    }
-    if (parent_kind == HIR_FOR_STMT && stmt_slot(parent, 0u) == STMT_RECORD_KIND_FOR)
-    {
-        if (tree_first_child_record(parent) == node)
-            return match_padding + 3u;
-        if (stmt_slot(parent, 3u) == node)
-            return match_padding + 1u;
-    }
-
-    return match_padding;
+    return control_role_padding(node);
 }
 
-void publish_upstream_error(uint node)
+uint upstream_error_code()
+{
+    if (x86_node_tree_status[1u] != 0u)
+        return x86_node_tree_status[1u];
+    if (x86_decl_layout_status[1u] != 0u)
+        return x86_decl_layout_status[1u];
+    if (call_record_status[1u] != 0u)
+        return call_record_status[1u];
+    if (x86_intrinsic_call_status[1u] != 0u)
+        return x86_intrinsic_call_status[1u];
+    if (x86_enum_record_status[1u] != 0u)
+        return x86_enum_record_status[1u];
+    if (x86_struct_record_status[1u] != 0u)
+        return x86_struct_record_status[1u];
+    return X86_ERR_NODE_INST_COUNTS;
+}
+
+uint upstream_error_detail()
+{
+    if (x86_node_tree_status[1u] != 0u)
+        return x86_node_tree_status[2u];
+    if (x86_decl_layout_status[1u] != 0u)
+        return x86_decl_layout_status[2u];
+    if (call_record_status[1u] != 0u)
+        return call_record_status[2u];
+    if (x86_intrinsic_call_status[1u] != 0u)
+        return x86_intrinsic_call_status[2u];
+    if (x86_enum_record_status[1u] != 0u)
+        return x86_enum_record_status[2u];
+    if (x86_struct_record_status[1u] != 0u)
+        return x86_struct_record_status[2u];
+    return 0u;
+}
+
+void publish_upstream_error()
 {
     publish_stage_error_min_detail4(
         x86_node_inst_count_status,
-        X86_ERR_NODE_INST_COUNTS,
-        node);
+        upstream_error_code(),
+        upstream_error_detail());
 }
 
 void write_count(uint node, uint count, uint kind, uint payload)
@@ -926,6 +957,70 @@ void write_count(uint node, uint count, uint kind, uint payload)
         increment_stage_count4(x86_node_inst_count_status, 1u);
 }
 
+void publish_aggregate_copy_width_error(uint node)
+{
+    publish_stage_error_min_detail4(
+        x86_node_inst_count_status,
+        X86_ERR_AGG_COPY_WIDTH,
+        node);
+}
+
+uint postfix_diagnostic_node(uint node)
+{
+    uint resolved = resolve_expr(node);
+    if (valid_node(resolved))
+        return resolved;
+    return node;
+}
+
+bool postfix_expr_is_incdec(uint node)
+{
+    if (!valid_node(node) || hir_kind[node] != HIR_POSTFIX_EXPR)
+        return false;
+    uint resolved = resolve_expr(node);
+    return valid_node(resolved) && hir_kind[resolved] == HIR_UNARY_EXPR;
+}
+
+void publish_postfix_expr_error(uint node)
+{
+    publish_stage_error_min_detail4(
+        x86_node_inst_count_status,
+        X86_ERR_POSTFIX_EXPR,
+        postfix_diagnostic_node(node));
+}
+
+bool unsupported_unary_expr(uint node)
+{
+    return valid_node(node) &&
+           hir_kind[node] == HIR_UNARY_EXPR &&
+           expr_form(node) == HIR_EXPR_NONE &&
+           !valid_node(x86_postfix_operand_owner[node]);
+}
+
+void publish_unsupported_unary_expr_error(uint node)
+{
+    publish_stage_error_min_detail4(
+        x86_node_inst_count_status,
+        X86_ERR_UNSUPPORTED_UNARY_EXPR,
+        node);
+}
+
+void publish_unsupported_match_expr_error(uint node)
+{
+    publish_stage_error_min_detail4(
+        x86_node_inst_count_status,
+        X86_ERR_UNSUPPORTED_MATCH_EXPR,
+        node);
+}
+
+void publish_for_iterable_error(uint node)
+{
+    publish_stage_error_min_detail4(
+        x86_node_inst_count_status,
+        X86_ERR_FOR_ITERABLE,
+        node);
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
@@ -934,32 +1029,49 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (!upstream_ok())
     {
         if (node == 0u)
-            publish_upstream_error(node);
+            publish_upstream_error();
         return;
     }
 
     if (!valid_node(node))
         return;
 
-    uint tree_parent = tree_parent_record(node);
     if (!valid_node(x86_node_func[node]))
     {
-        write_count(node, 0u, X86_NODE_INST_NONE, tree_parent);
+        write_count(node, 0u, X86_NODE_INST_NONE, INVALID);
         return;
     }
 
     uint kind = hir_kind[node];
     uint padding = branch_padding_count(node);
 
+    if (postfix_expr_is_incdec(node))
+    {
+        publish_postfix_expr_error(node);
+        return;
+    }
+
+    if (unsupported_unary_expr(node))
+    {
+        publish_unsupported_unary_expr_error(node);
+        return;
+    }
+
+    if (unsupported_aggregate_temporary_member(node))
+    {
+        publish_aggregate_temporary_member_error(node);
+        return;
+    }
+
     if (scalar_param_decl_node(node))
     {
-        write_count(node, 2u + padding, X86_NODE_INST_EXPR_VALUE, tree_parent);
+        write_count(node, 2u + padding, X86_NODE_INST_EXPR_VALUE, INVALID);
         return;
     }
 
     if (node_belongs_to_match_pattern(node))
     {
-        write_count(node, padding, padding == 0u ? X86_NODE_INST_NONE : X86_NODE_INST_PADDING, tree_parent);
+        write_count(node, padding, padding == 0u ? X86_NODE_INST_NONE : X86_NODE_INST_PADDING, INVALID);
         return;
     }
 
@@ -969,14 +1081,20 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
     }
 
+    if (kind == HIR_MATCH_EXPR && has_match_feature())
+    {
+        publish_unsupported_match_expr_error(node);
+        return;
+    }
+
     if (kind == HIR_CALL_EXPR && has_enum_value_record(node))
     {
         if (enum_value_belongs_to_aggregate_return(node))
         {
-            write_count(node, padding, padding == 0u ? X86_NODE_INST_NONE : X86_NODE_INST_PADDING, tree_parent);
+            write_count(node, padding, padding == 0u ? X86_NODE_INST_NONE : X86_NODE_INST_PADDING, INVALID);
             return;
         }
-        write_count(node, enum_value_store_count(node) + padding, X86_NODE_INST_CALL_VALUE, tree_parent);
+        write_count(node, enum_value_store_count(node) + padding, X86_NODE_INST_CALL_VALUE, INVALID);
         return;
     }
 
@@ -984,55 +1102,74 @@ void main(uint3 tid: SV_DispatchThreadID)
     {
         uint extra_store = aggregate_element_store_count(node);
         uint payload_row = has_call_record(node) ? 1u : 0u;
-        write_count(node, 1u + payload_row + extra_store + padding, X86_NODE_INST_CALL_VALUE, tree_parent);
+        write_count(node, 1u + payload_row + extra_store + padding, X86_NODE_INST_CALL_VALUE, INVALID);
         return;
     }
 
-    if (stmt_slot(node, 0u) == STMT_RECORD_KIND_RETURN)
+    if (node_is_stmt_kind(node, STMT_RECORD_KIND_RETURN))
     {
         if (return_stmt_has_supported_match(node))
         {
-            write_count(node, padding, padding == 0u ? X86_NODE_INST_NONE : X86_NODE_INST_PADDING, tree_parent);
+            write_count(node, padding, padding == 0u ? X86_NODE_INST_NONE : X86_NODE_INST_PADDING, INVALID);
+            return;
+        }
+        if (!valid_node(stmt_slot(node, 1u)))
+        {
+            write_count(node, 2u + padding, X86_NODE_INST_TRANSFER, INVALID);
             return;
         }
         uint return_width = 0u;
-        uint transfer_count = aggregate_return_width(node, return_width) ? return_width + 1u : 1u;
+        if (aggregate_return_width(node, return_width) && return_width > X86_AGG_COPY_MAX_WIDTH)
+        {
+            publish_aggregate_copy_width_error(node);
+            return;
+        }
+        uint transfer_count = return_width > 0u ? return_width + 1u : 1u;
         write_count(node, transfer_count + padding, X86_NODE_INST_TRANSFER, stmt_slot(node, 1u));
         return;
     }
 
-    if (kind == HIR_IF_STMT && stmt_slot(node, 0u) == STMT_RECORD_KIND_IF)
+    if (node_is_stmt_kind(node, STMT_RECORD_KIND_IF))
     {
         write_count(node, 0u, X86_NODE_INST_BRANCH, stmt_slot(node, 1u));
         return;
     }
 
-    if (kind == HIR_WHILE_STMT && stmt_slot(node, 0u) == STMT_RECORD_KIND_WHILE)
+    if (node_is_stmt_kind(node, STMT_RECORD_KIND_WHILE))
     {
         write_count(node, 0u, X86_NODE_INST_LOOP, stmt_slot(node, 1u));
         return;
     }
 
-    if ((kind == HIR_FOR_STMT || kind == HIR_STMT) && stmt_slot(node, 0u) == STMT_RECORD_KIND_FOR)
+    if (node_is_stmt_kind(node, STMT_RECORD_KIND_FOR))
     {
+        if (!for_iterable_has_array_layout(node))
+        {
+            publish_for_iterable_error(node);
+            return;
+        }
         write_count(node, padding, X86_NODE_INST_LOOP, stmt_slot(node, 2u));
         return;
     }
 
-    if ((kind == HIR_LET_STMT || kind == HIR_STMT) &&
-        (stmt_slot(node, 0u) == STMT_RECORD_KIND_LET ||
-         stmt_slot(node, 0u) == STMT_RECORD_KIND_CONST))
+    if (node_is_stmt_kind(node, STMT_RECORD_KIND_LET) ||
+        (kind == HIR_STMT && stmt_slot(node, 0u) == STMT_RECORD_KIND_CONST))
     {
         uint copy_width = 0u;
         if (aggregate_let_copy_width(node, copy_width))
         {
+            if (copy_width > X86_AGG_COPY_MAX_WIDTH)
+            {
+                publish_aggregate_copy_width_error(node);
+                return;
+            }
             write_count(node, copy_width * 2u + padding, X86_NODE_INST_STMT_VALUE, stmt_slot(node, 2u));
             return;
         }
 
         if (decl_is_aggregate(stmt_slot(node, 1u)))
         {
-            write_count(node, padding, padding == 0u ? X86_NODE_INST_NONE : X86_NODE_INST_PADDING, tree_parent);
+            write_count(node, padding, padding == 0u ? X86_NODE_INST_NONE : X86_NODE_INST_PADDING, INVALID);
             return;
         }
         write_count(node, 1u + padding, X86_NODE_INST_STMT_VALUE, stmt_slot(node, 2u));
@@ -1049,14 +1186,14 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     if (kind == HIR_BREAK_STMT || kind == HIR_CONTINUE_STMT)
     {
-        write_count(node, 1u + padding, X86_NODE_INST_TRANSFER, tree_parent);
+        write_count(node, 1u + padding, X86_NODE_INST_TRANSFER, INVALID);
         return;
     }
 
     if (kind == HIR_INDEX_EXPR)
     {
         uint extra_store = aggregate_element_store_count(node);
-        write_count(node, 1u + extra_store + padding, X86_NODE_INST_EXPR_VALUE, tree_parent);
+        write_count(node, 1u + extra_store + padding, X86_NODE_INST_EXPR_VALUE, INVALID);
         return;
     }
 
@@ -1065,10 +1202,17 @@ void main(uint3 tid: SV_DispatchThreadID)
         if (member_field_expr_has_value(node))
         {
             uint extra_store = aggregate_element_store_count(node);
-            write_count(node, 1u + extra_store + padding, X86_NODE_INST_EXPR_VALUE, tree_parent);
+            write_count(node, 1u + extra_store + padding, X86_NODE_INST_EXPR_VALUE, INVALID);
             return;
         }
-        write_count(node, padding, padding == 0u ? X86_NODE_INST_NONE : X86_NODE_INST_PADDING, tree_parent);
+        write_count(node, padding, padding == 0u ? X86_NODE_INST_NONE : X86_NODE_INST_PADDING, INVALID);
+        return;
+    }
+
+    if (kind == HIR_PATH_EXPR && !is_call_callee_node(node) && path_literal_value_node(node))
+    {
+        uint extra_store = aggregate_element_store_count(node);
+        write_count(node, 1u + extra_store + padding, X86_NODE_INST_EXPR_VALUE, INVALID);
         return;
     }
 
@@ -1084,25 +1228,25 @@ void main(uint3 tid: SV_DispatchThreadID)
         {
             if (enum_value_belongs_to_aggregate_return(node))
             {
-                write_count(node, padding, padding == 0u ? X86_NODE_INST_NONE : X86_NODE_INST_PADDING, tree_parent);
+                write_count(node, padding, padding == 0u ? X86_NODE_INST_NONE : X86_NODE_INST_PADDING, INVALID);
                 return;
             }
-            write_count(node, enum_value_store_count(node) + padding, X86_NODE_INST_EXPR_VALUE, tree_parent);
+            write_count(node, enum_value_store_count(node) + padding, X86_NODE_INST_EXPR_VALUE, INVALID);
             return;
         }
         if (is_call_callee_node(node))
         {
-            write_count(node, padding, padding == 0u ? X86_NODE_INST_NONE : X86_NODE_INST_PADDING, tree_parent);
+            write_count(node, padding, padding == 0u ? X86_NODE_INST_NONE : X86_NODE_INST_PADDING, INVALID);
             return;
         }
         if (is_struct_literal_head_node(node))
         {
-            write_count(node, padding, padding == 0u ? X86_NODE_INST_NONE : X86_NODE_INST_PADDING, tree_parent);
+            write_count(node, padding, padding == 0u ? X86_NODE_INST_NONE : X86_NODE_INST_PADDING, INVALID);
             return;
         }
         if (name_expr_is_aggregate_local(node))
         {
-            write_count(node, padding, padding == 0u ? X86_NODE_INST_NONE : X86_NODE_INST_PADDING, tree_parent);
+            write_count(node, padding, padding == 0u ? X86_NODE_INST_NONE : X86_NODE_INST_PADDING, INVALID);
             return;
         }
         uint extra_store = aggregate_element_store_count(node);
@@ -1112,9 +1256,9 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     if (padding != 0u)
     {
-        write_count(node, padding, X86_NODE_INST_PADDING, tree_parent);
+        write_count(node, padding, X86_NODE_INST_PADDING, INVALID);
         return;
     }
 
-    write_count(node, 0u, X86_NODE_INST_NONE, tree_parent);
+    write_count(node, 0u, X86_NODE_INST_NONE, INVALID);
 }

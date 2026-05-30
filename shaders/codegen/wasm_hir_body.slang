@@ -1,11 +1,11 @@
 // Record-driven WASM function-body emitter for the scalar main slice.
 //
-// This pass consumes GPU-owned HIR, statement, expression, resolver, and
-// intrinsic records. It does not read token records, source bytes, token
-// spelling, helper names, or function-body text shapes.
+// This pass consumes GPU-owned HIR, parser-published statement/expression
+// relation rows, resolver records, and intrinsic records. It does not read
+// token records, source bytes, token spelling, helper names, or function-body
+// text shapes.
 
 import gpu_index;
-import tree_walk;
 
 struct Params
 {
@@ -22,13 +22,20 @@ StructuredBuffer<uint> parent;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_token_end;
+StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> fn_entrypoint_tag;
+StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint2> wasm_const_value_record;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_expr_int_value;
 StructuredBuffer<uint> hir_call_callee_node;
+StructuredBuffer<uint> hir_call_context_stmt_node;
+StructuredBuffer<uint> hir_nearest_stmt_node;
+StructuredBuffer<uint> hir_nearest_block_node;
+StructuredBuffer<uint> hir_nearest_enclosing_control_node;
 StructuredBuffer<uint> hir_call_arg_start;
 StructuredBuffer<uint> hir_call_arg_count;
 StructuredBuffer<uint> call_intrinsic_tag;
@@ -50,6 +57,7 @@ static const uint HIR_WHILE_STMT = 11u;
 static const uint HIR_BREAK_STMT = 12u;
 static const uint HIR_CONTINUE_STMT = 13u;
 static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_FOR_STMT = 30u;
 static const uint HIR_MATCH_EXPR = 34u;
 
 static const uint ENTRYPOINT_MAIN = 1u;
@@ -82,7 +90,6 @@ static const uint EXPR_RECORD_LEFT = 1u;
 static const uint EXPR_RECORD_RIGHT = 2u;
 static const uint EXPR_RECORD_VALUE_TOKEN = 3u;
 
-static const uint HIR_EXPR_FORWARD = 1u;
 static const uint HIR_EXPR_NAME = 2u;
 static const uint HIR_EXPR_INT = 3u;
 static const uint HIR_EXPR_TRUE = 4u;
@@ -118,10 +125,14 @@ static const uint NEXT_STATEMENT_ASSIGN = 2u;
 static const uint NEXT_STATEMENT_PRINT = 3u;
 static const uint NEXT_STATEMENT_IF = 4u;
 
+static const uint ERR_UNSUPPORTED_SOURCE_SHAPE = 1u;
+static const uint ERR_UNSUPPORTED_FOR_LOOP = 2u;
+
 bool module_already_emitted()
 {
     return status[1u] == 1u || status[1u] == 2u || status[1u] == 3u ||
-           status[1u] == 5u;
+           status[1u] == 5u ||
+           (status[2u] != 0u && status[2u] != ERR_UNSUPPORTED_SOURCE_SHAPE);
 }
 
 uint linear_dispatch_id(uint3 tid)
@@ -144,83 +155,57 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
+bool function_decl_token_has_record(uint decl_token)
+{
+    return valid_token(decl_token) && call_fn_index[decl_token] == decl_token;
+}
+
+bool is_function_record_node(uint node)
+{
+    return valid_node(node) && hir_kind[node] == HIR_FN &&
+           function_decl_token_has_record(hir_token_pos[node]);
+}
+
 uint parent_node(uint node)
 {
     uint p = valid_node(node) ? parent[node] : INVALID;
     return valid_node(p) ? p : INVALID;
 }
 
-public struct WasmBodyWalkGraph : ITreeWalkGraph
-{
-    public static bool valid(uint node)
-    {
-        return valid_node(node);
-    }
-
-    public static uint parent(uint node)
-    {
-        return parent_node(node);
-    }
-}
-
-public struct WasmControlAncestorPredicate : ITreeWalkPredicate
-{
-    public static bool matches(uint node)
-    {
-        uint kind = hir_kind[node];
-        return kind == HIR_IF_STMT || kind == HIR_WHILE_STMT || kind == HIR_MATCH_EXPR;
-    }
-}
-
-public struct WasmStatementAncestorPredicate : ITreeWalkPredicate
-{
-    public static bool matches(uint node)
-    {
-        uint kind = hir_kind[node];
-        return kind == HIR_STMT || kind == HIR_LET_STMT || kind == HIR_RETURN_STMT ||
-               kind == HIR_IF_STMT || kind == HIR_WHILE_STMT || kind == HIR_BREAK_STMT ||
-               kind == HIR_CONTINUE_STMT;
-    }
-}
-
-public struct WasmBlockAncestorPredicate : ITreeWalkPredicate
-{
-    public static bool matches(uint node)
-    {
-        return hir_kind[node] == HIR_BLOCK;
-    }
-}
-
 uint nearest_control_ancestor(uint node)
 {
-    uint found;
-    return find_ancestor<WasmBodyWalkGraph, WasmControlAncestorPredicate>(
-        node,
-        96u,
-        found) ? found : INVALID;
+    if (!valid_node(node))
+        return INVALID;
+    uint control = hir_nearest_enclosing_control_node[node];
+    return valid_node(control) ? control : INVALID;
 }
 
-bool has_ancestor(uint node, uint ancestor)
+bool node_in_function(uint node, uint fn_node)
 {
-    return has_self_or_ancestor_node<WasmBodyWalkGraph>(node, ancestor, 128u);
+    if (!valid_node(node) || !valid_node(fn_node))
+        return false;
+    uint node_token = hir_token_pos[node];
+    uint fn_token = hir_token_pos[fn_node];
+    if (!valid_token(node_token) || !valid_token(fn_token))
+        return false;
+    uint encoded_fn = enclosing_fn[node_token];
+    return encoded_fn != 0u && encoded_fn - 1u == fn_token;
 }
 
 uint nearest_hir_statement(uint node)
 {
-    uint found;
-    return find_self_or_ancestor<WasmBodyWalkGraph, WasmStatementAncestorPredicate>(
-        node,
-        96u,
-        found) ? found : INVALID;
+    if (!valid_node(node))
+        return INVALID;
+    uint stmt = hir_nearest_stmt_node[node];
+    return valid_node(stmt) ? stmt : INVALID;
 }
 
 uint nearest_hir_block(uint node)
 {
-    uint found;
-    return find_self_or_ancestor<WasmBodyWalkGraph, WasmBlockAncestorPredicate>(
-        node,
-        96u,
-        found) ? found : INVALID;
+    if (!valid_node(node))
+        return INVALID;
+    uint block = hir_nearest_block_node[node];
+    return valid_node(block) ? block : INVALID;
 }
 
 uint stmt_slot(uint node, uint slot)
@@ -286,6 +271,14 @@ uint expr_value_token(uint node)
                      EXPR_RECORD_VALUE_TOKEN,
                      INVALID)
                : INVALID;
+}
+
+uint result_expr(uint node)
+{
+    if (!valid_node(node))
+        return INVALID;
+    uint root = hir_expr_result_root_node[node];
+    return valid_node(root) ? root : INVALID;
 }
 
 void put_body(uint pos, uint value, bool write, uint target)
@@ -368,7 +361,7 @@ uint find_main_fn_node()
     [loop]
     for (uint i = 0u; i < count; i += 1u)
     {
-        if (hir_kind[i] != HIR_FN)
+        if (!is_function_record_node(i))
             continue;
         bool tagged = fn_entrypoint_tag[i] == ENTRYPOINT_MAIN;
         if (!tagged)
@@ -387,7 +380,7 @@ uint find_return_node(uint fn_node)
     [loop]
     for (uint i = 0u; i < count; i += 1u)
     {
-        if (hir_kind[i] != HIR_RETURN_STMT || !has_ancestor(i, fn_node))
+        if (hir_kind[i] != HIR_RETURN_STMT || !node_in_function(i, fn_node))
             continue;
         if (stmt_record(i, STMT_RECORD_KIND) != STMT_RECORD_KIND_RETURN)
             continue;
@@ -405,21 +398,52 @@ bool unsupported_control_flow_before(uint fn_node, uint boundary_pos)
     for (uint i = 0u; i < count; i += 1u)
     {
         uint pos = hir_token_pos[i];
-        if (pos == INVALID || pos >= boundary_pos || !has_ancestor(i, fn_node))
+        if (pos == INVALID || pos >= boundary_pos || !node_in_function(i, fn_node))
             continue;
         uint kind = hir_kind[i];
         if (kind == HIR_WHILE_STMT || kind == HIR_BREAK_STMT ||
-            kind == HIR_CONTINUE_STMT || kind == HIR_MATCH_EXPR)
+            kind == HIR_CONTINUE_STMT || kind == HIR_FOR_STMT ||
+            kind == HIR_MATCH_EXPR)
             return true;
     }
     return false;
+}
+
+bool unsupported_for_loop_before(uint fn_node, uint boundary_pos, out uint token_i)
+{
+    token_i = INVALID;
+    uint count = active_hir_node_count();
+    [loop]
+    for (uint i = 0u; i < count; i += 1u)
+    {
+        uint pos = hir_token_pos[i];
+        if (pos == INVALID || pos >= boundary_pos || !node_in_function(i, fn_node))
+            continue;
+        if (hir_kind[i] != HIR_FOR_STMT)
+            continue;
+        token_i = pos;
+        return true;
+    }
+    return false;
+}
+
+void record_hir_body_reject(uint code, uint detail, uint target)
+{
+    if (target != 0u || code == 0u)
+        return;
+    uint existing = status[2u];
+    if (existing != 0u && existing != ERR_UNSUPPORTED_SOURCE_SHAPE && existing != code)
+        return;
+    status[1u] = 0u;
+    status[2u] = code;
+    status[3u] = detail;
 }
 
 bool is_print_call_statement(uint call_node)
 {
     if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
         return false;
-    uint stmt = nearest_hir_statement(call_node);
+    uint stmt = hir_call_context_stmt_node[call_node];
     if (!valid_node(stmt) || hir_kind[stmt] != HIR_STMT)
         return false;
     uint callee = hir_call_callee_node[call_node];
@@ -444,17 +468,8 @@ uint local_index_for_decl_token(uint decl_token, inout uint local_decl_tokens[MA
 uint local_index_for_name_expr(uint node, inout uint local_decl_tokens[MAX_LOCAL_COUNT],
                                uint local_count)
 {
-    uint cur = node;
+    uint cur = result_expr(node);
     uint form = expr_form(cur);
-    [loop]
-    for (uint guard = 0u; guard < 64u && form == HIR_EXPR_FORWARD; guard += 1u)
-    {
-        cur = expr_left(cur);
-        if (!valid_node(cur))
-            return INVALID;
-        form = expr_form(cur);
-    }
-
     if (form != HIR_EXPR_NAME)
         return INVALID;
     uint value_token = expr_value_token(cur);
@@ -481,7 +496,7 @@ bool collect_locals(uint fn_node, uint boundary_pos,
     {
         uint pos = hir_token_pos[i];
         if (hir_kind[i] != HIR_LET_STMT || pos == INVALID || pos >= boundary_pos ||
-            !has_ancestor(i, fn_node))
+            !node_in_function(i, fn_node))
             continue;
         if (stmt_record(i, STMT_RECORD_KIND) != STMT_RECORD_KIND_LET)
             return false;
@@ -608,16 +623,10 @@ bool emit_expr_node(inout uint cursor, uint root,
         uint node = node_stack[stack_top];
         uint state = state_stack[stack_top];
 
+        node = result_expr(node);
+        if (!valid_node(node))
+            return false;
         uint form = expr_form(node);
-        [loop]
-        for (uint forward_guard = 0u; forward_guard < 64u && form == HIR_EXPR_FORWARD;
-             forward_guard += 1u)
-        {
-            node = expr_left(node);
-            if (!valid_node(node))
-                return false;
-            form = expr_form(node);
-        }
 
         if (state == 1u)
         {
@@ -762,7 +771,7 @@ bool classify_statement_candidate(uint candidate, bool allow_if, out uint node, 
 
 bool candidate_in_top_sequence(uint candidate, uint fn_node)
 {
-    if (!has_ancestor(candidate, fn_node))
+    if (!node_in_function(candidate, fn_node))
         return false;
     uint stmt = nearest_hir_statement(candidate);
     if (!valid_node(stmt))
@@ -906,14 +915,26 @@ bool emit_if_stmt(inout uint cursor, uint if_node,
     return true;
 }
 
-bool emit_main_body(out uint body_len, bool write, uint target)
+bool emit_main_body(out uint body_len, out uint reject_code, out uint reject_detail,
+                    bool write, uint target)
 {
     body_len = 0u;
+    reject_code = 0u;
+    reject_detail = INVALID;
     uint fn_node = find_main_fn_node();
     uint ret_node = valid_node(fn_node) ? find_return_node(fn_node) : INVALID;
     uint ret_pos = valid_node(ret_node) ? hir_token_pos[ret_node] : INVALID;
-    if (!valid_node(fn_node) || !valid_node(ret_node) || ret_pos == INVALID ||
-        unsupported_control_flow_before(fn_node, ret_pos))
+    if (!valid_node(fn_node) || !valid_node(ret_node) || ret_pos == INVALID)
+        return false;
+
+    uint for_token = INVALID;
+    if (unsupported_for_loop_before(fn_node, ret_pos, for_token))
+    {
+        reject_code = ERR_UNSUPPORTED_FOR_LOOP;
+        reject_detail = for_token;
+        return false;
+    }
+    if (unsupported_control_flow_before(fn_node, ret_pos))
         return false;
 
     uint local_decl_tokens[MAX_LOCAL_COUNT];
@@ -964,12 +985,20 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     uint body_len = 0u;
-    if (!emit_main_body(body_len, false, target))
+    uint reject_code = 0u;
+    uint reject_detail = INVALID;
+    if (!emit_main_body(body_len, reject_code, reject_detail, false, target))
+    {
+        record_hir_body_reject(reject_code, reject_detail, target);
         return;
+    }
     if (body_len == 0u || body_len > gParams.out_capacity)
         return;
-    if (!emit_main_body(body_len, true, target))
+    if (!emit_main_body(body_len, reject_code, reject_detail, true, target))
+    {
+        record_hir_body_reject(reject_code, reject_detail, target);
         return;
+    }
 
     if (target == 0u)
     {

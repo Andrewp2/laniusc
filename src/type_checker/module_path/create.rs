@@ -75,6 +75,13 @@ pub(in crate::type_checker) fn create_with_passes(
         validate_modules,
         scatter_import_records,
         resolve_imports,
+        seed_import_edge_key_order,
+        import_edge_key_radix_dispatch,
+        sort_import_edge_key_histogram,
+        sort_import_edge_key_bucket_prefix,
+        sort_import_edge_key_bucket_bases,
+        sort_import_edge_key_scatter,
+        validate_import_cycles,
         mut retained_key_params,
     } = create_module_index(passes, device, layout, &inputs, &buffers)?;
     let ProjectionBindGroups {
@@ -90,6 +97,8 @@ pub(in crate::type_checker) fn create_with_passes(
         consume_value_consts,
         consume_value_enum_units,
         consume_value_enum_calls,
+        validate_value_enum_call_payloads,
+        finalize_value_enum_calls,
         bind_match_patterns,
         type_match_payloads,
         type_match_exprs,
@@ -133,6 +142,9 @@ pub(in crate::type_checker) fn create_with_passes(
         import_module_id,
         import_target_module_id,
         import_status,
+        import_edge_key_order,
+        import_edge_key_order_tmp,
+        import_edge_key_radix_dispatch_args,
         decl_module_file_id,
         decl_module_id,
         decl_name_token,
@@ -326,6 +338,7 @@ pub(in crate::type_checker) fn create_with_passes(
             ("path_count_out", path_count_out.as_entire_binding()),
             ("path_owner_hir", path_owner_hir.as_entire_binding()),
             ("hir_item_file_id", hir_items.file_id.as_entire_binding()),
+            ("module_count_out", module_count_out.as_entire_binding()),
             (
                 "module_id_by_file_id",
                 module_id_by_file_id.as_entire_binding(),
@@ -1249,62 +1262,83 @@ pub(in crate::type_checker) fn create_with_passes(
             &import_visible_validate_dispatch_args,
         )?;
 
-    let validate_import_visible_keys = bind_group::create_bind_group_from_bindings(
+    let import_visibility_mark_params = uniform_from_val(
         device,
-        Some("type_check_modules_09f_validate_import_visible_keys"),
-        &passes.modules_validate_import_visible_keys,
-        0,
-        &[
-            ("gParams", import_visibility_params.as_entire_binding()),
-            (
-                "import_visible_type_count_out",
-                import_visible_type_count_out.as_entire_binding(),
-            ),
-            (
-                "import_visible_type_key_module_id",
-                import_visible_type_key_module_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_type_key_name_id",
-                import_visible_type_key_name_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_type_key_to_decl_id",
-                import_visible_type_key_to_decl_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_value_count_out",
-                import_visible_value_count_out.as_entire_binding(),
-            ),
-            (
-                "import_visible_value_key_module_id",
-                import_visible_value_key_module_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_value_key_name_id",
-                import_visible_value_key_name_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_value_key_to_decl_id",
-                import_visible_value_key_to_decl_id.as_entire_binding(),
-            ),
-            (
-                "import_visible_type_status",
-                import_visible_type_status.as_entire_binding(),
-            ),
-            (
-                "import_visible_type_duplicate_of",
-                import_visible_type_duplicate_of.as_entire_binding(),
-            ),
-            (
-                "import_visible_value_status",
-                import_visible_value_status.as_entire_binding(),
-            ),
-            (
-                "import_visible_value_duplicate_of",
-                import_visible_value_duplicate_of.as_entire_binding(),
-            ),
-        ],
+        "type_check.modules.import_visibility.mark.params",
+        &ModuleKeyRadixParams {
+            module_capacity: record_capacity_u32,
+            reserved: import_visible_capacity_u32,
+            n_blocks,
+            key_step: 1,
+        },
+    );
+    let make_import_visible_validation_bind_group =
+        |label: &str, params: &LaniusBuffer<ModuleKeyRadixParams>| {
+            bind_group::create_bind_group_from_bindings(
+                device,
+                Some(label),
+                &passes.modules_validate_import_visible_keys,
+                0,
+                &[
+                    ("gParams", params.as_entire_binding()),
+                    (
+                        "import_visible_type_count_out",
+                        import_visible_type_count_out.as_entire_binding(),
+                    ),
+                    (
+                        "import_visible_type_key_module_id",
+                        import_visible_type_key_module_id.as_entire_binding(),
+                    ),
+                    (
+                        "import_visible_type_key_name_id",
+                        import_visible_type_key_name_id.as_entire_binding(),
+                    ),
+                    (
+                        "import_visible_type_key_to_decl_id",
+                        import_visible_type_key_to_decl_id.as_entire_binding(),
+                    ),
+                    (
+                        "import_visible_value_count_out",
+                        import_visible_value_count_out.as_entire_binding(),
+                    ),
+                    (
+                        "import_visible_value_key_module_id",
+                        import_visible_value_key_module_id.as_entire_binding(),
+                    ),
+                    (
+                        "import_visible_value_key_name_id",
+                        import_visible_value_key_name_id.as_entire_binding(),
+                    ),
+                    (
+                        "import_visible_value_key_to_decl_id",
+                        import_visible_value_key_to_decl_id.as_entire_binding(),
+                    ),
+                    (
+                        "import_visible_type_status",
+                        import_visible_type_status.as_entire_binding(),
+                    ),
+                    (
+                        "import_visible_type_duplicate_of",
+                        import_visible_type_duplicate_of.as_entire_binding(),
+                    ),
+                    (
+                        "import_visible_value_status",
+                        import_visible_value_status.as_entire_binding(),
+                    ),
+                    (
+                        "import_visible_value_duplicate_of",
+                        import_visible_value_duplicate_of.as_entire_binding(),
+                    ),
+                ],
+            )
+        };
+    let initialize_import_visible_keys = make_import_visible_validation_bind_group(
+        "type_check_modules_09f_validate_import_visible_keys.init",
+        &import_visibility_params,
+    )?;
+    let validate_import_visible_keys = make_import_visible_validation_bind_group(
+        "type_check_modules_09f_validate_import_visible_keys.mark",
+        &import_visibility_mark_params,
     )?;
 
     let resolve_local_type_paths = bind_group::create_bind_group_from_bindings(
@@ -1586,7 +1620,6 @@ pub(in crate::type_checker) fn create_with_passes(
             ("gParams", params.as_entire_binding()),
             ("decl_record_flag", decl_record_flag.as_entire_binding()),
             ("decl_record_prefix", decl_record_prefix.as_entire_binding()),
-            ("parent", hir_items.parent.as_entire_binding()),
             ("hir_item_file_id", hir_items.file_id.as_entire_binding()),
             (
                 "hir_item_name_token",
@@ -1600,6 +1633,10 @@ pub(in crate::type_checker) fn create_with_passes(
             (
                 "hir_item_visibility",
                 hir_items.visibility.as_entire_binding(),
+            ),
+            (
+                "hir_variant_parent_enum",
+                hir_items.variant_parent_enum.as_entire_binding(),
             ),
             ("name_id_by_token", name_id_by_token.as_entire_binding()),
             (
@@ -1672,12 +1709,16 @@ pub(in crate::type_checker) fn create_with_passes(
         _params: import_visibility_params,
     });
     retained_key_params.push(ModuleKeyRadixStep {
+        _params: import_visibility_mark_params,
+    });
+    retained_key_params.push(ModuleKeyRadixStep {
         _params: resolve_qualified_path_params,
     });
 
     Ok(State {
         n_blocks,
         record_n_blocks,
+        module_n_blocks,
         token_capacity,
         record_family_bits,
         record_family_flag,
@@ -1716,6 +1757,9 @@ pub(in crate::type_checker) fn create_with_passes(
         import_module_id,
         import_target_module_id,
         import_status,
+        import_edge_key_order,
+        import_edge_key_order_tmp,
+        import_edge_key_radix_dispatch_args,
         import_dispatch_args,
         decl_module_file_id,
         decl_module_id,
@@ -1850,6 +1894,13 @@ pub(in crate::type_checker) fn create_with_passes(
             sort_module_key_scatter,
             validate_modules,
             resolve_imports,
+            seed_import_edge_key_order,
+            import_edge_key_radix_dispatch,
+            sort_import_edge_key_histogram,
+            sort_import_edge_key_bucket_prefix,
+            sort_import_edge_key_bucket_bases,
+            sort_import_edge_key_scatter,
+            validate_import_cycles,
             clear_file_module_map,
             build_file_module_map,
             attach_record_modules,
@@ -1886,6 +1937,7 @@ pub(in crate::type_checker) fn create_with_passes(
             build_import_visible_type_key_table,
             build_import_visible_value_key_table,
             import_visible_validate_dispatch_args: import_visible_validate_dispatch_args_group,
+            initialize_import_visible_keys,
             validate_import_visible_keys,
             path_dispatch_args: path_dispatch_args_group,
             path_segment_dispatch_args: path_segment_dispatch_args_group,
@@ -1907,6 +1959,8 @@ pub(in crate::type_checker) fn create_with_passes(
             consume_value_consts,
             consume_value_enum_units,
             consume_value_enum_calls,
+            validate_value_enum_call_payloads,
+            finalize_value_enum_calls,
             bind_match_patterns,
             type_match_payloads,
             type_match_exprs,

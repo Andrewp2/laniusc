@@ -3,11 +3,12 @@
 // Scheduling contract:
 // - Dispatch after match-pattern binding and before the general scope/token
 //   validation passes.
-// - Use parser-owned HIR match-expression spans to walk arms and publish the
-//   expression result type in call_return_type[match_token].
+// - Use parser-owned match-arm owner/rank records to type arms independently
+//   and publish the expression result type in call_return_type[match_token].
 // - Arm-local names are consumed from the visible_decl/visible_type bindings
 //   produced by type_check_modules_10m_bind_match_patterns.slang.
 
+import atomics;
 import generated_parse_production_ids;
 import status;
 
@@ -26,12 +27,14 @@ StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> hir_struct_lit_head_node;
 StructuredBuffer<uint> hir_match_arm_start;
 StructuredBuffer<uint> hir_match_arm_count;
-StructuredBuffer<uint> hir_match_arm_next;
 StructuredBuffer<uint> hir_match_arm_result_node;
+StructuredBuffer<uint> hir_match_payload_match_node;
+StructuredBuffer<uint> hir_match_payload_ordinal;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 
@@ -53,11 +56,9 @@ static const uint HIR_MATCH_EXPR = 34u;
 
 static const uint HIR_EXPR_RECORD_STRIDE = 4u;
 static const uint HIR_EXPR_RECORD_FORM = 0u;
-static const uint HIR_EXPR_RECORD_LEFT = 1u;
 static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
 
 static const uint HIR_EXPR_NONE = 0u;
-static const uint HIR_EXPR_FORWARD = 1u;
 static const uint HIR_EXPR_NAME = 2u;
 static const uint HIR_EXPR_INT = 3u;
 static const uint HIR_EXPR_TRUE = 4u;
@@ -82,6 +83,7 @@ static const uint HIR_EXPR_BIT_XOR = 22u;
 static const uint HIR_EXPR_BIT_AND = 23u;
 static const uint HIR_EXPR_SHL = 24u;
 static const uint HIR_EXPR_SHR = 25u;
+static const uint HIR_EXPR_FLOAT = 27u;
 
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_BOOL = 2u;
@@ -130,11 +132,6 @@ uint expr_form(uint node)
     return valid_node(node) ? expr_record_slot(node, HIR_EXPR_RECORD_FORM) : HIR_EXPR_NONE;
 }
 
-uint expr_left(uint node)
-{
-    return valid_node(node) ? expr_record_slot(node, HIR_EXPR_RECORD_LEFT) : INVALID;
-}
-
 uint expr_value_token(uint node)
 {
     return valid_node(node) ? expr_record_slot(node, HIR_EXPR_RECORD_VALUE_TOKEN) : INVALID;
@@ -142,17 +139,10 @@ uint expr_value_token(uint node)
 
 uint resolve_expr(uint node)
 {
-    [loop]
-    for (uint guard = 0u; guard < 64u && valid_node(node); guard += 1u)
-    {
-        if (expr_form(node) != HIR_EXPR_FORWARD)
-            return node;
-        uint child = expr_left(node);
-        if (!valid_node(child))
-            return node;
-        node = child;
-    }
-    return node;
+    if (!valid_node(node))
+        return INVALID;
+    uint root = hir_expr_result_root_node[node];
+    return valid_node(root) ? root : node;
 }
 
 uint visible_type_for_token(uint token)
@@ -240,6 +230,8 @@ uint expr_type(uint result_node)
         return TY_BOOL;
     if (form == HIR_EXPR_INT)
         return TY_INT;
+    if (form == HIR_EXPR_FLOAT)
+        return TY_FLOAT;
     if (form == HIR_EXPR_NAME)
     {
         uint token = expr_value_token(node);
@@ -282,68 +274,78 @@ bool same_result_type(uint left, uint right)
     return left == right;
 }
 
-void type_match(uint match_node, uint match_i)
+void validate_match_node(uint match_node, uint match_i)
 {
     uint arm_i = hir_match_arm_start[match_node];
     uint arm_count = hir_match_arm_count[match_node];
     if (arm_count == 0u || !valid_node(arm_i))
     {
         record_error(match_i, ERR_BAD_HIR, HIR_MATCH_EXPR);
+    }
+
+    if (valid_node(arm_i) && hir_match_payload_match_node[arm_i] != match_node)
+        record_error(match_i, ERR_BAD_HIR, HIR_MATCH_EXPR);
+}
+
+void record_arm_bad_hir(uint arm_node)
+{
+    uint arm_i = hir_token_pos[arm_node];
+    record_error(valid_token(arm_i) ? arm_i : active_token_count(),
+                 ERR_BAD_HIR,
+                 HIR_MATCH_EXPR);
+}
+
+void publish_match_arm_type(uint arm_node)
+{
+    uint match_node = hir_match_payload_match_node[arm_node];
+    if (!valid_node(match_node) || hir_kind[match_node] != HIR_MATCH_EXPR)
+    {
+        record_arm_bad_hir(arm_node);
         return;
     }
 
-    uint result_ty = TY_UNKNOWN;
-    bool saw_arm = false;
-    [loop]
-    for (uint ordinal = 0u; ordinal < arm_count; ordinal += 1u)
+    uint match_i = hir_token_pos[match_node];
+    if (!valid_token(match_i))
     {
-        if (!valid_node(arm_i))
-        {
-            record_error(match_i, ERR_BAD_HIR, HIR_MATCH_EXPR);
-            return;
-        }
-
-        uint result_node = hir_match_arm_result_node[arm_i];
-        if (!valid_node(result_node))
-        {
-            record_error(match_i, ERR_BAD_HIR, HIR_MATCH_EXPR);
-            return;
-        }
-
-        uint result_start = hir_token_pos[result_node];
-        if (!valid_token(result_start))
-        {
-            record_error(match_i, ERR_BAD_HIR, HIR_MATCH_EXPR);
-            return;
-        }
-
-        uint arm_ty = expr_type(result_node);
-        if (arm_ty == TY_UNKNOWN)
-        {
-            record_error(result_start, ERR_BAD_HIR, HIR_MATCH_EXPR);
-            return;
-        }
-
-        if (!saw_arm)
-        {
-            result_ty = arm_ty;
-            saw_arm = true;
-        }
-        else if (!same_result_type(result_ty, arm_ty))
-        {
-            record_error(result_start, ERR_ASSIGN_MISMATCH, arm_ty);
-            return;
-        }
-
-        arm_i = hir_match_arm_next[arm_i];
+        record_error(active_token_count(), ERR_BAD_HIR, match_i);
+        return;
     }
 
-    if (!saw_arm || result_ty == TY_UNKNOWN)
+    uint ordinal = hir_match_payload_ordinal[arm_node];
+    if (ordinal >= hir_match_arm_count[match_node])
     {
         record_error(match_i, ERR_BAD_HIR, HIR_MATCH_EXPR);
         return;
     }
-    call_return_type[match_i] = result_ty;
+
+    uint result_node = hir_match_arm_result_node[arm_node];
+    if (!valid_node(result_node))
+    {
+        record_error(match_i, ERR_BAD_HIR, HIR_MATCH_EXPR);
+        return;
+    }
+
+    uint result_start = hir_token_pos[result_node];
+    if (!valid_token(result_start))
+    {
+        record_error(match_i, ERR_BAD_HIR, HIR_MATCH_EXPR);
+        return;
+    }
+
+    uint arm_ty = expr_type(result_node);
+    if (arm_ty == TY_UNKNOWN)
+    {
+        record_error(result_start, ERR_BAD_HIR, HIR_MATCH_EXPR);
+        return;
+    }
+
+    uint prior = atomic_u32_compare_exchange(
+        call_return_type,
+        match_i,
+        TY_UNKNOWN,
+        arm_ty);
+    if (prior != TY_UNKNOWN && !same_result_type(prior, arm_ty))
+        record_error(result_start, ERR_ASSIGN_MISMATCH, arm_ty);
 }
 
 [shader("compute")]
@@ -353,14 +355,20 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint i = linear_thread_id(dtid);
     if (i >= active_hir_node_count())
         return;
-    if (hir_kind[i] != HIR_MATCH_EXPR)
-        return;
 
-    uint match_i = hir_token_pos[i];
-    if (!valid_token(match_i))
+    if (hir_kind[i] == HIR_MATCH_EXPR)
     {
-        record_error(active_token_count(), ERR_BAD_HIR, match_i);
-        return;
+        uint match_i = hir_token_pos[i];
+        if (!valid_token(match_i))
+        {
+            record_error(active_token_count(), ERR_BAD_HIR, match_i);
+            return;
+        }
+        validate_match_node(i, match_i);
     }
-    type_match(i, match_i);
+
+    if (node_kind[i] == PROD_MATCH_ARM)
+    {
+        publish_match_arm_type(i);
+    }
 }

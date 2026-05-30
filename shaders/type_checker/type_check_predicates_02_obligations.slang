@@ -4,10 +4,10 @@
 // records. It intentionally stays bounded: direct calls only, concrete impl
 // rows only, and trait bounds with at most two type arguments.
 
+import fixed_key;
 import generated_parse_production_ids;
-import hir_records;
+import range_query;
 import status;
-import tree_walk;
 
 struct Params
 {
@@ -20,39 +20,48 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> parent;
-StructuredBuffer<uint> first_child;
-StructuredBuffer<uint> next_sibling;
-StructuredBuffer<uint> subtree_end;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_type_form;
 StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> hir_struct_lit_head_node;
 StructuredBuffer<uint> hir_expr_record;
-StructuredBuffer<uint4> hir_param_record;
+StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_call_callee_node;
-StructuredBuffer<uint> hir_call_arg_parent_call;
+StructuredBuffer<uint> call_arg_node;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> call_return_type;
+StructuredBuffer<uint> call_param_count;
+StructuredBuffer<uint4> call_arg_record;
+StructuredBuffer<uint> call_param_ref_tag;
+StructuredBuffer<uint> call_param_ref_payload;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
+StructuredBuffer<uint> generic_param_count_out;
+StructuredBuffer<uint> generic_param_owner_node;
+StructuredBuffer<uint> generic_param_name_id;
+StructuredBuffer<uint> generic_param_token;
+StructuredBuffer<uint> generic_param_kind;
+StructuredBuffer<uint> generic_param_key_order;
 StructuredBuffer<uint> predicate_owner_node;
 StructuredBuffer<uint> predicate_subject_token;
-StructuredBuffer<uint> predicate_bound_token;
+StructuredBuffer<uint> predicate_bound_decl_id;
 StructuredBuffer<uint> predicate_bound_arg_count;
 StructuredBuffer<uint> predicate_bound_first_arg_token;
 StructuredBuffer<uint> predicate_bound_second_arg_token;
 StructuredBuffer<uint> predicate_status;
+StructuredBuffer<uint> predicate_owner_key_order;
+StructuredBuffer<uint> predicate_impl_key_order;
 
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
 
+static const uint ERR_TRAIT_BOUND_UNSATISFIED = 13u;
+static const uint ERR_TRAIT_BOUND_AMBIGUOUS = 14u;
 static const uint ERR_BAD_HIR = 6u;
 
 static const uint HIR_CALL_EXPR = 19u;
@@ -62,13 +71,8 @@ static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 static const uint HIR_MATCH_EXPR = 34u;
 
-static const uint HIR_PARAM_RECORD_FN = 0u;
-static const uint HIR_PARAM_RECORD_ORDINAL = 1u;
-
-static const uint HIR_TYPE_FORM_NONE = 0u;
 static const uint EXPR_RECORD_STRIDE = 4u;
 static const uint EXPR_RECORD_FORM = 0u;
-static const uint EXPR_RECORD_LEFT = 1u;
 static const uint EXPR_RECORD_VALUE_TOKEN = 3u;
 
 static const uint HIR_EXPR_FORWARD = 1u;
@@ -96,6 +100,7 @@ static const uint HIR_EXPR_BIT_XOR = 22u;
 static const uint HIR_EXPR_BIT_AND = 23u;
 static const uint HIR_EXPR_SHL = 24u;
 static const uint HIR_EXPR_SHR = 25u;
+static const uint HIR_EXPR_FLOAT = 27u;
 
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_BOOL = 2u;
@@ -108,13 +113,22 @@ static const uint TY_ARRAY_BASE = 128u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
 static const uint TY_GENERIC_BASE = 8192u;
+static const uint PARAM_CACHE_STRIDE = 4u;
+static const uint PREDICATE_ARG_TYPE_CODE_BIT = 0x80000000u;
 
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
+static const uint GENERIC_PARAM_KIND_TYPE = 1u;
 
 static const uint PREDICATE_STATUS_OK = 0u;
 static const uint PREDICATE_STATUS_UNSATISFIED_BOUND = 9u;
 static const uint PREDICATE_STATUS_AMBIGUOUS_BOUND = 10u;
+static const uint PREDICATE_STATUS_UNSUPPORTED_BOUND_WIDTH = 11u;
+static const uint PREDICATE_STATUS_OVERLAPPING_IMPL = 19u;
+static const uint PREDICATE_STATUS_UNSUPPORTED_OBLIGATION_WINDOW = 21u;
+static const uint PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION = 22u;
+
+static const uint MAX_OBLIGATIONS_PER_CALL = 32u;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -144,56 +158,6 @@ void record_error(uint token_i, uint code, uint detail)
     record_min_token_error(status, token_i, code, detail);
 }
 
-uint obligation_parent_record(uint node)
-{
-    return parent[node];
-}
-
-uint obligation_first_child_record(uint node)
-{
-    return first_child[node];
-}
-
-uint obligation_next_sibling_record(uint node)
-{
-    return next_sibling[node];
-}
-
-public struct PredicateObligationLinkedGraph : ITreeLinkedGraph
-{
-    public static bool valid(uint node)
-    {
-        return valid_node(node);
-    }
-
-    public static uint parent(uint node)
-    {
-        return obligation_parent_record(node);
-    }
-
-    public static uint first_child(uint node)
-    {
-        return obligation_first_child_record(node);
-    }
-
-    public static uint next_sibling(uint node)
-    {
-        return obligation_next_sibling_record(node);
-    }
-}
-
-uint next_descendant_node(uint root, uint cur)
-{
-    uint next;
-    return tree_next_preorder_within<PredicateObligationLinkedGraph>(
-        root,
-        cur,
-        96u,
-        next)
-        ? next
-        : INVALID;
-}
-
 uint expr_record_slot(uint node, uint slot)
 {
     return valid_node(node) ? hir_expr_record[node * EXPR_RECORD_STRIDE + slot] : INVALID;
@@ -204,11 +168,6 @@ uint expr_form(uint node)
     return valid_node(node) ? expr_record_slot(node, EXPR_RECORD_FORM) : 0u;
 }
 
-uint expr_left(uint node)
-{
-    return valid_node(node) ? expr_record_slot(node, EXPR_RECORD_LEFT) : INVALID;
-}
-
 uint expr_value_token(uint node)
 {
     return valid_node(node) ? expr_record_slot(node, EXPR_RECORD_VALUE_TOKEN) : INVALID;
@@ -216,17 +175,10 @@ uint expr_value_token(uint node)
 
 uint resolve_expr(uint node)
 {
-    [loop]
-    for (uint guard = 0u; guard < 64u && valid_node(node); guard += 1u)
-    {
-        if (expr_form(node) != HIR_EXPR_FORWARD)
-            return node;
-        uint child = expr_left(node);
-        if (!valid_node(child))
-            return node;
-        node = child;
-    }
-    return node;
+    if (!valid_node(node))
+        return INVALID;
+    uint result = hir_expr_result_root_node[node];
+    return valid_node(result) ? result : INVALID;
 }
 
 uint visible_type_for_token(uint token_i)
@@ -264,6 +216,25 @@ uint scalar_type_for_literal_prod(uint prod)
     return TY_UNKNOWN;
 }
 
+uint call_callee_token(uint call_node)
+{
+    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+        return INVALID;
+
+    uint callee_node = hir_call_callee_node[call_node];
+    if (!valid_node(callee_node))
+        return INVALID;
+
+    if (hir_kind[callee_node] == HIR_MEMBER_EXPR)
+    {
+        uint member_token = hir_member_name_token[callee_node];
+        return valid_token(member_token) ? member_token : INVALID;
+    }
+
+    uint token = hir_token_pos[callee_node];
+    return valid_token(token) ? token : INVALID;
+}
+
 uint direct_node_type(uint node)
 {
     if (!valid_node(node))
@@ -297,8 +268,11 @@ uint direct_node_type(uint node)
     if (hir_kind[node] == HIR_INDEX_EXPR || hir_kind[node] == HIR_MATCH_EXPR)
         return call_return_type[token_i];
 
-    if (hir_kind[node] == HIR_CALL_EXPR && token_i > 0u)
-        return call_return_type[token_i - 1u];
+    if (hir_kind[node] == HIR_CALL_EXPR)
+    {
+        uint callee_token = call_callee_token(node);
+        return valid_token(callee_token) ? call_return_type[callee_token] : TY_UNKNOWN;
+    }
 
     return TY_UNKNOWN;
 }
@@ -314,11 +288,11 @@ uint direct_expr_record_type(uint node)
         return TY_BOOL;
     if (form == HIR_EXPR_INT)
         return TY_INT;
+    if (form == HIR_EXPR_FLOAT)
+        return TY_FLOAT;
     if (form == HIR_EXPR_NAME)
     {
         uint token_i = expr_value_token(node);
-        if (!valid_token(token_i))
-            token_i = hir_token_pos[node];
         return visible_type_for_token(token_i);
     }
 
@@ -349,94 +323,36 @@ uint direct_expr_record_type(uint node)
     return TY_UNKNOWN;
 }
 
-bool expression_result_node(uint node)
-{
-    if (!valid_node(node))
-        return false;
-    return hir_kind[node] == HIR_CALL_EXPR ||
-           hir_kind[node] == HIR_MEMBER_EXPR ||
-           hir_kind[node] == HIR_INDEX_EXPR ||
-           hir_kind[node] == HIR_MATCH_EXPR ||
-           hir_kind[node] == HIR_STRUCT_LITERAL_EXPR ||
-           node_kind[node] == PROD_STRUCT_LIT;
-}
-
-uint preferred_result_type_from_node(uint root, out uint value_token)
-{
-    value_token = INVALID;
-    uint node = root;
-    [loop]
-    for (uint guard = 0u; node != INVALID && guard < 256u; guard += 1u)
-    {
-        if (expression_result_node(node))
-        {
-            uint ty = direct_node_type(node);
-            if (ty != TY_UNKNOWN)
-            {
-                uint token_i = hir_token_pos[node];
-                value_token = valid_token(token_i) ? token_i : INVALID;
-                return ty;
-            }
-        }
-        node = next_descendant_node(root, node);
-    }
-    return TY_UNKNOWN;
-}
-
 uint first_value_type_from_node(uint root, out uint value_token)
 {
     value_token = INVALID;
     if (!valid_node(root))
         return TY_UNKNOWN;
 
-    uint record_ty = direct_expr_record_type(root);
+    uint result = resolve_expr(root);
+    if (!valid_node(result))
+        return TY_UNKNOWN;
+
+    uint record_ty = direct_expr_record_type(result);
     if (record_ty != TY_UNKNOWN)
     {
-        value_token = hir_token_pos[root];
+        uint token_i = valid_token(expr_value_token(result))
+            ? expr_value_token(result)
+            : hir_token_pos[result];
+        value_token = valid_token(token_i) ? token_i : INVALID;
         return record_ty;
     }
 
-    if (expression_result_node(root))
-    {
-        uint root_ty = direct_node_type(root);
-        if (root_ty != TY_UNKNOWN)
-        {
-            value_token = hir_token_pos[root];
-            return root_ty;
-        }
-    }
-
-    uint result_ty = preferred_result_type_from_node(root, value_token);
+    uint result_ty = direct_node_type(result);
     if (result_ty != TY_UNKNOWN)
-        return result_ty;
-
-    uint node = root;
-    [loop]
-    for (uint guard = 0u; node != INVALID && guard < 256u; guard += 1u)
     {
-        uint sibling = next_sibling[node];
-        if (hir_kind[node] == HIR_NAME_EXPR && sibling != INVALID &&
-            sibling < active_hir_node_count() &&
-            (hir_kind[sibling] == HIR_INDEX_EXPR || hir_kind[sibling] == HIR_MEMBER_EXPR ||
-             hir_kind[sibling] == HIR_STRUCT_LITERAL_EXPR))
-        {
-            node = next_descendant_node(root, node);
-            continue;
-        }
-
-        uint token_i = hir_token_pos[node];
-        uint ty = direct_node_type(node);
-        if (ty != TY_UNKNOWN)
-        {
-            value_token = valid_token(token_i) ? token_i : INVALID;
-            return ty;
-        }
-
-        if (hir_kind[node] == HIR_CALL_EXPR)
-            return TY_UNKNOWN;
-
-        node = next_descendant_node(root, node);
+        uint token_i = hir_kind[result] == HIR_MEMBER_EXPR
+            ? hir_member_name_token[result]
+            : hir_token_pos[result];
+        value_token = valid_token(token_i) ? token_i : INVALID;
+        return result_ty;
     }
+
     return TY_UNKNOWN;
 }
 
@@ -462,21 +378,31 @@ uint type_code_for_type_token(uint token)
     return visible_type_for_token(token);
 }
 
-bool same_name(uint lhs, uint rhs)
+uint active_generic_param_count()
 {
-    if (!valid_token(lhs) || !valid_token(rhs))
+    return min(generic_param_count_out[0u], gParams.n_tokens);
+}
+
+bool generic_param_key_less(uint row, uint owner, uint name_id)
+{
+    if (row >= active_generic_param_count())
         return false;
-    uint lhs_name = name_id_by_token[lhs];
-    uint rhs_name = name_id_by_token[rhs];
-    return lhs_name != INVALID && lhs_name == rhs_name;
+
+    uint row_owner = generic_param_owner_node[row];
+    if (row_owner != owner)
+        return row_owner < owner;
+    return generic_param_name_id[row] < name_id;
 }
 
-bool generic_param_node(uint node)
+bool generic_param_key_matches(uint row, uint owner, uint name_id, uint kind)
 {
-    return valid_node(node) && node_kind[node] == PROD_ENUM_TYPE_PARAM;
+    return row < active_generic_param_count() &&
+           generic_param_owner_node[row] == owner &&
+           generic_param_name_id[row] == name_id &&
+           generic_param_kind[row] == kind;
 }
 
-uint generic_param_slot_for_name(uint decl_node, uint name_token)
+uint generic_param_row_for_name(uint decl_node, uint name_token, uint kind)
 {
     if (!valid_node(decl_node) || !valid_token(name_token))
         return INVALID;
@@ -485,97 +411,74 @@ uint generic_param_slot_for_name(uint decl_node, uint name_token)
     if (name_id == INVALID)
         return INVALID;
 
-    uint end = min(subtree_end[decl_node], active_hir_node_count());
-    uint slot = 0u;
-    [loop]
-    for (uint node = decl_node + 1u; node < end; node += 1u)
+    uint count = active_generic_param_count();
+    uint lo = 0u;
+    uint hi = count;
+    [unroll]
+    for (uint step = 0u; step < 32u; step += 1u)
     {
-        if (!generic_param_node(node))
+        if (lo >= hi)
             continue;
-
-        uint param_token = hir_token_pos[node];
-        if (valid_token(param_token) && name_id_by_token[param_token] == name_id)
-            return slot;
-        slot += 1u;
+        uint mid = lo + ((hi - lo) >> 1u);
+        uint row = generic_param_key_order[mid];
+        if (row >= count || !generic_param_key_less(row, decl_node, name_id))
+            hi = mid;
+        else
+            lo = mid + 1u;
     }
 
-    return INVALID;
+    if (lo >= count)
+        return INVALID;
+    uint row = generic_param_key_order[lo];
+    return generic_param_key_matches(row, decl_node, name_id, kind) ? row : INVALID;
 }
 
-uint call_callee_token(uint call_node)
+uint generic_param_slot_for_name(uint decl_node, uint name_token)
 {
-    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+    if (!valid_node(decl_node) || !valid_token(name_token))
         return INVALID;
 
-    uint callee_node = hir_call_callee_node[call_node];
-    if (!valid_node(callee_node))
+    uint row = generic_param_row_for_name(decl_node, name_token, GENERIC_PARAM_KIND_TYPE);
+    if (row == INVALID)
         return INVALID;
 
-    uint token = hir_token_pos[callee_node];
-    return valid_token(token) ? token : INVALID;
+    uint param_token = generic_param_token[row];
+    return valid_token(param_token) ? type_generic_param_slot_by_token[param_token] : INVALID;
 }
 
 uint call_arg_node_for_ordinal(uint call_node, uint ordinal)
 {
-    uint count = active_hir_node_count();
-    [loop]
-    for (uint node = 0u; node < count; node += 1u)
-    {
-        uint packed = hir_call_arg_parent_call[node];
-        if (hir_node_ordinal_node(packed) == call_node &&
-            hir_node_ordinal_ordinal(packed) == ordinal)
-            return node;
-    }
-    return INVALID;
+    if (!valid_node(call_node) || ordinal >= PARAM_CACHE_STRIDE)
+        return INVALID;
+    return call_arg_node[call_node * PARAM_CACHE_STRIDE + ordinal];
 }
 
-uint child_node(uint node)
+uint call_arg_count_for_callee(uint callee_token)
 {
-    if (!valid_node(node))
-        return INVALID;
-    uint child = first_child[node];
-    return valid_node(child) ? child : INVALID;
+    return valid_token(callee_token) ? call_arg_record[callee_token].w : 0u;
 }
 
-uint param_type_node(uint param_node)
+bool call_argument_window_supported(uint callee_token, uint fn_token)
 {
-    if (!valid_node(param_node))
-        return INVALID;
-
-    uint prod = node_kind[param_node];
-    uint child = child_node(param_node);
-    if (!valid_node(child))
-        return INVALID;
-
-    if (prod == PROD_PARAM_NAMED)
-        return hir_type_form[child] != HIR_TYPE_FORM_NONE ? child : INVALID;
-
-    if (prod == PROD_PARAM_SELF)
-    {
-        uint typed_child = child_node(child);
-        return valid_node(typed_child) && hir_type_form[typed_child] != HIR_TYPE_FORM_NONE
-                   ? typed_child
-                   : INVALID;
-    }
-
-    return INVALID;
+    if (!valid_token(callee_token) || !valid_token(fn_token))
+        return false;
+    return call_param_count[fn_token] <= PARAM_CACHE_STRIDE &&
+           call_arg_count_for_callee(callee_token) <= PARAM_CACHE_STRIDE;
 }
 
-bool param_record_uses_generic_slot(uint param_node, uint slot)
+uint param_ref_index(uint fn_token, uint ordinal)
 {
-    if (!valid_node(param_node))
+    return fn_token * PARAM_CACHE_STRIDE + ordinal;
+}
+
+bool param_ref_uses_generic_slot(uint fn_token, uint ordinal, uint slot)
+{
+    if (!valid_token(fn_token) || ordinal >= PARAM_CACHE_STRIDE || slot == INVALID)
         return false;
 
-    uint type_node = param_type_node(param_node);
-    if (!valid_node(type_node))
-        return false;
-
-    uint token = hir_token_pos[type_node];
-    if (!valid_token(token))
-        return false;
-
-    uint tag = type_expr_ref_tag[token];
-    uint payload = type_expr_ref_payload[token];
+    uint ref_i = param_ref_index(fn_token, ordinal);
+    uint tag = call_param_ref_tag[ref_i];
+    uint payload = call_param_ref_payload[ref_i];
     if (tag != TYPE_REF_GENERIC_PARAM || !valid_token(payload))
         return false;
 
@@ -587,18 +490,24 @@ uint actual_type_for_generic_slot(uint call_node, uint fn_node, uint slot)
     if (!valid_node(call_node) || !valid_node(fn_node) || slot == INVALID)
         return TY_UNKNOWN;
 
+    uint fn_token = hir_token_pos[fn_node];
+    if (!valid_token(fn_token))
+        return TY_UNKNOWN;
+
+    if (call_param_count[fn_token] > PARAM_CACHE_STRIDE)
+        return TY_UNKNOWN;
+
     uint found = TY_UNKNOWN;
-    uint count = active_hir_node_count();
+    uint count = call_param_count[fn_token];
     [loop]
-    for (uint node = 0u; node < count; node += 1u)
+    for (uint ordinal = 0u; ordinal < PARAM_CACHE_STRIDE; ordinal += 1u)
     {
-        uint4 record = hir_param_record[node];
-        if (record[HIR_PARAM_RECORD_FN] != fn_node)
-            continue;
-        if (!param_record_uses_generic_slot(node, slot))
+        if (ordinal >= count)
+            break;
+        if (!param_ref_uses_generic_slot(fn_token, ordinal, slot))
             continue;
 
-        uint arg_node = call_arg_node_for_ordinal(call_node, record[HIR_PARAM_RECORD_ORDINAL]);
+        uint arg_node = call_arg_node_for_ordinal(call_node, ordinal);
         uint value_token = INVALID;
         uint actual = first_value_type_from_node(arg_node, value_token);
         if (actual == TY_UNKNOWN)
@@ -620,9 +529,24 @@ uint predicate_bound_arg_token(uint pred_node, uint ordinal)
     return INVALID;
 }
 
+bool predicate_arg_is_encoded_type(uint arg)
+{
+    return arg != INVALID && (arg & PREDICATE_ARG_TYPE_CODE_BIT) != 0u;
+}
+
+uint predicate_arg_type_code(uint arg)
+{
+    if (predicate_arg_is_encoded_type(arg))
+        return arg & ~PREDICATE_ARG_TYPE_CODE_BIT;
+    return type_code_for_type_token(arg);
+}
+
 uint predicate_arg_concrete_type(uint pred_node, uint fn_node, uint call_node, uint ordinal)
 {
     uint token = predicate_bound_arg_token(pred_node, ordinal);
+    if (predicate_arg_is_encoded_type(token))
+        return predicate_arg_type_code(token);
+
     if (!valid_token(token))
         return TY_UNKNOWN;
 
@@ -642,7 +566,7 @@ uint predicate_arg_concrete_type(uint pred_node, uint fn_node, uint call_node, u
 
 bool impl_row_satisfies_bound(
     uint impl_node,
-    uint bound_token,
+    uint bound_decl_id,
     uint subject_ty,
     uint required_arg0_ty,
     uint required_arg1_ty,
@@ -652,7 +576,7 @@ bool impl_row_satisfies_bound(
         return false;
     if (predicate_status[impl_node] != PREDICATE_STATUS_OK)
         return false;
-    if (!same_name(predicate_bound_token[impl_node], bound_token))
+    if (bound_decl_id == INVALID || predicate_bound_decl_id[impl_node] != bound_decl_id)
         return false;
     if (type_code_for_type_token(predicate_subject_token[impl_node]) != subject_ty)
         return false;
@@ -660,45 +584,237 @@ bool impl_row_satisfies_bound(
         return false;
     if (arg_count >= 1u)
     {
-        uint impl_arg0_ty = type_code_for_type_token(predicate_bound_first_arg_token[impl_node]);
+        uint impl_arg0_ty = predicate_arg_type_code(predicate_bound_first_arg_token[impl_node]);
         if (impl_arg0_ty == TY_UNKNOWN || impl_arg0_ty != required_arg0_ty)
             return false;
     }
     if (arg_count >= 2u)
     {
-        uint impl_arg1_ty = type_code_for_type_token(predicate_bound_second_arg_token[impl_node]);
+        uint impl_arg1_ty = predicate_arg_type_code(predicate_bound_second_arg_token[impl_node]);
         if (impl_arg1_ty == TY_UNKNOWN || impl_arg1_ty != required_arg1_ty)
             return false;
     }
     return true;
 }
 
-uint concrete_impl_match_count_for_bound(
-    uint bound_token,
+bool impl_lookup_row_matches_key(
+    uint row,
+    uint bound_decl_id,
     uint subject_ty,
     uint required_arg0_ty,
     uint required_arg1_ty,
     uint arg_count)
 {
-    uint matches = 0u;
-    uint count = active_hir_node_count();
-    [loop]
-    for (uint node = 0u; node < count; node += 1u)
+    if (row >= active_hir_node_count())
+        return false;
+
+    uint node = predicate_impl_key_order[row];
+    return impl_row_satisfies_bound(
+        node,
+        bound_decl_id,
+        subject_ty,
+        required_arg0_ty,
+        required_arg1_ty,
+        arg_count);
+}
+
+bool impl_lookup_range_matches_key(
+    QueryRange range,
+    uint bound_decl_id,
+    uint subject_ty,
+    uint required_arg0_ty,
+    uint required_arg1_ty,
+    uint arg_count)
+{
+    if (range.begin >= range.end)
+        return true;
+    if (range.end > active_hir_node_count())
+        return false;
+
+    return impl_lookup_row_matches_key(
+               range.begin,
+               bound_decl_id,
+               subject_ty,
+               required_arg0_ty,
+               required_arg1_ty,
+               arg_count) &&
+           impl_lookup_row_matches_key(
+               range.end - 1u,
+               bound_decl_id,
+               subject_ty,
+               required_arg0_ty,
+               required_arg1_ty,
+               arg_count);
+}
+
+public struct ImplLookupKey
+{
+    uint bound_decl_id;
+    uint subject_ty;
+    uint arg_count;
+    uint arg0_ty;
+    uint arg1_ty;
+}
+
+public struct ImplFixedKey : IFixedU32RowKey<ImplLookupKey>
+{
+    public static uint row_lane(uint row, uint lane)
     {
-        if (impl_row_satisfies_bound(
-                node,
-                bound_token,
-                subject_ty,
-                required_arg0_ty,
-                required_arg1_ty,
-                arg_count))
-        {
-            matches += 1u;
-            if (matches > 1u)
-                return matches;
-        }
+        uint pred = row < active_hir_node_count() ? predicate_impl_key_order[row] : INVALID;
+        if (!valid_node(pred) || predicate_status[pred] != PREDICATE_STATUS_OK ||
+            predicate_owner_node[pred] != pred)
+            return 0u;
+
+        if (lane == 0u)
+            return fixed_key_encode_nullable_u32(predicate_bound_decl_id[pred], INVALID);
+        if (lane == 1u)
+            return fixed_key_encode_nullable_u32(
+                type_code_for_type_token(predicate_subject_token[pred]),
+                TY_UNKNOWN);
+        if (lane == 2u)
+            return predicate_bound_arg_count[pred] + 1u;
+        if (lane == 3u)
+            return fixed_key_encode_nullable_u32(
+                predicate_arg_type_code(predicate_bound_first_arg_token[pred]),
+                TY_UNKNOWN);
+        return fixed_key_encode_nullable_u32(
+            predicate_arg_type_code(predicate_bound_second_arg_token[pred]),
+            TY_UNKNOWN);
     }
-    return matches;
+
+    public static uint key_lane(ImplLookupKey key, uint lane)
+    {
+        if (lane == 0u)
+            return fixed_key_encode_nullable_u32(key.bound_decl_id, INVALID);
+        if (lane == 1u)
+            return fixed_key_encode_nullable_u32(key.subject_ty, TY_UNKNOWN);
+        if (lane == 2u)
+            return key.arg_count + 1u;
+        if (lane == 3u)
+            return fixed_key_encode_nullable_u32(key.arg0_ty, TY_UNKNOWN);
+        return fixed_key_encode_nullable_u32(key.arg1_ty, TY_UNKNOWN);
+    }
+}
+
+public struct ImplKeyCompare : IRowQueryCompare<ImplLookupKey>
+{
+    public static int compare(uint row, ImplLookupKey key)
+    {
+        return fixed_u32_row_key_compare<ImplLookupKey, ImplFixedKey>(
+            row,
+            key,
+            5u);
+    }
+}
+
+uint concrete_impl_match_count_for_bound(
+    uint bound_decl_id,
+    uint subject_ty,
+    uint required_arg0_ty,
+    uint required_arg1_ty,
+    uint arg_count)
+{
+    if (bound_decl_id >= active_hir_node_count())
+        return 0u;
+
+    ImplLookupKey key;
+    key.bound_decl_id = bound_decl_id;
+    key.subject_ty = subject_ty;
+    key.arg_count = arg_count;
+    key.arg0_ty = required_arg0_ty;
+    key.arg1_ty = required_arg1_ty;
+
+    QueryRange range = equal_range_query<ImplLookupKey, ImplKeyCompare>(
+        active_hir_node_count(),
+        key);
+    if (!impl_lookup_range_matches_key(
+            range,
+            bound_decl_id,
+            subject_ty,
+            required_arg0_ty,
+            required_arg1_ty,
+            arg_count))
+        return INVALID;
+
+    uint match_count = range.end - range.begin;
+    if (match_count != 1u)
+        return match_count;
+
+    uint node = predicate_impl_key_order[range.begin];
+    return impl_row_satisfies_bound(
+        node,
+        bound_decl_id,
+        subject_ty,
+        required_arg0_ty,
+        required_arg1_ty,
+        arg_count)
+        ? 1u
+        : 0u;
+}
+
+void validate_unique_impl_key(uint impl_node)
+{
+    if (!valid_node(impl_node) ||
+        predicate_owner_node[impl_node] != impl_node ||
+        predicate_status[impl_node] != PREDICATE_STATUS_OK)
+        return;
+
+    uint subject_ty = type_code_for_type_token(predicate_subject_token[impl_node]);
+    if (subject_ty == TY_UNKNOWN)
+        return;
+
+    uint arg_count = predicate_bound_arg_count[impl_node];
+    if (arg_count > 2u)
+        return;
+
+    ImplLookupKey key;
+    key.bound_decl_id = predicate_bound_decl_id[impl_node];
+    key.subject_ty = subject_ty;
+    key.arg_count = arg_count;
+    key.arg0_ty = arg_count >= 1u
+        ? predicate_arg_type_code(predicate_bound_first_arg_token[impl_node])
+        : TY_UNKNOWN;
+    key.arg1_ty = arg_count >= 2u
+        ? predicate_arg_type_code(predicate_bound_second_arg_token[impl_node])
+        : TY_UNKNOWN;
+
+    QueryRange range = equal_range_query<ImplLookupKey, ImplKeyCompare>(
+        active_hir_node_count(),
+        key);
+    if (range.begin >= range.end ||
+        !impl_lookup_range_matches_key(
+            range,
+            key.bound_decl_id,
+            key.subject_ty,
+            key.arg0_ty,
+            key.arg1_ty,
+            key.arg_count))
+    {
+        uint token_i = valid_token(hir_token_pos[impl_node]) ? hir_token_pos[impl_node] : 0u;
+        record_error(token_i, ERR_BAD_HIR, PREDICATE_STATUS_OVERLAPPING_IMPL);
+        return;
+    }
+    if (range.end <= range.begin + 1u)
+        return;
+
+    if (predicate_impl_key_order[range.begin] == impl_node)
+        return;
+
+    uint token_i = valid_token(hir_token_pos[impl_node]) ? hir_token_pos[impl_node] : 0u;
+    record_error(token_i, ERR_BAD_HIR, PREDICATE_STATUS_OVERLAPPING_IMPL);
+}
+
+void validate_predicate_fail_closed_status(uint node)
+{
+    uint status_value = predicate_status[node];
+    if (status_value != PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION)
+        return;
+
+    uint token_i = hir_token_pos[node];
+    record_error(
+        valid_token(token_i) ? token_i : 0u,
+        ERR_TRAIT_BOUND_UNSATISFIED,
+        status_value);
 }
 
 void validate_trait_obligation_for_call(uint pred, uint fn_node, uint node)
@@ -722,14 +838,17 @@ void validate_trait_obligation_for_call(uint pred, uint fn_node, uint node)
     uint subject_ty = actual_type_for_generic_slot(node, fn_node, subject_slot);
     if (subject_ty == TY_UNKNOWN)
     {
-        record_error(callee_token, ERR_BAD_HIR, PREDICATE_STATUS_UNSATISFIED_BOUND);
+        record_error(callee_token, ERR_TRAIT_BOUND_UNSATISFIED, PREDICATE_STATUS_UNSATISFIED_BOUND);
         return;
     }
 
     uint arg_count = predicate_bound_arg_count[pred];
     if (arg_count > 2u)
     {
-        record_error(callee_token, ERR_BAD_HIR, PREDICATE_STATUS_UNSATISFIED_BOUND);
+        record_error(
+            callee_token,
+            ERR_TRAIT_BOUND_UNSATISFIED,
+            PREDICATE_STATUS_UNSUPPORTED_BOUND_WIDTH);
         return;
     }
 
@@ -740,7 +859,10 @@ void validate_trait_obligation_for_call(uint pred, uint fn_node, uint node)
         required_arg0_ty = predicate_arg_concrete_type(pred, fn_node, node, 0u);
         if (required_arg0_ty == TY_UNKNOWN)
         {
-            record_error(callee_token, ERR_BAD_HIR, PREDICATE_STATUS_UNSATISFIED_BOUND);
+            record_error(
+                callee_token,
+                ERR_TRAIT_BOUND_UNSATISFIED,
+                PREDICATE_STATUS_UNSATISFIED_BOUND);
             return;
         }
     }
@@ -749,42 +871,158 @@ void validate_trait_obligation_for_call(uint pred, uint fn_node, uint node)
         required_arg1_ty = predicate_arg_concrete_type(pred, fn_node, node, 1u);
         if (required_arg1_ty == TY_UNKNOWN)
         {
-            record_error(callee_token, ERR_BAD_HIR, PREDICATE_STATUS_UNSATISFIED_BOUND);
+            record_error(
+                callee_token,
+                ERR_TRAIT_BOUND_UNSATISFIED,
+                PREDICATE_STATUS_UNSATISFIED_BOUND);
             return;
         }
     }
 
     uint impl_count = concrete_impl_match_count_for_bound(
-        predicate_bound_token[pred],
+        predicate_bound_decl_id[pred],
         subject_ty,
         required_arg0_ty,
         required_arg1_ty,
         arg_count);
     if (impl_count != 1u)
     {
+        bool unsatisfied = impl_count == 0u;
         record_error(
             callee_token,
-            ERR_BAD_HIR,
-            impl_count == 0u ? PREDICATE_STATUS_UNSATISFIED_BOUND
-                             : PREDICATE_STATUS_AMBIGUOUS_BOUND);
+            unsatisfied ? ERR_TRAIT_BOUND_UNSATISFIED : ERR_TRAIT_BOUND_AMBIGUOUS,
+            unsatisfied ? PREDICATE_STATUS_UNSATISFIED_BOUND
+                        : PREDICATE_STATUS_AMBIGUOUS_BOUND);
         return;
     }
 }
 
-void validate_predicate_obligations(uint pred)
+public struct OwnerLookupKey
 {
-    if (predicate_status[pred] != PREDICATE_STATUS_OK)
-        return;
+    uint owner_token;
+}
 
-    uint fn_node = predicate_owner_node[pred];
-    if (!valid_node(fn_node))
-        return;
-
-    uint count = active_hir_node_count();
-    [loop]
-    for (uint node = 0u; node < count; node += 1u)
+public struct OwnerFixedKey : IFixedU32RowKey<OwnerLookupKey>
+{
+    public static uint row_lane(uint row, uint lane)
     {
-        validate_trait_obligation_for_call(pred, fn_node, node);
+        uint pred = row < active_hir_node_count() ? predicate_owner_key_order[row] : INVALID;
+        if (!valid_node(pred) || predicate_status[pred] != PREDICATE_STATUS_OK)
+            return 0u;
+
+        uint owner = predicate_owner_node[pred];
+        if (!valid_node(owner) || owner == pred)
+            return 0u;
+
+        return fixed_key_encode_nullable_u32(hir_token_pos[owner], INVALID);
+    }
+
+    public static uint key_lane(OwnerLookupKey key, uint lane)
+    {
+        return fixed_key_encode_nullable_u32(key.owner_token, INVALID);
+    }
+}
+
+public struct OwnerKeyCompare : IRowQueryCompare<OwnerLookupKey>
+{
+    public static int compare(uint row, OwnerLookupKey key)
+    {
+        return fixed_u32_row_key_compare<OwnerLookupKey, OwnerFixedKey>(
+            row,
+            key,
+            1u);
+    }
+}
+
+bool owner_lookup_row_matches_key(uint row, uint owner_token)
+{
+    if (row >= active_hir_node_count())
+        return false;
+
+    uint pred = predicate_owner_key_order[row];
+    if (!valid_node(pred) || predicate_status[pred] != PREDICATE_STATUS_OK)
+        return false;
+
+    uint owner = predicate_owner_node[pred];
+    return valid_node(owner) &&
+           owner != pred &&
+           valid_token(hir_token_pos[owner]) &&
+           hir_token_pos[owner] == owner_token;
+}
+
+bool owner_lookup_range_matches_key(QueryRange range, uint owner_token)
+{
+    if (range.begin >= range.end)
+        return true;
+    if (range.end > active_hir_node_count())
+        return false;
+
+    return owner_lookup_row_matches_key(range.begin, owner_token) &&
+           owner_lookup_row_matches_key(range.end - 1u, owner_token);
+}
+
+void validate_call_predicate_obligations(uint call_node)
+{
+    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+        return;
+
+    uint callee_token = call_callee_token(call_node);
+    if (!valid_token(callee_token))
+        return;
+
+    uint fn_token = call_fn_index[callee_token];
+    if (!valid_token(fn_token))
+        return;
+
+    if (!call_argument_window_supported(callee_token, fn_token))
+    {
+        record_error(
+            callee_token,
+            ERR_TRAIT_BOUND_UNSATISFIED,
+            PREDICATE_STATUS_UNSUPPORTED_OBLIGATION_WINDOW);
+        return;
+    }
+
+    OwnerLookupKey key;
+    key.owner_token = fn_token;
+    QueryRange range = equal_range_query<OwnerLookupKey, OwnerKeyCompare>(
+        active_hir_node_count(),
+        key);
+    if (!owner_lookup_range_matches_key(range, fn_token))
+    {
+        record_error(
+            callee_token,
+            ERR_TRAIT_BOUND_AMBIGUOUS,
+            PREDICATE_STATUS_AMBIGUOUS_BOUND);
+        return;
+    }
+
+    uint obligation_count = range.end - range.begin;
+    if (obligation_count > MAX_OBLIGATIONS_PER_CALL)
+    {
+        record_error(
+            callee_token,
+            ERR_TRAIT_BOUND_UNSATISFIED,
+            PREDICATE_STATUS_UNSUPPORTED_OBLIGATION_WINDOW);
+        return;
+    }
+
+    [loop]
+    for (uint offset = 0u; offset < MAX_OBLIGATIONS_PER_CALL; offset += 1u)
+    {
+        if (offset >= obligation_count)
+            break;
+
+        uint row = range.begin + offset;
+        uint pred = predicate_owner_key_order[row];
+        if (predicate_status[pred] != PREDICATE_STATUS_OK)
+            continue;
+
+        uint fn_node = predicate_owner_node[pred];
+        if (!valid_node(fn_node))
+            continue;
+
+        validate_trait_obligation_for_call(pred, fn_node, call_node);
     }
 }
 
@@ -796,5 +1034,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_node(node))
         return;
 
-    validate_predicate_obligations(node);
+    validate_predicate_fail_closed_status(node);
+    validate_unique_impl_key(node);
+    validate_call_predicate_obligations(node);
 }

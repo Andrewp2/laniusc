@@ -75,7 +75,18 @@ pub struct GpuParser {
     token_delimiters_01: PassData,
     token_delimiters_02: PassData,
     token_delimiters_03_owner_local: PassData,
+    token_delimiters_04_owner_apply: PassData,
     tokens_brace_context: PassData,
+    tokens_statement_phase_01_local: PassData,
+    tokens_statement_phase_02_apply: PassData,
+    tokens_impl_header_01_local: PassData,
+    tokens_impl_header_02_apply: PassData,
+    tokens_where_clause_01_local: PassData,
+    tokens_where_clause_02_apply: PassData,
+    tokens_match_pattern_01_local: PassData,
+    tokens_match_pattern_02_apply: PassData,
+    tokens_paren_match_01_depth_blocks: PassData,
+    tokens_angle_match_01_depth_blocks: PassData,
     tokens_bracket_match_01_depth_blocks: PassData,
     tokens_brace_match_01_depth_blocks: PassData,
     tokens_brace_match_02_build_min_tree: PassData,
@@ -85,6 +96,7 @@ pub struct GpuParser {
     tree_active_dispatch_args: PassData,
     tree_feature_dispatch_args: PassData,
     tokens_to_kinds: PassData,
+    tokens_to_identifier_kinds: PassData,
     passes: ParserPasses,
 
     // Bind group cache so passes don’t recreate BGs every dispatch.
@@ -104,35 +116,112 @@ impl GpuParser {
     pub async fn new_with_device(ctx: &device::GpuDevice) -> Result<Self> {
         let device = Arc::clone(&ctx.device);
         let queue = Arc::clone(&ctx.queue);
+        macro_rules! make_parser_pass {
+            ($label:literal, $make:ident) => {{ $make(&ctx.device)? }};
+        }
 
         Ok(Self {
             device,
             queue,
             timers_supported: ctx.timers_supported,
-            token_delimiters_01: make_token_delimiters_01_pass(&ctx.device)?,
-            token_delimiters_02: make_token_delimiters_02_pass(&ctx.device)?,
-            token_delimiters_03_owner_local: make_token_delimiters_03_owner_local_pass(
-                &ctx.device,
-            )?,
-            tokens_brace_context: make_tokens_brace_context_pass(&ctx.device)?,
-            tokens_bracket_match_01_depth_blocks: make_tokens_bracket_match_01_depth_blocks_pass(
-                &ctx.device,
-            )?,
-            tokens_brace_match_01_depth_blocks: make_tokens_brace_match_01_depth_blocks_pass(
-                &ctx.device,
-            )?,
-            tokens_brace_match_02_build_min_tree: make_tokens_brace_match_02_build_min_tree_pass(
-                &ctx.device,
-            )?,
-            tokens_bracket_match_03_pair_pse: make_tokens_bracket_match_03_pair_pse_pass(
-                &ctx.device,
-            )?,
-            tokens_brace_match_03_pair_pse: make_tokens_brace_match_03_pair_pse_pass(&ctx.device)?,
-            active_pair_dispatch_args: make_active_pair_dispatch_args_pass(&ctx.device)?,
-            tree_active_dispatch_args: make_tree_active_dispatch_args_pass(&ctx.device)?,
-            tree_feature_dispatch_args: make_tree_feature_dispatch_args_pass(&ctx.device)?,
-            tokens_to_kinds: make_tokens_to_kinds_pass(&ctx.device)?,
-            passes: ParserPasses::new(&ctx.device)?,
+            token_delimiters_01: make_parser_pass!(
+                "tokens_delimiters_01_local",
+                make_token_delimiters_01_pass
+            ),
+            token_delimiters_02: make_parser_pass!(
+                "tokens_delimiters_02_scan",
+                make_token_delimiters_02_pass
+            ),
+            token_delimiters_03_owner_local: make_parser_pass!(
+                "tokens_delimiters_03_owner_local",
+                make_token_delimiters_03_owner_local_pass
+            ),
+            token_delimiters_04_owner_apply: make_parser_pass!(
+                "tokens_delimiters_04_owner_apply",
+                make_token_delimiters_04_owner_apply_pass
+            ),
+            tokens_brace_context: make_parser_pass!(
+                "tokens_brace_context",
+                make_tokens_brace_context_pass
+            ),
+            tokens_statement_phase_01_local: make_parser_pass!(
+                "tokens_statement_phase_01_local",
+                make_tokens_statement_phase_01_local_pass
+            ),
+            tokens_statement_phase_02_apply: make_parser_pass!(
+                "tokens_statement_phase_02_apply",
+                make_tokens_statement_phase_02_apply_pass
+            ),
+            tokens_impl_header_01_local: make_parser_pass!(
+                "tokens_impl_header_01_local",
+                make_tokens_impl_header_01_local_pass
+            ),
+            tokens_impl_header_02_apply: make_parser_pass!(
+                "tokens_impl_header_02_apply",
+                make_tokens_impl_header_02_apply_pass
+            ),
+            tokens_where_clause_01_local: make_parser_pass!(
+                "tokens_where_clause_01_local",
+                make_tokens_where_clause_01_local_pass
+            ),
+            tokens_where_clause_02_apply: make_parser_pass!(
+                "tokens_where_clause_02_apply",
+                make_tokens_where_clause_02_apply_pass
+            ),
+            tokens_match_pattern_01_local: make_parser_pass!(
+                "tokens_match_pattern_01_local",
+                make_tokens_match_pattern_01_local_pass
+            ),
+            tokens_match_pattern_02_apply: make_parser_pass!(
+                "tokens_match_pattern_02_apply",
+                make_tokens_match_pattern_02_apply_pass
+            ),
+            tokens_paren_match_01_depth_blocks: make_parser_pass!(
+                "tokens_paren_match_01_depth_blocks",
+                make_tokens_paren_match_01_depth_blocks_pass
+            ),
+            tokens_angle_match_01_depth_blocks: make_parser_pass!(
+                "tokens_angle_match_01_depth_blocks",
+                make_tokens_angle_match_01_depth_blocks_pass
+            ),
+            tokens_bracket_match_01_depth_blocks: make_parser_pass!(
+                "tokens_bracket_match_01_depth_blocks",
+                make_tokens_bracket_match_01_depth_blocks_pass
+            ),
+            tokens_brace_match_01_depth_blocks: make_parser_pass!(
+                "tokens_brace_match_01_depth_blocks",
+                make_tokens_brace_match_01_depth_blocks_pass
+            ),
+            tokens_brace_match_02_build_min_tree: make_parser_pass!(
+                "tokens_brace_match_02_build_min_tree",
+                make_tokens_brace_match_02_build_min_tree_pass
+            ),
+            tokens_bracket_match_03_pair_pse: make_parser_pass!(
+                "tokens_bracket_match_03_pair_pse",
+                make_tokens_bracket_match_03_pair_pse_pass
+            ),
+            tokens_brace_match_03_pair_pse: make_parser_pass!(
+                "tokens_brace_match_03_pair_pse",
+                make_tokens_brace_match_03_pair_pse_pass
+            ),
+            active_pair_dispatch_args: make_parser_pass!(
+                "active_pair_dispatch_args",
+                make_active_pair_dispatch_args_pass
+            ),
+            tree_active_dispatch_args: make_parser_pass!(
+                "tree_active_dispatch_args",
+                make_tree_active_dispatch_args_pass
+            ),
+            tree_feature_dispatch_args: make_parser_pass!(
+                "tree_feature_dispatch_args",
+                make_tree_feature_dispatch_args_pass
+            ),
+            tokens_to_kinds: make_parser_pass!("tokens_to_kinds", make_tokens_to_kinds_pass),
+            tokens_to_identifier_kinds: make_parser_pass!(
+                "tokens_to_identifier_kinds",
+                make_tokens_to_identifier_kinds_pass
+            ),
+            passes: { ParserPasses::new(&ctx.device)? },
             bg_cache: std::sync::Mutex::new(BindGroupCache::new()),
             resident_buffers: std::sync::Mutex::new(None),
             resident_token_kind_bind_groups: std::sync::Mutex::new(None),
@@ -678,6 +767,12 @@ impl GpuParser {
                 hir_type_arg_next: Vec::new(),
                 hir_type_alias_target_node: Vec::new(),
                 hir_fn_return_type_node: Vec::new(),
+                hir_method_signature_flags: Vec::new(),
+                hir_stmt_record_kind: Vec::new(),
+                hir_stmt_record_operand0: Vec::new(),
+                hir_stmt_record_operand1: Vec::new(),
+                hir_stmt_record_operand2: Vec::new(),
+                hir_stmt_scope_end: Vec::new(),
                 hir_item_kind: Vec::new(),
                 hir_item_name_token: Vec::new(),
                 hir_item_decl_token: Vec::new(),
@@ -685,12 +780,14 @@ impl GpuParser {
                 hir_item_visibility: Vec::new(),
                 hir_item_path_start: Vec::new(),
                 hir_item_path_end: Vec::new(),
+                hir_item_path_node: Vec::new(),
                 hir_item_file_id: Vec::new(),
                 hir_item_import_target_kind: Vec::new(),
                 hir_variant_parent_enum: Vec::new(),
                 hir_variant_ordinal: Vec::new(),
                 hir_variant_payload_start: Vec::new(),
                 hir_variant_payload_count: Vec::new(),
+                hir_variant_payload_node: Vec::new(),
                 hir_match_scrutinee_node: Vec::new(),
                 hir_match_arm_start: Vec::new(),
                 hir_match_arm_count: Vec::new(),
@@ -822,6 +919,12 @@ impl GpuParser {
             hir_type_arg_next: decoded.hir_type_arg_next,
             hir_type_alias_target_node: decoded.hir_type_alias_target_node,
             hir_fn_return_type_node: decoded.hir_fn_return_type_node,
+            hir_method_signature_flags: decoded.hir_method_signature_flags,
+            hir_stmt_record_kind: decoded.hir_stmt_record_kind,
+            hir_stmt_record_operand0: decoded.hir_stmt_record_operand0,
+            hir_stmt_record_operand1: decoded.hir_stmt_record_operand1,
+            hir_stmt_record_operand2: decoded.hir_stmt_record_operand2,
+            hir_stmt_scope_end: decoded.hir_stmt_scope_end,
             hir_item_kind: decoded.hir_item_kind,
             hir_item_name_token: decoded.hir_item_name_token,
             hir_item_decl_token: decoded.hir_item_decl_token,
@@ -829,12 +932,14 @@ impl GpuParser {
             hir_item_visibility: decoded.hir_item_visibility,
             hir_item_path_start: decoded.hir_item_path_start,
             hir_item_path_end: decoded.hir_item_path_end,
+            hir_item_path_node: decoded.hir_item_path_node,
             hir_item_file_id: decoded.hir_item_file_id,
             hir_item_import_target_kind: decoded.hir_item_import_target_kind,
             hir_variant_parent_enum: decoded.hir_variant_parent_enum,
             hir_variant_ordinal: decoded.hir_variant_ordinal,
             hir_variant_payload_start: decoded.hir_variant_payload_start,
             hir_variant_payload_count: decoded.hir_variant_payload_count,
+            hir_variant_payload_node: decoded.hir_variant_payload_node,
             hir_match_scrutinee_node: decoded.hir_match_scrutinee_node,
             hir_match_arm_start: decoded.hir_match_arm_start,
             hir_match_arm_count: decoded.hir_match_arm_count,

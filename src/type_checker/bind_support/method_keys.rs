@@ -27,6 +27,10 @@ pub(in crate::type_checker) fn create_method_key_bind_groups(
         input.decl.visibility,
         input.module_type_path_type,
         input.type_instance_decl_token,
+        input.type_instance_arg_start,
+        input.type_instance_arg_count,
+        input.type_instance_arg_ref_tag,
+        input.type_instance_arg_ref_payload,
         input.keys.to_fn_token,
         input.keys.order_tmp,
         input.keys.status,
@@ -62,6 +66,10 @@ pub(in crate::type_checker) fn create_method_key_bind_groups_from_passes(
     method_decl_visibility: &wgpu::Buffer,
     module_type_path_type: &wgpu::Buffer,
     type_instance_decl_token: &wgpu::Buffer,
+    type_instance_arg_start: &wgpu::Buffer,
+    type_instance_arg_count: &wgpu::Buffer,
+    type_instance_arg_ref_tag: &wgpu::Buffer,
+    type_instance_arg_ref_payload: &wgpu::Buffer,
     method_key_to_fn_token: &wgpu::Buffer,
     method_key_order_tmp: &wgpu::Buffer,
     method_key_status: &wgpu::Buffer,
@@ -168,6 +176,22 @@ pub(in crate::type_checker) fn create_method_key_bind_groups_from_passes(
                     "type_instance_decl_token",
                     type_instance_decl_token.as_entire_binding(),
                 ),
+                (
+                    "type_instance_arg_start",
+                    type_instance_arg_start.as_entire_binding(),
+                ),
+                (
+                    "type_instance_arg_count",
+                    type_instance_arg_count.as_entire_binding(),
+                ),
+                (
+                    "type_instance_arg_ref_tag",
+                    type_instance_arg_ref_tag.as_entire_binding(),
+                ),
+                (
+                    "type_instance_arg_ref_payload",
+                    type_instance_arg_ref_payload.as_entire_binding(),
+                ),
                 ("method_key_order_in", read_order.as_entire_binding()),
                 (
                     "radix_block_histogram",
@@ -253,6 +277,22 @@ pub(in crate::type_checker) fn create_method_key_bind_groups_from_passes(
                     "type_instance_decl_token",
                     type_instance_decl_token.as_entire_binding(),
                 ),
+                (
+                    "type_instance_arg_start",
+                    type_instance_arg_start.as_entire_binding(),
+                ),
+                (
+                    "type_instance_arg_count",
+                    type_instance_arg_count.as_entire_binding(),
+                ),
+                (
+                    "type_instance_arg_ref_tag",
+                    type_instance_arg_ref_tag.as_entire_binding(),
+                ),
+                (
+                    "type_instance_arg_ref_payload",
+                    type_instance_arg_ref_payload.as_entire_binding(),
+                ),
                 ("method_key_order_in", read_order.as_entire_binding()),
                 (
                     "radix_bucket_base",
@@ -328,6 +368,22 @@ pub(in crate::type_checker) fn create_method_key_bind_groups_from_passes(
             (
                 "type_instance_decl_token",
                 type_instance_decl_token.as_entire_binding(),
+            ),
+            (
+                "type_instance_arg_start",
+                type_instance_arg_start.as_entire_binding(),
+            ),
+            (
+                "type_instance_arg_count",
+                type_instance_arg_count.as_entire_binding(),
+            ),
+            (
+                "type_instance_arg_ref_tag",
+                type_instance_arg_ref_tag.as_entire_binding(),
+            ),
+            (
+                "type_instance_arg_ref_payload",
+                type_instance_arg_ref_payload.as_entire_binding(),
             ),
             ("method_key_status", method_key_status.as_entire_binding()),
             (

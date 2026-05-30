@@ -53,16 +53,12 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Dfa03ApplyBlockP
             ),
             ("in_bytes".into(), b.in_bytes.as_entire_binding()),
             (
-                "source_file_count".into(),
-                b.source_file_count.as_entire_binding(),
+                "source_file_start_flags".into(),
+                b.source_file_start_flags.as_entire_binding(),
             ),
             (
-                "source_file_start".into(),
-                b.source_file_start.as_entire_binding(),
-            ),
-            (
-                "source_file_len".into(),
-                b.source_file_len.as_entire_binding(),
+                "source_file_end_flags".into(),
+                b.source_file_end_flags.as_entire_binding(),
             ),
             ("block_prefix".into(), block_prefix_binding),
             (

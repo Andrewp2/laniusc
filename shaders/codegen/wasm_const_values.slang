@@ -18,6 +18,7 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_expr_int_value;
 StructuredBuffer<uint> hir_stmt_record;
 
@@ -88,24 +89,20 @@ uint expr_left(uint node)
     return valid_node(node) ? expr_record_slot(node, EXPR_RECORD_LEFT) : INVALID;
 }
 
-uint resolve_expr(uint node)
+uint expr_result_root_or_invalid(uint node)
 {
-    [loop]
-    for (uint guard = 0u; guard < 64u; guard += 1u)
-    {
-        if (!valid_node(node))
-            return INVALID;
-        if (expr_form(node) != HIR_EXPR_FORWARD)
-            return node;
-        node = expr_left(node);
-    }
-    return INVALID;
+    if (!valid_node(node))
+        return INVALID;
+    uint root = hir_expr_result_root_node[node];
+    if (valid_node(root))
+        return root;
+    return expr_form(node) == HIR_EXPR_FORWARD ? INVALID : node;
 }
 
 bool literal_leaf_value(uint value_node, out uint value)
 {
     value = 0u;
-    value_node = resolve_expr(value_node);
+    value_node = expr_result_root_or_invalid(value_node);
     if (!valid_node(value_node))
         return false;
 
@@ -129,7 +126,7 @@ bool literal_expr_value(uint value_node, out uint value)
     if (literal_leaf_value(value_node, value))
         return true;
 
-    value_node = resolve_expr(value_node);
+    value_node = expr_result_root_or_invalid(value_node);
     if (!valid_node(value_node))
         return false;
 

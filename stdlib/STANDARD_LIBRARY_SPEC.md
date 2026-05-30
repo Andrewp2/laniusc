@@ -399,7 +399,7 @@ the responsibilities should remain clear.
 - `core::array`
 - `core::slice`
 - `core::tuple`
-- `core::mem`
+- `core::mem` (currently seeded as no-runtime generic value helpers)
 - `core::ptr`, only when the language has a defined unsafe boundary.
 - `core::marker`, for zero-sized marker types and marker traits.
 - `core::ops`, for operator traits/interfaces if the language exposes them.
@@ -413,6 +413,7 @@ the responsibilities should remain clear.
 - `core::panic`
 - `core::intrinsics`
 - `core::target` (currently seeded as source-level target capability defaults)
+- `core::runtime` (currently seeded as a conservative runtime capability view)
 
 ### Alloc Modules
 
@@ -456,7 +457,9 @@ the responsibilities should remain clear.
 - `std::atomic`
 - `std::net` (currently seeded as source-level host ABI declarations)
 - `std::dns`
-- `std::random`
+- `std::host` (currently seeded as aggregate host-service contract metadata)
+- `std::random` (currently seeded as source-level host ABI declarations)
+- `std::gpu` (currently seeded as source-level host ABI declarations)
 - `std::os`
 - `std::ffi`
 - `std::terminal`
@@ -1491,6 +1494,21 @@ Expected contracts:
 - Containers document whether operations invalidate references, indices, or
   iterators.
 - Drop/destructor behavior must be deterministic.
+- The current `core::mem` seed is a no-runtime, no-allocator value-helper
+  surface. `VALUE_HELPERS_REQUIRE_RUNTIME` and
+  `VALUE_HELPERS_REQUIRE_ALLOCATOR` remain false, and
+  `value_helpers_are_runtime_free()` reports true for the active compiler
+  slice.
+- Raw memory helpers are intentionally fail-closed until the language has an
+  unsafe boundary and concrete layout rules. `RAW_MEMORY_API_AVAILABLE` and
+  `raw_memory_api_is_available()` remain false, while
+  `raw_memory_api_is_blocked()` remains true.
+- The raw-memory surface is tied to allocator runtime-service metadata without
+  becoming executable: `RAW_MEMORY_SERVICE_ID` is the allocator service id,
+  `RAW_MEMORY_RUNTIME_ABI_VERSION` is the active runtime ABI version,
+  `RAW_MEMORY_SERVICE_STATUS_UNAVAILABLE` is the current status, and
+  `raw_memory_api_requires_runtime_binding()` remains true until an allocator
+  binding exists.
 
 ## Unsafe And Low-Level Utilities
 
@@ -2000,13 +2018,197 @@ Examples:
 - `core::target::has_threads`
 - `core::target::has_network`
 - `core::target::has_clock`
+- `core::target::has_panic_hook`
+- `core::target::has_host_services`
 - `core::target::has_secure_rng`
 - `core::target::has_gpu`
+- `core::target::has_process`
+- `core::target::has_env`
+- `core::target::is_freestanding`
 
 Capability checks should be compile-time where possible and runtime where
 necessary.
-The current source seed exposes static defaults only; real target configuration
-and compile-time capability evaluation are still required.
+The current `core::target` source seed exposes static defaults only and can be
+loaded through `--stdlib-root` by importing callers for frontend type-checking;
+real target configuration and compile-time capability evaluation are still
+required.
+The current `core::runtime` seed exposes `RUNTIME_ABI_METADATA_VERSION`,
+`RUNTIME_ABI_VERSION`, plus stable numeric `SERVICE_*_ID` descriptors for
+allocator, filesystem, stdio, clock, network, panic-hook, aggregate
+host-service, threads, secure RNG, GPU host-service, process, environment, and
+test-harness bindings. Those identifiers are for compiler/linker diagnostics
+and future binding metadata only; every runtime-backed service capability
+remains false until executable runtime support exists.
+`RUNTIME_SERVICE_COUNT`, `FIRST_RUNTIME_SERVICE_ID`,
+`LAST_RUNTIME_SERVICE_ID`, `runtime_service_count()`,
+`first_runtime_service_id()`, `last_runtime_service_id()`, and
+`service_id_in_descriptor_range(id)` expose the current bounded descriptor
+inventory for tooling and diagnostics without binding or executing any service.
+`is_known_service(id)` is a descriptor classifier only,
+`runtime_abi_version_for_service(id)` returns `RUNTIME_ABI_VERSION` for known
+service descriptors and `UNKNOWN_RUNTIME_ABI_VERSION` for unknown ids, and
+`has_service(id)` returns the current service capability value. In the active
+compiler slice that means known runtime services are still unavailable unless a
+future runtime/linker contract explicitly binds them.
+`service_status(id)` exposes that same distinction as a stable numeric
+`RuntimeServiceStatus`: unknown ids map to `SERVICE_STATUS_UNKNOWN`, known but
+currently unbound services map to `SERVICE_STATUS_UNAVAILABLE`, and
+`SERVICE_STATUS_AVAILABLE` is reserved for a future bound capability.
+`service_is_unknown(id)`, `service_is_unavailable(id)`, and
+`service_is_available(id)` are convenience predicates over that descriptor-only
+status and do not imply runtime binding.
+`runtime_bound_api_is_executable(id)` reports true only for available services,
+while `runtime_bound_api_is_blocked(id)` is its fail-closed companion and reports
+true for recognized-but-unbound services and unknown service ids.
+`service_is_contract_only(id)` and `service_requires_runtime_binding(id)` are
+diagnostic conveniences for that same descriptor surface: they report
+recognized service ids whose current capability is false and report false for
+unknown ids.
+`laniusc diagnostics explain LNC0038` mirrors that contract for external tools:
+it publishes service rows and API rows for the current runtime-bound stdlib
+extern declarations, including each qualified API name, executable probe,
+runtime-binding probe, current `known-unbound` status, and `executable = false`.
+This lets wrappers classify a visible host ABI declaration without treating it
+as executable runtime support.
+`HAS_RUNTIME_SERVICES`, `has_runtime_services()`, and
+`runtime_services_are_contract_only()` expose the aggregate current boundary:
+runtime-backed services are contract metadata only until a linker/runtime
+binding exists.
+Source-pack artifact descriptors use the same ids in
+`required_runtime_service_ids`, must also pin
+`required_runtime_abi_version = RUNTIME_ABI_VERSION`, and persist flat
+`required_runtime_services` rows with the service id, ABI version, and current
+service status. Runtime-bound descriptors must also persist `runtime_abi`
+metadata containing the metadata format version, ABI version, service count,
+and first/last service-id bounds. A descriptor that requires one of these
+runtime services is ABI-pinned metadata only in the current slice: validation
+rejects missing, unknown, or unsupported runtime ABI versions, missing or
+incoherent runtime ABI metadata, orphan `runtime_abi` metadata without required
+service ids, non-canonical runtime service-id ordering, service rows that do
+not match the canonical id list, service rows that claim availability,
+reserved flat record arrays without exactly one matching descriptor record, and
+emitted target-byte record arrays until a future
+runtime/linker binding exists. Link execution summaries must carry the same ABI
+pin with required runtime service ids before they can produce partial-link or
+linked-output descriptor contracts.
+Runtime-backed stdlib seed modules should mirror this descriptor surface with
+local ABI-version, service-id, known-service, service-status, availability, and
+runtime-binding helpers so users and tools can probe the unsupported boundary
+through public stdlib interfaces without relying on backend recognizers.
+`core::mem` follows that shape for raw-memory operations: generic value helpers
+remain runtime-free, while raw-memory helpers expose the allocator service id,
+runtime ABI version, unavailable status, and fail-closed runtime-binding gate
+without exposing executable pointer or layout operations.
+`alloc::allocator` follows that shape for heap allocation: callers can
+type-check allocation, reallocation, deallocation, and allocation-failure hook
+gates, while every allocator ABI declaration remains non-executable until an
+allocator runtime binding exists. `allocator_contract_metadata_is_available()`
+is descriptor metadata only, and `allocator_host_abi_is_contract_only()` keeps
+the raw allocator ABI visibly non-executable. `allocator_is_blocked()`,
+`alloc_is_blocked()`, `realloc_is_blocked()`, `dealloc_is_blocked()`, and
+`alloc_failed_is_blocked()` are the fail-closed companions to the executable
+probes until a heap allocator runtime binding exists.
+`core::panic` follows that shape for the panic-hook service even though its
+extern declarations are not executable yet: callers can inspect the local
+runtime ABI version, descriptor metadata availability, known-service predicate,
+unavailable status, blocked status, host-ABI contract-only status, and
+runtime-binding requirement and compare them with `core::runtime`. It also
+exposes `panic_is_executable()`, `panic_is_blocked()`,
+`panic_requires_runtime_binding()`, `unreachable_is_executable()`,
+`unreachable_is_blocked()`, and `unreachable_requires_runtime_binding()` so the
+raw panic extern declarations stay visibly fail-closed until a runtime/linker
+binding exists.
+`std::io` exposes per-extern gates for stdin, stdout, stderr, flush, and
+`print_i32`, so callers can type-check which standard-I/O declarations are
+recognized while still seeing that all of them require a runtime binding before
+execution. `stdio_contract_metadata_is_available()` is a descriptor-only probe,
+while `stdio_host_abi_is_contract_only()` marks the raw host ABI declarations as
+non-executable until the runtime is bound. `stdio_is_blocked()`,
+`write_stdout_is_blocked()`,
+`write_stderr_is_blocked()`, `read_stdin_is_blocked()`,
+`flush_stdout_is_blocked()`, `flush_stderr_is_blocked()`, and
+`print_i32_is_blocked()` are the fail-closed public companions to those
+executable probes until a standard-I/O runtime binding exists.
+`std::fs` exposes the same contract for file I/O and path-mutation API
+families. `filesystem_contract_metadata_is_available()` is descriptor metadata
+only, and `filesystem_host_abi_is_contract_only()` keeps the raw filesystem ABI
+declarations visibly non-executable. Opening/reading/writing/closing files and
+remove/create/rename declarations are visible through `--stdlib-root`, while
+`filesystem_is_blocked()`, `file_io_is_blocked()`, and
+`path_mutation_api_is_blocked()` remain the fail-closed family gates until a
+filesystem runtime binding is supplied. The file-I/O operations also expose
+per-operation gates for `open_read`, `open_write`, `open_append`, `close`,
+`read`, and `write`, so callers can type-check recognized filesystem APIs
+without treating raw extern visibility as executable host support.
+`std::process` also exposes API-family gates for process arguments and exit-code
+hooks plus per-extern gates for `argc`, `arg_len`, `arg_read`,
+`set_exit_code`, and `exit`. `process_contract_metadata_is_available()` is
+descriptor metadata only, and `process_host_abi_is_contract_only()` keeps the
+raw declarations visibly non-executable. The fail-closed blocked predicates let
+callers type-check the current "recognized but unbound" boundary without
+calling raw host externs. `EXIT_SUCCESS`, `EXIT_FAILURE`,
+`exit_success_code()`, `exit_failure_code()`, `exit_code_is_success(code)`,
+and `exit_code_is_failure(code)` are pure source-level process contracts and do
+not bind the process runtime.
+`std::env` exposes the same environment-service contract for environment
+variables and current-directory queries. `env_contract_metadata_is_available()`
+is descriptor metadata only, and `env_host_abi_is_contract_only()` keeps the raw
+environment ABI declarations visibly non-executable. The raw declarations can
+type-check through `--stdlib-root`, while the `var_*` and `current_dir_*`
+executable gates remain false until a host environment runtime binding exists.
+`std::time` exposes clock-service gates for monotonic time, wall-clock time, and
+sleep declarations. `clock_contract_metadata_is_available()` is descriptor
+metadata only, and `clock_host_abi_is_contract_only()` keeps the raw clock ABI
+declarations visibly non-executable. `clock_is_blocked()`,
+`monotonic_now_ns_is_blocked()`, `system_now_unix_ms_is_blocked()`, and
+`sleep_ms_is_blocked()` are the fail-closed companions to the executable probes
+and remain true until a clock runtime binding exists.
+`std::net` exposes the same kind of public gates for TCP and UDP API families:
+the extern declarations can type-check through `--stdlib-root`, while
+`network_contract_metadata_is_available()` is descriptor metadata only and
+`network_host_abi_is_contract_only()` keeps the raw networking ABI visibly
+contract-only. `network_is_blocked()`, `tcp_api_is_blocked()`, and
+`udp_api_is_blocked()` are
+the fail-closed companions to the executable probes. TCP and UDP remain
+contract-only until a runtime binding exists.
+`std::host` exposes the aggregate host-service descriptor as an importable
+contract-only module. It mirrors `core::runtime::SERVICE_HOST_SERVICES_ID`,
+keeps `HOST_SERVICES_HAS_RUNTIME_BINDING` false, reports descriptor metadata as
+available, and exposes blocked/runtime-binding gates for the aggregate
+host-services API. It deliberately declares no raw externs; the module exists so
+callers and tools can type-check the aggregate host-service boundary without
+claiming that any host callback or host-service ABI is executable.
+`std::random` follows the secure-RNG service contract: callers can type-check
+the local ABI version, service id, status, runtime-binding requirement, and
+raw entropy extern declarations through `--stdlib-root`, but
+`random_contract_metadata_is_available()` is descriptor metadata only and
+`random_host_abi_is_contract_only()` keeps the raw entropy ABI visibly
+non-executable. `random_is_blocked()`, `secure_rng_api_is_blocked()`,
+`fill_secure_bytes_is_blocked()`, and `secure_u32_is_blocked()` are the
+fail-closed companions to the executable probes until a secure entropy runtime
+binding exists.
+`std::gpu` follows the GPU host-service contract for user-visible buffer and
+dispatch declarations. Those APIs can type-check through `--stdlib-root`, but
+`gpu_contract_metadata_is_available()` is descriptor metadata only and
+`gpu_host_abi_is_contract_only()` keeps the raw GPU host ABI visibly
+non-executable. `gpu_is_blocked()`,
+`gpu_buffer_api_is_executable()` and `gpu_dispatch_api_is_executable()` remain
+false until a runtime binding defines actual GPU resource ownership and
+dispatch ABI semantics. `gpu_buffer_api_is_blocked()` and
+`gpu_dispatch_api_is_blocked()` are the fail-closed companions for callers that
+need to distinguish recognized-but-unbound GPU APIs from executable host GPU
+bindings.
+`std::thread` follows the threads service contract for spawn, join, yield, and
+current-thread-id declarations. Those APIs can type-check through
+`--stdlib-root`; `thread_contract_metadata_is_available()` is descriptor
+metadata only, and `thread_host_abi_is_contract_only()` keeps the raw thread ABI
+declarations visibly non-executable. The executable gates remain false and their
+`*_is_blocked()` and `*_requires_runtime_binding()` companions remain true until
+the language and runtime define a thread ABI and host binding.
+`test::harness` follows the same contract-only shape for test registration,
+discovery, and execution. The module exposes the test-harness service id, ABI
+version, unavailable status, metadata probe, and blocked/runtime-binding gates
+without declaring host externs or claiming a runnable harness.
 
 ## Naming Rules
 
@@ -2065,6 +2267,7 @@ Current files:
 - `core/slice.lani`
 - `core/panic.lani`
 - `core/target.lani`
+- `core/runtime.lani`
 - `alloc/allocator.lani`
 - `std/io.lani`
 - `std/process.lani`
@@ -2072,6 +2275,10 @@ Current files:
 - `std/time.lani`
 - `std/fs.lani`
 - `std/net.lani`
+- `std/host.lani`
+- `std/random.lani`
+- `std/gpu.lani`
+- `std/thread.lani`
 - `test/assert.lani`
 - `i32.lani`
 - `bool.lani`

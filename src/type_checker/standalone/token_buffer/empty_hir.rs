@@ -93,7 +93,15 @@ impl EmptyHirBuffers {
             "hir_fn_return_type_node".into(),
             self.parent.as_entire_binding(),
         );
+        resources.insert(
+            "hir_method_signature_flags".into(),
+            self.node_kind.as_entire_binding(),
+        );
         resources.insert("hir_param_record".into(), self.parent.as_entire_binding());
+        resources.insert(
+            "hir_param_type_node".into(),
+            self.parent.as_entire_binding(),
+        );
     }
 
     fn insert_expr_resources<'a>(
@@ -101,6 +109,14 @@ impl EmptyHirBuffers {
         resources: &mut HashMap<String, wgpu::BindingResource<'a>>,
     ) {
         resources.insert("hir_expr_record".into(), self.parent.as_entire_binding());
+        resources.insert(
+            "hir_expr_result_node".into(),
+            self.parent.as_entire_binding(),
+        );
+        resources.insert(
+            "hir_expr_result_root_node".into(),
+            self.parent.as_entire_binding(),
+        );
         resources.insert(
             "hir_expr_int_value".into(),
             self.node_kind.as_entire_binding(),
@@ -118,6 +134,7 @@ impl EmptyHirBuffers {
             self.parent.as_entire_binding(),
         );
         resources.insert("hir_stmt_record".into(), self.parent.as_entire_binding());
+        resources.insert("hir_stmt_scope_end".into(), self.parent.as_entire_binding());
         resources.insert(
             "hir_array_lit_first_element".into(),
             self.parent.as_entire_binding(),
@@ -125,6 +142,14 @@ impl EmptyHirBuffers {
         resources.insert(
             "hir_array_lit_element_count".into(),
             self.node_kind.as_entire_binding(),
+        );
+        resources.insert(
+            "hir_array_lit_context_stmt_node".into(),
+            self.parent.as_entire_binding(),
+        );
+        resources.insert(
+            "hir_array_element_parent_lit".into(),
+            self.parent.as_entire_binding(),
         );
         resources.insert(
             "hir_array_element_next".into(),
@@ -138,6 +163,10 @@ impl EmptyHirBuffers {
     ) {
         resources.insert(
             "hir_call_callee_node".into(),
+            self.parent.as_entire_binding(),
+        );
+        resources.insert(
+            "hir_call_context_stmt_node".into(),
             self.parent.as_entire_binding(),
         );
         resources.insert("hir_call_arg_start".into(), self.parent.as_entire_binding());
@@ -165,6 +194,10 @@ impl EmptyHirBuffers {
         resources.insert(
             "hir_variant_payload_count".into(),
             self.node_kind.as_entire_binding(),
+        );
+        resources.insert(
+            "hir_variant_payload_node".into(),
+            self.parent.as_entire_binding(),
         );
     }
 
@@ -219,6 +252,10 @@ impl EmptyHirBuffers {
             self.parent.as_entire_binding(),
         );
         resources.insert(
+            "hir_struct_lit_context_stmt_node".into(),
+            self.parent.as_entire_binding(),
+        );
+        resources.insert(
             "hir_struct_lit_field_start".into(),
             self.parent.as_entire_binding(),
         );
@@ -250,6 +287,10 @@ impl EmptyHirBuffers {
         );
         resources.insert(
             "predicate_bound_token".into(),
+            self.parent.as_entire_binding(),
+        );
+        resources.insert(
+            "predicate_bound_decl_id".into(),
             self.parent.as_entire_binding(),
         );
         resources.insert(

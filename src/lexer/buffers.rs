@@ -2,10 +2,10 @@ use super::LexParams;
 use crate::{
     gpu::buffers::{
         LaniusBuffer,
-        storage_ro_from_u32s,
+        storage_ro_from_u32s_with_queue,
         storage_rw_for_array,
         storage_rw_uninit_bytes,
-        uniform_from_val,
+        uniform_from_val_with_queue,
     },
     lexer::tables::dfa::N_STATES,
 };
@@ -39,6 +39,8 @@ pub struct GpuBuffers {
     pub source_file_count: LaniusBuffer<u32>,
     pub source_file_start: LaniusBuffer<u32>,
     pub source_file_len: LaniusBuffer<u32>,
+    pub source_file_start_flags: LaniusBuffer<u32>,
+    pub source_file_end_flags: LaniusBuffer<u32>,
     pub token_file_id: LaniusBuffer<u32>,
 }
 
@@ -46,6 +48,7 @@ impl GpuBuffers {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         n: u32,
         source_file_capacity: u32,
         start_state: u32,
@@ -76,12 +79,14 @@ impl GpuBuffers {
         let in_bytes: LaniusBuffer<u8> =
             storage_rw_uninit_bytes(device, "in_bytes", n as usize, n as usize);
 
-        let token_map: LaniusBuffer<u32> = storage_ro_from_u32s(device, "token_map", token_map);
+        let token_map: LaniusBuffer<u32> =
+            storage_ro_from_u32s_with_queue(device, queue, "token_map", token_map);
 
         let next_emit: LaniusBuffer<u32> =
-            storage_ro_from_u32s(device, "next_emit", next_emit_packed);
+            storage_ro_from_u32s_with_queue(device, queue, "next_emit", next_emit_packed);
 
-        let next_u8: LaniusBuffer<u32> = storage_ro_from_u32s(device, "next_u8", next_u8_packed);
+        let next_u8: LaniusBuffer<u32> =
+            storage_ro_from_u32s_with_queue(device, queue, "next_u8", next_u8_packed);
 
         let per_block_count = N_STATES * (nb_dfa as usize);
         let dfa_02_ping: LaniusBuffer<u32> =
@@ -123,6 +128,10 @@ impl GpuBuffers {
             storage_rw_for_array::<u32>(device, "source_file_start", source_file_capacity);
         let source_file_len =
             storage_rw_for_array::<u32>(device, "source_file_len", source_file_capacity);
+        let source_file_start_flags =
+            storage_rw_for_array::<u32>(device, "source_file_start_flags", n as usize + 1);
+        let source_file_end_flags =
+            storage_rw_for_array::<u32>(device, "source_file_end_flags", n as usize + 1);
         let token_file_id = storage_rw_for_array::<u32>(device, "token_file_id", n as usize);
 
         let params_val = LexParams {
@@ -134,7 +143,7 @@ impl GpuBuffers {
             skip2: skip_kinds[2],
             skip3: skip_kinds[3],
         };
-        let params = uniform_from_val(device, "LexParams", &params_val);
+        let params = uniform_from_val_with_queue(device, queue, "LexParams", &params_val);
 
         Self {
             n,
@@ -165,6 +174,8 @@ impl GpuBuffers {
             source_file_count,
             source_file_start,
             source_file_len,
+            source_file_start_flags,
+            source_file_end_flags,
             token_file_id,
         }
     }

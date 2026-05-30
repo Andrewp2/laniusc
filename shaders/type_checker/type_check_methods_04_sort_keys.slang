@@ -3,11 +3,13 @@
 // Scheduling contract:
 // - Dispatch after type_check_methods_03_seed_key_order.slang or the previous
 //   stable scatter pass has initialized method_key_order_in.
-// - For key_step 0..15, the host schedules histogram, GPU bucket-prefix scan,
+// - For key_step 0..51, the host schedules histogram, GPU bucket-prefix scan,
 //   GPU bucket-base scan, and stable scatter.
 // - key_step walks the fixed method key from least-significant to
-//   most-significant: method name id, receiver type-ref payload, receiver
-//   type-ref tag, then defining module id.
+//   most-significant: defining module id, method name id, bounded receiver
+//   type-argument refs, receiver nominal payload, then receiver type-ref tag.
+//   That leaves receiver/name as the searchable prefix and module as a
+//   duplicate/visibility tie-breaker.
 // - Invalid records encode to sentinel 0, while real ids encode as id + 1.
 // - This pass only counts radix buckets. It does not resolve methods, inspect
 //   source bytes, hash token text, perform CPU lookup, or apply same-source
@@ -34,6 +36,10 @@ StructuredBuffer<uint> method_decl_module_id;
 StructuredBuffer<uint> method_decl_name_id;
 StructuredBuffer<uint> module_type_path_type;
 StructuredBuffer<uint> type_instance_decl_token;
+StructuredBuffer<uint> type_instance_arg_start;
+StructuredBuffer<uint> type_instance_arg_count;
+StructuredBuffer<uint> type_instance_arg_ref_tag;
+StructuredBuffer<uint> type_instance_arg_ref_payload;
 StructuredBuffer<uint> method_key_order_in;
 
 RWStructuredBuffer<uint> radix_block_histogram;
@@ -45,6 +51,7 @@ static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
 static const uint TY_GENERIC_BASE = 8192u;
+static const uint TYPE_INSTANCE_ARG_REF_STRIDE = 4u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint RADIX_BUCKETS = RADIX_U8_SENTINEL_BUCKETS;
@@ -84,10 +91,11 @@ uint resolved_nominal_decl_token(uint token_i)
     return decl_token_from_type_code(module_type_path_type[token_i]);
 }
 
-uint receiver_payload_key(uint fn_i)
+uint type_ref_payload_key(uint tag, uint payload)
 {
-    uint payload = method_decl_receiver_ref_payload[fn_i];
-    uint tag = method_decl_receiver_ref_tag[fn_i];
+    if (tag == TYPE_REF_GENERIC_PARAM)
+        return INVALID;
+
     if (tag == TYPE_REF_INSTANCE && payload < gParams.method_capacity)
     {
         uint decl_token = type_instance_decl_token[payload];
@@ -97,13 +105,51 @@ uint receiver_payload_key(uint fn_i)
         if (decl_token != INVALID)
             return decl_token;
     }
-    if (tag == TYPE_REF_GENERIC_PARAM)
-    {
-        uint decl_token = resolved_nominal_decl_token(payload);
-        if (decl_token != INVALID)
-            return decl_token;
-    }
     return payload;
+}
+
+uint receiver_payload_key(uint fn_i)
+{
+    return type_ref_payload_key(
+        method_decl_receiver_ref_tag[fn_i],
+        method_decl_receiver_ref_payload[fn_i]);
+}
+
+uint receiver_arg_count(uint fn_i)
+{
+    uint tag = method_decl_receiver_ref_tag[fn_i];
+    uint payload = method_decl_receiver_ref_payload[fn_i];
+    if (tag != TYPE_REF_INSTANCE || payload >= active_method_capacity())
+        return 0u;
+    return min(type_instance_arg_count[payload], TYPE_INSTANCE_ARG_REF_STRIDE);
+}
+
+uint receiver_arg_ref_index(uint fn_i, uint slot)
+{
+    uint tag = method_decl_receiver_ref_tag[fn_i];
+    uint payload = method_decl_receiver_ref_payload[fn_i];
+    if (tag != TYPE_REF_INSTANCE || payload >= active_method_capacity())
+        return INVALID;
+    if (slot >= receiver_arg_count(fn_i))
+        return INVALID;
+    uint start = type_instance_arg_start[payload];
+    return start == INVALID ? INVALID : start + slot;
+}
+
+uint receiver_arg_ref_tag_key(uint fn_i, uint slot)
+{
+    uint arg_i = receiver_arg_ref_index(fn_i, slot);
+    return arg_i == INVALID ? TYPE_REF_INVALID : type_instance_arg_ref_tag[arg_i];
+}
+
+uint receiver_arg_ref_payload_key(uint fn_i, uint slot)
+{
+    uint arg_i = receiver_arg_ref_index(fn_i, slot);
+    if (arg_i == INVALID)
+        return INVALID;
+    return type_ref_payload_key(
+        type_instance_arg_ref_tag[arg_i],
+        type_instance_arg_ref_payload[arg_i]);
 }
 
 uint method_key_field(uint fn_i, uint field_i)
@@ -112,17 +158,35 @@ uint method_key_field(uint fn_i, uint field_i)
         return 0u;
 
     if (field_i == 0u)
-        return encode_nullable_id(method_decl_name_id[fn_i], INVALID);
+        return encode_nullable_id(method_decl_module_id[fn_i], INVALID);
     if (field_i == 1u)
-        return encode_nullable_id(receiver_payload_key(fn_i), INVALID);
+        return encode_nullable_id(method_decl_name_id[fn_i], INVALID);
     if (field_i == 2u)
-        return method_decl_receiver_ref_tag[fn_i] + 1u;
-    return encode_nullable_id(method_decl_module_id[fn_i], INVALID);
+        return encode_nullable_id(receiver_arg_ref_payload_key(fn_i, 3u), INVALID);
+    if (field_i == 3u)
+        return encode_nullable_id(receiver_arg_ref_tag_key(fn_i, 3u), TYPE_REF_INVALID);
+    if (field_i == 4u)
+        return encode_nullable_id(receiver_arg_ref_payload_key(fn_i, 2u), INVALID);
+    if (field_i == 5u)
+        return encode_nullable_id(receiver_arg_ref_tag_key(fn_i, 2u), TYPE_REF_INVALID);
+    if (field_i == 6u)
+        return encode_nullable_id(receiver_arg_ref_payload_key(fn_i, 1u), INVALID);
+    if (field_i == 7u)
+        return encode_nullable_id(receiver_arg_ref_tag_key(fn_i, 1u), TYPE_REF_INVALID);
+    if (field_i == 8u)
+        return encode_nullable_id(receiver_arg_ref_payload_key(fn_i, 0u), INVALID);
+    if (field_i == 9u)
+        return encode_nullable_id(receiver_arg_ref_tag_key(fn_i, 0u), TYPE_REF_INVALID);
+    if (field_i == 10u)
+        return receiver_arg_count(fn_i) + 1u;
+    if (field_i == 11u)
+        return encode_nullable_id(receiver_payload_key(fn_i), INVALID);
+    return method_decl_receiver_ref_tag[fn_i] + 1u;
 }
 
 uint method_key_radix_key(uint fn_i, uint key_step)
 {
-    uint field_i = radix_field_index(key_step, 3u);
+    uint field_i = radix_field_index(key_step, 12u);
     uint value = method_key_field(fn_i, field_i);
     return radix_byte_key(value, key_step);
 }

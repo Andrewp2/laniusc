@@ -6,10 +6,12 @@
 // - For each HIR name use, this pass performs sorted range queries over the
 //   declaration table and a max-scope segment-tree query to find the latest
 //   declaration before the use whose scope still contains it.
-// - It consumes HIR expression and statement records, interned name ids,
+// - It consumes HIR expression/statement/token-span records, interned name ids,
 //   function context records, and compact declaration records. It does not
 //   inspect source text, inspect token spelling, match helper names, or
-//   recognize function-body shapes.
+//   recognize function-body shapes. Local self-initializer rejection is driven
+//   by compact declaration-node records plus parser-owned initializer spans,
+//   not by walking parent/root chains.
 
 import range_query;
 import segment_tree;
@@ -29,7 +31,8 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_semantic_count;
 StructuredBuffer<uint> hir_kind;
-StructuredBuffer<uint> parent_record;
+StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_token_end;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> name_id_by_token;
@@ -40,6 +43,7 @@ StructuredBuffer<uint> hir_visible_decl_owner_fn;
 StructuredBuffer<uint> hir_visible_decl_name_id;
 StructuredBuffer<uint> hir_visible_decl_token;
 StructuredBuffer<uint> hir_visible_decl_scope_end;
+StructuredBuffer<uint> hir_visible_decl_node;
 StructuredBuffer<uint> hir_visible_decl_key_order;
 StructuredBuffer<uint> hir_visible_decl_scope_tree;
 
@@ -56,6 +60,7 @@ static const uint ERR_UNRESOLVED_IDENT = 2u;
 
 static const uint HIR_STMT = 7u;
 static const uint HIR_LET_STMT = 8u;
+static const uint HIR_FOR_STMT = 30u;
 
 static const uint EXPR_RECORD_STRIDE = 4u;
 static const uint EXPR_RECORD_FORM = 0u;
@@ -65,6 +70,7 @@ static const uint HIR_EXPR_NAME = 2u;
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_LET = 1u;
 static const uint STMT_RECORD_KIND_CONST = 4u;
+static const uint STMT_RECORD_KIND_FOR = 7u;
 
 public struct HirVisibleDeclLookupKey
 {
@@ -101,18 +107,33 @@ uint active_decl_count()
 uint visible_decl_leaf_count()
 {
     uint capacity = max(gParams.n_tokens, 1u);
-    return max(1u, (capacity + HIR_VISIBLE_DECL_ROW_BLOCK_SIZE - 1u) /
-                     HIR_VISIBLE_DECL_ROW_BLOCK_SIZE);
+    return ((capacity - 1u) / HIR_VISIBLE_DECL_ROW_BLOCK_SIZE) + 1u;
+}
+
+uint round_power_of_two_nonzero(uint value)
+{
+    value = max(value, 1u);
+    value -= 1u;
+    value |= value >> 1u;
+    value |= value >> 2u;
+    value |= value >> 4u;
+    value |= value >> 8u;
+    value |= value >> 16u;
+    return value + 1u;
 }
 
 uint visible_decl_leaf_base()
 {
-    uint base = 1u;
+    return round_power_of_two_nonzero(visible_decl_leaf_count());
+}
+
+bool visible_decl_tree_shape_supported()
+{
     uint leaves = visible_decl_leaf_count();
-    [loop]
-    while (base < leaves)
-        base <<= 1u;
-    return base;
+    uint leaf_base = visible_decl_leaf_base();
+    return leaf_base != 0u &&
+        leaves <= leaf_base &&
+        leaf_base <= 0x40000000u;
 }
 
 bool valid_token(uint token)
@@ -145,41 +166,51 @@ void record_error(uint token_i, uint code, uint detail)
     record_min_token_error(status, token_i, code, detail);
 }
 
-bool node_descends_from(uint node, uint ancestor)
+bool token_in_required_hir_span(uint token, uint node)
 {
-    if (!valid_node(node) || !valid_node(ancestor))
-        return false;
+    if (!valid_token(token) || !valid_node(node))
+        return true;
 
-    [loop]
-    for (uint guard = 0u; guard < 128u && valid_node(node); guard += 1u)
-    {
-        if (node == ancestor)
-            return true;
-        node = parent_record[node];
-    }
-    return false;
+    uint start = hir_token_pos[node];
+    uint end = hir_token_end[node];
+    if (!valid_token(start) || end == INVALID)
+        return true;
+
+    end = min(end, active_token_count());
+    if (end <= start)
+        return true;
+
+    return start <= token && token < end;
 }
 
-bool own_let_initializer_reference(uint node, uint decl_token)
+bool local_decl_initializer_contains_token(uint use_token, uint decl_i)
 {
-    if (!valid_node(node) || !valid_token(decl_token))
-        return false;
+    // If the compact row is malformed, do not bind the name through a
+    // declaration whose initializer boundary cannot be proven from records.
+    if (decl_i == INVALID || decl_i >= active_decl_count())
+        return true;
 
-    uint current = node;
-    [loop]
-    for (uint guard = 0u; guard < 128u && valid_node(current); guard += 1u)
+    uint decl_node = hir_visible_decl_node[decl_i];
+    if (!valid_node(decl_node))
+        return true;
+
+    uint kind = hir_kind[decl_node];
+    uint stmt_kind = stmt_slot(decl_node, 0u);
+    if ((kind == HIR_STMT || kind == HIR_LET_STMT) &&
+        (stmt_kind == STMT_RECORD_KIND_LET ||
+         stmt_kind == STMT_RECORD_KIND_CONST))
     {
-        uint kind = hir_kind[current];
-        uint stmt_kind = stmt_slot(current, 0u);
-        if ((kind == HIR_STMT || kind == HIR_LET_STMT) &&
-            (stmt_kind == STMT_RECORD_KIND_LET ||
-             stmt_kind == STMT_RECORD_KIND_CONST) &&
-            stmt_slot(current, 1u) == decl_token)
-        {
-            return node_descends_from(node, stmt_slot(current, 2u));
-        }
-        current = parent_record[current];
+        uint init_node = stmt_slot(decl_node, 2u);
+        return valid_node(init_node) && token_in_required_hir_span(use_token, init_node);
     }
+
+    if ((kind == HIR_STMT || kind == HIR_FOR_STMT) &&
+        stmt_kind == STMT_RECORD_KIND_FOR)
+    {
+        uint iterable_node = stmt_slot(decl_node, 2u);
+        return valid_node(iterable_node) && token_in_required_hir_span(use_token, iterable_node);
+    }
+
     return false;
 }
 
@@ -247,12 +278,14 @@ public struct HirVisibleDeclScopeTree : IRangeSearchTree<uint>
     public static uint leaf_value(uint block)
     {
         uint base = leaf_base();
-        return block < n_blocks() ? hir_visible_decl_scope_tree[base + block] : 0u;
+        return base != 0u && block < n_blocks() ?
+            hir_visible_decl_scope_tree[base + block] : 0u;
     }
 
     public static uint tree_value(uint node)
     {
-        return node < leaf_base() * 2u ? hir_visible_decl_scope_tree[node] : 0u;
+        uint base = leaf_base();
+        return base != 0u && node < base * 2u ? hir_visible_decl_scope_tree[node] : 0u;
     }
 }
 
@@ -288,10 +321,10 @@ public struct ScopeEndAfterUse : IRangeSearchPredicate<uint, uint>
     }
 }
 
-uint best_hir_decl_from_table(uint use_token, uint owner_encoded, uint use_name)
+uint best_hir_decl_row_from_table(uint use_token, uint owner_encoded, uint use_name)
 {
     uint count = active_decl_count();
-    if (count == 0u)
+    if (count == 0u || !visible_decl_tree_shape_supported())
         return INVALID;
 
     HirVisibleDeclLookupKey range_start =
@@ -322,7 +355,7 @@ uint best_hir_decl_from_table(uint use_token, uint owner_encoded, uint use_name)
         return INVALID;
 
     uint decl_i = sorted_decl_row(row);
-    return decl_i == INVALID ? INVALID : hir_visible_decl_token[decl_i];
+    return decl_i == INVALID ? INVALID : row;
 }
 
 [shader("compute")]
@@ -347,10 +380,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint owner_encoded = encoded_owner_fn(use_token);
-    uint decl_token = best_hir_decl_from_table(use_token, owner_encoded, use_name);
+    uint decl_row = best_hir_decl_row_from_table(use_token, owner_encoded, use_name);
+    uint decl_i = sorted_decl_row(decl_row);
+    uint decl_token = decl_i == INVALID ? INVALID : hir_visible_decl_token[decl_i];
     if (valid_token(decl_token))
     {
-        if (own_let_initializer_reference(node, decl_token))
+        if (local_decl_initializer_contains_token(use_token, decl_i))
         {
             record_error(use_token, ERR_UNRESOLVED_IDENT, 0u);
             return;

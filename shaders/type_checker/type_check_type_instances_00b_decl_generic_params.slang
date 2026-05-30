@@ -1,14 +1,13 @@
-// HIR-derived declaration generic parameter records.
+// Scatter HIR-derived declaration generic-parameter records.
 //
-// This pass records the expected type-argument arity for generic declarations
-// using parser-owned HIR item records and parse-tree ancestry. It is deliberately
-// fact-shaped: declaration nodes publish their token-to-HIR record and generic
-// parameter nodes publish declaration slots plus owner declaration counts.
-// Generic parameter use sites are resolved in a later pass after these counts
-// are complete.
+// Scheduling contract:
+// - Dispatch after type_check_type_instances_00a_mark_generic_param_records and
+//   a counted prefix scan over generic_param_flag.
+// - Each generic/const parameter declaration writes one compact row. Later
+//   passes sort those rows for duplicate-name validation and name lookup.
+// - This pass does not scan declaration subtrees.
 
 import generated_parse_production_ids;
-import tree_walk;
 import atomics;
 
 struct Params
@@ -22,30 +21,30 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> parent;
-StructuredBuffer<uint> subtree_end;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_item_kind;
 StructuredBuffer<uint> hir_item_name_token;
+StructuredBuffer<uint> name_id_by_token;
+StructuredBuffer<uint> generic_param_flag;
+StructuredBuffer<uint> generic_param_prefix;
+StructuredBuffer<uint> generic_decl_owner_by_node;
 
 RWStructuredBuffer<uint> type_decl_generic_param_count;
 RWStructuredBuffer<uint> type_decl_generic_param_count_by_node;
 RWStructuredBuffer<uint> type_decl_const_param_count_by_node;
-RWStructuredBuffer<uint> type_decl_hir_node_by_token;
-RWStructuredBuffer<uint> type_generic_param_slot_by_token;
-RWStructuredBuffer<uint> type_const_param_slot_by_token;
+RWStructuredBuffer<uint> type_decl_first_generic_param_row_by_node;
+RWStructuredBuffer<uint> type_decl_first_const_param_row_by_node;
+RWStructuredBuffer<uint> generic_param_owner_node;
+RWStructuredBuffer<uint> generic_param_name_id;
+RWStructuredBuffer<uint> generic_param_token;
+RWStructuredBuffer<uint> generic_param_node;
+RWStructuredBuffer<uint> generic_param_kind;
+RWStructuredBuffer<uint> generic_param_key_order;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint MAX_PARENT_WALK = 128u;
-
-static const uint HIR_ITEM_KIND_FN = 4u;
-static const uint HIR_ITEM_KIND_EXTERN_FN = 5u;
-static const uint HIR_ITEM_KIND_STRUCT = 6u;
-static const uint HIR_ITEM_KIND_ENUM = 7u;
-static const uint HIR_ITEM_KIND_TYPE_ALIAS = 8u;
-static const uint HIR_ITEM_KIND_TRAIT = 10u;
+static const uint GENERIC_PARAM_KIND_TYPE = 1u;
+static const uint GENERIC_PARAM_KIND_CONST = 2u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -67,54 +66,7 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
-uint parent_node(uint node)
-{
-    return parent[node];
-}
-
-public struct DeclGenericParamWalkGraph : ITreeWalkGraph
-{
-    public static bool valid(uint node)
-    {
-        return valid_node(node);
-    }
-
-    public static uint parent(uint node)
-    {
-        return parent_node(node);
-    }
-}
-
-bool generic_decl_item_kind(uint item_kind)
-{
-    return item_kind == HIR_ITEM_KIND_FN ||
-           item_kind == HIR_ITEM_KIND_EXTERN_FN ||
-           item_kind == HIR_ITEM_KIND_STRUCT ||
-           item_kind == HIR_ITEM_KIND_ENUM ||
-           item_kind == HIR_ITEM_KIND_TYPE_ALIAS ||
-           item_kind == HIR_ITEM_KIND_TRAIT;
-}
-
-public struct DeclGenericParamOwnerPredicate : ITreeWalkPredicate
-{
-    public static bool matches(uint node)
-    {
-        return generic_decl_item_kind(hir_item_kind[node]);
-    }
-}
-
-uint generic_decl_ancestor(uint node)
-{
-    uint ancestor;
-    return find_self_or_ancestor<
-        DeclGenericParamWalkGraph,
-        DeclGenericParamOwnerPredicate>(
-        node,
-        MAX_PARENT_WALK,
-        ancestor) ? ancestor : INVALID;
-}
-
-bool generic_param_node(uint node)
+bool is_generic_param_node(uint node)
 {
     return valid_node(node) && node_kind[node] == PROD_ENUM_TYPE_PARAM;
 }
@@ -132,66 +84,13 @@ uint const_param_name_token(uint node)
     return valid_token(token + 1u) ? token + 1u : INVALID;
 }
 
-uint generic_param_slot_for_node(uint decl_node, uint param_node)
+uint param_name_token(uint node)
 {
-    if (!valid_node(decl_node) || !valid_node(param_node))
-        return INVALID;
-
-    uint slot = 0u;
-    uint end = min(subtree_end[decl_node], active_hir_node_count());
-    [loop]
-    for (uint node = decl_node + 1u; node < end; node += 1u)
-    {
-        if (!generic_param_node(node) || generic_decl_ancestor(node) != decl_node)
-            continue;
-        if (node == param_node)
-            return slot;
-        slot += 1u;
-    }
+    if (is_generic_param_node(node))
+        return hir_token_pos[node];
+    if (const_param_node(node))
+        return const_param_name_token(node);
     return INVALID;
-}
-
-uint const_param_slot_for_node(uint decl_node, uint param_node)
-{
-    if (!valid_node(decl_node) || !valid_node(param_node))
-        return INVALID;
-
-    uint slot = 0u;
-    uint end = min(subtree_end[decl_node], active_hir_node_count());
-    [loop]
-    for (uint node = decl_node + 1u; node < end; node += 1u)
-    {
-        if (!const_param_node(node) || generic_decl_ancestor(node) != decl_node)
-            continue;
-        if (node == param_node)
-            return slot;
-        slot += 1u;
-    }
-    return INVALID;
-}
-
-void publish_generic_param_decl_slot(uint node)
-{
-    if (!generic_param_node(node))
-        return;
-
-    uint decl_node = generic_decl_ancestor(node);
-    uint token = hir_token_pos[node];
-    uint slot = generic_param_slot_for_node(decl_node, node);
-    if (valid_token(token) && slot != INVALID)
-        type_generic_param_slot_by_token[token] = slot;
-}
-
-void publish_const_param_decl_slot(uint node)
-{
-    if (!const_param_node(node))
-        return;
-
-    uint decl_node = generic_decl_ancestor(node);
-    uint token = const_param_name_token(node);
-    uint slot = const_param_slot_for_node(decl_node, node);
-    if (valid_token(token) && slot != INVALID)
-        type_const_param_slot_by_token[token] = slot;
 }
 
 [shader("compute")]
@@ -199,37 +98,39 @@ void publish_const_param_decl_slot(uint node)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
-    if (!valid_node(node))
+    if (!valid_node(node) || generic_param_flag[node] == 0u)
         return;
 
-    if (generic_decl_item_kind(hir_item_kind[node]))
-    {
-        uint name_token = hir_item_name_token[node];
-        if (valid_token(name_token))
-            type_decl_hir_node_by_token[name_token] = node;
-    }
-
-    publish_generic_param_decl_slot(node);
-    publish_const_param_decl_slot(node);
-
-    if (node_kind[node] == PROD_ENUM_CONST_PARAM)
-    {
-        uint const_decl_node = generic_decl_ancestor(node);
-        if (valid_node(const_decl_node))
-            atomic_u32_add(type_decl_const_param_count_by_node, const_decl_node, 1u);
-        return;
-    }
-
-    if (node_kind[node] != PROD_ENUM_TYPE_PARAM || !valid_token(hir_token_pos[node]))
+    uint row = generic_param_prefix[node];
+    if (row >= gParams.n_tokens)
         return;
 
-    uint decl_node = generic_decl_ancestor(node);
+    uint decl_node = generic_decl_owner_by_node[node];
     if (!valid_node(decl_node))
         return;
+
+    bool is_const = const_param_node(node);
+    uint token = param_name_token(node);
+    uint name_id = valid_token(token) ? name_id_by_token[token] : INVALID;
+
+    generic_param_owner_node[row] = decl_node;
+    generic_param_name_id[row] = name_id;
+    generic_param_token[row] = token;
+    generic_param_node[row] = node;
+    generic_param_kind[row] = is_const ? GENERIC_PARAM_KIND_CONST : GENERIC_PARAM_KIND_TYPE;
+    generic_param_key_order[row] = row;
+
+    if (is_const)
+    {
+        atomic_u32_add(type_decl_const_param_count_by_node, decl_node, 1u);
+        atomic_u32_min(type_decl_first_const_param_row_by_node, decl_node, row);
+        return;
+    }
 
     uint decl_name_token = hir_item_name_token[decl_node];
     uint decl_head_token = hir_token_pos[decl_node];
     atomic_u32_add(type_decl_generic_param_count_by_node, decl_node, 1u);
+    atomic_u32_min(type_decl_first_generic_param_row_by_node, decl_node, row);
     if (valid_token(decl_name_token))
         atomic_u32_add(type_decl_generic_param_count, decl_name_token, 1u);
     if (valid_token(decl_head_token))

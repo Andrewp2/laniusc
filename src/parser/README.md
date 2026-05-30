@@ -1,6 +1,6 @@
 # GPU Parsing — Brackets & Tree (current plan and next steps)
 
-This document explains the **current** GPU strategy for bracket matching and tree construction, how it fits the **WebGPU constraints** we care about (≤10 buffers per pass, modest buffer sizes, no push constants), and what we plan to do **next**.
+This document explains the **current** GPU strategy for bracket matching and tree construction, how it fits the **WebGPU constraints** we care about (modest buffers, reflected bind groups, no push constants), and what we plan to do **next**.
 
 The code lives under `shaders/parser/*` and is driven by `src/parser/*`. The demo entry point is `src/bin/parse_demo.rs`.
 
@@ -9,7 +9,8 @@ The code lives under `shaders/parser/*` and is driven by `src/parser/*`. The dem
 ## Design goals (tl;dr)
 
 * **Work-efficient & parallel:** ☑️ O(n) work and large-grid throughput; only O(#blocks) small scans.
-* **WebGPU-friendly:** ☑️ ≤10 buffers per pass, no push constants, fixed threadgroups (256).
+* **WebGPU-friendly:** ☑️ no push constants, fixed threadgroups (256),
+  and reflected bind groups checked against device limits.
 * **Deterministic pairing:** ☑️ Typed pairing invariant, involutive match map.
 * **Test oracles only:** ☑️ Any host-side sequential checks must be explicitly
   named as test CPU oracles and must not be called by the compiler pipeline.
@@ -19,20 +20,32 @@ The code lives under `shaders/parser/*` and is driven by `src/parser/*`. The dem
 
 ## Input model
 
-From generated pair headers we pack two streams (see `pack_varlen.slang`):
+The resident compiler path starts from lexer token rows and computes
+parser-local token facts before the LL(1) tree/HIR passes run:
+
+* delimiter depths, brace owners, statement/header context, and matched
+  delimiter pairs are produced by token-local kernels plus scan/apply passes;
+* `tokens_to_kinds.slang` consumes those token facts to publish semantic token
+  kinds for the generated LL(1) tables;
+* block-local LL(1) parsing stitches and seeds parser stacks, then flattens the
+  per-block emits into the production stream that feeds tree/HIR construction.
+
+The older LLP side path still exists for the paper-style summary-composition
+work. From generated pair headers it packs two streams (see
+`pack_varlen.slang`):
 
 * `out_sc`: **stack-change codes** (u32). *Odd* = push, *even* = pop. Upper bits carry a **typed ID** for the bracket kind (e.g., `(` vs `[`).
-* `out_emit`: **candidate production IDs** from the LLP pair table. This stream is not the compiler's trusted tree source until the grammar has a real conflict-free LLP table.
+* `out_emit`: **candidate production IDs** from the LLP pair table.
 
 These are produced by:
 
 * `llp_pairs.slang`  → headers per adjacent token pair
 * `pack_varlen.slang` → densely packs `out_sc` and `out_emit`
 
-The runtime currently runs the block-local seeded LL(1) passes and flattens
-their per-block emits into the canonical LL(1) production stream. Those passes
-provide exact acceptance/error reporting and feed tree/HIR construction while
-the paper-style LLP summary-composition path is blocked on grammar conflicts.
+Those LLP streams are not the compiler's trusted tree source until the grammar
+has a real conflict-free LLP table. The current resident compiler uses the LL(1)
+emit stream for exact acceptance/error reporting and tree/HIR construction while
+the LLP summary-composition path is blocked on grammar conflicts.
 
 ---
 
@@ -52,7 +65,7 @@ out_sc
   ├─ 05  scan histograms    → off_push[l], off_pop[l], (AND) valid
   ├─ (seed) copy offsets    → cur_push := off_push, cur_pop := off_pop
   ├─ 06  scatter by layer   → pushes_by_layer[], pops_by_layer[]
-  └─ 07  pair+validate      → match_for_index[], (AND) valid
+  └─ PSE pair+validate      → match_for_index[], (AND) valid
 ```
 
 ### Passes (files)
@@ -82,8 +95,10 @@ out_sc
 * **06** `brackets_06_scatter_by_layer.slang`
   Scatters indices of pushes and pops into `pushes_by_layer` / `pops_by_layer` using atomics and the seeded `cur_*` cursors.
 
-* **07** `brackets_07_pair_and_validate.slang`
-  **Pair by (layer, rank)** and write `match_for_index` bi-directionally. If `typed_check != 1`, type IDs are ignored; otherwise, a mismatched open/close type **ANDs** `valid` to 0.
+* **PSE pair** `brackets_pse_04_pair_by_layer.slang`
+  Pair by the predecessor-on-equal-depth relation and write
+  `match_for_index` bi-directionally. If `typed_check != 1`, type IDs are
+  ignored; otherwise, a mismatched open/close type **ANDs** `valid` to 0.
 
 > **Equivalence to PSE:** For properly nested sequences, the `r`-th pop at depth `d` pairs with the `r`-th push at layer `d` (rank-by-layer). This is precisely the predecessor-on-equal-depth selection PSE would find, but without building a min-tree. If we ever need the explicit predecessor structure (e.g., for incremental edits), we can add a min-tree build as an alternative path.
 
@@ -91,7 +106,9 @@ out_sc
 
 * **Work:** O(n).
 * **Span:** O(log blockSize) per block scan + O(#blocks) small scans + O(1) per event elsewhere.
-* **Per-pass bindings:** 6–9, under the “≤10 buffers” policy.
+* **Per-pass bindings:** the bracket stream passes stay in the 6-9-binding
+  range; resident token/HIR passes are validated against reflection and device
+  limits.
 * **Memory:** `n_layers ≤ #pushes ≤ len(out_sc)`. We allocate per-layer arrays with that upper bound (conservative but simple).
 
 ### Validity & diagnostics
@@ -128,21 +145,46 @@ It keeps the easy-to-reason-about sequential logic, but parallelizes across bloc
 ## Pipeline order (end-to-end)
 
 ```
-tokens ──► llp_pairs ──► pack_varlen
-                       │
-                       ├─► BRACKETS (01..07) → { match_for_index[], final_depth, min_depth, valid }
-                       │
-                       └─► TREE
-                           └─ TB1_local → TB2_stitch → TB3_seeded
+lexer token rows
+  └─ token fact passes:
+       impl/trait/header context local -> scan -> apply
+       delimiter depths/owners local -> scan -> apply
+       statement/match/where context local -> scan -> apply
+       delimiter match depth -> min-tree/PSE pair
+  └─ tokens_to_kinds + tokens_to_identifier_kinds
+  └─ LL(1) blocks:
+       stitch seeds -> seeded parse -> emit prefix scan -> flatten emit
+  └─ tree/HIR:
+       prefix count -> scan -> apply -> max-tree
+       parent/span/prev-sibling scatter
+       hir_nodes
+       semantic-HIR compact prefix -> scan -> scatter
+       semantic parent/depth/child-index pointer jumps
+       HIR record clears
+       type, type-arg, enum, item, return, parameter, method, expression,
+       call, array, match, struct, and context-relation record passes
 ```
 
-Driver code lives in `src/parser/driver.rs`, buffers in `src/parser/buffers.rs`, and pass wrappers in `src/parser/passes/*`. The driver seeds cursors (`cur_*`) by copying from offsets to keep bindings low.
+The order is intentionally fact-table first, consumer second: relation passes
+materialize token-local, tree-local, and semantic-HIR facts before downstream HIR
+records use them. For example, parameter links are pointer-jumped before method
+rows read parameter records, function-signature owners are pointer-jumped before
+return-type and method-signature status rows, and nearest statement/block/control
+context rows are scattered before later type/codegen consumers run.
+
+Driver code lives in `src/parser/driver.rs` and
+`src/parser/driver/token_frontend.rs`; buffers live in `src/parser/buffers.rs`;
+pass wrappers live in `src/parser/passes/*`. The driver seeds cursors (`cur_*`)
+by copying from offsets to keep bindings low.
 
 ---
 
 ## WebGPU constraints checklist
 
-* **≤10 buffers per pass:** All parser passes stay within 6–9 bindings.
+* **Binding counts:** The original bracket/tree passes stay in the small
+  6-9-binding range. Newer resident token/HIR relation passes use reflected
+  bind groups and must stay within the active device limits instead of the old
+  fixed 10-buffer budget.
 * **No push constants:** Uniforms are small constant buffers (via `encase`).
 * **Resource count:** We reuse buffers across passes; staging/readback is gated by `LANIUS_READBACK`.
 
@@ -161,6 +203,123 @@ Tree:
 * Exactly one root (`parent[0] = 0xFFFFFFFF` and others resolve).
 * For node `j` with arity `k > 0`, exactly `k` direct children appear consecutively after `j`.
 * Parent indices form a forest of one tree.
+
+HIR records:
+
+* Expression rows publish scalar literal forms for integer, float, string,
+  char, and boolean leaves with a value token inside the expression span.
+  Readback rejects literal forms on non-literal HIR rows and name forms on
+  non-name/non-path HIR rows.
+* Composite type rows publish parser-owned operand type edges: reference,
+  slice, and array records only publish a value node when it is another HIR type
+  row, and array records only publish a length token for parser-owned array
+  length rows. Readback validates path/value edges, path leaves, file ids, and
+  array length anchors before type-argument, statement, or function-return
+  consumers run.
+* Generic type-argument rows publish parser-owned first/count/next chains.
+  Readback rejects owner counts that exceed the flat row set, non-type owners
+  or arguments, non-path type owners, argument rows without concrete type
+  records, duplicate argument ownership, orphan next links, and chains that do
+  not terminate at the published count.
+* Enum variant tuple payload rows use a fixed four-slot flat layout. Readback
+  rejects payload counts beyond that stride instead of silently trusting a
+  truncated scatter record.
+* Call argument rows are linked and ranked by parser-owned flat records.
+  Readback rejects argument counts that cannot fit the packed owner/ordinal
+  representation, or owner rows whose argument ordinals are missing,
+  duplicated, or not rooted at ordinal zero. Argument end tokens reuse the
+  parser-owned HIR span end instead of reconstructing a boundary from sibling
+  or subtree shape.
+* Array literal element rows publish parser-owned owner, ordinal, and next-link
+  records. Readback rejects owner rows whose element count, first element,
+  back-links, zero-based ordinals, or next chain disagree.
+* Match expression rows publish parser-owned scrutinee, arm-chain, arm-pattern,
+  result-expression, and payload-pattern records. Readback rejects arm or
+  payload pattern edges that do not land on name/literal pattern HIR rows.
+* Struct literal rows publish a parser-owned head path/name node plus field
+  rows with owner, first/count, next-link, and value-expression records.
+  Readback rejects owner rows whose head node, field count, first field,
+  back-links, value edges, or next chain disagree. A semantic-row
+  pointer-jump pass also publishes nearest statement, block, control, and
+  function context rows for semantic HIR nodes, so contextual aggregate and
+  body-shape consumers do not need to walk ancestors in their own shader.
+* Item rows publish a known item kind on the matching parser-owned HIR row kind.
+  Readback rejects unknown item kinds and owner-kind mismatches before later
+  stages consume item metadata.
+* Item/type public rows are source-addressed before later record consumers run:
+  readback rejects item/type records without non-empty spans or file ids, file
+  ids that disagree with the HIR node, or rows that move backward in the flat
+  `(file_id, token_start)` stream.
+* Live tree/HIR readback lengths are fail-closed: the host rejects a published
+  active row count that exceeds the allocated readback buffer instead of
+  clipping the stream.
+* Expression rows publish parser-owned expression forms, child-expression
+  edges, and literal/name value-token anchors. Readback rejects records on
+  non-expression rows, unknown forms, malformed operands, cross-file child
+  edges, self edges, and value tokens outside the expression span before later
+  stages can fall back to source spelling.
+
+* `let` rows publish `{ kind, declaration name token, initializer expression node, declared type node }`.
+  Statement records are published only from non-empty owner spans, and
+  declaration or binding tokens must stay inside those spans. Readback rejects
+  concrete statement HIR rows that publish no matching statement record, so
+  later passes never need to rediscover missing statement metadata from token
+  neighborhoods. Local declaration rows also publish parser-owned scope-end
+  tokens, with readback rejecting missing or malformed scope boundaries before
+  visibility consumers can fall back to token-local block walks.
+* Top-level `const` declarations publish value-namespace item metadata plus
+  statement-slot records `{ kind, declaration name token, value expression
+  node, declared type node }`, so type checking and constant-value projection
+  can consume parser-owned rows rather than source text.
+* Trait declarations publish type-namespace item metadata with parser-owned
+  declaration/name tokens and visibility. The item record is emitted only from
+  the trait's HIR item row, so trait collection does not need source-text or
+  method-body shape rediscovery.
+* Function, extern-function, and impl-method function rows publish parser-owned
+  return-type edges when the grammar owns an explicit return type. Top-level
+  function owners also carry item metadata; impl-method owners remain method
+  rows and do not synthesize top-level item records. Readback rejects return
+  edges from non-function rows, edges to non-type rows, cross-file edges,
+  shared return-type rows, and return-type spans that escape the owning
+  function/method span.
+* Method declaration rows publish parser-owned owner, name, first-parameter,
+  receiver-mode, visibility, and impl receiver-type records. Readback rejects
+  impl receiver-type rows whose owner is not source-addressable or whose type
+  span escapes the owning impl span, so downstream method collection does not
+  need to rediscover the receiver from parser-local child scans.
+* Function parameter rows publish `{ owner function node, ordinal, token
+  anchor, parameter node }` plus an explicit type edge when the grammar owns
+  one directly. Named parameters and `self: T` receivers point at parser-owned
+  type HIR rows; plain `self` and `&self` do not synthesize type edges. The
+  ordinal is zero-based source order within the owning function/method row, so
+  method collection and type checking consume receiver/value parameters from
+  the flat parameter table instead of reconstructing parameter lists from
+  token neighborhoods. Readback rejects parameter rows without function owners,
+  non-contiguous per-function ordinals, cross-file owner/type edges, and type
+  edges that escape the parameter span.
+* Module and path-import item rows publish a parser-owned path node in addition
+  to token spans. Resolver passes can use that row as the module/import path
+  anchor instead of reclassifying source text or scanning token neighborhoods.
+  Readback rejects import rows that do not publish a supported parser-owned
+  target record, and rejects shared path-node anchors across module/import
+  owners. Quoted/string imports remain fail-closed until represented by a real
+  record pipeline.
+* `break` and `continue` rows publish explicit control-flow kinds with empty operands.
+* `for` rows publish `{ kind, binding token, iterable path node, body block node }`.
+  The iterable edge must point at a parser-owned path row, and the body edge is
+  published only when the sibling is a parser-owned block, so downstream scope
+  builders can keep the loop binding limited to the body span. Syntax validation
+  checks the `for` header directly and does not run a separate backward token
+  walk over the iterator expression to rediscover the header.
+* `if` rows publish `{ kind, condition expression node, then block node,
+  optional else block node }`. Readback rejects a then edge unless it lands on
+  a parser-owned block row; the else edge is present only for an explicit
+  `else` statement, never for a following standalone block statement. The two
+  block edges must be distinct, and an else block must not begin before the
+  then block has ended.
+* `return`, `while`, and assignment rows keep their existing node/token
+  operands; token positions are metadata, while child expressions and bodies
+  are HIR/tree node references.
 
 We keep the single-thread kernels to cross-check during bring-up and tests.
 
@@ -253,10 +412,24 @@ Brackets:
 * `brackets_04_histogram_layers.slang`
 * `brackets_05_scan_histograms.slang`
 * `brackets_06_scatter_by_layer.slang`
-* `brackets_07_pair_and_validate.slang`
+* `brackets_pse_04_pair_by_layer.slang`
 Tree:
 
+* LL(1) stream: `ll1_blocks_02_stitch.slang`,
+  `ll1_blocks_03_seeded.slang`, `ll1_blocks_04_scan_emit_prefix.slang`,
+  `ll1_blocks_04_flatten_emit.slang`
 * Parent recovery: `tree_parent_parallel.slang`
+* HIR relation materialization: `hir_semantic_*`,
+  `hir_context_relations_*`, and the `hir_*_fields`/`hir_*_scatter` passes
+
+Resident readback validates context relations against parser-owned statement
+records before downstream consumers use them, so malformed local context walks
+fail closed at the parser boundary.
+
+Method signature flags are parser-owned method records, not general function
+records. The `hir_method_signature_status` pass publishes generic/where bits
+only for trait methods and impl functions; free functions keep using the
+function/type pipeline without leaking into the method table.
 
 Host driver:
 

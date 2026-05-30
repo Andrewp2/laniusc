@@ -24,8 +24,6 @@ StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> x86_expr_resolved_node;
-StructuredBuffer<uint> x86_tree_parent;
-StructuredBuffer<uint> x86_tree_subtree_end;
 StructuredBuffer<uint> x86_struct_access_record;
 StructuredBuffer<uint> hir_array_element_parent_lit;
 StructuredBuffer<uint> hir_array_element_ordinal;
@@ -46,16 +44,16 @@ static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint INVALID = 0xffffffffu;
 static const uint X86_NODE_INST_GEN_INPUTS_OK = 1u;
 static const uint X86_ERR_NODE_VIRTUAL_INST = 11u;
+static const uint X86_VINST_ERROR_AGG_RET_STRUCT_WIDTH = 2601u;
 static const uint X86_VINST_ERROR_AGG_RET_STRUCT_VALUE = 2603u;
 static const uint X86_VINST_ERROR_AGG_RET_STRUCT_LOCATION = 2604u;
+static const uint X86_VINST_ERROR_AGG_RET_ARRAY_WIDTH = 2611u;
 static const uint X86_VINST_ERROR_AGG_RET_ARRAY_VALUE = 2613u;
 static const uint X86_VINST_ERROR_AGG_RET_ARRAY_LOCATION = 2614u;
 
 static const uint HIR_STMT = 7u;
 static const uint HIR_RETURN_STMT = 9u;
 static const uint HIR_ARRAY_EXPR = 24u;
-static const uint HIR_NAME_EXPR = 22u;
-static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_RETURN = 2u;
 static const uint EXPR_RECORD_STRIDE = 4u;
@@ -133,34 +131,6 @@ uint resolve_expr(uint node)
     return valid_node(node) ? x86_expr_resolved_node[node] : INVALID;
 }
 
-uint tree_parent_record(uint node)
-{
-    return valid_node(node) ? x86_tree_parent[node] : INVALID;
-}
-
-uint tree_subtree_end_record(uint node)
-{
-    return valid_node(node) ? x86_tree_subtree_end[node] : INVALID;
-}
-
-uint first_child_node(uint node)
-{
-    uint child = node + 1u;
-    uint end = tree_subtree_end_record(node);
-    return valid_node(child) && child < end && tree_parent_record(child) == node
-        ? child
-        : INVALID;
-}
-
-uint next_sibling_node(uint node)
-{
-    uint sibling = tree_subtree_end_record(node);
-    uint parent = tree_parent_record(node);
-    return valid_node(sibling) && tree_parent_record(sibling) == parent
-        ? sibling
-        : INVALID;
-}
-
 uint struct_access_word(uint row, uint slot)
 {
     return row_major_load<uint>(
@@ -177,6 +147,16 @@ uint struct_access_kind(uint row)
     return info == INVALID ? 0u : info & X86_STRUCT_ACCESS_KIND_MASK;
 }
 
+uint struct_access_payload0(uint row)
+{
+    return struct_access_word(row, 0u);
+}
+
+uint struct_access_payload1(uint row)
+{
+    return struct_access_word(row, 1u);
+}
+
 uint array_literal_node_for_expr(uint expr_node)
 {
     uint node = resolve_expr(expr_node);
@@ -185,23 +165,16 @@ uint array_literal_node_for_expr(uint expr_node)
     return INVALID;
 }
 
-uint struct_literal_node_for_expr(uint expr_node)
+bool struct_literal_record_for_expr(uint expr_node, out uint width, out uint first_field)
 {
+    width = 0u;
+    first_field = INVALID;
     uint node = resolve_expr(expr_node);
-    if (!valid_node(node))
-        return INVALID;
-    if (hir_kind[node] == HIR_STRUCT_LITERAL_EXPR)
-        return node;
-    if (hir_kind[node] != HIR_NAME_EXPR)
-        return INVALID;
-
-    uint sibling = next_sibling_node(node);
-    if (valid_node(sibling) && hir_kind[sibling] == HIR_STRUCT_LITERAL_EXPR)
-        return sibling;
-
-    uint child = first_child_node(node);
-    sibling = next_sibling_node(child);
-    return valid_node(sibling) && hir_kind[sibling] == HIR_STRUCT_LITERAL_EXPR ? sibling : INVALID;
+    if (!valid_node(node) || struct_access_kind(node) != X86_STRUCT_ACCESS_LITERAL)
+        return false;
+    width = struct_access_payload0(node);
+    first_field = struct_access_payload1(node);
+    return width != 0u && valid_node(first_field);
 }
 
 bool range_for_node(uint node, out uint2 range)
@@ -288,8 +261,12 @@ bool return_expr_is_struct_literal(uint return_node, uint literal_node)
     if (!is_return_stmt_node(return_node) || !valid_node(literal_node))
         return false;
     uint expr_node = stmt_slot(return_node, 1u);
-    return struct_literal_node_for_expr(expr_node) == literal_node &&
-           struct_access_kind(literal_node) == X86_STRUCT_ACCESS_LITERAL;
+    uint expr_width = 0u;
+    uint expr_first_field = INVALID;
+    return struct_literal_record_for_expr(expr_node, expr_width, expr_first_field) &&
+           struct_access_kind(literal_node) == X86_STRUCT_ACCESS_LITERAL &&
+           struct_access_payload0(literal_node) == expr_width &&
+           struct_access_payload1(literal_node) == expr_first_field;
 }
 
 void emit_array_element_return_copy(uint node)
@@ -298,9 +275,13 @@ void emit_array_element_return_copy(uint node)
     uint ordinal = hir_array_element_ordinal[node];
     uint return_node = valid_node(node) ? x86_enclosing_return_node[node] : INVALID;
     if (!valid_node(return_node) ||
-        ordinal >= X86_AGG_COPY_MAX_WIDTH ||
         !return_expr_is_array_literal(return_node, literal_node))
         return;
+    if (ordinal >= X86_AGG_COPY_MAX_WIDTH)
+    {
+        write_status_error_detail(return_node, X86_VINST_ERROR_AGG_RET_ARRAY_WIDTH);
+        return;
+    }
 
     uint src = INVALID;
     if (!value_vreg_for_node(node, src))
@@ -326,9 +307,13 @@ void emit_struct_field_return_copy(uint node)
     uint return_node = valid_node(node) ? x86_enclosing_return_node[node] : INVALID;
     if (!valid_node(return_node) ||
         !valid_node(value_node) ||
-        ordinal >= X86_AGG_COPY_MAX_WIDTH ||
         !return_expr_is_struct_literal(return_node, literal_node))
         return;
+    if (ordinal >= X86_AGG_COPY_MAX_WIDTH)
+    {
+        write_status_error_detail(return_node, X86_VINST_ERROR_AGG_RET_STRUCT_WIDTH);
+        return;
+    }
 
     uint src = INVALID;
     if (!value_vreg_for_node(value_node, src))

@@ -9,7 +9,6 @@
 //   lookup.
 
 import scatter;
-import tree_walk;
 
 struct Params
 {
@@ -22,12 +21,12 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> decl_record_flag;
 StructuredBuffer<uint> decl_record_prefix;
-StructuredBuffer<uint> parent;
 StructuredBuffer<uint> hir_item_file_id;
 StructuredBuffer<uint> hir_item_name_token;
 StructuredBuffer<uint> hir_item_kind;
 StructuredBuffer<uint> hir_item_namespace;
 StructuredBuffer<uint> hir_item_visibility;
+StructuredBuffer<uint> hir_variant_parent_enum;
 StructuredBuffer<uint> name_id_by_token;
 
 RWStructuredBuffer<uint> decl_module_file_id;
@@ -60,39 +59,14 @@ bool valid_node(uint node)
     return node != INVALID && node < gParams.n_hir_nodes;
 }
 
-uint parent_node(uint node)
-{
-    return valid_node(node) ? parent[node] : INVALID;
-}
-
-public struct DeclCoreWalkGraph : ITreeWalkGraph
-{
-    public static bool valid(uint node)
-    {
-        return valid_node(node);
-    }
-
-    public static uint parent(uint node)
-    {
-        return parent_node(node);
-    }
-}
-
-public struct DeclCoreParentEnumPredicate : ITreeWalkPredicate
-{
-    public static bool matches(uint node)
-    {
-        return hir_item_kind[node] == HIR_ITEM_KIND_ENUM && decl_record_flag[node] != 0u;
-    }
-}
-
 uint parent_enum_decl_for_variant(uint hir_i)
 {
-    uint enum_node;
-    return find_ancestor<DeclCoreWalkGraph, DeclCoreParentEnumPredicate>(
-        hir_i,
-        16u,
-        enum_node) ? decl_record_prefix[enum_node] : INVALID;
+    uint enum_node = valid_node(hir_i) ? hir_variant_parent_enum[hir_i] : INVALID;
+    if (!valid_node(enum_node) ||
+        hir_item_kind[enum_node] != HIR_ITEM_KIND_ENUM ||
+        decl_record_flag[enum_node] == 0u)
+        return INVALID;
+    return decl_record_prefix[enum_node];
 }
 
 [shader("compute")]

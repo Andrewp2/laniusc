@@ -22,7 +22,6 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> x86_tree_parent;
-StructuredBuffer<uint> x86_tree_subtree_end;
 
 RWStructuredBuffer<uint> x86_enclosing_let_node;
 RWStructuredBuffer<uint> x86_enclosing_let_link;

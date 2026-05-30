@@ -159,6 +159,11 @@ pub(in crate::compiler) fn validate_job_batch_page_with_mode(
         &page.batch.job_indices,
         &format!("job-batch page {} jobs", page.batch_index),
     )?;
+    validate_usize_values_strictly_ascending(
+        &page.batch.job_indices,
+        &format!("job-batch page {} jobs", page.batch_index),
+        |message| artifact_shard_contract_error(message),
+    )?;
     validate_job_batch_inline_record_count(
         page,
         "dependency",
@@ -220,6 +225,11 @@ pub(in crate::compiler) fn validate_job_batch_page_with_mode(
     let explicit_dependencies = unique_usize_set(
         &page.dependency.dependency_batch_indices,
         &format!("job-batch page {} dependencies", page.batch_index),
+    )?;
+    validate_usize_values_strictly_ascending(
+        &page.dependency.dependency_batch_indices,
+        &format!("job-batch page {} dependencies", page.batch_index),
+        |message| artifact_shard_contract_error(message),
     )?;
     for &dependency_batch_index in &page.dependency.dependency_batch_indices {
         if dependency_batch_index >= page.batch_index {
@@ -290,12 +300,12 @@ pub(in crate::compiler) fn validate_job_batch_dependency_page(
             page.dependency_batch_indices.len()
         )));
     }
-    if page.dependency_count > SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENCY_DEFAULT_PAGE_SIZE {
+    if page.dependency_count == 0
+        || page.dependency_count > SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENCY_DEFAULT_PAGE_SIZE
+    {
         return Err(artifact_shard_contract_error(format!(
-            "job-batch dependency page {} for batch {} exceeds page size {}",
-            page.page_index,
-            page.batch_index,
-            SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENCY_DEFAULT_PAGE_SIZE
+            "job-batch dependency page {} for batch {} has invalid dependency count {}",
+            page.page_index, page.batch_index, page.dependency_count
         )));
     }
     unique_usize_set(
@@ -304,6 +314,14 @@ pub(in crate::compiler) fn validate_job_batch_dependency_page(
             "job-batch dependency page {} for batch {} dependencies",
             page.page_index, page.batch_index
         ),
+    )?;
+    validate_usize_values_strictly_ascending(
+        &page.dependency_batch_indices,
+        &format!(
+            "job-batch dependency page {} for batch {} dependencies",
+            page.page_index, page.batch_index
+        ),
+        |message| artifact_shard_contract_error(message),
     )?;
     for &dependency_batch_index in &page.dependency_batch_indices {
         if dependency_batch_index >= page.batch_index {
@@ -363,12 +381,12 @@ pub(in crate::compiler) fn validate_job_batch_dependency_range_page(
             page.dependency_batch_ranges.len()
         )));
     }
-    if page.range_count > SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENCY_RANGE_DEFAULT_PAGE_SIZE {
+    if page.range_count == 0
+        || page.range_count > SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENCY_RANGE_DEFAULT_PAGE_SIZE
+    {
         return Err(artifact_shard_contract_error(format!(
-            "job-batch dependency range page {} for batch {} exceeds page size {}",
-            page.page_index,
-            page.batch_index,
-            SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENCY_RANGE_DEFAULT_PAGE_SIZE
+            "job-batch dependency range page {} for batch {} has invalid range count {}",
+            page.page_index, page.batch_index, page.range_count
         )));
     }
     let dependency_batch_count = page
@@ -550,6 +568,11 @@ pub(in crate::compiler) fn validate_job_batch_dependents_page_with_mode(
         &page.dependents.dependent_batch_indices,
         &format!("job-batch dependents page {} dependents", page.batch_index),
     )?;
+    validate_usize_values_strictly_ascending(
+        &page.dependents.dependent_batch_indices,
+        &format!("job-batch dependents page {} dependents", page.batch_index),
+        |message| artifact_shard_contract_error(message),
+    )?;
     for &dependent_batch_index in &page.dependents.dependent_batch_indices {
         if dependent_batch_index >= batch_count {
             return Err(artifact_shard_contract_error(format!(
@@ -557,10 +580,10 @@ pub(in crate::compiler) fn validate_job_batch_dependents_page_with_mode(
                 page.batch_index, dependent_batch_index
             )));
         }
-        if dependent_batch_index == page.batch_index {
+        if dependent_batch_index <= page.batch_index {
             return Err(artifact_shard_contract_error(format!(
-                "job-batch dependents page {} lists itself as a dependent",
-                page.batch_index
+                "job-batch dependents page {} has non-later dependent batch {}",
+                page.batch_index, dependent_batch_index
             )));
         }
     }
@@ -657,12 +680,12 @@ pub(in crate::compiler) fn validate_job_batch_dependent_batch_page(
             page.dependent_batch_indices.len()
         )));
     }
-    if page.dependent_count > SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENTS_DEFAULT_PAGE_SIZE {
+    if page.dependent_count == 0
+        || page.dependent_count > SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENTS_DEFAULT_PAGE_SIZE
+    {
         return Err(artifact_shard_contract_error(format!(
-            "job-batch dependent-batch page {} for batch {} exceeds page size {}",
-            page.page_index,
-            page.batch_index,
-            SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENTS_DEFAULT_PAGE_SIZE
+            "job-batch dependent-batch page {} for batch {} has invalid dependent count {}",
+            page.page_index, page.batch_index, page.dependent_count
         )));
     }
     unique_usize_set(
@@ -672,6 +695,14 @@ pub(in crate::compiler) fn validate_job_batch_dependent_batch_page(
             page.page_index, page.batch_index
         ),
     )?;
+    validate_usize_values_strictly_ascending(
+        &page.dependent_batch_indices,
+        &format!(
+            "job-batch dependent-batch page {} for batch {} dependents",
+            page.page_index, page.batch_index
+        ),
+        |message| artifact_shard_contract_error(message),
+    )?;
     for &dependent_batch_index in &page.dependent_batch_indices {
         if dependent_batch_index >= batch_count {
             return Err(artifact_shard_contract_error(format!(
@@ -679,12 +710,190 @@ pub(in crate::compiler) fn validate_job_batch_dependent_batch_page(
                 page.page_index, page.batch_index, dependent_batch_index
             )));
         }
-        if dependent_batch_index == page.batch_index {
+        if dependent_batch_index <= page.batch_index {
             return Err(artifact_shard_contract_error(format!(
-                "job-batch dependent-batch page {} for batch {} lists itself as a dependent",
-                page.page_index, page.batch_index
+                "job-batch dependent-batch page {} for batch {} has non-later dependent batch {}",
+                page.page_index, page.batch_index, dependent_batch_index
             )));
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn inline_dependents_page(
+        dependent_batch_indices: Vec<usize>,
+    ) -> SourcePackBuildJobBatchDependentsPage {
+        SourcePackBuildJobBatchDependentsPage {
+            version: SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENTS_PAGE_VERSION,
+            target: SourcePackArtifactTarget::Generic,
+            batch_count: 4,
+            batch_index: 1,
+            dependents: SourcePackJobBatchDependents {
+                batch_index: 1,
+                dependent_batch_indices,
+            },
+            dependent_batch_count: 0,
+            dependent_page_count: 0,
+        }
+    }
+
+    fn dependent_batch_page(
+        dependent_batch_indices: Vec<usize>,
+    ) -> SourcePackBuildJobBatchDependentBatchPage {
+        SourcePackBuildJobBatchDependentBatchPage {
+            version: SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENT_BATCH_PAGE_VERSION,
+            target: SourcePackArtifactTarget::Generic,
+            batch_count: 4,
+            batch_index: 1,
+            page_index: 0,
+            first_dependent_position: 0,
+            dependent_count: dependent_batch_indices.len(),
+            dependent_batch_indices,
+        }
+    }
+
+    fn dependency_page(
+        dependency_batch_indices: Vec<usize>,
+    ) -> SourcePackBuildJobBatchDependencyPage {
+        SourcePackBuildJobBatchDependencyPage {
+            version: SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENCY_PAGE_VERSION,
+            target: SourcePackArtifactTarget::Generic,
+            batch_index: 1,
+            page_index: 0,
+            first_dependency_position: 0,
+            dependency_count: dependency_batch_indices.len(),
+            dependency_batch_indices,
+        }
+    }
+
+    fn dependency_range_page(
+        dependency_batch_ranges: Vec<SourcePackJobBatchDependencyRange>,
+    ) -> SourcePackBuildJobBatchDependencyRangePage {
+        let dependency_batch_count = dependency_batch_ranges
+            .iter()
+            .map(|range| range.batch_count)
+            .sum();
+        SourcePackBuildJobBatchDependencyRangePage {
+            version: SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENCY_RANGE_PAGE_VERSION,
+            target: SourcePackArtifactTarget::Generic,
+            batch_index: 1,
+            page_index: 0,
+            first_range_position: 0,
+            range_count: dependency_batch_ranges.len(),
+            dependency_batch_count,
+            dependency_batch_ranges,
+        }
+    }
+
+    #[test]
+    fn job_batch_dependents_must_reference_later_batches() {
+        validate_job_batch_dependents_page(
+            &inline_dependents_page(vec![2, 3]),
+            SourcePackArtifactTarget::Generic,
+            4,
+            Some(1),
+        )
+        .expect("later inline dependents should validate");
+
+        assert!(
+            validate_job_batch_dependents_page(
+                &inline_dependents_page(vec![0]),
+                SourcePackArtifactTarget::Generic,
+                4,
+                Some(1),
+            )
+            .is_err(),
+            "inline dependents must not point back to already prior batches"
+        );
+
+        validate_job_batch_dependent_batch_page(
+            &dependent_batch_page(vec![2, 3]),
+            SourcePackArtifactTarget::Generic,
+            4,
+            1,
+            0,
+        )
+        .expect("later paged dependents should validate");
+
+        assert!(
+            validate_job_batch_dependent_batch_page(
+                &dependent_batch_page(vec![1]),
+                SourcePackArtifactTarget::Generic,
+                4,
+                1,
+                0,
+            )
+            .is_err(),
+            "paged dependents must not point to their own batch"
+        );
+    }
+
+    #[test]
+    fn job_batch_sidecar_pages_reject_empty_records() {
+        validate_job_batch_dependency_page(
+            &dependency_page(vec![0]),
+            SourcePackArtifactTarget::Generic,
+            1,
+            0,
+        )
+        .expect("non-empty dependency sidecar pages should validate");
+
+        assert!(
+            validate_job_batch_dependency_page(
+                &dependency_page(Vec::new()),
+                SourcePackArtifactTarget::Generic,
+                1,
+                0,
+            )
+            .is_err(),
+            "dependency sidecar pages must carry at least one record"
+        );
+
+        validate_job_batch_dependency_range_page(
+            &dependency_range_page(vec![SourcePackJobBatchDependencyRange {
+                first_batch_index: 0,
+                batch_count: 1,
+            }]),
+            SourcePackArtifactTarget::Generic,
+            1,
+            0,
+        )
+        .expect("non-empty dependency-range sidecar pages should validate");
+
+        assert!(
+            validate_job_batch_dependency_range_page(
+                &dependency_range_page(Vec::new()),
+                SourcePackArtifactTarget::Generic,
+                1,
+                0,
+            )
+            .is_err(),
+            "dependency-range sidecar pages must carry at least one record"
+        );
+
+        validate_job_batch_dependent_batch_page(
+            &dependent_batch_page(vec![2]),
+            SourcePackArtifactTarget::Generic,
+            4,
+            1,
+            0,
+        )
+        .expect("non-empty dependent-batch sidecar pages should validate");
+
+        assert!(
+            validate_job_batch_dependent_batch_page(
+                &dependent_batch_page(Vec::new()),
+                SourcePackArtifactTarget::Generic,
+                4,
+                1,
+                0,
+            )
+            .is_err(),
+            "dependent-batch sidecar pages must carry at least one record"
+        );
+    }
 }

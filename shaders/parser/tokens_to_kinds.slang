@@ -1,5 +1,5 @@
 import atomics;
-import segment_tree;
+import fixed_stack;
 import token_features;
 
 struct Params
@@ -18,11 +18,23 @@ struct TokenIn
 
 StructuredBuffer<TokenIn> token_words;
 StructuredBuffer<uint> lexer_token_count;
+StructuredBuffer<int> depth_paren_inblock;
+StructuredBuffer<int> block_prefix_paren;
 StructuredBuffer<int> depth_brace_inblock;
 StructuredBuffer<int> block_prefix_brace;
+StructuredBuffer<int> depth_bracket_inblock;
+StructuredBuffer<int> block_prefix_bracket;
+StructuredBuffer<int> depth_angle_inblock;
+StructuredBuffer<int> block_prefix_angle;
 StructuredBuffer<int> brace_match_depth;
 StructuredBuffer<int> brace_match_block_min;
 StructuredBuffer<int> brace_match_min_tree;
+StructuredBuffer<int> paren_match_depth;
+StructuredBuffer<int> paren_match_block_min;
+StructuredBuffer<int> paren_match_min_tree;
+StructuredBuffer<int> angle_match_depth;
+StructuredBuffer<int> angle_match_block_min;
+StructuredBuffer<int> angle_match_min_tree;
 
 RWStructuredBuffer<uint> semantic_token_kinds;
 RWStructuredBuffer<uint> parser_token_count;
@@ -30,6 +42,10 @@ RWStructuredBuffer<uint> token_feature_flags;
 StructuredBuffer<uint> brace_semantic_kind;
 StructuredBuffer<uint> bracket_semantic_kind;
 StructuredBuffer<uint> statement_context_kind;
+StructuredBuffer<uint> token_impl_header_kind;
+StructuredBuffer<uint> token_impl_context_event;
+StructuredBuffer<uint> token_where_context_event;
+StructuredBuffer<uint> token_match_pattern_context_event;
 groupshared uint group_feature_flags[256];
 
 static const uint WG_SIZE = 256u;
@@ -182,64 +198,213 @@ static const uint TK_PARAM_SELF_REF_VALUE = 178u;
 static const uint TK_BOUND_TYPE_AMPERSAND = 179u;
 static const uint TK_INHERENT_IMPL = 180u;
 static const uint TK_TRAIT_IMPL = 181u;
+static const uint STATEMENT_CONTEXT_TYPE_ALIAS_RHS = 254u;
+static const uint IMPL_HEADER_CONTEXT = 1u;
+static const uint WHERE_CLAUSE_CONTEXT = 1u;
+static const uint MATCH_PATTERN_CONTEXT = 1u;
+static const uint BOUND_PATH_SEGMENT_LIMIT = 8u;
+static const uint DEPTH_MODE_BRACE = 0u;
+static const uint DEPTH_MODE_PAREN = 1u;
+static const uint DEPTH_MODE_ANGLE = 2u;
+static const int DEPTH_SEARCH_STACK = 64;
+static const uint DEPTH_SEARCH_INVALID = 0xffffffffu;
 
-public struct BraceDepthTree : IRangeSearchTree<int>
+struct DepthSearchFrame
 {
-    public static uint n_blocks()
-    {
-        return gParams.token_capacity == 0u ? 1u : (gParams.token_capacity + WG_SIZE - 1u) / WG_SIZE;
-    }
+    uint node;
+    uint l;
+    uint r;
+};
 
-    public static uint leaf_base()
-    {
-        uint n_blocks = gParams.token_capacity == 0u ? 1u : (gParams.token_capacity + WG_SIZE - 1u) / WG_SIZE;
-        uint base = 1u;
-        [loop]
-        while (base < n_blocks)
-            base <<= 1u;
-        return base;
-    }
-
-    public static int leaf_value(uint block)
-    {
-        return brace_match_block_min[block];
-    }
-
-    public static int tree_value(uint node)
-    {
-        return brace_match_min_tree[node];
-    }
+DepthSearchFrame depth_search_frame(uint node, uint l, uint r)
+{
+    DepthSearchFrame frame;
+    frame.node = node;
+    frame.l = l;
+    frame.r = r;
+    return frame;
 }
 
-public struct BraceDepthRows : IRangeSearchRows<int>
+uint depth_search_n_blocks()
 {
-    public static uint item_count()
-    {
-        return gParams.token_capacity;
-    }
-
-    public static uint block_size()
-    {
-        return WG_SIZE;
-    }
-
-    public static int row_value(uint row)
-    {
-        return brace_match_depth[row];
-    }
+    return gParams.token_capacity == 0u ? 1u : (gParams.token_capacity + WG_SIZE - 1u) / WG_SIZE;
 }
 
-public struct BraceDepthAtMost : IRangeSearchPredicate<int, int>
+uint depth_search_leaf_base()
 {
-    public static bool aggregate_may_match(int aggregate, int query)
+    uint n_blocks = depth_search_n_blocks();
+    uint base = 1u;
+    [loop]
+    while (base < n_blocks)
+        base <<= 1u;
+    return base;
+}
+
+int depth_search_leaf_value(uint mode, uint block)
+{
+    if (mode == DEPTH_MODE_PAREN)
+        return paren_match_block_min[block];
+    if (mode == DEPTH_MODE_ANGLE)
+        return angle_match_block_min[block];
+    return brace_match_block_min[block];
+}
+
+int depth_search_tree_value(uint mode, uint node)
+{
+    if (mode == DEPTH_MODE_PAREN)
+        return paren_match_min_tree[node];
+    if (mode == DEPTH_MODE_ANGLE)
+        return angle_match_min_tree[node];
+    return brace_match_min_tree[node];
+}
+
+int depth_search_row_value(uint mode, uint row)
+{
+    if (mode == DEPTH_MODE_PAREN)
+        return paren_match_depth[row];
+    if (mode == DEPTH_MODE_ANGLE)
+        return angle_match_depth[row];
+    return brace_match_depth[row];
+}
+
+bool depth_search_matches(int value, int query)
+{
+    return value <= query;
+}
+
+bool depth_search_last_block_before_linear(uint mode, uint hi_block, int query, out uint block)
+{
+    block = DEPTH_SEARCH_INVALID;
+    uint n = depth_search_n_blocks();
+    uint i = min(hi_block, n);
+    [loop]
+    while (i > 0u)
     {
-        return aggregate <= query;
+        i -= 1u;
+        if (depth_search_matches(depth_search_leaf_value(mode, i), query))
+        {
+            block = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool depth_search_last_block_before(uint mode, uint hi_block, int query, out uint block)
+{
+    block = DEPTH_SEARCH_INVALID;
+    uint n = depth_search_n_blocks();
+    uint leaf_base = depth_search_leaf_base();
+    if (hi_block == 0u || n == 0u || leaf_base == 0u)
+        return false;
+
+    DepthSearchFrame stack[DEPTH_SEARCH_STACK];
+    uint sp = 0u;
+
+    if (!fixed_stack_push<DepthSearchFrame, DEPTH_SEARCH_STACK>(
+            sp,
+            stack,
+            depth_search_frame(1u, 0u, leaf_base)))
+        return false;
+
+    [loop]
+    while (!fixed_stack_empty(sp))
+    {
+        DepthSearchFrame frame;
+        if (!fixed_stack_pop<DepthSearchFrame, DEPTH_SEARCH_STACK>(
+                sp,
+                stack,
+                frame,
+                depth_search_frame(DEPTH_SEARCH_INVALID, 0u, 0u)))
+            return false;
+        uint node = frame.node;
+        uint l = frame.l;
+        uint r = frame.r;
+
+        if (l >= hi_block || l >= n)
+            continue;
+
+        bool fully_in_range = r <= hi_block;
+        if (fully_in_range && !depth_search_matches(depth_search_tree_value(mode, node), query))
+            continue;
+
+        if (r - l == 1u)
+        {
+            if (l < hi_block && l < n && depth_search_matches(depth_search_leaf_value(mode, l), query))
+            {
+                block = l;
+                return true;
+            }
+            continue;
+        }
+
+        if (sp + 2u > uint(DEPTH_SEARCH_STACK))
+            return depth_search_last_block_before_linear(mode, hi_block, query, block);
+
+        uint mid = (l + r) >> 1u;
+
+        if (!fixed_stack_push<DepthSearchFrame, DEPTH_SEARCH_STACK>(
+                sp,
+                stack,
+                depth_search_frame(node * 2u, l, mid)) ||
+            !fixed_stack_push<DepthSearchFrame, DEPTH_SEARCH_STACK>(
+                sp,
+                stack,
+                depth_search_frame(node * 2u + 1u, mid, r)))
+            return depth_search_last_block_before_linear(mode, hi_block, query, block);
     }
 
-    public static bool leaf_matches(int leaf, int query)
+    return false;
+}
+
+bool depth_search_last_index_in_block_before(
+    uint mode,
+    uint hi_index,
+    uint block,
+    int query,
+    out uint index)
+{
+    index = DEPTH_SEARCH_INVALID;
+    if (hi_index == 0u || gParams.token_capacity == 0u)
+        return false;
+
+    uint start = block * WG_SIZE;
+    uint end = min(gParams.token_capacity, (block + 1u) * WG_SIZE);
+    uint row = min(hi_index, end);
+    [loop]
+    while (row > start)
     {
-        return leaf <= query;
+        row -= 1u;
+        if (depth_search_matches(depth_search_row_value(mode, row), query))
+        {
+            index = row;
+            return true;
+        }
     }
+    return false;
+}
+
+bool depth_search_last_index_before(uint mode, uint hi_index, int query, out uint index)
+{
+    index = DEPTH_SEARCH_INVALID;
+    if (hi_index == 0u || gParams.token_capacity == 0u)
+        return false;
+
+    uint capped_hi = min(hi_index, gParams.token_capacity);
+    uint block = (capped_hi - 1u) / WG_SIZE;
+    if (depth_search_last_index_in_block_before(mode, capped_hi, block, query, index))
+        return true;
+
+    uint candidate_block;
+    if (!depth_search_last_block_before(mode, block, query, candidate_block))
+        return false;
+
+    return depth_search_last_index_in_block_before(
+        mode,
+        (candidate_block + 1u) * WG_SIZE,
+        candidate_block,
+        query,
+        index);
 }
 
 bool semantic_token_ends_primary(uint kind)
@@ -295,6 +460,14 @@ bool is_statement_boundary(uint kind)
     return kind == TK_SEMICOLON || kind == TK_LBRACE || kind == TK_RBRACE || kind == 0u;
 }
 
+uint statement_context_token_kind(uint token_i)
+{
+    if (token_i >= gParams.token_capacity)
+        return 0u;
+    uint kind = statement_context_kind[token_i] & 0xffu;
+    return kind == STATEMENT_CONTEXT_TYPE_ALIAS_RHS ? TK_TYPE : kind;
+}
+
 bool type_context_before(uint parser_i, uint count)
 {
     uint prev = raw_kind_at(parser_i - 1u, count);
@@ -304,15 +477,31 @@ bool type_context_before(uint parser_i, uint count)
 bool in_pattern_context(uint parser_i, uint count);
 bool top_level_match_arm_comma(uint parser_i, uint count);
 bool in_enum_variant_context(uint parser_i, uint count);
-uint semantic_prev_kind(uint parser_i, uint count);
 uint semantic_brace_open_kind_for(uint parser_i, uint count);
 uint enclosing_semantic_brace_open_before(uint parser_i, uint count);
+bool enclosing_semantic_brace_open_before_with_index(
+    uint parser_i,
+    uint count,
+    out uint open_i,
+    out uint semantic_kind);
 bool enclosing_raw_brace_owner_is(uint parser_i, uint count, uint owner);
 uint matching_semantic_brace_open_before(uint parser_i, uint count);
+int global_paren_depth_before(uint parser_i, uint count);
+int global_bracket_depth_before(uint parser_i, uint count);
+int global_angle_depth_before(uint parser_i, uint count);
 bool bound_colon_context(uint parser_i, uint count);
 bool bound_plus_context(uint parser_i, uint count);
 bool bound_type_context_before(uint parser_i, uint count);
 bool impl_type_context_before(uint parser_i, uint count);
+bool where_clause_context_before(uint parser_i, uint count);
+bool matching_raw_paren_open_before(uint parser_i, uint count, out uint open_i);
+uint matching_semantic_paren_open_before(uint parser_i, uint count);
+bool matching_raw_angle_open_for_close(uint close_parser_i, uint count, out uint open_i);
+
+void record_context_scan_limit()
+{
+    atomic_u32_or(token_feature_flags, 0u, PARSER_STATUS_CONTEXT_SCAN_LIMIT);
+}
 
 bool fn_param_lparen_context(uint parser_i, uint count)
 {
@@ -324,31 +513,12 @@ bool fn_param_lparen_context(uint parser_i, uint count)
     if (prev != TK_GT)
         return false;
 
-    uint depth = 0u;
-    uint j = parser_i - 1u;
-    [loop]
-    for (uint guard = 0u; guard < 512u && j > 0u; guard += 1u)
-    {
-        uint kind = raw_kind_at(j, count);
-        if (kind == TK_GT)
-        {
-            depth += 1u;
-        }
-        else if (kind == TK_LT)
-        {
-            if (depth == 1u)
-            {
-                return semantic_lt_kind_for(j, count) == TK_GENERIC_PARAM_LT &&
-                       raw_kind_at(j - 1u, count) == TK_IDENT &&
-                       raw_kind_at(j - 2u, count) == TK_FN;
-            }
-            if (depth == 0u)
-                return false;
-            depth -= 1u;
-        }
-        j -= 1u;
-    }
-    return false;
+    uint open_i = 0u;
+    if (!matching_raw_angle_open_for_close(parser_i - 1u, count, open_i))
+        return false;
+    uint open_parser_i = open_i + 1u;
+    return raw_kind_at(open_parser_i - 1u, count) == TK_IDENT &&
+           raw_kind_at(open_parser_i - 2u, count) == TK_FN;
 }
 
 uint semantic_open_kind_for(uint parser_i, uint count, uint raw_kind)
@@ -383,63 +553,6 @@ bool raw_kind_starts_item(uint kind)
            kind == TK_TRAIT;
 }
 
-bool scan_context_before(
-    uint parser_i,
-    uint count,
-    uint wanted,
-    uint stop_a,
-    uint stop_b,
-    uint stop_c)
-{
-    uint j = parser_i;
-    uint paren_depth = 0u;
-    uint bracket_depth = 0u;
-    uint brace_depth = 0u;
-    [loop]
-    for (uint guard = 0u; guard < 512u && j > 0u; guard += 1u)
-    {
-        j -= 1u;
-        uint kind = raw_kind_at(j, count);
-        if (kind == TK_RPAREN)
-        {
-            paren_depth += 1u;
-            continue;
-        }
-        if (kind == TK_LPAREN && paren_depth > 0u)
-        {
-            paren_depth -= 1u;
-            continue;
-        }
-        if (kind == TK_RBRACKET)
-        {
-            bracket_depth += 1u;
-            continue;
-        }
-        if (kind == TK_LBRACKET && bracket_depth > 0u)
-        {
-            bracket_depth -= 1u;
-            continue;
-        }
-        if (kind == TK_RBRACE)
-        {
-            brace_depth += 1u;
-            continue;
-        }
-        if (kind == TK_LBRACE && brace_depth > 0u)
-        {
-            brace_depth -= 1u;
-            continue;
-        }
-        if (paren_depth != 0u || bracket_depth != 0u || brace_depth != 0u)
-            continue;
-        if (kind == wanted)
-            return true;
-        if (kind == stop_a || kind == stop_b || kind == stop_c || is_statement_boundary(kind))
-            return false;
-    }
-    return false;
-}
-
 bool in_enum_variant_context(uint parser_i, uint count)
 {
     return enclosing_semantic_brace_open_before(parser_i, count) == TK_ENUM_LBRACE;
@@ -447,23 +560,13 @@ bool in_enum_variant_context(uint parser_i, uint count)
 
 bool in_pattern_context(uint parser_i, uint count)
 {
-    if (!enclosing_raw_brace_owner_is(parser_i, count, TK_MATCH))
+    if (parser_i == 0u)
         return false;
 
-    uint j = parser_i;
-    [loop]
-    for (uint guard = 0u; guard < 512u && j > 0u; guard += 1u)
-    {
-        j -= 1u;
-        uint kind = raw_kind_at(j, count);
-        if (kind == TK_ARROW)
-            return false;
-        if (kind == TK_LBRACE || top_level_match_arm_comma(j, count))
-            return true;
-        if (kind == TK_SEMICOLON)
-            return false;
-    }
-    return false;
+    uint token_i = parser_i - 1u;
+    return token_i < count &&
+           token_i < gParams.token_capacity &&
+           (token_match_pattern_context_event[token_i] & 0xffu) == MATCH_PATTERN_CONTEXT;
 }
 
 bool top_level_match_arm_comma(uint parser_i, uint count)
@@ -471,55 +574,19 @@ bool top_level_match_arm_comma(uint parser_i, uint count)
     if (raw_kind_at(parser_i, count) != TK_COMMA)
         return false;
 
-    uint j = parser_i;
-    uint paren_depth = 0u;
-    uint bracket_depth = 0u;
-    uint brace_depth = 0u;
-    [loop]
-    for (uint guard = 0u; guard < 1024u && j > 0u; guard += 1u)
-    {
-        j -= 1u;
-        uint kind = raw_kind_at(j, count);
-        if (kind == TK_RPAREN)
-        {
-            paren_depth += 1u;
-            continue;
-        }
-        if (kind == TK_LPAREN)
-        {
-            if (paren_depth == 0u)
-                return false;
-            paren_depth -= 1u;
-            continue;
-        }
-        if (kind == TK_RBRACKET)
-        {
-            bracket_depth += 1u;
-            continue;
-        }
-        if (kind == TK_LBRACKET)
-        {
-            if (bracket_depth == 0u)
-                return false;
-            bracket_depth -= 1u;
-            continue;
-        }
-        if (kind == TK_RBRACE)
-        {
-            brace_depth += 1u;
-            continue;
-        }
-        if (kind == TK_LBRACE)
-        {
-            if (brace_depth > 0u)
-            {
-                brace_depth -= 1u;
-                continue;
-            }
-            return scan_context_before(j, count, TK_MATCH, TK_SEMICOLON, TK_FN, TK_IMPL);
-        }
-    }
-    return false;
+    uint open_i = 0u;
+    uint open_kind = 0u;
+    if (!enclosing_semantic_brace_open_before_with_index(parser_i, count, open_i, open_kind) ||
+        open_kind != TK_MATCH_LBRACE)
+        return false;
+
+    uint open_parser_i = open_i + 1u;
+    return global_paren_depth_before(parser_i, count) ==
+               global_paren_depth_before(open_parser_i, count) &&
+           global_bracket_depth_before(parser_i, count) ==
+               global_bracket_depth_before(open_parser_i, count) &&
+           global_angle_depth_before(parser_i, count) ==
+               global_angle_depth_before(open_parser_i, count);
 }
 
 bool enclosing_raw_brace_owner_is(uint parser_i, uint count, uint owner)
@@ -543,34 +610,11 @@ bool in_trait_body_context(uint parser_i, uint count)
     return enclosing_semantic_brace_open_before(parser_i, count) == TK_TRAIT_LBRACE;
 }
 
-uint matching_semantic_open_before(uint parser_i, uint count, uint raw_open, uint raw_close)
-{
-    uint depth = 0u;
-    uint j = parser_i;
-    [loop]
-    for (uint guard = 0u; guard < 512u && j > 0u; guard += 1u)
-    {
-        j -= 1u;
-        uint kind = raw_kind_at(j, count);
-        if (kind == raw_close)
-        {
-            depth += 1u;
-            continue;
-        }
-        if (kind != raw_open)
-            continue;
-        if (depth == 0u)
-            return semantic_open_kind_for(j, count, kind);
-        depth -= 1u;
-    }
-    return 0u;
-}
-
 uint semantic_close_kind_for(uint parser_i, uint count, uint raw_kind)
 {
     if (raw_kind == TK_RPAREN)
     {
-        uint open_kind = matching_semantic_open_before(parser_i, count, TK_LPAREN, TK_RPAREN);
+        uint open_kind = matching_semantic_paren_open_before(parser_i, count);
         if (open_kind == TK_PARAM_LPAREN)
             return TK_PARAM_RPAREN;
         if (open_kind == TK_CALL_LPAREN)
@@ -634,53 +678,177 @@ int global_brace_depth_before(uint parser_i, uint count)
     return block_prefix_brace[block_i] + depth_brace_inblock[token_i];
 }
 
-uint enclosing_semantic_brace_open_before(uint parser_i, uint count)
+int global_paren_depth_before(uint parser_i, uint count)
 {
+    if (parser_i == 0u || parser_i > count + 1u)
+        return 0;
+    uint token_i = parser_i - 1u;
+    if (token_i >= gParams.token_capacity)
+        return 0;
+    uint block_i = token_i / WG_SIZE;
+    return block_prefix_paren[block_i] + depth_paren_inblock[token_i];
+}
+
+int global_bracket_depth_before(uint parser_i, uint count)
+{
+    if (parser_i == 0u || parser_i > count + 1u)
+        return 0;
+    uint token_i = parser_i - 1u;
+    if (token_i >= gParams.token_capacity)
+        return 0;
+    uint block_i = token_i / WG_SIZE;
+    return block_prefix_bracket[block_i] + depth_bracket_inblock[token_i];
+}
+
+int global_angle_depth_before(uint parser_i, uint count)
+{
+    if (parser_i == 0u || parser_i > count + 1u)
+        return 0;
+    uint token_i = parser_i - 1u;
+    if (token_i >= gParams.token_capacity)
+        return 0;
+    uint block_i = token_i / WG_SIZE;
+    return block_prefix_angle[block_i] + depth_angle_inblock[token_i];
+}
+
+bool matching_raw_paren_open_before(uint parser_i, uint count, out uint open_i)
+{
+    open_i = 0u;
     if (parser_i == 0u)
-        return 0u;
+        return false;
+
     uint token_i = parser_i - 1u;
     if (token_i >= count || token_i >= gParams.token_capacity)
-        return 0u;
+        return false;
 
-    int depth_before = global_brace_depth_before(parser_i, count);
+    int depth_before = global_paren_depth_before(parser_i, count);
     if (depth_before <= 0)
-        return 0u;
+        return false;
 
-    uint open_i;
-    if (!range_search_tree_last_index_before<
-            int,
-            int,
-            BraceDepthTree,
-            BraceDepthRows,
-            BraceDepthAtMost>(
+    if (!depth_search_last_index_before(
+            DEPTH_MODE_PAREN,
             token_i,
             depth_before - 1,
             open_i))
+        return false;
+
+    return open_i < count &&
+           token_words[open_i].kind == TK_LPAREN &&
+           paren_match_depth[open_i] == depth_before - 1;
+}
+
+uint matching_semantic_paren_open_before(uint parser_i, uint count)
+{
+    uint open_i = 0u;
+    if (!matching_raw_paren_open_before(parser_i, count, open_i))
         return 0u;
+
+    return semantic_open_kind_for(open_i + 1u, count, TK_LPAREN);
+}
+
+uint enclosing_semantic_brace_open_before(uint parser_i, uint count)
+{
+    uint open_i = 0u;
+    uint semantic_kind = 0u;
+    return enclosing_semantic_brace_open_before_with_index(
+        parser_i,
+        count,
+        open_i,
+        semantic_kind)
+        ? semantic_kind
+        : 0u;
+}
+
+bool enclosing_semantic_brace_open_before_with_index(
+    uint parser_i,
+    uint count,
+    out uint open_i,
+    out uint semantic_kind)
+{
+    if (parser_i == 0u)
+    {
+        open_i = 0u;
+        semantic_kind = 0u;
+        return false;
+    }
+    uint token_i = parser_i - 1u;
+    if (token_i >= count || token_i >= gParams.token_capacity)
+    {
+        open_i = 0u;
+        semantic_kind = 0u;
+        return false;
+    }
+
+    int depth_before = global_brace_depth_before(parser_i, count);
+    if (depth_before <= 0)
+    {
+        open_i = 0u;
+        semantic_kind = 0u;
+        return false;
+    }
+
+    if (!depth_search_last_index_before(
+            DEPTH_MODE_BRACE,
+            token_i,
+            depth_before - 1,
+            open_i))
+    {
+        open_i = 0u;
+        semantic_kind = 0u;
+        return false;
+    }
 
     if (open_i >= count || token_words[open_i].kind != TK_LBRACE)
-        return 0u;
+    {
+        open_i = 0u;
+        semantic_kind = 0u;
+        return false;
+    }
 
-    uint semantic_kind = brace_semantic_kind[open_i];
-    return semantic_kind != 0u ? semantic_kind : semantic_brace_open_kind_for(open_i + 1u, count);
+    semantic_kind = brace_semantic_kind[open_i];
+    if (semantic_kind == 0u)
+        semantic_kind = semantic_brace_open_kind_for(open_i + 1u, count);
+    return semantic_kind != 0u;
 }
 
 bool bound_type_context_before(uint parser_i, uint count)
 {
-    uint j = parser_i;
-    [loop]
-    for (uint guard = 0u; guard < 512u && j > 0u; guard += 1u)
+    uint prev = raw_kind_at(parser_i - 1u, count);
+    if (prev == TK_COLON)
+        return bound_colon_context(parser_i - 1u, count);
+    if (prev == TK_PLUS)
+        return bound_plus_context(parser_i - 1u, count);
+    if (where_clause_context_before(parser_i, count) &&
+        (prev == TK_LT || prev == TK_COMMA || prev == TK_AMPERSAND))
     {
-        j -= 1u;
-        uint kind = raw_kind_at(j, count);
-        if (kind == TK_COLON && bound_colon_context(j, count))
-            return true;
-        if (kind == TK_PLUS && bound_plus_context(j, count))
-            return true;
-        if (kind == TK_SEMICOLON || kind == TK_LBRACE || kind == TK_RBRACE ||
-            kind == TK_PARAM_LPAREN || kind == TK_LPAREN)
-            return false;
+        return true;
     }
+    if (prev != TK_IDENT)
+        return false;
+    if (where_clause_context_before(parser_i, count))
+        return true;
+
+    uint prefix_i = parser_i - 2u;
+    [loop]
+    for (uint segment = 0u; segment < BOUND_PATH_SEGMENT_LIMIT && prefix_i > 0u; segment += 1u)
+    {
+        uint kind = raw_kind_at(prefix_i, count);
+        if (kind == TK_COLON)
+        {
+            if (raw_kind_at(prefix_i - 1u, count) == TK_COLON &&
+                raw_kind_at(prefix_i - 2u, count) == TK_IDENT)
+            {
+                prefix_i -= 3u;
+                continue;
+            }
+            return bound_colon_context(prefix_i, count);
+        }
+        if (kind == TK_PLUS)
+            return bound_plus_context(prefix_i, count);
+        return false;
+    }
+    if (prefix_i > 0u)
+        record_context_scan_limit();
     return false;
 }
 
@@ -707,57 +875,100 @@ uint semantic_lt_kind_for(uint parser_i, uint count)
 
 bool impl_type_context_before(uint parser_i, uint count)
 {
-    uint j = parser_i;
-    uint angle_depth = 0u;
-    [loop]
-    for (uint guard = 0u; guard < 512u && j > 0u; guard += 1u)
-    {
-        j -= 1u;
-        uint kind = raw_kind_at(j, count);
-        if (kind == TK_GT)
-        {
-            angle_depth += 1u;
-            continue;
-        }
-        if (kind == TK_LT && angle_depth > 0u)
-        {
-            angle_depth -= 1u;
-            continue;
-        }
-        if (angle_depth != 0u)
-            continue;
+    if (parser_i == 0u)
+        return false;
+    uint token_i = parser_i - 1u;
+    return token_i < count &&
+           token_i < gParams.token_capacity &&
+           (token_impl_context_event[token_i] & 0xffu) == IMPL_HEADER_CONTEXT;
+}
 
-        if (kind == TK_IMPL)
-            return true;
-        if (kind == TK_FOR)
-            return scan_context_before(j, count, TK_IMPL, TK_SEMICOLON, TK_LBRACE, TK_RBRACE);
-        if (kind == TK_LBRACE || kind == TK_RBRACE || kind == TK_SEMICOLON || kind == TK_FN)
-            return false;
+bool where_clause_context_before(uint parser_i, uint count)
+{
+    if (parser_i == 0u)
+        return false;
+    uint token_i = parser_i - 1u;
+    return token_i < count &&
+           token_i < gParams.token_capacity &&
+           (token_where_context_event[token_i] & 0xffu) == WHERE_CLAUSE_CONTEXT;
+}
+
+bool matching_raw_angle_open_before(uint parser_i, uint count, out uint open_i)
+{
+    open_i = 0u;
+    if (parser_i == 0u)
+        return false;
+
+    uint token_i = parser_i - 1u;
+    if (token_i >= count || token_i >= gParams.token_capacity)
+        return false;
+
+    int depth_before = global_angle_depth_before(parser_i, count);
+    if (depth_before <= 0)
+        return false;
+
+    if (!depth_search_last_index_before(
+            DEPTH_MODE_ANGLE,
+            token_i,
+            depth_before - 1,
+            open_i))
+        return false;
+
+    return open_i < count &&
+           token_words[open_i].kind == TK_LT &&
+           angle_match_depth[open_i] == depth_before - 1;
+}
+
+bool raw_angle_open_can_contain_bound_colon(uint open_parser_i, uint count)
+{
+    uint prev_raw = raw_kind_at(open_parser_i - 1u, count);
+    uint prev2_raw = raw_kind_at(open_parser_i - 2u, count);
+    if (prev_raw == TK_IMPL || prev2_raw == TK_FN || prev2_raw == TK_STRUCT ||
+        prev2_raw == TK_ENUM || prev2_raw == TK_TRAIT || prev2_raw == TK_TYPE)
+    {
+        return true;
     }
-    return false;
+
+    return prev_raw == TK_IDENT &&
+           (prev2_raw == TK_COLON || prev2_raw == TK_ARROW || prev2_raw == TK_AMPERSAND ||
+            prev2_raw == TK_LT || prev2_raw == TK_COMMA || prev2_raw == TK_LBRACKET ||
+            impl_type_context_before(open_parser_i, count) ||
+            where_clause_context_before(open_parser_i, count));
 }
 
 uint matching_semantic_angle_open_before(uint parser_i, uint count)
 {
-    uint depth = 0u;
-    uint j = parser_i;
-    [loop]
-    for (uint guard = 0u; guard < 512u && j > 0u; guard += 1u)
-    {
-        j -= 1u;
-        uint kind = raw_kind_at(j, count);
-        if (kind == TK_GT)
-        {
-            depth += 1u;
-            continue;
-        }
-        if (kind != TK_LT)
-            continue;
-        if (depth == 0u)
-            return semantic_lt_kind_for(j, count);
-        depth -= 1u;
-    }
-    return 0u;
+    uint open_i = 0u;
+    if (!matching_raw_angle_open_before(parser_i, count, open_i))
+        return 0u;
+
+    return semantic_lt_kind_for(open_i + 1u, count);
+}
+
+bool matching_raw_angle_open_for_close(uint close_parser_i, uint count, out uint open_i)
+{
+    open_i = 0u;
+    if (close_parser_i == 0u || raw_kind_at(close_parser_i, count) != TK_GT)
+        return false;
+
+    uint close_i = close_parser_i - 1u;
+    if (close_i >= count || close_i >= gParams.token_capacity)
+        return false;
+
+    int depth_before = global_angle_depth_before(close_parser_i, count);
+    if (depth_before <= 0)
+        return false;
+
+    if (!depth_search_last_index_before(
+            DEPTH_MODE_ANGLE,
+            close_i,
+            depth_before - 1,
+            open_i))
+        return false;
+
+    return open_i < count &&
+           token_words[open_i].kind == TK_LT &&
+           angle_match_depth[open_i] == depth_before - 1;
 }
 
 uint semantic_gt_kind_for(uint parser_i, uint count)
@@ -774,7 +985,7 @@ uint semantic_gt_kind_for(uint parser_i, uint count)
 
 uint semantic_comma_kind_for(uint parser_i, uint count)
 {
-    uint paren_open = matching_semantic_open_before(parser_i, count, TK_LPAREN, TK_RPAREN);
+    uint paren_open = matching_semantic_paren_open_before(parser_i, count);
     uint angle_open = matching_semantic_angle_open_before(parser_i, count);
     if (angle_open == TK_TYPE_ARG_LT)
         return TK_TYPE_ARG_COMMA;
@@ -801,7 +1012,7 @@ uint semantic_comma_kind_for(uint parser_i, uint count)
         return TK_STRUCT_FIELD_COMMA;
     if (brace_open == TK_STRUCT_LIT_LBRACE)
         return TK_STRUCT_LIT_COMMA;
-    if (scan_context_before(parser_i, count, TK_WHERE, TK_SEMICOLON, TK_LBRACE, TK_RBRACE))
+    if (where_clause_context_before(parser_i, count))
         return TK_WHERE_COMMA;
     return TK_COMMA;
 }
@@ -812,31 +1023,14 @@ bool bound_colon_context(uint parser_i, uint count)
     if (prev2 == TK_CONST)
         return false;
 
-    uint j = parser_i;
-    uint angle_depth = 0u;
-    [loop]
-    for (uint guard = 0u; guard < 256u && j > 0u; guard += 1u)
-    {
-        j -= 1u;
-        uint kind = raw_kind_at(j, count);
-        if (kind == TK_GT)
-        {
-            angle_depth += 1u;
-            continue;
-        }
-        if (kind == TK_LT && angle_depth > 0u)
-        {
-            angle_depth -= 1u;
-            continue;
-        }
-        if (angle_depth > 0u)
-            continue;
-        if (kind == TK_WHERE || kind == TK_LT)
-            return true;
-        if (is_statement_boundary(kind) || kind == TK_PARAM_LPAREN || kind == TK_LPAREN)
-            return false;
-    }
-    return false;
+    if (where_clause_context_before(parser_i, count))
+        return true;
+
+    uint open_i = 0u;
+    if (!matching_raw_angle_open_before(parser_i, count, open_i))
+        return false;
+
+    return raw_angle_open_can_contain_bound_colon(open_i + 1u, count);
 }
 
 uint semantic_colon_kind_for(uint parser_i, uint count)
@@ -854,7 +1048,7 @@ uint semantic_colon_kind_for(uint parser_i, uint count)
 
 uint semantic_assign_kind_for(uint parser_i, uint count)
 {
-    uint statement_context = parser_i == 0u ? 0u : statement_context_kind[parser_i - 1u];
+    uint statement_context = parser_i == 0u ? 0u : statement_context_token_kind(parser_i - 1u);
     if (statement_context == TK_LET)
         return TK_LET_ASSIGN;
     if (statement_context == TK_TYPE)
@@ -874,22 +1068,26 @@ uint semantic_arrow_kind_for(uint parser_i, uint count)
     return TK_MATCH_ARROW;
 }
 
+bool raw_kind_can_end_bound_plus_lhs(uint kind)
+{
+    return kind == TK_IDENT ||
+           kind == TK_GT ||
+           kind == TK_SELF_VALUE;
+}
+
 bool bound_plus_context(uint parser_i, uint count)
 {
-    uint j = parser_i;
-    [loop]
-    for (uint guard = 0u; guard < 512u && j > 0u; guard += 1u)
-    {
-        j -= 1u;
-        uint kind = raw_kind_at(j, count);
-        if (kind == TK_COLON)
-            return true;
-        if (kind == TK_ASSIGN)
-            return false;
-        if (is_statement_boundary(kind) || kind == TK_LPAREN)
-            return false;
-    }
-    return false;
+    if (!raw_kind_can_end_bound_plus_lhs(raw_kind_at(parser_i - 1u, count)))
+        return false;
+
+    if (where_clause_context_before(parser_i, count))
+        return true;
+
+    uint open_i = 0u;
+    if (!matching_raw_angle_open_before(parser_i, count, open_i))
+        return false;
+
+    return raw_angle_open_can_contain_bound_colon(open_i + 1u, count);
 }
 
 uint semantic_plus_kind_for(uint parser_i, uint count)
@@ -943,7 +1141,7 @@ uint semicolon_kind_for_statement_context(uint statement_kind)
 
 uint semantic_semicolon_kind_for(uint parser_i, uint count)
 {
-    uint recorded = semicolon_kind_for_statement_context(statement_context_kind[parser_i - 1u]);
+    uint recorded = semicolon_kind_for_statement_context(statement_context_token_kind(parser_i - 1u));
     if (recorded != 0u)
         return recorded;
 
@@ -957,127 +1155,24 @@ uint semantic_semicolon_kind_for(uint parser_i, uint count)
 
 uint semantic_impl_kind_for(uint parser_i, uint count)
 {
-    uint paren_depth = 0u;
-    uint bracket_depth = 0u;
-    uint angle_depth = 0u;
-    [loop]
-    for (uint guard = 1u; guard < 1024u && parser_i + guard <= count; guard += 1u)
-    {
-        uint kind = raw_kind_at(parser_i + guard, count);
-        if (kind == TK_LPAREN)
-            paren_depth += 1u;
-        else if (kind == TK_RPAREN && paren_depth > 0u)
-            paren_depth -= 1u;
-        else if (kind == TK_LBRACKET)
-            bracket_depth += 1u;
-        else if (kind == TK_RBRACKET && bracket_depth > 0u)
-            bracket_depth -= 1u;
-        else if (kind == TK_LT)
-            angle_depth += 1u;
-        else if (kind == TK_GT && angle_depth > 0u)
-            angle_depth -= 1u;
-        else if (paren_depth == 0u && bracket_depth == 0u && angle_depth == 0u)
-        {
-            if (kind == TK_FOR)
-                return TK_TRAIT_IMPL;
-            if (kind == TK_LBRACE || kind == TK_SEMICOLON || kind == TK_RBRACE)
-                return TK_INHERENT_IMPL;
-        }
-    }
+    uint token_i = parser_i - 1u;
+    if (token_i < count &&
+        token_i < gParams.token_capacity &&
+        token_impl_header_kind[token_i] == TK_TRAIT_IMPL)
+        return TK_TRAIT_IMPL;
     return TK_INHERENT_IMPL;
-}
-
-uint semantic_prev_kind(uint parser_i, uint count)
-{
-    uint raw = raw_kind_at(parser_i, count);
-    if (raw == TK_LPAREN || raw == TK_LBRACKET)
-        return semantic_open_kind_for(parser_i, count, raw);
-    if (raw == TK_RPAREN || raw == TK_RBRACKET)
-        return semantic_close_kind_for(parser_i, count, raw);
-    if (raw == TK_LBRACE)
-        return semantic_brace_open_kind_for(parser_i, count);
-    if (raw == TK_RBRACE)
-        return semantic_brace_close_kind_for(parser_i, count);
-    if (raw == TK_COMMA)
-        return semantic_comma_kind_for(parser_i, count);
-    if (raw == TK_COLON)
-        return semantic_colon_kind_for(parser_i, count);
-    if (raw == TK_LT)
-        return semantic_lt_kind_for(parser_i, count);
-    if (raw == TK_GT)
-        return semantic_gt_kind_for(parser_i, count);
-    if (raw == TK_ARROW)
-        return semantic_arrow_kind_for(parser_i, count);
-    if (raw == TK_ASSIGN)
-        return semantic_assign_kind_for(parser_i, count);
-    if (raw == TK_PLUS)
-        return semantic_plus_kind_for(parser_i, count);
-    if (raw == TK_AMPERSAND)
-        return semantic_ampersand_kind_for(parser_i, count);
-    if (raw == TK_INC || raw == TK_DEC)
-        return semantic_inc_dec_kind_for(parser_i, raw, count);
-    if (raw == TK_SEMICOLON)
-        return semantic_semicolon_kind_for(parser_i, count);
-    return raw;
 }
 
 uint semantic_kind_for(uint parser_i, uint count, uint raw_kind)
 {
     if (raw_kind == TK_IDENT)
-    {
-        uint prev_raw = raw_kind_at(parser_i - 1u, count);
-        if (prev_raw == TK_DOT)
-            return TK_MEMBER_IDENT;
-        if (prev_raw == TK_LET)
-            return TK_LET_IDENT;
-        if (prev_raw == TK_TYPE)
-            return TK_TYPE_ALIAS_NAME_IDENT;
-        if (prev_raw == TK_TRAIT)
-            return TK_TRAIT_NAME_IDENT;
-        if (prev_raw == TK_WHERE)
-            return TK_WHERE_IDENT;
-
-        uint prev = semantic_prev_kind(parser_i - 1u, count);
-        if (prev == TK_GENERIC_PARAM_LT || prev == TK_GENERIC_PARAM_COMMA)
-            return TK_GENERIC_PARAM_IDENT;
-        if (prev == TK_WHERE_COMMA)
-            return TK_WHERE_IDENT;
-        if (prev == TK_BOUND_COLON || prev == TK_BOUND_PLUS ||
-            prev == TK_BOUND_TYPE_ARG_LT || prev == TK_BOUND_TYPE_ARG_COMMA)
-            return TK_BOUND_TYPE_IDENT;
-        if (prev_raw == TK_IMPL || prev_raw == TK_FOR ||
-            prev == TK_GENERIC_PARAM_GT || impl_type_context_before(parser_i, count))
-        {
-            if (impl_type_context_before(parser_i, count))
-                return TK_TYPE_IDENT;
-        }
-        if (prev == TK_PARAM_LPAREN || prev == TK_PARAM_COMMA)
-            return TK_PARAM_IDENT;
-        if (prev == TK_TYPE_ARRAY_LBRACKET)
-            return TK_TYPE_IDENT;
-        if (prev == TK_ENUM_PAYLOAD_LPAREN || prev == TK_ENUM_FIELD_COMMA)
-            return TK_TYPE_IDENT;
-        if (prev == TK_TYPE_COLON || prev == TK_BOUND_COLON || prev == TK_RETURN_ARROW ||
-            prev == TK_TYPE_ALIAS_ASSIGN || prev == TK_TYPE_AMPERSAND ||
-            prev == TK_TYPE_ARG_LT || prev == TK_TYPE_ARG_COMMA || prev == TK_GENERIC_PARAM_LT ||
-            prev == TK_GENERIC_PARAM_COMMA || prev == TK_TYPE_ARRAY_LBRACKET)
-            return TK_TYPE_IDENT;
         return TK_IDENT;
-    }
 
     if (raw_kind == TK_SELF_VALUE)
-    {
-        uint prev = semantic_prev_kind(parser_i - 1u, count);
-        if (prev == TK_TYPE_AMPERSAND)
-            return TK_PARAM_SELF_REF_VALUE;
-        if (prev == TK_PARAM_LPAREN || prev == TK_PARAM_COMMA)
-            return TK_PARAM_SELF_VALUE;
         return TK_SELF_VALUE;
-    }
     if (raw_kind == TK_IMPL)
         return semantic_impl_kind_for(parser_i, count);
-    if (raw_kind == TK_FOR &&
-        scan_context_before(parser_i, count, TK_IMPL, TK_SEMICOLON, TK_LBRACE, TK_RBRACE))
+    if (raw_kind == TK_FOR && impl_type_context_before(parser_i, count))
         return TK_IMPL_FOR;
     if (raw_kind == TK_PUB)
     {
@@ -1087,7 +1182,7 @@ uint semantic_kind_for(uint parser_i, uint count, uint raw_kind)
             return TK_TRAIT_PUB;
         return TK_PUB;
     }
-    if (raw_kind == TK_STRING && statement_context_kind[parser_i - 1u] == TK_IMPORT)
+    if (raw_kind == TK_STRING && statement_context_token_kind(parser_i - 1u) == TK_IMPORT)
         return TK_IMPORT_STRING;
     if (raw_kind == TK_LPAREN || raw_kind == TK_LBRACKET)
         return semantic_open_kind_for(parser_i, count, raw_kind);

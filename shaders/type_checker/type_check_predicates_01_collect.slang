@@ -4,10 +4,13 @@
 // This pass consumes parser-owned predicate parse nodes, generic-parameter
 // declaration records, interned name ids, language type records, and module
 // declaration records. It publishes node-keyed predicate records for each
-// top-level bound expression and trait impl header so later validation can
-// reject bad predicates without treating bounds or impls as comments.
+// top-level bound expression, trait impl header, and unsupported trait-method
+// contract shape so later validation can reject bad predicates without treating
+// bounds or impls as comments.
 
 import generated_parse_production_ids;
+import fixed_key;
+import range_query;
 
 struct Params
 {
@@ -22,18 +25,34 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> parent;
 StructuredBuffer<uint> first_child;
+StructuredBuffer<uint> next_sibling;
 StructuredBuffer<uint> subtree_end;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_type_len_value;
+StructuredBuffer<uint> hir_type_arg_start;
+StructuredBuffer<uint> hir_type_arg_count;
+StructuredBuffer<uint> hir_type_arg_next;
 StructuredBuffer<uint> hir_item_kind;
+StructuredBuffer<uint> hir_item_name_token;
+StructuredBuffer<uint> hir_method_impl_receiver_type_node;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> type_decl_generic_param_count_by_node;
+StructuredBuffer<uint> type_generic_param_slot_by_token;
+StructuredBuffer<uint> generic_decl_owner_by_node;
+StructuredBuffer<uint> generic_param_count_out;
+StructuredBuffer<uint> generic_param_owner_node;
+StructuredBuffer<uint> generic_param_name_id;
+StructuredBuffer<uint> generic_param_token;
+StructuredBuffer<uint> generic_param_kind;
+StructuredBuffer<uint> generic_param_key_order;
+StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> language_type_code_by_name_id;
 StructuredBuffer<uint> decl_count_out;
 StructuredBuffer<uint> decl_name_id;
 StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> decl_namespace;
 StructuredBuffer<uint> decl_hir_node;
+StructuredBuffer<uint> decl_visibility;
 StructuredBuffer<uint> module_count_out;
 StructuredBuffer<uint> sorted_module_key_order;
 StructuredBuffer<uint> module_key_segment_count;
@@ -41,24 +60,51 @@ StructuredBuffer<uint> module_key_segment_base;
 StructuredBuffer<uint> module_key_segment_name_id;
 StructuredBuffer<uint> decl_type_key_count_out;
 StructuredBuffer<uint> decl_type_key_to_decl_id;
+StructuredBuffer<uint> decl_id_by_name_token;
 StructuredBuffer<uint> decl_module_id;
+StructuredBuffer<uint> path_count_out;
+StructuredBuffer<uint> path_id_by_owner_hir;
+StructuredBuffer<uint> path_owner_module_id;
+StructuredBuffer<uint> import_visible_type_count_out;
+StructuredBuffer<uint> import_visible_type_key_module_id;
+StructuredBuffer<uint> import_visible_type_key_name_id;
+StructuredBuffer<uint> import_visible_type_key_to_decl_id;
+StructuredBuffer<uint> import_visible_type_status;
 
 RWStructuredBuffer<uint> predicate_owner_node;
 RWStructuredBuffer<uint> predicate_subject_token;
 RWStructuredBuffer<uint> predicate_bound_token;
+RWStructuredBuffer<uint> predicate_bound_decl_id;
 RWStructuredBuffer<uint> predicate_bound_arg_count;
 RWStructuredBuffer<uint> predicate_bound_first_arg_token;
 RWStructuredBuffer<uint> predicate_bound_second_arg_token;
 RWStructuredBuffer<uint> predicate_status;
+StructuredBuffer<uint> predicate_method_contract_owner_node;
+StructuredBuffer<uint> predicate_method_contract_name_token;
+StructuredBuffer<uint> predicate_method_contract_name_id;
+StructuredBuffer<uint> predicate_method_contract_param_count;
+StructuredBuffer<uint> predicate_method_contract_first_param_node;
+StructuredBuffer<uint> predicate_method_contract_return_type_node;
+StructuredBuffer<uint> predicate_method_contract_visibility;
+StructuredBuffer<uint> predicate_method_contract_status;
+StructuredBuffer<uint> predicate_method_contract_param_next_node;
+StructuredBuffer<uint> predicate_method_contract_param_type_node;
+StructuredBuffer<uint> predicate_method_contract_key_order;
+StructuredBuffer<uint> predicate_method_contract_owner_range_first;
+StructuredBuffer<uint> predicate_method_contract_owner_range_count;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint MAX_PARENT_WALK = 128u;
-static const uint MAX_GENERIC_PARAM_SEARCH = 64u;
 static const uint SORT_PATH_SEGMENTS = 8u;
 static const uint MODULE_KEY_SEGMENT_ROW_WIDTH = SORT_PATH_SEGMENTS;
 static const uint MAX_SIGNATURE_STACK = 16u;
+static const uint MAX_METHOD_SIGNATURE_PARAMS = 32u;
+static const uint MAX_METHOD_CONTRACTS_PER_OWNER = 32u;
+static const uint MAX_TYPE_ARG_SHAPE_SCAN = 64u;
+static const uint MAX_PREDICATE_PATH_SCAN = 64u;
+static const uint PREDICATE_ARG_TYPE_CODE_BIT = 0x80000000u;
 
 static const uint HIR_ITEM_KIND_FN = 4u;
 static const uint HIR_ITEM_KIND_EXTERN_FN = 5u;
@@ -68,6 +114,10 @@ static const uint HIR_ITEM_KIND_TYPE_ALIAS = 8u;
 static const uint HIR_ITEM_KIND_TRAIT = 10u;
 
 static const uint HIR_ITEM_NAMESPACE_TYPE = 3u;
+static const uint HIR_ITEM_VIS_PUBLIC = 1u;
+
+static const uint TYPE_REF_INSTANCE = 3u;
+static const uint GENERIC_PARAM_KIND_TYPE = 1u;
 
 static const uint PREDICATE_STATUS_OK = 0u;
 static const uint PREDICATE_STATUS_INVALID_SUBJECT = 1u;
@@ -78,6 +128,17 @@ static const uint PREDICATE_STATUS_INVALID_TARGET = 5u;
 static const uint PREDICATE_STATUS_MISSING_METHOD = 6u;
 static const uint PREDICATE_STATUS_METHOD_ARITY_MISMATCH = 7u;
 static const uint PREDICATE_STATUS_METHOD_SIGNATURE_MISMATCH = 8u;
+static const uint PREDICATE_STATUS_UNSUPPORTED_BOUND_WIDTH = 11u;
+static const uint PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE = 12u;
+static const uint PREDICATE_STATUS_BOUND_ARITY_MISMATCH = 13u;
+static const uint PREDICATE_STATUS_UNSUPPORTED_TARGET_SHAPE = 14u;
+static const uint PREDICATE_STATUS_INVALID_IMPL_ARG = 15u;
+static const uint PREDICATE_STATUS_UNSUPPORTED_METHOD_GENERIC = 16u;
+static const uint PREDICATE_STATUS_UNSUPPORTED_METHOD_WHERE = 17u;
+static const uint PREDICATE_STATUS_UNSUPPORTED_NON_CALLABLE_BOUND = 18u;
+static const uint PREDICATE_STATUS_DUPLICATE_TRAIT_METHOD = 20u;
+static const uint PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION = 22u;
+static const uint IMPORT_VISIBLE_STATUS_OK = 0u;
 
 static const uint SIGNATURE_TYPE_VOID = 0u;
 static const uint SIGNATURE_TYPE_DECL_BASE = 0x10000u;
@@ -107,6 +168,37 @@ uint parent_node(uint node)
     return valid_node(node) ? parent[node] : INVALID;
 }
 
+uint first_child_node(uint node)
+{
+    if (!valid_node(node))
+        return INVALID;
+    uint child = first_child[node];
+    return valid_node(child) && parent_node(child) == node ? child : INVALID;
+}
+
+uint next_sibling_node(uint node)
+{
+    if (!valid_node(node))
+        return INVALID;
+    uint sibling = next_sibling[node];
+    return valid_node(sibling) && parent_node(sibling) == parent_node(node)
+        ? sibling
+        : INVALID;
+}
+
+uint direct_child_at(uint node, uint ordinal)
+{
+    uint child = first_child_node(node);
+    [loop]
+    for (uint seen = 0u; seen <= ordinal && seen < 8u && valid_node(child); seen += 1u)
+    {
+        if (seen == ordinal)
+            return child;
+        child = next_sibling_node(child);
+    }
+    return INVALID;
+}
+
 bool generic_decl_item_kind(uint item_kind)
 {
     return item_kind == HIR_ITEM_KIND_FN ||
@@ -117,25 +209,50 @@ bool generic_decl_item_kind(uint item_kind)
            item_kind == HIR_ITEM_KIND_TRAIT;
 }
 
-uint generic_decl_ancestor(uint node)
+bool callable_generic_decl_item_kind(uint item_kind)
 {
-    uint cur = node;
-    [loop]
-    for (uint step = 0u; step < MAX_PARENT_WALK && valid_node(cur); step += 1u)
-    {
-        if (generic_decl_item_kind(hir_item_kind[cur]))
-            return cur;
-        cur = parent_node(cur);
-    }
-    return INVALID;
+    return item_kind == HIR_ITEM_KIND_FN ||
+           item_kind == HIR_ITEM_KIND_EXTERN_FN;
 }
 
-bool generic_param_node(uint node)
+uint generic_decl_owner_for_node(uint node)
 {
-    return valid_node(node) && node_kind[node] == PROD_ENUM_TYPE_PARAM;
+    if (!valid_node(node))
+        return INVALID;
+
+    uint owner = generic_decl_owner_by_node[node];
+    // Owner records also include impl headers; this pass only supports item-style
+    // generic owners for bound predicates, so impl-bound predicates fail closed.
+    return valid_node(owner) && generic_decl_item_kind(hir_item_kind[owner])
+        ? owner
+        : INVALID;
 }
 
-uint generic_param_slot_for_name(uint decl_node, uint name_token)
+uint active_generic_param_count()
+{
+    return min(generic_param_count_out[0u], gParams.n_tokens);
+}
+
+bool generic_param_key_less(uint row, uint owner, uint name_id)
+{
+    if (row >= active_generic_param_count())
+        return false;
+
+    uint row_owner = generic_param_owner_node[row];
+    if (row_owner != owner)
+        return row_owner < owner;
+    return generic_param_name_id[row] < name_id;
+}
+
+bool generic_param_key_matches(uint row, uint owner, uint name_id, uint kind)
+{
+    return row < active_generic_param_count() &&
+           generic_param_owner_node[row] == owner &&
+           generic_param_name_id[row] == name_id &&
+           generic_param_kind[row] == kind;
+}
+
+uint generic_param_row_for_name(uint decl_node, uint name_token, uint kind)
 {
     if (!valid_node(decl_node) || !valid_token(name_token))
         return INVALID;
@@ -144,26 +261,49 @@ uint generic_param_slot_for_name(uint decl_node, uint name_token)
     if (name_id == INVALID)
         return INVALID;
 
-    uint count = type_decl_generic_param_count_by_node[decl_node];
-    uint max_slots = count == 0u ? MAX_GENERIC_PARAM_SEARCH : count;
-    uint slot = 0u;
-    uint end = min(subtree_end[decl_node], active_hir_node_count());
-    [loop]
-    for (uint node = decl_node + 1u; node < end && slot < max_slots; node += 1u)
+    uint count = active_generic_param_count();
+    uint lo = 0u;
+    uint hi = count;
+    [unroll]
+    for (uint step = 0u; step < 32u; step += 1u)
     {
-        if (!generic_param_node(node) || generic_decl_ancestor(node) != decl_node)
+        if (lo >= hi)
             continue;
-
-        uint param_token = hir_token_pos[node];
-        if (valid_token(param_token) && name_id_by_token[param_token] == name_id)
-            return slot;
-        slot += 1u;
+        uint mid = lo + ((hi - lo) >> 1u);
+        uint row = generic_param_key_order[mid];
+        if (row >= count || !generic_param_key_less(row, decl_node, name_id))
+            hi = mid;
+        else
+            lo = mid + 1u;
     }
-    return INVALID;
+
+    if (lo >= count)
+        return INVALID;
+    uint row = generic_param_key_order[lo];
+    return generic_param_key_matches(row, decl_node, name_id, kind) ? row : INVALID;
 }
 
-uint predicate_list_ancestor(uint node)
+uint generic_param_slot_for_name(uint decl_node, uint name_token)
 {
+    if (!valid_node(decl_node) || !valid_token(name_token))
+        return INVALID;
+
+    uint count = type_decl_generic_param_count_by_node[decl_node];
+    uint row = generic_param_row_for_name(decl_node, name_token, GENERIC_PARAM_KIND_TYPE);
+    if (row == INVALID)
+        return INVALID;
+
+    uint param_token = generic_param_token[row];
+    // Slots are published for declaration tokens by the generic-param pass.
+    uint slot = valid_token(param_token)
+        ? type_generic_param_slot_by_token[param_token]
+        : INVALID;
+    return slot != INVALID && (count == 0u || slot < count) ? slot : INVALID;
+}
+
+uint predicate_list_ancestor(uint node, out bool exhausted)
+{
+    exhausted = false;
     uint cur = parent_node(node);
     [loop]
     for (uint step = 0u; step < MAX_PARENT_WALK && valid_node(cur); step += 1u)
@@ -181,16 +321,8 @@ uint predicate_list_ancestor(uint node)
             return INVALID;
         cur = parent_node(cur);
     }
+    exhausted = valid_node(cur);
     return INVALID;
-}
-
-bool top_level_predicate_expr(uint node)
-{
-    if (!valid_node(node))
-        return false;
-    uint kind = node_kind[node];
-    return (kind == PROD_BOUND_TYPE_IDENT || kind == PROD_BOUND_TYPE_REF) &&
-           valid_node(predicate_list_ancestor(node));
 }
 
 uint predicate_subject_token_for_list(uint list_node)
@@ -231,6 +363,16 @@ uint type_decl_key_record_count()
     return min(decl_type_key_count_out[0], gParams.n_hir_nodes);
 }
 
+uint path_record_count()
+{
+    return min(path_count_out[0], gParams.n_hir_nodes);
+}
+
+uint import_visible_type_record_count()
+{
+    return min(import_visible_type_count_out[0], max(gParams.n_tokens, 1u));
+}
+
 uint bound_path_node(uint expr_node)
 {
     if (!valid_node(expr_node) || node_kind[expr_node] != PROD_BOUND_TYPE_IDENT)
@@ -240,6 +382,39 @@ uint bound_path_node(uint expr_node)
     return valid_node(child) && node_kind[child] == PROD_BOUND_TYPE_PATH
         ? child
         : INVALID;
+}
+
+bool path_subtree_scan_supported(uint path)
+{
+    if (!valid_node(path))
+        return false;
+
+    uint end = min(subtree_end[path], active_hir_node_count());
+    return end <= path + 1u + MAX_PREDICATE_PATH_SCAN;
+}
+
+bool bound_path_scan_supported(uint expr_node)
+{
+    return path_subtree_scan_supported(bound_path_node(expr_node));
+}
+
+bool bound_ident_has_direct_arg_list(uint expr_node)
+{
+    if (!valid_node(expr_node) || node_kind[expr_node] != PROD_BOUND_TYPE_IDENT)
+        return false;
+
+    uint child = first_child_node(expr_node);
+    [loop]
+    for (uint guard = 0u; guard < 4u && valid_node(child); guard += 1u)
+    {
+        uint kind = node_kind[child];
+        if (kind == PROD_BOUND_TYPE_ARGS_SOME)
+            return true;
+        if (kind == PROD_BOUND_TYPE_ARGS_NONE)
+            return false;
+        child = next_sibling_node(child);
+    }
+    return false;
 }
 
 bool top_level_bound_path_segment_node(uint root_expr_node, uint node)
@@ -267,14 +442,16 @@ bool top_level_bound_path_segment_node(uint root_expr_node, uint node)
 uint bound_path_segment_token(uint expr_node, uint segment_i)
 {
     uint path = bound_path_node(expr_node);
-    if (!valid_node(path))
+    if (!valid_node(path) || !path_subtree_scan_supported(path))
         return INVALID;
 
     uint cur_segment = 0u;
     uint end = min(subtree_end[path], active_hir_node_count());
+    uint seen = 0u;
     [loop]
-    for (uint node = path + 1u; node < end; node += 1u)
+    for (uint node = path + 1u; node < end && seen < MAX_PREDICATE_PATH_SCAN; node += 1u)
     {
+        seen += 1u;
         if (!top_level_bound_path_segment_node(expr_node, node))
             continue;
         if (cur_segment == segment_i)
@@ -293,14 +470,16 @@ uint bound_path_segment_name_id(uint expr_node, uint segment_i)
 uint bound_path_segment_count(uint expr_node)
 {
     uint path = bound_path_node(expr_node);
-    if (!valid_node(path))
+    if (!valid_node(path) || !path_subtree_scan_supported(path))
         return 0u;
 
     uint count = 0u;
     uint end = min(subtree_end[path], active_hir_node_count());
+    uint seen = 0u;
     [loop]
-    for (uint node = path + 1u; node < end; node += 1u)
+    for (uint node = path + 1u; node < end && seen < MAX_PREDICATE_PATH_SCAN; node += 1u)
     {
+        seen += 1u;
         if (top_level_bound_path_segment_node(expr_node, node))
             count += 1u;
     }
@@ -310,53 +489,129 @@ uint bound_path_segment_count(uint expr_node)
 uint bound_path_leaf_token(uint expr_node)
 {
     uint path = bound_path_node(expr_node);
-    if (!valid_node(path))
+    if (!valid_node(path) || !path_subtree_scan_supported(path))
         return INVALID;
 
     uint token = INVALID;
     uint end = min(subtree_end[path], active_hir_node_count());
+    uint seen = 0u;
     [loop]
-    for (uint node = path + 1u; node < end; node += 1u)
+    for (uint node = path + 1u; node < end && seen < MAX_PREDICATE_PATH_SCAN; node += 1u)
     {
+        seen += 1u;
         if (top_level_bound_path_segment_node(expr_node, node))
             token = hir_token_pos[node];
     }
     return token;
 }
 
-bool module_key_matches_bound_prefix(uint module_i, uint expr_node, uint prefix_count)
+uint module_key_segment_value(uint module_i, uint segment_i)
 {
-    if (module_i >= module_record_count() ||
-        prefix_count == 0u ||
-        prefix_count > SORT_PATH_SEGMENTS ||
-        module_key_segment_count[module_i] != prefix_count)
-        return false;
-
-    uint base = module_key_segment_base[module_i];
-    [loop]
-    for (uint i = 0u; i < SORT_PATH_SEGMENTS; i += 1u)
+    uint value = INVALID;
+    if (module_i < module_record_count() &&
+        segment_i < min(module_key_segment_count[module_i], MODULE_KEY_SEGMENT_ROW_WIDTH))
     {
-        if (i >= prefix_count)
-            break;
-        uint path_name = bound_path_segment_name_id(expr_node, i);
-        uint module_name = module_key_segment_name_id[base + i];
-        if (path_name == INVALID || module_name != path_name)
-            return false;
+        value = module_key_segment_name_id[module_key_segment_base[module_i] + segment_i];
     }
-    return true;
+    return fixed_key_encode_nullable_u32(value, INVALID);
+}
+
+public struct BoundModulePrefixLookupKey
+{
+    uint expr_node;
+    uint prefix_count;
+}
+
+public struct BoundModulePrefixFixedKey : IFixedU32RowKey<BoundModulePrefixLookupKey>
+{
+    public static uint row_lane(uint row, uint lane)
+    {
+        uint module_i = sorted_module_key_order[row];
+        return module_key_segment_value(module_i, lane);
+    }
+
+    public static uint key_lane(BoundModulePrefixLookupKey key, uint lane)
+    {
+        uint value = lane < key.prefix_count
+            ? bound_path_segment_name_id(key.expr_node, lane)
+            : INVALID;
+        return fixed_key_encode_nullable_u32(value, INVALID);
+    }
+}
+
+public struct BoundModulePrefixCompare : IRowQueryCompare<BoundModulePrefixLookupKey>
+{
+    public static int compare(uint row, BoundModulePrefixLookupKey key)
+    {
+        return fixed_u32_row_key_compare<BoundModulePrefixLookupKey, BoundModulePrefixFixedKey>(
+            row,
+            key,
+            SORT_PATH_SEGMENTS);
+    }
 }
 
 uint find_module_for_bound_path_prefix(uint expr_node, uint prefix_count)
 {
-    uint count = module_record_count();
-    [loop]
-    for (uint row = 0u; row < count; row += 1u)
+    if (prefix_count == 0u || prefix_count > SORT_PATH_SEGMENTS)
+        return INVALID;
+
+    BoundModulePrefixLookupKey key;
+    key.expr_node = expr_node;
+    key.prefix_count = prefix_count;
+    uint row = find_equal_query<BoundModulePrefixLookupKey, BoundModulePrefixCompare>(
+        module_record_count(),
+        key);
+    return row == INVALID ? INVALID : sorted_module_key_order[row];
+}
+
+public struct ImportVisibleTypeLookupKey
+{
+    uint module_id;
+    uint name_id;
+}
+
+public struct TypeDeclLookupKey
+{
+    uint module_id;
+    uint name_id;
+}
+
+public struct TypeDeclFixedKey : IFixedU32RowKey<TypeDeclLookupKey>
+{
+    public static uint row_lane(uint row, uint lane)
     {
-        uint module_i = sorted_module_key_order[row];
-        if (module_key_matches_bound_prefix(module_i, expr_node, prefix_count))
-            return module_i;
+        uint decl_i = decl_type_key_to_decl_id[row];
+        uint value = INVALID;
+        if (decl_i < decl_record_count())
+        {
+            if (lane == 0u)
+                value = decl_module_id[decl_i];
+            else if (lane == 1u)
+                value = decl_namespace[decl_i];
+            else
+                value = decl_name_id[decl_i];
+        }
+        return fixed_key_encode_nullable_u32(value, INVALID);
     }
-    return INVALID;
+
+    public static uint key_lane(TypeDeclLookupKey key, uint lane)
+    {
+        uint value = lane == 0u
+            ? key.module_id
+            : (lane == 1u ? HIR_ITEM_NAMESPACE_TYPE : key.name_id);
+        return fixed_key_encode_nullable_u32(value, INVALID);
+    }
+}
+
+public struct TypeDeclKeyCompare : IRowQueryCompare<TypeDeclLookupKey>
+{
+    public static int compare(uint row, TypeDeclLookupKey key)
+    {
+        return fixed_u32_row_key_compare<TypeDeclLookupKey, TypeDeclFixedKey>(
+            row,
+            key,
+            3u);
+    }
 }
 
 uint find_type_decl_in_module(uint module_id, uint name_id)
@@ -364,21 +619,105 @@ uint find_type_decl_in_module(uint module_id, uint name_id)
     if (module_id == INVALID || name_id == INVALID)
         return INVALID;
 
-    uint count = type_decl_key_record_count();
-    [loop]
-    for (uint row = 0u; row < count; row += 1u)
-    {
-        uint decl_i = decl_type_key_to_decl_id[row];
-        if (decl_i < decl_record_count() &&
-            decl_module_id[decl_i] == module_id &&
-            decl_namespace[decl_i] == HIR_ITEM_NAMESPACE_TYPE &&
-            decl_name_id[decl_i] == name_id)
-            return decl_i;
-    }
-    return INVALID;
+    TypeDeclLookupKey key;
+    key.module_id = module_id;
+    key.name_id = name_id;
+    uint row = find_equal_query<TypeDeclLookupKey, TypeDeclKeyCompare>(
+        type_decl_key_record_count(),
+        key);
+    if (row == INVALID)
+        return INVALID;
+
+    uint decl_i = decl_type_key_to_decl_id[row];
+    return decl_i < decl_record_count() ? decl_i : INVALID;
 }
 
-uint type_decl_for_bound_path(uint expr_node)
+public struct ImportVisibleTypeFixedKey : IFixedU32RowKey<ImportVisibleTypeLookupKey>
+{
+    public static uint row_lane(uint row, uint lane)
+    {
+        uint value = lane == 0u
+            ? import_visible_type_key_module_id[row]
+            : import_visible_type_key_name_id[row];
+        return fixed_key_encode_nullable_u32(value, INVALID);
+    }
+
+    public static uint key_lane(ImportVisibleTypeLookupKey key, uint lane)
+    {
+        uint value = lane == 0u ? key.module_id : key.name_id;
+        return fixed_key_encode_nullable_u32(value, INVALID);
+    }
+}
+
+public struct ImportVisibleTypeKeyCompare : IRowQueryCompare<ImportVisibleTypeLookupKey>
+{
+    public static int compare(uint row, ImportVisibleTypeLookupKey key)
+    {
+        return fixed_u32_row_key_compare<ImportVisibleTypeLookupKey, ImportVisibleTypeFixedKey>(
+            row,
+            key,
+            2u);
+    }
+}
+
+uint find_import_visible_type_decl(uint module_id, uint name_id)
+{
+    if (module_id == INVALID || name_id == INVALID)
+        return INVALID;
+
+    ImportVisibleTypeLookupKey key;
+    key.module_id = module_id;
+    key.name_id = name_id;
+    uint row = find_equal_query<ImportVisibleTypeLookupKey, ImportVisibleTypeKeyCompare>(
+        import_visible_type_record_count(),
+        key);
+    if (row == INVALID || import_visible_type_status[row] != IMPORT_VISIBLE_STATUS_OK)
+        return INVALID;
+
+    uint decl_i = import_visible_type_key_to_decl_id[row];
+    return decl_i < decl_record_count() ? decl_i : INVALID;
+}
+
+uint owner_module_for_decl_node(uint owner_decl_node)
+{
+    if (!valid_node(owner_decl_node))
+        return INVALID;
+
+    uint name_token = hir_item_name_token[owner_decl_node];
+    if (!valid_token(name_token))
+        return INVALID;
+
+    uint decl_i = decl_id_by_name_token[name_token];
+    return decl_i < decl_record_count() ? decl_module_id[decl_i] : INVALID;
+}
+
+bool decl_visible_from_module(uint owner_module, uint decl_i)
+{
+    if (decl_i >= decl_record_count())
+        return false;
+
+    uint decl_module = decl_module_id[decl_i];
+    if (decl_module != INVALID && decl_module == owner_module)
+        return true;
+
+    return decl_visibility[decl_i] == HIR_ITEM_VIS_PUBLIC;
+}
+
+uint type_decl_for_unqualified_bound_path(uint expr_node, uint owner_decl_node)
+{
+    uint leaf_name_id = bound_path_segment_name_id(expr_node, 0u);
+    uint owner_module = owner_module_for_decl_node(owner_decl_node);
+    if (owner_module == INVALID)
+        return INVALID;
+
+    uint local_decl = find_type_decl_in_module(owner_module, leaf_name_id);
+    if (local_decl != INVALID)
+        return local_decl;
+
+    return find_import_visible_type_decl(owner_module, leaf_name_id);
+}
+
+uint type_decl_for_bound_path(uint expr_node, uint owner_decl_node)
 {
     uint segment_count = bound_path_segment_count(expr_node);
     if (segment_count == 0u)
@@ -386,36 +725,40 @@ uint type_decl_for_bound_path(uint expr_node)
 
     uint leaf_name_id = bound_path_segment_name_id(expr_node, segment_count - 1u);
     if (segment_count == 1u)
-    {
-        uint count = decl_record_count();
-        [loop]
-        for (uint i = 0u; i < count; i += 1u)
-        {
-            if (decl_namespace[i] == HIR_ITEM_NAMESPACE_TYPE && decl_name_id[i] == leaf_name_id)
-                return i;
-        }
-        return INVALID;
-    }
+        return type_decl_for_unqualified_bound_path(expr_node, owner_decl_node);
 
     uint prefix_count = segment_count - 1u;
     if (prefix_count > SORT_PATH_SEGMENTS)
         return INVALID;
 
+    uint owner_module = owner_module_for_decl_node(owner_decl_node);
     uint module_i = find_module_for_bound_path_prefix(expr_node, prefix_count);
-    return find_type_decl_in_module(module_i, leaf_name_id);
+    uint decl_i = find_type_decl_in_module(module_i, leaf_name_id);
+    return decl_visible_from_module(owner_module, decl_i) ? decl_i : INVALID;
 }
 
-bool type_decl_exists_for_bound_path(uint expr_node)
+bool type_decl_exists_for_bound_path(uint expr_node, uint owner_decl_node)
 {
-    return type_decl_for_bound_path(expr_node) != INVALID;
+    return type_decl_for_bound_path(expr_node, owner_decl_node) != INVALID;
 }
 
-bool trait_decl_exists_for_bound_path(uint expr_node)
+bool trait_decl_exists_for_bound_path(uint expr_node, uint owner_decl_node)
 {
-    uint decl_i = type_decl_for_bound_path(expr_node);
+    uint decl_i = type_decl_for_bound_path(expr_node, owner_decl_node);
     return decl_i != INVALID &&
            decl_kind[decl_i] == HIR_ITEM_KIND_TRAIT &&
            decl_namespace[decl_i] == HIR_ITEM_NAMESPACE_TYPE;
+}
+
+uint trait_decl_generic_param_count(uint decl_i)
+{
+    if (decl_i >= decl_record_count())
+        return INVALID;
+
+    uint trait_node = decl_hir_node[decl_i];
+    return valid_node(trait_node)
+        ? type_decl_generic_param_count_by_node[trait_node]
+        : INVALID;
 }
 
 bool language_type_exists_by_name(uint name_id)
@@ -434,6 +777,11 @@ uint type_path_node(uint expr_node)
     return valid_node(child) && node_kind[child] == PROD_TYPE_PATH
         ? child
         : INVALID;
+}
+
+bool type_path_scan_supported(uint expr_node)
+{
+    return path_subtree_scan_supported(type_path_node(expr_node));
 }
 
 bool top_level_type_path_segment_node(uint root_expr_node, uint node)
@@ -460,14 +808,16 @@ bool top_level_type_path_segment_node(uint root_expr_node, uint node)
 uint type_path_segment_token(uint expr_node, uint segment_i)
 {
     uint path = type_path_node(expr_node);
-    if (!valid_node(path))
+    if (!valid_node(path) || !path_subtree_scan_supported(path))
         return INVALID;
 
     uint cur_segment = 0u;
     uint end = min(subtree_end[path], active_hir_node_count());
+    uint seen = 0u;
     [loop]
-    for (uint node = path + 1u; node < end; node += 1u)
+    for (uint node = path + 1u; node < end && seen < MAX_PREDICATE_PATH_SCAN; node += 1u)
     {
+        seen += 1u;
         if (!top_level_type_path_segment_node(expr_node, node))
             continue;
         if (cur_segment == segment_i)
@@ -486,14 +836,16 @@ uint type_path_segment_name_id(uint expr_node, uint segment_i)
 uint type_path_segment_count(uint expr_node)
 {
     uint path = type_path_node(expr_node);
-    if (!valid_node(path))
+    if (!valid_node(path) || !path_subtree_scan_supported(path))
         return 0u;
 
     uint count = 0u;
     uint end = min(subtree_end[path], active_hir_node_count());
+    uint seen = 0u;
     [loop]
-    for (uint node = path + 1u; node < end; node += 1u)
+    for (uint node = path + 1u; node < end && seen < MAX_PREDICATE_PATH_SCAN; node += 1u)
     {
+        seen += 1u;
         if (top_level_type_path_segment_node(expr_node, node))
             count += 1u;
     }
@@ -506,39 +858,77 @@ uint type_path_leaf_token(uint expr_node)
     return segment_count == 0u ? INVALID : type_path_segment_token(expr_node, segment_count - 1u);
 }
 
-bool module_key_matches_type_prefix(uint module_i, uint expr_node, uint prefix_count)
+uint owner_module_for_type_path(uint expr_node)
 {
-    if (module_i >= module_record_count() ||
-        prefix_count == 0u ||
-        prefix_count > SORT_PATH_SEGMENTS ||
-        module_key_segment_count[module_i] != prefix_count)
-        return false;
+    if (!valid_node(expr_node))
+        return INVALID;
 
-    uint base = module_key_segment_base[module_i];
-    [loop]
-    for (uint i = 0u; i < SORT_PATH_SEGMENTS; i += 1u)
+    uint path_i = path_id_by_owner_hir[expr_node];
+    return path_i != INVALID && path_i < path_record_count()
+        ? path_owner_module_id[path_i]
+        : INVALID;
+}
+
+public struct TypeModulePrefixLookupKey
+{
+    uint expr_node;
+    uint prefix_count;
+}
+
+public struct TypeModulePrefixFixedKey : IFixedU32RowKey<TypeModulePrefixLookupKey>
+{
+    public static uint row_lane(uint row, uint lane)
     {
-        if (i >= prefix_count)
-            break;
-        uint path_name = type_path_segment_name_id(expr_node, i);
-        uint module_name = module_key_segment_name_id[base + i];
-        if (path_name == INVALID || module_name != path_name)
-            return false;
+        uint module_i = sorted_module_key_order[row];
+        return module_key_segment_value(module_i, lane);
     }
-    return true;
+
+    public static uint key_lane(TypeModulePrefixLookupKey key, uint lane)
+    {
+        uint value = lane < key.prefix_count
+            ? type_path_segment_name_id(key.expr_node, lane)
+            : INVALID;
+        return fixed_key_encode_nullable_u32(value, INVALID);
+    }
+}
+
+public struct TypeModulePrefixCompare : IRowQueryCompare<TypeModulePrefixLookupKey>
+{
+    public static int compare(uint row, TypeModulePrefixLookupKey key)
+    {
+        return fixed_u32_row_key_compare<TypeModulePrefixLookupKey, TypeModulePrefixFixedKey>(
+            row,
+            key,
+            SORT_PATH_SEGMENTS);
+    }
 }
 
 uint find_module_for_type_path_prefix(uint expr_node, uint prefix_count)
 {
-    uint count = module_record_count();
-    [loop]
-    for (uint row = 0u; row < count; row += 1u)
-    {
-        uint module_i = sorted_module_key_order[row];
-        if (module_key_matches_type_prefix(module_i, expr_node, prefix_count))
-            return module_i;
-    }
-    return INVALID;
+    if (prefix_count == 0u || prefix_count > SORT_PATH_SEGMENTS)
+        return INVALID;
+
+    TypeModulePrefixLookupKey key;
+    key.expr_node = expr_node;
+    key.prefix_count = prefix_count;
+    uint row = find_equal_query<TypeModulePrefixLookupKey, TypeModulePrefixCompare>(
+        module_record_count(),
+        key);
+    return row == INVALID ? INVALID : sorted_module_key_order[row];
+}
+
+uint type_decl_for_unqualified_type_path(uint expr_node)
+{
+    uint leaf_name_id = type_path_segment_name_id(expr_node, 0u);
+    uint owner_module = owner_module_for_type_path(expr_node);
+    if (owner_module == INVALID)
+        return INVALID;
+
+    uint local_decl = find_type_decl_in_module(owner_module, leaf_name_id);
+    if (local_decl != INVALID)
+        return local_decl;
+
+    return find_import_visible_type_decl(owner_module, leaf_name_id);
 }
 
 uint type_decl_for_type_path(uint expr_node)
@@ -549,118 +939,349 @@ uint type_decl_for_type_path(uint expr_node)
 
     uint leaf_name_id = type_path_segment_name_id(expr_node, segment_count - 1u);
     if (segment_count == 1u)
-    {
-        uint count = decl_record_count();
-        [loop]
-        for (uint i = 0u; i < count; i += 1u)
-        {
-            if (decl_namespace[i] == HIR_ITEM_NAMESPACE_TYPE && decl_name_id[i] == leaf_name_id)
-                return i;
-        }
-        return INVALID;
-    }
+        return type_decl_for_unqualified_type_path(expr_node);
 
     uint prefix_count = segment_count - 1u;
     if (prefix_count > SORT_PATH_SEGMENTS)
         return INVALID;
 
+    uint owner_module = owner_module_for_type_path(expr_node);
     uint module_i = find_module_for_type_path_prefix(expr_node, prefix_count);
-    return find_type_decl_in_module(module_i, leaf_name_id);
+    uint decl_i = find_type_decl_in_module(module_i, leaf_name_id);
+    return decl_visible_from_module(owner_module, decl_i) ? decl_i : INVALID;
 }
 
-bool valid_impl_target_type(uint expr_node)
+uint validate_trait_impl_target_type(uint expr_node)
 {
+    if (!type_path_scan_supported(expr_node))
+        return PREDICATE_STATUS_UNSUPPORTED_TARGET_SHAPE;
+
     uint segment_count = type_path_segment_count(expr_node);
+    if (segment_count == 0u)
+        return PREDICATE_STATUS_INVALID_TARGET;
+
+    uint leaf_token = type_path_leaf_token(expr_node);
+    uint leaf_name_id = valid_token(leaf_token) ? name_id_by_token[leaf_token] : INVALID;
+    uint arg_count = valid_node(expr_node) ? hir_type_arg_count[expr_node] : 0u;
+    if (segment_count == 1u && language_type_exists_by_name(leaf_name_id))
+        return arg_count == 0u
+            ? PREDICATE_STATUS_OK
+            : PREDICATE_STATUS_UNSUPPORTED_TARGET_SHAPE;
+
+    uint decl_i = type_decl_for_type_path(expr_node);
+    if (decl_i == INVALID || decl_i >= decl_record_count())
+        return PREDICATE_STATUS_INVALID_TARGET;
+    if (decl_kind[decl_i] == HIR_ITEM_KIND_TRAIT &&
+        decl_namespace[decl_i] == HIR_ITEM_NAMESPACE_TYPE)
+        return PREDICATE_STATUS_UNSUPPORTED_TARGET_SHAPE;
+    if (decl_kind[decl_i] == HIR_ITEM_KIND_TYPE_ALIAS &&
+        valid_token(leaf_token) &&
+        type_expr_ref_tag[leaf_token] == TYPE_REF_INSTANCE)
+        return PREDICATE_STATUS_UNSUPPORTED_TARGET_SHAPE;
+
+    uint decl_node = decl_hir_node[decl_i];
+    uint expected_arg_count = valid_node(decl_node)
+        ? type_decl_generic_param_count_by_node[decl_node]
+        : INVALID;
+    if (expected_arg_count == INVALID)
+        return PREDICATE_STATUS_INVALID_TARGET;
+
+    return arg_count == 0u && expected_arg_count == 0u
+        ? PREDICATE_STATUS_OK
+        : PREDICATE_STATUS_UNSUPPORTED_TARGET_SHAPE;
+}
+
+bool trait_impl_type_arg_resolves(uint arg_node)
+{
+    if (!type_path_scan_supported(arg_node))
+        return false;
+
+    uint segment_count = type_path_segment_count(arg_node);
     if (segment_count == 0u)
         return false;
 
-    uint leaf_token = type_path_leaf_token(expr_node);
+    uint leaf_token = type_path_leaf_token(arg_node);
     uint leaf_name_id = valid_token(leaf_token) ? name_id_by_token[leaf_token] : INVALID;
     if (segment_count == 1u && language_type_exists_by_name(leaf_name_id))
         return true;
 
-    return type_decl_for_type_path(expr_node) != INVALID;
+    return type_decl_for_type_path(arg_node) != INVALID;
 }
 
-uint method_name_id_from_fn_token(uint fn_token)
+bool type_arg_requires_instance_args(uint arg_node)
 {
-    uint name_token = fn_token + 1u;
-    return valid_token(name_token) ? name_id_by_token[name_token] : INVALID;
-}
+    if (!type_path_scan_supported(arg_node))
+        return true;
 
-bool method_param_node(uint node)
-{
-    if (!valid_node(node))
-        return false;
-    uint kind = node_kind[node];
-    return kind == PROD_PARAM_NAMED ||
-           kind == PROD_PARAM_SELF ||
-           kind == PROD_PARAM_SELF_REF;
-}
-
-bool signature_type_expr_node(uint node)
-{
-    if (!valid_node(node))
-        return false;
-    uint kind = node_kind[node];
-    return kind == PROD_TYPE_IDENT ||
-           kind == PROD_TYPE_ARRAY ||
-           kind == PROD_TYPE_REF;
-}
-
-bool type_arg_container_node(uint node)
-{
-    if (!valid_node(node))
-        return false;
-    uint kind = node_kind[node];
-    return kind == PROD_TYPE_ARGS_SOME ||
-           kind == PROD_TYPE_ARGS_MORE ||
-           kind == PROD_TYPE_ARGS_AFTER_COMMA_MORE;
-}
-
-bool direct_type_arg_expr(uint owner_type_node, uint arg_node)
-{
-    if (!valid_node(owner_type_node) ||
-        !signature_type_expr_node(arg_node) ||
-        owner_type_node == arg_node)
+    uint segment_count = type_path_segment_count(arg_node);
+    if (segment_count == 0u)
         return false;
 
-    bool saw_arg_container = false;
-    uint cur = parent_node(arg_node);
+    uint leaf_token = type_path_leaf_token(arg_node);
+    uint leaf_name_id = valid_token(leaf_token) ? name_id_by_token[leaf_token] : INVALID;
+    if (segment_count == 1u && language_type_exists_by_name(leaf_name_id))
+        return false;
+
+    uint decl_i = type_decl_for_type_path(arg_node);
+    if (decl_i == INVALID || decl_i >= decl_record_count())
+        return false;
+
+    uint decl_node = decl_hir_node[decl_i];
+    uint expected_arg_count = valid_node(decl_node)
+        ? type_decl_generic_param_count_by_node[decl_node]
+        : 0u;
+    return expected_arg_count > 0u && direct_type_arg_count(arg_node) == 0u;
+}
+
+bool type_expr_contains_nested_type_args(uint root)
+{
+    if (!valid_node(root))
+        return false;
+
+    uint end = min(subtree_end[root], active_hir_node_count());
+    uint node = root + 1u;
+    uint seen = 0u;
     [loop]
-    for (uint step = 0u; step < MAX_PARENT_WALK && valid_node(cur); step += 1u)
+    for (;
+         node < end && seen < MAX_TYPE_ARG_SHAPE_SCAN;
+         node += 1u, seen += 1u)
     {
-        if (cur == owner_type_node)
-            return saw_arg_container;
-
-        if (type_arg_container_node(cur))
-        {
-            saw_arg_container = true;
-        }
-        else if (signature_type_expr_node(cur))
-        {
-            return false;
-        }
-
-        cur = parent_node(cur);
+        if (node_kind[node] == PROD_TYPE_ARGS_SOME && parent_node(node) != root)
+            return true;
+        if (node_kind[node] == PROD_TYPE_IDENT && direct_type_arg_count(node) != 0u)
+            return true;
     }
-    return false;
+
+    return node < end;
+}
+
+bool trait_type_region_contains_nested_type_args(uint trait_type_node, uint target_type_node)
+{
+    if (!valid_node(trait_type_node))
+        return false;
+
+    uint end = valid_node(target_type_node)
+        ? target_type_node
+        : min(subtree_end[trait_type_node], active_hir_node_count());
+    bool seen_trait_arg_list = false;
+    uint node = trait_type_node + 1u;
+    uint seen = 0u;
+    [loop]
+    for (;
+         node < end && seen < MAX_TYPE_ARG_SHAPE_SCAN;
+         node += 1u, seen += 1u)
+    {
+        if (node_kind[node] != PROD_TYPE_ARGS_SOME)
+            continue;
+        if (seen_trait_arg_list)
+            return true;
+        seen_trait_arg_list = true;
+    }
+
+    return node < end;
+}
+
+bool trait_method_node(uint node)
+{
+    if (!valid_node(node))
+        return false;
+    uint kind = node_kind[node];
+    return kind == PROD_TRAIT_METHOD || kind == PROD_TRAIT_METHOD_PUB;
+}
+
+uint method_contract_name_token(uint method_node)
+{
+    if (!valid_node(method_node))
+        return INVALID;
+    uint token = predicate_method_contract_name_token[method_node];
+    return valid_token(token) ? token : INVALID;
+}
+
+uint method_contract_name_id(uint method_node)
+{
+    if (!valid_node(method_node))
+        return INVALID;
+    return predicate_method_contract_name_id[method_node];
+}
+
+bool method_contract_lookup_row_valid(uint method_node)
+{
+    if (!valid_node(method_node))
+        return false;
+    return valid_node(predicate_method_contract_owner_node[method_node]) &&
+           method_contract_name_id(method_node) != INVALID;
+}
+
+public struct MethodContractLookupKey
+{
+    uint owner_node;
+    uint name_id;
+}
+
+public struct MethodContractFixedKey : IFixedU32RowKey<MethodContractLookupKey>
+{
+    public static uint row_lane(uint row, uint lane)
+    {
+        uint method_node = row < active_hir_node_count()
+            ? predicate_method_contract_key_order[row]
+            : INVALID;
+        if (!method_contract_lookup_row_valid(method_node))
+            return 0u;
+
+        if (lane == 0u)
+            return fixed_key_encode_nullable_u32(
+                predicate_method_contract_owner_node[method_node],
+                INVALID);
+        return fixed_key_encode_nullable_u32(method_contract_name_id(method_node), INVALID);
+    }
+
+    public static uint key_lane(MethodContractLookupKey key, uint lane)
+    {
+        if (lane == 0u)
+            return fixed_key_encode_nullable_u32(key.owner_node, INVALID);
+        return fixed_key_encode_nullable_u32(key.name_id, INVALID);
+    }
+}
+
+public struct MethodContractKeyCompare : IRowQueryCompare<MethodContractLookupKey>
+{
+    public static int compare(uint row, MethodContractLookupKey key)
+    {
+        return fixed_u32_row_key_compare<MethodContractLookupKey, MethodContractFixedKey>(
+            row,
+            key,
+            2u);
+    }
+}
+
+QueryRange method_contract_range_for_owner_name(uint owner_node, uint name_id)
+{
+    MethodContractLookupKey key;
+    key.owner_node = owner_node;
+    key.name_id = name_id;
+    return equal_range_query<MethodContractLookupKey, MethodContractKeyCompare>(
+        active_hir_node_count(),
+        key);
+}
+
+QueryRange method_contract_range_for_owner(uint owner_node)
+{
+    QueryRange range;
+    range.begin = 0u;
+    range.end = 0u;
+    if (!valid_node(owner_node))
+        return range;
+
+    uint first = predicate_method_contract_owner_range_first[owner_node];
+    uint count = predicate_method_contract_owner_range_count[owner_node];
+    if (first == INVALID || count == 0u)
+        return range;
+
+    uint active = active_hir_node_count();
+    range.begin = min(first, active);
+    range.end = min(first + count, active);
+    if (range.end < range.begin)
+        range.end = range.begin;
+    return range;
+}
+
+bool method_contract_node_matches_owner_name(uint method_node, uint owner_node, uint name_id)
+{
+    return method_contract_lookup_row_valid(method_node) &&
+           predicate_method_contract_owner_node[method_node] == owner_node &&
+           method_contract_name_id(method_node) == name_id;
+}
+
+bool method_contract_order_row_matches_owner(uint row, uint owner_node)
+{
+    uint active = active_hir_node_count();
+    if (row >= active)
+        return false;
+
+    uint method_node = predicate_method_contract_key_order[row];
+    return method_contract_lookup_row_valid(method_node) &&
+           predicate_method_contract_owner_node[method_node] == owner_node;
+}
+
+bool method_contract_order_row_matches_owner_name(uint row, uint owner_node, uint name_id)
+{
+    uint active = active_hir_node_count();
+    if (row >= active)
+        return false;
+
+    uint method_node = predicate_method_contract_key_order[row];
+    return method_contract_node_matches_owner_name(method_node, owner_node, name_id);
+}
+
+bool method_contract_range_matches_owner(uint owner_node, QueryRange range)
+{
+    if (!valid_node(owner_node))
+        return false;
+    if (range.begin >= range.end)
+        return true;
+    if (range.end > active_hir_node_count())
+        return false;
+
+    return method_contract_order_row_matches_owner(range.begin, owner_node) &&
+           method_contract_order_row_matches_owner(range.end - 1u, owner_node);
+}
+
+uint method_contract_range_count(QueryRange range)
+{
+    return range.end >= range.begin ? range.end - range.begin : INVALID;
+}
+
+bool method_contract_range_within_owner_window(QueryRange range)
+{
+    uint count = method_contract_range_count(range);
+    return count != INVALID && count <= MAX_METHOD_CONTRACTS_PER_OWNER;
+}
+
+bool method_contract_range_matches_owner_name(
+    uint owner_node,
+    uint name_id,
+    QueryRange range)
+{
+    if (!valid_node(owner_node) || name_id == INVALID)
+        return false;
+    if (range.begin >= range.end)
+        return true;
+    if (range.end > active_hir_node_count())
+        return false;
+
+    return method_contract_order_row_matches_owner_name(range.begin, owner_node, name_id) &&
+           method_contract_order_row_matches_owner_name(range.end - 1u, owner_node, name_id);
+}
+
+uint first_method_contract_for_owner_name(uint owner_node, uint name_id)
+{
+    if (!valid_node(owner_node) || name_id == INVALID)
+        return INVALID;
+
+    QueryRange range = method_contract_range_for_owner_name(owner_node, name_id);
+    if (range.begin >= range.end ||
+        !method_contract_range_matches_owner_name(owner_node, name_id, range))
+        return INVALID;
+
+    uint method_node = predicate_method_contract_key_order[range.begin];
+    return method_contract_node_matches_owner_name(method_node, owner_node, name_id)
+        ? method_node
+        : INVALID;
+}
+
+bool duplicate_method_contract_for_owner_name(uint owner_node, uint name_id)
+{
+    if (!valid_node(owner_node) || name_id == INVALID)
+        return false;
+
+    QueryRange range = method_contract_range_for_owner_name(owner_node, name_id);
+    return range.end > range.begin + 1u &&
+           method_contract_range_matches_owner_name(owner_node, name_id, range);
 }
 
 uint direct_type_arg_count(uint owner_type_node)
 {
-    if (!valid_node(owner_type_node))
-        return 0u;
-
-    uint count = 0u;
-    uint end = min(subtree_end[owner_type_node], active_hir_node_count());
-    [loop]
-    for (uint node = owner_type_node + 1u; node < end; node += 1u)
-    {
-        if (direct_type_arg_expr(owner_type_node, node))
-            count += 1u;
-    }
-    return count;
+    return valid_node(owner_type_node) ? hir_type_arg_count[owner_type_node] : 0u;
 }
 
 uint direct_type_arg_node(uint owner_type_node, uint ordinal)
@@ -668,50 +1289,13 @@ uint direct_type_arg_node(uint owner_type_node, uint ordinal)
     if (!valid_node(owner_type_node))
         return INVALID;
 
-    uint seen = 0u;
-    uint end = min(subtree_end[owner_type_node], active_hir_node_count());
+    uint node = hir_type_arg_start[owner_type_node];
     [loop]
-    for (uint node = owner_type_node + 1u; node < end; node += 1u)
+    for (uint seen = 0u; seen <= ordinal && seen < 8u && valid_node(node); seen += 1u)
     {
-        if (!direct_type_arg_expr(owner_type_node, node))
-            continue;
         if (seen == ordinal)
             return node;
-        seen += 1u;
-    }
-    return INVALID;
-}
-
-uint direct_child_at(uint node, uint ordinal)
-{
-    if (!valid_node(node))
-        return INVALID;
-
-    uint seen = 0u;
-    uint end = min(subtree_end[node], active_hir_node_count());
-    [loop]
-    for (uint child = node + 1u; child < end; child += 1u)
-    {
-        if (parent_node(child) != node)
-            continue;
-        if (seen == ordinal)
-            return child;
-        seen += 1u;
-    }
-    return INVALID;
-}
-
-uint first_signature_type_descendant(uint root)
-{
-    if (!valid_node(root))
-        return INVALID;
-
-    uint end = min(subtree_end[root], active_hir_node_count());
-    [loop]
-    for (uint node = root + 1u; node < end; node += 1u)
-    {
-        if (signature_type_expr_node(node))
-            return node;
+        node = hir_type_arg_next[node];
     }
     return INVALID;
 }
@@ -721,16 +1305,15 @@ uint method_param_node_at(uint method_node, uint ordinal)
     if (!valid_node(method_node))
         return INVALID;
 
-    uint seen = 0u;
-    uint end = min(subtree_end[method_node], active_hir_node_count());
+    uint node = predicate_method_contract_first_param_node[method_node];
     [loop]
-    for (uint node = method_node + 1u; node < end; node += 1u)
+    for (uint seen = 0u;
+         seen <= ordinal && seen < MAX_METHOD_SIGNATURE_PARAMS && valid_node(node);
+         seen += 1u)
     {
-        if (!method_param_node(node))
-            continue;
         if (seen == ordinal)
             return node;
-        seen += 1u;
+        node = predicate_method_contract_param_next_node[node];
     }
     return INVALID;
 }
@@ -740,15 +1323,7 @@ uint method_param_count(uint method_node)
     if (!valid_node(method_node))
         return 0u;
 
-    uint count = 0u;
-    uint end = min(subtree_end[method_node], active_hir_node_count());
-    [loop]
-    for (uint node = method_node + 1u; node < end; node += 1u)
-    {
-        if (method_param_node(node))
-            count += 1u;
-    }
-    return count;
+    return predicate_method_contract_param_count[method_node];
 }
 
 uint method_param_type_node(uint param_node)
@@ -756,10 +1331,10 @@ uint method_param_type_node(uint param_node)
     if (!valid_node(param_node))
         return INVALID;
 
-    uint kind = node_kind[param_node];
-    if (kind == PROD_PARAM_SELF_REF)
-        return INVALID;
-    return first_signature_type_descendant(param_node);
+    // 00c owns parameter-shape extraction; this collector only consumes the
+    // node-keyed relation and fails closed if it was not published.
+    uint contract_type_node = predicate_method_contract_param_type_node[param_node];
+    return valid_node(contract_type_node) ? contract_type_node : INVALID;
 }
 
 uint method_return_type_node(uint method_node)
@@ -767,14 +1342,8 @@ uint method_return_type_node(uint method_node)
     if (!valid_node(method_node))
         return INVALID;
 
-    uint end = min(subtree_end[method_node], active_hir_node_count());
-    [loop]
-    for (uint node = method_node + 1u; node < end; node += 1u)
-    {
-        if (node_kind[node] == PROD_RET_TYPE)
-            return first_signature_type_descendant(node);
-    }
-    return INVALID;
+    uint type_node = predicate_method_contract_return_type_node[method_node];
+    return valid_node(type_node) ? type_node : INVALID;
 }
 
 uint signature_path_head_identity(uint type_node)
@@ -1061,8 +1630,11 @@ bool method_signatures_match(
     uint impl_trait_type_node)
 {
     uint param_count = method_param_count(trait_method);
+    if (param_count > MAX_METHOD_SIGNATURE_PARAMS)
+        return false;
+
     [loop]
-    for (uint ordinal = 0u; ordinal < 32u; ordinal += 1u)
+    for (uint ordinal = 0u; ordinal < MAX_METHOD_SIGNATURE_PARAMS; ordinal += 1u)
     {
         if (ordinal >= param_count)
             break;
@@ -1085,21 +1657,83 @@ bool method_signatures_match(
 
 uint impl_method_node_for_name(uint impl_node, uint method_name_id)
 {
-    if (!valid_node(impl_node) || method_name_id == INVALID)
-        return INVALID;
+    return first_method_contract_for_owner_name(impl_node, method_name_id);
+}
 
-    uint end = min(subtree_end[impl_node], active_hir_node_count());
+uint trait_method_node_for_name(uint trait_node, uint method_name_id)
+{
+    return first_method_contract_for_owner_name(trait_node, method_name_id);
+}
+
+uint trait_owner_node_for_method(uint method_node)
+{
+    uint owner = valid_node(method_node)
+        ? predicate_method_contract_owner_node[method_node]
+        : INVALID;
+    return valid_node(owner) && hir_item_kind[owner] == HIR_ITEM_KIND_TRAIT
+        ? owner
+        : INVALID;
+}
+
+bool duplicate_trait_method_node(uint method_node)
+{
+    uint trait_node = trait_owner_node_for_method(method_node);
+    uint name_id = method_contract_name_id(method_node);
+    if (!valid_node(trait_node) || name_id == INVALID)
+        return false;
+
+    QueryRange range = method_contract_range_for_owner_name(trait_node, name_id);
+    if (range.end <= range.begin + 1u)
+        return false;
+
+    uint first_method = predicate_method_contract_key_order[range.begin];
+    return method_contract_node_matches_owner_name(first_method, trait_node, name_id) &&
+           first_method != method_node;
+}
+
+bool impl_method_is_public(uint impl_method)
+{
+    return valid_node(impl_method) &&
+           predicate_method_contract_visibility[impl_method] == HIR_ITEM_VIS_PUBLIC;
+}
+
+bool trait_impl_method_visibility_matches(uint trait_method, uint impl_method)
+{
+    return node_kind[trait_method] != PROD_TRAIT_METHOD_PUB || impl_method_is_public(impl_method);
+}
+
+bool trait_impl_header_is_public(uint impl_node)
+{
+    uint cur = parent_node(impl_node);
     [loop]
-    for (uint node = impl_node + 1u; node < end; node += 1u)
+    for (uint guard = 0u; guard < 4u && valid_node(cur); guard += 1u)
     {
-        if (node_kind[node] != PROD_IMPL_FN)
-            continue;
-
-        uint fn_token = hir_token_pos[node];
-        if (valid_token(fn_token) && method_name_id_from_fn_token(fn_token) == method_name_id)
-            return node;
+        uint kind = node_kind[cur];
+        if (kind == PROD_PUB_IMPL)
+            return true;
+        if (kind == PROD_ITEM_IMPL)
+            return false;
+        cur = parent_node(cur);
     }
-    return INVALID;
+    return false;
+}
+
+bool trait_impl_header_visibility_matches_trait(uint trait_decl_i, uint impl_node)
+{
+    if (trait_decl_i >= decl_record_count())
+        return false;
+    bool trait_is_public = decl_visibility[trait_decl_i] == HIR_ITEM_VIS_PUBLIC;
+    bool impl_is_public = trait_impl_header_is_public(impl_node);
+    return trait_is_public == impl_is_public;
+}
+
+uint method_unsupported_contract_status(uint method_node)
+{
+    if (!valid_node(method_node))
+        return PREDICATE_STATUS_OK;
+
+    uint record_status = predicate_method_contract_status[method_node];
+    return record_status != INVALID ? record_status : PREDICATE_STATUS_OK;
 }
 
 uint trait_impl_method_status(
@@ -1112,19 +1746,33 @@ uint trait_impl_method_status(
     if (!valid_node(trait_node) || !valid_node(impl_node))
         return PREDICATE_STATUS_OK;
 
-    uint end = min(subtree_end[trait_node], active_hir_node_count());
+    QueryRange trait_methods = method_contract_range_for_owner(trait_node);
+    if (!method_contract_range_matches_owner(trait_node, trait_methods))
+        return PREDICATE_STATUS_MISSING_METHOD;
+    if (!method_contract_range_within_owner_window(trait_methods))
+        return PREDICATE_STATUS_METHOD_ARITY_MISMATCH;
+
+    QueryRange impl_methods = method_contract_range_for_owner(impl_node);
+    if (!method_contract_range_matches_owner(impl_node, impl_methods) ||
+        !method_contract_range_within_owner_window(impl_methods))
+        return PREDICATE_STATUS_METHOD_ARITY_MISMATCH;
+
+    uint trait_method_count = method_contract_range_count(trait_methods);
+    uint impl_method_count = method_contract_range_count(impl_methods);
     [loop]
-    for (uint node = trait_node + 1u; node < end; node += 1u)
+    for (uint offset = 0u; offset < MAX_METHOD_CONTRACTS_PER_OWNER; offset += 1u)
     {
-        if (node_kind[node] != PROD_TRAIT_METHOD)
+        if (offset >= trait_method_count)
+            break;
+        uint row = trait_methods.begin + offset;
+        uint node = predicate_method_contract_key_order[row];
+        if (!method_contract_lookup_row_valid(node) ||
+            predicate_method_contract_owner_node[node] != trait_node)
             continue;
 
-        uint fn_token = hir_token_pos[node];
-        uint name_token = fn_token + 1u;
-        uint name_id = method_name_id_from_fn_token(fn_token);
-        if (!valid_token(fn_token) ||
-            !valid_token(name_token) ||
-            name_id == INVALID)
+        uint name_token = method_contract_name_token(node);
+        uint name_id = method_contract_name_id(node);
+        if (!valid_token(name_token) || name_id == INVALID)
             continue;
 
         uint impl_method = impl_method_node_for_name(impl_node, name_id);
@@ -1134,7 +1782,45 @@ uint trait_impl_method_status(
             return PREDICATE_STATUS_MISSING_METHOD;
         }
 
-        if (method_param_count(node) != method_param_count(impl_method))
+        uint trait_contract_status = method_unsupported_contract_status(node);
+        if (trait_contract_status != PREDICATE_STATUS_OK)
+        {
+            detail_token = name_token;
+            return trait_contract_status;
+        }
+
+        uint impl_contract_status = method_unsupported_contract_status(impl_method);
+        if (impl_contract_status != PREDICATE_STATUS_OK)
+        {
+            uint impl_name_token = method_contract_name_token(impl_method);
+            detail_token = valid_token(impl_name_token) ? impl_name_token : name_token;
+            return impl_contract_status;
+        }
+
+        if (duplicate_method_contract_for_owner_name(impl_node, name_id))
+        {
+            uint impl_name_token = method_contract_name_token(impl_method);
+            detail_token = valid_token(impl_name_token) ? impl_name_token : name_token;
+            return PREDICATE_STATUS_DUPLICATE_TRAIT_METHOD;
+        }
+
+        if (!trait_impl_method_visibility_matches(node, impl_method))
+        {
+            uint impl_name_token = method_contract_name_token(impl_method);
+            detail_token = valid_token(impl_name_token) ? impl_name_token : name_token;
+            return PREDICATE_STATUS_METHOD_ARITY_MISMATCH;
+        }
+
+        uint trait_param_count = method_param_count(node);
+        uint impl_param_count = method_param_count(impl_method);
+        if (trait_param_count > MAX_METHOD_SIGNATURE_PARAMS ||
+            impl_param_count > MAX_METHOD_SIGNATURE_PARAMS)
+        {
+            detail_token = name_token;
+            return PREDICATE_STATUS_METHOD_ARITY_MISMATCH;
+        }
+
+        if (trait_param_count != impl_param_count)
         {
             detail_token = name_token;
             return PREDICATE_STATUS_METHOD_ARITY_MISMATCH;
@@ -1146,15 +1832,31 @@ uint trait_impl_method_status(
             return PREDICATE_STATUS_METHOD_SIGNATURE_MISMATCH;
         }
     }
+
+    if (impl_method_count != trait_method_count)
+    {
+        uint impl_token = hir_token_pos[impl_node];
+        detail_token = valid_token(impl_token) ? impl_token : detail_token;
+        return PREDICATE_STATUS_METHOD_SIGNATURE_MISMATCH;
+    }
+
     return PREDICATE_STATUS_OK;
+}
+
+uint impl_receiver_type_node(uint impl_node)
+{
+    uint type_node = valid_node(impl_node)
+        ? hir_method_impl_receiver_type_node[impl_node]
+        : INVALID;
+    return valid_node(type_node) ? type_node : INVALID;
 }
 
 uint direct_type_expr_child(uint node, uint ordinal)
 {
     uint seen = 0u;
-    uint child = valid_node(node) ? first_child[node] : INVALID;
+    uint child = direct_child_at(node, 0u);
     [loop]
-    for (uint guard = 0u; guard < 64u && valid_node(child); guard += 1u)
+    for (uint guard = 0u; guard < 8u && valid_node(child); guard += 1u)
     {
         if (node_kind[child] == PROD_IMPL_METHODS_NONE ||
             node_kind[child] == PROD_IMPL_METHODS_SOME)
@@ -1167,38 +1869,96 @@ uint direct_type_expr_child(uint node, uint ordinal)
             seen += 1u;
         }
 
-        uint next = child + 1u < active_hir_node_count() ? child + 1u : INVALID;
-        while (valid_node(next) && parent_node(next) != node)
-        {
-            if (subtree_end[child] > next)
-                next = subtree_end[child];
-            else
-                next += 1u;
-        }
-        child = next;
+        child = next_sibling_node(child);
     }
     return INVALID;
+}
+
+uint validate_trait_impl_type_args(
+    uint trait_type_node,
+    uint target_type_node,
+    out uint arg_count,
+    out uint first_arg_token,
+    out uint second_arg_token)
+{
+    arg_count = 0u;
+    first_arg_token = INVALID;
+    second_arg_token = INVALID;
+
+    if (!type_path_scan_supported(trait_type_node))
+        return PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE;
+
+    arg_count = direct_type_arg_count(trait_type_node);
+
+    if (arg_count > 2u)
+        return PREDICATE_STATUS_UNSUPPORTED_BOUND_WIDTH;
+
+    if (trait_type_region_contains_nested_type_args(trait_type_node, target_type_node))
+        return PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE;
+
+    if (type_expr_contains_nested_type_args(trait_type_node))
+        return PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE;
+
+    [loop]
+    for (uint ordinal = 0u; ordinal < 2u; ordinal += 1u)
+    {
+        if (ordinal >= arg_count)
+            break;
+
+        uint arg_node = direct_type_arg_node(trait_type_node, ordinal);
+        if (!valid_node(arg_node))
+            return PREDICATE_STATUS_INVALID_IMPL_ARG;
+
+        if (!type_path_scan_supported(arg_node))
+            return PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE;
+
+        if (node_kind[arg_node] != PROD_TYPE_IDENT || direct_type_arg_count(arg_node) != 0u)
+            return PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE;
+
+        if (type_arg_requires_instance_args(arg_node))
+            return PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE;
+
+        uint token = type_path_leaf_token(arg_node);
+        if (!valid_token(token))
+            return PREDICATE_STATUS_INVALID_IMPL_ARG;
+
+        if (!trait_impl_type_arg_resolves(arg_node))
+            return PREDICATE_STATUS_INVALID_IMPL_ARG;
+
+        if (ordinal == 0u)
+            first_arg_token = token;
+        else
+            second_arg_token = token;
+    }
+
+    return PREDICATE_STATUS_OK;
 }
 
 void validate_trait_impl_node(uint node)
 {
     uint trait_type_node = direct_type_expr_child(node, 0u);
-    uint target_type_node = direct_type_expr_child(node, 1u);
+    uint target_type_node = impl_receiver_type_node(node);
     uint trait_token = type_path_leaf_token(trait_type_node);
     uint target_token = type_path_leaf_token(target_type_node);
-    uint trait_arg0 = direct_type_arg_node(trait_type_node, 0u);
-    uint trait_arg1 = direct_type_arg_node(trait_type_node, 1u);
+    uint trait_arg_count;
+    uint trait_arg0_token;
+    uint trait_arg1_token;
+    uint trait_arg_status = validate_trait_impl_type_args(
+        trait_type_node,
+        target_type_node,
+        trait_arg_count,
+        trait_arg0_token,
+        trait_arg1_token);
+    uint target_status = valid_node(target_type_node)
+        ? validate_trait_impl_target_type(target_type_node)
+        : PREDICATE_STATUS_UNSUPPORTED_TARGET_SHAPE;
 
     predicate_owner_node[node] = node;
     predicate_bound_token[node] = trait_token;
     predicate_subject_token[node] = target_token;
-    predicate_bound_arg_count[node] = direct_type_arg_count(trait_type_node);
-    predicate_bound_first_arg_token[node] = valid_node(trait_arg0)
-        ? type_path_leaf_token(trait_arg0)
-        : INVALID;
-    predicate_bound_second_arg_token[node] = valid_node(trait_arg1)
-        ? type_path_leaf_token(trait_arg1)
-        : INVALID;
+    predicate_bound_arg_count[node] = trait_arg_count;
+    predicate_bound_first_arg_token[node] = trait_arg0_token;
+    predicate_bound_second_arg_token[node] = trait_arg1_token;
 
     uint trait_decl_i = type_decl_for_type_path(trait_type_node);
     if (!valid_node(trait_type_node) || !valid_token(trait_token) ||
@@ -1210,10 +1970,31 @@ void validate_trait_impl_node(uint node)
         return;
     }
 
-    if (!valid_node(target_type_node) || !valid_token(target_token) ||
-        !valid_impl_target_type(target_type_node))
+    predicate_bound_decl_id[node] = trait_decl_i;
+
+    if (!trait_impl_header_visibility_matches_trait(trait_decl_i, node))
+    {
+        predicate_status[node] = PREDICATE_STATUS_INVALID_IMPL_ARG;
+        return;
+    }
+
+    if (target_status == PREDICATE_STATUS_INVALID_TARGET ||
+        (target_status == PREDICATE_STATUS_OK &&
+         (!valid_node(target_type_node) || !valid_token(target_token))))
     {
         predicate_status[node] = PREDICATE_STATUS_INVALID_TARGET;
+        return;
+    }
+
+    if (target_status != PREDICATE_STATUS_OK)
+    {
+        predicate_status[node] = target_status;
+        return;
+    }
+
+    if (trait_arg_status != PREDICATE_STATUS_OK)
+    {
+        predicate_status[node] = trait_arg_status;
         return;
     }
 
@@ -1221,6 +2002,12 @@ void validate_trait_impl_node(uint node)
     if (!valid_node(trait_node))
     {
         predicate_status[node] = PREDICATE_STATUS_BOUND_NOT_TRAIT;
+        return;
+    }
+
+    if (trait_arg_count != trait_decl_generic_param_count(trait_decl_i))
+    {
+        predicate_status[node] = PREDICATE_STATUS_BOUND_ARITY_MISMATCH;
         return;
     }
 
@@ -1237,10 +2024,59 @@ void validate_trait_impl_node(uint node)
     predicate_status[node] = PREDICATE_STATUS_OK;
 }
 
+void validate_inherent_impl_header_node(uint node)
+{
+    uint receiver_type_node = impl_receiver_type_node(node);
+    uint receiver_token = type_path_leaf_token(receiver_type_node);
+    predicate_owner_node[node] = node;
+    predicate_bound_token[node] = receiver_token;
+
+    if (!valid_node(receiver_type_node))
+    {
+        predicate_status[node] = PREDICATE_STATUS_UNSUPPORTED_TARGET_SHAPE;
+        return;
+    }
+
+    uint decl_i = type_decl_for_type_path(receiver_type_node);
+    if (decl_i != INVALID &&
+        decl_i < decl_record_count() &&
+        decl_kind[decl_i] == HIR_ITEM_KIND_TRAIT &&
+        decl_namespace[decl_i] == HIR_ITEM_NAMESPACE_TYPE)
+    {
+        predicate_bound_decl_id[node] = decl_i;
+        predicate_status[node] = PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE;
+    }
+}
+
+void validate_trait_method_contract_node(uint node)
+{
+    if (!trait_method_node(node))
+        return;
+
+    uint method_status = method_unsupported_contract_status(node);
+    if (method_status == PREDICATE_STATUS_OK &&
+        !method_contract_lookup_row_valid(node))
+        method_status = PREDICATE_STATUS_METHOD_ARITY_MISMATCH;
+    if (method_status == PREDICATE_STATUS_OK && duplicate_trait_method_node(node))
+        method_status = PREDICATE_STATUS_DUPLICATE_TRAIT_METHOD;
+    if (method_status == PREDICATE_STATUS_OK)
+        return;
+
+    uint name_token = method_contract_name_token(node);
+    uint diagnostic_token = valid_token(name_token) ? name_token : hir_token_pos[node];
+    predicate_owner_node[node] = node;
+    predicate_bound_token[node] = diagnostic_token;
+    predicate_bound_first_arg_token[node] = diagnostic_token;
+    predicate_status[node] = method_status;
+}
+
 bool valid_bound_type_arg(uint owner_decl_node, uint expr_node)
 {
     if (!valid_node(expr_node) || node_kind[expr_node] != PROD_BOUND_TYPE_IDENT)
         return false;
+    if (!bound_path_scan_supported(expr_node))
+        return false;
+
     uint segment_count = bound_path_segment_count(expr_node);
     if (segment_count == 0u)
         return false;
@@ -1257,53 +2093,79 @@ bool valid_bound_type_arg(uint owner_decl_node, uint expr_node)
         if (language_type_exists_by_name(name_id))
             return true;
     }
-    return type_decl_exists_for_bound_path(expr_node);
+    return type_decl_exists_for_bound_path(expr_node, owner_decl_node);
 }
 
-uint enclosing_bound_args_node(uint node)
+bool bound_arg_requires_instance_args(uint owner_decl_node, uint expr_node)
 {
-    uint cur = parent_node(node);
-    [loop]
-    for (uint step = 0u; step < MAX_PARENT_WALK && valid_node(cur); step += 1u)
+    if (!valid_node(expr_node) || node_kind[expr_node] != PROD_BOUND_TYPE_IDENT)
+        return false;
+    if (!bound_path_scan_supported(expr_node))
+        return true;
+
+    uint segment_count = bound_path_segment_count(expr_node);
+    if (segment_count == 0u)
+        return false;
+
+    uint token = bound_path_leaf_token(expr_node);
+    if (!valid_token(token))
+        return false;
+
+    if (segment_count == 1u)
     {
-        uint kind = node_kind[cur];
-        if (kind == PROD_BOUND_TYPE_ARGS_SOME)
-            return cur;
-        if (kind == PROD_TYPE_PARAM_BOUND_LIST ||
-            kind == PROD_TYPE_PARAM_BOUND ||
-            kind == PROD_WHERE_TYPE_BOUND ||
-            generic_decl_item_kind(hir_item_kind[cur]))
-            return INVALID;
-        cur = parent_node(cur);
+        if (generic_param_slot_for_name(owner_decl_node, token) != INVALID)
+            return false;
+        uint name_id = name_id_by_token[token];
+        if (language_type_exists_by_name(name_id))
+            return false;
     }
+
+    uint decl_i = type_decl_for_bound_path(expr_node, owner_decl_node);
+    if (decl_i == INVALID || decl_i >= decl_record_count())
+        return false;
+
+    uint decl_node = decl_hir_node[decl_i];
+    uint expected_arg_count = valid_node(decl_node)
+        ? type_decl_generic_param_count_by_node[decl_node]
+        : 0u;
+    return expected_arg_count > 0u;
+}
+
+uint predicate_bound_arg_record_value(uint owner_decl_node, uint arg_node)
+{
+    uint kind = node_kind[arg_node];
+    uint token = kind == PROD_BOUND_TYPE_IDENT
+        ? bound_path_leaf_token(arg_node)
+        : hir_token_pos[arg_node];
+    if (!valid_token(token))
+        return INVALID;
+
+    if (kind == PROD_BOUND_TYPE_IDENT &&
+        bound_path_segment_count(arg_node) == 1u &&
+        generic_param_slot_for_name(owner_decl_node, token) == INVALID)
+    {
+        uint name_id = name_id_by_token[token];
+        uint type_code = name_id != INVALID ? language_type_code_by_name_id[name_id] : 0u;
+        if (type_code != 0u)
+            return PREDICATE_ARG_TYPE_CODE_BIT | type_code;
+    }
+
+    return token;
+}
+
+uint predicate_bound_arg_node(uint predicate_expr_node, uint ordinal)
+{
+    if (ordinal == 0u)
+        return predicate_bound_first_arg_token[predicate_expr_node];
+    if (ordinal == 1u)
+        return predicate_bound_second_arg_token[predicate_expr_node];
     return INVALID;
 }
 
-bool top_level_bound_arg_expr(uint predicate_expr_node, uint arg_expr_node)
+uint predicate_bound_arg_fact_status_value(uint predicate_expr_node)
 {
-    uint args_node = enclosing_bound_args_node(arg_expr_node);
-    if (valid_node(args_node) && parent_node(args_node) == predicate_expr_node)
-        return true;
-
-    uint cur = parent_node(arg_expr_node);
-    [loop]
-    for (uint step = 0u; step < MAX_PARENT_WALK && valid_node(cur); step += 1u)
-    {
-        if (cur == predicate_expr_node)
-            return true;
-
-        uint kind = node_kind[cur];
-        if (kind == PROD_BOUND_TYPE_IDENT || kind == PROD_BOUND_TYPE_REF)
-            return false;
-        if (kind == PROD_TYPE_PARAM_BOUND_LIST ||
-            kind == PROD_TYPE_PARAM_BOUND ||
-            kind == PROD_WHERE_TYPE_BOUND ||
-            generic_decl_item_kind(hir_item_kind[cur]))
-            return false;
-
-        cur = parent_node(cur);
-    }
-    return false;
+    uint status = predicate_status[predicate_expr_node];
+    return status == INVALID ? PREDICATE_STATUS_OK : status;
 }
 
 uint validate_bound_type_args(
@@ -1317,28 +2179,43 @@ uint validate_bound_type_args(
     first_arg_token = INVALID;
     second_arg_token = INVALID;
 
-    uint end = min(subtree_end[predicate_expr_node], active_hir_node_count());
+    arg_count = valid_node(predicate_expr_node)
+        ? predicate_bound_arg_count[predicate_expr_node]
+        : 0u;
+
+    uint fact_status = valid_node(predicate_expr_node)
+        ? predicate_bound_arg_fact_status_value(predicate_expr_node)
+        : PREDICATE_STATUS_OK;
+    if (fact_status != PREDICATE_STATUS_OK)
+        return fact_status;
+
+    if (arg_count == 0u && bound_ident_has_direct_arg_list(predicate_expr_node))
+        return PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION;
+
+    if (arg_count > 2u)
+        return PREDICATE_STATUS_UNSUPPORTED_BOUND_WIDTH;
+
     [loop]
-    for (uint node = predicate_expr_node + 1u; node < end; node += 1u)
+    for (uint ordinal = 0u; ordinal < 2u; ordinal += 1u)
     {
-        uint kind = node_kind[node];
-        if (kind != PROD_BOUND_TYPE_IDENT && kind != PROD_BOUND_TYPE_REF)
-            continue;
+        if (ordinal >= arg_count)
+            break;
 
-        if (top_level_bound_arg_expr(predicate_expr_node, node))
-        {
-            uint token = kind == PROD_BOUND_TYPE_IDENT
-                ? bound_path_leaf_token(node)
-                : hir_token_pos[node];
-            if (first_arg_token == INVALID)
-                first_arg_token = token;
-            else if (second_arg_token == INVALID)
-                second_arg_token = token;
-            arg_count += 1u;
-        }
-
+        uint node = predicate_bound_arg_node(predicate_expr_node, ordinal);
+        if (!valid_node(node) || node_kind[node] != PROD_BOUND_TYPE_IDENT)
+            return PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE;
+        if (!bound_path_scan_supported(node))
+            return PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE;
+        if (bound_arg_requires_instance_args(owner_decl_node, node))
+            return PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE;
         if (!valid_bound_type_arg(owner_decl_node, node))
             return PREDICATE_STATUS_INVALID_ARG;
+
+        uint token = predicate_bound_arg_record_value(owner_decl_node, node);
+        if (ordinal == 0u)
+            first_arg_token = token;
+        else
+            second_arg_token = token;
     }
 
     return PREDICATE_STATUS_OK;
@@ -1349,10 +2226,7 @@ void clear_predicate_record(uint node)
     predicate_owner_node[node] = INVALID;
     predicate_subject_token[node] = INVALID;
     predicate_bound_token[node] = INVALID;
-    predicate_bound_arg_count[node] = 0u;
-    predicate_bound_first_arg_token[node] = INVALID;
-    predicate_bound_second_arg_token[node] = INVALID;
-    predicate_status[node] = INVALID;
+    predicate_bound_decl_id[node] = INVALID;
 }
 
 [shader("compute")]
@@ -1371,11 +2245,42 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
 
-    if (!top_level_predicate_expr(node))
+    if (node_kind[node] == PROD_IMPL_INHERENT)
+    {
+        validate_inherent_impl_header_node(node);
+        return;
+    }
+
+    if (trait_method_node(node))
+    {
+        validate_trait_method_contract_node(node);
+        return;
+    }
+
+    bool predicate_ancestor_exhausted = false;
+    uint list_node = INVALID;
+    if (node_kind[node] == PROD_BOUND_TYPE_IDENT || node_kind[node] == PROD_BOUND_TYPE_REF)
+    {
+        list_node = predicate_list_ancestor(node, predicate_ancestor_exhausted);
+        if (!valid_node(list_node) && predicate_ancestor_exhausted)
+        {
+            uint diagnostic_token = node_kind[node] == PROD_BOUND_TYPE_IDENT
+                ? bound_path_leaf_token(node)
+                : hir_token_pos[node];
+            predicate_owner_node[node] = node;
+            predicate_bound_token[node] = valid_token(diagnostic_token)
+                ? diagnostic_token
+                : hir_token_pos[node];
+            predicate_bound_first_arg_token[node] = predicate_bound_token[node];
+            predicate_status[node] = PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION;
+            return;
+        }
+    }
+
+    if (!valid_node(list_node))
         return;
 
-    uint owner_decl = generic_decl_ancestor(node);
-    uint list_node = predicate_list_ancestor(node);
+    uint owner_decl = generic_decl_owner_for_node(node);
     uint subject_token = predicate_subject_token_for_list(list_node);
     uint bound_token = node_kind[node] == PROD_BOUND_TYPE_IDENT
         ? bound_path_leaf_token(node)
@@ -1393,17 +2298,38 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
 
-    if (node_kind[node] != PROD_BOUND_TYPE_IDENT || bound_path_segment_count(node) == 0u)
+    if (!callable_generic_decl_item_kind(hir_item_kind[owner_decl]))
+    {
+        predicate_status[node] = PREDICATE_STATUS_UNSUPPORTED_NON_CALLABLE_BOUND;
+        return;
+    }
+
+    if (node_kind[node] != PROD_BOUND_TYPE_IDENT)
+    {
+        predicate_status[node] = PREDICATE_STATUS_UNSUPPORTED;
+        return;
+    }
+    if (!bound_path_scan_supported(node))
+    {
+        predicate_status[node] = PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION;
+        return;
+    }
+    if (bound_path_segment_count(node) == 0u)
     {
         predicate_status[node] = PREDICATE_STATUS_UNSUPPORTED;
         return;
     }
 
-    if (!valid_token(bound_token) || !trait_decl_exists_for_bound_path(node))
+    uint trait_decl_i = type_decl_for_bound_path(node, owner_decl);
+    if (!valid_token(bound_token) ||
+        trait_decl_i == INVALID ||
+        decl_kind[trait_decl_i] != HIR_ITEM_KIND_TRAIT ||
+        decl_namespace[trait_decl_i] != HIR_ITEM_NAMESPACE_TYPE)
     {
         predicate_status[node] = PREDICATE_STATUS_BOUND_NOT_TRAIT;
         return;
     }
+    predicate_bound_decl_id[node] = trait_decl_i;
 
     uint arg_count;
     uint first_arg_token;
@@ -1417,5 +2343,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
     predicate_bound_arg_count[node] = arg_count;
     predicate_bound_first_arg_token[node] = first_arg_token;
     predicate_bound_second_arg_token[node] = second_arg_token;
-    predicate_status[node] = arg_status;
+    if (arg_status != PREDICATE_STATUS_OK)
+    {
+        predicate_status[node] = arg_status;
+        return;
+    }
+
+    uint trait_param_count = trait_decl_generic_param_count(trait_decl_i);
+    predicate_status[node] = trait_param_count != INVALID && arg_count == trait_param_count
+        ? PREDICATE_STATUS_OK
+        : PREDICATE_STATUS_BOUND_ARITY_MISMATCH;
 }

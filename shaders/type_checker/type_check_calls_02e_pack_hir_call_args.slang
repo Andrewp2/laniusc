@@ -3,8 +3,8 @@
 // Input records come from `hir_call_fields.slang`, which is derived from
 // production ids and inverted tree arrays. This pass preserves that structure
 // for type checking without requiring call resolvers to scan comma/parens. The
-// summary record is keyed by callee token; argument nodes stay in parser-owned
-// HIR call-argument records.
+// summary record is keyed by callee token; argument nodes are scattered into a
+// call-node/ordinal slot table for O(1) consumers.
 
 import gpu_index;
 import hir_records;
@@ -28,6 +28,7 @@ StructuredBuffer<uint> hir_call_arg_count;
 StructuredBuffer<uint> hir_call_arg_parent_call;
 
 RWStructuredBuffer<uint4> call_arg_record;
+RWStructuredBuffer<uint> call_arg_node;
 
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_MEMBER_EXPR = 21u;
@@ -77,11 +78,16 @@ void publish_zero_arg_call(uint call_node, uint n)
 void publish_arg_record(uint callee_token, uint call_node, uint arg_node, uint arg_count)
 {
     uint ordinal = hir_node_ordinal_ordinal(hir_call_arg_parent_call[arg_node]);
+    call_arg_record[callee_token].z = call_node;
+    call_arg_record[callee_token].w = arg_count;
+
     if (ordinal >= PARAM_CACHE_STRIDE)
         return;
 
     uint arg_start = hir_token_pos[arg_node];
     uint arg_end = hir_call_arg_end[arg_node];
+    if (valid_node(call_node, gParams.n_hir_nodes))
+        call_arg_node[call_node * PARAM_CACHE_STRIDE + ordinal] = arg_node;
     if (ordinal == 0u)
     {
         if (arg_start == INVALID || arg_end == INVALID || arg_start >= arg_end)
@@ -110,6 +116,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (callee_token == INVALID)
         return;
 
-    uint arg_count = min(hir_call_arg_count[call_node], PARAM_CACHE_STRIDE);
+    uint arg_count = hir_call_arg_count[call_node];
     publish_arg_record(callee_token, call_node, node, arg_count);
 }

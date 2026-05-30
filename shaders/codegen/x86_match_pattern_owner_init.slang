@@ -28,7 +28,6 @@ ConstantBuffer<FeatureParams> gX86Features;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> x86_tree_parent;
-StructuredBuffer<uint> x86_tree_subtree_end;
 StructuredBuffer<uint4> x86_match_record;
 StructuredBuffer<uint> x86_match_pattern_owner;
 

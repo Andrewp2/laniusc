@@ -70,6 +70,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirStructFieldsP
                 b.hir_struct_lit_head_node.as_entire_binding(),
             ),
             (
+                "hir_struct_lit_context_stmt_node".into(),
+                b.hir_struct_lit_context_stmt_node.as_entire_binding(),
+            ),
+            (
                 "hir_struct_lit_field_start".into(),
                 b.hir_struct_lit_field_start.as_entire_binding(),
             ),

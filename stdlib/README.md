@@ -9,13 +9,19 @@ tracked in [PLAN.md](PLAN.md). Compiler and runtime prerequisites for
 implementing those layers are tracked in
 [LANGUAGE_REQUIREMENTS.md](LANGUAGE_REQUIREMENTS.md).
 
-These files are not auto-imported by the compiler. The old CPU source import
-expander has been removed; the GPU syntax path now accepts one leading
+These files are not auto-imported by default. The old CPU source import
+expander has been removed; `--source-root` can explicitly load leading user
+module-path imports and `--stdlib-root stdlib` can explicitly load leading
+stdlib module-path imports into the source pack before GPU type-checking. The
+GPU syntax path accepts one leading
 `module path;` declaration plus leading `import path;` or `import "path";`
 declarations as source metadata. Path imports resolve only against modules
-already supplied in the source pack; the host does not load import closures or
-rewrite source. Duplicate or non-leading `module` declarations and non-leading
-imports remain rejected so they cannot be silently ignored.
+already supplied in the source pack; `--stdlib-root` supplies stdlib files by
+path convention and `--source-root` supplies user files by the same convention,
+but neither rewrites source or decides declaration visibility.
+Quoted imports remain unsupported. Duplicate or non-leading `module`
+declarations and non-leading imports remain rejected so they cannot be silently
+ignored.
 Qualified value paths can pass GPU syntax as HIR evidence. Regular qualified
 function calls, qualified extern calls, top-level qualified constants, local or
 qualified unit enum variants, and bounded contextual local or qualified generic
@@ -42,26 +48,28 @@ sorted lookup table, materialize visibility tables, resolve type/value paths,
   and connect narrow HIR consumers for regular/extern qualified function calls,
 top-level constants, and unit enum variants. The prior scan-based resolver and the later dense
 hash/prefix-scan metadata slice were deleted so neither can be mistaken for the
-intended sorted-table design. This still does not load files, follow module
-declarations to files, support quoted import loading, support general qualified
-value lookup, or make the normal compiler path a package compiler. The normal
-compiler now records the LL(1) tree/HIR path. That path receives the
+intended sorted-table design. `--stdlib-root` can load stdlib module-path
+imports into the source pack, but this still does not provide package manifests,
+user package roots, quoted import loading, general qualified value lookup, or a
+full package compiler. The normal compiler now records the LL(1) tree/HIR path.
+That path receives the
 lexer-produced `token_file_id` sideband, validates it during GPU syntax
 checking, and feeds it into LL(1) HIR
 ownership metadata. The older direct-HIR helper still mirrors the sideband, but
 it is not the semantic path to extend.
 
 Module-form helpers live under `stdlib/core/` and use module names such as
-`core::i32::abs`. The normal single-file compiler path does not load imports
-from the filesystem. Explicit source-pack inputs can type-check module-qualified
-helpers, and the current x86 path can execute bounded direct scalar helper calls
-such as `core::i32::abs`. The active WASM source-pack execution slice is
-narrower: selected linear scalar helpers, the `core::bool` helper subset, and
-the direct terminal `if`/`else` `core::i32::abs` helper. Broader branchy,
-array, aggregate, method, assertion, and enum-helper execution tests remain
-ignored until rebuilt on the record pipeline. Legacy flat files keep the
-`lstd_` prefix so copied or manually concatenated helpers are less likely to
-collide with application functions.
+`core::i32::abs`. Explicit source-pack inputs and `--stdlib-root` can
+type-check module-qualified helpers, and the current x86 path can execute
+bounded direct scalar helper calls, currently including
+`core::u8::is_ascii_digit`. The active WASM source-pack execution slice is
+narrower: synthetic selected linear scalar helpers, synthetic terminal
+`if`/`else` helpers, and resolver-backed scalar constants. Real stdlib enum
+predicate helpers, broader primitive helper families, arrays, aggregates,
+methods, assertion helpers, and payload enum helpers remain blocked until
+rebuilt on the record pipeline. Legacy flat files keep the `lstd_` prefix so
+copied or manually concatenated helpers are less likely to collide with
+application functions.
 
 The GPU parser now preserves early HIR evidence for module items, import items,
 and complete qualified path spans. Those records feed the current GPU
@@ -84,16 +92,18 @@ Current scope is intentionally small. Module-form seeds below are parser and
 source-pack frontend evidence; regular/extern qualified calls, top-level
 constants, bounded scalar aliases, and local or qualified unit enum variants
 can type-check through the current resolver when their declaring modules are
-explicitly supplied. Flat compatibility seeds without module headers can still
-type-check directly. None of this implies import loading, general qualified
-value lookup, runtime services, or backend lowering:
+explicitly supplied or loaded through `--stdlib-root`. Flat compatibility seeds
+without module headers can still type-check directly. None of this implies a
+full package system, general qualified value lookup, runtime services, or
+backend lowering:
 
-- `core/i32.lani` has module-form integer constants and helpers built from
-  supported arithmetic and comparison operators, including a source-level
-  `saturating_abs` seed.
+- `core/i32.lani` has module-form integer constants, including numeric
+  `BITS` and `BYTES` metadata, and helpers built from supported arithmetic and
+  comparison operators, including a source-level `saturating_abs` seed.
 - `core/u8.lani`, `core/u32.lani`, and `core/i64.lani` seed additional integer
-  helper modules with the same source-level shape as `core/i32`; `core/u8`
-  adds byte-oriented ASCII classification helpers, and `core/u32` also includes
+  helper modules with the same source-level shape as `core/i32`; they include
+  numeric `BITS` and `BYTES` metadata, `core/u8` adds
+  byte-oriented ASCII classification helpers, and `core/u32` also includes
   source-level `saturating_add` and `saturating_sub` seeds.
 - `core/f32.lani` seeds a small floating-point helper module using currently
   parseable float literals, comparisons, and arithmetic.
@@ -101,13 +111,24 @@ value lookup, runtime services, or backend lowering:
   char literals and boolean expressions. `core/char.lani`, `core/u32.lani`, and
   `core/ordering.lani` can type-check as explicitly supplied source-pack seeds;
   backend execution remains limited to the active narrow slices.
-- `core/bool.lani` has module-form boolean combinators and conversions built on
-  the current bool expression surface, including `true` and `false` literals.
-  `core/bool.lani` can type-check as an explicitly supplied source-pack seed,
-  and the active WASM source-pack slice executes `core::bool::not`,
-  `core::bool::and`, `core::bool::or`, `core::bool::xor`, `core::bool::eq`,
-  and `core::bool::from_i32`. `test/assert.lani` is frontend/type-check
-  evidence only; assertion-helper WASM execution remains ignored.
+- `core/bool.lani` has module-form boolean combinators, equality/inequality,
+  conversions, and bounded `i32` selection helpers built on the current bool
+  expression surface, including `true` and `false` literals.
+  `core/bool.lani` can type-check as an explicitly supplied source-pack seed or
+  through `--stdlib-root`, including `core::bool::ne`,
+  `core::bool::select_i32`, and the terminal-branch
+  `core::bool::choose_i32`. Selected synthetic bool-shaped helper bodies have
+  WASM source-pack execution coverage, but real `core::bool` module execution
+  is still not an active backend claim. `test/assert.lani` is
+  frontend/type-check evidence only; assertion-helper WASM execution remains
+  ignored.
+- `core/mem.lani` has no-runtime generic value helpers such as
+  `core::mem::identity`, `core::mem::first`, `core::mem::second`, and
+  `core::mem::select`. The module is ordinary Lanius source and type-checks
+  through `--stdlib-root` from an importing caller with both imported-name and
+  qualified calls at multiple concrete call-site substitutions. It is a
+  frontend/type-check stdlib seed only; it does not imply a move, borrow,
+  destructor, layout, or allocation model.
 - `core/array_i32_4.lani` has module-form fixed-size `[i32; 4]` helper seeds
   for length, first/last element access, lookup, counting, min/max, sum, copy,
   fill, and reverse. It is still a concrete stopgap for helpers that need a
@@ -163,9 +184,11 @@ value lookup, runtime services, or backend lowering:
   `core::option::unwrap_or(value, fallback)`, `core::result::is_ok(value)`, and
   `core::result::unwrap_or(value, 3)` now type-check in an explicitly supplied
   source pack. Backend execution for tag-only predicates such as
-  `core::option::is_some(value)` / `core::result::is_ok(value)` is not active
-  while the legacy tests are ignored. Payload projection helpers such as
-  `unwrap_or` remain blocked until backend lowering consumes parser-owned
+  `core::option::is_some(value)` / `core::result::is_ok(value)` is not an
+  active WASM claim; the guarded execution test is ignored and the retired
+  enum-match module emitter is no longer loaded until enum/match lowering is
+  rebuilt on record-driven passes. Payload projection helpers such
+  as `unwrap_or` remain blocked until backend lowering consumes parser-owned
   call/constructor argument records and typed payload value records instead of
   token-shaped call syntax. Package/import loading,
   exhaustive match semantics,
@@ -215,54 +238,315 @@ value lookup, runtime services, or backend lowering:
   `core/slice.lani` file is still a source seed rather than an accepted stdlib
   module seed. Slice runtime metadata, borrowing, mutation views, and backend
   representation are not implemented yet.
-- `core/panic.lani` has source-level `panic()` and `unreachable()` helpers
-  built on the current deterministic `assert(false)` failure path. The
-  module-form seed now type-checks as an explicitly supplied source-pack seed,
-  but assertion/panic helper execution still needs HIR-driven WASM lowering for
+- `core/panic.lani` declares source-level `panic()` and `unreachable()`
+  runtime-boundary helpers. It also exposes a frontend/type-check panic-hook
+  service contract:
+  `PANIC_HOOK_RUNTIME_ABI_VERSION`, `PANIC_HOOK_SERVICE_ID`,
+  `PANIC_HOOK_SERVICE_STATUS_UNAVAILABLE`,
+  `PANIC_HOOK_HAS_RUNTIME_BINDING`, and helpers such as
+  `panic_hook_runtime_abi_version()`, `panic_hook_service_is_known()`,
+  `panic_hook_contract_metadata_is_available()`,
+  `panic_hook_is_blocked()`, `panic_hook_requires_runtime_binding()`,
+  `panic_hook_host_abi_is_contract_only()`, and
+  `panic_hook_is_contract_only()`. Public gates
+  `panic_is_executable()`, `panic_is_blocked()`,
+  `panic_requires_runtime_binding()`, `unreachable_is_executable()`,
+  `unreachable_is_blocked()`, and
+  `unreachable_requires_runtime_binding()` keep the raw extern declarations
+  fail-closed. These mirror the unbound
+  `core::runtime::SERVICE_PANIC_HOOK_ID` boundary without installing a hook or
+  making panic reporting executable. The module-form seed now type-checks as
+  an explicitly supplied source-pack seed and through `--stdlib-root`, but the
+  extern declarations remain non-executable until a runtime/linker binding
+  exists. Assertion-helper execution still needs HIR-driven WASM lowering for
   resolver-selected void helpers with typed assertion expression statements and
-  void returns. Rich panic payloads, formatting, hooks, unwinding, and source
-  locations are not implemented yet.
-- `core/target.lani` has source-level target capability constants and helpers
-  intended to become paths such as `core::target::has_filesystem()` and
-  `core::target::is_wasm()`. The module-form seed can type-check as an
-  explicitly supplied source-pack seed. These are static defaults for the
-  current host-backed test environment; real target configuration, compile-time
-  capability evaluation, and backend execution are still missing.
+  void returns. Rich panic payloads, formatting, hooks, unwinding, source
+  locations, executable traps, and runtime/linker hook binding are not
+  implemented yet.
+- `core/target.lani` has a public `Capability = bool` alias plus source-level
+  target capability constants and helpers intended to become paths such as
+  `core::target::has_filesystem()` and `core::target::is_wasm()`. The
+  module-form seed can type-check as an explicitly supplied source-pack seed and
+  through normal `--stdlib-root` loading, including caller-visible imported and
+  qualified alias, constant, and helper uses. It exposes conservative target
+  probes for panic hooks, aggregate host services, process/environment services,
+  and `core::target::is_freestanding()`. These are static conservative defaults
+  for the active executable compiler slice:
+  runtime-backed services such as allocation, filesystem, stdio, clocks,
+  panic hooks, networking, aggregate host services, threads, secure RNG, GPU
+  host services, process, environment, and test harness are reported as
+  unavailable until a real runtime/linker contract exists. Real target
+  configuration, compile-time capability evaluation, and backend execution are
+  still missing.
+- `core/runtime.lani` exposes a self-contained conservative runtime capability
+  subset with constants and query helpers such as
+  `core::runtime::HAS_PANIC_HOOK` and `core::runtime::has_panic_hook()`. These
+  all report unavailable services in the active compiler slice and can
+  type-check through normal `--stdlib-root` loading. The file also exposes a
+  small numeric descriptor surface: `RUNTIME_ABI_METADATA_VERSION`,
+  `RUNTIME_ABI_VERSION`, plus stable `SERVICE_*_ID` constants for allocator,
+  filesystem, stdio, clock, network, panic-hook, aggregate host-service,
+  threads, secure RNG, GPU host-service, process, environment, and test-harness
+  bindings. This is a frontend contract surface only; it does not make
+  allocator, filesystem, stdio, clock, panic hooks, network, process,
+  environment, or test harness APIs executable.
+  `runtime_abi_metadata_version()`, `RUNTIME_SERVICE_COUNT`,
+  `FIRST_RUNTIME_SERVICE_ID`, `LAST_RUNTIME_SERVICE_ID`,
+  `runtime_service_count()`, `first_runtime_service_id()`,
+  `last_runtime_service_id()`, and
+  `service_id_in_descriptor_range(id)` expose the bounded descriptor inventory
+  for tooling without binding any service.
+  `is_known_service(id)` classifies stable descriptor ids,
+  `service_descriptor_is_known(id)` is the same predicate under a name intended
+  for diagnostics and external tools,
+  `runtime_abi_version_for_service(id)` returns
+  `RUNTIME_ABI_VERSION` for known service descriptors and
+  `UNKNOWN_RUNTIME_ABI_VERSION` for unknown ids, and `has_service(id)` maps
+  known ids to the current conservative capability constants, which are all
+  false for runtime-backed services today. `service_has_runtime_binding(id)` is
+  the externally named alias for that executable-binding probe.
+  `service_status(id)` returns a
+  stable numeric `RuntimeServiceStatus`: `SERVICE_STATUS_UNKNOWN` for unknown
+  ids, `SERVICE_STATUS_UNAVAILABLE` for recognized-but-unbound services, and
+  `SERVICE_STATUS_AVAILABLE` only when a future capability becomes true.
+  `service_is_unknown(id)`, `service_is_unavailable(id)`, and
+  `service_is_available(id)` are descriptor-only predicates over that status;
+  `service_is_unbound(id)` is the public diagnostic spelling for the
+  recognized-but-unbound case. They do not bind or execute any host service.
+  `runtime_bound_api_is_executable(id)` is the API-level form of the same
+  predicate: it is false for current runtime-backed stdlib APIs whose required
+  service is recognized but unbound. `runtime_bound_api_is_blocked(id)` is the
+  fail-closed companion: it remains true for both recognized-but-unbound services
+  and unknown service ids. `service_is_fail_closed(id)` is the same fail-closed
+  query named from the service-descriptor side.
+  `service_is_contract_only(id)` and
+  `service_requires_runtime_binding(id)` are descriptor-only diagnostic helpers:
+  they return true only for known service descriptors whose current capability
+  is false, so tools can distinguish "recognized but unbound" from "unknown
+  service id" without assuming any runtime service exists.
+  `service_binding_diagnostic_is_lnc0038(id)` is a source-level bridge to the
+  public diagnostic class used by tools for that recognized-but-unbound
+  condition. The current aggregate runtime signal is also explicit:
+  `HAS_RUNTIME_SERVICES` and
+  `has_runtime_services()` are false, while
+  `runtime_services_are_contract_only()` is true, until a linker/runtime
+  binding can make runtime-backed services executable. The current descriptor
+  inventory covers allocator, filesystem, stdio, clock, network, panic-hook,
+  aggregate host services, threads, secure RNG, GPU host services, process,
+  environment, and test harness; all runtime-backed capability constants are
+  false in this slice.
+  Source-pack artifact descriptors can carry these ids in
+  `required_runtime_service_ids` together with
+  `required_runtime_abi_version = RUNTIME_ABI_VERSION`, and also persist flat
+  `required_runtime_services` rows containing the service id, ABI version, and
+  current service status. Runtime-bound descriptors must also persist a
+  `runtime_abi` metadata object with the metadata format version, ABI version,
+  service count, and first/last service-id bounds. Descriptor validation treats
+  each public `core::runtime` service id as a recognized contract id. The public
+  descriptor builder writes service ids and service rows in ascending canonical
+  order, and validation rejects non-canonical persisted service-id lists, rows
+  that do not match the id list, orphan `runtime_abi` metadata without required
+  service ids, missing or incoherent runtime ABI metadata, or runtime ABI
+  inventory values that diverge from this stdlib contract. Any
+  runtime-bound descriptor must pin that ABI version, keep service rows at
+  `SERVICE_STATUS_UNAVAILABLE`, stay contract-only, and reject emitted
+  target-byte records until a linker/runtime binding exists.
+  `LNC0038` is the public diagnostic class for this runtime-service boundary:
+  future stdlib or host-service calls should use it when a known service
+  descriptor is still contract-only instead of reporting a backend-specific
+  failure. `laniusc diagnostics explain LNC0038` includes a structured
+  `runtime_service_boundaries` array for all known service descriptors, with
+  each row naming the module path, service id, status probe, binding probe,
+  current `known-unbound` status, and `executable = false`. The same
+  explanation also includes `runtime_bound_apis`, a structured table of the
+  currently declared runtime-bound stdlib extern APIs such as
+  `std::io::print_i32`, with their executable and runtime-binding probes. Every
+  row remains `known-unbound` and `executable = false`.
+  Link execution summaries use the same ABI-pinned service-id shape before they
+  produce partial-link or linked-output artifact descriptors, so persisted link
+  plans cannot imply a runtime service without also naming the expected runtime
+  ABI.
+  `alloc::*` and `std::*` extern declarations remain source-level ABI
+  declarations until a runtime/linker gate rejects or binds them explicitly.
+
+Runtime capability status in the active compiler slice:
+
+| Service descriptor | Current capability | Production requirement |
+| --- | --- | --- |
+| `SERVICE_ALLOCATOR_ID` | `HAS_ALLOCATOR = false` | Allocator ABI binding, ownership/drop model, executable lowering |
+| `SERVICE_FILESYSTEM_ID` | `HAS_FILESYSTEM = false` | Path/string ABI, host filesystem binding, error model |
+| `SERVICE_STDIO_ID` | `HAS_STDIO = false` | Host I/O binding, writer/string or byte-slice ABI |
+| `SERVICE_CLOCK_ID` | `HAS_CLOCK = false` | Time representation, host clock/sleep binding |
+| `SERVICE_NETWORK_ID` | `HAS_NETWORK = false` | Socket/address ABI, DNS and host network binding |
+| `SERVICE_PANIC_HOOK_ID` | `HAS_PANIC_HOOK = false` | Panic payloads, source locations, runtime hook binding |
+| `SERVICE_HOST_SERVICES_ID` | `HAS_HOST_SERVICES = false` | Link-plan capability gate for all host-backed services |
+| `SERVICE_THREADS_ID` | `HAS_THREADS = false` | Thread model, synchronization primitives, host/thread runtime binding |
+| `SERVICE_SECURE_RNG_ID` | `HAS_SECURE_RNG = false` | Entropy source, byte-buffer ABI, deterministic test policy |
+| `SERVICE_GPU_ID` | `HAS_GPU = false` | Host GPU service ABI, device selection, queue/runtime binding |
+| `SERVICE_PROCESS_ID` | `HAS_PROCESS = false` | Process arguments, exit, spawning, child status, host process binding |
+| `SERVICE_ENV_ID` | `HAS_ENV = false` | Environment variables, current directory, host environment binding |
+| `SERVICE_TEST_HARNESS_ID` | `HAS_TEST_HARNESS = false` | Test discovery, registration, execution, reporting, and harness runtime binding |
+
 - `alloc/allocator.lani` has source-level allocator ABI declarations for
-  allocation, growth, deallocation, and allocation failure hooks. Direct extern
-  signatures can type-check as calls in direct single-file fixtures, and bounded
-  source-pack fixtures can type-check resolver-backed qualified calls such as
-  `alloc::allocator::alloc(16, 4)` when the module is explicitly supplied. No
-  quoted import loading, target runtime implementation, native linker
-  integration, heap ownership model, allocator runtime, or backend lowering
-  exists yet.
+  allocation, growth, deallocation, and allocation failure hooks. It also
+  exposes a narrow allocator service contract that reports the
+  `SERVICE_ALLOCATOR_ID` descriptor as unavailable and requiring runtime
+  binding in the active compiler slice. `ALLOCATOR_RUNTIME_ABI_VERSION`,
+  `allocator_service_id()`, `allocator_service_status()`,
+  `allocator_contract_metadata_is_available()`,
+  `allocator_is_available()`, `allocator_is_blocked()`,
+  `allocator_requires_runtime_binding()`, and
+  `allocator_host_abi_is_contract_only()` can type-check through
+  `--stdlib-root` from an importing caller alongside `core::runtime`.
+  Per-operation gates for `alloc`, `realloc`, `dealloc`, and `alloc_failed`
+  expose executable, blocked, and runtime-binding status; every executable gate
+  remains false and every blocked/runtime-binding gate remains true until an
+  allocator runtime exists. Direct extern signatures can type-check as calls in
+  direct single-file fixtures, and bounded source-pack fixtures can type-check
+  resolver-backed qualified calls such as `alloc::allocator::alloc(16, 4)` when
+  the module is explicitly supplied. No quoted import loading, target runtime
+  implementation, native linker integration, heap ownership model, allocator
+  runtime, or backend lowering exists yet.
+- `std/host.lani` exposes the aggregate host-service descriptor as an
+  importable contract-only module. `HOST_SERVICES_SERVICE_ID` mirrors
+  `core::runtime::SERVICE_HOST_SERVICES_ID`, `HOST_SERVICES_HAS_RUNTIME_BINDING`
+  is false, and helpers such as
+  `host_services_contract_metadata_is_available()`,
+  `host_services_are_blocked()`,
+  `host_services_require_runtime_binding()`,
+  `host_services_abi_is_contract_only()`,
+  `host_services_api_is_executable()`, and
+  `host_services_api_requires_runtime_binding()` can type-check through
+  `--stdlib-root` from an importing caller alongside `core::runtime`. This file
+  deliberately declares no raw host externs; it is a fail-closed descriptor gate
+  for future host-backed services, not an executable runtime.
 - `std/io.lani` has source-level host I/O ABI declarations for stdin,
-  stdout, stderr, flushing, and a minimal `print_i32` hook. These extern
-  signatures can type-check as calls in direct single-file fixtures, and bounded
-  source-pack fixtures can type-check resolver-backed qualified calls such as
-  `std::io::flush_stdout()` and `std::io::print_i32(code)` when the module is
-  explicitly supplied. No quoted import loading, host runtime, capability
-  gating, string/slice ABI, or native/backend lowering exists yet.
+  stdout, stderr, flushing, and a minimal `print_i32` hook. It also exposes a
+  narrow stdio service contract that reports the `SERVICE_STDIO_ID` descriptor
+  as unavailable and requiring runtime binding in the active compiler slice.
+  It exposes the current runtime ABI version and a local recognized-service
+  predicate for that descriptor, matching the other host-service seeds.
+  `print_i32_is_executable()` and `print_i32_requires_runtime_binding()` make
+  the minimal `print_i32` hook explicitly contract-only until the stdio runtime
+  service is bound. The x86 backend rejects direct calls to these extern
+  declarations before producing target bytes, so source-pack stdio calls cannot
+  silently compile into invalid native stubs.
+  These extern signatures and contract helpers can type-check as calls in
+  direct single-file fixtures, through `--stdlib-root` from an importing caller,
+  and bounded source-pack fixtures can type-check resolver-backed qualified
+  calls such as `std::io::flush_stdout()`,
+  `std::io::print_i32(code)`, `std::io::print_i32_is_executable()`,
+  `std::io::print_i32_requires_runtime_binding()`, and
+  `std::io::stdio_requires_runtime_binding()`
+  when the module is explicitly supplied. No quoted import loading, host
+  runtime, string/slice ABI, native/backend lowering, or executable capability
+  gate exists yet.
 - `std/process.lani` and `std/env.lani` seed source-level host ABI declarations
-  for process args, exit codes, and environment variables. Their raw extern
-  declarations can type-check in direct no-module fixtures, and the module
-  files can type-check as explicitly supplied source-pack seeds. Stable string,
-  byte-slice, error, capability, and runtime initialization models are still
-  missing.
-- `std/time.lani` and `std/fs.lani` seed source-level host ABI declarations for
-  clocks, sleeping, and basic file operations. Their raw extern declarations
+  for process args, exit codes, environment variables, and current-directory
+  access. They also expose
+  narrow process and environment service contracts that report the
+  `SERVICE_PROCESS_ID` and `SERVICE_ENV_ID` descriptors as unavailable and
+  requiring runtime binding in the active compiler slice. Both modules also
+  expose the current runtime ABI version for their descriptors and local
+  recognized-service predicates, and their contract helpers can type-check
+  through `--stdlib-root` from an importing caller alongside `core::runtime`.
+  `std/process.lani` additionally exposes public API gates for process
+  arguments and exit-code hooks:
+  `process_args_is_executable()`,
+  `process_args_requires_runtime_binding()`,
+  `process_exit_is_executable()`, and
+  `process_exit_requires_runtime_binding()` all report the current
+  non-executable process-service boundary until a runtime binding exists.
+  The same module exposes pure exit-status contracts:
+  `EXIT_SUCCESS`, `EXIT_FAILURE`, `exit_success_code()`,
+  `exit_failure_code()`, `exit_code_is_success(code)`, and
+  `exit_code_is_failure(code)` are ordinary source-level helpers and do not
+  imply that `set_exit_code` or `exit` are executable.
+  `std/env.lani` additionally exposes fail-closed current-directory gates:
+  `current_dir_len_is_executable()`,
+  `current_dir_len_requires_runtime_binding()`,
+  `current_dir_read_is_executable()`, and
+  `current_dir_read_requires_runtime_binding()`. Their raw extern declarations
   can type-check in direct no-module fixtures, and the module files can
-  type-check as explicitly supplied source-pack seeds.
-  Stable path/string/byte-slice
-  representations, handle ownership, concrete error types, capability gating,
-  native lowering, and host services remain future work.
+  type-check as explicitly supplied source-pack seeds. Stable string,
+  byte-slice, error, broader executable capability, and runtime initialization
+  models are still missing.
+- `std/time.lani` seeds source-level host ABI declarations for clocks and
+  sleeping. It also exposes a narrow clock service contract that reports the
+  `SERVICE_CLOCK_ID` descriptor as unavailable and requiring runtime binding in
+  the active compiler slice. The current runtime ABI version, local
+  recognized-service predicate, service-status helper, service availability
+  helper, service runtime-binding helper, and public API gate helpers such as
+  `monotonic_now_ns_is_executable()`,
+  `monotonic_now_ns_requires_runtime_binding()`,
+  `system_now_unix_ms_is_executable()`,
+  `system_now_unix_ms_requires_runtime_binding()`,
+  `sleep_ms_is_executable()`, and `sleep_ms_requires_runtime_binding()` can
+  type-check through `--stdlib-root` from an importing caller alongside
+  `core::runtime`. The raw extern declarations can type-check in direct
+  no-module fixtures, and the module file can type-check as an explicitly
+  supplied source-pack seed. Stable time representations, executable clock
+  binding, native lowering, and host services remain future work.
+- `std/fs.lani` seeds source-level host ABI declarations for basic file
+  operations. It also exposes a narrow filesystem service contract that reports
+  the `SERVICE_FILESYSTEM_ID` descriptor as unavailable and requiring runtime
+  binding in the active compiler slice. The current runtime ABI version, local
+  recognized-service predicate, and contract helpers can type-check through
+  `--stdlib-root` from an importing caller alongside `core::runtime`. Its raw
+  filesystem, file-I/O, and path-mutation gates expose explicit `*_is_blocked()`
+  companions so callers can fail closed without inferring that state from raw
+  extern availability. File I/O declarations additionally expose per-operation
+  gates for `open_read`, `open_write`, `open_append`, `close`, `read`, and
+  `write`, all reporting non-executable and requiring a runtime binding in this
+  slice. The extern declarations can type-check in direct no-module fixtures,
+  and the module file can type-check as an explicitly supplied source-pack seed.
+  Stable path/string/byte-slice representations, handle ownership, concrete
+  error types, native lowering, and host services remain future work.
 - `std/net.lani` seeds source-level host ABI declarations for basic TCP and UDP
-  operations using opaque handles and raw pointer/length buffers. Its raw
-  extern declarations can type-check in direct no-module fixtures, and the
-  module file can type-check as an explicitly supplied source-pack seed. Stable
-  socket address
-  types, DNS, blocking mode, error reporting, capability gating, native
-  lowering, and host services remain future work.
+  operations using opaque handles and raw pointer/length buffers. It also
+  exposes a narrow network service contract that reports the
+  `SERVICE_NETWORK_ID` descriptor as unavailable and requiring runtime binding
+  in the active compiler slice. It exposes the current runtime ABI version and
+  a local recognized-service predicate for the descriptor.
+  `network_contract_metadata_is_available()` is descriptor metadata only, and
+  `network_host_abi_is_contract_only()` keeps the raw socket ABI visibly
+  non-executable. Its contract helpers can type-check through `--stdlib-root`
+  from an importing caller alongside `core::runtime`. Its raw extern
+  declarations can type-check in direct no-module fixtures, and the module file
+  can type-check as an explicitly supplied source-pack seed. Stable socket
+  address types, DNS, blocking mode,
+  error reporting, executable capability gates, native lowering, and host
+  services remain future work.
+- `std/random.lani` seeds source-level secure-RNG host ABI declarations for
+  filling caller-provided bytes and returning one `u32`. It reports the
+  `SERVICE_SECURE_RNG_ID` descriptor as unavailable, exposes
+  `random_contract_metadata_is_available()` as descriptor metadata only, and
+  exposes `random_host_abi_is_contract_only()` plus per-operation blocked and
+  runtime-binding gates for `fill_secure_bytes` and `secure_u32`. These helpers
+  can type-check through `--stdlib-root` from an importing caller alongside
+  `core::runtime`, but the raw entropy extern declarations remain
+  non-executable until a secure entropy runtime binding exists.
+- `std/gpu.lani` seeds source-level GPU host-service declarations for buffer
+  allocation, buffer I/O, and one-dimensional dispatch. It reports the
+  `SERVICE_GPU_ID` descriptor as unavailable, exposes
+  `gpu_contract_metadata_is_available()` as descriptor metadata only, and
+  exposes `gpu_host_abi_is_contract_only()` plus blocked and runtime-binding
+  gates for GPU buffer and dispatch API families. These helpers can type-check
+  through `--stdlib-root` from an importing caller alongside `core::runtime`,
+  but the raw GPU host-service extern declarations remain non-executable until
+  a GPU runtime binding defines resource ownership and dispatch ABI semantics.
+- `std/thread.lani` seeds source-level host ABI declarations for spawning,
+  joining, yielding, and querying the current thread id. It reports the
+  `SERVICE_THREADS_ID` descriptor as unavailable, exposes
+  `thread_contract_metadata_is_available()` as descriptor metadata only, and
+  exposes `thread_host_abi_is_contract_only()` plus per-operation blocked and
+  runtime-binding gates so raw thread extern declarations remain visibly
+  non-executable until a thread runtime binding exists.
+- `test/harness.lani` exposes the test-harness runtime descriptor as
+  contract-only source metadata. `TEST_HARNESS_SERVICE_ID` mirrors
+  `core::runtime::SERVICE_TEST_HARNESS_ID`, and registration, discovery, and
+  execution gates all report blocked/requiring runtime binding until a real
+  harness runtime exists. It declares no raw host externs and does not run tests.
 - `test/assert.lani` has source-level assertion helpers built on the current
   `assert(bool)` builtin. It type-checks as an explicitly supplied source-pack
   seed, but assertion-helper WASM execution is not active while the legacy tests

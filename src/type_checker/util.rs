@@ -14,6 +14,26 @@ pub(super) fn type_check_params_bytes(params: &TypeCheckParams) -> Vec<u8> {
     ub.as_ref().to_vec()
 }
 
+pub(super) fn zeroed_type_check_params_buffer(
+    device: &wgpu::Device,
+    label: &str,
+) -> LaniusBuffer<TypeCheckParams> {
+    let byte_len = type_check_params_bytes(&TypeCheckParams {
+        n_tokens: 0,
+        source_len: 0,
+        n_hir_nodes: 0,
+        n_source_files: 0,
+    })
+    .len();
+    let raw = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(label),
+        size: byte_len as u64,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    LaniusBuffer::new((raw, byte_len as u64), 1)
+}
+
 pub(super) fn read_status_words(bytes: &[u8]) -> Result<[u32; 4]> {
     crate::gpu::readback::read_u32_words(bytes, "type checker status")
 }

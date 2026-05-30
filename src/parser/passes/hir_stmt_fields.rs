@@ -14,6 +14,29 @@ pub struct Params {
     pub uses_ll1: u32,
 }
 
+pub const HIR_STMT_RECORD_KIND_NONE: u32 = 0;
+pub const HIR_STMT_RECORD_KIND_LET: u32 = 1;
+pub const HIR_STMT_RECORD_KIND_RETURN: u32 = 2;
+pub const HIR_STMT_RECORD_KIND_IF: u32 = 3;
+pub const HIR_STMT_RECORD_KIND_CONST: u32 = 4;
+pub const HIR_STMT_RECORD_KIND_ASSIGN: u32 = 5;
+pub const HIR_STMT_RECORD_KIND_WHILE: u32 = 6;
+pub const HIR_STMT_RECORD_KIND_FOR: u32 = 7;
+pub const HIR_STMT_RECORD_KIND_BREAK: u32 = 8;
+pub const HIR_STMT_RECORD_KIND_CONTINUE: u32 = 9;
+
+pub const HIR_ASSIGN_OP_SET: u32 = 1;
+pub const HIR_ASSIGN_OP_ADD: u32 = 2;
+pub const HIR_ASSIGN_OP_SUB: u32 = 3;
+pub const HIR_ASSIGN_OP_MUL: u32 = 4;
+pub const HIR_ASSIGN_OP_DIV: u32 = 5;
+pub const HIR_ASSIGN_OP_MOD: u32 = 6;
+pub const HIR_ASSIGN_OP_XOR: u32 = 7;
+pub const HIR_ASSIGN_OP_SHL: u32 = 8;
+pub const HIR_ASSIGN_OP_SHR: u32 = 9;
+pub const HIR_ASSIGN_OP_BAND: u32 = 10;
+pub const HIR_ASSIGN_OP_BOR: u32 = 11;
+
 pub struct HirStmtFieldsPass {
     data: PassData,
 }
@@ -59,9 +82,18 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirStmtFieldsPas
             ("next_sibling".into(), b.next_sibling.as_entire_binding()),
             ("hir_kind".into(), b.hir_kind.as_entire_binding()),
             ("hir_token_pos".into(), b.hir_token_pos.as_entire_binding()),
+            ("hir_token_end".into(), b.hir_token_end.as_entire_binding()),
             (
                 "hir_expr_record".into(),
                 b.hir_expr_record.as_entire_binding(),
+            ),
+            (
+                "hir_expr_result_root_node".into(),
+                b.hir_expr_result_root_node.as_entire_binding(),
+            ),
+            (
+                "hir_member_name_token".into(),
+                b.hir_member_name_token.as_entire_binding(),
             ),
             (
                 "hir_semantic_dense_node".into(),
@@ -74,6 +106,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirStmtFieldsPas
             (
                 "hir_stmt_record".into(),
                 b.hir_stmt_record.as_entire_binding(),
+            ),
+            (
+                "hir_stmt_scope_end".into(),
+                b.hir_stmt_scope_end.as_entire_binding(),
             ),
         ])
     }

@@ -53,6 +53,8 @@ pub(super) fn regalloc_params(
     let param_bytes = (0..chunk_count)
         .map(|chunk_i| {
             let params = X86RegallocParams {
+                // Regalloc consumes the compact x86_virtual_value_def_row
+                // stream, not raw virtual instruction row offsets.
                 chunk_start: chunk_i
                     .saturating_mul(X86_REGALLOC_ROWS_PER_CHUNK)
                     .min(u32::MAX as usize) as u32,

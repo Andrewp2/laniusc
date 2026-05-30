@@ -11,7 +11,7 @@ pub(in crate::compiler) fn validate_job_batch_dependency_ranges<F>(
 where
     F: Fn(String) -> CompileError,
 {
-    let mut ranges = Vec::<(usize, usize)>::new();
+    let mut previous_range_end = None;
     for (range_position, range) in dependency.dependency_batch_ranges.iter().enumerate() {
         if range.batch_count == 0 {
             return Err(make_error(format!(
@@ -37,6 +37,14 @@ where
                 )));
             }
         }
+        if let Some(previous_range_end) = previous_range_end
+            && range.first_batch_index < previous_range_end
+        {
+            return Err(make_error(format!(
+                "{context} dependency ranges must be sorted and non-overlapping; range {}..{} follows previous end {}",
+                range.first_batch_index, end_batch_index, previous_range_end
+            )));
+        }
         if let Some(duplicate) = explicit_dependencies
             .iter()
             .copied()
@@ -47,16 +55,7 @@ where
                 range.first_batch_index, end_batch_index, duplicate
             )));
         }
-        if let Some(&(overlap_start, overlap_end)) = ranges
-            .iter()
-            .find(|&&(start, end)| range.first_batch_index < end && start < end_batch_index)
-        {
-            return Err(make_error(format!(
-                "{context} dependency range {}..{} overlaps range {}..{}",
-                range.first_batch_index, end_batch_index, overlap_start, overlap_end
-            )));
-        }
-        ranges.push((range.first_batch_index, end_batch_index));
+        previous_range_end = Some(end_batch_index);
     }
     Ok(())
 }
@@ -181,6 +180,11 @@ pub(in crate::compiler) fn store_job_batch_dependency_pages(
     unique_usize_set(
         &dependency.dependency_batch_indices,
         &format!("job-batch page {} dependencies", dependency.batch_index),
+    )?;
+    validate_usize_values_strictly_ascending(
+        &dependency.dependency_batch_indices,
+        &format!("job-batch page {} dependencies", dependency.batch_index),
+        |message| artifact_shard_contract_error(message),
     )?;
     let mut dependency_batch_count = 0usize;
     let mut dependency_page_count = 0usize;
@@ -309,13 +313,6 @@ impl<'a> JobBatchDependencyPageWriter<'a> {
         {
             return Ok(());
         }
-        self.current_dependency_batch_indices
-            .push(dependency_batch_index);
-        if self.current_dependency_batch_indices.len()
-            == SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENCY_DEFAULT_PAGE_SIZE
-        {
-            self.flush()?;
-        }
         Ok(())
     }
 
@@ -346,7 +343,17 @@ impl<'a> JobBatchDependencyPageWriter<'a> {
     }
 
     pub(in crate::compiler) fn finish(mut self) -> Result<(usize, usize), CompileError> {
-        self.flush()?;
+        let dependency_batch_indices = self
+            .seen_dependency_batch_indices
+            .iter()
+            .copied()
+            .collect::<Vec<_>>();
+        for chunk in dependency_batch_indices
+            .chunks(SOURCE_PACK_BUILD_JOB_BATCH_DEPENDENCY_DEFAULT_PAGE_SIZE)
+        {
+            self.current_dependency_batch_indices = chunk.to_vec();
+            self.flush()?;
+        }
         Ok((self.dependency_batch_count, self.page_index))
     }
 }

@@ -34,11 +34,15 @@ use log::warn;
 static TEMP_ARTIFACT_COUNTER: AtomicU64 = AtomicU64::new(0);
 // libtest runs cases concurrently; start GPU timeouts after queued work gets the device.
 static GPU_TEST_LOCK: Mutex<()> = Mutex::new(());
-const DEFAULT_GPU_TEST_TIMEOUT_MS: u64 = 30_000;
+// Focused GPU behavior tests are intentionally tiny, but a cold process may
+// still pay one-time shader pipeline creation before it reaches the behavior
+// under test. Keep this guard above observed cold frontend/type-checker init
+// while preserving an explicit timeout for genuine hangs.
+const DEFAULT_GPU_TEST_TIMEOUT_MS: u64 = 60_000;
 // The default codegen coverage includes small source-pack programs.
-// Pipeline setup can exceed a couple of seconds on cold runs, so keep this
-// below the outer command watchdog while avoiding false timeout failures.
-const DEFAULT_GPU_CODEGEN_TEST_TIMEOUT_MS: u64 = 30_000;
+// Cold process pipeline setup can dominate the first codegen test, so use the
+// same guard as focused GPU type-checking while keeping suite-style loops short.
+const DEFAULT_GPU_CODEGEN_TEST_TIMEOUT_MS: u64 = 60_000;
 const DEFAULT_GPU_CODEGEN_SUITE_TEST_TIMEOUT_MS: u64 = 5_000;
 const DEFAULT_COMPILER_PROCESS_TEST_TIMEOUT_MS: u64 = 4_000;
 const DEFAULT_PROCESS_TEST_TIMEOUT_MS: u64 = 500;
@@ -186,11 +190,16 @@ where
 
 pub fn command_output_with_timeout(context: impl fmt::Display, command: &mut Command) -> Output {
     let context = context.to_string();
-    let _guard = gpu_test_lock();
-    command_output_result_with_timeout(&context, command, compiler_process_test_timeout())
-        .unwrap_or_else(|err| {
-            panic!("{context}: spawn command: {err}");
-        })
+    let (_guard, gpu_lock_wait) = gpu_test_lock();
+    command_output_result_with_timeout(
+        &context,
+        command,
+        compiler_process_test_timeout(),
+        TimeoutDetails::with_gpu_lock_wait(gpu_lock_wait),
+    )
+    .unwrap_or_else(|err| {
+        panic!("{context}: spawn command: {err}");
+    })
 }
 
 pub fn short_process_output_with_timeout(
@@ -198,17 +207,22 @@ pub fn short_process_output_with_timeout(
     command: &mut Command,
 ) -> Output {
     let context = context.to_string();
-    command_output_result_with_timeout(&context, command, process_test_timeout()).unwrap_or_else(
-        |err| {
-            panic!("{context}: spawn command: {err}");
-        },
+    command_output_result_with_timeout(
+        &context,
+        command,
+        process_test_timeout(),
+        TimeoutDetails::default(),
     )
+    .unwrap_or_else(|err| {
+        panic!("{context}: spawn command: {err}");
+    })
 }
 
 fn command_output_result_with_timeout(
     context: impl fmt::Display,
     command: &mut Command,
     timeout: Duration,
+    details: TimeoutDetails,
 ) -> io::Result<Output> {
     let context = context.to_string();
     let mut child = match command
@@ -241,7 +255,7 @@ fn command_output_result_with_timeout(
                 .unwrap_or_else(|err| panic!("{context}: collect timed-out command output: {err}"));
             exit_after_timeout(format_args!(
                 "{}\nstdout:\n{}\nstderr:\n{}",
-                timeout_message(&context, timeout),
+                timeout_message(&context, timeout, details),
                 String::from_utf8_lossy(&output.stdout),
                 String::from_utf8_lossy(&output.stderr)
             ));
@@ -264,7 +278,7 @@ where
     T: Send + 'static,
     F: FnOnce() -> T + Send + 'static,
 {
-    let _guard = gpu_test_lock();
+    let (_guard, gpu_lock_wait) = gpu_test_lock();
     let (tx, rx) = mpsc::channel();
     let handle = thread::spawn(move || {
         let result = f();
@@ -281,7 +295,10 @@ where
             result
         }
         Err(mpsc::RecvTimeoutError::Timeout) => {
-            exit_after_timeout(format_args!("{}", timeout_message(context, timeout)));
+            exit_after_timeout(format_args!(
+                "{}",
+                timeout_message(context, timeout, TimeoutDetails::gpu_worker(gpu_lock_wait))
+            ));
         }
         Err(mpsc::RecvTimeoutError::Disconnected) => match handle.join() {
             Ok(()) => panic!("{context} worker exited without sending a result"),
@@ -290,10 +307,12 @@ where
     }
 }
 
-fn gpu_test_lock() -> MutexGuard<'static, ()> {
-    GPU_TEST_LOCK
+fn gpu_test_lock() -> (MutexGuard<'static, ()>, Duration) {
+    let start = Instant::now();
+    let guard = GPU_TEST_LOCK
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    (guard, start.elapsed())
 }
 
 fn gpu_test_timeout() -> Duration {
@@ -370,11 +389,38 @@ fn process_test_timeout() -> Duration {
         .unwrap_or_else(|| Duration::from_millis(DEFAULT_PROCESS_TEST_TIMEOUT_MS))
 }
 
-fn timeout_message(context: &str, timeout: Duration) -> String {
-    format!(
-        "{context} timed out after {} ms; aborting this test binary to stop the timed-out worker",
+#[derive(Clone, Copy, Debug, Default)]
+struct TimeoutDetails {
+    gpu_lock_wait: Option<Duration>,
+}
+
+impl TimeoutDetails {
+    fn with_gpu_lock_wait(gpu_lock_wait: Duration) -> Self {
+        Self {
+            gpu_lock_wait: Some(gpu_lock_wait),
+        }
+    }
+
+    fn gpu_worker(gpu_lock_wait: Duration) -> Self {
+        Self::with_gpu_lock_wait(gpu_lock_wait)
+    }
+}
+
+fn timeout_message(context: &str, timeout: Duration, details: TimeoutDetails) -> String {
+    let mut message = format!(
+        "{context} timed out after {} ms after acquiring the GPU test lock; aborting this test binary to stop the timed-out worker",
         timeout.as_millis()
-    )
+    );
+    if let Some(wait) = details.gpu_lock_wait {
+        message.push_str(&format!(
+            "; waited {} ms for the GPU test lock before starting the timeout",
+            wait.as_millis()
+        ));
+    }
+    message.push_str(
+        "; cold pipeline initialization can dominate the first GPU codegen test, so enable LANIUS_GPU_COMPILE_HOST_TIMING=1 before classifying this as a backend hang",
+    );
+    message
 }
 
 fn exit_after_timeout(args: fmt::Arguments<'_>) -> ! {
@@ -407,7 +453,12 @@ pub fn node_available() -> bool {
     let mut command = Command::new("node");
     command.arg("--version");
     matches!(
-        command_output_result_with_timeout("node --version", &mut command, process_test_timeout()),
+        command_output_result_with_timeout(
+            "node --version",
+            &mut command,
+            process_test_timeout(),
+            TimeoutDetails::default(),
+        ),
         Ok(output) if output.status.success()
     )
 }

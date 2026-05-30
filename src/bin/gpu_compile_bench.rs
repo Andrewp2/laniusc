@@ -37,7 +37,7 @@ use laniusc::{
 };
 use sources::{SourceArtifact, make_source_artifact};
 
-const DEFAULT_BENCH_LINES: usize = 20_000;
+const DEFAULT_BENCH_LINES: usize = 5_000;
 const DEFAULT_SOURCE_PACK_DESCRIPTOR_MAX_ITEMS: usize = 1;
 const DEFAULT_SOURCE_PACK_DESCRIPTOR_MAX_READY_ITEMS: usize = 64;
 const SOURCE_PACK_DESCRIPTOR_MAX_CHUNK_ITEMS: usize = 64;
@@ -1287,7 +1287,7 @@ fn print_help() {
     eprintln!(
         "Usage: gpu_compile_bench [--emit wasm|x86_64-elf] [--source simple-lets|mixed|call-graph|expr-dense|abi-calls|varied|long-function|module-pack|all] [--lines N] [--target-bytes N] [--seed N] [--warmups N] [--iters N] [--validate-output] [--run-x86-output] [--allow-large] [--estimate-only|--estimate-live] [--dump-source] [--source-pack-descriptors] [--source-pack-max-items N] [--source-pack-max-ready-items N] [--source-pack-artifact-root PATH] [--source-pack-legacy-in-memory]\n\
          Optional phases: --phase lex|parse|typecheck|wasm|x86.\n\
-         Defaults to --lines 20000; use --allow-large for intentional large live runs.\n\
+         Defaults to --lines 5000; use --allow-large for intentional large live runs.\n\
          --source-pack-descriptors prepares module-pack filesystem artifacts and advances the persisted queue with bounded one-item submits; --source-pack-legacy-in-memory is required for the old whole-pack module-pack path.\n\
          Set LANIUS_PERFETTO_TRACE=path.json to write Perfetto-compatible trace-event JSON.\n\
          Measures reused GpuCompiler runtime after construction."

@@ -20,37 +20,30 @@ What parses today:
   qualified type expressions, qualified primary expressions, qualified patterns,
   generic type arguments, structs, enums, traits, impls, constants, and type
   aliases.
-- `tests/parser_tree.rs` has LL(1) table acceptance for
-  `module core::numbers; import core::i32; import "stdlib/bool.lani";`.
-- `tests/parser_tree.rs` has LL(1) table acceptance for namespaced paths in type
-  positions, value-call positions, struct literal heads, and match patterns:
-  `core::option::Option<i32>`, `core::math::add_one(1)`,
-  `core::point::Point { ... }`, and `core::option::Some(inner)`.
+- Parser and type-checker coverage now exercises module/import metadata and
+  namespaced paths through the resident GPU parser/type-check surfaces instead
+  of a separate parser-tree fixture.
 - The GPU parser/HIR path already classifies LL(1)-derived HIR nodes such as
   functions, params, types, lets, returns, consts, enums, structs, struct
   literals, and type aliases in `shaders/parser/hir_nodes.slang` and
-  `src/parser/gpu/passes/hir_nodes.rs`.
+  `src/parser/passes/hir_nodes.rs`.
 
 What GPU syntax accepts and rejects today:
 
-- `tests/parser_tree.rs` requires `check_tokens_on_gpu` to accept one leading
-  `module path;` declaration as source metadata.
-- `tests/parser_tree.rs` requires `check_tokens_on_gpu` to accept leading
-  `import path;` and `import "path";` declarations after the optional module
-  declaration as syntax metadata only.
-- `tests/parser_tree.rs` requires stdlib module seed files such as
+- Current GPU parser/type-checker tests require leading `module path;`
+  declarations, leading path imports, and stdlib seed modules such as
   `stdlib/core/i32.lani`, `stdlib/core/bool.lani`, and
-  `stdlib/test/assert.lani` to accept that leading module metadata.
-- `tests/parser_tree.rs` requires `check_tokens_on_gpu` to reject duplicate
-  module declarations, non-leading module declarations, and non-leading imports
-  until GPU module resolution exists.
-- `tests/parser_tree.rs` requires qualified value paths, including non-call
-  paths such as `core::i32::MIN`, to pass GPU syntax as HIR evidence. Semantic
-  resolution remains a GPU type-checker responsibility.
+  `stdlib/test/assert.lani` to flow as source metadata.
+- Current tests require duplicate modules, non-leading module declarations, and
+  non-leading imports to reject while the supported module/import slice stays
+  limited to leading source metadata plus GPU resolver records.
+- Current tests require qualified value paths, including non-call paths such as
+  `core::i32::MIN`, to pass syntax/HIR evidence. Semantic resolution remains a
+  GPU type-checker responsibility.
 
 What GPU HIR preserves today:
 
-- `shaders/parser/hir_nodes.slang` and `src/parser/gpu/passes/hir_nodes.rs`
+- `shaders/parser/hir_nodes.slang` and `src/parser/passes/hir_nodes.rs`
   now define `HIR_MODULE_ITEM`, `HIR_IMPORT_ITEM`, and `HIR_PATH_EXPR`.
 - LL(1) parser tests preserve module/import/path evidence for
   `module core::numbers; import core::i32;` and a qualified value path head
@@ -68,9 +61,12 @@ What GPU HIR preserves today:
   were both deleted because neither implemented the paper-style
   sort/deduplicate/lookup strategy for semantic names. Import path-vs-string
   target kind still comes from the parser import-tail production. Path imports
-  now resolve only against explicitly supplied source-pack modules; string
-  imports still fail in the GPU resolver because host-driven import loading is
-  not implemented.
+  now resolve only against explicitly supplied source-pack modules;
+  `--source-root` and `--stdlib-root` can load leading module-path imports into
+  that source pack. User/package source roots are searched before the stdlib
+  fallback, so a same-path user module does not pull in or conflict with the
+  stdlib candidate. String imports still fail in the GPU resolver and are not
+  host-included.
 - The path evidence is span metadata only: tests assert that `HIR_PATH_EXPR`
   covers complete token ranges such as `core::numbers`, `core::i32`, and
   `core::i32::abs`. Module declarations and import paths can now flow through a
@@ -83,7 +79,13 @@ What GPU HIR preserves today:
   value-path heads through parse-tree relationships and projects
   `resolved_value_status` into `module_value_path_status`; regular function
   calls and top-level consts now have declaration-consuming HIR value
-  consumers, while general qualified values remain blocked.
+  consumers, while general qualified values remain blocked. Function return
+  type edges are also available as parser-owned `hir_fn_return_type_node`
+  records with source-pack file ids and spans, so later return-type consumers do
+  not need to scan function bodies or re-read token spelling for the signature.
+  Return statements publish `hir_stmt_record` entries that point at the
+  parser-owned return expression and value token, so later type/codegen
+  consumers can use statement records instead of rescanning body shape.
 - `type_check_modules_00_mark_records.slang` and
   `type_check_modules_01_scatter_paths.slang` now exist as pre-resolution GPU
   metadata shaders and are scheduled by the resident type checker after name id
@@ -109,10 +111,19 @@ What GPU HIR preserves today:
   type codes. Regular qualified function calls are consumed from
   `resolved_value_decl` by a HIR call-context consumer that writes the existing
   call result arrays at the path head without inspecting source text or token
-  hashes. Top-level qualified constants and one-segment constants made visible
-  by path imports consume `resolved_value_decl` after declaration types are
-  available. General qualified value paths still reject unless a dedicated HIR
-  consumer clears the fail-closed status.
+  hashes. Generic enum constructor expected-type lookup consumes
+  parser-published `hir_call_context_stmt_node` rows instead of walking parent
+  links in the consumer. Top-level qualified constants and one-segment
+  constants made visible by path imports consume `resolved_value_decl` after
+  declaration types are available. General qualified value paths still reject
+  unless a dedicated HIR consumer clears the fail-closed status.
+  Ordinary qualified call typing is still bounded by the four-slot call/type
+  argument cache. The non-hacky replacement is to split the consumer into a
+  count/scan/scatter argument-row pass, a bounded-depth type-ref leaf relation
+  with explicit overflow rows, sorted joins/reductions for generic binding and
+  mismatch status, and a final map pass that updates the existing call result
+  arrays. That requires new state buffers and scheduler order beyond the
+  current `10h` bind group.
   The older token-segment `::` special-case rejection was deleted so it cannot
   be mistaken for a resolver.
 
@@ -127,6 +138,22 @@ What GPU type checking accepts and rejects today:
   `app::helper()`, and top-level qualified constants such as `app::LIMIT` to
   pass through resolver arrays, while wrong-module, unresolved, non-function,
   and general qualified value paths still fail with `CompileError::GpuTypeCheck`.
+- Imported public names are not resolved by first match: tests require same-name
+  public type and value declarations imported from different modules to reject
+  through the GPU imported-visibility tables, including a source/import-order
+  permutation where a first-match implementation would still type-check.
+  The readiness contract is module/import records, then sorted module and
+  declaration lookups, then joined public import-visibility rows, then sorted
+  imported visibility keys, then ambiguity validation before consumers read an
+  imported name.
+- Import cycles currently fail through GPU import-edge records only for direct
+  self-imports and two-module cycles. Direct self-imports reject during import
+  resolution, and sorted import-edge equal-range lookup rejects reverse-edge
+  pairs. Longer directed cycles such as `A -> B -> C -> A` still need a real
+  GPU topological/SCC checkpoint; do not claim that case as implemented or
+  replace it with CPU graph traversal. The CPU loader may use recursion guards
+  to avoid loading the same file forever, but it must not become the semantic
+  cycle decision for source packs.
 - Deleted Misleading Slice: `type_check_names_00_hash.slang`,
   `type_check_modules_00_clear.slang`, `type_check_modules_01_dense_scan.slang`,
   `type_check_modules_02_dense_scatter.slang`,
@@ -143,12 +170,88 @@ What GPU type checking accepts and rejects today:
   lookup helpers scan all tokens by unqualified text. This is useful evidence for
   current semantics, but it is not an acceptable module implementation shape.
 
+## Production-Readiness Audit: May 2026
+
+The module resolver is on the paper-aligned path where it uses flat GPU records,
+interned names, sorted module keys, import visibility tables, declaration keys,
+and parallel import-cycle peeling instead of recursive CPU resolver structures.
+That is the right foundation for large source packs, but several current paths
+must stay classified as scaffolding until they consume and produce durable GPU
+records end to end.
+
+Current pass-architecture violations and risks:
+
+- `type_check_visible_02_scatter.slang` still walks earlier tokens and compares
+  identifier text for unqualified visibility in the standalone legacy
+  token-buffer path. The resident compiler path skips that scatter/decode stage
+  and resolves HIR names through sorted declaration and scope records. Gate:
+  delete or quarantine the standalone legacy path once equivalent behavior is
+  covered by name-id/declaration/scope records, so no compiler-facing path can
+  silently fall back to token-neighborhood visibility.
+- `src/compiler/source_pack/package_manifest.rs` and
+  `src/compiler/source_pack/package_lock.rs` may discover files, validate path
+  metadata, and persist replay metadata on CPU, but the lockfile import graph
+  must not become semantic evidence. Gate: GPU module/import records revalidate
+  module declarations, import edges, and cycles on every replay, including
+  tampered or stale lockfile inputs.
+  Current bounded evidence also rejects stale package-name-shaped import graph
+  edges when the live source no longer declares that import, and the diagnostic
+  names the stale edge. Persisted import-graph endpoint module fields also
+  reject package-name-as-module spellings when the source identity for that file
+  declares a different module, so package names and persisted edges remain
+  replay metadata, not a replacement for parser/GPU module-import records.
+  Persisted import graph dependencies and edges must also be in canonical sorted
+  order; replay rejects hand-edited edge order instead of treating CPU discovery
+  order as semantic readiness evidence.
+- Descriptor-mode package/source-root preparation is still rejected by the
+  public API. That fail-closed behavior is correct, but it blocks a production
+  package pipeline. Gate: descriptor/prepare mode writes a source-pack path
+  manifest and artifact descriptors without compiling the package in memory.
+- `src/compiler/gpu_compiler/source_pack_executor.rs` and
+  `src/compiler/source_pack/execution/link.rs` currently stream work pages and
+  write descriptor/count artifacts for codegen objects, partial links, and
+  linked outputs. Linked-output descriptors now fail closed unless a
+  non-runtime-bound output has exactly one target-byte record array, or a
+  runtime-bound output has none while services remain unbound. X86 link
+  execution summaries also fail closed when descriptor counts are not backed by
+  explicit interface/object/section/symbol/relocation record contracts, or when
+  object inputs have symbol/relocation contracts but no object-section contract.
+  Relocations must attach to section rows rather than descriptor-only object
+  evidence. That is CPU control-plane scheduling, not GPU linking. Gate: link
+  stages consume GPU-produced interface/object/relocation records and emit real
+  linked bytes.
+- Import-cycle validation is not yet general: direct self-imports and
+  two-module cycles are covered by GPU import-edge records, but longer cycles
+  require an SCC/topological GPU checkpoint. Gate: add that checkpoint and a
+  small repeatable scale check for 64/128/256 generated modules proving acyclic
+  chains and one cycle produce bounded dispatch plans without running a huge
+  workload by default.
+
+Next verifiable gates:
+
+1. `module-visible-name-id-gate`: replace unqualified visibility token scans
+   with name/declaration/scope record lookup and keep behavior-facing fixtures
+   for shadowing, same-leaf names in different modules, and imported values.
+2. `package-replay-gpu-validation-gate`: replay a package lockfile with a
+   tampered module path or import edge and prove the GPU resolver rejects the
+   mismatch/cycle with the normal module diagnostic.
+3. `descriptor-source-root-prepare-gate`: make descriptor/prepare source-root
+   and package modes produce source-pack path manifests and artifact descriptors
+   without invoking in-memory compile.
+4. `module-cycle-scale-gate`: add a no-run or tiny CPU-only scale scaffold for
+   64/128/256 generated module graphs plus one focused GPU fixture for cycle
+   rejection.
+5. `link-record-gate`: replace descriptor-only link artifacts with GPU
+   interface/object/relocation records consumed by the hierarchical link plan.
+
 ## GPU-Resident Design
 
-The implementation should add a module-resolution stage after LL(1) tree/HIR
-construction and before the existing visible/type/call passes. The host may read source
-files and allocate/copy source blobs, but it must not parse, expand imports,
-resolve paths, or decide declarations.
+The implementation adds a module-resolution stage after LL(1) tree/HIR
+construction and before the existing visible/type/call passes. The host may read
+explicit source files, discover source-root candidate files from leading import
+metadata, and allocate/copy source blobs, but it must not rewrite source,
+perform semantic import expansion, decide declaration identity, decide
+visibility, or make semantic path lookup decisions.
 
 ### Source Pack Input
 
@@ -180,10 +283,144 @@ pass as GPU metadata, path imports resolve only against explicitly supplied
 source-pack modules, and the resolver foundation uses paper-style name
 interning, sorting, deduplication, module-key lookup, import-to-module lookup,
 type-path projection, and regular qualified function-call consumption. This
-groundwork does not load imports, discover files from module declarations, or
-make general qualified value paths pass. Top-level qualified constants are only
-accepted through the resolver/const-consumer bridge when the declaring module is
-explicitly present in the source pack. The normal compiler now uses the LL(1)
+groundwork exposes package manifests only as control-plane loading metadata and
+does not make package names part of semantic module identity or make general
+qualified value paths pass. Package names are validated as dot-separated ASCII
+control-plane identifiers whose segments start and end with an alphanumeric
+byte, so external package metadata cannot persist empty or punctuation-only
+name segments. Package replay also rejects a missing module-path import even
+when the package name maps to the requested module path spelling, so package
+control-plane identity cannot satisfy source-root module evidence.
+`--source-root` and `--stdlib-root` are narrow
+path-import source-pack loaders; user/package roots take precedence over the
+stdlib fallback for same module-path candidates from user/package sources, while
+imports discovered inside stdlib files resolve only within the stdlib root and
+report `LNC0024` instead of crossing back into package/user roots. Generated
+package replay rejects same-path module candidates from multiple package roots
+instead of allowing root order to become semantic module identity; the GPU
+module records still validate non-ambiguous source file declarations.
+Package lockfiles persist canonical resolved paths in sorted source-root order,
+input identity, source identities, import-graph metadata, and optional
+produced-artifact identities with target, kind, unique canonical path, byte
+length, and stable digest fields. Package
+input and source-identity sections are persisted in canonical `(library_id,
+path)` order rather than source traversal order, so replay safety does not
+depend on CPU import discovery order. Quoted imports remain unsupported. Package
+manifest check mode leaves them to the GPU resolver diagnostic, but package
+source-root replay and package lock generation reject them before writing a
+lockfile so a persisted import graph cannot omit an unsupported source edge.
+Package manifests remain
+relocatable by requiring relative roots, stdlib roots, and entries that do not
+contain parent-directory escapes and do not canonicalize through symlinks
+outside the manifest directory. They also require `/` path separators so
+manifest metadata has one portable spelling
+  for each package-relative path; lockfiles own the canonical absolute path
+  artifact. Package entries are also required to use the `.lani` source-file
+extension so package state cannot name an arbitrary control-plane file as the
+compilation entry while import discovery maps module paths to `.lani` files.
+Their source-root-relative module path is bounded to the current eight-segment
+GPU module-key slice during manifest resolution, so a package entry that cannot
+be represented by the resident resolver fails before lockfile generation.
+Direct public package-manifest serde deserialization and serialization now
+enforce that same package-relative shape, so callers cannot bypass
+`parse_json`/`load_json_file` and persist unchecked root or entry metadata.
+Lockfile loading rejects unsorted
+resolved roots and rejects persisted input, source-identity, or import-graph
+paths whose library ids do not match the resolved user/stdlib roots. It also
+requires those persisted source-file paths to remain canonical `.lani` files,
+so a hand-edited lockfile or symlinked import candidate cannot replay an
+arbitrary package file as source metadata. Import graph edges whose source or
+target files are absent from the input/source-identity set are rejected before
+replaying live source-root discovery. Import graph edges also persist the
+source and target module paths declared by their endpoint source identities,
+and public lockfile loading requires those endpoint module-path fields and
+rejects missing or tampered endpoint module paths before replaying discovery.
+Loaded lockfile objects retain the validated input/source-identity/import-graph
+snapshot and revalidate it before source-pack replay or lockfile
+reserialization, so a source tree mutation after `load_json_file` fails closed
+instead of replaying from current roots with a stale lockfile object.
+Replay also checks each import-graph endpoint module field directly against the
+endpoint file's resolved source-root-relative module mapping before it trusts
+the persisted source-identity table, so tampering both sections to a
+package-name spelling still fails closed as control-plane metadata.
+Persisted input and source-identity sections must
+  explicitly cover the package entry source, so replay cannot treat the entry as
+  implicit live-discovery state. A source-root import that resolves back to the
+  same source file is rejected as an import graph self-cycle during package
+  lockfile generation and replay, before the graph can be persisted as a valid
+  package contract. The persisted graph also rejects semantic self-cycles where a
+  source module imports its own module path, even if a hand-edited edge tampers
+  with the target file fields. Import-graph endpoint module fields are compared
+  to source identities before replay is accepted; if a hand-edited endpoint uses
+  the package name converted to module syntax for a different source file, the
+  lockfile reports the control-plane package metadata boundary instead of
+  treating that endpoint as semantic module evidence. The persisted graph also
+  rejects a single source file/import-path pair that names more than one target
+  file, so hand-edited lockfiles cannot encode an ambiguous import resolution
+  that the source-root replay would never produce.
+Source files with no leading module declaration are
+reported with the source-root-relative path and the module identity that path
+maps to, so stale or incomplete package sources are diagnosable without making
+the filesystem path semantic module identity. The import path itself must match the target's
+declared module identity, so filesystem aliases or symlink paths cannot turn a
+source-root path alias into a semantic module alias. Missing or ambiguous
+source-root imports report the importing source file as well as the requested
+module path and candidate/searched paths, so stale lockfile replay failures
+identify the package source that owns the broken import. Lockfile source
+identities now bind each file to its resolved source-root index and
+root-relative source path, so package-boundary metadata can be replayed without
+deriving semantic module identity from package paths. That persisted
+source-root-relative path metadata must also use `/` separators, so hand-edited
+lockfiles cannot introduce a second platform-specific spelling for the same
+package source identity. They reject source-root-relative paths deeper than the
+current eight-segment GPU module-key slice, reject multiple leading module
+declarations in one source file because the persisted source identity would
+otherwise be ambiguous, and reject non-leading module declarations before
+lockfile replay can treat package metadata as valid. Imported module paths use
+the same depth guard until the GPU module-key bound is lifted.
+Artifact identities are reproducibility metadata for produced files and do not
+make output paths or package names semantic module identity. Lockfile validation
+also rejects produced-artifact identities that point at the persisted source
+input set, so a stale or tampered package artifact cannot be confused with a
+source file while replaying package metadata. The artifact section also rejects
+multiple identities for the same canonical produced path, so downstream package
+tools cannot interpret one output file as two artifact records. Produced
+artifact identities must stay outside resolved package and stdlib source roots
+regardless of file extension, so control-plane outputs cannot occupy the
+source-root namespace while replay metadata is being validated.
+Package lockfile writes use atomic replacement and may create missing
+non-source output directories, but output identity is resolved through the
+nearest existing ancestor first so `.lani` paths under package or stdlib roots
+are rejected before any missing source directory is created. The same boundary
+now rejects any lockfile output path inside package or stdlib source roots,
+even when the output has a non-source extension such as `.json`.
+Persisted library-dependency metadata also rejects stdlib-to-user dependency
+edges, matching the live source-root boundary that keeps stdlib imports inside
+the stdlib root. Each persisted cross-library library dependency must also have
+at least one matching import-graph edge, which keeps coarse schedule metadata
+from outliving the source-level import relationship that justified it.
+Explicit source-pack manifests likewise reject duplicate coarse library
+dependency edges before scheduling, so CPU planning metadata cannot encode a
+stronger dependency graph than the source-pack/library boundary actually
+declared.
+Source-pack scheduling continues to use coarse library ordering: a library's
+frontend work depends on complete frontend ranges for earlier dependency
+libraries, not on fine-grained package-name or per-source import scans.
+Persisted library, job, job-batch, work-queue, artifact-range, and link-batch
+metadata must be canonical: explicit ids are strictly ascending and range
+records are stored in ascending non-overlapping order. This keeps replay and
+resume paths aligned with the paper-style sort/range/scan model instead of
+treating ad hoc per-job scans as semantic evidence.
+Completed hierarchical link execution metadata must also be backed by the final
+execution page record before replay can report resumable completion; the
+completed index alone is only summary metadata and cannot imply a GPU-produced
+linked output.
+Direct public lockfile deserialization enforces those persisted sections as
+well, so lockfiles cannot be downgraded into unchecked root metadata before
+replaying discovery.
+Top-level qualified constants are only accepted through the
+resolver/const-consumer bridge when the declaring module is explicitly present
+in the source pack. The normal compiler now uses the LL(1)
 tree/HIR path, which receives the lexer-produced `token_file_id` sideband,
 validates it during GPU syntax checking, and feeds it into LL(1) HIR ownership
 metadata.
@@ -447,7 +684,10 @@ Concrete pass names for the first implementation:
   `module_file_id`, `module_path_id`, `import_module_file_id`,
   `import_path_id`, `import_kind`, `decl_module_file_id`, `decl_name_id`,
   `decl_kind`, `decl_namespace`, `decl_visibility`, `decl_hir_node`,
-  `decl_name_token`, `decl_token_start`, and `decl_token_end`.
+  `decl_parent_type_decl`, `decl_name_token`, `decl_token_start`, and
+  `decl_token_end`. Enum-variant parent rows come from the parser-published
+  `hir_variant_parent_enum` relation and are mapped through the declaration
+  prefix; this scatter pass does not walk declaration ancestors.
 - `type_check_modules_02e_build_module_keys.slang`: copy each module record's
   path segment-name ids into fixed-width `module_key_segment_count`,
   `module_key_segment_base`, and `module_key_segment_name_id` rows, plus
@@ -468,8 +708,10 @@ Concrete pass names for the first implementation:
   `type_check_modules_05d_attach_record_modules.slang`: clear a GPU
   `module_id_by_file_id` table, scatter module ids into that table from
   parser-owned module file ids, and attach `decl_module_id`,
-  `import_module_id`, and `path_owner_module_id` to dense records. This is a
-  GPU table bridge from file ownership to
+  `import_module_id`, and `path_owner_module_id` to dense records. The legacy
+  root-file fallback is allowed only when the source pack has no module
+  declarations at all, so mixed source packs cannot attach an undeclared file to
+  another file's module id. This is a GPU table bridge from file ownership to
   module ownership; it is not declaration lookup or visibility.
 - `type_check_modules_06a_seed_decl_key_order.slang`,
   `type_check_modules_06_sort_decl_keys.slang`, and
@@ -562,12 +804,18 @@ Concrete pass names for the first implementation:
   qualified values by itself.
 - `type_check_modules_10h_consume_value_calls.slang`: consume
   `resolved_value_decl`, `resolved_value_status`, declaration metadata, and the
-  HIR call-open marker after regular function return metadata exists. For
+  HIR call-open marker after regular function return metadata exists. It uses
+  parser-published expression-result roots and call-context statement rows for
+  argument typing and contextual generic return inference, rather than
+  resolving expression wrappers or walking let/return ancestors itself. For
   resolved HIR path expressions that target regular function declarations, it
-  writes `call_fn_index`, `call_return_type`, and `call_return_type_token` at
-  the path head, then clears `module_value_path_status`. It does not inspect
-  source bytes, hash token text, scan for `::`, perform unqualified lookup, or
-  ask the CPU.
+  writes `call_fn_index` and `call_return_type` at the path head, then clears
+  `module_value_path_status`. Return type token metadata remains owned by the
+  regular call/method resolver rows rather than this module-path consumer. It
+  does not inspect source bytes, hash token text, scan for `::`, perform
+  unqualified lookup, or ask the CPU. It is still bounded by the four-slot
+  call/type-instance argument cache; the next step is compact argument rows plus
+  prefix-summed validation rows, not a wider shader loop.
 - `type_check_modules_10i_consume_value_consts.slang`: consume
   `resolved_value_decl`, `resolved_value_status`, declaration metadata, and the
   existing declaration `visible_type` output after scope typing has populated
@@ -588,15 +836,16 @@ Concrete pass names for the first implementation:
   heads such as `Option<i32>` and `core::option::Option<i32>` onto the existing
   `TYPE_REF_INSTANCE` metadata. It binds the leaf instance to the resolver's
   declaration token and copies argument refs without token text comparison.
-- `type_check_modules_10l_consume_value_enum_calls.slang`: consume resolved
-  local and qualified enum-variant calls after
-  `type_check_type_instances_06_enum_ctors` validates contextual generic
-  payloads. It clears `module_value_path_status` and publishes the parent enum
-  `call_return_type` only when the resolver names an enum variant and generic
-  constructor validation has produced `GENERIC_ENUM_CTOR_OK` when needed.
-  One-segment generic constructors keep the validator sentinel at the leaf token
-  instead of replacing it with the parent enum type, because the token checker
-  consumes that sentinel for bounded contextual generic constructor validation.
+- `type_check_modules_10l_consume_value_enum_calls.slang`,
+  `type_check_modules_10l2_validate_value_enum_call_payloads.slang`, and
+  `type_check_modules_10l3_finalize_value_enum_calls.slang`: consume resolved
+  local and qualified enum-variant calls after contextual type-instance records
+  exist. The first pass validates constructor shape, the second pass validates
+  one payload slot per GPU thread, and the third pass clears
+  `module_value_path_status` and publishes the parent enum `call_return_type`
+  only when no payload row rejected the candidate. The current parser call and
+  variant payload records are still bounded to four slots and fail closed beyond
+  that until payload rows are compacted into an unbounded relation.
   Non-constructor symbolic generic returns, exhaustive match semantics, enum
   layout, and backend lowering remain separate checkpoints. The bounded
   stdlib-shaped match type-check slice consumes HIR match spans plus these
@@ -648,10 +897,11 @@ Required data buffers for the first implementation:
 - Value path status projection: `module_value_path_expr_head`,
   `module_value_path_call_head`, and `module_value_path_status`, token-indexed
   bridges from HIR value-path ids to value-context status checks.
-- Value call consumer projection: `call_fn_index`, `call_return_type`, and
-  `call_return_type_token` for resolved regular function calls, keyed by the
-  HIR-produced `module_value_path_call_open` marker. General value lookup
-  outputs such as `resolved_call_decl` and `visible_decl` are a later checkpoint.
+- Value call consumer projection: `call_fn_index` and `call_return_type` for
+  resolved regular function calls, keyed by the HIR-produced
+  `module_value_path_call_open` marker. `call_return_type_token` remains owned
+  by the regular call/method resolver rows. General value lookup outputs such
+  as `resolved_call_decl` and `visible_decl` are a later checkpoint.
 - Value const consumer projection: `visible_decl` and `visible_type` for
   resolved top-level constants, including one-segment constants made visible by
   sorted import visibility tables.
@@ -723,9 +973,16 @@ Implementation checkpoints:
   The current bounded match consumer is limited to HIR-spanned arm result typing
   and enum tuple payload binding.
 - The host checkpoint is complete only when the CPU reads explicitly supplied
-  files, uploads source-pack buffers, and does not parse imports, expand import
-  closure, rewrite module names, precompute declarations, or decide
-  visibility.
+  files or control-plane source-root candidate files, uploads source-pack
+  buffers, and does not rewrite module names, precompute declarations, decide
+  visibility, perform semantic path lookup, resolve quoted imports, or allow
+  stdlib imports to cross into package/user source roots.
+- Descriptor-mode package/source-root preparation is not implemented yet.
+  Until it is, the CLI must reject `--package-manifest`, `--package-lockfile`,
+  `--source-root`, or `--stdlib-root` when combined with descriptor, prepare,
+  artifact-root, or contract-output flags. It must not route those inputs
+  through the in-memory source-root compiler path while claiming descriptor
+  output.
 
 Forbidden legacy resolver shapes:
 
@@ -782,11 +1039,13 @@ non-generic fixture such as `OptionI32` for the first module-resolution tests.
 
 ## No-CPU-Fallback Guardrails
 
-- No CPU source concatenation, import expansion, alias expansion, generic
-  substitution, semantic precheck, path lookup, or declaration visibility logic.
+- No CPU source concatenation, semantic import expansion, alias expansion,
+  generic substitution, semantic precheck, declaration lookup, or declaration
+  visibility logic.
 - CPU file/path handling is limited to reading explicitly supplied source-pack
-  files and uploading byte buffers plus file-span metadata. Module identity and
-  import identity are computed from GPU-parsed declarations and import items.
+  files or `--source-root`/`--stdlib-root` candidate files and uploading byte buffers plus
+  file-span metadata. Module identity and import identity are computed from
+  GPU-parsed declarations and import items.
 - Do not accept a feature by rewriting source into old flat `lstd_` names.
 - Do not make string imports perform host-side includes. Reject them until they
   resolve to an already-uploaded source-pack file through GPU-visible metadata.

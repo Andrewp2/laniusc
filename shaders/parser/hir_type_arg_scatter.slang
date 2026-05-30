@@ -41,6 +41,11 @@ bool valid_node(uint node)
     return node != INVALID && node < active_node_count();
 }
 
+bool valid_type_node(uint node)
+{
+    return valid_node(node) && hir_kind[node] == HIR_TYPE;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -50,13 +55,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint owner = hir_type_arg_owner_a[node];
-    if (!valid_node(owner))
+    if (!valid_type_node(owner))
         return;
 
     uint ordinal = hir_type_arg_rank_a[node];
     uint previous = hir_type_arg_previous[node];
     atomic_u32_min(hir_type_arg_start, owner, node);
     atomic_u32_max(hir_type_arg_count, owner, ordinal + 1u);
-    if (valid_node(previous))
+    if (valid_type_node(previous))
         hir_type_arg_next[previous] = node;
 }

@@ -3,18 +3,21 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use super::{ExplicitSourcePathFile, SourcePackShardSourceFile};
-use crate::codegen::unit::{
-    CodegenUnit,
-    CodegenUnitLimits,
-    DEFAULT_CODEGEN_UNIT_MAX_SOURCE_FILES,
-    FrontendUnit,
-    LibraryUnit,
-    SourcePackArtifactRef,
-    SourcePackArtifactTarget,
-    SourcePackJob,
-    SourcePackJobBatchLimits,
-    SourcePackJobIndexRange,
-    SourcePackJobPhase,
+use crate::{
+    codegen::unit::{
+        CodegenUnit,
+        CodegenUnitLimits,
+        DEFAULT_CODEGEN_UNIT_MAX_SOURCE_FILES,
+        FrontendUnit,
+        LibraryUnit,
+        SourcePackArtifactRef,
+        SourcePackArtifactTarget,
+        SourcePackJob,
+        SourcePackJobBatchLimits,
+        SourcePackJobIndexRange,
+        SourcePackJobPhase,
+    },
+    compiler::GPU_SOURCE_PACK_RUNTIME_ABI_VERSION,
 };
 
 pub const SOURCE_PACK_LIBRARY_PARTITION_INDEX_VERSION: u32 = 1;
@@ -374,6 +377,166 @@ pub struct SourcePackHierarchicalLinkExecutionIndex {
     pub final_output_key: String,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum SourcePackLinkRecordDomain {
+    Interface,
+    Object,
+    LinkedOutput,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum SourcePackLinkRecordKind {
+    Section,
+    Symbol,
+    UnresolvedSymbol,
+    Relocation,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourcePackLinkRecordContract {
+    pub domain: SourcePackLinkRecordDomain,
+    pub kind: SourcePackLinkRecordKind,
+    pub record_count: usize,
+}
+
+impl SourcePackLinkRecordContract {
+    pub fn new(
+        domain: SourcePackLinkRecordDomain,
+        kind: SourcePackLinkRecordKind,
+        record_count: usize,
+    ) -> Self {
+        Self {
+            domain,
+            kind,
+            record_count,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourcePackLinkDescriptorSummary {
+    #[serde(default)]
+    pub interface_symbol_count: usize,
+    #[serde(default)]
+    pub object_section_count: usize,
+    #[serde(default)]
+    pub object_symbol_count: usize,
+    #[serde(default)]
+    pub unresolved_symbol_count: usize,
+    #[serde(default)]
+    pub relocation_count: usize,
+    #[serde(default)]
+    pub export_symbol_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub required_runtime_abi_version: Option<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub required_runtime_service_ids: Vec<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub record_contracts: Vec<SourcePackLinkRecordContract>,
+}
+
+impl SourcePackLinkDescriptorSummary {
+    pub fn total_symbol_count(&self) -> Option<usize> {
+        self.interface_symbol_count
+            .checked_add(self.object_symbol_count)?
+            .checked_add(self.export_symbol_count)
+    }
+
+    pub fn total_descriptor_record_count(&self) -> Option<usize> {
+        self.total_symbol_count()?
+            .checked_add(self.object_section_count)?
+            .checked_add(self.unresolved_symbol_count)?
+            .checked_add(self.relocation_count)
+    }
+
+    pub fn set_required_runtime_services<I>(&mut self, service_ids: I)
+    where
+        I: IntoIterator<Item = u32>,
+    {
+        self.required_runtime_service_ids = service_ids.into_iter().collect();
+        self.required_runtime_service_ids.sort_unstable();
+        self.required_runtime_service_ids.dedup();
+        self.required_runtime_abi_version = if self.required_runtime_service_ids.is_empty() {
+            None
+        } else {
+            Some(GPU_SOURCE_PACK_RUNTIME_ABI_VERSION)
+        };
+    }
+
+    pub fn sync_record_contracts_from_counts(&mut self) {
+        self.record_contracts = self.record_contracts_from_counts();
+    }
+
+    pub fn with_record_contracts_from_counts(mut self) -> Self {
+        self.sync_record_contracts_from_counts();
+        self
+    }
+
+    pub fn record_contracts_from_counts(&self) -> Vec<SourcePackLinkRecordContract> {
+        let mut contracts = Vec::new();
+        push_link_record_contract(
+            &mut contracts,
+            SourcePackLinkRecordDomain::Interface,
+            SourcePackLinkRecordKind::Symbol,
+            self.interface_symbol_count,
+        );
+        push_link_record_contract(
+            &mut contracts,
+            SourcePackLinkRecordDomain::Object,
+            SourcePackLinkRecordKind::Section,
+            self.object_section_count,
+        );
+        push_link_record_contract(
+            &mut contracts,
+            SourcePackLinkRecordDomain::Object,
+            SourcePackLinkRecordKind::Symbol,
+            self.object_symbol_count,
+        );
+        push_link_record_contract(
+            &mut contracts,
+            SourcePackLinkRecordDomain::Object,
+            SourcePackLinkRecordKind::UnresolvedSymbol,
+            self.unresolved_symbol_count,
+        );
+        push_link_record_contract(
+            &mut contracts,
+            SourcePackLinkRecordDomain::Object,
+            SourcePackLinkRecordKind::Relocation,
+            self.relocation_count,
+        );
+        push_link_record_contract(
+            &mut contracts,
+            SourcePackLinkRecordDomain::LinkedOutput,
+            SourcePackLinkRecordKind::Symbol,
+            self.export_symbol_count,
+        );
+        contracts
+    }
+
+    pub fn with_required_runtime_services<I>(mut self, service_ids: I) -> Self
+    where
+        I: IntoIterator<Item = u32>,
+    {
+        self.set_required_runtime_services(service_ids);
+        self
+    }
+}
+
+fn push_link_record_contract(
+    contracts: &mut Vec<SourcePackLinkRecordContract>,
+    domain: SourcePackLinkRecordDomain,
+    kind: SourcePackLinkRecordKind,
+    record_count: usize,
+) {
+    if record_count != 0 {
+        contracts.push(SourcePackLinkRecordContract::new(
+            domain,
+            kind,
+            record_count,
+        ));
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourcePackHierarchicalLinkExecutionPage {
     pub version: u32,
@@ -405,6 +568,8 @@ pub struct SourcePackHierarchicalLinkExecutionPage {
     pub source_line_count: usize,
     pub output_key: String,
     pub final_output: bool,
+    #[serde(default)]
+    pub descriptor_summary: SourcePackLinkDescriptorSummary,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

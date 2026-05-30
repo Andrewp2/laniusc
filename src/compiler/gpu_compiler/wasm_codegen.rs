@@ -1,18 +1,21 @@
 // src/compiler/gpu_compiler/wasm_codegen.rs
 
-use super::*;
+use super::{typecheck::type_check_error_to_compile_error_for_source, *};
 
 impl<'gpu> GpuCompiler<'gpu> {
     pub async fn compile_source_to_wasm(&self, src: &str) -> Result<Vec<u8>, CompileError> {
         let src = prepare_source_for_gpu(src)?;
-        self.compile_expanded_source_to_wasm(&src).await
+        self.compile_expanded_source_to_wasm_with_diagnostic_path(&src, PathBuf::from("<source>"))
+            .await
     }
     pub async fn compile_source_to_wasm_from_path(
         &self,
         path: impl AsRef<Path>,
     ) -> Result<Vec<u8>, CompileError> {
+        let path = path.as_ref();
         let src = prepare_source_for_gpu_from_path(path)?;
-        self.compile_expanded_source_to_wasm(&src).await
+        self.compile_expanded_source_to_wasm_with_diagnostic_path(&src, path.to_path_buf())
+            .await
     }
     pub async fn compile_source_pack_to_wasm<S: AsRef<str>>(
         &self,
@@ -22,6 +25,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             "compile source pack to WASM",
             sources,
         )?;
+        let diagnostic_files = source_pack_diagnostic_files(sources, None);
         let _resident_guard = self.resident_pipeline_lock.lock().await;
         trace_wasm_compile("source_pack.compile.start");
         self.lexer
@@ -100,7 +104,23 @@ impl<'gpu> GpuCompiler<'gpu> {
                                             fn_return_type_node: &parse_bufs
                                                 .hir_fn_return_type_node,
                                             param_record: &parse_bufs.hir_param_record,
+                                            param_type_node: &parse_bufs.hir_param_type_node,
+                                            method_owner_node: &parse_bufs.hir_method_owner_node,
+                                            method_impl_node: &parse_bufs.hir_method_impl_node,
+                                            method_name_token: &parse_bufs.hir_method_name_token,
+                                            method_first_param_token: &parse_bufs
+                                                .hir_method_first_param_token,
+                                            method_receiver_mode: &parse_bufs
+                                                .hir_method_receiver_mode,
+                                            method_visibility: &parse_bufs.hir_method_visibility,
+                                            method_signature_flags: &parse_bufs
+                                                .hir_method_signature_flags,
+                                            method_impl_receiver_type_node: &parse_bufs
+                                                .hir_method_impl_receiver_type_node,
                                             expr_record: &parse_bufs.hir_expr_record,
+                                            expr_result_node: &parse_bufs.hir_expr_result_node,
+                                            expr_result_root_node: &parse_bufs
+                                                .hir_expr_result_root_node,
                                             expr_int_value: &parse_bufs.hir_expr_int_value,
                                             member_receiver_node: &parse_bufs
                                                 .hir_member_receiver_node,
@@ -108,10 +128,15 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 .hir_member_receiver_token,
                                             member_name_token: &parse_bufs.hir_member_name_token,
                                             stmt_record: &parse_bufs.hir_stmt_record,
+                                            stmt_scope_end: &parse_bufs.hir_stmt_scope_end,
                                             array_lit_first_element: &parse_bufs
                                                 .hir_array_lit_first_element,
                                             array_lit_element_count: &parse_bufs
                                                 .hir_array_lit_element_count,
+                                            array_lit_context_stmt_node: &parse_bufs
+                                                .hir_array_lit_context_stmt_node,
+                                            array_element_parent_lit: &parse_bufs
+                                                .hir_array_element_parent_lit,
                                             array_element_next: &parse_bufs.hir_array_element_next,
                                             namespace: &parse_bufs.hir_item_namespace,
                                             visibility: &parse_bufs.hir_item_visibility,
@@ -121,6 +146,8 @@ impl<'gpu> GpuCompiler<'gpu> {
                                             import_target_kind: &parse_bufs
                                                 .hir_item_import_target_kind,
                                             call_callee_node: &parse_bufs.hir_call_callee_node,
+                                            call_context_stmt_node: &parse_bufs
+                                                .hir_call_context_stmt_node,
                                             call_arg_start: &parse_bufs.hir_call_arg_start,
                                             call_arg_end: &parse_bufs.hir_call_arg_end,
                                             call_arg_count: &parse_bufs.hir_call_arg_count,
@@ -133,6 +160,8 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 .hir_variant_payload_start,
                                             variant_payload_count: &parse_bufs
                                                 .hir_variant_payload_count,
+                                            variant_payload_node: &parse_bufs
+                                                .hir_variant_payload_node,
                                             match_scrutinee_node: &parse_bufs
                                                 .hir_match_scrutinee_node,
                                             match_arm_start: &parse_bufs.hir_match_arm_start,
@@ -164,6 +193,8 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 .hir_struct_decl_field_count,
                                             struct_lit_head_node: &parse_bufs
                                                 .hir_struct_lit_head_node,
+                                            struct_lit_context_stmt_node: &parse_bufs
+                                                .hir_struct_lit_context_stmt_node,
                                             struct_lit_field_start: &parse_bufs
                                                 .hir_struct_lit_field_start,
                                             struct_lit_field_count: &parse_bufs
@@ -208,6 +239,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 codegen.visible_decl,
                                                 codegen.visible_type,
                                                 codegen.name_id_by_token,
+                                                codegen.enclosing_fn,
                                                 wasm::GpuWasmStructMetadataBuffers {
                                                     field_parent_struct: &parse_bufs
                                                         .hir_struct_field_parent_struct,
@@ -225,6 +257,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                         .hir_match_arm_start,
                                                     match_arm_count: &parse_bufs
                                                         .hir_match_arm_count,
+                                                    match_arm_next: &parse_bufs.hir_match_arm_next,
                                                     match_arm_pattern_node: &parse_bufs
                                                         .hir_match_arm_pattern_node,
                                                     match_arm_payload_start: &parse_bufs
@@ -236,6 +269,8 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 },
                                                 wasm::GpuWasmCallMetadataBuffers {
                                                     callee_node: &parse_bufs.hir_call_callee_node,
+                                                    context_stmt: &parse_bufs
+                                                        .hir_call_context_stmt_node,
                                                     arg_start: &parse_bufs.hir_call_arg_start,
                                                     arg_parent_call: &parse_bufs
                                                         .hir_call_arg_parent_call,
@@ -245,8 +280,16 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 },
                                                 wasm::GpuWasmExprMetadataBuffers {
                                                     record: &parse_bufs.hir_expr_record,
+                                                    result_root_node: &parse_bufs
+                                                        .hir_expr_result_root_node,
                                                     int_value: &parse_bufs.hir_expr_int_value,
                                                     stmt_record: &parse_bufs.hir_stmt_record,
+                                                    nearest_stmt_node: &parse_bufs
+                                                        .hir_nearest_stmt_node,
+                                                    nearest_block_node: &parse_bufs
+                                                        .hir_nearest_block_node,
+                                                    nearest_enclosing_control_node: &parse_bufs
+                                                        .hir_nearest_enclosing_control_node,
                                                 },
                                                 &parse_bufs.hir_param_record,
                                                 codegen.type_expr_ref_tag,
@@ -290,18 +333,21 @@ impl<'gpu> GpuCompiler<'gpu> {
                                         )
                                     })??;
                                 trace_wasm_compile("source_pack.wasm.recorded");
-                                Ok::<_, CompileError>((recorded, wasm_check))
+                                let wasm_diagnostics = WasmDiagnosticBuffers {
+                                    tokens_out: bufs.tokens_out.buffer.clone(),
+                                };
+                                Ok::<_, CompileError>((recorded, wasm_check, wasm_diagnostics))
                             },
                         )
                         .map_err(|err| CompileError::GpuSyntax(err.to_string()))?;
                     trace_wasm_compile("source_pack.parser.typecheck.recorded");
-                    let (type_check, wasm_check) = type_check?;
+                    let (type_check, wasm_check, wasm_diagnostics) = type_check?;
                     if let Some(timer) = timer.as_deref_mut() {
                         timer.stamp(encoder, "wasm.codegen.done");
                     }
-                    Ok((parser_check, type_check, wasm_check))
+                    Ok((parser_check, type_check, wasm_check, wasm_diagnostics))
                 },
-                |device, queue, (parser_check, type_check, wasm_check)| {
+                |device, queue, (parser_check, type_check, wasm_check, wasm_diagnostics)| {
                     trace_wasm_compile("source_pack.finish.parser.start");
                     self.parser
                         .finish_recorded_resident_ll1_hir_check(&parser_check)
@@ -313,7 +359,15 @@ impl<'gpu> GpuCompiler<'gpu> {
                     trace_wasm_compile("source_pack.finish.wasm.start");
                     self.wasm_generator()?
                         .finish_recorded_wasm(device, queue, &wasm_check)
-                        .map_err(|err| CompileError::GpuCodegen(err.to_string()))
+                        .map_err(|err| {
+                            wasm_codegen_error_to_compile_error_for_source_pack(
+                                device,
+                                queue,
+                                &wasm_diagnostics.tokens_out,
+                                &diagnostic_files,
+                                &err,
+                            )
+                        })
                 },
             )
             .await
@@ -329,6 +383,21 @@ impl<'gpu> GpuCompiler<'gpu> {
         &self,
         src: &str,
     ) -> Result<Vec<u8>, CompileError> {
+        self.compile_expanded_source_to_wasm_with_diagnostic_path(src, PathBuf::from("<source>"))
+            .await
+    }
+
+    async fn compile_expanded_source_to_wasm_with_diagnostic_path(
+        &self,
+        src: &str,
+        diagnostic_path: PathBuf,
+    ) -> Result<Vec<u8>, CompileError> {
+        // The current WASM recorder batches backend passes behind type checking.
+        // Preflight keeps expected user type errors from executing backend codegen
+        // until this path is split into staged GPU submissions like x86.
+        self.type_check_expanded_source_with_diagnostic_path(src, diagnostic_path.clone())
+            .await?;
+
         let _resident_guard = self.resident_pipeline_lock.lock().await;
         trace_wasm_compile("compile.start");
         self.lexer
@@ -407,7 +476,23 @@ impl<'gpu> GpuCompiler<'gpu> {
                                             fn_return_type_node: &parse_bufs
                                                 .hir_fn_return_type_node,
                                             param_record: &parse_bufs.hir_param_record,
+                                            param_type_node: &parse_bufs.hir_param_type_node,
+                                            method_owner_node: &parse_bufs.hir_method_owner_node,
+                                            method_impl_node: &parse_bufs.hir_method_impl_node,
+                                            method_name_token: &parse_bufs.hir_method_name_token,
+                                            method_first_param_token: &parse_bufs
+                                                .hir_method_first_param_token,
+                                            method_receiver_mode: &parse_bufs
+                                                .hir_method_receiver_mode,
+                                            method_visibility: &parse_bufs.hir_method_visibility,
+                                            method_signature_flags: &parse_bufs
+                                                .hir_method_signature_flags,
+                                            method_impl_receiver_type_node: &parse_bufs
+                                                .hir_method_impl_receiver_type_node,
                                             expr_record: &parse_bufs.hir_expr_record,
+                                            expr_result_node: &parse_bufs.hir_expr_result_node,
+                                            expr_result_root_node: &parse_bufs
+                                                .hir_expr_result_root_node,
                                             expr_int_value: &parse_bufs.hir_expr_int_value,
                                             member_receiver_node: &parse_bufs
                                                 .hir_member_receiver_node,
@@ -415,10 +500,15 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 .hir_member_receiver_token,
                                             member_name_token: &parse_bufs.hir_member_name_token,
                                             stmt_record: &parse_bufs.hir_stmt_record,
+                                            stmt_scope_end: &parse_bufs.hir_stmt_scope_end,
                                             array_lit_first_element: &parse_bufs
                                                 .hir_array_lit_first_element,
                                             array_lit_element_count: &parse_bufs
                                                 .hir_array_lit_element_count,
+                                            array_lit_context_stmt_node: &parse_bufs
+                                                .hir_array_lit_context_stmt_node,
+                                            array_element_parent_lit: &parse_bufs
+                                                .hir_array_element_parent_lit,
                                             array_element_next: &parse_bufs.hir_array_element_next,
                                             namespace: &parse_bufs.hir_item_namespace,
                                             visibility: &parse_bufs.hir_item_visibility,
@@ -428,6 +518,8 @@ impl<'gpu> GpuCompiler<'gpu> {
                                             import_target_kind: &parse_bufs
                                                 .hir_item_import_target_kind,
                                             call_callee_node: &parse_bufs.hir_call_callee_node,
+                                            call_context_stmt_node: &parse_bufs
+                                                .hir_call_context_stmt_node,
                                             call_arg_start: &parse_bufs.hir_call_arg_start,
                                             call_arg_end: &parse_bufs.hir_call_arg_end,
                                             call_arg_count: &parse_bufs.hir_call_arg_count,
@@ -440,6 +532,8 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 .hir_variant_payload_start,
                                             variant_payload_count: &parse_bufs
                                                 .hir_variant_payload_count,
+                                            variant_payload_node: &parse_bufs
+                                                .hir_variant_payload_node,
                                             match_scrutinee_node: &parse_bufs
                                                 .hir_match_scrutinee_node,
                                             match_arm_start: &parse_bufs.hir_match_arm_start,
@@ -471,6 +565,8 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 .hir_struct_decl_field_count,
                                             struct_lit_head_node: &parse_bufs
                                                 .hir_struct_lit_head_node,
+                                            struct_lit_context_stmt_node: &parse_bufs
+                                                .hir_struct_lit_context_stmt_node,
                                             struct_lit_field_start: &parse_bufs
                                                 .hir_struct_lit_field_start,
                                             struct_lit_field_count: &parse_bufs
@@ -515,6 +611,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 codegen.visible_decl,
                                                 codegen.visible_type,
                                                 codegen.name_id_by_token,
+                                                codegen.enclosing_fn,
                                                 wasm::GpuWasmStructMetadataBuffers {
                                                     field_parent_struct: &parse_bufs
                                                         .hir_struct_field_parent_struct,
@@ -532,6 +629,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                         .hir_match_arm_start,
                                                     match_arm_count: &parse_bufs
                                                         .hir_match_arm_count,
+                                                    match_arm_next: &parse_bufs.hir_match_arm_next,
                                                     match_arm_pattern_node: &parse_bufs
                                                         .hir_match_arm_pattern_node,
                                                     match_arm_payload_start: &parse_bufs
@@ -543,6 +641,8 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 },
                                                 wasm::GpuWasmCallMetadataBuffers {
                                                     callee_node: &parse_bufs.hir_call_callee_node,
+                                                    context_stmt: &parse_bufs
+                                                        .hir_call_context_stmt_node,
                                                     arg_start: &parse_bufs.hir_call_arg_start,
                                                     arg_parent_call: &parse_bufs
                                                         .hir_call_arg_parent_call,
@@ -552,8 +652,16 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 },
                                                 wasm::GpuWasmExprMetadataBuffers {
                                                     record: &parse_bufs.hir_expr_record,
+                                                    result_root_node: &parse_bufs
+                                                        .hir_expr_result_root_node,
                                                     int_value: &parse_bufs.hir_expr_int_value,
                                                     stmt_record: &parse_bufs.hir_stmt_record,
+                                                    nearest_stmt_node: &parse_bufs
+                                                        .hir_nearest_stmt_node,
+                                                    nearest_block_node: &parse_bufs
+                                                        .hir_nearest_block_node,
+                                                    nearest_enclosing_control_node: &parse_bufs
+                                                        .hir_nearest_enclosing_control_node,
                                                 },
                                                 &parse_bufs.hir_param_record,
                                                 codegen.type_expr_ref_tag,
@@ -616,11 +724,29 @@ impl<'gpu> GpuCompiler<'gpu> {
                     trace_wasm_compile("finish.typecheck.start");
                     self.type_checker
                         .finish_recorded_check(device, &type_check)
-                        .map_err(|err| CompileError::GpuTypeCheck(err.to_string()))?;
+                        .map_err(|err| {
+                            type_check_error_to_compile_error_for_source(
+                                device,
+                                queue,
+                                _bufs,
+                                src,
+                                &diagnostic_path,
+                                err,
+                            )
+                        })?;
                     trace_wasm_compile("finish.wasm.start");
                     self.wasm_generator()?
                         .finish_recorded_wasm(device, queue, &wasm_check)
-                        .map_err(|err| CompileError::GpuCodegen(err.to_string()))
+                        .map_err(|err| {
+                            wasm_codegen_error_to_compile_error_for_source(
+                                device,
+                                queue,
+                                &_bufs.tokens_out.buffer,
+                                src,
+                                &diagnostic_path,
+                                &err,
+                            )
+                        })
                 },
             )
             .await
@@ -632,4 +758,130 @@ impl<'gpu> GpuCompiler<'gpu> {
             CompileError::GpuCodegen(format!("initialize GPU WASM code generator: {err}"))
         })
     }
+}
+
+struct WasmDiagnosticBuffers {
+    tokens_out: wgpu::Buffer,
+}
+
+fn wasm_codegen_error_to_compile_error_for_source(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    token_buffer: &wgpu::Buffer,
+    src: &str,
+    diagnostic_path: &Path,
+    err: &anyhow::Error,
+) -> CompileError {
+    let Some(wasm_err) = err.downcast_ref::<wasm::WasmOutputError>() else {
+        return CompileError::GpuCodegen(err.to_string());
+    };
+
+    let label =
+        wasm_error_label_for_source(device, queue, token_buffer, src, diagnostic_path, wasm_err);
+    CompileError::Diagnostic(wasm_backend_boundary_diagnostic(wasm_err).with_primary_label(label))
+}
+
+fn wasm_error_label_for_source(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    token_buffer: &wgpu::Buffer,
+    src: &str,
+    diagnostic_path: &Path,
+    wasm_err: &wasm::WasmOutputError,
+) -> DiagnosticLabel {
+    if wasm_err.detail_is_token() {
+        if let Ok(token) =
+            read_single_token_from_buffer(device, queue, token_buffer, wasm_err.error_detail())
+        {
+            return diagnostic_label_from_source_span(
+                diagnostic_path,
+                src,
+                token.start,
+                token.len,
+                "not supported by the WASM backend yet",
+            );
+        }
+    }
+
+    diagnostic_label_from_source_span(
+        diagnostic_path,
+        src,
+        first_nonempty_label_start(src),
+        first_label_len(src),
+        "not supported by the WASM backend yet",
+    )
+}
+
+fn wasm_codegen_error_to_compile_error_for_source_pack(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    token_buffer: &wgpu::Buffer,
+    diagnostic_files: &[DiagnosticSourceFile],
+    err: &anyhow::Error,
+) -> CompileError {
+    let Some(wasm_err) = err.downcast_ref::<wasm::WasmOutputError>() else {
+        return CompileError::GpuCodegen(err.to_string());
+    };
+    let Some(file) = diagnostic_files.first() else {
+        return CompileError::GpuCodegen(err.to_string());
+    };
+
+    let label = if wasm_err.detail_is_token() {
+        read_single_token_from_buffer(device, queue, token_buffer, wasm_err.error_detail())
+            .ok()
+            .and_then(|token| {
+                source_pack_file_for_global_span(diagnostic_files, token.start).map(|file| {
+                    diagnostic_label_from_source_span(
+                        &file.path,
+                        &file.source,
+                        file.local_start_for_global(token.start),
+                        token.len,
+                        "not supported by the WASM backend yet",
+                    )
+                })
+            })
+            .unwrap_or_else(|| {
+                diagnostic_label_from_source_span(
+                    &file.path,
+                    &file.source,
+                    first_nonempty_label_start(&file.source),
+                    first_label_len(&file.source),
+                    "not supported by the WASM backend yet",
+                )
+            })
+    } else {
+        diagnostic_label_from_source_span(
+            &file.path,
+            &file.source,
+            first_nonempty_label_start(&file.source),
+            first_label_len(&file.source),
+            "not supported by the WASM backend yet",
+        )
+    };
+
+    CompileError::Diagnostic(wasm_backend_boundary_diagnostic(wasm_err).with_primary_label(label))
+}
+
+fn wasm_backend_boundary_diagnostic(wasm_err: &wasm::WasmOutputError) -> Diagnostic {
+    Diagnostic::error("LNC0036", wasm_err.error_name()).with_note(format!(
+        "WASM backend error code {} detail {}",
+        wasm_err.error_code(),
+        wasm_err.error_detail()
+    ))
+}
+
+fn first_label_len(source: &str) -> usize {
+    source[first_nonempty_label_start(source)..]
+        .chars()
+        .next()
+        .map(char::len_utf8)
+        .unwrap_or(0)
+}
+
+fn first_nonempty_label_start(source: &str) -> usize {
+    source
+        .char_indices()
+        .find(|(_, ch)| !ch.is_whitespace())
+        .map(|(index, _)| index)
+        .unwrap_or(0)
 }

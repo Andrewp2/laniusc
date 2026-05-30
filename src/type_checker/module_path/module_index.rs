@@ -27,6 +27,13 @@ pub(in crate::type_checker) struct ModuleIndex {
     pub(in crate::type_checker) validate_modules: wgpu::BindGroup,
     pub(in crate::type_checker) scatter_import_records: wgpu::BindGroup,
     pub(in crate::type_checker) resolve_imports: wgpu::BindGroup,
+    pub(in crate::type_checker) seed_import_edge_key_order: wgpu::BindGroup,
+    pub(in crate::type_checker) import_edge_key_radix_dispatch: wgpu::BindGroup,
+    pub(in crate::type_checker) sort_import_edge_key_histogram: Vec<wgpu::BindGroup>,
+    pub(in crate::type_checker) sort_import_edge_key_bucket_prefix: Vec<wgpu::BindGroup>,
+    pub(in crate::type_checker) sort_import_edge_key_bucket_bases: Vec<wgpu::BindGroup>,
+    pub(in crate::type_checker) sort_import_edge_key_scatter: Vec<wgpu::BindGroup>,
+    pub(in crate::type_checker) validate_import_cycles: wgpu::BindGroup,
     pub(in crate::type_checker) retained_key_params: Vec<ModuleKeyRadixStep>,
 }
 
@@ -404,6 +411,18 @@ pub(in crate::type_checker) fn create_module_index(
             ("import_kind", buffers.import_kind.as_entire_binding()),
             ("import_path_id", buffers.import_path_id.as_entire_binding()),
             (
+                "import_module_id",
+                buffers.import_module_id.as_entire_binding(),
+            ),
+            (
+                "import_owner_hir",
+                buffers.import_owner_hir.as_entire_binding(),
+            ),
+            (
+                "hir_token_pos",
+                inputs.hir_token_pos_buf.as_entire_binding(),
+            ),
+            (
                 "path_segment_count",
                 buffers.path_segment_count.as_entire_binding(),
             ),
@@ -448,8 +467,202 @@ pub(in crate::type_checker) fn create_module_index(
         ],
     )?;
 
+    let import_edge_key_radix_params = uniform_from_val(
+        device,
+        "type_check.modules.import_edge_key_radix.dispatch_params",
+        &ModuleKeyRadixParams {
+            module_capacity: layout.import_record_capacity_u32,
+            reserved: 0,
+            n_blocks: layout.record_n_blocks,
+            key_step: 0,
+        },
+    );
+    let import_edge_key_radix_dispatch = create_radix_dispatch(
+        device,
+        &passes.names_radix_dispatch_args,
+        "type_check.modules.import_edge_key_radix_dispatch",
+        &import_edge_key_radix_params,
+        &buffers.import_count_out,
+        &buffers.import_edge_key_radix_dispatch_args,
+    )?;
+
+    let seed_import_edge_key_order = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_modules_05e_seed_import_edge_key_order"),
+        &passes.modules_seed_import_edge_key_order,
+        0,
+        &[
+            ("gParams", resolve_import_params.as_entire_binding()),
+            (
+                "import_count_out",
+                buffers.import_count_out.as_entire_binding(),
+            ),
+            (
+                "import_edge_key_order",
+                buffers.import_edge_key_order.as_entire_binding(),
+            ),
+            (
+                "import_edge_key_order_tmp",
+                buffers.import_edge_key_order_tmp.as_entire_binding(),
+            ),
+        ],
+    )?;
+
+    let mut sort_import_edge_key_histogram =
+        Vec::with_capacity(IMPORT_EDGE_KEY_RADIX_STEPS as usize);
+    let mut sort_import_edge_key_bucket_prefix =
+        Vec::with_capacity(IMPORT_EDGE_KEY_RADIX_STEPS as usize);
+    let mut sort_import_edge_key_bucket_bases =
+        Vec::with_capacity(IMPORT_EDGE_KEY_RADIX_STEPS as usize);
+    let mut sort_import_edge_key_scatter = Vec::with_capacity(IMPORT_EDGE_KEY_RADIX_STEPS as usize);
+    for key_step in 0..IMPORT_EDGE_KEY_RADIX_STEPS {
+        let step_params = uniform_from_val(
+            device,
+            &format!("type_check.modules.import_edge_key_radix.params.{key_step}"),
+            &ModuleKeyRadixParams {
+                module_capacity: layout.import_record_capacity_u32,
+                reserved: 0,
+                n_blocks: layout.record_n_blocks,
+                key_step,
+            },
+        );
+        let read_order = if key_step % 2 == 0 {
+            &buffers.import_edge_key_order
+        } else {
+            &buffers.import_edge_key_order_tmp
+        };
+        let write_order = if key_step % 2 == 0 {
+            &buffers.import_edge_key_order_tmp
+        } else {
+            &buffers.import_edge_key_order
+        };
+
+        sort_import_edge_key_histogram.push(bind_group::create_bind_group_from_bindings(
+            device,
+            Some("type_check_modules_05f_sort_import_edges"),
+            &passes.modules_sort_import_edges,
+            0,
+            &[
+                ("gParams", step_params.as_entire_binding()),
+                (
+                    "import_count_out",
+                    buffers.import_count_out.as_entire_binding(),
+                ),
+                (
+                    "import_module_id",
+                    buffers.import_module_id.as_entire_binding(),
+                ),
+                (
+                    "import_target_module_id",
+                    buffers.import_target_module_id.as_entire_binding(),
+                ),
+                ("import_status", buffers.import_status.as_entire_binding()),
+                ("import_edge_key_order_in", read_order.as_entire_binding()),
+                (
+                    "radix_block_histogram",
+                    buffers.decl_key_radix_block_histogram.as_entire_binding(),
+                ),
+            ],
+        )?);
+
+        sort_import_edge_key_bucket_prefix.push(create_radix_bucket_prefix(
+            device,
+            &passes.names_radix_bucket_prefix,
+            "type_check_modules.import_edge_key_radix_bucket_prefix",
+            &step_params,
+            &buffers.import_count_out,
+            &buffers.decl_key_radix_block_histogram,
+            &buffers.decl_key_radix_block_bucket_prefix,
+            &buffers.decl_key_radix_bucket_total,
+        )?);
+
+        sort_import_edge_key_bucket_bases.push(create_radix_bucket_bases(
+            device,
+            &passes.names_radix_bucket_bases,
+            "type_check_modules.import_edge_key_radix_bucket_bases",
+            &step_params,
+            &buffers.decl_key_radix_bucket_total,
+            &buffers.decl_key_radix_bucket_base,
+        )?);
+
+        sort_import_edge_key_scatter.push(bind_group::create_bind_group_from_bindings(
+            device,
+            Some("type_check_modules_05g_sort_import_edges_scatter"),
+            &passes.modules_sort_import_edges_scatter,
+            0,
+            &[
+                ("gParams", step_params.as_entire_binding()),
+                (
+                    "import_count_out",
+                    buffers.import_count_out.as_entire_binding(),
+                ),
+                (
+                    "import_module_id",
+                    buffers.import_module_id.as_entire_binding(),
+                ),
+                (
+                    "import_target_module_id",
+                    buffers.import_target_module_id.as_entire_binding(),
+                ),
+                ("import_status", buffers.import_status.as_entire_binding()),
+                ("import_edge_key_order_in", read_order.as_entire_binding()),
+                (
+                    "radix_bucket_base",
+                    buffers.decl_key_radix_bucket_base.as_entire_binding(),
+                ),
+                (
+                    "radix_block_bucket_prefix",
+                    buffers
+                        .decl_key_radix_block_bucket_prefix
+                        .as_entire_binding(),
+                ),
+                ("import_edge_key_order_out", write_order.as_entire_binding()),
+            ],
+        )?);
+
+        retained_key_params.push(ModuleKeyRadixStep {
+            _params: step_params,
+        });
+    }
+
+    let validate_import_cycles = bind_group::create_bind_group_from_bindings(
+        device,
+        Some("type_check_modules_05h_validate_import_cycles"),
+        &passes.modules_validate_import_cycles,
+        0,
+        &[
+            ("gParams", resolve_import_params.as_entire_binding()),
+            (
+                "import_count_out",
+                buffers.import_count_out.as_entire_binding(),
+            ),
+            (
+                "import_module_id",
+                buffers.import_module_id.as_entire_binding(),
+            ),
+            (
+                "import_target_module_id",
+                buffers.import_target_module_id.as_entire_binding(),
+            ),
+            ("import_path_id", buffers.import_path_id.as_entire_binding()),
+            (
+                "path_owner_token",
+                buffers.path_owner_token.as_entire_binding(),
+            ),
+            (
+                "import_edge_key_order",
+                buffers.import_edge_key_order.as_entire_binding(),
+            ),
+            ("status", inputs.status_buf.as_entire_binding()),
+            ("import_status", buffers.import_status.as_entire_binding()),
+        ],
+    )?;
+
     retained_key_params.push(ModuleKeyRadixStep {
         _params: resolve_import_params,
+    });
+    retained_key_params.push(ModuleKeyRadixStep {
+        _params: import_edge_key_radix_params,
     });
     retained_key_params.push(ModuleKeyRadixStep {
         _params: module_record_params,
@@ -472,6 +685,13 @@ pub(in crate::type_checker) fn create_module_index(
         validate_modules,
         scatter_import_records,
         resolve_imports,
+        seed_import_edge_key_order,
+        import_edge_key_radix_dispatch,
+        sort_import_edge_key_histogram,
+        sort_import_edge_key_bucket_prefix,
+        sort_import_edge_key_bucket_bases,
+        sort_import_edge_key_scatter,
+        validate_import_cycles,
         retained_key_params,
     })
 }

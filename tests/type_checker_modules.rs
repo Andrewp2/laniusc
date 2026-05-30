@@ -1,10 +1,23 @@
 mod common;
 
-use laniusc::compiler::CompileError;
+use laniusc::compiler::{
+    CompileError,
+    EntrySourceRoots,
+    load_entry_path_manifest_with_source_root,
+    load_entry_path_manifest_with_source_root_and_stdlib,
+    load_entry_path_manifest_with_stdlib,
+    load_entry_with_source_root,
+    load_entry_with_source_roots,
+    load_entry_with_stdlib,
+    type_check_entry_with_source_root,
+    type_check_entry_with_source_roots,
+    type_check_entry_with_stdlib,
+};
 
 fn assert_gpu_type_check_rejects(src: &str) {
     match common::type_check_source_with_timeout(src) {
         Ok(()) => panic!("source should fail GPU type checking:\n{src}"),
+        Err(CompileError::Diagnostic(_)) => {}
         Err(CompileError::GpuTypeCheck(_)) => {}
         Err(other) => panic!("expected GPU type check error, got {other:?}"),
     }
@@ -21,6 +34,7 @@ fn assert_gpu_type_check_pack_rejects(sources: &[&str]) {
             "source pack should fail GPU type checking:\n{}",
             sources.join("\n--- source split ---\n")
         ),
+        Err(CompileError::Diagnostic(_)) => {}
         Err(CompileError::GpuTypeCheck(_)) => {}
         Err(other) => panic!("expected GPU type check error, got {other:?}"),
     }
@@ -43,6 +57,276 @@ fn assert_source_pack_case_accepts(sources: &'static [&'static str], app_source:
 fn type_checker_accepts_leading_module_metadata() {
     assert_gpu_type_check_accepts("module app::main;");
     assert_gpu_type_check_accepts("module app::main; fn main() { return 0; }");
+}
+
+#[test]
+fn type_checker_rejects_self_import_through_gpu_module_resolver() {
+    match common::type_check_source_pack_with_timeout(&[r#"module app::main;
+import app::main;
+fn main() { return 0; }
+"#])
+    {
+        Ok(()) => panic!("self-import should fail GPU type checking"),
+        Err(CompileError::Diagnostic(diagnostic)) => {
+            assert_eq!(
+                diagnostic.code, "LNC0002",
+                "direct self-import diagnostics should use the reserved cycle code"
+            );
+        }
+        Err(CompileError::GpuTypeCheck(message)) => {
+            panic!("self-import should report LNC0002, got raw GPU type-check error: {message}");
+        }
+        Err(other) => panic!("expected GPU resolver rejection, got {other:?}"),
+    }
+}
+
+#[test]
+fn type_checker_rejects_two_module_import_cycle_through_gpu_module_resolver() {
+    match common::type_check_source_pack_with_timeout(&[
+        r#"module app::main;
+import app::helper;
+fn main() { return 0; }
+"#,
+        r#"module app::helper;
+import app::main;
+"#,
+    ]) {
+        Ok(()) => panic!("two-module import cycle should fail GPU type checking"),
+        Err(CompileError::Diagnostic(diagnostic)) => {
+            assert_eq!(
+                diagnostic.code, "LNC0002",
+                "two-module import cycles should use the reserved cycle code"
+            );
+        }
+        Err(CompileError::GpuTypeCheck(message)) => {
+            panic!(
+                "two-module import cycle should report LNC0002, got raw GPU type-check error: {message}"
+            );
+        }
+        Err(other) => panic!("expected GPU resolver rejection, got {other:?}"),
+    }
+}
+
+#[test]
+#[ignore = "requires GPU SCC/topological import-cycle checkpoint beyond direct and two-module cycles"]
+fn type_checker_rejects_three_module_import_cycle_through_gpu_topological_checkpoint() {
+    match common::type_check_source_pack_with_timeout(&[
+        r#"module app::main;
+import app::middle;
+fn main() { return 0; }
+"#,
+        r#"module app::middle;
+import app::leaf;
+"#,
+        r#"module app::leaf;
+import app::main;
+"#,
+    ]) {
+        Ok(()) => panic!("three-module import cycle should fail GPU type checking"),
+        Err(CompileError::Diagnostic(diagnostic)) => {
+            assert_eq!(
+                diagnostic.code, "LNC0002",
+                "arbitrary import cycles should use the reserved cycle code"
+            );
+        }
+        Err(CompileError::GpuTypeCheck(message)) => {
+            panic!(
+                "three-module import cycle should report LNC0002, got raw GPU type-check error: {message}"
+            );
+        }
+        Err(other) => panic!("expected GPU resolver rejection, got {other:?}"),
+    }
+}
+
+#[test]
+fn type_checker_accepts_acyclic_three_module_import_chain() {
+    assert_gpu_type_check_pack_accepts(&[
+        r#"module app::main;
+import app::middle;
+fn main() { return 0; }
+"#,
+        r#"module app::middle;
+import app::leaf;
+"#,
+        r#"module app::leaf;
+"#,
+    ]);
+}
+
+#[test]
+fn type_checker_unresolved_source_pack_import_reports_stable_diagnostic() {
+    let source = r#"module app::main;
+import core::math;
+fn main() { return 0; }
+"#;
+
+    match common::type_check_source_pack_with_timeout(&[source]) {
+        Ok(()) => panic!("unresolved import should fail GPU type checking"),
+        Err(CompileError::Diagnostic(diagnostic)) => {
+            assert_eq!(diagnostic.code, "LNC0010");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("unresolved import diagnostic should point at the import path token");
+            assert_eq!(label.path, std::path::PathBuf::from("<source pack file 0>"));
+            assert_eq!(label.line, 2);
+            assert_eq!(label.column, 8);
+            assert_eq!(label.source_line, Some("import core::math;".to_string()));
+            let rendered = diagnostic.render();
+            assert!(rendered.contains("error[LNC0010]: unresolved import"));
+            assert!(rendered.contains("<source pack file 0>:2:8"));
+            assert!(rendered.contains("import core::math;"));
+            assert!(rendered.contains("imported module not found"));
+            assert!(
+                !rendered.contains("GPU type check rejected"),
+                "diagnostic should not expose raw GPU rejection:\n{rendered}"
+            );
+        }
+        Err(CompileError::GpuTypeCheck(message)) => {
+            panic!("unresolved import should report LNC0010, got raw GPU error: {message}");
+        }
+        Err(other) => panic!("expected GPU resolver diagnostic, got {other:?}"),
+    }
+}
+
+#[test]
+fn type_checker_source_pack_syntax_failure_reports_stable_diagnostic() {
+    let sources = [
+        "module app::main;\n",
+        "module app::bad;\nfn fn bad() -> i32 { return 1; }\n",
+    ];
+
+    match common::type_check_source_pack_with_timeout(&sources) {
+        Ok(()) => panic!("malformed source-pack file should fail GPU type checking"),
+        Err(CompileError::Diagnostic(diagnostic)) => {
+            assert_eq!(diagnostic.code, "LNC0016");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("syntax diagnostic should point at malformed source");
+            assert_eq!(label.path, std::path::PathBuf::from("<source pack file 1>"));
+            assert_eq!(label.line, 2);
+            assert_eq!(
+                label.source_line,
+                Some("fn fn bad() -> i32 { return 1; }".to_string())
+            );
+            let rendered = diagnostic.render();
+            assert!(rendered.contains("error[LNC0016]: syntax error"));
+            assert!(rendered.contains("<source pack file 1>:2:"));
+            assert!(rendered.contains("fn fn bad() -> i32 { return 1; }"));
+            assert!(
+                !rendered.contains("GPU type check rejected"),
+                "syntax diagnostic should not expose raw GPU rejection:\n{rendered}"
+            );
+        }
+        Err(CompileError::GpuTypeCheck(message)) => {
+            panic!(
+                "malformed source-pack file should report LNC0016, got raw GPU error: {message}"
+            );
+        }
+        Err(other) => panic!("expected GPU syntax diagnostic, got {other:?}"),
+    }
+}
+
+#[test]
+fn type_checker_string_import_reports_stable_diagnostic() {
+    let source = r#"module app::main;
+import "stdlib/core/math.lani";
+fn main() { return 0; }
+"#;
+
+    match common::type_check_source_pack_with_timeout(&[source]) {
+        Ok(()) => panic!("quoted import should fail GPU type checking"),
+        Err(CompileError::Diagnostic(diagnostic)) => {
+            assert_eq!(diagnostic.code, "LNC0011");
+            let rendered = diagnostic.render();
+            assert!(rendered.contains("error[LNC0011]: unsupported import form"));
+            assert!(rendered.contains("<source pack file 0>:2:1"));
+            assert!(rendered.contains("import \"stdlib/core/math.lani\";"));
+            assert!(rendered.contains("only module-path imports are supported here"));
+            assert!(!rendered.contains("GPU type check rejected"));
+        }
+        Err(CompileError::GpuTypeCheck(message)) => {
+            panic!("quoted import should report LNC0011, got raw GPU error: {message}");
+        }
+        Err(other) => panic!("expected unsupported import diagnostic, got {other:?}"),
+    }
+}
+
+#[test]
+fn type_checker_deep_import_path_reports_stable_diagnostic() {
+    let source = r#"module app::main;
+import a::b::c::d::e::f::g::h::i;
+fn main() { return 0; }
+"#;
+
+    match common::type_check_source_pack_with_timeout(&[source]) {
+        Ok(()) => panic!("over-deep import should fail GPU type checking"),
+        Err(CompileError::Diagnostic(diagnostic)) => {
+            assert_eq!(diagnostic.code, "LNC0012");
+            let rendered = diagnostic.render();
+            assert!(rendered.contains("error[LNC0012]: import path too deep"));
+            assert!(rendered.contains("<source pack file 0>:2:8"));
+            assert!(rendered.contains("import a::b::c::d::e::f::g::h::i;"));
+            assert!(rendered.contains("exceeds the current resolver depth limit"));
+            assert!(!rendered.contains("GPU type check rejected"));
+        }
+        Err(CompileError::GpuTypeCheck(message)) => {
+            panic!("over-deep import should report LNC0012, got raw GPU error: {message}");
+        }
+        Err(other) => panic!("expected import-depth diagnostic, got {other:?}"),
+    }
+}
+
+#[test]
+fn type_checker_duplicate_source_pack_module_reports_stable_diagnostic() {
+    let first = r#"module core::math;
+pub fn one() -> i32 { return 1; }
+"#;
+    let duplicate = r#"module core::math;
+pub fn two() -> i32 { return 2; }
+"#;
+
+    match common::type_check_source_pack_with_timeout(&[first, duplicate]) {
+        Ok(()) => panic!("duplicate module declarations should fail GPU type checking"),
+        Err(CompileError::Diagnostic(diagnostic)) => {
+            assert_eq!(diagnostic.code, "LNC0013");
+            let rendered = diagnostic.render();
+            assert!(rendered.contains("error[LNC0013]: duplicate module declaration"));
+            assert!(rendered.contains("<source pack file 1>:1:8"));
+            assert!(rendered.contains("module core::math;"));
+            assert!(rendered.contains("already declared in the source pack"));
+            assert!(!rendered.contains("GPU type check rejected"));
+        }
+        Err(CompileError::GpuTypeCheck(message)) => {
+            panic!("duplicate module should report LNC0013, got raw GPU error: {message}");
+        }
+        Err(other) => panic!("expected duplicate-module diagnostic, got {other:?}"),
+    }
+}
+
+#[test]
+fn type_checker_deep_module_path_reports_stable_diagnostic() {
+    let source = r#"module a::b::c::d::e::f::g::h::i;
+fn main() { return 0; }
+"#;
+
+    match common::type_check_source_pack_with_timeout(&[source]) {
+        Ok(()) => panic!("over-deep module path should fail GPU type checking"),
+        Err(CompileError::Diagnostic(diagnostic)) => {
+            assert_eq!(diagnostic.code, "LNC0014");
+            let rendered = diagnostic.render();
+            assert!(rendered.contains("error[LNC0014]: module path too deep"));
+            assert!(rendered.contains("<source pack file 0>:1:8"));
+            assert!(rendered.contains("module a::b::c::d::e::f::g::h::i;"));
+            assert!(rendered.contains("exceeds the current resolver depth limit"));
+            assert!(!rendered.contains("GPU type check rejected"));
+        }
+        Err(CompileError::GpuTypeCheck(message)) => {
+            panic!("over-deep module path should report LNC0014, got raw GPU error: {message}");
+        }
+        Err(other) => panic!("expected module-depth diagnostic, got {other:?}"),
+    }
 }
 
 #[test]
@@ -97,6 +381,915 @@ fn main() {
 }
 "#,
     ]);
+}
+
+#[test]
+fn type_checker_entry_stdlib_root_loads_imported_module() {
+    let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
+    let entry = common::TempArtifact::new("laniusc_source_root", "app", Some("lani"));
+    entry.write_str(
+        r#"
+module app::main;
+
+import core::i32;
+import core::i32;
+
+fn main() {
+    let min_value: i32 = core::i32::MIN;
+    let max_value: i32 = MAX;
+    let bits: u32 = core::i32::BITS;
+    let bytes: u32 = BYTES;
+    if (min_value != core::i32::MIN || max_value != core::i32::MAX || bits != 32 || bytes != 4) {
+        return 1;
+    }
+    return 0;
+}
+"#,
+    );
+
+    let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
+        .expect("source-root path manifest should load imported stdlib module");
+    let expected_stdlib_path = stdlib_root.join("core/i32.lani");
+    assert_eq!(manifest.files.len(), 2);
+    assert!(
+        manifest
+            .files
+            .iter()
+            .any(|file| file.library_id == 0 && file.path == expected_stdlib_path)
+    );
+    assert!(
+        manifest
+            .files
+            .iter()
+            .any(|file| file.library_id == 1 && file.path == entry.path())
+    );
+
+    common::block_on_gpu_with_timeout(
+        "GPU type check source-root stdlib import",
+        type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
+    )
+    .expect("source-root stdlib import should type check");
+}
+
+#[test]
+fn type_checker_entry_stdlib_root_type_checks_unsigned_integer_metadata() {
+    let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
+    let entry = common::TempArtifact::new("laniusc_source_root", "unsigned_ints", Some("lani"));
+    entry.write_str(
+        r#"
+module app::main;
+
+import core::u32;
+import core::u8;
+
+fn main() {
+    let u32_bits: u32 = core::u32::BITS;
+    let u32_bytes: u32 = core::u32::BYTES;
+    let u8_bits: u32 = core::u8::BITS;
+    let u8_bytes: u32 = core::u8::BYTES;
+    let u32_floor: u32 = core::u32::MIN;
+    let byte_ceiling: u8 = core::u8::MAX;
+    if (u32_bits != 32 || u32_bytes != 4 || u8_bits != 8 || u8_bytes != 1) {
+        return 1;
+    }
+    if (u32_floor != 0 || byte_ceiling != 255) {
+        return 1;
+    }
+    return 0;
+}
+"#,
+    );
+
+    let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
+        .expect("source-root path manifest should load unsigned integer stdlib modules");
+    assert_eq!(manifest.files.len(), 3);
+    assert!(
+        manifest
+            .files
+            .iter()
+            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/u32.lani"))
+    );
+    assert!(
+        manifest
+            .files
+            .iter()
+            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/u8.lani"))
+    );
+    assert!(
+        manifest
+            .files
+            .iter()
+            .any(|file| file.library_id == 1 && file.path == entry.path())
+    );
+
+    common::block_on_gpu_with_timeout(
+        "GPU type check source-root unsigned integer metadata",
+        type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
+    )
+    .expect("unsigned integer metadata should type check when loaded through --stdlib-root");
+}
+
+#[test]
+fn type_checker_entry_stdlib_root_type_checks_core_runtime_contract() {
+    let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
+    let entry = common::TempArtifact::new("laniusc_source_root", "runtime_app", Some("lani"));
+    entry.write_str(
+        r#"
+module app::main;
+
+import core::runtime;
+
+fn main() {
+    let allocator: core::runtime::Capability = core::runtime::HAS_ALLOCATOR;
+    let clock: Capability = core::runtime::HAS_CLOCK;
+    let panic_hook: Capability = core::runtime::HAS_PANIC_HOOK;
+    let host: Capability = core::runtime::HAS_HOST_SERVICES;
+    let threads: Capability = core::runtime::has_threads();
+    let secure_rng: core::runtime::Capability = core::runtime::has_secure_rng();
+    let gpu: Capability = core::runtime::has_gpu();
+    let process: Capability = core::runtime::has_process();
+    let env: core::runtime::Capability = has_env();
+    let runtime_services: Capability = core::runtime::has_runtime_services();
+    let contract_only: core::runtime::Capability =
+        core::runtime::runtime_services_are_contract_only();
+    let threads_status: RuntimeServiceStatus =
+        core::runtime::service_status(core::runtime::SERVICE_THREADS_ID);
+    let process_status: core::runtime::RuntimeServiceStatus =
+        service_status(core::runtime::SERVICE_PROCESS_ID);
+    let threads_unavailable: Capability =
+        core::runtime::service_is_unavailable(core::runtime::SERVICE_THREADS_ID);
+    let process_available: Capability =
+        core::runtime::service_is_available(core::runtime::SERVICE_PROCESS_ID);
+    let unknown_service_unknown: core::runtime::Capability = service_is_unknown(99);
+    let secure_rng_needs_binding: Capability =
+        service_requires_runtime_binding(SERVICE_SECURE_RNG_ID);
+    let gpu_needs_binding: Capability =
+        core::runtime::service_requires_runtime_binding(core::runtime::SERVICE_GPU_ID);
+    let env_needs_binding: core::runtime::Capability =
+        service_requires_runtime_binding(core::runtime::SERVICE_ENV_ID);
+    if (allocator || clock || panic_hook || host || threads || secure_rng || gpu || process || env || runtime_services || !contract_only) {
+        return 1;
+    }
+    if (threads_status != SERVICE_STATUS_UNAVAILABLE || process_status != SERVICE_STATUS_UNAVAILABLE) {
+        return 1;
+    }
+    if (!threads_unavailable || process_available || !unknown_service_unknown) {
+        return 1;
+    }
+    if (!secure_rng_needs_binding || !gpu_needs_binding || !env_needs_binding) {
+        return 1;
+    }
+    return 0;
+}
+"#,
+    );
+
+    let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
+        .expect("source-root path manifest should load core::runtime from stdlib");
+    assert!(
+        manifest
+            .files
+            .iter()
+            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/runtime.lani"))
+    );
+    assert_eq!(manifest.files.len(), 2);
+    common::block_on_gpu_with_timeout(
+        "GPU type check source-root core::runtime import",
+        type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
+    )
+    .expect("core::runtime should type check when loaded through --stdlib-root");
+}
+
+#[test]
+fn type_checker_entry_stdlib_root_type_checks_core_target_capability_contract() {
+    let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
+    let entry = common::TempArtifact::new("laniusc_source_root", "target_app", Some("lani"));
+    entry.write_str(
+        r#"
+module app::main;
+
+import core::target;
+
+fn main() {
+    let native: Capability = core::target::is_native();
+    let wasm: core::target::Capability = is_wasm();
+    let panic_hook: Capability = core::target::has_panic_hook();
+    let host_services: core::target::Capability = has_host_services();
+    let process: Capability = core::target::has_process();
+    let env: core::target::Capability = has_env();
+    let host_services_const: Capability = core::target::HAS_HOST_SERVICES;
+    let process_const: core::target::Capability = HAS_PROCESS;
+    let freestanding: Capability = core::target::is_freestanding();
+    if (!native || wasm || panic_hook || host_services || process || env || host_services_const || process_const || !freestanding) {
+        return 1;
+    }
+    return 0;
+}
+"#,
+    );
+
+    let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
+        .expect("source-root path manifest should load core::target from stdlib");
+    assert!(
+        manifest
+            .files
+            .iter()
+            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/target.lani"))
+    );
+    assert_eq!(manifest.files.len(), 2);
+    common::block_on_gpu_with_timeout(
+        "GPU type check source-root core::target import",
+        type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
+    )
+    .expect("core::target capability contract should type check when loaded through --stdlib-root");
+}
+
+#[test]
+fn type_checker_accepts_core_target_capability_contract_source_pack() {
+    assert_gpu_type_check_pack_accepts(&[
+        include_str!("../stdlib/core/target.lani"),
+        r#"
+module app::main;
+
+import core::target;
+
+fn main() {
+    let native: Capability = core::target::is_native();
+    let wasm: core::target::Capability = is_wasm();
+    let panic_hook: Capability = core::target::has_panic_hook();
+    let host_services: core::target::Capability = has_host_services();
+    let process: Capability = core::target::has_process();
+    let env: core::target::Capability = has_env();
+    let host_services_const: Capability = core::target::HAS_HOST_SERVICES;
+    let process_const: core::target::Capability = HAS_PROCESS;
+    let freestanding: Capability = core::target::is_freestanding();
+    if (!native || wasm || panic_hook || host_services || process || env || host_services_const || process_const || !freestanding) {
+        return 1;
+    }
+    return 0;
+}
+"#,
+    ]);
+}
+
+#[test]
+fn type_checker_entry_stdlib_root_type_checks_core_bool_contract() {
+    let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
+    let entry = common::TempArtifact::new("laniusc_source_root", "bool_app", Some("lani"));
+    entry.write_str(
+        r#"
+module app::main;
+
+import core::bool;
+
+fn main() {
+    let different: bool = core::bool::ne(true, false);
+    let same: bool = core::bool::eq(different, true);
+    let selected: i32 = core::bool::select_i32(different, 7, 99);
+    let fallback: i32 = core::bool::choose_i32(false, 11, 42);
+    if (same && selected == 7 && fallback == 42) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+    );
+
+    let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
+        .expect("source-root path manifest should load core::bool from stdlib");
+    assert!(
+        manifest
+            .files
+            .iter()
+            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/bool.lani"))
+    );
+    assert_eq!(manifest.files.len(), 2);
+    common::block_on_gpu_with_timeout(
+        "GPU type check source-root core::bool import",
+        type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
+    )
+    .expect("core::bool helpers should type check when loaded through --stdlib-root");
+}
+
+#[test]
+fn type_checker_entry_stdlib_root_type_checks_core_mem_generics() {
+    let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
+    let entry = common::TempArtifact::new("laniusc_source_root", "mem_app", Some("lani"));
+    entry.write_str(
+        r#"
+module app::main;
+
+import core::mem;
+
+fn main() {
+    let number: i32 = identity(7);
+    let flag: bool = identity(false);
+    let left: i32 = first(number, 11);
+    let right: bool = second(flag, true);
+    let selected_number: i32 = select(right, left, 0);
+    let selected_flag: bool = select(false, right, flag);
+    let qualified_number: i32 = core::mem::identity(selected_number);
+    if (selected_flag) {
+        return qualified_number;
+    }
+    return 0;
+}
+"#,
+    );
+
+    let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
+        .expect("source-root path manifest should load core::mem from stdlib");
+    assert!(
+        manifest
+            .files
+            .iter()
+            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/mem.lani"))
+    );
+    assert_eq!(manifest.files.len(), 2);
+    common::block_on_gpu_with_timeout(
+        "GPU type check source-root core::mem import",
+        type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
+    )
+    .expect("core::mem generic helpers should type check when loaded through --stdlib-root");
+}
+
+#[test]
+fn type_checker_entry_source_root_loads_user_module_imports() {
+    let source_root = common::temp_artifact_path("laniusc_source_root", "user_root", None);
+    let app_root = source_root.join("app");
+    std::fs::create_dir_all(&app_root).expect("create temp app source root");
+    let helper_path = app_root.join("helper.lani");
+    let entry_path = app_root.join("main.lani");
+    std::fs::write(
+        &helper_path,
+        r#"
+module app::helper;
+
+pub fn one() -> i32 {
+    return 1;
+}
+"#,
+    )
+    .expect("write helper module");
+    std::fs::write(
+        &entry_path,
+        r#"
+module app::main;
+
+import app::helper;
+
+fn main() {
+    return app::helper::one();
+}
+"#,
+    )
+    .expect("write entry module");
+
+    let manifest = load_entry_path_manifest_with_source_root(&entry_path, &source_root)
+        .expect("source-root path manifest should load imported user module");
+    assert_eq!(manifest.files.len(), 2);
+    assert!(
+        manifest
+            .files
+            .iter()
+            .any(|file| file.library_id == 1 && file.path == entry_path)
+    );
+    assert!(
+        manifest
+            .files
+            .iter()
+            .any(|file| file.library_id == 1 && file.path == helper_path)
+    );
+
+    common::block_on_gpu_with_timeout(
+        "GPU type check source-root user module import",
+        type_check_entry_with_source_root(entry_path.clone(), source_root.clone()),
+    )
+    .expect("source-root user module import should type check");
+
+    std::fs::remove_dir_all(&source_root).expect("remove temp user source root");
+}
+
+#[test]
+fn source_root_imports_use_gpu_module_declarations_not_host_paths() {
+    let source_root = common::temp_artifact_path("laniusc_source_root", "mismatched_module", None);
+    let app_root = source_root.join("app");
+    std::fs::create_dir_all(&app_root).expect("create temp app source root");
+    let helper_path = app_root.join("helper.lani");
+    let entry_path = app_root.join("main.lani");
+    std::fs::write(
+        &helper_path,
+        r#"
+module app::renamed;
+
+pub fn one() -> i32 {
+    return 1;
+}
+"#,
+    )
+    .expect("write mismatched helper module");
+    std::fs::write(
+        &entry_path,
+        r#"
+module app::main;
+
+import app::helper;
+
+fn main() {
+    return app::helper::one();
+}
+"#,
+    )
+    .expect("write entry module");
+
+    let manifest = load_entry_path_manifest_with_source_root(&entry_path, &source_root)
+        .expect("source-root loader should load the path candidate");
+    assert_eq!(manifest.files.len(), 2);
+    assert!(manifest.files.iter().any(|file| file.path == helper_path));
+
+    match common::block_on_gpu_with_timeout(
+        "GPU type check source-root module declaration mismatch",
+        type_check_entry_with_source_root(entry_path.clone(), source_root.clone()),
+    ) {
+        Err(CompileError::Diagnostic(diagnostic)) => {
+            assert_eq!(diagnostic.code, "LNC0010");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("module/path mismatch diagnostic should point at the import path");
+            assert_eq!(label.path, entry_path);
+            assert_eq!(label.line, 4);
+            assert_eq!(label.column, 8);
+            assert_eq!(label.source_line, Some("import app::helper;".to_string()));
+            let rendered = diagnostic.render();
+            assert!(rendered.contains("error[LNC0010]: unresolved import"));
+            assert!(rendered.contains("import app::helper;"));
+            assert!(rendered.contains("imported module not found"));
+            assert!(!rendered.contains("GPU type check rejected"));
+        }
+        Err(CompileError::GpuTypeCheck(message)) => {
+            panic!("module/path mismatch should report LNC0010, got raw GPU error: {message}");
+        }
+        other => panic!(
+            "expected GPU resolver diagnostic for module/path identity mismatch, got {other:?}"
+        ),
+    }
+
+    std::fs::remove_dir_all(&source_root).expect("remove temp user source root");
+}
+
+#[test]
+fn source_root_loader_can_combine_user_and_stdlib_roots() {
+    let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
+    let source_root = common::temp_artifact_path("laniusc_source_root", "user_and_stdlib", None);
+    let app_root = source_root.join("app");
+    std::fs::create_dir_all(&app_root).expect("create temp app source root");
+    let helper_path = app_root.join("helper.lani");
+    let entry_path = app_root.join("main.lani");
+    std::fs::write(
+        &helper_path,
+        r#"
+module app::helper;
+
+pub fn id(value: i32) -> i32 {
+    return value;
+}
+"#,
+    )
+    .expect("write helper module");
+    std::fs::write(
+        &entry_path,
+        r#"
+module app::main;
+
+import app::helper;
+import core::i32;
+
+fn main() {
+    let value: i32 = core::i32::MIN;
+    return app::helper::id(value);
+}
+"#,
+    )
+    .expect("write entry module");
+
+    let manifest = load_entry_path_manifest_with_source_root_and_stdlib(
+        &entry_path,
+        &source_root,
+        &stdlib_root,
+    )
+    .expect("source-root path manifest should load user and stdlib imports");
+    let expected_stdlib_path = stdlib_root.join("core/i32.lani");
+    assert_eq!(manifest.files.len(), 3);
+    assert!(
+        manifest
+            .files
+            .iter()
+            .any(|file| file.library_id == 0 && file.path == expected_stdlib_path)
+    );
+    assert!(
+        manifest
+            .files
+            .iter()
+            .any(|file| file.library_id == 1 && file.path == entry_path)
+    );
+    assert!(
+        manifest
+            .files
+            .iter()
+            .any(|file| file.library_id == 1 && file.path == helper_path)
+    );
+
+    let roots = EntrySourceRoots {
+        stdlib_root: Some(stdlib_root),
+        user_roots: vec![source_root.clone()],
+    };
+    common::block_on_gpu_with_timeout(
+        "GPU type check combined source-root and stdlib imports",
+        async move { type_check_entry_with_source_roots(entry_path, &roots).await },
+    )
+    .expect("combined source-root and stdlib imports should type check");
+
+    std::fs::remove_dir_all(&source_root).expect("remove temp user/std source root");
+}
+
+#[test]
+fn source_root_user_module_can_import_stdlib_dependency() {
+    let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
+    let source_root =
+        common::temp_artifact_path("laniusc_source_root", "user_module_stdlib_dependency", None);
+    let app_root = source_root.join("app");
+    std::fs::create_dir_all(&app_root).expect("create temp app source root");
+    let helper_path = app_root.join("int_gate.lani");
+    let entry_path = app_root.join("main.lani");
+    std::fs::write(
+        &helper_path,
+        r#"
+module app::int_gate;
+
+import core::i32;
+
+pub fn min_value() -> i32 {
+    return core::i32::MIN;
+}
+"#,
+    )
+    .expect("write helper module with stdlib dependency");
+    std::fs::write(
+        &entry_path,
+        r#"
+module app::main;
+
+import app::int_gate;
+
+fn main() {
+    if (app::int_gate::min_value() < 0) {
+        return 0;
+    }
+    return 1;
+}
+"#,
+    )
+    .expect("write entry module");
+
+    let manifest = load_entry_path_manifest_with_source_root_and_stdlib(
+        &entry_path,
+        &source_root,
+        &stdlib_root,
+    )
+    .expect("source-root path manifest should load transitive stdlib imports");
+    assert_eq!(manifest.files.len(), 3);
+    assert!(
+        manifest
+            .files
+            .iter()
+            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/i32.lani")),
+        "path manifest should include core::i32 imported by the source-root helper"
+    );
+    assert!(
+        manifest
+            .files
+            .iter()
+            .any(|file| file.library_id == 1 && file.path == entry_path)
+    );
+    assert!(
+        manifest
+            .files
+            .iter()
+            .any(|file| file.library_id == 1 && file.path == helper_path)
+    );
+
+    let roots = EntrySourceRoots {
+        stdlib_root: Some(stdlib_root),
+        user_roots: vec![source_root.clone()],
+    };
+    common::block_on_gpu_with_timeout(
+        "GPU type check source-root user module with stdlib dependency",
+        async move { type_check_entry_with_source_roots(entry_path, &roots).await },
+    )
+    .expect("source-root user module stdlib dependency should type check");
+
+    std::fs::remove_dir_all(&source_root).expect("remove temp source-root stdlib dependency dir");
+}
+
+#[test]
+fn source_root_loader_reports_missing_stdlib_module_path() {
+    let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
+    let entry = common::TempArtifact::new("laniusc_source_root", "missing", Some("lani"));
+    entry.write_str(
+        r#"
+module app::main;
+import core::missing;
+fn main() { return 0; }
+"#,
+    );
+
+    let err = load_entry_with_stdlib(entry.path(), &stdlib_root)
+        .expect_err("missing imported stdlib module should fail before GPU");
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0001");
+            let message = diagnostic.render();
+            assert!(message.contains("error[LNC0001]"));
+            assert!(message.contains("core::missing"));
+            assert!(message.contains(&entry.path().display().to_string()));
+            assert!(message.contains("core/missing.lani"));
+            assert!(message.contains("import core::missing;"));
+            assert!(message.contains("imported here"));
+        }
+        other => panic!("expected frontend source-root error, got {other:?}"),
+    }
+}
+
+#[test]
+fn source_root_loader_rejects_ambiguous_user_module_path() {
+    let root = common::temp_artifact_path("laniusc_source_root", "ambiguous", None);
+    let left_root = root.join("left");
+    let right_root = root.join("right");
+    std::fs::create_dir_all(left_root.join("app")).expect("create left source root");
+    std::fs::create_dir_all(right_root.join("app")).expect("create right source root");
+    let left_helper = left_root.join("app/helper.lani");
+    let right_helper = right_root.join("app/helper.lani");
+    std::fs::write(
+        &left_helper,
+        "module app::helper;\npub const VALUE: i32 = 1;\n",
+    )
+    .expect("write left helper");
+    std::fs::write(
+        &right_helper,
+        "module app::helper;\npub const VALUE: i32 = 2;\n",
+    )
+    .expect("write right helper");
+    let entry = common::TempArtifact::new("laniusc_source_root", "ambiguous_entry", Some("lani"));
+    entry.write_str(
+        r#"
+module app::main;
+import app::helper;
+fn main() { return 0; }
+"#,
+    );
+
+    let roots = EntrySourceRoots {
+        stdlib_root: None,
+        user_roots: vec![left_root.clone(), right_root.clone()],
+    };
+    let err = load_entry_with_source_roots(entry.path(), &roots)
+        .expect_err("source-root loader should reject ambiguous modules before GPU");
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0003");
+            let message = diagnostic.render();
+            assert!(message.contains("error[LNC0003]"));
+            assert!(message.contains("app::helper"));
+            assert!(message.contains(&left_helper.display().to_string()));
+            assert!(message.contains(&right_helper.display().to_string()));
+            assert!(message.contains("import app::helper;"));
+            assert!(message.contains("ambiguous import"));
+        }
+        other => panic!("expected ambiguous source-root diagnostic, got {other:?}"),
+    }
+
+    std::fs::remove_dir_all(&root).expect("remove temp ambiguous source roots");
+}
+
+#[test]
+fn source_root_loader_leaves_quoted_imports_for_gpu_rejection() {
+    let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
+    let entry = common::TempArtifact::new("laniusc_source_root", "quoted", Some("lani"));
+    entry.write_str(
+        r#"
+module app::main;
+import "stdlib/core/i32.lani";
+fn main() { return 0; }
+"#,
+    );
+
+    let source_pack = load_entry_with_stdlib(entry.path(), &stdlib_root)
+        .expect("source-root loader should not host-include quoted imports");
+    assert_eq!(source_pack.sources.len(), 1);
+    let result = common::block_on_gpu_with_timeout(
+        "GPU type check source-root quoted import",
+        type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
+    );
+    match result {
+        Err(CompileError::Diagnostic(diagnostic)) => {
+            assert_eq!(diagnostic.code, "LNC0011");
+            let rendered = diagnostic.render();
+            assert!(rendered.contains("error[LNC0011]: unsupported import form"));
+            assert!(rendered.contains(&entry.path().display().to_string()));
+            assert!(rendered.contains("import \"stdlib/core/i32.lani\";"));
+            assert!(!rendered.contains("GPU type check rejected"));
+        }
+        Err(CompileError::GpuTypeCheck(message)) => {
+            panic!("quoted import should report LNC0011, got raw GPU error: {message}");
+        }
+        other => panic!("expected GPU type check rejection for quoted import, got {other:?}"),
+    }
+}
+
+#[test]
+fn source_root_loader_deduplicates_import_cycles_without_semantic_rejection() {
+    let root = common::temp_artifact_path("laniusc_source_root", "cycle", None);
+    let stdlib_root = root.join("stdlib");
+    let core_root = stdlib_root.join("core");
+    std::fs::create_dir_all(&core_root).expect("create temp stdlib core root");
+    let a_path = core_root.join("a.lani");
+    let b_path = core_root.join("b.lani");
+    std::fs::write(
+        &a_path,
+        r#"
+module core::a;
+import core::b;
+pub const A: i32 = 1;
+"#,
+    )
+    .expect("write core::a");
+    std::fs::write(
+        &b_path,
+        r#"
+module core::b;
+import core::a;
+pub const B: i32 = 2;
+"#,
+    )
+    .expect("write core::b");
+    let entry = common::TempArtifact::new("laniusc_source_root", "cycle_entry", Some("lani"));
+    entry.write_str(
+        r#"
+module app::main;
+import core::a;
+fn main() { return 0; }
+"#,
+    );
+
+    let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
+        .expect("source-root loader should use import cycles only as recursion guards");
+    assert_eq!(
+        manifest.files.len(),
+        3,
+        "entry plus two cyclic imports should be loaded once each"
+    );
+    assert!(
+        manifest
+            .files
+            .iter()
+            .any(|file| file.library_id == 0 && file.path == a_path)
+    );
+    assert!(
+        manifest
+            .files
+            .iter()
+            .any(|file| file.library_id == 0 && file.path == b_path)
+    );
+    assert!(
+        manifest
+            .files
+            .iter()
+            .any(|file| file.library_id == 1 && file.path == entry.path())
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove temp source-root cycle test dir");
+}
+
+#[cfg(unix)]
+#[test]
+fn source_root_loader_rejects_stdlib_symlink_escape() {
+    let root = common::temp_artifact_path("laniusc_source_root", "symlink", None);
+    let stdlib_root = root.join("stdlib");
+    let outside_root = root.join("outside");
+    std::fs::create_dir_all(stdlib_root.join("core")).expect("create temp stdlib root");
+    std::fs::create_dir_all(&outside_root).expect("create outside root");
+    let outside_module = outside_root.join("escape.lani");
+    std::fs::write(&outside_module, "module core::escape;\n").expect("write outside module");
+    std::os::unix::fs::symlink(&outside_module, stdlib_root.join("core/escape.lani"))
+        .expect("create stdlib symlink escape");
+    let entry = common::TempArtifact::new("laniusc_source_root", "symlink_entry", Some("lani"));
+    entry.write_str(
+        r#"
+module app::main;
+import core::escape;
+fn main() { return 0; }
+"#,
+    );
+
+    let err = load_entry_with_stdlib(entry.path(), &stdlib_root)
+        .expect_err("stdlib-root loader should reject symlink escapes");
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0004");
+            let message = diagnostic.render();
+            assert!(message.contains("core::escape"));
+            assert!(message.contains("outside stdlib root"));
+            assert!(message.contains("import core::escape;"));
+        }
+        other => panic!("expected frontend symlink escape error, got {other:?}"),
+    }
+
+    std::fs::remove_dir_all(&root).expect("remove temp source-root symlink test dir");
+}
+
+#[cfg(unix)]
+#[test]
+fn source_root_loader_rejects_stdlib_symlink_to_non_source_file() {
+    let root = common::temp_artifact_path("laniusc_source_root", "stdlib_non_source", None);
+    let stdlib_root = root.join("stdlib");
+    let core_root = stdlib_root.join("core");
+    std::fs::create_dir_all(&core_root).expect("create temp stdlib root");
+    let non_source_module = core_root.join("helper.txt");
+    std::fs::write(&non_source_module, "module core::helper;\n")
+        .expect("write non-source stdlib module target");
+    std::os::unix::fs::symlink(&non_source_module, core_root.join("helper.lani"))
+        .expect("create stdlib symlink to non-source file");
+    let canonical_non_source =
+        std::fs::canonicalize(&non_source_module).expect("canonicalize non-source target");
+    let entry = common::TempArtifact::new(
+        "laniusc_source_root",
+        "stdlib_non_source_entry",
+        Some("lani"),
+    );
+    entry.write_str(
+        r#"
+module app::main;
+import core::helper;
+fn main() { return 0; }
+"#,
+    );
+
+    let err = load_entry_with_stdlib(entry.path(), &stdlib_root)
+        .expect_err("stdlib-root loader should reject non-source canonical import targets");
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0030");
+            let message = diagnostic.render();
+            assert!(message.contains("core::helper"));
+            assert!(message.contains("stdlib root"));
+            assert!(message.contains(&canonical_non_source.display().to_string()));
+            assert!(message.contains("import core::helper;"));
+            assert!(message.contains("canonical .lani source files"));
+            assert!(!message.contains("GPU frontend error"));
+        }
+        other => panic!("expected frontend stdlib non-source diagnostic, got {other:?}"),
+    }
+
+    std::fs::remove_dir_all(&root).expect("remove temp stdlib non-source test dir");
+}
+
+#[cfg(unix)]
+#[test]
+fn source_root_loader_rejects_user_symlink_escape() {
+    let root = common::temp_artifact_path("laniusc_source_root", "user_symlink", None);
+    let source_root = root.join("src");
+    let outside_root = root.join("outside");
+    std::fs::create_dir_all(source_root.join("app")).expect("create temp source root");
+    std::fs::create_dir_all(&outside_root).expect("create outside root");
+    let outside_module = outside_root.join("escape.lani");
+    std::fs::write(&outside_module, "module app::escape;\n").expect("write outside module");
+    std::os::unix::fs::symlink(&outside_module, source_root.join("app/escape.lani"))
+        .expect("create user source-root symlink escape");
+    let entry =
+        common::TempArtifact::new("laniusc_source_root", "user_symlink_entry", Some("lani"));
+    entry.write_str(
+        r#"
+module app::main;
+import app::escape;
+fn main() { return 0; }
+"#,
+    );
+
+    let err = load_entry_with_source_root(entry.path(), &source_root)
+        .expect_err("source-root loader should reject user symlink escapes");
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0004");
+            let message = diagnostic.render();
+            assert!(message.contains("app::escape"));
+            assert!(message.contains("outside source root"));
+            assert!(message.contains("import app::escape;"));
+        }
+        other => panic!("expected frontend user symlink escape error, got {other:?}"),
+    }
+
+    std::fs::remove_dir_all(&root).expect("remove temp user source-root symlink test dir");
 }
 
 #[test]
@@ -620,6 +1813,39 @@ fn main() {
 }
 
 #[test]
+fn type_checker_accepts_source_pack_generic_callee_at_two_concrete_types() {
+    assert_gpu_type_check_pack_accepts(&[
+        r#"
+module core::id;
+
+pub fn identity<T>(value: T) -> T {
+    return value;
+}
+"#,
+        r#"
+module other::id;
+
+pub fn identity(value: bool) -> bool {
+    return value;
+}
+"#,
+        r#"
+module app::main;
+
+fn main() {
+    let number: i32 = core::id::identity(7);
+    let flag: bool = core::id::identity(false);
+    let decoy: bool = other::id::identity(flag);
+    if (decoy) {
+        return number;
+    }
+    return 0;
+}
+"#,
+    ]);
+}
+
+#[test]
 fn rejects_non_constructor_symbolic_enum_returns() {
     assert_gpu_type_check_pack_rejects(&[
         include_str!("../stdlib/core/option.lani"),
@@ -930,9 +2156,9 @@ module app::main;
 import core::target;
 
 fn main() {
-    let native: bool = core::target::is_native();
-    let has_stdio: bool = core::target::HAS_STDIO;
-    let threaded: bool = core::target::has_threads();
+    let native: Capability = core::target::is_native();
+    let has_stdio: core::target::Capability = core::target::HAS_STDIO;
+    let threaded: Capability = core::target::has_threads();
     if (native && has_stdio && !threaded) {
         return 0;
     }
@@ -1097,6 +2323,82 @@ fn main() {
 }
 
 #[test]
+fn type_checker_rejects_leaf_name_trait_impl_for_different_qualified_bound() {
+    assert_gpu_type_check_pack_rejects(&[
+        r#"
+module core::cmp;
+
+pub trait Eq<T> {
+    pub fn check(value: T) -> bool;
+}
+"#,
+        r#"
+module other::cmp;
+
+pub trait Eq<T> {
+    pub fn check(value: T) -> bool;
+}
+
+pub impl other::cmp::Eq<i32> for i32 {
+    pub fn check(value: i32) -> bool {
+        return value > 0;
+    }
+}
+"#,
+        r#"
+module app;
+
+fn keep<T>(value: T) -> T where T: core::cmp::Eq<T> {
+    return value;
+}
+
+fn main() {
+    let value: i32 = keep(7);
+    return value;
+}
+"#,
+    ]);
+}
+
+#[test]
+fn type_checker_rejects_unqualified_trait_impl_for_different_module_bound() {
+    assert_gpu_type_check_pack_rejects(&[
+        r#"
+module core::cmp;
+
+pub trait Eq<T> {
+    pub fn check(value: T) -> bool;
+}
+"#,
+        r#"
+module other::cmp;
+
+pub trait Eq<T> {
+    pub fn check(value: T) -> bool;
+}
+
+pub impl Eq<i32> for i32 {
+    pub fn check(value: i32) -> bool {
+        return value > 0;
+    }
+}
+"#,
+        r#"
+module app;
+
+fn keep<T>(value: T) -> T where T: core::cmp::Eq<T> {
+    return value;
+}
+
+fn main() {
+    let value: i32 = keep(7);
+    return value;
+}
+"#,
+    ]);
+}
+
+#[test]
 fn type_checker_resolves_qualified_constants() {
     assert_gpu_type_check_accepts(
         r#"
@@ -1237,6 +2539,33 @@ fn main() {
 }
 
 #[test]
+fn type_checker_resolves_public_import_despite_private_imported_name_collision() {
+    assert_gpu_type_check_pack_accepts(&[
+        r#"
+module core::private_limits;
+
+const VALUE: bool = false;
+"#,
+        r#"
+module core::public_limits;
+
+pub const VALUE: i32 = 7;
+"#,
+        r#"
+module app::main;
+
+import core::private_limits;
+import core::public_limits;
+
+fn main() {
+    let value: i32 = VALUE;
+    return value;
+}
+"#,
+    ]);
+}
+
+#[test]
 fn type_checker_accepts_same_module_private_qualified_values() {
     assert_gpu_type_check_accepts(
         r#"
@@ -1347,6 +2676,61 @@ fn accept(value: Item) -> i32 {
 
 fn main() {
     return 0;
+}
+"#,
+    ]);
+}
+
+#[test]
+fn type_checker_rejects_ambiguous_imported_name_after_duplicate_reimport_prefix() {
+    assert_gpu_type_check_pack_rejects(&[
+        r#"
+module core::left;
+
+pub const VALUE: i32 = 1;
+"#,
+        r#"
+module core::right;
+
+pub const VALUE: i32 = 2;
+"#,
+        r#"
+module app::main;
+
+import core::left;
+import core::left;
+import core::right;
+
+fn main() {
+    let value: i32 = VALUE;
+    return value;
+}
+"#,
+    ]);
+}
+
+#[test]
+fn type_checker_rejects_ambiguous_imported_names_independent_of_source_and_import_order() {
+    assert_gpu_type_check_pack_rejects(&[
+        r#"
+module core::right;
+
+pub const VALUE: i32 = 2;
+"#,
+        r#"
+module core::left;
+
+pub const VALUE: i32 = 1;
+"#,
+        r#"
+module app::main;
+
+import core::right;
+import core::left;
+
+fn main() {
+    let value: i32 = VALUE;
+    return value;
 }
 "#,
     ]);

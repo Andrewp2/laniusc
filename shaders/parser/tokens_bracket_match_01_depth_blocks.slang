@@ -53,6 +53,7 @@ static const uint TK_TYPE_ARRAY_LBRACKET = 85u;
 static const uint TK_INDEX_LBRACKET = 30u;
 static const uint TK_ARRAY_LBRACKET = 31u;
 static const uint TK_AMPERSAND = 25u;
+static const uint STATEMENT_CONTEXT_TYPE_ALIAS_RHS = 254u;
 static const int INF = 2147483647;
 
 groupshared int local_depth[256];
@@ -77,30 +78,8 @@ uint raw_kind_at(uint parser_i, uint count)
 bool in_type_alias_rhs_context(uint parser_i, uint count)
 {
     uint token_i = parser_i - 1u;
-    bool current_statement_is_type =
-        token_i < count && statement_context_kind[token_i] == TK_TYPE;
-    bool saw_assign = false;
-
-    uint j = parser_i;
-    [loop]
-    for (uint guard = 0u; guard < 512u && j > 0u; guard += 1u)
-    {
-        j -= 1u;
-        uint kind = raw_kind_at(j, count);
-        if (kind == TK_SEMICOLON || kind == TK_LBRACE || kind == TK_RBRACE)
-            return false;
-        if (kind == TK_ASSIGN)
-        {
-            saw_assign = true;
-            if (current_statement_is_type)
-                return true;
-        }
-        else if (kind == TK_TYPE)
-        {
-            return saw_assign;
-        }
-    }
-    return false;
+    return token_i < count &&
+           (statement_context_kind[token_i] & 0xffu) == STATEMENT_CONTEXT_TYPE_ALIAS_RHS;
 }
 
 bool semantic_token_ends_primary(uint kind)

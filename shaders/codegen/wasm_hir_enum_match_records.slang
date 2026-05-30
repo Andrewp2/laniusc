@@ -3,6 +3,8 @@
 // The enum/match module already sits at the storage-buffer limit on common
 // WebGPU adapters. This pass compacts match and arm facts into one uint4 table
 // so lowering can consume parser records without rebinding every source array.
+// Match rows store (scrutinee, first_arm, arm_count, unused); arm rows store
+// (pattern, first_payload_or_invalid, next_arm, result).
 
 struct Params
 {
@@ -17,6 +19,7 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> hir_match_scrutinee_node;
 StructuredBuffer<uint> hir_match_arm_start;
 StructuredBuffer<uint> hir_match_arm_count;
+StructuredBuffer<uint> hir_match_arm_next;
 StructuredBuffer<uint> hir_match_arm_pattern_node;
 StructuredBuffer<uint> hir_match_arm_payload_start;
 StructuredBuffer<uint> hir_match_arm_payload_count;
@@ -56,10 +59,12 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint result = hir_match_arm_result_node[i];
     if (pattern != INVALID || result != INVALID)
     {
+        uint payload_count = hir_match_arm_payload_count[i];
+        uint payload_start = payload_count == 0u ? INVALID : hir_match_arm_payload_start[i];
         hir_enum_match_record[i] = uint4(
             pattern,
-            hir_match_arm_payload_start[i],
-            hir_match_arm_payload_count[i],
+            payload_start,
+            hir_match_arm_next[i],
             result);
     }
 }

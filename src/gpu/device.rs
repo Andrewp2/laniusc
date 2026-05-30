@@ -232,10 +232,11 @@ fn create_context() -> GpuDevice {
 
     let adapter_limits = adapter.limits();
     let mut limits = wgpu::Limits::defaults();
-    // Native compiler stages use wide GPU record tables; keep this limit in
-    // sync with reflected shader resource counts.
+    // Native compiler stages use wide GPU record tables; request the adapter's
+    // native storage-buffer limit so reflected pass layouts fail only when the
+    // selected device genuinely cannot support the compiler's record tables.
     limits.max_storage_buffers_per_shader_stage =
-        adapter_limits.max_storage_buffers_per_shader_stage.min(32);
+        adapter_limits.max_storage_buffers_per_shader_stage;
     limits.max_storage_buffer_binding_size = 2_147_483_644;
     limits.max_buffer_size = 2_147_483_644;
 

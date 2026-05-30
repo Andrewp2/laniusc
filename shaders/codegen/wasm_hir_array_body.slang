@@ -1,6 +1,11 @@
 import utils;
 
-// Bounded HIR-driven WASM array helper body emitter.
+// Quarantined legacy bounded HIR-driven WASM array helper body emitter.
+//
+// The Rust WASM generator does not load or dispatch this pass. Keep the source
+// only as historical scaffolding, without a shader entrypoint, until array
+// helper lowering is rebuilt as compact records with byte-count, prefix-scan,
+// and byte-scatter placement.
 //
 // This pass consumes GPU-produced HIR spans, resolver call metadata, and the
 // array literal table built by wasm_arrays. It lowers the selected fixed array
@@ -9,6 +14,10 @@ import utils;
 // helper shape that returns an indexed element or a scalar fallback argument,
 // and a bounded scan helper shape that returns a boolean scalar from a fixed
 // array comparison.
+//
+// It is not the production-scale backend shape: the supported slice must stay
+// fail-closed until array helper lowering is represented as node-local records
+// with scan/scatter byte placement.
 
 struct Params
 {
@@ -36,6 +45,7 @@ StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_token_end;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> call_fn_index;
+StructuredBuffer<uint> fn_entrypoint_tag;
 StructuredBuffer<uint> array_len;
 StructuredBuffer<uint> array_values;
 
@@ -52,6 +62,8 @@ static const uint HIR_LET_STMT = 8u;
 static const uint HIR_RETURN_STMT = 9u;
 static const uint HIR_IF_STMT = 10u;
 static const uint HIR_WHILE_STMT = 11u;
+
+static const uint ENTRYPOINT_MAIN = 1u;
 
 static const uint TK_IDENT = 1u;
 static const uint TK_INT = 2u;
@@ -92,11 +104,15 @@ static const uint TK_TRUE = 90u;
 static const uint TK_FALSE = 91u;
 
 static const uint MAX_ARRAY_ELEMS = 16u;
+static const uint MAX_LEGACY_ARRAY_BODY_TOKENS = 512u;
+static const uint MAX_LEGACY_ARRAY_BODY_HIR_NODES = 512u;
+static const uint ERR_UNSUPPORTED_SOURCE_SHAPE = 1u;
 
 bool module_already_emitted()
 {
     return status[1u] == 1u || status[1u] == 2u || status[1u] == 3u ||
-           status[1u] == 5u;
+           status[1u] == 5u ||
+           (status[2u] != 0u && status[2u] != ERR_UNSUPPORTED_SOURCE_SHAPE);
 }
 
 uint linear_dispatch_id(uint3 tid)
@@ -112,6 +128,27 @@ uint active_token_count()
 uint active_hir_node_count()
 {
     return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+}
+
+bool valid_node(uint node)
+{
+    return node != INVALID && node < active_hir_node_count();
+}
+
+bool valid_token(uint token)
+{
+    return token != INVALID && token < active_token_count();
+}
+
+bool function_decl_token_has_record(uint decl_token)
+{
+    return valid_token(decl_token) && call_fn_index[decl_token] == decl_token;
+}
+
+bool is_function_record_node(uint node)
+{
+    return valid_node(node) && hir_kind[node] == HIR_FN &&
+           function_decl_token_has_record(hir_token_pos[node]);
 }
 
 uint token_kind(uint i)
@@ -135,29 +172,11 @@ uint source_at(uint start, uint delta)
     return idx < gParams.source_len ? load_byte_at(source_bytes, idx) : 0u;
 }
 
-bool token_text_eq4(uint i, uint a, uint b, uint c, uint d)
+bool token_resolves_to(uint token_i, uint decl_token)
 {
-    uint start = token_start(i);
-    return token_len(i) == 4u && source_at(start, 0u) == a && source_at(start, 1u) == b &&
-           source_at(start, 2u) == c && source_at(start, 3u) == d;
-}
-
-bool token_text_same(uint left, uint right)
-{
-    uint len = token_len(left);
-    if (len != token_len(right) || len > 64u)
+    if (token_i == INVALID || decl_token == INVALID || token_i >= active_token_count())
         return false;
-    uint left_start = token_start(left);
-    uint right_start = token_start(right);
-    [loop]
-    for (uint i = 0u; i < 64u; i += 1u)
-    {
-        if (i >= len)
-            break;
-        if (source_at(left_start, i) != source_at(right_start, i))
-            return false;
-    }
-    return true;
+    return visible_decl[token_i] == decl_token;
 }
 
 bool is_identifier_token(uint kind)
@@ -359,13 +378,9 @@ uint find_main_fn_node()
     [loop]
     for (uint i = 0u; i < count; i += 1u)
     {
-        if (hir_kind[i] != HIR_FN)
+        if (!is_function_record_node(i))
             continue;
-        uint fn_i = hir_token_pos[i];
-        if (fn_i == INVALID || fn_i + 1u >= active_token_count() ||
-            token_kind(fn_i + 1u) != TK_IDENT)
-            continue;
-        if (!token_text_eq4(fn_i + 1u, 109u, 97u, 105u, 110u))
+        if (fn_entrypoint_tag[i] != ENTRYPOINT_MAIN)
             continue;
         if (found != INVALID)
             return INVALID;
@@ -382,7 +397,7 @@ uint find_fn_node_for_token(uint fn_token)
     [loop]
     for (uint i = 0u; i < count; i += 1u)
     {
-        if (hir_kind[i] == HIR_FN && hir_token_pos[i] == fn_token)
+        if (is_function_record_node(i) && hir_token_pos[i] == fn_token)
             return i;
     }
     return INVALID;
@@ -705,7 +720,7 @@ bool helper_param_slot_for_expr(uint helper_node, uint expr_i, out uint slot)
         uint pos = hir_token_pos[i];
         if (pos == INVALID || pos <= fn_start || pos >= body_open)
             continue;
-        if (pos == expr_decl_i || token_text_same(pos, expr_i))
+        if (pos == expr_decl_i)
         {
             slot = seen;
             return true;
@@ -723,8 +738,7 @@ bool call_arg_is_array_local(uint call_open_i, uint call_close_i, uint slot, uin
         return false;
     if (arg_start + 1u != arg_end || !is_identifier_token(token_kind(arg_start)))
         return false;
-    uint decl_i = visible_decl[arg_start];
-    return decl_i == local_name_i || token_text_same(arg_start, local_name_i);
+    return token_resolves_to(arg_start, local_name_i);
 }
 
 bool helper_return_array_index(uint helper_node, out uint param_slot, out uint index)
@@ -844,7 +858,8 @@ bool parse_local_lt_literal_condition(
     if (cond_start + 3u != cond_end || token_kind(cond_start + 1u) != TK_LT ||
         token_kind(cond_start + 2u) != TK_INT)
         return false;
-    if (!is_identifier_token(token_kind(cond_start)) || !token_text_same(cond_start, local_name_i))
+    if (!is_identifier_token(token_kind(cond_start)) ||
+        !token_resolves_to(cond_start, local_name_i))
         return false;
     limit = parse_uint_token(cond_start + 2u);
     return true;
@@ -894,7 +909,8 @@ bool parse_local_let_uint_literal(
 bool parse_increment_by_one(uint start_i, uint end_i, uint local_name_i)
 {
     if (start_i == INVALID || end_i == INVALID || start_i + 4u != end_i ||
-        !is_identifier_token(token_kind(start_i)) || !token_text_same(start_i, local_name_i) ||
+        !is_identifier_token(token_kind(start_i)) ||
+        !token_resolves_to(start_i, local_name_i) ||
         token_kind(start_i + 1u) != TK_PLUS_ASSIGN || token_kind(start_i + 2u) != TK_INT ||
         parse_uint_token(start_i + 2u) != 1u || token_kind(start_i + 3u) != TK_SEMICOLON)
         return false;
@@ -956,7 +972,7 @@ bool return_local_from_block(uint block_open, uint block_close, uint local_name_
                         : block_close;
     return expr_start + 1u == expr_end &&
            is_identifier_token(token_kind(expr_start)) &&
-           (visible_decl[expr_start] == local_name_i || token_text_same(expr_start, local_name_i));
+           token_resolves_to(expr_start, local_name_i);
 }
 
 bool return_local_from_node(uint ret_node, uint local_name_i)
@@ -970,7 +986,7 @@ bool return_local_from_node(uint ret_node, uint local_name_i)
                                                                              : ret_end;
     return expr_start + 1u == expr_end &&
            is_identifier_token(token_kind(expr_start)) &&
-           (visible_decl[expr_start] == local_name_i || token_text_same(expr_start, local_name_i));
+           token_resolves_to(expr_start, local_name_i);
 }
 
 bool return_param_slot_from_node(uint helper_node, uint ret_node, out uint param_slot)
@@ -1000,7 +1016,7 @@ bool parse_array_index_expr(
         !is_identifier_token(token_kind(expr_start)) ||
         !is_index_open(token_kind(expr_start + 1u)) ||
         !is_identifier_token(token_kind(expr_start + 2u)) ||
-        !token_text_same(expr_start + 2u, index_local_i) ||
+        !token_resolves_to(expr_start + 2u, index_local_i) ||
         !is_index_close(token_kind(expr_start + 3u)))
         return false;
     return helper_param_slot_for_expr(helper_node, expr_start, array_param_slot);
@@ -1057,7 +1073,7 @@ bool parse_add_array_index(
     array_param_slot = INVALID;
     if (start_i == INVALID || end_i == INVALID || start_i + 7u != end_i ||
         !is_identifier_token(token_kind(start_i)) ||
-        !token_text_same(start_i, accumulator_local_i) ||
+        !token_resolves_to(start_i, accumulator_local_i) ||
         token_kind(start_i + 1u) != TK_PLUS_ASSIGN ||
         token_kind(start_i + 6u) != TK_SEMICOLON)
         return false;
@@ -1080,7 +1096,7 @@ bool parse_assign_array_index(
     array_param_slot = INVALID;
     if (start_i == INVALID || end_i == INVALID || start_i + 7u != end_i ||
         !is_identifier_token(token_kind(start_i)) ||
-        !token_text_same(start_i, target_local_i) ||
+        !token_resolves_to(start_i, target_local_i) ||
         token_kind(start_i + 1u) != TK_ASSIGN ||
         token_kind(start_i + 6u) != TK_SEMICOLON)
         return false;
@@ -1106,7 +1122,7 @@ bool parse_array_index_eq_param_condition(
         !is_identifier_token(token_kind(cond_start)) ||
         !is_index_open(token_kind(cond_start + 1u)) ||
         !is_identifier_token(token_kind(cond_start + 2u)) ||
-        !token_text_same(cond_start + 2u, index_local_i) ||
+        !token_resolves_to(cond_start + 2u, index_local_i) ||
         !is_index_close(token_kind(cond_start + 3u)) ||
         token_kind(cond_start + 4u) != TK_EQEQ ||
         !is_identifier_token(token_kind(cond_start + 5u)))
@@ -1133,11 +1149,11 @@ bool parse_array_index_cmp_local_condition(
         !is_identifier_token(token_kind(cond_start)) ||
         !is_index_open(token_kind(cond_start + 1u)) ||
         !is_identifier_token(token_kind(cond_start + 2u)) ||
-        !token_text_same(cond_start + 2u, index_local_i) ||
+        !token_resolves_to(cond_start + 2u, index_local_i) ||
         !is_index_close(token_kind(cond_start + 3u)) ||
         (token_kind(cond_start + 4u) != TK_LT && token_kind(cond_start + 4u) != TK_GT) ||
         !is_identifier_token(token_kind(cond_start + 5u)) ||
-        !token_text_same(cond_start + 5u, target_local_i))
+        !token_resolves_to(cond_start + 5u, target_local_i))
         return false;
     if (!helper_param_slot_for_expr(helper_node, cond_start, array_param_slot))
         return false;
@@ -2241,6 +2257,30 @@ void record_array_reject(uint stage, uint detail, uint target)
     }
 }
 
+bool legacy_array_body_inputs_within_scan_budget(out uint stage, out uint detail)
+{
+    stage = 0u;
+    detail = 0u;
+
+    uint tokens = active_token_count();
+    if (tokens > MAX_LEGACY_ARRAY_BODY_TOKENS)
+    {
+        stage = 30u;
+        detail = tokens;
+        return false;
+    }
+
+    uint hir_nodes = active_hir_node_count();
+    if (hir_nodes > MAX_LEGACY_ARRAY_BODY_HIR_NODES)
+    {
+        stage = 31u;
+        detail = hir_nodes;
+        return false;
+    }
+
+    return true;
+}
+
 bool emit_body(out uint body_len, out uint reject_stage, out uint reject_detail, bool write, uint target)
 {
     body_len = 0u;
@@ -2303,9 +2343,8 @@ bool emit_body(out uint body_len, out uint reject_stage, out uint reject_detail,
     return true;
 }
 
-[shader("compute")]
 [numthreads(256, 1, 1)]
-void main(uint3 tid: SV_DispatchThreadID)
+void quarantined_legacy_array_body_main(uint3 tid: SV_DispatchThreadID)
 {
     if (module_already_emitted())
         return;
@@ -2317,6 +2356,12 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint body_len = 0u;
     uint reject_stage = 0u;
     uint reject_detail = INVALID;
+    if (!legacy_array_body_inputs_within_scan_budget(reject_stage, reject_detail))
+    {
+        record_array_reject(reject_stage, reject_detail, target);
+        return;
+    }
+
     if (!emit_body(body_len, reject_stage, reject_detail, false, target))
     {
         if (reject_stage > 5u)

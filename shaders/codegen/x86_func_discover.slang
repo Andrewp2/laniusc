@@ -24,19 +24,18 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
+StructuredBuffer<uint> hir_item_kind;
 StructuredBuffer<uint> x86_node_tree_status;
 StructuredBuffer<uint> hir_node_decl_token;
-StructuredBuffer<uint> hir_node_name_token;
-StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> fn_entrypoint_tag;
 
 RWStructuredBuffer<uint> x86_func_meta;
 RWStructuredBuffer<uint> x86_node_func;
 RWStructuredBuffer<uint> x86_decl_node_by_token;
-RWStructuredBuffer<uint> x86_func_slot_by_node;
 
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_FN = 3u;
+static const uint HIR_ITEM_KIND_FN = 4u;
 static const uint ENTRYPOINT_MAIN = 1u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint X86_NODE_TREE_OK = 1u;
@@ -56,22 +55,19 @@ uint active_hir_node_count()
 
 bool is_main_function_node(uint node_i)
 {
-    return hir_kind[node_i] == HIR_FN && fn_entrypoint_tag[node_i] == ENTRYPOINT_MAIN;
+    return hir_kind[node_i] == HIR_FN &&
+           hir_item_kind[node_i] == HIR_ITEM_KIND_FN &&
+           fn_entrypoint_tag[node_i] == ENTRYPOINT_MAIN;
 }
 
 bool is_function_record_node(uint node_i)
 {
-    return hir_kind[node_i] == HIR_FN;
+    return hir_kind[node_i] == HIR_FN && hir_item_kind[node_i] == HIR_ITEM_KIND_FN;
 }
 
 bool valid_node(uint node_i)
 {
     return node_i != INVALID && node_i < active_hir_node_count();
-}
-
-bool valid_token(uint token_i)
-{
-    return token_i != INVALID && token_i < gParams.n_tokens;
 }
 
 bool node_tree_ok()
@@ -82,7 +78,7 @@ bool node_tree_ok()
 
 void publish_function_lookup_key(uint key, uint node_i)
 {
-    if (!valid_token(key))
+    if (key == INVALID || key >= gParams.n_tokens)
         return;
 
     atomic_u32_min(x86_decl_node_by_token, key, node_i);
@@ -90,29 +86,10 @@ void publish_function_lookup_key(uint key, uint node_i)
 
 void publish_function_lookup(uint node_i)
 {
-    if (hir_kind[node_i] != HIR_FN)
+    if (!is_function_record_node(node_i))
         return;
 
     publish_function_lookup_key(hir_node_decl_token[node_i], node_i);
-    publish_function_lookup_key(hir_node_name_token[node_i], node_i);
-    publish_function_lookup_key(hir_token_pos[node_i], node_i);
-}
-
-uint function_slot_key(uint node_i)
-{
-    if (!valid_node(node_i))
-        return INVALID;
-    uint slot = hir_node_decl_token[node_i];
-    if (valid_token(slot))
-        return slot;
-    slot = hir_token_pos[node_i];
-    return valid_token(slot) ? slot : INVALID;
-}
-
-void publish_function_slot(uint node_i)
-{
-    uint slot = function_slot_key(node_i);
-    x86_func_slot_by_node[node_i] = slot;
 }
 
 [shader("compute")]
@@ -131,7 +108,6 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     x86_node_func[node_i] = node_i;
     publish_function_lookup(node_i);
-    publish_function_slot(node_i);
 
     if (!is_main_function_node(node_i))
         return;

@@ -5,6 +5,10 @@
 //   been sorted by the GPU radix passes.
 // - Each path import performs a sorted-table lookup against
 //   sorted_module_key_order using path segment name ids.
+// - Dispatch after type_check_modules_05d_attach_record_modules has attached
+//   import records to their owning module ids.
+// - Direct self-imports are rejected here. The following sorted import-edge
+//   pass rejects two-module cycles through GPU range lookups.
 // - This pass writes import_target_module_id and import_status only. It does
 //   not make declarations visible, resolve value/type paths, perform CPU path
 //   lookup, scan source bytes, use hashes, or apply same-source shortcuts.
@@ -27,6 +31,9 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> import_count_out;
 StructuredBuffer<uint> import_kind;
 StructuredBuffer<uint> import_path_id;
+StructuredBuffer<uint> import_module_id;
+StructuredBuffer<uint> import_owner_hir;
+StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_name_id;
@@ -54,8 +61,13 @@ static const uint IMPORT_STATUS_OK = 0u;
 static const uint IMPORT_STATUS_UNRESOLVED = 1u;
 static const uint IMPORT_STATUS_UNSUPPORTED_STRING = 2u;
 static const uint IMPORT_STATUS_PATH_TOO_DEEP = 3u;
+static const uint IMPORT_STATUS_SELF_CYCLE = 4u;
 
 static const uint ERR_BAD_HIR = 6u;
+static const uint ERR_IMPORT_CYCLE = 12u;
+static const uint ERR_UNRESOLVED_IMPORT = 15u;
+static const uint ERR_UNSUPPORTED_IMPORT = 16u;
+static const uint ERR_IMPORT_PATH_TOO_DEEP = 17u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -85,6 +97,12 @@ uint active_module_count()
 void record_error(uint token_i, uint code, uint detail)
 {
     record_min_token_error(status, token_i, code, detail);
+}
+
+uint import_owner_token(uint import_i)
+{
+    uint owner = import_owner_hir[import_i];
+    return owner == INVALID ? import_i : hir_token_pos[owner];
 }
 
 uint path_segment_value(uint path_id, uint segment_i)
@@ -181,7 +199,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (import_kind[import_i] != HIR_ITEM_IMPORT_TARGET_PATH)
     {
         import_status[import_i] = IMPORT_STATUS_UNSUPPORTED_STRING;
-        record_error(import_i, ERR_BAD_HIR, IMPORT_STATUS_UNSUPPORTED_STRING);
+        record_error(
+            import_owner_token(import_i),
+            ERR_UNSUPPORTED_IMPORT,
+            IMPORT_STATUS_UNSUPPORTED_STRING);
         return;
     }
 
@@ -189,7 +210,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (path_id >= record_capacity())
     {
         import_status[import_i] = IMPORT_STATUS_UNRESOLVED;
-        record_error(import_i, ERR_BAD_HIR, IMPORT_STATUS_UNRESOLVED);
+        record_error(import_i, ERR_UNRESOLVED_IMPORT, IMPORT_STATUS_UNRESOLVED);
         return;
     }
 
@@ -197,13 +218,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (count == 0u)
     {
         import_status[import_i] = IMPORT_STATUS_UNRESOLVED;
-        record_error(path_owner_token[path_id], ERR_BAD_HIR, IMPORT_STATUS_UNRESOLVED);
+        record_error(path_owner_token[path_id], ERR_UNRESOLVED_IMPORT, IMPORT_STATUS_UNRESOLVED);
         return;
     }
     if (count > SORT_PATH_SEGMENTS)
     {
         import_status[import_i] = IMPORT_STATUS_PATH_TOO_DEEP;
-        record_error(path_owner_token[path_id], ERR_BAD_HIR, IMPORT_STATUS_PATH_TOO_DEEP);
+        record_error(
+            path_owner_token[path_id],
+            ERR_IMPORT_PATH_TOO_DEEP,
+            IMPORT_STATUS_PATH_TOO_DEEP);
         return;
     }
 
@@ -211,7 +235,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (module_i == INVALID)
     {
         import_status[import_i] = IMPORT_STATUS_UNRESOLVED;
-        record_error(path_owner_token[path_id], ERR_BAD_HIR, IMPORT_STATUS_UNRESOLVED);
+        record_error(path_owner_token[path_id], ERR_UNRESOLVED_IMPORT, IMPORT_STATUS_UNRESOLVED);
+        return;
+    }
+
+    uint importing_module = import_module_id[import_i];
+    if (importing_module != INVALID && importing_module == module_i)
+    {
+        import_status[import_i] = IMPORT_STATUS_SELF_CYCLE;
+        record_error(path_owner_token[path_id], ERR_IMPORT_CYCLE, IMPORT_STATUS_SELF_CYCLE);
         return;
     }
 

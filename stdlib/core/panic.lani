@@ -1,13 +1,84 @@
-// Source-level panic helpers built on the current assert trap path.
+// Source-level panic declarations for the runtime boundary.
+// The panic and panic-hook surface below is frontend/type-check contract
+// metadata only. It does not install or call a hook until a runtime/linker
+// binding exists.
 
 module core::panic;
 
-pub fn panic() {
-    assert(false);
-    return;
+pub extern "lanius_panic" fn panic();
+
+pub extern "lanius_panic" fn unreachable();
+
+pub type PanicCapability = bool;
+pub type PanicHookRuntimeAbiVersion = u32;
+pub type PanicHookServiceId = u32;
+pub type PanicHookServiceStatus = u32;
+
+pub const PANIC_HOOK_RUNTIME_ABI_VERSION: PanicHookRuntimeAbiVersion = 1;
+pub const PANIC_HOOK_SERVICE_ID: PanicHookServiceId = 6;
+pub const PANIC_HOOK_SERVICE_STATUS_UNAVAILABLE: PanicHookServiceStatus = 1;
+pub const PANIC_HOOK_HAS_RUNTIME_BINDING: PanicCapability = false;
+
+pub fn panic_hook_runtime_abi_version() -> PanicHookRuntimeAbiVersion {
+    return PANIC_HOOK_RUNTIME_ABI_VERSION;
 }
 
-pub fn unreachable() {
-    assert(false);
-    return;
+pub fn panic_hook_service_id() -> PanicHookServiceId {
+    return PANIC_HOOK_SERVICE_ID;
+}
+
+pub fn panic_hook_service_is_known() -> PanicCapability {
+    return true;
+}
+
+pub fn panic_hook_contract_metadata_is_available() -> PanicCapability {
+    return panic_hook_service_is_known();
+}
+
+pub fn panic_hook_service_status() -> PanicHookServiceStatus {
+    return PANIC_HOOK_SERVICE_STATUS_UNAVAILABLE;
+}
+
+pub fn panic_hook_is_available() -> PanicCapability {
+    return PANIC_HOOK_HAS_RUNTIME_BINDING;
+}
+
+pub fn panic_hook_is_blocked() -> PanicCapability {
+    return !panic_hook_is_available();
+}
+
+pub fn panic_hook_requires_runtime_binding() -> PanicCapability {
+    return !PANIC_HOOK_HAS_RUNTIME_BINDING;
+}
+
+pub fn panic_hook_host_abi_is_contract_only() -> PanicCapability {
+    return panic_hook_requires_runtime_binding();
+}
+
+pub fn panic_hook_is_contract_only() -> PanicCapability {
+    return panic_hook_host_abi_is_contract_only();
+}
+
+pub fn panic_is_executable() -> PanicCapability {
+    return PANIC_HOOK_HAS_RUNTIME_BINDING;
+}
+
+pub fn panic_is_blocked() -> PanicCapability {
+    return !panic_is_executable();
+}
+
+pub fn panic_requires_runtime_binding() -> PanicCapability {
+    return !panic_is_executable();
+}
+
+pub fn unreachable_is_executable() -> PanicCapability {
+    return PANIC_HOOK_HAS_RUNTIME_BINDING;
+}
+
+pub fn unreachable_is_blocked() -> PanicCapability {
+    return !unreachable_is_executable();
+}
+
+pub fn unreachable_requires_runtime_binding() -> PanicCapability {
+    return !unreachable_is_executable();
 }

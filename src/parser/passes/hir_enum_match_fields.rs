@@ -62,6 +62,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirEnumMatchFiel
                 b.hir_variant_payload_count.as_entire_binding(),
             ),
             (
+                "hir_variant_payload_node".into(),
+                b.hir_variant_payload_node.as_entire_binding(),
+            ),
+            (
                 "hir_match_scrutinee_node".into(),
                 b.hir_match_scrutinee_node.as_entire_binding(),
             ),

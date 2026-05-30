@@ -49,6 +49,7 @@ static const uint X86_VINST_STORE_LOCAL_IMM = 16u;
 static const uint X86_VINST_CALL_MIXED = 20u;
 static const uint X86_VINST_LOAD_PARAM_INDEX = 21u;
 static const uint X86_VINST_STORE_RET_PTR = 22u;
+static const uint X86_VINST_STORE_LOCAL_INDEX = 30u;
 static const uint X86_ARG_SCALAR = 1u;
 
 uint linear_dispatch_id(uint3 tid)
@@ -82,6 +83,13 @@ uint mixed_arg_count(uint info)
     return info & 0xffu;
 }
 
+uint pack_count_error_extra(uint op, uint observed_count, uint supported_count)
+{
+    return ((op & 0xffu) << 24u) |
+           ((observed_count & 0xfffu) << 12u) |
+           (supported_count & 0xfffu);
+}
+
 uint mixed_arg_kind(uint info, uint ordinal)
 {
     if (ordinal < 4u)
@@ -104,12 +112,10 @@ uint mixed_scalar_operand_count(uint row)
     uint info = args.w;
     uint count = 0u;
     uint arg_count = mixed_arg_count(info);
-    [unroll]
-    for (uint ordinal = 0u; ordinal < 4u; ordinal += 1u)
-    {
-        if (ordinal < arg_count && mixed_arg_kind(info, ordinal) == X86_ARG_SCALAR)
-            count += 1u;
-    }
+    if (arg_count > 0u && mixed_arg_kind(info, 0u) == X86_ARG_SCALAR) count += 1u;
+    if (arg_count > 1u && mixed_arg_kind(info, 1u) == X86_ARG_SCALAR) count += 1u;
+    if (arg_count > 2u && mixed_arg_kind(info, 2u) == X86_ARG_SCALAR) count += 1u;
+    if (arg_count > 3u && mixed_arg_kind(info, 3u) == X86_ARG_SCALAR) count += 1u;
     return count;
 }
 
@@ -119,15 +125,24 @@ uint mixed_scalar_operand_at(uint row, uint slot)
     uint info = args.w;
     uint seen = 0u;
     uint arg_count = mixed_arg_count(info);
-    [unroll]
-    for (uint ordinal = 0u; ordinal < 4u; ordinal += 1u)
+    if (arg_count > 0u && mixed_arg_kind(info, 0u) == X86_ARG_SCALAR)
     {
-        if (ordinal < arg_count && mixed_arg_kind(info, ordinal) == X86_ARG_SCALAR)
-        {
-            if (seen == slot)
-                return mixed_arg_payload(row, ordinal);
-            seen += 1u;
-        }
+        if (seen == slot) return mixed_arg_payload(row, 0u);
+        seen += 1u;
+    }
+    if (arg_count > 1u && mixed_arg_kind(info, 1u) == X86_ARG_SCALAR)
+    {
+        if (seen == slot) return mixed_arg_payload(row, 1u);
+        seen += 1u;
+    }
+    if (arg_count > 2u && mixed_arg_kind(info, 2u) == X86_ARG_SCALAR)
+    {
+        if (seen == slot) return mixed_arg_payload(row, 2u);
+        seen += 1u;
+    }
+    if (arg_count > 3u && mixed_arg_kind(info, 3u) == X86_ARG_SCALAR)
+    {
+        if (seen == slot) return mixed_arg_payload(row, 3u);
     }
     return INVALID;
 }
@@ -151,7 +166,9 @@ uint operand_count_for_row(uint row)
         return 1u;
     if (op == X86_VINST_CALL_MIXED)
         return mixed_scalar_operand_count(row);
-    if (op == X86_VINST_BINARY || op == X86_VINST_COMPARE)
+    if (op == X86_VINST_BINARY ||
+        op == X86_VINST_COMPARE ||
+        op == X86_VINST_STORE_LOCAL_INDEX)
         return 2u;
     return 0u;
 }
@@ -163,6 +180,12 @@ uint operand_at(uint row, uint slot)
     if (op == X86_VINST_UNARY)
         return slot == 0u ? args.y : INVALID;
     if (op == X86_VINST_BINARY || op == X86_VINST_COMPARE)
+    {
+        if (slot == 0u) return args.y;
+        if (slot == 1u) return args.z;
+        return INVALID;
+    }
+    if (op == X86_VINST_STORE_LOCAL_INDEX)
     {
         if (slot == 0u) return args.y;
         if (slot == 1u) return args.z;
@@ -211,6 +234,24 @@ bool extend_operand_live_end(uint row, uint inst_count, uint op, uint slot)
     return true;
 }
 
+bool validate_operand_record(uint row, uint op)
+{
+    if (op == X86_VINST_CALL_MIXED)
+    {
+        uint arg_count = mixed_arg_count(x86_virtual_inst_args[row].w);
+        if (arg_count > MAX_X86_OPERANDS)
+        {
+            publish_stage_error_min_detail_extra4(
+                x86_virtual_liveness_status,
+                X86_ERR_VIRTUAL_LIVENESS,
+                row,
+                pack_count_error_extra(op, arg_count, MAX_X86_OPERANDS));
+            return false;
+        }
+    }
+    return true;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
@@ -238,6 +279,9 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     uint4 inst = x86_virtual_inst_record[row];
     if (inst.x == INVALID || inst.z == 0u)
+        return;
+
+    if (!validate_operand_record(row, inst.z))
         return;
 
     uint operand_count = operand_count_for_row(row);

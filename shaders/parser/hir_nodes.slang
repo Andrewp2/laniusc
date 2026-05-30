@@ -91,7 +91,8 @@ uint classify(uint prod)
         prod == PROD_PUB_IMPL || prod == PROD_PUB_TRAIT || prod == PROD_ENUM_VARIANT ||
         prod == PROD_TRAIT)
         return HIR_ITEM;
-    if (prod == PROD_FN || prod == PROD_EXTERN_FN || prod == PROD_IMPL_FN)
+    if (prod == PROD_FN || prod == PROD_EXTERN_FN || prod == PROD_IMPL_FN ||
+        prod == PROD_TRAIT_METHOD || prod == PROD_TRAIT_METHOD_PUB)
         return HIR_FN;
     if (prod == PROD_IMPORT)
         return HIR_IMPORT_ITEM;

@@ -107,6 +107,9 @@ pub(super) struct MetadataRecordBuffers {
     pub(super) call_abi_record_buf: wgpu::Buffer,
     pub(super) call_abi_status_buf: PooledStorageBuffer,
     pub(super) call_abi_status_uniform_buf: wgpu::Buffer,
+    pub(super) for_iterable_node_buf: wgpu::Buffer,
+    pub(super) node_control_padding_buf: wgpu::Buffer,
+    pub(super) postfix_operand_owner_buf: wgpu::Buffer,
 }
 
 pub(super) struct MetadataRecordBufferInputs<'a, 'scratch> {
@@ -131,6 +134,10 @@ pub(super) struct InstructionRecordBuffers {
     pub(super) node_inst_gen_node_record_buf: wgpu::Buffer,
     pub(super) node_inst_subtree_bounds_status_buf: PooledStorageBuffer,
     pub(super) node_inst_location_status_buf: PooledStorageBuffer,
+    pub(super) short_circuit_rhs_node_a_buf: wgpu::Buffer,
+    pub(super) short_circuit_rhs_node_b_buf: wgpu::Buffer,
+    pub(super) short_circuit_rhs_link_a_buf: wgpu::Buffer,
+    pub(super) short_circuit_rhs_link_b_buf: wgpu::Buffer,
     pub(super) node_inst_gen_input_status_buf: PooledStorageBuffer,
     pub(super) virtual_inst_record_buf: wgpu::Buffer,
     pub(super) virtual_inst_args_buf: wgpu::Buffer,
@@ -160,6 +167,8 @@ pub(super) struct InstructionRecordBuffers {
     pub(super) text_scan_prefix_b_buf: wgpu::Buffer,
     pub(super) virtual_value_def_flag_buf: wgpu::Buffer,
     pub(super) virtual_value_def_row_buf: wgpu::Buffer,
+    pub(super) reloc_count_buf: wgpu::Buffer,
+    pub(super) reloc_status_buf: PooledStorageBuffer,
     pub(super) encode_status_buf: PooledStorageBuffer,
     pub(super) elf_layout_buf: wgpu::Buffer,
     pub(super) layout_status_buf: PooledStorageBuffer,
@@ -559,6 +568,12 @@ pub(super) fn create_metadata_record_buffers(
         "codegen.x86.call_abi_status.uniform",
         &[1, 0, u32::MAX, 0],
     );
+    let for_iterable_node_buf =
+        storage_u32_copy(device, "codegen.x86.for_iterable_node", hir_words);
+    let node_control_padding_buf =
+        storage_u32_copy(device, "codegen.x86.node_control_padding", hir_words);
+    let postfix_operand_owner_buf =
+        storage_u32_copy(device, "codegen.x86.postfix_operand_owner", hir_words);
     allocation_scope.checkpoint("call argument planning buffer allocation")?;
 
     Ok(MetadataRecordBuffers {
@@ -602,6 +617,9 @@ pub(super) fn create_metadata_record_buffers(
         call_abi_record_buf,
         call_abi_status_buf,
         call_abi_status_uniform_buf,
+        for_iterable_node_buf,
+        node_control_padding_buf,
+        postfix_operand_owner_buf,
     })
 }
 
@@ -670,6 +688,14 @@ pub(super) fn create_instruction_record_buffers(
 
     let node_inst_location_status_buf =
         pooled_storage_u32_copy(device, "codegen.x86.node_inst_location_status", 4);
+    let short_circuit_rhs_node_a_buf =
+        storage_u32_copy(device, "codegen.x86.short_circuit_rhs_node.a", hir_words);
+    let short_circuit_rhs_node_b_buf =
+        storage_u32_copy(device, "codegen.x86.short_circuit_rhs_node.b", hir_words);
+    let short_circuit_rhs_link_a_buf =
+        storage_u32_copy(device, "codegen.x86.short_circuit_rhs_link.a", hir_words);
+    let short_circuit_rhs_link_b_buf =
+        storage_u32_copy(device, "codegen.x86.short_circuit_rhs_link.b", hir_words);
     let node_inst_gen_input_status_buf =
         pooled_storage_u32_copy(device, "codegen.x86.node_inst_gen_input_status", 5);
     let virtual_inst_record_buf =
@@ -730,6 +756,8 @@ pub(super) fn create_instruction_record_buffers(
         storage_u32_copy(device, "codegen.x86.virtual_value_def_flag", inst_capacity);
     let virtual_value_def_row_buf =
         storage_u32_copy(device, "codegen.x86.virtual_value_def_row", inst_capacity);
+    let reloc_count_buf = storage_u32_copy(device, "codegen.x86.reloc_count", 1);
+    let reloc_status_buf = pooled_storage_u32_copy(device, "codegen.x86.reloc_status", 4);
     let encode_status_buf = pooled_storage_u32_copy(device, "codegen.x86.encode_status", 4);
     let elf_layout_buf = storage_u32_copy(device, "codegen.x86.elf_layout", 8);
     let layout_status_buf = pooled_storage_u32_copy(device, "codegen.x86.layout_status", 4);
@@ -755,6 +783,10 @@ pub(super) fn create_instruction_record_buffers(
         node_inst_gen_node_record_buf,
         node_inst_subtree_bounds_status_buf,
         node_inst_location_status_buf,
+        short_circuit_rhs_node_a_buf,
+        short_circuit_rhs_node_b_buf,
+        short_circuit_rhs_link_a_buf,
+        short_circuit_rhs_link_b_buf,
         node_inst_gen_input_status_buf,
         virtual_inst_record_buf,
         virtual_inst_args_buf,
@@ -784,6 +816,8 @@ pub(super) fn create_instruction_record_buffers(
         text_scan_prefix_b_buf,
         virtual_value_def_flag_buf,
         virtual_value_def_row_buf,
+        reloc_count_buf,
+        reloc_status_buf,
         encode_status_buf,
         elf_layout_buf,
         layout_status_buf,

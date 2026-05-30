@@ -78,7 +78,30 @@ pub(super) fn register_hir_item_resources<'a>(
     );
     resources.buffer("hir_fn_return_type_node", &hir_items.fn_return_type_node);
     resources.buffer("hir_param_record", &hir_items.param_record);
+    resources.buffer("hir_param_type_node", &hir_items.param_type_node);
+    resources.buffer("hir_method_owner_node", &hir_items.method_owner_node);
+    resources.buffer("hir_method_impl_node", &hir_items.method_impl_node);
+    resources.buffer("hir_method_name_token", &hir_items.method_name_token);
+    resources.buffer(
+        "hir_method_first_param_token",
+        &hir_items.method_first_param_token,
+    );
+    resources.buffer("hir_method_receiver_mode", &hir_items.method_receiver_mode);
+    resources.buffer("hir_method_visibility", &hir_items.method_visibility);
+    resources.buffer(
+        "hir_method_signature_flags",
+        &hir_items.method_signature_flags,
+    );
+    resources.buffer(
+        "hir_method_impl_receiver_type_node",
+        &hir_items.method_impl_receiver_type_node,
+    );
     resources.buffer("hir_expr_record", &hir_items.expr_record);
+    resources.buffer("hir_expr_result_node", &hir_items.expr_result_node);
+    resources.buffer(
+        "hir_expr_result_root_node",
+        &hir_items.expr_result_root_node,
+    );
     resources.buffer("hir_expr_int_value", &hir_items.expr_int_value);
     resources.buffer("hir_member_receiver_node", &hir_items.member_receiver_node);
     resources.buffer(
@@ -87,6 +110,7 @@ pub(super) fn register_hir_item_resources<'a>(
     );
     resources.buffer("hir_member_name_token", &hir_items.member_name_token);
     resources.buffer("hir_stmt_record", &hir_items.stmt_record);
+    resources.buffer("hir_stmt_scope_end", &hir_items.stmt_scope_end);
     resources.buffer(
         "hir_array_lit_first_element",
         &hir_items.array_lit_first_element,
@@ -95,8 +119,20 @@ pub(super) fn register_hir_item_resources<'a>(
         "hir_array_lit_element_count",
         &hir_items.array_lit_element_count,
     );
+    resources.buffer(
+        "hir_array_lit_context_stmt_node",
+        &hir_items.array_lit_context_stmt_node,
+    );
+    resources.buffer(
+        "hir_array_element_parent_lit",
+        &hir_items.array_element_parent_lit,
+    );
     resources.buffer("hir_array_element_next", &hir_items.array_element_next);
     resources.buffer("hir_call_callee_node", &hir_items.call_callee_node);
+    resources.buffer(
+        "hir_call_context_stmt_node",
+        &hir_items.call_context_stmt_node,
+    );
     resources.buffer("hir_call_arg_start", &hir_items.call_arg_start);
     resources.buffer("hir_call_arg_end", &hir_items.call_arg_end);
     resources.buffer("hir_call_arg_count", &hir_items.call_arg_count);
@@ -111,6 +147,7 @@ pub(super) fn register_hir_item_resources<'a>(
         "hir_variant_payload_count",
         &hir_items.variant_payload_count,
     );
+    resources.buffer("hir_variant_payload_node", &hir_items.variant_payload_node);
     resources.buffer(
         "hir_match_arm_result_node",
         &hir_items.match_arm_result_node,
@@ -145,6 +182,10 @@ pub(super) fn register_hir_item_resources<'a>(
         &hir_items.struct_decl_field_count,
     );
     resources.buffer("hir_struct_lit_head_node", &hir_items.struct_lit_head_node);
+    resources.buffer(
+        "hir_struct_lit_context_stmt_node",
+        &hir_items.struct_lit_context_stmt_node,
+    );
     resources.buffer(
         "hir_struct_lit_field_start",
         &hir_items.struct_lit_field_start,
@@ -188,16 +229,31 @@ pub(super) fn register_fallback_hir_resources<'a>(
     resources.buffer("hir_type_alias_target_node", &fallback.parent);
     resources.buffer("hir_fn_return_type_node", &fallback.parent);
     resources.buffer("hir_param_record", &fallback.parent);
+    resources.buffer("hir_param_type_node", &fallback.parent);
+    resources.buffer("hir_method_owner_node", &fallback.parent);
+    resources.buffer("hir_method_impl_node", &fallback.parent);
+    resources.buffer("hir_method_name_token", &fallback.parent);
+    resources.buffer("hir_method_first_param_token", &fallback.parent);
+    resources.buffer("hir_method_receiver_mode", &fallback.node_kind);
+    resources.buffer("hir_method_visibility", &fallback.node_kind);
+    resources.buffer("hir_method_signature_flags", &fallback.node_kind);
+    resources.buffer("hir_method_impl_receiver_type_node", &fallback.parent);
     resources.buffer("hir_expr_record", &fallback.parent);
+    resources.buffer("hir_expr_result_node", &fallback.parent);
+    resources.buffer("hir_expr_result_root_node", &fallback.parent);
     resources.buffer("hir_expr_int_value", &fallback.node_kind);
     resources.buffer("hir_member_receiver_node", &fallback.parent);
     resources.buffer("hir_member_receiver_token", &fallback.parent);
     resources.buffer("hir_member_name_token", &fallback.parent);
     resources.buffer("hir_stmt_record", &fallback.parent);
+    resources.buffer("hir_stmt_scope_end", &fallback.parent);
     resources.buffer("hir_array_lit_first_element", &fallback.parent);
     resources.buffer("hir_array_lit_element_count", &fallback.node_kind);
+    resources.buffer("hir_array_lit_context_stmt_node", &fallback.parent);
+    resources.buffer("hir_array_element_parent_lit", &fallback.parent);
     resources.buffer("hir_array_element_next", &fallback.parent);
     resources.buffer("hir_call_callee_node", &fallback.parent);
+    resources.buffer("hir_call_context_stmt_node", &fallback.parent);
     resources.buffer("hir_call_arg_start", &fallback.parent);
     resources.buffer("hir_call_arg_end", &fallback.parent);
     resources.buffer("hir_call_arg_count", &fallback.node_kind);
@@ -206,6 +262,7 @@ pub(super) fn register_fallback_hir_resources<'a>(
     resources.buffer("hir_variant_parent_enum", &fallback.parent);
     resources.buffer("hir_variant_payload_start", &fallback.parent);
     resources.buffer("hir_variant_payload_count", &fallback.node_kind);
+    resources.buffer("hir_variant_payload_node", &fallback.parent);
     resources.buffer("hir_match_arm_result_node", &fallback.parent);
     resources.buffer("hir_match_payload_owner_arm", &fallback.parent);
     resources.buffer("hir_match_payload_match_node", &fallback.parent);
@@ -216,6 +273,7 @@ pub(super) fn register_fallback_hir_resources<'a>(
     resources.buffer("hir_struct_decl_field_start", &fallback.parent);
     resources.buffer("hir_struct_decl_field_count", &fallback.node_kind);
     resources.buffer("hir_struct_lit_head_node", &fallback.parent);
+    resources.buffer("hir_struct_lit_context_stmt_node", &fallback.parent);
     resources.buffer("hir_struct_lit_field_start", &fallback.parent);
     resources.buffer("hir_struct_lit_field_count", &fallback.node_kind);
     resources.buffer("hir_struct_lit_field_parent_lit", &fallback.parent);

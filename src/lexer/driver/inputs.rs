@@ -62,6 +62,7 @@ impl GpuLexer {
         let recreate = |cap_n: u32| -> buffers::GpuBuffers {
             GpuBuffers::new(
                 &self.device,
+                &self.queue,
                 cap_n,
                 1,
                 start_state,
@@ -138,6 +139,7 @@ impl GpuLexer {
         let recreate = |cap_n: u32, cap_files: u32| -> buffers::GpuBuffers {
             GpuBuffers::new(
                 &self.device,
+                &self.queue,
                 cap_n,
                 cap_files,
                 start_state,

@@ -1,0 +1,86 @@
+// Source-level GPU host-service ABI declarations.
+// The service contract below is intentionally conservative: the current
+// language runtime can type-check these declarations, but it does not bind
+// user-visible GPU buffer or dispatch APIs.
+
+module std::gpu;
+
+pub type GpuCapability = bool;
+pub type GpuRuntimeAbiVersion = u32;
+pub type GpuServiceId = u32;
+pub type GpuServiceStatus = u32;
+
+pub const GPU_RUNTIME_ABI_VERSION: GpuRuntimeAbiVersion = 1;
+pub const GPU_SERVICE_ID: GpuServiceId = 10;
+pub const GPU_SERVICE_STATUS_UNAVAILABLE: GpuServiceStatus = 1;
+pub const GPU_HAS_RUNTIME_BINDING: GpuCapability = false;
+
+pub fn gpu_runtime_abi_version() -> GpuRuntimeAbiVersion {
+    return GPU_RUNTIME_ABI_VERSION;
+}
+
+pub fn gpu_service_id() -> GpuServiceId {
+    return GPU_SERVICE_ID;
+}
+
+pub fn gpu_service_is_known() -> GpuCapability {
+    return true;
+}
+
+pub fn gpu_contract_metadata_is_available() -> GpuCapability {
+    return gpu_service_is_known();
+}
+
+pub fn gpu_service_status() -> GpuServiceStatus {
+    return GPU_SERVICE_STATUS_UNAVAILABLE;
+}
+
+pub fn gpu_is_available() -> GpuCapability {
+    return GPU_HAS_RUNTIME_BINDING;
+}
+
+pub fn gpu_is_blocked() -> GpuCapability {
+    return !gpu_is_available();
+}
+
+pub fn gpu_requires_runtime_binding() -> GpuCapability {
+    return !GPU_HAS_RUNTIME_BINDING;
+}
+
+pub fn gpu_host_abi_is_contract_only() -> GpuCapability {
+    return gpu_requires_runtime_binding();
+}
+
+pub fn gpu_buffer_api_is_executable() -> GpuCapability {
+    return GPU_HAS_RUNTIME_BINDING;
+}
+
+pub fn gpu_buffer_api_is_blocked() -> GpuCapability {
+    return !gpu_buffer_api_is_executable();
+}
+
+pub fn gpu_buffer_api_requires_runtime_binding() -> GpuCapability {
+    return !gpu_buffer_api_is_executable();
+}
+
+pub fn gpu_dispatch_api_is_executable() -> GpuCapability {
+    return GPU_HAS_RUNTIME_BINDING;
+}
+
+pub fn gpu_dispatch_api_is_blocked() -> GpuCapability {
+    return !gpu_dispatch_api_is_executable();
+}
+
+pub fn gpu_dispatch_api_requires_runtime_binding() -> GpuCapability {
+    return !gpu_dispatch_api_is_executable();
+}
+
+pub extern "lanius_std" fn buffer_alloc(byte_len: usize) -> u32;
+
+pub extern "lanius_std" fn buffer_free(handle: u32) -> i32;
+
+pub extern "lanius_std" fn buffer_write(handle: u32, src_ptr: u32, byte_len: usize) -> i32;
+
+pub extern "lanius_std" fn buffer_read(handle: u32, dst_ptr: u32, byte_len: usize) -> i32;
+
+pub extern "lanius_std" fn dispatch_1d(kernel_id: u32, workgroup_count: u32) -> i32;

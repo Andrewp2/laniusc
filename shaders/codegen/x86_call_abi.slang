@@ -46,6 +46,7 @@ static const uint X86_CALL_ABI_OK = 1u;
 static const uint X86_ENUM_RECORDS_OK = 1u;
 static const uint X86_STRUCT_RECORDS_OK = 1u;
 static const uint X86_ERR_CALL_ABI = 9u;
+static const uint X86_ERR_RECURSIVE_CALL = 25u;
 
 static const uint X86_CALL_TYPE_STRIDE = 3u;
 static const uint X86_CALL_ABI_ARG_COUNT_BITS = 8u;
@@ -53,6 +54,7 @@ static const uint X86_CALL_ABI_ARG_COUNT_MASK = 0xffu;
 static const uint X86_CALL_ABI_RETURN_WIDTH_MAX = 0x00ffffffu;
 
 static const uint X86_SYSV_MAX_INTEGER_ARGS = 6u;
+static const uint X86_BACKEND_MAX_PACKED_CALL_ARGS = 4u;
 static const uint HIR_TYPE = 5u;
 static const uint HIR_TYPE_FORM_ARRAY = 2u;
 static const uint TYPE_INSTANCE_ARRAY = 2u;
@@ -192,6 +194,11 @@ void mark_call_abi_error(uint detail)
     publish_stage_error_min_detail4(call_abi_status, X86_ERR_CALL_ABI, detail);
 }
 
+void mark_recursive_call_error(uint detail)
+{
+    publish_stage_error_min_detail4(call_abi_status, X86_ERR_RECURSIVE_CALL, detail);
+}
+
 uint pack_call_abi_info(uint arg_count, uint return_width)
 {
     if (return_width > X86_CALL_ABI_RETURN_WIDTH_MAX)
@@ -212,14 +219,34 @@ void project_call_record(uint call_node)
         call_return_width(return_ty, return_ty_token),
         function_return_hir_width(target_fn));
     uint abi_register_count = arg_count + (return_width > 1u ? 1u : 0u);
+    uint slot = call_record_slot(call_node);
+    bool supported = valid_node(target_fn);
+    if (!supported)
+        mark_call_abi_error(slot != INVALID ? slot : call_node);
+    if (valid_node(target_fn) && target_fn == call_record.x)
+    {
+        mark_recursive_call_error(slot != INVALID ? slot : call_node);
+        supported = false;
+    }
+    if (arg_count > X86_BACKEND_MAX_PACKED_CALL_ARGS)
+    {
+        mark_call_abi_error(slot != INVALID ? slot : call_node);
+        supported = false;
+    }
     if (abi_register_count > X86_SYSV_MAX_INTEGER_ARGS)
-        mark_call_abi_error(call_node);
+    {
+        mark_call_abi_error(slot != INVALID ? slot : call_node);
+        supported = false;
+    }
 
     uint abi_info = pack_call_abi_info(arg_count, return_width);
-    uint slot = call_record_slot(call_node);
     if (abi_info == INVALID || slot == INVALID)
-        mark_call_abi_error(call_node);
-    else
+    {
+        mark_call_abi_error(slot != INVALID ? slot : call_node);
+        supported = false;
+    }
+
+    if (supported)
         x86_call_abi_record[slot] = uint2(target_fn, abi_info);
 }
 

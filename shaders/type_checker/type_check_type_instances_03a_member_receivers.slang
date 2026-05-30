@@ -4,8 +4,6 @@
 // for generic receiver instances, the receiver instance token needed by the
 // later generic substitution pass.
 
-import tree_walk;
-
 struct Params
 {
     uint n_tokens;
@@ -16,11 +14,11 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> parent;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_member_receiver_token;
 StructuredBuffer<uint> hir_member_name_token;
+StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
@@ -34,7 +32,6 @@ RWStructuredBuffer<uint> member_result_field_ordinal;
 
 static const uint INVALID = 0xffffffffu;
 
-static const uint HIR_FN = 3u;
 static const uint HIR_MEMBER_EXPR = 21u;
 
 static const uint TYPE_REF_INVALID = 0u;
@@ -63,45 +60,9 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
-uint parent_node(uint node)
-{
-    uint p = valid_node(node) ? parent[node] : INVALID;
-    return valid_node(p) ? p : INVALID;
-}
-
-public struct MemberReceiverWalkGraph : ITreeWalkGraph
-{
-    public static bool valid(uint node)
-    {
-        return valid_node(node);
-    }
-
-    public static uint parent(uint node)
-    {
-        return parent_node(node);
-    }
-}
-
-public struct MemberReceiverFnPredicate : ITreeWalkPredicate
-{
-    public static bool matches(uint node)
-    {
-        return hir_kind[node] == HIR_FN;
-    }
-}
-
 uint receiver_token_for_member(uint member_node)
 {
     return valid_node(member_node) ? hir_member_receiver_token[member_node] : INVALID;
-}
-
-uint enclosing_function_node(uint node)
-{
-    uint fn_node;
-    return find_self_or_ancestor<MemberReceiverWalkGraph, MemberReceiverFnPredicate>(
-        node,
-        96u,
-        fn_node) ? fn_node : INVALID;
 }
 
 bool receiver_decl_type_ref(uint receiver_token, out uint tag, out uint payload)
@@ -123,8 +84,12 @@ bool enclosing_method_receiver_type_ref(uint member_node, out uint tag, out uint
     tag = TYPE_REF_INVALID;
     payload = INVALID;
 
-    uint fn_node = enclosing_function_node(member_node);
-    uint fn_token = valid_node(fn_node) ? hir_token_pos[fn_node] : INVALID;
+    uint member_token = valid_node(member_node) ? hir_member_name_token[member_node] : INVALID;
+    if (!valid_token(member_token))
+        return false;
+
+    uint encoded_fn = enclosing_fn[member_token];
+    uint fn_token = encoded_fn == 0u ? INVALID : encoded_fn - 1u;
     if (!valid_token(fn_token))
         return false;
 

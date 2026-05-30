@@ -1,9 +1,10 @@
-// Publish each function's parser-owned return type node.
+// Publish each function or impl-method parser-owned return type node.
 //
 // A prior parse-tree pointer-jump pass marks, for every parse node, the nearest
 // function owner and nearest return_type_opt production owner. This pass
 // consumes those grammar-owned records plus HIR type records and scatters the
-// preorder-first type node inside each function's return type production.
+// preorder-first type node inside each function or impl-method return type
+// production.
 // Downstream type checking can consume the published record instead of
 // searching function subtrees.
 struct Params

@@ -1,11 +1,8 @@
 // Attach method declaration metadata from GPU module/name/type tables.
 //
-// The receiver type is located from direct parser tree children of impl_item.
-// This keeps method records tied to AST/HIR structure instead of rediscovering
-// impl headers by token scans or full-HIR searches.
-
-import generated_parse_production_ids;
-import tree_walk;
+// The receiver type is read from parser-owned impl-node keyed HIR method rows.
+// This keeps method metadata tied to parser-owned records instead of rescanning
+// impl children.
 
 struct Params
 {
@@ -19,15 +16,12 @@ ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> token_file_id;
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> node_kind;
-StructuredBuffer<uint> first_child;
-StructuredBuffer<uint> next_sibling;
-StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> module_id_by_file_id;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
+StructuredBuffer<uint> hir_method_impl_receiver_type_node;
 StructuredBuffer<uint> method_decl_impl_node;
 StructuredBuffer<uint> method_decl_name_token;
 
@@ -37,7 +31,6 @@ RWStructuredBuffer<uint> method_decl_module_id;
 RWStructuredBuffer<uint> method_decl_name_id;
 
 static const uint INVALID = 0xffffffffu;
-static const uint HIR_TYPE = 5u;
 static const uint TYPE_REF_INVALID = 0u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -85,61 +78,10 @@ uint name_id_for_token(uint i)
     return i < active_token_count() ? name_id_by_token[i] : INVALID;
 }
 
-uint method_metadata_first_child_record(uint node)
-{
-    return valid_node(node) ? first_child[node] : INVALID;
-}
-
-uint method_metadata_next_sibling_record(uint node)
-{
-    return valid_node(node) ? next_sibling[node] : INVALID;
-}
-
-public struct MethodMetadataChildGraph : ITreeChildGraph
-{
-    public static bool valid(uint node)
-    {
-        return valid_node(node);
-    }
-
-    public static uint first_child(uint node)
-    {
-        return method_metadata_first_child_record(node);
-    }
-
-    public static uint next_sibling(uint node)
-    {
-        return method_metadata_next_sibling_record(node);
-    }
-}
-
-uint first_child_node(uint node)
-{
-    uint child;
-    return tree_child_first<MethodMetadataChildGraph>(node, child) ? child : INVALID;
-}
-
-uint next_sibling_node(uint node)
-{
-    uint sibling;
-    return tree_child_next<MethodMetadataChildGraph>(node, sibling) ? sibling : INVALID;
-}
-
 uint impl_receiver_type_node(uint impl_node)
 {
-    uint receiver = INVALID;
-    uint child = first_child_node(impl_node);
-    [loop]
-    for (uint guard = 0u; guard < 64u && valid_node(child); guard += 1u)
-    {
-        uint prod = node_kind[child];
-        if (prod == PROD_IMPL_METHODS_NONE || prod == PROD_IMPL_METHODS_SOME)
-            break;
-        if (hir_kind[child] == HIR_TYPE)
-            receiver = child;
-        child = next_sibling_node(child);
-    }
-    return receiver;
+    uint receiver = valid_node(impl_node) ? hir_method_impl_receiver_type_node[impl_node] : INVALID;
+    return valid_node(receiver) ? receiver : INVALID;
 }
 
 [shader("compute")]

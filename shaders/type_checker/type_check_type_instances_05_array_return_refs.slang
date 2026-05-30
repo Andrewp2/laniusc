@@ -1,9 +1,9 @@
 // HIR array-return projection.
 //
-// This pass consumes parser-owned return-statement records, visible-decl
-// records, declaration type refs, and function return type refs. It publishes
-// the array-return sentinel for `return values;` and bounded `return
-// copy(values);` call results only when the returned declaration or
+// This pass consumes parser-owned return-statement records, expression-result
+// roots, visible-decl records, declaration type refs, and function return type
+// refs. It publishes the array-return sentinel for `return values;` and
+// bounded one-argument `return copy(values);` call results only when the returned declaration or
 // declaration-backed call argument has the same bounded array instance as the
 // enclosing function return type. It does not inspect token kinds, token
 // spelling, source bytes, helper names, callee bodies, or expression
@@ -11,7 +11,6 @@
 
 import hir_records;
 import status;
-import tree_walk;
 
 struct Params
 {
@@ -23,19 +22,20 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
-StructuredBuffer<uint> parent;
-StructuredBuffer<uint> subtree_end;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_call_callee_node;
-StructuredBuffer<uint> hir_call_arg_parent_call;
+StructuredBuffer<uint> hir_call_arg_count;
+StructuredBuffer<uint> call_arg_node;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> fn_return_ref_payload;
+StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> type_const_param_slot_by_token;
 StructuredBuffer<uint> type_instance_kind;
@@ -51,7 +51,6 @@ static const uint INVALID = 0xffffffffu;
 static const uint ARRAY_RETURN_OK = 0xfffffffeu;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 
-static const uint HIR_FN = 3u;
 static const uint HIR_RETURN_STMT = 9u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_NAME_EXPR = 22u;
@@ -60,12 +59,7 @@ static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_RETURN = 2u;
 
 static const uint HIR_EXPR_RECORD_STRIDE = 4u;
-static const uint HIR_EXPR_RECORD_FORM = 0u;
-static const uint HIR_EXPR_RECORD_LEFT = 1u;
 static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
-
-static const uint HIR_EXPR_FORWARD = 1u;
-static const uint HIR_EXPR_NAME = 2u;
 
 static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TYPE_REF_SCALAR = 1u;
@@ -77,6 +71,7 @@ static const uint TYPE_LEN_CONST_PARAM = 2u;
 static const uint TY_ARRAY_BASE = 128u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_GENERIC_BASE = 8192u;
+static const uint PARAM_CACHE_STRIDE = 4u;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -101,32 +96,6 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.n_tokens;
 }
 
-uint parent_node(uint node)
-{
-    return valid_node(node) ? parent[node] : INVALID;
-}
-
-public struct ArrayReturnWalkGraph : ITreeWalkGraph
-{
-    public static bool valid(uint node)
-    {
-        return valid_node(node);
-    }
-
-    public static uint parent(uint node)
-    {
-        return parent_node(node);
-    }
-}
-
-public struct ArrayReturnFnPredicate : ITreeWalkPredicate
-{
-    public static bool matches(uint node)
-    {
-        return hir_kind[node] == HIR_FN;
-    }
-}
-
 uint stmt_slot(uint node, uint slot)
 {
     return node * STMT_RECORD_STRIDE + slot;
@@ -137,43 +106,22 @@ uint expr_slot(uint node, uint slot)
     return valid_node(node) ? hir_expr_record[node * HIR_EXPR_RECORD_STRIDE + slot] : INVALID;
 }
 
-uint expr_form(uint node)
+uint result_expr(uint node)
 {
-    return expr_slot(node, HIR_EXPR_RECORD_FORM);
-}
-
-uint resolve_expr(uint node)
-{
-    [loop]
-    for (uint guard = 0u; guard < 64u && valid_node(node); guard += 1u)
-    {
-        if (expr_form(node) != HIR_EXPR_FORWARD)
-            return node;
-        uint child = expr_slot(node, HIR_EXPR_RECORD_LEFT);
-        if (!valid_node(child))
-            return node;
-        node = child;
-    }
-    return node;
+    if (!valid_node(node))
+        return INVALID;
+    uint root = hir_expr_result_root_node[node];
+    return valid_node(root) ? root : INVALID;
 }
 
 uint name_token_for_expr(uint root)
 {
-    uint node = resolve_expr(root);
+    uint node = result_expr(root);
     if (!valid_node(node) || hir_kind[node] != HIR_NAME_EXPR)
         return INVALID;
 
     uint token = expr_slot(node, HIR_EXPR_RECORD_VALUE_TOKEN);
     return valid_token(token) ? token : hir_token_pos[node];
-}
-
-uint owning_function_node(uint node)
-{
-    uint fn_node;
-    return find_self_or_ancestor<ArrayReturnWalkGraph, ArrayReturnFnPredicate>(
-        node,
-        128u,
-        fn_node) ? fn_node : INVALID;
 }
 
 uint bounded_array_instance_from_ref(uint tag, uint payload)
@@ -240,11 +188,12 @@ bool same_bounded_array_instance(uint lhs, uint rhs)
 
 uint function_return_array_instance(uint return_node)
 {
-    uint fn_node = owning_function_node(return_node);
-    if (!valid_node(fn_node))
+    uint return_token = hir_token_pos[return_node];
+    if (!valid_token(return_token))
         return INVALID;
 
-    uint fn_token = hir_token_pos[fn_node];
+    uint encoded_fn = enclosing_fn[return_token];
+    uint fn_token = encoded_fn == 0u ? INVALID : encoded_fn - 1u;
     if (!valid_token(fn_token))
         return INVALID;
 
@@ -286,47 +235,32 @@ uint call_callee_token(uint call_node)
     return valid_token(token) ? token : INVALID;
 }
 
-uint first_array_call_node(uint root)
+uint direct_array_return_call_node(uint return_node)
 {
-    if (!valid_node(root))
+    uint expr_node = hir_stmt_record[stmt_slot(return_node, 1u)];
+    uint call_node = result_expr(expr_node);
+    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
         return INVALID;
 
-    uint end = min(subtree_end[root], active_hir_node_count());
-    if (end <= root)
-        end = active_hir_node_count();
-    [loop]
-    for (uint node = root; node < end; node += 1u)
-    {
-        if (hir_kind[node] != HIR_CALL_EXPR)
-            continue;
-        uint callee_token = call_callee_token(node);
-        if (valid_token(callee_token) && is_array_type(call_return_type[callee_token]))
-            return node;
-    }
-    return INVALID;
+    if (hir_call_arg_count[call_node] != 1u)
+        return INVALID;
+
+    uint callee_token = call_callee_token(call_node);
+    return valid_token(callee_token) && is_array_type(call_return_type[callee_token])
+               ? call_node
+               : INVALID;
 }
 
 uint call_arg_node_for_call(uint call_node, uint ordinal)
 {
-    if (!valid_node(call_node))
+    if (!valid_node(call_node) || ordinal >= PARAM_CACHE_STRIDE)
         return INVALID;
-
-    uint end = min(subtree_end[call_node], active_hir_node_count());
-    [loop]
-    for (uint node = call_node + 1u; node < end; node += 1u)
-    {
-        uint packed = hir_call_arg_parent_call[node];
-        if (hir_node_ordinal_node(packed) == call_node &&
-            hir_node_ordinal_ordinal(packed) == ordinal)
-            return node;
-    }
-    return INVALID;
+    return call_arg_node[call_node * PARAM_CACHE_STRIDE + ordinal];
 }
 
 uint returned_call_arg_array_instance(uint return_node)
 {
-    uint expr_node = hir_stmt_record[stmt_slot(return_node, 1u)];
-    uint call_node = first_array_call_node(expr_node);
+    uint call_node = direct_array_return_call_node(return_node);
     if (!valid_node(call_node))
         return INVALID;
 

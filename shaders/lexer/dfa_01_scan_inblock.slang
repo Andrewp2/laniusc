@@ -20,13 +20,10 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 ByteAddressBuffer in_bytes;
-StructuredBuffer<uint> source_file_count;
-StructuredBuffer<uint> source_file_start;
+StructuredBuffer<uint> source_file_start_flags;
 StructuredBuffer<uint> next_u8; // layout: [state_pack][byte] -> packed 4x u8 next states
 RWStructuredBuffer<uint> block_summaries;
 RWStructuredBuffer<uint> chunk_summary_out;
-
-static const uint MAX_FILES_SCAN = 1024u;
 
 groupshared uint chunk_summaries[CHUNK_COUNT * N_STATES];
 
@@ -38,14 +35,7 @@ uint load_next_state(uint byte_value, uint state)
 
 bool is_file_start(uint i_abs)
 {
-    uint files = min(source_file_count[0], MAX_FILES_SCAN);
-    [loop]
-    for (uint f = 0u; f < files; f += 1u)
-    {
-        if (source_file_start[f] == i_abs)
-            return true;
-    }
-    return false;
+    return source_file_start_flags[i_abs] != 0u;
 }
 
 [shader("compute")]

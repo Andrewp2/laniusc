@@ -1,0 +1,107 @@
+// Source-level thread host ABI declarations.
+// The service contract below is intentionally conservative: the current
+// backends can type-check these declarations, but they do not bind threads.
+
+module std::thread;
+
+pub type ThreadCapability = bool;
+pub type ThreadRuntimeAbiVersion = u32;
+pub type ThreadServiceId = u32;
+pub type ThreadServiceStatus = u32;
+
+pub const THREAD_RUNTIME_ABI_VERSION: ThreadRuntimeAbiVersion = 1;
+pub const THREAD_SERVICE_ID: ThreadServiceId = 8;
+pub const THREAD_SERVICE_STATUS_UNAVAILABLE: ThreadServiceStatus = 1;
+pub const THREAD_HAS_RUNTIME_BINDING: ThreadCapability = false;
+
+pub fn thread_runtime_abi_version() -> ThreadRuntimeAbiVersion {
+    return THREAD_RUNTIME_ABI_VERSION;
+}
+
+pub fn thread_service_id() -> ThreadServiceId {
+    return THREAD_SERVICE_ID;
+}
+
+pub fn thread_service_is_known() -> ThreadCapability {
+    return true;
+}
+
+pub fn thread_contract_metadata_is_available() -> ThreadCapability {
+    return thread_service_is_known();
+}
+
+pub fn thread_service_status() -> ThreadServiceStatus {
+    return THREAD_SERVICE_STATUS_UNAVAILABLE;
+}
+
+pub fn thread_is_available() -> ThreadCapability {
+    return THREAD_HAS_RUNTIME_BINDING;
+}
+
+pub fn thread_is_blocked() -> ThreadCapability {
+    return !thread_is_available();
+}
+
+pub fn thread_requires_runtime_binding() -> ThreadCapability {
+    return !THREAD_HAS_RUNTIME_BINDING;
+}
+
+pub fn thread_host_abi_is_contract_only() -> ThreadCapability {
+    return thread_requires_runtime_binding();
+}
+
+pub fn thread_spawn_is_executable() -> ThreadCapability {
+    return THREAD_HAS_RUNTIME_BINDING;
+}
+
+pub fn thread_spawn_is_blocked() -> ThreadCapability {
+    return !thread_spawn_is_executable();
+}
+
+pub fn thread_spawn_requires_runtime_binding() -> ThreadCapability {
+    return !thread_spawn_is_executable();
+}
+
+pub fn thread_join_is_executable() -> ThreadCapability {
+    return THREAD_HAS_RUNTIME_BINDING;
+}
+
+pub fn thread_join_is_blocked() -> ThreadCapability {
+    return !thread_join_is_executable();
+}
+
+pub fn thread_join_requires_runtime_binding() -> ThreadCapability {
+    return !thread_join_is_executable();
+}
+
+pub fn thread_yield_is_executable() -> ThreadCapability {
+    return THREAD_HAS_RUNTIME_BINDING;
+}
+
+pub fn thread_yield_is_blocked() -> ThreadCapability {
+    return !thread_yield_is_executable();
+}
+
+pub fn thread_yield_requires_runtime_binding() -> ThreadCapability {
+    return !thread_yield_is_executable();
+}
+
+pub fn thread_current_id_is_executable() -> ThreadCapability {
+    return THREAD_HAS_RUNTIME_BINDING;
+}
+
+pub fn thread_current_id_is_blocked() -> ThreadCapability {
+    return !thread_current_id_is_executable();
+}
+
+pub fn thread_current_id_requires_runtime_binding() -> ThreadCapability {
+    return !thread_current_id_is_executable();
+}
+
+pub extern "lanius_std" fn spawn(entry_id: u32, arg: u32) -> i32;
+
+pub extern "lanius_std" fn join(handle: i32) -> i32;
+
+pub extern "lanius_std" fn yield_now() -> i32;
+
+pub extern "lanius_std" fn current_id() -> i32;

@@ -111,6 +111,7 @@ static const uint X86_INST_V_LOAD_PTR_SLOT_R32 = 76u;
 static const uint X86_INST_V_MATCH_TAG_BRANCH = 77u;
 static const uint X86_INST_V_FOR_INTERVAL_BRANCH = 78u;
 static const uint X86_INST_V_COPY_LOCAL_R32 = 79u;
+static const uint X86_INST_V_STORE_LOCAL_INDEX_R32 = 80u;
 static const uint X86_ARG_SCALAR = 1u;
 static const uint X86_ARG_LOCAL_PTR = 2u;
 static const uint X86_ARG_PARAM_PTR = 3u;
@@ -308,6 +309,13 @@ uint binary_size(uint op, uint dst, uint packed)
         return 0u;
     if (op == X86_OP_DIV_I32 || op == X86_OP_MOD_I32)
         return divmod_size(op, dst, left, right);
+    if (op == X86_OP_SHL_I32 || op == X86_OP_SHR_I32)
+    {
+        uint check_size = shift_count_check_size(right);
+        uint move_size = dst == left ? 0u : mov_r32_r32_size(dst, left);
+        uint op_size = binary_alu_size(op, dst, right);
+        return check_size != 0u && op_size != 0u ? check_size + move_size + op_size : 0u;
+    }
 
     uint move_size = dst == left ? 0u : mov_r32_r32_size(dst, left);
     uint op_size = binary_alu_size(op, dst, right);
@@ -328,6 +336,13 @@ uint compare_size(uint dst, uint packed)
 uint cmp_r32_r32_size(uint left, uint right)
 {
     return valid_reg(left) && valid_reg(right) ? 2u + rex_for_modrm(right, left) : 0u;
+}
+
+uint cmp_r32_imm_size(uint reg, uint imm)
+{
+    return valid_reg(reg)
+               ? (signed_i8_immediate(imm) ? 3u : 6u) + rex_for_modrm(7u, reg)
+               : 0u;
 }
 
 uint local_slot_disp(uint slot)
@@ -366,6 +381,44 @@ bool valid_index_reg(uint reg)
     return valid_reg(reg) && (reg & 7u) != 4u;
 }
 
+uint packed_index_reg(uint packed)
+{
+    return packed & 0xffu;
+}
+
+uint packed_index_width(uint packed)
+{
+    return packed >> 8u;
+}
+
+uint exit_code_size(uint code)
+{
+    return mov_r32_imm_compact_size(X86_REG_EDI, code) +
+           mov_r32_imm_compact_size(X86_REG_EAX, 60u) +
+           2u;
+}
+
+uint unsigned_lt_trap_check_size(uint reg, uint limit, uint exit_code)
+{
+    if (!valid_reg(reg))
+        return 0u;
+    uint cmp_size = cmp_r32_imm_size(reg, limit);
+    uint trap_size = exit_code_size(exit_code);
+    return cmp_size != 0u && trap_size != 0u ? cmp_size + 6u + trap_size : 0u;
+}
+
+uint index_bounds_check_size(uint index, uint width)
+{
+    if (!valid_index_reg(index) || width == 0u)
+        return 0u;
+    return unsigned_lt_trap_check_size(index, width, 101u);
+}
+
+uint shift_count_check_size(uint count)
+{
+    return unsigned_lt_trap_check_size(count, 32u, 102u);
+}
+
 uint local_index_mem_r32_size(uint dst, uint slot, uint index)
 {
     if (!valid_reg(dst) || !valid_index_reg(index) || !valid_local_slot(slot))
@@ -374,11 +427,29 @@ uint local_index_mem_r32_size(uint dst, uint slot, uint index)
     return (disp <= 127u ? 4u : 7u) + rex_for_sib(dst, index, 4u);
 }
 
+uint checked_local_index_mem_r32_size(uint dst, uint slot, uint packed)
+{
+    uint index = packed_index_reg(packed);
+    uint width = packed_index_width(packed);
+    uint check_size = index_bounds_check_size(index, width);
+    uint access_size = local_index_mem_r32_size(dst, slot, index);
+    return check_size != 0u && access_size != 0u ? check_size + access_size : 0u;
+}
+
 uint param_index_mem_r32_size(uint dst, uint base, uint index)
 {
     return valid_reg(dst) && valid_reg(base) && valid_index_reg(index) && (base & 7u) != 4u
                ? 4u + rex_for_sib(dst, index, base)
                : 0u;
+}
+
+uint checked_param_index_mem_r32_size(uint dst, uint base, uint packed)
+{
+    uint index = packed_index_reg(packed);
+    uint width = packed_index_width(packed);
+    uint check_size = index_bounds_check_size(index, width);
+    uint access_size = param_index_mem_r32_size(dst, base, index);
+    return check_size != 0u && access_size != 0u ? check_size + access_size : 0u;
 }
 
 uint ptr_slot_mem_r32_size(uint reg, uint base, uint ordinal)
@@ -566,22 +637,14 @@ uint print_saved_reg_for_slot(uint slot)
 
 uint call_save_restore_size(uint save_mask)
 {
-    uint size = 0u;
-    [unroll]
-    for (uint slot = 0u; slot < 8u; slot += 1u)
-        if (call_save_mask_has_slot(save_mask, slot))
-            size += push_pop_reg_size(call_saved_reg_for_slot(slot));
-    return size;
+    uint active = save_mask & 0xffu;
+    uint high = active & 0xf0u;
+    return countbits(active) + countbits(high);
 }
 
 uint call_save_stack_size(uint save_mask)
 {
-    uint size = 0u;
-    [unroll]
-    for (uint slot = 0u; slot < 8u; slot += 1u)
-        if (call_save_mask_has_slot(save_mask, slot))
-            size += 8u;
-    return size;
+    return countbits(save_mask & 0xffu) * 8u;
 }
 
 uint call_frame_size(uint save_stack)
@@ -602,15 +665,14 @@ uint stack_frame_adjust_size(uint frame_size)
 bool call_saved_reg_slot(uint reg, out uint slot)
 {
     slot = 0xffffffffu;
-    [unroll]
-    for (uint candidate = 0u; candidate < 8u; candidate += 1u)
-    {
-        if (call_saved_reg_for_slot(candidate) == reg)
-        {
-            slot = candidate;
-            return true;
-        }
-    }
+    if (reg == X86_REG_ECX) { slot = 0u; return true; }
+    if (reg == X86_REG_EDX) { slot = 1u; return true; }
+    if (reg == X86_REG_ESI) { slot = 2u; return true; }
+    if (reg == X86_REG_EDI) { slot = 3u; return true; }
+    if (reg == X86_REG_R8D) { slot = 4u; return true; }
+    if (reg == X86_REG_R9D) { slot = 5u; return true; }
+    if (reg == X86_REG_R10D) { slot = 6u; return true; }
+    if (reg == X86_REG_R11D) { slot = 7u; return true; }
     return false;
 }
 
@@ -625,11 +687,7 @@ uint load_saved_call_reg_r32_size(uint dst, uint src, uint save_mask)
 
 uint print_save_restore_size()
 {
-    uint size = 0u;
-    [unroll]
-    for (uint slot = 0u; slot < 9u; slot += 1u)
-        size += push_pop_reg_size(print_saved_reg_for_slot(slot));
-    return size;
+    return 13u;
 }
 
 uint print_i32_size(uint src)
@@ -642,9 +700,7 @@ uint print_i32_size(uint src)
 
 uint exit_zero_size()
 {
-    return mov_r32_imm_compact_size(X86_REG_EDI, 0u) +
-           mov_r32_imm_compact_size(X86_REG_EAX, 60u) +
-           2u;
+    return exit_code_size(0u);
 }
 
 uint mixed_target_reg(uint ordinal, bool aggregate_return)
@@ -691,6 +747,30 @@ uint mixed_arg_move_size(uint target, uint kind, uint payload, uint save_mask, u
     return 0u;
 }
 
+uint call_mixed_ordinal_move_size(
+    uint info,
+    uint packed,
+    uint save_mask,
+    uint save_stack,
+    uint ordinal,
+    uint arg_count,
+    bool aggregate_return)
+{
+    if (ordinal >= arg_count)
+        return 0u;
+    uint target_reg = mixed_target_reg(ordinal, aggregate_return);
+    if (!valid_reg(target_reg))
+        return 0xffffffffu;
+    uint payload = selected_mixed_arg_payload(packed, ordinal);
+    uint kind = selected_mixed_arg_kind(info, ordinal);
+    uint move_size = mixed_arg_move_size(target_reg, kind, payload, save_mask, save_stack);
+    if (move_size == 0u &&
+        !(kind == X86_ARG_SCALAR && payload == target_reg) &&
+        !(kind == X86_ARG_PARAM_PTR && payload == target_reg))
+        return 0xffffffffu;
+    return move_size;
+}
+
 uint call_mixed_size(uint target, uint info, uint packed, uint save_mask)
 {
     bool aggregate_return = (info & 1u) != 0u;
@@ -706,23 +786,14 @@ uint call_mixed_size(uint target, uint info, uint packed, uint save_mask)
     if (aggregate_return)
         size += lea_arg_local_ptr_size(X86_REG_EDI, dest, save_stack);
 
-    [unroll]
-    for (uint ordinal = 0u; ordinal < 4u; ordinal += 1u)
-    {
-        if (ordinal >= arg_count)
-            break;
-        uint target_reg = mixed_target_reg(ordinal, aggregate_return);
-        if (!valid_reg(target_reg))
-            return 0u;
-        uint payload = selected_mixed_arg_payload(packed, ordinal);
-        uint kind = selected_mixed_arg_kind(info, ordinal);
-        uint move_size = mixed_arg_move_size(target_reg, kind, payload, save_mask, save_stack);
-        if (move_size == 0u &&
-            !(kind == X86_ARG_SCALAR && payload == target_reg) &&
-            !(kind == X86_ARG_PARAM_PTR && payload == target_reg))
-            return 0u;
-        size += move_size;
-    }
+    uint move0 = call_mixed_ordinal_move_size(info, packed, save_mask, save_stack, 0u, arg_count, aggregate_return);
+    uint move1 = call_mixed_ordinal_move_size(info, packed, save_mask, save_stack, 1u, arg_count, aggregate_return);
+    uint move2 = call_mixed_ordinal_move_size(info, packed, save_mask, save_stack, 2u, arg_count, aggregate_return);
+    uint move3 = call_mixed_ordinal_move_size(info, packed, save_mask, save_stack, 3u, arg_count, aggregate_return);
+    if (move0 == 0xffffffffu || move1 == 0xffffffffu ||
+        move2 == 0xffffffffu || move3 == 0xffffffffu)
+        return 0u;
+    size += move0 + move1 + move2 + move3;
 
     uint frame_adjust_size = stack_frame_adjust_size(call_frame_size(save_stack));
     size += frame_adjust_size + 5u + frame_adjust_size + save_size;
@@ -756,6 +827,11 @@ uint inst_kind_tag(uint inst_i)
 uint inst_call_save_mask(uint inst_i)
 {
     return (x86_inst_kind[inst_i] >> 8u) & 0xffu;
+}
+
+bool inst_target_valid(uint target)
+{
+    return target <= select_status[3u];
 }
 
 uint byte_size_for_inst(uint inst_i)
@@ -816,28 +892,29 @@ uint byte_size_for_inst(uint inst_i)
     if (kind == X86_INST_V_BINARY_R32_R32) return binary_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i]);
     if (kind == X86_INST_V_COMPARE_R32_R32) return compare_size(x86_inst_arg1[inst_i], x86_inst_arg2[inst_i]);
     if (kind == X86_INST_V_RETURN_R32) return return_size(x86_inst_arg0[inst_i]);
-    if (kind == X86_INST_V_BRANCH_ZERO) return branch_zero_size(x86_inst_arg0[inst_i]);
-    if (kind == X86_INST_V_JMP) return 5u;
+    if (kind == X86_INST_V_BRANCH_ZERO) return inst_target_valid(x86_inst_arg1[inst_i]) ? branch_zero_size(x86_inst_arg0[inst_i]) : 0u;
+    if (kind == X86_INST_V_JMP) return inst_target_valid(x86_inst_arg0[inst_i]) ? 5u : 0u;
     if (kind == X86_INST_V_PARAM_R32) return mov_r32_r32_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i]);
     if (kind == X86_INST_V_RETURN_FUNC_R32) return return_func_size(x86_inst_arg0[inst_i]);
     if (kind == X86_INST_V_PRINT_I32) return print_i32_size(x86_inst_arg0[inst_i]);
     if (kind == X86_INST_V_LOAD_LOCAL_R32) return local_mem_r32_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i]);
     if (kind == X86_INST_V_STORE_LOCAL_R32) return local_mem_r32_size(x86_inst_arg1[inst_i], x86_inst_arg0[inst_i]);
-    if (kind == X86_INST_V_LOAD_LOCAL_INDEX_R32) return local_index_mem_r32_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i]);
+    if (kind == X86_INST_V_LOAD_LOCAL_INDEX_R32) return checked_local_index_mem_r32_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i]);
+    if (kind == X86_INST_V_STORE_LOCAL_INDEX_R32) return checked_local_index_mem_r32_size(x86_inst_arg2[inst_i], x86_inst_arg0[inst_i], x86_inst_arg1[inst_i]);
     if (kind == X86_INST_V_STORE_LOCAL_IMM32) return local_imm32_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i]);
-    if (kind == X86_INST_V_FOR_ARRAY_BRANCH) return for_array_branch_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i]);
+    if (kind == X86_INST_V_FOR_ARRAY_BRANCH) return inst_target_valid(x86_inst_arg2[inst_i]) ? for_array_branch_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i]) : 0u;
     if (kind == X86_INST_V_FOR_ARRAY_LOAD) return for_array_load_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i]);
-    if (kind == X86_INST_V_FOR_ARRAY_INC_JMP) return for_array_inc_jmp_size(x86_inst_arg0[inst_i]);
-    if (kind == X86_INST_V_FOR_INTERVAL_BRANCH) return for_interval_branch_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i]);
+    if (kind == X86_INST_V_FOR_ARRAY_INC_JMP) return inst_target_valid(x86_inst_arg1[inst_i]) ? for_array_inc_jmp_size(x86_inst_arg0[inst_i]) : 0u;
+    if (kind == X86_INST_V_FOR_INTERVAL_BRANCH) return inst_target_valid(x86_inst_arg2[inst_i]) ? for_interval_branch_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i]) : 0u;
     if (kind == X86_INST_V_COPY_LOCAL_R32) return copy_local_r32_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i]);
-    if (kind == X86_INST_V_CALL_MIXED_DIRECT) return call_mixed_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i], inst_call_save_mask(inst_i));
-    if (kind == X86_INST_V_LOAD_PARAM_INDEX_R32) return param_index_mem_r32_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i]);
+    if (kind == X86_INST_V_CALL_MIXED_DIRECT) return inst_target_valid(x86_inst_arg0[inst_i]) ? call_mixed_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i], inst_call_save_mask(inst_i)) : 0u;
+    if (kind == X86_INST_V_LOAD_PARAM_INDEX_R32) return checked_param_index_mem_r32_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i]);
     if (kind == X86_INST_V_STORE_RET_PTR_R32) return ptr_slot_mem_r32_size(x86_inst_arg0[inst_i], X86_REG_EDI, x86_inst_arg1[inst_i]);
     if (kind == X86_INST_V_COPY_AGG_RET) return copy_agg_ret_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i]);
     if (kind == X86_INST_V_STORE_RET_PTR_IMM32) return ptr_slot_imm32_size(X86_REG_EDI, x86_inst_arg1[inst_i], x86_inst_arg0[inst_i]);
     if (kind == X86_INST_V_LOAD_PTR_SLOT_R32) return ptr_slot_mem_r32_size(x86_inst_arg0[inst_i], x86_inst_arg1[inst_i], x86_inst_arg2[inst_i]);
-    if (kind == X86_INST_V_MATCH_TAG_BRANCH) return match_tag_branch_size(unpack_u16_pair_low(x86_inst_arg0[inst_i]), unpack_u16_pair_high(x86_inst_arg0[inst_i]), x86_inst_arg1[inst_i]);
-    if (kind == X86_INST_V_ENTRY_STACK_JMP) return stack_frame_adjust_size(x86_inst_arg1[inst_i]) + 5u;
+    if (kind == X86_INST_V_MATCH_TAG_BRANCH) return inst_target_valid(x86_inst_arg2[inst_i]) ? match_tag_branch_size(unpack_u16_pair_low(x86_inst_arg0[inst_i]), unpack_u16_pair_high(x86_inst_arg0[inst_i]), x86_inst_arg1[inst_i]) : 0u;
+    if (kind == X86_INST_V_ENTRY_STACK_JMP) return inst_target_valid(x86_inst_arg0[inst_i]) ? stack_frame_adjust_size(x86_inst_arg1[inst_i]) + 5u : 0u;
     if (kind == X86_INST_V_EXIT_ZERO) return exit_zero_size();
     return 0u;
 }
@@ -848,13 +925,15 @@ void main(uint3 tid: SV_DispatchThreadID)
 {
     uint inst_i = linear_dispatch_id(tid);
     bool select_ok = select_status[0u] == X86_SELECT_OK &&
+                     select_status[1u] == 0u &&
                      select_status[3u] <= gParams.inst_capacity;
     uint inst_count = select_ok ? select_status[3u] : 0u;
 
     if (inst_i == 0u)
     {
+        uint upstream_error = select_status[1u] == 0u ? X86_ERR_INST_SIZE : select_status[1u];
         size_status[0u] = select_ok ? X86_SIZE_OK : 0u;
-        size_status[1u] = select_ok ? 0u : select_status[1u];
+        size_status[1u] = select_ok ? 0u : upstream_error;
         size_status[2u] = select_ok ? 0xffffffffu : select_status[2u];
         size_status[3u] = inst_count;
     }

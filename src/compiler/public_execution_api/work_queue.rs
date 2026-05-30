@@ -1,7 +1,10 @@
 use super::*;
 
 mod progress;
-pub(in crate::compiler) use progress::final_linked_output_for_progress;
+pub(in crate::compiler) use progress::{
+    completed_hierarchical_link_output_path,
+    final_linked_output_for_progress,
+};
 pub use progress::{work_queue_progress_snapshot, work_queue_progress_snapshot_at};
 
 mod completion;
