@@ -64,8 +64,6 @@ pub(in crate::type_checker) fn create_with_passes(
     let ModuleIndex {
         scatter_module_records,
         build_module_keys,
-        module_key_segment_dispatch_params,
-        module_key_segment_dispatch,
         module_key_radix_dispatch_params,
         module_key_radix_dispatch,
         sort_module_key_histogram,
@@ -118,6 +116,7 @@ pub(in crate::type_checker) fn create_with_passes(
         record_scan_prefix_a,
         record_scan_prefix_b,
         module_count_out,
+        module_table_count_out,
         import_count_out,
         decl_count_out,
         module_file_id,
@@ -278,6 +277,7 @@ pub(in crate::type_checker) fn create_with_passes(
                 "path_owner_module_id",
                 path_owner_module_id.as_entire_binding(),
             ),
+            ("status", status_buf.as_entire_binding()),
         ],
     )?;
 
@@ -298,9 +298,11 @@ pub(in crate::type_checker) fn create_with_passes(
         0,
         &[
             ("gParams", build_file_module_map_params.as_entire_binding()),
-            ("module_count_out", module_count_out.as_entire_binding()),
+            (
+                "module_table_count_out",
+                module_table_count_out.as_entire_binding(),
+            ),
             ("module_file_id", module_file_id.as_entire_binding()),
-            ("module_status", module_status.as_entire_binding()),
             (
                 "module_id_by_file_id",
                 module_id_by_file_id.as_entire_binding(),
@@ -487,7 +489,7 @@ pub(in crate::type_checker) fn create_with_passes(
         "type_check.modules.decl_key_radix.params.validate",
         &ModuleKeyRadixParams {
             module_capacity: record_capacity_u32,
-            reserved: 0,
+            reserved: module_capacity_u32,
             n_blocks: record_n_blocks,
             key_step: 0,
         },
@@ -500,7 +502,6 @@ pub(in crate::type_checker) fn create_with_passes(
         &[
             ("gParams", validate_decl_params.as_entire_binding()),
             ("decl_count_out", decl_count_out.as_entire_binding()),
-            ("module_count_out", module_count_out.as_entire_binding()),
             (
                 "sorted_decl_key_order",
                 decl_key_to_decl_id.as_entire_binding(),
@@ -1526,7 +1527,10 @@ pub(in crate::type_checker) fn create_with_passes(
                 "path_owner_module_id",
                 path_owner_module_id.as_entire_binding(),
             ),
-            ("module_count_out", module_count_out.as_entire_binding()),
+            (
+                "module_table_count_out",
+                module_table_count_out.as_entire_binding(),
+            ),
             (
                 "sorted_module_key_order",
                 module_key_to_module_id.as_entire_binding(),
@@ -1542,6 +1546,17 @@ pub(in crate::type_checker) fn create_with_passes(
             (
                 "module_key_segment_name_id",
                 module_key_segment_name_id.as_entire_binding(),
+            ),
+            ("import_count_out", import_count_out.as_entire_binding()),
+            ("import_status", import_status.as_entire_binding()),
+            ("import_module_id", import_module_id.as_entire_binding()),
+            (
+                "import_target_module_id",
+                import_target_module_id.as_entire_binding(),
+            ),
+            (
+                "import_edge_key_order",
+                import_edge_key_order.as_entire_binding(),
             ),
             (
                 "decl_key_count_out",
@@ -1578,7 +1593,10 @@ pub(in crate::type_checker) fn create_with_passes(
                 "path_owner_module_id",
                 path_owner_module_id.as_entire_binding(),
             ),
-            ("module_count_out", module_count_out.as_entire_binding()),
+            (
+                "module_table_count_out",
+                module_table_count_out.as_entire_binding(),
+            ),
             (
                 "sorted_module_key_order",
                 module_key_to_module_id.as_entire_binding(),
@@ -1594,6 +1612,17 @@ pub(in crate::type_checker) fn create_with_passes(
             (
                 "module_key_segment_name_id",
                 module_key_segment_name_id.as_entire_binding(),
+            ),
+            ("import_count_out", import_count_out.as_entire_binding()),
+            ("import_status", import_status.as_entire_binding()),
+            ("import_module_id", import_module_id.as_entire_binding()),
+            (
+                "import_target_module_id",
+                import_target_module_id.as_entire_binding(),
+            ),
+            (
+                "import_edge_key_order",
+                import_edge_key_order.as_entire_binding(),
             ),
             (
                 "decl_key_count_out",
@@ -1733,6 +1762,7 @@ pub(in crate::type_checker) fn create_with_passes(
         record_scan_prefix_a,
         record_scan_prefix_b,
         module_count_out,
+        module_table_count_out,
         import_count_out,
         decl_count_out,
         module_file_id,
@@ -1858,7 +1888,6 @@ pub(in crate::type_checker) fn create_with_passes(
         _path_segment_dispatch_params: path_segment_dispatch_params,
         _import_dispatch_params: import_dispatch_params,
         _import_visible_validate_dispatch_params: import_visible_validate_dispatch_params,
-        _module_key_segment_dispatch_params: module_key_segment_dispatch_params,
         _module_key_radix_dispatch_params: module_key_radix_dispatch_params,
         _decl_key_radix_dispatch_params: decl_key_radix_dispatch_params,
         _import_visible_type_key_radix_dispatch_params:
@@ -1886,7 +1915,6 @@ pub(in crate::type_checker) fn create_with_passes(
             clear_decl_lookup,
             scatter_decl_span_records,
             build_module_keys,
-            module_key_segment_dispatch,
             module_key_radix_dispatch,
             sort_module_key_histogram,
             sort_module_key_bucket_prefix,

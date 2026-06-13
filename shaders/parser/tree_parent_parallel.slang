@@ -7,6 +7,7 @@
 // blocks.
 
 import segment_tree;
+import generated_parse_production_ids;
 
 struct Params
 {
@@ -106,5 +107,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint kind = emit_stream[i];
     node_kind[i] = kind;
-    parent[i] = find_parent(i, n);
+    parent[i] = kind == PROD_FILE ? INVALID : find_parent(i, n);
 }

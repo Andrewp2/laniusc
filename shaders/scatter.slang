@@ -165,9 +165,9 @@ public uint local_same_key_rank<
     GroupMemoryBarrierWithGroupSync();
 
     uint rank = 0u;
-    for (uint j = 0u; j < lane; j += 1u)
+    for (uint j = 0u; j < uint(GSIZE); j += 1u)
     {
-        if (TEquality.equal(local_keys[j], key))
+        if (j < lane && TEquality.equal(local_keys[j], key))
             rank += 1u;
     }
     GroupMemoryBarrierWithGroupSync();

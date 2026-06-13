@@ -108,6 +108,10 @@ impl HirParamRankStepPass {
                 "hir_list_rank_node".into(),
                 buffers.hir_list_rank_node.as_entire_binding(),
             ),
+            (
+                "hir_list_rank_count".into(),
+                buffers.hir_list_rank_count.as_entire_binding(),
+            ),
             ("hir_param_owner_in".into(), owner_in.as_entire_binding()),
             ("hir_param_link_in".into(), link_in.as_entire_binding()),
             ("hir_param_rank_in".into(), rank_in.as_entire_binding()),

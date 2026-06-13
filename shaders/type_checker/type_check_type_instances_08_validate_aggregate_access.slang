@@ -25,6 +25,7 @@ StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_member_name_token;
+StructuredBuffer<uint> hir_struct_field_parent_struct;
 StructuredBuffer<uint> hir_struct_lit_field_value_node;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
@@ -32,6 +33,8 @@ StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> method_call_name_id;
 StructuredBuffer<uint> member_result_ref_tag;
 StructuredBuffer<uint> member_result_field_ordinal;
+StructuredBuffer<uint> name_id_by_token;
+StructuredBuffer<uint> struct_field_key_order;
 StructuredBuffer<uint> struct_init_field_ordinal;
 
 RWStructuredBuffer<uint> status;
@@ -110,6 +113,45 @@ bool valid_token(uint token)
 void record_error(uint token_i, uint code, uint detail)
 {
     record_min_token_error(status, token_i, code, detail);
+}
+
+bool valid_struct_field_key_node(uint field_node)
+{
+    if (!valid_node(field_node) || node_kind[field_node] != PROD_STRUCT_FIELD)
+        return false;
+
+    uint owner = hir_struct_field_parent_struct[field_node];
+    uint token_i = hir_token_pos[field_node];
+    return valid_node(owner) &&
+           valid_token(token_i) &&
+           name_id_by_token[token_i] != INVALID;
+}
+
+bool same_decl_field_key(uint left_node, uint right_node)
+{
+    if (!valid_struct_field_key_node(left_node) ||
+        !valid_struct_field_key_node(right_node))
+        return false;
+
+    uint left_token = hir_token_pos[left_node];
+    uint right_token = hir_token_pos[right_node];
+    return hir_struct_field_parent_struct[left_node] ==
+               hir_struct_field_parent_struct[right_node] &&
+           name_id_by_token[left_token] == name_id_by_token[right_token];
+}
+
+void validate_sorted_struct_field_key_row(uint row)
+{
+    if (row == 0u || row >= active_hir_node_count())
+        return;
+
+    uint left_node = struct_field_key_order[row - 1u];
+    uint right_node = struct_field_key_order[row];
+    if (same_decl_field_key(left_node, right_node))
+    {
+        uint token_i = hir_token_pos[right_node];
+        record_error(valid_token(token_i) ? token_i : 0u, ERR_INVALID_MEMBER_ACCESS, 1u);
+    }
 }
 
 bool assignable(uint dst, uint src)
@@ -363,6 +405,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint node = linear_thread_id(dtid);
     if (!valid_node(node))
         return;
+
+    validate_sorted_struct_field_key_row(node);
 
     if (hir_kind[node] == HIR_MEMBER_EXPR)
         validate_member_expr_node(node);

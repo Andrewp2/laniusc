@@ -42,7 +42,7 @@ trait_method  [trait_method] -> 'Fn' 'Ident' enum_type_params_opt 'ParamLParen' 
 trait_method  [trait_method_pub] -> 'TraitPub' 'Fn' 'Ident' enum_type_params_opt 'ParamLParen' param_list_opt 'ParamRParen' return_type_opt where_clause_opt 'TraitMethodSemicolon';
 trait_method_tail [trait_methods_more] -> trait_method trait_method_tail;
 trait_method_tail [trait_methods_end] -> ;
-extern_abi_opt [extern_abi]  -> 'String';
+extern_abi_opt [extern_abi]  -> 'ExternAbiString';
 extern_abi_opt [extern_abi_none] -> ;
 return_type_opt [ret_type]   -> 'ReturnArrow' type_expr;
 return_type_opt [ret_void]   -> ;
@@ -61,8 +61,13 @@ import_tail   [import_string] -> 'ImportString' 'ImportSemicolon';
 module_item   [module]       -> 'Module' path 'ModuleSemicolon';
 path          [path]         -> path_segment path_tail;
 path_segment  [path_ident]   -> 'Ident';
+path_segment  [path_ident_args] -> 'PathGenericIdent' 'PathTypeArgLt' type_expr path_type_arg_tail 'PathTypeArgGt';
 path_tail     [path_more]    -> 'PathColon' 'PathColon' path_segment path_tail;
 path_tail     [path_end]     -> ;
+path_type_arg_tail [path_type_args_more] -> 'PathTypeArgComma' path_type_arg_tail_after_comma;
+path_type_arg_tail [path_type_args_end] -> ;
+path_type_arg_tail_after_comma [path_type_args_after_comma_more] -> type_expr path_type_arg_tail;
+path_type_arg_tail_after_comma [path_type_args_after_comma_trailing] -> ;
 
 type_path     [type_path]    -> type_path_segment type_path_tail;
 type_path_segment [type_path_ident] -> 'TypeIdent';
@@ -85,15 +90,17 @@ type_expr      [type_array]  -> 'TypeArrayLBracket' type_expr type_bracket_tail;
 # ----- Blocks and statements -----
 
 block         [block]        -> 'LBrace' stmt_list 'RBrace';
+if_block      [if_block]     -> 'IfLBrace' stmt_list 'IfRBrace';
 stmt_list     [stmts_more]   -> stmt stmt_list;
 stmt_list     [stmts_end]    -> ;
 
 stmt          [let_stmt]     -> 'Let' 'LetIdent' let_type_opt let_init_opt 'LetSemicolon';
 stmt          [return_stmt]  -> 'Return' return_value_opt 'ReturnSemicolon';
-stmt          [if_stmt]      -> 'If' 'GroupLParen' expr 'GroupRParen' block;
-stmt          [else_stmt]    -> 'Else' block;
+stmt          [if_stmt]      -> 'If' 'GroupLParen' expr 'GroupRParen' if_block else_tail;
+else_tail     [else_stmt]    -> 'Else' block;
+else_tail     [else_none]    -> ;
 stmt          [while_stmt]   -> 'While' 'GroupLParen' expr 'GroupRParen' block;
-stmt          [for_stmt]     -> 'For' 'Ident' 'In' path block;
+stmt          [for_stmt]     -> 'For' 'Ident' 'In' for_iterable block;
 stmt          [break_stmt]   -> 'Break' 'BreakSemicolon';
 stmt          [continue_stmt] -> 'Continue' 'ContinueSemicolon';
 stmt          [block_stmt]   -> block;
@@ -105,8 +112,20 @@ let_init_opt  [let_init]     -> 'LetAssign' expr;
 let_init_opt  [let_init_none] -> ;
 return_value_opt [return_value] -> expr;
 return_value_opt [return_void] -> ;
-
 # ----- Expressions -----
+
+for_iterable  [for_iter_path] -> path;
+for_iterable  [for_iter_range_from_start] -> range_start range_start_tail;
+for_iterable  [for_iter_range_to] -> 'DotDot' range_bound_opt;
+for_iterable  [for_iter_range_to_inclusive] -> 'DotDotEqual' 'RangeInclusiveAssign' range_bound;
+range_start   [range_start_int] -> 'Int';
+range_start_tail [range_exclusive] -> 'DotDot' range_bound_opt;
+range_start_tail [range_inclusive] -> 'DotDotEqual' 'RangeInclusiveAssign' range_bound;
+range_bound   [range_bound_name] -> range_bound_ident postfix_tail;
+range_bound   [range_bound_int] -> 'Int';
+range_bound_ident [range_bound_ident] -> 'RangeEndIdent';
+range_bound_opt [range_bound] -> range_bound;
+range_bound_opt [range_unbounded] -> ;
 
 expr                         -> assign;
 
@@ -178,20 +197,15 @@ mul_tail     [mul_end]       -> ;
 
 # ----- Unary and postfix -----
 
-unary        [pre_inc]       -> 'PrefixInc' unary;
-unary        [pre_dec]       -> 'PrefixDec' unary;
 unary        [pos]           -> 'PrefixPlus' unary;
 unary        [neg]           -> 'PrefixMinus' unary;
 unary        [not]           -> 'Not' unary;
-unary        [bit_not]       -> 'Tilde' unary;
 unary        [base]          -> postfix;
 
 postfix                      -> primary postfix_tail;
 postfix_tail [postfix_call]  -> 'CallLParen' arg_list_opt 'CallRParen' postfix_tail;
 postfix_tail [postfix_index] -> 'IndexLBracket' expr 'IndexRBracket' postfix_tail;
 postfix_tail [postfix_member] -> 'Dot' 'MemberIdent' postfix_tail;
-postfix_tail [postfix_inc]   -> 'PostfixInc' postfix_tail;
-postfix_tail [postfix_dec]   -> 'PostfixDec' postfix_tail;
 postfix_tail [postfix_end]   -> ;
 
 # --- Optional arguments for calls (BNF, no EBNF sugar) ---

@@ -26,9 +26,30 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint TK_LT = 12u;
 static const uint TK_GT = 13u;
+static const uint TK_TYPE_ARG_LT = 131u;
+static const uint TK_TYPE_ARG_GT = 132u;
+static const uint TK_GENERIC_PARAM_LT = 133u;
+static const uint TK_GENERIC_PARAM_GT = 134u;
+static const uint TK_BOUND_TYPE_ARG_LT = 175u;
+static const uint TK_BOUND_TYPE_ARG_GT = 176u;
+static const uint TK_PATH_TYPE_ARG_LT = 184u;
+static const uint TK_PATH_TYPE_ARG_GT = 185u;
 static const int INF = 2147483647;
 
 groupshared int local_depth[256];
+
+public struct PrefixScanI32Min : IPrefixScanOp<int>
+{
+    public static int identity()
+    {
+        return INF;
+    }
+
+    public static int combine(int left, int right)
+    {
+        return min(left, right);
+    }
+}
 
 uint linear_group_id(uint3 gid)
 {
@@ -38,6 +59,18 @@ uint linear_group_id(uint3 gid)
 uint active_token_count()
 {
     return min(lexer_token_count[0], gParams.n_tokens);
+}
+
+bool is_angle_open(uint kind)
+{
+    return kind == TK_LT || kind == TK_TYPE_ARG_LT || kind == TK_GENERIC_PARAM_LT ||
+           kind == TK_BOUND_TYPE_ARG_LT || kind == TK_PATH_TYPE_ARG_LT;
+}
+
+bool is_angle_close(uint kind)
+{
+    return kind == TK_GT || kind == TK_TYPE_ARG_GT || kind == TK_GENERIC_PARAM_GT ||
+           kind == TK_BOUND_TYPE_ARG_GT || kind == TK_PATH_TYPE_ARG_GT;
 }
 
 [shader("compute")]
@@ -54,9 +87,9 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     {
         uint kind = token_words[token_i].kind;
         int depth_before = block_prefix_angle[block_idx] + depth_angle_inblock[token_i];
-        if (kind == TK_LT)
+        if (is_angle_open(kind))
             event_depth = depth_before;
-        else if (kind == TK_GT)
+        else if (is_angle_close(kind))
             event_depth = depth_before - 1;
         angle_match_depth[token_i] = event_depth;
     }
@@ -65,17 +98,11 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
         angle_match_depth[token_i] = INF;
     }
 
-    local_depth[lane] = event_depth;
-    GroupMemoryBarrierWithGroupSync();
+    int block_min = prefix_scan_inclusive<int, PrefixScanI32Min, 256>(
+        lane,
+        event_depth,
+        local_depth);
 
-    [unroll]
-    for (uint step = WG_SIZE >> 1u; step > 0u; step >>= 1u)
-    {
-        if (lane < step)
-            local_depth[lane] = min(local_depth[lane], local_depth[lane + step]);
-        GroupMemoryBarrierWithGroupSync();
-    }
-
-    if (lane == 0u)
-        angle_match_block_min[block_idx] = local_depth[0u];
+    if (lane == WG_SIZE - 1u)
+        angle_match_block_min[block_idx] = block_min;
 }

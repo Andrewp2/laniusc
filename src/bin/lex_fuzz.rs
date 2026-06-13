@@ -59,6 +59,7 @@ fn kind_from_str(s: &str) -> Option<TokenKind> {
         "LineComment" => LineComment,
         "BlockComment" => BlockComment,
         "Dot" => Dot,
+        "DotDot" => DotDot,
         "Comma" => Comma,
         "Semicolon" => Semicolon,
         "Colon" => Colon,

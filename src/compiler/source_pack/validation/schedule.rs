@@ -276,6 +276,7 @@ pub(in crate::compiler) fn validate_library_schedule_page(
     }
 
     let mut dependency_ids = BTreeSet::new();
+    let mut previous_dependency_library_id = None;
     for dependency_library_id in &page.dependency_library_ids {
         if *dependency_library_id == page.library_id {
             return Err(library_partition_contract_error(format!(
@@ -283,6 +284,15 @@ pub(in crate::compiler) fn validate_library_schedule_page(
                 page.partition_index, page.library_id
             )));
         }
+        if let Some(previous_dependency_library_id) = previous_dependency_library_id
+            && *dependency_library_id <= previous_dependency_library_id
+        {
+            return Err(library_partition_contract_error(format!(
+                "schedule page {} dependency library ids must be strictly ascending; id {} follows {}",
+                page.partition_index, dependency_library_id, previous_dependency_library_id
+            )));
+        }
+        previous_dependency_library_id = Some(*dependency_library_id);
         if !dependency_ids.insert(*dependency_library_id) {
             return Err(library_partition_contract_error(format!(
                 "schedule page {} contains duplicate dependency library {}",
@@ -383,6 +393,77 @@ pub(in crate::compiler) fn validate_library_schedule_page(
                 page.partition_index, job.job_index, job.library_job_index
             )));
         }
+    }
+    Ok(())
+}
+
+pub(in crate::compiler) fn validate_library_schedule_page_for_index(
+    page: &SourcePackLibrarySchedulePage,
+    index: &SourcePackLibraryScheduleIndex,
+) -> Result<(), CompileError> {
+    validate_library_schedule_index(index, index.target)?;
+    validate_library_schedule_page(page, index.target, Some(page.partition_index))?;
+    if page.partition_index >= index.partition_count {
+        return Err(library_partition_contract_error(format!(
+            "schedule page {} is outside schedule index partition count {}",
+            page.partition_index, index.partition_count
+        )));
+    }
+    if page.link_job_index != index.link_job_index {
+        return Err(library_partition_contract_error(format!(
+            "schedule page {} link job {} does not match schedule index link job {}",
+            page.partition_index, page.link_job_index, index.link_job_index
+        )));
+    }
+
+    let index_frontend_job_count = library_schedule_index_frontend_job_count(index);
+    let page_frontend_job_count = library_schedule_page_frontend_job_count(page);
+    let page_frontend_job_end = page
+        .frontend_job_index
+        .checked_add(page_frontend_job_count)
+        .ok_or_else(|| {
+            library_partition_contract_error(format!(
+                "schedule page {} frontend job range overflows",
+                page.partition_index
+            ))
+        })?;
+    if page_frontend_job_end > index_frontend_job_count {
+        return Err(library_partition_contract_error(format!(
+            "schedule page {} frontend job range {}..{} exceeds schedule index frontend range 0..{}",
+            page.partition_index,
+            page.frontend_job_index,
+            page_frontend_job_end,
+            index_frontend_job_count
+        )));
+    }
+
+    if page.first_codegen_job_index < index_frontend_job_count {
+        return Err(library_partition_contract_error(format!(
+            "schedule page {} codegen job range starts at {}, before schedule index codegen range {}..{}",
+            page.partition_index,
+            page.first_codegen_job_index,
+            index_frontend_job_count,
+            index.link_job_index
+        )));
+    }
+    let page_codegen_job_end = page
+        .first_codegen_job_index
+        .checked_add(page.codegen_job_count)
+        .ok_or_else(|| {
+            library_partition_contract_error(format!(
+                "schedule page {} codegen job range overflows",
+                page.partition_index
+            ))
+        })?;
+    if page_codegen_job_end > index.link_job_index {
+        return Err(library_partition_contract_error(format!(
+            "schedule page {} codegen job range {}..{} exceeds schedule index codegen range {}..{}",
+            page.partition_index,
+            page.first_codegen_job_index,
+            page_codegen_job_end,
+            index_frontend_job_count,
+            index.link_job_index
+        )));
     }
     Ok(())
 }

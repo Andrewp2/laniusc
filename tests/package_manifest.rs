@@ -9,6 +9,7 @@ use laniusc::compiler::{
     PackageLockfile,
     PackageLockfileArtifact,
     PackageManifest,
+    load_entry_path_manifest_with_source_root,
 };
 
 #[test]
@@ -84,18 +85,66 @@ fn main() {
     let err = lockfile
         .load_path_manifest()
         .expect_err("package lockfiles should reject module declarations that do not match source-root file paths before compiling");
-    assert_module_file_mapping_error(&err, "app::renamed", "app::helper");
+    assert_source_spanned_module_file_mapping_error(&err, "app::renamed", "app::helper");
 
     let err = lockfile.to_json_pretty().expect_err(
         "package lockfile generation should not persist mismatched module/file metadata",
     );
-    assert_module_file_mapping_error(&err, "app::renamed", "app::helper");
+    assert_source_spanned_module_file_mapping_error(&err, "app::renamed", "app::helper");
 
     std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
 }
 
 #[test]
-fn package_lockfile_reports_expected_module_for_missing_source_root_declaration() {
+fn package_lockfile_rejects_dotted_module_declarations_before_package_normalization() {
+    let root = common::temp_artifact_path("laniusc_package_manifest", "dotted_module", None);
+    let app_root = root.join("src").join("app");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+
+    let entry_path = app_root.join("main.lani");
+    std::fs::write(
+        &entry_path,
+        r#"
+module app.main;
+
+fn main() {
+    return 0;
+}
+"#,
+    )
+    .expect("write package entry source with a dotted module declaration");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "dotted-module",
+  "roots": ["src"],
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+
+    let err = lockfile.load_path_manifest().expect_err(
+        "package replay should reject package-name-shaped module declarations before normalization",
+    );
+    assert_source_spanned_module_path_separator_error(&err, &entry_path, "module app.main;");
+
+    let err = lockfile.to_json_pretty().expect_err(
+        "package lockfile generation should not persist dotted module declaration metadata",
+    );
+    assert_source_spanned_module_path_separator_error(&err, &entry_path, "module app.main;");
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_reports_source_span_for_missing_source_root_declaration() {
     let root = common::temp_artifact_path("laniusc_package_manifest", "missing_module", None);
     let app_root = root.join("src").join("app");
     std::fs::create_dir_all(&app_root).expect("create package app source root");
@@ -145,14 +194,107 @@ fn main() {
     let err = lockfile.to_json_pretty().expect_err(
         "package lockfile generation should reject source files without module declarations",
     );
-    let message = format!("{err:?}");
-    assert!(
-        message.contains("missing module path metadata")
-            && message.contains("app/helper.lani")
-            && message.contains("app::helper")
-            && message.contains("leading module declarations"),
-        "expected missing module diagnostic to name the expected source-root module, got {message}"
-    );
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0016");
+            assert_eq!(diagnostic.message, "syntax error");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("missing module declaration diagnostic should carry a source label");
+            assert_eq!(
+                label.source_line.as_deref(),
+                Some("pub fn value() -> i32 {")
+            );
+            assert_eq!(label.message, "expected leading module declaration");
+            assert!(
+                diagnostic
+                    .notes
+                    .iter()
+                    .any(|note| note.contains("app/helper.lani") && note.contains("app::helper")),
+                "expected source-root relative module note, got {:?}",
+                diagnostic.notes
+            );
+            assert!(
+                diagnostic
+                    .notes
+                    .iter()
+                    .any(|note| note.contains("stale source-root metadata")),
+                "expected stale metadata note, got {:?}",
+                diagnostic.notes
+            );
+        }
+        other => panic!("expected source-spanned missing module diagnostic, got {other:?}"),
+    }
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_reports_source_span_for_module_declaration_after_items() {
+    let root = common::temp_artifact_path("laniusc_package_manifest", "module_after_item", None);
+    let app_root = root.join("src").join("app");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+
+    std::fs::write(
+        app_root.join("main.lani"),
+        r#"
+fn before_module() -> i32 {
+    return 0;
+}
+
+module app::main;
+
+fn main() {
+    return before_module();
+}
+"#,
+    )
+    .expect("write package entry source with a module declaration after an item");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "module-after-item",
+  "roots": ["src"],
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+
+    let err = lockfile
+        .to_json_pretty()
+        .expect_err("package lockfile generation should reject module declarations after items");
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0016");
+            assert_eq!(diagnostic.message, "syntax error");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("non-leading module diagnostic should carry a source label");
+            assert_eq!(label.source_line.as_deref(), Some("module app::main;"));
+            assert_eq!(
+                label.message,
+                "module declarations must appear before other items"
+            );
+            assert!(
+                diagnostic
+                    .notes
+                    .iter()
+                    .any(|note| note.contains("first non-comment declaration")),
+                "expected module-position note, got {:?}",
+                diagnostic.notes
+            );
+        }
+        other => panic!("expected source-spanned non-leading module diagnostic, got {other:?}"),
+    }
 
     std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
 }
@@ -195,14 +337,38 @@ fn main() {
     let err = lockfile
         .to_json_pretty()
         .expect_err("package lockfile generation should reject ambiguous source module identity");
-    let message = format!("{err:?}");
-    assert!(
-        message.contains("multiple leading module declarations")
-            && message.contains("app::main")
-            && message.contains("app::other")
-            && message.contains("one module declaration per source file"),
-        "expected package source-identity ambiguity error, got {message}"
-    );
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0016");
+            assert_eq!(diagnostic.message, "syntax error");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("duplicate leading module diagnostic should carry a source label");
+            assert_eq!(label.source_line.as_deref(), Some("module app::other;"));
+            assert_eq!(label.message, "duplicate module declaration");
+            assert!(
+                diagnostic.notes.iter().any(|note| {
+                    note.contains("exactly one leading module declaration")
+                        && note.contains("source file")
+                }),
+                "expected package replay single-module note, got {:?}",
+                diagnostic.notes
+            );
+            assert!(
+                diagnostic.notes.iter().any(|note| {
+                    note.contains("app::other")
+                        && note.contains("app::main")
+                        && note.contains("source identity")
+                }),
+                "expected source identity ambiguity note to name both modules, got {:?}",
+                diagnostic.notes
+            );
+        }
+        other => {
+            panic!("expected source-spanned duplicate leading module diagnostic, got {other:?}")
+        }
+    }
 
     std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
 }
@@ -250,14 +416,38 @@ fn main() {
     let err = lockfile
         .to_json_pretty()
         .expect_err("package lockfile generation should reject non-leading module identities");
-    let message = format!("{err:?}");
-    assert!(
-        message.contains("non-leading module declaration")
-            && message.contains("app::main")
-            && message.contains("app::shadow")
-            && message.contains("exactly one module declaration per source file"),
-        "expected non-leading module identity error, got {message}"
-    );
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0016");
+            assert_eq!(diagnostic.message, "syntax error");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("non-leading module diagnostic should carry a source label");
+            assert_eq!(label.source_line.as_deref(), Some("module app::shadow;"));
+            assert_eq!(
+                label.message,
+                "module declarations must appear before other items"
+            );
+            assert!(
+                diagnostic.notes.iter().any(|note| {
+                    note.contains("exactly one leading module declaration")
+                        && note.contains("source file")
+                }),
+                "expected package replay single-module note, got {:?}",
+                diagnostic.notes
+            );
+            assert!(
+                diagnostic
+                    .notes
+                    .iter()
+                    .any(|note| { note.contains("app::shadow") && note.contains("app::main") }),
+                "expected note to name both module declarations, got {:?}",
+                diagnostic.notes
+            );
+        }
+        other => panic!("expected source-spanned non-leading module diagnostic, got {other:?}"),
+    }
 
     std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
 }
@@ -303,8 +493,7 @@ fn package_lockfile_rejects_non_reproducible_control_plane_fields() {
 "#,
         "absolute resolved path",
     );
-    assert_lockfile_rejects(
-        r#"
+    let entry_outside_roots = r#"
 {
   "version": 1,
   "package": "app",
@@ -313,8 +502,15 @@ fn package_lockfile_rejects_non_reproducible_control_plane_fields() {
   "roots": ["/tmp/lanius-lock-src"],
   "entry": "/tmp/other/main.lani"
 }
-"#,
-        "not under any resolved source root",
+"#;
+    let err = PackageLockfile::parse_json(entry_outside_roots)
+        .expect_err("lockfile entries outside roots should report the resolved root boundary");
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("not under any resolved source root")
+            && message.contains("resolved source roots")
+            && message.contains("/tmp/lanius-lock-src"),
+        "expected lockfile entry/root diagnostic to list resolved roots, got {message}"
     );
     assert_lockfile_rejects(
         r#"
@@ -461,6 +657,32 @@ fn package_manifest_public_serde_enforces_manifest_shape() {
             && message.contains("normalized package-relative path")
             && message.contains("parent-directory components"),
         "expected public manifest serde serialization error, got {message}"
+    );
+}
+
+#[test]
+fn package_manifest_reports_dependency_fields_as_unsupported_import_configuration() {
+    let err = PackageManifest::parse_json(
+        r#"
+{
+  "package": "manifest-import-config",
+  "roots": ["src"],
+  "dependencies": {
+    "tools": "../tools"
+  },
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect_err("package manifests should reject dependency sections with import guidance");
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("unsupported package manifest field `dependencies`")
+            && message.contains("source roots")
+            && message.contains("stdlib_root")
+            && message.contains("imports are declared in .lani source files")
+            && message.contains("external package dependencies are not supported yet"),
+        "expected manifest dependency-field guidance, got {message}"
     );
 }
 
@@ -737,6 +959,43 @@ fn package_manifest_rejects_non_normalized_relative_paths_before_resolution() {
     )
     .expect_err("package manifests should require portable entry separators");
     assert_manifest_separator_path_error(&backslash_entry, "entry");
+
+    let prefix_root = PackageManifest::parse_json(
+        r#"
+{
+  "package": "prefix-root",
+  "roots": ["pkg:src"],
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect_err("package manifests should reject source roots with drive-like prefixes");
+    assert_manifest_portable_path_error(&prefix_root, "source root");
+
+    let prefix_stdlib = PackageManifest::parse_json(
+        r#"
+{
+  "package": "prefix-stdlib",
+  "roots": ["src"],
+  "stdlib_root": "pkg:stdlib",
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect_err("package manifests should reject stdlib roots with drive-like prefixes");
+    assert_manifest_portable_path_error(&prefix_stdlib, "stdlib root");
+
+    let prefix_entry = PackageManifest::parse_json(
+        r#"
+{
+  "package": "prefix-entry",
+  "roots": ["src"],
+  "entry": "pkg:src/app/main.lani"
+}
+"#,
+    )
+    .expect_err("package manifests should reject entries with drive-like prefixes");
+    assert_manifest_portable_path_error(&prefix_entry, "entry");
 }
 
 #[cfg(unix)]
@@ -823,6 +1082,39 @@ fn package_manifest_rejects_symlink_escapes_before_lockfile_resolution() {
     assert_manifest_symlink_escape_error(&err, "package entry");
 
     std::fs::remove_dir_all(&root).expect("remove symlink escape temp root");
+}
+
+#[cfg(unix)]
+#[test]
+fn package_manifest_rejects_source_root_symlink_to_manifest_directory() {
+    let root = common::temp_artifact_path("laniusc_package_manifest", "symlink_root_self", None);
+    let package_dir = root.join("package");
+    let package_app = package_dir.join("app");
+    std::fs::create_dir_all(&package_app).expect("create package app source root");
+    std::fs::write(
+        package_app.join("main.lani"),
+        "module app::main;\nfn main() { return 0; }\n",
+    )
+    .expect("write package entry source");
+    std::os::unix::fs::symlink(&package_dir, package_dir.join("linked-root"))
+        .expect("create source-root symlink to package manifest directory");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "symlink-root-self",
+  "roots": ["linked-root"],
+  "entry": "linked-root/app/main.lani"
+}
+"#,
+    )
+    .expect("parse source-root self-symlink manifest");
+    let err = manifest.resolve_from_dir(&package_dir).expect_err(
+        "source-root symlinks should not widen the package source root to the manifest directory",
+    );
+    assert_manifest_directory_scope_error(&err, "package source root");
+
+    std::fs::remove_dir_all(&root).expect("remove source-root self-symlink temp root");
 }
 
 #[cfg(unix)]
@@ -1155,6 +1447,51 @@ fn main() {
 }
 
 #[test]
+fn package_lockfile_rejects_filesystem_root_import_roots() {
+    let root = common::temp_artifact_path("laniusc_package_manifest", "filesystem_root", None);
+    let (_, _, lockfile_path) = write_minimal_generated_lockfile(&root, "filesystem-root-lockfile");
+    let lockfile_json = std::fs::read_to_string(&lockfile_path).expect("read generated lockfile");
+    let filesystem_root = root
+        .ancestors()
+        .last()
+        .expect("temp root should have a filesystem root ancestor")
+        .display()
+        .to_string();
+
+    let mut document =
+        serde_json::from_str::<serde_json::Value>(&lockfile_json).expect("parse lockfile JSON");
+    document
+        .as_object_mut()
+        .expect("generated lockfile should be a JSON object")
+        .insert(
+            "roots".to_string(),
+            serde_json::Value::Array(vec![serde_json::Value::String(filesystem_root.clone())]),
+        );
+    let tampered_lockfile_json =
+        serde_json::to_string_pretty(&document).expect("serialize root-source lockfile");
+    let err = PackageLockfile::parse_json(&tampered_lockfile_json)
+        .expect_err("package lockfiles must not accept filesystem root as a source root");
+    assert_filesystem_root_import_root_error(&err, "source root");
+
+    let mut document =
+        serde_json::from_str::<serde_json::Value>(&lockfile_json).expect("parse lockfile JSON");
+    document
+        .as_object_mut()
+        .expect("generated lockfile should be a JSON object")
+        .insert(
+            "stdlib_root".to_string(),
+            serde_json::Value::String(filesystem_root),
+        );
+    let tampered_lockfile_json =
+        serde_json::to_string_pretty(&document).expect("serialize root-stdlib lockfile");
+    let err = PackageLockfile::parse_json(&tampered_lockfile_json)
+        .expect_err("package lockfiles must not accept filesystem root as a stdlib root");
+    assert_filesystem_root_import_root_error(&err, "stdlib root");
+
+    std::fs::remove_dir_all(&root).expect("remove filesystem-root lockfile temp root");
+}
+
+#[test]
 fn package_lockfile_records_and_validates_input_identity() {
     let root = common::temp_artifact_path("laniusc_package_manifest", "input_identity", None);
     let src_root = root.join("src");
@@ -1259,6 +1596,157 @@ pub fn value() -> i32 {
 }
 
 #[test]
+fn package_lockfile_rejects_noncanonical_input_digest_metadata() {
+    let root = common::temp_artifact_path(
+        "laniusc_package_manifest",
+        "noncanonical_input_digest",
+        None,
+    );
+    let (_, entry_path, lockfile_path) =
+        write_minimal_generated_lockfile(&root, "noncanonical-input-digest");
+    let lockfile_json = std::fs::read_to_string(&lockfile_path).expect("read generated lockfile");
+    let canonical_entry = std::fs::canonicalize(&entry_path)
+        .expect("canonicalize generated entry")
+        .display()
+        .to_string();
+
+    let mut document =
+        serde_json::from_str::<serde_json::Value>(&lockfile_json).expect("parse lockfile JSON");
+    let input_files = document
+        .get_mut("inputs")
+        .and_then(|inputs| inputs.get_mut("files"))
+        .and_then(|files| files.as_array_mut())
+        .expect("generated lockfile should persist source inputs");
+    let entry_input = input_files
+        .iter_mut()
+        .find(|file| {
+            file.get("path").and_then(|path| path.as_str()) == Some(canonical_entry.as_str())
+        })
+        .expect("generated lockfile should include the entry input");
+    let noncanonical_digest = "fnv1a64:0123456789ABCDEF";
+    entry_input
+        .as_object_mut()
+        .expect("input identity entry should be an object")
+        .insert(
+            "digest".to_string(),
+            serde_json::Value::String(noncanonical_digest.to_string()),
+        );
+
+    let tampered_lockfile_json =
+        serde_json::to_string_pretty(&document).expect("serialize tampered lockfile");
+    let err = PackageLockfile::parse_json(&tampered_lockfile_json)
+        .expect_err("persisted input digests should use canonical lowercase lockfile metadata");
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("input file")
+            && message.contains("invalid digest")
+            && message.contains(noncanonical_digest),
+        "expected canonical input digest metadata error, got {message}"
+    );
+    assert!(
+        !message.contains("input digest mismatch"),
+        "noncanonical persisted digest metadata should fail before live source replay, got {message}"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_rejects_empty_persisted_input_identity_before_live_replay() {
+    let root = common::temp_artifact_path(
+        "laniusc_package_manifest",
+        "empty_persisted_input_identity",
+        None,
+    );
+    let (_, entry_path, lockfile_path) =
+        write_minimal_generated_lockfile(&root, "empty-persisted-input-identity");
+    let lockfile_json = std::fs::read_to_string(&lockfile_path).expect("read generated lockfile");
+    let canonical_entry = std::fs::canonicalize(&entry_path)
+        .expect("canonicalize generated entry")
+        .display()
+        .to_string();
+
+    let mut document =
+        serde_json::from_str::<serde_json::Value>(&lockfile_json).expect("parse lockfile JSON");
+    let input_files = document
+        .get_mut("inputs")
+        .and_then(|inputs| inputs.get_mut("files"))
+        .and_then(|files| files.as_array_mut())
+        .expect("generated lockfile should persist source inputs");
+    let entry_input = input_files
+        .iter_mut()
+        .find(|file| file.get("path").and_then(|path| path.as_str()) == Some(&canonical_entry))
+        .expect("generated lockfile should include the entry input");
+    entry_input
+        .as_object_mut()
+        .expect("input identity entry should be an object")
+        .insert("byte_len".to_string(), serde_json::Value::from(0));
+
+    let tampered_lockfile_json =
+        serde_json::to_string_pretty(&document).expect("serialize tampered lockfile");
+    let err = PackageLockfile::parse_json(&tampered_lockfile_json)
+        .expect_err("empty persisted input identities should fail as malformed package metadata");
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("input file")
+            && message.contains("byte length must be greater than zero")
+            && message.contains("leading module metadata"),
+        "expected empty input identity metadata error, got {message}"
+    );
+    assert!(
+        !message.contains("input byte length mismatch"),
+        "malformed input identity should fail before live source replay, got {message}"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_rejects_stale_entry_input_before_source_replay_metadata() {
+    let root = common::temp_artifact_path(
+        "laniusc_package_manifest",
+        "stale_entry_input_before_replay",
+        None,
+    );
+    let (_, entry_path, lockfile_path) =
+        write_minimal_generated_lockfile(&root, "stale-entry-input");
+    let lockfile_json = std::fs::read_to_string(&lockfile_path).expect("read generated lockfile");
+    let canonical_entry = std::fs::canonicalize(&entry_path)
+        .expect("canonicalize generated entry")
+        .display()
+        .to_string();
+
+    std::fs::write(
+        &entry_path,
+        r#"
+fn main() {
+    return 0;
+}
+"#,
+    )
+    .expect("mutate entry before replaying package metadata");
+
+    let err = PackageLockfile::parse_json(&lockfile_json).expect_err(
+        "stale entry bytes should fail input identity before source replay metadata is trusted",
+    );
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("input")
+            && message.contains("mismatch")
+            && message.contains(canonical_entry.as_str()),
+        "expected entry input-identity mismatch before source replay, got {message}"
+    );
+    assert!(
+        !message.contains("missing leading module")
+            && !message.contains("source-root relative path")
+            && !message.contains("module declaration does not match"),
+        "stale entry bytes should not be reported as source replay metadata, got {message}"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
 fn loaded_package_lockfile_revalidates_input_identity_before_replay() {
     let root = common::temp_artifact_path("laniusc_package_manifest", "loaded_stale_input", None);
     let src_root = root.join("src");
@@ -1327,6 +1815,11 @@ pub fn value() -> i32 {
     .expect("mutate helper body without changing module or import metadata");
 
     let err = loaded
+        .validate()
+        .expect_err("loaded lockfile validation should reject stale source input bytes");
+    assert_input_digest_mismatch_error(&err, &helper_path);
+
+    let err = loaded
         .load_path_manifest()
         .expect_err("loaded lockfile replay should reject stale source input bytes");
     assert_input_digest_mismatch_error(&err, &helper_path);
@@ -1340,6 +1833,187 @@ pub fn value() -> i32 {
         .to_json_pretty()
         .expect_err("loaded lockfile serialization should reject stale source input bytes");
     assert_input_digest_mismatch_error(&err, &helper_path);
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn loaded_package_lockfile_revalidates_import_graph_before_replay() {
+    let root = common::temp_artifact_path("laniusc_package_manifest", "loaded_stale_imports", None);
+    let src_root = root.join("src");
+    let app_root = src_root.join("app");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+
+    let leaf_path = app_root.join("leaf.lani");
+    std::fs::write(
+        &leaf_path,
+        r#"
+module app::leaf;
+
+pub fn value() -> i32 {
+    return 7;
+}
+"#,
+    )
+    .expect("write package leaf source");
+
+    let helper_path = app_root.join("helper.lani");
+    std::fs::write(
+        &helper_path,
+        r#"
+module app::helper;
+
+pub fn value() -> i32 {
+    return 2;
+}
+"#,
+    )
+    .expect("write package helper source");
+
+    let entry_path = app_root.join("main.lani");
+    std::fs::write(
+        &entry_path,
+        r#"
+module app::main;
+
+import app::helper;
+
+fn main() {
+    return app::helper::value();
+}
+"#,
+    )
+    .expect("write package entry source");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "loaded-stale-imports",
+  "roots": ["src"],
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile_path = root.join("lanius.lock.json");
+    PackageLockfile::from_resolved_manifest(&resolved)
+        .expect("create package lockfile")
+        .write_json_file(&lockfile_path)
+        .expect("write package lockfile");
+
+    let loaded = PackageLockfile::load_json_file(&lockfile_path)
+        .expect("loaded package lockfile should validate before import graph changes");
+    std::fs::write(
+        &helper_path,
+        r#"
+module app::helper;
+
+import app::leaf;
+
+pub fn value() -> i32 {
+    return app::leaf::value();
+}
+"#,
+    )
+    .expect("mutate helper import graph");
+
+    let err = loaded
+        .load_path_manifest()
+        .expect_err("loaded lockfile replay should reject a stale import graph");
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("import graph changed") && message.contains("app::leaf"),
+        "expected loaded lockfile replay to reject stale import graph, got {message}"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn loaded_package_lockfile_revalidates_entry_import_graph_before_entry_digest() {
+    let root = common::temp_artifact_path(
+        "laniusc_package_manifest",
+        "loaded_stale_entry_imports",
+        None,
+    );
+    let app_root = root.join("src").join("app");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+
+    let helper_path = app_root.join("helper.lani");
+    std::fs::write(
+        &helper_path,
+        r#"
+module app::helper;
+
+pub fn value() -> i32 {
+    return 2;
+}
+"#,
+    )
+    .expect("write package helper source");
+
+    let entry_path = app_root.join("main.lani");
+    std::fs::write(
+        &entry_path,
+        r#"
+module app::main;
+
+import app::helper;
+
+fn main() {
+    return 0;
+}
+"#,
+    )
+    .expect("write package entry source");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "loaded-stale-entry-imports",
+  "roots": ["src"],
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile_path = root.join("lanius.lock.json");
+    PackageLockfile::from_resolved_manifest(&resolved)
+        .expect("create package lockfile")
+        .write_json_file(&lockfile_path)
+        .expect("write package lockfile");
+
+    let loaded = PackageLockfile::load_json_file(&lockfile_path)
+        .expect("loaded package lockfile should validate before entry imports change");
+    std::fs::write(
+        &entry_path,
+        r#"
+module app::main;
+
+fn main() {
+    return 0;
+}
+"#,
+    )
+    .expect("remove entry import graph edge");
+
+    let err = loaded
+        .load_path_manifest()
+        .expect_err("loaded lockfile replay should reject stale entry import edges");
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("import graph changed")
+            && message.contains("app::helper")
+            && message.contains("expected 1 imports")
+            && message.contains("found 0"),
+        "expected loaded lockfile replay to report the stale entry import edge, got {message}"
+    );
 
     std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
 }
@@ -1668,6 +2342,115 @@ fn main() {
             && message.contains("'/' separators")
             && message.contains("backslash path separators"),
         "expected source-root relative path separator error, got {message}"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_reports_source_root_drift_before_duplicate_module_metadata() {
+    let root = common::temp_artifact_path(
+        "laniusc_package_manifest",
+        "source_root_drift_before_duplicate",
+        None,
+    );
+    let helper_root = root.join("a-src");
+    let entry_root = root.join("z-src");
+    let helper_dir = helper_root.join("lib");
+    let entry_dir = entry_root.join("app");
+    std::fs::create_dir_all(&helper_dir).expect("create helper source root");
+    std::fs::create_dir_all(&entry_dir).expect("create entry source root");
+
+    let helper_path = helper_dir.join("helper.lani");
+    std::fs::write(
+        &helper_path,
+        r#"
+module lib::helper;
+
+pub fn value() -> i32 {
+    return 6;
+}
+"#,
+    )
+    .expect("write helper source");
+
+    let entry_path = entry_dir.join("main.lani");
+    std::fs::write(
+        &entry_path,
+        r#"
+module app::main;
+
+import lib::helper;
+
+fn main() {
+    return lib::helper::value();
+}
+"#,
+    )
+    .expect("write entry source");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "source-root-drift-before-duplicate",
+  "roots": ["z-src", "a-src"],
+  "entry": "z-src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+    let lockfile_json = lockfile
+        .to_json_pretty()
+        .expect("serialize package lockfile with source root metadata");
+
+    let canonical_entry = std::fs::canonicalize(&entry_path)
+        .expect("canonicalize entry source")
+        .display()
+        .to_string();
+    let mut document =
+        serde_json::from_str::<serde_json::Value>(&lockfile_json).expect("parse lockfile JSON");
+    let source_identity_files = document
+        .get_mut("source_identities")
+        .and_then(|identities| identities.get_mut("files"))
+        .and_then(|files| files.as_array_mut())
+        .expect("lockfile JSON should persist mutable source identities");
+    let entry_identity = source_identity_files
+        .iter_mut()
+        .find(|file| {
+            file.get("path").and_then(|path| path.as_str()) == Some(canonical_entry.as_str())
+        })
+        .expect("source identities should include the mutable entry");
+    let entry_identity = entry_identity
+        .as_object_mut()
+        .expect("source identity entry should be an object");
+    entry_identity.insert("source_root_index".to_string(), serde_json::Value::from(0));
+    entry_identity.insert(
+        "source_root_relative_path".to_string(),
+        serde_json::Value::String("lib/helper.lani".to_string()),
+    );
+    entry_identity.insert(
+        "module_path".to_string(),
+        serde_json::Value::String("lib::helper".to_string()),
+    );
+
+    let tampered_lockfile_json =
+        serde_json::to_string_pretty(&document).expect("serialize tampered lockfile");
+    let err = PackageLockfile::parse_json(&tampered_lockfile_json).expect_err(
+        "lockfile source-root drift should be reported before duplicate module metadata",
+    );
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("source-root index") && message.contains("expected 1"),
+        "expected source-root membership drift error, got {message}"
+    );
+    assert!(
+        !message.contains("duplicate source identity module"),
+        "source-root drift should not be masked by duplicate module metadata, got {message}"
     );
 
     std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
@@ -2004,6 +2787,394 @@ fn package_lockfile_public_deserialize_enforces_integrity_sections() {
     assert!(
         message.contains("missing source identities"),
         "expected public deserialization error to require source identities, got {message}"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_requires_integrity_sections_before_live_source_paths() {
+    let root = common::temp_artifact_path(
+        "laniusc_package_manifest",
+        "missing_integrity_before_live_source",
+        None,
+    );
+    let (src_root, _, lockfile_path) =
+        write_minimal_generated_lockfile(&root, "missing-integrity-before-live-source");
+    let lockfile_json = std::fs::read_to_string(&lockfile_path).expect("read generated lockfile");
+    std::fs::remove_dir_all(&src_root).expect("remove live package source root");
+
+    for (section, expected_message) in [
+        ("import_graph", "missing import graph"),
+        ("inputs", "missing input identity"),
+        ("source_identities", "missing source identities"),
+    ] {
+        let missing_section = remove_lockfile_section(&lockfile_json, section);
+        let err = PackageLockfile::parse_json(&missing_section)
+            .expect_err("lockfile without required integrity section should be rejected");
+        let message = format!("{err:?}");
+        assert!(
+            message.contains(expected_message),
+            "expected {expected_message:?} before live source validation, got {message}"
+        );
+        assert!(
+            !message.contains("no longer resolves") && !message.contains("read entry"),
+            "missing integrity sections should fail before stale source paths are loaded, got {message}"
+        );
+    }
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_requires_integrity_sections_before_optional_artifacts() {
+    let root = common::temp_artifact_path(
+        "laniusc_package_manifest",
+        "missing_integrity_before_artifacts",
+        None,
+    );
+    let (_, entry_path, lockfile_path) =
+        write_minimal_generated_lockfile(&root, "missing-integrity-before-artifacts");
+    let lockfile_json = std::fs::read_to_string(&lockfile_path).expect("read generated lockfile");
+    let artifact_path = std::fs::canonicalize(&entry_path).expect("canonicalize artifact fixture");
+
+    let mut document =
+        serde_json::from_str::<serde_json::Value>(&lockfile_json).expect("parse lockfile JSON");
+    document
+        .as_object_mut()
+        .expect("generated lockfile should be a JSON object")
+        .insert(
+            "artifacts".to_string(),
+            serde_json::json!({
+                "digest_algorithm": "lanius-fnv1a64-v1",
+                "files": [{
+                    "target": ":not-a-target",
+                    "kind": "final-output",
+                    "path": artifact_path.display().to_string(),
+                    "byte_len": 0,
+                    "digest": "fnv1a64:0000000000000000"
+                }]
+            }),
+        );
+    let malformed_artifact_lockfile_json =
+        serde_json::to_string_pretty(&document).expect("serialize malformed artifact lockfile");
+    let err = PackageLockfile::parse_json(&malformed_artifact_lockfile_json)
+        .expect_err("malformed optional artifact metadata should still be rejected");
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("artifact target") && message.contains(":not-a-target"),
+        "expected malformed optional artifact metadata error, got {message}"
+    );
+
+    for (section, expected_message) in [
+        ("import_graph", "missing import graph"),
+        ("inputs", "missing input identity"),
+        ("source_identities", "missing source identities"),
+    ] {
+        let missing_section = remove_lockfile_section(&malformed_artifact_lockfile_json, section);
+        let err = PackageLockfile::parse_json(&missing_section)
+            .expect_err("missing replay integrity should be rejected before optional artifacts");
+        let message = format!("{err:?}");
+        assert!(
+            message.contains(expected_message),
+            "expected {expected_message:?} before optional artifact validation, got {message}"
+        );
+        assert!(
+            !message.contains("artifact target") && !message.contains(":not-a-target"),
+            "optional produced artifacts should not mask missing replay integrity, got {message}"
+        );
+    }
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_requires_integrity_shape_before_optional_artifacts_and_live_source_paths() {
+    let root = common::temp_artifact_path(
+        "laniusc_package_manifest",
+        "malformed_integrity_before_artifacts_and_live_source",
+        None,
+    );
+    let (src_root, entry_path, lockfile_path) =
+        write_minimal_generated_lockfile(&root, "malformed-integrity-before-artifacts");
+    let lockfile_json = std::fs::read_to_string(&lockfile_path).expect("read generated lockfile");
+    let canonical_entry = std::fs::canonicalize(&entry_path)
+        .expect("canonicalize generated entry")
+        .display()
+        .to_string();
+
+    let mut document =
+        serde_json::from_str::<serde_json::Value>(&lockfile_json).expect("parse lockfile JSON");
+    document
+        .as_object_mut()
+        .expect("generated lockfile should be a JSON object")
+        .insert(
+            "artifacts".to_string(),
+            serde_json::json!({
+                "digest_algorithm": "lanius-fnv1a64-v1",
+                "files": [{
+                    "target": ":not-a-target",
+                    "kind": "final-output",
+                    "path": canonical_entry,
+                    "byte_len": 0,
+                    "digest": "fnv1a64:0000000000000000"
+                }]
+            }),
+        );
+    let input_files = document
+        .get_mut("inputs")
+        .and_then(|inputs| inputs.get_mut("files"))
+        .and_then(|files| files.as_array_mut())
+        .expect("generated lockfile should persist mutable source inputs");
+    let entry_input = input_files
+        .first_mut()
+        .expect("generated lockfile should include an input identity");
+    entry_input
+        .as_object_mut()
+        .expect("input identity entry should be an object")
+        .insert(
+            "digest".to_string(),
+            serde_json::Value::String("not-a-digest".to_string()),
+        );
+    let tampered_lockfile_json =
+        serde_json::to_string_pretty(&document).expect("serialize tampered lockfile");
+
+    let mut source_identity_document =
+        serde_json::from_str::<serde_json::Value>(&lockfile_json).expect("parse lockfile JSON");
+    source_identity_document
+        .as_object_mut()
+        .expect("generated lockfile should be a JSON object")
+        .insert(
+            "artifacts".to_string(),
+            serde_json::json!({
+                "digest_algorithm": "lanius-fnv1a64-v1",
+                "files": [{
+                    "target": ":not-a-target",
+                    "kind": "final-output",
+                    "path": canonical_entry.clone(),
+                    "byte_len": 0,
+                    "digest": "fnv1a64:0000000000000000"
+                }]
+            }),
+        );
+    let source_identity_files = source_identity_document
+        .get_mut("source_identities")
+        .and_then(|identities| identities.get_mut("files"))
+        .and_then(|files| files.as_array_mut())
+        .expect("generated lockfile should persist mutable source identities");
+    let entry_source_identity = source_identity_files
+        .first_mut()
+        .expect("generated lockfile should include an entry source identity");
+    entry_source_identity
+        .as_object_mut()
+        .expect("source identity entry should be an object")
+        .insert(
+            "module_path".to_string(),
+            serde_json::Value::String("app::".to_string()),
+        );
+    let tampered_source_identity_json = serde_json::to_string_pretty(&source_identity_document)
+        .expect("serialize tampered source identity lockfile");
+
+    let mut import_graph_document =
+        serde_json::from_str::<serde_json::Value>(&lockfile_json).expect("parse lockfile JSON");
+    import_graph_document
+        .as_object_mut()
+        .expect("generated lockfile should be a JSON object")
+        .insert(
+            "artifacts".to_string(),
+            serde_json::json!({
+                "digest_algorithm": "lanius-fnv1a64-v1",
+                "files": [{
+                    "target": ":not-a-target",
+                    "kind": "final-output",
+                    "path": canonical_entry,
+                    "byte_len": 0,
+                    "digest": "fnv1a64:0000000000000000"
+                }]
+            }),
+        );
+    import_graph_document
+        .get_mut("import_graph")
+        .and_then(|graph| graph.get_mut("library_dependencies"))
+        .and_then(|dependencies| dependencies.as_array_mut())
+        .expect("generated lockfile should persist mutable library dependencies")
+        .push(serde_json::json!({
+            "library_id": 3,
+            "depends_on_library_id": 1
+        }));
+    let tampered_import_graph_json = serde_json::to_string_pretty(&import_graph_document)
+        .expect("serialize tampered import graph lockfile");
+
+    std::fs::remove_dir_all(&src_root).expect("remove live package source root");
+
+    let err = PackageLockfile::parse_json(&tampered_lockfile_json).expect_err(
+        "malformed replay integrity should be rejected before artifacts or live source paths",
+    );
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("input file") && message.contains("invalid digest"),
+        "expected malformed input identity error before optional artifacts or live source validation, got {message}"
+    );
+    assert!(
+        !message.contains("artifact target")
+            && !message.contains(":not-a-target")
+            && !message.contains("no longer resolves")
+            && !message.contains("read entry"),
+        "optional artifacts and live source paths must not mask malformed replay integrity, got {message}"
+    );
+
+    let err = PackageLockfile::parse_json(&tampered_source_identity_json).expect_err(
+        "malformed source identity shape should be rejected before artifacts or live source paths",
+    );
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("source identity file") && message.contains("invalid module path"),
+        "expected malformed source identity shape before optional artifacts or live source validation, got {message}"
+    );
+    assert!(
+        !message.contains("artifact target")
+            && !message.contains(":not-a-target")
+            && !message.contains("no longer resolves")
+            && !message.contains("read entry"),
+        "optional artifacts and live source paths must not mask malformed source identity metadata, got {message}"
+    );
+
+    let err = PackageLockfile::parse_json(&tampered_import_graph_json).expect_err(
+        "malformed import graph shape should be rejected before artifacts or live source paths",
+    );
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("import graph library dependency source")
+            && message.contains("library 3")
+            && message.contains("unsupported"),
+        "expected malformed import graph shape before optional artifacts or live source validation, got {message}"
+    );
+    assert!(
+        !message.contains("artifact target")
+            && !message.contains(":not-a-target")
+            && !message.contains("no longer resolves")
+            && !message.contains("read entry"),
+        "optional artifacts and live source paths must not mask malformed import graph metadata, got {message}"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_rejects_stale_input_identity_before_optional_artifact_metadata() {
+    let root = common::temp_artifact_path(
+        "laniusc_package_manifest",
+        "stale_input_before_artifact_metadata",
+        None,
+    );
+    let (_, entry_path, lockfile_path) =
+        write_minimal_generated_lockfile(&root, "stale-input-before-artifacts");
+    let lockfile_json = std::fs::read_to_string(&lockfile_path).expect("read generated lockfile");
+    let canonical_entry = std::fs::canonicalize(&entry_path)
+        .expect("canonicalize generated entry")
+        .display()
+        .to_string();
+
+    let mut document =
+        serde_json::from_str::<serde_json::Value>(&lockfile_json).expect("parse lockfile JSON");
+    document
+        .as_object_mut()
+        .expect("generated lockfile should be a JSON object")
+        .insert(
+            "artifacts".to_string(),
+            serde_json::json!({
+                "digest_algorithm": "lanius-fnv1a64-v1",
+                "files": [{
+                    "target": ":not-a-target",
+                    "kind": "final-output",
+                    "path": canonical_entry,
+                    "byte_len": 0,
+                    "digest": "fnv1a64:0000000000000000"
+                }]
+            }),
+        );
+    let tampered_lockfile_json =
+        serde_json::to_string_pretty(&document).expect("serialize tampered lockfile");
+
+    std::fs::write(
+        &entry_path,
+        r#"
+module app::main;
+
+fn main() {
+    return 1;
+}
+"#,
+    )
+    .expect("mutate package entry source after lockfile generation");
+
+    let err = PackageLockfile::parse_json(&tampered_lockfile_json)
+        .expect_err("stale package inputs should fail before optional produced artifact metadata");
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("input")
+            && message.contains("mismatch")
+            && message.contains(&entry_path.display().to_string()),
+        "expected stale input identity error before optional artifacts, got {message}"
+    );
+    assert!(
+        !message.contains("artifact target") && !message.contains(":not-a-target"),
+        "optional produced artifacts should not mask stale source input identity, got {message}"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_rejects_stale_input_identity_before_tampered_source_identity_metadata() {
+    let root = common::temp_artifact_path(
+        "laniusc_package_manifest",
+        "stale_input_before_source_identity_metadata",
+        None,
+    );
+    let (_, entry_path, lockfile_path) =
+        write_minimal_generated_lockfile(&root, "stale-input-before-source-identity");
+    let lockfile_json = std::fs::read_to_string(&lockfile_path).expect("read generated lockfile");
+    let canonical_entry = std::fs::canonicalize(&entry_path)
+        .expect("canonicalize generated entry")
+        .display()
+        .to_string();
+
+    let mut document =
+        serde_json::from_str::<serde_json::Value>(&lockfile_json).expect("parse lockfile JSON");
+    let source_identity_files = document
+        .get_mut("source_identities")
+        .and_then(|identities| identities.get_mut("files"))
+        .and_then(|files| files.as_array_mut())
+        .expect("generated lockfile should persist source identities");
+    let entry_source_identity = source_identity_files
+        .iter_mut()
+        .find(|file| file.get("path").and_then(|path| path.as_str()) == Some(&canonical_entry))
+        .expect("generated lockfile should include entry source identity");
+    entry_source_identity
+        .as_object_mut()
+        .expect("source identity entry should be an object")
+        .insert(
+            "module_path".to_string(),
+            serde_json::Value::String("app::tampered".to_string()),
+        );
+    let tampered_lockfile_json =
+        serde_json::to_string_pretty(&document).expect("serialize tampered lockfile");
+
+    let source = std::fs::read_to_string(&entry_path).expect("read package entry source");
+    std::fs::write(&entry_path, source.replace("return 0;", "return 1;"))
+        .expect("mutate package entry source without changing replay shape");
+
+    let err = PackageLockfile::parse_json(&tampered_lockfile_json)
+        .expect_err("stale package inputs should fail before tampered source identity metadata");
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("input digest mismatch") && message.contains(canonical_entry.as_str()),
+        "expected stale input identity error before source identity metadata, got {message}"
+    );
+    assert!(
+        !message.contains("source identity file") && !message.contains("declares module"),
+        "tampered source identity metadata should not mask stale source inputs, got {message}"
     );
 
     std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
@@ -2414,6 +3585,14 @@ fn main() {
         }),
         "lockfile JSON should record declared import paths rather than deriving module identity from file paths"
     );
+    assert_import_graph_edge(
+        &lockfile_document,
+        1,
+        "app::helper",
+        "app::leaf",
+        1,
+        "app::leaf",
+    );
 
     PackageLockfile::parse_json(&lockfile_json)
         .expect("unchanged lockfile import graph should validate");
@@ -2441,7 +3620,388 @@ pub fn value() -> i32 {
 }
 
 #[test]
-fn package_lockfile_rejects_non_leading_imports_in_persisted_import_graph() {
+fn package_lockfile_rejects_import_graph_path_that_disagrees_with_target_module() {
+    let root = common::temp_artifact_path("laniusc_package_manifest", "import_target_module", None);
+    let app_root = root.join("src").join("app");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+
+    std::fs::write(
+        app_root.join("helper.lani"),
+        r#"
+module app::helper;
+
+pub fn value() -> i32 {
+    return 2;
+}
+"#,
+    )
+    .expect("write package helper source");
+
+    std::fs::write(
+        app_root.join("main.lani"),
+        r#"
+module app::main;
+
+import app::helper;
+
+fn main() {
+    return app::helper::value();
+}
+"#,
+    )
+    .expect("write package entry source");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "import-target-module",
+  "roots": ["src"],
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+    let lockfile_json = lockfile
+        .to_json_pretty()
+        .expect("serialize package lockfile with import graph");
+
+    let mut document =
+        serde_json::from_str::<serde_json::Value>(&lockfile_json).expect("parse lockfile JSON");
+    mutable_import_edge(&mut document, "app::helper").insert(
+        "import_path".to_string(),
+        serde_json::Value::String("app::renamed".to_string()),
+    );
+
+    let tampered_lockfile_json =
+        serde_json::to_string_pretty(&document).expect("serialize tampered lockfile");
+    let err = PackageLockfile::parse_json(&tampered_lockfile_json).expect_err(
+        "persisted package imports must resolve by the target's declared module identity",
+    );
+    assert_import_path_module_mismatch_error(&err, "app::renamed", "app::helper");
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_reports_changed_import_path_with_source_context() {
+    let root = common::temp_artifact_path("laniusc_package_manifest", "changed_import_path", None);
+    let app_root = root.join("src").join("app");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+
+    std::fs::write(
+        app_root.join("old.lani"),
+        r#"
+module app::old;
+
+pub const VALUE: i32 = 1;
+"#,
+    )
+    .expect("write original imported module");
+    std::fs::write(
+        app_root.join("new.lani"),
+        r#"
+module app::new;
+
+pub const VALUE: i32 = 2;
+"#,
+    )
+    .expect("write replacement imported module");
+
+    let entry_path = app_root.join("main.lani");
+    std::fs::write(
+        &entry_path,
+        r#"
+module app::main;
+
+import app::old;
+
+fn main() {
+    return app::old::VALUE;
+}
+"#,
+    )
+    .expect("write package entry with original import");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "changed-import-path",
+  "roots": ["src"],
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+    let lockfile_json = lockfile
+        .to_json_pretty()
+        .expect("serialize package lockfile with original import graph");
+
+    std::fs::write(
+        &entry_path,
+        r#"
+module app::main;
+
+import app::new;
+
+fn main() {
+    return app::new::VALUE;
+}
+"#,
+    )
+    .expect("rewrite package entry with changed import");
+
+    let err = PackageLockfile::parse_json(&lockfile_json)
+        .expect_err("stale package lockfile should identify changed import paths");
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("import graph changed")
+            && message.contains("source import path changed from app::old to app::new")
+            && message.contains("persisted edge")
+            && message.contains("live source-root replay")
+            && message.contains(entry_path.display().to_string().as_str())
+            && message.contains("regenerate the package lockfile"),
+        "expected changed import-path replay diagnostic, got {message}"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_reports_moved_import_source_module_with_context() {
+    let root = common::temp_artifact_path("laniusc_package_manifest", "moved_import_source", None);
+    let app_root = root.join("src").join("app");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+
+    let leaf_path = app_root.join("leaf.lani");
+    std::fs::write(
+        &leaf_path,
+        r#"
+module app::leaf;
+
+pub const VALUE: i32 = 3;
+"#,
+    )
+    .expect("write imported leaf module");
+
+    let carrier_path = app_root.join("zcarrier.lani");
+    std::fs::write(
+        &carrier_path,
+        r#"
+module app::zcarrier;
+
+pub fn value() -> i32 {
+    return 1;
+}
+"#,
+    )
+    .expect("write original carrier module without nested imports");
+
+    let entry_path = app_root.join("main.lani");
+    std::fs::write(
+        &entry_path,
+        r#"
+module app::main;
+
+import app::leaf;
+import app::zcarrier;
+
+fn main() {
+    return app::leaf::VALUE + app::zcarrier::value();
+}
+"#,
+    )
+    .expect("write entry that owns the leaf import");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "moved-import-source",
+  "roots": ["src"],
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+    let lockfile_json = lockfile
+        .to_json_pretty()
+        .expect("serialize package lockfile with original source-owned import graph");
+
+    std::fs::write(
+        &carrier_path,
+        r#"
+module app::zcarrier;
+
+import app::leaf;
+
+pub fn value() -> i32 {
+    return app::leaf::VALUE;
+}
+"#,
+    )
+    .expect("move leaf import into carrier module");
+    std::fs::write(
+        &entry_path,
+        r#"
+module app::main;
+
+import app::zcarrier;
+
+fn main() {
+    return app::zcarrier::value();
+}
+"#,
+    )
+    .expect("remove leaf import from entry while keeping carrier reachable");
+
+    let err = PackageLockfile::parse_json(&lockfile_json).expect_err(
+        "stale package lockfile should identify the source module that moved an import",
+    );
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("import graph changed")
+            && message.contains("source changed for import app::leaf")
+            && message.contains(entry_path.display().to_string().as_str())
+            && message.contains("module app::main")
+            && message.contains(carrier_path.display().to_string().as_str())
+            && message.contains("module app::zcarrier")
+            && message.contains("live source-root replay")
+            && message.contains("regenerate the package lockfile"),
+        "expected moved import-source replay diagnostic, got {message}"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_reports_moved_import_target_before_generic_count_change() {
+    let root = common::temp_artifact_path("laniusc_package_manifest", "moved_import_target", None);
+    let primary_app_root = root.join("src_primary").join("app");
+    let shadow_app_root = root.join("src_shadow").join("app");
+    std::fs::create_dir_all(&primary_app_root).expect("create primary package app source root");
+    std::fs::create_dir_all(&shadow_app_root).expect("create shadow package app source root");
+
+    let primary_helper_path = primary_app_root.join("helper.lani");
+    std::fs::write(
+        &primary_helper_path,
+        r#"
+module app::helper;
+
+pub const VALUE: i32 = 1;
+"#,
+    )
+    .expect("write original helper module in primary root");
+
+    let entry_path = primary_app_root.join("main.lani");
+    std::fs::write(
+        &entry_path,
+        r#"
+module app::main;
+
+import app::helper;
+
+fn main() {
+    return app::helper::VALUE;
+}
+"#,
+    )
+    .expect("write package entry with original helper import");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "moved-import-target",
+  "roots": ["src_primary", "src_shadow"],
+  "entry": "src_primary/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+    let lockfile_json = lockfile
+        .to_json_pretty()
+        .expect("serialize package lockfile with original target import graph");
+    let original_helper = std::fs::canonicalize(&primary_helper_path)
+        .expect("canonicalize original helper")
+        .display()
+        .to_string();
+
+    std::fs::remove_file(&primary_helper_path).expect("remove original helper module");
+    let shadow_helper_path = shadow_app_root.join("helper.lani");
+    std::fs::write(
+        &shadow_helper_path,
+        r#"
+module app::helper;
+
+pub const VALUE: i32 = 2;
+"#,
+    )
+    .expect("write replacement helper module in later source root");
+    let replacement_helper = std::fs::canonicalize(&shadow_helper_path)
+        .expect("canonicalize replacement helper")
+        .display()
+        .to_string();
+    std::fs::write(
+        primary_app_root.join("leaf.lani"),
+        r#"
+module app::leaf;
+
+pub const VALUE: i32 = 3;
+"#,
+    )
+    .expect("write newly imported leaf module");
+    std::fs::write(
+        &entry_path,
+        r#"
+module app::main;
+
+import app::helper;
+import app::leaf;
+
+fn main() {
+    return app::helper::VALUE + app::leaf::VALUE;
+}
+"#,
+    )
+    .expect("rewrite package entry with moved target and one extra import");
+
+    let err = PackageLockfile::parse_json(&lockfile_json).expect_err(
+        "stale package lockfile should identify the import target that moved before reporting a generic count mismatch",
+    );
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("import graph changed")
+            && message.contains("target changed for import app::helper")
+            && message.contains(original_helper.as_str())
+            && message.contains(replacement_helper.as_str())
+            && message.contains("live source-root replay")
+            && message.contains("regenerate the package lockfile"),
+        "expected moved import-target replay diagnostic, got {message}"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_rejects_non_leading_imports_before_persisting_import_graph() {
     let root = common::temp_artifact_path("laniusc_package_manifest", "late_import", None);
     let app_root = root.join("src").join("app");
     std::fs::create_dir_all(&app_root).expect("create package app source root");
@@ -2497,11 +4057,101 @@ fn main() {
         .expect_err("package lockfiles should not persist incomplete import graph edges");
     let message = format!("{err:?}");
     assert!(
-        message.contains("non-leading import declaration")
-            && message.contains("persisted import edges")
+        message.contains("unsupported import form")
+            && message.contains("imports must appear before other items")
+            && message.contains("package replay metadata stays complete")
             && message.contains("main.lani"),
-        "expected non-leading import graph replay error, got {message}"
+        "expected non-leading import discovery error, got {message}"
     );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_rejects_imports_before_module_identity_before_persisting_import_graph() {
+    let root = common::temp_artifact_path("laniusc_package_manifest", "import_before_module", None);
+    let app_root = root.join("src").join("app");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+
+    std::fs::write(
+        app_root.join("helper.lani"),
+        r#"
+module app::helper;
+
+pub fn value() -> i32 {
+    return 7;
+}
+"#,
+    )
+    .expect("write package helper source");
+
+    let entry_path = app_root.join("main.lani");
+    std::fs::write(
+        &entry_path,
+        r#"
+import app::helper;
+
+module app::main;
+
+fn main() {
+    return app::helper::value();
+}
+"#,
+    )
+    .expect("write package entry source with import before module identity");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "import-before-module",
+  "roots": ["src"],
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+
+    let err = lockfile.to_json_pretty().expect_err(
+        "package lockfiles should not persist imports before the source module identity exists",
+    );
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0011");
+            assert_eq!(diagnostic.message, "unsupported import form");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("import-before-module diagnostic should carry a source label");
+            assert_eq!(label.path, std::fs::canonicalize(&entry_path).unwrap());
+            assert_eq!(label.source_line.as_deref(), Some("import app::helper;"));
+            assert_eq!(
+                label.message,
+                "imports must follow a leading module declaration"
+            );
+            assert!(
+                diagnostic
+                    .notes
+                    .iter()
+                    .any(|note| note.contains("source module identity")),
+                "expected module-identity ordering note, got {:?}",
+                diagnostic.notes
+            );
+            assert!(
+                diagnostic
+                    .notes
+                    .iter()
+                    .any(|note| note.contains("GPU module identity")),
+                "expected GPU module-identity boundary note, got {:?}",
+                diagnostic.notes
+            );
+        }
+        other => panic!("expected source-spanned import-before-module diagnostic, got {other:?}"),
+    }
 
     std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
 }
@@ -2556,6 +4206,400 @@ fn main() {
 }
 
 #[test]
+fn package_lockfile_rejects_path_separator_imports_before_path_normalization() {
+    let root =
+        common::temp_artifact_path("laniusc_package_manifest", "path_separator_import", None);
+    let app_root = root.join("src").join("app");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+
+    std::fs::write(
+        app_root.join("helper.lani"),
+        r#"
+module app::helper;
+
+pub fn value() -> i32 {
+    return 7;
+}
+"#,
+    )
+    .expect("write package helper source");
+
+    let entry_path = app_root.join("main.lani");
+    std::fs::write(
+        &entry_path,
+        r#"
+module app::main;
+
+import app/helper;
+
+fn main() {
+    return app::helper::value();
+}
+"#,
+    )
+    .expect("write package entry source with a path-shaped import");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "path-separator-import",
+  "roots": ["src"],
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+
+    let err = resolved.load_path_manifest().expect_err(
+        "package source-root replay should reject filesystem-style import paths before normalization",
+    );
+    assert_source_spanned_import_path_separator_error(
+        &err,
+        &entry_path,
+        "import app/helper;",
+        "filesystem path separators",
+    );
+
+    let err = lockfile.load_path_manifest().expect_err(
+        "package lockfile path replay should reject filesystem-style import paths before normalization",
+    );
+    assert_source_spanned_import_path_separator_error(
+        &err,
+        &entry_path,
+        "import app/helper;",
+        "filesystem path separators",
+    );
+
+    let err = lockfile
+        .to_json_pretty()
+        .expect_err("package lockfile generation should not persist path-shaped import metadata");
+    assert_source_spanned_import_path_separator_error(
+        &err,
+        &entry_path,
+        "import app/helper;",
+        "filesystem path separators",
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_rejects_dotted_package_imports_before_module_normalization() {
+    let root =
+        common::temp_artifact_path("laniusc_package_manifest", "dotted_package_import", None);
+    let app_root = root.join("src").join("app");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+
+    std::fs::write(
+        app_root.join("helper.lani"),
+        r#"
+module app::helper;
+
+pub fn value() -> i32 {
+    return 7;
+}
+"#,
+    )
+    .expect("write package helper source");
+
+    let entry_path = app_root.join("main.lani");
+    std::fs::write(
+        &entry_path,
+        r#"
+module app::main;
+
+import app.helper;
+
+fn main() {
+    return app::helper::value();
+}
+"#,
+    )
+    .expect("write package entry source with a dotted package-name import");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "dotted-package-import",
+  "roots": ["src"],
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+
+    let err = resolved.load_path_manifest().expect_err(
+        "package source-root replay should reject package-name-shaped imports before normalization",
+    );
+    assert_source_spanned_import_path_separator_error(
+        &err,
+        &entry_path,
+        "import app.helper;",
+        "package-name separators",
+    );
+
+    let err = lockfile.load_path_manifest().expect_err(
+        "package lockfile replay should reject package-name-shaped imports before normalization",
+    );
+    assert_source_spanned_import_path_separator_error(
+        &err,
+        &entry_path,
+        "import app.helper;",
+        "package-name separators",
+    );
+
+    let err = lockfile.to_json_pretty().expect_err(
+        "package lockfile generation should not persist dotted package-name import metadata",
+    );
+    assert_source_spanned_import_path_separator_error(
+        &err,
+        &entry_path,
+        "import app.helper;",
+        "package-name separators",
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_rejects_import_aliases_before_persisting_import_graph() {
+    let root = common::temp_artifact_path("laniusc_package_manifest", "import_alias", None);
+    let app_root = root.join("src").join("app");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+
+    std::fs::write(
+        app_root.join("helper.lani"),
+        r#"
+module app::helper;
+
+pub fn value() -> i32 {
+    return 7;
+}
+"#,
+    )
+    .expect("write package helper source");
+
+    std::fs::write(
+        app_root.join("main.lani"),
+        r#"
+module app::main;
+
+import app::helper as helper;
+
+fn main() {
+    return helper::value();
+}
+"#,
+    )
+    .expect("write package entry source with aliased import");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "import-alias",
+  "roots": ["src"],
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+
+    let err = lockfile.to_json_pretty().expect_err(
+        "package lockfiles should reject aliased imports before persisting import graph metadata",
+    );
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0011");
+            assert_eq!(diagnostic.message, "unsupported import form");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("unsupported import alias diagnostic should carry a source label");
+            assert_eq!(
+                label.source_line.as_deref(),
+                Some("import app::helper as helper;")
+            );
+            assert_eq!(
+                label.message,
+                "import aliases are not supported by package replay"
+            );
+            assert!(
+                diagnostic
+                    .notes
+                    .iter()
+                    .any(|note| note.contains("GPU module/import records")),
+                "expected package replay alias boundary note, got {:?}",
+                diagnostic.notes
+            );
+        }
+        other => panic!("expected source-spanned unsupported import diagnostic, got {other:?}"),
+    }
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_rejects_glob_imports_before_persisting_import_graph() {
+    let root = common::temp_artifact_path("laniusc_package_manifest", "import_glob", None);
+    let app_root = root.join("src").join("app");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+
+    std::fs::write(
+        app_root.join("helper.lani"),
+        r#"
+module app::helper;
+
+pub fn value() -> i32 {
+    return 7;
+}
+"#,
+    )
+    .expect("write package helper source");
+
+    let entry_path = app_root.join("main.lani");
+    std::fs::write(
+        &entry_path,
+        r#"
+module app::main;
+
+import app::*;
+
+fn main() {
+    return helper::value();
+}
+"#,
+    )
+    .expect("write package entry source with a glob import");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "import-glob",
+  "roots": ["src"],
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+
+    let err = resolved.load_path_manifest().expect_err(
+        "package source-root replay should reject glob imports before returning a path manifest",
+    );
+    assert_source_spanned_import_glob_error(&err, &entry_path);
+
+    let err = lockfile.load_path_manifest().expect_err(
+        "package lockfile replay should reject glob imports before returning a path manifest",
+    );
+    assert_source_spanned_import_glob_error(&err, &entry_path);
+
+    let err = lockfile.to_json_pretty().expect_err(
+        "package lockfiles should reject glob imports before persisting import graph metadata",
+    );
+    assert_source_spanned_import_glob_error(&err, &entry_path);
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_reports_source_span_for_import_missing_semicolon_before_items() {
+    let root =
+        common::temp_artifact_path("laniusc_package_manifest", "import_missing_semicolon", None);
+    let app_root = root.join("src").join("app");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+
+    std::fs::write(
+        app_root.join("helper.lani"),
+        r#"
+module app::helper;
+
+pub fn value() -> i32 {
+    return 7;
+}
+"#,
+    )
+    .expect("write package helper source");
+
+    std::fs::write(
+        app_root.join("main.lani"),
+        r#"
+module app::main;
+
+import app::helper
+
+fn main() {
+    return app::helper::value();
+}
+"#,
+    )
+    .expect("write package entry source with unterminated import declaration");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "import-missing-semicolon",
+  "roots": ["src"],
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+
+    let err = lockfile
+        .to_json_pretty()
+        .expect_err("package lockfiles should reject malformed import declarations before persisting import graph metadata");
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0016");
+            assert_eq!(diagnostic.message, "syntax error");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("missing import semicolon diagnostic should carry a source label");
+            assert_eq!(label.source_line.as_deref(), Some("fn main() {"));
+            assert_eq!(label.message, "expected ';' after import path");
+            assert!(
+                diagnostic
+                    .notes
+                    .iter()
+                    .any(|note| note.contains("leading module/import metadata")),
+                "expected package replay boundary note, got {:?}",
+                diagnostic.notes
+            );
+        }
+        other => {
+            panic!("expected source-spanned missing import semicolon diagnostic, got {other:?}")
+        }
+    }
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
 fn package_lockfile_rejects_unterminated_block_comments_during_source_root_replay() {
     let root = common::temp_artifact_path("laniusc_package_manifest", "unterminated_comment", None);
     let app_root = root.join("src").join("app");
@@ -2589,6 +4633,11 @@ fn main() {
         .expect("resolve package manifest paths");
     let lockfile =
         PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+
+    let err = resolved.load_path_manifest().expect_err(
+        "package manifest source-root replay should reject malformed comments before returning a path manifest",
+    );
+    assert_unterminated_source_replay_comment_error(&err);
 
     let err = lockfile.load_path_manifest().expect_err(
         "source-root replay should reject malformed comments before returning a path manifest",
@@ -2654,6 +4703,35 @@ fn main() {
 }
 
 #[test]
+fn source_root_path_manifest_rejects_multiline_literals_before_returning_import_set() {
+    let root = common::temp_artifact_path("laniusc_package_manifest", "source_root_literal", None);
+    let app_root = root.join("src").join("app");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+
+    let entry_path = app_root.join("main.lani");
+    std::fs::write(
+        &entry_path,
+        r#"
+module app::main;
+
+fn main() {
+    let hidden = "unterminated
+import app::helper;
+";
+    return 0;
+}
+"#,
+    )
+    .expect("write entry source with malformed multiline string literal");
+
+    let err = load_entry_path_manifest_with_source_root(&entry_path, root.join("src"))
+        .expect_err("source-root path manifests must reject malformed literals before returning an incomplete import set");
+    assert_malformed_source_replay_literal_error(&err, "string literal");
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
 fn package_lockfile_rejects_multiline_string_literals_during_source_root_replay() {
     let root = common::temp_artifact_path("laniusc_package_manifest", "multiline_string", None);
     let app_root = root.join("src").join("app");
@@ -2699,6 +4777,107 @@ import app::helper;
         .to_json_pretty()
         .expect_err("package lockfile generation should reject malformed source-root literals");
     assert_malformed_source_replay_literal_error(&err, "string literal");
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_rejects_escaped_newline_string_literals_during_source_root_replay() {
+    let root =
+        common::temp_artifact_path("laniusc_package_manifest", "escaped_newline_string", None);
+    let app_root = root.join("src").join("app");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+
+    std::fs::write(
+        app_root.join("main.lani"),
+        r#"
+module app::main;
+
+fn main() {
+    let hidden = "unterminated\
+import app::helper;
+";
+    return 0;
+}
+"#,
+    )
+    .expect("write package entry source with escaped-newline malformed string literal");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "escaped-newline-string",
+  "roots": ["src"],
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+
+    let err = lockfile.load_path_manifest().expect_err(
+        "source-root replay should reject escaped-newline string literals before returning a path manifest",
+    );
+    assert_malformed_source_replay_literal_error(&err, "string literal");
+
+    let err = lockfile
+        .to_json_pretty()
+        .expect_err("package lockfile generation should reject escaped-newline literals");
+    assert_malformed_source_replay_literal_error(&err, "string literal");
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_rejects_live_source_self_import_before_persisting_import_graph() {
+    let root = common::temp_artifact_path("laniusc_package_manifest", "live_self_import", None);
+    let app_root = root.join("src").join("app");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+
+    let entry_path = app_root.join("main.lani");
+    std::fs::write(
+        &entry_path,
+        r#"
+module app::main;
+
+import app::main;
+
+fn main() {
+    return 0;
+}
+"#,
+    )
+    .expect("write package entry source with a self import");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "live-self-import",
+  "roots": ["src"],
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+
+    let err = lockfile.load_path_manifest().expect_err(
+        "package lockfile replay should reject source self-imports before returning a path manifest",
+    );
+    assert_source_spanned_self_import_error(&err, &entry_path, "app::main");
+
+    let err = lockfile
+        .to_json_pretty()
+        .expect_err("package lockfile generation should not persist source self-import edges");
+    assert_source_spanned_self_import_error(&err, &entry_path, "app::main");
 
     std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
 }
@@ -2834,6 +5013,239 @@ fn main() {
             && message.contains("imports its own module path"),
         "expected package semantic self-import diagnostic, got {message}"
     );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_preserves_two_module_import_edges_as_metadata() {
+    let root = common::temp_artifact_path("laniusc_package_manifest", "two_module_cycle", None);
+    let app_root = root.join("src").join("app");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+
+    std::fs::write(
+        app_root.join("helper.lani"),
+        r#"
+module app::helper;
+import app::main;
+
+pub const VALUE: i32 = 7;
+"#,
+    )
+    .expect("write cyclic helper source");
+
+    std::fs::write(
+        app_root.join("main.lani"),
+        r#"
+module app::main;
+import app::helper;
+
+fn main() {
+    return app::helper::VALUE;
+}
+"#,
+    )
+    .expect("write cyclic package entry source");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "two-module-cycle",
+  "roots": ["src"],
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+
+    let path_manifest = resolved
+        .load_path_manifest()
+        .expect("package manifest path replay should preserve direct reverse import edges");
+    assert_eq!(
+        path_manifest.files.len(),
+        2,
+        "cyclic import metadata should load each source file once"
+    );
+
+    let path_manifest = lockfile
+        .load_path_manifest()
+        .expect("package lockfile path replay should preserve direct reverse import edges");
+    assert_eq!(
+        path_manifest.files.len(),
+        2,
+        "cyclic import metadata should load each source file once"
+    );
+
+    let source_pack = lockfile
+        .load_source_pack()
+        .expect("package lockfile source replay should preserve direct reverse import edges");
+    assert_eq!(
+        source_pack.sources.len(),
+        2,
+        "cyclic import metadata should load each source file once for source replay"
+    );
+
+    let lockfile_json = lockfile.to_json_pretty().expect(
+        "package lockfile generation should persist direct reverse import edges as replay metadata",
+    );
+    let lockfile_document =
+        serde_json::from_str::<serde_json::Value>(&lockfile_json).expect("parse lockfile JSON");
+    assert_import_graph_edge(
+        &lockfile_document,
+        1,
+        "app::main",
+        "app::helper",
+        1,
+        "app::helper",
+    );
+    assert_import_graph_edge(
+        &lockfile_document,
+        1,
+        "app::helper",
+        "app::main",
+        1,
+        "app::main",
+    );
+
+    let reparsed = PackageLockfile::parse_json(&lockfile_json)
+        .expect("package lockfile replay should accept direct reverse import metadata");
+    reparsed
+        .load_path_manifest()
+        .expect("replayed lockfile should preserve direct reverse import metadata");
+    reparsed
+        .load_source_pack()
+        .expect("replayed lockfile source replay should preserve direct reverse import metadata");
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_preserves_longer_import_cycles_as_replay_metadata() {
+    let root = common::temp_artifact_path("laniusc_package_manifest", "long_import_cycle", None);
+    let app_root = root.join("src").join("app");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+
+    std::fs::write(
+        app_root.join("leaf.lani"),
+        r#"
+module app::leaf;
+import app::main;
+
+pub const VALUE: i32 = 7;
+"#,
+    )
+    .expect("write cyclic leaf source");
+
+    std::fs::write(
+        app_root.join("helper.lani"),
+        r#"
+module app::helper;
+import app::leaf;
+
+pub const VALUE: i32 = app::leaf::VALUE;
+"#,
+    )
+    .expect("write cyclic helper source");
+
+    std::fs::write(
+        app_root.join("main.lani"),
+        r#"
+module app::main;
+import app::helper;
+
+fn main() {
+    return app::helper::VALUE;
+}
+"#,
+    )
+    .expect("write cyclic package entry source");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "long-import-cycle",
+  "roots": ["src"],
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+
+    let path_manifest = resolved
+        .load_path_manifest()
+        .expect("package manifest path replay should preserve longer import cycles as metadata");
+    assert_eq!(
+        path_manifest.files.len(),
+        3,
+        "cyclic source-root discovery should load each reachable file once"
+    );
+
+    let path_manifest = lockfile
+        .load_path_manifest()
+        .expect("package lockfile path replay should preserve longer import cycles as metadata");
+    assert_eq!(
+        path_manifest.files.len(),
+        3,
+        "cyclic lockfile replay should load each reachable file once"
+    );
+
+    let source_pack = lockfile
+        .load_source_pack()
+        .expect("package lockfile source replay should preserve longer import cycle metadata");
+    assert_eq!(
+        source_pack.sources.len(),
+        3,
+        "cyclic replay metadata should not duplicate source files"
+    );
+
+    let lockfile_json = lockfile.to_json_pretty().expect(
+        "package lockfile generation should persist longer import cycles as replay metadata",
+    );
+    let lockfile_document =
+        serde_json::from_str::<serde_json::Value>(&lockfile_json).expect("parse lockfile JSON");
+    assert_import_graph_edge(
+        &lockfile_document,
+        1,
+        "app::main",
+        "app::helper",
+        1,
+        "app::helper",
+    );
+    assert_import_graph_edge(
+        &lockfile_document,
+        1,
+        "app::helper",
+        "app::leaf",
+        1,
+        "app::leaf",
+    );
+    assert_import_graph_edge(
+        &lockfile_document,
+        1,
+        "app::leaf",
+        "app::main",
+        1,
+        "app::main",
+    );
+
+    let reparsed = PackageLockfile::parse_json(&lockfile_json)
+        .expect("package lockfile replay should accept longer import-cycle metadata");
+    reparsed
+        .load_path_manifest()
+        .expect("replayed lockfile should preserve longer import-cycle metadata");
+    reparsed
+        .load_source_pack()
+        .expect("replayed lockfile source replay should preserve longer import-cycle metadata");
 
     std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
 }
@@ -3714,6 +6126,84 @@ fn main() {
 }
 
 #[test]
+fn package_lockfile_rejects_duplicate_library_dependency_metadata() {
+    let root = common::temp_artifact_path("laniusc_package_manifest", "duplicate_dependency", None);
+    let app_root = root.join("src").join("app");
+    let stdlib_core_root = root.join("stdlib").join("core");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+    std::fs::create_dir_all(&stdlib_core_root).expect("create package stdlib core root");
+
+    std::fs::write(
+        stdlib_core_root.join("number.lani"),
+        r#"
+module core::number;
+
+pub const VALUE: i32 = 1;
+"#,
+    )
+    .expect("write stdlib core source");
+
+    std::fs::write(
+        app_root.join("main.lani"),
+        r#"
+module app::main;
+
+import core::number;
+
+fn main() {
+    return core::number::VALUE;
+}
+"#,
+    )
+    .expect("write package entry source");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "duplicate-dependency",
+  "roots": ["src"],
+  "stdlib_root": "stdlib",
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+    let lockfile_json = lockfile
+        .to_json_pretty()
+        .expect("serialize package lockfile with stdlib dependency");
+
+    let mut document =
+        serde_json::from_str::<serde_json::Value>(&lockfile_json).expect("parse lockfile JSON");
+    let dependencies = document
+        .get_mut("import_graph")
+        .and_then(|graph| graph.get_mut("library_dependencies"))
+        .and_then(|dependencies| dependencies.as_array_mut())
+        .expect("generated lockfile should persist mutable library dependencies");
+    let dependency = dependencies
+        .iter()
+        .find(|dependency| {
+            dependency.get("library_id") == Some(&serde_json::Value::from(1))
+                && dependency.get("depends_on_library_id") == Some(&serde_json::Value::from(0))
+        })
+        .expect("fixture should record the user-to-stdlib dependency")
+        .clone();
+    dependencies.push(dependency);
+
+    let tampered_lockfile_json =
+        serde_json::to_string_pretty(&document).expect("serialize tampered lockfile");
+    let err = PackageLockfile::parse_json(&tampered_lockfile_json)
+        .expect_err("duplicate library dependency metadata should not validate");
+    assert_duplicate_library_dependency_error(&err, 1, 0);
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
 fn package_lockfile_rejects_library_dependency_without_import_edge() {
     let root =
         common::temp_artifact_path("laniusc_package_manifest", "dependency_without_edge", None);
@@ -3810,8 +6300,262 @@ fn main() {
 }
 
 #[test]
-fn package_lockfile_import_graph_is_a_deduplicated_source_graph() {
-    let root = common::temp_artifact_path("laniusc_package_manifest", "dedup_import_graph", None);
+fn package_lockfile_rejects_unknown_import_graph_library_ids() {
+    let root = common::temp_artifact_path("laniusc_package_manifest", "unknown_library_id", None);
+    let (_, entry_path, lockfile_path) =
+        write_minimal_generated_lockfile(&root, "unknown-library-id");
+    let lockfile_json = std::fs::read_to_string(&lockfile_path).expect("read generated lockfile");
+    let canonical_entry = std::fs::canonicalize(&entry_path)
+        .expect("canonicalize generated entry")
+        .display()
+        .to_string();
+
+    let mut dependency_document =
+        serde_json::from_str::<serde_json::Value>(&lockfile_json).expect("parse lockfile JSON");
+    dependency_document
+        .get_mut("import_graph")
+        .and_then(|graph| graph.get_mut("library_dependencies"))
+        .and_then(|dependencies| dependencies.as_array_mut())
+        .expect("generated lockfile should persist mutable library dependencies")
+        .push(serde_json::json!({
+            "library_id": 2,
+            "depends_on_library_id": 1
+        }));
+
+    let tampered_lockfile_json =
+        serde_json::to_string_pretty(&dependency_document).expect("serialize tampered lockfile");
+    let err = PackageLockfile::parse_json(&tampered_lockfile_json)
+        .expect_err("lockfile library dependencies must use known package replay libraries");
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("import graph library dependency source")
+            && message.contains("library 2")
+            && message.contains("unsupported")
+            && message.contains("stdlib library 0")
+            && message.contains("package/user library 1"),
+        "expected unknown dependency library diagnostic, got {message}"
+    );
+
+    let mut edge_document =
+        serde_json::from_str::<serde_json::Value>(&lockfile_json).expect("parse lockfile JSON");
+    edge_document
+        .get_mut("import_graph")
+        .and_then(|graph| graph.get_mut("imports"))
+        .and_then(|imports| imports.as_array_mut())
+        .expect("generated lockfile should persist mutable import graph edges")
+        .push(serde_json::json!({
+            "source_library_id": 2,
+            "source_path": canonical_entry.clone(),
+            "source_module_path": "app::main",
+            "import_path": "app::helper",
+            "target_library_id": 1,
+            "target_path": canonical_entry,
+            "target_module_path": "app::helper"
+        }));
+
+    let tampered_lockfile_json =
+        serde_json::to_string_pretty(&edge_document).expect("serialize tampered lockfile");
+    let err = PackageLockfile::parse_json(&tampered_lockfile_json)
+        .expect_err("lockfile import edges must use known package replay libraries");
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("import graph edge 0 source")
+            && message.contains("library 2")
+            && message.contains("unsupported"),
+        "expected unknown import-edge library diagnostic, got {message}"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_rejects_unknown_input_and_source_identity_library_ids() {
+    let root = common::temp_artifact_path(
+        "laniusc_package_manifest",
+        "unknown_identity_library_id",
+        None,
+    );
+    let (_, _, lockfile_path) =
+        write_minimal_generated_lockfile(&root, "unknown-identity-library-id");
+    let lockfile_json = std::fs::read_to_string(&lockfile_path).expect("read generated lockfile");
+
+    let mut input_document =
+        serde_json::from_str::<serde_json::Value>(&lockfile_json).expect("parse lockfile JSON");
+    input_document
+        .get_mut("inputs")
+        .and_then(|inputs| inputs.get_mut("files"))
+        .and_then(|files| files.as_array_mut())
+        .and_then(|files| files.first_mut())
+        .and_then(|file| file.as_object_mut())
+        .expect("generated lockfile should persist mutable input identities")
+        .insert("library_id".to_string(), serde_json::Value::from(2));
+    let tampered_lockfile_json =
+        serde_json::to_string_pretty(&input_document).expect("serialize tampered lockfile");
+    let err = PackageLockfile::parse_json(&tampered_lockfile_json)
+        .expect_err("lockfile input identities must use known replay libraries");
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("input identity file library 2")
+            && message.contains("unsupported")
+            && message.contains("stdlib library 0")
+            && message.contains("package/user library 1"),
+        "expected unknown input identity library diagnostic, got {message}"
+    );
+
+    let mut source_identity_document =
+        serde_json::from_str::<serde_json::Value>(&lockfile_json).expect("parse lockfile JSON");
+    source_identity_document
+        .get_mut("source_identities")
+        .and_then(|identities| identities.get_mut("files"))
+        .and_then(|files| files.as_array_mut())
+        .and_then(|files| files.first_mut())
+        .and_then(|file| file.as_object_mut())
+        .expect("generated lockfile should persist mutable source identities")
+        .insert("library_id".to_string(), serde_json::Value::from(2));
+    let tampered_lockfile_json = serde_json::to_string_pretty(&source_identity_document)
+        .expect("serialize tampered lockfile");
+    let err = PackageLockfile::parse_json(&tampered_lockfile_json)
+        .expect_err("lockfile source identities must use known replay libraries");
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("source identity file library 2")
+            && message.contains("unsupported")
+            && message.contains("stdlib library 0")
+            && message.contains("package/user library 1"),
+        "expected unknown source identity library diagnostic, got {message}"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_rejects_incomplete_source_identity_shape_before_import_graph_metadata() {
+    let root = common::temp_artifact_path(
+        "laniusc_package_manifest",
+        "incomplete_source_identity_shape",
+        None,
+    );
+    let (_, entry_path, lockfile_path) =
+        write_minimal_generated_lockfile(&root, "incomplete-source-identity-shape");
+    let lockfile_json = std::fs::read_to_string(&lockfile_path).expect("read generated lockfile");
+    let canonical_entry = std::fs::canonicalize(&entry_path)
+        .expect("canonicalize generated entry")
+        .display()
+        .to_string();
+
+    let mut document =
+        serde_json::from_str::<serde_json::Value>(&lockfile_json).expect("parse lockfile JSON");
+    document
+        .get_mut("source_identities")
+        .and_then(|identities| identities.get_mut("files"))
+        .and_then(|files| files.as_array_mut())
+        .and_then(|files| files.first_mut())
+        .and_then(|file| file.as_object_mut())
+        .expect("generated lockfile should persist mutable source identity metadata")
+        .remove("module_path");
+    document
+        .get_mut("import_graph")
+        .and_then(|graph| graph.get_mut("imports"))
+        .and_then(|imports| imports.as_array_mut())
+        .expect("generated lockfile should persist mutable import graph edges")
+        .push(serde_json::json!({
+            "source_library_id": 1,
+            "source_path": canonical_entry.clone(),
+            "source_module_path": "app::main",
+            "import_path": "not a module path",
+            "target_library_id": 1,
+            "target_path": canonical_entry,
+            "target_module_path": "app::main"
+        }));
+
+    let tampered_lockfile_json =
+        serde_json::to_string_pretty(&document).expect("serialize tampered lockfile");
+    let err = PackageLockfile::parse_json(&tampered_lockfile_json).expect_err(
+        "incomplete source identities should fail before import graph metadata is considered",
+    );
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("source identity file")
+            && message.contains("missing module path metadata"),
+        "expected incomplete source identity metadata error, got {message}"
+    );
+    assert!(
+        !message.contains("invalid import graph path"),
+        "incomplete source identity shape must not be masked by import graph metadata, got {message}"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_rejects_source_identity_package_metadata_before_import_graph_metadata() {
+    let root = common::temp_artifact_path(
+        "laniusc_package_manifest",
+        "source_identity_before_import_graph",
+        None,
+    );
+    let (_, entry_path, lockfile_path) = write_minimal_generated_lockfile(&root, "control.plane");
+    let lockfile_json = std::fs::read_to_string(&lockfile_path).expect("read generated lockfile");
+    let canonical_entry = std::fs::canonicalize(&entry_path)
+        .expect("canonicalize generated entry")
+        .display()
+        .to_string();
+
+    let mut document =
+        serde_json::from_str::<serde_json::Value>(&lockfile_json).expect("parse lockfile JSON");
+    document
+        .get_mut("source_identities")
+        .and_then(|identities| identities.get_mut("files"))
+        .and_then(|files| files.as_array_mut())
+        .and_then(|files| files.first_mut())
+        .and_then(|file| file.as_object_mut())
+        .expect("generated lockfile should persist mutable source identity metadata")
+        .insert(
+            "module_path".to_string(),
+            serde_json::Value::String("control::plane".to_string()),
+        );
+    document
+        .get_mut("import_graph")
+        .and_then(|graph| graph.get_mut("imports"))
+        .and_then(|imports| imports.as_array_mut())
+        .expect("generated lockfile should persist mutable import graph edges")
+        .push(serde_json::json!({
+            "source_library_id": 1,
+            "source_path": canonical_entry.clone(),
+            "source_module_path": "app::main",
+            "import_path": "not a module path",
+            "target_library_id": 1,
+            "target_path": canonical_entry,
+            "target_module_path": "app::main"
+        }));
+
+    let tampered_lockfile_json =
+        serde_json::to_string_pretty(&document).expect("serialize tampered lockfile");
+    let err = PackageLockfile::parse_json(&tampered_lockfile_json).expect_err(
+        "source identity ownership should fail before malformed import graph metadata is considered",
+    );
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("source identity file")
+            && message.contains("package metadata")
+            && message.contains("control.plane")
+            && message.contains("control::plane")
+            && message.contains("control-plane identity")
+            && message.contains("GPU module declarations"),
+        "expected source identity package/control-plane boundary error, got {message}"
+    );
+    assert!(
+        !message.contains("invalid import graph path"),
+        "source identity ownership must not be masked by import graph metadata, got {message}"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_rejects_duplicate_source_import_declarations() {
+    let root =
+        common::temp_artifact_path("laniusc_package_manifest", "duplicate_source_import", None);
     let app_root = root.join("src").join("app");
     std::fs::create_dir_all(&app_root).expect("create package app source root");
 
@@ -3847,7 +6591,7 @@ fn main() {
     let manifest = PackageManifest::parse_json(
         r#"
 {
-  "package": "dedup-import-graph",
+  "package": "duplicate-source-import",
   "roots": ["src"],
   "entry": "src/app/main.lani"
 }
@@ -3859,63 +6603,140 @@ fn main() {
         .expect("resolve package manifest paths");
     let lockfile =
         PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
-    let lockfile_json = lockfile
+    let err = lockfile
         .to_json_pretty()
-        .expect("serialize package lockfile with deduplicated import graph");
+        .expect_err("package lockfiles should reject duplicate source import declarations");
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0011");
+            assert_eq!(diagnostic.message, "unsupported import form");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("duplicate import diagnostic should carry a source label");
+            assert_eq!(label.path, std::fs::canonicalize(&entry_path).unwrap());
+            assert_eq!(label.source_line.as_deref(), Some("import app::helper;"));
+            assert_eq!(label.message, "duplicate import declaration");
+            assert!(
+                diagnostic
+                    .notes
+                    .iter()
+                    .any(|note| note.contains("app::helper") && note.contains("repeated")),
+                "expected duplicate import note, got {:?}",
+                diagnostic.notes
+            );
+            assert!(
+                diagnostic.notes.iter().any(|note| {
+                    note.contains("first `app::helper` import") && note.contains("line 4")
+                }),
+                "expected duplicate import diagnostic to identify the first import, got {:?}",
+                diagnostic.notes
+            );
+            assert!(
+                diagnostic
+                    .notes
+                    .iter()
+                    .any(|note| note.contains("GPU import records")),
+                "expected GPU import-record boundary note, got {:?}",
+                diagnostic.notes
+            );
+        }
+        other => panic!("expected source-spanned duplicate import diagnostic, got {other:?}"),
+    }
 
-    let document = serde_json::from_str::<serde_json::Value>(&lockfile_json)
-        .expect("parse generated lockfile");
-    let canonical_entry = std::fs::canonicalize(&entry_path)
-        .expect("canonicalize package entry")
-        .display()
-        .to_string();
-    let canonical_helper = std::fs::canonicalize(&helper_path)
-        .expect("canonicalize package helper")
-        .display()
-        .to_string();
-    let import_edges = document
-        .get("import_graph")
-        .and_then(|import_graph| import_graph.get("imports"))
-        .and_then(|imports| imports.as_array())
-        .expect("lockfile JSON should persist import graph edges");
-    let helper_edge_count = import_edges
-        .iter()
-        .filter(|edge| {
-            edge.get("source_path").and_then(|path| path.as_str()) == Some(canonical_entry.as_str())
-                && edge.get("import_path").and_then(|path| path.as_str()) == Some("app::helper")
-                && edge.get("target_path").and_then(|path| path.as_str())
-                    == Some(canonical_helper.as_str())
-        })
-        .count();
-    assert_eq!(
-        helper_edge_count, 1,
-        "repeated import declarations should persist as one source-graph edge"
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_rejects_duplicate_imports_after_path_normalization() {
+    let root = common::temp_artifact_path(
+        "laniusc_package_manifest",
+        "normalized_duplicate_import",
+        None,
     );
-    PackageLockfile::parse_json(&lockfile_json)
-        .expect("deduplicated package lockfile import graph should validate");
+    let app_root = root.join("src").join("app");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
 
-    let mut tampered_document = document;
-    let import_edges = tampered_document
-        .get_mut("import_graph")
-        .and_then(|import_graph| import_graph.get_mut("imports"))
-        .and_then(|imports| imports.as_array_mut())
-        .expect("lockfile JSON should persist mutable import graph edges");
-    let duplicate_edge = import_edges
-        .iter()
-        .find(|edge| edge.get("import_path").and_then(|path| path.as_str()) == Some("app::helper"))
-        .expect("generated lockfile should include helper import edge")
-        .clone();
-    import_edges.push(duplicate_edge);
+    std::fs::write(
+        app_root.join("helper.lani"),
+        r#"
+module app::helper;
 
-    let tampered_lockfile_json =
-        serde_json::to_string_pretty(&tampered_document).expect("serialize tampered lockfile");
-    let err = PackageLockfile::parse_json(&tampered_lockfile_json)
-        .expect_err("duplicated persisted import graph edges should be rejected");
-    let message = format!("{err:?}");
-    assert!(
-        message.contains("duplicate import graph edge") && message.contains("app::helper"),
-        "expected duplicate import graph edge error, got {message}"
+pub fn value() -> i32 {
+    return 9;
+}
+"#,
+    )
+    .expect("write package helper source");
+
+    let entry_path = app_root.join("main.lani");
+    std::fs::write(
+        &entry_path,
+        r#"
+module app::main;
+
+import app::helper;
+import app
+    /* import path trivia must not create a second edge */
+    :: helper;
+
+fn main() {
+    return app::helper::value();
+}
+"#,
+    )
+    .expect("write package entry source with normalized repeated import");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "normalized-duplicate-import",
+  "roots": ["src"],
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+    let err = lockfile.to_json_pretty().expect_err(
+        "package lockfiles should reject duplicate import declarations after path normalization",
     );
+
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0011");
+            assert_eq!(diagnostic.message, "unsupported import form");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("normalized duplicate import diagnostic should carry a source label");
+            assert_eq!(label.path, std::fs::canonicalize(&entry_path).unwrap());
+            assert_eq!(label.source_line.as_deref(), Some("import app"));
+            assert_eq!(label.message, "duplicate import declaration");
+            assert!(
+                diagnostic
+                    .notes
+                    .iter()
+                    .any(|note| note.contains("app::helper") && note.contains("repeated")),
+                "expected normalized duplicate import note, got {:?}",
+                diagnostic.notes
+            );
+            assert!(
+                diagnostic.notes.iter().any(|note| {
+                    note.contains("first `app::helper` import") && note.contains("line 4")
+                }),
+                "expected normalized duplicate import diagnostic to identify the first import, got {:?}",
+                diagnostic.notes
+            );
+        }
+        other => {
+            panic!("expected source-spanned normalized duplicate import diagnostic, got {other:?}")
+        }
+    }
 
     std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
 }
@@ -4266,6 +7087,278 @@ fn package_lockfile_import_graph_keeps_stdlib_nested_imports_inside_stdlib_bound
 }
 
 #[test]
+fn package_lockfile_rejects_user_import_edge_that_skips_user_shadow_for_stdlib_module() {
+    let root = common::temp_artifact_path("laniusc_package_manifest", "user_shadow_edge", None);
+    let source_root = root.join("src");
+    let stdlib_root = root.join("stdlib");
+    let app_root = source_root.join("app");
+    let user_core_root = source_root.join("core");
+    let stdlib_core_root = stdlib_root.join("core");
+    let stdlib_std_root = stdlib_root.join("std");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+    std::fs::create_dir_all(&user_core_root).expect("create package user core source root");
+    std::fs::create_dir_all(&stdlib_core_root).expect("create package stdlib core source root");
+    std::fs::create_dir_all(&stdlib_std_root).expect("create package stdlib std source root");
+
+    let user_number = user_core_root.join("number.lani");
+    std::fs::write(
+        &user_number,
+        "module core::number;\npub const VALUE: i32 = 1;\n",
+    )
+    .expect("write user-shadowed core module");
+    let stdlib_number = stdlib_core_root.join("number.lani");
+    std::fs::write(
+        &stdlib_number,
+        "module core::number;\npub const VALUE: i32 = 2;\n",
+    )
+    .expect("write stdlib core module");
+    std::fs::write(
+        stdlib_std_root.join("uses_number.lani"),
+        "module std::uses_number;\nimport core::number;\npub const VALUE: i32 = 3;\n",
+    )
+    .expect("write stdlib module with nested core import");
+    let entry_path = app_root.join("main.lani");
+    std::fs::write(
+        &entry_path,
+        "module app::main;\nimport core::number;\nimport std::uses_number;\nfn main() { return 0; }\n",
+    )
+    .expect("write package entry");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "user-shadow-edge",
+  "roots": ["src"],
+  "stdlib_root": "stdlib",
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+    let lockfile_json = lockfile
+        .to_json_pretty()
+        .expect("serialize lockfile with shadowed user and stdlib modules");
+
+    let canonical_entry = std::fs::canonicalize(&entry_path)
+        .expect("canonicalize package entry")
+        .display()
+        .to_string();
+    let canonical_user_number = std::fs::canonicalize(&user_number)
+        .expect("canonicalize user core module")
+        .display()
+        .to_string();
+    let canonical_stdlib_number = std::fs::canonicalize(&stdlib_number)
+        .expect("canonicalize stdlib core module")
+        .display()
+        .to_string();
+
+    let mut document =
+        serde_json::from_str::<serde_json::Value>(&lockfile_json).expect("parse lockfile JSON");
+    let entry_core_edge = document
+        .get_mut("import_graph")
+        .and_then(|graph| graph.get_mut("imports"))
+        .and_then(|imports| imports.as_array_mut())
+        .and_then(|imports| {
+            imports.iter_mut().find(|edge| {
+                edge.get("source_library_id") == Some(&serde_json::Value::from(1))
+                    && edge.get("source_path").and_then(|path| path.as_str())
+                        == Some(canonical_entry.as_str())
+                    && edge.get("import_path").and_then(|path| path.as_str())
+                        == Some("core::number")
+            })
+        })
+        .expect("generated lockfile should include entry core::number import edge")
+        .as_object_mut()
+        .expect("import graph edge should be an object");
+    entry_core_edge.insert("target_library_id".to_string(), serde_json::Value::from(0));
+    entry_core_edge.insert(
+        "target_path".to_string(),
+        serde_json::Value::String(canonical_stdlib_number.clone()),
+    );
+
+    let tampered_lockfile_json =
+        serde_json::to_string_pretty(&document).expect("serialize tampered lockfile");
+    let err = PackageLockfile::parse_json(&tampered_lockfile_json).expect_err(
+        "persisted import graph should not let library metadata skip a user-root module shadow",
+    );
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("targets stdlib module core::number")
+            && message.contains(canonical_stdlib_number.as_str())
+            && message.contains(canonical_user_number.as_str())
+            && message.contains("package/user roots take precedence")
+            && message.contains("must not choose semantic module identity"),
+        "expected user-root precedence import-graph error, got {message}"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove user-shadow edge temp root");
+}
+
+#[test]
+fn package_lockfile_rejects_stale_stdlib_fallback_when_user_module_appears() {
+    let root =
+        common::temp_artifact_path("laniusc_package_manifest", "stale_stdlib_fallback", None);
+    let source_root = root.join("src");
+    let app_root = source_root.join("app");
+    let user_core_root = source_root.join("core");
+    let stdlib_core_root = root.join("stdlib").join("core");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+    std::fs::create_dir_all(&stdlib_core_root).expect("create package stdlib core root");
+
+    let stdlib_number = stdlib_core_root.join("number.lani");
+    std::fs::write(
+        &stdlib_number,
+        "module core::number;\npub const VALUE: i32 = 2;\n",
+    )
+    .expect("write stdlib fallback module");
+    let entry_path = app_root.join("main.lani");
+    std::fs::write(
+        &entry_path,
+        "module app::main;\nimport core::number;\nfn main() { return core::number::VALUE; }\n",
+    )
+    .expect("write package entry using stdlib fallback");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "stale-stdlib-fallback",
+  "roots": ["src"],
+  "stdlib_root": "stdlib",
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+    let lockfile_json = lockfile
+        .to_json_pretty()
+        .expect("serialize package lockfile while stdlib fallback is current");
+
+    std::fs::create_dir_all(&user_core_root).expect("create package user core root");
+    let user_number = user_core_root.join("number.lani");
+    std::fs::write(
+        &user_number,
+        "module core::number;\npub const VALUE: i32 = 1;\n",
+    )
+    .expect("add user module that shadows the stale stdlib fallback");
+
+    let canonical_stdlib_number =
+        std::fs::canonicalize(&stdlib_number).expect("canonicalize stdlib number module");
+    let canonical_user_number =
+        std::fs::canonicalize(&user_number).expect("canonicalize user number module");
+    let err = PackageLockfile::parse_json(&lockfile_json).expect_err(
+        "stale package lockfile must not keep using a stdlib fallback shadowed by user source",
+    );
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("import graph changed")
+            && message.contains("core::number")
+            && message.contains(canonical_stdlib_number.display().to_string().as_str())
+            && message.contains(canonical_user_number.display().to_string().as_str())
+            && message.contains("package/user roots take precedence")
+            && message.contains("stale lockfile metadata"),
+        "expected stale stdlib fallback precedence error, got {message}"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove stale stdlib fallback temp root");
+}
+
+#[cfg(unix)]
+#[test]
+fn package_manifest_rejects_stdlib_nested_import_symlink_escape_through_user_root() {
+    let root = common::temp_artifact_path(
+        "laniusc_package_manifest",
+        "stdlib_nested_import_symlink_escape",
+        None,
+    );
+    let source_root = root.join("src");
+    let stdlib_root = root.join("stdlib");
+    let app_root = source_root.join("app");
+    let user_core_root = source_root.join("core");
+    let stdlib_core_root = stdlib_root.join("core");
+    let stdlib_std_root = stdlib_root.join("std");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+    std::fs::create_dir_all(&user_core_root).expect("create package user core source root");
+    std::fs::create_dir_all(&stdlib_core_root).expect("create package stdlib core source root");
+    std::fs::create_dir_all(&stdlib_std_root).expect("create package stdlib std source root");
+
+    let shared_path = stdlib_core_root.join("shared.lani");
+    std::fs::write(
+        &shared_path,
+        "module core::shared;\npub const VALUE: i32 = 1;\n",
+    )
+    .expect("write shared stdlib module");
+    std::os::unix::fs::symlink(&shared_path, user_core_root.join("shared.lani"))
+        .expect("create user-root source-looking symlink to stdlib module");
+
+    let shim_path = stdlib_std_root.join("shim.lani");
+    std::fs::write(
+        &shim_path,
+        "module std::shim;\nimport core::shared;\npub const VALUE: i32 = 2;\n",
+    )
+    .expect("write stdlib shim module");
+    let entry_path = app_root.join("main.lani");
+    std::fs::write(
+        &entry_path,
+        "module app::main;\nimport std::shim;\nfn main() { return 0; }\n",
+    )
+    .expect("write package entry");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "stdlib-nested-import-symlink-escape",
+  "roots": ["src"],
+  "stdlib_root": "stdlib",
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+
+    let err = resolved.load_source_pack().expect_err(
+        "package manifest source loading should reject user-root symlink aliases to stdlib imports",
+    );
+    assert_stdlib_nested_import_symlink_escape_error(&err, &shim_path, &shared_path);
+
+    let err = resolved.load_path_manifest().expect_err(
+        "package manifest path loading should reject user-root symlink aliases to stdlib imports",
+    );
+    assert_stdlib_nested_import_symlink_escape_error(&err, &shim_path, &shared_path);
+
+    let err = lockfile.load_source_pack().expect_err(
+        "package lockfile source loading should reject user-root symlink aliases to stdlib imports",
+    );
+    assert_stdlib_nested_import_symlink_escape_error(&err, &shim_path, &shared_path);
+
+    let err = lockfile.load_path_manifest().expect_err(
+        "package lockfile path loading should reject user-root symlink aliases to stdlib imports",
+    );
+    assert_stdlib_nested_import_symlink_escape_error(&err, &shim_path, &shared_path);
+
+    let err = lockfile.to_json_pretty().expect_err(
+        "package lockfile generation should reject user-root symlink aliases to stdlib imports",
+    );
+    assert_stdlib_nested_import_symlink_escape_error(&err, &shim_path, &shared_path);
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
 fn package_lockfile_rejects_import_graph_edges_missing_from_input_identity() {
     let root =
         common::temp_artifact_path("laniusc_package_manifest", "import_input_integrity", None);
@@ -4583,8 +7676,6 @@ pub const VALUE: i32 = 1;
         r#"
 module app::leaf;
 
-import app::helper;
-
 pub const VALUE: i32 = 2;
 "#,
     )
@@ -4624,6 +7715,7 @@ pub const VALUE: i32 = 2;
             .insert("path".to_string(), serde_json::Value::String(path.clone()));
         input_files.push(input);
     }
+    sort_lockfile_section_files(&mut document, "inputs");
 
     let source_identity_files = document
         .get_mut("source_identities")
@@ -4654,6 +7746,7 @@ pub const VALUE: i32 = 2;
         );
         source_identity_files.push(identity);
     }
+    sort_lockfile_section_files(&mut document, "source_identities");
 
     let import_edges = document
         .get_mut("import_graph")
@@ -4668,15 +7761,6 @@ pub const VALUE: i32 = 2;
         "target_library_id": 1,
         "target_path": canonical_leaf,
         "target_module_path": "app::leaf"
-    }));
-    import_edges.push(serde_json::json!({
-        "source_library_id": 1,
-        "source_path": canonical_leaf,
-        "source_module_path": "app::leaf",
-        "import_path": "app::helper",
-        "target_library_id": 1,
-        "target_path": canonical_helper,
-        "target_module_path": "app::helper"
     }));
 
     let tampered_lockfile_json =
@@ -4723,6 +7807,108 @@ fn package_lockfile_validates_optional_produced_artifact_identity() {
     assert_eq!(roundtrip.artifacts[0].target, "wasm32-unknown-unknown");
     assert_eq!(roundtrip.artifacts[0].kind, "final-output");
 
+    assert!(
+        PackageLockfileArtifact::from_existing_file("-wasm32", "final-output", &artifact_path)
+            .is_err(),
+        "artifact targets should be stable identity labels, not punctuation-prefixed tokens"
+    );
+    assert!(
+        PackageLockfileArtifact::from_existing_file(
+            "wasm32-unknown-unknown",
+            "final-output:",
+            &artifact_path,
+        )
+        .is_err(),
+        "artifact kinds should be stable identity labels, not punctuation-suffixed tokens"
+    );
+    let err = PackageLockfileArtifact::from_existing_file(
+        "wasm32-unknown-unknown",
+        "link",
+        &artifact_path,
+    )
+    .expect_err("package artifact identities must not reuse source-pack link evidence labels");
+    assert_reserved_artifact_kind_error(&err, "link");
+    let err = PackageLockfileArtifact::from_existing_file(
+        "wasm32-unknown-unknown",
+        "linked-output",
+        &artifact_path,
+    )
+    .expect_err("package artifact identities must not reuse source-pack link evidence labels");
+    assert_reserved_artifact_kind_error(&err, "linked-output");
+    let err = PackageLockfileArtifact::from_existing_file(
+        "wasm32-unknown-unknown",
+        "object-section",
+        &artifact_path,
+    )
+    .expect_err("package artifact identities must not reuse link record labels");
+    assert_reserved_artifact_kind_error(&err, "object-section");
+    let err = PackageLockfileArtifact::from_existing_file(
+        "wasm32-unknown-unknown",
+        "runtime-service",
+        &artifact_path,
+    )
+    .expect_err("package artifact identities must not reuse runtime link requirement labels");
+    assert_reserved_artifact_kind_error(&err, "runtime-service");
+
+    let mut tampered_label_document =
+        serde_json::from_str::<serde_json::Value>(&lockfile_json).expect("parse lockfile JSON");
+    let artifact_identity = tampered_label_document
+        .get_mut("artifacts")
+        .and_then(|artifacts| artifacts.get_mut("files"))
+        .and_then(|files| files.as_array_mut())
+        .and_then(|files| files.first_mut())
+        .and_then(|artifact| artifact.as_object_mut())
+        .expect("lockfile should persist one mutable artifact identity");
+    artifact_identity.insert(
+        "target".to_string(),
+        serde_json::Value::String("wasm32-unknown-unknown:".to_string()),
+    );
+    let tampered_label_json =
+        serde_json::to_string_pretty(&tampered_label_document).expect("serialize lockfile JSON");
+    assert!(
+        PackageLockfile::parse_json(&tampered_label_json).is_err(),
+        "persisted artifact targets should reject punctuation-suffixed labels"
+    );
+
+    let mut tampered_kind_document =
+        serde_json::from_str::<serde_json::Value>(&lockfile_json).expect("parse lockfile JSON");
+    let artifact_identity = tampered_kind_document
+        .get_mut("artifacts")
+        .and_then(|artifacts| artifacts.get_mut("files"))
+        .and_then(|files| files.as_array_mut())
+        .and_then(|files| files.first_mut())
+        .and_then(|artifact| artifact.as_object_mut())
+        .expect("lockfile should persist one mutable artifact identity");
+    artifact_identity.insert(
+        "kind".to_string(),
+        serde_json::Value::String("partial-link".to_string()),
+    );
+    let tampered_kind_json =
+        serde_json::to_string_pretty(&tampered_kind_document).expect("serialize lockfile JSON");
+    let err = PackageLockfile::parse_json(&tampered_kind_json)
+        .expect_err("persisted package artifact identities must not reuse link evidence labels");
+    assert_reserved_artifact_kind_error(&err, "partial-link");
+
+    let mut tampered_record_kind_document =
+        serde_json::from_str::<serde_json::Value>(&lockfile_json).expect("parse lockfile JSON");
+    let artifact_identity = tampered_record_kind_document
+        .get_mut("artifacts")
+        .and_then(|artifacts| artifacts.get_mut("files"))
+        .and_then(|files| files.as_array_mut())
+        .and_then(|files| files.first_mut())
+        .and_then(|artifact| artifact.as_object_mut())
+        .expect("lockfile should persist one mutable artifact identity");
+    artifact_identity.insert(
+        "kind".to_string(),
+        serde_json::Value::String("export-symbol".to_string()),
+    );
+    let tampered_record_kind_json = serde_json::to_string_pretty(&tampered_record_kind_document)
+        .expect("serialize link-record-label lockfile JSON");
+    let err = PackageLockfile::parse_json(&tampered_record_kind_json).expect_err(
+        "persisted package artifact identities must not reuse link record evidence labels",
+    );
+    assert_reserved_artifact_kind_error(&err, "export-symbol");
+
     std::fs::write(&artifact_path, b"\0asm\x01\0\0\x01")
         .expect("rewrite package artifact with stale content");
     let err = PackageLockfile::parse_json(&lockfile_json)
@@ -4739,6 +7925,135 @@ fn package_lockfile_validates_optional_produced_artifact_identity() {
             ),
         "expected artifact digest mismatch, got {message}"
     );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_rejects_empty_produced_artifact_identity() {
+    let root = common::temp_artifact_path("laniusc_package_manifest", "empty_artifact", None);
+    let (_, _, lockfile_path) = write_minimal_generated_lockfile(&root, "empty-artifact");
+    let artifact_dir = root.join("target");
+    std::fs::create_dir_all(&artifact_dir).expect("create package artifact directory");
+
+    let empty_artifact_path = artifact_dir.join("empty.wasm");
+    std::fs::write(&empty_artifact_path, b"").expect("write empty package artifact");
+    let err = PackageLockfileArtifact::from_existing_file(
+        "wasm32-unknown-unknown",
+        "final-output",
+        &empty_artifact_path,
+    )
+    .expect_err("empty produced artifact files should not become package lock identities");
+    assert_empty_artifact_error(&err, &empty_artifact_path);
+
+    let non_empty_artifact_path = artifact_dir.join("app.wasm");
+    std::fs::write(&non_empty_artifact_path, b"\0asm\x01\0\0\0")
+        .expect("write non-empty package artifact");
+    let mut lockfile =
+        PackageLockfile::load_json_file(&lockfile_path).expect("load generated package lockfile");
+    lockfile.artifacts.push(
+        PackageLockfileArtifact::from_existing_file(
+            "wasm32-unknown-unknown",
+            "final-output",
+            &non_empty_artifact_path,
+        )
+        .expect("record non-empty produced artifact identity"),
+    );
+    let mut document = serde_json::from_str::<serde_json::Value>(
+        &lockfile
+            .to_json_pretty()
+            .expect("serialize package lockfile with artifact identity"),
+    )
+    .expect("parse package lockfile JSON with artifact identity");
+    let artifact_identity = document
+        .get_mut("artifacts")
+        .and_then(|artifacts| artifacts.get_mut("files"))
+        .and_then(|files| files.as_array_mut())
+        .and_then(|files| files.first_mut())
+        .and_then(|artifact| artifact.as_object_mut())
+        .expect("lockfile should persist one mutable artifact identity");
+    artifact_identity.insert(
+        "path".to_string(),
+        serde_json::Value::String(
+            std::fs::canonicalize(&empty_artifact_path)
+                .expect("canonicalize empty package artifact")
+                .display()
+                .to_string(),
+        ),
+    );
+    artifact_identity.insert(
+        "byte_len".to_string(),
+        serde_json::Value::Number(serde_json::Number::from(0)),
+    );
+
+    let tampered_lockfile_json =
+        serde_json::to_string_pretty(&document).expect("serialize tampered lockfile");
+    let err = PackageLockfile::parse_json(&tampered_lockfile_json)
+        .expect_err("persisted artifact identities should not point at empty produced files");
+    assert_empty_artifact_error(&err, &empty_artifact_path);
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_rejects_stale_source_before_missing_produced_artifact() {
+    let root = common::temp_artifact_path(
+        "laniusc_package_manifest",
+        "stale_source_before_artifact",
+        None,
+    );
+    let (_, entry_path, lockfile_path) =
+        write_minimal_generated_lockfile(&root, "stale-source-before-artifact");
+    let artifact_dir = root.join("target");
+    std::fs::create_dir_all(&artifact_dir).expect("create package artifact directory");
+    let artifact_path = artifact_dir.join("app.wasm");
+    std::fs::write(&artifact_path, b"\0asm\x01\0\0\0").expect("write package artifact");
+
+    let mut lockfile =
+        PackageLockfile::load_json_file(&lockfile_path).expect("load generated package lockfile");
+    lockfile.artifacts.push(
+        PackageLockfileArtifact::from_existing_file(
+            "wasm32-unknown-unknown",
+            "final-output",
+            &artifact_path,
+        )
+        .expect("record produced artifact identity"),
+    );
+    let lockfile_json = lockfile
+        .to_json_pretty()
+        .expect("serialize package lockfile with artifact identity");
+
+    let source = std::fs::read_to_string(&entry_path).expect("read package entry source");
+    std::fs::write(&entry_path, source.replace("return 0;", "return 1;"))
+        .expect("mutate package entry source without changing replay shape");
+    std::fs::remove_file(&artifact_path).expect("remove produced artifact after lockfile write");
+
+    let assert_stale_source_before_artifact = |err: CompileError, context: &str| {
+        let message = format!("{err:?}");
+        assert!(
+            message.contains("input digest mismatch")
+                && message.contains(&entry_path.display().to_string()),
+            "expected stale source input digest error before artifact validation for {context}, got {message}"
+        );
+        assert!(
+            !message.contains("artifact file") && !message.contains("no longer resolves to a file"),
+            "missing produced artifacts must not mask stale package source identity for {context}, got {message}"
+        );
+    };
+
+    let err = lockfile
+        .to_json_pretty()
+        .expect_err("loaded lockfile reserialization should reject stale source before missing produced artifacts");
+    assert_stale_source_before_artifact(err, "lockfile reserialization");
+
+    let err = lockfile.load_path_manifest().expect_err(
+        "loaded lockfile replay should reject stale source before missing produced artifacts",
+    );
+    assert_stale_source_before_artifact(err, "lockfile replay");
+
+    let err = PackageLockfile::parse_json(&lockfile_json)
+        .expect_err("stale source identity should fail before missing produced artifacts");
+    assert_stale_source_before_artifact(err, "package lockfile parse");
 
     std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
 }
@@ -4942,6 +8257,10 @@ fn package_lockfile_rejects_artifact_identity_inside_source_roots() {
         .to_json_pretty()
         .expect_err("produced artifacts should stay outside package source roots");
     assert_artifact_package_source_collision(&err, &source_root_artifact_path);
+    let err = lockfile
+        .validate()
+        .expect_err("public lockfile validation should reject artifacts inside source roots");
+    assert_artifact_package_source_collision(&err, &source_root_artifact_path);
 
     let mut lockfile =
         PackageLockfile::load_json_file(&lockfile_path).expect("reload generated package lockfile");
@@ -5049,6 +8368,215 @@ fn package_lockfile_write_rejects_missing_parent_source_root_output_paths() {
 }
 
 #[test]
+fn package_lockfile_write_rejects_missing_parent_stdlib_root_output_paths() {
+    let root = common::temp_artifact_path(
+        "laniusc_package_manifest",
+        "lock_output_stdlib_source",
+        None,
+    );
+    let app_root = root.join("src").join("app");
+    let stdlib_root = root.join("stdlib");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+    std::fs::create_dir_all(&stdlib_root).expect("create package stdlib root");
+
+    std::fs::write(
+        app_root.join("main.lani"),
+        r#"
+module app::main;
+
+fn main() {
+    return 0;
+}
+"#,
+    )
+    .expect("write package entry source");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "lock-output-stdlib-source",
+  "roots": ["src"],
+  "stdlib_root": "stdlib",
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+
+    let source_output = stdlib_root
+        .join("core")
+        .join("generated")
+        .join("lanius.lock.json");
+    let source_output_parent = source_output
+        .parent()
+        .expect("stdlib output should have a parent")
+        .to_path_buf();
+    assert!(
+        !source_output_parent.exists(),
+        "test fixture should start without the stdlib output directory"
+    );
+
+    let err = lockfile
+        .write_json_file(&source_output)
+        .expect_err("package lockfile output must not create files inside stdlib source roots");
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("lockfile output path")
+            && message.contains("stdlib source root")
+            && message.contains("control-plane artifacts")
+            && message.contains(source_output.display().to_string().as_str()),
+        "expected stdlib source-output lockfile error, got {message}"
+    );
+    assert!(
+        !source_output.exists() && !source_output_parent.exists(),
+        "failed lockfile write should not create stdlib source output directories"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_load_rejects_control_plane_file_inside_source_roots() {
+    let root = common::temp_artifact_path("laniusc_package_manifest", "lock_load_source", None);
+    let (src_root, entry_path, lockfile_path) =
+        write_minimal_generated_lockfile(&root, "lock-load-source");
+    let misplaced_lockfile = src_root.join("app").join("lanius.lock.json");
+    std::fs::copy(&lockfile_path, &misplaced_lockfile)
+        .expect("place lockfile copy inside package source root");
+    let entry_source = std::fs::read_to_string(&entry_path).expect("read package entry source");
+    std::fs::write(&entry_path, entry_source.replace("return 0;", "return 1;"))
+        .expect("make persisted lockfile input identity stale");
+
+    let err = PackageLockfile::load_json_file(&misplaced_lockfile)
+        .expect_err("package lockfile loads must reject control-plane files inside source roots");
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("lockfile path")
+            && message.contains("package source root")
+            && message.contains("control-plane artifacts")
+            && message.contains(misplaced_lockfile.display().to_string().as_str()),
+        "expected source-root lockfile load boundary error, got {message}"
+    );
+    assert!(
+        !message.contains("input digest mismatch")
+            && !message.contains("input byte length mismatch"),
+        "source-root lockfile placement should fail before replaying stale source inputs, got {message}"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[cfg(unix)]
+#[test]
+fn package_lockfile_load_rejects_symlinked_control_plane_path_inside_source_roots() {
+    let root =
+        common::temp_artifact_path("laniusc_package_manifest", "lock_load_source_symlink", None);
+    let (src_root, entry_path, lockfile_path) =
+        write_minimal_generated_lockfile(&root, "lock-load-source-symlink");
+    let target_dir = root.join("target");
+    std::fs::create_dir_all(&target_dir).expect("create non-source lockfile target directory");
+    let target_lockfile = target_dir.join("lanius.lock.json");
+    std::fs::copy(&lockfile_path, &target_lockfile)
+        .expect("place lockfile target outside package source root");
+    let source_tree_symlink = src_root.join("app").join("linked-lock.json");
+    std::os::unix::fs::symlink(&target_lockfile, &source_tree_symlink)
+        .expect("place lockfile symlink inside package source root");
+    let entry_source = std::fs::read_to_string(&entry_path).expect("read package entry source");
+    std::fs::write(&entry_path, entry_source.replace("return 0;", "return 1;"))
+        .expect("make persisted lockfile input identity stale");
+
+    let err = PackageLockfile::load_json_file(&source_tree_symlink)
+        .expect_err("package lockfile loads must reject symlink paths placed inside source roots");
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("lockfile path")
+            && message.contains("package source root")
+            && message.contains("control-plane artifacts")
+            && message.contains(source_tree_symlink.display().to_string().as_str()),
+        "expected source-root symlink lockfile load boundary error, got {message}"
+    );
+    assert!(
+        !message.contains("input digest mismatch")
+            && !message.contains("input byte length mismatch"),
+        "source-root symlink placement should fail before replaying stale source inputs, got {message}"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_load_rejects_control_plane_file_inside_stdlib_root() {
+    let root = common::temp_artifact_path("laniusc_package_manifest", "lock_load_stdlib", None);
+    let app_root = root.join("src").join("app");
+    let stdlib_root = root.join("stdlib");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+    std::fs::create_dir_all(&stdlib_root).expect("create package stdlib root");
+
+    let entry_path = app_root.join("main.lani");
+    std::fs::write(
+        &entry_path,
+        r#"
+module app::main;
+
+fn main() {
+    return 0;
+}
+"#,
+    )
+    .expect("write package entry source");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "lock-load-stdlib",
+  "roots": ["src"],
+  "stdlib_root": "stdlib",
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile_path = root.join("lanius.lock.json");
+    PackageLockfile::from_resolved_manifest(&resolved)
+        .expect("create package lockfile")
+        .write_json_file(&lockfile_path)
+        .expect("write package lockfile outside source roots");
+
+    let misplaced_lockfile = stdlib_root.join("lanius.lock.json");
+    std::fs::copy(&lockfile_path, &misplaced_lockfile)
+        .expect("place lockfile copy inside stdlib source root");
+    let entry_source = std::fs::read_to_string(&entry_path).expect("read package entry source");
+    std::fs::write(&entry_path, entry_source.replace("return 0;", "return 1;"))
+        .expect("make persisted lockfile input identity stale");
+
+    let err = PackageLockfile::load_json_file(&misplaced_lockfile)
+        .expect_err("package lockfile loads must reject control-plane files inside stdlib roots");
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("lockfile path")
+            && message.contains("stdlib source root")
+            && message.contains("control-plane artifacts")
+            && message.contains(misplaced_lockfile.display().to_string().as_str()),
+        "expected stdlib-root lockfile load boundary error, got {message}"
+    );
+    assert!(
+        !message.contains("input digest mismatch")
+            && !message.contains("input byte length mismatch"),
+        "stdlib-root lockfile placement should fail before replaying stale source inputs, got {message}"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
 fn package_lockfile_detects_removed_imported_file() {
     let root = common::temp_artifact_path("laniusc_package_manifest", "removed_import", None);
     let app_root = root.join("src").join("app");
@@ -5100,16 +8628,218 @@ fn main() {
     let lockfile_json = lockfile
         .to_json_pretty()
         .expect("serialize package lockfile with import graph");
+    let canonical_helper = std::fs::canonicalize(&helper_path)
+        .expect("canonicalize imported helper before removal")
+        .display()
+        .to_string();
 
     std::fs::remove_file(&helper_path).expect("remove imported package helper source");
     let err = PackageLockfile::parse_json(&lockfile_json)
         .expect_err("stale package lockfile should reject removed imported source");
     let message = format!("{err:?}");
     assert!(
-        message.contains("missing source-root module")
-            && message.contains("app::helper")
-            && message.contains(entry_path.display().to_string().as_str()),
-        "expected stale lockfile error to mention missing imported module and importing source, got {message}"
+        message.contains("input file")
+            && message.contains(canonical_helper.as_str())
+            && message.contains("persisted input identity"),
+        "expected stale lockfile error to reject the removed persisted input before import replay, got {message}"
+    );
+    assert!(
+        !message.contains("missing source-root module")
+            && !message.contains(entry_path.display().to_string().as_str()),
+        "removed persisted inputs should fail before live import replay diagnostics, got {message}"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_rejects_removed_persisted_input_before_graph_shrink() {
+    let root = common::temp_artifact_path(
+        "laniusc_package_manifest",
+        "removed_input_before_graph_shrink",
+        None,
+    );
+    let app_root = root.join("src").join("app");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+
+    let leaf_path = app_root.join("leaf.lani");
+    std::fs::write(
+        &leaf_path,
+        r#"
+module app::leaf;
+
+pub const VALUE: i32 = 1;
+"#,
+    )
+    .expect("write package leaf source");
+
+    let middle_path = app_root.join("middle.lani");
+    std::fs::write(
+        &middle_path,
+        r#"
+module app::middle;
+
+import app::leaf;
+
+pub const VALUE: i32 = app::leaf::VALUE;
+"#,
+    )
+    .expect("write package middle source");
+
+    std::fs::write(
+        app_root.join("main.lani"),
+        r#"
+module app::main;
+
+import app::middle;
+
+fn main() {
+    return app::middle::VALUE;
+}
+"#,
+    )
+    .expect("write package entry source");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "removed-input-before-graph-shrink",
+  "roots": ["src"],
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+    let lockfile_json = lockfile
+        .to_json_pretty()
+        .expect("serialize package lockfile with transitive import graph");
+    let canonical_leaf = std::fs::canonicalize(&leaf_path)
+        .expect("canonicalize package leaf before removal")
+        .display()
+        .to_string();
+
+    std::fs::write(
+        &middle_path,
+        r#"
+module app::middle;
+
+pub const VALUE: i32 = 1;
+"#,
+    )
+    .expect("shrink live import graph by removing transitive import");
+    std::fs::remove_file(&leaf_path).expect("remove persisted transitive package input");
+
+    let err = PackageLockfile::parse_json(&lockfile_json).expect_err(
+        "removed persisted source inputs should fail input identity before graph comparison",
+    );
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("input file")
+            && message.contains(canonical_leaf.as_str())
+            && message.contains("persisted input identity"),
+        "expected missing persisted input identity error, got {message}"
+    );
+    assert!(
+        !message.contains("import graph changed"),
+        "missing persisted inputs should not be masked by live import graph shrinkage, got {message}"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_rejects_stale_imported_input_before_source_replay_failure() {
+    let root = common::temp_artifact_path(
+        "laniusc_package_manifest",
+        "stale_imported_input_before_replay",
+        None,
+    );
+    let app_root = root.join("src").join("app");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+
+    let helper_path = app_root.join("helper.lani");
+    std::fs::write(
+        &helper_path,
+        r#"
+module app::helper;
+
+pub fn value() -> i32 {
+    return 2;
+}
+"#,
+    )
+    .expect("write package helper source");
+
+    let entry_path = app_root.join("main.lani");
+    std::fs::write(
+        &entry_path,
+        r#"
+module app::main;
+
+import app::helper;
+
+fn main() {
+    return app::helper::value();
+}
+"#,
+    )
+    .expect("write package entry source");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "stale-imported-input-before-replay",
+  "roots": ["src"],
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+    let lockfile_json = lockfile
+        .to_json_pretty()
+        .expect("serialize package lockfile with import graph");
+    let canonical_helper = std::fs::canonicalize(&helper_path)
+        .expect("canonicalize imported helper")
+        .display()
+        .to_string();
+
+    std::fs::write(
+        &helper_path,
+        r#"
+module app::helper
+
+pub fn value() -> i32 {
+    return 3;
+}
+"#,
+    )
+    .expect("mutate imported helper into malformed replay metadata");
+
+    let err = PackageLockfile::parse_json(&lockfile_json).expect_err(
+        "stale package lockfile should reject imported input bytes before source replay diagnostics",
+    );
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("input")
+            && message.contains("mismatch")
+            && message.contains(canonical_helper.as_str()),
+        "expected stale imported input mismatch before source replay, got {message}"
+    );
+    assert!(
+        !message.contains("syntax error")
+            && !message.contains("expected ';' after module path")
+            && !message.contains("source-root relative path"),
+        "stale imported input bytes should fail before live source replay metadata diagnostics, got {message}"
     );
 
     std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
@@ -5203,6 +8933,95 @@ fn main() {
             && message.contains("source library")
             && message.contains("regenerate the package lockfile"),
         "expected import graph canonical order error, got {message}"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_rejects_import_graph_path_with_multiple_module_identities() {
+    let root = common::temp_artifact_path(
+        "laniusc_package_manifest",
+        "import_graph_path_identity",
+        None,
+    );
+    let app_root = root.join("src").join("app");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+
+    std::fs::write(
+        app_root.join("alpha.lani"),
+        r#"
+module app::alpha;
+
+pub const VALUE: i32 = 1;
+"#,
+    )
+    .expect("write alpha package source");
+    std::fs::write(
+        app_root.join("zeta.lani"),
+        r#"
+module app::zeta;
+
+pub const VALUE: i32 = 2;
+"#,
+    )
+    .expect("write zeta package source");
+    std::fs::write(
+        app_root.join("main.lani"),
+        r#"
+module app::main;
+
+import app::alpha;
+import app::zeta;
+
+fn main() {
+    return app::alpha::VALUE + app::zeta::VALUE;
+}
+"#,
+    )
+    .expect("write package entry source");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "import-graph-path-identity",
+  "roots": ["src"],
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+    let lockfile_json = lockfile
+        .to_json_pretty()
+        .expect("serialize package lockfile with import graph");
+    PackageLockfile::parse_json(&lockfile_json)
+        .expect("generated import graph should have one module identity per source path");
+
+    let mut document =
+        serde_json::from_str::<serde_json::Value>(&lockfile_json).expect("parse lockfile JSON");
+    mutable_import_edge(&mut document, "app::zeta").insert(
+        "source_module_path".to_string(),
+        serde_json::Value::String("app::shadow".to_string()),
+    );
+
+    let tampered_lockfile_json =
+        serde_json::to_string_pretty(&document).expect("serialize tampered lockfile");
+    let err = PackageLockfile::parse_json(&tampered_lockfile_json).expect_err(
+        "package lockfiles should reject one source path claiming multiple module identities",
+    );
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("import graph edge")
+            && message.contains("already associated")
+            && message.contains("one library/module identity per canonical source path")
+            && message.contains("app::main")
+            && message.contains("app::shadow"),
+        "expected import graph path/module identity error, got {message}"
     );
 
     std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
@@ -5351,6 +9170,71 @@ fn package_lockfile_rejects_non_canonical_input_identity_path() {
     assert!(
         message.contains("input file") && message.contains("canonical resolved path"),
         "expected canonical input identity path error, got {message}"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_rejects_non_canonical_missing_input_identity_path() {
+    let root = common::temp_artifact_path(
+        "laniusc_package_manifest",
+        "non_canonical_missing_input",
+        None,
+    );
+    let (_, entry_path, lockfile_path) =
+        write_minimal_generated_lockfile(&root, "non-canonical-missing-input");
+    let lockfile_json = std::fs::read_to_string(&lockfile_path).expect("read generated lockfile");
+    let canonical_entry = std::fs::canonicalize(&entry_path)
+        .expect("canonicalize generated entry")
+        .display()
+        .to_string();
+    let non_canonical_missing_input = entry_path
+        .parent()
+        .expect("entry should have a parent")
+        .join("..")
+        .join("missing")
+        .join("ghost.lani");
+    assert!(
+        !non_canonical_missing_input.exists(),
+        "fixture path should stay missing so validation cannot rely on filesystem canonicalization"
+    );
+
+    let mut document =
+        serde_json::from_str::<serde_json::Value>(&lockfile_json).expect("parse lockfile JSON");
+    let input_files = document
+        .get_mut("inputs")
+        .and_then(|inputs| inputs.get_mut("files"))
+        .and_then(|files| files.as_array_mut())
+        .expect("generated lockfile should persist source inputs");
+    let entry_input = input_files
+        .iter_mut()
+        .find(|file| file.get("path").and_then(|path| path.as_str()) == Some(&canonical_entry))
+        .expect("generated lockfile should include the entry in input identity");
+    entry_input
+        .as_object_mut()
+        .expect("input identity entry should be an object")
+        .insert(
+            "path".to_string(),
+            serde_json::Value::String(non_canonical_missing_input.display().to_string()),
+        );
+
+    let tampered_lockfile_json =
+        serde_json::to_string_pretty(&document).expect("serialize tampered lockfile");
+    let err = PackageLockfile::parse_json(&tampered_lockfile_json).expect_err(
+        "missing input paths should still reject non-canonical resolved replay metadata",
+    );
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("input file")
+            && message.contains("canonical resolved path")
+            && message.contains("parent-directory"),
+        "expected canonical input identity path error before replay consistency, got {message}"
+    );
+    assert!(
+        !message.contains("missing from input identity")
+            && !message.contains("no longer matches persisted input identity"),
+        "non-canonical persisted paths should not be reported as stale replay state, got {message}"
     );
 
     std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
@@ -5530,7 +9414,200 @@ fn main() {
 }
 
 #[test]
-fn package_manifest_rejects_entry_paths_deeper_than_current_resolver_limit() {
+fn package_manifest_rejects_imported_paths_that_map_to_reserved_module_segments() {
+    let root = common::temp_artifact_path("laniusc_package_manifest", "reserved_import", None);
+    let app_root = root.join("src").join("app");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+
+    std::fs::write(
+        app_root.join("fn.lani"),
+        r#"
+module app::fn;
+
+pub const VALUE: i32 = 1;
+"#,
+    )
+    .expect("write package source with reserved module segment");
+    std::fs::write(
+        app_root.join("main.lani"),
+        r#"
+module app::main;
+
+import app::fn;
+
+fn main() {
+    return 0;
+}
+"#,
+    )
+    .expect("write package entry importing a reserved module segment");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "reserved-import",
+  "roots": ["src"],
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let err = resolved.load_path_manifest().expect_err(
+        "package source-root replay should reject imported paths that cannot be GPU module identifiers",
+    );
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0011");
+            assert_eq!(diagnostic.message, "unsupported import form");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("invalid import segment diagnostic should carry a source label");
+            assert_eq!(label.source_line.as_deref(), Some("import app::fn;"));
+            assert_eq!(label.message, "invalid import path segment");
+            assert!(
+                diagnostic.notes.iter().any(|note| note
+                    .contains("reserved keywords cannot be used as import path segments")),
+                "expected reserved segment recovery note, got {:?}",
+                diagnostic.notes
+            );
+        }
+        other => panic!("expected source-spanned unsupported import diagnostic, got {other:?}"),
+    }
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_reports_source_span_for_invalid_import_segment_punctuation() {
+    let root =
+        common::temp_artifact_path("laniusc_package_manifest", "invalid_import_segment", None);
+    let app_root = root.join("src").join("app");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+
+    let entry_path = app_root.join("main.lani");
+    std::fs::write(
+        &entry_path,
+        r#"
+module app::main;
+
+import app::bad-name;
+
+fn main() {
+    return 0;
+}
+"#,
+    )
+    .expect("write package entry with invalid import segment punctuation");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "invalid-import-segment",
+  "roots": ["src"],
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+
+    let err = lockfile.load_path_manifest().expect_err(
+        "package replay should reject invalid import segment punctuation before source-root lookup",
+    );
+    assert_source_spanned_invalid_import_segment_error(
+        &err,
+        &entry_path,
+        "import app::bad-name;",
+        "bad-name",
+    );
+
+    let err = lockfile.to_json_pretty().expect_err(
+        "package lockfile generation should not persist invalid import segment metadata",
+    );
+    assert_source_spanned_invalid_import_segment_error(
+        &err,
+        &entry_path,
+        "import app::bad-name;",
+        "bad-name",
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_reports_source_span_for_import_segment_with_invalid_start() {
+    let root = common::temp_artifact_path(
+        "laniusc_package_manifest",
+        "invalid_import_segment_start",
+        None,
+    );
+    let app_root = root.join("src").join("app");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+
+    let entry_path = app_root.join("main.lani");
+    std::fs::write(
+        &entry_path,
+        r#"
+module app::main;
+
+import app::9helper;
+
+fn main() {
+    return 0;
+}
+"#,
+    )
+    .expect("write package entry with invalid import segment start");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "invalid-import-segment-start",
+  "roots": ["src"],
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+
+    let err = lockfile.load_path_manifest().expect_err(
+        "package replay should reject invalid import segment starts before source-root lookup",
+    );
+    assert_source_spanned_invalid_import_segment_error(
+        &err,
+        &entry_path,
+        "import app::9helper;",
+        "9helper",
+    );
+
+    let err = lockfile.to_json_pretty().expect_err(
+        "package lockfile generation should not persist import segments with invalid starts",
+    );
+    assert_source_spanned_invalid_import_segment_error(
+        &err,
+        &entry_path,
+        "import app::9helper;",
+        "9helper",
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_manifest_rejects_entry_paths_deeper_than_documented_path_depth_limit() {
     let root = common::temp_artifact_path("laniusc_package_manifest", "module_path_limit", None);
     let source_root = root.join("src");
     let parent_dir = source_root
@@ -5571,16 +9648,153 @@ fn main() {{
     )
     .expect("parse package manifest JSON");
     let err = manifest.resolve_from_dir(&root).expect_err(
-        "package manifests should reject entry paths beyond the current GPU resolver limit",
+        "package manifests should reject entry paths beyond the documented path-depth limit",
     );
     let message = format!("{err:?}");
     assert!(
         message.contains("package entry source-root relative path")
             && message.contains("more than 8 segments")
-            && message.contains("at most 8 path segments")
-            && message.contains("current GPU resolver slice"),
+            && message.contains("at most 8 path segments"),
         "expected package manifest entry depth-limit error, got {message}"
     );
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_reports_source_span_for_overdeep_import_path() {
+    let root = common::temp_artifact_path("laniusc_package_manifest", "deep_import_path", None);
+    let app_root = root.join("src").join("app");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+
+    let deep_import_path = "a::b::c::d::e::f::g::h::i";
+    let entry_path = app_root.join("main.lani");
+    std::fs::write(
+        &entry_path,
+        format!(
+            r#"
+module app::main;
+
+import {deep_import_path};
+
+fn main() {{
+    return 0;
+}}
+"#
+        ),
+    )
+    .expect("write package entry with overdeep import path");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "deep-import-path",
+  "roots": ["src"],
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+    let expected_source_line = format!("import {deep_import_path};");
+
+    let err = lockfile.load_path_manifest().expect_err(
+        "package replay should reject overdeep import metadata before returning a path manifest",
+    );
+    assert_source_spanned_import_path_too_deep_error(&err, &entry_path, &expected_source_line);
+
+    let err = lockfile
+        .to_json_pretty()
+        .expect_err("package lockfile generation should reject overdeep import graph metadata");
+    assert_source_spanned_import_path_too_deep_error(&err, &entry_path, &expected_source_line);
+
+    std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
+}
+
+#[test]
+fn package_lockfile_reports_stable_diagnostic_for_overdeep_imported_module_declaration() {
+    let root = common::temp_artifact_path(
+        "laniusc_package_manifest",
+        "deep_imported_module_path",
+        None,
+    );
+    let app_root = root.join("src").join("app");
+    std::fs::create_dir_all(&app_root).expect("create package app source root");
+
+    let deep_module_path = "a::b::c::d::e::f::g::h::i";
+    std::fs::write(
+        app_root.join("helper.lani"),
+        format!(
+            r#"
+module {deep_module_path};
+
+pub const VALUE: i32 = 1;
+"#
+        ),
+    )
+    .expect("write imported source with overdeep module declaration");
+    std::fs::write(
+        app_root.join("main.lani"),
+        r#"
+module app::main;
+
+import app::helper;
+
+fn main() {
+    return 0;
+}
+"#,
+    )
+    .expect("write package entry importing helper");
+
+    let manifest = PackageManifest::parse_json(
+        r#"
+{
+  "package": "deep-imported-module-path",
+  "roots": ["src"],
+  "entry": "src/app/main.lani"
+}
+"#,
+    )
+    .expect("parse package manifest JSON");
+    let resolved = manifest
+        .resolve_from_dir(&root)
+        .expect("resolve package manifest paths");
+    let lockfile =
+        PackageLockfile::from_resolved_manifest(&resolved).expect("create package lockfile");
+    let err = lockfile
+        .to_json_pretty()
+        .expect_err("package replay should report resolver-depth module metadata as a diagnostic");
+
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0014");
+            assert_eq!(diagnostic.message, "module path too deep");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("overdeep module diagnostic should carry a source label");
+            assert_eq!(
+                label.source_line.as_deref(),
+                Some("module a::b::c::d::e::f::g::h::i;")
+            );
+            assert!(
+                label.message.contains("module path") && label.message.contains("depth"),
+                "overdeep module diagnostic label should describe the path-depth failure, got {:?}",
+                label.message
+            );
+            assert!(
+                !diagnostic.notes.is_empty(),
+                "expected package replay diagnostic to include recovery notes, got {:?}",
+                diagnostic.notes
+            );
+        }
+        other => panic!("expected stable overdeep module diagnostic, got {other:?}"),
+    }
 
     std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
 }
@@ -5625,7 +9839,7 @@ fn main() {{
     let err = lockfile
         .to_json_pretty()
         .expect_err("lockfile generation should reject module declarations that do not match source-root file paths");
-    assert_module_file_mapping_error(&err, deep_module_path, "app::main");
+    assert_source_spanned_module_file_mapping_error(&err, deep_module_path, "app::main");
 
     std::fs::remove_dir_all(&root).expect("remove package manifest temp root");
 }
@@ -5708,6 +9922,26 @@ fn assert_canonical_section_file_order(document: &serde_json::Value, section: &s
     );
 }
 
+fn sort_lockfile_section_files(document: &mut serde_json::Value, section: &str) {
+    let files = document
+        .get_mut(section)
+        .and_then(|section| section.get_mut("files"))
+        .and_then(|files| files.as_array_mut())
+        .unwrap_or_else(|| panic!("lockfile fixture should include {section}.files"));
+    files.sort_by_key(|file| {
+        let library_id = file
+            .get("library_id")
+            .and_then(|library_id| library_id.as_u64())
+            .unwrap_or_else(|| panic!("{section}.files entry should include library_id"));
+        let path = file
+            .get("path")
+            .and_then(|path| path.as_str())
+            .unwrap_or_else(|| panic!("{section}.files entry should include path"))
+            .to_string();
+        (library_id, path)
+    });
+}
+
 fn assert_ambiguous_source_root_import_error(
     err: &CompileError,
     import_path: &str,
@@ -5729,6 +9963,36 @@ fn assert_ambiguous_source_root_import_error(
             message.contains(&canonical_candidate),
             "expected ambiguous source-root import error to mention {canonical_candidate}, got {message}"
         );
+    }
+}
+
+fn assert_stdlib_nested_import_symlink_escape_error(
+    err: &CompileError,
+    importer: &Path,
+    escaped_target: &Path,
+) {
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0004");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("source-root escape diagnostic should point at the import");
+            assert_eq!(
+                label.path,
+                std::fs::canonicalize(importer).expect("canonicalize stdlib importing source")
+            );
+            assert_eq!(label.source_line.as_deref(), Some("import core::shared;"));
+            let escaped_target = std::fs::canonicalize(escaped_target)
+                .expect("canonicalize escaped stdlib target")
+                .display()
+                .to_string();
+            let message = diagnostic.render();
+            assert!(message.contains("source-root module core::shared escapes source root"));
+            assert!(message.contains(&escaped_target));
+            assert!(message.contains("resolves outside source root"));
+        }
+        other => panic!("expected source-root escape diagnostic, got {other:?}"),
     }
 }
 
@@ -5772,6 +10036,16 @@ fn assert_manifest_separator_path_error(err: &CompileError, label: &str) {
     );
 }
 
+fn assert_manifest_portable_path_error(err: &CompileError, label: &str) {
+    let message = format!("{err:?}");
+    assert!(
+        message.contains(label)
+            && message.contains("must not contain ':'")
+            && message.contains("portable package-relative paths"),
+        "expected manifest portable-path error for {label}, got {message}"
+    );
+}
+
 fn assert_manifest_symlink_escape_error(err: &CompileError, label: &str) {
     let message = format!("{err:?}");
     assert!(
@@ -5779,6 +10053,16 @@ fn assert_manifest_symlink_escape_error(err: &CompileError, label: &str) {
             && message.contains("resolves outside package manifest directory")
             && message.contains("symlinks"),
         "expected manifest symlink escape error for {label}, got {message}"
+    );
+}
+
+fn assert_manifest_directory_scope_error(err: &CompileError, label: &str) {
+    let message = format!("{err:?}");
+    assert!(
+        message.contains(label)
+            && message.contains("resolves to the package manifest directory")
+            && message.contains("source or stdlib subdirectory"),
+        "expected manifest directory-scope error for {label}, got {message}"
     );
 }
 
@@ -5815,6 +10099,21 @@ fn assert_library_dependency_without_edge_error(
             && message.contains(dependency.as_str())
             && message.contains("no matching cross-library import edge"),
         "expected library-dependency/import-edge consistency error, got {message}"
+    );
+}
+
+fn assert_duplicate_library_dependency_error(
+    err: &CompileError,
+    library_id: u32,
+    depends_on_library_id: u32,
+) {
+    let message = format!("{err:?}");
+    let dependency = format!("{library_id} -> {depends_on_library_id}");
+    assert!(
+        message.contains("duplicate import graph library dependency")
+            && message.contains(dependency.as_str())
+            && message.contains("one coarse dependency edge per library pair"),
+        "expected duplicate library dependency error, got {message}"
     );
 }
 
@@ -5869,6 +10168,32 @@ fn assert_duplicate_artifact_path_error(err: &CompileError, path: &Path) {
     );
 }
 
+fn assert_reserved_artifact_kind_error(err: &CompileError, kind: &str) {
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("artifact kind")
+            && message.contains(kind)
+            && message.contains("reserved for GPU/source-pack")
+            && message.contains("control-plane path/digest metadata"),
+        "expected reserved artifact kind error, got {message}"
+    );
+}
+
+fn assert_empty_artifact_error(err: &CompileError, path: &Path) {
+    let canonical_path = std::fs::canonicalize(path)
+        .expect("canonicalize empty package artifact")
+        .display()
+        .to_string();
+    let message = format!("{err:?}");
+    assert!(
+        message.contains("artifact file")
+            && message.contains(canonical_path.as_str())
+            && message.contains("byte length must be greater than zero")
+            && message.contains("concrete artifact bytes"),
+        "expected empty artifact identity error, got {message}"
+    );
+}
+
 fn assert_entry_source_extension_error(err: &CompileError) {
     let message = format!("{err:?}");
     assert!(
@@ -5908,6 +10233,17 @@ fn assert_lockfile_source_extension_error(err: &CompileError, label: &str) {
     );
 }
 
+fn assert_filesystem_root_import_root_error(err: &CompileError, label: &str) {
+    let message = format!("{err:?}");
+    assert!(
+        message.contains(label)
+            && message.contains("filesystem root")
+            && message.contains("package-owned source directory")
+            && message.contains("imports cannot resolve arbitrary absolute paths"),
+        "expected filesystem-root lockfile import-root error for {label}, got {message}"
+    );
+}
+
 fn assert_duplicate_source_identity_module_error(err: &CompileError, module_path: &str) {
     let message = format!("{err:?}");
     assert!(
@@ -5927,6 +10263,87 @@ fn assert_module_file_mapping_error(err: &CompileError, declared: &str, expected
             && message.contains(expected),
         "expected module/file mapping error from {declared} to {expected}, got {message}"
     );
+}
+
+fn assert_source_spanned_module_path_separator_error(
+    err: &CompileError,
+    source_path: &Path,
+    expected_source_line: &str,
+) {
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0016");
+            assert_eq!(diagnostic.message, "syntax error");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("module path separator diagnostic should carry the separator span");
+            assert_eq!(label.path, std::fs::canonicalize(source_path).unwrap());
+            assert_eq!(label.source_line.as_deref(), Some(expected_source_line));
+            assert_eq!(label.message, "module paths must use `::` separators");
+            assert!(
+                diagnostic.notes.iter().any(|note| {
+                    note.contains("package-name separators") && note.contains("module declarations")
+                }),
+                "expected module path separator note, got {:?}",
+                diagnostic.notes
+            );
+            assert!(
+                diagnostic
+                    .notes
+                    .iter()
+                    .any(|note| note.contains("GPU parser module-path tokens")),
+                "expected GPU parser token boundary note, got {:?}",
+                diagnostic.notes
+            );
+            assert!(
+                !diagnostic
+                    .render()
+                    .contains("module declaration does not match source-root path"),
+                "dotted module declarations should fail before file/path mapping replay"
+            );
+        }
+        other => panic!("expected source-spanned module path separator diagnostic, got {other:?}"),
+    }
+}
+
+fn assert_source_spanned_module_file_mapping_error(
+    err: &CompileError,
+    declared: &str,
+    expected: &str,
+) {
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0015");
+            assert_eq!(diagnostic.message, "invalid module path");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("module/file mapping diagnostic should carry a source label");
+            assert!(
+                label
+                    .source_line
+                    .as_deref()
+                    .is_some_and(|line| line.contains(&format!("module {declared};"))),
+                "expected module declaration source line for {declared}, got {:?}",
+                label.source_line
+            );
+            assert_eq!(
+                label.message,
+                "module declaration does not match source-root path"
+            );
+            assert!(
+                diagnostic.notes.iter().any(|note| {
+                    note.contains(&format!("declares module `{declared}`"))
+                        && note.contains("source-root relative path")
+                        && note.contains(expected)
+                }),
+                "expected module/file mapping note from {declared} to {expected}, got {:?}",
+                diagnostic.notes
+            );
+        }
+        other => panic!("expected source-spanned module/file mapping diagnostic, got {other:?}"),
+    }
 }
 
 fn assert_import_graph_module_endpoint_error(
@@ -5979,16 +10396,48 @@ fn assert_missing_import_does_not_use_package_metadata(
     import_path: &str,
     source_path: &Path,
 ) {
-    let message = format!("{err:?}");
     let searched_tail = import_path.replace("::", "/") + ".lani";
-    assert!(
-        message.contains("missing source-root module")
-            && message.contains(import_path)
-            && message.contains(source_path.display().to_string().as_str())
-            && message.contains("searched")
-            && message.contains(searched_tail.as_str()),
-        "expected missing import diagnostic to come from source-root replay, got {message}"
-    );
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0001");
+            assert_eq!(
+                diagnostic.message,
+                format!("missing source-root module {import_path}")
+            );
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("missing import diagnostic should carry the import span");
+            assert_eq!(
+                label.path,
+                std::fs::canonicalize(source_path).expect("canonicalize missing-import source")
+            );
+            let expected_source_line = format!("import {import_path};");
+            assert_eq!(
+                label.source_line.as_deref(),
+                Some(expected_source_line.as_str())
+            );
+            assert_eq!(label.message, "imported here");
+            assert!(
+                diagnostic
+                    .notes
+                    .iter()
+                    .any(|note| note.contains("searched") && note.contains(searched_tail.as_str())),
+                "expected searched source-root candidate note, got {:?}",
+                diagnostic.notes
+            );
+            assert!(
+                diagnostic
+                    .notes
+                    .iter()
+                    .any(|note| note.contains("control-plane metadata")
+                        && note.contains("leading module declaration")),
+                "expected package metadata boundary note, got {:?}",
+                diagnostic.notes
+            );
+        }
+        other => panic!("expected source-spanned missing import diagnostic, got {other:?}"),
+    }
 }
 
 fn assert_unsupported_quoted_import_form_error(err: &CompileError) {
@@ -6015,27 +10464,233 @@ fn assert_unsupported_quoted_import_form_error(err: &CompileError) {
     }
 }
 
+fn assert_source_spanned_import_path_separator_error(
+    err: &CompileError,
+    source_path: &Path,
+    expected_source_line: &str,
+    expected_note_fragment: &str,
+) {
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0011");
+            assert_eq!(diagnostic.message, "unsupported import form");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("path-separator import diagnostic should carry the separator span");
+            assert_eq!(label.path, std::fs::canonicalize(source_path).unwrap());
+            assert_eq!(label.source_line.as_deref(), Some(expected_source_line));
+            assert_eq!(label.message, "import paths must use `::` separators");
+            assert!(
+                diagnostic.notes.iter().any(|note| {
+                    note.contains(expected_note_fragment)
+                        && note.contains("semantic module identity")
+                }),
+                "expected import path separator note, got {:?}",
+                diagnostic.notes
+            );
+            assert!(
+                !diagnostic
+                    .render()
+                    .contains("expected ';' after import path"),
+                "path-shaped imports should not be reported as a truncated module path"
+            );
+        }
+        other => {
+            panic!("expected source-spanned import path separator diagnostic, got {other:?}")
+        }
+    }
+}
+
+fn assert_source_spanned_invalid_import_segment_error(
+    err: &CompileError,
+    source_path: &Path,
+    expected_source_line: &str,
+    rejected_segment: &str,
+) {
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0011");
+            assert_eq!(diagnostic.message, "unsupported import form");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("invalid import segment diagnostic should carry a source label");
+            assert_eq!(label.path, std::fs::canonicalize(source_path).unwrap());
+            assert_eq!(label.source_line.as_deref(), Some(expected_source_line));
+            assert_eq!(label.message, "invalid import path segment");
+            assert!(
+                diagnostic.render().contains(rejected_segment),
+                "invalid import segment diagnostic should name the rejected segment"
+            );
+            assert!(
+                diagnostic
+                    .notes
+                    .iter()
+                    .any(|note| note.contains("ASCII identifiers")),
+                "expected import identifier-shape note, got {:?}",
+                diagnostic.notes
+            );
+        }
+        other => panic!("expected source-spanned invalid import segment diagnostic, got {other:?}"),
+    }
+}
+
+fn assert_source_spanned_self_import_error(
+    err: &CompileError,
+    source_path: &Path,
+    import_path: &str,
+) {
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0011");
+            assert_eq!(diagnostic.message, "unsupported import form");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("self-import diagnostic should carry the import declaration span");
+            assert_eq!(label.path, std::fs::canonicalize(source_path).unwrap());
+            assert_eq!(label.source_line.as_deref(), Some("import app::main;"));
+            assert_eq!(label.message, "module imports itself");
+            assert!(
+                diagnostic.notes.iter().any(|note| {
+                    note.contains(import_path) && note.contains("cannot import its own module path")
+                }),
+                "expected self-import note for {import_path}, got {:?}",
+                diagnostic.notes
+            );
+            assert!(
+                diagnostic.notes.iter().any(|note| {
+                    note.contains("import graph metadata") && note.contains("GPU module identity")
+                }),
+                "expected package import graph boundary note, got {:?}",
+                diagnostic.notes
+            );
+        }
+        other => panic!("expected source-spanned self-import diagnostic, got {other:?}"),
+    }
+}
+
+fn assert_source_spanned_import_glob_error(err: &CompileError, source_path: &Path) {
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0011");
+            assert_eq!(diagnostic.message, "unsupported import form");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("glob import diagnostic should carry the glob span");
+            assert_eq!(label.path, std::fs::canonicalize(source_path).unwrap());
+            assert_eq!(label.source_line.as_deref(), Some("import app::*;"));
+            assert_eq!(
+                label.message,
+                "import globs are not supported by package replay"
+            );
+            assert!(
+                diagnostic.notes.iter().any(|note| {
+                    note.contains("explicit module-path imports")
+                        && note.contains("import app::module")
+                }),
+                "expected explicit import replay note, got {:?}",
+                diagnostic.notes
+            );
+            assert!(
+                diagnostic
+                    .notes
+                    .iter()
+                    .any(|note| note.contains("GPU module/import records")),
+                "expected GPU module/import boundary note, got {:?}",
+                diagnostic.notes
+            );
+        }
+        other => panic!("expected source-spanned glob import diagnostic, got {other:?}"),
+    }
+}
+
+fn assert_source_spanned_import_path_too_deep_error(
+    err: &CompileError,
+    source_path: &Path,
+    expected_source_line: &str,
+) {
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0012");
+            assert_eq!(diagnostic.message, "import path too deep");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("overdeep import diagnostic should carry a source label");
+            assert_eq!(label.path, std::fs::canonicalize(source_path).unwrap());
+            assert_eq!(label.source_line.as_deref(), Some(expected_source_line));
+            assert!(
+                label.message.contains("import path") && label.message.contains("depth"),
+                "overdeep import diagnostic label should describe the path-depth failure, got {:?}",
+                label.message
+            );
+            assert!(
+                diagnostic.notes.iter().any(|note| {
+                    note.contains("before persisting import graph metadata")
+                        && note.contains("GPU import keys")
+                }),
+                "expected import graph boundary note, got {:?}",
+                diagnostic.notes
+            );
+        }
+        other => panic!("expected source-spanned overdeep import diagnostic, got {other:?}"),
+    }
+}
+
 fn assert_unterminated_source_replay_comment_error(err: &CompileError) {
-    let message = format!("{err:?}");
-    assert!(
-        message.contains("unterminated block comment")
-            && message.contains("main.lani")
-            && message.contains("source-root replay")
-            && message.contains("module/import metadata"),
-        "expected unterminated source-root replay comment error, got {message}"
-    );
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0016");
+            assert_eq!(diagnostic.message, "syntax error");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("malformed comment diagnostic should carry a source label");
+            assert_eq!(label.source_line.as_deref(), Some("/* import app::helper;"));
+            assert_eq!(label.message, "unterminated block comment");
+            assert!(
+                diagnostic.notes.iter().any(|note| {
+                    note.contains("source-root replay") && note.contains("module/import metadata")
+                }),
+                "expected source-root replay note, got {:?}",
+                diagnostic.notes
+            );
+        }
+        other => panic!("expected source-spanned unterminated comment diagnostic, got {other:?}"),
+    }
 }
 
 fn assert_malformed_source_replay_literal_error(err: &CompileError, label: &str) {
-    let message = format!("{err:?}");
-    assert!(
-        message.contains("malformed")
-            && message.contains(label)
-            && message.contains("main.lani")
-            && message.contains("source-root replay")
-            && message.contains("module/import metadata"),
-        "expected malformed source-root replay literal error for {label}, got {message}"
-    );
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0016");
+            assert_eq!(diagnostic.message, "syntax error");
+            let primary_label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("malformed literal diagnostic should carry a source label");
+            assert_eq!(primary_label.message, format!("malformed {label}"));
+            assert!(
+                primary_label
+                    .source_line
+                    .as_deref()
+                    .is_some_and(|line| line.contains("unterminated")),
+                "expected malformed literal source line, got {:?}",
+                primary_label.source_line
+            );
+            assert!(
+                diagnostic.notes.iter().any(|note| {
+                    note.contains("source-root replay") && note.contains("module/import metadata")
+                }),
+                "expected source-root replay note, got {:?}",
+                diagnostic.notes
+            );
+        }
+        other => panic!("expected source-spanned malformed literal diagnostic, got {other:?}"),
+    }
 }
 
 fn mutable_import_edge<'a>(
@@ -6054,6 +10709,38 @@ fn mutable_import_edge<'a>(
         .expect("lockfile JSON should persist the requested import edge")
         .as_object_mut()
         .expect("import graph edge should be an object")
+}
+
+fn assert_import_graph_edge(
+    document: &serde_json::Value,
+    source_library_id: u32,
+    source_module_path: &str,
+    import_path: &str,
+    target_library_id: u32,
+    target_module_path: &str,
+) {
+    let imports = document
+        .get("import_graph")
+        .and_then(|graph| graph.get("imports"))
+        .and_then(|imports| imports.as_array())
+        .expect("lockfile JSON should persist import graph edges");
+    assert!(
+        imports.iter().any(|edge| {
+            edge.get("source_library_id") == Some(&serde_json::Value::from(source_library_id))
+                && edge
+                    .get("source_module_path")
+                    .and_then(|path| path.as_str())
+                    == Some(source_module_path)
+                && edge.get("import_path").and_then(|path| path.as_str()) == Some(import_path)
+                && edge.get("target_library_id")
+                    == Some(&serde_json::Value::from(target_library_id))
+                && edge
+                    .get("target_module_path")
+                    .and_then(|path| path.as_str())
+                    == Some(target_module_path)
+        }),
+        "lockfile import graph should persist {source_module_path} importing {import_path} as {target_module_path}"
+    );
 }
 
 fn remove_lockfile_section(source: &str, section: &str) -> String {

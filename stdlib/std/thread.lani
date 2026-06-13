@@ -8,11 +8,14 @@ pub type ThreadCapability = bool;
 pub type ThreadRuntimeAbiVersion = u32;
 pub type ThreadServiceId = u32;
 pub type ThreadServiceStatus = u32;
+pub type ThreadOperationResult = i32;
 
 pub const THREAD_RUNTIME_ABI_VERSION: ThreadRuntimeAbiVersion = 1;
 pub const THREAD_SERVICE_ID: ThreadServiceId = 8;
 pub const THREAD_SERVICE_STATUS_UNAVAILABLE: ThreadServiceStatus = 1;
 pub const THREAD_HAS_RUNTIME_BINDING: ThreadCapability = false;
+pub const THREAD_OPERATION_OK: ThreadOperationResult = 0;
+pub const THREAD_OPERATION_UNAVAILABLE: ThreadOperationResult = -1;
 
 pub fn thread_runtime_abi_version() -> ThreadRuntimeAbiVersion {
     return THREAD_RUNTIME_ABI_VERSION;
@@ -42,6 +45,10 @@ pub fn thread_is_blocked() -> ThreadCapability {
     return !thread_is_available();
 }
 
+pub fn thread_is_known_but_unbound() -> ThreadCapability {
+    return thread_service_is_known() && thread_is_blocked();
+}
+
 pub fn thread_requires_runtime_binding() -> ThreadCapability {
     return !THREAD_HAS_RUNTIME_BINDING;
 }
@@ -50,12 +57,40 @@ pub fn thread_host_abi_is_contract_only() -> ThreadCapability {
     return thread_requires_runtime_binding();
 }
 
+pub fn thread_operation_ok() -> ThreadOperationResult {
+    return THREAD_OPERATION_OK;
+}
+
+pub fn thread_operation_unavailable() -> ThreadOperationResult {
+    return THREAD_OPERATION_UNAVAILABLE;
+}
+
+pub fn thread_operation_succeeded(result: ThreadOperationResult) -> ThreadCapability {
+    return result >= 0;
+}
+
+pub fn thread_operation_failed(result: ThreadOperationResult) -> ThreadCapability {
+    return result < 0;
+}
+
+pub fn thread_operation_is_unavailable(result: ThreadOperationResult) -> ThreadCapability {
+    return result == THREAD_OPERATION_UNAVAILABLE;
+}
+
+pub fn thread_operation_is_fail_closed(result: ThreadOperationResult) -> ThreadCapability {
+    return thread_is_known_but_unbound() && thread_operation_is_unavailable(result);
+}
+
 pub fn thread_spawn_is_executable() -> ThreadCapability {
     return THREAD_HAS_RUNTIME_BINDING;
 }
 
 pub fn thread_spawn_is_blocked() -> ThreadCapability {
     return !thread_spawn_is_executable();
+}
+
+pub fn thread_spawn_is_known_but_unbound() -> ThreadCapability {
+    return thread_service_is_known() && thread_spawn_is_blocked();
 }
 
 pub fn thread_spawn_requires_runtime_binding() -> ThreadCapability {
@@ -70,6 +105,10 @@ pub fn thread_join_is_blocked() -> ThreadCapability {
     return !thread_join_is_executable();
 }
 
+pub fn thread_join_is_known_but_unbound() -> ThreadCapability {
+    return thread_service_is_known() && thread_join_is_blocked();
+}
+
 pub fn thread_join_requires_runtime_binding() -> ThreadCapability {
     return !thread_join_is_executable();
 }
@@ -80,6 +119,10 @@ pub fn thread_yield_is_executable() -> ThreadCapability {
 
 pub fn thread_yield_is_blocked() -> ThreadCapability {
     return !thread_yield_is_executable();
+}
+
+pub fn thread_yield_is_known_but_unbound() -> ThreadCapability {
+    return thread_service_is_known() && thread_yield_is_blocked();
 }
 
 pub fn thread_yield_requires_runtime_binding() -> ThreadCapability {
@@ -94,14 +137,18 @@ pub fn thread_current_id_is_blocked() -> ThreadCapability {
     return !thread_current_id_is_executable();
 }
 
+pub fn thread_current_id_is_known_but_unbound() -> ThreadCapability {
+    return thread_service_is_known() && thread_current_id_is_blocked();
+}
+
 pub fn thread_current_id_requires_runtime_binding() -> ThreadCapability {
     return !thread_current_id_is_executable();
 }
 
-pub extern "lanius_std" fn spawn(entry_id: u32, arg: u32) -> i32;
+pub extern "lanius_std" fn spawn(entry_id: u32, arg: u32) -> ThreadOperationResult;
 
-pub extern "lanius_std" fn join(handle: i32) -> i32;
+pub extern "lanius_std" fn join(handle: i32) -> ThreadOperationResult;
 
-pub extern "lanius_std" fn yield_now() -> i32;
+pub extern "lanius_std" fn yield_now() -> ThreadOperationResult;
 
-pub extern "lanius_std" fn current_id() -> i32;
+pub extern "lanius_std" fn current_id() -> ThreadOperationResult;

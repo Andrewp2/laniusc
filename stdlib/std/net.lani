@@ -8,11 +8,14 @@ pub type NetworkCapability = bool;
 pub type NetworkRuntimeAbiVersion = u32;
 pub type NetworkServiceId = u32;
 pub type NetworkServiceStatus = u32;
+pub type NetworkOperationResult = i32;
 
 pub const NETWORK_RUNTIME_ABI_VERSION: NetworkRuntimeAbiVersion = 1;
 pub const NETWORK_SERVICE_ID: NetworkServiceId = 5;
 pub const NETWORK_SERVICE_STATUS_UNAVAILABLE: NetworkServiceStatus = 1;
 pub const NETWORK_HAS_RUNTIME_BINDING: NetworkCapability = false;
+pub const NETWORK_OPERATION_OK: NetworkOperationResult = 0;
+pub const NETWORK_OPERATION_UNAVAILABLE: NetworkOperationResult = -1;
 
 pub fn network_runtime_abi_version() -> NetworkRuntimeAbiVersion {
     return NETWORK_RUNTIME_ABI_VERSION;
@@ -42,12 +45,40 @@ pub fn network_is_blocked() -> NetworkCapability {
     return !network_is_available();
 }
 
+pub fn network_is_known_but_unbound() -> NetworkCapability {
+    return network_service_is_known() && network_is_blocked();
+}
+
 pub fn network_requires_runtime_binding() -> NetworkCapability {
     return !NETWORK_HAS_RUNTIME_BINDING;
 }
 
 pub fn network_host_abi_is_contract_only() -> NetworkCapability {
     return network_requires_runtime_binding();
+}
+
+pub fn network_operation_ok() -> NetworkOperationResult {
+    return NETWORK_OPERATION_OK;
+}
+
+pub fn network_operation_unavailable() -> NetworkOperationResult {
+    return NETWORK_OPERATION_UNAVAILABLE;
+}
+
+pub fn network_operation_succeeded(result: NetworkOperationResult) -> NetworkCapability {
+    return result >= 0;
+}
+
+pub fn network_operation_failed(result: NetworkOperationResult) -> NetworkCapability {
+    return result < 0;
+}
+
+pub fn network_operation_is_unavailable(result: NetworkOperationResult) -> NetworkCapability {
+    return result == NETWORK_OPERATION_UNAVAILABLE;
+}
+
+pub fn network_operation_is_fail_closed(result: NetworkOperationResult) -> NetworkCapability {
+    return network_is_known_but_unbound() && network_operation_is_unavailable(result);
 }
 
 pub fn tcp_api_is_executable() -> NetworkCapability {
@@ -58,8 +89,124 @@ pub fn tcp_api_is_blocked() -> NetworkCapability {
     return !tcp_api_is_executable();
 }
 
+pub fn tcp_api_is_known_but_unbound() -> NetworkCapability {
+    return network_service_is_known() && tcp_api_is_blocked();
+}
+
 pub fn tcp_api_requires_runtime_binding() -> NetworkCapability {
     return !tcp_api_is_executable();
+}
+
+pub fn tcp_connect_is_executable() -> NetworkCapability {
+    return tcp_api_is_executable();
+}
+
+pub fn tcp_connect_is_blocked() -> NetworkCapability {
+    return !tcp_connect_is_executable();
+}
+
+pub fn tcp_connect_is_known_but_unbound() -> NetworkCapability {
+    return network_service_is_known() && tcp_connect_is_blocked();
+}
+
+pub fn tcp_connect_requires_runtime_binding() -> NetworkCapability {
+    return !tcp_connect_is_executable();
+}
+
+pub fn tcp_bind_is_executable() -> NetworkCapability {
+    return tcp_api_is_executable();
+}
+
+pub fn tcp_bind_is_blocked() -> NetworkCapability {
+    return !tcp_bind_is_executable();
+}
+
+pub fn tcp_bind_is_known_but_unbound() -> NetworkCapability {
+    return network_service_is_known() && tcp_bind_is_blocked();
+}
+
+pub fn tcp_bind_requires_runtime_binding() -> NetworkCapability {
+    return !tcp_bind_is_executable();
+}
+
+pub fn tcp_listen_is_executable() -> NetworkCapability {
+    return tcp_api_is_executable();
+}
+
+pub fn tcp_listen_is_blocked() -> NetworkCapability {
+    return !tcp_listen_is_executable();
+}
+
+pub fn tcp_listen_is_known_but_unbound() -> NetworkCapability {
+    return network_service_is_known() && tcp_listen_is_blocked();
+}
+
+pub fn tcp_listen_requires_runtime_binding() -> NetworkCapability {
+    return !tcp_listen_is_executable();
+}
+
+pub fn tcp_accept_is_executable() -> NetworkCapability {
+    return tcp_api_is_executable();
+}
+
+pub fn tcp_accept_is_blocked() -> NetworkCapability {
+    return !tcp_accept_is_executable();
+}
+
+pub fn tcp_accept_is_known_but_unbound() -> NetworkCapability {
+    return network_service_is_known() && tcp_accept_is_blocked();
+}
+
+pub fn tcp_accept_requires_runtime_binding() -> NetworkCapability {
+    return !tcp_accept_is_executable();
+}
+
+pub fn tcp_close_is_executable() -> NetworkCapability {
+    return tcp_api_is_executable();
+}
+
+pub fn tcp_close_is_blocked() -> NetworkCapability {
+    return !tcp_close_is_executable();
+}
+
+pub fn tcp_close_is_known_but_unbound() -> NetworkCapability {
+    return network_service_is_known() && tcp_close_is_blocked();
+}
+
+pub fn tcp_close_requires_runtime_binding() -> NetworkCapability {
+    return !tcp_close_is_executable();
+}
+
+pub fn tcp_send_is_executable() -> NetworkCapability {
+    return tcp_api_is_executable();
+}
+
+pub fn tcp_send_is_blocked() -> NetworkCapability {
+    return !tcp_send_is_executable();
+}
+
+pub fn tcp_send_is_known_but_unbound() -> NetworkCapability {
+    return network_service_is_known() && tcp_send_is_blocked();
+}
+
+pub fn tcp_send_requires_runtime_binding() -> NetworkCapability {
+    return !tcp_send_is_executable();
+}
+
+pub fn tcp_recv_is_executable() -> NetworkCapability {
+    return tcp_api_is_executable();
+}
+
+pub fn tcp_recv_is_blocked() -> NetworkCapability {
+    return !tcp_recv_is_executable();
+}
+
+pub fn tcp_recv_is_known_but_unbound() -> NetworkCapability {
+    return network_service_is_known() && tcp_recv_is_blocked();
+}
+
+pub fn tcp_recv_requires_runtime_binding() -> NetworkCapability {
+    return !tcp_recv_is_executable();
 }
 
 pub fn udp_api_is_executable() -> NetworkCapability {
@@ -70,39 +217,88 @@ pub fn udp_api_is_blocked() -> NetworkCapability {
     return !udp_api_is_executable();
 }
 
+pub fn udp_api_is_known_but_unbound() -> NetworkCapability {
+    return network_service_is_known() && udp_api_is_blocked();
+}
+
 pub fn udp_api_requires_runtime_binding() -> NetworkCapability {
     return !udp_api_is_executable();
 }
 
-pub extern "lanius_std" fn tcp_connect(addr_ptr: u32, addr_len: usize, port: i32) -> i32;
+pub fn udp_bind_is_executable() -> NetworkCapability {
+    return udp_api_is_executable();
+}
 
-pub extern "lanius_std" fn tcp_bind(addr_ptr: u32, addr_len: usize, port: i32) -> i32;
+pub fn udp_bind_is_blocked() -> NetworkCapability {
+    return !udp_bind_is_executable();
+}
 
-pub extern "lanius_std" fn tcp_listen(handle: i32, backlog: i32) -> i32;
+pub fn udp_bind_is_known_but_unbound() -> NetworkCapability {
+    return network_service_is_known() && udp_bind_is_blocked();
+}
 
-pub extern "lanius_std" fn tcp_accept(listener: i32) -> i32;
+pub fn udp_bind_requires_runtime_binding() -> NetworkCapability {
+    return !udp_bind_is_executable();
+}
 
-pub extern "lanius_std" fn tcp_close(handle: i32) -> i32;
+pub fn udp_send_to_is_executable() -> NetworkCapability {
+    return udp_api_is_executable();
+}
 
-pub extern "lanius_std" fn tcp_send(handle: i32, ptr: u32, len: usize) -> i32;
+pub fn udp_send_to_is_blocked() -> NetworkCapability {
+    return !udp_send_to_is_executable();
+}
 
-pub extern "lanius_std" fn tcp_recv(handle: i32, ptr: u32, len: usize) -> i32;
+pub fn udp_send_to_is_known_but_unbound() -> NetworkCapability {
+    return network_service_is_known() && udp_send_to_is_blocked();
+}
 
-pub extern "lanius_std" fn udp_bind(addr_ptr: u32, addr_len: usize, port: i32) -> i32;
+pub fn udp_send_to_requires_runtime_binding() -> NetworkCapability {
+    return !udp_send_to_is_executable();
+}
+
+pub fn udp_recv_from_is_executable() -> NetworkCapability {
+    return udp_api_is_executable();
+}
+
+pub fn udp_recv_from_is_blocked() -> NetworkCapability {
+    return !udp_recv_from_is_executable();
+}
+
+pub fn udp_recv_from_is_known_but_unbound() -> NetworkCapability {
+    return network_service_is_known() && udp_recv_from_is_blocked();
+}
+
+pub fn udp_recv_from_requires_runtime_binding() -> NetworkCapability {
+    return !udp_recv_from_is_executable();
+}
+
+pub extern "lanius_std" fn tcp_connect(addr_ptr: u32, addr_len: usize, port: i32) -> NetworkOperationResult;
+
+pub extern "lanius_std" fn tcp_bind(addr_ptr: u32, addr_len: usize, port: i32) -> NetworkOperationResult;
+
+pub extern "lanius_std" fn tcp_listen(handle: i32, backlog: i32) -> NetworkOperationResult;
+
+pub extern "lanius_std" fn tcp_accept(listener: i32) -> NetworkOperationResult;
+
+pub extern "lanius_std" fn tcp_close(handle: i32) -> NetworkOperationResult;
+
+pub extern "lanius_std" fn tcp_send(handle: i32, ptr: u32, len: usize) -> NetworkOperationResult;
+
+pub extern "lanius_std" fn tcp_recv(handle: i32, ptr: u32, len: usize) -> NetworkOperationResult;
+
+pub extern "lanius_std" fn udp_bind(addr_ptr: u32, addr_len: usize, port: i32) -> NetworkOperationResult;
 
 pub extern "lanius_std" fn udp_send_to(
     handle: i32,
-    addr_ptr: u32,
-    addr_len: usize,
-    port: i32,
+    endpoint_ptr: u32,
     ptr: u32,
     len: usize,
-) -> i32;
+) -> NetworkOperationResult;
 
 pub extern "lanius_std" fn udp_recv_from(
     handle: i32,
-    addr_ptr: u32,
-    addr_len: usize,
+    endpoint_ptr: u32,
     ptr: u32,
     len: usize,
-) -> i32;
+) -> NetworkOperationResult;

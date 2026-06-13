@@ -1,5 +1,7 @@
 // Apply scanned block prefixes to local preorder deficits and build block maxima.
 
+import prefix_scan;
+
 struct Params
 {
     uint n;
@@ -23,6 +25,19 @@ static const uint MAX_GROUPS_X = 65535u;
 static const int NEG_INF = -2147483647;
 
 groupshared int s_max[256];
+
+public struct PrefixScanI32Max : IPrefixScanOp<int>
+{
+    public static int identity()
+    {
+        return NEG_INF;
+    }
+
+    public static int combine(int left, int right)
+    {
+        return max(left, right);
+    }
+}
 
 uint linear_group_id(uint3 gid)
 {
@@ -66,16 +81,11 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
         tree_prefix[p] = value;
     }
 
-    s_max[lane] = (p <= active_n) ? value : NEG_INF;
-    GroupMemoryBarrierWithGroupSync();
+    int block_max = prefix_scan_inclusive<int, PrefixScanI32Max, 256>(
+        lane,
+        (p <= active_n) ? value : NEG_INF,
+        s_max);
 
-    for (uint step = WG_SIZE >> 1; step > 0u; step >>= 1u)
-    {
-        if (lane < step)
-            s_max[lane] = max(s_max[lane], s_max[lane + step]);
-        GroupMemoryBarrierWithGroupSync();
-    }
-
-    if (lane == 0u)
-        prefix_block_max[block_idx] = s_max[0];
+    if (lane == WG_SIZE - 1u)
+        prefix_block_max[block_idx] = block_max;
 }

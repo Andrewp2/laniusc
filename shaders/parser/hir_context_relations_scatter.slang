@@ -18,11 +18,13 @@ StructuredBuffer<uint> hir_contextual_stmt_value_a;
 StructuredBuffer<uint> hir_nearest_stmt_value_a;
 StructuredBuffer<uint> hir_nearest_block_value_a;
 StructuredBuffer<uint> hir_nearest_enclosing_control_value_a;
+StructuredBuffer<uint> hir_nearest_loop_value_a;
 StructuredBuffer<uint> hir_nearest_fn_value_a;
 
 RWStructuredBuffer<uint> hir_nearest_stmt_node;
 RWStructuredBuffer<uint> hir_nearest_block_node;
 RWStructuredBuffer<uint> hir_nearest_enclosing_control_node;
+RWStructuredBuffer<uint> hir_nearest_loop_node;
 RWStructuredBuffer<uint> hir_nearest_fn_node;
 RWStructuredBuffer<uint> hir_struct_lit_context_stmt_node;
 RWStructuredBuffer<uint> hir_array_lit_context_stmt_node;
@@ -74,6 +76,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint nearest_control = hir_nearest_enclosing_control_value_a[row];
     hir_nearest_enclosing_control_node[node] =
         valid_original_node(nearest_control) ? nearest_control : INVALID;
+    uint nearest_loop = hir_nearest_loop_value_a[row];
+    hir_nearest_loop_node[node] =
+        valid_original_node(nearest_loop) ? nearest_loop : INVALID;
     uint nearest_fn = hir_nearest_fn_value_a[row];
     hir_nearest_fn_node[node] = valid_original_node(nearest_fn) ? nearest_fn : INVALID;
 

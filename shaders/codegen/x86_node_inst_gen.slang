@@ -35,14 +35,19 @@ ConstantBuffer<FeatureParams> gX86Features;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint> hir_expr_result_root_node;
+StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> x86_tree_parent;
 StructuredBuffer<uint> x86_expr_resolved_node;
 StructuredBuffer<uint> hir_expr_int_value;
 StructuredBuffer<uint> visible_decl;
+StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> resolved_value_decl;
 StructuredBuffer<uint> resolved_value_status;
 StructuredBuffer<uint> decl_name_token;
+StructuredBuffer<uint> x86_struct_type_record;
 StructuredBuffer<uint> x86_decl_layout_record;
 StructuredBuffer<uint2> x86_const_value_record;
 StructuredBuffer<uint> x86_local_literal_record;
@@ -60,6 +65,7 @@ StructuredBuffer<uint> x86_node_inst_range_info;
 StructuredBuffer<uint4> x86_node_inst_location_record;
 StructuredBuffer<uint> x86_node_inst_subtree_bound_start;
 StructuredBuffer<uint> x86_node_inst_subtree_bound_end;
+StructuredBuffer<uint> x86_expr_semantic_type;
 StructuredBuffer<uint> x86_node_inst_gen_input_status;
 StructuredBuffer<uint2> x86_node_inst_gen_node_record;
 StructuredBuffer<uint> x86_enclosing_loop_node;
@@ -69,6 +75,7 @@ StructuredBuffer<uint> x86_index_source_owner;
 StructuredBuffer<uint> x86_match_return_node;
 StructuredBuffer<uint> x86_enclosing_let_node;
 StructuredBuffer<uint> x86_node_func;
+StructuredBuffer<uint> x86_func_slot_by_node;
 
 RWStructuredBuffer<uint4> x86_virtual_inst_record;
 RWStructuredBuffer<uint4> x86_virtual_inst_args;
@@ -86,7 +93,6 @@ static const uint X86_ERR_INDEX_ASSIGNMENT = 31u;
 static const uint X86_ERR_LOOP_CONTAINED_CALL = 29u;
 static const uint X86_ERR_ZERO_DIVISOR = 32u;
 static const uint X86_ERR_FOR_ITERABLE = 33u;
-static const uint X86_ERR_NESTED_LOOP = 34u;
 static const uint X86_ERR_SHORT_CIRCUIT_CALL = 35u;
 static const uint X86_ERR_PARAM_AGG_ASSIGN = 37u;
 static const uint X86_ERR_PARAM_AGG_INDEX_ASSIGN = 38u;
@@ -95,6 +101,10 @@ static const uint X86_ERR_DYNAMIC_DIVISOR = 41u;
 static const uint X86_ERR_SHORT_CIRCUIT_TRAP = 42u;
 static const uint X86_ERR_AGGREGATE_TEMPORARY_INDEX = 45u;
 static const uint X86_ERR_DYNAMIC_INDEX = 47u;
+static const uint X86_ERR_AGGREGATE_RETURN_CALL = 52u;
+static const uint X86_ERR_LOOP_CONTROL_OUTSIDE_LOOP = 55u;
+static const uint X86_ERR_SIGNED_DIV_OVERFLOW = 59u;
+static const uint X86_ERR_NESTED_AGGREGATE_MEMBER = 61u;
 static const uint X86_VINST_ERROR_INDEX_OPERAND = 2001u;
 static const uint X86_VINST_ERROR_INDEX_SOURCE = 2002u;
 static const uint X86_VINST_ERROR_INDEX_VREG = 2003u;
@@ -118,11 +128,15 @@ static const uint X86_VINST_ERROR_CALL_ARG2_OPERAND = 2117u;
 static const uint X86_VINST_ERROR_CALL_ARG3_OPERAND = 2118u;
 static const uint X86_VINST_ERROR_CALL_ARG_PACK = 2119u;
 static const uint X86_VINST_ERROR_CALL_IN_LOOP = 2120u;
+static const uint X86_VINST_ERROR_CALL_ARG4_NODE = 2121u;
+static const uint X86_VINST_ERROR_CALL_ARG5_NODE = 2122u;
+static const uint X86_VINST_ERROR_CALL_ARG4_OPERAND = 2123u;
+static const uint X86_VINST_ERROR_CALL_ARG5_OPERAND = 2124u;
 static const uint X86_CALL_ARG_LOOKUP_KIND_BITS = 4u;
 static const uint X86_CALL_ABI_ARG_COUNT_BITS = 8u;
 static const uint X86_CALL_ABI_ARG_COUNT_MASK = 0xffu;
 static const uint X86_CALL_ABI_RETURN_WIDTH_MAX = 0x00ffffffu;
-static const uint X86_BACKEND_MAX_PACKED_CALL_ARGS = 4u;
+static const uint X86_BACKEND_MAX_PACKED_CALL_ARGS = 6u;
 static const uint X86_VINST_ERROR_MATCH_ARMS = 2201u;
 static const uint X86_VINST_ERROR_MATCH_PATTERN = 2202u;
 static const uint X86_VINST_ERROR_MATCH_SOURCE = 2203u;
@@ -227,6 +241,7 @@ static const uint X86_PARAM_REG_STRIDE = 5u;
 static const uint X86_PARAM_REG_ORDINAL_BITS = 4u;
 static const uint X86_PARAM_REG_ORDINAL_MASK = 0x0fu;
 static const uint X86_PARAM_REG_ARG_REG_MASK = 0x0fu;
+static const uint X86_PARAM_REG_KIND_BITS = 8u;
 static const uint X86_LOCAL_LITERAL_STRIDE = 3u;
 
 static const uint ASSIGN_OP_SET = 1u;
@@ -310,12 +325,14 @@ static const uint X86_VINST_MATCH_TAG_BRANCH = 27u;
 static const uint X86_VINST_FOR_INTERVAL_BRANCH = 28u;
 static const uint X86_VINST_COPY_LOCAL = 29u;
 static const uint X86_VINST_STORE_LOCAL_INDEX = 30u;
+static const uint X86_VINST_FOR_PARAM_ARRAY_LOAD = 31u;
+static const uint X86_VINST_STORE_PARAM_INDEX = 32u;
 static const uint X86_ARG_SCALAR = 1u;
 static const uint X86_ARG_LOCAL_PTR = 2u;
 static const uint X86_ARG_PARAM_PTR = 3u;
 static const uint X86_AGG_SOURCE_LOCAL = 1u;
 static const uint X86_AGG_SOURCE_PARAM = 2u;
-static const uint X86_CALL_ARG_LOOKUP_SLOTS = 4u;
+static const uint X86_CALL_ARG_LOOKUP_SLOTS = 6u;
 static const uint X86_NODE_INST_PADDING = 7u;
 static const uint X86_NODE_INST_RANGE_KIND_SHIFT = 28u;
 static const uint X86_NODE_INST_RANGE_COUNT_MASK = 0x0fffffffu;
@@ -351,6 +368,9 @@ static const uint X86_OP_BIT_OR_I32 = 9u;
 static const uint X86_OP_BIT_XOR = 10u;
 static const uint X86_OP_SHL_I32 = 11u;
 static const uint X86_OP_SHR_I32 = 12u;
+static const uint X86_OP_MOD_U32 = 13u;
+static const uint X86_OP_DIV_U32 = 14u;
+static const uint X86_OP_SHR_U32 = 15u;
 static const uint X86_CMP_LT = 1u;
 static const uint X86_CMP_GT = 2u;
 static const uint X86_CMP_LE = 3u;
@@ -362,8 +382,10 @@ static const uint X86_LOCATION_META_KIND_MASK = 0xf0000000u;
 static const uint X86_LOCATION_META_EXPR_SEMANTIC_TYPE = 0xe0000000u;
 static const uint X86_LOCATION_META_PARAM_DECL = 0xd0000000u;
 static const uint X86_LOCATION_META_PAYLOAD_MASK = 0x0fffffffu;
+static const uint EXPR_SEMANTIC_UINT_FLAG = 0x40000000u;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_UINT = 4u;
+static const uint I32_MIN = 0x80000000u;
 static const uint I32_NEG_ONE = 0xffffffffu;
 
 uint linear_dispatch_id(uint3 tid)
@@ -617,6 +639,12 @@ uint param_reg_arg_reg(uint decl_token)
                : (info >> X86_PARAM_REG_ORDINAL_BITS) & X86_PARAM_REG_ARG_REG_MASK;
 }
 
+uint param_reg_aggregate_kind(uint decl_token)
+{
+    uint info = param_reg_info(decl_token);
+    return info == INVALID ? 0u : info >> X86_PARAM_REG_KIND_BITS;
+}
+
 uint param_node_reg_arg_reg(uint param_node)
 {
     uint info = param_node_reg_info(param_node);
@@ -720,6 +748,14 @@ uint expr_value_token(uint node)
 uint resolve_expr(uint node)
 {
     return valid_node(node) ? x86_expr_resolved_node[node] : INVALID;
+}
+
+uint expr_result_root(uint node)
+{
+    if (!valid_node(node))
+        return INVALID;
+    uint root = hir_expr_result_root_node[node];
+    return valid_node(root) ? root : resolve_expr(node);
 }
 
 bool range_for_node(uint node, out uint2 range)
@@ -844,7 +880,7 @@ bool enclosing_while_for_node(uint node, out uint loop_node)
 
 uint array_literal_node_for_expr(uint expr_node)
 {
-    uint node = resolve_expr(expr_node);
+    uint node = expr_result_root(expr_node);
     if (valid_node(node) && hir_kind[node] == HIR_ARRAY_EXPR)
         return node;
     return INVALID;
@@ -852,9 +888,23 @@ uint array_literal_node_for_expr(uint expr_node)
 
 uint struct_literal_record_node_for_expr(uint expr_node)
 {
-    uint node = resolve_expr(expr_node);
-    return valid_node(node) && struct_access_kind(node) == X86_STRUCT_ACCESS_LITERAL
-        ? node
+    if (valid_node(expr_node) && struct_access_kind(expr_node) == X86_STRUCT_ACCESS_LITERAL)
+        return expr_node;
+    uint resolved = resolve_expr(expr_node);
+    if (valid_node(resolved) && struct_access_kind(resolved) == X86_STRUCT_ACCESS_LITERAL)
+        return resolved;
+    uint root = expr_result_root(expr_node);
+    if (valid_node(root) && struct_access_kind(root) == X86_STRUCT_ACCESS_LITERAL)
+        return root;
+    uint parent = valid_node(expr_node) ? x86_tree_parent[expr_node] : INVALID;
+    if (valid_node(parent) && struct_access_kind(parent) == X86_STRUCT_ACCESS_LITERAL)
+        return parent;
+    parent = valid_node(resolved) ? x86_tree_parent[resolved] : INVALID;
+    if (valid_node(parent) && struct_access_kind(parent) == X86_STRUCT_ACCESS_LITERAL)
+        return parent;
+    parent = valid_node(root) ? x86_tree_parent[root] : INVALID;
+    return valid_node(parent) && struct_access_kind(parent) == X86_STRUCT_ACCESS_LITERAL
+        ? parent
         : INVALID;
 }
 
@@ -871,8 +921,23 @@ uint base_node_for_index(uint index_node)
 
 bool is_struct_literal_head_node(uint node)
 {
-    node = resolve_expr(node);
-    return valid_node(node) && struct_access_kind(node) == X86_STRUCT_ACCESS_LITERAL;
+    if (!valid_node(node))
+        return false;
+    if (struct_access_kind(node) == X86_STRUCT_ACCESS_LITERAL)
+        return true;
+    uint resolved = resolve_expr(node);
+    return valid_node(resolved) && struct_access_kind(resolved) == X86_STRUCT_ACCESS_LITERAL;
+}
+
+bool is_struct_literal_head_or_path_child(uint node)
+{
+    if (is_struct_literal_head_node(node))
+        return true;
+    uint token = expr_value_token(node);
+    if (valid_token(token) && x86_struct_type_record[token] != 0u)
+        return true;
+    uint parent = valid_node(node) ? x86_tree_parent[node] : INVALID;
+    return valid_node(parent) && is_struct_literal_head_node(parent);
 }
 
 bool decl_array_len(uint decl_token, out uint len)
@@ -1086,25 +1151,64 @@ bool validate_array_literal_to_ret_ptr(uint expr_node, uint width)
     return true;
 }
 
-void write_mixed_arg_payloads(uint payload_row, uint node, uint arg_count, uint arg0, uint arg1, uint arg2, uint arg3)
+void write_mixed_arg_payloads(
+    uint payload_row,
+    uint payload_row_hi,
+    uint node,
+    uint arg_count,
+    uint arg0,
+    uint arg1,
+    uint arg2,
+    uint arg3,
+    uint arg4,
+    uint arg5)
 {
-    x86_virtual_inst_record[payload_row] = uint4(node, 1u, 0u, INVALID);
+    uint hi_row = arg_count > 4u ? payload_row_hi : INVALID;
+    x86_virtual_inst_record[payload_row] = uint4(node, 1u, 0u, hi_row);
     x86_virtual_inst_args[payload_row] = uint4(
         arg_count >= 1u ? arg0 : INVALID,
         arg_count >= 2u ? arg1 : INVALID,
         arg_count >= 3u ? arg2 : INVALID,
         arg_count >= 4u ? arg3 : INVALID);
+    if (arg_count > 4u && payload_row_hi != INVALID)
+    {
+        x86_virtual_inst_record[payload_row_hi] = uint4(node, 2u, 0u, INVALID);
+        x86_virtual_inst_args[payload_row_hi] = uint4(
+            arg_count >= 5u ? arg4 : INVALID,
+            arg_count >= 6u ? arg5 : INVALID,
+            INVALID,
+            INVALID);
+    }
 }
 
-bool value_vreg_for_node(uint node, out uint vreg)
+bool value_vreg_for_candidate(uint node, out uint vreg)
 {
     vreg = INVALID;
-    if (!valid_node(node) || hir_kind[node] != HIR_PATH_EXPR)
-        node = resolve_expr(node);
     uint2 range = uint2(INVALID, 0u);
     if (!range_for_node(node, range) || range_count(range) == 0u)
         return false;
     return location_for_node_local(node, 0u, vreg);
+}
+
+bool value_vreg_for_node(uint node, out uint vreg)
+{
+    uint resolved = resolve_expr(node);
+    if (value_vreg_for_candidate(resolved, vreg))
+        return true;
+
+    uint root = expr_result_root(node);
+    if (root != resolved && value_vreg_for_candidate(root, vreg))
+        return true;
+
+    if (valid_node(node) &&
+        hir_kind[node] == HIR_PATH_EXPR &&
+        node != resolved &&
+        node != root &&
+        value_vreg_for_candidate(node, vreg))
+        return true;
+
+    vreg = INVALID;
+    return false;
 }
 
 bool index_operand_expr_node(uint index_node, out uint operand_node)
@@ -1160,18 +1264,12 @@ bool literal_scalar_value(uint node, out uint value)
     return true;
 }
 
-bool decl_literal_value(uint name_node, out uint value)
+bool const_literal_value_for_token(uint token, out uint value)
 {
     value = 0u;
-    name_node = resolve_expr(name_node);
-    if (!valid_node(name_node) || expr_form(name_node) != HIR_EXPR_NAME)
+    if (!valid_token(token))
         return false;
-
-    uint name_token = expr_value_token(name_node);
-    if (!valid_token(name_token))
-        return false;
-
-    uint decl_token = visible_decl[name_token];
+    uint decl_token = visible_decl[token];
     if (!valid_token(decl_token))
         return false;
 
@@ -1190,7 +1288,7 @@ bool decl_literal_value(uint name_node, out uint value)
     return false;
 }
 
-bool decl_const_literal_value(uint name_node, out uint value)
+bool decl_literal_value(uint name_node, out uint value)
 {
     value = 0u;
     name_node = resolve_expr(name_node);
@@ -1198,13 +1296,21 @@ bool decl_const_literal_value(uint name_node, out uint value)
         return false;
 
     uint name_token = expr_value_token(name_node);
-    if (!valid_token(name_token))
-        return false;
+    if (const_literal_value_for_token(name_token, value))
+        return true;
 
-    uint decl_token = visible_decl[name_token];
+    uint head_token = hir_token_pos[name_node];
+    return head_token != name_token && const_literal_value_for_token(head_token, value);
+}
+
+bool const_decl_value_for_token(uint token, out uint value)
+{
+    value = 0u;
+    if (!valid_token(token))
+        return false;
+    uint decl_token = visible_decl[token];
     if (!valid_token(decl_token))
         return false;
-
     uint2 const_record = x86_const_value_record[decl_token];
     if (const_record.x != X86_CONST_VALUE_LITERAL)
         return false;
@@ -1213,10 +1319,33 @@ bool decl_const_literal_value(uint name_node, out uint value)
     return true;
 }
 
-bool path_literal_value(uint path_node, out uint value)
+bool decl_const_literal_value(uint name_node, out uint value)
 {
     value = 0u;
-    if (!valid_node(path_node) || hir_kind[path_node] != HIR_PATH_EXPR)
+    name_node = resolve_expr(name_node);
+    if (!valid_node(name_node) || expr_form(name_node) != HIR_EXPR_NAME)
+        return false;
+
+    uint name_token = expr_value_token(name_node);
+    if (const_decl_value_for_token(name_token, value))
+        return true;
+
+    uint head_token = hir_token_pos[name_node];
+    return head_token != name_token && const_decl_value_for_token(head_token, value);
+}
+
+bool source_head_const_literal_value(uint node, out uint value)
+{
+    value = 0u;
+    if (!valid_node(node))
+        return false;
+    return const_decl_value_for_token(hir_token_pos[node], value);
+}
+
+bool path_literal_value_candidate(uint path_node, out uint value)
+{
+    value = 0u;
+    if (!valid_node(path_node))
         return false;
 
     uint path_i = path_id_by_owner_hir[path_node];
@@ -1240,26 +1369,121 @@ bool path_literal_value(uint path_node, out uint value)
     return true;
 }
 
+bool path_literal_value(uint path_node, out uint value)
+{
+    if (path_literal_value_candidate(path_node, value))
+        return true;
+
+    uint resolved = resolve_expr(path_node);
+    if (resolved != path_node && path_literal_value_candidate(resolved, value))
+        return true;
+
+    uint root = expr_result_root(path_node);
+    return root != path_node && root != resolved && path_literal_value_candidate(root, value);
+}
+
 bool compile_time_scalar_immutable_atom_value(uint node, out uint value)
 {
     value = 0u;
     if (literal_scalar_value(node, value))
+        return true;
+    if (source_head_const_literal_value(node, value))
         return true;
     if (path_literal_value(node, value))
         return true;
     return decl_const_literal_value(node, value);
 }
 
+bool compile_time_scalar_immutable_binary_value(uint node, out uint value)
+{
+    value = 0u;
+    node = resolve_expr(node);
+    if (!valid_node(node))
+        return false;
+
+    uint form = expr_form(node);
+    if (form != HIR_EXPR_EQ &&
+        form != HIR_EXPR_NE &&
+        form != HIR_EXPR_ADD &&
+        form != HIR_EXPR_SUB &&
+        form != HIR_EXPR_MUL &&
+        form != HIR_EXPR_MOD &&
+        form != HIR_EXPR_DIV &&
+        form != HIR_EXPR_AND &&
+        form != HIR_EXPR_OR &&
+        form != HIR_EXPR_BIT_OR &&
+        form != HIR_EXPR_BIT_XOR &&
+        form != HIR_EXPR_BIT_AND &&
+        form != HIR_EXPR_SHL &&
+        form != HIR_EXPR_SHR)
+        return false;
+
+    uint left = 0u;
+    uint right = 0u;
+    if (!compile_time_scalar_immutable_atom_value(expr_left(node), left) ||
+        !compile_time_scalar_immutable_atom_value(expr_right(node), right))
+        return false;
+
+    if (form == HIR_EXPR_EQ)
+        value = left == right ? 1u : 0u;
+    else if (form == HIR_EXPR_NE)
+        value = left != right ? 1u : 0u;
+    else if (form == HIR_EXPR_ADD)
+        value = left + right;
+    else if (form == HIR_EXPR_SUB)
+        value = left - right;
+    else if (form == HIR_EXPR_MUL)
+        value = left * right;
+    else if (form == HIR_EXPR_MOD && right != 0u && left < I32_MIN && right < I32_MIN)
+        value = left % right;
+    else if (form == HIR_EXPR_DIV && right != 0u && left < I32_MIN && right < I32_MIN)
+        value = left / right;
+    else if (form == HIR_EXPR_AND)
+        value = (left != 0u && right != 0u) ? 1u : 0u;
+    else if (form == HIR_EXPR_OR)
+        value = (left != 0u || right != 0u) ? 1u : 0u;
+    else if (form == HIR_EXPR_BIT_OR)
+        value = left | right;
+    else if (form == HIR_EXPR_BIT_XOR)
+        value = left ^ right;
+    else if (form == HIR_EXPR_BIT_AND)
+        value = left & right;
+    else if (form == HIR_EXPR_SHL && right < 32u)
+        value = left << right;
+    else if (form == HIR_EXPR_SHR && right < 32u)
+        value = left >> right;
+    else
+        return false;
+    return true;
+}
+
+bool compile_time_scalar_immutable_value(uint node, out uint value)
+{
+    if (compile_time_scalar_immutable_atom_value(node, value))
+        return true;
+    return compile_time_scalar_immutable_binary_value(node, value);
+}
+
 bool compile_time_zero_value(uint node)
 {
     uint value = 0u;
-    return compile_time_scalar_immutable_atom_value(node, value) && value == 0u;
+    return compile_time_scalar_immutable_value(node, value) && value == 0u;
+}
+
+bool compile_time_signed_div_overflow(uint left_node, uint right_node)
+{
+    uint left = 0u;
+    uint right = 0u;
+    return compile_time_scalar_immutable_value(left_node, left) &&
+           compile_time_scalar_immutable_value(right_node, right) &&
+           left == I32_MIN &&
+           right == I32_NEG_ONE;
 }
 
 bool statically_safe_divisor(uint node, out uint value)
 {
     value = 0u;
-    if (compile_time_scalar_immutable_atom_value(node, value))
+    if (compile_time_scalar_immutable_value(node, value))
         return value != 0u && value != I32_NEG_ONE;
     return false;
 }
@@ -1267,7 +1491,7 @@ bool statically_safe_divisor(uint node, out uint value)
 bool compile_time_index_out_of_bounds(uint index_expr, uint width)
 {
     uint value = 0u;
-    return compile_time_scalar_immutable_atom_value(index_expr, value) && value >= width;
+    return compile_time_scalar_immutable_value(index_expr, value) && value >= width;
 }
 
 bool param_record_for_name(uint name_node, out uint4 record)
@@ -1655,15 +1879,22 @@ bool let_initializer_resolves_to(uint let_node, uint value_node)
 {
     if (!valid_node(let_node) || !valid_node(value_node))
         return false;
-    uint resolved_init = resolve_expr(stmt_slot(let_node, 2u));
-    uint resolved_value = resolve_expr(value_node);
-    return valid_node(resolved_init) && resolved_init == resolved_value;
+    uint init_node = stmt_slot(let_node, 2u);
+    if (init_node == value_node)
+        return true;
+    uint resolved_init = expr_result_root(init_node);
+    uint resolved_value = expr_result_root(value_node);
+    if (valid_node(resolved_init) && resolved_init == resolved_value)
+        return true;
+
+    uint legacy_init = resolve_expr(init_node);
+    uint legacy_value = resolve_expr(value_node);
+    return valid_node(legacy_init) && legacy_init == legacy_value;
 }
 
-bool aggregate_call_destination(uint call_node, out uint base_slot, out uint width, out uint reason)
+bool aggregate_call_destination(uint call_node, uint expected_width, out uint base_slot, out uint reason)
 {
     base_slot = INVALID;
-    width = 0u;
     reason = X86_VINST_ERROR_CALL_AGG_DEST;
     uint let_node = valid_node(call_node) ? x86_enclosing_let_node[call_node] : INVALID;
     if (!valid_node(let_node))
@@ -1677,7 +1908,8 @@ bool aggregate_call_destination(uint call_node, out uint base_slot, out uint wid
         return false;
     }
     uint decl_token = stmt_slot(let_node, 1u);
-    if (!decl_aggregate_width(decl_token, width) || width <= 1u)
+    uint dest_width = local_width_for_decl(decl_token);
+    if (expected_width <= 1u || dest_width < expected_width)
     {
         reason = X86_VINST_ERROR_CALL_AGG_DEST_WIDTH;
         return false;
@@ -1748,6 +1980,43 @@ uint binary_op_for_form(uint form)
     return 0u;
 }
 
+uint expr_semantic_type_metadata_for_node(uint node)
+{
+    uint meta = valid_node(node) ? x86_node_inst_location_record[node].w : INVALID;
+    if ((meta & X86_LOCATION_META_KIND_MASK) == X86_LOCATION_META_EXPR_SEMANTIC_TYPE)
+        return meta & X86_LOCATION_META_PAYLOAD_MASK;
+
+    uint record = valid_node(node) ? x86_expr_semantic_type[node] : INVALID;
+    return (record & EXPR_SEMANTIC_UINT_FLAG) != 0u ? TY_UINT : TY_UNKNOWN;
+}
+
+uint expr_semantic_type_metadata_for_value_node(uint node)
+{
+    uint ty = expr_semantic_type_metadata_for_node(node);
+    if (ty != TY_UNKNOWN)
+        return ty;
+
+    uint resolved = resolve_expr(node);
+    if (resolved == node)
+        return TY_UNKNOWN;
+
+    return expr_semantic_type_metadata_for_node(resolved);
+}
+
+uint binary_op_for_node(uint node, uint form)
+{
+    uint op = binary_op_for_form(form);
+    if (expr_semantic_type_metadata_for_node(node) != TY_UINT)
+        return op;
+    if (op == X86_OP_MOD_I32)
+        return X86_OP_MOD_U32;
+    if (op == X86_OP_DIV_I32)
+        return X86_OP_DIV_U32;
+    if (op == X86_OP_SHR_I32)
+        return X86_OP_SHR_U32;
+    return op;
+}
+
 uint binary_op_for_assignment(uint op)
 {
     if (op == ASSIGN_OP_ADD)
@@ -1773,6 +2042,41 @@ uint binary_op_for_assignment(uint op)
     return 0u;
 }
 
+uint binary_op_for_assignment_target(uint target_node, uint op)
+{
+    uint binary_op = binary_op_for_assignment(op);
+    if (binary_op != X86_OP_DIV_I32 &&
+        binary_op != X86_OP_MOD_I32 &&
+        binary_op != X86_OP_SHR_I32)
+        return binary_op;
+
+    uint target_ty = expr_semantic_type_metadata_for_value_node(target_node);
+    if (target_ty == TY_UNKNOWN && valid_node(target_node) &&
+        struct_access_kind(target_node) == X86_STRUCT_ACCESS_MEMBER)
+    {
+        uint member_token = struct_access_payload2(target_node);
+        if (valid_token(member_token))
+        {
+            uint member_ty = visible_type[member_token];
+            if (member_ty != INVALID && member_ty != TY_UNKNOWN)
+                target_ty = member_ty;
+        }
+    }
+    if (target_ty == TY_UINT)
+        return binary_op == X86_OP_DIV_I32 ? X86_OP_DIV_U32
+             : binary_op == X86_OP_MOD_I32 ? X86_OP_MOD_U32
+             : X86_OP_SHR_U32;
+
+    uint decl_token = INVALID;
+    if (!decl_token_for_name(target_node, decl_token) ||
+        decl_layout_type(decl_token) != TY_UINT)
+        return binary_op;
+
+    return binary_op == X86_OP_DIV_I32 ? X86_OP_DIV_U32
+         : binary_op == X86_OP_MOD_I32 ? X86_OP_MOD_U32
+         : X86_OP_SHR_U32;
+}
+
 uint compare_op_for_form(uint form)
 {
     if (form == HIR_EXPR_LT)
@@ -1795,12 +2099,7 @@ uint compare_op_for_node(uint node, uint form)
     uint op = compare_op_for_form(form);
     if (op == 0u || op == X86_CMP_EQ || op == X86_CMP_NE)
         return op;
-    uint meta = valid_node(node) ? x86_node_inst_location_record[node].w : INVALID;
-    uint semantic_type =
-        (meta & X86_LOCATION_META_KIND_MASK) == X86_LOCATION_META_EXPR_SEMANTIC_TYPE
-            ? (meta & X86_LOCATION_META_PAYLOAD_MASK)
-            : TY_UNKNOWN;
-    return semantic_type == TY_UINT
+    return expr_semantic_type_metadata_for_node(node) == TY_UINT
                ? (op | X86_CMP_UNSIGNED_FLAG)
                : op;
 }
@@ -1827,14 +2126,6 @@ void write_for_iterable_error(uint node)
         node);
 }
 
-void write_nested_loop_error(uint node)
-{
-    publish_stage_error_min_detail4(
-        x86_virtual_inst_status,
-        X86_ERR_NESTED_LOOP,
-        node);
-}
-
 void write_param_aggregate_assignment_error(uint node)
 {
     publish_stage_error_min_detail4(
@@ -1848,6 +2139,52 @@ void write_param_aggregate_index_assignment_error(uint node)
     publish_stage_error_min_detail4(
         x86_virtual_inst_status,
         X86_ERR_PARAM_AGG_INDEX_ASSIGN,
+        node);
+}
+
+void write_aggregate_return_call_error(uint node, uint detail)
+{
+    publish_stage_error_first4(
+        x86_virtual_inst_status,
+        X86_ERR_AGGREGATE_RETURN_CALL,
+        node,
+        detail);
+}
+
+bool is_member_expr_node(uint node)
+{
+    return valid_node(node) && hir_kind[node] == HIR_MEMBER_EXPR;
+}
+
+bool nested_aggregate_member_receiver(uint node, out uint receiver)
+{
+    receiver = INVALID;
+    if (!valid_node(node) ||
+        hir_kind[node] != HIR_MEMBER_EXPR ||
+        struct_access_kind(node) != X86_STRUCT_ACCESS_MEMBER)
+        return false;
+
+    receiver = struct_access_payload0(node);
+    uint resolved_receiver = valid_node(receiver) ? resolve_expr(receiver) : INVALID;
+    return is_member_expr_node(receiver) || is_member_expr_node(resolved_receiver);
+}
+
+void write_nested_aggregate_member_error(uint node)
+{
+    uint receiver = INVALID;
+    if (!nested_aggregate_member_receiver(node, receiver))
+        receiver = node;
+    publish_stage_error_min_detail4(
+        x86_virtual_inst_status,
+        X86_ERR_NESTED_AGGREGATE_MEMBER,
+        receiver);
+}
+
+void write_loop_control_outside_loop_error(uint node)
+{
+    publish_stage_error_min_detail4(
+        x86_virtual_inst_status,
+        X86_ERR_LOOP_CONTROL_OUTSIDE_LOOP,
         node);
 }
 
@@ -1927,16 +2264,22 @@ bool write_short_circuit_trap_error(uint node, uint detail_node)
 
 bool write_unsupported_short_circuit_arithmetic_error(uint node, uint binary_op)
 {
-    bool divisor_op = binary_op == X86_OP_DIV_I32 || binary_op == X86_OP_MOD_I32;
-    bool shift_op = binary_op == X86_OP_SHL_I32 || binary_op == X86_OP_SHR_I32;
+    bool signed_divisor_op = binary_op == X86_OP_DIV_I32 || binary_op == X86_OP_MOD_I32;
+    bool unsigned_divisor_op = binary_op == X86_OP_DIV_U32 || binary_op == X86_OP_MOD_U32;
+    bool divisor_op = signed_divisor_op || unsigned_divisor_op;
+    bool shift_op = binary_op == X86_OP_SHL_I32 ||
+                    binary_op == X86_OP_SHR_I32 ||
+                    binary_op == X86_OP_SHR_U32;
     if (!divisor_op && !shift_op)
         return false;
 
     uint rhs = expr_right(node);
     uint value = 0u;
     bool safe = divisor_op
-        ? statically_safe_divisor(rhs, value)
-        : (compile_time_scalar_immutable_atom_value(rhs, value) && value < 32u);
+        ? (unsigned_divisor_op
+               ? (compile_time_scalar_immutable_value(rhs, value) && value != 0u)
+               : statically_safe_divisor(rhs, value))
+        : (compile_time_scalar_immutable_value(rhs, value) && value < 32u);
     if (safe)
         return false;
 
@@ -1946,7 +2289,7 @@ bool write_unsupported_short_circuit_arithmetic_error(uint node, uint binary_op)
 bool compile_time_index_in_bounds(uint index_expr, uint width)
 {
     uint value = 0u;
-    return width != 0u && compile_time_scalar_immutable_atom_value(index_expr, value) && value < width;
+    return width != 0u && compile_time_scalar_immutable_value(index_expr, value) && value < width;
 }
 
 bool write_unsupported_short_circuit_index_error(uint node, uint index_expr, uint width)
@@ -1990,20 +2333,21 @@ bool write_zero_divisor_error(uint value_node)
     return true;
 }
 
-bool write_unsupported_divisor_error(uint value_node)
+bool write_compile_time_zero_divisor_error(uint value_node)
 {
-    if (write_zero_divisor_error(value_node))
-        return true;
+    return write_zero_divisor_error(value_node);
+}
 
-    uint value = 0u;
-    if (statically_safe_divisor(value_node, value))
+bool write_compile_time_signed_div_overflow_error(uint node)
+{
+    if (!compile_time_signed_div_overflow(expr_left(node), expr_right(node)))
         return false;
 
-    uint diagnostic_node = resolve_expr(value_node);
+    uint diagnostic_node = resolve_expr(node);
     publish_stage_error_min_detail4(
         x86_virtual_inst_status,
-        X86_ERR_DYNAMIC_DIVISOR,
-        valid_node(diagnostic_node) ? diagnostic_node : value_node);
+        X86_ERR_SIGNED_DIV_OVERFLOW,
+        valid_node(diagnostic_node) ? diagnostic_node : node);
     return true;
 }
 
@@ -2069,6 +2413,18 @@ bool emit_struct_field_store(uint node, uint src, uint local_i)
     return true;
 }
 
+uint aggregate_element_store_count(uint node)
+{
+    uint decl_token = INVALID;
+    uint ordinal = INVALID;
+    uint count = 0u;
+    if (array_element_store_for_value_node(node, decl_token, ordinal))
+        count += 1u;
+    if (struct_field_store_for_value_node(node, decl_token, ordinal))
+        count += 1u;
+    return count;
+}
+
 bool emit_aggregate_element_stores(uint node, uint src, uint first_local_i)
 {
     uint local_i = first_local_i;
@@ -2122,9 +2478,10 @@ bool for_layout_for_node(uint node, out uint value_slot, out uint index_slot)
     return true;
 }
 
-bool array_iterable_layout_for_for_node(uint node, out uint base_slot, out uint len)
+bool array_iterable_layout_for_for_node(uint node, out uint source_kind, out uint payload, out uint len)
 {
-    base_slot = INVALID;
+    source_kind = 0u;
+    payload = INVALID;
     len = 0u;
     if (!valid_node(node))
         return false;
@@ -2138,16 +2495,32 @@ bool array_iterable_layout_for_for_node(uint node, out uint base_slot, out uint 
         return false;
 
     uint decl_token = visible_decl[iterable_token];
-    if (!local_slot_for_decl(decl_token, x86_node_func[node], base_slot))
-        return false;
-
-    uint kind = decl_layout_kind(decl_token);
-    uint width = decl_layout_width(decl_token);
-    if (kind == X86_DECL_AGG_ARRAY && width != 0u)
+    uint base_slot = INVALID;
+    if (local_slot_for_decl(decl_token, x86_node_func[node], base_slot))
     {
-        len = width;
+        uint kind = decl_layout_kind(decl_token);
+        uint width = decl_layout_width(decl_token);
+        if (kind == X86_DECL_AGG_ARRAY && width != 0u)
+        {
+            source_kind = X86_AGG_SOURCE_LOCAL;
+            payload = base_slot;
+            len = width;
+            return true;
+        }
+    }
+
+    uint4 param = param_reg_record(decl_token);
+    if (param.x == x86_node_func[node] &&
+        param.z != INVALID &&
+        param.w != 0u &&
+        param_reg_aggregate_kind(decl_token) == X86_DECL_AGG_ARRAY)
+    {
+        source_kind = X86_AGG_SOURCE_PARAM;
+        payload = param.z;
+        len = param.w;
         return true;
     }
+
     return false;
 }
 
@@ -2195,9 +2568,18 @@ bool local_store_slot_for_assignment_target(uint target_node, uint owner_fn, out
     return true;
 }
 
-bool assignment_target_param_aggregate_member(uint target_node, uint owner_fn, out uint member_node)
+bool assignment_target_param_aggregate_member(
+    uint target_node,
+    uint owner_fn,
+    out uint member_node,
+    out uint base_slot,
+    out uint width,
+    out uint ordinal)
 {
     member_node = member_access_node_for_expr(target_node);
+    base_slot = INVALID;
+    width = 0u;
+    ordinal = INVALID;
     if (!valid_node(member_node) ||
         struct_access_kind(member_node) != X86_STRUCT_ACCESS_MEMBER ||
         !valid_node(struct_access_payload0(member_node)) ||
@@ -2206,11 +2588,20 @@ bool assignment_target_param_aggregate_member(uint target_node, uint owner_fn, o
 
     uint source_kind = 0u;
     uint payload = INVALID;
-    uint width = 0u;
-    if (!aggregate_source_for_expr(struct_access_payload0(member_node), owner_fn, source_kind, payload, width))
+    if (!aggregate_source_for_expr(
+            struct_access_payload0(member_node),
+            owner_fn,
+            source_kind,
+            payload,
+            width))
         return false;
 
-    return source_kind == X86_AGG_SOURCE_PARAM && struct_access_payload1(member_node) < width;
+    ordinal = struct_access_payload1(member_node);
+    if (source_kind != X86_AGG_SOURCE_PARAM || ordinal >= width)
+        return false;
+
+    base_slot = payload;
+    return true;
 }
 
 bool assignment_target_index_node(uint target_node, out uint index_node)
@@ -2261,6 +2652,15 @@ void publish_aggregate_temporary_index_error(uint index_node)
         detail);
 }
 
+bool publish_unsized_index_error(uint index_node)
+{
+    uint index_expr = INVALID;
+    if (!index_operand_expr_node(index_node, index_expr))
+        index_expr = index_node;
+    publish_dynamic_index_error(index_expr);
+    return true;
+}
+
 bool node_is_index_source(uint node, out uint index_node)
 {
     index_node = INVALID;
@@ -2271,14 +2671,37 @@ bool node_is_index_source(uint node, out uint index_node)
     return valid_node(index_node) && is_index_expr_node(index_node);
 }
 
-bool local_index_assignment_target(
+bool write_index_source_value_error(uint value_node)
+{
+    uint index_node = INVALID;
+    uint resolved = resolve_expr(value_node);
+    if (!assignment_target_index_node(value_node, index_node) &&
+        !node_is_index_source(resolved, index_node))
+        return false;
+
+    uint source_kind = 0u;
+    uint payload = INVALID;
+    uint width = 0u;
+    if (!aggregate_source_for_index(index_node, source_kind, payload, width))
+    {
+        publish_aggregate_temporary_index_error(index_node);
+        return true;
+    }
+    if (width == 0u)
+        return publish_unsized_index_error(index_node);
+    return false;
+}
+
+bool index_assignment_target(
     uint target_node,
     out uint index_node,
+    out uint source_kind,
     out uint base_slot,
     out uint width,
     out uint index_vreg)
 {
     index_node = INVALID;
+    source_kind = 0u;
     base_slot = INVALID;
     width = 0u;
     index_vreg = INVALID;
@@ -2286,7 +2709,6 @@ bool local_index_assignment_target(
         return false;
 
     uint index_expr = INVALID;
-    uint source_kind = 0u;
     if (!index_operand_expr_node(index_node, index_expr))
     {
         publish_index_assignment_error(index_node);
@@ -2300,12 +2722,15 @@ bool local_index_assignment_target(
         return false;
     }
 
-    if (source_kind != X86_AGG_SOURCE_LOCAL)
+    if (source_kind != X86_AGG_SOURCE_LOCAL && source_kind != X86_AGG_SOURCE_PARAM)
     {
-        if (source_kind == X86_AGG_SOURCE_PARAM)
-            write_param_aggregate_index_assignment_error(index_node);
-        else
-            publish_index_assignment_error(index_node);
+        publish_index_assignment_error(index_node);
+        return false;
+    }
+
+    if (width == 0u)
+    {
+        publish_unsized_index_error(index_node);
         return false;
     }
 
@@ -2418,6 +2843,12 @@ bool emit_member_field_value(uint node, uint row, uint dst)
     uint width = 0u;
     if (!aggregate_source_for_expr(receiver_node, x86_node_func[node], source_kind, payload, width))
     {
+        uint nested_receiver = INVALID;
+        if (nested_aggregate_member_receiver(node, nested_receiver))
+        {
+            write_nested_aggregate_member_error(node);
+            return false;
+        }
         write_status_error_detail(
             node,
             member_source_failure_detail(receiver_node, x86_node_func[node]));
@@ -2540,6 +2971,11 @@ bool emit_expr(uint node, uint2 range)
             publish_aggregate_temporary_index_error(node);
             return false;
         }
+        if (width == 0u)
+        {
+            publish_unsized_index_error(node);
+            return false;
+        }
         if (compile_time_index_out_of_bounds(index_expr, width))
         {
             publish_index_bounds_error(index_expr);
@@ -2575,7 +3011,8 @@ bool emit_expr(uint node, uint2 range)
         return emit_aggregate_element_stores(node, dst, 1u);
     }
     uint4 param_record = uint4_fill(INVALID);
-    if (is_struct_literal_head_node(node))
+    if (is_struct_literal_head_or_path_child(node) &&
+        aggregate_element_store_count(node) == 0u)
         return true;
 
     if (form == HIR_EXPR_NAME && has_enum_value_record(node))
@@ -2630,7 +3067,7 @@ bool emit_expr(uint node, uint2 range)
         return emit_aggregate_element_stores(node, dst, 1u);
     }
 
-    uint binary_op = binary_op_for_form(form);
+    uint binary_op = binary_op_for_node(node, form);
     uint compare_op = compare_op_for_node(node, form);
     if (binary_op != 0u || compare_op != 0u)
     {
@@ -2641,16 +3078,24 @@ bool emit_expr(uint node, uint2 range)
             return false;
         if (write_unsupported_short_circuit_arithmetic_error(node, binary_op))
             return false;
+        if ((binary_op == X86_OP_DIV_I32 || binary_op == X86_OP_MOD_I32 ||
+             binary_op == X86_OP_DIV_U32 || binary_op == X86_OP_MOD_U32) &&
+            write_compile_time_zero_divisor_error(expr_right(node)))
+            return false;
         if ((binary_op == X86_OP_DIV_I32 || binary_op == X86_OP_MOD_I32) &&
-            write_unsupported_divisor_error(expr_right(node)))
+            write_compile_time_signed_div_overflow_error(node))
             return false;
         if (!value_vreg_for_node(expr_left(node), left))
         {
+            if (write_index_source_value_error(expr_left(node)))
+                return false;
             write_status_error_detail(node, X86_VINST_ERROR_BINARY_LEFT);
             return false;
         }
         if (!value_vreg_for_node(expr_right(node), right))
         {
+            if (write_index_source_value_error(expr_right(node)))
+                return false;
             write_status_error_detail(node, X86_VINST_ERROR_BINARY_RIGHT);
             return false;
         }
@@ -2714,6 +3159,11 @@ bool has_call_abi_record(uint2 abi)
            return_width <= X86_CALL_ABI_RETURN_WIDTH_MAX;
 }
 
+uint function_slot_for_node(uint fn_node)
+{
+    return valid_node(fn_node) ? x86_func_slot_by_node[fn_node] : INVALID;
+}
+
 bool emit_call(uint node, uint2 range)
 {
     uint row = INVALID;
@@ -2723,14 +3173,6 @@ bool emit_call(uint node, uint2 range)
     if (has_enum_value_record(node))
         return emit_enum_value_to_local(node);
 
-    if (valid_node(x86_enclosing_loop_node[node]))
-    {
-        publish_stage_error_min_detail4(
-            x86_virtual_inst_status,
-            X86_ERR_LOOP_CONTAINED_CALL,
-            node);
-        return false;
-    }
     if (write_nested_short_circuit_call_error(node))
         return false;
 
@@ -2770,21 +3212,6 @@ bool emit_call(uint node, uint2 range)
         return false;
     }
 
-    uint payload_row = INVALID;
-    if (!location_for_node_local(node, 1u, payload_row))
-    {
-        write_status_error_detail(node, X86_VINST_ERROR_CALL_ARG_PACK);
-        return false;
-    }
-    write_mixed_arg_payloads(payload_row, node, 0u, INVALID, INVALID, INVALID, INVALID);
-
-    uint target_row = INVALID;
-    if (!first_instruction_row_in_subtree(abi.x, target_row))
-    {
-        write_status_error_detail(node, X86_VINST_ERROR_CALL_TARGET);
-        return false;
-    }
-
     uint arg_count = call_abi_arg_count(abi);
     if (arg_count > X86_BACKEND_MAX_PACKED_CALL_ARGS)
     {
@@ -2792,10 +3219,39 @@ bool emit_call(uint node, uint2 range)
         return false;
     }
 
+    uint payload_row = INVALID;
+    uint payload_row_hi = INVALID;
+    if (!location_for_node_local(node, 1u, payload_row) ||
+        (arg_count > 4u && !location_for_node_local(node, 2u, payload_row_hi)))
+    {
+        write_status_error_detail(node, X86_VINST_ERROR_CALL_ARG_PACK);
+        return false;
+    }
+    write_mixed_arg_payloads(
+        payload_row,
+        payload_row_hi,
+        node,
+        0u,
+        INVALID,
+        INVALID,
+        INVALID,
+        INVALID,
+        INVALID,
+        INVALID);
+
+    uint target_slot = function_slot_for_node(abi.x);
+    if (target_slot == INVALID)
+    {
+        write_status_error_detail(node, X86_VINST_ERROR_CALL_TARGET);
+        return false;
+    }
+
     uint arg0_node = INVALID;
     uint arg1_node = INVALID;
     uint arg2_node = INVALID;
     uint arg3_node = INVALID;
+    uint arg4_node = INVALID;
+    uint arg5_node = INVALID;
     if (arg_count >= 1u && !valid_node(arg0_node) &&
         !call_arg_node_for_call(node, 0u, arg0_node))
     {
@@ -2818,15 +3274,29 @@ bool emit_call(uint node, uint2 range)
         write_status_error_detail(node, X86_VINST_ERROR_CALL_ARG3_NODE);
         return false;
     }
+    if (arg_count >= 5u && !call_arg_node_for_call(node, 4u, arg4_node))
+    {
+        write_status_error_detail(node, X86_VINST_ERROR_CALL_ARG4_NODE);
+        return false;
+    }
+    if (arg_count >= 6u && !call_arg_node_for_call(node, 5u, arg5_node))
+    {
+        write_status_error_detail(node, X86_VINST_ERROR_CALL_ARG5_NODE);
+        return false;
+    }
 
     uint arg0_kind = 0u;
     uint arg1_kind = 0u;
     uint arg2_kind = 0u;
     uint arg3_kind = 0u;
+    uint arg4_kind = 0u;
+    uint arg5_kind = 0u;
     uint arg0_payload = INVALID;
     uint arg1_payload = INVALID;
     uint arg2_payload = INVALID;
     uint arg3_payload = INVALID;
+    uint arg4_payload = INVALID;
+    uint arg5_payload = INVALID;
     if (arg_count >= 1u && !call_arg_operand(arg0_node, x86_node_func[node], arg0_kind, arg0_payload))
     {
         write_status_error_detail(node, X86_VINST_ERROR_CALL_ARG0_OPERAND);
@@ -2847,6 +3317,16 @@ bool emit_call(uint node, uint2 range)
         write_status_error_detail(node, X86_VINST_ERROR_CALL_ARG3_OPERAND);
         return false;
     }
+    if (arg_count >= 5u && !call_arg_operand(arg4_node, x86_node_func[node], arg4_kind, arg4_payload))
+    {
+        write_status_error_detail(node, X86_VINST_ERROR_CALL_ARG4_OPERAND);
+        return false;
+    }
+    if (arg_count >= 6u && !call_arg_operand(arg5_node, x86_node_func[node], arg5_kind, arg5_payload))
+    {
+        write_status_error_detail(node, X86_VINST_ERROR_CALL_ARG5_OPERAND);
+        return false;
+    }
 
     uint return_width = call_abi_return_width(abi);
     bool aggregate_return = return_width > 1u;
@@ -2855,7 +3335,7 @@ bool emit_call(uint node, uint2 range)
     uint agg_dest_reason = X86_VINST_ERROR_CALL_AGG_DEST;
     if (aggregate_return)
     {
-        if (!aggregate_call_destination(node, dest_payload, return_width, agg_dest_reason))
+        if (!aggregate_call_destination(node, return_width, dest_payload, agg_dest_reason))
         {
             uint index_node = INVALID;
             if (node_is_index_source(node, index_node))
@@ -2863,37 +3343,38 @@ bool emit_call(uint node, uint2 range)
                 publish_aggregate_temporary_index_error(index_node);
                 return false;
             }
-            if (agg_dest_reason == X86_VINST_ERROR_CALL_AGG_DEST_NO_LET)
-            {
-                publish_aggregate_temporary_index_error(node);
-                return false;
-            }
-            write_status_error_detail(node, agg_dest_reason);
+            write_aggregate_return_call_error(node, agg_dest_reason);
             return false;
         }
-        mixed_dst = INVALID;
+        // Aggregate calls still need a value-def row so regalloc computes the
+        // live-register save mask for the call barrier.
+        mixed_dst = row;
     }
     write_mixed_arg_payloads(
         payload_row,
+        payload_row_hi,
         node,
         arg_count,
         arg_count >= 1u ? arg0_payload : INVALID,
         arg_count >= 2u ? arg1_payload : INVALID,
         arg_count >= 3u ? arg2_payload : INVALID,
-        arg_count >= 4u ? arg3_payload : INVALID);
+        arg_count >= 4u ? arg3_payload : INVALID,
+        arg_count >= 5u ? arg4_payload : INVALID,
+        arg_count >= 6u ? arg5_payload : INVALID);
     uint info = pack_u8x4(arg_count, aggregate_return ? 1u : 0u, 0u, 0u) |
-                pack_u2x4_at_offset(12u, arg0_kind, arg1_kind, arg2_kind, arg3_kind);
+                pack_u2x4_at_offset(12u, arg0_kind, arg1_kind, arg2_kind, arg3_kind) |
+                pack_u2x4_at_offset(20u, arg4_kind, arg5_kind, 0u, 0u);
     write_inst(
         row,
         node,
         0u,
         X86_VINST_CALL_MIXED,
         mixed_dst,
-        uint4(target_row, dest_payload, payload_row, info));
+        uint4(target_slot, dest_payload, payload_row, info));
     if (!aggregate_return)
     {
         write_node_value(node, X86_NODE_VALUE_VREG, dst, node, abi.x);
-        return emit_aggregate_element_stores(node, dst, 2u);
+        return emit_aggregate_element_stores(node, dst, arg_count > 4u ? 3u : 2u);
     }
     else
     {
@@ -3128,18 +3609,8 @@ bool emit_stmt(uint node, uint2 range)
         uint src = INVALID;
         if (!value_vreg_for_node(return_value, src))
         {
-            uint index_node = INVALID;
-            uint source_kind = 0u;
-            uint payload = INVALID;
-            uint width = 0u;
-            uint resolved_return_value = resolve_expr(return_value);
-            if (((assignment_target_index_node(return_value, index_node) ||
-                  node_is_index_source(resolved_return_value, index_node))) &&
-                !aggregate_source_for_index(index_node, source_kind, payload, width))
-            {
-                publish_aggregate_temporary_index_error(index_node);
+            if (write_index_source_value_error(return_value))
                 return false;
-            }
             if (write_loop_call_value_error(return_value))
                 return false;
             write_status_error_detail(node, resolve_expr(return_value));
@@ -3161,11 +3632,26 @@ bool emit_stmt(uint node, uint2 range)
             return true;
         }
 
+        uint init_node = stmt_slot(node, 2u);
         uint src = INVALID;
         uint slot = INVALID;
-        if (!value_vreg_for_node(stmt_slot(node, 2u), src))
+        uint init_value = 0u;
+        if (compile_time_scalar_immutable_value(init_node, init_value))
         {
-            if (write_loop_call_value_error(stmt_slot(node, 2u)))
+            if (!local_slot_for_decl(stmt_slot(node, 1u), x86_node_func[node], slot))
+            {
+                write_status_error_detail(node, stmt_slot(node, 1u));
+                return false;
+            }
+            write_inst(row, node, 0u, X86_VINST_STORE_LOCAL_IMM, INVALID, uint4(slot, init_value, stmt_kind, 0u));
+            write_node_value(node, X86_NODE_VALUE_NONE, INVALID, 0u, 0u);
+            return true;
+        }
+        if (!value_vreg_for_node(init_node, src))
+        {
+            if (write_index_source_value_error(init_node))
+                return false;
+            if (write_loop_call_value_error(init_node))
                 return false;
             write_status_error_detail(node, X86_VINST_ERROR_LET_INIT_VALUE);
             return false;
@@ -3188,17 +3674,26 @@ bool emit_stmt(uint node, uint2 range)
         uint index_node = INVALID;
         if (assignment_target_index_node(target_node, index_node))
         {
+            uint source_kind = 0u;
             uint base_slot = INVALID;
             uint width = 0u;
             uint index_vreg = INVALID;
             uint rhs = INVALID;
-            if (!local_index_assignment_target(target_node, index_node, base_slot, width, index_vreg))
+            if (!index_assignment_target(
+                    target_node,
+                    index_node,
+                    source_kind,
+                    base_slot,
+                    width,
+                    index_vreg))
                 return false;
             if ((assign_op == ASSIGN_OP_DIV || assign_op == ASSIGN_OP_MOD) &&
-                write_unsupported_divisor_error(rhs_node))
+                write_compile_time_zero_divisor_error(rhs_node))
                 return false;
             if (!value_vreg_for_node(rhs_node, rhs))
             {
+                if (write_index_source_value_error(rhs_node))
+                    return false;
                 if (write_loop_call_value_error(rhs_node))
                     return false;
                 write_status_error_detail(node, X86_VINST_ERROR_ASSIGN_RHS);
@@ -3207,7 +3702,10 @@ bool emit_stmt(uint node, uint2 range)
 
             if (assign_op == ASSIGN_OP_SET)
             {
-                write_inst(row, node, 0u, X86_VINST_STORE_LOCAL_INDEX, INVALID, uint4(base_slot, index_vreg, rhs, width));
+                uint store_op = source_kind == X86_AGG_SOURCE_PARAM
+                                    ? X86_VINST_STORE_PARAM_INDEX
+                                    : X86_VINST_STORE_LOCAL_INDEX;
+                write_inst(row, node, 0u, store_op, INVALID, uint4(base_slot, index_vreg, rhs, width));
                 write_node_value(node, X86_NODE_VALUE_NONE, INVALID, 0u, 0u);
                 return true;
             }
@@ -3215,7 +3713,7 @@ bool emit_stmt(uint node, uint2 range)
             uint load_row = INVALID;
             uint binary_row = INVALID;
             uint store_row = INVALID;
-            uint binary_op = binary_op_for_assignment(assign_op);
+            uint binary_op = binary_op_for_assignment_target(index_node, assign_op);
             if (binary_op == 0u ||
                 !location_for_node_local(node, 0u, load_row) ||
                 !location_for_node_local(node, 1u, binary_row) ||
@@ -3224,9 +3722,15 @@ bool emit_stmt(uint node, uint2 range)
                 write_status_error_detail(node, X86_VINST_ERROR_ASSIGN_LOCATION);
                 return false;
             }
-            write_inst(load_row, node, 0u, X86_VINST_LOAD_LOCAL_INDEX, load_row, uint4(base_slot, index_vreg, width, 0u));
+            uint load_op = source_kind == X86_AGG_SOURCE_PARAM
+                               ? X86_VINST_LOAD_PARAM_INDEX
+                               : X86_VINST_LOAD_LOCAL_INDEX;
+            uint store_op = source_kind == X86_AGG_SOURCE_PARAM
+                                ? X86_VINST_STORE_PARAM_INDEX
+                                : X86_VINST_STORE_LOCAL_INDEX;
+            write_inst(load_row, node, 0u, load_op, load_row, uint4(base_slot, index_vreg, width, 0u));
             write_inst(binary_row, node, 1u, X86_VINST_BINARY, binary_row, uint4(binary_op, load_row, rhs, 0u));
-            write_inst(store_row, node, 2u, X86_VINST_STORE_LOCAL_INDEX, INVALID, uint4(base_slot, index_vreg, binary_row, width));
+            write_inst(store_row, node, 2u, store_op, INVALID, uint4(base_slot, index_vreg, binary_row, width));
             write_node_value(node, X86_NODE_VALUE_VREG, binary_row, node, base_slot);
             return true;
         }
@@ -3237,19 +3741,113 @@ bool emit_stmt(uint node, uint2 range)
         if (!local_store_slot_for_assignment_target(target_node, x86_node_func[node], slot, target_value_node))
         {
             uint member_node = INVALID;
-            if (assignment_target_param_aggregate_member(target_node, x86_node_func[node], member_node))
+            uint param_base = INVALID;
+            uint param_width = 0u;
+            uint param_ordinal = INVALID;
+            if (assignment_target_param_aggregate_member(
+                    target_node,
+                    x86_node_func[node],
+                    member_node,
+                    param_base,
+                    param_width,
+                    param_ordinal))
             {
-                write_param_aggregate_assignment_error(member_node);
-                return false;
+                if ((assign_op == ASSIGN_OP_DIV || assign_op == ASSIGN_OP_MOD) &&
+                    write_compile_time_zero_divisor_error(rhs_node))
+                    return false;
+                if (!value_vreg_for_node(rhs_node, rhs))
+                {
+                    if (write_index_source_value_error(rhs_node))
+                        return false;
+                    if (write_loop_call_value_error(rhs_node))
+                        return false;
+                    write_status_error_detail(node, X86_VINST_ERROR_ASSIGN_RHS);
+                    return false;
+                }
+
+                uint index_row = INVALID;
+                if (assign_op == ASSIGN_OP_SET)
+                {
+                    uint store_row = INVALID;
+                    if (!location_for_node_local(node, 0u, index_row) ||
+                        !location_for_node_local(node, 1u, store_row))
+                    {
+                        write_status_error_detail(node, X86_VINST_ERROR_ASSIGN_LOCATION);
+                        return false;
+                    }
+                    write_inst(
+                        index_row,
+                        node,
+                        0u,
+                        X86_VINST_IMM_I32,
+                        index_row,
+                        uint4(param_ordinal, 0u, 0u, 0u));
+                    write_inst(
+                        store_row,
+                        node,
+                        1u,
+                        X86_VINST_STORE_PARAM_INDEX,
+                        INVALID,
+                        uint4(param_base, index_row, rhs, param_width));
+                    write_node_value(node, X86_NODE_VALUE_NONE, INVALID, 0u, 0u);
+                    return true;
+                }
+
+                uint load_row = INVALID;
+                uint binary_row = INVALID;
+                uint store_row = INVALID;
+                uint binary_op = binary_op_for_assignment_target(member_node, assign_op);
+                if (binary_op == 0u ||
+                    !location_for_node_local(node, 0u, index_row) ||
+                    !location_for_node_local(node, 1u, load_row) ||
+                    !location_for_node_local(node, 2u, binary_row) ||
+                    !location_for_node_local(node, 3u, store_row))
+                {
+                    write_status_error_detail(node, X86_VINST_ERROR_ASSIGN_LOCATION);
+                    return false;
+                }
+
+                write_inst(
+                    index_row,
+                    node,
+                    0u,
+                    X86_VINST_IMM_I32,
+                    index_row,
+                    uint4(param_ordinal, 0u, 0u, 0u));
+                write_inst(
+                    load_row,
+                    node,
+                    1u,
+                    X86_VINST_LOAD_PARAM_INDEX,
+                    load_row,
+                    uint4(param_base, index_row, param_width, 0u));
+                write_inst(
+                    binary_row,
+                    node,
+                    2u,
+                    X86_VINST_BINARY,
+                    binary_row,
+                    uint4(binary_op, load_row, rhs, 0u));
+                write_inst(
+                    store_row,
+                    node,
+                    3u,
+                    X86_VINST_STORE_PARAM_INDEX,
+                    INVALID,
+                    uint4(param_base, index_row, binary_row, param_width));
+                write_node_value(node, X86_NODE_VALUE_VREG, binary_row, node, param_base);
+                return true;
             }
             write_status_error_detail(node, X86_VINST_ERROR_ASSIGN_TARGET);
             return false;
         }
         if ((assign_op == ASSIGN_OP_DIV || assign_op == ASSIGN_OP_MOD) &&
-            write_unsupported_divisor_error(rhs_node))
+            write_compile_time_zero_divisor_error(rhs_node))
             return false;
         if (!value_vreg_for_node(rhs_node, rhs))
         {
+            if (write_index_source_value_error(rhs_node))
+                return false;
             if (write_loop_call_value_error(rhs_node))
                 return false;
             write_status_error_detail(node, X86_VINST_ERROR_ASSIGN_RHS);
@@ -3267,7 +3865,7 @@ bool emit_stmt(uint node, uint2 range)
         uint load_row = INVALID;
         uint binary_row = INVALID;
         uint store_row = INVALID;
-        uint binary_op = binary_op_for_assignment(assign_op);
+        uint binary_op = binary_op_for_assignment_target(target_node, assign_op);
         if (binary_op == 0u ||
             !location_for_node_local(node, 0u, load_row) ||
             !location_for_node_local(node, 1u, binary_row) ||
@@ -3319,12 +3917,6 @@ bool emit_stmt(uint node, uint2 range)
     if ((hir_kind[node] == HIR_WHILE_STMT || hir_kind[node] == HIR_STMT) &&
         stmt_kind == STMT_RECORD_KIND_WHILE)
     {
-        if (valid_node(x86_enclosing_loop_node[node]))
-        {
-            write_nested_loop_error(node);
-            return false;
-        }
-
         uint cond_node = stmt_slot(node, 1u);
         uint body_node = stmt_slot(node, 2u);
         uint cond = INVALID;
@@ -3354,15 +3946,10 @@ bool emit_stmt(uint node, uint2 range)
     if ((hir_kind[node] == HIR_FOR_STMT || hir_kind[node] == HIR_STMT) &&
         stmt_kind == STMT_RECORD_KIND_FOR)
     {
-        if (valid_node(x86_enclosing_loop_node[node]))
-        {
-            write_nested_loop_error(node);
-            return false;
-        }
-
         uint value_slot = INVALID;
         uint index_slot = INVALID;
-        uint array_base_slot = INVALID;
+        uint array_source_kind = 0u;
+        uint array_payload = INVALID;
         uint array_len = 0u;
         uint init_row = INVALID;
         uint branch_row = INVALID;
@@ -3375,7 +3962,7 @@ bool emit_stmt(uint node, uint2 range)
             write_status_error_detail(node, X86_VINST_ERROR_FOR_LAYOUT);
             return false;
         }
-        if (!array_iterable_layout_for_for_node(node, array_base_slot, array_len))
+        if (!array_iterable_layout_for_for_node(node, array_source_kind, array_payload, array_len))
         {
             write_for_iterable_error(node);
             return false;
@@ -3392,7 +3979,10 @@ bool emit_stmt(uint node, uint2 range)
 
         write_inst(init_row, node, 0u, X86_VINST_STORE_LOCAL_IMM, INVALID, uint4(index_slot, 0u, 0u, 0u));
         write_inst(branch_row, node, 1u, X86_VINST_FOR_ARRAY_BRANCH, INVALID, uint4(index_slot, array_len, after_target, 0u));
-        write_inst(load_row, node, 2u, X86_VINST_FOR_ARRAY_LOAD, INVALID, uint4(array_base_slot, index_slot, value_slot, 0u));
+        uint load_op = array_source_kind == X86_AGG_SOURCE_PARAM
+                           ? X86_VINST_FOR_PARAM_ARRAY_LOAD
+                           : X86_VINST_FOR_ARRAY_LOAD;
+        write_inst(load_row, node, 2u, load_op, INVALID, uint4(array_payload, index_slot, value_slot, 0u));
         write_inst(inc_row, node, 3u, X86_VINST_FOR_ARRAY_INC_JMP, INVALID, uint4(index_slot, branch_row, 0u, 0u));
         return true;
     }
@@ -3402,7 +3992,10 @@ bool emit_stmt(uint node, uint2 range)
         uint loop_node = INVALID;
         uint target = INVALID;
         if (!enclosing_while_for_node(node, loop_node))
+        {
+            write_loop_control_outside_loop_error(node);
             return false;
+        }
         if (hir_kind[node] == HIR_BREAK_STMT)
         {
             if (!row_after_subtree(loop_node, target))

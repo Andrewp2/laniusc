@@ -4,7 +4,6 @@ use super::{
     BracketsBlockPrefixScanStep,
     BracketsHistogramScanStep,
     HirSemanticPrefixScanStep,
-    LL1EmitPrefixScanStep,
     PackOffsetScanStep,
     PackTotalReduceStep,
     TokenDelimiterScanStep,
@@ -13,39 +12,8 @@ use super::{
 };
 use crate::gpu::{
     buffers::uniform_from_val,
-    scan::{ping_pong_scan_steps, ScanFinalize},
+    scan::{ScanFinalize, ping_pong_scan_steps},
 };
-
-pub(super) fn make_ll1_emit_prefix_scan_steps(
-    device: &wgpu::Device,
-    base: super::super::passes::ll1_blocks_01::LL1BlocksParams,
-    n_blocks: u32,
-) -> Vec<LL1EmitPrefixScanStep> {
-    ping_pong_scan_steps(n_blocks, ScanFinalize::CopyToAIfNeeded(n_blocks))
-        .into_iter()
-        .map(|plan| {
-            let label = if plan.scan_step == 0 {
-                "parser.ll1_emit_prefix_scan.params.init"
-            } else if plan.scan_step == n_blocks {
-                "parser.ll1_emit_prefix_scan.params.copy"
-            } else {
-                "parser.ll1_emit_prefix_scan.params.step"
-            };
-            LL1EmitPrefixScanStep {
-                params: uniform_from_val(
-                    device,
-                    label,
-                    &super::super::passes::ll1_blocks_01::LL1BlocksParams {
-                        emit_scan_step: plan.scan_step,
-                        ..base
-                    },
-                ),
-                read_from_a: plan.read_from_a,
-                write_to_a: plan.write_to_a,
-            }
-        })
-        .collect()
-}
 
 pub(super) fn make_pack_offset_scan_steps(
     device: &wgpu::Device,

@@ -41,9 +41,11 @@ RWStructuredBuffer<uint> hir_stmt_scope_end;
 RWStructuredBuffer<uint> hir_nearest_stmt_node;
 RWStructuredBuffer<uint> hir_nearest_block_node;
 RWStructuredBuffer<uint> hir_nearest_enclosing_control_node;
+RWStructuredBuffer<uint> hir_nearest_loop_node;
 RWStructuredBuffer<uint> hir_nearest_fn_node;
 RWStructuredBuffer<uint> hir_type_alias_target_node;
 RWStructuredBuffer<uint> hir_fn_return_type_node;
+RWStructuredBuffer<uint> hir_type_len_value;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -90,6 +92,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_item_import_target_kind[node] = HIR_ITEM_IMPORT_TARGET_NONE;
     hir_type_alias_target_node[node] = INVALID;
     hir_fn_return_type_node[node] = INVALID;
+    hir_type_len_value[node] = INVALID;
     hir_param_type_node[node] = INVALID;
     hir_method_owner_node[node] = INVALID;
     hir_method_impl_node[node] = INVALID;
@@ -121,5 +124,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_nearest_stmt_node[node] = INVALID;
     hir_nearest_block_node[node] = INVALID;
     hir_nearest_enclosing_control_node[node] = INVALID;
+    hir_nearest_loop_node[node] = INVALID;
     hir_nearest_fn_node[node] = INVALID;
 }

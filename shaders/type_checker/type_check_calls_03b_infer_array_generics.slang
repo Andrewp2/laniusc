@@ -45,6 +45,7 @@ StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_elem_ref_tag;
 StructuredBuffer<uint> type_instance_elem_ref_payload;
+StructuredBuffer<uint> method_call_name_id;
 
 RWStructuredBuffer<uint> call_return_type;
 RWStructuredBuffer<uint> status;
@@ -248,6 +249,82 @@ uint array_or_slice_type_for_name_token(uint name_token)
     return elem_ty == TY_UNKNOWN ? TY_UNKNOWN : TY_ARRAY_BASE + elem_ty;
 }
 
+uint array_or_slice_type_for_arg_slot(uint callee_token, uint call_node, uint arg_count, uint arg_i)
+{
+    if (arg_i >= arg_count)
+        return TY_UNKNOWN;
+    return array_or_slice_type_for_name_token(
+        call_arg_name_token(callee_token, call_node, arg_i));
+}
+
+uint first_array_or_slice_arg_type(uint callee_token, uint call_node, uint arg_count)
+{
+    uint array_ty = array_or_slice_type_for_arg_slot(callee_token, call_node, arg_count, 0u);
+    if (array_ty != TY_UNKNOWN)
+        return array_ty;
+    array_ty = array_or_slice_type_for_arg_slot(callee_token, call_node, arg_count, 1u);
+    if (array_ty != TY_UNKNOWN)
+        return array_ty;
+    array_ty = array_or_slice_type_for_arg_slot(callee_token, call_node, arg_count, 2u);
+    if (array_ty != TY_UNKNOWN)
+        return array_ty;
+    return array_or_slice_type_for_arg_slot(callee_token, call_node, arg_count, 3u);
+}
+
+bool matching_generic_arg_elem_type(
+    uint callee_token,
+    uint call_node,
+    uint fn_token,
+    uint arg_count,
+    uint target_slot,
+    uint arg_i,
+    out uint elem_ty)
+{
+    elem_ty = TY_UNKNOWN;
+    if (arg_i >= arg_count)
+        return false;
+
+    uint param_ty = row_major_load<uint>(
+        call_param_type,
+        fn_token,
+        PARAM_CACHE_STRIDE,
+        arg_i,
+        TY_UNKNOWN);
+    if (array_or_slice_generic_slot(param_ty) != target_slot)
+        return false;
+
+    elem_ty = array_or_slice_element_type_for_name_token(
+        call_arg_name_token(callee_token, call_node, arg_i));
+    return true;
+}
+
+bool matching_generic_arg_array_type(
+    uint callee_token,
+    uint call_node,
+    uint fn_token,
+    uint arg_count,
+    uint target_slot,
+    uint arg_i,
+    out uint array_ty)
+{
+    array_ty = TY_UNKNOWN;
+    if (arg_i >= arg_count)
+        return false;
+
+    uint param_ty = row_major_load<uint>(
+        call_param_type,
+        fn_token,
+        PARAM_CACHE_STRIDE,
+        arg_i,
+        TY_UNKNOWN);
+    if (array_or_slice_generic_slot(param_ty) != target_slot)
+        return false;
+
+    array_ty = array_or_slice_type_for_name_token(
+        call_arg_name_token(callee_token, call_node, arg_i));
+    return true;
+}
+
 void infer_array_generic_return(uint callee_token)
 {
     if (!valid_token(callee_token))
@@ -273,18 +350,11 @@ void infer_array_generic_return(uint callee_token)
         ret_ty = call_return_type[fn_token];
     if (ret_ty == TY_ARRAY_BASE + TY_UNKNOWN)
     {
-        [loop]
-        for (uint arg_i = 0u; arg_i < PARAM_CACHE_STRIDE; arg_i += 1u)
+        uint array_ty = first_array_or_slice_arg_type(callee_token, call_node, arg_count);
+        if (array_ty != TY_UNKNOWN)
         {
-            if (arg_i >= arg_count)
-                break;
-            uint array_ty = array_or_slice_type_for_name_token(
-                call_arg_name_token(callee_token, call_node, arg_i));
-            if (array_ty != TY_UNKNOWN)
-            {
-                call_return_type[callee_token] = array_ty;
-                return;
-            }
+            call_return_type[callee_token] = array_ty;
+            return;
         }
     }
     uint ret_slot = plain_generic_slot(ret_ty);
@@ -301,21 +371,20 @@ void infer_array_generic_return(uint callee_token)
             return;
         }
 
-        [loop]
-        for (uint arg_i = 0u; arg_i < PARAM_CACHE_STRIDE; arg_i += 1u)
+        uint elem_ty = TY_UNKNOWN;
+        bool matched = matching_generic_arg_elem_type(
+            callee_token, call_node, fn_token, arg_count, ret_slot, 0u, elem_ty);
+        if (!matched)
+            matched = matching_generic_arg_elem_type(
+                callee_token, call_node, fn_token, arg_count, ret_slot, 1u, elem_ty);
+        if (!matched)
+            matched = matching_generic_arg_elem_type(
+                callee_token, call_node, fn_token, arg_count, ret_slot, 2u, elem_ty);
+        if (!matched)
+            matched = matching_generic_arg_elem_type(
+                callee_token, call_node, fn_token, arg_count, ret_slot, 3u, elem_ty);
+        if (matched)
         {
-            if (arg_i >= arg_count)
-                break;
-            uint param_ty = row_major_load<uint>(
-                call_param_type,
-                fn_token,
-                PARAM_CACHE_STRIDE,
-                arg_i,
-                TY_UNKNOWN);
-            if (array_or_slice_generic_slot(param_ty) != ret_slot)
-                continue;
-            uint elem_ty = array_or_slice_element_type_for_name_token(
-                call_arg_name_token(callee_token, call_node, arg_i));
             if (elem_ty != TY_UNKNOWN)
                 call_return_type[callee_token] = elem_ty;
             return;
@@ -337,21 +406,20 @@ void infer_array_generic_return(uint callee_token)
         return;
     }
 
-    [loop]
-    for (uint arg_i = 0u; arg_i < PARAM_CACHE_STRIDE; arg_i += 1u)
+    uint array_ty = TY_UNKNOWN;
+    bool matched = matching_generic_arg_array_type(
+        callee_token, call_node, fn_token, arg_count, ret_array_slot, 0u, array_ty);
+    if (!matched)
+        matched = matching_generic_arg_array_type(
+            callee_token, call_node, fn_token, arg_count, ret_array_slot, 1u, array_ty);
+    if (!matched)
+        matched = matching_generic_arg_array_type(
+            callee_token, call_node, fn_token, arg_count, ret_array_slot, 2u, array_ty);
+    if (!matched)
+        matched = matching_generic_arg_array_type(
+            callee_token, call_node, fn_token, arg_count, ret_array_slot, 3u, array_ty);
+    if (matched)
     {
-        if (arg_i >= arg_count)
-            break;
-        uint param_ty = row_major_load<uint>(
-            call_param_type,
-            fn_token,
-            PARAM_CACHE_STRIDE,
-            arg_i,
-            TY_UNKNOWN);
-        if (array_or_slice_generic_slot(param_ty) != ret_array_slot)
-            continue;
-        uint array_ty = array_or_slice_type_for_name_token(
-            call_arg_name_token(callee_token, call_node, arg_i));
         if (array_ty != TY_UNKNOWN)
             call_return_type[callee_token] = array_ty;
         return;
@@ -364,6 +432,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint callee_token = linear_thread_id(dtid);
     if (!valid_token(callee_token))
+        return;
+    if (method_call_name_id[callee_token] != INVALID)
         return;
 
     infer_array_generic_return(callee_token);

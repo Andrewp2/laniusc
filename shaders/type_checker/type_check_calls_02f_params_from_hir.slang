@@ -18,10 +18,18 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
+StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint4> hir_param_record;
 StructuredBuffer<uint> hir_param_type_node;
 StructuredBuffer<uint> module_type_path_type;
+StructuredBuffer<uint> name_id_by_token;
+StructuredBuffer<uint> generic_param_count_out;
+StructuredBuffer<uint> generic_param_owner_node;
+StructuredBuffer<uint> generic_param_name_id;
+StructuredBuffer<uint> generic_param_token;
+StructuredBuffer<uint> generic_param_kind;
+StructuredBuffer<uint> generic_param_key_order;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
@@ -50,11 +58,13 @@ static const uint TYPE_INSTANCE_NAMED = 1u;
 static const uint TYPE_INSTANCE_ARRAY = 2u;
 static const uint TYPE_INSTANCE_SLICE = 3u;
 static const uint TYPE_INSTANCE_ARG_REF_STRIDE = 4u;
+static const uint GENERIC_PARAM_KIND_TYPE = 1u;
 static const uint TY_ARRAY_BASE = 128u;
 static const uint TY_STRUCT_BASE = 4096u;
 
 static const uint HIR_PARAM_RECORD_FN = 0u;
 static const uint HIR_PARAM_RECORD_ORDINAL = 1u;
+static const uint HIR_PARAM = 4u;
 
 static const uint PARAM_CACHE_STRIDE = 4u;
 static const uint WG_SIZE = 256u;
@@ -90,6 +100,70 @@ uint param_type_node(uint param_node)
     return valid_node(param_node) ? hir_param_type_node[param_node] : INVALID;
 }
 
+uint active_generic_param_count()
+{
+    return min(generic_param_count_out[0u], gParams.n_tokens);
+}
+
+bool generic_param_key_less(uint row, uint owner, uint name_id)
+{
+    if (row >= active_generic_param_count())
+        return false;
+
+    uint row_owner = generic_param_owner_node[row];
+    if (row_owner != owner)
+        return row_owner < owner;
+    return generic_param_name_id[row] < name_id;
+}
+
+bool generic_param_key_matches(uint row, uint owner, uint name_id, uint kind)
+{
+    return row < active_generic_param_count() &&
+           generic_param_owner_node[row] == owner &&
+           generic_param_name_id[row] == name_id &&
+           generic_param_kind[row] == kind;
+}
+
+uint generic_param_row_for_name(uint decl_node, uint name_token, uint kind)
+{
+    if (!valid_node(decl_node) || !valid_token(name_token))
+        return INVALID;
+
+    uint name_id = name_id_by_token[name_token];
+    if (name_id == INVALID)
+        return INVALID;
+
+    uint count = active_generic_param_count();
+    uint lo = 0u;
+    uint hi = count;
+    [unroll]
+    for (uint step = 0u; step < 32u; step += 1u)
+    {
+        if (lo >= hi)
+            continue;
+        uint mid = lo + ((hi - lo) >> 1u);
+        uint row = generic_param_key_order[mid];
+        if (row >= count || !generic_param_key_less(row, decl_node, name_id))
+            hi = mid;
+        else
+            lo = mid + 1u;
+    }
+
+    if (lo >= count)
+        return INVALID;
+    uint row = generic_param_key_order[lo];
+    return generic_param_key_matches(row, decl_node, name_id, kind) ? row : INVALID;
+}
+
+uint generic_param_decl_token_for_name(uint decl_node, uint name_token)
+{
+    uint row = generic_param_row_for_name(decl_node, name_token, GENERIC_PARAM_KIND_TYPE);
+    if (row == INVALID)
+        return INVALID;
+    uint token = generic_param_token[row];
+    return valid_token(token) ? token : INVALID;
+}
+
 uint scalar_or_named_type_code_for_ref(uint tag, uint payload)
 {
     if (tag == TYPE_REF_SCALAR)
@@ -101,12 +175,12 @@ uint scalar_or_named_type_code_for_ref(uint tag, uint payload)
     }
     if (tag == TYPE_REF_INSTANCE && valid_token(payload))
     {
-        uint named_ty = module_type_path_type[payload];
-        if (named_ty != TY_UNKNOWN)
-            return named_ty;
         uint decl_token = type_instance_decl_token[payload];
         if (valid_token(decl_token))
         {
+            uint named_ty = module_type_path_type[payload];
+            if (named_ty != TY_UNKNOWN)
+                return named_ty;
             named_ty = module_type_path_type[decl_token];
             if (named_ty != TY_UNKNOWN)
                 return named_ty;
@@ -234,6 +308,7 @@ uint semantic_type_code_for_ref(uint tag, uint payload)
                     return named_ty;
                 return TY_STRUCT_BASE + decl_token;
             }
+            return TY_UNKNOWN;
         }
 
         return module_type_path_type[payload];
@@ -241,7 +316,7 @@ uint semantic_type_code_for_ref(uint tag, uint payload)
     return TY_UNKNOWN;
 }
 
-bool param_type_ref(uint param_node, out uint tag, out uint payload)
+bool param_type_ref(uint param_node, uint fn_node, out uint tag, out uint payload)
 {
     tag = TYPE_REF_INVALID;
     payload = INVALID;
@@ -253,22 +328,45 @@ bool param_type_ref(uint param_node, out uint tag, out uint payload)
     if (!valid_token(type_token))
         return false;
 
+    uint decl_token = generic_param_decl_token_for_name(fn_node, type_token);
+    if (valid_token(decl_token))
+    {
+        tag = TYPE_REF_GENERIC_PARAM;
+        payload = decl_token;
+        return true;
+    }
+
     tag = type_expr_ref_tag[type_token];
     payload = type_expr_ref_payload[type_token];
-    return tag != TYPE_REF_INVALID;
+    if (tag != TYPE_REF_INVALID)
+    {
+        if (tag == TYPE_REF_GENERIC_PARAM && valid_token(payload) &&
+            type_generic_param_slot_by_token[payload] == INVALID)
+        {
+            uint decl_token = generic_param_decl_token_for_name(fn_node, payload);
+            if (valid_token(decl_token))
+                payload = decl_token;
+        }
+        return true;
+    }
+
+    return false;
 }
 
-uint param_type_code(uint param_node)
+uint param_type_code(uint param_node, uint fn_node)
 {
     uint tag;
     uint payload;
-    if (!param_type_ref(param_node, tag, payload))
+    if (!param_type_ref(param_node, fn_node, tag, payload))
         return TY_UNKNOWN;
     return semantic_type_code_for_ref(tag, payload);
 }
 
 void publish_param(uint param_node)
 {
+    if (!valid_node(param_node) || hir_kind[param_node] != HIR_PARAM)
+        return;
+
     uint4 record = hir_param_record[param_node];
     uint fn_node = record[HIR_PARAM_RECORD_FN];
     uint ordinal = record[HIR_PARAM_RECORD_ORDINAL];
@@ -285,13 +383,13 @@ void publish_param(uint param_node)
 
     uint tag;
     uint payload;
-    param_type_ref(param_node, tag, payload);
+    param_type_ref(param_node, fn_node, tag, payload);
     row_major_store<uint>(
         call_param_type,
         fn_token,
         PARAM_CACHE_STRIDE,
         ordinal,
-        param_type_code(param_node));
+        param_type_code(param_node, fn_node));
     row_major_store<uint>(
         call_param_ref_tag,
         fn_token,

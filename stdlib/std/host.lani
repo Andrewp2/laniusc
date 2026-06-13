@@ -42,8 +42,16 @@ pub fn host_services_are_blocked() -> HostServicesCapability {
     return !host_services_are_available();
 }
 
+pub fn host_services_are_known_but_unbound() -> HostServicesCapability {
+    return host_services_service_is_known() && host_services_are_blocked();
+}
+
 pub fn host_services_require_runtime_binding() -> HostServicesCapability {
     return !HOST_SERVICES_HAS_RUNTIME_BINDING;
+}
+
+pub fn host_services_requires_runtime_binding() -> HostServicesCapability {
+    return host_services_require_runtime_binding();
 }
 
 pub fn host_services_abi_is_contract_only() -> HostServicesCapability {
@@ -56,6 +64,10 @@ pub fn host_services_api_is_executable() -> HostServicesCapability {
 
 pub fn host_services_api_is_blocked() -> HostServicesCapability {
     return !host_services_api_is_executable();
+}
+
+pub fn host_services_api_is_known_but_unbound() -> HostServicesCapability {
+    return host_services_service_is_known() && host_services_api_is_blocked();
 }
 
 pub fn host_services_api_requires_runtime_binding() -> HostServicesCapability {

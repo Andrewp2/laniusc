@@ -40,6 +40,13 @@ static const uint TK_STRING = 32u;
 static const uint TK_LET_IDENT = 78u;
 static const uint TK_PARAM_IDENT = 79u;
 static const uint TK_TYPE_IDENT = 80u;
+static const uint TK_MEMBER_IDENT = 109u;
+static const uint TK_TYPE_ALIAS_NAME_IDENT = 153u;
+static const uint TK_TRAIT_NAME_IDENT = 154u;
+static const uint TK_GENERIC_PARAM_IDENT = 155u;
+static const uint TK_WHERE_IDENT = 156u;
+static const uint TK_BOUND_TYPE_IDENT = 174u;
+static const uint TK_PATH_GENERIC_IDENT = 187u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -58,7 +65,17 @@ uint token_kind(uint i)
 
 uint name_kind_for_token(uint kind)
 {
-    if (kind == TK_IDENT || kind == TK_LET_IDENT || kind == TK_PARAM_IDENT || kind == TK_TYPE_IDENT)
+    if (kind == TK_IDENT ||
+        kind == TK_LET_IDENT ||
+        kind == TK_PARAM_IDENT ||
+        kind == TK_TYPE_IDENT ||
+        kind == TK_MEMBER_IDENT ||
+        kind == TK_TYPE_ALIAS_NAME_IDENT ||
+        kind == TK_TRAIT_NAME_IDENT ||
+        kind == TK_GENERIC_PARAM_IDENT ||
+        kind == TK_WHERE_IDENT ||
+        kind == TK_BOUND_TYPE_IDENT ||
+        kind == TK_PATH_GENERIC_IDENT)
         return NAME_KIND_IDENTIFIER;
     if (kind == TK_STRING)
         return NAME_KIND_STRING;

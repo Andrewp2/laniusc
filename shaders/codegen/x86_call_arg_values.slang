@@ -22,6 +22,7 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_call_arg_parent_call;
+StructuredBuffer<uint> hir_call_arg_count;
 StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_member_receiver_node;
 StructuredBuffer<uint> call_record_status;
@@ -33,7 +34,7 @@ static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint X86_CALL_RECORDS_OK = 1u;
-static const uint X86_CALL_ARG_LOOKUP_SLOTS = 4u;
+static const uint X86_CALL_ARG_LOOKUP_SLOTS = 6u;
 static const uint X86_CALL_ARG_LOOKUP_KIND_BITS = 4u;
 
 uint linear_dispatch_id(uint3 tid)
@@ -89,6 +90,13 @@ uint method_receiver_node_for_call(uint call_node)
     return hir_member_receiver_node[callee_node];
 }
 
+bool method_receiver_is_abi_arg(uint call_node)
+{
+    if (!is_method_call(call_node) || !has_call_record(call_node))
+        return false;
+    return x86_call_record[call_node].w > hir_call_arg_count[call_node];
+}
+
 void write_call_arg_lookup_record(
     uint arg_node,
     uint call_node,
@@ -115,6 +123,9 @@ void write_call_arg_lookup_record(
 
 void publish_method_receiver_arg(uint call_node)
 {
+    if (!method_receiver_is_abi_arg(call_node))
+        return;
+
     uint receiver_node = method_receiver_node_for_call(call_node);
     if (!valid_node(receiver_node))
         return;
@@ -142,7 +153,8 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (!has_call_record(call_node))
         return;
 
-    uint ordinal = hir_node_ordinal_ordinal(packed_arg) + (is_method_call(call_node) ? 1u : 0u);
+    uint ordinal = hir_node_ordinal_ordinal(packed_arg) +
+                   (method_receiver_is_abi_arg(call_node) ? 1u : 0u);
     if (ordinal >= x86_call_record[call_node].w)
         return;
 

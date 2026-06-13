@@ -194,15 +194,25 @@ Current pass-architecture violations and risks:
   must not become semantic evidence. Gate: GPU module/import records revalidate
   module declarations, import edges, and cycles on every replay, including
   tampered or stale lockfile inputs.
+  Package lockfiles may persist direct reverse import edges and longer directed
+  import cycles as replay metadata; rejecting semantic import cycles is a GPU
+  resolver responsibility, not a package metadata shape rule.
   Current bounded evidence also rejects stale package-name-shaped import graph
   edges when the live source no longer declares that import, and the diagnostic
   names the stale edge. Persisted import-graph endpoint module fields also
   reject package-name-as-module spellings when the source identity for that file
   declares a different module, so package names and persisted edges remain
   replay metadata, not a replacement for parser/GPU module-import records.
+  Persisted input and source-identity rows must also be reachable from the
+  package entry through import-graph edges; source roots are lookup candidates,
+  not permission for a lockfile to upload unrelated root files as package
+  inputs.
   Persisted import graph dependencies and edges must also be in canonical sorted
   order; replay rejects hand-edited edge order instead of treating CPU discovery
   order as semantic readiness evidence.
+  Compact path-build manifests must also carry nonempty source-byte summaries
+  even when source-file rows live in sidecar pages; source counts without byte
+  provenance are replay metadata gaps, not package input evidence.
 - Descriptor-mode package/source-root preparation is still rejected by the
   public API. That fail-closed behavior is correct, but it blocks a production
   package pipeline. Gate: descriptor/prepare mode writes a source-pack path
@@ -216,6 +226,9 @@ Current pass-architecture violations and risks:
   execution summaries also fail closed when descriptor counts are not backed by
   explicit interface/object/section/symbol/relocation record contracts, or when
   object inputs have symbol/relocation contracts but no object-section contract.
+  Completed reduce-link replay also rejects object descriptor summaries that are
+  not carried by the consumed partial-link producer pages, so CPU-side
+  descriptor metadata cannot stand in for GPU-produced object/link evidence.
   Relocations must attach to section rows rather than descriptor-only object
   evidence. That is CPU control-plane scheduling, not GPU linking. Gate: link
   stages consume GPU-produced interface/object/relocation records and emit real
@@ -295,20 +308,54 @@ control-plane identity cannot satisfy source-root module evidence.
 path-import source-pack loaders; user/package roots take precedence over the
 stdlib fallback for same module-path candidates from user/package sources, while
 imports discovered inside stdlib files resolve only within the stdlib root and
-report `LNC0024` instead of crossing back into package/user roots. Generated
-package replay rejects same-path module candidates from multiple package roots
-instead of allowing root order to become semantic module identity; the GPU
-module records still validate non-ambiguous source file declarations.
+report `LNC0024` instead of crossing back into package/user roots. Persisted
+package replay also rejects hand-edited user import edges that target a stdlib
+module when a user source identity declares the same module path, so library
+ids and stdlib fallback metadata cannot choose semantic module identity ahead
+of GPU module/import records. Stale lockfile replay reports the same precedence
+boundary when a newly added package/user module shadows a stdlib fallback that
+the persisted graph used earlier. Generated package replay rejects same-path
+module candidates from multiple package roots instead of allowing root order to
+become semantic module identity; the GPU module records still validate
+non-ambiguous source file declarations.
 Package lockfiles persist canonical resolved paths in sorted source-root order,
 input identity, source identities, import-graph metadata, and optional
 produced-artifact identities with target, kind, unique canonical path, byte
 length, and stable digest fields. Package
 input and source-identity sections are persisted in canonical `(library_id,
 path)` order rather than source traversal order, so replay safety does not
-depend on CPU import discovery order. Quoted imports remain unsupported. Package
-manifest check mode leaves them to the GPU resolver diagnostic, but package
-source-root replay and package lock generation reject them before writing a
-lockfile so a persisted import graph cannot omit an unsupported source edge.
+depend on CPU import discovery order. Quoted imports, import aliases, glob
+imports, and non-leading imports remain unsupported. Package manifest check mode
+leaves quoted imports to the GPU resolver diagnostic, but package source-root
+replay and package lock generation reject unsupported source-root import forms
+with stable unsupported-import diagnostics before writing a lockfile so a
+persisted import graph cannot omit an unsupported or late source edge. Live
+source-root discovery also rejects glob and alias imports before lookup, so
+host-side loading cannot expand unsupported import forms or report them as
+missing module candidates. Malformed leading import metadata, such as a missing
+semicolon before later items, reports a source-spanned syntax diagnostic instead
+of a raw package replay error. Package source-root replay also reports reserved
+import path
+segments and import globs as source-spanned `LNC0011` diagnostics, keeping
+invalid metadata shapes explicit without letting CPU package metadata become
+semantic module evidence. Path-shaped imports that use filesystem separators
+such as `/` or `\`, or package-name separators such as `.`, now report
+source-spanned `LNC0011` diagnostics before package replay can normalize them
+into module paths. Module declarations with package-name or
+filesystem separators likewise report source-spanned `LNC0016` syntax
+diagnostics before package replay can reinterpret package metadata as semantic
+module identity. Missing package imports now report source-spanned `LNC0001`
+diagnostics at the importing declaration and name the searched source-root
+candidate paths, so package names and lockfile roots remain control-plane
+metadata rather than fallback module evidence. Over-depth import
+metadata reports source-spanned `LNC0012` diagnostics before source-root replay
+returns a path manifest or lockfile generation persists import graph metadata.
+Over-depth module metadata discovered while producing package lockfiles reports
+source-spanned `LNC0014` diagnostics, matching the GPU resolver depth contract
+instead of surfacing a raw package replay error. Unterminated block comments and
+malformed string/character literals discovered during package-lock replay now
+report source-spanned `LNC0016` diagnostics, so malformed source cannot make
+replay metadata silently omit later imports.
 Package manifests remain
 relocatable by requiring relative roots, stdlib roots, and entries that do not
 contain parent-directory escapes and do not canonicalize through symlinks
@@ -318,6 +365,13 @@ manifest metadata has one portable spelling
   artifact. Package entries are also required to use the `.lani` source-file
 extension so package state cannot name an arbitrary control-plane file as the
 compilation entry while import discovery maps module paths to `.lani` files.
+Package-manifest and package-lock CLI paths now reject a symlinked source root
+that canonicalizes outside the manifest directory before writing lockfile or
+target artifacts, keeping symlink canonicalization as package-boundary evidence
+instead of semantic module evidence.
+Entry/root mismatches report the resolved entry and the resolved declared source
+roots, so CLI metadata diagnostics expose the package boundary that failed
+without deriving semantic module identity from root order.
 Their source-root-relative module path is bounded to the current eight-segment
 GPU module-key slice during manifest resolution, so a package entry that cannot
 be represented by the resident resolver fails before lockfile generation.
@@ -348,73 +402,209 @@ Persisted input and source-identity sections must
   implicit live-discovery state. A source-root import that resolves back to the
   same source file is rejected as an import graph self-cycle during package
   lockfile generation and replay, before the graph can be persisted as a valid
-  package contract. The persisted graph also rejects semantic self-cycles where a
-  source module imports its own module path, even if a hand-edited edge tampers
-  with the target file fields. Import-graph endpoint module fields are compared
-  to source identities before replay is accepted; if a hand-edited endpoint uses
-  the package name converted to module syntax for a different source file, the
-  lockfile reports the control-plane package metadata boundary instead of
-  treating that endpoint as semantic module evidence. The persisted graph also
-  rejects a single source file/import-path pair that names more than one target
-  file, so hand-edited lockfiles cannot encode an ambiguous import resolution
-  that the source-root replay would never produce.
+package contract. The persisted graph also rejects semantic self-cycles where a
+source module imports its own module path, even if a hand-edited edge tampers
+with the target file fields. Import-graph endpoint module fields are compared
+to source identities before replay is accepted; if a hand-edited endpoint uses
+the package name converted to module syntax for a different source file, the
+lockfile reports the control-plane package metadata boundary instead of
+treating that endpoint as semantic module evidence. The persisted graph also
+rejects a single source file/import-path pair that names more than one target
+file, so hand-edited lockfiles cannot encode an ambiguous import resolution
+that the source-root replay would never produce. Package lockfile generation
+also rejects repeated leading declarations for the same source/import path with
+source-spanned `LNC0011` diagnostics that point at the duplicate and name the
+first import line instead of deduplicating source-level import records into one
+persisted edge. The duplicate check uses the normalized module path from the
+parsed source tokens, so trivia around `::` cannot create a second persisted
+edge for the same import path.
+Persisted import graph endpoint module identities must also be one-to-one within
+each library: if two edges claim the same `(library id, module path)` endpoint
+for different source files, replay rejects the graph before source-root
+discovery can treat inconsistent metadata as a valid package shape. The reverse
+mapping is also fail-closed: one canonical source path may appear in many import
+graph edges only with the same `(library id, module path)` endpoint identity, so
+hand-edited lockfiles cannot make one file serve as two modules while dependency
+resolution is reading replay metadata.
+Longer directed import cycles are still replay metadata at this layer:
+source-root and lockfile replay load each reachable source file once and
+persist each declared edge, while semantic cycle rejection remains owned by the
+GPU module/import resolver checkpoint.
 Source files with no leading module declaration are
 reported with the source-root-relative path and the module identity that path
 maps to, so stale or incomplete package sources are diagnosable without making
-the filesystem path semantic module identity. The import path itself must match the target's
-declared module identity, so filesystem aliases or symlink paths cannot turn a
-source-root path alias into a semantic module alias. Missing or ambiguous
-source-root imports report the importing source file as well as the requested
-module path and candidate/searched paths, so stale lockfile replay failures
-identify the package source that owns the broken import. Lockfile source
+the filesystem path semantic module identity. A module declaration that appears
+only after earlier items now reports a source-spanned syntax diagnostic instead
+of being collapsed into missing lockfile metadata. The import path itself must
+match the target's declared module identity, so filesystem aliases or symlink
+paths cannot turn a source-root path alias into a semantic module alias. Missing
+or ambiguous source-root imports report the importing source file as well as the
+requested module path and candidate/searched paths, so stale lockfile replay
+failures identify the package source that owns the broken import. Hand-edited
+lockfile edges that change only the persisted import path while leaving the
+target module endpoint unchanged fail before replay can reinterpret a source
+file as a renamed module. Stale lockfile
+replay also distinguishes import graph identity changes, such as a source file
+changing `import app::old;` to `import app::new;`, moving an unchanged import
+target from one source module to another, or moving an unchanged source/import
+edge to a different target source file even when other imports changed too. It
+reports both the persisted edge and the live source-root replay edge before
+asking the user to regenerate the lockfile. Lockfile source
 identities now bind each file to its resolved source-root index and
 root-relative source path, so package-boundary metadata can be replayed without
 deriving semantic module identity from package paths. That persisted
 source-root-relative path metadata must also use `/` separators, so hand-edited
 lockfiles cannot introduce a second platform-specific spelling for the same
-package source identity. They reject source-root-relative paths deeper than the
+package source identity. Public lockfile replay checks the source-root index and
+root-relative path for each source identity row before duplicate module metadata,
+so a hand-edited row reports package-root ownership drift instead of masking it
+as a semantic duplicate. Public lockfile replay rejects source identity rows that
+omit source-root index, source-root-relative path, or module-path metadata before
+import-graph metadata is considered, so an incomplete source identity cannot be
+patched over by control-plane edges. They reject
+source-root-relative paths deeper than the
 current eight-segment GPU module-key slice, reject multiple leading module
-declarations in one source file because the persisted source identity would
-otherwise be ambiguous, and reject non-leading module declarations before
-lockfile replay can treat package metadata as valid. Imported module paths use
-the same depth guard until the GPU module-key bound is lifted.
+declarations in one source file with source-spanned `LNC0016` diagnostics
+because the persisted source identity would otherwise be ambiguous, and reject
+non-leading module declarations before lockfile replay can treat package
+metadata as valid. Module declarations that do not match their
+source-root-relative file path now report source-spanned `LNC0015` diagnostics
+before lockfile generation can persist mismatched file-to-module metadata.
+Imported module paths use the same depth guard until the GPU module-key bound is
+lifted.
 Artifact identities are reproducibility metadata for produced files and do not
 make output paths or package names semantic module identity. Lockfile validation
 also rejects produced-artifact identities that point at the persisted source
 input set, so a stale or tampered package artifact cannot be confused with a
-source file while replaying package metadata. The artifact section also rejects
-multiple identities for the same canonical produced path, so downstream package
-tools cannot interpret one output file as two artifact records. Produced
-artifact identities must stay outside resolved package and stdlib source roots
-regardless of file extension, so control-plane outputs cannot occupy the
-source-root namespace while replay metadata is being validated.
+source file while replaying package metadata. Loaded lockfile replay and
+reserialization validate persisted source/import integrity before checking
+optional produced artifact files, so a missing output cannot mask a stale source
+graph. The artifact section also rejects multiple identities for the same
+canonical produced path, so downstream package tools cannot interpret one output
+file as two artifact records. Produced artifact `target` or `kind` labels also
+cannot reuse source-pack link artifact or link-record evidence labels such as
+`partial-link`, `object-section`, `export-symbol`, or `runtime-service`;
+package artifacts are path/digest metadata and cannot claim GPU/link record
+ownership by label.
+Produced artifact identities must stay outside resolved package and stdlib
+source roots regardless of file extension, so control-plane outputs cannot
+occupy the source-root namespace while replay metadata is being validated. The
+same source-root artifact boundary is enforced by public lockfile validation, not
+only by lockfile serialization and replay.
 Package lockfile writes use atomic replacement and may create missing
 non-source output directories, but output identity is resolved through the
 nearest existing ancestor first so `.lani` paths under package or stdlib roots
 are rejected before any missing source directory is created. The same boundary
 now rejects any lockfile output path inside package or stdlib source roots,
-even when the output has a non-source extension such as `.json`.
+even when the output has a non-source extension such as `.json`. Loading an
+existing package lockfile from inside a package or stdlib source root also
+fails closed, so control-plane replay metadata cannot live in the uploaded
+source namespace.
 Persisted library-dependency metadata also rejects stdlib-to-user dependency
 edges, matching the live source-root boundary that keeps stdlib imports inside
 the stdlib root. Each persisted cross-library library dependency must also have
 at least one matching import-graph edge, which keeps coarse schedule metadata
-from outliving the source-level import relationship that justified it.
+from outliving the source-level import relationship that justified it. Duplicate
+dependency rows are rejected as lockfile replay metadata, so a hand-edited
+artifact cannot strengthen one source-level import edge into multiple coarse
+package dependencies. Package lockfile import graphs also reject library ids
+outside the current replay universe of stdlib `0` and package/user `1`, so
+hand-edited lockfiles cannot invent extra coarse libraries before package
+linking has a real model for them.
+The dependency evidence is the explicit source import edge plus validated source
+identities; a coarse library dependency row is never evidence by itself. A
+user/package source can depend on the stdlib fallback only after user/package
+roots fail to provide that module path, while a stdlib source can never acquire
+a dependency back into a user/package library through replay metadata.
 Explicit source-pack manifests likewise reject duplicate coarse library
 dependency edges before scheduling, so CPU planning metadata cannot encode a
 stronger dependency graph than the source-pack/library boundary actually
 declared.
+Path-build manifests with inline source-file rows also require each non-link job
+source range to match the source-row library ids, so a persisted job cannot
+reinterpret a package/user source path as a stdlib path, or vice versa.
+Library partition indexes and pages also reject empty or under-file-count
+source-byte summaries before scheduling or link planning consumes them, so
+replay metadata cannot defer concrete source provenance to later descriptor or
+link artifact records.
 Source-pack scheduling continues to use coarse library ordering: a library's
 frontend work depends on complete frontend ranges for earlier dependency
 libraries, not on fine-grained package-name or per-source import scans.
+Persisted compact schedule pages are replay metadata for that library-by-library
+work: chunked schedule and link-leaf preparation reject pages whose partition,
+frontend range, codegen range, or link job no longer matches the schedule index
+before publishing link-group evidence.
+Retained artifact manifests also reject partial explicit link-job dependency
+lists: an explicit link dependency set must cover exactly the codegen object
+producer jobs, while the current empty dependency list remains the compact
+implicit "all codegen objects" convention. Package/import metadata must not turn
+link readiness into a subset of object producers. Positional dependency-range
+sidecars are also all-or-nothing at the build-manifest boundary: a replayed
+manifest may omit them entirely, but if present it must carry exactly one row
+per job so stale trailing package/link dependency metadata cannot be ignored.
+Inline link-batch rows must also carry at least one concrete artifact input,
+matching the paged link-batch contract before package/link replay can publish
+batch metadata as evidence.
 Persisted library, job, job-batch, work-queue, artifact-range, and link-batch
 metadata must be canonical: explicit ids are strictly ascending and range
 records are stored in ascending non-overlapping order. This keeps replay and
 resume paths aligned with the paper-style sort/range/scan model instead of
 treating ad hoc per-job scans as semantic evidence.
+Compact library partition indexes also fail closed when `partition_count`
+exceeds `source_file_count`; every library partition must carry at least one
+source file before artifact-shard, schedule, or link planning can consume the
+index as replay evidence.
+The final hierarchical link group must also cover exactly the plan index input
+partition count before link execution can publish completion metadata, so a
+stale final group cannot relabel a partial partition range as the package-scale
+linked output.
 Completed hierarchical link execution metadata must also be backed by the final
 execution page record before replay can report resumable completion; the
 completed index alone is only summary metadata and cannot imply a GPU-produced
-linked output.
+linked output. If that final execution page records paged link inputs, replay
+must also validate the corresponding input sidecar pages, so a completed index
+cannot hide missing library-interface, codegen-object, or partial-link evidence.
+Persisted link execution pages with source files must also carry nonempty
+source-line evidence that is at least the source-file count, matching the
+existing source-byte provenance rule; stale link artifacts cannot drop line
+provenance while crossing package/source-pack replay boundaries.
+Final execution pages also reject linked-output keys with empty `src-0-0`
+ranges before page persistence, so a zeroed stale final-output summary cannot
+stand in for concrete linked-output source coverage.
+The artifact-ref index also rejects final linked-output keys whose producer job
+or source range does not match the dense final artifact and source-file total,
+so stale key metadata cannot stand in for the linked-output artifact contract.
+Persisted build artifact manifests keep codegen objects as link-only inputs:
+library-frontend and codegen jobs may consume library-interface artifacts, but
+they cannot replay object artifacts as package/import evidence before the link
+job owns them. Non-linked artifact rows must also match the producer job's
+library id and source provenance, so a canonical-looking object key cannot
+relabel one package/library's codegen output as another library's link input.
+Non-link jobs also reject library-interface inputs whose producer job is not in
+that job's scheduled dependency set, even when the artifact IO and use sidecars
+are edited consistently. This keeps package/import replay from smuggling
+interface evidence across libraries without a GPU-visible dependency edge.
+Non-final sidecar pages must be full before a later sidecar page can satisfy a
+completed index, so sparse page counts cannot stand in for contiguous link-input
+records. Link sidecar pages also reject job slots before their dense group
+index, so impossible first-link-job arithmetic cannot publish forged input
+artifact evidence. Link descriptor summaries replay only when their explicit
+record contracts exactly match the counts-derived contract sequence; reordered,
+missing, or extra descriptor rows are metadata tampering and cannot stand in for
+GPU link records. Partial-link input keys treat the eight-digit group/job fields
+as a minimum width, and replay rejects widened job fields with extra leading
+zeroes, so large dense link plans cannot fail their own canonical partial-link
+keys or hide a padded producer job. Final and resumed leaf execution pages must
+also be the single dense group `0` case before they can claim linked-output
+evidence; nonzero final groups must consume prior partial-link outputs instead
+of relabeling direct object inputs as a first-link-job-owned executable.
+Final and resumed leaf execution pages must also consume the same dense codegen
+object job identities as the current link group, so stale object artifacts
+cannot imply link completion after the schedule has changed. Completed
+reduce-link replay also revalidates each direct
+partial-link producer execution page against its current link-group page before
+accepting the final linked output, so stale direct or nested producers cannot
+hide changed input records behind an otherwise matching final reduce page.
 Direct public lockfile deserialization enforces those persisted sections as
 well, so lockfiles cannot be downgraded into unchecked root metadata before
 replaying discovery.
@@ -849,8 +1039,10 @@ Concrete pass names for the first implementation:
   Non-constructor symbolic generic returns, exhaustive match semantics, enum
   layout, and backend lowering remain separate checkpoints. The bounded
   stdlib-shaped match type-check slice consumes HIR match spans plus these
-  resolver/type-instance arrays for enum payload arms, but it is not package
-  loading, exhaustiveness, layout, or codegen support.
+  resolver/type-instance arrays for enum payload arms and reads constructor
+  results from the current callee-token/path-head `call_return_type` slot before
+  the legacy adjacent-token fallback, but it is not package loading,
+  exhaustiveness, layout, or codegen support.
 
 Required data buffers for the first implementation:
 
@@ -975,8 +1167,18 @@ Implementation checkpoints:
 - The host checkpoint is complete only when the CPU reads explicitly supplied
   files or control-plane source-root candidate files, uploads source-pack
   buffers, and does not rewrite module names, precompute declarations, decide
-  visibility, perform semantic path lookup, resolve quoted imports, or allow
-  stdlib imports to cross into package/user source roots.
+  visibility, perform semantic path lookup, resolve quoted or glob imports, or
+  allow stdlib imports to cross into package/user source roots.
+- Package/source-root replay now rejects an `import` before the leading
+  `module` declaration and rejects import globs and aliases with source-spanned
+  `LNC0011` diagnostics. Persisted import graph edges are valid replay metadata
+  only after the source file has a declared module identity and an explicit
+  module-path import for the GPU resolver to own.
+- Hierarchical linked-output artifact stores now validate the same canonical
+  producer-job and source-range fields as retained linked-output artifact refs.
+  The store boundary rejects malformed or noncanonical linked-output keys before
+  publishing bytes, so link replay cannot treat a kind-only artifact path as
+  durable linked-output evidence.
 - Descriptor-mode package/source-root preparation is not implemented yet.
   Until it is, the CLI must reject `--package-manifest`, `--package-lockfile`,
   `--source-root`, or `--stdlib-root` when combined with descriptor, prepare,

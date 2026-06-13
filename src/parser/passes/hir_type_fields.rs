@@ -78,6 +78,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirTypeFieldsPas
                 b.hir_type_path_leaf_node.as_entire_binding(),
             ),
             (
+                "hir_bound_path_owner_by_leaf".into(),
+                b.hir_bound_path_owner_by_leaf.as_entire_binding(),
+            ),
+            (
                 "hir_type_arg_start".into(),
                 b.hir_type_arg_start.as_entire_binding(),
             ),

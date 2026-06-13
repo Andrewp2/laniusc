@@ -170,6 +170,17 @@ pub(in crate::compiler) fn validate_path_manifest_source_ranges(
             "path build manifest has no source files",
         ));
     }
+    if manifest.source_byte_count == 0 {
+        return Err(manifest_contract_error(format!(
+            "path build manifest has empty source-byte summary for {source_file_count} source files; compact replay manifests must carry concrete source-byte evidence"
+        )));
+    }
+    if manifest.source_byte_count < source_file_count {
+        return Err(manifest_contract_error(format!(
+            "path build manifest source-byte summary {} is smaller than source-file count {source_file_count}; compact replay manifests must not treat empty source metadata as package input",
+            manifest.source_byte_count
+        )));
+    }
     if !manifest.source_files.is_empty() && manifest.source_files.len() != source_file_count {
         return Err(manifest_contract_error(format!(
             "path build manifest has {} source-file records but source_file_count {}",
@@ -221,7 +232,35 @@ pub(in crate::compiler) fn validate_path_manifest_source_ranges(
             )));
         }
     }
+    validate_path_manifest_job_source_libraries(manifest)?;
     validate_path_manifest_frontend_source_coverage(manifest, source_file_count)?;
+    Ok(())
+}
+
+fn validate_path_manifest_job_source_libraries(
+    manifest: &SourcePackPathBuildManifest,
+) -> Result<(), CompileError> {
+    if manifest.source_files.is_empty() {
+        return Ok(());
+    }
+
+    for job in &manifest.artifacts.job_schedule.jobs {
+        if job.phase == SourcePackJobPhase::Link {
+            continue;
+        }
+        let source_end = job.first_source_index.saturating_add(job.source_file_count);
+        let source_files = &manifest.source_files[job.first_source_index..source_end];
+        for (source_offset, source_file) in source_files.iter().enumerate() {
+            if source_file.library_id != job.library_id {
+                let source_index = job.first_source_index.saturating_add(source_offset);
+                return Err(manifest_contract_error(format!(
+                    "job {} {:?} source range claims library {} but source-file record {} belongs to library {}; path-build replay must not reinterpret source-root path identity through job metadata",
+                    job.job_index, job.phase, job.library_id, source_index, source_file.library_id
+                )));
+            }
+        }
+    }
+
     Ok(())
 }
 

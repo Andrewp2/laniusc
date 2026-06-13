@@ -26,6 +26,7 @@ ConstantBuffer<PackParams> gParams;
 // Inputs
 StructuredBuffer<uint> token_kinds;  // len = n_tokens
 StructuredBuffer<uint> token_count;
+StructuredBuffer<uint> token_file_id;
 StructuredBuffer<uint> sc_offsets;   // len = n_pairs (exclusive)
 StructuredBuffer<uint> emit_offsets; // len = n_pairs (exclusive)
 
@@ -78,6 +79,59 @@ uint pp_seq_at(uint i)
     return tbl_at(gParams.pp_superseq_off, i);
 }
 
+bool valid_kind(uint kind)
+{
+    return kind < gParams.n_kinds;
+}
+
+uint table_index(uint prev_kind, uint this_kind)
+{
+    return prev_kind * gParams.n_kinds + this_kind;
+}
+
+bool source_file_boundary_pair(uint pair_i, uint token_count_value)
+{
+    if (pair_i == 0u || pair_i >= token_count_value)
+        return false;
+
+    uint prev_file = token_file_id[pair_i - 1u];
+    uint this_file = token_file_id[pair_i];
+    return prev_file != 0xffffffffu &&
+           this_file != 0xffffffffu &&
+           prev_file != this_file;
+}
+
+uint copy_sc_pair(uint idx2d, uint lane, uint dst_sc)
+{
+    uint sco = sc_off_at(idx2d);
+    uint scl = sc_len_at(idx2d);
+
+    if (lane < scl)
+    {
+        uint dst = dst_sc + lane;
+        if (dst < gParams.sc_capacity)
+            out_sc[dst] = sc_seq_at(sco + lane);
+    }
+    return scl;
+}
+
+uint copy_emit_pair(uint idx2d, uint lane, uint dst_emit, uint emit_pos)
+{
+    uint epo = pp_off_at(idx2d);
+    uint epl = pp_len_at(idx2d);
+
+    if (lane < epl)
+    {
+        uint dst = dst_emit + lane;
+        if (dst < gParams.emit_capacity)
+        {
+            out_emit[dst] = pp_seq_at(epo + lane);
+            out_emit_pos[dst] = emit_pos;
+        }
+    }
+    return epl;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
@@ -94,37 +148,26 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
 
     uint prev = token_kinds[i];
     uint thisK = token_kinds[i + 1];
-    if (prev >= gParams.n_kinds || thisK >= gParams.n_kinds)
+    if (!valid_kind(prev) || !valid_kind(thisK))
         return;
 
-    uint idx2d = prev * gParams.n_kinds + thisK;
-
-    // Stack-change copy
-    uint sco = sc_off_at(idx2d);
-    uint scl = sc_len_at(idx2d);
     uint dst_sc = sc_offsets[i];
-
-    [loop]
-    for (uint k = lane; k < scl; k += WG_SIZE)
-    {
-        uint dst = dst_sc + k;
-        if (dst < gParams.sc_capacity)
-            out_sc[dst] = sc_seq_at(sco + k);
-    }
-
-    // Emit copy
-    uint epo = pp_off_at(idx2d);
-    uint epl = pp_len_at(idx2d);
     uint dst_emit = emit_offsets[i];
-
-    [loop]
-    for (uint k = lane; k < epl; k += WG_SIZE)
+    uint count = min(token_count[0u], gParams.n_tokens > 2u ? gParams.n_tokens - 2u : 0u);
+    if (source_file_boundary_pair(i, count))
     {
-        uint dst = dst_emit + k;
-        if (dst < gParams.emit_capacity)
-        {
-            out_emit[dst] = pp_seq_at(epo + k);
-            out_emit_pos[dst] = i;
-        }
+        uint close_idx = table_index(prev, 0u);
+        uint open_idx = table_index(0u, thisK);
+        uint first_sc_len = copy_sc_pair(close_idx, lane, dst_sc);
+        uint first_emit_len = copy_emit_pair(close_idx, lane, dst_emit, i);
+        if (lane >= first_sc_len)
+            copy_sc_pair(open_idx, lane - first_sc_len, dst_sc + first_sc_len);
+        if (lane >= first_emit_len)
+            copy_emit_pair(open_idx, lane - first_emit_len, dst_emit + first_emit_len, i);
+        return;
     }
+
+    uint idx2d = table_index(prev, thisK);
+    copy_sc_pair(idx2d, lane, dst_sc);
+    copy_emit_pair(idx2d, lane, dst_emit, i);
 }

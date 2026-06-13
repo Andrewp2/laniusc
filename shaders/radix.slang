@@ -39,10 +39,14 @@ public void clear_radix_histogram_block(
     uint workgroup_size,
     RWStructuredBuffer<uint> histogram)
 {
-    for (uint bucket = lane; bucket < bucket_count; bucket += workgroup_size)
-    {
-        histogram[radix_histogram_slot(block_idx, bucket, bucket_count)] = 0u;
-    }
+    // U8 radix histograms use 257 buckets with 256 lanes, so each lane clears at most two buckets.
+    uint bucket0 = lane;
+    if (bucket0 < bucket_count)
+        histogram[radix_histogram_slot(block_idx, bucket0, bucket_count)] = 0u;
+
+    uint bucket1 = lane + workgroup_size;
+    if (bucket1 < bucket_count)
+        histogram[radix_histogram_slot(block_idx, bucket1, bucket_count)] = 0u;
 }
 
 public void radix_histogram_add(

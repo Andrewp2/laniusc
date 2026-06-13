@@ -19,6 +19,7 @@ StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> parent;
 StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> hir_kind;
+StructuredBuffer<uint> hir_fn_signature_function_owner;
 
 RWStructuredBuffer<uint> hir_param_owner_a;
 RWStructuredBuffer<uint> hir_param_link_a;
@@ -84,6 +85,9 @@ uint owner_seed_for_first_param_container(uint container)
 {
     if (!valid_node(container) || node_kind[container] != PROD_PARAMS_SOME)
         return INVALID;
+    uint signature_owner = hir_fn_signature_function_owner[container];
+    if (valid_node(signature_owner) && hir_kind[signature_owner] == HIR_FN)
+        return signature_owner;
     uint fn_node = parent_node(container);
     return valid_node(fn_node) && hir_kind[fn_node] == HIR_FN ? fn_node : INVALID;
 }

@@ -446,7 +446,9 @@ the responsibilities should remain clear.
 - `std::prelude`
 - `std::io` (currently seeded as source-level host ABI declarations)
 - `std::fs` (currently seeded as source-level host ABI declarations)
-- `std::path`
+- `std::path` (currently seeded as source-level lexical byte helpers,
+  including separator, Windows drive-letter, and Windows-reserved component byte
+  classifiers)
 - `std::env` (currently seeded as source-level host ABI declarations)
 - `std::process` (currently seeded as source-level host ABI declarations)
 - `std::cli`
@@ -649,8 +651,13 @@ Expected APIs:
 - `max`
 - `clamp`
 - `abs`
+- `saturating_abs_diff`
 - `checked_abs`
 - `signum`
+- `is_zero`
+- `is_nonzero`
+- `is_even`
+- `is_odd`
 - `checked_add`
 - `checked_sub`
 - `checked_mul`
@@ -682,6 +689,48 @@ Expected APIs:
 - `format_binary`
 - `format_octal`
 
+Current `core::i32` seed includes `checked_abs(value) ->
+core::option::Option<i32>` and `checked_add(left, right) ->
+core::option::Option<i32>` as source-level checked signed arithmetic helpers.
+`checked_abs` returns `Some(abs(value))` when the absolute value is
+representable and `None` for `MIN`; `checked_add` returns `Some(sum)` when the
+addition is representable and `None` at either signed overflow boundary.
+Current evidence is frontend/type-check only through `--stdlib-root`.
+
+Current `core::i64` seed includes `checked_abs(value) ->
+core::option::Option<i64>`, `checked_add(left, right) ->
+core::option::Option<i64>`, and `checked_sub(left, right) ->
+core::option::Option<i64>` plus `saturating_add(left, right)` and
+`saturating_sub(left, right)`, and `saturating_abs_diff(left, right)` as
+source-level signed arithmetic helpers.
+`checked_abs` returns `Some(abs(value))` when the absolute value is
+representable and `None` for `MIN`. Other checked helpers return `Some(value)`
+when the result is representable and `None` at signed overflow or underflow
+boundaries; saturating helpers clamp to `MIN` or `MAX` at the same signed
+boundaries, and `saturating_abs_diff` clamps the absolute distance at `MAX`.
+Current evidence is frontend/type-check only through `--stdlib-root`.
+
+Current `core::u32` seed includes `checked_add(left, right) ->
+core::option::Option<u32>`, `checked_sub(left, right) ->
+core::option::Option<u32>`, and `checked_next_power_of_two(value) ->
+core::option::Option<u32>` as source-level checked helpers.
+`checked_add` returns `Some(sum)` when `left + right` is representable and
+`None` when the addition would exceed `u32::MAX`; `checked_sub` returns
+`Some(diff)` when `left >= right` and `None` on unsigned underflow.
+`checked_next_power_of_two` returns `Some(1)` for `0` and `1`, returns
+`Some(power)` when the next power of two is representable, and returns `None`
+above the highest representable `u32` power of two. Current evidence is
+frontend/type-check only through `--stdlib-root`.
+
+Current `core::u8` seed includes `abs_diff(left, right)` as a no-underflow
+unsigned distance helper, `is_multiple_of(value, divisor)` as a divisibility
+predicate that returns `false` when `divisor == 0` and otherwise reports
+`value % divisor == 0`, plus `checked_add(left, right) ->
+core::option::Option<u8>` as a source-level overflow-aware helper.
+`checked_add` returns `Some(sum)` when `left + right` is representable and
+`None` when the addition would exceed `u8::MAX`. Current evidence is
+frontend/type-check only through `--stdlib-root`.
+
 ### Unsigned Integers
 
 Types:
@@ -705,6 +754,12 @@ Expected APIs:
 - `min`
 - `max`
 - `clamp`
+- `is_zero`
+- `is_nonzero`
+- `is_even`
+- `is_odd`
+- `is_multiple_of`
+- `abs_diff`
 - `checked_add`
 - `checked_sub`
 - `checked_mul`
@@ -797,6 +852,7 @@ Expected APIs:
 - `is_ascii_alphabetic`
 - `is_ascii_alphanumeric`
 - `is_ascii_whitespace`
+- `is_ascii_punctuation`
 - `to_ascii_lowercase`
 - `to_ascii_uppercase`
 - `is_digit`
@@ -819,7 +875,8 @@ Types:
 
 Expected APIs:
 
-- ASCII classification.
+- ASCII classification, including byte-oriented control and punctuation
+  predicates.
 - Hex encoding and decoding.
 - Base64 encoding and decoding.
 - Byte-slice comparison.
@@ -885,13 +942,17 @@ Expected APIs:
 
 - `is_some`
 - `is_none`
+- concrete `contains_i32`, `contains_u32`, and `contains_u8` seeds until
+  generic equality traits are complete
 - `unwrap`
 - `expect`
 - `unwrap_or`
 - `unwrap_or_else`
 - `map`
 - `and_then`
+- `and`
 - `or`
+- `xor`
 - `or_else`
 - `filter`
 - `take`
@@ -914,6 +975,9 @@ Expected APIs:
 
 - `is_ok`
 - `is_err`
+- concrete `contains_i32`, `contains_bool`, `contains_u32`, `contains_u8`,
+  `contains_err_i32`, `contains_err_bool`, `contains_err_u32`, and
+  `contains_err_u8` seeds until generic equality traits are complete
 - `unwrap`
 - `expect`
 - `unwrap_err`
@@ -923,6 +987,7 @@ Expected APIs:
 - `map`
 - `map_err`
 - `and_then`
+- `and`
 - `or`
 - `or_else`
 - `as_ref`
@@ -2056,14 +2121,21 @@ currently unbound services map to `SERVICE_STATUS_UNAVAILABLE`, and
 `SERVICE_STATUS_AVAILABLE` is reserved for a future bound capability.
 `service_is_unknown(id)`, `service_is_unavailable(id)`, and
 `service_is_available(id)` are convenience predicates over that descriptor-only
-status and do not imply runtime binding.
+status and do not imply runtime binding. `service_is_known_but_unbound(id)`
+names the exact recognized-but-unbound boundary so tools can distinguish it
+from an unknown service id without treating either case as executable.
 `runtime_bound_api_is_executable(id)` reports true only for available services,
 while `runtime_bound_api_is_blocked(id)` is its fail-closed companion and reports
 true for recognized-but-unbound services and unknown service ids.
+`runtime_bound_api_is_known_but_unbound(id)` is the API-facing spelling of the
+stricter known-unbound predicate.
 `service_is_contract_only(id)` and `service_requires_runtime_binding(id)` are
 diagnostic conveniences for that same descriptor surface: they report
 recognized service ids whose current capability is false and report false for
 unknown ids.
+`runtime_bound_api_requires_runtime_binding(id)` is the API-facing alias for
+`runtime_bound_api_requires_binding(id)`, preserving the same known-service-only
+runtime-binding requirement without implying executable host support.
 `laniusc diagnostics explain LNC0038` mirrors that contract for external tools:
 it publishes service rows and API rows for the current runtime-bound stdlib
 extern declarations, including each qualified API name, executable probe,
@@ -2078,7 +2150,34 @@ Source-pack artifact descriptors use the same ids in
 `required_runtime_service_ids`, must also pin
 `required_runtime_abi_version = RUNTIME_ABI_VERSION`, and persist flat
 `required_runtime_services` rows with the service id, ABI version, and current
-service status. Runtime-bound descriptors must also persist `runtime_abi`
+service status. `RUNTIME_SERVICE_REQUIREMENT_FIELD_COUNT` and the
+`RUNTIME_SERVICE_REQUIREMENT_*_FIELD` constants expose that row layout to
+stdlib-aware tooling without binding any service.
+`runtime_service_requirement_row_is_contract_only(id, abi, status)` names the
+contract-only predicate for those rows: a row is usable as metadata only when
+the service id is recognized, the ABI is active, and the status is
+`SERVICE_STATUS_UNAVAILABLE`.
+`runtime_service_requirement_row_is_valid(id, abi, status)` is the public
+source-level guard for the current row contract: the service id must be
+recognized, the ABI must be the active runtime ABI, and the status must remain
+`SERVICE_STATUS_UNAVAILABLE` until a runtime binding exists.
+`runtime_service_requirement_row_is_fail_closed(id, abi, status)` is the
+public rejection predicate for the same row contract: unknown service ids,
+unsupported ABI versions, unknown statuses, and available-status claims all
+remain blocked before a caller treats the row as descriptor metadata.
+`runtime_service_requirement_status_is_declared(status)` and
+`runtime_service_requirement_status_is_fail_closed(status)` expose raw
+status-value checks for row readers. The canonical raw-status spellings are
+`runtime_service_status_is_unknown(status)`,
+`runtime_service_status_is_unavailable(status)`,
+`runtime_service_status_is_available(status)`,
+`runtime_service_status_is_contract_only(status)`,
+`runtime_service_status_is_declared(status)`, and
+`runtime_service_status_is_fail_closed(status)`: declared values are unknown,
+unavailable, and available, while every status except available keeps the API
+fail-closed.
+Runtime-bound descriptors
+must also persist `runtime_abi`
 metadata containing the metadata format version, ABI version, service count,
 and first/last service-id bounds. A descriptor that requires one of these
 runtime services is ABI-pinned metadata only in the current slice: validation
@@ -2108,6 +2207,16 @@ the raw allocator ABI visibly non-executable. `allocator_is_blocked()`,
 `alloc_is_blocked()`, `realloc_is_blocked()`, `dealloc_is_blocked()`, and
 `alloc_failed_is_blocked()` are the fail-closed companions to the executable
 probes until a heap allocator runtime binding exists.
+`allocator_is_known_but_unbound()`, `alloc_is_known_but_unbound()`,
+`realloc_is_known_but_unbound()`, `dealloc_is_known_but_unbound()`, and
+`alloc_failed_is_known_but_unbound()` expose the stricter recognized but
+non-executable allocator boundary without binding heap allocation.
+`ALLOCATOR_POINTER_UNAVAILABLE` and the `AllocatorPointer` classifiers expose
+a source-level fail-closed allocation-result shape: null pointer is the
+contract-only unavailable sentinel while the allocator service is known but
+unbound, and `allocation_result_is_fail_closed()`,
+`alloc_result_is_fail_closed()`, and `realloc_result_is_fail_closed()` keep
+that result contract separate from executable heap support.
 `core::panic` follows that shape for the panic-hook service even though its
 extern declarations are not executable yet: callers can inspect the local
 runtime ABI version, descriptor metadata availability, known-service predicate,
@@ -2117,7 +2226,10 @@ exposes `panic_is_executable()`, `panic_is_blocked()`,
 `panic_requires_runtime_binding()`, `unreachable_is_executable()`,
 `unreachable_is_blocked()`, and `unreachable_requires_runtime_binding()` so the
 raw panic extern declarations stay visibly fail-closed until a runtime/linker
-binding exists.
+binding exists. `panic_hook_is_known_but_unbound()`,
+`panic_is_known_but_unbound()`, and `unreachable_is_known_but_unbound()` expose
+the stricter recognized-but-unbound panic-hook boundary without making the raw
+panic ABI executable.
 `std::io` exposes per-extern gates for stdin, stdout, stderr, flush, and
 `print_i32`, so callers can type-check which standard-I/O declarations are
 recognized while still seeing that all of them require a runtime binding before
@@ -2129,6 +2241,16 @@ non-executable until the runtime is bound. `stdio_is_blocked()`,
 `flush_stdout_is_blocked()`, `flush_stderr_is_blocked()`, and
 `print_i32_is_blocked()` are the fail-closed public companions to those
 executable probes until a standard-I/O runtime binding exists.
+`stdio_is_known_but_unbound()`, `stdio_output_api_is_known_but_unbound()`,
+`stdio_input_api_is_known_but_unbound()`, and
+the per-extern `*_is_known_but_unbound()` probes for stdout, stderr, stdin,
+flush, and `print_i32` expose the stricter source-level
+recognized-but-unbound boundary without changing the raw host ABI declarations
+or making any stdio API executable. `StdioOperationResult` names the signed
+result returned by read, write, and flush declarations; non-negative values are
+successful byte counts or zero-status results, while
+`STDIO_OPERATION_UNAVAILABLE` and `stdio_operation_is_fail_closed()` provide the
+current contract-only unavailable sentinel for unbound stdio.
 `std::fs` exposes the same contract for file I/O and path-mutation API
 families. `filesystem_contract_metadata_is_available()` is descriptor metadata
 only, and `filesystem_host_abi_is_contract_only()` keeps the raw filesystem ABI
@@ -2136,26 +2258,91 @@ declarations visibly non-executable. Opening/reading/writing/closing files and
 remove/create/rename declarations are visible through `--stdlib-root`, while
 `filesystem_is_blocked()`, `file_io_is_blocked()`, and
 `path_mutation_api_is_blocked()` remain the fail-closed family gates until a
-filesystem runtime binding is supplied. The file-I/O operations also expose
-per-operation gates for `open_read`, `open_write`, `open_append`, `close`,
-`read`, and `write`, so callers can type-check recognized filesystem APIs
-without treating raw extern visibility as executable host support.
+filesystem runtime binding is supplied. `filesystem_is_known_but_unbound()`,
+`file_io_is_known_but_unbound()`, and
+`path_mutation_api_is_known_but_unbound()` expose the stricter recognized but
+non-executable boundary for callers that need to distinguish contract metadata
+from unknown services. The file-I/O operations also expose per-operation gates
+for `open_read`, `open_write`, `open_append`, `close`, `read`, and `write`, so
+callers can type-check recognized filesystem APIs without treating raw extern
+visibility as executable host support. Each filesystem extern gate also exposes
+an `*_is_known_but_unbound()` companion, including file I/O and path-mutation
+operations, so source-level tooling can name the recognized-but-unbound
+operation without relying only on the broader family gate. The current seed also
+defines `FilesystemOperationResult`: non-negative values are successful handles,
+byte counts, or zero-status results, while `FILESYSTEM_OPERATION_UNAVAILABLE`
+and `filesystem_operation_is_fail_closed()` are the fail-closed result contract
+for recognized-but-unbound filesystem APIs. `FileHandle`,
+`FILE_HANDLE_INVALID`, `file_handle_invalid()`, `file_handle_is_valid()`, and
+`file_handle_is_invalid()` name the handle-shaped result contract without
+claiming that file-opening APIs are executable.
+`std::path` is currently a no-allocation, no-host source-level contract. It
+exposes byte constants and classifiers for Unix and Windows separators,
+extension separators, drive separators, separator kind classification, and
+Windows drive-letter bytes, NUL component boundaries, ASCII control bytes,
+Windows-reserved component punctuation, and `.`/`..` lexical component markers,
+root-separator and Windows drive-prefix components, Unix hidden-component
+classification, normal Unix-style and Windows-style relative component headers,
+plus relative-component start/continue checks.
+`path_contract_metadata_is_available()` and
+`path_lexical_byte_helpers_are_available()` name the supported frontend-only
+surface, while `path_allocation_api_is_blocked()`,
+`path_allocation_api_requires_allocator()`,
+`path_host_normalization_is_blocked()`, and
+`path_host_normalization_requires_runtime_binding()` keep path allocation and
+host canonicalization visibly out of the active compiler slice. The
+`path_allocation_api_is_known_but_unbound()` and
+`path_host_normalization_is_known_but_unbound()` probes identify those
+recognized but non-executable path surfaces without adding allocator or host
+runtime support.
 `std::process` also exposes API-family gates for process arguments and exit-code
 hooks plus per-extern gates for `argc`, `arg_len`, `arg_read`,
 `set_exit_code`, and `exit`. `process_contract_metadata_is_available()` is
 descriptor metadata only, and `process_host_abi_is_contract_only()` keeps the
 raw declarations visibly non-executable. The fail-closed blocked predicates let
 callers type-check the current "recognized but unbound" boundary without
-calling raw host externs. `EXIT_SUCCESS`, `EXIT_FAILURE`,
-`exit_success_code()`, `exit_failure_code()`, `exit_code_is_success(code)`,
-and `exit_code_is_failure(code)` are pure source-level process contracts and do
-not bind the process runtime.
+calling raw host externs. `process_is_known_but_unbound()`,
+`process_args_is_known_but_unbound()`, `process_exit_is_known_but_unbound()`,
+and the per-extern `*_is_known_but_unbound()` probes expose that same boundary
+for tooling without treating the process service as executable.
+`ProcessArgumentResult`, `PROCESS_ARGUMENT_UNAVAILABLE`,
+`process_argument_unavailable()`,
+`process_argument_result_succeeded(result)`,
+`process_argument_result_failed(result)`,
+`process_argument_result_is_unavailable(result)`, and
+`process_argument_result_is_fail_closed(result)` define the current
+contract-only result shape for argument count, length, and read APIs:
+non-negative values are successful counts or byte counts, while `-1` is the
+fail-closed unavailable sentinel for the known-but-unbound process-arguments
+surface.
+`EXIT_SUCCESS`, `EXIT_FAILURE`, `exit_success_code()`,
+`exit_failure_code()`, `exit_code_from_success(success)`,
+`exit_code_is_success(code)`, and `exit_code_is_failure(code)` are pure
+source-level process contracts and do not bind the process runtime.
 `std::env` exposes the same environment-service contract for environment
 variables and current-directory queries. `env_contract_metadata_is_available()`
 is descriptor metadata only, and `env_host_abi_is_contract_only()` keeps the raw
 environment ABI declarations visibly non-executable. The raw declarations can
 type-check through `--stdlib-root`, while the `var_*` and `current_dir_*`
 executable gates remain false until a host environment runtime binding exists.
+`env_is_known_but_unbound()`,
+`environment_variables_api_is_known_but_unbound()`, and
+`current_dir_api_is_known_but_unbound()` let source-level callers distinguish
+the recognized environment service from an executable host environment runtime.
+Each raw environment extern also has a per-operation known-but-unbound probe:
+`var_len_is_known_but_unbound()`, `var_read_is_known_but_unbound()`,
+`var_count_is_known_but_unbound()`, `var_key_len_is_known_but_unbound()`,
+`var_key_read_is_known_but_unbound()`,
+`current_dir_len_is_known_but_unbound()`, and
+`current_dir_read_is_known_but_unbound()`.
+The shared `EnvReadResult` alias and `ENV_READ_UNAVAILABLE` sentinel make
+environment-variable and current-directory read results classifiable in source
+without assuming a host runtime: `env_read_result_succeeded()`,
+`env_read_result_failed()`, `env_read_result_is_unavailable()`,
+`env_read_result_is_fail_closed()`,
+`environment_variable_read_result_is_fail_closed()`, and
+`current_dir_read_result_is_fail_closed()` type-check through `--stdlib-root`
+as contract helpers only.
 `std::time` exposes clock-service gates for monotonic time, wall-clock time, and
 sleep declarations. `clock_contract_metadata_is_available()` is descriptor
 metadata only, and `clock_host_abi_is_contract_only()` keeps the raw clock ABI
@@ -2163,21 +2350,39 @@ declarations visibly non-executable. `clock_is_blocked()`,
 `monotonic_now_ns_is_blocked()`, `system_now_unix_ms_is_blocked()`, and
 `sleep_ms_is_blocked()` are the fail-closed companions to the executable probes
 and remain true until a clock runtime binding exists.
+`clock_is_known_but_unbound()`,
+`clock_read_api_is_known_but_unbound()`,
+`clock_sleep_api_is_known_but_unbound()`,
+`monotonic_now_ns_is_known_but_unbound()`,
+`system_now_unix_ms_is_known_but_unbound()`, and
+`sleep_ms_is_known_but_unbound()` expose the recognized-but-unbound clock
+contract for tooling without claiming an executable runtime binding.
+`ClockReadResult` and `ClockSleepResult` make the raw return contracts explicit:
+non-negative clock reads and sleep statuses are successful values, while
+`CLOCK_READ_UNAVAILABLE` and `CLOCK_SLEEP_UNAVAILABLE` are contract-only
+sentinels for the active unbound clock service. The
+`clock_read_result_is_fail_closed()` and
+`clock_sleep_result_is_fail_closed()` helpers classify those unavailable
+sentinels only when the corresponding clock API family is recognized but
+unbound.
 `std::net` exposes the same kind of public gates for TCP and UDP API families:
 the extern declarations can type-check through `--stdlib-root`, while
 `network_contract_metadata_is_available()` is descriptor metadata only and
 `network_host_abi_is_contract_only()` keeps the raw networking ABI visibly
 contract-only. `network_is_blocked()`, `tcp_api_is_blocked()`, and
-`udp_api_is_blocked()` are
-the fail-closed companions to the executable probes. TCP and UDP remain
-contract-only until a runtime binding exists.
+`udp_api_is_blocked()` are the fail-closed companions to the executable probes;
+`network_is_known_but_unbound()`, `tcp_api_is_known_but_unbound()`, and
+`udp_api_is_known_but_unbound()` make the same contract explicit for tooling.
+TCP and UDP remain contract-only until a runtime binding exists.
 `std::host` exposes the aggregate host-service descriptor as an importable
 contract-only module. It mirrors `core::runtime::SERVICE_HOST_SERVICES_ID`,
 keeps `HOST_SERVICES_HAS_RUNTIME_BINDING` false, reports descriptor metadata as
 available, and exposes blocked/runtime-binding gates for the aggregate
-host-services API. It deliberately declares no raw externs; the module exists so
-callers and tools can type-check the aggregate host-service boundary without
-claiming that any host callback or host-service ABI is executable.
+host-services API. `host_services_are_known_but_unbound()` and
+`host_services_api_is_known_but_unbound()` expose the recognized aggregate
+service without claiming that any host callback or host-service ABI is
+executable. It deliberately declares no raw externs; the module exists so
+callers and tools can type-check the aggregate host-service boundary.
 `std::random` follows the secure-RNG service contract: callers can type-check
 the local ABI version, service id, status, runtime-binding requirement, and
 raw entropy extern declarations through `--stdlib-root`, but
@@ -2186,7 +2391,16 @@ raw entropy extern declarations through `--stdlib-root`, but
 non-executable. `random_is_blocked()`, `secure_rng_api_is_blocked()`,
 `fill_secure_bytes_is_blocked()`, and `secure_u32_is_blocked()` are the
 fail-closed companions to the executable probes until a secure entropy runtime
-binding exists.
+binding exists. `random_is_known_but_unbound()`,
+`secure_rng_api_is_known_but_unbound()`,
+`fill_secure_bytes_is_known_but_unbound()`, and
+`secure_u32_is_known_but_unbound()` are the stricter source-level probes for
+the current state: recognized secure-RNG descriptor and APIs, still no runtime
+binding. `RandomOperationResult` names the signed status returned by
+`fill_secure_bytes`; non-negative values are successful byte counts or
+zero-status results, while `RANDOM_OPERATION_UNAVAILABLE` and
+`random_operation_is_fail_closed()` provide the current fail-closed unavailable
+sentinel for the unbound secure-RNG service.
 `std::gpu` follows the GPU host-service contract for user-visible buffer and
 dispatch declarations. Those APIs can type-check through `--stdlib-root`, but
 `gpu_contract_metadata_is_available()` is descriptor metadata only and
@@ -2195,9 +2409,13 @@ non-executable. `gpu_is_blocked()`,
 `gpu_buffer_api_is_executable()` and `gpu_dispatch_api_is_executable()` remain
 false until a runtime binding defines actual GPU resource ownership and
 dispatch ABI semantics. `gpu_buffer_api_is_blocked()` and
-`gpu_dispatch_api_is_blocked()` are the fail-closed companions for callers that
-need to distinguish recognized-but-unbound GPU APIs from executable host GPU
-bindings.
+`gpu_dispatch_api_is_blocked()` are the fail-closed companions, and
+`gpu_is_known_but_unbound()`, `gpu_buffer_api_is_known_but_unbound()`,
+`buffer_alloc_is_known_but_unbound()`, `buffer_free_is_known_but_unbound()`,
+`buffer_write_is_known_but_unbound()`, `buffer_read_is_known_but_unbound()`,
+`gpu_dispatch_api_is_known_but_unbound()`, and
+`dispatch_1d_is_known_but_unbound()` expose the recognized-but-unbound state
+without claiming executable host GPU bindings.
 `std::thread` follows the threads service contract for spawn, join, yield, and
 current-thread-id declarations. Those APIs can type-check through
 `--stdlib-root`; `thread_contract_metadata_is_available()` is descriptor
@@ -2205,10 +2423,17 @@ metadata only, and `thread_host_abi_is_contract_only()` keeps the raw thread ABI
 declarations visibly non-executable. The executable gates remain false and their
 `*_is_blocked()` and `*_requires_runtime_binding()` companions remain true until
 the language and runtime define a thread ABI and host binding.
+`ThreadOperationResult`, `THREAD_OPERATION_OK`,
+`THREAD_OPERATION_UNAVAILABLE`, and the `thread_operation_*` classifiers provide
+a source-level signed result contract for unbound thread calls without making
+thread spawning, joining, yielding, or current-id lookup executable.
 `test::harness` follows the same contract-only shape for test registration,
 discovery, and execution. The module exposes the test-harness service id, ABI
 version, unavailable status, metadata probe, and blocked/runtime-binding gates
-without declaring host externs or claiming a runnable harness.
+without declaring host externs or claiming a runnable harness. It also exposes
+known-but-unbound probes for the harness descriptor plus registration,
+discovery, and execution gates so diagnostic tooling can distinguish the
+recognized contract boundary from executable harness support.
 
 ## Naming Rules
 
@@ -2244,6 +2469,27 @@ Current phase.
 - Source-level imports need a GPU implementation before they can be part of the
   normal compile path.
 - Top-level primitive constants.
+- Module-form `core::char` currently seeds ASCII classification helpers for
+  digit, alphabetic, alphanumeric, hexadecimal-digit, whitespace, punctuation,
+  graphic, and printable checks; `--stdlib-root` type-check evidence is
+  frontend-only.
+- Module-form `core::{i32,u32,u8}` currently seed integer parity predicates
+  such as `is_even` and `is_odd`, plus strict range predicates such as
+  `between_exclusive(value, low, high)`. `core::{u32,u8}` also seed
+  `is_multiple_of(value, divisor)`, which rejects zero divisors with `false`;
+  `--stdlib-root` type-check evidence is frontend-only.
+- Module-form `core::u32` also currently seeds `abs_diff(left, right)` as a
+  pure unsigned arithmetic helper plus `checked_add(left, right)` and
+  `checked_sub(left, right)` as checked `core::option::Option<u32>` helpers,
+  plus `checked_next_power_of_two(value)` for overflow-aware power-of-two
+  rounding;
+  `--stdlib-root` type-check evidence is frontend-only.
+- Module-form `core::u8` currently seeds byte-oriented ASCII range and
+  control-byte, punctuation, case-normalization, case-insensitive equality,
+  unsigned `abs_diff(left, right)`, and overflow-aware
+  `checked_add(left, right)` helpers; `--stdlib-root` type-check evidence is
+  frontend-only. `core::option::contains_u8(value, expected)` provides a
+  concrete byte `Option` predicate until generic equality traits are complete.
 - `lstd_` prefix.
 - GPU parser/type-check validation.
 - Representative GPU codegen tests.

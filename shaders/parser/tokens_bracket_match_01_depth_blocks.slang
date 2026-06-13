@@ -1,3 +1,5 @@
+import prefix_scan;
+
 struct Params
 {
     uint n_tokens;
@@ -19,8 +21,8 @@ StructuredBuffer<int> block_prefix_bracket;
 StructuredBuffer<uint> statement_context_kind;
 
 RWStructuredBuffer<uint> bracket_semantic_kind;
-RWStructuredBuffer<int> brace_match_depth;
-RWStructuredBuffer<int> brace_match_block_min;
+RWStructuredBuffer<int> bracket_match_depth;
+RWStructuredBuffer<int> bracket_match_block_min;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -57,6 +59,19 @@ static const uint STATEMENT_CONTEXT_TYPE_ALIAS_RHS = 254u;
 static const int INF = 2147483647;
 
 groupshared int local_depth[256];
+
+public struct PrefixScanI32Min : IPrefixScanOp<int>
+{
+    public static int identity()
+    {
+        return INF;
+    }
+
+    public static int combine(int left, int right)
+    {
+        return min(left, right);
+    }
+}
 
 uint linear_group_id(uint3 gid)
 {
@@ -138,25 +153,19 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
             event_depth = depth_before - 1;
         }
         bracket_semantic_kind[token_i] = semantic_kind;
-        brace_match_depth[token_i] = event_depth;
+        bracket_match_depth[token_i] = event_depth;
     }
     else if (token_i < gParams.n_tokens)
     {
         bracket_semantic_kind[token_i] = 0u;
-        brace_match_depth[token_i] = INF;
+        bracket_match_depth[token_i] = INF;
     }
 
-    local_depth[lane] = event_depth;
-    GroupMemoryBarrierWithGroupSync();
+    int block_min = prefix_scan_inclusive<int, PrefixScanI32Min, 256>(
+        lane,
+        event_depth,
+        local_depth);
 
-    [unroll]
-    for (uint step = WG_SIZE >> 1u; step > 0u; step >>= 1u)
-    {
-        if (lane < step)
-            local_depth[lane] = min(local_depth[lane], local_depth[lane + step]);
-        GroupMemoryBarrierWithGroupSync();
-    }
-
-    if (lane == 0u)
-        brace_match_block_min[block_idx] = local_depth[0u];
+    if (lane == WG_SIZE - 1u)
+        bracket_match_block_min[block_idx] = block_min;
 }

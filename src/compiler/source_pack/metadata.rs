@@ -166,7 +166,7 @@ where
                 dependency_library_count,
             )?;
         }
-        let (dependency_library_count, dependency_page_count) = store_library_dependencies(
+        let (dependency_library_count, dependency_page_count) = store_partition_dependency_ids(
             store,
             target,
             partition_count,
@@ -308,16 +308,11 @@ pub(in crate::compiler) fn load_metadata_prepare_progress_or_default(
 pub(in crate::compiler) fn validate_metadata_chunk_limits(
     library_id: u32,
     source_file_count: usize,
-    dependency_library_count: usize,
+    _dependency_library_count: usize,
 ) -> Result<(), CompileError> {
     if source_file_count > SOURCE_PACK_LIBRARY_METADATA_PREPARE_DEFAULT_SOURCE_FILE_LIMIT {
         return Err(CompileError::GpuFrontend(format!(
             "source-pack metadata chunk library {library_id} declares {source_file_count} source files, exceeding chunk source-file cap {SOURCE_PACK_LIBRARY_METADATA_PREPARE_DEFAULT_SOURCE_FILE_LIMIT}; split the library into bounded library records"
-        )));
-    }
-    if dependency_library_count > SOURCE_PACK_LIBRARY_METADATA_PREPARE_DEFAULT_DEPENDENCY_LIMIT {
-        return Err(CompileError::GpuFrontend(format!(
-            "source-pack metadata chunk library {library_id} declares {dependency_library_count} dependencies, exceeding chunk dependency cap {SOURCE_PACK_LIBRARY_METADATA_PREPARE_DEFAULT_DEPENDENCY_LIMIT}; split the library fan-in into bounded dependency records"
         )));
     }
     Ok(())
@@ -397,7 +392,7 @@ where
             dependency_library_count,
         )?;
 
-        let (dependency_library_count, dependency_page_count) = store_library_dependencies(
+        let (dependency_library_count, dependency_page_count) = store_partition_dependency_ids(
             store,
             target,
             partition_count,

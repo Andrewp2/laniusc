@@ -63,6 +63,12 @@ static const uint HIR_EXPR_INDEX = 26u;
 static const uint HIR_EXPR_FLOAT = 27u;
 static const uint HIR_EXPR_STRING = 28u;
 static const uint HIR_EXPR_CHAR = 29u;
+static const uint HIR_EXPR_RANGE = 30u;
+static const uint HIR_EXPR_RANGE_FROM = 31u;
+static const uint HIR_EXPR_RANGE_TO = 32u;
+static const uint HIR_EXPR_RANGE_FULL = 33u;
+static const uint HIR_EXPR_RANGE_INCLUSIVE = 34u;
+static const uint HIR_EXPR_RANGE_TO_INCLUSIVE = 35u;
 
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_INDEX_EXPR = 20u;
@@ -273,9 +279,7 @@ bool is_value_postfix_production(uint prod)
 {
     return prod == PROD_POSTFIX_CALL ||
            prod == PROD_POSTFIX_INDEX ||
-           prod == PROD_POSTFIX_MEMBER ||
-           prod == PROD_POSTFIX_INC ||
-           prod == PROD_POSTFIX_DEC;
+           prod == PROD_POSTFIX_MEMBER;
 }
 
 uint tail_continuation(uint tail)
@@ -350,28 +354,6 @@ void publish_forward(uint i, uint child)
     publish_expr_result(i, child);
 }
 
-bool publish_binary_from_tail(uint i, uint left, uint tail)
-{
-    if (!valid_node(left) || !valid_node(tail))
-        return false;
-
-    uint form = binary_form_for_tail(node_kind[tail]);
-    if (form == HIR_EXPR_NONE)
-        return false;
-
-    uint right = first_child_node(tail);
-    if (!valid_node(right))
-        return false;
-    uint continuation = next_sibling_node(right);
-    uint expected_end = end_production_for_tail(node_kind[tail]);
-    if (!valid_node(continuation) || node_kind[continuation] != expected_end)
-        return false;
-
-    write_expr_record(i, form, left, right, INVALID);
-    publish_expr_result(i, i);
-    return true;
-}
-
 bool publish_binary_tail_expr(uint i)
 {
     uint form = binary_form_for_tail(node_kind[i]);
@@ -401,6 +383,92 @@ bool publish_binary_tail_expr(uint i)
         return false;
 
     write_expr_record(i, form, left, right, INVALID);
+    publish_expr_result(i, i);
+    return true;
+}
+
+uint range_bound_value_node(uint range_bound)
+{
+    if (!valid_node(range_bound) || node_kind[range_bound] != PROD_RANGE_BOUND_NAME)
+        return INVALID;
+
+    uint value = first_child_node(range_bound);
+    if (!valid_node(value))
+        return INVALID;
+
+    uint tail = next_sibling_node(value);
+    if (valid_node(tail) && is_value_postfix_production(node_kind[tail]))
+    {
+        uint result = rightmost_leaf_parent(tail);
+        if (valid_node(result) && is_value_postfix_production(node_kind[result]))
+            return result;
+    }
+    return value;
+}
+
+uint range_bound_node(uint bound_opt)
+{
+    if (!valid_node(bound_opt) || node_kind[bound_opt] != PROD_RANGE_BOUND)
+        return INVALID;
+
+    uint bound = first_child_node(bound_opt);
+    if (!valid_node(bound))
+        return INVALID;
+    if (node_kind[bound] == PROD_RANGE_BOUND_NAME)
+        return range_bound_value_node(bound);
+    return bound;
+}
+
+bool publish_range_from_start_expr(uint i)
+{
+    uint left = first_child_node(i);
+    if (!valid_node(left))
+        return false;
+
+    uint tail = next_sibling_node(left);
+    if (!valid_node(tail))
+        return false;
+
+    uint form = HIR_EXPR_FORWARD;
+    uint right = INVALID;
+    if (node_kind[tail] == PROD_RANGE_EXCLUSIVE)
+    {
+        right = range_bound_node(first_child_node(tail));
+        form = valid_node(right) ? HIR_EXPR_RANGE : HIR_EXPR_RANGE_FROM;
+    }
+    else if (node_kind[tail] == PROD_RANGE_INCLUSIVE)
+    {
+        right = range_bound_node(first_child_node(tail));
+        if (!valid_node(right))
+            return false;
+        form = HIR_EXPR_RANGE_INCLUSIVE;
+    }
+    else
+    {
+        return false;
+    }
+
+    write_expr_record(i, form, left, right, INVALID);
+    publish_expr_result(i, i);
+    return true;
+}
+
+bool publish_range_to_expr(uint i)
+{
+    uint bound = range_bound_node(first_child_node(i));
+    uint form = valid_node(bound) ? HIR_EXPR_RANGE_TO : HIR_EXPR_RANGE_FULL;
+    write_expr_record(i, form, INVALID, bound, INVALID);
+    publish_expr_result(i, i);
+    return true;
+}
+
+bool publish_range_to_inclusive_expr(uint i)
+{
+    uint right = range_bound_node(first_child_node(i));
+    if (!valid_node(right))
+        return false;
+
+    write_expr_record(i, HIR_EXPR_RANGE_TO_INCLUSIVE, INVALID, right, INVALID);
     publish_expr_result(i, i);
     return true;
 }
@@ -454,14 +522,15 @@ void publish_expr(uint i)
     if (is_direct_result_hir_kind(hir_kind[i]))
         publish_expr_result(i, i);
 
-    if (prod == PROD_IDENT || prod == PROD_SELF_VALUE ||
-        prod == PROD_PATH)
+    if (prod == PROD_IDENT || prod == PROD_RANGE_BOUND_IDENT || prod == PROD_SELF_VALUE ||
+        prod == PROD_PATH || prod == PROD_PATTERN_IDENT)
     {
         write_expr_record(i, HIR_EXPR_NAME, INVALID, INVALID, hir_token_pos[i]);
         publish_expr_result(i, i);
         return;
     }
-    if (prod == PROD_INT)
+    if (prod == PROD_INT || prod == PROD_RANGE_START_INT ||
+        prod == PROD_RANGE_BOUND_INT || prod == PROD_PATTERN_INT)
     {
         write_expr_record(i, HIR_EXPR_INT, INVALID, INVALID, hir_token_pos[i]);
         publish_expr_result(i, i);
@@ -485,13 +554,13 @@ void publish_expr(uint i)
         publish_expr_result(i, i);
         return;
     }
-    if (prod == PROD_TRUE)
+    if (prod == PROD_TRUE || prod == PROD_PATTERN_TRUE)
     {
         write_expr_record(i, HIR_EXPR_TRUE, INVALID, INVALID, hir_token_pos[i]);
         publish_expr_result(i, i);
         return;
     }
-    if (prod == PROD_FALSE)
+    if (prod == PROD_FALSE || prod == PROD_PATTERN_FALSE)
     {
         write_expr_record(i, HIR_EXPR_FALSE, INVALID, INVALID, hir_token_pos[i]);
         publish_expr_result(i, i);
@@ -501,6 +570,11 @@ void publish_expr(uint i)
     {
         write_expr_record(i, HIR_EXPR_NOT, child, INVALID, INVALID);
         publish_expr_result(i, i);
+        return;
+    }
+    if (prod == PROD_POS)
+    {
+        publish_forward(i, child);
         return;
     }
     if (prod == PROD_NEG)
@@ -513,6 +587,30 @@ void publish_expr(uint i)
     if (is_binary_tail_production(prod))
     {
         publish_binary_tail_expr(i);
+        return;
+    }
+
+    if (prod == PROD_FOR_ITER_RANGE_FROM_START)
+    {
+        publish_range_from_start_expr(i);
+        return;
+    }
+
+    if (prod == PROD_FOR_ITER_RANGE_TO)
+    {
+        publish_range_to_expr(i);
+        return;
+    }
+
+    if (prod == PROD_FOR_ITER_RANGE_TO_INCLUSIVE)
+    {
+        publish_range_to_inclusive_expr(i);
+        return;
+    }
+
+    if (prod == PROD_RANGE_BOUND_NAME)
+    {
+        publish_forward(i, range_bound_value_node(i));
         return;
     }
 

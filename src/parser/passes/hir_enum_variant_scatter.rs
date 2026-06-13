@@ -61,6 +61,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirEnumVariantSc
                 "hir_variant_payload_rank_a".into(),
                 b.hir_variant_payload_rank_a.as_entire_binding(),
             ),
+            ("hir_token_end".into(), b.hir_token_end.as_entire_binding()),
             (
                 "hir_variant_parent_enum".into(),
                 b.hir_variant_parent_enum.as_entire_binding(),

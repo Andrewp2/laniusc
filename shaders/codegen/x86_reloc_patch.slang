@@ -29,13 +29,13 @@ StructuredBuffer<uint> x86_inst_byte_offset;
 StructuredBuffer<uint> x86_decl_layout_status;
 StructuredBuffer<uint> x86_text_len;
 StructuredBuffer<uint> text_status;
-StructuredBuffer<uint> encode_status;
 StructuredBuffer<uint> x86_reloc_count;
 StructuredBuffer<uint> x86_reloc_kind;
 StructuredBuffer<uint> x86_reloc_site_inst;
 StructuredBuffer<uint> x86_reloc_target_inst;
 
 RWStructuredBuffer<uint> out_words;
+RWStructuredBuffer<uint> encode_status;
 RWStructuredBuffer<uint> reloc_status;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -43,6 +43,7 @@ static const uint INVALID = 0xffffffffu;
 static const uint X86_ENCODE_OK = 1u;
 static const uint X86_RELOC_OK = 1u;
 static const uint X86_ERR_RELOC = 8u;
+static const uint ELF_TEXT_OFFSET = 0x78u;
 static const uint ELF_TEXT_WORD_OFFSET = 0x78u / 4u;
 
 static const uint X86_INST_JCC_FALSE_REL32 = 9u;
@@ -243,13 +244,19 @@ uint mixed_target_reg(uint ordinal, bool aggregate_return)
 
 uint selected_mixed_arg_kind(uint info, uint ordinal)
 {
+    uint arg_count = packed_u8_at(info, 2u);
+    if (arg_count > 4u && ordinal < 6u)
+        return X86_ARG_SCALAR;
     if (ordinal < 4u)
         return packed_u2_at_offset(info, 24u, ordinal);
     return 0u;
 }
 
-uint selected_mixed_arg_payload(uint packed, uint ordinal)
+uint selected_mixed_arg_payload(uint info, uint packed, uint ordinal)
 {
+    uint arg_count = packed_u8_at(info, 2u);
+    if (arg_count > 4u && ordinal < 6u)
+        return bitfield_extract_u32(packed, ordinal * 4u, 4u);
     if (ordinal < 4u)
         return packed_u8_at(packed, ordinal);
     return INVALID;
@@ -292,7 +299,7 @@ uint call_mixed_ordinal_move_size(
     uint target_reg = mixed_target_reg(ordinal, aggregate_return);
     if (!valid_reg(target_reg))
         return INVALID;
-    uint payload = selected_mixed_arg_payload(packed, ordinal);
+    uint payload = selected_mixed_arg_payload(info, packed, ordinal);
     uint kind = selected_mixed_arg_kind(info, ordinal);
     uint move_size = mixed_arg_move_size(target_reg, kind, payload, save_mask, save_stack);
     if (move_size == 0u &&
@@ -307,7 +314,7 @@ uint call_mixed_call_imm_offset(uint info, uint packed, uint save_mask)
     bool aggregate_return = (info & 1u) != 0u;
     uint dest = packed_u8_at(info, 1u);
     uint arg_count = packed_u8_at(info, 2u);
-    if (arg_count > 4u ||
+    if (arg_count > 6u ||
         (aggregate_return && !valid_local_slot(dest)) ||
         (!aggregate_return && !valid_reg(dest)))
         return INVALID;
@@ -331,11 +338,16 @@ uint call_mixed_call_imm_offset(uint info, uint packed, uint save_mask)
         info, packed, save_mask, save_stack, 2u, arg_count, aggregate_return);
     uint move3 = call_mixed_ordinal_move_size(
         info, packed, save_mask, save_stack, 3u, arg_count, aggregate_return);
-    if (move0 == INVALID || move1 == INVALID || move2 == INVALID || move3 == INVALID)
+    uint move4 = call_mixed_ordinal_move_size(
+        info, packed, save_mask, save_stack, 4u, arg_count, aggregate_return);
+    uint move5 = call_mixed_ordinal_move_size(
+        info, packed, save_mask, save_stack, 5u, arg_count, aggregate_return);
+    if (move0 == INVALID || move1 == INVALID || move2 == INVALID ||
+        move3 == INVALID || move4 == INVALID || move5 == INVALID)
         return INVALID;
 
     uint frame_adjust_size = stack_frame_adjust_size(call_frame_size(save_stack));
-    return offset + move0 + move1 + move2 + move3 + frame_adjust_size + 1u;
+    return offset + move0 + move1 + move2 + move3 + move4 + move5 + frame_adjust_size + 1u;
 }
 
 uint inst_kind_tag(uint inst_i)
@@ -358,13 +370,40 @@ uint target_offset(uint target)
 
 uint rel32_to_target(uint site_inst, uint target_inst)
 {
-    uint source_next = x86_inst_byte_offset[site_inst] + x86_inst_size[site_inst];
+    uint imm_offset = reloc_imm_offset_for_inst(site_inst);
+    uint source_next = imm_offset == INVALID
+                           ? x86_inst_byte_offset[site_inst] + x86_inst_size[site_inst]
+                           : x86_inst_byte_offset[site_inst] + imm_offset + 4u;
     return target_offset(target_inst) - source_next;
 }
 
 uint reloc_kind_base(uint packed_kind)
 {
     return packed_kind & 0xffu;
+}
+
+bool text_file_range_within_output()
+{
+    uint text_len = x86_text_len[0u];
+    if (text_len > 0xffffffffu - ELF_TEXT_OFFSET)
+        return false;
+    return ELF_TEXT_OFFSET + text_len <= gParams.out_capacity;
+}
+
+bool reloc_count_matches_status(uint inst_count)
+{
+    uint reloc_count = x86_reloc_count[0u];
+    return reloc_count == reloc_status[3u] && reloc_count <= inst_count;
+}
+
+bool reloc_site_ordered(uint reloc_i, uint site_inst)
+{
+    if (reloc_i > 0u && x86_reloc_site_inst[reloc_i - 1u] >= site_inst)
+        return false;
+    uint reloc_count = x86_reloc_count[0u];
+    if (reloc_i + 1u < reloc_count && site_inst >= x86_reloc_site_inst[reloc_i + 1u])
+        return false;
+    return true;
 }
 
 uint reloc_imm_offset_for_inst(uint inst_i)
@@ -460,7 +499,9 @@ bool valid_reloc_record(uint reloc_i, uint site_inst, uint inst_count)
     if (reloc_i >= x86_reloc_count[0u])
         return false;
     uint target = x86_reloc_target_inst[reloc_i];
-    if (x86_reloc_site_inst[reloc_i] != site_inst || target > inst_count)
+    if (x86_reloc_site_inst[reloc_i] != site_inst ||
+        target > inst_count ||
+        !reloc_site_ordered(reloc_i, site_inst))
         return false;
 
     uint site_kind = inst_kind_tag(site_inst);
@@ -470,6 +511,13 @@ bool valid_reloc_record(uint reloc_i, uint site_inst, uint inst_count)
 
     uint expected_target = reloc_target_for_inst(site_inst);
     return expected_target == target;
+}
+
+void publish_reloc_patch_error(uint detail)
+{
+    publish_stage_error_min_detail4(reloc_status, X86_ERR_RELOC, detail);
+    publish_stage_error_min_detail4(encode_status, X86_ERR_RELOC, detail);
+    encode_status[3u] = 0u;
 }
 
 void patch_text_byte(uint text_pos, uint value)
@@ -485,19 +533,24 @@ void patch_text_byte(uint text_pos, uint value)
 void main(uint3 tid: SV_DispatchThreadID)
 {
     uint reloc_i = linear_dispatch_id(tid);
+    uint inst_count = text_status[3u];
     bool encode_ok = encode_status[0u] == X86_ENCODE_OK && encode_status[1u] == 0u;
     bool reloc_ok = reloc_status[0u] == X86_RELOC_OK && reloc_status[1u] == 0u;
+    bool patch_records_ok = reloc_count_matches_status(inst_count) &&
+                            encode_status[3u] == x86_text_len[0u] &&
+                            text_file_range_within_output();
     bool upstream_ok = encode_ok && reloc_ok &&
-                       encode_status[3u] == x86_text_len[0u] &&
-                       text_status[3u] <= gParams.out_capacity;
+                       patch_records_ok;
+    if (reloc_i == 0u && encode_ok && reloc_ok && !patch_records_ok)
+        publish_reloc_patch_error(x86_reloc_count[0u]);
+
     if (!upstream_ok || reloc_i >= x86_reloc_count[0u])
         return;
 
-    uint inst_count = text_status[3u];
     uint site_inst = x86_reloc_site_inst[reloc_i];
     if (site_inst >= inst_count || !valid_reloc_record(reloc_i, site_inst, inst_count))
     {
-        publish_stage_error_min_detail4(reloc_status, X86_ERR_RELOC, reloc_i);
+        publish_reloc_patch_error(reloc_i);
         return;
     }
 
@@ -509,7 +562,7 @@ void main(uint3 tid: SV_DispatchThreadID)
                      inst_offset + size <= x86_text_len[0u];
     if (!in_bounds)
     {
-        publish_stage_error_min_detail4(reloc_status, X86_ERR_RELOC, reloc_i);
+        publish_reloc_patch_error(reloc_i);
         return;
     }
 

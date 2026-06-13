@@ -26,7 +26,10 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_item_kind;
 StructuredBuffer<uint> x86_node_tree_status;
+StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> method_decl_param_offset;
 StructuredBuffer<uint> hir_node_decl_token;
+StructuredBuffer<uint> hir_item_name_token;
 StructuredBuffer<uint> fn_entrypoint_tag;
 
 RWStructuredBuffer<uint> x86_func_meta;
@@ -41,6 +44,7 @@ static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint X86_NODE_TREE_OK = 1u;
 
 static const uint FUNC_META_MAIN_COUNT = 1u;
+static const uint FUNC_META_MAIN_MAX_NODE = 3u;
 static const uint FUNC_META_MAIN_NODE = 4u;
 
 uint linear_dispatch_id(uint3 tid)
@@ -53,6 +57,16 @@ uint active_hir_node_count()
     return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
 }
 
+bool valid_node(uint node_i)
+{
+    return node_i != INVALID && node_i < active_hir_node_count();
+}
+
+bool valid_token(uint token_i)
+{
+    return token_i != INVALID && token_i < gParams.n_tokens;
+}
+
 bool is_main_function_node(uint node_i)
 {
     return hir_kind[node_i] == HIR_FN &&
@@ -60,14 +74,19 @@ bool is_main_function_node(uint node_i)
            fn_entrypoint_tag[node_i] == ENTRYPOINT_MAIN;
 }
 
-bool is_function_record_node(uint node_i)
+bool is_impl_method_function_node(uint node_i)
 {
-    return hir_kind[node_i] == HIR_FN && hir_item_kind[node_i] == HIR_ITEM_KIND_FN;
+    uint fn_token = valid_node(node_i) ? hir_token_pos[node_i] : INVALID;
+    return hir_kind[node_i] == HIR_FN &&
+           valid_token(fn_token) &&
+           valid_token(method_decl_param_offset[fn_token]);
 }
 
-bool valid_node(uint node_i)
+bool is_function_record_node(uint node_i)
 {
-    return node_i != INVALID && node_i < active_hir_node_count();
+    return hir_kind[node_i] == HIR_FN &&
+           (hir_item_kind[node_i] == HIR_ITEM_KIND_FN ||
+            is_impl_method_function_node(node_i));
 }
 
 bool node_tree_ok()
@@ -89,7 +108,9 @@ void publish_function_lookup(uint node_i)
     if (!is_function_record_node(node_i))
         return;
 
+    publish_function_lookup_key(hir_token_pos[node_i], node_i);
     publish_function_lookup_key(hir_node_decl_token[node_i], node_i);
+    publish_function_lookup_key(hir_item_name_token[node_i], node_i);
 }
 
 [shader("compute")]
@@ -113,5 +134,6 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     atomic_u32_add(x86_func_meta, FUNC_META_MAIN_COUNT, 1u);
+    atomic_u32_max(x86_func_meta, FUNC_META_MAIN_MAX_NODE, node_i);
     atomic_u32_min(x86_func_meta, FUNC_META_MAIN_NODE, node_i);
 }

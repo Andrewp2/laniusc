@@ -6,26 +6,49 @@ use std::{
     fs,
     io,
     path::{Path, PathBuf},
-    process::Command,
-    time::SystemTime,
+    process::{Command, Output, Stdio},
+    thread,
+    time::{Duration, Instant, SystemTime},
 };
 
 use anyhow::{Context, Result, anyhow};
 
 fn main() -> Result<()> {
+    const DEFAULT_SLANGC_VERSION_TIMEOUT_MS: u64 = 2_000;
+    const DEFAULT_SHADER_COMPILE_TIMEOUT_MS: u64 = 120_000;
+
     println!("cargo:rustc-check-cfg=cfg(has_prebuilt_tables)");
     println!("cargo:rerun-if-env-changed=SLANGC");
     println!("cargo:rerun-if-env-changed=LANIUS_SHADER_DEBUG");
     println!("cargo:rerun-if-env-changed=LANIUS_SHADER_OPT_LEVEL");
+    println!("cargo:rerun-if-env-changed=LANIUS_SHADER_MAX_SPV_BYTES");
+    println!("cargo:rerun-if-env-changed=LANIUS_SLANGC_VERSION_TIMEOUT_MS");
+    println!("cargo:rerun-if-env-changed=LANIUS_SHADER_COMPILE_TIMEOUT_MS");
     println!("cargo:rerun-if-env-changed=SLANGC_EXTRA_FLAGS");
     track_dir_recursively("shaders");
 
     let slangc = find_slangc()
         .context("could not locate `slangc` binary. Set $SLANGC or add it to PATH.")?;
-    let slangc_version = slangc_version(&slangc);
+    let slangc_version_timeout = timeout_from_env_ms(
+        "LANIUS_SLANGC_VERSION_TIMEOUT_MS",
+        DEFAULT_SLANGC_VERSION_TIMEOUT_MS,
+    )?;
+    let shader_compile_timeout = timeout_from_env_ms(
+        "LANIUS_SHADER_COMPILE_TIMEOUT_MS",
+        DEFAULT_SHADER_COMPILE_TIMEOUT_MS,
+    )?;
+    let slangc_version = slangc_version(&slangc, slangc_version_timeout);
     println!("cargo:rerun-if-changed=Cargo.lock");
     println!("cargo:rerun-if-changed=Cargo.toml");
     println!("cargo:rustc-env=LANIUS_SLANGC_VERSION={slangc_version}");
+    println!(
+        "cargo:rustc-env=LANIUS_SLANGC_VERSION_TIMEOUT_MS={}",
+        timeout_metadata_value(slangc_version_timeout)
+    );
+    println!(
+        "cargo:rustc-env=LANIUS_SHADER_COMPILE_TIMEOUT_MS={}",
+        timeout_metadata_value(shader_compile_timeout)
+    );
     println!(
         "cargo:rustc-env=LANIUS_WGPU_VERSION={}",
         cargo_lock_package_version("wgpu").unwrap_or_else(|| "unknown".to_string())
@@ -37,11 +60,11 @@ fn main() -> Result<()> {
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR not set"));
     let shader_out_dir = out_dir.join("shaders");
     fs::create_dir_all(&shader_out_dir).context("create OUT_DIR/shaders")?;
-
     let mut sources =
         collect_slang_sources(Path::new("shaders")).context("walk shaders/ for .slang files")?;
     sources.sort();
     let mut shader_artifacts = Vec::new();
+    let max_shader_spv_bytes = shader_max_spv_bytes()?;
 
     // Only compile files that contain an entrypoint attribute, e.g. [shader("compute")]
     for ep in sources {
@@ -74,6 +97,7 @@ fn main() -> Result<()> {
             slangc.display(),
         );
         if shader_outputs_fresh(&ep, &spv_out, &refl_out, &stamp_out, &compile_stamp)? {
+            validate_shader_artifact_size(&ep, &spv_out, max_shader_spv_bytes)?;
             shader_artifacts.push((file_stem.to_string(), spv_out, refl_out));
             continue;
         }
@@ -111,8 +135,7 @@ fn main() -> Result<()> {
         // Finally, the entrypoint source itself (no module/library sources added!)
         cmd.arg(&ep);
 
-        let out = cmd
-            .output()
+        let out = command_output_with_timeout(&mut cmd, shader_compile_timeout)
             .with_context(|| format!("failed running slangc for {ep:?}"))?;
         if !out.stdout.is_empty() {
             for line in String::from_utf8_lossy(&out.stdout).lines() {
@@ -131,12 +154,30 @@ fn main() -> Result<()> {
                 out.status.code()
             ));
         }
+        validate_shader_artifact_size(&ep, &spv_out, max_shader_spv_bytes)?;
         fs::write(&stamp_out, compile_stamp)
             .with_context(|| format!("write shader stamp {}", stamp_out.display()))?;
         shader_artifacts.push((file_stem.to_string(), spv_out, refl_out));
     }
     let shader_digest = shader_artifact_digest(&shader_artifacts)?;
+    let shader_size_summary = shader_artifact_size_summary(&shader_artifacts)?;
+    let (shader_size_guard_status, shader_size_guard_max_bytes) =
+        shader_size_guard_build_metadata(max_shader_spv_bytes);
     println!("cargo:rustc-env=LANIUS_SHADER_ARTIFACT_DIGEST={shader_digest}");
+    println!(
+        "cargo:rustc-env=LANIUS_SHADER_ARTIFACT_COUNT={}",
+        shader_size_summary.count
+    );
+    println!(
+        "cargo:rustc-env=LANIUS_SHADER_ARTIFACT_MAX_BYTES={}",
+        shader_size_summary.max_spv_bytes
+    );
+    println!(
+        "cargo:rustc-env=LANIUS_SHADER_ARTIFACT_MAX_NAME={}",
+        shader_size_summary.max_spv_name
+    );
+    println!("cargo:rustc-env=LANIUS_SHADER_SIZE_GUARD_STATUS={shader_size_guard_status}");
+    println!("cargo:rustc-env=LANIUS_SHADER_SIZE_GUARD_MAX_BYTES={shader_size_guard_max_bytes}");
 
     // Prefer a compact .bin; fall back to .json
     let bin_prebuilt = PathBuf::from("tables/lexer_tables.bin");
@@ -185,24 +226,123 @@ fn shader_opt_level() -> String {
     env::var("LANIUS_SHADER_OPT_LEVEL").unwrap_or_else(|_| "1".into())
 }
 
-fn slangc_version(slangc: &Path) -> String {
-    Command::new(slangc)
-        .arg("-version")
-        .output()
-        .ok()
-        .and_then(|out| {
-            if !out.status.success() {
-                return None;
-            }
+fn timeout_from_env_ms(name: &str, default_ms: u64) -> Result<Option<Duration>> {
+    let value = match env::var(name) {
+        Ok(value) => value,
+        Err(env::VarError::NotPresent) => return Ok(Some(Duration::from_millis(default_ms))),
+        Err(env::VarError::NotUnicode(_)) => {
+            return Err(anyhow!("{name} must be a UTF-8 unsigned millisecond count"));
+        }
+    };
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(Some(Duration::from_millis(default_ms)));
+    }
+    let parsed = value
+        .parse::<u64>()
+        .with_context(|| format!("parse {name}={value:?} as an unsigned millisecond count"))?;
+    Ok((parsed != 0).then_some(Duration::from_millis(parsed)))
+}
+
+fn timeout_metadata_value(timeout: Option<Duration>) -> String {
+    timeout
+        .map(|timeout| timeout.as_millis().to_string())
+        .unwrap_or_else(|| "disabled".to_string())
+}
+
+fn shader_max_spv_bytes() -> Result<Option<u64>> {
+    const DEFAULT_MAX_SPV_BYTES: u64 = 4 * 1024 * 1024;
+
+    let value = match env::var("LANIUS_SHADER_MAX_SPV_BYTES") {
+        Ok(value) => value,
+        Err(env::VarError::NotPresent) => return Ok(Some(DEFAULT_MAX_SPV_BYTES)),
+        Err(env::VarError::NotUnicode(_)) => {
+            return Err(anyhow!(
+                "LANIUS_SHADER_MAX_SPV_BYTES must be a UTF-8 unsigned byte count"
+            ));
+        }
+    };
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(Some(DEFAULT_MAX_SPV_BYTES));
+    }
+    let parsed = value.parse::<u64>().with_context(|| {
+        format!("parse LANIUS_SHADER_MAX_SPV_BYTES={value:?} as an unsigned byte count")
+    })?;
+    Ok((parsed != 0).then_some(parsed))
+}
+
+fn validate_shader_artifact_size(ep: &Path, spv_out: &Path, max_bytes: Option<u64>) -> Result<()> {
+    let Some(max_bytes) = max_bytes else {
+        return Ok(());
+    };
+    let size = fs::metadata(spv_out)
+        .with_context(|| format!("stat shader artifact {}", spv_out.display()))?
+        .len();
+    if size <= max_bytes {
+        return Ok(());
+    }
+
+    Err(anyhow!(
+        "compiled shader artifact {} for {} is {} bytes, exceeding LANIUS_SHADER_MAX_SPV_BYTES={} bytes. Split the shader into smaller record/count/scan/scatter/join passes before relying on this pipeline; set LANIUS_SHADER_MAX_SPV_BYTES=0 only for local investigation.",
+        spv_out.display(),
+        ep.display(),
+        size,
+        max_bytes
+    ))
+}
+
+fn slangc_version(slangc: &Path, timeout: Option<Duration>) -> String {
+    let mut command = Command::new(slangc);
+    command.arg("-version");
+    match command_output_with_timeout(&mut command, timeout) {
+        Ok(out) if out.status.success() => {
             let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
             if !stdout.is_empty() {
-                return Some(stdout);
+                return stdout;
             }
             let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
-            (!stderr.is_empty()).then_some(stderr)
-        })
-        .filter(|version| !version.is_empty())
-        .unwrap_or_else(|| "unknown".to_string())
+            if !stderr.is_empty() {
+                return stderr;
+            }
+            "unknown".to_string()
+        }
+        Err(err) if err.kind() == io::ErrorKind::TimedOut => timeout
+            .map(|timeout| format!("timeout_after_{}ms", timeout.as_millis()))
+            .unwrap_or_else(|| "timeout".to_string()),
+        _ => "unknown".to_string(),
+    }
+}
+
+fn command_output_with_timeout(
+    command: &mut Command,
+    timeout: Option<Duration>,
+) -> io::Result<Output> {
+    let Some(timeout) = timeout else {
+        return command.output();
+    };
+
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command.spawn()?;
+    let start = Instant::now();
+    loop {
+        if child.try_wait()?.is_some() {
+            return child.wait_with_output();
+        }
+        if start.elapsed() >= timeout {
+            if let Err(err) = child.kill()
+                && err.kind() != io::ErrorKind::InvalidInput
+            {
+                return Err(err);
+            }
+            let _ = child.wait_with_output();
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!("command timed out after {} ms", timeout.as_millis()),
+            ));
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
 }
 
 fn cargo_lock_package_version(package_name: &str) -> Option<String> {
@@ -254,6 +394,40 @@ fn shader_artifact_digest(artifacts: &[(String, PathBuf, PathBuf)]) -> Result<St
     Ok(hash.finish_hex())
 }
 
+struct ShaderArtifactSizeSummary {
+    count: usize,
+    max_spv_bytes: u64,
+    max_spv_name: String,
+}
+
+fn shader_artifact_size_summary(
+    artifacts: &[(String, PathBuf, PathBuf)],
+) -> Result<ShaderArtifactSizeSummary> {
+    let mut summary = ShaderArtifactSizeSummary {
+        count: 0,
+        max_spv_bytes: 0,
+        max_spv_name: "none".to_string(),
+    };
+    for (name, spv, _) in artifacts {
+        let size = fs::metadata(spv)
+            .with_context(|| format!("stat shader artifact {}", spv.display()))?
+            .len();
+        summary.count += 1;
+        if size > summary.max_spv_bytes {
+            summary.max_spv_bytes = size;
+            summary.max_spv_name = name.clone();
+        }
+    }
+    Ok(summary)
+}
+
+fn shader_size_guard_build_metadata(max_shader_spv_bytes: Option<u64>) -> (&'static str, String) {
+    match max_shader_spv_bytes {
+        Some(max_bytes) => ("enforced", max_bytes.to_string()),
+        None => ("disabled", "disabled".to_string()),
+    }
+}
+
 struct StableHasher {
     value: u64,
 }
@@ -280,14 +454,7 @@ impl StableHasher {
 fn is_unwired_shader_entrypoint(path: &Path) -> bool {
     matches!(
         path.to_str(),
-        Some("shaders/codegen/wasm_body.slang")
-            | Some("shaders/codegen/wasm_bool_body.slang")
-            | Some("shaders/codegen/wasm_bool_compact.slang")
-            | Some("shaders/codegen/wasm_bool_probe.slang")
-            | Some("shaders/codegen/wasm_bool_scan.slang")
-            | Some("shaders/codegen/wasm_functions.slang")
-            | Some("shaders/codegen/wasm_functions_probe.slang")
-            | Some("shaders/codegen/x86_virtual_liveness_dispatch_args.slang")
+        Some("shaders/codegen/x86_virtual_liveness_dispatch_args.slang")
             | Some("shaders/codegen/x86_virtual_use_counts.slang")
             | Some("shaders/codegen/x86_virtual_use_edges.slang")
             | Some("shaders/codegen/x86_virtual_use_scan_blocks.slang")

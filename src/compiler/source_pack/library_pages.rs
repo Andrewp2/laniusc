@@ -725,7 +725,7 @@ pub(in crate::compiler) fn prepare_partition_schedule_page(
     page.frontend_job.dependency_job_indices.clear();
     page.frontend_jobs = Vec::new();
     page.codegen_jobs = Vec::new();
-    validate_library_schedule_page(&page, index.target, Some(entry.partition_index))?;
+    validate_library_schedule_page_for_index(&page, index)?;
     Ok(page)
 }
 

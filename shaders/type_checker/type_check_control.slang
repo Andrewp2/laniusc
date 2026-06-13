@@ -52,8 +52,6 @@ static const uint TK_OROR = 18u;
 static const uint TK_LPAREN = 4u;
 static const uint TK_RPAREN = 5u;
 static const uint TK_NOT = 19u;
-static const uint TK_LBRACE = 22u;
-static const uint TK_RBRACE = 23u;
 static const uint TK_CALL_LPAREN = 28u;
 static const uint TK_GROUP_LPAREN = 29u;
 static const uint TK_INDEX_LBRACKET = 30u;
@@ -82,15 +80,8 @@ static const uint TK_WHILE = 72u;
 static const uint TK_BREAK = 73u;
 static const uint TK_CONTINUE = 74u;
 static const uint TK_SEMICOLON = 37u;
-static const uint TK_IF_LBRACE = 88u;
-static const uint TK_IF_RBRACE = 89u;
 static const uint TK_TRUE = 90u;
 static const uint TK_FALSE = 91u;
-static const uint TK_FOR = 100u;
-
-static const uint BLOCK_OWNER_NONE = 0u;
-static const uint BLOCK_OWNER_WHILE = 1u;
-static const uint BLOCK_OWNER_FN = 2u;
 
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_BOOL = 2u;
@@ -133,80 +124,6 @@ void record_error(uint token_i, uint code, uint detail)
     record_min_token_error(status, token_i, code, detail);
 }
 
-bool is_open_block_token(uint kind)
-{
-    return kind == TK_LBRACE || kind == TK_IF_LBRACE;
-}
-
-bool is_close_block_token(uint kind)
-{
-    return kind == TK_RBRACE || kind == TK_IF_RBRACE;
-}
-
-uint block_owner(uint open_i)
-{
-    if (token_kind(open_i) == TK_IF_LBRACE)
-        return BLOCK_OWNER_NONE;
-
-    uint paren_depth = 0u;
-    uint j = open_i;
-    for (uint guard = 0u; guard < 256u && j > 0u; guard += 1u)
-    {
-        j -= 1u;
-        uint kind = token_kind(j);
-        if (kind == TK_GROUP_RPAREN || kind == TK_RPAREN || kind == TK_CALL_RPAREN)
-        {
-            paren_depth += 1u;
-        }
-        else if (kind == TK_GROUP_LPAREN || kind == TK_LPAREN || kind == TK_CALL_LPAREN)
-        {
-            if (paren_depth > 0u)
-                paren_depth -= 1u;
-        }
-
-        if (paren_depth != 0u)
-            continue;
-        if (kind == TK_WHILE || kind == TK_FOR)
-            return BLOCK_OWNER_WHILE;
-        if (kind == TK_FN)
-            return BLOCK_OWNER_FN;
-        if (kind == TK_SEMICOLON || is_open_block_token(kind) || is_close_block_token(kind))
-            return BLOCK_OWNER_NONE;
-    }
-    return BLOCK_OWNER_NONE;
-}
-
-bool inside_while_body(uint pos)
-{
-    uint block_depth = 0u;
-    uint j = pos;
-    for (uint guard = 0u; guard < 512u && j > 0u; guard += 1u)
-    {
-        j -= 1u;
-        uint kind = token_kind(j);
-        if (is_close_block_token(kind))
-        {
-            block_depth += 1u;
-            continue;
-        }
-        if (!is_open_block_token(kind))
-            continue;
-
-        if (block_depth > 0u)
-        {
-            block_depth -= 1u;
-            continue;
-        }
-
-        uint owner = block_owner(j);
-        if (owner == BLOCK_OWNER_WHILE)
-            return true;
-        if (owner == BLOCK_OWNER_FN)
-            return false;
-    }
-    return false;
-}
-
 void check_loop_control(uint pos, uint want)
 {
     if (token_kind(pos) != want)
@@ -214,49 +131,26 @@ void check_loop_control(uint pos, uint want)
         record_error(pos, ERR_BAD_HIR, want);
         return;
     }
-    if (active_hir_node_count() != 0u)
+    if (active_hir_node_count() == 0u)
     {
-        if (pos >= active_token_count() || loop_depth[pos] <= 0)
-            record_error(pos, ERR_LOOP_CONTROL, want);
+        record_error(pos, ERR_BAD_HIR, want);
         return;
     }
-    if (!inside_while_body(pos))
+    if (pos >= active_token_count() || loop_depth[pos] <= 0)
         record_error(pos, ERR_LOOP_CONTROL, want);
-}
-
-bool postfix_incdec_lvalue(uint i)
-{
-    if (i == 0u)
-        return false;
-    uint prev = token_kind(i - 1u);
-    return prev == TK_IDENT || prev == TK_INDEX_RBRACKET;
-}
-
-bool prefix_incdec_lvalue(uint i)
-{
-    uint n_active = active_token_count();
-    if (i + 1u >= n_active)
-        return false;
-    if (token_kind(i + 1u) != TK_IDENT)
-        return false;
-    return i + 2u >= n_active || token_kind(i + 2u) != TK_CALL_LPAREN;
-}
-
-void check_incdec_lvalue(uint i)
-{
-    if (!prefix_incdec_lvalue(i) && !postfix_incdec_lvalue(i))
-        record_error(i, ERR_ASSIGN_MISMATCH, token_kind(i));
 }
 
 uint unary_operand_token(uint i)
 {
     uint n_active = active_token_count();
     uint cur = i + 1u;
-    for (uint guard = 0u; guard < 16u && cur < n_active; guard += 1u)
+    for (uint guard = 0u; guard < 16u; guard += 1u)
     {
+        if (cur >= n_active)
+            break;
         uint kind = token_kind(cur);
         if (kind == TK_GROUP_LPAREN || kind == TK_PREFIX_PLUS || kind == TK_PREFIX_MINUS ||
-            kind == TK_NOT || kind == TK_TILDE)
+            kind == TK_NOT)
         {
             cur += 1u;
             continue;
@@ -277,11 +171,6 @@ void check_unary_operand(uint i, uint op)
     {
         if (operand == TK_STRING || operand == TK_ARRAY_LBRACKET)
             record_error(i, ERR_COND_TYPE, operand);
-    }
-    else if (op == TK_TILDE)
-    {
-        if (operand == TK_STRING || operand == TK_FLOAT || operand == TK_ARRAY_LBRACKET)
-            record_error(i, ERR_ASSIGN_MISMATCH, operand);
     }
 }
 
@@ -314,8 +203,10 @@ uint binary_left_operand_token(uint i)
 
     uint depth = 0u;
     uint j = cur + 1u;
-    for (uint guard = 0u; guard < 32u && j > 0u; guard += 1u)
+    for (uint guard = 0u; guard < 32u; guard += 1u)
     {
+        if (j == 0u)
+            break;
         j -= 1u;
         uint kind = token_kind(j);
         if (kind == TK_GROUP_RPAREN)
@@ -435,9 +326,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (i < active_token_count())
     {
         uint token = token_kind(i);
-        if (token == TK_INC || token == TK_DEC)
-            check_incdec_lvalue(i);
-        else if (token == TK_NOT || token == TK_TILDE)
+        if (token == TK_NOT)
             check_unary_operand(i, token);
         else if (is_checked_binary_operator(token))
             check_binary_operands(i, token);

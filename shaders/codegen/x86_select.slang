@@ -53,6 +53,7 @@ static const uint X86_FUNC_FIRST_VIRTUAL_ROW_OK = 1u;
 static const uint X86_ERR_MISSING_MAIN = 2u;
 static const uint X86_ERR_SELECT = 17u;
 static const uint X86_ERR_ENTRYPOINT_BODY = 43u;
+static const uint X86_ERR_MULTIPLE_MAIN = 62u;
 
 static const uint X86_VINST_IMM_I32 = 1u;
 static const uint X86_VINST_PARAM = 2u;
@@ -83,6 +84,8 @@ static const uint X86_VINST_MATCH_TAG_BRANCH = 27u;
 static const uint X86_VINST_FOR_INTERVAL_BRANCH = 28u;
 static const uint X86_VINST_COPY_LOCAL = 29u;
 static const uint X86_VINST_STORE_LOCAL_INDEX = 30u;
+static const uint X86_VINST_FOR_PARAM_ARRAY_LOAD = 31u;
+static const uint X86_VINST_STORE_PARAM_INDEX = 32u;
 static const uint X86_ARG_SCALAR = 1u;
 static const uint X86_ARG_LOCAL_PTR = 2u;
 static const uint X86_ARG_PARAM_PTR = 3u;
@@ -118,6 +121,8 @@ static const uint X86_INST_V_MATCH_TAG_BRANCH = 77u;
 static const uint X86_INST_V_FOR_INTERVAL_BRANCH = 78u;
 static const uint X86_INST_V_COPY_LOCAL_R32 = 79u;
 static const uint X86_INST_V_STORE_LOCAL_INDEX_R32 = 80u;
+static const uint X86_INST_V_FOR_PARAM_ARRAY_LOAD = 81u;
+static const uint X86_INST_V_STORE_PARAM_INDEX_R32 = 82u;
 static const uint X86_INTRINSIC_TEXT_WRITE = 1u;
 static const uint X86_OP_ADD_I32 = 1u;
 static const uint X86_OP_MUL_I32 = 3u;
@@ -129,6 +134,7 @@ static const uint X86_OP_BIT_XOR = 10u;
 
 static const uint FUNC_META_MAIN_COUNT = 1u;
 static const uint FUNC_META_MAIN_SLOT = 2u;
+static const uint FUNC_META_MAIN_MAX_NODE = 3u;
 static const uint FUNC_META_MAIN_NODE = 4u;
 static const uint MIN_X86_STACK_FRAME_BYTES = 16u;
 
@@ -178,13 +184,13 @@ bool upstream_ok()
            x86_func_first_virtual_row_status[3u] == inst_count;
 }
 
-void publish_error(uint detail, uint extra)
+void publish_error(uint node, uint row)
 {
     publish_stage_error_min_detail_extra4(
         select_status,
         X86_ERR_SELECT,
-        detail,
-        extra);
+        node,
+        row);
 }
 
 bool has_value_def(uint row, uint inst_count)
@@ -244,7 +250,13 @@ bool main_entry_target(uint inst_count, out uint target)
         return false;
 
     uint main_row = x86_func_first_virtual_row[main_slot];
-    if (main_row == INVALID || main_row >= inst_count)
+    if (main_row == INVALID)
+    {
+        target = selected_target(inst_count, inst_count);
+        return true;
+    }
+
+    if (main_row >= inst_count)
         return false;
 
     target = selected_target(main_row, inst_count);
@@ -255,6 +267,19 @@ bool missing_main_entrypoint()
 {
     return x86_func_meta[FUNC_META_MAIN_COUNT] == 0u ||
            x86_func_meta[FUNC_META_MAIN_NODE] == INVALID;
+}
+
+bool multiple_main_entrypoints()
+{
+    return x86_func_meta[FUNC_META_MAIN_COUNT] > 1u;
+}
+
+uint multiple_main_entrypoint_detail()
+{
+    uint max_node = x86_func_meta[FUNC_META_MAIN_MAX_NODE];
+    return max_node != INVALID && max_node < gParams.n_hir_nodes
+               ? max_node
+               : x86_func_meta[FUNC_META_MAIN_NODE];
 }
 
 bool main_entry_error_is_source_addressable()
@@ -276,6 +301,16 @@ bool call_target_valid(uint target, uint inst_count)
     return target != INVALID &&
            target < inst_count &&
            virtual_func_slot_valid(target);
+}
+
+bool function_slot_valid(uint slot)
+{
+    return slot != INVALID && slot < gParams.function_slot_capacity;
+}
+
+uint call_target_row_for_slot(uint slot)
+{
+    return function_slot_valid(slot) ? x86_func_first_virtual_row[slot] : INVALID;
 }
 
 uint pack_regs(uint a, uint b)
@@ -322,16 +357,29 @@ bool mixed_arg_payload_row(uint row, out uint payload_row)
         return false;
 
     uint4 payload_inst = x86_virtual_inst_record[payload_row];
-    return payload_inst.x == call_inst.x &&
-           payload_inst.y == 1u &&
-           payload_inst.z == 0u &&
-           payload_inst.w == INVALID;
+    bool first_ok = payload_inst.x == call_inst.x &&
+                    payload_inst.y == 1u &&
+                    payload_inst.z == 0u;
+    if (!first_ok)
+        return false;
+    if (payload_inst.w == INVALID)
+        return true;
+
+    if (payload_inst.w >= virtual_inst_count())
+        return false;
+    uint4 payload_inst_hi = x86_virtual_inst_record[payload_inst.w];
+    return payload_inst_hi.x == call_inst.x &&
+           payload_inst_hi.y == 2u &&
+           payload_inst_hi.z == 0u &&
+           payload_inst_hi.w == INVALID;
 }
 
 uint mixed_arg_kind(uint info, uint ordinal)
 {
     if (ordinal < 4u)
         return packed_u2_at_offset(info, 12u, ordinal);
+    if (ordinal < 6u)
+        return packed_u2_at_offset(info, 20u, ordinal - 4u);
     return 0u;
 }
 
@@ -366,11 +414,30 @@ uint mixed_target_reg(uint ordinal, bool aggregate_return)
     return INVALID;
 }
 
-uint call_arg_payload_at(uint ordinal, uint arg0, uint arg1, uint arg2, uint arg3)
+uint call_arg_payload_at(
+    uint ordinal,
+    uint arg0,
+    uint arg1,
+    uint arg2,
+    uint arg3,
+    uint arg4,
+    uint arg5)
 {
     return ordinal == 0u
         ? arg0
-        : (ordinal == 1u ? arg1 : (ordinal == 2u ? arg2 : arg3));
+        : (ordinal == 1u
+               ? arg1
+               : (ordinal == 2u
+                      ? arg2
+                      : (ordinal == 3u ? arg3 : (ordinal == 4u ? arg4 : arg5))));
+}
+
+void clear_selected_inst(uint out_row)
+{
+    x86_inst_kind[out_row] = 0u;
+    x86_inst_arg0[out_row] = 0u;
+    x86_inst_arg1[out_row] = 0u;
+    x86_inst_arg2[out_row] = 0u;
 }
 
 bool call_arg_move_writes_target(uint kind, uint payload, uint target)
@@ -388,12 +455,14 @@ uint call_arg_clobber_mask_for_ordinal(
     uint arg1,
     uint arg2,
     uint arg3,
+    uint arg4,
+    uint arg5,
     bool aggregate_return)
 {
     if (ordinal >= arg_count)
         return 0u;
     uint target = mixed_target_reg(ordinal, aggregate_return);
-    uint payload = call_arg_payload_at(ordinal, arg0, arg1, arg2, arg3);
+    uint payload = call_arg_payload_at(ordinal, arg0, arg1, arg2, arg3, arg4, arg5);
     return call_arg_move_writes_target(mixed_arg_kind(info, ordinal), payload, target)
                ? call_saved_reg_mask_bit(target)
                : 0u;
@@ -407,13 +476,17 @@ uint call_arg_clobber_mask_before(
     uint arg1,
     uint arg2,
     uint arg3,
+    uint arg4,
+    uint arg5,
     bool aggregate_return)
 {
     uint mask = aggregate_return ? call_saved_reg_mask_bit(X86_REG_EDI) : 0u;
-    if (ordinal > 0u) mask |= call_arg_clobber_mask_for_ordinal(info, 0u, arg_count, arg0, arg1, arg2, arg3, aggregate_return);
-    if (ordinal > 1u) mask |= call_arg_clobber_mask_for_ordinal(info, 1u, arg_count, arg0, arg1, arg2, arg3, aggregate_return);
-    if (ordinal > 2u) mask |= call_arg_clobber_mask_for_ordinal(info, 2u, arg_count, arg0, arg1, arg2, arg3, aggregate_return);
-    if (ordinal > 3u) mask |= call_arg_clobber_mask_for_ordinal(info, 3u, arg_count, arg0, arg1, arg2, arg3, aggregate_return);
+    if (ordinal > 0u) mask |= call_arg_clobber_mask_for_ordinal(info, 0u, arg_count, arg0, arg1, arg2, arg3, arg4, arg5, aggregate_return);
+    if (ordinal > 1u) mask |= call_arg_clobber_mask_for_ordinal(info, 1u, arg_count, arg0, arg1, arg2, arg3, arg4, arg5, aggregate_return);
+    if (ordinal > 2u) mask |= call_arg_clobber_mask_for_ordinal(info, 2u, arg_count, arg0, arg1, arg2, arg3, arg4, arg5, aggregate_return);
+    if (ordinal > 3u) mask |= call_arg_clobber_mask_for_ordinal(info, 3u, arg_count, arg0, arg1, arg2, arg3, arg4, arg5, aggregate_return);
+    if (ordinal > 4u) mask |= call_arg_clobber_mask_for_ordinal(info, 4u, arg_count, arg0, arg1, arg2, arg3, arg4, arg5, aggregate_return);
+    if (ordinal > 5u) mask |= call_arg_clobber_mask_for_ordinal(info, 5u, arg_count, arg0, arg1, arg2, arg3, arg4, arg5, aggregate_return);
     return mask;
 }
 
@@ -425,12 +498,14 @@ uint call_arg_save_mask_for_ordinal(
     uint arg1,
     uint arg2,
     uint arg3,
+    uint arg4,
+    uint arg5,
     bool aggregate_return)
 {
     if (ordinal >= arg_count || mixed_arg_kind(info, ordinal) != X86_ARG_SCALAR)
         return 0u;
     uint payload_bit = call_saved_reg_mask_bit(
-        call_arg_payload_at(ordinal, arg0, arg1, arg2, arg3));
+        call_arg_payload_at(ordinal, arg0, arg1, arg2, arg3, arg4, arg5));
     uint clobbered_before = call_arg_clobber_mask_before(
         info,
         ordinal,
@@ -439,6 +514,8 @@ uint call_arg_save_mask_for_ordinal(
         arg1,
         arg2,
         arg3,
+        arg4,
+        arg5,
         aggregate_return);
     return (payload_bit & clobbered_before) != 0u ? payload_bit : 0u;
 }
@@ -450,13 +527,17 @@ uint call_arg_save_mask(
     uint arg1,
     uint arg2,
     uint arg3,
+    uint arg4,
+    uint arg5,
     bool aggregate_return)
 {
     uint mask = 0u;
-    mask |= call_arg_save_mask_for_ordinal(info, 0u, arg_count, arg0, arg1, arg2, arg3, aggregate_return);
-    mask |= call_arg_save_mask_for_ordinal(info, 1u, arg_count, arg0, arg1, arg2, arg3, aggregate_return);
-    mask |= call_arg_save_mask_for_ordinal(info, 2u, arg_count, arg0, arg1, arg2, arg3, aggregate_return);
-    mask |= call_arg_save_mask_for_ordinal(info, 3u, arg_count, arg0, arg1, arg2, arg3, aggregate_return);
+    mask |= call_arg_save_mask_for_ordinal(info, 0u, arg_count, arg0, arg1, arg2, arg3, arg4, arg5, aggregate_return);
+    mask |= call_arg_save_mask_for_ordinal(info, 1u, arg_count, arg0, arg1, arg2, arg3, arg4, arg5, aggregate_return);
+    mask |= call_arg_save_mask_for_ordinal(info, 2u, arg_count, arg0, arg1, arg2, arg3, arg4, arg5, aggregate_return);
+    mask |= call_arg_save_mask_for_ordinal(info, 3u, arg_count, arg0, arg1, arg2, arg3, arg4, arg5, aggregate_return);
+    mask |= call_arg_save_mask_for_ordinal(info, 4u, arg_count, arg0, arg1, arg2, arg3, arg4, arg5, aggregate_return);
+    mask |= call_arg_save_mask_for_ordinal(info, 5u, arg_count, arg0, arg1, arg2, arg3, arg4, arg5, aggregate_return);
     return mask;
 }
 
@@ -468,9 +549,15 @@ uint pack_kind_with_call_save_mask(uint kind, uint save_mask)
 uint mixed_arg_payload(uint row, uint ordinal)
 {
     uint payload_row = INVALID;
-    if (!mixed_arg_payload_row(row, payload_row) || ordinal >= 4u)
+    if (!mixed_arg_payload_row(row, payload_row) || ordinal >= 6u)
         return INVALID;
-    return x86_virtual_inst_args[payload_row][ordinal];
+    if (ordinal < 4u)
+        return x86_virtual_inst_args[payload_row][ordinal];
+
+    uint payload_row_hi = x86_virtual_inst_record[payload_row].w;
+    if (payload_row_hi == INVALID || payload_row_hi >= virtual_inst_count())
+        return INVALID;
+    return x86_virtual_inst_args[payload_row_hi][ordinal - 4u];
 }
 
 bool selected_mixed_arg_payload(uint row, uint info, uint ordinal, uint inst_count, out uint payload)
@@ -488,30 +575,72 @@ bool selected_mixed_arg_payload(uint row, uint info, uint ordinal, uint inst_cou
     return false;
 }
 
+bool mixed_args_fit_extended_scalar_pack(uint info, uint arg_count)
+{
+    if (arg_count <= 4u)
+        return true;
+    if (arg_count > 6u)
+        return false;
+    if (arg_count >= 1u && mixed_arg_kind(info, 0u) != X86_ARG_SCALAR) return false;
+    if (arg_count >= 2u && mixed_arg_kind(info, 1u) != X86_ARG_SCALAR) return false;
+    if (arg_count >= 3u && mixed_arg_kind(info, 2u) != X86_ARG_SCALAR) return false;
+    if (arg_count >= 4u && mixed_arg_kind(info, 3u) != X86_ARG_SCALAR) return false;
+    if (arg_count >= 5u && mixed_arg_kind(info, 4u) != X86_ARG_SCALAR) return false;
+    if (arg_count >= 6u && mixed_arg_kind(info, 5u) != X86_ARG_SCALAR) return false;
+    return true;
+}
+
+bool selected_payloads_fit_extended_scalar_pack(
+    uint arg_count,
+    uint arg0,
+    uint arg1,
+    uint arg2,
+    uint arg3,
+    uint arg4,
+    uint arg5)
+{
+    if (arg_count <= 4u)
+        return true;
+    return (arg_count < 1u || arg0 < 16u) &&
+           (arg_count < 2u || arg1 < 16u) &&
+           (arg_count < 3u || arg2 < 16u) &&
+           (arg_count < 4u || arg3 < 16u) &&
+           (arg_count < 5u || arg4 < 16u) &&
+           (arg_count < 6u || arg5 < 16u);
+}
+
+uint pack_selected_call_arg_payloads(
+    uint arg_count,
+    uint arg0,
+    uint arg1,
+    uint arg2,
+    uint arg3,
+    uint arg4,
+    uint arg5)
+{
+    if (arg_count <= 4u)
+        return pack_u8x4(arg0, arg1, arg2, arg3);
+    return ((arg0 & 0xfu) << 0u) |
+           ((arg1 & 0xfu) << 4u) |
+           ((arg2 & 0xfu) << 8u) |
+           ((arg3 & 0xfu) << 12u) |
+           ((arg4 & 0xfu) << 16u) |
+           ((arg5 & 0xfu) << 20u);
+}
+
 bool select_virtual_inst(uint row, uint inst_count)
 {
     uint4 inst = x86_virtual_inst_record[row];
     uint4 args = x86_virtual_inst_args[row];
     uint op = inst.z;
     uint out_row = row + 1u;
+    clear_selected_inst(out_row);
 
     if (inst.x == INVALID || op == 0u)
-    {
-        x86_inst_kind[out_row] = 0u;
-        x86_inst_arg0[out_row] = 0u;
-        x86_inst_arg1[out_row] = 0u;
-        x86_inst_arg2[out_row] = 0u;
         return true;
-    }
 
     if (optimized_dead_value_def(row, inst_count))
-    {
-        x86_inst_kind[out_row] = 0u;
-        x86_inst_arg0[out_row] = 0u;
-        x86_inst_arg1[out_row] = 0u;
-        x86_inst_arg2[out_row] = 0u;
         return true;
-    }
 
     if (!virtual_func_slot_valid(row))
         return false;
@@ -590,11 +719,12 @@ bool select_virtual_inst(uint row, uint inst_count)
 
     if (op == X86_VINST_CALL_MIXED)
     {
-        if (!call_target_valid(args.x, inst_count))
+        uint target_row = call_target_row_for_slot(args.x);
+        if (!call_target_valid(target_row, inst_count))
             return false;
         uint info = args.w;
         uint arg_count = mixed_arg_count(info);
-        if (arg_count > 4u)
+        if (arg_count > 6u || !mixed_args_fit_extended_scalar_pack(info, arg_count))
             return false;
         bool aggregate_return = mixed_has_aggregate_return(info);
         uint dest_payload = args.y;
@@ -605,6 +735,8 @@ bool select_virtual_inst(uint row, uint inst_count)
         uint arg1 = 0u;
         uint arg2 = 0u;
         uint arg3 = 0u;
+        uint arg4 = 0u;
+        uint arg5 = 0u;
         if (arg_count >= 1u &&
             !selected_mixed_arg_payload(row, info, 0u, inst_count, arg0))
             return false;
@@ -617,13 +749,37 @@ bool select_virtual_inst(uint row, uint inst_count)
         if (arg_count >= 4u &&
             !selected_mixed_arg_payload(row, info, 3u, inst_count, arg3))
             return false;
+        if (arg_count >= 5u &&
+            !selected_mixed_arg_payload(row, info, 4u, inst_count, arg4))
+            return false;
+        if (arg_count >= 6u &&
+            !selected_mixed_arg_payload(row, info, 5u, inst_count, arg5))
+            return false;
+        if (!selected_payloads_fit_extended_scalar_pack(
+                arg_count,
+                arg0,
+                arg1,
+                arg2,
+                arg3,
+                arg4,
+                arg5))
+            return false;
 
         uint save_mask = x86_virtual_call_live_reg_mask[row] |
-                         call_arg_save_mask(info, arg_count, arg0, arg1, arg2, arg3, aggregate_return);
+                         call_arg_save_mask(
+                             info,
+                             arg_count,
+                             arg0,
+                             arg1,
+                             arg2,
+                             arg3,
+                             arg4,
+                             arg5,
+                             aggregate_return);
         x86_inst_kind[out_row] = pack_kind_with_call_save_mask(
             X86_INST_V_CALL_MIXED_DIRECT,
             save_mask);
-        x86_inst_arg0[out_row] = selected_target(args.x, inst_count);
+        x86_inst_arg0[out_row] = selected_target(target_row, inst_count);
         x86_inst_arg1[out_row] = pack_u8x4(
                                      aggregate_return ? 1u : 0u,
                                      dest_payload,
@@ -635,7 +791,14 @@ bool select_virtual_inst(uint row, uint inst_count)
                                      mixed_arg_kind(info, 1u),
                                      mixed_arg_kind(info, 2u),
                                      mixed_arg_kind(info, 3u));
-        x86_inst_arg2[out_row] = pack_u8x4(arg0, arg1, arg2, arg3);
+        x86_inst_arg2[out_row] = pack_selected_call_arg_payloads(
+            arg_count,
+            arg0,
+            arg1,
+            arg2,
+            arg3,
+            arg4,
+            arg5);
         return true;
     }
 
@@ -719,6 +882,20 @@ bool select_virtual_inst(uint row, uint inst_count)
         return true;
     }
 
+    if (op == X86_VINST_STORE_PARAM_INDEX)
+    {
+        uint index = INVALID;
+        uint src = INVALID;
+        if (!phys_reg_for_value(args.y, inst_count, index) ||
+            !phys_reg_for_value(args.z, inst_count, src))
+            return false;
+        x86_inst_kind[out_row] = X86_INST_V_STORE_PARAM_INDEX_R32;
+        x86_inst_arg0[out_row] = args.x;
+        x86_inst_arg1[out_row] = pack_index_width(index, args.w);
+        x86_inst_arg2[out_row] = src;
+        return true;
+    }
+
     if (op == X86_VINST_LOAD_PARAM_INDEX)
     {
         uint dst = INVALID;
@@ -768,6 +945,15 @@ bool select_virtual_inst(uint row, uint inst_count)
     if (op == X86_VINST_FOR_ARRAY_LOAD)
     {
         x86_inst_kind[out_row] = X86_INST_V_FOR_ARRAY_LOAD;
+        x86_inst_arg0[out_row] = args.x;
+        x86_inst_arg1[out_row] = args.y;
+        x86_inst_arg2[out_row] = args.z;
+        return true;
+    }
+
+    if (op == X86_VINST_FOR_PARAM_ARRAY_LOAD)
+    {
+        x86_inst_kind[out_row] = X86_INST_V_FOR_PARAM_ARRAY_LOAD;
         x86_inst_arg0[out_row] = args.x;
         x86_inst_arg1[out_row] = args.y;
         x86_inst_arg2[out_row] = args.z;
@@ -910,26 +1096,30 @@ void main(uint3 tid: SV_DispatchThreadID)
     {
         uint entry_target = INVALID;
         bool missing_main = ok && missing_main_entrypoint();
-        bool entry_ok = ok && !missing_main && main_entry_target(inst_count, entry_target);
-        bool entry_body_error = ok && !missing_main && !entry_ok &&
+        bool multiple_main = ok && !missing_main && multiple_main_entrypoints();
+        bool entry_ok = ok && !missing_main && !multiple_main &&
+                        main_entry_target(inst_count, entry_target);
+        bool entry_body_error = ok && !missing_main && !multiple_main && !entry_ok &&
                                 main_entry_error_is_source_addressable();
         select_status[0u] = entry_ok ? X86_SELECT_OK : 0u;
         select_status[1u] = entry_ok ? 0u :
                              (missing_main ? X86_ERR_MISSING_MAIN :
+                             (multiple_main ? X86_ERR_MULTIPLE_MAIN :
                              (entry_body_error ? X86_ERR_ENTRYPOINT_BODY :
                              (x86_func_first_virtual_row_status[1u] != 0u ?
                               x86_func_first_virtual_row_status[1u] :
                               (x86_virtual_regalloc_status[1u] == 0u ?
                               X86_ERR_SELECT :
-                              x86_virtual_regalloc_status[1u]))));
+                              x86_virtual_regalloc_status[1u])))));
         select_status[2u] = entry_ok ? INVALID :
                              (missing_main ? INVALID :
+                             (multiple_main ? multiple_main_entrypoint_detail() :
                              (entry_body_error ? x86_func_meta[FUNC_META_MAIN_NODE] :
                              (x86_func_first_virtual_row_status[1u] != 0u ?
                               x86_func_first_virtual_row_status[2u] :
                               (x86_virtual_regalloc_status[1u] == 0u ?
                               x86_virtual_inst_status[2u] :
-                              x86_virtual_regalloc_status[2u]))));
+                              x86_virtual_regalloc_status[2u])))));
         select_status[3u] = entry_ok ? selected_count : 0u;
         if (entry_ok)
         {
@@ -951,5 +1141,5 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     if (!select_virtual_inst(row, inst_count))
-        publish_error(x86_virtual_inst_record[row].z, row);
+        publish_error(x86_virtual_inst_record[row].x, row);
 }

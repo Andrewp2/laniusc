@@ -1,11 +1,12 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     env,
-    ffi::{OsStr, OsString},
+    ffi::OsString,
     fs,
     io::Read,
     path::{Path, PathBuf},
     process::{Command, Stdio},
+    sync::{Mutex, OnceLock},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -17,12 +18,9 @@ const DEFAULT_MAX_CAPACITY_STRESS_COMPILE_FLOOR_BYTES: u64 = 12 * 1024 * 1024 * 
 const DEFAULT_GENERATED_GATE_COMMAND_TIMEOUT_MS: u64 = 120_000;
 const MAX_GENERATED_LINES_WITHOUT_OPT_IN: usize = 20_000;
 const MAX_CAPACITY_STRESS_LINES_WITHOUT_OPT_IN: usize = 20_000;
-const MAX_PAREAS_COMPARE_ITERS_WITHOUT_OPT_IN: usize = 3;
 const ALLOW_LARGE_GENERATED_TESTS_ENV: &str = "LANIUS_ALLOW_LARGE_GENERATED_TESTS";
 const GENERATED_X86_READBACK_TIMEOUT_MS: &str = "60000";
-const DEFAULT_PAREAS_COMPARE_ITERS: &str = "1";
 const CHILD_PROCESS_POLL_INTERVAL_MS: u64 = 10;
-const PAREAS_LIMIT_FACTOR: f64 = 1.5;
 
 #[test]
 #[ignore = "parameterized generated compiler gate; run explicitly after frontend changes"]
@@ -227,89 +225,73 @@ fn generated_reused_x86_suite_validates() {
 }
 
 #[test]
-#[ignore = "requires a Pareas binary; set PAREAS_BIN or LANIUS_REQUIRE_PAREAS=1"]
-fn generated_pareas_comparison_when_available() {
+#[ignore = "Pareas comparison provenance gate; validates the no-run scaffold only"]
+fn generated_pareas_comparison_is_local_artifact_scaffold_only() {
     let Some(pareas_bin) = pareas_bin() else {
         if env_truthy("LANIUS_REQUIRE_PAREAS") {
-            panic!("Pareas comparison required, but no Pareas binary was found");
+            panic!("Pareas provenance check required, but no Pareas binary was found");
         }
-        eprintln!("skipping Pareas comparison: set PAREAS_BIN or build ~/code/pareas");
+        eprintln!("skipping Pareas provenance check: set PAREAS_BIN or build ~/code/pareas");
         return;
     };
 
-    if pass_contract_readiness_status() != "claimable" {
-        eprintln!(
-            "skipping Pareas performance ratio assertion: pass_contract_loop_status={} pass_contract_fallback_status={} pass_contract_claim_status={} pass_contract_readiness_status={}; comparison timing is not claimable while pass contracts are blocked",
-            pass_contract_loop_status(),
-            pass_contract_fallback_status(),
-            pass_contract_claim_status(),
-            pass_contract_readiness_status()
-        );
-        return;
-    }
+    let temp_home = unique_temp_dir("acceptance_pareas_home");
+    let temp_path = unique_temp_dir("acceptance_pareas_path");
+    install_cat_on_path(&temp_path);
 
-    let laniusc_bin = release_gpu_compile_bench_bin().unwrap_or_else(gpu_compile_bench_bin);
-    let lines = generated_lines();
-    let pareas_lines = parse_usize_env_value("LANIUS_GENERATED_LINES", lines.as_str());
-    let laniusc_args = [
-        "--phase",
-        "x86",
-        "--emit",
-        "x86_64-elf",
-        "--source",
-        "call-graph",
-        "--lines",
-        lines.as_str(),
-        "--warmups",
-        "0",
-        "--iters",
-        "1",
-        "--allow-large",
-        "--validate-output",
-    ];
-    let mut laniusc_inner_best_ms = f64::INFINITY;
-    let mut laniusc_wall_best_ms = f64::INFINITY;
-    let compare_iters = pareas_compare_iters();
-    for _ in 0..compare_iters {
-        let run = run_success_timed(&laniusc_bin, &laniusc_args);
-        laniusc_wall_best_ms = laniusc_wall_best_ms.min(duration_ms(run.elapsed));
-        laniusc_inner_best_ms = laniusc_inner_best_ms
-            .min(parse_ms_field(&run.stdout, "best_ms").expect("laniusc best_ms"));
-    }
+    let output = run_acceptance_script(&["--measurement-plan"], |command| {
+        command
+            .env("HOME", &temp_home)
+            .env("PATH", &temp_path)
+            .env("PAREAS_BIN", &pareas_bin)
+            .env("LANIUS_PERF_CHECKPOINT_LINES", "5000");
+    });
+    let plan = parse_measurement_plan(&output);
+    let checkpoint = plan
+        .checkpoints
+        .get("5000")
+        .unwrap_or_else(|| panic!("missing checkpoint 5000 in {plan:#?}"));
 
-    let pareas_source = pareas_generated_source(pareas_lines);
-    let pareas_cuda_path = pareas_runtime_cuda_path();
-    let pareas_ld_library_path = pareas_runtime_ld_library_path();
-    let source_path = unique_temp_path("pareas_generated", "par");
-    let output_path = unique_temp_path("pareas_generated", "out");
-    fs::write(&source_path, pareas_source).expect("write Pareas source");
-    let mut pareas_wall_best_ms = f64::INFINITY;
-    for _ in 0..compare_iters {
-        let run = run_pareas_success_timed(
-            &pareas_bin,
-            &[
-                source_path.as_os_str().to_owned(),
-                "-o".into(),
-                output_path.as_os_str().to_owned(),
-            ],
-            pareas_cuda_path.as_deref(),
-            pareas_ld_library_path.as_deref(),
-        );
-        pareas_wall_best_ms = pareas_wall_best_ms.min(duration_ms(run.elapsed));
-        let _ = fs::remove_file(&output_path);
-    }
-    let _ = fs::remove_file(&source_path);
-    let _ = fs::remove_file(&output_path);
-
-    eprintln!(
-        "pareas_bin={} compare_iters={compare_iters} laniusc_wall_best_ms={laniusc_wall_best_ms:.3} laniusc_inner_best_ms={laniusc_inner_best_ms:.3} pareas_wall_best_ms={pareas_wall_best_ms:.3}",
-        pareas_bin.display()
+    assert_eq!(
+        required_plan_field(&plan.top, "paper_numbers_accepted"),
+        "false"
     );
+    assert_eq!(
+        required_plan_field(&plan.top, "comparison_baseline_policy"),
+        "local-pareas-artifacts-only"
+    );
+    assert_eq!(
+        required_plan_field(&plan.top, "local_pareas_claim_source"),
+        local_pareas_claim_source()
+    );
+    for name in optional_comparison_artifact_names() {
+        let artifact = required_artifact(checkpoint, &name);
+        assert_eq!(
+            required_plan_field(artifact, "claim_source"),
+            "optional_local_comparison_artifact",
+            "Pareas artifact {name:?} should require local comparison provenance"
+        );
+        assert_eq!(
+            required_plan_field(artifact, "claim_boundary"),
+            "optional-local-comparison-provenance-not-pareas-claim",
+            "Pareas artifact {name:?} should stay provenance-only in the no-run scaffold"
+        );
+    }
+
+    let command_labels = &plan.command_labels;
+    assert!(command_labels.contains("pareas_source_command_5000l"));
+    assert!(command_labels.contains("pareas_source_sha256_command_5000l"));
+    assert!(command_labels.contains("pareas_binary_sha256_command_5000l"));
+    assert!(command_labels.contains("pareas_wrapped_command_5000l"));
     assert!(
-        laniusc_wall_best_ms <= pareas_wall_best_ms * PAREAS_LIMIT_FACTOR,
-        "laniusc wall best {laniusc_wall_best_ms:.3} exceeded {:.0}% of Pareas wall best {pareas_wall_best_ms:.3}",
-        PAREAS_LIMIT_FACTOR * 100.0
+        output.contains(
+            "this scaffold records the intended commands but does not generate or run them."
+        ),
+        "Pareas scaffold should stay no-run and artifact-provenance only\n{output}"
     );
+
+    let _ = fs::remove_dir_all(&temp_home);
+    let _ = fs::remove_dir_all(&temp_path);
 }
 
 #[test]
@@ -344,9 +326,12 @@ fn compiler_acceptance_measurement_plan_publishes_checkpoint_evidence_manifest()
         required_plan_field(&plan.top, "freshness_policy"),
         "hash-and-checkpoint-field-match"
     );
+    assert_eq!(
+        required_plan_field(&plan.top, "measurement_scaffold_evidence_status"),
+        measurement_scaffold_evidence_status()
+    );
     assert_measurement_timing_contract(&plan.top);
     assert_claim_provenance_contract(&plan.top);
-    assert_parallel_pass_contract_header(&plan.top);
     assert_eq!(
         required_plan_field(&plan.top, "source_control_policy"),
         "git-head-plus-status-in-command-environment-hash"
@@ -366,11 +351,15 @@ fn compiler_acceptance_measurement_plan_publishes_checkpoint_evidence_manifest()
     assert_eq!(required_plan_field(&plan.top, "target"), "x86_64-elf");
     assert_eq!(
         csv_set(required_plan_field(&plan.top, "checkpoints")),
-        string_set(["5000", "10000", "20000"])
+        string_set(["5000"])
     );
     assert_eq!(
         csv_vec(required_plan_field(&plan.top, "checkpoint_execution_order")),
-        vec!["5000", "10000", "20000"]
+        vec!["5000"]
+    );
+    assert_eq!(
+        required_plan_field(&plan.top, "checkpoint_run_policy"),
+        "run-checkpoint_execution_order-stop-on-first-readback-timeout-vram-growth-or-responsiveness-failure"
     );
     assert_eq!(
         csv_set(required_plan_field(
@@ -431,12 +420,13 @@ fn compiler_acceptance_measurement_plan_publishes_checkpoint_evidence_manifest()
         required_plan_field(&plan.top, "command_environment_schema"),
         "lanius.command-environment.v1"
     );
-    assert_eq!(
+    assert_contains_fields(
         csv_set(required_plan_field(
             &plan.top,
-            "required_command_environment_fields"
+            "required_command_environment_fields",
         )),
-        required_command_environment_field_names()
+        required_command_environment_field_names(),
+        "top-level command environment fields",
     );
     assert_eq!(
         required_plan_field(&plan.top, "responsiveness_probe_schema"),
@@ -457,12 +447,13 @@ fn compiler_acceptance_measurement_plan_publishes_checkpoint_evidence_manifest()
         required_plan_field(&plan.top, "evidence_status_schema"),
         "lanius.measurement-evidence-status.v1"
     );
-    assert_eq!(
+    assert_contains_fields(
         csv_set(required_plan_field(
             &plan.top,
-            "required_evidence_status_fields"
+            "required_evidence_status_fields",
         )),
-        required_evidence_status_field_names()
+        required_evidence_status_field_names(),
+        "top-level evidence status fields",
     );
     assert_eq!(
         required_plan_field(&plan.top, "evidence_freshness_schema"),
@@ -483,17 +474,18 @@ fn compiler_acceptance_measurement_plan_publishes_checkpoint_evidence_manifest()
         required_plan_field(&plan.top, "claim_readiness_policy"),
         "complete-local-evidence-only"
     );
-    assert_eq!(
+    assert_contains_fields(
         csv_set(required_plan_field(
             &plan.top,
-            "claim_readiness_required_evidence_classes"
+            "claim_readiness_required_evidence_classes",
         )),
-        claim_readiness_required_evidence_classes()
+        claim_readiness_required_evidence_classes(),
+        "top-level claim-readiness evidence classes",
     );
-    assert_eq!(
-        required_plan_field(&plan.top, "claim_readiness_required_statuses"),
-        claim_readiness_required_statuses()
-    );
+    assert_claim_readiness_status_requirements(required_plan_field(
+        &plan.top,
+        "claim_readiness_required_statuses",
+    ));
     assert_eq!(
         csv_set(required_plan_field(
             &plan.top,
@@ -513,9 +505,14 @@ fn compiler_acceptance_measurement_plan_publishes_checkpoint_evidence_manifest()
         required_plan_field(&plan.top, "measurement_summary_schema"),
         "lanius.measurement-summary.v1"
     );
-    assert_eq!(
+    assert_contains_fields(
         csv_set(required_plan_field(&plan.top, "required_summary_fields")),
-        required_summary_field_names()
+        required_summary_field_names(),
+        "top-level measurement summary fields",
+    );
+    assert_eq!(
+        required_plan_field(&plan.top, "pareas_vram_output_path"),
+        "target/lanius-measurements/pareas-5000l.vram.csv"
     );
     assert!(plan.command_labels.contains("lanius_build_command"));
 
@@ -534,25 +531,60 @@ fn compiler_acceptance_measurement_plan_publishes_parallel_pass_evidence_classes
     install_cat_on_path(&temp_path);
 
     let output = run_acceptance_script(&["--measurement-plan"], |command| {
-        command.env("HOME", &temp_home).env("PATH", &temp_path);
+        command
+            .env("HOME", &temp_home)
+            .env("PATH", &temp_path)
+            .env("LANIUS_PERF_CHECKPOINT_LINES", "5000");
     });
     let plan = parse_measurement_plan(&output);
+    let checkpoint = plan
+        .checkpoints
+        .get("5000")
+        .unwrap_or_else(|| panic!("missing checkpoint 5000 in {plan:#?}"));
 
-    assert_parallel_pass_contract_header(&plan.top);
-    for lines in ["5000", "10000", "20000"] {
-        let checkpoint = plan
-            .checkpoints
-            .get(lines)
-            .unwrap_or_else(|| panic!("missing checkpoint {lines}"));
-        assert_checkpoint_parallel_pass_evidence_classes(checkpoint);
-    }
+    assert_parallel_pass_contract_metadata(&plan.top);
+    assert_parallel_pass_contract_metadata(&checkpoint.fields);
+    assert_parallel_pass_contract_rows(&checkpoint.fields);
+
+    assert_contains_fields(
+        csv_set(required_plan_field(
+            required_artifact(checkpoint, "command_environment"),
+            "fields",
+        )),
+        parallel_pass_artifact_field_names(),
+        "command-environment pass-contract artifact fields",
+    );
+    assert_contains_fields(
+        csv_set(required_plan_field(
+            required_artifact(checkpoint, "measurement_summary"),
+            "fields",
+        )),
+        parallel_pass_artifact_field_names(),
+        "measurement summary pass-contract artifact fields",
+    );
+    assert_contains_fields(
+        csv_set(required_plan_field(
+            required_artifact(checkpoint, "measurement_summary"),
+            "claim_fields",
+        )),
+        parallel_pass_artifact_field_names(),
+        "measurement summary pass-contract claim fields",
+    );
+
+    assert!(
+        !output.contains("paper_numbers_accepted: true")
+            && !output.contains("local_performance_claim_status: claimable")
+            && !output.contains("scaling_claim_status: claimable")
+            && !output.contains("pass_contract_readiness_status: claimable"),
+        "parallel pass scaffold must not promote no-run metadata into claimable evidence\n{output}"
+    );
 
     let _ = fs::remove_dir_all(&temp_home);
     let _ = fs::remove_dir_all(&temp_path);
 }
 
 #[test]
-fn compiler_acceptance_measurement_summary_blocks_claims_for_bounded_fail_closed_pass_contracts() {
+fn compiler_acceptance_measurement_summary_preserves_link_artifact_claim_boundary() {
     let temp_home = unique_temp_dir("acceptance_measurement_home");
     let temp_path = unique_temp_dir("acceptance_measurement_path");
     let artifacts = unique_temp_dir("acceptance_measurement_artifacts");
@@ -575,95 +607,52 @@ fn compiler_acceptance_measurement_summary_blocks_claims_for_bounded_fail_closed
     run_bash_command_line_success(summary_command);
     let summary = fs::read_to_string(&measurement_summary_path).expect("read summary artifact");
     let summary_fields = parse_key_value_lines(&summary);
+    let link_artifact_blocker = link_artifact_claim_blocker();
+    let link_artifact_short_blocker = link_artifact_claim_short_blocker();
 
     assert_eq!(
-        required_plan_field(&summary_fields, "pass_contract_status_schema"),
-        pass_contract_status_schema()
+        required_plan_field(&summary_fields, "link_artifact_evidence_policy"),
+        link_artifact_evidence_policy()
     );
     assert_eq!(
-        required_plan_field(&summary_fields, "pass_contract_loop_status"),
-        pass_contract_loop_status()
+        required_plan_field(&summary_fields, "link_artifact_evidence_schema"),
+        link_artifact_evidence_schema()
     );
     assert_eq!(
-        required_plan_field(&summary_fields, "pass_contract_fallback_status"),
-        pass_contract_fallback_status()
+        required_plan_field(&summary_fields, "link_artifact_required_evidence_classes"),
+        link_artifact_required_evidence_classes()
     );
     assert_eq!(
-        required_plan_field(&summary_fields, "pass_contract_claim_status"),
-        pass_contract_claim_status()
+        required_plan_field(&summary_fields, "link_artifact_evidence_status"),
+        link_artifact_evidence_status()
     );
     assert_eq!(
-        required_plan_field(&summary_fields, "pass_contract_readiness_status"),
-        pass_contract_readiness_status()
+        required_plan_field(&summary_fields, "link_artifact_claim_blockers"),
+        link_artifact_claim_blockers()
     );
-    assert_eq!(
-        csv_set(required_plan_field(
-            &summary_fields,
-            "pass_contract_claim_blockers"
-        )),
-        pass_contract_claim_blockers()
+    assert!(
+        required_plan_field(&summary_fields, "local_performance_claim_blockers")
+            .contains(&link_artifact_short_blocker),
+        "local performance claims should stay blocked without link artifact evidence\n{summary}"
     );
     assert!(
         required_plan_field(&summary_fields, "production_readiness_blockers")
-            .contains("pass_contracts:blocked:loop_bounded:fallback_fail-closed:claim_blocked:bounded_pass_loops,fail_closed_passes"),
-        "bounded/fail-closed pass contracts should block production measurement claims\n{summary}"
+            .contains(&link_artifact_blocker),
+        "production readiness should require object/interface/partial-link/link-output artifacts\n{summary}"
     );
     assert!(
-        required_plan_field(&summary_fields, "production_readiness_blockers").contains(
-            "paper_pass_alignment:blocked:optimization_contract_narrow_single_pass_dead_values"
-        ),
-        "blocked paper-pass alignment should independently block production measurement claims\n{summary}"
+        required_plan_field(&summary_fields, "claim_readiness_blockers")
+            .contains(&link_artifact_short_blocker),
+        "claim readiness should carry the link-artifact evidence blocker\n{summary}"
+    );
+    assert!(
+        required_plan_field(&summary_fields, "claim_readiness_required_statuses")
+            .contains("link_artifact_evidence_status=artifact-backed"),
+        "claim readiness should require artifact-backed link evidence\n{summary}"
     );
     assert_eq!(
         required_plan_field(&summary_fields, "claim_readiness_status"),
         "not-claimable"
-    );
-    assert_eq!(
-        csv_set(required_plan_field(
-            &summary_fields,
-            "claim_readiness_required_evidence_classes"
-        )),
-        claim_readiness_required_evidence_classes()
-    );
-    assert_eq!(
-        required_plan_field(&summary_fields, "claim_readiness_required_statuses"),
-        claim_readiness_required_statuses()
-    );
-    assert!(
-        required_plan_field(&summary_fields, "claim_readiness_blockers")
-            .contains("pass_contracts:blocked"),
-        "claim-readiness blockers should carry the pass-contract boundary\n{summary}"
-    );
-    assert!(
-        required_plan_field(&summary_fields, "claim_readiness_blockers")
-            .contains("paper_pass_alignment:blocked"),
-        "claim-readiness blockers should carry the paper-pass alignment boundary\n{summary}"
-    );
-    assert!(
-        required_plan_field(&summary_fields, "claim_readiness_required_statuses")
-            .contains("paper_pass_alignment_status=claimable"),
-        "claim-readiness requirements should demand claimable paper-pass alignment\n{summary}"
-    );
-    assert!(
-        required_plan_field(&summary_fields, "claim_scope_key")
-            .contains("pass_contract_loop_status:bounded;pass_contract_fallback_status:fail-closed;pass_contract_claim_status:blocked;pass_contract_readiness_status:blocked"),
-        "claim scope should include pass loop/fallback status\n{summary}"
-    );
-    assert!(
-        required_plan_field(&summary_fields, "claim_scope_key").contains(
-            "paper_pass_alignment_blockers:optimization_contract_narrow_single_pass_dead_values"
-        ),
-        "claim scope should include the paper-pass alignment blocker details\n{summary}"
-    );
-    let parallel_groups = required_plan_field(&summary_fields, "parallel_pass_contract_groups");
-    let parallel_execution_order =
-        required_plan_field(&summary_fields, "parallel_pass_contract_execution_order");
-    assert_parallel_pass_evidence_class_values(parallel_groups, parallel_execution_order);
-    assert!(
-        required_plan_field(&summary_fields, "claim_scope_key").contains(&format!(
-            "parallel_pass_contract_execution_order:{parallel_execution_order}"
-        )),
-        "claim scope should include the paper-order pass contract sequence\n{summary}"
     );
 
     let _ = fs::remove_dir_all(&temp_home);
@@ -857,6 +846,76 @@ fn compiler_acceptance_measurement_plan_publishes_claim_provenance_boundaries() 
             .get(lines)
             .unwrap_or_else(|| panic!("missing checkpoint {lines}"));
         assert_claim_provenance_contract(&checkpoint.fields);
+    }
+
+    let _ = fs::remove_dir_all(&temp_home);
+    let _ = fs::remove_dir_all(&temp_path);
+}
+
+#[test]
+fn compiler_acceptance_measurement_plan_scopes_generated_workload_claims_to_source_shape() {
+    let temp_home = unique_temp_dir("acceptance_measurement_home");
+    let temp_path = unique_temp_dir("acceptance_measurement_path");
+    install_cat_on_path(&temp_path);
+
+    let output = run_acceptance_script(&["--measurement-plan"], |command| {
+        command.env("HOME", &temp_home).env("PATH", &temp_path);
+    });
+    let plan = parse_measurement_plan(&output);
+
+    assert_eq!(
+        required_plan_field(&plan.top, "workload_shape_policy"),
+        workload_shape_policy()
+    );
+    assert_eq!(
+        required_plan_field(&plan.top, "workload_shape_scope"),
+        workload_shape_scope()
+    );
+    assert_eq!(
+        required_plan_field(&plan.top, "workload_generalization_status"),
+        workload_generalization_status()
+    );
+    assert_eq!(
+        required_plan_field(&plan.top, "workload_generalization_blockers"),
+        workload_generalization_blockers()
+    );
+    for lines in ["5000", "10000", "20000"] {
+        let checkpoint = plan
+            .checkpoints
+            .get(lines)
+            .unwrap_or_else(|| panic!("missing checkpoint {lines}"));
+        assert_claim_provenance_contract(&checkpoint.fields);
+        assert_eq!(
+            required_plan_field(&checkpoint.fields, "source"),
+            "call-graph",
+            "generated workload claims should remain tied to the source shape"
+        );
+        assert!(
+            csv_set(required_plan_field(
+                required_artifact(checkpoint, "command_environment"),
+                "claim_fields"
+            ))
+            .is_superset(&string_set([
+                "workload_shape_policy",
+                "workload_shape_scope",
+                "workload_generalization_status",
+                "workload_generalization_blockers",
+            ])),
+            "command-environment provenance should preserve workload scope"
+        );
+        assert!(
+            csv_set(required_plan_field(
+                required_artifact(checkpoint, "measurement_summary"),
+                "claim_fields"
+            ))
+            .is_superset(&string_set([
+                "workload_shape_policy",
+                "workload_shape_scope",
+                "workload_generalization_status",
+                "workload_generalization_blockers",
+            ])),
+            "measurement summaries should preserve workload scope"
+        );
     }
 
     let _ = fs::remove_dir_all(&temp_home);
@@ -1291,6 +1350,10 @@ vram_output_path={}
         paper_baseline_policy()
     );
     assert_eq!(
+        required_plan_field(&summary_fields, "paper_baseline_claim_status"),
+        paper_baseline_claim_status()
+    );
+    assert_eq!(
         required_plan_field(&summary_fields, "local_performance_claim_source"),
         local_performance_claim_source()
     );
@@ -1301,10 +1364,6 @@ vram_output_path={}
     assert_eq!(
         required_plan_field(&summary_fields, "local_pareas_claim_source"),
         local_pareas_claim_source()
-    );
-    assert_eq!(
-        required_plan_field(&summary_fields, "scaling_claim_source"),
-        scaling_claim_source()
     );
     assert_eq!(
         required_plan_field(&summary_fields, "evidence_freshness_status"),
@@ -1333,6 +1392,195 @@ vram_output_path={}
     assert!(
         stale_artifacts.contains("resource_usage:resource_user_seconds:nonnumeric"),
         "resource usage CPU seconds must be numeric\n{summary}"
+    );
+    assert_eq!(
+        required_plan_field(&summary_fields, "claim_readiness_status"),
+        "not-claimable"
+    );
+
+    let _ = fs::remove_dir_all(&temp_home);
+    let _ = fs::remove_dir_all(&temp_path);
+    let _ = fs::remove_dir_all(&artifacts);
+}
+
+#[test]
+fn compiler_acceptance_measurement_summary_rejects_zero_readback_span_artifact() {
+    let temp_home = unique_temp_dir("acceptance_measurement_home");
+    let temp_path = unique_temp_dir("acceptance_measurement_path");
+    let artifacts = unique_temp_dir("acceptance_measurement_artifacts");
+    install_cat_on_path(&temp_path);
+
+    let trace_path = artifacts.join("trace.perfetto.json");
+    let readback_summary_path = artifacts.join("readback.txt");
+    let measurement_summary_path = artifacts.join("summary.tsv");
+
+    let output = run_acceptance_script(&["--measurement-plan"], |command| {
+        command
+            .env("HOME", &temp_home)
+            .env("PATH", &temp_path)
+            .env("LANIUS_PERF_CHECKPOINT_LINES", "5000")
+            .env("LANIUS_PERFETTO_TRACE", &trace_path)
+            .env(
+                "LANIUS_READBACK_SUMMARY_OUTPUT_PATH",
+                &readback_summary_path,
+            )
+            .env(
+                "LANIUS_MEASUREMENT_SUMMARY_OUTPUT_PATH",
+                &measurement_summary_path,
+            );
+    });
+    let plan = parse_measurement_plan(&output);
+
+    fs::write(
+        &readback_summary_path,
+        format!(
+            "\
+readback_summary_schema=lanius.readback-summary.v1
+line_count=5000
+source=call-graph
+phase=x86
+target=x86_64-elf
+trace_path={}
+readback_timeout_ms=60000
+steady_readback_claim_source={}
+span_count=0
+total_ms=0
+max_span_ms=0
+",
+            trace_path.display(),
+            steady_readback_claim_source()
+        ),
+    )
+    .expect("write zero-span readback summary artifact");
+
+    let summary_command = required_artifact_command(&plan, "5000", "measurement_summary");
+    run_bash_command_line_success(summary_command);
+    let summary = fs::read_to_string(&measurement_summary_path).expect("read summary artifact");
+    let summary_fields = parse_key_value_lines(&summary);
+    let stale_artifacts = csv_set(required_plan_field(&summary_fields, "stale_artifacts"));
+
+    assert_eq!(
+        required_plan_field(&summary_fields, "readback_span_count"),
+        "0"
+    );
+    assert!(
+        stale_artifacts.contains("readback_summary:span-metrics"),
+        "zero readback spans should not satisfy readback timing evidence\n{summary}"
+    );
+    assert_eq!(
+        required_plan_field(&summary_fields, "local_readback_evidence_status"),
+        "incomplete",
+        "readback evidence should require a positive span count and positive timing\n{summary}"
+    );
+    assert!(
+        required_plan_field(&summary_fields, "stale_artifact_checks")
+            .contains("readback_summary_span_metrics_are_consistent"),
+        "freshness checks should include readback span consistency\n{summary}"
+    );
+    assert!(
+        required_plan_field(&summary_fields, "production_readiness_blockers")
+            .contains("readback:incomplete"),
+        "zero-span readback evidence should block production readiness\n{summary}"
+    );
+    assert!(
+        required_plan_field(&summary_fields, "production_readiness_blockers")
+            .contains("freshness:stale"),
+        "zero-span readback evidence should make freshness stale\n{summary}"
+    );
+    assert_eq!(
+        required_plan_field(&summary_fields, "claim_readiness_status"),
+        "not-claimable"
+    );
+
+    let _ = fs::remove_dir_all(&temp_home);
+    let _ = fs::remove_dir_all(&temp_path);
+    let _ = fs::remove_dir_all(&artifacts);
+}
+
+#[test]
+fn compiler_acceptance_measurement_summary_rejects_readback_summary_without_trace_spans() {
+    let temp_home = unique_temp_dir("acceptance_measurement_home");
+    let temp_path = unique_temp_dir("acceptance_measurement_path");
+    let artifacts = unique_temp_dir("acceptance_measurement_artifacts");
+    install_cat_on_path(&temp_path);
+
+    let trace_path = artifacts.join("trace.perfetto.json");
+    let readback_summary_path = artifacts.join("readback.txt");
+    let measurement_summary_path = artifacts.join("summary.tsv");
+
+    let output = run_acceptance_script(&["--measurement-plan"], |command| {
+        command
+            .env("HOME", &temp_home)
+            .env("PATH", &temp_path)
+            .env("LANIUS_PERF_CHECKPOINT_LINES", "5000")
+            .env("LANIUS_PERFETTO_TRACE", &trace_path)
+            .env(
+                "LANIUS_READBACK_SUMMARY_OUTPUT_PATH",
+                &readback_summary_path,
+            )
+            .env(
+                "LANIUS_MEASUREMENT_SUMMARY_OUTPUT_PATH",
+                &measurement_summary_path,
+            );
+    });
+    let plan = parse_measurement_plan(&output);
+
+    fs::write(&trace_path, "{ \"traceEvents\": [] }\n").expect("write empty trace artifact");
+    fs::write(
+        &readback_summary_path,
+        format!(
+            "\
+readback_summary_schema=lanius.readback-summary.v1
+line_count=5000
+source=call-graph
+phase=x86
+target=x86_64-elf
+trace_path={}
+readback_timeout_ms=60000
+steady_readback_claim_source={}
+span_count=3
+total_ms=12.5
+max_span_ms=8.0
+",
+            trace_path.display(),
+            steady_readback_claim_source()
+        ),
+    )
+    .expect("write forged readback summary artifact");
+
+    let summary_command = required_artifact_command(&plan, "5000", "measurement_summary");
+    run_bash_command_line_success(summary_command);
+    let summary = fs::read_to_string(&measurement_summary_path).expect("read summary artifact");
+    let summary_fields = parse_key_value_lines(&summary);
+    let stale_artifacts = csv_set(required_plan_field(&summary_fields, "stale_artifacts"));
+
+    assert_eq!(
+        required_plan_field(&summary_fields, "readback_span_count"),
+        "3"
+    );
+    assert_eq!(
+        required_plan_field(&summary_fields, "local_readback_evidence_status"),
+        "incomplete",
+        "positive readback summary metrics should still require backing trace spans\n{summary}"
+    );
+    assert!(
+        stale_artifacts.contains("readback_summary:trace-spans"),
+        "readback summary spans must be backed by recorded trace spans\n{summary}"
+    );
+    assert!(
+        required_plan_field(&summary_fields, "stale_artifact_checks")
+            .contains("readback_summary_trace_contains_recorded_spans"),
+        "freshness checks should include trace-span validation\n{summary}"
+    );
+    assert!(
+        required_plan_field(&summary_fields, "production_readiness_blockers")
+            .contains("readback:incomplete"),
+        "unbacked readback metrics should block production readiness\n{summary}"
+    );
+    assert!(
+        required_plan_field(&summary_fields, "production_readiness_blockers")
+            .contains("freshness:stale"),
+        "unbacked readback metrics should stale the artifact set\n{summary}"
     );
     assert_eq!(
         required_plan_field(&summary_fields, "claim_readiness_status"),
@@ -1508,6 +1756,20 @@ pareas_stdout_path={}
         "not-run"
     );
     assert_eq!(
+        required_plan_field(&summary_fields, "pareas_source_line_count"),
+        "3"
+    );
+    assert!(
+        required_plan_field(&summary_fields, "stale_artifacts")
+            .contains("pareas_source:line_count"),
+        "Pareas comparison should be stale when its generated source is smaller than the checkpoint\n{summary}"
+    );
+    assert!(
+        required_plan_field(&summary_fields, "stale_artifact_checks")
+            .contains("pareas_source_line_count_covers_checkpoint"),
+        "freshness checks should include Pareas source size validation\n{summary}"
+    );
+    assert_eq!(
         required_plan_field(&summary_fields, "local_pareas_evidence_status"),
         "failed",
         "Pareas comparison should not become complete without a local compiler identity hash\n{summary}"
@@ -1586,903 +1848,6 @@ fn compiler_acceptance_measurement_plan_writes_requested_artifact_without_stdout
 }
 
 #[test]
-fn compiler_acceptance_generated_check_env_reports_measurement_inventory_without_running() {
-    let temp_home = unique_temp_dir("acceptance_check_env_home");
-    let temp_path = unique_temp_dir("acceptance_check_env_path");
-    install_command_on_path(&temp_path, "cargo");
-    install_command_on_path(&temp_path, "slangc");
-
-    let output = run_acceptance_script(&["--tier", "generated", "--check-env"], |command| {
-        command.env("HOME", &temp_home).env("PATH", &temp_path);
-    });
-    let notes = parse_acceptance_env_notes(&output);
-
-    assert!(
-        output
-            .lines()
-            .all(|line| !line.trim_start().starts_with('+')),
-        "check-env should not print executable acceptance commands\n{output}"
-    );
-    assert!(
-        output.contains("acceptance-env check ok: no tests were compiled or executed"),
-        "check-env should report no-run success\n{output}"
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_plan_schema"),
-        "lanius.measurement-plan.v1"
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_evidence_policy"),
-        "local-artifacts-only"
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_paper_numbers_accepted"),
-        "false"
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_comparison_baseline_policy"),
-        "local-pareas-artifacts-only"
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_freshness_policy"),
-        "hash-and-checkpoint-field-match"
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_timing_policy"),
-        measurement_timing_policy()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_cold_start_policy"),
-        cold_start_policy()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_compile_latency_claim_source"),
-        compile_latency_claim_source()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_runtime_validation_policy"),
-        runtime_validation_policy()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_claim_provenance_schema"),
-        claim_provenance_schema()
-    );
-    assert_eq!(
-        csv_set(required_plan_field(
-            &notes,
-            "measurement_required_claim_provenance_fields"
-        )),
-        required_claim_provenance_field_names()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_paper_baseline_policy"),
-        paper_baseline_policy()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_local_performance_claim_source"),
-        local_performance_claim_source()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_local_vram_claim_source"),
-        local_vram_claim_source()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_local_pareas_claim_source"),
-        local_pareas_claim_source()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_scaling_claim_source"),
-        scaling_claim_source()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_parallel_pass_contract_schema"),
-        parallel_pass_contract_schema()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_parallel_pass_contract_policy"),
-        parallel_pass_contract_policy()
-    );
-    assert_parallel_pass_evidence_class_values(
-        required_plan_field(&notes, "measurement_parallel_pass_contract_groups"),
-        required_plan_field(&notes, "measurement_parallel_pass_contract_execution_order"),
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_parallel_pass_contract_order_policy"),
-        parallel_pass_contract_order_policy()
-    );
-    assert_eq!(
-        csv_set(required_plan_field(
-            &notes,
-            "measurement_required_parallel_pass_contract_fields"
-        )),
-        required_parallel_pass_contract_field_names()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_pass_contract_status_schema"),
-        pass_contract_status_schema()
-    );
-    assert_eq!(
-        csv_set(required_plan_field(
-            &notes,
-            "measurement_required_pass_contract_status_fields"
-        )),
-        required_pass_contract_status_field_names()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_pass_contract_loop_policy"),
-        pass_contract_loop_policy()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_pass_contract_loop_status"),
-        pass_contract_loop_status()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_pass_contract_fallback_status"),
-        pass_contract_fallback_status()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_pass_contract_claim_status"),
-        pass_contract_claim_status()
-    );
-    assert_eq!(
-        csv_set(required_plan_field(
-            &notes,
-            "measurement_pass_contract_claim_blockers"
-        )),
-        pass_contract_claim_blockers()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_pass_contract_readiness_status"),
-        pass_contract_readiness_status()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_timeout_provenance_schema"),
-        "lanius.timeout-provenance.v1"
-    );
-    assert_eq!(
-        csv_set(required_plan_field(
-            &notes,
-            "measurement_required_timeout_provenance_fields"
-        )),
-        required_timeout_provenance_field_names()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_timeout_scope"),
-        timeout_scope()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_timeout_source"),
-        timeout_source()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_timeout_enforced_by"),
-        timeout_enforced_by()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_timeout_exit_code"),
-        "124"
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_timeout_exit_code_means_timed_out"),
-        "true"
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_source_control_policy"),
-        "git-head-plus-status-in-command-environment-hash"
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_claim_scope_policy"),
-        "exact-local-checkpoint-hardware-source-binary-only"
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_repeatability_policy"),
-        "claimable-metrics-require-at-least-three-iterations"
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_minimum_iterations_for_claim"),
-        "3"
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_summary_schema"),
-        "lanius.measurement-summary.v1"
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_readback_summary_schema"),
-        "lanius.readback-summary.v1"
-    );
-    assert_eq!(
-        csv_set(required_plan_field(
-            &notes,
-            "measurement_required_readback_summary_fields"
-        )),
-        required_readback_summary_field_names()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_vram_csv_schema"),
-        "lanius.vram-csv.v1"
-    );
-    assert_eq!(
-        csv_set(required_plan_field(
-            &notes,
-            "measurement_required_vram_csv_columns"
-        )),
-        required_vram_csv_columns()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_hardware_identity_schema"),
-        "lanius.hardware-identity.v1"
-    );
-    assert_eq!(
-        csv_set(required_plan_field(
-            &notes,
-            "measurement_required_hardware_identity_fields"
-        )),
-        required_hardware_identity_field_names()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_command_environment_schema"),
-        "lanius.command-environment.v1"
-    );
-    assert_eq!(
-        csv_set(required_plan_field(
-            &notes,
-            "measurement_required_command_environment_fields"
-        )),
-        required_command_environment_field_names()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_responsiveness_probe_schema"),
-        "lanius.responsiveness-probe.v1"
-    );
-    assert_eq!(
-        csv_set(required_plan_field(
-            &notes,
-            "measurement_required_responsiveness_probe_fields"
-        )),
-        required_responsiveness_probe_field_names()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_command_status_schema"),
-        "lanius.command-status.v1"
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_evidence_status_schema"),
-        "lanius.measurement-evidence-status.v1"
-    );
-    assert_eq!(
-        csv_set(required_plan_field(
-            &notes,
-            "measurement_required_evidence_status_fields"
-        )),
-        required_evidence_status_field_names()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_evidence_freshness_schema"),
-        "lanius.measurement-evidence-freshness.v1"
-    );
-    assert_eq!(
-        csv_set(required_plan_field(
-            &notes,
-            "measurement_required_evidence_freshness_fields"
-        )),
-        required_evidence_freshness_field_names()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_claim_readiness_schema"),
-        "lanius.measurement-claim-readiness.v1"
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_claim_readiness_policy"),
-        "complete-local-evidence-only"
-    );
-    assert_eq!(
-        csv_set(required_plan_field(
-            &notes,
-            "measurement_claim_readiness_required_evidence_classes"
-        )),
-        claim_readiness_required_evidence_classes()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_claim_readiness_required_statuses"),
-        claim_readiness_required_statuses()
-    );
-    assert_eq!(
-        csv_set(required_plan_field(
-            &notes,
-            "measurement_required_claim_readiness_fields"
-        )),
-        required_claim_readiness_field_names()
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_required_artifacts"),
-        required_plan_field(&notes, "measurement_checkpoint_5000l.required_artifacts")
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_optional_comparison_artifacts"),
-        required_plan_field(
-            &notes,
-            "measurement_checkpoint_5000l.optional_comparison_artifacts"
-        )
-    );
-    assert_eq!(
-        required_plan_field(&notes, "measurement_artifact_manifest_schema"),
-        "lanius.measurement-artifacts.v1"
-    );
-    assert_eq!(
-        csv_set(required_plan_field(
-            &notes,
-            "measurement_required_artifact_manifest_fields"
-        )),
-        required_artifact_manifest_field_names()
-    );
-    assert_eq!(
-        csv_set(required_plan_field(&notes, "LANIUS_PERF_CHECKPOINT_LINES")),
-        string_set(["5000", "10000", "20000"])
-    );
-    assert_eq!(
-        csv_vec(required_plan_field(
-            &notes,
-            "measurement_checkpoint_execution_order"
-        )),
-        vec!["5000", "10000", "20000"]
-    );
-    assert_eq!(
-        required_plan_field(&notes, "LANIUS_MEASUREMENT_SUMMARY_OUTPUT_PATH"),
-        "target/lanius-measurements/call-graph-x86-5000l-1i.summary.tsv"
-    );
-    assert_eq!(
-        required_plan_field(&notes, "LANIUS_RESOURCE_USAGE_OUTPUT_PATH"),
-        "target/lanius-measurements/call-graph-x86-5000l-1i.resource-usage.txt"
-    );
-    assert_eq!(
-        required_plan_field(&notes, "LANIUS_BENCH_SHA256_OUTPUT_PATH"),
-        "target/lanius-measurements/call-graph-x86-5000l-1i.bench.sha256.txt"
-    );
-    assert_eq!(
-        required_plan_field(&notes, "LANIUS_RESPONSIVENESS_OUTPUT_PATH"),
-        "target/lanius-measurements/call-graph-x86-5000l-1i.responsiveness.txt"
-    );
-    assert_eq!(
-        required_plan_field(&notes, "LANIUS_PAREAS_SOURCE_SHA256_OUTPUT_PATH"),
-        "target/lanius-measurements/pareas-5000l.source.sha256.txt"
-    );
-    assert_eq!(
-        required_plan_field(&notes, "LANIUS_PAREAS_BINARY_SHA256_OUTPUT_PATH"),
-        "target/lanius-measurements/pareas-5000l.compiler.sha256.txt"
-    );
-    assert_eq!(
-        csv_set(required_plan_field(
-            &notes,
-            "measurement_required_summary_fields"
-        )),
-        required_summary_field_names()
-    );
-    assert_eq!(
-        csv_set(required_plan_field(
-            &notes,
-            "measurement_optional_status_fields"
-        )),
-        optional_status_field_names()
-    );
-
-    for lines in ["5000", "10000", "20000"] {
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.line_count")
-            ),
-            lines
-        );
-        assert_eq!(
-            required_plan_field(&notes, &format!("measurement_checkpoint_{lines}l.target")),
-            "x86_64-elf"
-        );
-        assert_eq!(
-            required_plan_field(&notes, &format!("measurement_checkpoint_{lines}l.seed")),
-            "3235798765"
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.timing_policy")
-            ),
-            measurement_timing_policy()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.cold_start_policy")
-            ),
-            cold_start_policy()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.compile_latency_claim_source")
-            ),
-            compile_latency_claim_source()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.runtime_validation_policy")
-            ),
-            runtime_validation_policy()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.claim_provenance_schema")
-            ),
-            claim_provenance_schema()
-        );
-        assert_eq!(
-            csv_set(required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.required_claim_provenance_fields")
-            )),
-            required_claim_provenance_field_names()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.paper_baseline_policy")
-            ),
-            paper_baseline_policy()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.local_performance_claim_source")
-            ),
-            local_performance_claim_source()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.local_vram_claim_source")
-            ),
-            local_vram_claim_source()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.local_pareas_claim_source")
-            ),
-            local_pareas_claim_source()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.scaling_claim_source")
-            ),
-            scaling_claim_source()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.parallel_pass_contract_schema")
-            ),
-            parallel_pass_contract_schema()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.parallel_pass_contract_policy")
-            ),
-            parallel_pass_contract_policy()
-        );
-        assert_parallel_pass_evidence_class_values(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.parallel_pass_contract_groups"),
-            ),
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.parallel_pass_contract_execution_order"),
-            ),
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.parallel_pass_contract_order_policy")
-            ),
-            parallel_pass_contract_order_policy()
-        );
-        assert_eq!(
-            csv_set(required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.required_parallel_pass_contract_fields")
-            )),
-            required_parallel_pass_contract_field_names()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.pass_contract_status_schema")
-            ),
-            pass_contract_status_schema()
-        );
-        assert_eq!(
-            csv_set(required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.required_pass_contract_status_fields")
-            )),
-            required_pass_contract_status_field_names()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.pass_contract_loop_policy")
-            ),
-            pass_contract_loop_policy()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.pass_contract_loop_status")
-            ),
-            pass_contract_loop_status()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.pass_contract_fallback_status")
-            ),
-            pass_contract_fallback_status()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.pass_contract_claim_status")
-            ),
-            pass_contract_claim_status()
-        );
-        assert_eq!(
-            csv_set(required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.pass_contract_claim_blockers")
-            )),
-            pass_contract_claim_blockers()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.pass_contract_readiness_status")
-            ),
-            pass_contract_readiness_status()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.timeout_provenance_schema")
-            ),
-            "lanius.timeout-provenance.v1"
-        );
-        assert_eq!(
-            csv_set(required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.required_timeout_provenance_fields")
-            )),
-            required_timeout_provenance_field_names()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.timeout_scope")
-            ),
-            timeout_scope()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.timeout_source")
-            ),
-            timeout_source()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.timeout_enforced_by")
-            ),
-            timeout_enforced_by()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.timeout_exit_code")
-            ),
-            "124"
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.timeout_exit_code_means_timed_out")
-            ),
-            "true"
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.readback_timeout_ms")
-            ),
-            "60000"
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.vram_sample_interval_ms")
-            ),
-            "250"
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.lanius_stdout_path")
-            ),
-            format!("target/lanius-measurements/call-graph-x86-{lines}l-1i.stdout.txt")
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.readback_summary_path")
-            ),
-            format!("target/lanius-measurements/call-graph-x86-{lines}l-1i.readback.txt")
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.vram_output_path")
-            ),
-            format!("target/lanius-measurements/call-graph-x86-{lines}l-1i.vram.csv")
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.bench_sha256_output_path")
-            ),
-            format!("target/lanius-measurements/call-graph-x86-{lines}l-1i.bench.sha256.txt")
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.responsiveness_probe_output_path")
-            ),
-            format!("target/lanius-measurements/call-graph-x86-{lines}l-1i.responsiveness.txt")
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.pareas_source_sha256_output_path")
-            ),
-            format!("target/lanius-measurements/pareas-{lines}l.source.sha256.txt")
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.pareas_binary_sha256_output_path")
-            ),
-            format!("target/lanius-measurements/pareas-{lines}l.compiler.sha256.txt")
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.pareas_stdout_path")
-            ),
-            format!("target/lanius-measurements/pareas-{lines}l.stdout.txt")
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.measurement_summary_output_path")
-            ),
-            format!("target/lanius-measurements/call-graph-x86-{lines}l-1i.summary.tsv")
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.resource_usage_output_path")
-            ),
-            format!("target/lanius-measurements/call-graph-x86-{lines}l-1i.resource-usage.txt")
-        );
-        assert_eq!(
-            csv_set(required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.required_summary_fields")
-            )),
-            required_summary_field_names()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.artifact_manifest_schema")
-            ),
-            "lanius.measurement-artifacts.v1"
-        );
-        assert_eq!(
-            csv_set(required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.required_artifact_manifest_fields")
-            )),
-            required_artifact_manifest_field_names()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.readback_summary_schema")
-            ),
-            "lanius.readback-summary.v1"
-        );
-        assert_eq!(
-            csv_set(required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.required_readback_summary_fields")
-            )),
-            required_readback_summary_field_names()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.vram_csv_schema")
-            ),
-            "lanius.vram-csv.v1"
-        );
-        assert_eq!(
-            csv_set(required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.required_vram_csv_columns")
-            )),
-            required_vram_csv_columns()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.hardware_identity_schema")
-            ),
-            "lanius.hardware-identity.v1"
-        );
-        assert_eq!(
-            csv_set(required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.required_hardware_identity_fields")
-            )),
-            required_hardware_identity_field_names()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.command_environment_schema")
-            ),
-            "lanius.command-environment.v1"
-        );
-        assert_eq!(
-            csv_set(required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.required_command_environment_fields")
-            )),
-            required_command_environment_field_names()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.responsiveness_probe_schema")
-            ),
-            "lanius.responsiveness-probe.v1"
-        );
-        assert_eq!(
-            csv_set(required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.required_responsiveness_probe_fields")
-            )),
-            required_responsiveness_probe_field_names()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.command_status_schema")
-            ),
-            "lanius.command-status.v1"
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.evidence_status_schema")
-            ),
-            "lanius.measurement-evidence-status.v1"
-        );
-        assert_eq!(
-            csv_set(required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.required_evidence_status_fields")
-            )),
-            required_evidence_status_field_names()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.evidence_freshness_schema")
-            ),
-            "lanius.measurement-evidence-freshness.v1"
-        );
-        assert_eq!(
-            csv_set(required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.required_evidence_freshness_fields")
-            )),
-            required_evidence_freshness_field_names()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.claim_readiness_schema")
-            ),
-            "lanius.measurement-claim-readiness.v1"
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.claim_readiness_policy")
-            ),
-            "complete-local-evidence-only"
-        );
-        assert_eq!(
-            csv_set(required_plan_field(
-                &notes,
-                &format!(
-                    "measurement_checkpoint_{lines}l.claim_readiness_required_evidence_classes"
-                )
-            )),
-            claim_readiness_required_evidence_classes()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.claim_readiness_required_statuses")
-            ),
-            claim_readiness_required_statuses()
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.claim_scope_policy")
-            ),
-            "exact-local-checkpoint-hardware-source-binary-only"
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.source_control_policy")
-            ),
-            "git-head-plus-status-in-command-environment-hash"
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.repeatability_policy")
-            ),
-            "claimable-metrics-require-at-least-three-iterations"
-        );
-        assert_eq!(
-            required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.minimum_iterations_for_claim")
-            ),
-            "3"
-        );
-        assert_eq!(
-            csv_set(required_plan_field(
-                &notes,
-                &format!("measurement_checkpoint_{lines}l.required_claim_readiness_fields")
-            )),
-            required_claim_readiness_field_names()
-        );
-    }
-
-    let _ = fs::remove_dir_all(&temp_home);
-    let _ = fs::remove_dir_all(&temp_path);
-}
-
-#[test]
 fn compiler_acceptance_measurement_plan_canonicalizes_checkpoint_line_counts() {
     let temp_home = unique_temp_dir("acceptance_measurement_home");
     let temp_path = unique_temp_dir("acceptance_measurement_path");
@@ -2492,6 +1857,7 @@ fn compiler_acceptance_measurement_plan_canonicalizes_checkpoint_line_counts() {
         command
             .env("HOME", &temp_home)
             .env("PATH", &temp_path)
+            .env("LANIUS_ALLOW_LARGE_GENERATED_TESTS", "1")
             .env("LANIUS_PERF_CHECKPOINT_LINES", "05000,10000,20000");
     });
 
@@ -2525,9 +1891,53 @@ fn compiler_acceptance_measurement_plan_canonicalizes_checkpoint_line_counts() {
 }
 
 #[test]
+fn compiler_acceptance_measurement_plan_uses_requested_small_checkpoint_runbook() {
+    let temp_home = unique_temp_dir("acceptance_measurement_home");
+    let temp_path = unique_temp_dir("acceptance_measurement_path");
+    install_cat_on_path(&temp_path);
+
+    let output = run_acceptance_script(&["--measurement-plan"], |command| {
+        command
+            .env("HOME", &temp_home)
+            .env("PATH", &temp_path)
+            .env("LANIUS_ALLOW_LARGE_GENERATED_TESTS", "1")
+            .env("LANIUS_PERF_CHECKPOINT_LINES", "5000,10000");
+    });
+
+    let plan = parse_measurement_plan(&output);
+    assert_eq!(
+        csv_vec(required_plan_field(&plan.top, "checkpoint_execution_order")),
+        vec!["5000", "10000"]
+    );
+    assert_eq!(
+        required_plan_field(&plan.top, "checkpoint_run_policy"),
+        "run-checkpoint_execution_order-stop-on-first-readback-timeout-vram-growth-or-responsiveness-failure"
+    );
+    assert!(plan.checkpoints.contains_key("5000"));
+    assert!(plan.checkpoints.contains_key("10000"));
+    assert!(
+        !plan.checkpoints.contains_key("20000"),
+        "custom 5k/10k measurement plans should not emit an unrequested 20k checkpoint\n{output}"
+    );
+    assert!(
+        output.contains("Run checkpoints in checkpoint_execution_order."),
+        "runbook should refer to the actual planned order, not a hard-coded default\n{output}"
+    );
+    assert!(
+        !output.contains("5k first, then 10k, then 20k"),
+        "runbook should not preserve stale default checkpoint text for a 5k/10k plan\n{output}"
+    );
+
+    let _ = fs::remove_dir_all(&temp_home);
+    let _ = fs::remove_dir_all(&temp_path);
+}
+
+#[test]
 fn compiler_acceptance_measurement_plan_rejects_non_ascending_checkpoints() {
     let failure = run_acceptance_script_failure(&["--measurement-plan"], |command| {
-        command.env("LANIUS_PERF_CHECKPOINT_LINES", "10000,5000,20000");
+        command
+            .env("LANIUS_ALLOW_LARGE_GENERATED_TESTS", "1")
+            .env("LANIUS_PERF_CHECKPOINT_LINES", "10000,5000,20000");
     });
 
     assert!(
@@ -2556,6 +1966,7 @@ fn compiler_acceptance_measurement_plan_rejects_non_ascending_checkpoints() {
 fn compiler_acceptance_measurement_plan_rejects_primary_line_outside_checkpoint_set() {
     let failure = run_acceptance_script_failure(&["--measurement-plan"], |command| {
         command
+            .env("LANIUS_ALLOW_LARGE_GENERATED_TESTS", "1")
             .env("LANIUS_PERF_LINES", "5000")
             .env("LANIUS_PERF_CHECKPOINT_LINES", "10000,20000");
     });
@@ -2579,6 +1990,65 @@ fn compiler_acceptance_measurement_plan_rejects_primary_line_outside_checkpoint_
         "measurement plan should report a no-run validation failure\nstdout:\n{}\nstderr:\n{}",
         failure.stdout,
         failure.stderr
+    );
+}
+
+#[test]
+fn compiler_acceptance_measurement_plan_rejects_large_workloads_without_opt_in() {
+    let large_checkpoint_failure =
+        run_acceptance_script_failure(&["--measurement-plan"], |command| {
+            command.env("LANIUS_PERF_CHECKPOINT_LINES", "5000,10000");
+        });
+
+    assert!(
+        large_checkpoint_failure.stdout.is_empty(),
+        "oversized checkpoint rejection should happen before printing a plan\nstdout:\n{}\nstderr:\n{}",
+        large_checkpoint_failure.stdout,
+        large_checkpoint_failure.stderr
+    );
+    assert!(
+        large_checkpoint_failure
+            .stderr
+            .contains("checkpoint 10000 exceeds the default guardrail 5000"),
+        "measurement plan should explain the explicit opt-in required for generated checkpoints above 5k\nstdout:\n{}\nstderr:\n{}",
+        large_checkpoint_failure.stdout,
+        large_checkpoint_failure.stderr
+    );
+    assert!(
+        large_checkpoint_failure
+            .stderr
+            .contains("LANIUS_ALLOW_LARGE_GENERATED_TESTS=1"),
+        "measurement plan should name the large-workload opt-in\nstdout:\n{}\nstderr:\n{}",
+        large_checkpoint_failure.stdout,
+        large_checkpoint_failure.stderr
+    );
+
+    let large_iteration_failure =
+        run_acceptance_script_failure(&["--measurement-plan"], |command| {
+            command.env("LANIUS_PERF_ITERS", "4");
+        });
+
+    assert!(
+        large_iteration_failure.stdout.is_empty(),
+        "oversized iteration rejection should happen before printing a plan\nstdout:\n{}\nstderr:\n{}",
+        large_iteration_failure.stdout,
+        large_iteration_failure.stderr
+    );
+    assert!(
+        large_iteration_failure
+            .stderr
+            .contains("LANIUS_PERF_ITERS=4 exceeds the default guardrail 3"),
+        "measurement plan should reject broad repeated performance runs without opt-in\nstdout:\n{}\nstderr:\n{}",
+        large_iteration_failure.stdout,
+        large_iteration_failure.stderr
+    );
+    assert!(
+        large_iteration_failure
+            .stderr
+            .contains("LANIUS_ALLOW_LARGE_GENERATED_TESTS=1"),
+        "measurement plan should name the large-iteration opt-in\nstdout:\n{}\nstderr:\n{}",
+        large_iteration_failure.stdout,
+        large_iteration_failure.stderr
     );
 }
 
@@ -2754,7 +2224,6 @@ fn assert_checkpoint_evidence_contract(plan: &MeasurementPlan, lines: &str) {
     );
     assert_measurement_timing_contract(&checkpoint.fields);
     assert_claim_provenance_contract(&checkpoint.fields);
-    assert_checkpoint_parallel_pass_evidence_classes(checkpoint);
     assert_eq!(
         csv_set(required_plan_field(
             &checkpoint.fields,
@@ -2809,12 +2278,13 @@ fn assert_checkpoint_evidence_contract(plan: &MeasurementPlan, lines: &str) {
         required_plan_field(&checkpoint.fields, "command_environment_schema"),
         "lanius.command-environment.v1"
     );
-    assert_eq!(
+    assert_contains_fields(
         csv_set(required_plan_field(
             &checkpoint.fields,
-            "required_command_environment_fields"
+            "required_command_environment_fields",
         )),
-        required_command_environment_field_names()
+        required_command_environment_field_names(),
+        "checkpoint command environment fields",
     );
     assert_eq!(
         required_plan_field(&checkpoint.fields, "responsiveness_probe_schema"),
@@ -2835,12 +2305,13 @@ fn assert_checkpoint_evidence_contract(plan: &MeasurementPlan, lines: &str) {
         required_plan_field(&checkpoint.fields, "evidence_status_schema"),
         "lanius.measurement-evidence-status.v1"
     );
-    assert_eq!(
+    assert_contains_fields(
         csv_set(required_plan_field(
             &checkpoint.fields,
-            "required_evidence_status_fields"
+            "required_evidence_status_fields",
         )),
-        required_evidence_status_field_names()
+        required_evidence_status_field_names(),
+        "checkpoint evidence status fields",
     );
     assert_eq!(
         required_plan_field(&checkpoint.fields, "evidence_freshness_schema"),
@@ -2884,12 +2355,13 @@ fn assert_checkpoint_evidence_contract(plan: &MeasurementPlan, lines: &str) {
         )),
         required_claim_readiness_field_names()
     );
-    assert_eq!(
+    assert_contains_fields(
         csv_set(required_plan_field(
             &checkpoint.fields,
-            "required_summary_fields"
+            "required_summary_fields",
         )),
-        required_summary_field_names()
+        required_summary_field_names(),
+        "checkpoint measurement summary fields",
     );
 
     for name in required_artifact_names() {
@@ -2921,10 +2393,20 @@ fn assert_checkpoint_evidence_contract(plan: &MeasurementPlan, lines: &str) {
             expected_claim_source,
             "required artifact {name:?} should reject paper-number or manual-estimate claim provenance"
         );
+        let expected_claim_boundary = if name == "measurement_summary" {
+            "derived-summary-rollup-not-no-run-performance-evidence"
+        } else {
+            "checkpoint-local-artifact-not-claimable-without-summary"
+        };
         assert_eq!(
+            required_plan_field(artifact, "claim_boundary"),
+            expected_claim_boundary,
+            "required artifact {name:?} should publish its claim boundary"
+        );
+        assert_contains_fields(
             csv_set(required_plan_field(artifact, "claim_fields")),
             expected_claim_fields_for_artifact(&name),
-            "required artifact {name:?} should declare the summary claim fields it supports"
+            &format!("required artifact {name:?} claim fields"),
         );
         if required_plan_field(artifact, "status_field") == "not_captured" {
             assert_eq!(
@@ -2950,12 +2432,13 @@ fn assert_checkpoint_evidence_contract(plan: &MeasurementPlan, lines: &str) {
             required_plan_field(artifact, "path"),
             required_plan_field(&checkpoint.fields, artifact_checkpoint_path_field(&name))
         );
-        let expected_availability =
-            if matches!(name.as_str(), "pareas_source" | "pareas_source_sha256") {
-                "optional_comparison"
-            } else {
-                "requires_pareas"
-            };
+        let expected_availability = if name == "pareas_vram_csv" {
+            "requires_pareas_and_nvidia_smi"
+        } else if matches!(name.as_str(), "pareas_source" | "pareas_source_sha256") {
+            "optional_comparison"
+        } else {
+            "requires_pareas"
+        };
         assert_eq!(
             required_plan_field(artifact, "availability"),
             expected_availability
@@ -2976,9 +2459,14 @@ fn assert_checkpoint_evidence_contract(plan: &MeasurementPlan, lines: &str) {
             "Pareas artifact {name:?} should require local comparison provenance"
         );
         assert_eq!(
+            required_plan_field(artifact, "claim_boundary"),
+            "optional-local-comparison-provenance-not-pareas-claim",
+            "Pareas artifact {name:?} should not imply a Pareas comparison claim"
+        );
+        assert_contains_fields(
             csv_set(required_plan_field(artifact, "claim_fields")),
             expected_claim_fields_for_artifact(&name),
-            "Pareas artifact {name:?} should declare the summary claim fields it supports"
+            &format!("Pareas artifact {name:?} claim fields"),
         );
     }
 
@@ -3014,6 +2502,27 @@ fn assert_checkpoint_evidence_contract(plan: &MeasurementPlan, lines: &str) {
         "vram_csv_header_matches_required_columns"
     );
     assert_eq!(
+        required_plan_field(
+            required_artifact(checkpoint, "pareas_vram_csv"),
+            "availability"
+        ),
+        "requires_pareas_and_nvidia_smi"
+    );
+    assert_eq!(
+        required_plan_field(
+            required_artifact(checkpoint, "pareas_vram_csv"),
+            "stale_check"
+        ),
+        "pareas_vram_csv_header_matches_required_columns"
+    );
+    assert_eq!(
+        csv_set(required_plan_field(
+            required_artifact(checkpoint, "pareas_vram_csv"),
+            "claim_fields"
+        )),
+        string_set(["pareas_max_vram_bytes", "pareas_nvidia_smi_exit_status"])
+    );
+    assert_eq!(
         required_plan_field(required_artifact(checkpoint, "resource_usage"), "claim"),
         "cpu_time_and_memory"
     );
@@ -3046,12 +2555,13 @@ fn assert_checkpoint_evidence_contract(plan: &MeasurementPlan, lines: &str) {
         ),
         "lanius.command-environment.v1"
     );
-    assert_eq!(
+    assert_contains_fields(
         csv_set(required_plan_field(
             required_artifact(checkpoint, "command_environment"),
-            "fields"
+            "fields",
         )),
-        required_command_environment_field_names()
+        required_command_environment_field_names(),
+        "command environment artifact fields",
     );
     assert_eq!(
         required_plan_field(
@@ -3108,12 +2618,13 @@ fn assert_checkpoint_evidence_contract(plan: &MeasurementPlan, lines: &str) {
         ),
         "lanius.measurement-summary.v1"
     );
-    assert_eq!(
+    assert_contains_fields(
         csv_set(required_plan_field(
             required_artifact(checkpoint, "measurement_summary"),
-            "fields"
+            "fields",
         )),
-        required_summary_field_names()
+        required_summary_field_names(),
+        "measurement summary artifact fields",
     );
     assert_eq!(
         required_plan_field(
@@ -3122,12 +2633,13 @@ fn assert_checkpoint_evidence_contract(plan: &MeasurementPlan, lines: &str) {
         ),
         "lanius.measurement-evidence-status.v1"
     );
-    assert_eq!(
+    assert_contains_fields(
         csv_set(required_plan_field(
             required_artifact(checkpoint, "measurement_summary"),
-            "completion_fields"
+            "completion_fields",
         )),
-        required_evidence_status_field_names()
+        required_evidence_status_field_names(),
+        "measurement summary completion fields",
     );
     assert_eq!(
         required_plan_field(
@@ -3184,17 +2696,9 @@ fn assert_checkpoint_evidence_contract(plan: &MeasurementPlan, lines: &str) {
             "pareas_source",
             "pareas_source_sha256",
             "pareas_binary_sha256",
+            "pareas_vram_csv",
         ])
     );
-}
-
-fn parse_acceptance_env_notes(output: &str) -> BTreeMap<String, String> {
-    output
-        .lines()
-        .filter_map(|line| line.strip_prefix("# acceptance-env: "))
-        .filter_map(|line| line.split_once('='))
-        .map(|(key, value)| (key.to_string(), value.to_string()))
-        .collect()
 }
 
 fn parse_acceptance_plan_status(output: &str) -> BTreeMap<String, String> {
@@ -3274,8 +2778,20 @@ fn assert_measurement_timing_contract(fields: &BTreeMap<String, String>) {
         cold_start_policy()
     );
     assert_eq!(
+        required_plan_field(fields, "cold_gpu_pipeline_init_policy"),
+        cold_gpu_pipeline_init_policy()
+    );
+    assert_eq!(
         required_plan_field(fields, "compile_latency_claim_source"),
         compile_latency_claim_source()
+    );
+    assert_eq!(
+        required_plan_field(fields, "steady_compile_latency_claim_source"),
+        steady_compile_latency_claim_source()
+    );
+    assert_eq!(
+        required_plan_field(fields, "steady_readback_claim_source"),
+        steady_readback_claim_source()
     );
     assert_eq!(
         required_plan_field(fields, "runtime_validation_policy"),
@@ -3316,16 +2832,57 @@ fn assert_claim_provenance_contract(fields: &BTreeMap<String, String>) {
         required_plan_field(fields, "claim_provenance_schema"),
         claim_provenance_schema()
     );
-    assert_eq!(
+    assert_contains_fields(
         csv_set(required_plan_field(
             fields,
-            "required_claim_provenance_fields"
+            "required_claim_provenance_fields",
         )),
-        required_claim_provenance_field_names()
+        required_claim_provenance_field_names(),
+        "claim provenance fields",
     );
     assert_eq!(
         required_plan_field(fields, "paper_baseline_policy"),
         paper_baseline_policy()
+    );
+    assert_eq!(
+        required_plan_field(fields, "paper_baseline_claim_status"),
+        paper_baseline_claim_status()
+    );
+    assert_eq!(
+        required_plan_field(fields, "workload_shape_policy"),
+        workload_shape_policy()
+    );
+    assert_eq!(
+        required_plan_field(fields, "workload_shape_scope"),
+        workload_shape_scope()
+    );
+    assert_eq!(
+        required_plan_field(fields, "workload_generalization_status"),
+        workload_generalization_status()
+    );
+    assert_eq!(
+        required_plan_field(fields, "workload_generalization_blockers"),
+        workload_generalization_blockers()
+    );
+    assert_eq!(
+        required_plan_field(fields, "link_artifact_evidence_policy"),
+        link_artifact_evidence_policy()
+    );
+    assert_eq!(
+        required_plan_field(fields, "link_artifact_evidence_schema"),
+        link_artifact_evidence_schema()
+    );
+    assert_eq!(
+        required_plan_field(fields, "link_artifact_required_evidence_classes"),
+        link_artifact_required_evidence_classes()
+    );
+    assert_eq!(
+        required_plan_field(fields, "link_artifact_evidence_status"),
+        link_artifact_evidence_status()
+    );
+    assert_eq!(
+        required_plan_field(fields, "link_artifact_claim_blockers"),
+        link_artifact_claim_blockers()
     );
     assert_eq!(
         required_plan_field(fields, "local_performance_claim_source"),
@@ -3339,28 +2896,69 @@ fn assert_claim_provenance_contract(fields: &BTreeMap<String, String>) {
         required_plan_field(fields, "local_pareas_claim_source"),
         local_pareas_claim_source()
     );
-    assert_eq!(
-        required_plan_field(fields, "scaling_claim_source"),
-        scaling_claim_source()
-    );
 }
 
-fn assert_parallel_pass_contract_header(fields: &BTreeMap<String, String>) {
+fn assert_parallel_pass_contract_metadata(fields: &BTreeMap<String, String>) {
+    assert_eq!(
+        required_plan_field(fields, "paper_pass_order_schema"),
+        "lanius.paper-pass-order.v1"
+    );
+    assert!(
+        required_plan_field(fields, "paper_pass_order_source")
+            .contains("docs/PAREAS_PASS_CONTRACT.md:lanius-gate"),
+        "paper pass order source should cite the checked-in pass contract"
+    );
+    assert_eq!(
+        csv_vec(required_plan_field(fields, "paper_pass_order")),
+        vec![
+            "lexical_analysis",
+            "parsing",
+            "semantic_analysis",
+            "intermediate_code_generation",
+            "optimization",
+            "machine_code_generation",
+        ]
+    );
+    assert_eq!(
+        required_plan_field(fields, "paper_pass_alignment_policy"),
+        "parallel-pass-contracts-must-cover-paper-order-before-scale-claims"
+    );
+    assert_eq!(
+        required_plan_field(fields, "paper_pass_alignment_status"),
+        "blocked"
+    );
+    assert!(
+        required_plan_field(fields, "paper_pass_alignment_blockers")
+            .contains("pass_contracts:blocked"),
+        "paper-pass alignment blockers should carry pass-contract blockers"
+    );
     assert_eq!(
         required_plan_field(fields, "parallel_pass_contract_schema"),
-        parallel_pass_contract_schema()
+        "lanius.parallel-pass-contracts.v1"
     );
     assert_eq!(
         required_plan_field(fields, "parallel_pass_contract_policy"),
-        parallel_pass_contract_policy()
+        "scale-claims-require-behavioral-record-boundary-evidence"
     );
-    assert_parallel_pass_evidence_class_values(
-        required_plan_field(fields, "parallel_pass_contract_groups"),
-        required_plan_field(fields, "parallel_pass_contract_execution_order"),
+    assert_eq!(
+        csv_set(required_plan_field(fields, "parallel_pass_contract_groups")),
+        parallel_pass_contract_groups()
+    );
+    assert_eq!(
+        csv_vec(required_plan_field(
+            fields,
+            "parallel_pass_contract_execution_order"
+        )),
+        vec![
+            "record_invariant",
+            "semantic_contract",
+            "execution_contract",
+            "measurement_scaffold",
+        ]
     );
     assert_eq!(
         required_plan_field(fields, "parallel_pass_contract_order_policy"),
-        parallel_pass_contract_order_policy()
+        "paper-pass-order-record-boundary-sequence"
     );
     assert_eq!(
         csv_set(required_plan_field(
@@ -3369,13 +2967,9 @@ fn assert_parallel_pass_contract_header(fields: &BTreeMap<String, String>) {
         )),
         required_parallel_pass_contract_field_names()
     );
-    assert_pass_contract_status_header(fields);
-}
-
-fn assert_pass_contract_status_header(fields: &BTreeMap<String, String>) {
     assert_eq!(
         required_plan_field(fields, "pass_contract_status_schema"),
-        pass_contract_status_schema()
+        "lanius.parallel-pass-contract-status.v1"
     );
     assert_eq!(
         csv_set(required_plan_field(
@@ -3385,132 +2979,129 @@ fn assert_pass_contract_status_header(fields: &BTreeMap<String, String>) {
         required_pass_contract_status_field_names()
     );
     assert_eq!(
-        required_plan_field(fields, "pass_contract_loop_policy"),
-        pass_contract_loop_policy()
-    );
-    assert_eq!(
         required_plan_field(fields, "pass_contract_loop_status"),
-        pass_contract_loop_status()
+        "bounded"
     );
     assert_eq!(
         required_plan_field(fields, "pass_contract_fallback_status"),
-        pass_contract_fallback_status()
+        "fail-closed"
     );
     assert_eq!(
         required_plan_field(fields, "pass_contract_claim_status"),
-        pass_contract_claim_status()
-    );
-    assert_eq!(
-        csv_set(required_plan_field(fields, "pass_contract_claim_blockers")),
-        pass_contract_claim_blockers()
+        "blocked"
     );
     assert_eq!(
         required_plan_field(fields, "pass_contract_readiness_status"),
-        pass_contract_readiness_status()
+        "blocked"
     );
+    let pass_contract_blockers = required_plan_field(fields, "pass_contract_claim_blockers");
+    assert!(
+        pass_contract_blockers.contains("bounded_pass_loops")
+            && pass_contract_blockers.contains("fail_closed_passes"),
+        "pass-contract blockers should keep bounded loops and fail-closed fallbacks visible"
+    );
+    let scaling_blockers = required_plan_field(fields, "scaling_claim_blockers");
+    assert!(
+        scaling_blockers.contains("paper_pass_alignment:blocked")
+            && scaling_blockers.contains("pass_contracts:blocked"),
+        "scaling blockers should remain tied to paper-pass alignment and pass contracts"
+    );
+    assert_contains_fields(
+        csv_set(required_plan_field(
+            fields,
+            "claim_readiness_required_evidence_classes",
+        )),
+        string_set(["paper_pass_alignment", "parallel_pass_contracts"]),
+        "claim-readiness evidence classes",
+    );
+    assert_claim_readiness_status_requirements(required_plan_field(
+        fields,
+        "claim_readiness_required_statuses",
+    ));
 }
 
-fn assert_checkpoint_parallel_pass_evidence_classes(checkpoint: &MeasurementCheckpoint) {
-    assert_parallel_pass_contract_header(&checkpoint.fields);
-    let expected_groups = csv_set(required_plan_field(
-        &checkpoint.fields,
-        "parallel_pass_contract_groups",
-    ));
-    let execution_order = csv_vec(required_plan_field(
-        &checkpoint.fields,
-        "parallel_pass_contract_execution_order",
-    ));
-    let mut contract_groups = BTreeSet::new();
-    let mut evidence_shapes = BTreeSet::new();
-    let mut contract_count = 0usize;
+fn assert_parallel_pass_contract_rows(fields: &BTreeMap<String, String>) {
+    let expected = [
+        (
+            "parallel_pass_contract_record_invariant",
+            "record_invariant",
+            "paper_record_boundary",
+            "public_record_invariants",
+            "record_boundary_claim",
+            "record-invariant",
+            "behavioral-evidence-only",
+        ),
+        (
+            "parallel_pass_contract_semantic_contract",
+            "semantic_contract",
+            "paper_semantic_boundary",
+            "typed_identity_contracts",
+            "structured_record_contract",
+            "semantic-contract",
+            "behavioral-evidence-only",
+        ),
+        (
+            "parallel_pass_contract_execution_contract",
+            "execution_contract",
+            "paper_codegen_boundary",
+            "emitted_output_contracts",
+            "execution_behavior_claim",
+            "execution-contract",
+            "executed-output-or-fail-closed-diagnostic",
+        ),
+        (
+            "parallel_pass_contract_measurement_scaffold",
+            "measurement_scaffold",
+            "paper_scale_boundary",
+            "local_artifact_provenance",
+            "measurement_metadata_claim",
+            "measurement-scaffold",
+            "blocked-until-local-artifacts-and-contracts-claimable",
+        ),
+    ];
+    let required_fields = required_parallel_pass_contract_field_names();
+    let mut seen_groups = BTreeSet::new();
 
-    for (field, _) in checkpoint.fields.iter().filter(|(field, _)| {
-        field.starts_with("parallel_pass_contract_")
-            && !matches!(
-                field.as_str(),
-                "parallel_pass_contract_schema"
-                    | "parallel_pass_contract_policy"
-                    | "parallel_pass_contract_groups"
-                    | "parallel_pass_contract_order_policy"
-                    | "parallel_pass_contract_execution_order"
-            )
-    }) {
-        let contract = parse_key_value_words(required_plan_field(&checkpoint.fields, field));
-        let contract_fields = contract.keys().cloned().collect::<BTreeSet<_>>();
+    for (
+        key,
+        pass_group,
+        paper_pass_stage,
+        record_boundary,
+        parallel_primitives,
+        evidence_shape,
+        claim_boundary,
+    ) in expected
+    {
+        let row = parse_key_value_words(required_plan_field(fields, key));
+        assert_contains_fields(row.keys().cloned().collect(), required_fields.clone(), key);
         assert_eq!(
-            contract_fields,
-            required_parallel_pass_contract_field_names(),
-            "pass contract {field:?} should publish the required schema fields"
+            required_plan_field(&row, "contract_schema"),
+            "lanius.parallel-pass-contracts.v1"
+        );
+        assert_eq!(required_plan_field(&row, "pass_group"), pass_group);
+        assert_eq!(
+            required_plan_field(&row, "paper_pass_stage"),
+            paper_pass_stage
         );
         assert_eq!(
-            required_plan_field(&contract, "contract_schema"),
-            parallel_pass_contract_schema()
+            required_plan_field(&row, "record_boundary"),
+            record_boundary
         );
-        let pass_group = required_plan_field(&contract, "pass_group");
+        assert_eq!(
+            required_plan_field(&row, "parallel_primitives"),
+            parallel_primitives
+        );
+        assert_eq!(required_plan_field(&row, "evidence_shape"), evidence_shape);
+        assert_eq!(required_plan_field(&row, "loop_status"), "bounded");
+        assert_eq!(required_plan_field(&row, "fallback_status"), "fail-closed");
+        assert_eq!(required_plan_field(&row, "claim_boundary"), claim_boundary);
         assert!(
-            expected_groups.contains(pass_group),
-            "pass contract {field:?} should publish a behavior evidence class"
+            seen_groups.insert(pass_group.to_string()),
+            "pass group {pass_group:?} should only be published once"
         );
-        assert!(
-            contract_groups.insert(pass_group.to_string()),
-            "pass contract evidence classes should not repeat pass_group {pass_group:?}"
-        );
-        for metadata_field in [
-            "paper_pass_stage",
-            "record_boundary",
-            "parallel_primitives",
-            "evidence_shape",
-            "claim_boundary",
-        ] {
-            let metadata_value = required_plan_field(&contract, metadata_field);
-            assert!(
-                !metadata_value.is_empty() && metadata_value != "-",
-                "pass contract {field:?} should publish non-empty {metadata_field}"
-            );
-        }
-        evidence_shapes.insert(required_plan_field(&contract, "evidence_shape").to_string());
-        assert_eq!(
-            required_plan_field(&contract, "loop_status"),
-            pass_contract_loop_status()
-        );
-        assert_eq!(
-            required_plan_field(&contract, "fallback_status"),
-            pass_contract_fallback_status()
-        );
-        contract_count += 1;
     }
 
-    assert_eq!(
-        contract_count,
-        expected_groups.len(),
-        "each advertised pass-contract group should have one checkpoint record"
-    );
-    assert_eq!(
-        contract_groups, expected_groups,
-        "checkpoint pass-contract records should cover the advertised groups"
-    );
-    assert_eq!(
-        execution_order.len(),
-        contract_groups.len(),
-        "pass-contract execution order should cover the same group set"
-    );
-    for group in execution_order {
-        assert!(
-            contract_groups.contains(group),
-            "execution-order pass group {group:?} should have a checkpoint contract"
-        );
-    }
-    for required_shape in [
-        "record-invariant",
-        "semantic-contract",
-        "execution-contract",
-        "measurement-scaffold",
-    ] {
-        assert!(
-            evidence_shapes.contains(required_shape),
-            "pass-contract evidence classes should include {required_shape} evidence"
-        );
-    }
+    assert_eq!(seen_groups, parallel_pass_contract_groups());
 }
 
 fn assert_artifact_manifest_entry_fields(artifact: &BTreeMap<String, String>, name: &str) {
@@ -3542,6 +3133,7 @@ fn artifact_checkpoint_path_field(name: &str) -> &'static str {
         "pareas_binary_sha256" => "pareas_binary_sha256_output_path",
         "pareas_output" => "pareas_output_path",
         "pareas_stdout" => "pareas_stdout_path",
+        "pareas_vram_csv" => "pareas_vram_output_path",
         other => panic!("no checkpoint path field for artifact {other:?}"),
     }
 }
@@ -3556,7 +3148,8 @@ fn expected_status_artifact(name: &str) -> &'static str {
         | "responsiveness_probe"
         | "resource_usage"
         | "pareas_output"
-        | "pareas_stdout" => "command_status",
+        | "pareas_stdout"
+        | "pareas_vram_csv" => "command_status",
         "source_replay"
         | "source_sha256"
         | "bench_binary_sha256"
@@ -3582,47 +3175,71 @@ fn string_set<const N: usize>(items: [&str; N]) -> BTreeSet<String> {
     items.into_iter().map(str::to_string).collect()
 }
 
-fn assert_parallel_pass_evidence_class_values(groups: &str, execution_order: &str) {
-    let group_vec = csv_vec(groups);
-    let order_vec = csv_vec(execution_order);
+fn assert_contains_fields(actual: BTreeSet<String>, expected: BTreeSet<String>, label: &str) {
     assert!(
-        !groups.is_empty() && group_vec.iter().all(|group| !group.is_empty()),
-        "parallel pass-contract groups should be a non-empty CSV evidence-class set"
+        actual.is_superset(&expected),
+        "{label} should include {expected:?}; got {actual:?}"
     );
-    assert_eq!(
-        order_vec.len(),
-        group_vec.len(),
-        "parallel pass-contract execution order should cover each group once"
-    );
-    assert_eq!(
-        csv_set(execution_order),
-        csv_set(groups),
-        "parallel pass-contract execution order should match the advertised group set"
-    );
-    for group in group_vec {
-        assert_metadata_identifier(group, "parallel pass-contract evidence class");
-    }
 }
 
-fn assert_metadata_identifier(value: &str, label: &str) {
-    assert!(
-        value
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_'),
-        "{label} should use a stable machine-readable identifier, got {value:?}"
-    );
+fn assert_claim_readiness_status_requirements(value: &str) {
+    for status in [
+        "local_performance_evidence_status=complete",
+        "local_performance_claim_status=claimable",
+        "local_readback_evidence_status=complete",
+        "local_vram_evidence_status=complete",
+        "local_pareas_evidence_status=complete",
+        "local_pareas_vram_evidence_status=complete",
+        "resource_usage_status=0",
+        "machine_responsive_after=true",
+        "source_control_state=clean-or-dirty",
+        "source_control_revision=local-git-commit-sha",
+        "evidence_freshness_status=complete",
+        "repeatability_status=complete",
+        "workload_generalization_status=generalizable",
+        "link_artifact_evidence_schema=lanius.link-artifact-evidence.v1",
+        "link_artifact_required_evidence_classes=library_interface_artifacts,codegen_object_artifacts,partial_link_artifacts,linked_output_artifact",
+        "link_artifact_evidence_status=artifact-backed",
+        "paper_pass_alignment_status=claimable",
+        "pass_contract_loop_status=unbounded",
+        "pass_contract_fallback_status=none",
+        "pass_contract_claim_status=claimable",
+        "pass_contract_readiness_status=claimable",
+        "scaling_claim_status=claimable",
+    ] {
+        assert!(
+            value.contains(status),
+            "claim-readiness requirements should include {status:?}; got {value:?}"
+        );
+    }
 }
 
 fn measurement_timing_policy() -> &'static str {
     "compile-latency-claims-use-benchmark-best-ms-wall-time-is-provenance"
 }
 
+fn measurement_scaffold_evidence_status() -> &'static str {
+    "no-run-plan-not-local-performance-evidence"
+}
+
 fn cold_start_policy() -> &'static str {
     "excluded-from-claimable-compile-latency-captured-as-wrapper-wall-time"
 }
 
+fn cold_gpu_pipeline_init_policy() -> &'static str {
+    "cold-gpu-pipeline-init-is-provenance-only-excluded-from-steady-compile-and-readback-claims"
+}
+
 fn compile_latency_claim_source() -> &'static str {
     "benchmark-stdout-best-ms-local-run-only"
+}
+
+fn steady_compile_latency_claim_source() -> &'static str {
+    "benchmark-stdout-best-ms-local-run-only-excludes-cold-gpu-pipeline-init"
+}
+
+fn steady_readback_claim_source() -> &'static str {
+    "readback-summary-host-readback-spans-local-run-only-excludes-cold-gpu-pipeline-init"
 }
 
 fn runtime_validation_policy() -> &'static str {
@@ -3637,6 +3254,63 @@ fn paper_baseline_policy() -> &'static str {
     "reference-only-not-local-performance-evidence"
 }
 
+fn paper_baseline_claim_status() -> &'static str {
+    "not-local-performance-evidence"
+}
+
+fn workload_shape_policy() -> &'static str {
+    "single-generated-workload-is-checkpoint-local-not-general-language-performance"
+}
+
+fn workload_shape_scope() -> &'static str {
+    "line-count-source-phase-target-seed-binary-hardware-only"
+}
+
+fn workload_generalization_status() -> &'static str {
+    "not-generalizable"
+}
+
+fn workload_generalization_blockers() -> &'static str {
+    "multi-shape-local-artifacts-required,long-function-and-wide-tree-shape-coverage-required"
+}
+
+fn link_artifact_evidence_policy() -> &'static str {
+    "production-claims-require-object-interface-partial-link-artifacts"
+}
+
+fn link_artifact_evidence_schema() -> &'static str {
+    "lanius.link-artifact-evidence.v1"
+}
+
+fn link_artifact_required_evidence_classes() -> &'static str {
+    "library_interface_artifacts,codegen_object_artifacts,partial_link_artifacts,linked_output_artifact"
+}
+
+fn link_artifact_evidence_status() -> &'static str {
+    "not-artifact-backed"
+}
+
+fn link_artifact_claim_blockers() -> &'static str {
+    "object_interface_partial_link_artifacts_required"
+}
+
+fn link_artifact_claim_blocker() -> String {
+    format!(
+        "link_artifacts:{}:{}:{}",
+        link_artifact_evidence_status(),
+        link_artifact_claim_blockers(),
+        link_artifact_required_evidence_classes()
+    )
+}
+
+fn link_artifact_claim_short_blocker() -> String {
+    format!(
+        "link_artifacts:{}:{}",
+        link_artifact_evidence_status(),
+        link_artifact_claim_blockers()
+    )
+}
+
 fn local_performance_claim_source() -> &'static str {
     "benchmark-stdout-best-ms-plus-local-artifact-freshness"
 }
@@ -3646,51 +3320,7 @@ fn local_vram_claim_source() -> &'static str {
 }
 
 fn local_pareas_claim_source() -> &'static str {
-    "local-pareas-source-output-stdout-compiler-hash"
-}
-
-fn scaling_claim_source() -> &'static str {
-    "multi-checkpoint-local-artifacts-plus-claimable-parallel-pass-contracts-and-paper-order"
-}
-
-fn parallel_pass_contract_schema() -> &'static str {
-    "lanius.parallel-pass-contracts.v1"
-}
-
-fn parallel_pass_contract_policy() -> &'static str {
-    "scale-claims-require-behavioral-record-boundary-evidence"
-}
-
-fn parallel_pass_contract_order_policy() -> &'static str {
-    "paper-pass-order-record-boundary-sequence"
-}
-
-fn pass_contract_status_schema() -> &'static str {
-    "lanius.parallel-pass-contract-status.v1"
-}
-
-fn pass_contract_loop_policy() -> &'static str {
-    "scale-claims-require-unbounded-pass-loops"
-}
-
-fn pass_contract_loop_status() -> &'static str {
-    "bounded"
-}
-
-fn pass_contract_fallback_status() -> &'static str {
-    "fail-closed"
-}
-
-fn pass_contract_claim_status() -> &'static str {
-    "blocked"
-}
-
-fn pass_contract_claim_blockers() -> BTreeSet<String> {
-    string_set(["bounded_pass_loops", "fail_closed_passes"])
-}
-
-fn pass_contract_readiness_status() -> &'static str {
-    "blocked"
+    "local-pareas-source-output-stdout-compiler-hash-provenance-only"
 }
 
 fn claim_readiness_required_evidence_classes() -> BTreeSet<String> {
@@ -3700,37 +3330,18 @@ fn claim_readiness_required_evidence_classes() -> BTreeSet<String> {
         "local_readback",
         "local_vram",
         "local_pareas",
+        "local_pareas_vram",
         "resource_usage",
         "responsiveness",
         "source_control",
         "freshness",
         "repeatability",
+        "workload_generalization",
+        "link_artifacts",
         "paper_pass_alignment",
         "parallel_pass_contracts",
         "scaling_claim",
     ])
-}
-
-fn claim_readiness_required_statuses() -> &'static str {
-    concat!(
-        "local_performance_evidence_status=complete;",
-        "local_performance_claim_status=claimable;",
-        "local_readback_evidence_status=complete;",
-        "local_vram_evidence_status=complete;",
-        "local_pareas_evidence_status=complete;",
-        "resource_usage_status=0;",
-        "machine_responsive_after=true;",
-        "source_control_state=clean-or-dirty;",
-        "source_control_revision=local-git-commit-sha;",
-        "evidence_freshness_status=complete;",
-        "repeatability_status=complete;",
-        "paper_pass_alignment_status=claimable;",
-        "pass_contract_loop_status=unbounded;",
-        "pass_contract_fallback_status=none;",
-        "pass_contract_claim_status=claimable;",
-        "pass_contract_readiness_status=claimable;",
-        "scaling_claim_status=claimable"
-    )
 }
 
 fn timeout_scope() -> &'static str {
@@ -3770,6 +3381,7 @@ fn optional_comparison_artifact_names() -> BTreeSet<String> {
         "pareas_binary_sha256",
         "pareas_output",
         "pareas_stdout",
+        "pareas_vram_csv",
     ])
 }
 
@@ -3785,44 +3397,39 @@ fn required_artifact_manifest_field_names() -> BTreeSet<String> {
         "claim",
         "claim_source",
         "claim_fields",
-    ])
-}
-
-fn required_parallel_pass_contract_field_names() -> BTreeSet<String> {
-    string_set([
-        "contract_schema",
-        "pass_group",
-        "paper_pass_stage",
-        "record_boundary",
-        "parallel_primitives",
-        "evidence_shape",
-        "loop_status",
-        "fallback_status",
         "claim_boundary",
-    ])
-}
-
-fn required_pass_contract_status_field_names() -> BTreeSet<String> {
-    string_set([
-        "pass_contract_status_schema",
-        "pass_contract_loop_policy",
-        "pass_contract_loop_status",
-        "pass_contract_fallback_status",
-        "pass_contract_claim_status",
-        "pass_contract_claim_blockers",
-        "pass_contract_readiness_status",
     ])
 }
 
 fn required_claim_provenance_field_names() -> BTreeSet<String> {
     string_set([
         "claim_provenance_schema",
+        "baseline_separation_schema",
         "paper_baseline_policy",
+        "paper_baseline_numbers_status",
+        "paper_baseline_claim_status",
+        "local_evidence_status_policy",
+        "cold_gpu_pipeline_init_policy",
+        "steady_compile_latency_claim_source",
+        "steady_readback_claim_source",
+        "runtime_validation_policy",
+        "workload_shape_policy",
+        "workload_shape_scope",
+        "workload_generalization_status",
+        "workload_generalization_blockers",
+        "link_artifact_evidence_policy",
+        "link_artifact_evidence_schema",
+        "link_artifact_required_evidence_classes",
+        "link_artifact_evidence_status",
+        "link_artifact_claim_blockers",
+        "local_performance_claim_policy",
         "local_performance_claim_source",
+        "local_performance_claim_exclusions",
         "local_performance_claim_status",
         "local_performance_claim_blockers",
         "local_vram_claim_source",
         "local_pareas_claim_source",
+        "scaling_claim_policy",
         "scaling_claim_source",
         "scaling_claim_status",
         "scaling_claim_blockers",
@@ -3846,11 +3453,25 @@ fn expected_claim_fields_for_artifact(name: &str) -> BTreeSet<String> {
             "command_environment_sha256",
             "source_control_state",
             "source_control_revision",
-            "pass_contract_loop_status",
-            "pass_contract_fallback_status",
-            "pass_contract_claim_status",
-            "pass_contract_claim_blockers",
-            "pass_contract_readiness_status",
+            "paper_baseline_numbers_status",
+            "paper_baseline_claim_status",
+            "local_evidence_status_policy",
+            "cold_gpu_pipeline_init_policy",
+            "steady_compile_latency_claim_source",
+            "steady_readback_claim_source",
+            "workload_shape_policy",
+            "workload_shape_scope",
+            "workload_generalization_status",
+            "workload_generalization_blockers",
+            "link_artifact_evidence_policy",
+            "link_artifact_evidence_schema",
+            "link_artifact_required_evidence_classes",
+            "link_artifact_evidence_status",
+            "link_artifact_claim_blockers",
+            "local_performance_claim_status",
+            "local_performance_claim_blockers",
+            "scaling_claim_status",
+            "scaling_claim_blockers",
         ]),
         "command_status" => string_set([
             "lanius_exit_status",
@@ -3858,8 +3479,16 @@ fn expected_claim_fields_for_artifact(name: &str) -> BTreeSet<String> {
             "lanius_wall_elapsed_ms",
             "measurement_timing_policy",
             "cold_start_policy",
+            "cold_gpu_pipeline_init_policy",
             "compile_latency_claim_source",
+            "steady_compile_latency_claim_source",
+            "steady_readback_claim_source",
             "runtime_validation_policy",
+            "link_artifact_evidence_policy",
+            "link_artifact_evidence_schema",
+            "link_artifact_required_evidence_classes",
+            "link_artifact_evidence_status",
+            "link_artifact_claim_blockers",
             "timeout_provenance_schema",
             "timeout_scope",
             "timeout_ms",
@@ -3891,14 +3520,37 @@ fn expected_claim_fields_for_artifact(name: &str) -> BTreeSet<String> {
             "claim_readiness_blockers",
             "measurement_timing_policy",
             "cold_start_policy",
+            "cold_gpu_pipeline_init_policy",
             "compile_latency_claim_source",
+            "steady_compile_latency_claim_source",
+            "steady_readback_claim_source",
             "runtime_validation_policy",
+            "workload_shape_policy",
+            "workload_shape_scope",
+            "workload_generalization_status",
+            "workload_generalization_blockers",
+            "link_artifact_evidence_policy",
+            "link_artifact_evidence_schema",
+            "link_artifact_required_evidence_classes",
+            "link_artifact_evidence_status",
+            "link_artifact_claim_blockers",
             "claim_provenance_schema",
+            "baseline_separation_schema",
             "paper_baseline_policy",
+            "paper_baseline_numbers_status",
+            "paper_baseline_claim_status",
+            "local_evidence_status_policy",
+            "local_performance_claim_policy",
             "local_performance_claim_source",
+            "local_performance_claim_exclusions",
+            "local_performance_claim_status",
+            "local_performance_claim_blockers",
             "local_vram_claim_source",
             "local_pareas_claim_source",
+            "scaling_claim_policy",
             "scaling_claim_source",
+            "scaling_claim_status",
+            "scaling_claim_blockers",
             "timeout_provenance_schema",
             "timeout_scope",
             "timeout_ms",
@@ -3908,11 +3560,12 @@ fn expected_claim_fields_for_artifact(name: &str) -> BTreeSet<String> {
             "timeout_exit_code",
             "timeout_exit_code_means_timed_out",
         ]),
-        "pareas_source" => string_set(["pareas_source_path"]),
+        "pareas_source" => string_set(["pareas_source_path", "pareas_source_line_count"]),
         "pareas_source_sha256" => string_set(["pareas_source_sha256"]),
         "pareas_binary_sha256" => string_set(["pareas_binary_sha256"]),
         "pareas_output" => string_set(["pareas_exit_status"]),
         "pareas_stdout" => string_set(["pareas_wall_elapsed_ms", "lanius_pareas_wall_ratio"]),
+        "pareas_vram_csv" => string_set(["pareas_max_vram_bytes", "pareas_nvidia_smi_exit_status"]),
         other => panic!("no claim fields contract for artifact {other:?}"),
     }
 }
@@ -3926,6 +3579,7 @@ fn required_readback_summary_field_names() -> BTreeSet<String> {
         "target",
         "trace_path",
         "readback_timeout_ms",
+        "steady_readback_claim_source",
         "span_count",
         "total_ms",
         "max_span_ms",
@@ -3964,26 +3618,36 @@ fn required_command_environment_field_names() -> BTreeSet<String> {
         "iterations",
         "measurement_timing_policy",
         "cold_start_policy",
+        "cold_gpu_pipeline_init_policy",
         "compile_latency_claim_source",
+        "steady_compile_latency_claim_source",
+        "steady_readback_claim_source",
         "runtime_validation_policy",
+        "workload_shape_policy",
+        "workload_shape_scope",
+        "workload_generalization_status",
+        "workload_generalization_blockers",
+        "link_artifact_evidence_policy",
+        "link_artifact_evidence_schema",
+        "link_artifact_required_evidence_classes",
+        "link_artifact_evidence_status",
+        "link_artifact_claim_blockers",
+        "baseline_separation_schema",
+        "local_evidence_status_policy",
         "claim_provenance_schema",
         "paper_baseline_policy",
+        "paper_baseline_numbers_status",
+        "paper_baseline_claim_status",
+        "local_performance_claim_policy",
         "local_performance_claim_source",
+        "local_performance_claim_status",
+        "local_performance_claim_blockers",
         "local_vram_claim_source",
         "local_pareas_claim_source",
+        "scaling_claim_policy",
         "scaling_claim_source",
-        "parallel_pass_contract_schema",
-        "parallel_pass_contract_policy",
-        "parallel_pass_contract_groups",
-        "parallel_pass_contract_order_policy",
-        "parallel_pass_contract_execution_order",
-        "pass_contract_status_schema",
-        "pass_contract_loop_policy",
-        "pass_contract_loop_status",
-        "pass_contract_fallback_status",
-        "pass_contract_claim_status",
-        "pass_contract_claim_blockers",
-        "pass_contract_readiness_status",
+        "scaling_claim_status",
+        "scaling_claim_blockers",
         "timeout_provenance_schema",
         "timeout_scope",
         "timeout_source",
@@ -4037,9 +3701,15 @@ fn required_evidence_status_field_names() -> BTreeSet<String> {
         "local_readback_evidence_status",
         "local_vram_evidence_status",
         "local_pareas_evidence_status",
-        "pass_contract_claim_status",
-        "pass_contract_claim_blockers",
-        "pass_contract_readiness_status",
+        "local_pareas_vram_evidence_status",
+        "link_artifact_evidence_schema",
+        "link_artifact_required_evidence_classes",
+        "link_artifact_evidence_status",
+        "link_artifact_claim_blockers",
+        "local_performance_claim_status",
+        "local_performance_claim_blockers",
+        "scaling_claim_status",
+        "scaling_claim_blockers",
         "production_readiness_evidence_complete",
         "production_readiness_blockers",
     ])
@@ -4073,8 +3743,16 @@ fn required_status_field_names() -> BTreeSet<String> {
         "lanius_wall_elapsed_ms",
         "measurement_timing_policy",
         "cold_start_policy",
+        "cold_gpu_pipeline_init_policy",
         "compile_latency_claim_source",
+        "steady_compile_latency_claim_source",
+        "steady_readback_claim_source",
         "runtime_validation_policy",
+        "link_artifact_evidence_policy",
+        "link_artifact_evidence_schema",
+        "link_artifact_required_evidence_classes",
+        "link_artifact_evidence_status",
+        "link_artifact_claim_blockers",
         "timeout_provenance_schema",
         "timeout_scope",
         "timeout_ms",
@@ -4111,6 +3789,8 @@ fn optional_status_field_names() -> BTreeSet<String> {
         "pareas_source_path",
         "pareas_output_path",
         "pareas_stdout_path",
+        "pareas_nvidia_smi_exit_status",
+        "pareas_vram_output_path",
     ])
 }
 
@@ -4124,30 +3804,41 @@ fn required_summary_field_names() -> BTreeSet<String> {
         "evidence_provenance",
         "measurement_evidence_policy",
         "paper_numbers_accepted",
+        "baseline_separation_schema",
         "comparison_baseline_policy",
+        "local_evidence_status_policy",
         "freshness_policy",
         "measurement_timing_policy",
         "cold_start_policy",
+        "cold_gpu_pipeline_init_policy",
         "compile_latency_claim_source",
+        "steady_compile_latency_claim_source",
+        "steady_readback_claim_source",
         "runtime_validation_policy",
+        "workload_shape_policy",
+        "workload_shape_scope",
+        "workload_generalization_status",
+        "workload_generalization_blockers",
+        "link_artifact_evidence_policy",
+        "link_artifact_evidence_schema",
+        "link_artifact_required_evidence_classes",
+        "link_artifact_evidence_status",
+        "link_artifact_claim_blockers",
         "claim_provenance_schema",
         "paper_baseline_policy",
+        "paper_baseline_numbers_status",
+        "paper_baseline_claim_status",
+        "local_performance_claim_policy",
         "local_performance_claim_source",
+        "local_performance_claim_exclusions",
+        "local_performance_claim_status",
+        "local_performance_claim_blockers",
         "local_vram_claim_source",
         "local_pareas_claim_source",
+        "scaling_claim_policy",
         "scaling_claim_source",
-        "parallel_pass_contract_schema",
-        "parallel_pass_contract_policy",
-        "parallel_pass_contract_groups",
-        "parallel_pass_contract_order_policy",
-        "parallel_pass_contract_execution_order",
-        "pass_contract_status_schema",
-        "pass_contract_loop_policy",
-        "pass_contract_loop_status",
-        "pass_contract_fallback_status",
-        "pass_contract_claim_status",
-        "pass_contract_claim_blockers",
-        "pass_contract_readiness_status",
+        "scaling_claim_status",
+        "scaling_claim_blockers",
         "timeout_provenance_schema",
         "timeout_scope",
         "timeout_source",
@@ -4167,6 +3858,9 @@ fn required_summary_field_names() -> BTreeSet<String> {
         "local_readback_evidence_status",
         "local_vram_evidence_status",
         "local_pareas_evidence_status",
+        "local_pareas_vram_evidence_status",
+        "link_artifact_evidence_status",
+        "link_artifact_claim_blockers",
         "production_readiness_evidence_complete",
         "production_readiness_blockers",
         "evidence_freshness_schema",
@@ -4198,6 +3892,8 @@ fn required_summary_field_names() -> BTreeSet<String> {
         "readback_max_span_ms",
         "max_vram_bytes",
         "nvidia_smi_exit_status",
+        "pareas_max_vram_bytes",
+        "pareas_nvidia_smi_exit_status",
         "resource_user_seconds",
         "resource_system_seconds",
         "resource_max_rss_kb",
@@ -4212,6 +3908,7 @@ fn required_summary_field_names() -> BTreeSet<String> {
         "pareas_exit_status",
         "pareas_timed_out",
         "pareas_wall_elapsed_ms",
+        "pareas_source_line_count",
         "pareas_source_sha256",
         "pareas_binary_sha256",
         "lanius_pareas_wall_ratio",
@@ -4232,6 +3929,67 @@ fn required_summary_field_names() -> BTreeSet<String> {
         "pareas_binary_sha256_path",
         "pareas_output_path",
         "pareas_stdout_path",
+        "pareas_vram_output_path",
+    ])
+}
+
+fn parallel_pass_contract_groups() -> BTreeSet<String> {
+    string_set([
+        "record_invariant",
+        "semantic_contract",
+        "execution_contract",
+        "measurement_scaffold",
+    ])
+}
+
+fn required_parallel_pass_contract_field_names() -> BTreeSet<String> {
+    string_set([
+        "contract_schema",
+        "pass_group",
+        "paper_pass_stage",
+        "record_boundary",
+        "parallel_primitives",
+        "evidence_shape",
+        "loop_status",
+        "fallback_status",
+        "claim_boundary",
+    ])
+}
+
+fn required_pass_contract_status_field_names() -> BTreeSet<String> {
+    string_set([
+        "pass_contract_status_schema",
+        "pass_contract_loop_policy",
+        "pass_contract_loop_status",
+        "pass_contract_fallback_status",
+        "pass_contract_claim_status",
+        "pass_contract_claim_blockers",
+        "pass_contract_readiness_status",
+    ])
+}
+
+fn parallel_pass_artifact_field_names() -> BTreeSet<String> {
+    string_set([
+        "paper_pass_order_schema",
+        "paper_pass_order_source",
+        "paper_pass_order",
+        "paper_pass_alignment_policy",
+        "paper_pass_alignment_status",
+        "paper_pass_alignment_blockers",
+        "parallel_pass_contract_schema",
+        "parallel_pass_contract_policy",
+        "parallel_pass_contract_groups",
+        "parallel_pass_contract_order_policy",
+        "parallel_pass_contract_execution_order",
+        "pass_contract_status_schema",
+        "pass_contract_loop_policy",
+        "pass_contract_loop_status",
+        "pass_contract_fallback_status",
+        "pass_contract_claim_status",
+        "pass_contract_claim_blockers",
+        "pass_contract_readiness_status",
+        "shader_loop_audit_summary",
+        "shader_loop_audit_blocker",
     ])
 }
 
@@ -4250,7 +4008,6 @@ fn compiler_acceptance_readiness_check_plan_validates_measurement_inventory() {
         "missing_commands",
         "evidence_inventory_errors",
         "language_slice_errors",
-        "test_discipline_errors",
     ] {
         assert_zero_plan_counter(&status, name);
     }
@@ -4270,11 +4027,8 @@ fn compiler_acceptance_readiness_check_plan_validates_measurement_inventory() {
         "language_slice_fail_closed_evidence",
         "language_slice_measurement_scaffold_evidence",
         "language_slice_parser_type_relation_evidence",
-        "language_slice_pass_order_evidence",
         "language_slice_performance_claim_guards",
         "language_slice_external_tooling_gate_evidence",
-        "language_slice_planned_pass_order_gaps",
-        "test_discipline_checked_files",
     ] {
         assert_positive_plan_counter(&status, name);
     }
@@ -4294,6 +4048,88 @@ fn compiler_acceptance_readiness_check_plan_validates_measurement_inventory() {
 }
 
 #[test]
+fn compiler_acceptance_readiness_rejects_planned_object_link_pipeline_evidence_fixture() {
+    let _guard = acceptance_script_mutex()
+        .lock()
+        .expect("acceptance script lock should not be poisoned");
+    let fixture = TemporaryLanguageSliceFixture::replace_row(
+        "linking",
+        "object-link-pipeline",
+        [
+            "linking",
+            "object-link-pipeline",
+            "planned",
+            "integration:source_pack_package_boundaries",
+            "source_pack_link_execution_resume_requires_final_page_sidecar_evidence",
+            "artifact-contract",
+            "descriptor contract records exist but real object/relocation/native link emission remains incomplete",
+        ],
+    );
+
+    let failure =
+        run_acceptance_script_failure_locked(&["--tier", "readiness", "--check-plan"], |_| {});
+    drop(fixture);
+
+    assert!(
+        failure
+            .stderr
+            .contains("linking/object-link-pipeline has status 'planned' but cites evidence"),
+        "readiness gate should reject evidence attached to the planned link-pipeline row\nstdout:\n{}\nstderr:\n{}",
+        failure.stdout,
+        failure.stderr
+    );
+    assert!(
+        failure
+            .stderr
+            .contains("planned rows cannot cite production evidence"),
+        "planned rows must not be counted as production evidence\nstdout:\n{}\nstderr:\n{}",
+        failure.stdout,
+        failure.stderr
+    );
+    assert!(
+        failure
+            .stderr
+            .contains("promote to bounded only with behavior-facing link-pipeline evidence"),
+        "link-pipeline promotion should require behavior-facing evidence\nstdout:\n{}\nstderr:\n{}",
+        failure.stdout,
+        failure.stderr
+    );
+}
+
+#[test]
+fn compiler_acceptance_readiness_rejects_lsp_capabilities_without_claim_boundaries_fixture() {
+    let _guard = acceptance_script_mutex()
+        .lock()
+        .expect("acceptance script lock should not be poisoned");
+    let fixture = TemporaryLanguageSliceFixture::replace_row(
+        "tooling",
+        "lsp-capabilities",
+        [
+            "tooling",
+            "lsp-capabilities",
+            "bounded",
+            "integration:cli_lsp",
+            "cli_lsp_capabilities_reports_no_run_diagnostic_contract",
+            "public-boundary",
+            "LSP capability metadata exposes diagnostic registry source severity UTF-16 position contract distribution release boundary JSON-RPC error-data schema identity stdio handshake methods explicit no-run guards including source-scanning false and single-open-document pull-diagnostic scope with no workspace publish result-id source-root or stdlib-root claims",
+        ],
+    );
+
+    let failure =
+        run_acceptance_script_failure_locked(&["--tier", "readiness", "--check-plan"], |_| {});
+    drop(fixture);
+
+    assert!(
+        failure.stderr.contains(
+            "tooling/lsp-capabilities LSP capabilities evidence must publish explicit non-performance and non-production claim boundaries"
+        ),
+        "readiness gate should reject LSP capability evidence without claim-boundary metadata\nstdout:\n{}\nstderr:\n{}",
+        failure.stdout,
+        failure.stderr
+    );
+}
+
+#[test]
 fn compiler_acceptance_generated_run_requires_scale_opt_in() {
     let failure = run_acceptance_script_failure(&["--tier", "generated", "--run"], |_| {});
     assert!(
@@ -4307,6 +4143,25 @@ fn compiler_acceptance_generated_run_requires_scale_opt_in() {
             .stderr
             .contains("requires --allow-scale or LANIUS_ACCEPTANCE_ALLOW_SCALE=1 with --run"),
         "generated execution should require an explicit scale opt-in\nstdout:\n{}\nstderr:\n{}",
+        failure.stdout,
+        failure.stderr
+    );
+}
+
+#[test]
+fn compiler_acceptance_readiness_run_is_always_no_run_inventory() {
+    let failure = run_acceptance_script_failure(&["--tier", "readiness", "--run"], |_| {});
+    assert!(
+        failure.stdout.is_empty(),
+        "readiness execution rejection should happen before printing runnable commands\nstdout:\n{}\nstderr:\n{}",
+        failure.stdout,
+        failure.stderr
+    );
+    assert!(
+        failure
+            .stderr
+            .contains("tier 'readiness' is a no-run tracking inventory"),
+        "readiness tier must stay no-run instead of executing the full inventory\nstdout:\n{}\nstderr:\n{}",
         failure.stdout,
         failure.stderr
     );
@@ -4352,7 +4207,6 @@ fn run_success(bin: &Path, args: &[&str]) -> String {
 
 struct TimedOutput {
     stdout: String,
-    elapsed: Duration,
 }
 
 fn run_success_timed(bin: &Path, args: &[&str]) -> TimedOutput {
@@ -4367,24 +4221,14 @@ fn run_success_timed_owned(bin: &Path, args: &[OsString]) -> TimedOutput {
     run_command_success_timed(command, bin, args)
 }
 
-fn run_pareas_success_timed(
-    bin: &Path,
-    args: &[OsString],
-    cuda_path: Option<&Path>,
-    ld_library_path: Option<&OsStr>,
-) -> TimedOutput {
-    let mut command = Command::new(bin);
-    if let Some(cuda_path) = cuda_path {
-        command.env("CUDA_PATH", cuda_path);
-        command.env("CUDA_ROOT", cuda_path);
-    }
-    if let Some(ld_library_path) = ld_library_path {
-        command.env("LD_LIBRARY_PATH", ld_library_path);
-    }
-    run_command_success_timed(command, bin, args)
+fn run_acceptance_script(args: &[&str], configure: impl FnOnce(&mut Command)) -> String {
+    let _guard = acceptance_script_mutex()
+        .lock()
+        .expect("acceptance script lock should not be poisoned");
+    run_acceptance_script_locked(args, configure)
 }
 
-fn run_acceptance_script(args: &[&str], configure: impl FnOnce(&mut Command)) -> String {
+fn run_acceptance_script_locked(args: &[&str], configure: impl FnOnce(&mut Command)) -> String {
     let bash = PathBuf::from("/bin/bash");
     let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tools/compiler_acceptance.sh");
     let mut command = Command::new(&bash);
@@ -4402,6 +4246,16 @@ struct ScriptFailure {
 }
 
 fn run_acceptance_script_failure(
+    args: &[&str],
+    configure: impl FnOnce(&mut Command),
+) -> ScriptFailure {
+    let _guard = acceptance_script_mutex()
+        .lock()
+        .expect("acceptance script lock should not be poisoned");
+    run_acceptance_script_failure_locked(args, configure)
+}
+
+fn run_acceptance_script_failure_locked(
     args: &[&str],
     configure: impl FnOnce(&mut Command),
 ) -> ScriptFailure {
@@ -4429,6 +4283,62 @@ fn run_acceptance_script_failure(
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
     }
+}
+
+struct TemporaryLanguageSliceFixture {
+    path: PathBuf,
+    original: String,
+}
+
+impl TemporaryLanguageSliceFixture {
+    fn replace_row(kind: &str, id: &str, replacement_fields: [&str; 7]) -> Self {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("docs")
+            .join("language_slice_unstable_alpha.tsv");
+        let original = fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("read language-slice fixture {}: {err}", path.display()));
+        let mut replaced = false;
+        let mut updated = String::new();
+        for line in original.lines() {
+            if !updated.is_empty() {
+                updated.push('\n');
+            }
+            let fields = line.split('\t').collect::<Vec<_>>();
+            if fields.len() >= 2 && fields[0] == kind && fields[1] == id {
+                updated.push_str(&replacement_fields.join("\t"));
+                replaced = true;
+            } else {
+                updated.push_str(line);
+            }
+        }
+        if original.ends_with('\n') {
+            updated.push('\n');
+        }
+        assert!(
+            replaced,
+            "language-slice row {kind}/{id} should exist in {}",
+            path.display()
+        );
+        fs::write(&path, updated)
+            .unwrap_or_else(|err| panic!("write language-slice fixture {}: {err}", path.display()));
+        Self { path, original }
+    }
+}
+
+impl Drop for TemporaryLanguageSliceFixture {
+    fn drop(&mut self) {
+        if let Err(err) = fs::write(&self.path, &self.original) {
+            eprintln!(
+                "failed to restore language-slice fixture {}: {err}",
+                self.path.display()
+            );
+        }
+    }
+}
+
+fn acceptance_script_mutex() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
 }
 
 fn run_bash_command_line_success(command_line: &str) {
@@ -4484,6 +4394,7 @@ fn clear_acceptance_environment(command: &mut Command) {
         "LANIUS_PAREAS_BINARY_SHA256_OUTPUT_PATH",
         "LANIUS_PAREAS_OUTPUT_PATH",
         "LANIUS_PAREAS_STDOUT_PATH",
+        "LANIUS_PAREAS_VRAM_OUTPUT_PATH",
     ] {
         command.env_remove(name);
     }
@@ -4562,7 +4473,6 @@ fn run_command_success_timed(mut command: Command, bin: &Path, args: &[OsString]
 
         thread::sleep(Duration::from_millis(CHILD_PROCESS_POLL_INTERVAL_MS));
     };
-    let elapsed = start.elapsed();
     let stdout = stdout_reader
         .join()
         .expect("stdout reader thread should not panic");
@@ -4580,7 +4490,6 @@ fn run_command_success_timed(mut command: Command, bin: &Path, args: &[OsString]
     );
     TimedOutput {
         stdout: String::from_utf8_lossy(&stdout).into_owned(),
-        elapsed,
     }
 }
 
@@ -4600,10 +4509,6 @@ fn parse_bool_field(text: &str, name: &str) -> Option<bool> {
         "false" => Some(false),
         _ => None,
     }
-}
-
-fn parse_ms_field(text: &str, name: &str) -> Option<f64> {
-    parse_field(text, name)?.parse().ok()
 }
 
 fn line_containing<'a>(text: &'a str, marker: &str) -> &'a str {
@@ -4659,14 +4564,6 @@ fn generated_gate_command_timeout() -> Duration {
             Duration::from_millis(milliseconds)
         })
         .unwrap_or_else(|_| Duration::from_millis(DEFAULT_GENERATED_GATE_COMMAND_TIMEOUT_MS))
-}
-
-fn pareas_compare_iters() -> usize {
-    bounded_positive_usize_env(
-        "LANIUS_PAREAS_COMPARE_ITERS",
-        DEFAULT_PAREAS_COMPARE_ITERS,
-        MAX_PAREAS_COMPARE_ITERS_WITHOUT_OPT_IN,
-    )
 }
 
 fn parse_usize_env_value(name: &str, value: &str) -> usize {
@@ -4731,67 +4628,6 @@ fn pareas_bin() -> Option<PathBuf> {
     .find(|path| path.exists())
 }
 
-fn pareas_runtime_cuda_path() -> Option<PathBuf> {
-    if let Some(path) = env::var_os("PAREAS_CUDA_PATH").or_else(|| env::var_os("CUDA_PATH")) {
-        let path = PathBuf::from(path);
-        if path.join("include/cuda_fp16.h").is_file() {
-            return Some(path);
-        }
-    }
-    if let Ok(home) = env::var("HOME") {
-        let path = PathBuf::from(home).join(".cache/laniusc-tools/cuda-12.8-python");
-        if path.join("include/cuda_fp16.h").is_file() {
-            return Some(path);
-        }
-    }
-    let path = PathBuf::from("/usr/local/cuda");
-    path.join("include/cuda_fp16.h").is_file().then_some(path)
-}
-
-fn pareas_runtime_ld_library_path() -> Option<OsString> {
-    let mut dirs: Vec<PathBuf> = env::var_os("PAREAS_LD_LIBRARY_PATH")
-        .map(|value| env::split_paths(&value).collect())
-        .unwrap_or_default();
-
-    if let Some(cuda_path) = env::var_os("CUDA_PATH") {
-        push_existing_dir(&mut dirs, PathBuf::from(cuda_path).join("lib64"));
-    }
-    if let Ok(home) = env::var("HOME") {
-        let tools = PathBuf::from(home).join(".cache/laniusc-tools");
-        push_existing_dir(&mut dirs, tools.join("cuda-12.8-python/lib64"));
-        push_existing_dir(&mut dirs, tools.join("cuda-12.9-python/lib64"));
-    }
-    push_existing_dir(&mut dirs, PathBuf::from("/usr/local/cuda/lib64"));
-
-    if let Some(current) = env::var_os("LD_LIBRARY_PATH") {
-        dirs.extend(env::split_paths(&current));
-    }
-
-    (!dirs.is_empty()).then(|| env::join_paths(dirs).expect("join LD_LIBRARY_PATH candidates"))
-}
-
-fn push_existing_dir(dirs: &mut Vec<PathBuf>, dir: PathBuf) {
-    if dir.is_dir() {
-        dirs.push(dir);
-    }
-}
-
-fn pareas_generated_source(lines: usize) -> String {
-    let helper_count = lines.saturating_sub(4).max(1) / 5;
-    let mut src = String::with_capacity(lines * 28);
-    for i in 0..helper_count {
-        src.push_str(&format!(
-            "fn f{i}[a: int]: int {{\n  var x = a + {i};\n  return x;\n}}\n"
-        ));
-    }
-    src.push_str("fn main[]: int {\n  var acc = 0;\n");
-    for i in 0..helper_count {
-        src.push_str(&format!("  acc = acc + f{i}[{i}];\n"));
-    }
-    src.push_str("  return acc;\n}\n");
-    src
-}
-
 fn unique_temp_path(stem: &str, ext: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -4808,6 +4644,8 @@ fn unique_temp_dir(stem: &str) -> PathBuf {
 
 fn install_cat_on_path(dir: &Path) {
     install_command_on_path(dir, "cat");
+    install_system_command_on_path(dir, "awk");
+    install_system_command_on_path(dir, "sort");
 }
 
 fn install_command_on_path(dir: &Path, name: &str) {
@@ -4836,8 +4674,4 @@ fn env_truthy(name: &str) -> bool {
             "1" | "true" | "yes" | "on"
         )
     })
-}
-
-fn duration_ms(duration: Duration) -> f64 {
-    duration.as_secs_f64() * 1000.0
 }

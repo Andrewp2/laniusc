@@ -27,7 +27,6 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> decl_count_out;
-StructuredBuffer<uint> module_count_out;
 StructuredBuffer<uint> sorted_decl_key_order;
 StructuredBuffer<uint> decl_module_id;
 StructuredBuffer<uint> decl_namespace;
@@ -64,7 +63,7 @@ uint active_decl_count()
 
 uint active_module_count()
 {
-    return max(1u, min(module_count_out[0], gParams.decl_capacity));
+    return max(1u, gParams.reserved);
 }
 
 bool valid_namespace(uint namespace)

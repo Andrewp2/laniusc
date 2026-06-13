@@ -12,7 +12,6 @@ mod params;
 mod pass_loaders;
 mod record;
 mod resident;
-mod standalone;
 mod util;
 
 use anyhow::Result;
@@ -20,23 +19,14 @@ use bind_models::*;
 use bind_support::*;
 use module_path::*;
 use params::*;
-use pass_loaders::*;
 use record::*;
-pub use standalone::{
-    check_token_buffer_on_gpu,
-    check_token_buffer_with_hir_on_gpu,
-    check_tokens_on_gpu,
-};
 use util::*;
 use wgpu::util::DeviceExt;
 
-use crate::{
-    gpu::{
-        buffers::{LaniusBuffer, storage_ro_from_bytes, storage_ro_from_u32s, uniform_from_val},
-        device,
-        passes_core::{DispatchDim, InputElements, PassData, bind_group, plan_workgroups},
-    },
-    lexer::types::Token,
+use crate::gpu::{
+    buffers::{LaniusBuffer, storage_ro_from_bytes, storage_ro_from_u32s, uniform_from_val},
+    device,
+    passes_core::{DispatchDim, InputElements, PassData, bind_group, plan_workgroups},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,6 +106,7 @@ pub struct GpuTypeCheckHirItemBuffers<'a> {
     pub type_len_token: &'a wgpu::Buffer,
     pub type_len_value: &'a wgpu::Buffer,
     pub type_path_leaf_node: &'a wgpu::Buffer,
+    pub bound_path_owner_by_leaf: &'a wgpu::Buffer,
     pub type_arg_start: &'a wgpu::Buffer,
     pub type_arg_count: &'a wgpu::Buffer,
     pub type_arg_next: &'a wgpu::Buffer,
@@ -140,6 +131,10 @@ pub struct GpuTypeCheckHirItemBuffers<'a> {
     pub member_name_token: &'a wgpu::Buffer,
     pub stmt_record: &'a wgpu::Buffer,
     pub stmt_scope_end: &'a wgpu::Buffer,
+    pub nearest_stmt_node: &'a wgpu::Buffer,
+    pub nearest_block_node: &'a wgpu::Buffer,
+    pub nearest_loop_node: &'a wgpu::Buffer,
+    pub nearest_fn_node: &'a wgpu::Buffer,
     pub array_lit_first_element: &'a wgpu::Buffer,
     pub array_lit_element_count: &'a wgpu::Buffer,
     pub array_lit_context_stmt_node: &'a wgpu::Buffer,
@@ -327,7 +322,6 @@ struct TypeCheckPasses {
     names_radix_dedup: PassData,
     names_radix_assign_ids: PassData,
     language_names_clear: PassData,
-    language_names_mark: PassData,
     language_type_codes_clear: PassData,
     language_decls_materialize: PassData,
     modules_mark_records: PassData,
@@ -412,6 +406,7 @@ struct TypeCheckPasses {
     type_instances_array_literal_return_refs: PassData,
     type_instances_array_index_results: PassData,
     type_instances_validate_aggregate_access: PassData,
+    predicates_clear_syntax_tokens: PassData,
     predicates_clear_bound_arg_facts: PassData,
     predicates_collect_bound_arg_facts: PassData,
     predicates_collect_method_contracts: PassData,
@@ -420,9 +415,15 @@ struct TypeCheckPasses {
     predicates_sort_keys: PassData,
     predicates_sort_keys_scatter: PassData,
     predicates_build_method_owner_ranges: PassData,
+    predicates_emit_method_validation_rows: PassData,
+    predicates_reduce_method_validation_errors: PassData,
+    predicates_apply_method_validation_errors: PassData,
     predicates_obligations: PassData,
+    returns_clear: PassData,
+    returns_mark: PassData,
+    returns_mark_if: PassData,
+    returns_validate: PassData,
     conditions_hir: PassData,
-    tokens: PassData,
     control: PassData,
     control_hir: PassData,
     scope: PassData,
@@ -452,9 +453,6 @@ struct TypeCheckPasses {
     methods_resolve_table: PassData,
     methods_resolve: PassData,
     visible_clear_resident: PassData,
-    visible_scope_blocks: PassData,
-    visible_scatter: PassData,
-    visible_decode: PassData,
     visible_mark_hir_decl_names: PassData,
     visible_scatter_hir_decl_records: PassData,
     visible_seed_hir_decl_order: PassData,
@@ -556,6 +554,14 @@ struct ResidentTypeCheckBindGroups {
     hir_visible_decl_key_radix_bucket_total: wgpu::Buffer,
     hir_visible_decl_key_radix_bucket_base: wgpu::Buffer,
     hir_visible_decl_scope_tree: wgpu::Buffer,
+    generic_param_count_out: wgpu::Buffer,
+    generic_param_owner_node: wgpu::Buffer,
+    generic_param_name_id: wgpu::Buffer,
+    generic_param_token: wgpu::Buffer,
+    generic_param_node: wgpu::Buffer,
+    generic_param_kind: wgpu::Buffer,
+    generic_param_key_order: wgpu::Buffer,
+    generic_param_key_order_tmp: wgpu::Buffer,
     generic_decl_owner_by_node_a: wgpu::Buffer,
     generic_decl_owner_by_node_b: wgpu::Buffer,
     generic_decl_parent_jump_a: wgpu::Buffer,
@@ -587,6 +593,8 @@ struct ResidentTypeCheckBindGroups {
     fn_entrypoint_tag: wgpu::Buffer,
     call_return_type: wgpu::Buffer,
     call_return_type_token: wgpu::Buffer,
+    return_fn_flags: wgpu::Buffer,
+    return_block_flags: wgpu::Buffer,
     call_param_count: wgpu::Buffer,
     call_param_type: wgpu::Buffer,
     call_param_ref_tag: wgpu::Buffer,
@@ -652,6 +660,7 @@ struct ResidentTypeCheckBindGroups {
     predicate_bound_first_arg_token: wgpu::Buffer,
     predicate_bound_second_arg_token: wgpu::Buffer,
     predicate_status: wgpu::Buffer,
+    predicate_syntax_token: wgpu::Buffer,
     predicate_method_contract_owner_node: wgpu::Buffer,
     predicate_method_contract_name_token: wgpu::Buffer,
     predicate_method_contract_name_id: wgpu::Buffer,
@@ -664,8 +673,15 @@ struct ResidentTypeCheckBindGroups {
     predicate_method_contract_param_type_node: wgpu::Buffer,
     predicate_method_contract_key_order: wgpu::Buffer,
     predicate_method_contract_key_order_tmp: wgpu::Buffer,
+    predicate_method_param_key_order: wgpu::Buffer,
+    predicate_method_param_key_order_tmp: wgpu::Buffer,
     predicate_method_contract_owner_range_first: wgpu::Buffer,
     predicate_method_contract_owner_range_count: wgpu::Buffer,
+    predicate_method_validation_owner_node: wgpu::Buffer,
+    predicate_method_validation_peer_node: wgpu::Buffer,
+    predicate_method_validation_status: wgpu::Buffer,
+    predicate_method_validation_detail_token: wgpu::Buffer,
+    predicate_method_validation_first_error_row: wgpu::Buffer,
     predicate_owner_key_order: wgpu::Buffer,
     predicate_owner_key_order_tmp: wgpu::Buffer,
     predicate_impl_key_order: wgpu::Buffer,
@@ -674,6 +690,14 @@ struct ResidentTypeCheckBindGroups {
     predicate_key_radix_block_bucket_prefix: wgpu::Buffer,
     predicate_key_radix_bucket_total: wgpu::Buffer,
     predicate_key_radix_bucket_base: wgpu::Buffer,
+    predicate_obligation_count_by_call: wgpu::Buffer,
+    predicate_obligation_prefix_by_call: wgpu::Buffer,
+    predicate_obligation_scan_local_prefix: wgpu::Buffer,
+    predicate_obligation_scan_block_sum: wgpu::Buffer,
+    predicate_obligation_scan_prefix_a: wgpu::Buffer,
+    predicate_obligation_scan_prefix_b: wgpu::Buffer,
+    predicate_obligation_pair_total: wgpu::Buffer,
+    predicate_obligation_pair_dispatch_args: wgpu::Buffer,
     fn_return_ref_tag: wgpu::Buffer,
     fn_return_ref_payload: wgpu::Buffer,
     decl_type_ref_tag: wgpu::Buffer,
@@ -703,8 +727,11 @@ struct ResidentTypeCheckBindGroups {
     methods: MethodBindGroups,
     predicates: Option<PredicateBindGroups>,
     type_instances: TypeInstanceBindGroups,
+    returns_clear: wgpu::BindGroup,
+    returns_mark: wgpu::BindGroup,
+    returns_mark_if: wgpu::BindGroup,
+    returns_validate: wgpu::BindGroup,
     conditions_hir: wgpu::BindGroup,
-    tokens: wgpu::BindGroup,
     control: wgpu::BindGroup,
     scope: wgpu::BindGroup,
     scope_hir: wgpu::BindGroup,

@@ -18,6 +18,8 @@ StructuredBuffer<uint> ll1_status;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> parent;
 StructuredBuffer<uint> first_child;
+StructuredBuffer<uint> next_sibling;
+StructuredBuffer<uint> prev_sibling;
 StructuredBuffer<uint> hir_kind;
 
 RWStructuredBuffer<uint> hir_variant_owner_a;
@@ -71,6 +73,31 @@ uint first_child_node(uint node)
     return valid_node(child) ? child : INVALID;
 }
 
+uint next_sibling_node(uint node)
+{
+    if (!valid_node(node))
+        return INVALID;
+    uint sibling = next_sibling[node];
+    return valid_node(sibling) && parent[sibling] == parent[node]
+        ? sibling
+        : INVALID;
+}
+
+uint previous_sibling_node(uint node)
+{
+    if (!valid_node(node))
+        return INVALID;
+    uint sibling = prev_sibling[node];
+    if (!valid_node(sibling))
+        return INVALID;
+    uint node_parent = parent[node];
+    uint sibling_parent = parent[sibling];
+    if (valid_node(node_parent) && valid_node(sibling_parent) &&
+        sibling_parent != node_parent)
+        return INVALID;
+    return sibling;
+}
+
 bool is_variant_container(uint prod)
 {
     return prod == PROD_ENUM_VARIANTS_SOME ||
@@ -87,6 +114,72 @@ uint variant_from_container(uint container)
         : INVALID;
 }
 
+uint variant_from_tail_more(uint more)
+{
+    if (!valid_node(more) || node_kind[more] != PROD_ENUM_VARIANTS_MORE)
+        return INVALID;
+    uint container = first_child_node(more);
+    return variant_from_container(container);
+}
+
+uint enum_variant_container_child(uint enum_node)
+{
+    if (!valid_node(enum_node) || node_kind[enum_node] != PROD_ENUM)
+        return INVALID;
+
+    uint child = first_child_node(enum_node);
+    if (!valid_node(child))
+        return INVALID;
+    if (is_variant_container(node_kind[child]) ||
+        node_kind[child] == PROD_ENUM_VARIANTS_NONE)
+        return child;
+
+    child = next_sibling_node(child);
+    if (!valid_node(child))
+        return INVALID;
+    if (is_variant_container(node_kind[child]) ||
+        node_kind[child] == PROD_ENUM_VARIANTS_NONE)
+        return child;
+
+    child = next_sibling_node(child);
+    if (!valid_node(child))
+        return INVALID;
+    return is_variant_container(node_kind[child]) ||
+           node_kind[child] == PROD_ENUM_VARIANTS_NONE
+        ? child
+        : INVALID;
+}
+
+uint first_variant_from_enum(uint enum_node)
+{
+    return variant_from_container(enum_variant_container_child(enum_node));
+}
+
+uint first_variant_from_item_enum(uint item_node)
+{
+    if (!valid_node(item_node) || node_kind[item_node] != PROD_ITEM_ENUM)
+        return INVALID;
+    uint enum_node = first_child_node(item_node);
+    return first_variant_from_enum(enum_node);
+}
+
+uint previous_variant_from_tail_sibling(uint more)
+{
+    uint previous = previous_sibling_node(more);
+    uint previous_prod = valid_node(previous) ? node_kind[previous] : INVALID;
+    if (is_variant_container(previous_prod))
+        return variant_from_container(previous);
+    if (previous_prod == PROD_ENUM_VARIANTS_MORE)
+        return variant_from_tail_more(previous);
+    if (previous_prod == PROD_ENUM_VARIANTS_AFTER_COMMA_MORE)
+        return variant_from_container(previous);
+    if (previous_prod == PROD_ENUM)
+        return first_variant_from_enum(previous);
+    if (previous_prod == PROD_ITEM_ENUM)
+        return first_variant_from_item_enum(previous);
+    return INVALID;
+}
+
 uint previous_variant_for_after_comma(uint container)
 {
     if (!valid_node(container) ||
@@ -94,7 +187,8 @@ uint previous_variant_for_after_comma(uint container)
         return INVALID;
     uint more = parent_node(container);
     uint previous_container = parent_node(more);
-    return variant_from_container(previous_container);
+    uint previous = variant_from_container(previous_container);
+    return valid_node(previous) ? previous : previous_variant_from_tail_sibling(more);
 }
 
 uint owner_seed_for_variant_container(uint container)

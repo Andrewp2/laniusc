@@ -1,55 +1,5 @@
 use super::super::*;
 
-pub(in crate::type_checker) fn create_fn_context_bind_groups(
-    device: &wgpu::Device,
-    params: &LaniusBuffer<FnContextParams>,
-    scan_steps: &[FnContextScanStep],
-    hir_kind_buf: &wgpu::Buffer,
-    hir_token_pos_buf: &wgpu::Buffer,
-    hir_token_end_buf: &wgpu::Buffer,
-    hir_status_buf: &wgpu::Buffer,
-    enclosing_fn: &wgpu::Buffer,
-    enclosing_fn_end: &wgpu::Buffer,
-    fn_event_value: &wgpu::Buffer,
-    fn_event_end: &wgpu::Buffer,
-    fn_event_index: &wgpu::Buffer,
-    fn_event_inblock: &wgpu::Buffer,
-    fn_block_sum: &wgpu::Buffer,
-    fn_prefix_a: &wgpu::Buffer,
-    fn_prefix_b: &wgpu::Buffer,
-    fn_block_prefix: &wgpu::Buffer,
-) -> Result<FnContextBindGroups> {
-    let clear_pass = type_check_fn_context_clear_pass(device)?;
-    let mark_pass = type_check_fn_context_mark_pass(device)?;
-    let local_pass = type_check_fn_context_local_pass(device)?;
-    let scan_pass = type_check_fn_context_scan_pass(device)?;
-    let apply_pass = type_check_fn_context_apply_pass(device)?;
-    create_fn_context_bind_groups_from_passes(
-        device,
-        &clear_pass,
-        &mark_pass,
-        &local_pass,
-        &scan_pass,
-        &apply_pass,
-        params,
-        scan_steps,
-        hir_kind_buf,
-        hir_token_pos_buf,
-        hir_token_end_buf,
-        hir_status_buf,
-        enclosing_fn,
-        enclosing_fn_end,
-        fn_event_value,
-        fn_event_end,
-        fn_event_index,
-        fn_event_inblock,
-        fn_block_sum,
-        fn_prefix_a,
-        fn_prefix_b,
-        fn_block_prefix,
-    )
-}
-
 #[allow(clippy::too_many_arguments)]
 pub(in crate::type_checker) fn create_fn_context_bind_groups_with_passes(
     passes: &TypeCheckPasses,
@@ -220,55 +170,6 @@ pub(in crate::type_checker) fn create_fn_context_bind_groups_from_passes(
         scan,
         apply,
     })
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(in crate::type_checker) fn create_loop_depth_bind_groups(
-    device: &wgpu::Device,
-    params: &LaniusBuffer<LoopDepthParams>,
-    scan_steps: &[LoopDepthScanStep],
-    token_buf: &wgpu::Buffer,
-    token_count_buf: &wgpu::Buffer,
-    hir_kind_buf: &wgpu::Buffer,
-    hir_token_pos_buf: &wgpu::Buffer,
-    hir_token_end_buf: &wgpu::Buffer,
-    hir_status_buf: &wgpu::Buffer,
-    loop_delta: &wgpu::Buffer,
-    loop_depth_inblock: &wgpu::Buffer,
-    loop_block_sum: &wgpu::Buffer,
-    loop_prefix_a: &wgpu::Buffer,
-    loop_prefix_b: &wgpu::Buffer,
-    loop_block_prefix: &wgpu::Buffer,
-    loop_depth: &wgpu::Buffer,
-) -> Result<LoopDepthBindGroups> {
-    let clear_pass = loop_depth_01_clear_pass(device)?;
-    let mark_pass = loop_depth_02_mark_pass(device)?;
-    let local_pass = loop_depth_03_local_pass(device)?;
-    let scan_pass = loop_depth_04_scan_pass(device)?;
-    let apply_pass = loop_depth_05_apply_pass(device)?;
-    create_loop_depth_bind_groups_from_passes(
-        device,
-        &clear_pass,
-        &mark_pass,
-        &local_pass,
-        &scan_pass,
-        &apply_pass,
-        params,
-        scan_steps,
-        token_buf,
-        token_count_buf,
-        hir_kind_buf,
-        hir_token_pos_buf,
-        hir_token_end_buf,
-        hir_status_buf,
-        loop_delta,
-        loop_depth_inblock,
-        loop_block_sum,
-        loop_prefix_a,
-        loop_prefix_b,
-        loop_block_prefix,
-        loop_depth,
-    )
 }
 
 #[allow(clippy::too_many_arguments)]

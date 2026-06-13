@@ -21,9 +21,81 @@ pub fn is_err<T, E>(value: Result<T, E>) -> bool {
     };
 }
 
+pub fn contains_i32<E>(value: Result<i32, E>, expected: i32) -> bool {
+    return match (value) {
+        Ok(inner) -> inner == expected,
+        Err(error) -> false,
+    };
+}
+
+pub fn contains_bool<E>(value: Result<bool, E>, expected: bool) -> bool {
+    return match (value) {
+        Ok(inner) -> inner == expected,
+        Err(error) -> false,
+    };
+}
+
+pub fn contains_u32<E>(value: Result<u32, E>, expected: u32) -> bool {
+    return match (value) {
+        Ok(inner) -> inner == expected,
+        Err(error) -> false,
+    };
+}
+
+pub fn contains_u8<E>(value: Result<u8, E>, expected: u8) -> bool {
+    return match (value) {
+        Ok(inner) -> inner == expected,
+        Err(error) -> false,
+    };
+}
+
+pub fn contains_err_i32<T>(value: Result<T, i32>, expected: i32) -> bool {
+    return match (value) {
+        Ok(inner) -> false,
+        Err(error) -> error == expected,
+    };
+}
+
+pub fn contains_err_bool<T>(value: Result<T, bool>, expected: bool) -> bool {
+    return match (value) {
+        Ok(inner) -> false,
+        Err(error) -> error == expected,
+    };
+}
+
+pub fn contains_err_u32<T>(value: Result<T, u32>, expected: u32) -> bool {
+    return match (value) {
+        Ok(inner) -> false,
+        Err(error) -> error == expected,
+    };
+}
+
+pub fn contains_err_u8<T>(value: Result<T, u8>, expected: u8) -> bool {
+    return match (value) {
+        Ok(inner) -> false,
+        Err(error) -> error == expected,
+    };
+}
+
 pub fn unwrap_or<T, E>(value: Result<T, E>, fallback: T) -> T {
     return match (value) {
         Ok(inner) -> inner,
         Err(error) -> fallback,
     };
+}
+
+pub fn or<T, E>(value: Result<T, E>, fallback: Result<T, E>) -> Result<T, E> {
+    if (is_ok(value)) {
+        return value;
+    } else {
+        return fallback;
+    }
+}
+
+pub fn and<T, E>(value: Result<T, E>, next: Result<T, E>) -> Result<T, E> {
+    if (is_ok(value)) {
+        return next;
+    } else {
+        return value;
+    }
 }

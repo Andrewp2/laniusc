@@ -64,23 +64,11 @@ public bool bitset32_full_below(uint mask, uint bit_count)
 
 public uint bitset32_first_set(uint mask, uint invalid)
 {
-    [loop]
-    for (uint bit = 0u; bit < 32u; bit += 1u)
-    {
-        if (bitset32_contains(mask, bit))
-            return bit;
-    }
-    return invalid;
+    return mask == 0u ? invalid : uint(firstbitlow(mask));
 }
 
 public uint bitset32_first_clear_below(uint mask, uint bit_count, uint invalid)
 {
-    uint limit = min(bit_count, 32u);
-    [loop]
-    for (uint bit = 0u; bit < limit; bit += 1u)
-    {
-        if (!bitset32_contains(mask, bit))
-            return bit;
-    }
-    return invalid;
+    uint candidates = ~mask & bitset32_prefix(bit_count);
+    return candidates == 0u ? invalid : uint(firstbitlow(candidates));
 }

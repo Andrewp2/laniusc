@@ -59,3 +59,46 @@ fn main() {
         Err(other) => panic!("expected GPU type-check rejection, got {other:?}"),
     }
 }
+
+#[test]
+fn source_pack_presence_does_not_make_unimported_public_qualified_values_visible() {
+    let public_module = r#"
+module lib::api;
+
+pub fn exposed() -> i32 {
+    return 1;
+}
+"#;
+
+    common::type_check_source_pack_with_timeout(&[
+        public_module,
+        r#"
+module app::main;
+
+import lib::api;
+
+fn main() {
+    return lib::api::exposed();
+}
+"#,
+    ])
+    .expect("explicit imports should make public qualified values visible");
+
+    match common::type_check_source_pack_with_timeout(&[
+        public_module,
+        r#"
+module app::main;
+
+fn main() {
+    return lib::api::exposed();
+}
+"#,
+    ]) {
+        Ok(()) => panic!(
+            "a source-pack member must not make public qualified values visible \
+             unless the consuming module imports it"
+        ),
+        Err(CompileError::Diagnostic(_)) | Err(CompileError::GpuTypeCheck(_)) => {}
+        Err(other) => panic!("expected GPU type-check rejection, got {other:?}"),
+    }
+}

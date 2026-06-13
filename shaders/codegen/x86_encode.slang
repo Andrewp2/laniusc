@@ -39,6 +39,9 @@ static const uint X86_RELOC_OK = 1u;
 static const uint X86_ENCODE_OK = 1u;
 static const uint X86_ERR_OUTPUT_TOO_SMALL = 4u;
 static const uint X86_ERR_RELOC = 8u;
+// Local byte budget for one selected instruction. Source/program-sized work is
+// partitioned by dispatch rows and prefix-summed byte offsets before this pass.
+static const uint X86_MAX_ENCODED_INST_BYTES = 128u;
 static const uint ELF_TEXT_OFFSET = 0x78u;
 static const uint ELF_TEXT_WORD_OFFSET = ELF_TEXT_OFFSET / 4u;
 static const uint X86_INST_MOV_EAX_IMM32 = 1u;
@@ -120,6 +123,8 @@ static const uint X86_INST_V_MATCH_TAG_BRANCH = 77u;
 static const uint X86_INST_V_FOR_INTERVAL_BRANCH = 78u;
 static const uint X86_INST_V_COPY_LOCAL_R32 = 79u;
 static const uint X86_INST_V_STORE_LOCAL_INDEX_R32 = 80u;
+static const uint X86_INST_V_FOR_PARAM_ARRAY_LOAD = 81u;
+static const uint X86_INST_V_STORE_PARAM_INDEX_R32 = 82u;
 static const uint X86_ARG_SCALAR = 1u;
 static const uint X86_ARG_LOCAL_PTR = 2u;
 static const uint X86_ARG_PARAM_PTR = 3u;
@@ -151,6 +156,11 @@ static const uint X86_OP_BIT_OR_I32 = 9u;
 static const uint X86_OP_BIT_XOR = 10u;
 static const uint X86_OP_SHL_I32 = 11u;
 static const uint X86_OP_SHR_I32 = 12u;
+static const uint X86_OP_MOD_U32 = 13u;
+static const uint X86_OP_DIV_U32 = 14u;
+static const uint X86_OP_SHR_U32 = 15u;
+static const uint I32_MIN = 0x80000000u;
+static const uint I32_NEG_ONE = 0xffffffffu;
 static const uint X86_REG_EAX = 0u;
 static const uint X86_REG_ECX = 1u;
 static const uint X86_REG_EDX = 2u;
@@ -403,6 +413,13 @@ uint local_mem_r32_size(uint reg, uint slot)
         return 0u;
     uint disp = local_slot_disp(slot);
     return (disp <= 127u ? 4u : 7u) + (needs_rex_modrm(reg, 4u) ? 1u : 0u);
+}
+
+uint param_index_mem_r32_size(uint dst, uint base, uint index)
+{
+    return valid_reg(dst) && valid_reg(base) && valid_index_reg(index) && (base & 7u) != 4u
+               ? 4u + (needs_rex_sib(dst, index, base) ? 1u : 0u)
+               : 0u;
 }
 
 uint local_zero_size(uint slot)
@@ -665,6 +682,22 @@ uint store_local_index_r32_byte(uint slot, uint index, uint src, uint byte_i)
     return 0u;
 }
 
+uint store_param_index_r32_byte(uint base, uint index, uint src, uint byte_i)
+{
+    bool rex = needs_rex_sib(src, index, base);
+    uint cursor = 0u;
+    if (rex)
+    {
+        if (byte_i == cursor) return rex_sib(src, index, base);
+        cursor += 1u;
+    }
+    if (byte_i == cursor) return 0x89u;
+    if (byte_i == cursor + 1u) return 0x44u | ((src & 7u) << 3u);
+    if (byte_i == cursor + 2u) return 0x80u | ((index & 7u) << 3u) | (base & 7u);
+    if (byte_i == cursor + 3u) return 0u;
+    return 0u;
+}
+
 uint store_local_imm32_byte(uint slot, uint imm, uint byte_i)
 {
     uint disp = local_slot_disp(slot);
@@ -821,6 +854,21 @@ uint for_array_load_byte(uint array_base_slot, uint index_slot, uint value_slot,
         return load_local_index_r32_byte(
             X86_REG_R11D,
             array_base_slot,
+            X86_REG_R11D,
+            byte_i - load_index_size);
+    return store_local_r32_byte(value_slot, X86_REG_R11D, byte_i - load_index_size - load_value_size);
+}
+
+uint for_param_array_load_byte(uint array_base_reg, uint index_slot, uint value_slot, uint byte_i)
+{
+    uint load_index_size = local_mem_r32_size(X86_REG_R11D, index_slot);
+    uint load_value_size = param_index_mem_r32_size(X86_REG_R11D, array_base_reg, X86_REG_R11D);
+    if (byte_i < load_index_size)
+        return load_local_r32_byte(X86_REG_R11D, index_slot, byte_i);
+    if (byte_i < load_index_size + load_value_size)
+        return load_param_index_r32_byte(
+            X86_REG_R11D,
+            array_base_reg,
             X86_REG_R11D,
             byte_i - load_index_size);
     return store_local_r32_byte(value_slot, X86_REG_R11D, byte_i - load_index_size - load_value_size);
@@ -1045,6 +1093,93 @@ uint jb_skip_bytes(uint skip_bytes, uint byte_i)
     return 0u;
 }
 
+uint je_skip_bytes(uint skip_bytes, uint byte_i)
+{
+    if (byte_i == 0u) return 0x0fu;
+    if (byte_i == 1u) return 0x84u;
+    if (byte_i < 6u) return le32_byte(skip_bytes, byte_i - 2u);
+    return 0u;
+}
+
+uint jne_skip_bytes(uint skip_bytes, uint byte_i)
+{
+    if (byte_i == 0u) return 0x0fu;
+    if (byte_i == 1u) return 0x85u;
+    if (byte_i < 6u) return le32_byte(skip_bytes, byte_i - 2u);
+    return 0u;
+}
+
+uint zero_divisor_check_size(uint divisor)
+{
+    if (!valid_reg(divisor))
+        return 0u;
+    uint cmp_size = cmp_r32_imm_size(divisor, 0u);
+    uint trap_size = small_exit_trap_size();
+    return cmp_size != 0u ? cmp_size + 6u + trap_size : 0u;
+}
+
+uint zero_divisor_check_byte(uint divisor, uint byte_i)
+{
+    uint cmp_size = cmp_r32_imm_size(divisor, 0u);
+    if (byte_i < cmp_size)
+        return cmp_r32_imm_byte(divisor, 0u, byte_i);
+    byte_i -= cmp_size;
+    uint trap_size = small_exit_trap_size();
+    if (byte_i < 6u)
+        return jne_skip_bytes(trap_size, byte_i);
+    return exit_code_macro_byte(103u, byte_i - 6u);
+}
+
+uint signed_div_overflow_check_size(uint left, uint right)
+{
+    if (!valid_reg(left) || !valid_reg(right))
+        return 0u;
+    uint right_cmp_size = cmp_r32_imm_size(right, I32_NEG_ONE);
+    uint left_cmp_size = cmp_r32_imm_size(left, I32_MIN);
+    uint trap_size = small_exit_trap_size();
+    return right_cmp_size != 0u && left_cmp_size != 0u
+               ? right_cmp_size + 6u + left_cmp_size + 6u + trap_size
+               : 0u;
+}
+
+uint signed_div_overflow_check_byte(uint left, uint right, uint byte_i)
+{
+    uint right_cmp_size = cmp_r32_imm_size(right, I32_NEG_ONE);
+    if (byte_i < right_cmp_size)
+        return cmp_r32_imm_byte(right, I32_NEG_ONE, byte_i);
+    byte_i -= right_cmp_size;
+
+    uint left_cmp_size = cmp_r32_imm_size(left, I32_MIN);
+    uint trap_size = small_exit_trap_size();
+    uint skip_overflow_case_size = left_cmp_size + 6u + trap_size;
+    if (byte_i < 6u)
+        return jne_skip_bytes(skip_overflow_case_size, byte_i);
+    byte_i -= 6u;
+
+    if (byte_i < left_cmp_size)
+        return cmp_r32_imm_byte(left, I32_MIN, byte_i);
+    byte_i -= left_cmp_size;
+
+    if (byte_i < 6u)
+        return jne_skip_bytes(trap_size, byte_i);
+    return exit_code_macro_byte(104u, byte_i - 6u);
+}
+
+uint divmod_trap_check_size(uint left, uint right)
+{
+    uint zero_check = zero_divisor_check_size(right);
+    uint overflow_check = signed_div_overflow_check_size(left, right);
+    return zero_check != 0u && overflow_check != 0u ? zero_check + overflow_check : 0u;
+}
+
+uint divmod_trap_check_byte(uint left, uint right, uint byte_i)
+{
+    uint zero_check = zero_divisor_check_size(right);
+    if (byte_i < zero_check)
+        return zero_divisor_check_byte(right, byte_i);
+    return signed_div_overflow_check_byte(left, right, byte_i - zero_check);
+}
+
 uint index_bounds_check_size(uint index, uint width)
 {
     if (!valid_index_reg(index) || width == 0u)
@@ -1117,6 +1252,16 @@ uint checked_load_param_index_r32_byte(uint dst, uint base, uint packed, uint by
     return load_param_index_r32_byte(dst, base, index, byte_i - check_size);
 }
 
+uint checked_store_param_index_r32_byte(uint base, uint packed, uint src, uint byte_i)
+{
+    uint index = packed_index_reg(packed);
+    uint width = packed_index_width(packed);
+    uint check_size = index_bounds_check_size(index, width);
+    if (byte_i < check_size)
+        return index_bounds_check_byte(index, width, byte_i);
+    return store_param_index_r32_byte(base, index, src, byte_i - check_size);
+}
+
 uint test_r32_r32_byte(uint reg, uint byte_i)
 {
     bool rex = needs_rex_modrm(reg, reg);
@@ -1161,7 +1306,9 @@ uint idiv_r32_byte(uint reg, uint byte_i)
 
 uint shift_r32_cl_byte(uint op, uint reg, uint byte_i)
 {
-    uint field = op == X86_OP_SHL_I32 ? 4u : 7u;
+    uint field = op == X86_OP_SHL_I32 ? 4u
+               : op == X86_OP_SHR_U32 ? 5u
+               : 7u;
     bool rex = needs_rex_modrm(field, reg);
     uint cursor = 0u;
     if (rex)
@@ -1326,8 +1473,21 @@ uint binary_macro_byte(uint op, uint dst, uint packed, uint byte_i)
 {
     uint left = packed_reg_a(packed);
     uint right = packed_reg_b(packed);
-    if (op == X86_OP_DIV_I32 || op == X86_OP_MOD_I32)
+    if (op == X86_OP_DIV_I32 || op == X86_OP_MOD_I32 ||
+        op == X86_OP_DIV_U32 || op == X86_OP_MOD_U32)
     {
+        bool unsigned_op = op == X86_OP_DIV_U32 || op == X86_OP_MOD_U32;
+        uint check_size = unsigned_op
+                              ? zero_divisor_check_size(right)
+                              : divmod_trap_check_size(left, right);
+        if (byte_i < check_size)
+        {
+            return unsigned_op
+                       ? zero_divisor_check_byte(right, byte_i)
+                       : divmod_trap_check_byte(left, right, byte_i);
+        }
+        byte_i -= check_size;
+
         uint right_move_size = right == X86_REG_ECX ? 0u : mov_r32_r32_size(X86_REG_ECX, right);
         if (byte_i < right_move_size)
             return mov_r32_r32_byte(X86_REG_ECX, right, byte_i);
@@ -1338,20 +1498,27 @@ uint binary_macro_byte(uint op, uint dst, uint packed, uint byte_i)
             return mov_r32_r32_byte(X86_REG_EAX, left, byte_i);
         byte_i -= left_move_size;
 
-        if (byte_i == 0u)
-            return 0x99u;
-        byte_i -= 1u;
+        uint extend_size = unsigned_op ? xor_r32_self_size(X86_REG_EDX) : 1u;
+        if (byte_i < extend_size)
+        {
+            return unsigned_op
+                       ? xor_r32_r32_byte(X86_REG_EDX, byte_i)
+                       : (byte_i == 0u ? 0x99u : 0u);
+        }
+        byte_i -= extend_size;
 
-        uint idiv_size = 2u + (needs_rex_modrm(7u, X86_REG_ECX) ? 1u : 0u);
-        if (byte_i < idiv_size)
-            return idiv_r32_byte(X86_REG_ECX, byte_i);
-        byte_i -= idiv_size;
+        uint div_size = 2u + (needs_rex_modrm(unsigned_op ? 6u : 7u, X86_REG_ECX) ? 1u : 0u);
+        if (byte_i < div_size)
+            return unsigned_op
+                       ? div_r32_byte(X86_REG_ECX, byte_i)
+                       : idiv_r32_byte(X86_REG_ECX, byte_i);
+        byte_i -= div_size;
 
-        uint result = op == X86_OP_MOD_I32 ? X86_REG_EDX : X86_REG_EAX;
+        uint result = (op == X86_OP_MOD_I32 || op == X86_OP_MOD_U32) ? X86_REG_EDX : X86_REG_EAX;
         return dst == result ? 0u : mov_r32_r32_byte(dst, result, byte_i);
     }
 
-    if (op == X86_OP_SHL_I32 || op == X86_OP_SHR_I32)
+    if (op == X86_OP_SHL_I32 || op == X86_OP_SHR_I32 || op == X86_OP_SHR_U32)
     {
         uint check_size = shift_count_check_size(right);
         if (byte_i < check_size)
@@ -1771,13 +1938,19 @@ uint mixed_target_reg(uint ordinal, bool aggregate_return)
 
 uint selected_mixed_arg_kind(uint info, uint ordinal)
 {
+    uint arg_count = packed_u8_at(info, 2u);
+    if (arg_count > 4u && ordinal < 6u)
+        return X86_ARG_SCALAR;
     if (ordinal < 4u)
         return packed_u2_at_offset(info, 24u, ordinal);
     return 0u;
 }
 
-uint selected_mixed_arg_payload(uint packed, uint ordinal)
+uint selected_mixed_arg_payload(uint info, uint packed, uint ordinal)
 {
+    uint arg_count = packed_u8_at(info, 2u);
+    if (arg_count > 4u && ordinal < 6u)
+        return bitfield_extract_u32(packed, ordinal * 4u, 4u);
     if (ordinal < 4u)
         return packed_u8_at(packed, ordinal);
     return 0xffffffffu;
@@ -1842,7 +2015,7 @@ bool call_mixed_arg_byte(
     if (ordinal >= arg_count)
         return false;
     uint target_reg = mixed_target_reg(ordinal, aggregate_return);
-    uint payload = selected_mixed_arg_payload(packed, ordinal);
+    uint payload = selected_mixed_arg_payload(info, packed, ordinal);
     uint kind = selected_mixed_arg_kind(info, ordinal);
     uint move_size = mixed_arg_move_size(target_reg, kind, payload, save_mask, save_stack);
     if (byte_i < move_size)
@@ -1881,6 +2054,8 @@ uint call_mixed_macro_byte(uint inst_i, uint target, uint info, uint packed, uin
     if (call_mixed_arg_byte(info, packed, save_mask, save_stack, 1u, arg_count, aggregate_return, byte_i, byte)) return byte;
     if (call_mixed_arg_byte(info, packed, save_mask, save_stack, 2u, arg_count, aggregate_return, byte_i, byte)) return byte;
     if (call_mixed_arg_byte(info, packed, save_mask, save_stack, 3u, arg_count, aggregate_return, byte_i, byte)) return byte;
+    if (call_mixed_arg_byte(info, packed, save_mask, save_stack, 4u, arg_count, aggregate_return, byte_i, byte)) return byte;
+    if (call_mixed_arg_byte(info, packed, save_mask, save_stack, 5u, arg_count, aggregate_return, byte_i, byte)) return byte;
 
     if (byte_i < frame_adjust_size)
         return sub_r64_rsp_frame_byte(frame_size, byte_i);
@@ -2374,6 +2549,12 @@ uint instruction_byte(uint inst_i, uint byte_i)
             x86_inst_arg1[inst_i],
             x86_inst_arg2[inst_i],
             byte_i);
+    if (kind == X86_INST_V_STORE_PARAM_INDEX_R32)
+        return checked_store_param_index_r32_byte(
+            x86_inst_arg0[inst_i],
+            x86_inst_arg1[inst_i],
+            x86_inst_arg2[inst_i],
+            byte_i);
     if (kind == X86_INST_V_STORE_LOCAL_IMM32)
         return x86_inst_arg1[inst_i] == 0u
                    ? store_local_zero_byte(x86_inst_arg0[inst_i], byte_i)
@@ -2404,6 +2585,12 @@ uint instruction_byte(uint inst_i, uint byte_i)
             byte_i);
     if (kind == X86_INST_V_FOR_ARRAY_LOAD)
         return for_array_load_byte(
+            x86_inst_arg0[inst_i],
+            x86_inst_arg1[inst_i],
+            x86_inst_arg2[inst_i],
+            byte_i);
+    if (kind == X86_INST_V_FOR_PARAM_ARRAY_LOAD)
+        return for_param_array_load_byte(
             x86_inst_arg0[inst_i],
             x86_inst_arg1[inst_i],
             x86_inst_arg2[inst_i],
@@ -2456,8 +2643,12 @@ void scatter_instruction_bytes(uint inst_i)
     if (offset > text_len || size > text_len - offset)
         return;
 
-    for (uint byte_i = 0u; byte_i < size; byte_i += 1u)
-        scatter_text_byte(offset + byte_i, instruction_byte(inst_i, byte_i));
+    [unroll]
+    for (uint byte_i = 0u; byte_i < X86_MAX_ENCODED_INST_BYTES; byte_i += 1u)
+    {
+        if (byte_i < size)
+            scatter_text_byte(offset + byte_i, instruction_byte(inst_i, byte_i));
+    }
 }
 
 [shader("compute")]

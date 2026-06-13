@@ -38,7 +38,7 @@ StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_name_id;
 StructuredBuffer<uint> path_owner_token;
-StructuredBuffer<uint> module_count_out;
+StructuredBuffer<uint> module_table_count_out;
 StructuredBuffer<uint> sorted_module_key_order;
 StructuredBuffer<uint> module_key_segment_count;
 StructuredBuffer<uint> module_key_segment_base;
@@ -91,7 +91,7 @@ uint active_import_count()
 
 uint active_module_count()
 {
-    return min(module_count_out[0], module_capacity());
+    return min(module_table_count_out[0], module_capacity());
 }
 
 void record_error(uint token_i, uint code, uint detail)

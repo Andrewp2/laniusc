@@ -1,0 +1,16 @@
+{
+  "tokens": [
+    { "kind": "Int", "text": "0" },
+    { "kind": "DotDot", "text": ".." },
+    { "kind": "Ident", "text": "samples" },
+    { "kind": "Float", "text": "1.0" },
+    { "kind": "Float", "text": "1." },
+    { "kind": "Float", "text": ".5" },
+    { "kind": "DotDot", "text": ".." },
+    { "kind": "Ident", "text": "rest" },
+    { "kind": "Int", "text": "1" },
+    { "kind": "DotDotEqual", "text": ".." },
+    { "kind": "Assign", "text": "=" },
+    { "kind": "Ident", "text": "end" }
+  ]
+}

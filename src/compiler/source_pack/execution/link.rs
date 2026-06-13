@@ -18,6 +18,19 @@ where
     S: ArtifactStore + ExecutionShardLoader,
 {
     validate_link_input_shard_index(link_input_shard_index, target)?;
+    let output = single_output_artifact_ref(job_manifest, SourcePackArtifactKind::LinkedOutput)?;
+    let linked_output_key = output.key.clone();
+    if !execution_shard
+        .shard
+        .output_artifact_indices
+        .contains(&output.artifact_index)
+    {
+        return Err(artifact_shard_contract_error(format!(
+            "link job {} output artifact {} is not listed in execution shard {}",
+            job.job_index, output.artifact_index, execution_shard.shard.shard_index
+        )));
+    }
+
     let mut link_handle = executor.begin_link_codegen_objects(job)?;
     for_each_link_input_shard_index(
         link_input_shard_index,
@@ -71,20 +84,7 @@ where
         },
     )?;
     let linked_output = executor.finish_link_codegen_objects(job, link_handle)?;
-    let output = single_output_artifact_ref(job_manifest, SourcePackArtifactKind::LinkedOutput)?;
-    let linked_output_key = output.key.clone();
     store.store_linked_output(output, linked_output)?;
-
-    if !execution_shard
-        .shard
-        .output_artifact_indices
-        .contains(&output.artifact_index)
-    {
-        return Err(artifact_shard_contract_error(format!(
-            "link job {} output artifact {} is not listed in execution shard {}",
-            job.job_index, output.artifact_index, execution_shard.shard.shard_index
-        )));
-    }
 
     Ok(Some(linked_output_key))
 }
@@ -101,9 +101,10 @@ where
             LinkedOutputArtifact = S::LinkedOutputArtifact,
             PartialLinkArtifact = S::PartialLinkArtifact,
         >,
-    S: HierarchicalLinkArtifactStore + ExecutionShardLoader,
+    S: HierarchicalLinkArtifactStore + ExecutionShardLoader + AsRef<FilesystemArtifactStore>,
 {
     validate_link_execution_page(page, page.target, Some(page.group_index))?;
+    validate_hierarchical_link_reduce_inputs_before_begin(page, store)?;
     let mut link_handle = executor.begin_hierarchical_link_group(page)?;
     match page.kind {
         SourcePackHierarchicalLinkGroupKind::Leaf => {
@@ -121,11 +122,35 @@ where
                     )?;
                 }
             } else {
+                let mut previous_interface_producer_job_index = None;
                 for page_index in 0..page.input_interface_page_count {
                     let interface_page = store.load_hierarchical_link_execution_interface_page(
                         page.target,
                         page.group_index,
                         page_index,
+                    )?;
+                    validate_link_execution_interface_page(
+                        &interface_page,
+                        page.target,
+                        page.group_index,
+                        page_index,
+                    )?;
+                    validate_link_execution_sidecar_page(
+                        page.group_index,
+                        "interface",
+                        page_index,
+                        page.input_interface_page_count,
+                        SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_INTERFACE_DEFAULT_PAGE_SIZE,
+                        interface_page.input_count,
+                        interface_page.job_index,
+                        page.job_index,
+                    )?;
+                    validate_link_execution_sidecar_artifact_order(
+                        page.group_index,
+                        "interface",
+                        page_index,
+                        &interface_page.input_interfaces,
+                        &mut previous_interface_producer_job_index,
                     )?;
                     streamed_interface_count =
                         streamed_interface_count.saturating_add(interface_page.input_count);
@@ -203,11 +228,35 @@ where
                 let objects = load_codegen_object_artifacts(store, &page.input_objects)?;
                 executor.link_hierarchical_codegen_objects(page, &mut link_handle, &objects)?;
             } else {
+                let mut previous_object_producer_job_index = None;
                 for page_index in 0..page.input_object_page_count {
                     let object_page = store.load_hierarchical_link_execution_object_page(
                         page.target,
                         page.group_index,
                         page_index,
+                    )?;
+                    validate_link_execution_object_page(
+                        &object_page,
+                        page.target,
+                        page.group_index,
+                        page_index,
+                    )?;
+                    validate_link_execution_sidecar_page(
+                        page.group_index,
+                        "object",
+                        page_index,
+                        page.input_object_page_count,
+                        SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_OBJECT_DEFAULT_PAGE_SIZE,
+                        object_page.input_count,
+                        object_page.job_index,
+                        page.job_index,
+                    )?;
+                    validate_link_execution_sidecar_artifact_order(
+                        page.group_index,
+                        "object",
+                        page_index,
+                        &object_page.input_objects,
+                        &mut previous_object_producer_job_index,
                     )?;
                     streamed_object_count =
                         streamed_object_count.saturating_add(object_page.input_count);
@@ -225,9 +274,73 @@ where
         }
         SourcePackHierarchicalLinkGroupKind::Reduce => {
             let mut streamed_partial_count = 0usize;
+            let mut partial_source_summary = LinkExecutionPartialSourceSummary::default();
             if page.input_group_page_count == 0 {
+                partial_source_summary = validate_link_execution_partial_producer_pages(
+                    store.as_ref(),
+                    page,
+                    &page.input_group_indices,
+                    &page.input_group_output_keys,
+                    "inline partial-link inputs",
+                )?;
                 streamed_partial_count =
                     streamed_partial_count.saturating_add(page.input_group_output_keys.len());
+            } else {
+                let mut previous_partial_input_group_index = None;
+                for page_index in 0..page.input_group_page_count {
+                    let partial_page = store.load_hierarchical_link_execution_partial_page(
+                        page.target,
+                        page.group_index,
+                        page_index,
+                    )?;
+                    validate_link_execution_partial_page(
+                        &partial_page,
+                        page.target,
+                        page.group_index,
+                        page_index,
+                    )?;
+                    validate_link_execution_sidecar_page(
+                        page.group_index,
+                        "partial-link",
+                        page_index,
+                        page.input_group_page_count,
+                        SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PARTIAL_DEFAULT_PAGE_SIZE,
+                        partial_page.input_count,
+                        partial_page.job_index,
+                        page.job_index,
+                    )?;
+                    validate_link_execution_sidecar_group_order(
+                        page.group_index,
+                        "partial-link",
+                        page_index,
+                        &partial_page.input_group_indices,
+                        &mut previous_partial_input_group_index,
+                    )?;
+                    streamed_partial_count =
+                        streamed_partial_count.saturating_add(partial_page.input_count);
+                    let page_source_summary = validate_link_execution_partial_producer_pages(
+                        store.as_ref(),
+                        page,
+                        &partial_page.input_group_indices,
+                        &partial_page.input_group_output_keys,
+                        &format!("partial-link sidecar page {page_index}"),
+                    )?;
+                    partial_source_summary = partial_source_summary.checked_add(
+                        page_source_summary,
+                        page.group_index,
+                        &format!("partial-link sidecar page {page_index}"),
+                    )?;
+                }
+            }
+            let expected_partial_count = hierarchical_link_execution_input_group_count(page);
+            if streamed_partial_count != expected_partial_count {
+                return Err(artifact_shard_contract_error(format!(
+                    "hierarchical link execution group {} streamed {} partial-link refs but expected {}",
+                    page.group_index, streamed_partial_count, expected_partial_count
+                )));
+            }
+            validate_link_execution_partial_source_summary(page, partial_source_summary)?;
+            if page.input_group_page_count == 0 {
                 let partial_links =
                     load_partial_link_outputs(store, &page.input_group_output_keys)?;
                 executor.link_hierarchical_partial_links(page, &mut link_handle, &partial_links)?;
@@ -238,8 +351,12 @@ where
                         page.group_index,
                         page_index,
                     )?;
-                    streamed_partial_count =
-                        streamed_partial_count.saturating_add(partial_page.input_count);
+                    validate_link_execution_partial_page(
+                        &partial_page,
+                        page.target,
+                        page.group_index,
+                        page_index,
+                    )?;
                     let partial_links =
                         load_partial_link_outputs(store, &partial_page.input_group_output_keys)?;
                     executor.link_hierarchical_partial_links(
@@ -248,13 +365,6 @@ where
                         &partial_links,
                     )?;
                 }
-            }
-            let expected_partial_count = hierarchical_link_execution_input_group_count(page);
-            if streamed_partial_count != expected_partial_count {
-                return Err(artifact_shard_contract_error(format!(
-                    "hierarchical link execution group {} streamed {} partial-link refs but expected {}",
-                    page.group_index, streamed_partial_count, expected_partial_count
-                )));
             }
         }
     }
@@ -281,9 +391,10 @@ where
             LinkedOutputArtifact = S::LinkedOutputArtifact,
             PartialLinkArtifact = S::PartialLinkArtifact,
         >,
-    S: HierarchicalLinkArtifactStore + ExecutionShardLoader,
+    S: HierarchicalLinkArtifactStore + ExecutionShardLoader + AsRef<FilesystemArtifactStore>,
 {
     validate_link_execution_page(page, page.target, Some(page.group_index))?;
+    validate_hierarchical_link_reduce_inputs_before_begin(page, store)?;
     let mut link_handle = executor.begin_hierarchical_link_group(page).await?;
     match page.kind {
         SourcePackHierarchicalLinkGroupKind::Leaf => {
@@ -299,11 +410,35 @@ where
                         .await?;
                 }
             } else {
+                let mut previous_interface_producer_job_index = None;
                 for page_index in 0..page.input_interface_page_count {
                     let interface_page = store.load_hierarchical_link_execution_interface_page(
                         page.target,
                         page.group_index,
                         page_index,
+                    )?;
+                    validate_link_execution_interface_page(
+                        &interface_page,
+                        page.target,
+                        page.group_index,
+                        page_index,
+                    )?;
+                    validate_link_execution_sidecar_page(
+                        page.group_index,
+                        "interface",
+                        page_index,
+                        page.input_interface_page_count,
+                        SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_INTERFACE_DEFAULT_PAGE_SIZE,
+                        interface_page.input_count,
+                        interface_page.job_index,
+                        page.job_index,
+                    )?;
+                    validate_link_execution_sidecar_artifact_order(
+                        page.group_index,
+                        "interface",
+                        page_index,
+                        &interface_page.input_interfaces,
+                        &mut previous_interface_producer_job_index,
                     )?;
                     streamed_interface_count =
                         streamed_interface_count.saturating_add(interface_page.input_count);
@@ -381,11 +516,35 @@ where
                     .link_hierarchical_codegen_objects(page, &mut link_handle, &objects)
                     .await?;
             } else {
+                let mut previous_object_producer_job_index = None;
                 for page_index in 0..page.input_object_page_count {
                     let object_page = store.load_hierarchical_link_execution_object_page(
                         page.target,
                         page.group_index,
                         page_index,
+                    )?;
+                    validate_link_execution_object_page(
+                        &object_page,
+                        page.target,
+                        page.group_index,
+                        page_index,
+                    )?;
+                    validate_link_execution_sidecar_page(
+                        page.group_index,
+                        "object",
+                        page_index,
+                        page.input_object_page_count,
+                        SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_OBJECT_DEFAULT_PAGE_SIZE,
+                        object_page.input_count,
+                        object_page.job_index,
+                        page.job_index,
+                    )?;
+                    validate_link_execution_sidecar_artifact_order(
+                        page.group_index,
+                        "object",
+                        page_index,
+                        &object_page.input_objects,
+                        &mut previous_object_producer_job_index,
                     )?;
                     streamed_object_count =
                         streamed_object_count.saturating_add(object_page.input_count);
@@ -405,9 +564,73 @@ where
         }
         SourcePackHierarchicalLinkGroupKind::Reduce => {
             let mut streamed_partial_count = 0usize;
+            let mut partial_source_summary = LinkExecutionPartialSourceSummary::default();
             if page.input_group_page_count == 0 {
+                partial_source_summary = validate_link_execution_partial_producer_pages(
+                    store.as_ref(),
+                    page,
+                    &page.input_group_indices,
+                    &page.input_group_output_keys,
+                    "inline partial-link inputs",
+                )?;
                 streamed_partial_count =
                     streamed_partial_count.saturating_add(page.input_group_output_keys.len());
+            } else {
+                let mut previous_partial_input_group_index = None;
+                for page_index in 0..page.input_group_page_count {
+                    let partial_page = store.load_hierarchical_link_execution_partial_page(
+                        page.target,
+                        page.group_index,
+                        page_index,
+                    )?;
+                    validate_link_execution_partial_page(
+                        &partial_page,
+                        page.target,
+                        page.group_index,
+                        page_index,
+                    )?;
+                    validate_link_execution_sidecar_page(
+                        page.group_index,
+                        "partial-link",
+                        page_index,
+                        page.input_group_page_count,
+                        SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PARTIAL_DEFAULT_PAGE_SIZE,
+                        partial_page.input_count,
+                        partial_page.job_index,
+                        page.job_index,
+                    )?;
+                    validate_link_execution_sidecar_group_order(
+                        page.group_index,
+                        "partial-link",
+                        page_index,
+                        &partial_page.input_group_indices,
+                        &mut previous_partial_input_group_index,
+                    )?;
+                    streamed_partial_count =
+                        streamed_partial_count.saturating_add(partial_page.input_count);
+                    let page_source_summary = validate_link_execution_partial_producer_pages(
+                        store.as_ref(),
+                        page,
+                        &partial_page.input_group_indices,
+                        &partial_page.input_group_output_keys,
+                        &format!("partial-link sidecar page {page_index}"),
+                    )?;
+                    partial_source_summary = partial_source_summary.checked_add(
+                        page_source_summary,
+                        page.group_index,
+                        &format!("partial-link sidecar page {page_index}"),
+                    )?;
+                }
+            }
+            let expected_partial_count = hierarchical_link_execution_input_group_count(page);
+            if streamed_partial_count != expected_partial_count {
+                return Err(artifact_shard_contract_error(format!(
+                    "hierarchical link execution group {} streamed {} partial-link refs but expected {}",
+                    page.group_index, streamed_partial_count, expected_partial_count
+                )));
+            }
+            validate_link_execution_partial_source_summary(page, partial_source_summary)?;
+            if page.input_group_page_count == 0 {
                 let partial_links =
                     load_partial_link_outputs(store, &page.input_group_output_keys)?;
                 executor
@@ -420,21 +643,18 @@ where
                         page.group_index,
                         page_index,
                     )?;
-                    streamed_partial_count =
-                        streamed_partial_count.saturating_add(partial_page.input_count);
+                    validate_link_execution_partial_page(
+                        &partial_page,
+                        page.target,
+                        page.group_index,
+                        page_index,
+                    )?;
                     let partial_links =
                         load_partial_link_outputs(store, &partial_page.input_group_output_keys)?;
                     executor
                         .link_hierarchical_partial_links(page, &mut link_handle, &partial_links)
                         .await?;
                 }
-            }
-            let expected_partial_count = hierarchical_link_execution_input_group_count(page);
-            if streamed_partial_count != expected_partial_count {
-                return Err(artifact_shard_contract_error(format!(
-                    "hierarchical link execution group {} streamed {} partial-link refs but expected {}",
-                    page.group_index, streamed_partial_count, expected_partial_count
-                )));
             }
         }
     }
@@ -449,6 +669,340 @@ where
             .finish_hierarchical_partial_link_group(page, link_handle)
             .await?;
         store.store_partial_link_output(&page.output_key, output)?;
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct LinkExecutionPartialSourceSummary {
+    source_byte_count: usize,
+    source_file_count: usize,
+    source_line_count: usize,
+}
+
+impl LinkExecutionPartialSourceSummary {
+    fn from_page(page: &SourcePackHierarchicalLinkExecutionPage) -> Self {
+        Self {
+            source_byte_count: page.source_byte_count,
+            source_file_count: page.source_file_count,
+            source_line_count: page.source_line_count,
+        }
+    }
+
+    fn checked_add(self, rhs: Self, group_index: usize, label: &str) -> Result<Self, CompileError> {
+        Ok(Self {
+            source_byte_count: self.source_byte_count.checked_add(rhs.source_byte_count).ok_or_else(
+                || {
+                    artifact_shard_contract_error(format!(
+                        "source-pack hierarchical link execution group {group_index} {label} partial-link producer source-byte summary overflows"
+                    ))
+                },
+            )?,
+            source_file_count: self.source_file_count.checked_add(rhs.source_file_count).ok_or_else(
+                || {
+                    artifact_shard_contract_error(format!(
+                        "source-pack hierarchical link execution group {group_index} {label} partial-link producer source-file summary overflows"
+                    ))
+                },
+            )?,
+            source_line_count: self.source_line_count.checked_add(rhs.source_line_count).ok_or_else(
+                || {
+                    artifact_shard_contract_error(format!(
+                        "source-pack hierarchical link execution group {group_index} {label} partial-link producer source-line summary overflows"
+                    ))
+                },
+            )?,
+        })
+    }
+}
+
+fn validate_hierarchical_link_reduce_inputs_before_begin<S>(
+    page: &SourcePackHierarchicalLinkExecutionPage,
+    store: &S,
+) -> Result<(), CompileError>
+where
+    S: ExecutionShardLoader + AsRef<FilesystemArtifactStore>,
+{
+    if page.kind != SourcePackHierarchicalLinkGroupKind::Reduce {
+        return Ok(());
+    }
+
+    let mut streamed_partial_count = 0usize;
+    if page.input_group_page_count == 0 {
+        streamed_partial_count =
+            checked_add_pre_begin_partial_input_count(page, 0, page.input_group_output_keys.len())?;
+    } else {
+        let mut previous_partial_input_group_index = None;
+        for page_index in 0..page.input_group_page_count {
+            let partial_page = store.load_hierarchical_link_execution_partial_page(
+                page.target,
+                page.group_index,
+                page_index,
+            )?;
+            validate_link_execution_partial_page(
+                &partial_page,
+                page.target,
+                page.group_index,
+                page_index,
+            )?;
+            validate_link_execution_sidecar_page(
+                page.group_index,
+                "partial-link",
+                page_index,
+                page.input_group_page_count,
+                SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PARTIAL_DEFAULT_PAGE_SIZE,
+                partial_page.input_count,
+                partial_page.job_index,
+                page.job_index,
+            )?;
+            validate_link_execution_sidecar_group_order(
+                page.group_index,
+                "partial-link",
+                page_index,
+                &partial_page.input_group_indices,
+                &mut previous_partial_input_group_index,
+            )?;
+            streamed_partial_count = checked_add_pre_begin_partial_input_count(
+                page,
+                streamed_partial_count,
+                partial_page.input_count,
+            )?;
+        }
+    }
+
+    let expected_partial_count = hierarchical_link_execution_input_group_count(page);
+    if streamed_partial_count != expected_partial_count {
+        return Err(artifact_shard_contract_error(format!(
+            "hierarchical link execution group {} pre-begin validation streamed {} partial-link refs but expected {}; link executors must not begin before persisted partial-link evidence is complete",
+            page.group_index, streamed_partial_count, expected_partial_count
+        )));
+    }
+
+    let mut partial_source_summary = LinkExecutionPartialSourceSummary::default();
+    if page.input_group_page_count == 0 {
+        partial_source_summary = validate_link_execution_partial_producer_pages(
+            store.as_ref(),
+            page,
+            &page.input_group_indices,
+            &page.input_group_output_keys,
+            "inline partial-link inputs",
+        )?;
+    } else {
+        for page_index in 0..page.input_group_page_count {
+            let partial_page = store.load_hierarchical_link_execution_partial_page(
+                page.target,
+                page.group_index,
+                page_index,
+            )?;
+            validate_link_execution_partial_page(
+                &partial_page,
+                page.target,
+                page.group_index,
+                page_index,
+            )?;
+            let page_source_summary = validate_link_execution_partial_producer_pages(
+                store.as_ref(),
+                page,
+                &partial_page.input_group_indices,
+                &partial_page.input_group_output_keys,
+                &format!("partial-link sidecar page {page_index}"),
+            )?;
+            partial_source_summary = partial_source_summary.checked_add(
+                page_source_summary,
+                page.group_index,
+                &format!("partial-link sidecar page {page_index}"),
+            )?;
+        }
+    }
+    validate_link_execution_partial_source_summary(page, partial_source_summary)
+}
+
+fn checked_add_pre_begin_partial_input_count(
+    page: &SourcePackHierarchicalLinkExecutionPage,
+    current: usize,
+    additional: usize,
+) -> Result<usize, CompileError> {
+    current.checked_add(additional).ok_or_else(|| {
+        artifact_shard_contract_error(format!(
+            "hierarchical link execution group {} pre-begin partial-link input count overflows; link executors must not begin from unbounded partial-link evidence",
+            page.group_index
+        ))
+    })
+}
+
+fn validate_link_execution_partial_source_summary(
+    page: &SourcePackHierarchicalLinkExecutionPage,
+    partial_source_summary: LinkExecutionPartialSourceSummary,
+) -> Result<(), CompileError> {
+    let page_source_summary = LinkExecutionPartialSourceSummary::from_page(page);
+    if partial_source_summary == page_source_summary {
+        return Ok(());
+    }
+    Err(artifact_shard_contract_error(format!(
+        "source-pack hierarchical link execution group {} partial-link producer source summary bytes/files/lines {}/{}/{} does not match reduce page {}/{}/{}; live reduce-link execution must not write stale partial-link source evidence",
+        page.group_index,
+        partial_source_summary.source_byte_count,
+        partial_source_summary.source_file_count,
+        partial_source_summary.source_line_count,
+        page.source_byte_count,
+        page.source_file_count,
+        page.source_line_count
+    )))
+}
+
+fn validate_link_execution_sidecar_artifact_order(
+    group_index: usize,
+    label: &str,
+    page_index: usize,
+    artifacts: &[SourcePackArtifactRef],
+    previous_producer_job_index: &mut Option<usize>,
+) -> Result<(), CompileError> {
+    let Some(first_artifact) = artifacts.first() else {
+        return Ok(());
+    };
+    if let Some(previous_producer_job_index) = *previous_producer_job_index
+        && first_artifact.producing_job_index <= previous_producer_job_index
+    {
+        return Err(artifact_shard_contract_error(format!(
+            "source-pack hierarchical link execution group {group_index} {label} sidecar page {page_index} starts at producer job {} after prior page ended at producer job {previous_producer_job_index}; paged sidecar artifact refs must be globally strictly ascending so link replay cannot hide duplicate or missing artifact evidence",
+            first_artifact.producing_job_index
+        )));
+    }
+    if let Some(last_artifact) = artifacts.last() {
+        *previous_producer_job_index = Some(last_artifact.producing_job_index);
+    }
+    Ok(())
+}
+
+fn validate_link_execution_partial_producer_pages(
+    store: &FilesystemArtifactStore,
+    page: &SourcePackHierarchicalLinkExecutionPage,
+    input_group_indices: &[usize],
+    input_group_output_keys: &[String],
+    label: &str,
+) -> Result<LinkExecutionPartialSourceSummary, CompileError> {
+    let mut source_summary = LinkExecutionPartialSourceSummary::default();
+    for (&input_group_index, input_group_output_key) in input_group_indices
+        .iter()
+        .zip(input_group_output_keys.iter())
+    {
+        let producer_page = validate_link_execution_partial_producer_page(
+            store,
+            page,
+            input_group_index,
+            input_group_output_key,
+            label,
+        )?;
+        source_summary = source_summary.checked_add(
+            LinkExecutionPartialSourceSummary::from_page(&producer_page),
+            page.group_index,
+            label,
+        )?;
+    }
+    Ok(source_summary)
+}
+
+fn validate_link_execution_partial_producer_page(
+    store: &FilesystemArtifactStore,
+    page: &SourcePackHierarchicalLinkExecutionPage,
+    input_group_index: usize,
+    input_group_output_key: &str,
+    label: &str,
+) -> Result<SourcePackHierarchicalLinkExecutionPage, CompileError> {
+    let producer_page = store
+        .load_hierarchical_link_execution_page_for_target(page.target, input_group_index)
+        .map_err(|err| {
+            artifact_shard_contract_error(format!(
+                "source-pack hierarchical link execution group {} {label} requires partial-link producer execution page evidence for input group {input_group_index} before consuming partial-link artifact {input_group_output_key:?}: {err}",
+                page.group_index
+            ))
+        })?;
+    if producer_page.final_output {
+        return Err(artifact_shard_contract_error(format!(
+            "source-pack hierarchical link execution group {} {label} input group {input_group_index} is backed by a final execution page before consuming partial-link artifact {input_group_output_key:?}",
+            page.group_index
+        )));
+    }
+    let first_link_job_index = page.job_index.checked_sub(page.group_index).ok_or_else(|| {
+        artifact_shard_contract_error(format!(
+            "source-pack hierarchical link execution group {} link job {} precedes dense group index before validating partial-link producer evidence",
+            page.group_index, page.job_index
+        ))
+    })?;
+    let expected_producer_job_index =
+        first_link_job_index
+            .checked_add(input_group_index)
+            .ok_or_else(|| {
+                artifact_shard_contract_error(format!(
+                    "source-pack hierarchical link execution group {} {label} input group {input_group_index} dense producer job overflows",
+                    page.group_index
+                ))
+            })?;
+    if producer_page.job_index != expected_producer_job_index {
+        return Err(artifact_shard_contract_error(format!(
+            "source-pack hierarchical link execution group {} {label} input group {input_group_index} records producer job {} but dense producer job is {expected_producer_job_index}",
+            page.group_index, producer_page.job_index
+        )));
+    }
+    if producer_page.output_key != input_group_output_key {
+        return Err(artifact_shard_contract_error(format!(
+            "source-pack hierarchical link execution group {} {label} input group {input_group_index} consumes partial-link key {input_group_output_key:?} but producer execution page records {:?}",
+            page.group_index, producer_page.output_key
+        )));
+    }
+    store
+        .require_artifact_key_file(input_group_output_key, "partial link output")
+        .map_err(|err| {
+            artifact_shard_contract_error(format!(
+                "source-pack hierarchical link execution group {} {label} input group {input_group_index} requires concrete partial-link output artifact {input_group_output_key:?} before beginning reduce link execution; producer execution-page metadata is not link artifact evidence: {err}",
+                page.group_index
+            ))
+        })?;
+    Ok(producer_page)
+}
+
+fn validate_link_execution_sidecar_group_order(
+    group_index: usize,
+    label: &str,
+    page_index: usize,
+    input_group_indices: &[usize],
+    previous_input_group_index: &mut Option<usize>,
+) -> Result<(), CompileError> {
+    let Some(&first_input_group_index) = input_group_indices.first() else {
+        return Ok(());
+    };
+    if let Some(previous_input_group_index) = *previous_input_group_index
+        && first_input_group_index <= previous_input_group_index
+    {
+        return Err(artifact_shard_contract_error(format!(
+            "source-pack hierarchical link execution group {group_index} {label} sidecar page {page_index} starts at input group {first_input_group_index} after prior page ended at input group {previous_input_group_index}; paged partial-link sidecars must be globally strictly ascending by input group so link replay cannot hide duplicate or missing partial-link evidence"
+        )));
+    }
+    if let Some(&last_input_group_index) = input_group_indices.last() {
+        *previous_input_group_index = Some(last_input_group_index);
+    }
+    Ok(())
+}
+
+fn validate_link_execution_sidecar_page(
+    group_index: usize,
+    label: &str,
+    page_index: usize,
+    page_count: usize,
+    page_capacity: usize,
+    input_count: usize,
+    sidecar_job_index: usize,
+    execution_job_index: usize,
+) -> Result<(), CompileError> {
+    if sidecar_job_index != execution_job_index {
+        return Err(artifact_shard_contract_error(format!(
+            "source-pack hierarchical link execution group {group_index} {label} sidecar page {page_index} records job {sidecar_job_index} but execution page records job {execution_job_index}; live link execution sidecars must belong to the same dense link job"
+        )));
+    }
+    if page_index < page_count.saturating_sub(1) && input_count != page_capacity {
+        return Err(artifact_shard_contract_error(format!(
+            "source-pack hierarchical link execution group {group_index} {label} sidecar page {page_index} records {input_count} inputs before later sidecar pages; non-final sidecar pages must contain {page_capacity} inputs so live link execution cannot hide missing link input evidence"
+        )));
     }
     Ok(())
 }

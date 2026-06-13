@@ -38,12 +38,23 @@ static const uint MAX_GROUPS_X = 65535u;
 static const uint TK_LBRACE = 22u;
 static const uint TK_RBRACE = 23u;
 static const uint TK_SEMICOLON = 37u;
+static const uint TK_FN = 67u;
 static const uint TK_LET = 68u;
 static const uint TK_RETURN = 69u;
+static const uint TK_IF = 70u;
+static const uint TK_ELSE = 71u;
+static const uint TK_WHILE = 72u;
+static const uint TK_IF_LBRACE = 88u;
+static const uint TK_IF_RBRACE = 89u;
 static const uint TK_BREAK = 73u;
 static const uint TK_CONTINUE = 74u;
+static const uint TK_ENUM = 93u;
+static const uint TK_STRUCT = 94u;
 static const uint TK_IMPORT = 96u;
 static const uint TK_MODULE = 97u;
+static const uint TK_IMPL = 98u;
+static const uint TK_TRAIT = 99u;
+static const uint TK_FOR = 100u;
 static const uint TK_EXTERN = 102u;
 static const uint TK_TYPE = 103u;
 static const uint TK_CONST = 92u;
@@ -89,6 +100,8 @@ uint close_kind_for_open_kind(uint open_kind)
         return TK_IMPL_RBRACE;
     if (open_kind == TK_TRAIT_LBRACE)
         return TK_TRAIT_RBRACE;
+    if (open_kind == TK_IF_LBRACE)
+        return TK_IF_RBRACE;
     if (open_kind == TK_STRUCT_LIT_LBRACE)
         return TK_STRUCT_LIT_RBRACE;
     if (open_kind == TK_STRUCT_DECL_LBRACE)
@@ -111,8 +124,17 @@ bool is_statement_starter(uint kind)
            kind == TK_CONST ||
            kind == TK_LET ||
            kind == TK_RETURN ||
+           kind == TK_IF ||
+           kind == TK_ELSE ||
+           kind == TK_WHILE ||
+           kind == TK_FOR ||
            kind == TK_BREAK ||
-           kind == TK_CONTINUE;
+           kind == TK_CONTINUE ||
+           kind == TK_FN ||
+           kind == TK_ENUM ||
+           kind == TK_STRUCT ||
+           kind == TK_IMPL ||
+           kind == TK_TRAIT;
 }
 
 bool is_statement_reset_boundary(uint kind)

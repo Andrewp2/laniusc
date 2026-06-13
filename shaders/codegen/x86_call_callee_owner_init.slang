@@ -6,6 +6,7 @@
 // expression without walking parent chains in the instruction-count shader.
 
 import gpu_index;
+import hir_records;
 import status;
 
 struct Params
@@ -22,6 +23,7 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> x86_tree_parent;
+StructuredBuffer<uint> hir_call_arg_parent_call;
 StructuredBuffer<uint> hir_member_receiver_node;
 StructuredBuffer<uint> x86_call_callee_root_call;
 
@@ -55,6 +57,13 @@ bool is_member_receiver_child(uint parent, uint node)
            hir_member_receiver_node[parent] == node;
 }
 
+bool is_call_argument_root(uint node)
+{
+    if (!valid_node(node))
+        return false;
+    return valid_node(hir_node_ordinal_node(hir_call_arg_parent_call[node]));
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
@@ -74,5 +83,9 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint parent = x86_tree_parent[node];
     x86_call_callee_owner_call[node] = 0u;
     x86_call_callee_owner_link[node] =
-        valid_node(parent) && !is_member_receiver_child(parent, node) ? parent : INVALID;
+        valid_node(parent) &&
+                !is_member_receiver_child(parent, node) &&
+                !is_call_argument_root(node)
+            ? parent
+            : INVALID;
 }

@@ -43,6 +43,7 @@ StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> fn_return_ref_payload;
 StructuredBuffer<uint> visible_decl;
+StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint4> call_arg_record;
 
@@ -150,6 +151,32 @@ uint expr_value_token(uint node)
     return valid_node(node) ? expr_record_slot(node, EXPR_RECORD_VALUE_TOKEN) : INVALID;
 }
 
+uint function_return_instance_for_token(uint token)
+{
+    if (!valid_token(token))
+        return INVALID;
+
+    uint encoded_fn = enclosing_fn[token];
+    uint fn_token = encoded_fn == 0u ? INVALID : encoded_fn - 1u;
+    if (valid_token(fn_token))
+    {
+        uint tag = fn_return_ref_tag[fn_token];
+        uint payload = fn_return_ref_payload[fn_token];
+        if (tag == TYPE_REF_INSTANCE && valid_token(payload))
+            return payload;
+    }
+    return INVALID;
+}
+
+uint function_return_instance_for_call(uint owner_token, uint call_node)
+{
+    uint instance = function_return_instance_for_token(owner_token);
+    if (instance != INVALID)
+        return instance;
+    return valid_node(call_node) ? function_return_instance_for_token(hir_token_pos[call_node])
+                                 : INVALID;
+}
+
 uint result_expr(uint node)
 {
     if (!valid_node(node))
@@ -180,10 +207,18 @@ uint visible_type_for_token(uint token)
     if (!valid_token(token))
         return TY_UNKNOWN;
 
+    uint ty = visible_type[token];
+    if (ty != TY_UNKNOWN)
+        return ty;
+
     uint decl = visible_decl[token];
     if (valid_token(decl))
     {
-        uint ty = type_code_for_ref(decl_type_ref_tag[decl], decl_type_ref_payload[decl]);
+        ty = visible_type[decl];
+        if (ty != TY_UNKNOWN)
+            return ty;
+
+        ty = type_code_for_ref(decl_type_ref_tag[decl], decl_type_ref_payload[decl]);
         if (ty != TY_UNKNOWN)
             return ty;
     }
@@ -243,7 +278,7 @@ uint contextual_instance_for_call(uint owner_token, uint call_node)
 {
     uint context_node = valid_node(call_node) ? hir_call_context_stmt_node[call_node] : INVALID;
     if (!valid_node(context_node))
-        return INVALID;
+        return function_return_instance_for_call(owner_token, call_node);
 
     uint context_kind = hir_stmt_record[stmt_slot(context_node, 0u)];
     if (context_kind == STMT_RECORD_KIND_LET)
@@ -260,18 +295,12 @@ uint contextual_instance_for_call(uint owner_token, uint call_node)
 
     if (context_kind == STMT_RECORD_KIND_RETURN && valid_token(owner_token))
     {
-        uint encoded_fn = enclosing_fn[owner_token];
-        uint fn_token = encoded_fn == 0u ? INVALID : encoded_fn - 1u;
-        if (valid_token(fn_token))
-        {
-            uint tag = fn_return_ref_tag[fn_token];
-            uint payload = fn_return_ref_payload[fn_token];
-            if (tag == TYPE_REF_INSTANCE && valid_token(payload))
-                return payload;
-        }
+        uint instance = function_return_instance_for_call(owner_token, call_node);
+        if (instance != INVALID)
+            return instance;
     }
 
-    return INVALID;
+    return function_return_instance_for_call(owner_token, call_node);
 }
 
 void substituted_ref(
@@ -352,19 +381,20 @@ bool payload_matches(uint owner_token, uint enum_token, uint variant_node, uint 
     uint payload_head = valid_node(payload_node) ? hir_token_pos[payload_node] : INVALID;
     if (!valid_token(payload_head))
         return false;
-    if (type_expr_ref_tag[payload_head] == TYPE_REF_GENERIC_PARAM &&
-        context_instance == INVALID)
-        return false;
-
     uint tag = TYPE_REF_INVALID;
     uint payload = INVALID;
     substituted_ref(context_instance, payload_head, tag, payload);
+    if (type_expr_ref_tag[payload_head] == TYPE_REF_GENERIC_PARAM &&
+        context_instance == INVALID)
+        return false;
     uint expected_ty = type_code_for_ref(tag, payload);
     if (context_instance == INVALID && expected_ty == TY_UNKNOWN)
         return false;
 
     uint arg_node = call_arg_node[call_node * PARAM_CACHE_STRIDE + ordinal];
     uint actual_ty = direct_expr_type(arg_node);
+    if (actual_ty == TY_UNKNOWN && context_instance != INVALID && expected_ty >= TY_GENERIC_BASE)
+        return true;
     return assignable(expected_ty, actual_ty);
 }
 

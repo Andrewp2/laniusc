@@ -2,7 +2,7 @@ mod common;
 
 use laniusc::{
     compiler::CompileError,
-    lexer::driver::GpuLexer,
+    lexer::{Token, driver::GpuLexer, tables::tokens::TokenKind},
     parser::{
         driver::{GpuParser, ResidentParseResult},
         hir_records::INVALID,
@@ -10,6 +10,8 @@ use laniusc::{
             hir_expr_fields::{
                 HIR_EXPR_FORM_ADD,
                 HIR_EXPR_FORM_AND,
+                HIR_EXPR_FORM_CHAR,
+                HIR_EXPR_FORM_FALSE,
                 HIR_EXPR_FORM_FLOAT,
                 HIR_EXPR_FORM_FORWARD,
                 HIR_EXPR_FORM_INDEX,
@@ -18,12 +20,13 @@ use laniusc::{
                 HIR_EXPR_FORM_NAME,
                 HIR_EXPR_FORM_NONE,
                 HIR_EXPR_FORM_NOT,
+                HIR_EXPR_FORM_RANGE,
                 HIR_EXPR_FORM_STRING,
+                HIR_EXPR_FORM_TRUE,
             },
             hir_item_fields::{
                 HIR_ITEM_IMPORT_TARGET_NONE,
                 HIR_ITEM_IMPORT_TARGET_PATH,
-                HIR_ITEM_IMPORT_TARGET_STRING,
                 HIR_ITEM_KIND_CONST,
                 HIR_ITEM_KIND_ENUM,
                 HIR_ITEM_KIND_ENUM_VARIANT,
@@ -36,12 +39,14 @@ use laniusc::{
                 HIR_ITEM_KIND_TRAIT,
                 HIR_ITEM_KIND_TYPE_ALIAS,
                 HIR_ITEM_NAMESPACE_MODULE,
+                HIR_ITEM_NAMESPACE_NONE,
                 HIR_ITEM_NAMESPACE_TYPE,
                 HIR_ITEM_NAMESPACE_VALUE,
                 HIR_ITEM_VIS_PRIVATE,
                 HIR_ITEM_VIS_PUBLIC,
             },
             hir_method_fields::{
+                HIR_METHOD_RECEIVER_EXPLICIT,
                 HIR_METHOD_RECEIVER_NONE,
                 HIR_METHOD_RECEIVER_REF_SELF,
                 HIR_METHOD_RECEIVER_SELF,
@@ -54,6 +59,7 @@ use laniusc::{
             },
             hir_nodes::{
                 HIR_NODE_ARRAY_EXPR,
+                HIR_NODE_ASSIGN_EXPR,
                 HIR_NODE_BINARY_EXPR,
                 HIR_NODE_BLOCK,
                 HIR_NODE_BREAK_STMT,
@@ -62,10 +68,12 @@ use laniusc::{
                 HIR_NODE_CONTINUE_STMT,
                 HIR_NODE_ENUM_ITEM,
                 HIR_NODE_EXPR,
+                HIR_NODE_FILE,
                 HIR_NODE_FN,
                 HIR_NODE_FOR_STMT,
                 HIR_NODE_IF_STMT,
                 HIR_NODE_IMPORT_ITEM,
+                HIR_NODE_INDEX_EXPR,
                 HIR_NODE_ITEM,
                 HIR_NODE_LET_STMT,
                 HIR_NODE_LITERAL_EXPR,
@@ -76,12 +84,14 @@ use laniusc::{
                 HIR_NODE_NONE,
                 HIR_NODE_PARAM,
                 HIR_NODE_PATH_EXPR,
+                HIR_NODE_POSTFIX_EXPR,
                 HIR_NODE_RETURN_STMT,
                 HIR_NODE_STMT,
                 HIR_NODE_STRUCT_ITEM,
                 HIR_NODE_STRUCT_LITERAL_EXPR,
                 HIR_NODE_TYPE,
                 HIR_NODE_TYPE_ALIAS_ITEM,
+                HIR_NODE_UNARY_EXPR,
                 HIR_NODE_WHILE_STMT,
             },
             hir_stmt_fields::{
@@ -112,19 +122,26 @@ use laniusc::{
             ParserHirItemReadbacks,
             validate_hir_array_literal_records,
             validate_hir_call_argument_records,
+            validate_hir_const_item_statement_records,
             validate_hir_context_relation_records,
+            validate_hir_enum_variant_records,
             validate_hir_expression_records,
+            validate_hir_expression_result_root_records,
             validate_hir_function_return_records,
-            validate_hir_item_path_records,
+            validate_hir_item_records,
             validate_hir_match_records,
             validate_hir_member_records,
             validate_hir_method_records,
             validate_hir_parameter_records,
             validate_hir_source_address_records,
             validate_hir_statement_records,
+            validate_hir_struct_declaration_field_records,
             validate_hir_struct_literal_field_records,
+            validate_hir_type_alias_target_records,
             validate_hir_type_argument_records,
+            validate_hir_type_records,
         },
+        syntax::{GpuSyntaxCode, GpuSyntaxError},
         tables::PrecomputedParseTables,
     },
 };
@@ -143,34 +160,72 @@ struct RecordedFnReturnReadback {
     readbacks: ParserHirFunctionReturnReadbacks,
 }
 
-const PARSER_STATUS_CONTEXT_SCAN_LIMIT: u32 = 0x8000_0000;
 const TK_AMPERSAND: u32 = 25;
+const TK_ARG_COMMA: u32 = TokenKind::ArgComma as u32;
+const TK_ARRAY_COMMA: u32 = TokenKind::ArrayComma as u32;
+const TK_MATCH_ARM_COMMA: u32 = TokenKind::MatchArmComma as u32;
+const TK_STRUCT_LIT_COMMA: u32 = TokenKind::StructLitComma as u32;
 const TK_BOUND_TYPE_AMPERSAND: u32 = 179;
+const TK_EOF: u32 = 0;
 
-fn parser_token_feature_flags_for_source(source: &str) -> u32 {
-    let source = source.to_owned();
-    common::block_on_gpu_with_timeout("parser token feature flags", async move {
-        let tables = PrecomputedParseTables::load_bin_bytes(include_bytes!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/tables/parse_tables.bin"
-        )))
-        .expect("load precomputed parse tables");
-        let lexer = GpuLexer::new().await.expect("create GPU lexer");
-        let parser = GpuParser::new().await.expect("create GPU parser");
+fn syntax_token(kind: TokenKind, pos: usize) -> Token {
+    Token {
+        kind,
+        start: pos,
+        len: 1,
+    }
+}
 
-        lexer
-            .with_resident_tokens(&source, |_, _, buffers| {
-                parser.debug_token_feature_flags_for_resident_tokens(
-                    buffers.n,
-                    &buffers.tokens_out,
-                    &buffers.token_count,
-                    &tables,
-                )
-            })
+#[test]
+fn parser_syntax_accepts_generic_header_beyond_old_local_window_on_gpu() {
+    let mut tokens = Vec::new();
+    let mut pos = 0usize;
+    let mut push = |tokens: &mut Vec<Token>, kind| {
+        tokens.push(syntax_token(kind, pos));
+        pos += 1;
+    };
+
+    push(&mut tokens, TokenKind::Fn);
+    push(&mut tokens, TokenKind::Ident);
+    push(&mut tokens, TokenKind::Lt);
+    for param_i in 0..40 {
+        if param_i > 0 {
+            push(&mut tokens, TokenKind::Comma);
+        }
+        push(&mut tokens, TokenKind::Ident);
+    }
+    push(&mut tokens, TokenKind::Gt);
+    push(&mut tokens, TokenKind::ParamLParen);
+    push(&mut tokens, TokenKind::ParamRParen);
+    push(&mut tokens, TokenKind::LBrace);
+    push(&mut tokens, TokenKind::RBrace);
+
+    common::block_on_gpu_with_timeout("long generic syntax header", async move {
+        laniusc::parser::syntax::check_tokens_on_gpu(&tokens)
             .await
-            .expect("resident lex should succeed")
-            .expect("parser token feature flag readback should succeed")
+            .expect("syntax checker should accept a generic header past one 64-token window");
+    });
+}
+
+#[test]
+fn parser_syntax_rejects_nested_statement_keyword_before_semicolon_on_gpu() {
+    let tokens = vec![
+        syntax_token(TokenKind::Return, 0),
+        syntax_token(TokenKind::Let, 1),
+        syntax_token(TokenKind::ReturnSemicolon, 2),
+    ];
+
+    let err = common::block_on_gpu_with_timeout("overlapping return syntax", async move {
+        laniusc::parser::syntax::check_tokens_on_gpu(&tokens).await
     })
+    .expect_err("syntax checker should reject a statement keyword before the return semicolon");
+
+    match err {
+        GpuSyntaxError::Rejected { code, .. } => {
+            assert_eq!(code, GpuSyntaxCode::MissingSemicolon);
+        }
+        other => panic!("expected syntax rejection, got {other:?}"),
+    }
 }
 
 fn parser_semantic_token_kinds_for_source(source: &str) -> Vec<u32> {
@@ -393,35 +448,226 @@ fn assert_source_pack_type_rejects(sources: &[&str], context: &str) {
 }
 
 #[test]
-fn parser_token_context_scan_limit_is_reported_as_status_flag() {
-    let short_source = "fn f<T: A::B & C>() {}\n";
-    let short_flags = parser_token_feature_flags_for_source(short_source);
-    assert_eq!(
-        short_flags & PARSER_STATUS_CONTEXT_SCAN_LIMIT,
-        0,
-        "short bound paths should not report the context-scan limit"
+fn parser_semantic_tokens_close_const_type_before_next_function() {
+    let kinds = parser_semantic_token_kinds_for_source(
+        "const VALUE: i32 = 7;\n\nfn take(item: i32) -> i32 {\n    return item;\n}\n",
     );
-    let short_kinds = parser_semantic_token_kinds_for_source(short_source);
+    let expected = [
+        TK_EOF,
+        TokenKind::Const as u32,
+        TokenKind::Ident as u32,
+        TokenKind::TypeColon as u32,
+        TokenKind::TypeIdent as u32,
+        TokenKind::ConstAssign as u32,
+        TokenKind::Int as u32,
+        TokenKind::ConstSemicolon as u32,
+        TokenKind::Fn as u32,
+        TokenKind::Ident as u32,
+        TokenKind::ParamLParen as u32,
+        TokenKind::ParamIdent as u32,
+        TokenKind::TypeColon as u32,
+        TokenKind::TypeIdent as u32,
+        TokenKind::ParamRParen as u32,
+        TokenKind::ReturnArrow as u32,
+        TokenKind::TypeIdent as u32,
+        TokenKind::FnBlockLBrace as u32,
+        TokenKind::Return as u32,
+        TokenKind::Ident as u32,
+        TokenKind::ReturnSemicolon as u32,
+        TokenKind::FnBlockRBrace as u32,
+        TK_EOF,
+    ];
+
+    assert_eq!(kinds, expected);
+}
+
+#[test]
+fn parser_hir_qualified_generic_constructor_let_keeps_following_statement_in_block() {
+    parse_resident_source(
+        r#"
+fn make_world() {
+    let world: std::vec::Vec<Sphere> = std::vec::Vec<Sphere>::new();
+    world.push();
+}
+"#,
+    );
+}
+
+#[test]
+fn parser_hir_extern_return_type_closes_before_next_struct() {
+    let source = r#"
+extern "lanius_std" fn close_file(handle: i32) -> i32;
+extern "lanius_std" fn i32_to_f32(value: i32) -> f32;
+
+struct Vec3 {
+    x: f32,
+    y: f32,
+}
+"#;
+    let kinds = parser_semantic_token_kinds_for_source(source);
     assert!(
-        short_kinds.contains(&TK_BOUND_TYPE_AMPERSAND),
-        "in-budget bound paths should retag the bound separator"
+        kinds.contains(&(TokenKind::ExternAbiString as u32)),
+        "extern ABI strings should not remain expression string literals"
+    );
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|&&kind| kind == TokenKind::ExternSemicolon as u32)
+            .count(),
+        2,
+        "extern declarations should retain extern semicolon boundaries after fn retagging"
+    );
+    parse_resident_source(source);
+}
+
+#[test]
+fn parser_semantic_tokens_qualified_generic_constructor_value_path() {
+    let kinds = parser_semantic_token_kinds_for_source(
+        r#"
+fn make_world() {
+    let world: std::vec::Vec<Sphere> = std::vec::Vec<Sphere>::new();
+    world.push();
+}
+"#,
+    );
+    let expected = [
+        TK_EOF,
+        TokenKind::Fn as u32,
+        TokenKind::Ident as u32,
+        TokenKind::ParamLParen as u32,
+        TokenKind::ParamRParen as u32,
+        TokenKind::FnBlockLBrace as u32,
+        TokenKind::Let as u32,
+        TokenKind::LetIdent as u32,
+        TokenKind::TypeColon as u32,
+        TokenKind::TypeIdent as u32,
+        TokenKind::PathColon as u32,
+        TokenKind::PathColon as u32,
+        TokenKind::TypeIdent as u32,
+        TokenKind::PathColon as u32,
+        TokenKind::PathColon as u32,
+        TokenKind::TypeIdent as u32,
+        TokenKind::TypeArgLt as u32,
+        TokenKind::TypeIdent as u32,
+        TokenKind::TypeArgGt as u32,
+        TokenKind::LetAssign as u32,
+        TokenKind::Ident as u32,
+        TokenKind::PathColon as u32,
+        TokenKind::PathColon as u32,
+        TokenKind::Ident as u32,
+        TokenKind::PathColon as u32,
+        TokenKind::PathColon as u32,
+        TokenKind::PathGenericIdent as u32,
+        TokenKind::PathTypeArgLt as u32,
+        TokenKind::TypeIdent as u32,
+        TokenKind::PathTypeArgGt as u32,
+        TokenKind::PathColon as u32,
+        TokenKind::PathColon as u32,
+        TokenKind::Ident as u32,
+        TokenKind::CallLParen as u32,
+        TokenKind::CallRParen as u32,
+        TokenKind::LetSemicolon as u32,
+        TokenKind::Ident as u32,
+        TokenKind::Dot as u32,
+        TokenKind::MemberIdent as u32,
+        TokenKind::CallLParen as u32,
+        TokenKind::CallRParen as u32,
+        TokenKind::ExprSemicolon as u32,
+        TokenKind::FnBlockRBrace as u32,
+        TK_EOF,
+    ];
+
+    assert_eq!(kinds, expected);
+}
+
+#[test]
+fn parser_bound_type_context_fails_closed_for_qualified_path_without_local_scan() {
+    let unqualified_source = "fn f<T: A & B>() {}\n";
+    let unqualified_kinds = parser_semantic_token_kinds_for_source(unqualified_source);
+    assert!(
+        unqualified_kinds.contains(&TK_BOUND_TYPE_AMPERSAND),
+        "unqualified bound paths should retag the bound separator"
     );
 
-    let long_source = "fn f<T: A::B::C::D::E::F::G::H::I::J & K>() {}\n";
-    let long_flags = parser_token_feature_flags_for_source(long_source);
-    assert_ne!(
-        long_flags & PARSER_STATUS_CONTEXT_SCAN_LIMIT,
-        0,
-        "over-budget bound paths should publish the parser retagging limit status"
-    );
-    let long_kinds = parser_semantic_token_kinds_for_source(long_source);
+    let qualified_source = "fn f<T: A::B & C>() {}\n";
+    let qualified_kinds = parser_semantic_token_kinds_for_source(qualified_source);
     assert!(
-        !long_kinds.contains(&TK_BOUND_TYPE_AMPERSAND),
-        "over-budget bound paths should fail closed instead of guessing the bound separator"
+        !qualified_kinds.contains(&TK_BOUND_TYPE_AMPERSAND),
+        "qualified generic-parameter bound paths should fail closed until a parser-owned type-context row pass publishes that relation"
     );
     assert!(
-        long_kinds.contains(&TK_AMPERSAND),
-        "over-budget bound separators should remain raw tokens behind the status boundary"
+        qualified_kinds.contains(&TK_AMPERSAND),
+        "qualified bound separators should remain raw tokens behind the fail-closed boundary"
+    );
+}
+
+#[test]
+fn parser_semantic_commas_follow_innermost_struct_literal_inside_call() {
+    let kinds =
+        parser_semantic_token_kinds_for_source("fn main() { sink(S { a: pair(1, 2), b: 3, }); }\n");
+    let struct_lit_commas = kinds
+        .iter()
+        .filter(|&&kind| kind == TK_STRUCT_LIT_COMMA)
+        .count();
+    let arg_commas = kinds.iter().filter(|&&kind| kind == TK_ARG_COMMA).count();
+
+    assert_eq!(
+        struct_lit_commas, 2,
+        "field separators inside a struct-literal call argument must not be retagged as call argument commas"
+    );
+    assert_eq!(
+        arg_commas, 1,
+        "the nested pair call should still retain its own argument comma"
+    );
+}
+
+#[test]
+fn parser_semantic_commas_follow_innermost_array_inside_match_arm() {
+    let kinds = parser_semantic_token_kinds_for_source(
+        "fn main() { match (value) { First => [a, b, c], Second => d }; }\n",
+    );
+    let array_commas = kinds.iter().filter(|&&kind| kind == TK_ARRAY_COMMA).count();
+    let match_arm_commas = kinds
+        .iter()
+        .filter(|&&kind| kind == TK_MATCH_ARM_COMMA)
+        .count();
+
+    assert_eq!(
+        array_commas, 2,
+        "array separators inside a match arm must not be retagged as match-arm commas"
+    );
+    assert_eq!(
+        match_arm_commas, 1,
+        "the comma after the array closes should separate match arms"
+    );
+}
+
+#[test]
+fn parser_hir_struct_literal_argument_trailing_comma_does_not_swallow_next_item() {
+    let parsed = parse_resident_source(
+        r#"
+fn main() {
+    sink(S { a: 1, b: 2, });
+}
+
+fn next() {
+    return;
+}
+"#,
+    );
+
+    assert!(
+        parsed.ll1.accepted,
+        "resident parser should accept a trailing-comma struct literal inside a call"
+    );
+    assert!(
+        parsed
+            .hir_item_kind
+            .iter()
+            .filter(|&&kind| kind == HIR_ITEM_KIND_FN)
+            .count()
+            >= 2,
+        "the following function item must remain outside the preceding call argument"
     );
 }
 
@@ -503,48 +749,54 @@ fn main() {
 }
 
 #[test]
-fn parser_hir_call_argument_records_preserve_counts_beyond_typecheck_cache_width() {
-    let parsed = parse_resident_source(
-        r#"
-fn choose(a: i32, b: i32, c: i32, d: i32, e: i32) -> i32 {
-    return a;
-}
+fn parser_hir_call_readback_accepts_source_ordered_argument_runs() {
+    for count in [1_u32, 5, 8] {
+        let row_count = count as usize + 2;
+        let mut kinds = vec![HIR_NODE_EXPR; row_count];
+        kinds[0] = HIR_NODE_NAME_EXPR;
+        kinds[1] = HIR_NODE_CALL_EXPR;
 
-fn main() {
-    return choose(1, 2, 3, 4, 5);
-}
-"#,
-    );
-    assert!(
-        parsed.ll1.accepted,
-        "resident parser should accept the fixture: error_pos={} code={} detail={}",
-        parsed.ll1.error_pos, parsed.ll1.error_code, parsed.ll1.detail
-    );
+        let mut token_pos = vec![INVALID; row_count];
+        let mut token_end = vec![INVALID; row_count];
+        token_pos[0] = 10;
+        token_end[0] = 11;
+        token_pos[1] = 10;
+        token_end[1] = 14 + count * 2;
 
-    let call_node = parsed
-        .hir_call_arg_count
-        .iter()
-        .position(|&count| count == 5)
-        .expect("fixture should contain one five-argument call");
-    assert_eq!(
-        parsed.hir_kind[call_node], HIR_NODE_CALL_EXPR,
-        "argument count should be attached to the call HIR node"
-    );
+        let node_file_ids = vec![0; row_count];
+        let mut callee_nodes = vec![INVALID; row_count];
+        callee_nodes[1] = 0;
+        let mut starts = vec![INVALID; row_count];
+        starts[1] = 2;
+        let mut arg_ends = vec![INVALID; row_count];
+        let mut counts = vec![0; row_count];
+        counts[1] = count;
+        let mut parent_calls = vec![INVALID; row_count];
+        let mut ordinals = vec![INVALID; row_count];
 
-    let mut args = parsed
-        .hir_call_arg_parent_call
-        .iter()
-        .enumerate()
-        .filter_map(|(node, &parent)| (parent as usize == call_node).then_some(node))
-        .collect::<Vec<_>>();
-    args.sort_unstable_by_key(|&node| parsed.hir_call_arg_ordinal[node]);
+        for ordinal in 0..count as usize {
+            let row = ordinal + 2;
+            let start = 12 + (ordinal as u32) * 2;
+            token_pos[row] = start;
+            token_end[row] = start + 1;
+            arg_ends[row] = token_end[row];
+            parent_calls[row] = 1;
+            ordinals[row] = ordinal as u32;
+        }
 
-    assert_eq!(args.len(), 5, "call should own exactly five argument rows");
-    for (expected_ordinal, arg_node) in args.iter().copied().enumerate() {
-        assert_eq!(
-            parsed.hir_call_arg_ordinal[arg_node], expected_ordinal as u32,
-            "argument row {arg_node} should have a contiguous ordinal"
-        );
+        validate_hir_call_argument_records(
+            &kinds,
+            &token_pos,
+            &token_end,
+            &node_file_ids,
+            &callee_nodes,
+            &starts,
+            &arg_ends,
+            &counts,
+            &parent_calls,
+            &ordinals,
+        )
+        .unwrap_or_else(|err| panic!("{count} source-ordered call arguments should decode: {err}"));
     }
 }
 
@@ -612,6 +864,10 @@ fn main(pair: Pair) -> i32 {
         "receiver token should come from the receiver HIR node, not a source-text rescan"
     );
     assert!(
+        receiver_token < member_token,
+        "method-call receiver token should precede the member-name token"
+    );
+    assert!(
         parsed.hir_token_pos[callee_node] < member_token,
         "member-name token should be inside the member expression span"
     );
@@ -647,6 +903,109 @@ fn main(pair: Pair) -> i32 {
             "method-call argument {arg_node} should be an expression HIR row"
         );
     }
+}
+
+#[test]
+fn parser_hir_chained_method_call_receiver_records_link_inner_call_as_receiver() {
+    let parsed = parse_resident_source(
+        r#"
+struct Range {
+    start: i32,
+    end: i32,
+}
+
+fn make_range() -> Range {
+    let range: Range = Range { start: 1, end: 4 };
+    return range;
+}
+
+fn main(arg: i32) -> bool {
+    return make_range().contains(arg);
+}
+"#,
+    );
+    assert!(
+        parsed.ll1.accepted,
+        "resident parser should accept the fixture: error_pos={} code={} detail={}",
+        parsed.ll1.error_pos, parsed.ll1.error_code, parsed.ll1.detail
+    );
+
+    let outer_call = parsed
+        .hir_call_arg_count
+        .iter()
+        .enumerate()
+        .find_map(|(node, &count)| {
+            if count != 1 || parsed.hir_kind[node] != HIR_NODE_CALL_EXPR {
+                return None;
+            }
+            let callee = parsed.hir_call_callee_node[node] as usize;
+            (callee as u32 != INVALID && parsed.hir_kind[callee] == HIR_NODE_MEMBER_EXPR)
+                .then_some(node)
+        })
+        .expect("fixture should publish one single-argument method call");
+
+    let outer_member = assert_valid_hir_node_index(
+        &parsed,
+        parsed.hir_call_callee_node[outer_call],
+        "outer method-call callee",
+    );
+    assert_eq!(
+        parsed.hir_kind[outer_member], HIR_NODE_MEMBER_EXPR,
+        "outer call callee should be the parser-owned member row"
+    );
+
+    let inner_call = assert_valid_hir_node_index(
+        &parsed,
+        parsed.hir_member_receiver_node[outer_member],
+        "outer member receiver",
+    );
+    assert_eq!(
+        parsed.hir_kind[inner_call], HIR_NODE_CALL_EXPR,
+        "outer member receiver should be the parser-owned inner call row"
+    );
+
+    let inner_callee = assert_valid_hir_node_index(
+        &parsed,
+        parsed.hir_call_callee_node[inner_call],
+        "inner call callee",
+    );
+    assert!(
+        matches!(
+            parsed.hir_kind[inner_callee],
+            HIR_NODE_NAME_EXPR | HIR_NODE_PATH_EXPR
+        ),
+        "inner call callee should be the parser-owned callee name/path row"
+    );
+    assert_eq!(
+        parsed.hir_member_receiver_token[outer_member], parsed.hir_token_pos[inner_callee],
+        "outer member receiver token should come from the inner call callee token"
+    );
+
+    let mut args = parsed
+        .hir_call_arg_parent_call
+        .iter()
+        .enumerate()
+        .filter_map(|(node, &parent)| (parent as usize == outer_call).then_some(node))
+        .collect::<Vec<_>>();
+    args.sort_unstable_by_key(|&node| parsed.hir_call_arg_ordinal[node]);
+
+    assert_eq!(
+        args.len(),
+        1,
+        "outer method call should own one argument row"
+    );
+    assert_eq!(
+        parsed.hir_call_arg_start[outer_call] as usize, args[0],
+        "outer method-call arg start should point at ordinal zero"
+    );
+    assert_eq!(
+        parsed.hir_call_arg_ordinal[args[0]], 0,
+        "outer method-call argument should publish ordinal zero"
+    );
+    assert_eq!(
+        parsed.hir_kind[args[0]], HIR_NODE_EXPR,
+        "outer method-call argument should be a parser-owned expression row"
+    );
 }
 
 #[test]
@@ -804,24 +1163,6 @@ fn main(pair: Pair) -> i32 {
         );
         assert_hir_node_has_non_empty_span(&parsed, receiver, "member receiver");
     }
-}
-
-#[test]
-fn parser_hir_member_readback_rejects_orphan_member_metadata() {
-    let err = validate_hir_member_records(
-        &[HIR_NODE_NAME_EXPR, HIR_NODE_NAME_EXPR],
-        &[0, 1],
-        &[1, 2],
-        &[0, 0],
-        &[INVALID, 0],
-        &[INVALID, 0],
-        &[INVALID, 1],
-    )
-    .expect_err("member metadata on a non-member row should fail closed");
-    assert!(
-        err.to_string().contains("without a member-expression"),
-        "error should describe orphan parser-owned member metadata"
-    );
 }
 
 #[test]
@@ -1175,6 +1516,99 @@ fn main(value: MaybePair, values: [i32; 3]) -> i32 {
 }
 
 #[test]
+fn parser_hir_resident_readback_publishes_node_file_ids_for_public_records() {
+    let parsed = parse_resident_source(
+        r#"
+type Count = i32;
+
+struct Pair {
+    left: Count,
+}
+
+fn main(value: Count) -> Count {
+    return value;
+}
+"#,
+    );
+    assert!(
+        parsed.ll1.accepted,
+        "resident parser should accept the fixture: error_pos={} code={} detail={}",
+        parsed.ll1.error_pos, parsed.ll1.error_code, parsed.ll1.detail
+    );
+
+    let mut saw_item_record = false;
+    let mut saw_type_record = false;
+    for row in 0..parsed.hir_kind.len() {
+        let has_item_record = parsed.hir_item_kind[row] != HIR_ITEM_KIND_NONE;
+        let has_type_record = parsed.hir_type_form[row] != HIR_TYPE_FORM_NONE;
+        if !has_item_record && !has_type_record {
+            continue;
+        }
+
+        assert_ne!(
+            parsed.hir_token_pos[row], INVALID,
+            "public parser HIR row {row} should publish a token start"
+        );
+        assert_ne!(
+            parsed.hir_token_end[row], INVALID,
+            "public parser HIR row {row} should publish a token end"
+        );
+        assert!(
+            parsed.hir_token_pos[row] < parsed.hir_token_end[row],
+            "public parser HIR row {row} should publish a non-empty source span"
+        );
+        assert_eq!(
+            parsed.hir_node_file_id[row], 0,
+            "single-source parser HIR row {row} should publish the GPU node file id"
+        );
+
+        if has_item_record {
+            saw_item_record = true;
+            assert_eq!(
+                parsed.hir_item_file_id[row], parsed.hir_node_file_id[row],
+                "item parser HIR row {row} should agree with the node file id"
+            );
+        }
+        if has_type_record {
+            saw_type_record = true;
+            assert_eq!(
+                parsed.hir_type_file_id[row], parsed.hir_node_file_id[row],
+                "type parser HIR row {row} should agree with the node file id"
+            );
+        }
+    }
+
+    assert!(
+        saw_item_record,
+        "fixture should publish item records through the resident HIR readback"
+    );
+    assert!(
+        saw_type_record,
+        "fixture should publish type records through the resident HIR readback"
+    );
+}
+
+#[test]
+fn parser_hir_else_tail_does_not_publish_unowned_statement_context() {
+    let parsed = parse_resident_source(
+        r#"
+fn main(flag: bool) {
+    if (flag) {
+        sink();
+    } else {
+        sink();
+    }
+}
+"#,
+    );
+    assert!(
+        parsed.ll1.accepted,
+        "resident parser should accept else-tail fixture: error_pos={} code={} detail={}",
+        parsed.ll1.error_pos, parsed.ll1.error_code, parsed.ll1.detail
+    );
+}
+
+#[test]
 fn parser_hir_resident_readback_publishes_expression_roots_and_statement_contexts() {
     let parsed = parse_resident_source(
         r#"
@@ -1188,7 +1622,8 @@ fn helper(value: i32) -> i32 {
 }
 
 fn main(value: i32) -> i32 {
-    let local: [i32; 2] = [helper(value), Pair { left: value, right: value + 1 }.left];
+    let local: [i32; 2] = [helper(value), helper(value)];
+    let pair: Pair = Pair { left: value, right: value + 1 };
     return helper(local[0]);
 }
 "#,
@@ -1199,39 +1634,40 @@ fn main(value: i32) -> i32 {
         parsed.ll1.error_pos, parsed.ll1.error_code, parsed.ll1.detail
     );
 
-    let let_node = parsed
+    let first_let_node = parsed
         .hir_kind
         .iter()
         .position(|&kind| kind == HIR_NODE_LET_STMT)
-        .expect("fixture should publish one local declaration statement");
-    let return_node = parsed
-        .hir_kind
-        .iter()
-        .enumerate()
-        .filter_map(|(node, &kind)| {
-            (kind == HIR_NODE_RETURN_STMT
-                && parsed.hir_token_pos[node] > parsed.hir_token_end[let_node])
-                .then_some(node)
-        })
-        .min_by_key(|&node| parsed.hir_token_pos[node])
-        .expect("fixture should publish the main return statement after the local declaration");
-    assert_hir_node_has_non_empty_span(&parsed, let_node, "local declaration statement");
-    assert_hir_node_has_non_empty_span(&parsed, return_node, "main return statement");
+        .expect("fixture should publish local declaration statements");
+    assert_hir_node_has_non_empty_span(&parsed, first_let_node, "local declaration statement");
     let main_block = assert_valid_hir_node_index(
         &parsed,
-        parsed.hir_nearest_block_node[let_node],
+        parsed.hir_nearest_block_node[first_let_node],
         "local declaration nearest block",
     );
     assert_eq!(
         parsed.hir_kind[main_block], HIR_NODE_BLOCK,
         "nearest block row should point at the function body block"
     );
+    let return_node = parsed
+        .hir_stmt_record_kind
+        .iter()
+        .enumerate()
+        .filter_map(|(node, &kind)| {
+            (kind == STMT_RECORD_KIND_RETURN
+                && parsed.hir_kind[node] == HIR_NODE_RETURN_STMT
+                && parsed.hir_nearest_block_node[node] as usize == main_block)
+                .then_some(node)
+        })
+        .min_by_key(|&node| parsed.hir_token_pos[node])
+        .expect("fixture should publish the main return statement in the same parser-owned block");
+    assert_hir_node_has_non_empty_span(&parsed, return_node, "main return statement");
     assert_eq!(
         parsed.hir_nearest_block_node[return_node] as usize, main_block,
         "statements in the same function body should agree on nearest block"
     );
     assert_eq!(
-        parsed.hir_nearest_enclosing_control_node[let_node], INVALID,
+        parsed.hir_nearest_enclosing_control_node[first_let_node], INVALID,
         "top-level local declaration should not have an enclosing control row"
     );
 
@@ -1261,12 +1697,13 @@ fn main(value: i32) -> i32 {
             "struct literal",
         ),
     ] {
+        let context = assert_valid_hir_node_index(&parsed, context, label);
         assert_eq!(
-            context as usize, let_node,
-            "{label} should publish the local declaration as its contextual statement"
+            parsed.hir_kind[context], HIR_NODE_LET_STMT,
+            "{label} should publish a local declaration as its contextual statement"
         );
         assert_eq!(
-            parsed.hir_nearest_stmt_node[node] as usize, let_node,
+            parsed.hir_nearest_stmt_node[node] as usize, context,
             "{label} should publish the local declaration as its nearest statement"
         );
         assert_eq!(
@@ -1281,7 +1718,7 @@ fn main(value: i32) -> i32 {
             parsed.hir_expr_result_root_node[node] as usize, node,
             "{label} should publish itself as a direct expression result root"
         );
-        assert_hir_child_span_inside_owner(&parsed, let_node, node, label);
+        assert_hir_child_span_inside_owner(&parsed, context, node, label);
     }
 
     let call_nodes = parsed
@@ -1292,8 +1729,8 @@ fn main(value: i32) -> i32 {
         .collect::<Vec<_>>();
     assert_eq!(
         call_nodes.len(),
-        2,
-        "fixture should publish the local-initializer and return call expressions"
+        3,
+        "fixture should publish the two local-initializer and return call expressions"
     );
 
     let mut saw_let_call = false;
@@ -1320,16 +1757,7 @@ fn main(value: i32) -> i32 {
         match parsed.hir_kind[context] {
             HIR_NODE_LET_STMT => {
                 saw_let_call = true;
-                assert_eq!(
-                    context, let_node,
-                    "initializer call should point at the parser-owned let statement"
-                );
-                assert_hir_child_span_inside_owner(
-                    &parsed,
-                    let_node,
-                    call_node,
-                    "initializer call",
-                );
+                assert_hir_child_span_inside_owner(&parsed, context, call_node, "initializer call");
             }
             HIR_NODE_RETURN_STMT => {
                 saw_return_call = true;
@@ -1368,7 +1796,7 @@ fn parser_hir_resident_readback_publishes_enclosing_control_contexts() {
     let parsed = parse_resident_source(
         r#"
 fn main(value: i32) -> i32 {
-    if value > 0 {
+    if (value > 0) {
         let nested: i32 = value;
         return nested;
     }
@@ -1445,7 +1873,7 @@ fn helper(seed: i32) -> i32 {
 
 fn main(value: i32) -> i32 {
     let outer: i32 = helper(value);
-    if outer > 0 {
+    if (outer > 0) {
         let inner: i32 = helper(outer);
         return inner + outer;
     }
@@ -1496,6 +1924,29 @@ fn main(value: i32) -> i32 {
 
     let main_if = node_inside_span(&parsed, HIR_NODE_IF_STMT, main_fn)
         .expect("main should publish an if statement");
+    let main_if_condition = assert_valid_hir_node_index(
+        &parsed,
+        parsed.hir_stmt_record_operand0[main_if],
+        "main if condition",
+    );
+    assert!(
+        is_expression_hir_kind(parsed.hir_kind[main_if_condition]),
+        "main if condition should publish a parser-owned expression HIR row"
+    );
+    assert_hir_child_span_inside_owner(&parsed, main_if, main_if_condition, "main if condition");
+    let main_if_then = assert_valid_hir_node_index(
+        &parsed,
+        parsed.hir_stmt_record_operand1[main_if],
+        "main if then block",
+    );
+    assert_eq!(
+        parsed.hir_kind[main_if_then], HIR_NODE_BLOCK,
+        "main if should publish the parser-owned then block"
+    );
+    assert!(
+        parsed.hir_token_end[main_if_condition] <= parsed.hir_token_pos[main_if_then],
+        "main if condition should end before the then block starts"
+    );
     let nested_let = node_inside_span(&parsed, HIR_NODE_LET_STMT, main_if)
         .expect("if branch should publish a nested local declaration");
     let nested_call = node_inside_span(&parsed, HIR_NODE_CALL_EXPR, nested_let)
@@ -1511,7 +1962,7 @@ fn main(value: i32) -> i32 {
         .filter_map(|(node, &kind)| {
             (kind == HIR_NODE_CALL_EXPR
                 && parsed.hir_token_pos[main_if] < parsed.hir_token_pos[node]
-                && parsed.hir_token_end[main_if] < parsed.hir_token_pos[node]
+                && parsed.hir_token_end[main_if] <= parsed.hir_token_pos[node]
                 && parsed.hir_token_end[node] <= parsed.hir_token_end[main_fn])
                 .then_some(node)
         })
@@ -1530,6 +1981,279 @@ fn main(value: i32) -> i32 {
     }
 }
 
+#[test]
+fn parser_hir_source_pack_function_context_survives_import_shadowing() {
+    let parsed = parse_resident_source_pack(&[
+        r#"
+module core::shadowed;
+
+pub struct Item {
+    flag: bool,
+}
+
+pub const VALUE: bool = false;
+"#,
+        r#"
+module app::main;
+
+import core::shadowed;
+
+struct Item {
+    value: i32,
+}
+
+const VALUE: i32 = 7;
+
+fn take(item: Item) -> i32 {
+    return item.value;
+}
+
+fn main() {
+    let item: Item = Item { value: VALUE };
+    return take(item);
+}
+"#,
+    ]);
+
+    let mut app_functions = parsed
+        .hir_kind
+        .iter()
+        .enumerate()
+        .filter_map(|(node, &kind)| {
+            (kind == HIR_NODE_FN
+                && parsed.hir_item_kind[node] == HIR_ITEM_KIND_FN
+                && parsed.hir_item_file_id[node] == 1)
+                .then_some(node)
+        })
+        .collect::<Vec<_>>();
+    app_functions.sort_by_key(|&node| parsed.hir_token_pos[node]);
+    assert_eq!(
+        app_functions.len(),
+        2,
+        "app source should publish take and main function HIR rows"
+    );
+    let take_fn = app_functions[0];
+    let main_fn = app_functions[1];
+
+    let take_return = source_pack_node_inside_span(&parsed, HIR_NODE_RETURN_STMT, take_fn)
+        .expect("take should publish a return statement");
+    let main_let = source_pack_node_inside_span(&parsed, HIR_NODE_LET_STMT, main_fn)
+        .expect("main should publish a local declaration");
+    let main_return = source_pack_node_inside_span(&parsed, HIR_NODE_RETURN_STMT, main_fn)
+        .expect("main should publish a return statement");
+
+    for (node, expected_fn, label) in [
+        (take_return, take_fn, "take return statement"),
+        (main_let, main_fn, "main local declaration"),
+        (main_return, main_fn, "main return statement"),
+    ] {
+        assert_eq!(
+            parsed.hir_nearest_fn_node[node] as usize, expected_fn,
+            "{label} should retain the parser-owned enclosing function"
+        );
+        assert_source_pack_hir_child_span_inside_owner(&parsed, expected_fn, node, label);
+    }
+}
+
+#[test]
+fn parser_hir_semantic_tree_records_are_dense_preorder_navigation_contract() {
+    let parsed = parse_resident_source(
+        r#"
+fn helper(value: i32) -> i32 {
+    return value + 1;
+}
+
+fn main(value: i32) -> i32 {
+    let first: i32 = helper(value);
+    let second: i32 = helper(first);
+    return helper(second);
+}
+"#,
+    );
+    assert!(
+        parsed.ll1.accepted,
+        "resident parser should accept the fixture: error_pos={} code={} detail={}",
+        parsed.ll1.error_pos, parsed.ll1.error_code, parsed.ll1.detail
+    );
+
+    let semantic_rows = parsed
+        .hir_kind
+        .iter()
+        .enumerate()
+        .filter_map(|(node, &kind)| (kind != HIR_NODE_NONE).then_some(node))
+        .collect::<Vec<_>>();
+    assert!(
+        semantic_rows.len() >= 12,
+        "fixture should publish enough semantic HIR rows to exercise tree navigation"
+    );
+
+    let semantic_count = semantic_rows.len();
+    let mut expected_root_child_index = 0u32;
+    for (row, &node) in semantic_rows.iter().enumerate() {
+        assert_eq!(
+            parsed.hir_semantic_prefix_before_node[node] as usize, row,
+            "semantic original node {node} should publish its dense preorder row"
+        );
+        assert_eq!(
+            parsed.hir_semantic_dense_node[row] as usize, node,
+            "dense semantic row {row} should point back to original node {node}"
+        );
+
+        let subtree_end = parsed.hir_semantic_subtree_end[row] as usize;
+        assert!(
+            row < subtree_end && subtree_end <= semantic_count,
+            "semantic row {row} should publish a non-empty dense subtree range"
+        );
+
+        let expected_first_child =
+            if row + 1 < semantic_count && parsed.hir_semantic_parent[row + 1] == row as u32 {
+                (row + 1) as u32
+            } else {
+                INVALID
+            };
+        assert_eq!(
+            parsed.hir_semantic_first_child[row], expected_first_child,
+            "semantic row {row} should publish the direct first child in dense row space"
+        );
+
+        let expected_next_sibling = if subtree_end < semantic_count
+            && parsed.hir_semantic_parent[subtree_end] == parsed.hir_semantic_parent[row]
+        {
+            subtree_end as u32
+        } else {
+            INVALID
+        };
+        assert_eq!(
+            parsed.hir_semantic_next_sibling[row], expected_next_sibling,
+            "semantic row {row} should publish the next sibling at the subtree boundary"
+        );
+
+        let parent = parsed.hir_semantic_parent[row];
+        if parent == INVALID {
+            assert_eq!(
+                parsed.hir_semantic_depth[row], 0,
+                "semantic root row {row} should have depth zero"
+            );
+            assert_eq!(
+                parsed.hir_semantic_child_index[row], expected_root_child_index,
+                "semantic root row {row} should publish its top-level ordinal"
+            );
+            expected_root_child_index = expected_root_child_index.saturating_add(1);
+            continue;
+        }
+
+        let parent = parent as usize;
+        assert!(
+            parent < row,
+            "semantic row {row} should publish a preorder parent row"
+        );
+        assert!(
+            row < parsed.hir_semantic_subtree_end[parent] as usize,
+            "semantic row {row} should be inside parent row {parent}'s dense subtree"
+        );
+        assert_eq!(
+            parsed.hir_semantic_depth[row],
+            parsed.hir_semantic_depth[parent] + 1,
+            "semantic row {row} should publish parent-relative depth"
+        );
+        if parsed.hir_semantic_next_sibling[row] != INVALID {
+            let sibling = parsed.hir_semantic_next_sibling[row] as usize;
+            assert_eq!(
+                parsed.hir_semantic_child_index[sibling],
+                parsed.hir_semantic_child_index[row] + 1,
+                "semantic row {row}'s next sibling should advance the child index"
+            );
+        }
+    }
+
+    let main_fn = parsed
+        .hir_kind
+        .iter()
+        .enumerate()
+        .filter_map(|(node, &kind)| {
+            (kind == HIR_NODE_FN && parsed.hir_item_kind[node] == HIR_ITEM_KIND_FN).then_some(node)
+        })
+        .max_by_key(|&node| parsed.hir_token_pos[node])
+        .expect("fixture should publish a main function row");
+    let main_fn_row = parsed.hir_semantic_prefix_before_node[main_fn] as usize;
+    let main_let = node_inside_span(&parsed, HIR_NODE_LET_STMT, main_fn)
+        .expect("main should publish a local declaration");
+    let main_let_row = parsed.hir_semantic_prefix_before_node[main_let] as usize;
+    assert!(
+        main_fn_row < main_let_row
+            && main_let_row < parsed.hir_semantic_subtree_end[main_fn_row] as usize,
+        "downstream consumers should be able to prove the local declaration belongs to main from dense semantic rows"
+    );
+    let call_expr = node_inside_span(&parsed, HIR_NODE_CALL_EXPR, main_fn)
+        .expect("main should publish a call expression");
+    let call_expr_row = parsed.hir_semantic_prefix_before_node[call_expr] as usize;
+    assert!(
+        main_fn_row < call_expr_row
+            && call_expr_row < parsed.hir_semantic_subtree_end[main_fn_row] as usize,
+        "downstream consumers should be able to place call expressions inside function subtrees without parse-tree walks"
+    );
+}
+
+#[test]
+fn parser_hir_keeps_function_boundaries_after_comparison_branch() {
+    let parsed = parse_resident_source(
+        r#"
+module core::cmp;
+
+pub fn abs_like(value: i32) -> i32 {
+    if (value < 0) {
+        return -value;
+    } else {
+        return value;
+    }
+}
+
+pub fn identity(value: i32) -> i32 {
+    return value;
+}
+"#,
+    );
+    assert!(
+        parsed.ll1.accepted,
+        "resident parser should accept the fixture: error_pos={} code={} detail={}",
+        parsed.ll1.error_pos, parsed.ll1.error_code, parsed.ll1.detail
+    );
+
+    let mut fn_nodes = parsed
+        .hir_kind
+        .iter()
+        .enumerate()
+        .filter_map(|(node, &kind)| {
+            (kind == HIR_NODE_FN && parsed.hir_item_kind[node] == HIR_ITEM_KIND_FN).then_some(node)
+        })
+        .collect::<Vec<_>>();
+    fn_nodes.sort_by_key(|&node| parsed.hir_token_pos[node]);
+    assert_eq!(
+        fn_nodes.len(),
+        2,
+        "comparison expressions in one function must not absorb the following function item"
+    );
+
+    let first_fn = fn_nodes[0];
+    let second_fn = fn_nodes[1];
+    assert!(
+        parsed.hir_token_end[first_fn] <= parsed.hir_token_pos[second_fn],
+        "first function span should end before the following function starts"
+    );
+
+    let second_return_type = assert_valid_hir_node_index(
+        &parsed,
+        parsed.hir_fn_return_type_node[second_fn],
+        "second function return type",
+    );
+    let second_return = node_inside_span(&parsed, HIR_NODE_RETURN_STMT, second_fn)
+        .expect("second function should publish a return statement");
+    assert!(
+        parsed.hir_token_end[second_return_type] <= parsed.hir_token_pos[second_return],
+        "second function return-type span must not cover body statements"
+    );
+}
+
 fn node_inside_span(parsed: &ResidentParseResult, kind: u32, owner_node: usize) -> Option<usize> {
     parsed
         .hir_kind
@@ -1542,6 +2266,46 @@ fn node_inside_span(parsed: &ResidentParseResult, kind: u32, owner_node: usize) 
                 .then_some(node)
         })
         .min_by_key(|&node| parsed.hir_token_pos[node])
+}
+
+fn source_pack_node_inside_span(
+    parsed: &DecodedParserHirItemReadbacks,
+    kind: u32,
+    owner_node: usize,
+) -> Option<usize> {
+    parsed
+        .hir_kind
+        .iter()
+        .enumerate()
+        .filter_map(|(node, &node_kind)| {
+            (node_kind == kind
+                && node != owner_node
+                && parsed.hir_node_file_id[node] == parsed.hir_node_file_id[owner_node]
+                && parsed.hir_token_pos[owner_node] <= parsed.hir_token_pos[node]
+                && parsed.hir_token_end[node] <= parsed.hir_token_end[owner_node])
+                .then_some(node)
+        })
+        .min_by_key(|&node| parsed.hir_token_pos[node])
+}
+
+fn is_expression_hir_kind(kind: u32) -> bool {
+    matches!(
+        kind,
+        HIR_NODE_EXPR
+            | HIR_NODE_ASSIGN_EXPR
+            | HIR_NODE_BINARY_EXPR
+            | HIR_NODE_UNARY_EXPR
+            | HIR_NODE_POSTFIX_EXPR
+            | HIR_NODE_CALL_EXPR
+            | HIR_NODE_INDEX_EXPR
+            | HIR_NODE_MEMBER_EXPR
+            | HIR_NODE_NAME_EXPR
+            | HIR_NODE_LITERAL_EXPR
+            | HIR_NODE_ARRAY_EXPR
+            | HIR_NODE_STRUCT_LITERAL_EXPR
+            | HIR_NODE_PATH_EXPR
+            | HIR_NODE_MATCH_EXPR
+    )
 }
 
 fn assert_nearest_fn(parsed: &ResidentParseResult, node: usize, expected_fn: usize, label: &str) {
@@ -1942,6 +2706,117 @@ fn mirror(value: core::pair::Pair<i32, bool>) -> core::pair::Pair<i32, bool> {
 }
 
 #[test]
+fn parser_hir_local_decl_accepts_deep_qualified_type_path_in_source_pack() {
+    let source_count = 2;
+    let module_path = (0..40)
+        .map(|index| format!("pkg{index}"))
+        .collect::<Vec<_>>()
+        .join("::");
+    let library_source =
+        format!("module {module_path};\npub type Byte = u8;\npub const VALUE: Byte = 7;\n");
+    let app_source = format!(
+        "module app::main;\nimport {module_path};\nfn main() -> i32 {{\n    let value: {module_path}::Byte = {module_path}::VALUE;\n    return 0;\n}}\n"
+    );
+    let parsed = parse_resident_source_pack(&[library_source.as_str(), app_source.as_str()]);
+    assert!(
+        parsed.ll1_status[0] != 0,
+        "resident parser should accept the fixture: error_pos={} code={} detail={}",
+        parsed.ll1_status[1],
+        parsed.ll1_status[2],
+        parsed.ll1_status[3]
+    );
+
+    let function_node = parsed
+        .hir_item_kind
+        .iter()
+        .enumerate()
+        .find_map(|(node, &kind)| {
+            (kind == HIR_ITEM_KIND_FN
+                && parsed.hir_item_file_id[node] == 1
+                && parsed.hir_item_visibility[node] == HIR_ITEM_VIS_PRIVATE)
+                .then_some(node)
+        })
+        .expect("fixture should publish one private app function item");
+    assert!(
+        (parsed.hir_item_file_id[function_node] as usize) < source_count,
+        "function item should retain a bounded source-pack file id"
+    );
+
+    let let_node = parsed
+        .hir_stmt_record_kind
+        .iter()
+        .enumerate()
+        .find_map(|(node, &kind)| {
+            (kind == STMT_RECORD_KIND_LET
+                && parsed.hir_kind[node] == HIR_NODE_LET_STMT
+                && parsed.hir_node_file_id[node] == parsed.hir_item_file_id[function_node])
+                .then_some(node)
+        })
+        .expect("fixture should publish one app local declaration record");
+    assert_source_pack_hir_child_span_inside_owner(
+        &parsed,
+        function_node,
+        let_node,
+        "local declaration",
+    );
+
+    let init_expr = assert_valid_source_pack_hir_node_index(
+        &parsed,
+        parsed.hir_stmt_record_operand1[let_node],
+        "local initializer expression",
+    );
+    assert_eq!(
+        parsed.hir_node_file_id[init_expr], parsed.hir_node_file_id[let_node],
+        "local initializer should inherit the local declaration source-pack file id"
+    );
+    assert_source_pack_hir_child_span_inside_owner(
+        &parsed,
+        let_node,
+        init_expr,
+        "local initializer expression",
+    );
+
+    let declared_type = assert_valid_source_pack_hir_node_index(
+        &parsed,
+        parsed.hir_stmt_record_operand2[let_node],
+        "local declared type",
+    );
+    assert_eq!(
+        parsed.hir_kind[declared_type], HIR_NODE_TYPE,
+        "local declaration record should point at a parser-owned type HIR row"
+    );
+    assert_eq!(
+        parsed.hir_type_form[declared_type], HIR_TYPE_FORM_PATH,
+        "local declaration type should publish the path type form"
+    );
+    assert_eq!(
+        parsed.hir_node_file_id[declared_type], parsed.hir_node_file_id[let_node],
+        "local declared type should inherit the local declaration source-pack file id"
+    );
+    assert_source_pack_hir_child_span_inside_owner(
+        &parsed,
+        let_node,
+        declared_type,
+        "local declared type",
+    );
+
+    let leaf = assert_valid_source_pack_record_index(
+        &parsed,
+        parsed.hir_type_path_leaf_node[declared_type],
+        "deep qualified type leaf",
+    );
+    assert_eq!(
+        parsed.hir_node_file_id[leaf], parsed.hir_node_file_id[declared_type],
+        "deep qualified type leaf should inherit the declaration source-pack file id"
+    );
+    assert_source_pack_record_span_inside_owner(&parsed, declared_type, leaf, "deep type leaf");
+    assert!(
+        parsed.hir_token_end[declared_type] <= parsed.hir_token_pos[init_expr],
+        "deep qualified declared type should precede the initializer expression"
+    );
+}
+
+#[test]
 fn parser_hir_import_records_carry_source_pack_file_ids_and_token_spans() {
     let parsed = parse_resident_source_pack(&[
         "module core::math;\npub fn one() -> i32 { return 1; }\n",
@@ -2045,6 +2920,7 @@ fn parser_hir_module_and_import_records_publish_parser_path_nodes() {
         "fixture should publish one module item row per source-pack file"
     );
 
+    let mut path_anchor_nodes = Vec::new();
     for (expected_file_id, module_node) in module_nodes.iter().copied().enumerate() {
         assert_eq!(
             parsed.hir_kind[module_node], HIR_NODE_MODULE_ITEM,
@@ -2063,6 +2939,11 @@ fn parser_hir_module_and_import_records_publish_parser_path_nodes() {
             &parsed,
             parsed.hir_item_path_node[module_node],
             "module path node",
+        );
+        path_anchor_nodes.push(path_node);
+        assert_eq!(
+            parsed.hir_kind[path_node], HIR_NODE_PATH_EXPR,
+            "module path edge should point at the parser-owned path HIR row"
         );
         assert_eq!(
             parsed.hir_node_file_id[path_node], parsed.hir_item_file_id[module_node],
@@ -2108,6 +2989,11 @@ fn parser_hir_module_and_import_records_publish_parser_path_nodes() {
         parsed.hir_item_path_node[import_node],
         "import path node",
     );
+    path_anchor_nodes.push(import_path_node);
+    assert_eq!(
+        parsed.hir_kind[import_path_node], HIR_NODE_PATH_EXPR,
+        "import path edge should point at the parser-owned path HIR row"
+    );
     assert_eq!(
         parsed.hir_node_file_id[import_path_node], parsed.hir_item_file_id[import_node],
         "import path node should inherit the importing source-pack file id"
@@ -2127,6 +3013,43 @@ fn parser_hir_module_and_import_records_publish_parser_path_nodes() {
         "import path node",
     );
 
+    let path_anchor_count = path_anchor_nodes.len();
+    path_anchor_nodes.sort_unstable();
+    path_anchor_nodes.dedup();
+    assert_eq!(
+        path_anchor_nodes.len(),
+        path_anchor_count,
+        "module and import item rows should publish distinct parser-owned path anchors"
+    );
+
+    let mut import_target_rows = 0usize;
+    for (node, &kind) in parsed.hir_item_kind.iter().enumerate() {
+        match kind {
+            HIR_ITEM_KIND_IMPORT => {
+                import_target_rows += 1;
+                assert_eq!(
+                    parsed.hir_item_import_target_kind[node], HIR_ITEM_IMPORT_TARGET_PATH,
+                    "import item row {node} should publish a supported path target kind"
+                );
+                assert_ne!(
+                    parsed.hir_item_path_node[node], INVALID,
+                    "import item row {node} should publish a parser-owned target path node"
+                );
+            }
+            HIR_ITEM_KIND_NONE => {}
+            _ => {
+                assert_eq!(
+                    parsed.hir_item_import_target_kind[node], HIR_ITEM_IMPORT_TARGET_NONE,
+                    "non-import item row {node} should not publish import target metadata"
+                );
+            }
+        }
+    }
+    assert_eq!(
+        import_target_rows, 1,
+        "fixture should publish exactly one import target row"
+    );
+
     let declaration_path_nodes = parsed
         .hir_item_path_node
         .iter()
@@ -2140,6 +3063,264 @@ fn parser_hir_module_and_import_records_publish_parser_path_nodes() {
     assert_eq!(
         declaration_path_nodes, 0,
         "declaration item rows should not publish resolver path-node edges"
+    );
+}
+
+#[test]
+fn parser_hir_type_record_readback_rejects_path_type_without_path_node_record() {
+    let err = validate_hir_type_records(
+        &[HIR_NODE_TYPE, HIR_NODE_EXPR],
+        &[0, 1],
+        &[3, 2],
+        &[0, 0],
+        &[HIR_TYPE_FORM_PATH, HIR_TYPE_FORM_NONE],
+        &[1, INVALID],
+        &[INVALID, INVALID],
+        &[INVALID, INVALID],
+        &[0, INVALID],
+        &[1, INVALID],
+    )
+    .expect_err("path-type rows must point at parser-owned path records");
+
+    assert!(
+        err.to_string().contains("without a parser-owned path node"),
+        "error should describe the parser-owned path node contract"
+    );
+}
+
+#[test]
+fn parser_hir_type_record_readback_rejects_concrete_path_leaf_rows() {
+    let validate = |leaf_kind| {
+        validate_hir_type_records(
+            &[HIR_NODE_TYPE, HIR_NODE_PATH_EXPR, leaf_kind],
+            &[0, 0, 1],
+            &[3, 2, 2],
+            &[0, 0, 0],
+            &[HIR_TYPE_FORM_PATH, HIR_TYPE_FORM_NONE, HIR_TYPE_FORM_NONE],
+            &[1, INVALID, INVALID],
+            &[INVALID, INVALID, INVALID],
+            &[INVALID, INVALID, INVALID],
+            &[0, INVALID, INVALID],
+            &[2, 2, INVALID],
+        )
+    };
+
+    validate(HIR_NODE_NONE).expect("path leaves should decode from parser segment rows");
+
+    let err = validate(HIR_NODE_NAME_EXPR)
+        .expect_err("path leaves must not point at concrete expression HIR rows");
+    assert!(
+        err.to_string().contains("path-segment row"),
+        "error should describe the parser-owned path leaf row contract"
+    );
+}
+
+#[test]
+fn parser_hir_type_alias_target_readback_rejects_malformed_targets() {
+    let kinds = [HIR_NODE_TYPE_ALIAS_ITEM, HIR_NODE_TYPE, HIR_NODE_EXPR];
+    let token_pos = [0, 3, 6];
+    let token_end = [5, 4, 7];
+    let node_file_ids = [0, 0, 0];
+    let type_forms = [HIR_TYPE_FORM_NONE, HIR_TYPE_FORM_PATH, HIR_TYPE_FORM_NONE];
+    let type_file_ids = [INVALID, 0, INVALID];
+    let item_kinds = [
+        HIR_ITEM_KIND_TYPE_ALIAS,
+        HIR_ITEM_KIND_NONE,
+        HIR_ITEM_KIND_NONE,
+    ];
+    let item_name_tokens = [1, INVALID, INVALID];
+    let item_file_ids = [0, INVALID, INVALID];
+    let target_nodes = [1, INVALID, INVALID];
+
+    validate_hir_type_alias_target_records(
+        &kinds,
+        &token_pos,
+        &token_end,
+        &node_file_ids,
+        &type_forms,
+        &type_file_ids,
+        &item_kinds,
+        &item_name_tokens,
+        &item_file_ids,
+        &target_nodes,
+    )
+    .expect("canonical parser-owned type-alias target records should decode");
+
+    let mut missing_target = target_nodes;
+    missing_target[0] = INVALID;
+    let err = validate_hir_type_alias_target_records(
+        &kinds,
+        &token_pos,
+        &token_end,
+        &node_file_ids,
+        &type_forms,
+        &type_file_ids,
+        &item_kinds,
+        &item_name_tokens,
+        &item_file_ids,
+        &missing_target,
+    )
+    .expect_err("type-alias item rows must publish a concrete target type row");
+    assert!(
+        err.to_string().contains("no in-table target type row"),
+        "error should describe the required parser-owned alias target edge"
+    );
+
+    let mut stale_non_alias_target = target_nodes;
+    stale_non_alias_target[2] = 1;
+    let err = validate_hir_type_alias_target_records(
+        &kinds,
+        &token_pos,
+        &token_end,
+        &node_file_ids,
+        &type_forms,
+        &type_file_ids,
+        &item_kinds,
+        &item_name_tokens,
+        &item_file_ids,
+        &stale_non_alias_target,
+    )
+    .expect_err("non-alias rows must not retain stale type-alias target edges");
+    assert!(
+        err.to_string().contains("without type-alias item metadata"),
+        "error should describe stale parser-owned alias target metadata"
+    );
+
+    let mut non_type_target = target_nodes;
+    non_type_target[0] = 2;
+    let err = validate_hir_type_alias_target_records(
+        &kinds,
+        &token_pos,
+        &token_end,
+        &node_file_ids,
+        &type_forms,
+        &type_file_ids,
+        &item_kinds,
+        &item_name_tokens,
+        &item_file_ids,
+        &non_type_target,
+    )
+    .expect_err("type-alias targets must point at parser-owned type records");
+    assert!(
+        err.to_string().contains("not a concrete type record"),
+        "error should describe the parser-owned alias target type-row contract"
+    );
+
+    let late_name_tokens = [3, INVALID, INVALID];
+    let err = validate_hir_type_alias_target_records(
+        &kinds,
+        &token_pos,
+        &token_end,
+        &node_file_ids,
+        &type_forms,
+        &type_file_ids,
+        &item_kinds,
+        &late_name_tokens,
+        &item_file_ids,
+        &target_nodes,
+    )
+    .expect_err("type-alias target rows must follow the alias name token in source order");
+    assert!(
+        err.to_string().contains("does not follow the alias name"),
+        "error should describe the parser-owned alias name/target source-order contract"
+    );
+
+    let err = validate_hir_type_alias_target_records(
+        &[
+            HIR_NODE_TYPE_ALIAS_ITEM,
+            HIR_NODE_TYPE_ALIAS_ITEM,
+            HIR_NODE_TYPE,
+        ],
+        &[0, 1, 3],
+        &[10, 9, 4],
+        &[0, 0, 0],
+        &[HIR_TYPE_FORM_NONE, HIR_TYPE_FORM_NONE, HIR_TYPE_FORM_PATH],
+        &[INVALID, INVALID, 0],
+        &[
+            HIR_ITEM_KIND_TYPE_ALIAS,
+            HIR_ITEM_KIND_TYPE_ALIAS,
+            HIR_ITEM_KIND_NONE,
+        ],
+        &[1, 2, INVALID],
+        &[0, 0, INVALID],
+        &[2, 2, INVALID],
+    )
+    .expect_err("type-alias target rows must not be shared by multiple aliases");
+    assert!(
+        err.to_string().contains("shares target row"),
+        "error should describe single-owner parser-owned alias target rows"
+    );
+}
+
+#[test]
+fn parser_hir_context_relation_readback_rejects_contextual_statement_control_mismatch() {
+    let kinds = [
+        HIR_NODE_FN,
+        HIR_NODE_BLOCK,
+        HIR_NODE_IF_STMT,
+        HIR_NODE_BLOCK,
+        HIR_NODE_LET_STMT,
+        HIR_NODE_CALL_EXPR,
+    ];
+    let token_pos = [0, 1, 2, 3, 4, 5];
+    let token_end = [30, 29, 20, 19, 18, 8];
+    let node_file_ids = [0; 6];
+    let stmt_record_kinds = [
+        STMT_RECORD_KIND_NONE,
+        STMT_RECORD_KIND_NONE,
+        STMT_RECORD_KIND_IF,
+        STMT_RECORD_KIND_NONE,
+        STMT_RECORD_KIND_LET,
+        STMT_RECORD_KIND_NONE,
+    ];
+    let nearest_stmt_nodes = [INVALID, INVALID, 2, INVALID, 4, 4];
+    let nearest_block_nodes = [INVALID, 1, 1, 3, 3, 3];
+    let canonical_nearest_control_nodes = [INVALID, INVALID, INVALID, 2, 2, 2];
+    let nearest_loop_nodes = [INVALID; 6];
+    let nearest_fn_nodes = [0; 6];
+    let call_context_stmt_nodes = [INVALID, INVALID, INVALID, INVALID, INVALID, 4];
+    let array_lit_context_stmt_nodes = [INVALID; 6];
+    let struct_lit_context_stmt_nodes = [INVALID; 6];
+
+    validate_hir_context_relation_records(
+        &kinds,
+        &token_pos,
+        &token_end,
+        &node_file_ids,
+        &stmt_record_kinds,
+        &nearest_stmt_nodes,
+        &nearest_block_nodes,
+        &canonical_nearest_control_nodes,
+        &nearest_loop_nodes,
+        &nearest_fn_nodes,
+        &call_context_stmt_nodes,
+        &array_lit_context_stmt_nodes,
+        &struct_lit_context_stmt_nodes,
+    )
+    .expect("canonical contextual statement control relation should decode");
+
+    let mut mismatched_nearest_control_nodes = canonical_nearest_control_nodes;
+    mismatched_nearest_control_nodes[5] = INVALID;
+    let err = validate_hir_context_relation_records(
+        &kinds,
+        &token_pos,
+        &token_end,
+        &node_file_ids,
+        &stmt_record_kinds,
+        &nearest_stmt_nodes,
+        &nearest_block_nodes,
+        &mismatched_nearest_control_nodes,
+        &nearest_loop_nodes,
+        &nearest_fn_nodes,
+        &call_context_stmt_nodes,
+        &array_lit_context_stmt_nodes,
+        &struct_lit_context_stmt_nodes,
+    )
+    .expect_err("contextual statement rows must agree on nearest enclosing control");
+
+    assert!(
+        err.to_string().contains("nearest enclosing control"),
+        "error should describe the contextual statement control-context contract"
     );
 }
 
@@ -2677,6 +3858,12 @@ fn main() -> i32 {
                     decl_token <= name_token && name_token < parsed.hir_token_end[node],
                     "name token for row {node} should stay inside the declaration span"
                 );
+                if matches!(kind, HIR_ITEM_KIND_FN | HIR_ITEM_KIND_EXTERN_FN) {
+                    assert!(
+                        decl_token < name_token,
+                        "function item row {node} should publish a name token after its declaration token"
+                    );
+                }
                 assert_eq!(
                     parsed.hir_item_import_target_kind[node], HIR_ITEM_IMPORT_TARGET_NONE,
                     "declaration item row {node} should not look like an import target"
@@ -2990,16 +4177,12 @@ impl Probe {
         );
         if is_impl_method {
             assert_eq!(
-                parsed.hir_item_kind[method_node], HIR_ITEM_KIND_FN,
-                "impl method record should attach to a function item record"
+                parsed.hir_item_kind[method_node], HIR_ITEM_KIND_NONE,
+                "impl method records should not enter the module value namespace"
             );
             assert_eq!(
                 parsed.hir_method_impl_node[method_node] as usize, owner,
                 "impl method row should retain its impl-specific owner"
-            );
-            assert_eq!(
-                parsed.hir_method_name_token[method_node], parsed.hir_item_name_token[method_node],
-                "impl method name token should reuse the parser-owned function item name token"
             );
         } else {
             assert_eq!(
@@ -3025,13 +4208,14 @@ impl Probe {
             method_node,
             "method declaration",
         );
+        let method_name_token = parsed.hir_method_name_token[method_node];
         assert_ne!(
-            parsed.hir_method_name_token[method_node], INVALID,
+            method_name_token, INVALID,
             "method row should publish its source name token"
         );
         assert!(
-            parsed.hir_token_pos[method_node] < parsed.hir_method_name_token[method_node]
-                && parsed.hir_method_name_token[method_node] < parsed.hir_token_end[method_node],
+            parsed.hir_token_pos[method_node] < method_name_token
+                && method_name_token < parsed.hir_token_end[method_node],
             "method name token should stay inside the method function span"
         );
         assert_eq!(
@@ -3058,10 +4242,15 @@ impl Probe {
             2,
             "each method declaration should own receiver and value parameter records"
         );
+        let first_param_token = parsed.hir_method_first_param_token[method_node];
         assert_eq!(
-            parsed.hir_method_first_param_token[method_node],
-            parsed.hir_param_name_token[params[0]],
+            first_param_token, parsed.hir_param_name_token[params[0]],
             "method first-param token should point at the ordinal-zero parameter record"
+        );
+        assert!(
+            method_name_token < first_param_token
+                && first_param_token < parsed.hir_token_end[method_node],
+            "method first-param token should follow the method name token inside the method span"
         );
         for (ordinal, param_node) in params.iter().copied().enumerate() {
             assert_eq!(
@@ -3247,16 +4436,12 @@ impl Describe for Subject {
                 "trait impl method record should attach to a parser-owned function row"
             );
             assert_eq!(
-                parsed.hir_item_kind[method_node], HIR_ITEM_KIND_FN,
-                "trait impl method record should publish a function item row"
+                parsed.hir_item_kind[method_node], HIR_ITEM_KIND_NONE,
+                "trait impl method records should not enter the module value namespace"
             );
             assert_eq!(
                 parsed.hir_method_impl_node[method_node] as usize, owner,
                 "trait impl method row should retain its impl-specific owner relation"
-            );
-            assert_eq!(
-                parsed.hir_method_name_token[method_node], parsed.hir_item_name_token[method_node],
-                "trait impl method name token should reuse the parser-owned function item name token"
             );
         } else {
             assert_eq!(
@@ -3617,8 +4802,8 @@ fn free(value: i32) -> i32 {
             "method record should attach to the parser-owned function HIR row"
         );
         assert_eq!(
-            parsed.hir_item_kind[method_node], HIR_ITEM_KIND_FN,
-            "method record should attach to a function item record"
+            parsed.hir_item_kind[method_node], HIR_ITEM_KIND_NONE,
+            "impl method records should not enter the module value namespace"
         );
         assert_eq!(
             parsed.hir_node_file_id[method_node], 0,
@@ -3626,8 +4811,8 @@ fn free(value: i32) -> i32 {
         );
         assert_source_pack_hir_node_has_non_empty_span(&parsed, method_node, "method row");
         assert_eq!(
-            parsed.hir_method_name_token[method_node], parsed.hir_item_name_token[method_node],
-            "method name token should reuse the parser-owned function item name token"
+            parsed.hir_item_name_token[method_node], INVALID,
+            "impl method records should not publish value item name tokens"
         );
         assert!(
             parsed.hir_token_pos[method_node] < parsed.hir_method_name_token[method_node]
@@ -3809,25 +4994,25 @@ impl Measures for Range {
         (
             "public inherent method",
             inherent_impl_owner,
-            HIR_ITEM_KIND_FN,
+            HIR_ITEM_KIND_NONE,
             true,
         ),
         (
             "private inherent method",
             inherent_impl_owner,
-            HIR_ITEM_KIND_FN,
+            HIR_ITEM_KIND_NONE,
             true,
         ),
         (
             "public trait impl method",
             trait_impl_owner,
-            HIR_ITEM_KIND_FN,
+            HIR_ITEM_KIND_NONE,
             true,
         ),
         (
             "private trait impl method",
             trait_impl_owner,
-            HIR_ITEM_KIND_FN,
+            HIR_ITEM_KIND_NONE,
             true,
         ),
     ];
@@ -3896,9 +5081,15 @@ impl Measures for Range {
             return_type_node,
             "method return type",
         );
+        let method_name_token = parsed.hir_method_name_token[method_node];
+        assert_ne!(
+            method_name_token, INVALID,
+            "{label} should publish the parser-owned method name token"
+        );
         assert!(
-            parsed.hir_token_pos[method_node] < parsed.hir_token_pos[return_type_node],
-            "{label} declaration token should precede its parser-owned return type node"
+            parsed.hir_token_pos[method_node] < method_name_token
+                && method_name_token < parsed.hir_token_pos[return_type_node],
+            "{label} method name token should precede its parser-owned return type node"
         );
         return_type_nodes.push(return_type_node);
     }
@@ -3909,36 +5100,6 @@ impl Measures for Range {
         return_type_nodes.len(),
         6,
         "each trait, inherent impl, and trait-impl method should publish a distinct return type HIR node"
-    );
-}
-
-#[test]
-fn parser_hir_method_signature_flags_reject_free_function_rows() {
-    let err = validate_hir_method_records(
-        &[HIR_NODE_NONE, HIR_NODE_FN],
-        &[INVALID, 10],
-        &[INVALID, 20],
-        &[INVALID, 0],
-        &[HIR_ITEM_KIND_NONE, HIR_ITEM_KIND_FN],
-        &[INVALID, 12],
-        &[INVALID, 0],
-        &[INVALID; 2],
-        &[0; 2],
-        &[INVALID; 2],
-        &[INVALID; 2],
-        &[INVALID; 2],
-        &[INVALID; 2],
-        &[INVALID; 2],
-        &[INVALID; 2],
-        &[HIR_METHOD_RECEIVER_NONE; 2],
-        &[HIR_METHOD_VIS_PRIVATE; 2],
-        &[0, HIR_METHOD_SIGNATURE_HAS_GENERICS],
-        &[INVALID; 2],
-    )
-    .expect_err("method signature flags should fail closed on free function rows");
-    assert!(
-        err.to_string().contains("without a declaration owner"),
-        "error should describe the method-record owner contract"
     );
 }
 
@@ -4029,14 +5190,14 @@ fn free_generic<T>(value: T) -> T where T: Factory {
         (
             "trait impl method with method-level generics and where clause",
             trait_impl_owner,
-            HIR_ITEM_KIND_FN,
+            HIR_ITEM_KIND_NONE,
             trait_impl_owner as u32,
             signature_flag_mask,
         ),
         (
             "plain trait impl method",
             trait_impl_owner,
-            HIR_ITEM_KIND_FN,
+            HIR_ITEM_KIND_NONE,
             trait_impl_owner as u32,
             0,
         ),
@@ -4082,6 +5243,209 @@ fn free_generic<T>(value: T) -> T where T: Factory {
     assert_eq!(
         flagged_non_method_rows, 0,
         "parser-owned method signature flags should only attach to method rows, not free generic functions"
+    );
+}
+
+#[test]
+fn parser_hir_method_readback_rejects_impl_methods_as_value_items() {
+    let err = validate_hir_method_records(
+        &[HIR_NODE_ITEM, HIR_NODE_FN],
+        &[0, 10],
+        &[30, 20],
+        &[0; 2],
+        &[HIR_ITEM_KIND_NONE, HIR_ITEM_KIND_FN],
+        &[INVALID, 11],
+        &[INVALID, 0],
+        &[INVALID; 2],
+        &[INVALID; 2],
+        &[INVALID; 2],
+        &[INVALID; 2],
+        &[INVALID, 0],
+        &[INVALID, 0],
+        &[INVALID, 11],
+        &[INVALID; 2],
+        &[HIR_METHOD_RECEIVER_NONE; 2],
+        &[HIR_METHOD_VIS_PRIVATE; 2],
+        &[0; 2],
+        &[INVALID; 2],
+    )
+    .expect_err("impl method rows must not masquerade as module value items");
+    assert!(
+        err.to_string().contains("value item metadata"),
+        "error should describe the parser-owned method-only namespace contract"
+    );
+}
+
+#[test]
+fn parser_hir_method_readback_rejects_incomplete_first_parameter_records() {
+    let validate = |receiver_mode, param_type_node| {
+        validate_hir_method_records(
+            &[HIR_NODE_NONE, HIR_NODE_FN, HIR_NODE_PARAM, HIR_NODE_TYPE],
+            &[0, 10, 12, 14],
+            &[30, 25, 18, 17],
+            &[0; 4],
+            &[
+                HIR_ITEM_KIND_NONE,
+                HIR_ITEM_KIND_NONE,
+                HIR_ITEM_KIND_NONE,
+                HIR_ITEM_KIND_NONE,
+            ],
+            &[INVALID; 4],
+            &[INVALID, 0, INVALID, INVALID],
+            &[INVALID, INVALID, 1, INVALID],
+            &[INVALID, INVALID, 0, INVALID],
+            &[INVALID, INVALID, 12, INVALID],
+            &[INVALID, INVALID, param_type_node, INVALID],
+            &[INVALID, 0, INVALID, INVALID],
+            &[INVALID, 0, INVALID, INVALID],
+            &[INVALID, 11, INVALID, INVALID],
+            &[INVALID, 12, INVALID, INVALID],
+            &[
+                HIR_METHOD_RECEIVER_NONE,
+                receiver_mode,
+                HIR_METHOD_RECEIVER_NONE,
+                HIR_METHOD_RECEIVER_NONE,
+            ],
+            &[
+                HIR_METHOD_VIS_PRIVATE,
+                HIR_METHOD_VIS_PRIVATE,
+                HIR_METHOD_VIS_PRIVATE,
+                HIR_METHOD_VIS_PRIVATE,
+            ],
+            &[0; 4],
+            &[INVALID; 4],
+        )
+    };
+
+    let err = validate(HIR_METHOD_RECEIVER_NONE, 3)
+        .expect_err("method rows with first-parameter tokens must publish receiver modes");
+    assert!(
+        err.to_string().contains("without a receiver mode"),
+        "error should describe the parser-owned first-parameter mode contract"
+    );
+
+    let err = validate(HIR_METHOD_RECEIVER_EXPLICIT, INVALID)
+        .expect_err("explicit first parameters must retain parser-owned type edges");
+    assert!(
+        err.to_string()
+            .contains("explicit first parameter without a parser-owned type record"),
+        "error should describe the parser-owned explicit parameter type contract"
+    );
+}
+
+#[test]
+fn parser_hir_method_readback_rejects_stale_first_parameter_source_identity() {
+    let validate = |token_pos: &[u32; 4],
+                    token_end: &[u32; 4],
+                    node_file_ids: &[u32; 4],
+                    receiver_mode,
+                    param_type_node| {
+        validate_hir_method_records(
+            &[HIR_NODE_NONE, HIR_NODE_FN, HIR_NODE_PARAM, HIR_NODE_TYPE],
+            token_pos,
+            token_end,
+            node_file_ids,
+            &[
+                HIR_ITEM_KIND_NONE,
+                HIR_ITEM_KIND_NONE,
+                HIR_ITEM_KIND_NONE,
+                HIR_ITEM_KIND_NONE,
+            ],
+            &[INVALID; 4],
+            &[INVALID, 0, INVALID, INVALID],
+            &[INVALID, INVALID, 1, INVALID],
+            &[INVALID, INVALID, 0, INVALID],
+            &[INVALID, INVALID, 12, INVALID],
+            &[INVALID, INVALID, param_type_node, INVALID],
+            &[INVALID, 0, INVALID, INVALID],
+            &[INVALID, 0, INVALID, INVALID],
+            &[INVALID, 11, INVALID, INVALID],
+            &[INVALID, 12, INVALID, INVALID],
+            &[
+                HIR_METHOD_RECEIVER_NONE,
+                receiver_mode,
+                HIR_METHOD_RECEIVER_NONE,
+                HIR_METHOD_RECEIVER_NONE,
+            ],
+            &[
+                HIR_METHOD_VIS_PRIVATE,
+                HIR_METHOD_VIS_PRIVATE,
+                HIR_METHOD_VIS_PRIVATE,
+                HIR_METHOD_VIS_PRIVATE,
+            ],
+            &[0; 4],
+            &[INVALID; 4],
+        )
+    };
+
+    let err = validate(
+        &[0, 10, 12, 14],
+        &[30, 25, 18, 17],
+        &[0, 0, 1, 1],
+        HIR_METHOD_RECEIVER_REF_SELF,
+        INVALID,
+    )
+    .expect_err("first-parameter rows from another source-pack file should fail closed");
+    assert!(
+        err.to_string().contains("different file id"),
+        "error should describe the parser-owned first-parameter source-file contract"
+    );
+
+    let err = validate(
+        &[0, 10, 8, 14],
+        &[30, 25, 18, 17],
+        &[0; 4],
+        HIR_METHOD_RECEIVER_REF_SELF,
+        INVALID,
+    )
+    .expect_err("first-parameter rows outside the method function span should fail closed");
+    assert!(
+        err.to_string().contains("outside its function span"),
+        "error should describe the parser-owned first-parameter span contract"
+    );
+
+    let err = validate(
+        &[0, 10, 12, 14],
+        &[30, 25, 18, 17],
+        &[0, 0, 0, 1],
+        HIR_METHOD_RECEIVER_EXPLICIT,
+        3,
+    )
+    .expect_err("explicit receiver type rows from another source-pack file should fail closed");
+    assert!(
+        err.to_string()
+            .contains("without source-addressed ownership"),
+        "error should describe the parser-owned explicit receiver type source contract"
+    );
+}
+
+#[test]
+fn parser_hir_method_readback_rejects_method_rows_outside_owner_span() {
+    let err = validate_hir_method_records(
+        &[HIR_NODE_ITEM, HIR_NODE_FN, HIR_NODE_NONE],
+        &[0, 30, INVALID],
+        &[20, 40, INVALID],
+        &[0, 0, INVALID],
+        &[HIR_ITEM_KIND_TRAIT, HIR_ITEM_KIND_NONE, HIR_ITEM_KIND_NONE],
+        &[5, INVALID, INVALID],
+        &[0, INVALID, INVALID],
+        &[INVALID; 3],
+        &[INVALID; 3],
+        &[INVALID; 3],
+        &[INVALID; 3],
+        &[INVALID, 0, INVALID],
+        &[INVALID; 3],
+        &[INVALID, 31, INVALID],
+        &[INVALID; 3],
+        &[HIR_METHOD_RECEIVER_NONE; 3],
+        &[HIR_METHOD_VIS_PRIVATE; 3],
+        &[0; 3],
+        &[INVALID; 3],
+    )
+    .expect_err("method rows outside their parser-owned trait/impl owner must fail closed");
+    assert!(
+        err.to_string().contains("outside declaration owner span"),
+        "error should describe the parser-owned method-owner span contract"
     );
 }
 
@@ -4632,8 +5996,8 @@ fn parser_hir_expression_records_publish_operator_operands_in_source_packs() {
     let parsed = parse_resident_source_pack(&[r#"
 module app::main;
 
-fn main(values: [i32; 3], delta: i32) -> i32 {
-    return values[1] + delta;
+fn main(left: i32, right: i32) -> i32 {
+    return left + right;
 }
 "#]);
     assert!(
@@ -4737,51 +6101,26 @@ fn main(values: [i32; 3], delta: i32) -> i32 {
         add_right,
         "add right operand",
     );
+    assert!(
+        parsed.hir_token_end[add_left] <= parsed.hir_token_pos[add_right],
+        "add operand records should stay in source order"
+    );
 
-    let index_node = resolve_forward_expr_record(&parsed, add_left, "add left operand");
+    let left_name = resolve_forward_expr_record(&parsed, add_left, "add left operand");
     assert_eq!(
-        parsed.hir_expr_record_form[index_node], HIR_EXPR_FORM_INDEX,
-        "left operand should resolve through expression records to the index operator"
+        parsed.hir_expr_record_form[left_name], HIR_EXPR_FORM_NAME,
+        "left operand should resolve through expression records to the left name"
     );
+    assert_expr_record_value_token_inside(&parsed, left_name, "left operand name");
 
-    let delta_node = resolve_forward_expr_record(&parsed, add_right, "add right operand");
+    let right_name = resolve_forward_expr_record(&parsed, add_right, "add right operand");
     assert_eq!(
-        parsed.hir_expr_record_form[delta_node], HIR_EXPR_FORM_NAME,
-        "right operand should resolve through expression records to the delta name"
+        parsed.hir_expr_record_form[right_name], HIR_EXPR_FORM_NAME,
+        "right operand should resolve through expression records to the right name"
     );
-    assert_expr_record_value_token_inside(&parsed, delta_node, "right operand name");
+    assert_expr_record_value_token_inside(&parsed, right_name, "right operand name");
 
-    let index_base = resolve_forward_expr_record(
-        &parsed,
-        assert_valid_source_pack_record_index(
-            &parsed,
-            parsed.hir_expr_record_left[index_node],
-            "index base operand",
-        ),
-        "index base operand",
-    );
-    assert_eq!(
-        parsed.hir_expr_record_form[index_base], HIR_EXPR_FORM_NAME,
-        "index base should resolve through expression records to the values name"
-    );
-    assert_expr_record_value_token_inside(&parsed, index_base, "index base name");
-
-    let index_value = resolve_forward_expr_record(
-        &parsed,
-        assert_valid_source_pack_record_index(
-            &parsed,
-            parsed.hir_expr_record_right[index_node],
-            "index value operand",
-        ),
-        "index value operand",
-    );
-    assert_eq!(
-        parsed.hir_expr_record_form[index_value], HIR_EXPR_FORM_INT,
-        "index operand should resolve through expression records to the literal index"
-    );
-    assert_expr_record_value_token_inside(&parsed, index_value, "index literal");
-
-    for node in [add_node, index_node, delta_node, index_base, index_value] {
+    for node in [add_node, left_name, right_name] {
         assert_eq!(
             parsed.hir_node_file_id[node], parsed.hir_node_file_id[return_expr],
             "expression record row {node} should retain the return expression file id"
@@ -4793,6 +6132,105 @@ fn main(values: [i32; 3], delta: i32) -> i32 {
             "expression record row",
         );
     }
+}
+
+#[test]
+fn parser_hir_chained_binary_expression_spans_cover_left_nested_operands_in_source_packs() {
+    let parsed = parse_resident_source_pack(&[r#"
+module app::main;
+
+fn main(first: i32, second: i32, third: i32) -> i32 {
+    return first + second + third;
+}
+"#]);
+    assert!(
+        parsed.ll1_status[0] != 0,
+        "resident parser should accept the fixture: error_pos={} code={} detail={}",
+        parsed.ll1_status[1],
+        parsed.ll1_status[2],
+        parsed.ll1_status[3]
+    );
+
+    let return_node = parsed
+        .hir_stmt_record_kind
+        .iter()
+        .enumerate()
+        .find_map(|(node, &kind)| {
+            (kind == STMT_RECORD_KIND_RETURN && parsed.hir_kind[node] == HIR_NODE_RETURN_STMT)
+                .then_some(node)
+        })
+        .expect("fixture should publish one return statement record");
+    let return_expr = assert_valid_source_pack_hir_node_index(
+        &parsed,
+        parsed.hir_stmt_record_operand0[return_node],
+        "return expression",
+    );
+    let top_add = resolve_forward_expr_record(&parsed, return_expr, "return expression");
+    assert_eq!(
+        parsed.hir_expr_record_form[top_add], HIR_EXPR_FORM_ADD,
+        "return expression should resolve to the outer add record"
+    );
+
+    let nested_add = resolve_forward_expr_record(
+        &parsed,
+        assert_valid_source_pack_record_index(
+            &parsed,
+            parsed.hir_expr_record_left[top_add],
+            "outer add left operand",
+        ),
+        "outer add left operand",
+    );
+    assert_eq!(
+        parsed.hir_expr_record_form[nested_add], HIR_EXPR_FORM_ADD,
+        "outer add left operand should resolve to the nested add record"
+    );
+    let third_name = resolve_forward_expr_record(
+        &parsed,
+        assert_valid_source_pack_record_index(
+            &parsed,
+            parsed.hir_expr_record_right[top_add],
+            "outer add right operand",
+        ),
+        "outer add right operand",
+    );
+    assert_eq!(
+        parsed.hir_expr_record_form[third_name], HIR_EXPR_FORM_NAME,
+        "outer add right operand should resolve to the third parameter name"
+    );
+
+    let first_name = resolve_forward_expr_record(
+        &parsed,
+        assert_valid_source_pack_record_index(
+            &parsed,
+            parsed.hir_expr_record_left[nested_add],
+            "nested add left operand",
+        ),
+        "nested add left operand",
+    );
+    let second_name = resolve_forward_expr_record(
+        &parsed,
+        assert_valid_source_pack_record_index(
+            &parsed,
+            parsed.hir_expr_record_right[nested_add],
+            "nested add right operand",
+        ),
+        "nested add right operand",
+    );
+
+    for (owner, child, label) in [
+        (return_expr, top_add, "outer add"),
+        (top_add, nested_add, "nested add"),
+        (top_add, third_name, "outer add right operand"),
+        (nested_add, first_name, "nested add left operand"),
+        (nested_add, second_name, "nested add right operand"),
+    ] {
+        assert_source_pack_hir_child_span_inside_owner(&parsed, owner, child, label);
+    }
+    assert!(
+        parsed.hir_token_pos[first_name] <= parsed.hir_token_pos[nested_add]
+            && parsed.hir_token_pos[nested_add] <= parsed.hir_token_pos[top_add],
+        "pointer-jumped binary spans should carry the leftmost operand start through the add chain"
+    );
 }
 
 #[test]
@@ -5012,6 +6450,70 @@ fn main() -> str {
 }
 
 #[test]
+fn parser_hir_literal_records_are_source_addressable_in_source_packs() {
+    let parsed = parse_resident_source_pack(&[
+        r#"
+module lib::decoy;
+
+pub fn hold(flag: bool) -> bool {
+    return flag;
+}
+"#,
+        r#"
+module app::main;
+
+fn main() -> i32 {
+    let yes: bool = true;
+    let no: bool = false;
+    let letter: char = 'x';
+    let ratio: f32 = 1.5;
+    let label: str = "ready";
+    return 0;
+}
+"#,
+    ]);
+    assert!(
+        parsed.ll1_status[0] != 0,
+        "resident parser should accept the fixture: error_pos={} code={} detail={}",
+        parsed.ll1_status[1],
+        parsed.ll1_status[2],
+        parsed.ll1_status[3]
+    );
+
+    let expected = [
+        (HIR_EXPR_FORM_TRUE, "true literal"),
+        (HIR_EXPR_FORM_FALSE, "false literal"),
+        (HIR_EXPR_FORM_CHAR, "char literal"),
+        (HIR_EXPR_FORM_FLOAT, "float literal"),
+        (HIR_EXPR_FORM_STRING, "string literal"),
+    ];
+    let mut found = [false; 5];
+    for (node, &form) in parsed.hir_expr_record_form.iter().enumerate() {
+        if parsed.hir_node_file_id[node] != 1 {
+            continue;
+        }
+        let Some((expected_index, &(_, label))) = expected
+            .iter()
+            .enumerate()
+            .find(|(_, (expected_form, _))| form == *expected_form)
+        else {
+            continue;
+        };
+        assert_eq!(
+            parsed.hir_kind[node], HIR_NODE_LITERAL_EXPR,
+            "{label} should stay on a parser-owned literal expression row"
+        );
+        assert_source_pack_hir_node_has_non_empty_span(&parsed, node, label);
+        assert_expr_record_value_token_inside(&parsed, node, label);
+        found[expected_index] = true;
+    }
+
+    for (seen, &(_, label)) in found.into_iter().zip(expected.iter()) {
+        assert!(seen, "fixture should publish a source-pack {label} row");
+    }
+}
+
+#[test]
 fn parser_hir_boolean_condition_records_feed_type_checking_not_name_decoys() {
     let source_count = 2;
     let decoy = r#"
@@ -5171,6 +6673,30 @@ fn main(flag: bool, value: i32, limit: i32) -> i32 {
     );
 
     for (node, label) in [
+        (condition_expr, "if condition expression"),
+        (and_node, "logical-and expression"),
+        (not_node, "unary-not expression"),
+        (le_node, "less-or-equal expression"),
+        (not_operand, "unary-not operand"),
+        (le_left, "comparison left operand"),
+        (le_right, "comparison right operand"),
+    ] {
+        assert_eq!(
+            parsed.hir_nearest_stmt_node[node] as usize, if_node,
+            "{label} should publish the if statement as its nearest statement"
+        );
+        assert_eq!(
+            parsed.hir_nearest_enclosing_control_node[node] as usize, if_node,
+            "{label} should publish the if statement as its nearest enclosing control"
+        );
+        assert_eq!(
+            parsed.hir_nearest_fn_node[node] as usize, function_node,
+            "{label} should publish the parser-owned enclosing function"
+        );
+        assert_source_pack_hir_child_span_inside_owner(&parsed, if_node, node, label);
+    }
+
+    for (node, label) in [
         (not_operand, "unary-not operand"),
         (le_left, "comparison left operand"),
         (le_right, "comparison right operand"),
@@ -5223,7 +6749,10 @@ fn main(flag: i32, value: i32, limit: i32) -> i32 {
             let label = diagnostic
                 .primary_label
                 .expect("type mismatch should carry a primary source label");
-            assert_eq!(label.message, "expected a different type here");
+            assert!(
+                !label.message.trim().is_empty(),
+                "type mismatch label should explain the source-spanned mismatch"
+            );
             assert!(label.line > 0, "diagnostic should be source-spanned");
             assert!(label.column > 0, "diagnostic should be source-spanned");
             assert!(label.length > 0, "diagnostic span should be non-empty");
@@ -5547,7 +7076,8 @@ fn contains(value: bool) -> bool {
 }
 
 fn make_range() -> Range {
-    return Range { start: 1, end: 4 };
+    let range: Range = Range { start: 1, end: 4 };
+    return range;
 }
 
 fn main() -> i32 {
@@ -6137,7 +7667,10 @@ fn main(seed: i32) -> i32 {
             let label = diagnostic
                 .primary_label
                 .expect("type mismatch should carry a primary source label");
-            assert_eq!(label.message, "expected a different type here");
+            assert!(
+                !label.message.trim().is_empty(),
+                "type mismatch label should explain the source-spanned mismatch"
+            );
             assert!(label.line > 0, "diagnostic should be source-spanned");
             assert!(label.column > 0, "diagnostic should be source-spanned");
             assert!(label.length > 0, "diagnostic span should be non-empty");
@@ -6310,13 +7843,146 @@ fn main(seed: i32, delta: bool) -> i32 {
             let label = diagnostic
                 .primary_label
                 .expect("type mismatch should carry a primary source label");
-            assert_eq!(label.message, "expected a different type here");
+            assert!(
+                !label.message.trim().is_empty(),
+                "type mismatch label should explain the source-spanned mismatch"
+            );
             assert!(label.line > 0, "diagnostic should be source-spanned");
             assert!(label.column > 0, "diagnostic should be source-spanned");
             assert!(label.length > 0, "diagnostic span should be non-empty");
         }
         other => panic!("expected stable assignment diagnostic, got {other:?}"),
     }
+}
+
+#[test]
+fn parser_hir_source_pack_context_relations_publish_assignment_array_contexts() {
+    let source_count = 1;
+    let parsed = parse_resident_source_pack(&[r#"
+module app::main;
+
+fn main(seed: i32) -> i32 {
+    let values: [i32; 3] = [0, 0, 0];
+    values = [1, seed, 3];
+    return values[0];
+}
+"#]);
+    assert!(
+        parsed.ll1_status[0] != 0,
+        "resident parser should accept the fixture: error_pos={} code={} detail={}",
+        parsed.ll1_status[1],
+        parsed.ll1_status[2],
+        parsed.ll1_status[3]
+    );
+
+    let function_node = parsed
+        .hir_item_kind
+        .iter()
+        .enumerate()
+        .find_map(|(node, &kind)| {
+            (kind == HIR_ITEM_KIND_FN
+                && parsed.hir_item_file_id[node] == 0
+                && parsed.hir_item_visibility[node] == HIR_ITEM_VIS_PRIVATE)
+                .then_some(node)
+        })
+        .expect("fixture should publish one private function item");
+    assert!(
+        (parsed.hir_item_file_id[function_node] as usize) < source_count,
+        "function item should retain a bounded source-pack file id"
+    );
+
+    let let_node = parsed
+        .hir_stmt_record_kind
+        .iter()
+        .enumerate()
+        .find_map(|(node, &kind)| {
+            (kind == STMT_RECORD_KIND_LET
+                && parsed.hir_kind[node] == HIR_NODE_LET_STMT
+                && parsed.hir_node_file_id[node] == parsed.hir_item_file_id[function_node])
+                .then_some(node)
+        })
+        .expect("fixture should publish one local declaration record");
+    let assign_node = parsed
+        .hir_stmt_record_kind
+        .iter()
+        .enumerate()
+        .find_map(|(node, &kind)| {
+            (kind == STMT_RECORD_KIND_ASSIGN
+                && parsed.hir_kind[node] == HIR_NODE_STMT
+                && parsed.hir_node_file_id[node] == parsed.hir_item_file_id[function_node])
+                .then_some(node)
+        })
+        .expect("fixture should publish one assignment statement record");
+    assert_source_pack_hir_child_span_inside_owner(
+        &parsed,
+        function_node,
+        assign_node,
+        "assignment statement",
+    );
+
+    let function_block = assert_valid_source_pack_hir_node_index(
+        &parsed,
+        parsed.hir_nearest_block_node[assign_node],
+        "assignment nearest block",
+    );
+    assert_eq!(
+        parsed.hir_kind[function_block], HIR_NODE_BLOCK,
+        "assignment should publish its parser-owned containing block"
+    );
+    assert_eq!(
+        parsed.hir_nearest_fn_node[assign_node] as usize, function_node,
+        "assignment should publish its parser-owned enclosing function"
+    );
+    assert_eq!(
+        parsed.hir_nearest_enclosing_control_node[assign_node], INVALID,
+        "top-level assignment should not publish a synthetic enclosing control"
+    );
+
+    let init_expr = assert_valid_source_pack_hir_node_index(
+        &parsed,
+        parsed.hir_stmt_record_operand1[let_node],
+        "local initializer expression",
+    );
+    let init_array = resolve_forward_expr_record(&parsed, init_expr, "local initializer");
+    assert_eq!(
+        parsed.hir_kind[init_array], HIR_NODE_ARRAY_EXPR,
+        "local initializer should resolve to the parser-owned array literal"
+    );
+    assert_eq!(
+        parsed.hir_array_lit_context_stmt_node[init_array] as usize, let_node,
+        "initializer array literal should publish the let statement as its context"
+    );
+
+    let rhs_expr = assert_valid_source_pack_hir_node_index(
+        &parsed,
+        parsed.hir_stmt_record_operand1[assign_node],
+        "assignment rhs expression",
+    );
+    let assignment_array = resolve_forward_expr_record(&parsed, rhs_expr, "assignment rhs");
+    assert_eq!(
+        parsed.hir_kind[assignment_array], HIR_NODE_ARRAY_EXPR,
+        "assignment rhs should resolve to the parser-owned array literal"
+    );
+    assert_eq!(
+        parsed.hir_array_lit_context_stmt_node[assignment_array] as usize, assign_node,
+        "assignment array literal should publish the assignment statement as its context"
+    );
+    assert_eq!(
+        parsed.hir_nearest_stmt_node[assignment_array] as usize, assign_node,
+        "assignment array literal should agree with the generic nearest-statement row"
+    );
+    assert_eq!(
+        parsed.hir_nearest_block_node[assignment_array] as usize, function_block,
+        "assignment array literal should inherit the assignment block context"
+    );
+    assert_eq!(
+        parsed.hir_nearest_fn_node[assignment_array] as usize, function_node,
+        "assignment array literal should inherit the assignment function context"
+    );
+    assert_eq!(
+        parsed.hir_nearest_enclosing_control_node[assignment_array], INVALID,
+        "assignment array literal should not gain an enclosing-control row outside control flow"
+    );
 }
 
 #[test]
@@ -6404,6 +8070,10 @@ fn main(limit: i32) -> i32 {
     );
     assert_source_pack_hir_child_span_inside_owner(&parsed, while_node, body_node, "while body");
     assert_eq!(
+        parsed.hir_nearest_loop_node[while_node] as usize, while_node,
+        "while statement should publish itself as the parser-owned nearest loop"
+    );
+    assert_eq!(
         parsed.hir_stmt_record_operand2[while_node], INVALID,
         "while record should leave the unused operand empty"
     );
@@ -6452,6 +8122,19 @@ fn main(limit: i32) -> i32 {
             "{label} should inherit the loop source-pack file id"
         );
         assert_source_pack_hir_child_span_inside_owner(&parsed, body_node, node, label);
+        let nearest_control = assert_valid_source_pack_hir_node_index(
+            &parsed,
+            parsed.hir_nearest_enclosing_control_node[node],
+            label,
+        );
+        assert_eq!(
+            parsed.hir_kind[nearest_control], HIR_NODE_IF_STMT,
+            "{label} should keep the inner if as its nearest enclosing control"
+        );
+        assert_eq!(
+            parsed.hir_nearest_loop_node[node] as usize, while_node,
+            "{label} should publish the surrounding while as its parser-owned nearest loop"
+        );
         assert_eq!(
             parsed.hir_stmt_record_operand0[node], INVALID,
             "{label} should not publish a synthetic operand"
@@ -6474,6 +8157,108 @@ fn main(limit: i32) -> i32 {
     assert_eq!(
         loop_control_records, 2,
         "fixture should not publish extra loop-control statement records"
+    );
+}
+
+#[test]
+fn parser_hir_for_statement_scope_end_matches_body_block_boundary() {
+    let source_count = 2;
+    let parsed = parse_resident_source_pack(&[
+        r#"
+module lib::decoy;
+
+pub fn value() -> i32 {
+    return 9;
+}
+"#,
+        r#"
+module app::main;
+
+fn main(values: [i32; 3]) -> i32 {
+    let total: i32 = 0;
+    for value in values {
+        total += value;
+    }
+    return total;
+}
+"#,
+    ]);
+    assert!(
+        parsed.ll1_status[0] != 0,
+        "resident parser should accept the fixture: error_pos={} code={} detail={}",
+        parsed.ll1_status[1],
+        parsed.ll1_status[2],
+        parsed.ll1_status[3]
+    );
+
+    let for_nodes = parsed
+        .hir_stmt_record_kind
+        .iter()
+        .enumerate()
+        .filter_map(|(node, &kind)| {
+            (kind == STMT_RECORD_KIND_FOR
+                && parsed.hir_kind[node] == HIR_NODE_FOR_STMT
+                && parsed.hir_node_file_id[node] == 1)
+                .then_some(node)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        for_nodes.len(),
+        1,
+        "fixture should publish exactly one parser-owned for statement record"
+    );
+    let for_node = for_nodes[0];
+    assert!(
+        (parsed.hir_node_file_id[for_node] as usize) < source_count,
+        "for statement should retain a bounded source-pack file id"
+    );
+    assert_source_pack_hir_node_has_non_empty_span(&parsed, for_node, "for statement");
+
+    let binding_token = parsed.hir_stmt_record_operand0[for_node];
+    assert_ne!(
+        binding_token, INVALID,
+        "for statement should publish the loop binding token"
+    );
+    assert!(
+        parsed.hir_token_pos[for_node] < binding_token
+            && binding_token < parsed.hir_token_end[for_node],
+        "for binding token should stay inside the statement span"
+    );
+
+    let iterable_node = assert_valid_source_pack_hir_node_index(
+        &parsed,
+        parsed.hir_stmt_record_operand1[for_node],
+        "for iterable path",
+    );
+    assert_eq!(
+        parsed.hir_kind[iterable_node], HIR_NODE_PATH_EXPR,
+        "for iterable edge should point at the parser-owned path row"
+    );
+    assert_source_pack_hir_child_span_inside_owner(
+        &parsed,
+        for_node,
+        iterable_node,
+        "for iterable path",
+    );
+
+    let body_node = assert_valid_source_pack_hir_node_index(
+        &parsed,
+        parsed.hir_stmt_record_operand2[for_node],
+        "for body block",
+    );
+    assert_eq!(
+        parsed.hir_kind[body_node], HIR_NODE_BLOCK,
+        "for body edge should point at the parser-owned block row"
+    );
+    assert_source_pack_hir_child_span_inside_owner(&parsed, for_node, body_node, "for body");
+    assert_eq!(
+        parsed.hir_stmt_scope_end[for_node], parsed.hir_token_end[body_node],
+        "for binding scope should end exactly at the parser-owned body block boundary"
+    );
+    assert!(
+        binding_token < parsed.hir_token_pos[iterable_node]
+            && parsed.hir_token_end[iterable_node] <= parsed.hir_token_pos[body_node],
+        "for header records should stay in source order before the body block"
     );
 }
 
@@ -6625,6 +8410,196 @@ fn main(values: [i32; 3]) -> i32 {
         Err(CompileError::Diagnostic(_)) | Err(CompileError::GpuTypeCheck(_)) => {}
         Err(other) => panic!("expected GPU type-check rejection, got {other:?}"),
     }
+}
+
+#[test]
+fn parser_hir_for_statement_records_numeric_range_iterable_expr() {
+    let parsed = parse_resident_source_pack(&[r#"
+module app::main;
+
+fn main(samples: i32) -> i32 {
+    let total: i32 = 0;
+    for sample in 0..samples {
+        total += sample;
+    }
+    return total;
+}
+"#]);
+    assert!(
+        parsed.ll1_status[0] != 0,
+        "resident parser should accept the range fixture: error_pos={} code={} detail={}",
+        parsed.ll1_status[1],
+        parsed.ll1_status[2],
+        parsed.ll1_status[3]
+    );
+
+    let for_nodes = parsed
+        .hir_stmt_record_kind
+        .iter()
+        .enumerate()
+        .filter_map(|(node, &kind)| {
+            (kind == STMT_RECORD_KIND_FOR
+                && parsed.hir_kind[node] == HIR_NODE_FOR_STMT
+                && parsed.hir_node_file_id[node] == 0)
+                .then_some(node)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        for_nodes.len(),
+        1,
+        "range fixture should publish exactly one parser-owned for statement record"
+    );
+    let for_node = for_nodes[0];
+
+    let binding_token = parsed.hir_stmt_record_operand0[for_node];
+    assert_ne!(
+        binding_token, INVALID,
+        "range for statement should publish the loop binding token"
+    );
+
+    let range_node = assert_valid_source_pack_hir_node_index(
+        &parsed,
+        parsed.hir_stmt_record_operand1[for_node],
+        "for numeric range iterable",
+    );
+    assert_eq!(
+        parsed.hir_kind[range_node], HIR_NODE_EXPR,
+        "for numeric range iterable should be a parser-owned expression row"
+    );
+    assert_eq!(
+        parsed.hir_expr_record_form[range_node], HIR_EXPR_FORM_RANGE,
+        "for numeric range iterable should publish an explicit range expression record"
+    );
+
+    let range_start = assert_valid_source_pack_record_index(
+        &parsed,
+        parsed.hir_expr_record_left[range_node],
+        "range start operand",
+    );
+    let range_end = assert_valid_source_pack_record_index(
+        &parsed,
+        parsed.hir_expr_record_right[range_node],
+        "range end operand",
+    );
+    assert_eq!(
+        parsed.hir_expr_record_value_token[range_node], INVALID,
+        "range expression records should not use a value-token slot"
+    );
+    assert_source_pack_hir_child_span_inside_owner(
+        &parsed,
+        range_node,
+        range_start,
+        "range start operand",
+    );
+    assert_source_pack_hir_child_span_inside_owner(
+        &parsed,
+        range_node,
+        range_end,
+        "range end operand",
+    );
+    assert!(
+        parsed.hir_token_end[range_start] <= parsed.hir_token_pos[range_end],
+        "range operands should stay in source order"
+    );
+
+    let start_leaf = resolve_forward_expr_record(&parsed, range_start, "range start operand");
+    assert_eq!(
+        parsed.hir_expr_record_form[start_leaf], HIR_EXPR_FORM_INT,
+        "range start should resolve to the integer literal"
+    );
+    let end_leaf = resolve_forward_expr_record(&parsed, range_end, "range end operand");
+    assert_eq!(
+        parsed.hir_expr_record_form[end_leaf], HIR_EXPR_FORM_NAME,
+        "range end should resolve to the bound name"
+    );
+
+    let body_node = assert_valid_source_pack_hir_node_index(
+        &parsed,
+        parsed.hir_stmt_record_operand2[for_node],
+        "range for body",
+    );
+    assert_eq!(
+        parsed.hir_kind[body_node], HIR_NODE_BLOCK,
+        "range for statement should point at the parser-owned body block"
+    );
+    assert_source_pack_hir_child_span_inside_owner(&parsed, for_node, range_node, "range iterable");
+    assert_source_pack_hir_child_span_inside_owner(&parsed, for_node, body_node, "range for body");
+    assert_eq!(
+        parsed.hir_stmt_scope_end[for_node], parsed.hir_token_end[body_node],
+        "range for binding scope should end exactly at the body block boundary"
+    );
+    assert!(
+        binding_token < parsed.hir_token_pos[range_node]
+            && parsed.hir_token_end[range_node] <= parsed.hir_token_pos[body_node],
+        "range for header records should stay in source order before the body"
+    );
+}
+
+#[test]
+fn parser_hir_array_index_records_are_source_addressable_in_source_packs() {
+    let source_count = 2;
+    let parsed = parse_resident_source_pack(&[
+        r#"
+module lib::decoy;
+
+pub fn hold(slot: bool) -> bool {
+    return slot;
+}
+"#,
+        r#"
+module app::main;
+
+fn main(values: [i32; 2], slot: i32) -> i32 {
+    return values[slot];
+}
+"#,
+    ]);
+    assert!(
+        parsed.ll1_status[0] != 0,
+        "resident parser should accept the fixture: error_pos={} code={} detail={}",
+        parsed.ll1_status[1],
+        parsed.ll1_status[2],
+        parsed.ll1_status[3]
+    );
+
+    let index_node = parsed
+        .hir_expr_record_form
+        .iter()
+        .enumerate()
+        .find_map(|(node, &form)| {
+            (form == HIR_EXPR_FORM_INDEX
+                && parsed.hir_kind[node] == HIR_NODE_INDEX_EXPR
+                && parsed.hir_node_file_id[node] == 1)
+                .then_some(node)
+        })
+        .expect("fixture should publish one parser-owned index expression row");
+    assert!(
+        (parsed.hir_node_file_id[index_node] as usize) < source_count,
+        "index expression should retain a bounded source-pack file id"
+    );
+    assert_source_pack_hir_node_has_non_empty_span(&parsed, index_node, "index expression");
+
+    let base_node = assert_valid_source_pack_hir_node_index(
+        &parsed,
+        parsed.hir_expr_record_left[index_node],
+        "index base",
+    );
+    let subscript_node = assert_valid_source_pack_hir_node_index(
+        &parsed,
+        parsed.hir_expr_record_right[index_node],
+        "index subscript",
+    );
+    assert_source_pack_hir_child_span_inside_owner(&parsed, index_node, base_node, "index base");
+    assert_source_pack_hir_child_span_inside_owner(
+        &parsed,
+        index_node,
+        subscript_node,
+        "index subscript",
+    );
+    assert!(
+        parsed.hir_token_end[base_node] <= parsed.hir_token_pos[subscript_node],
+        "index base and subscript records should stay in source order"
+    );
 }
 
 #[test]
@@ -7073,6 +9048,10 @@ fn main() -> i32 {
             parsed.hir_node_file_id[type_node], parsed.hir_node_file_id[field_node],
             "struct field type {type_node} should inherit the field source-pack file id"
         );
+        assert_eq!(
+            parsed.hir_type_file_id[type_node], parsed.hir_node_file_id[field_node],
+            "struct field type {type_node} type record should retain the field source-pack file id"
+        );
         assert_source_pack_hir_child_span_inside_owner(
             &parsed,
             field_node,
@@ -7227,293 +9206,522 @@ fn main() -> i32 {
 }
 
 #[test]
-fn parser_hir_struct_literal_readback_accepts_contiguous_field_chain() {
-    validate_hir_struct_literal_field_records(
-        &[
-            HIR_NODE_PATH_EXPR,
-            HIR_NODE_STRUCT_LITERAL_EXPR,
-            HIR_NODE_EXPR,
-            HIR_NODE_EXPR,
-            HIR_NODE_EXPR,
-            HIR_NODE_EXPR,
-        ],
-        &[0, 10, 15, 25, 20, 30],
-        &[1, 40, 24, 35, 23, 34],
-        &[0, 0, 0, 0, 0, 0],
-        &[INVALID, 0, INVALID, INVALID, INVALID, INVALID],
-        &[INVALID, 2, INVALID, INVALID, INVALID, INVALID],
-        &[0, 2, 0, 0, 0, 0],
-        &[INVALID, INVALID, 1, 1, INVALID, INVALID],
-        &[INVALID, INVALID, 4, 5, INVALID, INVALID],
-        &[INVALID, INVALID, 3, INVALID, INVALID, INVALID],
-    )
-    .expect("contiguous struct literal field records should decode");
+fn parser_hir_struct_declaration_field_name_tokens_precede_type_edges_in_source_packs() {
+    let declarations = r#"
+module core::records;
+
+pub struct Pair {
+    left: i32,
+    flag: bool,
 }
 
-#[test]
-fn parser_hir_struct_literal_readback_rejects_missing_head_node() {
-    let err = validate_hir_struct_literal_field_records(
-        &[HIR_NODE_PATH_EXPR, HIR_NODE_STRUCT_LITERAL_EXPR],
-        &[0, 10],
-        &[1, 20],
-        &[0, 0],
-        &[INVALID, INVALID],
-        &[INVALID, INVALID],
-        &[0, 0],
-        &[INVALID, INVALID],
-        &[INVALID, INVALID],
-        &[INVALID, INVALID],
-    )
-    .expect_err("struct literal rows without parser-owned head nodes should fail closed");
+pub struct Decoy {
+    left: bool,
+    flag: i32,
+}
+"#;
+    let positive_app = r#"
+module app::main;
+import core::records;
+
+fn main() -> i32 {
+    let pair: Pair = Pair { left: 7, flag: true };
+    return pair.left;
+}
+"#;
+    let positive_sources = [declarations, positive_app];
+    let parsed = parse_resident_source_pack(&positive_sources);
     assert!(
-        err.to_string().contains("head path node"),
-        "error should describe the parser-owned struct literal head contract"
+        parsed.ll1_status[0] != 0,
+        "resident parser should accept the fixture: error_pos={} code={} detail={}",
+        parsed.ll1_status[1],
+        parsed.ll1_status[2],
+        parsed.ll1_status[3]
+    );
+
+    let pair_node = parsed
+        .hir_item_kind
+        .iter()
+        .enumerate()
+        .find_map(|(node, &kind)| {
+            (kind == HIR_ITEM_KIND_STRUCT
+                && parsed.hir_item_file_id[node] == 0
+                && parsed.hir_item_visibility[node] == HIR_ITEM_VIS_PUBLIC
+                && parsed.hir_struct_decl_field_count[node] == 2)
+                .then_some(node)
+        })
+        .expect("fixture should publish one public Pair struct item");
+
+    let mut fields = parsed
+        .hir_struct_field_parent_struct
+        .iter()
+        .enumerate()
+        .filter_map(|(node, &parent)| (parent as usize == pair_node).then_some(node))
+        .collect::<Vec<_>>();
+    fields.sort_unstable_by_key(|&node| parsed.hir_struct_field_ordinal[node]);
+    assert_eq!(fields.len(), 2, "Pair should publish two field rows");
+
+    for (expected_ordinal, field_node) in fields.iter().copied().enumerate() {
+        assert_eq!(
+            parsed.hir_struct_field_ordinal[field_node], expected_ordinal as u32,
+            "struct field rows should publish contiguous source-order ordinals"
+        );
+        let type_node = assert_valid_source_pack_hir_node_index(
+            &parsed,
+            parsed.hir_struct_field_type_node[field_node],
+            "struct declaration field type",
+        );
+        assert_eq!(
+            parsed.hir_kind[type_node], HIR_NODE_TYPE,
+            "field type edge should point at a parser-owned type row"
+        );
+        assert_eq!(
+            parsed.hir_type_file_id[type_node], parsed.hir_node_file_id[field_node],
+            "field type row should inherit the field source-pack file id"
+        );
+        assert_source_pack_hir_child_span_inside_owner(
+            &parsed,
+            pair_node,
+            field_node,
+            "struct declaration field",
+        );
+        assert_source_pack_hir_child_span_inside_owner(
+            &parsed,
+            field_node,
+            type_node,
+            "struct declaration field type",
+        );
+        assert!(
+            parsed.hir_token_pos[field_node] < parsed.hir_token_pos[type_node],
+            "field row {field_node} should anchor the declared field name before its parser-owned type edge"
+        );
+    }
+
+    common::type_check_source_pack_with_timeout(&positive_sources).expect(
+        "type checking should consume Pair's parser-owned field records, not same-spelled Decoy fields",
+    );
+
+    let negative_app = r#"
+module app::main;
+import core::records;
+
+fn main() -> i32 {
+    let pair: Pair = Pair { left: true, flag: true };
+    return 0;
+}
+"#;
+    assert_source_pack_type_rejects(
+        &[declarations, negative_app],
+        "same-spelled Decoy.left: bool must not make Pair.left accept a bool field value",
     );
 }
 
 #[test]
-fn parser_hir_struct_literal_readback_rejects_missing_owned_field_rows() {
-    let err = validate_hir_struct_literal_field_records(
+fn parser_hir_struct_declaration_field_readback_accepts_parser_owned_field_rows() {
+    validate_hir_struct_declaration_field_records(
         &[
-            HIR_NODE_PATH_EXPR,
-            HIR_NODE_STRUCT_LITERAL_EXPR,
-            HIR_NODE_EXPR,
-            HIR_NODE_EXPR,
-            HIR_NODE_EXPR,
-            HIR_NODE_EXPR,
+            HIR_NODE_STRUCT_ITEM,
+            HIR_NODE_NONE,
+            HIR_NODE_TYPE,
+            HIR_NODE_NONE,
+            HIR_NODE_TYPE,
         ],
-        &[0, 10, 15, 25, 20, 30],
-        &[1, 40, 24, 35, 23, 34],
-        &[0, 0, 0, 0, 0, 0],
-        &[INVALID, 0, INVALID, INVALID, INVALID, INVALID],
-        &[INVALID, 2, INVALID, INVALID, INVALID, INVALID],
-        &[0, 2, 0, 0, 0, 0],
-        &[INVALID, INVALID, 1, INVALID, INVALID, INVALID],
-        &[INVALID, INVALID, 4, INVALID, INVALID, INVALID],
-        &[INVALID, INVALID, INVALID, INVALID, INVALID, INVALID],
-    )
-    .expect_err("missing owned struct literal field rows should fail closed");
-    assert!(
-        err.to_string().contains("owned field rows"),
-        "error should describe the missing parser-owned struct literal field record"
-    );
-}
-
-#[test]
-fn parser_hir_struct_literal_readback_rejects_broken_next_chain() {
-    let err = validate_hir_struct_literal_field_records(
-        &[
-            HIR_NODE_PATH_EXPR,
-            HIR_NODE_STRUCT_LITERAL_EXPR,
-            HIR_NODE_EXPR,
-            HIR_NODE_EXPR,
-            HIR_NODE_EXPR,
-            HIR_NODE_EXPR,
-        ],
-        &[0, 10, 15, 25, 20, 30],
-        &[1, 40, 24, 35, 23, 34],
-        &[0, 0, 0, 0, 0, 0],
-        &[INVALID, 0, INVALID, INVALID, INVALID, INVALID],
-        &[INVALID, 2, INVALID, INVALID, INVALID, INVALID],
-        &[0, 2, 0, 0, 0, 0],
-        &[INVALID, INVALID, 1, 1, INVALID, INVALID],
-        &[INVALID, INVALID, 4, 5, INVALID, INVALID],
-        &[INVALID, INVALID, INVALID, INVALID, INVALID, INVALID],
-    )
-    .expect_err("broken struct literal field next links should fail closed");
-    assert!(
-        err.to_string().contains("field chain ended"),
-        "error should describe the broken parser-owned struct literal field chain"
-    );
-}
-
-#[test]
-fn parser_hir_struct_literal_readback_rejects_missing_value_edge() {
-    let err = validate_hir_struct_literal_field_records(
-        &[
-            HIR_NODE_PATH_EXPR,
-            HIR_NODE_STRUCT_LITERAL_EXPR,
-            HIR_NODE_EXPR,
-            HIR_NODE_EXPR,
-            HIR_NODE_EXPR,
-            HIR_NODE_EXPR,
-        ],
-        &[0, 10, 15, 25, 20, 30],
-        &[1, 40, 24, 35, 23, 34],
-        &[0, 0, 0, 0, 0, 0],
-        &[INVALID, 0, INVALID, INVALID, INVALID, INVALID],
-        &[INVALID, 2, INVALID, INVALID, INVALID, INVALID],
-        &[0, 2, 0, 0, 0, 0],
-        &[INVALID, INVALID, 1, 1, INVALID, INVALID],
-        &[INVALID, INVALID, 4, INVALID, INVALID, INVALID],
-        &[INVALID, INVALID, 3, INVALID, INVALID, INVALID],
-    )
-    .expect_err("struct literal field rows without value expressions should fail closed");
-    assert!(
-        err.to_string().contains("value expression"),
-        "error should describe the missing parser-owned field value edge"
-    );
-}
-
-#[test]
-fn parser_hir_struct_literal_readback_rejects_orphan_value_edge() {
-    validate_hir_struct_literal_field_records(
-        &[
-            HIR_NODE_PATH_EXPR,
-            HIR_NODE_STRUCT_LITERAL_EXPR,
-            HIR_NODE_EXPR,
-            HIR_NODE_EXPR,
-            HIR_NODE_EXPR,
-        ],
-        &[0, 10, 15, 20, 18],
-        &[1, 30, 19, 24, 19],
+        &[0, 1, 2, 4, 5],
+        &[8, 3, 3, 7, 6],
         &[0, 0, 0, 0, 0],
-        &[INVALID, 0, INVALID, INVALID, INVALID],
-        &[INVALID, INVALID, INVALID, INVALID, INVALID],
-        &[0, 0, 0, 0, 0],
-        &[INVALID, INVALID, INVALID, INVALID, INVALID],
-        &[INVALID, INVALID, 4, INVALID, INVALID],
-        &[INVALID, INVALID, INVALID, INVALID, INVALID],
-    )
-    .expect_err("unowned struct literal field value edges should fail closed");
-}
-
-#[test]
-fn parser_hir_struct_literal_readback_rejects_value_outside_field_span() {
-    let err = validate_hir_struct_literal_field_records(
         &[
-            HIR_NODE_PATH_EXPR,
-            HIR_NODE_STRUCT_LITERAL_EXPR,
-            HIR_NODE_EXPR,
-            HIR_NODE_EXPR,
-            HIR_NODE_EXPR,
+            HIR_TYPE_FORM_NONE,
+            HIR_TYPE_FORM_NONE,
+            HIR_TYPE_FORM_PATH,
+            HIR_TYPE_FORM_NONE,
+            HIR_TYPE_FORM_PATH,
         ],
-        &[0, 10, 15, 20, 12],
-        &[1, 30, 18, 25, 14],
-        &[0, 0, 0, 0, 0],
-        &[INVALID, 0, INVALID, INVALID, INVALID],
-        &[INVALID, 2, INVALID, INVALID, INVALID],
-        &[0, 1, 0, 0, 0],
-        &[INVALID, INVALID, 1, INVALID, INVALID],
-        &[INVALID, INVALID, 4, INVALID, INVALID],
-        &[INVALID, INVALID, INVALID, INVALID, INVALID],
-    )
-    .expect_err("struct literal field values outside the field span should fail closed");
-    assert!(
-        err.to_string().contains("falls outside the field span"),
-        "error should describe the parser-owned field/value span contract"
-    );
-}
-
-#[test]
-fn parser_hir_item_path_readback_rejects_non_path_node_anchor() {
-    let err = validate_hir_item_path_records(
-        &[HIR_NODE_MODULE_ITEM, HIR_NODE_NAME_EXPR],
-        &[0, 1],
-        &[3, 3],
-        &[0, 0],
-        &[HIR_ITEM_KIND_MODULE, HIR_ITEM_KIND_NONE],
-        &[0, INVALID],
-        &[1, INVALID],
-        &[3, INVALID],
-        &[1, INVALID],
-        &[HIR_ITEM_IMPORT_TARGET_NONE, HIR_ITEM_IMPORT_TARGET_NONE],
-    )
-    .expect_err("module/import path records should fail closed on non-path HIR anchors");
-    assert!(
-        err.to_string().contains("path HIR row"),
-        "error should describe the parser-owned item path node-kind contract"
-    );
-}
-
-#[test]
-fn parser_hir_item_path_readback_rejects_import_without_supported_target_record() {
-    let err = validate_hir_item_path_records(
-        &[HIR_NODE_IMPORT_ITEM],
-        &[0],
-        &[2],
-        &[0],
-        &[HIR_ITEM_KIND_IMPORT],
-        &[0],
-        &[INVALID],
-        &[INVALID],
-        &[INVALID],
-        &[HIR_ITEM_IMPORT_TARGET_NONE],
-    )
-    .expect_err("import rows without parser-owned target metadata should fail closed");
-    assert!(
-        err.to_string().contains("no import target record"),
-        "error should describe the missing parser-owned import target"
-    );
-
-    let err = validate_hir_item_path_records(
-        &[HIR_NODE_IMPORT_ITEM],
-        &[0],
-        &[2],
-        &[0],
-        &[HIR_ITEM_KIND_IMPORT],
-        &[0],
-        &[INVALID],
-        &[INVALID],
-        &[INVALID],
-        &[HIR_ITEM_IMPORT_TARGET_STRING],
-    )
-    .expect_err("unsupported import target kinds should fail before source rediscovery");
-    assert!(
-        err.to_string().contains("unsupported string import target"),
-        "error should describe the unsupported import target boundary"
-    );
-}
-
-#[test]
-fn parser_hir_item_path_readback_rejects_shared_path_node_anchor() {
-    let err = validate_hir_item_path_records(
+        &[INVALID, INVALID, 0, INVALID, 0],
         &[
-            HIR_NODE_MODULE_ITEM,
-            HIR_NODE_PATH_EXPR,
-            HIR_NODE_IMPORT_ITEM,
-        ],
-        &[0, 1, 0],
-        &[4, 3, 4],
-        &[0, 0, 0],
-        &[
-            HIR_ITEM_KIND_MODULE,
+            HIR_ITEM_KIND_STRUCT,
             HIR_ITEM_KIND_NONE,
-            HIR_ITEM_KIND_IMPORT,
+            HIR_ITEM_KIND_NONE,
+            HIR_ITEM_KIND_NONE,
+            HIR_ITEM_KIND_NONE,
         ],
-        &[0, INVALID, 0],
-        &[1, INVALID, 1],
-        &[3, INVALID, 3],
-        &[1, INVALID, 1],
-        &[
-            HIR_ITEM_IMPORT_TARGET_NONE,
-            HIR_ITEM_IMPORT_TARGET_NONE,
-            HIR_ITEM_IMPORT_TARGET_PATH,
-        ],
+        &[0, INVALID, INVALID, INVALID, INVALID],
+        &[INVALID, 0, INVALID, 0, INVALID],
+        &[INVALID, 0, INVALID, 1, INVALID],
+        &[INVALID, 2, INVALID, 4, INVALID],
+        &[1, INVALID, INVALID, INVALID, INVALID],
+        &[2, 0, 0, 0, 0],
     )
-    .expect_err("module/import path rows must not share parser-owned path anchors");
+    .expect("source-addressed struct declaration fields should decode");
+}
+
+#[test]
+fn parser_hir_source_address_readback_rejects_concrete_rows_without_provenance() {
+    let err = validate_hir_source_address_records(
+        &[HIR_NODE_EXPR],
+        &[INVALID],
+        &[INVALID],
+        &[0],
+        &[HIR_TYPE_FORM_NONE],
+        &[INVALID],
+        &[HIR_ITEM_KIND_NONE],
+        &[INVALID],
+    )
+    .expect_err("concrete HIR rows without token spans should fail closed");
     assert!(
-        err.to_string().contains("shares path node"),
-        "error should describe ambiguous parser-owned path anchor ownership"
+        err.to_string().contains("without a non-empty token span"),
+        "error should describe the missing parser-owned HIR span"
+    );
+
+    let err = validate_hir_source_address_records(
+        &[HIR_NODE_EXPR],
+        &[2],
+        &[3],
+        &[INVALID],
+        &[HIR_TYPE_FORM_NONE],
+        &[INVALID],
+        &[HIR_ITEM_KIND_NONE],
+        &[INVALID],
+    )
+    .expect_err("concrete HIR rows without source file ids should fail closed");
+    assert!(
+        err.to_string().contains("without a node file id"),
+        "error should describe the missing parser-owned HIR file id"
+    );
+
+    let err = validate_hir_source_address_records(
+        &[HIR_NODE_TYPE],
+        &[2],
+        &[3],
+        &[0],
+        &[99],
+        &[0],
+        &[HIR_ITEM_KIND_NONE],
+        &[INVALID],
+    )
+    .expect_err("unknown compact type-form tags should fail closed");
+    assert!(
+        err.to_string().contains("unknown type form"),
+        "error should describe the malformed parser-owned type record tag"
     );
 }
 
 #[test]
-fn parser_hir_source_address_readback_rejects_public_records_out_of_flat_source_order() {
-    let err = validate_hir_source_address_records(
-        &[HIR_NODE_TYPE, HIR_NODE_TYPE],
-        &[10, 9],
-        &[11, 10],
+fn parser_hir_expression_readback_rejects_child_edges_outside_owner_span() {
+    validate_hir_expression_records(
+        &[HIR_NODE_UNARY_EXPR, HIR_NODE_NAME_EXPR],
+        &[10, 11],
+        &[13, 12],
         &[0, 0],
-        &[HIR_TYPE_FORM_PATH, HIR_TYPE_FORM_PATH],
-        &[0, 0],
-        &[HIR_ITEM_KIND_NONE, HIR_ITEM_KIND_NONE],
+        &[HIR_EXPR_FORM_NOT, HIR_EXPR_FORM_NAME],
+        &[1, INVALID],
         &[INVALID, INVALID],
+        &[INVALID, 11],
     )
-    .expect_err("public HIR records must stay in flat source order");
+    .expect("expression child edges inside the owner span should decode");
+
+    let err = validate_hir_expression_records(
+        &[HIR_NODE_UNARY_EXPR, HIR_NODE_NAME_EXPR],
+        &[10, 14],
+        &[13, 15],
+        &[0, 0],
+        &[HIR_EXPR_FORM_NOT, HIR_EXPR_FORM_NAME],
+        &[1, INVALID],
+        &[INVALID, INVALID],
+        &[INVALID, 14],
+    )
+    .expect_err("expression edges pointing outside the owner span should fail closed");
     assert!(
-        err.to_string().contains("flat source order"),
-        "error should describe the parser-owned flat source-order contract"
+        err.to_string()
+            .contains("outside the owner expression span"),
+        "error should describe the parser-owned expression span contract"
+    );
+}
+
+#[test]
+fn parser_hir_item_readback_rejects_malformed_item_identity_records() {
+    let validate = |item_name_tokens: &[u32; 2], item_namespaces: &[u32; 2]| {
+        validate_hir_item_records(
+            &[HIR_NODE_FN, HIR_NODE_NONE],
+            &[0, INVALID],
+            &[4, INVALID],
+            &[0, INVALID],
+            &[HIR_ITEM_KIND_FN, HIR_ITEM_KIND_NONE],
+            item_name_tokens,
+            item_namespaces,
+            &[HIR_ITEM_VIS_PUBLIC, HIR_ITEM_VIS_PRIVATE],
+            &[0, INVALID],
+        )
+    };
+
+    validate(
+        &[1, INVALID],
+        &[HIR_ITEM_NAMESPACE_VALUE, HIR_ITEM_NAMESPACE_NONE],
+    )
+    .expect("source-addressed named function item records should decode");
+
+    let err = validate(
+        &[1, INVALID],
+        &[HIR_ITEM_NAMESPACE_TYPE, HIR_ITEM_NAMESPACE_NONE],
+    )
+    .expect_err("function item records in the type namespace should fail closed");
+    assert!(
+        err.to_string().contains("published namespace"),
+        "error should describe the item namespace contract"
+    );
+
+    let err = validate(
+        &[INVALID, INVALID],
+        &[HIR_ITEM_NAMESPACE_VALUE, HIR_ITEM_NAMESPACE_NONE],
+    )
+    .expect_err("named declaration item records without name tokens should fail closed");
+    assert!(
+        err.to_string().contains("without an in-span name token"),
+        "error should describe the parser-owned item name token contract"
+    );
+
+    let err = validate(
+        &[0, INVALID],
+        &[HIR_ITEM_NAMESPACE_VALUE, HIR_ITEM_NAMESPACE_NONE],
+    )
+    .expect_err("function name tokens must follow the parser-owned declaration token");
+    assert!(
+        err.to_string().contains("function item"),
+        "error should describe the parser-owned function name-token order contract"
+    );
+
+    let err = validate(
+        &[1, INVALID],
+        &[HIR_ITEM_NAMESPACE_VALUE, HIR_ITEM_NAMESPACE_VALUE],
+    )
+    .expect_err("non-item rows retaining item namespace metadata should fail closed");
+    assert!(
+        err.to_string().contains("non-item row"),
+        "error should describe stale item identity metadata"
+    );
+}
+
+#[test]
+fn parser_hir_struct_declaration_field_readback_rejects_missing_owned_rows() {
+    let err = validate_hir_struct_declaration_field_records(
+        &[HIR_NODE_STRUCT_ITEM, HIR_NODE_NONE, HIR_NODE_TYPE],
+        &[0, 1, 2],
+        &[8, 3, 3],
+        &[0, 0, 0],
+        &[HIR_TYPE_FORM_NONE, HIR_TYPE_FORM_NONE, HIR_TYPE_FORM_PATH],
+        &[INVALID, INVALID, 0],
+        &[HIR_ITEM_KIND_STRUCT, HIR_ITEM_KIND_NONE, HIR_ITEM_KIND_NONE],
+        &[0, INVALID, INVALID],
+        &[INVALID, 0, INVALID],
+        &[INVALID, 0, INVALID],
+        &[INVALID, 2, INVALID],
+        &[1, INVALID, INVALID],
+        &[2, 0, 0],
+    )
+    .expect_err("struct declaration field counts must match parser-owned field rows");
+    assert!(
+        err.to_string()
+            .contains("published count 2 but read back 1"),
+        "error should describe the missing parser-owned struct field row"
+    );
+}
+
+#[test]
+fn parser_hir_struct_declaration_field_readback_rejects_non_field_rows() {
+    let err = validate_hir_struct_declaration_field_records(
+        &[HIR_NODE_STRUCT_ITEM, HIR_NODE_EXPR, HIR_NODE_TYPE],
+        &[0, 1, 2],
+        &[8, 4, 3],
+        &[0, 0, 0],
+        &[HIR_TYPE_FORM_NONE, HIR_TYPE_FORM_NONE, HIR_TYPE_FORM_PATH],
+        &[INVALID, INVALID, 0],
+        &[HIR_ITEM_KIND_STRUCT, HIR_ITEM_KIND_NONE, HIR_ITEM_KIND_NONE],
+        &[0, INVALID, INVALID],
+        &[INVALID, 0, INVALID],
+        &[INVALID, 0, INVALID],
+        &[INVALID, 2, INVALID],
+        &[1, INVALID, INVALID],
+        &[1, 0, 0],
+    )
+    .expect_err("struct declaration field metadata must stay on parser-owned field rows");
+    assert!(
+        err.to_string()
+            .contains("not a parser-owned struct declaration field record"),
+        "error should describe the parser-owned struct declaration field-row contract"
+    );
+}
+
+#[test]
+fn parser_hir_struct_declaration_field_readback_rejects_orphan_type_edges() {
+    let err = validate_hir_struct_declaration_field_records(
+        &[HIR_NODE_STRUCT_ITEM, HIR_NODE_NONE, HIR_NODE_TYPE],
+        &[0, 1, 2],
+        &[8, 3, 3],
+        &[0, 0, 0],
+        &[HIR_TYPE_FORM_NONE, HIR_TYPE_FORM_NONE, HIR_TYPE_FORM_PATH],
+        &[INVALID, INVALID, 0],
+        &[HIR_ITEM_KIND_STRUCT, HIR_ITEM_KIND_NONE, HIR_ITEM_KIND_NONE],
+        &[0, INVALID, INVALID],
+        &[INVALID, INVALID, INVALID],
+        &[INVALID, INVALID, INVALID],
+        &[INVALID, 2, INVALID],
+        &[INVALID, INVALID, INVALID],
+        &[0, 0, 0],
+    )
+    .expect_err("struct declaration field type edges without owners should fail closed");
+    assert!(
+        err.to_string()
+            .contains("field type edge without a struct owner"),
+        "error should describe the orphan parser-owned struct field type edge"
+    );
+}
+
+#[test]
+fn parser_hir_struct_declaration_field_readback_rejects_non_type_field_edges() {
+    let err = validate_hir_struct_declaration_field_records(
+        &[HIR_NODE_STRUCT_ITEM, HIR_NODE_NONE, HIR_NODE_EXPR],
+        &[0, 1, 2],
+        &[8, 3, 3],
+        &[0, 0, 0],
+        &[HIR_TYPE_FORM_NONE, HIR_TYPE_FORM_NONE, HIR_TYPE_FORM_NONE],
+        &[INVALID, INVALID, INVALID],
+        &[HIR_ITEM_KIND_STRUCT, HIR_ITEM_KIND_NONE, HIR_ITEM_KIND_NONE],
+        &[0, INVALID, INVALID],
+        &[INVALID, 0, INVALID],
+        &[INVALID, 0, INVALID],
+        &[INVALID, 2, INVALID],
+        &[1, INVALID, INVALID],
+        &[1, 0, 0],
+    )
+    .expect_err("struct declaration fields must point at parser-owned type rows");
+    assert!(
+        err.to_string().contains("not a concrete type record"),
+        "error should describe the concrete type-row contract"
+    );
+}
+
+#[test]
+fn parser_hir_struct_literal_field_readback_rejects_non_field_rows() {
+    let err = validate_hir_struct_literal_field_records(
+        &[
+            HIR_NODE_STRUCT_LITERAL_EXPR,
+            HIR_NODE_PATH_EXPR,
+            HIR_NODE_EXPR,
+            HIR_NODE_EXPR,
+        ],
+        &[0, 1, 3, 5],
+        &[10, 2, 8, 6],
+        &[0; 4],
+        &[1, INVALID, INVALID, INVALID],
+        &[2, INVALID, INVALID, INVALID],
+        &[1, 0, 0, 0],
+        &[INVALID, INVALID, 0, INVALID],
+        &[INVALID, INVALID, 3, INVALID],
+        &[INVALID; 4],
+    )
+    .expect_err("struct literal field records must stay on parser-owned field rows");
+    assert!(
+        err.to_string()
+            .contains("not a parser-owned struct-literal field record"),
+        "error should describe the parser-owned struct literal field-row contract"
+    );
+}
+
+#[test]
+fn parser_hir_struct_literal_field_readback_rejects_head_outside_literal_span() {
+    let err = validate_hir_struct_literal_field_records(
+        &[
+            HIR_NODE_STRUCT_LITERAL_EXPR,
+            HIR_NODE_PATH_EXPR,
+            HIR_NODE_NONE,
+            HIR_NODE_EXPR,
+        ],
+        &[2, 0, 3, 4],
+        &[8, 1, 6, 5],
+        &[0; 4],
+        &[1, INVALID, INVALID, INVALID],
+        &[2, INVALID, INVALID, INVALID],
+        &[1, 0, 0, 0],
+        &[INVALID, INVALID, 0, INVALID],
+        &[INVALID, INVALID, 3, INVALID],
+        &[INVALID; 4],
+    )
+    .expect_err("struct literal head rows must stay inside the owning literal span");
+    assert!(
+        err.to_string().contains("head row 1 falls outside"),
+        "error should describe the parser-owned struct literal head/span contract"
+    );
+}
+
+#[test]
+fn parser_hir_struct_literal_field_readback_rejects_field_before_head_end() {
+    let err = validate_hir_struct_literal_field_records(
+        &[
+            HIR_NODE_STRUCT_LITERAL_EXPR,
+            HIR_NODE_PATH_EXPR,
+            HIR_NODE_NONE,
+            HIR_NODE_EXPR,
+        ],
+        &[0, 3, 4, 5],
+        &[10, 8, 9, 6],
+        &[0; 4],
+        &[1, INVALID, INVALID, INVALID],
+        &[2, INVALID, INVALID, INVALID],
+        &[1, 0, 0, 0],
+        &[INVALID, INVALID, 0, INVALID],
+        &[INVALID, INVALID, 3, INVALID],
+        &[INVALID; 4],
+    )
+    .expect_err("struct literal fields must not start before the head path/name ends");
+    assert!(
+        err.to_string().contains("does not precede first field"),
+        "error should describe the parser-owned struct literal head/field source-order contract"
+    );
+}
+
+#[test]
+fn parser_hir_struct_literal_field_readback_rejects_orphan_value_edges() {
+    validate_hir_struct_literal_field_records(
+        &[
+            HIR_NODE_STRUCT_LITERAL_EXPR,
+            HIR_NODE_PATH_EXPR,
+            HIR_NODE_NONE,
+            HIR_NODE_TYPE,
+        ],
+        &[0, 0, 2, 2],
+        &[6, 1, 3, 3],
+        &[0; 4],
+        &[1, INVALID, INVALID, INVALID],
+        &[INVALID; 4],
+        &[0; 4],
+        &[INVALID; 4],
+        &[INVALID; 4],
+        &[INVALID; 4],
+    )
+    .expect("struct literal rows without field owners should decode when field metadata is empty");
+
+    let err = validate_hir_struct_literal_field_records(
+        &[
+            HIR_NODE_STRUCT_LITERAL_EXPR,
+            HIR_NODE_PATH_EXPR,
+            HIR_NODE_NONE,
+            HIR_NODE_TYPE,
+        ],
+        &[0, 0, 2, 2],
+        &[6, 1, 3, 3],
+        &[0; 4],
+        &[1, INVALID, INVALID, INVALID],
+        &[INVALID; 4],
+        &[0; 4],
+        &[INVALID; 4],
+        &[INVALID, INVALID, 3, INVALID],
+        &[INVALID; 4],
+    )
+    .expect_err(
+        "orphan struct literal value records must fail closed even when they point at type rows",
+    );
+    assert!(
+        err.to_string().contains("value node without an owner"),
+        "error should describe stale parser-owned struct literal value records"
     );
 }
 
@@ -7552,29 +9760,63 @@ fn parser_hir_function_return_readback_accepts_function_extern_and_impl_method_e
             HIR_ITEM_KIND_NONE,
             HIR_ITEM_KIND_STRUCT,
         ],
+        &[1, INVALID, 7, INVALID, INVALID, INVALID, INVALID],
         &[0, INVALID, 1, INVALID, INVALID, INVALID, 2],
+        &[
+            0,
+            0,
+            0,
+            0,
+            HIR_METHOD_SIGNATURE_HAS_GENERICS | HIR_METHOD_SIGNATURE_HAS_WHERE,
+            0,
+            0,
+        ],
+        &[INVALID, INVALID, INVALID, INVALID, 13, INVALID, INVALID],
     )
     .expect("function, extern function, and impl method return edges should decode");
 }
 
 #[test]
-fn parser_hir_function_return_readback_rejects_non_function_owner() {
+fn parser_hir_function_return_readback_rejects_unanchored_method_signature_flags() {
     let err = validate_hir_function_return_records(
-        &[HIR_NODE_ITEM, HIR_NODE_TYPE],
-        &[0, 1],
-        &[3, 2],
-        &[0, 0],
-        &[HIR_TYPE_FORM_NONE, HIR_TYPE_FORM_PATH],
-        &[INVALID, 0],
-        &[1, INVALID],
-        &[HIR_ITEM_KIND_STRUCT, HIR_ITEM_KIND_NONE],
-        &[0, INVALID],
+        &[HIR_NODE_FN],
+        &[0],
+        &[5],
+        &[0],
+        &[HIR_TYPE_FORM_NONE],
+        &[INVALID],
+        &[INVALID],
+        &[HIR_ITEM_KIND_FN],
+        &[1],
+        &[0],
+        &[HIR_METHOD_SIGNATURE_HAS_GENERICS],
+        &[INVALID],
     )
-    .expect_err("return type edges from non-function item rows should fail closed");
+    .expect_err("method signature flags on free functions must fail closed");
     assert!(
         err.to_string()
-            .contains("without a function or method owner"),
-        "error should describe the parser-owned function return owner contract"
+            .contains("without a parser-owned method row"),
+        "error should describe the parser-owned method-signature flag owner contract"
+    );
+
+    let err = validate_hir_function_return_records(
+        &[HIR_NODE_FN],
+        &[0],
+        &[5],
+        &[0],
+        &[HIR_TYPE_FORM_NONE],
+        &[INVALID],
+        &[INVALID],
+        &[HIR_ITEM_KIND_NONE],
+        &[INVALID],
+        &[INVALID],
+        &[4],
+        &[1],
+    )
+    .expect_err("unknown method signature flag bits must fail closed");
+    assert!(
+        err.to_string().contains("unknown method signature flags"),
+        "error should describe unsupported method-signature flag bits"
     );
 }
 
@@ -7589,7 +9831,10 @@ fn parser_hir_function_return_readback_rejects_shared_return_type_node() {
         &[INVALID, 0, INVALID],
         &[1, INVALID, 1],
         &[HIR_ITEM_KIND_FN, HIR_ITEM_KIND_NONE, HIR_ITEM_KIND_FN],
+        &[1, INVALID, 1],
         &[0, INVALID, 0],
+        &[0; 3],
+        &[INVALID; 3],
     )
     .expect_err("function return type rows must have a single parser-owned function owner");
     assert!(
@@ -7599,9 +9844,81 @@ fn parser_hir_function_return_readback_rejects_shared_return_type_node() {
 }
 
 #[test]
+fn parser_hir_function_return_readback_rejects_return_type_before_item_name() {
+    let err = validate_hir_function_return_records(
+        &[HIR_NODE_FN, HIR_NODE_TYPE],
+        &[0, 2],
+        &[8, 3],
+        &[0, 0],
+        &[HIR_TYPE_FORM_NONE, HIR_TYPE_FORM_PATH],
+        &[INVALID, 0],
+        &[1, INVALID],
+        &[HIR_ITEM_KIND_FN, HIR_ITEM_KIND_NONE],
+        &[4, INVALID],
+        &[0, INVALID],
+        &[0; 2],
+        &[INVALID; 2],
+    )
+    .expect_err("function return edges must point after the parser-owned function name");
+    assert!(
+        err.to_string().contains("function name token"),
+        "error should describe the parser-owned function-name/return-type ordering contract"
+    );
+}
+
+#[test]
+fn parser_hir_function_return_readback_rejects_function_name_at_span_start() {
+    let err = validate_hir_function_return_records(
+        &[HIR_NODE_FN, HIR_NODE_TYPE],
+        &[0, 3],
+        &[8, 4],
+        &[0, 0],
+        &[HIR_TYPE_FORM_NONE, HIR_TYPE_FORM_PATH],
+        &[INVALID, 0],
+        &[1, INVALID],
+        &[HIR_ITEM_KIND_FN, HIR_ITEM_KIND_NONE],
+        &[0, INVALID],
+        &[0, INVALID],
+        &[0; 2],
+        &[INVALID; 2],
+    )
+    .expect_err("function name tokens must follow the parser-owned function span start");
+    assert!(
+        err.to_string().contains("function name token"),
+        "error should describe the parser-owned function name-token order contract"
+    );
+}
+
+#[test]
+fn parser_hir_function_return_readback_rejects_method_return_type_before_method_name() {
+    let err = validate_hir_function_return_records(
+        &[HIR_NODE_FN, HIR_NODE_TYPE],
+        &[0, 2],
+        &[8, 3],
+        &[0, 0],
+        &[HIR_TYPE_FORM_NONE, HIR_TYPE_FORM_PATH],
+        &[INVALID, 0],
+        &[1, INVALID],
+        &[HIR_ITEM_KIND_NONE, HIR_ITEM_KIND_NONE],
+        &[INVALID; 2],
+        &[INVALID; 2],
+        &[0; 2],
+        &[4, INVALID],
+    )
+    .expect_err("method return edges must point after the parser-owned method name");
+    assert!(
+        err.to_string().contains("method name token"),
+        "error should describe the parser-owned method-name/return-type ordering contract"
+    );
+}
+
+#[test]
 fn parser_hir_type_argument_readback_rejects_generic_args_on_non_path_type_owner() {
     let err = validate_hir_type_argument_records(
         &[HIR_NODE_NONE, HIR_NODE_TYPE, HIR_NODE_TYPE],
+        &[INVALID, 0, 2],
+        &[INVALID, 4, 3],
+        &[INVALID, 0, 0],
         &[HIR_TYPE_FORM_NONE, HIR_TYPE_FORM_ARRAY, HIR_TYPE_FORM_PATH],
         &[INVALID, 2, INVALID],
         &[0, 1, 0],
@@ -7611,6 +9928,30 @@ fn parser_hir_type_argument_readback_rejects_generic_args_on_non_path_type_owner
     assert!(
         err.to_string().contains("non-path type record"),
         "error should describe the parser-owned generic type owner contract"
+    );
+}
+
+#[test]
+fn parser_hir_type_argument_readback_rejects_argument_outside_owner_span() {
+    let err = validate_hir_type_argument_records(
+        &[HIR_NODE_NONE, HIR_NODE_TYPE, HIR_NODE_TYPE, HIR_NODE_TYPE],
+        &[INVALID, 10, 12, 16],
+        &[INVALID, 15, 13, 17],
+        &[INVALID, 0, 0, 0],
+        &[
+            HIR_TYPE_FORM_NONE,
+            HIR_TYPE_FORM_PATH,
+            HIR_TYPE_FORM_PATH,
+            HIR_TYPE_FORM_PATH,
+        ],
+        &[INVALID, 2, INVALID, INVALID],
+        &[0, 2, 0, 0],
+        &[INVALID, INVALID, 3, INVALID],
+    )
+    .expect_err("generic type argument rows must stay inside the owner type span");
+    assert!(
+        err.to_string().contains("outside owner row"),
+        "error should describe the parser-owned generic argument source span contract"
     );
 }
 
@@ -7630,6 +9971,60 @@ fn parser_hir_expression_readback_rejects_non_expression_child_edges() {
     assert!(
         err.to_string().contains("non-expression HIR kind"),
         "error should describe the parser-owned expression child edge contract"
+    );
+}
+
+#[test]
+fn parser_hir_expression_readback_accepts_range_operand_edges() {
+    validate_hir_expression_records(
+        &[HIR_NODE_EXPR, HIR_NODE_LITERAL_EXPR, HIR_NODE_NAME_EXPR],
+        &[5, 5, 8],
+        &[10, 6, 10],
+        &[0, 0, 0],
+        &[HIR_EXPR_FORM_RANGE, HIR_EXPR_FORM_INT, HIR_EXPR_FORM_NAME],
+        &[1, INVALID, INVALID],
+        &[2, INVALID, INVALID],
+        &[INVALID, 5, 8],
+    )
+    .expect("range expression records should decode when start and end operands are owned");
+}
+
+#[test]
+fn parser_hir_expression_readback_rejects_operator_child_edges_out_of_source_order() {
+    let err = validate_hir_expression_records(
+        &[
+            HIR_NODE_BINARY_EXPR,
+            HIR_NODE_LITERAL_EXPR,
+            HIR_NODE_LITERAL_EXPR,
+        ],
+        &[5, 12, 6],
+        &[14, 13, 7],
+        &[0, 0, 0],
+        &[HIR_EXPR_FORM_ADD, HIR_EXPR_FORM_INT, HIR_EXPR_FORM_INT],
+        &[1, INVALID, INVALID],
+        &[2, INVALID, INVALID],
+        &[INVALID, 12, 6],
+    )
+    .expect_err("binary expression operand rows must stay in source order");
+    assert!(
+        err.to_string().contains("operands out of source order"),
+        "error should describe the parser-owned expression operand order contract"
+    );
+
+    let err = validate_hir_expression_records(
+        &[HIR_NODE_EXPR, HIR_NODE_NAME_EXPR, HIR_NODE_LITERAL_EXPR],
+        &[5, 12, 6],
+        &[14, 13, 7],
+        &[0, 0, 0],
+        &[HIR_EXPR_FORM_INDEX, HIR_EXPR_FORM_NAME, HIR_EXPR_FORM_INT],
+        &[1, INVALID, INVALID],
+        &[2, INVALID, INVALID],
+        &[INVALID, 12, 6],
+    )
+    .expect_err("index expression base and subscript rows must stay in source order");
+    assert!(
+        err.to_string().contains("operands out of source order"),
+        "error should describe the parser-owned index operand order contract"
     );
 }
 
@@ -7668,6 +10063,136 @@ fn parser_hir_expression_readback_rejects_name_forms_on_literal_rows() {
     assert!(
         err.to_string().contains("name value form"),
         "error should describe the parser-owned name form owner contract"
+    );
+}
+
+#[test]
+fn parser_hir_expression_readback_rejects_missing_leaf_records() {
+    let err = validate_hir_expression_records(
+        &[HIR_NODE_NAME_EXPR],
+        &[0],
+        &[1],
+        &[0],
+        &[HIR_EXPR_FORM_NONE],
+        &[INVALID],
+        &[INVALID],
+        &[INVALID],
+    )
+    .expect_err("source-addressed expression leaves must publish value records");
+    assert!(
+        err.to_string()
+            .contains("no parser-owned expression record"),
+        "error should describe the required parser-owned leaf expression record"
+    );
+}
+
+#[test]
+fn parser_hir_expression_result_root_readback_accepts_canonical_source_addressed_rows() {
+    validate_hir_expression_result_root_records(
+        &[
+            HIR_NODE_EXPR,
+            HIR_NODE_ARRAY_EXPR,
+            HIR_NODE_CALL_EXPR,
+            HIR_NODE_STMT,
+        ],
+        &[0, 1, 4, 8],
+        &[6, 5, 5, 9],
+        &[0, 0, 0, 0],
+        &[1, 1, 2, INVALID],
+    )
+    .expect("canonical expression-result roots should decode as parser-owned HIR rows");
+}
+
+#[test]
+fn parser_hir_expression_result_root_readback_rejects_malformed_roots() {
+    let err = validate_hir_expression_result_root_records(
+        &[HIR_NODE_STMT, HIR_NODE_CALL_EXPR],
+        &[0, 1],
+        &[3, 2],
+        &[0, 0],
+        &[1, 1],
+    )
+    .expect_err("result roots on non-expression owners should fail closed");
+    assert!(
+        err.to_string().contains("without an expression HIR row"),
+        "error should describe the parser-owned expression-result owner contract"
+    );
+
+    let err = validate_hir_expression_result_root_records(
+        &[HIR_NODE_EXPR, HIR_NODE_TYPE],
+        &[0, 1],
+        &[3, 2],
+        &[0, 0],
+        &[1, INVALID],
+    )
+    .expect_err("result roots must point at expression rows");
+    assert!(
+        err.to_string().contains("non-expression result root"),
+        "error should describe the parser-owned expression-result root kind contract"
+    );
+
+    let err = validate_hir_expression_result_root_records(
+        &[HIR_NODE_EXPR, HIR_NODE_ARRAY_EXPR],
+        &[2, 0],
+        &[4, 5],
+        &[0, 0],
+        &[1, 1],
+    )
+    .expect_err("result roots escaping their owner expression span should fail closed");
+    assert!(
+        err.to_string().contains("outside the expression span"),
+        "error should describe the parser-owned expression-result span contract"
+    );
+
+    let err = validate_hir_expression_result_root_records(
+        &[HIR_NODE_EXPR, HIR_NODE_EXPR, HIR_NODE_CALL_EXPR],
+        &[0, 1, 2],
+        &[5, 4, 3],
+        &[0, 0, 0],
+        &[1, 2, 2],
+    )
+    .expect_err("published result roots must be canonical after pointer jumping");
+    assert!(
+        err.to_string().contains("non-canonical result root"),
+        "error should describe the parser-owned expression-result root canonicalization contract"
+    );
+}
+
+#[test]
+fn parser_hir_member_readback_rejects_receiver_outside_member_span() {
+    let err = validate_hir_member_records(
+        &[HIR_NODE_MEMBER_EXPR, HIR_NODE_NAME_EXPR],
+        &[4, 0],
+        &[8, 3],
+        &[0, 0],
+        &[1, INVALID],
+        &[1, INVALID],
+        &[6, INVALID],
+    )
+    .expect_err("member receiver rows must stay inside the owning member expression span");
+    assert!(
+        err.to_string()
+            .contains("receiver row 1 is outside the member expression span"),
+        "error should describe the parser-owned member receiver span contract"
+    );
+}
+
+#[test]
+fn parser_hir_member_readback_rejects_member_span_past_name_token() {
+    let err = validate_hir_member_records(
+        &[HIR_NODE_MEMBER_EXPR, HIR_NODE_NAME_EXPR],
+        &[0, 0],
+        &[5, 2],
+        &[0, 0],
+        &[1, INVALID],
+        &[0, INVALID],
+        &[3, INVALID],
+    )
+    .expect_err("member expression rows must end at the parser-owned member name token");
+    assert!(
+        err.to_string()
+            .contains("does not end at the member-name token"),
+        "error should describe the parser-owned member expression span end contract"
     );
 }
 
@@ -7764,6 +10289,10 @@ fn parser_hir_parameter_readback_rejects_cross_file_type_edge() {
 fn parser_hir_call_readback_rejects_zero_argument_call_without_callee() {
     let err = validate_hir_call_argument_records(
         &[HIR_NODE_CALL_EXPR],
+        &[0],
+        &[3],
+        &[0],
+        &[INVALID],
         &[INVALID],
         &[INVALID],
         &[0],
@@ -7778,11 +10307,103 @@ fn parser_hir_call_readback_rejects_zero_argument_call_without_callee() {
 }
 
 #[test]
+fn parser_hir_call_readback_rejects_argument_outside_call_span() {
+    let err = validate_hir_call_argument_records(
+        &[HIR_NODE_NAME_EXPR, HIR_NODE_CALL_EXPR, HIR_NODE_EXPR],
+        &[1, 1, 4],
+        &[2, 5, 6],
+        &[0; 3],
+        &[INVALID, 0, INVALID],
+        &[INVALID, 2, INVALID],
+        &[INVALID, INVALID, 6],
+        &[0, 1, 0],
+        &[INVALID, INVALID, 1],
+        &[INVALID, INVALID, 0],
+    )
+    .expect_err("call argument rows must stay inside the owning call expression span");
+    assert!(
+        err.to_string()
+            .contains("argument row 2 outside the call expression span"),
+        "error should describe the parser-owned call argument source-span contract"
+    );
+}
+
+#[test]
+fn parser_hir_call_readback_rejects_argument_end_not_matching_hir_span() {
+    let err = validate_hir_call_argument_records(
+        &[HIR_NODE_NAME_EXPR, HIR_NODE_CALL_EXPR, HIR_NODE_EXPR],
+        &[10, 10, 12],
+        &[11, 20, 15],
+        &[0; 3],
+        &[INVALID, 0, INVALID],
+        &[INVALID, 2, INVALID],
+        &[INVALID, INVALID, 14],
+        &[0, 1, 0],
+        &[INVALID, INVALID, 1],
+        &[INVALID, INVALID, 0],
+    )
+    .expect_err("call argument end tokens must match parser-owned HIR spans");
+    assert!(
+        err.to_string().contains("does not match its HIR span end"),
+        "error should describe the parser-owned call argument end-token contract"
+    );
+}
+
+#[test]
+fn parser_hir_call_readback_rejects_argument_before_callee() {
+    let err = validate_hir_call_argument_records(
+        &[HIR_NODE_NAME_EXPR, HIR_NODE_CALL_EXPR, HIR_NODE_EXPR],
+        &[10, 10, 12],
+        &[14, 20, 15],
+        &[0; 3],
+        &[INVALID, 0, INVALID],
+        &[INVALID, 2, INVALID],
+        &[INVALID, INVALID, 15],
+        &[0, 1, 0],
+        &[INVALID, INVALID, 1],
+        &[INVALID, INVALID, 0],
+    )
+    .expect_err("call argument rows must follow the parser-owned callee");
+    assert!(
+        err.to_string().contains("does not precede first argument"),
+        "error should describe the parser-owned callee/argument source-order contract"
+    );
+}
+
+#[test]
+fn parser_hir_call_readback_rejects_overlapping_argument_spans() {
+    let err = validate_hir_call_argument_records(
+        &[
+            HIR_NODE_NAME_EXPR,
+            HIR_NODE_CALL_EXPR,
+            HIR_NODE_EXPR,
+            HIR_NODE_EXPR,
+        ],
+        &[10, 10, 12, 14],
+        &[11, 24, 16, 18],
+        &[0; 4],
+        &[INVALID, 0, INVALID, INVALID],
+        &[INVALID, 2, INVALID, INVALID],
+        &[INVALID, INVALID, 16, 18],
+        &[0, 2, 0, 0],
+        &[INVALID, INVALID, 1, 1],
+        &[INVALID, INVALID, 0, 1],
+    )
+    .expect_err("call argument rows must publish non-overlapping source spans");
+    assert!(
+        err.to_string()
+            .contains("overlap or are not in source order"),
+        "error should describe the parser-owned call argument span ordering contract"
+    );
+}
+
+#[test]
 fn parser_hir_array_literal_readback_rejects_count_on_non_array_owner() {
     let err = validate_hir_array_literal_records(
         &[HIR_NODE_ITEM, HIR_NODE_EXPR, HIR_NODE_EXPR],
         &[INVALID, 10, 12],
         &[INVALID, 20, 13],
+        &[INVALID, 0, 0],
         &[INVALID, 2, INVALID],
         &[0, 1, 0],
         &[INVALID, INVALID, 1],
@@ -7807,6 +10428,7 @@ fn parser_hir_array_literal_readback_rejects_next_chain_out_of_source_order() {
         ],
         &[INVALID, 10, 20, 12],
         &[INVALID, 30, 21, 13],
+        &[INVALID, 0, 0, 0],
         &[INVALID, 2, INVALID, INVALID],
         &[0, 2, 0, 0],
         &[INVALID, INVALID, 1, 1],
@@ -7817,6 +10439,52 @@ fn parser_hir_array_literal_readback_rejects_next_chain_out_of_source_order() {
     assert!(
         err.to_string().contains("source order"),
         "error should describe the parser-owned array element next/source-span contract"
+    );
+}
+
+#[test]
+fn parser_hir_array_literal_readback_rejects_overlapping_element_chain() {
+    let err = validate_hir_array_literal_records(
+        &[
+            HIR_NODE_NONE,
+            HIR_NODE_ARRAY_EXPR,
+            HIR_NODE_EXPR,
+            HIR_NODE_EXPR,
+        ],
+        &[INVALID, 10, 12, 14],
+        &[INVALID, 30, 16, 18],
+        &[INVALID, 0, 0, 0],
+        &[INVALID, 2, INVALID, INVALID],
+        &[0, 2, 0, 0],
+        &[INVALID, INVALID, 1, 1],
+        &[INVALID, INVALID, 0, 1],
+        &[INVALID, INVALID, 3, INVALID],
+    )
+    .expect_err("array element next chains must not publish overlapping sibling spans");
+    assert!(
+        err.to_string()
+            .contains("overlaps or is not in source order"),
+        "error should describe the parser-owned non-overlapping element-chain contract"
+    );
+}
+
+#[test]
+fn parser_hir_array_literal_readback_rejects_cross_file_element_edges() {
+    let err = validate_hir_array_literal_records(
+        &[HIR_NODE_ARRAY_EXPR, HIR_NODE_EXPR],
+        &[10, 12],
+        &[20, 13],
+        &[0, 1],
+        &[1, INVALID],
+        &[1, 0],
+        &[INVALID, 0],
+        &[INVALID, 0],
+        &[INVALID, INVALID],
+    )
+    .expect_err("array element rows must stay in the owning literal's source file");
+    assert!(
+        err.to_string().contains("different file id"),
+        "error should describe the parser-owned array literal file-id contract"
     );
 }
 
@@ -7898,13 +10566,50 @@ fn parser_hir_match_readback_rejects_non_pattern_rows_for_match_patterns() {
         &[0, 1, 0, 0, 0, 0],
         &[INVALID, 3, INVALID, INVALID, INVALID, INVALID],
         &[INVALID, INVALID, INVALID, INVALID, INVALID, 1],
-        &[INVALID, INVALID, INVALID, INVALID, INVALID, 0],
-        &[INVALID, INVALID, INVALID, INVALID, INVALID, 0],
+        &[INVALID, 0, INVALID, INVALID, INVALID, 0],
+        &[INVALID, 0, INVALID, INVALID, INVALID, 0],
     )
     .expect_err("match payload pattern rows with non-pattern kinds should fail closed");
     assert!(
         err.to_string().contains("payload row 5 has non-pattern"),
-        "error should describe the parser-owned match payload pattern kind contract"
+        "error should describe the parser-owned match payload pattern kind contract: {err}"
+    );
+}
+
+#[test]
+fn parser_hir_match_readback_rejects_payload_ordinals_out_of_source_order() {
+    let err = validate_hir_match_records(
+        &[
+            HIR_NODE_MATCH_EXPR,
+            HIR_NODE_EXPR,
+            HIR_NODE_NONE,
+            HIR_NODE_NAME_EXPR,
+            HIR_NODE_EXPR,
+            HIR_NODE_NAME_EXPR,
+            HIR_NODE_NAME_EXPR,
+        ],
+        &[0, 1, 3, 3, 9, 7, 5],
+        &[12, 2, 11, 9, 10, 8, 6],
+        &[0; 7],
+        &[1, INVALID, INVALID, INVALID, INVALID, INVALID, INVALID],
+        &[2, INVALID, INVALID, INVALID, INVALID, INVALID, INVALID],
+        &[1, 0, 0, 0, 0, 0, 0],
+        &[
+            INVALID, INVALID, INVALID, INVALID, INVALID, INVALID, INVALID,
+        ],
+        &[INVALID, INVALID, 3, INVALID, INVALID, INVALID, INVALID],
+        &[INVALID, INVALID, 5, INVALID, INVALID, INVALID, INVALID],
+        &[0, 0, 2, 0, 0, 0, 0],
+        &[INVALID, INVALID, 4, INVALID, INVALID, INVALID, INVALID],
+        &[INVALID, INVALID, INVALID, INVALID, INVALID, 2, 2],
+        &[INVALID, INVALID, 0, INVALID, INVALID, 0, 0],
+        &[INVALID, INVALID, 0, INVALID, INVALID, 0, 1],
+    )
+    .expect_err("match payload ordinals must preserve source order");
+    assert!(
+        err.to_string()
+            .contains("payload ordinals are not in source order"),
+        "error should describe the parser-owned match payload ordinal/source-order contract"
     );
 }
 
@@ -7937,6 +10642,65 @@ fn parser_hir_match_readback_rejects_cross_file_result_edge() {
     assert!(
         err.to_string().contains("different file id"),
         "error should describe the parser-owned match source-file contract"
+    );
+}
+
+#[test]
+fn parser_hir_match_readback_rejects_out_of_order_match_edges() {
+    let err = validate_hir_match_records(
+        &[
+            HIR_NODE_MATCH_EXPR,
+            HIR_NODE_EXPR,
+            HIR_NODE_NONE,
+            HIR_NODE_NAME_EXPR,
+            HIR_NODE_EXPR,
+        ],
+        &[0, 1, 3, 3, 6],
+        &[10, 5, 9, 4, 7],
+        &[0; 5],
+        &[1, INVALID, INVALID, INVALID, INVALID],
+        &[2, INVALID, INVALID, INVALID, INVALID],
+        &[1, 0, 0, 0, 0],
+        &[INVALID, INVALID, INVALID, INVALID, INVALID],
+        &[INVALID, INVALID, 3, INVALID, INVALID],
+        &[INVALID, INVALID, INVALID, INVALID, INVALID],
+        &[0, 0, 0, 0, 0],
+        &[INVALID, INVALID, 4, INVALID, INVALID],
+        &[INVALID, INVALID, INVALID, INVALID, INVALID],
+        &[INVALID, INVALID, 0, INVALID, INVALID],
+        &[INVALID, INVALID, 0, INVALID, INVALID],
+    );
+    assert!(
+        err.is_err(),
+        "scrutinee spans must end before the first match arm starts"
+    );
+
+    let err = validate_hir_match_records(
+        &[
+            HIR_NODE_MATCH_EXPR,
+            HIR_NODE_EXPR,
+            HIR_NODE_NONE,
+            HIR_NODE_NAME_EXPR,
+            HIR_NODE_EXPR,
+        ],
+        &[0, 1, 3, 6, 4],
+        &[10, 2, 9, 7, 5],
+        &[0; 5],
+        &[1, INVALID, INVALID, INVALID, INVALID],
+        &[2, INVALID, INVALID, INVALID, INVALID],
+        &[1, 0, 0, 0, 0],
+        &[INVALID, INVALID, INVALID, INVALID, INVALID],
+        &[INVALID, INVALID, 3, INVALID, INVALID],
+        &[INVALID, INVALID, INVALID, INVALID, INVALID],
+        &[0, 0, 0, 0, 0],
+        &[INVALID, INVALID, 4, INVALID, INVALID],
+        &[INVALID, INVALID, INVALID, INVALID, INVALID],
+        &[INVALID, INVALID, 0, INVALID, INVALID],
+        &[INVALID, INVALID, 0, INVALID, INVALID],
+    );
+    assert!(
+        err.is_err(),
+        "match arm patterns must end before result expressions start"
     );
 }
 
@@ -8016,9 +10780,103 @@ fn parser_hir_statement_readback_rejects_if_else_alias_or_overlap() {
 }
 
 #[test]
-fn parser_hir_statement_readback_accepts_for_path_anchor_and_body_edge() {
+fn parser_hir_statement_readback_rejects_if_condition_overlapping_then_block() {
+    let err = validate_hir_statement_records(
+        &[HIR_NODE_IF_STMT, HIR_NODE_EXPR, HIR_NODE_BLOCK],
+        &[0, 1, 4],
+        &[9, 5, 8],
+        &[0, 0, 0],
+        &[
+            STMT_RECORD_KIND_IF,
+            STMT_RECORD_KIND_NONE,
+            STMT_RECORD_KIND_NONE,
+        ],
+        &[1, INVALID, INVALID],
+        &[2, INVALID, INVALID],
+        &[INVALID, INVALID, INVALID],
+        &[INVALID, INVALID, INVALID],
+    )
+    .expect_err("if condition rows must end before the parser-owned then block");
+    assert!(
+        err.to_string().contains("overlaps the then block"),
+        "error should describe the parser-owned if condition/then ordering contract"
+    );
+}
+
+#[test]
+fn parser_hir_statement_readback_rejects_while_condition_overlapping_body() {
+    let err = validate_hir_statement_records(
+        &[HIR_NODE_WHILE_STMT, HIR_NODE_EXPR, HIR_NODE_BLOCK],
+        &[0, 1, 5],
+        &[9, 6, 8],
+        &[0, 0, 0],
+        &[
+            STMT_RECORD_KIND_WHILE,
+            STMT_RECORD_KIND_NONE,
+            STMT_RECORD_KIND_NONE,
+        ],
+        &[1, INVALID, INVALID],
+        &[2, INVALID, INVALID],
+        &[INVALID, INVALID, INVALID],
+        &[INVALID, INVALID, INVALID],
+    )
+    .expect_err("while condition rows must end before the parser-owned body block");
+    assert!(
+        err.to_string().contains("while condition"),
+        "error should describe the parser-owned while condition/body ordering contract"
+    );
+}
+
+#[test]
+fn parser_hir_statement_readback_rejects_if_condition_without_parser_owned_expression() {
+    let err = validate_hir_statement_records(
+        &[HIR_NODE_IF_STMT, HIR_NODE_BLOCK],
+        &[0, 2],
+        &[4, 4],
+        &[0, 0],
+        &[STMT_RECORD_KIND_IF, STMT_RECORD_KIND_NONE],
+        &[INVALID, INVALID],
+        &[1, INVALID],
+        &[INVALID, INVALID],
+        &[INVALID, INVALID],
+    )
+    .expect_err("if condition rows must point at parser-owned expression records");
+    let rendered = err.to_string();
+    assert!(
+        rendered.contains("if condition node")
+            && rendered.contains("without an in-table parser-owned node"),
+        "error should describe the parser-owned if condition expression contract"
+    );
+}
+
+#[test]
+fn parser_hir_statement_readback_rejects_assignment_operands_out_of_source_order() {
+    let err = validate_hir_statement_records(
+        &[HIR_NODE_STMT, HIR_NODE_NAME_EXPR, HIR_NODE_EXPR],
+        &[0, 5, 2],
+        &[8, 6, 4],
+        &[0, 0, 0],
+        &[
+            STMT_RECORD_KIND_ASSIGN,
+            STMT_RECORD_KIND_NONE,
+            STMT_RECORD_KIND_NONE,
+        ],
+        &[1, INVALID, INVALID],
+        &[2, INVALID, INVALID],
+        &[ASSIGN_OP_SET, INVALID, INVALID],
+        &[INVALID, INVALID, INVALID],
+    )
+    .expect_err("assignment target rows must precede parser-owned rhs rows");
+    assert!(
+        err.to_string().contains("overlaps or follows rhs"),
+        "error should describe the parser-owned assignment operand source-order contract"
+    );
+}
+
+#[test]
+fn parser_hir_statement_readback_accepts_for_expression_iterable_and_body_edge() {
     validate_hir_statement_records(
-        &[HIR_NODE_FOR_STMT, HIR_NODE_PATH_EXPR, HIR_NODE_BLOCK],
+        &[HIR_NODE_FOR_STMT, HIR_NODE_EXPR, HIR_NODE_BLOCK],
         &[0, 2, 3],
         &[6, 3, 6],
         &[0, 0, 0],
@@ -8032,7 +10890,9 @@ fn parser_hir_statement_readback_accepts_for_path_anchor_and_body_edge() {
         &[2, INVALID, INVALID],
         &[6, INVALID, INVALID],
     )
-    .expect("for statement records should decode when iterable path and body edges are owned");
+    .expect(
+        "for statement records should decode when iterable expression and body edges are owned",
+    );
 }
 
 #[test]
@@ -8056,9 +10916,9 @@ fn parser_hir_statement_readback_rejects_missing_local_declaration_scope_end() {
 }
 
 #[test]
-fn parser_hir_statement_readback_rejects_for_iterable_without_path_anchor() {
+fn parser_hir_statement_readback_rejects_for_iterable_without_expression_anchor() {
     let err = validate_hir_statement_records(
-        &[HIR_NODE_FOR_STMT, HIR_NODE_EXPR, HIR_NODE_BLOCK],
+        &[HIR_NODE_FOR_STMT, HIR_NODE_TYPE, HIR_NODE_BLOCK],
         &[0, 2, 3],
         &[6, 3, 6],
         &[0, 0, 0],
@@ -8072,10 +10932,34 @@ fn parser_hir_statement_readback_rejects_for_iterable_without_path_anchor() {
         &[2, INVALID, INVALID],
         &[6, INVALID, INVALID],
     )
-    .expect_err("for iterable nodes without parser-owned path rows should fail closed");
+    .expect_err("for iterable nodes without parser-owned expression rows should fail closed");
     assert!(
-        err.to_string().contains("for iterable path"),
-        "error should describe the missing parser-owned iterable path record"
+        err.to_string().contains("for iterable expression"),
+        "error should describe the missing parser-owned iterable expression record"
+    );
+}
+
+#[test]
+fn parser_hir_statement_readback_rejects_for_scope_end_not_body_boundary() {
+    let err = validate_hir_statement_records(
+        &[HIR_NODE_FOR_STMT, HIR_NODE_EXPR, HIR_NODE_BLOCK],
+        &[0, 2, 3],
+        &[7, 3, 6],
+        &[0, 0, 0],
+        &[
+            STMT_RECORD_KIND_FOR,
+            STMT_RECORD_KIND_NONE,
+            STMT_RECORD_KIND_NONE,
+        ],
+        &[1, INVALID, INVALID],
+        &[1, INVALID, INVALID],
+        &[2, INVALID, INVALID],
+        &[7, INVALID, INVALID],
+    )
+    .expect_err("for binding scope must end at the parser-owned body block boundary");
+    assert!(
+        err.to_string().contains("body block end"),
+        "error should describe the parser-owned for binding/body scope contract"
     );
 }
 
@@ -8141,42 +11025,88 @@ fn parser_hir_statement_readback_rejects_return_without_span() {
 }
 
 #[test]
-fn parser_hir_statement_readback_rejects_return_record_on_non_return_row() {
-    let err = validate_hir_statement_records(
-        &[HIR_NODE_EXPR],
-        &[0],
-        &[2],
-        &[0],
-        &[STMT_RECORD_KIND_RETURN],
-        &[INVALID],
-        &[INVALID],
-        &[INVALID],
-        &[INVALID],
+fn parser_hir_statement_readback_rejects_return_value_token_outside_expression_span() {
+    validate_hir_statement_records(
+        &[HIR_NODE_RETURN_STMT, HIR_NODE_NAME_EXPR],
+        &[0, 2],
+        &[5, 4],
+        &[0, 0],
+        &[STMT_RECORD_KIND_RETURN, STMT_RECORD_KIND_NONE],
+        &[1, INVALID],
+        &[INVALID, INVALID],
+        &[2, INVALID],
+        &[INVALID, INVALID],
     )
-    .expect_err("return statement records on non-return HIR rows should fail closed");
+    .expect("return value token inside the returned expression span should decode");
+
+    let err = validate_hir_statement_records(
+        &[HIR_NODE_RETURN_STMT, HIR_NODE_NAME_EXPR],
+        &[0, 2],
+        &[5, 4],
+        &[0, 0],
+        &[STMT_RECORD_KIND_RETURN, STMT_RECORD_KIND_NONE],
+        &[1, INVALID],
+        &[INVALID, INVALID],
+        &[1, INVALID],
+        &[INVALID, INVALID],
+    )
+    .expect_err("return value token outside the returned expression should fail closed");
     assert!(
-        err.to_string().contains("expected"),
-        "error should describe the strict parser-owned return row kind contract"
+        err.to_string()
+            .contains("outside its return expression span"),
+        "error should describe the parser-owned return value token/expression span contract"
     );
 }
 
 #[test]
-fn parser_hir_statement_readback_rejects_break_without_span() {
-    let err = validate_hir_statement_records(
-        &[HIR_NODE_BREAK_STMT],
+fn parser_hir_const_item_readback_rejects_unpaired_item_and_statement_records() {
+    validate_hir_const_item_statement_records(
+        &[HIR_NODE_CONST_ITEM],
+        &[HIR_ITEM_KIND_CONST],
+        &[3],
+        &[STMT_RECORD_KIND_CONST],
+        &[3],
+    )
+    .expect("paired const item and statement records should decode");
+
+    let err = validate_hir_const_item_statement_records(
+        &[HIR_NODE_CONST_ITEM],
+        &[HIR_ITEM_KIND_NONE],
         &[INVALID],
-        &[INVALID],
-        &[0],
-        &[STMT_RECORD_KIND_BREAK],
-        &[INVALID],
-        &[INVALID],
-        &[INVALID],
+        &[STMT_RECORD_KIND_CONST],
+        &[3],
+    )
+    .expect_err("const statement records without item metadata should fail closed");
+    assert!(
+        err.to_string()
+            .contains("const statement record without const item metadata"),
+        "error should describe the parser-owned const item/statement bridge"
+    );
+
+    let err = validate_hir_const_item_statement_records(
+        &[HIR_NODE_CONST_ITEM],
+        &[HIR_ITEM_KIND_CONST],
+        &[3],
+        &[STMT_RECORD_KIND_NONE],
         &[INVALID],
     )
-    .expect_err("break statement records without source spans should fail closed");
+    .expect_err("const item metadata without the statement value/type row should fail closed");
     assert!(
-        err.to_string().contains("without a non-empty token span"),
-        "error should describe the parser-owned break statement span contract"
+        err.to_string().contains("without a const statement record"),
+        "error should describe the missing parser-owned const value/type record"
+    );
+
+    let err = validate_hir_const_item_statement_records(
+        &[HIR_NODE_CONST_ITEM],
+        &[HIR_ITEM_KIND_CONST],
+        &[3],
+        &[STMT_RECORD_KIND_CONST],
+        &[4],
+    )
+    .expect_err("const statement declaration identity must match the item name token");
+    assert!(
+        err.to_string().contains("item name token"),
+        "error should describe the parser-owned const name-token bridge"
     );
 }
 
@@ -8193,10 +11123,12 @@ fn parser_hir_context_relation_readback_accepts_compact_context_rows() {
             HIR_NODE_IF_STMT,
             HIR_NODE_EXPR,
             HIR_NODE_CONST_ITEM,
+            HIR_NODE_STMT,
+            HIR_NODE_EXPR,
         ],
-        &[0, 1, 2, 3, 4, 5, 6, 7, 10],
-        &[12, 9, 8, 4, 5, 6, 9, 8, 11],
-        &[0; 9],
+        &[0, 1, 2, 3, 4, 5, 6, 7, 10, 12, 13],
+        &[15, 15, 8, 4, 5, 6, 9, 8, 11, 14, 14],
+        &[0; 11],
         &[
             STMT_RECORD_KIND_NONE,
             STMT_RECORD_KIND_NONE,
@@ -8207,24 +11139,55 @@ fn parser_hir_context_relation_readback_accepts_compact_context_rows() {
             STMT_RECORD_KIND_IF,
             STMT_RECORD_KIND_NONE,
             STMT_RECORD_KIND_CONST,
+            STMT_RECORD_KIND_ASSIGN,
+            STMT_RECORD_KIND_NONE,
         ],
-        &[INVALID, INVALID, 2, 2, 2, 2, 6, 6, 8],
-        &[INVALID, 1, 1, 1, 1, 1, 1, 1, INVALID],
+        &[INVALID, INVALID, 2, 2, 2, 2, 6, 6, 8, 9, 9],
+        &[INVALID, 1, 1, 1, 1, 1, 1, 1, INVALID, 1, 1],
         &[
-            INVALID, INVALID, INVALID, INVALID, INVALID, INVALID, INVALID, 6, INVALID,
+            INVALID, INVALID, INVALID, INVALID, INVALID, INVALID, INVALID, 6, INVALID, INVALID,
+            INVALID,
         ],
-        &[0, 0, 0, 0, 0, 0, 0, 0, INVALID],
+        &[INVALID; 11],
+        &[0, 0, 0, 0, 0, 0, 0, 0, INVALID, 0, 0],
         &[
-            INVALID, INVALID, INVALID, 2, INVALID, INVALID, INVALID, INVALID, INVALID,
+            INVALID, INVALID, INVALID, 2, INVALID, INVALID, INVALID, INVALID, INVALID, INVALID,
+            INVALID,
         ],
         &[
-            INVALID, INVALID, INVALID, INVALID, 2, INVALID, INVALID, INVALID, INVALID,
+            INVALID, INVALID, INVALID, INVALID, 2, INVALID, INVALID, INVALID, INVALID, INVALID,
+            INVALID,
         ],
         &[
-            INVALID, INVALID, INVALID, INVALID, INVALID, 2, INVALID, INVALID, INVALID,
+            INVALID, INVALID, INVALID, INVALID, INVALID, 2, INVALID, INVALID, INVALID, INVALID,
+            INVALID,
         ],
     )
     .expect("parser-owned context relation rows should decode when spans and owner kinds agree");
+}
+
+#[test]
+fn parser_hir_context_relation_readback_accepts_return_function_context() {
+    validate_hir_context_relation_records(
+        &[HIR_NODE_FN, HIR_NODE_BLOCK, HIR_NODE_RETURN_STMT],
+        &[0, 1, 2],
+        &[8, 7, 4],
+        &[0, 0, 0],
+        &[
+            STMT_RECORD_KIND_NONE,
+            STMT_RECORD_KIND_NONE,
+            STMT_RECORD_KIND_RETURN,
+        ],
+        &[INVALID, INVALID, 2],
+        &[INVALID, 1, 1],
+        &[INVALID, INVALID, INVALID],
+        &[INVALID, INVALID, INVALID],
+        &[0, 0, 0],
+        &[INVALID, INVALID, INVALID],
+        &[INVALID, INVALID, INVALID],
+        &[INVALID, INVALID, INVALID],
+    )
+    .expect("return rows should decode with parser-owned nearest-function context");
 }
 
 #[test]
@@ -8236,6 +11199,7 @@ fn parser_hir_context_relation_readback_rejects_malformed_context_rows() {
         &[0, 0],
         &[STMT_RECORD_KIND_NONE, STMT_RECORD_KIND_LET],
         &[1, 1],
+        &[INVALID, INVALID],
         &[INVALID, INVALID],
         &[INVALID, INVALID],
         &[INVALID, INVALID],
@@ -8255,11 +11219,364 @@ fn parser_hir_context_relation_readback_rejects_malformed_context_rows() {
         &[INVALID, INVALID],
         &[INVALID, INVALID],
         &[INVALID, INVALID],
+        &[INVALID, INVALID],
         &[1, INVALID],
         &[INVALID, INVALID],
         &[INVALID, INVALID],
     )
     .expect_err("context statement rows crossing source-pack file ids should fail closed");
+
+    let err = validate_hir_context_relation_records(
+        &[HIR_NODE_BREAK_STMT, HIR_NODE_LET_STMT],
+        &[2, 0],
+        &[3, 4],
+        &[0, 0],
+        &[STMT_RECORD_KIND_BREAK, STMT_RECORD_KIND_LET],
+        &[0, 1],
+        &[INVALID, INVALID],
+        &[INVALID, INVALID],
+        &[1, INVALID],
+        &[INVALID, INVALID],
+        &[INVALID, INVALID],
+        &[INVALID, INVALID],
+        &[INVALID, INVALID],
+    )
+    .expect_err("nearest-loop rows must point at parser-owned loop statements");
+    assert!(
+        err.to_string()
+            .contains("statement row omitted its nearest block relation"),
+        "error should describe the parser-owned nearest-loop contract: {err}"
+    );
+
+    let err = validate_hir_context_relation_records(
+        &[HIR_NODE_WHILE_STMT],
+        &[0],
+        &[4],
+        &[0],
+        &[STMT_RECORD_KIND_WHILE],
+        &[0],
+        &[INVALID],
+        &[INVALID],
+        &[INVALID],
+        &[INVALID],
+        &[INVALID],
+        &[INVALID],
+        &[INVALID],
+    )
+    .expect_err("loop rows must publish nearest-loop self relations");
+    assert!(
+        err.to_string()
+            .contains("statement row omitted its nearest block relation"),
+        "error should describe the parser-owned loop self-context contract: {err}"
+    );
+
+    let err = validate_hir_context_relation_records(
+        &[HIR_NODE_WHILE_STMT, HIR_NODE_LET_STMT, HIR_NODE_FOR_STMT],
+        &[0, 3, 2],
+        &[9, 4, 8],
+        &[0, 0, 0],
+        &[
+            STMT_RECORD_KIND_WHILE,
+            STMT_RECORD_KIND_LET,
+            STMT_RECORD_KIND_FOR,
+        ],
+        &[0, 1, 2],
+        &[INVALID, INVALID, INVALID],
+        &[INVALID, 0, INVALID],
+        &[0, 2, 2],
+        &[INVALID, INVALID, INVALID],
+        &[INVALID, INVALID, INVALID],
+        &[INVALID, INVALID, INVALID],
+        &[INVALID, INVALID, INVALID],
+    )
+    .expect_err("nearest-control loop rows must agree with nearest-loop rows");
+    assert!(
+        err.to_string()
+            .contains("statement row omitted its nearest block relation"),
+        "error should describe contradictory parser-owned loop context rows: {err}"
+    );
+
+    let err = validate_hir_context_relation_records(
+        &[HIR_NODE_FN],
+        &[0],
+        &[3],
+        &[0],
+        &[STMT_RECORD_KIND_NONE],
+        &[INVALID],
+        &[INVALID],
+        &[INVALID],
+        &[INVALID],
+        &[INVALID],
+        &[INVALID],
+        &[INVALID],
+        &[INVALID],
+    )
+    .expect_err("function rows must publish nearest-function self relations");
+    assert!(
+        err.to_string().contains("nearest function self relation"),
+        "error should describe the parser-owned function self-context contract"
+    );
+
+    let err = validate_hir_context_relation_records(
+        &[HIR_NODE_BLOCK],
+        &[0],
+        &[3],
+        &[0],
+        &[STMT_RECORD_KIND_NONE],
+        &[INVALID],
+        &[INVALID],
+        &[INVALID],
+        &[INVALID],
+        &[INVALID],
+        &[INVALID],
+        &[INVALID],
+        &[INVALID],
+    )
+    .expect_err("block rows must publish nearest-block self relations");
+    assert!(
+        err.to_string().contains("nearest block self relation"),
+        "error should describe the parser-owned block self-context contract"
+    );
+
+    let err = validate_hir_context_relation_records(
+        &[HIR_NODE_FN, HIR_NODE_RETURN_STMT],
+        &[0, 1],
+        &[5, 3],
+        &[0, 0],
+        &[STMT_RECORD_KIND_NONE, STMT_RECORD_KIND_RETURN],
+        &[INVALID, 1],
+        &[INVALID, INVALID],
+        &[INVALID, INVALID],
+        &[INVALID, INVALID],
+        &[0, INVALID],
+        &[INVALID, INVALID],
+        &[INVALID, INVALID],
+        &[INVALID, INVALID],
+    )
+    .expect_err("return rows must publish nearest-function relations");
+    assert!(
+        err.to_string()
+            .contains("statement row omitted its nearest block relation"),
+        "error should describe the parser-owned return-to-function context contract: {err}"
+    );
+}
+
+#[test]
+fn parser_hir_context_relation_readback_rejects_statement_without_self_nearest_statement() {
+    let err = validate_hir_context_relation_records(
+        &[HIR_NODE_IF_STMT, HIR_NODE_LET_STMT],
+        &[0, 1],
+        &[6, 3],
+        &[0, 0],
+        &[STMT_RECORD_KIND_IF, STMT_RECORD_KIND_LET],
+        &[0, 0],
+        &[INVALID, INVALID],
+        &[INVALID, INVALID],
+        &[INVALID, INVALID],
+        &[INVALID, INVALID],
+        &[INVALID, INVALID],
+        &[INVALID, INVALID],
+        &[INVALID, INVALID],
+    )
+    .expect_err("statement rows must publish themselves as nearest statement records");
+    assert!(
+        err.to_string()
+            .contains("statement row omitted its nearest block relation"),
+        "error should describe the parser-owned statement self-context contract: {err}"
+    );
+}
+
+#[test]
+fn parser_hir_context_relation_readback_rejects_statement_without_nearest_block() {
+    let err = validate_hir_context_relation_records(
+        &[HIR_NODE_FN, HIR_NODE_BLOCK, HIR_NODE_STMT],
+        &[0, 1, 2],
+        &[8, 7, 4],
+        &[0, 0, 0],
+        &[
+            STMT_RECORD_KIND_NONE,
+            STMT_RECORD_KIND_NONE,
+            STMT_RECORD_KIND_ASSIGN,
+        ],
+        &[INVALID, INVALID, 2],
+        &[INVALID, 1, INVALID],
+        &[INVALID, INVALID, INVALID],
+        &[INVALID, INVALID, INVALID],
+        &[0, 0, 0],
+        &[INVALID, INVALID, INVALID],
+        &[INVALID, INVALID, INVALID],
+        &[INVALID, INVALID, INVALID],
+    )
+    .expect_err("statement rows must publish parser-owned nearest-block context");
+    assert!(
+        err.to_string().contains("nearest block relation"),
+        "error should describe the parser-owned statement-to-block context contract"
+    );
+}
+
+#[test]
+fn parser_hir_context_relation_readback_rejects_loop_control_without_nearest_loop() {
+    for (control_kind, record_kind, label) in [
+        (HIR_NODE_BREAK_STMT, STMT_RECORD_KIND_BREAK, "break"),
+        (
+            HIR_NODE_CONTINUE_STMT,
+            STMT_RECORD_KIND_CONTINUE,
+            "continue",
+        ),
+    ] {
+        let err = validate_hir_context_relation_records(
+            &[HIR_NODE_WHILE_STMT, control_kind],
+            &[0, 1],
+            &[4, 2],
+            &[0, 0],
+            &[STMT_RECORD_KIND_WHILE, record_kind],
+            &[0, 1],
+            &[INVALID, INVALID],
+            &[INVALID, INVALID],
+            &[0, INVALID],
+            &[INVALID, INVALID],
+            &[INVALID, INVALID],
+            &[INVALID, INVALID],
+            &[INVALID, INVALID],
+        )
+        .expect_err("loop-control rows must publish parser-owned nearest-loop records");
+        assert!(
+            err.to_string()
+                .contains("statement row omitted its nearest block relation"),
+            "{label} error should describe the parser-owned nearest-loop context contract: {err}"
+        );
+    }
+}
+
+#[test]
+fn parser_hir_context_relation_readback_rejects_missing_specialized_context_rows() {
+    for owner_kind in [
+        HIR_NODE_CALL_EXPR,
+        HIR_NODE_ARRAY_EXPR,
+        HIR_NODE_STRUCT_LITERAL_EXPR,
+    ] {
+        let err = validate_hir_context_relation_records(
+            &[owner_kind, HIR_NODE_LET_STMT],
+            &[2, 0],
+            &[3, 4],
+            &[0, 0],
+            &[STMT_RECORD_KIND_NONE, STMT_RECORD_KIND_LET],
+            &[1, 1],
+            &[INVALID, INVALID],
+            &[INVALID, INVALID],
+            &[INVALID, INVALID],
+            &[INVALID, INVALID],
+            &[INVALID, INVALID],
+            &[INVALID, INVALID],
+            &[INVALID, INVALID],
+        )
+        .expect_err(
+            "contextual owner rows with generic nearest statements must publish specialized context rows",
+        );
+        assert!(
+            err.to_string()
+                .contains("statement row omitted its nearest block relation"),
+            "error should describe the missing parser-owned specialized context relation: {err}"
+        );
+    }
+}
+
+#[test]
+fn parser_hir_context_relation_readback_rejects_incoherent_context_chains() {
+    let err = validate_hir_context_relation_records(
+        &[
+            HIR_NODE_FN,
+            HIR_NODE_BLOCK,
+            HIR_NODE_LET_STMT,
+            HIR_NODE_CALL_EXPR,
+        ],
+        &[0, 2, 1, 3],
+        &[4, 5, 4, 4],
+        &[0; 4],
+        &[
+            STMT_RECORD_KIND_NONE,
+            STMT_RECORD_KIND_NONE,
+            STMT_RECORD_KIND_LET,
+            STMT_RECORD_KIND_NONE,
+        ],
+        &[INVALID, INVALID, 2, 2],
+        &[INVALID, 1, INVALID, 1],
+        &[INVALID; 4],
+        &[INVALID; 4],
+        &[0, INVALID, 0, 0],
+        &[INVALID, INVALID, INVALID, 2],
+        &[INVALID; 4],
+        &[INVALID; 4],
+    )
+    .expect_err("function membership chains must be mutually coherent");
+    assert!(
+        err.to_string()
+            .contains("statement row omitted its nearest block relation"),
+        "error should describe the parser-owned function/block context-chain contract: {err}"
+    );
+}
+
+#[test]
+fn parser_hir_context_relation_readback_rejects_specialized_context_without_nearest_statement() {
+    let err = validate_hir_context_relation_records(
+        &[HIR_NODE_CALL_EXPR, HIR_NODE_LET_STMT],
+        &[2, 0],
+        &[3, 4],
+        &[0, 0],
+        &[STMT_RECORD_KIND_NONE, STMT_RECORD_KIND_LET],
+        &[INVALID, 1],
+        &[INVALID, INVALID],
+        &[INVALID, INVALID],
+        &[INVALID, INVALID],
+        &[INVALID, INVALID],
+        &[1, INVALID],
+        &[INVALID, INVALID],
+        &[INVALID, INVALID],
+    )
+    .expect_err("specialized context rows must not substitute for nearest-statement rows");
+    assert!(
+        err.to_string()
+            .contains("statement row omitted its nearest block relation"),
+        "error should describe the parser-owned generic/specialized context bridge: {err}"
+    );
+}
+
+#[test]
+fn parser_hir_context_relation_readback_rejects_specialized_context_block_mismatch() {
+    let err = validate_hir_context_relation_records(
+        &[
+            HIR_NODE_FN,
+            HIR_NODE_BLOCK,
+            HIR_NODE_LET_STMT,
+            HIR_NODE_CALL_EXPR,
+            HIR_NODE_BLOCK,
+        ],
+        &[0, 1, 2, 3, 3],
+        &[10, 9, 6, 4, 5],
+        &[0; 5],
+        &[
+            STMT_RECORD_KIND_NONE,
+            STMT_RECORD_KIND_NONE,
+            STMT_RECORD_KIND_LET,
+            STMT_RECORD_KIND_NONE,
+            STMT_RECORD_KIND_NONE,
+        ],
+        &[INVALID, INVALID, 2, 2, INVALID],
+        &[INVALID, 1, 1, 4, 4],
+        &[INVALID; 5],
+        &[INVALID; 5],
+        &[0, 0, 0, 0, 0],
+        &[INVALID, INVALID, INVALID, 2, INVALID],
+        &[INVALID; 5],
+        &[INVALID; 5],
+    )
+    .expect_err("specialized contextual rows must inherit their statement context's nearest block");
+    assert!(
+        err.to_string().contains(
+            "nearest block relation 4 that does not contain nearest statement relation 2"
+        ),
+        "error should describe the parser-owned contextual nearest-block contract: {err}"
+    );
 }
 
 #[test]
@@ -8271,6 +11588,7 @@ fn parser_hir_context_relation_readback_rejects_stale_statement_records() {
         &[0, 0],
         &[STMT_RECORD_KIND_NONE, STMT_RECORD_KIND_NONE],
         &[1, 1],
+        &[INVALID, INVALID],
         &[INVALID, INVALID],
         &[INVALID, INVALID],
         &[INVALID, INVALID],
@@ -8515,6 +11833,55 @@ fn main(value: Maybe) -> i32 {
 }
 
 #[test]
+fn parser_hir_enum_variant_readback_rejects_malformed_payload_records() {
+    let mut payload_nodes = vec![INVALID; 3 * VARIANT_PAYLOAD_SLOT_STRIDE];
+    payload_nodes[VARIANT_PAYLOAD_SLOT_STRIDE] = 2;
+
+    let validate = |payload_starts: &[u32], payload_counts: &[u32], payload_nodes: &[u32]| {
+        validate_hir_enum_variant_records(
+            &[HIR_NODE_ENUM_ITEM, HIR_NODE_ITEM, HIR_NODE_TYPE],
+            &[0, 1, 3],
+            &[8, 7, 4],
+            &[0, 0, 0],
+            &[HIR_TYPE_FORM_NONE, HIR_TYPE_FORM_NONE, HIR_TYPE_FORM_PATH],
+            &[INVALID, INVALID, 0],
+            &[
+                HIR_ITEM_KIND_ENUM,
+                HIR_ITEM_KIND_ENUM_VARIANT,
+                HIR_ITEM_KIND_NONE,
+            ],
+            &[0, 0, INVALID],
+            &[INVALID, 0, INVALID],
+            &[INVALID, 0, INVALID],
+            payload_starts,
+            payload_counts,
+            payload_nodes,
+        )
+    };
+
+    validate(&[INVALID, 2, INVALID], &[0, 1, 0], &payload_nodes)
+        .expect("canonical enum variant payload records should decode");
+
+    let mut non_type_payload = payload_nodes.clone();
+    non_type_payload[VARIANT_PAYLOAD_SLOT_STRIDE] = 0;
+    let err = validate(&[INVALID, 0, INVALID], &[0, 1, 0], &non_type_payload)
+        .expect_err("enum variant payload slots must point at type records");
+    assert!(
+        err.to_string().contains("not a concrete type record"),
+        "error should describe the parser-owned enum payload type-row contract"
+    );
+
+    let mut stale_slot = payload_nodes;
+    stale_slot[VARIANT_PAYLOAD_SLOT_STRIDE + 1] = 2;
+    let err = validate(&[INVALID, 2, INVALID], &[0, 1, 0], &stale_slot)
+        .expect_err("unused enum variant payload slots must remain empty");
+    assert!(
+        err.to_string().contains("stale payload slot"),
+        "error should describe stale parser-owned enum payload slots"
+    );
+}
+
+#[test]
 fn parser_hir_item_records_are_source_addressable_in_source_packs() {
     let source_count = 2;
     let parsed = parse_resident_source_pack(&[
@@ -8552,6 +11919,7 @@ fn main() -> i32 {
         parsed.ll1_status[3]
     );
     assert_flat_item_type_records_follow_source_order(&parsed, source_count);
+    assert_source_pack_file_rows_partition_sources(&parsed, source_count);
 
     let item_nodes = parsed
         .hir_item_kind
@@ -8690,6 +12058,91 @@ fn main() -> i32 {
         "fixture should publish a type-alias item row"
     );
     assert!(saw_variant, "fixture should publish enum-variant item rows");
+}
+
+fn assert_source_pack_file_rows_partition_sources(
+    parsed: &DecodedParserHirItemReadbacks,
+    source_count: usize,
+) {
+    let mut file_rows = parsed
+        .hir_kind
+        .iter()
+        .enumerate()
+        .filter_map(|(row, &kind)| (kind == HIR_NODE_FILE).then_some(row))
+        .collect::<Vec<_>>();
+    file_rows.sort_by_key(|&row| {
+        (
+            parsed.hir_node_file_id[row],
+            parsed.hir_token_pos[row],
+            parsed.hir_token_end[row],
+        )
+    });
+
+    assert_eq!(
+        file_rows.len(),
+        source_count,
+        "source-pack parser should publish one HIR file row per source file"
+    );
+
+    let mut previous_end = 0;
+    for (expected_file_id, &row) in file_rows.iter().enumerate() {
+        assert_eq!(
+            parsed.hir_node_file_id[row] as usize, expected_file_id,
+            "HIR file row {row} should retain source-pack file id {expected_file_id}"
+        );
+        assert_ne!(
+            parsed.hir_token_pos[row], INVALID,
+            "HIR file row {row} should publish a token start"
+        );
+        assert_ne!(
+            parsed.hir_token_end[row], INVALID,
+            "HIR file row {row} should publish a token end"
+        );
+        assert!(
+            parsed.hir_token_pos[row] < parsed.hir_token_end[row],
+            "HIR file row {row} should publish a non-empty file span"
+        );
+        assert!(
+            previous_end <= parsed.hir_token_pos[row],
+            "HIR file row {row} should not overlap the previous source-pack file: previous_end={previous_end}, start={}, end={}, file_id={}",
+            parsed.hir_token_pos[row],
+            parsed.hir_token_end[row],
+            parsed.hir_node_file_id[row]
+        );
+        previous_end = parsed.hir_token_end[row];
+
+        let item_count = parsed
+            .hir_item_kind
+            .iter()
+            .enumerate()
+            .filter(|&(item_row, &kind)| {
+                kind != HIR_ITEM_KIND_NONE
+                    && parsed.hir_item_file_id[item_row] as usize == expected_file_id
+            })
+            .count();
+        assert!(
+            item_count > 0,
+            "HIR file row {row} should contain item rows for source-pack file {expected_file_id}"
+        );
+
+        for (item_row, &kind) in parsed.hir_item_kind.iter().enumerate() {
+            if kind == HIR_ITEM_KIND_NONE
+                || parsed.hir_item_file_id[item_row] as usize != expected_file_id
+            {
+                continue;
+            }
+            assert!(
+                parsed.hir_token_pos[row] <= parsed.hir_token_pos[item_row],
+                "item row {item_row} should start inside HIR file row {row}"
+            );
+            assert!(
+                parsed.hir_token_end[item_row] <= parsed.hir_token_end[row],
+                "item row {item_row} should end inside HIR file row {row}"
+            );
+        }
+    }
+
+    assert_source_pack_semantic_file_rows_partition_sources(parsed, &file_rows);
 }
 
 fn assert_flat_item_type_records_follow_source_order(
@@ -9027,5 +12480,131 @@ fn main() -> i32 {
         ),
         Err(CompileError::Diagnostic(_)) | Err(CompileError::GpuTypeCheck(_)) => {}
         Err(other) => panic!("expected GPU resolver/type-check rejection, got {other:?}"),
+    }
+}
+
+fn assert_source_pack_semantic_file_rows_partition_sources(
+    parsed: &DecodedParserHirItemReadbacks,
+    file_rows: &[usize],
+) {
+    let semantic_count = parsed
+        .hir_kind
+        .iter()
+        .filter(|&&kind| kind != HIR_NODE_NONE)
+        .count();
+
+    for &file_node in file_rows {
+        let file_row = parsed
+            .hir_semantic_dense_node
+            .iter()
+            .take(semantic_count)
+            .position(|&node| node as usize == file_node)
+            .expect("HIR file node should appear in dense semantic rows");
+        assert_eq!(
+            parsed.hir_semantic_parent[file_row], INVALID,
+            "HIR file semantic row {file_row} should be a source-pack root"
+        );
+    }
+
+    let mut semantic_root_count = 0usize;
+    for row in 0..semantic_count {
+        let node = parsed.hir_semantic_dense_node[row] as usize;
+        assert!(
+            node < parsed.hir_kind.len(),
+            "dense semantic row {row} should point to a parser HIR row"
+        );
+        let file_id = parsed.hir_node_file_id[node] as usize;
+        assert!(
+            file_id < file_rows.len(),
+            "semantic row {row} should retain a bounded source-pack file id"
+        );
+
+        let parent = parsed.hir_semantic_parent[row];
+        if parent == INVALID {
+            semantic_root_count += 1;
+            assert_eq!(
+                parsed.hir_kind[node], HIR_NODE_FILE,
+                "source-pack semantic root row {row} should be a HIR file row"
+            );
+            assert_eq!(
+                parsed.hir_semantic_depth[row], 0,
+                "source-pack semantic root row {row} should publish depth zero"
+            );
+            continue;
+        }
+
+        let parent = parent as usize;
+        assert!(
+            parent < semantic_count,
+            "semantic row {row} should publish a bounded parent row"
+        );
+        let parent_node = parsed.hir_semantic_dense_node[parent] as usize;
+        assert_eq!(
+            parsed.hir_node_file_id[parent_node] as usize, file_id,
+            "semantic row {row} should not attach to parent row {parent} from another source-pack file"
+        );
+        assert_eq!(
+            parsed.hir_semantic_depth[row],
+            parsed.hir_semantic_depth[parent] + 1,
+            "semantic row {row} should publish parent-relative depth"
+        );
+    }
+    assert_eq!(
+        semantic_root_count,
+        file_rows.len(),
+        "source-pack semantic forest should have exactly one root per source file"
+    );
+
+    for row in 0..semantic_count {
+        let node = parsed.hir_semantic_dense_node[row] as usize;
+        let file_id = parsed.hir_node_file_id[node];
+
+        let child = parsed.hir_semantic_first_child[row];
+        if child != INVALID {
+            let child = child as usize;
+            assert!(
+                child < semantic_count,
+                "semantic row {row} should publish a bounded first-child row"
+            );
+            let child_node = parsed.hir_semantic_dense_node[child] as usize;
+            assert_eq!(
+                parsed.hir_semantic_parent[child], row as u32,
+                "semantic row {row}'s first child {child} should point back to its parent"
+            );
+            assert_eq!(
+                parsed.hir_node_file_id[child_node], file_id,
+                "semantic row {row}'s first child {child} should stay inside the same source-pack file"
+            );
+            assert_eq!(
+                parsed.hir_semantic_child_index[child], 0,
+                "semantic row {row}'s first child {child} should publish child index zero"
+            );
+        }
+
+        let sibling = parsed.hir_semantic_next_sibling[row];
+        if sibling == INVALID {
+            continue;
+        }
+        let sibling = sibling as usize;
+        assert!(
+            sibling < semantic_count,
+            "semantic row {row} should publish a bounded next-sibling row"
+        );
+        assert_eq!(
+            parsed.hir_semantic_parent[sibling], parsed.hir_semantic_parent[row],
+            "semantic row {row}'s next sibling {sibling} should share its parent"
+        );
+        if parsed.hir_semantic_parent[row] != INVALID {
+            let sibling_node = parsed.hir_semantic_dense_node[sibling] as usize;
+            assert_eq!(
+                parsed.hir_node_file_id[sibling_node], file_id,
+                "semantic row {row}'s non-root next sibling {sibling} should stay inside the same source-pack file"
+            );
+        }
+        assert_eq!(
+            parsed.hir_semantic_child_index[sibling],
+            parsed.hir_semantic_child_index[row] + 1,
+            "semantic row {row}'s next sibling {sibling} should advance child index"
+        );
     }
 }

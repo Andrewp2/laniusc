@@ -58,6 +58,8 @@ static const uint X86_OP_MOD_I32 = 6u;
 static const uint X86_OP_DIV_I32 = 7u;
 static const uint X86_OP_SHL_I32 = 11u;
 static const uint X86_OP_SHR_I32 = 12u;
+static const uint X86_OP_MOD_U32 = 13u;
+static const uint X86_OP_DIV_U32 = 14u;
 
 bool row_has_virtual_instruction(uint row, uint inst_count)
 {
@@ -114,6 +116,8 @@ bool row_has_fixed_register_barrier(uint row, uint inst_count)
     uint op = x86_virtual_inst_args[row].x;
     return op == X86_OP_DIV_I32 ||
            op == X86_OP_MOD_I32 ||
+           op == X86_OP_DIV_U32 ||
+           op == X86_OP_MOD_U32 ||
            op == X86_OP_SHL_I32 ||
            op == X86_OP_SHR_I32;
 }

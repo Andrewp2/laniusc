@@ -69,6 +69,10 @@ pub(super) fn register_hir_item_resources<'a>(
     resources.buffer("hir_type_len_token", &hir_items.type_len_token);
     resources.buffer("hir_type_len_value", &hir_items.type_len_value);
     resources.buffer("hir_type_path_leaf_node", &hir_items.type_path_leaf_node);
+    resources.buffer(
+        "hir_bound_path_owner_by_leaf",
+        &hir_items.bound_path_owner_by_leaf,
+    );
     resources.buffer("hir_type_arg_start", &hir_items.type_arg_start);
     resources.buffer("hir_type_arg_count", &hir_items.type_arg_count);
     resources.buffer("hir_type_arg_next", &hir_items.type_arg_next);
@@ -111,6 +115,10 @@ pub(super) fn register_hir_item_resources<'a>(
     resources.buffer("hir_member_name_token", &hir_items.member_name_token);
     resources.buffer("hir_stmt_record", &hir_items.stmt_record);
     resources.buffer("hir_stmt_scope_end", &hir_items.stmt_scope_end);
+    resources.buffer("hir_nearest_stmt_node", &hir_items.nearest_stmt_node);
+    resources.buffer("hir_nearest_block_node", &hir_items.nearest_block_node);
+    resources.buffer("hir_nearest_loop_node", &hir_items.nearest_loop_node);
+    resources.buffer("hir_nearest_fn_node", &hir_items.nearest_fn_node);
     resources.buffer(
         "hir_array_lit_first_element",
         &hir_items.array_lit_first_element,
@@ -223,6 +231,7 @@ pub(super) fn register_fallback_hir_resources<'a>(
     resources.buffer("hir_type_len_token", &fallback.parent);
     resources.buffer("hir_type_len_value", &fallback.parent);
     resources.buffer("hir_type_path_leaf_node", &fallback.parent);
+    resources.buffer("hir_bound_path_owner_by_leaf", &fallback.parent);
     resources.buffer("hir_type_arg_start", &fallback.parent);
     resources.buffer("hir_type_arg_count", &fallback.node_kind);
     resources.buffer("hir_type_arg_next", &fallback.parent);
@@ -247,6 +256,10 @@ pub(super) fn register_fallback_hir_resources<'a>(
     resources.buffer("hir_member_name_token", &fallback.parent);
     resources.buffer("hir_stmt_record", &fallback.parent);
     resources.buffer("hir_stmt_scope_end", &fallback.parent);
+    resources.buffer("hir_nearest_stmt_node", &fallback.parent);
+    resources.buffer("hir_nearest_block_node", &fallback.parent);
+    resources.buffer("hir_nearest_loop_node", &fallback.parent);
+    resources.buffer("hir_nearest_fn_node", &fallback.parent);
     resources.buffer("hir_array_lit_first_element", &fallback.parent);
     resources.buffer("hir_array_lit_element_count", &fallback.node_kind);
     resources.buffer("hir_array_lit_context_stmt_node", &fallback.parent);

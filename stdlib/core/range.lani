@@ -43,6 +43,11 @@ pub fn contains_i32(range: Range<i32>, value: i32) -> bool {
     return value >= range.start && value < range.end;
 }
 
+pub fn overlaps_i32(left: Range<i32>, right: Range<i32>) -> bool {
+    return left.start < left.end && right.start < right.end &&
+        left.start < right.end && right.start < left.end;
+}
+
 pub fn range_inclusive_i32(start: i32, end: i32) -> RangeInclusive<i32> {
     return RangeInclusive { start: start, end: end, };
 }
@@ -63,6 +68,11 @@ pub fn contains_inclusive_i32(range: RangeInclusive<i32>, value: i32) -> bool {
     return value >= range.start && value <= range.end;
 }
 
+pub fn overlaps_inclusive_i32(left: RangeInclusive<i32>, right: RangeInclusive<i32>) -> bool {
+    return left.start <= left.end && right.start <= right.end &&
+        left.start <= right.end && right.start <= left.end;
+}
+
 pub impl Range<i32> {
     pub fn start(self) -> i32 {
         return self.start;
@@ -78,6 +88,11 @@ pub impl Range<i32> {
 
     pub fn contains(&self, value: i32) -> bool {
         return value >= self.start && value < self.end;
+    }
+
+    pub fn overlaps(&self, other: Range<i32>) -> bool {
+        return self.start < self.end && other.start < other.end &&
+            self.start < other.end && other.start < self.end;
     }
 }
 
@@ -96,5 +111,10 @@ pub impl RangeInclusive<i32> {
 
     pub fn contains(&self, value: i32) -> bool {
         return value >= self.start && value <= self.end;
+    }
+
+    pub fn overlaps(&self, other: RangeInclusive<i32>) -> bool {
+        return self.start <= self.end && other.start <= other.end &&
+            self.start <= other.end && other.start <= self.end;
     }
 }

@@ -14,7 +14,6 @@
 import fixed_key;
 import gpu_index;
 import range_query;
-import status;
 
 struct Params
 {
@@ -49,8 +48,6 @@ StructuredBuffer<uint> type_instance_arg_ref_payload;
 RWStructuredBuffer<uint> call_fn_index;
 RWStructuredBuffer<uint> call_return_type;
 RWStructuredBuffer<uint> call_return_type_token;
-RWStructuredBuffer<uint> status;
-
 static const uint INVALID = 0xffffffffu;
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_SCALAR = 1u;
@@ -63,10 +60,8 @@ static const uint TYPE_INSTANCE_ARG_REF_STRIDE = 4u;
 static const uint METHOD_KEY_STATUS_PRIVATE_OK = 0u;
 static const uint METHOD_KEY_STATUS_PUBLIC_OK = 5u;
 static const uint TY_UNKNOWN = 0u;
-static const uint ERR_CALL_MISMATCH = 10u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint MAX_VISIBLE_METHOD_CANDIDATES = 32u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -165,12 +160,12 @@ uint type_code_for_ref(uint tag, uint payload)
         return payload;
     if (tag == TYPE_REF_INSTANCE && payload < active_token_count())
     {
-        uint ty = module_type_path_type[payload];
-        if (ty != TY_UNKNOWN)
-            return ty;
         uint decl_token = type_instance_decl_token[payload];
         if (decl_token != INVALID && decl_token < active_token_count())
         {
+            uint ty = module_type_path_type[payload];
+            if (ty != TY_UNKNOWN)
+                return ty;
             ty = module_type_path_type[decl_token];
             if (ty != TY_UNKNOWN)
                 return ty;
@@ -178,6 +173,42 @@ uint type_code_for_ref(uint tag, uint payload)
         }
     }
     return TY_UNKNOWN;
+}
+
+bool substituted_receiver_return_type_slot(
+    uint receiver_tag,
+    uint receiver_payload,
+    uint decl_receiver_tag,
+    uint decl_receiver_payload,
+    uint decl_arg_count,
+    uint ret_payload,
+    uint fallback_ty,
+    uint slot,
+    out uint ty)
+{
+    ty = TY_UNKNOWN;
+    if (slot >= decl_arg_count)
+        return false;
+
+    uint decl_arg_i = receiver_arg_ref_index(decl_receiver_tag, decl_receiver_payload, slot);
+    if (decl_arg_i == INVALID)
+        return false;
+    if (type_instance_arg_ref_tag[decl_arg_i] != TYPE_REF_GENERIC_PARAM ||
+        type_instance_arg_ref_payload[decl_arg_i] != ret_payload)
+        return false;
+
+    uint call_arg_i = receiver_arg_ref_index(receiver_tag, receiver_payload, slot);
+    if (call_arg_i == INVALID)
+    {
+        ty = fallback_ty;
+        return true;
+    }
+
+    uint resolved_ty = type_code_for_ref(
+        type_instance_arg_ref_tag[call_arg_i],
+        type_instance_arg_ref_payload[call_arg_i]);
+    ty = resolved_ty == TY_UNKNOWN ? fallback_ty : resolved_ty;
+    return true;
 }
 
 uint substituted_receiver_return_type(
@@ -195,26 +226,23 @@ uint substituted_receiver_return_type(
             uint decl_receiver_tag = method_decl_receiver_ref_tag[fn_i];
             uint decl_receiver_payload = method_decl_receiver_ref_payload[fn_i];
             uint decl_arg_count = receiver_arg_count(decl_receiver_tag, decl_receiver_payload);
-            [loop]
-            for (uint slot = 0u; slot < TYPE_INSTANCE_ARG_REF_STRIDE; slot += 1u)
-            {
-                if (slot >= decl_arg_count)
-                    break;
-                uint decl_arg_i = receiver_arg_ref_index(decl_receiver_tag, decl_receiver_payload, slot);
-                if (decl_arg_i == INVALID)
-                    break;
-                if (type_instance_arg_ref_tag[decl_arg_i] == TYPE_REF_GENERIC_PARAM &&
-                    type_instance_arg_ref_payload[decl_arg_i] == ret_payload)
-                {
-                    uint call_arg_i = receiver_arg_ref_index(receiver_tag, receiver_payload, slot);
-                    if (call_arg_i == INVALID)
-                        return fallback_ty;
-                    uint ty = type_code_for_ref(
-                        type_instance_arg_ref_tag[call_arg_i],
-                        type_instance_arg_ref_payload[call_arg_i]);
-                    return ty == TY_UNKNOWN ? fallback_ty : ty;
-                }
-            }
+            uint ty = TY_UNKNOWN;
+            if (substituted_receiver_return_type_slot(
+                    receiver_tag, receiver_payload, decl_receiver_tag, decl_receiver_payload,
+                    decl_arg_count, ret_payload, fallback_ty, 0u, ty))
+                return ty;
+            if (substituted_receiver_return_type_slot(
+                    receiver_tag, receiver_payload, decl_receiver_tag, decl_receiver_payload,
+                    decl_arg_count, ret_payload, fallback_ty, 1u, ty))
+                return ty;
+            if (substituted_receiver_return_type_slot(
+                    receiver_tag, receiver_payload, decl_receiver_tag, decl_receiver_payload,
+                    decl_arg_count, ret_payload, fallback_ty, 2u, ty))
+                return ty;
+            if (substituted_receiver_return_type_slot(
+                    receiver_tag, receiver_payload, decl_receiver_tag, decl_receiver_payload,
+                    decl_arg_count, ret_payload, fallback_ty, 3u, ty))
+                return ty;
         }
     }
 
@@ -494,6 +522,23 @@ uint find_method(uint module_id, uint receiver_tag, uint receiver_payload, uint 
     return INVALID;
 }
 
+bool unique_visible_method_in_range(uint method_i, QueryRange range, out uint visible_fn_i)
+{
+    visible_fn_i = INVALID;
+    if (range.end > active_token_count() || range.end < range.begin)
+        return false;
+
+    uint candidate_count = range.end - range.begin;
+    if (candidate_count == 0u)
+        return true;
+    if (candidate_count != 1u)
+        return false;
+
+    uint fn_i = sorted_method_key_order[range.begin];
+    visible_fn_i = visibility_checked_method(method_i, fn_i);
+    return true;
+}
+
 uint find_visible_method(uint method_i, uint receiver_tag, uint receiver_payload, uint name_id)
 {
     if (!receiver_instance_resolved(receiver_tag, receiver_payload))
@@ -517,28 +562,9 @@ uint find_visible_method(uint method_i, uint receiver_tag, uint receiver_payload
     QueryRange range = equal_range_query<MethodLookupKey, MethodPrefixCompare>(
         active_token_count(),
         key);
-    if (range.end > active_token_count() || range.end < range.begin)
+    if (!unique_visible_method_in_range(method_i, range, exact_fn_i))
         return INVALID;
 
-    uint candidate_count = range.end - range.begin;
-    if (candidate_count > MAX_VISIBLE_METHOD_CANDIDATES)
-        return INVALID;
-
-    [loop]
-    for (uint offset = 0u; offset < MAX_VISIBLE_METHOD_CANDIDATES; offset += 1u)
-    {
-        if (offset >= candidate_count)
-            break;
-        uint row = range.begin + offset;
-        uint fn_i = sorted_method_key_order[row];
-        fn_i = visibility_checked_method(method_i, fn_i);
-        if (fn_i != INVALID)
-        {
-            if (exact_fn_i != INVALID)
-                return INVALID;
-            exact_fn_i = fn_i;
-        }
-    }
     if (receiver_arg_count(receiver_tag, receiver_payload) == 0u)
         return exact_fn_i;
 
@@ -547,28 +573,9 @@ uint find_visible_method(uint method_i, uint receiver_tag, uint receiver_payload
     range = equal_range_query<MethodLookupKey, MethodPrefixCompare>(
         active_token_count(),
         key);
-    if (range.end > active_token_count() || range.end < range.begin)
+    if (!unique_visible_method_in_range(method_i, range, generic_fn_i))
         return INVALID;
 
-    candidate_count = range.end - range.begin;
-    if (candidate_count > MAX_VISIBLE_METHOD_CANDIDATES)
-        return INVALID;
-
-    [loop]
-    for (uint offset = 0u; offset < MAX_VISIBLE_METHOD_CANDIDATES; offset += 1u)
-    {
-        if (offset >= candidate_count)
-            break;
-        uint row = range.begin + offset;
-        uint fn_i = sorted_method_key_order[row];
-        fn_i = visibility_checked_method(method_i, fn_i);
-        if (fn_i != INVALID)
-        {
-            if (generic_fn_i != INVALID)
-                return INVALID;
-            generic_fn_i = fn_i;
-        }
-    }
     if (exact_fn_i != INVALID && generic_fn_i != INVALID)
         return INVALID;
 
@@ -620,10 +627,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         fn_i,
         call_return_type[fn_i]);
     if (ret_ty == TY_UNKNOWN)
-    {
-        record_min_token_error(status, i, ERR_CALL_MISMATCH, method_call_name_id[i]);
         return;
-    }
     call_fn_index[i] = fn_i;
     call_return_type[i] = ret_ty;
     call_return_type_token[i] = call_return_type_token[fn_i];

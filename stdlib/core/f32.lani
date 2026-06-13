@@ -40,3 +40,39 @@ pub fn clamp(value: f32, low: f32, high: f32) -> f32 {
         }
     }
 }
+
+pub fn is_negative(value: f32) -> bool {
+    return value < ZERO;
+}
+
+pub fn is_positive(value: f32) -> bool {
+    return value > ZERO;
+}
+
+pub fn is_zero(value: f32) -> bool {
+    return value == ZERO;
+}
+
+pub fn is_nonzero(value: f32) -> bool {
+    return value != ZERO;
+}
+
+pub fn signum(value: f32) -> f32 {
+    if (is_positive(value)) {
+        return ONE;
+    } else {
+        if (is_negative(value)) {
+            return -ONE;
+        } else {
+            return ZERO;
+        }
+    }
+}
+
+pub fn between_exclusive(value: f32, low: f32, high: f32) -> bool {
+    return value > low && value < high;
+}
+
+pub fn between_inclusive(value: f32, low: f32, high: f32) -> bool {
+    return value >= low && value <= high;
+}

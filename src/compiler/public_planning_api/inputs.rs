@@ -320,12 +320,28 @@ fn collect_entry_source_root_paths(
 ) -> Result<(Vec<PathBuf>, Vec<PathBuf>), CompileError> {
     let entry_path = entry_path.to_path_buf();
     let mut search_roots = Vec::with_capacity(roots.user_roots.len() + 1);
+    let mut seen_user_roots: BTreeSet<PathBuf> = BTreeSet::new();
     for source_root in &roots.user_roots {
-        search_roots.push(canonical_source_root(
-            "source root",
-            source_root,
-            SourceRootLibrary::User,
-        )?);
+        let source_root =
+            canonical_source_root("source root", source_root, SourceRootLibrary::User)?;
+        if seen_user_roots.contains(&source_root.root) {
+            return Err(CompileError::GpuFrontend(format!(
+                "duplicate source root {}",
+                source_root.root.display()
+            )));
+        }
+        if let Some(overlapping_root) = seen_user_roots
+            .iter()
+            .find(|seen_root| source_roots_overlap(seen_root, &source_root.root))
+        {
+            return Err(CompileError::GpuFrontend(format!(
+                "overlapping source roots {} and {}; user source roots must be disjoint so package-relative module identity is stable",
+                overlapping_root.display(),
+                source_root.root.display()
+            )));
+        }
+        seen_user_roots.insert(source_root.root.clone());
+        search_roots.push(source_root);
     }
     if let Some(stdlib_root) = &roots.stdlib_root {
         search_roots.push(canonical_source_root(
@@ -384,6 +400,10 @@ fn canonical_source_root(
         label,
         root,
     })
+}
+
+fn source_roots_overlap(left: &Path, right: &Path) -> bool {
+    left.starts_with(right) || right.starts_with(left)
 }
 
 fn load_source_root_import(
@@ -451,6 +471,19 @@ fn resolve_source_root_import(
             return Err(ambiguous_source_root_module_error(import, &stdlib_matches));
         }
         if let Some(stdlib_match) = stdlib_matches.pop() {
+            let user_alias_matches = collect_source_root_import_alias_matches(
+                import,
+                roots
+                    .iter()
+                    .filter(|root| root.library == SourceRootLibrary::User),
+                &stdlib_match.path,
+                &mut searched_paths,
+            )?;
+            if !user_alias_matches.is_empty() {
+                let mut matches = vec![stdlib_match.clone()];
+                matches.extend(user_alias_matches);
+                return Err(ambiguous_source_root_module_error(import, &matches));
+            }
             return Ok(stdlib_match);
         }
 
@@ -524,6 +557,55 @@ fn collect_source_root_import_matches<'a>(
             Ok(path) => path,
             Err(_) => continue,
         };
+        if !canonical_import_path.starts_with(&root.root) {
+            return Err(source_root_escape_error(
+                import,
+                &canonical_import_path,
+                root,
+            ));
+        }
+        if !canonical_import_path.is_file() {
+            continue;
+        }
+        if !is_lani_source_path(&canonical_import_path) {
+            return Err(source_root_non_source_file_error(
+                import,
+                &canonical_import_path,
+                root,
+            ));
+        }
+        if !matches.iter().any(|candidate: &SourceRootResolvedImport| {
+            candidate.path == canonical_import_path && candidate.library == root.library
+        }) {
+            matches.push(SourceRootResolvedImport {
+                library: root.library,
+                root_label: root.label,
+                path: canonical_import_path,
+            });
+        }
+    }
+
+    Ok(matches)
+}
+
+fn collect_source_root_import_alias_matches<'a>(
+    import: &SourceRootImport,
+    roots: impl Iterator<Item = &'a SourceRootSearchRoot>,
+    canonical_target: &Path,
+    searched_paths: &mut Vec<PathBuf>,
+) -> Result<Vec<SourceRootResolvedImport>, CompileError> {
+    let mut matches = Vec::new();
+
+    for root in roots {
+        let import_path = source_root_module_path(&root.root, &import.path);
+        searched_paths.push(import_path.clone());
+        let canonical_import_path = match fs::canonicalize(&import_path) {
+            Ok(path) => path,
+            Err(_) => continue,
+        };
+        if canonical_import_path.as_path() != canonical_target {
+            continue;
+        }
         if !canonical_import_path.starts_with(&root.root) {
             return Err(source_root_escape_error(
                 import,
@@ -724,7 +806,7 @@ fn leading_path_imports(
     let mut offset = 0usize;
 
     loop {
-        offset = skip_ws_and_comments(bytes, offset);
+        offset = skip_ws_and_comments(source, bytes, offset, source_path)?;
         if keyword_at(bytes, offset, b"module") {
             offset += "module".len();
             let (_, next_offset) =
@@ -735,14 +817,27 @@ fn leading_path_imports(
         if keyword_at(bytes, offset, b"import") {
             let import_offset = offset;
             offset += "import".len();
-            offset = skip_ws_and_comments(bytes, offset);
+            offset = skip_ws_and_comments(source, bytes, offset, source_path)?;
             if bytes.get(offset) == Some(&b'"') {
-                offset = skip_quoted_import_path(source, offset, source_path)?;
-                offset = expect_semicolon(source, offset, source_path, "import")?;
-                continue;
+                let quoted_end = skip_quoted_import_path(source, offset, source_path)?;
+                return Err(unsupported_source_root_quoted_import_error(
+                    source,
+                    source_path,
+                    import_offset,
+                    quoted_end.saturating_sub(import_offset),
+                ));
             }
             let (path, next_offset) =
                 parse_source_root_path(source, offset, source_path, SourceRootPathKind::Import)?;
+            let next_offset = skip_ws_and_comments(source, bytes, next_offset, source_path)?;
+            if keyword_at(bytes, next_offset, b"as") {
+                return Err(unsupported_source_root_import_alias_error(
+                    source,
+                    source_path,
+                    next_offset,
+                    source_root_import_alias_label_len(bytes, next_offset),
+                ));
+            }
             let import_end = expect_semicolon(source, next_offset, source_path, "import")?;
             let (line, column) = line_column_at(source, import_offset);
             let (source_line, label_len) =
@@ -758,8 +853,62 @@ fn leading_path_imports(
             offset = import_end;
             continue;
         }
+        reject_non_leading_source_root_imports(source, offset, source_path)?;
         return Ok(imports);
     }
+}
+
+fn reject_non_leading_source_root_imports(
+    source: &str,
+    offset: usize,
+    source_path: &Path,
+) -> Result<(), CompileError> {
+    let bytes = source.as_bytes();
+    let mut offset = offset;
+
+    while offset < bytes.len() {
+        if bytes.get(offset..offset + 2) == Some(b"//") {
+            offset += 2;
+            while bytes.get(offset).is_some_and(|byte| *byte != b'\n') {
+                offset += 1;
+            }
+            continue;
+        }
+        if bytes.get(offset..offset + 2) == Some(b"/*") {
+            let comment_start = offset;
+            offset += 2;
+            while offset + 1 < bytes.len() && bytes.get(offset..offset + 2) != Some(b"*/") {
+                offset += 1;
+            }
+            if offset + 1 >= bytes.len() {
+                return Err(unterminated_source_root_block_comment_error(
+                    source,
+                    source_path,
+                    comment_start,
+                ));
+            }
+            offset += 2;
+            continue;
+        }
+        if bytes.get(offset) == Some(&b'"') {
+            offset = skip_quoted_literal(source, offset, source_path, b'"', "string literal")?;
+            continue;
+        }
+        if bytes.get(offset) == Some(&b'\'') {
+            offset = skip_quoted_literal(source, offset, source_path, b'\'', "character literal")?;
+            continue;
+        }
+        if keyword_at_anywhere(bytes, offset, b"import") {
+            return Err(non_leading_source_root_import_error(
+                source,
+                source_path,
+                offset,
+            ));
+        }
+        offset += 1;
+    }
+
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -769,6 +918,13 @@ enum SourceRootPathKind {
 }
 
 impl SourceRootPathKind {
+    fn label(self) -> &'static str {
+        match self {
+            SourceRootPathKind::Module => "module",
+            SourceRootPathKind::Import => "import",
+        }
+    }
+
     fn enforce_source_root_depth_limit(self) -> bool {
         matches!(self, SourceRootPathKind::Import)
     }
@@ -781,16 +937,34 @@ fn parse_source_root_path(
     kind: SourceRootPathKind,
 ) -> Result<(String, usize), CompileError> {
     let bytes = source.as_bytes();
-    let mut offset = skip_ws_and_comments(bytes, offset);
+    let mut offset = skip_ws_and_comments(source, bytes, offset, source_path)?;
     let path_start = offset;
     let mut segments = Vec::new();
 
     loop {
         let segment_start = offset;
+        if kind == SourceRootPathKind::Import && bytes.get(segment_start) == Some(&b'*') {
+            return Err(unsupported_source_root_import_glob_error(
+                source,
+                source_path,
+                segment_start,
+            ));
+        }
         offset = parse_ident(bytes, offset).ok_or_else(|| {
             syntax_error_to_compile_error_for_source_span(source_path, source, segment_start, 1)
         })?;
-        segments.push(&source[segment_start..offset]);
+        let segment = &source[segment_start..offset];
+        if kind == SourceRootPathKind::Import
+            && is_source_root_reserved_module_path_segment(segment)
+        {
+            return Err(invalid_source_root_import_path_segment_error(
+                source,
+                source_path,
+                segment_start,
+                segment,
+            ));
+        }
+        segments.push(segment);
         if kind.enforce_source_root_depth_limit()
             && segments.len() > SOURCE_ROOT_IMPORT_PATH_SEGMENT_LIMIT
         {
@@ -804,15 +978,78 @@ fn parse_source_root_path(
                 label_len,
             ));
         }
-        offset = skip_ws_and_comments(bytes, offset);
+        offset = skip_ws_and_comments(source, bytes, offset, source_path)?;
+        if invalid_source_root_path_separator(bytes, offset) {
+            return Err(invalid_source_root_path_separator_error(
+                source,
+                source_path,
+                offset,
+                kind,
+            ));
+        }
         if bytes.get(offset..offset + 2) != Some(b"::") {
             break;
         }
         offset += 2;
-        offset = skip_ws_and_comments(bytes, offset);
+        offset = skip_ws_and_comments(source, bytes, offset, source_path)?;
     }
 
     Ok((segments.join("::"), offset))
+}
+
+fn invalid_source_root_path_separator(bytes: &[u8], offset: usize) -> bool {
+    match bytes.get(offset) {
+        Some(b'/' | b'\\' | b'.') => true,
+        Some(b':') => bytes.get(offset..offset + 2) != Some(b"::"),
+        _ => false,
+    }
+}
+
+fn invalid_source_root_path_separator_error(
+    source: &str,
+    source_path: &Path,
+    start: usize,
+    kind: SourceRootPathKind,
+) -> CompileError {
+    let (line, column) = line_column_at(source, start);
+    let (source_line, label_len) = source_line_and_label_len(source, start, start + 1);
+    let label_message = format!("{} paths must use `::` separators", kind.label());
+    match kind {
+        SourceRootPathKind::Module => CompileError::Diagnostic(
+            Diagnostic::error("LNC0016", "syntax error")
+                .with_primary_label(DiagnosticLabel::primary(
+                    source_path.to_path_buf(),
+                    line,
+                    column,
+                    label_len,
+                    Some(source_line),
+                    label_message,
+                ))
+                .with_note(
+                    "source-root discovery does not normalize filesystem path separators or package-name separators into module declarations",
+                )
+                .with_note(
+                    "module identity must come from GPU parser module-path tokens such as `module app::main;`",
+                ),
+        ),
+        SourceRootPathKind::Import => CompileError::Diagnostic(
+            Diagnostic::error("LNC0011", "unsupported import form")
+                .with_primary_label(DiagnosticLabel::primary(
+                    source_path.to_path_buf(),
+                    line,
+                    column,
+                    label_len,
+                    Some(source_line),
+                    label_message,
+                ))
+                .with_note(
+                    "source-root discovery records module-path imports such as `import app::module;`",
+                )
+                .with_note(
+                    "filesystem path separators and package-name separators cannot be normalized into semantic module identity during package replay",
+                ),
+        ),
+    }
 }
 
 fn source_root_import_path_too_deep_error(
@@ -843,6 +1080,16 @@ fn skip_quoted_import_path(
     offset: usize,
     source_path: &Path,
 ) -> Result<usize, CompileError> {
+    skip_quoted_literal(source, offset, source_path, b'"', "string literal")
+}
+
+fn skip_quoted_literal(
+    source: &str,
+    offset: usize,
+    source_path: &Path,
+    quote: u8,
+    label: &str,
+) -> Result<usize, CompileError> {
     let bytes = source.as_bytes();
     let quote_start = offset;
     let mut offset = offset + 1;
@@ -851,17 +1098,162 @@ fn skip_quoted_import_path(
             offset = (offset + 2).min(bytes.len());
             continue;
         }
-        if *byte == b'"' {
+        if *byte == b'\n' {
+            return Err(malformed_source_root_literal_error(
+                source,
+                source_path,
+                quote_start,
+                label,
+            ));
+        }
+        if *byte == quote {
             return Ok(offset + 1);
         }
         offset += 1;
     }
-    Err(syntax_error_to_compile_error_for_source_span(
-        source_path,
+    Err(malformed_source_root_literal_error(
         source,
+        source_path,
         quote_start,
-        source.len().saturating_sub(quote_start).max(1),
+        label,
     ))
+}
+
+fn non_leading_source_root_import_error(
+    source: &str,
+    source_path: &Path,
+    import_offset: usize,
+) -> CompileError {
+    let (line, column) = line_column_at(source, import_offset);
+    let (source_line, label_len) =
+        source_line_and_label_len(source, import_offset, import_offset + "import".len());
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0011", "unsupported import form")
+            .with_primary_label(DiagnosticLabel::primary(
+                source_path.to_path_buf(),
+                line,
+                column,
+                label_len,
+                Some(source_line),
+                "imports must appear before other items",
+            ))
+            .with_note(
+                "source-root/package discovery only loads leading module-path imports so package replay metadata stays complete",
+            )
+            .with_note("move imports directly after the module declaration"),
+    )
+}
+
+fn unsupported_source_root_import_alias_error(
+    source: &str,
+    source_path: &Path,
+    start: usize,
+    len: usize,
+) -> CompileError {
+    let (line, column) = line_column_at(source, start);
+    let (source_line, label_len) = source_line_and_label_len(source, start, start + len);
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0011", "unsupported import form")
+            .with_primary_label(DiagnosticLabel::primary(
+                source_path.to_path_buf(),
+                line,
+                column,
+                label_len,
+                Some(source_line),
+                "import aliases are not supported by source-root discovery",
+            ))
+            .with_note(
+                "source-root discovery only loads explicit module-path imports until alias metadata is represented by GPU module/import records",
+            ),
+    )
+}
+
+fn unsupported_source_root_import_glob_error(
+    source: &str,
+    source_path: &Path,
+    start: usize,
+) -> CompileError {
+    let (line, column) = line_column_at(source, start);
+    let (source_line, label_len) = source_line_and_label_len(source, start, start + 1);
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0011", "unsupported import form")
+            .with_primary_label(DiagnosticLabel::primary(
+                source_path.to_path_buf(),
+                line,
+                column,
+                label_len,
+                Some(source_line),
+                "import globs are not supported by source-root discovery",
+            ))
+            .with_note(
+                "source-root discovery must publish explicit module-path source candidates instead of expanding glob imports on the host",
+            ),
+    )
+}
+
+fn unsupported_source_root_quoted_import_error(
+    source: &str,
+    source_path: &Path,
+    start: usize,
+    len: usize,
+) -> CompileError {
+    let (line, column) = line_column_at(source, start);
+    let (source_line, label_len) = source_line_and_label_len(source, start, start + len);
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0011", "unsupported import form")
+            .with_primary_label(DiagnosticLabel::primary(
+                source_path.to_path_buf(),
+                line,
+                column,
+                label_len,
+                Some(source_line),
+                "quoted imports are not supported by source-root discovery",
+            ))
+            .with_note(
+                "source-root discovery must publish explicit module-path source candidates instead of treating quoted paths as optional metadata",
+            ),
+    )
+}
+
+fn invalid_source_root_import_path_segment_error(
+    source: &str,
+    source_path: &Path,
+    start: usize,
+    segment: &str,
+) -> CompileError {
+    let (line, column) = line_column_at(source, start);
+    let (source_line, label_len) = source_line_and_label_len(source, start, start + segment.len());
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0011", "unsupported import form")
+            .with_primary_label(DiagnosticLabel::primary(
+                source_path.to_path_buf(),
+                line,
+                column,
+                label_len,
+                Some(source_line),
+                "invalid import path segment",
+            ))
+            .with_note(
+                "reserved keywords cannot be used as source-root import path segments",
+            )
+            .with_note(
+                "source-root discovery must follow GPU module/import identifier records instead of normalizing invalid module paths into host file lookups",
+            ),
+    )
+}
+
+fn source_root_import_alias_label_len(bytes: &[u8], start: usize) -> usize {
+    let mut end = start + "as".len();
+    while bytes
+        .get(end)
+        .is_some_and(|byte| byte.is_ascii_whitespace())
+    {
+        end += 1;
+    }
+    if let Some(alias_end) = parse_ident(bytes, end) {
+        end = alias_end;
+    }
+    end.saturating_sub(start)
 }
 
 fn expect_semicolon(
@@ -871,7 +1263,7 @@ fn expect_semicolon(
     _context: &str,
 ) -> Result<usize, CompileError> {
     let bytes = source.as_bytes();
-    let offset = skip_ws_and_comments(bytes, offset);
+    let offset = skip_ws_and_comments(source, bytes, offset, source_path)?;
     if bytes.get(offset) == Some(&b';') {
         return Ok(offset + 1);
     }
@@ -883,7 +1275,12 @@ fn expect_semicolon(
     ))
 }
 
-fn skip_ws_and_comments(bytes: &[u8], mut offset: usize) -> usize {
+fn skip_ws_and_comments(
+    source: &str,
+    bytes: &[u8],
+    mut offset: usize,
+    source_path: &Path,
+) -> Result<usize, CompileError> {
     loop {
         while bytes
             .get(offset)
@@ -899,21 +1296,86 @@ fn skip_ws_and_comments(bytes: &[u8], mut offset: usize) -> usize {
             continue;
         }
         if bytes.get(offset..offset + 2) == Some(b"/*") {
+            let comment_start = offset;
             offset += 2;
             while offset + 1 < bytes.len() && bytes.get(offset..offset + 2) != Some(b"*/") {
                 offset += 1;
             }
-            offset = (offset + 2).min(bytes.len());
+            if offset + 1 >= bytes.len() {
+                return Err(unterminated_source_root_block_comment_error(
+                    source,
+                    source_path,
+                    comment_start,
+                ));
+            }
+            offset += 2;
             continue;
         }
-        return offset;
+        return Ok(offset);
     }
+}
+
+fn unterminated_source_root_block_comment_error(
+    source: &str,
+    source_path: &Path,
+    comment_offset: usize,
+) -> CompileError {
+    let (line, column) = line_column_at(source, comment_offset);
+    let (source_line, label_len) =
+        source_line_and_label_len(source, comment_offset, comment_offset + 2);
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0016", "syntax error")
+            .with_primary_label(DiagnosticLabel::primary(
+                source_path.to_path_buf(),
+                line,
+                column,
+                label_len,
+                Some(source_line),
+                "unterminated block comment",
+            ))
+            .with_note(
+                "source-root replay must not skip malformed comments while discovering module/import metadata",
+            ),
+    )
+}
+
+fn malformed_source_root_literal_error(
+    source: &str,
+    source_path: &Path,
+    literal_offset: usize,
+    label: &str,
+) -> CompileError {
+    let (line, column) = line_column_at(source, literal_offset);
+    let (source_line, label_len) =
+        source_line_and_label_len(source, literal_offset, literal_offset + 1);
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0016", "syntax error")
+            .with_primary_label(DiagnosticLabel::primary(
+                source_path.to_path_buf(),
+                line,
+                column,
+                label_len,
+                Some(source_line),
+                format!("malformed {label}"),
+            ))
+            .with_note(
+                "source-root replay must not skip malformed literals while discovering module/import metadata",
+            ),
+    )
 }
 
 fn keyword_at(bytes: &[u8], offset: usize, keyword: &[u8]) -> bool {
     bytes.get(offset..offset + keyword.len()) == Some(keyword)
         && bytes
             .get(offset + keyword.len())
+            .is_none_or(|byte| !is_ident_continue(*byte))
+}
+
+fn keyword_at_anywhere(bytes: &[u8], offset: usize, keyword: &[u8]) -> bool {
+    keyword_at(bytes, offset, keyword)
+        && offset
+            .checked_sub(1)
+            .and_then(|previous| bytes.get(previous))
             .is_none_or(|byte| !is_ident_continue(*byte))
 }
 
@@ -935,6 +1397,37 @@ fn is_ident_start(byte: u8) -> bool {
 
 fn is_ident_continue(byte: u8) -> bool {
     is_ident_start(byte) || byte.is_ascii_digit()
+}
+
+fn is_source_root_reserved_module_path_segment(segment: &str) -> bool {
+    matches!(
+        segment,
+        "break"
+            | "const"
+            | "continue"
+            | "else"
+            | "enum"
+            | "extern"
+            | "false"
+            | "fn"
+            | "for"
+            | "if"
+            | "impl"
+            | "import"
+            | "in"
+            | "let"
+            | "match"
+            | "module"
+            | "pub"
+            | "return"
+            | "self"
+            | "struct"
+            | "trait"
+            | "true"
+            | "type"
+            | "where"
+            | "while"
+    )
 }
 
 fn line_column_at(source: &str, offset: usize) -> (usize, usize) {

@@ -5,112 +5,6 @@ use super::{
 };
 
 #[allow(clippy::too_many_arguments)]
-pub(in crate::type_checker) fn create_standalone_visible_bind_groups(
-    device: &wgpu::Device,
-    resources: &HashMap<String, wgpu::BindingResource<'_>>,
-    hir_node_capacity: u32,
-    hir_decl_scan_n_blocks: u32,
-    hir_decl_record_capacity: u32,
-    hir_decl_record_n_blocks: u32,
-    hir_decl_tree_leaf_base: u32,
-    hir_decl_scan_steps: &[NameScanStep],
-    hir_active_count: &wgpu::Buffer,
-    hir_semantic_count: &wgpu::Buffer,
-    hir_visible_decl_flag: &wgpu::Buffer,
-    hir_visible_decl_prefix: &wgpu::Buffer,
-    hir_visible_decl_scan_local_prefix: &wgpu::Buffer,
-    hir_visible_decl_scan_block_sum: &wgpu::Buffer,
-    hir_visible_decl_scan_prefix_a: &wgpu::Buffer,
-    hir_visible_decl_scan_prefix_b: &wgpu::Buffer,
-    hir_visible_decl_count_out: &wgpu::Buffer,
-    hir_visible_decl_owner_fn: &wgpu::Buffer,
-    hir_visible_decl_name_id: &wgpu::Buffer,
-    hir_visible_decl_token: &wgpu::Buffer,
-    hir_visible_decl_scope_end: &wgpu::Buffer,
-    hir_visible_decl_key_order: &wgpu::Buffer,
-    hir_visible_decl_key_order_tmp: &wgpu::Buffer,
-    hir_visible_decl_key_radix_dispatch_args: &wgpu::Buffer,
-    hir_visible_decl_key_radix_block_histogram: &wgpu::Buffer,
-    hir_visible_decl_key_radix_block_bucket_prefix: &wgpu::Buffer,
-    hir_visible_decl_key_radix_bucket_total: &wgpu::Buffer,
-    hir_visible_decl_key_radix_bucket_base: &wgpu::Buffer,
-    hir_visible_decl_scope_tree: &wgpu::Buffer,
-) -> Result<VisibleBindGroups> {
-    let clear_pass = type_check_visible_clear_pass(device)?;
-    let scope_blocks_pass = type_check_visible_scope_blocks_pass(device)?;
-    let scatter_pass = type_check_visible_scatter_pass(device)?;
-    let decode_pass = type_check_visible_decode_pass(device)?;
-    let mark_hir_decl_names_pass = type_check_visible_mark_hir_decl_names_pass(device)?;
-    let count_dispatch_pass = type_check_count_dispatch_args_pass(device)?;
-    let counted_scan_local_pass = type_check_counted_scan_local_pass(device)?;
-    let counted_scan_blocks_pass = type_check_counted_scan_blocks_pass(device)?;
-    let counted_scan_apply_pass = type_check_counted_scan_apply_pass(device)?;
-    let scatter_hir_decl_records_pass = type_check_visible_scatter_hir_decl_records_pass(device)?;
-    let seed_hir_decl_order_pass = type_check_visible_seed_hir_decl_order_pass(device)?;
-    let sort_hir_decl_keys_pass = type_check_visible_sort_hir_decl_keys_pass(device)?;
-    let sort_hir_decl_keys_scatter_pass =
-        type_check_visible_sort_hir_decl_keys_scatter_pass(device)?;
-    let build_hir_decl_scope_leaves_pass =
-        type_check_visible_build_hir_decl_scope_leaves_pass(device)?;
-    let build_hir_decl_scope_tree_pass = type_check_visible_build_hir_decl_scope_tree_pass(device)?;
-    let radix_dispatch_pass = type_check_names_radix_dispatch_args_pass(device)?;
-    let radix_bucket_prefix_pass = type_check_names_radix_bucket_prefix_pass(device)?;
-    let radix_bucket_bases_pass = type_check_names_radix_bucket_bases_pass(device)?;
-    let hir_names_pass = type_check_visible_hir_names_pass(device)?;
-    create_visible_bind_groups_from_passes(
-        device,
-        resources,
-        clear_pass,
-        scope_blocks_pass,
-        scatter_pass,
-        decode_pass,
-        mark_hir_decl_names_pass,
-        count_dispatch_pass,
-        counted_scan_local_pass,
-        counted_scan_blocks_pass,
-        counted_scan_apply_pass,
-        scatter_hir_decl_records_pass,
-        seed_hir_decl_order_pass,
-        sort_hir_decl_keys_pass,
-        sort_hir_decl_keys_scatter_pass,
-        build_hir_decl_scope_leaves_pass,
-        build_hir_decl_scope_tree_pass,
-        radix_dispatch_pass,
-        radix_bucket_prefix_pass,
-        radix_bucket_bases_pass,
-        hir_names_pass,
-        true,
-        hir_node_capacity,
-        hir_decl_scan_n_blocks,
-        hir_decl_record_capacity,
-        hir_decl_record_n_blocks,
-        hir_decl_tree_leaf_base,
-        hir_decl_scan_steps,
-        hir_active_count,
-        hir_semantic_count,
-        hir_visible_decl_flag,
-        hir_visible_decl_prefix,
-        hir_visible_decl_scan_local_prefix,
-        hir_visible_decl_scan_block_sum,
-        hir_visible_decl_scan_prefix_a,
-        hir_visible_decl_scan_prefix_b,
-        hir_visible_decl_count_out,
-        hir_visible_decl_owner_fn,
-        hir_visible_decl_name_id,
-        hir_visible_decl_token,
-        hir_visible_decl_scope_end,
-        hir_visible_decl_key_order,
-        hir_visible_decl_key_order_tmp,
-        hir_visible_decl_key_radix_dispatch_args,
-        hir_visible_decl_key_radix_block_histogram,
-        hir_visible_decl_key_radix_block_bucket_prefix,
-        hir_visible_decl_key_radix_bucket_total,
-        hir_visible_decl_key_radix_bucket_base,
-        hir_visible_decl_scope_tree,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
 pub(in crate::type_checker) fn create_resident_visible_bind_groups(
     passes: &TypeCheckPasses,
     device: &wgpu::Device,
@@ -123,9 +17,6 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
         device,
         resources,
         &passes.visible_clear_resident,
-        &passes.visible_scope_blocks,
-        &passes.visible_scatter,
-        &passes.visible_decode,
         &passes.visible_mark_hir_decl_names,
         &passes.count_dispatch_args,
         &passes.counted_scan_local,
@@ -141,7 +32,6 @@ pub(in crate::type_checker) fn create_resident_visible_bind_groups(
         &passes.names_radix_bucket_prefix,
         &passes.names_radix_bucket_bases,
         &passes.visible_hir_names,
-        false,
         shape.hir_nodes,
         shape.scan_blocks,
         shape.record_capacity,
@@ -177,9 +67,6 @@ pub(in crate::type_checker) fn create_visible_bind_groups_from_passes(
     device: &wgpu::Device,
     resources: &HashMap<String, wgpu::BindingResource<'_>>,
     clear_pass: &PassData,
-    scope_blocks_pass: &PassData,
-    scatter_pass: &PassData,
-    decode_pass: &PassData,
     mark_hir_decl_names_pass: &PassData,
     count_dispatch_pass: &PassData,
     counted_scan_local_pass: &PassData,
@@ -195,7 +82,6 @@ pub(in crate::type_checker) fn create_visible_bind_groups_from_passes(
     radix_bucket_prefix_pass: &PassData,
     radix_bucket_bases_pass: &PassData,
     hir_names_pass: &PassData,
-    include_legacy_token_visibility: bool,
     hir_node_capacity: u32,
     hir_decl_scan_n_blocks: u32,
     hir_decl_record_capacity: u32,
@@ -230,16 +116,6 @@ pub(in crate::type_checker) fn create_visible_bind_groups_from_passes(
         clear_pass,
         resources,
     )?;
-    let legacy_scope_blocks = if include_legacy_token_visibility {
-        Some(reflected_bind_group_from_resources(
-            device,
-            "type_check_visible_02_scope_blocks",
-            scope_blocks_pass,
-            resources,
-        )?)
-    } else {
-        None
-    };
     let hir_semantic_dispatch_args = storage_u32_rw(
         device,
         "type_check.visible.hir_semantic_dispatch_args",
@@ -583,25 +459,6 @@ pub(in crate::type_checker) fn create_visible_bind_groups_from_passes(
         level_start /= 2;
     }
 
-    let legacy_token_visibility = if let Some(scope_blocks) = legacy_scope_blocks {
-        Some(LegacyVisibleBindGroups {
-            scope_blocks,
-            scatter: reflected_bind_group_from_resources(
-                device,
-                "type_check_visible_02_scatter",
-                scatter_pass,
-                resources,
-            )?,
-            decode: reflected_bind_group_from_resources(
-                device,
-                "type_check_visible_03_decode",
-                decode_pass,
-                resources,
-            )?,
-        })
-    } else {
-        None
-    };
     let hir_names = reflected_bind_group_from_resources(
         device,
         "type_check_visible_04_hir_names",
@@ -611,10 +468,8 @@ pub(in crate::type_checker) fn create_visible_bind_groups_from_passes(
 
     Ok(VisibleBindGroups {
         hir_decl_scan_n_blocks,
-        hir_decl_record_n_blocks,
         hir_semantic_dispatch_args,
         clear,
-        legacy_token_visibility,
         hir_semantic_dispatch,
         mark_hir_decl_names,
         hir_decl_scan,

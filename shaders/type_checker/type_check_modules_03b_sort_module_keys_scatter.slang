@@ -22,7 +22,7 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> module_count_out;
+StructuredBuffer<uint> module_table_count_out;
 StructuredBuffer<uint> module_key_segment_count;
 StructuredBuffer<uint> module_key_segment_base;
 StructuredBuffer<uint> module_key_segment_name_id;
@@ -48,7 +48,7 @@ uint linear_group_id(uint3 gid)
 
 uint active_module_count()
 {
-    return min(module_count_out[0], gParams.module_capacity);
+    return min(module_table_count_out[0], gParams.module_capacity);
 }
 
 uint module_key_segment_value(uint module_i, uint segment_i)

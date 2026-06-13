@@ -159,6 +159,10 @@ impl HirStructFieldRankStepPass {
                 buffers.hir_struct_rank_node.as_entire_binding(),
             ),
             (
+                "hir_struct_rank_count".into(),
+                buffers.hir_struct_rank_count.as_entire_binding(),
+            ),
+            (
                 "hir_struct_field_owner_in".into(),
                 field_owner_in.as_entire_binding(),
             ),

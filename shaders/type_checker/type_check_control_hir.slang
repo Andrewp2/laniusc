@@ -25,7 +25,7 @@ StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> call_return_type;
-StructuredBuffer<int> loop_depth;
+StructuredBuffer<uint> hir_nearest_loop_node;
 
 RWStructuredBuffer<uint> status;
 
@@ -371,7 +371,7 @@ void validate_loop_control_node(uint node)
         record_error(0u, ERR_BAD_HIR, kind);
         return;
     }
-    if (loop_depth[token_i] <= 0)
+    if (!valid_node(hir_nearest_loop_node[node]))
         record_error(token_i, ERR_LOOP_CONTROL, kind);
 }
 

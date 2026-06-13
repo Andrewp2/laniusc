@@ -1,7 +1,7 @@
 {
   "tokens": [
     {
-      "kind": "GroupLParen",
+      "kind": "LParen",
       "text": "("
     },
     {
@@ -9,7 +9,7 @@
       "text": "1"
     },
     {
-      "kind": "InfixPlus",
+      "kind": "Plus",
       "text": "+"
     },
     {
@@ -17,7 +17,7 @@
       "text": "2"
     },
     {
-      "kind": "GroupRParen",
+      "kind": "RParen",
       "text": ")"
     },
     {
@@ -37,7 +37,7 @@
       "text": "!"
     },
     {
-      "kind": "GroupLParen",
+      "kind": "LParen",
       "text": "("
     },
     {
@@ -53,7 +53,7 @@
       "text": "5"
     },
     {
-      "kind": "GroupRParen",
+      "kind": "RParen",
       "text": ")"
     },
     {
@@ -65,7 +65,7 @@
       "text": "a"
     },
     {
-      "kind": "IndexLBracket",
+      "kind": "LBracket",
       "text": "["
     },
     {
@@ -73,7 +73,7 @@
       "text": "b"
     },
     {
-      "kind": "IndexRBracket",
+      "kind": "RBracket",
       "text": "]"
     },
     {

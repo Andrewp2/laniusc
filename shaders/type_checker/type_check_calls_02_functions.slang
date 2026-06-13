@@ -125,12 +125,12 @@ uint scalar_or_named_type_code_for_ref(uint tag, uint payload)
     }
     if (tag == TYPE_REF_INSTANCE && valid_token(payload))
     {
-        uint named_ty = module_type_path_type[payload];
-        if (named_ty != TY_UNKNOWN)
-            return named_ty;
         uint decl_token = type_instance_decl_token[payload];
         if (valid_token(decl_token))
         {
+            uint named_ty = module_type_path_type[payload];
+            if (named_ty != TY_UNKNOWN)
+                return named_ty;
             named_ty = module_type_path_type[decl_token];
             if (named_ty != TY_UNKNOWN)
                 return named_ty;
@@ -258,6 +258,7 @@ uint semantic_type_code_for_ref(uint tag, uint payload)
                     return named_ty;
                 return TY_STRUCT_BASE + decl_token;
             }
+            return TY_UNKNOWN;
         }
 
         return module_type_path_type[payload];
@@ -310,6 +311,7 @@ void publish_function_lookup(uint fn_node)
         key,
         fn_decl_token,
         lookup_capacity(),
+        INVALID,
         INVALID,
         function_lookup_key,
         function_lookup_fn);

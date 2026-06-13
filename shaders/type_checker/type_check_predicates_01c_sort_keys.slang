@@ -7,6 +7,9 @@
 //   arg0 type, arg1 type).
 // - mode 2 sorts trait/impl method contract rows by (owner node, method name,
 //   method node), so validators can range-query by owner/name.
+// - mode 3 sorts method parameter rows by (method node, ordinal, param node),
+//   so signature validators can join parameters by ordinal without walking a
+//   source-sized method-local chain.
 // - This pass only counts radix buckets; it does not solve obligations,
 //   inspect source bytes, or impose fixed per-owner/per-trait limits.
 
@@ -38,6 +41,7 @@ StructuredBuffer<uint> predicate_bound_arg_count;
 StructuredBuffer<uint> predicate_bound_first_arg_token;
 StructuredBuffer<uint> predicate_bound_second_arg_token;
 StructuredBuffer<uint> predicate_status;
+StructuredBuffer<uint4> hir_param_record;
 StructuredBuffer<uint> predicate_method_contract_owner_node;
 StructuredBuffer<uint> predicate_method_contract_name_id;
 StructuredBuffer<uint> predicate_key_order_in;
@@ -48,6 +52,7 @@ static const uint INVALID = 0xffffffffu;
 static const uint PREDICATE_KEY_MODE_OWNER = 0u;
 static const uint PREDICATE_KEY_MODE_IMPL = 1u;
 static const uint PREDICATE_KEY_MODE_METHOD_CONTRACT = 2u;
+static const uint PREDICATE_KEY_MODE_METHOD_PARAM = 3u;
 static const uint PREDICATE_STATUS_OK = 0u;
 static const uint PREDICATE_ARG_TYPE_CODE_BIT = 0x80000000u;
 static const uint TYPE_REF_SCALAR = 1u;
@@ -122,6 +127,11 @@ uint predicate_arg_type_code(uint arg)
     return type_code_for_type_token(arg);
 }
 
+uint predicate_type_code(uint value)
+{
+    return predicate_arg_type_code(value);
+}
+
 bool valid_owner_predicate(uint pred)
 {
     if (!valid_node(pred) || predicate_status[pred] != PREDICATE_STATUS_OK)
@@ -136,7 +146,7 @@ bool valid_impl_predicate(uint pred)
         return false;
     return predicate_owner_node[pred] == pred &&
            predicate_bound_decl_id[pred] != INVALID &&
-           type_code_for_type_token(predicate_subject_token[pred]) != TY_UNKNOWN;
+           predicate_type_code(predicate_subject_token[pred]) != TY_UNKNOWN;
 }
 
 bool valid_method_contract(uint node)
@@ -145,6 +155,19 @@ bool valid_method_contract(uint node)
         return false;
     return valid_node(predicate_method_contract_owner_node[node]) &&
            predicate_method_contract_name_id[node] != INVALID;
+}
+
+bool valid_method_param(uint node)
+{
+    if (!valid_node(node))
+        return false;
+
+    uint4 record = hir_param_record[node];
+    uint owner = record.x;
+    uint ordinal = record.y;
+    return record.w == node &&
+           valid_method_contract(owner) &&
+           ordinal != INVALID;
 }
 
 uint owner_key_field(uint pred, uint field_i)
@@ -165,7 +188,7 @@ uint impl_key_lane(uint pred, uint lane)
         return encode_key_value(predicate_bound_decl_id[pred], INVALID);
     if (lane == 1u)
         return encode_key_value(
-            type_code_for_type_token(predicate_subject_token[pred]),
+            predicate_type_code(predicate_subject_token[pred]),
             TY_UNKNOWN);
     if (lane == 2u)
         return predicate_bound_arg_count[pred] + 1u;
@@ -212,10 +235,34 @@ uint method_contract_key_field(uint node, uint field_i)
     return method_contract_key_lane(node, 0u);
 }
 
+uint method_param_key_lane(uint node, uint lane)
+{
+    if (!valid_method_param(node))
+        return 0u;
+
+    uint4 record = hir_param_record[node];
+    if (lane == 0u)
+        return encode_key_value(record.x, INVALID);
+    if (lane == 1u)
+        return encode_key_value(record.y, INVALID);
+    return encode_key_value(node, INVALID);
+}
+
+uint method_param_key_field(uint node, uint field_i)
+{
+    if (field_i == 0u)
+        return method_param_key_lane(node, 2u);
+    if (field_i == 1u)
+        return method_param_key_lane(node, 1u);
+    return method_param_key_lane(node, 0u);
+}
+
 uint predicate_key_field(uint pred, uint field_i)
 {
     if (gParams.mode == PREDICATE_KEY_MODE_METHOD_CONTRACT)
         return method_contract_key_field(pred, field_i);
+    if (gParams.mode == PREDICATE_KEY_MODE_METHOD_PARAM)
+        return method_param_key_field(pred, field_i);
     return gParams.mode == PREDICATE_KEY_MODE_IMPL
         ? impl_key_field(pred, field_i)
         : owner_key_field(pred, field_i);
@@ -223,7 +270,8 @@ uint predicate_key_field(uint pred, uint field_i)
 
 uint predicate_key_radix_key(uint pred, uint key_step)
 {
-    uint field_count = gParams.mode == PREDICATE_KEY_MODE_METHOD_CONTRACT
+    uint field_count = (gParams.mode == PREDICATE_KEY_MODE_METHOD_CONTRACT ||
+                        gParams.mode == PREDICATE_KEY_MODE_METHOD_PARAM)
         ? 3u
         : (gParams.mode == PREDICATE_KEY_MODE_IMPL ? 5u : 2u);
     uint field_i = radix_field_index(key_step, field_count);

@@ -13,7 +13,8 @@ current compiler is still early alpha; published benchmark claims need checked
 local evidence before they should be treated as production numbers.
 
 ### 2) Embedadbility
-Lanius is great for embedding into other projects, like a game compiled to WASM.
+Lanius is intended to be embeddable, including future web/Wasm-style hosts, but
+the current production backend work is focused on native x86_64.
 
 ### 3) Honesty
 Lanius is explicit, but more than that Lanius is honest. Lanius code does what it says it does. There is no operator overloading, all usages of typeclasses are explicit. Nothing is "auto-wired" or otherwise transforms the control flow graph in a way that you could not expect.
@@ -48,7 +49,8 @@ Run `laniusc doctor` for a no-run JSON toolchain report that checks whether
 `slangc` is available on `PATH` and reports the same edition/target/build
 metadata without compiling source or creating a GPU device.
 
-The current emit targets are `wasm` and `x86_64`. The `x86_64` path supports a
+The current emit targets are `x86_64` and `wasm`; `x86_64` is the default when
+`--emit` is omitted. The `x86_64` path supports a
 bounded alpha slice: GPU HIR `main` returns, resolver-backed constants, direct
 calls inside the current packed ABI width, selected scalar control flow,
 bounded array/aggregate cases, and focused source-pack helper cases. Small
@@ -59,10 +61,12 @@ native linking are still outside the native backend slice. Unsupported source
 shapes are expected to fail closed through compiler status instead of silently
 falling back to another backend.
 
-The accepted target triples are `wasm32-unknown-unknown` for `--emit wasm` and
-`x86_64-unknown-linux-gnu` for `--emit x86_64`. Passing `--target` is optional,
+The accepted target triples are `x86_64-unknown-linux-gnu` for `--emit x86_64`
+and `wasm32-unknown-unknown` for `--emit wasm`. Passing `--target` is optional,
 but unsupported triples or triples that do not match `--emit` are rejected
 before source loading.
+The `wasm` target currently fails closed at the backend boundary until its byte
+emitter is rebuilt as record/count/prefix-sum/scatter passes.
 
 Compiler diagnostics render as text by default. Passing
 `--diagnostic-format=json` emits structured JSON for stable compiler

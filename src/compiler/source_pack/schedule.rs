@@ -45,7 +45,7 @@ where
                 "explicit source pack library {library_id} appears more than once"
             )));
         }
-        let (dependency_library_count, dependency_page_count) = store_library_dependencies(
+        let (dependency_library_count, dependency_page_count) = store_partition_dependency_ids(
             store,
             target,
             partition_count,
@@ -591,6 +591,7 @@ pub(in crate::compiler) fn prepare_schedule_chunk_from_metadata(
         {
             let page = store.load_library_schedule_page_for_target(target, partition_index)?;
             validate_schedule_entry_page(&page, &entry)?;
+            validate_library_schedule_page_for_index(&page, &library_schedule_index)?;
         } else {
             if new_library_build_unit_page_count + new_library_schedule_page_count
                 >= max_new_libraries

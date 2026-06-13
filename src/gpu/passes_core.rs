@@ -149,21 +149,14 @@ pub fn pipeline_from_spirv_and_bgls(
     bgls: &[&wgpu::BindGroupLayout],
 ) -> wgpu::ComputePipeline {
     trace_pipeline(label, "shader_module.start");
-    let module = if label == "codegen_wasm_body" || label == "codegen_wasm_functions" {
-        device.create_shader_module(wgpu::ShaderModuleDescriptor {
+    // SAFETY: Slang produced this SPIR-V module for the selected backend;
+    // Lanius intentionally bypasses Naga translation for shader modules.
+    let module = unsafe {
+        device.create_shader_module_passthrough(wgpu::ShaderModuleDescriptorPassthrough {
             label: Some(label),
-            source: wgpu::util::make_spirv(spirv),
+            spirv: Some(wgpu::util::make_spirv_raw(spirv)),
+            ..Default::default()
         })
-    } else {
-        // SAFETY: Slang produced this SPIR-V module for the selected backend;
-        // Lanius intentionally bypasses Naga translation for shader modules.
-        unsafe {
-            device.create_shader_module_passthrough(wgpu::ShaderModuleDescriptorPassthrough {
-                label: Some(label),
-                spirv: Some(wgpu::util::make_spirv_raw(spirv)),
-                ..Default::default()
-            })
-        }
     };
     trace_pipeline(label, "shader_module.done");
     trace_pipeline(label, "pipeline_layout.start");
@@ -466,27 +459,6 @@ macro_rules! impl_static_shader_pass {
     };
 }
 
-macro_rules! impl_cached_main_pass_getter {
-    ($(#[$meta:meta])* $vis:vis fn $name:ident($device:ident), label: $label:expr, shader: $shader:literal) => {
-        $(#[$meta])*
-        $vis fn $name($device: &wgpu::Device) -> anyhow::Result<&'static $crate::gpu::passes_core::PassData> {
-            static PASS: std::sync::OnceLock<Result<$crate::gpu::passes_core::PassData, String>> =
-                std::sync::OnceLock::new();
-            PASS.get_or_init(|| {
-                $crate::gpu::passes_core::make_main_pass!(
-                    $device,
-                    $label,
-                    shader: $shader
-                )
-                .map_err(|err| err.to_string())
-            })
-            .as_ref()
-            .map_err(|err| anyhow::anyhow!("{err}"))
-        }
-    };
-}
-
-pub(crate) use impl_cached_main_pass_getter;
 pub(crate) use impl_static_shader_pass;
 pub(crate) use make_main_pass;
 pub(crate) use make_shader_pass;

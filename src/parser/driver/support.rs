@@ -118,6 +118,26 @@ pub(super) fn make_tokens_to_identifier_kinds_pass(device: &wgpu::Device) -> Res
     )
 }
 
+pub(super) fn make_tokens_type_path_context_01_local_pass(
+    device: &wgpu::Device,
+) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_type_path_context_01_local",
+        shader: "tokens_type_path_context_01_local"
+    )
+}
+
+pub(super) fn make_tokens_type_path_context_02_apply_pass(
+    device: &wgpu::Device,
+) -> Result<PassData> {
+    crate::gpu::passes_core::make_main_pass!(
+        device,
+        "parser_tokens_type_path_context_02_apply",
+        shader: "tokens_type_path_context_02_apply"
+    )
+}
+
 pub(super) fn make_token_delimiters_01_pass(device: &wgpu::Device) -> Result<PassData> {
     crate::gpu::passes_core::make_main_pass!(
         device,

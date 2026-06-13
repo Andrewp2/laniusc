@@ -21,10 +21,21 @@ pub(in crate::compiler) fn validate_library_partition_index(
             "partition index has no source files",
         ));
     }
+    validate_source_byte_summary(
+        "partition index",
+        index.source_file_count,
+        index.source_byte_count,
+    )?;
     if index.partition_count == 0 {
         return Err(library_partition_contract_error(
             "partition index has no library partitions",
         ));
+    }
+    if index.partition_count > index.source_file_count {
+        return Err(library_partition_contract_error(format!(
+            "partition index has {} library partitions for {} source files; each partition must carry at least one source file before scheduling or linking",
+            index.partition_count, index.source_file_count
+        )));
     }
     Ok(())
 }
@@ -230,6 +241,11 @@ pub(in crate::compiler) fn validate_library_partition(
             partition.partition_index
         )));
     }
+    validate_source_byte_summary(
+        &format!("partition {}", partition.partition_index),
+        partition.source_file_count,
+        partition.source_byte_count,
+    )?;
 
     if !partition.dependency_library_ids.is_empty() && partition.dependency_library_count != 0 {
         return Err(library_partition_contract_error(format!(
@@ -297,6 +313,24 @@ pub(in crate::compiler) fn validate_library_partition(
     Ok(())
 }
 
+fn validate_source_byte_summary(
+    context: &str,
+    source_file_count: usize,
+    source_byte_count: usize,
+) -> Result<(), CompileError> {
+    if source_byte_count == 0 {
+        return Err(library_partition_contract_error(format!(
+            "{context} has empty source-byte summary for {source_file_count} source files; source-pack replay must carry concrete source-byte evidence before scheduling or linking"
+        )));
+    }
+    if source_byte_count < source_file_count {
+        return Err(library_partition_contract_error(format!(
+            "{context} source-byte summary {source_byte_count} is smaller than source-file count {source_file_count}; source-pack replay must not treat empty source metadata as linkable package input"
+        )));
+    }
+    Ok(())
+}
+
 pub(in crate::compiler) fn validate_library_dependency_page(
     page: &SourcePackLibraryDependencyPage,
     target: SourcePackArtifactTarget,
@@ -327,8 +361,13 @@ pub(in crate::compiler) fn validate_library_dependency_page(
             page.page_index, page.partition_index, expected_page_index
         )));
     }
-    let expected_first_position =
-        expected_page_index.saturating_mul(SOURCE_PACK_LIBRARY_DEPENDENCY_DEFAULT_PAGE_SIZE);
+    let expected_first_position = checked_first_record_position(
+        &format!(
+            "library dependency page {expected_page_index} for partition {expected_partition_index}"
+        ),
+        expected_page_index,
+        SOURCE_PACK_LIBRARY_DEPENDENCY_DEFAULT_PAGE_SIZE,
+    )?;
     if page.first_dependency_position != expected_first_position {
         return Err(library_partition_contract_error(format!(
             "library dependency page {} for partition {} starts at {} but expected {}",
@@ -368,4 +407,102 @@ pub(in crate::compiler) fn validate_library_dependency_page(
         ),
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn library_dependency_pages_reject_overflowed_first_record_positions() {
+        let target = SourcePackArtifactTarget::Generic;
+        let page_index = usize::MAX;
+        let dependency_page = SourcePackLibraryDependencyPage {
+            version: SOURCE_PACK_LIBRARY_DEPENDENCY_PAGE_VERSION,
+            target,
+            partition_index: 1,
+            page_index,
+            first_dependency_position: usize::MAX,
+            dependency_count: 1,
+            dependency_library_ids: vec![0],
+        };
+
+        let err = validate_library_dependency_page(&dependency_page, target, 1, page_index)
+            .expect_err("overflowed dependency page positions must be rejected");
+        assert!(
+            matches!(err, CompileError::GpuFrontend(_)),
+            "unexpected dependency page validation error: {err}"
+        );
+    }
+
+    #[test]
+    fn library_partitions_reject_empty_source_byte_summaries() {
+        let target = SourcePackArtifactTarget::Generic;
+        let valid_index = SourcePackLibraryPartitionIndex {
+            version: SOURCE_PACK_LIBRARY_PARTITION_INDEX_VERSION,
+            target,
+            partition_count: 1,
+            source_file_count: 2,
+            source_byte_count: 8,
+            source_line_count: 0,
+        };
+        validate_library_partition_index(&valid_index, target)
+            .expect("nonempty source-byte summary should validate");
+
+        let empty_index = SourcePackLibraryPartitionIndex {
+            source_byte_count: 0,
+            ..valid_index.clone()
+        };
+        let err = validate_library_partition_index(&empty_index, target)
+            .expect_err("partition indexes must carry source-byte evidence");
+        let message = err.to_string();
+        assert!(
+            message.contains("partition index")
+                && message.contains("empty source-byte summary")
+                && message.contains("source-byte evidence"),
+            "unexpected partition index source-byte error: {message}"
+        );
+
+        let short_index = SourcePackLibraryPartitionIndex {
+            source_byte_count: 1,
+            ..valid_index
+        };
+        let err = validate_library_partition_index(&short_index, target)
+            .expect_err("partition indexes must not report fewer bytes than files");
+        let message = err.to_string();
+        assert!(
+            message.contains("source-byte summary 1") && message.contains("source-file count 2"),
+            "unexpected partition byte/file count error: {message}"
+        );
+
+        let valid_partition = SourcePackLibraryPartition {
+            version: SOURCE_PACK_LIBRARY_PARTITION_INDEX_VERSION,
+            target,
+            partition_index: 0,
+            library_id: 1,
+            first_source_index: 0,
+            source_file_count: 1,
+            source_byte_count: 4,
+            source_line_count: 0,
+            dependency_library_ids: Vec::new(),
+            dependency_library_count: 0,
+            dependency_page_count: 0,
+        };
+        validate_library_partition(&valid_partition, target, Some(0))
+            .expect("nonempty partition source-byte summary should validate");
+
+        let empty_partition = SourcePackLibraryPartition {
+            source_byte_count: 0,
+            ..valid_partition
+        };
+        let err = validate_library_partition(&empty_partition, target, Some(0))
+            .expect_err("library partitions must carry source-byte evidence");
+        let message = err.to_string();
+        assert!(
+            message.contains("partition 0")
+                && message.contains("empty source-byte summary")
+                && message.contains("scheduling or linking"),
+            "unexpected partition source-byte error: {message}"
+        );
+    }
 }

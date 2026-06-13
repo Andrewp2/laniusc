@@ -47,6 +47,10 @@ pub fn panic_hook_is_blocked() -> PanicCapability {
     return !panic_hook_is_available();
 }
 
+pub fn panic_hook_is_known_but_unbound() -> PanicCapability {
+    return panic_hook_service_is_known() && panic_hook_is_blocked();
+}
+
 pub fn panic_hook_requires_runtime_binding() -> PanicCapability {
     return !PANIC_HOOK_HAS_RUNTIME_BINDING;
 }
@@ -67,6 +71,10 @@ pub fn panic_is_blocked() -> PanicCapability {
     return !panic_is_executable();
 }
 
+pub fn panic_is_known_but_unbound() -> PanicCapability {
+    return panic_hook_service_is_known() && panic_is_blocked();
+}
+
 pub fn panic_requires_runtime_binding() -> PanicCapability {
     return !panic_is_executable();
 }
@@ -77,6 +85,10 @@ pub fn unreachable_is_executable() -> PanicCapability {
 
 pub fn unreachable_is_blocked() -> PanicCapability {
     return !unreachable_is_executable();
+}
+
+pub fn unreachable_is_known_but_unbound() -> PanicCapability {
+    return panic_hook_service_is_known() && unreachable_is_blocked();
 }
 
 pub fn unreachable_requires_runtime_binding() -> PanicCapability {

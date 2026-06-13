@@ -29,6 +29,7 @@ pub(in crate::type_checker) struct CreateInputs<'a> {
     pub(in crate::type_checker) module_value_path_const_head: &'a wgpu::Buffer,
     pub(in crate::type_checker) module_value_path_const_end: &'a wgpu::Buffer,
     pub(in crate::type_checker) module_value_path_status: &'a wgpu::Buffer,
+    pub(in crate::type_checker) predicate_syntax_token: &'a wgpu::Buffer,
     pub(in crate::type_checker) visible_decl: &'a wgpu::Buffer,
     pub(in crate::type_checker) visible_type: &'a wgpu::Buffer,
     pub(in crate::type_checker) enclosing_fn: &'a wgpu::Buffer,

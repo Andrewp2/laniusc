@@ -136,6 +136,16 @@ uint receiver_arg_count(uint fn_i)
     return min(type_instance_arg_count[payload], TYPE_INSTANCE_ARG_REF_STRIDE);
 }
 
+bool receiver_arg_slot_valid(uint start, uint arg_count, uint slot)
+{
+    if (slot >= arg_count)
+        return true;
+
+    uint arg_i = start + slot;
+    return type_instance_arg_ref_tag[arg_i] != TYPE_REF_INVALID &&
+           type_instance_arg_ref_payload[arg_i] != INVALID;
+}
+
 bool receiver_args_valid(uint fn_i)
 {
     uint tag = method_decl_receiver_ref_tag[fn_i];
@@ -157,15 +167,10 @@ bool receiver_args_valid(uint fn_i)
     if (start == INVALID)
         return false;
 
-    [loop]
-    for (uint slot = 0u; slot < TYPE_INSTANCE_ARG_REF_STRIDE && slot < arg_count; slot += 1u)
-    {
-        uint arg_i = start + slot;
-        if (type_instance_arg_ref_tag[arg_i] == TYPE_REF_INVALID ||
-            type_instance_arg_ref_payload[arg_i] == INVALID)
-            return false;
-    }
-    return true;
+    return receiver_arg_slot_valid(start, arg_count, 0u) &&
+           receiver_arg_slot_valid(start, arg_count, 1u) &&
+           receiver_arg_slot_valid(start, arg_count, 2u) &&
+           receiver_arg_slot_valid(start, arg_count, 3u);
 }
 
 uint receiver_arg_ref_index(uint fn_i, uint slot)

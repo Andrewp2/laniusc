@@ -8,11 +8,15 @@ pub type TestHarnessCapability = bool;
 pub type TestHarnessRuntimeAbiVersion = u32;
 pub type TestHarnessServiceId = u32;
 pub type TestHarnessServiceStatus = u32;
+pub type TestHarnessStatus = i32;
 
 pub const TEST_HARNESS_RUNTIME_ABI_VERSION: TestHarnessRuntimeAbiVersion = 1;
 pub const TEST_HARNESS_SERVICE_ID: TestHarnessServiceId = 13;
 pub const TEST_HARNESS_SERVICE_STATUS_UNAVAILABLE: TestHarnessServiceStatus = 1;
 pub const TEST_HARNESS_HAS_RUNTIME_BINDING: TestHarnessCapability = false;
+pub const TEST_STATUS_PASSED: TestHarnessStatus = 0;
+pub const TEST_STATUS_FAILED: TestHarnessStatus = 1;
+pub const TEST_STATUS_SKIPPED: TestHarnessStatus = 2;
 
 pub fn test_harness_runtime_abi_version() -> TestHarnessRuntimeAbiVersion {
     return TEST_HARNESS_RUNTIME_ABI_VERSION;
@@ -42,6 +46,10 @@ pub fn test_harness_is_blocked() -> TestHarnessCapability {
     return !test_harness_is_available();
 }
 
+pub fn test_harness_is_known_but_unbound() -> TestHarnessCapability {
+    return test_harness_service_is_known() && test_harness_is_blocked();
+}
+
 pub fn test_harness_requires_runtime_binding() -> TestHarnessCapability {
     return !TEST_HARNESS_HAS_RUNTIME_BINDING;
 }
@@ -58,6 +66,10 @@ pub fn test_registration_is_blocked() -> TestHarnessCapability {
     return !test_registration_is_executable();
 }
 
+pub fn test_registration_is_known_but_unbound() -> TestHarnessCapability {
+    return test_harness_service_is_known() && test_registration_is_blocked();
+}
+
 pub fn test_registration_requires_runtime_binding() -> TestHarnessCapability {
     return !test_registration_is_executable();
 }
@@ -68,6 +80,10 @@ pub fn test_discovery_is_executable() -> TestHarnessCapability {
 
 pub fn test_discovery_is_blocked() -> TestHarnessCapability {
     return !test_discovery_is_executable();
+}
+
+pub fn test_discovery_is_known_but_unbound() -> TestHarnessCapability {
+    return test_harness_service_is_known() && test_discovery_is_blocked();
 }
 
 pub fn test_discovery_requires_runtime_binding() -> TestHarnessCapability {
@@ -82,6 +98,47 @@ pub fn test_execution_is_blocked() -> TestHarnessCapability {
     return !test_execution_is_executable();
 }
 
+pub fn test_execution_is_known_but_unbound() -> TestHarnessCapability {
+    return test_harness_service_is_known() && test_execution_is_blocked();
+}
+
 pub fn test_execution_requires_runtime_binding() -> TestHarnessCapability {
     return !test_execution_is_executable();
+}
+
+pub fn test_status_passed() -> TestHarnessStatus {
+    return TEST_STATUS_PASSED;
+}
+
+pub fn test_status_failed() -> TestHarnessStatus {
+    return TEST_STATUS_FAILED;
+}
+
+pub fn test_status_skipped() -> TestHarnessStatus {
+    return TEST_STATUS_SKIPPED;
+}
+
+pub fn test_status_is_passed(status: TestHarnessStatus) -> TestHarnessCapability {
+    return status == TEST_STATUS_PASSED;
+}
+
+pub fn test_status_is_failed(status: TestHarnessStatus) -> TestHarnessCapability {
+    return status == TEST_STATUS_FAILED;
+}
+
+pub fn test_status_is_skipped(status: TestHarnessStatus) -> TestHarnessCapability {
+    return status == TEST_STATUS_SKIPPED;
+}
+
+pub fn test_status_is_known(status: TestHarnessStatus) -> TestHarnessCapability {
+    return test_status_is_passed(status) || test_status_is_failed(status) ||
+        test_status_is_skipped(status);
+}
+
+pub fn test_status_is_success(status: TestHarnessStatus) -> TestHarnessCapability {
+    return test_status_is_passed(status);
+}
+
+pub fn test_status_is_failure(status: TestHarnessStatus) -> TestHarnessCapability {
+    return test_status_is_failed(status);
 }

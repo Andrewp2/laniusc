@@ -5,8 +5,9 @@
 // emit/EOF flags.
 
 #define WORKGROUP_SIZE 256
-#define N_STATES 80
+#define N_STATES 82
 #define CHUNK_COUNT 3
+#define CHUNK_WIDTH_CAP ((WORKGROUP_SIZE + CHUNK_COUNT - 1) / CHUNK_COUNT)
 
 import gpu_index;
 import utils; // PF_* bits, load helpers, etc.
@@ -91,9 +92,11 @@ void dfa_03_apply_block_prefix(uint3 tid: SV_GroupThreadID,
     }
 
     const uint chunk_begin = min(block_len, chunk * chunk_width);
-    [loop]
-    for (uint k = chunk_begin; k < tIdx; k += 1u)
+    for (uint offset = 0u; offset < CHUNK_WIDTH_CAP; offset += 1u)
     {
+        const uint k = chunk_begin + offset;
+        if (k >= tIdx)
+            break;
         uint prev_abs = base + k;
         if (is_file_start(prev_abs))
             state_before = gParams.start_state;

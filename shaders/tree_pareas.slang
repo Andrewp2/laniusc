@@ -17,9 +17,14 @@ public bool pareas_valid_link(uint link)
 public uint pareas_bit_width_u32(uint value)
 {
     uint width = 0u;
-    [loop]
-    for (uint v = value; v != 0u && width < 32u; v >>= 1u)
+    uint v = value;
+    for (uint guard = 0u; guard < 32u; guard += 1u)
+    {
+        if (v == 0u)
+            break;
         width += 1u;
+        v >>= 1u;
+    }
     return width;
 }
 

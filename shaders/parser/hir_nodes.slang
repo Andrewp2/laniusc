@@ -17,6 +17,7 @@ ConstantBuffer<Params> gHir;
 StructuredBuffer<uint> emit_stream;
 StructuredBuffer<uint> emit_pos;
 StructuredBuffer<uint> token_file_id;
+StructuredBuffer<uint> token_count;
 StructuredBuffer<uint> ll1_status;
 
 RWStructuredBuffer<uint> hir_kind;
@@ -75,7 +76,7 @@ uint active_node_count()
 
 uint hir_file_for_emit_pos(uint token_i)
 {
-    return token_i < gHir.n ? token_file_id[token_i] : INVALID;
+    return token_i < token_count[0u] ? token_file_id[token_i] : INVALID;
 }
 
 uint classify(uint prod)
@@ -98,16 +99,17 @@ uint classify(uint prod)
         return HIR_IMPORT_ITEM;
     if (prod == PROD_MODULE)
         return HIR_MODULE_ITEM;
-    if (prod == PROD_PATH)
+    if (prod == PROD_PATH || prod == PROD_TYPE_PATH)
         return HIR_PATH_EXPR;
     if (prod == PROD_PARAM_NAMED || prod == PROD_PARAM_SELF ||
         prod == PROD_PARAM_SELF_REF)
         return HIR_PARAM;
     if (prod == PROD_TYPE_IDENT || prod == PROD_TYPE_ARRAY || prod == PROD_TYPE_REF)
         return HIR_TYPE;
-    if (prod == PROD_FN_BLOCK || prod == PROD_IMPL_FN_BLOCK || prod == PROD_BLOCK)
+    if (prod == PROD_FN_BLOCK || prod == PROD_IMPL_FN_BLOCK ||
+        prod == PROD_BLOCK || prod == PROD_IF_BLOCK)
         return HIR_BLOCK;
-    if (prod == PROD_BLOCK_STMT || prod == PROD_EXPR_STMT || prod == PROD_ELSE_STMT)
+    if (prod == PROD_BLOCK_STMT || prod == PROD_EXPR_STMT)
         return HIR_STMT;
     if (prod == PROD_LET_STMT)
         return HIR_LET_STMT;
@@ -123,7 +125,10 @@ uint classify(uint prod)
         return HIR_BREAK_STMT;
     if (prod == PROD_CONTINUE_STMT)
         return HIR_CONTINUE_STMT;
-    if (prod == PROD_EXPR)
+    if (prod == PROD_EXPR || prod == PROD_FOR_ITER_PATH ||
+        prod == PROD_FOR_ITER_RANGE_FROM_START ||
+        prod == PROD_FOR_ITER_RANGE_TO || prod == PROD_FOR_ITER_RANGE_TO_INCLUSIVE ||
+        prod == PROD_RANGE_BOUND_NAME)
         return HIR_EXPR;
     if (prod == PROD_MATCH_EXPR)
         return HIR_MATCH_EXPR;
@@ -131,8 +136,7 @@ uint classify(uint prod)
         return HIR_ASSIGN_EXPR;
     if (prod >= PROD_OREXPR && prod <= PROD_MUL_END)
         return HIR_BINARY_EXPR;
-    if ((prod >= PROD_PRE_INC && prod <= PROD_BASE) ||
-        prod == PROD_POSTFIX_INC || prod == PROD_POSTFIX_DEC)
+    if (prod >= PROD_POS && prod <= PROD_BASE)
         return HIR_UNARY_EXPR;
     if (prod == PROD_POSTFIX || prod == PROD_POSTFIX_END)
         return HIR_POSTFIX_EXPR;
@@ -144,10 +148,13 @@ uint classify(uint prod)
         return HIR_MEMBER_EXPR;
     if (prod == PROD_ARRAY_LIT)
         return HIR_ARRAY_EXPR;
-    if (prod == PROD_IDENT || prod == PROD_SELF_VALUE ||
+    if (prod == PROD_IDENT || prod == PROD_RANGE_BOUND_IDENT ||
+        prod == PROD_SELF_VALUE ||
         prod == PROD_PATTERN_IDENT)
         return HIR_NAME_EXPR;
-    if (prod == PROD_INT || prod == PROD_FLOAT || prod == PROD_STRING ||
+    if (prod == PROD_INT || prod == PROD_RANGE_START_INT ||
+        prod == PROD_RANGE_BOUND_INT ||
+        prod == PROD_FLOAT || prod == PROD_STRING ||
         prod == PROD_CHAR || prod == PROD_TRUE || prod == PROD_FALSE ||
         prod == PROD_PATTERN_INT || prod == PROD_PATTERN_TRUE || prod == PROD_PATTERN_FALSE)
         return HIR_LITERAL_EXPR;

@@ -41,6 +41,17 @@ pub fn gen_valid_source<R: Rng>(rng: &mut R, target_len: usize) -> String {
     out
 }
 
+/// Generate a syntactically valid Lanius program for parser fuzzing.
+///
+/// This intentionally samples across the parser grammar surface: top-level
+/// items, types, generic parameters, where clauses, blocks, statements,
+/// expression precedence, postfix forms, literals, arrays, matches, and
+/// aggregate syntax. It is not a type-checking oracle; generated programs are
+/// parser-valid.
+pub fn gen_valid_program<R: Rng>(rng: &mut R, target_len: usize) -> String {
+    WideProgramGenerator::new(target_len).generate(rng)
+}
+
 fn push_ident<R: Rng>(rng: &mut R, out: &mut String) {
     let len = rng.random_range(1..=12);
     let mut s = String::new();
@@ -128,6 +139,860 @@ fn random_digit<R: Rng>(rng: &mut R) -> char {
     let set = b"0123456789";
     let i = rng.random_range(0..set.len());
     set[i] as char
+}
+
+struct WideProgramGenerator {
+    target_len: usize,
+    item_index: usize,
+    fn_index: usize,
+    local_name_index: usize,
+    function_names: Vec<String>,
+    type_names: Vec<String>,
+    trait_names: Vec<String>,
+    struct_names: Vec<String>,
+    enum_names: Vec<String>,
+}
+
+impl WideProgramGenerator {
+    fn new(target_len: usize) -> Self {
+        Self {
+            target_len,
+            item_index: 0,
+            fn_index: 0,
+            local_name_index: 0,
+            function_names: Vec::new(),
+            type_names: vec![
+                "i32".to_string(),
+                "bool".to_string(),
+                "u32".to_string(),
+                "usize".to_string(),
+            ],
+            trait_names: vec!["Copy".to_string(), "Debug".to_string()],
+            struct_names: Vec::new(),
+            enum_names: Vec::new(),
+        }
+    }
+
+    fn generate<R: Rng>(mut self, rng: &mut R) -> String {
+        let mut out =
+            String::with_capacity(self.target_len.saturating_add(self.target_len / 3).max(512));
+        self.push_module_item(rng, &mut out);
+
+        let first_roll = rng.random_range(0..8);
+        match first_roll {
+            0 => self.push_struct_item(rng, &mut out),
+            1 => self.push_enum_item(rng, &mut out),
+            2 => self.push_trait_item(rng, &mut out),
+            3 => self.push_type_alias_item(rng, &mut out),
+            4 => self.push_extern_fn_item(rng, &mut out),
+            5 => self.push_const_item(rng, &mut out),
+            6 => self.push_import_item(rng, &mut out),
+            _ => self.push_function_item(rng, &mut out),
+        }
+
+        while out.len() < self.target_len {
+            self.push_random_item(rng, &mut out);
+        }
+
+        if self.function_names.is_empty() {
+            self.push_function_item(rng, &mut out);
+        }
+
+        out
+    }
+
+    fn push_random_item<R: Rng>(&mut self, rng: &mut R, out: &mut String) {
+        match rng.random_range(0..10) {
+            0 => self.push_module_item(rng, out),
+            1 => self.push_import_item(rng, out),
+            2 => self.push_const_item(rng, out),
+            3 => self.push_type_alias_item(rng, out),
+            4 => self.push_struct_item(rng, out),
+            5 => self.push_enum_item(rng, out),
+            6 => self.push_trait_item(rng, out),
+            7 => self.push_impl_item(rng, out),
+            8 => self.push_extern_fn_item(rng, out),
+            _ => self.push_function_item(rng, out),
+        }
+    }
+
+    fn push_module_item<R: Rng>(&mut self, rng: &mut R, out: &mut String) {
+        out.push_str("module ");
+        self.push_path(rng, out, "fuzz", 1, 3);
+        out.push_str(";\n\n");
+    }
+
+    fn push_import_item<R: Rng>(&mut self, rng: &mut R, out: &mut String) {
+        if rng.random_bool(0.25) {
+            out.push_str("import \"");
+            out.push_str(match rng.random_range(0..3) {
+                0 => "core",
+                1 => "std/io",
+                _ => "fuzz/support",
+            });
+            out.push_str("\";\n\n");
+            return;
+        }
+        out.push_str("import ");
+        self.push_path(rng, out, "pkg", 1, 4);
+        out.push_str(";\n\n");
+    }
+
+    fn push_const_item<R: Rng>(&mut self, rng: &mut R, out: &mut String) {
+        self.push_pub(rng, out);
+        out.push_str("const ");
+        out.push_str(&self.next_ident("C"));
+        out.push_str(": ");
+        self.push_type_expr(rng, out, 2);
+        out.push_str(" = ");
+        self.push_expr(rng, out, &[], 2);
+        out.push_str(";\n\n");
+    }
+
+    fn push_type_alias_item<R: Rng>(&mut self, rng: &mut R, out: &mut String) {
+        self.push_pub(rng, out);
+        out.push_str("type ");
+        let name = self.next_ident("Alias");
+        self.type_names.push(name.clone());
+        out.push_str(&name);
+        self.push_generics_opt(rng, out, 1);
+        self.push_where_clause_opt(rng, out, 1);
+        out.push_str(" = ");
+        self.push_type_expr(rng, out, 2);
+        out.push_str(";\n\n");
+    }
+
+    fn push_struct_item<R: Rng>(&mut self, rng: &mut R, out: &mut String) {
+        self.push_pub(rng, out);
+        out.push_str("struct ");
+        let name = self.next_ident("S");
+        self.type_names.push(name.clone());
+        self.struct_names.push(name.clone());
+        out.push_str(&name);
+        self.push_generics_opt(rng, out, 1);
+        self.push_where_clause_opt(rng, out, 1);
+        out.push_str(" {\n");
+        let fields = rng.random_range(0..=3);
+        for field_i in 0..fields {
+            out.push_str("    ");
+            out.push_str(&format!("field{field_i}"));
+            out.push_str(": ");
+            self.push_type_expr(rng, out, 2);
+            if field_i + 1 < fields || rng.random_bool(0.65) {
+                out.push(',');
+            }
+            out.push('\n');
+        }
+        out.push_str("}\n\n");
+    }
+
+    fn push_enum_item<R: Rng>(&mut self, rng: &mut R, out: &mut String) {
+        self.push_pub(rng, out);
+        out.push_str("enum ");
+        let name = self.next_ident("E");
+        self.type_names.push(name.clone());
+        self.enum_names.push(name.clone());
+        out.push_str(&name);
+        self.push_generics_opt(rng, out, 1);
+        self.push_where_clause_opt(rng, out, 1);
+        out.push_str(" {\n");
+        let variants = rng.random_range(0..=4);
+        for variant_i in 0..variants {
+            out.push_str("    ");
+            out.push_str(&format!("Variant{variant_i}"));
+            if rng.random_bool(0.45) {
+                out.push('(');
+                let payloads = rng.random_range(0..=3);
+                for payload_i in 0..payloads {
+                    if payload_i > 0 {
+                        out.push_str(", ");
+                    }
+                    self.push_type_expr(rng, out, 1);
+                }
+                if payloads > 0 && rng.random_bool(0.4) {
+                    out.push(',');
+                }
+                out.push(')');
+            }
+            if variant_i + 1 < variants || rng.random_bool(0.75) {
+                out.push(',');
+            }
+            out.push('\n');
+        }
+        out.push_str("}\n\n");
+    }
+
+    fn push_trait_item<R: Rng>(&mut self, rng: &mut R, out: &mut String) {
+        self.push_pub(rng, out);
+        out.push_str("trait ");
+        let name = self.next_ident("Trait");
+        self.trait_names.push(name.clone());
+        out.push_str(&name);
+        self.push_generics_opt(rng, out, 1);
+        self.push_where_clause_opt(rng, out, 1);
+        out.push_str(" {\n");
+        let methods = rng.random_range(0..=3);
+        for _ in 0..methods {
+            out.push_str("    ");
+            if rng.random_bool(0.35) {
+                out.push_str("pub ");
+            }
+            out.push_str("fn ");
+            out.push_str(&self.next_ident("trait_method"));
+            self.push_function_signature_tail(rng, out, true, true);
+            out.push_str(";\n");
+        }
+        out.push_str("}\n\n");
+    }
+
+    fn push_impl_item<R: Rng>(&mut self, rng: &mut R, out: &mut String) {
+        self.push_pub(rng, out);
+        out.push_str("impl ");
+        self.push_generics_opt(rng, out, 1);
+        if rng.random_bool(0.45) && !self.trait_names.is_empty() {
+            self.push_known_trait_path(rng, out);
+            out.push_str(" for ");
+            self.push_known_type_path(rng, out);
+        } else {
+            self.push_known_type_path(rng, out);
+        }
+        self.push_where_clause_opt(rng, out, 1);
+        out.push_str(" {\n");
+        let methods = rng.random_range(0..=3);
+        for _ in 0..methods {
+            out.push_str("    ");
+            if rng.random_bool(0.35) {
+                out.push_str("pub ");
+            }
+            out.push_str("fn ");
+            out.push_str(&self.next_ident("method"));
+            self.push_function_signature_tail(rng, out, true, false);
+            out.push_str(" {\n");
+            self.push_stmt_list(rng, out, 2, 1, false);
+            out.push_str("    }\n");
+        }
+        out.push_str("}\n\n");
+    }
+
+    fn push_extern_fn_item<R: Rng>(&mut self, rng: &mut R, out: &mut String) {
+        self.push_pub(rng, out);
+        out.push_str("extern ");
+        if rng.random_bool(0.7) {
+            out.push_str("\"C\" ");
+        }
+        out.push_str("fn ");
+        let name = self.next_fn_name();
+        out.push_str(&name);
+        self.push_function_signature_tail(rng, out, false, true);
+        out.push_str(";\n\n");
+    }
+
+    fn push_function_item<R: Rng>(&mut self, rng: &mut R, out: &mut String) {
+        self.push_pub(rng, out);
+        out.push_str("fn ");
+        let name = self.next_fn_name();
+        out.push_str(&name);
+        self.push_function_signature_tail(rng, out, false, false);
+        out.push_str(" {\n");
+        self.push_stmt_list(rng, out, 1, 0, false);
+        out.push_str("}\n\n");
+    }
+
+    fn push_function_signature_tail<R: Rng>(
+        &mut self,
+        rng: &mut R,
+        out: &mut String,
+        allow_self: bool,
+        semicolon_body: bool,
+    ) {
+        self.push_generics_opt(rng, out, 1);
+        out.push('(');
+        self.push_param_list(rng, out, allow_self);
+        out.push(')');
+        if semicolon_body || rng.random_bool(0.8) {
+            out.push_str(" -> ");
+            self.push_type_expr(rng, out, 2);
+        }
+        self.push_where_clause_opt(rng, out, 1);
+    }
+
+    fn push_param_list<R: Rng>(&mut self, rng: &mut R, out: &mut String, allow_self: bool) {
+        let mut wrote = false;
+        if allow_self && rng.random_bool(0.45) {
+            if rng.random_bool(0.5) {
+                out.push_str("&self");
+            } else {
+                out.push_str("self");
+                if rng.random_bool(0.25) {
+                    out.push_str(": ");
+                    self.push_type_expr(rng, out, 1);
+                }
+            }
+            wrote = true;
+        }
+        let params = rng.random_range(0..=3);
+        for param_i in 0..params {
+            if wrote {
+                out.push_str(", ");
+            }
+            wrote = true;
+            out.push_str(&format!("p{param_i}"));
+            out.push_str(": ");
+            self.push_type_expr(rng, out, 2);
+        }
+        if wrote && rng.random_bool(0.2) {
+            out.push(',');
+        }
+    }
+
+    fn push_stmt_list<R: Rng>(
+        &mut self,
+        rng: &mut R,
+        out: &mut String,
+        indent: usize,
+        depth: usize,
+        in_loop: bool,
+    ) {
+        let stmt_count = rng.random_range(1..=4);
+        let mut locals = Vec::new();
+        for param_i in 0..=2 {
+            locals.push(format!("p{param_i}"));
+        }
+        for _ in 0..stmt_count {
+            self.push_wide_stmt(rng, out, indent, depth, in_loop, &mut locals);
+        }
+        if rng.random_bool(0.65) {
+            self.push_indent(out, indent);
+            out.push_str("return ");
+            self.push_expr(rng, out, &locals, 2);
+            out.push_str(";\n");
+        }
+    }
+
+    fn push_wide_stmt<R: Rng>(
+        &mut self,
+        rng: &mut R,
+        out: &mut String,
+        indent: usize,
+        depth: usize,
+        in_loop: bool,
+        locals: &mut Vec<String>,
+    ) {
+        match rng.random_range(0..10) {
+            0 | 1 => {
+                let name = self.next_local_name();
+                self.push_indent(out, indent);
+                out.push_str("let ");
+                out.push_str(&name);
+                if rng.random_bool(0.75) {
+                    out.push_str(": ");
+                    self.push_type_expr(rng, out, 2);
+                }
+                if rng.random_bool(0.8) {
+                    out.push_str(" = ");
+                    self.push_expr(rng, out, locals, 2);
+                }
+                out.push_str(";\n");
+                locals.push(name);
+            }
+            2 => {
+                self.push_indent(out, indent);
+                out.push_str("return");
+                if rng.random_bool(0.8) {
+                    out.push(' ');
+                    self.push_expr(rng, out, locals, 2);
+                }
+                out.push_str(";\n");
+            }
+            3 if depth < 2 => {
+                self.push_indent(out, indent);
+                out.push_str("if (");
+                self.push_expr(rng, out, locals, 2);
+                out.push_str(") {\n");
+                self.push_wide_stmt(rng, out, indent + 1, depth + 1, in_loop, locals);
+                self.push_indent(out, indent);
+                out.push_str("}\n");
+                if rng.random_bool(0.75) {
+                    self.push_indent(out, indent);
+                    out.push_str("else {\n");
+                    self.push_wide_stmt(rng, out, indent + 1, depth + 1, in_loop, locals);
+                    self.push_indent(out, indent);
+                    out.push_str("}\n");
+                }
+            }
+            4 if depth < 2 => {
+                self.push_indent(out, indent);
+                out.push_str("while (");
+                self.push_expr(rng, out, locals, 2);
+                out.push_str(") {\n");
+                self.push_wide_stmt(rng, out, indent + 1, depth + 1, true, locals);
+                if rng.random_bool(0.5) {
+                    self.push_indent(out, indent + 1);
+                    out.push_str("break;\n");
+                }
+                self.push_indent(out, indent);
+                out.push_str("}\n");
+            }
+            5 if depth < 2 => {
+                self.push_indent(out, indent);
+                out.push_str("for ");
+                out.push_str(&self.next_local_name());
+                out.push_str(" in ");
+                self.push_path(rng, out, "iter", 1, 3);
+                out.push_str(" {\n");
+                self.push_wide_stmt(rng, out, indent + 1, depth + 1, true, locals);
+                self.push_indent(out, indent);
+                out.push_str("}\n");
+            }
+            6 if in_loop => {
+                self.push_indent(out, indent);
+                out.push_str(if rng.random_bool(0.5) {
+                    "break;\n"
+                } else {
+                    "continue;\n"
+                });
+            }
+            7 if depth < 2 => {
+                self.push_indent(out, indent);
+                out.push_str("{\n");
+                self.push_wide_stmt(rng, out, indent + 1, depth + 1, in_loop, locals);
+                self.push_indent(out, indent);
+                out.push_str("}\n");
+            }
+            _ => {
+                self.push_indent(out, indent);
+                self.push_expr(rng, out, locals, 3);
+                out.push_str(";\n");
+            }
+        }
+    }
+
+    fn push_expr<R: Rng>(
+        &mut self,
+        rng: &mut R,
+        out: &mut String,
+        locals: &[String],
+        depth: usize,
+    ) {
+        if depth == 0 {
+            self.push_primary_expr(rng, out, locals, 0);
+            return;
+        }
+
+        match rng.random_range(0..12) {
+            0 => self.push_primary_expr(rng, out, locals, depth),
+            1 => {
+                out.push('(');
+                self.push_expr(rng, out, locals, depth - 1);
+                out.push(')');
+            }
+            2 => {
+                out.push_str(match rng.random_range(0..3) {
+                    0 => "+",
+                    1 => "-",
+                    _ => "!",
+                });
+                self.push_expr(rng, out, locals, depth - 1);
+            }
+            3 if !locals.is_empty() => {
+                self.push_local_ref(rng, out, locals);
+                out.push(' ');
+                out.push_str(self.random_assignment_op(rng));
+                out.push(' ');
+                self.push_expr(rng, out, locals, depth - 1);
+            }
+            4 => {
+                self.push_expr(rng, out, locals, depth - 1);
+                out.push(' ');
+                out.push_str(self.random_binary_op(rng));
+                out.push(' ');
+                self.push_expr(rng, out, locals, depth - 1);
+            }
+            5 => self.push_array_literal(rng, out, locals, depth - 1),
+            6 => self.push_match_expr(rng, out, locals, depth - 1),
+            7 => self.push_struct_literal(rng, out, locals, depth - 1),
+            _ => self.push_postfix_expr(rng, out, locals, depth - 1),
+        }
+    }
+
+    fn push_primary_expr<R: Rng>(
+        &mut self,
+        rng: &mut R,
+        out: &mut String,
+        locals: &[String],
+        depth: usize,
+    ) {
+        match rng.random_range(0..10) {
+            0 if !locals.is_empty() => self.push_local_ref(rng, out, locals),
+            1 => out.push_str(&rng.random_range(0..=999).to_string()),
+            2 => out.push_str(if rng.random_bool(0.5) {
+                "true"
+            } else {
+                "false"
+            }),
+            3 => out.push_str(match rng.random_range(0..3) {
+                0 => "\"text\"",
+                1 => "\"\"",
+                _ => "\"line\\ntext\"",
+            }),
+            4 => out.push_str(match rng.random_range(0..3) {
+                0 => "'a'",
+                1 => "'\\n'",
+                _ => "'0'",
+            }),
+            5 => out.push_str(match rng.random_range(0..3) {
+                0 => "0.0",
+                1 => "1.5",
+                _ => "10e2",
+            }),
+            6 if depth > 0 => self.push_array_literal(rng, out, locals, depth - 1),
+            7 if depth > 0 => self.push_struct_literal(rng, out, locals, depth - 1),
+            8 if depth > 0 => self.push_match_expr(rng, out, locals, depth - 1),
+            _ => self.push_path(rng, out, "value", 1, 3),
+        }
+    }
+
+    fn push_postfix_expr<R: Rng>(
+        &mut self,
+        rng: &mut R,
+        out: &mut String,
+        locals: &[String],
+        depth: usize,
+    ) {
+        self.push_primary_expr(rng, out, locals, depth);
+        let postfixes = rng.random_range(0..=2);
+        for _ in 0..postfixes {
+            match rng.random_range(0..3) {
+                0 => {
+                    out.push('(');
+                    let args = rng.random_range(0..=3);
+                    for arg_i in 0..args {
+                        if arg_i > 0 {
+                            out.push_str(", ");
+                        }
+                        self.push_expr(rng, out, locals, depth.saturating_sub(1));
+                    }
+                    if args > 0 && rng.random_bool(0.25) {
+                        out.push(',');
+                    }
+                    out.push(')');
+                }
+                1 => {
+                    out.push('[');
+                    self.push_expr(rng, out, locals, depth.saturating_sub(1));
+                    out.push(']');
+                }
+                2 => {
+                    out.push('.');
+                    out.push_str(&format!("field{}", rng.random_range(0..=3)));
+                }
+                _ => unreachable!("postfix generator samples exactly three postfix forms"),
+            }
+        }
+    }
+
+    fn push_array_literal<R: Rng>(
+        &mut self,
+        rng: &mut R,
+        out: &mut String,
+        locals: &[String],
+        depth: usize,
+    ) {
+        out.push('[');
+        let elems = rng.random_range(0..=3);
+        for elem_i in 0..elems {
+            if elem_i > 0 {
+                out.push_str(", ");
+            }
+            self.push_expr(rng, out, locals, depth);
+        }
+        if elems > 0 && rng.random_bool(0.35) {
+            out.push(',');
+        }
+        out.push(']');
+    }
+
+    fn push_struct_literal<R: Rng>(
+        &mut self,
+        rng: &mut R,
+        out: &mut String,
+        locals: &[String],
+        depth: usize,
+    ) {
+        self.push_known_type_path(rng, out);
+        out.push_str(" { ");
+        let fields = rng.random_range(0..=3);
+        for field_i in 0..fields {
+            if field_i > 0 {
+                out.push_str(", ");
+            }
+            out.push_str(&format!("field{field_i}: "));
+            self.push_expr(rng, out, locals, depth);
+        }
+        if fields > 0 && rng.random_bool(0.35) {
+            out.push(',');
+        }
+        out.push_str(" }");
+    }
+
+    fn push_match_expr<R: Rng>(
+        &mut self,
+        rng: &mut R,
+        out: &mut String,
+        locals: &[String],
+        depth: usize,
+    ) {
+        out.push_str("match (");
+        self.push_expr(rng, out, locals, depth);
+        out.push_str(") { ");
+        let arms = rng.random_range(0..=3);
+        for arm_i in 0..arms {
+            if arm_i > 0 {
+                out.push_str(", ");
+            }
+            self.push_pattern(rng, out, depth);
+            out.push_str(" => ");
+            self.push_expr(rng, out, locals, depth);
+        }
+        if arms > 0 && rng.random_bool(0.5) {
+            out.push(',');
+        }
+        out.push_str(" }");
+    }
+
+    fn push_pattern<R: Rng>(&mut self, rng: &mut R, out: &mut String, depth: usize) {
+        match rng.random_range(0..5) {
+            0 => out.push_str(&rng.random_range(0..=7).to_string()),
+            1 => out.push_str("true"),
+            2 => out.push_str("false"),
+            3 if depth > 0 => {
+                self.push_path(rng, out, "Variant", 1, 2);
+                out.push('(');
+                let patterns = rng.random_range(0..=2);
+                for pattern_i in 0..patterns {
+                    if pattern_i > 0 {
+                        out.push_str(", ");
+                    }
+                    self.push_pattern(rng, out, depth - 1);
+                }
+                if patterns > 0 && rng.random_bool(0.35) {
+                    out.push(',');
+                }
+                out.push(')');
+            }
+            _ => self.push_path(rng, out, "Pattern", 1, 2),
+        }
+    }
+
+    fn push_type_expr<R: Rng>(&mut self, rng: &mut R, out: &mut String, depth: usize) {
+        if depth == 0 {
+            self.push_known_type_path(rng, out);
+            return;
+        }
+        match rng.random_range(0..5) {
+            0 => {
+                out.push('&');
+                self.push_type_expr(rng, out, depth - 1);
+            }
+            1 => {
+                out.push('[');
+                self.push_type_expr(rng, out, depth - 1);
+                if rng.random_bool(0.55) {
+                    out.push_str("; ");
+                    if rng.random_bool(0.7) {
+                        out.push_str(&rng.random_range(0..=8).to_string());
+                    } else {
+                        out.push_str(&self.next_ident("N"));
+                    }
+                }
+                out.push(']');
+            }
+            _ => {
+                self.push_known_type_path(rng, out);
+                if rng.random_bool(0.35) {
+                    out.push('<');
+                    let args = rng.random_range(1..=3);
+                    for arg_i in 0..args {
+                        if arg_i > 0 {
+                            out.push_str(", ");
+                        }
+                        self.push_type_expr(rng, out, depth - 1);
+                    }
+                    if rng.random_bool(0.25) {
+                        out.push(',');
+                    }
+                    out.push('>');
+                }
+            }
+        }
+    }
+
+    fn push_generics_opt<R: Rng>(&mut self, rng: &mut R, out: &mut String, depth: usize) {
+        if depth == 0 || !rng.random_bool(0.35) {
+            return;
+        }
+        out.push('<');
+        let params = rng.random_range(1..=3);
+        for param_i in 0..params {
+            if param_i > 0 {
+                out.push_str(", ");
+            }
+            if rng.random_bool(0.25) {
+                out.push_str("const ");
+                out.push_str(&self.next_ident("N"));
+                out.push_str(": ");
+                self.push_type_expr(rng, out, depth - 1);
+            } else {
+                out.push_str(&self.next_ident("T"));
+                if rng.random_bool(0.45) {
+                    out.push_str(": ");
+                    self.push_bound_type_expr(rng, out, depth - 1);
+                    if rng.random_bool(0.35) {
+                        out.push_str(" + ");
+                        self.push_bound_type_expr(rng, out, depth - 1);
+                    }
+                }
+            }
+        }
+        if rng.random_bool(0.25) {
+            out.push(',');
+        }
+        out.push('>');
+    }
+
+    fn push_where_clause_opt<R: Rng>(&mut self, rng: &mut R, out: &mut String, depth: usize) {
+        if depth == 0 || !rng.random_bool(0.25) {
+            return;
+        }
+        out.push_str(" where ");
+        let predicates = rng.random_range(1..=2);
+        for pred_i in 0..predicates {
+            if pred_i > 0 {
+                out.push_str(", ");
+            }
+            out.push_str(&self.next_ident("T"));
+            out.push_str(": ");
+            self.push_bound_type_expr(rng, out, depth - 1);
+            if rng.random_bool(0.35) {
+                out.push_str(" + ");
+                self.push_bound_type_expr(rng, out, depth - 1);
+            }
+        }
+        if rng.random_bool(0.25) {
+            out.push(',');
+        }
+    }
+
+    fn push_bound_type_expr<R: Rng>(&mut self, rng: &mut R, out: &mut String, depth: usize) {
+        if depth > 0 && rng.random_bool(0.25) {
+            out.push('&');
+            self.push_bound_type_expr(rng, out, depth - 1);
+            return;
+        }
+        self.push_known_trait_path(rng, out);
+        if depth > 0 && rng.random_bool(0.25) {
+            out.push('<');
+            self.push_bound_type_expr(rng, out, depth - 1);
+            if rng.random_bool(0.25) {
+                out.push(',');
+            }
+            out.push('>');
+        }
+    }
+
+    fn push_path<R: Rng>(
+        &mut self,
+        rng: &mut R,
+        out: &mut String,
+        prefix: &str,
+        min_segments: usize,
+        max_segments: usize,
+    ) {
+        let segments = rng.random_range(min_segments..=max_segments);
+        for segment_i in 0..segments {
+            if segment_i > 0 {
+                out.push_str("::");
+            }
+            out.push_str(prefix);
+            out.push_str(&self.item_index.to_string());
+            out.push('_');
+            out.push_str(&segment_i.to_string());
+        }
+        self.item_index += 1;
+    }
+
+    fn push_known_type_path<R: Rng>(&mut self, rng: &mut R, out: &mut String) {
+        let names = if self.type_names.is_empty() {
+            &["i32"][..]
+        } else {
+            &[][..]
+        };
+        if self.type_names.is_empty() {
+            out.push_str(names[0]);
+        } else {
+            let i = rng.random_range(0..self.type_names.len());
+            out.push_str(&self.type_names[i]);
+        }
+    }
+
+    fn push_known_trait_path<R: Rng>(&mut self, rng: &mut R, out: &mut String) {
+        if self.trait_names.is_empty() {
+            out.push_str("Copy");
+        } else {
+            let i = rng.random_range(0..self.trait_names.len());
+            out.push_str(&self.trait_names[i]);
+        }
+    }
+
+    fn push_local_ref<R: Rng>(&self, rng: &mut R, out: &mut String, locals: &[String]) {
+        let i = rng.random_range(0..locals.len());
+        out.push_str(&locals[i]);
+    }
+
+    fn next_fn_name(&mut self) -> String {
+        let name = format!("f{}", self.fn_index);
+        self.fn_index += 1;
+        self.function_names.push(name.clone());
+        name
+    }
+
+    fn next_local_name(&mut self) -> String {
+        let name = format!("v{}", self.local_name_index);
+        self.local_name_index += 1;
+        name
+    }
+
+    fn next_ident(&mut self, prefix: &str) -> String {
+        let name = format!("{prefix}{}", self.item_index);
+        self.item_index += 1;
+        name
+    }
+
+    fn push_pub<R: Rng>(&self, rng: &mut R, out: &mut String) {
+        if rng.random_bool(0.35) {
+            out.push_str("pub ");
+        }
+    }
+
+    fn push_indent(&self, out: &mut String, indent: usize) {
+        for _ in 0..indent {
+            out.push_str("    ");
+        }
+    }
+
+    fn random_assignment_op<R: Rng>(&self, rng: &mut R) -> &'static str {
+        const OPS: [&str; 11] = [
+            "=", "+=", "-=", "*=", "/=", "%=", "^=", "<<=", ">>=", "&=", "|=",
+        ];
+        OPS[rng.random_range(0..OPS.len())]
+    }
+
+    fn random_binary_op<R: Rng>(&self, rng: &mut R) -> &'static str {
+        const OPS: [&str; 16] = [
+            "||", "&&", "|", "^", "&", "==", "!=", "<", ">", "<=", ">=", "<<", ">>", "+", "-", "*",
+        ];
+        OPS[rng.random_range(0..OPS.len())]
+    }
 }
 
 #[test]

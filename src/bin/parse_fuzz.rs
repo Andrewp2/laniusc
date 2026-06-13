@@ -502,6 +502,7 @@ async fn run_source(
     path_opt: Option<&Path>,
     label: &str,
     src: &str,
+    validate_resident: bool,
     lexer: &GpuLexer,
     parser: &GpuParser,
     tables: &PrecomputedParseTables,
@@ -518,20 +519,37 @@ async fn run_source(
         .parse(&kinds, tables)
         .await
         .with_context(|| format!("parse {}", label))?;
+    if validate_resident {
+        let resident = lexer
+            .with_resident_tokens(src, |_, _, bufs| {
+                parser.parse_resident_tokens(bufs.n, &bufs.tokens_out, &bufs.token_count, tables)
+            })
+            .await
+            .with_context(|| format!("resident lex {}", label))?
+            .with_context(|| format!("resident parse {}", label))?;
+        if !resident.ll1.accepted {
+            anyhow::bail!(
+                "resident LL(1) parser rejected {}: error_pos={} error_code={} detail={}",
+                label,
+                resident.ll1.error_pos,
+                resident.ll1.error_code,
+                resident.ll1.detail
+            );
+        }
+    }
     let expected_pairs = kinds.len().saturating_sub(1);
     if tables.n_nonterminals > 0 {
         let test_cpu_ll1 = tables.test_cpu_ll1_production_stream(&kinds);
-
-        if path_opt.is_some() && !res.ll1.accepted {
+        let projected = tables.test_cpu_projected_production_stream(&kinds);
+        if res.emit_stream != projected {
             anyhow::bail!(
-                "LL(1) GPU acceptance failed for {} at token pos {} (code={}, detail={}, steps={})",
+                "LLP projected stream mismatch for {}: GPU len={} test CPU pair-oracle len={}",
                 label,
-                res.ll1.error_pos,
-                res.ll1.error_code,
-                res.ll1.detail,
-                res.ll1.steps
+                res.emit_stream.len(),
+                projected.len()
             );
         }
+
         match (test_cpu_ll1, res.ll1.accepted) {
             (Ok(expected), true) => {
                 if res.ll1_emit_stream != expected {
@@ -542,22 +560,6 @@ async fn run_source(
                         expected.len()
                     );
                 }
-                let projected = tables.test_cpu_projected_production_stream(&kinds);
-                if res.emit_stream != projected {
-                    anyhow::bail!(
-                        "LLP projected stream mismatch for {}: GPU len={} test CPU pair-oracle len={}",
-                        label,
-                        res.emit_stream.len(),
-                        projected.len()
-                    );
-                }
-            }
-            (Ok(expected), false) => {
-                anyhow::bail!(
-                    "GPU rejected a test-CPU-oracle-accepted LL(1) parse for {} (oracle productions={})",
-                    label,
-                    expected.len()
-                );
             }
             (Err(err), true) => {
                 anyhow::bail!(
@@ -566,7 +568,7 @@ async fn run_source(
                     err
                 );
             }
-            (Err(_), false) => {}
+            _ => {}
         }
     }
     if tables.n_nonterminals > 0 && res.ll1_block_size > 0 {
@@ -759,10 +761,10 @@ async fn main() -> Result<()> {
         let label = path.display().to_string();
         let src =
             std::fs::read_to_string(&path).with_context(|| format!("read input {}", label))?;
-        match run_source(Some(&path), &label, &src, &lexer, &parser, &tables).await {
+        match run_source(Some(&path), &label, &src, true, &lexer, &parser, &tables).await {
             Ok(()) => passed += 1,
             Err(e) => {
-                eprintln!("[fail] {}:\n  {}", label, e);
+                eprintln!("[fail] {}:\n  {:#}", label, e);
                 failed += 1;
                 break; // fail-fast; flip if you want full sweep
             }
@@ -777,13 +779,13 @@ async fn main() -> Result<()> {
     );
 
     for i in 0..fuzz.iters {
-        // Use the repo’s generator to make *valid* sources.
-        let src = laniusc::dev::generator::gen_valid_source(&mut rng, fuzz.len);
+        // Use the repo's grammar-oriented generator to make parser-valid programs.
+        let src = laniusc::dev::generator::gen_valid_program(&mut rng, fuzz.len);
         let label = format!("fuzz_iter_{}_bytes_{}", i, src.len());
-        match run_source(None, &label, &src, &lexer, &parser, &tables).await {
+        match run_source(None, &label, &src, true, &lexer, &parser, &tables).await {
             Ok(()) => passed += 1,
             Err(e) => {
-                eprintln!("[fail] {}:\n  {}", label, e);
+                eprintln!("[fail] {}:\n  {:#}", label, e);
                 // Write a repro case immediately so it’s not lost.
                 let ts = match SystemTime::now().duration_since(UNIX_EPOCH) {
                     Ok(elapsed) => elapsed.as_secs(),
@@ -797,7 +799,15 @@ async fn main() -> Result<()> {
                     warn!("failed to create {dir}: {err}");
                 }
                 let path = format!("{}/case_{ts}_i{}_n{}.lani", dir, i, src.len());
-                if let Err(e) = std::fs::write(&path, src.as_bytes()) {
+                let repro = format!(
+                    "// parse_fuzz seed={} iter={} requested_len={} generated_len={}\n{}",
+                    fuzz.seed,
+                    i,
+                    fuzz.len,
+                    src.len(),
+                    src
+                );
+                if let Err(e) = std::fs::write(&path, repro.as_bytes()) {
                     eprintln!("[save] failed to write repro case: {e}");
                 } else {
                     eprintln!("[save] wrote repro case: {}", path);

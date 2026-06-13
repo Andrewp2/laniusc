@@ -87,7 +87,7 @@ impl Formatter {
             match token.kind {
                 TokenKind::OpenBrace => self.write_open_brace(prev, token),
                 TokenKind::CloseBrace => self.write_close_brace(next, token),
-                TokenKind::Semicolon => self.write_semicolon(token),
+                TokenKind::Semicolon => self.write_semicolon(next, token),
                 TokenKind::Comma => self.write_comma(prev, next, token),
                 TokenKind::LineComment => self.write_line_comment(token),
                 TokenKind::BlockComment => self.write_block_comment(prev, token),
@@ -156,12 +156,16 @@ impl Formatter {
         }
     }
 
-    fn write_semicolon(&mut self, token: Token<'_>) {
+    fn write_semicolon(&mut self, next: Option<Token<'_>>, token: Token<'_>) {
         self.compact_next_token = false;
         trim_line_end(&mut self.out);
         self.write_raw_token(token.text);
         self.where_clause = false;
         self.where_angle_depth = 0;
+        if next.is_some_and(|next| next.kind == TokenKind::LineComment) {
+            self.ensure_space();
+            return;
+        }
         if self.paren_depth == 0 && self.bracket_depth == 0 {
             self.newline();
         } else {
@@ -181,6 +185,13 @@ impl Formatter {
                 && self.bracket_depth == 0 =>
             {
                 self.newline();
+            }
+            _ if self.where_clause
+                && self.paren_depth == 0
+                && self.bracket_depth == 0
+                && self.where_angle_depth > 0 =>
+            {
+                self.ensure_space();
             }
             _ if self.indent > 0 && self.paren_depth == 0 && self.bracket_depth == 0 => {
                 self.newline();

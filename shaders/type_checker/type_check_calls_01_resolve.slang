@@ -58,6 +58,28 @@ uint lookup_capacity()
     return max(gParams.n_tokens * 2u, 1u);
 }
 
+void clear_call_param_slot(uint token_i, uint param_i)
+{
+    row_major_store<uint>(
+        call_param_type,
+        token_i,
+        PARAM_CACHE_STRIDE,
+        param_i,
+        TY_UNKNOWN);
+    row_major_store<uint>(
+        call_param_ref_tag,
+        token_i,
+        PARAM_CACHE_STRIDE,
+        param_i,
+        TYPE_REF_INVALID);
+    row_major_store<uint>(
+        call_param_ref_payload,
+        token_i,
+        PARAM_CACHE_STRIDE,
+        param_i,
+        INVALID);
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -70,28 +92,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         call_return_type[i] = TY_UNKNOWN;
         call_return_type_token[i] = INVALID;
         call_param_count[i] = 0u;
-        [loop]
-        for (uint param_i = 0u; param_i < PARAM_CACHE_STRIDE; param_i += 1u)
-        {
-            row_major_store<uint>(
-                call_param_type,
-                i,
-                PARAM_CACHE_STRIDE,
-                param_i,
-                TY_UNKNOWN);
-            row_major_store<uint>(
-                call_param_ref_tag,
-                i,
-                PARAM_CACHE_STRIDE,
-                param_i,
-                TYPE_REF_INVALID);
-            row_major_store<uint>(
-                call_param_ref_payload,
-                i,
-                PARAM_CACHE_STRIDE,
-                param_i,
-                INVALID);
-        }
+        clear_call_param_slot(i, 0u);
+        clear_call_param_slot(i, 1u);
+        clear_call_param_slot(i, 2u);
+        clear_call_param_slot(i, 3u);
     }
 
     if (i < gParams.n_hir_nodes)
@@ -99,7 +103,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     if (i < lookup_capacity())
     {
-        function_lookup_key[i] = 0u;
+        function_lookup_key[i] = INVALID;
         function_lookup_fn[i] = INVALID;
     }
 }

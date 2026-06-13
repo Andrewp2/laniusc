@@ -11,7 +11,7 @@ use crate::gpu::{
     passes_core::{PassData, bind_group, make_traced_main_pass},
 };
 
-const HIR_MODULE_OUTPUT_TARGET_LIMIT: u32 = 512;
+const WASM_ASSERT_OUTPUT_TARGET_LIMIT: u32 = 512;
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
@@ -25,6 +25,70 @@ struct WasmParams {
 pub struct RecordedWasmCodegen {
     output_capacity: usize,
     token_capacity: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WasmRecordBoundary {
+    pub stage: &'static str,
+    pub reads: &'static [&'static str],
+    pub writes: &'static [&'static str],
+}
+
+const WASM_RECORD_BOUNDARIES: &[WasmRecordBoundary] = &[
+    WasmRecordBoundary {
+        stage: "agg_layout_clear",
+        reads: &["wasm_params"],
+        writes: &["aggregate_layout_records"],
+    },
+    WasmRecordBoundary {
+        stage: "agg_layout",
+        reads: &["hir_records", "struct_records", "aggregate_layout_records"],
+        writes: &["aggregate_layout_records"],
+    },
+    WasmRecordBoundary {
+        stage: "const_values",
+        reads: &["hir_status", "hir_expr_records", "hir_stmt_records"],
+        writes: &["wasm_const_value_records"],
+    },
+    WasmRecordBoundary {
+        stage: "hir_body",
+        reads: &[
+            "hir_records",
+            "typecheck_records",
+            "call_records",
+            "wasm_const_value_records",
+        ],
+        writes: &["wasm_body_words", "wasm_body_status", "wasm_status"],
+    },
+    WasmRecordBoundary {
+        stage: "hir_agg_body",
+        reads: &["wasm_status"],
+        writes: &["wasm_status"],
+    },
+    WasmRecordBoundary {
+        stage: "hir_enum_match_records",
+        reads: &["hir_match_records"],
+        writes: &["wasm_enum_match_records"],
+    },
+    WasmRecordBoundary {
+        stage: "module",
+        reads: &["wasm_body_words", "wasm_body_status"],
+        writes: &["wasm_module_words", "wasm_status"],
+    },
+    WasmRecordBoundary {
+        stage: "hir_assert_module",
+        reads: &["wasm_status"],
+        writes: &["wasm_status"],
+    },
+    WasmRecordBoundary {
+        stage: "pack_output",
+        reads: &["wasm_module_words", "wasm_status"],
+        writes: &["wasm_packed_words", "wasm_status"],
+    },
+];
+
+pub fn wasm_record_boundaries() -> &'static [WasmRecordBoundary] {
+    WASM_RECORD_BOUNDARIES
 }
 
 #[derive(Debug)]
@@ -77,9 +141,10 @@ impl std::error::Error for WasmOutputError {}
 
 #[derive(Clone, Copy)]
 pub struct GpuWasmStructMetadataBuffers<'a> {
-    pub field_parent_struct: &'a wgpu::Buffer,
-    pub field_ordinal: &'a wgpu::Buffer,
     pub lit_field_parent_lit: &'a wgpu::Buffer,
+    pub member_name_token: &'a wgpu::Buffer,
+    pub member_result_field_ordinal: &'a wgpu::Buffer,
+    pub struct_init_field_ordinal_by_node: &'a wgpu::Buffer,
 }
 
 #[derive(Clone, Copy)]
@@ -147,7 +212,6 @@ struct ResidentWasmBuffers {
     agg_layout_bind_group: wgpu::BindGroup,
     hir_body_bind_group: wgpu::BindGroup,
     hir_agg_body_bind_group: wgpu::BindGroup,
-    hir_module_bind_group: wgpu::BindGroup,
     hir_assert_module_bind_group: wgpu::BindGroup,
     hir_enum_match_records_bind_group: wgpu::BindGroup,
     wasm_const_values_bind_group: wgpu::BindGroup,
@@ -160,7 +224,6 @@ pub struct GpuWasmCodeGenerator {
     agg_layout_pass: PassData,
     hir_body_pass: PassData,
     hir_agg_body_pass: PassData,
-    hir_module_pass: PassData,
     hir_assert_module_pass: PassData,
     hir_enum_match_records_pass: PassData,
     wasm_const_values_pass: PassData,
@@ -207,12 +270,6 @@ impl GpuWasmCodeGenerator {
             "wasm_hir_agg_body.spv",
             "wasm_hir_agg_body.reflect.json"
         );
-        let hir_module_pass = wasm_pass!(
-            "hir_module",
-            "codegen_wasm_hir_module",
-            "wasm_hir_module.spv",
-            "wasm_hir_module.reflect.json"
-        );
         let hir_assert_module_pass = wasm_pass!(
             "hir_assert_module",
             "codegen_wasm_hir_assert_module",
@@ -248,7 +305,6 @@ impl GpuWasmCodeGenerator {
             agg_layout_pass,
             hir_body_pass,
             hir_agg_body_pass,
-            hir_module_pass,
             hir_assert_module_pass,
             hir_enum_match_records_pass,
             wasm_const_values_pass,
@@ -339,9 +395,10 @@ impl GpuWasmCodeGenerator {
             visible_type_buf,
             name_id_by_token_buf,
             enclosing_fn_buf,
-            struct_metadata.field_parent_struct,
-            struct_metadata.field_ordinal,
             struct_metadata.lit_field_parent_lit,
+            struct_metadata.member_name_token,
+            struct_metadata.member_result_field_ordinal,
+            struct_metadata.struct_init_field_ordinal_by_node,
             enum_match_metadata.variant_ordinal,
             enum_match_metadata.match_scrutinee_node,
             enum_match_metadata.match_arm_start,
@@ -480,12 +537,12 @@ impl GpuWasmCodeGenerator {
         let token_groups = token_capacity.div_ceil(256).max(1);
         let agg_layout_groups = token_capacity.max(hir_node_capacity).div_ceil(256).max(1);
         let (agg_layout_groups_x, agg_layout_groups_y) = workgroup_grid_1d(agg_layout_groups);
-        let hir_module_output_groups = ((output_capacity as u32)
-            .min(HIR_MODULE_OUTPUT_TARGET_LIMIT))
+        let wasm_assert_output_groups = ((output_capacity as u32)
+            .min(WASM_ASSERT_OUTPUT_TARGET_LIMIT))
         .div_ceil(256)
         .max(1);
-        let (hir_module_output_groups_x, hir_module_output_groups_y) =
-            workgroup_grid_1d(hir_module_output_groups);
+        let (wasm_assert_output_groups_x, wasm_assert_output_groups_y) =
+            workgroup_grid_1d(wasm_assert_output_groups);
 
         trace_wasm_codegen("record.dispatch.agg_layout_clear.start");
         let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -555,8 +612,6 @@ impl GpuWasmCodeGenerator {
         drop(compute);
         trace_wasm_codegen("record.dispatch.hir_enum_match_records.done");
 
-        trace_wasm_codegen("record.dispatch.hir_enum_match_module.retired_not_loaded");
-
         trace_wasm_codegen("record.dispatch.module.start");
         let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("codegen.wasm.module"),
@@ -568,16 +623,7 @@ impl GpuWasmCodeGenerator {
         drop(compute);
         trace_wasm_codegen("record.dispatch.module.done");
 
-        trace_wasm_codegen("record.dispatch.hir_module.start");
-        let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("codegen.wasm.hir_module"),
-            timestamp_writes: None,
-        });
-        compute.set_pipeline(&self.hir_module_pass.pipeline);
-        compute.set_bind_group(0, Some(&bufs.hir_module_bind_group), &[]);
-        compute.dispatch_workgroups(hir_module_output_groups_x, hir_module_output_groups_y, 1);
-        drop(compute);
-        trace_wasm_codegen("record.dispatch.hir_module.done");
+        trace_wasm_codegen("record.dispatch.hir_module.retired");
 
         trace_wasm_codegen("record.dispatch.hir_assert_module.start");
         let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -586,7 +632,7 @@ impl GpuWasmCodeGenerator {
         });
         compute.set_pipeline(&self.hir_assert_module_pass.pipeline);
         compute.set_bind_group(0, Some(&bufs.hir_assert_module_bind_group), &[]);
-        compute.dispatch_workgroups(hir_module_output_groups_x, hir_module_output_groups_y, 1);
+        compute.dispatch_workgroups(wasm_assert_output_groups_x, wasm_assert_output_groups_y, 1);
         drop(compute);
         trace_wasm_codegen("record.dispatch.hir_assert_module.done");
 
@@ -762,6 +808,7 @@ impl GpuWasmCodeGenerator {
         Ok(slot.as_ref().expect("resident wasm buffers allocated"))
     }
 
+    #[allow(unused_macros, unused_variables)]
     fn create_resident_buffers(
         &self,
         device: &wgpu::Device,
@@ -1110,32 +1157,40 @@ impl GpuWasmCodeGenerator {
             &agg_layout_clear_bindings,
         )?;
 
-        let mut agg_layout_bindings = vec![
+        let agg_layout_bindings = [
             ("gParams", params_buf.as_entire_binding()),
             ("hir_status", hir_status_buf.as_entire_binding()),
-            ("node_kind", node_kind_buf.as_entire_binding()),
-            ("parent", parent_buf.as_entire_binding()),
-            ("first_child", first_child_buf.as_entire_binding()),
-            ("next_sibling", next_sibling_buf.as_entire_binding()),
             ("hir_kind", hir_kind_buf.as_entire_binding()),
             ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
-            (
-                "hir_struct_field_parent_struct",
-                struct_metadata.field_parent_struct.as_entire_binding(),
-            ),
-            (
-                "hir_struct_field_ordinal",
-                struct_metadata.field_ordinal.as_entire_binding(),
-            ),
             (
                 "hir_struct_lit_field_parent_lit",
                 struct_metadata.lit_field_parent_lit.as_entire_binding(),
             ),
-            ("visible_decl", visible_decl_buf.as_entire_binding()),
-            ("call_fn_index", call_fn_index_buf.as_entire_binding()),
+            (
+                "hir_member_name_token",
+                struct_metadata.member_name_token.as_entire_binding(),
+            ),
+            (
+                "member_result_field_ordinal",
+                struct_metadata
+                    .member_result_field_ordinal
+                    .as_entire_binding(),
+            ),
+            (
+                "struct_init_field_ordinal_by_node",
+                struct_metadata
+                    .struct_init_field_ordinal_by_node
+                    .as_entire_binding(),
+            ),
+            (
+                "struct_init_field_index",
+                struct_init_field_index_buf.as_entire_binding(),
+            ),
+            (
+                "member_result_field_index",
+                member_result_field_index_buf.as_entire_binding(),
+            ),
         ];
-        add_codegen_metadata_bindings!(agg_layout_bindings);
-        add_aggregate_layout_output_bindings!(agg_layout_bindings);
         let agg_layout_bind_group = bind_group::create_bind_group_from_bindings(
             device,
             Some("codegen_wasm_agg_layout"),
@@ -1230,94 +1285,6 @@ impl GpuWasmCodeGenerator {
             &self.hir_agg_body_pass,
             0,
             &hir_agg_body_bindings,
-        )?;
-
-        let mut hir_module_bindings = vec![
-            ("gParams", params_buf.as_entire_binding()),
-            ("token_words", token_buf.as_entire_binding()),
-            ("token_count", token_count_buf.as_entire_binding()),
-            ("source_bytes", source_buf.as_entire_binding()),
-            ("node_kind", node_kind_buf.as_entire_binding()),
-            ("first_child", first_child_buf.as_entire_binding()),
-            ("next_sibling", next_sibling_buf.as_entire_binding()),
-            ("hir_status", hir_status_buf.as_entire_binding()),
-            ("hir_kind", hir_kind_buf.as_entire_binding()),
-            ("hir_token_pos", hir_token_pos_buf.as_entire_binding()),
-            ("hir_token_end", hir_token_end_buf.as_entire_binding()),
-            (
-                "hir_call_callee_node",
-                call_metadata.callee_node.as_entire_binding(),
-            ),
-            (
-                "hir_call_arg_start",
-                call_metadata.arg_start.as_entire_binding(),
-            ),
-            (
-                "hir_call_arg_parent_call",
-                call_metadata.arg_parent_call.as_entire_binding(),
-            ),
-            (
-                "hir_call_arg_end",
-                call_metadata.arg_end.as_entire_binding(),
-            ),
-            (
-                "hir_call_arg_count",
-                call_metadata.arg_count.as_entire_binding(),
-            ),
-            ("enclosing_fn", enclosing_fn_buf.as_entire_binding()),
-            ("hir_param_record", hir_param_record_buf.as_entire_binding()),
-            (
-                "hir_stmt_record",
-                expr_metadata.stmt_record.as_entire_binding(),
-            ),
-            ("hir_expr_record", expr_metadata.record.as_entire_binding()),
-            (
-                "hir_expr_result_root_node",
-                expr_metadata.result_root_node.as_entire_binding(),
-            ),
-            (
-                "hir_expr_int_value",
-                expr_metadata.int_value.as_entire_binding(),
-            ),
-            ("visible_decl", visible_decl_buf.as_entire_binding()),
-            (
-                "module_value_path_call_head",
-                module_value_path_call_head_buf.as_entire_binding(),
-            ),
-            (
-                "module_value_path_call_open",
-                module_value_path_call_open_buf.as_entire_binding(),
-            ),
-            (
-                "module_value_path_const_head",
-                module_value_path_const_head_buf.as_entire_binding(),
-            ),
-            (
-                "module_value_path_const_end",
-                module_value_path_const_end_buf.as_entire_binding(),
-            ),
-            ("call_fn_index", call_fn_index_buf.as_entire_binding()),
-            (
-                "call_intrinsic_tag",
-                call_intrinsic_tag_buf.as_entire_binding(),
-            ),
-            (
-                "fn_entrypoint_tag",
-                fn_entrypoint_tag_buf.as_entire_binding(),
-            ),
-            ("call_return_type", call_return_type_buf.as_entire_binding()),
-            ("call_param_count", call_param_count_buf.as_entire_binding()),
-            ("call_param_type", call_param_type_buf.as_entire_binding()),
-            ("out_words", out_buf.as_entire_binding()),
-            ("status", status_buf.as_entire_binding()),
-        ];
-        add_codegen_metadata_bindings!(hir_module_bindings);
-        let hir_module_bind_group = bind_group::create_bind_group_from_bindings(
-            device,
-            Some("codegen_wasm_hir_module"),
-            &self.hir_module_pass,
-            0,
-            &hir_module_bindings,
         )?;
 
         let hir_assert_module_bindings = [
@@ -1443,7 +1410,6 @@ impl GpuWasmCodeGenerator {
             agg_layout_bind_group,
             hir_body_bind_group,
             hir_agg_body_bind_group,
-            hir_module_bind_group,
             hir_assert_module_bind_group,
             hir_enum_match_records_bind_group,
             wasm_const_values_bind_group,

@@ -57,6 +57,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for PackVarlenPass {
                 b.semantic_token_kinds.as_entire_binding(),
             ),
             ("token_count".into(), b.token_count.as_entire_binding()),
+            (
+                "token_file_id".into(),
+                b.default_token_file_id.as_entire_binding(),
+            ),
             ("sc_offsets".into(), b.sc_offsets.as_entire_binding()),
             ("emit_offsets".into(), b.emit_offsets.as_entire_binding()),
             ("tables_blob".into(), b.tables_blob.as_entire_binding()),

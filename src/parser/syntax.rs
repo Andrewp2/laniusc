@@ -175,18 +175,23 @@ struct SyntaxBufferCache {
     depth_paren_inblock: wgpu::Buffer,
     depth_bracket_inblock: wgpu::Buffer,
     depth_brace_inblock: wgpu::Buffer,
+    depth_angle_inblock: wgpu::Buffer,
     block_sum_paren: wgpu::Buffer,
     block_sum_bracket: wgpu::Buffer,
     block_sum_brace: wgpu::Buffer,
+    block_sum_angle: wgpu::Buffer,
     prefix_paren_a: wgpu::Buffer,
     prefix_paren_b: wgpu::Buffer,
     prefix_bracket_a: wgpu::Buffer,
     prefix_bracket_b: wgpu::Buffer,
     prefix_brace_a: wgpu::Buffer,
     prefix_brace_b: wgpu::Buffer,
+    prefix_angle_a: wgpu::Buffer,
+    prefix_angle_b: wgpu::Buffer,
     block_prefix_paren: wgpu::Buffer,
     block_prefix_bracket: wgpu::Buffer,
     block_prefix_brace: wgpu::Buffer,
+    block_prefix_angle: wgpu::Buffer,
     statement_context_event_block: wgpu::Buffer,
     statement_context_event_prefix_a: wgpu::Buffer,
     statement_context_event_prefix_b: wgpu::Buffer,
@@ -209,6 +214,9 @@ struct SyntaxBufferCache {
     paren_match_depth: wgpu::Buffer,
     paren_match_block_min: wgpu::Buffer,
     paren_match_min_tree: wgpu::Buffer,
+    angle_match_depth: wgpu::Buffer,
+    angle_match_block_min: wgpu::Buffer,
+    angle_match_min_tree: wgpu::Buffer,
     paren_match_min_tree_steps: Vec<MinTreeBuildStep>,
     default_token_file_id: LaniusBuffer<u32>,
     status_buf: wgpu::Buffer,
@@ -260,6 +268,12 @@ impl SyntaxBufferCache {
                 token_capacity as usize,
                 wgpu::BufferUsages::empty(),
             ),
+            depth_angle_inblock: storage_i32_rw(
+                device,
+                "parser.syntax.depth_angle_inblock",
+                token_capacity as usize,
+                wgpu::BufferUsages::empty(),
+            ),
             block_sum_paren: storage_i32_rw(
                 device,
                 "parser.syntax.block_sum_paren",
@@ -275,6 +289,12 @@ impl SyntaxBufferCache {
             block_sum_brace: storage_i32_rw(
                 device,
                 "parser.syntax.block_sum_brace",
+                n_blocks_capacity as usize,
+                wgpu::BufferUsages::empty(),
+            ),
+            block_sum_angle: storage_i32_rw(
+                device,
+                "parser.syntax.block_sum_angle",
                 n_blocks_capacity as usize,
                 wgpu::BufferUsages::empty(),
             ),
@@ -314,6 +334,18 @@ impl SyntaxBufferCache {
                 n_blocks_capacity as usize,
                 wgpu::BufferUsages::empty(),
             ),
+            prefix_angle_a: storage_i32_rw(
+                device,
+                "parser.syntax.prefix_angle_a",
+                n_blocks_capacity as usize,
+                wgpu::BufferUsages::empty(),
+            ),
+            prefix_angle_b: storage_i32_rw(
+                device,
+                "parser.syntax.prefix_angle_b",
+                n_blocks_capacity as usize,
+                wgpu::BufferUsages::empty(),
+            ),
             block_prefix_paren: storage_i32_rw(
                 device,
                 "parser.syntax.block_prefix_paren",
@@ -323,6 +355,12 @@ impl SyntaxBufferCache {
             block_prefix_bracket: storage_i32_rw(
                 device,
                 "parser.syntax.block_prefix_bracket",
+                n_blocks_capacity as usize,
+                wgpu::BufferUsages::empty(),
+            ),
+            block_prefix_angle: storage_i32_rw(
+                device,
+                "parser.syntax.block_prefix_angle",
                 n_blocks_capacity as usize,
                 wgpu::BufferUsages::empty(),
             ),
@@ -458,6 +496,24 @@ impl SyntaxBufferCache {
             paren_match_min_tree: storage_i32_rw(
                 device,
                 "parser.syntax.paren_match_min_tree",
+                paren_match_min_tree_leaf_base.saturating_mul(2) as usize,
+                wgpu::BufferUsages::empty(),
+            ),
+            angle_match_depth: storage_i32_rw(
+                device,
+                "parser.syntax.angle_match_depth",
+                token_capacity as usize,
+                wgpu::BufferUsages::empty(),
+            ),
+            angle_match_block_min: storage_i32_rw(
+                device,
+                "parser.syntax.angle_match_block_min",
+                n_blocks_capacity as usize,
+                wgpu::BufferUsages::empty(),
+            ),
+            angle_match_min_tree: storage_i32_rw(
+                device,
+                "parser.syntax.angle_match_min_tree",
                 paren_match_min_tree_leaf_base.saturating_mul(2) as usize,
                 wgpu::BufferUsages::empty(),
             ),
@@ -768,6 +824,7 @@ fn record_token_buffer_check_with_cache_and_file_ids(
     let trait_context_scan_pass = syntax_trait_context_02_pass(device)?;
     let trait_context_apply_pass = syntax_trait_context_03_pass(device)?;
     let paren_match_pass = syntax_paren_match_01_pass(device)?;
+    let angle_match_pass = syntax_angle_match_01_pass(device)?;
     let min_tree_pass = syntax_match_min_tree_pass(device)?;
     let pass = syntax_tokens_pass(device)?;
 
@@ -793,6 +850,10 @@ fn record_token_buffer_check_with_cache_and_file_ids(
         buffers.depth_brace_inblock.as_entire_binding(),
     );
     resources.insert(
+        "depth_angle_inblock".into(),
+        buffers.depth_angle_inblock.as_entire_binding(),
+    );
+    resources.insert(
         "block_prefix_paren".into(),
         buffers.block_prefix_paren.as_entire_binding(),
     );
@@ -805,6 +866,10 @@ fn record_token_buffer_check_with_cache_and_file_ids(
         buffers.block_prefix_brace.as_entire_binding(),
     );
     resources.insert(
+        "block_prefix_angle".into(),
+        buffers.block_prefix_angle.as_entire_binding(),
+    );
+    resources.insert(
         "paren_match_depth".into(),
         buffers.paren_match_depth.as_entire_binding(),
     );
@@ -815,6 +880,18 @@ fn record_token_buffer_check_with_cache_and_file_ids(
     resources.insert(
         "paren_match_min_tree".into(),
         buffers.paren_match_min_tree.as_entire_binding(),
+    );
+    resources.insert(
+        "angle_match_depth".into(),
+        buffers.angle_match_depth.as_entire_binding(),
+    );
+    resources.insert(
+        "angle_match_block_min".into(),
+        buffers.angle_match_block_min.as_entire_binding(),
+    );
+    resources.insert(
+        "angle_match_min_tree".into(),
+        buffers.angle_match_min_tree.as_entire_binding(),
     );
     resources.insert(
         "statement_context_kind".into(),
@@ -858,6 +935,10 @@ fn record_token_buffer_check_with_cache_and_file_ids(
                 buffers.depth_brace_inblock.as_entire_binding(),
             ),
             (
+                "depth_angle_inblock".into(),
+                buffers.depth_angle_inblock.as_entire_binding(),
+            ),
+            (
                 "block_sum_paren".into(),
                 buffers.block_sum_paren.as_entire_binding(),
             ),
@@ -868,6 +949,10 @@ fn record_token_buffer_check_with_cache_and_file_ids(
             (
                 "block_sum_brace".into(),
                 buffers.block_sum_brace.as_entire_binding(),
+            ),
+            (
+                "block_sum_angle".into(),
+                buffers.block_sum_angle.as_entire_binding(),
             ),
         ]);
         let delimiter_bind_group = bind_group::create_bind_group_from_reflection(
@@ -902,6 +987,11 @@ fn record_token_buffer_check_with_cache_and_file_ids(
         } else {
             &buffers.prefix_brace_b
         };
+        let prefix_angle_in = if step.read_from_a {
+            &buffers.prefix_angle_a
+        } else {
+            &buffers.prefix_angle_b
+        };
         let prefix_paren_out = if step.write_to_a {
             &buffers.prefix_paren_a
         } else {
@@ -916,6 +1006,11 @@ fn record_token_buffer_check_with_cache_and_file_ids(
             &buffers.prefix_brace_a
         } else {
             &buffers.prefix_brace_b
+        };
+        let prefix_angle_out = if step.write_to_a {
+            &buffers.prefix_angle_a
+        } else {
+            &buffers.prefix_angle_b
         };
         let scan_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
             ("gParams".into(), step.params.as_entire_binding()),
@@ -932,6 +1027,10 @@ fn record_token_buffer_check_with_cache_and_file_ids(
                 buffers.block_sum_brace.as_entire_binding(),
             ),
             (
+                "block_sum_angle".into(),
+                buffers.block_sum_angle.as_entire_binding(),
+            ),
+            (
                 "prefix_paren_in".into(),
                 prefix_paren_in.as_entire_binding(),
             ),
@@ -942,6 +1041,10 @@ fn record_token_buffer_check_with_cache_and_file_ids(
             (
                 "prefix_brace_in".into(),
                 prefix_brace_in.as_entire_binding(),
+            ),
+            (
+                "prefix_angle_in".into(),
+                prefix_angle_in.as_entire_binding(),
             ),
             (
                 "prefix_paren_out".into(),
@@ -956,6 +1059,10 @@ fn record_token_buffer_check_with_cache_and_file_ids(
                 prefix_brace_out.as_entire_binding(),
             ),
             (
+                "prefix_angle_out".into(),
+                prefix_angle_out.as_entire_binding(),
+            ),
+            (
                 "block_prefix_paren".into(),
                 buffers.block_prefix_paren.as_entire_binding(),
             ),
@@ -966,6 +1073,10 @@ fn record_token_buffer_check_with_cache_and_file_ids(
             (
                 "block_prefix_brace".into(),
                 buffers.block_prefix_brace.as_entire_binding(),
+            ),
+            (
+                "block_prefix_angle".into(),
+                buffers.block_prefix_angle.as_entire_binding(),
             ),
             ("counters".into(), buffers.counters_buf.as_entire_binding()),
         ]);
@@ -1421,6 +1532,76 @@ fn record_token_buffer_check_with_cache_and_file_ids(
         }
     }
     {
+        let angle_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
+            ("gParams".into(), buffers.params_buf.as_entire_binding()),
+            ("token_words".into(), token_buf.as_entire_binding()),
+            (
+                "lexer_token_count".into(),
+                token_count_buf.as_entire_binding(),
+            ),
+            (
+                "depth_angle_inblock".into(),
+                buffers.depth_angle_inblock.as_entire_binding(),
+            ),
+            (
+                "block_prefix_angle".into(),
+                buffers.block_prefix_angle.as_entire_binding(),
+            ),
+            (
+                "angle_match_depth".into(),
+                buffers.angle_match_depth.as_entire_binding(),
+            ),
+            (
+                "angle_match_block_min".into(),
+                buffers.angle_match_block_min.as_entire_binding(),
+            ),
+        ]);
+        let angle_bind_group = bind_group::create_bind_group_from_reflection(
+            device,
+            Some("parser_syntax_angle_match_01_depth_blocks"),
+            &angle_match_pass.bind_group_layouts[0],
+            &angle_match_pass.reflection,
+            0,
+            &angle_resources,
+        )?;
+        record_compute(
+            encoder,
+            angle_match_pass,
+            &angle_bind_group,
+            "parser.syntax.angle_match.depth_blocks",
+            n_blocks.saturating_mul(256),
+        )?;
+
+        for step in &buffers.paren_match_min_tree_steps {
+            let tree_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
+                ("gMinTree".into(), step.params.as_entire_binding()),
+                (
+                    "brace_match_block_min".into(),
+                    buffers.angle_match_block_min.as_entire_binding(),
+                ),
+                (
+                    "brace_match_min_tree".into(),
+                    buffers.angle_match_min_tree.as_entire_binding(),
+                ),
+            ]);
+            let tree_bind_group = bind_group::create_bind_group_from_reflection(
+                device,
+                Some("parser_syntax_angle_match_02_build_min_tree"),
+                &min_tree_pass.bind_group_layouts[0],
+                &min_tree_pass.reflection,
+                0,
+                &tree_resources,
+            )?;
+            record_compute(
+                encoder,
+                min_tree_pass,
+                &tree_bind_group,
+                "parser.syntax.angle_match.build_min_tree",
+                step.work_items,
+            )?;
+        }
+    }
+    {
         let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("parser.syntax.pass"),
             timestamp_writes: None,
@@ -1666,6 +1847,20 @@ fn syntax_paren_match_01_pass(device: &wgpu::Device) -> Result<&'static PassData
             device,
             "parser_syntax_paren_match_01_depth_blocks",
             shader: "tokens_paren_match_01_depth_blocks"
+        )
+        .map_err(|err| err.to_string())
+    })
+    .as_ref()
+    .map_err(|err| anyhow!("{err}"))
+}
+
+fn syntax_angle_match_01_pass(device: &wgpu::Device) -> Result<&'static PassData> {
+    static PASS: OnceLock<Result<PassData, String>> = OnceLock::new();
+    PASS.get_or_init(|| {
+        crate::gpu::passes_core::make_main_pass!(
+            device,
+            "parser_syntax_angle_match_01_depth_blocks",
+            shader: "tokens_angle_match_01_depth_blocks"
         )
         .map_err(|err| err.to_string())
     })

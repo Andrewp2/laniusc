@@ -18,6 +18,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_status;
+StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_token_end;
@@ -36,6 +37,7 @@ static const uint MAX_GROUPS_X = 65535u;
 
 static const uint HIR_TYPE = 5u;
 static const uint HIR_PATH_EXPR = 33u;
+static const uint PROD_PATH = 47u;
 
 static const uint HIR_ITEM_KIND_NONE = 0u;
 static const uint HIR_ITEM_KIND_MODULE = 1u;
@@ -110,7 +112,8 @@ uint candidate_path_kind(uint i, uint item_kind)
         valid_span(hir_item_path_start[i], hir_item_path_end[i]))
         return PATH_RECORD_KIND_IMPORT_PATH;
 
-    if (hir_kind[i] == HIR_PATH_EXPR && valid_span(hir_token_pos[i], hir_token_end[i]))
+    if (hir_kind[i] == HIR_PATH_EXPR && node_kind[i] == PROD_PATH &&
+        valid_span(hir_token_pos[i], hir_token_end[i]))
         return PATH_RECORD_KIND_HIR_PATH_EXPR;
 
     if (hir_kind[i] == HIR_TYPE && valid_span(hir_token_pos[i], hir_token_end[i]))

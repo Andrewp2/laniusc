@@ -26,7 +26,9 @@ RWStructuredBuffer<uint> x86_node_tree_status;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint INVALID = 0xffffffffu;
 static const uint X86_NODE_TREE_OK = 1u;
-static const uint X86_ERR_TREE_SHAPE = 9u;
+// Host diagnostics treat this detail as a HIR node; keep it distinct from
+// token-addressed call-ABI errors.
+static const uint X86_ERR_TREE_SHAPE = 57u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -69,7 +71,19 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     uint p = valid_parent_or_invalid(node);
     uint end = subtree_end[node];
-    bool ok = p != node && (valid_node(end) || end == active_nodes);
+    uint parent_end = valid_node(p) ? subtree_end[p] : active_nodes;
+    bool end_in_active_tree = valid_node(end) || end == active_nodes;
+    bool parent_end_in_active_tree = valid_node(parent_end) || parent_end == active_nodes;
+    bool parent_precedes_node = p == INVALID || p < node;
+    bool node_range_is_nonempty = end > node;
+    bool node_range_is_in_parent =
+        p == INVALID ||
+        (parent_end_in_active_tree && parent_end > node && end <= parent_end);
+    bool ok = p != node &&
+              parent_precedes_node &&
+              end_in_active_tree &&
+              node_range_is_nonempty &&
+              node_range_is_in_parent;
     if (!ok)
     {
         publish_error(node);

@@ -21,6 +21,10 @@ RWStructuredBuffer<TokenOut> tokens_out;
 RWStructuredBuffer<uint> token_file_id;
 
 static const uint TK_IDENT = 1;
+static const uint TK_INT = 2;
+static const uint TK_ASSIGN = 8;
+static const uint TK_DOT = 35;
+static const uint TK_FLOAT = 33;
 static const uint TK_PUB = 66;
 static const uint TK_FN = 67;
 static const uint TK_LET = 68;
@@ -46,6 +50,8 @@ static const uint TK_EXTERN = 102;
 static const uint TK_TYPE = 103;
 static const uint TK_WHERE = 104;
 static const uint TK_SELF_VALUE = 105;
+static const uint TK_DOT_DOT = 182;
+static const uint TK_DOT_DOT_EQUAL = 189;
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
@@ -58,8 +64,10 @@ uint2 file_start_and_id_for_token_end(uint end_excl)
     uint count = source_file_count[0];
     uint lo = 0u;
     uint hi = count;
-    for (uint guard = 0u; guard < 32u && lo < hi; guard += 1u)
+    for (uint guard = 0u; guard < 32u; guard += 1u)
     {
+        if (lo >= hi)
+            break;
         uint mid = lo + ((hi - lo) >> 1u);
         if (source_file_start[mid] <= pos)
             lo = mid + 1u;
@@ -201,6 +209,70 @@ inline uint retag_compact_kind(uint token_index, uint start, uint end_excl)
     return kind;
 }
 
+inline bool token_is_single_dot(uint token_index, uint start, uint end_excl)
+{
+    return retag_compact_kind(token_index, start, end_excl) == TK_DOT
+        && end_excl == start + 1u;
+}
+
+inline bool float_token_ends_with_dot(uint kind, uint start, uint end_excl)
+{
+    return kind == TK_FLOAT
+        && end_excl > start
+        && load_byte_at(in_bytes, end_excl - 1u) == 46u;
+}
+
+inline bool next_token_is_adjacent_dot(uint token_index, uint end_excl, uint file_id, uint total)
+{
+    uint next_index = token_index + 1u;
+    if (next_index >= total)
+        return false;
+
+    uint next_end = end_positions[next_index];
+    uint2 next_file_info = file_start_and_id_for_token_end(next_end);
+    if (next_file_info.y != file_id)
+        return false;
+
+    uint next_start = compact_token_start(next_index);
+    next_start = max(next_start, next_file_info.x);
+    return next_start == end_excl && token_is_single_dot(next_index, next_start, next_end);
+}
+
+inline bool next_token_is_adjacent_assign(uint token_index, uint end_excl, uint file_id, uint total)
+{
+    uint next_index = token_index + 1u;
+    if (next_index >= total)
+        return false;
+
+    uint next_end = end_positions[next_index];
+    uint2 next_file_info = file_start_and_id_for_token_end(next_end);
+    if (next_file_info.y != file_id)
+        return false;
+
+    uint next_start = compact_token_start(next_index);
+    next_start = max(next_start, next_file_info.x);
+    return next_start == end_excl &&
+           retag_compact_kind(next_index, next_start, next_end) == TK_ASSIGN &&
+           next_end == next_start + 1u;
+}
+
+inline bool previous_token_is_adjacent_float_dot(uint token_index, uint start, uint file_id)
+{
+    if (token_index == 0u)
+        return false;
+
+    uint prev_index = token_index - 1u;
+    uint prev_end = end_positions[prev_index];
+    uint2 prev_file_info = file_start_and_id_for_token_end(prev_end);
+    if (prev_file_info.y != file_id)
+        return false;
+
+    uint prev_start = compact_token_start(prev_index);
+    prev_start = max(prev_start, prev_file_info.x);
+    uint prev_kind = retag_compact_kind(prev_index, prev_start, prev_end);
+    return prev_end == start && float_token_ends_with_dot(prev_kind, prev_start, prev_end);
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void tokens_build(uint3 tid: SV_DispatchThreadID)
@@ -216,6 +288,25 @@ void tokens_build(uint3 tid: SV_DispatchThreadID)
     uint start = compact_token_start(k);
     start = max(start, file_info.x);
     uint kind = retag_compact_kind(k, start, end_excl);
+
+    if (float_token_ends_with_dot(kind, start, end_excl)
+        && next_token_is_adjacent_dot(k, end_excl, file_info.y, total))
+    {
+        kind = TK_INT;
+        end_excl -= 1u;
+    }
+    else if (kind == TK_DOT
+        && previous_token_is_adjacent_float_dot(k, start, file_info.y))
+    {
+        kind = TK_DOT_DOT;
+        start -= 1u;
+    }
+
+    if (kind == TK_DOT_DOT
+        && next_token_is_adjacent_assign(k, end_excl, file_info.y, total))
+    {
+        kind = TK_DOT_DOT_EQUAL;
+    }
 
     // Write final token
     TokenOut t;

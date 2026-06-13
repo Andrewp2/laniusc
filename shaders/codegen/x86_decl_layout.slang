@@ -24,6 +24,8 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint> hir_call_callee_node;
+StructuredBuffer<uint> hir_member_name_token;
 StructuredBuffer<uint> hir_type_form;
 StructuredBuffer<uint> hir_type_len_value;
 StructuredBuffer<uint4> hir_param_record;
@@ -45,6 +47,8 @@ StructuredBuffer<uint> x86_decl_width_by_node;
 StructuredBuffer<uint> x86_decl_node_by_token;
 StructuredBuffer<uint> x86_decl_scan_local_prefix;
 StructuredBuffer<uint> x86_decl_scan_block_prefix;
+StructuredBuffer<uint> call_return_type;
+StructuredBuffer<uint> call_return_type_token;
 
 RWStructuredBuffer<uint> x86_decl_layout_record;
 RWStructuredBuffer<uint> x86_decl_layout_status;
@@ -61,6 +65,9 @@ static const uint HIR_PARAM = 4u;
 static const uint HIR_TYPE = 5u;
 static const uint HIR_STMT = 7u;
 static const uint HIR_LET_STMT = 8u;
+static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_MEMBER_EXPR = 21u;
+static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_ARRAY_EXPR = 24u;
 static const uint HIR_FOR_STMT = 30u;
 static const uint HIR_TYPE_FORM_ARRAY = 2u;
@@ -85,6 +92,7 @@ static const uint TY_GENERIC_BASE = 8192u;
 static const uint X86_DECL_AGG_ARRAY = 1u;
 static const uint X86_DECL_AGG_ENUM = 2u;
 static const uint X86_DECL_AGG_STRUCT = 3u;
+static const uint EXPR_RECORD_VALUE_TOKEN = 3u;
 static const uint X86_STRUCT_ACCESS_LITERAL = 2u;
 static const uint X86_STRUCT_ACCESS_ARRAY_LITERAL = 3u;
 // Keep local-slot displacements within x86 signed disp32 while allowing large
@@ -159,6 +167,11 @@ uint struct_access_kind(uint row)
 uint struct_access_payload0(uint row)
 {
     return struct_access_word(row, 0u);
+}
+
+uint expr_value_token(uint node)
+{
+    return valid_node(node) ? expr_slot(node, EXPR_RECORD_VALUE_TOKEN) : INVALID;
 }
 
 uint resolve_expr(uint node)
@@ -316,6 +329,105 @@ uint width_for_decl(uint decl_token)
     return 1u;
 }
 
+bool semantic_aggregate_kind_width(uint semantic_ty, out uint kind, out uint width)
+{
+    kind = 0u;
+    width = 0u;
+    if (semantic_ty >= TY_ENUM_BASE && semantic_ty < TY_GENERIC_BASE)
+    {
+        uint enum_token = semantic_ty - TY_ENUM_BASE;
+        uint enum_width = valid_token(enum_token) ? x86_enum_type_record[enum_token] : 0u;
+        kind = X86_DECL_AGG_ENUM;
+        width = max(enum_width, 2u);
+        return true;
+    }
+    if (semantic_ty >= TY_STRUCT_BASE && semantic_ty < TY_ENUM_BASE)
+    {
+        uint struct_token = semantic_ty - TY_STRUCT_BASE;
+        uint struct_width = valid_token(struct_token) ? x86_struct_type_record[struct_token] : 0u;
+        if (struct_width > 1u)
+        {
+            kind = X86_DECL_AGG_STRUCT;
+            width = struct_width;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool type_instance_aggregate_kind_width(uint ty, out uint kind, out uint width)
+{
+    kind = 0u;
+    width = 0u;
+    if (!valid_token(ty))
+        return false;
+    if (type_instance_kind[ty] == TYPE_INSTANCE_ARRAY &&
+        type_instance_len_kind[ty] == TYPE_LEN_LITERAL &&
+        type_instance_len_payload[ty] > 1u)
+    {
+        kind = X86_DECL_AGG_ARRAY;
+        width = type_instance_len_payload[ty];
+        return true;
+    }
+
+    uint decl_token = type_instance_decl_token[ty];
+    if (!valid_token(decl_token))
+        return false;
+    uint enum_width = x86_enum_type_record[decl_token];
+    if (enum_width > 1u)
+    {
+        kind = X86_DECL_AGG_ENUM;
+        width = enum_width;
+        return true;
+    }
+    uint struct_width = x86_struct_type_record[decl_token];
+    if (struct_width > 1u)
+    {
+        kind = X86_DECL_AGG_STRUCT;
+        width = struct_width;
+        return true;
+    }
+    return false;
+}
+
+bool aggregate_return_call_kind_width_for_decl_node(uint node, out uint kind, out uint width)
+{
+    kind = 0u;
+    width = 0u;
+    if (!is_local_decl_node(node))
+        return false;
+
+    uint call_node = resolve_expr(stmt_slot(node, 2u));
+    if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
+        return false;
+
+    uint callee_node = resolve_expr(hir_call_callee_node[call_node]);
+    uint callee_token = INVALID;
+    if (valid_node(callee_node) && hir_kind[callee_node] == HIR_MEMBER_EXPR)
+        callee_token = hir_member_name_token[callee_node];
+    else if (valid_node(callee_node) && hir_kind[callee_node] == HIR_NAME_EXPR)
+        callee_token = expr_value_token(callee_node);
+    if (!valid_token(callee_token))
+        return false;
+
+    uint semantic_kind = 0u;
+    uint semantic_width = 0u;
+    if (semantic_aggregate_kind_width(
+            call_return_type[callee_token],
+            semantic_kind,
+            semantic_width))
+    {
+        kind = semantic_kind;
+        width = semantic_width;
+        return true;
+    }
+
+    return type_instance_aggregate_kind_width(
+        call_return_type_token[callee_token],
+        kind,
+        width);
+}
+
 uint semantic_type_for_decl(uint decl_token)
 {
     if (!valid_token(decl_token))
@@ -400,6 +512,10 @@ uint local_width_for_node(uint node)
         uint literal_width = 0u;
         if (struct_literal_width_for_decl_node(node, literal_width))
             return literal_width;
+        uint call_return_width = 0u;
+        uint call_return_kind = 0u;
+        if (aggregate_return_call_kind_width_for_decl_node(node, call_return_kind, call_return_width))
+            return call_return_width;
         return width;
     }
     return 0u;
@@ -424,6 +540,13 @@ uint base_slot_for_node(uint target_node)
     uint node_prefix = scanned_prefix_for_node(target_node);
     uint fn_prefix = scanned_prefix_for_node(owner_fn);
     return node_prefix >= fn_prefix ? node_prefix - fn_prefix : INVALID;
+}
+
+bool has_layout_owner(uint node)
+{
+    if (!valid_node(node))
+        return false;
+    return valid_node(x86_node_func[node]);
 }
 
 void publish_error(uint detail, uint extent)
@@ -490,6 +613,8 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint decl_token = decl_token_for_layout_node(node);
     if (!valid_token(decl_token))
         return;
+    if (!has_layout_owner(node))
+        return;
 
     uint base = base_slot_for_node(node);
     uint width = x86_decl_width_by_node[node];
@@ -534,6 +659,12 @@ void main(uint3 tid: SV_DispatchThreadID)
         agg_kind = X86_DECL_AGG_STRUCT;
     if (agg_kind == 0u && struct_literal_width_for_decl_node(node, struct_width))
         agg_kind = X86_DECL_AGG_STRUCT;
+    uint call_return_width = 0u;
+    uint call_return_kind = 0u;
+    if (agg_kind == 0u &&
+        aggregate_return_call_kind_width_for_decl_node(node, call_return_kind, call_return_width) &&
+        call_return_width == width)
+        agg_kind = call_return_kind;
     if (!publish_decl_layout_record(decl_token, base, width, agg_kind, node))
     {
         publish_error(node, base + width);

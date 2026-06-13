@@ -6,6 +6,7 @@
 module alloc::allocator;
 
 pub type AllocatorCapability = bool;
+pub type AllocatorPointer = u32;
 pub type AllocatorRuntimeAbiVersion = u32;
 pub type AllocatorServiceId = u32;
 pub type AllocatorServiceStatus = u32;
@@ -14,6 +15,7 @@ pub const ALLOCATOR_RUNTIME_ABI_VERSION: AllocatorRuntimeAbiVersion = 1;
 pub const ALLOCATOR_SERVICE_ID: AllocatorServiceId = 1;
 pub const ALLOCATOR_SERVICE_STATUS_UNAVAILABLE: AllocatorServiceStatus = 1;
 pub const ALLOCATOR_HAS_RUNTIME_BINDING: AllocatorCapability = false;
+pub const ALLOCATOR_POINTER_UNAVAILABLE: AllocatorPointer = 0;
 
 pub fn allocator_runtime_abi_version() -> AllocatorRuntimeAbiVersion {
     return ALLOCATOR_RUNTIME_ABI_VERSION;
@@ -43,6 +45,10 @@ pub fn allocator_is_blocked() -> AllocatorCapability {
     return !allocator_is_available();
 }
 
+pub fn allocator_is_known_but_unbound() -> AllocatorCapability {
+    return allocator_service_is_known() && allocator_is_blocked();
+}
+
 pub fn allocator_requires_runtime_binding() -> AllocatorCapability {
     return !ALLOCATOR_HAS_RUNTIME_BINDING;
 }
@@ -59,6 +65,10 @@ pub fn alloc_is_blocked() -> AllocatorCapability {
     return !alloc_is_executable();
 }
 
+pub fn alloc_is_known_but_unbound() -> AllocatorCapability {
+    return allocator_service_is_known() && alloc_is_blocked();
+}
+
 pub fn alloc_requires_runtime_binding() -> AllocatorCapability {
     return !alloc_is_executable();
 }
@@ -69,6 +79,10 @@ pub fn realloc_is_executable() -> AllocatorCapability {
 
 pub fn realloc_is_blocked() -> AllocatorCapability {
     return !realloc_is_executable();
+}
+
+pub fn realloc_is_known_but_unbound() -> AllocatorCapability {
+    return allocator_service_is_known() && realloc_is_blocked();
 }
 
 pub fn realloc_requires_runtime_binding() -> AllocatorCapability {
@@ -83,6 +97,10 @@ pub fn dealloc_is_blocked() -> AllocatorCapability {
     return !dealloc_is_executable();
 }
 
+pub fn dealloc_is_known_but_unbound() -> AllocatorCapability {
+    return allocator_service_is_known() && dealloc_is_blocked();
+}
+
 pub fn dealloc_requires_runtime_binding() -> AllocatorCapability {
     return !dealloc_is_executable();
 }
@@ -95,8 +113,36 @@ pub fn alloc_failed_is_blocked() -> AllocatorCapability {
     return !alloc_failed_is_executable();
 }
 
+pub fn alloc_failed_is_known_but_unbound() -> AllocatorCapability {
+    return allocator_service_is_known() && alloc_failed_is_blocked();
+}
+
 pub fn alloc_failed_requires_runtime_binding() -> AllocatorCapability {
     return !alloc_failed_is_executable();
+}
+
+pub fn allocator_pointer_unavailable() -> AllocatorPointer {
+    return ALLOCATOR_POINTER_UNAVAILABLE;
+}
+
+pub fn allocator_pointer_is_unavailable(ptr: AllocatorPointer) -> AllocatorCapability {
+    return ptr == ALLOCATOR_POINTER_UNAVAILABLE;
+}
+
+pub fn allocator_pointer_is_available(ptr: AllocatorPointer) -> AllocatorCapability {
+    return ptr != ALLOCATOR_POINTER_UNAVAILABLE;
+}
+
+pub fn allocation_result_is_fail_closed(ptr: AllocatorPointer) -> AllocatorCapability {
+    return allocator_is_known_but_unbound() && allocator_pointer_is_unavailable(ptr);
+}
+
+pub fn alloc_result_is_fail_closed(ptr: AllocatorPointer) -> AllocatorCapability {
+    return alloc_is_known_but_unbound() && allocator_pointer_is_unavailable(ptr);
+}
+
+pub fn realloc_result_is_fail_closed(ptr: AllocatorPointer) -> AllocatorCapability {
+    return realloc_is_known_but_unbound() && allocator_pointer_is_unavailable(ptr);
 }
 
 pub extern "lanius_alloc" fn alloc(size: usize, align: usize) -> u32;

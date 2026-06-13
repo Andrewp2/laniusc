@@ -151,6 +151,14 @@ pub(super) fn create_virtual_bind_groups(
                 "x86_virtual_inst_status",
                 virtual_inst_status.as_entire_binding(),
             ),
+            (
+                "x86_virtual_func_slot",
+                virtual_func_slot.as_entire_binding(),
+            ),
+            (
+                "x86_func_first_virtual_row_status",
+                virtual_func_first_row_status.as_entire_binding(),
+            ),
             ("x86_virtual_live_end", virtual_live_end.as_entire_binding()),
             (
                 "x86_virtual_liveness_status",

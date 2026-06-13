@@ -22,6 +22,7 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_member_receiver_token;
@@ -31,6 +32,7 @@ StructuredBuffer<uint> call_arg_node;
 StructuredBuffer<uint> method_decl_receiver_mode;
 StructuredBuffer<uint> method_decl_receiver_ref_tag;
 StructuredBuffer<uint> method_decl_receiver_ref_payload;
+StructuredBuffer<uint> hir_method_signature_flags;
 StructuredBuffer<uint> method_call_name_id;
 StructuredBuffer<uint> method_call_receiver_ref_tag;
 StructuredBuffer<uint> method_call_receiver_ref_payload;
@@ -58,16 +60,53 @@ static const uint TY_UINT = 4u;
 static const uint TY_FLOAT = 5u;
 static const uint TY_CHAR = 6u;
 static const uint TY_STRING = 7u;
+static const uint TY_GENERIC_BASE = 8192u;
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint TYPE_REF_INSTANCE = 3u;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint ERR_CALL_MISMATCH = 10u;
+static const uint CALL_MISMATCH_UNSUPPORTED_METHOD_RETURN_REF = 0xffffff01u;
+static const uint CALL_MISMATCH_UNSUPPORTED_METHOD_GENERIC = 0xffffff02u;
+static const uint CALL_MISMATCH_UNSUPPORTED_METHOD_WHERE = 0xffffff03u;
+static const uint METHOD_SIGNATURE_HAS_GENERICS = 1u;
+static const uint METHOD_SIGNATURE_HAS_WHERE = 2u;
 
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
+
+static const uint HIR_EXPR_RECORD_STRIDE = 4u;
+static const uint HIR_EXPR_RECORD_FORM = 0u;
+static const uint HIR_EXPR_VALUE_TOKEN = 3u;
+
+static const uint HIR_EXPR_NONE = 0u;
+static const uint HIR_EXPR_NAME = 2u;
+static const uint HIR_EXPR_INT = 3u;
+static const uint HIR_EXPR_TRUE = 4u;
+static const uint HIR_EXPR_FALSE = 5u;
+static const uint HIR_EXPR_NOT = 6u;
+static const uint HIR_EXPR_EQ = 7u;
+static const uint HIR_EXPR_NE = 8u;
+static const uint HIR_EXPR_LT = 9u;
+static const uint HIR_EXPR_GT = 10u;
+static const uint HIR_EXPR_LE = 11u;
+static const uint HIR_EXPR_GE = 12u;
+static const uint HIR_EXPR_NEG = 13u;
+static const uint HIR_EXPR_ADD = 14u;
+static const uint HIR_EXPR_SUB = 15u;
+static const uint HIR_EXPR_MUL = 16u;
+static const uint HIR_EXPR_AND = 17u;
+static const uint HIR_EXPR_OR = 18u;
+static const uint HIR_EXPR_MOD = 19u;
+static const uint HIR_EXPR_DIV = 20u;
+static const uint HIR_EXPR_BIT_OR = 21u;
+static const uint HIR_EXPR_BIT_XOR = 22u;
+static const uint HIR_EXPR_BIT_AND = 23u;
+static const uint HIR_EXPR_SHL = 24u;
+static const uint HIR_EXPR_SHR = 25u;
+static const uint HIR_EXPR_FLOAT = 27u;
 
 static const uint METHOD_RECEIVER_NONE = 0u;
 static const uint METHOD_RECEIVER_SELF = 1u;
@@ -101,6 +140,11 @@ bool valid_node(uint i)
 bool valid_token(uint i)
 {
     return i != INVALID && i < active_token_count();
+}
+
+bool is_generic_type(uint ty)
+{
+    return ty >= TY_GENERIC_BASE;
 }
 
 void record_error(uint token_i, uint code, uint detail)
@@ -151,6 +195,25 @@ uint receiver_arg_ref_index(uint method_i, uint slot)
     return arg_i < active_token_count() ? arg_i : INVALID;
 }
 
+uint receiver_decl_generic_slot_at(
+    uint arg_start,
+    uint arg_count,
+    uint generic_token,
+    uint slot)
+{
+    if (slot >= arg_count)
+        return INVALID;
+
+    uint arg_i = arg_start + slot;
+    if (arg_i >= active_token_count())
+        return INVALID;
+
+    if (type_instance_arg_ref_tag[arg_i] == TYPE_REF_GENERIC_PARAM &&
+        type_instance_arg_ref_payload[arg_i] == generic_token)
+        return slot;
+    return INVALID;
+}
+
 uint receiver_decl_generic_slot(uint fn_i, uint generic_token)
 {
     if (fn_i >= active_token_count() || !valid_token(generic_token))
@@ -166,20 +229,18 @@ uint receiver_decl_generic_slot(uint fn_i, uint generic_token)
     if (arg_start == INVALID)
         return INVALID;
 
-    [loop]
-    for (uint slot = 0u; slot < PARAM_CACHE_STRIDE; slot += 1u)
-    {
-        if (slot >= arg_count)
-            break;
-
-        uint arg_i = arg_start + slot;
-        if (arg_i >= active_token_count())
-            return INVALID;
-
-        if (type_instance_arg_ref_tag[arg_i] == TYPE_REF_GENERIC_PARAM &&
-            type_instance_arg_ref_payload[arg_i] == generic_token)
-            return slot;
-    }
+    uint slot = receiver_decl_generic_slot_at(arg_start, arg_count, generic_token, 0u);
+    if (slot != INVALID)
+        return slot;
+    slot = receiver_decl_generic_slot_at(arg_start, arg_count, generic_token, 1u);
+    if (slot != INVALID)
+        return slot;
+    slot = receiver_decl_generic_slot_at(arg_start, arg_count, generic_token, 2u);
+    if (slot != INVALID)
+        return slot;
+    slot = receiver_decl_generic_slot_at(arg_start, arg_count, generic_token, 3u);
+    if (slot != INVALID)
+        return slot;
 
     return INVALID;
 }
@@ -220,6 +281,61 @@ uint scalar_type_for_literal_prod(uint prod)
     return TY_UNKNOWN;
 }
 
+uint expr_record_slot(uint node, uint slot)
+{
+    return valid_node(node) ? hir_expr_record[node * HIR_EXPR_RECORD_STRIDE + slot] : INVALID;
+}
+
+uint expr_form(uint node)
+{
+    return valid_node(node) ? expr_record_slot(node, HIR_EXPR_RECORD_FORM) : HIR_EXPR_NONE;
+}
+
+uint expr_value_token(uint node)
+{
+    return valid_node(node) ? expr_record_slot(node, HIR_EXPR_VALUE_TOKEN) : INVALID;
+}
+
+uint scalar_type_for_expr_form(uint form)
+{
+    if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
+        return TY_BOOL;
+    if (form == HIR_EXPR_INT)
+        return TY_INT;
+    if (form == HIR_EXPR_FLOAT)
+        return TY_FLOAT;
+    return TY_UNKNOWN;
+}
+
+uint operator_result_type_for_expr_form(uint form)
+{
+    if (form == HIR_EXPR_NOT ||
+        form == HIR_EXPR_EQ ||
+        form == HIR_EXPR_NE ||
+        form == HIR_EXPR_LT ||
+        form == HIR_EXPR_GT ||
+        form == HIR_EXPR_LE ||
+        form == HIR_EXPR_GE ||
+        form == HIR_EXPR_AND ||
+        form == HIR_EXPR_OR)
+        return TY_BOOL;
+
+    if (form == HIR_EXPR_NEG ||
+        form == HIR_EXPR_ADD ||
+        form == HIR_EXPR_SUB ||
+        form == HIR_EXPR_MUL ||
+        form == HIR_EXPR_MOD ||
+        form == HIR_EXPR_DIV ||
+        form == HIR_EXPR_BIT_OR ||
+        form == HIR_EXPR_BIT_XOR ||
+        form == HIR_EXPR_BIT_AND ||
+        form == HIR_EXPR_SHL ||
+        form == HIR_EXPR_SHR)
+        return TY_INT;
+
+    return TY_UNKNOWN;
+}
+
 uint call_callee_token(uint call_node)
 {
     if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
@@ -248,12 +364,23 @@ uint direct_node_type(uint node)
     if (prod_ty != TY_UNKNOWN)
         return prod_ty;
 
+    uint form = expr_form(node);
+    uint expr_ty = scalar_type_for_expr_form(form);
+    if (expr_ty != TY_UNKNOWN)
+        return expr_ty;
+    expr_ty = operator_result_type_for_expr_form(form);
+    if (expr_ty != TY_UNKNOWN)
+        return expr_ty;
+
     uint token_i = hir_token_pos[node];
     if (token_i >= active_token_count())
         return TY_UNKNOWN;
 
     if (hir_kind[node] == HIR_NAME_EXPR)
     {
+        uint value_token = expr_value_token(node);
+        if (valid_token(value_token))
+            token_i = value_token;
         uint visible_ty = visible_type[token_i];
         if (visible_ty != TY_UNKNOWN)
             return visible_ty;
@@ -343,6 +470,37 @@ uint receiver_token_for_member(uint member_node)
     return valid_node(member_node) ? hir_member_receiver_token[member_node] : INVALID;
 }
 
+bool validate_method_arg_slot(
+    uint method_i,
+    uint fn_i,
+    bool receiver_consumed,
+    uint actual_args,
+    uint arg_i)
+{
+    if (arg_i >= actual_args)
+        return true;
+
+    uint param_i = receiver_consumed ? arg_i + 1u : arg_i;
+    if (param_i >= PARAM_CACHE_STRIDE)
+        return true;
+
+    uint expr_node = call_arg_node_for_method_token(method_i, arg_i);
+    uint dst = row_major_load<uint>(
+        call_param_type,
+        fn_i,
+        PARAM_CACHE_STRIDE,
+        param_i,
+        TY_UNKNOWN);
+    uint src = expr_type_from_hir(expr_node);
+    uint arg_token = valid_node(expr_node) ? hir_token_pos[expr_node] : method_i;
+    if (!assignable(dst, src))
+    {
+        record_error(arg_token, ERR_ASSIGN_MISMATCH, dst * 256u + src);
+        return false;
+    }
+    return true;
+}
+
 bool validate_method_args(uint method_i, uint fn_i, uint receiver_ty)
 {
     uint param_count = call_param_count[fn_i];
@@ -358,29 +516,21 @@ bool validate_method_args(uint method_i, uint fn_i, uint receiver_ty)
     uint expected_args = receiver_consumed && param_count > 0u ? param_count - 1u : param_count;
     uint actual_args = call_arg_count_for_method_token(method_i);
     if (actual_args > PARAM_CACHE_STRIDE)
-        actual_args = PARAM_CACHE_STRIDE;
-    [loop]
-    for (uint arg_i = 0u; arg_i < actual_args && arg_i < PARAM_CACHE_STRIDE; arg_i += 1u)
     {
-        uint param_i = receiver_consumed ? arg_i + 1u : arg_i;
-        if (param_i >= PARAM_CACHE_STRIDE)
-            break;
-
-        uint expr_node = call_arg_node_for_method_token(method_i, arg_i);
-        uint dst = row_major_load<uint>(
-            call_param_type,
-            fn_i,
-            PARAM_CACHE_STRIDE,
-            param_i,
-            TY_UNKNOWN);
-        uint src = expr_type_from_hir(expr_node);
-        uint arg_token = valid_node(expr_node) ? hir_token_pos[expr_node] : method_i;
-        if (!assignable(dst, src))
-        {
-            record_error(arg_token, ERR_ASSIGN_MISMATCH, dst * 256u + src);
-            return false;
-        }
+        record_error(
+            method_i,
+            ERR_CALL_MISMATCH,
+            expected_args * 256u + min(actual_args, 255u));
+        return false;
     }
+    if (!validate_method_arg_slot(method_i, fn_i, receiver_consumed, actual_args, 0u))
+        return false;
+    if (!validate_method_arg_slot(method_i, fn_i, receiver_consumed, actual_args, 1u))
+        return false;
+    if (!validate_method_arg_slot(method_i, fn_i, receiver_consumed, actual_args, 2u))
+        return false;
+    if (!validate_method_arg_slot(method_i, fn_i, receiver_consumed, actual_args, 3u))
+        return false;
 
     if (actual_args != expected_args)
     {
@@ -416,10 +566,23 @@ void resolve_method_member_node(uint member_node)
     if (receiver_ty == TY_UNKNOWN)
         receiver_ty = call_return_type[receiver_i];
 
-    uint ret_ty = substituted_method_return_type(method_i, fn_i, call_return_type[fn_i]);
-    if (ret_ty == TY_UNKNOWN && fn_return_ref_tag[fn_i] != TYPE_REF_INVALID)
+    uint signature_flags = valid_node(fn_i) ? hir_method_signature_flags[fn_i] : 0u;
+    if ((signature_flags & METHOD_SIGNATURE_HAS_GENERICS) != 0u)
     {
-        record_error(method_i, ERR_CALL_MISMATCH, method_call_name_id[method_i]);
+        record_error(method_i, ERR_CALL_MISMATCH, CALL_MISMATCH_UNSUPPORTED_METHOD_GENERIC);
+        return;
+    }
+    if ((signature_flags & METHOD_SIGNATURE_HAS_WHERE) != 0u)
+    {
+        record_error(method_i, ERR_CALL_MISMATCH, CALL_MISMATCH_UNSUPPORTED_METHOD_WHERE);
+        return;
+    }
+
+    uint ret_ty = substituted_method_return_type(method_i, fn_i, call_return_type[fn_i]);
+    if ((ret_ty == TY_UNKNOWN && fn_return_ref_tag[fn_i] != TYPE_REF_INVALID) ||
+        is_generic_type(ret_ty))
+    {
+        record_error(method_i, ERR_CALL_MISMATCH, CALL_MISMATCH_UNSUPPORTED_METHOD_RETURN_REF);
         return;
     }
     call_fn_index[method_i] = fn_i;
@@ -433,24 +596,11 @@ void resolve_method_member_node(uint member_node)
     validate_method_args(method_i, fn_i, receiver_ty);
 }
 
-void reject_unresolved_marked_method_token(uint method_i)
-{
-    if (method_i >= active_token_count() || method_call_name_id[method_i] == INVALID)
-        return;
-
-    uint fn_i = call_fn_index[method_i];
-    if (fn_i == INVALID || fn_i >= active_token_count())
-        record_error(method_i, ERR_CALL_MISMATCH, method_call_name_id[method_i]);
-}
-
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
-    if (i < active_token_count())
-        reject_unresolved_marked_method_token(i);
-
     if (i >= active_hir_node_count() || hir_kind[i] != HIR_MEMBER_EXPR)
         return;
 

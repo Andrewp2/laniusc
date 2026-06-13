@@ -49,6 +49,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirParamLinksPas
             ("first_child".into(), b.first_child.as_entire_binding()),
             ("hir_kind".into(), b.hir_kind.as_entire_binding()),
             (
+                "hir_fn_signature_function_owner".into(),
+                b.hir_fn_signature_function_owner_a.as_entire_binding(),
+            ),
+            (
                 "hir_param_owner_a".into(),
                 b.hir_param_owner_a.as_entire_binding(),
             ),

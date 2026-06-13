@@ -24,6 +24,8 @@ use super::{
     dispatch_args::ActiveDispatchArgBuffers,
 };
 
+const X86_CALL_ARG_LOOKUP_SLOTS: usize = 6;
+
 pub(super) struct InitialRecordBuffers {
     pub(super) params_buf: wgpu::Buffer,
     pub(super) feature_params_buf: wgpu::Buffer,
@@ -544,9 +546,9 @@ pub(super) fn create_metadata_record_buffers(
     allocation_scope.checkpoint("node instruction order buffer allocation")?;
 
     let call_arg_lookup_record_words = if feature_summary.has_call() {
-        token_words * 4
+        token_words.saturating_mul(X86_CALL_ARG_LOOKUP_SLOTS)
     } else {
-        function_slot_capacity.max(4)
+        function_slot_capacity.max(X86_CALL_ARG_LOOKUP_SLOTS)
     };
     let call_arg_lookup_record_buf = storage_u32_copy(
         device,

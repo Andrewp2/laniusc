@@ -48,8 +48,10 @@ pub enum DiagnosticPrimaryLabelPolicy {
 pub const LSP_DIAGNOSTIC_SOURCE: &str = "laniusc";
 pub const LSP_DIAGNOSTIC_ERROR_SEVERITY: u8 = 1;
 pub const LSP_POSITION_ENCODING: &str = "utf-16";
-pub const DIAGNOSTIC_JSON_SCHEMA_VERSION: u32 = 1;
-pub const LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION: u32 = 2;
+pub const DIAGNOSTIC_JSON_SCHEMA_NAME: &str = "laniusc.diagnostics.rendered-json";
+pub const LSP_DIAGNOSTIC_DATA_SCHEMA_NAME: &str = "laniusc.diagnostics.lsp-data";
+pub const DIAGNOSTIC_JSON_SCHEMA_VERSION: u32 = 4;
+pub const LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION: u32 = 5;
 
 impl DiagnosticCodeInfo {
     const fn error(
@@ -299,6 +301,18 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeInfo] = &[
         "runtime binding",
         DiagnosticPrimaryLabelPolicy::Required,
     ),
+    DiagnosticCodeInfo::error(
+        "LNC0039",
+        "unknown CLI subcommand",
+        "tooling",
+        DiagnosticPrimaryLabelPolicy::None,
+    ),
+    DiagnosticCodeInfo::error(
+        "LNC0040",
+        "input read failed",
+        "tooling",
+        DiagnosticPrimaryLabelPolicy::Required,
+    ),
 ];
 
 pub const DIAGNOSTIC_CATEGORIES: &[&str] = &[
@@ -314,27 +328,58 @@ pub const DIAGNOSTIC_CATEGORIES: &[&str] = &[
     "type checking",
 ];
 
-pub const DIAGNOSTIC_REGISTRY_SCHEMA_VERSION: u32 = 5;
-pub const DIAGNOSTIC_EXPLANATION_SCHEMA_VERSION: u32 = 4;
-pub const DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_VERSION: u32 = 6;
+pub const DIAGNOSTIC_REGISTRY_SCHEMA_NAME: &str = "laniusc.diagnostics.registry";
+pub const DIAGNOSTIC_EXPLANATION_SCHEMA_NAME: &str = "laniusc.diagnostics.explanation";
+pub const DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_NAME: &str = "laniusc.diagnostics.output-formats";
+pub const DIAGNOSTIC_REGISTRY_SCHEMA_VERSION: u32 = 8;
+pub const DIAGNOSTIC_EXPLANATION_SCHEMA_VERSION: u32 = 14;
+pub const DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_VERSION: u32 = 9;
 pub const DEFAULT_DIAGNOSTIC_OUTPUT_FORMAT: &str = "text";
 pub const DIAGNOSTIC_OUTPUT_FORMAT_NAMES: &[&str] = &["text", "json", "lsp-json"];
+pub const DIAGNOSTIC_CODE_SELECTOR_EXAMPLES: &[&str] = &[
+    "LNC0018",
+    "lnc0018",
+    "error[LNC0018]: unsupported CLI option value",
+];
+pub const DIAGNOSTIC_CODE_SELECTOR_PATTERNS: &[&str] = &[
+    "LNCdddd",
+    "lncdddd",
+    "copied text containing one LNCdddd token",
+];
+pub const DIAGNOSTIC_CODE_INDEX_COMMAND: &str = "laniusc diagnostics codes";
+pub const DIAGNOSTIC_REGISTRY_COMMAND: &str = "laniusc diagnostics registry";
+pub const RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS: &[&str] = &[
+    "service_id",
+    "service_name",
+    "module_path",
+    "capability_constant",
+    "status_probe",
+    "binding_probe",
+    "api_name",
+    "service_api_name",
+];
+pub const RUNTIME_BOUND_API_SELECTOR_KINDS: &[&str] = &["api_name", "service_api_name"];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct DiagnosticRegistry {
     pub schema_version: u32,
+    pub schema_name: &'static str,
     pub codes: &'static [DiagnosticCodeInfo],
     pub categories: &'static [&'static str],
     pub unsupported_features: &'static [UnsupportedFeatureDiagnosticInfo],
+    pub codegen_boundaries: &'static [CodegenBoundaryDiagnosticInfo],
+    pub no_run_guards: DiagnosticExplanationNoRunGuards,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct DiagnosticOutputFormatRegistry {
     pub schema_version: u32,
+    pub schema_name: &'static str,
     pub cli_flag: &'static str,
     pub default_format: &'static str,
     pub accepted_formats: &'static [&'static str],
     pub formats: &'static [DiagnosticOutputFormatInfo],
+    pub no_run_guards: DiagnosticExplanationNoRunGuards,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -342,6 +387,9 @@ pub struct DiagnosticOutputFormatInfo {
     pub name: &'static str,
     pub output_stream: &'static str,
     pub payload: &'static str,
+    pub payload_schema_name: Option<&'static str>,
+    pub payload_schema_version: Option<u32>,
+    pub payload_schema_location: Option<&'static str>,
     pub position_encoding: &'static str,
     pub includes_source_snippet: bool,
     pub language_server_envelope: bool,
@@ -359,6 +407,18 @@ pub struct UnsupportedFeatureDiagnosticInfo {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct CodegenBoundaryDiagnosticInfo {
+    pub diagnostic_code: &'static str,
+    pub boundary: &'static str,
+    pub target: &'static str,
+    pub stage: &'static str,
+    pub partial_artifact_policy: &'static str,
+    pub target_bytes_emitted: bool,
+    pub diagnostics_only_command: &'static str,
+    pub fallback_emit: Option<&'static str>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct RuntimeServiceBoundaryDiagnosticInfo {
     pub diagnostic_code: &'static str,
     pub service_id: u32,
@@ -367,6 +427,7 @@ pub struct RuntimeServiceBoundaryDiagnosticInfo {
     pub capability_constant: &'static str,
     pub status_probe: &'static str,
     pub binding_probe: &'static str,
+    pub accepted_selector_kinds: &'static [&'static str],
     pub current_status: &'static str,
     pub executable: bool,
 }
@@ -376,24 +437,48 @@ pub struct RuntimeBoundApiDiagnosticInfo {
     pub diagnostic_code: &'static str,
     pub service_id: u32,
     pub service_name: &'static str,
+    pub service_capability_constant: &'static str,
+    pub service_module_path: &'static str,
+    pub service_status_probe: &'static str,
+    pub service_binding_probe: &'static str,
+    pub service_current_status: &'static str,
+    pub service_executable: bool,
     pub module_path: &'static str,
     pub api_name: &'static str,
+    pub extern_abi: &'static str,
     pub executable_probe: &'static str,
     pub binding_probe: &'static str,
+    pub accepted_selector_kinds: &'static [&'static str],
     pub current_status: &'static str,
     pub executable: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct DiagnosticExplanationNoRunGuards {
+    pub source_compilation: bool,
+    pub source_scanning: bool,
+    pub gpu_device_creation: bool,
+    pub target_codegen: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct DiagnosticExplanation {
     pub schema_version: u32,
+    pub schema_name: &'static str,
     pub registry_schema_version: u32,
     pub requested_code: String,
+    pub explain_command: String,
     pub known: bool,
     pub diagnostic: Option<DiagnosticCodeInfo>,
     pub unsupported_feature: Option<UnsupportedFeatureDiagnosticInfo>,
+    pub codegen_boundary: Option<CodegenBoundaryDiagnosticInfo>,
     pub runtime_service_boundaries: Option<&'static [RuntimeServiceBoundaryDiagnosticInfo]>,
     pub runtime_bound_apis: Option<&'static [RuntimeBoundApiDiagnosticInfo]>,
+    pub accepted_selector_examples: &'static [&'static str],
+    pub accepted_selector_patterns: &'static [&'static str],
+    pub code_index_command: &'static str,
+    pub registry_command: &'static str,
+    pub no_run_guards: DiagnosticExplanationNoRunGuards,
 }
 
 pub const UNSUPPORTED_FEATURE_DIAGNOSTICS: &[UnsupportedFeatureDiagnosticInfo] = &[
@@ -447,6 +532,37 @@ pub const UNSUPPORTED_FEATURE_DIAGNOSTICS: &[UnsupportedFeatureDiagnosticInfo] =
     },
 ];
 
+pub const CODEGEN_BOUNDARY_DIAGNOSTICS: &[CodegenBoundaryDiagnosticInfo] = &[
+    CodegenBoundaryDiagnosticInfo {
+        diagnostic_code: "LNC0017",
+        boundary: "x86 backend",
+        target: "x86_64",
+        stage: "native codegen lowering",
+        partial_artifact_policy: "fail-closed before emitting a partial instruction prefix",
+        target_bytes_emitted: false,
+        diagnostics_only_command: "laniusc check",
+        fallback_emit: Some("wasm"),
+    },
+    CodegenBoundaryDiagnosticInfo {
+        diagnostic_code: "LNC0036",
+        boundary: "WASM backend",
+        target: "wasm",
+        stage: "WASM codegen lowering",
+        partial_artifact_policy: "fail-closed before emitting a partial module prefix",
+        target_bytes_emitted: false,
+        diagnostics_only_command: "laniusc check",
+        fallback_emit: None,
+    },
+];
+
+pub const DIAGNOSTIC_EXPLANATION_NO_RUN_GUARDS: DiagnosticExplanationNoRunGuards =
+    DiagnosticExplanationNoRunGuards {
+        source_compilation: false,
+        source_scanning: false,
+        gpu_device_creation: false,
+        target_codegen: false,
+    };
+
 pub const RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS: &[RuntimeServiceBoundaryDiagnosticInfo] = &[
     RuntimeServiceBoundaryDiagnosticInfo {
         diagnostic_code: "LNC0038",
@@ -456,6 +572,7 @@ pub const RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS: &[RuntimeServiceBoundaryDiagnost
         capability_constant: "ALLOCATOR_HAS_RUNTIME_BINDING",
         status_probe: "allocator_service_status()",
         binding_probe: "allocator_requires_runtime_binding()",
+        accepted_selector_kinds: RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
         current_status: "known-unbound",
         executable: false,
     },
@@ -467,6 +584,7 @@ pub const RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS: &[RuntimeServiceBoundaryDiagnost
         capability_constant: "FILESYSTEM_HAS_RUNTIME_BINDING",
         status_probe: "filesystem_service_status()",
         binding_probe: "filesystem_requires_runtime_binding()",
+        accepted_selector_kinds: RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
         current_status: "known-unbound",
         executable: false,
     },
@@ -478,6 +596,7 @@ pub const RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS: &[RuntimeServiceBoundaryDiagnost
         capability_constant: "STDIO_HAS_RUNTIME_BINDING",
         status_probe: "stdio_service_status()",
         binding_probe: "stdio_requires_runtime_binding()",
+        accepted_selector_kinds: RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
         current_status: "known-unbound",
         executable: false,
     },
@@ -489,6 +608,7 @@ pub const RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS: &[RuntimeServiceBoundaryDiagnost
         capability_constant: "CLOCK_HAS_RUNTIME_BINDING",
         status_probe: "clock_service_status()",
         binding_probe: "clock_requires_runtime_binding()",
+        accepted_selector_kinds: RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
         current_status: "known-unbound",
         executable: false,
     },
@@ -500,6 +620,7 @@ pub const RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS: &[RuntimeServiceBoundaryDiagnost
         capability_constant: "NETWORK_HAS_RUNTIME_BINDING",
         status_probe: "network_service_status()",
         binding_probe: "network_requires_runtime_binding()",
+        accepted_selector_kinds: RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
         current_status: "known-unbound",
         executable: false,
     },
@@ -511,6 +632,7 @@ pub const RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS: &[RuntimeServiceBoundaryDiagnost
         capability_constant: "PANIC_HOOK_HAS_RUNTIME_BINDING",
         status_probe: "panic_hook_service_status()",
         binding_probe: "panic_hook_requires_runtime_binding()",
+        accepted_selector_kinds: RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
         current_status: "known-unbound",
         executable: false,
     },
@@ -522,6 +644,7 @@ pub const RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS: &[RuntimeServiceBoundaryDiagnost
         capability_constant: "HOST_SERVICES_HAS_RUNTIME_BINDING",
         status_probe: "host_services_service_status()",
         binding_probe: "host_services_require_runtime_binding()",
+        accepted_selector_kinds: RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
         current_status: "known-unbound",
         executable: false,
     },
@@ -533,6 +656,7 @@ pub const RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS: &[RuntimeServiceBoundaryDiagnost
         capability_constant: "THREAD_HAS_RUNTIME_BINDING",
         status_probe: "thread_service_status()",
         binding_probe: "thread_requires_runtime_binding()",
+        accepted_selector_kinds: RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
         current_status: "known-unbound",
         executable: false,
     },
@@ -544,6 +668,7 @@ pub const RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS: &[RuntimeServiceBoundaryDiagnost
         capability_constant: "RANDOM_HAS_RUNTIME_BINDING",
         status_probe: "random_service_status()",
         binding_probe: "random_requires_runtime_binding()",
+        accepted_selector_kinds: RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
         current_status: "known-unbound",
         executable: false,
     },
@@ -555,6 +680,7 @@ pub const RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS: &[RuntimeServiceBoundaryDiagnost
         capability_constant: "GPU_HAS_RUNTIME_BINDING",
         status_probe: "gpu_service_status()",
         binding_probe: "gpu_requires_runtime_binding()",
+        accepted_selector_kinds: RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
         current_status: "known-unbound",
         executable: false,
     },
@@ -566,6 +692,7 @@ pub const RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS: &[RuntimeServiceBoundaryDiagnost
         capability_constant: "PROCESS_HAS_RUNTIME_BINDING",
         status_probe: "process_service_status()",
         binding_probe: "process_requires_runtime_binding()",
+        accepted_selector_kinds: RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
         current_status: "known-unbound",
         executable: false,
     },
@@ -577,6 +704,7 @@ pub const RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS: &[RuntimeServiceBoundaryDiagnost
         capability_constant: "ENV_HAS_RUNTIME_BINDING",
         status_probe: "env_service_status()",
         binding_probe: "env_requires_runtime_binding()",
+        accepted_selector_kinds: RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
         current_status: "known-unbound",
         executable: false,
     },
@@ -588,6 +716,7 @@ pub const RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS: &[RuntimeServiceBoundaryDiagnost
         capability_constant: "TEST_HARNESS_HAS_RUNTIME_BINDING",
         status_probe: "test_harness_service_status()",
         binding_probe: "test_harness_requires_runtime_binding()",
+        accepted_selector_kinds: RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
         current_status: "known-unbound",
         executable: false,
     },
@@ -605,12 +734,117 @@ const fn runtime_bound_api(
         diagnostic_code: "LNC0038",
         service_id,
         service_name,
+        service_capability_constant: runtime_service_capability_constant(service_id),
+        service_module_path: runtime_service_module_path(service_id),
+        service_status_probe: runtime_service_status_probe(service_id),
+        service_binding_probe: runtime_service_binding_probe(service_id),
+        service_current_status: runtime_service_current_status(service_id),
+        service_executable: runtime_service_executable(service_id),
         module_path,
         api_name,
+        extern_abi: runtime_service_extern_abi(service_id),
         executable_probe,
         binding_probe,
+        accepted_selector_kinds: RUNTIME_BOUND_API_SELECTOR_KINDS,
         current_status: "known-unbound",
         executable: false,
+    }
+}
+
+const fn runtime_service_capability_constant(service_id: u32) -> &'static str {
+    match service_id {
+        1 => "ALLOCATOR_HAS_RUNTIME_BINDING",
+        2 => "FILESYSTEM_HAS_RUNTIME_BINDING",
+        3 => "STDIO_HAS_RUNTIME_BINDING",
+        4 => "CLOCK_HAS_RUNTIME_BINDING",
+        5 => "NETWORK_HAS_RUNTIME_BINDING",
+        6 => "PANIC_HOOK_HAS_RUNTIME_BINDING",
+        7 => "HOST_SERVICES_HAS_RUNTIME_BINDING",
+        8 => "THREAD_HAS_RUNTIME_BINDING",
+        9 => "RANDOM_HAS_RUNTIME_BINDING",
+        10 => "GPU_HAS_RUNTIME_BINDING",
+        11 => "PROCESS_HAS_RUNTIME_BINDING",
+        12 => "ENV_HAS_RUNTIME_BINDING",
+        13 => "TEST_HARNESS_HAS_RUNTIME_BINDING",
+        _ => "UNKNOWN_RUNTIME_SERVICE_HAS_RUNTIME_BINDING",
+    }
+}
+
+const fn runtime_service_module_path(service_id: u32) -> &'static str {
+    match service_id {
+        1 => "alloc::allocator",
+        2 => "std::fs",
+        3 => "std::io",
+        4 => "std::time",
+        5 => "std::net",
+        6 => "core::panic",
+        7 => "std::host",
+        8 => "std::thread",
+        9 => "std::random",
+        10 => "std::gpu",
+        11 => "std::process",
+        12 => "std::env",
+        13 => "test::harness",
+        _ => "unknown::runtime_service",
+    }
+}
+
+const fn runtime_service_status_probe(service_id: u32) -> &'static str {
+    match service_id {
+        1 => "allocator_service_status()",
+        2 => "filesystem_service_status()",
+        3 => "stdio_service_status()",
+        4 => "clock_service_status()",
+        5 => "network_service_status()",
+        6 => "panic_hook_service_status()",
+        7 => "host_services_service_status()",
+        8 => "thread_service_status()",
+        9 => "random_service_status()",
+        10 => "gpu_service_status()",
+        11 => "process_service_status()",
+        12 => "env_service_status()",
+        13 => "test_harness_service_status()",
+        _ => "unknown_runtime_service_status()",
+    }
+}
+
+const fn runtime_service_binding_probe(service_id: u32) -> &'static str {
+    match service_id {
+        1 => "allocator_requires_runtime_binding()",
+        2 => "filesystem_requires_runtime_binding()",
+        3 => "stdio_requires_runtime_binding()",
+        4 => "clock_requires_runtime_binding()",
+        5 => "network_requires_runtime_binding()",
+        6 => "panic_hook_requires_runtime_binding()",
+        7 => "host_services_require_runtime_binding()",
+        8 => "thread_requires_runtime_binding()",
+        9 => "random_requires_runtime_binding()",
+        10 => "gpu_requires_runtime_binding()",
+        11 => "process_requires_runtime_binding()",
+        12 => "env_requires_runtime_binding()",
+        13 => "test_harness_requires_runtime_binding()",
+        _ => "unknown_runtime_service_requires_runtime_binding()",
+    }
+}
+
+const fn runtime_service_current_status(service_id: u32) -> &'static str {
+    match service_id {
+        1..=13 => "known-unbound",
+        _ => "unknown",
+    }
+}
+
+const fn runtime_service_executable(_service_id: u32) -> bool {
+    false
+}
+
+const fn runtime_service_extern_abi(service_id: u32) -> &'static str {
+    match service_id {
+        1 => "lanius_alloc",
+        2 | 3 | 4 | 5 | 8 | 9 | 10 | 11 | 12 => "lanius_std",
+        6 => "lanius_panic",
+        13 => "lanius_test",
+        _ => "unknown_runtime_service_abi",
     }
 }
 
@@ -1086,6 +1320,9 @@ pub const DIAGNOSTIC_OUTPUT_FORMATS: &[DiagnosticOutputFormatInfo] = &[
         name: "text",
         output_stream: "stderr",
         payload: "human-readable diagnostic text",
+        payload_schema_name: None,
+        payload_schema_version: None,
+        payload_schema_location: None,
         position_encoding: "one-based source line and column",
         includes_source_snippet: true,
         language_server_envelope: false,
@@ -1097,30 +1334,77 @@ pub const DIAGNOSTIC_OUTPUT_FORMATS: &[DiagnosticOutputFormatInfo] = &[
         name: "json",
         output_stream: "stderr",
         payload: "Diagnostic JSON object",
+        payload_schema_name: Some(DIAGNOSTIC_JSON_SCHEMA_NAME),
+        payload_schema_version: Some(DIAGNOSTIC_JSON_SCHEMA_VERSION),
+        payload_schema_location: Some("top-level"),
         position_encoding: "one-based source line and column",
         includes_source_snippet: true,
         language_server_envelope: false,
         check_mode_supported: true,
         formatter_check_supported: true,
-        description: "diagnostic object preserving payload schema version, registry schema version, severity, stable code/title/category/primary-label policy/help, message, optional primary_label, and notes",
+        description: "diagnostic object preserving payload schema name/version, registry schema version, severity, stable code/title/category/primary-label policy/help, explain command, message, optional primary_label with source path/line/column/byte-span context, and notes",
     },
     DiagnosticOutputFormatInfo {
         name: "lsp-json",
         output_stream: "stderr",
         payload: "LSP Diagnostic JSON object",
+        payload_schema_name: Some(LSP_DIAGNOSTIC_DATA_SCHEMA_NAME),
+        payload_schema_version: Some(LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION),
+        payload_schema_location: Some("data"),
         position_encoding: LSP_POSITION_ENCODING,
         includes_source_snippet: false,
         language_server_envelope: false,
         check_mode_supported: true,
         formatter_check_supported: true,
-        description: "single LSP Diagnostic-shaped object with zero-based range, numeric severity, code, source, message, and versioned Lanius title/category/notes/help metadata under data",
+        description: "single LSP Diagnostic-shaped object with zero-based range, numeric severity, code, source, message, and versioned Lanius schema name/title/category/notes/help/explain-command/source-byte-span metadata under data",
     },
 ];
 
 pub fn diagnostic_code_info(code: &str) -> Option<&'static DiagnosticCodeInfo> {
+    let code = code.trim();
     DIAGNOSTIC_CODE_REGISTRY
         .iter()
-        .find(|diagnostic| diagnostic.code == code)
+        .find(|diagnostic| diagnostic.code.eq_ignore_ascii_case(code))
+}
+
+fn canonical_diagnostic_code(code: &str) -> String {
+    if let Some(diagnostic) = diagnostic_code_info(code) {
+        return diagnostic.code.to_string();
+    }
+
+    let code = diagnostic_code_token(code).unwrap_or_else(|| code.trim());
+    diagnostic_code_info(code)
+        .map(|diagnostic| diagnostic.code.to_string())
+        .unwrap_or_else(|| code.trim().to_ascii_uppercase())
+}
+
+fn diagnostic_code_token(input: &str) -> Option<&str> {
+    let input = input.trim();
+    let bytes = input.as_bytes();
+    for start in 0..bytes.len().saturating_sub(6) {
+        let end = start + 7;
+        let Some(candidate) = input.get(start..end) else {
+            continue;
+        };
+        if !diagnostic_code_token_has_boundary(bytes, start, end) {
+            continue;
+        }
+        let candidate_bytes = candidate.as_bytes();
+        if candidate_bytes[0].eq_ignore_ascii_case(&b'L')
+            && candidate_bytes[1].eq_ignore_ascii_case(&b'N')
+            && candidate_bytes[2].eq_ignore_ascii_case(&b'C')
+            && candidate_bytes[3..].iter().all(u8::is_ascii_digit)
+        {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn diagnostic_code_token_has_boundary(bytes: &[u8], start: usize, end: usize) -> bool {
+    let left_boundary = start == 0 || !bytes[start - 1].is_ascii_alphanumeric();
+    let right_boundary = end == bytes.len() || !bytes[end].is_ascii_alphanumeric();
+    left_boundary && right_boundary
 }
 
 pub fn diagnostic_category_is_registered(category: &str) -> bool {
@@ -1130,9 +1414,19 @@ pub fn diagnostic_category_is_registered(category: &str) -> bool {
 pub fn unsupported_feature_diagnostic_info(
     code: &str,
 ) -> Option<&'static UnsupportedFeatureDiagnosticInfo> {
+    let code = canonical_diagnostic_code(code);
     UNSUPPORTED_FEATURE_DIAGNOSTICS
         .iter()
         .find(|diagnostic| diagnostic.code == code)
+}
+
+pub fn codegen_boundary_diagnostic_info(
+    code: &str,
+) -> Option<&'static CodegenBoundaryDiagnosticInfo> {
+    let code = canonical_diagnostic_code(code);
+    CODEGEN_BOUNDARY_DIAGNOSTICS
+        .iter()
+        .find(|diagnostic| diagnostic.diagnostic_code == code)
 }
 
 pub fn runtime_service_boundary_diagnostic_info(
@@ -1162,19 +1456,24 @@ pub fn runtime_bound_api_diagnostics_json_pretty() -> Result<String, serde_json:
 pub fn diagnostic_registry() -> DiagnosticRegistry {
     DiagnosticRegistry {
         schema_version: DIAGNOSTIC_REGISTRY_SCHEMA_VERSION,
+        schema_name: DIAGNOSTIC_REGISTRY_SCHEMA_NAME,
         codes: DIAGNOSTIC_CODE_REGISTRY,
         categories: DIAGNOSTIC_CATEGORIES,
         unsupported_features: UNSUPPORTED_FEATURE_DIAGNOSTICS,
+        codegen_boundaries: CODEGEN_BOUNDARY_DIAGNOSTICS,
+        no_run_guards: DIAGNOSTIC_EXPLANATION_NO_RUN_GUARDS,
     }
 }
 
 pub fn diagnostic_output_formats() -> DiagnosticOutputFormatRegistry {
     DiagnosticOutputFormatRegistry {
         schema_version: DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_VERSION,
+        schema_name: DIAGNOSTIC_OUTPUT_FORMATS_SCHEMA_NAME,
         cli_flag: "--diagnostic-format",
         default_format: DEFAULT_DIAGNOSTIC_OUTPUT_FORMAT,
         accepted_formats: DIAGNOSTIC_OUTPUT_FORMAT_NAMES,
         formats: DIAGNOSTIC_OUTPUT_FORMATS,
+        no_run_guards: DIAGNOSTIC_EXPLANATION_NO_RUN_GUARDS,
     }
 }
 
@@ -1187,20 +1486,28 @@ pub fn diagnostic_output_formats_json_pretty() -> Result<String, serde_json::Err
 }
 
 pub fn diagnostic_explanation(code: &str) -> DiagnosticExplanation {
-    let requested_code = code.trim().to_ascii_uppercase();
+    let requested_code = canonical_diagnostic_code(code);
     let diagnostic = diagnostic_code_info(&requested_code).copied();
     let runtime_service_boundaries =
         (requested_code == "LNC0038").then_some(RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS);
     let runtime_bound_apis = (requested_code == "LNC0038").then_some(RUNTIME_BOUND_API_DIAGNOSTICS);
     DiagnosticExplanation {
         schema_version: DIAGNOSTIC_EXPLANATION_SCHEMA_VERSION,
+        schema_name: DIAGNOSTIC_EXPLANATION_SCHEMA_NAME,
         registry_schema_version: DIAGNOSTIC_REGISTRY_SCHEMA_VERSION,
         requested_code: requested_code.clone(),
+        explain_command: diagnostic_explain_command(&requested_code),
         known: diagnostic.is_some(),
         diagnostic,
         unsupported_feature: unsupported_feature_diagnostic_info(&requested_code).copied(),
+        codegen_boundary: codegen_boundary_diagnostic_info(&requested_code).copied(),
         runtime_service_boundaries,
         runtime_bound_apis,
+        accepted_selector_examples: DIAGNOSTIC_CODE_SELECTOR_EXAMPLES,
+        accepted_selector_patterns: DIAGNOSTIC_CODE_SELECTOR_PATTERNS,
+        code_index_command: DIAGNOSTIC_CODE_INDEX_COMMAND,
+        registry_command: DIAGNOSTIC_REGISTRY_COMMAND,
+        no_run_guards: DIAGNOSTIC_EXPLANATION_NO_RUN_GUARDS,
     }
 }
 
@@ -1222,6 +1529,8 @@ pub struct DiagnosticLabel {
     pub line: usize,
     pub column: usize,
     pub length: usize,
+    pub byte_start: Option<usize>,
+    pub byte_end: Option<usize>,
     pub source_line: Option<String>,
     pub message: String,
 }
@@ -1251,11 +1560,13 @@ pub struct LspDiagnostic {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct LspDiagnosticData {
     pub schema_version: u32,
+    pub schema_name: &'static str,
     pub registry_schema_version: u32,
     pub position_encoding: &'static str,
     pub title: String,
     pub category: String,
     pub primary_label_policy: DiagnosticPrimaryLabelPolicy,
+    pub explain_command: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub help: Option<String>,
     pub notes: Vec<String>,
@@ -1269,6 +1580,8 @@ pub struct LspDiagnosticPrimaryLabel {
     pub line: usize,
     pub column: usize,
     pub length: usize,
+    pub byte_start: Option<usize>,
+    pub byte_end: Option<usize>,
     pub message: String,
 }
 
@@ -1286,9 +1599,17 @@ impl DiagnosticLabel {
             line,
             column,
             length: length.max(1),
+            byte_start: None,
+            byte_end: None,
             source_line,
             message: message.into(),
         }
+    }
+
+    pub fn with_byte_span(mut self, byte_start: usize, byte_end: usize) -> Self {
+        self.byte_start = Some(byte_start);
+        self.byte_end = Some(byte_end.max(byte_start));
+        self
     }
 }
 
@@ -1327,6 +1648,7 @@ pub(in crate::compiler) fn diagnostic_label_from_source_span(
         .map(|line| line.to_string());
 
     DiagnosticLabel::primary(path, line, column, length, source_line, message)
+        .with_byte_span(span_start, span_end)
 }
 
 fn floor_char_boundary(source: &str, mut index: usize) -> usize {
@@ -1569,12 +1891,14 @@ fn fallback_syntax_error_start(source: &str) -> usize {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Diagnostic {
     pub schema_version: u32,
+    pub schema_name: &'static str,
     pub registry_schema_version: u32,
     pub severity: DiagnosticSeverity,
     pub code: String,
     pub title: String,
     pub category: String,
     pub primary_label_policy: DiagnosticPrimaryLabelPolicy,
+    pub explain_command: String,
     pub message: String,
     pub primary_label: Option<DiagnosticLabel>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1585,6 +1909,7 @@ pub struct Diagnostic {
 impl Diagnostic {
     pub fn error(code: impl Into<String>, message: impl Into<String>) -> Self {
         let code = code.into();
+        let code = canonical_diagnostic_code(&code);
         let code_info = diagnostic_code_info(&code);
         debug_assert!(
             code_info.is_some(),
@@ -1597,15 +1922,18 @@ impl Diagnostic {
             .map(|info| info.primary_label_policy)
             .unwrap_or(DiagnosticPrimaryLabelPolicy::None);
         let help = unsupported_feature_diagnostic_info(&code)
-            .map(|diagnostic| diagnostic.next_step.to_string());
+            .and_then(|diagnostic| non_empty_public_text(diagnostic.next_step));
+        let explain_command = diagnostic_explain_command(&code);
         Self {
             schema_version: DIAGNOSTIC_JSON_SCHEMA_VERSION,
+            schema_name: DIAGNOSTIC_JSON_SCHEMA_NAME,
             registry_schema_version: DIAGNOSTIC_REGISTRY_SCHEMA_VERSION,
             severity: DiagnosticSeverity::Error,
             code,
             title: title.to_string(),
             category: category.to_string(),
             primary_label_policy,
+            explain_command,
             message: message.into(),
             primary_label: None,
             help,
@@ -1619,12 +1947,14 @@ impl Diagnostic {
     }
 
     pub fn with_note(mut self, note: impl Into<String>) -> Self {
-        self.notes.push(note.into());
+        if let Some(note) = non_empty_public_text(note) {
+            self.notes.push(note);
+        }
         self
     }
 
     pub fn with_help(mut self, help: impl Into<String>) -> Self {
-        self.help = Some(help.into());
+        self.help = non_empty_public_text(help);
         self
     }
 
@@ -1728,11 +2058,13 @@ impl Diagnostic {
             message: self.message.clone(),
             data: LspDiagnosticData {
                 schema_version: LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION,
+                schema_name: LSP_DIAGNOSTIC_DATA_SCHEMA_NAME,
                 registry_schema_version: DIAGNOSTIC_REGISTRY_SCHEMA_VERSION,
                 position_encoding: LSP_POSITION_ENCODING,
                 title: title.to_string(),
                 category: category.to_string(),
                 primary_label_policy,
+                explain_command: diagnostic_explain_command(&self.code),
                 help: self.help.clone(),
                 notes: self.notes.clone(),
                 primary_label: self.primary_label.as_ref().map(lsp_primary_label_data),
@@ -1743,6 +2075,19 @@ impl Diagnostic {
     pub fn render_lsp_json_pretty(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(&self.to_lsp_diagnostic())
     }
+}
+
+fn non_empty_public_text(text: impl Into<String>) -> Option<String> {
+    let text = text.into();
+    let text = text.trim();
+    (!text.is_empty()).then_some(text.to_string())
+}
+
+pub fn diagnostic_explain_command(code: &str) -> String {
+    format!(
+        "laniusc diagnostics explain {}",
+        canonical_diagnostic_code(code)
+    )
 }
 
 impl fmt::Display for Diagnostic {
@@ -1770,6 +2115,8 @@ fn lsp_primary_label_data(label: &DiagnosticLabel) -> LspDiagnosticPrimaryLabel 
         line: label.line,
         column: label.column,
         length: label.length,
+        byte_start: label.byte_start,
+        byte_end: label.byte_end,
         message: label.message.clone(),
     }
 }
@@ -1859,6 +2206,43 @@ mod tests {
     }
 
     #[test]
+    fn diagnostic_public_code_inputs_are_canonicalized() {
+        let info = diagnostic_code_info(" lnc0017 ")
+            .expect("diagnostic registry lookup should normalize public code input");
+        assert_eq!(info.code, "LNC0017");
+        assert_eq!(info.title, "x86 backend boundary");
+
+        let diagnostic = Diagnostic::error(" lnc0017 ", "backend boundary");
+        assert_eq!(diagnostic.code, "LNC0017");
+        assert_eq!(diagnostic.title, "x86 backend boundary");
+        assert_eq!(diagnostic.category, "native codegen");
+        assert_eq!(
+            diagnostic.explain_command,
+            "laniusc diagnostics explain LNC0017"
+        );
+        assert_eq!(
+            unsupported_feature_diagnostic_info(" lnc0017 ")
+                .expect("unsupported-feature lookup should normalize public code input")
+                .boundary,
+            "x86 backend"
+        );
+        assert_eq!(
+            codegen_boundary_diagnostic_info(" lnc0017 ")
+                .expect("codegen-boundary lookup should normalize public code input")
+                .target,
+            "x86_64"
+        );
+
+        let explanation = diagnostic_explanation(" lnc9999 ");
+        assert_eq!(explanation.requested_code, "LNC9999");
+        assert!(!explanation.known);
+        assert_eq!(
+            diagnostic_explain_command(" lnc0017 "),
+            "laniusc diagnostics explain LNC0017"
+        );
+    }
+
+    #[test]
     #[cfg(debug_assertions)]
     #[should_panic(expected = "diagnostic code LNC9999 is not registered")]
     fn diagnostic_creation_rejects_unregistered_codes_in_debug_builds() {
@@ -1934,6 +2318,8 @@ mod tests {
                 "package/import loading",
             ),
             ("LNC0038", "runtime service boundary", "runtime binding"),
+            ("LNC0039", "unknown CLI subcommand", "tooling"),
+            ("LNC0040", "input read failed", "tooling"),
         ];
 
         assert_eq!(DIAGNOSTIC_CODE_REGISTRY.len(), expected.len());
@@ -2001,6 +2387,10 @@ mod tests {
             assert!(entry.capability_constant.ends_with("_HAS_RUNTIME_BINDING"));
             assert!(entry.status_probe.ends_with("_service_status()"));
             assert!(entry.binding_probe.contains("runtime_binding()"));
+            assert_eq!(
+                entry.accepted_selector_kinds,
+                RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS
+            );
             assert_eq!(entry.current_status, "known-unbound");
             assert!(!entry.executable);
             assert_eq!(
@@ -2020,6 +2410,10 @@ mod tests {
         assert_eq!(stdio["diagnostic_code"], "LNC0038");
         assert_eq!(stdio["module_path"], "std::io");
         assert_eq!(stdio["binding_probe"], "stdio_requires_runtime_binding()");
+        assert_eq!(
+            stdio["accepted_selector_kinds"],
+            serde_json::json!(RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS)
+        );
         assert_eq!(stdio["current_status"], "known-unbound");
         assert_eq!(stdio["executable"], false);
     }
@@ -2042,14 +2436,32 @@ mod tests {
                 entry.service_id >= previous_service_id,
                 "runtime-bound API rows should be grouped by canonical service-id order"
             );
-            assert!(
-                runtime_service_boundary_diagnostic_info(entry.service_id).is_some(),
+            let service = runtime_service_boundary_diagnostic_info(entry.service_id)
+                .expect("runtime-bound API rows should point at a known service boundary");
+            assert_eq!(
+                entry.service_capability_constant, service.capability_constant,
+                "runtime-bound API rows should carry the owning service capability constant"
+            );
+            assert_eq!(
+                entry.service_module_path, service.module_path,
+                "runtime-bound API rows should carry the owning service module path"
+            );
+            assert_eq!(
+                entry.service_status_probe, service.status_probe,
+                "runtime-bound API rows should carry the owning service status probe"
+            );
+            assert_eq!(
+                entry.service_binding_probe, service.binding_probe,
                 "runtime-bound API rows should point at a known service boundary"
             );
             assert!(entry.module_path.contains("::"));
             assert!(entry.api_name.starts_with(entry.module_path));
             assert!(entry.executable_probe.ends_with("_is_executable()"));
             assert!(entry.binding_probe.contains("runtime_binding()"));
+            assert_eq!(
+                entry.accepted_selector_kinds,
+                RUNTIME_BOUND_API_SELECTOR_KINDS
+            );
             assert_eq!(entry.current_status, "known-unbound");
             assert!(!entry.executable);
             assert_eq!(
@@ -2066,11 +2478,30 @@ mod tests {
             .expect("stdio print_i32 API row should be present");
         assert_eq!(print_i32["diagnostic_code"], "LNC0038");
         assert_eq!(print_i32["service_id"], 3);
+        let stdio_service = runtime_service_boundary_diagnostic_info(3)
+            .expect("stdio service boundary row should be public");
+        assert_eq!(
+            print_i32["service_capability_constant"],
+            stdio_service.capability_constant
+        );
+        assert_eq!(print_i32["service_module_path"], stdio_service.module_path);
+        assert_eq!(
+            print_i32["service_status_probe"],
+            stdio_service.status_probe
+        );
+        assert_eq!(
+            print_i32["service_binding_probe"],
+            stdio_service.binding_probe
+        );
         assert_eq!(print_i32["module_path"], "std::io");
         assert_eq!(print_i32["executable_probe"], "print_i32_is_executable()");
         assert_eq!(
             print_i32["binding_probe"],
             "print_i32_requires_runtime_binding()"
+        );
+        assert_eq!(
+            print_i32["accepted_selector_kinds"],
+            serde_json::json!(RUNTIME_BOUND_API_SELECTOR_KINDS)
         );
         assert_eq!(print_i32["current_status"], "known-unbound");
         assert_eq!(print_i32["executable"], false);
@@ -2087,11 +2518,16 @@ mod tests {
             value["schema_version"],
             DIAGNOSTIC_EXPLANATION_SCHEMA_VERSION
         );
+        assert_eq!(value["schema_name"], DIAGNOSTIC_EXPLANATION_SCHEMA_NAME);
         assert_eq!(
             value["registry_schema_version"],
             DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
         );
         assert_eq!(value["requested_code"], "LNC0017");
+        assert_eq!(
+            value["explain_command"],
+            "laniusc diagnostics explain LNC0017"
+        );
         assert_eq!(value["known"], true);
         assert_eq!(value["diagnostic"]["code"], "LNC0017");
         assert_eq!(value["diagnostic"]["title"], "x86 backend boundary");
@@ -2110,8 +2546,34 @@ mod tests {
                 .expect("unsupported-feature next step should be a string")
                 .contains("--emit=wasm")
         );
+        assert_eq!(value["codegen_boundary"]["diagnostic_code"], "LNC0017");
+        assert_eq!(value["codegen_boundary"]["boundary"], "x86 backend");
+        assert_eq!(value["codegen_boundary"]["target"], "x86_64");
+        assert_eq!(
+            value["codegen_boundary"]["stage"],
+            "native codegen lowering"
+        );
+        assert_eq!(
+            value["codegen_boundary"]["partial_artifact_policy"],
+            "fail-closed before emitting a partial instruction prefix"
+        );
+        assert_eq!(value["codegen_boundary"]["target_bytes_emitted"], false);
+        assert_eq!(
+            value["codegen_boundary"]["diagnostics_only_command"],
+            "laniusc check"
+        );
+        assert_eq!(value["codegen_boundary"]["fallback_emit"], "wasm");
         assert!(value["runtime_service_boundaries"].is_null());
         assert!(value["runtime_bound_apis"].is_null());
+
+        let copied_json = diagnostic_explanation_json_pretty("error[lnc0017]: x86 backend")
+            .expect("copied diagnostic explanation should serialize");
+        let copied: serde_json::Value = serde_json::from_str(&copied_json)
+            .expect("copied diagnostic explanation JSON should parse");
+        assert_eq!(copied["requested_code"], "LNC0017");
+        assert_eq!(copied["known"], true);
+        assert_eq!(copied["diagnostic"]["code"], "LNC0017");
+        assert_eq!(copied["codegen_boundary"]["target"], "x86_64");
 
         let runtime_json = diagnostic_explanation_json_pretty("lnc0038")
             .expect("runtime diagnostic explanation should serialize");
@@ -2132,6 +2594,8 @@ mod tests {
         );
         assert!(runtime_services.iter().all(|service| {
             service["diagnostic_code"] == "LNC0038"
+                && service["accepted_selector_kinds"]
+                    == serde_json::json!(RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS)
                 && service["current_status"] == "known-unbound"
                 && service["executable"] == false
         }));
@@ -2143,12 +2607,26 @@ mod tests {
             api["api_name"] == "std::io::print_i32"
                 && api["service_id"] == 3
                 && api["binding_probe"] == "print_i32_requires_runtime_binding()"
+                && api["accepted_selector_kinds"]
+                    == serde_json::json!(RUNTIME_BOUND_API_SELECTOR_KINDS)
                 && api["executable"] == false
         }));
         assert!(runtime_apis.iter().all(|api| {
+            let service_id = api["service_id"]
+                .as_u64()
+                .and_then(|service_id| u32::try_from(service_id).ok());
+            let service = service_id.and_then(runtime_service_boundary_diagnostic_info);
             api["diagnostic_code"] == "LNC0038"
+                && api["accepted_selector_kinds"]
+                    == serde_json::json!(RUNTIME_BOUND_API_SELECTOR_KINDS)
                 && api["current_status"] == "known-unbound"
                 && api["executable"] == false
+                && service.is_some_and(|service| {
+                    api["service_capability_constant"] == service.capability_constant
+                        && api["service_module_path"] == service.module_path
+                        && api["service_status_probe"] == service.status_probe
+                        && api["service_binding_probe"] == service.binding_probe
+                })
         }));
 
         let unknown_json = diagnostic_explanation_json_pretty("LNC9999")
@@ -2159,10 +2637,16 @@ mod tests {
             unknown["schema_version"],
             DIAGNOSTIC_EXPLANATION_SCHEMA_VERSION
         );
+        assert_eq!(unknown["schema_name"], DIAGNOSTIC_EXPLANATION_SCHEMA_NAME);
         assert_eq!(unknown["requested_code"], "LNC9999");
+        assert_eq!(
+            unknown["explain_command"],
+            "laniusc diagnostics explain LNC9999"
+        );
         assert_eq!(unknown["known"], false);
         assert!(unknown["diagnostic"].is_null());
         assert!(unknown["unsupported_feature"].is_null());
+        assert!(unknown["codegen_boundary"].is_null());
         assert!(unknown["runtime_service_boundaries"].is_null());
         assert!(unknown["runtime_bound_apis"].is_null());
     }
@@ -2303,6 +2787,81 @@ mod tests {
     }
 
     #[test]
+    fn diagnostic_renderers_omit_blank_help_and_notes() {
+        let diagnostic = Diagnostic::error("LNC0020", "unknown CLI option")
+            .with_help(" \t ")
+            .with_note("")
+            .with_note("   ")
+            .with_note("try --help");
+
+        let rendered = diagnostic.render();
+        assert!(
+            !rendered.contains("= help:"),
+            "text diagnostics should not render blank help rows\n{rendered}"
+        );
+        assert_eq!(
+            rendered.matches("= note:").count(),
+            1,
+            "text diagnostics should omit blank note rows\n{rendered}"
+        );
+        assert!(
+            rendered.contains("= note: try --help"),
+            "text diagnostics should keep nonblank note rows\n{rendered}"
+        );
+
+        let json = diagnostic
+            .render_json_pretty()
+            .expect("diagnostic JSON should serialize");
+        let value: serde_json::Value =
+            serde_json::from_str(&json).expect("diagnostic JSON should parse");
+        assert!(
+            value.get("help").is_none(),
+            "JSON diagnostics should not publish a blank help field\n{json}"
+        );
+        assert_eq!(value["notes"], serde_json::json!(["try --help"]));
+    }
+
+    #[test]
+    fn diagnostic_renderers_trim_public_help_and_notes() {
+        let diagnostic = Diagnostic::error("LNC0020", "unknown CLI option")
+            .with_help("  run `laniusc --help`  ")
+            .with_note("\tunknown option: --wat  ");
+
+        let rendered = diagnostic.render();
+        assert!(
+            rendered.contains("= help: run `laniusc --help`"),
+            "text diagnostics should trim public help text\n{rendered}"
+        );
+        assert!(
+            rendered.contains("= note: unknown option: --wat"),
+            "text diagnostics should trim public notes\n{rendered}"
+        );
+        assert!(
+            !rendered.contains("help:   ") && !rendered.contains("note: \t"),
+            "text diagnostics should not preserve incidental caller whitespace\n{rendered:?}"
+        );
+
+        let json = diagnostic
+            .render_json_pretty()
+            .expect("diagnostic JSON should serialize");
+        let value: serde_json::Value =
+            serde_json::from_str(&json).expect("diagnostic JSON should parse");
+        assert_eq!(value["help"], "run `laniusc --help`");
+        assert_eq!(value["notes"], serde_json::json!(["unknown option: --wat"]));
+
+        let lsp_json = diagnostic
+            .render_lsp_json_pretty()
+            .expect("LSP diagnostic JSON should serialize");
+        let lsp: serde_json::Value =
+            serde_json::from_str(&lsp_json).expect("LSP diagnostic JSON should parse");
+        assert_eq!(lsp["data"]["help"], "run `laniusc --help`");
+        assert_eq!(
+            lsp["data"]["notes"],
+            serde_json::json!(["unknown option: --wat"])
+        );
+    }
+
+    #[test]
     fn unsupported_feature_diagnostics_render_public_help_metadata() {
         let diagnostic = Diagnostic::error("LNC0022", "linked-output contract descriptor")
             .with_primary_label(DiagnosticLabel::primary(
@@ -2371,6 +2930,7 @@ mod tests {
             serde_json::from_str(&json).expect("diagnostic JSON should parse");
 
         assert_eq!(value["schema_version"], DIAGNOSTIC_JSON_SCHEMA_VERSION);
+        assert_eq!(value["schema_name"], DIAGNOSTIC_JSON_SCHEMA_NAME);
         assert_eq!(
             value["registry_schema_version"],
             DIAGNOSTIC_REGISTRY_SCHEMA_VERSION
@@ -2380,11 +2940,17 @@ mod tests {
         assert_eq!(value["title"], "syntax error");
         assert_eq!(value["category"], "parsing");
         assert_eq!(value["primary_label_policy"], "required");
+        assert_eq!(
+            value["explain_command"],
+            "laniusc diagnostics explain LNC0016"
+        );
         assert_eq!(value["message"], "syntax error");
         assert_eq!(value["primary_label"]["path"], "app.lani");
         assert_eq!(value["primary_label"]["line"], 2);
         assert_eq!(value["primary_label"]["column"], 5);
         assert_eq!(value["primary_label"]["length"], 2);
+        assert!(value["primary_label"]["byte_start"].is_null());
+        assert!(value["primary_label"]["byte_end"].is_null());
         assert_eq!(value["primary_label"]["source_line"], "fn fn main() {}");
         assert_eq!(value["primary_label"]["message"], "invalid syntax here");
         assert_eq!(value["notes"][0], "parser rejected the token stream");
@@ -2421,10 +2987,20 @@ mod tests {
             value["data"]["schema_version"],
             LSP_DIAGNOSTIC_DATA_SCHEMA_VERSION
         );
+        assert_eq!(
+            value["data"]["schema_name"],
+            LSP_DIAGNOSTIC_DATA_SCHEMA_NAME
+        );
         assert_eq!(value["data"]["position_encoding"], LSP_POSITION_ENCODING);
         assert_eq!(value["data"]["title"], "syntax error");
         assert_eq!(value["data"]["category"], "parsing");
         assert_eq!(value["data"]["primary_label_policy"], "required");
+        assert_eq!(
+            value["data"]["explain_command"],
+            "laniusc diagnostics explain LNC0016"
+        );
+        assert!(value["data"]["primary_label"]["byte_start"].is_null());
+        assert!(value["data"]["primary_label"]["byte_end"].is_null());
         assert_eq!(value["range"]["start"]["line"], 1);
         assert_eq!(value["range"]["start"]["character"], 2);
         assert_eq!(value["range"]["end"]["line"], 1);
@@ -2445,8 +3021,28 @@ mod tests {
         assert_eq!(label.line, 2);
         assert_eq!(label.column, 12);
         assert_eq!(label.length, 5);
+        assert_eq!(label.byte_start, Some(23));
+        assert_eq!(label.byte_end, Some(28));
         assert_eq!(label.source_line, Some("    return later;".to_string()));
         assert_eq!(label.message, "not found");
+
+        let diagnostic =
+            Diagnostic::error("LNC0005", "unresolved identifier").with_primary_label(label);
+        let json = diagnostic
+            .render_json_pretty()
+            .expect("diagnostic JSON should serialize");
+        let value: serde_json::Value =
+            serde_json::from_str(&json).expect("diagnostic JSON should parse");
+        assert_eq!(value["primary_label"]["byte_start"], 23);
+        assert_eq!(value["primary_label"]["byte_end"], 28);
+
+        let lsp_json = diagnostic
+            .render_lsp_json_pretty()
+            .expect("LSP diagnostic JSON should serialize");
+        let lsp: serde_json::Value =
+            serde_json::from_str(&lsp_json).expect("LSP diagnostic JSON should parse");
+        assert_eq!(lsp["data"]["primary_label"]["byte_start"], 23);
+        assert_eq!(lsp["data"]["primary_label"]["byte_end"], 28);
     }
 
     #[test]
@@ -2475,6 +3071,8 @@ mod tests {
             label.length, 1,
             "label should cover the multibyte character as one displayed column"
         );
+        assert_eq!(label.byte_start, Some(cafe_byte + "caf".len()));
+        assert_eq!(label.byte_end, Some(cafe_byte + "café".len()));
     }
 
     #[test]

@@ -475,13 +475,11 @@ ordered by architectural risk, not by how easy they are to patch.
    matching records run before `tokens_to_kinds.slang`. Keep that pass order:
    parser-owned context rows first, then token classification consumes those
    rows. The remaining blocker is narrower: `tokens_to_kinds.slang` still has
-   source-neighborhood checks for function-parameter and generic syntax plus the
-   bounded `BOUND_PATH_SEGMENT_LIMIT` path-context walk for bound type
-   arguments. That walk reports `PARSER_STATUS_CONTEXT_SCAN_LIMIT` through the
-   parser token feature/status word when it exhausts its segment budget; this
-   is a fail-closed boundary, not production support for unbounded type-context
-   discovery. Promote the remaining path/generic context into parser-owned
-   type-context rows produced before retagging rather than widening local loops.
+   source-neighborhood checks for function-parameter and generic syntax.
+   Qualified bound paths in generic-parameter lists now fail closed instead of
+   using a bounded backward path-context walk. Promote the remaining path and
+   generic context into parser-owned type-context rows produced before retagging
+   rather than restoring local loops.
 2. Type-check name and type-instance passes still have local parent/subtree
    walks, including HIR-name ancestry checks, member generic-parameter lookup,
    predicate collection, and direct scalar call resolution. The recent

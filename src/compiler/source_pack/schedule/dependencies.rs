@@ -310,7 +310,7 @@ pub(in crate::compiler) fn write_dependency_frontend_job_range(
     )
 }
 
-pub(in crate::compiler) fn store_library_dependencies<I>(
+pub(in crate::compiler) fn store_partition_dependency_ids<I>(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
     partition_index: usize,
@@ -373,7 +373,7 @@ where
         dependency_page_ids.push(dependency_library_id);
         dependency_library_count += 1;
         if dependency_page_ids.len() == SOURCE_PACK_LIBRARY_DEPENDENCY_DEFAULT_PAGE_SIZE {
-            store_library_dependency_id_page(
+            store_partition_dependency_id_page(
                 store,
                 target,
                 partition_index,
@@ -394,7 +394,7 @@ where
         )));
     }
     if !dependency_page_ids.is_empty() {
-        store_library_dependency_id_page(
+        store_partition_dependency_id_page(
             store,
             target,
             partition_index,
@@ -408,7 +408,7 @@ where
     Ok((dependency_library_count, dependency_page_count))
 }
 
-pub(in crate::compiler) fn store_library_dependency_id_page(
+pub(in crate::compiler) fn store_partition_dependency_id_page(
     store: &FilesystemArtifactStore,
     target: SourcePackArtifactTarget,
     partition_index: usize,

@@ -19,6 +19,7 @@ StructuredBuffer<uint> hir_struct_lit_field_link_in;
 StructuredBuffer<uint> hir_struct_lit_field_rank_in;
 StructuredBuffer<uint> token_feature_flags;
 StructuredBuffer<uint> hir_struct_rank_node;
+StructuredBuffer<uint> hir_struct_rank_count;
 
 RWStructuredBuffer<uint> hir_struct_field_owner_out;
 RWStructuredBuffer<uint> hir_struct_field_link_out;
@@ -84,7 +85,7 @@ void jump_one(
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint row = linear_thread_id(dtid);
-    if (row >= gHirStruct.n)
+    if (row >= gHirStruct.n || row >= hir_struct_rank_count[0u])
         return;
 
     uint node = hir_struct_rank_node[row];

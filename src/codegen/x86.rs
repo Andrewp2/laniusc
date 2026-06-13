@@ -46,9 +46,16 @@ impl X86OutputError {
     pub fn detail_is_hir_node(&self) -> bool {
         matches!(
             self.error_code,
-            11 | 17
+            X86_ERR_NODE_INST_COUNTS
+                | 11
+                | X86_ERR_VIRTUAL_LIVENESS
+                | X86_ERR_NODE_INST_LOCATIONS
+                | 17
+                | X86_ERR_INTRINSIC_CALLS
                 | 24
                 | 26
+                | 27
+                | X86_ERR_STRUCT_RECORDS
                 | 29
                 | 30
                 | 31
@@ -67,11 +74,23 @@ impl X86OutputError {
                 | 45
                 | 46
                 | 47
+                | X86_ERR_REGALLOC_BOUNDARY
+                | 49
+                | 51
+                | 52
+                | 53
+                | 54
+                | 55
+                | X86_ERR_MULTIPLE_MAIN
+                | X86_ERR_UNSUPPORTED_LITERAL_EXPR
+                | X86_ERR_NESTED_AGGREGATE_MEMBER
+                | X86_ERR_SIGNED_DIV_OVERFLOW
+                | X86_ERR_HIR_TREE_SHAPE
         )
     }
 
     pub fn detail_is_token(&self) -> bool {
-        matches!(self.error_code, 9 | 25)
+        matches!(self.error_code, 9 | 25 | 56)
     }
 }
 
@@ -123,6 +142,17 @@ pub const X86_FEATURE_ENUM: u32 = 1 << 0;
 pub const X86_FEATURE_MATCH: u32 = 1 << 1;
 pub const X86_FEATURE_AGGREGATE: u32 = 1 << 2;
 pub const X86_FEATURE_CALL: u32 = 1 << 3;
+pub(super) const X86_ERR_NODE_INST_COUNTS: u32 = 10;
+pub(super) const X86_ERR_VIRTUAL_LIVENESS: u32 = 14;
+pub(super) const X86_ERR_NODE_INST_LOCATIONS: u32 = 16;
+pub(super) const X86_ERR_INTRINSIC_CALLS: u32 = 21;
+pub(super) const X86_ERR_STRUCT_RECORDS: u32 = 28;
+pub(super) const X86_ERR_REGALLOC_BOUNDARY: u32 = 48;
+pub(super) const X86_ERR_HIR_TREE_SHAPE: u32 = 57;
+pub(super) const X86_ERR_SIGNED_DIV_OVERFLOW: u32 = 59;
+pub(super) const X86_ERR_UNSUPPORTED_LITERAL_EXPR: u32 = 60;
+pub(super) const X86_ERR_NESTED_AGGREGATE_MEMBER: u32 = 61;
+pub(super) const X86_ERR_MULTIPLE_MAIN: u32 = 62;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct X86FeatureSummary {
@@ -275,6 +305,7 @@ pub struct GpuX86StructMetadataBuffers<'a> {
     pub decl_hir_node: &'a wgpu::Buffer,
     pub struct_decl_field_count: &'a wgpu::Buffer,
     pub struct_lit_head_node: &'a wgpu::Buffer,
+    pub struct_lit_context_stmt_node: &'a wgpu::Buffer,
     pub struct_lit_field_parent_lit: &'a wgpu::Buffer,
     pub struct_lit_field_start: &'a wgpu::Buffer,
     pub struct_lit_field_count: &'a wgpu::Buffer,
@@ -381,12 +412,23 @@ const X86_INITIAL_OUTPUT_READBACK_SOURCE_MULTIPLIER: usize = 3;
 const X86_INITIAL_OUTPUT_READBACK_SLACK_BYTES: usize = 64 * 1024;
 const X86_INITIAL_OUTPUT_READBACK_LARGE_SOURCE_SLACK_BYTES: usize = 128 * 1024;
 const X86_INITIAL_OUTPUT_READBACK_CAPACITY_DIVISOR: usize = 2;
+const X86_ENCODE_MAX_BYTES_PER_INST: usize = 128;
 // Mirror Pareas' lockstep register-allocation shape: each dispatch step
 // advances a small fixed chunk for every function, carrying per-function
 // active state between chunks. Regalloc consumes compact value-definition rows,
 // so this bound is over semantic defs rather than every virtual instruction.
 const X86_REGALLOC_ROWS_PER_CHUNK: usize = 32;
 
+const X86_ENCODE_PASS_CONTRACT_SCHEMA: &str = "lanius.x86.encode-pass-contract.v1";
+const X86_ENCODE_LOOP_STATUS: &str = "bounded-local";
+const X86_ENCODE_FALLBACK_STATUS: &str = "fail-closed";
+const X86_ENCODE_CLAIM_STATUS: &str = "not-blocking";
+const X86_ENCODE_SOURCE_TEXT_STATUS: &str = "not-consumed";
+const X86_ENCODE_BYTE_LOOP_BASIS: &str = "per_instruction_encoded_byte_width";
+const X86_ENCODE_INPUT_ORDERING: &str =
+    "prefix_instruction_sizes,scatter_instruction_bytes,patch_relocation_records";
+const X86_ENCODE_GUARDS: &str =
+    "text_status,reloc_status,text_len_matches_byte_offsets,out_capacity";
 const X86_REGALLOC_PASS_CONTRACT_SCHEMA: &str = "lanius.x86.regalloc-pass-contract.v1";
 const X86_REGALLOC_LOOP_STATUS: &str = "bounded";
 const X86_REGALLOC_FALLBACK_STATUS: &str = "fail-closed";
@@ -395,6 +437,62 @@ const X86_REGALLOC_CLAIM_BLOCKERS: &str =
     "bounded_value_def_chunk_loop,loop_carried_active_end,loop_carried_param_rank_mask";
 const X86_REGALLOC_REQUIRED_REPLACEMENT: &str =
     "function_region_value_def_rows,segmented_state_composition,pressure_spill_stack_scans";
+const X86_REGALLOC_RECORDED_SPAN_BASIS: &str = "instruction_capacity_not_source_len";
+const X86_REGALLOC_CHUNK_SPAN_INVARIANT: &str =
+    "recorded_chunks_times_rows_per_chunk_must_cover_inst_capacity";
+const X86_CONTROL_FLOW_BRIDGE_PASS_CONTRACT_SCHEMA: &str =
+    "lanius.x86.control-flow-bridge-pass-contract.v1";
+const X86_CONTROL_FLOW_BRIDGE_LOOP_STATUS: &str = "bounded";
+const X86_CONTROL_FLOW_BRIDGE_FALLBACK_STATUS: &str = "fail-closed";
+const X86_CONTROL_FLOW_BRIDGE_CLAIM_STATUS: &str = "blocked";
+const X86_CONTROL_FLOW_BRIDGE_RELATIONS: &str =
+    "node_inst_same_end_rank,enclosing_loop,short_circuit_rhs,index_source_owner";
+const X86_CONTROL_FLOW_BRIDGE_CLAIM_BLOCKERS: &str = "pre_basic_block_owner_bridge,pointer_jump_widths_scale_with_hir_rows,virtual_generation_consumes_bridge_rows";
+const X86_CONTROL_FLOW_BRIDGE_REQUIRED_REPLACEMENT: &str =
+    "basic_block_edge_rows,control_region_records,segmented_control_flow_scans";
+const X86_CONTROL_FLOW_BRIDGE_RECORD_ORDERING: &str =
+    "record_relations,prefix_control_regions,sort_join_edges,scatter_virtual_rows";
+const X86_LOWERING_PASS_CONTRACT_SCHEMA: &str = "lanius.x86.lowering-pass-contract.v1";
+const X86_LOWERING_LOOP_STATUS: &str = "bounded";
+const X86_LOWERING_FALLBACK_STATUS: &str = "fail-closed";
+const X86_LOWERING_CLAIM_STATUS: &str = "blocked";
+const X86_LOWERING_SOURCE_TEXT_STATUS: &str = "not-consumed";
+const X86_LOWERING_FUNCTION_BODY_RECOGNIZER_STATUS: &str = "forbidden";
+const X86_LOWERING_RELATIONS: &str =
+    "hir_expr_record,hir_stmt_record,visible_decl,x86_node_inst_order,x86_virtual_inst_record";
+const X86_LOWERING_CLAIM_BLOCKERS: &str =
+    "bounded_shape_specific_lowering,pre_basic_block_control_padding,non_ssa_virtual_generation";
+const X86_LOWERING_REQUIRED_REPLACEMENT: &str =
+    "generic_operation_records,basic_block_edge_rows,segmented_virtual_instruction_scatter";
+const X86_LOWERING_RECORD_ORDERING: &str =
+    "record_semantic_rows,prefix_instruction_counts,scatter_virtual_rows,encode_from_virtual_rows";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct X86EncodePassContract {
+    pub schema: &'static str,
+    pub loop_status: &'static str,
+    pub fallback_status: &'static str,
+    pub claim_status: &'static str,
+    pub source_text_status: &'static str,
+    pub byte_loop_basis: &'static str,
+    pub max_bytes_per_instruction: usize,
+    pub input_ordering: &'static str,
+    pub guards: &'static str,
+}
+
+pub fn x86_encode_pass_contract() -> X86EncodePassContract {
+    X86EncodePassContract {
+        schema: X86_ENCODE_PASS_CONTRACT_SCHEMA,
+        loop_status: X86_ENCODE_LOOP_STATUS,
+        fallback_status: X86_ENCODE_FALLBACK_STATUS,
+        claim_status: X86_ENCODE_CLAIM_STATUS,
+        source_text_status: X86_ENCODE_SOURCE_TEXT_STATUS,
+        byte_loop_basis: X86_ENCODE_BYTE_LOOP_BASIS,
+        max_bytes_per_instruction: X86_ENCODE_MAX_BYTES_PER_INST,
+        input_ordering: X86_ENCODE_INPUT_ORDERING,
+        guards: X86_ENCODE_GUARDS,
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct X86RegallocPassContract {
@@ -404,6 +502,8 @@ pub struct X86RegallocPassContract {
     pub claim_status: &'static str,
     pub claim_blockers: &'static str,
     pub required_replacement: &'static str,
+    pub recorded_span_basis: &'static str,
+    pub chunk_span_invariant: &'static str,
     pub rows_per_chunk: usize,
 }
 
@@ -415,7 +515,67 @@ pub fn x86_regalloc_pass_contract() -> X86RegallocPassContract {
         claim_status: X86_REGALLOC_CLAIM_STATUS,
         claim_blockers: X86_REGALLOC_CLAIM_BLOCKERS,
         required_replacement: X86_REGALLOC_REQUIRED_REPLACEMENT,
+        recorded_span_basis: X86_REGALLOC_RECORDED_SPAN_BASIS,
+        chunk_span_invariant: X86_REGALLOC_CHUNK_SPAN_INVARIANT,
         rows_per_chunk: X86_REGALLOC_ROWS_PER_CHUNK,
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct X86ControlFlowBridgePassContract {
+    pub schema: &'static str,
+    pub loop_status: &'static str,
+    pub fallback_status: &'static str,
+    pub claim_status: &'static str,
+    pub relation_count: usize,
+    pub relations: &'static str,
+    pub claim_blockers: &'static str,
+    pub required_replacement: &'static str,
+    pub record_ordering: &'static str,
+}
+
+pub fn x86_control_flow_bridge_pass_contract() -> X86ControlFlowBridgePassContract {
+    X86ControlFlowBridgePassContract {
+        schema: X86_CONTROL_FLOW_BRIDGE_PASS_CONTRACT_SCHEMA,
+        loop_status: X86_CONTROL_FLOW_BRIDGE_LOOP_STATUS,
+        fallback_status: X86_CONTROL_FLOW_BRIDGE_FALLBACK_STATUS,
+        claim_status: X86_CONTROL_FLOW_BRIDGE_CLAIM_STATUS,
+        relation_count: 4,
+        relations: X86_CONTROL_FLOW_BRIDGE_RELATIONS,
+        claim_blockers: X86_CONTROL_FLOW_BRIDGE_CLAIM_BLOCKERS,
+        required_replacement: X86_CONTROL_FLOW_BRIDGE_REQUIRED_REPLACEMENT,
+        record_ordering: X86_CONTROL_FLOW_BRIDGE_RECORD_ORDERING,
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct X86LoweringPassContract {
+    pub schema: &'static str,
+    pub loop_status: &'static str,
+    pub fallback_status: &'static str,
+    pub claim_status: &'static str,
+    pub source_text_status: &'static str,
+    pub function_body_recognizer_status: &'static str,
+    pub relation_count: usize,
+    pub relations: &'static str,
+    pub claim_blockers: &'static str,
+    pub required_replacement: &'static str,
+    pub record_ordering: &'static str,
+}
+
+pub fn x86_lowering_pass_contract() -> X86LoweringPassContract {
+    X86LoweringPassContract {
+        schema: X86_LOWERING_PASS_CONTRACT_SCHEMA,
+        loop_status: X86_LOWERING_LOOP_STATUS,
+        fallback_status: X86_LOWERING_FALLBACK_STATUS,
+        claim_status: X86_LOWERING_CLAIM_STATUS,
+        source_text_status: X86_LOWERING_SOURCE_TEXT_STATUS,
+        function_body_recognizer_status: X86_LOWERING_FUNCTION_BODY_RECOGNIZER_STATUS,
+        relation_count: 5,
+        relations: X86_LOWERING_RELATIONS,
+        claim_blockers: X86_LOWERING_CLAIM_BLOCKERS,
+        required_replacement: X86_LOWERING_REQUIRED_REPLACEMENT,
+        record_ordering: X86_LOWERING_RECORD_ORDERING,
     }
 }
 
@@ -611,6 +771,20 @@ pub fn x86_function_slot_capacity(
 
 pub fn regalloc_recorded_step_count(inst_capacity: usize) -> usize {
     inst_capacity.max(1)
+}
+
+pub fn regalloc_recorded_chunk_count(inst_capacity: usize) -> usize {
+    regalloc_recorded_step_count(inst_capacity)
+        .div_ceil(X86_REGALLOC_ROWS_PER_CHUNK)
+        .max(1)
+}
+
+pub fn regalloc_recorded_span_rows(inst_capacity: usize) -> usize {
+    regalloc_recorded_chunk_count(inst_capacity).saturating_mul(X86_REGALLOC_ROWS_PER_CHUNK)
+}
+
+pub fn regalloc_recorded_span_covers_inst_capacity(inst_capacity: usize) -> bool {
+    regalloc_recorded_span_rows(inst_capacity) >= inst_capacity.max(1)
 }
 
 pub struct RecordedX86Codegen {
@@ -1410,6 +1584,109 @@ mod tests {
         assert!(
             capacity.inst_capacity > 100usize.saturating_add(X86_INST_CAPACITY_SLACK),
             "dense scalar programs should use the measured scalar instruction summary"
+        );
+    }
+
+    #[test]
+    fn x86_regalloc_recorded_span_is_capacity_sized() {
+        let contract = x86_regalloc_pass_contract();
+
+        assert_eq!(
+            contract.recorded_span_basis,
+            "instruction_capacity_not_source_len"
+        );
+        assert_eq!(
+            contract.chunk_span_invariant,
+            "recorded_chunks_times_rows_per_chunk_must_cover_inst_capacity"
+        );
+        assert_eq!(regalloc_recorded_chunk_count(0), 1);
+        assert_eq!(regalloc_recorded_chunk_count(contract.rows_per_chunk), 1);
+        assert_eq!(
+            regalloc_recorded_chunk_count(contract.rows_per_chunk + 1),
+            2
+        );
+        assert!(regalloc_recorded_span_covers_inst_capacity(0));
+        assert!(regalloc_recorded_span_covers_inst_capacity(1_025));
+    }
+
+    #[test]
+    fn x86_encode_contract_marks_byte_scatter_as_local_bounded_work() {
+        let contract = x86_encode_pass_contract();
+
+        assert_eq!(contract.schema, "lanius.x86.encode-pass-contract.v1");
+        assert_eq!(contract.loop_status, "bounded-local");
+        assert_eq!(contract.fallback_status, "fail-closed");
+        assert_eq!(contract.claim_status, "not-blocking");
+        assert_eq!(contract.source_text_status, "not-consumed");
+        assert_eq!(
+            contract.byte_loop_basis,
+            "per_instruction_encoded_byte_width"
+        );
+        assert_eq!(contract.max_bytes_per_instruction, 128);
+        assert!(
+            contract.input_ordering.contains("prefix_instruction_sizes")
+                && contract.input_ordering.contains("patch_relocation_records"),
+            "encoding must stay ordered after byte-prefix and relocation-record publication"
+        );
+        assert!(
+            contract.guards.contains("text_status") && contract.guards.contains("reloc_status"),
+            "encoding must stay gated by GPU-published text and relocation status"
+        );
+    }
+
+    #[test]
+    fn x86_control_flow_bridge_contract_marks_transitional_rows_fail_closed() {
+        let contract = x86_control_flow_bridge_pass_contract();
+
+        assert_eq!(
+            contract.schema,
+            "lanius.x86.control-flow-bridge-pass-contract.v1"
+        );
+        assert_eq!(contract.loop_status, "bounded");
+        assert_eq!(contract.fallback_status, "fail-closed");
+        assert_eq!(contract.claim_status, "blocked");
+        assert_eq!(contract.relation_count, 4);
+        assert_eq!(
+            contract.relations,
+            "node_inst_same_end_rank,enclosing_loop,short_circuit_rhs,index_source_owner"
+        );
+        assert!(
+            contract
+                .required_replacement
+                .contains("basic_block_edge_rows"),
+            "control-flow bridge must not be claimable before basic-block edge records exist"
+        );
+        assert_eq!(
+            contract.record_ordering,
+            "record_relations,prefix_control_regions,sort_join_edges,scatter_virtual_rows"
+        );
+    }
+
+    #[test]
+    fn x86_lowering_contract_blocks_claims_until_generic_record_rows() {
+        let contract = x86_lowering_pass_contract();
+
+        assert_eq!(contract.schema, "lanius.x86.lowering-pass-contract.v1");
+        assert_eq!(contract.loop_status, "bounded");
+        assert_eq!(contract.fallback_status, "fail-closed");
+        assert_eq!(contract.claim_status, "blocked");
+        assert_eq!(contract.source_text_status, "not-consumed");
+        assert_eq!(contract.function_body_recognizer_status, "forbidden");
+        assert_eq!(contract.relation_count, 5);
+        assert!(
+            contract.relations.contains("hir_expr_record")
+                && contract.relations.contains("x86_virtual_inst_record"),
+            "lowering contract must describe record rows, not source or helper names"
+        );
+        assert!(
+            contract
+                .required_replacement
+                .contains("generic_operation_records"),
+            "generic operation rows are required before lowering is claimable"
+        );
+        assert_eq!(
+            contract.record_ordering,
+            "record_semantic_rows,prefix_instruction_counts,scatter_virtual_rows,encode_from_virtual_rows"
         );
     }
 }

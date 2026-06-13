@@ -38,6 +38,9 @@ language_slice_measurement_scaffold_evidence=0
 language_slice_parser_type_relation_evidence=0
 language_slice_pass_order_evidence=0
 language_slice_planned_pass_order_gaps=0
+language_slice_wasm_record_pass_order_guard=0
+language_slice_linking_gpu_pass_order_guard=0
+language_slice_object_link_pipeline_guard=0
 language_slice_performance_claim_guards=0
 language_slice_array_lit_context_evidence=0
 language_slice_struct_lit_context_evidence=0
@@ -52,23 +55,58 @@ language_slice_nearest_stmt_context_evidence=0
 language_slice_nearest_block_control_context_evidence=0
 language_slice_rows=0
 language_slice_external_tooling_gate_evidence=0
+language_slice_version_surface_gate=0
+language_slice_doctor_surface_gate=0
+language_slice_doctor_slangc_timeout_gate=0
 language_slice_stable_code_registry_gate=0
 language_slice_diagnostic_registry_json_gate=0
 language_slice_diagnostic_registry_cli_gate=0
+language_slice_diagnostic_codes_cli_gate=0
 language_slice_diagnostic_categories_cli_gate=0
 language_slice_diagnostic_explain_cli_gate=0
 language_slice_diagnostic_explain_unknown_cli_gate=0
 language_slice_diagnostic_formats_cli_gate=0
+language_slice_diagnostic_format_position_gate=0
+language_slice_global_diagnostic_format_routing_gate=0
+language_slice_diagnostic_runtime_api_cli_gate=0
+language_slice_diagnostic_runtime_api_service_selector_cli_gate=0
+language_slice_diagnostic_runtime_apis_cli_gate=0
+language_slice_diagnostic_runtime_service_cli_gate=0
+language_slice_diagnostic_runtime_service_apis_cli_gate=0
+language_slice_diagnostic_runtime_service_selector_cli_gate=0
+language_slice_diagnostic_runtime_service_api_selector_cli_gate=0
+language_slice_diagnostic_runtime_services_cli_gate=0
 language_slice_formatter_library_gate=0
 language_slice_formatter_cli_check_gate=0
+language_slice_formatter_input_read_gate=0
+language_slice_formatter_stdin_read_gate=0
+language_slice_formatter_output_write_gate=0
 language_slice_lsp_capabilities_gate=0
 language_slice_lsp_stdio_gate=0
+language_slice_lsp_reinitialize_gate=0
+language_slice_lsp_pre_initialize_gate=0
+language_slice_lsp_language_id_gate=0
+language_slice_lsp_formatting_options_gate=0
+language_slice_lsp_unsupported_method_gate=0
+language_slice_lsp_invalid_request_gate=0
+language_slice_lsp_invalid_frame_body_drain_gate=0
 language_slice_lsp_document_diagnostics_gate=0
 language_slice_package_manifest_cli_gate=0
 language_slice_package_lockfile_cli_gate=0
 language_slice_package_lock_command_gate=0
+language_slice_package_lock_argument_diagnostic_gate=0
 language_slice_package_metadata_diagnostic_gate=0
+language_slice_source_scoped_evidence=0
 test_discipline_checked_files=0
+measurement_shader_loop_audit_summary_cached=0
+measurement_shader_loop_audit_summary_value=
+measurement_plan_check_file=
+measurement_plan_check_text=
+declare -A measurement_checkpoint_block_cache=()
+declare -A plan_evidence_lanes=()
+declare -A language_slice_kind_counts=()
+declare -A language_slice_kind_status_counts=()
+declare -A test_reference_function_cache=()
 
 usage() {
   cat <<'USAGE'
@@ -78,7 +116,7 @@ Default mode is dry-run: commands are printed but not executed.
 Use --list-tests to print/list test inventories instead of acceptance runs.
 Use --check-plan to validate the planned command inventory without compiling or executing tests.
 Use --check-env to validate command and environment prerequisites without compiling or executing tests.
-Use --measurement-plan to print a no-run 5k/10k/20k performance/VRAM/readback measurement plan.
+Use --measurement-plan to print a no-run 5k measurement scaffold and claim-boundary plan.
 Use --write-measurement-plan PATH to write that no-run plan to PATH.
 Use --allow-scale to execute generated, Pareas, or all-tier scale lanes.
 
@@ -88,7 +126,7 @@ Tiers:
   generated   Run parameterized generated compiler gates around 5k lines by default.
   properties  Run named deterministic randomized/property-style compiler tests.
   readiness   No-run inventory for the current production-readiness contracts.
-  pareas      Run the optional Pareas comparison gate.
+  pareas      Validate the optional Pareas comparison provenance scaffold.
   all         Run focused, smoke, generated, properties, and pareas.
 
 Relevant environment:
@@ -96,10 +134,10 @@ Relevant environment:
   LANIUS_CAPACITY_STRESS_LINES                   default 5000
   LANIUS_CAPACITY_STRESS_SOURCE                  default expr-dense
   LANIUS_MAX_CAPACITY_STRESS_COMPILE_FLOOR_BYTES default 12 GiB
-  LANIUS_ALLOW_LARGE_GENERATED_TESTS=1           opt into >20k generated gates
+  LANIUS_ALLOW_LARGE_GENERATED_TESTS=1           opt into >5k generated gates or measurement checkpoints
   LANIUS_GENERATED_GATE_COMMAND_TIMEOUT_MS        default 120000
   LANIUS_X86_READBACK_TIMEOUT_MS                  default 60000 inside generated/perf x86 gates
-  LANIUS_PERF_CHECKPOINT_LINES                    default 5000,10000,20000; comma-separated checkpoints
+  LANIUS_PERF_CHECKPOINT_LINES                    default 5000; comma-separated checkpoints
   LANIUS_PERF_LINES                               default 5000 for future VRAM/perf plans
   LANIUS_PERF_SEED                                default 3235798765, matching gpu_compile_bench
   LANIUS_PERF_ITERS                               default 1; >3 requires large-test opt-in
@@ -124,9 +162,9 @@ Relevant environment:
   LANIUS_PAREAS_BINARY_SHA256_OUTPUT_PATH         default target/lanius-measurements/pareas-<lines>l.compiler.sha256.txt
   LANIUS_PAREAS_OUTPUT_PATH                       default target/lanius-measurements/pareas-<lines>l.out
   LANIUS_PAREAS_STDOUT_PATH                       default target/lanius-measurements/pareas-<lines>l.stdout.txt
+  LANIUS_PAREAS_VRAM_OUTPUT_PATH                  default target/lanius-measurements/pareas-<lines>l.vram.csv
   NVIDIA_SMI                                     path to nvidia-smi
   LANIUS_REQUIRE_NVIDIA_SMI=1                    fail if nvidia-smi is unavailable
-  LANIUS_PAREAS_COMPARE_ITERS                    default 1; >3 requires large-test opt-in
   LANIUS_ACCEPTANCE_ALLOW_SCALE=1                 allow generated/Pareas/all tiers to execute
   PAREAS_BIN                                     path to Pareas compiler
   LANIUS_REQUIRE_PAREAS=1                        fail if Pareas is unavailable
@@ -291,31 +329,162 @@ run_cmd() {
 }
 
 validate_test_name() {
-  local fn_name="${1##*::}"
-  if [[ ! "$fn_name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+  local test_name="$1"
+  local remaining="$test_name"
+  local segment
+
+  if [[ -z "$test_name" || "$test_name" == ::* || "$test_name" == *:: || "$test_name" == *":::"* ]]; then
+    echo "unsupported test name in acceptance plan: $test_name" >&2
+    return 1
+  fi
+
+  while [[ "$remaining" == *::* ]]; do
+    segment="${remaining%%::*}"
+    if [[ ! "$segment" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+      echo "unsupported test name in acceptance plan: $test_name" >&2
+      return 1
+    fi
+    remaining="${remaining#*::}"
+  done
+
+  if [[ ! "$remaining" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
     echo "unsupported test name in acceptance plan: $1" >&2
     return 1
   fi
 }
 
+test_reference_fn_exists_in_path() {
+  local fn_name="$1"
+  local target_path="$2"
+  local fn_pattern="^[[:space:]]*(pub[[:space:]]+)?(async[[:space:]]+)?fn[[:space:]]+$fn_name[[:space:]]*\\("
+
+  if [[ -f "$target_path" ]]; then
+    grep -qE "$fn_pattern" "$target_path"
+  elif [[ -d "$target_path" ]]; then
+    grep -R -qE --include='*.rs' "$fn_pattern" "$target_path"
+  else
+    return 1
+  fi
+}
+
+test_reference_module_filter_exists() {
+  local test_name="$1"
+  shift
+  local fn_name="${test_name##*::}"
+  local module_path="${test_name%::*}"
+  local module_rel="${module_path//:://}"
+  local target_path
+  local candidate
+  local module_dir
+  local module_file_seen=0
+  local -A seen_candidates=()
+
+  for target_path in "$@"; do
+    if [[ "$target_path" == tests/*.rs ]]; then
+      module_dir="${target_path%.rs}"
+      for candidate in "$module_dir/$module_rel.rs" "$module_dir/$module_rel/mod.rs"; do
+        if [[ -n "${seen_candidates[$candidate]:-}" ]]; then
+          continue
+        fi
+        seen_candidates[$candidate]=1
+        if [[ -f "$candidate" ]]; then
+          module_file_seen=1
+          if test_reference_fn_exists_in_path "$fn_name" "$candidate"; then
+            return 0
+          fi
+        fi
+      done
+    elif [[ -d "$target_path" ]]; then
+      for candidate in "$target_path/$module_rel.rs" "$target_path/$module_rel/mod.rs"; do
+        if [[ -n "${seen_candidates[$candidate]:-}" ]]; then
+          continue
+        fi
+        seen_candidates[$candidate]=1
+        if [[ -f "$candidate" ]]; then
+          module_file_seen=1
+          if test_reference_fn_exists_in_path "$fn_name" "$candidate"; then
+            return 0
+          fi
+        fi
+      done
+    fi
+  done
+
+  if [[ "$module_file_seen" -eq 1 ]]; then
+    return 1
+  fi
+
+  local first_module="${module_path%%::*}"
+  local inline_mod_pattern="^[[:space:]]*(pub[[:space:]]+)?mod[[:space:]]+$first_module[[:space:]]*\\{"
+  for target_path in "$@"; do
+    if [[ -f "$target_path" ]] \
+      && grep -qE "$inline_mod_pattern" "$target_path" \
+      && test_reference_fn_exists_in_path "$fn_name" "$target_path"; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 test_reference_filter_exists() {
   local test_name="$1"
   shift
-  local fn_pattern="^[[:space:]]*(pub[[:space:]]+)?(async[[:space:]]+)?fn[[:space:]]+$test_name[[:space:]]*\\("
+  local fn_name="${test_name##*::}"
+  local cache_key=""
   local target_path
+
+  if [[ "$test_name" == *::* ]]; then
+    test_reference_module_filter_exists "$test_name" "$@"
+    return
+  fi
+
+  for target_path in "$@"; do
+    cache_key+="${target_path}"$'\034'
+  done
+
+  if [[ -z "${test_reference_function_cache[$cache_key]+set}" ]]; then
+    local fn_pattern="^[[:space:]]*(pub[[:space:]]+)?(async[[:space:]]+)?fn[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\\("
+    local -a scan_paths=()
+    for target_path in "$@"; do
+      if [[ -e "$target_path" ]]; then
+        scan_paths+=("$target_path")
+      fi
+      if [[ "$target_path" == tests/*.rs ]]; then
+        local sibling_dir="${target_path%.rs}"
+        if [[ -d "$sibling_dir" ]]; then
+          scan_paths+=("$sibling_dir")
+        fi
+      fi
+    done
+    if [[ "${#scan_paths[@]}" -eq 0 ]]; then
+      test_reference_function_cache["$cache_key"]=""
+    else
+      test_reference_function_cache["$cache_key"]="$(grep -RhoE --include='*.rs' "$fn_pattern" "${scan_paths[@]}" \
+        | sed -E 's/^[[:space:]]*(pub[[:space:]]+)?(async[[:space:]]+)?fn[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*\(.*/\3/' \
+        || true)"
+    fi
+  fi
+
+  case $'\n'"${test_reference_function_cache[$cache_key]}"$'\n' in
+    *$'\n'"$fn_name"$'\n'*)
+      return 0
+      ;;
+  esac
+
   for target_path in "$@"; do
     if [[ -f "$target_path" ]]; then
-      if grep -qE "$fn_pattern" "$target_path"; then
+      if test_reference_fn_exists_in_path "$fn_name" "$target_path"; then
         return 0
       fi
       if [[ "$target_path" == tests/*.rs ]]; then
         local sibling_dir="${target_path%.rs}"
-        if [[ -d "$sibling_dir" ]] && grep -R -qE --include='*.rs' "$fn_pattern" "$sibling_dir"; then
+        if [[ -d "$sibling_dir" ]] && test_reference_fn_exists_in_path "$fn_name" "$sibling_dir"; then
           return 0
         fi
       fi
     elif [[ -d "$target_path" ]]; then
-      if grep -R -qE --include='*.rs' "$fn_pattern" "$target_path"; then
+      if test_reference_fn_exists_in_path "$fn_name" "$target_path"; then
         return 0
       fi
     fi
@@ -594,6 +763,7 @@ perf_pareas_source_sha256_output_path=
 perf_pareas_binary_sha256_output_path=
 perf_pareas_output_path=
 perf_pareas_stdout_path=
+perf_pareas_vram_output_path=
 
 ceil_ms_to_seconds() {
   local milliseconds="$1"
@@ -606,7 +776,7 @@ join_by_comma() {
 }
 
 parse_perf_checkpoint_lines_env() {
-  local raw="${LANIUS_PERF_CHECKPOINT_LINES:-5000,10000,20000}"
+  local raw="${LANIUS_PERF_CHECKPOINT_LINES:-5000}"
   local checkpoint
   local canonical_checkpoint
   local previous_checkpoint=0
@@ -630,8 +800,8 @@ parse_perf_checkpoint_lines_env() {
       env_error "LANIUS_PERF_CHECKPOINT_LINES contains zero; checkpoints must be greater than zero"
       continue
     fi
-    if (( canonical_checkpoint > 20000 )) && ! is_truthy "${LANIUS_ALLOW_LARGE_GENERATED_TESTS:-}"; then
-      env_error "LANIUS_PERF_CHECKPOINT_LINES checkpoint $canonical_checkpoint exceeds the default guardrail 20000; set LANIUS_ALLOW_LARGE_GENERATED_TESTS=1 for an intentional larger measurement"
+    if (( canonical_checkpoint > 5000 )) && ! is_truthy "${LANIUS_ALLOW_LARGE_GENERATED_TESTS:-}"; then
+      env_error "LANIUS_PERF_CHECKPOINT_LINES checkpoint $canonical_checkpoint exceeds the default guardrail 5000; set LANIUS_ALLOW_LARGE_GENERATED_TESTS=1 for an intentional larger measurement"
       continue
     fi
     if [[ "$seen" == *",$canonical_checkpoint,"* ]]; then
@@ -673,7 +843,7 @@ prepare_perf_measurement_plan_values() {
     perf_lines \
     LANIUS_PERF_LINES \
     5000 \
-    20000 \
+    5000 \
     LANIUS_ALLOW_LARGE_GENERATED_TESTS \
     "performance/VRAM line count" || true
   bounded_positive_integer_env_value \
@@ -772,6 +942,10 @@ prepare_perf_measurement_plan_values() {
     perf_pareas_stdout_path \
     LANIUS_PAREAS_STDOUT_PATH \
     "target/lanius-measurements/pareas-${perf_lines}l.stdout.txt" || true
+  path_env_value \
+    perf_pareas_vram_output_path \
+    LANIUS_PAREAS_VRAM_OUTPUT_PATH \
+    "target/lanius-measurements/pareas-${perf_lines}l.vram.csv" || true
 
   if [[ "$env_errors" -gt "$errors_before" ]]; then
     return 1
@@ -956,12 +1130,21 @@ pareas_stdout_path_for_line() {
   fi
 }
 
+pareas_vram_path_for_line() {
+  local line_count="$1"
+  if [[ "$line_count" == "$perf_lines" ]]; then
+    printf '%s\n' "$perf_pareas_vram_output_path"
+  else
+    printf 'target/lanius-measurements/pareas-%sl.vram.csv\n' "$line_count"
+  fi
+}
+
 measurement_required_artifacts() {
   printf '%s\n' 'lanius_stdout,perfetto_trace,readback_summary,vram_csv,source_replay,source_sha256,bench_binary_sha256,hardware_identity,command_environment,command_status,responsiveness_probe,resource_usage,measurement_summary'
 }
 
 measurement_optional_comparison_artifacts() {
-  printf '%s\n' 'pareas_source,pareas_source_sha256,pareas_binary_sha256,pareas_output,pareas_stdout'
+  printf '%s\n' 'pareas_source,pareas_source_sha256,pareas_binary_sha256,pareas_output,pareas_stdout,pareas_vram_csv'
 }
 
 measurement_artifact_manifest_schema() {
@@ -969,23 +1152,81 @@ measurement_artifact_manifest_schema() {
 }
 
 measurement_required_artifact_manifest_fields() {
-  printf '%s\n' 'checkpoint,name,required,path,producer,status_field,status_artifact,claim,claim_source,claim_fields'
+  printf '%s\n' 'checkpoint,name,required,path,producer,status_field,status_artifact,claim,claim_source,claim_fields,claim_boundary'
 }
 
 measurement_timing_policy() {
   printf '%s\n' 'compile-latency-claims-use-benchmark-best-ms-wall-time-is-provenance'
 }
 
+measurement_scaffold_evidence_status() {
+  printf '%s\n' 'no-run-plan-not-local-performance-evidence'
+}
+
 measurement_cold_start_policy() {
   printf '%s\n' 'excluded-from-claimable-compile-latency-captured-as-wrapper-wall-time'
+}
+
+measurement_cold_gpu_pipeline_init_policy() {
+  printf '%s\n' 'cold-gpu-pipeline-init-is-provenance-only-excluded-from-steady-compile-and-readback-claims'
 }
 
 measurement_compile_latency_claim_source() {
   printf '%s\n' 'benchmark-stdout-best-ms-local-run-only'
 }
 
+measurement_steady_compile_latency_claim_source() {
+  printf '%s\n' 'benchmark-stdout-best-ms-local-run-only-excludes-cold-gpu-pipeline-init'
+}
+
+measurement_steady_readback_claim_source() {
+  printf '%s\n' 'readback-summary-host-readback-spans-local-run-only-excludes-cold-gpu-pipeline-init'
+}
+
 measurement_runtime_validation_policy() {
   printf '%s\n' 'validate-output-only-not-runtime-performance-claim'
+}
+
+measurement_workload_shape_policy() {
+  printf '%s\n' 'single-generated-workload-is-checkpoint-local-not-general-language-performance'
+}
+
+measurement_workload_shape_scope() {
+  printf '%s\n' 'line-count-source-phase-target-seed-binary-hardware-only'
+}
+
+measurement_workload_generalization_status() {
+  printf '%s\n' 'not-generalizable'
+}
+
+measurement_workload_generalization_blockers() {
+  printf '%s\n' 'multi-shape-local-artifacts-required,long-function-and-wide-tree-shape-coverage-required'
+}
+
+measurement_link_artifact_evidence_policy() {
+  printf '%s\n' 'production-claims-require-object-interface-partial-link-artifacts'
+}
+
+measurement_link_artifact_evidence_schema() {
+  printf '%s\n' 'lanius.link-artifact-evidence.v1'
+}
+
+measurement_link_artifact_required_evidence_classes() {
+  printf '%s\n' 'library_interface_artifacts,codegen_object_artifacts,partial_link_artifacts,linked_output_artifact'
+}
+
+measurement_link_artifact_evidence_status() {
+  printf '%s\n' 'not-artifact-backed'
+}
+
+measurement_link_artifact_claim_blockers() {
+  printf '%s\n' 'object_interface_partial_link_artifacts_required'
+}
+
+measurement_link_artifact_claim_blocker() {
+  printf 'link_artifacts:%s:%s\n' \
+    "$(measurement_link_artifact_evidence_status)" \
+    "$(measurement_link_artifact_claim_blockers)"
 }
 
 measurement_claim_provenance_schema() {
@@ -997,7 +1238,7 @@ measurement_baseline_separation_schema() {
 }
 
 measurement_required_claim_provenance_fields() {
-  printf '%s\n' 'claim_provenance_schema,baseline_separation_schema,paper_baseline_policy,paper_baseline_numbers_status,local_evidence_status_policy,local_performance_claim_policy,local_performance_claim_source,local_performance_claim_status,local_performance_claim_blockers,local_vram_claim_source,local_pareas_claim_source,scaling_claim_policy,scaling_claim_source,scaling_claim_status,scaling_claim_blockers,paper_pass_order_schema,paper_pass_order_source,paper_pass_order,paper_pass_alignment_policy,paper_pass_alignment_status,paper_pass_alignment_blockers'
+  printf '%s\n' 'claim_provenance_schema,baseline_separation_schema,paper_baseline_policy,paper_baseline_numbers_status,paper_baseline_claim_status,local_evidence_status_policy,cold_gpu_pipeline_init_policy,steady_compile_latency_claim_source,steady_readback_claim_source,runtime_validation_policy,workload_shape_policy,workload_shape_scope,workload_generalization_status,workload_generalization_blockers,link_artifact_evidence_policy,link_artifact_evidence_schema,link_artifact_required_evidence_classes,link_artifact_evidence_status,link_artifact_claim_blockers,local_performance_claim_policy,local_performance_claim_source,local_performance_claim_exclusions,local_performance_claim_status,local_performance_claim_blockers,local_vram_claim_source,local_pareas_claim_source,scaling_claim_policy,scaling_claim_source,scaling_claim_status,scaling_claim_blockers,paper_pass_order_schema,paper_pass_order_source,paper_pass_order,paper_pass_alignment_policy,paper_pass_alignment_status,paper_pass_alignment_blockers'
 }
 
 measurement_paper_baseline_policy() {
@@ -1008,20 +1249,30 @@ measurement_paper_baseline_numbers_status() {
   printf '%s\n' 'reference-only-not-ingested'
 }
 
+measurement_paper_baseline_claim_status() {
+  printf '%s\n' 'not-local-performance-evidence'
+}
+
 measurement_local_evidence_status_policy() {
   printf '%s\n' 'claimable-only-from-fresh-local-artifacts'
 }
 
 measurement_local_performance_claim_policy() {
-  printf '%s\n' 'blocked-until-pass-contracts-claimable-and-local-artifacts-complete'
+  printf '%s\n' 'blocked-until-local-artifacts-link-artifacts-behavioral-pass-contracts-and-claim-boundaries-are-complete'
 }
 
 measurement_local_performance_claim_source() {
   printf '%s\n' 'benchmark-stdout-best-ms-plus-local-artifact-freshness'
 }
 
+measurement_local_performance_claim_exclusions() {
+  printf '%s\n' 'no-run-measurement-scaffold,cold-gpu-pipeline-init,wrapper-wall-time,paper-numbers,paper-pareas-reference-numbers,pareas-wall-time,pareas-wall-ratio,manual-estimates'
+}
+
 measurement_local_performance_claim_status() {
-  if [[ "$(measurement_pass_contract_readiness_status)" == "claimable" ]]; then
+  if [[ "$(measurement_pass_contract_readiness_status)" == "claimable" &&
+    "$(measurement_link_artifact_evidence_status)" == "artifact-backed" &&
+    "$(measurement_shader_loop_pareas_pass_gate_status)" == "ok" ]]; then
     printf '%s\n' 'artifact-dependent'
   else
     printf '%s\n' 'blocked'
@@ -1029,16 +1280,18 @@ measurement_local_performance_claim_status() {
 }
 
 measurement_local_performance_claim_blockers() {
-  if [[ "$(measurement_pass_contract_readiness_status)" == "claimable" ]]; then
-    printf '%s\n' 'local_artifacts_and_repeatability_must_be_complete'
-  else
-    printf 'pass_contracts:%s:loop_%s:fallback_%s:claim_%s:%s\n' \
-      "$(measurement_pass_contract_readiness_status)" \
-      "$(measurement_pass_contract_loop_status)" \
-      "$(measurement_pass_contract_fallback_status)" \
-      "$(measurement_pass_contract_claim_status)" \
-      "$(measurement_pass_contract_claim_blockers)"
+  local artifact_blocker=local_artifacts_and_repeatability_must_be_complete
+  local blockers="$artifact_blocker"
+  if [[ "$(measurement_link_artifact_evidence_status)" != "artifact-backed" ]]; then
+    blockers="${blockers},$(measurement_link_artifact_claim_blocker)"
   fi
+  if [[ "$(measurement_shader_loop_pareas_pass_gate_status)" != "ok" ]]; then
+    blockers="${blockers},shader_loop_pareas_pass_gate:$(measurement_shader_loop_pareas_pass_gate_status):$(measurement_shader_loop_pareas_pass_gate_blockers)"
+  fi
+  if [[ "$(measurement_pass_contract_readiness_status)" != "claimable" ]]; then
+    blockers="${blockers},$(measurement_pass_contract_claim_blocker)"
+  fi
+  printf '%s\n' "$blockers"
 }
 
 measurement_local_vram_claim_source() {
@@ -1046,7 +1299,7 @@ measurement_local_vram_claim_source() {
 }
 
 measurement_local_pareas_claim_source() {
-  printf '%s\n' 'local-pareas-source-output-stdout-compiler-hash'
+  printf '%s\n' 'local-pareas-source-output-stdout-compiler-hash-provenance-only'
 }
 
 measurement_scaling_claim_source() {
@@ -1054,7 +1307,7 @@ measurement_scaling_claim_source() {
 }
 
 measurement_scaling_claim_policy() {
-  printf '%s\n' 'no-scaling-claims-while-pass-contracts-or-paper-alignment-blocked'
+  printf '%s\n' 'no-scaling-claims-without-local-artifacts-behavior-facing-pass-contracts-and-claimable-boundaries'
 }
 
 measurement_scaling_claim_status() {
@@ -1063,17 +1316,26 @@ measurement_scaling_claim_status() {
 
 measurement_scaling_claim_blocker_list() {
   local blockers=multi_checkpoint_rollup_required
+  if [[ "$(measurement_link_artifact_evidence_status)" != "artifact-backed" ]]; then
+    blockers="$(measurement_link_artifact_claim_blocker),${blockers}"
+  fi
+  if [[ "$(measurement_pass_contract_readiness_status)" != "claimable" ]]; then
+    blockers="$(measurement_pass_contract_claim_blocker),${blockers}"
+  fi
   if [[ "$(measurement_paper_pass_alignment_status)" != "claimable" ]]; then
     blockers="paper_pass_alignment:$(measurement_paper_pass_alignment_status):$(measurement_paper_pass_alignment_blockers),${blockers}"
-  elif [[ "$(measurement_pass_contract_readiness_status)" != "claimable" ]]; then
-    blockers="pass_contracts:$(measurement_pass_contract_readiness_status):loop_$(measurement_pass_contract_loop_status):fallback_$(measurement_pass_contract_fallback_status):claim_$(measurement_pass_contract_claim_status):$(measurement_pass_contract_claim_blockers),${blockers}"
+  fi
+  if [[ "$(measurement_shader_loop_pareas_pass_gate_status)" != "ok" ]]; then
+    blockers="shader_loop_pareas_pass_gate:$(measurement_shader_loop_pareas_pass_gate_status):$(measurement_shader_loop_pareas_pass_gate_blockers),${blockers}"
   fi
   printf '%s\n' "$blockers"
 }
 
 measurement_scaling_claim_blockers() {
   if [[ "$(measurement_pass_contract_readiness_status)" == "claimable" &&
-    "$(measurement_paper_pass_alignment_status)" == "claimable" ]]; then
+    "$(measurement_paper_pass_alignment_status)" == "claimable" &&
+    "$(measurement_link_artifact_evidence_status)" == "artifact-backed" &&
+    "$(measurement_shader_loop_pareas_pass_gate_status)" == "ok" ]]; then
     printf '%s\n' 'multi_checkpoint_rollup_required'
   else
     printf '%s\n' "$(measurement_scaling_claim_blocker_list)"
@@ -1085,7 +1347,7 @@ measurement_paper_pass_order_schema() {
 }
 
 measurement_paper_pass_order_source() {
-  printf '%s\n' 'docs/CompilationOnTheGPU.md:figure-1;docs/ParallelCodeGeneration.md:chapter-3'
+  printf '%s\n' 'docs/CompilationOnTheGPU.md:figure-1;docs/ParallelLLParsing.md:parallel-parser-summaries;docs/ParallelLexingParsingSemanticAnalysis.md:parallel-frontend-relations;docs/ParallelCodeGeneration.md:chapter-3;docs/PAREAS_PASS_CONTRACT.md:lanius-gate'
 }
 
 measurement_paper_pass_order() {
@@ -1101,12 +1363,11 @@ measurement_paper_pass_alignment_status() {
 }
 
 measurement_paper_pass_alignment_blockers() {
-  printf 'optimization_contract_narrow_single_pass_dead_values,pass_contracts:%s:loop_%s:fallback_%s:claim_%s:%s\n' \
-    "$(measurement_pass_contract_readiness_status)" \
-    "$(measurement_pass_contract_loop_status)" \
-    "$(measurement_pass_contract_fallback_status)" \
-    "$(measurement_pass_contract_claim_status)" \
-    "$(measurement_pass_contract_claim_blockers)"
+  local blockers=optimization_contract_narrow_single_pass_dead_values
+  if [[ "$(measurement_pass_contract_readiness_status)" != "claimable" ]]; then
+    blockers="${blockers},$(measurement_pass_contract_claim_blocker)"
+  fi
+  printf '%s\n' "$blockers"
 }
 
 measurement_parallel_pass_contract_schema() {
@@ -1154,13 +1415,1530 @@ measurement_pass_contract_claim_status() {
 }
 
 measurement_pass_contract_claim_blockers() {
-  printf '%s\n' 'bounded_pass_loops,fail_closed_passes'
+  local blockers=bounded_pass_loops,fail_closed_passes
+  local shader_loop_blocker
+  shader_loop_blocker="$(measurement_shader_loop_audit_blocker)"
+  if [[ "$shader_loop_blocker" != "none" ]]; then
+    blockers="${blockers},${shader_loop_blocker}"
+  fi
+  local shader_loop_local_review_blocker
+  shader_loop_local_review_blocker="$(measurement_shader_loop_audit_local_review_blocker)"
+  if [[ "$shader_loop_local_review_blocker" != "none" ]]; then
+    blockers="${blockers},${shader_loop_local_review_blocker}"
+  fi
+  local shader_loop_source_sized_symbolic_cap_blocker
+  shader_loop_source_sized_symbolic_cap_blocker="$(measurement_shader_loop_audit_source_sized_symbolic_cap_blocker)"
+  if [[ "$shader_loop_source_sized_symbolic_cap_blocker" != "none" ]]; then
+    blockers="${blockers},${shader_loop_source_sized_symbolic_cap_blocker}"
+  fi
+  if [[ "$(measurement_shader_loop_pareas_pass_gate_status)" != "ok" ]]; then
+    blockers="${blockers},shader_loop_pareas_pass_gate:$(measurement_shader_loop_pareas_pass_gate_status):$(measurement_shader_loop_pareas_pass_gate_blockers)"
+  fi
+  printf '%s\n' "$blockers"
+}
+
+measurement_pass_contract_claim_blocker() {
+  printf 'pass_contracts:%s:loop_%s:fallback_%s:claim_%s:%s\n' \
+    "$(measurement_pass_contract_readiness_status)" \
+    "$(measurement_pass_contract_loop_status)" \
+    "$(measurement_pass_contract_fallback_status)" \
+    "$(measurement_pass_contract_claim_status)" \
+    "$(measurement_pass_contract_claim_blockers)"
+}
+
+measurement_shader_loop_audit_command() {
+  printf '%s\n' 'tools/shader_loop_audit.sh'
+}
+
+measurement_shader_loop_audit_policy() {
+  printf '%s\n' 'no-run-shader-loop-inventory-separates-paper-pass-blockers-source-sized-symbolic-caps-local-review-routes-fixed-guards-x86-codegen-fixed-loops-wasm-codegen-review-blockers-raw-for-unroll-attrs-suspicious-loop-attrs-and-pareas-claim-boundary'
+}
+
+prepare_measurement_shader_loop_audit_summary_cache() {
+  if [[ "$measurement_shader_loop_audit_summary_cached" -eq 1 ]]; then
+    return
+  fi
+
+  local audit_tool
+  audit_tool="$(measurement_shader_loop_audit_command)"
+  if [[ ! -x "$audit_tool" ]]; then
+    measurement_shader_loop_audit_summary_value='unavailable:tool-not-executable'
+    measurement_shader_loop_audit_summary_cached=1
+    return
+  fi
+
+  local PATH="/usr/bin:/bin:${PATH:-}"
+  local audit_output
+  if ! audit_output="$(/bin/bash "$audit_tool" --summary-only 2>/dev/null)"; then
+    measurement_shader_loop_audit_summary_value='unavailable:tool-failed'
+    measurement_shader_loop_audit_summary_cached=1
+    return
+  fi
+
+  local fixed_bound
+  local fixed_bound_guard
+  local data_dependent
+  local unknown_bound
+  local while_loop
+  local review_required
+  local codegen_review_required
+  local wasm_codegen_review_required
+  local x86_codegen_review_required
+  local wasm_codegen_fixed_bound
+  local x86_codegen_fixed_bound
+  local large_fixed_bound
+  local codegen_large_fixed_bound
+  local loop_attribute
+  local unroll_attribute
+  local suspicious_loop_attribute
+  local suspicious_unroll_attribute
+  local raw_for_loop
+  local raw_for_review_required
+  local paper_pass_blocker
+  local paper_pass_local_review
+  local record_map_prefix_scan_scatter
+  local source_record_partition_prefix_scan
+  local source_sized_symbolic_cap
+  local source_sized_symbolic_cap_names
+  local top_component_paper_pass_blocker
+  local paper_pass_blocker_by_component
+  local paper_pass_blocker_by_rewrite
+  local paper_pass_blocker_by_component_route
+  local paper_pass_local_review_by_component
+  local paper_pass_local_review_by_component_route
+  local source_sized_symbolic_cap_by_component
+  local source_sized_symbolic_cap_route
+  local source_sized_symbolic_cap_route_by_component
+  local source_sized_symbolic_cap_path_route
+  local source_sized_loop_rewrite_route
+  local source_sized_loop_rewrite_route_by_component
+  local audit_evidence_proof
+  local audit_evidence_blocker
+  local audit_evidence_local_review
+  local audit_evidence_proof_pass_primitive_shape_only
+  local audit_evidence_blocker_source_sized_legacy_fallback
+  local audit_evidence_blocker_source_sized_symbolic_cap
+  local audit_evidence_local_review_bounded_helper
+  local performance_scaling_or_pareas_parity_audit_debt
+  local performance_scaling_or_pareas_parity_audit_blocker
+  local performance_scaling_or_pareas_parity_local_review
+  local behavior_facing_pass_evidence
+  local rewrite_routes_not_source_grep_evidence
+  local rust_product_source_inspection_not_pass_evidence
+  local audit_proof_is_pass_shape_only
+  local audit_blockers_and_local_review_are_not_performance_evidence
+  local audit_debt_blocks_performance_and_pareas_parity_claims
+  local zero_paper_pass_blocker_not_pass_contract_proof
+  local no_run_not_performance_evidence
+  local no_run_not_pareas_claim_evidence
+  fixed_bound="$(shader_loop_summary_count "$audit_output" classification fixed-bound)"
+  fixed_bound_guard="$(shader_loop_summary_count "$audit_output" classification fixed-bound-guard)"
+  data_dependent="$(shader_loop_summary_count "$audit_output" classification data-dependent)"
+  unknown_bound="$(shader_loop_summary_count "$audit_output" classification unknown-bound)"
+  while_loop="$(shader_loop_summary_count "$audit_output" classification while-loop)"
+  review_required="$(shader_loop_summary_count "$audit_output" review review-required)"
+  codegen_review_required="$(shader_loop_summary_count "$audit_output" review codegen-review-required)"
+  wasm_codegen_review_required="$(shader_loop_summary_count "$audit_output" review wasm-codegen-review-required)"
+  x86_codegen_review_required="$(shader_loop_summary_count "$audit_output" review x86-codegen-review-required)"
+  wasm_codegen_fixed_bound="$(shader_loop_summary_count "$audit_output" review wasm-codegen-fixed-bound)"
+  x86_codegen_fixed_bound="$(shader_loop_summary_count "$audit_output" review x86-codegen-fixed-bound)"
+  large_fixed_bound="$(shader_loop_summary_count "$audit_output" review large-fixed-bound)"
+  codegen_large_fixed_bound="$(shader_loop_summary_count "$audit_output" review codegen-large-fixed-bound)"
+  loop_attribute="$(shader_loop_summary_count "$audit_output" review loop-attribute)"
+  unroll_attribute="$(shader_loop_summary_count "$audit_output" review unroll-attribute)"
+  suspicious_loop_attribute="$(shader_loop_summary_count "$audit_output" review suspicious-loop-attribute)"
+  suspicious_unroll_attribute="$(shader_loop_summary_count "$audit_output" review suspicious-unroll-attribute)"
+  raw_for_loop="$(shader_loop_summary_count "$audit_output" review raw-for-loop)"
+  raw_for_review_required="$(shader_loop_summary_count "$audit_output" review raw-for-review-required)"
+  paper_pass_blocker="$(shader_loop_summary_count "$audit_output" pass-contract paper-pass-blocker)"
+  paper_pass_local_review="$(shader_loop_summary_count "$audit_output" pass-contract paper-pass-local-review)"
+  record_map_prefix_scan_scatter="$(shader_loop_summary_count_or_zero "$audit_output" paper-pass record-map-prefix-scan-scatter)"
+  source_record_partition_prefix_scan="$(shader_loop_summary_count_or_zero "$audit_output" paper-pass source-record-partition-prefix-scan)"
+  source_sized_symbolic_cap="$(shader_loop_summary_count "$audit_output" review source-sized-symbolic-cap)"
+  source_sized_symbolic_cap_names="$(shader_loop_summary_source_sized_symbolic_cap_names "$audit_output")"
+  top_component_paper_pass_blocker="$(shader_loop_summary_top_component_paper_pass_blocker "$audit_output")"
+  paper_pass_blocker_by_component="$(shader_loop_summary_paper_pass_blocker_by_component "$audit_output")"
+  paper_pass_blocker_by_rewrite="$(shader_loop_summary_paper_pass_blocker_by_rewrite "$audit_output")"
+  paper_pass_blocker_by_component_route="$(shader_loop_summary_paper_pass_blocker_by_component_route "$audit_output")"
+  paper_pass_local_review_by_component="$(shader_loop_summary_paper_pass_local_review_by_component "$audit_output")"
+  paper_pass_local_review_by_component_route="$(shader_loop_summary_paper_pass_local_review_by_component_route "$audit_output")"
+  source_sized_symbolic_cap_by_component="$(shader_loop_summary_source_sized_symbolic_cap_by_component "$audit_output")"
+  source_sized_symbolic_cap_route="$(shader_loop_summary_source_sized_symbolic_cap_route "$audit_output")"
+  source_sized_symbolic_cap_route_by_component="$(shader_loop_summary_source_sized_symbolic_cap_route_by_component "$audit_output")"
+  source_sized_symbolic_cap_path_route="$(shader_loop_summary_source_sized_symbolic_cap_path_route "$audit_output")"
+  source_sized_loop_rewrite_route="$(shader_loop_summary_source_sized_rewrite_route "$audit_output")"
+  source_sized_loop_rewrite_route_by_component="$(shader_loop_summary_source_sized_rewrite_route_by_component "$audit_output")"
+  audit_evidence_proof="$(shader_loop_summary_count "$audit_output" audit-evidence-role proof)"
+  audit_evidence_blocker="$(shader_loop_summary_count "$audit_output" audit-evidence-role blocker)"
+  audit_evidence_local_review="$(shader_loop_summary_count "$audit_output" audit-evidence-role local-review)"
+  audit_evidence_proof_pass_primitive_shape_only="$(shader_loop_summary_count "$audit_output" audit-evidence proof-pass-primitive-shape-only)"
+  audit_evidence_blocker_source_sized_legacy_fallback="$(shader_loop_summary_count_or_zero "$audit_output" audit-evidence blocker-source-sized-legacy-fallback)"
+  audit_evidence_blocker_source_sized_symbolic_cap="$(shader_loop_summary_count_or_zero "$audit_output" audit-evidence blocker-source-sized-symbolic-cap)"
+  audit_evidence_local_review_bounded_helper="$(shader_loop_summary_count "$audit_output" audit-evidence local-review-bounded-helper)"
+  performance_scaling_or_pareas_parity_audit_debt="$(shader_loop_summary_count "$audit_output" claim-blocker performance-scaling-or-pareas-parity-audit-debt)"
+  performance_scaling_or_pareas_parity_audit_blocker="$(shader_loop_summary_count "$audit_output" claim-blocker performance-scaling-or-pareas-parity-audit-blocker)"
+  performance_scaling_or_pareas_parity_local_review="$(shader_loop_summary_count "$audit_output" claim-blocker performance-scaling-or-pareas-parity-local-review)"
+  behavior_facing_pass_evidence="$(shader_loop_summary_count "$audit_output" evidence-policy behavior-facing-pass-evidence)"
+  rewrite_routes_not_source_grep_evidence="$(shader_loop_summary_count "$audit_output" evidence-policy rewrite-routes-not-source-grep-evidence)"
+  rust_product_source_inspection_not_pass_evidence="$(shader_loop_summary_count "$audit_output" evidence-policy rust-product-source-inspection-not-pass-evidence)"
+  audit_proof_is_pass_shape_only="$(shader_loop_summary_count "$audit_output" evidence-policy audit-proof-is-pass-shape-only)"
+  audit_blockers_and_local_review_are_not_performance_evidence="$(shader_loop_summary_count "$audit_output" evidence-policy audit-blockers-and-local-review-are-not-performance-evidence)"
+  audit_debt_blocks_performance_and_pareas_parity_claims="$(shader_loop_summary_count "$audit_output" evidence-policy audit-debt-blocks-performance-and-pareas-parity-claims)"
+  zero_paper_pass_blocker_not_pass_contract_proof="$(shader_loop_summary_count "$audit_output" evidence-policy zero-paper-pass-blocker-not-pass-contract-proof)"
+  no_run_not_performance_evidence="$(shader_loop_summary_count "$audit_output" evidence-policy no-run-not-performance-evidence)"
+  no_run_not_pareas_claim_evidence="$(shader_loop_summary_count "$audit_output" evidence-policy no-run-not-pareas-claim-evidence)"
+  local count
+  for count in \
+    "$fixed_bound" \
+    "$fixed_bound_guard" \
+    "$data_dependent" \
+    "$unknown_bound" \
+    "$while_loop" \
+    "$review_required" \
+    "$codegen_review_required" \
+    "$wasm_codegen_review_required" \
+    "$x86_codegen_review_required" \
+    "$wasm_codegen_fixed_bound" \
+    "$x86_codegen_fixed_bound" \
+    "$large_fixed_bound" \
+    "$codegen_large_fixed_bound" \
+    "$loop_attribute" \
+    "$unroll_attribute" \
+    "$suspicious_loop_attribute" \
+    "$suspicious_unroll_attribute" \
+    "$raw_for_loop" \
+    "$raw_for_review_required" \
+    "$paper_pass_blocker" \
+    "$paper_pass_local_review" \
+    "$record_map_prefix_scan_scatter" \
+    "$source_record_partition_prefix_scan" \
+    "$source_sized_symbolic_cap" \
+    "$audit_evidence_proof" \
+    "$audit_evidence_blocker" \
+    "$audit_evidence_local_review" \
+    "$audit_evidence_proof_pass_primitive_shape_only" \
+    "$audit_evidence_blocker_source_sized_legacy_fallback" \
+    "$audit_evidence_blocker_source_sized_symbolic_cap" \
+    "$audit_evidence_local_review_bounded_helper" \
+    "$performance_scaling_or_pareas_parity_audit_debt" \
+    "$performance_scaling_or_pareas_parity_audit_blocker" \
+    "$performance_scaling_or_pareas_parity_local_review" \
+    "$behavior_facing_pass_evidence" \
+    "$rewrite_routes_not_source_grep_evidence" \
+    "$rust_product_source_inspection_not_pass_evidence" \
+    "$audit_proof_is_pass_shape_only" \
+    "$audit_blockers_and_local_review_are_not_performance_evidence" \
+    "$audit_debt_blocks_performance_and_pareas_parity_claims" \
+    "$zero_paper_pass_blocker_not_pass_contract_proof" \
+    "$no_run_not_performance_evidence" \
+    "$no_run_not_pareas_claim_evidence"; do
+    if [[ ! "$count" =~ ^[0-9]+$ ]]; then
+      measurement_shader_loop_audit_summary_value='unavailable:malformed-summary'
+      measurement_shader_loop_audit_summary_cached=1
+      return
+    fi
+  done
+  if [[ "$behavior_facing_pass_evidence" -ne 1 ||
+    "$rewrite_routes_not_source_grep_evidence" -ne 1 ||
+    "$rust_product_source_inspection_not_pass_evidence" -ne 1 ||
+    "$audit_proof_is_pass_shape_only" -ne 1 ||
+    "$audit_blockers_and_local_review_are_not_performance_evidence" -ne 1 ||
+    "$audit_debt_blocks_performance_and_pareas_parity_claims" -ne 1 ||
+    "$zero_paper_pass_blocker_not_pass_contract_proof" -ne 1 ||
+    "$no_run_not_performance_evidence" -ne 1 ||
+    "$no_run_not_pareas_claim_evidence" -ne 1 ]]; then
+    measurement_shader_loop_audit_summary_value='unavailable:missing-evidence-policy'
+    measurement_shader_loop_audit_summary_cached=1
+    return
+  fi
+  if [[ "$top_component_paper_pass_blocker" != "none" &&
+    ! "$top_component_paper_pass_blocker" =~ ^[A-Za-z0-9_-]+:[A-Za-z0-9_-]+:[0-9]+$ ]]; then
+    measurement_shader_loop_audit_summary_value='unavailable:malformed-summary'
+    measurement_shader_loop_audit_summary_cached=1
+    return
+  fi
+  if ! shader_loop_summary_mix_is_valid "$paper_pass_blocker_by_component"; then
+    measurement_shader_loop_audit_summary_value='unavailable:malformed-summary'
+    measurement_shader_loop_audit_summary_cached=1
+    return
+  fi
+  if ! shader_loop_summary_mix_is_valid "$paper_pass_blocker_by_rewrite"; then
+    measurement_shader_loop_audit_summary_value='unavailable:malformed-summary'
+    measurement_shader_loop_audit_summary_cached=1
+    return
+  fi
+  if ! shader_loop_summary_component_route_count_mix_is_valid "$paper_pass_blocker_by_component_route"; then
+    measurement_shader_loop_audit_summary_value='unavailable:malformed-summary'
+    measurement_shader_loop_audit_summary_cached=1
+    return
+  fi
+  if ! shader_loop_summary_mix_is_valid "$paper_pass_local_review_by_component"; then
+    measurement_shader_loop_audit_summary_value='unavailable:malformed-summary'
+    measurement_shader_loop_audit_summary_cached=1
+    return
+  fi
+  if ! shader_loop_summary_component_route_count_mix_is_valid "$paper_pass_local_review_by_component_route"; then
+    measurement_shader_loop_audit_summary_value='unavailable:malformed-summary'
+    measurement_shader_loop_audit_summary_cached=1
+    return
+  fi
+  if ! shader_loop_summary_mix_is_valid "$source_sized_symbolic_cap_by_component"; then
+    measurement_shader_loop_audit_summary_value='unavailable:malformed-summary'
+    measurement_shader_loop_audit_summary_cached=1
+    return
+  fi
+  if ! shader_loop_summary_mix_is_valid "$source_sized_symbolic_cap_names"; then
+    measurement_shader_loop_audit_summary_value='unavailable:malformed-summary'
+    measurement_shader_loop_audit_summary_cached=1
+    return
+  fi
+  if ! shader_loop_summary_mix_is_valid "$source_sized_symbolic_cap_route"; then
+    measurement_shader_loop_audit_summary_value='unavailable:malformed-summary'
+    measurement_shader_loop_audit_summary_cached=1
+    return
+  fi
+  if ! shader_loop_summary_component_route_count_mix_is_valid "$source_sized_symbolic_cap_route_by_component"; then
+    measurement_shader_loop_audit_summary_value='unavailable:malformed-summary'
+    measurement_shader_loop_audit_summary_cached=1
+    return
+  fi
+  if ! shader_loop_summary_component_cap_path_route_count_mix_is_valid "$source_sized_symbolic_cap_path_route"; then
+    measurement_shader_loop_audit_summary_value='unavailable:malformed-summary'
+    measurement_shader_loop_audit_summary_cached=1
+    return
+  fi
+  if ! shader_loop_summary_route_count_is_valid "$source_sized_loop_rewrite_route"; then
+    measurement_shader_loop_audit_summary_value='unavailable:malformed-summary'
+    measurement_shader_loop_audit_summary_cached=1
+    return
+  fi
+  if ! shader_loop_summary_component_route_count_mix_is_valid "$source_sized_loop_rewrite_route_by_component"; then
+    measurement_shader_loop_audit_summary_value='unavailable:malformed-summary'
+    measurement_shader_loop_audit_summary_cached=1
+    return
+  fi
+  if ! shader_loop_summary_counts_are_consistent "$audit_output"; then
+    measurement_shader_loop_audit_summary_value='unavailable:inconsistent-summary'
+    measurement_shader_loop_audit_summary_cached=1
+    return
+  fi
+  measurement_shader_loop_audit_summary_value="$(printf 'fixed-bound=%s,fixed-bound-guard=%s,data-dependent=%s,unknown-bound=%s,while-loop=%s,codegen-review-required=%s,wasm-codegen-review-required=%s,x86-codegen-review-required=%s,wasm-codegen-fixed-bound=%s,x86-codegen-fixed-bound=%s,large-fixed-bound=%s,codegen-large-fixed-bound=%s,loop-attribute=%s,unroll-attribute=%s,suspicious-loop-attribute=%s,suspicious-unroll-attribute=%s,raw-for-loop=%s,raw-for-review-required=%s,review-required=%s,paper-pass-blocker=%s,paper-pass-local-review=%s,record-map-prefix-scan-scatter=%s,source-record-partition-prefix-scan=%s,source-sized-symbolic-cap=%s,source-sized-symbolic-cap-names=%s,source-sized-symbolic-cap-by-component=%s,source-sized-symbolic-cap-route=%s,source-sized-symbolic-cap-route-by-component=%s,source-sized-symbolic-cap-path-route=%s,top-component-paper-pass-blocker=%s,paper-pass-blocker-by-component=%s,paper-pass-blocker-by-rewrite=%s,paper-pass-blocker-by-component-route=%s,paper-pass-local-review-by-component=%s,paper-pass-local-review-by-component-route=%s,source-sized-loop-rewrite-route=%s,source-sized-loop-rewrite-route-by-component=%s,audit-evidence-proof=%s,audit-evidence-blocker=%s,audit-evidence-local-review=%s,audit-evidence-proof-pass-primitive-shape-only=%s,audit-evidence-blocker-source-sized-legacy-fallback=%s,audit-evidence-blocker-source-sized-symbolic-cap=%s,audit-evidence-local-review-bounded-helper=%s,performance-scaling-or-pareas-parity-audit-debt=%s,performance-scaling-or-pareas-parity-audit-blocker=%s,performance-scaling-or-pareas-parity-local-review=%s,behavior-facing-pass-evidence=%s,rewrite-routes-not-source-grep-evidence=%s,rust-product-source-inspection-not-pass-evidence=%s,audit-proof-is-pass-shape-only=%s,audit-blockers-and-local-review-are-not-performance-evidence=%s,audit-debt-blocks-performance-and-pareas-parity-claims=%s,zero-paper-pass-blocker-not-pass-contract-proof=%s,no-run-not-performance-evidence=%s,no-run-not-pareas-claim-evidence=%s' \
+    "$fixed_bound" \
+    "$fixed_bound_guard" \
+    "$data_dependent" \
+    "$unknown_bound" \
+    "$while_loop" \
+    "$codegen_review_required" \
+    "$wasm_codegen_review_required" \
+    "$x86_codegen_review_required" \
+    "$wasm_codegen_fixed_bound" \
+    "$x86_codegen_fixed_bound" \
+    "$large_fixed_bound" \
+    "$codegen_large_fixed_bound" \
+    "$loop_attribute" \
+    "$unroll_attribute" \
+    "$suspicious_loop_attribute" \
+    "$suspicious_unroll_attribute" \
+    "$raw_for_loop" \
+    "$raw_for_review_required" \
+    "$review_required" \
+    "$paper_pass_blocker" \
+    "$paper_pass_local_review" \
+    "$record_map_prefix_scan_scatter" \
+    "$source_record_partition_prefix_scan" \
+    "$source_sized_symbolic_cap" \
+    "$source_sized_symbolic_cap_names" \
+    "$source_sized_symbolic_cap_by_component" \
+    "$source_sized_symbolic_cap_route" \
+    "$source_sized_symbolic_cap_route_by_component" \
+    "$source_sized_symbolic_cap_path_route" \
+    "$top_component_paper_pass_blocker" \
+    "$paper_pass_blocker_by_component" \
+    "$paper_pass_blocker_by_rewrite" \
+    "$paper_pass_blocker_by_component_route" \
+    "$paper_pass_local_review_by_component" \
+    "$paper_pass_local_review_by_component_route" \
+    "$source_sized_loop_rewrite_route" \
+    "$source_sized_loop_rewrite_route_by_component" \
+    "$audit_evidence_proof" \
+    "$audit_evidence_blocker" \
+    "$audit_evidence_local_review" \
+    "$audit_evidence_proof_pass_primitive_shape_only" \
+    "$audit_evidence_blocker_source_sized_legacy_fallback" \
+    "$audit_evidence_blocker_source_sized_symbolic_cap" \
+    "$audit_evidence_local_review_bounded_helper" \
+    "$performance_scaling_or_pareas_parity_audit_debt" \
+    "$performance_scaling_or_pareas_parity_audit_blocker" \
+    "$performance_scaling_or_pareas_parity_local_review" \
+    "$behavior_facing_pass_evidence" \
+    "$rewrite_routes_not_source_grep_evidence" \
+    "$rust_product_source_inspection_not_pass_evidence" \
+    "$audit_proof_is_pass_shape_only" \
+    "$audit_blockers_and_local_review_are_not_performance_evidence" \
+    "$audit_debt_blocks_performance_and_pareas_parity_claims" \
+    "$zero_paper_pass_blocker_not_pass_contract_proof" \
+    "$no_run_not_performance_evidence" \
+    "$no_run_not_pareas_claim_evidence")"
+  measurement_shader_loop_audit_summary_cached=1
+}
+
+measurement_shader_loop_audit_summary() {
+  prepare_measurement_shader_loop_audit_summary_cache
+  printf '%s\n' "$measurement_shader_loop_audit_summary_value"
+}
+
+measurement_shader_loop_audit_review_required_count() {
+  measurement_shader_loop_audit_summary_field review-required
+}
+
+measurement_shader_loop_audit_paper_pass_blocker_count() {
+  measurement_shader_loop_audit_summary_field paper-pass-blocker
+}
+
+measurement_shader_loop_audit_local_review_count() {
+  measurement_shader_loop_audit_summary_field paper-pass-local-review
+}
+
+measurement_shader_loop_audit_source_sized_symbolic_cap_count() {
+  measurement_shader_loop_audit_summary_field source-sized-symbolic-cap
+}
+
+measurement_shader_loop_audit_source_sized_symbolic_cap_blocker() {
+  local source_sized_symbolic_cap
+  source_sized_symbolic_cap="$(measurement_shader_loop_audit_source_sized_symbolic_cap_count)"
+  if [[ "$source_sized_symbolic_cap" =~ ^[0-9]+$ && "$source_sized_symbolic_cap" -gt 0 ]]; then
+    printf 'shader_loop_audit_source_sized_symbolic_cap_%s\n' "$source_sized_symbolic_cap"
+  else
+    printf '%s\n' none
+  fi
+}
+
+measurement_shader_loop_audit_summary_field() {
+  local field="$1"
+  local summary
+  summary="$(measurement_shader_loop_audit_summary)"
+  case "$summary" in
+    unavailable:*)
+      printf '%s\n' unknown
+      return
+      ;;
+  esac
+
+  local entries=",${summary},"
+  local value="${entries#*,${field}=}"
+  if [[ "$value" == "$entries" ]]; then
+    printf '%s\n' unknown
+    return
+  fi
+  value="${value%%,*}"
+  if [[ "$value" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "$value"
+  else
+    printf '%s\n' unknown
+  fi
+}
+
+measurement_shader_loop_audit_summary_field_text() {
+  local field="$1"
+  local summary
+  summary="$(measurement_shader_loop_audit_summary)"
+  case "$summary" in
+    unavailable:*)
+      printf '%s\n' unknown
+      return
+      ;;
+  esac
+
+  local entries=",${summary},"
+  local value="${entries#*,${field}=}"
+  if [[ "$value" == "$entries" ]]; then
+    printf '%s\n' unknown
+    return
+  fi
+  value="${value%%,*}"
+  if [[ -n "$value" ]]; then
+    printf '%s\n' "$value"
+  else
+    printf '%s\n' unknown
+  fi
+}
+
+measurement_shader_loop_audit_blocker() {
+  local paper_pass_blocker
+  local review_required
+  paper_pass_blocker="$(measurement_shader_loop_audit_paper_pass_blocker_count)"
+  review_required="$(measurement_shader_loop_audit_review_required_count)"
+  if [[ "$paper_pass_blocker" == "unknown" && "$review_required" == "unknown" ]]; then
+    printf '%s\n' 'shader_loop_audit_unavailable'
+  elif [[ "$paper_pass_blocker" =~ ^[0-9]+$ && "$paper_pass_blocker" -gt 0 ]]; then
+    printf 'shader_loop_audit_paper_pass_blocker_%s\n' "$paper_pass_blocker"
+  elif [[ "$review_required" =~ ^[0-9]+$ && "$review_required" -gt 0 ]]; then
+    printf 'shader_loop_audit_review_required_%s\n' "$review_required"
+  else
+    printf '%s\n' none
+  fi
+}
+
+measurement_shader_loop_audit_local_review_blocker() {
+  local local_review
+  local_review="$(measurement_shader_loop_audit_local_review_count)"
+  if [[ "$local_review" =~ ^[0-9]+$ && "$local_review" -gt 0 ]]; then
+    printf 'shader_loop_audit_local_review_%s\n' "$local_review"
+  else
+    printf '%s\n' none
+  fi
+}
+
+measurement_shader_loop_audit_suspicious_loop_attribute_count() {
+  measurement_shader_loop_audit_summary_field suspicious-loop-attribute
+}
+
+measurement_shader_loop_audit_raw_for_review_required_count() {
+  measurement_shader_loop_audit_summary_field raw-for-review-required
+}
+
+measurement_shader_loop_pareas_pass_gate_blockers() {
+  local blockers=
+  local paper_pass_blocker
+  local review_required
+  local source_sized_symbolic_cap
+  local suspicious_loop_attribute
+  local raw_for_review_required
+  paper_pass_blocker="$(measurement_shader_loop_audit_paper_pass_blocker_count)"
+  review_required="$(measurement_shader_loop_audit_review_required_count)"
+  source_sized_symbolic_cap="$(measurement_shader_loop_audit_source_sized_symbolic_cap_count)"
+  suspicious_loop_attribute="$(measurement_shader_loop_audit_suspicious_loop_attribute_count)"
+  raw_for_review_required="$(measurement_shader_loop_audit_raw_for_review_required_count)"
+
+  append_gate_blocker() {
+    if [[ -n "$blockers" ]]; then
+      blockers="${blockers},$1"
+    else
+      blockers="$1"
+    fi
+  }
+
+  if [[ ! "$paper_pass_blocker" =~ ^[0-9]+$ ]]; then
+    append_gate_blocker paper_pass_blocker_unknown
+  elif [[ "$paper_pass_blocker" -gt 0 ]]; then
+    append_gate_blocker "paper_pass_blocker_${paper_pass_blocker}"
+  fi
+  if [[ ! "$review_required" =~ ^[0-9]+$ ]]; then
+    append_gate_blocker review_required_unknown
+  elif [[ "$review_required" -gt 0 ]]; then
+    append_gate_blocker "review_required_${review_required}"
+  fi
+  if [[ ! "$source_sized_symbolic_cap" =~ ^[0-9]+$ ]]; then
+    append_gate_blocker source_sized_symbolic_cap_unknown
+  elif [[ "$source_sized_symbolic_cap" -gt 0 ]]; then
+    append_gate_blocker "source_sized_symbolic_cap_${source_sized_symbolic_cap}"
+  fi
+  if [[ ! "$suspicious_loop_attribute" =~ ^[0-9]+$ ]]; then
+    append_gate_blocker suspicious_loop_attribute_unknown
+  elif [[ "$suspicious_loop_attribute" -gt 0 ]]; then
+    append_gate_blocker "suspicious_loop_attribute_${suspicious_loop_attribute}"
+  fi
+  if [[ ! "$raw_for_review_required" =~ ^[0-9]+$ ]]; then
+    append_gate_blocker raw_for_review_required_unknown
+  elif [[ "$raw_for_review_required" -gt 0 ]]; then
+    append_gate_blocker "raw_for_review_required_${raw_for_review_required}"
+  fi
+
+  if [[ -z "$blockers" ]]; then
+    printf '%s\n' none
+  else
+    printf '%s\n' "$blockers"
+  fi
+}
+
+measurement_shader_loop_pareas_pass_gate_status() {
+  if [[ "$(measurement_shader_loop_pareas_pass_gate_blockers)" == "none" ]]; then
+    printf '%s\n' ok
+  else
+    printf '%s\n' blocked
+  fi
+}
+
+shader_loop_summary_count() {
+  local summary_rows="$1"
+  local group="$2"
+  local name="$3"
+  local kind scope row_group row_name count
+
+  while IFS=$'\t' read -r kind scope row_group row_name count; do
+    if [[ "$kind" == "summary" && "$scope" == "scanned" && "$row_group" == "$group" && "$row_name" == "$name" ]]; then
+      printf '%s\n' "$count"
+      return
+    fi
+  done <<<"$summary_rows"
+
+  printf '%s\n' unknown
+}
+
+shader_loop_summary_count_or_zero() {
+  local summary_rows="$1"
+  local group="$2"
+  local name="$3"
+  local count
+
+  count="$(shader_loop_summary_count "$summary_rows" "$group" "$name")"
+  if [[ "$count" == "unknown" ]]; then
+    printf '%s\n' 0
+  else
+    printf '%s\n' "$count"
+  fi
+}
+
+shader_loop_summary_top_component_paper_pass_blocker() {
+  local summary_rows="$1"
+  local kind scope row_group row_name count
+  local top_name=none
+  local top_count=0
+
+  while IFS=$'\t' read -r kind scope row_group row_name count; do
+    if [[ "$kind" != "summary" || "$scope" != "scanned" || "$row_group" != "component-paper-pass" ]]; then
+      continue
+    fi
+    case "$row_name" in
+      *:bounded-local-helper-review|*:bounded-local-scan-reduce-review)
+        continue
+        ;;
+    esac
+    if [[ ! "$count" =~ ^[0-9]+$ ]]; then
+      printf '%s\n' unknown
+      return
+    fi
+    if (( count > top_count )); then
+      top_count="$count"
+      top_name="$row_name"
+    fi
+  done <<<"$summary_rows"
+
+  if [[ "$top_name" == "none" ]]; then
+    printf '%s\n' none
+  else
+    printf '%s:%s\n' "$top_name" "$top_count"
+  fi
+}
+
+shader_loop_summary_paper_pass_blocker_by_component() {
+  local summary_rows="$1"
+  local kind scope row_group row_name count
+  local component paper_pass
+  local -a components=()
+  local -A totals=()
+
+  while IFS=$'\t' read -r kind scope row_group row_name count; do
+    if [[ "$kind" != "summary" || "$scope" != "scanned" || "$row_group" != "component-paper-pass" ]]; then
+      continue
+    fi
+    case "$row_name" in
+      *:bounded-local-helper-review|*:bounded-local-scan-reduce-review)
+        continue
+        ;;
+    esac
+    if [[ ! "$count" =~ ^[0-9]+$ ]]; then
+      printf '%s\n' unknown
+      return
+    fi
+    component="${row_name%%:*}"
+    paper_pass="${row_name#*:}"
+    if [[ "$component" == "$row_name" || -z "$component" || -z "$paper_pass" ||
+      ! "$component" =~ ^[A-Za-z0-9_-]+$ || ! "$paper_pass" =~ ^[A-Za-z0-9_-]+$ ]]; then
+      printf '%s\n' unknown
+      return
+    fi
+    if [[ -z "${totals[$component]+set}" ]]; then
+      components+=("$component")
+      totals[$component]=0
+    fi
+    totals[$component]=$((totals[$component] + count))
+  done <<<"$summary_rows"
+
+  if [[ "${#components[@]}" -eq 0 ]]; then
+    printf '%s\n' none
+    return
+  fi
+
+  for component in "${components[@]}"; do
+    printf '%s\t%s\n' "${totals[$component]}" "$component"
+  done | LC_ALL=C sort -rn -k1,1 -k2,2 | awk -F'\t' '{ item = $2 ":" $1; out = (out == "" ? item : out ";" item) } END { print out }'
+}
+
+shader_loop_summary_paper_pass_blocker_by_rewrite() {
+  local summary_rows="$1"
+  local kind scope row_group row_name count
+  local -a entries=()
+
+  while IFS=$'\t' read -r kind scope row_group row_name count; do
+    if [[ "$kind" != "summary" || "$scope" != "scanned" || "$row_group" != "paper-pass" ]]; then
+      continue
+    fi
+    case "$row_name" in
+      bounded-local-helper-review|bounded-local-scan-reduce-review)
+        continue
+        ;;
+    esac
+    if [[ ! "$count" =~ ^[0-9]+$ || ! "$row_name" =~ ^[A-Za-z0-9_-]+$ ]]; then
+      printf '%s\n' unknown
+      return
+    fi
+    entries+=("$count"$'\t'"$row_name")
+  done <<<"$summary_rows"
+
+  if [[ "${#entries[@]}" -eq 0 ]]; then
+    printf '%s\n' none
+    return
+  fi
+
+  printf '%s\n' "${entries[@]}" | LC_ALL=C sort -rn -k1,1 -k2,2 | awk -F'\t' '{ item = $2 ":" $1; out = (out == "" ? item : out ";" item) } END { print out }'
+}
+
+shader_loop_summary_component_blockers_by_component() {
+  local summary_rows="$1"
+  local kind scope row_group row_name count
+  local component paper_pass
+  local -a components=()
+  local -A totals=()
+
+  while IFS=$'\t' read -r kind scope row_group row_name count; do
+    if [[ "$kind" != "summary" || "$scope" != "scanned" || "$row_group" != "component-paper-pass-blocker" ]]; then
+      continue
+    fi
+    if [[ ! "$count" =~ ^[0-9]+$ ]]; then
+      printf '%s\n' unknown
+      return
+    fi
+    component="${row_name%%:*}"
+    paper_pass="${row_name#*:}"
+    if [[ "$component" == "$row_name" || -z "$component" || -z "$paper_pass" ||
+      ! "$component" =~ ^[A-Za-z0-9_-]+$ || ! "$paper_pass" =~ ^[A-Za-z0-9_-]+$ ]]; then
+      printf '%s\n' unknown
+      return
+    fi
+    if [[ -z "${totals[$component]+set}" ]]; then
+      components+=("$component")
+      totals[$component]=0
+    fi
+    totals[$component]=$((totals[$component] + count))
+  done <<<"$summary_rows"
+
+  if [[ "${#components[@]}" -eq 0 ]]; then
+    printf '%s\n' none
+    return
+  fi
+
+  for component in "${components[@]}"; do
+    printf '%s\t%s\n' "${totals[$component]}" "$component"
+  done | LC_ALL=C sort -rn -k1,1 -k2,2 | awk -F'\t' '{ item = $2 ":" $1; out = (out == "" ? item : out ";" item) } END { print out }'
+}
+
+shader_loop_summary_component_blockers_by_rewrite() {
+  local summary_rows="$1"
+  local kind scope row_group row_name count
+  local component paper_pass
+  local -a entries=()
+
+  while IFS=$'\t' read -r kind scope row_group row_name count; do
+    if [[ "$kind" != "summary" || "$scope" != "scanned" || "$row_group" != "component-paper-pass-blocker" ]]; then
+      continue
+    fi
+    component="${row_name%%:*}"
+    paper_pass="${row_name#*:}"
+    if [[ "$component" == "$row_name" ||
+      -z "$component" ||
+      -z "$paper_pass" ||
+      ! "$component" =~ ^[A-Za-z0-9_-]+$ ||
+      ! "$paper_pass" =~ ^[A-Za-z0-9_-]+$ ||
+      ! "$count" =~ ^[0-9]+$ ]]; then
+      printf '%s\n' unknown
+      return
+    fi
+    entries+=("$count"$'\t'"$paper_pass")
+  done <<<"$summary_rows"
+
+  if [[ "${#entries[@]}" -eq 0 ]]; then
+    printf '%s\n' none
+    return
+  fi
+
+  printf '%s\n' "${entries[@]}" |
+    awk -F'\t' '{ totals[$2] += $1 } END { for (name in totals) print totals[name] "\t" name }' |
+    LC_ALL=C sort -rn -k1,1 -k2,2 |
+    awk -F'\t' '{ item = $2 ":" $1; out = (out == "" ? item : out ";" item) } END { print out }'
+}
+
+shader_loop_summary_paper_pass_blocker_by_component_route() {
+  local summary_rows="$1"
+  local kind scope row_group row_name count
+  local component route
+  local -a entries=()
+
+  while IFS=$'\t' read -r kind scope row_group row_name count; do
+    if [[ "$kind" != "summary" || "$scope" != "scanned" || "$row_group" != "component-rewrite-route-blocker" ]]; then
+      continue
+    fi
+    component="${row_name%%:*}"
+    route="${row_name#*:}"
+    if [[ "$component" == "$row_name" ||
+      -z "$component" ||
+      -z "$route" ||
+      ! "$component" =~ ^[A-Za-z0-9_-]+$ ||
+      ! "$route" =~ ^[A-Za-z0-9_-]+$ ||
+      ! "$count" =~ ^[0-9]+$ ]]; then
+      printf '%s\n' unknown
+      return
+    fi
+    entries+=("$count"$'\t'"$component:$route")
+  done <<<"$summary_rows"
+
+  if [[ "${#entries[@]}" -eq 0 ]]; then
+    printf '%s\n' none
+    return
+  fi
+
+  printf '%s\n' "${entries[@]}" | LC_ALL=C sort -rn -k1,1 -k2,2 | awk -F'\t' '{ item = $2 ":" $1; out = (out == "" ? item : out ";" item) } END { print out }'
+}
+
+shader_loop_summary_paper_pass_local_review_by_component() {
+  local summary_rows="$1"
+  local kind scope row_group row_name count
+  local component paper_pass
+  local -a components=()
+  local -A totals=()
+
+  while IFS=$'\t' read -r kind scope row_group row_name count; do
+    if [[ "$kind" != "summary" || "$scope" != "scanned" || "$row_group" != "component-paper-pass-local-review" ]]; then
+      continue
+    fi
+    component="${row_name%%:*}"
+    paper_pass="${row_name#*:}"
+    if [[ "$component" == "$row_name" ||
+      -z "$component" ||
+      -z "$paper_pass" ||
+      ! "$component" =~ ^[A-Za-z0-9_-]+$ ||
+      ! "$paper_pass" =~ ^[A-Za-z0-9_-]+$ ||
+      ! "$count" =~ ^[0-9]+$ ]]; then
+      printf '%s\n' unknown
+      return
+    fi
+    case "$paper_pass" in
+      bounded-local-helper-review|bounded-local-scan-reduce-review) ;;
+      *)
+        printf '%s\n' unknown
+        return
+        ;;
+    esac
+    if [[ -z "${totals[$component]+set}" ]]; then
+      components+=("$component")
+      totals[$component]=0
+    fi
+    totals[$component]=$((totals[$component] + count))
+  done <<<"$summary_rows"
+
+  if [[ "${#components[@]}" -eq 0 ]]; then
+    printf '%s\n' none
+    return
+  fi
+
+  for component in "${components[@]}"; do
+    printf '%s\t%s\n' "${totals[$component]}" "$component"
+  done | LC_ALL=C sort -rn -k1,1 -k2,2 | awk -F'\t' '{ item = $2 ":" $1; out = (out == "" ? item : out ";" item) } END { print out }'
+}
+
+shader_loop_summary_paper_pass_local_review_by_component_route() {
+  local summary_rows="$1"
+  local kind scope row_group row_name count
+  local component route
+  local -a entries=()
+
+  while IFS=$'\t' read -r kind scope row_group row_name count; do
+    if [[ "$kind" != "summary" || "$scope" != "scanned" || "$row_group" != "component-rewrite-route-local-review" ]]; then
+      continue
+    fi
+    component="${row_name%%:*}"
+    route="${row_name#*:}"
+    if [[ "$component" == "$row_name" ||
+      -z "$component" ||
+      -z "$route" ||
+      ! "$component" =~ ^[A-Za-z0-9_-]+$ ||
+      ! "$route" =~ ^[A-Za-z0-9_-]+$ ||
+      ! "$count" =~ ^[0-9]+$ ]]; then
+      printf '%s\n' unknown
+      return
+    fi
+    case "$route" in
+      bounded-local-helper-justify|bounded-local-scan-reduce-justify) ;;
+      *)
+        printf '%s\n' unknown
+        return
+        ;;
+    esac
+    entries+=("$count"$'\t'"$component:$route")
+  done <<<"$summary_rows"
+
+  if [[ "${#entries[@]}" -eq 0 ]]; then
+    printf '%s\n' none
+    return
+  fi
+
+  printf '%s\n' "${entries[@]}" | LC_ALL=C sort -rn -k1,1 -k2,2 | awk -F'\t' '{ item = $2 ":" $1; out = (out == "" ? item : out ";" item) } END { print out }'
+}
+
+shader_loop_summary_source_sized_rewrite_route() {
+  local summary_rows="$1"
+  local kind scope row_group row_name count
+  local reason route
+
+  while IFS=$'\t' read -r kind scope row_group row_name count; do
+    if [[ "$kind" != "summary" || "$scope" != "scanned" || "$row_group" != "reason-rewrite-route" ]]; then
+      continue
+    fi
+    reason="${row_name%%:*}"
+    route="${row_name#*:}"
+    if [[ "$reason" != "source-or-dispatch-sized-loop" ]]; then
+      continue
+    fi
+    if [[ "$route" == "$row_name" || -z "$route" || ! "$route" =~ ^[A-Za-z0-9_-]+$ || ! "$count" =~ ^[0-9]+$ ]]; then
+      printf '%s\n' unknown
+      return
+    fi
+    printf '%s:%s\n' "$route" "$count"
+    return
+  done <<<"$summary_rows"
+
+  printf '%s\n' none
+}
+
+shader_loop_summary_source_sized_rewrite_route_by_component() {
+  local summary_rows="$1"
+  local kind scope row_group row_name count
+  local component rest reason route
+  local -a entries=()
+
+  while IFS=$'\t' read -r kind scope row_group row_name count; do
+    if [[ "$kind" != "summary" || "$scope" != "scanned" || "$row_group" != "component-reason-rewrite-route" ]]; then
+      continue
+    fi
+    component="${row_name%%:*}"
+    rest="${row_name#*:}"
+    reason="${rest%%:*}"
+    route="${rest#*:}"
+    if [[ "$reason" != "source-or-dispatch-sized-loop" ]]; then
+      continue
+    fi
+    if [[ "$component" == "$row_name" || "$reason" == "$rest" || "$route" == "$rest" ||
+      -z "$component" || -z "$route" ||
+      ! "$component" =~ ^[A-Za-z0-9_-]+$ ||
+      ! "$route" =~ ^[A-Za-z0-9_-]+$ ||
+      ! "$count" =~ ^[0-9]+$ ]]; then
+      printf '%s\n' unknown
+      return
+    fi
+    entries+=("$count"$'\t'"$component:$route")
+  done <<<"$summary_rows"
+
+  if [[ "${#entries[@]}" -eq 0 ]]; then
+    printf '%s\n' none
+    return
+  fi
+
+  printf '%s\n' "${entries[@]}" | LC_ALL=C sort -rn -k1,1 -k2,2 | awk -F'\t' '{ item = $2 ":" $1; out = (out == "" ? item : out ";" item) } END { print out }'
+}
+
+shader_loop_summary_source_sized_symbolic_cap_by_component() {
+  local summary_rows="$1"
+  local kind scope row_group row_name count
+  local -a entries=()
+
+  while IFS=$'\t' read -r kind scope row_group row_name count; do
+    if [[ "$kind" != "summary" || "$scope" != "scanned" || "$row_group" != "component-source-sized-symbolic-cap" ]]; then
+      continue
+    fi
+    if [[ -z "$row_name" || ! "$row_name" =~ ^[A-Za-z0-9_-]+$ || ! "$count" =~ ^[0-9]+$ ]]; then
+      printf '%s\n' unknown
+      return
+    fi
+    entries+=("$count"$'\t'"$row_name")
+  done <<<"$summary_rows"
+
+  if [[ "${#entries[@]}" -eq 0 ]]; then
+    printf '%s\n' none
+    return
+  fi
+
+  printf '%s\n' "${entries[@]}" | LC_ALL=C sort -rn -k1,1 -k2,2 | awk -F'\t' '{ item = $2 ":" $1; out = (out == "" ? item : out ";" item) } END { print out }'
+}
+
+shader_loop_summary_source_sized_symbolic_cap_names() {
+  local summary_rows="$1"
+  local kind scope row_group row_name count
+  local -a entries=()
+
+  while IFS=$'\t' read -r kind scope row_group row_name count; do
+    if [[ "$kind" != "summary" || "$scope" != "scanned" || "$row_group" != "source-sized-symbolic-cap-name" ]]; then
+      continue
+    fi
+    if [[ -z "$row_name" || ! "$row_name" =~ ^[A-Za-z0-9_]+$ || ! "$count" =~ ^[0-9]+$ ]]; then
+      printf '%s\n' unknown
+      return
+    fi
+    entries+=("$count"$'\t'"$row_name")
+  done <<<"$summary_rows"
+
+  if [[ "${#entries[@]}" -eq 0 ]]; then
+    printf '%s\n' none
+    return
+  fi
+
+  printf '%s\n' "${entries[@]}" | LC_ALL=C sort -rn -k1,1 -k2,2 | awk -F'\t' '{ item = $2 ":" $1; out = (out == "" ? item : out ";" item) } END { print out }'
+}
+
+shader_loop_summary_source_sized_symbolic_cap_route() {
+  local summary_rows="$1"
+  local kind scope row_group row_name count
+  local -a entries=()
+
+  while IFS=$'\t' read -r kind scope row_group row_name count; do
+    if [[ "$kind" != "summary" || "$scope" != "scanned" || "$row_group" != "source-sized-symbolic-cap-route" ]]; then
+      continue
+    fi
+    if [[ -z "$row_name" || ! "$row_name" =~ ^[A-Za-z0-9_-]+$ || ! "$count" =~ ^[0-9]+$ ]]; then
+      printf '%s\n' unknown
+      return
+    fi
+    entries+=("$count"$'\t'"$row_name")
+  done <<<"$summary_rows"
+
+  if [[ "${#entries[@]}" -eq 0 ]]; then
+    printf '%s\n' none
+    return
+  fi
+
+  printf '%s\n' "${entries[@]}" | LC_ALL=C sort -rn -k1,1 -k2,2 | awk -F'\t' '{ item = $2 ":" $1; out = (out == "" ? item : out ";" item) } END { print out }'
+}
+
+shader_loop_summary_source_sized_symbolic_cap_route_by_component() {
+  local summary_rows="$1"
+  local kind scope row_group row_name count
+  local component route
+  local -a entries=()
+
+  while IFS=$'\t' read -r kind scope row_group row_name count; do
+    if [[ "$kind" != "summary" || "$scope" != "scanned" || "$row_group" != "component-source-sized-symbolic-cap-route" ]]; then
+      continue
+    fi
+    component="${row_name%%:*}"
+    route="${row_name#*:}"
+    if [[ "$component" == "$row_name" ||
+      -z "$component" ||
+      -z "$route" ||
+      ! "$component" =~ ^[A-Za-z0-9_-]+$ ||
+      ! "$route" =~ ^[A-Za-z0-9_-]+$ ||
+      ! "$count" =~ ^[0-9]+$ ]]; then
+      printf '%s\n' unknown
+      return
+    fi
+    entries+=("$count"$'\t'"$component:$route")
+  done <<<"$summary_rows"
+
+  if [[ "${#entries[@]}" -eq 0 ]]; then
+    printf '%s\n' none
+    return
+  fi
+
+  printf '%s\n' "${entries[@]}" | LC_ALL=C sort -rn -k1,1 -k2,2 | awk -F'\t' '{ item = $2 ":" $1; out = (out == "" ? item : out ";" item) } END { print out }'
+}
+
+shader_loop_summary_source_sized_symbolic_cap_path_route() {
+  local summary_rows="$1"
+  local kind scope row_group row_name count
+  local component cap path route rest
+  local -a entries=()
+
+  while IFS=$'\t' read -r kind scope row_group row_name count; do
+    if [[ "$kind" != "summary" || "$scope" != "scanned" || "$row_group" != "component-source-sized-symbolic-cap-path-route" ]]; then
+      continue
+    fi
+    component="${row_name%%:*}"
+    rest="${row_name#*:}"
+    cap="${rest%%:*}"
+    rest="${rest#*:}"
+    path="${rest%:*}"
+    route="${rest##*:}"
+    if [[ "$component" == "$row_name" ||
+      "$cap" == "$rest" ||
+      "$path" == "$rest" ||
+      -z "$component" ||
+      -z "$cap" ||
+      -z "$path" ||
+      -z "$route" ||
+      ! "$component" =~ ^[A-Za-z0-9_-]+$ ||
+      ! "$cap" =~ ^[A-Za-z0-9_]+$ ||
+      ! "$path" =~ ^[A-Za-z0-9_./-]+$ ||
+      ! "$route" =~ ^[A-Za-z0-9_-]+$ ||
+      ! "$count" =~ ^[0-9]+$ ]]; then
+      printf '%s\n' unknown
+      return
+    fi
+    entries+=("$count"$'\t'"$component:$cap:$path:$route")
+  done <<<"$summary_rows"
+
+  if [[ "${#entries[@]}" -eq 0 ]]; then
+    printf '%s\n' none
+    return
+  fi
+
+  printf '%s\n' "${entries[@]}" | LC_ALL=C sort -rn -k1,1 -k2,2 | awk -F'\t' '{ item = $2 ":" $1; out = (out == "" ? item : out ";" item) } END { print out }'
+}
+
+shader_loop_summary_mix_is_valid() {
+  local value="$1"
+
+  [[ "$value" == "none" || "$value" =~ ^[A-Za-z0-9_-]+:[0-9]+(;[A-Za-z0-9_-]+:[0-9]+)*$ ]]
+}
+
+shader_loop_summary_component_route_count_mix_is_valid() {
+  local value="$1"
+
+  [[ "$value" == "none" || "$value" =~ ^[A-Za-z0-9_-]+:[A-Za-z0-9_-]+:[0-9]+(;[A-Za-z0-9_-]+:[A-Za-z0-9_-]+:[0-9]+)*$ ]]
+}
+
+shader_loop_summary_component_cap_path_route_count_mix_is_valid() {
+  local value="$1"
+
+  [[ "$value" == "none" || "$value" =~ ^[A-Za-z0-9_-]+:[A-Za-z0-9_]+:[A-Za-z0-9_./-]+:[A-Za-z0-9_-]+:[0-9]+(;[A-Za-z0-9_-]+:[A-Za-z0-9_]+:[A-Za-z0-9_./-]+:[A-Za-z0-9_-]+:[0-9]+)*$ ]]
+}
+
+shader_loop_summary_route_count_is_valid() {
+  local value="$1"
+
+  [[ "$value" == "none" || "$value" =~ ^[A-Za-z0-9_-]+:[0-9]+$ ]]
+}
+
+shader_loop_summary_group_sum() {
+  local summary_rows="$1"
+  local group="$2"
+  local kind scope row_group row_name count
+  local total=0
+
+  while IFS=$'\t' read -r kind scope row_group row_name count; do
+    if [[ "$kind" != "summary" || "$scope" != "scanned" || "$row_group" != "$group" ]]; then
+      continue
+    fi
+    if [[ ! "$count" =~ ^[0-9]+$ ]]; then
+      printf '%s\n' unknown
+      return
+    fi
+    total=$((total + count))
+  done <<<"$summary_rows"
+
+  printf '%s\n' "$total"
+}
+
+shader_loop_summary_paper_pass_blocker_sum() {
+  local summary_rows="$1"
+  local kind scope row_group row_name count
+  local total=0
+
+  while IFS=$'\t' read -r kind scope row_group row_name count; do
+    if [[ "$kind" != "summary" || "$scope" != "scanned" || "$row_group" != "paper-pass" ]]; then
+      continue
+    fi
+    case "$row_name" in
+      bounded-local-helper-review|bounded-local-scan-reduce-review)
+        continue
+        ;;
+    esac
+    if [[ ! "$count" =~ ^[0-9]+$ ]]; then
+      printf '%s\n' unknown
+      return
+    fi
+    total=$((total + count))
+  done <<<"$summary_rows"
+
+  printf '%s\n' "$total"
+}
+
+shader_loop_summary_reason_rewrite_route_count() {
+  local summary_rows="$1"
+  local expected_reason="$2"
+  local expected_route="$3"
+  local kind scope row_group row_name count
+  local reason route
+
+  while IFS=$'\t' read -r kind scope row_group row_name count; do
+    if [[ "$kind" != "summary" || "$scope" != "scanned" || "$row_group" != "reason-rewrite-route" ]]; then
+      continue
+    fi
+    reason="${row_name%%:*}"
+    route="${row_name#*:}"
+    if [[ "$reason" != "$expected_reason" || "$route" != "$expected_route" ]]; then
+      continue
+    fi
+    if [[ ! "$count" =~ ^[0-9]+$ ]]; then
+      printf '%s\n' unknown
+      return
+    fi
+    printf '%s\n' "$count"
+    return
+  done <<<"$summary_rows"
+
+  printf '%s\n' 0
+}
+
+shader_loop_summary_component_reason_rewrite_route_sum() {
+  local summary_rows="$1"
+  local expected_reason="$2"
+  local expected_route="$3"
+  local kind scope row_group row_name count
+  local component rest reason route
+  local total=0
+
+  while IFS=$'\t' read -r kind scope row_group row_name count; do
+    if [[ "$kind" != "summary" || "$scope" != "scanned" || "$row_group" != "component-reason-rewrite-route" ]]; then
+      continue
+    fi
+    component="${row_name%%:*}"
+    rest="${row_name#*:}"
+    reason="${rest%%:*}"
+    route="${rest#*:}"
+    if [[ "$reason" != "$expected_reason" || "$route" != "$expected_route" ]]; then
+      continue
+    fi
+    if [[ "$component" == "$row_name" || "$reason" == "$rest" || "$route" == "$rest" || ! "$count" =~ ^[0-9]+$ ]]; then
+      printf '%s\n' unknown
+      return
+    fi
+    total=$((total + count))
+  done <<<"$summary_rows"
+
+  printf '%s\n' "$total"
+}
+
+shader_loop_summary_counts_are_consistent() {
+  local summary_rows="$1"
+  local fixed_bound fixed_bound_guard data_dependent unknown_bound while_loop
+  local total review_required paper_pass_blocker paper_pass_local_review
+  local record_map_prefix_scan_scatter source_record_partition_prefix_scan
+  local audit_evidence_proof audit_evidence_blocker audit_evidence_local_review
+  local audit_evidence_proof_pass_primitive_shape_only
+  local audit_evidence_blocker_source_sized_legacy_fallback
+  local audit_evidence_blocker_source_sized_symbolic_cap
+  local audit_evidence_local_review_bounded_helper
+  local performance_scaling_or_pareas_parity_audit_debt
+  local performance_scaling_or_pareas_parity_audit_blocker
+  local performance_scaling_or_pareas_parity_local_review
+  local record_or_range source_or_dispatch paper_blocker_sum component_blocker_sum
+  local component_route_blocker_sum component_local_review_sum component_route_local_review_sum
+  local source_route_count source_component_route_sum
+  local source_sized_symbolic_cap source_sized_symbolic_component_sum
+  local blocker_by_component blocker_rows_by_component
+  local blocker_by_rewrite blocker_rows_by_rewrite
+  local risk_sum component_sum component_risk_sum reason_sum paper_pass_sum rewrite_route_sum reason_route_sum
+  local component_reason_route_sum component_paper_pass_sum
+
+  fixed_bound="$(shader_loop_summary_count "$summary_rows" classification fixed-bound)"
+  fixed_bound_guard="$(shader_loop_summary_count "$summary_rows" classification fixed-bound-guard)"
+  data_dependent="$(shader_loop_summary_count "$summary_rows" classification data-dependent)"
+  unknown_bound="$(shader_loop_summary_count "$summary_rows" classification unknown-bound)"
+  while_loop="$(shader_loop_summary_count "$summary_rows" classification while-loop)"
+  total="$(shader_loop_summary_count "$summary_rows" total all)"
+  review_required="$(shader_loop_summary_count "$summary_rows" review review-required)"
+  paper_pass_blocker="$(shader_loop_summary_count "$summary_rows" pass-contract paper-pass-blocker)"
+  paper_pass_local_review="$(shader_loop_summary_count "$summary_rows" pass-contract paper-pass-local-review)"
+  record_map_prefix_scan_scatter="$(shader_loop_summary_count_or_zero "$summary_rows" paper-pass record-map-prefix-scan-scatter)"
+  source_record_partition_prefix_scan="$(shader_loop_summary_count_or_zero "$summary_rows" paper-pass source-record-partition-prefix-scan)"
+  audit_evidence_proof="$(shader_loop_summary_count "$summary_rows" audit-evidence-role proof)"
+  audit_evidence_blocker="$(shader_loop_summary_count "$summary_rows" audit-evidence-role blocker)"
+  audit_evidence_local_review="$(shader_loop_summary_count "$summary_rows" audit-evidence-role local-review)"
+  audit_evidence_proof_pass_primitive_shape_only="$(shader_loop_summary_count "$summary_rows" audit-evidence proof-pass-primitive-shape-only)"
+  audit_evidence_blocker_source_sized_legacy_fallback="$(shader_loop_summary_count_or_zero "$summary_rows" audit-evidence blocker-source-sized-legacy-fallback)"
+  audit_evidence_blocker_source_sized_symbolic_cap="$(shader_loop_summary_count_or_zero "$summary_rows" audit-evidence blocker-source-sized-symbolic-cap)"
+  audit_evidence_local_review_bounded_helper="$(shader_loop_summary_count "$summary_rows" audit-evidence local-review-bounded-helper)"
+  performance_scaling_or_pareas_parity_audit_debt="$(shader_loop_summary_count "$summary_rows" claim-blocker performance-scaling-or-pareas-parity-audit-debt)"
+  performance_scaling_or_pareas_parity_audit_blocker="$(shader_loop_summary_count "$summary_rows" claim-blocker performance-scaling-or-pareas-parity-audit-blocker)"
+  performance_scaling_or_pareas_parity_local_review="$(shader_loop_summary_count "$summary_rows" claim-blocker performance-scaling-or-pareas-parity-local-review)"
+  record_or_range="$(shader_loop_summary_count_or_zero "$summary_rows" reason record-or-range-sized-loop)"
+  source_or_dispatch="$(shader_loop_summary_count_or_zero "$summary_rows" reason source-or-dispatch-sized-loop)"
+  source_sized_symbolic_cap="$(shader_loop_summary_count "$summary_rows" review source-sized-symbolic-cap)"
+  paper_blocker_sum="$(shader_loop_summary_paper_pass_blocker_sum "$summary_rows")"
+  component_blocker_sum="$(shader_loop_summary_group_sum "$summary_rows" component-paper-pass-blocker)"
+  component_route_blocker_sum="$(shader_loop_summary_group_sum "$summary_rows" component-rewrite-route-blocker)"
+  component_local_review_sum="$(shader_loop_summary_group_sum "$summary_rows" component-paper-pass-local-review)"
+  component_route_local_review_sum="$(shader_loop_summary_group_sum "$summary_rows" component-rewrite-route-local-review)"
+  blocker_by_component="$(shader_loop_summary_paper_pass_blocker_by_component "$summary_rows")"
+  blocker_rows_by_component="$(shader_loop_summary_component_blockers_by_component "$summary_rows")"
+  blocker_by_rewrite="$(shader_loop_summary_paper_pass_blocker_by_rewrite "$summary_rows")"
+  blocker_rows_by_rewrite="$(shader_loop_summary_component_blockers_by_rewrite "$summary_rows")"
+  source_route_count="$(shader_loop_summary_reason_rewrite_route_count "$summary_rows" source-or-dispatch-sized-loop partition-source-records-prefix-sum-scatter)"
+  source_component_route_sum="$(shader_loop_summary_component_reason_rewrite_route_sum "$summary_rows" source-or-dispatch-sized-loop partition-source-records-prefix-sum-scatter)"
+  source_sized_symbolic_component_sum="$(shader_loop_summary_group_sum "$summary_rows" component-source-sized-symbolic-cap)"
+  risk_sum="$(shader_loop_summary_group_sum "$summary_rows" risk)"
+  component_sum="$(shader_loop_summary_group_sum "$summary_rows" component)"
+  component_risk_sum="$(shader_loop_summary_group_sum "$summary_rows" component-risk)"
+  reason_sum="$(shader_loop_summary_group_sum "$summary_rows" reason)"
+  paper_pass_sum="$(shader_loop_summary_group_sum "$summary_rows" paper-pass)"
+  rewrite_route_sum="$(shader_loop_summary_group_sum "$summary_rows" rewrite-route)"
+  reason_route_sum="$(shader_loop_summary_group_sum "$summary_rows" reason-rewrite-route)"
+  component_reason_route_sum="$(shader_loop_summary_group_sum "$summary_rows" component-reason-rewrite-route)"
+  component_paper_pass_sum="$(shader_loop_summary_group_sum "$summary_rows" component-paper-pass)"
+
+  local count
+  for count in \
+    "$fixed_bound" \
+    "$fixed_bound_guard" \
+    "$data_dependent" \
+    "$unknown_bound" \
+    "$while_loop" \
+    "$total" \
+    "$review_required" \
+    "$paper_pass_blocker" \
+    "$paper_pass_local_review" \
+    "$record_map_prefix_scan_scatter" \
+    "$source_record_partition_prefix_scan" \
+    "$audit_evidence_proof" \
+    "$audit_evidence_blocker" \
+    "$audit_evidence_local_review" \
+    "$audit_evidence_proof_pass_primitive_shape_only" \
+    "$audit_evidence_blocker_source_sized_legacy_fallback" \
+    "$audit_evidence_blocker_source_sized_symbolic_cap" \
+    "$audit_evidence_local_review_bounded_helper" \
+    "$performance_scaling_or_pareas_parity_audit_debt" \
+    "$performance_scaling_or_pareas_parity_audit_blocker" \
+    "$performance_scaling_or_pareas_parity_local_review" \
+    "$record_or_range" \
+    "$source_or_dispatch" \
+    "$source_sized_symbolic_cap" \
+    "$paper_blocker_sum" \
+    "$component_blocker_sum" \
+    "$component_route_blocker_sum" \
+    "$component_local_review_sum" \
+    "$component_route_local_review_sum" \
+    "$source_route_count" \
+    "$source_component_route_sum" \
+    "$source_sized_symbolic_component_sum" \
+    "$risk_sum" \
+    "$component_sum" \
+    "$component_risk_sum" \
+    "$reason_sum" \
+    "$paper_pass_sum" \
+    "$rewrite_route_sum" \
+    "$reason_route_sum" \
+    "$component_reason_route_sum" \
+    "$component_paper_pass_sum"; do
+    [[ "$count" =~ ^[0-9]+$ ]] || return 1
+  done
+
+  [[ $((fixed_bound + fixed_bound_guard + data_dependent + unknown_bound + while_loop)) -eq "$total" ]] || return 1
+  [[ "$risk_sum" -eq "$total" ]] || return 1
+  [[ "$component_sum" -eq "$total" ]] || return 1
+  [[ "$component_risk_sum" -eq "$total" ]] || return 1
+  [[ "$reason_sum" -eq "$total" ]] || return 1
+  [[ "$paper_pass_sum" -eq "$total" ]] || return 1
+  [[ "$rewrite_route_sum" -eq "$total" ]] || return 1
+  [[ "$reason_route_sum" -eq "$total" ]] || return 1
+  [[ "$component_reason_route_sum" -eq "$total" ]] || return 1
+  [[ "$component_paper_pass_sum" -eq "$total" ]] || return 1
+  [[ $((audit_evidence_proof + audit_evidence_blocker + audit_evidence_local_review)) -eq "$total" ]] || return 1
+  [[ "$audit_evidence_proof_pass_primitive_shape_only" -eq "$audit_evidence_proof" ]] || return 1
+  [[ $((audit_evidence_blocker_source_sized_legacy_fallback + audit_evidence_blocker_source_sized_symbolic_cap)) -eq "$audit_evidence_blocker" ]] || return 1
+  [[ "$audit_evidence_local_review_bounded_helper" -eq "$audit_evidence_local_review" ]] || return 1
+  [[ $((performance_scaling_or_pareas_parity_audit_blocker + performance_scaling_or_pareas_parity_local_review)) -eq "$performance_scaling_or_pareas_parity_audit_debt" ]] || return 1
+  [[ "$performance_scaling_or_pareas_parity_audit_blocker" -eq "$audit_evidence_blocker" ]] || return 1
+  [[ "$performance_scaling_or_pareas_parity_local_review" -eq "$audit_evidence_local_review" ]] || return 1
+  [[ "$blocker_rows_by_component" != unknown && "$blocker_rows_by_component" == "$blocker_by_component" ]] || return 1
+  [[ "$blocker_rows_by_rewrite" != unknown && "$blocker_rows_by_rewrite" == "$blocker_by_rewrite" ]] || return 1
+  [[ $((data_dependent + unknown_bound + while_loop)) -eq "$review_required" ]] || return 1
+  [[ $((paper_pass_blocker + paper_pass_local_review)) -eq "$total" ]] || return 1
+  [[ "$paper_blocker_sum" -eq "$paper_pass_blocker" ]] || return 1
+  [[ "$component_blocker_sum" -eq "$paper_pass_blocker" ]] || return 1
+  [[ "$component_route_blocker_sum" -eq "$paper_pass_blocker" ]] || return 1
+  [[ "$component_local_review_sum" -eq "$paper_pass_local_review" ]] || return 1
+  [[ "$component_route_local_review_sum" -eq "$paper_pass_local_review" ]] || return 1
+  [[ "$record_or_range" -eq "$record_map_prefix_scan_scatter" ]] || return 1
+  [[ "$source_or_dispatch" -eq "$source_record_partition_prefix_scan" ]] || return 1
+  [[ "$source_route_count" -eq "$source_record_partition_prefix_scan" ]] || return 1
+  [[ "$source_component_route_sum" -eq "$source_record_partition_prefix_scan" ]] || return 1
+  [[ "$source_sized_symbolic_component_sum" -eq "$source_sized_symbolic_cap" ]] || return 1
+}
+
+check_x86_codegen_shader_loop_gate() {
+  local audit_tool
+  audit_tool="$(measurement_shader_loop_audit_command)"
+  if [[ ! -x "$audit_tool" ]]; then
+    env_error "shader loop audit gate requires executable $audit_tool"
+    return
+  fi
+
+  local gate_output
+  if ! gate_output="$(PATH="/usr/bin:/bin:${PATH:-}" /bin/bash "$audit_tool" --root shaders/codegen --summary-only --fail-on-x86-codegen-review-required --fail-on-x86-codegen-large-fixed-bound --fail-on-suspicious-loop-attr --fail-on-raw-for-review-required 2>&1)"; then
+    gate_output="${gate_output//$'\n'/; }"
+    env_error "x86 codegen shader loop audit failed: $gate_output"
+    return
+  fi
+
+  local x86_review_required
+  local x86_fixed_bound
+  local x86_large_fixed_bound
+  local suspicious_loop_attribute
+  local raw_for_review_required
+  x86_review_required="$(shader_loop_summary_count "$gate_output" review x86-codegen-review-required)"
+  x86_fixed_bound="$(shader_loop_summary_count "$gate_output" review x86-codegen-fixed-bound)"
+  x86_large_fixed_bound="$(shader_loop_summary_count "$gate_output" review x86-codegen-large-fixed-bound)"
+  suspicious_loop_attribute="$(shader_loop_summary_count "$gate_output" review suspicious-loop-attribute)"
+  raw_for_review_required="$(shader_loop_summary_count "$gate_output" review raw-for-review-required)"
+  if [[ ! "$x86_review_required" =~ ^[0-9]+$ ||
+    ! "$x86_fixed_bound" =~ ^[0-9]+$ ||
+    ! "$x86_large_fixed_bound" =~ ^[0-9]+$ ||
+    ! "$suspicious_loop_attribute" =~ ^[0-9]+$ ||
+    ! "$raw_for_review_required" =~ ^[0-9]+$ ]]; then
+    env_error "x86 codegen shader loop audit summary omitted numeric scoped counts: review-required=$x86_review_required fixed-bound=$x86_fixed_bound large-fixed-bound=$x86_large_fixed_bound suspicious-loop-attribute=$suspicious_loop_attribute raw-for-review-required=$raw_for_review_required"
+    return
+  fi
+  env_note "measurement_x86_codegen_loop_gate_status=ok"
+  env_note "measurement_x86_codegen_review_required=$x86_review_required"
+  env_note "measurement_x86_codegen_fixed_bound=$x86_fixed_bound"
+  env_note "measurement_x86_codegen_large_fixed_bound=$x86_large_fixed_bound"
+  env_note "measurement_shader_loop_suspicious_loop_attribute=$suspicious_loop_attribute"
+  env_note "measurement_shader_loop_raw_for_review_required=$raw_for_review_required"
+}
+
+check_pareas_pass_structure_gate() {
+  local gate_status
+  local gate_blockers
+  local paper_pass_blocker
+  local review_required
+  local source_sized_symbolic_cap
+  local paper_pass_local_review
+  local suspicious_loop_attribute
+  local raw_for_review_required
+  local record_map_prefix_scan_scatter
+  local source_record_partition_prefix_scan
+  local audit_evidence_proof
+  local audit_evidence_blocker
+  local audit_evidence_local_review
+  local audit_proof_is_pass_shape_only
+  local rust_product_source_inspection_not_pass_evidence
+  local audit_blockers_and_local_review_are_not_performance_evidence
+  local audit_debt_blocks_performance_and_pareas_parity_claims
+  local performance_scaling_or_pareas_parity_audit_debt
+  local performance_scaling_or_pareas_parity_audit_blocker
+  local performance_scaling_or_pareas_parity_local_review
+  local zero_paper_pass_blocker_not_pass_contract_proof
+  local no_run_not_pareas_claim_evidence
+  paper_pass_blocker="$(measurement_shader_loop_audit_summary_field paper-pass-blocker)"
+  review_required="$(measurement_shader_loop_audit_summary_field review-required)"
+  source_sized_symbolic_cap="$(measurement_shader_loop_audit_summary_field source-sized-symbolic-cap)"
+  paper_pass_local_review="$(measurement_shader_loop_audit_summary_field paper-pass-local-review)"
+  suspicious_loop_attribute="$(measurement_shader_loop_audit_summary_field suspicious-loop-attribute)"
+  raw_for_review_required="$(measurement_shader_loop_audit_summary_field raw-for-review-required)"
+  record_map_prefix_scan_scatter="$(measurement_shader_loop_audit_summary_field record-map-prefix-scan-scatter)"
+  source_record_partition_prefix_scan="$(measurement_shader_loop_audit_summary_field source-record-partition-prefix-scan)"
+  audit_evidence_proof="$(measurement_shader_loop_audit_summary_field audit-evidence-proof)"
+  audit_evidence_blocker="$(measurement_shader_loop_audit_summary_field audit-evidence-blocker)"
+  audit_evidence_local_review="$(measurement_shader_loop_audit_summary_field audit-evidence-local-review)"
+  audit_proof_is_pass_shape_only="$(measurement_shader_loop_audit_summary_field audit-proof-is-pass-shape-only)"
+  rust_product_source_inspection_not_pass_evidence="$(measurement_shader_loop_audit_summary_field rust-product-source-inspection-not-pass-evidence)"
+  audit_blockers_and_local_review_are_not_performance_evidence="$(measurement_shader_loop_audit_summary_field audit-blockers-and-local-review-are-not-performance-evidence)"
+  audit_debt_blocks_performance_and_pareas_parity_claims="$(measurement_shader_loop_audit_summary_field audit-debt-blocks-performance-and-pareas-parity-claims)"
+  performance_scaling_or_pareas_parity_audit_debt="$(measurement_shader_loop_audit_summary_field performance-scaling-or-pareas-parity-audit-debt)"
+  performance_scaling_or_pareas_parity_audit_blocker="$(measurement_shader_loop_audit_summary_field performance-scaling-or-pareas-parity-audit-blocker)"
+  performance_scaling_or_pareas_parity_local_review="$(measurement_shader_loop_audit_summary_field performance-scaling-or-pareas-parity-local-review)"
+  zero_paper_pass_blocker_not_pass_contract_proof="$(measurement_shader_loop_audit_summary_field zero-paper-pass-blocker-not-pass-contract-proof)"
+  no_run_not_pareas_claim_evidence="$(measurement_shader_loop_audit_summary_field no-run-not-pareas-claim-evidence)"
+  gate_status="$(measurement_shader_loop_pareas_pass_gate_status)"
+  gate_blockers="$(measurement_shader_loop_pareas_pass_gate_blockers)"
+
+  local field
+  for field in \
+    "$paper_pass_blocker" \
+    "$review_required" \
+    "$source_sized_symbolic_cap" \
+    "$paper_pass_local_review" \
+    "$suspicious_loop_attribute" \
+    "$raw_for_review_required" \
+    "$record_map_prefix_scan_scatter" \
+    "$source_record_partition_prefix_scan" \
+    "$audit_evidence_proof" \
+    "$audit_evidence_blocker" \
+    "$audit_evidence_local_review" \
+    "$audit_proof_is_pass_shape_only" \
+    "$rust_product_source_inspection_not_pass_evidence" \
+    "$audit_blockers_and_local_review_are_not_performance_evidence" \
+    "$audit_debt_blocks_performance_and_pareas_parity_claims" \
+    "$performance_scaling_or_pareas_parity_audit_debt" \
+    "$performance_scaling_or_pareas_parity_audit_blocker" \
+    "$performance_scaling_or_pareas_parity_local_review" \
+    "$zero_paper_pass_blocker_not_pass_contract_proof" \
+    "$no_run_not_pareas_claim_evidence"; do
+    if [[ ! "$field" =~ ^[0-9]+$ ]]; then
+      env_error "Pareas pass-structure shader loop audit summary omitted a numeric gate count"
+      return
+    fi
+  done
+
+  env_note "measurement_shader_loop_pareas_pass_gate_status=$gate_status"
+  env_note "measurement_shader_loop_pareas_pass_gate_blockers=$gate_blockers"
+  env_note "measurement_shader_loop_paper_pass_blocker=$paper_pass_blocker"
+  env_note "measurement_shader_loop_review_required=$review_required"
+  env_note "measurement_shader_loop_source_sized_symbolic_cap=$source_sized_symbolic_cap"
+  env_note "measurement_shader_loop_source_sized_symbolic_cap_by_component=$(measurement_shader_loop_audit_summary_field_text source-sized-symbolic-cap-by-component)"
+  env_note "measurement_shader_loop_source_sized_symbolic_cap_names=$(measurement_shader_loop_audit_summary_field_text source-sized-symbolic-cap-names)"
+  env_note "measurement_shader_loop_source_sized_symbolic_cap_route=$(measurement_shader_loop_audit_summary_field_text source-sized-symbolic-cap-route)"
+  env_note "measurement_shader_loop_source_sized_symbolic_cap_route_by_component=$(measurement_shader_loop_audit_summary_field_text source-sized-symbolic-cap-route-by-component)"
+  env_note "measurement_shader_loop_source_sized_symbolic_cap_path_route=$(measurement_shader_loop_audit_summary_field_text source-sized-symbolic-cap-path-route)"
+  env_note "measurement_shader_loop_paper_pass_local_review=$paper_pass_local_review"
+  env_note "measurement_shader_loop_record_map_prefix_scan_scatter=$record_map_prefix_scan_scatter"
+  env_note "measurement_shader_loop_source_record_partition_prefix_scan=$source_record_partition_prefix_scan"
+  env_note "measurement_shader_loop_audit_evidence_proof=$audit_evidence_proof"
+  env_note "measurement_shader_loop_audit_evidence_blocker=$audit_evidence_blocker"
+  env_note "measurement_shader_loop_audit_evidence_local_review=$audit_evidence_local_review"
+  env_note "measurement_shader_loop_audit_proof_is_pass_shape_only=$audit_proof_is_pass_shape_only"
+  env_note "measurement_shader_loop_rust_product_source_inspection_not_pass_evidence=$rust_product_source_inspection_not_pass_evidence"
+  env_note "measurement_shader_loop_audit_blockers_and_local_review_are_not_performance_evidence=$audit_blockers_and_local_review_are_not_performance_evidence"
+  env_note "measurement_shader_loop_audit_debt_blocks_performance_and_pareas_parity_claims=$audit_debt_blocks_performance_and_pareas_parity_claims"
+  env_note "measurement_shader_loop_performance_scaling_or_pareas_parity_audit_debt=$performance_scaling_or_pareas_parity_audit_debt"
+  env_note "measurement_shader_loop_performance_scaling_or_pareas_parity_audit_blocker=$performance_scaling_or_pareas_parity_audit_blocker"
+  env_note "measurement_shader_loop_performance_scaling_or_pareas_parity_local_review=$performance_scaling_or_pareas_parity_local_review"
+  env_note "measurement_shader_loop_zero_paper_pass_blocker_not_pass_contract_proof=$zero_paper_pass_blocker_not_pass_contract_proof"
+  env_note "measurement_shader_loop_no_run_not_pareas_claim_evidence=$no_run_not_pareas_claim_evidence"
+
+  if [[ "$paper_pass_blocker" -gt 0 ]]; then
+    env_error "Pareas pass-structure gate has $paper_pass_blocker paper-pass blocker loop(s)"
+    return
+  fi
+  if [[ "$review_required" -gt 0 ]]; then
+    env_error "Pareas pass-structure gate has $review_required review-required shader loop(s)"
+    return
+  fi
+  if [[ "$source_sized_symbolic_cap" -gt 0 ]]; then
+    env_error "Pareas pass-structure gate has $source_sized_symbolic_cap source-sized symbolic cap loop(s)"
+    return
+  fi
+  if [[ "$suspicious_loop_attribute" -gt 0 ]]; then
+    env_error "Pareas pass-structure gate has $suspicious_loop_attribute suspicious [loop] annotation(s)"
+    return
+  fi
+  if [[ "$raw_for_review_required" -gt 0 ]]; then
+    env_error "Pareas pass-structure gate has $raw_for_review_required raw for-loop review blocker(s)"
+    return
+  fi
+  if [[ "$no_run_not_pareas_claim_evidence" -ne 1 ]]; then
+    env_error "Pareas pass-structure gate is missing the no-run-not-pareas-claim evidence-policy marker"
+    return
+  fi
+  if [[ "$rust_product_source_inspection_not_pass_evidence" -ne 1 ]]; then
+    env_error "Pareas pass-structure gate is missing the rust-product-source-inspection-not-pass-evidence evidence-policy marker"
+    return
+  fi
 }
 
 measurement_pass_contract_readiness_status() {
   if [[ "$(measurement_pass_contract_loop_status)" == "unbounded" &&
     "$(measurement_pass_contract_fallback_status)" == "none" &&
-    "$(measurement_pass_contract_claim_status)" == "claimable" ]]; then
+    "$(measurement_pass_contract_claim_status)" == "claimable" &&
+    "$(measurement_shader_loop_pareas_pass_gate_status)" == "ok" ]]; then
     printf '%s\n' 'claimable'
   else
     printf '%s\n' 'blocked'
@@ -1204,7 +2982,7 @@ measurement_readback_summary_schema() {
 }
 
 measurement_required_readback_summary_fields() {
-  printf '%s\n' 'readback_summary_schema,line_count,source,phase,target,trace_path,readback_timeout_ms,span_count,total_ms,max_span_ms'
+  printf '%s\n' 'readback_summary_schema,line_count,source,phase,target,trace_path,readback_timeout_ms,steady_readback_claim_source,span_count,total_ms,max_span_ms'
 }
 
 measurement_vram_csv_schema() {
@@ -1228,7 +3006,7 @@ measurement_command_environment_schema() {
 }
 
 measurement_required_command_environment_fields() {
-  printf '%s\n' 'command_environment_schema,timestamp_utc,cwd,line_count,source,phase,target,iterations,measurement_timing_policy,cold_start_policy,compile_latency_claim_source,runtime_validation_policy,claim_provenance_schema,baseline_separation_schema,paper_baseline_policy,paper_baseline_numbers_status,local_evidence_status_policy,local_performance_claim_policy,local_performance_claim_source,local_performance_claim_status,local_performance_claim_blockers,local_vram_claim_source,local_pareas_claim_source,scaling_claim_policy,scaling_claim_source,scaling_claim_status,scaling_claim_blockers,paper_pass_order_schema,paper_pass_order_source,paper_pass_order,paper_pass_alignment_policy,paper_pass_alignment_status,paper_pass_alignment_blockers,parallel_pass_contract_schema,parallel_pass_contract_policy,parallel_pass_contract_groups,parallel_pass_contract_order_policy,parallel_pass_contract_execution_order,pass_contract_status_schema,pass_contract_loop_policy,pass_contract_loop_status,pass_contract_fallback_status,pass_contract_claim_status,pass_contract_claim_blockers,pass_contract_readiness_status,timeout_provenance_schema,timeout_scope,timeout_source,timeout_ms,timeout_seconds,readback_timeout_ms,vram_sample_interval_ms,source_seed,responsiveness_probe_timeout_ms,responsiveness_probe_timeout_seconds,git_head,rustc_version,cargo_version,slangc_version'
+  printf '%s\n' 'command_environment_schema,timestamp_utc,cwd,line_count,source,phase,target,iterations,measurement_timing_policy,cold_start_policy,cold_gpu_pipeline_init_policy,compile_latency_claim_source,steady_compile_latency_claim_source,steady_readback_claim_source,runtime_validation_policy,workload_shape_policy,workload_shape_scope,workload_generalization_status,workload_generalization_blockers,link_artifact_evidence_policy,link_artifact_evidence_schema,link_artifact_required_evidence_classes,link_artifact_evidence_status,link_artifact_claim_blockers,claim_provenance_schema,baseline_separation_schema,paper_baseline_policy,paper_baseline_numbers_status,paper_baseline_claim_status,local_evidence_status_policy,local_performance_claim_policy,local_performance_claim_source,local_performance_claim_status,local_performance_claim_blockers,local_vram_claim_source,local_pareas_claim_source,scaling_claim_policy,scaling_claim_source,scaling_claim_status,scaling_claim_blockers,paper_pass_order_schema,paper_pass_order_source,paper_pass_order,paper_pass_alignment_policy,paper_pass_alignment_status,paper_pass_alignment_blockers,parallel_pass_contract_schema,parallel_pass_contract_policy,parallel_pass_contract_groups,parallel_pass_contract_order_policy,parallel_pass_contract_execution_order,pass_contract_status_schema,pass_contract_loop_policy,pass_contract_loop_status,pass_contract_fallback_status,pass_contract_claim_status,pass_contract_claim_blockers,pass_contract_readiness_status,shader_loop_audit_command,shader_loop_audit_policy,shader_loop_audit_summary,shader_loop_audit_blocker,shader_loop_pareas_pass_gate_status,shader_loop_pareas_pass_gate_blockers,shader_loop_source_sized_symbolic_cap,shader_loop_source_sized_symbolic_cap_by_component,shader_loop_source_sized_symbolic_cap_names,shader_loop_source_sized_symbolic_cap_route,shader_loop_source_sized_symbolic_cap_route_by_component,shader_loop_source_sized_symbolic_cap_path_route,timeout_provenance_schema,timeout_scope,timeout_source,timeout_ms,timeout_seconds,readback_timeout_ms,vram_sample_interval_ms,source_seed,responsiveness_probe_timeout_ms,responsiveness_probe_timeout_seconds,git_head,rustc_version,cargo_version,slangc_version'
 }
 
 measurement_responsiveness_probe_schema() {
@@ -1244,15 +3022,15 @@ measurement_command_status_schema() {
 }
 
 measurement_required_status_fields() {
-  printf '%s\n' 'command_status_schema,lanius_exit_status,lanius_wall_elapsed_ms,measurement_timing_policy,cold_start_policy,compile_latency_claim_source,runtime_validation_policy,timeout_provenance_schema,timeout_scope,timeout_ms,timeout_seconds,timeout_source,timeout_enforced_by,timeout_exit_code,timeout_exit_code_means_timed_out,line_count,source,phase,target,source_seed,iterations,readback_timeout_ms,machine_responsive_after,responsiveness_probe_status,responsiveness_probe_path,lanius_stdout_path,perfetto_trace_path,resource_usage_status,resource_usage_path'
+  printf '%s\n' 'command_status_schema,lanius_exit_status,lanius_wall_elapsed_ms,measurement_timing_policy,cold_start_policy,cold_gpu_pipeline_init_policy,compile_latency_claim_source,steady_compile_latency_claim_source,steady_readback_claim_source,runtime_validation_policy,link_artifact_evidence_policy,link_artifact_evidence_schema,link_artifact_required_evidence_classes,link_artifact_evidence_status,link_artifact_claim_blockers,timeout_provenance_schema,timeout_scope,timeout_ms,timeout_seconds,timeout_source,timeout_enforced_by,timeout_exit_code,timeout_exit_code_means_timed_out,line_count,source,phase,target,source_seed,iterations,readback_timeout_ms,machine_responsive_after,responsiveness_probe_status,responsiveness_probe_path,lanius_stdout_path,perfetto_trace_path,resource_usage_status,resource_usage_path'
 }
 
 measurement_optional_status_fields() {
-  printf '%s\n' 'nvidia_smi_exit_status,vram_sample_interval_ms,vram_output_path,pareas_exit_status,pareas_wall_elapsed_ms,pareas_bin_path,pareas_source_path,pareas_output_path,pareas_stdout_path'
+  printf '%s\n' 'nvidia_smi_exit_status,vram_sample_interval_ms,vram_output_path,pareas_exit_status,pareas_wall_elapsed_ms,pareas_bin_path,pareas_source_path,pareas_output_path,pareas_stdout_path,pareas_nvidia_smi_exit_status,pareas_vram_output_path'
 }
 
 measurement_required_summary_fields() {
-  printf '%s\n' 'measurement_summary_schema,line_count,source,phase,target,evidence_provenance,measurement_evidence_policy,paper_numbers_accepted,comparison_baseline_policy,freshness_policy,measurement_timing_policy,cold_start_policy,compile_latency_claim_source,runtime_validation_policy,claim_provenance_schema,baseline_separation_schema,paper_baseline_policy,paper_baseline_numbers_status,local_evidence_status_policy,local_performance_claim_policy,local_performance_claim_source,local_performance_claim_status,local_performance_claim_blockers,local_vram_claim_source,local_pareas_claim_source,scaling_claim_policy,scaling_claim_source,scaling_claim_status,scaling_claim_blockers,paper_pass_order_schema,paper_pass_order_source,paper_pass_order,paper_pass_alignment_policy,paper_pass_alignment_status,paper_pass_alignment_blockers,parallel_pass_contract_schema,parallel_pass_contract_policy,parallel_pass_contract_groups,parallel_pass_contract_order_policy,parallel_pass_contract_execution_order,pass_contract_status_schema,pass_contract_loop_policy,pass_contract_loop_status,pass_contract_fallback_status,pass_contract_claim_status,pass_contract_claim_blockers,pass_contract_readiness_status,timeout_provenance_schema,timeout_scope,timeout_source,timeout_enforced_by,timeout_exit_code,timeout_exit_code_means_timed_out,source_control_policy,source_control_state,source_control_revision,repeatability_policy,minimum_iterations_for_claim,repeatability_status,required_artifacts_complete,missing_required_artifacts,evidence_status_schema,local_performance_evidence_status,local_performance_claim_status,local_performance_claim_blockers,local_readback_evidence_status,local_vram_evidence_status,local_pareas_evidence_status,scaling_claim_status,scaling_claim_blockers,production_readiness_evidence_complete,production_readiness_blockers,evidence_freshness_schema,evidence_freshness_status,stale_artifacts,stale_artifact_checks,claim_readiness_schema,claim_readiness_policy,claim_readiness_required_evidence_classes,claim_readiness_required_statuses,claim_readiness_status,claimable_measurement_claims,claim_readiness_blockers,claim_scope_policy,claim_scope_key,source_seed,iterations,timeout_ms,timeout_seconds,readback_timeout_ms,vram_sample_interval_ms,lanius_exit_status,timed_out,lanius_wall_elapsed_ms,best_ms,throughput_lines_per_second,readback_span_count,readback_total_ms,readback_max_span_ms,max_vram_bytes,nvidia_smi_exit_status,resource_user_seconds,resource_system_seconds,resource_max_rss_kb,resource_usage_status,source_replay_line_count,source_sha256,bench_binary_sha256,hardware_identity_sha256,command_environment_sha256,machine_responsive_after,responsiveness_probe_status,pareas_exit_status,pareas_timed_out,pareas_wall_elapsed_ms,pareas_source_sha256,pareas_binary_sha256,lanius_pareas_wall_ratio,lanius_stdout_path,perfetto_trace_path,readback_summary_path,vram_output_path,source_replay_path,source_sha256_path,bench_binary_sha256_path,hardware_output_path,command_env_path,command_status_path,responsiveness_probe_path,resource_usage_path,pareas_source_path,pareas_source_sha256_path,pareas_binary_sha256_path,pareas_output_path,pareas_stdout_path'
+  printf '%s\n' 'measurement_summary_schema,line_count,source,phase,target,evidence_provenance,measurement_evidence_policy,paper_numbers_accepted,comparison_baseline_policy,freshness_policy,measurement_timing_policy,cold_start_policy,cold_gpu_pipeline_init_policy,compile_latency_claim_source,steady_compile_latency_claim_source,steady_readback_claim_source,runtime_validation_policy,workload_shape_policy,workload_shape_scope,workload_generalization_status,workload_generalization_blockers,link_artifact_evidence_policy,link_artifact_evidence_schema,link_artifact_required_evidence_classes,link_artifact_evidence_status,link_artifact_claim_blockers,claim_provenance_schema,baseline_separation_schema,paper_baseline_policy,paper_baseline_numbers_status,paper_baseline_claim_status,local_evidence_status_policy,local_performance_claim_policy,local_performance_claim_source,local_performance_claim_exclusions,local_performance_claim_status,local_performance_claim_blockers,local_vram_claim_source,local_pareas_claim_source,scaling_claim_policy,scaling_claim_source,scaling_claim_status,scaling_claim_blockers,paper_pass_order_schema,paper_pass_order_source,paper_pass_order,paper_pass_alignment_policy,paper_pass_alignment_status,paper_pass_alignment_blockers,parallel_pass_contract_schema,parallel_pass_contract_policy,parallel_pass_contract_groups,parallel_pass_contract_order_policy,parallel_pass_contract_execution_order,pass_contract_status_schema,pass_contract_loop_policy,pass_contract_loop_status,pass_contract_fallback_status,pass_contract_claim_status,pass_contract_claim_blockers,pass_contract_readiness_status,shader_loop_audit_command,shader_loop_audit_policy,shader_loop_audit_summary,shader_loop_audit_blocker,shader_loop_pareas_pass_gate_status,shader_loop_pareas_pass_gate_blockers,shader_loop_source_sized_symbolic_cap,shader_loop_source_sized_symbolic_cap_by_component,shader_loop_source_sized_symbolic_cap_names,shader_loop_source_sized_symbolic_cap_route,shader_loop_source_sized_symbolic_cap_route_by_component,shader_loop_source_sized_symbolic_cap_path_route,timeout_provenance_schema,timeout_scope,timeout_source,timeout_enforced_by,timeout_exit_code,timeout_exit_code_means_timed_out,source_control_policy,source_control_state,source_control_revision,repeatability_policy,minimum_iterations_for_claim,repeatability_status,required_artifacts_complete,missing_required_artifacts,evidence_status_schema,local_performance_evidence_status,local_performance_claim_status,local_performance_claim_blockers,local_readback_evidence_status,local_vram_evidence_status,local_pareas_evidence_status,local_pareas_vram_evidence_status,link_artifact_evidence_schema,link_artifact_required_evidence_classes,scaling_claim_status,scaling_claim_blockers,production_readiness_evidence_complete,production_readiness_blockers,evidence_freshness_schema,evidence_freshness_status,stale_artifacts,stale_artifact_checks,claim_readiness_schema,claim_readiness_policy,claim_readiness_required_evidence_classes,claim_readiness_required_statuses,claim_readiness_status,claimable_measurement_claims,claim_readiness_blockers,claim_scope_policy,claim_scope_key,source_seed,iterations,timeout_ms,timeout_seconds,readback_timeout_ms,vram_sample_interval_ms,lanius_exit_status,timed_out,lanius_wall_elapsed_ms,best_ms,throughput_lines_per_second,readback_span_count,readback_total_ms,readback_max_span_ms,max_vram_bytes,nvidia_smi_exit_status,pareas_max_vram_bytes,pareas_nvidia_smi_exit_status,resource_user_seconds,resource_system_seconds,resource_max_rss_kb,resource_usage_status,source_replay_line_count,source_sha256,bench_binary_sha256,hardware_identity_sha256,command_environment_sha256,machine_responsive_after,responsiveness_probe_status,pareas_exit_status,pareas_timed_out,pareas_wall_elapsed_ms,pareas_source_line_count,pareas_source_sha256,pareas_binary_sha256,lanius_pareas_wall_ratio,lanius_stdout_path,perfetto_trace_path,readback_summary_path,vram_output_path,source_replay_path,source_sha256_path,bench_binary_sha256_path,hardware_output_path,command_env_path,command_status_path,responsiveness_probe_path,resource_usage_path,pareas_source_path,pareas_source_sha256_path,pareas_binary_sha256_path,pareas_output_path,pareas_stdout_path,pareas_vram_output_path'
 }
 
 measurement_evidence_status_schema() {
@@ -1260,7 +3038,7 @@ measurement_evidence_status_schema() {
 }
 
 measurement_required_evidence_status_fields() {
-  printf '%s\n' 'evidence_status_schema,local_performance_evidence_status,local_performance_claim_status,local_performance_claim_blockers,local_readback_evidence_status,local_vram_evidence_status,local_pareas_evidence_status,scaling_claim_status,scaling_claim_blockers,pass_contract_claim_status,pass_contract_claim_blockers,pass_contract_readiness_status,production_readiness_evidence_complete,production_readiness_blockers'
+  printf '%s\n' 'evidence_status_schema,local_performance_evidence_status,local_performance_claim_status,local_performance_claim_blockers,local_readback_evidence_status,local_vram_evidence_status,local_pareas_evidence_status,local_pareas_vram_evidence_status,link_artifact_evidence_schema,link_artifact_required_evidence_classes,link_artifact_evidence_status,link_artifact_claim_blockers,scaling_claim_status,scaling_claim_blockers,pass_contract_claim_status,pass_contract_claim_blockers,pass_contract_readiness_status,production_readiness_evidence_complete,production_readiness_blockers'
 }
 
 measurement_evidence_freshness_schema() {
@@ -1295,16 +3073,20 @@ measurement_minimum_iterations_for_claim() {
   printf '%s\n' '3'
 }
 
+measurement_checkpoint_run_policy() {
+  printf '%s\n' 'run-checkpoint_execution_order-stop-on-first-readback-timeout-vram-growth-or-responsiveness-failure'
+}
+
 measurement_required_claim_readiness_fields() {
   printf '%s\n' 'claim_readiness_schema,claim_readiness_policy,claim_readiness_required_evidence_classes,claim_readiness_required_statuses,claim_readiness_status,claimable_measurement_claims,claim_readiness_blockers'
 }
 
 measurement_claim_readiness_required_evidence_classes() {
-  printf '%s\n' 'local_performance,local_performance_claim,local_readback,local_vram,local_pareas,resource_usage,responsiveness,source_control,freshness,repeatability,paper_pass_alignment,parallel_pass_contracts,scaling_claim'
+  printf '%s\n' 'local_performance,local_performance_claim,local_readback,local_vram,local_pareas,local_pareas_vram,resource_usage,responsiveness,source_control,freshness,repeatability,workload_generalization,link_artifacts,paper_pass_alignment,parallel_pass_contracts,scaling_claim'
 }
 
 measurement_claim_readiness_required_statuses() {
-  printf '%s\n' 'local_performance_evidence_status=complete;local_performance_claim_status=claimable;local_readback_evidence_status=complete;local_vram_evidence_status=complete;local_pareas_evidence_status=complete;resource_usage_status=0;machine_responsive_after=true;source_control_state=clean-or-dirty;source_control_revision=local-git-commit-sha;evidence_freshness_status=complete;repeatability_status=complete;paper_pass_alignment_status=claimable;pass_contract_loop_status=unbounded;pass_contract_fallback_status=none;pass_contract_claim_status=claimable;pass_contract_readiness_status=claimable;scaling_claim_status=claimable'
+  printf '%s\n' 'local_performance_evidence_status=complete;local_performance_claim_status=claimable;local_readback_evidence_status=complete;local_vram_evidence_status=complete;local_pareas_evidence_status=complete;local_pareas_vram_evidence_status=complete;resource_usage_status=0;machine_responsive_after=true;source_control_state=clean-or-dirty;source_control_revision=local-git-commit-sha;evidence_freshness_status=complete;repeatability_status=complete;workload_generalization_status=generalizable;link_artifact_evidence_schema=lanius.link-artifact-evidence.v1;link_artifact_required_evidence_classes=library_interface_artifacts,codegen_object_artifacts,partial_link_artifacts,linked_output_artifact;link_artifact_evidence_status=artifact-backed;paper_pass_alignment_status=claimable;pass_contract_loop_status=unbounded;pass_contract_fallback_status=none;pass_contract_claim_status=claimable;pass_contract_readiness_status=claimable;scaling_claim_status=claimable'
 }
 
 measurement_claim_fields_for_artifact() {
@@ -1334,10 +3116,10 @@ measurement_claim_fields_for_artifact() {
       printf '%s\n' 'hardware_identity_sha256'
       ;;
     command_environment)
-      printf '%s\n' 'command_environment_sha256,source_control_state,source_control_revision,paper_baseline_numbers_status,local_evidence_status_policy,local_performance_claim_status,local_performance_claim_blockers,scaling_claim_status,scaling_claim_blockers,paper_pass_order,paper_pass_alignment_status,paper_pass_alignment_blockers,pass_contract_loop_status,pass_contract_fallback_status,pass_contract_claim_status,pass_contract_claim_blockers,pass_contract_readiness_status'
+      printf '%s\n' 'command_environment_sha256,source_control_state,source_control_revision,paper_baseline_numbers_status,paper_baseline_claim_status,local_evidence_status_policy,cold_gpu_pipeline_init_policy,steady_compile_latency_claim_source,steady_readback_claim_source,workload_shape_policy,workload_shape_scope,workload_generalization_status,workload_generalization_blockers,link_artifact_evidence_policy,link_artifact_evidence_schema,link_artifact_required_evidence_classes,link_artifact_evidence_status,link_artifact_claim_blockers,local_performance_claim_status,local_performance_claim_blockers,scaling_claim_status,scaling_claim_blockers,paper_pass_order,paper_pass_alignment_status,paper_pass_alignment_blockers,pass_contract_loop_status,pass_contract_fallback_status,pass_contract_claim_status,pass_contract_claim_blockers,pass_contract_readiness_status,shader_loop_audit_summary,shader_loop_audit_blocker,shader_loop_pareas_pass_gate_status,shader_loop_pareas_pass_gate_blockers,shader_loop_source_sized_symbolic_cap,shader_loop_source_sized_symbolic_cap_by_component,shader_loop_source_sized_symbolic_cap_names,shader_loop_source_sized_symbolic_cap_route,shader_loop_source_sized_symbolic_cap_route_by_component,shader_loop_source_sized_symbolic_cap_path_route'
       ;;
     command_status)
-      printf '%s\n' 'lanius_exit_status,timed_out,lanius_wall_elapsed_ms,measurement_timing_policy,cold_start_policy,compile_latency_claim_source,runtime_validation_policy,timeout_provenance_schema,timeout_scope,timeout_ms,timeout_seconds,timeout_source,timeout_enforced_by,timeout_exit_code,timeout_exit_code_means_timed_out,nvidia_smi_exit_status,pareas_exit_status,pareas_wall_elapsed_ms,machine_responsive_after,resource_usage_status'
+      printf '%s\n' 'lanius_exit_status,timed_out,lanius_wall_elapsed_ms,measurement_timing_policy,cold_start_policy,cold_gpu_pipeline_init_policy,compile_latency_claim_source,steady_compile_latency_claim_source,steady_readback_claim_source,runtime_validation_policy,link_artifact_evidence_policy,link_artifact_evidence_schema,link_artifact_required_evidence_classes,link_artifact_evidence_status,link_artifact_claim_blockers,timeout_provenance_schema,timeout_scope,timeout_ms,timeout_seconds,timeout_source,timeout_enforced_by,timeout_exit_code,timeout_exit_code_means_timed_out,nvidia_smi_exit_status,pareas_exit_status,pareas_wall_elapsed_ms,machine_responsive_after,resource_usage_status'
       ;;
     responsiveness_probe)
       printf '%s\n' 'machine_responsive_after,responsiveness_probe_status'
@@ -1346,10 +3128,10 @@ measurement_claim_fields_for_artifact() {
       printf '%s\n' 'resource_user_seconds,resource_system_seconds,resource_max_rss_kb,resource_usage_status'
       ;;
     measurement_summary)
-      printf '%s\n' 'production_readiness_evidence_complete,production_readiness_blockers,claim_readiness_status,claimable_measurement_claims,claim_readiness_blockers,measurement_timing_policy,cold_start_policy,compile_latency_claim_source,runtime_validation_policy,claim_provenance_schema,baseline_separation_schema,paper_baseline_policy,paper_baseline_numbers_status,local_evidence_status_policy,local_performance_claim_policy,local_performance_claim_source,local_performance_claim_status,local_performance_claim_blockers,local_vram_claim_source,local_pareas_claim_source,scaling_claim_policy,scaling_claim_source,scaling_claim_status,scaling_claim_blockers,paper_pass_order_schema,paper_pass_order_source,paper_pass_order,paper_pass_alignment_policy,paper_pass_alignment_status,paper_pass_alignment_blockers,parallel_pass_contract_schema,parallel_pass_contract_policy,parallel_pass_contract_groups,parallel_pass_contract_order_policy,parallel_pass_contract_execution_order,pass_contract_status_schema,pass_contract_loop_policy,pass_contract_loop_status,pass_contract_fallback_status,pass_contract_claim_status,pass_contract_claim_blockers,pass_contract_readiness_status,timeout_provenance_schema,timeout_scope,timeout_ms,timeout_seconds,timeout_source,timeout_enforced_by,timeout_exit_code,timeout_exit_code_means_timed_out'
+      printf '%s\n' 'production_readiness_evidence_complete,production_readiness_blockers,claim_readiness_status,claimable_measurement_claims,claim_readiness_blockers,measurement_timing_policy,cold_start_policy,cold_gpu_pipeline_init_policy,compile_latency_claim_source,steady_compile_latency_claim_source,steady_readback_claim_source,runtime_validation_policy,workload_shape_policy,workload_shape_scope,workload_generalization_status,workload_generalization_blockers,link_artifact_evidence_policy,link_artifact_evidence_schema,link_artifact_required_evidence_classes,link_artifact_evidence_status,link_artifact_claim_blockers,claim_provenance_schema,baseline_separation_schema,paper_baseline_policy,paper_baseline_numbers_status,paper_baseline_claim_status,local_evidence_status_policy,local_performance_claim_policy,local_performance_claim_source,local_performance_claim_exclusions,local_performance_claim_status,local_performance_claim_blockers,local_vram_claim_source,local_pareas_claim_source,scaling_claim_policy,scaling_claim_source,scaling_claim_status,scaling_claim_blockers,paper_pass_order_schema,paper_pass_order_source,paper_pass_order,paper_pass_alignment_policy,paper_pass_alignment_status,paper_pass_alignment_blockers,parallel_pass_contract_schema,parallel_pass_contract_policy,parallel_pass_contract_groups,parallel_pass_contract_order_policy,parallel_pass_contract_execution_order,pass_contract_status_schema,pass_contract_loop_policy,pass_contract_loop_status,pass_contract_fallback_status,pass_contract_claim_status,pass_contract_claim_blockers,pass_contract_readiness_status,shader_loop_audit_summary,shader_loop_audit_blocker,shader_loop_pareas_pass_gate_status,shader_loop_pareas_pass_gate_blockers,shader_loop_source_sized_symbolic_cap,shader_loop_source_sized_symbolic_cap_by_component,shader_loop_source_sized_symbolic_cap_names,shader_loop_source_sized_symbolic_cap_route,shader_loop_source_sized_symbolic_cap_route_by_component,shader_loop_source_sized_symbolic_cap_path_route,timeout_provenance_schema,timeout_scope,timeout_ms,timeout_seconds,timeout_source,timeout_enforced_by,timeout_exit_code,timeout_exit_code_means_timed_out'
       ;;
     pareas_source)
-      printf '%s\n' 'pareas_source_path'
+      printf '%s\n' 'pareas_source_path,pareas_source_line_count'
       ;;
     pareas_source_sha256)
       printf '%s\n' 'pareas_source_sha256'
@@ -1362,6 +3144,9 @@ measurement_claim_fields_for_artifact() {
       ;;
     pareas_stdout)
       printf '%s\n' 'pareas_wall_elapsed_ms,lanius_pareas_wall_ratio'
+      ;;
+    pareas_vram_csv)
+      printf '%s\n' 'pareas_max_vram_bytes,pareas_nvidia_smi_exit_status'
       ;;
     *)
       printf '%s\n' 'none'
@@ -1379,18 +3164,22 @@ print_checkpoint_evidence_artifact() {
   local status_artifact="$7"
   local claim="$8"
   local claim_source
+  local claim_boundary
   shift 8
   if [[ "$required" == "true" ]]; then
     if [[ "$name" == "measurement_summary" ]]; then
       claim_source=derived_local_artifacts
+      claim_boundary=derived-summary-rollup-not-no-run-performance-evidence
     else
       claim_source=local_artifact
+      claim_boundary=checkpoint-local-artifact-not-claimable-without-summary
     fi
   else
     claim_source=optional_local_comparison_artifact
+    claim_boundary=optional-local-comparison-provenance-not-pareas-claim
   fi
 
-  printf '  evidence_artifact: checkpoint=%s name=%s required=%s path=%q producer=%s status_field=%s status_artifact=%s claim=%s claim_source=%s claim_fields=%s' \
+  printf '  evidence_artifact: checkpoint=%s name=%s required=%s path=%q producer=%s status_field=%s status_artifact=%s claim=%s claim_source=%s claim_fields=%s claim_boundary=%s' \
     "$checkpoint" \
     "$name" \
     "$required" \
@@ -1400,7 +3189,8 @@ print_checkpoint_evidence_artifact() {
     "$status_artifact" \
     "$claim" \
     "$claim_source" \
-    "$(measurement_claim_fields_for_artifact "$name")"
+    "$(measurement_claim_fields_for_artifact "$name")" \
+    "$claim_boundary"
   local field
   for field in "$@"; do
     printf ' %s' "$field"
@@ -1430,6 +3220,7 @@ emit_perf_checkpoint_plan() {
   local pareas_binary_sha256_path
   local pareas_output_path
   local pareas_stdout_path
+  local pareas_vram_path
 
   stdout_path="$(measurement_stdout_path_for_line "$line_count")"
   trace_path="$(measurement_trace_path_for_line "$line_count")"
@@ -1449,6 +3240,7 @@ emit_perf_checkpoint_plan() {
   pareas_binary_sha256_path="$(pareas_binary_sha256_path_for_line "$line_count")"
   pareas_output_path="$(pareas_output_path_for_line "$line_count")"
   pareas_stdout_path="$(pareas_stdout_path_for_line "$line_count")"
+  pareas_vram_path="$(pareas_vram_path_for_line "$line_count")"
 
   printf 'checkpoint_%sl:\n' "$line_count"
   printf '  line_count: %s\n' "$line_count"
@@ -1465,17 +3257,32 @@ emit_perf_checkpoint_plan() {
   printf '  target: x86_64-elf\n'
   printf '  gpu_timing_env: LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1\n'
   printf '  measurement_timing_policy: %s\n' "$(measurement_timing_policy)"
+  printf '  measurement_scaffold_evidence_status: %s\n' "$(measurement_scaffold_evidence_status)"
   printf '  cold_start_policy: %s\n' "$(measurement_cold_start_policy)"
+  printf '  cold_gpu_pipeline_init_policy: %s\n' "$(measurement_cold_gpu_pipeline_init_policy)"
   printf '  compile_latency_claim_source: %s\n' "$(measurement_compile_latency_claim_source)"
+  printf '  steady_compile_latency_claim_source: %s\n' "$(measurement_steady_compile_latency_claim_source)"
+  printf '  steady_readback_claim_source: %s\n' "$(measurement_steady_readback_claim_source)"
   printf '  runtime_validation_policy: %s\n' "$(measurement_runtime_validation_policy)"
+  printf '  workload_shape_policy: %s\n' "$(measurement_workload_shape_policy)"
+  printf '  workload_shape_scope: %s\n' "$(measurement_workload_shape_scope)"
+  printf '  workload_generalization_status: %s\n' "$(measurement_workload_generalization_status)"
+  printf '  workload_generalization_blockers: %s\n' "$(measurement_workload_generalization_blockers)"
+  printf '  link_artifact_evidence_policy: %s\n' "$(measurement_link_artifact_evidence_policy)"
+  printf '  link_artifact_evidence_schema: %s\n' "$(measurement_link_artifact_evidence_schema)"
+  printf '  link_artifact_required_evidence_classes: %s\n' "$(measurement_link_artifact_required_evidence_classes)"
+  printf '  link_artifact_evidence_status: %s\n' "$(measurement_link_artifact_evidence_status)"
+  printf '  link_artifact_claim_blockers: %s\n' "$(measurement_link_artifact_claim_blockers)"
   printf '  claim_provenance_schema: %s\n' "$(measurement_claim_provenance_schema)"
   printf '  baseline_separation_schema: %s\n' "$(measurement_baseline_separation_schema)"
   printf '  required_claim_provenance_fields: %s\n' "$(measurement_required_claim_provenance_fields)"
   printf '  paper_baseline_policy: %s\n' "$(measurement_paper_baseline_policy)"
   printf '  paper_baseline_numbers_status: %s\n' "$(measurement_paper_baseline_numbers_status)"
+  printf '  paper_baseline_claim_status: %s\n' "$(measurement_paper_baseline_claim_status)"
   printf '  local_evidence_status_policy: %s\n' "$(measurement_local_evidence_status_policy)"
   printf '  local_performance_claim_policy: %s\n' "$(measurement_local_performance_claim_policy)"
   printf '  local_performance_claim_source: %s\n' "$(measurement_local_performance_claim_source)"
+  printf '  local_performance_claim_exclusions: %s\n' "$(measurement_local_performance_claim_exclusions)"
   printf '  local_performance_claim_status: %s\n' "$(measurement_local_performance_claim_status)"
   printf '  local_performance_claim_blockers: %s\n' "$(measurement_local_performance_claim_blockers)"
   printf '  local_vram_claim_source: %s\n' "$(measurement_local_vram_claim_source)"
@@ -1504,6 +3311,10 @@ emit_perf_checkpoint_plan() {
   printf '  pass_contract_claim_status: %s\n' "$(measurement_pass_contract_claim_status)"
   printf '  pass_contract_claim_blockers: %s\n' "$(measurement_pass_contract_claim_blockers)"
   printf '  pass_contract_readiness_status: %s\n' "$(measurement_pass_contract_readiness_status)"
+  printf '  shader_loop_audit_command: %s\n' "$(measurement_shader_loop_audit_command)"
+  printf '  shader_loop_audit_policy: %s\n' "$(measurement_shader_loop_audit_policy)"
+  printf '  shader_loop_audit_summary: %s\n' "$(measurement_shader_loop_audit_summary)"
+  printf '  shader_loop_audit_blocker: %s\n' "$(measurement_shader_loop_audit_blocker)"
   printf '  parallel_pass_contract_record_invariant: contract_schema=%s pass_group=record_invariant paper_pass_stage=paper_record_boundary record_boundary=public_record_invariants parallel_primitives=record_boundary_claim evidence_shape=record-invariant loop_status=%s fallback_status=%s claim_boundary=behavioral-evidence-only\n' "$(measurement_parallel_pass_contract_schema)" "$(measurement_pass_contract_loop_status)" "$(measurement_pass_contract_fallback_status)"
   printf '  parallel_pass_contract_semantic_contract: contract_schema=%s pass_group=semantic_contract paper_pass_stage=paper_semantic_boundary record_boundary=typed_identity_contracts parallel_primitives=structured_record_contract evidence_shape=semantic-contract loop_status=%s fallback_status=%s claim_boundary=behavioral-evidence-only\n' "$(measurement_parallel_pass_contract_schema)" "$(measurement_pass_contract_loop_status)" "$(measurement_pass_contract_fallback_status)"
   printf '  parallel_pass_contract_execution_contract: contract_schema=%s pass_group=execution_contract paper_pass_stage=paper_codegen_boundary record_boundary=emitted_output_contracts parallel_primitives=execution_behavior_claim evidence_shape=execution-contract loop_status=%s fallback_status=%s claim_boundary=executed-output-or-fail-closed-diagnostic\n' "$(measurement_parallel_pass_contract_schema)" "$(measurement_pass_contract_loop_status)" "$(measurement_pass_contract_fallback_status)"
@@ -1560,6 +3371,7 @@ emit_perf_checkpoint_plan() {
   printf '  pareas_binary_sha256_output_path: %q\n' "$pareas_binary_sha256_path"
   printf '  pareas_output_path: %q\n' "$pareas_output_path"
   printf '  pareas_stdout_path: %q\n' "$pareas_stdout_path"
+  printf '  pareas_vram_output_path: %q\n' "$pareas_vram_path"
   printf '  required_status_fields: %s\n' "$(measurement_required_status_fields)"
   printf '  optional_status_fields: %s\n' "$(measurement_optional_status_fields)"
   printf '  required_summary_fields: %s\n' "$(measurement_required_summary_fields)"
@@ -1678,7 +3490,7 @@ emit_perf_checkpoint_plan() {
     command_status \
     timeout_and_exit_metadata \
     status_fields="$(measurement_required_status_fields)" \
-    "appended_by=responsiveness_probe_command_${line_count}l,nvidia_smi_wrapped_command_${line_count}l,pareas_wrapped_command_${line_count}l"
+    "appended_by=responsiveness_probe_command_${line_count}l,nvidia_smi_wrapped_command_${line_count}l,pareas_wrapped_command_${line_count}l,pareas_nvidia_smi_wrapped_command_${line_count}l"
   print_checkpoint_evidence_artifact \
     "$line_count" \
     responsiveness_probe \
@@ -1720,7 +3532,7 @@ emit_perf_checkpoint_plan() {
     claim_readiness_schema="$(measurement_claim_readiness_schema)" \
     claim_readiness_policy="$(measurement_claim_readiness_policy)" \
     claim_readiness_fields="$(measurement_required_claim_readiness_fields)" \
-    inputs=lanius_stdout,readback_summary,vram_csv,source_replay,source_sha256,bench_binary_sha256,hardware_identity,command_environment,command_status,responsiveness_probe,resource_usage,pareas_source,pareas_source_sha256,pareas_binary_sha256
+    inputs=lanius_stdout,readback_summary,vram_csv,source_replay,source_sha256,bench_binary_sha256,hardware_identity,command_environment,command_status,responsiveness_probe,resource_usage,pareas_source,pareas_source_sha256,pareas_binary_sha256,pareas_vram_csv
   print_checkpoint_evidence_artifact \
     "$line_count" \
     pareas_source \
@@ -1778,6 +3590,20 @@ emit_perf_checkpoint_plan() {
     pareas_comparison_timing \
     availability=requires_pareas \
     "redirect=pareas_stdout_redirect_${line_count}l"
+  print_checkpoint_evidence_artifact \
+    "$line_count" \
+    pareas_vram_csv \
+    false \
+    "$pareas_vram_path" \
+    "pareas_nvidia_smi_wrapped_command_${line_count}l" \
+    pareas_nvidia_smi_exit_status \
+    command_status \
+    pareas_vram_usage \
+    availability=requires_pareas_and_nvidia_smi \
+    schema="$(measurement_vram_csv_schema)" \
+    columns="$(measurement_required_vram_csv_columns)" \
+    stale_check=pareas_vram_csv_header_matches_required_columns \
+    "redirect=pareas_nvidia_smi_stdout_redirect_${line_count}l"
   printf '  evidence_artifacts_end\n'
   print_report_command \
     "hardware_identity_command_${line_count}l" \
@@ -1791,7 +3617,7 @@ emit_perf_checkpoint_plan() {
     "command_environment_command_${line_count}l" \
     sh \
     -c \
-    'line_count="$1"; source="$2"; phase="$3"; target="$4"; iterations="$5"; timeout_ms="$6"; timeout_seconds="$7"; readback_timeout_ms="$8"; vram_sample_interval_ms="$9"; seed="${10}"; responsiveness_timeout_ms="${11}"; responsiveness_timeout_seconds="${12}"; timing_policy="${13}"; cold_start_policy="${14}"; compile_latency_claim_source="${15}"; runtime_validation_policy="${16}"; timeout_provenance_schema="${17}"; timeout_scope="${18}"; timeout_source="${19}"; parallel_pass_contract_schema="${20}"; parallel_pass_contract_policy="${21}"; parallel_pass_contract_groups="${22}"; parallel_pass_contract_order_policy="${23}"; parallel_pass_contract_execution_order="${24}"; claim_provenance_schema="${25}"; baseline_separation_schema="${26}"; paper_baseline_policy="${27}"; paper_baseline_numbers_status="${28}"; local_evidence_status_policy="${29}"; local_performance_claim_policy="${30}"; local_performance_claim_source="${31}"; local_performance_claim_status="${32}"; local_performance_claim_blockers="${33}"; local_vram_claim_source="${34}"; local_pareas_claim_source="${35}"; scaling_claim_policy="${36}"; scaling_claim_source="${37}"; scaling_claim_status="${38}"; scaling_claim_blockers="${39}"; paper_pass_order_schema="${40}"; paper_pass_order_source="${41}"; paper_pass_order="${42}"; paper_pass_alignment_policy="${43}"; paper_pass_alignment_status="${44}"; paper_pass_alignment_blockers="${45}"; pass_contract_status_schema="${46}"; pass_contract_loop_policy="${47}"; pass_contract_loop_status="${48}"; pass_contract_fallback_status="${49}"; pass_contract_claim_status="${50}"; pass_contract_claim_blockers="${51}"; pass_contract_readiness_status=blocked; if [ "$pass_contract_loop_status" = unbounded ] && [ "$pass_contract_fallback_status" = none ] && [ "$pass_contract_claim_status" = claimable ]; then pass_contract_readiness_status=claimable; fi; printf "command_environment_schema=lanius.command-environment.v1\n"; printf "timestamp_utc="; date -u +%Y-%m-%dT%H:%M:%SZ; printf "cwd=%s\n" "$PWD"; printf "line_count=%s\n" "$line_count"; printf "source=%s\n" "$source"; printf "phase=%s\n" "$phase"; printf "target=%s\n" "$target"; printf "iterations=%s\n" "$iterations"; printf "measurement_timing_policy=%s\n" "$timing_policy"; printf "cold_start_policy=%s\n" "$cold_start_policy"; printf "compile_latency_claim_source=%s\n" "$compile_latency_claim_source"; printf "runtime_validation_policy=%s\n" "$runtime_validation_policy"; printf "claim_provenance_schema=%s\n" "$claim_provenance_schema"; printf "baseline_separation_schema=%s\n" "$baseline_separation_schema"; printf "paper_baseline_policy=%s\n" "$paper_baseline_policy"; printf "paper_baseline_numbers_status=%s\n" "$paper_baseline_numbers_status"; printf "local_evidence_status_policy=%s\n" "$local_evidence_status_policy"; printf "local_performance_claim_policy=%s\n" "$local_performance_claim_policy"; printf "local_performance_claim_source=%s\n" "$local_performance_claim_source"; printf "local_performance_claim_status=%s\n" "$local_performance_claim_status"; printf "local_performance_claim_blockers=%s\n" "$local_performance_claim_blockers"; printf "local_vram_claim_source=%s\n" "$local_vram_claim_source"; printf "local_pareas_claim_source=%s\n" "$local_pareas_claim_source"; printf "scaling_claim_policy=%s\n" "$scaling_claim_policy"; printf "scaling_claim_source=%s\n" "$scaling_claim_source"; printf "scaling_claim_status=%s\n" "$scaling_claim_status"; printf "scaling_claim_blockers=%s\n" "$scaling_claim_blockers"; printf "paper_pass_order_schema=%s\n" "$paper_pass_order_schema"; printf "paper_pass_order_source=%s\n" "$paper_pass_order_source"; printf "paper_pass_order=%s\n" "$paper_pass_order"; printf "paper_pass_alignment_policy=%s\n" "$paper_pass_alignment_policy"; printf "paper_pass_alignment_status=%s\n" "$paper_pass_alignment_status"; printf "paper_pass_alignment_blockers=%s\n" "$paper_pass_alignment_blockers"; printf "parallel_pass_contract_schema=%s\n" "$parallel_pass_contract_schema"; printf "parallel_pass_contract_policy=%s\n" "$parallel_pass_contract_policy"; printf "parallel_pass_contract_groups=%s\n" "$parallel_pass_contract_groups"; printf "parallel_pass_contract_order_policy=%s\n" "$parallel_pass_contract_order_policy"; printf "parallel_pass_contract_execution_order=%s\n" "$parallel_pass_contract_execution_order"; printf "pass_contract_status_schema=%s\n" "$pass_contract_status_schema"; printf "pass_contract_loop_policy=%s\n" "$pass_contract_loop_policy"; printf "pass_contract_loop_status=%s\n" "$pass_contract_loop_status"; printf "pass_contract_fallback_status=%s\n" "$pass_contract_fallback_status"; printf "pass_contract_claim_status=%s\n" "$pass_contract_claim_status"; printf "pass_contract_claim_blockers=%s\n" "$pass_contract_claim_blockers"; printf "pass_contract_readiness_status=%s\n" "$pass_contract_readiness_status"; printf "timeout_provenance_schema=%s\n" "$timeout_provenance_schema"; printf "timeout_scope=%s\n" "$timeout_scope"; printf "timeout_source=%s\n" "$timeout_source"; printf "timeout_ms=%s\n" "$timeout_ms"; printf "timeout_seconds=%s\n" "$timeout_seconds"; printf "readback_timeout_ms=%s\n" "$readback_timeout_ms"; printf "vram_sample_interval_ms=%s\n" "$vram_sample_interval_ms"; printf "source_seed=%s\n" "$seed"; printf "responsiveness_probe_timeout_ms=%s\n" "$responsiveness_timeout_ms"; printf "responsiveness_probe_timeout_seconds=%s\n" "$responsiveness_timeout_seconds"; printf "git_head="; git rev-parse HEAD 2>/dev/null || printf "unavailable\n"; rustc_version="$(rustc --version 2>/dev/null || true)"; [ -n "$rustc_version" ] || rustc_version=unavailable; printf "rustc_version=%s\n" "$rustc_version"; cargo_version="$(cargo --version 2>/dev/null || true)"; [ -n "$cargo_version" ] || cargo_version=unavailable; printf "cargo_version=%s\n" "$cargo_version"; slangc_version=unavailable; if [ -n "${SLANGC:-}" ] && [ -x "$SLANGC" ]; then slangc_version="$("$SLANGC" --version 2>/dev/null | head -n1 || true)"; elif command -v slangc >/dev/null 2>&1; then slangc_version="$(slangc --version 2>/dev/null | head -n1 || true)"; fi; [ -n "$slangc_version" ] || slangc_version=unavailable; printf "slangc_version=%s\n" "$slangc_version"; printf "git_status_short_begin\n"; git status --short 2>/dev/null || true; printf "git_status_short_end\n"; env | LC_ALL=C sort | grep -E "^(LANIUS_|PAREAS_|NVIDIA_|CUDA|SLANGC=|PATH=)" || true' \
+    'line_count="$1"; source="$2"; phase="$3"; target="$4"; iterations="$5"; timeout_ms="$6"; timeout_seconds="$7"; readback_timeout_ms="$8"; vram_sample_interval_ms="$9"; seed="${10}"; responsiveness_timeout_ms="${11}"; responsiveness_timeout_seconds="${12}"; timing_policy="${13}"; cold_start_policy="${14}"; compile_latency_claim_source="${15}"; runtime_validation_policy="${16}"; timeout_provenance_schema="${17}"; timeout_scope="${18}"; timeout_source="${19}"; parallel_pass_contract_schema="${20}"; parallel_pass_contract_policy="${21}"; parallel_pass_contract_groups="${22}"; parallel_pass_contract_order_policy="${23}"; parallel_pass_contract_execution_order="${24}"; claim_provenance_schema="${25}"; baseline_separation_schema="${26}"; paper_baseline_policy="${27}"; paper_baseline_numbers_status="${28}"; local_evidence_status_policy="${29}"; local_performance_claim_policy="${30}"; local_performance_claim_source="${31}"; local_performance_claim_status="${32}"; local_performance_claim_blockers="${33}"; local_vram_claim_source="${34}"; local_pareas_claim_source="${35}"; scaling_claim_policy="${36}"; scaling_claim_source="${37}"; scaling_claim_status="${38}"; scaling_claim_blockers="${39}"; paper_pass_order_schema="${40}"; paper_pass_order_source="${41}"; paper_pass_order="${42}"; paper_pass_alignment_policy="${43}"; paper_pass_alignment_status="${44}"; paper_pass_alignment_blockers="${45}"; pass_contract_status_schema="${46}"; pass_contract_loop_policy="${47}"; pass_contract_loop_status="${48}"; pass_contract_fallback_status="${49}"; pass_contract_claim_status="${50}"; pass_contract_claim_blockers="${51}"; shader_loop_audit_command="${52}"; shader_loop_audit_policy="${53}"; shader_loop_audit_summary="${54}"; shader_loop_audit_blocker="${55}"; cold_gpu_pipeline_init_policy="${56}"; steady_compile_latency_claim_source="${57}"; steady_readback_claim_source="${58}"; paper_baseline_claim_status="${59}"; workload_shape_policy="${60}"; workload_shape_scope="${61}"; workload_generalization_status="${62}"; workload_generalization_blockers="${63}"; link_artifact_evidence_policy="${64}"; link_artifact_evidence_schema="${65}"; link_artifact_required_evidence_classes="${66}"; link_artifact_evidence_status="${67}"; link_artifact_claim_blockers="${68}"; shader_loop_pareas_pass_gate_status="${69}"; shader_loop_pareas_pass_gate_blockers="${70}"; shader_summary_field() { field_name="$1"; printf "%s\n" "$shader_loop_audit_summary" | tr "," "\n" | sed -n "s/^${field_name}=//p" | head -n 1; }; shader_loop_source_sized_symbolic_cap="$(shader_summary_field source-sized-symbolic-cap)"; shader_loop_source_sized_symbolic_cap_by_component="$(shader_summary_field source-sized-symbolic-cap-by-component)"; shader_loop_source_sized_symbolic_cap_names="$(shader_summary_field source-sized-symbolic-cap-names)"; shader_loop_source_sized_symbolic_cap_route="$(shader_summary_field source-sized-symbolic-cap-route)"; shader_loop_source_sized_symbolic_cap_route_by_component="$(shader_summary_field source-sized-symbolic-cap-route-by-component)"; shader_loop_source_sized_symbolic_cap_path_route="$(shader_summary_field source-sized-symbolic-cap-path-route)"; pass_contract_readiness_status=blocked; if [ "$pass_contract_loop_status" = unbounded ] && [ "$pass_contract_fallback_status" = none ] && [ "$pass_contract_claim_status" = claimable ]; then pass_contract_readiness_status=claimable; fi; printf "command_environment_schema=lanius.command-environment.v1\n"; printf "timestamp_utc="; date -u +%Y-%m-%dT%H:%M:%SZ; printf "cwd=%s\n" "$PWD"; printf "line_count=%s\n" "$line_count"; printf "source=%s\n" "$source"; printf "phase=%s\n" "$phase"; printf "target=%s\n" "$target"; printf "iterations=%s\n" "$iterations"; printf "measurement_timing_policy=%s\n" "$timing_policy"; printf "cold_start_policy=%s\n" "$cold_start_policy"; printf "cold_gpu_pipeline_init_policy=%s\n" "$cold_gpu_pipeline_init_policy"; printf "compile_latency_claim_source=%s\n" "$compile_latency_claim_source"; printf "steady_compile_latency_claim_source=%s\n" "$steady_compile_latency_claim_source"; printf "steady_readback_claim_source=%s\n" "$steady_readback_claim_source"; printf "runtime_validation_policy=%s\n" "$runtime_validation_policy"; printf "workload_shape_policy=%s\n" "$workload_shape_policy"; printf "workload_shape_scope=%s\n" "$workload_shape_scope"; printf "workload_generalization_status=%s\n" "$workload_generalization_status"; printf "workload_generalization_blockers=%s\n" "$workload_generalization_blockers"; printf "link_artifact_evidence_policy=%s\n" "$link_artifact_evidence_policy"; printf "link_artifact_evidence_schema=%s\n" "$link_artifact_evidence_schema"; printf "link_artifact_required_evidence_classes=%s\n" "$link_artifact_required_evidence_classes"; printf "link_artifact_evidence_status=%s\n" "$link_artifact_evidence_status"; printf "link_artifact_claim_blockers=%s\n" "$link_artifact_claim_blockers"; printf "claim_provenance_schema=%s\n" "$claim_provenance_schema"; printf "baseline_separation_schema=%s\n" "$baseline_separation_schema"; printf "paper_baseline_policy=%s\n" "$paper_baseline_policy"; printf "paper_baseline_numbers_status=%s\n" "$paper_baseline_numbers_status"; printf "paper_baseline_claim_status=%s\n" "$paper_baseline_claim_status"; printf "local_evidence_status_policy=%s\n" "$local_evidence_status_policy"; printf "local_performance_claim_policy=%s\n" "$local_performance_claim_policy"; printf "local_performance_claim_source=%s\n" "$local_performance_claim_source"; printf "local_performance_claim_status=%s\n" "$local_performance_claim_status"; printf "local_performance_claim_blockers=%s\n" "$local_performance_claim_blockers"; printf "local_vram_claim_source=%s\n" "$local_vram_claim_source"; printf "local_pareas_claim_source=%s\n" "$local_pareas_claim_source"; printf "scaling_claim_policy=%s\n" "$scaling_claim_policy"; printf "scaling_claim_source=%s\n" "$scaling_claim_source"; printf "scaling_claim_status=%s\n" "$scaling_claim_status"; printf "scaling_claim_blockers=%s\n" "$scaling_claim_blockers"; printf "paper_pass_order_schema=%s\n" "$paper_pass_order_schema"; printf "paper_pass_order_source=%s\n" "$paper_pass_order_source"; printf "paper_pass_order=%s\n" "$paper_pass_order"; printf "paper_pass_alignment_policy=%s\n" "$paper_pass_alignment_policy"; printf "paper_pass_alignment_status=%s\n" "$paper_pass_alignment_status"; printf "paper_pass_alignment_blockers=%s\n" "$paper_pass_alignment_blockers"; printf "parallel_pass_contract_schema=%s\n" "$parallel_pass_contract_schema"; printf "parallel_pass_contract_policy=%s\n" "$parallel_pass_contract_policy"; printf "parallel_pass_contract_groups=%s\n" "$parallel_pass_contract_groups"; printf "parallel_pass_contract_order_policy=%s\n" "$parallel_pass_contract_order_policy"; printf "parallel_pass_contract_execution_order=%s\n" "$parallel_pass_contract_execution_order"; printf "pass_contract_status_schema=%s\n" "$pass_contract_status_schema"; printf "pass_contract_loop_policy=%s\n" "$pass_contract_loop_policy"; printf "pass_contract_loop_status=%s\n" "$pass_contract_loop_status"; printf "pass_contract_fallback_status=%s\n" "$pass_contract_fallback_status"; printf "pass_contract_claim_status=%s\n" "$pass_contract_claim_status"; printf "pass_contract_claim_blockers=%s\n" "$pass_contract_claim_blockers"; printf "pass_contract_readiness_status=%s\n" "$pass_contract_readiness_status"; printf "shader_loop_audit_command=%s\n" "$shader_loop_audit_command"; printf "shader_loop_audit_policy=%s\n" "$shader_loop_audit_policy"; printf "shader_loop_audit_summary=%s\n" "$shader_loop_audit_summary"; printf "shader_loop_audit_blocker=%s\n" "$shader_loop_audit_blocker"; printf "shader_loop_pareas_pass_gate_status=%s\n" "$shader_loop_pareas_pass_gate_status"; printf "shader_loop_pareas_pass_gate_blockers=%s\n" "$shader_loop_pareas_pass_gate_blockers"; printf "shader_loop_source_sized_symbolic_cap=%s\n" "$shader_loop_source_sized_symbolic_cap"; printf "shader_loop_source_sized_symbolic_cap_by_component=%s\n" "$shader_loop_source_sized_symbolic_cap_by_component"; printf "shader_loop_source_sized_symbolic_cap_names=%s\n" "$shader_loop_source_sized_symbolic_cap_names"; printf "shader_loop_source_sized_symbolic_cap_route=%s\n" "$shader_loop_source_sized_symbolic_cap_route"; printf "shader_loop_source_sized_symbolic_cap_route_by_component=%s\n" "$shader_loop_source_sized_symbolic_cap_route_by_component"; printf "shader_loop_source_sized_symbolic_cap_path_route=%s\n" "$shader_loop_source_sized_symbolic_cap_path_route"; printf "timeout_provenance_schema=%s\n" "$timeout_provenance_schema"; printf "timeout_scope=%s\n" "$timeout_scope"; printf "timeout_source=%s\n" "$timeout_source"; printf "timeout_ms=%s\n" "$timeout_ms"; printf "timeout_seconds=%s\n" "$timeout_seconds"; printf "readback_timeout_ms=%s\n" "$readback_timeout_ms"; printf "vram_sample_interval_ms=%s\n" "$vram_sample_interval_ms"; printf "source_seed=%s\n" "$seed"; printf "responsiveness_probe_timeout_ms=%s\n" "$responsiveness_timeout_ms"; printf "responsiveness_probe_timeout_seconds=%s\n" "$responsiveness_timeout_seconds"; printf "git_head="; git rev-parse HEAD 2>/dev/null || printf "unavailable\n"; rustc_version="$(rustc --version 2>/dev/null || true)"; [ -n "$rustc_version" ] || rustc_version=unavailable; printf "rustc_version=%s\n" "$rustc_version"; cargo_version="$(cargo --version 2>/dev/null || true)"; [ -n "$cargo_version" ] || cargo_version=unavailable; printf "cargo_version=%s\n" "$cargo_version"; slangc_version=unavailable; if [ -n "${SLANGC:-}" ] && [ -x "$SLANGC" ]; then slangc_version="$("$SLANGC" -version 2>/dev/null | head -n1 || true)"; elif command -v slangc >/dev/null 2>&1; then slangc_version="$(slangc -version 2>/dev/null | head -n1 || true)"; fi; [ -n "$slangc_version" ] || slangc_version=unavailable; printf "slangc_version=%s\n" "$slangc_version"; printf "git_status_short_begin\n"; git status --short 2>/dev/null || true; printf "git_status_short_end\n"; env | LC_ALL=C sort | grep -E "^(LANIUS_|PAREAS_|NVIDIA_|CUDA|SLANGC=|PATH=)" || true' \
     sh \
     "$line_count" \
     "$perf_source" \
@@ -1843,7 +3669,26 @@ emit_perf_checkpoint_plan() {
     "$(measurement_pass_contract_loop_status)" \
     "$(measurement_pass_contract_fallback_status)" \
     "$(measurement_pass_contract_claim_status)" \
-    "$(measurement_pass_contract_claim_blockers)"
+    "$(measurement_pass_contract_claim_blockers)" \
+    "$(measurement_shader_loop_audit_command)" \
+    "$(measurement_shader_loop_audit_policy)" \
+    "$(measurement_shader_loop_audit_summary)" \
+    "$(measurement_shader_loop_audit_blocker)" \
+    "$(measurement_cold_gpu_pipeline_init_policy)" \
+    "$(measurement_steady_compile_latency_claim_source)" \
+    "$(measurement_steady_readback_claim_source)" \
+    "$(measurement_paper_baseline_claim_status)" \
+    "$(measurement_workload_shape_policy)" \
+    "$(measurement_workload_shape_scope)" \
+    "$(measurement_workload_generalization_status)" \
+    "$(measurement_workload_generalization_blockers)" \
+    "$(measurement_link_artifact_evidence_policy)" \
+    "$(measurement_link_artifact_evidence_schema)" \
+    "$(measurement_link_artifact_required_evidence_classes)" \
+    "$(measurement_link_artifact_evidence_status)" \
+    "$(measurement_link_artifact_claim_blockers)" \
+    "$(measurement_shader_loop_pareas_pass_gate_status)" \
+    "$(measurement_shader_loop_pareas_pass_gate_blockers)"
   printf 'command_environment_stdout_redirect_%sl: > %q\n' "$line_count" "$command_env_path"
   print_report_command \
     "source_replay_command_${line_count}l" \
@@ -1924,6 +3769,14 @@ timeout_source="${20}"
 timeout_enforced_by="${21}"
 timeout_exit_code="${22}"
 timeout_exit_code_means_timed_out="${23}"
+cold_gpu_pipeline_init_policy="${24}"
+steady_compile_latency_claim_source="${25}"
+steady_readback_claim_source="${26}"
+link_artifact_evidence_policy="${27}"
+link_artifact_evidence_schema="${28}"
+link_artifact_required_evidence_classes="${29}"
+link_artifact_evidence_status="${30}"
+link_artifact_claim_blockers="${31}"
 target=x86_64-elf
 status=0
 resource_usage_status=unavailable
@@ -1955,8 +3808,16 @@ esac
   printf "lanius_wall_elapsed_ms=%s\n" "$lanius_wall_elapsed_ms"
   printf "measurement_timing_policy=%s\n" "$timing_policy"
   printf "cold_start_policy=%s\n" "$cold_start_policy"
+  printf "cold_gpu_pipeline_init_policy=%s\n" "$cold_gpu_pipeline_init_policy"
   printf "compile_latency_claim_source=%s\n" "$compile_latency_claim_source"
+  printf "steady_compile_latency_claim_source=%s\n" "$steady_compile_latency_claim_source"
+  printf "steady_readback_claim_source=%s\n" "$steady_readback_claim_source"
   printf "runtime_validation_policy=%s\n" "$runtime_validation_policy"
+  printf "link_artifact_evidence_policy=%s\n" "$link_artifact_evidence_policy"
+  printf "link_artifact_evidence_schema=%s\n" "$link_artifact_evidence_schema"
+  printf "link_artifact_required_evidence_classes=%s\n" "$link_artifact_required_evidence_classes"
+  printf "link_artifact_evidence_status=%s\n" "$link_artifact_evidence_status"
+  printf "link_artifact_claim_blockers=%s\n" "$link_artifact_claim_blockers"
   printf "timeout_provenance_schema=%s\n" "$timeout_provenance_schema"
   printf "timeout_scope=%s\n" "$timeout_scope"
   printf "timeout_ms=%s\n" "$timeout_ms"
@@ -2002,7 +3863,15 @@ exit "$status"' \
     "$(measurement_timeout_source)" \
     "$(measurement_timeout_enforced_by)" \
     "$(measurement_timeout_exit_code)" \
-    "$(measurement_timeout_exit_code_means_timed_out)"
+    "$(measurement_timeout_exit_code_means_timed_out)" \
+    "$(measurement_cold_gpu_pipeline_init_policy)" \
+    "$(measurement_steady_compile_latency_claim_source)" \
+    "$(measurement_steady_readback_claim_source)" \
+    "$(measurement_link_artifact_evidence_policy)" \
+    "$(measurement_link_artifact_evidence_schema)" \
+    "$(measurement_link_artifact_required_evidence_classes)" \
+    "$(measurement_link_artifact_evidence_status)" \
+    "$(measurement_link_artifact_claim_blockers)"
   print_report_command \
     "responsiveness_probe_command_${line_count}l" \
     sh \
@@ -2022,14 +3891,15 @@ exit "$status"' \
     "readback_trace_summary_command_${line_count}l" \
     sh \
     -c \
-    'trace_path="$1"; line_count="$2"; source="$3"; phase="$4"; target="$5"; readback_timeout_ms="$6"; span_count=pending; if [ -f "$trace_path" ]; then if command -v rg >/dev/null 2>&1; then span_count="$(rg -i "host.readback|readback" "$trace_path" | wc -l | tr -d " ")"; else span_count=missing-rg; fi; fi; { printf "readback_summary_schema=lanius.readback-summary.v1\n"; printf "line_count=%s\n" "$line_count"; printf "source=%s\n" "$source"; printf "phase=%s\n" "$phase"; printf "target=%s\n" "$target"; printf "trace_path=%s\n" "$trace_path"; printf "readback_timeout_ms=%s\n" "$readback_timeout_ms"; printf "span_count=%s\n" "$span_count"; printf "total_ms=pending\n"; printf "max_span_ms=pending\n"; }' \
+    'trace_path="$1"; line_count="$2"; source="$3"; phase="$4"; target="$5"; readback_timeout_ms="$6"; steady_readback_claim_source="$7"; span_count=pending; if [ -f "$trace_path" ]; then if command -v rg >/dev/null 2>&1; then span_count="$(rg -i "host.readback|readback" "$trace_path" | wc -l | tr -d " ")"; else span_count=missing-rg; fi; fi; { printf "readback_summary_schema=lanius.readback-summary.v1\n"; printf "line_count=%s\n" "$line_count"; printf "source=%s\n" "$source"; printf "phase=%s\n" "$phase"; printf "target=%s\n" "$target"; printf "trace_path=%s\n" "$trace_path"; printf "readback_timeout_ms=%s\n" "$readback_timeout_ms"; printf "steady_readback_claim_source=%s\n" "$steady_readback_claim_source"; printf "span_count=%s\n" "$span_count"; printf "total_ms=pending\n"; printf "max_span_ms=pending\n"; }' \
     sh \
     "$trace_path" \
     "$line_count" \
     "$perf_source" \
     "$perf_phase" \
     x86_64-elf \
-    "$perf_readback_timeout_ms"
+    "$perf_readback_timeout_ms" \
+    "$(measurement_steady_readback_claim_source)"
   printf 'readback_trace_summary_stdout_redirect_%sl: > %q\n' "$line_count" "$readback_summary_path"
 
   if [[ -n "$nvidia_smi" ]]; then
@@ -2063,7 +3933,7 @@ exit "$status"' \
     "pareas_source_command_${line_count}l" \
     sh \
     -c \
-    'lines="$1"; helpers=$(((lines > 4 ? lines - 4 : 1) / 5)); if [ "$helpers" -lt 1 ]; then helpers=1; fi; i=0; while [ "$i" -lt "$helpers" ]; do printf "fn f%s[a: int]: int {\n  var x = a + %s;\n  return x;\n}\n" "$i" "$i"; i=$((i + 1)); done; printf "fn main[]: int {\n  var acc = 0;\n"; i=0; while [ "$i" -lt "$helpers" ]; do printf "  acc = acc + f%s[%s];\n" "$i" "$i"; i=$((i + 1)); done; printf "  return acc;\n}\n"' \
+    'lines="$1"; helper_basis=$((lines > 4 ? lines - 4 : 1)); helpers=$(((helper_basis + 4) / 5)); if [ "$helpers" -lt 1 ]; then helpers=1; fi; i=0; while [ "$i" -lt "$helpers" ]; do printf "fn f%s[a: int]: int {\n  var x = a + %s;\n  return x;\n}\n" "$i" "$i"; i=$((i + 1)); done; printf "fn main[]: int {\n  var acc = 0;\n"; i=0; while [ "$i" -lt "$helpers" ]; do printf "  acc = acc + f%s[%s];\n" "$i" "$i"; i=$((i + 1)); done; printf "  return acc;\n}\n"' \
     sh \
     "$line_count"
   printf 'pareas_source_stdout_redirect_%sl: > %q\n' "$line_count" "$pareas_source_path"
@@ -2101,12 +3971,41 @@ exit "$status"' \
       "$pareas_stdout_path" \
       "$command_status_path" \
       "$line_count"
+    if [[ -n "$nvidia_smi" ]]; then
+      print_report_command \
+        "pareas_nvidia_smi_command_${line_count}l" \
+        "$nvidia_smi" \
+        --query-gpu=timestamp,index,name,memory.used,memory.total,utilization.gpu \
+        --format=csv \
+        -lms \
+        "$perf_vram_sample_interval_ms"
+      printf 'pareas_nvidia_smi_stdout_redirect_%sl: > %q\n' "$line_count" "$pareas_vram_path"
+      print_report_command \
+        "pareas_nvidia_smi_wrapped_command_${line_count}l" \
+        sh \
+        -c \
+        'status=0; timeout "$1" "$2" --query-gpu=timestamp,index,name,memory.used,memory.total,utilization.gpu --format=csv -lms "$3" >"$4" 2>&1 || status=$?; { printf "pareas_nvidia_smi_exit_status=%s\n" "$status"; printf "timeout_seconds=%s\n" "$1"; printf "line_count=%s\n" "$6"; printf "vram_sample_interval_ms=%s\n" "$3"; printf "pareas_vram_output_path=%s\n" "$4"; } >>"$5"; exit "$status"' \
+        sh \
+        "$perf_timeout_seconds" \
+        "$nvidia_smi" \
+        "$perf_vram_sample_interval_ms" \
+        "$pareas_vram_path" \
+        "$command_status_path" \
+        "$line_count"
+    else
+      printf 'pareas_nvidia_smi_command_%sl: unavailable optional; set NVIDIA_SMI or LANIUS_REQUIRE_NVIDIA_SMI=1 before claiming a local Pareas VRAM comparison\n' "$line_count"
+      printf 'pareas_nvidia_smi_stdout_redirect_%sl: unavailable optional; intended output path > %q\n' "$line_count" "$pareas_vram_path"
+      printf 'pareas_nvidia_smi_wrapped_command_%sl: unavailable optional; Pareas VRAM CSV cannot be captured without NVIDIA_SMI or nvidia-smi on PATH\n' "$line_count"
+    fi
   else
     printf 'pareas_binary_sha256_command_%sl: unavailable optional; set PAREAS_BIN or LANIUS_REQUIRE_PAREAS=1 before claiming a local Pareas comparison\n' "$line_count"
     printf 'pareas_binary_sha256_stdout_redirect_%sl: unavailable optional; intended output path > %q\n' "$line_count" "$pareas_binary_sha256_path"
     printf 'pareas_command_%sl: unavailable optional; set PAREAS_BIN or LANIUS_REQUIRE_PAREAS=1 after building Pareas\n' "$line_count"
     printf 'pareas_stdout_redirect_%sl: unavailable optional; intended stdout path > %q\n' "$line_count" "$pareas_stdout_path"
     printf 'pareas_wrapped_command_%sl: unavailable optional; Pareas status cannot be captured without PAREAS_BIN\n' "$line_count"
+    printf 'pareas_nvidia_smi_command_%sl: unavailable optional; set PAREAS_BIN and NVIDIA_SMI before claiming a local Pareas VRAM comparison\n' "$line_count"
+    printf 'pareas_nvidia_smi_stdout_redirect_%sl: unavailable optional; intended output path > %q\n' "$line_count" "$pareas_vram_path"
+    printf 'pareas_nvidia_smi_wrapped_command_%sl: unavailable optional; Pareas VRAM status cannot be captured without PAREAS_BIN\n' "$line_count"
   fi
 
   print_report_command \
@@ -2165,26 +4064,57 @@ paper_baseline_numbers_status="${49}"
 local_evidence_status_policy="${50}"
 local_performance_claim_policy="${51}"
 local_performance_claim_source="${52}"
-local_performance_claim_status="${53}"
-local_performance_claim_blockers="${54}"
-local_vram_claim_source="${55}"
-local_pareas_claim_source="${56}"
-scaling_claim_policy="${57}"
-scaling_claim_source="${58}"
-scaling_claim_status="${59}"
-scaling_claim_blockers="${60}"
-paper_pass_order_schema="${61}"
-paper_pass_order_source="${62}"
-paper_pass_order="${63}"
-paper_pass_alignment_policy="${64}"
-paper_pass_alignment_status="${65}"
-paper_pass_alignment_blockers="${66}"
-pass_contract_status_schema="${67}"
-pass_contract_loop_policy="${68}"
-pass_contract_loop_status="${69}"
-pass_contract_fallback_status="${70}"
-pass_contract_claim_status="${71}"
-pass_contract_claim_blockers="${72}"
+local_performance_claim_exclusions="${53}"
+local_performance_claim_status="${54}"
+local_performance_claim_blockers="${55}"
+local_vram_claim_source="${56}"
+local_pareas_claim_source="${57}"
+scaling_claim_policy="${58}"
+scaling_claim_source="${59}"
+scaling_claim_status="${60}"
+scaling_claim_blockers="${61}"
+paper_pass_order_schema="${62}"
+paper_pass_order_source="${63}"
+paper_pass_order="${64}"
+paper_pass_alignment_policy="${65}"
+paper_pass_alignment_status="${66}"
+paper_pass_alignment_blockers="${67}"
+pass_contract_status_schema="${68}"
+pass_contract_loop_policy="${69}"
+pass_contract_loop_status="${70}"
+pass_contract_fallback_status="${71}"
+pass_contract_claim_status="${72}"
+pass_contract_claim_blockers="${73}"
+shader_loop_audit_command="${74}"
+shader_loop_audit_policy="${75}"
+shader_loop_audit_summary="${76}"
+shader_loop_audit_blocker="${77}"
+cold_gpu_pipeline_init_policy="${78}"
+steady_compile_latency_claim_source="${79}"
+steady_readback_claim_source="${80}"
+paper_baseline_claim_status="${81}"
+workload_shape_policy="${82}"
+workload_shape_scope="${83}"
+workload_generalization_status="${84}"
+workload_generalization_blockers="${85}"
+link_artifact_evidence_policy="${86}"
+link_artifact_evidence_schema="${87}"
+link_artifact_required_evidence_classes="${88}"
+link_artifact_evidence_status="${89}"
+link_artifact_claim_blockers="${90}"
+shader_loop_pareas_pass_gate_status="${91}"
+shader_loop_pareas_pass_gate_blockers="${92}"
+
+shader_summary_field() {
+  field_name="$1"
+  printf "%s\n" "$shader_loop_audit_summary" | tr "," "\n" | sed -n "s/^${field_name}=//p" | head -n 1
+}
+shader_loop_source_sized_symbolic_cap="$(shader_summary_field source-sized-symbolic-cap)"
+shader_loop_source_sized_symbolic_cap_by_component="$(shader_summary_field source-sized-symbolic-cap-by-component)"
+shader_loop_source_sized_symbolic_cap_names="$(shader_summary_field source-sized-symbolic-cap-names)"
+shader_loop_source_sized_symbolic_cap_route="$(shader_summary_field source-sized-symbolic-cap-route)"
+shader_loop_source_sized_symbolic_cap_route_by_component="$(shader_summary_field source-sized-symbolic-cap-route-by-component)"
+shader_loop_source_sized_symbolic_cap_path_route="$(shader_summary_field source-sized-symbolic-cap-path-route)"
 
 missing_required_artifacts=""
 append_missing_artifact() {
@@ -2248,6 +4178,11 @@ if [ -f "$hardware_output_path" ]; then
     hardware_identity_sha256="unavailable"
   fi
 fi
+pareas_source_line_count="not-run"
+if [ -f "$pareas_source_path" ]; then
+  pareas_source_line_count="$(awk "END { print NR + 0 }" "$pareas_source_path")"
+  [ -n "$pareas_source_line_count" ] || pareas_source_line_count="missing"
+fi
 pareas_source_sha256="not-run"
 if [ -f "$pareas_source_sha256_path" ]; then
   pareas_source_sha256="$(sed -n "1{s/[[:space:]].*//;p;q;}" "$pareas_source_sha256_path")"
@@ -2273,6 +4208,8 @@ nvidia_smi_exit_status="not-run"
 pareas_exit_status="not-run"
 pareas_wall_elapsed_ms="not-run"
 pareas_bin_path="not-run"
+pareas_nvidia_smi_exit_status="not-run"
+pareas_vram_output_path="not-run"
 if [ -f "$command_status_path" ]; then
   lanius_exit_status="$(status_first lanius_exit_status)"
   [ -n "$lanius_exit_status" ] || lanius_exit_status="missing"
@@ -2292,6 +4229,10 @@ if [ -f "$command_status_path" ]; then
   [ -n "$maybe_pareas_wall_elapsed_ms" ] && pareas_wall_elapsed_ms="$maybe_pareas_wall_elapsed_ms"
   maybe_pareas_bin_path="$(status_last pareas_bin_path)"
   [ -n "$maybe_pareas_bin_path" ] && pareas_bin_path="$maybe_pareas_bin_path"
+  maybe_pareas_nvidia_smi_exit_status="$(status_last pareas_nvidia_smi_exit_status)"
+  [ -n "$maybe_pareas_nvidia_smi_exit_status" ] && pareas_nvidia_smi_exit_status="$maybe_pareas_nvidia_smi_exit_status"
+  maybe_pareas_vram_output_path="$(status_last pareas_vram_output_path)"
+  [ -n "$maybe_pareas_vram_output_path" ] && pareas_vram_output_path="$maybe_pareas_vram_output_path"
 fi
 timed_out="pending"
 case "$lanius_exit_status" in
@@ -2339,6 +4280,10 @@ fi
 max_vram_bytes="pending"
 if [ -f "$vram_output_path" ]; then
   max_vram_bytes="$(awk -F, "NR > 1 { used = \$4; gsub(/[^0-9]/, \"\", used); if (used + 0 > max) max = used + 0 } END { if (max > 0) printf \"%.0f\", max * 1048576; else printf \"missing\" }" "$vram_output_path")"
+fi
+pareas_max_vram_bytes="not-run"
+if [ "$pareas_vram_output_path" != "not-run" ] && [ -f "$pareas_vram_output_path" ]; then
+  pareas_max_vram_bytes="$(awk -F, "NR > 1 { used = \$4; gsub(/[^0-9]/, \"\", used); if (used + 0 > max) max = used + 0 } END { if (max > 0) printf \"%.0f\", max * 1048576; else printf \"missing\" }" "$pareas_vram_output_path")"
 fi
 resource_user_seconds="pending"
 resource_system_seconds="pending"
@@ -2400,14 +4345,19 @@ check_file_field_present() {
     fi
   fi
 }
-check_vram_csv_header() {
-  if [ -f "$vram_output_path" ]; then
-    actual_header="$(sed -n "1p;q" "$vram_output_path" | sed "s/[[:space:]]//g; s/\\[[^]]*\\]//g")"
+check_vram_csv_header_path() {
+  artifact_name="$1"
+  artifact_path="$2"
+  if [ -f "$artifact_path" ]; then
+    actual_header="$(sed -n "1p;q" "$artifact_path" | sed "s/[[:space:]]//g; s/\\[[^]]*\\]//g")"
     expected_header="timestamp,index,name,memory.used,memory.total,utilization.gpu"
     if [ "$actual_header" != "$expected_header" ]; then
-      append_stale_artifact "vram_csv:header"
+      append_stale_artifact "${artifact_name}:header"
     fi
   fi
+}
+check_vram_csv_header() {
+  check_vram_csv_header_path vram_csv "$vram_output_path"
 }
 is_unsigned_integer() {
   case "${1:-}" in
@@ -2417,6 +4367,9 @@ is_unsigned_integer() {
 }
 is_nonnegative_number() {
   awk -v value="${1:-}" "BEGIN { exit (value ~ /^[0-9]+([.][0-9]+)?$/) ? 0 : 1 }"
+}
+is_positive_number() {
+  awk -v value="${1:-}" "BEGIN { exit (value ~ /^[0-9]+([.][0-9]+)?$/ && value + 0 > 0) ? 0 : 1 }"
 }
 check_metric_unsigned_if_present() {
   artifact_name="$1"
@@ -2460,9 +4413,24 @@ check_readback_span_metrics_consistent() {
     is_unsigned_integer "$readback_span_count" &&
     is_nonnegative_number "$readback_total_ms" &&
     is_nonnegative_number "$readback_max_span_ms"; then
-    if ! awk -v spans="$readback_span_count" -v total="$readback_total_ms" -v max_span="$readback_max_span_ms" "BEGIN { if (spans == 0) { if (total == 0 && max_span == 0) exit 0; exit 1 } if (max_span <= total) exit 0; exit 1 }"; then
+    if ! awk -v spans="$readback_span_count" -v total="$readback_total_ms" -v max_span="$readback_max_span_ms" "BEGIN { if (spans <= 0) exit 1; if (total <= 0 || max_span <= 0) exit 1; if (max_span <= total) exit 0; exit 1 }"; then
       append_stale_artifact "readback_summary:span-metrics"
     fi
+  fi
+}
+readback_trace_has_recorded_spans() {
+  if [ ! -s "$perfetto_trace_path" ]; then
+    return 1
+  fi
+  trace_readback_marker_count="$(awk "BEGIN { count = 0 } /host[.]readback|readback/ { count += 1 } END { print count + 0 }" "$perfetto_trace_path" 2>/dev/null || printf "0")"
+  is_unsigned_integer "$trace_readback_marker_count" && [ "$trace_readback_marker_count" -gt 0 ]
+}
+check_readback_summary_trace_contains_recorded_spans() {
+  if [ -f "$readback_summary_path" ] &&
+    is_unsigned_integer "$readback_span_count" &&
+    [ "$readback_span_count" -gt 0 ] &&
+    ! readback_trace_has_recorded_spans; then
+    append_stale_artifact "readback_summary:trace-spans"
   fi
 }
 check_source_replay_line_count_covers_checkpoint() {
@@ -2471,6 +4439,14 @@ check_source_replay_line_count_covers_checkpoint() {
     is_unsigned_integer "$line_count" &&
     [ "$source_replay_line_count" -lt "$line_count" ]; then
     append_stale_artifact "source_replay:line_count"
+  fi
+}
+check_pareas_source_line_count_covers_checkpoint() {
+  if [ -f "$pareas_source_path" ] &&
+    is_unsigned_integer "$pareas_source_line_count" &&
+    is_unsigned_integer "$line_count" &&
+    [ "$pareas_source_line_count" -lt "$line_count" ]; then
+    append_stale_artifact "pareas_source:line_count"
   fi
 }
 check_status_field_equals() {
@@ -2515,8 +4491,16 @@ fi
 check_status_field_equals command_status_schema lanius.command-status.v1
 check_status_field_equals measurement_timing_policy "$timing_policy"
 check_status_field_equals cold_start_policy "$cold_start_policy"
+check_status_field_equals cold_gpu_pipeline_init_policy "$cold_gpu_pipeline_init_policy"
 check_status_field_equals compile_latency_claim_source "$compile_latency_claim_source"
+check_status_field_equals steady_compile_latency_claim_source "$steady_compile_latency_claim_source"
+check_status_field_equals steady_readback_claim_source "$steady_readback_claim_source"
 check_status_field_equals runtime_validation_policy "$runtime_validation_policy"
+check_status_field_equals link_artifact_evidence_policy "$link_artifact_evidence_policy"
+check_status_field_equals link_artifact_evidence_schema "$link_artifact_evidence_schema"
+check_status_field_equals link_artifact_required_evidence_classes "$link_artifact_required_evidence_classes"
+check_status_field_equals link_artifact_evidence_status "$link_artifact_evidence_status"
+check_status_field_equals link_artifact_claim_blockers "$link_artifact_claim_blockers"
 check_status_field_equals timeout_provenance_schema "$timeout_provenance_schema"
 check_status_field_equals timeout_scope "$timeout_scope"
 check_status_field_equals timeout_ms "$timeout_ms"
@@ -2553,6 +4537,14 @@ if [ "$pareas_exit_status" != "not-run" ] || [ -e "$pareas_output_path" ] || [ -
   check_status_last_field_equals pareas_status pareas_output_path "$pareas_output_path"
   check_status_last_field_equals pareas_status pareas_stdout_path "$pareas_stdout_path"
 fi
+if [ "$pareas_nvidia_smi_exit_status" != "not-run" ] || { [ "$pareas_vram_output_path" != "not-run" ] && [ -f "$pareas_vram_output_path" ]; }; then
+  check_status_last_field_equals pareas_vram_status pareas_nvidia_smi_exit_status "$pareas_nvidia_smi_exit_status"
+  check_status_last_field_equals pareas_vram_status timeout_seconds "$timeout_seconds"
+  check_status_last_field_equals pareas_vram_status line_count "$line_count"
+  check_status_last_field_equals pareas_vram_status vram_sample_interval_ms "$vram_sample_interval_ms"
+  check_status_last_field_equals pareas_vram_status pareas_vram_output_path "$pareas_vram_output_path"
+  check_vram_csv_header_path pareas_vram_csv "$pareas_vram_output_path"
+fi
 check_file_field_equals command_environment "$command_env_path" command_environment_schema lanius.command-environment.v1
 check_file_field_equals command_environment "$command_env_path" line_count "$line_count"
 check_file_field_equals command_environment "$command_env_path" source "$source"
@@ -2561,12 +4553,25 @@ check_file_field_equals command_environment "$command_env_path" target "$target"
 check_file_field_equals command_environment "$command_env_path" iterations "$iterations"
 check_file_field_equals command_environment "$command_env_path" measurement_timing_policy "$timing_policy"
 check_file_field_equals command_environment "$command_env_path" cold_start_policy "$cold_start_policy"
+check_file_field_equals command_environment "$command_env_path" cold_gpu_pipeline_init_policy "$cold_gpu_pipeline_init_policy"
 check_file_field_equals command_environment "$command_env_path" compile_latency_claim_source "$compile_latency_claim_source"
+check_file_field_equals command_environment "$command_env_path" steady_compile_latency_claim_source "$steady_compile_latency_claim_source"
+check_file_field_equals command_environment "$command_env_path" steady_readback_claim_source "$steady_readback_claim_source"
 check_file_field_equals command_environment "$command_env_path" runtime_validation_policy "$runtime_validation_policy"
+check_file_field_equals command_environment "$command_env_path" workload_shape_policy "$workload_shape_policy"
+check_file_field_equals command_environment "$command_env_path" workload_shape_scope "$workload_shape_scope"
+check_file_field_equals command_environment "$command_env_path" workload_generalization_status "$workload_generalization_status"
+check_file_field_equals command_environment "$command_env_path" workload_generalization_blockers "$workload_generalization_blockers"
+check_file_field_equals command_environment "$command_env_path" link_artifact_evidence_policy "$link_artifact_evidence_policy"
+check_file_field_equals command_environment "$command_env_path" link_artifact_evidence_schema "$link_artifact_evidence_schema"
+check_file_field_equals command_environment "$command_env_path" link_artifact_required_evidence_classes "$link_artifact_required_evidence_classes"
+check_file_field_equals command_environment "$command_env_path" link_artifact_evidence_status "$link_artifact_evidence_status"
+check_file_field_equals command_environment "$command_env_path" link_artifact_claim_blockers "$link_artifact_claim_blockers"
 check_file_field_equals command_environment "$command_env_path" claim_provenance_schema "$claim_provenance_schema"
 check_file_field_equals command_environment "$command_env_path" baseline_separation_schema "$baseline_separation_schema"
 check_file_field_equals command_environment "$command_env_path" paper_baseline_policy "$paper_baseline_policy"
 check_file_field_equals command_environment "$command_env_path" paper_baseline_numbers_status "$paper_baseline_numbers_status"
+check_file_field_equals command_environment "$command_env_path" paper_baseline_claim_status "$paper_baseline_claim_status"
 check_file_field_equals command_environment "$command_env_path" local_evidence_status_policy "$local_evidence_status_policy"
 check_file_field_equals command_environment "$command_env_path" local_performance_claim_policy "$local_performance_claim_policy"
 check_file_field_equals command_environment "$command_env_path" local_performance_claim_source "$local_performance_claim_source"
@@ -2602,6 +4607,18 @@ if [ "$pass_contract_loop_status" = "unbounded" ] &&
   pass_contract_readiness_status=claimable
 fi
 check_file_field_equals command_environment "$command_env_path" pass_contract_readiness_status "$pass_contract_readiness_status"
+check_file_field_equals command_environment "$command_env_path" shader_loop_audit_command "$shader_loop_audit_command"
+check_file_field_equals command_environment "$command_env_path" shader_loop_audit_policy "$shader_loop_audit_policy"
+check_file_field_equals command_environment "$command_env_path" shader_loop_audit_summary "$shader_loop_audit_summary"
+check_file_field_equals command_environment "$command_env_path" shader_loop_audit_blocker "$shader_loop_audit_blocker"
+check_file_field_equals command_environment "$command_env_path" shader_loop_pareas_pass_gate_status "$shader_loop_pareas_pass_gate_status"
+check_file_field_equals command_environment "$command_env_path" shader_loop_pareas_pass_gate_blockers "$shader_loop_pareas_pass_gate_blockers"
+check_file_field_equals command_environment "$command_env_path" shader_loop_source_sized_symbolic_cap "$shader_loop_source_sized_symbolic_cap"
+check_file_field_equals command_environment "$command_env_path" shader_loop_source_sized_symbolic_cap_by_component "$shader_loop_source_sized_symbolic_cap_by_component"
+check_file_field_equals command_environment "$command_env_path" shader_loop_source_sized_symbolic_cap_names "$shader_loop_source_sized_symbolic_cap_names"
+check_file_field_equals command_environment "$command_env_path" shader_loop_source_sized_symbolic_cap_route "$shader_loop_source_sized_symbolic_cap_route"
+check_file_field_equals command_environment "$command_env_path" shader_loop_source_sized_symbolic_cap_route_by_component "$shader_loop_source_sized_symbolic_cap_route_by_component"
+check_file_field_equals command_environment "$command_env_path" shader_loop_source_sized_symbolic_cap_path_route "$shader_loop_source_sized_symbolic_cap_path_route"
 check_file_field_equals command_environment "$command_env_path" timeout_provenance_schema "$timeout_provenance_schema"
 check_file_field_equals command_environment "$command_env_path" timeout_scope "$timeout_scope"
 check_file_field_equals command_environment "$command_env_path" timeout_source "$timeout_source"
@@ -2622,6 +4639,7 @@ check_file_field_equals readback_summary "$readback_summary_path" phase "$phase"
 check_file_field_equals readback_summary "$readback_summary_path" target "$target"
 check_file_field_equals readback_summary "$readback_summary_path" trace_path "$perfetto_trace_path"
 check_file_field_equals readback_summary "$readback_summary_path" readback_timeout_ms "$readback_timeout_ms"
+check_file_field_equals readback_summary "$readback_summary_path" steady_readback_claim_source "$steady_readback_claim_source"
 check_file_field_equals responsiveness_probe "$responsiveness_probe_path" responsiveness_probe_schema lanius.responsiveness-probe.v1
 check_file_field_equals responsiveness_probe "$responsiveness_probe_path" line_count "$line_count"
 check_file_field_equals responsiveness_probe "$responsiveness_probe_path" source "$source"
@@ -2640,14 +4658,18 @@ check_metric_unsigned_if_present readback_summary span_count "$readback_span_cou
 check_metric_number_if_present readback_summary total_ms "$readback_total_ms"
 check_metric_number_if_present readback_summary max_span_ms "$readback_max_span_ms"
 check_metric_unsigned_if_present vram_csv max_vram_bytes "$max_vram_bytes"
+check_metric_unsigned_if_present pareas_vram_csv pareas_max_vram_bytes "$pareas_max_vram_bytes"
 check_metric_number_if_present resource_usage resource_user_seconds "$resource_user_seconds"
 check_metric_number_if_present resource_usage resource_system_seconds "$resource_system_seconds"
 check_metric_unsigned_if_present resource_usage resource_max_rss_kb "$resource_max_rss_kb"
 check_metric_unsigned_if_present source_replay source_replay_line_count "$source_replay_line_count"
+check_metric_unsigned_if_present pareas_source pareas_source_line_count "$pareas_source_line_count"
 check_metric_unsigned_if_present pareas_status pareas_wall_elapsed_ms "$pareas_wall_elapsed_ms"
 check_metric_number_if_present pareas_stdout lanius_pareas_wall_ratio "$lanius_pareas_wall_ratio"
 check_readback_span_metrics_consistent
+check_readback_summary_trace_contains_recorded_spans
 check_source_replay_line_count_covers_checkpoint
+check_pareas_source_line_count_covers_checkpoint
 source_control_policy=git-head-plus-status-in-command-environment-hash
 source_control_state=pending
 source_control_revision=pending
@@ -2695,7 +4717,7 @@ elif [ ! -f "$command_env_path" ]; then
   source_control_state=missing
   source_control_revision=missing
 fi
-stale_artifact_checks="source_sha256_matches_source_replay,source_replay_line_count_covers_checkpoint,bench_binary_sha256_matches_binary,pareas_source_sha256_matches_pareas_source,pareas_binary_sha256_matches_pareas_binary,command_status_schema_checkpoint_timing_policy_timeout_provenance_and_paths,vram_status_matches_checkpoint,vram_csv_header_matches_required_columns,pareas_status_matches_checkpoint,command_environment_schema_checkpoint_timing_policy_timeout_provenance_tool_versions_claim_provenance_baseline_separation_paper_pass_order_pass_contracts_loop_status_and_readiness,source_control_revision_is_local_git_commit,claim_provenance_fields_match_checkpoint,paper_baseline_and_local_evidence_separation_match_checkpoint,paper_pass_order_matches_checkpoint,paper_pass_alignment_status_matches_checkpoint,parallel_pass_contracts_match_checkpoint,parallel_pass_contract_order_matches_checkpoint,pass_contract_loop_fallback_and_readiness_status_match_checkpoint,readback_summary_matches_checkpoint,readback_summary_span_metrics_are_consistent,responsiveness_probe_matches_checkpoint,hardware_identity_matches_target,resource_usage_command_matches_checkpoint,quantitative_artifact_fields_are_numeric"
+stale_artifact_checks="source_sha256_matches_source_replay,source_replay_line_count_covers_checkpoint,bench_binary_sha256_matches_binary,pareas_source_sha256_matches_pareas_source,pareas_source_line_count_covers_checkpoint,pareas_binary_sha256_matches_pareas_binary,command_status_schema_checkpoint_timing_policy_timeout_provenance_and_paths,cold_gpu_pipeline_and_steady_claim_fields_match_checkpoint,link_artifact_evidence_status_matches_checkpoint,link_artifact_required_evidence_classes_matches_checkpoint,vram_status_matches_checkpoint,vram_csv_header_matches_required_columns,pareas_status_matches_checkpoint,pareas_vram_status_matches_checkpoint,pareas_vram_csv_header_matches_required_columns,command_environment_schema_checkpoint_timing_policy_timeout_provenance_tool_versions_claim_provenance_baseline_separation_link_artifacts_paper_claim_status_paper_pass_order_pass_contracts_loop_status_and_readiness,command_environment_shader_loop_audit_summary_matches_plan,command_environment_shader_loop_audit_blocker_matches_plan,command_environment_shader_loop_pareas_gate_matches_plan,command_environment_shader_loop_symbolic_cap_routes_match_plan,source_control_revision_is_local_git_commit,claim_provenance_fields_match_checkpoint,paper_baseline_claim_status_matches_checkpoint,paper_baseline_and_local_evidence_separation_match_checkpoint,paper_pass_order_matches_checkpoint,paper_pass_alignment_status_matches_checkpoint,parallel_pass_contracts_match_checkpoint,parallel_pass_contract_order_matches_checkpoint,pass_contract_loop_fallback_and_readiness_status_match_checkpoint,shader_loop_audit_summary_matches_checkpoint,shader_loop_audit_blocker_matches_checkpoint,shader_loop_pareas_gate_matches_checkpoint,shader_loop_symbolic_cap_routes_match_checkpoint,readback_summary_matches_checkpoint,readback_summary_span_metrics_are_consistent,readback_summary_trace_contains_recorded_spans,responsiveness_probe_matches_checkpoint,hardware_identity_matches_target,resource_usage_command_matches_checkpoint,quantitative_artifact_fields_are_numeric"
 if [ -n "$stale_artifacts" ]; then
   evidence_freshness_status=stale
 else
@@ -2749,8 +4771,12 @@ else
 fi
 local_readback_evidence_status=incomplete
 if unsigned_value_present "$readback_span_count" &&
-  numeric_value_present "$readback_total_ms" &&
-  numeric_value_present "$readback_max_span_ms"; then
+  [ "$readback_span_count" -gt 0 ] &&
+  value_present "$readback_total_ms" &&
+  value_present "$readback_max_span_ms" &&
+  is_positive_number "$readback_total_ms" &&
+  is_positive_number "$readback_max_span_ms" &&
+  readback_trace_has_recorded_spans; then
   local_readback_evidence_status=complete
 elif [ ! -f "$readback_summary_path" ]; then
   local_readback_evidence_status=missing
@@ -2773,6 +4799,7 @@ local_pareas_evidence_status=incomplete
 if [ "$pareas_exit_status" = "0" ] &&
   [ "$pareas_timed_out" = "false" ] &&
   unsigned_value_present "$pareas_wall_elapsed_ms" &&
+  unsigned_value_present "$pareas_source_line_count" &&
   value_present "$pareas_source_sha256" &&
   value_present "$pareas_binary_sha256" &&
   [ -e "$pareas_output_path" ] &&
@@ -2786,6 +4813,18 @@ elif [ "$pareas_timed_out" = "true" ]; then
   local_pareas_evidence_status=timed-out
 else
   local_pareas_evidence_status=failed
+fi
+local_pareas_vram_evidence_status=not-run
+if [ "$pareas_nvidia_smi_exit_status" = "0" ] && unsigned_value_present "$pareas_max_vram_bytes"; then
+  local_pareas_vram_evidence_status=complete
+elif [ "$pareas_nvidia_smi_exit_status" = "not-run" ]; then
+  local_pareas_vram_evidence_status=not-run
+elif [ "$pareas_nvidia_smi_exit_status" = "pending" ] || [ "$pareas_nvidia_smi_exit_status" = "missing" ]; then
+  local_pareas_vram_evidence_status=missing
+elif [ "$pareas_nvidia_smi_exit_status" = "124" ]; then
+  local_pareas_vram_evidence_status=timed-out
+else
+  local_pareas_vram_evidence_status=failed
 fi
 repeatability_policy=claimable-metrics-require-at-least-three-iterations
 minimum_iterations_for_claim=3
@@ -2805,7 +4844,10 @@ production_readiness_blockers=""
 [ "$local_readback_evidence_status" = "complete" ] || append_blocker "readback:${local_readback_evidence_status}"
 [ "$local_vram_evidence_status" = "complete" ] || append_blocker "vram:${local_vram_evidence_status}"
 [ "$local_pareas_evidence_status" = "complete" ] || append_blocker "pareas:${local_pareas_evidence_status}"
+[ "$local_pareas_vram_evidence_status" = "complete" ] || append_blocker "pareas_vram:${local_pareas_vram_evidence_status}"
 [ "$scaling_claim_status" = "claimable" ] || append_blocker "scaling_claim:${scaling_claim_status}:${scaling_claim_blockers}"
+[ "$workload_generalization_status" = "generalizable" ] || append_blocker "workload_generalization:${workload_generalization_status}:${workload_generalization_blockers}"
+[ "$link_artifact_evidence_status" = "artifact-backed" ] || append_blocker "link_artifacts:${link_artifact_evidence_status}:${link_artifact_claim_blockers}:${link_artifact_required_evidence_classes}"
 [ "$paper_pass_alignment_status" = "claimable" ] || append_blocker "paper_pass_alignment:${paper_pass_alignment_status}:${paper_pass_alignment_blockers}"
 case "$source_control_state" in
   clean|dirty) ;;
@@ -2824,10 +4866,16 @@ fi
 claim_readiness_status=not-claimable
 claimable_measurement_claims=none
 claim_readiness_blockers="$production_readiness_blockers"
-claim_readiness_required_evidence_classes="local_performance,local_performance_claim,local_readback,local_vram,local_pareas,resource_usage,responsiveness,source_control,freshness,repeatability,paper_pass_alignment,parallel_pass_contracts,scaling_claim"
-claim_readiness_required_statuses="local_performance_evidence_status=complete;local_performance_claim_status=claimable;local_readback_evidence_status=complete;local_vram_evidence_status=complete;local_pareas_evidence_status=complete;resource_usage_status=0;machine_responsive_after=true;source_control_state=clean-or-dirty;source_control_revision=local-git-commit-sha;evidence_freshness_status=complete;repeatability_status=complete;paper_pass_alignment_status=claimable;pass_contract_loop_status=unbounded;pass_contract_fallback_status=none;pass_contract_claim_status=claimable;pass_contract_readiness_status=claimable;scaling_claim_status=claimable"
+claim_readiness_required_evidence_classes="local_performance,local_performance_claim,local_readback,local_vram,local_pareas,local_pareas_vram,resource_usage,responsiveness,source_control,freshness,repeatability,workload_generalization,link_artifacts,paper_pass_alignment,parallel_pass_contracts,scaling_claim"
+claim_readiness_required_statuses="local_performance_evidence_status=complete;local_performance_claim_status=claimable;local_readback_evidence_status=complete;local_vram_evidence_status=complete;local_pareas_evidence_status=complete;local_pareas_vram_evidence_status=complete;resource_usage_status=0;machine_responsive_after=true;source_control_state=clean-or-dirty;source_control_revision=local-git-commit-sha;evidence_freshness_status=complete;repeatability_status=complete;workload_generalization_status=generalizable;link_artifact_evidence_schema=lanius.link-artifact-evidence.v1;link_artifact_required_evidence_classes=library_interface_artifacts,codegen_object_artifacts,partial_link_artifacts,linked_output_artifact;link_artifact_evidence_status=artifact-backed;paper_pass_alignment_status=claimable;pass_contract_loop_status=unbounded;pass_contract_fallback_status=none;pass_contract_claim_status=claimable;pass_contract_readiness_status=claimable;scaling_claim_status=claimable"
 claim_scope_policy=exact-local-checkpoint-hardware-source-binary-only
-claim_scope_key="line_count:${line_count};source:${source};phase:${phase};target:${target};seed:${seed};iterations:${iterations};minimum_iterations_for_claim:${minimum_iterations_for_claim};repeatability_status:${repeatability_status};paper_pass_order:${paper_pass_order};paper_pass_alignment_status:${paper_pass_alignment_status};paper_pass_alignment_blockers:${paper_pass_alignment_blockers};parallel_pass_contract_execution_order:${parallel_pass_contract_execution_order};pass_contract_loop_status:${pass_contract_loop_status};pass_contract_fallback_status:${pass_contract_fallback_status};pass_contract_claim_status:${pass_contract_claim_status};pass_contract_readiness_status:${pass_contract_readiness_status};local_performance_claim_status:${local_performance_claim_status};scaling_claim_status:${scaling_claim_status};source_control_state:${source_control_state};source_control_revision:${source_control_revision};source_replay_line_count:${source_replay_line_count};source_sha256:${source_sha256};bench_binary_sha256:${bench_binary_sha256};hardware_identity_sha256:${hardware_identity_sha256};command_environment_sha256:${command_environment_sha256};pareas_binary_sha256:${pareas_binary_sha256}"
+claim_scope_key="line_count:${line_count};source:${source};phase:${phase};target:${target};seed:${seed};iterations:${iterations};minimum_iterations_for_claim:${minimum_iterations_for_claim};repeatability_status:${repeatability_status};workload_shape_scope:${workload_shape_scope};workload_generalization_status:${workload_generalization_status}"
+claim_scope_key="${claim_scope_key};link_artifact_evidence_schema:${link_artifact_evidence_schema};link_artifact_required_evidence_classes:${link_artifact_required_evidence_classes};link_artifact_evidence_status:${link_artifact_evidence_status};link_artifact_claim_blockers:${link_artifact_claim_blockers}"
+claim_scope_key="${claim_scope_key};cold_gpu_pipeline_init_policy:${cold_gpu_pipeline_init_policy};steady_compile_latency_claim_source:${steady_compile_latency_claim_source};steady_readback_claim_source:${steady_readback_claim_source}"
+claim_scope_key="${claim_scope_key};paper_pass_order:${paper_pass_order};paper_pass_alignment_status:${paper_pass_alignment_status};paper_pass_alignment_blockers:${paper_pass_alignment_blockers};parallel_pass_contract_execution_order:${parallel_pass_contract_execution_order};pass_contract_loop_status:${pass_contract_loop_status};pass_contract_fallback_status:${pass_contract_fallback_status};pass_contract_claim_status:${pass_contract_claim_status};pass_contract_readiness_status:${pass_contract_readiness_status}"
+claim_scope_key="${claim_scope_key};shader_loop_pareas_pass_gate_status:${shader_loop_pareas_pass_gate_status};shader_loop_pareas_pass_gate_blockers:${shader_loop_pareas_pass_gate_blockers};shader_loop_source_sized_symbolic_cap:${shader_loop_source_sized_symbolic_cap};shader_loop_source_sized_symbolic_cap_route:${shader_loop_source_sized_symbolic_cap_route};shader_loop_source_sized_symbolic_cap_path_route:${shader_loop_source_sized_symbolic_cap_path_route}"
+claim_scope_key="${claim_scope_key};local_performance_evidence_status:${local_performance_evidence_status};local_performance_claim_status:${local_performance_claim_status};local_readback_evidence_status:${local_readback_evidence_status};local_vram_evidence_status:${local_vram_evidence_status};max_vram_bytes:${max_vram_bytes};local_pareas_evidence_status:${local_pareas_evidence_status};local_pareas_vram_evidence_status:${local_pareas_vram_evidence_status};pareas_max_vram_bytes:${pareas_max_vram_bytes};pareas_nvidia_smi_exit_status:${pareas_nvidia_smi_exit_status};scaling_claim_status:${scaling_claim_status}"
+claim_scope_key="${claim_scope_key};source_control_state:${source_control_state};source_control_revision:${source_control_revision};source_replay_line_count:${source_replay_line_count};source_sha256:${source_sha256};bench_binary_sha256:${bench_binary_sha256};hardware_identity_sha256:${hardware_identity_sha256};command_environment_sha256:${command_environment_sha256};pareas_source_line_count:${pareas_source_line_count};pareas_binary_sha256:${pareas_binary_sha256}"
 if [ "$production_readiness_evidence_complete" = "true" ]; then
   claim_readiness_status=claimable
   claimable_measurement_claims=checkpoint_local_latency,checkpoint_local_throughput,checkpoint_local_readback,checkpoint_local_vram,checkpoint_local_pareas_wall_ratio
@@ -2846,15 +4894,29 @@ fi
   printf "freshness_policy=hash-and-checkpoint-field-match\n"
   printf "measurement_timing_policy=%s\n" "$timing_policy"
   printf "cold_start_policy=%s\n" "$cold_start_policy"
+  printf "cold_gpu_pipeline_init_policy=%s\n" "$cold_gpu_pipeline_init_policy"
   printf "compile_latency_claim_source=%s\n" "$compile_latency_claim_source"
+  printf "steady_compile_latency_claim_source=%s\n" "$steady_compile_latency_claim_source"
+  printf "steady_readback_claim_source=%s\n" "$steady_readback_claim_source"
   printf "runtime_validation_policy=%s\n" "$runtime_validation_policy"
+  printf "workload_shape_policy=%s\n" "$workload_shape_policy"
+  printf "workload_shape_scope=%s\n" "$workload_shape_scope"
+  printf "workload_generalization_status=%s\n" "$workload_generalization_status"
+  printf "workload_generalization_blockers=%s\n" "$workload_generalization_blockers"
+  printf "link_artifact_evidence_policy=%s\n" "$link_artifact_evidence_policy"
+  printf "link_artifact_evidence_schema=%s\n" "$link_artifact_evidence_schema"
+  printf "link_artifact_required_evidence_classes=%s\n" "$link_artifact_required_evidence_classes"
+  printf "link_artifact_evidence_status=%s\n" "$link_artifact_evidence_status"
+  printf "link_artifact_claim_blockers=%s\n" "$link_artifact_claim_blockers"
   printf "claim_provenance_schema=%s\n" "$claim_provenance_schema"
   printf "baseline_separation_schema=%s\n" "$baseline_separation_schema"
   printf "paper_baseline_policy=%s\n" "$paper_baseline_policy"
   printf "paper_baseline_numbers_status=%s\n" "$paper_baseline_numbers_status"
+  printf "paper_baseline_claim_status=%s\n" "$paper_baseline_claim_status"
   printf "local_evidence_status_policy=%s\n" "$local_evidence_status_policy"
   printf "local_performance_claim_policy=%s\n" "$local_performance_claim_policy"
   printf "local_performance_claim_source=%s\n" "$local_performance_claim_source"
+  printf "local_performance_claim_exclusions=%s\n" "$local_performance_claim_exclusions"
   printf "local_performance_claim_status=%s\n" "$local_performance_claim_status"
   printf "local_performance_claim_blockers=%s\n" "$local_performance_claim_blockers"
   printf "local_vram_claim_source=%s\n" "$local_vram_claim_source"
@@ -2881,6 +4943,18 @@ fi
   printf "pass_contract_claim_status=%s\n" "$pass_contract_claim_status"
   printf "pass_contract_claim_blockers=%s\n" "$pass_contract_claim_blockers"
   printf "pass_contract_readiness_status=%s\n" "$pass_contract_readiness_status"
+  printf "shader_loop_audit_command=%s\n" "$shader_loop_audit_command"
+  printf "shader_loop_audit_policy=%s\n" "$shader_loop_audit_policy"
+  printf "shader_loop_audit_summary=%s\n" "$shader_loop_audit_summary"
+  printf "shader_loop_audit_blocker=%s\n" "$shader_loop_audit_blocker"
+  printf "shader_loop_pareas_pass_gate_status=%s\n" "$shader_loop_pareas_pass_gate_status"
+  printf "shader_loop_pareas_pass_gate_blockers=%s\n" "$shader_loop_pareas_pass_gate_blockers"
+  printf "shader_loop_source_sized_symbolic_cap=%s\n" "$shader_loop_source_sized_symbolic_cap"
+  printf "shader_loop_source_sized_symbolic_cap_by_component=%s\n" "$shader_loop_source_sized_symbolic_cap_by_component"
+  printf "shader_loop_source_sized_symbolic_cap_names=%s\n" "$shader_loop_source_sized_symbolic_cap_names"
+  printf "shader_loop_source_sized_symbolic_cap_route=%s\n" "$shader_loop_source_sized_symbolic_cap_route"
+  printf "shader_loop_source_sized_symbolic_cap_route_by_component=%s\n" "$shader_loop_source_sized_symbolic_cap_route_by_component"
+  printf "shader_loop_source_sized_symbolic_cap_path_route=%s\n" "$shader_loop_source_sized_symbolic_cap_path_route"
   printf "timeout_provenance_schema=%s\n" "$timeout_provenance_schema"
   printf "timeout_scope=%s\n" "$timeout_scope"
   printf "timeout_source=%s\n" "$timeout_source"
@@ -2902,6 +4976,11 @@ fi
   printf "local_readback_evidence_status=%s\n" "$local_readback_evidence_status"
   printf "local_vram_evidence_status=%s\n" "$local_vram_evidence_status"
   printf "local_pareas_evidence_status=%s\n" "$local_pareas_evidence_status"
+  printf "local_pareas_vram_evidence_status=%s\n" "$local_pareas_vram_evidence_status"
+  printf "link_artifact_evidence_schema=%s\n" "$link_artifact_evidence_schema"
+  printf "link_artifact_required_evidence_classes=%s\n" "$link_artifact_required_evidence_classes"
+  printf "link_artifact_evidence_status=%s\n" "$link_artifact_evidence_status"
+  printf "link_artifact_claim_blockers=%s\n" "$link_artifact_claim_blockers"
   printf "scaling_claim_status=%s\n" "$scaling_claim_status"
   printf "scaling_claim_blockers=%s\n" "$scaling_claim_blockers"
   printf "production_readiness_evidence_complete=%s\n" "$production_readiness_evidence_complete"
@@ -2935,6 +5014,8 @@ fi
   printf "readback_max_span_ms=%s\n" "$readback_max_span_ms"
   printf "max_vram_bytes=%s\n" "$max_vram_bytes"
   printf "nvidia_smi_exit_status=%s\n" "$nvidia_smi_exit_status"
+  printf "pareas_max_vram_bytes=%s\n" "$pareas_max_vram_bytes"
+  printf "pareas_nvidia_smi_exit_status=%s\n" "$pareas_nvidia_smi_exit_status"
   printf "resource_user_seconds=%s\n" "$resource_user_seconds"
   printf "resource_system_seconds=%s\n" "$resource_system_seconds"
   printf "resource_max_rss_kb=%s\n" "$resource_max_rss_kb"
@@ -2949,6 +5030,7 @@ fi
   printf "pareas_exit_status=%s\n" "$pareas_exit_status"
   printf "pareas_timed_out=%s\n" "$pareas_timed_out"
   printf "pareas_wall_elapsed_ms=%s\n" "$pareas_wall_elapsed_ms"
+  printf "pareas_source_line_count=%s\n" "$pareas_source_line_count"
   printf "pareas_source_sha256=%s\n" "$pareas_source_sha256"
   printf "pareas_binary_sha256=%s\n" "$pareas_binary_sha256"
   printf "lanius_pareas_wall_ratio=%s\n" "$lanius_pareas_wall_ratio"
@@ -2969,6 +5051,7 @@ fi
   printf "pareas_binary_sha256_path=%s\n" "$pareas_binary_sha256_path"
   printf "pareas_output_path=%s\n" "$pareas_output_path"
   printf "pareas_stdout_path=%s\n" "$pareas_stdout_path"
+  printf "pareas_vram_output_path=%s\n" "$pareas_vram_output_path"
 } >"$out"' \
     sh \
     "$measurement_summary_path" \
@@ -3023,6 +5106,7 @@ fi
     "$(measurement_local_evidence_status_policy)" \
     "$(measurement_local_performance_claim_policy)" \
     "$(measurement_local_performance_claim_source)" \
+    "$(measurement_local_performance_claim_exclusions)" \
     "$(measurement_local_performance_claim_status)" \
     "$(measurement_local_performance_claim_blockers)" \
     "$(measurement_local_vram_claim_source)" \
@@ -3042,7 +5126,26 @@ fi
     "$(measurement_pass_contract_loop_status)" \
     "$(measurement_pass_contract_fallback_status)" \
     "$(measurement_pass_contract_claim_status)" \
-    "$(measurement_pass_contract_claim_blockers)"
+    "$(measurement_pass_contract_claim_blockers)" \
+    "$(measurement_shader_loop_audit_command)" \
+    "$(measurement_shader_loop_audit_policy)" \
+    "$(measurement_shader_loop_audit_summary)" \
+    "$(measurement_shader_loop_audit_blocker)" \
+    "$(measurement_cold_gpu_pipeline_init_policy)" \
+    "$(measurement_steady_compile_latency_claim_source)" \
+    "$(measurement_steady_readback_claim_source)" \
+    "$(measurement_paper_baseline_claim_status)" \
+    "$(measurement_workload_shape_policy)" \
+    "$(measurement_workload_shape_scope)" \
+    "$(measurement_workload_generalization_status)" \
+    "$(measurement_workload_generalization_blockers)" \
+    "$(measurement_link_artifact_evidence_policy)" \
+    "$(measurement_link_artifact_evidence_schema)" \
+    "$(measurement_link_artifact_required_evidence_classes)" \
+    "$(measurement_link_artifact_evidence_status)" \
+    "$(measurement_link_artifact_claim_blockers)" \
+    "$(measurement_shader_loop_pareas_pass_gate_status)" \
+    "$(measurement_shader_loop_pareas_pass_gate_blockers)"
 }
 
 emit_perf_measurement_plan() {
@@ -3072,7 +5175,7 @@ emit_perf_measurement_plan() {
   fi
 
   cat <<PLAN
-# Lanius no-run performance/VRAM measurement plan
+# Lanius no-run measurement scaffold and claim-boundary plan
 measurement_plan_schema: lanius.measurement-plan.v1
 mode: no-run
 measurement_evidence_policy: local-artifacts-only
@@ -3080,17 +5183,32 @@ paper_numbers_accepted: false
 comparison_baseline_policy: local-pareas-artifacts-only
 freshness_policy: hash-and-checkpoint-field-match
 measurement_timing_policy: $(measurement_timing_policy)
+measurement_scaffold_evidence_status: $(measurement_scaffold_evidence_status)
 cold_start_policy: $(measurement_cold_start_policy)
+cold_gpu_pipeline_init_policy: $(measurement_cold_gpu_pipeline_init_policy)
 compile_latency_claim_source: $(measurement_compile_latency_claim_source)
+steady_compile_latency_claim_source: $(measurement_steady_compile_latency_claim_source)
+steady_readback_claim_source: $(measurement_steady_readback_claim_source)
 runtime_validation_policy: $(measurement_runtime_validation_policy)
+workload_shape_policy: $(measurement_workload_shape_policy)
+workload_shape_scope: $(measurement_workload_shape_scope)
+workload_generalization_status: $(measurement_workload_generalization_status)
+workload_generalization_blockers: $(measurement_workload_generalization_blockers)
+link_artifact_evidence_policy: $(measurement_link_artifact_evidence_policy)
+link_artifact_evidence_schema: $(measurement_link_artifact_evidence_schema)
+link_artifact_required_evidence_classes: $(measurement_link_artifact_required_evidence_classes)
+link_artifact_evidence_status: $(measurement_link_artifact_evidence_status)
+link_artifact_claim_blockers: $(measurement_link_artifact_claim_blockers)
 claim_provenance_schema: $(measurement_claim_provenance_schema)
 baseline_separation_schema: $(measurement_baseline_separation_schema)
 required_claim_provenance_fields: $(measurement_required_claim_provenance_fields)
 paper_baseline_policy: $(measurement_paper_baseline_policy)
 paper_baseline_numbers_status: $(measurement_paper_baseline_numbers_status)
+paper_baseline_claim_status: $(measurement_paper_baseline_claim_status)
 local_evidence_status_policy: $(measurement_local_evidence_status_policy)
 local_performance_claim_policy: $(measurement_local_performance_claim_policy)
 local_performance_claim_source: $(measurement_local_performance_claim_source)
+local_performance_claim_exclusions: $(measurement_local_performance_claim_exclusions)
 local_performance_claim_status: $(measurement_local_performance_claim_status)
 local_performance_claim_blockers: $(measurement_local_performance_claim_blockers)
 local_vram_claim_source: $(measurement_local_vram_claim_source)
@@ -3119,6 +5237,10 @@ pass_contract_fallback_status: $(measurement_pass_contract_fallback_status)
 pass_contract_claim_status: $(measurement_pass_contract_claim_status)
 pass_contract_claim_blockers: $(measurement_pass_contract_claim_blockers)
 pass_contract_readiness_status: $(measurement_pass_contract_readiness_status)
+shader_loop_audit_command: $(measurement_shader_loop_audit_command)
+shader_loop_audit_policy: $(measurement_shader_loop_audit_policy)
+shader_loop_audit_summary: $(measurement_shader_loop_audit_summary)
+shader_loop_audit_blocker: $(measurement_shader_loop_audit_blocker)
 timeout_provenance_schema: $(measurement_timeout_provenance_schema)
 required_timeout_provenance_fields: $(measurement_required_timeout_provenance_fields)
 timeout_scope: $(measurement_timeout_scope)
@@ -3132,6 +5254,7 @@ minimum_iterations_for_claim: $(measurement_minimum_iterations_for_claim)
 primary_line_count: $perf_lines
 checkpoints: $(join_by_comma "${perf_checkpoint_lines[@]}")
 checkpoint_execution_order: $(join_by_comma "${perf_checkpoint_lines[@]}")
+checkpoint_run_policy: $(measurement_checkpoint_run_policy)
 source_seed: $perf_seed
 iterations: $perf_iters
 timeout_ms: $perf_timeout_ms
@@ -3192,7 +5315,8 @@ pareas_source_sha256_output_path: $perf_pareas_source_sha256_output_path
 pareas_binary_sha256_output_path: $perf_pareas_binary_sha256_output_path
 pareas_output_path: $perf_pareas_output_path
 pareas_stdout_path: $perf_pareas_stdout_path
-large_case_guardrail: LANIUS_PERF_CHECKPOINT_LINES checkpoint > 20000, LANIUS_PERF_LINES > 20000, or LANIUS_PERF_ITERS > 3 requires LANIUS_ALLOW_LARGE_GENERATED_TESTS=1
+pareas_vram_output_path: $perf_pareas_vram_output_path
+large_case_guardrail: LANIUS_PERF_CHECKPOINT_LINES checkpoint > 5000, LANIUS_PERF_LINES > 5000, or LANIUS_PERF_ITERS > 3 requires LANIUS_ALLOW_LARGE_GENERATED_TESTS=1
 PLAN
 
   print_report_command \
@@ -3213,23 +5337,27 @@ PLAN
   cat <<'PLAN'
 notes:
 - This report is a scaffold only; it does not compile, run Lanius, run Pareas, or start nvidia-smi.
+- The measurement_scaffold_evidence_status field is a hard boundary: this no-run plan is not local performance evidence, Pareas comparison evidence, or scale evidence until the generated local artifacts and summary exist.
 - Run the lanius_build_command separately before the measured lanius_command so cargo build time is not included.
+- Treat cold_gpu_pipeline_init_policy as separate from steady compile/readback claims; cold GPU pipeline creation may be captured as wrapper/provenance metadata but must not be rolled into best_ms or readback span claims.
 - Run the hardware_identity_command before each measured checkpoint and keep its output with the benchmark artifacts.
 - Run the command_environment_command before each measured checkpoint so the timeout, readback, VRAM, GPU timing, Slang, CUDA, and Pareas environment is captured.
 - Run the source_replay_command, source_sha256_command, and bench_sha256_command for each checkpoint so a failed or published measurement has a replayable generated input, source content hash, and exact benchmark binary hash.
-- Run checkpoints in ascending order: 5k first, then 10k, then 20k. Stop at the first readback timeout, excessive VRAM growth, or machine responsiveness issue.
+- Run checkpoints in checkpoint_execution_order. Stop at the first readback timeout, excessive VRAM growth, or machine responsiveness issue.
 - Start the matching nvidia-smi sampling command immediately before each benchmark command and stop it after that command exits; the wrapped command includes a timeout fallback so the sampler cannot run indefinitely.
 - Prefer the wrapped Lanius/Pareas/nvidia-smi commands plus the responsiveness_probe_command when collecting evidence because they write exit status, timeout, responsiveness, and Lanius resource-usage artifact status to the status path.
 - Inspect and save the matching readback trace summary after each Lanius run; host.readback spans are the expected source for readback cost evidence.
 - Write the measurement_summary_command output after the benchmark, resource usage, readback, VRAM, source hash, benchmark binary hash, hardware, environment, and status artifacts exist; it is the per-checkpoint rollup expected by production-readiness evidence.
 - Treat source_control_state in the summary as part of the claim boundary; dirty-worktree measurements are exact local checkpoint evidence, not clean release evidence.
 - The summary's evidence-status row keeps production_readiness_evidence_complete=false until local Lanius performance, readback, VRAM, machine-responsiveness, and Pareas comparison evidence are complete; missing optional tools must appear as not-run or missing blockers.
-- Paper baseline values are reference-only metadata; the summary can only make checkpoint-local claims from fresh local Lanius, VRAM, readback, resource-usage, source/hash, hardware/env, and local Pareas artifacts.
-- Pareas comparison requires a Pareas-compatible generated source at pareas_source_path plus pareas_source_sha256_output_path and a local Pareas compiler hash at pareas_binary_sha256_output_path; this scaffold records the intended commands but does not generate or run them.
+- Paper baseline values are reference-only metadata; the summary can only make checkpoint-local claims from fresh local Lanius, VRAM, readback, resource-usage, source/hash, hardware/env, and local Pareas provenance artifacts after every claim-readiness boundary is satisfied.
+- Pareas comparison requires a Pareas-compatible generated source at pareas_source_path plus pareas_source_sha256_output_path and a local Pareas compiler hash at pareas_binary_sha256_output_path; this scaffold records the intended commands but does not generate or run them, and optional Pareas artifact rows remain provenance-only through claim_boundary=optional-local-comparison-provenance-not-pareas-claim.
+- Run the shader_loop_audit_command as a no-run inventory when evaluating pass-contract readiness; fixed-bound guards, x86 codegen fixed loops, x86 codegen review loops, and WASM codegen review loops are counted separately, while data-dependent, while, or unknown-bound shader loops are claim blockers until they are replaced by prefix/sort/scatter/record passes or explicitly reclassified. The audit evidence-policy rows must include no-run-not-pareas-claim-evidence so paper/Pareas route alignment cannot be read as a Pareas comparison claim.
 PLAN
 }
 
 write_perf_measurement_plan() {
+  prepare_measurement_shader_loop_audit_summary_cache
   if [[ -n "$measurement_plan_path" ]]; then
     mkdir -p "$(dirname "$measurement_plan_path")"
     emit_perf_measurement_plan >"$measurement_plan_path"
@@ -3246,17 +5374,32 @@ emit_measurement_check_env_notes() {
   env_note "measurement_comparison_baseline_policy=local-pareas-artifacts-only"
   env_note "measurement_freshness_policy=hash-and-checkpoint-field-match"
   env_note "measurement_timing_policy=$(measurement_timing_policy)"
+  env_note "measurement_scaffold_evidence_status=$(measurement_scaffold_evidence_status)"
   env_note "measurement_cold_start_policy=$(measurement_cold_start_policy)"
+  env_note "measurement_cold_gpu_pipeline_init_policy=$(measurement_cold_gpu_pipeline_init_policy)"
   env_note "measurement_compile_latency_claim_source=$(measurement_compile_latency_claim_source)"
+  env_note "measurement_steady_compile_latency_claim_source=$(measurement_steady_compile_latency_claim_source)"
+  env_note "measurement_steady_readback_claim_source=$(measurement_steady_readback_claim_source)"
   env_note "measurement_runtime_validation_policy=$(measurement_runtime_validation_policy)"
+  env_note "measurement_workload_shape_policy=$(measurement_workload_shape_policy)"
+  env_note "measurement_workload_shape_scope=$(measurement_workload_shape_scope)"
+  env_note "measurement_workload_generalization_status=$(measurement_workload_generalization_status)"
+  env_note "measurement_workload_generalization_blockers=$(measurement_workload_generalization_blockers)"
+  env_note "measurement_link_artifact_evidence_policy=$(measurement_link_artifact_evidence_policy)"
+  env_note "measurement_link_artifact_evidence_schema=$(measurement_link_artifact_evidence_schema)"
+  env_note "measurement_link_artifact_required_evidence_classes=$(measurement_link_artifact_required_evidence_classes)"
+  env_note "measurement_link_artifact_evidence_status=$(measurement_link_artifact_evidence_status)"
+  env_note "measurement_link_artifact_claim_blockers=$(measurement_link_artifact_claim_blockers)"
   env_note "measurement_claim_provenance_schema=$(measurement_claim_provenance_schema)"
   env_note "measurement_baseline_separation_schema=$(measurement_baseline_separation_schema)"
   env_note "measurement_required_claim_provenance_fields=$(measurement_required_claim_provenance_fields)"
   env_note "measurement_paper_baseline_policy=$(measurement_paper_baseline_policy)"
   env_note "measurement_paper_baseline_numbers_status=$(measurement_paper_baseline_numbers_status)"
+  env_note "measurement_paper_baseline_claim_status=$(measurement_paper_baseline_claim_status)"
   env_note "measurement_local_evidence_status_policy=$(measurement_local_evidence_status_policy)"
   env_note "measurement_local_performance_claim_policy=$(measurement_local_performance_claim_policy)"
   env_note "measurement_local_performance_claim_source=$(measurement_local_performance_claim_source)"
+  env_note "measurement_local_performance_claim_exclusions=$(measurement_local_performance_claim_exclusions)"
   env_note "measurement_local_performance_claim_status=$(measurement_local_performance_claim_status)"
   env_note "measurement_local_performance_claim_blockers=$(measurement_local_performance_claim_blockers)"
   env_note "measurement_local_vram_claim_source=$(measurement_local_vram_claim_source)"
@@ -3285,6 +5428,26 @@ emit_measurement_check_env_notes() {
   env_note "measurement_pass_contract_claim_status=$(measurement_pass_contract_claim_status)"
   env_note "measurement_pass_contract_claim_blockers=$(measurement_pass_contract_claim_blockers)"
   env_note "measurement_pass_contract_readiness_status=$(measurement_pass_contract_readiness_status)"
+  env_note "measurement_shader_loop_audit_command=$(measurement_shader_loop_audit_command)"
+  env_note "measurement_shader_loop_audit_policy=$(measurement_shader_loop_audit_policy)"
+  env_note "measurement_shader_loop_audit_summary=$(measurement_shader_loop_audit_summary)"
+  env_note "measurement_shader_loop_audit_blocker=$(measurement_shader_loop_audit_blocker)"
+  env_note "measurement_shader_loop_pareas_pass_gate_status=$(measurement_shader_loop_pareas_pass_gate_status)"
+  env_note "measurement_shader_loop_pareas_pass_gate_blockers=$(measurement_shader_loop_pareas_pass_gate_blockers)"
+  env_note "measurement_shader_loop_source_sized_symbolic_cap=$(measurement_shader_loop_audit_source_sized_symbolic_cap_count)"
+  env_note "measurement_shader_loop_source_sized_symbolic_cap_by_component=$(measurement_shader_loop_audit_summary_field_text source-sized-symbolic-cap-by-component)"
+  env_note "measurement_shader_loop_source_sized_symbolic_cap_names=$(measurement_shader_loop_audit_summary_field_text source-sized-symbolic-cap-names)"
+  env_note "measurement_shader_loop_source_sized_symbolic_cap_route=$(measurement_shader_loop_audit_summary_field_text source-sized-symbolic-cap-route)"
+  env_note "measurement_shader_loop_source_sized_symbolic_cap_route_by_component=$(measurement_shader_loop_audit_summary_field_text source-sized-symbolic-cap-route-by-component)"
+  env_note "measurement_shader_loop_source_sized_symbolic_cap_path_route=$(measurement_shader_loop_audit_summary_field_text source-sized-symbolic-cap-path-route)"
+  env_note "measurement_shader_loop_audit_evidence_proof=$(measurement_shader_loop_audit_summary_field audit-evidence-proof)"
+  env_note "measurement_shader_loop_audit_evidence_blocker=$(measurement_shader_loop_audit_summary_field audit-evidence-blocker)"
+  env_note "measurement_shader_loop_audit_evidence_local_review=$(measurement_shader_loop_audit_summary_field audit-evidence-local-review)"
+  env_note "measurement_shader_loop_performance_scaling_or_pareas_parity_audit_debt=$(measurement_shader_loop_audit_summary_field performance-scaling-or-pareas-parity-audit-debt)"
+  env_note "measurement_shader_loop_performance_scaling_or_pareas_parity_audit_blocker=$(measurement_shader_loop_audit_summary_field performance-scaling-or-pareas-parity-audit-blocker)"
+  env_note "measurement_shader_loop_performance_scaling_or_pareas_parity_local_review=$(measurement_shader_loop_audit_summary_field performance-scaling-or-pareas-parity-local-review)"
+  env_note "measurement_shader_loop_audit_debt_blocks_performance_and_pareas_parity_claims=$(measurement_shader_loop_audit_summary_field audit-debt-blocks-performance-and-pareas-parity-claims)"
+  env_note "measurement_shader_loop_no_run_not_pareas_claim_evidence=$(measurement_shader_loop_audit_summary_field no-run-not-pareas-claim-evidence)"
   env_note "measurement_timeout_provenance_schema=$(measurement_timeout_provenance_schema)"
   env_note "measurement_required_timeout_provenance_fields=$(measurement_required_timeout_provenance_fields)"
   env_note "measurement_timeout_scope=$(measurement_timeout_scope)"
@@ -3319,6 +5482,7 @@ emit_measurement_check_env_notes() {
   env_note "measurement_claim_scope_policy=$(measurement_claim_scope_policy)"
   env_note "measurement_repeatability_policy=$(measurement_repeatability_policy)"
   env_note "measurement_minimum_iterations_for_claim=$(measurement_minimum_iterations_for_claim)"
+  env_note "measurement_checkpoint_run_policy=$(measurement_checkpoint_run_policy)"
   env_note "measurement_required_claim_readiness_fields=$(measurement_required_claim_readiness_fields)"
   env_note "measurement_required_status_fields=$(measurement_required_status_fields)"
   env_note "measurement_optional_status_fields=$(measurement_optional_status_fields)"
@@ -3334,17 +5498,32 @@ emit_measurement_check_env_notes() {
     env_note "measurement_checkpoint_${checkpoint}l.seed=$perf_seed"
     env_note "measurement_checkpoint_${checkpoint}l.iterations=$perf_iters"
     env_note "measurement_checkpoint_${checkpoint}l.timing_policy=$(measurement_timing_policy)"
+    env_note "measurement_checkpoint_${checkpoint}l.scaffold_evidence_status=$(measurement_scaffold_evidence_status)"
     env_note "measurement_checkpoint_${checkpoint}l.cold_start_policy=$(measurement_cold_start_policy)"
+    env_note "measurement_checkpoint_${checkpoint}l.cold_gpu_pipeline_init_policy=$(measurement_cold_gpu_pipeline_init_policy)"
     env_note "measurement_checkpoint_${checkpoint}l.compile_latency_claim_source=$(measurement_compile_latency_claim_source)"
+    env_note "measurement_checkpoint_${checkpoint}l.steady_compile_latency_claim_source=$(measurement_steady_compile_latency_claim_source)"
+    env_note "measurement_checkpoint_${checkpoint}l.steady_readback_claim_source=$(measurement_steady_readback_claim_source)"
     env_note "measurement_checkpoint_${checkpoint}l.runtime_validation_policy=$(measurement_runtime_validation_policy)"
+    env_note "measurement_checkpoint_${checkpoint}l.workload_shape_policy=$(measurement_workload_shape_policy)"
+    env_note "measurement_checkpoint_${checkpoint}l.workload_shape_scope=$(measurement_workload_shape_scope)"
+    env_note "measurement_checkpoint_${checkpoint}l.workload_generalization_status=$(measurement_workload_generalization_status)"
+    env_note "measurement_checkpoint_${checkpoint}l.workload_generalization_blockers=$(measurement_workload_generalization_blockers)"
+    env_note "measurement_checkpoint_${checkpoint}l.link_artifact_evidence_policy=$(measurement_link_artifact_evidence_policy)"
+    env_note "measurement_checkpoint_${checkpoint}l.link_artifact_evidence_schema=$(measurement_link_artifact_evidence_schema)"
+    env_note "measurement_checkpoint_${checkpoint}l.link_artifact_required_evidence_classes=$(measurement_link_artifact_required_evidence_classes)"
+    env_note "measurement_checkpoint_${checkpoint}l.link_artifact_evidence_status=$(measurement_link_artifact_evidence_status)"
+    env_note "measurement_checkpoint_${checkpoint}l.link_artifact_claim_blockers=$(measurement_link_artifact_claim_blockers)"
     env_note "measurement_checkpoint_${checkpoint}l.claim_provenance_schema=$(measurement_claim_provenance_schema)"
     env_note "measurement_checkpoint_${checkpoint}l.baseline_separation_schema=$(measurement_baseline_separation_schema)"
     env_note "measurement_checkpoint_${checkpoint}l.required_claim_provenance_fields=$(measurement_required_claim_provenance_fields)"
     env_note "measurement_checkpoint_${checkpoint}l.paper_baseline_policy=$(measurement_paper_baseline_policy)"
     env_note "measurement_checkpoint_${checkpoint}l.paper_baseline_numbers_status=$(measurement_paper_baseline_numbers_status)"
+    env_note "measurement_checkpoint_${checkpoint}l.paper_baseline_claim_status=$(measurement_paper_baseline_claim_status)"
     env_note "measurement_checkpoint_${checkpoint}l.local_evidence_status_policy=$(measurement_local_evidence_status_policy)"
     env_note "measurement_checkpoint_${checkpoint}l.local_performance_claim_policy=$(measurement_local_performance_claim_policy)"
     env_note "measurement_checkpoint_${checkpoint}l.local_performance_claim_source=$(measurement_local_performance_claim_source)"
+    env_note "measurement_checkpoint_${checkpoint}l.local_performance_claim_exclusions=$(measurement_local_performance_claim_exclusions)"
     env_note "measurement_checkpoint_${checkpoint}l.local_performance_claim_status=$(measurement_local_performance_claim_status)"
     env_note "measurement_checkpoint_${checkpoint}l.local_performance_claim_blockers=$(measurement_local_performance_claim_blockers)"
     env_note "measurement_checkpoint_${checkpoint}l.local_vram_claim_source=$(measurement_local_vram_claim_source)"
@@ -3373,6 +5552,15 @@ emit_measurement_check_env_notes() {
     env_note "measurement_checkpoint_${checkpoint}l.pass_contract_claim_status=$(measurement_pass_contract_claim_status)"
     env_note "measurement_checkpoint_${checkpoint}l.pass_contract_claim_blockers=$(measurement_pass_contract_claim_blockers)"
     env_note "measurement_checkpoint_${checkpoint}l.pass_contract_readiness_status=$(measurement_pass_contract_readiness_status)"
+    env_note "measurement_checkpoint_${checkpoint}l.shader_loop_audit_blocker=$(measurement_shader_loop_audit_blocker)"
+    env_note "measurement_checkpoint_${checkpoint}l.shader_loop_pareas_pass_gate_status=$(measurement_shader_loop_pareas_pass_gate_status)"
+    env_note "measurement_checkpoint_${checkpoint}l.shader_loop_pareas_pass_gate_blockers=$(measurement_shader_loop_pareas_pass_gate_blockers)"
+    env_note "measurement_checkpoint_${checkpoint}l.shader_loop_source_sized_symbolic_cap=$(measurement_shader_loop_audit_source_sized_symbolic_cap_count)"
+    env_note "measurement_checkpoint_${checkpoint}l.shader_loop_source_sized_symbolic_cap_by_component=$(measurement_shader_loop_audit_summary_field_text source-sized-symbolic-cap-by-component)"
+    env_note "measurement_checkpoint_${checkpoint}l.shader_loop_source_sized_symbolic_cap_names=$(measurement_shader_loop_audit_summary_field_text source-sized-symbolic-cap-names)"
+    env_note "measurement_checkpoint_${checkpoint}l.shader_loop_source_sized_symbolic_cap_route=$(measurement_shader_loop_audit_summary_field_text source-sized-symbolic-cap-route)"
+    env_note "measurement_checkpoint_${checkpoint}l.shader_loop_source_sized_symbolic_cap_route_by_component=$(measurement_shader_loop_audit_summary_field_text source-sized-symbolic-cap-route-by-component)"
+    env_note "measurement_checkpoint_${checkpoint}l.shader_loop_source_sized_symbolic_cap_path_route=$(measurement_shader_loop_audit_summary_field_text source-sized-symbolic-cap-path-route)"
     env_note "measurement_checkpoint_${checkpoint}l.timeout_provenance_schema=$(measurement_timeout_provenance_schema)"
     env_note "measurement_checkpoint_${checkpoint}l.required_timeout_provenance_fields=$(measurement_required_timeout_provenance_fields)"
     env_note "measurement_checkpoint_${checkpoint}l.timeout_scope=$(measurement_timeout_scope)"
@@ -3433,6 +5621,7 @@ emit_measurement_check_env_notes() {
     env_note "measurement_checkpoint_${checkpoint}l.pareas_binary_sha256_output_path=$(pareas_binary_sha256_path_for_line "$checkpoint")"
     env_note "measurement_checkpoint_${checkpoint}l.pareas_output_path=$(pareas_output_path_for_line "$checkpoint")"
     env_note "measurement_checkpoint_${checkpoint}l.pareas_stdout_path=$(pareas_stdout_path_for_line "$checkpoint")"
+    env_note "measurement_checkpoint_${checkpoint}l.pareas_vram_output_path=$(pareas_vram_path_for_line "$checkpoint")"
   done
 }
 
@@ -3445,6 +5634,7 @@ check_perf_measurement_environment() {
     env_note "LANIUS_PERF_SEED=$perf_seed"
     env_note "LANIUS_PERF_CHECKPOINT_LINES=$(join_by_comma "${perf_checkpoint_lines[@]}")"
     env_note "measurement_checkpoint_execution_order=$(join_by_comma "${perf_checkpoint_lines[@]}")"
+    env_note "measurement_checkpoint_run_policy=$(measurement_checkpoint_run_policy)"
     env_note "LANIUS_PERF_ITERS=$perf_iters"
     env_note "LANIUS_PERF_COMMAND_TIMEOUT_MS=$perf_timeout_ms"
     env_note "LANIUS_X86_READBACK_TIMEOUT_MS=$perf_readback_timeout_ms"
@@ -3470,15 +5660,19 @@ check_perf_measurement_environment() {
     env_note "LANIUS_PAREAS_BINARY_SHA256_OUTPUT_PATH=$perf_pareas_binary_sha256_output_path"
     env_note "LANIUS_PAREAS_OUTPUT_PATH=$perf_pareas_output_path"
     env_note "LANIUS_PAREAS_STDOUT_PATH=$perf_pareas_stdout_path"
+    env_note "LANIUS_PAREAS_VRAM_OUTPUT_PATH=$perf_pareas_vram_output_path"
+    prepare_measurement_shader_loop_audit_summary_cache
     emit_measurement_check_env_notes
+    check_pareas_pass_structure_gate
+    check_x86_codegen_shader_loop_gate
   fi
   check_nvidia_smi_environment
 }
 
 check_generated_environment() {
   env_note "generated/Pareas gates are still no-run in --check-env"
-  check_bounded_positive_integer_env LANIUS_GENERATED_LINES 5000 20000
-  check_bounded_positive_integer_env LANIUS_CAPACITY_STRESS_LINES 5000 20000
+  check_bounded_positive_integer_env LANIUS_GENERATED_LINES 5000 5000
+  check_bounded_positive_integer_env LANIUS_CAPACITY_STRESS_LINES 5000 5000
   check_positive_integer_env LANIUS_GENERATED_GATE_COMMAND_TIMEOUT_MS 120000
   check_positive_integer_env LANIUS_X86_READBACK_TIMEOUT_MS 60000
   check_positive_integer_env LANIUS_MAX_CAPACITY_STRESS_COMPILE_FLOOR_BYTES 12884901888
@@ -3488,7 +5682,6 @@ check_generated_environment() {
 check_pareas_environment() {
   local pareas_bin
 
-  check_bounded_positive_integer_env LANIUS_PAREAS_COMPARE_ITERS 1 3
   pareas_bin="$(find_pareas_bin || true)"
   if [[ -n "$pareas_bin" ]]; then
     env_note "Pareas=$pareas_bin"
@@ -3582,6 +5775,15 @@ record_plan_evidence_claim() {
   case "$kind" in
     integration|lib|bin) ;;
     *) return ;;
+  esac
+
+  local evidence_key="$kind|$target|$test_name"
+  case ",${plan_evidence_lanes[$evidence_key]:-}," in
+    *",$current_plan_lane,"*)
+      evidence_inventory_error "duplicate $current_plan_lane evidence ref: $kind $target $test_name"
+      return
+      ;;
+    *) plan_evidence_lanes["$evidence_key"]="${plan_evidence_lanes[$evidence_key]:-}${plan_evidence_lanes[$evidence_key]:+,}$current_plan_lane" ;;
   esac
 
   case "$current_plan_lane" in
@@ -3693,6 +5895,233 @@ check_evidence_inventory_contract() {
   fi
 }
 
+check_production_readiness_snapshot_count() {
+  local snapshot="$1"
+  local label="$2"
+  local pattern="$3"
+  local expected="$4"
+
+  if [[ ! "$snapshot" =~ $pattern ]]; then
+    evidence_inventory_error "production-readiness snapshot is missing $label count"
+    return
+  fi
+
+  local actual="${BASH_REMATCH[1]}"
+  if [[ "$actual" != "$expected" ]]; then
+    evidence_inventory_error "production-readiness snapshot has stale $label count: expected $expected, found $actual"
+  fi
+}
+
+check_production_readiness_snapshot_pair_count() {
+  local snapshot="$1"
+  local label="$2"
+  local pattern="$3"
+  local expected_first="$4"
+  local expected_second="$5"
+
+  if [[ ! "$snapshot" =~ $pattern ]]; then
+    evidence_inventory_error "production-readiness snapshot is missing $label counts"
+    return
+  fi
+
+  local actual_first="${BASH_REMATCH[1]}"
+  local actual_second="${BASH_REMATCH[2]}"
+  if [[ "$actual_first" != "$expected_first" || "$actual_second" != "$expected_second" ]]; then
+    evidence_inventory_error "production-readiness snapshot has stale $label counts: expected $expected_first/$expected_second, found $actual_first/$actual_second"
+  fi
+}
+
+language_slice_kind_count() {
+  local kind="$1"
+  printf '%s\n' "${language_slice_kind_counts[$kind]:-0}"
+}
+
+language_slice_kind_status_count() {
+  local kind="$1"
+  local status="$2"
+  printf '%s\n' "${language_slice_kind_status_counts["$kind|$status"]:-0}"
+}
+
+check_production_readiness_snapshot_contract() {
+  if [[ "$check_plan" -eq 0 ]]; then
+    return
+  fi
+
+  case "$tier" in
+    readiness|all) ;;
+    *) return ;;
+  esac
+
+  local path="docs/PRODUCTION_READINESS.md"
+  if [[ ! -f "$path" ]]; then
+    evidence_inventory_error "production-readiness snapshot file is missing: $path"
+    return
+  fi
+
+  local snapshot
+  snapshot="$(sed -n '10,24p' "$path" | tr '\n' ' ')"
+  check_production_readiness_snapshot_count \
+    "$snapshot" \
+    "evidence reference" \
+    '([0-9]+)[[:space:]]+evidence[[:space:]]+references' \
+    "$plan_checked_tests"
+  check_production_readiness_snapshot_count \
+    "$snapshot" \
+    "no-run command" \
+    '([0-9]+)[[:space:]]+no-run[[:space:]]+command[[:space:]]+checks' \
+    "$plan_checked_commands"
+  check_production_readiness_snapshot_count \
+    "$snapshot" \
+    "language-slice row" \
+    '([0-9]+)[[:space:]]+language-slice[[:space:]]+rows' \
+    "$language_slice_rows"
+  check_production_readiness_snapshot_count \
+    "$snapshot" \
+    "parser/type relation" \
+    '([0-9]+)[[:space:]]+required[[:space:]]+parser/type[[:space:]]+relation[[:space:]]+rows' \
+    "$language_slice_parser_type_relation_evidence"
+  check_production_readiness_snapshot_count \
+    "$snapshot" \
+    "external tooling gate" \
+    '([0-9]+)[[:space:]]+external[[:space:]]+diagnostics/tooling/package[[:space:]]+gates' \
+    "$language_slice_external_tooling_gate_evidence"
+  check_production_readiness_snapshot_count \
+    "$snapshot" \
+    "source-scoped evidence" \
+    '([0-9]+)[[:space:]]+source-scoped[[:space:]]+evidence[[:space:]]+rows' \
+    "$language_slice_source_scoped_evidence"
+  check_production_readiness_snapshot_count \
+    "$snapshot" \
+    "performance-claim guard" \
+    '([0-9]+)[[:space:]]+performance-claim[[:space:]]+guard[[:space:]]+rows' \
+    "$language_slice_performance_claim_guards"
+  check_production_readiness_snapshot_count \
+    "$snapshot" \
+    "test-discipline file" \
+    '([0-9]+)[[:space:]]+Rust[[:space:]]+integration[[:space:]]+test[[:space:]]+files' \
+    "$test_discipline_checked_files"
+
+  local matrix
+  matrix="$(tr '\n' ' ' <"$path")"
+  check_production_readiness_snapshot_pair_count \
+    "$matrix" \
+    "package/import language-slice area" \
+    'The[[:space:]]+slice[[:space:]]+inventory[[:space:]]+has[[:space:]]+([0-9]+)[[:space:]]+package[[:space:]]+rows[[:space:]]+and[[:space:]]+([0-9]+)[[:space:]]+import[[:space:]]+rows' \
+    "$(language_slice_kind_count packages)" \
+    "$(language_slice_kind_count imports)"
+  check_production_readiness_snapshot_count \
+    "$matrix" \
+    "bounded stdlib language-slice area" \
+    'slice[[:space:]]+inventory[[:space:]]+has[[:space:]]+([0-9]+)[[:space:]]+bounded[[:space:]]+stdlib[[:space:]]+rows' \
+    "$(language_slice_kind_status_count stdlib bounded)"
+  check_production_readiness_snapshot_count \
+    "$matrix" \
+    "parser-HIR language-slice area" \
+    'slice[[:space:]]+inventory[[:space:]]+has[[:space:]]+([0-9]+)[[:space:]]+parser-HIR[[:space:]]+rows' \
+    "$(language_slice_kind_count parser-hir)"
+  check_production_readiness_snapshot_count \
+    "$matrix" \
+    "bounded linking language-slice area" \
+    'slice[[:space:]]+inventory[[:space:]]+has[[:space:]]+([0-9]+)[[:space:]]+bounded[[:space:]]+linking[[:space:]]+rows[[:space:]]+and[[:space:]]+one[[:space:]]+planned' \
+    "$(language_slice_kind_status_count linking bounded)"
+  if [[ "$(language_slice_kind_status_count linking planned)" -ne 1 ]]; then
+    evidence_inventory_error "language-slice inventory must keep exactly one planned linking row while the production-readiness matrix names one planned linking row"
+  fi
+}
+
+check_pareas_pass_contract_contains() {
+  local path="$1"
+  local label="$2"
+  local needle="$3"
+
+  if ! grep -Fq -- "$needle" "$path"; then
+    evidence_inventory_error "Pareas pass contract is missing $label anchor: $needle"
+  fi
+}
+
+check_pareas_pass_contract_document() {
+  if [[ "$check_plan" -eq 0 ]]; then
+    return
+  fi
+
+  case "$tier" in
+    readiness|all) ;;
+    *) return ;;
+  esac
+
+  local path="docs/PAREAS_PASS_CONTRACT.md"
+  if [[ ! -f "$path" ]]; then
+    evidence_inventory_error "Pareas pass contract document is missing: $path"
+    return
+  fi
+
+  check_pareas_pass_contract_contains "$path" paper "docs/CompilationOnTheGPU.md"
+  check_pareas_pass_contract_contains "$path" paper "docs/ParallelCodeGeneration.md"
+  check_pareas_pass_contract_contains "$path" paper "docs/ParallelLLParsing.md"
+  check_pareas_pass_contract_contains "$path" paper "docs/ParallelLexingParsingSemanticAnalysis.md"
+  check_pareas_pass_contract_contains "$path" local-pareas "~/code/pareas"
+  check_pareas_pass_contract_contains "$path" pareas-source-check "## Pareas Source Check"
+  check_pareas_pass_contract_contains "$path" pass-prefix-sum "exclusive prefix sum"
+  check_pareas_pass_contract_contains "$path" pass-radix-sort "radix_sort"
+  check_pareas_pass_contract_contains "$path" pass-segmented-scan "segmented_scan"
+  check_pareas_pass_contract_contains "$path" pass-scatter "scatter"
+  check_pareas_pass_contract_contains "$path" loop-audit "tools/shader_loop_audit.sh --summary-only --fail-on-paper-pass-blocker"
+  check_pareas_pass_contract_contains "$path" evidence-policy "behavior-facing-pass-evidence"
+  check_pareas_pass_contract_contains "$path" route-not-grep-policy "rewrite-routes-not-source-grep-evidence"
+  check_pareas_pass_contract_contains "$path" rust-source-inspection-policy "rust-product-source-inspection-not-pass-evidence"
+  check_pareas_pass_contract_contains "$path" no-run-policy "no-run-not-performance-evidence"
+  check_pareas_pass_contract_contains "$path" no-pareas-claim-policy "no-run-not-pareas-claim-evidence"
+  check_pareas_pass_contract_contains "$path" audit-debt-claim-blocker "performance-scaling-or-pareas-parity-audit-debt"
+  check_pareas_pass_contract_contains "$path" zero-paper-pass-boundary "zero-paper-pass-blocker-not-pass-contract-proof"
+  check_pareas_pass_contract_contains "$path" check-env-pass-gate "measurement_shader_loop_pareas_pass_gate_status=ok"
+  check_pareas_pass_contract_contains "$path" optional-pareas-provenance-boundary "optional-local-comparison-provenance-not-pareas-claim"
+  check_pareas_pass_contract_contains "$path" top-level-pass-contract-scaling-blocker 'top-level `pass_contracts:blocked` scaling blocker'
+  check_pareas_pass_contract_contains "$path" no-performance-evidence "measurement_scaffold_evidence_status=no-run-plan-not-local-performance-evidence"
+  check_pareas_pass_contract_contains "$path" checkpoint-order "checkpoint_execution_order"
+  check_pareas_pass_contract_contains "$path" checkpoint-run-policy "checkpoint_run_policy"
+}
+
+check_testing_strategy_contract_contains() {
+  local path="$1"
+  local label="$2"
+  local needle="$3"
+
+  if ! grep -Fq -- "$needle" "$path"; then
+    evidence_inventory_error "testing strategy is missing $label anchor: $needle"
+  fi
+}
+
+check_testing_strategy_contract_document() {
+  if [[ "$check_plan" -eq 0 ]]; then
+    return
+  fi
+
+  case "$tier" in
+    readiness|all) ;;
+    *) return ;;
+  esac
+
+  local path="docs/TESTING_STRATEGY.md"
+  if [[ ! -f "$path" ]]; then
+    evidence_inventory_error "testing strategy document is missing: $path"
+    return
+  fi
+
+  check_testing_strategy_contract_contains "$path" charter "Before adding, changing, or running tests, state the behavior contract"
+  check_testing_strategy_contract_contains "$path" plausible-bug "Do not add a test that cannot answer the plausible-bug question"
+  check_testing_strategy_contract_contains "$path" narrow-default "Prefer the narrowest test that exercises the relevant contract"
+  check_testing_strategy_contract_contains "$path" source-inspection-ban "these by grepping compiler, shader, or test source"
+  check_testing_strategy_contract_contains "$path" audit-evidence-policy "behavior-facing-pass-evidence"
+  check_testing_strategy_contract_contains "$path" audit-route-policy "rewrite-routes-not-source-grep-evidence"
+  check_testing_strategy_contract_contains "$path" rust-source-inspection-policy "rust-product-source-inspection-not-pass-evidence"
+  check_testing_strategy_contract_contains "$path" audit-pareas-claim-policy "no-run-not-pareas-claim-evidence"
+  check_testing_strategy_contract_contains "$path" top-level-pass-contract-scaling-blocker 'top-level `pass_contracts:blocked` scaling blocker'
+  check_testing_strategy_contract_contains "$path" readiness-no-run 'Use `tools/compiler_acceptance.sh --tier readiness --check-plan`'
+  check_testing_strategy_contract_contains "$path" readiness-rejects-run 'The `readiness` tier intentionally rejects'
+  check_testing_strategy_contract_contains "$path" scale-opt-in "Scale/performance lanes require a second opt-in before execution"
+  check_testing_strategy_contract_contains "$path" generated-checkpoint-policy "Default generated cases should use 5k lines"
+}
+
 verify_measurement_plan_contains() {
   local plan="$1"
   local label="$2"
@@ -3703,16 +6132,154 @@ verify_measurement_plan_contains() {
   fi
 
   plan_checked_commands=$((plan_checked_commands + 1))
-  if [[ "$plan" != *"$needle"* ]]; then
-    echo "acceptance measurement plan missing $label: $needle" >&2
-    plan_missing_commands=$((plan_missing_commands + 1))
+  if [[ -n "$measurement_plan_check_text" ]]; then
+    if [[ "$measurement_plan_check_text" == *"$needle"* ]]; then
+      return
+    fi
+  elif [[ -n "$measurement_plan_check_file" ]]; then
+    if grep -Fq -- "$needle" "$measurement_plan_check_file"; then
+      return
+    fi
+  elif [[ "$plan" == *"$needle"* ]]; then
+    return
   fi
+
+  echo "acceptance measurement plan missing $label: $needle" >&2
+  plan_missing_commands=$((plan_missing_commands + 1))
+}
+
+verify_measurement_check_env_note_contains() {
+  local notes="$1"
+  local label="$2"
+  local needle="$3"
+
+  if [[ "$check_plan" -eq 0 ]]; then
+    return
+  fi
+
+  plan_checked_commands=$((plan_checked_commands + 1))
+  if [[ "$notes" == *"$needle"* ]]; then
+    return
+  fi
+
+  echo "acceptance measurement check-env notes missing $label: $needle" >&2
+  plan_missing_commands=$((plan_missing_commands + 1))
+}
+
+check_measurement_check_env_notes_contract() {
+  if [[ "$check_plan" -eq 0 ]]; then
+    return
+  fi
+
+  case "$tier" in
+    generated|readiness|all) ;;
+    *) return ;;
+  esac
+
+  if ! prepare_perf_measurement_plan_values; then
+    echo "acceptance measurement check-env notes failed to prepare defaults" >&2
+    plan_missing_commands=$((plan_missing_commands + 1))
+    return
+  fi
+
+  prepare_measurement_shader_loop_audit_summary_cache
+
+  local notes
+  notes="$(emit_measurement_check_env_notes)"
+  verify_measurement_check_env_note_contains \
+    "$notes" \
+    pareas-pass-gate-status \
+    "measurement_shader_loop_pareas_pass_gate_status=$(measurement_shader_loop_pareas_pass_gate_status)"
+  verify_measurement_check_env_note_contains \
+    "$notes" \
+    pareas-pass-gate-blockers \
+    "measurement_shader_loop_pareas_pass_gate_blockers=$(measurement_shader_loop_pareas_pass_gate_blockers)"
+  verify_measurement_check_env_note_contains \
+    "$notes" \
+    source-sized-symbolic-cap \
+    "measurement_shader_loop_source_sized_symbolic_cap=$(measurement_shader_loop_audit_source_sized_symbolic_cap_count)"
+  verify_measurement_check_env_note_contains \
+    "$notes" \
+    source-sized-symbolic-cap-by-component \
+    "measurement_shader_loop_source_sized_symbolic_cap_by_component=$(measurement_shader_loop_audit_summary_field_text source-sized-symbolic-cap-by-component)"
+  verify_measurement_check_env_note_contains \
+    "$notes" \
+    source-sized-symbolic-cap-names \
+    "measurement_shader_loop_source_sized_symbolic_cap_names=$(measurement_shader_loop_audit_summary_field_text source-sized-symbolic-cap-names)"
+  verify_measurement_check_env_note_contains \
+    "$notes" \
+    source-sized-symbolic-cap-route \
+    "measurement_shader_loop_source_sized_symbolic_cap_route=$(measurement_shader_loop_audit_summary_field_text source-sized-symbolic-cap-route)"
+  verify_measurement_check_env_note_contains \
+    "$notes" \
+    source-sized-symbolic-cap-route-by-component \
+    "measurement_shader_loop_source_sized_symbolic_cap_route_by_component=$(measurement_shader_loop_audit_summary_field_text source-sized-symbolic-cap-route-by-component)"
+  verify_measurement_check_env_note_contains \
+    "$notes" \
+    source-sized-symbolic-cap-path-route \
+    "measurement_shader_loop_source_sized_symbolic_cap_path_route=$(measurement_shader_loop_audit_summary_field_text source-sized-symbolic-cap-path-route)"
+
+  local checkpoint
+  for checkpoint in "${perf_checkpoint_lines[@]}"; do
+    verify_measurement_check_env_note_contains \
+      "$notes" \
+      "checkpoint-${checkpoint}-pareas-pass-gate-status" \
+      "measurement_checkpoint_${checkpoint}l.shader_loop_pareas_pass_gate_status=$(measurement_shader_loop_pareas_pass_gate_status)"
+    verify_measurement_check_env_note_contains \
+      "$notes" \
+      "checkpoint-${checkpoint}-pareas-pass-gate-blockers" \
+      "measurement_checkpoint_${checkpoint}l.shader_loop_pareas_pass_gate_blockers=$(measurement_shader_loop_pareas_pass_gate_blockers)"
+    verify_measurement_check_env_note_contains \
+      "$notes" \
+      "checkpoint-${checkpoint}-source-sized-symbolic-cap" \
+      "measurement_checkpoint_${checkpoint}l.shader_loop_source_sized_symbolic_cap=$(measurement_shader_loop_audit_source_sized_symbolic_cap_count)"
+    verify_measurement_check_env_note_contains \
+      "$notes" \
+      "checkpoint-${checkpoint}-source-sized-symbolic-cap-by-component" \
+      "measurement_checkpoint_${checkpoint}l.shader_loop_source_sized_symbolic_cap_by_component=$(measurement_shader_loop_audit_summary_field_text source-sized-symbolic-cap-by-component)"
+    verify_measurement_check_env_note_contains \
+      "$notes" \
+      "checkpoint-${checkpoint}-source-sized-symbolic-cap-names" \
+      "measurement_checkpoint_${checkpoint}l.shader_loop_source_sized_symbolic_cap_names=$(measurement_shader_loop_audit_summary_field_text source-sized-symbolic-cap-names)"
+    verify_measurement_check_env_note_contains \
+      "$notes" \
+      "checkpoint-${checkpoint}-source-sized-symbolic-cap-route" \
+      "measurement_checkpoint_${checkpoint}l.shader_loop_source_sized_symbolic_cap_route=$(measurement_shader_loop_audit_summary_field_text source-sized-symbolic-cap-route)"
+    verify_measurement_check_env_note_contains \
+      "$notes" \
+      "checkpoint-${checkpoint}-source-sized-symbolic-cap-route-by-component" \
+      "measurement_checkpoint_${checkpoint}l.shader_loop_source_sized_symbolic_cap_route_by_component=$(measurement_shader_loop_audit_summary_field_text source-sized-symbolic-cap-route-by-component)"
+    verify_measurement_check_env_note_contains \
+      "$notes" \
+      "checkpoint-${checkpoint}-source-sized-symbolic-cap-path-route" \
+      "measurement_checkpoint_${checkpoint}l.shader_loop_source_sized_symbolic_cap_path_route=$(measurement_shader_loop_audit_summary_field_text source-sized-symbolic-cap-path-route)"
+  done
 }
 
 measurement_checkpoint_block() {
   local plan="$1"
   local checkpoint="$2"
   local start="checkpoint_${checkpoint}l:"
+
+  if [[ -n "$measurement_plan_check_file" ]]; then
+    awk -v start="$start" '
+      $0 == start {
+        in_block = 1
+        print
+        next
+      }
+      in_block && /^checkpoint_[0-9]+l:/ {
+        exit
+      }
+      in_block && /^notes:/ {
+        exit
+      }
+      in_block {
+        print
+      }
+    ' "$measurement_plan_check_file"
+    return
+  fi
 
   awk -v start="$start" '
     $0 == start {
@@ -3732,6 +6299,15 @@ measurement_checkpoint_block() {
   ' <<<"$plan"
 }
 
+cache_measurement_checkpoint_block() {
+  local plan="$1"
+  local checkpoint="$2"
+
+  if [[ -z "${measurement_checkpoint_block_cache[$checkpoint]+set}" ]]; then
+    measurement_checkpoint_block_cache[$checkpoint]="$(measurement_checkpoint_block "$plan" "$checkpoint")"
+  fi
+}
+
 verify_measurement_checkpoint_contains() {
   local plan="$1"
   local checkpoint="$2"
@@ -3743,7 +6319,8 @@ verify_measurement_checkpoint_contains() {
     return
   fi
 
-  block="$(measurement_checkpoint_block "$plan" "$checkpoint")"
+  cache_measurement_checkpoint_block "$plan" "$checkpoint"
+  block="${measurement_checkpoint_block_cache[$checkpoint]}"
   plan_checked_commands=$((plan_checked_commands + 1))
   if [[ -z "$block" || "$block" != *"$needle"* ]]; then
     echo "acceptance measurement checkpoint $checkpoint missing $label: $needle" >&2
@@ -3800,7 +6377,8 @@ verify_measurement_checkpoint_parallel_pass_contracts() {
   fi
 
   local block
-  block="$(measurement_checkpoint_block "$plan" "$checkpoint")"
+  cache_measurement_checkpoint_block "$plan" "$checkpoint"
+  block="${measurement_checkpoint_block_cache[$checkpoint]}"
   plan_checked_commands=$((plan_checked_commands + 1))
   if [[ -z "$block" ]]; then
     echo "acceptance measurement checkpoint $checkpoint missing parallel pass-contract block" >&2
@@ -3929,6 +6507,222 @@ verify_measurement_checkpoint_parallel_pass_contracts() {
   fi
 }
 
+measurement_evidence_artifact_field() {
+  local line="$1"
+  local field="$2"
+  local prefix="${field}="
+  local word
+
+  for word in $line; do
+    if [[ "$word" == "$prefix"* ]]; then
+      printf '%s\n' "${word#"$prefix"}"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+measurement_artifact_separation_error() {
+  local checkpoint="$1"
+  shift
+
+  echo "acceptance measurement checkpoint $checkpoint artifact evidence separation error: $*" >&2
+  plan_missing_commands=$((plan_missing_commands + 1))
+}
+
+verify_measurement_checkpoint_artifact_claim_separation() {
+  local plan="$1"
+  local checkpoint="$2"
+
+  if [[ "$check_plan" -eq 0 ]]; then
+    return
+  fi
+
+  local block
+  cache_measurement_checkpoint_block "$plan" "$checkpoint"
+  block="${measurement_checkpoint_block_cache[$checkpoint]}"
+  plan_checked_commands=$((plan_checked_commands + 1))
+  if [[ -z "$block" ]]; then
+    measurement_artifact_separation_error "$checkpoint" "missing evidence artifact block"
+    return
+  fi
+
+  local required_artifacts
+  local optional_artifacts
+  required_artifacts="$(measurement_checkpoint_field "$block" required_artifacts)"
+  optional_artifacts="$(measurement_checkpoint_field "$block" optional_comparison_artifacts)"
+  if [[ -z "$required_artifacts" || -z "$optional_artifacts" ]]; then
+    measurement_artifact_separation_error "$checkpoint" "missing required/optional artifact inventories"
+    return
+  fi
+
+  local expected_count
+  expected_count=$(( $(csv_count "$required_artifacts") + $(csv_count "$optional_artifacts") ))
+  local artifact_count=0
+  local -A seen_artifacts=()
+  local line
+  local name
+  local required
+  local claim
+  local claim_source
+  local claim_fields
+  local claim_boundary
+  local claim_field
+  local expected_required
+  local expected_claim_source
+  local expected_claim_boundary
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    case "$line" in
+      '  evidence_artifact:'*) ;;
+      *) continue ;;
+    esac
+
+    artifact_count=$((artifact_count + 1))
+    name="$(measurement_evidence_artifact_field "$line" name || true)"
+    required="$(measurement_evidence_artifact_field "$line" required || true)"
+    claim="$(measurement_evidence_artifact_field "$line" claim || true)"
+    claim_source="$(measurement_evidence_artifact_field "$line" claim_source || true)"
+    claim_fields="$(measurement_evidence_artifact_field "$line" claim_fields || true)"
+    claim_boundary="$(measurement_evidence_artifact_field "$line" claim_boundary || true)"
+
+    if [[ -z "$name" || -z "$required" || -z "$claim" || -z "$claim_source" || -z "$claim_fields" || -z "$claim_boundary" ]]; then
+      measurement_artifact_separation_error "$checkpoint" "malformed evidence artifact line: $line"
+      continue
+    fi
+
+    if [[ -n "${seen_artifacts[$name]:-}" ]]; then
+      measurement_artifact_separation_error "$checkpoint" "duplicates artifact '$name'"
+    fi
+    seen_artifacts[$name]=1
+
+    if csv_has_value "$required_artifacts" "$name"; then
+      expected_required=true
+      case "$name" in
+        measurement_summary)
+          expected_claim_source=derived_local_artifacts
+          expected_claim_boundary=derived-summary-rollup-not-no-run-performance-evidence
+          ;;
+        *)
+          expected_claim_source=local_artifact
+          expected_claim_boundary=checkpoint-local-artifact-not-claimable-without-summary
+          ;;
+      esac
+    elif csv_has_value "$optional_artifacts" "$name"; then
+      expected_required=false
+      expected_claim_source=optional_local_comparison_artifact
+      expected_claim_boundary=optional-local-comparison-provenance-not-pareas-claim
+    else
+      measurement_artifact_separation_error "$checkpoint" "publishes artifact '$name' outside required/optional inventories"
+      continue
+    fi
+
+    if [[ "$required" != "$expected_required" ]]; then
+      measurement_artifact_separation_error "$checkpoint" "artifact '$name' required=$required but inventory expects required=$expected_required"
+    fi
+    if [[ "$claim_source" != "$expected_claim_source" ]]; then
+      measurement_artifact_separation_error "$checkpoint" "artifact '$name' claim_source=$claim_source but expected $expected_claim_source"
+    fi
+    if [[ "$claim_boundary" != "$expected_claim_boundary" ]]; then
+      measurement_artifact_separation_error "$checkpoint" "artifact '$name' claim_boundary=$claim_boundary but expected $expected_claim_boundary"
+    fi
+
+    case "$name" in
+      lanius_stdout)
+        if [[ "$claim" != lanius_latency_throughput || "$claim_fields" != best_ms,throughput_lines_per_second ]]; then
+          measurement_artifact_separation_error "$checkpoint" "lanius_stdout must claim only benchmark best_ms-derived local latency/throughput"
+        fi
+        if csv_has_value "$claim_fields" lanius_wall_elapsed_ms; then
+          measurement_artifact_separation_error "$checkpoint" "lanius_stdout must not use wrapper wall time as a latency claim"
+        fi
+        ;;
+      perfetto_trace|readback_summary)
+        if [[ "$claim_fields" != readback_span_count,readback_total_ms,readback_max_span_ms ]]; then
+          measurement_artifact_separation_error "$checkpoint" "readback artifact '$name' must stay in the readback metric domain"
+        fi
+        ;;
+      vram_csv)
+        if [[ "$claim" != vram_usage || "$claim_source" != local_artifact || "$claim_fields" != max_vram_bytes,nvidia_smi_exit_status ]]; then
+          measurement_artifact_separation_error "$checkpoint" "vram_csv must stay a local nvidia-smi VRAM artifact, separate from Lanius and Pareas timing"
+        fi
+        ;;
+      measurement_summary)
+        for claim_field in \
+          baseline_separation_schema \
+          paper_baseline_policy \
+          paper_baseline_numbers_status \
+          workload_shape_policy \
+          workload_shape_scope \
+          workload_generalization_status \
+          workload_generalization_blockers \
+          link_artifact_evidence_status \
+          link_artifact_evidence_schema \
+          link_artifact_required_evidence_classes \
+          link_artifact_claim_blockers \
+          local_performance_claim_status \
+          local_vram_claim_source \
+          local_pareas_claim_source \
+          scaling_claim_status \
+          claim_readiness_status \
+          production_readiness_blockers; do
+          if ! csv_has_value "$claim_fields" "$claim_field"; then
+            measurement_artifact_separation_error "$checkpoint" "measurement_summary claim fields omit $claim_field"
+          fi
+        done
+        ;;
+      pareas_source)
+        if [[ "$claim" != pareas_comparison_input || "$claim_fields" != pareas_source_path,pareas_source_line_count ]]; then
+          measurement_artifact_separation_error "$checkpoint" "pareas_source must stay optional Pareas input provenance"
+        fi
+        ;;
+      pareas_source_sha256)
+        if [[ "$claim" != pareas_comparison_input_hash || "$claim_fields" != pareas_source_sha256 ]]; then
+          measurement_artifact_separation_error "$checkpoint" "pareas_source_sha256 must stay optional Pareas input-hash provenance"
+        fi
+        ;;
+      pareas_binary_sha256)
+        if [[ "$claim" != pareas_compiler_identity || "$claim_fields" != pareas_binary_sha256 ]]; then
+          measurement_artifact_separation_error "$checkpoint" "pareas_binary_sha256 must stay optional Pareas compiler identity provenance"
+        fi
+        ;;
+      pareas_output)
+        if [[ "$claim" != pareas_comparison_output || "$claim_fields" != pareas_exit_status ]]; then
+          measurement_artifact_separation_error "$checkpoint" "pareas_output must stay optional Pareas output provenance"
+        fi
+        ;;
+      pareas_stdout)
+        if [[ "$claim" != pareas_comparison_timing || "$claim_fields" != pareas_wall_elapsed_ms,lanius_pareas_wall_ratio ]]; then
+          measurement_artifact_separation_error "$checkpoint" "pareas_stdout must stay optional local Pareas timing/comparison provenance"
+        fi
+        if [[ "$claim_boundary" != optional-local-comparison-provenance-not-pareas-claim ]]; then
+          measurement_artifact_separation_error "$checkpoint" "pareas_stdout must not become a Pareas comparison claim boundary"
+        fi
+        ;;
+      pareas_vram_csv)
+        if [[ "$claim" != pareas_vram_usage || "$claim_fields" != pareas_max_vram_bytes,pareas_nvidia_smi_exit_status ]]; then
+          measurement_artifact_separation_error "$checkpoint" "pareas_vram_csv must stay optional Pareas VRAM provenance"
+        fi
+        ;;
+    esac
+  done <<<"$block"
+
+  if [[ "$artifact_count" -ne "$expected_count" ]]; then
+    measurement_artifact_separation_error "$checkpoint" "publishes $artifact_count evidence artifacts but inventories require $expected_count"
+  fi
+
+  local artifact
+  local -a required_values
+  local -a optional_values
+  IFS=',' read -r -a required_values <<<"$required_artifacts"
+  IFS=',' read -r -a optional_values <<<"$optional_artifacts"
+  for artifact in "${required_values[@]}" "${optional_values[@]}"; do
+    if [[ -z "${seen_artifacts[$artifact]:-}" ]]; then
+      measurement_artifact_separation_error "$checkpoint" "inventory artifact '$artifact' has no evidence_artifact row"
+    fi
+  done
+}
+
 check_measurement_plan_contract() {
   if [[ "$check_plan" -eq 0 ]]; then
     return
@@ -3946,12 +6740,21 @@ check_measurement_plan_contract() {
   fi
 
   local -a checkpoints=("${perf_checkpoint_lines[@]}")
-  local plan
-  if ! plan="$(emit_perf_measurement_plan)"; then
+  local plan=
+  local previous_plan_check_file="$measurement_plan_check_file"
+  local previous_plan_check_text="$measurement_plan_check_text"
+  local plan_file
+  prepare_measurement_shader_loop_audit_summary_cache
+  plan_file="$(mktemp)"
+  if ! emit_perf_measurement_plan >"$plan_file"; then
     echo "acceptance measurement plan failed to render" >&2
     plan_missing_commands=$((plan_missing_commands + 1))
+    rm -f "$plan_file"
     return
   fi
+  measurement_plan_check_file="$plan_file"
+  measurement_plan_check_text="$(<"$plan_file")"
+  measurement_checkpoint_block_cache=()
 
   verify_measurement_plan_contains "$plan" target "target: x86_64-elf"
   verify_measurement_plan_contains "$plan" schema "measurement_plan_schema: lanius.measurement-plan.v1"
@@ -3960,17 +6763,32 @@ check_measurement_plan_contract() {
   verify_measurement_plan_contains "$plan" comparison-baseline-policy "comparison_baseline_policy: local-pareas-artifacts-only"
   verify_measurement_plan_contains "$plan" freshness-policy "freshness_policy: hash-and-checkpoint-field-match"
   verify_measurement_plan_contains "$plan" timing-policy "measurement_timing_policy: $(measurement_timing_policy)"
+  verify_measurement_plan_contains "$plan" scaffold-evidence-status "measurement_scaffold_evidence_status: $(measurement_scaffold_evidence_status)"
   verify_measurement_plan_contains "$plan" cold-start-policy "cold_start_policy: $(measurement_cold_start_policy)"
+  verify_measurement_plan_contains "$plan" cold-gpu-pipeline-init-policy "cold_gpu_pipeline_init_policy: $(measurement_cold_gpu_pipeline_init_policy)"
   verify_measurement_plan_contains "$plan" compile-latency-claim-source "compile_latency_claim_source: $(measurement_compile_latency_claim_source)"
+  verify_measurement_plan_contains "$plan" steady-compile-latency-claim-source "steady_compile_latency_claim_source: $(measurement_steady_compile_latency_claim_source)"
+  verify_measurement_plan_contains "$plan" steady-readback-claim-source "steady_readback_claim_source: $(measurement_steady_readback_claim_source)"
   verify_measurement_plan_contains "$plan" runtime-validation-policy "runtime_validation_policy: $(measurement_runtime_validation_policy)"
+  verify_measurement_plan_contains "$plan" workload-shape-policy "workload_shape_policy: $(measurement_workload_shape_policy)"
+  verify_measurement_plan_contains "$plan" workload-shape-scope "workload_shape_scope: $(measurement_workload_shape_scope)"
+  verify_measurement_plan_contains "$plan" workload-generalization-status "workload_generalization_status: $(measurement_workload_generalization_status)"
+  verify_measurement_plan_contains "$plan" workload-generalization-blockers "workload_generalization_blockers: $(measurement_workload_generalization_blockers)"
+  verify_measurement_plan_contains "$plan" link-artifact-evidence-policy "link_artifact_evidence_policy: $(measurement_link_artifact_evidence_policy)"
+  verify_measurement_plan_contains "$plan" link-artifact-evidence-schema "link_artifact_evidence_schema: $(measurement_link_artifact_evidence_schema)"
+  verify_measurement_plan_contains "$plan" link-artifact-required-evidence-classes "link_artifact_required_evidence_classes: $(measurement_link_artifact_required_evidence_classes)"
+  verify_measurement_plan_contains "$plan" link-artifact-evidence-status "link_artifact_evidence_status: $(measurement_link_artifact_evidence_status)"
+  verify_measurement_plan_contains "$plan" link-artifact-claim-blockers "link_artifact_claim_blockers: $(measurement_link_artifact_claim_blockers)"
   verify_measurement_plan_contains "$plan" claim-provenance-schema "claim_provenance_schema: $(measurement_claim_provenance_schema)"
   verify_measurement_plan_contains "$plan" baseline-separation-schema "baseline_separation_schema: $(measurement_baseline_separation_schema)"
   verify_measurement_plan_contains "$plan" required-claim-provenance-fields "required_claim_provenance_fields: $(measurement_required_claim_provenance_fields)"
   verify_measurement_plan_contains "$plan" paper-baseline-policy "paper_baseline_policy: $(measurement_paper_baseline_policy)"
   verify_measurement_plan_contains "$plan" paper-baseline-numbers-status "paper_baseline_numbers_status: $(measurement_paper_baseline_numbers_status)"
+  verify_measurement_plan_contains "$plan" paper-baseline-claim-status "paper_baseline_claim_status: $(measurement_paper_baseline_claim_status)"
   verify_measurement_plan_contains "$plan" local-evidence-status-policy "local_evidence_status_policy: $(measurement_local_evidence_status_policy)"
   verify_measurement_plan_contains "$plan" local-performance-claim-policy "local_performance_claim_policy: $(measurement_local_performance_claim_policy)"
   verify_measurement_plan_contains "$plan" local-performance-claim-source "local_performance_claim_source: $(measurement_local_performance_claim_source)"
+  verify_measurement_plan_contains "$plan" local-performance-claim-exclusions "local_performance_claim_exclusions: $(measurement_local_performance_claim_exclusions)"
   verify_measurement_plan_contains "$plan" local-performance-claim-status "local_performance_claim_status: $(measurement_local_performance_claim_status)"
   verify_measurement_plan_contains "$plan" local-performance-claim-blockers "local_performance_claim_blockers: $(measurement_local_performance_claim_blockers)"
   verify_measurement_plan_contains "$plan" local-vram-claim-source "local_vram_claim_source: $(measurement_local_vram_claim_source)"
@@ -3979,6 +6797,9 @@ check_measurement_plan_contract() {
   verify_measurement_plan_contains "$plan" scaling-claim-source "scaling_claim_source: $(measurement_scaling_claim_source)"
   verify_measurement_plan_contains "$plan" scaling-claim-status "scaling_claim_status: $(measurement_scaling_claim_status)"
   verify_measurement_plan_contains "$plan" scaling-claim-blockers "scaling_claim_blockers: $(measurement_scaling_claim_blockers)"
+  if [[ "$(measurement_pass_contract_readiness_status)" != "claimable" ]]; then
+    verify_measurement_plan_contains "$plan" scaling-claim-pass-contract-blocker "$(measurement_pass_contract_claim_blocker)"
+  fi
   verify_measurement_plan_contains "$plan" paper-pass-order-schema "paper_pass_order_schema: $(measurement_paper_pass_order_schema)"
   verify_measurement_plan_contains "$plan" paper-pass-order-source "paper_pass_order_source: $(measurement_paper_pass_order_source)"
   verify_measurement_plan_contains "$plan" paper-pass-order "paper_pass_order: $(measurement_paper_pass_order)"
@@ -3998,7 +6819,69 @@ check_measurement_plan_contract() {
   verify_measurement_plan_contains "$plan" pass-contract-fallback-status "pass_contract_fallback_status: $(measurement_pass_contract_fallback_status)"
   verify_measurement_plan_contains "$plan" pass-contract-claim-status "pass_contract_claim_status: $(measurement_pass_contract_claim_status)"
   verify_measurement_plan_contains "$plan" pass-contract-claim-blockers "pass_contract_claim_blockers: $(measurement_pass_contract_claim_blockers)"
+  if [[ "$(measurement_shader_loop_audit_local_review_blocker)" != "none" ]]; then
+    verify_measurement_plan_contains "$plan" pass-contract-local-review-blocker "$(measurement_shader_loop_audit_local_review_blocker)"
+  fi
   verify_measurement_plan_contains "$plan" pass-contract-readiness-status "pass_contract_readiness_status: $(measurement_pass_contract_readiness_status)"
+  verify_measurement_plan_contains "$plan" shader-loop-audit-command "shader_loop_audit_command: $(measurement_shader_loop_audit_command)"
+  verify_measurement_plan_contains "$plan" shader-loop-audit-policy "shader_loop_audit_policy: $(measurement_shader_loop_audit_policy)"
+  verify_measurement_plan_contains "$plan" shader-loop-audit-summary "shader_loop_audit_summary: fixed-bound="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-fixed-guard "fixed-bound-guard="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-codegen-review "codegen-review-required="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-wasm-codegen-review "wasm-codegen-review-required="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-x86-codegen-review "x86-codegen-review-required="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-wasm-codegen-fixed-bound "wasm-codegen-fixed-bound="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-x86-codegen-fixed-bound "x86-codegen-fixed-bound="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-large-fixed-bound "large-fixed-bound="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-codegen-large-fixed-bound "codegen-large-fixed-bound="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-loop-attribute "loop-attribute="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-unroll-attribute "unroll-attribute="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-suspicious-loop-attribute "suspicious-loop-attribute="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-suspicious-unroll-attribute "suspicious-unroll-attribute="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-raw-for-loop "raw-for-loop="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-raw-for-review-required "raw-for-review-required="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-review-required "review-required="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-paper-pass-blocker "paper-pass-blocker="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-paper-pass-local-review "paper-pass-local-review="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-record-map-prefix-scan-scatter "record-map-prefix-scan-scatter="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-source-record-partition-prefix-scan "source-record-partition-prefix-scan="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-source-sized-symbolic-cap "source-sized-symbolic-cap="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-source-sized-symbolic-cap-names "source-sized-symbolic-cap-names="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-source-sized-symbolic-cap-by-component "source-sized-symbolic-cap-by-component="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-source-sized-symbolic-cap-route "source-sized-symbolic-cap-route="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-source-sized-symbolic-cap-route-by-component "source-sized-symbolic-cap-route-by-component="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-source-sized-symbolic-cap-path-route "source-sized-symbolic-cap-path-route="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-top-component-paper-pass-blocker "top-component-paper-pass-blocker="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-paper-pass-blocker-by-component "paper-pass-blocker-by-component="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-paper-pass-blocker-by-rewrite "paper-pass-blocker-by-rewrite="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-paper-pass-blocker-by-component-route "paper-pass-blocker-by-component-route="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-paper-pass-local-review-by-component "paper-pass-local-review-by-component="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-paper-pass-local-review-by-component-route "paper-pass-local-review-by-component-route="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-source-sized-loop-rewrite-route "source-sized-loop-rewrite-route="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-source-sized-loop-rewrite-route-by-component "source-sized-loop-rewrite-route-by-component="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-evidence-proof "audit-evidence-proof="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-evidence-blocker "audit-evidence-blocker="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-evidence-local-review "audit-evidence-local-review="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-evidence-proof-pass-primitive-shape-only "audit-evidence-proof-pass-primitive-shape-only="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-evidence-blocker-source-sized-legacy-fallback "audit-evidence-blocker-source-sized-legacy-fallback="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-evidence-blocker-source-sized-symbolic-cap "audit-evidence-blocker-source-sized-symbolic-cap="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-evidence-local-review-bounded-helper "audit-evidence-local-review-bounded-helper="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-claim-blocker-performance-scaling-or-pareas-parity-audit-debt "performance-scaling-or-pareas-parity-audit-debt="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-claim-blocker-performance-scaling-or-pareas-parity-audit-blocker "performance-scaling-or-pareas-parity-audit-blocker="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-claim-blocker-performance-scaling-or-pareas-parity-local-review "performance-scaling-or-pareas-parity-local-review="
+  verify_measurement_plan_contains "$plan" shader-loop-audit-behavior-facing-pass-evidence "behavior-facing-pass-evidence=1"
+  verify_measurement_plan_contains "$plan" shader-loop-audit-rewrite-routes-not-source-grep-evidence "rewrite-routes-not-source-grep-evidence=1"
+  verify_measurement_plan_contains "$plan" shader-loop-audit-rust-product-source-inspection-not-pass-evidence "rust-product-source-inspection-not-pass-evidence=1"
+  verify_measurement_plan_contains "$plan" shader-loop-audit-proof-is-pass-shape-only "audit-proof-is-pass-shape-only=1"
+  verify_measurement_plan_contains "$plan" shader-loop-audit-blockers-and-local-review-are-not-performance-evidence "audit-blockers-and-local-review-are-not-performance-evidence=1"
+  verify_measurement_plan_contains "$plan" shader-loop-audit-debt-blocks-performance-and-pareas-parity-claims "audit-debt-blocks-performance-and-pareas-parity-claims=1"
+  verify_measurement_plan_contains "$plan" shader-loop-audit-zero-paper-pass-blocker-not-pass-contract-proof "zero-paper-pass-blocker-not-pass-contract-proof=1"
+  verify_measurement_plan_contains "$plan" shader-loop-audit-no-run-not-performance-evidence "no-run-not-performance-evidence=1"
+  verify_measurement_plan_contains "$plan" shader-loop-audit-no-run-not-pareas-claim-evidence "no-run-not-pareas-claim-evidence=1"
+  verify_measurement_plan_contains "$plan" shader-loop-audit-blocker-field "shader_loop_audit_blocker: $(measurement_shader_loop_audit_blocker)"
+  if [[ "$(measurement_shader_loop_audit_blocker)" != "none" ]]; then
+    verify_measurement_plan_contains "$plan" shader-loop-audit-blocker "$(measurement_shader_loop_audit_blocker)"
+  fi
   verify_measurement_plan_contains "$plan" timeout-provenance-schema "timeout_provenance_schema: $(measurement_timeout_provenance_schema)"
   verify_measurement_plan_contains "$plan" required-timeout-provenance-fields "required_timeout_provenance_fields: $(measurement_required_timeout_provenance_fields)"
   verify_measurement_plan_contains "$plan" timeout-scope "timeout_scope: $(measurement_timeout_scope)"
@@ -4011,6 +6894,7 @@ check_measurement_plan_contract() {
   verify_measurement_plan_contains "$plan" minimum-iterations-for-claim "minimum_iterations_for_claim: $(measurement_minimum_iterations_for_claim)"
   verify_measurement_plan_contains "$plan" checkpoints "checkpoints: $(join_by_comma "${checkpoints[@]}")"
   verify_measurement_plan_contains "$plan" checkpoint-execution-order "checkpoint_execution_order: $(join_by_comma "${checkpoints[@]}")"
+  verify_measurement_plan_contains "$plan" checkpoint-run-policy "checkpoint_run_policy: $(measurement_checkpoint_run_policy)"
   verify_measurement_plan_contains "$plan" required-artifacts "required_checkpoint_artifacts: $(measurement_required_artifacts)"
   verify_measurement_plan_contains "$plan" optional-comparison-artifacts "optional_comparison_artifacts: $(measurement_optional_comparison_artifacts)"
   verify_measurement_plan_contains "$plan" artifact-manifest-schema "artifact_manifest_schema: $(measurement_artifact_manifest_schema)"
@@ -4054,297 +6938,39 @@ check_measurement_plan_contract() {
   verify_measurement_plan_contains "$plan" bench-sha256-path "bench_sha256_output_path:"
   verify_measurement_plan_contains "$plan" pareas-source-sha256-path "pareas_source_sha256_output_path:"
   verify_measurement_plan_contains "$plan" pareas-binary-sha256-path "pareas_binary_sha256_output_path:"
+  verify_measurement_plan_contains "$plan" pareas-vram-output-path "pareas_vram_output_path:"
 
   local checkpoint
   for checkpoint in "${checkpoints[@]}"; do
     verify_measurement_plan_contains "$plan" "checkpoint-${checkpoint}" "checkpoint_${checkpoint}l:"
     verify_measurement_checkpoint_contains "$plan" "$checkpoint" "line-count-${checkpoint}" "  line_count: $checkpoint"
     verify_measurement_checkpoint_contains "$plan" "$checkpoint" "iterations-${checkpoint}" "  iterations: $perf_iters"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "timeout-ms-${checkpoint}" "  timeout_ms: $perf_timeout_ms"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "readback-timeout-ms-${checkpoint}" "  readback_timeout_ms: $perf_readback_timeout_ms"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "vram-sample-interval-ms-${checkpoint}" "  vram_sample_interval_ms: $perf_vram_sample_interval_ms"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "responsiveness-timeout-ms-${checkpoint}" "  responsiveness_probe_timeout_ms: $perf_responsiveness_timeout_ms"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "source-seed-${checkpoint}" "  source_seed: $perf_seed"
     verify_measurement_checkpoint_contains "$plan" "$checkpoint" "target-${checkpoint}" "  target: x86_64-elf"
+    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "source-seed-${checkpoint}" "  source_seed: $perf_seed"
+    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "scaffold-evidence-status-${checkpoint}" "  measurement_scaffold_evidence_status: $(measurement_scaffold_evidence_status)"
     verify_measurement_checkpoint_contains "$plan" "$checkpoint" "gpu-timing-env-${checkpoint}" "  gpu_timing_env: LANIUS_GPU_TIMING=1 LANIUS_GPU_COMPILE_HOST_TIMING=1"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "timing-policy-${checkpoint}" "  measurement_timing_policy: $(measurement_timing_policy)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "cold-start-policy-${checkpoint}" "  cold_start_policy: $(measurement_cold_start_policy)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "compile-latency-claim-source-${checkpoint}" "  compile_latency_claim_source: $(measurement_compile_latency_claim_source)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "runtime-validation-policy-${checkpoint}" "  runtime_validation_policy: $(measurement_runtime_validation_policy)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "claim-provenance-schema-${checkpoint}" "  claim_provenance_schema: $(measurement_claim_provenance_schema)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "baseline-separation-schema-${checkpoint}" "  baseline_separation_schema: $(measurement_baseline_separation_schema)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "required-claim-provenance-fields-${checkpoint}" "  required_claim_provenance_fields: $(measurement_required_claim_provenance_fields)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "paper-baseline-policy-${checkpoint}" "  paper_baseline_policy: $(measurement_paper_baseline_policy)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "paper-baseline-numbers-status-${checkpoint}" "  paper_baseline_numbers_status: $(measurement_paper_baseline_numbers_status)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "local-evidence-status-policy-${checkpoint}" "  local_evidence_status_policy: $(measurement_local_evidence_status_policy)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "local-performance-claim-policy-${checkpoint}" "  local_performance_claim_policy: $(measurement_local_performance_claim_policy)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "local-performance-claim-source-${checkpoint}" "  local_performance_claim_source: $(measurement_local_performance_claim_source)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "local-performance-claim-status-${checkpoint}" "  local_performance_claim_status: $(measurement_local_performance_claim_status)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "local-performance-claim-blockers-${checkpoint}" "  local_performance_claim_blockers: $(measurement_local_performance_claim_blockers)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "local-vram-claim-source-${checkpoint}" "  local_vram_claim_source: $(measurement_local_vram_claim_source)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "local-pareas-claim-source-${checkpoint}" "  local_pareas_claim_source: $(measurement_local_pareas_claim_source)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "scaling-claim-policy-${checkpoint}" "  scaling_claim_policy: $(measurement_scaling_claim_policy)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "scaling-claim-source-${checkpoint}" "  scaling_claim_source: $(measurement_scaling_claim_source)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "scaling-claim-status-${checkpoint}" "  scaling_claim_status: $(measurement_scaling_claim_status)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "scaling-claim-blockers-${checkpoint}" "  scaling_claim_blockers: $(measurement_scaling_claim_blockers)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "paper-pass-order-schema-${checkpoint}" "  paper_pass_order_schema: $(measurement_paper_pass_order_schema)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "paper-pass-order-source-${checkpoint}" "  paper_pass_order_source: $(measurement_paper_pass_order_source)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "paper-pass-order-${checkpoint}" "  paper_pass_order: $(measurement_paper_pass_order)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "paper-pass-alignment-policy-${checkpoint}" "  paper_pass_alignment_policy: $(measurement_paper_pass_alignment_policy)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "paper-pass-alignment-status-${checkpoint}" "  paper_pass_alignment_status: $(measurement_paper_pass_alignment_status)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "paper-pass-alignment-blockers-${checkpoint}" "  paper_pass_alignment_blockers: $(measurement_paper_pass_alignment_blockers)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "parallel-pass-contract-schema-${checkpoint}" "  parallel_pass_contract_schema: $(measurement_parallel_pass_contract_schema)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "parallel-pass-contract-policy-${checkpoint}" "  parallel_pass_contract_policy: $(measurement_parallel_pass_contract_policy)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "parallel-pass-contract-groups-${checkpoint}" "  parallel_pass_contract_groups: $(measurement_parallel_pass_contract_groups)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "parallel-pass-contract-order-policy-${checkpoint}" "  parallel_pass_contract_order_policy: $(measurement_parallel_pass_contract_order_policy)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "parallel-pass-contract-execution-order-${checkpoint}" "  parallel_pass_contract_execution_order: $(measurement_parallel_pass_contract_execution_order)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "required-parallel-pass-contract-fields-${checkpoint}" "  required_parallel_pass_contract_fields: $(measurement_required_parallel_pass_contract_fields)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "pass-contract-status-schema-${checkpoint}" "  pass_contract_status_schema: $(measurement_pass_contract_status_schema)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "required-pass-contract-status-fields-${checkpoint}" "  required_pass_contract_status_fields: $(measurement_required_pass_contract_status_fields)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "pass-contract-loop-policy-${checkpoint}" "  pass_contract_loop_policy: $(measurement_pass_contract_loop_policy)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "pass-contract-loop-status-${checkpoint}" "  pass_contract_loop_status: $(measurement_pass_contract_loop_status)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "pass-contract-fallback-status-${checkpoint}" "  pass_contract_fallback_status: $(measurement_pass_contract_fallback_status)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "pass-contract-claim-status-${checkpoint}" "  pass_contract_claim_status: $(measurement_pass_contract_claim_status)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "pass-contract-claim-blockers-${checkpoint}" "  pass_contract_claim_blockers: $(measurement_pass_contract_claim_blockers)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "pass-contract-readiness-status-${checkpoint}" "  pass_contract_readiness_status: $(measurement_pass_contract_readiness_status)"
-    verify_measurement_checkpoint_parallel_pass_contracts "$plan" "$checkpoint"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "timeout-provenance-schema-${checkpoint}" "  timeout_provenance_schema: $(measurement_timeout_provenance_schema)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "required-timeout-provenance-fields-${checkpoint}" "  required_timeout_provenance_fields: $(measurement_required_timeout_provenance_fields)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "timeout-scope-${checkpoint}" "  timeout_scope: $(measurement_timeout_scope)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "timeout-source-${checkpoint}" "  timeout_source: $(measurement_timeout_source)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "timeout-enforced-by-${checkpoint}" "  timeout_enforced_by: $(measurement_timeout_enforced_by)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "timeout-exit-code-${checkpoint}" "  timeout_exit_code: $(measurement_timeout_exit_code)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "timeout-exit-code-means-timed-out-${checkpoint}" "  timeout_exit_code_means_timed_out: $(measurement_timeout_exit_code_means_timed_out)"
     verify_measurement_checkpoint_contains "$plan" "$checkpoint" "required-artifacts-${checkpoint}" "  required_artifacts: $(measurement_required_artifacts)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "artifact-manifest-schema-${checkpoint}" "  artifact_manifest_schema: $(measurement_artifact_manifest_schema)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "required-artifact-manifest-fields-${checkpoint}" "  required_artifact_manifest_fields: $(measurement_required_artifact_manifest_fields)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "readback-summary-schema-${checkpoint}" "  readback_summary_schema: $(measurement_readback_summary_schema)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "required-readback-summary-fields-${checkpoint}" "  required_readback_summary_fields: $(measurement_required_readback_summary_fields)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "vram-csv-schema-${checkpoint}" "  vram_csv_schema: $(measurement_vram_csv_schema)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "required-vram-csv-columns-${checkpoint}" "  required_vram_csv_columns: $(measurement_required_vram_csv_columns)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "hardware-identity-schema-${checkpoint}" "  hardware_identity_schema: $(measurement_hardware_identity_schema)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "required-hardware-identity-fields-${checkpoint}" "  required_hardware_identity_fields: $(measurement_required_hardware_identity_fields)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "command-environment-schema-${checkpoint}" "  command_environment_schema: $(measurement_command_environment_schema)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "required-command-environment-fields-${checkpoint}" "  required_command_environment_fields: $(measurement_required_command_environment_fields)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "responsiveness-probe-schema-${checkpoint}" "  responsiveness_probe_schema: $(measurement_responsiveness_probe_schema)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "required-responsiveness-probe-fields-${checkpoint}" "  required_responsiveness_probe_fields: $(measurement_required_responsiveness_probe_fields)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "command-status-schema-${checkpoint}" "  command_status_schema: $(measurement_command_status_schema)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-status-schema-${checkpoint}" "  evidence_status_schema: $(measurement_evidence_status_schema)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "required-evidence-status-fields-${checkpoint}" "  required_evidence_status_fields: $(measurement_required_evidence_status_fields)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-freshness-schema-${checkpoint}" "  evidence_freshness_schema: $(measurement_evidence_freshness_schema)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "required-evidence-freshness-fields-${checkpoint}" "  required_evidence_freshness_fields: $(measurement_required_evidence_freshness_fields)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "claim-readiness-schema-${checkpoint}" "  claim_readiness_schema: $(measurement_claim_readiness_schema)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "claim-readiness-policy-${checkpoint}" "  claim_readiness_policy: $(measurement_claim_readiness_policy)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "claim-readiness-required-evidence-${checkpoint}" "  claim_readiness_required_evidence_classes: $(measurement_claim_readiness_required_evidence_classes)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "claim-readiness-required-statuses-${checkpoint}" "  claim_readiness_required_statuses: $(measurement_claim_readiness_required_statuses)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "claim-scope-policy-${checkpoint}" "  claim_scope_policy: $(measurement_claim_scope_policy)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "source-control-policy-${checkpoint}" "  source_control_policy: $(measurement_source_control_policy)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "repeatability-policy-${checkpoint}" "  repeatability_policy: $(measurement_repeatability_policy)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "minimum-iterations-for-claim-${checkpoint}" "  minimum_iterations_for_claim: $(measurement_minimum_iterations_for_claim)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "required-claim-readiness-fields-${checkpoint}" "  required_claim_readiness_fields: $(measurement_required_claim_readiness_fields)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "required-status-fields-${checkpoint}" "  required_status_fields: $(measurement_required_status_fields)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "optional-status-fields-${checkpoint}" "  optional_status_fields: $(measurement_optional_status_fields)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "required-summary-fields-${checkpoint}" "  required_summary_fields: $(measurement_required_summary_fields)"
     verify_measurement_checkpoint_contains "$plan" "$checkpoint" "optional-comparison-artifacts-${checkpoint}" "  optional_comparison_artifacts: $(measurement_optional_comparison_artifacts)"
     verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-artifacts-begin-${checkpoint}" "  evidence_artifacts_begin"
     verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-artifacts-end-${checkpoint}" "  evidence_artifacts_end"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-lanius-stdout-${checkpoint}" "  evidence_artifact: checkpoint=$checkpoint name=lanius_stdout required=true"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-lanius-stdout-status-${checkpoint}" "name=lanius_stdout required=true path="
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-lanius-stdout-status-artifact-${checkpoint}" "producer=lanius_wrapped_command_${checkpoint}l status_field=lanius_exit_status status_artifact=command_status"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-lanius-stdout-claim-fields-${checkpoint}" "claim_fields=best_ms,throughput_lines_per_second"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-perfetto-${checkpoint}" "  evidence_artifact: checkpoint=$checkpoint name=perfetto_trace required=true"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-readback-${checkpoint}" "  evidence_artifact: checkpoint=$checkpoint name=readback_summary required=true"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-readback-schema-${checkpoint}" "name=readback_summary required=true path="
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-readback-fields-${checkpoint}" "schema=$(measurement_readback_summary_schema) fields=$(measurement_required_readback_summary_fields)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-readback-claim-fields-${checkpoint}" "claim_fields=readback_span_count,readback_total_ms,readback_max_span_ms"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-vram-${checkpoint}" "  evidence_artifact: checkpoint=$checkpoint name=vram_csv required=true"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-vram-schema-${checkpoint}" "schema=$(measurement_vram_csv_schema) columns=$(measurement_required_vram_csv_columns)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-vram-claim-fields-${checkpoint}" "claim_fields=max_vram_bytes,nvidia_smi_exit_status"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-vram-header-stale-check-${checkpoint}" "stale_check=vram_csv_header_matches_required_columns"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-resource-usage-${checkpoint}" "  evidence_artifact: checkpoint=$checkpoint name=resource_usage required=true"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-resource-usage-status-artifact-${checkpoint}" "producer=lanius_wrapped_command_${checkpoint}l status_field=resource_usage_status status_artifact=command_status"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-resource-usage-stale-check-${checkpoint}" "stale_check=resource_usage_command_matches_checkpoint"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-source-replay-status-artifact-${checkpoint}" "name=source_replay required=true"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-source-replay-status-none-${checkpoint}" "producer=source_replay_command_${checkpoint}l status_field=not_captured status_artifact=none"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-bench-sha256-${checkpoint}" "  evidence_artifact: checkpoint=$checkpoint name=bench_binary_sha256 required=true"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-bench-sha256-status-none-${checkpoint}" "producer=bench_sha256_command_${checkpoint}l status_field=not_captured status_artifact=none"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-hardware-schema-${checkpoint}" "schema=$(measurement_hardware_identity_schema) fields=$(measurement_required_hardware_identity_fields)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-command-environment-schema-${checkpoint}" "schema=$(measurement_command_environment_schema) fields=$(measurement_required_command_environment_fields)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-status-${checkpoint}" "  evidence_artifact: checkpoint=$checkpoint name=command_status required=true"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-responsiveness-${checkpoint}" "  evidence_artifact: checkpoint=$checkpoint name=responsiveness_probe required=true"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-responsiveness-schema-${checkpoint}" "schema=$(measurement_responsiveness_probe_schema) fields=$(measurement_required_responsiveness_probe_fields)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-summary-${checkpoint}" "  evidence_artifact: checkpoint=$checkpoint name=measurement_summary required=true"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-summary-freshness-${checkpoint}" "freshness_schema=$(measurement_evidence_freshness_schema) freshness_fields=$(measurement_required_evidence_freshness_fields)"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-pareas-source-${checkpoint}" "  evidence_artifact: checkpoint=$checkpoint name=pareas_source required=false"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-pareas-source-sha256-${checkpoint}" "  evidence_artifact: checkpoint=$checkpoint name=pareas_source_sha256 required=false"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-pareas-source-sha256-input-${checkpoint}" "name=pareas_source_sha256 required=false path="
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-pareas-binary-sha256-${checkpoint}" "  evidence_artifact: checkpoint=$checkpoint name=pareas_binary_sha256 required=false"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-pareas-binary-sha256-stale-check-${checkpoint}" "stale_check=pareas_binary_sha256_matches_pareas_binary"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-pareas-output-${checkpoint}" "  evidence_artifact: checkpoint=$checkpoint name=pareas_output required=false"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-pareas-output-status-artifact-${checkpoint}" "producer=pareas_wrapped_command_${checkpoint}l status_field=pareas_exit_status status_artifact=command_status"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-pareas-stdout-${checkpoint}" "  evidence_artifact: checkpoint=$checkpoint name=pareas_stdout required=false"
-    verify_measurement_checkpoint_contains "$plan" "$checkpoint" "evidence-pareas-stdout-claim-fields-${checkpoint}" "claim_fields=pareas_wall_elapsed_ms,lanius_pareas_wall_ratio"
     verify_measurement_plan_contains "$plan" "source-replay-command-${checkpoint}" "source_replay_command_${checkpoint}l ="
-    verify_measurement_plan_contains "$plan" "source-replay-output-${checkpoint}" "source_replay_stdout_redirect_${checkpoint}l:"
-    verify_measurement_plan_contains "$plan" "source-sha256-command-${checkpoint}" "source_sha256_command_${checkpoint}l ="
-    verify_measurement_plan_contains "$plan" "source-sha256-output-${checkpoint}" "source_sha256_stdout_redirect_${checkpoint}l:"
-    verify_measurement_plan_contains "$plan" "bench-sha256-command-${checkpoint}" "bench_sha256_command_${checkpoint}l ="
-    verify_measurement_plan_contains "$plan" "bench-sha256-output-${checkpoint}" "bench_sha256_stdout_redirect_${checkpoint}l:"
-    verify_measurement_plan_contains "$plan" "lanius-command-${checkpoint}" "lanius_command_${checkpoint}l ="
     verify_measurement_plan_contains "$plan" "lanius-wrapped-command-${checkpoint}" "lanius_wrapped_command_${checkpoint}l ="
-    verify_measurement_plan_contains "$plan" "lanius-command-status-schema-${checkpoint}" "command_status_schema=lanius.command-status.v1"
-    verify_measurement_plan_contains "$plan" "lanius-wall-status-${checkpoint}" "lanius_wall_elapsed_ms=%s"
-    verify_measurement_plan_contains "$plan" "lanius-timeout-ms-status-${checkpoint}" "timeout_ms=%s"
-    verify_measurement_plan_contains "$plan" "lanius-source-status-${checkpoint}" "source=%s"
-    verify_measurement_plan_contains "$plan" "lanius-phase-status-${checkpoint}" "phase=%s"
-    verify_measurement_plan_contains "$plan" "lanius-target-status-${checkpoint}" "target=%s"
-    verify_measurement_plan_contains "$plan" "responsiveness-command-${checkpoint}" "responsiveness_probe_command_${checkpoint}l ="
-    verify_measurement_plan_contains "$plan" "machine-responsive-status-${checkpoint}" "machine_responsive_after=%s"
-    verify_measurement_plan_contains "$plan" "responsiveness-output-${checkpoint}" "responsiveness_probe_stdout_redirect_${checkpoint}l:"
-    verify_measurement_plan_contains "$plan" "lanius-stdout-${checkpoint}" "lanius_stdout_redirect_${checkpoint}l:"
     verify_measurement_plan_contains "$plan" "readback-command-${checkpoint}" "readback_trace_summary_command_${checkpoint}l ="
-    verify_measurement_plan_contains "$plan" "readback-output-${checkpoint}" "readback_trace_summary_stdout_redirect_${checkpoint}l:"
-    verify_measurement_plan_contains "$plan" "hardware-command-${checkpoint}" "hardware_identity_command_${checkpoint}l ="
-    verify_measurement_plan_contains "$plan" "hardware-schema-output-${checkpoint}" "hardware_identity_schema=lanius.hardware-identity.v1"
-    verify_measurement_plan_contains "$plan" "hardware-nvidia-status-output-${checkpoint}" "nvidia_smi_status=unavailable"
-    verify_measurement_plan_contains "$plan" "hardware-output-${checkpoint}" "hardware_identity_stdout_redirect_${checkpoint}l:"
-    verify_measurement_plan_contains "$plan" "command-env-command-${checkpoint}" "command_environment_command_${checkpoint}l ="
-    verify_measurement_plan_contains "$plan" "command-env-schema-output-${checkpoint}" "command_environment_schema=lanius.command-environment.v1"
-    verify_measurement_plan_contains "$plan" "command-env-source-output-${checkpoint}" "source=%s"
-    verify_measurement_plan_contains "$plan" "command-env-target-output-${checkpoint}" "target=%s"
-    verify_measurement_plan_contains "$plan" "command-env-pass-contract-loop-status-${checkpoint}" "pass_contract_loop_status=%s"
-    verify_measurement_plan_contains "$plan" "command-env-pass-contract-fallback-status-${checkpoint}" "pass_contract_fallback_status=%s"
-    verify_measurement_plan_contains "$plan" "command-env-pass-contract-claim-status-${checkpoint}" "pass_contract_claim_status=%s"
-    verify_measurement_plan_contains "$plan" "command-env-pass-contract-readiness-status-${checkpoint}" "pass_contract_readiness_status=%s"
-    verify_measurement_plan_contains "$plan" "command-env-output-${checkpoint}" "command_environment_stdout_redirect_${checkpoint}l:"
-    verify_measurement_plan_contains "$plan" "vram-command-${checkpoint}" "nvidia_smi_command_${checkpoint}l"
-    verify_measurement_plan_contains "$plan" "vram-output-${checkpoint}" "nvidia_smi_stdout_redirect_${checkpoint}l:"
     verify_measurement_plan_contains "$plan" "vram-wrapped-command-${checkpoint}" "nvidia_smi_wrapped_command_${checkpoint}l"
-    verify_measurement_plan_contains "$plan" "pareas-source-command-${checkpoint}" "pareas_source_command_${checkpoint}l"
-    verify_measurement_plan_contains "$plan" "pareas-source-output-${checkpoint}" "pareas_source_stdout_redirect_${checkpoint}l:"
-    verify_measurement_plan_contains "$plan" "pareas-source-sha256-command-${checkpoint}" "pareas_source_sha256_command_${checkpoint}l"
-    verify_measurement_plan_contains "$plan" "pareas-source-sha256-output-${checkpoint}" "pareas_source_sha256_stdout_redirect_${checkpoint}l:"
-    verify_measurement_plan_contains "$plan" "pareas-binary-sha256-command-${checkpoint}" "pareas_binary_sha256_command_${checkpoint}l"
-    verify_measurement_plan_contains "$plan" "pareas-binary-sha256-output-${checkpoint}" "pareas_binary_sha256_stdout_redirect_${checkpoint}l:"
-    verify_measurement_plan_contains "$plan" "pareas-command-${checkpoint}" "pareas_command_${checkpoint}l"
-    verify_measurement_plan_contains "$plan" "pareas-output-${checkpoint}" "pareas_stdout_redirect_${checkpoint}l:"
     verify_measurement_plan_contains "$plan" "pareas-wrapped-command-${checkpoint}" "pareas_wrapped_command_${checkpoint}l"
-    verify_measurement_plan_contains "$plan" "pareas-wall-status-${checkpoint}" "pareas_wall_elapsed_ms=%s"
+    verify_measurement_plan_contains "$plan" "pareas-vram-wrapped-command-${checkpoint}" "pareas_nvidia_smi_wrapped_command_${checkpoint}l"
     verify_measurement_plan_contains "$plan" "measurement-summary-command-${checkpoint}" "measurement_summary_command_${checkpoint}l ="
-    verify_measurement_plan_contains "$plan" "summary-provenance-${checkpoint}" "evidence_provenance=local-run"
-    verify_measurement_plan_contains "$plan" "summary-evidence-policy-${checkpoint}" "measurement_evidence_policy=local-artifacts-only"
-    verify_measurement_plan_contains "$plan" "summary-paper-numbers-${checkpoint}" "paper_numbers_accepted=false"
-    verify_measurement_plan_contains "$plan" "summary-comparison-baseline-policy-${checkpoint}" "comparison_baseline_policy=local-pareas-artifacts-only"
-    verify_measurement_plan_contains "$plan" "summary-freshness-policy-${checkpoint}" "freshness_policy=hash-and-checkpoint-field-match"
-    verify_measurement_plan_contains "$plan" "summary-timing-policy-${checkpoint}" "measurement_timing_policy=%s"
-    verify_measurement_plan_contains "$plan" "summary-cold-start-policy-${checkpoint}" "cold_start_policy=%s"
-    verify_measurement_plan_contains "$plan" "summary-compile-latency-claim-source-${checkpoint}" "compile_latency_claim_source=%s"
-    verify_measurement_plan_contains "$plan" "summary-runtime-validation-policy-${checkpoint}" "runtime_validation_policy=%s"
-    verify_measurement_plan_contains "$plan" "summary-claim-provenance-schema-${checkpoint}" "claim_provenance_schema=%s"
-    verify_measurement_plan_contains "$plan" "summary-baseline-separation-schema-${checkpoint}" "baseline_separation_schema=%s"
-    verify_measurement_plan_contains "$plan" "summary-paper-baseline-policy-${checkpoint}" "paper_baseline_policy=%s"
-    verify_measurement_plan_contains "$plan" "summary-paper-baseline-numbers-status-${checkpoint}" "paper_baseline_numbers_status=%s"
-    verify_measurement_plan_contains "$plan" "summary-local-evidence-status-policy-${checkpoint}" "local_evidence_status_policy=%s"
-    verify_measurement_plan_contains "$plan" "summary-local-performance-claim-policy-${checkpoint}" "local_performance_claim_policy=%s"
-    verify_measurement_plan_contains "$plan" "summary-local-performance-claim-source-${checkpoint}" "local_performance_claim_source=%s"
-    verify_measurement_plan_contains "$plan" "summary-local-performance-claim-status-${checkpoint}" "local_performance_claim_status=%s"
-    verify_measurement_plan_contains "$plan" "summary-local-performance-claim-blockers-${checkpoint}" "local_performance_claim_blockers=%s"
-    verify_measurement_plan_contains "$plan" "summary-local-vram-claim-source-${checkpoint}" "local_vram_claim_source=%s"
-    verify_measurement_plan_contains "$plan" "summary-local-pareas-claim-source-${checkpoint}" "local_pareas_claim_source=%s"
-    verify_measurement_plan_contains "$plan" "summary-scaling-claim-policy-${checkpoint}" "scaling_claim_policy=%s"
-    verify_measurement_plan_contains "$plan" "summary-scaling-claim-source-${checkpoint}" "scaling_claim_source=%s"
-    verify_measurement_plan_contains "$plan" "summary-scaling-claim-status-${checkpoint}" "scaling_claim_status=%s"
-    verify_measurement_plan_contains "$plan" "summary-scaling-claim-blockers-${checkpoint}" "scaling_claim_blockers=%s"
-    verify_measurement_plan_contains "$plan" "summary-paper-pass-order-schema-${checkpoint}" "paper_pass_order_schema=%s"
-    verify_measurement_plan_contains "$plan" "summary-paper-pass-order-source-${checkpoint}" "paper_pass_order_source=%s"
-    verify_measurement_plan_contains "$plan" "summary-paper-pass-order-${checkpoint}" "paper_pass_order=%s"
-    verify_measurement_plan_contains "$plan" "summary-paper-pass-alignment-policy-${checkpoint}" "paper_pass_alignment_policy=%s"
-    verify_measurement_plan_contains "$plan" "summary-paper-pass-alignment-status-${checkpoint}" "paper_pass_alignment_status=%s"
-    verify_measurement_plan_contains "$plan" "summary-paper-pass-alignment-blockers-${checkpoint}" "paper_pass_alignment_blockers=%s"
-    verify_measurement_plan_contains "$plan" "summary-parallel-pass-contract-schema-${checkpoint}" "parallel_pass_contract_schema=%s"
-    verify_measurement_plan_contains "$plan" "summary-parallel-pass-contract-policy-${checkpoint}" "parallel_pass_contract_policy=%s"
-    verify_measurement_plan_contains "$plan" "summary-parallel-pass-contract-groups-${checkpoint}" "parallel_pass_contract_groups=%s"
-    verify_measurement_plan_contains "$plan" "summary-parallel-pass-contract-order-policy-${checkpoint}" "parallel_pass_contract_order_policy=%s"
-    verify_measurement_plan_contains "$plan" "summary-parallel-pass-contract-execution-order-${checkpoint}" "parallel_pass_contract_execution_order=%s"
-    verify_measurement_plan_contains "$plan" "summary-pass-contract-status-schema-${checkpoint}" "pass_contract_status_schema=%s"
-    verify_measurement_plan_contains "$plan" "summary-pass-contract-loop-policy-${checkpoint}" "pass_contract_loop_policy=%s"
-    verify_measurement_plan_contains "$plan" "summary-pass-contract-loop-status-${checkpoint}" "pass_contract_loop_status=%s"
-    verify_measurement_plan_contains "$plan" "summary-pass-contract-fallback-status-${checkpoint}" "pass_contract_fallback_status=%s"
-    verify_measurement_plan_contains "$plan" "summary-pass-contract-claim-status-${checkpoint}" "pass_contract_claim_status=%s"
-    verify_measurement_plan_contains "$plan" "summary-pass-contract-claim-blockers-${checkpoint}" "pass_contract_claim_blockers=%s"
-    verify_measurement_plan_contains "$plan" "summary-pass-contract-readiness-status-${checkpoint}" "pass_contract_readiness_status=%s"
-    verify_measurement_plan_contains "$plan" "summary-timeout-provenance-schema-${checkpoint}" "timeout_provenance_schema=%s"
-    verify_measurement_plan_contains "$plan" "summary-timeout-scope-${checkpoint}" "timeout_scope=%s"
-    verify_measurement_plan_contains "$plan" "summary-timeout-source-${checkpoint}" "timeout_source=%s"
-    verify_measurement_plan_contains "$plan" "summary-timeout-enforced-by-${checkpoint}" "timeout_enforced_by=%s"
-    verify_measurement_plan_contains "$plan" "summary-timeout-exit-code-${checkpoint}" "timeout_exit_code=%s"
-    verify_measurement_plan_contains "$plan" "summary-timeout-exit-code-means-timed-out-${checkpoint}" "timeout_exit_code_means_timed_out=%s"
-    verify_measurement_plan_contains "$plan" "summary-source-control-policy-${checkpoint}" "source_control_policy=%s"
-    verify_measurement_plan_contains "$plan" "summary-source-control-state-${checkpoint}" "source_control_state=%s"
-    verify_measurement_plan_contains "$plan" "summary-source-control-revision-${checkpoint}" "source_control_revision=%s"
-    verify_measurement_plan_contains "$plan" "summary-repeatability-policy-${checkpoint}" "repeatability_policy=%s"
-    verify_measurement_plan_contains "$plan" "summary-minimum-iterations-for-claim-${checkpoint}" "minimum_iterations_for_claim=%s"
-    verify_measurement_plan_contains "$plan" "summary-repeatability-status-${checkpoint}" "repeatability_status=%s"
-    verify_measurement_plan_contains "$plan" "summary-repeatability-blocker-${checkpoint}" 'repeatability:${repeatability_status}:iterations_'
-    verify_measurement_plan_contains "$plan" "summary-artifacts-complete-${checkpoint}" "required_artifacts_complete=%s"
-    verify_measurement_plan_contains "$plan" "summary-missing-artifacts-${checkpoint}" "missing_required_artifacts=%s"
-    verify_measurement_plan_contains "$plan" "summary-evidence-status-schema-${checkpoint}" "evidence_status_schema=$(measurement_evidence_status_schema)"
-    verify_measurement_plan_contains "$plan" "summary-performance-status-${checkpoint}" "local_performance_evidence_status=%s"
-    verify_measurement_plan_contains "$plan" "summary-performance-claim-status-${checkpoint}" "local_performance_claim_status=%s"
-    verify_measurement_plan_contains "$plan" "summary-performance-claim-blockers-${checkpoint}" "local_performance_claim_blockers=%s"
-    verify_measurement_plan_contains "$plan" "summary-readback-status-${checkpoint}" "local_readback_evidence_status=%s"
-    verify_measurement_plan_contains "$plan" "summary-vram-status-${checkpoint}" "local_vram_evidence_status=%s"
-    verify_measurement_plan_contains "$plan" "summary-nvidia-smi-status-${checkpoint}" "nvidia_smi_exit_status=%s"
-    verify_measurement_plan_contains "$plan" "summary-pareas-status-${checkpoint}" "local_pareas_evidence_status=%s"
-    verify_measurement_plan_contains "$plan" "summary-scaling-status-${checkpoint}" "scaling_claim_status=%s"
-    verify_measurement_plan_contains "$plan" "summary-scaling-blockers-${checkpoint}" "scaling_claim_blockers=%s"
-    verify_measurement_plan_contains "$plan" "summary-production-complete-${checkpoint}" "production_readiness_evidence_complete=%s"
-    verify_measurement_plan_contains "$plan" "summary-production-blockers-${checkpoint}" "production_readiness_blockers=%s"
-    verify_measurement_plan_contains "$plan" "summary-source-control-blocker-${checkpoint}" 'source_control:${source_control_state}'
-    verify_measurement_plan_contains "$plan" "summary-freshness-schema-${checkpoint}" "evidence_freshness_schema=$(measurement_evidence_freshness_schema)"
-    verify_measurement_plan_contains "$plan" "summary-freshness-status-${checkpoint}" "evidence_freshness_status=%s"
-    verify_measurement_plan_contains "$plan" "summary-stale-artifacts-${checkpoint}" "stale_artifacts=%s"
-    verify_measurement_plan_contains "$plan" "summary-stale-checks-${checkpoint}" "stale_artifact_checks=%s"
-    verify_measurement_plan_contains "$plan" "summary-source-control-local-revision-stale-check-${checkpoint}" "source_control_revision_is_local_git_commit"
-    verify_measurement_plan_contains "$plan" "summary-source-replay-line-count-stale-check-${checkpoint}" "source_replay_line_count_covers_checkpoint"
-    verify_measurement_plan_contains "$plan" "summary-resource-usage-stale-check-${checkpoint}" "resource_usage_command_matches_checkpoint"
-    verify_measurement_plan_contains "$plan" "summary-readback-span-stale-check-${checkpoint}" "readback_summary_span_metrics_are_consistent"
-    verify_measurement_plan_contains "$plan" "summary-quantitative-field-stale-check-${checkpoint}" "quantitative_artifact_fields_are_numeric"
-    verify_measurement_plan_contains "$plan" "summary-vram-status-freshness-${checkpoint}" "vram_status_matches_checkpoint"
-    verify_measurement_plan_contains "$plan" "summary-vram-header-stale-check-${checkpoint}" "vram_csv_header_matches_required_columns"
-    verify_measurement_plan_contains "$plan" "summary-pareas-status-freshness-${checkpoint}" "pareas_status_matches_checkpoint"
-    verify_measurement_plan_contains "$plan" "summary-claim-readiness-schema-${checkpoint}" "claim_readiness_schema=lanius.measurement-claim-readiness.v1"
-    verify_measurement_plan_contains "$plan" "summary-claim-readiness-policy-${checkpoint}" "claim_readiness_policy=complete-local-evidence-only"
-    verify_measurement_plan_contains "$plan" "summary-claim-readiness-required-evidence-${checkpoint}" "claim_readiness_required_evidence_classes=%s"
-    verify_measurement_plan_contains "$plan" "summary-claim-readiness-required-statuses-${checkpoint}" "claim_readiness_required_statuses=%s"
-    verify_measurement_plan_contains "$plan" "summary-claim-readiness-status-${checkpoint}" "claim_readiness_status=%s"
-    verify_measurement_plan_contains "$plan" "summary-claimable-measurement-claims-${checkpoint}" "claimable_measurement_claims=%s"
-    verify_measurement_plan_contains "$plan" "summary-claim-readiness-blockers-${checkpoint}" "claim_readiness_blockers=%s"
-    verify_measurement_plan_contains "$plan" "summary-claim-scope-policy-${checkpoint}" "claim_scope_policy=%s"
-    verify_measurement_plan_contains "$plan" "summary-claim-scope-key-${checkpoint}" "claim_scope_key=%s"
-    verify_measurement_plan_contains "$plan" "summary-claim-scope-key-source-control-state-${checkpoint}" "source_control_state:"
-    verify_measurement_plan_contains "$plan" "summary-claim-scope-key-source-control-revision-${checkpoint}" "source_control_revision:"
-    verify_measurement_plan_contains "$plan" "summary-claim-scope-key-pass-order-${checkpoint}" "parallel_pass_contract_execution_order:"
-    verify_measurement_plan_contains "$plan" "summary-claim-scope-key-repeatability-status-${checkpoint}" "repeatability_status:"
-    verify_measurement_plan_contains "$plan" "summary-status-identity-stale-check-${checkpoint}" "command_status_schema_checkpoint_timing_policy_timeout_provenance_and_paths"
-    verify_measurement_plan_contains "$plan" "summary-command-env-stale-check-${checkpoint}" "command_environment_schema_checkpoint_timing_policy_timeout_provenance_tool_versions_claim_provenance_baseline_separation_paper_pass_order_pass_contracts_loop_status_and_readiness"
-    verify_measurement_plan_contains "$plan" "summary-paper-baseline-stale-check-${checkpoint}" "paper_baseline_and_local_evidence_separation_match_checkpoint"
-    verify_measurement_plan_contains "$plan" "summary-paper-pass-order-stale-check-${checkpoint}" "paper_pass_order_matches_checkpoint"
-    verify_measurement_plan_contains "$plan" "summary-paper-pass-alignment-stale-check-${checkpoint}" "paper_pass_alignment_status_matches_checkpoint"
-    verify_measurement_plan_contains "$plan" "summary-claim-provenance-stale-check-${checkpoint}" "claim_provenance_fields_match_checkpoint"
-    verify_measurement_plan_contains "$plan" "summary-pass-contract-stale-check-${checkpoint}" "parallel_pass_contracts_match_checkpoint"
-    verify_measurement_plan_contains "$plan" "summary-pass-order-stale-check-${checkpoint}" "parallel_pass_contract_order_matches_checkpoint"
-    verify_measurement_plan_contains "$plan" "summary-pass-loop-status-stale-check-${checkpoint}" "pass_contract_loop_fallback_and_readiness_status_match_checkpoint"
-    verify_measurement_plan_contains "$plan" "summary-timeout-ms-${checkpoint}" "timeout_ms=%s"
-    verify_measurement_plan_contains "$plan" "summary-resource-usage-status-${checkpoint}" "resource_usage_status=%s"
-    verify_measurement_plan_contains "$plan" "summary-source-replay-line-count-${checkpoint}" "source_replay_line_count=%s"
-    verify_measurement_plan_contains "$plan" "summary-throughput-${checkpoint}" "throughput_lines_per_second=%s"
-    verify_measurement_plan_contains "$plan" "summary-hardware-identity-sha256-${checkpoint}" "hardware_identity_sha256=%s"
-    verify_measurement_plan_contains "$plan" "summary-command-env-sha256-${checkpoint}" "command_environment_sha256=%s"
-    verify_measurement_plan_contains "$plan" "summary-pareas-source-sha256-${checkpoint}" "pareas_source_sha256=%s"
-    verify_measurement_plan_contains "$plan" "summary-pareas-binary-sha256-${checkpoint}" "pareas_binary_sha256=%s"
-    verify_measurement_plan_contains "$plan" "summary-pareas-ratio-${checkpoint}" "lanius_pareas_wall_ratio=%s"
+    if [[ "$(measurement_pass_contract_readiness_status)" != "claimable" ]]; then
+      verify_measurement_checkpoint_contains "$plan" "$checkpoint" "scaling-claim-pass-contract-blocker-${checkpoint}" "$(measurement_pass_contract_claim_blocker)"
+    fi
+    verify_measurement_checkpoint_parallel_pass_contracts "$plan" "$checkpoint"
+    verify_measurement_checkpoint_artifact_claim_separation "$plan" "$checkpoint"
   done
+
+  measurement_plan_check_file="$previous_plan_check_file"
+  measurement_plan_check_text="$previous_plan_check_text"
+  measurement_checkpoint_block_cache=()
+  rm -f "$plan_file"
 }
 
 language_slice_error() {
@@ -4484,15 +7110,84 @@ record_language_slice_pass_order_evidence() {
         language_slice_pass_order_evidence=1
       fi
       ;;
-    architecture/wasm-record-pass-order|architecture/linking-gpu-pass-order)
-      if [[ "$status" != "planned" \
-        || "$evidence_scope" != "-" \
-        || "$evidence_test" != "-" \
-        || "$evidence_contract" != "-" ]]; then
-        language_slice_error "$kind/$id must remain a planned gap until behavior, record, artifact, or measurement-scaffold evidence exists"
+    architecture/wasm-record-pass-order)
+      if [[ "$status" == "planned" ]]; then
+        if [[ "$evidence_scope" != "-" \
+          || "$evidence_test" != "-" \
+          || "$evidence_contract" != "-" ]]; then
+          language_slice_error "$kind/$id planned rows cannot cite production evidence; promote to bounded only with artifact-contract pass-order evidence"
+        else
+          language_slice_planned_pass_order_gaps=$((language_slice_planned_pass_order_gaps + 1))
+          language_slice_wasm_record_pass_order_guard=1
+        fi
+      elif [[ "$status" == "bounded" || "$status" == "supported" ]]; then
+        if [[ "$evidence_scope" == "-" \
+          || "$evidence_test" == "-" \
+          || "$evidence_contract" != "artifact-contract" ]]; then
+          language_slice_error "$kind/$id can leave planned status only with behavior-facing artifact-contract pass-order evidence"
+        else
+          language_slice_wasm_record_pass_order_guard=1
+        fi
       else
-        language_slice_planned_pass_order_gaps=$((language_slice_planned_pass_order_gaps + 1))
+        language_slice_error "$kind/$id must stay planned or be promoted to bounded/supported with artifact-contract pass-order evidence"
       fi
+      ;;
+    architecture/linking-gpu-pass-order)
+      if [[ "$status" == "planned" ]]; then
+        if [[ "$evidence_scope" != "-" \
+          || "$evidence_test" != "-" \
+          || "$evidence_contract" != "-" ]]; then
+          language_slice_error "$kind/$id planned rows cannot cite production evidence; promote to bounded only with behavior-facing pass-order evidence"
+        else
+          language_slice_planned_pass_order_gaps=$((language_slice_planned_pass_order_gaps + 1))
+          language_slice_linking_gpu_pass_order_guard=1
+        fi
+      elif [[ "$status" == "bounded" || "$status" == "supported" ]]; then
+        if [[ "$evidence_scope" == "-" \
+          || "$evidence_test" == "-" ]] \
+          || ! language_slice_link_pass_order_contract_is_behavior_facing "$evidence_contract"; then
+          language_slice_error "$kind/$id can leave planned status only with behavior, record, artifact, execution, or measurement-scaffold evidence"
+        else
+          language_slice_pass_order_evidence=$((language_slice_pass_order_evidence + 1))
+          language_slice_linking_gpu_pass_order_guard=1
+        fi
+      else
+        language_slice_error "$kind/$id must stay planned or be promoted to bounded/supported with behavior-facing pass-order evidence"
+      fi
+      ;;
+    linking/object-link-pipeline)
+      if [[ "$status" == "planned" ]]; then
+        if [[ "$evidence_scope" != "-" \
+          || "$evidence_test" != "-" \
+          || "$evidence_contract" != "-" ]]; then
+          language_slice_error "$kind/$id planned rows cannot cite production evidence; promote to bounded only with behavior-facing link-pipeline evidence"
+        else
+          language_slice_object_link_pipeline_guard=1
+        fi
+      elif [[ "$status" == "bounded" || "$status" == "supported" ]]; then
+        if [[ "$evidence_scope" == "-" \
+          || "$evidence_test" == "-" ]] \
+          || ! language_slice_link_pass_order_contract_is_behavior_facing "$evidence_contract"; then
+          language_slice_error "$kind/$id can leave planned status only with behavior, record, artifact, execution, or measurement-scaffold evidence"
+        else
+          language_slice_object_link_pipeline_guard=1
+        fi
+      else
+        language_slice_error "$kind/$id must stay planned or be promoted to bounded/supported with behavior-facing link-pipeline evidence"
+      fi
+      ;;
+  esac
+}
+
+language_slice_link_pass_order_contract_is_behavior_facing() {
+  local evidence_contract="$1"
+
+  case "$evidence_contract" in
+    artifact-contract|record-invariant|semantic-contract|execution-contract|measurement-scaffold)
+      return 0
+      ;;
+    *)
+      return 1
       ;;
   esac
 }
@@ -4531,13 +7226,101 @@ record_language_slice_performance_claim_guard() {
     language_slice_error "$kind/$id performance evidence must explicitly remain no-run"
     valid=0
   fi
+  if [[ "$notes" != *"measurement_scaffold_evidence_status=no-run-plan-not-local-performance-evidence"* ]]; then
+    language_slice_error "$kind/$id performance evidence must mark no-run scaffolds as non-evidence for local performance"
+    valid=0
+  fi
+  if [[ "$notes" != *"cold_gpu_pipeline_init_policy=$(measurement_cold_gpu_pipeline_init_policy)"* ]]; then
+    language_slice_error "$kind/$id performance evidence must separate cold GPU pipeline init from steady compile/readback claims"
+    valid=0
+  fi
+  if [[ "$notes" != *"steady_compile_latency_claim_source=$(measurement_steady_compile_latency_claim_source)"* ||
+    "$notes" != *"steady_readback_claim_source=$(measurement_steady_readback_claim_source)"* ]]; then
+    language_slice_error "$kind/$id performance evidence must name steady compile and readback claim sources"
+    valid=0
+  fi
+  if [[ "$notes" != *"local-artifact-only"* && "$notes" != *"local-artifacts-only"* ]]; then
+    language_slice_error "$kind/$id performance evidence must explicitly require local artifacts"
+    valid=0
+  fi
+  if [[ "$notes" != *"paper_numbers_accepted=false"* ]]; then
+    language_slice_error "$kind/$id performance evidence must explicitly reject paper numbers as local evidence"
+    valid=0
+  fi
+  if [[ "$notes" != *"paper_baseline_policy=reference-only-not-local-performance-evidence"* && "$notes" != *"paper baselines remain reference-only"* ]]; then
+    language_slice_error "$kind/$id performance evidence must keep paper baselines reference-only"
+    valid=0
+  fi
+  if [[ "$notes" != *"link_artifact_evidence_schema=$(measurement_link_artifact_evidence_schema)"* ||
+    "$notes" != *"link_artifact_required_evidence_classes=$(measurement_link_artifact_required_evidence_classes)"* ]]; then
+    language_slice_error "$kind/$id performance evidence must publish exact link artifact evidence classes before claims can become artifact-backed"
+    valid=0
+  fi
+  if [[ "$notes" != *"link_artifact_evidence_status=$(measurement_link_artifact_evidence_status)"* ||
+    "$notes" != *"link_artifact_claim_blockers=$(measurement_link_artifact_claim_blockers)"* ]]; then
+    language_slice_error "$kind/$id performance evidence must publish exact link artifact status and blockers before claims can become artifact-backed"
+    valid=0
+  fi
+  if [[ "$(measurement_link_artifact_evidence_status)" != "artifact-backed" &&
+    "$notes" == *"link_artifact_evidence_status=artifact-backed"* ]]; then
+    language_slice_error "$kind/$id performance evidence claims artifact-backed link evidence before local link artifacts exist"
+    valid=0
+  fi
   if [[ "$notes" != *"local_performance_claim_status=blocked"* || "$notes" != *"scaling_claim_status=blocked"* || "$notes" != *"claim_readiness_status=not-claimable"* ]]; then
     language_slice_error "$kind/$id performance evidence must carry blocked local-performance, scaling, and claim-readiness statuses"
     valid=0
   fi
+  if [[ "$notes" != *"paper_pass_order_schema=$(measurement_paper_pass_order_schema)"* ||
+    "$notes" != *"paper_pass_order=$(measurement_paper_pass_order)"* ||
+    "$notes" != *"paper_pass_alignment_status=$(measurement_paper_pass_alignment_status)"* ]]; then
+    language_slice_error "$kind/$id performance evidence must publish the Pareas-shaped paper pass order and blocked paper-pass alignment status"
+    valid=0
+  fi
+  if [[ "$notes" != *"paper_pass_alignment_blockers="* || "$notes" == *"paper_pass_alignment_blockers=none"* ]]; then
+    language_slice_error "$kind/$id performance evidence must publish non-empty paper-pass alignment blockers before scaling claims can become claimable"
+    valid=0
+  fi
+  if [[ "$notes" != *"parallel_pass_contract_schema=$(measurement_parallel_pass_contract_schema)"* ||
+    "$notes" != *"parallel_pass_contract_order_policy=$(measurement_parallel_pass_contract_order_policy)"* ||
+    "$notes" != *"parallel_pass_contract_execution_order=$(measurement_parallel_pass_contract_execution_order)"* ]]; then
+    language_slice_error "$kind/$id performance evidence must cite behavior-facing parallel pass-contract metadata instead of private pass lists or source inspection"
+    valid=0
+  fi
+  if [[ "$notes" != *"pass_contract_loop_status=$(measurement_pass_contract_loop_status)"* ||
+    "$notes" != *"pass_contract_fallback_status=$(measurement_pass_contract_fallback_status)"* ||
+    "$notes" != *"pass_contract_claim_status=$(measurement_pass_contract_claim_status)"* ||
+    "$notes" != *"pass_contract_readiness_status=$(measurement_pass_contract_readiness_status)"* ]]; then
+    language_slice_error "$kind/$id performance evidence must publish blocked pass-contract loop/fallback/claim/readiness statuses"
+    valid=0
+  fi
+  if [[ "$notes" != *"pass_contract_claim_blockers="* || "$notes" == *"pass_contract_claim_blockers=none"* ]]; then
+    language_slice_error "$kind/$id performance evidence must publish non-empty pass-contract blockers before performance or scaling claims can become claimable"
+    valid=0
+  fi
+  if [[ "$notes" != *"workload_shape_policy=$(measurement_workload_shape_policy)"* ||
+    "$notes" != *"workload_shape_scope=$(measurement_workload_shape_scope)"* ||
+    "$notes" != *"workload_generalization_status=$(measurement_workload_generalization_status)"* ]]; then
+    language_slice_error "$kind/$id performance evidence must scope generated workloads instead of treating one checkpoint shape as general compiler performance"
+    valid=0
+  fi
+  if [[ "$notes" != *"workload_generalization_blockers="* ||
+    "$notes" == *"workload_generalization_blockers=none"* ]]; then
+    language_slice_error "$kind/$id performance evidence must publish non-empty workload generalization blockers before scaling claims can become claimable"
+    valid=0
+  fi
+  if [[ "$notes" != *"scaling_claim_blockers="* ||
+    "$notes" != *"paper_pass_alignment:blocked"* ||
+    "$notes" != *"pass_contracts:blocked"* ]]; then
+    language_slice_error "$kind/$id performance evidence must keep scaling blockers tied to paper-pass alignment and pass-contract blockers"
+    valid=0
+  fi
+  if [[ "$notes" != *"multi_checkpoint_rollup_required"* ]]; then
+    language_slice_error "$kind/$id performance evidence must keep scaling blockers tied to a multi-checkpoint rollup; one generated checkpoint cannot support scaling or Pareas-parity claims"
+    valid=0
+  fi
   case "$notes" in
-    *"paper_numbers_accepted=true"*|*"paper numbers accepted"*|*"local_performance_claim_status=claimable"*|*"scaling_claim_status=claimable"*|*"claim_readiness_status=claimable"*)
-      language_slice_error "$kind/$id performance evidence makes a claimable or paper-backed performance assertion before the scaffold is claimable"
+    *"paper_numbers_accepted=true"*|*"paper numbers accepted"*|*"local_performance_claim_status=claimable"*|*"scaling_claim_status=claimable"*|*"claim_readiness_status=claimable"*|*"paper_pass_alignment_status=claimable"*|*"pass_contract_claim_status=claimable"*|*"pass_contract_readiness_status=claimable"*|*"local_pareas_claim_status=claimable"*|*"pareas_claim_status=claimable"*|*"pareas_parity_claim_status=claimable"*|*"lanius_pareas_wall_ratio_claim_status=claimable"*)
+      language_slice_error "$kind/$id performance evidence makes a claimable, paper-backed, or Pareas-parity assertion before the scaffold is claimable"
       valid=0
       ;;
   esac
@@ -4567,7 +7350,52 @@ language_slice_required_gate_is_valid() {
     language_slice_error "$gate must cite $expected_scope/$expected_test as $expected_contract evidence"
     return 1
   fi
+  if ! language_slice_required_gate_is_in_acceptance_plan "$gate" "$expected_scope" "$expected_test"; then
+    return 1
+  fi
   return 0
+}
+
+language_slice_required_gate_acceptance_key() {
+  local evidence_scope="$1"
+  local evidence_test="$2"
+
+  case "$evidence_scope" in
+    integration:*)
+      printf 'integration|%s|%s\n' "${evidence_scope#integration:}" "$evidence_test"
+      ;;
+    lib:laniusc)
+      printf 'lib|laniusc|%s\n' "$evidence_test"
+      ;;
+    bin:*)
+      printf 'bin|%s|%s\n' "${evidence_scope#bin:}" "$evidence_test"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+language_slice_required_gate_is_in_acceptance_plan() {
+  local gate="$1"
+  local evidence_scope="$2"
+  local evidence_test="$3"
+  local evidence_key
+
+  if ! evidence_key="$(language_slice_required_gate_acceptance_key "$evidence_scope" "$evidence_test")"; then
+    language_slice_error "$gate has unsupported evidence scope '$evidence_scope' for acceptance-plan cross-check"
+    return 1
+  fi
+
+  local lanes="${plan_evidence_lanes[$evidence_key]:-}"
+  case ",$lanes," in
+    *,focused,*|*,smoke,*|*,properties,*)
+      return 0
+      ;;
+  esac
+
+  language_slice_error "$gate must also be present in the non-scale acceptance plan as $evidence_scope/$evidence_test"
+  return 1
 }
 
 record_language_slice_external_tooling_gate() {
@@ -4577,8 +7405,30 @@ record_language_slice_external_tooling_gate() {
   local evidence_scope="$4"
   local evidence_test="$5"
   local evidence_contract="$6"
+  local notes="$7"
 
   case "$kind/$id" in
+    tooling/version-surface)
+      if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
+        "integration:cli_version" "cli_version_reports_distribution_contract_without_compiling_source" "public-boundary"; then
+        language_slice_version_surface_gate=1
+        language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
+      fi
+      ;;
+    tooling/doctor-surface)
+      if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
+        "integration:cli_version" "cli_doctor_reports_no_run_toolchain_contract_without_compiling_source" "public-boundary"; then
+        language_slice_doctor_surface_gate=1
+        language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
+      fi
+      ;;
+    tooling/doctor-slangc-timeout)
+      if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
+        "integration:cli_version" "cli_doctor_bounds_slangc_version_probe_without_compiling_source" "public-boundary"; then
+        language_slice_doctor_slangc_timeout_gate=1
+        language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
+      fi
+      ;;
     diagnostics/registered-codes)
       if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
         "lib:laniusc" "diagnostic_creation_rejects_unregistered_codes_in_debug_builds" "artifact-contract"; then
@@ -4597,6 +7447,13 @@ record_language_slice_external_tooling_gate() {
       if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
         "integration:cli_diagnostics" "cli_diagnostics_registry_prints_combined_registry_json_without_compiling_source" "artifact-contract"; then
         language_slice_diagnostic_registry_cli_gate=1
+        language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
+      fi
+      ;;
+    tooling/diagnostic-codes-cli)
+      if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
+        "integration:cli_diagnostics" "cli_diagnostics_codes_prints_compact_code_index_without_compiling_source" "public-boundary"; then
+        language_slice_diagnostic_codes_cli_gate=1
         language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
       fi
       ;;
@@ -4628,6 +7485,76 @@ record_language_slice_external_tooling_gate() {
         language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
       fi
       ;;
+    diagnostics/diagnostic-subcommand-format-position)
+      if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
+        "integration:cli_diagnostics" "cli_diagnostics_registry_accepts_diagnostic_format_after_subcommand" "public-boundary"; then
+        language_slice_diagnostic_format_position_gate=1
+        language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
+      fi
+      ;;
+    tooling/global-diagnostic-format-routing)
+      if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
+        "integration:cli_diagnostics" "cli_global_diagnostic_format_before_no_run_subcommand_keeps_query_routing" "public-boundary"; then
+        language_slice_global_diagnostic_format_routing_gate=1
+        language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
+      fi
+      ;;
+    tooling/diagnostic-runtime-api-cli)
+      if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
+        "integration:cli_diagnostics" "cli_diagnostics_runtime_api_reports_known_unbound_stdlib_api_without_source_scan" "public-boundary"; then
+        language_slice_diagnostic_runtime_api_cli_gate=1
+        language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
+      fi
+      ;;
+    tooling/diagnostic-runtime-api-service-selector-cli)
+      if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
+        "integration:cli_diagnostics" "cli_diagnostics_runtime_api_accepts_service_qualified_selector_without_source_scan" "public-boundary"; then
+        language_slice_diagnostic_runtime_api_service_selector_cli_gate=1
+        language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
+      fi
+      ;;
+    tooling/diagnostic-runtime-apis-cli)
+      if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
+        "integration:cli_diagnostics" "cli_diagnostics_runtime_apis_prints_stdlib_runtime_api_index_without_source_scan" "public-boundary"; then
+        language_slice_diagnostic_runtime_apis_cli_gate=1
+        language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
+      fi
+      ;;
+    tooling/diagnostic-runtime-service-cli)
+      if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
+        "integration:cli_diagnostics" "cli_diagnostics_runtime_service_reports_stdlib_service_by_module_path_without_source_scan" "public-boundary"; then
+        language_slice_diagnostic_runtime_service_cli_gate=1
+        language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
+      fi
+      ;;
+    tooling/diagnostic-runtime-service-apis-cli)
+      if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
+        "integration:cli_diagnostics" "cli_diagnostics_runtime_service_apis_reports_service_api_rows_without_source_scan" "public-boundary"; then
+        language_slice_diagnostic_runtime_service_apis_cli_gate=1
+        language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
+      fi
+      ;;
+    tooling/diagnostic-runtime-service-selector-cli)
+      if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
+        "integration:cli_diagnostics" "cli_diagnostics_runtime_service_apis_accepts_capability_constant_selector_without_source_scan" "public-boundary"; then
+        language_slice_diagnostic_runtime_service_selector_cli_gate=1
+        language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
+      fi
+      ;;
+    tooling/diagnostic-runtime-service-api-selector-cli)
+      if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
+        "integration:cli_diagnostics" "cli_diagnostics_runtime_service_apis_accepts_qualified_api_selector_without_source_scan" "public-boundary"; then
+        language_slice_diagnostic_runtime_service_api_selector_cli_gate=1
+        language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
+      fi
+      ;;
+    tooling/diagnostic-runtime-services-cli)
+      if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
+        "integration:cli_diagnostics" "cli_diagnostics_runtime_services_prints_stdlib_runtime_service_index_without_source_scan" "public-boundary"; then
+        language_slice_diagnostic_runtime_services_cli_gate=1
+        language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
+      fi
+      ;;
     tooling/formatter)
       if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
         "integration:formatter" "formatter_is_idempotent_for_alpha_slice" "public-boundary"; then
@@ -4642,17 +7569,96 @@ record_language_slice_external_tooling_gate() {
         language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
       fi
       ;;
+    tooling/formatter-input-read-diagnostic)
+      if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
+        "integration:cli_diagnostics" "cli_fmt_missing_input_can_render_json_diagnostic_without_stdout" "fail-closed-diagnostic"; then
+        language_slice_formatter_input_read_gate=1
+        language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
+      fi
+      ;;
+    tooling/formatter-stdin-read-diagnostic)
+      if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
+        "integration:cli_diagnostics" "cli_fmt_stdin_invalid_utf8_can_render_json_diagnostic_without_stdout" "fail-closed-diagnostic"; then
+        language_slice_formatter_stdin_read_gate=1
+        language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
+      fi
+      ;;
+    tooling/formatter-output-write-diagnostic)
+      if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
+        "integration:cli_diagnostics" "cli_fmt_readonly_file_can_render_json_output_write_diagnostic_without_stdout" "fail-closed-diagnostic"; then
+        language_slice_formatter_output_write_gate=1
+        language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
+      fi
+      ;;
     tooling/lsp-capabilities)
       if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
         "integration:cli_lsp" "cli_lsp_capabilities_reports_no_run_diagnostic_contract" "public-boundary"; then
-        language_slice_lsp_capabilities_gate=1
-        language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
+        if [[ "$notes" != *"capabilities_are_performance_evidence=false"* ||
+          "$notes" != *"capabilities_are_production_readiness_claim=false"* ||
+          "$notes" != *"latency_claim_status=not-measured"* ||
+          "$notes" != *"throughput_claim_status=not-measured"* ||
+          "$notes" != *"local_performance_claim_status=not-claimable"* ||
+          "$notes" != *"production_editor_ready=false"* ]]; then
+          language_slice_error "$kind/$id LSP capabilities evidence must publish explicit non-performance and non-production claim boundaries"
+        else
+          language_slice_lsp_capabilities_gate=1
+          language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
+        fi
       fi
       ;;
     tooling/lsp-stdio-handshake)
       if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
         "integration:cli_lsp" "cli_lsp_serve_handles_initialize_shutdown_without_compiling_source" "public-boundary"; then
         language_slice_lsp_stdio_gate=1
+        language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
+      fi
+      ;;
+    tooling/lsp-reinitialize-diagnostic)
+      if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
+        "integration:cli_lsp" "cli_lsp_serve_rejects_reinitialize_without_resetting_session" "public-boundary"; then
+        language_slice_lsp_reinitialize_gate=1
+        language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
+      fi
+      ;;
+    tooling/lsp-pre-initialize-diagnostic)
+      if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
+        "integration:cli_lsp" "cli_lsp_serve_rejects_requests_before_initialize_without_compiling_source" "public-boundary"; then
+        language_slice_lsp_pre_initialize_gate=1
+        language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
+      fi
+      ;;
+    tooling/lsp-language-id-diagnostic)
+      if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
+        "integration:cli_lsp" "cli_lsp_serve_rejects_wrong_language_id_without_opening_document" "public-boundary"; then
+        language_slice_lsp_language_id_gate=1
+        language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
+      fi
+      ;;
+    tooling/lsp-formatting-options-diagnostic)
+      if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
+        "integration:cli_lsp" "cli_lsp_serve_rejects_formatting_requests_without_options_without_mutating_document" "fail-closed-diagnostic"; then
+        language_slice_lsp_formatting_options_gate=1
+        language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
+      fi
+      ;;
+    tooling/lsp-unsupported-method-diagnostic)
+      if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
+        "integration:cli_lsp" "cli_lsp_serve_reports_unsupported_method_with_stable_diagnostic_data" "public-boundary"; then
+        language_slice_lsp_unsupported_method_gate=1
+        language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
+      fi
+      ;;
+    tooling/lsp-invalid-request-diagnostic)
+      if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
+        "integration:cli_lsp" "cli_lsp_serve_reports_invalid_messages_with_stable_diagnostic_data" "fail-closed-diagnostic"; then
+        language_slice_lsp_invalid_request_gate=1
+        language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
+      fi
+      ;;
+    tooling/lsp-invalid-frame-body-drain)
+      if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
+        "integration:cli_lsp" "cli_lsp_serve_drains_known_length_invalid_frame_body_before_next_message" "fail-closed-diagnostic"; then
+        language_slice_lsp_invalid_frame_body_drain_gate=1
         language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
       fi
       ;;
@@ -4665,22 +7671,29 @@ record_language_slice_external_tooling_gate() {
       ;;
     packages/manifest-source-roots)
       if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
-        "integration:cli_package_manifest" "cli_package_manifest_compiles_entry_through_source_roots" "public-boundary"; then
+        "integration:cli_package_manifest" "cli_package_manifest_checks_entry_through_source_roots" "public-boundary"; then
         language_slice_package_manifest_cli_gate=1
         language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
       fi
       ;;
     packages/lockfile-source-roots)
       if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
-        "integration:cli_package_manifest" "cli_package_lockfile_compiles_entry_through_resolved_source_roots" "public-boundary"; then
+        "integration:cli_package_manifest" "cli_package_lockfile_checks_entry_through_resolved_source_roots" "public-boundary"; then
         language_slice_package_lockfile_cli_gate=1
         language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
       fi
       ;;
     packages/package-lock-command)
       if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
-        "integration:cli_package_manifest" "cli_package_lock_generates_lockfile_that_existing_compile_path_uses" "public-boundary"; then
+        "integration:cli_package_manifest" "cli_package_lock_generates_lockfile_that_existing_check_path_uses" "public-boundary"; then
         language_slice_package_lock_command_gate=1
+        language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
+      fi
+      ;;
+    tooling/package-lock-argument-diagnostic)
+      if language_slice_required_gate_is_valid "$kind/$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" \
+        "integration:cli_diagnostics" "cli_package_lock_positional_argument_can_render_json_diagnostic_without_loading_manifest" "fail-closed-diagnostic"; then
+        language_slice_package_lock_argument_diagnostic_gate=1
         language_slice_external_tooling_gate_evidence=$((language_slice_external_tooling_gate_evidence + 1))
       fi
       ;;
@@ -4702,6 +7715,25 @@ require_language_slice_named_gate() {
   fi
 }
 
+record_language_slice_source_scope_policy() {
+  local kind="$1"
+  local id="$2"
+  local evidence_scope="$3"
+  local evidence_contract="$4"
+
+  case "$evidence_scope" in
+    lib:laniusc|bin:*)
+      language_slice_source_scoped_evidence=$((language_slice_source_scoped_evidence + 1))
+      case "$evidence_contract" in
+        artifact-contract|public-boundary|execution-contract|measurement-scaffold) ;;
+        *)
+          language_slice_error "$kind/$id uses source-scoped evidence '$evidence_scope' with '$evidence_contract'; use integration evidence or a public/artifact/execution/scaffold contract instead"
+          ;;
+      esac
+      ;;
+  esac
+}
+
 verify_language_slice_evidence() {
   local kind="$1"
   local id="$2"
@@ -4720,7 +7752,14 @@ verify_language_slice_evidence() {
         return
       fi
       ;;
-    planned|unsupported)
+    planned)
+      if [[ "$evidence_scope" == "-" && "$evidence_test" == "-" && "$evidence_contract" == "-" ]]; then
+        return
+      fi
+      language_slice_error "$kind/$id has status 'planned' but cites evidence; planned rows cannot count as production evidence, so remove the evidence fields or promote the row to bounded with behavior-facing evidence"
+      return
+      ;;
+    unsupported)
       if [[ "$evidence_scope" == "-" && "$evidence_test" == "-" && "$evidence_contract" == "-" ]]; then
         return
       fi
@@ -4729,6 +7768,8 @@ verify_language_slice_evidence() {
       fi
       ;;
   esac
+
+  record_language_slice_source_scope_policy "$kind" "$id" "$evidence_scope" "$evidence_contract"
 
   case "$evidence_scope" in
     integration:*)
@@ -4789,6 +7830,80 @@ record_language_slice_evidence_contract() {
   esac
 }
 
+reset_language_slice_contract_state() {
+  language_slice_public_boundary_evidence=0
+  language_slice_artifact_contract_evidence=0
+  language_slice_record_invariant_evidence=0
+  language_slice_semantic_contract_evidence=0
+  language_slice_execution_contract_evidence=0
+  language_slice_fail_closed_evidence=0
+  language_slice_measurement_scaffold_evidence=0
+  language_slice_parser_type_relation_evidence=0
+  language_slice_pass_order_evidence=0
+  language_slice_planned_pass_order_gaps=0
+  language_slice_wasm_record_pass_order_guard=0
+  language_slice_linking_gpu_pass_order_guard=0
+  language_slice_object_link_pipeline_guard=0
+  language_slice_performance_claim_guards=0
+  language_slice_array_lit_context_evidence=0
+  language_slice_struct_lit_context_evidence=0
+  language_slice_call_context_evidence=0
+  language_slice_expr_result_root_evidence=0
+  language_slice_trait_or_inherent_method_owner_evidence=0
+  language_slice_trait_impl_method_owner_evidence=0
+  language_slice_method_owner_evidence=0
+  language_slice_method_signature_status_hook=0
+  language_slice_method_signature_status_evidence=0
+  language_slice_nearest_stmt_context_evidence=0
+  language_slice_nearest_block_control_context_evidence=0
+  language_slice_rows=0
+  language_slice_external_tooling_gate_evidence=0
+  language_slice_version_surface_gate=0
+  language_slice_doctor_surface_gate=0
+  language_slice_doctor_slangc_timeout_gate=0
+  language_slice_stable_code_registry_gate=0
+  language_slice_diagnostic_registry_json_gate=0
+  language_slice_diagnostic_registry_cli_gate=0
+  language_slice_diagnostic_codes_cli_gate=0
+  language_slice_diagnostic_categories_cli_gate=0
+  language_slice_diagnostic_explain_cli_gate=0
+  language_slice_diagnostic_explain_unknown_cli_gate=0
+  language_slice_diagnostic_formats_cli_gate=0
+  language_slice_diagnostic_format_position_gate=0
+  language_slice_global_diagnostic_format_routing_gate=0
+  language_slice_diagnostic_runtime_api_cli_gate=0
+  language_slice_diagnostic_runtime_api_service_selector_cli_gate=0
+  language_slice_diagnostic_runtime_apis_cli_gate=0
+  language_slice_diagnostic_runtime_service_cli_gate=0
+  language_slice_diagnostic_runtime_service_apis_cli_gate=0
+  language_slice_diagnostic_runtime_service_selector_cli_gate=0
+  language_slice_diagnostic_runtime_service_api_selector_cli_gate=0
+  language_slice_diagnostic_runtime_services_cli_gate=0
+  language_slice_formatter_library_gate=0
+  language_slice_formatter_cli_check_gate=0
+  language_slice_formatter_input_read_gate=0
+  language_slice_formatter_stdin_read_gate=0
+  language_slice_formatter_output_write_gate=0
+  language_slice_lsp_capabilities_gate=0
+  language_slice_lsp_stdio_gate=0
+  language_slice_lsp_reinitialize_gate=0
+  language_slice_lsp_pre_initialize_gate=0
+  language_slice_lsp_language_id_gate=0
+  language_slice_lsp_formatting_options_gate=0
+  language_slice_lsp_unsupported_method_gate=0
+  language_slice_lsp_invalid_request_gate=0
+  language_slice_lsp_invalid_frame_body_drain_gate=0
+  language_slice_lsp_document_diagnostics_gate=0
+  language_slice_package_manifest_cli_gate=0
+  language_slice_package_lockfile_cli_gate=0
+  language_slice_package_lock_command_gate=0
+  language_slice_package_lock_argument_diagnostic_gate=0
+  language_slice_package_metadata_diagnostic_gate=0
+  language_slice_source_scoped_evidence=0
+  language_slice_kind_counts=()
+  language_slice_kind_status_counts=()
+}
+
 check_language_slice_contract() {
   if [[ "$check_plan" -eq 0 ]]; then
     return
@@ -4798,6 +7913,8 @@ check_language_slice_contract() {
     readiness|all) ;;
     *) return ;;
   esac
+
+  reset_language_slice_contract_state
 
   local path="docs/language_slice_unstable_alpha.tsv"
   if [[ ! -f "$path" ]]; then
@@ -4842,11 +7959,13 @@ check_language_slice_contract() {
     esac
 
     rows=$((rows + 1))
+    language_slice_kind_counts["$kind"]=$(( ${language_slice_kind_counts["$kind"]:-0} + 1 ))
+    language_slice_kind_status_counts["$kind|$status"]=$(( ${language_slice_kind_status_counts["$kind|$status"]:-0} + 1 ))
     verify_language_slice_evidence "$kind" "$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract"
     record_language_slice_parser_type_relation_evidence "$kind" "$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract"
     record_language_slice_pass_order_evidence "$kind" "$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract"
     record_language_slice_performance_claim_guard "$kind" "$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" "$notes"
-    record_language_slice_external_tooling_gate "$kind" "$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract"
+    record_language_slice_external_tooling_gate "$kind" "$id" "$status" "$evidence_scope" "$evidence_test" "$evidence_contract" "$notes"
   done <"$path"
 
   language_slice_method_owner_evidence=$((language_slice_trait_or_inherent_method_owner_evidence + language_slice_trait_impl_method_owner_evidence))
@@ -4875,28 +7994,62 @@ check_language_slice_contract() {
     require_language_slice_evidence_count pass-order-record-boundary "$language_slice_pass_order_evidence"
     require_language_slice_evidence_count performance-claim-guard "$language_slice_performance_claim_guards"
     require_language_slice_evidence_count external-tooling-gate "$language_slice_external_tooling_gate_evidence"
+    require_language_slice_named_gate "version surface" "$language_slice_version_surface_gate"
+    require_language_slice_named_gate "doctor surface" "$language_slice_doctor_surface_gate"
+    require_language_slice_named_gate "doctor Slang probe timeout" "$language_slice_doctor_slangc_timeout_gate"
     require_language_slice_named_gate "stable diagnostic code registry" "$language_slice_stable_code_registry_gate"
     require_language_slice_named_gate "diagnostic registry JSON" "$language_slice_diagnostic_registry_json_gate"
     require_language_slice_named_gate "diagnostic registry CLI" "$language_slice_diagnostic_registry_cli_gate"
+    require_language_slice_named_gate "diagnostic codes/code selector CLI" "$language_slice_diagnostic_codes_cli_gate"
     require_language_slice_named_gate "diagnostic categories CLI" "$language_slice_diagnostic_categories_cli_gate"
     require_language_slice_named_gate "diagnostic explain CLI" "$language_slice_diagnostic_explain_cli_gate"
     require_language_slice_named_gate "diagnostic explain unknown-code CLI" "$language_slice_diagnostic_explain_unknown_cli_gate"
     require_language_slice_named_gate "diagnostic formats CLI" "$language_slice_diagnostic_formats_cli_gate"
+    require_language_slice_named_gate "diagnostic-format subcommand routing" "$language_slice_diagnostic_format_position_gate"
+    require_language_slice_named_gate "global diagnostic-format routing" "$language_slice_global_diagnostic_format_routing_gate"
+    require_language_slice_named_gate "runtime API diagnostic CLI" "$language_slice_diagnostic_runtime_api_cli_gate"
+    require_language_slice_named_gate "runtime API service-selector CLI" "$language_slice_diagnostic_runtime_api_service_selector_cli_gate"
+    require_language_slice_named_gate "runtime APIs diagnostic CLI" "$language_slice_diagnostic_runtime_apis_cli_gate"
+    require_language_slice_named_gate "runtime service diagnostic CLI" "$language_slice_diagnostic_runtime_service_cli_gate"
+    require_language_slice_named_gate "runtime service APIs diagnostic CLI" "$language_slice_diagnostic_runtime_service_apis_cli_gate"
+    require_language_slice_named_gate "runtime service selector diagnostic CLI" "$language_slice_diagnostic_runtime_service_selector_cli_gate"
+    require_language_slice_named_gate "runtime service API selector diagnostic CLI" "$language_slice_diagnostic_runtime_service_api_selector_cli_gate"
+    require_language_slice_named_gate "runtime services diagnostic CLI" "$language_slice_diagnostic_runtime_services_cli_gate"
     require_language_slice_named_gate "formatter library idempotence" "$language_slice_formatter_library_gate"
     require_language_slice_named_gate "formatter CLI check diagnostic" "$language_slice_formatter_cli_check_gate"
+    require_language_slice_named_gate "formatter input-read diagnostic" "$language_slice_formatter_input_read_gate"
+    require_language_slice_named_gate "formatter stdin-read diagnostic" "$language_slice_formatter_stdin_read_gate"
+    require_language_slice_named_gate "formatter output-write diagnostic" "$language_slice_formatter_output_write_gate"
     require_language_slice_named_gate "LSP capabilities" "$language_slice_lsp_capabilities_gate"
     require_language_slice_named_gate "LSP stdio handshake" "$language_slice_lsp_stdio_gate"
+    require_language_slice_named_gate "LSP reinitialize diagnostic" "$language_slice_lsp_reinitialize_gate"
+    require_language_slice_named_gate "LSP pre-initialize diagnostic" "$language_slice_lsp_pre_initialize_gate"
+    require_language_slice_named_gate "LSP language-id diagnostic" "$language_slice_lsp_language_id_gate"
+    require_language_slice_named_gate "LSP formatting-options diagnostic" "$language_slice_lsp_formatting_options_gate"
+    require_language_slice_named_gate "LSP unsupported-method diagnostic" "$language_slice_lsp_unsupported_method_gate"
+    require_language_slice_named_gate "LSP invalid-request diagnostic" "$language_slice_lsp_invalid_request_gate"
+    require_language_slice_named_gate "LSP invalid-frame body drain" "$language_slice_lsp_invalid_frame_body_drain_gate"
     require_language_slice_named_gate "LSP document diagnostics" "$language_slice_lsp_document_diagnostics_gate"
     require_language_slice_named_gate "package manifest CLI compile" "$language_slice_package_manifest_cli_gate"
     require_language_slice_named_gate "package lockfile CLI compile" "$language_slice_package_lockfile_cli_gate"
     require_language_slice_named_gate "package lock command" "$language_slice_package_lock_command_gate"
+    require_language_slice_named_gate "package lock argument diagnostic" "$language_slice_package_lock_argument_diagnostic_gate"
     require_language_slice_named_gate "package metadata JSON diagnostic" "$language_slice_package_metadata_diagnostic_gate"
-    if [[ "$language_slice_planned_pass_order_gaps" -ne 2 ]]; then
-      language_slice_error "$path must track the WASM and GPU link/object pass-order gaps as planned rows"
+    if [[ "$language_slice_planned_pass_order_gaps" -gt 2 ]]; then
+      language_slice_error "$path must not count more than two guarded GPU pass-order rows as planned"
+    fi
+    if [[ "$language_slice_wasm_record_pass_order_guard" -ne 1 ]]; then
+      language_slice_error "$path must keep architecture/wasm-record-pass-order planned with no evidence or promote it with artifact-contract pass-order evidence"
+    fi
+    if [[ "$language_slice_linking_gpu_pass_order_guard" -ne 1 ]]; then
+      language_slice_error "$path must keep architecture/linking-gpu-pass-order planned with no evidence or promote it with behavior-facing pass-order evidence"
+    fi
+    if [[ "$language_slice_object_link_pipeline_guard" -ne 1 ]]; then
+      language_slice_error "$path must keep linking/object-link-pipeline planned with no evidence or promote it with behavior-facing link-pipeline evidence"
     fi
   fi
   if [[ "$rows" -gt 0 && "$language_slice_errors" -eq 0 ]]; then
-    echo "# acceptance language-slice check ok: $rows rows validated with behavior-facing evidence contracts public-boundary=$language_slice_public_boundary_evidence artifact-contract=$language_slice_artifact_contract_evidence record-invariant=$language_slice_record_invariant_evidence semantic-contract=$language_slice_semantic_contract_evidence execution-contract=$language_slice_execution_contract_evidence fail-closed-diagnostic=$language_slice_fail_closed_evidence measurement-scaffold=$language_slice_measurement_scaffold_evidence parser-type-relation=$language_slice_parser_type_relation_evidence pass-order-record-boundary=$language_slice_pass_order_evidence performance-claim-guard=$language_slice_performance_claim_guards external-tooling-gates=$language_slice_external_tooling_gate_evidence planned-pass-order-gaps=$language_slice_planned_pass_order_gaps"
+    echo "# acceptance language-slice check ok: $rows rows validated with behavior-facing evidence contracts public-boundary=$language_slice_public_boundary_evidence artifact-contract=$language_slice_artifact_contract_evidence record-invariant=$language_slice_record_invariant_evidence semantic-contract=$language_slice_semantic_contract_evidence execution-contract=$language_slice_execution_contract_evidence fail-closed-diagnostic=$language_slice_fail_closed_evidence measurement-scaffold=$language_slice_measurement_scaffold_evidence parser-type-relation=$language_slice_parser_type_relation_evidence pass-order-record-boundary=$language_slice_pass_order_evidence performance-claim-guard=$language_slice_performance_claim_guards external-tooling-gates=$language_slice_external_tooling_gate_evidence source-scoped=$language_slice_source_scoped_evidence planned-pass-order-gaps=$language_slice_planned_pass_order_gaps"
   fi
 }
 
@@ -4960,25 +8113,63 @@ check_test_discipline_contract() {
 
     local source_probe_matches
     local manifest_source_probe_matches
+    local command_source_probe_matches
+    local git_source_probe_matches
+    local shell_source_probe_matches
     local line
     local line_no
     local manifest_probe_start_line
     local manifest_probe_window
     local manifest_probe_saw_src_root
+    local command_probe_start_line
+    local command_probe_window
+    local command_probe_saw_src_root
+    local git_probe_start_line
+    local git_probe_window
+    local git_probe_saw_grep
+    local git_probe_saw_src_root
+    local shell_probe_start_line
+    local shell_probe_window
     local product_source_segment_path
     local product_source_path
+    local product_source_any_path
     local manifest_source_literal_path
     local manifest_join_product_path
-    local manifest_src_root_join
-    local manifest_src_segment_join
+    local manifest_src_root_step
+    local manifest_src_segment_step
+    local command_probe_start
+    local command_source_literal_arg
+    local command_src_root_arg
+    local command_src_segment_arg
+    local git_probe_start
+    local git_grep_arg
+    local git_source_literal_arg
+    local git_src_root_arg
+    local git_src_segment_arg
+    local shell_probe_start
+    local shell_source_command_arg
     local source_probe_pattern
+    local source_inspection_tool
     product_source_segment_path='(bin|cli(\.rs)?|codegen|compiler(\.rs)?|dev|formatter\.rs|gpu|lexer|lib\.rs|main\.rs|parser|reflection\.rs|type_checker)'
-    product_source_path='(\.\./)?(shaders|src/'"$product_source_segment_path"')'
+    product_source_path='(\.\./)*(shaders|src/'"$product_source_segment_path"')'
+    product_source_any_path='(\.\./)*(shaders|src(/'"$product_source_segment_path"')?)'
+    source_inspection_tool='(rg|grep|cat|sed|awk|python([0-9]+(\.[0-9]+)?)?)'
     manifest_source_literal_path='"/(shaders|src/'"$product_source_segment_path"')'
     manifest_join_product_path='\.join\("(shaders|src/'"$product_source_segment_path"')'
-    manifest_src_root_join='\.join\("src"\)'
-    manifest_src_segment_join='\.join\("'"$product_source_segment_path"')'
-    source_probe_pattern="include_(str|bytes)!\\([^)]*\"$product_source_path|read(_to_string)?\\([^)]*\"$product_source_path|fs::read(_to_string)?\\([^)]*\"$product_source_path|\\.(arg|args|join)\\([^)]*\"$product_source_path|\\.(arg|args)\\([^)]*\"(rg|grep)[^\"]*$product_source_path"
+    manifest_src_root_step='\.(join|push)\("src"\)'
+    manifest_src_segment_step='\.(join|push)\("'"$product_source_segment_path"'"'
+    command_probe_start='Command::new\("'"$source_inspection_tool"'"\)'
+    command_source_literal_arg='\.(arg|args)\([^)]*"'"$product_source_path"
+    command_src_root_arg='\.(arg|args)\([^)]*"src"'
+    command_src_segment_arg='\.(arg|args)\([^)]*"'"$product_source_segment_path"'"'
+    git_probe_start='Command::new\("git"\)'
+    git_grep_arg='\.(arg|args)\([^)]*"(grep|show|cat-file)"'
+    git_source_literal_arg='\.(arg|args)\([^)]*"'"$product_source_path"
+    git_src_root_arg='\.(arg|args)\([^)]*"src"'
+    git_src_segment_arg='\.(arg|args)\([^)]*"'"$product_source_segment_path"'"'
+    shell_probe_start='Command::new\("(sh|bash)"\)'
+    shell_source_command_arg='\.(arg|args)\([^)]*"('"$source_inspection_tool"'|git[[:space:]]+(grep|show|cat-file))[^"]*'"$product_source_path"
+    source_probe_pattern="include(_(str|bytes))?!\\([^)]*\"$product_source_path|(std::)?fs::(read(_to_string)?|metadata|read_dir|canonicalize)\\([^)]*\"$product_source_any_path|File::open\\([^)]*\"$product_source_any_path|\\.open\\([^)]*\"$product_source_any_path|Path(Buf)?::(new|from)\\([^)]*\"$product_source_any_path[^)]*\\)\\.(exists|try_exists|is_file|is_dir)|read(_to_string)?\\([^)]*\"$product_source_path|\\.(arg|args|join|push)\\([^)]*\"$product_source_path|\\.(arg|args)\\([^)]*\"$source_inspection_tool[^\"]*$product_source_path"
     source_probe_matches="$(grep -nE "$source_probe_pattern" "$path" || true)"
     if [[ -n "$source_probe_matches" ]]; then
       while IFS= read -r match; do
@@ -4988,10 +8179,22 @@ check_test_discipline_contract() {
     fi
 
     manifest_source_probe_matches=
+    command_source_probe_matches=
+    git_source_probe_matches=
+    shell_source_probe_matches=
     line_no=0
     manifest_probe_start_line=0
     manifest_probe_window=0
     manifest_probe_saw_src_root=0
+    command_probe_start_line=0
+    command_probe_window=0
+    command_probe_saw_src_root=0
+    git_probe_start_line=0
+    git_probe_window=0
+    git_probe_saw_grep=0
+    git_probe_saw_src_root=0
+    shell_probe_start_line=0
+    shell_probe_window=0
     while IFS= read -r line || [[ -n "$line" ]]; do
       line_no=$((line_no + 1))
       if [[ "$line" == *CARGO_MANIFEST_DIR* ]]; then
@@ -5001,18 +8204,81 @@ check_test_discipline_contract() {
       fi
 
       if [[ "$manifest_probe_window" -gt 0 ]]; then
-        if [[ "$line" =~ $manifest_src_root_join ]]; then
+        if [[ "$line" =~ $manifest_src_root_step ]]; then
           manifest_probe_saw_src_root=1
         fi
 
-        if [[ "$line" =~ $manifest_source_literal_path \
-          || "$line" =~ $manifest_join_product_path \
-          || ( "$manifest_probe_saw_src_root" -eq 1 && "$line" =~ $manifest_src_segment_join ) ]]; then
+        if [[ "$line" =~ $manifest_source_literal_path ]] \
+          || [[ "$line" =~ $manifest_join_product_path ]] \
+          || { [[ "$manifest_probe_saw_src_root" -eq 1 ]] && [[ "$line" =~ $manifest_src_segment_step ]]; }; then
           manifest_source_probe_matches+="${manifest_probe_start_line}-${line_no}:${line}"$'\n'
           manifest_probe_window=0
           manifest_probe_saw_src_root=0
         else
           manifest_probe_window=$((manifest_probe_window - 1))
+        fi
+      fi
+
+      if [[ "$line" =~ $command_probe_start ]]; then
+        command_probe_start_line="$line_no"
+        command_probe_window=8
+        command_probe_saw_src_root=0
+      fi
+
+      if [[ "$command_probe_window" -gt 0 ]]; then
+        if [[ "$line" =~ $command_src_root_arg ]]; then
+          command_probe_saw_src_root=1
+        fi
+
+        if [[ "$line" =~ $command_source_literal_arg ]] \
+          || { [[ "$command_probe_saw_src_root" -eq 1 ]] && [[ "$line" =~ $command_src_segment_arg ]]; }; then
+          command_source_probe_matches+="${command_probe_start_line}-${line_no}:${line}"$'\n'
+          command_probe_window=0
+          command_probe_saw_src_root=0
+        else
+          command_probe_window=$((command_probe_window - 1))
+        fi
+      fi
+
+      if [[ "$line" =~ $git_probe_start ]]; then
+        git_probe_start_line="$line_no"
+        git_probe_window=10
+        git_probe_saw_grep=0
+        git_probe_saw_src_root=0
+      fi
+
+      if [[ "$git_probe_window" -gt 0 ]]; then
+        if [[ "$line" =~ $git_grep_arg ]]; then
+          git_probe_saw_grep=1
+        fi
+
+        if [[ "$line" =~ $git_src_root_arg ]]; then
+          git_probe_saw_src_root=1
+        fi
+
+        if [[ "$git_probe_saw_grep" -eq 1 ]] \
+          && { [[ "$line" =~ $git_source_literal_arg ]] \
+            || { [[ "$git_probe_saw_src_root" -eq 1 ]] && [[ "$line" =~ $git_src_segment_arg ]]; }; }; then
+          git_source_probe_matches+="${git_probe_start_line}-${line_no}:${line}"$'\n'
+          git_probe_window=0
+          git_probe_saw_grep=0
+          git_probe_saw_src_root=0
+        else
+          git_probe_window=$((git_probe_window - 1))
+        fi
+      fi
+
+      if [[ "$line" =~ $shell_probe_start ]]; then
+        shell_probe_start_line="$line_no"
+        shell_probe_window=8
+      fi
+
+      if [[ "$shell_probe_window" -gt 0 ]]; then
+        if [[ "$line" =~ $shell_source_command_arg ]]; then
+          shell_source_probe_matches+="${shell_probe_start_line}-${line_no}:${line}"$'\n'
+          shell_probe_window=0
+        else
+          shell_probe_window=$((shell_probe_window - 1))
         fi
       fi
     done < "$path"
@@ -5023,11 +8289,32 @@ check_test_discipline_contract() {
         test_discipline_error "$path:$match builds a CARGO_MANIFEST_DIR path to compiler/shader product source; use behavior, artifact, diagnostic, or record evidence instead"
       done <<< "$manifest_source_probe_matches"
     fi
+
+    if [[ -n "$command_source_probe_matches" ]]; then
+      while IFS= read -r match; do
+        [[ -n "$match" ]] || continue
+        test_discipline_error "$path:$match inspects compiler/shader product source through a command; use behavior, artifact, diagnostic, or record evidence instead"
+      done <<< "$command_source_probe_matches"
+    fi
+
+    if [[ -n "$git_source_probe_matches" ]]; then
+      while IFS= read -r match; do
+        [[ -n "$match" ]] || continue
+        test_discipline_error "$path:$match inspects compiler/shader product source through git; use behavior, artifact, diagnostic, or record evidence instead"
+      done <<< "$git_source_probe_matches"
+    fi
+
+    if [[ -n "$shell_source_probe_matches" ]]; then
+      while IFS= read -r match; do
+        [[ -n "$match" ]] || continue
+        test_discipline_error "$path:$match inspects compiler/shader product source through a shell command; use behavior, artifact, diagnostic, or record evidence instead"
+      done <<< "$shell_source_probe_matches"
+    fi
   done
 
   test_discipline_checked_files="$checked_test_count"
   if [[ "$test_discipline_errors" -eq 0 ]]; then
-    echo "# acceptance test-discipline check ok: $checked_test_count Rust integration test files inventoried through behavior/evidence references; compiler/shader product-source grep audit passed"
+    echo "# acceptance test-discipline check ok: $checked_test_count current-tree Rust integration test files inventoried through behavior/evidence references; compiler/shader product-source inspection audit passed"
   fi
 }
 
@@ -5086,7 +8373,11 @@ finish_plan_check() {
   check_test_discipline_contract
   check_evidence_inventory_contract
   check_measurement_plan_contract
+  check_measurement_check_env_notes_contract
   check_language_slice_contract
+  check_production_readiness_snapshot_contract
+  check_pareas_pass_contract_document
+  check_testing_strategy_contract_document
   if plan_check_has_errors; then
     print_plan_check_status failed
     echo "# acceptance-plan check failed: $plan_invalid_tests of $plan_checked_tests evidence references were invalid; $plan_missing_tests of $plan_checked_tests evidence target paths were not found; $plan_missing_commands of $plan_checked_commands no-run checks were not found; $evidence_inventory_errors evidence-plan issue(s), $language_slice_errors language-slice issue(s), and $test_discipline_errors test-discipline issue(s) were found" >&2
@@ -5139,7 +8430,7 @@ describe_tier() {
       echo "# testing-strategy tier=readiness lane=no-run-inventory contract='current production-readiness evidence stays syntactically concrete without launching heavy jobs'"
       ;;
     pareas)
-      echo "# testing-strategy tier=pareas lane=external-comparison contract='optional Pareas comparison is bounded, replayable, and explicitly requested'"
+      echo "# testing-strategy tier=pareas lane=external-comparison-provenance contract='optional Pareas comparison remains no-run until local artifact capture is explicitly performed'"
       ;;
     all)
       echo "# testing-strategy tier=all lane=escalated-checkpoint contract='focused, smoke, generated, properties, and Pareas lanes were intentionally requested together'"
@@ -5170,10 +8461,13 @@ run_focused() {
   run_cargo_lib_test diagnostic_renderer_includes_code_span_snippet_label_and_note
   run_cargo_lib_test diagnostic_json_renderer_preserves_external_fields
   run_cargo_lib_test diagnostic_code_registry_preserves_public_metadata
+  run_cargo_lib_test diagnostic_creation_rejects_unregistered_codes_in_debug_builds
   run_cargo_lib_test artifact_descriptor_records_distinguish_stage_contracts
   run_cargo_lib_test artifact_descriptor_records_reject_cross_stage_shapes
   run_cargo_lib_test link_execution_output_key_must_match_partial_or_final_kind
+  run_cargo_lib_test partial_link_input_keys_accept_wide_dense_job_indices
   run_cargo_lib_test link_reduce_work_queue_inputs_must_reference_prior_groups
+  run_cargo_lib_test hierarchical_link_reduce_group_rejects_inline_partition_indices
   run_cargo_lib_test final_link_work_queue_rejects_persisted_relocation_descriptor_summary
   run_cargo_lib_test partial_link_work_queue_rejects_mismatched_persisted_output_key
   run_cargo_lib_test linked_output_descriptor_rejects_partial_link_output_records
@@ -5185,17 +8479,20 @@ run_focused() {
   run_cargo_test cli_package_manifest cli_package_manifest_rejects_extra_positional_inputs
   run_cargo_test cli_package_manifest cli_package_lockfile_rejects_mixed_input_modes
   run_cargo_test cli_source_pack_contract cli_descriptor_source_pack_requires_explicit_contract_output
+  run_cargo_test cli_source_pack_contract cli_emit_contract_single_input_uses_descriptor_path_instead_of_plain_compile
+  run_cargo_test cli_source_pack_contract cli_explicit_legacy_source_pack_requires_an_input_instead_of_demo_compile
   run_cargo_test cli_source_pack_contract cli_descriptor_source_root_preparation_is_explicitly_unsupported
   run_cargo_test cli_source_pack_contract cli_descriptor_package_manifest_preparation_is_explicitly_unsupported
   run_cargo_test cli_formatter cli_fmt_formats_source_file_in_place
   run_cargo_test cli_formatter cli_fmt_keeps_where_predicates_one_per_line_and_check_accepts_rewrite
   run_cargo_test cli_formatter cli_fmt_check_reports_unformatted_source_without_writing
+  run_cargo_test cli_formatter cli_fmt_check_can_render_json_diagnostic_without_writing
   run_cargo_test cli_lsp cli_lsp_capabilities_reports_no_run_diagnostic_contract
   run_cargo_test cli_lsp cli_lsp_serve_handles_initialize_shutdown_without_compiling_source
   run_cargo_test cli_version cli_version_reports_distribution_contract_without_compiling_source
   run_cargo_test cli_version cli_doctor_reports_no_run_toolchain_contract_without_compiling_source
+  run_cargo_test cli_version cli_doctor_bounds_slangc_version_probe_without_compiling_source
   run_cargo_test cli_version cli_accepts_explicit_current_language_edition
-  run_cargo_test cli_version cli_accepts_explicit_supported_target_triple
   run_cargo_test cli_version cli_rejects_unsupported_language_edition_before_compiling_source
   run_cargo_test cli_version cli_rejects_unsupported_target_triple_before_compiling_source
   run_cargo_test cli_version cli_rejects_emit_target_mismatch_before_compiling_source
@@ -5209,8 +8506,12 @@ run_focused() {
   run_cargo_test package_manifest package_lockfile_requires_import_graph_and_input_identity
   run_cargo_test package_manifest package_lockfile_rejects_other_compiler_versions
   run_cargo_test package_manifest package_lockfile_rejects_non_reproducible_control_plane_fields
+  run_cargo_test package_manifest package_lockfile_reports_source_root_drift_before_duplicate_module_metadata
   run_cargo_test package_manifest package_lockfile_rejects_duplicate_source_identity_modules_in_one_library
   run_cargo_test package_manifest package_lockfile_rejects_import_graph_dependencies_missing_from_identity_sections
+  run_cargo_test package_manifest package_lockfile_rejects_empty_persisted_input_identity_before_live_replay
+  run_cargo_test package_manifest package_lockfile_rejects_unknown_input_and_source_identity_library_ids
+  run_cargo_test package_manifest package_lockfile_rejects_incomplete_source_identity_shape_before_import_graph_metadata
   run_cargo_lib_test source_pack_work_queue_progress_page_transitions_match_reference_model
 }
 
@@ -5274,21 +8575,57 @@ run_properties() {
   run_cargo_test cli_diagnostics \
     cli_diagnostics_registry_prints_combined_registry_json_without_compiling_source
   run_cargo_test cli_diagnostics \
+    cli_diagnostics_codes_prints_compact_code_index_without_compiling_source
+  run_cargo_test cli_diagnostics \
+    cli_diagnostics_codes_is_registry_projection_without_source_loading
+  run_cargo_test cli_diagnostics \
     cli_diagnostics_categories_groups_codes_by_stable_category_without_compiling_source
   run_cargo_test cli_diagnostics \
     cli_diagnostics_formats_prints_machine_readable_contract_without_compiling_source
+  run_cargo_test cli_diagnostics \
+    cli_diagnostics_formatter_prints_no_run_formatter_policy
+  run_cargo_test cli_diagnostics \
+    cli_diagnostics_commands_prints_no_run_command_discovery_index
+  run_cargo_test cli_diagnostics \
+    cli_diagnostics_version_policy_prints_no_run_tooling_contract
+  run_cargo_test cli_diagnostics \
+    cli_diagnostics_version_policy_embeds_command_discovery_index_without_source_scan
+  run_cargo_test cli_diagnostics \
+    cli_global_diagnostic_format_before_no_run_subcommand_keeps_query_routing
   run_cargo_test cli_diagnostics \
     cli_diagnostics_explain_prints_single_code_json_without_compiling_source
   run_cargo_test cli_diagnostics \
     cli_diagnostics_explain_reports_unknown_code_as_machine_readable_result
   run_cargo_test cli_diagnostics \
-    cli_unsupported_emit_target_can_render_json_diagnostic_without_compiling_source
+    cli_diagnostics_explain_missing_code_can_render_json_diagnostic
   run_cargo_test cli_diagnostics \
-    cli_unsupported_edition_can_render_lsp_json_diagnostic_before_source_loading
+    cli_unsupported_emit_target_can_render_json_diagnostic_without_compiling_source
   run_cargo_test cli_diagnostics \
     cli_unknown_flag_can_render_json_diagnostic_without_compiling_source
   run_cargo_test cli_diagnostics \
     cli_diagnostics_registry_accepts_diagnostic_format_after_subcommand
+  run_cargo_test cli_diagnostics \
+    cli_diagnostics_runtime_api_reports_known_unbound_stdlib_api_without_source_scan
+  run_cargo_test cli_diagnostics \
+    cli_diagnostics_runtime_api_accepts_service_qualified_selector_without_source_scan
+  run_cargo_test cli_diagnostics \
+    cli_diagnostics_runtime_apis_prints_stdlib_runtime_api_index_without_source_scan
+  run_cargo_test cli_diagnostics \
+    cli_diagnostics_runtime_service_reports_stdlib_service_by_module_path_without_source_scan
+  run_cargo_test cli_diagnostics \
+    cli_diagnostics_runtime_service_apis_reports_service_api_rows_without_source_scan
+  run_cargo_test cli_diagnostics \
+    cli_diagnostics_runtime_service_apis_accepts_capability_constant_selector_without_source_scan
+  run_cargo_test cli_diagnostics \
+    cli_diagnostics_runtime_service_apis_accepts_qualified_api_selector_without_source_scan
+  run_cargo_test cli_diagnostics \
+    cli_diagnostics_runtime_services_prints_stdlib_runtime_service_index_without_source_scan
+  run_cargo_test cli_diagnostics \
+    cli_diagnostics_runtime_service_accepts_service_qualified_api_selector_without_source_scan
+  run_cargo_test cli_diagnostics \
+    cli_diagnostics_runtime_service_reports_unknown_selector_as_no_run_result
+  run_cargo_test cli_diagnostics \
+    cli_diagnostics_runtime_service_apis_accepts_service_qualified_api_selector_without_source_scan
   run_cargo_test cli_diagnostics \
     diagnostic_lsp_json_renderer_exposes_protocol_fields_without_envelope
   run_cargo_test cli_diagnostics \
@@ -5309,10 +8646,42 @@ run_properties() {
     cli_check_source_root_missing_import_renders_json_category_before_compiling_source
   run_cargo_test cli_diagnostics \
     cli_linked_output_contract_descriptor_rejects_target_bytes_as_json_diagnostic
+  run_cargo_test cli_diagnostics \
+    cli_fmt_missing_input_can_render_json_diagnostic_without_stdout
+  run_cargo_test cli_diagnostics \
+    cli_fmt_stdin_invalid_utf8_can_render_json_diagnostic_without_stdout
+  run_cargo_test cli_diagnostics \
+    cli_fmt_readonly_file_can_render_json_output_write_diagnostic_without_stdout
+  run_cargo_test cli_diagnostics \
+    cli_package_lock_positional_argument_can_render_json_diagnostic_without_loading_manifest
   run_cargo_test cli_package_manifest \
-    cli_package_manifest_compiles_entry_through_source_roots
+    cli_package_manifest_checks_entry_through_source_roots
   run_cargo_test cli_package_manifest \
-    cli_package_lockfile_compiles_entry_through_resolved_source_roots
+    cli_package_lockfile_checks_entry_through_resolved_source_roots
+  run_cargo_test cli_package_manifest \
+    cli_package_lock_generates_lockfile_that_existing_check_path_uses
+  run_cargo_test cli_package_manifest \
+    cli_package_manifest_invalid_metadata_can_render_json_without_compiling_source
+  run_cargo_test cli_package_manifest \
+    cli_package_manifest_entry_outside_roots_json_reports_declared_roots
+  run_cargo_test cli_package_manifest \
+    cli_package_lock_rejects_quoted_import_json_before_writing_lockfile
+  run_cargo_test cli_lsp \
+    cli_lsp_serve_returns_document_diagnostics_for_opened_source
+  run_cargo_test cli_lsp \
+    cli_lsp_serve_rejects_reinitialize_without_resetting_session
+  run_cargo_test cli_lsp \
+    cli_lsp_serve_rejects_requests_before_initialize_without_compiling_source
+  run_cargo_test cli_lsp \
+    cli_lsp_serve_rejects_wrong_language_id_without_opening_document
+  run_cargo_test cli_lsp \
+    cli_lsp_serve_rejects_formatting_requests_without_options_without_mutating_document
+  run_cargo_test cli_lsp \
+    cli_lsp_serve_reports_unsupported_method_with_stable_diagnostic_data
+  run_cargo_test cli_lsp \
+    cli_lsp_serve_drains_known_length_invalid_frame_body_before_next_message
+  run_cargo_test cli_lsp \
+    cli_lsp_serve_reports_invalid_messages_with_stable_diagnostic_data
   run_cargo_test cli_stdlib_root \
     cli_stdlib_root_reports_missing_import_before_gpu
   run_cargo_test cli_stdlib_root \
@@ -5339,10 +8708,24 @@ run_properties() {
     package_lockfile_rejects_import_graph_edges_missing_from_input_identity
   run_cargo_test package_manifest \
     package_lockfile_rejects_import_graph_edge_with_wrong_library_root
+  run_cargo_test package_manifest \
+    package_lockfile_rejects_quoted_imports_before_persisting_import_graph
+  run_cargo_test package_manifest \
+    package_lockfile_rejects_removed_persisted_input_before_graph_shrink
+  run_cargo_test package_manifest \
+    package_lockfile_rejects_non_canonical_missing_input_identity_path
+  run_cargo_test package_manifest \
+    package_lockfile_rejects_import_graph_path_that_disagrees_with_target_module
+  run_cargo_test package_manifest \
+    package_lockfile_reports_source_span_for_overdeep_import_path
+  run_cargo_test package_manifest \
+    source_root_path_manifest_rejects_multiline_literals_before_returning_import_set
+  run_cargo_test package_manifest \
+    package_lockfile_rejects_multiline_string_literals_during_source_root_replay
+  run_cargo_test package_manifest \
+    package_lockfile_rejects_unterminated_block_comments_during_source_root_replay
   run_cargo_test formatter \
     formatter_preserves_string_and_char_literal_contents
-  run_cargo_test codegen_wasm \
-    wasm_executes_source_pack_function_call
   run_cargo_test codegen_x86 \
     x86_executes_while_loop_with_scalar_local_mutation
   run_cargo_test codegen_x86 \
@@ -5352,33 +8735,55 @@ run_properties() {
   run_cargo_test codegen_x86 \
     x86_executes_for_array_with_break_and_continue
   run_cargo_test codegen_x86 \
-    x86_rejects_loop_condition_call_before_codegen_timeout
+    x86_executes_loop_condition_call
   run_cargo_test codegen_x86 \
-    x86_rejects_loop_body_assignment_call_before_codegen_timeout
+    x86_executes_loop_body_assignment_call
+  run_cargo_test codegen_x86 \
+    x86_executes_source_pack_helper_call_in_loop_let_initializer
+  run_cargo_test codegen_x86 \
+    x86_executes_source_pack_recursive_scalar_call
   run_cargo_test codegen_x86 \
     x86_executes_array_literal_index_sum
   run_cargo_test codegen_x86 \
     x86_executes_indexed_assignment_inside_loop_branch
   run_cargo_test codegen_x86 \
-    x86_rejects_unsupported_five_argument_call_in_codegen
+    x86_rejects_helper_parameter_beyond_sysv_registers_with_diagnostic
   run_cargo_test codegen_x86 \
-    x86_source_pack_rejects_unsupported_five_argument_call_with_diagnostic
+    x86_call_abi_clears_stale_rows_for_unsupported_arg_count
+  run_cargo_test codegen_x86 \
+    x86_select_clears_stale_selected_rows_for_unsupported_virtual_ops
+  run_cargo_test codegen_x86 \
+    x86_rejects_direct_call_argument_count_beyond_packed_abi_with_diagnostic
   run_cargo_test codegen_x86 \
     x86_source_pack_assignment_mismatch_reports_lnc0006_diagnostic
   run_cargo_test codegen_x86 \
     x86_source_pack_unresolved_identifier_reports_lnc0005_diagnostic
   run_cargo_test codegen_x86 \
-    x86_rejects_direct_recursive_call_before_lowering
+    x86_source_pack_rejects_scalar_for_iterable_with_diagnostic
+  run_cargo_test codegen_x86 \
+    x86_rejects_unsized_slice_parameter_index_with_diagnostic
+  run_cargo_test codegen_x86 \
+    x86_executes_direct_recursive_scalar_call
+  run_cargo_test codegen_x86 \
+    x86_reloc_patch_rejects_non_compact_reloc_rows
+  run_cargo_test codegen_x86 \
+    x86_virtual_regalloc_rejects_non_monotonic_value_def_rows
   run_cargo_test codegen_x86 \
     x86_rejects_aggregate_copy_above_bounded_gpu_row_width
+  run_cargo_test codegen_x86 \
+    x86_rejects_static_out_of_bounds_array_index_before_native_memory_access
+  run_cargo_test codegen_x86 \
+    x86_executes_direct_self_method_call
   run_cargo_test codegen_x86_properties \
     generated_x86_programs_are_name_and_shape_independent
   run_cargo_test codegen_x86_properties \
     generated_x86_source_pack_calls_are_name_and_shape_independent
   run_cargo_test codegen_x86_properties \
-    generated_x86_loop_contained_call_rejections_are_name_independent
+    generated_x86_loop_assignment_calls_are_name_independent
   run_cargo_test codegen_x86_properties \
-    generated_x86_zero_divisor_rejections_are_name_and_shape_independent
+    generated_x86_loop_let_initializer_calls_are_name_independent
+  run_cargo_test codegen_x86_properties \
+    generated_x86_divisor_boundaries_are_name_and_shape_independent
   run_cargo_test module_visibility \
     imports_expose_only_public_declarations_from_imported_module_records
   run_cargo_test parser_hir_records \
@@ -5386,9 +8791,15 @@ run_properties() {
   run_cargo_test parser_hir_records \
     parser_hir_method_call_records_link_callee_member_and_receiver
   run_cargo_test parser_hir_records \
+    parser_hir_chained_method_call_receiver_records_link_inner_call_as_receiver
+  run_cargo_test parser_hir_records \
+    parser_hir_chained_member_records_link_previous_member_as_receiver
+  run_cargo_test parser_hir_records \
     parser_hir_enum_variant_records_link_variants_and_payload_types
   run_cargo_test parser_hir_records \
     parser_hir_array_literal_records_link_elements_and_spans
+  run_cargo_test parser_hir_records \
+    parser_hir_array_literal_readback_rejects_cross_file_element_edges
   run_cargo_test parser_hir_records \
     parser_hir_array_literal_local_declaration_context_feeds_type_checking
   run_cargo_test parser_hir_records \
@@ -5400,23 +8811,55 @@ run_properties() {
   run_cargo_test parser_hir_records \
     parser_hir_generic_type_arguments_are_source_addressable_in_source_packs
   run_cargo_test parser_hir_records \
+    parser_hir_type_record_readback_rejects_path_type_without_path_node_record
+  run_cargo_test parser_hir_records \
     parser_hir_import_records_carry_source_pack_file_ids_and_token_spans
   run_cargo_test parser_hir_records \
     parser_hir_item_records_are_source_addressable_in_source_packs
   run_cargo_test parser_hir_records \
+    parser_hir_type_alias_target_readback_rejects_malformed_targets
+  run_cargo_test parser_hir_records \
     parser_hir_match_payload_records_are_source_addressable_in_source_packs
+  run_cargo_test parser_hir_records \
+    parser_hir_match_readback_rejects_payload_ordinals_out_of_source_order
   run_cargo_test parser_hir_records \
     parser_hir_match_payload_records_feed_type_checking_not_variant_name_decoys
   run_cargo_test parser_hir_records \
     parser_hir_struct_field_records_are_source_addressable_in_source_packs
   run_cargo_test parser_hir_records \
+    parser_hir_struct_literal_field_readback_rejects_non_field_rows
+  run_cargo_test parser_hir_records \
     parser_hir_struct_literal_field_records_feed_type_checking_not_field_spelling
   run_cargo_test parser_hir_records \
     parser_hir_module_and_import_records_publish_parser_path_nodes
+  run_cargo_test parser_hir_records \
+    parser_hir_method_readback_rejects_incomplete_first_parameter_records
+  run_cargo_test parser_hir_records \
+    parser_hir_method_readback_rejects_method_rows_outside_owner_span
+  run_cargo_test parser_hir_records \
+    parser_hir_call_readback_rejects_argument_end_not_matching_hir_span
+  run_cargo_test parser_hir_records \
+    parser_hir_context_relation_readback_rejects_incoherent_context_chains
+  run_cargo_test parser_hir_records \
+    parser_hir_context_relation_readback_rejects_specialized_context_without_nearest_statement
   run_cargo_test source_pack_package_boundaries \
     explicit_source_pack_library_ids_are_planning_boundaries_not_package_boundaries
   run_cargo_test source_pack_package_boundaries \
     source_root_loader_rejects_same_file_across_user_and_stdlib_boundaries
+  run_cargo_test source_pack_package_boundaries \
+    source_root_loader_reports_unterminated_block_comment_as_stable_syntax_diagnostic
+  run_cargo_test source_pack_package_boundaries \
+    source_pack_link_execution_resume_requires_final_page_sidecar_evidence
+  run_cargo_test source_pack_package_boundaries \
+    source_pack_link_execution_resume_rejects_reduce_descriptor_summary_without_partial_evidence
+  run_cargo_test source_pack_package_boundaries \
+    source_pack_link_execution_resume_requires_reduce_tail_partial_producer_evidence
+  run_cargo_test source_pack_package_boundaries \
+    source_pack_link_execution_rejects_noncanonical_descriptor_record_contract_order
+  run_cargo_test source_pack_package_boundaries \
+    source_pack_link_execution_resume_rejects_stale_partial_producer_leaf_inputs
+  run_cargo_test source_pack_package_boundaries \
+    source_pack_link_execution_resume_rejects_stale_nested_partial_producer_leaf_inputs
   run_cargo_test type_checker_scope \
     type_checker_unresolved_identifier_diagnostic_uses_source_span_and_path
   run_cargo_test type_checker_modules \
@@ -5466,7 +8909,15 @@ run_properties() {
   run_cargo_test stdlib_runtime_contract \
     core_runtime_descriptor_inventory_type_checks_through_stdlib_root
   run_cargo_test stdlib_runtime_contract \
+    core_runtime_bound_api_runtime_binding_alias_type_checks_through_stdlib_root
+  run_cargo_test stdlib_runtime_contract \
+    core_runtime_requirement_row_contract_only_alias_type_checks_through_stdlib_root
+  run_cargo_test stdlib_runtime_contract \
     core_runtime_descriptor_is_importable_from_source_pack
+  run_cargo_test stdlib_runtime_contract \
+    core_u8_ascii_case_helpers_type_check_through_stdlib_root
+  run_cargo_test stdlib_runtime_contract \
+    core_u8_ascii_control_punctuation_helpers_type_check_through_stdlib_root
   run_cargo_test stdlib_runtime_contract \
     core_panic_hook_contract_type_checks_against_unbound_runtime_service_through_stdlib_root
   run_cargo_test stdlib_runtime_contract \
@@ -5477,16 +8928,34 @@ run_properties() {
     std_net_contract_type_checks_against_unbound_runtime_network_service_through_stdlib_root
   run_cargo_test stdlib_runtime_contract \
     std_time_contract_type_checks_against_unbound_runtime_clock_service_through_stdlib_root
+  run_cargo_test stdlib_runtime_contract \
+    std_io_public_stdio_api_gates_type_check_through_stdlib_root
   run_cargo_test type_checker_generics \
     type_checker_accepts_nested_direct_generic_function_calls
   run_cargo_test type_checker_generics \
     type_checker_accepts_nested_generic_forwarding_through_helpers
+  run_cargo_test type_checker_generics \
+    type_checker_rejects_nested_generic_instance_parameters_without_partial_outer_match
   run_cargo_test type_checker_semantics \
     type_checker_accepts_generated_let_chain_on_gpu
   run_cargo_test type_checker_semantics \
     type_checker_accepts_generated_call_argument_shapes_on_gpu
   run_cargo_test type_checker_semantics \
     type_checker_rejects_trait_impls_whose_trait_does_not_resolve_on_gpu
+  run_cargo_test type_checker_semantics \
+    trait_methods_control::type_checker_rejects_unresolved_trait_impl_targets_with_stable_diagnostic
+  run_cargo_test type_checker_semantics \
+    type_checker_rejects_inherent_impls_on_traits_with_trait_impl_diagnostic
+  run_cargo_test type_checker_semantics \
+    type_checker_rejects_under_applied_inherent_impl_receiver_targets_on_gpu
+  run_cargo_test type_checker_semantics \
+    type_checker_rejects_inherent_impl_receiver_targets_beyond_gpu_arg_window
+  run_cargo_test type_checker_semantics \
+    type_checker_rejects_trait_bounds_on_const_generic_subjects_on_gpu
+  run_cargo_test type_checker_semantics \
+    type_checker_normalizes_alias_predicate_type_argument_leaves_on_gpu
+  run_cargo_test type_checker_semantics \
+    trait_methods_control::type_checker_rejects_generic_trait_impl_arguments_until_predicate_rows_carry_param_refs_on_gpu
   run_cargo_test type_checker_semantics \
     type_checker_rejects_nonzero_call_argument_type_mismatches_on_gpu
   run_cargo_test type_checker_semantics \
@@ -5498,6 +8967,8 @@ run_properties() {
   run_cargo_test type_checker_semantics \
     type_checker_resolves_methods_by_concrete_generic_receiver_instance
   run_cargo_test type_checker_semantics \
+    type_checker_rejects_method_calls_beyond_gpu_argument_width
+  run_cargo_test type_checker_semantics \
     type_checker_reports_generic_inherent_method_returns_outside_bounded_gpu_slice
   run_cargo_test type_checker_semantics \
     type_checker_accepts_direct_generic_function_at_two_concrete_types
@@ -5507,6 +8978,10 @@ run_properties() {
     type_checker_checks_multi_payload_enum_match_ordinals_on_gpu
   run_cargo_test type_checker_semantics \
     type_checker_resolves_qualified_two_arg_trait_bounds_by_decl_identity
+  run_cargo_test type_checker_semantics \
+    trait_methods_control::type_checker_reports_malformed_extra_impl_method_contract_status_on_gpu
+  run_cargo_test type_checker_semantics \
+    trait_methods_control::type_checker_rejects_private_impl_method_for_public_trait_contract_on_gpu
   run_cargo_test type_checker_semantics \
     type_checker_rejects_trait_impl_methods_with_wrong_return_type_on_gpu
   run_cargo_test type_checker_semantics \
@@ -5523,12 +8998,12 @@ run_pareas() {
   current_plan_lane=pareas
   if [[ "$list_tests" -eq 1 ]]; then
     run_cmd cargo test --test generated_10k_gates -j1 \
-      generated_pareas_comparison_when_available \
+      generated_pareas_comparison_is_local_artifact_scaffold_only \
       -- --list
     return
   fi
   run_cargo_test generated_10k_gates \
-    generated_pareas_comparison_when_available \
+    generated_pareas_comparison_is_local_artifact_scaffold_only \
     --ignored
 }
 

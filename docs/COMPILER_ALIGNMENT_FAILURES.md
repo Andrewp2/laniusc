@@ -255,23 +255,13 @@ Pareas alignment:
   generic/where rejection consumes parser-owned `hir_method_signature_flags`
   rows before predicate validation. Later trait dispatch metadata remains
   missing.
-- The multi-function WASM HIR emitters now resolve expression-forward wrappers
-  through the parser-produced `hir_expr_result_root_node` relation, consume the
-  type-checker-produced `enclosing_fn` token relation for function membership,
-  and classify intrinsic print call statements through the parser-produced
-  `hir_call_context_stmt_node` relation instead of re-walking from the call
-  node. WASM const-value projection also consumes
-  `hir_expr_result_root_node`, so literal const folding no longer chases local
-  `HIR_EXPR_FORWARD` chains. `wasm_hir_body.slang` now consumes
-  `hir_expr_result_root_node` for scalar body expression roots,
-  `hir_nearest_stmt_node` for statement membership,
-  `hir_nearest_block_node` for block membership, and
-  `hir_nearest_enclosing_control_node` for enclosing if/while/for/match
-  membership. The parser also publishes `hir_nearest_fn_node` for HIR-keyed
-  function membership. These relation rows come from semantic-HIR parent rows
-  with pointer jumping after HIR statement/control records and before consumers
-  need body-shape context. `wasm_hir_module.slang` no longer imports the
-  tree-walk helper.
+- The single-body Wasm byte emitter has been retired from active byte emission
+  rather than preserved as a hidden bounded-scan backend. `wasm_hir_body.slang`
+  now fails closed with the stable WASM backend diagnostic until body lowering is
+  rebuilt from compact function/body/value records, per-node byte counts,
+  prefix-summed byte locations, and byte scatter passes. The legacy whole-module
+  WASM shader has also been deleted rather than preserved as a hidden
+  bounded-scan backend.
 - WASM HIR function enumeration now requires the type-checker-published
   function declaration identity row before treating a `HIR_FN` node as a
   normal function. This keeps trait method signature rows, which are HIR
@@ -280,25 +270,12 @@ Pareas alignment:
   trait syntax from parse shape. The remaining production replacement is still a
   compact function-record table consumed by WASM byte-count/byte-scatter passes
   rather than repeated bounded scans over all HIR nodes.
-- The remaining WASM helper blocker is exact: `wasm_hir_array_body.slang` is
-  quarantined as source-only scaffolding with no shader entrypoint because it
-  still recognizes bounded array helper bodies by scanning token/HIR ranges
-  under `MAX_LEGACY_ARRAY_BODY_*` caps. The legacy token-driven
-  `wasm_functions.slang`, `wasm_arrays.slang`, and `wasm_bool_body.slang`
-  surfaces still contain source/token range scans. Those should be replaced by
-  compact function/body/value records, per-node byte counts, prefix-summed byte
-  locations, and byte scatter passes rather than by adding more helper patterns
-  or larger scan budgets.
-- The legacy enum-match WASM emitter is now retired from the Rust WASM
-  generator: the current path does not load its SPIR-V module, build its
-  token/source bind group, or dispatch it. When inspected, it consumes the
-  parser-published
-  `hir_match_arm_next` relation compacted by `wasm_hir_enum_match_records`
-  instead of scanning HIR token ranges to find the next arm, but it remains a
-  bounded module writer: `MAX_MATCH_ARMS`, token delimiter searches, literal
-  parsing, and helper-shape checks still need to be replaced by per-node byte
-  records plus prefix-scan/scatter placement before this can become active
-  backend evidence.
+- Retired token-driven WASM helper emitters and disabled array/enum-match
+  helper module writers have been deleted from the production shader surface.
+  The remaining WASM blocker is architectural: there is no executable byte
+  emitter until the backend is rebuilt around compact function/body/value
+  records, per-node byte counts, prefix-summed byte locations, and byte scatter
+  passes rather than new helper patterns or larger scan budgets.
 - WASM aggregate and assertion HIR placeholder passes now bind only their
   pipeline parameters and module status. Their earlier Rust bind groups still
   carried stale token/source/HIR and helper metadata inputs from removed
@@ -311,18 +288,86 @@ Pareas alignment:
   `x86_node_inst_counts.slang` and `x86_match_ownership.slang` no longer carry
   parent/subtree rows as consumer-side ownership shortcuts. Parent/subtree
   arrays remain valid inputs to dedicated pointer-jump and postorder ordering
-  passes. `x86_virtual_regalloc.slang` still has a bounded value-definition
-  chunk loop. The blocker is exact: allocation mutates `active_end` and the
-  remaining parameter-register mask between rows, so replacing the loop with
-  parallel row threads would race. The paper-aligned replacement is not a larger
-  chunk; it is region-boundary publication, value-definition rows keyed by
-  function/region, segmented allocation or pressure/spill records, and segmented
-  stack-slot scans before x86 selection consumes physical-register rows.
+  passes. The no-run audit now reports zero review-required x86 codegen loops.
+  The remaining x86 codegen audit rows are fixed-bound: `x86_encode.slang`
+  scatters up to `X86_MAX_ENCODED_INST_BYTES`, and
+  `x86_virtual_regalloc.slang` walks `MAX_REGALLOC_ROWS_PER_CHUNK`. The
+  regalloc blocker is exact: allocation mutates `active_end` and the remaining
+  parameter-register mask between rows, so replacing the loop with parallel row
+  threads would race. The paper-aligned replacement is not a larger chunk; it is
+  region-boundary publication, value-definition rows keyed by function/region,
+  segmented allocation or pressure/spill records, and segmented stack-slot scans
+  before x86 selection consumes physical-register rows.
 - The resident x86 path now wires `x86_reloc_patch.slang` after encoding and
   before ELF layout, so compact branch/call relocation rows are consumed inside
   the GPU pass sequence. The remaining alignment gap is package-scale
   object/interface relocation records and linking, not whole-ELF resident rel32
   patch consumption.
+
+## Paper-Alignment Production Gaps
+
+The checked-in GPU compilation papers are architecture references, not release
+evidence. The remaining gaps below are the concrete places where the current
+repo still cannot claim the paper shape for production readiness.
+
+- **LLP/PSLS parser correctness source:** the papers require deterministic
+  parallel LL parsing by composing context-bearing summaries with reduction.
+  The repo has adjacent-pair/table artifacts and seeded LL(1) block machinery,
+  but `TODO.md` still marks true LLP/PSLS summary composition as missing and
+  treats witness-projected pair output as an artifact rather than the resident
+  correctness source. Production evidence needs the parser-fed HIR/type/codegen
+  path to come from a deterministic LLP/PSLS reduction, with a focused test that
+  fails if LL(1) replay or witness projection becomes the production oracle.
+- **Attributed AST/HIR boundary:** the frontend papers move from parse tree to
+  semantic/AST arrays before downstream passes. The current GPU path publishes a
+  production-id tree plus HIR-facing classification and relation buffers, while
+  `TODO.md` still calls out incomplete AST/HIR materialization from that tree.
+  Production evidence needs every supported construct to expose stable
+  owner/operand/type records consumed by type checking and backend lowering,
+  not a token-directed or parser-local fallback.
+- **Semantic relation completeness:** many consumers now use parser-owned HIR
+  rows, but predicate, generic, method, and value-call paths still carry bounded
+  slot/cache bridges. The paper-aligned replacement is compact relation
+  publication with prefix scans, segmented scans for per-owner ranges,
+  sort/join/scatter passes, and reduction validation. Production evidence needs
+  positive behavior beyond the current bounded windows and deterministic
+  fail-closed diagnostics for any remaining explicit cap.
+- **Backend pass contract:** the backend papers describe instruction counting,
+  location calculation, per-node virtual instruction generation, optimization,
+  register allocation/spill, instruction removal, jump/relocation fixup, and
+  output. The x86 path now has real record passes, resident relocation
+  patching, and no review-required x86 codegen loop-audit rows, but the current
+  fixed-bound encode/regalloc loops and narrow dead-value optimization boundary
+  still leave the pass contract blocked. The no-run shader loop audit now reports
+  `paper-pass-blocker=0`, `review-required=0`, zero high/medium-risk rows, and
+  `paper-pass-local-review=71`. It also reports
+  `source-sized-symbolic-cap=0`. Its `claim-blocker` rows
+  publish `performance-scaling-or-pareas-parity-audit-debt=50`, which is the
+  no-run blocker plus local-review count for performance/scaling and Pareas
+  parity claims. Those zero paper-pass/review blocker counts retire the old
+  blocker-route queue, but the bounded-local helper rows still require
+  justification or replacement before pass-contract
+  readiness can be claimable.
+  Production evidence needs `x86_regalloc_pass_contract()` and measurement
+  summaries to become claimable, with supported calls, control flow, aggregates,
+  methods, enums, traps, and runtime boundaries either executing or failing with
+  stable diagnostics.
+- **Package/object/link artifacts:** the papers stop at a single compilation
+  unit/final instruction buffer. Lanius production packages therefore need
+  extra evidence outside the papers: package libraries must produce real
+  object/interface artifacts, GPU symbol and relocation records, resumable link
+  pages, and final native output without CPU semantic rewriting.
+- **Local measurement evidence:** paper timing tables and Pareas provenance do
+  not prove this repo. Production claims need complete local
+  `lanius.measurement-summary.v1` rows with numeric timings, readback spans,
+  VRAM/resource data, hardware/env hashes, source-control provenance,
+  repeatability, clean shader-loop-audit blocker status, and claimable
+  paper-pass/pass-contract fields. They must also carry
+  `link_artifact_evidence_schema=lanius.link-artifact-evidence.v1`,
+  `link_artifact_required_evidence_classes=library_interface_artifacts,codegen_object_artifacts,partial_link_artifacts,linked_output_artifact`,
+  and artifact-backed evidence for every named link artifact class. Whole-pack
+  benchmark rows must keep `link_artifact_evidence_status=not-artifact-backed`
+  until those artifacts exist.
 
 ## What Must Happen Next
 

@@ -114,15 +114,21 @@ The current `stdlib/` directory contains plain `.lani` files:
 - `core/slice.lani`
 - `core/panic.lani`
 - `core/target.lani`
+- `core/runtime.lani`
 - `alloc/allocator.lani`
 - `std/io.lani`
 - `std/process.lani`
 - `std/env.lani`
 - `std/time.lani`
 - `std/fs.lani`
+- `std/path.lani`
 - `std/net.lani`
 - `std/host.lani`
+- `std/random.lani`
+- `std/gpu.lani`
+- `std/thread.lani`
 - `test/assert.lani`
+- `test/harness.lani`
 - `i32.lani`
 - `bool.lani`
 - `array_i32_4.lani`
@@ -295,6 +301,8 @@ For signed and unsigned integer types:
 - `clamp`
 - `abs` for signed types.
 - `signum` for signed types.
+- `is_zero`
+- `is_nonzero`
 - `checked_add`
 - `checked_sub`
 - `checked_mul`
@@ -381,6 +389,8 @@ Expected APIs:
 - `is_none`
 - `unwrap`
 - `unwrap_or`
+- `and`
+- `or`
 - `map`
 - `and_then`
 - `or_else`
@@ -397,6 +407,8 @@ Expected APIs:
 - `unwrap`
 - `unwrap_err`
 - `unwrap_or`
+- `and`
+- `or`
 - `map`
 - `map_err`
 - `and_then`
@@ -836,6 +848,11 @@ Expected APIs:
 - Remove directory.
 - Read directory.
 - Rename.
+- Signed operation result contract with an explicit unavailable sentinel for
+  unbound host filesystem calls.
+- Runtime-free path byte classifiers for separators, NUL/control bytes,
+  Windows-reserved component punctuation, lexical `.`/`..` components, and
+  relative component headers before path buffers and host normalization exist.
 - Copy.
 - Canonicalize.
 - Path join.
@@ -848,6 +865,13 @@ Expected APIs:
 - Program arguments.
 - Environment variables.
 - Current working directory.
+- Runtime-free capability gates for environment-variable and current-directory
+  API groups.
+- Runtime-free environment read-result aliases, unavailable sentinels, and
+  fail-closed classifiers for unbound environment-variable and current-directory
+  calls.
+- Runtime-free exit-code constants and helpers for mapping boolean success to
+  process exit codes.
 - Exit process.
 - Spawn process.
 - Process status.
@@ -868,6 +892,8 @@ Expected APIs:
 - Monotonic clock.
 - Wall clock.
 - Sleep.
+- Signed read and sleep result contracts with explicit unavailable sentinels
+  for unbound host clock calls.
 - Timeout helpers.
 - Date/time formatting later.
 
@@ -890,6 +916,8 @@ Expected APIs:
 
 - Spawn thread.
 - Join thread.
+- Signed operation result contract with an explicit unavailable sentinel for
+  unbound host thread calls.
 - Lock/unlock.
 - Try lock.
 - Send/receive.
@@ -955,6 +983,8 @@ Expected APIs:
 - Generate ranges.
 - Shuffle.
 - Sample distributions.
+- Signed fill-status result contract with an explicit unavailable sentinel for
+  unbound secure-RNG calls.
 
 The secure RNG should be target-specific and fail explicitly if unavailable.
 
@@ -1042,6 +1072,8 @@ Examples:
 - `core::target::has_network`
 - `core::target::has_clock`
 - `core::target::has_secure_rng`
+- `core::target::has_runtime_services`
+- `core::target::runtime_services_are_blocked`
 - `core::target::is_wasm`
 
 This keeps embedded and WASM use cases honest.
@@ -1052,6 +1084,10 @@ capability evaluation are still future work.
 `std::host` exposes the aggregate host-service descriptor as contract metadata
 only, with fail-closed blocked and runtime-binding probes and no raw executable
 host ABI declarations.
+`std::io` now mirrors the recognized-but-unbound runtime boundary at the
+module, grouped API, and per-extern gate level, so source-level callers can
+distinguish a known stdio service descriptor from executable stdio support
+without relying on backend behavior.
 
 ## Naming Principles
 
@@ -1084,6 +1120,12 @@ Current phase.
 - Source-level imports need a GPU implementation before they can be part of the
   normal compile path.
 - Top-level primitive constants.
+- Module-form `core::char` has ASCII punctuation classification helpers that
+  are frontend/type-check evidence only through `--stdlib-root`.
+- Module-form `core::u8` has byte-oriented ASCII range, control-byte,
+  punctuation, hex-digit value conversion, case-normalization, and
+  case-insensitive equality helpers that are frontend/type-check evidence only
+  through `--stdlib-root`.
 - `lstd_` prefix.
 - GPU parser/type-check validation.
 - Representative GPU codegen tests.

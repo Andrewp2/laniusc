@@ -72,6 +72,7 @@ static const uint X86_FUNC_FIRST_VIRTUAL_ROW_OK = 1u;
 static const uint X86_VIRTUAL_VALUE_DEFS_OK = 1u;
 static const uint X86_VIRTUAL_REGALLOC_OK = 1u;
 static const uint X86_ERR_VIRTUAL_REGALLOC = 15u;
+static const uint X86_ERR_REGALLOC_BOUNDARY = 48u;
 static const uint X86_VINST_PARAM = 2u;
 static const uint X86_VINST_BINARY = 4u;
 static const uint X86_VINST_CALL_MIXED = 20u;
@@ -80,9 +81,10 @@ static const uint X86_OP_SHR_I32 = 12u;
 static const uint FUNC_META_FUNC_COUNT = 0u;
 static const uint FUNC_META_REGALLOC_ACTIVE_CHUNKS = 6u;
 static const uint FUNC_META_REGALLOC_RECORDED_CHUNKS = 7u;
-// Transitional bound for the current serial value-definition chunk. This is
-// intentionally small and fail-closed; it is not the production allocator shape.
-static const uint MAX_REGALLOC_ROWS_PER_CHUNK = 32u;
+// Fixed local width for the current serial value-definition helper chunk. This
+// is intentionally small and fail-closed; source scaling is carried by the
+// recorded regalloc chunk count, not by this shader loop bound.
+static const uint REGALLOC_LOCAL_CHUNK_WIDTH = 32u;
 static const int X86_TEMP_REG_RANK_COUNT = 14;
 static const uint X86_TEMP_REG_RANK_MASK = 0x3fffu;
 static const uint X86_RANK_MASK_EAX = 0x0001u;
@@ -259,13 +261,26 @@ bool regalloc_chunk_shape_valid()
 {
     uint rows_per_chunk = gParams.regalloc_rows_per_chunk;
     if (rows_per_chunk == 0u ||
-        rows_per_chunk > MAX_REGALLOC_ROWS_PER_CHUNK ||
+        rows_per_chunk > REGALLOC_LOCAL_CHUNK_WIDTH ||
         gParams.regalloc_chunk_count == 0u ||
         gRegalloc.chunk_len != rows_per_chunk)
         return false;
 
     return gRegalloc.chunk_start % rows_per_chunk == 0u &&
            gRegalloc.chunk_start / rows_per_chunk < gParams.regalloc_chunk_count;
+}
+
+bool recorded_chunk_span_covers_inst_capacity(out uint required_chunks)
+{
+    required_chunks = 1u;
+    uint rows_per_chunk = gParams.regalloc_rows_per_chunk;
+    if (rows_per_chunk == 0u)
+        return false;
+
+    uint capacity_rows = max(gParams.inst_capacity, 1u);
+    required_chunks = ((capacity_rows - 1u) / rows_per_chunk) + 1u;
+    return gParams.regalloc_chunk_count >= required_chunks &&
+           x86_func_meta[FUNC_META_REGALLOC_RECORDED_CHUNKS] >= required_chunks;
 }
 
 uint required_regalloc_chunk_count(uint value_def_count)
@@ -310,10 +325,46 @@ bool regalloc_recorded_span_valid(uint inst_count, out uint required_chunks)
         !allocation_status_inputs_valid(inst_count))
         return false;
 
+    if (!recorded_chunk_span_covers_inst_capacity(required_chunks))
+        return false;
+
     required_chunks = required_regalloc_chunk_count(x86_virtual_value_def_status[3u]);
     return x86_func_meta[FUNC_META_REGALLOC_RECORDED_CHUNKS] >= required_chunks &&
            x86_func_meta[FUNC_META_REGALLOC_ACTIVE_CHUNKS] >= required_chunks &&
            gParams.regalloc_chunk_count >= required_chunks;
+}
+
+uint recorded_regalloc_chunk_count()
+{
+    return min(
+        min(
+            x86_func_meta[FUNC_META_REGALLOC_RECORDED_CHUNKS],
+            x86_func_meta[FUNC_META_REGALLOC_ACTIVE_CHUNKS]),
+        gParams.regalloc_chunk_count);
+}
+
+bool valid_hir_node(uint node)
+{
+    return node != INVALID && node < gParams.n_hir_nodes;
+}
+
+uint regalloc_span_diagnostic_node(uint inst_count)
+{
+    uint rows_per_chunk = max(gParams.regalloc_rows_per_chunk, 1u);
+    uint recorded_chunks = recorded_regalloc_chunk_count();
+    if (recorded_chunks > 0xffffffffu / rows_per_chunk)
+        return INVALID;
+
+    uint first_missing_ordinal = recorded_chunks * rows_per_chunk;
+    if (first_missing_ordinal >= x86_virtual_value_def_status[3u])
+        return INVALID;
+
+    uint row = x86_virtual_value_def_row[first_missing_ordinal];
+    if (row >= inst_count || row >= gParams.inst_capacity)
+        return INVALID;
+
+    uint node = x86_virtual_inst_record[row].x;
+    return valid_hir_node(node) ? node : INVALID;
 }
 
 bool inst_is_call_result(uint4 inst)
@@ -389,6 +440,42 @@ bool function_row_bounds(uint fn_slot, uint inst_count, out uint start_row, out 
         return true;
 
     end_row = last_row + 1u;
+    return true;
+}
+
+bool valid_compact_value_def_row(uint value_def_i, uint row, uint inst_count, out uint failed_node)
+{
+    failed_node = INVALID;
+    if (row >= inst_count)
+        return false;
+
+    uint4 inst = x86_virtual_inst_record[row];
+    uint node = inst.x;
+    if (!inst_has_value_def(inst, row))
+    {
+        failed_node = valid_hir_node(node) ? node : INVALID;
+        return false;
+    }
+
+    if (value_def_i > 0u)
+    {
+        uint previous_row = x86_virtual_value_def_row[value_def_i - 1u];
+        if (previous_row >= row)
+        {
+            failed_node = valid_hir_node(node) ? node : INVALID;
+            return false;
+        }
+        uint4 previous_inst = x86_virtual_inst_record[previous_row];
+        uint previous_node = previous_inst.x;
+        if (!inst_has_value_def(previous_inst, previous_row))
+        {
+            failed_node = valid_hir_node(previous_node)
+                ? previous_node
+                : (valid_hir_node(node) ? node : INVALID);
+            return false;
+        }
+    }
+
     return true;
 }
 
@@ -507,8 +594,9 @@ bool allocate_virtual_row(
     return true;
 }
 
-bool allocate_function_row_offset(uint func_i, uint fn_slot, uint inst_count)
+bool allocate_function_row_offset(uint func_i, uint fn_slot, uint inst_count, out uint failed_node)
 {
+    failed_node = INVALID;
     uint start_row = INVALID;
     uint end_row = INVALID;
     if (!function_row_bounds(fn_slot, inst_count, start_row, end_row))
@@ -527,7 +615,7 @@ bool allocate_function_row_offset(uint func_i, uint fn_slot, uint inst_count)
     // function entry, before the rest of the function has live temporaries.
     // After that copy, those ABI registers are ordinary allocatable temps.
     uint current_param_rank_mask = load_param_rank_mask(func_i, fn_slot);
-    uint chunk_len = min(gRegalloc.chunk_len, MAX_REGALLOC_ROWS_PER_CHUNK);
+    uint chunk_len = min(gRegalloc.chunk_len, REGALLOC_LOCAL_CHUNK_WIDTH);
     uint chunk_end = chunk_start + chunk_len;
     if (chunk_end < chunk_start)
         chunk_end = value_def_count;
@@ -537,7 +625,7 @@ bool allocate_function_row_offset(uint func_i, uint fn_slot, uint inst_count)
     // parallel threads without a new state-composition relation would race and
     // produce non-deterministic register choices.
     [unroll]
-    for (uint local_i = 0u; local_i < MAX_REGALLOC_ROWS_PER_CHUNK; local_i += 1u)
+    for (uint local_i = 0u; local_i < REGALLOC_LOCAL_CHUNK_WIDTH; local_i += 1u)
     {
         if (local_i < chunk_len)
         {
@@ -545,12 +633,24 @@ bool allocate_function_row_offset(uint func_i, uint fn_slot, uint inst_count)
             if (value_def_i >= chunk_start && value_def_i < value_def_count)
             {
                 uint row = x86_virtual_value_def_row[value_def_i];
-                if (row >= inst_count)
+                uint compact_failed_node = INVALID;
+                if (!valid_compact_value_def_row(
+                        value_def_i,
+                        row,
+                        inst_count,
+                        compact_failed_node))
+                {
+                    failed_node = compact_failed_node;
                     return false;
+                }
                 if (row >= start_row && row < end_row)
                 {
                     if (!allocate_virtual_row(row, fn_slot, active_end, current_param_rank_mask))
+                    {
+                        uint node = x86_virtual_inst_record[row].x;
+                        failed_node = valid_hir_node(node) ? node : INVALID;
                         return false;
+                    }
                 }
             }
         }
@@ -603,15 +703,18 @@ void initialize_status(uint inst_count)
         bool chunk_shape_failed = !chunk_shape_ok;
         bool function_slice_failed = chunk_shape_ok && !function_slice_ok;
         bool span_failed = inputs_ok && !recorded_span_ok;
-        uint upstream_error = (chunk_shape_failed || function_slice_failed || span_failed)
-            ? X86_ERR_VIRTUAL_REGALLOC
-            : first_allocation_upstream_error();
+        uint span_detail = span_failed ? regalloc_span_diagnostic_node(inst_count) : INVALID;
+        uint upstream_error = span_failed && valid_hir_node(span_detail)
+            ? X86_ERR_REGALLOC_BOUNDARY
+            : ((chunk_shape_failed || function_slice_failed || span_failed)
+                ? X86_ERR_VIRTUAL_REGALLOC
+                : first_allocation_upstream_error());
         uint upstream_detail = chunk_shape_failed
             ? gParams.regalloc_rows_per_chunk
             : (function_slice_failed
                 ? x86_func_meta[FUNC_META_FUNC_COUNT]
                 : (span_failed
-                ? required_chunks
+                ? (valid_hir_node(span_detail) ? span_detail : required_chunks)
                 : first_allocation_upstream_detail()));
         write_stage_status4_from_result(
             x86_virtual_regalloc_status,
@@ -648,15 +751,28 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     uint fn_slot = x86_func_slot_by_index[func_i];
     if (fn_slot >= gParams.function_slot_capacity)
+    {
+        publish_stage_error_min_detail4(
+            x86_virtual_regalloc_status,
+            X86_ERR_VIRTUAL_REGALLOC,
+            func_i);
         return;
+    }
 
     uint required_chunks = 1u;
     if (!regalloc_recorded_span_valid(inst_count, required_chunks))
         return;
 
-    if (!allocate_function_row_offset(func_i, fn_slot, inst_count))
+    uint failed_node = INVALID;
+    if (!allocate_function_row_offset(func_i, fn_slot, inst_count, failed_node))
+    {
+        uint error = valid_hir_node(failed_node)
+            ? X86_ERR_REGALLOC_BOUNDARY
+            : X86_ERR_VIRTUAL_REGALLOC;
+        uint detail = valid_hir_node(failed_node) ? failed_node : fn_slot;
         publish_stage_error_min_detail4(
             x86_virtual_regalloc_status,
-            X86_ERR_VIRTUAL_REGALLOC,
-            fn_slot);
+            error,
+            detail);
+    }
 }

@@ -30,7 +30,6 @@ impl GpuTypeChecker {
         hir_status_buf: &wgpu::Buffer,
         hir_items: Option<GpuTypeCheckHirItemBuffers<'_>>,
         passes: &TypeCheckPasses,
-        pass: &PassData,
         control_pass: &PassData,
         scope_pass: &PassData,
         input_fingerprint: u64,
@@ -204,6 +203,55 @@ impl GpuTypeChecker {
             device,
             "type_check.resident.hir_visible_decl_key_radix_bucket_base",
             NAME_RADIX_BUCKETS as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let generic_param_capacity = token_capacity.max(1);
+        let generic_param_count_out = storage_u32_rw(
+            device,
+            "type_check.resident.generic_param_count_out",
+            1,
+            wgpu::BufferUsages::empty(),
+        );
+        let generic_param_owner_node = storage_u32_rw(
+            device,
+            "type_check.resident.generic_param_owner_node",
+            generic_param_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let generic_param_name_id = storage_u32_rw(
+            device,
+            "type_check.resident.generic_param_name_id",
+            generic_param_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let generic_param_token = storage_u32_rw(
+            device,
+            "type_check.resident.generic_param_token",
+            generic_param_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let generic_param_node = storage_u32_rw(
+            device,
+            "type_check.resident.generic_param_node",
+            generic_param_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let generic_param_kind = storage_u32_rw(
+            device,
+            "type_check.resident.generic_param_kind",
+            generic_param_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let generic_param_key_order = storage_u32_rw(
+            device,
+            "type_check.resident.generic_param_key_order",
+            generic_param_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let generic_param_key_order_tmp = storage_u32_rw(
+            device,
+            "type_check.resident.generic_param_key_order_tmp",
+            generic_param_capacity as usize,
             wgpu::BufferUsages::empty(),
         );
         let struct_field_key_order = storage_u32_rw(
@@ -658,6 +706,18 @@ impl GpuTypeChecker {
             token_capacity as usize,
             wgpu::BufferUsages::empty(),
         );
+        let return_fn_flags = storage_u32_rw(
+            device,
+            "type_check.resident.return_fn_flags",
+            hir_node_capacity.max(1) as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let return_block_flags = storage_u32_rw(
+            device,
+            "type_check.resident.return_block_flags",
+            hir_node_capacity.max(1) as usize,
+            wgpu::BufferUsages::empty(),
+        );
         let call_param_count = reuse_storage_u32(
             device,
             "type_check.resident.call_param_count",
@@ -820,29 +880,29 @@ impl GpuTypeChecker {
             NAME_RADIX_BUCKETS as usize,
             wgpu::BufferUsages::empty(),
         );
-        let method_call_receiver_ref_tag = reuse_storage_u32(
+        let method_call_receiver_ref_tag = storage_u32_rw(
             device,
             "type_check.resident.method_call_receiver_ref_tag",
             token_capacity as usize,
-            external_scratch.map(|scratch| scratch.method_call_receiver_ref_tag),
+            wgpu::BufferUsages::empty(),
         );
-        let method_call_receiver_ref_payload = reuse_storage_u32(
+        let method_call_receiver_ref_payload = storage_u32_rw(
             device,
             "type_check.resident.method_call_receiver_ref_payload",
             token_capacity as usize,
-            external_scratch.map(|scratch| scratch.method_call_receiver_ref_payload),
+            wgpu::BufferUsages::empty(),
         );
-        let method_call_name_id = reuse_storage_u32(
+        let method_call_name_id = storage_u32_rw(
             device,
             "type_check.resident.method_call_name_id",
             token_capacity as usize,
-            external_scratch.map(|scratch| scratch.method_call_name_id),
+            wgpu::BufferUsages::empty(),
         );
-        let method_call_site_module_id = reuse_storage_u32(
+        let method_call_site_module_id = storage_u32_rw(
             device,
             "type_check.resident.method_call_site_module_id",
             token_capacity as usize,
-            external_scratch.map(|scratch| scratch.method_call_site_module_id),
+            wgpu::BufferUsages::empty(),
         );
         let type_expr_ref_tag = reuse_storage_u32(
             device,
@@ -1041,6 +1101,12 @@ impl GpuTypeChecker {
             u32::MAX,
             wgpu::BufferUsages::empty(),
         );
+        let predicate_syntax_token = storage_u32_rw(
+            device,
+            "type_check.resident.predicate_syntax_token",
+            token_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
         let predicate_method_contract_owner_node = storage_u32_fill_rw(
             device,
             "type_check.resident.predicate_method_contract_owner_node",
@@ -1121,6 +1187,18 @@ impl GpuTypeChecker {
             predicate_capacity,
             wgpu::BufferUsages::empty(),
         );
+        let predicate_method_param_key_order = storage_u32_rw(
+            device,
+            "type_check.resident.predicate_method_param_key_order",
+            predicate_capacity,
+            wgpu::BufferUsages::empty(),
+        );
+        let predicate_method_param_key_order_tmp = storage_u32_rw(
+            device,
+            "type_check.resident.predicate_method_param_key_order_tmp",
+            predicate_capacity,
+            wgpu::BufferUsages::empty(),
+        );
         let predicate_method_contract_owner_range_first = storage_u32_fill_rw(
             device,
             "type_check.resident.predicate_method_contract_owner_range_first",
@@ -1132,6 +1210,41 @@ impl GpuTypeChecker {
             device,
             "type_check.resident.predicate_method_contract_owner_range_count",
             predicate_capacity,
+            wgpu::BufferUsages::empty(),
+        );
+        let predicate_method_validation_owner_node = storage_u32_fill_rw(
+            device,
+            "type_check.resident.predicate_method_validation_owner_node",
+            predicate_capacity,
+            u32::MAX,
+            wgpu::BufferUsages::empty(),
+        );
+        let predicate_method_validation_peer_node = storage_u32_fill_rw(
+            device,
+            "type_check.resident.predicate_method_validation_peer_node",
+            predicate_capacity,
+            u32::MAX,
+            wgpu::BufferUsages::empty(),
+        );
+        let predicate_method_validation_status = storage_u32_fill_rw(
+            device,
+            "type_check.resident.predicate_method_validation_status",
+            predicate_capacity,
+            u32::MAX,
+            wgpu::BufferUsages::empty(),
+        );
+        let predicate_method_validation_detail_token = storage_u32_fill_rw(
+            device,
+            "type_check.resident.predicate_method_validation_detail_token",
+            predicate_capacity,
+            u32::MAX,
+            wgpu::BufferUsages::empty(),
+        );
+        let predicate_method_validation_first_error_row = storage_u32_fill_rw(
+            device,
+            "type_check.resident.predicate_method_validation_first_error_row",
+            predicate_capacity,
+            u32::MAX,
             wgpu::BufferUsages::empty(),
         );
         let predicate_owner_key_order = storage_u32_rw(
@@ -1183,6 +1296,54 @@ impl GpuTypeChecker {
             "type_check.resident.predicate_key_radix_bucket_base",
             NAME_RADIX_BUCKETS as usize,
             wgpu::BufferUsages::empty(),
+        );
+        let predicate_obligation_count_by_call = storage_u32_rw(
+            device,
+            "type_check.resident.predicate_obligation_count_by_call",
+            hir_node_capacity.max(1) as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let predicate_obligation_prefix_by_call = storage_u32_rw(
+            device,
+            "type_check.resident.predicate_obligation_prefix_by_call",
+            hir_node_capacity.max(1) as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let predicate_obligation_scan_local_prefix = storage_u32_rw(
+            device,
+            "type_check.resident.predicate_obligation_scan_local_prefix",
+            hir_node_capacity.max(1) as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let predicate_obligation_scan_block_sum = storage_u32_rw(
+            device,
+            "type_check.resident.predicate_obligation_scan_block_sum",
+            predicate_key_radix_n_blocks.max(1) as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let predicate_obligation_scan_prefix_a = storage_u32_rw(
+            device,
+            "type_check.resident.predicate_obligation_scan_prefix_a",
+            predicate_key_radix_n_blocks.max(1) as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let predicate_obligation_scan_prefix_b = storage_u32_rw(
+            device,
+            "type_check.resident.predicate_obligation_scan_prefix_b",
+            predicate_key_radix_n_blocks.max(1) as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let predicate_obligation_pair_total = storage_u32_rw(
+            device,
+            "type_check.resident.predicate_obligation_pair_total",
+            1,
+            wgpu::BufferUsages::empty(),
+        );
+        let predicate_obligation_pair_dispatch_args = storage_u32_rw(
+            device,
+            "type_check.resident.predicate_obligation_pair_dispatch_args",
+            3,
+            wgpu::BufferUsages::INDIRECT,
         );
         // Function return refs are populated after the name-radix pipeline has
         // assigned stable name ids. Reuse dead name-dedup scratch for these
@@ -1332,6 +1493,8 @@ impl GpuTypeChecker {
         resources.buffer("fn_entrypoint_tag", &fn_entrypoint_tag);
         resources.buffer("call_return_type", &call_return_type);
         resources.buffer("call_return_type_token", &call_return_type_token);
+        resources.buffer("return_fn_flags", &return_fn_flags);
+        resources.buffer("return_block_flags", &return_block_flags);
         resources.buffer("call_param_count", &call_param_count);
         resources.buffer("call_param_type", &call_param_type);
         resources.buffer("call_param_ref_tag", &call_param_ref_tag);
@@ -1453,6 +1616,7 @@ impl GpuTypeChecker {
             &predicate_bound_second_arg_token,
         );
         resources.buffer("predicate_status", &predicate_status);
+        resources.buffer("predicate_syntax_token", &predicate_syntax_token);
         resources.buffer(
             "predicate_method_contract_owner_node",
             &predicate_method_contract_owner_node,
@@ -1498,6 +1662,10 @@ impl GpuTypeChecker {
             &predicate_method_contract_key_order,
         );
         resources.buffer(
+            "predicate_method_param_key_order",
+            &predicate_method_param_key_order,
+        );
+        resources.buffer(
             "predicate_method_contract_owner_range_first",
             &predicate_method_contract_owner_range_first,
         );
@@ -1505,8 +1673,40 @@ impl GpuTypeChecker {
             "predicate_method_contract_owner_range_count",
             &predicate_method_contract_owner_range_count,
         );
+        resources.buffer(
+            "predicate_method_validation_owner_node",
+            &predicate_method_validation_owner_node,
+        );
+        resources.buffer(
+            "predicate_method_validation_peer_node",
+            &predicate_method_validation_peer_node,
+        );
+        resources.buffer(
+            "predicate_method_validation_status",
+            &predicate_method_validation_status,
+        );
+        resources.buffer(
+            "predicate_method_validation_detail_token",
+            &predicate_method_validation_detail_token,
+        );
+        resources.buffer(
+            "predicate_method_validation_first_error_row",
+            &predicate_method_validation_first_error_row,
+        );
         resources.buffer("predicate_owner_key_order", &predicate_owner_key_order);
         resources.buffer("predicate_impl_key_order", &predicate_impl_key_order);
+        resources.buffer(
+            "predicate_obligation_count_by_call",
+            &predicate_obligation_count_by_call,
+        );
+        resources.buffer(
+            "predicate_obligation_prefix_by_call",
+            &predicate_obligation_prefix_by_call,
+        );
+        resources.buffer(
+            "predicate_obligation_pair_total",
+            &predicate_obligation_pair_total,
+        );
         resources.buffer("fn_return_ref_tag", &fn_return_ref_tag);
         resources.buffer("fn_return_ref_payload", &fn_return_ref_payload);
         resources.buffer("decl_type_ref_tag", &decl_type_ref_tag);
@@ -1540,6 +1740,13 @@ impl GpuTypeChecker {
             &struct_lit_context_decl_token,
         );
         resources.buffer("struct_lit_context_instance", &struct_lit_context_instance);
+        resources.buffer("generic_decl_owner_by_node", &generic_decl_owner_by_node_a);
+        resources.buffer("generic_param_count_out", &generic_param_count_out);
+        resources.buffer("generic_param_owner_node", &generic_param_owner_node);
+        resources.buffer("generic_param_name_id", &generic_param_name_id);
+        resources.buffer("generic_param_token", &generic_param_token);
+        resources.buffer("generic_param_kind", &generic_param_kind);
+        resources.buffer("generic_param_key_order", &generic_param_key_order);
         let hir_active_dispatch = reflected_bind_group_from_resources(
             device,
             "type_check_resident_hir_active_dispatch_args",
@@ -1552,7 +1759,6 @@ impl GpuTypeChecker {
             &passes.conditions_hir,
             &resources,
         )?;
-        let calls = create_call_bind_groups(device, passes, &resources)?;
         let language_name_bind_groups =
             create_language_name_bind_groups(device, passes, &resources)?;
         let name_bind_groups = create_name_bind_groups_with_passes(
@@ -1642,6 +1848,7 @@ impl GpuTypeChecker {
                     module_value_path_const_head: &module_value_path_const_head,
                     module_value_path_const_end: &module_value_path_const_end,
                     module_value_path_status: &module_value_path_status,
+                    predicate_syntax_token: &predicate_syntax_token,
                     visible_decl: &visible_decl,
                     visible_type: &visible_type,
                     enclosing_fn: &enclosing_fn,
@@ -1676,6 +1883,23 @@ impl GpuTypeChecker {
         } else {
             None
         };
+        if let Some(module_path) = module_path.as_ref() {
+            resources.buffer("path_id_by_owner_hir", &module_path.path_id_by_owner_hir);
+            resources.buffer("path_owner_module_id", &module_path.path_owner_module_id);
+            resources.buffer("resolved_value_decl", &module_path.resolved_value_decl);
+            resources.buffer("resolved_value_status", &module_path.resolved_value_status);
+            resources.buffer("decl_token_start", &module_path.decl_token_start);
+        } else {
+            resources.add("path_id_by_owner_hir", resources["parent"].clone());
+            resources.add(
+                "path_owner_module_id",
+                resources["module_value_path_status"].clone(),
+            );
+            resources.add("resolved_value_decl", resources["visible_decl"].clone());
+            resources.add("resolved_value_status", resources["visible_decl"].clone());
+            resources.add("decl_token_start", resources["visible_decl"].clone());
+        }
+        let calls = create_call_bind_groups(device, passes, &resources)?;
         let visible_scratch = ResidentVisibleScratch::new(
             device,
             module_path.as_ref(),
@@ -1712,17 +1936,14 @@ impl GpuTypeChecker {
         resources.buffer("generic_decl_parent_jump_a", &generic_decl_parent_jump_a);
         resources.buffer("generic_decl_parent_jump_b", &generic_decl_parent_jump_b);
         resources.buffer("generic_decl_owner_by_node", &generic_decl_owner_by_node_a);
-        resources.buffer("generic_param_count_out", &hir_visible_decl_count_out);
-        resources.buffer("generic_param_owner_node", &hir_visible_decl_owner_fn);
-        resources.buffer("generic_param_name_id", &hir_visible_decl_name_id);
-        resources.buffer("generic_param_token", &hir_visible_decl_token);
-        resources.buffer("generic_param_node", &hir_visible_decl_scope_end);
-        resources.buffer("generic_param_kind", &type_instance_head_token);
-        resources.buffer("generic_param_key_order", &hir_visible_decl_key_order);
-        resources.buffer(
-            "generic_param_key_order_tmp",
-            &hir_visible_decl_key_order_tmp,
-        );
+        resources.buffer("generic_param_count_out", &generic_param_count_out);
+        resources.buffer("generic_param_owner_node", &generic_param_owner_node);
+        resources.buffer("generic_param_name_id", &generic_param_name_id);
+        resources.buffer("generic_param_token", &generic_param_token);
+        resources.buffer("generic_param_node", &generic_param_node);
+        resources.buffer("generic_param_kind", &generic_param_kind);
+        resources.buffer("generic_param_key_order", &generic_param_key_order);
+        resources.buffer("generic_param_key_order_tmp", &generic_param_key_order_tmp);
         resources.buffer(
             "generic_param_key_radix_dispatch_args",
             &hir_visible_decl_key_radix_dispatch_args,
@@ -1774,6 +1995,7 @@ impl GpuTypeChecker {
                     predicate_capacity: predicate_capacity_u32,
                     predicate_blocks: predicate_key_radix_n_blocks,
                     params: &self.params_buf,
+                    hir_active_count: &hir_active_count,
                     hir_status: hir_status_buf,
                     hir_token_pos: hir_token_pos_buf,
                     hir_items: hir_items.expect("predicate collection requires HIR item buffers"),
@@ -1782,6 +2004,7 @@ impl GpuTypeChecker {
                     generic_param_count_by_node: &type_decl_generic_param_count_by_node,
                     generic_param_slot_by_token: &type_generic_param_slot_by_token,
                     type_expr_ref_tag: &type_expr_ref_tag,
+                    type_expr_ref_payload: &type_expr_ref_payload,
                     type_code_by_name: &language_type_code_by_name_id,
                     rows: PredicateRows {
                         owner_node: &predicate_owner_node,
@@ -1798,6 +2021,8 @@ impl GpuTypeChecker {
                         impl_order_tmp: &predicate_impl_key_order_tmp,
                         method_contract_order: &predicate_method_contract_key_order,
                         method_contract_order_tmp: &predicate_method_contract_key_order_tmp,
+                        method_param_order: &predicate_method_param_key_order,
+                        method_param_order_tmp: &predicate_method_param_key_order_tmp,
                         radix: RadixRows {
                             histogram: &predicate_key_radix_block_histogram,
                             bucket_prefix: &predicate_key_radix_block_bucket_prefix,
@@ -1820,6 +2045,18 @@ impl GpuTypeChecker {
                             &predicate_method_contract_owner_range_first,
                         method_contract_owner_range_count:
                             &predicate_method_contract_owner_range_count,
+                    },
+                    obligation_rows: PredicateObligationRows {
+                        count_by_call: &predicate_obligation_count_by_call,
+                        prefix_by_call: &predicate_obligation_prefix_by_call,
+                        pair_total: &predicate_obligation_pair_total,
+                        scan: ScanRows {
+                            local_prefix: &predicate_obligation_scan_local_prefix,
+                            block_sum: &predicate_obligation_scan_block_sum,
+                            prefix_a: &predicate_obligation_scan_prefix_a,
+                            prefix_b: &predicate_obligation_scan_prefix_b,
+                        },
+                        pair_dispatch_args: &predicate_obligation_pair_dispatch_args,
                     },
                 },
                 &resources,
@@ -1891,10 +2128,28 @@ impl GpuTypeChecker {
         let methods =
             create_method_bind_groups(device, passes, &resources, method_key_bind_groups)?;
 
-        let tokens = reflected_bind_group_from_resources(
+        let returns_clear = reflected_bind_group_from_resources(
             device,
-            "type_check_resident_tokens",
-            pass,
+            "type_check_resident_returns_clear",
+            &passes.returns_clear,
+            &resources,
+        )?;
+        let returns_mark = reflected_bind_group_from_resources(
+            device,
+            "type_check_resident_returns_mark",
+            &passes.returns_mark,
+            &resources,
+        )?;
+        let returns_mark_if = reflected_bind_group_from_resources(
+            device,
+            "type_check_resident_returns_mark_if",
+            &passes.returns_mark_if,
+            &resources,
+        )?;
+        let returns_validate = reflected_bind_group_from_resources(
+            device,
+            "type_check_resident_returns_validate",
+            &passes.returns_validate,
             &resources,
         )?;
         let control = reflected_bind_group_from_resources(
@@ -2068,6 +2323,14 @@ impl GpuTypeChecker {
             hir_visible_decl_key_radix_bucket_total,
             hir_visible_decl_key_radix_bucket_base,
             hir_visible_decl_scope_tree,
+            generic_param_count_out,
+            generic_param_owner_node,
+            generic_param_name_id,
+            generic_param_token,
+            generic_param_node,
+            generic_param_kind,
+            generic_param_key_order,
+            generic_param_key_order_tmp,
             generic_decl_owner_by_node_a,
             generic_decl_owner_by_node_b,
             generic_decl_parent_jump_a,
@@ -2099,6 +2362,8 @@ impl GpuTypeChecker {
             fn_entrypoint_tag,
             call_return_type,
             call_return_type_token,
+            return_fn_flags,
+            return_block_flags,
             call_param_count,
             call_param_type,
             call_param_ref_tag,
@@ -2166,6 +2431,7 @@ impl GpuTypeChecker {
             predicate_bound_first_arg_token,
             predicate_bound_second_arg_token,
             predicate_status,
+            predicate_syntax_token,
             predicate_method_contract_owner_node,
             predicate_method_contract_name_token,
             predicate_method_contract_name_id,
@@ -2178,8 +2444,15 @@ impl GpuTypeChecker {
             predicate_method_contract_param_type_node,
             predicate_method_contract_key_order,
             predicate_method_contract_key_order_tmp,
+            predicate_method_param_key_order,
+            predicate_method_param_key_order_tmp,
             predicate_method_contract_owner_range_first,
             predicate_method_contract_owner_range_count,
+            predicate_method_validation_owner_node,
+            predicate_method_validation_peer_node,
+            predicate_method_validation_status,
+            predicate_method_validation_detail_token,
+            predicate_method_validation_first_error_row,
             predicate_owner_key_order,
             predicate_owner_key_order_tmp,
             predicate_impl_key_order,
@@ -2188,6 +2461,14 @@ impl GpuTypeChecker {
             predicate_key_radix_block_bucket_prefix,
             predicate_key_radix_bucket_total,
             predicate_key_radix_bucket_base,
+            predicate_obligation_count_by_call,
+            predicate_obligation_prefix_by_call,
+            predicate_obligation_scan_local_prefix,
+            predicate_obligation_scan_block_sum,
+            predicate_obligation_scan_prefix_a,
+            predicate_obligation_scan_prefix_b,
+            predicate_obligation_pair_total,
+            predicate_obligation_pair_dispatch_args,
             fn_return_ref_tag,
             fn_return_ref_payload,
             decl_type_ref_tag,
@@ -2217,8 +2498,11 @@ impl GpuTypeChecker {
             methods,
             predicates,
             type_instances,
+            returns_clear,
+            returns_mark,
+            returns_mark_if,
+            returns_validate,
             conditions_hir,
-            tokens,
             control,
             scope,
             scope_hir,

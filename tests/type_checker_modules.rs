@@ -384,6 +384,60 @@ fn main() {
 }
 
 #[test]
+fn type_checker_rejects_private_cross_module_type_aliases_on_gpu() {
+    assert_gpu_type_check_pack_accepts(&[r#"
+module core::count;
+
+type Count = i32;
+
+fn keep(value: core::count::Count) -> Count {
+    return value;
+}
+
+fn main() {
+    let value: core::count::Count = keep(1);
+    return value;
+}
+"#]);
+
+    assert_gpu_type_check_pack_rejects(&[
+        r#"
+module core::count;
+
+type Count = i32;
+"#,
+        r#"
+module app::main;
+
+import core::count;
+
+fn main() {
+    let value: core::count::Count = 1;
+    return value;
+}
+"#,
+    ]);
+
+    assert_gpu_type_check_pack_rejects(&[
+        r#"
+module core::count;
+
+type Count = i32;
+"#,
+        r#"
+module app::main;
+
+import core::count;
+
+fn main() {
+    let value: Count = 1;
+    return value;
+}
+"#,
+    ]);
+}
+
+#[test]
 fn type_checker_entry_stdlib_root_loads_imported_module() {
     let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
     let entry = common::TempArtifact::new("laniusc_source_root", "app", Some("lani"));
@@ -914,6 +968,197 @@ fn main() {
 }
 
 #[test]
+fn source_root_user_module_takes_precedence_over_stdlib_candidate() {
+    let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
+    let source_root = common::temp_artifact_path("laniusc_source_root", "user_stdlib_shadow", None);
+    let app_root = source_root.join("app");
+    let core_root = source_root.join("core");
+    std::fs::create_dir_all(&app_root).expect("create temp app source root");
+    std::fs::create_dir_all(&core_root).expect("create temp core source root");
+    let user_core_i32_path = core_root.join("i32.lani");
+    let entry_path = app_root.join("main.lani");
+    std::fs::write(
+        &user_core_i32_path,
+        r#"
+module core::i32;
+
+pub fn local_only() -> i32 {
+    return 11;
+}
+"#,
+    )
+    .expect("write user core::i32 module");
+    std::fs::write(
+        &entry_path,
+        r#"
+module app::main;
+
+import core::i32;
+
+fn main() {
+    let value: i32 = core::i32::local_only();
+    return value;
+}
+"#,
+    )
+    .expect("write entry module");
+
+    let manifest = load_entry_path_manifest_with_source_root_and_stdlib(
+        &entry_path,
+        &source_root,
+        &stdlib_root,
+    )
+    .expect("source-root path manifest should prefer user module before stdlib fallback");
+    assert_eq!(manifest.files.len(), 2);
+    assert!(
+        manifest
+            .files
+            .iter()
+            .any(|file| file.library_id == 1 && file.path == entry_path)
+    );
+    assert!(
+        manifest
+            .files
+            .iter()
+            .any(|file| file.library_id == 1 && file.path == user_core_i32_path),
+        "core::i32 should resolve to the user source-root candidate"
+    );
+    assert!(
+        !manifest
+            .files
+            .iter()
+            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/i32.lani")),
+        "stdlib fallback must not be loaded when a user source root resolves the module"
+    );
+
+    let roots = EntrySourceRoots {
+        stdlib_root: Some(stdlib_root),
+        user_roots: vec![source_root.clone()],
+    };
+    common::block_on_gpu_with_timeout(
+        "GPU type check source-root module precedence over stdlib fallback",
+        async move { type_check_entry_with_source_roots(entry_path, &roots).await },
+    )
+    .expect("user source-root module should shadow the stdlib fallback during type checking");
+
+    std::fs::remove_dir_all(&source_root).expect("remove temp user/std shadow source root");
+}
+
+#[test]
+fn source_root_stdlib_nested_import_stays_inside_stdlib_boundary() {
+    let root = common::temp_artifact_path("laniusc_source_root", "stdlib_nested_boundary", None);
+    let source_root = root.join("src");
+    let stdlib_root = root.join("stdlib");
+    let app_root = source_root.join("app");
+    let user_core_root = source_root.join("core");
+    let stdlib_core_root = stdlib_root.join("core");
+    let stdlib_std_root = stdlib_root.join("std");
+    std::fs::create_dir_all(&app_root).expect("create temp app source root");
+    std::fs::create_dir_all(&user_core_root).expect("create temp user core root");
+    std::fs::create_dir_all(&stdlib_core_root).expect("create temp stdlib core root");
+    std::fs::create_dir_all(&stdlib_std_root).expect("create temp stdlib std root");
+
+    let user_shared_path = user_core_root.join("shared.lani");
+    let stdlib_shared_path = stdlib_core_root.join("shared.lani");
+    let shim_path = stdlib_std_root.join("shim.lani");
+    let entry_path = app_root.join("main.lani");
+    std::fs::write(
+        &user_shared_path,
+        r#"
+module core::shared;
+
+pub fn value() -> bool {
+    return false;
+}
+"#,
+    )
+    .expect("write user core::shared module");
+    std::fs::write(
+        &stdlib_shared_path,
+        r#"
+module core::shared;
+
+pub fn value() -> i32 {
+    return 7;
+}
+"#,
+    )
+    .expect("write stdlib core::shared module");
+    std::fs::write(
+        &shim_path,
+        r#"
+module std::shim;
+
+import core::shared;
+
+pub fn forwarded() -> i32 {
+    return core::shared::value();
+}
+"#,
+    )
+    .expect("write stdlib shim module");
+    std::fs::write(
+        &entry_path,
+        r#"
+module app::main;
+
+import std::shim;
+
+fn main() {
+    let value: i32 = std::shim::forwarded();
+    return value;
+}
+"#,
+    )
+    .expect("write entry module");
+
+    let manifest = load_entry_path_manifest_with_source_root_and_stdlib(
+        &entry_path,
+        &source_root,
+        &stdlib_root,
+    )
+    .expect("source-root path manifest should keep stdlib nested imports inside stdlib");
+    assert_eq!(manifest.files.len(), 3);
+    assert!(
+        manifest
+            .files
+            .iter()
+            .any(|file| file.library_id == 1 && file.path == entry_path)
+    );
+    assert!(
+        manifest
+            .files
+            .iter()
+            .any(|file| file.library_id == 0 && file.path == shim_path)
+    );
+    assert!(
+        manifest
+            .files
+            .iter()
+            .any(|file| file.library_id == 0 && file.path == stdlib_shared_path),
+        "stdlib shim's nested core::shared import should resolve inside the stdlib root"
+    );
+    assert!(
+        !manifest
+            .files
+            .iter()
+            .any(|file| file.path == user_shared_path),
+        "stdlib nested imports must not cross back into the user source root"
+    );
+
+    let roots = EntrySourceRoots {
+        stdlib_root: Some(stdlib_root.clone()),
+        user_roots: vec![source_root.clone()],
+    };
+    common::block_on_gpu_with_timeout("GPU type check stdlib nested import boundary", async move {
+        type_check_entry_with_source_roots(entry_path, &roots).await
+    })
+    .expect("stdlib nested import should type check against the stdlib candidate");
+
+    std::fs::remove_dir_all(&root).expect("remove temp stdlib nested boundary root");
+}
+
+#[test]
 fn source_root_user_module_can_import_stdlib_dependency() {
     let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
     let source_root =
@@ -990,6 +1235,86 @@ fn main() {
     .expect("source-root user module stdlib dependency should type check");
 
     std::fs::remove_dir_all(&source_root).expect("remove temp source-root stdlib dependency dir");
+}
+
+#[test]
+fn source_root_user_module_can_import_user_dependency() {
+    let source_root =
+        common::temp_artifact_path("laniusc_source_root", "user_module_user_dependency", None);
+    let app_root = source_root.join("app");
+    std::fs::create_dir_all(&app_root).expect("create temp app source root");
+    let leaf_path = app_root.join("leaf.lani");
+    let gate_path = app_root.join("gate.lani");
+    let entry_path = app_root.join("main.lani");
+    std::fs::write(
+        &leaf_path,
+        r#"
+module app::leaf;
+
+pub fn value() -> i32 {
+    return 7;
+}
+"#,
+    )
+    .expect("write transitive leaf module");
+    std::fs::write(
+        &gate_path,
+        r#"
+module app::gate;
+
+import app::leaf;
+
+pub fn forwarded() -> i32 {
+    return app::leaf::value();
+}
+"#,
+    )
+    .expect("write helper module with user dependency");
+    std::fs::write(
+        &entry_path,
+        r#"
+module app::main;
+
+import app::gate;
+
+fn main() {
+    let value: i32 = app::gate::forwarded();
+    return value;
+}
+"#,
+    )
+    .expect("write entry module");
+
+    let manifest = load_entry_path_manifest_with_source_root(&entry_path, &source_root)
+        .expect("source-root path manifest should load transitive user imports");
+    assert_eq!(manifest.files.len(), 3);
+    assert!(
+        manifest
+            .files
+            .iter()
+            .any(|file| file.library_id == 1 && file.path == entry_path)
+    );
+    assert!(
+        manifest
+            .files
+            .iter()
+            .any(|file| file.library_id == 1 && file.path == gate_path)
+    );
+    assert!(
+        manifest
+            .files
+            .iter()
+            .any(|file| file.library_id == 1 && file.path == leaf_path),
+        "path manifest should include app::leaf imported by the source-root helper"
+    );
+
+    common::block_on_gpu_with_timeout(
+        "GPU type check source-root user module with user dependency",
+        type_check_entry_with_source_root(entry_path.clone(), source_root.clone()),
+    )
+    .expect("source-root user module dependency should type check");
+
+    std::fs::remove_dir_all(&source_root).expect("remove temp source-root user dependency dir");
 }
 
 #[test]
@@ -1369,6 +1694,7 @@ fn main() {
 fn type_checker_accepts_core_stdlib_module_calls() {
     let cases = [
         (
+            "core::bool",
             &[include_str!("../stdlib/core/bool.lani")][..],
             r#"
 module app::main;
@@ -1390,6 +1716,7 @@ fn main() {
 "#,
         ),
         (
+            "core::i32",
             &[include_str!("../stdlib/core/i32.lani")][..],
             r#"
 module app::main;
@@ -1409,6 +1736,7 @@ fn main() {
 "#,
         ),
         (
+            "core::char+u32",
             &[
                 include_str!("../stdlib/core/char.lani"),
                 include_str!("../stdlib/core/u32.lani"),
@@ -1432,6 +1760,7 @@ fn main() {
 "#,
         ),
         (
+            "core::u8+i64",
             &[
                 include_str!("../stdlib/core/u8.lani"),
                 include_str!("../stdlib/core/i64.lani"),
@@ -1455,6 +1784,7 @@ fn main() {
 "#,
         ),
         (
+            "core::f32",
             &[include_str!("../stdlib/core/f32.lani")][..],
             r#"
 module app::main;
@@ -1482,8 +1812,14 @@ fn main() {
         ),
     ];
 
-    for (sources, app_source) in cases {
-        assert_source_pack_case_accepts(sources, app_source);
+    for (label, sources, app_source) in cases {
+        let mut sources = sources.to_vec();
+        if !app_source.is_empty() {
+            sources.push(app_source);
+        }
+        common::type_check_source_pack_with_timeout(&sources).unwrap_or_else(|err| {
+            panic!("{label} source pack should pass GPU type checking: {err:?}")
+        });
     }
 }
 
@@ -1676,6 +2012,7 @@ fn main() {
 #[test]
 fn type_checker_accepts_qualified_generic_enum_instance_returns() {
     assert_gpu_type_check_pack_accepts(&[
+        include_str!("../stdlib/core/result.lani"),
         include_str!("../stdlib/core/option.lani"),
         r#"
 module app::main;
@@ -1694,6 +2031,7 @@ fn main() {
 #[test]
 fn type_checker_rejects_qualified_generic_option_and_result_call_mismatches() {
     assert_gpu_type_check_pack_rejects(&[
+        include_str!("../stdlib/core/result.lani"),
         include_str!("../stdlib/core/option.lani"),
         r#"
 module app::main;
@@ -1720,6 +2058,7 @@ fn main() {
 "#,
     ]);
     assert_gpu_type_check_pack_rejects(&[
+        include_str!("../stdlib/core/result.lani"),
         include_str!("../stdlib/core/option.lani"),
         r#"
 module app::main;
@@ -1832,6 +2171,9 @@ pub fn identity(value: bool) -> bool {
         r#"
 module app::main;
 
+import core::id;
+import other::id;
+
 fn main() {
     let number: i32 = core::id::identity(7);
     let flag: bool = core::id::identity(false);
@@ -1848,6 +2190,7 @@ fn main() {
 #[test]
 fn rejects_non_constructor_symbolic_enum_returns() {
     assert_gpu_type_check_pack_rejects(&[
+        include_str!("../stdlib/core/result.lani"),
         include_str!("../stdlib/core/option.lani"),
         r#"
 module app::main;
@@ -2016,6 +2359,8 @@ pub fn one() -> i32 {
 "#,
         r#"
 module app::main;
+
+import core::math;
 
 fn main() {
     return core::math::one();
@@ -2269,6 +2614,8 @@ pub impl Eq<i32> for i32 {
 "#,
         r#"
 module app;
+
+import core::cmp;
 
 fn keep<T>(value: T) -> T where T: core::cmp::Eq<T> {
     return value;
@@ -2563,6 +2910,68 @@ fn main() {
 }
 "#,
     ]);
+    assert_gpu_type_check_pack_accepts(&[
+        r#"
+module core::private_math;
+
+fn choose() -> bool {
+    return false;
+}
+"#,
+        r#"
+module core::public_math;
+
+pub fn choose() -> i32 {
+    return 7;
+}
+"#,
+        r#"
+module app::main;
+
+import core::private_math;
+import core::public_math;
+
+fn main() {
+    let value: i32 = choose();
+    return value;
+}
+"#,
+    ]);
+}
+
+#[test]
+fn type_checker_resolves_public_type_import_despite_private_imported_name_collision() {
+    assert_gpu_type_check_pack_accepts(&[
+        r#"
+module core::private_types;
+
+struct Token {
+    hidden: bool,
+}
+"#,
+        r#"
+module core::public_types;
+
+pub struct Token {
+    value: i32,
+}
+"#,
+        r#"
+module app::main;
+
+import core::private_types;
+import core::public_types;
+
+fn take(value: Token) -> i32 {
+    return value.value;
+}
+
+fn main() {
+    let item: Token = Token { value: 9 };
+    return take(item);
+}
+"#,
+    ]);
 }
 
 #[test]
@@ -2727,6 +3136,104 @@ module app::main;
 
 import core::right;
 import core::left;
+
+fn main() {
+    let value: i32 = VALUE;
+    return value;
+}
+"#,
+    ]);
+}
+
+#[test]
+fn type_checker_keeps_imported_type_and_value_namespaces_separate() {
+    assert_gpu_type_check_pack_accepts(&[
+        r#"
+module core::types;
+
+pub struct Shared {
+    value: i32,
+}
+"#,
+        r#"
+module core::values;
+
+pub const Shared: i32 = 7;
+"#,
+        r#"
+module app::main;
+
+import core::types;
+import core::values;
+
+fn take(value: Shared) -> i32 {
+    return value.value;
+}
+
+fn main() {
+    let item: Shared = Shared { value: Shared };
+    return take(item);
+}
+"#,
+    ]);
+}
+
+#[test]
+fn type_checker_prefers_local_declarations_over_imported_names() {
+    assert_gpu_type_check_pack_accepts(&[
+        r#"
+module core::shadowed;
+
+pub struct Item {
+    flag: bool,
+}
+
+pub const VALUE: bool = false;
+"#,
+        r#"
+module app::main;
+
+import core::shadowed;
+
+struct Item {
+    value: i32,
+}
+
+const VALUE: i32 = 7;
+
+fn take(item: Item) -> i32 {
+    return item.value;
+}
+
+fn main() {
+    let item: Item = Item { value: VALUE };
+    return take(item);
+}
+"#,
+    ]);
+}
+
+#[test]
+fn type_checker_does_not_make_imported_names_transitively_visible() {
+    assert_gpu_type_check_pack_rejects(&[
+        r#"
+module core::leaf;
+
+pub const VALUE: i32 = 7;
+"#,
+        r#"
+module core::mid;
+
+import core::leaf;
+
+pub fn forwarded() -> i32 {
+    return core::leaf::VALUE;
+}
+"#,
+        r#"
+module app::main;
+
+import core::mid;
 
 fn main() {
     let value: i32 = VALUE;

@@ -74,6 +74,7 @@ pub(super) fn read_wasm_output(
         if error_code != 0 {
             let error_name = match error_code {
                 2 => "unsupported for loop",
+                3 => "legacy WASM body HIR-node budget",
                 830 => "legacy array-helper body token budget",
                 831 => "legacy array-helper body HIR-node budget",
                 800..=899 => "unsupported legacy array-helper body shape",

@@ -16,7 +16,16 @@ struct Params
     uint n_hir_nodes;
 };
 
+struct ObligationParams
+{
+    uint stage;
+    uint reserved0;
+    uint reserved1;
+    uint reserved2;
+};
+
 ConstantBuffer<Params> gParams;
+ConstantBuffer<ObligationParams> gObligations;
 
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> node_kind;
@@ -55,6 +64,9 @@ StructuredBuffer<uint> predicate_bound_second_arg_token;
 StructuredBuffer<uint> predicate_status;
 StructuredBuffer<uint> predicate_owner_key_order;
 StructuredBuffer<uint> predicate_impl_key_order;
+RWStructuredBuffer<uint> predicate_obligation_count_by_call;
+StructuredBuffer<uint> predicate_obligation_prefix_by_call;
+StructuredBuffer<uint> predicate_obligation_pair_total;
 
 RWStructuredBuffer<uint> status;
 
@@ -121,14 +133,35 @@ static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint GENERIC_PARAM_KIND_TYPE = 1u;
 
 static const uint PREDICATE_STATUS_OK = 0u;
+static const uint PREDICATE_STATUS_INVALID_SUBJECT = 1u;
+static const uint PREDICATE_STATUS_BOUND_NOT_TRAIT = 2u;
+static const uint PREDICATE_STATUS_INVALID_ARG = 4u;
+static const uint PREDICATE_STATUS_MISSING_METHOD = 6u;
+static const uint PREDICATE_STATUS_METHOD_ARITY_MISMATCH = 7u;
+static const uint PREDICATE_STATUS_METHOD_SIGNATURE_MISMATCH = 8u;
 static const uint PREDICATE_STATUS_UNSATISFIED_BOUND = 9u;
 static const uint PREDICATE_STATUS_AMBIGUOUS_BOUND = 10u;
 static const uint PREDICATE_STATUS_UNSUPPORTED_BOUND_WIDTH = 11u;
+static const uint PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE = 12u;
+static const uint PREDICATE_STATUS_BOUND_ARITY_MISMATCH = 13u;
+static const uint PREDICATE_STATUS_UNSUPPORTED_TARGET_SHAPE = 14u;
+static const uint PREDICATE_STATUS_INVALID_IMPL_ARG = 15u;
+static const uint PREDICATE_STATUS_UNSUPPORTED_METHOD_GENERIC = 16u;
+static const uint PREDICATE_STATUS_UNSUPPORTED_METHOD_WHERE = 17u;
+static const uint PREDICATE_STATUS_UNSUPPORTED_NON_CALLABLE_BOUND = 18u;
 static const uint PREDICATE_STATUS_OVERLAPPING_IMPL = 19u;
+static const uint PREDICATE_STATUS_DUPLICATE_TRAIT_METHOD = 20u;
 static const uint PREDICATE_STATUS_UNSUPPORTED_OBLIGATION_WINDOW = 21u;
 static const uint PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION = 22u;
+static const uint PREDICATE_STATUS_EXTRA_IMPL_METHOD = 23u;
+static const uint PREDICATE_STATUS_DUPLICATE_IMPL_METHOD = 24u;
+static const uint PREDICATE_STATUS_IMPL_VISIBILITY_MISMATCH = 25u;
+static const uint PREDICATE_STATUS_IMPL_METHOD_VISIBILITY_MISMATCH = 26u;
+static const uint PREDICATE_STATUS_UNSUPPORTED_METHOD_CONTRACT_WINDOW = 27u;
+static const uint PREDICATE_STATUS_UNSUPPORTED_IMPL_GENERIC_ARG = 28u;
 
-static const uint MAX_OBLIGATIONS_PER_CALL = 32u;
+static const uint OBLIGATION_STAGE_COUNT = 0u;
+static const uint OBLIGATION_STAGE_VALIDATE = 1u;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -178,7 +211,7 @@ uint resolve_expr(uint node)
     if (!valid_node(node))
         return INVALID;
     uint result = hir_expr_result_root_node[node];
-    return valid_node(result) ? result : INVALID;
+    return valid_node(result) ? result : node;
 }
 
 uint visible_type_for_token(uint token_i)
@@ -378,20 +411,41 @@ uint type_code_for_type_token(uint token)
     return visible_type_for_token(token);
 }
 
+bool exact_impl_key_type_supported(uint ty)
+{
+    return ty != TY_UNKNOWN && ty < TY_GENERIC_BASE;
+}
+
 uint active_generic_param_count()
 {
     return min(generic_param_count_out[0u], gParams.n_tokens);
 }
 
-bool generic_param_key_less(uint row, uint owner, uint name_id)
+public struct GenericParamLookupKey
+{
+    uint owner;
+    uint name_id;
+}
+
+int compare_generic_param_key(uint row, GenericParamLookupKey key)
 {
     if (row >= active_generic_param_count())
-        return false;
+        return 1;
 
-    uint row_owner = generic_param_owner_node[row];
-    if (row_owner != owner)
-        return row_owner < owner;
-    return generic_param_name_id[row] < name_id;
+    int owner_cmp = fixed_u32_lane_compare(generic_param_owner_node[row], key.owner);
+    if (owner_cmp != 0)
+        return owner_cmp;
+    return fixed_u32_lane_compare(generic_param_name_id[row], key.name_id);
+}
+
+public struct GenericParamKeyCompare : IRowQueryCompare<GenericParamLookupKey>
+{
+    public static int compare(uint row, GenericParamLookupKey key)
+    {
+        if (row >= active_generic_param_count())
+            return 1;
+        return compare_generic_param_key(generic_param_key_order[row], key);
+    }
 }
 
 bool generic_param_key_matches(uint row, uint owner, uint name_id, uint kind)
@@ -412,21 +466,10 @@ uint generic_param_row_for_name(uint decl_node, uint name_token, uint kind)
         return INVALID;
 
     uint count = active_generic_param_count();
-    uint lo = 0u;
-    uint hi = count;
-    [unroll]
-    for (uint step = 0u; step < 32u; step += 1u)
-    {
-        if (lo >= hi)
-            continue;
-        uint mid = lo + ((hi - lo) >> 1u);
-        uint row = generic_param_key_order[mid];
-        if (row >= count || !generic_param_key_less(row, decl_node, name_id))
-            hi = mid;
-        else
-            lo = mid + 1u;
-    }
-
+    GenericParamLookupKey key;
+    key.owner = decl_node;
+    key.name_id = name_id;
+    uint lo = lower_bound_query<GenericParamLookupKey, GenericParamKeyCompare>(count, key);
     if (lo >= count)
         return INVALID;
     uint row = generic_param_key_order[lo];
@@ -471,7 +514,7 @@ uint param_ref_index(uint fn_token, uint ordinal)
     return fn_token * PARAM_CACHE_STRIDE + ordinal;
 }
 
-bool param_ref_uses_generic_slot(uint fn_token, uint ordinal, uint slot)
+bool param_ref_uses_generic_slot(uint fn_node, uint fn_token, uint ordinal, uint slot)
 {
     if (!valid_token(fn_token) || ordinal >= PARAM_CACHE_STRIDE || slot == INVALID)
         return false;
@@ -482,11 +525,19 @@ bool param_ref_uses_generic_slot(uint fn_token, uint ordinal, uint slot)
     if (tag != TYPE_REF_GENERIC_PARAM || !valid_token(payload))
         return false;
 
-    return type_generic_param_slot_by_token[payload] == slot;
+    uint payload_slot = type_generic_param_slot_by_token[payload];
+    if (payload_slot == INVALID)
+        payload_slot = generic_param_slot_for_name(fn_node, payload);
+    return payload_slot == slot;
 }
 
-uint actual_type_for_generic_slot(uint call_node, uint fn_node, uint slot)
+uint actual_type_for_generic_slot_with_detail(
+    uint call_node,
+    uint fn_node,
+    uint slot,
+    out uint failure_detail)
 {
+    failure_detail = PREDICATE_STATUS_UNSUPPORTED_OBLIGATION_WINDOW;
     if (!valid_node(call_node) || !valid_node(fn_node) || slot == INVALID)
         return TY_UNKNOWN;
 
@@ -497,27 +548,57 @@ uint actual_type_for_generic_slot(uint call_node, uint fn_node, uint slot)
     if (call_param_count[fn_token] > PARAM_CACHE_STRIDE)
         return TY_UNKNOWN;
 
-    uint found = TY_UNKNOWN;
     uint count = call_param_count[fn_token];
+    if (count == 0u)
+    {
+        failure_detail = PREDICATE_STATUS_UNSUPPORTED_OBLIGATION_WINDOW;
+        return TY_UNKNOWN;
+    }
+
+    uint found = TY_UNKNOWN;
+    bool participates = false;
     [loop]
     for (uint ordinal = 0u; ordinal < PARAM_CACHE_STRIDE; ordinal += 1u)
     {
         if (ordinal >= count)
             break;
-        if (!param_ref_uses_generic_slot(fn_token, ordinal, slot))
+        if (!param_ref_uses_generic_slot(fn_node, fn_token, ordinal, slot))
             continue;
 
+        participates = true;
         uint arg_node = call_arg_node_for_ordinal(call_node, ordinal);
+        if (!valid_node(arg_node))
+        {
+            failure_detail = PREDICATE_STATUS_INVALID_ARG;
+            return TY_UNKNOWN;
+        }
+
         uint value_token = INVALID;
         uint actual = first_value_type_from_node(arg_node, value_token);
         if (actual == TY_UNKNOWN)
+        {
+            failure_detail = PREDICATE_STATUS_INVALID_ARG;
             return TY_UNKNOWN;
+        }
         if (found == TY_UNKNOWN)
             found = actual;
         else if (found != actual)
+        {
+            failure_detail = PREDICATE_STATUS_INVALID_ARG;
             return TY_UNKNOWN;
+        }
     }
+    if (found != TY_UNKNOWN)
+        failure_detail = PREDICATE_STATUS_OK;
+    else if (!participates)
+        failure_detail = PREDICATE_STATUS_INVALID_SUBJECT;
     return found;
+}
+
+uint actual_type_for_generic_slot(uint call_node, uint fn_node, uint slot)
+{
+    uint failure_detail = PREDICATE_STATUS_OK;
+    return actual_type_for_generic_slot_with_detail(call_node, fn_node, slot, failure_detail);
 }
 
 uint predicate_bound_arg_token(uint pred_node, uint ordinal)
@@ -541,6 +622,11 @@ uint predicate_arg_type_code(uint arg)
     return type_code_for_type_token(arg);
 }
 
+uint predicate_type_code(uint value)
+{
+    return predicate_arg_type_code(value);
+}
+
 uint predicate_arg_concrete_type(uint pred_node, uint fn_node, uint call_node, uint ordinal)
 {
     uint token = predicate_bound_arg_token(pred_node, ordinal);
@@ -559,9 +645,46 @@ uint predicate_arg_concrete_type(uint pred_node, uint fn_node, uint call_node, u
     if (tag == TYPE_REF_GENERIC_PARAM && valid_token(payload))
     {
         uint payload_slot = type_generic_param_slot_by_token[payload];
+        if (payload_slot == INVALID)
+            payload_slot = generic_param_slot_for_name(fn_node, payload);
         return actual_type_for_generic_slot(call_node, fn_node, payload_slot);
     }
     return type_code_for_ref(tag, payload);
+}
+
+bool impl_row_has_supported_exact_key(uint impl_node)
+{
+    if (!valid_node(impl_node) ||
+        predicate_owner_node[impl_node] != impl_node ||
+        predicate_status[impl_node] != PREDICATE_STATUS_OK)
+        return false;
+
+    if (!valid_node(predicate_bound_decl_id[impl_node]))
+        return false;
+
+    uint subject_ty = predicate_type_code(predicate_subject_token[impl_node]);
+    if (!exact_impl_key_type_supported(subject_ty))
+        return false;
+
+    uint arg_count = predicate_bound_arg_count[impl_node];
+    if (arg_count > 2u)
+        return false;
+
+    if (arg_count >= 1u)
+    {
+        uint arg0_ty = predicate_arg_type_code(predicate_bound_first_arg_token[impl_node]);
+        if (!exact_impl_key_type_supported(arg0_ty))
+            return false;
+    }
+
+    if (arg_count >= 2u)
+    {
+        uint arg1_ty = predicate_arg_type_code(predicate_bound_second_arg_token[impl_node]);
+        if (!exact_impl_key_type_supported(arg1_ty))
+            return false;
+    }
+
+    return true;
 }
 
 bool impl_row_satisfies_bound(
@@ -572,13 +695,12 @@ bool impl_row_satisfies_bound(
     uint required_arg1_ty,
     uint arg_count)
 {
-    if (!valid_node(impl_node) || predicate_owner_node[impl_node] != impl_node)
-        return false;
-    if (predicate_status[impl_node] != PREDICATE_STATUS_OK)
+    if (!impl_row_has_supported_exact_key(impl_node))
         return false;
     if (bound_decl_id == INVALID || predicate_bound_decl_id[impl_node] != bound_decl_id)
         return false;
-    if (type_code_for_type_token(predicate_subject_token[impl_node]) != subject_ty)
+    uint impl_subject_ty = predicate_type_code(predicate_subject_token[impl_node]);
+    if (impl_subject_ty != subject_ty)
         return false;
     if (predicate_bound_arg_count[impl_node] != arg_count)
         return false;
@@ -669,7 +791,7 @@ public struct ImplFixedKey : IFixedU32RowKey<ImplLookupKey>
             return fixed_key_encode_nullable_u32(predicate_bound_decl_id[pred], INVALID);
         if (lane == 1u)
             return fixed_key_encode_nullable_u32(
-                type_code_for_type_token(predicate_subject_token[pred]),
+                predicate_type_code(predicate_subject_token[pred]),
                 TY_UNKNOWN);
         if (lane == 2u)
             return predicate_bound_arg_count[pred] + 1u;
@@ -716,6 +838,12 @@ uint concrete_impl_match_count_for_bound(
 {
     if (bound_decl_id >= active_hir_node_count())
         return 0u;
+    if (!exact_impl_key_type_supported(subject_ty))
+        return 0u;
+    if (arg_count >= 1u && !exact_impl_key_type_supported(required_arg0_ty))
+        return 0u;
+    if (arg_count >= 2u && !exact_impl_key_type_supported(required_arg1_ty))
+        return 0u;
 
     ImplLookupKey key;
     key.bound_decl_id = bound_decl_id;
@@ -759,13 +887,16 @@ void validate_unique_impl_key(uint impl_node)
         predicate_status[impl_node] != PREDICATE_STATUS_OK)
         return;
 
-    uint subject_ty = type_code_for_type_token(predicate_subject_token[impl_node]);
-    if (subject_ty == TY_UNKNOWN)
+    if (!impl_row_has_supported_exact_key(impl_node))
+    {
+        uint token_i = valid_token(hir_token_pos[impl_node]) ? hir_token_pos[impl_node] : 0u;
+        record_error(token_i, ERR_BAD_HIR, PREDICATE_STATUS_INVALID_IMPL_ARG);
         return;
+    }
+
+    uint subject_ty = predicate_type_code(predicate_subject_token[impl_node]);
 
     uint arg_count = predicate_bound_arg_count[impl_node];
-    if (arg_count > 2u)
-        return;
 
     ImplLookupKey key;
     key.bound_decl_id = predicate_bound_decl_id[impl_node];
@@ -807,14 +938,80 @@ void validate_unique_impl_key(uint impl_node)
 void validate_predicate_fail_closed_status(uint node)
 {
     uint status_value = predicate_status[node];
-    if (status_value != PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION)
+    uint kind = node_kind[node];
+    bool trait_contract_node =
+        kind == PROD_IMPL_TRAIT ||
+        kind == PROD_IMPL_INHERENT ||
+        kind == PROD_IMPL_FN ||
+        kind == PROD_TRAIT_METHOD ||
+        kind == PROD_TRAIT_METHOD_PUB;
+
+    bool trait_bound_status =
+        status_value == PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION ||
+        status_value == PREDICATE_STATUS_UNSUPPORTED_BOUND_WIDTH ||
+        status_value == PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE ||
+        status_value == PREDICATE_STATUS_INVALID_ARG ||
+        (!trait_contract_node &&
+         (status_value == PREDICATE_STATUS_INVALID_SUBJECT ||
+          status_value == PREDICATE_STATUS_BOUND_NOT_TRAIT ||
+          status_value == PREDICATE_STATUS_BOUND_ARITY_MISMATCH ||
+          status_value == PREDICATE_STATUS_UNSUPPORTED_NON_CALLABLE_BOUND));
+    if (trait_bound_status)
+    {
+        uint token_i = hir_token_pos[node];
+        if (status_value == PREDICATE_STATUS_INVALID_SUBJECT &&
+            valid_token(predicate_subject_token[node]))
+            token_i = predicate_subject_token[node];
+        if ((status_value == PREDICATE_STATUS_INVALID_ARG ||
+             status_value == PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE ||
+             status_value == PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION) &&
+            (valid_token(predicate_bound_first_arg_token[node]) ||
+             valid_token(predicate_bound_second_arg_token[node])))
+            token_i = valid_token(predicate_bound_second_arg_token[node])
+                ? predicate_bound_second_arg_token[node]
+                : predicate_bound_first_arg_token[node];
+        record_error(
+            valid_token(token_i) ? token_i : 0u,
+            ERR_TRAIT_BOUND_UNSATISFIED,
+            status_value);
+        return;
+    }
+
+    if (!trait_contract_node)
         return;
 
-    uint token_i = hir_token_pos[node];
-    record_error(
-        valid_token(token_i) ? token_i : 0u,
-        ERR_TRAIT_BOUND_UNSATISFIED,
-        status_value);
+    bool trait_contract_status =
+        status_value == PREDICATE_STATUS_BOUND_NOT_TRAIT ||
+        status_value == PREDICATE_STATUS_UNSUPPORTED_BOUND_WIDTH ||
+        status_value == PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE ||
+        status_value == PREDICATE_STATUS_MISSING_METHOD ||
+        status_value == PREDICATE_STATUS_METHOD_ARITY_MISMATCH ||
+        status_value == PREDICATE_STATUS_METHOD_SIGNATURE_MISMATCH ||
+        status_value == PREDICATE_STATUS_BOUND_ARITY_MISMATCH ||
+        status_value == PREDICATE_STATUS_UNSUPPORTED_TARGET_SHAPE ||
+        status_value == PREDICATE_STATUS_INVALID_IMPL_ARG ||
+        status_value == PREDICATE_STATUS_UNSUPPORTED_METHOD_GENERIC ||
+        status_value == PREDICATE_STATUS_UNSUPPORTED_METHOD_WHERE ||
+        status_value == PREDICATE_STATUS_DUPLICATE_TRAIT_METHOD ||
+        status_value == PREDICATE_STATUS_EXTRA_IMPL_METHOD ||
+        status_value == PREDICATE_STATUS_DUPLICATE_IMPL_METHOD ||
+        status_value == PREDICATE_STATUS_IMPL_VISIBILITY_MISMATCH ||
+        status_value == PREDICATE_STATUS_IMPL_METHOD_VISIBILITY_MISMATCH ||
+        status_value == PREDICATE_STATUS_UNSUPPORTED_METHOD_CONTRACT_WINDOW ||
+        status_value == PREDICATE_STATUS_UNSUPPORTED_IMPL_GENERIC_ARG;
+    if (!trait_contract_status)
+        return;
+
+    uint token_i = predicate_bound_first_arg_token[node];
+    bool trait_impl_arg_status =
+        status_value == PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE ||
+        status_value == PREDICATE_STATUS_INVALID_IMPL_ARG ||
+        status_value == PREDICATE_STATUS_UNSUPPORTED_IMPL_GENERIC_ARG;
+    if (trait_impl_arg_status && valid_token(predicate_bound_second_arg_token[node]))
+        token_i = predicate_bound_second_arg_token[node];
+    if (!valid_token(token_i))
+        token_i = hir_token_pos[node];
+    record_error(valid_token(token_i) ? token_i : 0u, ERR_BAD_HIR, status_value);
 }
 
 void validate_trait_obligation_for_call(uint pred, uint fn_node, uint node)
@@ -835,10 +1032,26 @@ void validate_trait_obligation_for_call(uint pred, uint fn_node, uint node)
 
     uint subject_token = predicate_subject_token[pred];
     uint subject_slot = generic_param_slot_for_name(fn_node, subject_token);
-    uint subject_ty = actual_type_for_generic_slot(node, fn_node, subject_slot);
+    if (subject_slot == INVALID)
+    {
+        record_error(callee_token, ERR_TRAIT_BOUND_UNSATISFIED, PREDICATE_STATUS_INVALID_SUBJECT);
+        return;
+    }
+
+    uint subject_failure_detail = PREDICATE_STATUS_OK;
+    uint subject_ty = actual_type_for_generic_slot_with_detail(
+        node,
+        fn_node,
+        subject_slot,
+        subject_failure_detail);
     if (subject_ty == TY_UNKNOWN)
     {
-        record_error(callee_token, ERR_TRAIT_BOUND_UNSATISFIED, PREDICATE_STATUS_UNSATISFIED_BOUND);
+        record_error(
+            callee_token,
+            ERR_TRAIT_BOUND_UNSATISFIED,
+            subject_failure_detail == PREDICATE_STATUS_OK
+                ? PREDICATE_STATUS_UNSUPPORTED_OBLIGATION_WINDOW
+                : subject_failure_detail);
         return;
     }
 
@@ -862,7 +1075,7 @@ void validate_trait_obligation_for_call(uint pred, uint fn_node, uint node)
             record_error(
                 callee_token,
                 ERR_TRAIT_BOUND_UNSATISFIED,
-                PREDICATE_STATUS_UNSATISFIED_BOUND);
+                PREDICATE_STATUS_INVALID_ARG);
             return;
         }
     }
@@ -874,7 +1087,7 @@ void validate_trait_obligation_for_call(uint pred, uint fn_node, uint node)
             record_error(
                 callee_token,
                 ERR_TRAIT_BOUND_UNSATISFIED,
-                PREDICATE_STATUS_UNSATISFIED_BOUND);
+                PREDICATE_STATUS_INVALID_ARG);
             return;
         }
     }
@@ -961,7 +1174,7 @@ bool owner_lookup_range_matches_key(QueryRange range, uint owner_token)
            owner_lookup_row_matches_key(range.end - 1u, owner_token);
 }
 
-void validate_call_predicate_obligations(uint call_node)
+void count_call_predicate_obligations(uint call_node)
 {
     if (!valid_node(call_node) || hir_kind[call_node] != HIR_CALL_EXPR)
         return;
@@ -997,44 +1210,118 @@ void validate_call_predicate_obligations(uint call_node)
         return;
     }
 
-    uint obligation_count = range.end - range.begin;
-    if (obligation_count > MAX_OBLIGATIONS_PER_CALL)
+    predicate_obligation_count_by_call[call_node] = range.end - range.begin;
+}
+
+public struct ObligationPairLookupKey
+{
+    uint pair_row;
+}
+
+uint call_obligation_end(uint call_node)
+{
+    if (!valid_node(call_node))
+        return 0u;
+
+    uint prefix = predicate_obligation_prefix_by_call[call_node];
+    uint count = predicate_obligation_count_by_call[call_node];
+    return prefix > 0xffffffffu - count ? 0xffffffffu : prefix + count;
+}
+
+public struct ObligationPairEndCompare : IRowQueryCompare<ObligationPairLookupKey>
+{
+    public static int compare(uint row, ObligationPairLookupKey key)
+    {
+        if (row >= active_hir_node_count())
+            return 1;
+        return fixed_u32_lane_compare(call_obligation_end(row), key.pair_row);
+    }
+}
+
+uint call_node_for_obligation_pair(uint pair_row)
+{
+    ObligationPairLookupKey key;
+    key.pair_row = pair_row;
+    uint row = upper_bound_query<ObligationPairLookupKey, ObligationPairEndCompare>(
+        active_hir_node_count(),
+        key);
+    return valid_node(row) ? row : INVALID;
+}
+
+void validate_call_predicate_obligation_pair(uint pair_row)
+{
+    if (pair_row >= predicate_obligation_pair_total[0u])
+        return;
+
+    uint call_node = call_node_for_obligation_pair(pair_row);
+    if (!valid_node(call_node))
+        return;
+
+    uint count = predicate_obligation_count_by_call[call_node];
+    if (count == 0u)
+        return;
+
+    uint prefix = predicate_obligation_prefix_by_call[call_node];
+    if (pair_row < prefix)
+        return;
+
+    uint offset = pair_row - prefix;
+    if (offset >= count)
+        return;
+
+    uint callee_token = call_callee_token(call_node);
+    if (!valid_token(callee_token))
+        return;
+
+    uint fn_token = call_fn_index[callee_token];
+    if (!valid_token(fn_token))
+        return;
+
+    OwnerLookupKey key;
+    key.owner_token = fn_token;
+    QueryRange range = equal_range_query<OwnerLookupKey, OwnerKeyCompare>(
+        active_hir_node_count(),
+        key);
+    if (!owner_lookup_range_matches_key(range, fn_token))
     {
         record_error(
             callee_token,
-            ERR_TRAIT_BOUND_UNSATISFIED,
-            PREDICATE_STATUS_UNSUPPORTED_OBLIGATION_WINDOW);
+            ERR_TRAIT_BOUND_AMBIGUOUS,
+            PREDICATE_STATUS_AMBIGUOUS_BOUND);
         return;
     }
 
-    [loop]
-    for (uint offset = 0u; offset < MAX_OBLIGATIONS_PER_CALL; offset += 1u)
-    {
-        if (offset >= obligation_count)
-            break;
+    if (offset >= range.end - range.begin)
+        return;
 
-        uint row = range.begin + offset;
-        uint pred = predicate_owner_key_order[row];
-        if (predicate_status[pred] != PREDICATE_STATUS_OK)
-            continue;
+    uint pred = predicate_owner_key_order[range.begin + offset];
+    if (!valid_node(pred) || predicate_status[pred] != PREDICATE_STATUS_OK)
+        return;
 
-        uint fn_node = predicate_owner_node[pred];
-        if (!valid_node(fn_node))
-            continue;
+    uint fn_node = predicate_owner_node[pred];
+    if (!valid_node(fn_node))
+        return;
 
-        validate_trait_obligation_for_call(pred, fn_node, call_node);
-    }
+    validate_trait_obligation_for_call(pred, fn_node, call_node);
 }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = linear_thread_id(dtid);
+    uint row = linear_thread_id(dtid);
+    if (gObligations.stage == OBLIGATION_STAGE_VALIDATE)
+    {
+        validate_call_predicate_obligation_pair(row);
+        return;
+    }
+
+    uint node = row;
     if (!valid_node(node))
         return;
 
+    predicate_obligation_count_by_call[node] = 0u;
     validate_predicate_fail_closed_status(node);
     validate_unique_impl_key(node);
-    validate_call_predicate_obligations(node);
+    count_call_predicate_obligations(node);
 }

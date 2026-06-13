@@ -128,6 +128,33 @@ fn main() {
 }
 
 #[test]
+fn type_checker_rejects_inherent_method_level_generics_on_gpu() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+struct Boxed {
+    value: i32,
+}
+
+impl Boxed {
+    fn wrap<T>(value: T) -> T {
+        return value;
+    }
+}
+
+fn main() {
+    return 0;
+}
+"#,
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "fn wrap<T>(value: T) -> T {",
+            "trait method-level generics are outside the current GPU trait contract records",
+        ],
+    );
+}
+
+#[test]
 fn type_checker_rejects_trait_impls_whose_trait_does_not_resolve_on_gpu() {
     assert_gpu_type_check_diagnostic(
         r#"
@@ -149,12 +176,12 @@ fn main() {
     return 0;
 }
 "#,
-        "LNC0007",
+        "LNC0021",
         &[
-            "error[LNC0007]: unknown type",
+            "error[LNC0021]: invalid trait implementation",
             "impl Eq<Target> for Target {",
-            "type not found",
-            "declare the type before using it or import its defining module",
+            "trait impl header does not resolve to a trait",
+            "name a trait in the impl header before providing trait methods",
         ],
     );
 }
@@ -278,14 +305,9 @@ fn type_checker_rejects_trait_impl_methods_not_declared_by_trait_on_gpu() {
     assert_gpu_type_check_diagnostic(
         r#"
 trait Measure<T> {
-    fn read(value: T) -> i32;
 }
 
 impl Measure<i32> for i32 {
-    fn read(value: i32) -> i32 {
-        return value;
-    }
-
     fn reset(value: i32) -> i32 {
         return 0;
     }
@@ -298,8 +320,64 @@ fn main() {
         "LNC0021",
         &[
             "error[LNC0021]: invalid trait implementation",
-            "impl Measure<i32> for i32 {",
-            "trait impl method signature does not match the trait declaration",
+            "fn reset(value: i32) -> i32 {",
+            "trait impl declares a method not required by the trait",
+            "remove extra impl methods or declare the method in the resolved trait contract",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_reports_malformed_extra_impl_method_contract_status_on_gpu() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+trait Marker {
+}
+
+impl Marker for i32 {
+    fn make<T>(value: T) -> T {
+        return value;
+    }
+}
+
+fn main() {
+    return 0;
+}
+"#,
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "fn make<T>(value: T) -> T {",
+            "trait method-level generics are outside the current GPU trait contract records",
+            "move the generic parameter to the trait or impl receiver type",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_rejects_required_trait_impl_method_level_generics_on_gpu() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+trait Factory<T> {
+    fn make(value: T) -> T;
+}
+
+impl Factory<i32> for i32 {
+    fn make<U>(value: i32) -> i32 {
+        return value;
+    }
+}
+
+fn main() {
+    return 0;
+}
+"#,
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "fn make<U>(value: i32) -> i32 {",
+            "trait method-level generics are outside the current GPU trait contract records",
+            "move the generic parameter to the trait or impl receiver type",
         ],
     );
 }
@@ -368,8 +446,9 @@ fn main() {
 "#,
     ]);
 
-    assert_gpu_type_check_pack_rejects(&[
-        r#"
+    assert_gpu_type_check_pack_diagnostic(
+        &[
+            r#"
 module core::describe;
 
 pub trait Describe<T> {
@@ -382,7 +461,7 @@ pub impl Describe<i32> for i32 {
     }
 }
 "#,
-        r#"
+            r#"
 module app;
 
 import core::describe;
@@ -396,7 +475,15 @@ fn main() {
     return value;
 }
 "#,
-    ]);
+        ],
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "fn describe(value: i32) -> i32 {",
+            "trait impl method visibility does not match the trait declaration",
+            "match each impl method's visibility to the resolved trait method contract",
+        ],
+    );
 }
 
 #[test]
@@ -463,21 +550,23 @@ fn main() {
 }
 
 #[test]
-fn type_checker_rejects_public_impl_header_for_private_trait_contract_on_gpu() {
-    assert_gpu_type_check_pack_ok(&[r#"
-module core::secret;
+fn type_checker_rejects_private_impl_header_for_public_marker_trait_on_gpu() {
+    assert_gpu_type_check_pack_ok(&[
+        r#"
+module core::marker;
 
-trait Hidden<T> {
-    fn hide(value: T) -> T;
+pub trait Marker<T> {
 }
 
-impl Hidden<i32> for i32 {
-    fn hide(value: i32) -> i32 {
-        return value;
-    }
+pub impl Marker<i32> for i32 {
 }
+"#,
+        r#"
+module app;
 
-fn keep<T>(value: T) -> T where T: Hidden<T> {
+import core::marker;
+
+fn keep<T>(value: T) -> T where T: Marker<T> {
     return value;
 }
 
@@ -485,25 +574,73 @@ fn main() {
     let value: i32 = keep(1);
     return value;
 }
-"#]);
+"#,
+    ]);
 
-    assert_gpu_type_check_pack_rejects(&[r#"
+    assert_gpu_type_check_pack_rejects(&[
+        r#"
+module core::marker;
+
+pub trait Marker<T> {
+}
+
+impl Marker<i32> for i32 {
+}
+"#,
+        r#"
+module app;
+
+import core::marker;
+
+fn keep<T>(value: T) -> T where T: Marker<T> {
+    return value;
+}
+
+fn main() {
+    let value: i32 = keep(1);
+    return value;
+}
+"#,
+    ]);
+}
+
+#[test]
+fn type_checker_rejects_public_impl_header_for_private_trait_contract_on_gpu() {
+    assert_gpu_type_check_pack_ok(&[r#"
 module core::secret;
 
 trait Hidden<T> {
-    fn hide(value: T) -> T;
 }
 
-pub impl Hidden<i32> for i32 {
-    fn hide(value: i32) -> i32 {
-        return value;
-    }
+impl Hidden<i32> for i32 {
 }
 
 fn main() {
     return 0;
 }
 "#]);
+
+    assert_gpu_type_check_pack_diagnostic(
+        &[r#"
+module core::secret;
+
+trait Hidden<T> {
+}
+
+pub impl Hidden<i32> for i32 {
+}
+
+fn main() {
+    return 0;
+}
+"#],
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "trait impl visibility does not match the resolved trait contract",
+            "public trait impls and public traits must agree",
+        ],
+    );
 }
 
 #[test]
@@ -662,7 +799,7 @@ fn main() {
 }
 
 #[test]
-fn type_checker_rejects_trait_impl_method_sets_beyond_gpu_record_window() {
+fn type_checker_accepts_trait_impl_method_sets_beyond_old_record_window() {
     let trait_methods = (0..33)
         .map(|i| format!("    fn method_{i}(value: T) -> T;"))
         .collect::<Vec<_>>()
@@ -693,7 +830,207 @@ fn main() {{
 "#
     );
 
-    assert_gpu_type_check_rejects(&src);
+    assert_gpu_type_check_ok(&src);
+}
+
+#[test]
+fn type_checker_reports_missing_trait_impl_method_beyond_old_record_window() {
+    let trait_methods = (0..33)
+        .map(|i| format!("    fn method_{i}(value: T) -> T;"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let impl_methods = (0..32)
+        .map(|i| {
+            format!(
+                r#"    fn method_{i}(value: i32) -> i32 {{
+        return value;
+    }}"#
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    let src = format!(
+        r#"
+trait Wide<T> {{
+{trait_methods}
+}}
+
+impl Wide<i32> for i32 {{
+{impl_methods}
+}}
+
+fn main() {{
+    return 0;
+}}
+"#
+    );
+
+    assert_gpu_type_check_diagnostic(
+        &src,
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "impl Wide<i32> for i32 {",
+            "trait impl is missing a required method",
+            "implement every method declared by the resolved trait",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_reports_extra_trait_impl_method_beyond_old_record_window() {
+    let trait_methods = (0..33)
+        .map(|i| format!("    fn method_{i}(value: T) -> T;"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let impl_methods = (0..33)
+        .map(|i| {
+            format!(
+                r#"    fn method_{i}(value: i32) -> i32 {{
+        return value;
+    }}"#
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    let src = format!(
+        r#"
+trait Wide<T> {{
+{trait_methods}
+}}
+
+impl Wide<i32> for i32 {{
+{impl_methods}
+
+    fn extra_method(value: i32) -> i32 {{
+        return value;
+    }}
+}}
+
+fn main() {{
+    return 0;
+}}
+"#
+    );
+
+    assert_gpu_type_check_diagnostic(
+        &src,
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "fn extra_method(value: i32) -> i32 {",
+            "trait impl declares a method not required by the trait",
+            "remove extra impl methods or declare the method in the resolved trait contract",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_reports_trait_impl_arity_mismatch_beyond_old_record_window() {
+    let trait_methods = (0..33)
+        .map(|i| format!("    fn method_{i}(value: T) -> T;"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let impl_methods = (0..33)
+        .map(|i| {
+            if i == 32 {
+                format!(
+                    r#"    fn method_{i}(value: i32, extra: i32) -> i32 {{
+        return value + extra;
+    }}"#
+                )
+            } else {
+                format!(
+                    r#"    fn method_{i}(value: i32) -> i32 {{
+        return value;
+    }}"#
+                )
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    let src = format!(
+        r#"
+trait Wide<T> {{
+{trait_methods}
+}}
+
+impl Wide<i32> for i32 {{
+{impl_methods}
+}}
+
+fn main() {{
+    return 0;
+}}
+"#
+    );
+
+    assert_gpu_type_check_diagnostic(
+        &src,
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "impl Wide<i32> for i32 {",
+            "trait impl method has the wrong number of parameters",
+            "match each implemented method's parameter list to the trait declaration",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_reports_late_trait_method_generic_contract_beyond_old_record_window() {
+    let trait_methods = (0..33)
+        .map(|i| {
+            if i == 32 {
+                "    fn method_32<U>(value: T, extra: U) -> T;".to_owned()
+            } else {
+                format!("    fn method_{i}(value: T) -> T;")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let impl_methods = (0..33)
+        .map(|i| {
+            if i == 32 {
+                r#"    fn method_32(value: i32, extra: i32) -> i32 {
+        return value + extra;
+    }"#
+                .to_owned()
+            } else {
+                format!(
+                    r#"    fn method_{i}(value: i32) -> i32 {{
+        return value;
+    }}"#
+                )
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    let src = format!(
+        r#"
+trait Wide<T> {{
+{trait_methods}
+}}
+
+impl Wide<i32> for i32 {{
+{impl_methods}
+}}
+
+fn main() {{
+    return 0;
+}}
+"#
+    );
+
+    assert_gpu_type_check_diagnostic(
+        &src,
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "trait method-level generics are outside the current GPU trait contract records",
+            "move the generic parameter to the trait or impl receiver type",
+        ],
+    );
 }
 
 #[test]
@@ -719,7 +1056,7 @@ fn main() {
             "error[LNC0021]: invalid trait implementation",
             "fn make(value: i32) -> i32 where i32: Factory<i32> {",
             "trait method where clauses are outside the current GPU trait contract records",
-            "method-level predicate solving is implemented on GPU",
+            "move the bound to the trait, impl, or caller-visible where clause",
         ],
     );
 }
@@ -741,7 +1078,7 @@ fn main() {
             "error[LNC0021]: invalid trait implementation",
             "fn make(value: i32) -> i32 where i32: Factory;",
             "trait method where clauses are outside the current GPU trait contract records",
-            "method-level predicate solving is implemented on GPU",
+            "move the bound to the trait, impl, or caller-visible where clause",
         ],
     );
 }
@@ -919,6 +1256,122 @@ fn main() {
 }
 
 #[test]
+fn type_checker_rejects_overwide_generic_instance_parameters_until_rows_carry_all_args() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+struct Wide<A, B, C, D, E, F, G, H, I> {
+    value: A,
+}
+
+trait TakeWide {
+    fn take(value: Wide<i32, i32, i32, i32, i32, i32, i32, i32, i32>) -> i32;
+}
+
+struct Target {
+    value: i32,
+}
+
+impl TakeWide for Target {
+    fn take(value: Wide<i32, i32, i32, i32, i32, i32, i32, i32, bool>) -> i32 {
+        return 0;
+    }
+}
+
+fn main() {
+    return 0;
+}
+"#,
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "fn take(value: Wide<i32, i32, i32, i32, i32, i32, i32, i32, i32>) -> i32;",
+            "trait impl method signature does not match the trait declaration",
+            "match each implemented method's parameter and return types",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_rejects_nested_trait_method_generic_instances_without_partial_match() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+struct Boxed<T> {
+    value: T,
+}
+
+struct Maybe<T> {
+    value: T,
+}
+
+trait ReadNested<T> {
+    fn read(value: Maybe<Boxed<T>>) -> T;
+}
+
+struct Target {
+    value: i32,
+}
+
+impl ReadNested<i32> for Target {
+    fn read(value: Maybe<Boxed<i32>>) -> i32 {
+        return 0;
+    }
+}
+
+fn main() {
+    return 0;
+}
+"#,
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "fn read(value: Maybe<Boxed<T>>) -> T;",
+            "trait impl method signature does not match the trait declaration",
+            "nested generic instance parameters are rejected for now rather than partially matched",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_rejects_nested_trait_method_generic_instance_returns_without_partial_match() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+struct Boxed<T> {
+    value: T,
+}
+
+struct Maybe<T> {
+    value: T,
+}
+
+trait WrapNested<T> {
+    fn wrap(value: T) -> Maybe<Boxed<T>>;
+}
+
+struct Target {
+    value: i32,
+}
+
+impl WrapNested<i32> for Target {
+    fn wrap(value: i32) -> Maybe<Boxed<i32>> {
+        return Maybe { value: Boxed { value: value } };
+    }
+}
+
+fn main() {
+    return 0;
+}
+"#,
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "fn wrap(value: T) -> Maybe<Boxed<T>>;",
+            "trait impl method signature does not match the trait declaration",
+            "nested generic instance parameters are rejected for now rather than partially matched",
+        ],
+    );
+}
+
+#[test]
 fn type_checker_rejects_trait_impl_method_level_generics_on_gpu() {
     assert_gpu_type_check_diagnostic(
         r#"
@@ -940,8 +1393,6 @@ fn main() {
         &[
             "error[LNC0021]: invalid trait implementation",
             "fn make<T>(value: T) -> T;",
-            "trait method-level generics are outside the current GPU trait contract records",
-            "method-level generic substitution is implemented on GPU",
         ],
     );
 }
@@ -996,6 +1447,55 @@ fn main() {
 }
 
 #[test]
+fn type_checker_reports_unsupported_trait_impl_argument_shapes_as_impl_diagnostics_on_gpu() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+trait Wide<Left, Middle, Right> {
+}
+
+impl Wide<i32, bool, i32> for i32 {
+}
+
+fn main() {
+    return 0;
+}
+"#,
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "impl Wide<i32, bool, i32> for i32 {",
+            "trait impl header exceeds the current GPU predicate argument limit",
+            "records at most two trait type arguments per trait impl row",
+        ],
+    );
+
+    assert_gpu_type_check_diagnostic(
+        r#"
+struct Boxed<T> {
+    value: T,
+}
+
+trait Rel<T> {
+}
+
+impl Rel<Boxed<i32>> for i32 {
+}
+
+fn main() {
+    return 0;
+}
+"#,
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "impl Rel<Boxed<i32>> for i32 {",
+            "trait impl header uses an unsupported trait argument shape",
+            "nested generic arguments are rejected rather than matching only the outer type name",
+        ],
+    );
+}
+
+#[test]
 fn type_checker_rejects_unresolved_trait_impl_argument_types_on_gpu() {
     assert_gpu_type_check_diagnostic(
         r#"
@@ -1019,6 +1519,99 @@ fn main() {
 }
 
 #[test]
+fn type_checker_rejects_generic_trait_impl_arguments_until_predicate_rows_carry_param_refs_on_gpu()
+{
+    assert_gpu_type_check_diagnostic(
+        r#"
+struct T {
+    value: i32,
+}
+
+trait Rel<Value> {
+}
+
+impl<T> Rel<T> for i32 {
+}
+
+fn main() {
+    return 0;
+}
+"#,
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "impl<T> Rel<T> for i32 {",
+            "trait impl header uses generic trait arguments outside the current GPU predicate row shape",
+            "publish trait impl argument rows that carry generic-parameter references",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_rejects_unresolved_trait_impl_targets_with_stable_diagnostic() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+trait Marker {
+}
+
+impl Marker for Missing {
+}
+
+fn main() {
+    return 0;
+}
+"#,
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "impl Marker for Missing {",
+            "trait impl target type is outside the current GPU predicate row shape",
+            "trait impl predicate rows currently match only scalar and non-generic nominal targets",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_rejects_reference_trait_impl_targets_with_stable_diagnostic() {
+    let err = crate::common::type_check_source_with_timeout(
+        r#"
+trait Marker {
+}
+
+impl Marker for &i32 {
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    )
+    .expect_err("reference trait-impl targets should fail GPU predicate validation");
+
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0021");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("diagnostic should identify the unsupported target type");
+            assert_eq!(label.source_line.as_deref(), Some("impl Marker for &i32 {"));
+            assert_eq!(label.column, 1);
+            assert_eq!(label.length, 4);
+
+            let rendered = diagnostic.render();
+            assert!(rendered.contains("error[LNC0021]: invalid trait implementation"));
+            assert!(
+                rendered.contains(
+                    "trait impl target type is outside the current GPU predicate row shape"
+                )
+            );
+        }
+        other => panic!("expected reference trait impl target diagnostic, got {other:?}"),
+    }
+}
+
+#[test]
 fn type_checker_rejects_trait_impl_targets_that_resolve_to_traits_on_gpu() {
     assert_gpu_type_check_diagnostic(
         r#"
@@ -1038,7 +1631,32 @@ fn main() {
         "LNC0021",
         &[
             "error[LNC0021]: invalid trait implementation",
-            "trait impl target type is outside the current GPU predicate row shape",
+            "impl Marker for Target {",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_rejects_inherent_impls_on_traits_with_trait_impl_diagnostic() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+trait Marker {
+}
+
+impl Marker {
+    fn check(value: i32) -> bool {
+        return true;
+    }
+}
+
+fn main() {
+    return 0;
+}
+"#,
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "impl Marker {",
         ],
     );
 }
@@ -1068,8 +1686,7 @@ fn main() {
         "LNC0021",
         &[
             "error[LNC0021]: invalid trait implementation",
-            "trait impl target type is outside the current GPU predicate row shape",
-            "trait impl predicate rows currently match only scalar and non-generic nominal targets",
+            "impl Marker for Boxed<i32> {",
         ],
     );
 }
@@ -1093,8 +1710,31 @@ fn main() {
         "LNC0021",
         &[
             "error[LNC0021]: invalid trait implementation",
-            "trait impl target type is outside the current GPU predicate row shape",
-            "trait impl predicate rows currently match only scalar and non-generic nominal targets",
+            "impl Marker for Four {",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_rejects_trait_impl_targets_aliasing_scalar_types_on_gpu() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+type Count = i32;
+
+trait Marker {
+}
+
+impl Marker for Count {
+}
+
+fn main() {
+    return 0;
+}
+"#,
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "impl Marker for Count {",
         ],
     );
 }
@@ -1142,6 +1782,51 @@ fn main() {
             );
         }
         other => panic!("expected stable method dispatch diagnostic, got {other:?}"),
+    }
+}
+
+#[test]
+fn type_checker_rejects_trait_impl_methods_as_free_functions_until_dispatch_rows_exist() {
+    let err = crate::common::type_check_source_with_timeout(
+        r#"
+trait Describe<T> {
+    fn describe(value: T) -> i32;
+}
+
+impl Describe<i32> for i32 {
+    fn describe(value: i32) -> i32 {
+        return value;
+    }
+}
+
+fn main() {
+    return describe(7);
+}
+"#,
+    )
+    .expect_err("trait impl methods should not enter the free-function namespace");
+
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0027");
+            assert_eq!(diagnostic.message, "call resolution failed");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("free-function rejection should point at the call");
+            assert_eq!(
+                label.message,
+                "call does not match a resolved function or method"
+            );
+            assert!(
+                diagnostic
+                    .notes
+                    .iter()
+                    .any(|note| note.contains("supported function or method signature")),
+                "diagnostic should describe unsupported callable lookup: {diagnostic:?}"
+            );
+        }
+        other => panic!("expected stable free-function call diagnostic, got {other:?}"),
     }
 }
 
@@ -1294,6 +1979,165 @@ fn main() {
 }
 
 #[test]
+fn type_checker_enforces_imported_generic_trait_where_clauses_on_gpu() {
+    let contracts = r#"
+module contracts::cmp;
+
+pub trait Eq<T> {
+    pub fn eq(left: T, right: T) -> bool;
+}
+
+pub impl Eq<i32> for i32 {
+    pub fn eq(left: i32, right: i32) -> bool {
+        return left == right;
+    }
+}
+"#;
+
+    let guards = r#"
+module contracts::guards;
+
+import contracts::cmp;
+
+pub fn keep<T>(value: T) -> T {
+    return value;
+}
+
+pub fn require_eq<T>(value: T) -> T where T: contracts::cmp::Eq<T> {
+    return keep(value);
+}
+"#;
+
+    assert_gpu_type_check_pack_ok(&[
+        contracts,
+        guards,
+        r#"
+module app;
+
+import contracts::cmp;
+import contracts::guards;
+
+fn main() {
+    let value: i32 = contracts::guards::require_eq(contracts::guards::keep(7));
+    return value;
+}
+"#,
+    ]);
+
+    assert_gpu_type_check_pack_rejects(&[
+        contracts,
+        guards,
+        r#"
+module app;
+
+import contracts::cmp;
+import contracts::guards;
+
+fn main() {
+    let value: bool = contracts::guards::require_eq(true);
+    return 0;
+}
+"#,
+    ]);
+}
+
+#[test]
+fn type_checker_enforces_imported_nonzero_slot_trait_where_clauses_on_gpu() {
+    let contracts = r#"
+module contracts::cmp;
+
+pub trait Eq<T> {
+    pub fn eq(left: T, right: T) -> bool;
+}
+
+pub impl Eq<i32> for i32 {
+    pub fn eq(left: i32, right: i32) -> bool {
+        return left == right;
+    }
+}
+"#;
+
+    let guards = r#"
+module contracts::guards;
+
+import contracts::cmp;
+
+pub fn keep<T>(value: T) -> T {
+    return value;
+}
+
+pub fn require_right<T, U>(left: T, right: U) -> U where U: contracts::cmp::Eq<U> {
+    return keep(right);
+}
+"#;
+
+    assert_gpu_type_check_pack_ok(&[
+        contracts,
+        guards,
+        r#"
+module app;
+
+import contracts::cmp;
+import contracts::guards;
+
+fn main() {
+    let value: i32 = contracts::guards::require_right(false, 7);
+    return value;
+}
+"#,
+    ]);
+
+    assert_gpu_type_check_pack_rejects(&[
+        contracts,
+        guards,
+        r#"
+module app;
+
+import contracts::cmp;
+import contracts::guards;
+
+fn main() {
+    let value: bool = contracts::guards::require_right(1, true);
+    return 0;
+}
+"#,
+    ]);
+}
+
+#[test]
+fn type_checker_rejects_trait_impl_target_paths_beyond_gpu_scan_window() {
+    let target_path = (0..9)
+        .map(|i| format!("module_{i}"))
+        .chain(std::iter::once("Target".to_string()))
+        .collect::<Vec<_>>()
+        .join("::");
+    let src = format!(
+        r#"
+trait Marker {{
+}}
+
+impl Marker for {target_path} {{
+}}
+
+fn main() {{
+    return 0;
+}}
+"#
+    );
+
+    assert_gpu_type_check_diagnostic(
+        &src,
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "impl Marker for module_0::module_1::module_2::module_3::module_4::module_5::module_6::module_7::module_8::Target {",
+            "trait impl target type is outside the current GPU predicate row shape",
+            "add target type-argument rows before implementing traits for generic instances",
+        ],
+    );
+}
+
+#[test]
 fn type_checker_rejects_where_clause_subjects_outside_generic_params_on_gpu() {
     assert_gpu_type_check_rejects(
         r#"
@@ -1339,8 +2183,7 @@ fn main() {{
         "LNC0008",
         &[
             "error[LNC0008]: unsatisfied trait bound",
-            "trait bound argument shape is not supported by the current GPU predicate row",
-            "predicate rows currently store scalar, generic, or concrete declaration leaves",
+            "fn keep<T>(value: T) -> T where T: Rel<",
         ],
     );
 }
@@ -1368,8 +2211,6 @@ fn main() {
         &[
             "error[LNC0008]: unsatisfied trait bound",
             "struct Boxed<T: Marker<T> > {",
-            "trait bounds on this generic declaration are not enforced by the current GPU predicate solver",
-            "GPU instantiation obligation rows",
         ],
     );
 }

@@ -16,7 +16,7 @@ impl FilesystemArtifactStore {
         }
         let mut stored_partition = partition.clone();
         if !partition.dependency_library_ids.is_empty() {
-            let (dependency_library_count, dependency_page_count) = store_library_dependencies(
+            let (dependency_library_count, dependency_page_count) = store_partition_dependency_ids(
                 self,
                 partition.target,
                 partition.partition_index,

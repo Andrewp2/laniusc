@@ -293,8 +293,7 @@ pub(in crate::compiler) fn for_each_stored_schedule_frontend_job<F>(
 where
     F: FnMut(usize, SourcePackJob, usize) -> Result<(), CompileError>,
 {
-    validate_library_schedule_index(schedule_index, schedule_index.target)?;
-    validate_library_schedule_page(page, schedule_index.target, Some(page.partition_index))?;
+    validate_library_schedule_page_for_index(page, schedule_index)?;
     if !page.frontend_jobs.is_empty() {
         for (offset, job) in page.frontend_jobs.iter().cloned().enumerate() {
             let dependency_job_count = job.dependency_job_indices.len();
@@ -349,8 +348,7 @@ pub(in crate::compiler) fn for_each_stored_schedule_codegen_job<F>(
 where
     F: FnMut(usize, SourcePackJob) -> Result<(), CompileError>,
 {
-    validate_library_schedule_index(schedule_index, schedule_index.target)?;
-    validate_library_schedule_page(page, schedule_index.target, Some(page.partition_index))?;
+    validate_library_schedule_page_for_index(page, schedule_index)?;
     if !page.codegen_jobs.is_empty() {
         for (offset, job) in page.codegen_jobs.iter().cloned().enumerate() {
             visit(offset, job)?;

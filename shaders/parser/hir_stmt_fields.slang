@@ -21,9 +21,10 @@ StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> parent;
 StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> next_sibling;
+StructuredBuffer<uint> subtree_end;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_token_end;
+RWStructuredBuffer<uint> hir_token_end;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_member_name_token;
@@ -37,9 +38,28 @@ static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint HIR_EXPR = 14u;
+static const uint HIR_ASSIGN_EXPR = 15u;
+static const uint HIR_BINARY_EXPR = 16u;
+static const uint HIR_UNARY_EXPR = 17u;
+static const uint HIR_POSTFIX_EXPR = 18u;
+static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_TYPE = 5u;
 static const uint HIR_MEMBER_EXPR = 21u;
+static const uint HIR_NAME_EXPR = 22u;
+static const uint HIR_LITERAL_EXPR = 23u;
+static const uint HIR_ARRAY_EXPR = 24u;
+static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 static const uint HIR_FOR_STMT = 30u;
+static const uint HIR_PATH_EXPR = 33u;
+static const uint HIR_MATCH_EXPR = 34u;
+static const uint HIR_BLOCK = 6u;
+static const uint HIR_EXPR_RANGE = 30u;
+static const uint HIR_EXPR_RANGE_FROM = 31u;
+static const uint HIR_EXPR_RANGE_TO = 32u;
+static const uint HIR_EXPR_RANGE_FULL = 33u;
+static const uint HIR_EXPR_RANGE_INCLUSIVE = 34u;
+static const uint HIR_EXPR_RANGE_TO_INCLUSIVE = 35u;
 
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_NONE = 0u;
@@ -54,6 +74,7 @@ static const uint STMT_RECORD_KIND_BREAK = 8u;
 static const uint STMT_RECORD_KIND_CONTINUE = 9u;
 
 static const uint HIR_EXPR_RECORD_STRIDE = 4u;
+static const uint HIR_EXPR_RECORD_FORM = 0u;
 static const uint HIR_EXPR_RECORD_VALUE_TOKEN = 3u;
 
 static const uint ASSIGN_OP_SET = 1u;
@@ -167,13 +188,219 @@ uint sibling_if_production(uint node, uint prod)
     return valid_node(sibling) && node_kind[sibling] == prod ? sibling : INVALID;
 }
 
+bool is_hir_expression_kind(uint kind)
+{
+    return kind == HIR_EXPR ||
+           kind == HIR_ASSIGN_EXPR ||
+           kind == HIR_BINARY_EXPR ||
+           kind == HIR_UNARY_EXPR ||
+           kind == HIR_POSTFIX_EXPR ||
+           kind == HIR_CALL_EXPR ||
+           kind == HIR_INDEX_EXPR ||
+           kind == HIR_MEMBER_EXPR ||
+           kind == HIR_NAME_EXPR ||
+           kind == HIR_LITERAL_EXPR ||
+           kind == HIR_ARRAY_EXPR ||
+           kind == HIR_STRUCT_LITERAL_EXPR ||
+           kind == HIR_PATH_EXPR ||
+           kind == HIR_MATCH_EXPR;
+}
+
+uint expr_record_form(uint node)
+{
+    return valid_node(node) ? hir_expr_record[node * HIR_EXPR_RECORD_STRIDE + HIR_EXPR_RECORD_FORM] : 0u;
+}
+
+bool is_range_expr_form(uint form)
+{
+    return form == HIR_EXPR_RANGE ||
+           form == HIR_EXPR_RANGE_FROM ||
+           form == HIR_EXPR_RANGE_TO ||
+           form == HIR_EXPR_RANGE_FULL ||
+           form == HIR_EXPR_RANGE_INCLUSIVE ||
+           form == HIR_EXPR_RANGE_TO_INCLUSIVE;
+}
+
 uint direct_expr_child(uint node)
 {
     uint child = valid_child_or_invalid(node);
-    return valid_node(child) &&
-           (node_kind[child] == PROD_EXPR || hir_kind[child] == HIR_EXPR)
-        ? child
-        : INVALID;
+    return valid_node(child) && is_hir_expression_kind(hir_kind[child]) ? child : INVALID;
+}
+
+uint direct_expr_child_scan(uint node)
+{
+    uint child = valid_child_or_invalid(node);
+    for (uint step = 0u; step < 8u && valid_node(child); step++)
+    {
+        if (is_hir_expression_kind(hir_kind[child]))
+            return child;
+        child = valid_sibling_or_invalid(child);
+    }
+    return INVALID;
+}
+
+bool is_for_iterable_production(uint prod)
+{
+    return prod == PROD_FOR_ITER_PATH ||
+           prod == PROD_FOR_ITER_RANGE_FROM_START ||
+           prod == PROD_FOR_ITER_RANGE_TO ||
+           prod == PROD_FOR_ITER_RANGE_TO_INCLUSIVE;
+}
+
+uint direct_for_iterable_child(uint node)
+{
+    uint child = valid_child_or_invalid(node);
+    for (uint step = 0u; step < 12u && valid_node(child); step++)
+    {
+        if (is_for_iterable_production(node_kind[child]))
+            return child;
+        child = valid_sibling_or_invalid(child);
+    }
+    return INVALID;
+}
+
+uint bounded_subtree_production_scan(uint node, uint prod, uint after_node)
+{
+    if (!valid_node(node))
+        return INVALID;
+
+    uint end = subtree_end[node];
+    if (!valid_node(end - 1u))
+        return INVALID;
+
+    uint cursor = valid_node(after_node) ? after_node + 1u : node + 1u;
+    for (uint step = 0u; step < 64u && cursor < end; step++, cursor++)
+    {
+        if (valid_node(cursor) && node_kind[cursor] == prod)
+            return cursor;
+    }
+    return INVALID;
+}
+
+uint bounded_subtree_for_iterable_scan(uint node)
+{
+    if (!valid_node(node))
+        return INVALID;
+
+    uint end = subtree_end[node];
+    if (!valid_node(end - 1u))
+        return INVALID;
+
+    for (uint step = 0u, cursor = node + 1u; step < 64u && cursor < end; step++, cursor++)
+    {
+        if (valid_node(cursor) && is_for_iterable_production(node_kind[cursor]))
+            return cursor;
+    }
+    return INVALID;
+}
+
+uint semantic_for_iterable_scan(uint row, uint node)
+{
+    uint node_end = hir_token_end[node];
+    for (uint step = 1u; step <= 64u; step++)
+    {
+        uint candidate = semantic_row_node(row + step);
+        if (!valid_node(candidate))
+            break;
+        if (!node_has_non_empty_span(candidate))
+            continue;
+        if (hir_token_pos[candidate] >= node_end)
+            break;
+        if (is_for_iterable_production(node_kind[candidate]))
+            return candidate;
+    }
+    return INVALID;
+}
+
+uint semantic_body_block_scan(uint row, uint node, uint after_node)
+{
+    uint node_end = hir_token_end[node];
+    uint after_end = valid_node(after_node) ? hir_token_end[after_node] : hir_token_pos[node];
+    for (uint step = 1u; step <= 64u; step++)
+    {
+        uint candidate = semantic_row_node(row + step);
+        if (!valid_node(candidate))
+            break;
+        if (!node_has_non_empty_span(candidate))
+            continue;
+        if (hir_token_pos[candidate] >= node_end)
+            break;
+        if (hir_kind[candidate] == HIR_BLOCK && hir_token_pos[candidate] >= after_end)
+            return candidate;
+    }
+    return INVALID;
+}
+
+uint nearby_body_block_scan(uint node, uint binding_token)
+{
+    uint node_end = hir_token_end[node];
+    for (uint step = 1u; step <= 128u; step++)
+    {
+        uint candidate = node + step;
+        if (valid_node(candidate) && (hir_kind[candidate] == HIR_BLOCK || node_kind[candidate] == PROD_BLOCK))
+            return candidate;
+
+        candidate = node >= step ? node - step : INVALID;
+        if (valid_node(candidate) && (hir_kind[candidate] == HIR_BLOCK || node_kind[candidate] == PROD_BLOCK) &&
+            node_has_non_empty_span(candidate) &&
+            hir_token_pos[candidate] > binding_token &&
+            hir_token_pos[candidate] < node_end)
+            return candidate;
+    }
+    return INVALID;
+}
+
+uint nearby_range_iterable_scan(uint node, uint binding_token, uint body)
+{
+    uint limit = valid_node(body) ? hir_token_pos[body] : hir_token_end[node];
+    uint first_expr = INVALID;
+    for (uint step = 1u; step <= 128u; step++)
+    {
+        uint candidate = node + step;
+        if (!valid_node(candidate))
+            break;
+        if (!node_has_non_empty_span(candidate))
+            continue;
+        if (hir_token_pos[candidate] >= limit)
+            break;
+        if (hir_token_pos[candidate] <= binding_token)
+            continue;
+        if (is_hir_expression_kind(hir_kind[candidate]))
+        {
+            if (!valid_node(first_expr))
+                first_expr = candidate;
+            if (is_range_expr_form(expr_record_form(candidate)))
+                return candidate;
+        }
+    }
+    return first_expr;
+}
+
+uint direct_production_child_after(uint node, uint prod, uint after_node)
+{
+    if (valid_node(after_node))
+    {
+        uint candidate = subtree_end[after_node];
+        if (valid_node(candidate) && parent[candidate] == node && node_kind[candidate] == prod)
+            return candidate;
+    }
+
+    uint child = valid_child_or_invalid(node);
+    bool after_seen = after_node == INVALID;
+    for (uint step = 0u; step < 8u && valid_node(child); step++)
+    {
+        if (child == after_node)
+            after_seen = true;
+        else if (after_seen && node_kind[child] == prod)
+            return child;
+        child = valid_sibling_or_invalid(child);
+    }
+
+    uint sibling = valid_sibling_or_invalid(node);
+    if (valid_node(sibling) && node_kind[sibling] == prod)
+        return sibling;
+
+    return INVALID;
 }
 
 uint let_init_child(uint node)
@@ -199,6 +426,11 @@ uint block_child(uint node)
     return child_if_production(node, PROD_BLOCK);
 }
 
+uint if_block_child(uint node)
+{
+    return child_if_production(node, PROD_IF_BLOCK);
+}
+
 uint lexical_statement_list_scope_end(uint node)
 {
     uint p = valid_node(node) ? parent[node] : INVALID;
@@ -211,6 +443,7 @@ uint lexical_statement_list_scope_end(uint node)
 
     if (valid_node(p) &&
         (node_kind[p] == PROD_BLOCK ||
+         node_kind[p] == PROD_IF_BLOCK ||
          node_kind[p] == PROD_FN_BLOCK ||
          node_kind[p] == PROD_IMPL_FN_BLOCK))
         return valid_end_or_invalid(p);
@@ -220,23 +453,19 @@ uint lexical_statement_list_scope_end(uint node)
 
 uint if_then_block(uint node)
 {
-    uint condition = direct_expr_child(node);
-    return sibling_if_production(condition, PROD_BLOCK);
+    uint condition = direct_expr_child_scan(node);
+    return direct_production_child_after(node, PROD_IF_BLOCK, condition);
 }
 
 uint else_block_for_if(uint node)
 {
-    uint sibling = valid_sibling_or_invalid(node);
-    if (!valid_node(sibling))
-        return INVALID;
-    if (node_kind[sibling] == PROD_ELSE_STMT)
-        return block_child(sibling);
-
-    uint child = valid_child_or_invalid(sibling);
-    if (!valid_node(child))
-        return INVALID;
-    if (node_kind[child] == PROD_ELSE_STMT)
-        return block_child(child);
+    uint child = valid_child_or_invalid(node);
+    for (uint guard = 0u; guard < 16u && valid_node(child); guard++)
+    {
+        if (node_kind[child] == PROD_ELSE_STMT)
+            return block_child(child);
+        child = valid_sibling_or_invalid(child);
+    }
     return INVALID;
 }
 
@@ -357,7 +586,7 @@ bool compressed_if_return_value(uint node)
 void publish_if(uint node)
 {
     uint else_block = else_block_for_if(node);
-    uint cond = direct_expr_child(node);
+    uint cond = direct_expr_child_scan(node);
     uint then_block = if_then_block(node);
     uint then_return = return_value_child(node);
     uint then_arm = valid_node(then_block) ? then_block : then_return;
@@ -370,8 +599,8 @@ void publish_if(uint node)
 
 void publish_while(uint node)
 {
-    uint cond = direct_expr_child(node);
-    uint body = valid_sibling_or_invalid(cond);
+    uint cond = direct_expr_child_scan(node);
+    uint body = direct_production_child_after(node, PROD_BLOCK, cond);
     hir_stmt_record[stmt_slot(node, 0u)] = STMT_RECORD_KIND_WHILE;
     hir_stmt_record[stmt_slot(node, 1u)] = cond;
     hir_stmt_record[stmt_slot(node, 2u)] = valid_node(body) && node_kind[body] == PROD_BLOCK
@@ -380,19 +609,40 @@ void publish_while(uint node)
     hir_stmt_record[stmt_slot(node, 3u)] = INVALID;
 }
 
-void publish_for(uint node)
+void publish_for(uint row, uint node)
 {
-    uint iterable = valid_child_or_invalid(node);
-    uint body = valid_node(iterable) && node_kind[iterable] == PROD_PATH
-        ? sibling_if_production(iterable, PROD_BLOCK)
-        : INVALID;
     uint binding_token = token_after_keyword(node);
     if (binding_token == INVALID)
         return;
 
+    uint iterable_owner = direct_for_iterable_child(node);
+    if (!valid_node(iterable_owner))
+        iterable_owner = bounded_subtree_for_iterable_scan(node);
+    if (!valid_node(iterable_owner))
+        iterable_owner = semantic_for_iterable_scan(row, node);
+    uint body = direct_production_child_after(node, PROD_BLOCK, iterable_owner);
+    if (!valid_node(body))
+        body = bounded_subtree_production_scan(node, PROD_BLOCK, iterable_owner);
+    if (!valid_node(body))
+        body = semantic_body_block_scan(row, node, iterable_owner);
+    if (!valid_node(body))
+        body = nearby_body_block_scan(node, binding_token);
+
+    if (!valid_node(iterable_owner))
+        iterable_owner = nearby_range_iterable_scan(node, binding_token, body);
+    uint iterable = valid_node(iterable_owner) ? hir_expr_result_root_node[iterable_owner] : INVALID;
+    if (!valid_node(iterable) && valid_node(iterable_owner) &&
+        is_hir_expression_kind(hir_kind[iterable_owner]))
+        iterable = iterable_owner;
+    if (valid_node(iterable) && valid_node(body) &&
+        hir_token_end[iterable] > hir_token_pos[body])
+    {
+        hir_token_end[iterable] = hir_token_pos[body];
+    }
+
     hir_stmt_record[stmt_slot(node, 0u)] = STMT_RECORD_KIND_FOR;
     hir_stmt_record[stmt_slot(node, 1u)] = binding_token;
-    hir_stmt_record[stmt_slot(node, 2u)] = valid_node(iterable) && node_kind[iterable] == PROD_PATH
+    hir_stmt_record[stmt_slot(node, 2u)] = valid_node(iterable) && is_hir_expression_kind(hir_kind[iterable])
         ? iterable
         : INVALID;
     hir_stmt_record[stmt_slot(node, 3u)] = body;
@@ -467,7 +717,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     else if (prod == PROD_WHILE_STMT)
         publish_while(i);
     else if (prod == PROD_FOR_STMT || hir_kind[i] == HIR_FOR_STMT)
-        publish_for(i);
+        publish_for(row, i);
     else if (prod == PROD_BREAK_STMT)
         publish_loop_control(i, STMT_RECORD_KIND_BREAK);
     else if (prod == PROD_CONTINUE_STMT)

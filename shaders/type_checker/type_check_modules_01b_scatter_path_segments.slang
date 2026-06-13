@@ -44,14 +44,12 @@ static const uint SORT_PATH_SEGMENTS = 8u;
 static const uint PATH_SEGMENT_ROW_WIDTH = SORT_PATH_SEGMENTS + 1u;
 static const uint PATH_SEGMENT_OVERFLOW_COUNT = PATH_SEGMENT_ROW_WIDTH + 1u;
 
-static const uint PATH_RECORD_KIND_HIR_PATH_EXPR = 3u;
-static const uint PATH_RECORD_KIND_HIR_TYPE_EXPR = 4u;
-
 static const uint TK_IDENT = 1u;
 static const uint TK_COLON = 38u;
 static const uint TK_LET_IDENT = 78u;
 static const uint TK_PARAM_IDENT = 79u;
 static const uint TK_TYPE_IDENT = 80u;
+static const uint TK_PATH_GENERIC_IDENT = 187u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -71,34 +69,26 @@ uint token_kind(uint i)
 bool is_path_segment(uint kind)
 {
     return kind == TK_IDENT || kind == TK_TYPE_IDENT || kind == TK_PARAM_IDENT ||
-           kind == TK_LET_IDENT;
+           kind == TK_LET_IDENT || kind == TK_PATH_GENERIC_IDENT;
 }
 
-uint qualified_path_head_end(uint start, uint limit)
+bool segment_exists(uint start, uint end_exclusive, uint segment_i)
 {
-    if (start >= limit || !is_path_segment(token_kind(start)))
-        return start;
+    uint token_i = start + segment_i * 3u;
+    if (token_i >= end_exclusive || name_id_by_token[token_i] == INVALID ||
+        !is_path_segment(token_kind(token_i)))
+        return false;
 
-    uint end = start + 1u;
-    [loop]
-    for (uint guard = 0u; guard < PATH_SEGMENT_OVERFLOW_COUNT && end + 2u < limit;
-         guard += 1u)
-    {
-        if (token_kind(end) != TK_COLON || token_kind(end + 1u) != TK_COLON ||
-            !is_path_segment(token_kind(end + 2u)))
-            break;
-        end += 3u;
-    }
-    return end;
+    if (segment_i == 0u)
+        return true;
+
+    uint sep = token_i - 2u;
+    return token_kind(sep) == TK_COLON && token_kind(sep + 1u) == TK_COLON;
 }
 
-uint path_segment_end(uint path_slot)
+uint segment_token(uint start, uint end_exclusive, uint segment_i)
 {
-    uint start = path_start[path_slot];
-    uint end_exclusive = min(start + path_len[path_slot], gParams.n_tokens);
-    if (path_kind[path_slot] == PATH_RECORD_KIND_HIR_TYPE_EXPR)
-        return qualified_path_head_end(start, end_exclusive);
-    return end_exclusive;
+    return segment_exists(start, end_exclusive, segment_i) ? start + segment_i * 3u : INVALID;
 }
 
 void write_segment(uint path_slot, uint segment_i)
@@ -111,22 +101,13 @@ void write_segment(uint path_slot, uint segment_i)
     path_segment_token[dst] = INVALID;
 
     uint start = path_start[path_slot];
-    uint end_exclusive = path_segment_end(path_slot);
-    uint seen = 0u;
-    for (uint token_i = start; token_i < end_exclusive && seen <= segment_i; token_i += 1u)
-    {
-        uint name_id = name_id_by_token[token_i];
-        if (name_id == INVALID)
-            continue;
+    uint end_exclusive = min(start + path_len[path_slot], gParams.n_tokens);
+    uint token_i = segment_token(start, end_exclusive, segment_i);
+    if (token_i == INVALID)
+        return;
 
-        if (seen == segment_i)
-        {
-            path_segment_name_id[dst] = name_id;
-            path_segment_token[dst] = token_i;
-            return;
-        }
-        seen += 1u;
-    }
+    path_segment_name_id[dst] = name_id_by_token[token_i];
+    path_segment_token[dst] = token_i;
 }
 
 [shader("compute")]

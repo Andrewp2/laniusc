@@ -31,6 +31,7 @@ RWStructuredBuffer<uint4> call_arg_record;
 RWStructuredBuffer<uint> call_arg_node;
 
 static const uint INVALID = 0xffffffffu;
+static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint PARAM_CACHE_STRIDE = 4u;
 static const uint WG_SIZE = 256u;
@@ -43,7 +44,7 @@ uint linear_thread_id(uint3 dtid)
 
 uint active_hir_node_count()
 {
-    return gParams.n_hir_nodes;
+    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
 }
 
 bool valid_node(uint node, uint n)
@@ -54,6 +55,8 @@ bool valid_node(uint node, uint n)
 uint callee_token_for_call(uint call_node, uint n)
 {
     if (!valid_node(call_node, n))
+        return INVALID;
+    if (hir_kind[call_node] != HIR_CALL_EXPR)
         return INVALID;
 
     uint callee_node = hir_call_callee_node[call_node];
@@ -106,10 +109,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (node >= n)
         return;
 
-    publish_zero_arg_call(node, n);
+    if (hir_kind[node] == HIR_CALL_EXPR)
+        publish_zero_arg_call(node, n);
 
     uint call_node = hir_node_ordinal_node(hir_call_arg_parent_call[node]);
-    if (!valid_node(call_node, n))
+    if (!valid_node(call_node, n) || hir_kind[call_node] != HIR_CALL_EXPR)
         return;
 
     uint callee_token = callee_token_for_call(call_node, n);

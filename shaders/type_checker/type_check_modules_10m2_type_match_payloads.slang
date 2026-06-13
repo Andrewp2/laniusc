@@ -24,7 +24,8 @@ StructuredBuffer<uint> hir_match_payload_match_node;
 StructuredBuffer<uint> hir_match_payload_ordinal;
 StructuredBuffer<uint> hir_variant_payload_count;
 StructuredBuffer<uint> hir_variant_payload_node;
-StructuredBuffer<uint> visible_decl;
+RWStructuredBuffer<uint> visible_decl;
+RWStructuredBuffer<uint> module_value_path_status;
 StructuredBuffer<uint> decl_id_by_name_token;
 StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> decl_name_token;
@@ -229,6 +230,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint binder_token = hir_token_pos[payload_node];
     if (!valid_token(binder_token))
         return;
+
+    visible_decl[binder_token] = binder_token;
+    module_value_path_status[binder_token] = INVALID;
 
     uint payload_ty = payload_type_for_node(
         payload_node,

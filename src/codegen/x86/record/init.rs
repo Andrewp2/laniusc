@@ -348,11 +348,16 @@ pub(super) fn record_initializers(inputs: InitializerInputs<'_>) -> Result<()> {
         &[u32::MAX; 3],
         node_inst_order_rows,
     );
+    let call_arg_lookup_record_words = if feature_summary.has_call() {
+        token_words.saturating_mul(6)
+    } else {
+        function_slot_capacity.max(6)
+    };
     init_repeated!(
         "call_arg_lookup_record",
         call_arg_lookup_record_buf,
         &[u32::MAX],
-        token_words * 4,
+        call_arg_lookup_record_words,
     );
     write_u32_words(queue, intrinsic_call_status_buf, &[1, 0, u32::MAX, 0]);
     init_repeated!(

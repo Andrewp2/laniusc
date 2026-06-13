@@ -20,6 +20,32 @@ groupshared int s_val[256];
 groupshared int s_minp[256];
 groupshared int s_depth[256];
 
+public struct BracketScanI32Min : IPrefixScanOp<int>
+{
+    public static int identity()
+    {
+        return 2147483647;
+    }
+
+    public static int combine(int left, int right)
+    {
+        return min(left, right);
+    }
+}
+
+public struct BracketScanI32Max : IPrefixScanOp<int>
+{
+    public static int identity()
+    {
+        return -2147483647;
+    }
+
+    public static int combine(int left, int right)
+    {
+        return max(left, right);
+    }
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID,
@@ -48,21 +74,14 @@ void main(uint3 tid: SV_DispatchThreadID,
     // Compute min prefix in-block: min over partial sums (exclusive domain)
     // We can reconstruct running depth within block as ex + depth_base (added later),
     // here we only need the block-local min of (ex + 0) and the block sum.
-    s_minp[ltid.x] = min(ex, 0);
-    s_depth[ltid.x] = max(ex + ((s_val[ltid.x] > 0) ? 1 : 0), ex); // cheap upper bound proxy for max depth
-
-    GroupMemoryBarrierWithGroupSync();
-
-    // Reduce min and max into the last lane.
-    for (uint step = GSIZE >> 1; step > 0; step >>= 1)
-    {
-        if (ltid.x >= GSIZE - step)
-        {
-            s_minp[ltid.x] = min(s_minp[ltid.x - step], s_minp[ltid.x]);
-            s_depth[ltid.x] = max(s_depth[ltid.x - step], s_depth[ltid.x]);
-        }
-        GroupMemoryBarrierWithGroupSync();
-    }
+    int minp = prefix_scan_inclusive<int, BracketScanI32Min, 256>(
+        ltid.x,
+        min(ex, 0),
+        s_minp);
+    int max_depth = prefix_scan_inclusive<int, BracketScanI32Max, 256>(
+        ltid.x,
+        max(ex + ((s_val[ltid.x] > 0) ? 1 : 0), ex), // cheap upper bound proxy for max depth
+        s_depth);
 
     if (i < n)
     {
@@ -72,7 +91,7 @@ void main(uint3 tid: SV_DispatchThreadID,
     {
         int sum = s_val[GSIZE - 1];
         block_sum[gid.x] = sum;
-        block_minpref[gid.x] = s_minp[GSIZE - 1];
-        block_maxdepth[gid.x] = s_depth[GSIZE - 1];
+        block_minpref[gid.x] = minp;
+        block_maxdepth[gid.x] = max_depth;
     }
 }

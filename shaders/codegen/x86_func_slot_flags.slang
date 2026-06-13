@@ -1,10 +1,10 @@
 // Mark HIR function records for deterministic function-slot compaction.
 //
 // Function discovery materializes per-node records. This pass turns executable
-// function item records into a compact-scan input so the slot index list is
-// built by prefix rank rather than by an atomic append order. Trait method
-// signatures may be HIR_FN rows, but they are not HIR_ITEM_KIND_FN rows and must
-// not occupy backend function slots.
+// free-function and impl-method records into a compact-scan input so the slot
+// index list is built by prefix rank rather than by an atomic append order.
+// Trait method signatures may be HIR_FN rows, but they do not have parser
+// impl owners and must not occupy backend function slots.
 
 import gpu_index;
 
@@ -26,12 +26,15 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_item_kind;
+StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> method_decl_param_offset;
 
 RWStructuredBuffer<uint> x86_func_slot_flags;
 
 static const uint HIR_FN = 3u;
 static const uint HIR_ITEM_KIND_FN = 4u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
+static const uint INVALID = 0xffffffffu;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -43,11 +46,20 @@ uint active_hir_node_count()
     return active_count_from_status(gParams.n_hir_nodes, hir_status, 5u);
 }
 
+bool valid_token(uint token_i)
+{
+    return token_i != INVALID && token_i < gParams.n_tokens;
+}
+
 bool is_compiled_function_node(uint node_i)
 {
-    return node_i < active_hir_node_count() &&
-           hir_kind[node_i] == HIR_FN &&
-           hir_item_kind[node_i] == HIR_ITEM_KIND_FN;
+    if (node_i >= active_hir_node_count() || hir_kind[node_i] != HIR_FN)
+        return false;
+    if (hir_item_kind[node_i] == HIR_ITEM_KIND_FN)
+        return true;
+
+    uint fn_token = hir_token_pos[node_i];
+    return valid_token(fn_token) && method_decl_param_offset[fn_token] != INVALID;
 }
 
 [shader("compute")]

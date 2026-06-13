@@ -72,6 +72,7 @@ static const uint TK_ELSE = 71u;
 static const uint TK_WHILE = 72u;
 static const uint TK_BREAK = 73u;
 static const uint TK_CONTINUE = 74u;
+static const uint TK_IF_LBRACE = 88u;
 static const uint TK_MATCH_LBRACE = 119u;
 static const uint TK_IMPL_LBRACE = 121u;
 static const uint TK_TRAIT_LBRACE = 123u;
@@ -125,7 +126,16 @@ uint decode_owner_kind(uint event)
 
 bool item_header_delimiter_context(int paren_depth, int bracket_depth, int angle_depth)
 {
-    return paren_depth == 0 && bracket_depth == 0 && angle_depth == 0;
+    // Raw `<`/`>` tokens include comparison operators before semantic retagging.
+    // Do not let an earlier comparison expression suppress a later top-level
+    // item header; generic header structure is recovered by dedicated angle
+    // retagging passes.
+    return paren_depth == 0 && bracket_depth == 0;
+}
+
+bool header_reset_delimiter_context(int paren_depth, int bracket_depth, int angle_depth)
+{
+    return paren_depth == 0 && bracket_depth == 0;
 }
 
 bool recorded_impl_header_context_before_token(uint token_i, uint count)
@@ -167,9 +177,14 @@ uint owner_header_event_for(
             : TK_LBRACE;
         return encode_owner_event(token_i, owner);
     }
-    if (kind == TK_IF || kind == TK_ELSE || kind == TK_WHILE)
+    if (kind == TK_IF)
+        return encode_owner_event(token_i, TK_IF_LBRACE);
+    if (kind == TK_ELSE || kind == TK_WHILE)
         return encode_owner_event(token_i, TK_LBRACE);
-    if (kind == TK_SEMICOLON || kind == TK_LBRACE || kind == TK_RBRACE)
+    if (kind == TK_SEMICOLON &&
+        header_reset_delimiter_context(paren_depth, bracket_depth, angle_depth))
+        return encode_owner_event(token_i, 0u);
+    if (kind == TK_LBRACE || kind == TK_RBRACE)
         return encode_owner_event(token_i, 0u);
     return 0u;
 }
@@ -196,8 +211,17 @@ bool is_statement_starter(uint kind)
            kind == TK_CONST ||
            kind == TK_LET ||
            kind == TK_RETURN ||
+           kind == TK_IF ||
+           kind == TK_ELSE ||
+           kind == TK_WHILE ||
+           kind == TK_FOR ||
            kind == TK_BREAK ||
-           kind == TK_CONTINUE;
+           kind == TK_CONTINUE ||
+           kind == TK_FN ||
+           kind == TK_ENUM ||
+           kind == TK_STRUCT ||
+           kind == TK_IMPL ||
+           kind == TK_TRAIT;
 }
 
 bool is_statement_reset_boundary(uint kind)

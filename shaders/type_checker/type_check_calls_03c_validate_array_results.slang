@@ -48,6 +48,7 @@ StructuredBuffer<uint> type_instance_elem_ref_tag;
 StructuredBuffer<uint> type_instance_elem_ref_payload;
 StructuredBuffer<uint> type_instance_len_kind;
 StructuredBuffer<uint> type_instance_len_payload;
+StructuredBuffer<uint> method_call_name_id;
 
 RWStructuredBuffer<uint> status;
 RWStructuredBuffer<uint> call_return_type;
@@ -363,28 +364,48 @@ bool same_bounded_array_instance(uint lhs, uint rhs)
         type_instance_elem_ref_payload[rhs]);
 }
 
+uint prior_matching_generic_array_arg_instance_slot(
+    uint callee_token,
+    uint call_node,
+    uint ordinal,
+    uint expected_instance,
+    uint prior)
+{
+    if (prior >= ordinal)
+        return INVALID;
+
+    uint prior_expected = array_instance_from_call_param(callee_token, prior);
+    if (!same_bounded_array_instance(expected_instance, prior_expected))
+        return INVALID;
+
+    uint prior_arg_node = call_arg_node_for_call(call_node, prior);
+    uint prior_actual =
+        array_instance_from_name_token(name_token_for_expr(prior_arg_node));
+    return concrete_bounded_array_instance(prior_actual) ? prior_actual : INVALID;
+}
+
 uint prior_matching_generic_array_arg_instance(
     uint callee_token,
     uint call_node,
     uint ordinal,
     uint expected_instance)
 {
-    [loop]
-    for (uint prior = 0u; prior < PARAM_CACHE_STRIDE; prior += 1u)
-    {
-        if (prior >= ordinal)
-            break;
-
-        uint prior_expected = array_instance_from_call_param(callee_token, prior);
-        if (!same_bounded_array_instance(expected_instance, prior_expected))
-            continue;
-
-        uint prior_arg_node = call_arg_node_for_call(call_node, prior);
-        uint prior_actual =
-            array_instance_from_name_token(name_token_for_expr(prior_arg_node));
-        if (concrete_bounded_array_instance(prior_actual))
-            return prior_actual;
-    }
+    uint prior_actual = prior_matching_generic_array_arg_instance_slot(
+        callee_token, call_node, ordinal, expected_instance, 0u);
+    if (prior_actual != INVALID)
+        return prior_actual;
+    prior_actual = prior_matching_generic_array_arg_instance_slot(
+        callee_token, call_node, ordinal, expected_instance, 1u);
+    if (prior_actual != INVALID)
+        return prior_actual;
+    prior_actual = prior_matching_generic_array_arg_instance_slot(
+        callee_token, call_node, ordinal, expected_instance, 2u);
+    if (prior_actual != INVALID)
+        return prior_actual;
+    prior_actual = prior_matching_generic_array_arg_instance_slot(
+        callee_token, call_node, ordinal, expected_instance, 3u);
+    if (prior_actual != INVALID)
+        return prior_actual;
 
     return INVALID;
 }
@@ -398,6 +419,8 @@ void validate_array_call_arg_slot(uint slot)
 
     uint callee_token = call_callee_token(call_node);
     if (!valid_token(callee_token))
+        return;
+    if (method_call_name_id[callee_token] != INVALID)
         return;
     if (!call_window_fits_cache(callee_token, call_node))
         return;
@@ -464,6 +487,8 @@ void validate_array_call_let(uint node)
 
     uint callee_token = call_callee_token(call_node);
     if (!valid_token(callee_token))
+        return;
+    if (method_call_name_id[callee_token] != INVALID)
         return;
     if (!call_window_fits_cache(callee_token, call_node))
         return;

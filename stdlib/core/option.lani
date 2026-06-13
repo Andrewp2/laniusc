@@ -2,6 +2,8 @@
 
 module core::option;
 
+import core::result;
+
 pub enum Option<T> {
     Some(T),
     None,
@@ -21,6 +23,27 @@ pub fn is_none<T>(value: Option<T>) -> bool {
     };
 }
 
+pub fn contains_i32(value: Option<i32>, expected: i32) -> bool {
+    return match (value) {
+        Some(inner) -> inner == expected,
+        None -> false,
+    };
+}
+
+pub fn contains_u32(value: Option<u32>, expected: u32) -> bool {
+    return match (value) {
+        Some(inner) -> inner == expected,
+        None -> false,
+    };
+}
+
+pub fn contains_u8(value: Option<u8>, expected: u8) -> bool {
+    return match (value) {
+        Some(inner) -> inner == expected,
+        None -> false,
+    };
+}
+
 pub fn unwrap_or<T>(value: Option<T>, fallback: T) -> T {
     return match (value) {
         Some(inner) -> inner,
@@ -28,6 +51,57 @@ pub fn unwrap_or<T>(value: Option<T>, fallback: T) -> T {
     };
 }
 
+pub fn or<T>(value: Option<T>, fallback: Option<T>) -> Option<T> {
+    if (is_some(value)) {
+        return value;
+    } else {
+        return fallback;
+    }
+}
+
+pub fn and<T>(value: Option<T>, next: Option<T>) -> Option<T> {
+    if (is_some(value)) {
+        return next;
+    } else {
+        return value;
+    }
+}
+
+pub fn xor<T>(left: Option<T>, right: Option<T>) -> Option<T> {
+    if (is_some(left)) {
+        if (is_some(right)) {
+            let none: Option<T> = None;
+            return none;
+        } else {
+            return left;
+        }
+    } else {
+        return right;
+    }
+}
+
 pub fn replace<T>(value: Option<T>, next: T) -> Option<T> {
-    return Some(next);
+    let replacement: Option<T> = Some(next);
+    return replacement;
+}
+
+pub fn ok_or<T, E>(value: Option<T>, error: E) -> core::result::Result<T, E> {
+    return match (value) {
+        Some(inner) -> core::result::Ok(inner),
+        None -> core::result::Err(error),
+    };
+}
+
+pub fn ok<T, E>(value: core::result::Result<T, E>) -> Option<T> {
+    return match (value) {
+        core::result::Ok(inner) -> Some(inner),
+        core::result::Err(error) -> None,
+    };
+}
+
+pub fn err<T, E>(value: core::result::Result<T, E>) -> Option<E> {
+    return match (value) {
+        core::result::Ok(inner) -> None,
+        core::result::Err(error) -> Some(error),
+    };
 }

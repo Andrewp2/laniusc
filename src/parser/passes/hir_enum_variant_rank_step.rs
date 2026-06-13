@@ -150,6 +150,10 @@ impl HirEnumVariantRankStepPass {
                 buffers.hir_enum_rank_node.as_entire_binding(),
             ),
             (
+                "hir_enum_rank_count".into(),
+                buffers.hir_enum_rank_count.as_entire_binding(),
+            ),
+            (
                 "hir_variant_owner_in".into(),
                 variant_owner_in.as_entire_binding(),
             ),

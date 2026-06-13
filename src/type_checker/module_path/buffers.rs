@@ -15,6 +15,7 @@ pub(super) struct Buffers {
     pub(super) record_scan_prefix_a: wgpu::Buffer,
     pub(super) record_scan_prefix_b: wgpu::Buffer,
     pub(super) module_count_out: wgpu::Buffer,
+    pub(super) module_table_count_out: wgpu::Buffer,
     pub(super) import_count_out: wgpu::Buffer,
     pub(super) decl_count_out: wgpu::Buffer,
     pub(super) module_file_id: wgpu::Buffer,
@@ -245,6 +246,13 @@ impl Buffers {
             1,
             wgpu::BufferUsages::empty(),
         );
+        let module_table_count_out = storage_u32_fill_rw(
+            device,
+            "type_check.resident.module_table_count_out",
+            1,
+            layout.module_capacity_u32,
+            wgpu::BufferUsages::empty(),
+        );
         let import_count_out = storage_u32_rw(
             device,
             "type_check.resident.import_count_out",
@@ -400,11 +408,11 @@ impl Buffers {
             record_capacity,
             external.map(|scratch| scratch.decl_module_file_id),
         );
-        let decl_module_id = reuse_storage_u32(
+        let decl_module_id = storage_u32_rw(
             device,
             "type_check.resident.decl_module_id",
             record_capacity,
-            external.map(|scratch| scratch.decl_module_id),
+            wgpu::BufferUsages::empty(),
         );
         let decl_name_id = reuse_storage_u32(
             device,
@@ -894,6 +902,7 @@ impl Buffers {
             record_scan_prefix_a,
             record_scan_prefix_b,
             module_count_out,
+            module_table_count_out,
             import_count_out,
             decl_count_out,
             module_file_id,

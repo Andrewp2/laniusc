@@ -4,6 +4,8 @@ public interface IFixedU32RowKey<TKey>
     static uint key_lane(TKey key, uint lane);
 }
 
+static const uint FIXED_U32_KEY_MAX_LANES = 16u;
+
 public int fixed_u32_lane_compare(uint left, uint right)
 {
     if (left < right)
@@ -21,15 +23,17 @@ public int fixed_u32_row_key_compare<
     uint lane_count)
 {
     [loop]
-    for (uint lane = 0u; lane < lane_count; lane += 1u)
+    for (uint lane = 0u; lane < FIXED_U32_KEY_MAX_LANES; lane += 1u)
     {
+        if (lane >= lane_count)
+            return 0;
         int cmp = fixed_u32_lane_compare(
             TOps.row_lane(row, lane),
             TOps.key_lane(key, lane));
         if (cmp != 0)
             return cmp;
     }
-    return 0;
+    return lane_count > FIXED_U32_KEY_MAX_LANES ? 1 : 0;
 }
 
 public bool fixed_u32_row_key_equal<

@@ -47,6 +47,8 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirEnumVariantLi
             ("node_kind".into(), b.node_kind.as_entire_binding()),
             ("parent".into(), b.parent.as_entire_binding()),
             ("first_child".into(), b.first_child.as_entire_binding()),
+            ("next_sibling".into(), b.next_sibling.as_entire_binding()),
+            ("prev_sibling".into(), b.prev_sibling.as_entire_binding()),
             ("hir_kind".into(), b.hir_kind.as_entire_binding()),
             (
                 "hir_variant_owner_a".into(),

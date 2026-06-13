@@ -43,14 +43,34 @@ owner/ordinal set is incomplete, so type checking never has to rediscover call
 arguments from source text to compensate for a truncated parser record. Array
 literals follow the same fail-closed handoff shape: readback rejects malformed
 element owner/count/ordinal/next chains before type checking consumes those
-parser-owned rows. Struct literals do the same for parser-owned field
-first/count/owner/next/value rows, so a malformed field chain fails during
-readback instead of falling back to field-name or source-shape recovery. Module
+parser-owned rows, including cross-file element edges that would otherwise
+look in-span under source-pack-local token offsets. Struct literals do the same
+for parser-owned field first/count/owner/next/value rows, so a malformed field
+chain fails during readback instead of falling back to field-name or
+source-shape recovery. Module
 and path-import item rows also have parser-owned path-node anchors; readback
 rejects path spans that are detached from those nodes, so import resolution does
 not need to reconstruct module paths from source bytes. Each path-node anchor is
 owned by only one module/import row, so resolver input is a flat owner-to-path
-record relation rather than an inferred source-neighborhood relation.
+record relation rather than an inferred source-neighborhood relation. Path-type
+records follow the same edge contract: their path edge must point at a
+parser-owned path row, not merely at a same-span or same-spelled child, and
+their leaf must match that path row's parser-owned terminal leaf. Their type
+row span must also start at the parser-owned path row; generic arguments may
+extend the type row, but an earlier sibling token cannot become part of the
+type span. Readback rejects leaves that sit inside the path span but do not end
+at the path row, so module/type resolution consumes the published terminal
+segment rather than reconstructing path endings from source text or sibling
+shape.
+Call expression rows also keep their parser-owned callee edge as the span
+anchor: readback rejects call spans that start before the callee row, so call
+typing consumes the published callee/argument relation instead of compensating
+with source-neighborhood recovery. Call argument rows also stay in the call
+owner's source-pack file; matching token offsets from another file are rejected
+at readback instead of becoming implicit argument-discovery hints. Their
+published argument spans must also follow ordinal source order without overlap
+inside the owning call span, so type checking can trust the flat argument rows
+as the complete ordered call input.
 Language declarations follow the same materialize-once rule: the language
 declaration pass publishes dense name-id lookup tables for entrypoints,
 intrinsics, and primitive type codes, and later call/entrypoint consumers read
@@ -58,13 +78,35 @@ those tables directly instead of looping over the declaration list at each use.
 Enum variant declarations follow that same handoff: the parser publishes
 `hir_variant_parent_enum` after pointer-jumping enum variant list links, and the
 module declaration scatter uses that row to materialize `decl_parent_type_decl`
-instead of climbing declaration ancestors in the consumer.
+instead of climbing declaration ancestors in the consumer. Bounded enum payload
+slots must also be complete, source-ordered, and non-overlapping before
+downstream enum typing can consume them.
+Match arm rows follow the same parser-owned chain contract: readback validates
+the published arm rank metadata against the source-order arm chain, so
+downstream match typing can consume flat match/ordinal rows without rebuilding
+arm order from source adjacency.
+Match payload rows are also anchored to their owning pattern span, not just the
+whole arm span, so enum-payload typing cannot accidentally consume a same-arm
+row that was scattered outside the pattern. Payload binder rows must also start
+after the owning pattern head token, keeping the enum variant head as the
+variant lookup anchor rather than a binder token. Payload rows must also share
+the owner arm's source-pack file id, so matching token offsets from another
+file cannot be treated as implicit binder adjacency.
 
 ## Current Implementation Alignment
 
 The current implementation has moved some hot semantic consumers toward this
 shape, but it is not there yet.
 
+- The paper front-end sequence does not end at expression type assignment.
+  GPU semantic passes now validate explicit return expression types and a
+  bounded return-convergence contract for concrete non-void functions before
+  backend codegen consumes the program. The current convergence rows are
+  parser-owned HIR facts for direct top-level returns, direct `if`/`else` arms
+  that both return, and one ordered propagation through an enclosing block for
+  nested direct `if`/`else` rows. Broader nested control-flow convergence still
+  needs compact control-flow rows, reductions, and stable unsupported
+  diagnostics before this can be called a full production convergence model.
 - Visible declaration scattering now consumes the parser-owned
   `hir_stmt_scope_end` row instead of walking parent/block syntax in
   `type_check_visible_03c_scatter_hir_decls.slang`.
@@ -76,8 +118,11 @@ shape, but it is not there yet.
   `hir_expr_result_root_node` records for argument result discovery instead of
   walking descendant and sibling source shape in
   `type_check_predicates_02_obligations.slang`. The root table is produced from
-  parser expression-result edges by pointer-jump passes, so consumers do not
-  carry their own bounded result-edge chase.
+  parser expression-result edges by pointer-jump passes, and resident readback
+  now rejects non-expression roots, cross-file roots, roots outside the owner
+  expression span, and roots that are not canonical after pointer jumping. That
+  keeps consumers from carrying their own bounded result-edge chase or falling
+  back to source spelling when the handoff is malformed.
 - Those changes are transitional records, not a full relational type checker.
   `hir_stmt_fields.slang` still derives some records from local production
   parent/child/sibling relations, and predicate obligations still have bounded
@@ -87,6 +132,10 @@ shape, but it is not there yet.
   field rows, radix-sorts them by `(struct_node, field_name_id)`, and the member
   and struct-init consumers perform range queries instead of scanning
   `hir_struct_decl_field_start` through `hir_struct_decl_field_count`. The
+  aggregate-access validator also checks adjacent equal sorted field keys and
+  rejects duplicate field declarations before later member or literal use can
+  depend on an ambiguous first-match result. That validation is a row-local
+  sorted-table check, not a declaration subtree walk. The
   final aggregate-access validator consumes `hir_expr_result_root_node` for
   field value roots and the method-call key relation (`method_call_name_id`) for
   member-call classification; it no longer imports the tree-walk helper. If a
@@ -107,13 +156,37 @@ shape, but it is not there yet.
   `hir_call_context_stmt_node` remain narrower contextual-typing rows and only
   carry nearest let/return contexts. Downstream consumers that need statement
   or function membership should consume these parser-owned rows instead of
-  overloading contextual-typing rows or walking parents.
+  overloading contextual-typing rows or walking parents. Parser readback now
+  also validates the durable function-context boundary: function rows must
+  publish themselves as their nearest function, and return-statement rows must
+  carry a nearest-function relation before downstream return checking can
+  consume them.
+- The same context pass now publishes `hir_nearest_loop_node` separately from
+  `hir_nearest_enclosing_control_node`. This matters for `break` and
+  `continue` inside an `if` nested in a loop: the nearest control row remains
+  the inner `if`, while the nearest-loop row points directly at the enclosing
+  `while`/`for`, giving later loop-control consumers a flat parser-owned
+  relation instead of a token loop-depth or ancestor-shape guess. Parser
+  readback now also rejects loop rows that do not publish themselves as their
+  nearest loop and rejects contradictory loop-control/context rows where the
+  nearest enclosing control is a loop but the nearest-loop row points elsewhere.
 - The scalar WASM HIR body emitter now follows that contract for statement
-  membership, block membership, enclosing-control membership, and expression
-  roots. The parser publishes `hir_nearest_stmt_node`,
-  `hir_nearest_block_node`, `hir_nearest_enclosing_control_node`, and
-  `hir_nearest_fn_node` from the dense semantic-HIR parent relation with
-  pointer-jump passes before consumers need context membership.
+  membership, block membership, enclosing-control/loop membership, and
+  expression roots. The parser publishes `hir_nearest_stmt_node`,
+  `hir_nearest_block_node`, `hir_nearest_enclosing_control_node`,
+  `hir_nearest_loop_node`, and `hir_nearest_fn_node` from the dense
+  semantic-HIR parent relation with pointer-jump passes before consumers need
+  context membership. Parser readback rejects incoherent context chains where
+  function membership does not contain the published statement/block/control/loop
+  relation, where nearest-block membership does not contain the nearest-statement
+  relation for non-block rows, or where loop membership does not contain the
+  published enclosing control relation. It also rejects specialized
+  call/array/struct context rows that omit the generic nearest-statement row,
+  disagree with their statement's parser-owned block/function/control/loop
+  context, or publish extra peer context rows that the owning statement did not
+  publish. That keeps call and literal contexts inside nested control from
+  carrying stale nearest-`if` or nearest-loop membership into downstream type
+  passes.
 - WASM codegen now starts fail-closed and only lets parser/type-owned relation
   consumers clear the unsupported-shape status. Legacy source/token-shape WASM
   body passes remain quarantined as source-only migration scaffolding when they
@@ -132,7 +205,10 @@ shape, but it is not there yet.
   enclosing function.
 - Array index result typing also consumes `hir_expr_result_root_node` for the
   indexed base and index operand, so it no longer chases `HIR_EXPR_FORWARD`
-  records inside the consumer.
+  records inside the consumer. Parser readback also requires the index row's
+  source span to start at the parser-owned base operand, keeping stale or
+  over-wide index spans from becoming source-shape recovery hints for
+  downstream passes.
 - Generic array/slice call inference now consumes parser-published
   `hir_expr_result_root_node` plus direct HIR call-argument rows when mapping
   declaration-backed actual arguments to generic return slots. Its remaining
@@ -141,19 +217,27 @@ shape, but it is not there yet.
 - HIR control/scalar-expression validation now consumes the same parser-owned
   `hir_expr_result_root_node` relation for binary, index, name, and diagnostic
   operand roots instead of carrying a bounded forward-edge chase in the
-  consumer. Loop-control validation still uses the token-keyed `loop_depth`
-  fact; it does not need nearest-control/block/function rows for its current
-  break/continue contract.
+  consumer. Loop-control validation now consumes parser-owned
+  `hir_nearest_loop_node` rows for `break` and `continue` instead of the
+  token-keyed `loop_depth` bridge.
   Assignment validation no longer accepts an aggregate literal merely because
   one appears somewhere under the RHS subtree. Contextual aggregates must come
-  from the parser-published literal-to-statement row; direct array literals in
-  assignment fail closed until the parser publishes an explicit assignment
-  context relation.
+  from the parser-published literal-to-statement row. Source-pack HIR readback
+  now carries and validates the same nearest-statement/block/control/loop/function
+  and call/array/struct contextual-statement rows as resident debug readback,
+  including direct array-literal assignment contexts, so downstream consumers
+  can fail closed on those parser-owned relations instead of rediscovering the
+  RHS shape from source or descendants. The readback contract now also rejects
+  call/array/struct context owners that have a parser-owned nearest-statement
+  row but omit their specialized contextual-statement row.
 - Inherent method declaration collection now consumes parser-owned
   HIR-function-keyed `hir_method_*` rows for impl owner, method name token,
   first parameter token, receiver mode, visibility, and impl receiver type.
   The method name is copied from the parser-owned `hir_item_name_token` row,
   not inferred from token adjacency around `fn`.
+  Syntax validation now also consumes the semantic `TK_PARAM_LPAREN` row from
+  token classification when locating function parameter lists, instead of
+  scanning forward through the source until it finds a parenthesis.
   `type_check_methods_02_collect.slang` now only projects those rows into the
   token-keyed method table; it no longer imports tree-walk helpers or derives
   method ownership from parse-tree ancestors/child lists. Method `self`
@@ -173,10 +257,18 @@ shape, but it is not there yet.
   `type_check_modules_10h_consume_value_calls.slang`. Its remaining bounded
   shape is the four-slot call/type-instance argument cache; larger argument
   lists need compact argument rows plus prefix-summed validation rows rather
-  than expanding an in-shader loop.
-  Direct scalar call resolution in `type_check_calls_03_resolve.slang` now
-  consumes the same parser-owned expression-root relation while inferring
-  simple generic call returns and checking argument consistency.
+  than expanding an in-shader loop. Parser readback now validates the direct
+  call-argument span order against the parser-owned ordinals, so consumers do
+  not infer argument ordering from source adjacency.
+	  Direct scalar call resolution in `type_check_calls_03_resolve.slang` now
+	  consumes the same parser-owned expression-root relation while inferring
+	  simple generic call returns and checking argument consistency. That evidence
+	  currently covers direct argument rows, including source-pack qualified
+	  helper forwarding through generic calls and direct scalar returns inferred
+	  from nominal instance arguments, such as `unbox(Boxed<i32>) -> T`.
+	  Nested direct calls that return generic instances still need compact
+	  return-instance relation joins before their planned rows can be promoted to
+	  supported semantic-contract evidence.
   The paper-aligned replacement is a multi-pass relation, not a local unroll:
   count and scan qualified value-call argument pairs, scatter
   `module_value_call_arg_rows(call_token, fn_token, ordinal, arg_node,
@@ -192,7 +284,10 @@ shape, but it is not there yet.
   Trait declarations, inherent impl methods, and trait impl methods now expose
   parser-owned `hir_method_owner_node`, name, visibility, receiver, and
   parameter rows, and predicate collection reads those rows instead of
-  rediscovering owners from local source shape.
+  rediscovering owners from local source shape. Impl method rows are method-only
+  declarations: they must not also publish module value item metadata, so
+  downstream name lookup cannot accidentally consume a method as a free
+  function item.
   Trait and inherent impl header consumers also read the parser-owned
   `hir_method_impl_receiver_type_node` relation for the impl receiver/target
   type; if that relation is absent, predicate collection fails closed with the
@@ -214,9 +309,26 @@ shape, but it is not there yet.
   `hir_fn_return_type_node`, and `hir_param_record` / `hir_param_type_node` rows
   for trait and impl method metadata. Impl method ownership is accepted from the
   parser-owned method-owner relation, not rediscovered by checking parse parents.
+  Parser readback now also rejects method rows that publish a first-parameter
+  token without a receiver/first-parameter mode, and rejects explicit first
+  parameters without a parser-owned type edge, so predicate signature comparison
+  does not need to recover the parameter type from local source shape. It also
+  rejects impl method rows that carry value item metadata, keeping the method
+  relation separate from the module value namespace. The same
+  readback boundary now requires the method row to live inside its parser-owned
+  trait/impl owner span, and requires the ordinal-zero parameter row plus the
+  explicit receiver type row when present to share the method source-pack file
+  and live inside the method/parameter spans; same local token offsets or
+  spelling cannot substitute for a stale parser-owned HIR record.
   The remaining predecessor bridge for method parameter chains now validates
   every locally linked predecessor against the parser-owned owner/ordinal row and
   fails the whole method contract if those facts disagree.
+  Trait impl arguments that name the impl header's own generic parameters now
+  fail closed before predicate collection resolves the same leaf spelling as a
+  concrete type declaration, and the predicate status row retains the offending
+  argument token for the stable diagnostic. This keeps generic impl headers out
+  of the compact predicate key space until impl-argument rows can carry
+  generic-parameter refs through a sorted relation rather than a leaf-token key.
   `type_check_predicates_01_collect.slang` now consumes those predicate
   method-contract rows for method name identity instead of falling back to local
   token arithmetic. Bound-argument owner/ordinal extraction remains a bounded
@@ -232,7 +344,10 @@ shape, but it is not there yet.
   status)` rows produced by count/scan/scatter. Predicate bound and impl type
   paths also fail closed when their path subtree exceeds the current 64-node GPU
   extraction window, rather than letting predicate collection perform an
-  arbitrary source-shaped path walk. It is not fully clean yet: broader
+  arbitrary source-shaped path walk. Invalid bound argument types now keep the
+  parser-owned argument token in the predicate row, so `Rel<T, Missing>` reports
+  the missing argument type instead of falling back to the outer predicate path.
+  It is not fully clean yet: broader
   trait/impl header shape discovery, method-parameter predecessor links, and
   nested signature type comparison still have bounded transitional walks.
   Those should be replaced by compact count/scan/scatter records and consumed
@@ -323,26 +438,42 @@ relation: owner node, method name id/token, visibility, receiver mode, return
 type ref, method-level generic/where status, and compact parameter rows keyed by
 `(method, ordinal)`. The current implementation already validates reordered impl
 methods through sorted
-`(owner, name)` method-contract joins instead of source-order pairing, detects
-extra methods from owner range counts after the required-name joins, and checks
-malformed owner/name ranges before accepting them. Method-parameter publication
-is fail-closed for its current bounded record shape: if a parameter is found
-under a method but no ordinal or next-parameter row can be published, the
-collector marks the method as over the signature window so later signature
-comparison rejects the whole contract instead of validating a truncated prefix.
+`(owner, name)` method-contract joins instead of source-order pairing, classifies
+extra, malformed, and duplicate impl-method rows through explicit per-method
+validation records, classifies the compact count case where an impl owner range
+has fewer rows than the resolved trait owner range as a missing required method,
+and checks malformed owner/name ranges before accepting them. Per-method
+validation rows now also reflect trait-side generic/where contract statuses
+through each matching impl method row, so late trait methods can produce the
+specific contract diagnostic instead of only the old owner-window failure. Method
+parameter publication is fail-closed for its current bounded record shape: if a
+parameter is found under a method but no ordinal or next-parameter row can be
+published, the collector marks the method as over the signature window so later
+signature comparison rejects the whole contract instead of validating a
+truncated prefix.
 Impl-method parameter owner/ordinal/type publication consumes the parser-owned
 `hir_param_record` / `hir_param_type_node` rows produced by pointer-jump parser
 passes for trait declarations, inherent impl methods, and trait impl methods;
 the local predecessor relation is accepted only when the previous parameter's
 parser-owned owner/ordinal is exactly the same owner and one lower ordinal.
+Parser readback also rejects parameter owner/ordinal rows whose sibling spans
+overlap, so signature consumers cannot recover a malformed parameter list from
+token adjacency.
 
 The current evidence should not be overstated. Trait impl method owner rows
 now come from parser-owned method rows rather than a predicate-pass fallback.
-Method return types also come from parser-owned function return rows.
+Method return types also come from parser-owned function return rows. For
+item-backed functions and extern functions, readback rejects return-type edges
+whose target type row does not follow the parser-owned function name token, so
+parameter or body-local type rows inside the same function span cannot be
+reused as stale return-signature evidence.
 Method-level generic/where detection now comes from parser-owned
 `hir_method_signature_flags`. The remaining method-signature loop in
 `type_check_predicates_01_collect.slang` walks the predicate-linked parameter
-list and nested type-ref structure. The production relation family should be:
+list and nested type-ref structure. It now fails closed for nested generic
+instance arguments and top-level instance signatures whose direct argument list
+exceeds the bounded bridge, so the compiler does not validate a truncated
+signature prefix. The production relation family should be:
 compact `method_param_signature_row(method_node, ordinal, param_kind,
 param_type_ref, status)` rows sorted by `(method_node, ordinal)`, plus
 `type_ref_leaf_row(root_type_ref, leaf_path, leaf_type_ref, kind, generic_slot,
@@ -353,9 +484,12 @@ method, and scatter explicit validation status rows without per-method local
 walks. Inherent method lookup now fails closed when exact concrete and generic
 receiver keys both produce visible candidates for the same receiver/name,
 rather than silently choosing a specialization before there is an explicit
-specialization/ambiguity relation. Cross-module inherent method lookup also
-bounds each sorted receiver/name visibility range and fails unresolved when
-that candidate window is exceeded.
+  specialization/ambiguity relation. Cross-module inherent method lookup now
+  accepts only empty or single-candidate sorted receiver/name visibility ranges;
+  multi-candidate ranges fail unresolved until public candidate rows and a
+  reduction/ambiguity pass exist. Inherent impl receiver target validation now
+also rejects nested generic receiver arguments before method-key publication, so
+the bounded top-level receiver key cannot erase nested instance arguments.
 The next GPU-style step is to emit explicit validation result rows from those
 sorted joins. That remains deliberately narrower than trait-method dispatch or
 backend monomorphization.

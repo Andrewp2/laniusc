@@ -93,6 +93,7 @@ pub(in crate::compiler) fn validate_link_group_page(
             )));
         }
     }
+    validate_link_group_source_summary(group)?;
     if group.input_partition_indices.len()
         > SOURCE_PACK_HIERARCHICAL_LINK_GROUP_INPUT_DEFAULT_PAGE_SIZE
     {
@@ -241,6 +242,7 @@ pub(in crate::compiler) fn validate_link_group_page(
         SourcePackHierarchicalLinkGroupKind::Reduce => {
             if group.level == 0
                 || group.input_link_group_indices.is_empty()
+                || !group.input_partition_indices.is_empty()
                 || input_frontend_job_count != 0
                 || !group.input_codegen_job_indices.is_empty()
                 || input_partition_count == 0
@@ -259,6 +261,30 @@ pub(in crate::compiler) fn validate_link_group_page(
                 }
             }
         }
+    }
+    Ok(())
+}
+
+fn validate_link_group_source_summary(
+    group: &SourcePackHierarchicalLinkGroupPage,
+) -> Result<(), CompileError> {
+    if group.source_file_count == 0 {
+        return Err(library_partition_contract_error(format!(
+            "hierarchical link group {} has empty source summary; link-plan replay must carry source-file evidence for every link group",
+            group.group_index
+        )));
+    }
+    if group.source_byte_count == 0 {
+        return Err(library_partition_contract_error(format!(
+            "hierarchical link group {} has empty source-byte summary for {} source files; link-plan replay must carry concrete source-byte evidence",
+            group.group_index, group.source_file_count
+        )));
+    }
+    if group.source_byte_count < group.source_file_count {
+        return Err(library_partition_contract_error(format!(
+            "hierarchical link group {} source-byte summary {} is smaller than source-file count {}; each replayed source file must contribute concrete bytes",
+            group.group_index, group.source_byte_count, group.source_file_count
+        )));
     }
     Ok(())
 }
@@ -299,12 +325,19 @@ pub(in crate::compiler) fn validate_link_group_page_for_plan(
             group.group_index, group.job_index, index.final_link_job_index
         )));
     }
-    if hierarchical_link_group_input_partition_count(group) > index.input_partition_count {
+    let group_input_partition_count = hierarchical_link_group_input_partition_count(group);
+    if group.group_index == index.final_link_group_index
+        && group_input_partition_count != index.input_partition_count
+    {
+        return Err(library_partition_contract_error(format!(
+            "hierarchical link final group {} records {} input partitions but plan has {} input partitions; final link-plan groups must cover the complete input partition range before completion metadata is published",
+            group.group_index, group_input_partition_count, index.input_partition_count
+        )));
+    }
+    if group_input_partition_count > index.input_partition_count {
         return Err(library_partition_contract_error(format!(
             "hierarchical link group {} records {} input partitions but plan has {} partitions",
-            group.group_index,
-            hierarchical_link_group_input_partition_count(group),
-            index.input_partition_count
+            group.group_index, group_input_partition_count, index.input_partition_count
         )));
     }
     for &partition_index in &group.input_partition_indices {
@@ -406,6 +439,45 @@ mod tests {
     }
 
     #[test]
+    fn hierarchical_link_group_rejects_empty_source_summary() {
+        let mut no_files = leaf_group(2);
+        no_files.source_file_count = 0;
+        let err = validate_link_group_page(&no_files, SourcePackArtifactTarget::Wasm, Some(2))
+            .expect_err("link groups must carry source-file provenance");
+        let message = err.to_string();
+        assert!(
+            message.contains("empty source summary") && message.contains("source-file evidence"),
+            "unexpected empty source summary error: {message}"
+        );
+
+        let mut no_bytes = leaf_group(2);
+        no_bytes.source_byte_count = 0;
+        let err = validate_link_group_page(&no_bytes, SourcePackArtifactTarget::Wasm, Some(2))
+            .expect_err("link groups must carry concrete source-byte provenance");
+        let message = err.to_string();
+        assert!(
+            message.contains("empty source-byte summary")
+                && message.contains("concrete source-byte evidence"),
+            "unexpected empty source-byte summary error: {message}"
+        );
+
+        let mut fewer_bytes_than_files = leaf_group(2);
+        fewer_bytes_than_files.source_file_count = 4;
+        fewer_bytes_than_files.source_byte_count = 3;
+        let err = validate_link_group_page(
+            &fewer_bytes_than_files,
+            SourcePackArtifactTarget::Wasm,
+            Some(2),
+        )
+        .expect_err("link groups must not report fewer source bytes than source files");
+        let message = err.to_string();
+        assert!(
+            message.contains("source-byte summary 3") && message.contains("source-file count 4"),
+            "unexpected source byte/file count error: {message}"
+        );
+    }
+
+    #[test]
     fn hierarchical_link_plan_index_rejects_unrepresentable_dense_final_job_slot() {
         let index = SourcePackHierarchicalLinkPlanIndex {
             version: SOURCE_PACK_HIERARCHICAL_LINK_PLAN_INDEX_VERSION,
@@ -426,6 +498,36 @@ mod tests {
                 && message.contains("final group")
                 && message.contains("overflows final job index"),
             "unexpected overflow validation error: {message}"
+        );
+    }
+
+    #[test]
+    fn hierarchical_link_reduce_group_rejects_inline_partition_indices() {
+        let group = SourcePackHierarchicalLinkGroupPage {
+            version: SOURCE_PACK_HIERARCHICAL_LINK_GROUP_PAGE_VERSION,
+            target: SourcePackArtifactTarget::Wasm,
+            group_index: 2,
+            kind: SourcePackHierarchicalLinkGroupKind::Reduce,
+            level: 1,
+            job_index: 32,
+            input_partition_count: 1,
+            input_partition_indices: vec![0],
+            input_frontend_job_count: 0,
+            input_frontend_job_indices: Vec::new(),
+            input_codegen_job_indices: Vec::new(),
+            input_link_group_indices: vec![0],
+            source_byte_count: 8,
+            source_file_count: 1,
+            source_line_count: 1,
+            oversized_input: false,
+        };
+
+        let err = validate_link_group_page(&group, SourcePackArtifactTarget::Wasm, Some(2))
+            .expect_err("reduce groups must summarize partitions through input groups only");
+        let message = err.to_string();
+        assert!(
+            message.contains("reduce group 2") && message.contains("invalid page shape"),
+            "unexpected reduce group validation error: {message}"
         );
     }
 }

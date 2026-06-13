@@ -44,6 +44,12 @@ pub const HIR_EXPR_FORM_INDEX: u32 = 26;
 pub const HIR_EXPR_FORM_FLOAT: u32 = 27;
 pub const HIR_EXPR_FORM_STRING: u32 = 28;
 pub const HIR_EXPR_FORM_CHAR: u32 = 29;
+pub const HIR_EXPR_FORM_RANGE: u32 = 30;
+pub const HIR_EXPR_FORM_RANGE_FROM: u32 = 31;
+pub const HIR_EXPR_FORM_RANGE_TO: u32 = 32;
+pub const HIR_EXPR_FORM_RANGE_FULL: u32 = 33;
+pub const HIR_EXPR_FORM_RANGE_INCLUSIVE: u32 = 34;
+pub const HIR_EXPR_FORM_RANGE_TO_INCLUSIVE: u32 = 35;
 
 pub struct HirExprFieldsPass {
     data: PassData,

@@ -12,6 +12,7 @@
 // block to recover the exact prefix position.
 
 import segment_tree;
+import generated_parse_production_ids;
 
 struct Params
 {
@@ -102,6 +103,16 @@ uint find_subtree_end(uint i, uint n)
     return n;
 }
 
+uint file_root_subtree_end(uint i, uint n)
+{
+    uint child = i + 1u;
+    if (child >= n || parent[child] != i)
+        return min(i + 1u, n);
+
+    uint end = find_subtree_end(child, n);
+    return end > child && node_kind[end - 1u] == PROD_FILE ? end - 1u : end;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -114,7 +125,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint arity = prod_arity[node_kind[i]];
     first_child[i] = (arity > 0u && i + 1u < n) ? i + 1u : INVALID;
 
-    uint end = find_subtree_end(i, n);
+    uint end = node_kind[i] == PROD_FILE ? file_root_subtree_end(i, n) : find_subtree_end(i, n);
     subtree_end[i] = end;
 
     next_sibling[i] = (end < n && parent[end] == parent[i]) ? end : INVALID;

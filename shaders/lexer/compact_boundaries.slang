@@ -124,10 +124,11 @@ inline void compact_impl(bool use_kept_pred, uint3 tid)
         uint delta_all = all_idx_1based - prev_all;
 
         uint all_idx_for_kept = all_idx_1based;
-        if (is_last != 0u && delta_all == 2u)
+        if (delta_all == 2u)
         {
-            // If we kept the earlier (EMIT) end, start should be the previous ALL boundary (j-2),
-            // which corresponds to j-1 here. Otherwise (kept EOF) use j.
+            // If we kept the earlier EMIT boundary while the EOF/file-end boundary was skipped,
+            // start from the previous ALL boundary. This can happen at source-pack file ends too,
+            // not just at the end of the whole input buffer.
             uint kept_emit = ((f & PF_KEEP_EMIT) != 0u) ? 1u : 0u;
             all_idx_for_kept = (kept_emit != 0u) ? (all_idx_1based - 1u) : all_idx_1based;
         }

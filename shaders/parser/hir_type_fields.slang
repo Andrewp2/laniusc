@@ -25,6 +25,7 @@ RWStructuredBuffer<uint> hir_type_form;
 RWStructuredBuffer<uint> hir_type_value_node;
 RWStructuredBuffer<uint> hir_type_len_token;
 RWStructuredBuffer<uint> hir_type_path_leaf_node;
+RWStructuredBuffer<uint> hir_bound_path_owner_by_leaf;
 RWStructuredBuffer<uint> hir_type_arg_start;
 RWStructuredBuffer<uint> hir_type_arg_count;
 RWStructuredBuffer<uint> hir_type_arg_next;
@@ -83,6 +84,7 @@ void clear_type(uint i)
     hir_type_value_node[i] = INVALID;
     hir_type_len_token[i] = INVALID;
     hir_type_path_leaf_node[i] = INVALID;
+    hir_bound_path_owner_by_leaf[i] = INVALID;
     hir_type_arg_start[i] = INVALID;
     hir_type_arg_count[i] = 0u;
     hir_type_arg_next[i] = INVALID;

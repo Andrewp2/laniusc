@@ -127,29 +127,3 @@ pub(super) fn readback_u32s(device: &wgpu::Device, label: &str, count: usize) ->
         mapped_at_creation: false,
     })
 }
-
-pub(super) fn token_bytes(tokens: &[Token]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(tokens.len().max(1) * 12);
-    for token in tokens {
-        out.extend_from_slice(&(token.kind as u32).to_le_bytes());
-        out.extend_from_slice(&(token.start as u32).to_le_bytes());
-        out.extend_from_slice(&(token.len as u32).to_le_bytes());
-    }
-    if out.is_empty() {
-        out.resize(12, 0);
-    }
-    out
-}
-
-pub(super) fn nonempty_bytes(bytes: &[u8]) -> Vec<u8> {
-    let mut out = if bytes.is_empty() {
-        vec![0]
-    } else {
-        bytes.to_vec()
-    };
-    let aligned_len = out.len().div_ceil(4) * 4;
-    if out.len() < aligned_len {
-        out.resize(aligned_len, 0);
-    }
-    out
-}

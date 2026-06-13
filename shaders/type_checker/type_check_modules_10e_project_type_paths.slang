@@ -131,6 +131,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (ty != 0u)
     {
         module_type_path_type[owner_token] = ty;
+        uint decl_token = decl_name_token[decl_i];
+        if (decl_token < gParams.n_tokens)
+            module_type_path_type[decl_token] = ty;
         module_type_path_status[owner_token] = PATH_RESOLVE_STATUS_OK;
     }
     else if (copied_alias_ref)

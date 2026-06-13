@@ -17,6 +17,8 @@
 // - It does not inspect source bytes, hash token text, scan for "::", patch
 //   call outputs, or perform any CPU lookup.
 
+import generated_parse_production_ids;
+
 struct Params
 {
     uint n_tokens;
@@ -26,9 +28,13 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+StructuredBuffer<uint> hir_status;
+StructuredBuffer<uint> node_kind;
+StructuredBuffer<uint> parent;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_kind;
 StructuredBuffer<uint> path_segment_count;
+StructuredBuffer<uint> path_owner_hir;
 StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> resolved_type_decl;
 StructuredBuffer<uint> resolved_value_status;
@@ -37,6 +43,7 @@ StructuredBuffer<uint> module_value_path_call_head;
 StructuredBuffer<uint> module_value_path_expr_head;
 
 RWStructuredBuffer<uint> module_value_path_status;
+RWStructuredBuffer<uint> predicate_syntax_token;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -58,6 +65,48 @@ uint active_path_count()
     return min(path_count_out[0], gParams.n_hir_nodes);
 }
 
+uint active_hir_node_count()
+{
+    return gParams.n_hir_nodes == 0u ? 0u : min(gParams.n_hir_nodes, hir_status[5u]);
+}
+
+bool valid_node(uint node)
+{
+    return node != INVALID && node < active_hir_node_count();
+}
+
+bool predicate_bound_type_path(uint path_i)
+{
+    uint node = path_owner_hir[path_i];
+    [loop]
+    for (uint guard = 0u; guard < 16u && valid_node(node); guard += 1u)
+    {
+        uint kind = node_kind[node];
+        if (kind == PROD_BOUND_TYPE_IDENT ||
+            kind == PROD_BOUND_TYPE_REF ||
+            kind == PROD_BOUND_TYPE_PATH ||
+            kind == PROD_BOUND_TYPE_PATH_IDENT ||
+            kind == PROD_BOUND_TYPE_PATH_MORE ||
+            kind == PROD_BOUND_TYPE_PATH_END ||
+            kind == PROD_BOUND_TYPE_ARGS_NONE ||
+            kind == PROD_BOUND_TYPE_ARGS_SOME ||
+            kind == PROD_BOUND_TYPE_ARGS_MORE ||
+            kind == PROD_BOUND_TYPE_ARGS_END ||
+            kind == PROD_BOUND_TYPE_ARGS_AFTER_COMMA_MORE ||
+            kind == PROD_BOUND_TYPE_ARGS_AFTER_COMMA_TRAILING ||
+            kind == PROD_TYPE_PARAM_BOUND ||
+            kind == PROD_TYPE_PARAM_BOUND_NONE ||
+            kind == PROD_TYPE_PARAM_BOUND_LIST ||
+            kind == PROD_TYPE_PARAM_BOUND_MORE ||
+            kind == PROD_TYPE_PARAM_BOUND_END ||
+            kind == PROD_WHERE_TYPE_BOUND)
+            return true;
+
+        node = parent[node];
+    }
+    return false;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -74,6 +123,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint owner_token = path_owner_token[path_i];
     if (owner_token >= gParams.n_tokens)
         return;
+    if (predicate_bound_type_path(path_i))
+    {
+        predicate_syntax_token[owner_token] = 1u;
+        return;
+    }
     if (resolved_type_decl[path_i] != INVALID)
         return;
     if (module_type_path_status[owner_token] == PATH_RESOLVE_STATUS_OK)

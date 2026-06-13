@@ -171,6 +171,8 @@ pub(in crate::type_checker) struct PredicateRows<'a> {
     pub(in crate::type_checker) impl_order_tmp: &'a wgpu::Buffer,
     pub(in crate::type_checker) method_contract_order: &'a wgpu::Buffer,
     pub(in crate::type_checker) method_contract_order_tmp: &'a wgpu::Buffer,
+    pub(in crate::type_checker) method_param_order: &'a wgpu::Buffer,
+    pub(in crate::type_checker) method_param_order_tmp: &'a wgpu::Buffer,
     pub(in crate::type_checker) radix: RadixRows<'a>,
     pub(in crate::type_checker) method_contract_owner_node: &'a wgpu::Buffer,
     pub(in crate::type_checker) method_contract_name_token: &'a wgpu::Buffer,
@@ -187,11 +189,21 @@ pub(in crate::type_checker) struct PredicateRows<'a> {
 }
 
 #[derive(Clone, Copy)]
+pub(in crate::type_checker) struct PredicateObligationRows<'a> {
+    pub(in crate::type_checker) count_by_call: &'a wgpu::Buffer,
+    pub(in crate::type_checker) prefix_by_call: &'a wgpu::Buffer,
+    pub(in crate::type_checker) pair_total: &'a wgpu::Buffer,
+    pub(in crate::type_checker) scan: ScanRows<'a>,
+    pub(in crate::type_checker) pair_dispatch_args: &'a wgpu::Buffer,
+}
+
+#[derive(Clone, Copy)]
 pub(in crate::type_checker) struct PredicateInput<'a> {
     pub(in crate::type_checker) token_capacity: u32,
     pub(in crate::type_checker) predicate_capacity: u32,
     pub(in crate::type_checker) predicate_blocks: u32,
     pub(in crate::type_checker) params: &'a LaniusBuffer<TypeCheckParams>,
+    pub(in crate::type_checker) hir_active_count: &'a wgpu::Buffer,
     pub(in crate::type_checker) hir_status: &'a wgpu::Buffer,
     pub(in crate::type_checker) hir_token_pos: &'a wgpu::Buffer,
     pub(in crate::type_checker) hir_items: GpuTypeCheckHirItemBuffers<'a>,
@@ -200,8 +212,10 @@ pub(in crate::type_checker) struct PredicateInput<'a> {
     pub(in crate::type_checker) generic_param_count_by_node: &'a wgpu::Buffer,
     pub(in crate::type_checker) generic_param_slot_by_token: &'a wgpu::Buffer,
     pub(in crate::type_checker) type_expr_ref_tag: &'a wgpu::Buffer,
+    pub(in crate::type_checker) type_expr_ref_payload: &'a wgpu::Buffer,
     pub(in crate::type_checker) type_code_by_name: &'a wgpu::Buffer,
     pub(in crate::type_checker) rows: PredicateRows<'a>,
+    pub(in crate::type_checker) obligation_rows: PredicateObligationRows<'a>,
 }
 
 pub(in crate::type_checker) struct LoopDepthBindGroups {
@@ -222,10 +236,8 @@ pub(in crate::type_checker) struct FnContextBindGroups {
 
 pub(in crate::type_checker) struct VisibleBindGroups {
     pub(in crate::type_checker) hir_decl_scan_n_blocks: u32,
-    pub(in crate::type_checker) hir_decl_record_n_blocks: u32,
     pub(in crate::type_checker) hir_semantic_dispatch_args: wgpu::Buffer,
     pub(in crate::type_checker) clear: wgpu::BindGroup,
-    pub(in crate::type_checker) legacy_token_visibility: Option<LegacyVisibleBindGroups>,
     pub(in crate::type_checker) hir_semantic_dispatch: wgpu::BindGroup,
     pub(in crate::type_checker) mark_hir_decl_names: wgpu::BindGroup,
     pub(in crate::type_checker) hir_decl_scan: U32ScanBindGroups,
@@ -246,12 +258,6 @@ pub(in crate::type_checker) struct VisibleBindGroups {
     pub(in crate::type_checker) hir_decl_scope_leaf_work_items: u32,
     pub(in crate::type_checker) hir_decl_scope_tree_levels: Vec<VisibleDeclScopeTreeLevel>,
     pub(in crate::type_checker) hir_names: wgpu::BindGroup,
-}
-
-pub(in crate::type_checker) struct LegacyVisibleBindGroups {
-    pub(in crate::type_checker) scope_blocks: wgpu::BindGroup,
-    pub(in crate::type_checker) scatter: wgpu::BindGroup,
-    pub(in crate::type_checker) decode: wgpu::BindGroup,
 }
 
 pub(in crate::type_checker) struct VisibleDeclScopeTreeLevel {
@@ -286,7 +292,6 @@ pub(in crate::type_checker) struct NameBindGroups {
 
 pub(in crate::type_checker) struct LanguageNameBindGroups {
     pub(in crate::type_checker) clear: wgpu::BindGroup,
-    pub(in crate::type_checker) mark: wgpu::BindGroup,
     pub(in crate::type_checker) type_codes_clear: wgpu::BindGroup,
     pub(in crate::type_checker) decls_materialize: wgpu::BindGroup,
 }
@@ -377,6 +382,8 @@ pub(in crate::type_checker) struct PredicateBindGroups {
     pub(in crate::type_checker) _owner_key_radix_steps: Vec<PredicateKeyStep>,
     pub(in crate::type_checker) _impl_key_radix_steps: Vec<PredicateKeyStep>,
     pub(in crate::type_checker) _method_contract_key_radix_steps: Vec<PredicateKeyStep>,
+    pub(in crate::type_checker) _method_param_key_radix_steps: Vec<PredicateKeyStep>,
+    pub(in crate::type_checker) clear_syntax_tokens: wgpu::BindGroup,
     pub(in crate::type_checker) clear_bound_arg_facts: wgpu::BindGroup,
     pub(in crate::type_checker) collect_bound_arg_facts: wgpu::BindGroup,
     pub(in crate::type_checker) collect_method_contracts: wgpu::BindGroup,
@@ -386,7 +393,15 @@ pub(in crate::type_checker) struct PredicateBindGroups {
     pub(in crate::type_checker) sort_method_contract_key_bucket_prefix: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_method_contract_key_bucket_bases: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_method_contract_key_scatter: Vec<wgpu::BindGroup>,
+    pub(in crate::type_checker) seed_method_param_key_order: wgpu::BindGroup,
+    pub(in crate::type_checker) sort_method_param_key_histogram: Vec<wgpu::BindGroup>,
+    pub(in crate::type_checker) sort_method_param_key_bucket_prefix: Vec<wgpu::BindGroup>,
+    pub(in crate::type_checker) sort_method_param_key_bucket_bases: Vec<wgpu::BindGroup>,
+    pub(in crate::type_checker) sort_method_param_key_scatter: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) build_method_contract_owner_ranges: wgpu::BindGroup,
+    pub(in crate::type_checker) emit_method_validation_rows: wgpu::BindGroup,
+    pub(in crate::type_checker) reduce_method_validation_errors: wgpu::BindGroup,
+    pub(in crate::type_checker) apply_method_validation_errors: wgpu::BindGroup,
     pub(in crate::type_checker) seed_owner_key_order: wgpu::BindGroup,
     pub(in crate::type_checker) sort_owner_key_histogram: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_owner_key_bucket_prefix: Vec<wgpu::BindGroup>,
@@ -397,5 +412,15 @@ pub(in crate::type_checker) struct PredicateBindGroups {
     pub(in crate::type_checker) sort_impl_key_bucket_prefix: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_impl_key_bucket_bases: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_impl_key_scatter: Vec<wgpu::BindGroup>,
-    pub(in crate::type_checker) obligations: wgpu::BindGroup,
+    pub(in crate::type_checker) _obligation_pair_scan_steps: Vec<NameScanStep>,
+    pub(in crate::type_checker) _obligation_count_params: LaniusBuffer<PredicateObligationParams>,
+    pub(in crate::type_checker) _obligation_validate_params:
+        LaniusBuffer<PredicateObligationParams>,
+    pub(in crate::type_checker) _obligation_pair_dispatch_params: LaniusBuffer<CountDispatchParams>,
+    pub(in crate::type_checker) obligation_pair_scan_n_blocks: u32,
+    pub(in crate::type_checker) count_obligation_pairs: wgpu::BindGroup,
+    pub(in crate::type_checker) obligation_pair_scan: U32ScanBindGroups,
+    pub(in crate::type_checker) obligation_pair_dispatch: wgpu::BindGroup,
+    pub(in crate::type_checker) obligation_pair_dispatch_args: wgpu::Buffer,
+    pub(in crate::type_checker) validate_obligation_pairs: wgpu::BindGroup,
 }

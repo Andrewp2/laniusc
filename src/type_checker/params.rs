@@ -77,6 +77,18 @@ pub(in crate::type_checker) struct CountPairMaxDispatchParams {
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
+pub(in crate::type_checker) struct PredicateObligationParams {
+    pub(in crate::type_checker) stage: u32,
+    pub(in crate::type_checker) reserved0: u32,
+    pub(in crate::type_checker) reserved1: u32,
+    pub(in crate::type_checker) reserved2: u32,
+}
+
+pub(in crate::type_checker) const PREDICATE_OBLIGATION_STAGE_COUNT: u32 = 0;
+pub(in crate::type_checker) const PREDICATE_OBLIGATION_STAGE_VALIDATE: u32 = 1;
+
+#[repr(C)]
+#[derive(Clone, Copy, ShaderType)]
 pub(in crate::type_checker) struct RecordFamilyFlagParams {
     pub(in crate::type_checker) n_hir_nodes: u32,
     pub(in crate::type_checker) family_bit: u32,
@@ -192,9 +204,11 @@ pub(in crate::type_checker) const METHOD_KEY_RADIX_STEPS: u32 = 52;
 pub(in crate::type_checker) const PREDICATE_KEY_MODE_OWNER: u32 = 0;
 pub(in crate::type_checker) const PREDICATE_KEY_MODE_IMPL: u32 = 1;
 pub(in crate::type_checker) const PREDICATE_KEY_MODE_METHOD_CONTRACT: u32 = 2;
+pub(in crate::type_checker) const PREDICATE_KEY_MODE_METHOD_PARAM: u32 = 3;
 pub(in crate::type_checker) const PREDICATE_OWNER_KEY_RADIX_STEPS: u32 = 8;
 pub(in crate::type_checker) const PREDICATE_IMPL_KEY_RADIX_STEPS: u32 = 20;
 pub(in crate::type_checker) const PREDICATE_METHOD_CONTRACT_KEY_RADIX_STEPS: u32 = 12;
+pub(in crate::type_checker) const PREDICATE_METHOD_PARAM_KEY_RADIX_STEPS: u32 = 12;
 const VISIBLE_DECL_KEY_FIELD_COUNT: u32 = 3;
 const VISIBLE_DECL_KEY_MAX_RADIX_STEPS: u32 = 12;
 pub(in crate::type_checker) const HIR_VISIBLE_DECL_ROW_BLOCK_SIZE: u32 = 64;

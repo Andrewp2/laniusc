@@ -1,11 +1,6 @@
 use super::{
     super::*,
-    bind_helpers::{
-        create_count_dispatch,
-        create_radix_bucket_bases,
-        create_radix_bucket_prefix,
-        create_radix_dispatch,
-    },
+    bind_helpers::{create_radix_bucket_bases, create_radix_bucket_prefix, create_radix_dispatch},
     buffers::Buffers,
     inputs::CreateInputs,
     layout::Layout,
@@ -14,9 +9,6 @@ use super::{
 pub(in crate::type_checker) struct ModuleIndex {
     pub(in crate::type_checker) scatter_module_records: wgpu::BindGroup,
     pub(in crate::type_checker) build_module_keys: wgpu::BindGroup,
-    pub(in crate::type_checker) module_key_segment_dispatch_params:
-        LaniusBuffer<CountDispatchParams>,
-    pub(in crate::type_checker) module_key_segment_dispatch: wgpu::BindGroup,
     pub(in crate::type_checker) module_key_radix_dispatch_params:
         LaniusBuffer<ModuleKeyRadixParams>,
     pub(in crate::type_checker) module_key_radix_dispatch: wgpu::BindGroup,
@@ -104,10 +96,14 @@ pub(in crate::type_checker) fn create_module_index(
         &[
             ("gParams", module_key_build_params.as_entire_binding()),
             (
-                "module_count_out",
-                buffers.module_count_out.as_entire_binding(),
+                "module_table_count_out",
+                buffers.module_table_count_out.as_entire_binding(),
             ),
             ("module_path_id", buffers.module_path_id.as_entire_binding()),
+            (
+                "module_owner_hir",
+                buffers.module_owner_hir.as_entire_binding(),
+            ),
             (
                 "path_segment_count",
                 buffers.path_segment_count.as_entire_binding(),
@@ -145,17 +141,6 @@ pub(in crate::type_checker) fn create_module_index(
         ],
     )?;
 
-    let (module_key_segment_dispatch_params, module_key_segment_dispatch) = create_count_dispatch(
-        device,
-        &passes.count_dispatch_args,
-        "type_check.modules.module_key_segment_dispatch.params",
-        "type_check.modules.module_key_segment_dispatch",
-        layout.module_capacity_u32,
-        MODULE_KEY_SEGMENT_ROW_WIDTH as u32,
-        &buffers.module_count_out,
-        &buffers.module_key_radix_dispatch_args,
-    )?;
-
     let module_key_radix_dispatch_params = uniform_from_val(
         device,
         "type_check.modules.module_key_radix.dispatch_params",
@@ -171,7 +156,7 @@ pub(in crate::type_checker) fn create_module_index(
         &passes.names_radix_dispatch_args,
         "type_check.modules.module_key_radix_dispatch",
         &module_key_radix_dispatch_params,
-        &buffers.module_count_out,
+        &buffers.module_table_count_out,
         &buffers.module_key_radix_dispatch_args,
     )?;
 
@@ -210,8 +195,8 @@ pub(in crate::type_checker) fn create_module_index(
             &[
                 ("gParams", step_params.as_entire_binding()),
                 (
-                    "module_count_out",
-                    buffers.module_count_out.as_entire_binding(),
+                    "module_table_count_out",
+                    buffers.module_table_count_out.as_entire_binding(),
                 ),
                 (
                     "module_key_segment_count",
@@ -238,7 +223,7 @@ pub(in crate::type_checker) fn create_module_index(
             &passes.names_radix_bucket_prefix,
             "type_check_modules.module_key_radix_bucket_prefix",
             &step_params,
-            &buffers.module_count_out,
+            &buffers.module_table_count_out,
             &buffers.module_key_radix_block_histogram,
             &buffers.module_key_radix_block_bucket_prefix,
             &buffers.module_key_radix_bucket_total,
@@ -261,8 +246,8 @@ pub(in crate::type_checker) fn create_module_index(
             &[
                 ("gParams", step_params.as_entire_binding()),
                 (
-                    "module_count_out",
-                    buffers.module_count_out.as_entire_binding(),
+                    "module_table_count_out",
+                    buffers.module_table_count_out.as_entire_binding(),
                 ),
                 (
                     "module_key_segment_count",
@@ -314,8 +299,8 @@ pub(in crate::type_checker) fn create_module_index(
         &[
             ("gParams", validate_module_params.as_entire_binding()),
             (
-                "module_count_out",
-                buffers.module_count_out.as_entire_binding(),
+                "module_table_count_out",
+                buffers.module_table_count_out.as_entire_binding(),
             ),
             (
                 "sorted_module_key_order",
@@ -439,8 +424,8 @@ pub(in crate::type_checker) fn create_module_index(
                 buffers.path_owner_token.as_entire_binding(),
             ),
             (
-                "module_count_out",
-                buffers.module_count_out.as_entire_binding(),
+                "module_table_count_out",
+                buffers.module_table_count_out.as_entire_binding(),
             ),
             (
                 "sorted_module_key_order",
@@ -674,8 +659,6 @@ pub(in crate::type_checker) fn create_module_index(
     Ok(ModuleIndex {
         scatter_module_records,
         build_module_keys,
-        module_key_segment_dispatch_params,
-        module_key_segment_dispatch,
         module_key_radix_dispatch_params,
         module_key_radix_dispatch,
         sort_module_key_histogram,

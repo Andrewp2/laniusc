@@ -15,6 +15,7 @@ struct TokenIn
 StructuredBuffer<TokenIn> token_words;
 StructuredBuffer<uint> lexer_token_count;
 StructuredBuffer<uint> token_impl_context_event;
+StructuredBuffer<uint> token_type_path_context_kind;
 
 RWStructuredBuffer<uint> semantic_token_kinds;
 
@@ -57,6 +58,13 @@ static const uint TK_BOUND_TYPE_IDENT = 174u;
 static const uint TK_BOUND_TYPE_ARG_LT = 175u;
 static const uint TK_BOUND_TYPE_ARG_COMMA = 177u;
 static const uint TK_PARAM_SELF_REF_VALUE = 178u;
+static const uint TK_ASSIGN = 8u;
+static const uint TK_DOT_DOT = 182u;
+static const uint TK_DOT_DOT_EQUAL = 189u;
+static const uint TK_RANGE_END_IDENT = 183u;
+static const uint TK_PATH_TYPE_ARG_LT = 184u;
+static const uint TK_PATH_TYPE_ARG_COMMA = 186u;
+static const uint TK_PATH_GENERIC_IDENT = 187u;
 static const uint IMPL_HEADER_CONTEXT = 1u;
 
 uint raw_kind_at(uint parser_i, uint count)
@@ -95,11 +103,30 @@ bool impl_type_context_before(uint parser_i, uint count)
            (token_impl_context_event[token_i] & 0xffu) == IMPL_HEADER_CONTEXT;
 }
 
+uint type_context_identifier_kind(uint prev, bool impl_context)
+{
+    if (prev == TK_BOUND_COLON || prev == TK_BOUND_PLUS ||
+        prev == TK_BOUND_TYPE_ARG_LT || prev == TK_BOUND_TYPE_ARG_COMMA)
+        return TK_BOUND_TYPE_IDENT;
+    if (prev == TK_TYPE_COLON || prev == TK_RETURN_ARROW ||
+        prev == TK_TYPE_ALIAS_ASSIGN || prev == TK_TYPE_AMPERSAND ||
+        prev == TK_TYPE_ARG_LT || prev == TK_TYPE_ARG_COMMA ||
+        prev == TK_PATH_TYPE_ARG_LT || prev == TK_PATH_TYPE_ARG_COMMA ||
+        prev == TK_GENERIC_PARAM_LT || prev == TK_GENERIC_PARAM_COMMA ||
+        prev == TK_TYPE_ARRAY_LBRACKET || impl_context)
+        return TK_TYPE_IDENT;
+    return 0u;
+}
+
 uint identifier_kind_for(uint parser_i, uint count)
 {
     uint prev_raw = raw_kind_at(parser_i - 1u, count);
+    uint prev_prev_raw = raw_kind_at(parser_i - 2u, count);
     if (prev_raw == TK_DOT)
         return TK_MEMBER_IDENT;
+    if (prev_raw == TK_DOT_DOT || prev_raw == TK_DOT_DOT_EQUAL ||
+        (prev_raw == TK_ASSIGN && prev_prev_raw == TK_DOT_DOT_EQUAL))
+        return TK_RANGE_END_IDENT;
     if (prev_raw == TK_LET)
         return TK_LET_IDENT;
     if (prev_raw == TK_TYPE)
@@ -109,14 +136,23 @@ uint identifier_kind_for(uint parser_i, uint count)
     if (prev_raw == TK_WHERE)
         return TK_WHERE_IDENT;
 
+    uint token_i = parser_i - 1u;
+    uint qualified_kind = token_i < gParams.token_capacity
+        ? (token_type_path_context_kind[token_i] & 0xffu)
+        : 0u;
+    if (qualified_kind != 0u)
+        return qualified_kind;
+
     uint prev = previous_symbol_kind(parser_i, count);
     if (prev == TK_GENERIC_PARAM_LT || prev == TK_GENERIC_PARAM_COMMA)
         return TK_GENERIC_PARAM_IDENT;
     if (prev == TK_WHERE_COMMA)
         return TK_WHERE_IDENT;
-    if (prev == TK_BOUND_COLON || prev == TK_BOUND_PLUS ||
-        prev == TK_BOUND_TYPE_ARG_LT || prev == TK_BOUND_TYPE_ARG_COMMA)
-        return TK_BOUND_TYPE_IDENT;
+    uint type_context_kind = type_context_identifier_kind(
+        prev,
+        impl_type_context_before(parser_i, count));
+    if (type_context_kind != 0u)
+        return type_context_kind;
     if (prev_raw == TK_IMPL || prev_raw == TK_FOR ||
         prev == TK_GENERIC_PARAM_GT || impl_type_context_before(parser_i, count))
     {
@@ -129,11 +165,8 @@ uint identifier_kind_for(uint parser_i, uint count)
         return TK_TYPE_IDENT;
     if (prev == TK_ENUM_PAYLOAD_LPAREN || prev == TK_ENUM_FIELD_COMMA)
         return TK_TYPE_IDENT;
-    if (prev == TK_TYPE_COLON || prev == TK_BOUND_COLON || prev == TK_RETURN_ARROW ||
-        prev == TK_TYPE_ALIAS_ASSIGN || prev == TK_TYPE_AMPERSAND ||
-        prev == TK_TYPE_ARG_LT || prev == TK_TYPE_ARG_COMMA || prev == TK_GENERIC_PARAM_LT ||
-        prev == TK_GENERIC_PARAM_COMMA || prev == TK_TYPE_ARRAY_LBRACKET)
-        return TK_TYPE_IDENT;
+    if (semantic_kind_at(parser_i + 1u, count) == TK_PATH_TYPE_ARG_LT)
+        return TK_PATH_GENERIC_IDENT;
     return TK_IDENT;
 }
 

@@ -1,0 +1,25 @@
+sample	stdout	slice	evidence_policy
+arithmetic_precedence	arithmetic_precedence.stdout	arithmetic and precedence	documentation-smoke only; not backend or conformance evidence
+array_return_helpers	array_return_helpers.stdout	array returns and helper calls	documentation-smoke only; not backend or conformance evidence
+array_sum	array_sum.stdout	array indexing and loops	documentation-smoke only; not backend or conformance evidence
+bitwise_ops	bitwise_ops.stdout	bitwise integer operators	documentation-smoke only; not backend or conformance evidence
+bool_branch	bool_branch.stdout	boolean branch control	documentation-smoke only; not backend or conformance evidence
+checkout_fee	checkout_fee.stdout	small external-user function call	documentation-smoke only; not backend or conformance evidence
+comparison_else_matrix	comparison_else_matrix.stdout	comparison branches with else paths	documentation-smoke only; not backend or conformance evidence
+comparison_matrix	comparison_matrix.stdout	comparison operator matrix	documentation-smoke only; not backend or conformance evidence
+compound_assignments	compound_assignments.stdout	compound assignment operators	documentation-smoke only; not backend or conformance evidence
+factorial_loop	factorial_loop.stdout	while-loop arithmetic	documentation-smoke only; not backend or conformance evidence
+factorial_recursive	factorial_recursive.stdout	recursive function call	documentation-smoke only; not backend or conformance evidence
+fibonacci_loop	fibonacci_loop.stdout	loop-carried values	documentation-smoke only; not backend or conformance evidence
+fixed_point_ray_checksum	fixed_point_ray_checksum.stdout	fixed-point ray-style checksum exit status	documentation-smoke only; not backend or conformance evidence
+for_array_control	for_array_control.stdout	for-loop array control	documentation-smoke only; not backend or conformance evidence
+function_calls	function_calls.stdout	direct function calls	documentation-smoke only; not backend or conformance evidence
+loop_control	loop_control.stdout	loop break and continue control	documentation-smoke only; not backend or conformance evidence
+nested_blocks_shadowing	nested_blocks_shadowing.stdout	nested scopes and shadowing	documentation-smoke only; not backend or conformance evidence
+option_result_helpers	option_result_helpers.stdout	core option and result helpers	documentation-smoke only; not backend or conformance evidence
+range_sum	range_sum.stdout	range iteration helper surface	documentation-smoke only; not backend or conformance evidence
+slice_helpers	slice_helpers.stdout	slice helper surface	documentation-smoke only; not backend or conformance evidence
+struct_fields	struct_fields.stdout	struct fields and access	documentation-smoke only; not backend or conformance evidence
+top_level_script	top_level_script.stdout	top-level script entry behavior	documentation-smoke only; not backend or conformance evidence
+unary_abs	unary_abs.stdout	unary expressions	documentation-smoke only; not backend or conformance evidence
+while_sum	while_sum.stdout	while-loop accumulation	documentation-smoke only; not backend or conformance evidence

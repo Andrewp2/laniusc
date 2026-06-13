@@ -6,6 +6,8 @@
 // - Multi-segment HIR path expressions resolve by looking up the prefix as a
 //   module path and then looking up the leaf in that module's declaration
 //   table. Private declarations are visible only from the owning module.
+//   Public cross-module declarations are visible only through an explicit
+//   resolved import edge from the consuming module to the prefix module.
 //   One-segment paths are handled by local/imported lookup passes.
 // - It does not scan source bytes, use hashes, perform CPU lookup, or apply
 //   same-source shortcuts.
@@ -31,11 +33,16 @@ StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_name_id;
 StructuredBuffer<uint> path_owner_module_id;
-StructuredBuffer<uint> module_count_out;
+StructuredBuffer<uint> module_table_count_out;
 StructuredBuffer<uint> sorted_module_key_order;
 StructuredBuffer<uint> module_key_segment_count;
 StructuredBuffer<uint> module_key_segment_base;
 StructuredBuffer<uint> module_key_segment_name_id;
+StructuredBuffer<uint> import_count_out;
+StructuredBuffer<uint> import_status;
+StructuredBuffer<uint> import_module_id;
+StructuredBuffer<uint> import_target_module_id;
+StructuredBuffer<uint> import_edge_key_order;
 StructuredBuffer<uint> decl_key_count_out;
 StructuredBuffer<uint> decl_key_to_decl_id;
 StructuredBuffer<uint> decl_module_id;
@@ -55,10 +62,12 @@ static const uint PATH_RECORD_KIND_HIR_PATH_EXPR = 3u;
 static const uint PATH_RECORD_KIND_HIR_TYPE_EXPR = 4u;
 
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
+static const uint PATH_RESOLVE_STATUS_INVALID_OWNER = 3u;
 static const uint PATH_RESOLVE_STATUS_UNRESOLVED_MODULE = 5u;
 static const uint PATH_RESOLVE_STATUS_UNRESOLVED_DECL = 6u;
 static const uint PATH_RESOLVE_STATUS_PATH_TOO_DEEP = 7u;
 static const uint HIR_ITEM_VIS_PUBLIC = 1u;
+static const uint IMPORT_STATUS_OK = 0u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -77,12 +86,25 @@ uint module_capacity()
 
 uint active_module_count()
 {
-    return min(module_count_out[0], module_capacity());
+    return min(module_table_count_out[0], module_capacity());
+}
+
+uint active_import_count()
+{
+    return min(import_count_out[0], gParams.capacity);
 }
 
 uint active_decl_count()
 {
     return min(decl_key_count_out[0], gParams.capacity);
+}
+
+bool valid_import_edge(uint import_i)
+{
+    return import_i < active_import_count() &&
+           import_status[import_i] == IMPORT_STATUS_OK &&
+           import_module_id[import_i] != INVALID &&
+           import_target_module_id[import_i] != INVALID;
 }
 
 uint path_segment_value(uint path_i, uint segment_i)
@@ -163,6 +185,56 @@ uint find_module_for_path_prefix(uint path_i, uint prefix_count)
         INVALID);
 }
 
+public struct ImportEdgeLookupKey
+{
+    uint importing_module;
+    uint target_module;
+}
+
+public struct ImportEdgeFixedKey : IFixedU32RowKey<ImportEdgeLookupKey>
+{
+    public static uint row_lane(uint row, uint lane)
+    {
+        if (row >= active_import_count())
+            return 0u;
+        uint import_i = import_edge_key_order[row];
+        if (!valid_import_edge(import_i))
+            return 0u;
+        uint value = lane == 0u
+            ? import_module_id[import_i]
+            : import_target_module_id[import_i];
+        return fixed_key_encode_nullable_u32(value, INVALID);
+    }
+
+    public static uint key_lane(ImportEdgeLookupKey key, uint lane)
+    {
+        uint value = lane == 0u ? key.importing_module : key.target_module;
+        return fixed_key_encode_nullable_u32(value, INVALID);
+    }
+}
+
+public struct ImportEdgeCompare : IRowQueryCompare<ImportEdgeLookupKey>
+{
+    public static int compare(uint row, ImportEdgeLookupKey key)
+    {
+        return fixed_u32_row_key_compare<ImportEdgeLookupKey, ImportEdgeFixedKey>(
+            row,
+            key,
+            2u);
+    }
+}
+
+bool has_import_edge(uint importing_module, uint target_module)
+{
+    ImportEdgeLookupKey key;
+    key.importing_module = importing_module;
+    key.target_module = target_module;
+    QueryRange range = equal_range_query<ImportEdgeLookupKey, ImportEdgeCompare>(
+        active_import_count(),
+        key);
+    return range.begin < range.end;
+}
+
 public struct DeclLookupKey
 {
     uint module_id;
@@ -239,6 +311,16 @@ bool decl_visible_from_path(uint path_i, uint decl_i)
     return decl_visibility[decl_i] == HIR_ITEM_VIS_PUBLIC;
 }
 
+bool module_prefix_visible_from_path(uint path_i, uint module_i)
+{
+    uint owner_module = path_owner_module_id[path_i];
+    if (owner_module == INVALID)
+        return false;
+    if (owner_module == module_i)
+        return true;
+    return has_import_edge(owner_module, module_i);
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -260,6 +342,18 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint module_i = find_module_for_path_prefix(path_i, count - 1u);
     if (module_i == INVALID)
+    {
+        resolved_decl[path_i] = INVALID;
+        resolved_status[path_i] = PATH_RESOLVE_STATUS_UNRESOLVED_MODULE;
+        return;
+    }
+    if (path_owner_module_id[path_i] == INVALID)
+    {
+        resolved_decl[path_i] = INVALID;
+        resolved_status[path_i] = PATH_RESOLVE_STATUS_INVALID_OWNER;
+        return;
+    }
+    if (!module_prefix_visible_from_path(path_i, module_i))
     {
         resolved_decl[path_i] = INVALID;
         resolved_status[path_i] = PATH_RESOLVE_STATUS_UNRESOLVED_MODULE;

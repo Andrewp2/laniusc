@@ -2,6 +2,8 @@
 
 module core::u32;
 
+import core::option;
+
 pub const MIN: u32 = 0;
 pub const MAX: u32 = 4294967295;
 pub const BITS: u32 = 32;
@@ -47,6 +49,22 @@ pub fn wrapping_mul(left: u32, right: u32) -> u32 {
     return left * right;
 }
 
+pub fn checked_add(left: u32, right: u32) -> core::option::Option<u32> {
+    if (left > MAX - right) {
+        return core::option::None;
+    } else {
+        return core::option::Some(left + right);
+    }
+}
+
+pub fn checked_sub(left: u32, right: u32) -> core::option::Option<u32> {
+    if (left < right) {
+        return core::option::None;
+    } else {
+        return core::option::Some(left - right);
+    }
+}
+
 pub fn saturating_add(left: u32, right: u32) -> u32 {
     if (left > MAX - right) {
         return MAX;
@@ -63,12 +81,63 @@ pub fn saturating_sub(left: u32, right: u32) -> u32 {
     }
 }
 
+pub fn saturating_mul(left: u32, right: u32) -> u32 {
+    if (left == 0 || right == 0) {
+        return 0;
+    } else {
+        let factor: u32 = max(left, right);
+        let times: u32 = min(left, right);
+        let total: u32 = 0;
+        let count: u32 = 0;
+        while (count < times) {
+            total = saturating_add(total, factor);
+            if (total == MAX) {
+                return MAX;
+            }
+            count += 1;
+        }
+        return total;
+    }
+}
+
+pub fn abs_diff(left: u32, right: u32) -> u32 {
+    if (left >= right) {
+        return left - right;
+    } else {
+        return right - left;
+    }
+}
+
 pub fn is_zero(value: u32) -> bool {
     return value == 0;
 }
 
+pub fn is_nonzero(value: u32) -> bool {
+    return value != 0;
+}
+
+pub fn is_even(value: u32) -> bool {
+    return value % 2 == 0;
+}
+
+pub fn is_odd(value: u32) -> bool {
+    return value % 2 != 0;
+}
+
+pub fn is_multiple_of(value: u32, divisor: u32) -> bool {
+    if (divisor == 0) {
+        return false;
+    } else {
+        return value % divisor == 0;
+    }
+}
+
 pub fn between_inclusive(value: u32, low: u32, high: u32) -> bool {
     return value >= low && value <= high;
+}
+
+pub fn between_exclusive(value: u32, low: u32, high: u32) -> bool {
+    return value > low && value < high;
 }
 
 pub fn is_power_of_two(value: u32) -> bool {
@@ -92,5 +161,53 @@ pub fn next_power_of_two(value: u32) -> u32 {
             power *= 2;
         }
         return power;
+    }
+}
+
+pub fn checked_next_power_of_two(value: u32) -> core::option::Option<u32> {
+    let highest_power_of_two: u32 = 2147483648;
+    if (value <= 1) {
+        return core::option::Some(1);
+    } else {
+        if (value > highest_power_of_two) {
+            return core::option::None;
+        } else {
+            let power: u32 = 1;
+            while (power < value) {
+                power *= 2;
+            }
+            return core::option::Some(power);
+        }
+    }
+}
+
+pub fn is_aligned(value: u32, alignment: u32) -> bool {
+    if (alignment <= 1) {
+        return true;
+    } else {
+        return value % alignment == 0;
+    }
+}
+
+pub fn align_up(value: u32, alignment: u32) -> u32 {
+    if (alignment <= 1) {
+        return value;
+    } else {
+        let remainder: u32 = value % alignment;
+        if (remainder == 0) {
+            return value;
+        } else {
+            let bump: u32 = alignment - remainder;
+            return saturating_add(value, bump);
+        }
+    }
+}
+
+pub fn align_down(value: u32, alignment: u32) -> u32 {
+    if (alignment <= 1) {
+        return value;
+    } else {
+        let remainder: u32 = value % alignment;
+        return value - remainder;
     }
 }

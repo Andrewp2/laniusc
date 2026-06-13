@@ -1,11 +1,13 @@
 // Seed parser-owned context-relation propagation for semantic HIR rows.
 //
 // This pass works over dense semantic-HIR rows. It records the nearest
-// syntactic statement, block, enclosing-control, and function contexts with
+// syntactic statement, block, enclosing-control, loop, and function contexts with
 // pointer-jump links so consumers can avoid bounded ancestor walks over the
 // parse tree. Contextual statement rows come from parser-owned statement
 // records, plus generic expression-statement HIR rows for statement-call
 // consumers.
+
+import generated_parse_production_ids;
 
 struct Params
 {
@@ -17,6 +19,7 @@ ConstantBuffer<Params> gHirContextRelations;
 
 StructuredBuffer<uint> ll1_status;
 StructuredBuffer<uint> hir_kind;
+StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_semantic_count;
 StructuredBuffer<uint> hir_semantic_parent;
@@ -27,6 +30,7 @@ RWStructuredBuffer<uint> hir_contextual_stmt_value_a;
 RWStructuredBuffer<uint> hir_nearest_stmt_value_a;
 RWStructuredBuffer<uint> hir_nearest_block_value_a;
 RWStructuredBuffer<uint> hir_nearest_enclosing_control_value_a;
+RWStructuredBuffer<uint> hir_nearest_loop_value_a;
 RWStructuredBuffer<uint> hir_nearest_fn_value_a;
 
 static const uint INVALID = 0xffffffffu;
@@ -81,28 +85,35 @@ uint stmt_slot(uint node, uint slot)
     return node * STMT_RECORD_STRIDE + slot;
 }
 
-bool nearest_statement_node(uint node)
+bool block_node(uint node)
+{
+    return valid_original_node(node) && hir_kind[node] == HIR_BLOCK;
+}
+
+bool generic_statement_node(uint node)
+{
+    return valid_original_node(node) &&
+           (node_kind[node] == PROD_BLOCK_STMT || node_kind[node] == PROD_EXPR_STMT);
+}
+
+bool nearest_statement_node(uint node, uint parent_node)
 {
     if (!valid_original_node(node))
         return false;
     uint kind = hir_kind[node];
-    return kind == HIR_STMT || kind == HIR_LET_STMT || kind == HIR_RETURN_STMT ||
+    return generic_statement_node(node) ||
+           kind == HIR_LET_STMT || kind == HIR_RETURN_STMT ||
            kind == HIR_IF_STMT || kind == HIR_WHILE_STMT ||
            kind == HIR_BREAK_STMT || kind == HIR_CONTINUE_STMT ||
            kind == HIR_CONST_ITEM || kind == HIR_FOR_STMT;
 }
 
-bool context_statement_node(uint node)
+bool context_statement_node(uint node, uint parent_node)
 {
-    if (!nearest_statement_node(node))
+    if (!nearest_statement_node(node, parent_node))
         return false;
     uint kind = hir_stmt_record[stmt_slot(node, 0u)];
-    return kind != STMT_RECORD_KIND_NONE || hir_kind[node] == HIR_STMT;
-}
-
-bool block_node(uint node)
-{
-    return valid_original_node(node) && hir_kind[node] == HIR_BLOCK;
+    return kind != STMT_RECORD_KIND_NONE || generic_statement_node(node);
 }
 
 bool function_node(uint node)
@@ -117,6 +128,14 @@ bool control_node(uint node)
     uint kind = hir_kind[node];
     return kind == HIR_IF_STMT || kind == HIR_WHILE_STMT ||
            kind == HIR_FOR_STMT || kind == HIR_MATCH_EXPR;
+}
+
+bool loop_node(uint node)
+{
+    if (!valid_original_node(node))
+        return false;
+    uint kind = hir_kind[node];
+    return kind == HIR_WHILE_STMT || kind == HIR_FOR_STMT;
 }
 
 [shader("compute")]
@@ -135,13 +154,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_stmt_context_link_a[row] =
         valid_semantic_row(parent, semantic_count) ? parent : INVALID;
     hir_contextual_stmt_value_a[row] =
-        context_statement_node(node) ? node : INVALID;
+        context_statement_node(node, parent_node) ? node : INVALID;
     hir_nearest_stmt_value_a[row] =
-        nearest_statement_node(node) ? node : INVALID;
+        nearest_statement_node(node, parent_node) ? node : INVALID;
     hir_nearest_block_value_a[row] =
         block_node(node) ? node : INVALID;
     hir_nearest_enclosing_control_value_a[row] =
         control_node(parent_node) ? parent_node : INVALID;
+    hir_nearest_loop_value_a[row] =
+        loop_node(node) ? node : INVALID;
     hir_nearest_fn_value_a[row] =
         function_node(node) ? node : INVALID;
 }

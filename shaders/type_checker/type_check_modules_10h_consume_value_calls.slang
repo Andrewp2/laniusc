@@ -23,14 +23,19 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> path_count_out;
+StructuredBuffer<uint> path_segment_count;
+StructuredBuffer<uint> path_segment_base;
+StructuredBuffer<uint> path_segment_token;
 StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> resolved_value_decl;
 StructuredBuffer<uint> resolved_value_status;
 StructuredBuffer<uint> decl_token_start;
+StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_expr_record;
 StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint> hir_stmt_record;
+StructuredBuffer<uint> hir_call_callee_node;
 StructuredBuffer<uint> hir_call_context_stmt_node;
 StructuredBuffer<uint> hir_call_arg_count;
 StructuredBuffer<uint4> call_arg_record;
@@ -44,6 +49,7 @@ StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> fn_return_ref_payload;
+StructuredBuffer<uint> type_decl_generic_param_count;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> type_instance_decl_token;
 StructuredBuffer<uint> type_instance_arg_start;
@@ -62,6 +68,7 @@ static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint PARAM_CACHE_STRIDE = 4u;
+static const uint MAX_PATH_SEGMENTS = 9u;
 
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint PATH_RESOLVE_STATUS_UNRESOLVED_DECL = 6u;
@@ -111,6 +118,8 @@ static const uint HIR_EXPR_FLOAT = 27u;
 static const uint STMT_RECORD_STRIDE = 4u;
 static const uint STMT_RECORD_KIND_LET = 1u;
 static const uint STMT_RECORD_KIND_RETURN = 2u;
+
+static const uint HIR_MEMBER_EXPR = 21u;
 
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_SCALAR = 1u;
@@ -193,6 +202,44 @@ uint call_node_for_callee_token(uint callee_i)
     if (!valid_token(callee_i))
         return INVALID;
     return call_arg_record[callee_i].z;
+}
+
+uint path_leaf_token(uint path_i, uint owner_token)
+{
+    uint count = path_i < active_path_count() ? path_segment_count[path_i] : 0u;
+    if (count <= 1u)
+        return owner_token;
+    count = min(count, MAX_PATH_SEGMENTS);
+    uint leaf_i = path_segment_base[path_i] + count - 1u;
+    uint leaf_token =
+        leaf_i < gParams.n_tokens * MAX_PATH_SEGMENTS ? path_segment_token[leaf_i] : INVALID;
+    return valid_token(leaf_token) ? leaf_token : owner_token;
+}
+
+uint call_node_for_owner_token(uint path_i, uint owner_token)
+{
+    uint call_node = call_node_for_callee_token(owner_token);
+    if (valid_node(call_node))
+        return call_node;
+
+    uint leaf_token = path_leaf_token(path_i, owner_token);
+    if (leaf_token != owner_token)
+    {
+        call_node = call_node_for_callee_token(leaf_token);
+        if (valid_node(call_node))
+            return call_node;
+    }
+
+    uint call_head = module_value_path_call_open[owner_token];
+    return valid_token(call_head) ? call_node_for_callee_token(call_head) : INVALID;
+}
+
+bool call_record_is_member_call(uint call_node)
+{
+    if (!valid_node(call_node))
+        return false;
+    uint callee_node = hir_call_callee_node[call_node];
+    return valid_node(callee_node) && hir_kind[callee_node] == HIR_MEMBER_EXPR;
 }
 
 uint call_arg_count_for_call(uint owner_token, uint call_node)
@@ -665,6 +712,50 @@ bool unify_param_ref_with_actual(
     return true;
 }
 
+bool unify_cached_param_type_with_actual(
+    uint param_ty,
+    uint actual_tag,
+    uint actual_payload,
+    uint error_token,
+    inout uint b0_tag,
+    inout uint b0_payload,
+    inout uint b1_tag,
+    inout uint b1_payload,
+    inout uint b2_tag,
+    inout uint b2_payload,
+    inout uint b3_tag,
+    inout uint b3_payload)
+{
+    if (param_ty == TY_UNKNOWN || actual_tag == TYPE_REF_INVALID)
+        return true;
+
+    uint slot = generic_slot_for_type(param_ty);
+    if (slot != INVALID)
+        return bind_generic_slot(
+            slot,
+            actual_tag,
+            actual_payload,
+            error_token,
+            b0_tag,
+            b0_payload,
+            b1_tag,
+            b1_payload,
+            b2_tag,
+            b2_payload,
+            b3_tag,
+            b3_payload);
+
+    if (is_generic_type(param_ty) || is_concrete_array_type(param_ty))
+        return true;
+
+    uint actual_ty = type_code_for_ref(actual_tag, actual_payload);
+    if (actual_ty == TY_UNKNOWN || assignable(param_ty, actual_ty))
+        return true;
+
+    record_error(error_token, ERR_ASSIGN_MISMATCH, param_ty);
+    return false;
+}
+
 bool ref_contains_generic(uint tag, uint payload)
 {
     if (tag == TYPE_REF_GENERIC_PARAM)
@@ -948,9 +1039,90 @@ bool bounded_call_window(
     return false;
 }
 
-bool validate_and_infer_call(uint owner_token, uint fn_token, bool reject_array_generic_call)
+bool check_required_generic_slot_bound(
+    uint owner_token,
+    uint generic_count,
+    uint slot,
+    uint b0_tag,
+    uint b1_tag,
+    uint b2_tag,
+    uint b3_tag)
 {
-    uint call_node = call_node_for_callee_token(owner_token);
+    if (slot >= generic_count)
+        return true;
+
+    if (bound_tag_for_slot(slot, b0_tag, b1_tag, b2_tag, b3_tag) != TYPE_REF_INVALID)
+        return true;
+
+    record_error(owner_token, ERR_ASSIGN_MISMATCH, (TY_GENERIC_BASE + slot) * 256u + TY_UNKNOWN);
+    return false;
+}
+
+bool check_all_generic_parameters_bound(
+    uint fn_token,
+    uint owner_token,
+    uint b0_tag,
+    uint b1_tag,
+    uint b2_tag,
+    uint b3_tag)
+{
+    uint generic_count = valid_token(fn_token) ? type_decl_generic_param_count[fn_token] : 0u;
+    if (generic_count == 0u)
+        return true;
+
+    if (generic_count > PARAM_CACHE_STRIDE)
+    {
+        record_error(
+            owner_token,
+            ERR_ASSIGN_MISMATCH,
+            (TY_GENERIC_BASE + PARAM_CACHE_STRIDE) * 256u + TY_UNKNOWN);
+        return false;
+    }
+
+    if (!check_required_generic_slot_bound(
+            owner_token,
+            generic_count,
+            0u,
+            b0_tag,
+            b1_tag,
+            b2_tag,
+            b3_tag))
+        return false;
+    if (!check_required_generic_slot_bound(
+            owner_token,
+            generic_count,
+            1u,
+            b0_tag,
+            b1_tag,
+            b2_tag,
+            b3_tag))
+        return false;
+    if (!check_required_generic_slot_bound(
+            owner_token,
+            generic_count,
+            2u,
+            b0_tag,
+            b1_tag,
+            b2_tag,
+            b3_tag))
+        return false;
+    return check_required_generic_slot_bound(
+        owner_token,
+        generic_count,
+        3u,
+        b0_tag,
+        b1_tag,
+        b2_tag,
+        b3_tag);
+}
+
+bool validate_and_infer_call(
+    uint path_i,
+    uint owner_token,
+    uint fn_token,
+    bool reject_array_generic_call)
+{
+    uint call_node = call_node_for_owner_token(path_i, owner_token);
     if (!valid_node(call_node))
         return true;
 
@@ -985,13 +1157,28 @@ bool validate_and_infer_call(uint owner_token, uint fn_token, bool reject_array_
 
         uint param_tag = call_param_ref_tag[param_ref_i];
         uint param_payload = call_param_ref_payload[param_ref_i];
-        if (param_tag == TYPE_REF_INVALID)
-            continue;
-
         uint actual_tag = TYPE_REF_INVALID;
         uint actual_payload = INVALID;
         uint arg_node = call_arg_node_for_call(call_node, ordinal);
         if (!actual_ref_for_arg_node(arg_node, actual_tag, actual_payload))
+            continue;
+
+        if (!unify_cached_param_type_with_actual(
+                param_ty,
+                actual_tag,
+                actual_payload,
+                owner_token,
+                b0_tag,
+                b0_payload,
+                b1_tag,
+                b1_payload,
+                b2_tag,
+                b2_payload,
+                b3_tag,
+                b3_payload))
+            return false;
+
+        if (param_tag == TYPE_REF_INVALID)
             continue;
 
         if (!unify_param_ref_with_actual(
@@ -1080,6 +1267,15 @@ bool validate_and_infer_call(uint owner_token, uint fn_token, bool reject_array_
             call_return_type[owner_token] = inferred_instance_ty;
     }
 
+    if (!check_all_generic_parameters_bound(
+            fn_token,
+            owner_token,
+            b0_tag,
+            b1_tag,
+            b2_tag,
+            b3_tag))
+        return false;
+
     return true;
 }
 
@@ -1094,8 +1290,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint owner_token = path_owner_token[path_i];
     if (!valid_token(owner_token) || module_value_path_call_open[owner_token] == INVALID)
         return;
+    if (valid_token(call_fn_index[owner_token]))
+        return;
 
-    if (!valid_node(call_node_for_callee_token(owner_token)))
+    uint call_node = call_node_for_owner_token(path_i, owner_token);
+    if (!valid_node(call_node))
+    {
+        record_error(owner_token, ERR_CALL_MISMATCH, 0u);
+        module_value_path_status[owner_token] = INVALID;
+        return;
+    }
+    if (call_record_is_member_call(call_node))
         return;
     if (resolved_value_status[path_i] != PATH_RESOLVE_STATUS_OK)
     {
@@ -1109,7 +1314,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint ret_ty = call_return_type[owner_token];
     bool reject_array_generic_call = true;
-    if (!validate_and_infer_call(owner_token, fn_token, reject_array_generic_call))
+    if (!validate_and_infer_call(path_i, owner_token, fn_token, reject_array_generic_call))
     {
         module_value_path_status[owner_token] = INVALID;
         return;

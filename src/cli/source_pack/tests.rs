@@ -6,20 +6,27 @@ use std::{
 
 use laniusc::{codegen::unit::SourcePackArtifactTarget, compiler::FilesystemArtifactStore};
 
-use super::*;
-use crate::cli::{
+use super::{
     DEFAULT_SOURCE_PACK_BUILD_MAX_ITEMS,
     DEFAULT_SOURCE_PACK_MAX_ITEMS,
     DEFAULT_SOURCE_PACK_MAX_READY_ITEMS,
     DEFAULT_SOURCE_PACK_METADATA_MAX_LIBRARIES,
     DEFAULT_SOURCE_PACK_METADATA_MAX_SOURCE_FILES,
+    Options,
+    artifacts::has_prepared_build,
     build_max_items,
+    compile_direct,
+    compile_from_metadata,
+    compile_library_manifest,
+    compile_manifest,
+    manifest,
     max_items,
     max_ready_items,
     metadata_max_libraries,
     metadata_max_source_files,
-    source_pack::source_pack_artifact_root_has_prepared_build,
-    source_pack_manifest,
+    prepare_build_from_metadata_chunk_only,
+    prepare_inputs_chunk_only,
+    prepare_metadata_only,
 };
 
 #[test]
@@ -57,7 +64,7 @@ fn source_pack_metadata_only_stores_persisted_library_records() {
         )
         .expect("write library manifest");
 
-    let mut source_pack = SourcePackCliOptions::default();
+    let mut source_pack = Options::default();
     source_pack.library_manifest = Some(manifest_path);
     source_pack.metadata_only = true;
     source_pack.artifact_root = Some(artifact_root.clone());
@@ -130,7 +137,7 @@ fn source_pack_metadata_only_library_manifest_defaults_to_bounded_chunk() {
     let manifest_path = root.join("libraries.jsonl");
     fs::write(&manifest_path, manifest).expect("write library manifest");
 
-    let mut source_pack = SourcePackCliOptions::default();
+    let mut source_pack = Options::default();
     source_pack.library_manifest = Some(manifest_path);
     source_pack.metadata_only = true;
     source_pack.artifact_root = Some(artifact_root.clone());
@@ -153,9 +160,8 @@ fn source_pack_metadata_only_library_manifest_defaults_to_bounded_chunk() {
             .is_file(),
         "metadata-only must leave a later library manifest entry for a future chunk"
     );
-    let progress_path =
-        source_pack_manifest::progress_path(&artifact_root, SourcePackArtifactTarget::Wasm);
-    let progress = serde_json::from_slice::<source_pack_manifest::Progress>(
+    let progress_path = manifest::progress_path(&artifact_root, SourcePackArtifactTarget::Wasm);
+    let progress = serde_json::from_slice::<manifest::Progress>(
         &fs::read(&progress_path).expect("read manifest progress"),
     )
     .expect("parse manifest progress");
@@ -179,24 +185,23 @@ fn source_pack_library_manifest_reader_rejects_overlong_records() {
     ));
     fs::create_dir_all(&root).expect("create line cap root");
     let manifest_path = root.join("libraries.jsonl");
-    let overlong_path = "x".repeat(source_pack_manifest::LIBRARY_MANIFEST_MAX_LINE_BYTES);
+    let overlong_path = "x".repeat(manifest::LIBRARY_MANIFEST_MAX_LINE_BYTES);
     fs::write(
         &manifest_path,
         format!("{{\"library_id\":1,\"source_file_count\":1,\"path_list\":\"{overlong_path}\"}}\n"),
     )
     .expect("write overlong library manifest record");
 
-    let chunk_err =
-        match source_pack_manifest::load_entries_chunk_from_offset(&manifest_path, 0, 1, 1) {
-            Ok(_) => panic!("chunked manifest reader should reject an overlong record"),
-            Err(err) => err,
-        };
+    let chunk_err = match manifest::load_entries_chunk_from_offset(&manifest_path, 0, 1, 1) {
+        Ok(_) => panic!("chunked manifest reader should reject an overlong record"),
+        Err(err) => err,
+    };
     assert!(
         chunk_err.contains("exceeds line byte limit"),
         "unexpected overlong chunk error: {chunk_err}"
     );
 
-    let progress_err = source_pack_manifest::offset_after_entry_count(&manifest_path, 1)
+    let progress_err = manifest::offset_after_entry_count(&manifest_path, 1)
         .expect_err("progress replay should reject an overlong record");
     assert!(
         progress_err.contains("exceeds line byte limit"),
@@ -218,19 +223,11 @@ fn source_pack_path_list_reader_rejects_overlong_records() {
     ));
     fs::create_dir_all(&root).expect("create path-list line cap root");
     let path_list = root.join("library.paths");
-    let overlong_path = "x".repeat(source_pack_manifest::PATH_LIST_MAX_LINE_BYTES);
+    let overlong_path = "x".repeat(manifest::PATH_LIST_MAX_LINE_BYTES);
     fs::write(&path_list, format!("{overlong_path}\n")).expect("write overlong path list");
 
-    let mut paths = source_pack_manifest::PathListFile::deferred(path_list).into_iter();
-    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _ = paths.next();
-    }))
-    .expect_err("path-list iterator should reject an overlong path record");
-    let message = panic
-        .downcast_ref::<String>()
-        .map(String::as_str)
-        .or_else(|| panic.downcast_ref::<&str>().copied())
-        .unwrap_or("<non-string panic>");
+    let message = manifest::load_path_list(&path_list, 1)
+        .expect_err("path-list reader should reject an overlong path record");
     assert!(
         message.contains("exceeds line byte limit"),
         "unexpected overlong path-list error: {message}"
@@ -252,7 +249,7 @@ fn source_pack_stream_readers_reject_unbounded_blank_records() {
     fs::create_dir_all(&root).expect("create blank cap root");
 
     let blank_manifest_prefix =
-        "\n".repeat(source_pack_manifest::LIBRARY_MANIFEST_MAX_BLANK_LINES_PER_CHUNK + 1);
+        "\n".repeat(manifest::LIBRARY_MANIFEST_MAX_BLANK_LINES_PER_CHUNK + 1);
     let manifest_path = root.join("libraries.jsonl");
     fs::write(
             &manifest_path,
@@ -262,17 +259,16 @@ fn source_pack_stream_readers_reject_unbounded_blank_records() {
         )
         .expect("write blank-heavy library manifest");
 
-    let chunk_err =
-        match source_pack_manifest::load_entries_chunk_from_offset(&manifest_path, 0, 1, 1) {
-            Ok(_) => panic!("manifest chunk reader should reject too many blank records"),
-            Err(err) => err,
-        };
+    let chunk_err = match manifest::load_entries_chunk_from_offset(&manifest_path, 0, 1, 1) {
+        Ok(_) => panic!("manifest chunk reader should reject too many blank records"),
+        Err(err) => err,
+    };
     assert!(
         chunk_err.contains("blank lines"),
         "unexpected manifest blank chunk error: {chunk_err}"
     );
 
-    let progress_err = source_pack_manifest::offset_after_entry_count(&manifest_path, 1)
+    let progress_err = manifest::offset_after_entry_count(&manifest_path, 1)
         .expect_err("manifest progress replay should reject too many blank records");
     assert!(
         progress_err.contains("blank lines"),
@@ -284,21 +280,13 @@ fn source_pack_stream_readers_reject_unbounded_blank_records() {
         &path_list,
         format!(
             "{}{}\n",
-            "\n".repeat(source_pack_manifest::PATH_LIST_MAX_BLANK_LINES_PER_ITEM + 1),
+            "\n".repeat(manifest::PATH_LIST_MAX_BLANK_LINES_PER_ITEM + 1),
             root.join("source.lani").display()
         ),
     )
     .expect("write blank-heavy path list");
-    let mut paths = source_pack_manifest::PathListFile::deferred(path_list).into_iter();
-    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _ = paths.next();
-    }))
-    .expect_err("path-list iterator should reject too many blank records");
-    let message = panic
-        .downcast_ref::<String>()
-        .map(String::as_str)
-        .or_else(|| panic.downcast_ref::<&str>().copied())
-        .unwrap_or("<non-string panic>");
+    let message = manifest::load_path_list(&path_list, 1)
+        .expect_err("path-list reader should reject too many blank records");
     assert!(
         message.contains("blank lines"),
         "unexpected path-list blank error: {message}"
@@ -308,11 +296,56 @@ fn source_pack_stream_readers_reject_unbounded_blank_records() {
 }
 
 #[test]
+fn source_pack_library_manifest_rejects_duplicate_dependency_edges_before_paths() {
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock")
+        .as_nanos();
+    let root = env::temp_dir().join(format!(
+        "laniusc-cli-library-manifest-duplicate-dependency-test-{}-{suffix}",
+        std::process::id()
+    ));
+    let artifact_root = root.join("artifacts");
+    fs::create_dir_all(&root).expect("create duplicate-dependency root");
+    let manifest_path = root.join("libraries.jsonl");
+    fs::write(
+        &manifest_path,
+        "{\"library_id\":2,\"source_file_count\":1,\"path_list\":\"missing.paths\",\"dependency_library_ids\":[1,1]}\n",
+    )
+    .expect("write duplicate-dependency library manifest");
+
+    let mut source_pack = Options::default();
+    source_pack.library_manifest = Some(manifest_path);
+    source_pack.metadata_only = true;
+    source_pack.artifact_root = Some(artifact_root.clone());
+
+    let err = prepare_metadata_only("wasm", &[], &[], &source_pack)
+        .expect_err("library manifest metadata must reject duplicate dependency edges");
+    assert!(
+        err.contains("duplicate dependency library 1"),
+        "unexpected duplicate dependency error: {err}"
+    );
+    assert!(
+        !err.contains("missing.paths"),
+        "duplicate dependency validation should run before opening path lists"
+    );
+    let store = FilesystemArtifactStore::new(&artifact_root);
+    assert!(
+        !store
+            .library_partition_index_path_for_target(SourcePackArtifactTarget::Wasm)
+            .is_file(),
+        "rejected dependency metadata must not publish a completed partition index"
+    );
+
+    fs::remove_dir_all(&root).expect("remove duplicate dependency root");
+}
+
+#[test]
 fn source_pack_cli_limits_default_override_and_cap() {
     struct LimitCase {
         name: &'static str,
-        configure: fn(&mut SourcePackCliOptions, usize),
-        read: fn(&SourcePackCliOptions) -> usize,
+        configure: fn(&mut Options, usize),
+        read: fn(&Options) -> usize,
         default_limit: usize,
         override_value: usize,
     }
@@ -356,7 +389,7 @@ fn source_pack_cli_limits_default_override_and_cap() {
     ];
 
     for case in cases {
-        let default_options = SourcePackCliOptions::default();
+        let default_options = Options::default();
         assert_eq!(
             (case.read)(&default_options),
             case.default_limit,
@@ -364,7 +397,7 @@ fn source_pack_cli_limits_default_override_and_cap() {
             case.name
         );
 
-        let mut overridden = SourcePackCliOptions::default();
+        let mut overridden = Options::default();
         (case.configure)(&mut overridden, case.override_value);
         assert_eq!(
             (case.read)(&overridden),
@@ -373,7 +406,7 @@ fn source_pack_cli_limits_default_override_and_cap() {
             case.name
         );
 
-        let mut unbounded = SourcePackCliOptions::default();
+        let mut unbounded = Options::default();
         (case.configure)(&mut unbounded, usize::MAX);
         assert_eq!(
             (case.read)(&unbounded),
@@ -419,7 +452,7 @@ fn source_pack_build_prepare_only_runs_one_bounded_metadata_chunk() {
         )
         .expect("write library manifest");
 
-    let mut metadata_pack = SourcePackCliOptions::default();
+    let mut metadata_pack = Options::default();
     metadata_pack.library_manifest = Some(manifest_path);
     metadata_pack.metadata_only = true;
     metadata_pack.artifact_root = Some(artifact_root.clone());
@@ -427,7 +460,7 @@ fn source_pack_build_prepare_only_runs_one_bounded_metadata_chunk() {
         .expect("prepare metadata only before build chunk");
     fs::remove_dir_all(&source_root).expect("remove source files after metadata");
 
-    let mut build_pack = SourcePackCliOptions::default();
+    let mut build_pack = Options::default();
     build_pack.build_from_metadata = true;
     build_pack.build_prepare_only = true;
     build_pack.build_max_items = 1;
@@ -492,7 +525,7 @@ fn prepare_only_advances_metadata_then_build_chunks() {
         )
         .expect("write library manifest");
 
-    let mut source_pack = SourcePackCliOptions::default();
+    let mut source_pack = Options::default();
     source_pack.library_manifest = Some(manifest_path);
     source_pack.prepare_only = true;
     source_pack.metadata_max_libraries = Some(1);
@@ -580,7 +613,7 @@ fn prepare_only_library_manifest_skips_later_paths() {
         )
         .expect("write library manifest with missing later path list");
 
-    let mut source_pack = SourcePackCliOptions::default();
+    let mut source_pack = Options::default();
     source_pack.library_manifest = Some(manifest_path);
     source_pack.prepare_only = true;
     source_pack.metadata_max_libraries = Some(1);
@@ -629,7 +662,7 @@ fn source_pack_prepare_only_library_manifest_chunk_stops_at_source_file_limit() 
     fs::write(&manifest_path, format!("{first_line}{second_line}"))
         .expect("write library manifest with missing later path list");
 
-    let mut source_pack = SourcePackCliOptions::default();
+    let mut source_pack = Options::default();
     source_pack.library_manifest = Some(manifest_path);
     source_pack.prepare_only = true;
     source_pack.metadata_max_libraries = Some(64);
@@ -650,9 +683,8 @@ fn source_pack_prepare_only_library_manifest_chunk_stops_at_source_file_limit() 
             .is_file(),
         "a later source-file-limited manifest entry must keep metadata incomplete"
     );
-    let progress_path =
-        source_pack_manifest::progress_path(&artifact_root, SourcePackArtifactTarget::Wasm);
-    let progress = serde_json::from_slice::<source_pack_manifest::Progress>(
+    let progress_path = manifest::progress_path(&artifact_root, SourcePackArtifactTarget::Wasm);
+    let progress = serde_json::from_slice::<manifest::Progress>(
         &fs::read(&progress_path).expect("read manifest progress"),
     )
     .expect("parse manifest progress");
@@ -681,7 +713,7 @@ fn prepare_only_rejects_oversized_library_before_paths() {
     )
     .expect("write oversized library manifest");
 
-    let mut source_pack = SourcePackCliOptions::default();
+    let mut source_pack = Options::default();
     source_pack.library_manifest = Some(manifest_path);
     source_pack.prepare_only = true;
     source_pack.metadata_max_libraries = Some(64);
@@ -730,7 +762,7 @@ fn source_pack_prepare_only_library_manifest_chunk_resumes_from_byte_offset() {
     fs::write(&manifest_path, format!("{first_line}{second_line}"))
         .expect("write library manifest");
 
-    let mut source_pack = SourcePackCliOptions::default();
+    let mut source_pack = Options::default();
     source_pack.library_manifest = Some(manifest_path.clone());
     source_pack.prepare_only = true;
     source_pack.metadata_max_libraries = Some(1);
@@ -738,9 +770,8 @@ fn source_pack_prepare_only_library_manifest_chunk_resumes_from_byte_offset() {
 
     prepare_inputs_chunk_only("wasm", &[], &[], &source_pack)
         .expect("prepare first metadata chunk");
-    let progress_path =
-        source_pack_manifest::progress_path(&artifact_root, SourcePackArtifactTarget::Wasm);
-    let progress = serde_json::from_slice::<source_pack_manifest::Progress>(
+    let progress_path = manifest::progress_path(&artifact_root, SourcePackArtifactTarget::Wasm);
+    let progress = serde_json::from_slice::<manifest::Progress>(
         &fs::read(&progress_path).expect("read manifest progress"),
     )
     .expect("parse manifest progress");
@@ -796,10 +827,10 @@ fn source_pack_json_manifest_chunk_modes_reject_before_manifest_read() {
         ));
         let artifact_root = root.join("artifacts");
         let missing_manifest = root.join("missing-source-pack.json");
-        let mut source_pack = SourcePackCliOptions {
+        let mut source_pack = Options {
             manifest: Some(missing_manifest),
             artifact_root: Some(artifact_root),
-            ..SourcePackCliOptions::default()
+            ..Options::default()
         };
 
         let err = match mode {
@@ -836,7 +867,7 @@ fn source_pack_prepare_only_rejects_raw_paths_before_source_metadata_read() {
     ));
     let artifact_root = root.join("artifacts");
     let missing_source = root.join("missing.lani");
-    let mut source_pack = SourcePackCliOptions::default();
+    let mut source_pack = Options::default();
     source_pack.prepare_only = true;
     source_pack.artifact_root = Some(artifact_root);
 
@@ -867,15 +898,11 @@ fn direct_descriptor_compile_requires_prepared_root() {
         std::process::id()
     ));
     let artifact_root = root.join("artifacts");
-    let missing_manifest = root.join("missing-source-pack.json");
-    let missing_library_manifest = root.join("missing-libraries.jsonl");
-    let missing_source = root.join("missing.lani");
-    let mut source_pack = SourcePackCliOptions::default();
+    let mut source_pack = Options::default();
     source_pack.artifact_root = Some(artifact_root);
 
-    let manifest_err =
-        compile_source_pack_manifest_with_descriptor_queue("wasm", &missing_manifest, &source_pack)
-            .expect_err("fresh explicit artifact roots must be prepared before manifest parsing");
+    let manifest_err = compile_manifest("wasm", &source_pack)
+        .expect_err("fresh explicit artifact roots must be prepared before manifest parsing");
     assert!(manifest_err.contains("no persisted metadata"));
     assert!(manifest_err.contains("--source-pack-prepare-only"));
     assert!(
@@ -883,58 +910,44 @@ fn direct_descriptor_compile_requires_prepared_root() {
         "compile should fail before reading source-pack manifests"
     );
 
-    let library_manifest_err = compile_source_pack_library_manifest_with_descriptor_queue(
-        "wasm",
-        &missing_library_manifest,
-        &source_pack,
-    )
-    .expect_err("fresh explicit artifact roots must be prepared before library manifest parsing");
+    let library_manifest_err = compile_library_manifest("wasm", &source_pack).expect_err(
+        "fresh explicit artifact roots must be prepared before library manifest parsing",
+    );
     assert!(library_manifest_err.contains("no persisted metadata"));
     assert!(
         !library_manifest_err.contains("open source-pack library manifest"),
         "compile should fail before reading source-pack library manifests"
     );
 
-    let default_manifest_err = compile_source_pack_manifest_with_descriptor_queue(
-        "wasm",
-        &missing_manifest,
-        &SourcePackCliOptions::default(),
-    )
-    .expect_err("manifest descriptor compile must name an artifact root before parsing");
+    let default_manifest_err = compile_manifest("wasm", &Options::default())
+        .expect_err("manifest descriptor compile must name an artifact root before parsing");
     assert!(default_manifest_err.contains("--source-pack-artifact-root"));
     assert!(
         !default_manifest_err.contains("read source-pack manifest"),
         "manifest compile without an artifact root should fail before reading source-pack manifests"
     );
 
-    let default_library_manifest_err = compile_source_pack_library_manifest_with_descriptor_queue(
-        "wasm",
-        &missing_library_manifest,
-        &SourcePackCliOptions::default(),
-    )
-    .expect_err("library manifest descriptor compile must name an artifact root before parsing");
+    let default_library_manifest_err = compile_library_manifest("wasm", &Options::default())
+        .expect_err(
+            "library manifest descriptor compile must name an artifact root before parsing",
+        );
     assert!(default_library_manifest_err.contains("--source-pack-artifact-root"));
     assert!(
         !default_library_manifest_err.contains("open source-pack library manifest"),
         "library manifest compile without an artifact root should fail before reading source-pack library manifests"
     );
 
-    let default_source_err = compile_source_pack_with_descriptor_queue(
-        "wasm",
-        &[],
-        &[missing_source.clone()],
-        &SourcePackCliOptions::default(),
-    )
-    .expect_err("source-pack descriptor compile must name an artifact root before reading sources");
+    let default_source_err = compile_direct("wasm", &Options::default()).expect_err(
+        "source-pack descriptor compile must name an artifact root before reading sources",
+    );
     assert!(default_source_err.contains("--source-pack-artifact-root"));
     assert!(
         !default_source_err.contains("missing.lani"),
         "source-pack compile without an artifact root should fail before touching explicit source paths"
     );
 
-    let source_err =
-        compile_source_pack_with_descriptor_queue("wasm", &[], &[missing_source], &source_pack)
-            .expect_err("fresh explicit artifact roots must be prepared before source parsing");
+    let source_err = compile_direct("wasm", &source_pack)
+        .expect_err("fresh explicit artifact roots must be prepared before source parsing");
     assert!(source_err.contains("no persisted metadata"));
     assert!(
         !source_err.contains("missing.lani"),
@@ -965,10 +978,10 @@ fn descriptor_compile_requires_build_queue_after_metadata() {
     )
     .expect("create metadata index dir");
     fs::write(&metadata_index_path, b"{}").expect("write metadata index marker");
-    let mut source_pack = SourcePackCliOptions::default();
+    let mut source_pack = Options::default();
     source_pack.artifact_root = Some(artifact_root.clone());
 
-    let err = compile_from_metadata_with_descriptor_queue("wasm", &source_pack)
+    let err = compile_from_metadata("wasm", &source_pack)
         .expect_err("metadata alone must not trigger full build-queue preparation");
     assert!(err.contains("no prepared build queue"));
     assert!(err.contains("--source-pack-build-from-metadata --source-pack-build-prepare-only"));
@@ -1002,14 +1015,8 @@ fn source_pack_resume_detection_is_target_specific() {
     .expect("create build state dir");
     fs::write(&wasm_state_path, b"{}").expect("write wasm build state marker");
 
-    assert!(source_pack_artifact_root_has_prepared_build(
-        &artifact_root,
-        "wasm"
-    ));
-    assert!(!source_pack_artifact_root_has_prepared_build(
-        &artifact_root,
-        "x86_64"
-    ));
+    assert!(has_prepared_build(&artifact_root, "wasm"));
+    assert!(!has_prepared_build(&artifact_root, "x86_64"));
 
     fs::remove_dir_all(&artifact_root).expect("remove temp artifact root");
 }

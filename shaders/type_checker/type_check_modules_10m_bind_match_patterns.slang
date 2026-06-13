@@ -9,6 +9,7 @@
 // subtree, binding fails closed instead of scanning the subtree.
 
 import range_query;
+import status;
 
 struct Params
 {
@@ -34,13 +35,16 @@ StructuredBuffer<uint> resolved_value_decl;
 StructuredBuffer<uint> resolved_value_status;
 StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> decl_name_token;
+StructuredBuffer<uint> decl_hir_node;
 StructuredBuffer<uint> decl_parent_type_decl;
+StructuredBuffer<uint> hir_variant_payload_count;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> language_name_id;
 
 RWStructuredBuffer<uint> module_value_path_status;
 RWStructuredBuffer<uint> visible_decl;
 RWStructuredBuffer<uint> visible_type;
+RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -48,6 +52,8 @@ static const uint MAX_GROUPS_X = 65535u;
 static const uint LANGUAGE_SYMBOL_WILDCARD = 18u;
 
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
+static const uint ERR_ASSIGN_MISMATCH = 3u;
+static const uint VARIANT_PAYLOAD_SLOT_STRIDE = 4u;
 
 static const uint HIR_PATH_EXPR = 33u;
 
@@ -93,6 +99,11 @@ bool token_is_wildcard(uint i)
            name_id_by_token[i] == language_name_id[LANGUAGE_SYMBOL_WILDCARD];
 }
 
+void record_error(uint token_i, uint code, uint detail)
+{
+    record_min_token_error(status, token_i, code, detail);
+}
+
 int compare_u32(uint left, uint right)
 {
     if (left < right)
@@ -133,10 +144,15 @@ uint first_pattern_path_node(uint pattern_node)
     return node;
 }
 
-bool enum_variant_decl(uint decl_i, out uint variant_token, out uint enum_token)
+bool enum_variant_decl(
+    uint decl_i,
+    out uint variant_token,
+    out uint enum_token,
+    out uint variant_node)
 {
     variant_token = INVALID;
     enum_token = INVALID;
+    variant_node = INVALID;
     if (decl_i >= gParams.n_hir_nodes || decl_kind[decl_i] != HIR_ITEM_KIND_ENUM_VARIANT)
         return false;
 
@@ -146,8 +162,22 @@ bool enum_variant_decl(uint decl_i, out uint variant_token, out uint enum_token)
 
     variant_token = decl_name_token[decl_i];
     enum_token = decl_name_token[enum_decl_i];
+    variant_node = decl_hir_node[decl_i];
     return variant_token != INVALID && enum_token != INVALID &&
-           variant_token < active_token_count() && enum_token < active_token_count();
+           variant_token < active_token_count() && enum_token < active_token_count() &&
+           valid_node(variant_node);
+}
+
+bool match_payload_shape_supported(uint arm_node, uint variant_node)
+{
+    if (!valid_node(arm_node) || !valid_node(variant_node))
+        return false;
+
+    uint actual_count = hir_match_arm_payload_count[arm_node];
+    uint expected_count = hir_variant_payload_count[variant_node];
+    return actual_count == expected_count &&
+           actual_count <= VARIANT_PAYLOAD_SLOT_STRIDE &&
+           expected_count <= VARIANT_PAYLOAD_SLOT_STRIDE;
 }
 
 uint first_payload_binding(uint arm_node)
@@ -208,8 +238,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint variant_token;
     uint enum_token;
-    if (!enum_variant_decl(resolved_value_decl[path_i], variant_token, enum_token))
+    uint variant_node;
+    if (!enum_variant_decl(resolved_value_decl[path_i], variant_token, enum_token, variant_node))
         return;
+
+    if (!match_payload_shape_supported(arm_node, variant_node))
+    {
+        record_error(owner_token, ERR_ASSIGN_MISMATCH, 0u);
+        return;
+    }
 
     bind_decl(owner_token, variant_token);
     visible_type[owner_token] = TY_ENUM_BASE + enum_token;

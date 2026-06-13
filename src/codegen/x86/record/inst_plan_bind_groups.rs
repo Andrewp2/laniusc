@@ -65,6 +65,7 @@ pub(super) struct InstPlanBindGroupInputs<'a> {
     pub(super) final_node_func: &'a wgpu::Buffer,
     pub(super) visible_decl: &'a wgpu::Buffer,
     pub(super) const_value_record: &'a wgpu::Buffer,
+    pub(super) struct_type_record: &'a wgpu::Buffer,
     pub(super) decl_layout_record: &'a wgpu::Buffer,
     pub(super) decl_layout_status: &'a wgpu::Buffer,
     pub(super) param_reg_record: &'a wgpu::Buffer,
@@ -73,6 +74,7 @@ pub(super) struct InstPlanBindGroupInputs<'a> {
     pub(super) match_return_node: &'a wgpu::Buffer,
     pub(super) call_record: &'a wgpu::Buffer,
     pub(super) call_type_record: &'a wgpu::Buffer,
+    pub(super) call_callee_root_call: &'a wgpu::Buffer,
     pub(super) call_callee_owner_step_final: &'a wgpu::Buffer,
     pub(super) call_record_status: &'a wgpu::Buffer,
     pub(super) intrinsic_call_record: &'a wgpu::Buffer,
@@ -163,6 +165,7 @@ pub(super) fn create_inst_plan_bind_groups(
         final_node_func,
         visible_decl,
         const_value_record,
+        struct_type_record,
         decl_layout_record,
         decl_layout_status,
         param_reg_record,
@@ -171,6 +174,7 @@ pub(super) fn create_inst_plan_bind_groups(
         match_return_node,
         call_record,
         call_type_record,
+        call_callee_root_call,
         call_callee_owner_step_final,
         call_record_status,
         intrinsic_call_record,
@@ -323,7 +327,12 @@ pub(super) fn create_inst_plan_bind_groups(
                 expr_metadata.stmt_record.as_entire_binding(),
             ),
             ("hir_expr_record", expr_metadata.record.as_entire_binding()),
+            (
+                "hir_expr_result_root_node",
+                expr_metadata.expr_result_root_node.as_entire_binding(),
+            ),
             ("hir_param_record", hir_param_record.as_entire_binding()),
+            ("x86_tree_parent", parent.as_entire_binding()),
             (
                 "x86_expr_resolved_node",
                 expr_resolved_final.as_entire_binding(),
@@ -349,6 +358,14 @@ pub(super) fn create_inst_plan_bind_groups(
             (
                 "decl_name_token",
                 enum_metadata.decl_name_token.as_entire_binding(),
+            ),
+            (
+                "x86_struct_type_record",
+                struct_type_record.as_entire_binding(),
+            ),
+            (
+                "call_fn_index",
+                call_metadata.call_fn_index.as_entire_binding(),
             ),
             (
                 "x86_decl_layout_record",
@@ -385,6 +402,10 @@ pub(super) fn create_inst_plan_bind_groups(
                 match_return_node.as_entire_binding(),
             ),
             ("x86_call_record", call_record.as_entire_binding()),
+            (
+                "x86_call_callee_root_call",
+                call_callee_root_call.as_entire_binding(),
+            ),
             (
                 "x86_call_callee_owner_call",
                 call_callee_owner_step_final.as_entire_binding(),

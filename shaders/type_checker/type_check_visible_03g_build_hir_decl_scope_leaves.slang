@@ -30,6 +30,10 @@ RWStructuredBuffer<uint> hir_visible_decl_scope_tree;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
+// Matches HIR_VISIBLE_DECL_ROW_BLOCK_SIZE on the Rust side. This pass is a
+// fixed-size leaf reduction over compact declaration rows; larger reductions
+// happen through the explicit tree levels in 03h.
+static const uint HIR_VISIBLE_DECL_ROW_BLOCK_SIZE = 64u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -46,17 +50,21 @@ uint active_decl_count()
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint leaf = linear_thread_id(dtid);
-    if (leaf >= gParams.leaf_base || gParams.row_block_size == 0u)
+    if (leaf >= gParams.leaf_base)
         return;
 
     uint active_count = active_decl_count();
-    uint start = leaf * gParams.row_block_size;
-    uint end = min(active_count, start + gParams.row_block_size);
+    uint start = leaf * HIR_VISIBLE_DECL_ROW_BLOCK_SIZE;
+    uint end = min(active_count, start + HIR_VISIBLE_DECL_ROW_BLOCK_SIZE);
     uint max_scope_end = 0u;
 
     [loop]
-    for (uint row = start; row < end; row += 1u)
+    for (uint offset = 0u; offset < HIR_VISIBLE_DECL_ROW_BLOCK_SIZE; offset += 1u)
     {
+        uint row = start + offset;
+        if (row >= end)
+            continue;
+
         uint decl_i = hir_visible_decl_key_order[row];
         if (decl_i != INVALID && decl_i < gParams.decl_capacity)
             max_scope_end = max(max_scope_end, hir_visible_decl_scope_end[decl_i]);

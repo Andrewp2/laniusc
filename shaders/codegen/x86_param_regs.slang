@@ -20,6 +20,7 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_node_decl_token;
 StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> fn_entrypoint_tag;
 StructuredBuffer<uint> hir_fn_return_type_node;
 StructuredBuffer<uint> hir_type_form;
 StructuredBuffer<uint> hir_type_len_value;
@@ -50,12 +51,17 @@ static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint X86_PARAM_REGS_OK = 1u;
 static const uint X86_ENUM_RECORDS_OK = 1u;
 static const uint X86_STRUCT_RECORDS_OK = 1u;
+static const uint X86_ERR_ENTRYPOINT_PARAMS = 49u;
+static const uint X86_ERR_PARAM_REG_COUNT = 51u;
+static const uint X86_ERR_ENTRYPOINT_AGG_RETURN = 54u;
+static const uint ENTRYPOINT_MAIN = 1u;
 
 static const uint HIR_PARAM_RECORD_FN = 0u;
 static const uint HIR_PARAM_RECORD_ORDINAL = 1u;
 static const uint HIR_PARAM_RECORD_NAME_TOKEN = 2u;
 static const uint HIR_PARAM_RECORD_NODE = 3u;
 
+static const uint HIR_FN = 3u;
 static const uint HIR_TYPE = 5u;
 static const uint HIR_TYPE_FORM_ARRAY = 2u;
 static const uint X86_SYSV_MAX_INTEGER_ARGS = 6u;
@@ -75,10 +81,14 @@ static const uint TY_UNKNOWN = 0u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
 static const uint TY_GENERIC_BASE = 8192u;
+static const uint X86_DECL_AGG_ARRAY = 1u;
+static const uint X86_DECL_AGG_ENUM = 2u;
+static const uint X86_DECL_AGG_STRUCT = 3u;
 static const uint X86_PARAM_REG_STRIDE = 5u;
 static const uint X86_PARAM_REG_ORDINAL_BITS = 4u;
 static const uint X86_PARAM_REG_ORDINAL_MASK = 0x0fu;
 static const uint X86_PARAM_REG_ARG_REG_MASK = 0x0fu;
+static const uint X86_PARAM_REG_KIND_BITS = 8u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -145,6 +155,91 @@ bool decl_is_unsized_array(uint decl_token)
            type_instance_is_unsized_array(decl_type_ref_payload[decl_token]);
 }
 
+bool array_len_for_decl(uint decl_token, out uint len)
+{
+    len = 0u;
+    if (!valid_token(decl_token))
+        return false;
+    if (decl_type_ref_tag[decl_token] != TYPE_REF_INSTANCE)
+        return false;
+
+    uint instance = decl_type_ref_payload[decl_token];
+    if (!valid_token(instance))
+        return false;
+    if (type_instance_kind[instance] != TYPE_INSTANCE_ARRAY ||
+        type_instance_len_kind[instance] != TYPE_LEN_LITERAL)
+        return false;
+
+    len = type_instance_len_payload[instance];
+    return len != 0u;
+}
+
+bool enum_width_for_decl(uint decl_token, out uint width)
+{
+    width = 0u;
+    if (!valid_token(decl_token))
+        return false;
+
+    uint enum_token = INVALID;
+    uint tag = decl_type_ref_tag[decl_token];
+    uint payload = decl_type_ref_payload[decl_token];
+    uint semantic_ty = visible_type[decl_token] != TY_UNKNOWN ? visible_type[decl_token] :
+                       (tag == TYPE_REF_SCALAR ? payload : TY_UNKNOWN);
+    if (semantic_ty >= TY_ENUM_BASE && semantic_ty < TY_GENERIC_BASE)
+    {
+        enum_token = semantic_ty - TY_ENUM_BASE;
+    }
+    else if (tag == TYPE_REF_INSTANCE)
+    {
+        if (!valid_token(payload))
+            return false;
+        enum_token = type_instance_decl_token[payload];
+    }
+    else
+    {
+        return false;
+    }
+
+    if (!valid_token(enum_token))
+        return false;
+
+    width = x86_enum_type_record[enum_token];
+    return width > 1u;
+}
+
+bool struct_width_for_decl(uint decl_token, out uint width)
+{
+    width = 0u;
+    if (!valid_token(decl_token))
+        return false;
+
+    uint struct_token = INVALID;
+    uint tag = decl_type_ref_tag[decl_token];
+    uint payload = decl_type_ref_payload[decl_token];
+    uint semantic_ty = visible_type[decl_token] != TY_UNKNOWN ? visible_type[decl_token] :
+                       (tag == TYPE_REF_SCALAR ? payload : TY_UNKNOWN);
+    if (semantic_ty >= TY_STRUCT_BASE && semantic_ty < TY_ENUM_BASE)
+    {
+        struct_token = semantic_ty - TY_STRUCT_BASE;
+    }
+    else if (tag == TYPE_REF_INSTANCE)
+    {
+        if (!valid_token(payload))
+            return false;
+        struct_token = type_instance_decl_token[payload];
+    }
+    else
+    {
+        return false;
+    }
+
+    if (!valid_token(struct_token))
+        return false;
+
+    width = x86_struct_type_record[struct_token];
+    return width != 0u;
+}
+
 uint semantic_type_width(uint ty)
 {
     if (ty >= TY_ENUM_BASE && ty < TY_GENERIC_BASE)
@@ -203,6 +298,22 @@ uint decl_type_width(uint decl_token)
     return 1u;
 }
 
+uint decl_aggregate_kind(uint decl_token, uint semantic_ty)
+{
+    uint len = 0u;
+    if (array_len_for_decl(decl_token, len))
+        return X86_DECL_AGG_ARRAY;
+    uint enum_width = 0u;
+    if (enum_width_for_decl(decl_token, enum_width) ||
+        (semantic_ty >= TY_ENUM_BASE && semantic_ty < TY_GENERIC_BASE))
+        return X86_DECL_AGG_ENUM;
+    uint struct_width = 0u;
+    if (struct_width_for_decl(decl_token, struct_width) ||
+        (semantic_ty >= TY_STRUCT_BASE && semantic_ty < TY_ENUM_BASE))
+        return X86_DECL_AGG_STRUCT;
+    return 0u;
+}
+
 uint type_ref_width(uint tag, uint payload)
 {
     if (tag == TYPE_REF_SCALAR)
@@ -223,11 +334,78 @@ uint method_receiver_width(uint fn_decl_token, uint decl_token)
         method_decl_receiver_ref_payload[fn_decl_token]);
 }
 
-uint pack_param_reg_info(uint ordinal, uint arg_reg)
+uint pack_param_reg_info(uint ordinal, uint arg_reg, uint aggregate_kind)
 {
     if (ordinal > X86_PARAM_REG_ORDINAL_MASK || arg_reg > X86_PARAM_REG_ARG_REG_MASK)
         return INVALID;
-    return ordinal | (arg_reg << X86_PARAM_REG_ORDINAL_BITS);
+    return ordinal |
+           (arg_reg << X86_PARAM_REG_ORDINAL_BITS) |
+           (aggregate_kind << X86_PARAM_REG_KIND_BITS);
+}
+
+bool fn_is_main_entrypoint(uint fn_node)
+{
+    return valid_node(fn_node) &&
+           hir_kind[fn_node] == HIR_FN &&
+           fn_entrypoint_tag[fn_node] == ENTRYPOINT_MAIN;
+}
+
+void publish_entrypoint_param_error(uint param_node)
+{
+    publish_stage_error_min_detail4(
+        x86_param_reg_status,
+        X86_ERR_ENTRYPOINT_PARAMS,
+        param_node);
+}
+
+void publish_entrypoint_aggregate_return_error(uint fn_node)
+{
+    publish_stage_error_min_detail4(
+        x86_param_reg_status,
+        X86_ERR_ENTRYPOINT_AGG_RETURN,
+        fn_node);
+}
+
+void publish_param_reg_count_error(uint param_node)
+{
+    publish_stage_error_min_detail4(
+        x86_param_reg_status,
+        X86_ERR_PARAM_REG_COUNT,
+        param_node);
+}
+
+uint function_decl_token(uint fn_node)
+{
+    if (!valid_node(fn_node))
+        return INVALID;
+    uint decl_token = hir_node_decl_token[fn_node];
+    if (!valid_token(decl_token))
+        decl_token = hir_token_pos[fn_node];
+    return valid_token(decl_token) ? decl_token : INVALID;
+}
+
+uint function_return_width(uint fn_node)
+{
+    uint fn_decl_token = function_decl_token(fn_node);
+    if (!valid_token(fn_decl_token))
+        return function_return_hir_width(fn_node);
+
+    return max(
+        max(
+            max(
+                semantic_type_width(call_return_type[fn_decl_token]),
+                type_width(call_return_type_token[fn_decl_token])),
+            decl_type_width(fn_decl_token)),
+        function_return_hir_width(fn_node));
+}
+
+void reject_unsupported_entrypoint_return(uint fn_node)
+{
+    if (!fn_is_main_entrypoint(fn_node))
+        return;
+    if (function_return_width(fn_node) <= 1u)
+        return;
+    publish_entrypoint_aggregate_return_error(fn_node);
 }
 
 void write_param_reg_record_at(
@@ -237,9 +415,10 @@ void write_param_reg_record_at(
     uint ordinal,
     uint arg_reg,
     uint width,
-    uint semantic_ty)
+    uint semantic_ty,
+    uint aggregate_kind)
 {
-    uint info = pack_param_reg_info(ordinal, arg_reg);
+    uint info = pack_param_reg_info(ordinal, arg_reg, aggregate_kind);
     if (info == INVALID)
         return;
     row_major_store<uint>(x86_param_reg_record, record_key, X86_PARAM_REG_STRIDE, 0u, fn_node);
@@ -266,9 +445,18 @@ void write_param_reg_record(
     uint ordinal,
     uint arg_reg,
     uint width,
-    uint semantic_ty)
+    uint semantic_ty,
+    uint aggregate_kind)
 {
-    write_param_reg_record_at(decl_token, fn_node, param_node, ordinal, arg_reg, width, semantic_ty);
+    write_param_reg_record_at(
+        decl_token,
+        fn_node,
+        param_node,
+        ordinal,
+        arg_reg,
+        width,
+        semantic_ty,
+        aggregate_kind);
 }
 
 void scatter_param_reg(uint param_node)
@@ -279,28 +467,33 @@ void scatter_param_reg(uint param_node)
     uint decl_token = record[HIR_PARAM_RECORD_NAME_TOKEN];
     uint source_param_node = record[HIR_PARAM_RECORD_NODE];
     if (!valid_node(fn_node) || !valid_node(source_param_node) ||
-        !valid_token(decl_token) || ordinal >= X86_SYSV_MAX_INTEGER_ARGS)
+        !valid_token(decl_token))
         return;
 
-    uint fn_decl_token = hir_node_decl_token[fn_node];
-    if (!valid_token(fn_decl_token))
-        fn_decl_token = hir_token_pos[fn_node];
+    if (fn_is_main_entrypoint(fn_node))
+    {
+        publish_entrypoint_param_error(source_param_node);
+        return;
+    }
+
+    if (ordinal >= X86_SYSV_MAX_INTEGER_ARGS)
+    {
+        publish_param_reg_count_error(source_param_node);
+        return;
+    }
+
+    uint fn_decl_token = function_decl_token(fn_node);
     if (!valid_token(fn_decl_token))
         return;
 
-    uint fn_return_width = valid_token(fn_decl_token)
-                               ? max(
-                                     max(
-                                         max(
-                                             semantic_type_width(call_return_type[fn_decl_token]),
-                                             type_width(call_return_type_token[fn_decl_token])),
-                                         decl_type_width(fn_decl_token)),
-                                     function_return_hir_width(fn_node))
-                               : 1u;
+    uint fn_return_width = function_return_width(fn_node);
     uint abi_ordinal = ordinal + (fn_return_width > 1u ? 1u : 0u);
     uint arg_reg = sysv_integer_arg_reg(abi_ordinal);
     if (arg_reg == INVALID)
+    {
+        publish_param_reg_count_error(source_param_node);
         return;
+    }
 
     uint param_type = row_major_load<uint>(
         call_param_type,
@@ -316,7 +509,16 @@ void scatter_param_reg(uint param_node)
                                method_receiver_width(fn_decl_token, decl_token)),
                            1u);
     uint semantic_ty = param_type != TY_UNKNOWN ? param_type : visible_type[decl_token];
-    write_param_reg_record(decl_token, fn_node, source_param_node, ordinal, arg_reg, width, semantic_ty);
+    uint aggregate_kind = decl_aggregate_kind(decl_token, semantic_ty);
+    write_param_reg_record(
+        decl_token,
+        fn_node,
+        source_param_node,
+        ordinal,
+        arg_reg,
+        width,
+        semantic_ty,
+        aggregate_kind);
 }
 
 [shader("compute")]
@@ -341,5 +543,6 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (node_i >= active_hir_node_count())
         return;
 
+    reject_unsupported_entrypoint_return(node_i);
     scatter_param_reg(node_i);
 }

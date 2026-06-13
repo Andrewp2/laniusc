@@ -98,11 +98,7 @@ public struct BraceDepthTree : IRangeSearchTree<int>
 
     public static uint leaf_base()
     {
-        uint base = 1u;
-        [loop]
-        while (base < gParams.n_blocks)
-            base <<= 1u;
-        return base;
+        return range_search_leaf_base_for_block_count(gParams.n_blocks);
     }
 
     public static int leaf_value(uint block)

@@ -98,7 +98,9 @@ bool is_type_path_container(uint prod)
 
 bool is_type_path_segment(uint prod)
 {
-    return prod == PROD_TYPE_PATH_IDENT || prod == PROD_PATH_IDENT;
+    return prod == PROD_TYPE_PATH_IDENT ||
+           prod == PROD_PATH_IDENT ||
+           prod == PROD_PATH_IDENT_ARGS;
 }
 
 uint arg_from_container(uint container)

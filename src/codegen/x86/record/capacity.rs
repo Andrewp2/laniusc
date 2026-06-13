@@ -4,21 +4,21 @@ use super::super::{
     X86_REGALLOC_ROWS_PER_CHUNK,
     X86FeatureSummary,
     X86Params,
+    regalloc_recorded_chunk_count,
     regalloc_recorded_step_count,
     support::{pointer_jump_steps_for_items, scan_steps_for_blocks, workgroup_grid_1d},
     x86_capacity_estimate_for_hir_tokens_inst_basis_and_feature_summary,
+    x86_control_flow_bridge_pass_contract,
+    x86_encode_pass_contract,
     x86_function_slot_capacity,
     x86_initial_output_readback_bytes,
+    x86_lowering_pass_contract,
     x86_node_inst_order_rows,
     x86_regalloc_pass_contract,
 };
 
-// Bounded owner/placement relations that still bridge control-flow lowering into
-// virtual instruction generation before a full basic-block edge table exists.
-const X86_CONTROL_FLOW_BRIDGE_RELATIONS: usize = 4;
-const X86_CONTROL_FLOW_BRIDGE_LOOP_STATUS: &str = "bounded";
-const X86_CONTROL_FLOW_BRIDGE_FALLBACK_STATUS: &str = "fail-closed";
-const X86_CONTROL_FLOW_BRIDGE_CLAIM_STATUS: &str = "blocked";
+const X86_SYSV_INTEGER_REGISTER_SLOTS: usize = 6;
+const X86_AGGREGATE_RETURN_POINTER_REGISTER_SLOTS: usize = 1;
 
 pub(super) struct RecordCapacity {
     pub(super) hir_words: usize,
@@ -99,9 +99,7 @@ impl RecordCapacity {
         let func_owner_scan_blocks = hir_words.div_ceil(256).max(1);
         let virtual_next_call_steps = scan_steps_for_blocks(inst_capacity);
         let regalloc_recorded_steps = regalloc_recorded_step_count(inst_capacity);
-        let virtual_regalloc_chunk_count = regalloc_recorded_steps
-            .div_ceil(X86_REGALLOC_ROWS_PER_CHUNK)
-            .max(1);
+        let virtual_regalloc_chunk_count = regalloc_recorded_chunk_count(inst_capacity);
         let token_words = (token_capacity as usize).max(1);
         let function_slot_capacity =
             x86_function_slot_capacity(inst_hir_node_count, hir_words, token_words);
@@ -195,9 +193,24 @@ fn trace_capacity(
 
     let now = std::time::Instant::now();
     let regalloc_contract = x86_regalloc_pass_contract();
+    let regalloc_recorded_span_rows =
+        virtual_regalloc_chunk_count.saturating_mul(X86_REGALLOC_ROWS_PER_CHUNK);
     let regalloc_readiness_blocked = regalloc_contract.loop_status == "bounded"
         && regalloc_contract.fallback_status == "fail-closed"
         && regalloc_contract.claim_status == "blocked";
+    let control_bridge_contract = x86_control_flow_bridge_pass_contract();
+    let control_bridge_readiness_blocked = control_bridge_contract.loop_status == "bounded"
+        && control_bridge_contract.fallback_status == "fail-closed"
+        && control_bridge_contract.claim_status == "blocked";
+    let lowering_contract = x86_lowering_pass_contract();
+    let lowering_readiness_blocked = lowering_contract.loop_status == "bounded"
+        && lowering_contract.fallback_status == "fail-closed"
+        && lowering_contract.claim_status == "blocked";
+    let encode_contract = x86_encode_pass_contract();
+    let encode_local_byte_loop_not_blocking = encode_contract.loop_status == "bounded-local"
+        && encode_contract.fallback_status == "fail-closed"
+        && encode_contract.claim_status == "not-blocking"
+        && encode_contract.source_text_status == "not-consumed";
     let control_bridge_max_steps = [
         node_inst_same_end_rank_steps.len(),
         enclosing_loop_steps.len(),
@@ -209,7 +222,7 @@ fn trace_capacity(
     .unwrap_or(0);
     let control_bridge_relation_words = capacity
         .hir_words
-        .saturating_mul(X86_CONTROL_FLOW_BRIDGE_RELATIONS);
+        .saturating_mul(control_bridge_contract.relation_count);
     for (name, value) in [
         ("x86.hir_words", capacity.hir_words),
         ("x86.inst_basis_words", capacity.inst_basis_words),
@@ -226,6 +239,14 @@ fn trace_capacity(
         ("x86.function_slot_capacity", function_slot_capacity),
         ("x86.virtual_next_call_steps", virtual_next_call_steps.len()),
         ("x86.regalloc_recorded_chunks", virtual_regalloc_chunk_count),
+        (
+            "x86.regalloc_recorded_span_rows",
+            regalloc_recorded_span_rows,
+        ),
+        (
+            "x86.regalloc_recorded_span_covers_inst_capacity",
+            usize::from(regalloc_recorded_span_rows >= capacity.inst_capacity.max(1)),
+        ),
         ("x86.regalloc_recorded_steps", regalloc_recorded_steps),
         ("x86.regalloc_rows_per_chunk", X86_REGALLOC_ROWS_PER_CHUNK),
         (
@@ -250,23 +271,79 @@ fn trace_capacity(
         ),
         (
             "x86.control_bridge_contract_loop_status_bounded",
-            usize::from(X86_CONTROL_FLOW_BRIDGE_LOOP_STATUS == "bounded"),
+            usize::from(control_bridge_contract.loop_status == "bounded"),
         ),
         (
             "x86.control_bridge_contract_fallback_status_fail_closed",
-            usize::from(X86_CONTROL_FLOW_BRIDGE_FALLBACK_STATUS == "fail-closed"),
+            usize::from(control_bridge_contract.fallback_status == "fail-closed"),
         ),
         (
             "x86.control_bridge_contract_claim_status_blocked",
-            usize::from(X86_CONTROL_FLOW_BRIDGE_CLAIM_STATUS == "blocked"),
+            usize::from(control_bridge_contract.claim_status == "blocked"),
+        ),
+        (
+            "x86.control_bridge_contract_readiness_status_blocked",
+            usize::from(control_bridge_readiness_blocked),
         ),
         (
             "x86.control_bridge_relation_count",
-            X86_CONTROL_FLOW_BRIDGE_RELATIONS,
+            control_bridge_contract.relation_count,
         ),
         (
             "x86.control_bridge_relation_words",
             control_bridge_relation_words,
+        ),
+        (
+            "x86.lowering_contract_loop_status_bounded",
+            usize::from(lowering_contract.loop_status == "bounded"),
+        ),
+        (
+            "x86.lowering_contract_fallback_status_fail_closed",
+            usize::from(lowering_contract.fallback_status == "fail-closed"),
+        ),
+        (
+            "x86.lowering_contract_claim_status_blocked",
+            usize::from(lowering_contract.claim_status == "blocked"),
+        ),
+        (
+            "x86.lowering_contract_source_text_status_not_consumed",
+            usize::from(lowering_contract.source_text_status == "not-consumed"),
+        ),
+        (
+            "x86.lowering_contract_function_body_recognizers_forbidden",
+            usize::from(lowering_contract.function_body_recognizer_status == "forbidden"),
+        ),
+        (
+            "x86.lowering_contract_readiness_status_blocked",
+            usize::from(lowering_readiness_blocked),
+        ),
+        (
+            "x86.lowering_contract_relation_count",
+            lowering_contract.relation_count,
+        ),
+        (
+            "x86.encode_contract_loop_status_bounded_local",
+            usize::from(encode_contract.loop_status == "bounded-local"),
+        ),
+        (
+            "x86.encode_contract_fallback_status_fail_closed",
+            usize::from(encode_contract.fallback_status == "fail-closed"),
+        ),
+        (
+            "x86.encode_contract_claim_status_not_blocking",
+            usize::from(encode_contract.claim_status == "not-blocking"),
+        ),
+        (
+            "x86.encode_contract_source_text_status_not_consumed",
+            usize::from(encode_contract.source_text_status == "not-consumed"),
+        ),
+        (
+            "x86.encode_contract_local_byte_loop_not_blocking",
+            usize::from(encode_local_byte_loop_not_blocking),
+        ),
+        (
+            "x86.encode_contract_max_bytes_per_instruction",
+            encode_contract.max_bytes_per_instruction,
         ),
         (
             "x86.control_bridge_node_inst_same_end_rank_steps",
@@ -301,6 +378,19 @@ fn trace_capacity(
         (
             "x86.feature_param_count",
             feature_summary.param_count as usize,
+        ),
+        (
+            "x86.sysv_integer_register_slots",
+            X86_SYSV_INTEGER_REGISTER_SLOTS,
+        ),
+        (
+            "x86.aggregate_return_pointer_register_slots",
+            X86_AGGREGATE_RETURN_POINTER_REGISTER_SLOTS,
+        ),
+        (
+            "x86.max_explicit_args_with_aggregate_return",
+            X86_SYSV_INTEGER_REGISTER_SLOTS
+                .saturating_sub(X86_AGGREGATE_RETURN_POINTER_REGISTER_SLOTS),
         ),
     ] {
         crate::gpu::trace::record_counter("host.x86.capacity", name, now, value as f64);

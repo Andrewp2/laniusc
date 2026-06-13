@@ -30,6 +30,13 @@ emission from GPU-resident compiler data.
   It no longer discovers the entrypoint by source text, and it no longer seeds
   provisional token-derived function slots; the dense function-slot relation is
   owned by the later flag/scan/scatter compaction pass.
+- `shaders/codegen/x86_node_tree_info.slang` is a fail-closed, node-local HIR
+  tree record guard before function discovery. Each active row now requires any
+  valid parent to be an earlier preorder row, requires `subtree_end` to be a
+  non-empty exclusive range inside the active tree, and requires child ranges to
+  stay inside the parent range. Malformed parent/subtree records publish
+  `unsupported x86 HIR tree shape` with the malformed HIR node as detail before
+  prefix-summed instruction locations or scatter consumers can trust the tree.
 - `shaders/codegen/x86_node_inst_counts.slang` and
   `shaders/codegen/x86_node_inst_gen.slang` consume HIR, resolver, type,
   literal, declaration-layout, call, argument-prefix, and match records to
@@ -73,8 +80,12 @@ emission from GPU-resident compiler data.
 - `shaders/codegen/x86_expr_semantic_type_init.slang`,
   `shaders/codegen/x86_call_records.slang`, and
   `shaders/codegen/x86_const_values.slang` consume that parser-owned expression
-  root row directly for semantic-type, call-callee, and const-literal
+  root row directly for semantic-type, call-callee, and scalar const-value
   projection instead of carrying local `HIR_EXPR_FORWARD` resolution logic.
+  The x86 const-value projection now folds non-trapping `/` and `%` scalar
+  const expressions with non-negative operands, plus one nested binary operand
+  layer, in the same per-const scatter pass as the existing arithmetic, shift,
+  comparison, and boolean folds.
 - `shaders/codegen/x86_postfix_operand_owner.slang` also consumes
   `hir_expr_result_root_node` directly when scattering postfix operand-owner
   rows, so postfix/unary ownership no longer depends on the backend-local
@@ -149,36 +160,84 @@ emission from GPU-resident compiler data.
   loop is the current serial linear-scan scheduling boundary. It mutates
   per-function active register-end state and the remaining parameter-register
   mask as loop-carried state, so a simple one-thread-per-row split would race
-  rather than become a Pareas-style map/scatter pass. It fails closed when the
-  compact value-definition stream needs chunks outside the GPU-recorded
-  active-chunk span, when a dynamic register-allocation chunk is not aligned to
-  the recorded fixed row count, or when the discovered function set exceeds the
-  recorded function-slot slice. That prevents partial allocation from implying a
-  CPU-scale fallback. The host x86 backend also exposes
-  `x86_regalloc_pass_contract()` and capacity-trace counters for
+  rather than become a Pareas-style map/scatter pass. The host-recorded chunk
+  span is sized from instruction capacity, not source length, and the shader
+  validates that `recorded_chunks * rows_per_chunk` covers the full instruction
+  capacity before accepting the GPU-computed compact value-definition span. It
+  keeps the shader loop bound named as a fixed local chunk width because the
+  program-sized dimension is the recorded chunk count, not the per-dispatch
+  helper loop.
+  It fails closed when the compact value-definition stream needs chunks outside
+  the GPU-recorded active-chunk span, when a dynamic register-allocation chunk is
+  not aligned to the recorded fixed row count, when a consumed compact
+  value-definition row is not a real value-definition row or is not strictly
+  ordered against the previous compact ordinal, or when the discovered function
+  set exceeds the recorded function-slot slice. That prevents partial allocation
+  from implying a CPU-scale fallback or a stale prefix/scatter record. The host
+  x86 backend also exposes `x86_regalloc_pass_contract()` and capacity-trace
+  counters for
   `loop_status=bounded`, `fallback_status=fail-closed`, and
   `claim_status=blocked`, so measurement artifacts cannot treat the current
   allocator as an unbounded paper-aligned pass by omission. Host capacity trace
   counters also mark the current control-flow bridge
   `bounded`/`fail-closed`/`blocked` and record the pointer-jump widths for
   same-end placement, loop ownership, short-circuit RHS ownership, and index
-  source ownership before virtual instruction generation. The replacement should
+  source ownership before virtual instruction generation. The host x86 backend
+  now exposes `x86_control_flow_bridge_pass_contract()` as a no-run artifact
+  contract for those transitional bridge rows, including the required
+  replacement shape: basic-block edge rows, control-region records, and
+  segmented control-flow scans. The host x86 backend also exposes
+  `x86_lowering_pass_contract()` for the current node-local lowering bridge:
+  it declares source text as not consumed, function-body recognizers as
+  forbidden, and broad x86 lowering/performance claims as blocked until generic
+  operation rows, basic-block edge rows, and segmented virtual-instruction
+  scatters replace the bounded shape-specific lowering path. The replacement
+  for register allocation should
   partition value-definition rows by allocation region, compose state with
   segmented scan/prefix-style records, or publish explicit pressure/spill rows
   before selection. The current x86 audit found no remaining
   executable-function gates that use bare `HIR_FN`; all function discovery,
   owner-scan, assignment, and slot-compaction seeds require `HIR_ITEM_KIND_FN`.
-  The only shader `for` loop in the x86 codegen surface is this
+  Method-function gates that carry the full x86 params now validate HIR function
+  tokens against `n_tokens` before indexing token-keyed method metadata. The
+  remaining local function-owner scan still uses the shared scan-param ABI, so
+  its explicit invariant is that parser/type records for active `HIR_FN` method
+  rows publish a valid `hir_token_pos` into `method_decl_param_offset`; replacing
+  that scan should either carry token capacity or pre-scatter method-owner flags
+  before the prefix scan.
+  Span overflow in the current compact value-definition stream now publishes
+  the first unrecorded value definition's HIR node as a GPU status detail, so
+  the public failure is a source-spanned `LNC0017` instead of a raw readback
+  error while still failing closed before ELF bytes are returned.
+  The remaining non-local shader `for` loop in the x86 codegen surface is this
   register-allocation chunk loop, and no existing prefix/scan/scatter table
   carries the loop-carried active-register and parameter-mask state it mutates.
+  The separate byte encoder loop is a fixed per-instruction byte scatter over
+  the x86 maximum encoded instruction width, after prefix-summed byte offsets
+  and relocation records exist; the host exposes `x86_encode_pass_contract()`
+  and capacity-trace counters marking it
+  `loop_status=bounded-local`, `source_text_status=not-consumed`, and
+  `claim_status=not-blocking` so no-run artifacts distinguish it from
+  source-sized pass work.
 - `shaders/codegen/x86_select.slang` consumes allocated virtual instruction
   records and scatters fixed-width x86 instruction records plus GPU target
   indices consumed by byte sizing/encoding. The deleted planning shaders no
   longer materialize source-shape-specific rows before selection.
+- Empty x86 entrypoint bodies now stay on the same selected-instruction record
+  path: when GPU function discovery finds `main` but the first-row scatter has
+  no virtual row for that slot, `x86_select` points the synthetic entry-stack
+  jump at the synthetic exit row instead of publishing an entrypoint-body
+  diagnostic. Missing `main` and malformed virtual-row ownership remain
+  fail-closed through status rows.
 - `x86_select` now also requires each non-padding virtual instruction row to
   carry a valid GPU-computed function slot before it can select native
   instruction records, so malformed ownership records fail closed through
-  `X86_ERR_SELECT` instead of reaching byte encoding.
+  `X86_ERR_SELECT` instead of reaching byte encoding. Each selected output row
+  is cleared before row-local selection, so an unsupported virtual op cannot
+  preserve a stale native instruction payload after publishing the select
+  boundary. Row-local selection failures publish the owning HIR node as the
+  status detail so the host diagnostic remains source-addressable instead of
+  treating a virtual opcode as a source node.
 - Virtual row locations are checked against the exact prefix-summed virtual
   instruction total, not just the allocation capacity. Mixed direct-call
   selection now also validates that the callee target row has a function slot
@@ -191,7 +250,13 @@ emission from GPU-resident compiler data.
   have no later use. Register-allocation compaction consumes this same flag
   table, and `x86_select` emits zero-size selected rows for optimized-away
   virtual rows. This is deliberately a narrow single-pass dead-value
-  optimization, not a claimable broad optimizer.
+  optimization, not a claimable broad optimizer. It is still only partially
+  paper-ordered: the backend paper builds the optimization mask from virtual
+  instruction operands before lifetime analysis/register allocation, while the
+  current flag pass consumes liveness records produced immediately before it.
+  Production should either move dead-value marking ahead of liveness or make
+  the pre-optimization liveness rows an explicit usage-summary relation rather
+  than treating them as the register-allocation lifetime stage.
 - `shaders/codegen/x86_inst_size.slang` computes variable-width instruction
   sizes for those records. It also validates selected branch, jump, call, and
   entry-jump targets against the prefix-summed instruction stream before byte
@@ -213,12 +278,21 @@ emission from GPU-resident compiler data.
   ordered after a GPU clear of the output words, so byte-lane atomic OR is safe.
   It fails closed on wrapped `.text`/file-length arithmetic before calculating
   output ranges, and it refuses to encode if relocation-record publication did
-  not succeed.
+  not succeed. Its only byte loop is capped by the maximum encoded width of one
+  selected instruction, not by source length, token count, HIR rows, relocation
+  count, or output size; instruction-row parallelism still comes from the
+  prefix-size/offset/scatter pass shape.
 - `shaders/codegen/x86_reloc_patch.slang` runs after encoding and before ELF
   layout. Encoding leaves zero rel32 placeholders; the patch pass traverses
   compact relocation rows directly, validates target/kind consistency, and
   atomically scatters rel32 bytes into packed output words so adjacent
-  relocations can share an output word without races.
+  relocations can share an output word without races. The patch pass also
+  revalidates the relocation count/status handoff, final text range, and strict
+  ascending relocation-site order before patching, and any patch validation
+  error must invalidate `encode_status` as well as `reloc_status` because ELF
+  layout consumes the encode status as the byte-publication gate. Stale or
+  non-compact relocation rows therefore fail closed as relocation errors instead
+  of returning ELF bytes from an already-accepted encode stage.
 - `shaders/codegen/x86_elf_layout.slang` computes the ELF text/file layout from
   the encoded text length.
 - `shaders/codegen/x86_elf_write.slang` consumes the encoded `.text` bytes and
@@ -233,40 +307,94 @@ emission from GPU-resident compiler data.
   type checking, and the direct GPU x86 emitter for the bounded scalar
   main-return slice. The source-pack route proves that supplied modules can flow
   through the native path while `main` uses the existing scalar return shape,
-  and can now lower one resolver-backed module-qualified scalar constant
-  arithmetic return plus one resolver-backed module-qualified direct call.
+  and can now lower resolver-backed module-qualified scalar constant arithmetic
+  returns, module-qualified direct calls, and an imported helper that recursively
+  calls itself through the same call/relocation path.
   Direct calls lower through resolver-owned callee ids, call ABI records,
   node-local virtual instruction rows, liveness, register allocation, and
   selection; they must not reintroduce whole-callee body recognizers for helper
-  functions. A small executable
-  `while`/scalar-local-mutation case now covers loop ownership, assignment
-  lowering, branch layout, liveness/regalloc, ELF emission, and process exit.
+  functions. Small executable `while`/scalar-local-mutation and nested-`while`
+  cases now cover loop ownership, assignment lowering, branch layout,
+  liveness/regalloc, ELF emission, and process exit.
   Package imports are still not loaded by the host.
 - The CLI now routes explicit `--stdlib`/input source-pack file lists to the
   same direct GPU x86 source-pack entrypoint. This is still an explicit file-list
   surface; it does not discover imports, walk directories, concatenate sources,
   or run a host parser/typechecker.
 - `tests/codegen_x86.rs` locks this behavior: missing file errors must happen
-  before codegen, direct ELF bytes are emitted for scalar programs, a small
-  `while`/scalar-local-mutation program exits with the expected value, a
+  before codegen, direct ELF bytes are emitted for scalar programs, small
+  `while` and nested-`while` scalar-local-mutation programs exit with the
+  expected values, a
   bounded scalar-op program executes division, modulo, bitwise, and shift
   expression rows through native output,
   `while` program with `break`/`continue` and an array `for` program with
   `break`/`continue` execute through native control-flow output, local-array
   indexed assignments execute through native indexed store output, struct
   aggregate parameters can be passed to helpers and read through member loads, a
-  bool-returning helper can feed a native branch condition, a four-argument
-  direct call with mixed local/expression/literal argument sources executes
-  through the packed call-ABI path in both single-source and source-pack
-  imported-helper programs, an imported helper can return a bounded aggregate
-  array through the native call ABI for local indexing, and a
-  five-argument direct call fails through a source-spanned x86 diagnostic. The
-  old WASM translation prototype files must remain absent.
+  bool-returning helper can feed a native branch
+  condition, scalar helper calls up to the six-register packed ABI slice
+  execute with mixed local/expression/literal argument sources in both
+  single-source and source-pack imported-helper programs, and nested helper-call
+  return values can fill all six packed direct-call argument slots through the
+  per-call/per-ordinal lookup rows. Imported helpers can
+  execute in a source-pack loop condition, loop-body assignment, and
+  loop-local let initializer through the same node-local call records, a
+  source-pack helper can iterate a sized array parameter with native `for`
+  lowering through the parameter aggregate load path, imported
+  nested helper calls can execute inside a source-pack `for` branch body, nested
+  imported helper results can feed source-pack call arguments through the same
+  resolver-owned call records, an imported helper can own nested loops while
+  calling another helper from the inner loop body, one
+  source-pack helper can return a struct literal into a qualified aggregate
+  local through the hidden return-pointer ABI, imported helpers can return and
+  pass a single-payload enum value before executing a return-position match, a
+  same-module scalar helper can call itself recursively through the ordinary
+  direct-call ABI and relocation rows, and an imported source-pack scalar helper
+  can do the same before returning to `app::main`. Imported source-pack scalar
+  consts can also feed native indexed assignment and indexed load operands
+  through resolver-owned const rows instead of being treated as source-local
+  literals. Imported source-pack inherent
+  methods on struct receivers can execute through the same resolver-owned method
+  target rows, receiver ABI argument projection, native call lowering, and
+  bool-returning branch conditions. Imported source-pack self methods can also
+  consume multiple explicit scalar arguments inside a loop-body accumulation
+  through the same per-call/per-ordinal lookup rows instead of a
+  method-specific one-argument gate. Same-source inherent methods can now
+  consume the receiver plus multiple explicit scalar arguments through the same
+  per-call/per-ordinal lookup rows. General source-pack aggregate-return helpers
+  beyond the covered
+  struct-initializer and single-payload-enum cases, and
+  module-qualified alias locals outside direct aggregate-call initializers are
+  not current executable x86 evidence. The direct
+  same-module mutually recursive scalar helpers can call across forward and
+  backward function-order edges through ordinary direct-call ABI and relocation
+  rows. The direct
+  `x86_reloc_patch_rejects_non_compact_reloc_rows` fixture corrupts only the
+  compact relocation rows and verifies that non-ascending relocation sites poison
+  both relocation and encode status before patch bytes are written. The old WASM
+  translation prototype files must remain absent.
 - Missing `main` now fails through x86 entry selection as source-spanned
   `LNC0017` with `missing main entrypoint` instead of falling through to a
   generic selection failure. The diagnostic anchors to the source when no
   entrypoint token exists; real package entrypoint discovery remains future
-  work.
+  work. Source-pack x86 backend errors now also retain a public `LNC0017`
+  primary label when the GPU error detail cannot be mapped back to a token,
+  including an empty source pack, instead of leaking a raw backend readback
+  error.
+- Parameterized `main` now fails closed in the GPU parameter-record pass as
+  source-spanned `LNC0017` with `unsupported x86 entrypoint parameters`. The
+  native process entrypoint currently has no language-level argument ABI, so
+  parameter records for `main` must not be treated as ordinary SysV helper
+  parameters.
+- Aggregate-returning `main` now fails closed in the same GPU parameter-record
+  pass as source-spanned `LNC0017` with
+  `unsupported x86 entrypoint aggregate return`. The native process entrypoint
+  currently has no hidden return-buffer ABI, so aggregate returns must not flow
+  into ordinary helper return-pointer lowering.
+- Helper parameters beyond the current SysV register-backed slice now fail
+  closed in the same GPU parameter-record pass as source-spanned `LNC0017` with
+  `unsupported x86 parameter register count`, instead of leaving later function
+  body planning to observe an absent parameter row.
 - The x86 executable tests now validate a public ELF64 artifact contract beyond
   the magic bytes: the program-header table must fit in the returned bytes, load
   segment file ranges must fit the file, and the entry point must map into an
@@ -275,34 +403,112 @@ emission from GPU-resident compiler data.
   callees and for direct calls that fail bounded ABI checks, so later
   node-local virtual instruction generation cannot accidentally consume a
   partial direct-call record after a fail-closed diagnostic has been published.
-  The virtual-instruction generator also revalidates both words of the ABI row,
-  the target function node, the packed argument count, and nonzero return width
+  The ABI projection actively clears the call's token-keyed ABI row before
+  validating the bounded argument/register shape, so a stale row cannot survive
+  an unsupported call even if the input buffer was prefilled incorrectly. The
+  virtual-instruction generator also revalidates both words of the ABI row, the
+  target function node, the packed argument count, and nonzero return width
   before treating a row as supported, so a stale half-written bounded record
   cannot imply call support.
+- Direct `self` method calls now publish ordinary GPU call/type/callee-root
+  records after the type checker resolves the method-name token to a function
+  target. The call-record pass adds one receiver ABI argument only when the
+  resolved method declaration exposes a receiver parameter, and
+  `x86_call_arg_values` scatters the receiver into ordinal 0 before explicit
+  call arguments. This keeps the method-call slice on resolver-owned records
+  instead of source spelling or CPU method lookup. The old call-record-only
+  cap at one explicit method argument is gone; receiver methods now share the
+  packed six-register ABI limit with ordinary direct calls. Source-pack imported
+  method calls now have executable evidence in both branch and loop-condition
+  consumers, and same-source methods have executable evidence for multiple
+  explicit scalar arguments.
+- Source-pack imported free helpers now have executable evidence for passing an
+  aggregate struct value across the helper-call ABI after the aggregate was
+  returned by another imported helper. The coverage keeps the contract at the
+  behavior boundary: the caller imports the module, receives a concrete struct
+  value, passes it by value to a second helper, and the produced ELF exits with
+  the helper-computed result. `tests/codegen_x86.rs` now also locks the composed
+  loop case where `main` repeatedly receives an imported aggregate return,
+  passes it to another imported helper, and accumulates the helper result
+  through native x86 loop output.
+- Direct source calls with seven scalar arguments currently stop at the shared
+  GPU call-resolution boundary with source-spanned `LNC0027` before native x86
+  lowering can publish bytes. The x86 packed-ABI overflow path remains covered
+  as a backend record contract: `x86_call_abi` clears the token-keyed ABI row
+  and publishes `unsupported x86 call argument count` when fed an unsupported
+  packed argument count, instead of sharing the generic call-ABI boundary used
+  by unresolved runtime/service callees. Broadening this needs a wider
+  argument-payload record or a prefix-scattered per-call argument table consumed
+  by instruction generation.
+- Aggregate-return helper calls reserve one hidden SysV integer-register slot
+  for the return buffer. A direct call with six explicit scalar arguments and
+  an aggregate return therefore fails closed as `unsupported x86 call ABI`
+  before native bytes are returned: the backend budget is six total register
+  slots, not six explicit arguments plus an implicit return pointer. The public
+  diagnostic contract points into the capacity-exceeding call expression so this
+  boundary cannot degrade into an unspanned backend failure. The host capacity
+  trace records the six-slot budget, the hidden return-pointer slot, and the
+  resulting five-explicit-argument aggregate-return ceiling so scaling
+  artifacts cannot misstate the bounded ABI slice. Broadening this requires
+  stack-argument lowering plus a wider or prefix-scattered call-argument
+  relation consumed by virtual instruction generation.
 - `tests/codegen_x86_properties.rs` adds record-first x86 evidence without
   checking private helper names or backend source strings: generated executable
   programs with helper-like names versus renamed functions must both execute the
   resolver target's body semantics, including imported callees that combine
   array parameters, loop-carried locals, nested arithmetic, branch-local
-  updates, and local-dependent call-argument expression nodes. The generated
-  fail-closed cases also exercise loop-contained calls through assignment and
-  `let`-initializer statement consumers plus postfix increment/decrement
-  rejection, proving those diagnostic boundaries are not tied to one source
-  statement spelling. The same property file also treats the current
+  updates, and local-dependent call-argument expression nodes. Generated
+  source-pack nested direct-call argument programs now also vary
+  module/function/local names and all six packed SysV scalar argument ordinals,
+  interleave two imported inner callee targets, and include a reordered helper
+  declaration shape, proving inner call results stay attached to the intended
+  outer call argument positions rather than a stale nested-call payload.
+  Generated
+  same-source mutually recursive scalar call graphs with different function
+  orders must match a Rust parity reference model, covering both forward and
+  backward direct-call relocation edges without depending on helper names.
+  Generated
+  array `for` programs with different binding names must also match a Rust
+  reference model for `continue`, `break`, and arithmetic loop-carried updates.
+  Generated boolean `&&`/`||` programs with helper-like and renamed local names
+  must also match a Rust reference model for the supported local-operand
+  execution slice. Generated source-pack programs now also compare imported
+  self-method loop conditions against a Rust reference model across helper-like
+  and renamed module/type/method/local names, exercising package-qualified
+  aggregate construction, receiver ABI projection, and loop-carried arithmetic
+  through executable ELF results. Generated source-pack enum helpers with
+  helper-like and renamed module/type/variant/function/local names must also
+  return single-payload enum values and execute return-position matches against
+  a Rust reference model. Generated source-pack nested-loop helper owners now
+  also call a four-argument helper from the inner loop and compare the ELF exit
+  code against a Rust loop model across helper-like and renamed names. The
+  generated cases also exercise
+  loop-contained calls through assignment and `let`-initializer statement
+  consumers plus postfix increment/decrement rejection, proving those call
+  execution and diagnostic boundaries are not tied to one source statement
+  spelling. It also checks that RHS calls under `&&`/`||`
+  fail through the same source-spanned short-circuit diagnostic across
+  helper-like and renamed callees, rather than being tied to one callee spelling
+  or operator fixture. Trap-sensitive RHS operands such as dynamic division and
+  dynamic shift counts now get the same generated diagnostic coverage across
+  different names and operators. The same property file also treats the current
   register-allocation chunk span as a bounded backend contract: generated
-  straight-line value-definition chains with different binding names must fail
-  closed instead of returning fallback ELF bytes when they exceed the recorded
-  allocator chunk coverage.
-- Calls inside loop subtrees are an explicit fail-closed x86 boundary:
-  `x86_node_inst_gen` reads the GPU-resident nearest-enclosing-loop table and
-  reports source-spanned `LNC0017` as `unsupported x86 loop-contained call`
-  before lowering. Statement value consumers also check resolved call nodes
-  against the same loop-owner table before falling back to generic assignment,
-  let, return, or branch failures, so loop-condition, loop-body assignment, and
-  loop-local let-initializer calls now fail at the call token without adding a
-  helper-name, source-text, or whole-function recognizer. Implementing calls in
-  loop conditions, loop-carried assignments, and loop bodies remains required
-  before those programs can become executable x86 tests.
+  straight-line value-definition chains with different binding names must
+  execute across the first compact value-definition chunk boundary, proving the
+  recorded allocator span is not a source-sized single-chunk cap.
+- Simple direct calls inside loop subtrees now execute through GPU-owned
+  call/ABI rows when the surrounding statement shape is already supported:
+  single-source loop conditions, loop-body assignments, loop-local
+  let-initializer calls, and loop-contained branch conditions have executable
+  coverage, and source-pack imported helpers cover the same condition,
+  assignment, and loop-local initializer statement consumers. Source-pack
+  imported methods also execute as loop conditions through the same
+  resolver-owned method target and receiver ABI rows. Source-pack imported
+  helpers also have branch-body loop coverage where one helper call consumes
+  another imported helper call as an argument.
+  `x86_node_inst_gen` still keeps a source-spanned
+  `LNC0017` fallback for unsupported loop-contained call shapes rather than
+  rediscovering helper names, source text, or whole functions.
 - Postfix expressions are now a GPU-written fail-closed x86 boundary:
   `x86_node_inst_counts` rejects `HIR_POSTFIX_EXPR` rows with source-spanned
   `LNC0017` as `unsupported x86 postfix expression` before prefix-summed
@@ -317,6 +523,13 @@ emission from GPU-resident compiler data.
   prefix update such as `++local` can become a zero-instruction no-op. Real
   support needs explicit read/modify/write virtual rows from parser-owned unary
   operator records.
+- Unsupported non-integer literal expressions are now a GPU-written
+  fail-closed x86 boundary: `x86_node_inst_counts` rejects parser-owned float,
+  string, and char literal forms with source-spanned `LNC0017` as
+  `unsupported x86 literal expression` before a literal value can fall through
+  as a zero-instruction node or generic virtual-instruction failure. Real
+  support needs typed literal payload rows and native selection for those
+  scalar/aggregate representations.
 - Non-return match expressions are now a GPU-written fail-closed x86 boundary:
   `x86_node_inst_counts` rejects `HIR_MATCH_EXPR` rows outside the currently
   supported return-position match lowering with source-spanned `LNC0017` as
@@ -328,29 +541,36 @@ emission from GPU-resident compiler data.
   operands, and instruction selection/encoding writes an indexed local-memory
   store. Unsupported indexed assignment targets still fail closed through the
   backend status row instead of falling through to generic assignment lowering.
+  Indexed compound division and modulo now reuse expression semantic metadata on
+  the index-expression row, so `u32` array elements select unsigned native
+  division instead of signed reinterpretation. Source-pack coverage now also
+  exercises a module-qualified scalar const as the indexed write/read operand,
+  keeping the path tied to resolver-owned const records rather than source-local
+  literal recognition.
 - Statically known out-of-bounds array indexes are now a GPU-written
-  fail-closed x86 boundary: `x86_node_inst_gen` rejects literal and
-  resolver-backed const atom indexes outside the aggregate width with
-  source-spanned `LNC0017` as
+  fail-closed x86 boundary: `x86_node_inst_gen` rejects literal,
+  resolver-backed const atom, and one-level immutable scalar const-expression
+  indexes outside the aggregate width with source-spanned `LNC0017` as
   `unsupported x86 array index bounds` before native indexed stack access is
-  emitted. Local literal names and shaped index expressions now flow through
-  ordinary virtual value/register rows and the native runtime bounds check
-  instead of being rediscovered as a function-body/static-proof shape.
-- Aggregate-parameter member assignment is now an explicit GPU-written
-  fail-closed boundary: `x86_node_inst_gen` reads the member-access record plus
-  aggregate source records, accepts local aggregate fields as writable slots, and
-  reports source-spanned `LNC0017` as
-  `unsupported x86 parameter aggregate assignment` for parameter-backed members.
-  Real support needs writable parameter-copy or by-reference aggregate storage
-  rows before a member write can become executable output.
-- Aggregate-parameter indexed assignment is now the matching GPU-written
-  fail-closed boundary for array-style aggregate parameters: `x86_node_inst_gen`
-  reads the index expression plus aggregate source records, accepts only local
-  aggregate slots as writable indexed stores, and reports source-spanned
-  `LNC0017` as `unsupported x86 parameter aggregate indexed assignment` for
-  parameter-backed indexed targets. Real support needs the same writable
-  parameter-copy or by-reference aggregate storage rows before indexed parameter
-  writes can become executable output.
+  emitted. Mutable local literal names and non-constant shaped index
+  expressions still flow through ordinary virtual value/register rows and the
+  native runtime bounds check instead of being rediscovered as a function-body
+  static-proof shape.
+- Aggregate-parameter member assignment now executes through GPU-owned member
+  access and parameter aggregate records: `x86_node_inst_gen` accepts
+  parameter-backed fields as writable slots, lowers writes through
+  `STORE_PARAM_INDEX`, and uses member expression semantic-type metadata so
+  `u32` compound division, modulo, and right shift select unsigned native
+  operations instead of signed reinterpretation.
+- Aggregate-parameter indexed assignment now executes through the matching
+  parameter aggregate path for array-style parameters: `x86_node_inst_gen`
+  reads the index expression plus aggregate source records and lowers writable
+  parameter-backed indexed targets through `STORE_PARAM_INDEX`. Unsupported
+  unsized or temporary aggregate index sources still fail closed through the
+  existing indexed/temporary aggregate status rows. Source-pack executable
+  coverage now exercises the same path through an imported helper so resolver
+  call/ABI records, parameter aggregate records, and `STORE_PARAM_INDEX`
+  selection are covered together without reconstructing source shapes.
 - Aggregate-return temporary member reads are now a GPU-written fail-closed
   boundary: `x86_node_inst_counts` rejects member expressions whose receiver is
   not a named local or parameter aggregate source with source-spanned `LNC0017`
@@ -358,8 +578,11 @@ emission from GPU-resident compiler data.
   fixture covers the aggregate-return case without a timeout. Real support
   still needs aggregate return temporaries materialized as explicit slots or
   value rows that member loads can consume. Nested aggregate-valued member
-  receivers (`outer.inner.left`) remain future work and should not be revived as
-  timeout-heavy aggregate-temporary tests.
+  receivers (`outer.inner.left`) now fail through their own source-spanned
+  `unsupported x86 nested aggregate member` boundary instead of being folded
+  into generic temporary-member failures. Real support needs explicit aggregate
+  path/field-width rows before nested member loads can become executable output;
+  do not revive timeout-heavy aggregate-temporary tests for that gap.
 - Struct-literal local sizing/layout now consumes parser-owned
   `hir_struct_lit_head_node` through backend `x86_struct_access_record` aliases,
   so declaration width/layout projection no longer probes sibling/child tree
@@ -373,28 +596,28 @@ emission from GPU-resident compiler data.
   The compact copy pass now also fails closed if a stale or over-wide record
   presents an ordinal beyond the current 32-element row cap, publishing the same
   aggregate-return width status detail instead of silently dropping that element.
-- Divisor safety is now a GPU-written fail-closed x86 boundary:
-  `x86_node_inst_gen` rejects division and modulo expressions or compound
-  assignments whose RHS is zero, or whose RHS is not a literal or
-  resolver-backed immutable scalar atom. The previous one-level unary/binary
-  expression proof is intentionally gone; shaped RHS expressions now fail closed
-  until trap-check lowering exists as explicit virtual instruction rows. Mutable
-  local literal records are not accepted as either zero or nonzero divisor proof
-  because later assignments can make the original initializer stale. Known
-  nonzero RHS atoms other than signed `-1` are accepted. Known zero RHS atoms
-  report
-  source-spanned `LNC0017` as
-  `unsupported x86 zero divisor`; dynamic RHS values and known `-1` RHS values
-  report `unsupported x86 dynamic divisor` before native `idiv` can fault on
-  zero or signed-overflow cases. General runtime divisor checks still need real
-  panic/trap lowering.
+- Divisor safety now has native runtime trap checks in the GPU x86 stream:
+  `x86_node_inst_gen` emits ordinary binary virtual rows for dynamic division
+  and modulo, while `x86_inst_size`/`x86_encode` prepend byte-level zero-divisor
+  and signed-overflow checks before `idiv`. Known literal or immutable-const
+  zero divisors still report source-spanned `LNC0017` as
+  `unsupported x86 zero divisor` before codegen, but mutable locals, parameters,
+  shaped values, and known `-1` divisors flow through the runtime check path.
+  `u32` division and modulo now reuse the same node-local virtual rows but
+  select unsigned `div` with zero-extension from expression semantic metadata,
+  avoiding signed reinterpretation of values above `i32::MAX`.
+  The current trap is still a tiny process-exit boundary, not the final language
+  panic model.
 - Shift counts now lower through ordinary node-local virtual binary
   instructions and native selection adds a byte-level unsigned `< 32` runtime
-  trap before `shl`/`sar` can observe x86's masked count behavior. This keeps
-  dynamic `<<`, `>>`, `<<=`, and `>>=` in the HIR/virtual-instruction pipeline
-  instead of recognizing a source shape or relying on static proof. The current
-  trap is still a tiny process-exit boundary, not the final language panic
-  model.
+  trap before native shifts can observe x86's masked count behavior. Signed
+  `>>`/`>>=` stays on arithmetic `sar`, while `u32` `>>`/`>>=` now routes
+  through expression/declaration type metadata to a distinct logical `shr`
+  virtual opcode instead of reinterpreting high-bit unsigned values as signed.
+  This keeps dynamic `<<`, `>>`, `<<=`, and `>>=` in the
+  HIR/virtual-instruction pipeline instead of recognizing a source shape or
+  relying on static proof. The current trap is still a tiny process-exit
+  boundary, not the final language panic model.
 - Virtual-instruction generation now checks each emitted row against the
   GPU-computed subtree instruction bounds before writing `x86_virtual_inst_*`.
   This keeps branch/loop rows allowed in child padding slots while rejecting a
@@ -409,13 +632,20 @@ emission from GPU-resident compiler data.
   `x86_node_inst_gen` keeps the same boundary for stale records with
   source-spanned `LNC0017` instead of falling through to the generic
   virtual-instruction error. The earlier two-field-struct interval shortcut is
-  gone because width alone is not an iterable/range contract. Scalar and struct
-  `for`-iterable execution still require real iterable records before they can
-  become executable support.
+  gone because width alone is not an iterable/range contract. Sized array
+  parameters are accepted only when `x86_param_reg_record` carries an explicit
+  array aggregate kind, and source-pack coverage now exercises that record path
+  through an imported helper's `FOR_PARAM_ARRAY_LOAD` lowering. Scalar and
+  struct `for`-iterable execution still require real iterable records before
+  they can become executable support.
 - Nested `while`/`for` loops are now a GPU-written fail-closed x86 boundary:
   `x86_node_inst_gen` reads the materialized nearest-enclosing-loop table and
   rejects loop nodes that already have a loop owner before branch rows can be
   emitted for a shape the current native loop layout does not support.
+- `break`/`continue` outside any materialized enclosing loop now fail closed
+  from the same `x86_enclosing_loop_node` relation as source-spanned `LNC0017`
+  with `unsupported x86 loop control outside loop`, instead of falling through
+  to a generic virtual-instruction failure before native branch emission.
 - Calls in the RHS operand of `&&`/`||` are now a GPU-written fail-closed x86
   boundary: `x86_node_inst_gen` rejects the resolved RHS call node with
   source-spanned `LNC0017` as `unsupported x86 short-circuit call operand`
@@ -430,8 +660,9 @@ emission from GPU-resident compiler data.
   Pareas-style parent-link pointer jumping before virtual instruction
   generation. Calls at any supported HIR depth under that RHS owner fail
   through the same source-spanned boundary without fixed-depth parent probes in
-  `x86_node_inst_gen`. Real support still needs conditional RHS blocks and
-  call rows wired through prefix-summed instruction ranges.
+  `x86_node_inst_gen`; property coverage now varies callee names and operators
+  to keep that boundary behavior-facing. Real support still needs conditional
+  RHS blocks and call rows wired through prefix-summed instruction ranges.
 - Division, modulo, shift expressions, and dynamic aggregate indexes under a
   `&&`/`||` RHS owner now also fail closed when the trap-sensitive operand
   cannot be proven statically safe. This uses the same GPU-owned RHS relation,
@@ -500,8 +731,8 @@ Current pass-architecture violations and risks:
   descriptor-only success.
 - Remaining unsupported x86 constructs must keep failing from GPU status rows.
   Do not widen executable support by adding whole-function recognizers for
-  loop-contained calls, short-circuit RHS calls, aggregate temporaries, dynamic
-  divisors, or parameter aggregate writes.
+  unsupported loop-contained call shapes, short-circuit RHS calls, aggregate
+  temporaries, or parameter aggregate writes.
 
 Next verifiable gates:
 
@@ -513,9 +744,9 @@ Next verifiable gates:
    contract descriptor alone.
 3. `x86-gpu-link-gate`: link two tiny libraries, one helper library and one
    importing entry library, into final ELF bytes through GPU object/link records.
-4. `x86-loop-call-gate`: replace the current loop-contained-call diagnostic for
-   one `while` condition/body call fixture with node-local call/ABI rows and
-   prefix-summed virtual instruction records.
+4. `x86-loop-call-gate`: expand loop-contained direct-call coverage beyond the
+   current simple condition/body/let fixtures while keeping unsupported shapes
+   source-spanned and fail-closed from GPU status rows.
 
 ## Direct GPU Pipeline
 
@@ -545,13 +776,13 @@ The direct backend should add these x86-specific GPU buffers.
 | `x86_func_lookup_key/node` | function discovery pass | Open-addressed table from exact resolver target declaration ids, currently `hir_item_decl_token`, to HIR function nodes. |
 | `x86_expr_resolved_node` | expression-forward pointer-jump passes | Resolved HIR expression node for legacy backend consumers that still need the x86-local forward-wrapper relation. New expression-root consumers should prefer the parser-owned `hir_expr_result_root_node` row when it is already available at their pass point. |
 | `x86_expr_resolve_link` | expression-forward pointer-jump passes | Scratch relation used by the pointer-jump passes while converging `x86_expr_resolved_node`. |
-| `x86_call_record` | call-record projection pass | Sparse per-call HIR record: owner function, resolver target token, argument start, and argument count. |
-| `x86_call_type_record` | call-record projection pass | Sparse per-call type record: return type, return type token, callee token, and argument end. |
-| `x86_call_callee_root_call` | call-record projection pass | Sparse callee-root marker keyed by resolved callee HIR node. Zero means no call owns the node; nonzero means the node is the root of a callee expression. |
-| `x86_call_callee_owner_call` | call-callee owner pointer-jump passes | Sparse ownership row for nodes inside a callee expression. Instruction counting consumes this table to suppress callee syntax as ordinary values while excluding method receiver subtrees. |
+| `x86_call_record` | call-record projection pass | Sparse per-call HIR record: owner function, resolver target token, argument start, and ABI argument count. Direct method calls include the receiver in the count only when the resolved method declaration has a receiver parameter, then use the same packed argument-count limit as ordinary direct calls. |
+| `x86_call_type_record` | call-record projection pass | Sparse per-call type record: return type, return type token, callee token, and argument end. Direct method calls use the type-checker method-name token records rather than re-resolving receiver syntax. |
+| `x86_call_callee_root_call` | call-record projection pass | Sparse callee-root marker keyed by resolved callee HIR node. Zero means no call owns the node; nonzero means the node is the root of a callee expression. Direct method calls publish callee ownership while leaving the receiver outside the callee subtree. |
+| `x86_call_callee_owner_call` | call-callee owner pointer-jump passes | Sparse ownership row for nodes inside a supported callee expression. Instruction counting consumes this table to suppress callee syntax as ordinary values while method receivers remain ordinary argument values. |
 | `x86_call_callee_owner_link` | call-callee owner pointer-jump passes | Scratch parent-link relation used while converging callee-expression ownership. |
-| `x86_const_value_record` | const value projection pass | Sparse declaration-token table for supported const literal values. The pass scatters from parser-owned statement/expression records, so later backend value consumers do not scan the whole HIR to rediscover const declarations. |
-| `x86_const_value_status` | const value projection pass | Status/count row for the const value projection. Unsupported const expressions leave their declaration row absent and consumers fail closed if they need it. |
+| `x86_const_value_record` | const value projection pass | Sparse declaration-token table for supported scalar const values: literal/unary atoms and non-trapping scalar binary expressions whose operands are atoms or one nested scalar binary expression, including bounded shifts and nonzero `/`/`%` with non-negative operands. The pass scatters from parser-owned statement/expression records, so later backend value consumers do not scan the whole HIR to rediscover const declarations. |
+| `x86_const_value_status` | const value projection pass | Status/count row for the const value projection. Unsupported deeper-nested/trapping const expressions leave their declaration row absent and consumers fail closed if they need it. |
 | `x86_local_literal_record` | local literal projection pass | Sparse declaration-token table for supported scalar literal `let` values: owning function from `x86_node_func`, let statement node, literal value, and flags. Consumers resolve names through `visible_decl`, then validate same function and definition-before-use ordering from HIR node ids instead of scanning HIR statements. |
 | `x86_local_literal_status` | local literal projection pass | Status/count row for local literal projection. Unsupported local initializers leave their declaration row absent and consumers fail closed when they need the value. |
 | `x86_call_arg_lookup_record` | call-argument lookup projection pass | Per-call/per-ordinal slot table scattered from parser-owned call argument links. The slot index encodes call token and ordinal; the row stores the argument node. |
@@ -565,7 +796,7 @@ The direct backend should add these x86-specific GPU buffers.
 | `x86_enclosing_let_link` | enclosing-let pointer-jump passes | Scratch parent-link relation used while converging nearest let-statement owners. |
 | `x86_enclosing_stmt_node` | enclosing-statement pointer-jump passes | Nearest enclosing HIR statement wrapper for each HIR node. Intrinsic-call projection consumes this instead of walking parent chains. |
 | `x86_enclosing_stmt_link` | enclosing-statement pointer-jump passes | Scratch parent-link relation used while converging nearest statement owners. |
-| `x86_param_reg_record` | parameter register projection pass | Declaration-token keyed parameter ABI row: owner function node, parameter ordinal, SysV integer register, and parameter HIR node. Function body planning consumes this table instead of scanning HIR parameter rows. |
+| `x86_param_reg_record` | parameter register projection pass | Declaration-token keyed parameter ABI row: owner function node, parameter ordinal, SysV integer register, aggregate kind, and parameter HIR node. Function body planning consumes this table instead of scanning HIR parameter rows. |
 | `x86_param_reg_status` | parameter register projection pass | Status/count row for declaration-token keyed parameter register projection. Unsupported high ordinals leave their declaration row absent so body planning fails closed. |
 | `x86_node_control_padding` | control-padding scatter pass | Child-node keyed padding count for if/while/for and return-match branch rows. `x86_node_inst_counts` consumes this table instead of reading `x86_tree_parent` to reclassify direct statement children. |
 | `x86_postfix_operand_owner` | postfix operand-owner scatter pass | Operand-node keyed relation from postfix expression roots to their parser-published result unary operator node. `x86_node_inst_counts` consumes this table so postfix/unary fail-closed classification is a table read instead of a parent probe. |
@@ -623,12 +854,20 @@ The current resident pass sequence is:
 4. `x86_call_records`, `x86_const_values`, `x86_param_regs`, and
    `x86_local_literals`: project parser-owned call nodes plus resolver/type
    metadata into backend call/type records, and scatter const, parameter, and
-   local literal facts by declaration token. This removes whole-HIR searches
-   from call-argument and function-body value planning.
+   local literal facts by declaration token. Direct method calls consume the
+   type-checker method-name token target and receiver-parameter metadata here,
+   so the call row's ABI argument count already accounts for an implicit
+   receiver when the resolved method declaration consumes one. Explicit method
+   arguments remain parser-owned call-argument rows and are capped only by the
+   shared packed SysV register slice. This removes whole-HIR searches from
+   call-argument and function-body value planning.
 5. `x86_call_arg_values`: scatter parser-owned call-argument links into
-   per-call / per-ordinal lookup slots. Argument expression lowering remains in
-   instruction counting/generation, where it consumes HIR expression, resolver,
-   and type metadata without inspecting source text or token layout.
+   per-call / per-ordinal lookup slots. For direct receiver methods, this pass
+   scatters the HIR member receiver into ordinal 0 and shifts explicit
+   arguments only when the call record's ABI count proves the receiver is
+   consumed. Argument expression lowering remains in instruction
+   counting/generation, where it consumes HIR expression, resolver, and type
+   metadata without inspecting source text or token layout.
 6. `x86_intrinsic_calls` and `x86_call_abi`: project intrinsic calls and SysV
    ABI call rows from backend call/type records plus call-argument identity
    rows. Direct targets are mapped through the exact resolver target id in
@@ -639,9 +878,10 @@ The current resident pass sequence is:
    ABI shape are valid; unsupported calls keep the initialized absent row, and
    instruction generation treats partial/stale ABI rows as absent.
 7. `x86_call_callee_owner_init` and `x86_call_callee_owner_step`: materialize
-   call-callee syntax ownership with parent-link pointer jumping. Method
-   receiver subtrees stay unowned so receiver values can still become implicit
-   arguments.
+   call-callee syntax ownership with parent-link pointer jumping. Direct method
+   calls publish ordinary callee ownership for the member-name side while the
+   receiver stays outside that callee-owned subtree and is consumed through the
+   explicit argument lookup row.
 8. `x86_for_iterable_nodes`: materialize the `for`-statement to
    iterable-HIR-node relation directly from parser-owned statement records.
 9. `x86_node_control_padding`: scatter control-statement records to child-node
@@ -687,15 +927,21 @@ The current resident pass sequence is:
    compact live value-definition rows, and allocate SysV x86_64 registers from
    a fixed pool (`rax`, `rcx`, `rdx`, `rsi`, `rdi`, `r8`-`r11` for
    caller-saved temps, reserving ABI scratch as needed). The optimization
-   boundary is paper-ordered because it runs before register allocation and
-   selection, but it is intentionally narrow: it removes only pure
-   single-pass-dead virtual values. This replaces the current fixed
-   `visible_decl` modulo map. It must write explicit failure for unsupported
-   pressure before stack-slot spilling exists. The active shader is still
-   transitional here: the paper translation calls this lifetime-analysis stage
-   largely sequential inside a function, and its own future-work section points
-   to full-expression/statement partitioning plus segmented scans as the route
-   for parallel allocation. The production pass order should therefore be:
+   boundary still runs before register allocation and selection, but it is only
+   partially paper-ordered because the current keep flags consume liveness rows
+   instead of deriving the instruction mask directly from virtual instruction
+   operands before lifetime analysis. It is also intentionally narrow: it
+   removes only pure single-pass-dead virtual values. This replaces the current
+   fixed `visible_decl` modulo map. It must write explicit failure for
+   unsupported pressure before stack-slot spilling exists. The regalloc pass also
+   validates that every consumed compact value-definition ordinal is a real,
+   strictly increasing virtual instruction row, including chunk-boundary rows,
+   so stale scan/scatter output cannot silently drive allocation. The active
+   shader is still transitional here: the paper translation calls this lifetime
+   analysis stage largely sequential inside a function, and its own future-work
+   section
+   points to full-expression/statement partitioning plus segmented scans as the
+   route for parallel allocation. The production pass order should therefore be:
    region-boundary publication from node/statement instruction locations,
    value-definition rows keyed by region/function, segmented
    allocation/pressure records, segmented stack-slot scans for spills, then
@@ -713,10 +959,14 @@ The current resident pass sequence is:
    rows, scatter compact relocation rows, and publish relocation status after
    text offsets and before byte emission.
 21. `x86_encode`: scatter instruction bytes from compact instruction rows into
-   `x86_text_bytes` by byte offset.
-22. `x86_reloc_patch`: consume compact relocation rows and GPU byte offsets to
-   patch rel32 fields in packed output words before layout reads encoded
-   status.
+   `x86_text_bytes` by byte offset. The fixed byte loop is local to one
+   selected instruction and must stay ordered after prefix-summed byte offsets
+   plus relocation-record publication; it is not a source-sized emission loop.
+22. `x86_reloc_patch`: validate compact relocation-row count/order, then
+   consume those rows and GPU byte offsets to patch rel32 fields in packed
+   output words. Any relocation-patch validation error also clears the encoded
+   text length in `encode_status`, so layout cannot publish final bytes from a
+   stale encode success.
 23. `x86_elf_layout`: compute ELF64 executable layout, entry virtual address,
    program header values, `.text` file offset, and final file length.
 24. `x86_elf_write`: write ELF header, program header, padding, and `.text`
@@ -730,6 +980,20 @@ recursive CPU compiler algorithms. The CPU may allocate buffers, dispatch
 passes, submit command buffers, check a GPU-written status code, and read back
 final bytes. It must not interpret HIR, allocate registers, assemble
 instructions, patch offsets, write ELF headers, or repair emitted bytes.
+
+The current x86 pipeline is also aligned with the Pareas codegen shape for the
+parts that are safe to parallelize today: node instruction counts are mapped and
+prefix-scanned into row locations, virtual and selected instruction rows are
+materialized with scatters, text offsets are scanned, and relocation/ELF bytes
+are patched from GPU-owned records. The main remaining style exception is
+`x86_virtual_regalloc.slang`, which still uses a bounded per-function chunk loop
+because it mutates live-register, spill, and parameter-rank state. That loop
+uses a fixed local chunk width that must stay fail-closed and small;
+source/program scaling is represented by the recorded chunk count. Raising the
+bound is not the production fix.
+The production replacement should follow the Pareas direction by publishing
+value-pressure/spill records and using segmented scans/scatters across statement
+or expression partitions before the final selected-instruction scatter.
 
 ## Minimal First Implementation Slice
 
@@ -753,10 +1017,15 @@ through GPU lexer, parser, type checker, and codegen. It should support:
   the exercised scalar-op slice includes nonzero `/` and `%`, `&`, `|`, `^`,
   `<<`, and `>>` over literal/local atoms in let initializers and return
   expressions;
-  broader expression graphs, arbitrary local initializer forms, and wider
-  constant expressions are still rejected by GPU x86 status until direct value
-  lowering, instruction selection, and register allocation expand beyond this
-  bounded shape;
+  non-trapping scalar const expressions with atom operands or one nested
+  scalar-binary operand layer, including bounded shifts with literal counts
+  below 32, nonzero `/`/`%` over non-negative literal atoms, and boolean
+  `&&`/`||` over literal/unary atoms,
+  can also feed imported qualified-name value consumers through the GPU
+  const-value record; broader expression graphs,
+  arbitrary local initializer forms, and trapping constant expressions are
+  still rejected by GPU x86 status until direct value lowering, instruction
+  selection, and register allocation expand beyond this bounded shape;
 - one bounded boolean `&&`/`||` return over literal/local atoms is implemented
   through parser-owned expression records and `and eax, imm32` / `or eax, imm32`
   instruction records;
@@ -771,13 +1040,15 @@ through GPU lexer, parser, type checker, and codegen. It should support:
   scalar atoms, including boolean literal atoms. Instruction selection, sizing,
   byte offsets, and encoding produce real `cmp`,
   conditional branch, and jump records on GPU without backend token-layout
-  scanning or routing through WASM-shaped buffers. One small `while` case with
-  scalar local mutation now executes through the same record pipeline. Broader
-  boolean expressions, nested branches, nested loops, and non-scalar arms still
-  fail with GPU status;
-- one zero-, one-, two-, three-, or four-argument direct call from `main` to a
-  bounded scalar-return function is implemented by projecting resolver-owned
-  target declaration ids into
+  scanning or routing through WASM-shaped buffers. Small `while` and
+  nested-`while` cases with scalar local mutation now execute through the same
+  record pipeline using the pointer-jumped nearest-loop relation. Broader
+  boolean expressions and non-scalar arms still fail with GPU status;
+- one zero-, one-, two-, three-, four-, five-, or six-argument direct or
+  source-pack imported helper call to a bounded scalar-return function, and a
+  receiver method call with multiple explicit scalar arguments, are implemented
+  by projecting resolver-owned target
+  declaration ids into
   backend function lookup records,
   projecting call-argument value/eval records from HIR expression/statement/
   resolver metadata, projecting SysV call ABI records from those value rows,
@@ -791,10 +1062,12 @@ through GPU lexer, parser, type checker, and codegen. It should support:
   planning recognizers. The first nontrivial
   argument expression path lowers a one-argument binary scalar expression as
   left/right immediate vregs plus a binary-result vreg before moving that result
-  into the SysV argument register. Calls with non-scalar arguments, broader
-  runtime argument expression graphs, calls returning
-  non-scalar values, recursive calls, multi-call functions, and broader callee bodies still
-  fail with GPU status until function layout and value lowering become general;
+  into the SysV argument register. Same-module scalar self-recursion now uses
+  those same ABI, virtual-call, liveness, selection, relocation, and ELF rows
+  rather than a special recursive recognizer. Calls with non-scalar arguments,
+  broader runtime argument expression graphs, calls returning non-scalar values,
+  multi-call functions, and broader callee bodies still fail with GPU status
+  until function layout and value lowering become general;
 - one resolver-backed module-qualified scalar constant arithmetic return from
   an explicit source pack, such as
   `return core::numbers::LIMIT + core::numbers::STEP;`, is implemented by
@@ -838,8 +1111,9 @@ Next files to change for the broader direct backend:
 - `shaders/codegen/x86_virtual_regalloc.slang`: add a real liveness/pressure/spill-slot
   allocator, or use a different direct allocator filename. The current shader
   still processes bounded value-definition chunks serially inside one
-  invocation and fails closed when the GPU-recorded active chunk span is too
-  small; remove that scheduling boundary instead of raising the chunk size.
+  invocation; the recorded chunk span is capacity-sized and fail-closed, but the
+  serial scheduling boundary itself still needs removal instead of raising the
+  chunk size.
   Changing the host chunk size to one row would remove the shader loop but leave
   a long serial dispatch chain, so it should not be treated as the final
   performance answer without a measured allocator redesign. Do not restore the
@@ -850,8 +1124,8 @@ Next files to change for the broader direct backend:
   existing shader build mechanism.
 - `tests/codegen_x86.rs`: change the unavailability tests into executable ELF
   tests for the minimal direct subset. Keep the missing-input ordering test.
-  Add tests that reject unsupported constructs with a `CompileError::GpuCodegen`
-  status produced by the GPU pass, not by a CPU precheck.
+  Add tests that reject unsupported constructs with source-spanned diagnostics
+  mapped from a GPU-written status, not by a CPU precheck.
 - Add or update focused wiring coverage so the behavior proves "x86 is wired
   only through LL(1) GPU HIR-to-ELF passes." Prefer executable programs,
   source-pack programs, and fail-closed diagnostics that require HIR/type
@@ -884,7 +1158,7 @@ ABI declarations, and runtime capability model exist.
   spans, type metadata, declaration/call resolution, and later module metadata.
 - Unsupported language/runtime constructs must fail through a GPU-written status
   code with a deterministic error class. The CPU should only map that status to a
-  `CompileError::GpuCodegen` message.
+  source-spanned `LNC0017` diagnostic.
 - Tests should keep asserting that deleted CPU routes remain deleted:
   `cpu_wasm`, `cpu_native`, `emit_c`, `emit_wasm`, CPU parser/HIR modules, import
   expansion, and type-alias expansion must not reappear in the compiler path.

@@ -22,6 +22,11 @@ static const uint HIR_FN = 3u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
+uint encode_event_key(uint token, bool is_start)
+{
+    return token * 2u + (is_start ? 2u : 1u);
+}
+
 uint linear_thread_id(uint3 dtid)
 {
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
@@ -45,13 +50,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (fn_start == INVALID || fn_start >= gParams.n_tokens || fn_end <= fn_start)
         return;
 
-    fn_event_index[fn_start] = fn_start + 1u;
+    InterlockedMax(fn_event_index[fn_start], encode_event_key(fn_start, true));
     fn_event_value[fn_start] = fn_start + 1u;
     fn_event_end[fn_start] = fn_end;
 
     if (fn_end < gParams.n_tokens)
     {
-        fn_event_index[fn_end] = fn_end + 1u;
-        fn_event_value[fn_end] = 0u;
+        InterlockedMax(fn_event_index[fn_end], encode_event_key(fn_end, false));
     }
 }

@@ -9,11 +9,14 @@ pub type GpuCapability = bool;
 pub type GpuRuntimeAbiVersion = u32;
 pub type GpuServiceId = u32;
 pub type GpuServiceStatus = u32;
+pub type GpuOperationResult = i32;
 
 pub const GPU_RUNTIME_ABI_VERSION: GpuRuntimeAbiVersion = 1;
 pub const GPU_SERVICE_ID: GpuServiceId = 10;
 pub const GPU_SERVICE_STATUS_UNAVAILABLE: GpuServiceStatus = 1;
 pub const GPU_HAS_RUNTIME_BINDING: GpuCapability = false;
+pub const GPU_OPERATION_OK: GpuOperationResult = 0;
+pub const GPU_OPERATION_UNAVAILABLE: GpuOperationResult = -1;
 
 pub fn gpu_runtime_abi_version() -> GpuRuntimeAbiVersion {
     return GPU_RUNTIME_ABI_VERSION;
@@ -43,12 +46,40 @@ pub fn gpu_is_blocked() -> GpuCapability {
     return !gpu_is_available();
 }
 
+pub fn gpu_is_known_but_unbound() -> GpuCapability {
+    return gpu_service_is_known() && gpu_is_blocked();
+}
+
 pub fn gpu_requires_runtime_binding() -> GpuCapability {
     return !GPU_HAS_RUNTIME_BINDING;
 }
 
 pub fn gpu_host_abi_is_contract_only() -> GpuCapability {
     return gpu_requires_runtime_binding();
+}
+
+pub fn gpu_operation_ok() -> GpuOperationResult {
+    return GPU_OPERATION_OK;
+}
+
+pub fn gpu_operation_unavailable() -> GpuOperationResult {
+    return GPU_OPERATION_UNAVAILABLE;
+}
+
+pub fn gpu_operation_succeeded(result: GpuOperationResult) -> GpuCapability {
+    return result >= 0;
+}
+
+pub fn gpu_operation_failed(result: GpuOperationResult) -> GpuCapability {
+    return result < 0;
+}
+
+pub fn gpu_operation_is_unavailable(result: GpuOperationResult) -> GpuCapability {
+    return result == GPU_OPERATION_UNAVAILABLE;
+}
+
+pub fn gpu_operation_is_fail_closed(result: GpuOperationResult) -> GpuCapability {
+    return gpu_is_known_but_unbound() && gpu_operation_is_unavailable(result);
 }
 
 pub fn gpu_buffer_api_is_executable() -> GpuCapability {
@@ -59,8 +90,76 @@ pub fn gpu_buffer_api_is_blocked() -> GpuCapability {
     return !gpu_buffer_api_is_executable();
 }
 
+pub fn gpu_buffer_api_is_known_but_unbound() -> GpuCapability {
+    return gpu_service_is_known() && gpu_buffer_api_is_blocked();
+}
+
 pub fn gpu_buffer_api_requires_runtime_binding() -> GpuCapability {
     return !gpu_buffer_api_is_executable();
+}
+
+pub fn buffer_alloc_is_executable() -> GpuCapability {
+    return gpu_buffer_api_is_executable();
+}
+
+pub fn buffer_alloc_is_blocked() -> GpuCapability {
+    return !buffer_alloc_is_executable();
+}
+
+pub fn buffer_alloc_is_known_but_unbound() -> GpuCapability {
+    return gpu_service_is_known() && buffer_alloc_is_blocked();
+}
+
+pub fn buffer_alloc_requires_runtime_binding() -> GpuCapability {
+    return !buffer_alloc_is_executable();
+}
+
+pub fn buffer_free_is_executable() -> GpuCapability {
+    return gpu_buffer_api_is_executable();
+}
+
+pub fn buffer_free_is_blocked() -> GpuCapability {
+    return !buffer_free_is_executable();
+}
+
+pub fn buffer_free_is_known_but_unbound() -> GpuCapability {
+    return gpu_service_is_known() && buffer_free_is_blocked();
+}
+
+pub fn buffer_free_requires_runtime_binding() -> GpuCapability {
+    return !buffer_free_is_executable();
+}
+
+pub fn buffer_write_is_executable() -> GpuCapability {
+    return gpu_buffer_api_is_executable();
+}
+
+pub fn buffer_write_is_blocked() -> GpuCapability {
+    return !buffer_write_is_executable();
+}
+
+pub fn buffer_write_is_known_but_unbound() -> GpuCapability {
+    return gpu_service_is_known() && buffer_write_is_blocked();
+}
+
+pub fn buffer_write_requires_runtime_binding() -> GpuCapability {
+    return !buffer_write_is_executable();
+}
+
+pub fn buffer_read_is_executable() -> GpuCapability {
+    return gpu_buffer_api_is_executable();
+}
+
+pub fn buffer_read_is_blocked() -> GpuCapability {
+    return !buffer_read_is_executable();
+}
+
+pub fn buffer_read_is_known_but_unbound() -> GpuCapability {
+    return gpu_service_is_known() && buffer_read_is_blocked();
+}
+
+pub fn buffer_read_requires_runtime_binding() -> GpuCapability {
+    return !buffer_read_is_executable();
 }
 
 pub fn gpu_dispatch_api_is_executable() -> GpuCapability {
@@ -71,8 +170,28 @@ pub fn gpu_dispatch_api_is_blocked() -> GpuCapability {
     return !gpu_dispatch_api_is_executable();
 }
 
+pub fn gpu_dispatch_api_is_known_but_unbound() -> GpuCapability {
+    return gpu_service_is_known() && gpu_dispatch_api_is_blocked();
+}
+
 pub fn gpu_dispatch_api_requires_runtime_binding() -> GpuCapability {
     return !gpu_dispatch_api_is_executable();
+}
+
+pub fn dispatch_1d_is_executable() -> GpuCapability {
+    return gpu_dispatch_api_is_executable();
+}
+
+pub fn dispatch_1d_is_blocked() -> GpuCapability {
+    return !dispatch_1d_is_executable();
+}
+
+pub fn dispatch_1d_is_known_but_unbound() -> GpuCapability {
+    return gpu_service_is_known() && dispatch_1d_is_blocked();
+}
+
+pub fn dispatch_1d_requires_runtime_binding() -> GpuCapability {
+    return !dispatch_1d_is_executable();
 }
 
 pub extern "lanius_std" fn buffer_alloc(byte_len: usize) -> u32;

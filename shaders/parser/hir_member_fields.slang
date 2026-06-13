@@ -82,8 +82,7 @@ uint first_child_node(uint node)
 bool is_postfix_operator(uint prod)
 {
     return prod == PROD_POSTFIX_CALL || prod == PROD_POSTFIX_INDEX ||
-           prod == PROD_POSTFIX_MEMBER || prod == PROD_POSTFIX_INC ||
-           prod == PROD_POSTFIX_DEC;
+           prod == PROD_POSTFIX_MEMBER;
 }
 
 uint token_before(uint token)

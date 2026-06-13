@@ -696,11 +696,15 @@ pub(super) fn type_check_error_to_compile_error_for_source(
         GpuTypeCheckError::Rejected {
             token,
             code: GpuTypeCheckCode::CallMismatch,
-            ..
+            detail,
         } => match read_single_token_for_diagnostic(device, queue, bufs, *token) {
-            Ok(token_record) => {
-                call_mismatch_diagnostic(diagnostic_path, src, token_record.start, token_record.len)
-            }
+            Ok(token_record) => call_mismatch_diagnostic(
+                diagnostic_path,
+                src,
+                token_record.start,
+                token_record.len,
+                *detail,
+            ),
             Err(read_err) => CompileError::GpuTypeCheck(format!(
                 "{}; failed to read diagnostic token {}: {}",
                 err, token, read_err
@@ -1133,7 +1137,7 @@ fn type_check_error_to_compile_error_for_source_pack(
         GpuTypeCheckError::Rejected {
             token,
             code: GpuTypeCheckCode::CallMismatch,
-            ..
+            detail,
         } => match read_single_token_from_buffer(
             device,
             queue,
@@ -1151,7 +1155,13 @@ fn type_check_error_to_compile_error_for_source_pack(
                     ));
                 };
                 let local_start = file.local_start_for_global(token_record.start);
-                call_mismatch_diagnostic(&file.path, &file.source, local_start, token_record.len)
+                call_mismatch_diagnostic(
+                    &file.path,
+                    &file.source,
+                    local_start,
+                    token_record.len,
+                    *detail,
+                )
             }
             Err(read_err) => CompileError::GpuTypeCheck(format!(
                 "{}; failed to read diagnostic token {}: {}",
@@ -1345,6 +1355,8 @@ fn trait_bound_diagnostic(
     code: GpuTypeCheckCode,
     detail: u32,
 ) -> CompileError {
+    const PREDICATE_STATUS_INVALID_SUBJECT: u32 = 1;
+    const PREDICATE_STATUS_BOUND_NOT_TRAIT: u32 = 2;
     const PREDICATE_STATUS_UNSUPPORTED_BOUND_WIDTH: u32 = 11;
     const PREDICATE_STATUS_UNSUPPORTED_ARG_SHAPE: u32 = 12;
     const PREDICATE_STATUS_BOUND_ARITY_MISMATCH: u32 = 13;
@@ -1353,6 +1365,18 @@ fn trait_bound_diagnostic(
     const PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION: u32 = 22;
 
     let (diagnostic_code, message, label, note) = match code {
+        GpuTypeCheckCode::TraitBoundUnsatisfied if detail == PREDICATE_STATUS_INVALID_SUBJECT => (
+            "LNC0008",
+            "unsatisfied trait bound",
+            "trait bound subject must be a type generic parameter",
+            "use a declared type parameter as the bound subject; const generic parameters and undeclared names cannot carry trait bounds here",
+        ),
+        GpuTypeCheckCode::TraitBoundUnsatisfied if detail == PREDICATE_STATUS_BOUND_NOT_TRAIT => (
+            "LNC0008",
+            "unsatisfied trait bound",
+            "trait bound target does not resolve to a trait",
+            "name a trait in the bound before relying on GPU predicate solving",
+        ),
         GpuTypeCheckCode::TraitBoundUnsatisfied
             if detail == PREDICATE_STATUS_UNSUPPORTED_BOUND_WIDTH =>
         {
@@ -1370,7 +1394,7 @@ fn trait_bound_diagnostic(
                 "LNC0008",
                 "unsatisfied trait bound",
                 "trait bound argument shape is not supported by the current GPU predicate row",
-                "predicate rows currently store scalar, generic, or concrete declaration leaves, not nested type-instance arguments",
+                "use scalar, generic, or concrete non-nested trait arguments here; nested generic arguments are rejected rather than matching only the outer type name",
             )
         }
         GpuTypeCheckCode::TraitBoundUnsatisfied
@@ -1409,8 +1433,8 @@ fn trait_bound_diagnostic(
             (
                 "LNC0008",
                 "unsatisfied trait bound",
-                "trait bound argument relation is outside the current GPU predicate row shape",
-                "do not widen predicate parent-chain walks; publish parser-owned bound-argument rows before accepting this shape",
+                "trait bound relation is outside the current GPU predicate row shape",
+                "this generic type pattern is not supported in this position yet; the compiler rejects it rather than matching only the visible top-level type",
             )
         }
         GpuTypeCheckCode::TraitBoundUnsatisfied => (
@@ -1445,6 +1469,10 @@ fn trait_impl_diagnostic(
     detail: u32,
 ) -> Option<CompileError> {
     let (label, note) = match detail {
+        2 => (
+            "trait impl header does not resolve to a trait",
+            "name a trait in the impl header before providing trait methods",
+        ),
         6 => (
             "trait impl is missing a required method",
             "implement every method declared by the resolved trait",
@@ -1455,7 +1483,15 @@ fn trait_impl_diagnostic(
         ),
         8 => (
             "trait impl method signature does not match the trait declaration",
-            "match each implemented method's parameter and return types to the resolved trait declaration",
+            "match each implemented method's parameter and return types to the resolved trait declaration; nested generic instance parameters are rejected for now rather than partially matched",
+        ),
+        11 => (
+            "trait impl header exceeds the current GPU predicate argument limit",
+            "this compiler slice records at most two trait type arguments per trait impl row",
+        ),
+        12 => (
+            "trait impl header uses an unsupported trait argument shape",
+            "use scalar, generic, or concrete non-nested trait arguments here; nested generic arguments are rejected rather than matching only the outer type name",
         ),
         13 => (
             "trait impl header uses the wrong number of trait arguments",
@@ -1484,6 +1520,30 @@ fn trait_impl_diagnostic(
         20 => (
             "trait declares duplicate method contracts",
             "give each method in a trait a unique name until GPU trait method overload resolution is implemented",
+        ),
+        23 => (
+            "trait impl declares a method not required by the trait",
+            "remove extra impl methods or declare the method in the resolved trait contract",
+        ),
+        24 => (
+            "trait impl declares duplicate methods for the same trait contract",
+            "give each implemented trait method a unique name before GPU trait contract validation",
+        ),
+        25 => (
+            "trait impl visibility does not match the resolved trait contract",
+            "public trait impls and public traits must agree until GPU obligation matching carries module-scoped impl visibility rows",
+        ),
+        26 => (
+            "trait impl method visibility does not match the trait declaration",
+            "match each impl method's visibility to the resolved trait method contract",
+        ),
+        27 => (
+            "trait impl method contract rows are not valid for GPU validation",
+            "rebuild compact trait-method validation rows before accepting this trait impl",
+        ),
+        28 => (
+            "trait impl header uses generic trait arguments outside the current GPU predicate row shape",
+            "publish trait impl argument rows that carry generic-parameter references before accepting generic impl headers",
         ),
         _ => return None,
     };
@@ -1525,109 +1585,42 @@ fn generic_param_diagnostic(
     ))
 }
 
-fn call_mismatch_diagnostic(path: &Path, source: &str, start: usize, len: usize) -> CompileError {
+fn call_mismatch_diagnostic(
+    path: &Path,
+    source: &str,
+    start: usize,
+    len: usize,
+    detail: u32,
+) -> CompileError {
+    const CALL_MISMATCH_UNSUPPORTED_METHOD_RETURN_REF: u32 = 0xffffff01;
+    const CALL_MISMATCH_UNSUPPORTED_METHOD_GENERIC: u32 = 0xffffff02;
+    const CALL_MISMATCH_UNSUPPORTED_METHOD_WHERE: u32 = 0xffffff03;
+    let (label, note) = match detail {
+        CALL_MISMATCH_UNSUPPORTED_METHOD_RETURN_REF => (
+            "method return type is outside the current GPU substitution records",
+            "publish method return substitution rows keyed by receiver type-instance arguments before accepting generic method returns",
+        ),
+        CALL_MISMATCH_UNSUPPORTED_METHOD_GENERIC => (
+            "method-level generics are outside the current GPU method-call records",
+            "publish explicit method-level generic substitution rows before accepting generic method dispatch",
+        ),
+        CALL_MISMATCH_UNSUPPORTED_METHOD_WHERE => (
+            "method-level where clauses are outside the current GPU method-call records",
+            "publish method predicate obligation rows before accepting method-level where clauses",
+        ),
+        _ => (
+            "call does not match a resolved function or method",
+            "no supported function or method signature matches this receiver and argument list",
+        ),
+    };
+
     CompileError::Diagnostic(
         Diagnostic::error("LNC0027", "call resolution failed")
             .with_primary_label(diagnostic_label_from_source_span(
-                path,
-                source,
-                start,
-                len,
-                "call does not match a resolved function or method",
+                path, source, start, len, label,
             ))
-            .with_note(
-                "no supported function or method signature matches this receiver and argument list",
-            ),
+            .with_note(note),
     )
-}
-
-fn type_mismatch_note(detail: u32) -> String {
-    if detail == 0 {
-        return "change the expression or the annotation so both sides have the same type"
-            .to_string();
-    }
-
-    let expected = detail / 256;
-    let actual = detail % 256;
-    if expected == 0 {
-        return format!(
-            "found {}, but this context requires another type; change the expression or the annotation so they agree",
-            type_code_note(actual)
-        );
-    }
-
-    format!(
-        "expected {}, found {}; change the expression or the annotation so they agree",
-        type_code_note(expected),
-        type_code_note(actual)
-    )
-}
-
-fn type_mismatch_label(detail: u32) -> String {
-    if detail == 0 {
-        return "value type does not match this context".to_string();
-    }
-
-    let expected = detail / 256;
-    let actual = detail % 256;
-    if expected == 0 {
-        return format!(
-            "value type is {}, which is not accepted here",
-            type_code_note(actual)
-        );
-    }
-
-    format!(
-        "value type is {} but this context expects {}",
-        type_code_note(actual),
-        type_code_note(expected)
-    )
-}
-
-fn type_code_note(code: u32) -> String {
-    const TY_UNKNOWN: u32 = 0;
-    const TY_VOID: u32 = 1;
-    const TY_BOOL: u32 = 2;
-    const TY_INT: u32 = 3;
-    const TY_UINT: u32 = 4;
-    const TY_FLOAT: u32 = 5;
-    const TY_CHAR: u32 = 6;
-    const TY_STRING: u32 = 7;
-    const TY_ARRAY_BASE: u32 = 128;
-    const TY_STRUCT_BASE: u32 = 4096;
-    const TY_ENUM_BASE: u32 = 6144;
-    const TY_GENERIC_BASE: u32 = 8192;
-
-    let description = match code {
-        TY_UNKNOWN => "unknown type".to_string(),
-        TY_VOID => "void".to_string(),
-        TY_BOOL => "bool".to_string(),
-        TY_INT => "i32".to_string(),
-        TY_UINT => "u32".to_string(),
-        TY_FLOAT => "float".to_string(),
-        TY_CHAR => "char".to_string(),
-        TY_STRING => "str".to_string(),
-        code if (TY_ARRAY_BASE..TY_STRUCT_BASE).contains(&code) => {
-            let element_code = code - TY_ARRAY_BASE;
-            if element_code == TY_UNKNOWN {
-                "array".to_string()
-            } else {
-                format!("array of {}", type_code_note_name(element_code))
-            }
-        }
-        code if (TY_STRUCT_BASE..TY_ENUM_BASE).contains(&code) => "struct".to_string(),
-        code if (TY_ENUM_BASE..TY_GENERIC_BASE).contains(&code) => "enum".to_string(),
-        code if code >= TY_GENERIC_BASE => {
-            format!("generic parameter {}", code - TY_GENERIC_BASE)
-        }
-        _ => "an unsupported type".to_string(),
-    };
-
-    description
-}
-
-fn type_code_note_name(code: u32) -> String {
-    type_code_note(code)
 }
 
 fn read_single_token_for_diagnostic(
@@ -1696,39 +1689,4 @@ fn read_single_token_from_buffer(
     tokens
         .pop()
         .ok_or_else(|| format!("token {token_index} readback returned no rows"))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn type_mismatch_note_decodes_scalar_type_code_record() {
-        let detail = 3 * 256 + 2;
-
-        let note = type_mismatch_note(detail);
-        assert!(note.contains("expected i32"));
-        assert!(note.contains("found bool"));
-        assert!(note.contains("change the expression or the annotation"));
-        assert!(!note.contains("type code"));
-
-        let label = type_mismatch_label(detail);
-        assert!(label.contains("value type is bool"));
-        assert!(label.contains("expects i32"));
-        assert!(!label.contains("type code"));
-    }
-
-    #[test]
-    fn type_mismatch_note_preserves_unknown_and_array_code_records() {
-        let array_expected = 128 * 256;
-        let array_note = type_mismatch_note(array_expected);
-        assert!(array_note.contains("expected array"));
-        assert!(array_note.contains("found unknown type"));
-        assert!(!array_note.contains("type code"));
-
-        let float_note = type_mismatch_note(5);
-        assert!(float_note.contains("found float"));
-        assert!(float_note.contains("requires another type"));
-        assert!(!float_note.contains("type code"));
-    }
 }

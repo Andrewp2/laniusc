@@ -2,111 +2,7 @@
 
 use super::*;
 
-pub(in crate::type_checker) fn record_method_bind_groups(
-    device: &wgpu::Device,
-    encoder: &mut wgpu::CommandEncoder,
-    token_capacity: u32,
-    hir_node_capacity: u32,
-    n_work: u32,
-    groups: &MethodBindGroups,
-) -> Result<()> {
-    let lookup_work = token_capacity.saturating_mul(2).max(n_work);
-    record_compute(
-        encoder,
-        type_check_methods_clear_pass(device)?,
-        &groups.clear,
-        "type_check.methods.clear",
-        lookup_work,
-    )?;
-    record_compute(
-        encoder,
-        type_check_methods_collect_pass(device)?,
-        &groups.collect,
-        "type_check.methods.collect",
-        hir_node_capacity.max(1),
-    )?;
-    record_compute(
-        encoder,
-        type_check_methods_attach_metadata_pass(device)?,
-        &groups.attach_metadata,
-        "type_check.methods.attach_metadata",
-        lookup_work,
-    )?;
-    record_compute(
-        encoder,
-        type_check_methods_bind_self_receivers_pass(device)?,
-        &groups.bind_self_receivers,
-        "type_check.methods.bind_self_receivers",
-        hir_node_capacity.max(1),
-    )?;
-    record_compute(
-        encoder,
-        type_check_methods_seed_key_order_pass(device)?,
-        &groups.keys.seed_key_order,
-        "type_check.methods.seed_key_order",
-        token_capacity.max(1),
-    )?;
-    for i in 0..groups.keys.sort_key_scatter.len() {
-        record_compute(
-            encoder,
-            type_check_methods_sort_keys_pass(device)?,
-            &groups.keys.sort_key_histogram[i],
-            "type_check.methods.sort_keys_histogram",
-            token_capacity.max(1),
-        )?;
-        record_compute(
-            encoder,
-            type_check_names_radix_bucket_prefix_pass(device)?,
-            &groups.keys.sort_key_bucket_prefix[i],
-            "type_check.methods.sort_keys_bucket_prefix",
-            NAME_RADIX_BUCKETS.saturating_mul(256),
-        )?;
-        record_compute(
-            encoder,
-            type_check_names_radix_bucket_bases_pass(device)?,
-            &groups.keys.sort_key_bucket_bases[i],
-            "type_check.methods.sort_keys_bucket_bases",
-            256,
-        )?;
-        record_compute(
-            encoder,
-            type_check_methods_sort_keys_scatter_pass(device)?,
-            &groups.keys.sort_key_scatter[i],
-            "type_check.methods.sort_keys_scatter",
-            token_capacity.max(1),
-        )?;
-    }
-    record_compute(
-        encoder,
-        type_check_methods_validate_keys_pass(device)?,
-        &groups.keys.validate_keys,
-        "type_check.methods.validate_keys",
-        token_capacity.max(1),
-    )?;
-    record_compute(
-        encoder,
-        type_check_methods_mark_call_keys_pass(device)?,
-        &groups.mark_call_keys,
-        "type_check.methods.mark_call_keys",
-        token_capacity.max(hir_node_capacity).max(1),
-    )?;
-    record_compute(
-        encoder,
-        type_check_methods_mark_call_return_keys_pass(device)?,
-        &groups.mark_call_return_keys,
-        "type_check.methods.mark_call_return_keys",
-        token_capacity.max(hir_node_capacity).max(1),
-    )?;
-    record_compute(
-        encoder,
-        type_check_methods_resolve_table_pass(device)?,
-        &groups.resolve_table,
-        "type_check.methods.resolve_table",
-        token_capacity.max(1),
-    )
-}
-
-pub(in crate::type_checker) fn record_method_bind_groups_with_passes(
+pub(in crate::type_checker) fn record_method_declaration_passes_with_passes(
     passes: &TypeCheckPasses,
     encoder: &mut wgpu::CommandEncoder,
     token_capacity: u32,
@@ -142,7 +38,15 @@ pub(in crate::type_checker) fn record_method_bind_groups_with_passes(
         &groups.bind_self_receivers,
         "type_check.methods.bind_self_receivers",
         hir_active_dispatch_args,
-    )?;
+    )
+}
+
+pub(in crate::type_checker) fn record_method_key_table_passes_with_passes(
+    passes: &TypeCheckPasses,
+    encoder: &mut wgpu::CommandEncoder,
+    token_active_dispatch_args: &wgpu::Buffer,
+    groups: &MethodBindGroups,
+) -> Result<()> {
     record_compute_indirect(
         encoder,
         &passes.methods_seed_key_order,
@@ -187,6 +91,16 @@ pub(in crate::type_checker) fn record_method_bind_groups_with_passes(
         "type_check.methods.validate_keys",
         token_active_dispatch_args,
     )?;
+    Ok(())
+}
+
+pub(in crate::type_checker) fn record_method_call_resolution_passes_with_passes(
+    passes: &TypeCheckPasses,
+    encoder: &mut wgpu::CommandEncoder,
+    token_active_dispatch_args: &wgpu::Buffer,
+    hir_active_dispatch_args: &wgpu::Buffer,
+    groups: &MethodBindGroups,
+) -> Result<()> {
     record_compute_indirect(
         encoder,
         &passes.methods_mark_call_keys,

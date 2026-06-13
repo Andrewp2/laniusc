@@ -67,19 +67,31 @@ bool is_type_path_container(uint prod)
     return prod == PROD_TYPE_PATH || prod == PROD_TYPE_PATH_MORE;
 }
 
+bool is_bound_type_path_container(uint prod)
+{
+    return prod == PROD_BOUND_TYPE_PATH || prod == PROD_BOUND_TYPE_PATH_MORE;
+}
+
 bool is_path_container(uint prod)
 {
-    return is_type_path_container(prod) || is_value_path_container(prod);
+    return is_type_path_container(prod) ||
+           is_value_path_container(prod) ||
+           is_bound_type_path_container(prod);
 }
 
 bool is_type_path_segment(uint prod)
 {
-    return prod == PROD_TYPE_PATH_IDENT || prod == PROD_PATH_IDENT;
+    return prod == PROD_TYPE_PATH_IDENT ||
+           prod == PROD_PATH_IDENT ||
+           prod == PROD_PATH_IDENT_ARGS ||
+           prod == PROD_BOUND_TYPE_PATH_IDENT;
 }
 
 bool is_type_path_tail(uint prod)
 {
-    return prod == PROD_TYPE_PATH_MORE || prod == PROD_PATH_MORE;
+    return prod == PROD_TYPE_PATH_MORE ||
+           prod == PROD_PATH_MORE ||
+           prod == PROD_BOUND_TYPE_PATH_MORE;
 }
 
 [shader("compute")]

@@ -13,9 +13,13 @@ struct Params
 ConstantBuffer<Params> gParams;
 
 StructuredBuffer<uint> hir_stmt_record;
+StructuredBuffer<uint> hir_token_pos;
 StructuredBuffer<uint> hir_call_context_stmt_node;
 StructuredBuffer<uint> hir_variant_payload_count;
 StructuredBuffer<uint> path_count_out;
+StructuredBuffer<uint> path_segment_count;
+StructuredBuffer<uint> path_segment_base;
+StructuredBuffer<uint> path_segment_token;
 StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> resolved_value_decl;
 StructuredBuffer<uint> resolved_value_status;
@@ -39,6 +43,7 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint PARAM_CACHE_STRIDE = 4u;
 static const uint VARIANT_PAYLOAD_SLOT_STRIDE = 4u;
+static const uint MAX_PATH_SEGMENTS = 9u;
 
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint PATH_RESOLVE_STATUS_UNRESOLVED_DECL = 6u;
@@ -74,16 +79,54 @@ bool valid_node(uint node)
     return node != INVALID && node < gParams.n_hir_nodes;
 }
 
+uint path_leaf_token(uint path_i, uint owner_token)
+{
+    uint count = path_segment_count[path_i];
+    if (count <= 1u)
+        return owner_token;
+    count = min(count, MAX_PATH_SEGMENTS);
+    uint leaf_i = path_segment_base[path_i] + count - 1u;
+    uint leaf_token =
+        leaf_i < gParams.n_tokens * MAX_PATH_SEGMENTS ? path_segment_token[leaf_i] : INVALID;
+    return valid_token(leaf_token) ? leaf_token : owner_token;
+}
+
 uint stmt_slot(uint node, uint slot)
 {
     return node * STMT_RECORD_STRIDE + slot;
+}
+
+uint function_return_instance_for_token(uint token)
+{
+    if (!valid_token(token))
+        return INVALID;
+
+    uint encoded_fn = enclosing_fn[token];
+    uint fn_token = encoded_fn == 0u ? INVALID : encoded_fn - 1u;
+    if (valid_token(fn_token))
+    {
+        uint tag = fn_return_ref_tag[fn_token];
+        uint payload = fn_return_ref_payload[fn_token];
+        if (tag == TYPE_REF_INSTANCE && valid_token(payload))
+            return payload;
+    }
+    return INVALID;
+}
+
+uint function_return_instance_for_call(uint owner_token, uint call_node)
+{
+    uint instance = function_return_instance_for_token(owner_token);
+    if (instance != INVALID)
+        return instance;
+    return valid_node(call_node) ? function_return_instance_for_token(hir_token_pos[call_node])
+                                 : INVALID;
 }
 
 uint contextual_instance_for_call(uint owner_token, uint call_node)
 {
     uint context_node = valid_node(call_node) ? hir_call_context_stmt_node[call_node] : INVALID;
     if (!valid_node(context_node))
-        return INVALID;
+        return function_return_instance_for_call(owner_token, call_node);
 
     uint context_kind = hir_stmt_record[stmt_slot(context_node, 0u)];
     if (context_kind == STMT_RECORD_KIND_LET)
@@ -100,18 +143,12 @@ uint contextual_instance_for_call(uint owner_token, uint call_node)
 
     if (context_kind == STMT_RECORD_KIND_RETURN && valid_token(owner_token))
     {
-        uint encoded_fn = enclosing_fn[owner_token];
-        uint fn_token = encoded_fn == 0u ? INVALID : encoded_fn - 1u;
-        if (valid_token(fn_token))
-        {
-            uint tag = fn_return_ref_tag[fn_token];
-            uint payload = fn_return_ref_payload[fn_token];
-            if (tag == TYPE_REF_INSTANCE && valid_token(payload))
-                return payload;
-        }
+        uint instance = function_return_instance_for_call(owner_token, call_node);
+        if (instance != INVALID)
+            return instance;
     }
 
-    return INVALID;
+    return function_return_instance_for_call(owner_token, call_node);
 }
 
 bool valid_enum_variant_decl(uint decl_i, out uint enum_token, out uint variant_node)
@@ -174,6 +211,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
 
-    call_return_type[owner_token] = TY_ENUM_BASE + enum_token;
+    uint result_ty = TY_ENUM_BASE + enum_token;
+    call_return_type[owner_token] = result_ty;
+    uint leaf_token = path_leaf_token(path_i, owner_token);
+    if (leaf_token != owner_token)
+        call_return_type[leaf_token] = result_ty;
     module_value_path_status[owner_token] = PATH_RESOLVE_STATUS_INVALID;
 }

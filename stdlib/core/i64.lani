@@ -2,6 +2,8 @@
 
 module core::i64;
 
+import core::option;
+
 pub const MIN: i64 = -9223372036854775808;
 pub const MAX: i64 = 9223372036854775807;
 pub const BITS: u32 = 64;
@@ -12,6 +14,24 @@ pub fn abs(value: i64) -> i64 {
         return -value;
     } else {
         return value;
+    }
+}
+
+pub fn saturating_abs(value: i64) -> i64 {
+    if (value == MIN) {
+        return MAX;
+    } else {
+        return abs(value);
+    }
+}
+
+pub fn checked_abs(value: i64) -> core::option::Option<i64> {
+    if (value == MIN) {
+        let overflow: core::option::Option<i64> = core::option::None;
+        return overflow;
+    } else {
+        let absolute: core::option::Option<i64> = core::option::Some(abs(value));
+        return absolute;
     }
 }
 
@@ -55,6 +75,38 @@ pub fn signum(value: i64) -> i64 {
     }
 }
 
+pub fn is_zero(value: i64) -> bool {
+    return value == 0;
+}
+
+pub fn is_nonzero(value: i64) -> bool {
+    return value != 0;
+}
+
+pub fn is_even(value: i64) -> bool {
+    return value % 2 == 0;
+}
+
+pub fn is_odd(value: i64) -> bool {
+    return value % 2 != 0;
+}
+
+pub fn is_negative(value: i64) -> bool {
+    return value < 0;
+}
+
+pub fn is_positive(value: i64) -> bool {
+    return value > 0;
+}
+
+pub fn between_inclusive(value: i64, low: i64, high: i64) -> bool {
+    return value >= low && value <= high;
+}
+
+pub fn between_exclusive(value: i64, low: i64, high: i64) -> bool {
+    return value > low && value < high;
+}
+
 pub fn wrapping_add(left: i64, right: i64) -> i64 {
     return left + right;
 }
@@ -65,4 +117,66 @@ pub fn wrapping_sub(left: i64, right: i64) -> i64 {
 
 pub fn wrapping_mul(left: i64, right: i64) -> i64 {
     return left * right;
+}
+
+pub fn checked_add(left: i64, right: i64) -> core::option::Option<i64> {
+    if (right > 0 && left > MAX - right) {
+        let overflow: core::option::Option<i64> = core::option::None;
+        return overflow;
+    } else {
+        if (right < 0 && left < MIN - right) {
+            let overflow: core::option::Option<i64> = core::option::None;
+            return overflow;
+        } else {
+            let sum: core::option::Option<i64> = core::option::Some(left + right);
+            return sum;
+        }
+    }
+}
+
+pub fn saturating_add(left: i64, right: i64) -> i64 {
+    if (right > 0 && left > MAX - right) {
+        return MAX;
+    } else {
+        if (right < 0 && left < MIN - right) {
+            return MIN;
+        } else {
+            return left + right;
+        }
+    }
+}
+
+pub fn checked_sub(left: i64, right: i64) -> core::option::Option<i64> {
+    if (right < 0 && left > MAX + right) {
+        let overflow: core::option::Option<i64> = core::option::None;
+        return overflow;
+    } else {
+        if (right > 0 && left < MIN + right) {
+            let underflow: core::option::Option<i64> = core::option::None;
+            return underflow;
+        } else {
+            let diff: core::option::Option<i64> = core::option::Some(left - right);
+            return diff;
+        }
+    }
+}
+
+pub fn saturating_sub(left: i64, right: i64) -> i64 {
+    if (right < 0 && left > MAX + right) {
+        return MAX;
+    } else {
+        if (right > 0 && left < MIN + right) {
+            return MIN;
+        } else {
+            return left - right;
+        }
+    }
+}
+
+pub fn saturating_abs_diff(left: i64, right: i64) -> i64 {
+    if (left >= right) {
+        return saturating_sub(left, right);
+    } else {
+        return saturating_sub(right, left);
+    }
 }

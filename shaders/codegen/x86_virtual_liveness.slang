@@ -17,6 +17,10 @@ struct Params
     uint out_capacity;
     uint n_hir_nodes;
     uint inst_capacity;
+    uint virtual_next_call_step_count;
+    uint regalloc_rows_per_chunk;
+    uint regalloc_chunk_count;
+    uint function_slot_capacity;
 };
 
 ConstantBuffer<Params> gParams;
@@ -24,14 +28,17 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint4> x86_virtual_inst_record;
 StructuredBuffer<uint4> x86_virtual_inst_args;
 StructuredBuffer<uint> x86_virtual_inst_status;
+StructuredBuffer<uint> x86_virtual_func_slot;
+StructuredBuffer<uint> x86_func_first_virtual_row_status;
 
 RWStructuredBuffer<uint> x86_virtual_live_end;
 RWStructuredBuffer<uint> x86_virtual_liveness_status;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint INVALID = 0xffffffffu;
-static const uint MAX_X86_OPERANDS = 4u;
+static const uint MAX_X86_OPERANDS = 6u;
 static const uint X86_VIRTUAL_INST_OK = 1u;
+static const uint X86_FUNC_FIRST_VIRTUAL_ROW_OK = 1u;
 static const uint X86_VIRTUAL_LIVENESS_OK = 1u;
 static const uint X86_ERR_VIRTUAL_LIVENESS = 14u;
 
@@ -50,6 +57,7 @@ static const uint X86_VINST_CALL_MIXED = 20u;
 static const uint X86_VINST_LOAD_PARAM_INDEX = 21u;
 static const uint X86_VINST_STORE_RET_PTR = 22u;
 static const uint X86_VINST_STORE_LOCAL_INDEX = 30u;
+static const uint X86_VINST_STORE_PARAM_INDEX = 32u;
 static const uint X86_ARG_SCALAR = 1u;
 
 uint linear_dispatch_id(uint3 tid)
@@ -67,7 +75,28 @@ bool upstream_ok(uint inst_count)
     return x86_virtual_inst_status[0u] == X86_VIRTUAL_INST_OK &&
            x86_virtual_inst_status[1u] == 0u &&
            x86_virtual_inst_status[3u] == inst_count &&
-           inst_count <= gParams.inst_capacity;
+           inst_count <= gParams.inst_capacity &&
+           x86_func_first_virtual_row_status[0u] == X86_FUNC_FIRST_VIRTUAL_ROW_OK &&
+           x86_func_first_virtual_row_status[1u] == 0u &&
+           x86_func_first_virtual_row_status[3u] == inst_count;
+}
+
+uint upstream_error_or_liveness()
+{
+    if (x86_virtual_inst_status[1u] != 0u)
+        return x86_virtual_inst_status[1u];
+    if (x86_func_first_virtual_row_status[1u] != 0u)
+        return x86_func_first_virtual_row_status[1u];
+    return X86_ERR_VIRTUAL_LIVENESS;
+}
+
+uint upstream_detail_or(uint fallback_detail)
+{
+    if (x86_virtual_inst_status[1u] != 0u)
+        return x86_virtual_inst_status[2u];
+    if (x86_func_first_virtual_row_status[1u] != 0u)
+        return x86_func_first_virtual_row_status[2u];
+    return fallback_detail;
 }
 
 bool has_value_def(uint row, uint inst_count)
@@ -94,6 +123,8 @@ uint mixed_arg_kind(uint info, uint ordinal)
 {
     if (ordinal < 4u)
         return packed_u2_at_offset(info, 12u, ordinal);
+    if (ordinal < 6u)
+        return packed_u2_at_offset(info, 20u, ordinal - 4u);
     return 0u;
 }
 
@@ -101,9 +132,15 @@ uint mixed_arg_payload(uint row, uint ordinal)
 {
     uint4 args = x86_virtual_inst_args[row];
     uint payload_row = args.z;
-    if (payload_row == INVALID || payload_row >= virtual_inst_count() || ordinal >= 4u)
+    if (payload_row == INVALID || payload_row >= virtual_inst_count() || ordinal >= 6u)
         return INVALID;
-    return x86_virtual_inst_args[payload_row][ordinal];
+    if (ordinal < 4u)
+        return x86_virtual_inst_args[payload_row][ordinal];
+
+    uint payload_row_hi = x86_virtual_inst_record[payload_row].w;
+    if (payload_row_hi == INVALID || payload_row_hi >= virtual_inst_count())
+        return INVALID;
+    return x86_virtual_inst_args[payload_row_hi][ordinal - 4u];
 }
 
 uint mixed_scalar_operand_count(uint row)
@@ -116,6 +153,8 @@ uint mixed_scalar_operand_count(uint row)
     if (arg_count > 1u && mixed_arg_kind(info, 1u) == X86_ARG_SCALAR) count += 1u;
     if (arg_count > 2u && mixed_arg_kind(info, 2u) == X86_ARG_SCALAR) count += 1u;
     if (arg_count > 3u && mixed_arg_kind(info, 3u) == X86_ARG_SCALAR) count += 1u;
+    if (arg_count > 4u && mixed_arg_kind(info, 4u) == X86_ARG_SCALAR) count += 1u;
+    if (arg_count > 5u && mixed_arg_kind(info, 5u) == X86_ARG_SCALAR) count += 1u;
     return count;
 }
 
@@ -143,6 +182,16 @@ uint mixed_scalar_operand_at(uint row, uint slot)
     if (arg_count > 3u && mixed_arg_kind(info, 3u) == X86_ARG_SCALAR)
     {
         if (seen == slot) return mixed_arg_payload(row, 3u);
+        seen += 1u;
+    }
+    if (arg_count > 4u && mixed_arg_kind(info, 4u) == X86_ARG_SCALAR)
+    {
+        if (seen == slot) return mixed_arg_payload(row, 4u);
+        seen += 1u;
+    }
+    if (arg_count > 5u && mixed_arg_kind(info, 5u) == X86_ARG_SCALAR)
+    {
+        if (seen == slot) return mixed_arg_payload(row, 5u);
     }
     return INVALID;
 }
@@ -168,7 +217,8 @@ uint operand_count_for_row(uint row)
         return mixed_scalar_operand_count(row);
     if (op == X86_VINST_BINARY ||
         op == X86_VINST_COMPARE ||
-        op == X86_VINST_STORE_LOCAL_INDEX)
+        op == X86_VINST_STORE_LOCAL_INDEX ||
+        op == X86_VINST_STORE_PARAM_INDEX)
         return 2u;
     return 0u;
 }
@@ -185,7 +235,8 @@ uint operand_at(uint row, uint slot)
         if (slot == 1u) return args.z;
         return INVALID;
     }
-    if (op == X86_VINST_STORE_LOCAL_INDEX)
+    if (op == X86_VINST_STORE_LOCAL_INDEX ||
+        op == X86_VINST_STORE_PARAM_INDEX)
     {
         if (slot == 0u) return args.y;
         if (slot == 1u) return args.z;
@@ -212,10 +263,34 @@ uint operand_at(uint row, uint slot)
 uint pack_error_extra(uint op, uint slot, uint operand, uint inst_count)
 {
     uint operand_op = operand < inst_count ? x86_virtual_inst_record[operand].z : 0xffu;
-    return ((slot & 0x03u) << 30u) |
-           ((op & 0xffu) << 22u) |
-           ((operand_op & 0xffu) << 14u) |
-           (operand & 0x00003fffu);
+    return ((slot & 0x07u) << 29u) |
+           ((op & 0xffu) << 21u) |
+           ((operand_op & 0xffu) << 13u) |
+           (operand & 0x00001fffu);
+}
+
+uint row_function_slot(uint row, uint inst_count)
+{
+    if (row >= inst_count)
+        return INVALID;
+    uint slot = x86_virtual_func_slot[row];
+    return slot < gParams.function_slot_capacity ? slot : INVALID;
+}
+
+uint row_hir_node(uint row, uint fallback)
+{
+    if (row >= virtual_inst_count())
+        return fallback;
+    uint node = x86_virtual_inst_record[row].x;
+    return node < gParams.n_hir_nodes ? node : fallback;
+}
+
+uint pack_function_error_extra(uint op, uint slot, uint row_slot, uint operand_slot)
+{
+    return ((slot & 0x07u) << 29u) |
+           ((op & 0xffu) << 21u) |
+           ((row_slot & 0x3ffu) << 11u) |
+           (operand_slot & 0x7ffu);
 }
 
 bool extend_operand_live_end(uint row, uint inst_count, uint op, uint slot)
@@ -226,8 +301,19 @@ bool extend_operand_live_end(uint row, uint inst_count, uint op, uint slot)
         publish_stage_error_min_detail_extra4(
             x86_virtual_liveness_status,
             X86_ERR_VIRTUAL_LIVENESS,
-            row,
+            row_hir_node(row, INVALID),
             pack_error_extra(op, slot, operand, inst_count));
+        return false;
+    }
+    uint row_slot = row_function_slot(row, inst_count);
+    uint operand_slot = row_function_slot(operand, inst_count);
+    if (row_slot == INVALID || operand_slot == INVALID || row_slot != operand_slot)
+    {
+        publish_stage_error_min_detail_extra4(
+            x86_virtual_liveness_status,
+            X86_ERR_VIRTUAL_LIVENESS,
+            row_hir_node(row, INVALID),
+            pack_function_error_extra(op, slot, row_slot, operand_slot));
         return false;
     }
     atomic_u32_max(x86_virtual_live_end, operand, row);
@@ -244,12 +330,38 @@ bool validate_operand_record(uint row, uint op)
             publish_stage_error_min_detail_extra4(
                 x86_virtual_liveness_status,
                 X86_ERR_VIRTUAL_LIVENESS,
-                row,
+                row_hir_node(row, INVALID),
                 pack_count_error_extra(op, arg_count, MAX_X86_OPERANDS));
             return false;
         }
     }
     return true;
+}
+
+void publish_status(bool ok, uint inst_count)
+{
+    if (ok)
+    {
+        // Successful row-0 publication must not clear row-local failures that
+        // another lane may already have published into the shared status row.
+        if (x86_virtual_liveness_status[1u] == 0u)
+        {
+            x86_virtual_liveness_status[0u] = X86_VIRTUAL_LIVENESS_OK;
+            x86_virtual_liveness_status[3u] = inst_count;
+        }
+        return;
+    }
+
+    write_stage_status4_from_result(
+        x86_virtual_liveness_status,
+        false,
+        X86_VIRTUAL_LIVENESS_OK,
+        INVALID,
+        X86_ERR_VIRTUAL_LIVENESS,
+        upstream_error_or_liveness(),
+        INVALID,
+        upstream_detail_or(INVALID),
+        inst_count);
 }
 
 [shader("compute")]
@@ -261,18 +373,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     bool ok = upstream_ok(inst_count);
 
     if (row == 0u)
-    {
-        write_stage_status4_from_result(
-            x86_virtual_liveness_status,
-            ok,
-            X86_VIRTUAL_LIVENESS_OK,
-            INVALID,
-            X86_ERR_VIRTUAL_LIVENESS,
-            x86_virtual_inst_status[1u],
-            inst_count,
-            x86_virtual_inst_status[2u],
-            inst_count);
-    }
+        publish_status(ok, inst_count);
 
     if (!ok || row >= inst_count)
         return;

@@ -19,6 +19,7 @@ StructuredBuffer<uint> hir_variant_payload_link_in;
 StructuredBuffer<uint> hir_variant_payload_rank_in;
 StructuredBuffer<uint> token_feature_flags;
 StructuredBuffer<uint> hir_enum_rank_node;
+StructuredBuffer<uint> hir_enum_rank_count;
 
 RWStructuredBuffer<uint> hir_variant_owner_out;
 RWStructuredBuffer<uint> hir_variant_link_out;
@@ -107,7 +108,7 @@ void jump_payload(uint node)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint row = linear_thread_id(dtid);
-    if (row >= gHirEnum.n)
+    if (row >= gHirEnum.n || row >= hir_enum_rank_count[0u])
         return;
 
     uint node = hir_enum_rank_node[row];

@@ -343,6 +343,35 @@ fn source_pack_path_manifest_preserves_source_line_totals() {
     );
 }
 
+#[test]
+fn source_pack_path_manifest_rejects_compact_empty_source_byte_summaries() {
+    let mut empty_summary = source_pack_contract_test_manifest();
+    empty_summary.source_files.clear();
+    empty_summary.source_byte_count = 0;
+    let err = validate_path_manifest(&empty_summary)
+        .expect_err("compact path manifests must carry source-byte evidence");
+    let message = err.to_string();
+    assert!(
+        message.contains("path build manifest")
+            && message.contains("empty source-byte summary")
+            && message.contains("concrete source-byte evidence"),
+        "unexpected compact source-byte summary error: {message}"
+    );
+
+    let mut under_file_count = source_pack_contract_test_manifest();
+    under_file_count.source_files.clear();
+    under_file_count.source_byte_count = under_file_count.source_file_count - 1;
+    let err = validate_path_manifest(&under_file_count)
+        .expect_err("compact path manifests must not report fewer bytes than files");
+    let message = err.to_string();
+    assert!(
+        message.contains("source-byte summary")
+            && message.contains("source-file count")
+            && message.contains("package input"),
+        "unexpected compact source byte/file count error: {message}"
+    );
+}
+
 use super::test_support::*;
 
 #[test]
@@ -529,12 +558,11 @@ fn hierarchical_link_execution_descriptor_summary_persists_and_rejects_impossibl
         object_symbol_count: 3,
         unresolved_symbol_count: 5,
         relocation_count: 4,
-        export_symbol_count: 1,
         ..SourcePackLinkDescriptorSummary::default()
     }
     .with_record_contracts_from_counts();
-    let interface_ref = artifact_ref(target, SourcePackArtifactKind::LibraryInterface, 0, 1);
-    let object_ref = artifact_ref(target, SourcePackArtifactKind::CodegenObject, 1, 2);
+    let interface_ref = artifact_ref(target, SourcePackArtifactKind::LibraryInterface, 1, 1);
+    let object_ref = artifact_ref(target, SourcePackArtifactKind::CodegenObject, 2, 2);
 
     store
         .store_hierarchical_link_execution_page(&SourcePackHierarchicalLinkExecutionPage {
@@ -576,7 +604,7 @@ fn hierarchical_link_execution_descriptor_summary_persists_and_rejects_impossibl
 
     let invalid_group_index = 1;
     let invalid_interface_ref =
-        artifact_ref(target, SourcePackArtifactKind::LibraryInterface, 2, 3);
+        artifact_ref(target, SourcePackArtifactKind::LibraryInterface, 3, 3);
     let invalid_page = SourcePackHierarchicalLinkExecutionPage {
         version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
         target,
@@ -629,7 +657,7 @@ fn hierarchical_link_execution_descriptor_summary_persists_and_rejects_impossibl
 
     let invalid_unresolved_group_index = 2;
     let invalid_unresolved_ref =
-        artifact_ref(target, SourcePackArtifactKind::LibraryInterface, 3, 4);
+        artifact_ref(target, SourcePackArtifactKind::LibraryInterface, 4, 4);
     let invalid_unresolved_page = SourcePackHierarchicalLinkExecutionPage {
         version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
         target,
@@ -694,7 +722,7 @@ fn hierarchical_link_execution_descriptor_summary_persists_and_rejects_impossibl
         input_interfaces: vec![artifact_ref(
             target,
             SourcePackArtifactKind::LibraryInterface,
-            4,
+            5,
             5,
         )],
         input_object_count: 0,
@@ -702,7 +730,7 @@ fn hierarchical_link_execution_descriptor_summary_persists_and_rejects_impossibl
         input_objects: vec![artifact_ref(
             target,
             SourcePackArtifactKind::CodegenObject,
-            5,
+            6,
             6,
         )],
         input_group_count: 0,
@@ -986,7 +1014,9 @@ fn hierarchical_link_execution_rejects_truncated_paged_inputs() {
             .contains("streamed 1 object refs but expected 2")
     );
 
-    let partial_key = hierarchical_link_partial_output_key(target, 0, 20);
+    let reduce_job_index = 20usize;
+    let first_link_job_index = reduce_job_index - 3;
+    let partial_key = hierarchical_link_partial_output_key(target, 0, first_link_job_index);
     store
         .store_partial_link_output(&partial_key, b"partial:0:1:1".to_vec())
         .expect("store partial link artifact");
@@ -996,7 +1026,7 @@ fn hierarchical_link_execution_rejects_truncated_paged_inputs() {
                 version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PARTIAL_PAGE_VERSION,
                 target,
                 group_index: 3,
-                job_index: 20,
+                job_index: reduce_job_index,
                 page_index: 0,
                 first_input_position: 0,
                 input_count: 1,
@@ -1011,7 +1041,7 @@ fn hierarchical_link_execution_rejects_truncated_paged_inputs() {
         target,
         group_index: 3,
         kind: SourcePackHierarchicalLinkGroupKind::Reduce,
-        job_index: 20,
+        job_index: reduce_job_index,
         input_interface_count: 0,
         input_interface_page_count: 0,
         input_interface_ranges: Vec::new(),
@@ -1026,7 +1056,7 @@ fn hierarchical_link_execution_rejects_truncated_paged_inputs() {
         source_byte_count: 1,
         source_file_count: 1,
         source_line_count: 1,
-        output_key: hierarchical_link_partial_output_key(target, 3, 20),
+        output_key: hierarchical_link_partial_output_key(target, 3, reduce_job_index),
         final_output: false,
         descriptor_summary: SourcePackLinkDescriptorSummary::default(),
     };
@@ -1038,6 +1068,536 @@ fn hierarchical_link_execution_rejects_truncated_paged_inputs() {
     );
 
     std::fs::remove_dir_all(&root).expect("remove truncated hlink page test dir");
+}
+
+#[test]
+fn hierarchical_reduce_link_requires_partial_artifact_before_beginning() {
+    fn artifact_ref(
+        target: SourcePackArtifactTarget,
+        kind: SourcePackArtifactKind,
+        artifact_index: usize,
+        producing_job_index: usize,
+    ) -> SourcePackArtifactRef {
+        SourcePackArtifactRef {
+            artifact_index,
+            key: source_pack_artifact_key_for_output(
+                target,
+                kind,
+                producing_job_index as u32,
+                producing_job_index,
+                0,
+                1,
+            ),
+            producing_job_index,
+            kind,
+        }
+    }
+
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "laniusc-hlink-missing-partial-artifact-test-{}-{suffix}",
+        std::process::id()
+    ));
+    let mut store = FilesystemArtifactStore::new(&root);
+    let target = SourcePackArtifactTarget::Wasm;
+    let producer_group_index = 0usize;
+    let consumer_group_index = 1usize;
+    let first_link_job_index = 2usize;
+    let consumer_job_index = first_link_job_index + consumer_group_index;
+    let partial_key =
+        hierarchical_link_partial_output_key(target, producer_group_index, first_link_job_index);
+    let reduce_output_key =
+        hierarchical_link_partial_output_key(target, consumer_group_index, consumer_job_index);
+
+    store
+        .store_hierarchical_link_execution_page(&SourcePackHierarchicalLinkExecutionPage {
+            version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
+            target,
+            group_index: producer_group_index,
+            kind: SourcePackHierarchicalLinkGroupKind::Leaf,
+            job_index: first_link_job_index,
+            input_interface_count: 0,
+            input_interface_page_count: 0,
+            input_interface_ranges: Vec::new(),
+            input_interfaces: vec![artifact_ref(
+                target,
+                SourcePackArtifactKind::LibraryInterface,
+                0,
+                0,
+            )],
+            input_object_count: 0,
+            input_object_page_count: 0,
+            input_objects: vec![artifact_ref(
+                target,
+                SourcePackArtifactKind::CodegenObject,
+                1,
+                1,
+            )],
+            input_group_count: 0,
+            input_group_page_count: 0,
+            input_group_indices: Vec::new(),
+            input_group_output_keys: Vec::new(),
+            source_byte_count: 16,
+            source_file_count: 1,
+            source_line_count: 1,
+            output_key: partial_key.clone(),
+            final_output: false,
+            descriptor_summary: SourcePackLinkDescriptorSummary::default(),
+        })
+        .expect("store producer execution-page evidence without partial-link bytes");
+
+    assert!(
+        !store
+            .path_for_key(&partial_key)
+            .expect("partial-link artifact path")
+            .exists(),
+        "test setup must leave the producer partial-link bytes absent"
+    );
+
+    let reduce_page = SourcePackHierarchicalLinkExecutionPage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
+        target,
+        group_index: consumer_group_index,
+        kind: SourcePackHierarchicalLinkGroupKind::Reduce,
+        job_index: consumer_job_index,
+        input_interface_count: 0,
+        input_interface_page_count: 0,
+        input_interface_ranges: Vec::new(),
+        input_interfaces: Vec::new(),
+        input_object_count: 0,
+        input_object_page_count: 0,
+        input_objects: Vec::new(),
+        input_group_count: 0,
+        input_group_page_count: 0,
+        input_group_indices: vec![producer_group_index],
+        input_group_output_keys: vec![partial_key],
+        source_byte_count: 16,
+        source_file_count: 1,
+        source_line_count: 1,
+        output_key: reduce_output_key.clone(),
+        final_output: false,
+        descriptor_summary: SourcePackLinkDescriptorSummary::default(),
+    };
+
+    let mut executor = RecordingSourcePackByteArtifactExecutor::default();
+    let err = execute_hierarchical_link_page(&reduce_page, &mut executor, &mut store)
+        .expect_err("reduce links must require concrete partial-link artifact bytes");
+    let message = err.to_string();
+    assert!(
+        message.contains("partial link output artifact"),
+        "expected missing partial-link artifact evidence error, got {message}"
+    );
+    assert!(
+        executor.events.is_empty(),
+        "missing partial-link bytes must be rejected before the link executor begins: {:?}",
+        executor.events
+    );
+    assert!(
+        !store
+            .path_for_key(&reduce_output_key)
+            .expect("reduce output path")
+            .exists(),
+        "rejected reduce link must not write a partial-link output"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove missing partial-link artifact test dir");
+}
+
+#[test]
+fn hierarchical_link_execution_rejects_sparse_nonfinal_sidecar_pages() {
+    fn artifact_ref(
+        target: SourcePackArtifactTarget,
+        kind: SourcePackArtifactKind,
+        artifact_index: usize,
+        producing_job_index: usize,
+    ) -> SourcePackArtifactRef {
+        SourcePackArtifactRef {
+            artifact_index,
+            key: source_pack_artifact_key_for_output(
+                target,
+                kind,
+                producing_job_index as u32,
+                producing_job_index,
+                0,
+                1,
+            ),
+            producing_job_index,
+            kind,
+        }
+    }
+
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "laniusc-hlink-sparse-sidecar-test-{}-{suffix}",
+        std::process::id()
+    ));
+    let mut store = FilesystemArtifactStore::new(&root);
+    let target = SourcePackArtifactTarget::Wasm;
+
+    let interface_ref = artifact_ref(target, SourcePackArtifactKind::LibraryInterface, 0, 0);
+    store
+        .store_library_interface(&interface_ref, b"iface".to_vec())
+        .expect("store interface artifact");
+
+    let object_ref = artifact_ref(target, SourcePackArtifactKind::CodegenObject, 1, 1);
+    store
+        .store_hierarchical_link_execution_object_page(
+            &SourcePackHierarchicalLinkExecutionObjectPage {
+                version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_OBJECT_PAGE_VERSION,
+                target,
+                group_index: 0,
+                job_index: 10,
+                page_index: 0,
+                first_input_position: 0,
+                input_count: 1,
+                input_objects: vec![object_ref],
+            },
+        )
+        .expect("store sparse first object sidecar page");
+
+    let object_page_capacity = SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_OBJECT_DEFAULT_PAGE_SIZE;
+    let leaf_page = SourcePackHierarchicalLinkExecutionPage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
+        target,
+        group_index: 0,
+        kind: SourcePackHierarchicalLinkGroupKind::Leaf,
+        job_index: 10,
+        input_interface_count: 1,
+        input_interface_page_count: 0,
+        input_interface_ranges: Vec::new(),
+        input_interfaces: vec![interface_ref],
+        input_object_count: object_page_capacity + 1,
+        input_object_page_count: 2,
+        input_objects: Vec::new(),
+        input_group_count: 0,
+        input_group_page_count: 0,
+        input_group_indices: Vec::new(),
+        input_group_output_keys: Vec::new(),
+        source_byte_count: 1,
+        source_file_count: 1,
+        source_line_count: 1,
+        output_key: hierarchical_link_partial_output_key(target, 0, 10),
+        final_output: false,
+        descriptor_summary: SourcePackLinkDescriptorSummary::default(),
+    };
+    let mut executor = RecordingSourcePackByteArtifactExecutor::default();
+    let err = execute_hierarchical_link_page(&leaf_page, &mut executor, &mut store)
+        .expect_err("sparse non-final object sidecars must be rejected before linking");
+    assert!(
+        err.to_string().contains("object sidecar page 0")
+            && err.to_string().contains("non-final sidecar pages")
+            && err.to_string().contains("hide missing link input evidence"),
+        "expected sparse object sidecar evidence error, got {err}"
+    );
+
+    let partial_page_capacity = SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PARTIAL_DEFAULT_PAGE_SIZE;
+    let reduce_group_index = partial_page_capacity + 2;
+    let reduce_job_index = reduce_group_index + 20;
+    let first_link_job_index = reduce_job_index - reduce_group_index;
+    let partial_key = hierarchical_link_partial_output_key(target, 0, first_link_job_index);
+    store
+        .store_hierarchical_link_execution_partial_page(
+            &SourcePackHierarchicalLinkExecutionPartialPage {
+                version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PARTIAL_PAGE_VERSION,
+                target,
+                group_index: reduce_group_index,
+                job_index: reduce_job_index,
+                page_index: 0,
+                first_input_position: 0,
+                input_count: 1,
+                input_group_indices: vec![0],
+                input_group_output_keys: vec![partial_key],
+            },
+        )
+        .expect("store sparse first partial-link sidecar page");
+
+    let reduce_page = SourcePackHierarchicalLinkExecutionPage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
+        target,
+        group_index: reduce_group_index,
+        kind: SourcePackHierarchicalLinkGroupKind::Reduce,
+        job_index: reduce_job_index,
+        input_interface_count: 0,
+        input_interface_page_count: 0,
+        input_interface_ranges: Vec::new(),
+        input_interfaces: Vec::new(),
+        input_object_count: 0,
+        input_object_page_count: 0,
+        input_objects: Vec::new(),
+        input_group_count: partial_page_capacity + 1,
+        input_group_page_count: 2,
+        input_group_indices: Vec::new(),
+        input_group_output_keys: Vec::new(),
+        source_byte_count: 1,
+        source_file_count: 1,
+        source_line_count: 1,
+        output_key: hierarchical_link_partial_output_key(
+            target,
+            reduce_group_index,
+            reduce_job_index,
+        ),
+        final_output: false,
+        descriptor_summary: SourcePackLinkDescriptorSummary::default(),
+    };
+    let err = execute_hierarchical_link_page(&reduce_page, &mut executor, &mut store)
+        .expect_err("sparse non-final partial-link sidecars must be rejected before linking");
+    assert!(
+        err.to_string().contains("partial-link sidecar page 0")
+            && err.to_string().contains("non-final sidecar pages")
+            && err.to_string().contains("hide missing link input evidence"),
+        "expected sparse partial-link sidecar evidence error, got {err}"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove sparse hlink sidecar test dir");
+}
+
+#[test]
+fn hierarchical_link_execution_rejects_sidecar_job_mismatch_before_streaming_inputs() {
+    fn artifact_ref(
+        target: SourcePackArtifactTarget,
+        kind: SourcePackArtifactKind,
+        artifact_index: usize,
+        producing_job_index: usize,
+    ) -> SourcePackArtifactRef {
+        SourcePackArtifactRef {
+            artifact_index,
+            key: source_pack_artifact_key_for_output(
+                target,
+                kind,
+                producing_job_index as u32,
+                producing_job_index,
+                0,
+                1,
+            ),
+            producing_job_index,
+            kind,
+        }
+    }
+
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "laniusc-hlink-sidecar-job-test-{}-{suffix}",
+        std::process::id()
+    ));
+    let mut store = FilesystemArtifactStore::new(&root);
+    let target = SourcePackArtifactTarget::Wasm;
+
+    let interface_ref = artifact_ref(target, SourcePackArtifactKind::LibraryInterface, 0, 0);
+    store
+        .store_library_interface(&interface_ref, b"iface".to_vec())
+        .expect("store interface artifact");
+
+    let object_ref = artifact_ref(target, SourcePackArtifactKind::CodegenObject, 1, 1);
+    store
+        .store_hierarchical_link_execution_object_page(
+            &SourcePackHierarchicalLinkExecutionObjectPage {
+                version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_OBJECT_PAGE_VERSION,
+                target,
+                group_index: 0,
+                job_index: 11,
+                page_index: 0,
+                first_input_position: 0,
+                input_count: 1,
+                input_objects: vec![object_ref],
+            },
+        )
+        .expect("store object sidecar for a different link job");
+
+    let leaf_page = SourcePackHierarchicalLinkExecutionPage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
+        target,
+        group_index: 0,
+        kind: SourcePackHierarchicalLinkGroupKind::Leaf,
+        job_index: 10,
+        input_interface_count: 1,
+        input_interface_page_count: 0,
+        input_interface_ranges: Vec::new(),
+        input_interfaces: vec![interface_ref],
+        input_object_count: 1,
+        input_object_page_count: 1,
+        input_objects: Vec::new(),
+        input_group_count: 0,
+        input_group_page_count: 0,
+        input_group_indices: Vec::new(),
+        input_group_output_keys: Vec::new(),
+        source_byte_count: 1,
+        source_file_count: 1,
+        source_line_count: 1,
+        output_key: hierarchical_link_partial_output_key(target, 0, 10),
+        final_output: false,
+        descriptor_summary: SourcePackLinkDescriptorSummary::default(),
+    };
+    let mut executor = RecordingSourcePackByteArtifactExecutor::default();
+    let err = execute_hierarchical_link_page(&leaf_page, &mut executor, &mut store)
+        .expect_err("sidecars from a different dense link job must be rejected");
+    let message = err.to_string();
+    assert!(
+        message.contains("object sidecar page 0 records job 11")
+            && message.contains("execution page records job 10")
+            && message.contains("same dense link job"),
+        "expected sidecar job identity error, got {message}"
+    );
+    assert!(
+        !executor
+            .events
+            .iter()
+            .any(|event| event.starts_with("hlink-objects:")),
+        "mismatched object sidecars must be rejected before object inputs are streamed"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove mismatched hlink sidecar test dir");
+}
+
+#[test]
+fn hierarchical_link_execution_rejects_noncanonical_sidecar_page_sequence() {
+    fn artifact_ref(
+        target: SourcePackArtifactTarget,
+        kind: SourcePackArtifactKind,
+        artifact_index: usize,
+        producing_job_index: usize,
+    ) -> SourcePackArtifactRef {
+        SourcePackArtifactRef {
+            artifact_index,
+            key: source_pack_artifact_key_for_output(
+                target,
+                kind,
+                producing_job_index as u32,
+                producing_job_index,
+                0,
+                1,
+            ),
+            producing_job_index,
+            kind,
+        }
+    }
+
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "laniusc-hlink-sidecar-order-test-{}-{suffix}",
+        std::process::id()
+    ));
+    let mut store = FilesystemArtifactStore::new(&root);
+    let target = SourcePackArtifactTarget::Wasm;
+    let object_page_capacity = SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_OBJECT_DEFAULT_PAGE_SIZE;
+    let link_job_index = object_page_capacity * 3;
+
+    let interface_ref = artifact_ref(target, SourcePackArtifactKind::LibraryInterface, 0, 0);
+    store
+        .store_library_interface(&interface_ref, b"iface".to_vec())
+        .expect("store interface artifact");
+
+    let first_page_objects = (0..object_page_capacity)
+        .map(|offset| {
+            artifact_ref(
+                target,
+                SourcePackArtifactKind::CodegenObject,
+                100 + offset,
+                object_page_capacity + offset,
+            )
+        })
+        .collect::<Vec<_>>();
+    let second_page_objects = (0..object_page_capacity)
+        .map(|offset| {
+            artifact_ref(
+                target,
+                SourcePackArtifactKind::CodegenObject,
+                200 + offset,
+                1 + offset,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    for object_ref in &first_page_objects {
+        store
+            .store_codegen_object(object_ref, b"object".to_vec())
+            .expect("store first-page object artifact");
+    }
+    store
+        .store_hierarchical_link_execution_object_page(
+            &SourcePackHierarchicalLinkExecutionObjectPage {
+                version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_OBJECT_PAGE_VERSION,
+                target,
+                group_index: 0,
+                job_index: link_job_index,
+                page_index: 0,
+                first_input_position: 0,
+                input_count: first_page_objects.len(),
+                input_objects: first_page_objects,
+            },
+        )
+        .expect("store locally canonical first object page");
+    store
+        .store_hierarchical_link_execution_object_page(
+            &SourcePackHierarchicalLinkExecutionObjectPage {
+                version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_OBJECT_PAGE_VERSION,
+                target,
+                group_index: 0,
+                job_index: link_job_index,
+                page_index: 1,
+                first_input_position: object_page_capacity,
+                input_count: second_page_objects.len(),
+                input_objects: second_page_objects,
+            },
+        )
+        .expect("store locally canonical second object page");
+
+    let leaf_page = SourcePackHierarchicalLinkExecutionPage {
+        version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
+        target,
+        group_index: 0,
+        kind: SourcePackHierarchicalLinkGroupKind::Leaf,
+        job_index: link_job_index,
+        input_interface_count: 1,
+        input_interface_page_count: 0,
+        input_interface_ranges: Vec::new(),
+        input_interfaces: vec![interface_ref],
+        input_object_count: object_page_capacity * 2,
+        input_object_page_count: 2,
+        input_objects: Vec::new(),
+        input_group_count: 0,
+        input_group_page_count: 0,
+        input_group_indices: Vec::new(),
+        input_group_output_keys: Vec::new(),
+        source_byte_count: 1,
+        source_file_count: 1,
+        source_line_count: 1,
+        output_key: hierarchical_link_partial_output_key(target, 0, link_job_index),
+        final_output: false,
+        descriptor_summary: SourcePackLinkDescriptorSummary::default(),
+    };
+    let mut executor = RecordingSourcePackByteArtifactExecutor::default();
+    let err = execute_hierarchical_link_page(&leaf_page, &mut executor, &mut store)
+        .expect_err("sidecar pages must be globally canonical, not only page-local");
+    let message = err.to_string();
+    assert!(
+        message.contains("object sidecar page 1")
+            && message.contains("globally strictly ascending")
+            && message.contains("duplicate or missing artifact evidence"),
+        "expected cross-page sidecar order error, got {message}"
+    );
+    assert_eq!(
+        executor
+            .events
+            .iter()
+            .filter(|event| event.starts_with("hlink-objects:"))
+            .count(),
+        1,
+        "the forged second page must be rejected before its object inputs are streamed"
+    );
+
+    std::fs::remove_dir_all(&root).expect("remove noncanonical hlink sidecar order test dir");
 }
 
 #[test]

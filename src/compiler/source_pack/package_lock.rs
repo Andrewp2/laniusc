@@ -9,7 +9,6 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _, se
 
 use super::{
     package_manifest::{
-        PACKAGE_MODULE_PATH_SEGMENT_LIMIT,
         PACKAGE_NAME_RULES,
         is_lani_source_path,
         package_source_root_relative_module_path_with_label,
@@ -18,6 +17,30 @@ use super::{
     },
     write_file_atomic,
 };
+mod artifacts;
+mod import_graph;
+mod source_scan;
+pub use artifacts::PackageLockfileArtifact;
+use artifacts::PackageLockfileArtifacts;
+use import_graph::{
+    PackageLockfileImportEdge,
+    PackageLockfileImportGraph,
+    PackageLockfileImportSearchRoot,
+    PackageLockfileResolvedImport,
+    compare_import_edge_identity,
+    import_graph_edge_summary,
+    import_graph_reachable_files_from_entry,
+    validate_import_graph_module_endpoint,
+};
+use source_scan::{
+    LeadingImportPath,
+    leading_import_path_records_for_module,
+    leading_import_paths_for_module,
+    package_name_module_path,
+    required_leading_module_path,
+    valid_module_path,
+};
+
 use crate::compiler::{
     CompileError,
     Diagnostic,
@@ -26,7 +49,6 @@ use crate::compiler::{
     ExplicitSourcePackPathManifest,
     PACKAGE_MANIFEST_MAX_ROOTS,
     ResolvedPackageManifest,
-    SourcePackLibraryDependency,
     diagnostic_label_from_source_span,
     load_entry_path_manifest_with_source_roots,
     load_entry_with_source_roots,
@@ -56,20 +78,6 @@ pub struct PackageLockfile {
     replay_integrity: Option<PackageLockfileReplayIntegrity>,
 }
 
-/// Optional produced-artifact identity metadata. Paths and hashes are
-/// control-plane reproducibility evidence; each produced path has one
-/// unambiguous identity, and semantic module identity remains owned by
-/// GPU-parsed module/import records.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PackageLockfileArtifact {
-    pub target: String,
-    pub kind: String,
-    pub path: PathBuf,
-    pub byte_len: usize,
-    pub digest: String,
-}
-
 impl<'de> Deserialize<'de> for PackageLockfile {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -85,33 +93,9 @@ impl Serialize for PackageLockfile {
     where
         S: Serializer,
     {
-        self.validate().map_err(S::Error::custom)?;
-        self.validate_replay_integrity().map_err(S::Error::custom)?;
-        let path_manifest = self
-            .load_path_manifest_without_input_validation()
-            .map_err(S::Error::custom)?;
-        self.validate_path_manifest_file_set(&path_manifest)
-            .map_err(S::Error::custom)?;
-        let inputs =
-            Self::input_identity_from_path_manifest(&path_manifest).map_err(S::Error::custom)?;
-        self.validate_artifact_source_collisions(&inputs)
-            .map_err(S::Error::custom)?;
-        let source_identities = self
-            .source_identities_from_path_manifest(&path_manifest)
-            .map_err(S::Error::custom)?;
-        let import_graph = self
-            .import_graph_from_path_manifest(&path_manifest)
-            .map_err(S::Error::custom)?;
-        let artifacts = PackageLockfileArtifacts::from_files(self.artifacts.clone())
-            .map_err(S::Error::custom)?;
-        let document = PackageLockfileDocument::from_lockfile(
-            self,
-            Some(inputs),
-            Some(source_identities),
-            Some(import_graph),
-            artifacts,
-        );
-        document.serialize(serializer)
+        self.to_document_for_serialization()
+            .map_err(S::Error::custom)?
+            .serialize(serializer)
     }
 }
 
@@ -150,66 +134,11 @@ struct PackageLockfileSourceIdentityFile {
     module_path: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct PackageLockfileImportGraph {
-    library_dependencies: Vec<SourcePackLibraryDependency>,
-    imports: Vec<PackageLockfileImportEdge>,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct PackageLockfileReplayIntegrity {
     inputs: PackageLockfileInputs,
     source_identities: PackageLockfileSourceIdentities,
     import_graph: PackageLockfileImportGraph,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct PackageLockfileArtifacts {
-    digest_algorithm: String,
-    files: Vec<PackageLockfileArtifact>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct PackageLockfileImportEdge {
-    source_library_id: u32,
-    source_path: PathBuf,
-    source_module_path: String,
-    import_path: String,
-    target_library_id: u32,
-    target_path: PathBuf,
-    target_module_path: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct PackageLockfileImportSearchRoot {
-    library_id: u32,
-    label: &'static str,
-    root: PathBuf,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct PackageLockfileResolvedImport {
-    library_id: u32,
-    label: &'static str,
-    path: PathBuf,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PackageLockfilePathKind {
-    Module,
-    Import,
-}
-
-impl PackageLockfilePathKind {
-    fn label(self) -> &'static str {
-        match self {
-            PackageLockfilePathKind::Module => "module",
-            PackageLockfilePathKind::Import => "import",
-        }
-    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -253,10 +182,7 @@ impl PackageLockfile {
     }
 
     pub fn parse_json(source: &str) -> Result<Self, CompileError> {
-        let document = serde_json::from_str::<PackageLockfileDocument>(source).map_err(|err| {
-            CompileError::GpuFrontend(format!("parse package lockfile JSON: {err}"))
-        })?;
-        document.to_validated_lockfile()
+        Self::parse_document(source)?.to_validated_lockfile()
     }
 
     pub fn load_json_file(path: impl AsRef<Path>) -> Result<Self, CompileError> {
@@ -264,42 +190,158 @@ impl PackageLockfile {
         let source = fs::read_to_string(path).map_err(|err| {
             CompileError::GpuFrontend(format!("read package lockfile {}: {err}", path.display()))
         })?;
-        Self::parse_json(&source)
+        let document = Self::parse_document(&source)?;
+        let lockfile_shape = document.to_lockfile();
+        lockfile_shape.validate_shape()?;
+        lockfile_shape
+            .validate_control_plane_path_is_outside_source_roots("lockfile path", path)?;
+        lockfile_shape
+            .validate_control_plane_path_is_not_recorded_artifact("lockfile path", path)?;
+        document.to_validated_lockfile()
+    }
+
+    fn parse_document(source: &str) -> Result<PackageLockfileDocument, CompileError> {
+        serde_json::from_str::<PackageLockfileDocument>(source)
+            .map_err(|err| CompileError::GpuFrontend(format!("parse package lockfile JSON: {err}")))
     }
 
     pub fn to_json_pretty(&self) -> Result<String, CompileError> {
-        serde_json::to_string_pretty(self).map_err(|err| {
+        let document = self.to_document_for_serialization()?;
+        serde_json::to_string_pretty(&document).map_err(|err| {
             CompileError::GpuFrontend(format!("serialize package lockfile JSON: {err}"))
         })
     }
 
     pub fn write_json_file(&self, path: impl AsRef<Path>) -> Result<(), CompileError> {
         let path = path.as_ref();
+        self.validate_control_plane_path_is_outside_source_roots("lockfile output path", path)?;
         let source = self.to_json_pretty()?;
-        self.validate_output_path_is_outside_source_roots(path)?;
+        self.validate_control_plane_path_is_not_recorded_artifact("lockfile output path", path)?;
         write_file_atomic(path, source.as_bytes(), "package lockfile")
     }
 
-    fn validate_output_path_is_outside_source_roots(
+    fn validate_control_plane_path_is_outside_source_roots(
         &self,
+        label: &str,
         path: &Path,
     ) -> Result<(), CompileError> {
-        let Some(output_path) = lockfile_output_identity_path(path) else {
+        let control_plane_paths = lockfile_control_plane_identity_paths(path);
+        if control_plane_paths.is_empty() {
             return Ok(());
-        };
-        if self.roots.iter().any(|root| output_path.starts_with(root))
-            || self
+        }
+        for control_plane_path in control_plane_paths {
+            if self
+                .roots
+                .iter()
+                .any(|root| control_plane_path.starts_with(root))
+            {
+                return Err(package_lockfile_error(format!(
+                    "{label} {} is inside a package source root; choose a separate lockfile path so package source files and control-plane artifacts stay separate",
+                    control_plane_path.display()
+                )));
+            }
+            if self
                 .stdlib_root
                 .as_ref()
-                .is_some_and(|root| output_path.starts_with(root))
-        {
-            return Err(package_lockfile_error(format!(
-                "lockfile output path {} is inside a package source root; choose a separate lockfile path so package source files and control-plane artifacts stay separate",
-                output_path.display()
-            )));
+                .is_some_and(|root| control_plane_path.starts_with(root))
+            {
+                return Err(package_lockfile_error(format!(
+                    "{label} {} is inside a stdlib source root; choose a separate lockfile path so stdlib source files and control-plane artifacts stay separate",
+                    control_plane_path.display()
+                )));
+            }
         }
         Ok(())
     }
+
+    fn validate_control_plane_path_is_not_recorded_artifact(
+        &self,
+        label: &str,
+        path: &Path,
+    ) -> Result<(), CompileError> {
+        let control_plane_paths = lockfile_control_plane_identity_paths(path);
+        if control_plane_paths.is_empty() {
+            return Ok(());
+        }
+        for control_plane_path in control_plane_paths {
+            if self
+                .artifacts
+                .iter()
+                .any(|artifact| artifact.path.as_path() == control_plane_path.as_path())
+            {
+                return Err(package_lockfile_error(format!(
+                    "{label} {} is also recorded as a produced artifact; package lockfiles are control-plane metadata and must not be replayed as build artifacts",
+                    control_plane_path.display()
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    fn to_document_for_serialization(&self) -> Result<PackageLockfileDocument, CompileError> {
+        self.validate_shape_and_existing_source_state()?;
+        self.validate_replay_integrity()?;
+        self.validate_entry_replay_metadata()?;
+        let path_manifest = self.load_path_manifest_without_input_validation()?;
+        self.validate_path_manifest_file_set(&path_manifest)?;
+        let inputs = Self::input_identity_from_path_manifest(&path_manifest)?;
+        let source_identities = self.source_identities_from_path_manifest(&path_manifest)?;
+        let import_graph = self.import_graph_from_path_manifest(&path_manifest)?;
+        self.validate_artifact_source_collisions(&inputs)?;
+        let artifacts = PackageLockfileArtifacts::from_files(self.artifacts.clone())?;
+        self.validate_artifacts()?;
+        Ok(PackageLockfileDocument::from_lockfile(
+            self,
+            Some(inputs),
+            Some(source_identities),
+            Some(import_graph),
+            artifacts,
+        ))
+    }
+}
+
+fn lockfile_control_plane_identity_paths(path: &Path) -> Vec<PathBuf> {
+    let mut paths = Vec::with_capacity(2);
+    if let Some(path) = lockfile_normalized_absolute_path(path) {
+        paths.push(path);
+    }
+    if let Some(path) = lockfile_output_identity_path(path) {
+        if !paths.iter().any(|candidate| candidate == &path) {
+            paths.push(path);
+        }
+    }
+    paths
+}
+
+fn format_resolved_roots(roots: &[PathBuf]) -> String {
+    roots
+        .iter()
+        .map(|root| root.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn lockfile_normalized_absolute_path(path: &Path) -> Option<PathBuf> {
+    let absolute_path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir().ok()?.join(path)
+    };
+    let mut normalized = PathBuf::new();
+    for component in absolute_path.components() {
+        match component {
+            std::path::Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            std::path::Component::RootDir => normalized.push(component.as_os_str()),
+            std::path::Component::Normal(segment) => normalized.push(segment),
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                if !normalized.pop() {
+                    return None;
+                }
+            }
+        }
+    }
+    Some(normalized)
 }
 
 fn lockfile_output_identity_path(path: &Path) -> Option<PathBuf> {
@@ -339,63 +381,19 @@ fn apply_missing_output_tail(mut base: PathBuf, tail: &Path) -> Option<PathBuf> 
     Some(base)
 }
 
-impl PackageLockfileArtifact {
-    pub fn from_existing_file(
-        target: impl Into<String>,
-        kind: impl Into<String>,
-        path: impl AsRef<Path>,
-    ) -> Result<Self, CompileError> {
-        let path = path.as_ref();
-        let canonical_path = fs::canonicalize(path).map_err(|err| {
-            package_lockfile_error(format!(
-                "canonicalize artifact file {}: {err}",
-                path.display()
-            ))
-        })?;
-        let bytes = fs::read(&canonical_path).map_err(|err| {
-            package_lockfile_error(format!(
-                "read artifact file {}: {err}",
-                canonical_path.display()
-            ))
-        })?;
-        let artifact = Self {
-            target: target.into(),
-            kind: kind.into(),
-            path: canonical_path,
-            byte_len: bytes.len(),
-            digest: stable_content_digest(&bytes),
-        };
-        artifact.validate_shape()?;
-        Ok(artifact)
+impl PackageLockfile {
+    pub fn validate(&self) -> Result<(), CompileError> {
+        self.validate_shape_and_existing_source_state()?;
+        self.validate_replay_integrity()?;
+        self.validate_artifacts()
+    }
+
+    fn validate_shape_and_existing_source_state(&self) -> Result<(), CompileError> {
+        self.validate_shape()?;
+        self.validate_existing_package_source_state()
     }
 
     fn validate_shape(&self) -> Result<(), CompileError> {
-        if !valid_lockfile_label(&self.target) {
-            return Err(package_lockfile_error(format!(
-                "artifact target {:?} must contain only ASCII letters, digits, '.', '_', '-' or ':'",
-                self.target
-            )));
-        }
-        if !valid_lockfile_label(&self.kind) {
-            return Err(package_lockfile_error(format!(
-                "artifact kind {:?} must contain only ASCII letters, digits, '.', '_', '-' or ':'",
-                self.kind
-            )));
-        }
-        validate_resolved_path("artifact file", &self.path)?;
-        if !valid_stable_content_digest(&self.digest) {
-            return Err(package_lockfile_error(format!(
-                "artifact file {} has invalid digest {:?}",
-                self.path.display(),
-                self.digest
-            )));
-        }
-        Ok(())
-    }
-}
-
-impl PackageLockfile {
-    pub fn validate(&self) -> Result<(), CompileError> {
         if self.version != PACKAGE_LOCKFILE_VERSION {
             return Err(package_lockfile_error(format!(
                 "unsupported version {}; expected {PACKAGE_LOCKFILE_VERSION}",
@@ -431,7 +429,7 @@ impl PackageLockfile {
 
         let mut seen_roots = BTreeSet::new();
         for root in &self.roots {
-            validate_resolved_path("source root", root)?;
+            validate_resolved_source_root_path("source root", root)?;
             if !seen_roots.insert(root.clone()) {
                 return Err(package_lockfile_error(format!(
                     "duplicate resolved source root {}",
@@ -458,7 +456,7 @@ impl PackageLockfile {
             }
         }
         if let Some(stdlib_root) = &self.stdlib_root {
-            validate_resolved_path("stdlib root", stdlib_root)?;
+            validate_resolved_source_root_path("stdlib root", stdlib_root)?;
             for root in &self.roots {
                 if resolved_paths_overlap(root, stdlib_root) {
                     return Err(package_lockfile_error(format!(
@@ -472,8 +470,9 @@ impl PackageLockfile {
         validate_resolved_source_path("entry", &self.entry)?;
         if !self.roots.iter().any(|root| self.entry.starts_with(root)) {
             return Err(package_lockfile_error(format!(
-                "entry {} is not under any resolved source root",
-                self.entry.display()
+                "entry {} is not under any resolved source root; resolved source roots: {}",
+                self.entry.display(),
+                format_resolved_roots(&self.roots)
             )));
         }
         let (_, entry_relative_path) =
@@ -488,6 +487,10 @@ impl PackageLockfile {
                 self.compiler_version, PACKAGE_LOCKFILE_COMPILER_VERSION
             )));
         }
+        Ok(())
+    }
+
+    fn validate_existing_package_source_state(&self) -> Result<(), CompileError> {
         for root in &self.roots {
             validate_existing_resolved_dir("source root", root)?;
         }
@@ -495,7 +498,6 @@ impl PackageLockfile {
             validate_existing_resolved_dir("stdlib root", stdlib_root)?;
         }
         validate_existing_resolved_file("entry", &self.entry)?;
-        self.validate_artifacts()?;
         Ok(())
     }
 
@@ -505,6 +507,12 @@ impl PackageLockfile {
         };
         artifacts.validate_shape()?;
         for artifact in &artifacts.files {
+            if self.artifact_path_is_inside_source_roots(&artifact.path) {
+                return Err(package_lockfile_error(format!(
+                    "artifact file {} is inside a package source root; produced artifact identities must not point inside package or stdlib source roots",
+                    artifact.path.display()
+                )));
+            }
             validate_existing_resolved_file("artifact file", &artifact.path)?;
             let bytes = fs::read(&artifact.path).map_err(|err| {
                 package_lockfile_error(format!(
@@ -566,15 +574,80 @@ impl PackageLockfile {
         let Some(integrity) = &self.replay_integrity else {
             return Ok(());
         };
+        self.validate_persisted_input_identity_bytes(&integrity.inputs)?;
         self.validate_section_consistency(
             &integrity.inputs,
             &integrity.source_identities,
             &integrity.import_graph,
         )?;
-        self.validate_artifact_source_collisions(&integrity.inputs)?;
-        self.validate_import_graph(&integrity.import_graph)?;
+        self.validate_import_graph_with_input_staleness(
+            &integrity.import_graph,
+            &integrity.inputs,
+        )?;
+        self.validate_entry_input_identity(&integrity.inputs)?;
         self.validate_source_identities(&integrity.source_identities)?;
         self.validate_inputs(&integrity.inputs)?;
+        self.validate_artifact_source_collisions(&integrity.inputs)?;
+        Ok(())
+    }
+
+    fn validate_entry_input_identity(
+        &self,
+        inputs: &PackageLockfileInputs,
+    ) -> Result<(), CompileError> {
+        inputs.validate_shape()?;
+        let expected_entry = inputs
+            .files
+            .iter()
+            .find(|file| {
+                file.library_id == PACKAGE_LOCKFILE_USER_LIBRARY_ID && file.path == self.entry
+            })
+            .ok_or_else(|| {
+                package_lockfile_error(format!(
+                    "entry {} in user library {PACKAGE_LOCKFILE_USER_LIBRARY_ID} is missing from input identity; regenerate the package lockfile from the package manifest",
+                    self.entry.display()
+                ))
+            })?;
+        let bytes = fs::read(&self.entry).map_err(|err| {
+            package_lockfile_error(format!("read entry input {}: {err}", self.entry.display()))
+        })?;
+        if expected_entry.byte_len != bytes.len() {
+            return Err(package_lockfile_error(format!(
+                "input byte length mismatch for {}; expected {}, found {}",
+                expected_entry.path.display(),
+                expected_entry.byte_len,
+                bytes.len()
+            )));
+        }
+        let actual_digest = stable_content_digest(&bytes);
+        if expected_entry.digest != actual_digest {
+            return Err(package_lockfile_error(format!(
+                "input digest mismatch for {}; expected {}, found {}",
+                expected_entry.path.display(),
+                expected_entry.digest,
+                actual_digest
+            )));
+        }
+        Ok(())
+    }
+
+    fn validate_entry_replay_metadata(&self) -> Result<(), CompileError> {
+        let source = fs::read_to_string(&self.entry).map_err(|err| {
+            package_lockfile_error(format!(
+                "read entry source replay metadata {}: {err}",
+                self.entry.display()
+            ))
+        })?;
+        let (_, entry_relative_path) =
+            self.source_identity_root_metadata(PACKAGE_LOCKFILE_USER_LIBRARY_ID, &self.entry)?;
+        let expected_module_path = source_root_relative_module_path(&entry_relative_path)?;
+        let module_path = required_leading_module_path(
+            &source,
+            &self.entry,
+            &entry_relative_path,
+            &expected_module_path,
+        )?;
+        leading_import_paths_for_module(&source, &self.entry, &module_path)?;
         Ok(())
     }
 
@@ -587,7 +660,7 @@ impl PackageLockfile {
     }
 
     fn input_identity(&self) -> Result<PackageLockfileInputs, CompileError> {
-        self.validate()?;
+        self.validate_shape_and_existing_source_state()?;
         let path_manifest = self.load_path_manifest_without_input_validation()?;
         Self::input_identity_from_path_manifest(&path_manifest)
     }
@@ -617,7 +690,7 @@ impl PackageLockfile {
     }
 
     fn source_identities(&self) -> Result<PackageLockfileSourceIdentities, CompileError> {
-        self.validate()?;
+        self.validate_shape_and_existing_source_state()?;
         let path_manifest = self.load_path_manifest_without_input_validation()?;
         self.source_identities_from_path_manifest(&path_manifest)
     }
@@ -636,12 +709,20 @@ impl PackageLockfile {
             })?;
             let (source_root_index, source_root_relative_path) =
                 self.source_identity_root_metadata(file.library_id, &file.path)?;
+            let expected_module_path =
+                source_root_relative_module_path(&source_root_relative_path)?;
+            let module_path = required_leading_module_path(
+                &source,
+                &file.path,
+                &source_root_relative_path,
+                &expected_module_path,
+            )?;
             files.push(PackageLockfileSourceIdentityFile {
                 library_id: file.library_id,
                 path: file.path.clone(),
                 source_root_index: Some(source_root_index),
                 source_root_relative_path: Some(source_root_relative_path),
-                module_path: leading_lockfile_module_path(&source, &file.path)?,
+                module_path: Some(module_path),
             });
         }
         files.sort_by(compare_source_identity_file_identity);
@@ -652,7 +733,7 @@ impl PackageLockfile {
     }
 
     fn import_graph(&self) -> Result<PackageLockfileImportGraph, CompileError> {
-        self.validate()?;
+        self.validate_shape_and_existing_source_state()?;
         let path_manifest = self.load_path_manifest_without_input_validation()?;
         self.import_graph_from_path_manifest(&path_manifest)
     }
@@ -672,7 +753,7 @@ impl PackageLockfile {
             self.source_identities_from_path_manifest(path_manifest)?,
         )?;
         let mut imports = Vec::new();
-        let mut seen_import_edges = BTreeSet::new();
+        let mut seen_source_imports = BTreeSet::new();
 
         for file in &path_manifest.files {
             let source = fs::read_to_string(&file.path).map_err(|err| {
@@ -692,12 +773,27 @@ impl PackageLockfile {
                         file.library_id
                     ))
                 })?;
-            for import_path in leading_lockfile_import_paths(&source, &file.path)? {
+            for import in
+                leading_import_path_records_for_module(&source, &file.path, &source_module_path)?
+            {
+                if !seen_source_imports.insert((
+                    file.library_id,
+                    file.path.clone(),
+                    import.path.clone(),
+                )) {
+                    return Err(package_lockfile_error(format!(
+                        "duplicate import declaration {} in library {} {}; package lockfiles require one leading declaration per source/import path so replay metadata cannot silently deduplicate source-level import records",
+                        import.path,
+                        file.library_id,
+                        file.path.display()
+                    )));
+                }
                 let target = resolve_lockfile_import(
-                    &import_path,
+                    &import,
                     &search_roots,
                     file.library_id,
                     &file.path,
+                    &source,
                 )?;
                 let target_library_id =
                     file_library_ids
@@ -706,7 +802,7 @@ impl PackageLockfile {
                         .ok_or_else(|| {
                             package_lockfile_error(format!(
                                 "import graph resolved {} from {} to {}, but the target is not in the source-pack file set",
-                                import_path,
+                                import.path,
                                 file.path.display(),
                                 target.path.display()
                             ))
@@ -725,14 +821,12 @@ impl PackageLockfile {
                     source_library_id: file.library_id,
                     source_path: file.path.clone(),
                     source_module_path: source_module_path.clone(),
-                    import_path,
+                    import_path: import.path,
                     target_library_id,
                     target_path: target.path,
                     target_module_path,
                 };
-                if seen_import_edges.insert(edge.identity_key()) {
-                    imports.push(edge);
-                }
+                imports.push(edge);
             }
         }
 
@@ -875,17 +969,59 @@ impl PackageLockfile {
         Ok(())
     }
 
-    fn validate_import_graph(
+    fn validate_import_graph_with_input_staleness(
         &self,
         expected: &PackageLockfileImportGraph,
+        inputs: &PackageLockfileInputs,
     ) -> Result<(), CompileError> {
         expected.validate_shape()?;
+        self.validate_persisted_input_identity_bytes(inputs)?;
         let actual = self.import_graph()?;
+        self.validate_import_graph_against_actual(expected, &actual)
+    }
+
+    fn validate_persisted_input_identity_bytes(
+        &self,
+        expected: &PackageLockfileInputs,
+    ) -> Result<(), CompileError> {
+        if let Some(input_err) = self.first_unavailable_input_identity_error(expected)? {
+            return Err(input_err);
+        }
+        if let Some(input_err) = self.first_stale_input_identity_error(expected)? {
+            return Err(input_err);
+        }
+        Ok(())
+    }
+
+    fn validate_import_graph_against_actual(
+        &self,
+        expected: &PackageLockfileImportGraph,
+        actual: &PackageLockfileImportGraph,
+    ) -> Result<(), CompileError> {
+        validate_live_import_graph_user_root_precedence(expected, actual)?;
         if actual.library_dependencies != expected.library_dependencies {
             return Err(package_lockfile_error(format!(
                 "library dependency graph changed; expected {:?}, found {:?}",
                 expected.library_dependencies, actual.library_dependencies
             )));
+        }
+        if let Some((index, expected_import, actual_import)) =
+            find_import_graph_source_move(&expected.imports, &actual.imports)
+        {
+            return Err(import_graph_changed_error(
+                index,
+                expected_import,
+                actual_import,
+            ));
+        }
+        if let Some((index, expected_import, actual_import)) =
+            find_import_graph_target_change(&expected.imports, &actual.imports)
+        {
+            return Err(import_graph_changed_error(
+                index,
+                expected_import,
+                actual_import,
+            ));
         }
         if actual.imports.len() != expected.imports.len() {
             return Err(package_lockfile_error(format!(
@@ -903,18 +1039,79 @@ impl PackageLockfile {
             .enumerate()
         {
             if expected_import != actual_import {
-                return Err(package_lockfile_error(format!(
-                    "import graph changed at edge {index}; expected {} from {} to {}, found {} from {} to {}",
-                    expected_import.import_path,
-                    expected_import.source_path.display(),
-                    expected_import.target_path.display(),
-                    actual_import.import_path,
-                    actual_import.source_path.display(),
-                    actual_import.target_path.display()
-                )));
+                return Err(import_graph_changed_error(
+                    index,
+                    expected_import,
+                    actual_import,
+                ));
             }
         }
         Ok(())
+    }
+
+    fn first_unavailable_input_identity_error(
+        &self,
+        expected: &PackageLockfileInputs,
+    ) -> Result<Option<CompileError>, CompileError> {
+        expected.validate_shape()?;
+        for file in &expected.files {
+            self.validate_file_library_ownership("input file", file.library_id, &file.path)?;
+            validate_resolved_source_path("input file", &file.path)?;
+            let metadata = match fs::metadata(&file.path) {
+                Ok(metadata) => metadata,
+                Err(err) => {
+                    return Ok(Some(package_lockfile_error(format!(
+                        "input file {} no longer matches persisted input identity: {err}",
+                        file.path.display()
+                    ))));
+                }
+            };
+            if !metadata.is_file() {
+                return Ok(Some(package_lockfile_error(format!(
+                    "input file {} no longer matches persisted input identity: no longer resolves to a file",
+                    file.path.display()
+                ))));
+            }
+        }
+        Ok(None)
+    }
+
+    fn first_stale_input_identity_error(
+        &self,
+        expected: &PackageLockfileInputs,
+    ) -> Result<Option<CompileError>, CompileError> {
+        expected.validate_shape()?;
+        for file in &expected.files {
+            self.validate_file_library_ownership("input file", file.library_id, &file.path)?;
+            validate_resolved_source_path("input file", &file.path)?;
+            let bytes = match fs::read(&file.path) {
+                Ok(bytes) => bytes,
+                Err(err) => {
+                    return Ok(Some(package_lockfile_error(format!(
+                        "input file {} no longer matches persisted input identity: {err}",
+                        file.path.display()
+                    ))));
+                }
+            };
+            if file.byte_len != bytes.len() {
+                return Ok(Some(package_lockfile_error(format!(
+                    "input byte length mismatch for {}; expected {}, found {}",
+                    file.path.display(),
+                    file.byte_len,
+                    bytes.len()
+                ))));
+            }
+            let actual_digest = stable_content_digest(&bytes);
+            if file.digest != actual_digest {
+                return Ok(Some(package_lockfile_error(format!(
+                    "input digest mismatch for {}; expected {}, found {}",
+                    file.path.display(),
+                    file.digest,
+                    actual_digest
+                ))));
+            }
+        }
+        Ok(None)
     }
 
     fn validate_section_consistency(
@@ -924,11 +1121,12 @@ impl PackageLockfile {
         import_graph: &PackageLockfileImportGraph,
     ) -> Result<(), CompileError> {
         inputs.validate_shape()?;
+        self.validate_source_identity_root_metadata(source_identities)?;
         source_identities.validate_shape()?;
+        self.validate_source_identity_ownership(source_identities)?;
         import_graph.validate_shape()?;
         self.validate_input_identity_ownership(inputs)?;
         self.validate_import_graph_ownership(import_graph)?;
-        self.validate_source_identity_ownership(source_identities)?;
 
         let input_files = inputs
             .files
@@ -942,6 +1140,16 @@ impl PackageLockfile {
             .collect::<BTreeSet<_>>();
         let source_identity_module_paths =
             source_identity_module_paths_by_file(source_identities.clone())?;
+        let user_source_identity_modules = source_identities
+            .files
+            .iter()
+            .filter(|file| file.library_id == PACKAGE_LOCKFILE_USER_LIBRARY_ID)
+            .filter_map(|file| {
+                file.module_path
+                    .as_ref()
+                    .map(|module_path| (module_path.clone(), file.path.clone()))
+            })
+            .collect::<BTreeMap<_, _>>();
         let package_module_path = package_name_module_path(&self.package);
         let input_libraries = inputs
             .files
@@ -1052,6 +1260,11 @@ impl PackageLockfile {
                 package_module_path.as_deref(),
                 &self.package,
             )?;
+            validate_import_graph_user_root_precedence(
+                edge_index,
+                import,
+                &user_source_identity_modules,
+            )?;
         }
 
         for file in &source_identities.files {
@@ -1102,51 +1315,7 @@ impl PackageLockfile {
         source_identities: &PackageLockfileSourceIdentities,
     ) -> Result<(), CompileError> {
         for file in &source_identities.files {
-            self.validate_file_library_ownership(
-                "source identity file",
-                file.library_id,
-                &file.path,
-            )?;
-            let (expected_root_index, expected_relative_path) =
-                self.source_identity_root_metadata(file.library_id, &file.path)?;
-            match file.source_root_index {
-                Some(actual_root_index) if actual_root_index == expected_root_index => {}
-                Some(actual_root_index) => {
-                    return Err(package_lockfile_error(format!(
-                        "source identity file {} in library {} has source-root index {}; expected {}",
-                        file.path.display(),
-                        file.library_id,
-                        actual_root_index,
-                        expected_root_index
-                    )));
-                }
-                None => {
-                    return Err(package_lockfile_error(format!(
-                        "source identity file {} in library {} is missing source-root index metadata",
-                        file.path.display(),
-                        file.library_id
-                    )));
-                }
-            }
-            match &file.source_root_relative_path {
-                Some(actual_relative_path) if actual_relative_path == &expected_relative_path => {}
-                Some(actual_relative_path) => {
-                    return Err(package_lockfile_error(format!(
-                        "source identity file {} in library {} has source-root relative path {}; expected {}",
-                        file.path.display(),
-                        file.library_id,
-                        actual_relative_path.display(),
-                        expected_relative_path.display()
-                    )));
-                }
-                None => {
-                    return Err(package_lockfile_error(format!(
-                        "source identity file {} in library {} is missing source-root relative path metadata",
-                        file.path.display(),
-                        file.library_id
-                    )));
-                }
-            }
+            let expected_relative_path = self.validate_source_identity_root_metadata_file(file)?;
             let expected_module_path = source_root_relative_module_path(&expected_relative_path)?;
             match &file.module_path {
                 Some(module_path) if module_path == &expected_module_path => {}
@@ -1185,6 +1354,65 @@ impl PackageLockfile {
         Ok(())
     }
 
+    fn validate_source_identity_root_metadata(
+        &self,
+        source_identities: &PackageLockfileSourceIdentities,
+    ) -> Result<(), CompileError> {
+        for file in &source_identities.files {
+            self.validate_source_identity_root_metadata_file(file)?;
+        }
+        Ok(())
+    }
+
+    fn validate_source_identity_root_metadata_file(
+        &self,
+        file: &PackageLockfileSourceIdentityFile,
+    ) -> Result<PathBuf, CompileError> {
+        validate_resolved_source_path("source identity file", &file.path)?;
+        self.validate_file_library_ownership("source identity file", file.library_id, &file.path)?;
+        let (expected_root_index, expected_relative_path) =
+            self.source_identity_root_metadata(file.library_id, &file.path)?;
+        match file.source_root_index {
+            Some(actual_root_index) if actual_root_index == expected_root_index => {}
+            Some(actual_root_index) => {
+                return Err(package_lockfile_error(format!(
+                    "source identity file {} in library {} has source-root index {}; expected {}",
+                    file.path.display(),
+                    file.library_id,
+                    actual_root_index,
+                    expected_root_index
+                )));
+            }
+            None => {
+                return Err(package_lockfile_error(format!(
+                    "source identity file {} in library {} is missing source-root index metadata",
+                    file.path.display(),
+                    file.library_id
+                )));
+            }
+        }
+        match &file.source_root_relative_path {
+            Some(actual_relative_path) if actual_relative_path == &expected_relative_path => {}
+            Some(actual_relative_path) => {
+                return Err(package_lockfile_error(format!(
+                    "source identity file {} in library {} has source-root relative path {}; expected {}",
+                    file.path.display(),
+                    file.library_id,
+                    actual_relative_path.display(),
+                    expected_relative_path.display()
+                )));
+            }
+            None => {
+                return Err(package_lockfile_error(format!(
+                    "source identity file {} in library {} is missing source-root relative path metadata",
+                    file.path.display(),
+                    file.library_id
+                )));
+            }
+        }
+        Ok(expected_relative_path)
+    }
+
     fn source_identity_root_metadata(
         &self,
         library_id: u32,
@@ -1198,8 +1426,9 @@ impl PackageLockfile {
                 .find(|(_, root)| path.starts_with(root))
                 .ok_or_else(|| {
                     package_lockfile_error(format!(
-                        "source identity file {} in user library {PACKAGE_LOCKFILE_USER_LIBRARY_ID} is not under any resolved source root",
-                        path.display()
+                        "source identity file {} in user library {PACKAGE_LOCKFILE_USER_LIBRARY_ID} is not under any resolved source root; resolved source roots: {}",
+                        path.display(),
+                        format_resolved_roots(&self.roots)
                     ))
                 })?,
             PACKAGE_LOCKFILE_STDLIB_LIBRARY_ID => {
@@ -1287,7 +1516,7 @@ impl PackageLockfile {
             .is_some_and(|package_module_path| package_module_path == edge_module_path)
         {
             return Err(package_lockfile_error(format!(
-                "import graph edge {edge_index} {endpoint} module path {:?} matches package metadata {:?}, but resolved source-root relative path {} maps to {:?}; package names are control-plane identity and must not replace GPU module declarations",
+                "import graph edge {edge_index} {endpoint} module path {:?} matches package metadata {:?}, but source identity module from resolved source-root relative path {} maps to {:?}; package names are control-plane identity and must not replace GPU module declarations",
                 edge_module_path,
                 self.package,
                 relative_path.display(),
@@ -1295,7 +1524,7 @@ impl PackageLockfile {
             )));
         }
         Err(package_lockfile_error(format!(
-            "import graph edge {edge_index} {endpoint} module path {:?} does not match resolved source-root relative path {} mapping {:?}",
+            "import graph edge {edge_index} {endpoint} module path {:?} does not match source identity module from resolved source-root relative path {} mapping {:?}",
             edge_module_path,
             relative_path.display(),
             expected_module_path
@@ -1314,8 +1543,9 @@ impl PackageLockfile {
                     Ok(())
                 } else {
                     Err(package_lockfile_error(format!(
-                        "{label} {} in user library {PACKAGE_LOCKFILE_USER_LIBRARY_ID} is not under any resolved source root",
-                        path.display()
+                        "{label} {} in user library {PACKAGE_LOCKFILE_USER_LIBRARY_ID} is not under any resolved source root; resolved source roots: {}",
+                        path.display(),
+                        format_resolved_roots(&self.roots)
                     )))
                 }
             }
@@ -1351,15 +1581,19 @@ impl PackageLockfile {
     }
 
     pub fn load_source_pack(&self) -> Result<ExplicitSourcePack, CompileError> {
-        self.validate()?;
+        self.validate_shape_and_existing_source_state()?;
         self.validate_replay_integrity()?;
+        self.validate_entry_replay_metadata()?;
+        self.validate_artifacts()?;
         self.validate_live_import_graph()?;
         load_entry_with_source_roots(&self.entry, &self.to_entry_source_roots())
     }
 
     pub fn load_path_manifest(&self) -> Result<ExplicitSourcePackPathManifest, CompileError> {
-        self.validate()?;
+        self.validate_shape_and_existing_source_state()?;
         self.validate_replay_integrity()?;
+        self.validate_entry_replay_metadata()?;
+        self.validate_artifacts()?;
         let path_manifest = self.load_path_manifest_without_input_validation()?;
         self.import_graph_from_path_manifest(&path_manifest)?;
         Ok(path_manifest)
@@ -1369,6 +1603,7 @@ impl PackageLockfile {
         &self,
     ) -> Result<ExplicitSourcePackPathManifest, CompileError> {
         load_entry_path_manifest_with_source_roots(&self.entry, &self.to_entry_source_roots())
+            .map_err(add_package_replay_diagnostic_context)
     }
 
     fn validate_live_import_graph(&self) -> Result<(), CompileError> {
@@ -1376,6 +1611,255 @@ impl PackageLockfile {
         self.import_graph_from_path_manifest(&path_manifest)?;
         Ok(())
     }
+}
+
+fn validate_import_graph_user_root_precedence(
+    edge_index: usize,
+    import: &PackageLockfileImportEdge,
+    user_source_identity_modules: &BTreeMap<String, PathBuf>,
+) -> Result<(), CompileError> {
+    if import.source_library_id != PACKAGE_LOCKFILE_USER_LIBRARY_ID
+        || import.target_library_id != PACKAGE_LOCKFILE_STDLIB_LIBRARY_ID
+    {
+        return Ok(());
+    }
+    let Some(user_path) = user_source_identity_modules.get(&import.target_module_path) else {
+        return Ok(());
+    };
+    Err(package_lockfile_error(format!(
+        "import graph edge {edge_index} from user source {} targets stdlib module {} at {}, but user source identity {} declares the same module; package/user roots take precedence over stdlib fallback so persisted library metadata must not choose semantic module identity",
+        import.source_path.display(),
+        import.target_module_path,
+        import.target_path.display(),
+        user_path.display()
+    )))
+}
+
+fn validate_live_import_graph_user_root_precedence(
+    expected: &PackageLockfileImportGraph,
+    actual: &PackageLockfileImportGraph,
+) -> Result<(), CompileError> {
+    for expected_import in &expected.imports {
+        if expected_import.source_library_id != PACKAGE_LOCKFILE_USER_LIBRARY_ID
+            || expected_import.target_library_id != PACKAGE_LOCKFILE_STDLIB_LIBRARY_ID
+        {
+            continue;
+        }
+        let Some(actual_import) = actual.imports.iter().find(|actual_import| {
+            actual_import.source_library_id == expected_import.source_library_id
+                && actual_import.source_path == expected_import.source_path
+                && actual_import.import_path == expected_import.import_path
+                && actual_import.target_library_id == PACKAGE_LOCKFILE_USER_LIBRARY_ID
+        }) else {
+            continue;
+        };
+        return Err(package_lockfile_error(format!(
+            "import graph changed for user source {} import {}; persisted replay targets stdlib module {} at {}, but live source-root replay resolves package/user module at {}; package/user roots take precedence over stdlib fallback so stale lockfile metadata must not choose semantic module identity",
+            expected_import.source_path.display(),
+            expected_import.import_path,
+            expected_import.target_module_path,
+            expected_import.target_path.display(),
+            actual_import.target_path.display()
+        )));
+    }
+    Ok(())
+}
+
+fn add_package_replay_diagnostic_context(err: CompileError) -> CompileError {
+    match err {
+        CompileError::Diagnostic(diagnostic) if diagnostic.code == "LNC0001" => {
+            CompileError::Diagnostic(diagnostic.with_note(
+                "package names and lockfile roots are control-plane metadata; provide a source-root .lani file whose leading module declaration matches the import path",
+            ))
+        }
+        other => other,
+    }
+}
+
+fn find_import_graph_source_move<'a>(
+    expected_imports: &'a [PackageLockfileImportEdge],
+    actual_imports: &'a [PackageLockfileImportEdge],
+) -> Option<(
+    usize,
+    &'a PackageLockfileImportEdge,
+    &'a PackageLockfileImportEdge,
+)> {
+    let actual_edges = import_graph_full_edge_keys(actual_imports);
+    let actual_by_import_target = actual_imports
+        .iter()
+        .map(|actual| (import_graph_import_target_key(actual), actual))
+        .collect::<BTreeMap<_, _>>();
+    for (index, expected) in expected_imports.iter().enumerate() {
+        if actual_edges.contains(&import_graph_full_edge_key(expected)) {
+            continue;
+        }
+        let key = import_graph_import_target_key(expected);
+        if let Some(actual) = actual_by_import_target.get(&key).copied()
+            && import_graph_edge_source_changed(expected, actual)
+        {
+            return Some((index, expected, actual));
+        }
+    }
+    None
+}
+
+fn find_import_graph_target_change<'a>(
+    expected_imports: &'a [PackageLockfileImportEdge],
+    actual_imports: &'a [PackageLockfileImportEdge],
+) -> Option<(
+    usize,
+    &'a PackageLockfileImportEdge,
+    &'a PackageLockfileImportEdge,
+)> {
+    let actual_edges = import_graph_full_edge_keys(actual_imports);
+    let actual_by_source_import = actual_imports
+        .iter()
+        .map(|actual| (import_graph_source_import_key(actual), actual))
+        .collect::<BTreeMap<_, _>>();
+    for (index, expected) in expected_imports.iter().enumerate() {
+        if actual_edges.contains(&import_graph_full_edge_key(expected)) {
+            continue;
+        }
+        let key = import_graph_source_import_key(expected);
+        if let Some(actual) = actual_by_source_import.get(&key).copied()
+            && import_graph_edge_target_changed(expected, actual)
+        {
+            return Some((index, expected, actual));
+        }
+    }
+    None
+}
+
+type ImportGraphFullEdgeKey = (u32, PathBuf, String, String, u32, PathBuf, String);
+type ImportGraphImportTargetKey = (String, u32, PathBuf, String);
+type ImportGraphSourceImportKey = (u32, PathBuf, String, String);
+
+fn import_graph_full_edge_keys(
+    imports: &[PackageLockfileImportEdge],
+) -> BTreeSet<ImportGraphFullEdgeKey> {
+    imports.iter().map(import_graph_full_edge_key).collect()
+}
+
+fn import_graph_full_edge_key(import: &PackageLockfileImportEdge) -> ImportGraphFullEdgeKey {
+    (
+        import.source_library_id,
+        import.source_path.clone(),
+        import.source_module_path.clone(),
+        import.import_path.clone(),
+        import.target_library_id,
+        import.target_path.clone(),
+        import.target_module_path.clone(),
+    )
+}
+
+fn import_graph_import_target_key(
+    import: &PackageLockfileImportEdge,
+) -> ImportGraphImportTargetKey {
+    (
+        import.import_path.clone(),
+        import.target_library_id,
+        import.target_path.clone(),
+        import.target_module_path.clone(),
+    )
+}
+
+fn import_graph_source_import_key(
+    import: &PackageLockfileImportEdge,
+) -> ImportGraphSourceImportKey {
+    (
+        import.source_library_id,
+        import.source_path.clone(),
+        import.source_module_path.clone(),
+        import.import_path.clone(),
+    )
+}
+
+fn import_graph_edge_source_changed(
+    expected: &PackageLockfileImportEdge,
+    actual: &PackageLockfileImportEdge,
+) -> bool {
+    expected.source_library_id != actual.source_library_id
+        || expected.source_path != actual.source_path
+        || expected.source_module_path != actual.source_module_path
+}
+
+fn import_graph_edge_target_changed(
+    expected: &PackageLockfileImportEdge,
+    actual: &PackageLockfileImportEdge,
+) -> bool {
+    expected.target_library_id != actual.target_library_id
+        || expected.target_path != actual.target_path
+        || expected.target_module_path != actual.target_module_path
+}
+
+fn import_graph_changed_error(
+    edge_index: usize,
+    expected: &PackageLockfileImportEdge,
+    actual: &PackageLockfileImportEdge,
+) -> CompileError {
+    let reason = if expected.source_library_id == actual.source_library_id
+        && expected.source_path == actual.source_path
+        && expected.import_path != actual.import_path
+    {
+        format!(
+            "source import path changed from {} to {}",
+            expected.import_path, actual.import_path
+        )
+    } else if expected.source_library_id == actual.source_library_id
+        && expected.source_path == actual.source_path
+        && expected.import_path == actual.import_path
+        && (expected.target_library_id != actual.target_library_id
+            || expected.target_path != actual.target_path
+            || expected.target_module_path != actual.target_module_path)
+    {
+        format!(
+            "target changed for import {} from library {} {} module {} to library {} {} module {}",
+            expected.import_path,
+            expected.target_library_id,
+            expected.target_path.display(),
+            expected.target_module_path,
+            actual.target_library_id,
+            actual.target_path.display(),
+            actual.target_module_path
+        )
+    } else if expected.import_path == actual.import_path
+        && expected.target_library_id == actual.target_library_id
+        && expected.target_path == actual.target_path
+        && expected.target_module_path == actual.target_module_path
+        && (expected.source_library_id != actual.source_library_id
+            || expected.source_path != actual.source_path
+            || expected.source_module_path != actual.source_module_path)
+    {
+        format!(
+            "source changed for import {} from library {} {} module {} to library {} {} module {}",
+            expected.import_path,
+            expected.source_library_id,
+            expected.source_path.display(),
+            expected.source_module_path,
+            actual.source_library_id,
+            actual.source_path.display(),
+            actual.source_module_path
+        )
+    } else {
+        "source or target edge identity changed".to_string()
+    };
+    package_lockfile_error(format!(
+        "import graph changed at edge {edge_index}: {reason}; persisted edge was import {} from library {} {} module {} to library {} {} module {}, live source-root replay found import {} from library {} {} module {} to library {} {} module {}; regenerate the package lockfile from the package manifest",
+        expected.import_path,
+        expected.source_library_id,
+        expected.source_path.display(),
+        expected.source_module_path,
+        expected.target_library_id,
+        expected.target_path.display(),
+        expected.target_module_path,
+        actual.import_path,
+        actual.source_library_id,
+        actual.source_path.display(),
+        actual.source_module_path,
+        actual.target_library_id,
+        actual.target_path.display(),
+        actual.target_module_path
+    ))
 }
 
 impl PackageLockfileInputs {
@@ -1394,6 +1878,7 @@ impl PackageLockfileInputs {
         let mut seen = BTreeSet::new();
         let mut previous_file: Option<&PackageLockfileInputFile> = None;
         for file in &self.files {
+            validate_lockfile_replay_library_id("input identity file", file.library_id)?;
             validate_resolved_source_path("input file", &file.path)?;
             if let Some(previous_file) = previous_file {
                 if compare_input_file_identity(previous_file, file).is_gt() {
@@ -1407,6 +1892,12 @@ impl PackageLockfileInputs {
                 }
             }
             previous_file = Some(file);
+            if file.byte_len == 0 {
+                return Err(package_lockfile_error(format!(
+                    "input file {} byte length must be greater than zero; package source inputs require leading module metadata",
+                    file.path.display()
+                )));
+            }
             if file.digest.trim().is_empty() {
                 return Err(package_lockfile_error(format!(
                     "input file {} digest must not be empty",
@@ -1443,6 +1934,7 @@ impl PackageLockfileSourceIdentities {
         let mut seen_modules = BTreeMap::new();
         let mut previous_file: Option<&PackageLockfileSourceIdentityFile> = None;
         for file in &self.files {
+            validate_lockfile_replay_library_id("source identity file", file.library_id)?;
             validate_resolved_source_path("source identity file", &file.path)?;
             if let Some(previous_file) = previous_file {
                 if compare_source_identity_file_identity(previous_file, file).is_gt() {
@@ -1456,9 +1948,6 @@ impl PackageLockfileSourceIdentities {
                 }
             }
             previous_file = Some(file);
-            if let Some(relative_path) = &file.source_root_relative_path {
-                validate_source_root_relative_path("source identity relative path", relative_path)?;
-            }
             if !seen.insert((file.library_id, file.path.clone())) {
                 return Err(package_lockfile_error(format!(
                     "duplicate source identity file for library {} {}",
@@ -1466,8 +1955,24 @@ impl PackageLockfileSourceIdentities {
                     file.path.display()
                 )));
             }
+            if file.source_root_index.is_none() {
+                return Err(package_lockfile_error(format!(
+                    "source identity file {} in library {} is missing source-root index metadata",
+                    file.path.display(),
+                    file.library_id
+                )));
+            }
+            if let Some(relative_path) = &file.source_root_relative_path {
+                validate_source_root_relative_path("source identity relative path", relative_path)?;
+            } else {
+                return Err(package_lockfile_error(format!(
+                    "source identity file {} in library {} is missing source-root relative path metadata",
+                    file.path.display(),
+                    file.library_id
+                )));
+            }
             if let Some(module_path) = &file.module_path {
-                if !valid_lockfile_module_path(module_path) {
+                if !valid_module_path(module_path) {
                     return Err(package_lockfile_error(format!(
                         "source identity file {} has invalid module path {:?}",
                         file.path.display(),
@@ -1485,88 +1990,16 @@ impl PackageLockfileSourceIdentities {
                         file.path.display()
                     )));
                 }
-            }
-        }
-        Ok(())
-    }
-}
-
-impl PackageLockfileArtifacts {
-    fn from_files(mut files: Vec<PackageLockfileArtifact>) -> Result<Option<Self>, CompileError> {
-        if files.is_empty() {
-            return Ok(None);
-        }
-        files.sort_by(compare_artifact_identity);
-        let artifacts = Self {
-            digest_algorithm: PACKAGE_LOCKFILE_DIGEST_ALGORITHM.to_string(),
-            files,
-        };
-        artifacts.validate_shape()?;
-        Ok(Some(artifacts))
-    }
-
-    fn validate_shape(&self) -> Result<(), CompileError> {
-        if self.digest_algorithm != PACKAGE_LOCKFILE_DIGEST_ALGORITHM {
-            return Err(package_lockfile_error(format!(
-                "unsupported artifact digest algorithm {:?}; expected {PACKAGE_LOCKFILE_DIGEST_ALGORITHM:?}",
-                self.digest_algorithm
-            )));
-        }
-        if self.files.is_empty() {
-            return Err(package_lockfile_error(
-                "artifact identity must declare at least one produced file",
-            ));
-        }
-        let mut seen_identities = BTreeSet::new();
-        let mut seen_paths = BTreeSet::new();
-        let mut previous_artifact: Option<&PackageLockfileArtifact> = None;
-        for artifact in &self.files {
-            artifact.validate_shape()?;
-            if let Some(previous_artifact) = previous_artifact {
-                if compare_artifact_identity(previous_artifact, artifact).is_gt() {
-                    return Err(package_lockfile_error(format!(
-                        "artifact identity files must be sorted by target, kind, and canonical path; artifact {} kind {} path {} appears after artifact {} kind {} path {}; regenerate the package lockfile",
-                        artifact.target,
-                        artifact.kind,
-                        artifact.path.display(),
-                        previous_artifact.target,
-                        previous_artifact.kind,
-                        previous_artifact.path.display()
-                    )));
-                }
-            }
-            previous_artifact = Some(artifact);
-            if !seen_paths.insert(artifact.path.clone()) {
+            } else {
                 return Err(package_lockfile_error(format!(
-                    "duplicate artifact path {}; produced artifact paths must be unique across targets and kinds",
-                    artifact.path.display()
-                )));
-            }
-            if !seen_identities.insert((
-                artifact.target.clone(),
-                artifact.kind.clone(),
-                artifact.path.clone(),
-            )) {
-                return Err(package_lockfile_error(format!(
-                    "duplicate artifact file for target {} kind {} {}",
-                    artifact.target,
-                    artifact.kind,
-                    artifact.path.display()
+                    "source identity file {} in library {} is missing module path metadata",
+                    file.path.display(),
+                    file.library_id
                 )));
             }
         }
         Ok(())
     }
-}
-
-fn compare_artifact_identity(
-    left: &PackageLockfileArtifact,
-    right: &PackageLockfileArtifact,
-) -> std::cmp::Ordering {
-    left.target
-        .cmp(&right.target)
-        .then_with(|| left.kind.cmp(&right.kind))
-        .then_with(|| left.path.cmp(&right.path))
 }
 
 impl PackageLockfileDocument {
@@ -1611,11 +2044,8 @@ impl PackageLockfileDocument {
     }
 
     fn to_validated_lockfile(&self) -> Result<PackageLockfile, CompileError> {
-        if let Some(artifacts) = &self.artifacts {
-            artifacts.validate_shape()?;
-        }
         let mut lockfile = self.to_lockfile();
-        lockfile.validate()?;
+        lockfile.validate_shape()?;
         let import_graph = self.import_graph.as_ref().ok_or_else(|| {
             package_lockfile_error(
                 "missing import graph; regenerate the package lockfile from the package manifest",
@@ -1631,11 +2061,22 @@ impl PackageLockfileDocument {
                 "missing source identities; regenerate the package lockfile from the package manifest",
             )
         })?;
+        inputs.validate_shape()?;
+        source_identities.validate_shape()?;
+        import_graph.validate_shape()?;
+        lockfile.validate_existing_package_source_state()?;
+        lockfile.validate_persisted_input_identity_bytes(inputs)?;
         lockfile.validate_section_consistency(inputs, source_identities, import_graph)?;
-        lockfile.validate_artifact_source_collisions(inputs)?;
-        lockfile.validate_import_graph(import_graph)?;
+        if let Some(artifacts) = &self.artifacts {
+            artifacts.validate_shape()?;
+        }
+        lockfile.validate_import_graph_with_input_staleness(import_graph, inputs)?;
+        lockfile.validate_entry_input_identity(inputs)?;
+        lockfile.validate_entry_replay_metadata()?;
         lockfile.validate_source_identities(source_identities)?;
         lockfile.validate_inputs(inputs)?;
+        lockfile.validate_artifact_source_collisions(inputs)?;
+        lockfile.validate_artifacts()?;
         lockfile.replay_integrity = Some(PackageLockfileReplayIntegrity {
             inputs: inputs.clone(),
             source_identities: source_identities.clone(),
@@ -1643,215 +2084,6 @@ impl PackageLockfileDocument {
         });
         Ok(lockfile)
     }
-}
-
-impl PackageLockfileImportGraph {
-    fn validate_shape(&self) -> Result<(), CompileError> {
-        let mut seen_dependencies = BTreeSet::new();
-        let mut previous_dependency: Option<&SourcePackLibraryDependency> = None;
-        for dependency in &self.library_dependencies {
-            if dependency.library_id == dependency.depends_on_library_id {
-                return Err(package_lockfile_error(format!(
-                    "library {} depends on itself",
-                    dependency.library_id
-                )));
-            }
-            if dependency.library_id == PACKAGE_LOCKFILE_STDLIB_LIBRARY_ID
-                && dependency.depends_on_library_id == PACKAGE_LOCKFILE_USER_LIBRARY_ID
-            {
-                return Err(package_lockfile_error(format!(
-                    "package boundary: stdlib library {PACKAGE_LOCKFILE_STDLIB_LIBRARY_ID} may not depend on package/user library {PACKAGE_LOCKFILE_USER_LIBRARY_ID}"
-                )));
-            }
-            if !seen_dependencies.insert((dependency.library_id, dependency.depends_on_library_id))
-            {
-                return Err(package_lockfile_error(format!(
-                    "duplicate library dependency {} -> {}",
-                    dependency.library_id, dependency.depends_on_library_id
-                )));
-            }
-            if let Some(previous_dependency) = previous_dependency {
-                if (
-                    previous_dependency.library_id,
-                    previous_dependency.depends_on_library_id,
-                ) > (dependency.library_id, dependency.depends_on_library_id)
-                {
-                    return Err(package_lockfile_error(format!(
-                        "import graph library dependencies must be sorted by library id and dependency library id; dependency {} -> {} appears after {} -> {}; regenerate the package lockfile from the package manifest",
-                        dependency.library_id,
-                        dependency.depends_on_library_id,
-                        previous_dependency.library_id,
-                        previous_dependency.depends_on_library_id
-                    )));
-                }
-            }
-            previous_dependency = Some(dependency);
-        }
-
-        let allowed_cross_library_imports = self
-            .library_dependencies
-            .iter()
-            .map(|dependency| (dependency.library_id, dependency.depends_on_library_id))
-            .collect::<BTreeSet<_>>();
-        let mut seen_imports = BTreeSet::new();
-        let mut seen_source_import_targets = BTreeMap::new();
-        let mut cross_library_imports = BTreeSet::new();
-        let mut previous_import: Option<&PackageLockfileImportEdge> = None;
-        for (edge_index, import) in self.imports.iter().enumerate() {
-            validate_resolved_source_path("import graph source file", &import.source_path)?;
-            validate_resolved_source_path("import graph target file", &import.target_path)?;
-            if !valid_lockfile_import_path(&import.import_path) {
-                return Err(package_lockfile_error(format!(
-                    "invalid import graph path {:?}",
-                    import.import_path
-                )));
-            }
-            if !valid_lockfile_module_path(&import.source_module_path) {
-                return Err(package_lockfile_error(format!(
-                    "invalid import graph source module path {:?}",
-                    import.source_module_path
-                )));
-            }
-            if import.source_module_path == import.import_path {
-                return Err(package_lockfile_error(format!(
-                    "import graph semantic self-cycle: source module {} in library {} {} imports its own module path; package imports must resolve to a different module identity",
-                    import.source_module_path,
-                    import.source_library_id,
-                    import.source_path.display()
-                )));
-            }
-            if !valid_lockfile_module_path(&import.target_module_path) {
-                return Err(package_lockfile_error(format!(
-                    "invalid import graph target module path {:?}",
-                    import.target_module_path
-                )));
-            }
-            if import.target_module_path != import.import_path {
-                return Err(package_lockfile_error(format!(
-                    "import graph edge {edge_index} import path {} resolves to target module {}; package imports must resolve by declared module identity",
-                    import.import_path, import.target_module_path
-                )));
-            }
-            if import.source_library_id != import.target_library_id
-                && !allowed_cross_library_imports
-                    .contains(&(import.source_library_id, import.target_library_id))
-            {
-                if import.source_library_id == PACKAGE_LOCKFILE_STDLIB_LIBRARY_ID
-                    && import.target_library_id == PACKAGE_LOCKFILE_USER_LIBRARY_ID
-                {
-                    return Err(package_lockfile_error(format!(
-                        "package boundary: stdlib source {} imports user source-root module {}; stdlib sources may not import package/user roots (target {})",
-                        import.source_path.display(),
-                        import.import_path,
-                        import.target_path.display()
-                    )));
-                }
-                return Err(package_lockfile_error(format!(
-                    "import graph edge {edge_index} from library {} to library {} is not permitted by the library dependency graph",
-                    import.source_library_id, import.target_library_id
-                )));
-            }
-            if import.source_library_id == import.target_library_id
-                && import.source_path == import.target_path
-            {
-                return Err(package_lockfile_error(format!(
-                    "import graph self-cycle: source {} in library {} imports its own module {}; package imports must resolve to a different source file",
-                    import.source_path.display(),
-                    import.source_library_id,
-                    import.import_path
-                )));
-            }
-            if import.source_library_id != import.target_library_id {
-                cross_library_imports.insert((import.source_library_id, import.target_library_id));
-            }
-            let source_import_key = (
-                import.source_library_id,
-                import.source_path.clone(),
-                import.import_path.clone(),
-            );
-            let target_key = (import.target_library_id, import.target_path.clone());
-            if let Some(previous_target) = seen_source_import_targets.get(&source_import_key) {
-                if previous_target != &target_key {
-                    let (previous_library_id, previous_path) = previous_target;
-                    return Err(package_lockfile_error(format!(
-                        "ambiguous import graph edge {} from library {} {}; previous target library {} {}, new target library {} {}; package imports must resolve to one target per source import path",
-                        import.import_path,
-                        import.source_library_id,
-                        import.source_path.display(),
-                        previous_library_id,
-                        previous_path.display(),
-                        import.target_library_id,
-                        import.target_path.display()
-                    )));
-                }
-            } else {
-                seen_source_import_targets.insert(source_import_key, target_key);
-            }
-            if !seen_imports.insert(import.identity_key()) {
-                return Err(package_lockfile_error(format!(
-                    "duplicate import graph edge {} from library {} {} to library {} {}",
-                    import.import_path,
-                    import.source_library_id,
-                    import.source_path.display(),
-                    import.target_library_id,
-                    import.target_path.display()
-                )));
-            }
-            if let Some(previous_import) = previous_import {
-                if compare_import_edge_identity(previous_import, import).is_gt() {
-                    return Err(package_lockfile_error(format!(
-                        "import graph edges must be sorted by source library, source path, import path, target library, and target path; edge {} from library {} {} to library {} {} appears after edge {} from library {} {} to library {} {}; regenerate the package lockfile from the package manifest",
-                        import.import_path,
-                        import.source_library_id,
-                        import.source_path.display(),
-                        import.target_library_id,
-                        import.target_path.display(),
-                        previous_import.import_path,
-                        previous_import.source_library_id,
-                        previous_import.source_path.display(),
-                        previous_import.target_library_id,
-                        previous_import.target_path.display()
-                    )));
-                }
-            }
-            previous_import = Some(import);
-        }
-        for dependency in &self.library_dependencies {
-            if !cross_library_imports
-                .contains(&(dependency.library_id, dependency.depends_on_library_id))
-            {
-                return Err(package_lockfile_error(format!(
-                    "import graph library dependency {} -> {} has no matching cross-library import edge",
-                    dependency.library_id, dependency.depends_on_library_id
-                )));
-            }
-        }
-        Ok(())
-    }
-}
-
-impl PackageLockfileImportEdge {
-    fn identity_key(&self) -> (u32, PathBuf, String, u32, PathBuf) {
-        (
-            self.source_library_id,
-            self.source_path.clone(),
-            self.import_path.clone(),
-            self.target_library_id,
-            self.target_path.clone(),
-        )
-    }
-}
-
-fn compare_import_edge_identity(
-    left: &PackageLockfileImportEdge,
-    right: &PackageLockfileImportEdge,
-) -> std::cmp::Ordering {
-    left.source_library_id
-        .cmp(&right.source_library_id)
-        .then_with(|| left.source_path.cmp(&right.source_path))
-        .then_with(|| left.import_path.cmp(&right.import_path))
-        .then_with(|| left.target_library_id.cmp(&right.target_library_id))
-        .then_with(|| left.target_path.cmp(&right.target_path))
 }
 
 fn compare_input_file_identity(
@@ -1870,92 +2102,6 @@ fn compare_source_identity_file_identity(
     left.library_id
         .cmp(&right.library_id)
         .then_with(|| left.path.cmp(&right.path))
-}
-
-fn import_graph_edge_summary(imports: &[PackageLockfileImportEdge]) -> String {
-    if imports.is_empty() {
-        return "none".to_string();
-    }
-    let mut edges = imports
-        .iter()
-        .take(8)
-        .map(|edge| {
-            format!(
-                "{} from library {} {} to library {} {}",
-                edge.import_path,
-                edge.source_library_id,
-                edge.source_path.display(),
-                edge.target_library_id,
-                edge.target_path.display()
-            )
-        })
-        .collect::<Vec<_>>();
-    if imports.len() > edges.len() {
-        edges.push(format!("{} more", imports.len() - edges.len()));
-    }
-    edges.join("; ")
-}
-
-fn import_graph_reachable_files_from_entry(
-    entry_key: &(u32, PathBuf),
-    import_graph: &PackageLockfileImportGraph,
-) -> BTreeSet<(u32, PathBuf)> {
-    let mut edges_by_source = BTreeMap::<(u32, PathBuf), Vec<(u32, PathBuf)>>::new();
-    for import in &import_graph.imports {
-        edges_by_source
-            .entry((import.source_library_id, import.source_path.clone()))
-            .or_default()
-            .push((import.target_library_id, import.target_path.clone()));
-    }
-
-    let mut reachable = BTreeSet::new();
-    let mut pending = vec![entry_key.clone()];
-    while let Some(file_key) = pending.pop() {
-        if !reachable.insert(file_key.clone()) {
-            continue;
-        }
-        if let Some(targets) = edges_by_source.get(&file_key) {
-            pending.extend(
-                targets
-                    .iter()
-                    .filter(|target| !reachable.contains(*target))
-                    .cloned(),
-            );
-        }
-    }
-    reachable
-}
-
-fn validate_import_graph_module_endpoint(
-    edge_index: usize,
-    endpoint: &str,
-    library_id: u32,
-    path: &Path,
-    edge_module_path: &str,
-    source_identity_module_path: &str,
-    package_module_path: Option<&str>,
-    package: &str,
-) -> Result<(), CompileError> {
-    if edge_module_path == source_identity_module_path {
-        return Ok(());
-    }
-    if package_module_path == Some(edge_module_path) {
-        return Err(package_lockfile_error(format!(
-            "import graph edge {edge_index} {endpoint} module path {:?} matches package metadata {:?}, but source identity module is {:?} for library {} {}; package names are control-plane identity and must not replace GPU module declarations",
-            edge_module_path,
-            package,
-            source_identity_module_path,
-            library_id,
-            path.display()
-        )));
-    }
-    Err(package_lockfile_error(format!(
-        "import graph edge {edge_index} {endpoint} module path {:?} does not match source identity module {:?} for library {} {}",
-        edge_module_path,
-        source_identity_module_path,
-        library_id,
-        path.display()
-    )))
 }
 
 fn source_identity_module_paths_by_file(
@@ -2005,7 +2151,19 @@ fn valid_stable_content_digest(digest: &str) -> bool {
     let Some(hex) = digest.strip_prefix("fnv1a64:") else {
         return false;
     };
-    hex.len() == 16 && hex.bytes().all(|byte| byte.is_ascii_hexdigit())
+    hex.len() == 16
+        && hex
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+}
+
+fn validate_lockfile_replay_library_id(label: &str, library_id: u32) -> Result<(), CompileError> {
+    match library_id {
+        PACKAGE_LOCKFILE_STDLIB_LIBRARY_ID | PACKAGE_LOCKFILE_USER_LIBRARY_ID => Ok(()),
+        other => Err(package_lockfile_error(format!(
+            "{label} library {other} is unsupported; package lockfile replay metadata currently supports stdlib library {PACKAGE_LOCKFILE_STDLIB_LIBRARY_ID} and package/user library {PACKAGE_LOCKFILE_USER_LIBRARY_ID}"
+        ))),
+    }
 }
 
 fn validate_resolved_path(label: &str, path: &Path) -> Result<(), CompileError> {
@@ -2018,7 +2176,38 @@ fn validate_resolved_path(label: &str, path: &Path) -> Result<(), CompileError> 
             path.display()
         )));
     }
+    validate_normalized_resolved_path(label, path)?;
     validate_canonical_resolved_path_if_present(label, path)?;
+    Ok(())
+}
+
+fn validate_resolved_source_root_path(label: &str, path: &Path) -> Result<(), CompileError> {
+    validate_resolved_path(label, path)?;
+    if path.parent().is_none() {
+        return Err(package_lockfile_error(format!(
+            "{label} {} must not be the filesystem root; package lockfiles require a package-owned source directory so imports cannot resolve arbitrary absolute paths",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
+fn validate_normalized_resolved_path(label: &str, path: &Path) -> Result<(), CompileError> {
+    let has_non_normal_component = path.components().any(|component| {
+        matches!(
+            component,
+            std::path::Component::CurDir | std::path::Component::ParentDir
+        )
+    }) || path
+        .to_string_lossy()
+        .split(['/', '\\'])
+        .any(|component| component == "." || component == "..");
+    if has_non_normal_component {
+        return Err(package_lockfile_error(format!(
+            "{label} {} is not a canonical resolved path; remove current-directory and parent-directory components before writing package lockfile metadata",
+            path.display()
+        )));
+    }
     Ok(())
 }
 
@@ -2161,184 +2350,14 @@ fn canonicalize_import_root(label: &str, path: &Path) -> Result<PathBuf, Compile
     Ok(root)
 }
 
-fn leading_lockfile_module_path(
-    source: &str,
-    source_path: &Path,
-) -> Result<Option<String>, CompileError> {
-    let bytes = source.as_bytes();
-    let offset = skip_ws_and_comments(bytes, 0, source_path)?;
-    if !keyword_at(bytes, offset, b"module") {
-        return Ok(None);
-    }
-
-    let offset = offset + "module".len();
-    let (module_path, next_offset) =
-        parse_lockfile_path(source, offset, source_path, PackageLockfilePathKind::Module)?;
-    let next_offset = expect_semicolon(source, next_offset, source_path, "module")?;
-    ensure_no_additional_module_declaration(source, next_offset, source_path, &module_path)?;
-    Ok(Some(module_path))
-}
-
-fn leading_lockfile_import_paths(
-    source: &str,
-    source_path: &Path,
-) -> Result<Vec<String>, CompileError> {
-    let bytes = source.as_bytes();
-    let mut imports = Vec::new();
-    let mut offset = 0usize;
-
-    loop {
-        offset = skip_ws_and_comments(bytes, offset, source_path)?;
-        if keyword_at(bytes, offset, b"module") {
-            offset += "module".len();
-            let (_, next_offset) =
-                parse_lockfile_path(source, offset, source_path, PackageLockfilePathKind::Module)?;
-            offset = expect_semicolon(source, next_offset, source_path, "module")?;
-            continue;
-        }
-        if keyword_at(bytes, offset, b"import") {
-            let import_start = offset;
-            offset += "import".len();
-            offset = skip_ws_and_comments(bytes, offset, source_path)?;
-            if bytes.get(offset) == Some(&b'"') {
-                let quoted_end = skip_quoted_import_path(source, offset, source_path)?;
-                return Err(unsupported_lockfile_import_form_diagnostic(
-                    source,
-                    source_path,
-                    import_start,
-                    quoted_end.saturating_sub(import_start),
-                ));
-            }
-            let (path, next_offset) =
-                parse_lockfile_path(source, offset, source_path, PackageLockfilePathKind::Import)?;
-            offset = expect_semicolon(source, next_offset, source_path, "import")?;
-            imports.push(path);
-            continue;
-        }
-        reject_non_leading_lockfile_imports(source, offset, source_path)?;
-        return Ok(imports);
-    }
-}
-
-fn reject_non_leading_lockfile_imports(
-    source: &str,
-    offset: usize,
-    source_path: &Path,
-) -> Result<(), CompileError> {
-    let bytes = source.as_bytes();
-    let mut offset = offset;
-
-    while offset < bytes.len() {
-        if bytes.get(offset..offset + 2) == Some(b"//") {
-            offset += 2;
-            while bytes.get(offset).is_some_and(|byte| *byte != b'\n') {
-                offset += 1;
-            }
-            continue;
-        }
-        if bytes.get(offset..offset + 2) == Some(b"/*") {
-            let comment_start = offset;
-            offset += 2;
-            while offset + 1 < bytes.len() && bytes.get(offset..offset + 2) != Some(b"*/") {
-                offset += 1;
-            }
-            if offset + 1 >= bytes.len() {
-                return Err(unterminated_block_comment_error(source_path, comment_start));
-            }
-            offset += 2;
-            continue;
-        }
-        if bytes.get(offset) == Some(&b'"') {
-            offset = skip_string_literal(source, offset, source_path)?;
-            continue;
-        }
-        if bytes.get(offset) == Some(&b'\'') {
-            offset = skip_char_literal(source, offset, source_path)?;
-            continue;
-        }
-        if keyword_at_anywhere(bytes, offset, b"import") {
-            return Err(package_lockfile_error(format!(
-                "non-leading import declaration in {}; package lockfile import graphs require module-path imports before other items so persisted import edges stay complete",
-                source_path.display()
-            )));
-        }
-        offset += 1;
-    }
-
-    Ok(())
-}
-
-fn ensure_no_additional_module_declaration(
-    source: &str,
-    offset: usize,
-    source_path: &Path,
-    first_module_path: &str,
-) -> Result<(), CompileError> {
-    let bytes = source.as_bytes();
-    let mut offset = offset;
-    let mut still_leading_declarations = true;
-
-    loop {
-        offset = skip_ws_and_comments(bytes, offset, source_path)?;
-        if offset >= bytes.len() {
-            return Ok(());
-        }
-        if keyword_at_anywhere(bytes, offset, b"module") {
-            offset += "module".len();
-            let (module_path, _) =
-                parse_lockfile_path(source, offset, source_path, PackageLockfilePathKind::Module)?;
-            if still_leading_declarations {
-                return Err(package_lockfile_error(format!(
-                    "source identity file {} has multiple leading module declarations ({first_module_path} and {module_path}); package lockfiles require exactly one module declaration per source file",
-                    source_path.display()
-                )));
-            }
-            return Err(package_lockfile_error(format!(
-                "source identity file {} has non-leading module declaration {module_path} after leading module {first_module_path}; package lockfiles require exactly one module declaration per source file",
-                source_path.display()
-            )));
-        }
-        if still_leading_declarations && keyword_at(bytes, offset, b"import") {
-            let import_start = offset;
-            offset += "import".len();
-            offset = skip_ws_and_comments(bytes, offset, source_path)?;
-            if bytes.get(offset) == Some(&b'"') {
-                let quoted_end = skip_quoted_import_path(source, offset, source_path)?;
-                return Err(unsupported_lockfile_import_form_diagnostic(
-                    source,
-                    source_path,
-                    import_start,
-                    quoted_end.saturating_sub(import_start),
-                ));
-            } else {
-                let (_, next_offset) = parse_lockfile_path(
-                    source,
-                    offset,
-                    source_path,
-                    PackageLockfilePathKind::Import,
-                )?;
-                offset = next_offset;
-            }
-            offset = expect_semicolon(source, offset, source_path, "import")?;
-            continue;
-        }
-        still_leading_declarations = false;
-        if bytes.get(offset) == Some(&b'"') {
-            offset = skip_string_literal(source, offset, source_path)?;
-        } else if bytes.get(offset) == Some(&b'\'') {
-            offset = skip_char_literal(source, offset, source_path)?;
-        } else {
-            offset += 1;
-        }
-    }
-}
-
 fn resolve_lockfile_import(
-    import_path: &str,
+    import: &LeadingImportPath,
     roots: &[PackageLockfileImportSearchRoot],
     source_library_id: u32,
     source_path: &Path,
+    source: &str,
 ) -> Result<PackageLockfileResolvedImport, CompileError> {
+    let import_path = import.path.as_str();
     let mut searched_paths = Vec::with_capacity(roots.len());
     if source_library_id == PACKAGE_LOCKFILE_STDLIB_LIBRARY_ID {
         let mut stdlib_matches = collect_lockfile_import_matches(
@@ -2380,10 +2399,12 @@ fn resolve_lockfile_import(
             .map(|path| path.display().to_string())
             .collect::<Vec<_>>()
             .join("; ");
-        return Err(package_lockfile_error(format!(
-            "import graph missing source-root module {import_path} from {}; searched {searched}",
-            source_path.display()
-        )));
+        return Err(missing_lockfile_import_diagnostic(
+            source,
+            source_path,
+            import,
+            &searched,
+        ));
     }
 
     let user_matches = collect_lockfile_import_matches(
@@ -2420,10 +2441,12 @@ fn resolve_lockfile_import(
                 .map(|path| path.display().to_string())
                 .collect::<Vec<_>>()
                 .join("; ");
-            Err(package_lockfile_error(format!(
-                "import graph missing source-root module {import_path} from {}; searched {searched}",
-                source_path.display()
-            )))
+            Err(missing_lockfile_import_diagnostic(
+                source,
+                source_path,
+                import,
+                &searched,
+            ))
         }
         1 => Ok(matches.remove(0)),
         _ => {
@@ -2434,6 +2457,28 @@ fn resolve_lockfile_import(
             )))
         }
     }
+}
+
+fn missing_lockfile_import_diagnostic(
+    source: &str,
+    source_path: &Path,
+    import: &LeadingImportPath,
+    searched: &str,
+) -> CompileError {
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0001", format!("missing source-root module {}", import.path))
+            .with_primary_label(diagnostic_label_from_source_span(
+                source_path,
+                source,
+                import.start,
+                import.len.max("import".len()),
+                "imported here",
+            ))
+            .with_note(format!("package replay searched {searched}"))
+            .with_note(
+                "package names and lockfile roots are control-plane metadata; provide a source-root .lani file whose leading module declaration matches the import path",
+            ),
+    )
 }
 
 fn collect_lockfile_import_matches<'a>(
@@ -2492,434 +2537,20 @@ fn lockfile_import_source_path(source_root: &Path, import_path: &str) -> PathBuf
     path
 }
 
-fn parse_lockfile_path(
-    source: &str,
-    offset: usize,
-    source_path: &Path,
-    kind: PackageLockfilePathKind,
-) -> Result<(String, usize), CompileError> {
-    let bytes = source.as_bytes();
-    let mut offset = skip_ws_and_comments(bytes, offset, source_path)?;
-    let mut segments = Vec::new();
-
-    loop {
-        let segment_start = offset;
-        offset = parse_ident(bytes, offset).ok_or_else(|| {
-            package_lockfile_error(format!(
-                "import graph expected identifier in {} path at {} byte {segment_start}",
-                kind.label(),
-                source_path.display()
-            ))
-        })?;
-        segments.push(&source[segment_start..offset]);
-        if segments.len() > PACKAGE_MODULE_PATH_SEGMENT_LIMIT {
-            return Err(package_lockfile_error(format!(
-                "package lockfile supports at most {PACKAGE_MODULE_PATH_SEGMENT_LIMIT} path segments in {} path at {} byte {segment_start}; deeper module identities are not part of the current GPU resolver slice",
-                kind.label(),
-                source_path.display()
-            )));
-        }
-        offset = skip_ws_and_comments(bytes, offset, source_path)?;
-        if bytes.get(offset..offset + 2) != Some(b"::") {
-            break;
-        }
-        offset += 2;
-        offset = skip_ws_and_comments(bytes, offset, source_path)?;
-    }
-
-    Ok((segments.join("::"), offset))
-}
-
-fn skip_quoted_import_path(
-    source: &str,
-    offset: usize,
-    source_path: &Path,
-) -> Result<usize, CompileError> {
-    skip_string_literal(source, offset, source_path)
-}
-
-fn unsupported_lockfile_import_form_diagnostic(
-    source: &str,
-    source_path: &Path,
-    start: usize,
-    len: usize,
-) -> CompileError {
-    CompileError::Diagnostic(
-        Diagnostic::error("LNC0011", "unsupported import form")
-            .with_primary_label(diagnostic_label_from_source_span(
-                source_path,
-                source,
-                start,
-                len,
-                "package lockfiles require module-path imports here",
-            ))
-            .with_note(
-                "package lockfile import graphs record module-path imports such as `import app::module;`",
-            )
-            .with_note(
-                "quoted imports are unsupported in this edition and are rejected instead of being persisted as incomplete package metadata",
-            ),
-    )
-}
-
-fn skip_string_literal(
-    source: &str,
-    offset: usize,
-    source_path: &Path,
-) -> Result<usize, CompileError> {
-    skip_quoted_literal(source, offset, source_path, b'"', "string literal")
-}
-
-fn skip_char_literal(
-    source: &str,
-    offset: usize,
-    source_path: &Path,
-) -> Result<usize, CompileError> {
-    skip_quoted_literal(source, offset, source_path, b'\'', "character literal")
-}
-
-fn skip_quoted_literal(
-    source: &str,
-    offset: usize,
-    source_path: &Path,
-    quote: u8,
-    label: &str,
-) -> Result<usize, CompileError> {
-    let bytes = source.as_bytes();
-    let literal_start = offset;
-    let mut offset = offset + 1;
-    while let Some(byte) = bytes.get(offset) {
-        if *byte == b'\\' {
-            offset = (offset + 2).min(bytes.len());
-            continue;
-        }
-        if *byte == b'\n' {
-            return Err(malformed_literal_error(source_path, literal_start, label));
-        }
-        if *byte == quote {
-            return Ok(offset + 1);
-        }
-        offset += 1;
-    }
-    Err(malformed_literal_error(source_path, literal_start, label))
-}
-
-fn malformed_literal_error(source_path: &Path, offset: usize, label: &str) -> CompileError {
-    package_lockfile_error(format!(
-        "malformed {label} in {} at byte {offset}; package source-root replay must not skip malformed source while discovering module/import metadata",
-        source_path.display()
-    ))
-}
-
-fn expect_semicolon(
-    source: &str,
-    offset: usize,
-    source_path: &Path,
-    context: &str,
-) -> Result<usize, CompileError> {
-    let bytes = source.as_bytes();
-    let offset = skip_ws_and_comments(bytes, offset, source_path)?;
-    if bytes.get(offset) == Some(&b';') {
-        return Ok(offset + 1);
-    }
-    Err(package_lockfile_error(format!(
-        "import graph expected ';' after {context} path at {} byte {offset}",
-        source_path.display()
-    )))
-}
-
-fn skip_ws_and_comments(
-    bytes: &[u8],
-    mut offset: usize,
-    source_path: &Path,
-) -> Result<usize, CompileError> {
-    loop {
-        while bytes
-            .get(offset)
-            .is_some_and(|byte| byte.is_ascii_whitespace())
-        {
-            offset += 1;
-        }
-        if bytes.get(offset..offset + 2) == Some(b"//") {
-            offset += 2;
-            while bytes.get(offset).is_some_and(|byte| *byte != b'\n') {
-                offset += 1;
-            }
-            continue;
-        }
-        if bytes.get(offset..offset + 2) == Some(b"/*") {
-            let comment_start = offset;
-            offset += 2;
-            while offset + 1 < bytes.len() && bytes.get(offset..offset + 2) != Some(b"*/") {
-                offset += 1;
-            }
-            if offset + 1 >= bytes.len() {
-                return Err(unterminated_block_comment_error(source_path, comment_start));
-            }
-            offset += 2;
-            continue;
-        }
-        return Ok(offset);
-    }
-}
-
-fn unterminated_block_comment_error(source_path: &Path, offset: usize) -> CompileError {
-    package_lockfile_error(format!(
-        "unterminated block comment in {} at byte {offset}; package source-root replay must not skip malformed source while discovering module/import metadata",
-        source_path.display()
-    ))
-}
-
-fn keyword_at(bytes: &[u8], offset: usize, keyword: &[u8]) -> bool {
-    bytes.get(offset..offset + keyword.len()) == Some(keyword)
-        && bytes
-            .get(offset + keyword.len())
-            .is_none_or(|byte| !is_ident_continue(*byte))
-}
-
-fn keyword_at_anywhere(bytes: &[u8], offset: usize, keyword: &[u8]) -> bool {
-    keyword_at(bytes, offset, keyword)
-        && offset
-            .checked_sub(1)
-            .and_then(|previous| bytes.get(previous))
-            .is_none_or(|byte| !is_ident_continue(*byte))
-}
-
-fn parse_ident(bytes: &[u8], offset: usize) -> Option<usize> {
-    let first = *bytes.get(offset)?;
-    if !is_ident_start(first) {
-        return None;
-    }
-    let mut end = offset + 1;
-    while bytes.get(end).is_some_and(|byte| is_ident_continue(*byte)) {
-        end += 1;
-    }
-    Some(end)
-}
-
-fn is_ident_start(byte: u8) -> bool {
-    byte == b'_' || byte.is_ascii_alphabetic()
-}
-
-fn is_ident_continue(byte: u8) -> bool {
-    is_ident_start(byte) || byte.is_ascii_digit()
-}
-
-fn valid_lockfile_import_path(path: &str) -> bool {
-    let mut count = 0usize;
-    for segment in path.split("::") {
-        count += 1;
-        if count > PACKAGE_MODULE_PATH_SEGMENT_LIMIT || !valid_lockfile_ident(segment) {
-            return false;
-        }
-    }
-    count != 0
-}
-
-fn valid_lockfile_module_path(path: &str) -> bool {
-    let mut count = 0usize;
-    for segment in path.split("::") {
-        count += 1;
-        if count > PACKAGE_MODULE_PATH_SEGMENT_LIMIT || !valid_lockfile_ident(segment) {
-            return false;
-        }
-    }
-    count != 0
-}
-
-fn package_name_module_path(package: &str) -> Option<String> {
-    let segments = package.split('.').collect::<Vec<_>>();
-    if segments.is_empty()
-        || segments.len() > PACKAGE_MODULE_PATH_SEGMENT_LIMIT
-        || !segments.iter().all(|segment| valid_lockfile_ident(segment))
-    {
-        return None;
-    }
-    Some(segments.join("::"))
-}
-
-fn valid_lockfile_ident(segment: &str) -> bool {
-    let Some(first) = segment.bytes().next() else {
-        return false;
-    };
-    is_ident_start(first) && segment.bytes().skip(1).all(is_ident_continue)
-}
-
 fn valid_lockfile_label(label: &str) -> bool {
-    !label.is_empty()
-        && label
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':'))
+    let bytes = label.as_bytes();
+    !bytes.is_empty()
+        && bytes
+            .first()
+            .is_some_and(|byte| byte.is_ascii_alphanumeric())
+        && bytes
+            .last()
+            .is_some_and(|byte| byte.is_ascii_alphanumeric())
+        && bytes
+            .iter()
+            .all(|&byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':'))
 }
 
 fn package_lockfile_error(message: impl Into<String>) -> CompileError {
     CompileError::GpuFrontend(format!("package lockfile: {}", message.into()))
-}
-
-#[cfg(test)]
-mod tests {
-    use std::{
-        fs,
-        path::{Path, PathBuf},
-        sync::atomic::{AtomicU64, Ordering},
-        time::{SystemTime, UNIX_EPOCH},
-    };
-
-    use super::*;
-
-    static TEMP_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-    struct TempPackageRoot {
-        path: PathBuf,
-    }
-
-    impl TempPackageRoot {
-        fn new(stem: &str) -> Self {
-            let nonce = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("system time should be after unix epoch")
-                .as_nanos();
-            let path = std::env::temp_dir().join(format!(
-                "laniusc_package_lock_{stem}_{}_{}_{}",
-                std::process::id(),
-                TEMP_DIR_COUNTER.fetch_add(1, Ordering::Relaxed),
-                nonce
-            ));
-            fs::create_dir_all(&path).expect("create package lock test root");
-            Self { path }
-        }
-
-        fn path(&self) -> &Path {
-            &self.path
-        }
-    }
-
-    impl Drop for TempPackageRoot {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.path);
-        }
-    }
-
-    #[test]
-    fn package_lockfile_serializes_artifacts_in_canonical_identity_order() {
-        let root = TempPackageRoot::new("artifact_order_serialize");
-        let lockfile = lockfile_with_out_of_order_artifacts(root.path());
-
-        let document =
-            serde_json::to_value(&lockfile).expect("serialize lockfile with artifact identities");
-        let artifact_files = document
-            .get("artifacts")
-            .and_then(|artifacts| artifacts.get("files"))
-            .and_then(serde_json::Value::as_array)
-            .expect("serialized lockfile should include artifact identity files");
-        let artifact_kinds = artifact_files
-            .iter()
-            .map(|artifact| artifact.get("kind").and_then(serde_json::Value::as_str))
-            .collect::<Vec<_>>();
-        assert_eq!(
-            artifact_kinds,
-            vec![Some("a-final"), Some("z-final")],
-            "public package lockfile serialization should canonicalize artifact identity order"
-        );
-
-        let roundtrip = serde_json::from_value::<PackageLockfile>(document)
-            .expect("canonically serialized artifact identities should deserialize");
-        assert_eq!(
-            roundtrip
-                .artifacts
-                .iter()
-                .map(|artifact| artifact.kind.as_str())
-                .collect::<Vec<_>>(),
-            vec!["a-final", "z-final"],
-            "parsed package lockfiles should retain canonical artifact identity order"
-        );
-    }
-
-    #[test]
-    fn package_lockfile_rejects_persisted_artifacts_outside_canonical_identity_order() {
-        let root = TempPackageRoot::new("artifact_order_parse");
-        let lockfile = lockfile_with_out_of_order_artifacts(root.path());
-
-        let mut document =
-            serde_json::to_value(&lockfile).expect("serialize lockfile with artifact identities");
-        let artifact_files = document
-            .get_mut("artifacts")
-            .and_then(|artifacts| artifacts.get_mut("files"))
-            .and_then(serde_json::Value::as_array_mut)
-            .expect("serialized lockfile should include mutable artifact identity files");
-        assert_eq!(
-            artifact_files
-                .iter()
-                .map(|artifact| artifact.get("kind").and_then(serde_json::Value::as_str))
-                .collect::<Vec<_>>(),
-            vec![Some("a-final"), Some("z-final")],
-            "fixture should start from canonical artifact order"
-        );
-        artifact_files.swap(0, 1);
-
-        let tampered_lockfile =
-            serde_json::to_string_pretty(&document).expect("serialize tampered package lockfile");
-        let err = PackageLockfile::parse_json(&tampered_lockfile)
-            .expect_err("persisted artifact identities must already be canonical");
-        let message = format!("{err:?}");
-        assert!(
-            message.contains("artifact identity files must be sorted")
-                && message.contains("target")
-                && message.contains("kind")
-                && message.contains("canonical path"),
-            "expected canonical artifact order error, got {message}"
-        );
-    }
-
-    fn lockfile_with_out_of_order_artifacts(root: &Path) -> PackageLockfile {
-        let source_root = root.join("src");
-        let app_root = source_root.join("app");
-        fs::create_dir_all(&app_root).expect("create package app source root");
-        let entry_path = app_root.join("main.lani");
-        fs::write(
-            &entry_path,
-            r#"
-module app::main;
-
-fn main() {
-    return 0;
-}
-"#,
-        )
-        .expect("write package entry source");
-
-        let artifact_root = root.join("target");
-        fs::create_dir_all(&artifact_root).expect("create package artifact root");
-        let alpha_artifact_path = artifact_root.join("alpha.wasm");
-        let zeta_artifact_path = artifact_root.join("zeta.wasm");
-        fs::write(&alpha_artifact_path, b"\0asm\x01\0\0\0alpha")
-            .expect("write alpha package artifact");
-        fs::write(&zeta_artifact_path, b"\0asm\x01\0\0\0zeta")
-            .expect("write zeta package artifact");
-
-        PackageLockfile {
-            version: PACKAGE_LOCKFILE_VERSION,
-            package: "artifact-order".to_string(),
-            language_edition: PACKAGE_LOCKFILE_LANGUAGE_EDITION.to_string(),
-            compiler_version: PACKAGE_LOCKFILE_COMPILER_VERSION.to_string(),
-            roots: vec![fs::canonicalize(&source_root).expect("canonicalize source root")],
-            stdlib_root: None,
-            entry: fs::canonicalize(&entry_path).expect("canonicalize package entry"),
-            artifacts: vec![
-                PackageLockfileArtifact::from_existing_file(
-                    "wasm32-unknown-unknown",
-                    "z-final",
-                    &zeta_artifact_path,
-                )
-                .expect("record zeta artifact identity"),
-                PackageLockfileArtifact::from_existing_file(
-                    "wasm32-unknown-unknown",
-                    "a-final",
-                    &alpha_artifact_path,
-                )
-                .expect("record alpha artifact identity"),
-            ],
-            replay_integrity: None,
-        }
-    }
 }

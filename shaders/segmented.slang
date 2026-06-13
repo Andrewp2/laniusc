@@ -1,92 +1,13 @@
 import prefix_scan;
-import scatter;
-
-public interface ISegmentRowPredicate
-{
-    static bool keep(uint row);
-}
-
-public interface ISegmentScatterEmitter<TContext>
-{
-    static bool keep(uint row);
-    static void store(uint dst, uint row, uint local_i, TContext context);
-}
-
-public struct SegmentScatterResult
-{
-    public uint matched;
-    public uint stored;
-    public uint first_oob_dst;
-}
-
-public SegmentScatterResult segment_scatter_result(
-    uint matched,
-    uint stored,
-    uint first_oob_dst)
-{
-    SegmentScatterResult result;
-    result.matched = matched;
-    result.stored = stored;
-    result.first_oob_dst = first_oob_dst;
-    return result;
-}
 
 public uint segment_length(uint begin, uint end)
 {
     return end > begin ? end - begin : 0u;
 }
 
-public uint count_segment_rows_if<TPredicate: ISegmentRowPredicate>(uint begin, uint end)
-{
-    uint count = 0u;
-    [loop]
-    for (uint row = begin; row < end; row += 1u)
-    {
-        if (TPredicate.keep(row))
-            count += 1u;
-    }
-    return count;
-}
-
 public bool segment_has_rows(uint begin, uint end)
 {
     return end > begin;
-}
-
-public SegmentScatterResult scatter_segment_rows_if<
-    TContext,
-    TEmitter: ISegmentScatterEmitter<TContext>>(
-    uint begin,
-    uint end,
-    uint dst_prefix,
-    uint capacity,
-    TContext context,
-    uint invalid)
-{
-    uint matched = 0u;
-    uint stored = 0u;
-    uint first_oob_dst = invalid;
-
-    [loop]
-    for (uint row = begin; row < end; row += 1u)
-    {
-        if (!TEmitter.keep(row))
-            continue;
-
-        uint dst = segment_item_dst(dst_prefix, matched);
-        matched += 1u;
-        if (!scatter_dst_in_bounds(dst, capacity))
-        {
-            if (first_oob_dst == invalid)
-                first_oob_dst = dst;
-            continue;
-        }
-
-        TEmitter.store(dst, row, matched - 1u, context);
-        stored += 1u;
-    }
-
-    return segment_scatter_result(matched, stored, first_oob_dst);
 }
 
 public uint segment_head_flag(bool starts_segment)

@@ -96,6 +96,46 @@ fn main() {
 }
 
 #[test]
+fn formatter_preserves_statement_trailing_line_comments() {
+    let source = "fn main(){let value:i32=1;// keep attached\nreturn value;// return note\n}";
+
+    let formatted = format_source(source);
+
+    assert_eq!(
+        formatted,
+        "\
+fn main() {
+    let value: i32 = 1; // keep attached
+    return value; // return note
+}
+"
+    );
+    assert_eq!(format_source(&formatted), formatted);
+}
+
+#[test]
+fn formatter_preserves_top_level_comments_around_module_and_imports() {
+    let source = "/* package docs */module app::main;/* dependency docs */import core::i32;/* entry docs */fn main(){return core::i32::abs(-1);}";
+
+    let formatted = format_source(source);
+
+    assert_eq!(
+        formatted,
+        "\
+/* package docs */
+module app::main;
+/* dependency docs */
+import core::i32;
+/* entry docs */
+fn main() {
+    return core::i32::abs(-1);
+}
+"
+    );
+    assert_eq!(format_source(&formatted), formatted);
+}
+
+#[test]
 fn formatter_distinguishes_unary_and_binary_minus() {
     let source =
         "fn main(){let diff:i32=10-3;let neg:i32=-diff;let both:i32=diff- -neg;return-neg;}";
@@ -156,6 +196,27 @@ where
     T: Rel<U>
 {
     return left;
+}
+"
+    );
+    assert_eq!(format_source(&formatted), formatted);
+}
+
+#[test]
+fn formatter_keeps_generic_where_arguments_inline_inside_blocks() {
+    let source =
+        "trait Rel<T,U,V>{pub fn related(left:T,right:U)->bool where T:Pair<U,V>, U:Eq<U>;}";
+
+    let formatted = format_source(source);
+
+    assert_eq!(
+        formatted,
+        "\
+trait Rel<T, U, V> {
+    pub fn related(left: T, right: U) -> bool
+    where
+        T: Pair<U, V>,
+        U: Eq<U>;
 }
 "
     );

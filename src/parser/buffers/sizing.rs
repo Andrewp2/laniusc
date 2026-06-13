@@ -1,8 +1,8 @@
 use crate::parser::tables::PrecomputedParseTables;
 
 pub(super) const LL1_BLOCK_SIZE: u32 = 8192;
-pub(super) const LL1_BLOCK_STACK_CAPACITY: u32 = 2048;
 pub(super) const LL1_BLOCK_EMIT_STRIDE: u32 = 65_536;
+pub(super) const LL1_SEED_PLAN_STATUS_WORDS: usize = 8;
 
 pub(super) fn parser_table_uses_ll1_tree_stream(tables: &PrecomputedParseTables) -> bool {
     // The live parser follows Pareas/the Parallel LL paper: adjacent token-pair

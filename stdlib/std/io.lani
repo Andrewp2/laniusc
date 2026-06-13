@@ -8,11 +8,14 @@ pub type StdioCapability = bool;
 pub type StdioRuntimeAbiVersion = u32;
 pub type StdioServiceId = u32;
 pub type StdioServiceStatus = u32;
+pub type StdioOperationResult = i32;
 
 pub const STDIO_RUNTIME_ABI_VERSION: StdioRuntimeAbiVersion = 1;
 pub const STDIO_SERVICE_ID: StdioServiceId = 3;
 pub const STDIO_SERVICE_STATUS_UNAVAILABLE: StdioServiceStatus = 1;
 pub const STDIO_HAS_RUNTIME_BINDING: StdioCapability = false;
+pub const STDIO_OPERATION_OK: StdioOperationResult = 0;
+pub const STDIO_OPERATION_UNAVAILABLE: StdioOperationResult = -1;
 
 pub fn stdio_runtime_abi_version() -> StdioRuntimeAbiVersion {
     return STDIO_RUNTIME_ABI_VERSION;
@@ -42,6 +45,34 @@ pub fn stdio_is_blocked() -> StdioCapability {
     return !stdio_is_available();
 }
 
+pub fn stdio_is_known_but_unbound() -> StdioCapability {
+    return stdio_service_is_known() && stdio_is_blocked();
+}
+
+pub fn stdio_operation_ok() -> StdioOperationResult {
+    return STDIO_OPERATION_OK;
+}
+
+pub fn stdio_operation_unavailable() -> StdioOperationResult {
+    return STDIO_OPERATION_UNAVAILABLE;
+}
+
+pub fn stdio_operation_succeeded(result: StdioOperationResult) -> StdioCapability {
+    return result >= 0;
+}
+
+pub fn stdio_operation_failed(result: StdioOperationResult) -> StdioCapability {
+    return result < 0;
+}
+
+pub fn stdio_operation_is_unavailable(result: StdioOperationResult) -> StdioCapability {
+    return result == STDIO_OPERATION_UNAVAILABLE;
+}
+
+pub fn stdio_operation_is_fail_closed(result: StdioOperationResult) -> StdioCapability {
+    return stdio_is_known_but_unbound() && stdio_operation_is_unavailable(result);
+}
+
 pub fn stdio_requires_runtime_binding() -> StdioCapability {
     return !STDIO_HAS_RUNTIME_BINDING;
 }
@@ -50,12 +81,48 @@ pub fn stdio_host_abi_is_contract_only() -> StdioCapability {
     return stdio_requires_runtime_binding();
 }
 
-pub fn write_stdout_is_executable() -> StdioCapability {
+pub fn stdio_output_api_is_executable() -> StdioCapability {
     return STDIO_HAS_RUNTIME_BINDING;
+}
+
+pub fn stdio_output_api_is_blocked() -> StdioCapability {
+    return !stdio_output_api_is_executable();
+}
+
+pub fn stdio_output_api_is_known_but_unbound() -> StdioCapability {
+    return stdio_service_is_known() && stdio_output_api_is_blocked();
+}
+
+pub fn stdio_output_api_requires_runtime_binding() -> StdioCapability {
+    return !stdio_output_api_is_executable();
+}
+
+pub fn stdio_input_api_is_executable() -> StdioCapability {
+    return STDIO_HAS_RUNTIME_BINDING;
+}
+
+pub fn stdio_input_api_is_blocked() -> StdioCapability {
+    return !stdio_input_api_is_executable();
+}
+
+pub fn stdio_input_api_is_known_but_unbound() -> StdioCapability {
+    return stdio_service_is_known() && stdio_input_api_is_blocked();
+}
+
+pub fn stdio_input_api_requires_runtime_binding() -> StdioCapability {
+    return !stdio_input_api_is_executable();
+}
+
+pub fn write_stdout_is_executable() -> StdioCapability {
+    return stdio_output_api_is_executable();
 }
 
 pub fn write_stdout_is_blocked() -> StdioCapability {
     return !write_stdout_is_executable();
+}
+
+pub fn write_stdout_is_known_but_unbound() -> StdioCapability {
+    return stdio_service_is_known() && write_stdout_is_blocked();
 }
 
 pub fn write_stdout_requires_runtime_binding() -> StdioCapability {
@@ -63,11 +130,15 @@ pub fn write_stdout_requires_runtime_binding() -> StdioCapability {
 }
 
 pub fn write_stderr_is_executable() -> StdioCapability {
-    return STDIO_HAS_RUNTIME_BINDING;
+    return stdio_output_api_is_executable();
 }
 
 pub fn write_stderr_is_blocked() -> StdioCapability {
     return !write_stderr_is_executable();
+}
+
+pub fn write_stderr_is_known_but_unbound() -> StdioCapability {
+    return stdio_service_is_known() && write_stderr_is_blocked();
 }
 
 pub fn write_stderr_requires_runtime_binding() -> StdioCapability {
@@ -75,11 +146,15 @@ pub fn write_stderr_requires_runtime_binding() -> StdioCapability {
 }
 
 pub fn read_stdin_is_executable() -> StdioCapability {
-    return STDIO_HAS_RUNTIME_BINDING;
+    return stdio_input_api_is_executable();
 }
 
 pub fn read_stdin_is_blocked() -> StdioCapability {
     return !read_stdin_is_executable();
+}
+
+pub fn read_stdin_is_known_but_unbound() -> StdioCapability {
+    return stdio_service_is_known() && read_stdin_is_blocked();
 }
 
 pub fn read_stdin_requires_runtime_binding() -> StdioCapability {
@@ -87,11 +162,15 @@ pub fn read_stdin_requires_runtime_binding() -> StdioCapability {
 }
 
 pub fn flush_stdout_is_executable() -> StdioCapability {
-    return STDIO_HAS_RUNTIME_BINDING;
+    return stdio_output_api_is_executable();
 }
 
 pub fn flush_stdout_is_blocked() -> StdioCapability {
     return !flush_stdout_is_executable();
+}
+
+pub fn flush_stdout_is_known_but_unbound() -> StdioCapability {
+    return stdio_service_is_known() && flush_stdout_is_blocked();
 }
 
 pub fn flush_stdout_requires_runtime_binding() -> StdioCapability {
@@ -99,11 +178,15 @@ pub fn flush_stdout_requires_runtime_binding() -> StdioCapability {
 }
 
 pub fn flush_stderr_is_executable() -> StdioCapability {
-    return STDIO_HAS_RUNTIME_BINDING;
+    return stdio_output_api_is_executable();
 }
 
 pub fn flush_stderr_is_blocked() -> StdioCapability {
     return !flush_stderr_is_executable();
+}
+
+pub fn flush_stderr_is_known_but_unbound() -> StdioCapability {
+    return stdio_service_is_known() && flush_stderr_is_blocked();
 }
 
 pub fn flush_stderr_requires_runtime_binding() -> StdioCapability {
@@ -111,25 +194,29 @@ pub fn flush_stderr_requires_runtime_binding() -> StdioCapability {
 }
 
 pub fn print_i32_is_executable() -> StdioCapability {
-    return STDIO_HAS_RUNTIME_BINDING;
+    return stdio_output_api_is_executable();
 }
 
 pub fn print_i32_is_blocked() -> StdioCapability {
     return !print_i32_is_executable();
 }
 
+pub fn print_i32_is_known_but_unbound() -> StdioCapability {
+    return stdio_service_is_known() && print_i32_is_blocked();
+}
+
 pub fn print_i32_requires_runtime_binding() -> StdioCapability {
     return !print_i32_is_executable();
 }
 
-pub extern "lanius_std" fn write_stdout(ptr: u32, len: usize) -> i32;
+pub extern "lanius_std" fn write_stdout(ptr: u32, len: usize) -> StdioOperationResult;
 
-pub extern "lanius_std" fn write_stderr(ptr: u32, len: usize) -> i32;
+pub extern "lanius_std" fn write_stderr(ptr: u32, len: usize) -> StdioOperationResult;
 
-pub extern "lanius_std" fn read_stdin(ptr: u32, len: usize) -> i32;
+pub extern "lanius_std" fn read_stdin(ptr: u32, len: usize) -> StdioOperationResult;
 
-pub extern "lanius_std" fn flush_stdout() -> i32;
+pub extern "lanius_std" fn flush_stdout() -> StdioOperationResult;
 
-pub extern "lanius_std" fn flush_stderr() -> i32;
+pub extern "lanius_std" fn flush_stderr() -> StdioOperationResult;
 
 pub extern "lanius_std" fn print_i32(value: i32);

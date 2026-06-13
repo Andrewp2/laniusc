@@ -13,6 +13,8 @@ pub type RuntimeAbiMetadataVersion = u32;
 pub type RuntimeAbiVersion = u32;
 pub type RuntimeServiceCount = u32;
 pub type RuntimeServiceId = u32;
+pub type RuntimeServiceRequirementFieldCount = u32;
+pub type RuntimeServiceRequirementFieldIndex = u32;
 pub type RuntimeServiceStatus = u32;
 
 pub const RUNTIME_ABI_METADATA_VERSION: RuntimeAbiMetadataVersion = 1;
@@ -21,6 +23,10 @@ pub const RUNTIME_ABI_VERSION: RuntimeAbiVersion = 1;
 pub const RUNTIME_SERVICE_COUNT: RuntimeServiceCount = 13;
 pub const FIRST_RUNTIME_SERVICE_ID: RuntimeServiceId = 1;
 pub const LAST_RUNTIME_SERVICE_ID: RuntimeServiceId = 13;
+pub const RUNTIME_SERVICE_REQUIREMENT_FIELD_COUNT: RuntimeServiceRequirementFieldCount = 3;
+pub const RUNTIME_SERVICE_REQUIREMENT_SERVICE_ID_FIELD: RuntimeServiceRequirementFieldIndex = 0;
+pub const RUNTIME_SERVICE_REQUIREMENT_ABI_VERSION_FIELD: RuntimeServiceRequirementFieldIndex = 1;
+pub const RUNTIME_SERVICE_REQUIREMENT_STATUS_FIELD: RuntimeServiceRequirementFieldIndex = 2;
 
 pub const SERVICE_STATUS_UNKNOWN: RuntimeServiceStatus = 0;
 pub const SERVICE_STATUS_UNAVAILABLE: RuntimeServiceStatus = 1;
@@ -115,6 +121,10 @@ pub fn runtime_services_are_contract_only() -> Capability {
     return !HAS_RUNTIME_SERVICES;
 }
 
+pub fn runtime_services_are_blocked() -> Capability {
+    return !has_runtime_services();
+}
+
 pub fn runtime_abi_metadata_version() -> RuntimeAbiMetadataVersion {
     return RUNTIME_ABI_METADATA_VERSION;
 }
@@ -129,6 +139,22 @@ pub fn first_runtime_service_id() -> RuntimeServiceId {
 
 pub fn last_runtime_service_id() -> RuntimeServiceId {
     return LAST_RUNTIME_SERVICE_ID;
+}
+
+pub fn runtime_service_requirement_field_count() -> RuntimeServiceRequirementFieldCount {
+    return RUNTIME_SERVICE_REQUIREMENT_FIELD_COUNT;
+}
+
+pub fn runtime_service_requirement_service_id_field() -> RuntimeServiceRequirementFieldIndex {
+    return RUNTIME_SERVICE_REQUIREMENT_SERVICE_ID_FIELD;
+}
+
+pub fn runtime_service_requirement_abi_version_field() -> RuntimeServiceRequirementFieldIndex {
+    return RUNTIME_SERVICE_REQUIREMENT_ABI_VERSION_FIELD;
+}
+
+pub fn runtime_service_requirement_status_field() -> RuntimeServiceRequirementFieldIndex {
+    return RUNTIME_SERVICE_REQUIREMENT_STATUS_FIELD;
 }
 
 pub fn service_id_in_descriptor_range(service_id: RuntimeServiceId) -> Capability {
@@ -153,6 +179,70 @@ pub fn is_known_service(service_id: RuntimeServiceId) -> Capability {
 
 pub fn service_descriptor_is_known(service_id: RuntimeServiceId) -> Capability {
     return is_known_service(service_id);
+}
+
+pub fn runtime_service_requirement_service_is_known(service_id: RuntimeServiceId) -> Capability {
+    return is_known_service(service_id);
+}
+
+pub fn runtime_service_requirement_abi_is_supported(required_abi_version: RuntimeAbiVersion) -> Capability {
+    return required_abi_version == RUNTIME_ABI_VERSION;
+}
+
+pub fn runtime_service_status_is_unknown(service_status: RuntimeServiceStatus) -> Capability {
+    return service_status == SERVICE_STATUS_UNKNOWN;
+}
+
+pub fn runtime_service_status_is_unavailable(service_status: RuntimeServiceStatus) -> Capability {
+    return service_status == SERVICE_STATUS_UNAVAILABLE;
+}
+
+pub fn runtime_service_status_is_available(service_status: RuntimeServiceStatus) -> Capability {
+    return service_status == SERVICE_STATUS_AVAILABLE;
+}
+
+pub fn runtime_service_status_is_contract_only(service_status: RuntimeServiceStatus) -> Capability {
+    return runtime_service_status_is_unavailable(service_status);
+}
+
+pub fn runtime_service_status_is_declared(service_status: RuntimeServiceStatus) -> Capability {
+    return runtime_service_status_is_unknown(service_status)
+        || runtime_service_status_is_unavailable(service_status)
+        || runtime_service_status_is_available(service_status);
+}
+
+pub fn runtime_service_status_is_fail_closed(service_status: RuntimeServiceStatus) -> Capability {
+    return !runtime_service_status_is_available(service_status);
+}
+
+pub fn runtime_service_requirement_status_is_contract_only(service_status: RuntimeServiceStatus) -> Capability {
+    return runtime_service_status_is_contract_only(service_status);
+}
+
+pub fn runtime_service_requirement_status_is_declared(service_status: RuntimeServiceStatus) -> Capability {
+    return runtime_service_status_is_declared(service_status);
+}
+
+pub fn runtime_service_requirement_status_is_fail_closed(service_status: RuntimeServiceStatus) -> Capability {
+    return runtime_service_status_is_fail_closed(service_status);
+}
+
+pub fn runtime_service_requirement_row_is_known_unbound(service_id: RuntimeServiceId, required_abi_version: RuntimeAbiVersion, service_status: RuntimeServiceStatus) -> Capability {
+    return runtime_service_requirement_service_is_known(service_id)
+        && runtime_service_requirement_abi_is_supported(required_abi_version)
+        && runtime_service_requirement_status_is_contract_only(service_status);
+}
+
+pub fn runtime_service_requirement_row_is_contract_only(service_id: RuntimeServiceId, required_abi_version: RuntimeAbiVersion, service_status: RuntimeServiceStatus) -> Capability {
+    return runtime_service_requirement_row_is_known_unbound(service_id, required_abi_version, service_status);
+}
+
+pub fn runtime_service_requirement_row_is_valid(service_id: RuntimeServiceId, required_abi_version: RuntimeAbiVersion, service_status: RuntimeServiceStatus) -> Capability {
+    return runtime_service_requirement_row_is_known_unbound(service_id, required_abi_version, service_status);
+}
+
+pub fn runtime_service_requirement_row_is_fail_closed(service_id: RuntimeServiceId, required_abi_version: RuntimeAbiVersion, service_status: RuntimeServiceStatus) -> Capability {
+    return !runtime_service_requirement_row_is_valid(service_id, required_abi_version, service_status);
 }
 
 pub fn has_service(service_id: RuntimeServiceId) -> Capability {
@@ -201,6 +291,10 @@ pub fn service_is_unbound(service_id: RuntimeServiceId) -> Capability {
     return service_is_unavailable(service_id);
 }
 
+pub fn service_is_known_but_unbound(service_id: RuntimeServiceId) -> Capability {
+    return is_known_service(service_id) && service_is_unbound(service_id);
+}
+
 pub fn service_is_available(service_id: RuntimeServiceId) -> Capability {
     let status: RuntimeServiceStatus = service_status(service_id);
     return status == SERVICE_STATUS_AVAILABLE;
@@ -218,8 +312,16 @@ pub fn runtime_bound_api_is_blocked(service_id: RuntimeServiceId) -> Capability 
     return !runtime_bound_api_is_executable(service_id);
 }
 
+pub fn runtime_bound_api_is_known_but_unbound(service_id: RuntimeServiceId) -> Capability {
+    return service_is_known_but_unbound(service_id);
+}
+
 pub fn service_is_fail_closed(service_id: RuntimeServiceId) -> Capability {
     return runtime_bound_api_is_blocked(service_id);
+}
+
+pub fn service_is_blocked(service_id: RuntimeServiceId) -> Capability {
+    return service_is_fail_closed(service_id);
 }
 
 pub fn service_requires_runtime_binding(service_id: RuntimeServiceId) -> Capability {
@@ -244,6 +346,10 @@ pub fn service_binding_diagnostic_is_lnc0038(service_id: RuntimeServiceId) -> Ca
 
 pub fn runtime_bound_api_requires_binding(service_id: RuntimeServiceId) -> Capability {
     return service_requires_runtime_binding(service_id);
+}
+
+pub fn runtime_bound_api_requires_runtime_binding(service_id: RuntimeServiceId) -> Capability {
+    return runtime_bound_api_requires_binding(service_id);
 }
 
 pub fn runtime_abi_version() -> RuntimeAbiVersion {

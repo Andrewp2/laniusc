@@ -1,11 +1,5 @@
 use crate::gpu::buffers::LaniusBuffer;
 
-pub struct LL1EmitPrefixScanStep {
-    pub params: LaniusBuffer<super::super::passes::ll1_blocks_01::LL1BlocksParams>,
-    pub read_from_a: bool,
-    pub write_to_a: bool,
-}
-
 pub struct PackOffsetScanStep {
     pub params: LaniusBuffer<super::super::passes::pack_offsets::Params>,
     pub read_from_a: bool,

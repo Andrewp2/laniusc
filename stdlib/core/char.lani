@@ -21,3 +21,95 @@ pub fn is_ascii_alphabetic(value: char) -> bool {
 pub fn is_ascii_alphanumeric(value: char) -> bool {
     return is_ascii_alphabetic(value) || is_ascii_digit(value);
 }
+
+pub fn is_ascii_word(value: char) -> bool {
+    return is_ascii_alphanumeric(value) || value == '_';
+}
+
+pub fn eq_ignore_ascii_case(left: char, right: char) -> bool {
+    return left == right
+        || left == 'A' && right == 'a'
+        || left == 'a' && right == 'A'
+        || left == 'B' && right == 'b'
+        || left == 'b' && right == 'B'
+        || left == 'C' && right == 'c'
+        || left == 'c' && right == 'C'
+        || left == 'D' && right == 'd'
+        || left == 'd' && right == 'D'
+        || left == 'E' && right == 'e'
+        || left == 'e' && right == 'E'
+        || left == 'F' && right == 'f'
+        || left == 'f' && right == 'F'
+        || left == 'G' && right == 'g'
+        || left == 'g' && right == 'G'
+        || left == 'H' && right == 'h'
+        || left == 'h' && right == 'H'
+        || left == 'I' && right == 'i'
+        || left == 'i' && right == 'I'
+        || left == 'J' && right == 'j'
+        || left == 'j' && right == 'J'
+        || left == 'K' && right == 'k'
+        || left == 'k' && right == 'K'
+        || left == 'L' && right == 'l'
+        || left == 'l' && right == 'L'
+        || left == 'M' && right == 'm'
+        || left == 'm' && right == 'M'
+        || left == 'N' && right == 'n'
+        || left == 'n' && right == 'N'
+        || left == 'O' && right == 'o'
+        || left == 'o' && right == 'O'
+        || left == 'P' && right == 'p'
+        || left == 'p' && right == 'P'
+        || left == 'Q' && right == 'q'
+        || left == 'q' && right == 'Q'
+        || left == 'R' && right == 'r'
+        || left == 'r' && right == 'R'
+        || left == 'S' && right == 's'
+        || left == 's' && right == 'S'
+        || left == 'T' && right == 't'
+        || left == 't' && right == 'T'
+        || left == 'U' && right == 'u'
+        || left == 'u' && right == 'U'
+        || left == 'V' && right == 'v'
+        || left == 'v' && right == 'V'
+        || left == 'W' && right == 'w'
+        || left == 'w' && right == 'W'
+        || left == 'X' && right == 'x'
+        || left == 'x' && right == 'X'
+        || left == 'Y' && right == 'y'
+        || left == 'y' && right == 'Y'
+        || left == 'Z' && right == 'z'
+        || left == 'z' && right == 'Z';
+}
+
+pub fn is_ascii_hexdigit(value: char) -> bool {
+    return is_ascii_digit(value) || value >= 'A' && value <= 'F' || value >= 'a' && value <= 'f';
+}
+
+pub fn is_ascii_whitespace(value: char) -> bool {
+    return value == ' ' || value == '\t' || value == '\n' || value == '\r';
+}
+
+pub fn is_ascii_punctuation(value: char) -> bool {
+    if (value >= '!' && value <= '/') {
+        return true;
+    } else {
+        if (value >= ':' && value <= '@') {
+            return true;
+        } else {
+            if (value >= '[' && value < 'a') {
+                return true;
+            } else {
+                return value >= '{' && value <= '~';
+            }
+        }
+    }
+}
+
+pub fn is_ascii_graphic(value: char) -> bool {
+    return value >= '!' && value <= '~';
+}
+
+pub fn is_ascii_printable(value: char) -> bool {
+    return value >= ' ' && value <= '~';
+}

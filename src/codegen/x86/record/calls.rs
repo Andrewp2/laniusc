@@ -26,6 +26,7 @@ pub(super) struct CallRecordBindGroups {
 
 pub(super) struct CallRecordInputs<'a> {
     pub(super) params_buf: &'a wgpu::Buffer,
+    pub(super) feature_params_buf: &'a wgpu::Buffer,
     pub(super) hir_status_buf: &'a wgpu::Buffer,
     pub(super) hir_kind_buf: &'a wgpu::Buffer,
     pub(super) parent_buf: &'a wgpu::Buffer,
@@ -48,10 +49,12 @@ pub(super) struct CallRecordInputs<'a> {
     pub(super) const_value_record_buf: &'a wgpu::Buffer,
     pub(super) const_value_status_buf: &'a wgpu::Buffer,
     pub(super) hir_param_record_buf: &'a wgpu::Buffer,
+    pub(super) fn_entrypoint_tag_buf: &'a wgpu::Buffer,
     pub(super) decl_node_by_token_buf: &'a wgpu::Buffer,
     pub(super) struct_type_record_buf: &'a wgpu::Buffer,
     pub(super) struct_record_status_buf: &'a wgpu::Buffer,
     pub(super) enum_type_record_buf: &'a wgpu::Buffer,
+    pub(super) enum_value_record_buf: &'a wgpu::Buffer,
     pub(super) enum_record_status_buf: &'a wgpu::Buffer,
     pub(super) param_reg_record_buf: &'a wgpu::Buffer,
     pub(super) param_reg_status_buf: &'a wgpu::Buffer,
@@ -72,6 +75,7 @@ pub(super) fn create_call_record_bind_groups(
 ) -> Result<CallRecordBindGroups> {
     let CallRecordInputs {
         params_buf,
+        feature_params_buf,
         hir_status_buf,
         hir_kind_buf,
         parent_buf,
@@ -94,10 +98,12 @@ pub(super) fn create_call_record_bind_groups(
         const_value_record_buf,
         const_value_status_buf,
         hir_param_record_buf,
+        fn_entrypoint_tag_buf,
         decl_node_by_token_buf,
         struct_type_record_buf,
         struct_record_status_buf,
         enum_type_record_buf,
+        enum_value_record_buf,
         enum_record_status_buf,
         param_reg_record_buf,
         param_reg_status_buf,
@@ -118,6 +124,7 @@ pub(super) fn create_call_record_bind_groups(
         0,
         &[
             ("gParams", params_buf.as_entire_binding()),
+            ("gX86Features", feature_params_buf.as_entire_binding()),
             ("hir_status", hir_status_buf.as_entire_binding()),
             ("hir_kind", hir_kind_buf.as_entire_binding()),
             ("hir_expr_record", expr_metadata.record.as_entire_binding()),
@@ -126,6 +133,7 @@ pub(super) fn create_call_record_bind_groups(
                 expr_metadata.expr_result_root_node.as_entire_binding(),
             ),
             ("x86_node_func", final_node_func_buf.as_entire_binding()),
+            ("x86_tree_parent", parent_buf.as_entire_binding()),
             (
                 "hir_call_callee_node",
                 call_metadata.callee_node.as_entire_binding(),
@@ -154,6 +162,12 @@ pub(super) fn create_call_record_bind_groups(
                 "call_return_type_token",
                 call_metadata.call_return_type_token.as_entire_binding(),
             ),
+            (
+                "method_decl_param_offset",
+                function_metadata
+                    .method_decl_param_offset
+                    .as_entire_binding(),
+            ),
             ("x86_call_record", call_record_buf.as_entire_binding()),
             (
                 "x86_call_type_record",
@@ -179,6 +193,10 @@ pub(super) fn create_call_record_bind_groups(
             ("hir_status", hir_status_buf.as_entire_binding()),
             ("hir_kind", hir_kind_buf.as_entire_binding()),
             ("x86_tree_parent", parent_buf.as_entire_binding()),
+            (
+                "hir_call_arg_parent_call",
+                call_metadata.arg_parent_call.as_entire_binding(),
+            ),
             (
                 "hir_member_receiver_node",
                 call_metadata.member_receiver_node.as_entire_binding(),
@@ -269,6 +287,10 @@ pub(super) fn create_call_record_bind_groups(
                 function_metadata.hir_token_pos.as_entire_binding(),
             ),
             (
+                "fn_entrypoint_tag",
+                fn_entrypoint_tag_buf.as_entire_binding(),
+            ),
+            (
                 "hir_fn_return_type_node",
                 function_metadata.fn_return_type_node.as_entire_binding(),
             ),
@@ -348,6 +370,10 @@ pub(super) fn create_call_record_bind_groups(
                 enum_type_record_buf.as_entire_binding(),
             ),
             (
+                "x86_enum_value_record",
+                enum_value_record_buf.as_entire_binding(),
+            ),
+            (
                 "x86_enum_record_status",
                 enum_record_status_buf.as_entire_binding(),
             ),
@@ -422,6 +448,10 @@ pub(super) fn create_call_record_bind_groups(
                 call_metadata.arg_parent_call.as_entire_binding(),
             ),
             (
+                "hir_call_arg_count",
+                call_metadata.arg_count.as_entire_binding(),
+            ),
+            (
                 "hir_call_callee_node",
                 call_metadata.callee_node.as_entire_binding(),
             ),
@@ -482,6 +512,7 @@ pub(super) fn create_call_record_bind_groups(
         0,
         &[
             ("gParams", params_buf.as_entire_binding()),
+            ("gX86Features", feature_params_buf.as_entire_binding()),
             ("hir_status", hir_status_buf.as_entire_binding()),
             ("hir_kind", hir_kind_buf.as_entire_binding()),
             (
@@ -533,6 +564,10 @@ pub(super) fn create_call_record_bind_groups(
             (
                 "x86_enum_type_record",
                 enum_type_record_buf.as_entire_binding(),
+            ),
+            (
+                "x86_enum_value_record",
+                enum_value_record_buf.as_entire_binding(),
             ),
             (
                 "x86_enum_record_status",

@@ -116,8 +116,7 @@ pub(in crate::compiler) fn store_leaf_groups_for_schedule_page(
     limits: SourcePackJobBatchLimits,
     next_group_index: &mut usize,
 ) -> Result<usize, CompileError> {
-    validate_library_schedule_index(schedule_index, schedule_index.target)?;
-    validate_library_schedule_page(page, schedule_index.target, Some(page.partition_index))?;
+    validate_library_schedule_page_for_index(page, schedule_index)?;
     let mut created_group_count = 0usize;
     let mut current_codegen_jobs = Vec::<SourcePackJob>::new();
     let mut current_source_bytes = 0usize;
@@ -439,7 +438,12 @@ pub(in crate::compiler) fn reduce_link_group(
             schedule_index.target,
             input_group_index,
         )?;
-        if input_group.level + 1 != level {
+        let expected_level = input_group.level.checked_add(1).ok_or_else(|| {
+            library_partition_contract_error(format!(
+                "stored hierarchical link reduce group {group_index} input group {input_group_index} level overflows"
+            ))
+        })?;
+        if expected_level != level {
             return Err(library_partition_contract_error(format!(
                 "stored hierarchical link reduce group {group_index} level {level} references input group {input_group_index} at level {}",
                 input_group.level
@@ -452,9 +456,27 @@ pub(in crate::compiler) fn reduce_link_group(
                     "stored hierarchical link group {group_index} partition count overflows"
                 ))
             })?;
-        source_byte_count = source_byte_count.saturating_add(input_group.source_byte_count);
-        source_file_count = source_file_count.saturating_add(input_group.source_file_count);
-        source_line_count = source_line_count.saturating_add(input_group.source_line_count);
+        source_byte_count = source_byte_count
+            .checked_add(input_group.source_byte_count)
+            .ok_or_else(|| {
+                library_partition_contract_error(format!(
+                    "stored hierarchical link reduce group {group_index} source-byte summary overflows"
+                ))
+            })?;
+        source_file_count = source_file_count
+            .checked_add(input_group.source_file_count)
+            .ok_or_else(|| {
+                library_partition_contract_error(format!(
+                    "stored hierarchical link reduce group {group_index} source-file summary overflows"
+                ))
+            })?;
+        source_line_count = source_line_count
+            .checked_add(input_group.source_line_count)
+            .ok_or_else(|| {
+                library_partition_contract_error(format!(
+                    "stored hierarchical link reduce group {group_index} source-line summary overflows"
+                ))
+            })?;
         oversized_input |= input_group.oversized_input;
     }
     let input_link_group_indices =
@@ -498,7 +520,14 @@ pub(in crate::compiler) fn leaf_link_group(
             group_index
         )));
     }
-    let job_index = schedule_index.link_job_index + group_index;
+    let job_index = schedule_index
+        .link_job_index
+        .checked_add(group_index)
+        .ok_or_else(|| {
+            library_partition_contract_error(format!(
+                "stored hierarchical link leaf group {group_index} job index overflows"
+            ))
+        })?;
     let oversized_input = input_frontend_job_count > limits.max_jobs_per_batch
         || codegen_jobs.len() > limits.max_jobs_per_batch
         || source_byte_count > limits.max_source_bytes_per_batch
@@ -552,4 +581,146 @@ pub(in crate::compiler) fn hierarchical_link_group_input_frontend_job_count(
     group
         .input_frontend_job_count
         .max(group.input_frontend_job_indices.len())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_store(stem: &str) -> (PathBuf, FilesystemArtifactStore) {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time should be after Unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "laniusc_link_plan_groups_{stem}_{}_{}",
+            std::process::id(),
+            nanos
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("create link-plan group test store");
+        let store = FilesystemArtifactStore::new(&root);
+        (root, store)
+    }
+
+    fn schedule_index() -> SourcePackLibraryScheduleIndex {
+        SourcePackLibraryScheduleIndex {
+            version: SOURCE_PACK_LIBRARY_SCHEDULE_INDEX_VERSION,
+            target: SourcePackArtifactTarget::Generic,
+            partition_count: 2,
+            frontend_job_count: 2,
+            codegen_job_count: 2,
+            link_job_index: 4,
+            job_count: 5,
+        }
+    }
+
+    fn leaf_group(
+        group_index: usize,
+        job_index: usize,
+        partition_index: usize,
+        source_byte_count: usize,
+    ) -> SourcePackHierarchicalLinkGroupPage {
+        SourcePackHierarchicalLinkGroupPage {
+            version: SOURCE_PACK_HIERARCHICAL_LINK_GROUP_PAGE_VERSION,
+            target: SourcePackArtifactTarget::Generic,
+            group_index,
+            kind: SourcePackHierarchicalLinkGroupKind::Leaf,
+            level: 0,
+            job_index,
+            input_partition_count: 1,
+            input_partition_indices: vec![partition_index],
+            input_frontend_job_count: 2,
+            input_frontend_job_indices: Vec::new(),
+            input_codegen_job_indices: vec![2, 3],
+            input_link_group_indices: Vec::new(),
+            source_byte_count,
+            source_file_count: 1,
+            source_line_count: 1,
+            oversized_input: false,
+        }
+    }
+
+    #[test]
+    fn reduce_link_group_rejects_overflowed_input_source_summary() {
+        let (root, store) = temp_store("source_summary_overflow");
+        store
+            .store_hierarchical_link_group_page(&leaf_group(0, 4, 0, usize::MAX))
+            .expect("store first leaf input group");
+        store
+            .store_hierarchical_link_group_page(&leaf_group(1, 5, 1, 1))
+            .expect("store second leaf input group");
+
+        let result = reduce_link_group(
+            &store,
+            &schedule_index(),
+            SourcePackJobBatchLimits::default().normalized(),
+            2,
+            1,
+            0,
+            2,
+        );
+
+        assert!(result.is_err());
+        std::fs::remove_dir_all(root).expect("remove link-plan group test store");
+    }
+
+    #[test]
+    fn leaf_link_group_rejects_unrepresentable_dense_job_slot() {
+        let mut schedule_index = schedule_index();
+        schedule_index.link_job_index = usize::MAX;
+
+        let page = SourcePackLibrarySchedulePage {
+            version: SOURCE_PACK_LIBRARY_SCHEDULE_PAGE_VERSION,
+            target: SourcePackArtifactTarget::Generic,
+            partition_index: 0,
+            library_id: 1,
+            dependency_library_ids: Vec::new(),
+            frontend_job_index: 0,
+            first_frontend_unit_index: 0,
+            frontend_job_count: 1,
+            first_codegen_unit_index: 0,
+            first_codegen_job_index: 1,
+            codegen_job_count: 1,
+            link_job_index: usize::MAX,
+            frontend_job: source_pack_job(0, SourcePackJobPhase::LibraryFrontend),
+            frontend_jobs: Vec::new(),
+            codegen_jobs: Vec::new(),
+        };
+        let codegen_jobs = vec![source_pack_job(1, SourcePackJobPhase::Codegen)];
+
+        let err = leaf_link_group(
+            1,
+            &schedule_index,
+            &page,
+            1,
+            &codegen_jobs,
+            8,
+            1,
+            1,
+            SourcePackJobBatchLimits::default().normalized(),
+        )
+        .expect_err("leaf link groups must fail closed when dense job slots overflow");
+        let message = err.to_string();
+        assert!(
+            message.contains("leaf group 1") && message.contains("job index overflows"),
+            "unexpected leaf dense job overflow error: {message}"
+        );
+    }
+
+    fn source_pack_job(job_index: usize, phase: SourcePackJobPhase) -> SourcePackJob {
+        SourcePackJob {
+            job_index,
+            phase,
+            phase_unit_index: job_index,
+            library_job_index: Some(job_index),
+            library_id: 1,
+            first_source_index: 0,
+            source_file_count: 1,
+            source_bytes: 8,
+            source_lines: 1,
+            oversized_source_file: false,
+            dependency_job_indices: Vec::new(),
+        }
+    }
 }

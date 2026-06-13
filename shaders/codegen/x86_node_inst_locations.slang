@@ -58,6 +58,8 @@ static const uint X86_FEATURE_MATCH = 1u << 1u;
 static const uint HIR_PARAM = 4u;
 static const uint HIR_MATCH_EXPR = 34u;
 static const uint HIR_BINARY_EXPR = 16u;
+static const uint HIR_INDEX_EXPR = 20u;
+static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_IF_STMT = 10u;
 static const uint HIR_WHILE_STMT = 11u;
 static const uint HIR_FOR_STMT = 30u;
@@ -75,6 +77,8 @@ static const uint HIR_EXPR_LT = 9u;
 static const uint HIR_EXPR_GT = 10u;
 static const uint HIR_EXPR_LE = 11u;
 static const uint HIR_EXPR_GE = 12u;
+static const uint HIR_EXPR_MOD = 19u;
+static const uint HIR_EXPR_DIV = 20u;
 static const uint HIR_EXPR_SHR = 25u;
 static const uint HIR_EXPR_NEG = 13u;
 static const uint X86_NODE_INST_BRANCH = 4u;
@@ -374,6 +378,13 @@ bool compare_expr_form(uint form)
            form == HIR_EXPR_GE;
 }
 
+bool semantic_metadata_expr_form(uint form)
+{
+    return compare_expr_form(form) ||
+           form == HIR_EXPR_MOD ||
+           form == HIR_EXPR_DIV;
+}
+
 uint pack_expr_semantic_type_metadata(uint ty)
 {
     return X86_LOCATION_META_EXPR_SEMANTIC_TYPE |
@@ -420,8 +431,14 @@ uint expr_semantic_compare_type(uint node)
 
 uint4 attach_expr_semantic_type_metadata(uint node, uint4 locations)
 {
-    if (!valid_node(node) || hir_kind[node] != HIR_BINARY_EXPR ||
-        !compare_expr_form(expr_form(node)) || locations.w != INVALID)
+    if (!valid_node(node) || locations.w != INVALID)
+        return locations;
+
+    bool can_attach =
+        (hir_kind[node] == HIR_BINARY_EXPR && semantic_metadata_expr_form(expr_form(node))) ||
+        hir_kind[node] == HIR_INDEX_EXPR ||
+        hir_kind[node] == HIR_MEMBER_EXPR;
+    if (!can_attach)
         return locations;
 
     uint ty = expr_semantic_compare_type(node);

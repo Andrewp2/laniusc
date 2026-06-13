@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use anyhow::Result;
 
 use crate::{
-    gpu::passes_core::{PassData, bind_group},
+    gpu::passes_core::{DispatchDim, InputElements, PassData, bind_group, plan_workgroups},
     parser::buffers::ParserBuffers,
 };
 
@@ -24,6 +24,25 @@ impl HirFnSignatureOwnerStepPass {
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
         dispatch_args: &wgpu::Buffer,
+    ) -> Result<()> {
+        self.record_steps_inner(device, encoder, buffers, Some(dispatch_args))
+    }
+
+    pub fn record_steps(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        buffers: &ParserBuffers,
+    ) -> Result<()> {
+        self.record_steps_inner(device, encoder, buffers, None)
+    }
+
+    fn record_steps_inner(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        buffers: &ParserBuffers,
+        dispatch_args: Option<&wgpu::Buffer>,
     ) -> Result<()> {
         let steps = pointer_jump_steps_for_items(buffers.tree_capacity);
         for step in 0..steps {
@@ -59,7 +78,7 @@ impl HirFnSignatureOwnerStepPass {
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
         read_from_a: bool,
-        dispatch_args: &wgpu::Buffer,
+        dispatch_args: Option<&wgpu::Buffer>,
     ) -> Result<()> {
         let (
             link_in,
@@ -142,7 +161,17 @@ impl HirFnSignatureOwnerStepPass {
         });
         pass.set_pipeline(&self.data.pipeline);
         pass.set_bind_group(0, Some(&bind_group), &[]);
-        pass.dispatch_workgroups_indirect(dispatch_args, 0);
+        if let Some(dispatch_args) = dispatch_args {
+            pass.dispatch_workgroups_indirect(dispatch_args, 0);
+        } else {
+            let [tgsx, tgsy, _] = self.data.thread_group_size;
+            let (gx, gy, gz) = plan_workgroups(
+                DispatchDim::D1,
+                InputElements::Elements1D(buffers.tree_capacity),
+                [tgsx, tgsy, 1],
+            )?;
+            pass.dispatch_workgroups(gx, gy, gz);
+        }
         Ok(())
     }
 }

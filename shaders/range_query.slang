@@ -15,8 +15,10 @@ public uint lower_bound_query<TKey, TCompare: IRowQueryCompare<TKey>>(
 {
     uint lo = 0u;
     uint hi = count;
-    for (uint guard = 0u; guard < 32u && lo < hi; guard += 1u)
+    for (uint guard = 0u; guard < 32u; guard += 1u)
     {
+        if (lo >= hi)
+            break;
         uint mid = lo + ((hi - lo) >> 1u);
         int cmp = TCompare.compare(mid, key);
         if (cmp < 0)
@@ -33,8 +35,10 @@ public uint upper_bound_query<TKey, TCompare: IRowQueryCompare<TKey>>(
 {
     uint lo = 0u;
     uint hi = count;
-    for (uint guard = 0u; guard < 32u && lo < hi; guard += 1u)
+    for (uint guard = 0u; guard < 32u; guard += 1u)
     {
+        if (lo >= hi)
+            break;
         uint mid = lo + ((hi - lo) >> 1u);
         int cmp = TCompare.compare(mid, key);
         if (cmp <= 0)

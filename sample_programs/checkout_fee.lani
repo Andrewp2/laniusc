@@ -1,0 +1,8 @@
+fn add_fee(value: i32) -> i32 {
+    return value + 4;
+}
+
+fn main() {
+    print(add_fee(36));
+    return 0;
+}

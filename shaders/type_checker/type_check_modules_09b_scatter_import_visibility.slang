@@ -105,21 +105,29 @@ public struct DeclModuleCompare : IRowQueryCompare<ModuleLookupKey>
     }
 }
 
+public struct ImportVisiblePrefixLookupKey
+{
+    uint visible_i;
+}
+
+public struct ImportVisiblePrefixCompare : IRowQueryCompare<ImportVisiblePrefixLookupKey>
+{
+    public static int compare(uint row, ImportVisiblePrefixLookupKey key)
+    {
+        if (row >= active_import_count())
+            return 1;
+        return compare_u32(import_visible_prefix[row], key.visible_i);
+    }
+}
+
 uint import_for_visible_row(uint visible_i)
 {
-    uint count = active_import_count();
-    uint lo = 0u;
-    uint hi = count;
-    for (uint guard = 0u; guard < 32u && lo < hi; guard += 1u)
-    {
-        uint mid = lo + ((hi - lo) >> 1u);
-        uint prefix = import_visible_prefix[mid];
-        if (prefix <= visible_i)
-            lo = mid + 1u;
-        else
-            hi = mid;
-    }
-    return lo == 0u ? INVALID : lo - 1u;
+    ImportVisiblePrefixLookupKey key;
+    key.visible_i = visible_i;
+    uint upper = upper_bound_query<ImportVisiblePrefixLookupKey, ImportVisiblePrefixCompare>(
+        active_import_count(),
+        key);
+    return upper == 0u ? INVALID : upper - 1u;
 }
 
 uint public_prefix_after_row(uint row)
@@ -132,26 +140,43 @@ uint public_prefix_before_row(uint row)
     return row == 0u ? 0u : public_prefix_after_row(row - 1u);
 }
 
+public struct PublicDeclPrefixLookupKey
+{
+    uint begin;
+    uint target_prefix_after;
+}
+
+public struct PublicDeclPrefixCompare : IRowQueryCompare<PublicDeclPrefixLookupKey>
+{
+    public static int compare(uint row, PublicDeclPrefixLookupKey key)
+    {
+        uint actual_row = key.begin + row;
+        if (actual_row >= active_decl_count())
+            return 1;
+        return compare_u32(public_prefix_after_row(actual_row), key.target_prefix_after);
+    }
+}
+
 uint public_decl_row_for_local_index(uint begin, uint end, uint local_i)
 {
     if (end <= begin)
         return INVALID;
 
     uint target_prefix_after = public_prefix_before_row(begin) + local_i + 1u;
-    uint lo = begin;
-    uint hi = end;
-    for (uint guard = 0u; guard < 32u && lo < hi; guard += 1u)
-    {
-        uint mid = lo + ((hi - lo) >> 1u);
-        if (public_prefix_after_row(mid) < target_prefix_after)
-            lo = mid + 1u;
-        else
-            hi = mid;
-    }
-    return lo < end &&
-           decl_public_flag[lo] != 0u &&
-           public_prefix_after_row(lo) == target_prefix_after
-               ? lo
+    PublicDeclPrefixLookupKey key;
+    key.begin = begin;
+    key.target_prefix_after = target_prefix_after;
+    uint count = end - begin;
+    uint offset = lower_bound_query<PublicDeclPrefixLookupKey, PublicDeclPrefixCompare>(
+        count,
+        key);
+    if (offset >= count)
+        return INVALID;
+
+    uint row = begin + offset;
+    return decl_public_flag[row] != 0u &&
+           public_prefix_after_row(row) == target_prefix_after
+               ? row
                : INVALID;
 }
 

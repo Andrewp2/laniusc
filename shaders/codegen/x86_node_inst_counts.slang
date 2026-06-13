@@ -32,7 +32,9 @@ StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint> hir_expr_result_root_node;
 StructuredBuffer<uint4> hir_param_record;
+StructuredBuffer<uint> x86_tree_parent;
 StructuredBuffer<uint> x86_expr_resolved_node;
 StructuredBuffer<uint> x86_node_func;
 StructuredBuffer<uint> visible_decl;
@@ -41,6 +43,7 @@ StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> resolved_value_decl;
 StructuredBuffer<uint> resolved_value_status;
 StructuredBuffer<uint> decl_name_token;
+StructuredBuffer<uint> x86_struct_type_record;
 StructuredBuffer<uint> x86_decl_layout_record;
 StructuredBuffer<uint> x86_decl_layout_status;
 StructuredBuffer<uint2> x86_const_value_record;
@@ -52,6 +55,7 @@ StructuredBuffer<uint> x86_postfix_operand_owner;
 StructuredBuffer<uint> x86_enclosing_return_node;
 StructuredBuffer<uint> x86_match_return_node;
 StructuredBuffer<uint4> x86_call_record;
+StructuredBuffer<uint> x86_call_callee_root_call;
 StructuredBuffer<uint> x86_call_callee_owner_call;
 StructuredBuffer<uint> call_record_status;
 StructuredBuffer<uint> x86_intrinsic_call_record;
@@ -85,6 +89,8 @@ static const uint X86_ERR_FOR_ITERABLE = 33u;
 static const uint X86_ERR_UNSUPPORTED_UNARY_EXPR = 39u;
 static const uint X86_ERR_UNSUPPORTED_MATCH_EXPR = 44u;
 static const uint X86_ERR_AGGREGATE_TEMPORARY_MEMBER = 46u;
+static const uint X86_ERR_UNSUPPORTED_LITERAL_EXPR = 60u;
+static const uint X86_ERR_NESTED_AGGREGATE_MEMBER = 61u;
 static const uint X86_FEATURE_ENUM = 1u << 0u;
 static const uint X86_FEATURE_MATCH = 1u << 1u;
 static const uint X86_FEATURE_AGGREGATE = 1u << 2u;
@@ -124,6 +130,9 @@ static const uint X86_STRUCT_ACCESS_STRIDE = 3u;
 static const uint X86_STRUCT_ACCESS_KIND_BITS = 4u;
 static const uint X86_STRUCT_ACCESS_KIND_MASK = 0x0fu;
 static const uint X86_PARAM_REG_STRIDE = 5u;
+static const uint X86_PARAM_REG_ORDINAL_BITS = 4u;
+static const uint X86_PARAM_REG_ARG_REG_MASK = 0x0fu;
+static const uint X86_PARAM_REG_KIND_BITS = 8u;
 static const uint X86_NODE_INST_COUNT_STRIDE = 2u;
 static const uint X86_NODE_INST_COUNT_KIND_SHIFT = 28u;
 static const uint X86_NODE_INST_COUNT_COUNT_MASK = 0x0fffffffu;
@@ -167,6 +176,9 @@ static const uint HIR_EXPR_BIT_XOR = 22u;
 static const uint HIR_EXPR_BIT_AND = 23u;
 static const uint HIR_EXPR_SHL = 24u;
 static const uint HIR_EXPR_SHR = 25u;
+static const uint HIR_EXPR_FLOAT = 27u;
+static const uint HIR_EXPR_STRING = 28u;
+static const uint HIR_EXPR_CHAR = 29u;
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint X86_CONST_VALUE_LITERAL = 1u;
 
@@ -180,6 +192,7 @@ static const uint X86_NODE_INST_TRANSFER = 6u;
 static const uint X86_NODE_INST_PADDING = 7u;
 static const uint X86_ENUM_VALUE_CALL_CTOR = 1u;
 static const uint X86_ENUM_VALUE_UNIT_CTOR = 2u;
+static const uint X86_ENUM_VALUE_KIND_BITS = 4u;
 static const uint X86_ENUM_VALUE_KIND_MASK = 0x0fu;
 static const uint X86_STRUCT_ACCESS_MEMBER = 1u;
 static const uint X86_STRUCT_ACCESS_LITERAL = 2u;
@@ -373,6 +386,25 @@ uint param_node_reg_width(uint param_node)
     return param_node_reg_word(param_node, 1u);
 }
 
+uint param_reg_info(uint decl_token)
+{
+    return param_reg_word(decl_token, 2u);
+}
+
+uint param_reg_arg_reg(uint decl_token)
+{
+    uint info = param_reg_info(decl_token);
+    return info == INVALID
+               ? INVALID
+               : (info >> X86_PARAM_REG_ORDINAL_BITS) & X86_PARAM_REG_ARG_REG_MASK;
+}
+
+uint param_reg_aggregate_kind(uint decl_token)
+{
+    uint info = param_reg_info(decl_token);
+    return info == INVALID ? 0u : info >> X86_PARAM_REG_KIND_BITS;
+}
+
 uint param_reg_link(uint decl_token)
 {
     return param_reg_word(decl_token, 4u);
@@ -424,9 +456,17 @@ uint resolve_expr(uint node)
     return valid_node(node) ? x86_expr_resolved_node[node] : INVALID;
 }
 
-bool path_literal_value_node(uint node)
+uint expr_result_root(uint node)
 {
-    if (!valid_node(node) || hir_kind[node] != HIR_PATH_EXPR)
+    if (!valid_node(node))
+        return INVALID;
+    uint root = hir_expr_result_root_node[node];
+    return valid_node(root) ? root : resolve_expr(node);
+}
+
+bool path_literal_value_candidate(uint node)
+{
+    if (!valid_node(node))
         return false;
 
     uint path_i = path_id_by_owner_hir[node];
@@ -443,6 +483,19 @@ bool path_literal_value_node(uint node)
         return false;
 
     return x86_const_value_record[decl_token].x == X86_CONST_VALUE_LITERAL;
+}
+
+bool path_literal_value_node(uint node)
+{
+    if (path_literal_value_candidate(node))
+        return true;
+
+    uint resolved = resolve_expr(node);
+    if (resolved != node && path_literal_value_candidate(resolved))
+        return true;
+
+    uint root = expr_result_root(node);
+    return root != node && root != resolved && path_literal_value_candidate(root);
 }
 
 bool expression_form_has_value_instr(uint form)
@@ -483,6 +536,13 @@ bool has_intrinsic_call_record(uint node)
 {
     uint call = x86_intrinsic_call_record[node];
     return call != INVALID && (call & X86_INTRINSIC_TAG_MASK) != 0u;
+}
+
+uint direct_call_payload_rows(uint node)
+{
+    if (!has_call_record(node))
+        return 0u;
+    return x86_call_record[node].w > 4u ? 2u : 1u;
 }
 
 bool enum_value_record_is_supported(uint2 record)
@@ -596,7 +656,7 @@ bool match_return_arm_value_node(uint node)
 
 uint array_literal_node_for_expr(uint expr_node)
 {
-    uint node = resolve_expr(expr_node);
+    uint node = expr_result_root(expr_node);
     if (valid_node(node) && hir_kind[node] == HIR_ARRAY_EXPR)
         return node;
     return INVALID;
@@ -604,9 +664,23 @@ uint array_literal_node_for_expr(uint expr_node)
 
 uint struct_literal_record_node_for_expr(uint expr_node)
 {
-    uint node = resolve_expr(expr_node);
-    return valid_node(node) && struct_access_kind(node) == X86_STRUCT_ACCESS_LITERAL
-        ? node
+    if (valid_node(expr_node) && struct_access_kind(expr_node) == X86_STRUCT_ACCESS_LITERAL)
+        return expr_node;
+    uint resolved = resolve_expr(expr_node);
+    if (valid_node(resolved) && struct_access_kind(resolved) == X86_STRUCT_ACCESS_LITERAL)
+        return resolved;
+    uint root = expr_result_root(expr_node);
+    if (valid_node(root) && struct_access_kind(root) == X86_STRUCT_ACCESS_LITERAL)
+        return root;
+    uint parent = valid_node(expr_node) ? x86_tree_parent[expr_node] : INVALID;
+    if (valid_node(parent) && struct_access_kind(parent) == X86_STRUCT_ACCESS_LITERAL)
+        return parent;
+    parent = valid_node(resolved) ? x86_tree_parent[resolved] : INVALID;
+    if (valid_node(parent) && struct_access_kind(parent) == X86_STRUCT_ACCESS_LITERAL)
+        return parent;
+    parent = valid_node(root) ? x86_tree_parent[root] : INVALID;
+    return valid_node(parent) && struct_access_kind(parent) == X86_STRUCT_ACCESS_LITERAL
+        ? parent
         : INVALID;
 }
 
@@ -664,10 +738,16 @@ bool for_iterable_has_array_layout(uint node)
         return false;
 
     uint decl_token = visible_decl[iterable_token];
-    return valid_token(decl_token) &&
-           decl_layout_base(decl_token) != INVALID &&
-           decl_layout_kind(decl_token) == X86_DECL_AGG_ARRAY &&
-           decl_layout_width(decl_token) != 0u;
+    if (!valid_token(decl_token))
+        return false;
+    if (decl_layout_base(decl_token) != INVALID &&
+        decl_layout_kind(decl_token) == X86_DECL_AGG_ARRAY &&
+        decl_layout_width(decl_token) != 0u)
+        return true;
+    return param_reg_owner(decl_token) == x86_node_func[node] &&
+           param_reg_arg_reg(decl_token) != INVALID &&
+           param_reg_aggregate_kind(decl_token) == X86_DECL_AGG_ARRAY &&
+           param_reg_width(decl_token) != 0u;
 }
 
 bool name_expr_is_aggregate_local(uint node)
@@ -775,8 +855,23 @@ bool enum_value_belongs_to_aggregate_return(uint node)
 
 bool is_struct_literal_head_node(uint node)
 {
-    node = resolve_expr(node);
-    return valid_node(node) && struct_access_kind(node) == X86_STRUCT_ACCESS_LITERAL;
+    if (!valid_node(node))
+        return false;
+    if (struct_access_kind(node) == X86_STRUCT_ACCESS_LITERAL)
+        return true;
+    uint resolved = resolve_expr(node);
+    return valid_node(resolved) && struct_access_kind(resolved) == X86_STRUCT_ACCESS_LITERAL;
+}
+
+bool is_struct_literal_head_or_path_child(uint node)
+{
+    if (is_struct_literal_head_node(node))
+        return true;
+    uint token = expr_value_token(node);
+    if (valid_token(token) && x86_struct_type_record[token] != 0u)
+        return true;
+    uint parent = valid_node(node) ? x86_tree_parent[node] : INVALID;
+    return valid_node(parent) && is_struct_literal_head_node(parent);
 }
 
 bool array_element_store_for_value_node(uint node, out uint decl_token, out uint ordinal)
@@ -835,10 +930,14 @@ bool is_call_callee_node(uint node)
 {
     if (!valid_node(node))
         return false;
+    if (x86_call_callee_root_call[node] != 0u)
+        return true;
     if (x86_call_callee_owner_call[node] != 0u)
         return true;
     uint resolved = resolve_expr(node);
-    return valid_node(resolved) && x86_call_callee_owner_call[resolved] != 0u;
+    return valid_node(resolved) &&
+           (x86_call_callee_root_call[resolved] != 0u ||
+            x86_call_callee_owner_call[resolved] != 0u);
 }
 
 bool member_receiver_has_supported_aggregate_source(uint member_node)
@@ -853,6 +952,31 @@ bool member_receiver_has_supported_aggregate_source(uint member_node)
            ordinal != INVALID &&
            name_expr_aggregate_width(receiver_node, width) &&
            ordinal < width;
+}
+
+bool assignment_target_param_aggregate_member(uint target_node)
+{
+    uint member_node = resolve_expr(target_node);
+    if (!valid_node(member_node) || hir_kind[member_node] != HIR_MEMBER_EXPR)
+        member_node = target_node;
+    if (!valid_node(member_node) ||
+        struct_access_kind(member_node) != X86_STRUCT_ACCESS_MEMBER ||
+        !valid_node(struct_access_payload0(member_node)) ||
+        struct_access_payload1(member_node) == INVALID)
+        return false;
+
+    uint receiver = resolve_expr(struct_access_payload0(member_node));
+    if (!valid_node(receiver) || expr_form(receiver) != HIR_EXPR_NAME)
+        return false;
+    uint receiver_token = expr_value_token(receiver);
+    if (!valid_token(receiver_token))
+        return false;
+    uint decl_token = visible_decl[receiver_token];
+    uint width = param_reg_width(decl_token);
+    return param_reg_owner(decl_token) == x86_node_func[member_node] &&
+           param_reg_arg_reg(decl_token) != INVALID &&
+           width > 1u &&
+           struct_access_payload1(member_node) < width;
 }
 
 bool member_field_expr_has_value(uint node)
@@ -873,6 +997,17 @@ bool unsupported_aggregate_temporary_member(uint node)
     return !member_receiver_has_supported_aggregate_source(node);
 }
 
+bool unsupported_nested_aggregate_member(uint node)
+{
+    if (!unsupported_aggregate_temporary_member(node))
+        return false;
+
+    uint receiver = struct_access_payload0(node);
+    uint resolved_receiver = valid_node(receiver) ? resolve_expr(receiver) : INVALID;
+    return (valid_node(receiver) && hir_kind[receiver] == HIR_MEMBER_EXPR) ||
+           (valid_node(resolved_receiver) && hir_kind[resolved_receiver] == HIR_MEMBER_EXPR);
+}
+
 uint aggregate_temporary_member_detail(uint member_node)
 {
     uint receiver = valid_node(member_node) ? struct_access_payload0(member_node) : INVALID;
@@ -889,6 +1024,14 @@ void publish_aggregate_temporary_member_error(uint node)
     publish_stage_error_min_detail4(
         x86_node_inst_count_status,
         X86_ERR_AGGREGATE_TEMPORARY_MEMBER,
+        aggregate_temporary_member_detail(node));
+}
+
+void publish_nested_aggregate_member_error(uint node)
+{
+    publish_stage_error_min_detail4(
+        x86_node_inst_count_status,
+        X86_ERR_NESTED_AGGREGATE_MEMBER,
         aggregate_temporary_member_detail(node));
 }
 
@@ -1005,6 +1148,24 @@ void publish_unsupported_unary_expr_error(uint node)
         node);
 }
 
+bool unsupported_literal_expr(uint node)
+{
+    if (!valid_node(node))
+        return false;
+    uint form = expr_form(node);
+    return form == HIR_EXPR_FLOAT ||
+           form == HIR_EXPR_STRING ||
+           form == HIR_EXPR_CHAR;
+}
+
+void publish_unsupported_literal_expr_error(uint node)
+{
+    publish_stage_error_min_detail4(
+        x86_node_inst_count_status,
+        X86_ERR_UNSUPPORTED_LITERAL_EXPR,
+        node);
+}
+
 void publish_unsupported_match_expr_error(uint node)
 {
     publish_stage_error_min_detail4(
@@ -1057,6 +1218,18 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
     }
 
+    if (unsupported_literal_expr(node))
+    {
+        publish_unsupported_literal_expr_error(node);
+        return;
+    }
+
+    if (unsupported_nested_aggregate_member(node))
+    {
+        publish_nested_aggregate_member_error(node);
+        return;
+    }
+
     if (unsupported_aggregate_temporary_member(node))
     {
         publish_aggregate_temporary_member_error(node);
@@ -1101,8 +1274,8 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (kind == HIR_CALL_EXPR && (has_call_record(node) || has_intrinsic_call_record(node)))
     {
         uint extra_store = aggregate_element_store_count(node);
-        uint payload_row = has_call_record(node) ? 1u : 0u;
-        write_count(node, 1u + payload_row + extra_store + padding, X86_NODE_INST_CALL_VALUE, INVALID);
+        uint payload_rows = direct_call_payload_rows(node);
+        write_count(node, 1u + payload_rows + extra_store + padding, X86_NODE_INST_CALL_VALUE, INVALID);
         return;
     }
 
@@ -1179,7 +1352,9 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (kind == HIR_STMT && stmt_slot(node, 0u) == STMT_RECORD_KIND_ASSIGN)
     {
         uint op = stmt_slot(node, 3u);
-        uint count = op == ASSIGN_OP_SET ? 1u : 3u;
+        uint count = assignment_target_param_aggregate_member(stmt_slot(node, 1u))
+                         ? (op == ASSIGN_OP_SET ? 2u : 4u)
+                         : (op == ASSIGN_OP_SET ? 1u : 3u);
         write_count(node, count + padding, X86_NODE_INST_STMT_VALUE, stmt_slot(node, 2u));
         return;
     }
@@ -1217,11 +1392,15 @@ void main(uint3 tid: SV_DispatchThreadID)
     }
 
     uint form = expr_form(node);
-    if ((kind == HIR_ASSIGN_EXPR ||
-         kind == HIR_BINARY_EXPR ||
-         kind == HIR_UNARY_EXPR ||
-         kind == HIR_NAME_EXPR ||
-         kind == HIR_LITERAL_EXPR) &&
+    uint extra_store = aggregate_element_store_count(node);
+    bool expression_value_node =
+        kind == HIR_ASSIGN_EXPR ||
+        kind == HIR_BINARY_EXPR ||
+        kind == HIR_UNARY_EXPR ||
+        kind == HIR_NAME_EXPR ||
+        kind == HIR_LITERAL_EXPR ||
+        (kind == HIR_EXPR && extra_store != 0u);
+    if (expression_value_node &&
         expression_form_has_value_instr(form))
     {
         if (kind == HIR_NAME_EXPR && has_enum_value_record(node))
@@ -1239,7 +1418,7 @@ void main(uint3 tid: SV_DispatchThreadID)
             write_count(node, padding, padding == 0u ? X86_NODE_INST_NONE : X86_NODE_INST_PADDING, INVALID);
             return;
         }
-        if (is_struct_literal_head_node(node))
+        if (extra_store == 0u && is_struct_literal_head_or_path_child(node))
         {
             write_count(node, padding, padding == 0u ? X86_NODE_INST_NONE : X86_NODE_INST_PADDING, INVALID);
             return;
@@ -1249,7 +1428,6 @@ void main(uint3 tid: SV_DispatchThreadID)
             write_count(node, padding, padding == 0u ? X86_NODE_INST_NONE : X86_NODE_INST_PADDING, INVALID);
             return;
         }
-        uint extra_store = aggregate_element_store_count(node);
         write_count(node, 1u + extra_store + padding, X86_NODE_INST_EXPR_VALUE, form);
         return;
     }

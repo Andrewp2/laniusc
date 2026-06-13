@@ -125,8 +125,56 @@ compiler path accepts it directly or a GPU-side transform implements it.
   single-file GPU type-check acceptance is covered for the primitive helper
   seeds in `stdlib/bool.lani` and `stdlib/i32.lani`. Module-form `core::*`
   scalar helpers can participate in explicit source-pack module/type/function
-  lookup. The `core::mem` seed exposes no-runtime generic value helpers that
-  type-check from an importing caller through `--stdlib-root` using both
+  lookup. Unsigned primitive helpers such as `core::u32::is_nonzero` and
+  `core::u8::is_nonzero` can type-check through `--stdlib-root` as frontend
+  evidence only. Integer parity predicates such as `core::i32::is_even`,
+  `core::u32::is_odd`, and `core::u8::is_even` also type-check through
+  `--stdlib-root` as frontend evidence only. The i32 sign-bound predicates
+  `core::i32::is_nonnegative(value)` and
+  `core::i32::is_nonpositive(value)` also type-check through `--stdlib-root`
+  as frontend evidence only. The pure unsigned helper
+  `core::u32::abs_diff` and unsigned strict range predicates such as
+  `core::u32::between_exclusive` and `core::u8::between_exclusive` also
+  type-check through `--stdlib-root` as frontend evidence only.
+  `core::char` ASCII classification
+  helpers, including
+  word-character, hexadecimal-digit, whitespace, graphic, printable, and
+  case-insensitive equality predicates, can also type-check through
+  `--stdlib-root` as frontend evidence only. `core::char::is_ascii_word(value)`
+  is a pure source-level classifier for ASCII alphanumeric characters plus `_`;
+  it is not executable backend coverage.
+  `core::u32::checked_add(left, right)` returns
+  `core::option::Option<u32>` and type-checks through `--stdlib-root` as
+  frontend unsigned overflow-contract evidence only.
+  `core::u32::checked_sub(left, right)` returns
+  `core::option::Option<u32>` and type-checks through `--stdlib-root` as
+  frontend unsigned underflow-contract evidence only.
+  `core::u32::checked_next_power_of_two(value)` returns
+  `core::option::Option<u32>` and type-checks through `--stdlib-root` as
+  frontend overflow-aware power-of-two rounding evidence only.
+  `core::u32::saturating_mul(left, right)` returns `u32` and type-checks
+  through `--stdlib-root` as frontend saturating unsigned multiplication
+  evidence only. `core::u8::checked_add` returns
+  `core::option::Option<u8>` and type-checks through `--stdlib-root` as
+  frontend byte overflow-contract evidence only.
+  `core::i64::checked_abs(value)`,
+  `core::i64::checked_add(left, right)`, and
+  `core::i64::checked_sub(left, right)` return
+  `core::option::Option<i64>` and type-check through `--stdlib-root` as
+  frontend signed overflow-contract evidence only.
+  `core::u8`
+  byte-oriented ASCII range, control-byte, punctuation,
+  case-normalization, and case-insensitive equality helpers also type-check
+  through `--stdlib-root` as frontend evidence only. `core::f32` sign and zero
+  predicates `is_negative(value)`, `is_positive(value)`, `is_zero(value)`,
+  `is_nonzero(value)`, `signum(value)`, `between_exclusive(value, low, high)`,
+  and `between_inclusive(value, low, high)` type-check through `--stdlib-root`
+  as frontend evidence only. `core::i32::checked_add(left, right)` returns
+  `core::option::Option<i32>` and type-checks through `--stdlib-root` as
+  frontend overflow-contract evidence only. The
+  `core::mem` seed exposes
+  no-runtime generic value helpers
+  that type-check from an importing caller through `--stdlib-root` using both
   imported-name and qualified calls; this is frontend/type-check evidence only,
   not a move, borrow, destructor, layout, or allocation model. The
   `core::target` seed exposes a public `Capability = bool` alias
@@ -152,6 +200,9 @@ compiler path accepts it directly or a GPU-side transform implements it.
   `runtime_abi_version_for_service(id)` for known/unknown service descriptor
   ABI classification, conservative `has_service(id)` lookups,
   `service_status(id)` for unknown/known-unavailable/available status codes,
+  the flat `required_runtime_services` row field count and field ordinals,
+  raw status predicates such as
+  `runtime_service_status_is_fail_closed(status)`,
   descriptor-only status predicates such as `service_is_unavailable(id)`, plus
   `service_is_contract_only(id)`, `service_requires_runtime_binding(id)`, and
   `runtime_bound_api_requires_binding(id)` for known-but-unbound service/API
@@ -165,7 +216,12 @@ compiler path accepts it directly or a GPU-side transform implements it.
   `required_runtime_abi_version = RUNTIME_ABI_VERSION`. Runtime-bound
   descriptors are accepted only as ABI-pinned contract metadata today; the
   public descriptor builder canonicalizes service-id ordering, persists flat
-  service requirement rows with unavailable status, exposes those rows through
+  service requirement rows with unavailable status, exposes a
+  `runtime_service_requirement_row_is_valid(id, abi, status)` source guard for
+  recognized active-ABI known-unbound rows, exposes a
+  `runtime_service_requirement_row_is_fail_closed(id, abi, status)` rejection
+  guard for unknown ids, unsupported ABIs, and non-unavailable statuses, publishes
+  those rows through
   `runtime_service_requirement_records` descriptor records, and writes a
   `runtime_abi` metadata object with the metadata format version, ABI version,
   service count, and first/last service-id bounds. Validation rejects
@@ -186,21 +242,30 @@ compiler path accepts it directly or a GPU-side transform implements it.
   ABI-version, descriptor metadata, known-service, status, blocked,
   contract-only host-ABI, and runtime-binding helpers so callers can compare
   the panic runtime boundary to `core::runtime` without backend recognizers.
+  `alloc::allocator` exposes the same contract-only allocator service boundary
+  plus a null-pointer unavailable sentinel and fail-closed allocation/reallocation
+  result classifiers that type-check through `--stdlib-root`; these are
+  frontend/source contracts only, not executable heap allocation support.
   `std::io` and `std::process` now separate descriptor metadata from runtime
   binding by exposing contract-only host-ABI predicates. `std::process` also
   mirrors each raw process extern with executable, blocked, and
-  requires-binding probes so tooling can diagnose an unbound service before any
-  executable claim is made.
-  `std::fs`, `std::time`, and `std::env` now follow the same runtime-gate
-  shape for their public host-service calls: callers can type-check service-id,
-  ABI, unavailable-status, descriptor-metadata, contract-only, non-executable,
-  blocked, and requires-binding predicates through `--stdlib-root`, but this
-  remains contract metadata until host filesystem, clock, and environment
-  bindings are implemented.
+  requires-binding probes plus known-but-unbound companions so tooling can
+  diagnose a recognized unbound service before any executable claim is made.
+  `std::fs`, `std::time`, `std::env`, `std::net`, `std::random`, `std::gpu`,
+  and `std::thread` now follow the same runtime-gate shape for their public
+  host-service calls: callers can type-check service-id, ABI,
+  unavailable-status, descriptor-metadata, contract-only, non-executable,
+  blocked, and requires-binding predicates through `--stdlib-root`. They also
+  expose known-but-unbound probes for their recognized runtime services and
+  public API families/operations, so tooling can distinguish contract-only
+  declarations from unknown runtime services. This remains contract metadata
+  until host filesystem, clock, environment, network, entropy, GPU host-service,
+  and thread bindings are implemented.
   `std::host` now exposes the aggregate host-service descriptor through the
   same fail-closed shape. It can type-check through `--stdlib-root` alongside
-  `core::runtime`, but it deliberately declares no raw host externs and remains
-  descriptor metadata only until a host-services runtime ABI exists.
+  `core::runtime`, including known-but-unbound aggregate probes, but it
+  deliberately declares no raw host externs and remains descriptor metadata only
+  until a host-services runtime ABI exists.
   Allocator and `std::*` extern declarations can now participate in
   resolver-backed qualified source-pack call type checking when their modules
   are explicitly supplied, but they remain non-executable source artifacts
@@ -333,7 +398,10 @@ compiler path accepts it directly or a GPU-side transform implements it.
   local and qualified unit enum variants can type-check through source-pack
   module resolver arrays, and bounded contextual local or qualified generic enum
   constructors can type-check when their modules are explicitly supplied.
-  `core::ordering` now type-checks as an explicitly supplied source-pack seed.
+  `core::ordering` now type-checks as an explicitly supplied source-pack seed
+  and through `--stdlib-root` for source-level helpers such as
+  `core::ordering::to_i32(ordering)`, which maps `Less`/`Equal`/`Greater` to
+  `-1`/`0`/`1` as frontend evidence only.
   Symbolic generic enum constructor returns can type-check when the return
   expression is validated against `fn_return_ref_*` metadata. Bounded
   stdlib-shaped matches such as `Some(inner) -> inner` / `None -> fallback`
@@ -341,9 +409,30 @@ compiler path accepts it directly or a GPU-side transform implements it.
   payload substitution. Bounded module-qualified generic calls such as
   `core::option::unwrap_or(value, fallback)` and
   `core::result::unwrap_or(value, 3)` can type-check through HIR call spans,
-  resolver arrays, GPU name-id tables, and type-ref metadata; match
-  exhaustiveness and payload enum layout remain unsupported. Tag-only
-  `Option`/`Result` predicate execution and `core::ordering::compare_i32`
+  resolver arrays, GPU name-id tables, and type-ref metadata. Concrete scalar
+  option predicates such as `core::option::contains_i32(value, expected)`,
+  `core::option::contains_u32(value, expected)`, and
+  `core::option::contains_u8(value, expected)`, plus Result payload predicates
+  such as `core::result::contains_i32(value, expected)`,
+  `core::result::contains_bool(value, expected)`,
+  `core::result::contains_u32(value, expected)`,
+  `core::result::contains_u8(value, expected)`,
+  `core::result::contains_err_i32(value, expected)`,
+  `core::result::contains_err_bool(value, expected)`,
+  `core::result::contains_err_u32(value, expected)`, and
+  `core::result::contains_err_u8(value, expected)`, can type-check through
+  `--stdlib-root` as frontend evidence while generic equality traits are still
+  incomplete. Same-type enum-choice helpers such as
+  `core::option::or(value, fallback)`,
+  `core::option::and(value, next)`, `core::option::xor(left, right)`,
+  `core::result::or(value, fallback)`, and
+  `core::result::and(value, next)` can type-check through `--stdlib-root` as
+  source-level frontend evidence only. `core::option::ok_or(value, error)` and
+  the reverse `core::option::ok(result)` / `core::option::err(result)`
+  conversions type-check through explicit source packs as bounded
+  `Option<T>`/`Result<T, E>` match helpers; match exhaustiveness and payload
+  enum layout remain unsupported. Tag-only
+  `Option`/`Result` predicate execution and `core::ordering` comparator
   tag/match execution are frontend/type-check evidence only until enum/match
   WASM lowering is rebuilt on active record-driven passes.
   Broader payload and predicate helper execution remains blocked until codegen
@@ -537,17 +626,17 @@ not count.
 | Stdlib requirement | Required compiler/runtime artifact | Current evidence | Status |
 | --- | --- | --- | --- |
 | Source files in modules | GPU-compatible module/import resolution, visibility, and path lookup | `module path;` and leading `import path;` / `import "path";` have GPU syntax metadata coverage. The replacement foundation now uses paper-style name interning, sort/deduplication, module-key duplicate validation, sorted import-to-module lookup, per-namespace declaration lookup, type-path projection, a HIR value-call consumer for regular and extern qualified function calls plus bounded scalar/literal and generic enum-instance return inference, a HIR value-const consumer for top-level qualified and imported one-segment constants, a HIR unit-enum-variant consumer for local and qualified unit enum variants, and a type-instance projection feeding bounded local or qualified enum constructor calls. The prior scan-based path-import resolver, dense metadata slice, and same-source qualified-path shortcuts have been deleted. Path imports only resolve against explicitly supplied source-pack modules; non-leading modules, non-leading imports, quoted import loading, module-qualified generic callees outside the bounded scalar/literal or generic enum-instance inference slices, qualified method callees, broader non-constructor symbolic generic enum returns, and general qualified value paths remain rejected | Blocked |
-| Primitive helper modules | GPU parser/type checker plus GPU module/value-path resolution and HIR-driven function-body codegen for scalar and bounded aggregate helpers | Flat compatibility helpers such as `stdlib/bool.lani` and `stdlib/i32.lani` type-check directly. Module-form scalar helpers and constants can participate in source-pack module/type/function lookup when explicitly supplied, but broad package loading is still blocked. Active WASM execution has record-driven single-source sample coverage, synthetic source-pack selected linear scalar helper-call coverage, synthetic source-pack terminal-branch helper coverage, and resolver-backed source-pack scalar constant return coverage through GPU const-value records. The real module-form `core::bool::choose_i32` helper has normal `--stdlib-root` type-check evidence, but not executable backend coverage. Broader primitive stdlib helper families such as `core::bool` and `core::{i32,u32,u8}` still need active codegen tests before they are execution claims. Native x86 execution has bounded GPU HIR main-return coverage, resolver-backed module-qualified scalar constants, and one resolver-backed module-qualified direct helper call whose callee is a bounded scalar terminal-if parameter branch such as `core::i32::abs`, using call/value records, function layout rows, planned compare/branch/return instruction rows, and GPU relocation patch rows rather than helper-name or token-text recognition. Legacy WASM tests for broader branchy `i32`/`u32`/`u8` helpers, assertion/panic helpers, arrays, aggregates, methods, enum tag/predicate helpers, and payload-projecting enum helpers remain ignored until rebuilt on the record pipeline. Full stdlib helper modules are not broadly lowered, broader nested helper branches, broader helper loops, broader helper-to-helper calls, aggregate returns/parameters, array returns/loops, broader method-body lowering, enum payload layout/projection, and native stdlib-helper lowering remain unsupported | Partial for flat/source-pack frontend, active WASM top-level/synthetic-linear-helper/synthetic-terminal-branch/const slices, and native x86 scalar-const/helper slices; blocked for stdlib module execution |
-| `Option`, `Result`, `Ordering` | GPU enum semantics, match exhaustiveness, enum layout/lowering | Parser coverage plus concrete GPU constructor payload type/arity checks; bounded contextual generic enum constructor checks now accept annotated concrete locals such as `Maybe<i32> = Some(1)` and `Result<i32, bool> = Ok(1)`/`Err(false)` on GPU, local and qualified `Ordering` unit variants can type-check through source-pack resolver arrays, `core::ordering`, `core::option`, and `core::result` now type-check as explicitly supplied source-pack seeds, explicitly supplied local or module-qualified constructors such as `Some(1)` and `core::maybe::Some(1)` can type-check in annotated concrete local contexts, symbolic generic constructor returns such as `fn wrap<T>(value: T) -> Option<T> { return Some(value); }` can type-check through return-ref metadata, bounded stdlib-shaped matches such as `Some(inner) -> inner` / `None -> fallback` can type-check through HIR match spans and type-instance payload substitution, bounded module-qualified calls such as `core::option::unwrap_or(value, fallback)` / `core::result::unwrap_or(value, 3)` can infer scalar returns from type-ref metadata, and bounded module-qualified enum-instance returns such as `core::option::replace(value, next)` can validate contextual `Option<T>` results when `T` is bound by arguments. Current WASM execution for tag-only predicates and `core::ordering::compare_i32` tag/match dispatch is ignored; the retired enum-match module emitter is not loaded until enum/match lowering is rebuilt on active record-driven passes. Package loading, exhaustive match semantics, payload enum layout, broader predicate/helper backend execution, generic enum monomorphization, and broad backend lowering are still missing | Partial for parser/type-check; blocked for general enum codegen |
+| Primitive helper modules | GPU parser/type checker plus GPU module/value-path resolution and HIR-driven function-body codegen for scalar and bounded aggregate helpers | Flat compatibility helpers such as `stdlib/bool.lani` and `stdlib/i32.lani` type-check directly. Module-form scalar helpers and constants can participate in source-pack module/type/function lookup when explicitly supplied, but broad package loading is still blocked. Active WASM execution has record-driven single-source sample coverage, synthetic source-pack selected linear scalar helper-call coverage, synthetic source-pack terminal-branch helper coverage, and resolver-backed source-pack scalar constant return coverage through GPU const-value records. The real module-form `core::bool::choose_i32` helper has normal `--stdlib-root` type-check evidence, and `core::{i32,u32,u8}::{is_nonzero,is_even,is_odd}` has normal `--stdlib-root` type-check evidence as scalar predicates, but neither is executable backend coverage. Broader primitive stdlib helper families such as `core::bool` and `core::{i32,u32,u8}` still need active codegen tests before they are execution claims. Native x86 execution has bounded GPU HIR main-return coverage, resolver-backed module-qualified scalar constants, and one resolver-backed module-qualified direct helper call whose callee is a bounded scalar terminal-if parameter branch such as `core::i32::abs`, using call/value records, function layout rows, planned compare/branch/return instruction rows, and GPU relocation patch rows rather than helper-name or token-text recognition. Legacy WASM tests for broader branchy `i32`/`u32`/`u8` helpers, assertion/panic helpers, arrays, aggregates, methods, enum tag/predicate helpers, and payload-projecting enum helpers remain ignored until rebuilt on the record pipeline. Full stdlib helper modules are not broadly lowered, broader nested helper branches, broader helper loops, broader helper-to-helper calls, aggregate returns/parameters, array returns/loops, broader method-body lowering, enum payload layout/projection, and native stdlib-helper lowering remain unsupported | Partial for flat/source-pack frontend, active WASM top-level/synthetic-linear-helper/synthetic-terminal-branch/const slices, and native x86 scalar-const/helper slices; blocked for stdlib module execution |
+| `Option`, `Result`, `Ordering` | GPU enum semantics, match exhaustiveness, enum layout/lowering | Parser coverage plus concrete GPU constructor payload type/arity checks; bounded contextual generic enum constructor checks now accept annotated concrete locals such as `Maybe<i32> = Some(1)` and `Result<i32, bool> = Ok(1)`/`Err(false)` on GPU, local and qualified `Ordering` unit variants can type-check through source-pack resolver arrays, `core::ordering` now type-checks with `compare_i32`, `compare_i64`, `compare_u32`, `compare_u8`, `reverse`, `then`, and predicate helpers as an explicitly supplied source-pack seed, and `core::option` and `core::result` now type-check as explicitly supplied source-pack seeds, explicitly supplied local or module-qualified constructors such as `Some(1)` and `core::maybe::Some(1)` can type-check in annotated concrete local contexts, symbolic generic constructor returns such as `fn wrap<T>(value: T) -> Option<T> { return Some(value); }` can type-check through return-ref metadata, bounded stdlib-shaped matches such as `Some(inner) -> inner` / `None -> fallback` can type-check through HIR match spans and type-instance payload substitution, bounded module-qualified calls such as `core::option::unwrap_or(value, fallback)` / `core::result::unwrap_or(value, 3)` can infer scalar returns from type-ref metadata, concrete scalar payload predicates such as `core::option::contains_i32(value, expected)`, `core::option::contains_u32(value, expected)`, `core::option::contains_u8(value, expected)`, `core::result::contains_i32(value, expected)`, `core::result::contains_bool(value, expected)`, `core::result::contains_u32(value, expected)`, `core::result::contains_u8(value, expected)`, `core::result::contains_err_i32(value, expected)`, `core::result::contains_err_bool(value, expected)`, `core::result::contains_err_u32(value, expected)`, and `core::result::contains_err_u8(value, expected)` can type-check through `--stdlib-root`, and bounded module-qualified enum-instance returns such as `core::option::replace(value, next)` and `core::option::xor(left, right)` can validate contextual `Option<T>` results when `T` is bound by arguments. `core::option::ok_or(value, error)` now type-checks as a bounded `Option<T>` to `Result<T, E>` helper by resolving module-qualified `core::result::{Ok, Err}` constructors inside match arms, and `core::option::ok(result)` / `core::option::err(result)` type-check as bounded reverse conversions from `Result<T, E>` to `Option<T>` / `Option<E>`. Current WASM execution for tag-only predicates and `core::ordering` comparator tag/match dispatch is ignored; the retired enum-match module emitter is not loaded until enum/match lowering is rebuilt on active record-driven passes. Package loading, exhaustive match semantics, payload enum layout, broader predicate/helper backend execution, generic enum monomorphization, and broad backend lowering are still missing | Partial for parser/type-check; blocked for general enum codegen |
 | Generic function calls | Simple GPU call substitution for callee type parameters, with full monomorphization/backend specialization as separate later work | `keep(7)`, `keep(true)`, nested direct calls such as `keep(keep(7))`, generic forwarding from one generic function into another, bounded direct generic array/slice calls whose element return `T` or annotated-local array result `[T; N]` is inferred from one declaration-backed actual argument, bounded module-qualified scalar generic calls such as `core::id::keep(1)`, bounded module-qualified generic enum-instance returns such as `core::option::replace(value, 11)`, and bounded module-qualified `Option`/`Result` helpers inferred from scalar literal or annotated local arguments have GPU type-check tests; conflicting repeated generic arguments and generic struct aggregate returns remain rejected | Partial |
 | Generic arrays and slices | Const generics, generic element types, slice metadata representation, GPU type-instance records | Limited `[i32; N]` and `[i32]` type-check tests; `type_check_type_instances_01_collect.slang` records array/slice element and length refs on GPU, `type_check_type_instances_07_array_index_results.slang` publishes bounded generic `values[0]` and local `copy[0]` element result types for parameter/local/struct-field declarations, and `type_check_type_instances_05_array_return_refs.slang` accepts concrete identifier returns plus HIR-backed i32 value array returns, including bounded concrete index-expression elements, for matching `[i32; literal]` signatures and bounded generic identifier returns for matching `[T; N]` signatures. The flat and module-form `[i32; 4]` seeds now type-check on GPU, and bounded direct generic array/slice calls can infer element or annotated-local array results from declaration-backed actual arguments, but broader call returns, mismatched concrete/generic lengths, and backend lowering remain rejected | Partial |
 | Traits/interfaces and methods | Trait bounds, impl conformance, module-aware method lookup, dictionaries or static dispatch | Parser coverage for trait/impl/where and receiver syntax; direct `self.field` access type-checks for `self`, `self: Type`, and `&self` in impl bodies. Concrete inherent method calls use GPU method declaration records, sorted method key tables, interned names, type-ref metadata, and current module-id public/private checks. The bounded `core::range::Range<i32>` source-pack method fixture type-checks for annotated receivers and concrete call-result receivers such as `core::range::range_i32(1, 4).start()`. Method and aggregate WASM execution tests are ignored until rebuilt on active record passes; trait dispatch, broader generic methods, richer visibility policy, and broader backend lowering remain unavailable | Blocked |
 | `String` and `Vec` | Heap allocation, ownership model, pointer/slice/string ABI | Allocator ABI seeds only | Blocked |
 | Maps, sets, heaps, trees | Generics, allocation, traits, ordering/hashing, loops | No complete prerequisites | Blocked |
 | Formatting/parsing | Strings, writers/builders, integer/float formatting, error types | No string/runtime representation | Blocked |
-| `std` host APIs | Target capability model, ABI, native linking/x86 codegen | Raw extern ABI declaration seed files type-check as single-file inputs, and bounded source-pack fixtures can type-check resolver-backed qualified calls such as `std::io::flush_stdout()` or allocator hooks when the defining module is explicitly supplied. `core::runtime` now provides a focused stdlib contract with false service capabilities for allocator, filesystem, stdio, clock, network, panic hooks, aggregate host services, threads, secure RNG, GPU host services, process, environment, and test harness, stable numeric service descriptors, descriptor-only service/status and ABI-version classification, and public query helpers, but there is still no quoted import loading, host runtime, executable capability binding, native linking, or executable backend support | Blocked |
+| `std` host APIs | Target capability model, ABI, native linking/x86 codegen | Raw extern ABI declaration seed files type-check as single-file inputs, and bounded source-pack fixtures can type-check resolver-backed qualified calls such as `std::io::flush_stdout()` or allocator hooks when the defining module is explicitly supplied. `std::path` is the current no-host exception inside `std`: it exposes frontend/source-level lexical byte and component-header classifiers for separators, NUL/control bytes, Windows-reserved component punctuation, drive prefixes, lexically rooted path headers, and `.`/`..` handling without allocating path buffers, normalizing or canonicalizing paths, accessing the filesystem, or binding host normalization. One separator classifier, `std::path::path_byte_is_separator`, now also has focused source-pack x86 execution evidence for `u8` inputs. `core::runtime` now provides a focused stdlib contract with false service capabilities for allocator, filesystem, stdio, clock, network, panic hooks, aggregate host services, threads, secure RNG, GPU host services, process, environment, and test harness, stable numeric service descriptors, descriptor-only service/status and ABI-version classification, and public query helpers, but there is still no quoted import loading, host runtime, executable capability binding, native linking, or executable backend support | Blocked |
 | Test framework | Assertions, panic reporting, source locations, harness | `assert(bool)` and explicit source-pack assertion helper seeds can type-check. Legacy assertion/panic WASM execution and trap tests remain ignored until rebuilt on active record passes. Panic reporting, source locations, formatted messages, automatic package loading, and harness integration remain unavailable | Partial for frontend/type-check; blocked for helper execution |
-| Native output | GPU register allocation and x86_64 binary emission wired into compiler | The old WASM-translation prototype has been deleted. A new direct GPU HIR-to-x86 slice records the `main` function from GPU `fn_entrypoint_tag` metadata, lowers a literal return including HIR-backed unary signed integer literals and boolean literals, up to two scalar locals initialized from scalar literals, HIR-backed unary negation over bounded scalar locals, HIR-backed logical-not over bounded boolean atoms, one bounded two-atom integer or boolean binary return, one scalar comparison return, or one terminal scalar `if`/`else` with a comparison condition into vregs, materializes live intervals by scanning explicit GPU value-edge records, assigns registers from those liveness records with no token/declaration-index register map, selects fixed x86 instruction records including `cmp`/`setcc`/`movzx` for predicate returns, `and`/`or` records for boolean binary returns, and conditional/unconditional branch records for terminal branches, computes instruction sizes and byte offsets, encodes packed `.text` bytes with zeroed relocation fields, patches branch displacements from explicit GPU relocation records, computes ELF layout records, emits final ELF64 bytes for the bounded `main` return shapes, and rejects unsupported return expressions through GPU-written status. The x86 lowerer consumes parser-owned packed `hir_expr_record` rows for binary/comparison operators and operands, parser-owned HIR literal value records for integer immediates, parser-owned `hir_stmt_record` rows for local binding, return, const, and terminal `if` block facts, and explicit `x86_vreg_arg0/1` plus packed branch-arm value edges for branch condition/arm values rather than reparsing source bytes, token punctuation/layout, or hard-coded branch vreg positions. The same direct x86 route can now receive explicit source packs and emit ELF for a module `main` that uses the bounded scalar main-return shape while supplied modules flow through GPU frontend/type metadata, plus one resolver-backed module-qualified scalar constant return such as `core::i32::MAX` through GPU `visible_decl` metadata, parser-owned return value tokens, and parser HIR path spans, and one resolver-backed module-qualified direct helper call whose callee is the bounded scalar terminal-if parameter branch shape. The helper branch path uses call/value records, function return eval/vreg records, function layout rows, planned compare/branch/return instruction rows, and GPU relocation patch rows rather than helper-name or token-text recognition; the CLI explicit `--stdlib`/input file-list path forwards to that same GPU source-pack x86 entrypoint without import discovery or host semantic passes. Package imports, broad call lowering, broader native source-pack helper execution, nested branches/loops, spilling, and broader executable backend coverage remain missing | Partial |
+| Native output | GPU register allocation and x86_64 binary emission wired into compiler | The old WASM-translation prototype has been deleted. A new direct GPU HIR-to-x86 slice records the `main` function from GPU `fn_entrypoint_tag` metadata, lowers a literal return including HIR-backed unary signed integer literals and boolean literals, up to two scalar locals initialized from scalar literals, HIR-backed unary negation over bounded scalar locals, HIR-backed logical-not over bounded boolean atoms, one bounded two-atom integer or boolean binary return, one scalar comparison return, or one terminal scalar `if`/`else` with a comparison condition into vregs, materializes live intervals by scanning explicit GPU value-edge records, assigns registers from those liveness records with no token/declaration-index register map, selects fixed x86 instruction records including `cmp`/`setcc`/`movzx` for predicate returns, `and`/`or` records for boolean binary returns, and conditional/unconditional branch records for terminal branches, computes instruction sizes and byte offsets, encodes packed `.text` bytes with zeroed relocation fields, patches branch displacements from explicit GPU relocation records, computes ELF layout records, emits final ELF64 bytes for the bounded `main` return shapes, and rejects unsupported return expressions through GPU-written status. The x86 lowerer consumes parser-owned packed `hir_expr_record` rows for binary/comparison operators and operands, parser-owned HIR literal value records for integer immediates, parser-owned `hir_stmt_record` rows for local binding, return, const, and terminal `if` block facts, and explicit `x86_vreg_arg0/1` plus packed branch-arm value edges for branch condition/arm values rather than reparsing source bytes, token punctuation/layout, or hard-coded branch vreg positions. The same direct x86 route can now receive explicit source packs and emit ELF for a module `main` that uses the bounded scalar main-return shape while supplied modules flow through GPU frontend/type metadata, plus one resolver-backed module-qualified scalar constant return such as `core::i32::MAX` through GPU `visible_decl` metadata, parser-owned return value tokens, and parser HIR path spans, one resolver-backed module-qualified direct helper call whose callee is the bounded scalar terminal-if parameter branch shape, and one real `std::path::path_byte_is_separator` source-pack helper execution gate. The helper branch path uses call/value records, function return eval/vreg records, function layout rows, planned compare/branch/return instruction rows, and GPU relocation patch rows rather than helper-name or token-text recognition; the CLI explicit `--stdlib`/input file-list path forwards to that same GPU source-pack x86 entrypoint without import discovery or host semantic passes. Package imports, broad call lowering, broader native source-pack helper execution, nested branches/loops, spilling, and broader executable backend coverage remain missing | Partial |
 
 Any row marked partial or blocked is not done for the objective.
 

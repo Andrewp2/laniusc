@@ -96,6 +96,8 @@ impl<'gpu> GpuCompiler<'gpu> {
                                             type_len_value: &parse_bufs.hir_type_len_value,
                                             type_path_leaf_node: &parse_bufs
                                                 .hir_type_path_leaf_node,
+                                            bound_path_owner_by_leaf: &parse_bufs
+                                                .hir_bound_path_owner_by_leaf,
                                             type_arg_start: &parse_bufs.hir_type_arg_start,
                                             type_arg_count: &parse_bufs.hir_type_arg_count,
                                             type_arg_next: &parse_bufs.hir_type_arg_next,
@@ -129,6 +131,10 @@ impl<'gpu> GpuCompiler<'gpu> {
                                             member_name_token: &parse_bufs.hir_member_name_token,
                                             stmt_record: &parse_bufs.hir_stmt_record,
                                             stmt_scope_end: &parse_bufs.hir_stmt_scope_end,
+                                            nearest_stmt_node: &parse_bufs.hir_nearest_stmt_node,
+                                            nearest_block_node: &parse_bufs.hir_nearest_block_node,
+                                            nearest_loop_node: &parse_bufs.hir_nearest_loop_node,
+                                            nearest_fn_node: &parse_bufs.hir_nearest_fn_node,
                                             array_lit_first_element: &parse_bufs
                                                 .hir_array_lit_first_element,
                                             array_lit_element_count: &parse_bufs
@@ -241,12 +247,14 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 codegen.name_id_by_token,
                                                 codegen.enclosing_fn,
                                                 wasm::GpuWasmStructMetadataBuffers {
-                                                    field_parent_struct: &parse_bufs
-                                                        .hir_struct_field_parent_struct,
-                                                    field_ordinal: &parse_bufs
-                                                        .hir_struct_field_ordinal,
                                                     lit_field_parent_lit: &parse_bufs
                                                         .hir_struct_lit_field_parent_lit,
+                                                    member_name_token: &parse_bufs
+                                                        .hir_member_name_token,
+                                                    member_result_field_ordinal: codegen
+                                                        .member_result_field_ordinal,
+                                                    struct_init_field_ordinal_by_node: codegen
+                                                        .struct_init_field_ordinal_by_node,
                                                 },
                                                 wasm::GpuWasmEnumMatchMetadataBuffers {
                                                     variant_ordinal: &parse_bufs
@@ -468,6 +476,8 @@ impl<'gpu> GpuCompiler<'gpu> {
                                             type_len_value: &parse_bufs.hir_type_len_value,
                                             type_path_leaf_node: &parse_bufs
                                                 .hir_type_path_leaf_node,
+                                            bound_path_owner_by_leaf: &parse_bufs
+                                                .hir_bound_path_owner_by_leaf,
                                             type_arg_start: &parse_bufs.hir_type_arg_start,
                                             type_arg_count: &parse_bufs.hir_type_arg_count,
                                             type_arg_next: &parse_bufs.hir_type_arg_next,
@@ -501,6 +511,10 @@ impl<'gpu> GpuCompiler<'gpu> {
                                             member_name_token: &parse_bufs.hir_member_name_token,
                                             stmt_record: &parse_bufs.hir_stmt_record,
                                             stmt_scope_end: &parse_bufs.hir_stmt_scope_end,
+                                            nearest_stmt_node: &parse_bufs.hir_nearest_stmt_node,
+                                            nearest_block_node: &parse_bufs.hir_nearest_block_node,
+                                            nearest_loop_node: &parse_bufs.hir_nearest_loop_node,
+                                            nearest_fn_node: &parse_bufs.hir_nearest_fn_node,
                                             array_lit_first_element: &parse_bufs
                                                 .hir_array_lit_first_element,
                                             array_lit_element_count: &parse_bufs
@@ -613,12 +627,14 @@ impl<'gpu> GpuCompiler<'gpu> {
                                                 codegen.name_id_by_token,
                                                 codegen.enclosing_fn,
                                                 wasm::GpuWasmStructMetadataBuffers {
-                                                    field_parent_struct: &parse_bufs
-                                                        .hir_struct_field_parent_struct,
-                                                    field_ordinal: &parse_bufs
-                                                        .hir_struct_field_ordinal,
                                                     lit_field_parent_lit: &parse_bufs
                                                         .hir_struct_lit_field_parent_lit,
+                                                    member_name_token: &parse_bufs
+                                                        .hir_member_name_token,
+                                                    member_result_field_ordinal: codegen
+                                                        .member_result_field_ordinal,
+                                                    struct_init_field_ordinal_by_node: codegen
+                                                        .struct_init_field_ordinal_by_node,
                                                 },
                                                 wasm::GpuWasmEnumMatchMetadataBuffers {
                                                     variant_ordinal: &parse_bufs

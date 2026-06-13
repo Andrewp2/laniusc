@@ -19,3 +19,99 @@ pub fn compare_i32(left: i32, right: i32) -> Ordering {
         }
     }
 }
+
+pub fn compare_i64(left: i64, right: i64) -> Ordering {
+    if (left < right) {
+        return Less;
+    } else {
+        if (left > right) {
+            return Greater;
+        } else {
+            return Equal;
+        }
+    }
+}
+
+pub fn compare_u32(left: u32, right: u32) -> Ordering {
+    if (left < right) {
+        return Less;
+    } else {
+        if (left > right) {
+            return Greater;
+        } else {
+            return Equal;
+        }
+    }
+}
+
+pub fn compare_u8(left: u8, right: u8) -> Ordering {
+    if (left < right) {
+        return Less;
+    } else {
+        if (left > right) {
+            return Greater;
+        } else {
+            return Equal;
+        }
+    }
+}
+
+pub fn reverse(ordering: Ordering) -> Ordering {
+    return match (ordering) {
+        Less -> Greater,
+        Equal -> Equal,
+        Greater -> Less,
+    };
+}
+
+pub fn then(ordering: Ordering, next: Ordering) -> Ordering {
+    if (is_equal(ordering)) {
+        return next;
+    } else {
+        return ordering;
+    }
+}
+
+pub fn to_i32(ordering: Ordering) -> i32 {
+    return match (ordering) {
+        Less -> -1,
+        Equal -> 0,
+        Greater -> 1,
+    };
+}
+
+pub fn is_less(ordering: Ordering) -> bool {
+    return match (ordering) {
+        Less -> true,
+        Equal -> false,
+        Greater -> false,
+    };
+}
+
+pub fn is_equal(ordering: Ordering) -> bool {
+    return match (ordering) {
+        Less -> false,
+        Equal -> true,
+        Greater -> false,
+    };
+}
+
+pub fn is_greater(ordering: Ordering) -> bool {
+    return match (ordering) {
+        Less -> false,
+        Equal -> false,
+        Greater -> true,
+    };
+}
+
+pub fn is_less_or_equal(ordering: Ordering) -> bool {
+    return !is_greater(ordering);
+}
+
+pub fn is_greater_or_equal(ordering: Ordering) -> bool {
+    return !is_less(ordering);
+}
+
+pub fn is_not_equal(ordering: Ordering) -> bool {
+    return !is_equal(ordering);
+}

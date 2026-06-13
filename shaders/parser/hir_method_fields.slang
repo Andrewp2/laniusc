@@ -22,7 +22,6 @@ StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> next_sibling;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_token_pos;
-StructuredBuffer<uint> hir_item_name_token;
 StructuredBuffer<uint> hir_node_dense_id;
 StructuredBuffer<uint> hir_semantic_dense_node;
 StructuredBuffer<uint> hir_semantic_count;
@@ -216,13 +215,19 @@ uint receiver_mode_for_param(uint param_node)
     return METHOD_RECEIVER_NONE;
 }
 
+uint impl_method_name_token(uint fn_node)
+{
+    uint start = valid_node(fn_node) ? hir_token_pos[fn_node] : INVALID;
+    return start == INVALID ? INVALID : start + 1u;
+}
+
 void publish_method_function(uint fn_node)
 {
     uint impl_node = method_impl_node_for_fn(fn_node);
     if (!valid_node(impl_node))
         return;
 
-    uint name_token = hir_item_name_token[fn_node];
+    uint name_token = impl_method_name_token(fn_node);
     if (name_token == INVALID)
         return;
 

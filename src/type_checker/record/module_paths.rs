@@ -10,6 +10,7 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
     mut timer: Option<&mut crate::gpu::timer::GpuTimer>,
 ) -> Result<()> {
     let hir_work = state.n_blocks.saturating_mul(256).max(1);
+    let module_work = state.module_n_blocks.saturating_mul(256).max(1);
     let record_n_blocks = state.record_n_blocks.max(1);
     let file_map_clear_work = hir_work;
 
@@ -95,26 +96,24 @@ pub(in crate::type_checker) fn record_module_path_state_with_passes(
         &state.bind_groups.module_scan,
         "type_check.modules.module_record_scan",
     )?;
-    record_compute_indirect(
+    record_compute(
         encoder,
         &passes.modules_scatter_module_records,
         &state.bind_groups.scatter_module_records,
         "type_check.modules.scatter_module_records",
-        hir_active_dispatch_args,
+        hir_work.max(module_work),
     )?;
+    let module_key_work = state
+        .module_n_blocks
+        .saturating_mul(256)
+        .saturating_mul(MODULE_KEY_SEGMENT_ROW_WIDTH as u32)
+        .max(1);
     record_compute(
-        encoder,
-        &passes.count_dispatch_args,
-        &state.bind_groups.module_key_segment_dispatch,
-        "type_check.modules.module_key_segment_dispatch_args",
-        1,
-    )?;
-    record_compute_indirect(
         encoder,
         &passes.modules_build_module_keys,
         &state.bind_groups.build_module_keys,
         "type_check.modules.build_module_keys",
-        &state.module_key_radix_dispatch_args,
+        module_key_work,
     )?;
     record_compute(
         encoder,

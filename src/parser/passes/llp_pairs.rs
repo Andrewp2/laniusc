@@ -45,6 +45,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for LLPPairsPass {
                 b.semantic_token_kinds.as_entire_binding(),
             ),
             ("token_count".into(), b.token_count.as_entire_binding()),
+            (
+                "token_file_id".into(),
+                b.default_token_file_id.as_entire_binding(),
+            ),
             ("action_table".into(), b.action_table.as_entire_binding()),
             ("out_headers".into(), b.out_headers.as_entire_binding()),
             ("gParams".into(), b.params_llp.as_entire_binding()),

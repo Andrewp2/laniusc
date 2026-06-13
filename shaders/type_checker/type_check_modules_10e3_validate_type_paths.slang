@@ -8,6 +8,7 @@
 //   status buffer. It does not inspect source bytes, token spelling, helper
 //   names, or function-body shapes.
 
+import generated_parse_production_ids;
 import gpu_index;
 import status;
 
@@ -18,12 +19,23 @@ struct Params
     uint n_hir_nodes;
 };
 
+struct TokenIn
+{
+    uint kind;
+    uint start;
+    uint len;
+};
+
 ConstantBuffer<Params> gParams;
 
+StructuredBuffer<TokenIn> token_words;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_kind;
 StructuredBuffer<uint> path_segment_count;
+StructuredBuffer<uint> path_owner_hir;
 StructuredBuffer<uint> path_owner_token;
+StructuredBuffer<uint> node_kind;
+StructuredBuffer<uint> parent;
 StructuredBuffer<uint> resolved_type_status;
 StructuredBuffer<uint> resolved_value_status;
 StructuredBuffer<uint> module_value_path_status;
@@ -43,6 +55,9 @@ static const uint PATH_RESOLVE_STATUS_INVALID = 0xffffffffu;
 static const uint ERR_UNKNOWN_TYPE = 1u;
 static const uint ERR_UNRESOLVED_IDENT = 2u;
 
+static const uint TK_IMPORT = 96u;
+static const uint TK_MODULE = 97u;
+
 uint linear_thread_id(uint3 dtid)
 {
     return linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
@@ -58,6 +73,85 @@ void record_error(uint token_i, uint code, uint detail)
     record_min_token_error(status, token_i, code, detail);
 }
 
+bool predicate_bound_type_path(uint path_i)
+{
+    uint node = path_owner_hir[path_i];
+    [loop]
+    for (uint guard = 0u; guard < 16u && node != INVALID && node < gParams.n_hir_nodes; guard += 1u)
+    {
+        uint kind = node_kind[node];
+        if (kind == PROD_BOUND_TYPE_IDENT ||
+            kind == PROD_BOUND_TYPE_REF ||
+            kind == PROD_BOUND_TYPE_PATH ||
+            kind == PROD_BOUND_TYPE_PATH_IDENT ||
+            kind == PROD_BOUND_TYPE_PATH_MORE ||
+            kind == PROD_BOUND_TYPE_PATH_END ||
+            kind == PROD_BOUND_TYPE_ARGS_NONE ||
+            kind == PROD_BOUND_TYPE_ARGS_SOME ||
+            kind == PROD_BOUND_TYPE_ARGS_MORE ||
+            kind == PROD_BOUND_TYPE_ARGS_END ||
+            kind == PROD_BOUND_TYPE_ARGS_AFTER_COMMA_MORE ||
+            kind == PROD_BOUND_TYPE_ARGS_AFTER_COMMA_TRAILING ||
+            kind == PROD_TYPE_PARAM_BOUND ||
+            kind == PROD_TYPE_PARAM_BOUND_NONE ||
+            kind == PROD_TYPE_PARAM_BOUND_LIST ||
+            kind == PROD_TYPE_PARAM_BOUND_MORE ||
+            kind == PROD_TYPE_PARAM_BOUND_END ||
+            kind == PROD_WHERE_TYPE_BOUND)
+            return true;
+
+        node = parent[node];
+    }
+    return false;
+}
+
+bool metadata_path_record_step(inout uint node, out bool done)
+{
+    done = true;
+    if (node == INVALID || node >= gParams.n_hir_nodes)
+        return false;
+
+    uint kind = node_kind[node];
+    if (kind == PROD_MODULE ||
+        kind == PROD_IMPORT ||
+        kind == PROD_IMPORT_PATH ||
+        kind == PROD_ITEM_MODULE ||
+        kind == PROD_ITEM_IMPORT)
+        return true;
+    if (kind != PROD_PATH)
+        return false;
+
+    node = parent[node];
+    done = false;
+    return false;
+}
+
+bool metadata_path_record(uint path_i)
+{
+    uint node = path_owner_hir[path_i];
+    bool done = false;
+
+    bool found = metadata_path_record_step(node, done);
+    if (found || done)
+        return found;
+    found = metadata_path_record_step(node, done);
+    if (found || done)
+        return found;
+    found = metadata_path_record_step(node, done);
+    if (found || done)
+        return found;
+    found = metadata_path_record_step(node, done);
+    return found;
+}
+
+bool metadata_path_token_context(uint start)
+{
+    if (start == 0u || start >= gParams.n_tokens)
+        return false;
+    uint prev_kind = token_words[start - 1u].kind;
+    return prev_kind == TK_MODULE || prev_kind == TK_IMPORT;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -67,6 +161,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     uint owner_token = path_owner_token[path_i];
     uint error_token = owner_token < gParams.n_tokens ? owner_token : gParams.n_tokens;
+
+    if (predicate_bound_type_path(path_i))
+        return;
 
     if (path_kind[path_i] == PATH_RECORD_KIND_HIR_TYPE_EXPR)
     {
@@ -80,6 +177,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
 
     if (path_kind[path_i] != PATH_RECORD_KIND_HIR_PATH_EXPR)
+        return;
+    if (metadata_path_record(path_i) || metadata_path_token_context(owner_token))
         return;
     if (owner_token >= gParams.n_tokens || module_value_path_expr_head[owner_token] == 0u)
         return;

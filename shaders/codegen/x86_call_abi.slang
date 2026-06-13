@@ -18,6 +18,16 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
+struct FeatureParams
+{
+    uint mask;
+    uint enum_count;
+    uint match_count;
+    uint aggregate_count;
+};
+
+ConstantBuffer<FeatureParams> gX86Features;
+
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_fn_return_type_node;
@@ -34,6 +44,7 @@ StructuredBuffer<uint> type_instance_len_payload;
 StructuredBuffer<uint> x86_struct_type_record;
 StructuredBuffer<uint> x86_struct_record_status;
 StructuredBuffer<uint> x86_enum_type_record;
+StructuredBuffer<uint2> x86_enum_value_record;
 StructuredBuffer<uint> x86_enum_record_status;
 
 RWStructuredBuffer<uint2> x86_call_abi_record;
@@ -46,15 +57,21 @@ static const uint X86_CALL_ABI_OK = 1u;
 static const uint X86_ENUM_RECORDS_OK = 1u;
 static const uint X86_STRUCT_RECORDS_OK = 1u;
 static const uint X86_ERR_CALL_ABI = 9u;
-static const uint X86_ERR_RECURSIVE_CALL = 25u;
+static const uint X86_ERR_ENUM_PAYLOAD_ARITY = 53u;
+static const uint X86_ERR_CALL_ARG_COUNT = 56u;
 
+static const uint X86_FEATURE_ENUM = 1u << 0u;
+static const uint X86_ENUM_VALUE_KIND_BITS = 4u;
+static const uint X86_ENUM_VALUE_KIND_MASK = 0xfu;
+static const uint X86_ENUM_VALUE_CALL_CTOR = 1u;
+static const uint X86_ENUM_VALUE_UNIT_CTOR = 2u;
 static const uint X86_CALL_TYPE_STRIDE = 3u;
 static const uint X86_CALL_ABI_ARG_COUNT_BITS = 8u;
 static const uint X86_CALL_ABI_ARG_COUNT_MASK = 0xffu;
 static const uint X86_CALL_ABI_RETURN_WIDTH_MAX = 0x00ffffffu;
 
 static const uint X86_SYSV_MAX_INTEGER_ARGS = 6u;
-static const uint X86_BACKEND_MAX_PACKED_CALL_ARGS = 4u;
+static const uint X86_BACKEND_MAX_PACKED_CALL_ARGS = 6u;
 static const uint HIR_TYPE = 5u;
 static const uint HIR_TYPE_FORM_ARRAY = 2u;
 static const uint TYPE_INSTANCE_ARRAY = 2u;
@@ -104,6 +121,54 @@ bool enum_records_ok()
 bool struct_records_ok()
 {
     return stage_status4_ok(x86_struct_record_status, X86_STRUCT_RECORDS_OK);
+}
+
+bool has_enum_feature()
+{
+    return (gX86Features.mask & X86_FEATURE_ENUM) != 0u;
+}
+
+uint enum_value_kind(uint2 record)
+{
+    return record.x & X86_ENUM_VALUE_KIND_MASK;
+}
+
+uint enum_value_payload_count(uint2 record)
+{
+    return record.x >> X86_ENUM_VALUE_KIND_BITS;
+}
+
+bool enum_value_record_is_supported(uint2 record)
+{
+    if (record.x == INVALID || record.y == INVALID)
+        return false;
+
+    uint kind = enum_value_kind(record);
+    uint payload_count = enum_value_payload_count(record);
+    return (kind == X86_ENUM_VALUE_UNIT_CTOR && payload_count == 0u) ||
+           (kind == X86_ENUM_VALUE_CALL_CTOR && payload_count == 1u);
+}
+
+bool has_enum_value_record(uint node)
+{
+    if (!has_enum_feature())
+        return false;
+    if (!valid_node(node))
+        return false;
+    return enum_value_record_is_supported(x86_enum_value_record[node]);
+}
+
+bool unsupported_multi_payload_enum_constructor(uint node)
+{
+    if (!has_enum_feature() || !valid_node(node))
+        return false;
+
+    uint2 record = x86_enum_value_record[node];
+    if (record.x == INVALID || record.y == INVALID)
+        return false;
+
+    return enum_value_kind(record) == X86_ENUM_VALUE_CALL_CTOR &&
+           enum_value_payload_count(record) > 1u;
 }
 
 bool has_call_record(uint call_node)
@@ -194,9 +259,20 @@ void mark_call_abi_error(uint detail)
     publish_stage_error_min_detail4(call_abi_status, X86_ERR_CALL_ABI, detail);
 }
 
-void mark_recursive_call_error(uint detail)
+void mark_call_arg_count_error(uint detail)
 {
-    publish_stage_error_min_detail4(call_abi_status, X86_ERR_RECURSIVE_CALL, detail);
+    publish_stage_error_min_detail4(
+        call_abi_status,
+        X86_ERR_CALL_ARG_COUNT,
+        detail);
+}
+
+void mark_enum_payload_arity_error(uint call_node)
+{
+    publish_stage_error_min_detail4(
+        call_abi_status,
+        X86_ERR_ENUM_PAYLOAD_ARITY,
+        call_node);
 }
 
 uint pack_call_abi_info(uint arg_count, uint return_width)
@@ -209,7 +285,18 @@ uint pack_call_abi_info(uint arg_count, uint return_width)
 
 void project_call_record(uint call_node)
 {
+    uint slot = call_record_slot(call_node);
+    if (slot != INVALID)
+        x86_call_abi_record[slot] = uint2(INVALID, INVALID);
+
+    if (unsupported_multi_payload_enum_constructor(call_node))
+    {
+        mark_enum_payload_arity_error(call_node);
+        return;
+    }
+
     uint4 call_record = x86_call_record[call_node];
+    uint owner_fn = call_record.x;
     uint target_fn = function_node_for_resolver_target(call_record.y);
     uint arg_count = call_record.w;
     uint return_ty = call_type_word(call_node, 0u);
@@ -219,18 +306,20 @@ void project_call_record(uint call_node)
         call_return_width(return_ty, return_ty_token),
         function_return_hir_width(target_fn));
     uint abi_register_count = arg_count + (return_width > 1u ? 1u : 0u);
-    uint slot = call_record_slot(call_node);
-    bool supported = valid_node(target_fn);
-    if (!supported)
-        mark_call_abi_error(slot != INVALID ? slot : call_node);
-    if (valid_node(target_fn) && target_fn == call_record.x)
+    bool supported = true;
+    if (!valid_node(target_fn))
     {
-        mark_recursive_call_error(slot != INVALID ? slot : call_node);
+        mark_call_abi_error(slot != INVALID ? slot : call_node);
+        supported = false;
+    }
+    if (!valid_node(owner_fn))
+    {
+        mark_call_abi_error(slot != INVALID ? slot : call_node);
         supported = false;
     }
     if (arg_count > X86_BACKEND_MAX_PACKED_CALL_ARGS)
     {
-        mark_call_abi_error(slot != INVALID ? slot : call_node);
+        mark_call_arg_count_error(slot != INVALID ? slot : call_node);
         supported = false;
     }
     if (abi_register_count > X86_SYSV_MAX_INTEGER_ARGS)
@@ -280,6 +369,6 @@ void main(uint3 tid: SV_DispatchThreadID)
         node_i >= active_hir_node_count())
         return;
 
-    if (has_call_record(node_i))
+    if (has_call_record(node_i) && !has_enum_value_record(node_i))
         project_call_record(node_i);
 }

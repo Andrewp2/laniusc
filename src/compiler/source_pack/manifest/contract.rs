@@ -1,4 +1,5 @@
 use super::*;
+use crate::codegen::unit::artifact_key_for_output;
 
 pub(in crate::compiler) fn validate_artifact_manifest_contract(
     manifest: &SourcePackBuildArtifactManifest,
@@ -59,6 +60,25 @@ pub(in crate::compiler) fn validate_artifact_manifest_contract(
         return Err(manifest_contract_error(format!(
             "artifact manifest has {} job records but job_count {}",
             manifest.job_schedule.jobs.len(),
+            job_count
+        )));
+    }
+    if !manifest
+        .job_schedule
+        .dependency_job_ranges_by_job_index
+        .is_empty()
+        && manifest
+            .job_schedule
+            .dependency_job_ranges_by_job_index
+            .len()
+            != job_count
+    {
+        return Err(manifest_contract_error(format!(
+            "artifact manifest has {} positional dependency-range rows but job_count {}; package/link replay must either omit dependency range rows or carry exactly one row per job",
+            manifest
+                .job_schedule
+                .dependency_job_ranges_by_job_index
+                .len(),
             job_count
         )));
     }
@@ -178,6 +198,7 @@ pub(in crate::compiler) fn validate_artifact_manifest_contract(
         )));
     }
     let link_job_index = link_job_indices[0];
+    validate_manifest_link_job_dependency_shape(manifest, link_job_index)?;
 
     let mut output_artifact_indices_by_job = vec![Vec::new(); job_count];
     let mut linked_output_artifact_count = 0usize;
@@ -194,6 +215,7 @@ pub(in crate::compiler) fn validate_artifact_manifest_contract(
             artifact.kind,
             &format!("artifact {}", artifact.artifact_index),
         )?;
+        validate_manifest_artifact_key_identity(manifest.target, artifact)?;
         let Some(producer_job) = manifest.job_schedule.jobs.get(artifact.producing_job_index)
         else {
             return Err(manifest_contract_error(format!(
@@ -212,6 +234,7 @@ pub(in crate::compiler) fn validate_artifact_manifest_contract(
                 artifact.artifact_index, artifact.kind, producer_job.job_index, producer_job.phase
             )));
         }
+        validate_manifest_artifact_producer_provenance(artifact, producer_job)?;
         if artifact.kind == SourcePackArtifactKind::LinkedOutput {
             linked_output_artifact_count += 1;
         }
@@ -238,6 +261,126 @@ pub(in crate::compiler) fn validate_artifact_manifest_contract(
     validate_manifest_link_batches(manifest, link_job_index)?;
 
     Ok(())
+}
+
+fn validate_manifest_link_job_dependency_shape(
+    manifest: &SourcePackBuildArtifactManifest,
+    link_job_index: usize,
+) -> Result<(), CompileError> {
+    let link_job = &manifest.job_schedule.jobs[link_job_index];
+    let link_dependency_ranges = manifest
+        .job_schedule
+        .dependency_job_ranges_for_job(link_job);
+    if link_job.dependency_job_indices.is_empty() && link_dependency_ranges.is_empty() {
+        return Ok(());
+    }
+
+    let mut actual_dependencies = unique_usize_set(
+        &link_job.dependency_job_indices,
+        &format!("link job {} dependencies", link_job.job_index),
+    )?;
+    for dependency_job_range in link_dependency_ranges {
+        let Some(dependency_job_indices) = dependency_job_range.iter() else {
+            return Err(manifest_contract_error(format!(
+                "link job {} dependency range starting at {} overflows usize",
+                link_job.job_index, dependency_job_range.first_job_index
+            )));
+        };
+        actual_dependencies.extend(dependency_job_indices);
+    }
+
+    let expected_codegen_dependencies = manifest
+        .job_schedule
+        .jobs
+        .iter()
+        .filter(|job| job.phase == SourcePackJobPhase::Codegen)
+        .map(|job| job.job_index)
+        .collect::<BTreeSet<_>>();
+    if actual_dependencies == expected_codegen_dependencies {
+        return Ok(());
+    }
+
+    let missing = expected_codegen_dependencies
+        .difference(&actual_dependencies)
+        .copied()
+        .collect::<Vec<_>>();
+    let unexpected = actual_dependencies
+        .difference(&expected_codegen_dependencies)
+        .copied()
+        .collect::<Vec<_>>();
+    Err(manifest_contract_error(format!(
+        "link job {} explicit dependencies do not cover exactly the codegen object producer jobs: missing {:?}, unexpected {:?}; link readiness must be all codegen outputs, not a package/import subset",
+        link_job.job_index, missing, unexpected
+    )))
+}
+
+fn validate_manifest_artifact_key_identity(
+    target: SourcePackArtifactTarget,
+    artifact: &SourcePackArtifactManifestEntry,
+) -> Result<(), CompileError> {
+    let expected_key = artifact_key_for_output(
+        target,
+        artifact.kind,
+        artifact.library_id,
+        artifact.producing_job_index,
+        artifact.first_source_index,
+        artifact.source_file_count,
+    );
+    if artifact.key == expected_key {
+        return Ok(());
+    }
+    Err(manifest_contract_error(format!(
+        "artifact {} key {:?} does not match persisted artifact identity; expected {:?} for target {:?} {:?} library {} producer job {} source range {}..{}",
+        artifact.artifact_index,
+        artifact.key,
+        expected_key,
+        target,
+        artifact.kind,
+        artifact.library_id,
+        artifact.producing_job_index,
+        artifact.first_source_index,
+        artifact
+            .first_source_index
+            .saturating_add(artifact.source_file_count)
+    )))
+}
+
+fn validate_manifest_artifact_producer_provenance(
+    artifact: &SourcePackArtifactManifestEntry,
+    producer_job: &SourcePackJob,
+) -> Result<(), CompileError> {
+    if artifact.kind == SourcePackArtifactKind::LinkedOutput {
+        return Ok(());
+    }
+
+    if artifact.library_id == producer_job.library_id
+        && artifact.first_source_index == producer_job.first_source_index
+        && artifact.source_file_count == producer_job.source_file_count
+        && artifact.source_bytes == producer_job.source_bytes
+        && artifact.source_lines == producer_job.source_lines
+    {
+        return Ok(());
+    }
+
+    Err(manifest_contract_error(format!(
+        "artifact {} provenance does not match producer job {}: artifact library {} source range {}..{} bytes {} lines {}, producer library {} source range {}..{} bytes {} lines {}",
+        artifact.artifact_index,
+        producer_job.job_index,
+        artifact.library_id,
+        artifact.first_source_index,
+        artifact
+            .first_source_index
+            .saturating_add(artifact.source_file_count),
+        artifact.source_bytes,
+        artifact.source_lines,
+        producer_job.library_id,
+        producer_job.first_source_index,
+        producer_job
+            .first_source_index
+            .saturating_add(producer_job.source_file_count),
+        producer_job.source_bytes,
+        producer_job.source_lines
+    )))
 }
 
 pub(in crate::compiler) fn validate_manifest_job_batches(
@@ -447,6 +590,9 @@ pub(in crate::compiler) fn validate_manifest_job_artifacts(
                 job_position, job_manifest.phase, job.phase
             )));
         }
+        validate_manifest_job_input_shape(job_manifest)?;
+        validate_manifest_job_input_count_metadata(job_manifest, job_count)?;
+        let scheduled_dependency_job_indices = manifest_job_dependency_index_set(manifest, job)?;
 
         let mut seen_input_interface_artifacts = BTreeSet::new();
         for artifact_ref in &job_manifest.input_interfaces {
@@ -466,6 +612,12 @@ pub(in crate::compiler) fn validate_manifest_job_artifacts(
                 &manifest.artifacts,
                 artifact_ref,
                 &format!("job {} input interface", job_position),
+            )?;
+            validate_manifest_non_link_interface_input_dependency(
+                job,
+                artifact_ref.artifact_index,
+                artifact_ref.producing_job_index,
+                &scheduled_dependency_job_indices,
             )?;
             actual_artifact_consumers[artifact_ref.artifact_index].insert(job_position);
         }
@@ -490,20 +642,32 @@ pub(in crate::compiler) fn validate_manifest_job_artifacts(
                     job_position, artifact_index, artifact.kind
                 )));
             }
+            validate_manifest_non_link_interface_input_dependency(
+                job,
+                artifact.artifact_index,
+                artifact.producing_job_index,
+                &scheduled_dependency_job_indices,
+            )?;
             actual_artifact_consumers[artifact_index].insert(job_position);
         }
         for range in &job_manifest.input_interface_ranges {
-            let Some(dependency_job_indices) = range.iter() else {
+            let Some(ranged_dependency_job_indices) = range.iter() else {
                 return Err(manifest_contract_error(format!(
                     "job {} input interface job range starting at {} overflows usize",
                     job_position, range.first_job_index
                 )));
             };
-            for dependency_job_index in dependency_job_indices {
+            for dependency_job_index in ranged_dependency_job_indices {
                 let artifact = library_interface_artifact_for_job(
                     &manifest.artifacts,
                     dependency_job_index,
                     &format!("job {} input interface job range", job_position),
+                )?;
+                validate_manifest_non_link_interface_input_dependency(
+                    job,
+                    artifact.artifact_index,
+                    artifact.producing_job_index,
+                    &scheduled_dependency_job_indices,
                 )?;
                 if !seen_input_interface_artifacts.insert(artifact.artifact_index) {
                     return Err(manifest_contract_error(format!(
@@ -587,6 +751,202 @@ pub(in crate::compiler) fn validate_manifest_job_artifacts(
         validate_manifest_job_output_shape(job_manifest)?;
     }
     Ok(())
+}
+
+fn manifest_job_dependency_index_set(
+    manifest: &SourcePackBuildArtifactManifest,
+    job: &SourcePackJob,
+) -> Result<BTreeSet<usize>, CompileError> {
+    let mut dependency_job_indices = unique_usize_set(
+        &job.dependency_job_indices,
+        &format!("job {} dependencies", job.job_index),
+    )?;
+    for range in manifest.job_schedule.dependency_job_ranges_for_job(job) {
+        let Some(ranged_dependency_job_indices) = range.iter() else {
+            return Err(manifest_contract_error(format!(
+                "job {} dependency range starting at {} overflows usize",
+                job.job_index, range.first_job_index
+            )));
+        };
+        dependency_job_indices.extend(ranged_dependency_job_indices);
+    }
+    Ok(dependency_job_indices)
+}
+
+fn validate_manifest_non_link_interface_input_dependency(
+    job: &SourcePackJob,
+    artifact_index: usize,
+    producing_job_index: usize,
+    dependency_job_indices: &BTreeSet<usize>,
+) -> Result<(), CompileError> {
+    if job.phase == SourcePackJobPhase::Link
+        || dependency_job_indices.contains(&producing_job_index)
+    {
+        return Ok(());
+    }
+
+    Err(manifest_contract_error(format!(
+        "job {} phase {:?} consumes library-interface artifact {} from producer job {}, but that producer is not in the job's scheduled dependencies {:?}; package/import replay cannot consume interface artifacts that are not dependency-ready",
+        job.job_index, job.phase, artifact_index, producing_job_index, dependency_job_indices
+    )))
+}
+
+fn validate_manifest_job_input_shape(
+    job_manifest: &SourcePackJobArtifactManifest,
+) -> Result<(), CompileError> {
+    if job_manifest.phase != SourcePackJobPhase::Link
+        && (job_manifest.input_object_count != 0
+            || job_manifest.input_object_page_count != 0
+            || !job_manifest.input_object_artifact_ranges.is_empty()
+            || !job_manifest.input_objects.is_empty())
+    {
+        return Err(manifest_contract_error(format!(
+            "job {} phase {:?} has codegen object inputs; only link jobs may consume codegen objects",
+            job_manifest.job_index, job_manifest.phase
+        )));
+    }
+
+    Ok(())
+}
+
+fn validate_manifest_job_input_count_metadata(
+    job_manifest: &SourcePackJobArtifactManifest,
+    job_count: usize,
+) -> Result<(), CompileError> {
+    let context = format!("job {} artifact manifest", job_manifest.job_index);
+    let explicit_interface_artifacts = artifact_ref_index_set(
+        &job_manifest.input_interfaces,
+        &format!("{context} input interfaces"),
+    )?;
+    validate_artifact_index_ranges(
+        &job_manifest.input_interface_artifact_ranges,
+        &explicit_interface_artifacts,
+        &format!("{context} input interface artifact"),
+        |message| manifest_contract_error(message),
+    )?;
+    validate_job_dependency_ranges(
+        &job_manifest.input_interface_ranges,
+        &BTreeSet::new(),
+        &format!("{context} input interface job"),
+        job_count,
+        |message| manifest_contract_error(message),
+    )?;
+
+    let interface_job_range_count = checked_job_range_count(
+        &job_manifest.input_interface_ranges,
+        &format!("{context} input interface job ranges"),
+    )?;
+    let interface_artifact_range_count = checked_artifact_range_count(
+        &job_manifest.input_interface_artifact_ranges,
+        &format!("{context} input interface artifact ranges"),
+    )?;
+    let inline_interface_count = checked_count_sum(
+        &format!("{context} input interface count"),
+        &[
+            job_manifest.input_interfaces.len(),
+            interface_job_range_count,
+            interface_artifact_range_count,
+        ],
+    )?;
+    if job_manifest.input_interface_page_count != 0 && !job_manifest.input_interfaces.is_empty() {
+        return Err(manifest_contract_error(format!(
+            "{context} mixes inline and paged interface inputs; persisted count metadata must not stand in for artifact refs"
+        )));
+    }
+    if job_manifest.input_interface_page_count == 0 {
+        if job_manifest.input_interface_count != inline_interface_count {
+            return Err(manifest_contract_error(format!(
+                "{context} records interface input count {} but concrete refs/ranges cover {}; count metadata is not link artifact evidence",
+                job_manifest.input_interface_count, inline_interface_count
+            )));
+        }
+    } else {
+        let ranged_interface_count = checked_count_sum(
+            &format!("{context} ranged interface count"),
+            &[interface_job_range_count, interface_artifact_range_count],
+        )?;
+        if job_manifest.input_interface_count < ranged_interface_count {
+            return Err(manifest_contract_error(format!(
+                "{context} records interface input count {} below ranged interface count {}",
+                job_manifest.input_interface_count, ranged_interface_count
+            )));
+        }
+        let paged_interface_count = job_manifest.input_interface_count - ranged_interface_count;
+        let expected_page_count = paged_interface_count
+            .div_ceil(SOURCE_PACK_JOB_ARTIFACT_INPUT_INTERFACE_DEFAULT_PAGE_SIZE);
+        if job_manifest.input_interface_page_count != expected_page_count {
+            return Err(manifest_contract_error(format!(
+                "{context} records interface page count {} but expected {} for {} paged interface artifact refs",
+                job_manifest.input_interface_page_count, expected_page_count, paged_interface_count
+            )));
+        }
+    }
+
+    let explicit_object_artifacts = artifact_ref_index_set(
+        &job_manifest.input_objects,
+        &format!("{context} input objects"),
+    )?;
+    validate_artifact_index_ranges(
+        &job_manifest.input_object_artifact_ranges,
+        &explicit_object_artifacts,
+        &format!("{context} input object artifact"),
+        |message| manifest_contract_error(message),
+    )?;
+    let object_artifact_range_count = checked_artifact_range_count(
+        &job_manifest.input_object_artifact_ranges,
+        &format!("{context} input object artifact ranges"),
+    )?;
+    let concrete_object_count = checked_count_sum(
+        &format!("{context} input object count"),
+        &[
+            job_manifest.input_objects.len(),
+            object_artifact_range_count,
+        ],
+    )?;
+    if job_manifest.input_object_page_count != 0 {
+        return Err(manifest_contract_error(format!(
+            "{context} records object page count {}, but job artifact manifests do not persist object input sidecar pages; object counts are not link artifact evidence",
+            job_manifest.input_object_page_count
+        )));
+    }
+    if job_manifest.input_object_count != concrete_object_count {
+        return Err(manifest_contract_error(format!(
+            "{context} records object input count {} but concrete refs/ranges cover {}; count metadata is not link artifact evidence",
+            job_manifest.input_object_count, concrete_object_count
+        )));
+    }
+
+    Ok(())
+}
+
+fn checked_job_range_count(
+    ranges: &[SourcePackJobIndexRange],
+    context: &str,
+) -> Result<usize, CompileError> {
+    ranges.iter().try_fold(0usize, |count, range| {
+        count.checked_add(range.job_count).ok_or_else(|| {
+            manifest_contract_error(format!("{context} count overflows persisted metadata"))
+        })
+    })
+}
+
+fn checked_artifact_range_count(
+    ranges: &[SourcePackArtifactIndexRange],
+    context: &str,
+) -> Result<usize, CompileError> {
+    ranges.iter().try_fold(0usize, |count, range| {
+        count.checked_add(range.artifact_count).ok_or_else(|| {
+            manifest_contract_error(format!("{context} count overflows persisted metadata"))
+        })
+    })
+}
+
+fn checked_count_sum(context: &str, counts: &[usize]) -> Result<usize, CompileError> {
+    counts.iter().try_fold(0usize, |total, count| {
+        total.checked_add(*count).ok_or_else(|| {
+            manifest_contract_error(format!("{context} overflows persisted metadata"))
+        })
+    })
 }
 
 pub(in crate::compiler) fn validate_manifest_job_output_shape(
@@ -815,6 +1175,12 @@ pub(in crate::compiler) fn validate_manifest_link_batches(
                 batch.batch_index
             )));
         }
+        if batch.input_interface_artifact_indices.is_empty() {
+            return Err(manifest_contract_error(format!(
+                "link interface batch {} has no input artifacts",
+                batch.batch_index
+            )));
+        }
         if batch.input_interface_artifact_indices.len()
             > SOURCE_PACK_LINK_BATCH_INPUT_DEFAULT_PAGE_SIZE
         {
@@ -836,6 +1202,7 @@ pub(in crate::compiler) fn validate_manifest_link_batches(
         )?;
         let mut source_bytes = 0usize;
         let mut source_file_count = 0usize;
+        let mut source_lines = 0usize;
         for &artifact_index in &batch.input_interface_artifact_indices {
             let artifact = manifest_artifact_entry(
                 &manifest.artifacts,
@@ -856,6 +1223,7 @@ pub(in crate::compiler) fn validate_manifest_link_batches(
             }
             source_bytes = source_bytes.saturating_add(artifact.source_bytes);
             source_file_count = source_file_count.saturating_add(artifact.source_file_count);
+            source_lines = source_lines.saturating_add(artifact.source_lines);
         }
         if batch.source_bytes != source_bytes {
             return Err(manifest_contract_error(format!(
@@ -867,6 +1235,12 @@ pub(in crate::compiler) fn validate_manifest_link_batches(
             return Err(manifest_contract_error(format!(
                 "link interface batch {} records {} source files but artifacts sum to {}",
                 batch.batch_index, batch.source_file_count, source_file_count
+            )));
+        }
+        if batch.source_lines != source_lines {
+            return Err(manifest_contract_error(format!(
+                "link interface batch {} records {} source lines but artifacts sum to {}",
+                batch.batch_index, batch.source_lines, source_lines
             )));
         }
     }
@@ -882,6 +1256,12 @@ pub(in crate::compiler) fn validate_manifest_link_batches(
         if batch.batch_index != batch_position {
             return Err(manifest_contract_error(format!(
                 "link object batch entry {batch_position} has batch_index {}",
+                batch.batch_index
+            )));
+        }
+        if batch.input_object_artifact_indices.is_empty() {
+            return Err(manifest_contract_error(format!(
+                "link object batch {} has no input artifacts",
                 batch.batch_index
             )));
         }
@@ -906,6 +1286,7 @@ pub(in crate::compiler) fn validate_manifest_link_batches(
         )?;
         let mut source_bytes = 0usize;
         let mut source_file_count = 0usize;
+        let mut source_lines = 0usize;
         for &artifact_index in &batch.input_object_artifact_indices {
             let artifact = manifest_artifact_entry(
                 &manifest.artifacts,
@@ -926,6 +1307,7 @@ pub(in crate::compiler) fn validate_manifest_link_batches(
             }
             source_bytes = source_bytes.saturating_add(artifact.source_bytes);
             source_file_count = source_file_count.saturating_add(artifact.source_file_count);
+            source_lines = source_lines.saturating_add(artifact.source_lines);
         }
         if batch.source_bytes != source_bytes {
             return Err(manifest_contract_error(format!(
@@ -937,6 +1319,12 @@ pub(in crate::compiler) fn validate_manifest_link_batches(
             return Err(manifest_contract_error(format!(
                 "link object batch {} records {} source files but artifacts sum to {}",
                 batch.batch_index, batch.source_file_count, source_file_count
+            )));
+        }
+        if batch.source_lines != source_lines {
+            return Err(manifest_contract_error(format!(
+                "link object batch {} records {} source lines but artifacts sum to {}",
+                batch.batch_index, batch.source_lines, source_lines
             )));
         }
     }

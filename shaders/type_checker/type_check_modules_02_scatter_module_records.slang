@@ -30,6 +30,7 @@ RWStructuredBuffer<uint> module_owner_hir;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
+static const uint INVALID = 0xffffffffu;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -41,6 +42,14 @@ uint linear_thread_id(uint3 dtid)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
+
+    if (i < gParams.module_capacity)
+    {
+        module_file_id[i] = INVALID;
+        module_path_id[i] = INVALID;
+        module_owner_hir[i] = INVALID;
+    }
+
     if (i >= gParams.hir_node_capacity)
         return;
 

@@ -98,6 +98,7 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirNodesPass {
                 "token_file_id".into(),
                 b.default_token_file_id.as_entire_binding(),
             ),
+            ("token_count".into(), b.token_count.as_entire_binding()),
             (
                 "ll1_status".into(),
                 if b.tree_count_uses_status && !b.tree_stream_uses_ll1 {

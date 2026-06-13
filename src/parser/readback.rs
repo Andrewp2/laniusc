@@ -31,6 +31,12 @@ use super::{
             HIR_EXPR_FORM_NONE,
             HIR_EXPR_FORM_NOT,
             HIR_EXPR_FORM_OR,
+            HIR_EXPR_FORM_RANGE,
+            HIR_EXPR_FORM_RANGE_FROM,
+            HIR_EXPR_FORM_RANGE_FULL,
+            HIR_EXPR_FORM_RANGE_INCLUSIVE,
+            HIR_EXPR_FORM_RANGE_TO,
+            HIR_EXPR_FORM_RANGE_TO_INCLUSIVE,
             HIR_EXPR_FORM_SHL,
             HIR_EXPR_FORM_SHR,
             HIR_EXPR_FORM_STRING,
@@ -52,6 +58,12 @@ use super::{
             HIR_ITEM_KIND_STRUCT,
             HIR_ITEM_KIND_TRAIT,
             HIR_ITEM_KIND_TYPE_ALIAS,
+            HIR_ITEM_NAMESPACE_MODULE,
+            HIR_ITEM_NAMESPACE_NONE,
+            HIR_ITEM_NAMESPACE_TYPE,
+            HIR_ITEM_NAMESPACE_VALUE,
+            HIR_ITEM_VIS_PRIVATE,
+            HIR_ITEM_VIS_PUBLIC,
         },
         hir_method_fields::{
             HIR_METHOD_RECEIVER_EXPLICIT,
@@ -76,6 +88,7 @@ use super::{
             HIR_NODE_CONTINUE_STMT,
             HIR_NODE_ENUM_ITEM,
             HIR_NODE_EXPR,
+            HIR_NODE_FILE,
             HIR_NODE_FN,
             HIR_NODE_FOR_STMT,
             HIR_NODE_IF_STMT,
@@ -88,6 +101,7 @@ use super::{
             HIR_NODE_MEMBER_EXPR,
             HIR_NODE_MODULE_ITEM,
             HIR_NODE_NAME_EXPR,
+            HIR_NODE_NONE,
             HIR_NODE_PARAM,
             HIR_NODE_PATH_EXPR,
             HIR_NODE_POSTFIX_EXPR,
@@ -126,6 +140,7 @@ use super::{
 
 const HIR_VARIANT_PAYLOAD_SLOT_STRIDE: u32 = 4;
 const HIR_PACKED_NODE_ORDINAL_SLOT_COUNT: u32 = 16;
+const PROD_BOUND_TYPE_IDENT: u32 = 230;
 
 /// Staging buffers for parser readbacks.
 pub struct ParserReadbacks {
@@ -1333,10 +1348,17 @@ impl ParserReadbacks {
 /// production buffer layout.
 pub struct ParserHirItemReadbacks {
     pub ll1_status: wgpu::Buffer,
+    pub node_kind: wgpu::Buffer,
     pub hir_kind: wgpu::Buffer,
     pub hir_token_pos: wgpu::Buffer,
     pub hir_token_end: wgpu::Buffer,
     pub hir_node_file_id: wgpu::Buffer,
+    pub hir_semantic_dense_node: wgpu::Buffer,
+    pub hir_semantic_parent: wgpu::Buffer,
+    pub hir_semantic_first_child: wgpu::Buffer,
+    pub hir_semantic_next_sibling: wgpu::Buffer,
+    pub hir_semantic_depth: wgpu::Buffer,
+    pub hir_semantic_child_index: wgpu::Buffer,
     pub hir_type_form: wgpu::Buffer,
     pub hir_type_value_node: wgpu::Buffer,
     pub hir_type_len_token: wgpu::Buffer,
@@ -1386,12 +1408,14 @@ pub struct ParserHirItemReadbacks {
     pub hir_match_payload_match_node: wgpu::Buffer,
     pub hir_match_payload_ordinal: wgpu::Buffer,
     pub hir_call_callee_node: wgpu::Buffer,
+    pub hir_call_context_stmt_node: wgpu::Buffer,
     pub hir_call_arg_start: wgpu::Buffer,
     pub hir_call_arg_end: wgpu::Buffer,
     pub hir_call_arg_count: wgpu::Buffer,
     pub hir_call_arg_parent_call: wgpu::Buffer,
     pub hir_array_lit_first_element: wgpu::Buffer,
     pub hir_array_lit_element_count: wgpu::Buffer,
+    pub hir_array_lit_context_stmt_node: wgpu::Buffer,
     pub hir_array_element_parent_lit: wgpu::Buffer,
     pub hir_array_element_ordinal: wgpu::Buffer,
     pub hir_array_element_next: wgpu::Buffer,
@@ -1400,6 +1424,10 @@ pub struct ParserHirItemReadbacks {
     pub hir_member_name_token: wgpu::Buffer,
     pub hir_stmt_record: wgpu::Buffer,
     pub hir_stmt_scope_end: wgpu::Buffer,
+    pub hir_nearest_stmt_node: wgpu::Buffer,
+    pub hir_nearest_block_node: wgpu::Buffer,
+    pub hir_nearest_enclosing_control_node: wgpu::Buffer,
+    pub hir_nearest_loop_node: wgpu::Buffer,
     pub hir_nearest_fn_node: wgpu::Buffer,
     pub hir_struct_field_parent_struct: wgpu::Buffer,
     pub hir_struct_field_ordinal: wgpu::Buffer,
@@ -1407,6 +1435,7 @@ pub struct ParserHirItemReadbacks {
     pub hir_struct_decl_field_start: wgpu::Buffer,
     pub hir_struct_decl_field_count: wgpu::Buffer,
     pub hir_struct_lit_head_node: wgpu::Buffer,
+    pub hir_struct_lit_context_stmt_node: wgpu::Buffer,
     pub hir_struct_lit_field_start: wgpu::Buffer,
     pub hir_struct_lit_field_count: wgpu::Buffer,
     pub hir_struct_lit_field_parent_lit: wgpu::Buffer,
@@ -1416,10 +1445,17 @@ pub struct ParserHirItemReadbacks {
 
 pub struct DecodedParserHirItemReadbacks {
     pub ll1_status: [u32; 6],
+    pub node_kind: Vec<u32>,
     pub hir_kind: Vec<u32>,
     pub hir_token_pos: Vec<u32>,
     pub hir_token_end: Vec<u32>,
     pub hir_node_file_id: Vec<u32>,
+    pub hir_semantic_dense_node: Vec<u32>,
+    pub hir_semantic_parent: Vec<u32>,
+    pub hir_semantic_first_child: Vec<u32>,
+    pub hir_semantic_next_sibling: Vec<u32>,
+    pub hir_semantic_depth: Vec<u32>,
+    pub hir_semantic_child_index: Vec<u32>,
     pub hir_type_form: Vec<u32>,
     pub hir_type_value_node: Vec<u32>,
     pub hir_type_len_token: Vec<u32>,
@@ -1475,6 +1511,7 @@ pub struct DecodedParserHirItemReadbacks {
     pub hir_match_payload_match_node: Vec<u32>,
     pub hir_match_payload_ordinal: Vec<u32>,
     pub hir_call_callee_node: Vec<u32>,
+    pub hir_call_context_stmt_node: Vec<u32>,
     pub hir_call_arg_start: Vec<u32>,
     pub hir_call_arg_end: Vec<u32>,
     pub hir_call_arg_count: Vec<u32>,
@@ -1482,6 +1519,7 @@ pub struct DecodedParserHirItemReadbacks {
     pub hir_call_arg_ordinal: Vec<u32>,
     pub hir_array_lit_first_element: Vec<u32>,
     pub hir_array_lit_element_count: Vec<u32>,
+    pub hir_array_lit_context_stmt_node: Vec<u32>,
     pub hir_array_element_parent_lit: Vec<u32>,
     pub hir_array_element_ordinal: Vec<u32>,
     pub hir_array_element_next: Vec<u32>,
@@ -1493,6 +1531,10 @@ pub struct DecodedParserHirItemReadbacks {
     pub hir_stmt_record_operand1: Vec<u32>,
     pub hir_stmt_record_operand2: Vec<u32>,
     pub hir_stmt_scope_end: Vec<u32>,
+    pub hir_nearest_stmt_node: Vec<u32>,
+    pub hir_nearest_block_node: Vec<u32>,
+    pub hir_nearest_enclosing_control_node: Vec<u32>,
+    pub hir_nearest_loop_node: Vec<u32>,
     pub hir_nearest_fn_node: Vec<u32>,
     pub hir_struct_field_parent_struct: Vec<u32>,
     pub hir_struct_field_ordinal: Vec<u32>,
@@ -1500,6 +1542,7 @@ pub struct DecodedParserHirItemReadbacks {
     pub hir_struct_decl_field_start: Vec<u32>,
     pub hir_struct_decl_field_count: Vec<u32>,
     pub hir_struct_lit_head_node: Vec<u32>,
+    pub hir_struct_lit_context_stmt_node: Vec<u32>,
     pub hir_struct_lit_field_start: Vec<u32>,
     pub hir_struct_lit_field_count: Vec<u32>,
     pub hir_struct_lit_field_parent_lit: Vec<u32>,
@@ -1522,6 +1565,7 @@ pub struct ParserHirFunctionReturnReadbacks {
     pub hir_type_file_id: wgpu::Buffer,
     pub hir_fn_return_type_node: wgpu::Buffer,
     pub hir_method_signature_flags: wgpu::Buffer,
+    pub hir_method_name_token: wgpu::Buffer,
     pub hir_item_kind: wgpu::Buffer,
     pub hir_item_name_token: wgpu::Buffer,
     pub hir_item_file_id: wgpu::Buffer,
@@ -1537,6 +1581,7 @@ pub struct DecodedParserHirFunctionReturnReadbacks {
     pub hir_type_file_id: Vec<u32>,
     pub hir_fn_return_type_node: Vec<u32>,
     pub hir_method_signature_flags: Vec<u32>,
+    pub hir_method_name_token: Vec<u32>,
     pub hir_item_kind: Vec<u32>,
     pub hir_item_name_token: Vec<u32>,
     pub hir_item_file_id: Vec<u32>,
@@ -1589,6 +1634,10 @@ impl ParserHirFunctionReturnReadbacks {
             hir_method_signature_flags: mk(
                 "rb.parser.hir_fn_return_records.hir_method_signature_flags",
                 bufs.hir_method_signature_flags.byte_size as u64,
+            ),
+            hir_method_name_token: mk(
+                "rb.parser.hir_fn_return_records.hir_method_name_token",
+                bufs.hir_method_name_token.byte_size as u64,
             ),
             hir_item_kind: mk(
                 "rb.parser.hir_fn_return_records.hir_item_kind",
@@ -1670,6 +1719,13 @@ impl ParserHirFunctionReturnReadbacks {
             bufs.hir_method_signature_flags.byte_size as u64,
         );
         encoder.copy_buffer_to_buffer(
+            &bufs.hir_method_name_token,
+            0,
+            &self.hir_method_name_token,
+            0,
+            bufs.hir_method_name_token.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
             &bufs.hir_item_kind,
             0,
             &self.hir_item_kind,
@@ -1715,6 +1771,7 @@ impl ParserHirFunctionReturnReadbacks {
             "hir_method_signature_flags",
             &self.hir_method_signature_flags,
         );
+        map("hir_method_name_token", &self.hir_method_name_token);
         map("hir_item_kind", &self.hir_item_kind);
         map("hir_item_name_token", &self.hir_item_name_token);
         map("hir_item_file_id", &self.hir_item_file_id);
@@ -1744,6 +1801,7 @@ impl ParserHirFunctionReturnReadbacks {
             hir_type_file_id: read_u32_vec(&self.hir_type_file_id, tree_len),
             hir_fn_return_type_node: read_u32_vec(&self.hir_fn_return_type_node, tree_len),
             hir_method_signature_flags: read_u32_vec(&self.hir_method_signature_flags, tree_len),
+            hir_method_name_token: read_u32_vec(&self.hir_method_name_token, tree_len),
             hir_item_kind: read_u32_vec(&self.hir_item_kind, tree_len),
             hir_item_name_token: read_u32_vec(&self.hir_item_name_token, tree_len),
             hir_item_file_id: read_u32_vec(&self.hir_item_file_id, tree_len),
@@ -1767,7 +1825,10 @@ impl ParserHirFunctionReturnReadbacks {
             &decoded.hir_type_file_id,
             &decoded.hir_fn_return_type_node,
             &decoded.hir_item_kind,
+            &decoded.hir_item_name_token,
             &decoded.hir_item_file_id,
+            &decoded.hir_method_signature_flags,
+            &decoded.hir_method_name_token,
         )?;
         Ok(decoded)
     }
@@ -1789,6 +1850,10 @@ impl ParserHirItemReadbacks {
                 "rb.parser.hir_item_records.ll1_status",
                 bufs.ll1_status.byte_size as u64,
             ),
+            node_kind: mk(
+                "rb.parser.hir_item_records.node_kind",
+                bufs.node_kind.byte_size as u64,
+            ),
             hir_kind: mk(
                 "rb.parser.hir_item_records.hir_kind",
                 bufs.hir_kind.byte_size as u64,
@@ -1804,6 +1869,30 @@ impl ParserHirItemReadbacks {
             hir_node_file_id: mk(
                 "rb.parser.hir_item_records.hir_node_file_id",
                 bufs.hir_token_file_id.byte_size as u64,
+            ),
+            hir_semantic_dense_node: mk(
+                "rb.parser.hir_item_records.hir_semantic_dense_node",
+                bufs.hir_semantic_dense_node.byte_size as u64,
+            ),
+            hir_semantic_parent: mk(
+                "rb.parser.hir_item_records.hir_semantic_parent",
+                bufs.hir_semantic_parent.byte_size as u64,
+            ),
+            hir_semantic_first_child: mk(
+                "rb.parser.hir_item_records.hir_semantic_first_child",
+                bufs.hir_semantic_first_child.byte_size as u64,
+            ),
+            hir_semantic_next_sibling: mk(
+                "rb.parser.hir_item_records.hir_semantic_next_sibling",
+                bufs.hir_semantic_next_sibling.byte_size as u64,
+            ),
+            hir_semantic_depth: mk(
+                "rb.parser.hir_item_records.hir_semantic_depth",
+                bufs.hir_semantic_depth.byte_size as u64,
+            ),
+            hir_semantic_child_index: mk(
+                "rb.parser.hir_item_records.hir_semantic_child_index",
+                bufs.hir_semantic_child_index.byte_size as u64,
             ),
             hir_type_form: mk(
                 "rb.parser.hir_item_records.hir_type_form",
@@ -2001,6 +2090,10 @@ impl ParserHirItemReadbacks {
                 "rb.parser.hir_item_records.hir_call_callee_node",
                 bufs.hir_call_callee_node.byte_size as u64,
             ),
+            hir_call_context_stmt_node: mk(
+                "rb.parser.hir_item_records.hir_call_context_stmt_node",
+                bufs.hir_call_context_stmt_node.byte_size as u64,
+            ),
             hir_call_arg_start: mk(
                 "rb.parser.hir_item_records.hir_call_arg_start",
                 bufs.hir_call_arg_start.byte_size as u64,
@@ -2024,6 +2117,10 @@ impl ParserHirItemReadbacks {
             hir_array_lit_element_count: mk(
                 "rb.parser.hir_item_records.hir_array_lit_element_count",
                 bufs.hir_array_lit_element_count.byte_size as u64,
+            ),
+            hir_array_lit_context_stmt_node: mk(
+                "rb.parser.hir_item_records.hir_array_lit_context_stmt_node",
+                bufs.hir_array_lit_context_stmt_node.byte_size as u64,
             ),
             hir_array_element_parent_lit: mk(
                 "rb.parser.hir_item_records.hir_array_element_parent_lit",
@@ -2057,6 +2154,22 @@ impl ParserHirItemReadbacks {
                 "rb.parser.hir_item_records.hir_stmt_scope_end",
                 bufs.hir_stmt_scope_end.byte_size as u64,
             ),
+            hir_nearest_stmt_node: mk(
+                "rb.parser.hir_item_records.hir_nearest_stmt_node",
+                bufs.hir_nearest_stmt_node.byte_size as u64,
+            ),
+            hir_nearest_block_node: mk(
+                "rb.parser.hir_item_records.hir_nearest_block_node",
+                bufs.hir_nearest_block_node.byte_size as u64,
+            ),
+            hir_nearest_enclosing_control_node: mk(
+                "rb.parser.hir_item_records.hir_nearest_enclosing_control_node",
+                bufs.hir_nearest_enclosing_control_node.byte_size as u64,
+            ),
+            hir_nearest_loop_node: mk(
+                "rb.parser.hir_item_records.hir_nearest_loop_node",
+                bufs.hir_nearest_loop_node.byte_size as u64,
+            ),
             hir_nearest_fn_node: mk(
                 "rb.parser.hir_item_records.hir_nearest_fn_node",
                 bufs.hir_nearest_fn_node.byte_size as u64,
@@ -2084,6 +2197,10 @@ impl ParserHirItemReadbacks {
             hir_struct_lit_head_node: mk(
                 "rb.parser.hir_item_records.hir_struct_lit_head_node",
                 bufs.hir_struct_lit_head_node.byte_size as u64,
+            ),
+            hir_struct_lit_context_stmt_node: mk(
+                "rb.parser.hir_item_records.hir_struct_lit_context_stmt_node",
+                bufs.hir_struct_lit_context_stmt_node.byte_size as u64,
             ),
             hir_struct_lit_field_start: mk(
                 "rb.parser.hir_item_records.hir_struct_lit_field_start",
@@ -2117,6 +2234,13 @@ impl ParserHirItemReadbacks {
             bufs.ll1_status.byte_size as u64,
         );
         encoder.copy_buffer_to_buffer(
+            &bufs.node_kind,
+            0,
+            &self.node_kind,
+            0,
+            bufs.node_kind.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
             &bufs.hir_kind,
             0,
             &self.hir_kind,
@@ -2143,6 +2267,48 @@ impl ParserHirItemReadbacks {
             &self.hir_node_file_id,
             0,
             bufs.hir_token_file_id.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_semantic_dense_node,
+            0,
+            &self.hir_semantic_dense_node,
+            0,
+            bufs.hir_semantic_dense_node.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_semantic_parent,
+            0,
+            &self.hir_semantic_parent,
+            0,
+            bufs.hir_semantic_parent.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_semantic_first_child,
+            0,
+            &self.hir_semantic_first_child,
+            0,
+            bufs.hir_semantic_first_child.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_semantic_next_sibling,
+            0,
+            &self.hir_semantic_next_sibling,
+            0,
+            bufs.hir_semantic_next_sibling.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_semantic_depth,
+            0,
+            &self.hir_semantic_depth,
+            0,
+            bufs.hir_semantic_depth.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_semantic_child_index,
+            0,
+            &self.hir_semantic_child_index,
+            0,
+            bufs.hir_semantic_child_index.byte_size as u64,
         );
         encoder.copy_buffer_to_buffer(
             &bufs.hir_type_form,
@@ -2586,11 +2752,53 @@ impl ParserHirItemReadbacks {
             bufs.hir_stmt_scope_end.byte_size as u64,
         );
         encoder.copy_buffer_to_buffer(
+            &bufs.hir_nearest_stmt_node,
+            0,
+            &self.hir_nearest_stmt_node,
+            0,
+            bufs.hir_nearest_stmt_node.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_nearest_block_node,
+            0,
+            &self.hir_nearest_block_node,
+            0,
+            bufs.hir_nearest_block_node.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_nearest_enclosing_control_node,
+            0,
+            &self.hir_nearest_enclosing_control_node,
+            0,
+            bufs.hir_nearest_enclosing_control_node.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_nearest_loop_node,
+            0,
+            &self.hir_nearest_loop_node,
+            0,
+            bufs.hir_nearest_loop_node.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
             &bufs.hir_nearest_fn_node,
             0,
             &self.hir_nearest_fn_node,
             0,
             bufs.hir_nearest_fn_node.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_call_context_stmt_node,
+            0,
+            &self.hir_call_context_stmt_node,
+            0,
+            bufs.hir_call_context_stmt_node.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_array_lit_context_stmt_node,
+            0,
+            &self.hir_array_lit_context_stmt_node,
+            0,
+            bufs.hir_array_lit_context_stmt_node.byte_size as u64,
         );
         encoder.copy_buffer_to_buffer(
             &bufs.hir_struct_field_parent_struct,
@@ -2633,6 +2841,13 @@ impl ParserHirItemReadbacks {
             &self.hir_struct_lit_head_node,
             0,
             bufs.hir_struct_lit_head_node.byte_size as u64,
+        );
+        encoder.copy_buffer_to_buffer(
+            &bufs.hir_struct_lit_context_stmt_node,
+            0,
+            &self.hir_struct_lit_context_stmt_node,
+            0,
+            bufs.hir_struct_lit_context_stmt_node.byte_size as u64,
         );
         encoder.copy_buffer_to_buffer(
             &bufs.hir_struct_lit_field_start,
@@ -2683,10 +2898,17 @@ impl ParserHirItemReadbacks {
             );
         };
         map("ll1_status", &self.ll1_status);
+        map("node_kind", &self.node_kind);
         map("hir_kind", &self.hir_kind);
         map("hir_token_pos", &self.hir_token_pos);
         map("hir_token_end", &self.hir_token_end);
         map("hir_node_file_id", &self.hir_node_file_id);
+        map("hir_semantic_dense_node", &self.hir_semantic_dense_node);
+        map("hir_semantic_parent", &self.hir_semantic_parent);
+        map("hir_semantic_first_child", &self.hir_semantic_first_child);
+        map("hir_semantic_next_sibling", &self.hir_semantic_next_sibling);
+        map("hir_semantic_depth", &self.hir_semantic_depth);
+        map("hir_semantic_child_index", &self.hir_semantic_child_index);
         map("hir_type_form", &self.hir_type_form);
         map("hir_type_value_node", &self.hir_type_value_node);
         map("hir_type_len_token", &self.hir_type_len_token);
@@ -2766,6 +2988,10 @@ impl ParserHirItemReadbacks {
         );
         map("hir_match_payload_ordinal", &self.hir_match_payload_ordinal);
         map("hir_call_callee_node", &self.hir_call_callee_node);
+        map(
+            "hir_call_context_stmt_node",
+            &self.hir_call_context_stmt_node,
+        );
         map("hir_call_arg_start", &self.hir_call_arg_start);
         map("hir_call_arg_end", &self.hir_call_arg_end);
         map("hir_call_arg_count", &self.hir_call_arg_count);
@@ -2779,6 +3005,10 @@ impl ParserHirItemReadbacks {
             &self.hir_array_lit_element_count,
         );
         map(
+            "hir_array_lit_context_stmt_node",
+            &self.hir_array_lit_context_stmt_node,
+        );
+        map(
             "hir_array_element_parent_lit",
             &self.hir_array_element_parent_lit,
         );
@@ -2789,6 +3019,13 @@ impl ParserHirItemReadbacks {
         map("hir_member_name_token", &self.hir_member_name_token);
         map("hir_stmt_record", &self.hir_stmt_record);
         map("hir_stmt_scope_end", &self.hir_stmt_scope_end);
+        map("hir_nearest_stmt_node", &self.hir_nearest_stmt_node);
+        map("hir_nearest_block_node", &self.hir_nearest_block_node);
+        map(
+            "hir_nearest_enclosing_control_node",
+            &self.hir_nearest_enclosing_control_node,
+        );
+        map("hir_nearest_loop_node", &self.hir_nearest_loop_node);
         map("hir_nearest_fn_node", &self.hir_nearest_fn_node);
         map(
             "hir_struct_field_parent_struct",
@@ -2808,6 +3045,10 @@ impl ParserHirItemReadbacks {
             &self.hir_struct_decl_field_count,
         );
         map("hir_struct_lit_head_node", &self.hir_struct_lit_head_node);
+        map(
+            "hir_struct_lit_context_stmt_node",
+            &self.hir_struct_lit_context_stmt_node,
+        );
         map(
             "hir_struct_lit_field_start",
             &self.hir_struct_lit_field_start,
@@ -2896,10 +3137,17 @@ impl ParserHirItemReadbacks {
 
         let decoded = DecodedParserHirItemReadbacks {
             ll1_status,
+            node_kind: read_u32_vec(&self.node_kind, tree_len),
             hir_kind: read_u32_vec(&self.hir_kind, tree_len),
             hir_token_pos: read_u32_vec(&self.hir_token_pos, tree_len),
             hir_token_end: read_u32_vec(&self.hir_token_end, tree_len),
             hir_node_file_id: read_u32_vec(&self.hir_node_file_id, tree_len),
+            hir_semantic_dense_node: read_u32_vec(&self.hir_semantic_dense_node, tree_len),
+            hir_semantic_parent: read_u32_vec(&self.hir_semantic_parent, tree_len),
+            hir_semantic_first_child: read_u32_vec(&self.hir_semantic_first_child, tree_len),
+            hir_semantic_next_sibling: read_u32_vec(&self.hir_semantic_next_sibling, tree_len),
+            hir_semantic_depth: read_u32_vec(&self.hir_semantic_depth, tree_len),
+            hir_semantic_child_index: read_u32_vec(&self.hir_semantic_child_index, tree_len),
             hir_type_form: read_u32_vec(&self.hir_type_form, tree_len),
             hir_type_value_node: read_u32_vec(&self.hir_type_value_node, tree_len),
             hir_type_len_token: read_u32_vec(&self.hir_type_len_token, tree_len),
@@ -2967,6 +3215,7 @@ impl ParserHirItemReadbacks {
             ),
             hir_match_payload_ordinal: read_u32_vec(&self.hir_match_payload_ordinal, tree_len),
             hir_call_callee_node: read_u32_vec(&self.hir_call_callee_node, tree_len),
+            hir_call_context_stmt_node: read_u32_vec(&self.hir_call_context_stmt_node, tree_len),
             hir_call_arg_start: read_u32_vec(&self.hir_call_arg_start, tree_len),
             hir_call_arg_end: read_u32_vec(&self.hir_call_arg_end, tree_len),
             hir_call_arg_count: read_u32_vec(&self.hir_call_arg_count, tree_len),
@@ -2974,6 +3223,10 @@ impl ParserHirItemReadbacks {
             hir_call_arg_ordinal,
             hir_array_lit_first_element: read_u32_vec(&self.hir_array_lit_first_element, tree_len),
             hir_array_lit_element_count: read_u32_vec(&self.hir_array_lit_element_count, tree_len),
+            hir_array_lit_context_stmt_node: read_u32_vec(
+                &self.hir_array_lit_context_stmt_node,
+                tree_len,
+            ),
             hir_array_element_parent_lit: read_u32_vec(
                 &self.hir_array_element_parent_lit,
                 tree_len,
@@ -2988,6 +3241,13 @@ impl ParserHirItemReadbacks {
             hir_stmt_record_operand1,
             hir_stmt_record_operand2,
             hir_stmt_scope_end: read_u32_vec(&self.hir_stmt_scope_end, tree_len),
+            hir_nearest_stmt_node: read_u32_vec(&self.hir_nearest_stmt_node, tree_len),
+            hir_nearest_block_node: read_u32_vec(&self.hir_nearest_block_node, tree_len),
+            hir_nearest_enclosing_control_node: read_u32_vec(
+                &self.hir_nearest_enclosing_control_node,
+                tree_len,
+            ),
+            hir_nearest_loop_node: read_u32_vec(&self.hir_nearest_loop_node, tree_len),
             hir_nearest_fn_node: read_u32_vec(&self.hir_nearest_fn_node, tree_len),
             hir_struct_field_parent_struct: read_u32_vec(
                 &self.hir_struct_field_parent_struct,
@@ -2998,6 +3258,10 @@ impl ParserHirItemReadbacks {
             hir_struct_decl_field_start: read_u32_vec(&self.hir_struct_decl_field_start, tree_len),
             hir_struct_decl_field_count: read_u32_vec(&self.hir_struct_decl_field_count, tree_len),
             hir_struct_lit_head_node: read_u32_vec(&self.hir_struct_lit_head_node, tree_len),
+            hir_struct_lit_context_stmt_node: read_u32_vec(
+                &self.hir_struct_lit_context_stmt_node,
+                tree_len,
+            ),
             hir_struct_lit_field_start: read_u32_vec(&self.hir_struct_lit_field_start, tree_len),
             hir_struct_lit_field_count: read_u32_vec(&self.hir_struct_lit_field_count, tree_len),
             hir_struct_lit_field_parent_lit: read_u32_vec(
@@ -3010,7 +3274,6 @@ impl ParserHirItemReadbacks {
             ),
             hir_struct_lit_field_next: read_u32_vec(&self.hir_struct_lit_field_next, tree_len),
         };
-        validate_hir_variant_payload_slot_counts(&decoded.hir_variant_payload_count)?;
         validate_hir_source_address_records(
             &decoded.hir_kind,
             &decoded.hir_token_pos,
@@ -3021,7 +3284,8 @@ impl ParserHirItemReadbacks {
             &decoded.hir_item_kind,
             &decoded.hir_item_file_id,
         )?;
-        validate_hir_type_records(
+        validate_hir_type_records_with_node_kinds(
+            &decoded.node_kind,
             &decoded.hir_kind,
             &decoded.hir_token_pos,
             &decoded.hir_token_end,
@@ -3032,6 +3296,44 @@ impl ParserHirItemReadbacks {
             &decoded.hir_type_len_value,
             &decoded.hir_type_file_id,
             &decoded.hir_type_path_leaf_node,
+        )?;
+        validate_hir_type_alias_target_records(
+            &decoded.hir_kind,
+            &decoded.hir_token_pos,
+            &decoded.hir_token_end,
+            &decoded.hir_node_file_id,
+            &decoded.hir_type_form,
+            &decoded.hir_type_file_id,
+            &decoded.hir_item_kind,
+            &decoded.hir_item_name_token,
+            &decoded.hir_item_file_id,
+            &decoded.hir_type_alias_target_node,
+        )?;
+        validate_hir_item_records(
+            &decoded.hir_kind,
+            &decoded.hir_token_pos,
+            &decoded.hir_token_end,
+            &decoded.hir_node_file_id,
+            &decoded.hir_item_kind,
+            &decoded.hir_item_name_token,
+            &decoded.hir_item_namespace,
+            &decoded.hir_item_visibility,
+            &decoded.hir_item_file_id,
+        )?;
+        validate_hir_enum_variant_records(
+            &decoded.hir_kind,
+            &decoded.hir_token_pos,
+            &decoded.hir_token_end,
+            &decoded.hir_node_file_id,
+            &decoded.hir_type_form,
+            &decoded.hir_type_file_id,
+            &decoded.hir_item_kind,
+            &decoded.hir_item_file_id,
+            &decoded.hir_variant_parent_enum,
+            &decoded.hir_variant_ordinal,
+            &decoded.hir_variant_payload_start,
+            &decoded.hir_variant_payload_count,
+            &decoded.hir_variant_payload_node,
         )?;
         validate_hir_parameter_records(
             &decoded.hir_kind,
@@ -3069,6 +3371,9 @@ impl ParserHirItemReadbacks {
         )?;
         validate_hir_type_argument_records(
             &decoded.hir_kind,
+            &decoded.hir_token_pos,
+            &decoded.hir_token_end,
+            &decoded.hir_node_file_id,
             &decoded.hir_type_form,
             &decoded.hir_type_arg_start,
             &decoded.hir_type_arg_count,
@@ -3076,8 +3381,12 @@ impl ParserHirItemReadbacks {
         )?;
         validate_hir_call_argument_records(
             &decoded.hir_kind,
+            &decoded.hir_token_pos,
+            &decoded.hir_token_end,
+            &decoded.hir_node_file_id,
             &decoded.hir_call_callee_node,
             &decoded.hir_call_arg_start,
+            &decoded.hir_call_arg_end,
             &decoded.hir_call_arg_count,
             &decoded.hir_call_arg_parent_call,
             &decoded.hir_call_arg_ordinal,
@@ -3086,6 +3395,7 @@ impl ParserHirItemReadbacks {
             &decoded.hir_kind,
             &decoded.hir_token_pos,
             &decoded.hir_token_end,
+            &decoded.hir_node_file_id,
             &decoded.hir_array_lit_first_element,
             &decoded.hir_array_lit_element_count,
             &decoded.hir_array_element_parent_lit,
@@ -3139,6 +3449,28 @@ impl ParserHirItemReadbacks {
             &decoded.hir_stmt_record_operand2,
             &decoded.hir_stmt_scope_end,
         )?;
+        validate_hir_const_item_statement_records(
+            &decoded.hir_kind,
+            &decoded.hir_item_kind,
+            &decoded.hir_item_name_token,
+            &decoded.hir_stmt_record_kind,
+            &decoded.hir_stmt_record_operand0,
+        )?;
+        validate_hir_context_relation_records(
+            &decoded.hir_kind,
+            &decoded.hir_token_pos,
+            &decoded.hir_token_end,
+            &decoded.hir_node_file_id,
+            &decoded.hir_stmt_record_kind,
+            &decoded.hir_nearest_stmt_node,
+            &decoded.hir_nearest_block_node,
+            &decoded.hir_nearest_enclosing_control_node,
+            &decoded.hir_nearest_loop_node,
+            &decoded.hir_nearest_fn_node,
+            &decoded.hir_call_context_stmt_node,
+            &decoded.hir_array_lit_context_stmt_node,
+            &decoded.hir_struct_lit_context_stmt_node,
+        )?;
         validate_hir_struct_literal_field_records(
             &decoded.hir_kind,
             &decoded.hir_token_pos,
@@ -3151,6 +3483,21 @@ impl ParserHirItemReadbacks {
             &decoded.hir_struct_lit_field_value_node,
             &decoded.hir_struct_lit_field_next,
         )?;
+        validate_hir_struct_declaration_field_records(
+            &decoded.hir_kind,
+            &decoded.hir_token_pos,
+            &decoded.hir_token_end,
+            &decoded.hir_node_file_id,
+            &decoded.hir_type_form,
+            &decoded.hir_type_file_id,
+            &decoded.hir_item_kind,
+            &decoded.hir_item_file_id,
+            &decoded.hir_struct_field_parent_struct,
+            &decoded.hir_struct_field_ordinal,
+            &decoded.hir_struct_field_type_node,
+            &decoded.hir_struct_decl_field_start,
+            &decoded.hir_struct_decl_field_count,
+        )?;
         validate_hir_function_return_records(
             &decoded.hir_kind,
             &decoded.hir_token_pos,
@@ -3160,7 +3507,10 @@ impl ParserHirItemReadbacks {
             &decoded.hir_type_file_id,
             &decoded.hir_fn_return_type_node,
             &decoded.hir_item_kind,
+            &decoded.hir_item_name_token,
             &decoded.hir_item_file_id,
+            &decoded.hir_method_signature_flags,
+            &decoded.hir_method_name_token,
         )?;
         validate_hir_item_path_records(
             &decoded.hir_kind,
@@ -3714,77 +4064,21 @@ impl DecodedParserReadbacks {
             hir_struct_lit_field_value_node,
             hir_struct_lit_field_next,
         };
-        validate_hir_variant_payload_slot_counts(&decoded.hir_variant_payload_count)?;
-        let single_file_ids = vec![0u32; decoded.hir_kind.len()];
-        validate_hir_statement_records(
+        validate_hir_semantic_tree_records(
             &decoded.hir_kind,
-            &decoded.hir_token_pos,
-            &decoded.hir_token_end,
-            &single_file_ids,
-            &decoded.hir_stmt_record_kind,
-            &decoded.hir_stmt_record_operand0,
-            &decoded.hir_stmt_record_operand1,
-            &decoded.hir_stmt_record_operand2,
-            &decoded.hir_stmt_scope_end,
+            &decoded.subtree_end,
+            &decoded.hir_semantic_prefix_before_node,
+            &decoded.hir_semantic_dense_node,
+            &decoded.hir_semantic_subtree_end,
+            &decoded.hir_semantic_parent,
+            &decoded.hir_semantic_first_child,
+            &decoded.hir_semantic_next_sibling,
+            &decoded.hir_semantic_depth,
+            &decoded.hir_semantic_child_index,
         )?;
-        validate_hir_type_records(
-            &decoded.hir_kind,
-            &decoded.hir_token_pos,
-            &decoded.hir_token_end,
-            &single_file_ids,
-            &decoded.hir_type_form,
-            &decoded.hir_type_value_node,
-            &decoded.hir_type_len_token,
-            &decoded.hir_type_len_value,
-            &decoded.hir_type_file_id,
-            &decoded.hir_type_path_leaf_node,
-        )?;
-        validate_hir_type_argument_records(
-            &decoded.hir_kind,
-            &decoded.hir_type_form,
-            &decoded.hir_type_arg_start,
-            &decoded.hir_type_arg_count,
-            &decoded.hir_type_arg_next,
-        )?;
-        validate_hir_call_argument_records(
-            &decoded.hir_kind,
-            &decoded.hir_call_callee_node,
-            &decoded.hir_call_arg_start,
-            &decoded.hir_call_arg_count,
-            &decoded.hir_call_arg_parent_call,
-            &decoded.hir_call_arg_ordinal,
-        )?;
-        validate_hir_array_literal_records(
-            &decoded.hir_kind,
-            &decoded.hir_token_pos,
-            &decoded.hir_token_end,
-            &decoded.hir_array_lit_first_element,
-            &decoded.hir_array_lit_element_count,
-            &decoded.hir_array_element_parent_lit,
-            &decoded.hir_array_element_ordinal,
-            &decoded.hir_array_element_next,
-        )?;
-        validate_hir_member_records(
-            &decoded.hir_kind,
-            &decoded.hir_token_pos,
-            &decoded.hir_token_end,
-            &single_file_ids,
-            &decoded.hir_member_receiver_node,
-            &decoded.hir_member_receiver_token,
-            &decoded.hir_member_name_token,
-        )?;
-        validate_hir_struct_literal_field_records(
-            &decoded.hir_kind,
-            &decoded.hir_token_pos,
-            &decoded.hir_token_end,
-            &single_file_ids,
-            &decoded.hir_struct_lit_head_node,
-            &decoded.hir_struct_lit_field_start,
-            &decoded.hir_struct_lit_field_count,
-            &decoded.hir_struct_lit_field_parent_lit,
-            &decoded.hir_struct_lit_field_value_node,
-            &decoded.hir_struct_lit_field_next,
-        )?;
+        // This readback path decodes the adjacent-pair projected tree. It is a
+        // structural grammar artifact, not the complete LL(1) semantic tree, so
+        // full HIR record validation belongs to the resident parse readback.
         Ok(decoded)
     }
 }
@@ -3855,20 +4149,421 @@ fn bounded_readback_len(label: &str, requested: usize, capacity: usize) -> Resul
     Ok(requested)
 }
 
-fn validate_hir_variant_payload_slot_counts(counts: &[u32]) -> Result<()> {
-    for (node, &count) in counts.iter().enumerate() {
-        if count > HIR_VARIANT_PAYLOAD_SLOT_STRIDE {
+pub fn validate_hir_enum_variant_records(
+    kinds: &[u32],
+    token_pos: &[u32],
+    token_end: &[u32],
+    node_file_ids: &[u32],
+    type_forms: &[u32],
+    type_file_ids: &[u32],
+    item_kinds: &[u32],
+    item_file_ids: &[u32],
+    parent_enums: &[u32],
+    variant_ordinals: &[u32],
+    payload_starts: &[u32],
+    payload_counts: &[u32],
+    payload_nodes: &[u32],
+) -> Result<()> {
+    let row_count = kinds.len();
+    let slot_stride = HIR_VARIANT_PAYLOAD_SLOT_STRIDE as usize;
+    if token_pos.len() != row_count
+        || token_end.len() != row_count
+        || node_file_ids.len() != row_count
+        || type_forms.len() != row_count
+        || type_file_ids.len() != row_count
+        || item_kinds.len() != row_count
+        || item_file_ids.len() != row_count
+        || parent_enums.len() != row_count
+        || variant_ordinals.len() != row_count
+        || payload_starts.len() != row_count
+        || payload_counts.len() != row_count
+        || payload_nodes.len() != row_count.saturating_mul(slot_stride)
+    {
+        return Err(anyhow!(
+            "parser HIR enum variant record arrays have inconsistent lengths"
+        ));
+    }
+
+    let has_non_empty_span = |node: usize| {
+        token_pos[node] != INVALID
+            && token_end[node] != INVALID
+            && token_pos[node] < token_end[node]
+    };
+
+    let require_child_source = |owner: usize, child: usize, label: &str| -> Result<()> {
+        if !has_non_empty_span(owner) || node_file_ids[owner] == INVALID {
             return Err(anyhow!(
-                "parser HIR variant payload row {node} published {count} payloads, exceeding {} flat payload slots",
+                "parser HIR enum variant owner row {owner} lacks source-addressable metadata"
+            ));
+        }
+        if !has_non_empty_span(child) || node_file_ids[child] == INVALID {
+            return Err(anyhow!(
+                "parser HIR enum variant {label} row {child} lacks source-addressable metadata"
+            ));
+        }
+        if node_file_ids[child] != node_file_ids[owner] {
+            return Err(anyhow!(
+                "parser HIR enum variant {label} row {child} published a different file id than owner row {owner}"
+            ));
+        }
+        if token_pos[child] < token_pos[owner] || token_end[child] > token_end[owner] {
+            return Err(anyhow!(
+                "parser HIR enum variant {label} row {child} falls outside owner row {owner} span"
+            ));
+        }
+        Ok(())
+    };
+
+    let mut variant_ordinal_keys = Vec::new();
+    let mut payload_owner = vec![INVALID; row_count];
+    for (row, &parent) in parent_enums.iter().enumerate() {
+        let payload_base = row * slot_stride;
+        let payload_slots = &payload_nodes[payload_base..payload_base + slot_stride];
+
+        if parent == INVALID {
+            if variant_ordinals[row] != INVALID {
+                return Err(anyhow!(
+                    "parser HIR enum variant row {row} published an ordinal without an enum owner"
+                ));
+            }
+            if payload_starts[row] != INVALID
+                || payload_counts[row] != 0
+                || payload_slots.iter().any(|&payload| payload != INVALID)
+            {
+                return Err(anyhow!(
+                    "parser HIR enum variant row {row} published payload metadata without an enum-variant owner (kind={}, span={}..{}, item_kind={}, payload_start={}, payload_count={}, payload_slots={:?})",
+                    kinds[row],
+                    token_pos[row],
+                    token_end[row],
+                    item_kinds[row],
+                    payload_starts[row],
+                    payload_counts[row],
+                    payload_slots
+                ));
+            }
+            continue;
+        }
+
+        let parent = parent as usize;
+        if parent >= row_count {
+            return Err(anyhow!(
+                "parser HIR enum variant row {row} published enum owner {parent}, outside {row_count} readback rows"
+            ));
+        }
+        if kinds[parent] != HIR_NODE_ENUM_ITEM || item_kinds[parent] != HIR_ITEM_KIND_ENUM {
+            return Err(anyhow!(
+                "parser HIR enum variant row {row} points at owner {parent} without an enum item record"
+            ));
+        }
+        if kinds[row] != HIR_NODE_ITEM || item_kinds[row] != HIR_ITEM_KIND_ENUM_VARIANT {
+            return Err(anyhow!(
+                "parser HIR enum variant row {row} is not backed by a parser-owned enum-variant item record"
+            ));
+        }
+        if item_file_ids[parent] != node_file_ids[parent]
+            || item_file_ids[row] != node_file_ids[row]
+            || item_file_ids[row] != item_file_ids[parent]
+        {
+            return Err(anyhow!(
+                "parser HIR enum variant row {row} published item/file ids that do not match enum owner {parent}"
+            ));
+        }
+        require_child_source(parent, row, "row")?;
+
+        let ordinal = variant_ordinals[row];
+        if ordinal == INVALID {
+            return Err(anyhow!(
+                "parser HIR enum variant row {row} omitted its source-order ordinal"
+            ));
+        }
+        variant_ordinal_keys.push((parent, ordinal, row));
+
+        let payload_count = payload_counts[row];
+        if payload_count > HIR_VARIANT_PAYLOAD_SLOT_STRIDE {
+            return Err(anyhow!(
+                "parser HIR enum variant row {row} published {payload_count} payloads, exceeding {} flat payload slots",
                 HIR_VARIANT_PAYLOAD_SLOT_STRIDE
             ));
         }
+
+        if payload_count == 0 {
+            if payload_starts[row] != INVALID
+                || payload_slots.iter().any(|&payload| payload != INVALID)
+            {
+                return Err(anyhow!(
+                    "parser HIR enum variant row {row} published payload slots without a payload count"
+                ));
+            }
+            continue;
+        }
+
+        let first_payload = payload_slots[0];
+        if payload_starts[row] != first_payload {
+            return Err(anyhow!(
+                "parser HIR enum variant row {row} payload start does not point at ordinal zero"
+            ));
+        }
+
+        let mut previous_payload: Option<usize> = None;
+        for slot in 0..slot_stride {
+            let payload = payload_slots[slot];
+            if slot >= payload_count as usize {
+                if payload != INVALID {
+                    return Err(anyhow!(
+                        "parser HIR enum variant row {row} retained stale payload slot {slot}"
+                    ));
+                }
+                continue;
+            }
+
+            if payload == INVALID || payload as usize >= row_count {
+                return Err(anyhow!(
+                    "parser HIR enum variant row {row} published payload count {payload_count} without an in-table payload type at ordinal {slot}"
+                ));
+            }
+            let payload = payload as usize;
+            if payload_owner[payload] != INVALID {
+                return Err(anyhow!(
+                    "parser HIR enum variant payload row {payload} appears in multiple variant payload slots"
+                ));
+            }
+            payload_owner[payload] = row as u32;
+            if kinds[payload] != HIR_NODE_TYPE || type_forms[payload] == HIR_TYPE_FORM_NONE {
+                return Err(anyhow!(
+                    "parser HIR enum variant payload row {payload} is not a concrete type record"
+                ));
+            }
+            if type_file_ids[payload] != node_file_ids[payload] {
+                return Err(anyhow!(
+                    "parser HIR enum variant payload row {payload} type/file id does not match its HIR row"
+                ));
+            }
+            require_child_source(row, payload, "payload")?;
+            if let Some(previous) = previous_payload {
+                if token_pos[payload] <= token_pos[previous]
+                    || token_end[previous] > token_pos[payload]
+                {
+                    return Err(anyhow!(
+                        "parser HIR enum variant row {row} payload slots overlap or are not in source order"
+                    ));
+                }
+            }
+            previous_payload = Some(payload);
+        }
     }
+
+    variant_ordinal_keys.sort_unstable();
+    let mut current_owner = INVALID as usize;
+    let mut expected_ordinal = 0u32;
+    for (owner, ordinal, row) in variant_ordinal_keys {
+        if owner != current_owner {
+            current_owner = owner;
+            expected_ordinal = 0;
+        }
+        if ordinal != expected_ordinal {
+            return Err(anyhow!(
+                "parser HIR enum row {owner} variant ordinals are not contiguous from zero at row {row}"
+            ));
+        }
+        expected_ordinal += 1;
+    }
+
+    Ok(())
+}
+
+pub fn validate_hir_semantic_tree_records(
+    kinds: &[u32],
+    parse_subtree_end: &[u32],
+    semantic_prefix_before_node: &[u32],
+    semantic_dense_node: &[u32],
+    semantic_subtree_end: &[u32],
+    semantic_parent: &[u32],
+    semantic_first_child: &[u32],
+    semantic_next_sibling: &[u32],
+    semantic_depth: &[u32],
+    semantic_child_index: &[u32],
+) -> Result<()> {
+    let row_count = kinds.len();
+    if parse_subtree_end.len() != row_count
+        || semantic_prefix_before_node.len() != row_count
+        || semantic_dense_node.len() != row_count
+        || semantic_subtree_end.len() != row_count
+        || semantic_parent.len() != row_count
+        || semantic_first_child.len() != row_count
+        || semantic_next_sibling.len() != row_count
+        || semantic_depth.len() != row_count
+        || semantic_child_index.len() != row_count
+    {
+        return Err(anyhow!(
+            "parser HIR semantic-tree record arrays have inconsistent lengths"
+        ));
+    }
+
+    let semantic_count = kinds.iter().filter(|&&kind| kind != HIR_NODE_NONE).count();
+    let mut expected_prefix = 0usize;
+    for (node, &kind) in kinds.iter().enumerate() {
+        let published_prefix = semantic_prefix_before_node[node] as usize;
+        if published_prefix != expected_prefix {
+            return Err(anyhow!(
+                "parser HIR semantic-tree node {node} published prefix {published_prefix}, expected {expected_prefix}"
+            ));
+        }
+        if kind == HIR_NODE_NONE {
+            continue;
+        }
+        if expected_prefix >= row_count {
+            return Err(anyhow!(
+                "parser HIR semantic-tree dense row {expected_prefix} exceeds {row_count} readback rows"
+            ));
+        }
+        let dense_node = semantic_dense_node[expected_prefix];
+        if dense_node as usize != node {
+            return Err(anyhow!(
+                "parser HIR semantic-tree dense row {expected_prefix} points at node {dense_node}, expected {node}"
+            ));
+        }
+        expected_prefix += 1;
+    }
+
+    let mut next_child_index_by_parent = vec![0u32; semantic_count];
+    let mut root_count = 0usize;
+    let mut next_root_child_index = 0u32;
+    for row in 0..semantic_count {
+        let original_node = semantic_dense_node[row] as usize;
+        if original_node >= row_count {
+            return Err(anyhow!(
+                "parser HIR semantic-tree row {row} published original node {original_node}, outside {row_count} readback rows"
+            ));
+        }
+        if kinds[original_node] == HIR_NODE_NONE {
+            return Err(anyhow!(
+                "parser HIR semantic-tree row {row} points at non-semantic original node {original_node}"
+            ));
+        }
+        if semantic_prefix_before_node[original_node] as usize != row {
+            return Err(anyhow!(
+                "parser HIR semantic-tree row {row} disagrees with original node {original_node} prefix {}",
+                semantic_prefix_before_node[original_node]
+            ));
+        }
+
+        let subtree_end = semantic_subtree_end[row] as usize;
+        if subtree_end <= row || subtree_end > semantic_count {
+            return Err(anyhow!(
+                "parser HIR semantic-tree row {row} published subtree end {subtree_end}, outside row range"
+            ));
+        }
+        let original_end = parse_subtree_end[original_node] as usize;
+        if original_end > row_count {
+            return Err(anyhow!(
+                "parser HIR semantic-tree row {row} original node {original_node} published parse subtree end {original_end}, outside {row_count} readback rows"
+            ));
+        }
+        let expected_subtree_end = if original_end == row_count {
+            semantic_count
+        } else {
+            semantic_prefix_before_node[original_end] as usize
+        }
+        .max(row + 1);
+        if subtree_end != expected_subtree_end {
+            return Err(anyhow!(
+                "parser HIR semantic-tree row {row} published subtree end {subtree_end}, expected {expected_subtree_end}"
+            ));
+        }
+
+        let parent = semantic_parent[row];
+        if parent == INVALID {
+            root_count += 1;
+            if semantic_depth[row] != 0 {
+                return Err(anyhow!(
+                    "parser HIR semantic-tree root row {row} published depth {}",
+                    semantic_depth[row]
+                ));
+            }
+            if semantic_child_index[row] != next_root_child_index {
+                return Err(anyhow!(
+                    "parser HIR semantic-tree root row {row} published child index {}, expected {next_root_child_index}",
+                    semantic_child_index[row]
+                ));
+            }
+            next_root_child_index = next_root_child_index.saturating_add(1);
+        } else {
+            let parent = parent as usize;
+            if parent >= semantic_count {
+                return Err(anyhow!(
+                    "parser HIR semantic-tree row {row} published parent {parent}, outside {semantic_count} semantic rows"
+                ));
+            }
+            if parent >= row {
+                return Err(anyhow!(
+                    "parser HIR semantic-tree row {row} published non-preorder parent {parent}"
+                ));
+            }
+            if row >= semantic_subtree_end[parent] as usize {
+                return Err(anyhow!(
+                    "parser HIR semantic-tree row {row} published parent {parent} whose subtree ends at {}",
+                    semantic_subtree_end[parent]
+                ));
+            }
+            let expected_depth = semantic_depth[parent].saturating_add(1);
+            if semantic_depth[row] != expected_depth {
+                return Err(anyhow!(
+                    "parser HIR semantic-tree row {row} published depth {}, expected {expected_depth}",
+                    semantic_depth[row]
+                ));
+            }
+            let expected_child_index = next_child_index_by_parent[parent];
+            if semantic_child_index[row] != expected_child_index {
+                return Err(anyhow!(
+                    "parser HIR semantic-tree row {row} published child index {}, expected {expected_child_index}",
+                    semantic_child_index[row]
+                ));
+            }
+            next_child_index_by_parent[parent] = expected_child_index.saturating_add(1);
+        }
+
+        let expected_first_child =
+            if row + 1 < semantic_count && semantic_parent[row + 1] == row as u32 {
+                (row + 1) as u32
+            } else {
+                INVALID
+            };
+        if semantic_first_child[row] != expected_first_child {
+            return Err(anyhow!(
+                "parser HIR semantic-tree row {row} published first child {}, expected {expected_first_child}",
+                semantic_first_child[row]
+            ));
+        }
+
+        let expected_next_sibling = if subtree_end < semantic_count
+            && semantic_parent[subtree_end] == semantic_parent[row]
+        {
+            subtree_end as u32
+        } else {
+            INVALID
+        };
+        if semantic_next_sibling[row] != expected_next_sibling {
+            return Err(anyhow!(
+                "parser HIR semantic-tree row {row} published next sibling {}, expected {expected_next_sibling}",
+                semantic_next_sibling[row]
+            ));
+        }
+    }
+
+    if semantic_count > 0 && root_count == 0 {
+        return Err(anyhow!(
+            "parser HIR semantic-tree published semantic rows without a root"
+        ));
+    }
+
     Ok(())
 }
 
 pub fn validate_hir_type_argument_records(
     kinds: &[u32],
+    token_pos: &[u32],
+    token_end: &[u32],
+    node_file_ids: &[u32],
     type_forms: &[u32],
     starts: &[u32],
     counts: &[u32],
@@ -3876,6 +4571,9 @@ pub fn validate_hir_type_argument_records(
 ) -> Result<()> {
     let row_count = counts.len();
     if kinds.len() != row_count
+        || token_pos.len() != row_count
+        || token_end.len() != row_count
+        || node_file_ids.len() != row_count
         || type_forms.len() != row_count
         || starts.len() != row_count
         || next_args.len() != row_count
@@ -3894,6 +4592,12 @@ pub fn validate_hir_type_argument_records(
             "parser HIR type argument owner rows claim {total_claimed_args} type argument rows, exceeding {row_count} readback rows"
         ));
     }
+
+    let has_non_empty_span = |node: usize| {
+        token_pos[node] != INVALID
+            && token_end[node] != INVALID
+            && token_pos[node] < token_end[node]
+    };
 
     let mut argument_owner = vec![INVALID; row_count];
     for (owner, &count) in counts.iter().enumerate() {
@@ -3915,6 +4619,11 @@ pub fn validate_hir_type_argument_records(
                 "parser HIR type argument owner row {owner} published generic arguments on a non-path type record"
             ));
         }
+        if !has_non_empty_span(owner) || node_file_ids[owner] == INVALID {
+            return Err(anyhow!(
+                "parser HIR type argument owner row {owner} published generic arguments without a source-addressable owner span"
+            ));
+        }
         if count as usize > row_count {
             return Err(anyhow!(
                 "parser HIR type argument owner row {owner} published {count} arguments, exceeding {row_count} readback rows"
@@ -3929,6 +4638,7 @@ pub fn validate_hir_type_argument_records(
         }
 
         let mut arg = start as usize;
+        let mut previous_arg = None;
         for expected_ordinal in 0..count as usize {
             if arg == owner {
                 return Err(anyhow!(
@@ -3945,6 +4655,30 @@ pub fn validate_hir_type_argument_records(
                     "parser HIR type argument row {arg} has no concrete type record"
                 ));
             }
+            if !has_non_empty_span(arg) {
+                return Err(anyhow!(
+                    "parser HIR type argument row {arg} has no source-addressable argument span"
+                ));
+            }
+            if node_file_ids[arg] != node_file_ids[owner] {
+                return Err(anyhow!(
+                    "parser HIR type argument row {arg} has a different file id than owner row {owner}"
+                ));
+            }
+            if token_pos[arg] < token_pos[owner] || token_end[arg] > token_end[owner] {
+                return Err(anyhow!(
+                    "parser HIR type argument row {arg} is outside owner row {owner}'s source span"
+                ));
+            }
+            if let Some(previous_arg) = previous_arg {
+                if token_pos[arg] <= token_pos[previous_arg]
+                    || token_end[previous_arg] > token_pos[arg]
+                {
+                    return Err(anyhow!(
+                        "parser HIR type argument owner row {owner} published argument row {arg} out of source order"
+                    ));
+                }
+            }
             let previous_owner = argument_owner[arg];
             if previous_owner != INVALID {
                 return Err(anyhow!(
@@ -3952,6 +4686,7 @@ pub fn validate_hir_type_argument_records(
                 ));
             }
             argument_owner[arg] = owner as u32;
+            previous_arg = Some(arg);
 
             let next = next_args[arg];
             if expected_ordinal + 1 == count as usize {
@@ -4173,9 +4908,11 @@ pub fn validate_hir_parameter_records(
             }
             if expected_ordinal > 0 {
                 let previous_param_node = ordinal_keys[index - 1].2;
-                if token_pos[param_node] <= token_pos[previous_param_node] {
+                if token_pos[param_node] <= token_pos[previous_param_node]
+                    || token_end[previous_param_node] > token_pos[param_node]
+                {
                     return Err(anyhow!(
-                        "parser HIR function row {owner} parameter ordinals are not in source order"
+                        "parser HIR function row {owner} parameter rows overlap or are not in source order"
                     ));
                 }
             }
@@ -4294,6 +5031,13 @@ pub fn validate_hir_method_records(
                 "parser HIR method row {method_node} published owner {owner_node} without a matching source-addressable owner row"
             ));
         }
+        if token_pos[method_node] < token_pos[owner_node]
+            || token_end[method_node] > token_end[owner_node]
+        {
+            return Err(anyhow!(
+                "parser HIR method row {method_node} falls outside declaration owner span {owner_node}"
+            ));
+        }
 
         let impl_method = impl_node != INVALID;
         if impl_method {
@@ -4302,11 +5046,14 @@ pub fn validate_hir_method_records(
                     "parser HIR method row {method_node} published impl owner {impl_node} that does not match declaration owner {owner_node}"
                 ));
             }
-            if item_kinds[method_node] != HIR_ITEM_KIND_FN
-                || item_file_ids[method_node] != node_file_ids[method_node]
-            {
+            if item_kinds[method_node] != HIR_ITEM_KIND_NONE {
                 return Err(anyhow!(
-                    "parser HIR method row {method_node} published an impl owner without a function item row"
+                    "parser HIR impl method row {method_node} published value item metadata"
+                ));
+            }
+            if item_name_tokens[method_node] != INVALID {
+                return Err(anyhow!(
+                    "parser HIR impl method row {method_node} published a value item name token"
                 ));
             }
         } else {
@@ -4331,9 +5078,9 @@ pub fn validate_hir_method_records(
                 "parser HIR method row {method_node} published a method name token outside its function span"
             ));
         }
-        if impl_method && name_token != item_name_tokens[method_node] {
+        if name_token <= token_pos[method_node] {
             return Err(anyhow!(
-                "parser HIR impl method row {method_node} published a method name token that does not match its function item name token"
+                "parser HIR method row {method_node} published a method name token that does not follow its function declaration token"
             ));
         }
 
@@ -4371,20 +5118,78 @@ pub fn validate_hir_method_records(
                     "parser HIR method row {method_node} published a first parameter token outside its function span"
                 ));
             }
-            let owns_ordinal_zero_param =
+            if first_param_token <= name_token {
+                return Err(anyhow!(
+                    "parser HIR method row {method_node} published a first parameter token that does not follow its method name token"
+                ));
+            }
+            let ordinal_zero_param =
                 param_owner_fn_nodes
                     .iter()
                     .enumerate()
-                    .any(|(param_node, &owner)| {
-                        owner as usize == method_node
+                    .find_map(|(param_node, &owner)| {
+                        (owner as usize == method_node
                             && param_ordinals[param_node] == 0
                             && param_name_tokens[param_node] == first_param_token
-                            && kinds[param_node] == HIR_NODE_PARAM
+                            && kinds[param_node] == HIR_NODE_PARAM)
+                            .then_some(param_node)
                     });
-            if !owns_ordinal_zero_param {
+            let Some(ordinal_zero_param) = ordinal_zero_param else {
                 return Err(anyhow!(
                     "parser HIR method row {method_node} published a first parameter token without an ordinal-zero parameter row"
                 ));
+            };
+            if !has_non_empty_span(ordinal_zero_param)
+                || node_file_ids[ordinal_zero_param] == INVALID
+            {
+                return Err(anyhow!(
+                    "parser HIR method row {method_node} published ordinal-zero parameter row {ordinal_zero_param} without a source-addressable parameter span"
+                ));
+            }
+            if node_file_ids[ordinal_zero_param] != node_file_ids[method_node] {
+                return Err(anyhow!(
+                    "parser HIR method row {method_node} published ordinal-zero parameter row {ordinal_zero_param} with a different file id"
+                ));
+            }
+            if token_pos[ordinal_zero_param] < token_pos[method_node]
+                || token_end[ordinal_zero_param] > token_end[method_node]
+            {
+                return Err(anyhow!(
+                    "parser HIR method row {method_node} published ordinal-zero parameter row {ordinal_zero_param} outside its function span"
+                ));
+            }
+            if first_param_token < token_pos[ordinal_zero_param]
+                || first_param_token >= token_end[ordinal_zero_param]
+            {
+                return Err(anyhow!(
+                    "parser HIR method row {method_node} published a first parameter token outside the ordinal-zero parameter span"
+                ));
+            }
+            if receiver_mode == HIR_METHOD_RECEIVER_NONE {
+                return Err(anyhow!(
+                    "parser HIR method row {method_node} published a first parameter token without a receiver mode"
+                ));
+            }
+            if receiver_mode == HIR_METHOD_RECEIVER_EXPLICIT {
+                let param_type_node = param_type_nodes[ordinal_zero_param];
+                if param_type_node == INVALID
+                    || param_type_node as usize >= row_count
+                    || kinds[param_type_node as usize] != HIR_NODE_TYPE
+                {
+                    return Err(anyhow!(
+                        "parser HIR method row {method_node} published an explicit first parameter without a parser-owned type record"
+                    ));
+                }
+                let param_type_node = param_type_node as usize;
+                if !has_non_empty_span(param_type_node)
+                    || node_file_ids[param_type_node] != node_file_ids[ordinal_zero_param]
+                    || token_pos[param_type_node] < token_pos[ordinal_zero_param]
+                    || token_end[param_type_node] > token_end[ordinal_zero_param]
+                {
+                    return Err(anyhow!(
+                        "parser HIR method row {method_node} published explicit first parameter type row {param_type_node} without source-addressed ownership by ordinal-zero parameter row {ordinal_zero_param}"
+                    ));
+                }
             }
         }
 
@@ -4520,6 +5325,18 @@ fn is_hir_expr_binary_form(form: u32) -> bool {
     )
 }
 
+fn is_hir_expr_range_form(form: u32) -> bool {
+    matches!(
+        form,
+        HIR_EXPR_FORM_RANGE
+            | HIR_EXPR_FORM_RANGE_FROM
+            | HIR_EXPR_FORM_RANGE_TO
+            | HIR_EXPR_FORM_RANGE_FULL
+            | HIR_EXPR_FORM_RANGE_INCLUSIVE
+            | HIR_EXPR_FORM_RANGE_TO_INCLUSIVE
+    )
+}
+
 pub fn validate_hir_expression_records(
     kinds: &[u32],
     token_pos: &[u32],
@@ -4594,6 +5411,24 @@ pub fn validate_hir_expression_records(
         Ok(())
     };
 
+    let require_no_left = |node: usize, left: u32, label: &str| -> Result<()> {
+        if left != INVALID {
+            return Err(anyhow!(
+                "parser HIR expression row {node} published {label} with a non-empty left operand"
+            ));
+        }
+        Ok(())
+    };
+
+    let require_no_right = |node: usize, right: u32, label: &str| -> Result<()> {
+        if right != INVALID {
+            return Err(anyhow!(
+                "parser HIR expression row {node} published {label} with a non-empty right operand"
+            ));
+        }
+        Ok(())
+    };
+
     let require_value_token = |node: usize, token: u32, label: &str| -> Result<()> {
         if token == INVALID || token < token_pos[node] || token >= token_end[node] {
             return Err(anyhow!(
@@ -4631,13 +5466,41 @@ pub fn validate_hir_expression_records(
                 "parser HIR expression row {owner} published {label} row {node} with a different file id"
             ));
         }
+        if token_pos[node] < token_pos[owner] || token_end[node] > token_end[owner] {
+            return Err(anyhow!(
+                "parser HIR expression row {owner} published {label} row {node} outside the owner expression span (owner={}..{}, operand={}..{})",
+                token_pos[owner],
+                token_end[owner],
+                token_pos[node],
+                token_end[node]
+            ));
+        }
         Ok(node)
+    };
+
+    let require_ordered_expression_pair = |owner: usize,
+                                           left: usize,
+                                           right: usize,
+                                           label: &str|
+     -> Result<()> {
+        if token_pos[right] <= token_pos[left] || token_end[left] > token_pos[right] {
+            return Err(anyhow!(
+                "parser HIR expression row {owner} published {label} operands out of source order"
+            ));
+        }
+        Ok(())
     };
 
     for row in 0..row_count {
         let form = expr_forms[row];
         match form {
             HIR_EXPR_FORM_NONE => {
+                if matches!(kinds[row], HIR_NODE_NAME_EXPR | HIR_NODE_LITERAL_EXPR) {
+                    return Err(anyhow!(
+                        "parser HIR expression row {row} has expression leaf HIR kind {} but no parser-owned expression record",
+                        kinds[row]
+                    ));
+                }
                 require_empty(row, "no expression record")?;
             }
             HIR_EXPR_FORM_FORWARD => {
@@ -4675,14 +5538,59 @@ pub fn validate_hir_expression_records(
             }
             form if is_hir_expr_binary_form(form) => {
                 require_expression_owner(row, "binary record")?;
-                require_expression_edge(row, left_nodes[row], "binary left operand")?;
-                require_expression_edge(row, right_nodes[row], "binary right operand")?;
+                let left = require_expression_edge(row, left_nodes[row], "binary left operand")?;
+                let right = require_expression_edge(row, right_nodes[row], "binary right operand")?;
+                require_ordered_expression_pair(row, left, right, "binary")?;
                 require_no_value(row, "binary record")?;
+            }
+            form if is_hir_expr_range_form(form) => {
+                require_expression_owner(row, "range record")?;
+                let has_start = matches!(
+                    form,
+                    HIR_EXPR_FORM_RANGE | HIR_EXPR_FORM_RANGE_FROM | HIR_EXPR_FORM_RANGE_INCLUSIVE
+                );
+                let has_end = matches!(
+                    form,
+                    HIR_EXPR_FORM_RANGE
+                        | HIR_EXPR_FORM_RANGE_TO
+                        | HIR_EXPR_FORM_RANGE_INCLUSIVE
+                        | HIR_EXPR_FORM_RANGE_TO_INCLUSIVE
+                );
+                let left = if has_start {
+                    Some(require_expression_edge(
+                        row,
+                        left_nodes[row],
+                        "range start operand",
+                    )?)
+                } else {
+                    require_no_left(row, left_nodes[row], "range record")?;
+                    None
+                };
+                let right = if has_end {
+                    Some(require_expression_edge(
+                        row,
+                        right_nodes[row],
+                        "range end operand",
+                    )?)
+                } else {
+                    require_no_right(row, right_nodes[row], "range record")?;
+                    None
+                };
+                if let (Some(left), Some(right)) = (left, right) {
+                    require_ordered_expression_pair(row, left, right, "range")?;
+                }
+                require_no_value(row, "range record")?;
             }
             HIR_EXPR_FORM_INDEX => {
                 require_expression_owner(row, "index record")?;
-                require_expression_edge(row, left_nodes[row], "index base")?;
-                require_expression_edge(row, right_nodes[row], "index expression")?;
+                let base = require_expression_edge(row, left_nodes[row], "index base")?;
+                let index = require_expression_edge(row, right_nodes[row], "index expression")?;
+                require_ordered_expression_pair(row, base, index, "index")?;
+                if token_pos[row] != token_pos[base] {
+                    return Err(anyhow!(
+                        "parser HIR expression row {row} index span does not start at base row {base}"
+                    ));
+                }
                 require_no_value(row, "index record")?;
             }
             other => {
@@ -4690,6 +5598,80 @@ pub fn validate_hir_expression_records(
                     "parser HIR expression row {row} published unknown expression record form {other}"
                 ));
             }
+        }
+    }
+
+    Ok(())
+}
+
+pub fn validate_hir_expression_result_root_records(
+    kinds: &[u32],
+    token_pos: &[u32],
+    token_end: &[u32],
+    node_file_ids: &[u32],
+    result_roots: &[u32],
+) -> Result<()> {
+    let row_count = kinds.len();
+    if token_pos.len() != row_count
+        || token_end.len() != row_count
+        || node_file_ids.len() != row_count
+        || result_roots.len() != row_count
+    {
+        return Err(anyhow!(
+            "parser HIR expression-result-root arrays have inconsistent lengths"
+        ));
+    }
+
+    let has_non_empty_span = |node: usize| {
+        token_pos[node] != INVALID
+            && token_end[node] != INVALID
+            && token_pos[node] < token_end[node]
+    };
+
+    for (row, &root) in result_roots.iter().enumerate() {
+        if root == INVALID {
+            continue;
+        }
+        if !is_hir_expression_kind(kinds[row]) {
+            return Err(anyhow!(
+                "parser HIR expression-result row {row} published a result root without an expression HIR row"
+            ));
+        }
+        let root = root as usize;
+        if root >= row_count {
+            return Err(anyhow!(
+                "parser HIR expression-result row {row} published result root {root}, outside {row_count} readback rows"
+            ));
+        }
+        if !is_hir_expression_kind(kinds[root]) {
+            return Err(anyhow!(
+                "parser HIR expression-result row {row} published non-expression result root {root} with HIR kind {}",
+                kinds[root]
+            ));
+        }
+        if !has_non_empty_span(row) || !has_non_empty_span(root) {
+            return Err(anyhow!(
+                "parser HIR expression-result row {row} published result root {root} without source-addressable spans"
+            ));
+        }
+        if node_file_ids[row] == INVALID
+            || node_file_ids[root] == INVALID
+            || node_file_ids[row] != node_file_ids[root]
+        {
+            return Err(anyhow!(
+                "parser HIR expression-result row {row} published result root {root} with a different file id"
+            ));
+        }
+        if token_pos[root] < token_pos[row] || token_end[root] > token_end[row] {
+            return Err(anyhow!(
+                "parser HIR expression-result row {row} published result root {root} outside the expression span"
+            ));
+        }
+        if result_roots[root] != root as u32 {
+            let next_root = result_roots[root];
+            return Err(anyhow!(
+                "parser HIR expression-result row {row} published non-canonical result root {root} whose root row points to {next_root}"
+            ));
         }
     }
 
@@ -4716,16 +5698,24 @@ fn expected_statement_record_kind_for_hir_kind(kind: u32) -> Option<u32> {
 
 pub fn validate_hir_call_argument_records(
     kinds: &[u32],
+    token_pos: &[u32],
+    token_end: &[u32],
+    node_file_ids: &[u32],
     callee_nodes: &[u32],
     starts: &[u32],
+    arg_ends: &[u32],
     counts: &[u32],
     parent_calls: &[u32],
     ordinals: &[u32],
 ) -> Result<()> {
     let row_count = counts.len();
     if kinds.len() != row_count
+        || token_pos.len() != row_count
+        || token_end.len() != row_count
+        || node_file_ids.len() != row_count
         || callee_nodes.len() != row_count
         || starts.len() != row_count
+        || arg_ends.len() != row_count
         || parent_calls.len() != row_count
         || ordinals.len() != row_count
     {
@@ -4733,6 +5723,46 @@ pub fn validate_hir_call_argument_records(
             "parser HIR call argument record arrays have inconsistent lengths"
         ));
     }
+
+    let has_non_empty_span = |node: usize| {
+        token_pos[node] != INVALID
+            && token_end[node] != INVALID
+            && token_pos[node] < token_end[node]
+    };
+
+    let require_call_source = |call_node: usize| -> Result<()> {
+        if !has_non_empty_span(call_node) {
+            return Err(anyhow!(
+                "parser HIR call row {call_node} published call metadata without a non-empty token span"
+            ));
+        }
+        if node_file_ids[call_node] == INVALID {
+            return Err(anyhow!(
+                "parser HIR call row {call_node} published call metadata without a source file id"
+            ));
+        }
+        Ok(())
+    };
+
+    let require_child_source = |owner: usize, child: usize, label: &str| -> Result<()> {
+        require_call_source(owner)?;
+        if !has_non_empty_span(child) {
+            return Err(anyhow!(
+                "parser HIR call row {owner} published {label} row {child} without a non-empty token span"
+            ));
+        }
+        if node_file_ids[child] != node_file_ids[owner] {
+            return Err(anyhow!(
+                "parser HIR call row {owner} published {label} row {child} with a different file id"
+            ));
+        }
+        if token_pos[child] < token_pos[owner] || token_end[child] > token_end[owner] {
+            return Err(anyhow!(
+                "parser HIR call row {owner} published {label} row {child} outside the call expression span"
+            ));
+        }
+        Ok(())
+    };
 
     for (call_node, &callee) in callee_nodes.iter().enumerate() {
         if kinds[call_node] != HIR_NODE_CALL_EXPR {
@@ -4743,6 +5773,7 @@ pub fn validate_hir_call_argument_records(
             }
             continue;
         }
+        require_call_source(call_node)?;
 
         if callee == INVALID || callee as usize >= row_count {
             return Err(anyhow!(
@@ -4754,19 +5785,27 @@ pub fn validate_hir_call_argument_records(
                 "parser HIR call row {call_node} points at itself as the call callee"
             ));
         }
-        if !is_hir_expression_kind(kinds[callee as usize]) {
+        let callee = callee as usize;
+        if !is_hir_expression_kind(kinds[callee]) {
             return Err(anyhow!(
                 "parser HIR call row {call_node} published callee row {callee} with non-expression HIR kind {}",
-                kinds[callee as usize]
+                kinds[callee]
+            ));
+        }
+        require_child_source(call_node, callee, "callee")?;
+        if token_pos[call_node] != token_pos[callee] {
+            return Err(anyhow!(
+                "parser HIR call row {call_node} span does not start at callee row {callee}"
             ));
         }
     }
 
     let mut actual_counts = vec![0u32; row_count];
     let mut ordinal_masks = vec![0u32; row_count];
+    let mut ordinal_keys = Vec::new();
     for (arg_node, &owner) in parent_calls.iter().enumerate() {
         if owner == INVALID {
-            if ordinals[arg_node] != INVALID {
+            if ordinals[arg_node] != INVALID || arg_ends[arg_node] != INVALID {
                 return Err(anyhow!(
                     "parser HIR call argument row {arg_node} published argument metadata without an owner"
                 ));
@@ -4787,6 +5826,24 @@ pub fn validate_hir_call_argument_records(
         if kinds[arg_node] != HIR_NODE_EXPR {
             return Err(anyhow!(
                 "parser HIR call argument row {arg_node} is not an expression HIR row"
+            ));
+        }
+        require_child_source(owner, arg_node, "argument")?;
+        if arg_ends[arg_node] == INVALID {
+            return Err(anyhow!(
+                "parser HIR call argument row {arg_node} omitted its parser-owned argument end token"
+            ));
+        }
+        if arg_ends[arg_node] != token_end[arg_node] {
+            return Err(anyhow!(
+                "parser HIR call argument row {arg_node} published argument end token {} that does not match its HIR span end {}",
+                arg_ends[arg_node],
+                token_end[arg_node]
+            ));
+        }
+        if arg_ends[arg_node] > token_end[owner] {
+            return Err(anyhow!(
+                "parser HIR call argument row {arg_node} published argument end token outside owner {owner} call span"
             ));
         }
 
@@ -4817,7 +5874,9 @@ pub fn validate_hir_call_argument_records(
         }
         ordinal_masks[owner] |= bit;
         actual_counts[owner] += 1;
+        ordinal_keys.push((owner, ordinal, arg_node));
     }
+    ordinal_keys.sort_unstable_by_key(|&(owner, ordinal, _)| (owner, ordinal));
 
     for (owner, &count) in counts.iter().enumerate() {
         if count == 0 {
@@ -4852,6 +5911,22 @@ pub fn validate_hir_call_argument_records(
                 "parser HIR call row {owner} first argument row {start} is not ordinal zero for that owner"
             ));
         }
+        if token_pos[start] < token_pos[owner] || token_end[start] > token_end[owner] {
+            return Err(anyhow!(
+                "parser HIR call row {owner} first argument row {start} is outside the call expression span"
+            ));
+        }
+        let callee = callee_nodes[owner] as usize;
+        if callee >= row_count {
+            return Err(anyhow!(
+                "parser HIR call row {owner} published argument metadata without an in-table callee"
+            ));
+        }
+        if token_end[callee] > token_pos[start] {
+            return Err(anyhow!(
+                "parser HIR call row {owner} published callee row {callee} that does not precede first argument row {start}"
+            ));
+        }
         if actual_counts[owner] != count {
             return Err(anyhow!(
                 "parser HIR call row {owner} published count {count} but read back {} owned argument rows",
@@ -4864,6 +5939,28 @@ pub fn validate_hir_call_argument_records(
                 "parser HIR call row {owner} argument ordinals are not contiguous from zero"
             ));
         }
+        let mut previous_arg = start;
+        for expected_ordinal in 1..count {
+            let next_arg = ordinal_keys
+                .binary_search_by_key(&(owner, expected_ordinal), |&(owner, ordinal, _)| {
+                    (owner, ordinal)
+                })
+                .ok()
+                .map(|index| ordinal_keys[index].2)
+                .ok_or_else(|| {
+                    anyhow!(
+                        "parser HIR call row {owner} argument ordinals are not contiguous from zero"
+                    )
+                })?;
+            if token_pos[next_arg] <= token_pos[previous_arg]
+                || token_end[previous_arg] > token_pos[next_arg]
+            {
+                return Err(anyhow!(
+                    "parser HIR call row {owner} argument rows overlap or are not in source order at row {next_arg}"
+                ));
+            }
+            previous_arg = next_arg;
+        }
     }
 
     Ok(())
@@ -4873,6 +5970,7 @@ pub fn validate_hir_array_literal_records(
     kinds: &[u32],
     token_pos: &[u32],
     token_end: &[u32],
+    node_file_ids: &[u32],
     first_elements: &[u32],
     counts: &[u32],
     parent_literals: &[u32],
@@ -4883,6 +5981,7 @@ pub fn validate_hir_array_literal_records(
     if kinds.len() != row_count
         || token_pos.len() != row_count
         || token_end.len() != row_count
+        || node_file_ids.len() != row_count
         || first_elements.len() != row_count
         || parent_literals.len() != row_count
         || ordinals.len() != row_count
@@ -4903,6 +6002,11 @@ pub fn validate_hir_array_literal_records(
         if !has_non_empty_span(node) {
             return Err(anyhow!(
                 "parser HIR array literal {label} row {node} lacks a non-empty token span"
+            ));
+        }
+        if node_file_ids[node] == INVALID {
+            return Err(anyhow!(
+                "parser HIR array literal {label} row {node} lacks a source file id"
             ));
         }
         Ok(())
@@ -4950,6 +6054,11 @@ pub fn validate_hir_array_literal_records(
         }
         require_span(owner, "owner")?;
         require_span(element_node, "element")?;
+        if node_file_ids[element_node] != node_file_ids[owner] {
+            return Err(anyhow!(
+                "parser HIR array element row {element_node} published a different file id than owner {owner}"
+            ));
+        }
         if token_pos[element_node] < token_pos[owner] || token_end[element_node] > token_end[owner]
         {
             return Err(anyhow!(
@@ -5004,6 +6113,12 @@ pub fn validate_hir_array_literal_records(
                 "parser HIR array literal row {owner} published element count {count} without an in-table first element"
             ));
         }
+        let first = first as usize;
+        if token_pos[first] <= token_pos[owner] {
+            return Err(anyhow!(
+                "parser HIR array literal row {owner} first element row {first} does not follow the array literal start token"
+            ));
+        }
         if actual_counts[owner] != count {
             return Err(anyhow!(
                 "parser HIR array literal row {owner} published count {count} but read back {} owned element rows",
@@ -5011,7 +6126,7 @@ pub fn validate_hir_array_literal_records(
             ));
         }
 
-        let mut element = first as usize;
+        let mut element = first;
         for expected_ordinal in 0..count {
             if parent_literals[element] as usize != owner {
                 return Err(anyhow!(
@@ -5043,9 +6158,9 @@ pub fn validate_hir_array_literal_records(
                         "parser HIR array literal row {owner} element chain row {next} does not point back to that owner"
                     ));
                 }
-                if token_pos[next] <= token_pos[element] {
+                if token_pos[next] <= token_pos[element] || token_end[element] > token_pos[next] {
                     return Err(anyhow!(
-                        "parser HIR array literal row {owner} element chain is not in source order at row {element}"
+                        "parser HIR array literal row {owner} element chain overlaps or is not in source order at row {element}"
                     ));
                 }
                 element = next;
@@ -5130,19 +6245,43 @@ pub fn validate_hir_member_records(
                 "parser HIR member row {row} receiver row {receiver} has a different file id"
             ));
         }
+        if token_pos[receiver] < token_pos[row] || token_end[receiver] > token_end[row] {
+            return Err(anyhow!(
+                "parser HIR member row {row} receiver row {receiver} is outside the member expression span"
+            ));
+        }
+        if token_pos[row] != token_pos[receiver] {
+            return Err(anyhow!(
+                "parser HIR member row {row} member expression span does not start at receiver row {receiver}"
+            ));
+        }
         if receiver_token == INVALID || member_token == INVALID || receiver_token >= member_token {
             return Err(anyhow!(
                 "parser HIR member row {row} published unordered receiver/member tokens"
             ));
         }
-        if receiver_token >= token_end[receiver] {
+        if receiver_token < token_pos[receiver] || receiver_token >= token_end[receiver] {
             return Err(anyhow!(
                 "parser HIR member row {row} receiver token is outside receiver row {receiver}"
+            ));
+        }
+        if token_end[receiver] >= member_token {
+            return Err(anyhow!(
+                "parser HIR member row {row} receiver row {receiver} does not leave a member separator before the member-name token (receiver span={}..{}, member token={member_token}, member span={}..{})",
+                token_pos[receiver],
+                token_end[receiver],
+                token_pos[row],
+                token_end[row],
             ));
         }
         if member_token < token_pos[row] || member_token >= token_end[row] {
             return Err(anyhow!(
                 "parser HIR member row {row} member-name token is outside the member expression span"
+            ));
+        }
+        if token_end[row] != member_token + 1 {
+            return Err(anyhow!(
+                "parser HIR member row {row} member expression span does not end at the member-name token"
             ));
         }
     }
@@ -5224,6 +6363,20 @@ pub fn validate_hir_match_records(
         Ok(())
     };
 
+    let require_source_precedes = |owner: usize,
+                                   left: usize,
+                                   right: usize,
+                                   left_label: &str,
+                                   right_label: &str|
+     -> Result<()> {
+        if token_end[left] > token_pos[right] {
+            return Err(anyhow!(
+                "parser HIR match row {owner} published {left_label} row {left} that does not precede {right_label} row {right}"
+            ));
+        }
+        Ok(())
+    };
+
     let total_claimed_arms = arm_counts.iter().try_fold(0usize, |acc, &count| {
         acc.checked_add(count as usize)
             .ok_or_else(|| anyhow!("parser HIR match arm counts overflowed host usize"))
@@ -5245,8 +6398,14 @@ pub fn validate_hir_match_records(
     }
 
     let mut arm_owner = vec![INVALID; row_count];
+    let mut arm_ordinal = vec![INVALID; row_count];
     for (match_node, &count) in arm_counts.iter().enumerate() {
         if count == 0 {
+            if kinds[match_node] == HIR_NODE_MATCH_EXPR {
+                return Err(anyhow!(
+                    "parser HIR match row {match_node} has a match-expression HIR kind but no parser-owned match record"
+                ));
+            }
             if scrutinee_nodes[match_node] != INVALID {
                 return Err(anyhow!(
                     "parser HIR match row {match_node} published a scrutinee without a match-expression HIR owner"
@@ -5293,8 +6452,24 @@ pub fn validate_hir_match_records(
                     "parser HIR match arm row {arm} appears in multiple match arm chains"
                 ));
             }
+            if kinds[arm] != HIR_NODE_NONE {
+                return Err(anyhow!(
+                    "parser HIR match arm row {arm} has HIR kind {}, not a parser-owned match arm row",
+                    kinds[arm]
+                ));
+            }
             arm_owner[arm] = match_node as u32;
+            arm_ordinal[arm] = expected_ordinal as u32;
             require_child_source(match_node, arm, "arm")?;
+            if expected_ordinal == 0 {
+                require_source_precedes(
+                    match_node,
+                    scrutinee as usize,
+                    arm,
+                    "scrutinee",
+                    "first arm",
+                )?;
+            }
 
             let pattern_node = arm_pattern_nodes[arm];
             if pattern_node == INVALID || pattern_node as usize >= row_count {
@@ -5321,6 +6496,13 @@ pub fn validate_hir_match_records(
                 ));
             }
             require_child_source(arm, result_node as usize, "arm result")?;
+            require_source_precedes(
+                arm,
+                pattern_node as usize,
+                result_node as usize,
+                "pattern",
+                "result expression",
+            )?;
 
             let next = arm_next[arm];
             if expected_ordinal + 1 == count as usize {
@@ -5341,6 +6523,7 @@ pub fn validate_hir_match_records(
                         "parser HIR match row {match_node} arm chain is not in source order at row {arm}"
                     ));
                 }
+                require_source_precedes(match_node, arm, next, "arm", "next arm")?;
                 arm = next;
             }
         }
@@ -5350,7 +6533,15 @@ pub fn validate_hir_match_records(
     let mut payload_ordinal_keys = Vec::new();
     for (payload_node, &owner) in payload_owner_arms.iter().enumerate() {
         if owner == INVALID {
-            if payload_match_nodes[payload_node] != INVALID
+            if arm_owner[payload_node] != INVALID {
+                if payload_match_nodes[payload_node] != arm_owner[payload_node]
+                    || payload_ordinals[payload_node] != arm_ordinal[payload_node]
+                {
+                    return Err(anyhow!(
+                        "parser HIR match arm row {payload_node} published arm rank metadata that disagrees with its match arm chain"
+                    ));
+                }
+            } else if payload_match_nodes[payload_node] != INVALID
                 || payload_ordinals[payload_node] != INVALID
             {
                 return Err(anyhow!(
@@ -5398,18 +6589,31 @@ pub fn validate_hir_match_records(
             ));
         }
         require_child_source(owner, payload_node, "payload")?;
+        let pattern_node = arm_pattern_nodes[owner] as usize;
+        if token_pos[payload_node] < token_pos[pattern_node]
+            || token_end[payload_node] > token_end[pattern_node]
+        {
+            return Err(anyhow!(
+                "parser HIR match payload row {payload_node} falls outside owner arm {owner} pattern row {pattern_node} span"
+            ));
+        }
+        if token_pos[payload_node] <= token_pos[pattern_node] {
+            return Err(anyhow!(
+                "parser HIR match payload row {payload_node} does not start after owner arm {owner} pattern head row {pattern_node}"
+            ));
+        }
 
         actual_payload_counts[owner] += 1;
-        payload_ordinal_keys.push((owner, ordinal));
+        payload_ordinal_keys.push((owner, ordinal, payload_node));
     }
 
-    payload_ordinal_keys.sort_unstable();
+    payload_ordinal_keys.sort_unstable_by_key(|&(owner, ordinal, _)| (owner, ordinal));
     for pair in payload_ordinal_keys.windows(2) {
-        if pair[0] == pair[1] {
+        let (owner, ordinal, payload_node) = pair[0];
+        let (next_owner, next_ordinal, _) = pair[1];
+        if owner == next_owner && ordinal == next_ordinal {
             return Err(anyhow!(
-                "parser HIR match arm row {} published duplicate payload ordinal {}",
-                pair[0].0,
-                pair[0].1
+                "parser HIR match arm row {owner} published duplicate payload ordinal {ordinal} at row {payload_node}"
             ));
         }
     }
@@ -5457,6 +6661,34 @@ pub fn validate_hir_match_records(
                 "parser HIR match arm row {arm} published payload count {payload_count} but read back {} owned payload rows",
                 actual_payload_counts[arm]
             ));
+        }
+
+        let mut previous_payload: Option<usize> = None;
+        for expected_ordinal in 0..payload_count {
+            let payload = payload_ordinal_keys
+                .binary_search_by_key(&(arm, expected_ordinal), |&(owner, ordinal, _)| {
+                    (owner, ordinal)
+                })
+                .ok()
+                .map(|index| payload_ordinal_keys[index].2)
+                .ok_or_else(|| {
+                    anyhow!(
+                        "parser HIR match arm row {arm} payload ordinals are not contiguous from zero"
+                    )
+                })?;
+            if let Some(previous_payload) = previous_payload {
+                if token_pos[payload] <= token_pos[previous_payload] {
+                    return Err(anyhow!(
+                        "parser HIR match arm row {arm} payload ordinals are not in source order at row {payload}"
+                    ));
+                }
+                if token_end[previous_payload] > token_pos[payload] {
+                    return Err(anyhow!(
+                        "parser HIR match arm row {arm} payload rows overlap before row {payload}"
+                    ));
+                }
+            }
+            previous_payload = Some(payload);
         }
     }
 
@@ -5517,7 +6749,13 @@ pub fn validate_hir_statement_records(
     let require_empty_operands = |node: usize, label: &str| -> Result<()> {
         if operand0[node] != INVALID || operand1[node] != INVALID || operand2[node] != INVALID {
             return Err(anyhow!(
-                "parser HIR statement row {node} published {label} with non-empty operands"
+                "parser HIR statement row {node} published {label} with non-empty operands ({}, {}, {}) on HIR kind {} span {}..{}",
+                operand0[node],
+                operand1[node],
+                operand2[node],
+                kinds[node],
+                token_pos[node],
+                token_end[node],
             ));
         }
         Ok(())
@@ -5561,7 +6799,13 @@ pub fn validate_hir_statement_records(
      -> Result<usize> {
         if node == INVALID || node as usize >= row_count {
             return Err(anyhow!(
-                "parser HIR statement row {owner} published {label} without an in-table parser-owned node"
+                "parser HIR statement row {owner} published {label} node {node} without an in-table parser-owned node (rows={row_count}, owner kind={}, span={}..{}, operands=({}, {}, {}))",
+                kinds[owner],
+                token_pos[owner],
+                token_end[owner],
+                operand0[owner],
+                operand1[owner],
+                operand2[owner]
             ));
         }
         let node = node as usize;
@@ -5652,16 +6896,29 @@ pub fn validate_hir_statement_records(
                         ));
                     }
                 } else {
-                    require_expression_edge(row, operand0[row], "return expression")?;
+                    let return_expression =
+                        require_expression_edge(row, operand0[row], "return expression")?;
                     require_token_inside(row, operand2[row], "return value")?;
+                    if operand2[row] < token_pos[return_expression]
+                        || operand2[row] >= token_end[return_expression]
+                    {
+                        return Err(anyhow!(
+                            "parser HIR statement row {row} published return value token outside its return expression span"
+                        ));
+                    }
                 }
             }
             HIR_STMT_RECORD_KIND_IF => {
                 require_statement_kind(row, HIR_NODE_IF_STMT, "if record")?;
                 require_empty_scope_end(row, "if record")?;
-                require_expression_edge(row, operand0[row], "if condition")?;
+                let condition = require_expression_edge(row, operand0[row], "if condition")?;
                 let then_block =
-                    require_node_edge(row, operand1[row], &[HIR_NODE_BLOCK], true, "if then arm")?;
+                    require_node_edge(row, operand1[row], &[HIR_NODE_BLOCK], false, "if then arm")?;
+                if token_end[condition] > token_pos[then_block] {
+                    return Err(anyhow!(
+                        "parser HIR statement row {row} published if condition row {condition} that overlaps the then block"
+                    ));
+                }
                 if operand2[row] != INVALID {
                     let else_block = require_node_edge(
                         row,
@@ -5700,8 +6957,13 @@ pub fn validate_hir_statement_records(
             HIR_STMT_RECORD_KIND_ASSIGN => {
                 require_statement_kind(row, HIR_NODE_STMT, "assignment record")?;
                 require_empty_scope_end(row, "assignment record")?;
-                require_expression_edge(row, operand0[row], "assignment target")?;
-                require_expression_edge(row, operand1[row], "assignment rhs")?;
+                let target = require_expression_edge(row, operand0[row], "assignment target")?;
+                let rhs = require_expression_edge(row, operand1[row], "assignment rhs")?;
+                if token_end[target] > token_pos[rhs] {
+                    return Err(anyhow!(
+                        "parser HIR statement row {row} published assignment target row {target} that overlaps or follows rhs row {rhs}"
+                    ));
+                }
                 let op = operand2[row];
                 if !(HIR_ASSIGN_OP_SET..=HIR_ASSIGN_OP_BOR).contains(&op) {
                     return Err(anyhow!(
@@ -5712,8 +6974,14 @@ pub fn validate_hir_statement_records(
             HIR_STMT_RECORD_KIND_WHILE => {
                 require_statement_kind(row, HIR_NODE_WHILE_STMT, "while record")?;
                 require_empty_scope_end(row, "while record")?;
-                require_expression_edge(row, operand0[row], "while condition")?;
-                require_node_edge(row, operand1[row], &[HIR_NODE_BLOCK], true, "while body")?;
+                let condition = require_expression_edge(row, operand0[row], "while condition")?;
+                let body =
+                    require_node_edge(row, operand1[row], &[HIR_NODE_BLOCK], false, "while body")?;
+                if token_end[condition] > token_pos[body] {
+                    return Err(anyhow!(
+                        "parser HIR statement row {row} published while condition row {condition} that overlaps the body block"
+                    ));
+                }
                 if operand2[row] != INVALID {
                     return Err(anyhow!(
                         "parser HIR statement row {row} published while record with a non-empty reserved operand"
@@ -5723,15 +6991,10 @@ pub fn validate_hir_statement_records(
             HIR_STMT_RECORD_KIND_FOR => {
                 require_statement_kind(row, HIR_NODE_FOR_STMT, "for record")?;
                 require_token_inside(row, operand0[row], "for binding")?;
-                let iterable = require_node_edge(
-                    row,
-                    operand1[row],
-                    &[HIR_NODE_PATH_EXPR],
-                    true,
-                    "for iterable path",
-                )?;
+                let iterable =
+                    require_expression_edge(row, operand1[row], "for iterable expression")?;
                 let body =
-                    require_node_edge(row, operand2[row], &[HIR_NODE_BLOCK], true, "for body")?;
+                    require_node_edge(row, operand2[row], &[HIR_NODE_BLOCK], false, "for body")?;
                 require_scope_end_after_owner(row, "for binding")?;
                 if stmt_scope_end[row] != token_end[body] {
                     return Err(anyhow!(
@@ -5740,7 +7003,7 @@ pub fn validate_hir_statement_records(
                 }
                 if token_end[iterable] > token_pos[body] {
                     return Err(anyhow!(
-                        "parser HIR statement row {row} published for iterable path row {iterable} after the body block started"
+                        "parser HIR statement row {row} published for iterable expression row {iterable} after the body block started"
                     ));
                 }
             }
@@ -5767,6 +7030,65 @@ pub fn validate_hir_statement_records(
     Ok(())
 }
 
+pub fn validate_hir_const_item_statement_records(
+    kinds: &[u32],
+    item_kinds: &[u32],
+    item_name_tokens: &[u32],
+    stmt_kinds: &[u32],
+    stmt_decl_tokens: &[u32],
+) -> Result<()> {
+    let row_count = kinds.len();
+    if item_kinds.len() != row_count
+        || item_name_tokens.len() != row_count
+        || stmt_kinds.len() != row_count
+        || stmt_decl_tokens.len() != row_count
+    {
+        return Err(anyhow!(
+            "parser HIR const item/statement record arrays have inconsistent lengths"
+        ));
+    }
+
+    for row in 0..row_count {
+        let has_const_item = item_kinds[row] == HIR_ITEM_KIND_CONST;
+        let has_const_stmt = stmt_kinds[row] == HIR_STMT_RECORD_KIND_CONST;
+
+        if has_const_item {
+            if kinds[row] != HIR_NODE_CONST_ITEM {
+                return Err(anyhow!(
+                    "parser HIR const item row {row} published item metadata on HIR kind {}",
+                    kinds[row]
+                ));
+            }
+            if !has_const_stmt {
+                return Err(anyhow!(
+                    "parser HIR const item row {row} published const item metadata without a const statement record"
+                ));
+            }
+        }
+
+        if has_const_stmt {
+            if kinds[row] != HIR_NODE_CONST_ITEM {
+                return Err(anyhow!(
+                    "parser HIR const statement row {row} published const statement metadata on HIR kind {}",
+                    kinds[row]
+                ));
+            }
+            if !has_const_item {
+                return Err(anyhow!(
+                    "parser HIR const statement row {row} published a const statement record without const item metadata"
+                ));
+            }
+            if item_name_tokens[row] == INVALID || stmt_decl_tokens[row] != item_name_tokens[row] {
+                return Err(anyhow!(
+                    "parser HIR const statement row {row} declaration token does not match its item name token"
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
 pub fn validate_hir_context_relation_records(
     kinds: &[u32],
     token_pos: &[u32],
@@ -5776,6 +7098,7 @@ pub fn validate_hir_context_relation_records(
     nearest_stmt_nodes: &[u32],
     nearest_block_nodes: &[u32],
     nearest_control_nodes: &[u32],
+    nearest_loop_nodes: &[u32],
     nearest_fn_nodes: &[u32],
     call_context_stmt_nodes: &[u32],
     array_lit_context_stmt_nodes: &[u32],
@@ -5789,6 +7112,7 @@ pub fn validate_hir_context_relation_records(
         || nearest_stmt_nodes.len() != row_count
         || nearest_block_nodes.len() != row_count
         || nearest_control_nodes.len() != row_count
+        || nearest_loop_nodes.len() != row_count
         || nearest_fn_nodes.len() != row_count
         || call_context_stmt_nodes.len() != row_count
         || array_lit_context_stmt_nodes.len() != row_count
@@ -5807,7 +7131,9 @@ pub fn validate_hir_context_relation_records(
 
     let has_statement_record = |node: usize| {
         if kinds[node] == HIR_NODE_STMT {
-            return stmt_record_kinds[node] == HIR_STMT_RECORD_KIND_NONE;
+            return stmt_record_kinds[node] == HIR_STMT_RECORD_KIND_ASSIGN
+                || (stmt_record_kinds[node] == HIR_STMT_RECORD_KIND_NONE
+                    && nearest_block_nodes[node] != INVALID);
         }
         match expected_statement_record_kind_for_hir_kind(kinds[node]) {
             Some(expected) => stmt_record_kinds[node] == expected,
@@ -5846,16 +7172,94 @@ pub fn validate_hir_context_relation_records(
         Ok(Some(related))
     };
 
+    let relation_contains = |outer: usize, inner: usize| -> bool {
+        has_non_empty_span(outer)
+            && has_non_empty_span(inner)
+            && node_file_ids[outer] != INVALID
+            && node_file_ids[outer] == node_file_ids[inner]
+            && token_pos[outer] <= token_pos[inner]
+            && token_end[inner] <= token_end[outer]
+    };
+
+    let require_context_contains = |row: usize,
+                                    outer: Option<usize>,
+                                    inner: Option<usize>,
+                                    outer_label: &str,
+                                    inner_label: &str|
+     -> Result<()> {
+        let (Some(outer), Some(inner)) = (outer, inner) else {
+            return Ok(());
+        };
+        if !relation_contains(outer, inner) {
+            return Err(anyhow!(
+                "parser HIR context row {row} published {outer_label} relation {outer} that does not contain {inner_label} relation {inner}"
+            ));
+        }
+        Ok(())
+    };
+
+    let require_context_peer_relation = |row: usize,
+                                         context: usize,
+                                         row_relation_value: u32,
+                                         context_relation_value: u32,
+                                         relation_label: &str,
+                                         context_label: &str|
+     -> Result<()> {
+        let context_relation = require_relation(context, context_relation_value, relation_label)?;
+        let row_relation = require_relation(row, row_relation_value, relation_label)?;
+        match (row_relation, context_relation) {
+            (None, None) => {}
+            (None, Some(context_relation)) => {
+                return Err(anyhow!(
+                    "parser HIR context row {row} published {context_label} relation {context} without matching {relation_label} relation {context_relation}"
+                ));
+            }
+            (Some(row_relation), None) => {
+                return Err(anyhow!(
+                    "parser HIR context row {row} published {context_label} relation {context} with extra {relation_label} relation {row_relation} that the context row omitted"
+                ));
+            }
+            (Some(row_relation), Some(context_relation)) if row_relation != context_relation => {
+                return Err(anyhow!(
+                    "parser HIR context row {row} published {context_label} relation {context} with {relation_label} relation {row_relation} that disagrees with context {relation_label} relation {context_relation}"
+                ));
+            }
+            (Some(_), Some(_)) => {}
+        }
+        Ok(())
+    };
+
     for row in 0..row_count {
-        if let Some(stmt) = require_relation(row, nearest_stmt_nodes[row], "nearest statement")? {
+        let nearest_statement =
+            require_relation(row, nearest_stmt_nodes[row], "nearest statement")?;
+        if let Some(stmt) = nearest_statement {
             if !has_statement_record(stmt) {
                 return Err(anyhow!(
-                    "parser HIR context row {row} nearest statement relation {stmt} is not backed by a parser-owned statement record"
+                    "parser HIR context row {row} nearest statement relation {stmt} is not backed by a parser-owned statement record (stmt_hir_kind={}, stmt_record_kind={}, stmt_nearest_block={})",
+                    kinds[stmt],
+                    stmt_record_kinds[stmt],
+                    nearest_block_nodes[stmt]
                 ));
             }
         }
+        if has_statement_record(row) {
+            match nearest_statement {
+                Some(stmt) if stmt == row => {}
+                Some(stmt) => {
+                    return Err(anyhow!(
+                        "parser HIR context row {row} statement row published nearest statement relation {stmt} instead of itself"
+                    ));
+                }
+                None => {
+                    return Err(anyhow!(
+                        "parser HIR context row {row} statement row omitted its nearest statement self relation"
+                    ));
+                }
+            }
+        }
 
-        if let Some(block) = require_relation(row, nearest_block_nodes[row], "nearest block")? {
+        let nearest_block = require_relation(row, nearest_block_nodes[row], "nearest block")?;
+        if let Some(block) = nearest_block {
             if kinds[block] != HIR_NODE_BLOCK {
                 return Err(anyhow!(
                     "parser HIR context row {row} nearest block relation {block} has HIR kind {}",
@@ -5863,10 +7267,34 @@ pub fn validate_hir_context_relation_records(
                 ));
             }
         }
-
-        if let Some(control) =
-            require_relation(row, nearest_control_nodes[row], "nearest enclosing control")?
+        if kinds[row] == HIR_NODE_BLOCK {
+            match nearest_block {
+                Some(block) if block == row => {}
+                Some(block) => {
+                    return Err(anyhow!(
+                        "parser HIR context row {row} block row published nearest block relation {block} instead of itself"
+                    ));
+                }
+                None => {
+                    return Err(anyhow!(
+                        "parser HIR context row {row} block row omitted its nearest block self relation"
+                    ));
+                }
+            }
+        }
+        if has_statement_record(row) && kinds[row] != HIR_NODE_CONST_ITEM && nearest_block.is_none()
         {
+            return Err(anyhow!(
+                "parser HIR context row {row} statement row omitted its nearest block relation (kind={}, span={}..{})",
+                kinds[row],
+                token_pos[row],
+                token_end[row]
+            ));
+        }
+
+        let nearest_control =
+            require_relation(row, nearest_control_nodes[row], "nearest enclosing control")?;
+        if let Some(control) = nearest_control {
             if control == row {
                 return Err(anyhow!(
                     "parser HIR context row {row} published itself as nearest enclosing control"
@@ -5881,9 +7309,81 @@ pub fn validate_hir_context_relation_records(
                     kinds[control]
                 ));
             }
+            if expected_statement_record_kind_for_hir_kind(kinds[control]).is_some()
+                && !has_statement_record(control)
+            {
+                return Err(anyhow!(
+                    "parser HIR context row {row} nearest enclosing control relation {control} is not backed by a parser-owned control statement record"
+                ));
+            }
         }
 
-        if let Some(function) = require_relation(row, nearest_fn_nodes[row], "nearest function")? {
+        let nearest_loop = require_relation(row, nearest_loop_nodes[row], "nearest loop")?;
+        if let Some(loop_node) = nearest_loop {
+            if !matches!(kinds[loop_node], HIR_NODE_WHILE_STMT | HIR_NODE_FOR_STMT) {
+                return Err(anyhow!(
+                    "parser HIR context row {row} nearest loop relation {loop_node} has HIR kind {}",
+                    kinds[loop_node]
+                ));
+            }
+            if !has_statement_record(loop_node) {
+                return Err(anyhow!(
+                    "parser HIR context row {row} nearest loop relation {loop_node} is not backed by a parser-owned loop statement record"
+                ));
+            }
+        }
+        if matches!(kinds[row], HIR_NODE_WHILE_STMT | HIR_NODE_FOR_STMT) {
+            match nearest_loop {
+                Some(loop_node) if loop_node == row => {}
+                Some(loop_node) => {
+                    return Err(anyhow!(
+                        "parser HIR context row {row} loop row published nearest loop relation {loop_node} instead of itself"
+                    ));
+                }
+                None => {
+                    return Err(anyhow!(
+                        "parser HIR context row {row} loop row omitted its nearest loop self relation"
+                    ));
+                }
+            }
+        }
+        if let Some(control) = nearest_control {
+            if matches!(kinds[control], HIR_NODE_WHILE_STMT | HIR_NODE_FOR_STMT) {
+                let loop_row_owns_itself =
+                    matches!(kinds[row], HIR_NODE_WHILE_STMT | HIR_NODE_FOR_STMT)
+                        && nearest_loop == Some(row)
+                        && relation_contains(control, row);
+                if !loop_row_owns_itself {
+                    match nearest_loop {
+                        Some(loop_node) if loop_node == control => {}
+                        Some(loop_node) => {
+                            return Err(anyhow!(
+                                "parser HIR context row {row} nearest loop relation {loop_node} disagrees with loop enclosing control {control}"
+                            ));
+                        }
+                        None => {
+                            return Err(anyhow!(
+                                "parser HIR context row {row} omitted nearest loop relation for loop enclosing control {control}"
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        if matches!(kinds[row], HIR_NODE_BREAK_STMT | HIR_NODE_CONTINUE_STMT)
+            || matches!(
+                stmt_record_kinds[row],
+                HIR_STMT_RECORD_KIND_BREAK | HIR_STMT_RECORD_KIND_CONTINUE
+            )
+        {
+            if nearest_loop.is_none() {
+                return Err(anyhow!(
+                    "parser HIR context row {row} loop-control statement omitted its nearest loop relation"
+                ));
+            }
+        }
+        let nearest_function = require_relation(row, nearest_fn_nodes[row], "nearest function")?;
+        if let Some(function) = nearest_function {
             if kinds[function] != HIR_NODE_FN {
                 return Err(anyhow!(
                     "parser HIR context row {row} nearest function relation {function} has HIR kind {}",
@@ -5891,6 +7391,95 @@ pub fn validate_hir_context_relation_records(
                 ));
             }
         }
+        if kinds[row] == HIR_NODE_FN {
+            match nearest_function {
+                Some(function) if function == row => {}
+                Some(function) => {
+                    return Err(anyhow!(
+                        "parser HIR context row {row} function row published nearest function relation {function} instead of itself"
+                    ));
+                }
+                None => {
+                    return Err(anyhow!(
+                        "parser HIR context row {row} function row omitted its nearest function self relation"
+                    ));
+                }
+            }
+        }
+        if kinds[row] == HIR_NODE_RETURN_STMT
+            || stmt_record_kinds[row] == HIR_STMT_RECORD_KIND_RETURN
+        {
+            if nearest_function.is_none() {
+                return Err(anyhow!(
+                    "parser HIR context row {row} return statement omitted its nearest function relation (kind={}, span={}..{}, nearest_stmt={:?}, nearest_block={:?}, nearest_control={:?}, nearest_loop={:?}, raw_nearest_fn={})",
+                    kinds[row],
+                    token_pos[row],
+                    token_end[row],
+                    nearest_statement,
+                    nearest_block,
+                    nearest_control,
+                    nearest_loop,
+                    nearest_fn_nodes[row]
+                ));
+            }
+        }
+
+        if matches!(kinds[row], HIR_NODE_WHILE_STMT | HIR_NODE_FOR_STMT)
+            && nearest_loop == Some(row)
+        {
+            if let Some(control) = nearest_control
+                && !relation_contains(control, row)
+            {
+                return Err(anyhow!(
+                    "parser HIR context row {row} loop statement is outside nearest enclosing control relation {control}"
+                ));
+            }
+        } else {
+            require_context_contains(
+                row,
+                nearest_loop,
+                nearest_control,
+                "nearest loop",
+                "nearest enclosing control",
+            )?;
+        }
+        require_context_contains(
+            row,
+            nearest_function,
+            nearest_statement,
+            "nearest function",
+            "nearest statement",
+        )?;
+        require_context_contains(
+            row,
+            nearest_function,
+            nearest_block,
+            "nearest function",
+            "nearest block",
+        )?;
+        if kinds[row] != HIR_NODE_BLOCK {
+            require_context_contains(
+                row,
+                nearest_block,
+                nearest_statement,
+                "nearest block",
+                "nearest statement",
+            )?;
+        }
+        require_context_contains(
+            row,
+            nearest_function,
+            nearest_control,
+            "nearest function",
+            "nearest enclosing control",
+        )?;
+        require_context_contains(
+            row,
+            nearest_function,
+            nearest_loop,
+            "nearest function",
+            "nearest loop",
+        )?;
     }
 
     for (contexts, owner_kind, label) in [
@@ -5921,6 +7510,13 @@ pub fn validate_hir_context_relation_records(
             }
 
             let Some(context) = require_relation(row, context, label)? else {
+                if let Some(nearest_stmt) =
+                    require_relation(row, nearest_stmt_nodes[row], "nearest statement")?
+                {
+                    return Err(anyhow!(
+                        "parser HIR context row {row} omitted {label} relation even though nearest statement {nearest_stmt} is available"
+                    ));
+                }
                 continue;
             };
             if !has_statement_record(context) {
@@ -5928,19 +7524,179 @@ pub fn validate_hir_context_relation_records(
                     "parser HIR context row {row} published {label} relation {context} without a parser-owned statement relation"
                 ));
             }
-            if let Some(nearest_stmt) =
+            let Some(nearest_stmt) =
                 require_relation(row, nearest_stmt_nodes[row], "nearest statement")?
-            {
-                if nearest_stmt != context {
+            else {
+                return Err(anyhow!(
+                    "parser HIR context row {row} published {label} relation {context} without a parser-owned nearest statement relation"
+                ));
+            };
+            if nearest_stmt != context {
+                return Err(anyhow!(
+                    "parser HIR context row {row} published {label} relation {context} that disagrees with nearest statement {nearest_stmt}"
+                ));
+            }
+            require_context_peer_relation(
+                row,
+                context,
+                nearest_block_nodes[row],
+                nearest_block_nodes[context],
+                "nearest block",
+                label,
+            )?;
+            require_context_peer_relation(
+                row,
+                context,
+                nearest_fn_nodes[row],
+                nearest_fn_nodes[context],
+                "nearest function",
+                label,
+            )?;
+            require_context_peer_relation(
+                row,
+                context,
+                nearest_loop_nodes[row],
+                nearest_loop_nodes[context],
+                "nearest loop",
+                label,
+            )?;
+            let row_control =
+                require_relation(row, nearest_control_nodes[row], "nearest enclosing control")?;
+            let context_control = require_relation(
+                context,
+                nearest_control_nodes[context],
+                "nearest enclosing control",
+            )?;
+            let context_is_control = matches!(
+                kinds[context],
+                HIR_NODE_IF_STMT | HIR_NODE_WHILE_STMT | HIR_NODE_FOR_STMT | HIR_NODE_MATCH_EXPR
+            );
+            match (row_control, context_control) {
+                (Some(row_control), _) if context_is_control && row_control == context => {}
+                (Some(row_control), _) if relation_contains(context, row_control) => {}
+                (None, None) => {}
+                (None, Some(context_control)) => {
                     return Err(anyhow!(
-                        "parser HIR context row {row} published {label} relation {context} that disagrees with nearest statement {nearest_stmt}"
+                        "parser HIR context row {row} published {label} relation {context} without matching nearest enclosing control relation {context_control}"
                     ));
                 }
+                (Some(row_control), None) => {
+                    return Err(anyhow!(
+                        "parser HIR context row {row} published {label} relation {context} with extra nearest enclosing control relation {row_control} that the context row omitted"
+                    ));
+                }
+                (Some(row_control), Some(context_control)) if row_control != context_control => {
+                    return Err(anyhow!(
+                        "parser HIR context row {row} published {label} relation {context} with nearest enclosing control relation {row_control} that disagrees with context nearest enclosing control relation {context_control}"
+                    ));
+                }
+                (Some(_), Some(_)) => {}
             }
         }
     }
 
     Ok(())
+}
+
+fn is_known_hir_kind(kind: u32) -> bool {
+    matches!(
+        kind,
+        HIR_NODE_NONE
+            | HIR_NODE_FILE
+            | HIR_NODE_ITEM
+            | HIR_NODE_FN
+            | HIR_NODE_PARAM
+            | HIR_NODE_TYPE
+            | HIR_NODE_BLOCK
+            | HIR_NODE_STMT
+            | HIR_NODE_LET_STMT
+            | HIR_NODE_RETURN_STMT
+            | HIR_NODE_IF_STMT
+            | HIR_NODE_WHILE_STMT
+            | HIR_NODE_BREAK_STMT
+            | HIR_NODE_CONTINUE_STMT
+            | HIR_NODE_EXPR
+            | HIR_NODE_ASSIGN_EXPR
+            | HIR_NODE_BINARY_EXPR
+            | HIR_NODE_UNARY_EXPR
+            | HIR_NODE_POSTFIX_EXPR
+            | HIR_NODE_CALL_EXPR
+            | HIR_NODE_INDEX_EXPR
+            | HIR_NODE_MEMBER_EXPR
+            | HIR_NODE_NAME_EXPR
+            | HIR_NODE_LITERAL_EXPR
+            | HIR_NODE_ARRAY_EXPR
+            | HIR_NODE_CONST_ITEM
+            | HIR_NODE_ENUM_ITEM
+            | HIR_NODE_STRUCT_ITEM
+            | HIR_NODE_STRUCT_LITERAL_EXPR
+            | HIR_NODE_TYPE_ALIAS_ITEM
+            | HIR_NODE_FOR_STMT
+            | HIR_NODE_MODULE_ITEM
+            | HIR_NODE_IMPORT_ITEM
+            | HIR_NODE_PATH_EXPR
+            | HIR_NODE_MATCH_EXPR
+    )
+}
+
+fn is_known_hir_type_form(form: u32) -> bool {
+    matches!(
+        form,
+        HIR_TYPE_FORM_NONE
+            | HIR_TYPE_FORM_PATH
+            | HIR_TYPE_FORM_ARRAY
+            | HIR_TYPE_FORM_SLICE
+            | HIR_TYPE_FORM_REF
+    )
+}
+
+fn expected_hir_kind_for_item_kind(item_kind: u32) -> Result<Option<u32>> {
+    match item_kind {
+        HIR_ITEM_KIND_NONE => Ok(None),
+        HIR_ITEM_KIND_MODULE => Ok(Some(HIR_NODE_MODULE_ITEM)),
+        HIR_ITEM_KIND_IMPORT => Ok(Some(HIR_NODE_IMPORT_ITEM)),
+        HIR_ITEM_KIND_CONST => Ok(Some(HIR_NODE_CONST_ITEM)),
+        HIR_ITEM_KIND_FN | HIR_ITEM_KIND_EXTERN_FN => Ok(Some(HIR_NODE_FN)),
+        HIR_ITEM_KIND_STRUCT => Ok(Some(HIR_NODE_STRUCT_ITEM)),
+        HIR_ITEM_KIND_ENUM => Ok(Some(HIR_NODE_ENUM_ITEM)),
+        HIR_ITEM_KIND_TYPE_ALIAS => Ok(Some(HIR_NODE_TYPE_ALIAS_ITEM)),
+        HIR_ITEM_KIND_ENUM_VARIANT | HIR_ITEM_KIND_TRAIT => Ok(Some(HIR_NODE_ITEM)),
+        other => Err(anyhow!("unknown item kind {other}")),
+    }
+}
+
+fn expected_namespace_for_item_kind(item_kind: u32) -> Result<Option<u32>> {
+    match item_kind {
+        HIR_ITEM_KIND_NONE => Ok(Some(HIR_ITEM_NAMESPACE_NONE)),
+        HIR_ITEM_KIND_MODULE | HIR_ITEM_KIND_IMPORT => Ok(Some(HIR_ITEM_NAMESPACE_MODULE)),
+        HIR_ITEM_KIND_CONST
+        | HIR_ITEM_KIND_FN
+        | HIR_ITEM_KIND_EXTERN_FN
+        | HIR_ITEM_KIND_ENUM_VARIANT => Ok(Some(HIR_ITEM_NAMESPACE_VALUE)),
+        HIR_ITEM_KIND_STRUCT
+        | HIR_ITEM_KIND_ENUM
+        | HIR_ITEM_KIND_TYPE_ALIAS
+        | HIR_ITEM_KIND_TRAIT => Ok(Some(HIR_ITEM_NAMESPACE_TYPE)),
+        other => Err(anyhow!("unknown item kind {other}")),
+    }
+}
+
+fn item_kind_requires_name_token(item_kind: u32) -> bool {
+    matches!(
+        item_kind,
+        HIR_ITEM_KIND_CONST
+            | HIR_ITEM_KIND_FN
+            | HIR_ITEM_KIND_EXTERN_FN
+            | HIR_ITEM_KIND_STRUCT
+            | HIR_ITEM_KIND_ENUM
+            | HIR_ITEM_KIND_TYPE_ALIAS
+            | HIR_ITEM_KIND_ENUM_VARIANT
+            | HIR_ITEM_KIND_TRAIT
+    )
+}
+
+fn is_known_item_visibility(visibility: u32) -> bool {
+    matches!(visibility, HIR_ITEM_VIS_PRIVATE | HIR_ITEM_VIS_PUBLIC)
 }
 
 pub fn validate_hir_source_address_records(
@@ -5967,42 +7723,44 @@ pub fn validate_hir_source_address_records(
         ));
     }
 
-    let mut previous_public_record: Option<(usize, u32, u32)> = None;
+    let mut previous_public_record: Option<(usize, u32, u32, u32)> = None;
     for row in 0..row_count {
-        let expected_item_node_kind = match item_kinds[row] {
-            HIR_ITEM_KIND_NONE => None,
-            HIR_ITEM_KIND_MODULE => Some(HIR_NODE_MODULE_ITEM),
-            HIR_ITEM_KIND_IMPORT => Some(HIR_NODE_IMPORT_ITEM),
-            HIR_ITEM_KIND_CONST => Some(HIR_NODE_CONST_ITEM),
-            HIR_ITEM_KIND_FN | HIR_ITEM_KIND_EXTERN_FN => Some(HIR_NODE_FN),
-            HIR_ITEM_KIND_STRUCT => Some(HIR_NODE_STRUCT_ITEM),
-            HIR_ITEM_KIND_ENUM => Some(HIR_NODE_ENUM_ITEM),
-            HIR_ITEM_KIND_TYPE_ALIAS => Some(HIR_NODE_TYPE_ALIAS_ITEM),
-            HIR_ITEM_KIND_ENUM_VARIANT | HIR_ITEM_KIND_TRAIT => Some(HIR_NODE_ITEM),
-            other => {
-                return Err(anyhow!(
-                    "parser HIR source address row {row} published unknown item kind {other}"
-                ));
-            }
-        };
-        let has_item_record = expected_item_node_kind.is_some();
-        let has_type_record = type_forms[row] != HIR_TYPE_FORM_NONE;
-        if !has_item_record && !has_type_record {
-            continue;
+        if !is_known_hir_kind(kinds[row]) {
+            return Err(anyhow!(
+                "parser HIR source address row {row} published unknown HIR node kind {}",
+                kinds[row]
+            ));
+        }
+        if !is_known_hir_type_form(type_forms[row]) {
+            return Err(anyhow!(
+                "parser HIR source address row {row} published unknown type form {}",
+                type_forms[row]
+            ));
         }
 
-        if token_pos[row] == INVALID
-            || token_end[row] == INVALID
-            || token_pos[row] >= token_end[row]
+        let expected_item_node_kind = expected_hir_kind_for_item_kind(item_kinds[row])
+            .map_err(|err| anyhow!("parser HIR source address row {row} published {err}"))?;
+        let has_item_record = expected_item_node_kind.is_some();
+        let has_type_record = type_forms[row] != HIR_TYPE_FORM_NONE;
+        let has_hir_record = kinds[row] != HIR_NODE_NONE;
+        if has_hir_record
+            && (token_pos[row] == INVALID
+                || token_end[row] == INVALID
+                || token_pos[row] >= token_end[row])
         {
             return Err(anyhow!(
-                "parser HIR source address row {row} published an item/type record without a non-empty token span"
+                "parser HIR source address row {row} published HIR kind {} without a non-empty token span",
+                kinds[row]
             ));
         }
-        if node_file_ids[row] == INVALID {
+        if has_hir_record && node_file_ids[row] == INVALID {
             return Err(anyhow!(
-                "parser HIR source address row {row} published an item/type record without a node file id"
+                "parser HIR source address row {row} published HIR kind {} without a node file id",
+                kinds[row]
             ));
+        }
+        if !has_item_record && !has_type_record {
+            continue;
         }
 
         if has_item_record && item_file_ids[row] != node_file_ids[row] {
@@ -6038,17 +7796,258 @@ pub fn validate_hir_source_address_records(
             }
         }
 
-        let current_key = (node_file_ids[row], token_pos[row]);
-        if let Some((previous_row, previous_file_id, previous_token_pos)) = previous_public_record {
-            if current_key < (previous_file_id, previous_token_pos) {
+        let current_key = (node_file_ids[row], token_pos[row], token_end[row]);
+        if let Some((previous_row, previous_file_id, previous_token_pos, previous_token_end)) =
+            previous_public_record
+        {
+            if current_key < (previous_file_id, previous_token_pos, previous_token_end) {
                 return Err(anyhow!(
-                    "parser HIR source address row {row} is out of flat source order after row {previous_row}: ({}, {}) before ({previous_file_id}, {previous_token_pos})",
+                    "parser HIR source address row {row} is out of flat source order after row {previous_row}: ({}, {}, {}) before ({previous_file_id}, {previous_token_pos}, {previous_token_end})",
                     node_file_ids[row],
-                    token_pos[row]
+                    token_pos[row],
+                    token_end[row]
                 ));
             }
         }
-        previous_public_record = Some((row, node_file_ids[row], token_pos[row]));
+        previous_public_record = Some((row, node_file_ids[row], token_pos[row], token_end[row]));
+    }
+
+    Ok(())
+}
+
+pub fn validate_hir_item_records(
+    kinds: &[u32],
+    token_pos: &[u32],
+    token_end: &[u32],
+    node_file_ids: &[u32],
+    item_kinds: &[u32],
+    item_name_tokens: &[u32],
+    item_namespaces: &[u32],
+    item_visibilities: &[u32],
+    item_file_ids: &[u32],
+) -> Result<()> {
+    let row_count = item_kinds.len();
+    if kinds.len() != row_count
+        || token_pos.len() != row_count
+        || token_end.len() != row_count
+        || node_file_ids.len() != row_count
+        || item_name_tokens.len() != row_count
+        || item_namespaces.len() != row_count
+        || item_visibilities.len() != row_count
+        || item_file_ids.len() != row_count
+    {
+        return Err(anyhow!(
+            "parser HIR item record arrays have inconsistent lengths"
+        ));
+    }
+
+    for row in 0..row_count {
+        let item_kind = item_kinds[row];
+        let expected_namespace = expected_namespace_for_item_kind(item_kind)
+            .map_err(|err| anyhow!("parser HIR item row {row} published {err}"))?;
+        if !is_known_item_visibility(item_visibilities[row]) {
+            return Err(anyhow!(
+                "parser HIR item row {row} published unknown item visibility {}",
+                item_visibilities[row]
+            ));
+        }
+
+        let Some(expected_node_kind) = expected_hir_kind_for_item_kind(item_kind)
+            .map_err(|err| anyhow!("parser HIR item row {row} published {err}"))?
+        else {
+            if item_namespaces[row] != HIR_ITEM_NAMESPACE_NONE {
+                return Err(anyhow!(
+                    "parser HIR non-item row {row} published item namespace {}",
+                    item_namespaces[row]
+                ));
+            }
+            if item_name_tokens[row] != INVALID {
+                return Err(anyhow!(
+                    "parser HIR non-item row {row} retained item name metadata"
+                ));
+            }
+            if item_file_ids[row] != INVALID && item_file_ids[row] != node_file_ids[row] {
+                return Err(anyhow!(
+                    "parser HIR non-item row {row} published file id {} but node file id is {}",
+                    item_file_ids[row],
+                    node_file_ids[row]
+                ));
+            }
+            continue;
+        };
+
+        if kinds[row] != expected_node_kind {
+            return Err(anyhow!(
+                "parser HIR item row {row} published item kind {item_kind} on HIR kind {}, expected {expected_node_kind}",
+                kinds[row]
+            ));
+        }
+        if item_namespaces[row] != expected_namespace.unwrap_or(HIR_ITEM_NAMESPACE_NONE) {
+            return Err(anyhow!(
+                "parser HIR item row {row} published namespace {} for item kind {item_kind}",
+                item_namespaces[row]
+            ));
+        }
+        if token_pos[row] == INVALID
+            || token_end[row] == INVALID
+            || token_pos[row] >= token_end[row]
+            || node_file_ids[row] == INVALID
+        {
+            return Err(anyhow!(
+                "parser HIR item row {row} published item kind {item_kind} without source-addressable ownership"
+            ));
+        }
+        if item_file_ids[row] != node_file_ids[row] {
+            return Err(anyhow!(
+                "parser HIR item row {row} published file id {} but node file id is {}",
+                item_file_ids[row],
+                node_file_ids[row]
+            ));
+        }
+
+        let name_token = item_name_tokens[row];
+        if item_kind_requires_name_token(item_kind) {
+            if name_token == INVALID || name_token < token_pos[row] || name_token >= token_end[row]
+            {
+                return Err(anyhow!(
+                    "parser HIR item row {row} published item kind {item_kind} without an in-span name token"
+                ));
+            }
+            if matches!(item_kind, HIR_ITEM_KIND_FN | HIR_ITEM_KIND_EXTERN_FN)
+                && name_token <= token_pos[row]
+            {
+                return Err(anyhow!(
+                    "parser HIR function item row {row} published a name token that does not follow its declaration token"
+                ));
+            }
+        } else if name_token != INVALID {
+            return Err(anyhow!(
+                "parser HIR item row {row} published a name token for path-owned item kind {item_kind}"
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+pub fn validate_hir_type_alias_target_records(
+    kinds: &[u32],
+    token_pos: &[u32],
+    token_end: &[u32],
+    node_file_ids: &[u32],
+    type_forms: &[u32],
+    type_file_ids: &[u32],
+    item_kinds: &[u32],
+    item_name_tokens: &[u32],
+    item_file_ids: &[u32],
+    target_nodes: &[u32],
+) -> Result<()> {
+    let row_count = kinds.len();
+    if token_pos.len() != row_count
+        || token_end.len() != row_count
+        || node_file_ids.len() != row_count
+        || type_forms.len() != row_count
+        || type_file_ids.len() != row_count
+        || item_kinds.len() != row_count
+        || item_name_tokens.len() != row_count
+        || item_file_ids.len() != row_count
+        || target_nodes.len() != row_count
+    {
+        return Err(anyhow!(
+            "parser HIR type-alias target record arrays have inconsistent lengths"
+        ));
+    }
+
+    let has_non_empty_span = |node: usize| {
+        token_pos[node] != INVALID
+            && token_end[node] != INVALID
+            && token_pos[node] < token_end[node]
+    };
+
+    let mut target_owners = vec![INVALID; row_count];
+    for row in 0..row_count {
+        let is_type_alias = item_kinds[row] == HIR_ITEM_KIND_TYPE_ALIAS;
+        let target = target_nodes[row];
+
+        if !is_type_alias {
+            if kinds[row] == HIR_NODE_TYPE_ALIAS_ITEM {
+                return Err(anyhow!(
+                    "parser HIR type-alias row {row} has no parser-owned type-alias item metadata"
+                ));
+            }
+            if target != INVALID {
+                return Err(anyhow!(
+                    "parser HIR row {row} published a type-alias target without type-alias item metadata"
+                ));
+            }
+            continue;
+        }
+
+        if kinds[row] != HIR_NODE_TYPE_ALIAS_ITEM {
+            return Err(anyhow!(
+                "parser HIR type-alias row {row} published item metadata on HIR kind {}",
+                kinds[row]
+            ));
+        }
+        if !has_non_empty_span(row) || node_file_ids[row] == INVALID {
+            return Err(anyhow!(
+                "parser HIR type-alias row {row} published item metadata without a source-addressable alias span"
+            ));
+        }
+        if item_file_ids[row] != node_file_ids[row] {
+            return Err(anyhow!(
+                "parser HIR type-alias row {row} has inconsistent item and node file ids"
+            ));
+        }
+
+        let name_token = item_name_tokens[row];
+        if name_token == INVALID || name_token < token_pos[row] || name_token >= token_end[row] {
+            return Err(anyhow!(
+                "parser HIR type-alias row {row} published a name token outside its alias span"
+            ));
+        }
+
+        if target == INVALID || target as usize >= row_count || target as usize == row {
+            return Err(anyhow!(
+                "parser HIR type-alias row {row} published no in-table target type row"
+            ));
+        }
+        let target = target as usize;
+        if kinds[target] != HIR_NODE_TYPE || type_forms[target] == HIR_TYPE_FORM_NONE {
+            return Err(anyhow!(
+                "parser HIR type-alias row {row} target row {target} is not a concrete type record"
+            ));
+        }
+        if !has_non_empty_span(target) {
+            return Err(anyhow!(
+                "parser HIR type-alias row {row} target row {target} lacks a non-empty token span"
+            ));
+        }
+        if node_file_ids[target] != node_file_ids[row]
+            || type_file_ids[target] != node_file_ids[row]
+        {
+            return Err(anyhow!(
+                "parser HIR type-alias row {row} target row {target} has a different file id"
+            ));
+        }
+        if token_pos[target] < token_pos[row] || token_end[target] > token_end[row] {
+            return Err(anyhow!(
+                "parser HIR type-alias row {row} target row {target} falls outside the alias span"
+            ));
+        }
+        if token_pos[target] <= name_token {
+            return Err(anyhow!(
+                "parser HIR type-alias row {row} target row {target} does not follow the alias name token"
+            ));
+        }
+
+        let previous_owner = target_owners[target];
+        if previous_owner != INVALID {
+            return Err(anyhow!(
+                "parser HIR type-alias row {row} shares target row {target} with alias row {previous_owner}"
+            ));
+        }
+        target_owners[target] = row as u32;
     }
 
     Ok(())
@@ -6066,8 +8065,38 @@ pub fn validate_hir_type_records(
     type_file_ids: &[u32],
     type_path_leaf_nodes: &[u32],
 ) -> Result<()> {
+    let node_kinds = vec![INVALID; kinds.len()];
+    validate_hir_type_records_with_node_kinds(
+        &node_kinds,
+        kinds,
+        token_pos,
+        token_end,
+        node_file_ids,
+        type_forms,
+        type_value_nodes,
+        type_len_tokens,
+        type_len_values,
+        type_file_ids,
+        type_path_leaf_nodes,
+    )
+}
+
+pub fn validate_hir_type_records_with_node_kinds(
+    node_kinds: &[u32],
+    kinds: &[u32],
+    token_pos: &[u32],
+    token_end: &[u32],
+    node_file_ids: &[u32],
+    type_forms: &[u32],
+    type_value_nodes: &[u32],
+    type_len_tokens: &[u32],
+    type_len_values: &[u32],
+    type_file_ids: &[u32],
+    type_path_leaf_nodes: &[u32],
+) -> Result<()> {
     let row_count = kinds.len();
-    if token_pos.len() != row_count
+    if node_kinds.len() != row_count
+        || token_pos.len() != row_count
         || token_end.len() != row_count
         || node_file_ids.len() != row_count
         || type_forms.len() != row_count
@@ -6156,6 +8185,12 @@ pub fn validate_hir_type_records(
                 "parser HIR path/type row {owner} published path leaf row {leaf} without a non-empty token span"
             ));
         }
+        if kinds[leaf] != HIR_NODE_NONE {
+            return Err(anyhow!(
+                "parser HIR path/type row {owner} published path leaf row {leaf} on concrete HIR kind {} instead of a parser path-segment row",
+                kinds[leaf]
+            ));
+        }
         if node_file_ids[leaf] != node_file_ids[owner] {
             return Err(anyhow!(
                 "parser HIR path/type row {owner} published path leaf row {leaf} with a different file id"
@@ -6164,6 +8199,11 @@ pub fn validate_hir_type_records(
         if token_pos[leaf] < token_pos[path_node] || token_end[leaf] > token_end[path_node] {
             return Err(anyhow!(
                 "parser HIR path/type row {owner} published path leaf row {leaf} outside path node {path_node}"
+            ));
+        }
+        if token_end[leaf] != token_end[path_node] {
+            return Err(anyhow!(
+                "parser HIR path/type row {owner} published path leaf row {leaf} that is not the terminal segment of path node {path_node}"
             ));
         }
         Ok(leaf)
@@ -6186,7 +8226,10 @@ pub fn validate_hir_type_records(
                 ));
             }
             require_path_leaf(row, row)?;
-        } else if type_path_leaf_nodes[row] != INVALID && type_forms[row] != HIR_TYPE_FORM_PATH {
+        } else if type_path_leaf_nodes[row] != INVALID
+            && type_forms[row] != HIR_TYPE_FORM_PATH
+            && node_kinds[row] != PROD_BOUND_TYPE_IDENT
+        {
             return Err(anyhow!(
                 "parser HIR row {row} published a path leaf without a path HIR/type owner"
             ));
@@ -6212,7 +8255,23 @@ pub fn validate_hir_type_records(
                 require_type_owner(row, "path type record")?;
                 let path_node =
                     require_parser_node_inside_owner(row, type_value_nodes[row], "path node")?;
-                require_path_leaf(row, path_node)?;
+                if kinds[path_node] != HIR_NODE_PATH_EXPR {
+                    return Err(anyhow!(
+                        "parser HIR type row {row} published path type record without a parser-owned path node record"
+                    ));
+                }
+                if token_pos[path_node] != token_pos[row] {
+                    return Err(anyhow!(
+                        "parser HIR type row {row} path type span does not start at parser-owned path node {path_node}"
+                    ));
+                }
+                let path_leaf = require_path_leaf(row, path_node)?;
+                let path_node_leaf = require_path_leaf(path_node, path_node)?;
+                if path_leaf != path_node_leaf {
+                    return Err(anyhow!(
+                        "parser HIR type row {row} published path leaf row {path_leaf} different from parser-owned path node {path_node} leaf row {path_node_leaf}"
+                    ));
+                }
                 require_no_len(row, "path type record")?;
             }
             HIR_TYPE_FORM_ARRAY | HIR_TYPE_FORM_SLICE | HIR_TYPE_FORM_REF => {
@@ -6276,7 +8335,10 @@ pub fn validate_hir_function_return_records(
     type_file_ids: &[u32],
     return_type_nodes: &[u32],
     item_kinds: &[u32],
+    item_name_tokens: &[u32],
     item_file_ids: &[u32],
+    method_signature_flags: &[u32],
+    method_name_tokens: &[u32],
 ) -> Result<()> {
     let row_count = kinds.len();
     if token_pos.len() != row_count
@@ -6286,7 +8348,10 @@ pub fn validate_hir_function_return_records(
         || type_file_ids.len() != row_count
         || return_type_nodes.len() != row_count
         || item_kinds.len() != row_count
+        || item_name_tokens.len() != row_count
         || item_file_ids.len() != row_count
+        || method_signature_flags.len() != row_count
+        || method_name_tokens.len() != row_count
     {
         return Err(anyhow!(
             "parser HIR function return record arrays have inconsistent lengths"
@@ -6298,6 +8363,43 @@ pub fn validate_hir_function_return_records(
             && token_end[node] != INVALID
             && token_pos[node] < token_end[node]
     };
+
+    let signature_flag_mask = HIR_METHOD_SIGNATURE_HAS_GENERICS | HIR_METHOD_SIGNATURE_HAS_WHERE;
+    for row in 0..row_count {
+        let flags = method_signature_flags[row];
+        if flags == 0 {
+            continue;
+        }
+        if flags & !signature_flag_mask != 0 {
+            return Err(anyhow!(
+                "parser HIR function return row {row} published unknown method signature flags {flags}"
+            ));
+        }
+        if kinds[row] != HIR_NODE_FN || item_kinds[row] != HIR_ITEM_KIND_NONE {
+            return Err(anyhow!(
+                "parser HIR function return row {row} published method signature flags without a parser-owned method row"
+            ));
+        }
+        if !has_non_empty_span(row) || node_file_ids[row] == INVALID {
+            return Err(anyhow!(
+                "parser HIR function return row {row} published method signature flags without a source-addressable method row"
+            ));
+        }
+        let method_name_token = method_name_tokens[row];
+        if method_name_token == INVALID
+            || method_name_token < token_pos[row]
+            || method_name_token >= token_end[row]
+        {
+            return Err(anyhow!(
+                "parser HIR function return row {row} published method signature flags without an in-span parser-owned method name token"
+            ));
+        }
+        if method_name_token <= token_pos[row] {
+            return Err(anyhow!(
+                "parser HIR function return row {row} published method signature flags with a method name token that does not follow the function span start"
+            ));
+        }
+    }
 
     let mut return_type_owner = vec![INVALID; row_count];
     for owner in 0..row_count {
@@ -6321,6 +8423,34 @@ pub fn validate_hir_function_return_records(
         {
             return Err(anyhow!(
                 "parser HIR function return row {owner} has inconsistent owner item and node file ids"
+            ));
+        }
+        let (owner_name_token, owner_name_label) = if is_hir_function_item_kind(item_kinds[owner]) {
+            let name_token = item_name_tokens[owner];
+            if name_token == INVALID
+                || name_token < token_pos[owner]
+                || name_token >= token_end[owner]
+            {
+                return Err(anyhow!(
+                    "parser HIR function return row {owner} published a return type without a source-addressable function name token"
+                ));
+            }
+            (name_token, "function")
+        } else {
+            let name_token = method_name_tokens[owner];
+            if name_token == INVALID
+                || name_token < token_pos[owner]
+                || name_token >= token_end[owner]
+            {
+                return Err(anyhow!(
+                    "parser HIR function return row {owner} published a return type without a source-addressable method name token"
+                ));
+            }
+            (name_token, "method")
+        };
+        if owner_name_token <= token_pos[owner] {
+            return Err(anyhow!(
+                "parser HIR function return row {owner} published a {owner_name_label} name token that does not follow the function span start"
             ));
         }
 
@@ -6362,6 +8492,252 @@ pub fn validate_hir_function_return_records(
             return Err(anyhow!(
                 "parser HIR function return row {owner} points at return type row {return_type_node} outside the function span"
             ));
+        }
+        if token_pos[return_type_node] <= owner_name_token {
+            return Err(anyhow!(
+                "parser HIR function return row {owner} points at return type row {return_type_node} that does not follow the {owner_name_label} name token"
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+pub fn validate_hir_struct_declaration_field_records(
+    kinds: &[u32],
+    token_pos: &[u32],
+    token_end: &[u32],
+    node_file_ids: &[u32],
+    type_forms: &[u32],
+    type_file_ids: &[u32],
+    item_kinds: &[u32],
+    item_file_ids: &[u32],
+    parent_structs: &[u32],
+    ordinals: &[u32],
+    type_nodes: &[u32],
+    first_fields: &[u32],
+    counts: &[u32],
+) -> Result<()> {
+    let row_count = counts.len();
+    if kinds.len() != row_count
+        || token_pos.len() != row_count
+        || token_end.len() != row_count
+        || node_file_ids.len() != row_count
+        || type_forms.len() != row_count
+        || type_file_ids.len() != row_count
+        || item_kinds.len() != row_count
+        || item_file_ids.len() != row_count
+        || parent_structs.len() != row_count
+        || ordinals.len() != row_count
+        || type_nodes.len() != row_count
+        || first_fields.len() != row_count
+    {
+        return Err(anyhow!(
+            "parser HIR struct declaration field record arrays have inconsistent lengths"
+        ));
+    }
+
+    let has_non_empty_span = |node: usize| {
+        token_pos[node] != INVALID
+            && token_end[node] != INVALID
+            && token_pos[node] < token_end[node]
+    };
+
+    let require_span = |node: usize, label: &str| -> Result<()> {
+        if !has_non_empty_span(node) {
+            return Err(anyhow!(
+                "parser HIR struct declaration {label} row {node} lacks a non-empty token span"
+            ));
+        }
+        if node_file_ids[node] == INVALID {
+            return Err(anyhow!(
+                "parser HIR struct declaration {label} row {node} lacks a source file id"
+            ));
+        }
+        Ok(())
+    };
+
+    let require_struct_owner = |owner: usize| -> Result<()> {
+        if kinds[owner] != HIR_NODE_STRUCT_ITEM || item_kinds[owner] != HIR_ITEM_KIND_STRUCT {
+            return Err(anyhow!(
+                "parser HIR struct declaration row {owner} is not backed by a parser-owned struct item record"
+            ));
+        }
+        require_span(owner, "owner")?;
+        if item_file_ids[owner] != node_file_ids[owner] {
+            return Err(anyhow!(
+                "parser HIR struct declaration row {owner} has inconsistent item and node file ids"
+            ));
+        }
+        Ok(())
+    };
+
+    let mut actual_counts = vec![0u32; row_count];
+    let mut ordinal_keys = Vec::new();
+    for (field_node, &owner) in parent_structs.iter().enumerate() {
+        if owner == INVALID {
+            if ordinals[field_node] != INVALID {
+                return Err(anyhow!(
+                    "parser HIR struct field row {field_node} published a field ordinal without a struct owner"
+                ));
+            }
+            if type_nodes[field_node] != INVALID {
+                return Err(anyhow!(
+                    "parser HIR struct field row {field_node} published a field type edge without a struct owner"
+                ));
+            }
+            continue;
+        }
+
+        let owner = owner as usize;
+        if owner >= row_count {
+            return Err(anyhow!(
+                "parser HIR struct field row {field_node} published owner {owner}, outside {row_count} readback rows"
+            ));
+        }
+        require_struct_owner(owner)?;
+        let owner_count = counts[owner];
+        if owner_count == 0 {
+            return Err(anyhow!(
+                "parser HIR struct field row {field_node} points at owner {owner} with zero field count"
+            ));
+        }
+        if owner_count as usize > row_count {
+            return Err(anyhow!(
+                "parser HIR struct declaration row {owner} published {owner_count} fields, exceeding {row_count} readback rows"
+            ));
+        }
+
+        if kinds[field_node] != HIR_NODE_NONE {
+            return Err(anyhow!(
+                "parser HIR struct field row {field_node} has HIR kind {}, not a parser-owned struct declaration field record",
+                kinds[field_node]
+            ));
+        }
+        require_span(field_node, "field")?;
+        if node_file_ids[field_node] != node_file_ids[owner] {
+            return Err(anyhow!(
+                "parser HIR struct field row {field_node} published a different file id than owner {owner}"
+            ));
+        }
+        if token_pos[field_node] < token_pos[owner] || token_end[field_node] > token_end[owner] {
+            return Err(anyhow!(
+                "parser HIR struct field row {field_node} falls outside owner {owner} span"
+            ));
+        }
+
+        let ordinal = ordinals[field_node];
+        if ordinal >= owner_count {
+            return Err(anyhow!(
+                "parser HIR struct field row {field_node} published ordinal {ordinal}, outside owner {owner} count {owner_count}"
+            ));
+        }
+
+        let type_node = type_nodes[field_node];
+        if type_node == INVALID || type_node as usize >= row_count {
+            return Err(anyhow!(
+                "parser HIR struct field row {field_node} published no in-table type node"
+            ));
+        }
+        let type_node = type_node as usize;
+        if kinds[type_node] != HIR_NODE_TYPE || type_forms[type_node] == HIR_TYPE_FORM_NONE {
+            return Err(anyhow!(
+                "parser HIR struct field row {field_node} type row {type_node} is not a concrete type record"
+            ));
+        }
+        require_span(type_node, "field type")?;
+        if node_file_ids[type_node] != node_file_ids[field_node]
+            || type_file_ids[type_node] != node_file_ids[field_node]
+        {
+            return Err(anyhow!(
+                "parser HIR struct field row {field_node} type row {type_node} has a different file id"
+            ));
+        }
+        if token_pos[type_node] < token_pos[field_node]
+            || token_end[type_node] > token_end[field_node]
+        {
+            return Err(anyhow!(
+                "parser HIR struct field row {field_node} type row {type_node} falls outside the field span"
+            ));
+        }
+        if token_pos[type_node] <= token_pos[field_node] {
+            return Err(anyhow!(
+                "parser HIR struct field row {field_node} type row {type_node} does not follow the field name token"
+            ));
+        }
+
+        actual_counts[owner] += 1;
+        ordinal_keys.push((owner, ordinal, field_node));
+    }
+
+    ordinal_keys.sort_unstable();
+    for pair in ordinal_keys.windows(2) {
+        let (owner, ordinal, first_row) = pair[0];
+        let (next_owner, next_ordinal, _) = pair[1];
+        if owner == next_owner && ordinal == next_ordinal {
+            return Err(anyhow!(
+                "parser HIR struct declaration row {owner} published duplicate field ordinal {ordinal} at row {first_row}"
+            ));
+        }
+    }
+
+    for (owner, &count) in counts.iter().enumerate() {
+        if count == 0 {
+            if first_fields[owner] != INVALID {
+                return Err(anyhow!(
+                    "parser HIR struct declaration row {owner} published first field without a field count"
+                ));
+            }
+            continue;
+        }
+        require_struct_owner(owner)?;
+        if count as usize > row_count {
+            return Err(anyhow!(
+                "parser HIR struct declaration row {owner} published {count} fields, exceeding {row_count} readback rows"
+            ));
+        }
+
+        let first = first_fields[owner];
+        if first == INVALID || first as usize >= row_count {
+            return Err(anyhow!(
+                "parser HIR struct declaration row {owner} published field count {count} without an in-table first field"
+            ));
+        }
+        let first = first as usize;
+        if parent_structs[first] as usize != owner || ordinals[first] != 0 {
+            return Err(anyhow!(
+                "parser HIR struct declaration row {owner} first field row {first} is not ordinal zero for that owner"
+            ));
+        }
+        if actual_counts[owner] != count {
+            return Err(anyhow!(
+                "parser HIR struct declaration row {owner} published count {count} but read back {} owned field rows",
+                actual_counts[owner]
+            ));
+        }
+
+        let mut previous_field: Option<usize> = None;
+        for expected_ordinal in 0..count {
+            let field = ordinal_keys
+                .binary_search_by_key(&(owner, expected_ordinal), |&(owner, ordinal, _)| {
+                    (owner, ordinal)
+                })
+                .ok()
+                .map(|index| ordinal_keys[index].2)
+                .ok_or_else(|| {
+                    anyhow!(
+                        "parser HIR struct declaration row {owner} field ordinals are not contiguous from zero"
+                    )
+                })?;
+            if let Some(previous) = previous_field {
+                if token_pos[field] <= token_pos[previous] || token_end[previous] > token_pos[field]
+                {
+                    return Err(anyhow!(
+                        "parser HIR struct declaration row {owner} fields overlap or are not in source order at row {field}"
+                    ));
+                }
+            }
+            previous_field = Some(field);
         }
     }
 
@@ -6441,6 +8817,11 @@ pub fn validate_hir_struct_literal_field_records(
                 "parser HIR struct literal row {row} head row {head} published a different file id"
             ));
         }
+        if token_pos[head] < token_pos[row] || token_end[head] > token_end[row] {
+            return Err(anyhow!(
+                "parser HIR struct literal row {row} head row {head} falls outside owner row {row} span"
+            ));
+        }
         if !matches!(kinds[head], HIR_NODE_PATH_EXPR | HIR_NODE_NAME_EXPR) {
             return Err(anyhow!(
                 "parser HIR struct literal row {row} head row {head} has non-path/name HIR kind {}",
@@ -6458,12 +8839,9 @@ pub fn validate_hir_struct_literal_field_records(
                 ));
             }
             let value_node = value_nodes[field_node];
-            let value_is_declaration_type_alias = value_node != INVALID
-                && (value_node as usize) < row_count
-                && kinds[value_node as usize] == HIR_NODE_TYPE;
-            if value_node != INVALID && !value_is_declaration_type_alias {
+            if value_node != INVALID {
                 return Err(anyhow!(
-                    "parser HIR struct literal field row {field_node} published value expression without an owner"
+                    "parser HIR struct literal field row {field_node} published value node without an owner"
                 ));
             }
             continue;
@@ -6478,6 +8856,12 @@ pub fn validate_hir_struct_literal_field_records(
         if kinds[owner] != HIR_NODE_STRUCT_LITERAL_EXPR {
             return Err(anyhow!(
                 "parser HIR struct literal field row {field_node} points at owner {owner} that is not a struct-literal HIR row"
+            ));
+        }
+        if kinds[field_node] != HIR_NODE_NONE {
+            return Err(anyhow!(
+                "parser HIR struct literal field row {field_node} has HIR kind {}, not a parser-owned struct-literal field record",
+                kinds[field_node]
             ));
         }
 
@@ -6567,6 +8951,19 @@ pub fn validate_hir_struct_literal_field_records(
                 "parser HIR struct literal row {owner} published field count {count} without an in-table first field"
             ));
         }
+        let first = first as usize;
+        let head = head_nodes[owner];
+        if head == INVALID || head as usize >= row_count {
+            return Err(anyhow!(
+                "parser HIR struct literal row {owner} published field count {count} without an in-table head path node"
+            ));
+        }
+        let head = head as usize;
+        if token_end[head] > token_pos[first] {
+            return Err(anyhow!(
+                "parser HIR struct literal row {owner} head row {head} does not precede first field row {first}"
+            ));
+        }
         if actual_counts[owner] != count {
             return Err(anyhow!(
                 "parser HIR struct literal row {owner} published count {count} but read back {} owned field rows",
@@ -6574,7 +8971,7 @@ pub fn validate_hir_struct_literal_field_records(
             ));
         }
 
-        let mut field = first as usize;
+        let mut field = first;
         for expected_position in 0..count {
             if parent_literals[field] as usize != owner {
                 return Err(anyhow!(
@@ -6607,9 +9004,9 @@ pub fn validate_hir_struct_literal_field_records(
                         "parser HIR struct literal row {owner} field chain row {next} does not point back to that owner"
                     ));
                 }
-                if token_pos[next] <= token_pos[field] {
+                if token_pos[next] <= token_pos[field] || token_end[field] > token_pos[next] {
                     return Err(anyhow!(
-                        "parser HIR struct literal row {owner} field chain is not in source order at row {field}"
+                        "parser HIR struct literal row {owner} field chain rows overlap or are not in source order at row {field}"
                     ));
                 }
                 field = next;
@@ -6692,6 +9089,17 @@ pub fn validate_hir_item_path_records(
                 ));
             }
             continue;
+        }
+        let expected_owner_kind = if item_kind == HIR_ITEM_KIND_MODULE {
+            HIR_NODE_MODULE_ITEM
+        } else {
+            HIR_NODE_IMPORT_ITEM
+        };
+        if kinds[row] != expected_owner_kind {
+            return Err(anyhow!(
+                "parser HIR item path row {row} published item kind {item_kind} on HIR kind {}, expected path owner kind {expected_owner_kind}",
+                kinds[row]
+            ));
         }
 
         if token_pos[row] == INVALID
@@ -6818,26 +9226,12 @@ mod tests {
     }
 
     #[test]
-    fn variant_payload_readback_allows_counts_at_flat_slot_bound() {
-        validate_hir_variant_payload_slot_counts(&[0, 1, HIR_VARIANT_PAYLOAD_SLOT_STRIDE])
-            .expect("counts at the flat slot bound should decode");
-    }
-
-    #[test]
-    fn variant_payload_readback_rejects_counts_past_flat_slot_bound() {
-        let err =
-            validate_hir_variant_payload_slot_counts(&[0, HIR_VARIANT_PAYLOAD_SLOT_STRIDE + 1])
-                .expect_err("counts past the flat slot bound should fail closed");
-        assert!(
-            err.to_string().contains("flat payload slots"),
-            "error should describe the violated flat-record payload bound"
-        );
-    }
-
-    #[test]
     fn type_argument_readback_accepts_contiguous_type_chain() {
         validate_hir_type_argument_records(
             &[0, HIR_NODE_TYPE, HIR_NODE_TYPE, HIR_NODE_TYPE],
+            &[0, 10, 12, 16],
+            &[1, 20, 13, 17],
+            &[0; 4],
             &[
                 HIR_TYPE_FORM_NONE,
                 HIR_TYPE_FORM_PATH,
@@ -6861,6 +9255,9 @@ mod tests {
                 HIR_NODE_TYPE,
                 HIR_NODE_TYPE,
             ],
+            &[0, 10, 12, 15, 24],
+            &[1, 30, 22, 16, 25],
+            &[0; 5],
             &[
                 HIR_TYPE_FORM_NONE,
                 HIR_TYPE_FORM_PATH,
@@ -6882,6 +9279,9 @@ mod tests {
                 HIR_NODE_TYPE,
                 HIR_NODE_TYPE,
             ],
+            &[0, 10, 12, 15, 24],
+            &[1, 30, 22, 16, 25],
+            &[0; 5],
             &[
                 HIR_TYPE_FORM_NONE,
                 HIR_TYPE_FORM_PATH,
@@ -6903,6 +9303,9 @@ mod tests {
     fn type_argument_readback_rejects_owner_counts_past_rows() {
         let err = validate_hir_type_argument_records(
             &[0, HIR_NODE_TYPE, HIR_NODE_TYPE, HIR_NODE_TYPE],
+            &[0, 10, 12, 16],
+            &[1, 20, 13, 17],
+            &[0; 4],
             &[
                 HIR_TYPE_FORM_NONE,
                 HIR_TYPE_FORM_PATH,
@@ -6924,6 +9327,9 @@ mod tests {
     fn type_argument_readback_rejects_broken_next_chain() {
         let err = validate_hir_type_argument_records(
             &[0, HIR_NODE_TYPE, HIR_NODE_TYPE, HIR_NODE_TYPE],
+            &[0, 10, 12, 16],
+            &[1, 20, 13, 17],
+            &[0; 4],
             &[
                 HIR_TYPE_FORM_NONE,
                 HIR_TYPE_FORM_PATH,
@@ -6945,6 +9351,9 @@ mod tests {
     fn type_argument_readback_rejects_orphan_next_links() {
         let err = validate_hir_type_argument_records(
             &[0, HIR_NODE_TYPE, HIR_NODE_TYPE, HIR_NODE_TYPE],
+            &[0, 10, 12, 16],
+            &[1, 20, 13, 17],
+            &[0; 4],
             &[
                 HIR_TYPE_FORM_NONE,
                 HIR_TYPE_FORM_PATH,
@@ -6967,6 +9376,9 @@ mod tests {
     fn type_argument_readback_rejects_count_on_non_path_owner() {
         let err = validate_hir_type_argument_records(
             &[0, HIR_NODE_TYPE, HIR_NODE_TYPE],
+            &[0, 10, 12],
+            &[1, 20, 13],
+            &[0; 3],
             &[HIR_TYPE_FORM_NONE, HIR_TYPE_FORM_ARRAY, HIR_TYPE_FORM_PATH],
             &[INVALID, 2, INVALID],
             &[0, 1, 0],
@@ -6994,12 +9406,12 @@ mod tests {
             &[0; 5],
             &[
                 HIR_ITEM_KIND_NONE,
-                HIR_ITEM_KIND_FN,
+                HIR_ITEM_KIND_NONE,
                 HIR_ITEM_KIND_NONE,
                 HIR_ITEM_KIND_NONE,
                 HIR_ITEM_KIND_FN,
             ],
-            &[INVALID, 12, INVALID, INVALID, 32],
+            &[INVALID, INVALID, INVALID, INVALID, 32],
             &[INVALID, 0, INVALID, INVALID, 0],
             &[INVALID, INVALID, 1, INVALID, INVALID],
             &[INVALID, INVALID, 0, INVALID, INVALID],
@@ -7036,13 +9448,77 @@ mod tests {
     }
 
     #[test]
-    fn method_readback_rejects_method_name_token_not_owned_by_function_item() {
+    fn method_readback_rejects_method_name_at_function_span_start() {
         let err = validate_hir_method_records(
             &[HIR_NODE_NONE, HIR_NODE_FN, HIR_NODE_PARAM],
             &[0, 10, 15],
             &[30, 25, 20],
             &[0; 3],
-            &[HIR_ITEM_KIND_NONE, HIR_ITEM_KIND_FN, HIR_ITEM_KIND_NONE],
+            &[HIR_ITEM_KIND_NONE; 3],
+            &[INVALID; 3],
+            &[INVALID, 0, INVALID],
+            &[INVALID; 3],
+            &[INVALID; 3],
+            &[INVALID; 3],
+            &[INVALID; 3],
+            &[INVALID, 0, INVALID],
+            &[INVALID, 0, INVALID],
+            &[INVALID, 10, INVALID],
+            &[INVALID; 3],
+            &[HIR_METHOD_RECEIVER_NONE; 3],
+            &[HIR_METHOD_VIS_PRIVATE; 3],
+            &[0; 3],
+            &[INVALID; 3],
+        )
+        .expect_err("method names must follow the parser-owned function span start");
+        assert!(
+            err.to_string().contains("method name token"),
+            "error should describe the parser-owned method name-token order contract"
+        );
+    }
+
+    #[test]
+    fn method_readback_rejects_first_param_before_method_name() {
+        let err = validate_hir_method_records(
+            &[HIR_NODE_NONE, HIR_NODE_FN, HIR_NODE_PARAM],
+            &[0, 10, 12],
+            &[30, 25, 15],
+            &[0; 3],
+            &[HIR_ITEM_KIND_NONE; 3],
+            &[INVALID; 3],
+            &[INVALID, 0, INVALID],
+            &[INVALID, INVALID, 1],
+            &[INVALID, INVALID, 0],
+            &[INVALID, INVALID, 13],
+            &[INVALID; 3],
+            &[INVALID, 0, INVALID],
+            &[INVALID, 0, INVALID],
+            &[INVALID, 14, INVALID],
+            &[INVALID, 13, INVALID],
+            &[
+                HIR_METHOD_RECEIVER_NONE,
+                HIR_METHOD_RECEIVER_REF_SELF,
+                HIR_METHOD_RECEIVER_NONE,
+            ],
+            &[HIR_METHOD_VIS_PRIVATE; 3],
+            &[0; 3],
+            &[INVALID; 3],
+        )
+        .expect_err("method first-parameter tokens must follow method names");
+        assert!(
+            err.to_string().contains("first parameter token"),
+            "error should describe the parser-owned method parameter token order contract"
+        );
+    }
+
+    #[test]
+    fn method_readback_rejects_impl_method_value_item_name_token() {
+        let err = validate_hir_method_records(
+            &[HIR_NODE_NONE, HIR_NODE_FN, HIR_NODE_PARAM],
+            &[0, 10, 15],
+            &[30, 25, 20],
+            &[0; 3],
+            &[HIR_ITEM_KIND_NONE, HIR_ITEM_KIND_NONE, HIR_ITEM_KIND_NONE],
             &[INVALID, 12, INVALID],
             &[INVALID, 0, INVALID],
             &[INVALID, INVALID, 1],
@@ -7066,10 +9542,10 @@ mod tests {
             &[0; 3],
             &[INVALID; 3],
         )
-        .expect_err("method name token mismatches should fail closed");
+        .expect_err("impl methods must not publish value item name tokens");
         assert!(
-            err.to_string().contains("method name token"),
-            "error should describe the parser-owned method name token contract"
+            err.to_string().contains("value item name token"),
+            "error should describe the parser-owned method-only namespace contract"
         );
     }
 
@@ -7082,11 +9558,11 @@ mod tests {
             &[0; 4],
             &[
                 HIR_ITEM_KIND_NONE,
-                HIR_ITEM_KIND_FN,
+                HIR_ITEM_KIND_NONE,
                 HIR_ITEM_KIND_NONE,
                 HIR_ITEM_KIND_NONE,
             ],
-            &[INVALID, 12, INVALID, INVALID],
+            &[INVALID; 4],
             &[INVALID, 0, INVALID, INVALID],
             &[INVALID, INVALID, 1, INVALID],
             &[INVALID, INVALID, 0, INVALID],
@@ -7154,30 +9630,30 @@ mod tests {
         validate_hir_type_records(
             &[
                 HIR_NODE_TYPE,
-                0,
-                HIR_NODE_TYPE,
-                HIR_NODE_TYPE,
-                0,
                 HIR_NODE_PATH_EXPR,
-                0,
+                HIR_NODE_NONE,
+                HIR_NODE_TYPE,
+                HIR_NODE_TYPE,
+                HIR_NODE_PATH_EXPR,
+                HIR_NODE_NONE,
             ],
-            &[0, 0, 2, 3, 3, 7, 8],
-            &[1, 1, 6, 4, 4, 9, 9],
+            &[0, 0, 2, 4, 5, 5, 6],
+            &[3, 3, 3, 9, 7, 7, 7],
             &[0; 7],
             &[
                 HIR_TYPE_FORM_PATH,
+                HIR_TYPE_FORM_NONE,
                 HIR_TYPE_FORM_NONE,
                 HIR_TYPE_FORM_ARRAY,
                 HIR_TYPE_FORM_PATH,
                 HIR_TYPE_FORM_NONE,
                 HIR_TYPE_FORM_NONE,
-                HIR_TYPE_FORM_NONE,
             ],
-            &[1, INVALID, 3, 4, INVALID, INVALID, INVALID],
-            &[INVALID, INVALID, 5, INVALID, INVALID, INVALID, INVALID],
-            &[INVALID, INVALID, 3, INVALID, INVALID, INVALID, INVALID],
-            &[0; 7],
-            &[1, INVALID, INVALID, 4, INVALID, 6, INVALID],
+            &[1, INVALID, INVALID, 4, 5, INVALID, INVALID],
+            &[INVALID, INVALID, INVALID, 8, INVALID, INVALID, INVALID],
+            &[INVALID; 7],
+            &[0, INVALID, INVALID, 0, 0, INVALID, INVALID],
+            &[2, 2, INVALID, INVALID, 6, 6, INVALID],
         )
         .expect("path, array, and path-expression leaf records should decode");
     }
@@ -7254,8 +9730,12 @@ mod tests {
                 HIR_NODE_EXPR,
                 HIR_NODE_EXPR,
             ],
+            &[10, 10, 12, 14],
+            &[11, 20, 13, 15],
+            &[0; 4],
             &[INVALID, 0, INVALID, INVALID],
             &[INVALID, 2, INVALID, INVALID],
+            &[INVALID, INVALID, 13, 15],
             &[0, 2, 0, 0],
             &[INVALID, INVALID, 1, 1],
             &[INVALID, INVALID, 0, 1],
@@ -7267,8 +9747,12 @@ mod tests {
     fn call_argument_readback_rejects_packed_ordinal_overflow() {
         let err = validate_hir_call_argument_records(
             &[HIR_NODE_NAME_EXPR, HIR_NODE_CALL_EXPR, HIR_NODE_EXPR],
+            &[10, 10, 12],
+            &[11, 20, 13],
+            &[0; 3],
             &[INVALID, 0, INVALID],
             &[INVALID, 2, INVALID],
+            &[INVALID, INVALID, 13],
             &[0, HIR_PACKED_NODE_ORDINAL_SLOT_COUNT + 1, 0],
             &[INVALID, INVALID, 1],
             &[INVALID, INVALID, 0],
@@ -7289,8 +9773,12 @@ mod tests {
                 HIR_NODE_EXPR,
                 HIR_NODE_EXPR,
             ],
+            &[10, 10, 12, 14],
+            &[11, 20, 13, 15],
+            &[0; 4],
             &[INVALID, 0, INVALID, INVALID],
             &[INVALID, 2, INVALID, INVALID],
+            &[INVALID, INVALID, 13, INVALID],
             &[0, 2, 0, 0],
             &[INVALID, INVALID, 1, INVALID],
             &[INVALID, INVALID, 0, INVALID],
@@ -7306,6 +9794,10 @@ mod tests {
     fn call_argument_readback_rejects_orphan_argument_metadata() {
         let err = validate_hir_call_argument_records(
             &[HIR_NODE_NAME_EXPR, HIR_NODE_EXPR],
+            &[0, 1],
+            &[1, 2],
+            &[0; 2],
+            &[INVALID, INVALID],
             &[INVALID, INVALID],
             &[INVALID, INVALID],
             &[0, 0],
@@ -7325,6 +9817,7 @@ mod tests {
             &[0, HIR_NODE_ARRAY_EXPR, HIR_NODE_EXPR, HIR_NODE_EXPR],
             &[INVALID, 10, 12, 20],
             &[INVALID, 30, 13, 21],
+            &[INVALID, 0, 0, 0],
             &[INVALID, 2, INVALID, INVALID],
             &[0, 2, 0, 0],
             &[INVALID, INVALID, 1, 1],
@@ -7340,6 +9833,7 @@ mod tests {
             &[0, HIR_NODE_ARRAY_EXPR, HIR_NODE_EXPR, HIR_NODE_EXPR],
             &[INVALID, 10, 12, 20],
             &[INVALID, 30, 13, 21],
+            &[INVALID, 0, 0, 0],
             &[INVALID, 2, INVALID, INVALID],
             &[0, 2, 0, 0],
             &[INVALID, INVALID, 1, INVALID],
@@ -7359,6 +9853,7 @@ mod tests {
             &[0, HIR_NODE_ARRAY_EXPR, HIR_NODE_EXPR, HIR_NODE_EXPR],
             &[INVALID, 10, 12, 20],
             &[INVALID, 30, 13, 21],
+            &[INVALID, 0, 0, 0],
             &[INVALID, 2, INVALID, INVALID],
             &[0, 2, 0, 0],
             &[INVALID, INVALID, 1, 1],

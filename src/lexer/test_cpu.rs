@@ -16,344 +16,6 @@ pub struct TestCpuToken {
     pub len: usize,
 }
 
-fn ends_primary(k: TokenKind) -> bool {
-    use TokenKind::*;
-    matches!(
-        k,
-        Ident
-            | Int
-            | Float
-            | True
-            | False
-            | String
-            | Char
-            | RParen
-            | GroupRParen
-            | CallRParen
-            | ParamRParen
-            | RBracket
-            | ArrayRBracket
-            | IndexRBracket
-            | RBrace
-            | AngleGeneric
-    )
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum GroupOwner {
-    None,
-    If,
-    While,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct OpenCtx {
-    kind: TokenKind,
-    group_owner: GroupOwner,
-}
-
-fn can_start_generic_angle_list(kinds: &[TokenKind], lt_i: usize) -> bool {
-    use TokenKind::*;
-    if kinds.get(lt_i).copied() != Some(Lt) || lt_i == 0 {
-        return false;
-    }
-    if kinds.get(lt_i - 1).copied() != Some(Ident) {
-        return false;
-    }
-
-    let before = lt_i
-        .checked_sub(2)
-        .and_then(|index| kinds.get(index))
-        .copied();
-    matches!(
-        before,
-        Some(
-            Fn | Enum
-                | Struct
-                | Type
-                | Impl
-                | Trait
-                | Where
-                | Colon
-                | Arrow
-                | Assign
-                | Comma
-                | Plus
-                | Lt
-                | LParen
-                | LBracket
-                | Ampersand
-        )
-    )
-}
-
-fn generic_angle_boundary(kind: TokenKind) -> bool {
-    use TokenKind::*;
-    matches!(
-        kind,
-        Semicolon
-            | LBrace
-            | RBrace
-            | Fn
-            | Let
-            | Return
-            | If
-            | While
-            | For
-            | Break
-            | Continue
-            | Enum
-            | Struct
-            | Type
-            | Import
-            | Module
-            | Impl
-            | Trait
-            | Extern
-            | Where
-    )
-}
-
-fn nested_generic_shr_split_positions(tokens: &[TestCpuToken]) -> Vec<usize> {
-    use TokenKind::*;
-    let kinds = tokens.iter().map(|token| token.kind).collect::<Vec<_>>();
-    let mut depth = 0usize;
-    let mut splits = Vec::new();
-
-    for (index, token) in tokens.iter().enumerate() {
-        match token.kind {
-            Lt if can_start_generic_angle_list(&kinds, index) => {
-                depth = depth.saturating_add(1);
-            }
-            Gt if depth > 0 => {
-                depth -= 1;
-            }
-            Shr if depth >= 2 => {
-                splits.push(index);
-                depth -= 2;
-            }
-            kind if generic_angle_boundary(kind) => {
-                depth = 0;
-            }
-            _ => {}
-        }
-    }
-
-    splits
-}
-
-fn split_nested_generic_shr_tokens(tokens: Vec<TestCpuToken>) -> Vec<TestCpuToken> {
-    let split_positions = nested_generic_shr_split_positions(&tokens);
-    if split_positions.is_empty() {
-        return tokens;
-    }
-
-    let split_positions = split_positions
-        .into_iter()
-        .collect::<std::collections::HashSet<_>>();
-    let mut out = Vec::with_capacity(tokens.len() + split_positions.len());
-    for (index, token) in tokens.into_iter().enumerate() {
-        if split_positions.contains(&index) {
-            out.push(TestCpuToken {
-                kind: TokenKind::Gt,
-                start: token.start,
-                len: 1,
-            });
-            out.push(TestCpuToken {
-                kind: TokenKind::Gt,
-                start: token.start + 1,
-                len: 1,
-            });
-        } else {
-            out.push(token);
-        }
-    }
-    out
-}
-
-fn retag_calls_and_arrays_in_test_oracle(kinds: &mut [TokenKind]) {
-    use TokenKind::*;
-    let mut opens: Vec<OpenCtx> = Vec::new();
-    let mut prev2_sig: Option<TokenKind> = None;
-    let mut prev_sig: Option<TokenKind> = None; // after filtering, all are significant
-    let mut last_closed_group_owner = GroupOwner::None;
-    let mut expect_let_name = false;
-    let mut in_let_decl = false;
-    let mut let_can_init = false;
-    let mut expect_type_alias_name = false;
-    let mut in_type_alias_decl = false;
-    let mut expect_type = false;
-    let mut param_depth = 0usize;
-    let mut type_array_depth = 0usize;
-
-    for k in kinds.iter_mut() {
-        let prev_ends = prev_sig.map(ends_primary).unwrap_or(false);
-        let after_fn_name = prev2_sig == Some(Fn) && prev_sig == Some(Ident);
-        let top_open = opens.last().map(|open| open.kind);
-
-        let raw = *k;
-        let next = match raw {
-            Ident if expect_let_name => LetIdent,
-            Ident if expect_type_alias_name => TypeAliasNameIdent,
-            Ident if expect_type => TypeIdent,
-            Ident if param_depth > 0 && matches!(prev_sig, Some(ParamLParen | ParamComma)) => {
-                ParamIdent
-            }
-            LParen => {
-                if after_fn_name {
-                    ParamLParen
-                } else if prev_ends {
-                    CallLParen
-                } else {
-                    GroupLParen
-                }
-            }
-            LBracket => {
-                if expect_type {
-                    TypeArrayLBracket
-                } else if prev_ends {
-                    IndexLBracket
-                } else {
-                    ArrayLBracket
-                }
-            }
-            Plus => {
-                if prev_ends {
-                    InfixPlus
-                } else {
-                    PrefixPlus
-                }
-            }
-            Minus => {
-                if prev_ends {
-                    InfixMinus
-                } else {
-                    PrefixMinus
-                }
-            }
-            Assign if in_let_decl && let_can_init => LetAssign,
-            Assign if in_type_alias_decl => TypeAliasAssign,
-            Comma => match top_open {
-                Some(ParamLParen) => ParamComma,
-                Some(CallLParen) => ArgComma,
-                Some(ArrayLBracket) => ArrayComma,
-                _ => Comma,
-            },
-            Semicolon if top_open == Some(TypeArrayLBracket) => TypeSemicolon,
-            Semicolon if in_type_alias_decl => TypeAliasSemicolon,
-            LBrace
-                if matches!(prev_sig, Some(RParen | GroupRParen))
-                    && last_closed_group_owner == GroupOwner::If =>
-            {
-                IfLBrace
-            }
-            _ => raw,
-        };
-
-        if raw != RParen && raw != LBrace {
-            last_closed_group_owner = GroupOwner::None;
-        }
-
-        match next {
-            Let => {
-                expect_let_name = true;
-                in_let_decl = false;
-                let_can_init = false;
-            }
-            Type => {
-                expect_type_alias_name = true;
-                in_type_alias_decl = false;
-            }
-            TypeAliasNameIdent => {
-                expect_type_alias_name = false;
-                in_type_alias_decl = true;
-            }
-            LetIdent => {
-                expect_let_name = false;
-                in_let_decl = true;
-                let_can_init = true;
-            }
-            Colon => {
-                expect_type = true;
-                if in_let_decl {
-                    let_can_init = false;
-                }
-            }
-            Arrow => {
-                expect_type = true;
-            }
-            TypeIdent => {
-                expect_type = false;
-                if in_let_decl && type_array_depth == 0 {
-                    let_can_init = true;
-                }
-            }
-            LetAssign => {
-                in_let_decl = false;
-                let_can_init = false;
-            }
-            TypeAliasAssign => {
-                expect_type = true;
-            }
-            TypeAliasSemicolon => {
-                expect_type_alias_name = false;
-                in_type_alias_decl = false;
-                expect_type = false;
-            }
-            Semicolon => {
-                in_let_decl = false;
-                let_can_init = false;
-                expect_type_alias_name = false;
-                in_type_alias_decl = false;
-                expect_type = false;
-            }
-            _ => {}
-        }
-
-        if is_context_open(next) {
-            let group_owner = if next == GroupLParen {
-                match prev_sig {
-                    Some(If) => GroupOwner::If,
-                    Some(While) => GroupOwner::While,
-                    _ => GroupOwner::None,
-                }
-            } else {
-                GroupOwner::None
-            };
-            if next == ParamLParen {
-                param_depth += 1;
-            } else if next == TypeArrayLBracket {
-                type_array_depth += 1;
-                expect_type = true;
-            }
-            opens.push(OpenCtx {
-                kind: next,
-                group_owner,
-            });
-        } else if is_context_close(raw)
-            && let Some(open) = opens.pop()
-        {
-            if open.kind == ParamLParen {
-                param_depth = param_depth.saturating_sub(1);
-            } else if open.kind == TypeArrayLBracket {
-                type_array_depth = type_array_depth.saturating_sub(1);
-                expect_type = false;
-                if in_let_decl && type_array_depth == 0 {
-                    let_can_init = true;
-                }
-            } else if open.kind == GroupLParen && raw == RParen {
-                last_closed_group_owner = open.group_owner;
-            }
-        }
-
-        *k = next;
-        prev2_sig = prev_sig;
-        prev_sig = Some(next);
-    }
-
-    retag_closes_by_layer_rank(kinds);
-}
-
 fn keyword_kind(bytes: &[u8]) -> Option<TokenKind> {
     match bytes {
         b"pub" => Some(TokenKind::Pub),
@@ -400,117 +62,47 @@ fn retag_keywords_in_place(tokens: &mut [TestCpuToken], src: &[u8]) {
     }
 }
 
-fn retag_closes_by_layer_rank(kinds: &mut [TokenKind]) {
-    let n_layers = kinds.len().saturating_add(2);
-    let mut pushes_by_layer = vec![Vec::<usize>::new(); n_layers];
-    let mut pops_by_layer = vec![Vec::<usize>::new(); n_layers];
-    let mut depth = 0i32;
-
-    for (i, &kind) in kinds.iter().enumerate() {
-        if is_open(kind) {
-            let layer = depth + 1;
-            if layer >= 0 {
-                let layer = layer as usize;
-                if layer < n_layers {
-                    pushes_by_layer[layer].push(i);
-                }
-            }
-            depth += 1;
-        } else if is_close(kind) {
-            let layer = depth;
-            if layer >= 0 {
-                let layer = layer as usize;
-                if layer < n_layers {
-                    pops_by_layer[layer].push(i);
-                }
-            }
-            depth -= 1;
+fn repair_numeric_dotdot_ranges(tokens: &mut Vec<TestCpuToken>, src: &[u8]) {
+    let mut i = 0;
+    while i + 1 < tokens.len() {
+        let current = tokens[i];
+        let next = tokens[i + 1];
+        if current.kind != TokenKind::Float
+            || current.len < 2
+            || next.kind != TokenKind::Dot
+            || next.len != 1
+            || next.start != current.start + current.len
+        {
+            i += 1;
+            continue;
         }
-    }
 
-    for layer in 0..n_layers {
-        let npairs = pushes_by_layer[layer].len().min(pops_by_layer[layer].len());
-        for rank in 0..npairs {
-            let open_i = pushes_by_layer[layer][rank];
-            let close_i = pops_by_layer[layer][rank];
-            if let Some(close_kind) = close_for_open(kinds[open_i], kinds[close_i]) {
-                kinds[close_i] = close_kind;
-            }
+        let dot = current.start + current.len - 1;
+        if src.get(dot) != Some(&b'.') {
+            i += 1;
+            continue;
         }
+
+        tokens[i].kind = TokenKind::Int;
+        tokens[i].len -= 1;
+        tokens[i + 1].kind = TokenKind::DotDot;
+        tokens[i + 1].start -= 1;
+        tokens[i + 1].len += 1;
+        i += 2;
     }
 }
 
-fn is_open(kind: TokenKind) -> bool {
-    use TokenKind::*;
-    matches!(
-        kind,
-        LBrace
-            | IfLBrace
-            | GroupLParen
-            | CallLParen
-            | ParamLParen
-            | ArrayLBracket
-            | IndexLBracket
-            | TypeArrayLBracket
-    )
-}
-
-fn is_close(kind: TokenKind) -> bool {
-    use TokenKind::*;
-    matches!(
-        kind,
-        RParen
-            | RBracket
-            | RBrace
-            | GroupRParen
-            | CallRParen
-            | ParamRParen
-            | ArrayRBracket
-            | IndexRBracket
-            | TypeArrayRBracket
-            | IfRBrace
-    )
-}
-
-fn close_for_open(open: TokenKind, close: TokenKind) -> Option<TokenKind> {
-    use TokenKind::*;
-    match (open, close) {
-        (GroupLParen, RParen | GroupRParen | CallRParen | ParamRParen) => Some(GroupRParen),
-        (CallLParen, RParen | GroupRParen | CallRParen | ParamRParen) => Some(CallRParen),
-        (ParamLParen, RParen | GroupRParen | CallRParen | ParamRParen) => Some(ParamRParen),
-        (ArrayLBracket, RBracket | ArrayRBracket | IndexRBracket | TypeArrayRBracket) => {
-            Some(ArrayRBracket)
+fn retag_inclusive_dotdot_ranges(tokens: &mut [TestCpuToken]) {
+    for i in 0..tokens.len().saturating_sub(1) {
+        let current = tokens[i];
+        let next = tokens[i + 1];
+        if current.kind == TokenKind::DotDot
+            && next.kind == TokenKind::Assign
+            && next.start == current.start + current.len
+        {
+            tokens[i].kind = TokenKind::DotDotEqual;
         }
-        (IndexLBracket, RBracket | ArrayRBracket | IndexRBracket | TypeArrayRBracket) => {
-            Some(IndexRBracket)
-        }
-        (TypeArrayLBracket, RBracket | ArrayRBracket | IndexRBracket | TypeArrayRBracket) => {
-            Some(TypeArrayRBracket)
-        }
-        (IfLBrace, RBrace | IfRBrace) => Some(IfRBrace),
-        (LBrace, RBrace | IfRBrace) => Some(RBrace),
-        _ => None,
     }
-}
-
-fn is_context_open(kind: TokenKind) -> bool {
-    use TokenKind::*;
-    matches!(
-        kind,
-        LBrace
-            | IfLBrace
-            | GroupLParen
-            | CallLParen
-            | ParamLParen
-            | ArrayLBracket
-            | IndexLBracket
-            | TypeArrayLBracket
-    )
-}
-
-fn is_context_close(kind: TokenKind) -> bool {
-    use TokenKind::*;
-    matches!(kind, RParen | RBracket | RBrace)
 }
 
 #[inline]
@@ -621,18 +213,14 @@ fn lex_raw_kept(input: &str) -> Result<Vec<TestCpuToken>, String> {
     ))
 }
 
-/// Deterministic test CPU oracle for the GPU streaming-emit lexer rules.
-/// Returns kept tokens (whitespace/comments filtered out).
+/// Deterministic test CPU oracle for GPU lexer readback.
+/// Returns kept DFA tokens with lexer-owned keyword retags applied.
 pub fn lex_on_test_cpu(input: &str) -> Result<Vec<TestCpuToken>, String> {
     let bytes = input.as_bytes();
     let mut out = lex_raw_kept(input)?;
+    repair_numeric_dotdot_ranges(&mut out, bytes);
+    retag_inclusive_dotdot_ranges(&mut out);
     retag_keywords_in_place(&mut out, bytes);
-    out = split_nested_generic_shr_tokens(out);
-    let mut kinds: Vec<TokenKind> = out.iter().map(|t| t.kind).collect();
-    retag_calls_and_arrays_in_test_oracle(&mut kinds);
-    for (tok, k) in out.iter_mut().zip(kinds.into_iter()) {
-        tok.kind = k;
-    }
     Ok(out)
 }
 
@@ -654,66 +242,37 @@ mod tests {
     }
 
     #[test]
-    fn retags_prefix_and_infix_plus_minus() {
+    fn keeps_plus_and_minus_raw_at_lexer_boundary() {
         use TokenKind::*;
 
         assert_eq!(
             kinds("-a + +b - c"),
-            vec![
-                PrefixMinus,
-                Ident,
-                InfixPlus,
-                PrefixPlus,
-                Ident,
-                InfixMinus,
-                Ident
-            ]
+            vec![Minus, Ident, Plus, Plus, Ident, Minus, Ident]
         );
     }
 
     #[test]
-    fn retags_calls_groups_arrays_and_indexes() {
+    fn keeps_delimiters_raw_at_lexer_boundary() {
         use TokenKind::*;
 
         assert_eq!(
             kinds("f(a)[b] + [c]"),
             vec![
-                Ident,
-                CallLParen,
-                Ident,
-                CallRParen,
-                IndexLBracket,
-                Ident,
-                IndexRBracket,
-                InfixPlus,
-                ArrayLBracket,
-                Ident,
-                ArrayRBracket
+                Ident, LParen, Ident, RParen, LBracket, Ident, RBracket, Plus, LBracket, Ident,
+                RBracket
             ]
         );
     }
 
     #[test]
-    fn retags_closes_from_matched_openers() {
+    fn keeps_close_delimiters_raw_at_lexer_boundary() {
         use TokenKind::*;
 
         assert_eq!(
             kinds("(a) f(b)[c] + [d]"),
             vec![
-                GroupLParen,
-                Ident,
-                GroupRParen,
-                Ident,
-                CallLParen,
-                Ident,
-                CallRParen,
-                IndexLBracket,
-                Ident,
-                IndexRBracket,
-                InfixPlus,
-                ArrayLBracket,
-                Ident,
-                ArrayRBracket
+                LParen, Ident, RParen, Ident, LParen, Ident, RParen, LBracket, Ident, RBracket,
+                Plus, LBracket, Ident, RBracket
             ]
         );
     }
@@ -727,40 +286,58 @@ mod tests {
                 "pub fn f() { let x = 1; if (x) { return x; } else { while (x) { break; continue; } } }"
             ),
             vec![
-                Pub,
-                Fn,
-                Ident,
-                ParamLParen,
-                ParamRParen,
-                LBrace,
-                Let,
-                LetIdent,
-                LetAssign,
+                Pub, Fn, Ident, LParen, RParen, LBrace, Let, Ident, Assign, Int, Semicolon, If,
+                LParen, Ident, RParen, LBrace, Return, Ident, Semicolon, RBrace, Else, LBrace,
+                While, LParen, Ident, RParen, LBrace, Break, Semicolon, Continue, Semicolon,
+                RBrace, RBrace, RBrace
+            ]
+        );
+    }
+
+    #[test]
+    fn qualified_module_and_import_paths_are_raw_identifier_segments() {
+        use TokenKind::*;
+
+        assert_eq!(
+            kinds("module app::main;\nimport core::f32;"),
+            vec![
+                Module, Ident, Colon, Colon, Ident, Semicolon, Import, Ident, Colon, Colon, Ident,
+                Semicolon
+            ]
+        );
+    }
+
+    #[test]
+    fn qualified_type_paths_are_raw_identifier_segments() {
+        use TokenKind::*;
+
+        assert_eq!(
+            kinds("let value: core::f32 = 0.0;"),
+            vec![
+                Let, Ident, Colon, Ident, Colon, Colon, Ident, Assign, Float, Semicolon
+            ]
+        );
+    }
+
+    #[test]
+    fn lexes_numeric_exclusive_ranges_without_stealing_float_literals() {
+        use TokenKind::*;
+
+        assert_eq!(
+            kinds("0..samples 1.0 1. .5 ..rest 1..=end"),
+            vec![
                 Int,
-                Semicolon,
-                If,
-                GroupLParen,
+                DotDot,
                 Ident,
-                GroupRParen,
-                IfLBrace,
-                Return,
+                Float,
+                Float,
+                Float,
+                DotDot,
                 Ident,
-                Semicolon,
-                IfRBrace,
-                Else,
-                LBrace,
-                While,
-                GroupLParen,
-                Ident,
-                GroupRParen,
-                LBrace,
-                Break,
-                Semicolon,
-                Continue,
-                Semicolon,
-                RBrace,
-                RBrace,
-                RBrace
+                Int,
+                DotDotEqual,
+                Assign,
+                Ident
             ]
         );
     }

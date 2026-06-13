@@ -18,6 +18,7 @@ StructuredBuffer<uint> hir_variant_rank_a;
 StructuredBuffer<uint> hir_variant_payload_owner_a;
 StructuredBuffer<uint> hir_variant_payload_rank_a;
 
+RWStructuredBuffer<uint> hir_token_end;
 RWStructuredBuffer<uint> hir_variant_parent_enum;
 RWStructuredBuffer<uint> hir_variant_ordinal;
 RWStructuredBuffer<uint> hir_variant_payload_start;
@@ -53,6 +54,9 @@ void publish_variant(uint node)
 
     hir_variant_parent_enum[node] = owner;
     hir_variant_ordinal[node] = hir_variant_rank_a[node];
+    uint variant_end = hir_token_end[node];
+    if (variant_end != INVALID)
+        atomic_u32_max(hir_token_end, owner, variant_end);
 }
 
 void publish_payload_type(uint node)
@@ -69,6 +73,9 @@ void publish_payload_type(uint node)
         hir_variant_payload_count,
         owner,
         ordinal + 1u);
+    uint payload_end = hir_token_end[node];
+    if (payload_end != INVALID)
+        atomic_u32_max(hir_token_end, owner, payload_end);
 }
 
 [shader("compute")]

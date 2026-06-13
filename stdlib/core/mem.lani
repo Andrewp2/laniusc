@@ -49,6 +49,10 @@ pub fn raw_memory_service_is_known() -> MemoryCapability {
     return true;
 }
 
+pub fn raw_memory_contract_metadata_is_available() -> MemoryCapability {
+    return raw_memory_service_is_known();
+}
+
 pub fn raw_memory_service_status() -> RawMemoryServiceStatus {
     return RAW_MEMORY_SERVICE_STATUS_UNAVAILABLE;
 }
@@ -63,6 +67,10 @@ pub fn raw_memory_api_is_executable() -> MemoryCapability {
 
 pub fn raw_memory_api_requires_runtime_binding() -> MemoryCapability {
     return !raw_memory_api_is_executable();
+}
+
+pub fn raw_memory_host_abi_is_contract_only() -> MemoryCapability {
+    return raw_memory_api_requires_runtime_binding();
 }
 
 pub fn identity<T>(value: T) -> T {

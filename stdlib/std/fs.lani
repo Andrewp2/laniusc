@@ -9,11 +9,16 @@ pub type FilesystemCapability = bool;
 pub type FilesystemRuntimeAbiVersion = u32;
 pub type FilesystemServiceId = u32;
 pub type FilesystemServiceStatus = u32;
+pub type FilesystemOperationResult = i32;
+pub type FileHandle = i32;
 
 pub const FILESYSTEM_RUNTIME_ABI_VERSION: FilesystemRuntimeAbiVersion = 1;
 pub const FILESYSTEM_SERVICE_ID: FilesystemServiceId = 2;
 pub const FILESYSTEM_SERVICE_STATUS_UNAVAILABLE: FilesystemServiceStatus = 1;
 pub const FILESYSTEM_HAS_RUNTIME_BINDING: FilesystemCapability = false;
+pub const FILESYSTEM_OPERATION_OK: FilesystemOperationResult = 0;
+pub const FILESYSTEM_OPERATION_UNAVAILABLE: FilesystemOperationResult = -1;
+pub const FILE_HANDLE_INVALID: FileHandle = -1;
 
 pub fn filesystem_runtime_abi_version() -> FilesystemRuntimeAbiVersion {
     return FILESYSTEM_RUNTIME_ABI_VERSION;
@@ -43,6 +48,10 @@ pub fn filesystem_is_blocked() -> FilesystemCapability {
     return !filesystem_is_available();
 }
 
+pub fn filesystem_is_known_but_unbound() -> FilesystemCapability {
+    return filesystem_service_is_known() && filesystem_is_blocked();
+}
+
 pub fn filesystem_requires_runtime_binding() -> FilesystemCapability {
     return !FILESYSTEM_HAS_RUNTIME_BINDING;
 }
@@ -59,8 +68,48 @@ pub fn file_io_is_blocked() -> FilesystemCapability {
     return !file_io_is_executable();
 }
 
+pub fn file_io_is_known_but_unbound() -> FilesystemCapability {
+    return filesystem_service_is_known() && file_io_is_blocked();
+}
+
 pub fn file_io_requires_runtime_binding() -> FilesystemCapability {
     return !file_io_is_executable();
+}
+
+pub fn filesystem_operation_ok() -> FilesystemOperationResult {
+    return FILESYSTEM_OPERATION_OK;
+}
+
+pub fn filesystem_operation_unavailable() -> FilesystemOperationResult {
+    return FILESYSTEM_OPERATION_UNAVAILABLE;
+}
+
+pub fn filesystem_operation_succeeded(result: FilesystemOperationResult) -> FilesystemCapability {
+    return result >= 0;
+}
+
+pub fn filesystem_operation_failed(result: FilesystemOperationResult) -> FilesystemCapability {
+    return result < 0;
+}
+
+pub fn filesystem_operation_is_unavailable(result: FilesystemOperationResult) -> FilesystemCapability {
+    return result == FILESYSTEM_OPERATION_UNAVAILABLE;
+}
+
+pub fn filesystem_operation_is_fail_closed(result: FilesystemOperationResult) -> FilesystemCapability {
+    return filesystem_is_known_but_unbound() && filesystem_operation_is_unavailable(result);
+}
+
+pub fn file_handle_invalid() -> FileHandle {
+    return FILE_HANDLE_INVALID;
+}
+
+pub fn file_handle_is_valid(handle: FileHandle) -> FilesystemCapability {
+    return handle >= 0;
+}
+
+pub fn file_handle_is_invalid(handle: FileHandle) -> FilesystemCapability {
+    return handle < 0;
 }
 
 pub fn open_read_is_executable() -> FilesystemCapability {
@@ -69,6 +118,10 @@ pub fn open_read_is_executable() -> FilesystemCapability {
 
 pub fn open_read_is_blocked() -> FilesystemCapability {
     return !open_read_is_executable();
+}
+
+pub fn open_read_is_known_but_unbound() -> FilesystemCapability {
+    return filesystem_service_is_known() && open_read_is_blocked();
 }
 
 pub fn open_read_requires_runtime_binding() -> FilesystemCapability {
@@ -83,6 +136,10 @@ pub fn open_write_is_blocked() -> FilesystemCapability {
     return !open_write_is_executable();
 }
 
+pub fn open_write_is_known_but_unbound() -> FilesystemCapability {
+    return filesystem_service_is_known() && open_write_is_blocked();
+}
+
 pub fn open_write_requires_runtime_binding() -> FilesystemCapability {
     return !open_write_is_executable();
 }
@@ -93,6 +150,10 @@ pub fn open_append_is_executable() -> FilesystemCapability {
 
 pub fn open_append_is_blocked() -> FilesystemCapability {
     return !open_append_is_executable();
+}
+
+pub fn open_append_is_known_but_unbound() -> FilesystemCapability {
+    return filesystem_service_is_known() && open_append_is_blocked();
 }
 
 pub fn open_append_requires_runtime_binding() -> FilesystemCapability {
@@ -107,6 +168,10 @@ pub fn close_is_blocked() -> FilesystemCapability {
     return !close_is_executable();
 }
 
+pub fn close_is_known_but_unbound() -> FilesystemCapability {
+    return filesystem_service_is_known() && close_is_blocked();
+}
+
 pub fn close_requires_runtime_binding() -> FilesystemCapability {
     return !close_is_executable();
 }
@@ -117,6 +182,10 @@ pub fn read_is_executable() -> FilesystemCapability {
 
 pub fn read_is_blocked() -> FilesystemCapability {
     return !read_is_executable();
+}
+
+pub fn read_is_known_but_unbound() -> FilesystemCapability {
+    return filesystem_service_is_known() && read_is_blocked();
 }
 
 pub fn read_requires_runtime_binding() -> FilesystemCapability {
@@ -131,6 +200,10 @@ pub fn write_is_blocked() -> FilesystemCapability {
     return !write_is_executable();
 }
 
+pub fn write_is_known_but_unbound() -> FilesystemCapability {
+    return filesystem_service_is_known() && write_is_blocked();
+}
+
 pub fn write_requires_runtime_binding() -> FilesystemCapability {
     return !write_is_executable();
 }
@@ -143,31 +216,99 @@ pub fn path_mutation_api_is_blocked() -> FilesystemCapability {
     return !path_mutation_api_is_executable();
 }
 
+pub fn path_mutation_api_is_known_but_unbound() -> FilesystemCapability {
+    return filesystem_service_is_known() && path_mutation_api_is_blocked();
+}
+
 pub fn path_mutation_api_requires_runtime_binding() -> FilesystemCapability {
     return !path_mutation_api_is_executable();
 }
 
-pub extern "lanius_std" fn open_read(path_ptr: u32, path_len: usize) -> i32;
+pub fn remove_file_is_executable() -> FilesystemCapability {
+    return path_mutation_api_is_executable();
+}
 
-pub extern "lanius_std" fn open_write(path_ptr: u32, path_len: usize) -> i32;
+pub fn remove_file_is_blocked() -> FilesystemCapability {
+    return !remove_file_is_executable();
+}
 
-pub extern "lanius_std" fn open_append(path_ptr: u32, path_len: usize) -> i32;
+pub fn remove_file_is_known_but_unbound() -> FilesystemCapability {
+    return filesystem_service_is_known() && remove_file_is_blocked();
+}
 
-pub extern "lanius_std" fn close(handle: i32) -> i32;
+pub fn remove_file_requires_runtime_binding() -> FilesystemCapability {
+    return !remove_file_is_executable();
+}
 
-pub extern "lanius_std" fn read(handle: i32, ptr: u32, len: usize) -> i32;
+pub fn create_dir_is_executable() -> FilesystemCapability {
+    return path_mutation_api_is_executable();
+}
 
-pub extern "lanius_std" fn write(handle: i32, ptr: u32, len: usize) -> i32;
+pub fn create_dir_is_blocked() -> FilesystemCapability {
+    return !create_dir_is_executable();
+}
 
-pub extern "lanius_std" fn remove_file(path_ptr: u32, path_len: usize) -> i32;
+pub fn create_dir_is_known_but_unbound() -> FilesystemCapability {
+    return filesystem_service_is_known() && create_dir_is_blocked();
+}
 
-pub extern "lanius_std" fn create_dir(path_ptr: u32, path_len: usize) -> i32;
+pub fn create_dir_requires_runtime_binding() -> FilesystemCapability {
+    return !create_dir_is_executable();
+}
 
-pub extern "lanius_std" fn remove_dir(path_ptr: u32, path_len: usize) -> i32;
+pub fn remove_dir_is_executable() -> FilesystemCapability {
+    return path_mutation_api_is_executable();
+}
+
+pub fn remove_dir_is_blocked() -> FilesystemCapability {
+    return !remove_dir_is_executable();
+}
+
+pub fn remove_dir_is_known_but_unbound() -> FilesystemCapability {
+    return filesystem_service_is_known() && remove_dir_is_blocked();
+}
+
+pub fn remove_dir_requires_runtime_binding() -> FilesystemCapability {
+    return !remove_dir_is_executable();
+}
+
+pub fn rename_is_executable() -> FilesystemCapability {
+    return path_mutation_api_is_executable();
+}
+
+pub fn rename_is_blocked() -> FilesystemCapability {
+    return !rename_is_executable();
+}
+
+pub fn rename_is_known_but_unbound() -> FilesystemCapability {
+    return filesystem_service_is_known() && rename_is_blocked();
+}
+
+pub fn rename_requires_runtime_binding() -> FilesystemCapability {
+    return !rename_is_executable();
+}
+
+pub extern "lanius_std" fn open_read(path_ptr: u32, path_len: usize) -> FilesystemOperationResult;
+
+pub extern "lanius_std" fn open_write(path_ptr: u32, path_len: usize) -> FilesystemOperationResult;
+
+pub extern "lanius_std" fn open_append(path_ptr: u32, path_len: usize) -> FilesystemOperationResult;
+
+pub extern "lanius_std" fn close(handle: i32) -> FilesystemOperationResult;
+
+pub extern "lanius_std" fn read(handle: i32, ptr: u32, len: usize) -> FilesystemOperationResult;
+
+pub extern "lanius_std" fn write(handle: i32, ptr: u32, len: usize) -> FilesystemOperationResult;
+
+pub extern "lanius_std" fn remove_file(path_ptr: u32, path_len: usize) -> FilesystemOperationResult;
+
+pub extern "lanius_std" fn create_dir(path_ptr: u32, path_len: usize) -> FilesystemOperationResult;
+
+pub extern "lanius_std" fn remove_dir(path_ptr: u32, path_len: usize) -> FilesystemOperationResult;
 
 pub extern "lanius_std" fn rename(
     from_ptr: u32,
     from_len: usize,
     to_ptr: u32,
     to_len: usize,
-) -> i32;
+) -> FilesystemOperationResult;

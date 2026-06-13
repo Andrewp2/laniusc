@@ -22,12 +22,17 @@ RWStructuredBuffer<uint> status;
 StructuredBuffer<int> depth_paren_inblock;
 StructuredBuffer<int> depth_bracket_inblock;
 StructuredBuffer<int> depth_brace_inblock;
+StructuredBuffer<int> depth_angle_inblock;
 StructuredBuffer<int> block_prefix_paren;
 StructuredBuffer<int> block_prefix_bracket;
 StructuredBuffer<int> block_prefix_brace;
+StructuredBuffer<int> block_prefix_angle;
 StructuredBuffer<int> paren_match_depth;
 StructuredBuffer<int> paren_match_block_min;
 StructuredBuffer<int> paren_match_min_tree;
+StructuredBuffer<int> angle_match_depth;
+StructuredBuffer<int> angle_match_block_min;
+StructuredBuffer<int> angle_match_min_tree;
 StructuredBuffer<uint> statement_context_kind;
 StructuredBuffer<uint> token_impl_context_event;
 StructuredBuffer<uint> trait_context_event;
@@ -145,6 +150,54 @@ static const uint TK_EXTERN = 102u;
 static const uint TK_TYPE = 103u;
 static const uint TK_WHERE = 104u;
 static const uint TK_SELF_VALUE = 105u;
+static const uint TK_TYPE_ALIAS_ASSIGN = 110u;
+static const uint TK_MATCH_LBRACE = 119u;
+static const uint TK_MATCH_RBRACE = 120u;
+static const uint TK_IMPL_LBRACE = 121u;
+static const uint TK_IMPL_RBRACE = 122u;
+static const uint TK_TRAIT_LBRACE = 123u;
+static const uint TK_TRAIT_RBRACE = 124u;
+static const uint TK_STRUCT_LIT_LBRACE = 125u;
+static const uint TK_STRUCT_LIT_RBRACE = 126u;
+static const uint TK_STRUCT_DECL_LBRACE = 127u;
+static const uint TK_STRUCT_DECL_RBRACE = 128u;
+static const uint TK_ENUM_LBRACE = 129u;
+static const uint TK_ENUM_RBRACE = 130u;
+static const uint TK_TYPE_ARG_LT = 131u;
+static const uint TK_TYPE_ARG_GT = 132u;
+static const uint TK_GENERIC_PARAM_LT = 133u;
+static const uint TK_GENERIC_PARAM_GT = 134u;
+static const uint TK_TYPE_ARG_COMMA = 135u;
+static const uint TK_GENERIC_PARAM_COMMA = 136u;
+static const uint TK_BOUND_TYPE_ARG_LT = 175u;
+static const uint TK_BOUND_TYPE_ARG_GT = 176u;
+static const uint TK_BOUND_TYPE_ARG_COMMA = 177u;
+static const uint TK_PATH_TYPE_ARG_LT = 184u;
+static const uint TK_PATH_TYPE_ARG_GT = 185u;
+static const uint TK_PATH_TYPE_ARG_COMMA = 186u;
+static const uint TK_PATH_GENERIC_IDENT = 187u;
+static const uint TK_EXTERN_ABI_STRING = 188u;
+static const uint TK_TRAIT_METHOD_SEMICOLON = 146u;
+static const uint TK_FN_BLOCK_LBRACE = 149u;
+static const uint TK_FN_BLOCK_RBRACE = 150u;
+static const uint TK_IMPL_FN_BLOCK_LBRACE = 151u;
+static const uint TK_IMPL_FN_BLOCK_RBRACE = 152u;
+static const uint TK_IMPORT_SEMICOLON = 162u;
+static const uint TK_MODULE_SEMICOLON = 163u;
+static const uint TK_EXTERN_SEMICOLON = 164u;
+static const uint TK_TYPE_ALIAS_SEMICOLON = 165u;
+static const uint TK_CONST_SEMICOLON = 166u;
+static const uint TK_LET_SEMICOLON = 167u;
+static const uint TK_RETURN_SEMICOLON = 168u;
+static const uint TK_EXPR_SEMICOLON = 169u;
+static const uint TK_BREAK_SEMICOLON = 170u;
+static const uint TK_CONTINUE_SEMICOLON = 171u;
+
+static const uint STATEMENT_CONTEXT_CONST_RHS = 250u;
+static const uint STATEMENT_CONTEXT_ASSIGN_RHS = 251u;
+static const uint STATEMENT_CONTEXT_FOR_IN = 252u;
+static const uint STATEMENT_CONTEXT_LET_RHS = 253u;
+static const uint STATEMENT_CONTEXT_TYPE_ALIAS_RHS = 254u;
 
 uint active_token_count()
 {
@@ -175,8 +228,8 @@ void record_error(uint token_i, uint code, uint detail)
 
 bool is_stmt_keyword(uint kind)
 {
-    return kind == TK_LET || kind == TK_RETURN || kind == TK_IF || kind == TK_WHILE ||
-           kind == TK_FOR ||
+    return kind == TK_LET || kind == TK_RETURN || kind == TK_IF || kind == TK_ELSE ||
+           kind == TK_WHILE || kind == TK_FOR ||
            kind == TK_BREAK || kind == TK_CONTINUE || kind == TK_FN || kind == TK_CONST ||
            kind == TK_TYPE ||
            kind == TK_ENUM || kind == TK_STRUCT || kind == TK_IMPORT || kind == TK_MODULE ||
@@ -185,7 +238,14 @@ bool is_stmt_keyword(uint kind)
 
 bool is_stmt_boundary(uint kind)
 {
-    return kind == TK_RBRACE || kind == TK_IF_RBRACE || kind == TK_ELSE || is_stmt_keyword(kind);
+    return kind == TK_SEMICOLON || kind == TK_TYPE_SEMICOLON ||
+           kind == TK_TRAIT_METHOD_SEMICOLON || kind == TK_MODULE_SEMICOLON ||
+           kind == TK_EXTERN_SEMICOLON || kind == TK_TYPE_ALIAS_SEMICOLON ||
+           kind == TK_CONST_SEMICOLON || kind == TK_LET_SEMICOLON ||
+           kind == TK_RETURN_SEMICOLON || kind == TK_EXPR_SEMICOLON ||
+           kind == TK_BREAK_SEMICOLON || kind == TK_CONTINUE_SEMICOLON ||
+           kind == TK_RBRACE || kind == TK_IF_RBRACE || kind == TK_ELSE ||
+           is_stmt_keyword(kind);
 }
 
 bool is_type_start(uint kind)
@@ -211,6 +271,64 @@ bool is_binary_operator(uint kind)
            kind == TK_CARET || kind == TK_SHL || kind == TK_SHR;
 }
 
+bool is_semicolon_kind(uint kind)
+{
+    return kind == TK_SEMICOLON || kind == TK_TYPE_SEMICOLON ||
+           kind == TK_TRAIT_METHOD_SEMICOLON || kind == TK_IMPORT_SEMICOLON ||
+           kind == TK_MODULE_SEMICOLON || kind == TK_EXTERN_SEMICOLON ||
+           kind == TK_TYPE_ALIAS_SEMICOLON || kind == TK_CONST_SEMICOLON ||
+           kind == TK_LET_SEMICOLON || kind == TK_RETURN_SEMICOLON ||
+           kind == TK_EXPR_SEMICOLON || kind == TK_BREAK_SEMICOLON ||
+           kind == TK_CONTINUE_SEMICOLON;
+}
+
+bool is_statement_semicolon_kind(uint kind)
+{
+    return kind == TK_SEMICOLON || kind == TK_TRAIT_METHOD_SEMICOLON ||
+           kind == TK_IMPORT_SEMICOLON || kind == TK_MODULE_SEMICOLON ||
+           kind == TK_EXTERN_SEMICOLON || kind == TK_TYPE_ALIAS_SEMICOLON ||
+           kind == TK_CONST_SEMICOLON || kind == TK_LET_SEMICOLON ||
+           kind == TK_RETURN_SEMICOLON || kind == TK_EXPR_SEMICOLON ||
+           kind == TK_BREAK_SEMICOLON || kind == TK_CONTINUE_SEMICOLON;
+}
+
+bool is_lbrace_kind(uint kind)
+{
+    return kind == TK_LBRACE || kind == TK_IF_LBRACE || kind == TK_FN_BLOCK_LBRACE ||
+           kind == TK_IMPL_FN_BLOCK_LBRACE || kind == TK_MATCH_LBRACE ||
+           kind == TK_IMPL_LBRACE || kind == TK_TRAIT_LBRACE ||
+           kind == TK_STRUCT_LIT_LBRACE || kind == TK_STRUCT_DECL_LBRACE ||
+           kind == TK_ENUM_LBRACE;
+}
+
+bool is_rbrace_kind(uint kind)
+{
+    return kind == TK_RBRACE || kind == TK_IF_RBRACE || kind == TK_FN_BLOCK_RBRACE ||
+           kind == TK_IMPL_FN_BLOCK_RBRACE || kind == TK_MATCH_RBRACE ||
+           kind == TK_IMPL_RBRACE || kind == TK_TRAIT_RBRACE ||
+           kind == TK_STRUCT_LIT_RBRACE || kind == TK_STRUCT_DECL_RBRACE ||
+           kind == TK_ENUM_RBRACE;
+}
+
+bool is_generic_lt_kind(uint kind)
+{
+    return kind == TK_LT || kind == TK_TYPE_ARG_LT || kind == TK_GENERIC_PARAM_LT ||
+           kind == TK_BOUND_TYPE_ARG_LT || kind == TK_PATH_TYPE_ARG_LT;
+}
+
+bool is_generic_gt_kind(uint kind)
+{
+    return kind == TK_GT || kind == TK_TYPE_ARG_GT || kind == TK_GENERIC_PARAM_GT ||
+           kind == TK_BOUND_TYPE_ARG_GT || kind == TK_PATH_TYPE_ARG_GT;
+}
+
+bool is_generic_comma_kind(uint kind)
+{
+    return kind == TK_COMMA || kind == TK_ARG_COMMA || kind == TK_PARAM_COMMA ||
+           kind == TK_TYPE_ARG_COMMA || kind == TK_GENERIC_PARAM_COMMA ||
+           kind == TK_BOUND_TYPE_ARG_COMMA || kind == TK_PATH_TYPE_ARG_COMMA;
+}
+
 bool is_self_receiver_ref_amp(uint i)
 {
     if (token_kind(i) != TK_AMPERSAND || token_kind(i + 1u) != TK_SELF_VALUE || i == 0u)
@@ -222,21 +340,22 @@ bool is_self_receiver_ref_amp(uint i)
 
 bool is_expr_start(uint kind)
 {
-    return kind == TK_IDENT || kind == TK_INT || kind == TK_FLOAT || kind == TK_STRING ||
+    return kind == TK_IDENT || kind == TK_PATH_GENERIC_IDENT ||
+           kind == TK_INT || kind == TK_FLOAT || kind == TK_STRING ||
            kind == TK_TRUE || kind == TK_FALSE || kind == TK_SELF_VALUE ||
            kind == TK_CHAR || kind == TK_GROUP_LPAREN || kind == TK_LPAREN ||
            kind == TK_ARRAY_LBRACKET || kind == TK_LBRACKET || kind == TK_PREFIX_PLUS ||
-           kind == TK_PREFIX_MINUS || kind == TK_NOT || kind == TK_TILDE || kind == TK_INC ||
-           kind == TK_DEC || kind == TK_MATCH;
+           kind == TK_PREFIX_MINUS || kind == TK_NOT || kind == TK_MATCH;
 }
 
 bool is_expr_end(uint kind)
 {
-    return kind == TK_IDENT || kind == TK_INT || kind == TK_FLOAT || kind == TK_STRING ||
+    return kind == TK_IDENT || kind == TK_PATH_GENERIC_IDENT ||
+           kind == TK_INT || kind == TK_FLOAT || kind == TK_STRING ||
            kind == TK_TRUE || kind == TK_FALSE || kind == TK_SELF_VALUE ||
            kind == TK_CHAR || kind == TK_GROUP_RPAREN || kind == TK_RPAREN ||
            kind == TK_CALL_RPAREN || kind == TK_INDEX_RBRACKET || kind == TK_ARRAY_RBRACKET ||
-           kind == TK_RBRACKET || kind == TK_INC || kind == TK_DEC;
+           kind == TK_RBRACKET;
 }
 
 int paren_depth_before(uint i)
@@ -257,6 +376,12 @@ int brace_depth_before(uint i)
     return block_prefix_brace[block_idx] + depth_brace_inblock[i];
 }
 
+int angle_depth_before(uint i)
+{
+    uint block_idx = i / WG_SIZE;
+    return block_prefix_angle[block_idx] + depth_angle_inblock[i];
+}
+
 bool same_delimiter_depth_before(uint a, uint b)
 {
     return paren_depth_before(a) == paren_depth_before(b) &&
@@ -274,12 +399,15 @@ bool is_impl_trait_for(uint i)
 
 bool is_generic_name_kind(uint kind)
 {
-    return kind == TK_IDENT || kind == TK_TYPE_IDENT || kind == TK_PARAM_IDENT;
+    return kind == TK_IDENT ||
+           kind == TK_TYPE_IDENT ||
+           kind == TK_PARAM_IDENT ||
+           kind == TK_PATH_GENERIC_IDENT;
 }
 
 bool can_start_generic_angle_list(uint lt_i)
 {
-    if (token_kind(lt_i) != TK_LT || lt_i == 0u)
+    if (!is_generic_lt_kind(token_kind(lt_i)) || lt_i == 0u)
         return false;
 
     uint prev = token_kind(lt_i - 1u);
@@ -288,8 +416,8 @@ bool can_start_generic_angle_list(uint lt_i)
 
     uint before = lt_i > 1u ? token_kind(lt_i - 2u) : 0u;
     return before == TK_FN || before == TK_ENUM || before == TK_STRUCT || before == TK_TYPE ||
-           before == TK_IMPL || before == TK_TRAIT || before == TK_COLON || before == TK_ARROW || before == TK_COMMA ||
-           before == TK_ARG_COMMA || before == TK_PARAM_COMMA || before == TK_LT ||
+           before == TK_IMPL || before == TK_TRAIT || before == TK_COLON || before == TK_ARROW ||
+           is_generic_comma_kind(before) || is_generic_lt_kind(before) ||
            before == TK_PLUS || before == TK_PREFIX_PLUS || before == TK_INFIX_PLUS ||
            before == TK_LPAREN || before == TK_GROUP_LPAREN || before == TK_CALL_LPAREN ||
            before == TK_PARAM_LPAREN || before == TK_TYPE_ARRAY_LBRACKET ||
@@ -298,10 +426,10 @@ bool can_start_generic_angle_list(uint lt_i)
 
 bool is_generic_angle_boundary(uint kind)
 {
-    return kind == TK_SEMICOLON || kind == TK_LBRACE || kind == TK_IF_LBRACE ||
+    return is_semicolon_kind(kind) || is_lbrace_kind(kind) ||
            kind == TK_RBRACE || kind == TK_IF_RBRACE || kind == TK_FN ||
-           kind == TK_LET || kind == TK_RETURN || kind == TK_IF || kind == TK_WHILE ||
-           kind == TK_FOR ||
+           kind == TK_LET || kind == TK_RETURN || kind == TK_IF || kind == TK_ELSE ||
+           kind == TK_WHILE || kind == TK_FOR ||
            kind == TK_BREAK || kind == TK_CONTINUE || kind == TK_ENUM ||
            kind == TK_STRUCT || kind == TK_TYPE || kind == TK_IMPORT || kind == TK_MODULE ||
            kind == TK_IMPL || kind == TK_TRAIT || kind == TK_EXTERN || kind == TK_WHERE;
@@ -309,213 +437,347 @@ bool is_generic_angle_boundary(uint kind)
 
 uint generic_angle_list_end(uint open_i)
 {
-    uint n_active = active_token_count();
-    uint depth = 0u;
-    [loop]
-    for (uint j = open_i + 1u; j < n_active; j += 1u)
-    {
-        uint kind = token_kind(j);
-        if (kind == TK_LT && can_start_generic_angle_list(j))
-        {
-            depth += 1u;
-            continue;
-        }
-        if (kind == TK_GT)
-        {
-            if (depth == 0u)
-                return j + 1u;
-            depth -= 1u;
-            continue;
-        }
-        if (is_generic_angle_boundary(kind))
-            return INVALID;
-    }
-    return INVALID;
+    uint close_i = matching_close_angle_after(open_i);
+    return close_i == INVALID ? INVALID : close_i + 1u;
 }
 
 bool token_in_generic_angle_list(uint token_i)
 {
-    if (token_kind(token_i) == TK_LT && can_start_generic_angle_list(token_i))
+    if (is_generic_lt_kind(token_kind(token_i)) && can_start_generic_angle_list(token_i))
     {
         uint close = generic_angle_list_end(token_i);
         return close != INVALID && token_i < close;
     }
 
-    uint depth = 0u;
-    uint j = token_i;
-    [loop]
-    for (uint guard = 0u; guard < 128u && j > 0u; guard += 1u)
-    {
-        j -= 1u;
-        uint kind = token_kind(j);
-        if (kind == TK_GT)
-        {
-            depth += 1u;
-            continue;
-        }
-        if (kind == TK_LT)
-        {
-            if (depth > 0u)
-            {
-                depth -= 1u;
-                continue;
-            }
-            if (!can_start_generic_angle_list(j))
-                return false;
-            uint close = generic_angle_list_end(j);
-            return close != INVALID && token_i < close;
-        }
-        if (is_generic_angle_boundary(kind))
-            return false;
-    }
-    return false;
+    uint open_i = matching_open_angle_before(token_i);
+    if (open_i == INVALID)
+        return false;
+    uint close = generic_angle_list_end(open_i);
+    return close != INVALID && token_i < close;
 }
 
-uint find_before_boundary_at_depth(uint start_i, uint want, uint base_i)
+uint statement_context_token_kind(uint context)
+{
+    uint kind = context & 0xffu;
+    if (kind == STATEMENT_CONTEXT_ASSIGN_RHS)
+        return 0u;
+    if (kind == STATEMENT_CONTEXT_FOR_IN)
+        return TK_FOR;
+    if (kind == STATEMENT_CONTEXT_CONST_RHS)
+        return TK_CONST;
+    if (kind == STATEMENT_CONTEXT_LET_RHS)
+        return TK_LET;
+    return kind == STATEMENT_CONTEXT_TYPE_ALIAS_RHS ? TK_TYPE : kind;
+}
+
+uint assignment_event_before_semicolon(uint semi, uint rhs_context)
+{
+    if (semi >= gParams.n_tokens)
+        return INVALID;
+    uint event = statement_context_kind[semi];
+    if ((event & 0xffu) != rhs_context)
+        return INVALID;
+    uint encoded_token = event >> 8u;
+    return encoded_token == 0u ? INVALID : encoded_token - 1u;
+}
+
+uint statement_event_token(uint event)
+{
+    uint encoded_token = event >> 8u;
+    return encoded_token == 0u ? INVALID : encoded_token - 1u;
+}
+
+uint owner_statement_before_rhs_event(uint rhs_i, uint owner_kind)
+{
+    if (rhs_i >= gParams.n_tokens)
+        return INVALID;
+    uint owner_event = statement_context_kind[rhs_i];
+    if (statement_context_token_kind(owner_event) != owner_kind)
+        return INVALID;
+    return statement_event_token(owner_event);
+}
+
+uint statement_context_owner_token(uint event)
+{
+    uint context = event & 0xffu;
+    uint event_i = statement_event_token(event);
+    if (event_i == INVALID)
+        return INVALID;
+    if (context == STATEMENT_CONTEXT_LET_RHS)
+        return owner_statement_before_rhs_event(event_i, TK_LET);
+    if (context == STATEMENT_CONTEXT_CONST_RHS)
+        return owner_statement_before_rhs_event(event_i, TK_CONST);
+    if (context == STATEMENT_CONTEXT_TYPE_ALIAS_RHS)
+        return owner_statement_before_rhs_event(event_i, TK_TYPE);
+    if (context == STATEMENT_CONTEXT_FOR_IN)
+        return owner_statement_before_rhs_event(event_i, TK_FOR);
+    return event_i;
+}
+
+bool latest_statement_keyword_overlaps(uint semi, uint statement_i)
+{
+    if (semi >= gParams.n_tokens)
+        return false;
+    uint event = statement_context_kind[semi];
+    uint event_i = statement_event_token(event);
+    if (event_i == INVALID || event_i <= statement_i)
+        return false;
+    return same_delimiter_depth_before(statement_i, event_i) && is_stmt_keyword(event & 0xffu);
+}
+
+uint for_in_event_before_or_at(uint token_i, uint for_i)
+{
+    if (token_i >= min(active_token_count(), gParams.n_tokens))
+        return INVALID;
+
+    uint event = statement_context_kind[token_i];
+    if ((event & 0xffu) == STATEMENT_CONTEXT_FOR_IN)
+    {
+        uint event_i = statement_event_token(event);
+        return event_i != INVALID &&
+               event_i > for_i + 1u &&
+               same_delimiter_depth_before(for_i, event_i)
+            ? event_i
+            : INVALID;
+    }
+
+    return token_kind(token_i) == TK_IN &&
+           (statement_context_kind[token_i] & 0xffu) == TK_FOR &&
+           token_i > for_i + 1u &&
+           same_delimiter_depth_before(for_i, token_i)
+        ? token_i
+        : INVALID;
+}
+
+bool fn_allows_semicolon(uint fn_i)
+{
+    return (fn_i > 0u && token_kind(fn_i - 1u) == TK_EXTERN) ||
+           (fn_i > 1u &&
+            (token_kind(fn_i - 1u) == TK_STRING ||
+             token_kind(fn_i - 1u) == TK_EXTERN_ABI_STRING) &&
+            token_kind(fn_i - 2u) == TK_EXTERN) ||
+           (fn_i < active_token_count() &&
+            fn_i < gParams.n_tokens &&
+            brace_depth_before(fn_i) == 1 &&
+            (trait_context_event[fn_i] & 0xffu) == TRAIT_BODY_CONTEXT);
+}
+
+bool context_requires_semicolon(uint context)
+{
+    return context == STATEMENT_CONTEXT_ASSIGN_RHS ||
+           context == STATEMENT_CONTEXT_CONST_RHS ||
+           context == STATEMENT_CONTEXT_LET_RHS ||
+           context == STATEMENT_CONTEXT_TYPE_ALIAS_RHS ||
+           context == TK_LET || context == TK_RETURN || context == TK_BREAK ||
+           context == TK_CONTINUE || context == TK_CONST || context == TK_TYPE ||
+           context == TK_IMPORT || context == TK_MODULE;
+}
+
+bool context_requires_body(uint context)
+{
+    return context == TK_FN || context == TK_ENUM || context == TK_STRUCT ||
+           context == TK_FOR || context == STATEMENT_CONTEXT_FOR_IN;
+}
+
+uint diagnostic_token_for_context(uint event)
+{
+    uint owner = statement_context_owner_token(event);
+    return owner == INVALID ? statement_event_token(event) : owner;
+}
+
+void record_pending_missing_semicolon(uint event)
+{
+    uint token_i = diagnostic_token_for_context(event);
+    if (token_i != INVALID)
+        record_error(token_i, ERR_MISSING_SEMICOLON, 0u);
+}
+
+void record_pending_expected_lbrace(uint event)
+{
+    uint token_i = diagnostic_token_for_context(event);
+    if (token_i != INVALID)
+        record_error(token_i, ERR_EXPECTED_TOKEN, TK_LBRACE);
+}
+
+void validate_type_alias_boundary(uint event, uint boundary_i, bool has_semicolon)
+{
+    uint context = event & 0xffu;
+    uint type_i = diagnostic_token_for_context(event);
+    if (type_i == INVALID)
+        return;
+    if (!has_semicolon)
+    {
+        record_error(type_i, ERR_MISSING_SEMICOLON, 0u);
+        return;
+    }
+    if (context == TK_TYPE)
+    {
+        record_error(type_i, ERR_EXPECTED_TOKEN, TK_ASSIGN);
+        return;
+    }
+    uint assign_i = statement_event_token(event);
+    if (assign_i == INVALID || assign_i + 1u >= boundary_i ||
+        !is_type_start(token_kind(assign_i + 1u)))
+        record_error(assign_i == INVALID ? type_i : assign_i + 1u, ERR_EXPECTED_TOKEN, TK_TYPE_IDENT);
+}
+
+void validate_let_boundary(uint event, uint boundary_i, bool has_semicolon)
+{
+    uint let_i = diagnostic_token_for_context(event);
+    if (let_i == INVALID)
+        return;
+    if (!has_semicolon)
+    {
+        record_error(let_i, ERR_MISSING_SEMICOLON, 0u);
+        return;
+    }
+    if ((event & 0xffu) == STATEMENT_CONTEXT_LET_RHS)
+    {
+        uint assign_i = statement_event_token(event);
+        if (assign_i != INVALID && assign_i + 1u >= boundary_i)
+            record_error(assign_i, ERR_EXPECTED_TOKEN, TK_IDENT);
+    }
+}
+
+void validate_assignment_boundary(uint event, uint boundary_i, bool has_semicolon)
+{
+    uint assign_i = statement_event_token(event);
+    if (assign_i == INVALID)
+        return;
+    if (!has_semicolon)
+    {
+        record_error(assign_i, ERR_MISSING_SEMICOLON, 0u);
+        return;
+    }
+    if (assign_i + 1u >= boundary_i)
+        record_error(assign_i, ERR_EXPECTED_TOKEN, TK_IDENT);
+}
+
+void validate_for_boundary(uint event, uint boundary_i, bool has_body)
+{
+    uint context = event & 0xffu;
+    uint for_i = context == STATEMENT_CONTEXT_FOR_IN
+        ? owner_statement_before_rhs_event(statement_event_token(event), TK_FOR)
+        : statement_event_token(event);
+    if (for_i == INVALID || is_impl_trait_for(for_i))
+        return;
+
+    uint in_i = context == STATEMENT_CONTEXT_FOR_IN
+        ? statement_event_token(event)
+        : for_in_event_before_or_at(boundary_i, for_i);
+    if (in_i == INVALID || in_i <= for_i + 1u)
+    {
+        record_error(for_i + 1u, ERR_EXPECTED_TOKEN, TK_IN);
+        return;
+    }
+    if (!is_expr_start(token_kind(in_i + 1u)) || in_i + 1u >= boundary_i)
+    {
+        record_error(in_i + 1u, ERR_EXPECTED_TOKEN, TK_IDENT);
+        return;
+    }
+    if (!has_body)
+        record_error(in_i + 1u, ERR_EXPECTED_TOKEN, TK_LBRACE);
+}
+
+void validate_pending_statement_at_boundary(uint boundary_i, bool has_semicolon, bool has_body)
+{
+    uint event = statement_context_kind[boundary_i];
+    uint context = event & 0xffu;
+    if (context == 0u)
+        return;
+
+    uint owner_i = diagnostic_token_for_context(event);
+    if (owner_i == INVALID || !same_delimiter_depth_before(owner_i, boundary_i))
+        return;
+
+    if (context == TK_EXTERN)
+        return;
+    if (context == TK_FN)
+    {
+        if (has_semicolon && fn_allows_semicolon(owner_i))
+            return;
+        if (!has_body)
+            record_pending_expected_lbrace(event);
+        return;
+    }
+    if (context == TK_ENUM || context == TK_STRUCT)
+    {
+        if (!has_body)
+            record_pending_expected_lbrace(event);
+        return;
+    }
+    if (context == TK_FOR || context == STATEMENT_CONTEXT_FOR_IN)
+    {
+        validate_for_boundary(event, boundary_i, has_body);
+        return;
+    }
+    if (context == TK_TYPE || context == STATEMENT_CONTEXT_TYPE_ALIAS_RHS)
+    {
+        validate_type_alias_boundary(event, boundary_i, has_semicolon);
+        return;
+    }
+    if (context == TK_LET || context == STATEMENT_CONTEXT_LET_RHS)
+    {
+        validate_let_boundary(event, boundary_i, has_semicolon);
+        return;
+    }
+    if (context == STATEMENT_CONTEXT_ASSIGN_RHS)
+    {
+        validate_assignment_boundary(event, boundary_i, has_semicolon);
+        return;
+    }
+    if (context_requires_semicolon(context) && !has_semicolon)
+        record_pending_missing_semicolon(event);
+}
+
+void validate_pending_before_statement_starter(uint i)
+{
+    uint event = statement_context_kind[i];
+    uint context = event & 0xffu;
+    if (context == 0u || context == TK_EXTERN)
+        return;
+    uint owner_i = diagnostic_token_for_context(event);
+    if (owner_i == INVALID || owner_i >= i || !same_delimiter_depth_before(owner_i, i))
+        return;
+    if (context_requires_body(context))
+        record_pending_expected_lbrace(event);
+    else if (context_requires_semicolon(context))
+        record_pending_missing_semicolon(event);
+}
+
+void validate_pending_at_end(uint i)
 {
     uint n_active = active_token_count();
-    for (uint j = start_i; j < n_active; j += 1u)
-    {
-        uint kind = token_kind(j);
-        if (!same_delimiter_depth_before(base_i, j))
-            continue;
-        if (kind == want)
-            return j;
-        if (token_in_generic_angle_list(j))
-            continue;
-        if (is_stmt_boundary(kind))
-            return INVALID;
-    }
-    return INVALID;
-}
-
-uint find_stmt_semicolon(uint start_i)
-{
-    return find_before_boundary_at_depth(start_i + 1u, TK_SEMICOLON, start_i);
-}
-
-uint find_type_alias_semicolon(uint start_i)
-{
-    uint n_active = active_token_count();
-    uint angle_depth = 0u;
-    uint array_depth = 0u;
-    uint limit = min(n_active, start_i + 256u);
-    [loop]
-    for (uint j = start_i + 1u; j < limit; j += 1u)
-    {
-        uint kind = token_kind(j);
-        if (kind == TK_LT)
-            angle_depth += 1u;
-        else if (kind == TK_GT && angle_depth > 0u)
-            angle_depth -= 1u;
-        else if (kind == TK_LBRACKET || kind == TK_TYPE_ARRAY_LBRACKET)
-            array_depth += 1u;
-        else if ((kind == TK_RBRACKET || kind == TK_TYPE_ARRAY_RBRACKET) && array_depth > 0u)
-            array_depth -= 1u;
-        else if ((kind == TK_SEMICOLON || kind == TK_TYPE_SEMICOLON) && angle_depth == 0u &&
-                 array_depth == 0u)
-            return j;
-        else if (is_stmt_keyword(kind) && angle_depth == 0u && array_depth == 0u)
-            return INVALID;
-    }
-    return INVALID;
-}
-
-uint find_let_assign(uint start_i, uint end_i, uint base_i)
-{
-    uint n_active = active_token_count();
-    for (uint j = start_i; j < end_i && j < n_active; j += 1u)
-    {
-        if (!same_delimiter_depth_before(base_i, j))
-            continue;
-        uint kind = token_kind(j);
-        if (kind == TK_LET_ASSIGN || kind == TK_ASSIGN)
-            return j;
-    }
-    return INVALID;
-}
-
-uint find_for_in(uint for_i)
-{
-    uint n_active = active_token_count();
-    for (uint j = for_i + 1u; j < n_active; j += 1u)
-    {
-        if (!same_delimiter_depth_before(for_i, j))
-            continue;
-        uint kind = token_kind(j);
-        if (kind == TK_IN)
-            return j;
-        if (token_in_generic_angle_list(j))
-            continue;
-        if (kind == TK_LBRACE || kind == TK_IF_LBRACE || kind == TK_SEMICOLON ||
-            is_stmt_boundary(kind))
-            return INVALID;
-    }
-    return INVALID;
-}
-
-bool has_statement_keyword_before(uint start_i, uint end_i, uint base_i)
-{
-    uint n_active = active_token_count();
-    for (uint j = start_i; j < end_i && j < n_active; j += 1u)
-    {
-        if (!same_delimiter_depth_before(base_i, j))
-            continue;
-        if (is_stmt_keyword(token_kind(j)))
-            return true;
-    }
-    return false;
+    if (n_active == 0u || i + 1u != n_active)
+        return;
+    uint kind = token_kind(i);
+    if (is_statement_semicolon_kind(kind) || is_lbrace_kind(kind) || is_rbrace_kind(kind))
+        return;
+    validate_pending_statement_at_boundary(i, false, false);
 }
 
 uint find_condition_close(uint start_i)
 {
-    uint n_active = active_token_count();
-    int open_paren_depth = paren_depth_before(start_i);
-    int open_bracket_depth = bracket_depth_before(start_i);
-    int open_brace_depth = brace_depth_before(start_i);
-    for (uint j = start_i + 1u; j < n_active; j += 1u)
-    {
-        uint kind = token_kind(j);
-        bool at_condition_depth = paren_depth_before(j) == open_paren_depth + 1 &&
-                                  bracket_depth_before(j) == open_bracket_depth &&
-                                  brace_depth_before(j) == open_brace_depth;
-        if ((kind == TK_GROUP_RPAREN || kind == TK_RPAREN) && at_condition_depth)
-            return j;
-        if ((kind == TK_LBRACE || kind == TK_IF_LBRACE || kind == TK_SEMICOLON ||
-             kind == TK_RBRACE || kind == TK_IF_RBRACE) &&
-            at_condition_depth)
-            return INVALID;
-    }
-    return INVALID;
+    uint close_i = matching_close_paren_after(start_i);
+    return close_i != INVALID &&
+           bracket_depth_before(close_i) == bracket_depth_before(start_i) &&
+           brace_depth_before(close_i) == brace_depth_before(start_i)
+        ? close_i
+        : INVALID;
 }
 
 uint find_fn_param_open(uint fn_i)
 {
-    uint n_active = active_token_count();
-    uint angle_depth = 0u;
-    [loop]
-    for (uint j = fn_i + 2u; j < n_active; j += 1u)
-    {
-        uint kind = token_kind(j);
-        if (kind == TK_LT)
-        {
-            angle_depth += 1u;
-            continue;
-        }
-        if (kind == TK_GT && angle_depth > 0u)
-        {
-            angle_depth -= 1u;
-            continue;
-        }
-        if (angle_depth != 0u)
-            continue;
-        if (kind == TK_PARAM_LPAREN || kind == TK_GROUP_LPAREN || kind == TK_LPAREN)
-            return j;
-        if (kind == TK_LBRACE || kind == TK_IF_LBRACE || kind == TK_SEMICOLON ||
-            is_stmt_boundary(kind))
-            return INVALID;
-    }
-    return INVALID;
+    if (token_kind(fn_i + 2u) == TK_PARAM_LPAREN)
+        return fn_i + 2u;
+
+    if (token_kind(fn_i + 2u) != TK_LT || !can_start_generic_angle_list(fn_i + 2u))
+        return INVALID;
+
+    uint generic_end = generic_angle_list_end(fn_i + 2u);
+    return generic_end != INVALID && token_kind(generic_end) == TK_PARAM_LPAREN ?
+        generic_end :
+        INVALID;
 }
 
 bool is_trait_method_fn(uint fn_i)
@@ -539,14 +801,6 @@ uint delimiter_class(uint kind)
     if (kind == TK_LBRACE || kind == TK_IF_LBRACE || kind == TK_RBRACE || kind == TK_IF_RBRACE)
         return 3u;
     return 0u;
-}
-
-bool is_open_delimiter(uint kind)
-{
-    return kind == TK_LPAREN || kind == TK_GROUP_LPAREN || kind == TK_CALL_LPAREN ||
-           kind == TK_PARAM_LPAREN || kind == TK_LBRACKET || kind == TK_INDEX_LBRACKET ||
-           kind == TK_ARRAY_LBRACKET || kind == TK_TYPE_ARRAY_LBRACKET || kind == TK_LBRACE ||
-           kind == TK_IF_LBRACE;
 }
 
 bool is_close_delimiter(uint kind)
@@ -588,23 +842,6 @@ void check_fn(uint i)
         record_error(i + 2u, ERR_EXPECTED_TOKEN, TK_LPAREN);
         return;
     }
-
-    bool semicolon_terminated = (i > 0u && token_kind(i - 1u) == TK_EXTERN) ||
-                                (i > 1u && token_kind(i - 1u) == TK_STRING &&
-                                 token_kind(i - 2u) == TK_EXTERN) ||
-                                is_trait_method_fn(i);
-    if (semicolon_terminated)
-    {
-        uint semi = find_stmt_semicolon(i);
-        if (semi == INVALID)
-            record_error(i, ERR_MISSING_SEMICOLON, 0u);
-    }
-    else
-    {
-        uint body = find_before_boundary_at_depth(params_open_i + 1u, TK_LBRACE, i);
-        if (body == INVALID)
-            record_error(i, ERR_EXPECTED_TOKEN, TK_LBRACE);
-    }
 }
 
 void check_extern(uint i)
@@ -612,7 +849,7 @@ void check_extern(uint i)
     uint next = token_kind(i + 1u);
     if (next == TK_FN)
         return;
-    if (next == TK_STRING && token_kind(i + 2u) == TK_FN)
+    if ((next == TK_STRING || next == TK_EXTERN_ABI_STRING) && token_kind(i + 2u) == TK_FN)
         return;
     record_error(i + 1u, ERR_EXPECTED_TOKEN, TK_FN);
 }
@@ -624,9 +861,6 @@ void check_enum(uint i)
         record_error(i, ERR_EXPECTED_TOKEN, TK_IDENT);
         return;
     }
-    uint body = find_before_boundary_at_depth(i + 2u, TK_LBRACE, i);
-    if (body == INVALID)
-        record_error(i, ERR_EXPECTED_TOKEN, TK_LBRACE);
 }
 
 void check_struct(uint i)
@@ -636,9 +870,6 @@ void check_struct(uint i)
         record_error(i, ERR_EXPECTED_TOKEN, TK_IDENT);
         return;
     }
-    uint body = find_before_boundary_at_depth(i + 2u, TK_LBRACE, i);
-    if (body == INVALID)
-        record_error(i, ERR_EXPECTED_TOKEN, TK_LBRACE);
 }
 
 void check_type_alias(uint i)
@@ -648,43 +879,6 @@ void check_type_alias(uint i)
         record_error(i, ERR_EXPECTED_TOKEN, TK_IDENT);
         return;
     }
-
-    uint semi = find_type_alias_semicolon(i);
-    if (semi == INVALID)
-    {
-        record_error(i, ERR_MISSING_SEMICOLON, 0u);
-        return;
-    }
-
-    uint assign_i = INVALID;
-    uint angle_depth = 0u;
-    uint array_depth = 0u;
-    [loop]
-    for (uint j = i + 2u; j < semi; j += 1u)
-    {
-        uint kind = token_kind(j);
-        if (kind == TK_LT)
-            angle_depth += 1u;
-        else if (kind == TK_GT && angle_depth > 0u)
-            angle_depth -= 1u;
-        else if (kind == TK_LBRACKET || kind == TK_TYPE_ARRAY_LBRACKET)
-            array_depth += 1u;
-        else if ((kind == TK_RBRACKET || kind == TK_TYPE_ARRAY_RBRACKET) && array_depth > 0u)
-            array_depth -= 1u;
-        else if (kind == TK_ASSIGN && angle_depth == 0u && array_depth == 0u)
-        {
-            assign_i = j;
-            break;
-        }
-    }
-
-    if (assign_i == INVALID)
-    {
-        record_error(i, ERR_EXPECTED_TOKEN, TK_ASSIGN);
-        return;
-    }
-    if (assign_i + 1u >= semi || !is_type_start(token_kind(assign_i + 1u)))
-        record_error(assign_i + 1u, ERR_EXPECTED_TOKEN, TK_TYPE_IDENT);
 }
 
 void check_let(uint i)
@@ -695,37 +889,15 @@ void check_let(uint i)
         record_error(i, ERR_EXPECTED_TOKEN, TK_IDENT);
         return;
     }
-    uint semi = find_stmt_semicolon(i);
-    if (semi == INVALID)
-    {
-        record_error(i, ERR_MISSING_SEMICOLON, 0u);
-        return;
-    }
     if (token_kind(i + 2u) == TK_COLON && !is_type_start(token_kind(i + 3u)))
     {
         record_error(i + 3u, ERR_EXPECTED_TOKEN, TK_TYPE_IDENT);
         return;
     }
-    uint assign_i = find_let_assign(i + 2u, semi, i);
-    if (assign_i != INVALID && assign_i + 1u >= semi)
-    {
-        record_error(assign_i, ERR_EXPECTED_TOKEN, TK_IDENT);
-        return;
-    }
-    if (has_statement_keyword_before(i + 2u, semi, i))
-        record_error(i, ERR_STMT_OVERLAP, 0u);
 }
 
 void check_return_like(uint i)
 {
-    uint semi = find_stmt_semicolon(i);
-    if (semi == INVALID)
-    {
-        record_error(i, ERR_MISSING_SEMICOLON, 0u);
-        return;
-    }
-    if (has_statement_keyword_before(i + 1u, semi, i))
-        record_error(i, ERR_STMT_OVERLAP, 0u);
 }
 
 void check_condition_stmt(uint i, uint brace_kind)
@@ -754,31 +926,11 @@ void check_for_stmt(uint i)
         record_error(i, ERR_EXPECTED_TOKEN, TK_IDENT);
         return;
     }
-    uint in_i = find_for_in(i);
-    if (in_i == INVALID || in_i <= i + 1u)
-    {
-        record_error(i + 1u, ERR_EXPECTED_TOKEN, TK_IN);
-        return;
-    }
-    if (!is_expr_start(token_kind(in_i + 1u)))
-    {
-        record_error(in_i + 1u, ERR_EXPECTED_TOKEN, TK_IDENT);
-        return;
-    }
-    uint body = find_before_boundary_at_depth(in_i + 1u, TK_LBRACE, i);
-    if (body == INVALID)
-        record_error(in_i + 1u, ERR_EXPECTED_TOKEN, TK_LBRACE);
 }
 
 void check_assignment(uint i)
 {
-    uint semi = find_stmt_semicolon(i);
-    if (semi == INVALID)
-    {
-        record_error(i, ERR_MISSING_SEMICOLON, 0u);
-        return;
-    }
-    if (i + 1u >= semi)
+    if (!is_expr_start(token_kind(i + 1u)))
         record_error(i, ERR_EXPECTED_TOKEN, TK_IDENT);
 }
 
@@ -819,11 +971,13 @@ uint paren_match_n_blocks()
 uint paren_match_leaf_base()
 {
     uint n_blocks = paren_match_n_blocks();
-    uint base = 1u;
-    [loop]
-    while (base < n_blocks)
-        base <<= 1u;
-    return base;
+    uint base = max(n_blocks, 1u) - 1u;
+    base |= base >> 1u;
+    base |= base >> 2u;
+    base |= base >> 4u;
+    base |= base >> 8u;
+    base |= base >> 16u;
+    return base + 1u;
 }
 
 public struct SyntaxParenDepthTree : IRangeSearchTree<int>
@@ -880,6 +1034,64 @@ public struct SyntaxParenDepthAtMost : IRangeSearchPredicate<int, int>
     }
 }
 
+uint angle_match_n_blocks()
+{
+    return gParams.n_tokens == 0u ? 1u : (gParams.n_tokens + WG_SIZE - 1u) / WG_SIZE;
+}
+
+uint angle_match_leaf_base()
+{
+    uint n_blocks = angle_match_n_blocks();
+    uint base = max(n_blocks, 1u) - 1u;
+    base |= base >> 1u;
+    base |= base >> 2u;
+    base |= base >> 4u;
+    base |= base >> 8u;
+    base |= base >> 16u;
+    return base + 1u;
+}
+
+public struct SyntaxAngleDepthTree : IRangeSearchTree<int>
+{
+    public static uint n_blocks()
+    {
+        return angle_match_n_blocks();
+    }
+
+    public static uint leaf_base()
+    {
+        return angle_match_leaf_base();
+    }
+
+    public static int leaf_value(uint block)
+    {
+        return angle_match_block_min[block];
+    }
+
+    public static int tree_value(uint node)
+    {
+        return angle_match_min_tree[node];
+    }
+}
+
+public struct SyntaxAngleDepthRows : IRangeSearchRows<int>
+{
+    public static uint item_count()
+    {
+        return min(active_token_count(), gParams.n_tokens);
+    }
+
+    public static uint block_size()
+    {
+        return WG_SIZE;
+    }
+
+    public static int row_value(uint row)
+    {
+        return angle_match_depth[row];
+    }
+}
+
 uint matching_open_paren_before(uint close_i)
 {
     uint n_active = active_token_count();
@@ -906,21 +1118,98 @@ uint matching_open_paren_before(uint close_i)
         INVALID;
 }
 
-bool is_fn_param_open_token(uint open_i)
+uint matching_open_angle_before(uint token_i)
 {
-    uint j = open_i;
-    [loop]
-    for (uint guard = 0u; guard < 256u && j > 0u; guard += 1u)
+    uint n_active = active_token_count();
+    if (token_i == 0u || token_i >= n_active || token_i >= gParams.n_tokens)
+        return INVALID;
+
+    int depth_before = angle_depth_before(token_i);
+    uint open_i;
+    if (!range_search_tree_last_index_before<
+            int,
+            int,
+            SyntaxAngleDepthTree,
+            SyntaxAngleDepthRows,
+            SyntaxParenDepthAtMost>(
+            token_i,
+            depth_before - 1,
+            open_i))
+        return INVALID;
+
+    return open_i < n_active &&
+           is_generic_lt_kind(token_kind(open_i)) &&
+           can_start_generic_angle_list(open_i) &&
+           angle_match_depth[open_i] == depth_before - 1
+        ? open_i
+        : INVALID;
+}
+
+uint matching_close_angle_after(uint open_i)
+{
+    uint n_active = active_token_count();
+    if (open_i >= n_active || open_i >= gParams.n_tokens ||
+        !is_generic_lt_kind(token_kind(open_i)) || !can_start_generic_angle_list(open_i))
+        return INVALID;
+
+    int open_depth = angle_depth_before(open_i);
+    uint close_i;
+    if (!range_search_tree_first_index_at_or_after<
+            int,
+            int,
+            SyntaxAngleDepthTree,
+            SyntaxAngleDepthRows,
+            SyntaxParenDepthAtMost>(
+            open_i + 1u,
+            open_depth,
+            close_i))
+        return INVALID;
+
+    return close_i > open_i &&
+           close_i < n_active &&
+           is_generic_gt_kind(token_kind(close_i)) &&
+           angle_match_depth[close_i] == open_depth
+        ? close_i
+        : INVALID;
+}
+
+uint matching_close_paren_after(uint open_i)
+{
+    uint n_active = active_token_count();
+    if (open_i >= n_active || open_i >= gParams.n_tokens ||
+        !is_open_paren_kind(token_kind(open_i)))
+        return INVALID;
+
+    int open_depth = paren_depth_before(open_i);
+    uint after_close_i;
+    if (!range_search_tree_first_index_at_or_after<
+            int,
+            int,
+            SyntaxParenDepthTree,
+            SyntaxParenDepthRows,
+            SyntaxParenDepthAtMost>(
+            open_i + 1u,
+            open_depth,
+            after_close_i))
     {
-        j -= 1u;
-        uint kind = token_kind(j);
-        if (kind == TK_FN)
-            return find_fn_param_open(j) == open_i;
-        if (kind == TK_SEMICOLON || kind == TK_LBRACE || kind == TK_IF_LBRACE ||
-            kind == TK_RBRACE || kind == TK_IF_RBRACE)
-            return false;
+        uint last_i = n_active - 1u;
+        return last_i > open_i &&
+               is_close_paren_kind(token_kind(last_i)) &&
+               paren_depth_before(last_i) == open_depth + 1
+            ? last_i
+            : INVALID;
     }
-    return false;
+
+    if (after_close_i == 0u)
+        return INVALID;
+
+    uint close_i = after_close_i - 1u;
+    return close_i > open_i &&
+           close_i < n_active &&
+           is_close_paren_kind(token_kind(close_i)) &&
+           paren_depth_before(close_i) == open_depth + 1
+        ? close_i
+        : INVALID;
 }
 
 bool is_trailing_param_comma(uint i)
@@ -932,7 +1221,7 @@ bool is_trailing_param_comma(uint i)
         return true;
 
     uint open_i = matching_open_paren_before(i + 1u);
-    return open_i != INVALID && is_fn_param_open_token(open_i);
+    return open_i != INVALID && token_kind(open_i) == TK_PARAM_LPAREN;
 }
 
 bool is_allowed_trailing_list_comma(uint i)
@@ -970,7 +1259,7 @@ void check_comma(uint i)
 bool is_path_segment(uint kind)
 {
     return kind == TK_IDENT || kind == TK_TYPE_IDENT || kind == TK_PARAM_IDENT ||
-           kind == TK_LET_IDENT;
+           kind == TK_LET_IDENT || kind == TK_PATH_GENERIC_IDENT;
 }
 
 bool is_module_path_segment(uint kind)
@@ -984,129 +1273,32 @@ bool same_token_file(uint a, uint b)
     return file != INVALID && file == token_file(b);
 }
 
-uint file_first_token(uint i)
+bool is_file_first_token(uint i)
 {
     uint file = token_file(i);
     if (file == INVALID)
-        return i;
-
-    uint n = active_token_count();
-    uint first = i;
-    [loop]
-    for (uint guard = 0u; guard < n && first > 0u; guard += 1u)
-    {
-        if (token_file(first - 1u) != file)
-            break;
-        first -= 1u;
-    }
-    return first;
-}
-
-uint leading_module_decl_end(uint file_start)
-{
-    if (token_file(file_start) == INVALID || token_kind(file_start) != TK_MODULE)
-        return INVALID;
-
-    uint n = active_token_count();
-    [loop]
-    for (uint j = file_start + 1u; j < n; j += 1u)
-    {
-        if (!same_token_file(j, file_start))
-            return INVALID;
-        if (token_kind(j) == TK_SEMICOLON)
-            return j;
-    }
-    return INVALID;
+        return false;
+    return i == 0u || token_file(i - 1u) != file;
 }
 
 bool token_in_leading_module_decl(uint i)
 {
-    uint file_start = file_first_token(i);
-    uint end = leading_module_decl_end(file_start);
-    return end != INVALID && i >= file_start && i <= end && same_token_file(i, file_start);
-}
-
-uint import_decl_end(uint import_i)
-{
-    if (token_kind(import_i) != TK_IMPORT)
-        return INVALID;
-
-    uint n = active_token_count();
-    [loop]
-    for (uint j = import_i + 1u; j < n; j += 1u)
-    {
-        if (!same_token_file(j, import_i))
-            return INVALID;
-        uint kind = token_kind(j);
-        if (kind == TK_SEMICOLON)
-            return j;
-        if (kind == TK_FN || kind == TK_CONST || kind == TK_ENUM || kind == TK_STRUCT ||
-            kind == TK_IMPL || kind == TK_TRAIT || kind == TK_EXTERN || kind == TK_MODULE ||
-            kind == TK_LBRACE || kind == TK_IF_LBRACE || kind == TK_RBRACE ||
-            kind == TK_IF_RBRACE)
-            return INVALID;
-    }
-    return INVALID;
-}
-
-uint first_token_after_optional_module(uint file_start)
-{
-    if (token_kind(file_start) != TK_MODULE)
-        return file_start;
-    uint module_end = leading_module_decl_end(file_start);
-    return module_end == INVALID ? file_start : module_end + 1u;
+    return i < active_token_count() &&
+           i < gParams.n_tokens &&
+           token_file(i) != INVALID &&
+           (statement_context_kind[i] & 0xffu) == TK_MODULE;
 }
 
 bool is_leading_import_decl(uint import_i)
 {
     if (token_file(import_i) == INVALID || token_kind(import_i) != TK_IMPORT)
         return false;
-
-    uint n = active_token_count();
-    uint file_start = file_first_token(import_i);
-    uint j = first_token_after_optional_module(file_start);
-    [loop]
-    for (uint guard = 0u; guard < 256u && j < n; guard += 1u)
-    {
-        if (!same_token_file(j, file_start))
-            return false;
-        if (j == import_i)
-            return true;
-        if (j > import_i || token_kind(j) != TK_IMPORT)
-            return false;
-        uint end = import_decl_end(j);
-        if (end == INVALID)
-            return false;
-        j = end + 1u;
-    }
-    return false;
-}
-
-bool token_in_leading_import_decl(uint i)
-{
-    if (token_file(i) == INVALID)
+    if (is_file_first_token(import_i))
+        return true;
+    if (token_kind(import_i - 1u) != TK_SEMICOLON || !same_token_file(import_i - 1u, import_i))
         return false;
-
-    uint n = active_token_count();
-    uint file_start = file_first_token(i);
-    uint j = first_token_after_optional_module(file_start);
-    [loop]
-    for (uint guard = 0u; guard < 256u && j < n; guard += 1u)
-    {
-        if (!same_token_file(j, file_start))
-            return false;
-        if (token_kind(j) != TK_IMPORT)
-            return false;
-        uint end = import_decl_end(j);
-        if (end == INVALID)
-            return false;
-        if (i >= j && i <= end)
-            return true;
-        if (i < j)
-            return false;
-        j = end + 1u;
-    }
-    return false;
+    uint previous_context = statement_context_kind[import_i - 1u] & 0xffu;
+    return previous_context == TK_MODULE || previous_context == TK_IMPORT;
 }
 
 bool token_may_be_in_import_decl(uint i)
@@ -1117,33 +1309,9 @@ bool token_may_be_in_import_decl(uint i)
            (statement_context_kind[i] & 0xffu) == TK_IMPORT;
 }
 
-uint qualified_path_start(uint first_colon_i)
+bool token_in_leading_import_decl(uint i)
 {
-    uint start = first_colon_i > 0u ? first_colon_i - 1u : 0u;
-    [loop]
-    for (uint guard = 0u; guard < 32u && start >= 3u; guard += 1u)
-    {
-        if (token_kind(start - 1u) != TK_COLON || token_kind(start - 2u) != TK_COLON ||
-            !is_path_segment(token_kind(start - 3u)))
-            break;
-        start -= 3u;
-    }
-    return start;
-}
-
-uint qualified_path_end(uint start)
-{
-    uint n = active_token_count();
-    uint end = start;
-    [loop]
-    for (uint guard = 0u; guard < 32u && end + 3u < n; guard += 1u)
-    {
-        if (token_kind(end + 1u) != TK_COLON || token_kind(end + 2u) != TK_COLON ||
-            !is_path_segment(token_kind(end + 3u)))
-            break;
-        end += 3u;
-    }
-    return end;
+    return token_may_be_in_import_decl(i);
 }
 
 bool is_qualified_type_context(uint prev)
@@ -1152,12 +1320,12 @@ bool is_qualified_type_context(uint prev)
            prev == TK_PARAM_COMMA;
 }
 
-bool is_qualified_value_path(uint start)
+bool is_qualified_path_colon_pair(uint first_colon_i)
 {
-    if (!is_path_segment(token_kind(start)))
+    if (first_colon_i == 0u || token_kind(first_colon_i + 1u) != TK_COLON)
         return false;
-    uint leaf = qualified_path_end(start);
-    return leaf > start + 1u;
+    return is_path_segment(token_kind(first_colon_i - 1u)) &&
+           is_path_segment(token_kind(first_colon_i + 2u));
 }
 
 void check_qualified_path_colon(uint i)
@@ -1168,16 +1336,14 @@ void check_qualified_path_colon(uint i)
         return;
     if (token_in_leading_import_decl(i))
         return;
-    uint start = qualified_path_start(i);
-    uint prev = start > 0u ? token_kind(start - 1u) : 0u;
-    if (!is_qualified_type_context(prev) && !is_qualified_value_path(start))
+    uint prev = i > 1u ? token_kind(i - 2u) : 0u;
+    if (!is_qualified_type_context(prev) && !is_qualified_path_colon_pair(i))
         record_error(i, ERR_UNEXPECTED_TOKEN, TK_COLON);
 }
 
 void check_module_decl(uint i)
 {
-    uint file_start = file_first_token(i);
-    if (i != file_start)
+    if (!is_file_first_token(i))
     {
         record_error(i, ERR_UNEXPECTED_TOKEN, TK_MODULE);
         return;
@@ -1189,46 +1355,8 @@ void check_module_decl(uint i)
         record_error(i, ERR_EXPECTED_TOKEN, TK_IDENT);
         return;
     }
-
-    uint j = i + 1u;
-    bool expect_segment = true;
-    bool saw_segment = false;
-    [loop]
-    for (uint guard = 0u; guard < 128u && j < n; guard += 1u)
-    {
-        if (!same_token_file(j, i))
-        {
-            record_error(saw_segment ? j - 1u : i, ERR_MISSING_SEMICOLON, TK_SEMICOLON);
-            return;
-        }
-        uint kind = token_kind(j);
-        if (expect_segment)
-        {
-            if (!is_module_path_segment(kind))
-            {
-                record_error(j, ERR_EXPECTED_TOKEN, TK_IDENT);
-                return;
-            }
-            saw_segment = true;
-            expect_segment = false;
-            j += 1u;
-            continue;
-        }
-
-        if (kind == TK_SEMICOLON)
-            return;
-        if (kind == TK_COLON && token_kind(j + 1u) == TK_COLON)
-        {
-            expect_segment = true;
-            j += 2u;
-            continue;
-        }
-
-        record_error(j, ERR_EXPECTED_TOKEN, TK_SEMICOLON);
-        return;
-    }
-
-    record_error(saw_segment ? n - 1u : i, ERR_MISSING_SEMICOLON, TK_SEMICOLON);
+    if (!is_module_path_segment(token_kind(i + 1u)))
+        record_error(i + 1u, ERR_EXPECTED_TOKEN, TK_IDENT);
 }
 
 void check_import_decl(uint i)
@@ -1239,54 +1367,15 @@ void check_import_decl(uint i)
         return;
     }
 
-    uint end = import_decl_end(i);
-    if (end == INVALID)
-    {
-        record_error(i, ERR_MISSING_SEMICOLON, TK_SEMICOLON);
-        return;
-    }
-
     if (token_kind(i + 1u) == TK_STRING)
     {
-        if (i + 2u != end)
+        if (token_kind(i + 2u) != TK_SEMICOLON)
             record_error(i + 2u, ERR_EXPECTED_TOKEN, TK_SEMICOLON);
         return;
     }
 
-    uint j = i + 1u;
-    bool expect_segment = true;
-    bool saw_segment = false;
-    [loop]
-    for (uint guard = 0u; guard < 128u && j <= end; guard += 1u)
-    {
-        uint kind = token_kind(j);
-        if (expect_segment)
-        {
-            if (!is_module_path_segment(kind))
-            {
-                record_error(j, ERR_EXPECTED_TOKEN, TK_IDENT);
-                return;
-            }
-            saw_segment = true;
-            expect_segment = false;
-            j += 1u;
-            continue;
-        }
-
-        if (kind == TK_SEMICOLON)
-            return;
-        if (kind == TK_COLON && token_kind(j + 1u) == TK_COLON)
-        {
-            expect_segment = true;
-            j += 2u;
-            continue;
-        }
-
-        record_error(j, ERR_EXPECTED_TOKEN, TK_SEMICOLON);
-        return;
-    }
-
-    record_error(saw_segment ? end : i, ERR_MISSING_SEMICOLON, TK_SEMICOLON);
+    if (!is_module_path_segment(token_kind(i + 1u)))
+        record_error(i + 1u, ERR_EXPECTED_TOKEN, TK_IDENT);
 }
 
 void check_binary_operator(uint i)
@@ -1320,21 +1409,7 @@ void check_expr_end(uint i)
         return;
     if (next == TK_INDEX_LBRACKET || next == TK_LBRACKET)
         return;
-    if (next == TK_INC || next == TK_DEC)
-        return;
     if (is_expr_start(next))
-        record_error(i + 1u, ERR_EXPECTED_TOKEN, TK_SEMICOLON);
-}
-
-void check_incdec(uint i)
-{
-    uint prev = i > 0u ? token_kind(i - 1u) : 0u;
-    uint next = token_kind(i + 1u);
-    bool postfix = is_expr_end(prev);
-    bool prefix = is_expr_start(next);
-    if (!postfix && !prefix)
-        record_error(i, ERR_EXPECTED_TOKEN, TK_IDENT);
-    else if (postfix && prefix)
         record_error(i + 1u, ERR_EXPECTED_TOKEN, TK_SEMICOLON);
 }
 
@@ -1373,6 +1448,16 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     if (delimiter_prefix_underflows(i))
         record_error(i, ERR_UNBALANCED_DELIMITER, kind);
+
+    if (is_stmt_keyword(kind))
+        validate_pending_before_statement_starter(i);
+    if (is_statement_semicolon_kind(kind))
+        validate_pending_statement_at_boundary(i, true, false);
+    else if (is_lbrace_kind(kind))
+        validate_pending_statement_at_boundary(i, false, true);
+    else if (is_rbrace_kind(kind))
+        validate_pending_statement_at_boundary(i, false, false);
+    validate_pending_at_end(i);
 
     if (token_in_generic_angle_list(i))
         return;
@@ -1446,8 +1531,6 @@ void main(uint3 tid: SV_DispatchThreadID)
     }
     else if (is_binary_operator(kind))
         check_binary_operator(i);
-    else if (kind == TK_INC || kind == TK_DEC)
-        check_incdec(i);
     else if (is_expr_end(kind))
         check_expr_end(i);
     else if (kind == TK_ELSE)

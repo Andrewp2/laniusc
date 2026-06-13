@@ -39,6 +39,7 @@ RWStructuredBuffer<uint> adjacent_equal_mask;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint NAME_KIND_LANGUAGE_SYMBOL = 3u;
+static const uint NAME_RADIX_MAX_BYTES = 64u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -77,10 +78,18 @@ bool byte_equal_name_spans(uint left_name_i, uint right_name_i)
     NameSpan b = name_spans[right_name_i];
     if (a.len != b.len)
         return false;
+    // The scatter pass has already recorded ERR_NAME_LIMIT for longer spans.
+    // Keep dedup bounded by the same radix limit while the status path fails
+    // the compile closed.
+    if (a.len > NAME_RADIX_MAX_BYTES)
+        return false;
 
     [loop]
-    for (uint i = 0u; i < a.len; i += 1u)
+    for (uint i = 0u; i < NAME_RADIX_MAX_BYTES; i += 1u)
     {
+        if (i >= a.len)
+            continue;
+
         if (load_name_byte(a, i) != load_name_byte(b, i))
             return false;
     }

@@ -67,19 +67,38 @@ uint source_at(uint start, uint delta)
     return idx < gHirLiteral.source_len ? load_byte_at(source_bytes, idx) : 0u;
 }
 
+void consume_decimal_digit(uint start, uint len, uint i, inout uint value, inout bool active)
+{
+    if (!active || i >= len)
+    {
+        active = false;
+        return;
+    }
+    uint ch = source_at(start, i);
+    if (ch < 48u || ch > 57u)
+    {
+        active = false;
+        return;
+    }
+    value = value * 10u + (ch - 48u);
+}
+
 uint parse_uint_token(uint token_i)
 {
     uint value = 0u;
     uint start = token_words[token_i].start;
     uint len = token_words[token_i].len;
-    [loop]
-    for (uint i = 0u; i < len && i < 10u; i += 1u)
-    {
-        uint ch = source_at(start, i);
-        if (ch < 48u || ch > 57u)
-            break;
-        value = value * 10u + (ch - 48u);
-    }
+    bool active = true;
+    consume_decimal_digit(start, len, 0u, value, active);
+    consume_decimal_digit(start, len, 1u, value, active);
+    consume_decimal_digit(start, len, 2u, value, active);
+    consume_decimal_digit(start, len, 3u, value, active);
+    consume_decimal_digit(start, len, 4u, value, active);
+    consume_decimal_digit(start, len, 5u, value, active);
+    consume_decimal_digit(start, len, 6u, value, active);
+    consume_decimal_digit(start, len, 7u, value, active);
+    consume_decimal_digit(start, len, 8u, value, active);
+    consume_decimal_digit(start, len, 9u, value, active);
     return value;
 }
 

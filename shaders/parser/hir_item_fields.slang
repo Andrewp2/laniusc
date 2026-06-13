@@ -158,9 +158,12 @@ bool is_private_top_level_child(uint kind, uint parent_prod)
     return false;
 }
 
-bool is_public_top_level_child(uint kind, uint parent_prod, uint grandparent_prod)
+bool is_public_top_level_child(uint kind, uint parent_prod)
 {
-    if (grandparent_prod != PROD_ITEM_PUB || !is_public_wrapper(parent_prod))
+    // Public wrapper productions only arise from top-level `pub_item`.
+    // The projected tree can attach those wrappers under either the `item_pub`
+    // node or an item-list tail, so the wrapper parent is the durable signal.
+    if (!is_public_wrapper(parent_prod))
         return false;
     if (kind == PROD_FN)
         return parent_prod == PROD_PUB_FN;
@@ -177,6 +180,17 @@ bool is_public_top_level_child(uint kind, uint parent_prod, uint grandparent_pro
     if (kind == PROD_TRAIT)
         return parent_prod == PROD_PUB_TRAIT;
     return false;
+}
+
+bool is_impl_method_child(uint kind, uint parent_prod)
+{
+    return kind == PROD_IMPL_FN &&
+           (parent_prod == PROD_IMPL_METHOD || parent_prod == PROD_IMPL_METHOD_PUB);
+}
+
+bool is_impl_owner(uint kind)
+{
+    return kind == PROD_IMPL_INHERENT || kind == PROD_IMPL_TRAIT;
 }
 
 uint item_kind_for_production(uint prod)
@@ -343,10 +357,9 @@ uint enum_item_visibility(uint enum_i)
     if (enum_i == INVALID || enum_i >= active_node_count())
         return INVALID;
     uint p_kind = parent_kind(enum_i);
-    uint gp_kind = grandparent_kind(enum_i);
     if (is_private_top_level_child(PROD_ENUM, p_kind))
         return HIR_ITEM_VIS_PRIVATE;
-    if (is_public_top_level_child(PROD_ENUM, p_kind, gp_kind))
+    if (is_public_top_level_child(PROD_ENUM, p_kind))
         return HIR_ITEM_VIS_PUBLIC;
     return INVALID;
 }
@@ -388,9 +401,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
 
     uint p_kind = parent_kind(i);
-    uint gp_kind = grandparent_kind(i);
-    if (is_private_top_level_child(prod, p_kind))
+    if (is_impl_owner(prod) && (p_kind == PROD_ITEM_IMPL || p_kind == PROD_PUB_IMPL))
+    {
+        hir_item_visibility[i] =
+            p_kind == PROD_PUB_IMPL ? HIR_ITEM_VIS_PUBLIC : HIR_ITEM_VIS_PRIVATE;
+        return;
+    }
+
+    if (is_impl_method_child(prod, p_kind))
+        return;
+    else if (is_private_top_level_child(prod, p_kind))
         publish_decl(i, prod, start, HIR_ITEM_VIS_PRIVATE);
-    else if (is_public_top_level_child(prod, p_kind, gp_kind))
+    else if (is_public_top_level_child(prod, p_kind))
         publish_decl(i, prod, start, HIR_ITEM_VIS_PUBLIC);
 }

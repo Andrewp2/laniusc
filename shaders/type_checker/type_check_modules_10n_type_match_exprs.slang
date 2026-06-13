@@ -209,8 +209,14 @@ uint direct_node_type(uint node)
     if (hir_kind[node] == HIR_INDEX_EXPR || hir_kind[node] == HIR_MATCH_EXPR)
         return valid_token(token) ? call_return_type[token] : TY_UNKNOWN;
 
-    if (hir_kind[node] == HIR_CALL_EXPR && valid_token(token) && token > 0u)
-        return call_return_type[token - 1u];
+    if (hir_kind[node] == HIR_CALL_EXPR && valid_token(token))
+    {
+        uint ty = call_return_type[token];
+        if (ty != TY_UNKNOWN)
+            return ty;
+        if (token > 0u)
+            return call_return_type[token - 1u];
+    }
 
     return TY_UNKNOWN;
 }

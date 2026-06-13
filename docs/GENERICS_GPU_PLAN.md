@@ -26,9 +26,69 @@ The syntax surface is ahead of semantic support:
 - Simple generic function calls now have GPU type-check substitution for direct
   calls inferred from value arguments. The acceptance tests cover `keep(7)`,
   `keep(true)`, generic forwarding through `return keep(value)`, and nested
-  direct calls such as `keep(keep(7))` and `return keep(keep(value))`.
+  direct calls such as `keep(keep(7))` and `return keep(keep(value))`. Direct
+  generic return substitution is also covered for nonzero generic slots, such
+  as `second<T, U>(left: T, right: U) -> U`, and callers that expect the wrong
+  concrete return type fail type checking. Generic instance arguments now also
+  compare direct nominal arguments against scalar generic slots for the bounded
+  scalar slice, so `score(Option<bool>, 0)` rejects when the `Option<bool>`
+  argument conflicts with the fallback's `i32` slot. Scalar aliases used as
+  direct call arguments normalize before bounded generic-slot consistency:
+  `choose(Count, i32)` binds one `T`, while an alias to `bool` rejects against
+  the same `i32` slot. Nested direct calls that return generic instances now
+  contribute bounded return-instance argument refs to the outer call-site
+  consistency pass: `score(wrap(1), 0)` type-checks, and `score(wrap(true), 0)`
+  rejects at the conflicting fallback argument. If a
+  generic instance argument participates in a call-site slot but the bounded
+  records cannot recover the actual instance argument, the call fails closed
+  instead of treating the unknown instance shape as a successful binding.
+  Direct calls whose scalar generic return slot cannot be inferred from the
+  current bounded argument records now fail closed at the call token instead of
+  publishing an unresolved symbolic generic return for downstream consumers.
+  Direct scalar generic returns from concrete nominal instance arguments now
+  have bounded GPU semantic coverage. `unbox(Boxed<i32>) -> T` infers `T = i32`
+  from the parser-owned call argument row plus the nominal instance argument
+  refs, and the generic function body validates `return value.value` from
+  member-result refs that publish the symbolic field type. The same focused
+  contract rejects `Boxed<bool>` in an `i32` context.
+  Source-pack qualified generic calls are checked per resolved declaration, not
+  by leaf function name: same-named helpers in different modules can substitute
+  different concrete return types in one caller, while assigning the imported
+  `bool` instantiation to `i32` still fails. Qualified calls now also require
+  every declared generic parameter to be inferred from the bounded call records,
+  matching the direct-call fail-closed behavior for unused generic slots.
+  Concrete nominal instance parameters now compare bounded scalar type-instance
+  argument records for direct-name and direct-call arguments, so `Pair<bool>`
+  is rejected for a `Pair<i32>` parameter instead of matching only the outer
+  declaration. Repeated generic slots inside one nominal argument are checked
+  against each other from the same bounded instance records, so `Pair<i32,
+  bool>` is rejected for a `Pair<T, T>` parameter instead of only binding the
+  first `T` slot.
+  Direct-call formal instance arguments are also relation-validated before the
+  outer nominal match is trusted: missing argument refs, error refs, and
+  over-width arg lists fail closed with the normal type-mismatch diagnostic.
+  Nested instance refs in formal parameter annotations now fail earlier with the
+  GPU predicate-row diagnostic (`LNC0008`) until direct-call unification
+  consumes compact nested relation records. This prevents shapes such as
+  `Maybe<Boxed<i32>>` parameters from being accepted by comparing only the
+  `Maybe` declaration.
+  Trait-method signatures follow the same fail-closed rule while signature
+  comparison remains a bounded bridge: top-level generic instance signatures
+  with more than eight direct type arguments, and nested generic instance
+  arguments such as `Maybe<Boxed<T>>`, are rejected with the trait-impl
+  signature diagnostic until compact type-ref leaf rows carry every argument.
+  That contract applies to return positions as well as parameter positions, so
+  a matching-looking `fn wrap(value: T) -> Maybe<Boxed<T>>` trait method is not
+  accepted by comparing only the outer `Maybe` head.
   Conflicting repeated generic arguments are rejected, including
   `choose(keep(1), keep(true))`.
+  Direct generic calls wider than the current four-argument substitution window
+  fail closed before any prefix slot binding can publish a partial instance:
+  `choose_first(1, 2, 3, 4, true)` reports call-resolution failure instead of
+  accepting the first four arguments as a concrete `T`. The same boundary is
+  locked for source-pack qualified calls, so
+  `core::wide::choose_first(1, 2, 3, 4, true)` also fails before resolved
+  declaration lookup can publish a prefix-based monomorphization.
 - Duplicate type/const generic parameter names now fail closed from compact GPU
   generic-parameter records. The pass sequence marks parameter facts, prefix
   scans them into compact rows, scatters declaration rows, sorts by
@@ -58,20 +118,22 @@ The syntax surface is ahead of semantic support:
   substituted from concrete receiver type-argument refs, and the module-form
   `core::range` seed through resolver arrays. These are
   type-checker/resolver facts, not a broad executable backend guarantee.
-  Legacy aggregate and method WASM execution tests for `core::range` helpers
-  remain ignored until backend lowering consumes those records directly.
-  Current WASM/x86 executable coverage is narrower than this semantic slice.
-  An earlier attempt to substitute `Range<i32>.start` directly inside
-  `type_check_tokens_min.slang` by walking the base value's annotation, struct
-  generic parameter list, and field type compiled, but made the focused GPU
-  type-check test hit both the 2s and 60s watchdogs. That route was backed out;
-  generic struct projection needs a precomputed GPU type-instance/substitution
-  table instead of adding instance lookup to the hot token checker. A later
-  attempt to feed the hot token checker a concrete scalar bridge from those
-  metadata buffers still stalled in `type_check_tokens` compute-pipeline
-  creation with both 15s and 30s focused-test watchdogs. The working path keeps
-  reusable type-instance metadata in GPU arrays and feeds bounded consumers from
-  those arrays instead of expanding token-local substitution.
+  Nested inherent impl receiver target arguments such as
+  `Holder<Boxed<i32>>` fail closed before method-key lookup because the current
+  bounded receiver key records carry only top-level argument refs.
+  Legacy aggregate and method Wasm gates for `core::range` helpers are not
+  active execution evidence while Wasm lowering is fail-closed.
+  Current x86 executable coverage is narrower than this semantic slice.
+  An earlier attempt to substitute `Range<i32>.start` by walking the base
+  value's annotation, struct generic parameter list, and field type compiled,
+  but made the focused GPU type-check test hit both the 2s and 60s watchdogs.
+  That route was backed out; generic struct projection needs precomputed GPU
+  type-instance/substitution tables and bounded HIR/fact-table consumers. A
+  later attempt to bridge those metadata buffers back into the retired
+  source-shaped path still stalled compute-pipeline creation with both 15s and
+  30s focused-test watchdogs. The working path keeps reusable type-instance
+  metadata in GPU arrays and feeds bounded consumers from those arrays instead
+  of expanding source-local substitution.
 - Concrete enum constructors are checked on GPU today. The tests
   `type_checker_accepts_enum_constructors_with_concrete_types` and
   `type_checker_rejects_invalid_enum_constructor_payloads_on_gpu` cover payload
@@ -86,9 +148,12 @@ The syntax surface is ahead of semantic support:
   `fn wrap<T>(value: T) -> Maybe<T> { return Some(value); }` against
   `fn_return_ref_*` and type-instance argument refs before finalization
   publishes the return row. Bounded GPU match typing now covers stdlib-shaped
-  enum payload arms such as `Some(inner) -> inner` / `None -> fallback`,
-  publishing the match result type from HIR match spans and
-  resolver/type-instance metadata. The old bounded WASM codegen slice for
+  enum payload arms such as `Some(inner) -> inner` / `None -> fallback` and
+  multi-slot variants such as `Left(left) -> left` through parser-owned
+  match-payload rows, resolved variant declarations, and type-instance argument
+  refs. Focused evidence covers both positive substitution and a mismatched
+  payload arm that fails with `LNC0006` at the arm result instead of being
+  accepted as an unresolved or source-local pattern. The old bounded WASM codegen slice for
   `core::ordering::compare_i32` unit enum returns plus a `match` over those unit
   variants is retired from the Rust generator: the pass is not loaded, its
   token/source bind group is not built, and it is not dispatched. It still
@@ -119,13 +184,47 @@ The syntax surface is ahead of semantic support:
   impl predicate records. The acceptance and rejection tests cover multiple
   trait bounds, qualified bounds, missing bounds, subjects outside generic
   parameters, mixed concrete/generic bound arguments, and one/two-argument
-  called trait predicates. Trait bounds and trait impl headers wider than the
+  called trait predicates. The bounded inline `+` chain is checked independently
+  for the currently published top-level predicate rows:
+  `T: Bound<T> + Other<T>` accepts only when every required impl is present, and
+  a missing later bound fails with the same stable obligation diagnostic as a
+  missing first bound. Inline bound chains deeper than that parser-owned
+  relation, such as `T: First<T> + Second<T> + Third<T>`, now fail closed with
+  `LNC0008` instead of letting an unsupported later predicate disappear. Trait
+  call-site substitutions normalize accepted type aliases before checking
+  obligations, so a value annotated through `type Count = i32` satisfies
+  `T: Eq<T>` through an `Eq<i32> for i32` impl, while an alias to `bool` still
+  fails if no visible `Eq<bool>` impl exists. The same normalization applies
+  when an alias-typed value fills a nonzero generic slot that appears as another
+  slot's trait-bound argument, such as `U: Rel<T>`. Predicate type-argument
+  aliases inside the bound or impl argument list now normalize through the same
+  GPU alias-projected type refs when the alias resolves to an existing
+  scalar/nominal type code, so `T: Rel<Count>`,
+  `T: core::types::Rel<core::types::Count>`, and
+  `impl Rel<Count> for i32` match `Rel<i32>` obligations. Nominal alias leaves
+  are covered by the same contract: `type KeyAlias = Key` in `T: Rel<KeyAlias>`
+  matches an `impl Rel<Key> for i32`, while an alias to a different nominal type
+  still fails the call obligation. Alias leaves that cannot publish such a ref
+  remain fail-closed.
+  Trait bounds and trait impl headers wider than the
   current two-argument GPU predicate records now fail closed with a stable GPU
   predicate diagnostic instead of publishing partial predicate rows. Nested
   type-instance predicate arguments in both bounds and impl headers, such as
   `Rel<Boxed<i32>>`, now also fail closed until predicate rows carry argument
   type-instance refs. Unapplied generic type heads in predicate arguments, such
   as `Rel<Boxed>` where `Boxed<T>` is generic, fail closed for the same reason.
+  Predicate type-argument leaves that resolve to traits still fail closed until
+  compact predicate rows carry resolved argument refs instead of making
+  obligation consumers rediscover declaration meaning from leaf tokens.
+  Predicate type-argument leaves that resolve only across a private module
+  boundary also fail closed from the predicate row's invalid-argument status,
+  so visibility cannot be recovered later by obligation matching.
+  Reference-shaped bound heads, such as `T: &Marker`, also fail closed with the
+  GPU predicate-shape diagnostic instead of falling through as unknown types.
+  Bounds that resolve to non-trait type declarations, such as
+  `T: Bound<T>` where `Bound` is a struct, now report a stable GPU
+  predicate diagnostic that identifies the bound target as non-trait instead of
+  relying on raw rejection or later call use.
   Predicate and trait-impl headers now compare their
   recorded argument count against the resolved trait declaration's generic
   parameter count, so under-applied and over-applied trait names fail from GPU
@@ -137,9 +236,21 @@ The syntax surface is ahead of semantic support:
   source-spanned diagnostics instead of collapsing into generic signature
   mismatch.
   Trait impl targets with generic arguments, such as `impl Marker for Boxed<i32>`,
-  also fail closed because the current predicate row carries only the target
-  leaf token; accepting them before target type-argument rows exist would erase
-  the impl subject during obligation matching.
+  and targets that name type aliases, such as `impl Marker for Count`, also fail
+  closed because the current predicate row carries only the target leaf token;
+  accepting them before target reference rows exist would erase or misrepresent
+  the impl subject during obligation matching. Unresolved trait impl target
+  names also fail closed through the same stable target-shape diagnostic instead
+  of relying on downstream type-path validation to catch the missing subject.
+  Generic type parameters in trait impl arguments, such as
+  `impl<T> Rel<T> for i32`, now fail closed before concrete declaration lookup
+  can reinterpret the generic leaf token. The predicate row preserves the
+  offending trait-argument token for the stable `LNC0021` diagnostic; accepting
+  that shape requires compact impl-argument rows that carry generic-parameter
+  references, not just leaf tokens.
+  Call-site obligation matching also treats symbolic generic type codes as
+  unsupported exact impl keys, so forwarding a generic value into a bounded
+  helper fails closed until recursive obligation/dictionary rows exist.
   Trait and inherent impl target discovery now consumes the parser-owned
   `hir_method_impl_receiver_type_node` row; if the parser cannot publish that
   owner-to-type relation, predicate collection reports the existing unsupported
@@ -159,21 +270,31 @@ The syntax surface is ahead of semantic support:
   Trait impl methods are validated against their trait declarations but are not
   published into the inherent method lookup table. The predicate collection pass
   now also rejects extra or duplicate methods inside a trait impl instead of
-  accepting an impl that merely contains every required method. Reordered trait
+  accepting an impl that merely contains every required method; extra impl
+  methods publish a distinct GPU status keyed to the extra method name rather
+  than collapsing into a generic signature mismatch. Reordered trait
   impl methods validate through sorted `(owner, method name)` contract ranges
   rather than declaration-order pairing. Method return-type facts now come from
   parser-owned `hir_fn_return_type_node` rows, and method-level generic/where
   rejection comes from parser-owned `hir_method_signature_flags` rows instead
-  of bounded child-list scans in predicate consumers. A public
+  of bounded child-list scans in predicate consumers. A required impl method
+  that adds method-level generics still fails from its own compact method-status
+  row instead of satisfying the trait by owner/name and concrete signature
+  shape, so unsupported generic method monomorphization cannot be hidden behind
+  trait contract joining. A public
   trait method must also be implemented by a public impl method, so exported
   trait contracts cannot be satisfied by private method rows. Implementations of
   public traits must currently use a public impl header, because obligation
-  matching does not yet carry module-scoped impl visibility rows. Dot-call
+  matching does not yet carry module-scoped impl visibility rows. Public-trait
+  contracts implemented by non-public impl headers now publish a distinct GPU
+  predicate status and stable trait-implementation diagnostic instead of reusing
+  the invalid-argument status. Focused coverage also locks the opposite header
+  mismatch, so public impl headers for private trait contracts report the same
+  stable trait-implementation diagnostic. The corresponding impl-method
+  visibility mismatch diagnostic is also locked, so a private method row cannot
+  satisfy a public trait contract by falling back to a raw rejection. Dot-call
   dispatch through a trait impl still fails closed with a stable call diagnostic
-  until trait-method lookup has explicit predicate/selection rows. Public impl
-  headers also fail closed when they name private traits, so exported impl rows
-  do not leak
-  contracts that cannot be named outside their module. The method-contract pass
+  until trait-method lookup has explicit predicate/selection rows. The method-contract pass
   now consumes parser-owned method name, owner, visibility, and parameter rows
   for trait declarations plus inherent and trait impl methods before building
   predicate records. Trait method contracts wider than the current 32-parameter GPU
@@ -189,19 +310,30 @@ The syntax surface is ahead of semantic support:
   of a predicate-pass fallback. This is still validation scaffolding rather than
   trait dispatch readiness because dispatch selection/dictionary rows are not
   implemented.
-  Trait/impl method owner ranges wider than 32 rows also fail closed before
-  validation consumes them, so each impl-header thread has a bounded record
-  window until method validation is emitted as its own sorted
-  join/result-record pass. Broader trait solving, associated types, recursive
-  obligations, dictionaries/static dispatch, and trait-method lookup remain
-  future work.
+  Trait/impl method owner ranges wider than 32 rows still fail closed for full
+  signature comparison, but method-contract validation now emits explicit
+  per-method result rows for extra methods, duplicate impl methods,
+  visibility/arity mismatches, and trait-side generic/where contract statuses.
+  It also emits an impl-owner validation row when compact sorted owner-range
+  counts prove that required trait methods are missing. Those row/reduce/apply
+  passes let late methods report the specific contract failure instead of being
+  hidden behind the legacy owner-window diagnostic while compact
+  `(impl, trait_method)` and `(method, ordinal)` signature rows are built.
+  Broader trait solving, associated types, recursive obligations,
+  dictionaries/static dispatch, and trait-method lookup remain future work.
   Top-level predicate-owner discovery is still a capped transitional walk, but
   exhausting that cap now publishes `PREDICATE_STATUS_UNSUPPORTED_BOUND_ARG_RELATION`
   and the predicate obligation pass records the corresponding `LNC0008`
   diagnostic directly, so unsupported predicate shapes cannot disappear before
   the later condition validator sees them. The paper-aligned replacement is a
   parser-owned compact predicate/bound-argument relation, not a wider owner
-  walk.
+  walk. Over-deep inline `+` bound chains also publish that status until
+  parser-owned predicate-list rows can represent every bound as a compact record.
+  The obligation pass also records fail-closed diagnostics for existing
+  unsupported predicate-row statuses such as declaration-level bounds on
+  non-callable generic items, unsupported bound argument shapes, and bound arity
+  mismatches, so unsupported bounds are not accepted as comments while the full
+  predicate-row relation is still incomplete.
   Predicate path extraction is likewise explicitly bounded. Bound and impl type
   paths currently scan at most 64 parser nodes inside the path subtree; wider
   predicate paths fail closed through existing predicate diagnostics instead of
@@ -226,11 +358,10 @@ The syntax surface is ahead of semantic support:
   parser-owned expression-root rows for direct scalar call argument/return
   typing; the remaining direct-call gap is the bounded four-slot argument
   cache, not expression-forward chasing.
-- Legacy token checkers such as `type_check_scope.slang` and
-  `type_check_tokens_min.slang` can still recognize generic parameter names as
-  `TY_GENERIC_BASE + token_index`, but the active resident path should keep
-  moving acceptance evidence to HIR/fact-table consumers instead of treating
-  token-local equality checks as the generic-call architecture.
+- The remaining scope and call passes can still represent generic parameter
+  names as `TY_GENERIC_BASE + token_index`, but the active resident path should
+  keep moving acceptance evidence to HIR/fact-table consumers instead of
+  treating token-local equality checks as the generic-call architecture.
 
 ## Data Model Direction
 
@@ -347,18 +478,19 @@ Failure behavior:
 Objective: add the minimal resident metadata needed before generic
 struct/enum/array semantics can be enabled. This slice builds reusable
 type-instance records first, then enables narrow consumers only when they read
-those records instead of reparsing declarations in the hot token checker.
+those records instead of reparsing declarations inside individual semantic
+passes.
 
-The key rule is that `type_check_tokens_min.slang` must not rediscover generic
-arguments by walking item headers, field declarations, or return type spans.
-Token checks should read precomputed type refs and emit errors. The earlier
-failed `Range<i32>.start` and enum-constructor attempts both timed out because
-they put substitution work in hot token-local paths.
+The key rule is that semantic passes must not rediscover generic arguments by
+walking item headers, field declarations, or return type spans. They should read
+precomputed type refs and emit errors. The earlier failed `Range<i32>.start` and
+enum-constructor attempts both timed out because they put substitution work in
+source-shaped consumers.
 
 The first committed implementation slice starts with
-`type_check_type_instances_01_collect.slang`, wired through the resident and
-standalone GPU type-check paths under `src/type_checker/`. It is intentionally
-metadata-only: it creates token-indexed
+`type_check_type_instances_01_collect.slang`, wired through the resident GPU
+type-check path under `src/type_checker/`. It is intentionally metadata-only:
+it creates token-indexed
 `type_expr_ref_*`, `type_instance_*`, and `fn_return_ref_*` buffers for scalar
 type heads, named generic candidates, arrays, slices, and function return type
 heads, including named generic argument start/count records. The follow-up
@@ -446,8 +578,8 @@ Minimal passes:
 4. `type_instances_04_publish_struct_enum_uses`
    publishes substituted expected refs for struct literals and member
    projections. This pass walks declaration fields once, applies the instance
-   slot map, and writes consumer-facing buffers. The token checker only
-   consumes those buffers.
+   slot map, and writes consumer-facing buffers. Downstream semantic consumers
+   read those buffers directly.
 5. `type_instances_05_publish_array_uses`
    publishes array/slice element and length refs for parameters, locals, fields,
    and returns. The current consumers accept matching concrete `[i32; literal]`
@@ -501,11 +633,11 @@ Data structures:
 
 Passes:
 
-1. Dispatch the type-instance metadata passes before scope/token checks.
-2. Split struct literal checking out of `type_check_tokens_min.slang` and have the
-   new checker read `struct_init_field_expected_ref_*`.
-3. Split member projection checking out of `type_check_tokens_min.slang` and have
-   the new checker read `member_result_ref_*`.
+1. Dispatch the type-instance metadata passes before scope and semantic checks.
+2. Keep struct literal checking in bounded HIR/fact-table consumers that read
+   `struct_init_field_expected_ref_*`.
+3. Keep member projection checking in bounded HIR/fact-table consumers that read
+   `member_result_ref_*`.
 4. Update enum constructor checking to consume the ordered module enum-call
    prepare, per-payload validation, and finalize passes after contextual
    concrete payload refs or symbolic constructor-return refs exist.
@@ -626,6 +758,13 @@ The obligation pass also fails closed before matching when the formal/actual
 call argument cache exceeds its four-record window or when a called function has
 more than 32 predicate rows in its sorted owner range, so a bounded invocation
 never validates only a prefix of the required obligations.
+A symbolic generic actual type is not a concrete impl key in this solver: calls
+that would require carrying an obligation such as `U: Eq<U>` forward fail with
+the normal trait-bound diagnostic until compact recursive obligation rows exist.
+A focused regression fixture records the obligation-window contract with a
+33-obligation generic call: the current solver must report the unsupported
+obligation window rather than accept the call by checking only the first 32
+predicate rows.
 Sorted impl-predicate keys are also range-checked on GPU, so overlapping exact
 supported impls fail as invalid trait implementations even if no call currently
 uses the bound. The later condition pass no longer performs a per-impl scan
@@ -637,23 +776,38 @@ closed instead of letting required or extra method rows be skipped.
 Name-specific method-contract lookups also endpoint-validate the sorted
 `(owner, name)` equal range before returning the first method row, so duplicate,
 missing, and extra-method checks cannot consume a malformed key slice as a
-valid trait method match. Method contract collection also marks a method row as
-unsupported when its owner/name relation cannot be published, so later
-validation cannot accept a trait method whose relation evidence is missing.
+valid trait method match. Method contract collection also marks every trait and
+impl method production as unsupported when its owner/name relation cannot be
+published, and impl-method malformed rows are surfaced directly as trait
+contract errors instead of disappearing from the sorted owner/name join. Impl
+method rows that carry their own compact unsupported-status record are checked
+before the extra-method join classifies them by name, so a malformed extra
+method fails for the malformed contract rather than being downgraded to an
+ordinary extra method.
 Required impl methods also check that the sorted
 `(impl owner, method name)` range has only one row before signature comparison,
 so a duplicate impl method cannot satisfy a trait contract by letting the first
-row match and hiding the later row. Reordered impl methods are accepted by
-joining the trait and impl rows through those sorted owner/name facts instead
-of pairing methods by source order. Extra impl methods are detected from owner
-range counts after those required-name joins, rather than by scanning every impl
-method row a second time. The next pass-style readiness point is to emit
-explicit trait-method validation result records from those joins, rather than
-returning a status directly from each impl header thread. That still would not
+row match and hiding the later row; duplicate impl methods now use a distinct
+GPU predicate status and `LNC0021` diagnostic from duplicate trait declaration
+methods. Reordered impl methods are accepted by joining the trait and impl rows
+through those sorted owner/name facts instead of pairing methods by source
+order. Extra, duplicate, and malformed impl-method rows are now reported by
+explicit method-validation records reduced per impl owner, while the old
+collector keeps only the remaining required-name/signature bridge. The next
+pass-style readiness point is to move that bridge into compact parameter and
+type-ref validation records rather than returning a status directly from each
+impl header thread. That still would not
 publish trait methods for dot-call dispatch or backend monomorphization.
-Trait and impl owner ranges currently have a 32-method validation window. Wider
-ranges fail closed from the sorted method-contract records instead of letting a
-single shader invocation perform an unbounded walk over all methods.
+Trait and impl owner ranges currently have a 32-method signature-comparison
+window. Wider ranges fail closed from the sorted method-contract records instead
+of letting a single shader invocation perform an unbounded walk over all
+methods, and they now report a distinct `LNC0021` method-contract-window
+diagnostic instead of being collapsed into ordinary method parameter arity
+mismatch. The validation-row slice can now also classify the compact count case
+where a trait's sorted owner range has more required methods than the impl's
+range, so a missing required method beyond the old owner-window reports the
+normal missing-method contract diagnostic instead of the generic window
+diagnostic.
 Method-contract collection should preserve the same pass order used by the
 papers: materialize relation rows once, prefix-scan compact rows, sort keys, and
 join/reduce ranges. For methods that means trait declarations, inherent impls,
@@ -680,46 +834,75 @@ method-local child-list scans in predicate consumers.
 Trait impl type-shape scans are intentionally bounded; exceeding that bound is
 classified as an unsupported predicate shape on GPU, not as successful
 validation of the scanned prefix.
+Trait-method signature comparison also rejects over-width or nested generic
+instance arguments instead of comparing the recorded prefix. The production fix
+is the same type-ref leaf relation used by direct-call unification: compact
+rows sorted by `(root_type_ref, leaf_path)` that preserve all generic argument
+leaves before trait/impl signature joins run. The same relation must cover
+method return refs before nested generic return signatures can participate in
+trait impl validation or backend monomorphization.
 Same-name inherent
 methods on different concrete instances of the same generic type head now have a
 bounded GPU method-key slice: the sorted lookup key includes the nominal
 receiver plus up to four receiver type-argument refs from the type-instance
 records, and method-key validation fails closed when those receiver argument
 records are malformed or when the receiver instance never bound to its nominal
-generic declaration. Method-call lookup also rejects unresolved receiver
-instances before searching the sorted method table, so under-applied generic
-receiver types cannot resolve by matching only the recorded argument prefix.
+generic declaration. Inherent impl headers now also validate the receiver
+target's nominal declaration arity and four-argument record window before method
+lookup, so under-applied generic receiver impls fail from the GPU predicate
+status path instead of waiting for a call to miss the sorted method table.
+Over-width receiver instances fail through the same source-spanned `LNC0021`
+predicate status before method lookup can publish or consume a truncated
+receiver-key slice. Receiver targets whose top-level argument is itself a
+generic instance also fail through that predicate status until method keys carry
+flattened nested type-ref rows; accepting them with the current key would erase
+the nested arguments.
+Method-call lookup also rejects unresolved receiver instances before searching
+the sorted method table, so unresolved generic receiver values cannot resolve by
+matching only the recorded argument prefix.
 Focused coverage now includes all four receiver argument slots, with
-source-pack coverage for two-slot receivers. Overlapping exact concrete and
-generic inherent methods with the same receiver/name still need a sorted-record
+source-pack coverage for two-slot receivers. Method calls whose argument lists
+exceed the current four-slot GPU argument cache fail closed before per-slot
+validation, so a five-argument call cannot be accepted by comparing only the
+first four argument records. Overlapping exact concrete and generic inherent
+methods with the same receiver/name still need a sorted-record
 specialization/ambiguity pass. Until that exists, method lookup fails closed
 when both the exact receiver key and the generic receiver key produce a visible
 candidate; it does not silently prefer the concrete method and call that
-specialization. Cross-module inherent method lookup also fails closed when a
-sorted receiver/name range exceeds the current 32-candidate visibility window
-instead of scanning the whole range. Broader method lookup still needs trait
-predicates, associated items, and backend specialization.
+  specialization. Cross-module inherent method lookup also fails closed when a
+  sorted receiver/name range has more than one candidate instead of scanning the
+  range in-shader; public candidate compaction/reduction is still needed before
+  multiple visible/hidden rows can be handled precisely. Broader method lookup
+  still needs trait predicates, associated items, and backend specialization.
 
 Bounds should not be treated as comments. Predicate forms outside the current
 GPU predicate records and obligation checker must continue to fail with a GPU
 type-check error.
+Source-pack calls to imported generic functions preserve the same contract:
+qualified trait bounds on the called function are checked against visible
+public impls, imported bounded functions may forward through another generic
+helper before returning the substituted value, and unsupported concrete callers
+fail instead of bypassing the where clause. The imported contract also covers
+nonzero bound subjects such as `require_right<T, U>(left: T, right: U) -> U
+where U: Eq<U>`, so the predicate solver must infer and check the bound from
+the second value argument before publishing the substituted return.
 
 ## Minimal First Implementation Slice
 
 Objective: direct simple generic function calls substitute parameter and return
 types on GPU. The current implementation covers literal/identifier arguments,
-generic forwarding, nested direct helper calls, and repeated-parameter conflict
-detection for those direct-call shapes.
+generic forwarding, nested direct helper calls, source-pack qualified forwarding
+through helper calls, bounded nested generic-instance return argument inference,
+nonzero-slot trait-bound obligations on imported qualified calls, and
+repeated-parameter conflict detection for those direct-call shapes.
 
 Files to change:
 
 - The resident GPU type-check path under `src/type_checker/resident.rs`
   dispatches the call metadata block before visible/scope facts, then runs
   `type_check_calls_03_resolve`, `03b`, `03c`, and `04_erase_generic_params`
-  after `type_check_scope_hir` publishes visibility. The older standalone
-  token-buffer path still records resolve and erasure inside its single
-  `record_call_bind_groups` block before legacy scope checks, so do not cite
-  standalone ordering as resident pass-order evidence.
+  after `type_check_scope_hir` publishes visibility. Use this resident ordering
+  as the pass-order evidence for this slice.
 - `shaders/type_checker/type_check_calls_02_functions.slang`
   keeps function parameter and return caches used by substitution.
 - `shaders/type_checker/type_check_calls_03_resolve.slang`
@@ -732,12 +915,13 @@ Files to change:
   preserve existing rejections for generic arrays, bounds, and where predicates;
   do not reject simple generic function declarations or calls once call
   substitution succeeds.
-- `shaders/type_checker/type_check_tokens_min.slang`
-  consume substituted call return types and keep strict mismatch checks for
-  unresolved generic codes.
+- Downstream condition, control, module, and backend consumers read substituted
+  call return types and keep strict mismatch checks for unresolved generic
+  codes.
 - `tests/type_checker_semantics.rs` and `tests/type_checker_generics.rs`
-  cover simple calls, nested direct calls, generic forwarding, and conflicting
-  repeated inference.
+  cover simple calls, nested direct calls, generic forwarding, source-pack
+  qualified forwarding through generic helpers, and conflicting repeated
+  inference.
 
 Exact first tests:
 

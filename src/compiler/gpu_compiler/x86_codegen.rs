@@ -28,9 +28,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         mut timer: Option<&mut GpuTimer>,
     ) -> Result<x86::RecordedX86Codegen, CompileError> {
         let hir_status = &parse_bufs.ll1_status;
-        let external_scratch = Self::x86_external_scratch_from_frontend_and_codegen_buffers(
+        let external_scratch = Self::x86_external_scratch_from_frontend_buffers(
             parse_bufs,
-            codegen,
             token_capacity,
             feature_summary,
         );
@@ -121,6 +120,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         decl_hir_node: codegen.decl_hir_node,
                         struct_decl_field_count: &parse_bufs.hir_struct_decl_field_count,
                         struct_lit_head_node: &parse_bufs.hir_struct_lit_head_node,
+                        struct_lit_context_stmt_node: &parse_bufs.hir_struct_lit_context_stmt_node,
                         struct_lit_field_parent_lit: &parse_bufs.hir_struct_lit_field_parent_lit,
                         struct_lit_field_start: &parse_bufs.hir_struct_lit_field_start,
                         struct_lit_field_count: &parse_bufs.hir_struct_lit_field_count,
@@ -149,9 +149,8 @@ impl<'gpu> GpuCompiler<'gpu> {
             )
             .map_err(|err| CompileError::GpuCodegen(err.to_string()))
     }
-    fn x86_external_scratch_from_frontend_and_codegen_buffers<'a>(
+    fn x86_external_scratch_from_frontend_buffers<'a>(
         parse_bufs: &'a OwnedX86ParserBuffers,
-        codegen: gpu_type_checker::GpuX86CodegenBuffers<'a>,
         token_capacity: u32,
         feature_summary: x86::X86FeatureSummary,
     ) -> x86::GpuX86ExternalScratchBuffers<'a> {
@@ -182,17 +181,20 @@ impl<'gpu> GpuCompiler<'gpu> {
                 None
             },
             call_type_record: None,
-            node_inst_count_info: Some(codegen.fn_entrypoint_tag),
+            // x86 function discovery reads fn_entrypoint_tag as frontend
+            // evidence; do not alias it into backend scratch that is cleared
+            // before discovery runs.
+            node_inst_count_info: None,
             node_inst_count_payload: Some(&parse_bufs.hir_type_arg_rank_a),
             node_inst_range_start: Some(&parse_bufs.hir_type_path_leaf_link_a),
             node_inst_range_info: Some(&parse_bufs.hir_type_path_leaf_link_b),
             node_inst_subtree_bound_start: Some(&parse_bufs.hir_type_arg_rank_a),
             node_inst_subtree_bound_end: Some(&parse_bufs.hir_array_element_previous),
             node_inst_gen_node_record: None,
-            decl_layout_record: buffer_if_wgpu_u32_words(
-                &parse_bufs.hir_item_kind,
-                token_words * 4,
-            ),
+            // Function discovery reads hir_item_kind before layout lowering.
+            // The decl-layout scratch is initialized at backend start, so it
+            // must not alias that live parser HIR input.
+            decl_layout_record: None,
             const_value_record: buffer_if_wgpu_u32_words(
                 &parse_bufs.hir_item_namespace,
                 token_words * 2,
@@ -234,6 +236,9 @@ impl<'gpu> GpuCompiler<'gpu> {
         sources: &[S],
         source_paths: Option<&[Option<PathBuf>]>,
     ) -> Result<Vec<u8>, CompileError> {
+        if sources.is_empty() {
+            return Err(x86_empty_source_pack_compile_error());
+        }
         validate_in_memory_source_pack_fits_default_codegen_unit(
             "compile source pack to x86_64",
             sources,
@@ -699,46 +704,19 @@ fn x86_codegen_error_to_compile_error_for_source(
         return CompileError::GpuCodegen(err.to_string());
     };
 
-    let diagnostic_token = x86_diagnostic_token_for_error(
+    let label = x86_diagnostic_label_for_source(
         device,
         queue,
         x86_parse,
+        x86_diagnostics,
         x86_err,
         "compiler.x86.diagnostic-hir-token-pos",
         Some(0),
+        src,
+        diagnostic_path,
     );
 
-    let token_index = match diagnostic_token {
-        Ok(token_index) => token_index,
-        Err(read_err) => {
-            return CompileError::GpuCodegen(format!(
-                "{}; failed to resolve diagnostic token: {}",
-                err, read_err
-            ));
-        }
-    };
-
-    match read_single_owned_token_for_diagnostic(device, queue, x86_diagnostics, token_index) {
-        Ok(token_record) => CompileError::Diagnostic(
-            Diagnostic::error("LNC0017", x86_err.error_name())
-                .with_primary_label(diagnostic_label_from_source_span(
-                    diagnostic_path,
-                    src,
-                    token_record.start,
-                    token_record.len,
-                    "not supported by the native x86 backend yet",
-                ))
-                .with_note(format!(
-                    "x86 backend error code {} detail {}",
-                    x86_err.error_code(),
-                    x86_err.error_detail()
-                )),
-        ),
-        Err(read_err) => CompileError::GpuCodegen(format!(
-            "{}; failed to read diagnostic token {}: {}",
-            err, token_index, read_err
-        )),
-    }
+    CompileError::Diagnostic(x86_backend_boundary_diagnostic(x86_err).with_primary_label(label))
 }
 
 fn x86_codegen_error_to_compile_error_for_source_pack(
@@ -753,55 +731,157 @@ fn x86_codegen_error_to_compile_error_for_source_pack(
         return CompileError::GpuCodegen(err.to_string());
     };
 
-    let diagnostic_token = x86_diagnostic_token_for_error(
+    let label = x86_diagnostic_label_for_source_pack(
         device,
         queue,
         x86_parse,
+        x86_diagnostics,
+        diagnostic_files,
         x86_err,
         "compiler.x86.source-pack-diagnostic-hir-token-pos",
         Some(0),
     );
 
-    let token_index = match diagnostic_token {
-        Ok(token_index) => token_index,
-        Err(read_err) => {
-            return CompileError::GpuCodegen(format!(
-                "{}; failed to resolve diagnostic token: {}",
-                err, read_err
-            ));
-        }
-    };
+    CompileError::Diagnostic(x86_backend_boundary_diagnostic(x86_err).with_primary_label(label))
+}
 
-    match read_single_owned_token_for_diagnostic(device, queue, x86_diagnostics, token_index) {
-        Ok(token_record) => {
-            let Some(file) = source_pack_file_for_global_span(diagnostic_files, token_record.start)
-            else {
-                return CompileError::GpuCodegen(format!(
-                    "{}; failed to map diagnostic token {} at byte {} to a source-pack file",
-                    err, token_index, token_record.start
-                ));
-            };
-            CompileError::Diagnostic(
-                Diagnostic::error("LNC0017", x86_err.error_name())
-                    .with_primary_label(diagnostic_label_from_source_span(
-                        &file.path,
-                        &file.source,
-                        file.local_start_for_global(token_record.start),
-                        token_record.len,
-                        "not supported by the native x86 backend yet",
-                    ))
-                    .with_note(format!(
-                        "x86 backend error code {} detail {}",
-                        x86_err.error_code(),
-                        x86_err.error_detail()
-                    )),
-            )
+fn x86_backend_boundary_diagnostic(x86_err: &x86::X86OutputError) -> Diagnostic {
+    Diagnostic::error("LNC0017", x86_err.error_name()).with_note(format!(
+        "x86 backend error code {} detail {}",
+        x86_err.error_code(),
+        x86_err.error_detail()
+    ))
+}
+
+fn x86_empty_source_pack_compile_error() -> CompileError {
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0017", "missing main entrypoint")
+            .with_primary_label(x86_fallback_label_for_source_pack(&[]))
+            .with_note("x86 source packs must contain at least one source file before native entry selection can run"),
+    )
+}
+
+fn x86_diagnostic_label_for_source(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    x86_parse: &OwnedX86ParserBuffers,
+    x86_diagnostics: &OwnedX86DiagnosticBuffers,
+    x86_err: &x86::X86OutputError,
+    hir_token_pos_readback_label: &'static str,
+    invalid_select_anchor_token: Option<u32>,
+    src: &str,
+    diagnostic_path: &Path,
+) -> DiagnosticLabel {
+    let token = x86_diagnostic_token_for_error(
+        device,
+        queue,
+        x86_parse,
+        x86_err,
+        hir_token_pos_readback_label,
+        invalid_select_anchor_token,
+    );
+    if let Ok(token_index) = token {
+        if let Ok(token_record) =
+            read_single_owned_token_for_diagnostic(device, queue, x86_diagnostics, token_index)
+        {
+            return diagnostic_label_from_source_span(
+                diagnostic_path,
+                src,
+                token_record.start,
+                token_record.len,
+                "not supported by the native x86 backend yet",
+            );
         }
-        Err(read_err) => CompileError::GpuCodegen(format!(
-            "{}; failed to read diagnostic token {}: {}",
-            err, token_index, read_err
-        )),
     }
+
+    x86_fallback_label_for_source(diagnostic_path, src)
+}
+
+fn x86_diagnostic_label_for_source_pack(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    x86_parse: &OwnedX86ParserBuffers,
+    x86_diagnostics: &OwnedX86DiagnosticBuffers,
+    diagnostic_files: &[DiagnosticSourceFile],
+    x86_err: &x86::X86OutputError,
+    hir_token_pos_readback_label: &'static str,
+    invalid_select_anchor_token: Option<u32>,
+) -> DiagnosticLabel {
+    let token = x86_diagnostic_token_for_error(
+        device,
+        queue,
+        x86_parse,
+        x86_err,
+        hir_token_pos_readback_label,
+        invalid_select_anchor_token,
+    );
+    if let Ok(token_index) = token {
+        if let Ok(token_record) =
+            read_single_owned_token_for_diagnostic(device, queue, x86_diagnostics, token_index)
+        {
+            if let Some(file) =
+                source_pack_file_for_global_span(diagnostic_files, token_record.start)
+            {
+                return diagnostic_label_from_source_span(
+                    &file.path,
+                    &file.source,
+                    file.local_start_for_global(token_record.start),
+                    token_record.len,
+                    "not supported by the native x86 backend yet",
+                );
+            }
+        }
+    }
+
+    x86_fallback_label_for_source_pack(diagnostic_files)
+}
+
+fn x86_fallback_label_for_source(diagnostic_path: &Path, src: &str) -> DiagnosticLabel {
+    diagnostic_label_from_source_span(
+        diagnostic_path,
+        src,
+        x86_first_nonempty_label_start(src),
+        x86_first_label_len(src),
+        "not supported by the native x86 backend yet",
+    )
+}
+
+fn x86_fallback_label_for_source_pack(
+    diagnostic_files: &[DiagnosticSourceFile],
+) -> DiagnosticLabel {
+    if let Some(file) = diagnostic_files.first() {
+        return diagnostic_label_from_source_span(
+            &file.path,
+            &file.source,
+            x86_first_nonempty_label_start(&file.source),
+            x86_first_label_len(&file.source),
+            "not supported by the native x86 backend yet",
+        );
+    }
+
+    diagnostic_label_from_source_span(
+        PathBuf::from("<source pack>"),
+        "",
+        0,
+        1,
+        "not supported by the native x86 backend yet",
+    )
+}
+
+fn x86_first_label_len(source: &str) -> usize {
+    source[x86_first_nonempty_label_start(source)..]
+        .chars()
+        .next()
+        .map(char::len_utf8)
+        .unwrap_or(0)
+}
+
+fn x86_first_nonempty_label_start(source: &str) -> usize {
+    source
+        .char_indices()
+        .find(|(_, ch)| !ch.is_whitespace())
+        .map(|(index, _)| index)
+        .unwrap_or(0)
 }
 
 fn x86_diagnostic_token_for_error(
@@ -818,6 +898,15 @@ fn x86_diagnostic_token_for_error(
         if let Some(token) = invalid_select_anchor_token {
             return Ok(token);
         }
+    }
+    if x86_err.error_code() == 48 {
+        return read_u32_from_buffer_for_diagnostic(
+            device,
+            queue,
+            &x86_parse.hir_token_pos,
+            x86_err.error_detail(),
+            hir_token_pos_readback_label,
+        );
     }
     if x86_err.detail_is_token() {
         return Ok(x86_err.error_detail());
@@ -875,9 +964,26 @@ fn type_check_error_to_compile_error_for_owned_source(
                         src,
                         token_record.start,
                         token_record.len,
-                        "expected a different type here",
+                        type_mismatch_label(*detail),
                     ))
                     .with_note(type_mismatch_note(*detail)),
+            ),
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::CallMismatch,
+            detail,
+        } => match read_single_owned_token_for_diagnostic(device, queue, x86_diagnostics, *token) {
+            Ok(token_record) => x86_call_mismatch_diagnostic(
+                diagnostic_path,
+                src,
+                token_record.start,
+                token_record.len,
+                *detail,
             ),
             Err(read_err) => CompileError::GpuTypeCheck(format!(
                 "{}; failed to read diagnostic token {}: {}",
@@ -964,9 +1070,36 @@ fn type_check_error_to_compile_error_for_x86_source_pack(
                             &file.source,
                             file.local_start_for_global(token_record.start),
                             token_record.len,
-                            "expected a different type here",
+                            type_mismatch_label(*detail),
                         ))
                         .with_note(type_mismatch_note(*detail)),
+                )
+            }
+            Err(read_err) => CompileError::GpuTypeCheck(format!(
+                "{}; failed to read diagnostic token {}: {}",
+                err, token, read_err
+            )),
+        },
+        GpuTypeCheckError::Rejected {
+            token,
+            code: GpuTypeCheckCode::CallMismatch,
+            detail,
+        } => match read_single_owned_token_for_diagnostic(device, queue, x86_diagnostics, *token) {
+            Ok(token_record) => {
+                let Some(file) =
+                    source_pack_file_for_global_span(diagnostic_files, token_record.start)
+                else {
+                    return CompileError::GpuTypeCheck(format!(
+                        "{}; failed to map diagnostic token {} at byte {} to a source-pack file",
+                        err, token, token_record.start
+                    ));
+                };
+                x86_call_mismatch_diagnostic(
+                    &file.path,
+                    &file.source,
+                    file.local_start_for_global(token_record.start),
+                    token_record.len,
+                    *detail,
                 )
             }
             Err(read_err) => CompileError::GpuTypeCheck(format!(
@@ -1011,18 +1144,43 @@ fn type_check_error_to_compile_error_for_x86_source_pack(
     }
 }
 
-fn type_mismatch_note(detail: u32) -> String {
-    if detail == 0 {
-        return "the expression type does not match the required type".to_string();
-    }
+fn x86_call_mismatch_diagnostic(
+    path: &Path,
+    source: &str,
+    start: usize,
+    len: usize,
+    detail: u32,
+) -> CompileError {
+    const CALL_MISMATCH_UNSUPPORTED_METHOD_RETURN_REF: u32 = 0xffffff01;
+    const CALL_MISMATCH_UNSUPPORTED_METHOD_GENERIC: u32 = 0xffffff02;
+    const CALL_MISMATCH_UNSUPPORTED_METHOD_WHERE: u32 = 0xffffff03;
 
-    let expected = detail / 256;
-    let actual = detail % 256;
-    if expected == 0 {
-        return format!("the expression resolved to incompatible type code {actual}");
-    }
+    let (label, note) = match detail {
+        CALL_MISMATCH_UNSUPPORTED_METHOD_RETURN_REF => (
+            "method return type is outside the current GPU substitution records",
+            "publish method return substitution rows keyed by receiver type-instance arguments before accepting generic method returns",
+        ),
+        CALL_MISMATCH_UNSUPPORTED_METHOD_GENERIC => (
+            "method-level generics are outside the current GPU method-call records",
+            "publish explicit method-level generic substitution rows before accepting generic method dispatch",
+        ),
+        CALL_MISMATCH_UNSUPPORTED_METHOD_WHERE => (
+            "method-level where clauses are outside the current GPU method-call records",
+            "publish method predicate obligation rows before accepting method-level where clauses",
+        ),
+        _ => (
+            "call does not match a resolved function or method",
+            "no supported function or method signature matches this receiver and argument list",
+        ),
+    };
 
-    format!("expected type code {expected}, found type code {actual}")
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0027", "call resolution failed")
+            .with_primary_label(diagnostic_label_from_source_span(
+                path, source, start, len, label,
+            ))
+            .with_note(note),
+    )
 }
 
 fn read_u32_from_buffer_for_diagnostic(

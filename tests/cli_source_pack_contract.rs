@@ -49,6 +49,53 @@ fn cli_descriptor_source_pack_requires_explicit_contract_output() {
 }
 
 #[test]
+fn cli_emit_contract_single_input_uses_descriptor_path_instead_of_plain_compile() {
+    let root =
+        common::temp_artifact_path("laniusc_cli_source_pack_contract", "emit_contract", None);
+    let missing_source = root.join("missing.lani");
+    fs::create_dir_all(&root).expect("create emit-contract root");
+
+    let mut command = Command::new(laniusc_bin());
+    command.arg("--emit-contract").arg(&missing_source);
+
+    let output =
+        common::command_output_with_timeout("laniusc emit-contract source-pack path", &mut command);
+    assert!(
+        !output.status.success(),
+        "--emit-contract must not fall through to plain single-file compile\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--source-pack-artifact-root"));
+    assert!(
+        !stderr.contains("missing.lani"),
+        "descriptor-mode validation should run before loading the input source"
+    );
+
+    fs::remove_dir_all(&root).expect("remove emit-contract root");
+}
+
+#[test]
+fn cli_explicit_legacy_source_pack_requires_an_input_instead_of_demo_compile() {
+    let mut command = Command::new(laniusc_bin());
+    command.arg("--source-pack-legacy-in-memory");
+
+    let output = common::command_output_with_timeout(
+        "laniusc legacy source-pack explicit input requirement",
+        &mut command,
+    );
+    assert!(
+        !output.status.success(),
+        "explicit legacy source-pack mode must not compile the default demo\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("explicit source-pack compilation requires at least one input file"));
+}
+
+#[test]
 fn cli_descriptor_source_root_preparation_is_explicitly_unsupported() {
     let root = common::temp_artifact_path("laniusc_cli_source_pack_contract", "source_root", None);
     let source_root = root.join("missing_source_root");
@@ -138,7 +185,8 @@ fn cli_descriptor_package_manifest_preparation_is_explicitly_unsupported() {
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("--package-manifest"));
-    assert!(stderr.contains("do not combine"));
+    assert!(stderr.contains("--source-pack-metadata-only"));
+    assert!(stderr.contains("final source-pack descriptor"));
     assert!(
         !output_path.exists(),
         "unsupported package descriptor compile must not leave contract or executable output"
@@ -180,8 +228,8 @@ fn cli_descriptor_package_lockfile_preparation_is_explicitly_unsupported() {
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("--package-lockfile"));
-    assert!(stderr.contains("in-memory source-root compiler path"));
-    assert!(stderr.contains("do not combine"));
+    assert!(stderr.contains("--source-pack-metadata-only"));
+    assert!(stderr.contains("final source-pack descriptor"));
     assert!(
         !stderr.contains("missing.lanius.lock.json"),
         "descriptor/package-lockfile guard should run before lockfile loading"

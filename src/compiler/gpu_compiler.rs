@@ -16,6 +16,8 @@ use helpers::{
     buffer_if_wgpu_u32_words,
     hir_node_capacity_for_parser_emit,
     trace_wasm_compile,
+    type_mismatch_label,
+    type_mismatch_note,
     x86_inst_hir_node_count_for_backend_capacity,
 };
 pub(in crate::compiler) use helpers::{prepare_source_for_gpu, prepare_source_for_gpu_from_path};

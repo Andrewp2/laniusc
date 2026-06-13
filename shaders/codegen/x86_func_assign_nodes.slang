@@ -5,8 +5,9 @@
 // owner, and the subtree span validates that the node is actually inside that
 // function. The parent link then pointer-jumps any remaining unresolved nodes
 // from the tree relation. It works from HIR records only; it does not inspect
-// token spelling or source text. HIR_FN signature rows that are not function
-// items, such as trait methods, never own native backend nodes.
+// token spelling or source text. HIR_FN signature rows that are neither free
+// functions nor impl methods, such as trait signatures, never own native
+// backend nodes.
 
 import gpu_index;
 
@@ -23,6 +24,8 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> hir_status;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_item_kind;
+StructuredBuffer<uint> hir_token_pos;
+StructuredBuffer<uint> method_decl_param_offset;
 StructuredBuffer<uint> x86_tree_parent;
 StructuredBuffer<uint> x86_tree_subtree_end;
 StructuredBuffer<uint> x86_node_tree_status;
@@ -54,6 +57,11 @@ bool valid_node(uint node_i)
     return node_i != INVALID && node_i < active_hir_node_count();
 }
 
+bool valid_token(uint token_i)
+{
+    return token_i != INVALID && token_i < gParams.n_tokens;
+}
+
 bool node_tree_ok()
 {
     return x86_node_tree_status[0u] == X86_NODE_TREE_OK &&
@@ -64,8 +72,13 @@ bool is_owning_function_node(uint node_i)
 {
     if (!valid_node(node_i))
         return false;
-    return hir_kind[node_i] == HIR_FN &&
-           hir_item_kind[node_i] == HIR_ITEM_KIND_FN;
+    if (hir_kind[node_i] != HIR_FN)
+        return false;
+    if (hir_item_kind[node_i] == HIR_ITEM_KIND_FN)
+        return true;
+
+    uint fn_token = hir_token_pos[node_i];
+    return valid_token(fn_token) && method_decl_param_offset[fn_token] != INVALID;
 }
 
 uint owner_from_hir_order_scan(uint node_i)

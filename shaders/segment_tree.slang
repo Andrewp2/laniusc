@@ -48,7 +48,23 @@ public struct RangeSearchU32BitsetIntersects : IRangeSearchPredicate<uint, uint>
 }
 
 static const int RANGE_SEARCH_TREE_SEARCH_STACK = 64;
+// Local helper budgets: callers must bound tree frames by the fixed stack and
+// row scans by one published row block before using these loops.
+static const uint RANGE_SEARCH_TREE_POP_BUDGET = 256u;
+static const uint RANGE_SEARCH_ROW_BLOCK_SCAN_BUDGET = 256u;
 static const uint RANGE_SEARCH_TREE_INVALID = 0xffffffffu;
+
+public uint range_search_leaf_base_for_block_count(uint block_count)
+{
+    uint value = max(block_count, 1u);
+    value -= 1u;
+    value |= value >> 1u;
+    value |= value >> 2u;
+    value |= value >> 4u;
+    value |= value >> 8u;
+    value |= value >> 16u;
+    return value + 1u;
+}
 
 public struct RangeSearchTreeFrame
 {
@@ -64,80 +80,6 @@ public RangeSearchTreeFrame range_search_tree_frame(uint node, uint l, uint r)
     frame.l = l;
     frame.r = r;
     return frame;
-}
-
-public bool range_search_tree_first_block_at_or_after_linear<
-    TValue,
-    TQuery,
-    TTree: IRangeSearchTree<TValue>,
-    TPredicate: IRangeSearchPredicate<TValue, TQuery>>(
-    uint lo_block,
-    TQuery query,
-    out uint block)
-{
-    block = RANGE_SEARCH_TREE_INVALID;
-    uint n = TTree.n_blocks();
-    [loop]
-    for (uint i = lo_block; i < n; i += 1u)
-    {
-        if (TPredicate.leaf_matches(TTree.leaf_value(i), query))
-        {
-            block = i;
-            return true;
-        }
-    }
-    return false;
-}
-
-public bool range_search_tree_last_block_before_linear<
-    TValue,
-    TQuery,
-    TTree: IRangeSearchTree<TValue>,
-    TPredicate: IRangeSearchPredicate<TValue, TQuery>>(
-    uint hi_block,
-    TQuery query,
-    out uint block)
-{
-    block = RANGE_SEARCH_TREE_INVALID;
-    uint n = TTree.n_blocks();
-    uint i = min(hi_block, n);
-    [loop]
-    while (i > 0u)
-    {
-        i -= 1u;
-        if (TPredicate.leaf_matches(TTree.leaf_value(i), query))
-        {
-            block = i;
-            return true;
-        }
-    }
-    return false;
-}
-
-public bool range_search_tree_last_block_between_linear<
-    TValue,
-    TQuery,
-    TTree: IRangeSearchTree<TValue>,
-    TPredicate: IRangeSearchPredicate<TValue, TQuery>>(
-    uint lo_block,
-    uint hi_block,
-    TQuery query,
-    out uint block)
-{
-    block = RANGE_SEARCH_TREE_INVALID;
-    uint n = TTree.n_blocks();
-    uint i = min(hi_block, n);
-    [loop]
-    while (i > lo_block)
-    {
-        i -= 1u;
-        if (TPredicate.leaf_matches(TTree.leaf_value(i), query))
-        {
-            block = i;
-            return true;
-        }
-    }
-    return false;
 }
 
 public bool range_search_tree_first_block_at_or_after<
@@ -165,8 +107,11 @@ public bool range_search_tree_first_block_at_or_after<
         return false;
 
     [loop]
-    while (!fixed_stack_empty(sp))
+    for (uint pop_count = 0u; pop_count < RANGE_SEARCH_TREE_POP_BUDGET; pop_count += 1u)
     {
+        if (fixed_stack_empty(sp))
+            return false;
+
         RangeSearchTreeFrame frame;
         if (!fixed_stack_pop<RangeSearchTreeFrame, RANGE_SEARCH_TREE_SEARCH_STACK>(
                 sp,
@@ -196,10 +141,7 @@ public bool range_search_tree_first_block_at_or_after<
         }
 
         if (sp + 2u > uint(RANGE_SEARCH_TREE_SEARCH_STACK))
-            return range_search_tree_first_block_at_or_after_linear<TValue, TQuery, TTree, TPredicate>(
-                lo_block,
-                query,
-                block);
+            return false;
 
         uint mid = (l + r) >> 1u;
 
@@ -211,10 +153,7 @@ public bool range_search_tree_first_block_at_or_after<
                 sp,
                 stack,
                 range_search_tree_frame(node * 2u, l, mid)))
-            return range_search_tree_first_block_at_or_after_linear<TValue, TQuery, TTree, TPredicate>(
-                lo_block,
-                query,
-                block);
+            return false;
     }
 
     return false;
@@ -245,8 +184,11 @@ public bool range_search_tree_last_block_before<
         return false;
 
     [loop]
-    while (!fixed_stack_empty(sp))
+    for (uint pop_count = 0u; pop_count < RANGE_SEARCH_TREE_POP_BUDGET; pop_count += 1u)
     {
+        if (fixed_stack_empty(sp))
+            return false;
+
         RangeSearchTreeFrame frame;
         if (!fixed_stack_pop<RangeSearchTreeFrame, RANGE_SEARCH_TREE_SEARCH_STACK>(
                 sp,
@@ -276,10 +218,7 @@ public bool range_search_tree_last_block_before<
         }
 
         if (sp + 2u > uint(RANGE_SEARCH_TREE_SEARCH_STACK))
-            return range_search_tree_last_block_before_linear<TValue, TQuery, TTree, TPredicate>(
-                hi_block,
-                query,
-                block);
+            return false;
 
         uint mid = (l + r) >> 1u;
 
@@ -291,10 +230,7 @@ public bool range_search_tree_last_block_before<
                 sp,
                 stack,
                 range_search_tree_frame(node * 2u + 1u, mid, r)))
-            return range_search_tree_last_block_before_linear<TValue, TQuery, TTree, TPredicate>(
-                hi_block,
-                query,
-                block);
+            return false;
     }
 
     return false;
@@ -330,8 +266,11 @@ public bool range_search_tree_last_block_between<
         return false;
 
     [loop]
-    while (!fixed_stack_empty(sp))
+    for (uint pop_count = 0u; pop_count < RANGE_SEARCH_TREE_POP_BUDGET; pop_count += 1u)
     {
+        if (fixed_stack_empty(sp))
+            return false;
+
         RangeSearchTreeFrame frame;
         if (!fixed_stack_pop<RangeSearchTreeFrame, RANGE_SEARCH_TREE_SEARCH_STACK>(
                 sp,
@@ -362,11 +301,7 @@ public bool range_search_tree_last_block_between<
         }
 
         if (sp + 2u > uint(RANGE_SEARCH_TREE_SEARCH_STACK))
-            return range_search_tree_last_block_between_linear<TValue, TQuery, TTree, TPredicate>(
-                lo_block,
-                capped_hi,
-                query,
-                block);
+            return false;
 
         uint mid = (l + r) >> 1u;
 
@@ -378,11 +313,7 @@ public bool range_search_tree_last_block_between<
                 sp,
                 stack,
                 range_search_tree_frame(node * 2u + 1u, mid, r)))
-            return range_search_tree_last_block_between_linear<TValue, TQuery, TTree, TPredicate>(
-                lo_block,
-                capped_hi,
-                query,
-                block);
+            return false;
     }
 
     return false;
@@ -401,14 +332,19 @@ public bool range_search_first_index_in_block_at_or_after<
     index = RANGE_SEARCH_TREE_INVALID;
     uint block_size = TRows.block_size();
     uint count = TRows.item_count();
-    if (block_size == 0u || lo_index >= count)
+    if (block_size == 0u || block_size > RANGE_SEARCH_ROW_BLOCK_SCAN_BUDGET || lo_index >= count)
         return false;
 
     uint start = max(lo_index, block * block_size);
     uint end = min(count, (block + 1u) * block_size);
+    uint span = (end > start) ? (end - start) : 0u;
     [loop]
-    for (uint row = start; row < end; row += 1u)
+    for (uint offset = 0u; offset < RANGE_SEARCH_ROW_BLOCK_SCAN_BUDGET; offset += 1u)
     {
+        if (offset >= span)
+            continue;
+
+        uint row = start + offset;
         if (TPredicate.leaf_matches(TRows.row_value(row), query))
         {
             index = row;
@@ -431,16 +367,21 @@ public bool range_search_last_index_in_block_before<
     index = RANGE_SEARCH_TREE_INVALID;
     uint block_size = TRows.block_size();
     uint count = TRows.item_count();
-    if (block_size == 0u || hi_index == 0u || count == 0u)
+    if (block_size == 0u || block_size > RANGE_SEARCH_ROW_BLOCK_SCAN_BUDGET || hi_index == 0u ||
+        count == 0u)
         return false;
 
     uint start = block * block_size;
     uint end = min(count, (block + 1u) * block_size);
-    uint row = min(hi_index, end);
+    uint scan_end = min(hi_index, end);
+    uint span = (scan_end > start) ? (scan_end - start) : 0u;
     [loop]
-    while (row > start)
+    for (uint offset = 0u; offset < RANGE_SEARCH_ROW_BLOCK_SCAN_BUDGET; offset += 1u)
     {
-        row -= 1u;
+        if (offset >= span)
+            continue;
+
+        uint row = scan_end - 1u - offset;
         if (TPredicate.leaf_matches(TRows.row_value(row), query))
         {
             index = row;
@@ -464,16 +405,20 @@ public bool range_search_last_index_in_block_between<
     index = RANGE_SEARCH_TREE_INVALID;
     uint block_size = TRows.block_size();
     uint count = TRows.item_count();
-    if (block_size == 0u || hi_index <= lo_index || count == 0u)
+    if (block_size == 0u || block_size > RANGE_SEARCH_ROW_BLOCK_SCAN_BUDGET ||
+        hi_index <= lo_index || count == 0u)
         return false;
 
     uint start = max(lo_index, block * block_size);
     uint end = min(min(hi_index, count), (block + 1u) * block_size);
-    uint row = end;
+    uint span = (end > start) ? (end - start) : 0u;
     [loop]
-    while (row > start)
+    for (uint offset = 0u; offset < RANGE_SEARCH_ROW_BLOCK_SCAN_BUDGET; offset += 1u)
     {
-        row -= 1u;
+        if (offset >= span)
+            continue;
+
+        uint row = end - 1u - offset;
         if (TPredicate.leaf_matches(TRows.row_value(row), query))
         {
             index = row;

@@ -72,7 +72,13 @@ impl Serialize for PackageManifest {
 impl PackageManifest {
     pub fn parse_json(source: &str) -> Result<Self, CompileError> {
         let document = serde_json::from_str::<PackageManifestDocument>(source).map_err(|err| {
-            CompileError::GpuFrontend(format!("parse package manifest JSON: {err}"))
+            let mut message = format!("parse package manifest JSON: {err}");
+            if let Some(field) = unsupported_manifest_import_configuration_field(source) {
+                message.push_str(&format!(
+                    "; unsupported package manifest field `{field}`; package manifests configure source roots, optional stdlib_root, and entry only; imports are declared in .lani source files with module paths, and external package dependencies are not supported yet"
+                ));
+            }
+            CompileError::GpuFrontend(message)
         })?;
         document.to_validated_manifest()
     }
@@ -128,8 +134,9 @@ impl PackageManifest {
         validate_package_entry_source_path("resolved package entry", &entry)?;
         if !roots.iter().any(|root| entry.starts_with(root)) {
             return Err(package_manifest_error(format!(
-                "package entry {} is not under any declared source root",
-                entry.display()
+                "package entry {} is not under any declared source root; declared source roots: {}",
+                entry.display(),
+                format_manifest_roots(&roots)
             )));
         }
         let entry_relative_path = roots
@@ -137,8 +144,9 @@ impl PackageManifest {
             .find_map(|root| entry.strip_prefix(root).ok())
             .ok_or_else(|| {
                 package_manifest_error(format!(
-                    "package entry {} is not relative to any declared source root",
-                    entry.display()
+                    "package entry {} is not relative to any declared source root; declared source roots: {}",
+                    entry.display(),
+                    format_manifest_roots(&roots)
                 ))
             })?;
         package_source_root_relative_module_path_with_label(
@@ -205,6 +213,17 @@ impl PackageManifest {
                 )));
             }
         }
+        for (index, root) in self.roots.iter().enumerate() {
+            for other in self.roots.iter().skip(index + 1) {
+                if resolved_paths_overlap(root, other) {
+                    return Err(package_manifest_error(format!(
+                        "package source roots {} and {} overlap by manifest-relative path",
+                        root.display(),
+                        other.display()
+                    )));
+                }
+            }
+        }
         if let Some(stdlib_root) = &self.stdlib_root {
             if stdlib_root.as_os_str().is_empty() {
                 return Err(package_manifest_error(
@@ -212,6 +231,15 @@ impl PackageManifest {
                 ));
             }
             validate_package_relative_path("stdlib root", stdlib_root)?;
+            for root in &self.roots {
+                if resolved_paths_overlap(root, stdlib_root) {
+                    return Err(package_manifest_error(format!(
+                        "package stdlib root {} overlaps source root {} by manifest-relative path",
+                        stdlib_root.display(),
+                        root.display()
+                    )));
+                }
+            }
         }
         if self.entry.as_os_str().is_empty() {
             return Err(package_manifest_error(
@@ -220,6 +248,22 @@ impl PackageManifest {
         }
         validate_package_relative_path("entry", &self.entry)?;
         validate_package_entry_source_path("entry", &self.entry)?;
+        let entry_relative_path = self
+            .roots
+            .iter()
+            .find_map(|root| self.entry.strip_prefix(root).ok())
+            .ok_or_else(|| {
+                package_manifest_error(format!(
+                    "package entry {} is not under any declared source root by manifest-relative path; declared source roots: {}",
+                    self.entry.display(),
+                    format_manifest_roots(&self.roots)
+                ))
+            })?;
+        package_source_root_relative_module_path_with_label(
+            "package entry source-root relative path",
+            entry_relative_path,
+        )
+        .map_err(package_manifest_error)?;
         Ok(())
     }
 }
@@ -286,6 +330,7 @@ fn canonical_manifest_dir(
         )));
     }
     validate_manifest_boundary(label, base_dir, &canonical)?;
+    validate_manifest_directory_scope(label, base_dir, &canonical)?;
     Ok(canonical)
 }
 
@@ -342,8 +387,46 @@ fn validate_manifest_boundary(
     )))
 }
 
+fn validate_manifest_directory_scope(
+    label: &str,
+    base_dir: &Path,
+    canonical: &Path,
+) -> Result<(), CompileError> {
+    if canonical != base_dir {
+        return Ok(());
+    }
+    Err(package_manifest_error(format!(
+        "{label} {} resolves to the package manifest directory {}; \
+         use a package-owned source or stdlib subdirectory instead",
+        canonical.display(),
+        base_dir.display()
+    )))
+}
+
 fn resolve_manifest_path(base_dir: &Path, path: &Path) -> PathBuf {
     base_dir.join(path)
+}
+
+fn unsupported_manifest_import_configuration_field(source: &str) -> Option<&'static str> {
+    let document = serde_json::from_str::<serde_json::Value>(source).ok()?;
+    let object = document.as_object()?;
+    [
+        "dependencies",
+        "dev_dependencies",
+        "imports",
+        "import_roots",
+        "packages",
+    ]
+    .into_iter()
+    .find(|field| object.contains_key(*field))
+}
+
+fn format_manifest_roots(roots: &[PathBuf]) -> String {
+    roots
+        .iter()
+        .map(|root| root.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn validate_package_relative_path(label: &str, path: &Path) -> Result<(), CompileError> {
@@ -360,6 +443,12 @@ fn validate_package_relative_path(label: &str, path: &Path) -> Result<(), Compil
     if raw_path.contains('\\') {
         return Err(package_manifest_error(format!(
             "{label} {} must use '/' separators; package manifests do not accept backslash path separators",
+            path.display()
+        )));
+    }
+    if raw_path.contains(':') {
+        return Err(package_manifest_error(format!(
+            "{label} {} must not contain ':'; package manifests use portable package-relative paths and do not accept drive prefixes or URI schemes",
             path.display()
         )));
     }
@@ -422,9 +511,16 @@ pub(super) fn package_source_root_relative_module_path_with_label(
                 relative_path.display()
             ));
         };
-        if !valid_package_module_path_segment(segment) {
+        if !valid_package_module_ident_segment(segment) {
             return Err(format!(
                 "{label} {} maps to invalid module path segment {:?}",
+                relative_path.display(),
+                segment
+            ));
+        }
+        if is_package_module_reserved_segment(segment) {
+            return Err(format!(
+                "{label} {} maps to reserved keyword module path segment {:?}; GPU parser module paths require identifier tokens",
                 relative_path.display(),
                 segment
             ));
@@ -448,7 +544,11 @@ pub(super) fn package_source_root_relative_module_path_with_label(
     Ok(segments.join("::"))
 }
 
-fn valid_package_module_path_segment(segment: &str) -> bool {
+pub(super) fn valid_package_module_path_segment(segment: &str) -> bool {
+    valid_package_module_ident_segment(segment) && !is_package_module_reserved_segment(segment)
+}
+
+pub(super) fn valid_package_module_ident_segment(segment: &str) -> bool {
     let Some(first) = segment.bytes().next() else {
         return false;
     };
@@ -457,6 +557,37 @@ fn valid_package_module_path_segment(segment: &str) -> bool {
             .bytes()
             .skip(1)
             .all(is_package_module_ident_continue)
+}
+
+pub(super) fn is_package_module_reserved_segment(segment: &str) -> bool {
+    matches!(
+        segment,
+        "break"
+            | "const"
+            | "continue"
+            | "else"
+            | "enum"
+            | "extern"
+            | "false"
+            | "fn"
+            | "for"
+            | "if"
+            | "impl"
+            | "import"
+            | "in"
+            | "let"
+            | "match"
+            | "module"
+            | "pub"
+            | "return"
+            | "self"
+            | "struct"
+            | "trait"
+            | "true"
+            | "type"
+            | "where"
+            | "while"
+    )
 }
 
 fn is_package_module_ident_start(byte: u8) -> bool {

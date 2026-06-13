@@ -228,6 +228,8 @@ pub(in crate::compiler) fn validate_link_execution_page_with_mode(
         ),
     )?;
     validate_link_execution_output_key_kind(page, target)?;
+    validate_link_execution_dense_job_base(page)?;
+    validate_link_execution_source_summary(page)?;
     if page.input_interface_ranges.len()
         > SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_INTERFACE_DEFAULT_PAGE_SIZE
     {
@@ -337,7 +339,7 @@ pub(in crate::compiler) fn validate_link_execution_page_with_mode(
     let input_interface_count = hierarchical_link_execution_input_interface_count(page);
     let input_object_count = hierarchical_link_execution_input_object_count(page);
     let input_group_count = hierarchical_link_execution_input_group_count(page);
-    validate_store_input_descriptor_evidence(
+    validate_store_input_artifact_evidence(
         page,
         input_interface_count,
         input_object_count,
@@ -537,6 +539,12 @@ pub(in crate::compiler) fn validate_link_execution_page_with_mode(
 
     match page.kind {
         SourcePackHierarchicalLinkGroupKind::Leaf => {
+            if page.final_output && page.group_index != 0 {
+                return Err(library_partition_contract_error(format!(
+                    "hierarchical link execution final leaf group {} is invalid; a final leaf can only be dense group 0, and nonzero final groups must reduce prior partial-link outputs before claiming linked-output evidence",
+                    page.group_index
+                )));
+            }
             if input_interface_count == 0
                 || input_object_count == 0
                 || (page.input_objects.is_empty() && page.input_object_page_count == 0)
@@ -583,50 +591,135 @@ pub(in crate::compiler) fn validate_link_execution_page_with_mode(
     Ok(())
 }
 
-fn validate_store_input_descriptor_evidence(
+fn validate_link_execution_dense_job_base(
+    page: &SourcePackHierarchicalLinkExecutionPage,
+) -> Result<(), CompileError> {
+    if page.job_index < page.group_index {
+        return Err(library_partition_contract_error(format!(
+            "hierarchical link execution group {} records link job {} before its dense group index; persisted link pages must encode a nonnegative first link job before output artifact evidence is trusted",
+            page.group_index, page.job_index
+        )));
+    }
+    Ok(())
+}
+
+fn validate_link_execution_source_summary(
+    page: &SourcePackHierarchicalLinkExecutionPage,
+) -> Result<(), CompileError> {
+    if page.source_file_count == 0 {
+        return Ok(());
+    }
+    if page.source_byte_count == 0 {
+        return Err(library_partition_contract_error(format!(
+            "hierarchical link execution group {} has empty source-byte summary for {} source files; link-execution replay must carry concrete source-byte evidence",
+            page.group_index, page.source_file_count
+        )));
+    }
+    if page.source_byte_count < page.source_file_count {
+        return Err(library_partition_contract_error(format!(
+            "hierarchical link execution group {} source-byte summary {} is smaller than source-file count {}; each replayed source file must contribute concrete bytes",
+            page.group_index, page.source_byte_count, page.source_file_count
+        )));
+    }
+    if page.source_line_count == 0 {
+        return Err(library_partition_contract_error(format!(
+            "hierarchical link execution group {} has empty source-line summary for {} source files; link-execution replay must carry concrete source-line evidence",
+            page.group_index, page.source_file_count
+        )));
+    }
+    if page.source_line_count < page.source_file_count {
+        return Err(library_partition_contract_error(format!(
+            "hierarchical link execution group {} source-line summary {} is smaller than source-file count {}; each replayed source file must contribute source-line evidence",
+            page.group_index, page.source_line_count, page.source_file_count
+        )));
+    }
+    Ok(())
+}
+
+fn validate_link_execution_sidecar_dense_job_base(
+    label: &str,
+    group_index: usize,
+    job_index: usize,
+) -> Result<(), CompileError> {
+    if job_index < group_index {
+        return Err(library_partition_contract_error(format!(
+            "{label} records link job {job_index} before dense group index {group_index}; persisted link sidecar pages must encode a nonnegative first link job before input artifact evidence is trusted"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_store_input_artifact_evidence(
     page: &SourcePackHierarchicalLinkExecutionPage,
     input_interface_count: usize,
     input_object_count: usize,
     input_group_count: usize,
     mode: LinkExecutionPageValidationMode,
 ) -> Result<(), CompileError> {
-    if mode != LinkExecutionPageValidationMode::StoreInput
-        || !link_descriptor_summary_carries_evidence(&page.descriptor_summary)
-    {
+    if mode != LinkExecutionPageValidationMode::StoreInput {
         return Ok(());
     }
 
-    let descriptor_only_interface_inputs =
-        input_interface_count != 0 && page.input_interfaces.is_empty();
-    let descriptor_only_object_inputs = input_object_count != 0 && page.input_objects.is_empty();
-    let descriptor_only_partial_inputs = input_group_count != 0
-        && page.input_group_indices.is_empty()
-        && page.input_group_output_keys.is_empty();
+    if link_descriptor_summary_carries_evidence(&page.descriptor_summary) {
+        let descriptor_only_interface_inputs =
+            input_interface_count != 0 && page.input_interfaces.is_empty();
+        let descriptor_only_object_inputs =
+            input_object_count != 0 && page.input_objects.is_empty();
+        let descriptor_only_partial_inputs = input_group_count != 0
+            && page.input_group_indices.is_empty()
+            && page.input_group_output_keys.is_empty();
 
-    if descriptor_only_interface_inputs
-        || descriptor_only_object_inputs
-        || descriptor_only_partial_inputs
-    {
-        let mut missing_records = Vec::new();
-        if descriptor_only_interface_inputs {
-            if page.input_interface_ranges.is_empty() {
-                missing_records.push("interface artifact refs");
-            } else {
-                missing_records.push(
-                    "interface artifact refs; dependency ranges are artifact lookups, not persisted interface artifacts",
-                );
+        if descriptor_only_interface_inputs
+            || descriptor_only_object_inputs
+            || descriptor_only_partial_inputs
+        {
+            let mut missing_records = Vec::new();
+            if descriptor_only_interface_inputs {
+                if page.input_interface_ranges.is_empty() {
+                    missing_records.push("interface artifact refs");
+                } else {
+                    missing_records.push(
+                        "interface artifact refs; dependency ranges are artifact lookups, not persisted interface artifacts",
+                    );
+                }
             }
+            if descriptor_only_object_inputs {
+                missing_records.push("object artifact refs");
+            }
+            if descriptor_only_partial_inputs {
+                missing_records.push("partial-link output keys");
+            }
+            return Err(library_partition_contract_error(format!(
+                "hierarchical link execution group {} descriptor summary cannot be persisted from store input without concrete {}; descriptor rows are not link artifact evidence",
+                page.group_index,
+                missing_records.join(", ")
+            )));
         }
-        if descriptor_only_object_inputs {
-            missing_records.push("object artifact refs");
-        }
-        if descriptor_only_partial_inputs {
-            missing_records.push("partial-link output keys");
-        }
+    }
+
+    let mut missing_sidecar_inputs = Vec::new();
+    if input_interface_count != 0
+        && page.input_interface_page_count != 0
+        && page.input_interfaces.is_empty()
+    {
+        missing_sidecar_inputs.push("interface artifact refs");
+    }
+    if input_object_count != 0 && page.input_object_page_count != 0 && page.input_objects.is_empty()
+    {
+        missing_sidecar_inputs.push("object artifact refs");
+    }
+    if input_group_count != 0
+        && page.input_group_page_count != 0
+        && page.input_group_indices.is_empty()
+        && page.input_group_output_keys.is_empty()
+    {
+        missing_sidecar_inputs.push("partial-link output keys");
+    }
+    if !missing_sidecar_inputs.is_empty() {
         return Err(library_partition_contract_error(format!(
-            "hierarchical link execution group {} descriptor summary cannot be persisted from store input without concrete {}; descriptor rows are not link artifact evidence",
+            "hierarchical link execution group {} store input references pre-paged {}; store input must carry concrete input records so the store can write sidecar pages rather than persisting missing artifact evidence",
             page.group_index,
-            missing_records.join(", ")
+            missing_sidecar_inputs.join(", ")
         )));
     }
 
@@ -750,6 +843,12 @@ fn validate_final_linked_output_key(
         ),
         "source end",
     )?;
+    if source_end == 0 {
+        return Err(library_partition_contract_error(format!(
+            "hierarchical link execution group {} final linked output key {:?} has empty source range 0..0; final linked-output pages must cover at least one source file",
+            page.group_index, page.output_key
+        )));
+    }
     if source_end != page.source_file_count {
         return Err(library_partition_contract_error(format!(
             "hierarchical link execution group {} final linked output key {:?} source end {} does not match source file count {}",
@@ -801,7 +900,7 @@ mod tests {
         SourcePackHierarchicalLinkExecutionPage {
             version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PAGE_VERSION,
             target,
-            group_index: if final_output { 1 } else { 0 },
+            group_index: 0,
             kind: SourcePackHierarchicalLinkGroupKind::Leaf,
             job_index: 50,
             input_interface_count: 0,
@@ -810,7 +909,7 @@ mod tests {
             input_interfaces: vec![artifact_ref(
                 target,
                 SourcePackArtifactKind::LibraryInterface,
-                0,
+                1,
                 1,
             )],
             input_object_count: 0,
@@ -818,7 +917,7 @@ mod tests {
             input_objects: vec![artifact_ref(
                 target,
                 SourcePackArtifactKind::CodegenObject,
-                1,
+                2,
                 2,
             )],
             input_group_count: 0,
@@ -875,24 +974,24 @@ mod tests {
         .expect("partial link output key is accepted");
 
         validate_link_execution_page(
-            &leaf_page(true, "wasm/linked-output/job-49/src-0-1"),
+            &leaf_page(true, "wasm/linked-output/job-50/src-0-1"),
             SourcePackArtifactTarget::Wasm,
-            Some(1),
+            Some(0),
         )
         .expect("final linked output key is accepted");
 
         let err = validate_link_execution_page(
-            &leaf_page(true, "wasm/partial-link/group-00000001/job-00000050"),
+            &leaf_page(true, "wasm/partial-link/group-00000000/job-00000050"),
             SourcePackArtifactTarget::Wasm,
-            Some(1),
+            Some(0),
         )
         .expect_err("final output must not use a partial-link key");
         assert!(err.to_string().contains("final linked output key"));
 
         let err = validate_link_execution_page(
-            &leaf_page(true, "wasm/linked-output/job-49/src-0-2"),
+            &leaf_page(true, "wasm/linked-output/job-50/src-0-2"),
             SourcePackArtifactTarget::Wasm,
-            Some(1),
+            Some(0),
         )
         .expect_err("final output must match the source-count key");
         assert!(err.to_string().contains("source end 2"));
@@ -901,7 +1000,7 @@ mod tests {
         let err = validate_link_execution_page(
             &leaf_page(true, "wasm/linked-output/job-51/src-0-1"),
             SourcePackArtifactTarget::Wasm,
-            Some(1),
+            Some(0),
         )
         .expect_err("final output must use the dense final output producer job");
         assert!(err.to_string().contains("dense final output artifact"));
@@ -913,6 +1012,18 @@ mod tests {
         )
         .expect_err("partial output must not use a linked-output key");
         assert!(err.to_string().contains("partial-link output key"));
+    }
+
+    #[test]
+    fn final_leaf_execution_must_be_the_single_dense_group() {
+        let mut page = leaf_page(true, "wasm/linked-output/job-49/src-0-1");
+        page.group_index = 1;
+        let err = validate_link_execution_page(&page, SourcePackArtifactTarget::Wasm, Some(1))
+            .expect_err("nonzero final leaf groups cannot claim linked-output evidence");
+        let message = err.to_string();
+        assert!(message.contains("final leaf group 1"));
+        assert!(message.contains("dense group 0"));
+        assert!(message.contains("reduce prior partial-link outputs"));
     }
 
     #[test]
@@ -958,6 +1069,59 @@ mod tests {
     }
 
     #[test]
+    fn partial_link_input_keys_accept_wide_dense_job_indices() {
+        let target = SourcePackArtifactTarget::Wasm;
+        let input_group_index = 100_000_000usize;
+        let consumer_group_index = input_group_index + 1;
+        let first_link_job_index = 3usize;
+        let producer_job_index = first_link_job_index + input_group_index;
+        let consumer_job_index = first_link_job_index + consumer_group_index;
+
+        validate_link_execution_partial_page(
+            &SourcePackHierarchicalLinkExecutionPartialPage {
+                version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PARTIAL_PAGE_VERSION,
+                target,
+                group_index: consumer_group_index,
+                job_index: consumer_job_index,
+                page_index: 0,
+                first_input_position: 0,
+                input_count: 1,
+                input_group_indices: vec![input_group_index],
+                input_group_output_keys: vec![hierarchical_link_partial_output_key(
+                    target,
+                    input_group_index,
+                    producer_job_index,
+                )],
+            },
+            target,
+            consumer_group_index,
+            0,
+        )
+        .expect("partial-link keys should treat eight digits as a minimum width");
+
+        let padded_key =
+            format!("wasm/partial-link/group-{input_group_index:08}/job-0{producer_job_index}");
+        let err = validate_link_execution_partial_page(
+            &SourcePackHierarchicalLinkExecutionPartialPage {
+                version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_PARTIAL_PAGE_VERSION,
+                target,
+                group_index: consumer_group_index,
+                job_index: consumer_job_index,
+                page_index: 0,
+                first_input_position: 0,
+                input_count: 1,
+                input_group_indices: vec![input_group_index],
+                input_group_output_keys: vec![padded_key],
+            },
+            target,
+            consumer_group_index,
+            0,
+        )
+        .expect_err("wider partial-link producer job indices must not be padded");
+        assert!(err.to_string().contains("non-canonical producer job index"));
+    }
+
+    #[test]
     fn partial_link_input_pages_reject_overflowed_first_record_positions() {
         let target = SourcePackArtifactTarget::Wasm;
         let page_index = usize::MAX;
@@ -981,6 +1145,40 @@ mod tests {
     }
 
     #[test]
+    fn link_execution_sidecar_pages_reject_overflowed_record_spans() {
+        let target = SourcePackArtifactTarget::Wasm;
+        let page_capacity = SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_INTERFACE_DEFAULT_PAGE_SIZE;
+        let page_index = usize::MAX / page_capacity;
+        let first_input_position = page_index * page_capacity;
+        let input_count = usize::MAX % page_capacity + 1;
+        let input_interfaces = (0..input_count)
+            .map(|producer_job_index| {
+                artifact_ref(
+                    target,
+                    SourcePackArtifactKind::LibraryInterface,
+                    producer_job_index,
+                    producer_job_index,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let interface_page = SourcePackHierarchicalLinkExecutionInterfacePage {
+            version: SOURCE_PACK_HIERARCHICAL_LINK_EXECUTION_INTERFACE_PAGE_VERSION,
+            target,
+            group_index: 3,
+            job_index: input_count + 10,
+            page_index,
+            first_input_position,
+            input_count,
+            input_interfaces,
+        };
+        let err = validate_link_execution_interface_page(&interface_page, target, 3, page_index)
+            .expect_err("sidecar page record span end must not overflow");
+        assert!(err.to_string().contains("overflows its exclusive end"));
+        assert!(err.to_string().contains("bounded dense input range"));
+    }
+
+    #[test]
     fn link_execution_rejects_unbound_runtime_services_in_final_output() {
         let mut partial = leaf_page(false, "wasm/partial-link/group-00000000/job-00000050");
         partial.descriptor_summary.set_required_runtime_services([
@@ -990,12 +1188,12 @@ mod tests {
         validate_link_execution_page(&partial, SourcePackArtifactTarget::Wasm, Some(0))
             .expect("partial-link pages may carry runtime service requirements forward");
 
-        let mut final_page = leaf_page(true, "wasm/linked-output/job-49/src-0-1");
+        let mut final_page = leaf_page(true, "wasm/linked-output/job-50/src-0-1");
         final_page
             .descriptor_summary
             .set_required_runtime_services([GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID]);
         let err =
-            validate_link_execution_page(&final_page, SourcePackArtifactTarget::Wasm, Some(1))
+            validate_link_execution_page(&final_page, SourcePackArtifactTarget::Wasm, Some(0))
                 .expect_err("final linked output must not claim unbound runtime services");
         assert!(err.to_string().contains("unbound runtime services"));
         assert!(err.to_string().contains("executable output"));
@@ -1263,6 +1461,7 @@ fn validate_link_descriptor_summary(
         )));
     }
     validate_link_record_contracts(page)?;
+    validate_link_descriptor_summary_interface_evidence(page, input_interface_count)?;
     let has_partial_link_inputs = input_group_count != 0;
     if input_interface_count == 0 && !has_partial_link_inputs && summary.interface_symbol_count != 0
     {
@@ -1307,6 +1506,25 @@ fn validate_link_descriptor_summary(
             page.group_index, summary.unresolved_symbol_count
         )));
     }
+    if page.final_output && summary.interface_symbol_count != 0 {
+        return Err(library_partition_contract_error(format!(
+            "hierarchical link execution group {} final linked output records interface-domain symbol descriptor contracts; interface records must remain link inputs and final artifact evidence must use linked-output records",
+            page.group_index
+        )));
+    }
+    if page.final_output && (summary.object_section_count != 0 || summary.object_symbol_count != 0)
+    {
+        return Err(library_partition_contract_error(format!(
+            "hierarchical link execution group {} final linked output records object-domain section/symbol descriptor contracts; object records must remain link inputs and final artifact evidence must use linked-output records",
+            page.group_index
+        )));
+    }
+    if !page.final_output && summary.export_symbol_count != 0 {
+        return Err(library_partition_contract_error(format!(
+            "hierarchical link execution group {} partial-link output records linked-output symbol descriptor contracts; linked-output records require final linked-output artifact evidence",
+            page.group_index
+        )));
+    }
     if summary.object_section_count == 0
         && (summary.object_symbol_count != 0
             || summary.unresolved_symbol_count != 0
@@ -1343,11 +1561,41 @@ fn validate_link_descriptor_summary(
     Ok(())
 }
 
+fn validate_link_descriptor_summary_interface_evidence(
+    page: &SourcePackHierarchicalLinkExecutionPage,
+    input_interface_count: usize,
+) -> Result<(), CompileError> {
+    let summary = &page.descriptor_summary;
+    if summary.interface_symbol_count == 0 || page.input_interface_ranges.is_empty() {
+        return Ok(());
+    }
+
+    let ranged_input_interface_count =
+        job_index_range_dependency_count(&page.input_interface_ranges);
+    let concrete_input_interface_count =
+        input_interface_count
+            .checked_sub(ranged_input_interface_count)
+            .ok_or_else(|| {
+                library_partition_contract_error(format!(
+                    "hierarchical link execution group {} interface descriptor evidence underflows dependency-range interface inputs",
+                    page.group_index
+                ))
+            })?;
+    return Err(library_partition_contract_error(format!(
+        "hierarchical link execution group {} records {} interface symbol descriptor contracts while {} interface inputs are dependency ranges and {} are concrete refs; dependency ranges are artifact lookup cursors, not concrete interface artifact refs for resumable link descriptor evidence",
+        page.group_index,
+        summary.interface_symbol_count,
+        ranged_input_interface_count,
+        concrete_input_interface_count
+    )));
+}
+
 fn validate_link_record_contracts(
     page: &SourcePackHierarchicalLinkExecutionPage,
 ) -> Result<(), CompileError> {
     let summary = &page.descriptor_summary;
     let expected_contracts = summary.record_contracts_from_counts();
+    let expected_contract_sequence = expected_contracts.clone();
     if expected_contracts.is_empty() {
         if !summary.record_contracts.is_empty() {
             return Err(library_partition_contract_error(format!(
@@ -1415,6 +1663,12 @@ fn validate_link_record_contracts(
                 page.group_index, expected_count, contract_key.0, contract_key.1
             )));
         }
+    }
+    if summary.record_contracts != expected_contract_sequence {
+        return Err(library_partition_contract_error(format!(
+            "hierarchical link execution group {} explicit link record contracts are not the canonical counts-derived sequence; persisted descriptor summaries must replay exact record contracts rather than descriptor-only link evidence",
+            page.group_index
+        )));
     }
 
     Ok(())
@@ -1628,6 +1882,12 @@ pub(in crate::compiler) fn validate_link_execution_artifact_refs(
                 artifact.producing_job_index
             )));
         }
+        if artifact.artifact_index != artifact.producing_job_index {
+            return Err(library_partition_contract_error(format!(
+                "{label} artifact index {} records producer job {}; link input artifact refs must use the dense producer job as artifact index so descriptor/link replay cannot overstate stale GPU-owned {:?} evidence",
+                artifact.artifact_index, artifact.producing_job_index, expected_kind
+            )));
+        }
         if !producer_jobs.insert(artifact.producing_job_index) {
             return Err(library_partition_contract_error(format!(
                 "{label} records producer job {} more than once; distinct artifact indices cannot forge duplicate {:?} inputs",
@@ -1795,6 +2055,22 @@ pub(in crate::compiler) fn validate_link_execution_interface_page(
             page.group_index, page.page_index, page.input_count
         )));
     }
+    validate_link_execution_sidecar_record_span(
+        &format!(
+            "hierarchical link execution interface page {}:{}",
+            page.group_index, page.page_index
+        ),
+        page.first_input_position,
+        page.input_count,
+    )?;
+    validate_link_execution_sidecar_dense_job_base(
+        &format!(
+            "hierarchical link execution interface page {}:{}",
+            page.group_index, page.page_index
+        ),
+        page.group_index,
+        page.job_index,
+    )?;
     validate_link_execution_artifact_refs(
         &page.input_interfaces,
         SourcePackArtifactKind::LibraryInterface,
@@ -1865,6 +2141,22 @@ pub(in crate::compiler) fn validate_link_execution_object_page(
             page.group_index, page.page_index, page.input_count
         )));
     }
+    validate_link_execution_sidecar_record_span(
+        &format!(
+            "hierarchical link execution object page {}:{}",
+            page.group_index, page.page_index
+        ),
+        page.first_input_position,
+        page.input_count,
+    )?;
+    validate_link_execution_sidecar_dense_job_base(
+        &format!(
+            "hierarchical link execution object page {}:{}",
+            page.group_index, page.page_index
+        ),
+        page.group_index,
+        page.job_index,
+    )?;
     validate_link_execution_artifact_refs(
         &page.input_objects,
         SourcePackArtifactKind::CodegenObject,
@@ -1938,6 +2230,22 @@ pub(in crate::compiler) fn validate_link_execution_partial_page(
             page.group_index, page.page_index, page.input_count
         )));
     }
+    validate_link_execution_sidecar_record_span(
+        &format!(
+            "hierarchical link execution partial page {}:{}",
+            page.group_index, page.page_index
+        ),
+        page.first_input_position,
+        page.input_count,
+    )?;
+    validate_link_execution_sidecar_dense_job_base(
+        &format!(
+            "hierarchical link execution partial page {}:{}",
+            page.group_index, page.page_index
+        ),
+        page.group_index,
+        page.job_index,
+    )?;
     validate_partial_input_group_output_keys(
         target,
         page.group_index,
@@ -1992,6 +2300,19 @@ pub(in crate::compiler) fn validate_link_execution_partial_page(
     Ok(())
 }
 
+fn validate_link_execution_sidecar_record_span(
+    label: &str,
+    first_input_position: usize,
+    input_count: usize,
+) -> Result<(), CompileError> {
+    first_input_position.checked_add(input_count).ok_or_else(|| {
+        library_partition_contract_error(format!(
+            "{label} record span starts at {first_input_position} with {input_count} inputs and overflows its exclusive end; persisted sidecar pages must encode a bounded dense input range"
+        ))
+    })?;
+    Ok(())
+}
+
 fn validate_partial_input_group_output_keys(
     target: SourcePackArtifactTarget,
     consumer_group_index: usize,
@@ -2032,14 +2353,19 @@ fn validate_partial_input_group_output_key(
             "{label} input group {input_group_index} for consumer group {consumer_group_index} has output key {key:?}, expected partial-link key prefix {expected_prefix:?}"
         )));
     };
-    if job_index_suffix.len() != 8
+    if job_index_suffix.len() < 8
         || !job_index_suffix
             .as_bytes()
             .iter()
             .all(|byte| byte.is_ascii_digit())
     {
         return Err(library_partition_contract_error(format!(
-            "{label} input group {input_group_index} for consumer group {consumer_group_index} has output key {key:?}, expected exactly eight job-index digits after prefix {expected_prefix:?}"
+            "{label} input group {input_group_index} for consumer group {consumer_group_index} has output key {key:?}, expected at least eight job-index digits after prefix {expected_prefix:?}"
+        )));
+    }
+    if job_index_suffix.len() > 8 && job_index_suffix.starts_with('0') {
+        return Err(library_partition_contract_error(format!(
+            "{label} input group {input_group_index} for consumer group {consumer_group_index} has output key {key:?} with non-canonical producer job index {job_index_suffix:?}; widened partial-link job indices must not carry leading zeroes"
         )));
     }
     let producer_job_index = job_index_suffix.parse::<usize>().map_err(|err| {

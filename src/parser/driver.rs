@@ -96,6 +96,8 @@ pub struct GpuParser {
     tree_active_dispatch_args: PassData,
     tree_feature_dispatch_args: PassData,
     tokens_to_kinds: PassData,
+    tokens_type_path_context_01_local: PassData,
+    tokens_type_path_context_02_apply: PassData,
     tokens_to_identifier_kinds: PassData,
     passes: ParserPasses,
 
@@ -217,6 +219,14 @@ impl GpuParser {
                 make_tree_feature_dispatch_args_pass
             ),
             tokens_to_kinds: make_parser_pass!("tokens_to_kinds", make_tokens_to_kinds_pass),
+            tokens_type_path_context_01_local: make_parser_pass!(
+                "tokens_type_path_context_01_local",
+                make_tokens_type_path_context_01_local_pass
+            ),
+            tokens_type_path_context_02_apply: make_parser_pass!(
+                "tokens_type_path_context_02_apply",
+                make_tokens_type_path_context_02_apply_pass
+            ),
             tokens_to_identifier_kinds: make_parser_pass!(
                 "tokens_to_identifier_kinds",
                 make_tokens_to_identifier_kinds_pass
@@ -272,6 +282,7 @@ impl GpuParser {
             token_count_buf,
             &bufs,
         )?;
+        encoder.clear_buffer(&bufs.default_token_file_id, 0, None);
         let mut timer_ref: Option<&mut GpuTimer> = None;
         self.record_ll1_resident_passes(&mut encoder, &bufs, true, true, None, &mut timer_ref)?;
 
@@ -430,7 +441,7 @@ impl GpuParser {
         token_capacity: u32,
         token_buf: &wgpu::Buffer,
         token_count_buf: &wgpu::Buffer,
-        _token_file_id_buf: Option<&wgpu::Buffer>,
+        token_file_id_buf: Option<&wgpu::Buffer>,
         tables: &PrecomputedParseTables,
     ) -> Result<u32> {
         let mut resident_guard = self
@@ -456,6 +467,20 @@ impl GpuParser {
             token_count_buf,
             bufs,
         )?;
+        if let Some(token_file_id_buf) = token_file_id_buf {
+            let copy_bytes = (token_capacity as u64).saturating_mul(4);
+            if copy_bytes > 0 {
+                encoder.copy_buffer_to_buffer(
+                    token_file_id_buf,
+                    0,
+                    &bufs.default_token_file_id,
+                    0,
+                    copy_bytes,
+                );
+            }
+        } else {
+            encoder.clear_buffer(&bufs.default_token_file_id, 0, None);
+        }
         self.record_resident_projected_status(&mut encoder, bufs)?;
 
         let status_readback = self.device.create_buffer(&wgpu::BufferDescriptor {

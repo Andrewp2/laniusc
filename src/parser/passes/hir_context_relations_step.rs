@@ -54,6 +54,10 @@ impl HirContextRelationsStepPass {
                     &buffers.hir_nearest_enclosing_control_value_a,
                 ),
                 (
+                    &buffers.hir_nearest_loop_value_b,
+                    &buffers.hir_nearest_loop_value_a,
+                ),
+                (
                     &buffers.hir_nearest_fn_value_b,
                     &buffers.hir_nearest_fn_value_a,
                 ),
@@ -132,6 +136,17 @@ impl HirContextRelationsStepPass {
                 &buffers.hir_nearest_fn_value_a,
             )
         };
+        let (nearest_loop_in, nearest_loop_out) = if read_from_a {
+            (
+                &buffers.hir_nearest_loop_value_a,
+                &buffers.hir_nearest_loop_value_b,
+            )
+        } else {
+            (
+                &buffers.hir_nearest_loop_value_b,
+                &buffers.hir_nearest_loop_value_a,
+            )
+        };
 
         let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
             (
@@ -171,6 +186,10 @@ impl HirContextRelationsStepPass {
                 nearest_control_in.as_entire_binding(),
             ),
             (
+                "hir_nearest_loop_value_in".into(),
+                nearest_loop_in.as_entire_binding(),
+            ),
+            (
                 "hir_nearest_fn_value_in".into(),
                 nearest_fn_in.as_entire_binding(),
             ),
@@ -193,6 +212,10 @@ impl HirContextRelationsStepPass {
             (
                 "hir_nearest_enclosing_control_value_out".into(),
                 nearest_control_out.as_entire_binding(),
+            ),
+            (
+                "hir_nearest_loop_value_out".into(),
+                nearest_loop_out.as_entire_binding(),
             ),
             (
                 "hir_nearest_fn_value_out".into(),

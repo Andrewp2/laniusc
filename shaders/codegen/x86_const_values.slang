@@ -1,6 +1,6 @@
 // x86_64 const value projection over HIR statement/expression records.
 //
-// This pass scatters supported const literal values by declaration token. Later
+// This pass scatters supported scalar const values by declaration token. Later
 // x86 value consumers can resolve a name through visible_decl and read this
 // table directly instead of scanning all HIR statements to rediscover consts.
 
@@ -37,8 +37,28 @@ static const uint STMT_RECORD_KIND_CONST = 4u;
 static const uint EXPR_RECORD_STRIDE = 4u;
 static const uint EXPR_RECORD_FORM = 0u;
 static const uint EXPR_RECORD_LEFT = 1u;
+static const uint EXPR_RECORD_RIGHT = 2u;
+static const uint HIR_EXPR_EQ = 7u;
+static const uint HIR_EXPR_NE = 8u;
+static const uint HIR_EXPR_LT = 9u;
+static const uint HIR_EXPR_GT = 10u;
+static const uint HIR_EXPR_LE = 11u;
+static const uint HIR_EXPR_GE = 12u;
+static const uint HIR_EXPR_ADD = 14u;
+static const uint HIR_EXPR_SUB = 15u;
+static const uint HIR_EXPR_MUL = 16u;
+static const uint HIR_EXPR_AND = 17u;
+static const uint HIR_EXPR_OR = 18u;
+static const uint HIR_EXPR_MOD = 19u;
+static const uint HIR_EXPR_DIV = 20u;
+static const uint HIR_EXPR_BIT_OR = 21u;
+static const uint HIR_EXPR_BIT_XOR = 22u;
+static const uint HIR_EXPR_BIT_AND = 23u;
+static const uint HIR_EXPR_SHL = 24u;
+static const uint HIR_EXPR_SHR = 25u;
 static const uint X86_CONST_VALUE_LITERAL = 1u;
 static const uint X86_CONST_VALUES_OK = 1u;
+static const uint I32_SIGN_BIT = 0x80000000u;
 
 uint linear_dispatch_id(uint3 tid)
 {
@@ -90,6 +110,11 @@ uint expr_left(uint node)
     return valid_node(node) ? expr_record_slot(node, EXPR_RECORD_LEFT) : INVALID;
 }
 
+uint expr_right(uint node)
+{
+    return valid_node(node) ? expr_record_slot(node, EXPR_RECORD_RIGHT) : INVALID;
+}
+
 uint expr_root_node(uint node)
 {
     return valid_node(node) ? hir_expr_result_root_node[node] : INVALID;
@@ -116,7 +141,7 @@ bool literal_leaf_value(uint value_node, out uint value)
     return false;
 }
 
-bool literal_expr_value(uint value_node, out uint value)
+bool literal_atom_value(uint value_node, out uint value)
 {
     value = 0u;
     if (literal_leaf_value(value_node, value))
@@ -144,6 +169,193 @@ bool literal_expr_value(uint value_node, out uint value)
         return true;
     }
     return false;
+}
+
+bool scalar_binary_const_form(uint form)
+{
+    return form == HIR_EXPR_EQ ||
+           form == HIR_EXPR_NE ||
+           form == HIR_EXPR_LT ||
+           form == HIR_EXPR_GT ||
+           form == HIR_EXPR_LE ||
+           form == HIR_EXPR_GE ||
+           form == HIR_EXPR_ADD ||
+           form == HIR_EXPR_SUB ||
+           form == HIR_EXPR_MUL ||
+           form == HIR_EXPR_MOD ||
+           form == HIR_EXPR_DIV ||
+           form == HIR_EXPR_AND ||
+           form == HIR_EXPR_OR ||
+           form == HIR_EXPR_BIT_OR ||
+           form == HIR_EXPR_BIT_XOR ||
+           form == HIR_EXPR_BIT_AND ||
+           form == HIR_EXPR_SHL ||
+           form == HIR_EXPR_SHR;
+}
+
+bool scalar_relational_const_operands_supported(uint left, uint right)
+{
+    // This pass does not bind semantic types, so only fold the range where
+    // signed and unsigned scalar ordering agree.
+    return left < I32_SIGN_BIT && right < I32_SIGN_BIT;
+}
+
+bool eval_scalar_binary_const(uint form, uint left, uint right, out uint value)
+{
+    value = 0u;
+    if (form == HIR_EXPR_EQ)
+    {
+        value = left == right ? 1u : 0u;
+        return true;
+    }
+    if (form == HIR_EXPR_NE)
+    {
+        value = left != right ? 1u : 0u;
+        return true;
+    }
+    if (form == HIR_EXPR_LT)
+    {
+        if (!scalar_relational_const_operands_supported(left, right))
+            return false;
+        value = left < right ? 1u : 0u;
+        return true;
+    }
+    if (form == HIR_EXPR_GT)
+    {
+        if (!scalar_relational_const_operands_supported(left, right))
+            return false;
+        value = left > right ? 1u : 0u;
+        return true;
+    }
+    if (form == HIR_EXPR_LE)
+    {
+        if (!scalar_relational_const_operands_supported(left, right))
+            return false;
+        value = left <= right ? 1u : 0u;
+        return true;
+    }
+    if (form == HIR_EXPR_GE)
+    {
+        if (!scalar_relational_const_operands_supported(left, right))
+            return false;
+        value = left >= right ? 1u : 0u;
+        return true;
+    }
+    if (form == HIR_EXPR_ADD)
+    {
+        value = left + right;
+        return true;
+    }
+    if (form == HIR_EXPR_SUB)
+    {
+        value = left - right;
+        return true;
+    }
+    if (form == HIR_EXPR_MUL)
+    {
+        value = left * right;
+        return true;
+    }
+    if (form == HIR_EXPR_MOD)
+    {
+        if (right == 0u || !scalar_relational_const_operands_supported(left, right))
+            return false;
+        value = left % right;
+        return true;
+    }
+    if (form == HIR_EXPR_DIV)
+    {
+        if (right == 0u || !scalar_relational_const_operands_supported(left, right))
+            return false;
+        value = left / right;
+        return true;
+    }
+    if (form == HIR_EXPR_AND)
+    {
+        value = (left != 0u && right != 0u) ? 1u : 0u;
+        return true;
+    }
+    if (form == HIR_EXPR_OR)
+    {
+        value = (left != 0u || right != 0u) ? 1u : 0u;
+        return true;
+    }
+    if (form == HIR_EXPR_BIT_OR)
+    {
+        value = left | right;
+        return true;
+    }
+    if (form == HIR_EXPR_BIT_XOR)
+    {
+        value = left ^ right;
+        return true;
+    }
+    if (form == HIR_EXPR_BIT_AND)
+    {
+        value = left & right;
+        return true;
+    }
+    if (form == HIR_EXPR_SHL && right < 32u)
+    {
+        value = left << right;
+        return true;
+    }
+    if (form == HIR_EXPR_SHR && right < 32u)
+    {
+        value = left >> right;
+        return true;
+    }
+    return false;
+}
+
+bool literal_binary_atom_const_value(uint value_node, out uint value)
+{
+    value = 0u;
+    value_node = expr_root_node(value_node);
+    if (!valid_node(value_node))
+        return false;
+
+    uint form = expr_form(value_node);
+    if (!scalar_binary_const_form(form))
+        return false;
+
+    uint left = 0u;
+    uint right = 0u;
+    if (!literal_atom_value(expr_left(value_node), left) ||
+        !literal_atom_value(expr_right(value_node), right))
+        return false;
+
+    return eval_scalar_binary_const(form, left, right, value);
+}
+
+bool literal_nested_const_operand_value(uint value_node, out uint value)
+{
+    if (literal_atom_value(value_node, value))
+        return true;
+    return literal_binary_atom_const_value(value_node, value);
+}
+
+bool literal_expr_value(uint value_node, out uint value)
+{
+    value = 0u;
+    if (literal_atom_value(value_node, value))
+        return true;
+
+    value_node = expr_root_node(value_node);
+    if (!valid_node(value_node))
+        return false;
+
+    uint form = expr_form(value_node);
+    if (!scalar_binary_const_form(form))
+        return false;
+
+    uint left = 0u;
+    uint right = 0u;
+    if (!literal_nested_const_operand_value(expr_left(value_node), left) ||
+        !literal_nested_const_operand_value(expr_right(value_node), right))
+        return false;
+
+    return eval_scalar_binary_const(form, left, right, value);
 }
 
 [shader("compute")]

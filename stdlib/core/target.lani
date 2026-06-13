@@ -19,6 +19,7 @@ pub const HAS_GPU: Capability = false;
 pub const HAS_PROCESS: Capability = false;
 pub const HAS_ENV: Capability = false;
 pub const HAS_TEST_HARNESS: Capability = false;
+pub const HAS_RUNTIME_SERVICES: Capability = false;
 
 pub fn is_wasm() -> Capability {
     return IS_WASM;
@@ -80,18 +81,14 @@ pub fn has_test_harness() -> Capability {
     return HAS_TEST_HARNESS;
 }
 
+pub fn has_runtime_services() -> Capability {
+    return HAS_RUNTIME_SERVICES;
+}
+
+pub fn runtime_services_are_blocked() -> Capability {
+    return !has_runtime_services();
+}
+
 pub fn is_freestanding() -> Capability {
-    return !HAS_ALLOCATOR
-        && !HAS_FILESYSTEM
-        && !HAS_STDIO
-        && !HAS_THREADS
-        && !HAS_NETWORK
-        && !HAS_CLOCK
-        && !HAS_PANIC_HOOK
-        && !HAS_HOST_SERVICES
-        && !HAS_SECURE_RNG
-        && !HAS_GPU
-        && !HAS_PROCESS
-        && !HAS_ENV
-        && !HAS_TEST_HARNESS;
+    return !has_runtime_services();
 }

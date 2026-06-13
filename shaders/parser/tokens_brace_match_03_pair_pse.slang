@@ -29,6 +29,8 @@ static const uint TK_IMPL_LBRACE = 121u;
 static const uint TK_IMPL_RBRACE = 122u;
 static const uint TK_TRAIT_LBRACE = 123u;
 static const uint TK_TRAIT_RBRACE = 124u;
+static const uint TK_IF_LBRACE = 88u;
+static const uint TK_IF_RBRACE = 89u;
 static const uint TK_STRUCT_LIT_LBRACE = 125u;
 static const uint TK_STRUCT_LIT_RBRACE = 126u;
 static const uint TK_STRUCT_DECL_LBRACE = 127u;
@@ -58,11 +60,7 @@ public struct BraceDepthTree : IRangeSearchTree<int>
     public static uint leaf_base()
     {
         uint n_blocks = gParams.n_tokens == 0u ? 1u : (gParams.n_tokens + WG_SIZE - 1u) / WG_SIZE;
-        uint base = 1u;
-        [loop]
-        while (base < n_blocks)
-            base <<= 1u;
-        return base;
+        return range_search_leaf_base_for_block_count(n_blocks);
     }
 
     public static int leaf_value(uint block)
@@ -115,6 +113,8 @@ uint close_kind_for_open_kind(uint open_kind)
         return TK_IMPL_RBRACE;
     if (open_kind == TK_TRAIT_LBRACE)
         return TK_TRAIT_RBRACE;
+    if (open_kind == TK_IF_LBRACE)
+        return TK_IF_RBRACE;
     if (open_kind == TK_STRUCT_LIT_LBRACE)
         return TK_STRUCT_LIT_RBRACE;
     if (open_kind == TK_STRUCT_DECL_LBRACE)

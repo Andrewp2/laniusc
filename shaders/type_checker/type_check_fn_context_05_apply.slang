@@ -24,6 +24,16 @@ uint linear_thread_id(uint3 dtid)
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
 }
 
+uint event_token(uint event_key)
+{
+    return (event_key - 1u) / 2u;
+}
+
+bool event_is_start(uint event_key)
+{
+    return ((event_key - 1u) & 1u) == 1u;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -32,7 +42,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (i >= gParams.n_tokens)
         return;
 
-    uint event_idx = max(fn_event_inblock[i], block_prefix[i / WG_SIZE]);
-    enclosing_fn[i] = event_idx == 0u ? 0u : fn_event_value[event_idx - 1u];
-    enclosing_fn_end[i] = event_idx == 0u ? 0u : fn_event_end[event_idx - 1u];
+    uint event_key = max(fn_event_inblock[i], block_prefix[i / WG_SIZE]);
+    if (event_key == 0u || !event_is_start(event_key))
+    {
+        enclosing_fn[i] = 0u;
+        enclosing_fn_end[i] = 0u;
+        return;
+    }
+
+    uint token = event_token(event_key);
+    enclosing_fn[i] = fn_event_value[token];
+    enclosing_fn_end[i] = fn_event_end[token];
 }

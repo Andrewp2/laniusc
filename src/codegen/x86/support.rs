@@ -9,7 +9,24 @@ use anyhow::{Result, bail};
 use log::warn;
 use wgpu::util::DeviceExt;
 
-use super::{RecordedX86Codegen, X86OutputError, X86Params, X86RegallocParams, X86ScanParams};
+use super::{
+    RecordedX86Codegen,
+    X86_ERR_HIR_TREE_SHAPE,
+    X86_ERR_INTRINSIC_CALLS,
+    X86_ERR_MULTIPLE_MAIN,
+    X86_ERR_NESTED_AGGREGATE_MEMBER,
+    X86_ERR_NODE_INST_COUNTS,
+    X86_ERR_NODE_INST_LOCATIONS,
+    X86_ERR_REGALLOC_BOUNDARY,
+    X86_ERR_SIGNED_DIV_OVERFLOW,
+    X86_ERR_STRUCT_RECORDS,
+    X86_ERR_UNSUPPORTED_LITERAL_EXPR,
+    X86_ERR_VIRTUAL_LIVENESS,
+    X86OutputError,
+    X86Params,
+    X86RegallocParams,
+    X86ScanParams,
+};
 use crate::gpu::passes_core::{PassData, bind_group};
 
 const UNIFORM_BINDING_ARRAY_STRIDE: u64 = 256;
@@ -501,6 +518,50 @@ mod tests {
         assert_eq!(uniform_binding_array_offset(7), 1792);
         assert_eq!(uniform_binding_array_offset(3) % 256, 0);
     }
+
+    #[test]
+    fn x86_hir_tree_shape_error_is_source_addressable() {
+        let err = X86OutputError::new(
+            x86_error_name(X86_ERR_HIR_TREE_SHAPE as usize, 12),
+            X86_ERR_HIR_TREE_SHAPE,
+            12,
+        );
+
+        assert_eq!(err.error_name(), "unsupported x86 HIR tree shape");
+        assert!(err.detail_is_hir_node());
+        assert!(!err.detail_is_token());
+    }
+
+    #[test]
+    fn x86_stage_record_errors_are_source_addressable() {
+        for (error_code, expected_name) in [
+            (
+                X86_ERR_NODE_INST_COUNTS,
+                "unsupported x86 node instruction count",
+            ),
+            (X86_ERR_VIRTUAL_LIVENESS, "unsupported x86 virtual liveness"),
+            (
+                X86_ERR_NODE_INST_LOCATIONS,
+                "unsupported x86 instruction location",
+            ),
+            (X86_ERR_INTRINSIC_CALLS, "unsupported x86 intrinsic call"),
+            (X86_ERR_STRUCT_RECORDS, "unsupported x86 struct record"),
+            (
+                X86_ERR_REGALLOC_BOUNDARY,
+                "unsupported x86 register allocation",
+            ),
+            (
+                X86_ERR_UNSUPPORTED_LITERAL_EXPR,
+                "unsupported x86 literal expression",
+            ),
+        ] {
+            let err = X86OutputError::new(x86_error_name(error_code as usize, 12), error_code, 12);
+
+            assert_eq!(err.error_name(), expected_name, "code {error_code}");
+            assert!(err.detail_is_hir_node(), "code {error_code}");
+            assert!(!err.detail_is_token(), "code {error_code}");
+        }
+    }
 }
 
 pub(super) fn dispatch_compute_pass(
@@ -884,42 +945,7 @@ pub(super) fn read_x86_output(
                 warn!("failed to read x86 status trace: {err:#}");
             }
         }
-        let error_name = match error_code {
-            2 => "missing main entrypoint",
-            3 => "unsupported return expression",
-            4 => "output capacity too small",
-            5 => "register allocation failure",
-            6 => "instruction sizing failure",
-            7 => "ELF layout failure",
-            8 => "x86 relocation failure",
-            9 => "unsupported x86 call ABI",
-            11 => "unsupported x86 virtual instruction",
-            15 => "virtual register allocation failure",
-            17 if error_detail == u32::MAX as usize => "unsupported x86 entrypoint body",
-            17 => "instruction selection failure",
-            24 => "unsupported x86 method call",
-            25 => "unsupported x86 recursive call",
-            26 => "unsupported x86 aggregate copy width",
-            29 => "unsupported x86 loop-contained call",
-            30 => "unsupported x86 postfix expression",
-            31 => "unsupported x86 indexed assignment",
-            32 => "unsupported x86 zero divisor",
-            33 => "unsupported x86 for iterable",
-            34 => "unsupported x86 nested loop",
-            35 => "unsupported x86 short-circuit call operand",
-            37 => "unsupported x86 parameter aggregate assignment",
-            38 => "unsupported x86 parameter aggregate indexed assignment",
-            39 => "unsupported x86 unary expression",
-            40 => "unsupported x86 array index bounds",
-            41 => "unsupported x86 dynamic divisor",
-            42 => "unsupported x86 short-circuit trapping operand",
-            43 => "unsupported x86 entrypoint body",
-            44 => "unsupported x86 match expression",
-            45 => "unsupported x86 aggregate temporary index",
-            46 => "unsupported x86 aggregate temporary member",
-            47 => "unsupported x86 dynamic array index",
-            _ => "unsupported source shape",
-        };
+        let error_name = x86_error_name(error_code, error_detail);
         return Err(X86OutputError::new(error_name, error_code as u32, error_detail as u32).into());
     }
     if mode != 1 || len > recorded.output_capacity {
@@ -951,6 +977,74 @@ pub(super) fn read_x86_output(
     Err(anyhow::anyhow!(
         "GPU x86 emitter output bytes were unavailable"
     ))
+}
+
+fn x86_error_name(error_code: usize, error_detail: usize) -> &'static str {
+    match error_code {
+        2 => "missing main entrypoint",
+        3 => "unsupported return expression",
+        4 => "output capacity too small",
+        5 => "register allocation failure",
+        6 => "instruction sizing failure",
+        7 => "ELF layout failure",
+        8 => "x86 relocation failure",
+        9 => "unsupported x86 call ABI",
+        error if error == X86_ERR_NODE_INST_COUNTS as usize => {
+            "unsupported x86 node instruction count"
+        }
+        11 => "unsupported x86 virtual instruction",
+        error if error == X86_ERR_VIRTUAL_LIVENESS as usize => "unsupported x86 virtual liveness",
+        15 => "virtual register allocation failure",
+        error if error == X86_ERR_NODE_INST_LOCATIONS as usize => {
+            "unsupported x86 instruction location"
+        }
+        17 if error_detail == u32::MAX as usize => "unsupported x86 entrypoint body",
+        17 => "instruction selection failure",
+        error if error == X86_ERR_INTRINSIC_CALLS as usize => "unsupported x86 intrinsic call",
+        24 => "unsupported x86 method call",
+        26 => "unsupported x86 aggregate copy width",
+        27 => "unsupported x86 declaration layout",
+        error if error == X86_ERR_STRUCT_RECORDS as usize => "unsupported x86 struct record",
+        29 => "unsupported x86 loop-contained call",
+        30 => "unsupported x86 postfix expression",
+        31 => "unsupported x86 indexed assignment",
+        32 => "unsupported x86 zero divisor",
+        33 => "unsupported x86 for iterable",
+        35 => "unsupported x86 short-circuit call operand",
+        37 => "unsupported x86 parameter aggregate assignment",
+        38 => "unsupported x86 parameter aggregate indexed assignment",
+        39 => "unsupported x86 unary expression",
+        40 => "unsupported x86 array index bounds",
+        41 => "unsupported x86 dynamic divisor",
+        42 => "unsupported x86 short-circuit trapping operand",
+        43 => "unsupported x86 entrypoint body",
+        44 => "unsupported x86 match expression",
+        45 => "unsupported x86 aggregate temporary index",
+        46 => "unsupported x86 aggregate temporary member",
+        47 => "unsupported x86 dynamic array index",
+        error if error == X86_ERR_REGALLOC_BOUNDARY as usize => {
+            "unsupported x86 register allocation"
+        }
+        49 => "unsupported x86 entrypoint parameters",
+        51 => "unsupported x86 parameter register count",
+        52 => "unsupported x86 aggregate return call",
+        53 => "unsupported x86 multi-payload enum constructor",
+        54 => "unsupported x86 entrypoint aggregate return",
+        55 => "unsupported x86 loop control outside loop",
+        56 => "unsupported x86 call argument count",
+        error if error == X86_ERR_HIR_TREE_SHAPE as usize => "unsupported x86 HIR tree shape",
+        error if error == X86_ERR_MULTIPLE_MAIN as usize => "multiple main entrypoints",
+        error if error == X86_ERR_SIGNED_DIV_OVERFLOW as usize => {
+            "unsupported x86 signed division overflow"
+        }
+        error if error == X86_ERR_UNSUPPORTED_LITERAL_EXPR as usize => {
+            "unsupported x86 literal expression"
+        }
+        error if error == X86_ERR_NESTED_AGGREGATE_MEMBER as usize => {
+            "unsupported x86 nested aggregate member"
+        }
+        _ => "unsupported source shape",
+    }
 }
 
 fn read_exact_x86_output_bytes(
@@ -1008,6 +1102,7 @@ fn dump_x86_status_trace(device: &wgpu::Device, readback: &wgpu::Buffer) -> Resu
         for (name, value) in [
             ("x86.func_count", words[func_meta_offset]),
             ("x86.main_count", words[func_meta_offset + 1]),
+            ("x86.main_max_node", words[func_meta_offset + 3]),
             ("x86.main_node", words[func_meta_offset + 4]),
             ("x86.max_virtual_func_rows", words[func_meta_offset + 5]),
             ("x86.regalloc_active_chunks", words[func_meta_offset + 6]),

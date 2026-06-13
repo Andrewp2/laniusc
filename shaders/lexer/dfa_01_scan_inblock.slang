@@ -5,8 +5,9 @@
 // into the block transition function used by the inter-block scan.
 
 #define WORKGROUP_SIZE 256
-#define N_STATES 80
+#define N_STATES 82
 #define CHUNK_COUNT 3
+#define CHUNK_WIDTH_CAP ((WORKGROUP_SIZE + CHUNK_COUNT - 1) / CHUNK_COUNT)
 
 import byte_packing;
 import utils;
@@ -63,9 +64,11 @@ void dfa_01_scan_inblock(uint3 tid: SV_GroupThreadID,
         const uint rel_end = min(block_len, rel_begin + chunk_width);
 
         uint state = state0;
-        [loop]
-        for (uint k = rel_begin; k < rel_end; k += 1u)
+        for (uint offset = 0u; offset < CHUNK_WIDTH_CAP; offset += 1u)
         {
+            const uint k = rel_begin + offset;
+            if (k >= rel_end)
+                break;
             uint i_abs = base + k;
             if (is_file_start(i_abs))
                 state = gParams.start_state;

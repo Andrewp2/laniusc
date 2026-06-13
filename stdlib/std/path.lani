@@ -1,0 +1,355 @@
+// Source-level path helper contract.
+// The active compiler slice can type-check byte-level path classifiers through
+// --stdlib-root, but it does not allocate path buffers, normalize paths, or
+// ask the host filesystem to canonicalize paths.
+
+module std::path;
+
+pub type PathCapability = bool;
+pub type PathByte = u8;
+pub type PathComponentLength = u32;
+pub type PathSeparatorKind = u32;
+
+pub const PATH_SEPARATOR_NONE: PathSeparatorKind = 0;
+pub const PATH_SEPARATOR_UNIX_KIND: PathSeparatorKind = 1;
+pub const PATH_SEPARATOR_WINDOWS_KIND: PathSeparatorKind = 2;
+
+pub const PATH_SEPARATOR_UNIX: PathByte = 47;
+pub const PATH_SEPARATOR_WINDOWS: PathByte = 92;
+pub const PATH_EXTENSION_SEPARATOR: PathByte = 46;
+pub const PATH_DRIVE_SEPARATOR: PathByte = 58;
+pub const PATH_NUL: PathByte = 0;
+pub const PATH_ASCII_DELETE: PathByte = 127;
+pub const PATH_WINDOWS_RESERVED_DOUBLE_QUOTE: PathByte = 34;
+pub const PATH_WINDOWS_RESERVED_ASTERISK: PathByte = 42;
+pub const PATH_WINDOWS_RESERVED_LESS_THAN: PathByte = 60;
+pub const PATH_WINDOWS_RESERVED_GREATER_THAN: PathByte = 62;
+pub const PATH_WINDOWS_RESERVED_QUESTION_MARK: PathByte = 63;
+pub const PATH_WINDOWS_RESERVED_PIPE: PathByte = 124;
+
+pub const PATH_HAS_ALLOCATION_API: PathCapability = false;
+pub const PATH_HAS_HOST_NORMALIZATION: PathCapability = false;
+
+pub fn path_contract_metadata_is_available() -> PathCapability {
+    return true;
+}
+
+pub fn path_lexical_byte_helpers_are_available() -> PathCapability {
+    return true;
+}
+
+pub fn path_allocation_api_is_executable() -> PathCapability {
+    return PATH_HAS_ALLOCATION_API;
+}
+
+pub fn path_allocation_api_is_blocked() -> PathCapability {
+    return !path_allocation_api_is_executable();
+}
+
+pub fn path_allocation_api_is_known_but_unbound() -> PathCapability {
+    if (!path_contract_metadata_is_available()) {
+        return false;
+    } else {
+        return path_allocation_api_is_blocked();
+    }
+}
+
+pub fn path_allocation_api_requires_allocator() -> PathCapability {
+    return !path_allocation_api_is_executable();
+}
+
+pub fn path_host_normalization_is_executable() -> PathCapability {
+    return PATH_HAS_HOST_NORMALIZATION;
+}
+
+pub fn path_host_normalization_is_blocked() -> PathCapability {
+    return !path_host_normalization_is_executable();
+}
+
+pub fn path_host_normalization_is_known_but_unbound() -> PathCapability {
+    if (!path_contract_metadata_is_available()) {
+        return false;
+    } else {
+        return path_host_normalization_is_blocked();
+    }
+}
+
+pub fn path_host_normalization_requires_runtime_binding() -> PathCapability {
+    return !path_host_normalization_is_executable();
+}
+
+pub fn path_unix_separator_byte() -> PathByte {
+    return PATH_SEPARATOR_UNIX;
+}
+
+pub fn path_windows_separator_byte() -> PathByte {
+    return PATH_SEPARATOR_WINDOWS;
+}
+
+pub fn path_extension_separator_byte() -> PathByte {
+    return PATH_EXTENSION_SEPARATOR;
+}
+
+pub fn path_drive_separator_byte() -> PathByte {
+    return PATH_DRIVE_SEPARATOR;
+}
+
+pub fn path_nul_byte() -> PathByte {
+    return PATH_NUL;
+}
+
+pub fn path_byte_is_unix_separator(value: PathByte) -> PathCapability {
+    return value == PATH_SEPARATOR_UNIX;
+}
+
+pub fn path_byte_is_windows_separator(value: PathByte) -> PathCapability {
+    return value == PATH_SEPARATOR_WINDOWS;
+}
+
+pub fn path_byte_is_separator(value: PathByte) -> PathCapability {
+    if (path_byte_is_unix_separator(value)) {
+        return true;
+    } else {
+        return path_byte_is_windows_separator(value);
+    }
+}
+
+pub fn path_separator_kind(value: PathByte) -> PathSeparatorKind {
+    if (path_byte_is_unix_separator(value)) {
+        return PATH_SEPARATOR_UNIX_KIND;
+    } else {
+        if (path_byte_is_windows_separator(value)) {
+            return PATH_SEPARATOR_WINDOWS_KIND;
+        } else {
+            return PATH_SEPARATOR_NONE;
+        }
+    }
+}
+
+pub fn path_byte_is_extension_separator(value: PathByte) -> PathCapability {
+    return value == PATH_EXTENSION_SEPARATOR;
+}
+
+pub fn path_byte_is_drive_separator(value: PathByte) -> PathCapability {
+    return value == PATH_DRIVE_SEPARATOR;
+}
+
+pub fn path_byte_is_ascii_letter(value: PathByte) -> PathCapability {
+    return value >= 65 && value <= 90 || value >= 97 && value <= 122;
+}
+
+pub fn path_byte_is_windows_drive_letter(value: PathByte) -> PathCapability {
+    return path_byte_is_ascii_letter(value);
+}
+
+pub fn path_byte_is_ascii_digit(value: PathByte) -> PathCapability {
+    return value >= 48 && value <= 57;
+}
+
+pub fn path_byte_is_ascii_control(value: PathByte) -> PathCapability {
+    return value < 32 || value == PATH_ASCII_DELETE;
+}
+
+pub fn path_byte_is_windows_component_reserved_punctuation(value: PathByte) -> PathCapability {
+    return value == PATH_WINDOWS_RESERVED_DOUBLE_QUOTE
+        || value == PATH_WINDOWS_RESERVED_ASTERISK
+        || value == PATH_DRIVE_SEPARATOR
+        || value == PATH_WINDOWS_RESERVED_LESS_THAN
+        || value == PATH_WINDOWS_RESERVED_GREATER_THAN
+        || value == PATH_WINDOWS_RESERVED_QUESTION_MARK
+        || value == PATH_WINDOWS_RESERVED_PIPE;
+}
+
+pub fn path_byte_is_windows_component_reserved(value: PathByte) -> PathCapability {
+    if (path_byte_is_ascii_control(value)) {
+        return true;
+    } else {
+        if (path_byte_is_separator(value)) {
+            return true;
+        } else {
+            return path_byte_is_windows_component_reserved_punctuation(value);
+        }
+    }
+}
+
+pub fn path_byte_is_nul(value: PathByte) -> PathCapability {
+    return value == PATH_NUL;
+}
+
+pub fn path_component_is_current_dir(first: PathByte, length: PathComponentLength) -> PathCapability {
+    return length == 1 && first == PATH_EXTENSION_SEPARATOR;
+}
+
+pub fn path_component_is_parent_dir(first: PathByte, second: PathByte, length: PathComponentLength) -> PathCapability {
+    return length == 2 && first == PATH_EXTENSION_SEPARATOR && second == PATH_EXTENSION_SEPARATOR;
+}
+
+pub fn path_component_is_current_or_parent_dir(first: PathByte, second: PathByte, length: PathComponentLength) -> PathCapability {
+    if (path_component_is_current_dir(first, length)) {
+        return true;
+    } else {
+        return path_component_is_parent_dir(first, second, length);
+    }
+}
+
+pub fn path_component_is_unix_hidden(first: PathByte, second: PathByte, length: PathComponentLength) -> PathCapability {
+    if (length <= 1) {
+        return false;
+    } else {
+        if (first != PATH_EXTENSION_SEPARATOR) {
+            return false;
+        } else {
+            return !path_component_is_parent_dir(first, second, length);
+        }
+    }
+}
+
+pub fn path_component_is_root_separator(first: PathByte, length: PathComponentLength) -> PathCapability {
+    if (length != 1) {
+        return false;
+    } else {
+        return path_byte_is_separator(first);
+    }
+}
+
+pub fn path_component_is_windows_drive_prefix(first: PathByte, second: PathByte, length: PathComponentLength) -> PathCapability {
+    if (length != 2) {
+        return false;
+    } else {
+        if (!path_byte_is_windows_drive_letter(first)) {
+            return false;
+        } else {
+            return path_byte_is_drive_separator(second);
+        }
+    }
+}
+
+pub fn path_header_is_windows_drive_prefix(first: PathByte, second: PathByte, length: PathComponentLength) -> PathCapability {
+    if (length < 2) {
+        return false;
+    } else {
+        if (!path_byte_is_windows_drive_letter(first)) {
+            return false;
+        } else {
+            return path_byte_is_drive_separator(second);
+        }
+    }
+}
+
+pub fn path_header_is_windows_drive_root(first: PathByte, second: PathByte, third: PathByte, length: PathComponentLength) -> PathCapability {
+    if (length < 3) {
+        return false;
+    } else {
+        if (!path_header_is_windows_drive_prefix(first, second, length)) {
+            return false;
+        } else {
+            return path_byte_is_separator(third);
+        }
+    }
+}
+
+pub fn path_header_is_lexically_rooted(first: PathByte, second: PathByte, third: PathByte, length: PathComponentLength) -> PathCapability {
+    if (length == 0) {
+        return false;
+    } else {
+        if (path_byte_is_separator(first)) {
+            return true;
+        } else {
+            return path_header_is_windows_drive_root(first, second, third, length);
+        }
+    }
+}
+
+pub fn path_header_is_absolute(first: PathByte, second: PathByte, third: PathByte, length: PathComponentLength) -> PathCapability {
+    if (length == 0) {
+        return false;
+    } else {
+        if (path_byte_is_unix_separator(first)) {
+            return true;
+        } else {
+            return path_header_is_windows_drive_root(first, second, third, length);
+        }
+    }
+}
+
+pub fn path_header_is_windows_drive_relative(first: PathByte, second: PathByte, third: PathByte, length: PathComponentLength) -> PathCapability {
+    if (length <= 2) {
+        return false;
+    } else {
+        if (!path_header_is_windows_drive_prefix(first, second, length)) {
+            return false;
+        } else {
+            return path_byte_can_start_windows_component(third);
+        }
+    }
+}
+
+pub fn path_byte_is_component_boundary(value: PathByte) -> PathCapability {
+    if (path_byte_is_nul(value)) {
+        return true;
+    } else {
+        return path_byte_is_separator(value);
+    }
+}
+
+pub fn path_byte_can_start_relative_component(value: PathByte) -> PathCapability {
+    return !path_byte_is_component_boundary(value);
+}
+
+pub fn path_byte_can_continue_relative_component(value: PathByte) -> PathCapability {
+    return !path_byte_is_component_boundary(value);
+}
+
+pub fn path_byte_can_start_windows_component(value: PathByte) -> PathCapability {
+    return !path_byte_is_windows_component_reserved(value);
+}
+
+pub fn path_byte_can_continue_windows_component(value: PathByte) -> PathCapability {
+    return !path_byte_is_windows_component_reserved(value);
+}
+
+pub fn path_component_is_normal_relative(first: PathByte, second: PathByte, length: PathComponentLength) -> PathCapability {
+    if (length == 0) {
+        return false;
+    } else {
+        if (!path_byte_can_start_relative_component(first)) {
+            return false;
+        } else {
+            if (length > 1) {
+                if (!path_byte_can_continue_relative_component(second)) {
+                    return false;
+                }
+            }
+            if (path_component_is_current_or_parent_dir(first, second, length)) {
+                return false;
+            } else {
+                return !path_component_is_windows_drive_prefix(first, second, length);
+            }
+        }
+    }
+}
+
+pub fn path_component_header_is_normal_relative(first: PathByte, second: PathByte, length: PathComponentLength) -> PathCapability {
+    return path_component_is_normal_relative(first, second, length);
+}
+
+pub fn path_component_header_is_normal_windows_relative(first: PathByte, second: PathByte, length: PathComponentLength) -> PathCapability {
+    if (length == 0) {
+        return false;
+    } else {
+        if (!path_byte_can_start_windows_component(first)) {
+            return false;
+        } else {
+            if (length > 1) {
+                if (!path_byte_can_continue_windows_component(second)) {
+                    return false;
+                }
+            }
+            if (path_component_is_current_or_parent_dir(first, second, length)) {
+                return false;
+            } else {
+                return !path_component_is_windows_drive_prefix(first, second, length);
+            }
+        }
+    }
+}

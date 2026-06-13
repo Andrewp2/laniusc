@@ -23,6 +23,8 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> hir_kind;
 StructuredBuffer<uint> hir_stmt_record;
 StructuredBuffer<uint> hir_expr_record;
+StructuredBuffer<uint> hir_expr_result_root_node;
+StructuredBuffer<uint> x86_tree_parent;
 StructuredBuffer<uint> x86_expr_resolved_node;
 StructuredBuffer<uint> x86_struct_access_record;
 StructuredBuffer<uint> hir_array_element_parent_lit;
@@ -131,6 +133,14 @@ uint resolve_expr(uint node)
     return valid_node(node) ? x86_expr_resolved_node[node] : INVALID;
 }
 
+uint expr_result_root(uint node)
+{
+    if (!valid_node(node))
+        return INVALID;
+    uint root = hir_expr_result_root_node[node];
+    return valid_node(root) ? root : resolve_expr(node);
+}
+
 uint struct_access_word(uint row, uint slot)
 {
     return row_major_load<uint>(
@@ -169,7 +179,29 @@ bool struct_literal_record_for_expr(uint expr_node, out uint width, out uint fir
 {
     width = 0u;
     first_field = INVALID;
-    uint node = resolve_expr(expr_node);
+    uint node = INVALID;
+    if (valid_node(expr_node) && struct_access_kind(expr_node) == X86_STRUCT_ACCESS_LITERAL)
+        node = expr_node;
+    uint resolved = resolve_expr(expr_node);
+    if (!valid_node(node) && valid_node(resolved) &&
+        struct_access_kind(resolved) == X86_STRUCT_ACCESS_LITERAL)
+        node = resolved;
+    uint root = expr_result_root(expr_node);
+    if (!valid_node(node) && valid_node(root) &&
+        struct_access_kind(root) == X86_STRUCT_ACCESS_LITERAL)
+        node = root;
+    uint parent = valid_node(expr_node) ? x86_tree_parent[expr_node] : INVALID;
+    if (!valid_node(node) && valid_node(parent) &&
+        struct_access_kind(parent) == X86_STRUCT_ACCESS_LITERAL)
+        node = parent;
+    parent = valid_node(resolved) ? x86_tree_parent[resolved] : INVALID;
+    if (!valid_node(node) && valid_node(parent) &&
+        struct_access_kind(parent) == X86_STRUCT_ACCESS_LITERAL)
+        node = parent;
+    parent = valid_node(root) ? x86_tree_parent[root] : INVALID;
+    if (!valid_node(node) && valid_node(parent) &&
+        struct_access_kind(parent) == X86_STRUCT_ACCESS_LITERAL)
+        node = parent;
     if (!valid_node(node) || struct_access_kind(node) != X86_STRUCT_ACCESS_LITERAL)
         return false;
     width = struct_access_payload0(node);

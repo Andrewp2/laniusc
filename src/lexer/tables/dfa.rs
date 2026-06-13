@@ -58,6 +58,7 @@ pub enum S {
     OrOrDone,
 
     EqEqDone,
+    MatchArrowDone,
     NotEqualDone,
 
     // numeric separators and floats
@@ -105,6 +106,7 @@ pub enum S {
     IncDone,
     DecDone,
     ArrowDone,
+    DotDotDone,
 
     Reject,
 }
@@ -115,7 +117,7 @@ impl S {
     }
 }
 
-pub const N_STATES: usize = 80;
+pub const N_STATES: usize = 82;
 pub const START: S = S::Start;
 pub const REJECT: S = S::Reject;
 
@@ -161,6 +163,7 @@ const ALL_STATES: &[S] = &[
     S::MaybeOr,
     S::OrOrDone,
     S::EqEqDone,
+    S::MatchArrowDone,
     S::NotEqualDone,
     S::IntAfterUnderscore,
     S::HexStart,
@@ -199,6 +202,7 @@ const ALL_STATES: &[S] = &[
     S::IncDone,
     S::DecDone,
     S::ArrowDone,
+    S::DotDotDone,
     S::Reject,
 ];
 
@@ -274,6 +278,7 @@ pub(crate) fn token_of_state(s: S) -> Option<TokenKind> {
         ShrDone => Some(TokenKind::Shr),
 
         EqEqDone => Some(TokenKind::EqEq),
+        MatchArrowDone => Some(TokenKind::MatchArrow),
         MaybeAnd => Some(TokenKind::Ampersand),
         AndAndDone => Some(TokenKind::AndAnd),
         MaybeOr => Some(TokenKind::Pipe),
@@ -316,6 +321,7 @@ pub(crate) fn token_of_state(s: S) -> Option<TokenKind> {
         IncDone => Some(TokenKind::Inc),
         DecDone => Some(TokenKind::Dec),
         ArrowDone => Some(TokenKind::Arrow),
+        DotDotDone => Some(TokenKind::DotDot),
         _ => None,
     }
 }
@@ -629,6 +635,7 @@ impl StreamingDfa {
         set(&mut next, S::MaybeGreater, b"=", S::GreaterEqualDone);
         set(&mut next, S::MaybeGreater, b">", S::ShrDone);
         set(&mut next, S::AfterAssign, b"=", S::EqEqDone);
+        set(&mut next, S::AfterAssign, b">", S::MatchArrowDone);
         set(&mut next, S::AfterBang, b"=", S::NotEqualDone);
         set(&mut next, S::MaybeAnd, b"&", S::AndAndDone);
         set(&mut next, S::MaybeAnd, b"=", S::AmpAssignDone);
@@ -646,6 +653,10 @@ impl StreamingDfa {
         set(&mut next, S::ShrDone, b"=", S::ShrAssignDone);
 
         // Floats and dot handling
+        next[S::MaybeDot.idx()][b'.' as usize] = Next {
+            state: S::DotDotDone.idx() as u16,
+            emit: false,
+        };
         for b in b'0'..=b'9' {
             next[S::MaybeDot.idx()][b as usize] = Next {
                 state: S::FloatFrac.idx() as u16,

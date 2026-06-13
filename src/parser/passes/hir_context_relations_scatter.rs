@@ -70,6 +70,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirContextRelati
                 b.hir_nearest_enclosing_control_value_a.as_entire_binding(),
             ),
             (
+                "hir_nearest_loop_value_a".into(),
+                b.hir_nearest_loop_value_a.as_entire_binding(),
+            ),
+            (
                 "hir_nearest_fn_value_a".into(),
                 b.hir_nearest_fn_value_a.as_entire_binding(),
             ),
@@ -84,6 +88,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirContextRelati
             (
                 "hir_nearest_enclosing_control_node".into(),
                 b.hir_nearest_enclosing_control_node.as_entire_binding(),
+            ),
+            (
+                "hir_nearest_loop_node".into(),
+                b.hir_nearest_loop_node.as_entire_binding(),
             ),
             (
                 "hir_nearest_fn_node".into(),

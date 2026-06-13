@@ -9,6 +9,7 @@ pub type ProcessRuntimeAbiVersion = u32;
 pub type ProcessServiceId = u32;
 pub type ProcessServiceStatus = u32;
 pub type ExitCode = i32;
+pub type ProcessArgumentResult = i32;
 
 pub const PROCESS_RUNTIME_ABI_VERSION: ProcessRuntimeAbiVersion = 1;
 pub const PROCESS_SERVICE_ID: ProcessServiceId = 11;
@@ -16,6 +17,7 @@ pub const PROCESS_SERVICE_STATUS_UNAVAILABLE: ProcessServiceStatus = 1;
 pub const PROCESS_HAS_RUNTIME_BINDING: ProcessCapability = false;
 pub const EXIT_SUCCESS: ExitCode = 0;
 pub const EXIT_FAILURE: ExitCode = 1;
+pub const PROCESS_ARGUMENT_UNAVAILABLE: ProcessArgumentResult = -1;
 
 pub fn process_runtime_abi_version() -> ProcessRuntimeAbiVersion {
     return PROCESS_RUNTIME_ABI_VERSION;
@@ -45,6 +47,10 @@ pub fn process_is_blocked() -> ProcessCapability {
     return !process_is_available();
 }
 
+pub fn process_is_known_but_unbound() -> ProcessCapability {
+    return process_service_is_known() && process_is_blocked();
+}
+
 pub fn process_requires_runtime_binding() -> ProcessCapability {
     return !PROCESS_HAS_RUNTIME_BINDING;
 }
@@ -59,6 +65,14 @@ pub fn exit_success_code() -> ExitCode {
 
 pub fn exit_failure_code() -> ExitCode {
     return EXIT_FAILURE;
+}
+
+pub fn exit_code_from_success(success: ProcessCapability) -> ExitCode {
+    if (success) {
+        return EXIT_SUCCESS;
+    } else {
+        return EXIT_FAILURE;
+    }
 }
 
 pub fn exit_code_is_success(code: ExitCode) -> ProcessCapability {
@@ -77,6 +91,30 @@ pub fn process_args_is_blocked() -> ProcessCapability {
     return !process_args_is_executable();
 }
 
+pub fn process_args_is_known_but_unbound() -> ProcessCapability {
+    return process_service_is_known() && process_args_is_blocked();
+}
+
+pub fn process_argument_unavailable() -> ProcessArgumentResult {
+    return PROCESS_ARGUMENT_UNAVAILABLE;
+}
+
+pub fn process_argument_result_succeeded(result: ProcessArgumentResult) -> ProcessCapability {
+    return result >= 0;
+}
+
+pub fn process_argument_result_failed(result: ProcessArgumentResult) -> ProcessCapability {
+    return result < 0;
+}
+
+pub fn process_argument_result_is_unavailable(result: ProcessArgumentResult) -> ProcessCapability {
+    return result == PROCESS_ARGUMENT_UNAVAILABLE;
+}
+
+pub fn process_argument_result_is_fail_closed(result: ProcessArgumentResult) -> ProcessCapability {
+    return process_args_is_known_but_unbound() && process_argument_result_is_unavailable(result);
+}
+
 pub fn process_args_requires_runtime_binding() -> ProcessCapability {
     return !process_args_is_executable();
 }
@@ -87,6 +125,10 @@ pub fn argc_is_executable() -> ProcessCapability {
 
 pub fn argc_is_blocked() -> ProcessCapability {
     return !argc_is_executable();
+}
+
+pub fn argc_is_known_but_unbound() -> ProcessCapability {
+    return process_service_is_known() && argc_is_blocked();
 }
 
 pub fn argc_requires_runtime_binding() -> ProcessCapability {
@@ -101,6 +143,10 @@ pub fn arg_len_is_blocked() -> ProcessCapability {
     return !arg_len_is_executable();
 }
 
+pub fn arg_len_is_known_but_unbound() -> ProcessCapability {
+    return process_service_is_known() && arg_len_is_blocked();
+}
+
 pub fn arg_len_requires_runtime_binding() -> ProcessCapability {
     return !arg_len_is_executable();
 }
@@ -111,6 +157,10 @@ pub fn arg_read_is_executable() -> ProcessCapability {
 
 pub fn arg_read_is_blocked() -> ProcessCapability {
     return !arg_read_is_executable();
+}
+
+pub fn arg_read_is_known_but_unbound() -> ProcessCapability {
+    return process_service_is_known() && arg_read_is_blocked();
 }
 
 pub fn arg_read_requires_runtime_binding() -> ProcessCapability {
@@ -125,6 +175,10 @@ pub fn process_exit_is_blocked() -> ProcessCapability {
     return !process_exit_is_executable();
 }
 
+pub fn process_exit_is_known_but_unbound() -> ProcessCapability {
+    return process_service_is_known() && process_exit_is_blocked();
+}
+
 pub fn process_exit_requires_runtime_binding() -> ProcessCapability {
     return !process_exit_is_executable();
 }
@@ -137,6 +191,10 @@ pub fn set_exit_code_is_blocked() -> ProcessCapability {
     return !set_exit_code_is_executable();
 }
 
+pub fn set_exit_code_is_known_but_unbound() -> ProcessCapability {
+    return process_service_is_known() && set_exit_code_is_blocked();
+}
+
 pub fn set_exit_code_requires_runtime_binding() -> ProcessCapability {
     return !set_exit_code_is_executable();
 }
@@ -147,6 +205,10 @@ pub fn exit_is_executable() -> ProcessCapability {
 
 pub fn exit_is_blocked() -> ProcessCapability {
     return !exit_is_executable();
+}
+
+pub fn exit_is_known_but_unbound() -> ProcessCapability {
+    return process_service_is_known() && exit_is_blocked();
 }
 
 pub fn exit_requires_runtime_binding() -> ProcessCapability {

@@ -21,7 +21,7 @@ struct Params
 
 ConstantBuffer<Params> gParams;
 
-StructuredBuffer<uint> module_count_out;
+StructuredBuffer<uint> module_table_count_out;
 StructuredBuffer<uint> sorted_module_key_order;
 StructuredBuffer<uint> module_key_segment_count;
 StructuredBuffer<uint> module_key_segment_base;
@@ -49,7 +49,7 @@ uint linear_thread_id(uint3 dtid)
 
 uint active_module_count()
 {
-    return min(module_count_out[0], gParams.module_capacity);
+    return min(module_table_count_out[0], gParams.module_capacity);
 }
 
 uint record_capacity()

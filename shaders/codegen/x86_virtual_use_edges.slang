@@ -37,9 +37,9 @@ RWStructuredBuffer<uint> x86_virtual_use_status;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint WG_SIZE = 256u;
 static const uint INVALID = 0xffffffffu;
-static const uint MAX_X86_OPERANDS = 4u;
-static const uint X86_USE_KEY_SLOT_BITS = 2u;
-static const uint X86_USE_KEY_SLOT_MASK = 0x3u;
+static const uint MAX_X86_OPERANDS = 6u;
+static const uint X86_USE_KEY_SLOT_BITS = 3u;
+static const uint X86_USE_KEY_SLOT_MASK = 0x7u;
 static const uint X86_VIRTUAL_INST_OK = 1u;
 static const uint X86_VIRTUAL_USE_OK = 1u;
 static const uint X86_ERR_VIRTUAL_USE = 13u;
@@ -66,6 +66,7 @@ static const uint X86_VINST_CALL_MIXED = 20u;
 static const uint X86_VINST_LOAD_PARAM_INDEX = 21u;
 static const uint X86_VINST_STORE_RET_PTR = 22u;
 static const uint X86_VINST_STORE_LOCAL_INDEX = 30u;
+static const uint X86_VINST_STORE_PARAM_INDEX = 32u;
 static const uint X86_ARG_SCALAR = 1u;
 
 uint mixed_arg_count(uint info)
@@ -84,6 +85,8 @@ uint mixed_arg_kind(uint info, uint ordinal)
 {
     if (ordinal < 4u)
         return packed_u2_at_offset(info, 12u, ordinal);
+    if (ordinal < 6u)
+        return packed_u2_at_offset(info, 20u, ordinal - 4u);
     return 0u;
 }
 
@@ -91,9 +94,15 @@ uint mixed_arg_payload(uint row, uint ordinal)
 {
     uint4 args = x86_virtual_inst_args[row];
     uint payload_row = args.z;
-    if (payload_row == INVALID || payload_row >= virtual_inst_count() || ordinal >= 4u)
+    if (payload_row == INVALID || payload_row >= virtual_inst_count() || ordinal >= 6u)
         return INVALID;
-    return x86_virtual_inst_args[payload_row][ordinal];
+    if (ordinal < 4u)
+        return x86_virtual_inst_args[payload_row][ordinal];
+
+    uint payload_row_hi = x86_virtual_inst_record[payload_row].w;
+    if (payload_row_hi == INVALID || payload_row_hi >= virtual_inst_count())
+        return INVALID;
+    return x86_virtual_inst_args[payload_row_hi][ordinal - 4u];
 }
 
 uint mixed_scalar_operand_count(uint row)
@@ -106,6 +115,8 @@ uint mixed_scalar_operand_count(uint row)
     if (arg_count > 1u && mixed_arg_kind(info, 1u) == X86_ARG_SCALAR) count += 1u;
     if (arg_count > 2u && mixed_arg_kind(info, 2u) == X86_ARG_SCALAR) count += 1u;
     if (arg_count > 3u && mixed_arg_kind(info, 3u) == X86_ARG_SCALAR) count += 1u;
+    if (arg_count > 4u && mixed_arg_kind(info, 4u) == X86_ARG_SCALAR) count += 1u;
+    if (arg_count > 5u && mixed_arg_kind(info, 5u) == X86_ARG_SCALAR) count += 1u;
     return count;
 }
 
@@ -133,6 +144,16 @@ uint mixed_scalar_operand_at(uint row, uint slot)
     if (arg_count > 3u && mixed_arg_kind(info, 3u) == X86_ARG_SCALAR)
     {
         if (seen == slot) return mixed_arg_payload(row, 3u);
+        seen += 1u;
+    }
+    if (arg_count > 4u && mixed_arg_kind(info, 4u) == X86_ARG_SCALAR)
+    {
+        if (seen == slot) return mixed_arg_payload(row, 4u);
+        seen += 1u;
+    }
+    if (arg_count > 5u && mixed_arg_kind(info, 5u) == X86_ARG_SCALAR)
+    {
+        if (seen == slot) return mixed_arg_payload(row, 5u);
     }
     return INVALID;
 }
@@ -187,7 +208,8 @@ uint operand_count_for_row(uint row)
         return mixed_scalar_operand_count(row);
     if (op == X86_VINST_BINARY ||
         op == X86_VINST_COMPARE ||
-        op == X86_VINST_STORE_LOCAL_INDEX)
+        op == X86_VINST_STORE_LOCAL_INDEX ||
+        op == X86_VINST_STORE_PARAM_INDEX)
         return 2u;
     return 0u;
 }
@@ -204,7 +226,8 @@ uint operand_at(uint row, uint slot)
         if (slot == 1u) return args.z;
         return INVALID;
     }
-    if (op == X86_VINST_STORE_LOCAL_INDEX)
+    if (op == X86_VINST_STORE_LOCAL_INDEX ||
+        op == X86_VINST_STORE_PARAM_INDEX)
     {
         if (slot == 0u) return args.y;
         if (slot == 1u) return args.z;
@@ -245,10 +268,10 @@ uint pack_use_key(uint user_row, uint slot)
 uint pack_error_extra(uint op, uint slot, uint operand, uint inst_count)
 {
     uint operand_op = operand < inst_count ? x86_virtual_inst_record[operand].z : 0xffu;
-    return ((slot & 0x03u) << 30u) |
-           ((op & 0xffu) << 22u) |
-           ((operand_op & 0xffu) << 14u) |
-           (operand & 0x00003fffu);
+    return ((slot & 0x07u) << 29u) |
+           ((op & 0xffu) << 21u) |
+           ((operand_op & 0xffu) << 13u) |
+           (operand & 0x00001fffu);
 }
 
 void publish_error(uint detail, uint extra)

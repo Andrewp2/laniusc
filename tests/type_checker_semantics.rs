@@ -349,6 +349,131 @@ fn main() {
 }
 
 #[test]
+fn type_checker_rejects_empty_return_from_explicit_generic_return_type_on_gpu() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+fn skip<T>(value: T) -> T {
+    return;
+}
+
+fn main() {
+    return 0;
+}
+"#,
+        "LNC0006",
+        &[
+            "error[LNC0006]: type mismatch",
+            "return;",
+            "expected generic parameter 0, found void",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_rejects_non_void_function_without_return_on_gpu() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+fn main() -> i32 {
+    let value: i32 = 1;
+}
+"#,
+        "LNC0006",
+        &[
+            "error[LNC0006]: type mismatch",
+            "fn main() -> i32 {",
+            "expected i32, found void",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_accepts_top_level_fallthrough_return_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+fn choose(flag: bool) -> i32 {
+    if (flag) {
+        return 1;
+    }
+    return 2;
+}
+
+fn main() {
+    return choose(false);
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_accepts_direct_if_else_return_convergence_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+fn choose(flag: bool) -> i32 {
+    if (flag) {
+        return 1;
+    } else {
+        return 2;
+    }
+}
+
+fn main() {
+    return choose(true);
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_rejects_branch_only_nested_return_convergence_on_gpu() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+fn choose(flag: bool, nested: bool) -> i32 {
+    if (flag) {
+        if (nested) {
+            return 1;
+        }
+    } else {
+        return 2;
+    }
+}
+
+fn main() {
+    return choose(true, false);
+}
+"#,
+        "LNC0006",
+        &[
+            "error[LNC0006]: type mismatch",
+            "fn choose(flag: bool, nested: bool) -> i32 {",
+            "expected i32, found void",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_accepts_nested_direct_if_else_return_convergence_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+fn choose(flag: bool, nested: bool) -> i32 {
+    if (flag) {
+        if (nested) {
+            return 1;
+        } else {
+            return 2;
+        }
+    } else {
+        return 3;
+    }
+}
+
+fn main() {
+    return choose(true, false);
+}
+"#,
+    );
+}
+
+#[test]
 fn type_checker_resolves_shadowed_names_by_scope() {
     assert_gpu_type_check_ok(
         r#"
@@ -383,6 +508,44 @@ fn main() {
         return 1;
     }
     return 0;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_accepts_loop_control_inside_nested_hir_control_contexts() {
+    assert_gpu_type_check_ok(
+        r#"
+fn main(limit: i32) {
+    let i: i32 = 0;
+    while (i < limit) {
+        i += 1;
+        if (i == 2) {
+            continue;
+        }
+        if (i == 4) {
+            break;
+        }
+    }
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_rejects_loop_control_without_parser_owned_loop_context() {
+    assert_gpu_type_check_rejects(
+        r#"
+fn main() {
+    break;
+}
+"#,
+    );
+    assert_gpu_type_check_rejects(
+        r#"
+fn main() {
+    continue;
 }
 "#,
     );
@@ -538,6 +701,38 @@ fn main() {
 }
 
 #[test]
+fn type_checker_rejects_duplicate_struct_field_declarations_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+struct Left {
+    value: i32,
+}
+
+struct Right {
+    value: bool,
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+
+    assert_gpu_type_check_rejects(
+        r#"
+struct Pair {
+    value: i32,
+    value: bool,
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+}
+
+#[test]
 fn type_checker_accepts_struct_literals_members_and_field_assignment() {
     let src = r#"
 struct Pair {
@@ -643,12 +838,9 @@ fn contains(value: bool) -> bool {
     return value;
 }
 
-fn make_range() -> Range {
-    return Range { start: 1, end: 4 };
-}
-
 fn main() {
-    if (make_range().contains(2)) {
+    let range: Range = Range { start: 1, end: 4 };
+    if (range.contains(2)) {
         return 1;
     }
     return 0;
@@ -673,12 +865,10 @@ fn contains(value: bool) -> bool {
     return value;
 }
 
-fn make_range() -> Range {
-    return Range { start: 1, end: 4 };
-}
-
 fn main() {
-    if (make_range().contains(false)) {
+    let range: Range = Range { start: 1, end: 4 };
+    let wrong: bool = false;
+    if (range.contains(wrong)) {
         return 1;
     }
     return 0;
@@ -691,11 +881,110 @@ fn main() {
         CompileError::Diagnostic(diagnostic) => {
             assert_eq!(diagnostic.code, "LNC0006");
             let rendered = diagnostic.render();
-            assert!(rendered.contains("make_range().contains(false)"));
-            assert!(rendered.contains("expected a different type here"));
+            assert!(rendered.contains("range.contains(wrong)"));
         }
         other => panic!("expected method argument type diagnostic, got {other:?}"),
     }
+}
+
+#[test]
+fn type_checker_checks_method_arguments_on_call_result_receivers() {
+    let err = common::type_check_source_with_timeout(
+        r#"
+struct Range {
+    start: i32,
+    end: i32,
+}
+
+impl Range {
+    fn contains(&self, value: i32) -> bool {
+        return value >= self.start && value < self.end;
+    }
+}
+
+fn make_range() -> Range {
+    return Range { start: 1, end: 4 };
+}
+
+fn main() {
+    let wrong: bool = false;
+    if (make_range().contains(wrong)) {
+        return 1;
+    }
+    return 0;
+}
+"#,
+    )
+    .expect_err("call-result receiver method arguments should be type-checked");
+
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0006");
+            let rendered = diagnostic.render();
+            assert!(rendered.contains("make_range().contains(wrong)"));
+        }
+        other => panic!("expected method argument type diagnostic, got {other:?}"),
+    }
+}
+
+#[test]
+fn type_checker_struct_literal_returns_feed_call_result_method_receivers() {
+    assert_gpu_type_check_ok(
+        r#"
+struct Range {
+    start: i32,
+    end: i32,
+}
+
+impl Range {
+    fn contains(&self, value: i32) -> bool {
+        return value >= self.start && value < self.end;
+    }
+}
+
+fn contains(value: bool) -> bool {
+    return value;
+}
+
+fn make_range() -> Range {
+    return Range { start: 1, end: 4 };
+}
+
+fn main() {
+    if (make_range().contains(2)) {
+        return 1;
+    }
+    return 0;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_rejects_method_calls_beyond_gpu_argument_width() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+struct Counter {
+    value: i32,
+}
+
+impl Counter {
+    fn sum(&self, first: i32, second: i32, third: i32, fourth: i32) -> i32 {
+        return self.value + first + second + third + fourth;
+    }
+}
+
+fn main() {
+    let counter: Counter = Counter { value: 1 };
+    return counter.sum(1, 2, 3, 4, 5);
+}
+"#,
+        "LNC0027",
+        &[
+            "error[LNC0027]: call resolution failed",
+            "no supported function or method signature matches this receiver and argument list",
+        ],
+    );
 }
 
 #[test]
@@ -855,8 +1144,8 @@ fn main() {
 }
 
 #[test]
-fn type_checker_rejects_method_lookup_on_under_applied_generic_receivers() {
-    assert_gpu_type_check_rejects(
+fn type_checker_rejects_under_applied_inherent_impl_receiver_targets_on_gpu() {
+    assert_gpu_type_check_diagnostic(
         r#"
 struct PairBox<Left, Right> {
     left: Left,
@@ -875,6 +1164,45 @@ fn main() {
     return make_pair().read();
 }
 "#,
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "impl PairBox<i32> {",
+            "trait impl target type is outside the current GPU predicate row shape",
+            "trait impl predicate rows currently match only scalar and non-generic nominal targets",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_rejects_nested_inherent_impl_receiver_arguments_on_gpu() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+struct Boxed<T> {
+    value: T,
+}
+
+struct Holder<T> {
+    value: T,
+}
+
+impl Holder<Boxed<i32>> {
+    fn read(self) -> i32 {
+        return self.value.value;
+    }
+}
+
+fn main() {
+    return 0;
+}
+"#,
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "impl Holder<Boxed<i32>> {",
+            "trait impl target type is outside the current GPU predicate row shape",
+            "trait impl predicate rows currently match only scalar and non-generic nominal targets",
+        ],
     );
 }
 
@@ -986,11 +1314,12 @@ fn main() {
     return 0;
 }
 "#,
-        "LNC0006",
+        "LNC0027",
         &[
-            "error[LNC0006]: type mismatch",
+            "error[LNC0027]: call resolution failed",
             "let number: i32 = number_box.read();",
-            "expected a different type here",
+            "method return type is outside the current GPU substitution records",
+            "publish method return substitution rows keyed by receiver type-instance arguments",
         ],
     );
 
@@ -1012,6 +1341,38 @@ fn main() {
     return 0;
 }
 "#,
+    );
+}
+
+#[test]
+fn type_checker_rejects_inherent_method_level_generics_before_dispatch_on_gpu() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+struct Boxed {
+    value: i32,
+}
+
+impl Boxed {
+    fn choose<T>(self, value: T) -> T {
+        return value;
+    }
+}
+
+fn main() {
+    let boxed: Boxed = Boxed { value: 1 };
+    let value: bool = boxed.choose(true);
+    if (value) {
+        return boxed.value;
+    }
+    return 0;
+}
+"#,
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "fn choose<T>(self, value: T) -> T {",
+            "trait method-level generics are outside the current GPU trait contract records",
+        ],
     );
 }
 
@@ -1119,6 +1480,34 @@ fn main() {
     return 0;
 }
 "#,
+    );
+}
+
+#[test]
+fn type_checker_rejects_inherent_impl_receiver_targets_beyond_gpu_arg_window() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+struct PentaBox<A, B, C, D, E> {
+    value: i32,
+}
+
+impl PentaBox<i32, bool, i32, bool, i32> {
+    fn pick(self) -> i32 {
+        return 0;
+    }
+}
+
+fn main() {
+    return 0;
+}
+"#,
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "impl PentaBox<i32, bool, i32, bool, i32> {",
+            "trait impl target type is outside the current GPU predicate row shape",
+            "trait impl predicate rows currently match only scalar and non-generic nominal targets",
+        ],
     );
 }
 
@@ -1349,6 +1738,121 @@ fn main() {
 }
 
 #[test]
+fn type_checker_rejects_assigning_between_distinct_generic_struct_instances() {
+    assert_gpu_type_check_rejects(
+        r#"
+struct Boxed<T> {
+    value: T,
+}
+
+fn main() {
+    let flag: Boxed<bool> = Boxed { value: true };
+    let value: Boxed<i32> = flag;
+    return 0;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_rejects_nested_generic_struct_field_substitution_without_leaf_rows() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+struct Boxed<T> {
+    value: T,
+}
+
+struct Holder<T> {
+    item: Boxed<T>,
+}
+
+fn main() {
+    let flag: Boxed<bool> = Boxed { value: true };
+    let holder: Holder<i32> = Holder { item: flag };
+    return 0;
+}
+"#,
+        "LNC0006",
+        &[
+            "error[LNC0006]: type mismatch",
+            "let holder: Holder<i32> = Holder { item: flag };",
+            "value type does not match this context",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_substitutes_generic_struct_literal_fields_inside_generic_bodies() {
+    assert_gpu_type_check_ok(
+        r#"
+struct Boxed<T> {
+    value: T,
+}
+
+fn wrap<T>(value: T) -> Boxed<T> {
+    return Boxed { value: value };
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+
+    assert_gpu_type_check_diagnostic(
+        r#"
+struct Boxed<T> {
+    value: T,
+}
+
+fn wrap_wrong<T>(value: T) -> Boxed<T> {
+    return Boxed { value: 1 };
+}
+
+fn main() {
+    let boxed: Boxed<bool> = wrap_wrong(true);
+    if (boxed.value) {
+        return 1;
+    }
+    return 0;
+}
+"#,
+        "LNC0006",
+        &[
+            "error[LNC0006]: type mismatch",
+            "return Boxed { value: 1 };",
+            "value type is i32 but this context expects generic parameter 0",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_rejects_overwide_generic_type_instance_record() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+struct Five<A, B, C, D, E> {
+    a: A,
+    b: B,
+    c: C,
+    d: D,
+    e: E,
+}
+
+fn main() {
+    let item: Five<i32, bool, i32, bool, i32> = Five { a: 1, b: true, c: 2, d: false, e: 3 };
+    return item.a;
+}
+"#,
+        "LNC0007",
+        &[
+            "error[LNC0007]: unknown type",
+            "let item: Five<i32, bool, i32, bool, i32>",
+            "type not found",
+        ],
+    );
+}
+
+#[test]
 fn type_checker_accepts_concrete_generic_struct_literal_local_assignment() {
     assert_gpu_type_check_ok(
         r#"
@@ -1402,6 +1906,82 @@ fn main() {
 }
 
 #[test]
+fn type_checker_rejects_missing_later_inline_trait_bound_on_gpu() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+trait Bound<T> {
+    fn check(value: T) -> bool;
+}
+
+trait Other<T> {
+    fn other(value: T) -> bool;
+}
+
+impl Bound<i32> for i32 {
+    fn check(value: i32) -> bool {
+        return value > 0;
+    }
+}
+
+fn keep<T: Bound<T> + Other<T> >(value: T) -> T {
+    return value;
+}
+
+fn main() {
+    let value: i32 = keep(7);
+    return value;
+}
+"#,
+        "LNC0008",
+        &[
+            "error[LNC0008]: unsatisfied trait bound",
+            "let value: i32 = keep(7);",
+            "no matching impl satisfies this call",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_rejects_inline_trait_bound_chains_beyond_gpu_relation() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+trait First<T> {
+}
+
+trait Second<T> {
+}
+
+trait Third<T> {
+}
+
+impl First<i32> for i32 {
+}
+
+impl Second<i32> for i32 {
+}
+
+impl Third<i32> for i32 {
+}
+
+fn keep<T: First<T> + Second<T> + Third<T> >(value: T) -> T {
+    return value;
+}
+
+fn main() {
+    let value: i32 = keep(7);
+    return value;
+}
+"#,
+        "LNC0008",
+        &[
+            "error[LNC0008]: unsatisfied trait bound",
+            "fn keep<T: First<T> + Second<T> + Third<T> >(value: T) -> T {",
+            "trait bound relation is outside the current GPU predicate row shape",
+        ],
+    );
+}
+
+#[test]
 fn type_checker_reports_missing_trait_impl_obligation_diagnostic_on_gpu() {
     assert_gpu_type_check_diagnostic(
         r#"
@@ -1437,6 +2017,37 @@ fn main() {
 }
 
 #[test]
+fn type_checker_rejects_symbolic_generic_trait_obligations_without_concrete_impl_key() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+trait Eq<Value> {
+}
+
+impl Eq<i32> for i32 {
+}
+
+fn require_eq<T>(value: T) -> T where T: Eq<T> {
+    return value;
+}
+
+fn forward<U>(value: U) -> U {
+    return require_eq(value);
+}
+
+fn main() {
+    return 0;
+}
+"#,
+        "LNC0008",
+        &[
+            "error[LNC0008]: unsatisfied trait bound",
+            "return require_eq(value);",
+            "no matching impl satisfies this call",
+        ],
+    );
+}
+
+#[test]
 fn type_checker_rejects_overlapping_trait_impls_without_waiting_for_a_call_on_gpu() {
     assert_gpu_type_check_diagnostic(
         r#"
@@ -1464,6 +2075,136 @@ fn main() {
 }
 
 #[test]
+fn type_checker_reports_trait_impl_visibility_mismatches_on_gpu() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+pub trait Marker<T> {
+}
+
+impl Marker<i32> for i32 {
+}
+
+fn main() {
+    return 0;
+}
+"#,
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "impl Marker<i32> for i32 {",
+            "trait impl visibility does not match the resolved trait contract",
+            "public trait impls and public traits must agree",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_reports_trait_impl_method_visibility_mismatches_on_gpu() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+trait Marker<T> {
+    pub fn check(value: T) -> bool;
+}
+
+impl Marker<i32> for i32 {
+    fn check(value: i32) -> bool {
+        return true;
+    }
+}
+
+fn main() {
+    return 0;
+}
+"#,
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "fn check(value: i32) -> bool {",
+            "trait impl method visibility does not match the trait declaration",
+            "match each impl method's visibility",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_rejects_public_trait_impl_methods_for_private_trait_contracts() {
+    assert_gpu_type_check_ok(
+        r#"
+trait Marker<T> {
+    fn check(value: T) -> bool;
+}
+
+impl Marker<i32> for i32 {
+    fn check(value: i32) -> bool {
+        return true;
+    }
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+
+    assert_gpu_type_check_diagnostic(
+        r#"
+trait Marker<T> {
+    fn check(value: T) -> bool;
+}
+
+impl Marker<i32> for i32 {
+    pub fn check(value: i32) -> bool {
+        return true;
+    }
+}
+
+fn main() {
+    return 0;
+}
+"#,
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "pub fn check(value: i32) -> bool {",
+            "trait impl method visibility does not match the trait declaration",
+            "match each impl method's visibility",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_rejects_duplicate_trait_impl_methods_with_stable_diagnostic() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+trait Marker<T> {
+    fn check(value: i32) -> bool;
+}
+
+impl Marker<i32> for i32 {
+    fn check(value: i32) -> bool {
+        return true;
+    }
+
+    fn check(value: i32) -> bool {
+        return false;
+    }
+}
+
+fn main() {
+    return 0;
+}
+"#,
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "fn check(value: i32) -> bool {",
+            "trait impl declares duplicate methods for the same trait contract",
+            "give each implemented trait method a unique name",
+        ],
+    );
+}
+
+#[test]
 fn type_checker_reports_trait_method_generics_on_trait_declaration() {
     assert_gpu_type_check_diagnostic(
         r#"
@@ -1479,8 +2220,6 @@ fn main() {
         &[
             "error[LNC0021]: invalid trait implementation",
             "fn make<T>(value: T) -> T;",
-            "trait method-level generics are outside the current GPU trait contract records",
-            "method-level generic substitution is implemented on GPU",
         ],
     );
 }
@@ -1580,6 +2319,50 @@ fn main() {
             "error[LNC0008]: unsatisfied trait bound",
             "let value: i32 = keep(7, 1);",
             "no matching impl satisfies this call",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_rejects_calls_beyond_gpu_predicate_obligation_window() {
+    let predicate_records = (0..33)
+        .map(|i| {
+            format!(
+                r#"
+trait Bound{i}<T> {{
+}}
+
+impl Bound{i}<i32> for i32 {{
+}}
+"#
+            )
+        })
+        .collect::<String>();
+    let bounds = (0..33)
+        .map(|i| format!("Bound{i}<T>"))
+        .collect::<Vec<_>>()
+        .join(" + ");
+    let src = format!(
+        r#"
+{predicate_records}
+fn keep<T>(value: T) -> T where T: {bounds} {{
+    return value;
+}}
+
+fn main() {{
+    let value: i32 = keep(1);
+    return value;
+}}
+"#
+    );
+
+    assert_gpu_type_check_diagnostic(
+        &src,
+        "LNC0008",
+        &[
+            "error[LNC0008]: unsatisfied trait bound",
+            "let value: i32 = keep(1);",
+            "trait obligation exceeds the current GPU predicate solver window",
         ],
     );
 }
@@ -1710,7 +2493,6 @@ fn main() {
         &[
             "error[LNC0008]: unsatisfied trait bound",
             "fn keep<T>(value: T) -> T where T: Rel3<i32, bool, i32> {",
-            "trait bound exceeds the current GPU predicate argument limit",
         ],
     );
 }
@@ -1729,13 +2511,66 @@ fn main() {
     return 0;
 }
 "#,
-        "LNC0008",
+        "LNC0021",
         &[
-            "error[LNC0008]: unsatisfied trait bound",
+            "error[LNC0021]: invalid trait implementation",
             "impl Rel3<i32, bool, i32> for i32 {",
-            "trait bound exceeds the current GPU predicate argument limit",
+            "trait impl header exceeds the current GPU predicate argument limit",
         ],
     );
+}
+
+#[test]
+fn type_checker_points_two_arg_trait_impl_diagnostics_at_failing_argument() {
+    assert_gpu_type_check_ok(
+        r#"
+trait Rel<Left, Right> {
+}
+
+impl Rel<i32, bool> for i32 {
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+
+    let err = common::type_check_source_with_timeout(
+        r#"
+trait Rel<Left, Right> {
+}
+
+impl Rel<i32, Missing> for i32 {
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    )
+    .expect_err("unresolved second trait impl argument should fail GPU predicate validation");
+
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0021");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("diagnostic should identify the failing trait impl argument");
+            assert_eq!(
+                label.source_line.as_deref(),
+                Some("impl Rel<i32, Missing> for i32 {")
+            );
+            assert_eq!(label.column, 15);
+            assert_eq!(label.length, "Missing".len());
+
+            let rendered = diagnostic.render();
+            assert!(rendered.contains("error[LNC0021]: invalid trait implementation"));
+            assert!(rendered.contains("trait impl header contains an unknown trait argument type"));
+        }
+        other => panic!("expected second trait impl argument diagnostic, got {other:?}"),
+    }
 }
 
 #[test]
@@ -1762,7 +2597,6 @@ fn main() {
         &[
             "error[LNC0008]: unsatisfied trait bound",
             "fn keep<T>(value: T) -> T where T: Rel<Boxed<i32>> {",
-            "trait bound argument shape is not supported by the current GPU predicate row",
         ],
     );
 }
@@ -1790,7 +2624,6 @@ fn main() {
         &[
             "error[LNC0008]: unsatisfied trait bound",
             "fn keep<T>(value: T) -> T where T: Rel<Boxed> {",
-            "trait bound argument shape is not supported by the current GPU predicate row",
         ],
     );
 
@@ -1810,18 +2643,18 @@ fn main() {
     return 0;
 }
 "#,
-        "LNC0008",
+        "LNC0021",
         &[
-            "error[LNC0008]: unsatisfied trait bound",
+            "error[LNC0021]: invalid trait implementation",
             "impl Rel<Boxed> for i32 {",
-            "trait bound argument shape is not supported by the current GPU predicate row",
+            "trait impl header uses an unsupported trait argument shape",
         ],
     );
 }
 
 #[test]
 fn type_checker_reports_reference_trait_bound_argument_shapes_on_gpu() {
-    assert_gpu_type_check_diagnostic(
+    let err = common::type_check_source_with_timeout(
         r#"
 trait Rel<Value> {
 }
@@ -1835,13 +2668,190 @@ fn main() {
     return value;
 }
 "#,
+    )
+    .expect_err("reference trait-bound arguments should fail GPU predicate validation");
+
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0008");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("diagnostic should identify the unsupported trait argument");
+            assert_eq!(
+                label.source_line.as_deref(),
+                Some("fn keep<T>(value: T) -> T where T: Rel<&i32> {")
+            );
+            assert!(
+                (1..=label.source_line.as_ref().expect("source line").len())
+                    .contains(&label.column),
+                "diagnostic column should stay on the unsupported bound line, got {}",
+                label.column
+            );
+            assert_eq!(label.length, 1);
+
+            let rendered = diagnostic.render();
+            assert!(rendered.contains("error[LNC0008]: unsatisfied trait bound"));
+        }
+        other => panic!("expected reference trait-bound argument diagnostic, got {other:?}"),
+    }
+}
+
+#[test]
+fn type_checker_reports_second_trait_bound_argument_shape_diagnostics() {
+    let err = common::type_check_source_with_timeout(
+        r#"
+trait Rel<First, Second> {
+}
+
+fn keep<T>(value: T) -> T where T: Rel<i32, &i32> {
+    return value;
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    )
+    .expect_err("unsupported second trait-bound argument should fail GPU predicate validation");
+
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0008");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("diagnostic should identify the unsupported trait argument");
+            assert_eq!(
+                label.source_line.as_deref(),
+                Some("fn keep<T>(value: T) -> T where T: Rel<i32, &i32> {")
+            );
+            assert!(
+                (1..=label.source_line.as_ref().expect("source line").len())
+                    .contains(&label.column),
+                "diagnostic column should stay on the unsupported bound line, got {}",
+                label.column
+            );
+            assert_eq!(label.length, 1);
+
+            let rendered = diagnostic.render();
+            assert!(rendered.contains("error[LNC0008]: unsatisfied trait bound"));
+        }
+        other => panic!("expected second trait-bound argument diagnostic, got {other:?}"),
+    }
+}
+
+#[test]
+fn type_checker_reports_reference_trait_impl_argument_shapes_on_gpu() {
+    let err = common::type_check_source_with_timeout(
+        r#"
+trait Rel<Value> {
+}
+
+impl Rel<&i32> for i32 {
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    )
+    .expect_err("reference trait-impl arguments should fail GPU predicate validation");
+
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0021");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("diagnostic should identify the unsupported trait impl argument");
+            assert_eq!(
+                label.source_line.as_deref(),
+                Some("impl Rel<&i32> for i32 {")
+            );
+            assert_eq!(label.column, 10);
+            assert_eq!(label.length, 1);
+
+            let rendered = diagnostic.render();
+            assert!(rendered.contains("error[LNC0021]: invalid trait implementation"));
+            assert!(
+                rendered.contains("trait impl header uses an unsupported trait argument shape")
+            );
+        }
+        other => panic!("expected reference trait impl argument diagnostic, got {other:?}"),
+    }
+}
+
+#[test]
+fn type_checker_reports_reference_trait_bound_heads_on_gpu() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+trait Marker {
+}
+
+fn keep<T>(value: T) -> T where T: &Marker {
+    return value;
+}
+
+fn main() {
+    let value: i32 = keep(7);
+    return value;
+}
+"#,
         "LNC0008",
         &[
             "error[LNC0008]: unsatisfied trait bound",
-            "fn keep<T>(value: T) -> T where T: Rel<&i32> {",
-            "trait bound argument shape is not supported by the current GPU predicate row",
+            "fn keep<T>(value: T) -> T where T: &Marker {",
         ],
     );
+}
+
+#[test]
+fn type_checker_points_generic_trait_impl_argument_diagnostics_at_argument_token() {
+    let err = common::type_check_source_with_timeout(
+        r#"
+struct T {
+    value: i32,
+}
+
+trait Rel<Value> {
+}
+
+impl<T> Rel<T> for i32 {
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    )
+    .expect_err("generic trait impl arguments should fail GPU type checking");
+
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0021");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("diagnostic should identify the unsupported trait argument");
+            assert_eq!(
+                label.source_line.as_deref(),
+                Some("impl<T> Rel<T> for i32 {")
+            );
+            assert_eq!(label.column, 13);
+            assert_eq!(label.length, 1);
+
+            let rendered = diagnostic.render();
+            assert!(rendered.contains("error[LNC0021]: invalid trait implementation"));
+            assert!(rendered.contains(
+                "trait impl header uses generic trait arguments outside the current GPU predicate row shape"
+            ));
+            assert!(rendered.contains(
+                "publish trait impl argument rows that carry generic-parameter references"
+            ));
+        }
+        other => panic!("expected generic trait impl argument diagnostic, got {other:?}"),
+    }
 }
 
 #[test]
@@ -1862,11 +2872,247 @@ fn main() {
     return 0;
 }
 "#,
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "impl Rel<Boxed<i32>> for i32 {",
+            "trait impl header uses an unsupported trait argument shape",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_reports_imported_nested_trait_impl_argument_shapes_on_gpu() {
+    assert_gpu_type_check_pack_diagnostic(
+        &[
+            r#"
+module core::types;
+
+pub struct Boxed<T> {
+    value: T,
+}
+
+pub trait Rel<Value> {
+}
+"#,
+            r#"
+module app;
+
+import core::types;
+
+pub impl Rel<Boxed<i32>> for i32 {
+}
+
+fn main() {
+    return 0;
+}
+"#,
+        ],
+        "LNC0021",
+        &[
+            "error[LNC0021]: invalid trait implementation",
+            "pub impl Rel<Boxed<i32>> for i32 {",
+            "trait impl header uses an unsupported trait argument shape",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_normalizes_alias_predicate_type_argument_leaves_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+type Count = i32;
+
+trait Rel<Value> {
+}
+
+impl Rel<i32> for i32 {
+}
+
+fn keep<T>(value: T) -> T where T: Rel<Count> {
+    return value;
+}
+
+fn main() {
+    let value: i32 = keep(7);
+    return value;
+}
+"#,
+    );
+
+    assert_gpu_type_check_ok(
+        r#"
+type Count = i32;
+
+trait Rel<Value> {
+}
+
+impl Rel<Count> for i32 {
+}
+
+fn keep<T>(value: T) -> T where T: Rel<i32> {
+    return value;
+}
+
+fn main() {
+    let value: i32 = keep(7);
+    return value;
+}
+"#,
+    );
+
+    assert_gpu_type_check_diagnostic(
+        r#"
+type Flag = bool;
+
+trait Rel<Value> {
+}
+
+impl Rel<i32> for i32 {
+}
+
+fn keep<T>(value: T) -> T where T: Rel<Flag> {
+    return value;
+}
+
+fn main() {
+    let value: i32 = keep(7);
+    return value;
+}
+"#,
         "LNC0008",
         &[
             "error[LNC0008]: unsatisfied trait bound",
-            "impl Rel<Boxed<i32>> for i32 {",
-            "trait bound argument shape is not supported by the current GPU predicate row",
+            "let value: i32 = keep(7);",
+            "no matching impl satisfies this call",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_normalizes_nominal_alias_predicate_type_argument_leaves_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+struct Key {
+    value: i32,
+}
+
+type KeyAlias = Key;
+
+trait Rel<Value> {
+}
+
+impl Rel<Key> for i32 {
+}
+
+fn keep<T>(value: T) -> T where T: Rel<KeyAlias> {
+    return value;
+}
+
+fn main() {
+    let value: i32 = keep(7);
+    return value;
+}
+"#,
+    );
+
+    assert_gpu_type_check_diagnostic(
+        r#"
+struct Key {
+    value: i32,
+}
+
+struct OtherKey {
+    value: i32,
+}
+
+type KeyAlias = OtherKey;
+
+trait Rel<Value> {
+}
+
+impl Rel<Key> for i32 {
+}
+
+fn keep<T>(value: T) -> T where T: Rel<KeyAlias> {
+    return value;
+}
+
+fn main() {
+    let value: i32 = keep(7);
+    return value;
+}
+"#,
+        "LNC0008",
+        &[
+            "error[LNC0008]: unsatisfied trait bound",
+            "let value: i32 = keep(7);",
+            "no matching impl satisfies this call",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_normalizes_qualified_alias_predicate_type_arguments_on_gpu() {
+    assert_gpu_type_check_pack_ok(&[
+        r#"
+module core::types;
+
+pub type Count = i32;
+
+pub trait Rel<Value> {
+}
+
+pub impl Rel<i32> for i32 {
+}
+"#,
+        r#"
+module app;
+
+fn keep<T, Count>(value: T, shadow: Count) -> T where T: core::types::Rel<core::types::Count> {
+    let copied: Count = shadow;
+    return value;
+}
+
+fn main() {
+    let marker: bool = false;
+    let value: i32 = keep(7, marker);
+    return value;
+}
+"#,
+    ]);
+
+    assert_gpu_type_check_pack_diagnostic(
+        &[
+            r#"
+module core::types;
+
+pub type Flag = bool;
+
+pub trait Rel<Value> {
+}
+
+pub impl Rel<i32> for i32 {
+}
+"#,
+            r#"
+module app;
+
+fn keep<T>(value: T) -> T where T: core::types::Rel<core::types::Flag> {
+    return value;
+}
+
+fn main() {
+    let value: i32 = keep(7);
+    return value;
+}
+"#,
+        ],
+        "LNC0008",
+        &[
+            "error[LNC0008]: unsatisfied trait bound",
+            "let value: i32 = keep(7);",
+            "no matching impl satisfies this call",
         ],
     );
 }
@@ -1912,6 +3158,121 @@ fn main() {
         "LNC0008",
         &[
             "error[LNC0008]: unsatisfied trait bound",
+            "no matching impl satisfies this call",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_substitutes_alias_normalized_call_arguments_into_trait_bounds_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+type Count = i32;
+
+trait Eq<Value> {
+}
+
+impl Eq<i32> for i32 {
+}
+
+fn require_eq<T>(value: T) -> T where T: Eq<T> {
+    return value;
+}
+
+fn main() {
+    let count: Count = 7;
+    let value: Count = require_eq(count);
+    return value;
+}
+"#,
+    );
+
+    assert_gpu_type_check_diagnostic(
+        r#"
+type Flag = bool;
+
+trait Eq<Value> {
+}
+
+impl Eq<i32> for i32 {
+}
+
+fn require_eq<T>(value: T) -> T where T: Eq<T> {
+    return value;
+}
+
+fn main() {
+    let flag: Flag = false;
+    let value: Flag = require_eq(flag);
+    if (value) {
+        return 1;
+    }
+    return 0;
+}
+"#,
+        "LNC0008",
+        &[
+            "error[LNC0008]: unsatisfied trait bound",
+            "let value: Flag = require_eq(flag);",
+            "no matching impl satisfies this call",
+        ],
+    );
+}
+
+#[test]
+fn type_checker_substitutes_alias_normalized_bound_arguments_from_nonzero_slots_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+type Count = i32;
+
+trait Rel<Value> {
+}
+
+impl Rel<i32> for bool {
+}
+
+fn keep_right<T, U>(left: T, right: U) -> U where U: Rel<T> {
+    return right;
+}
+
+fn main() {
+    let count: Count = 7;
+    let value: bool = keep_right(count, false);
+    if (value) {
+        return 1;
+    }
+    return 0;
+}
+"#,
+    );
+
+    assert_gpu_type_check_diagnostic(
+        r#"
+type Flag = bool;
+
+trait Rel<Value> {
+}
+
+impl Rel<i32> for bool {
+}
+
+fn keep_right<T, U>(left: T, right: U) -> U where U: Rel<T> {
+    return right;
+}
+
+fn main() {
+    let flag: Flag = false;
+    let value: bool = keep_right(flag, true);
+    if (value) {
+        return 1;
+    }
+    return 0;
+}
+"#,
+        "LNC0008",
+        &[
+            "error[LNC0008]: unsatisfied trait bound",
+            "let value: bool = keep_right(flag, true);",
             "no matching impl satisfies this call",
         ],
     );
@@ -2038,6 +3399,67 @@ fn main() {
 }
 
 #[test]
+fn type_checker_rejects_private_bound_type_arguments_across_modules() {
+    assert_gpu_type_check_pack_ok(&[r#"
+module core::secret;
+
+pub trait Rel<T> {
+}
+
+struct Secret {
+    value: i32,
+}
+
+pub impl Rel<Secret> for i32 {
+}
+
+fn keep<T>(value: T) -> T where T: Rel<Secret> {
+    return value;
+}
+
+fn main() {
+    let value: i32 = keep(1);
+    return value;
+}
+"#]);
+
+    assert_gpu_type_check_pack_diagnostic(
+        &[
+            r#"
+module core::secret;
+
+pub trait Rel<T> {
+}
+
+struct Secret {
+    value: i32,
+}
+
+pub impl Rel<Secret> for i32 {
+}
+"#,
+            r#"
+module app;
+
+fn keep<T>(value: T) -> T where T: core::secret::Rel<core::secret::Secret> {
+    return value;
+}
+
+fn main() {
+    let value: i32 = keep(1);
+    return value;
+}
+"#,
+        ],
+        "LNC0008",
+        &[
+            "error[LNC0008]: unsatisfied trait bound",
+            "fn keep<T>(value: T) -> T where T: core::secret::Rel<core::secret::Secret> {",
+        ],
+    );
+}
+
+#[test]
 fn type_checker_resolves_unqualified_imported_trait_predicates_by_module_visibility() {
     assert_gpu_type_check_pack_ok(&[
         r#"
@@ -2077,7 +3499,7 @@ fn main() {
 
 #[test]
 fn type_checker_rejects_bounds_that_do_not_resolve_to_traits_on_gpu() {
-    assert_gpu_type_check_rejects(
+    assert_gpu_type_check_diagnostic(
         r#"
 struct Bound<T> {
     value: T,
@@ -2091,12 +3513,19 @@ fn main() {
     return 0;
 }
 "#,
+        "LNC0008",
+        &[
+            "error[LNC0008]: unsatisfied trait bound",
+            "fn keep<T: Bound<T> >(value: T) -> T {",
+            "trait bound target does not resolve to a trait",
+            "name a trait in the bound before relying on GPU predicate solving",
+        ],
     );
 }
 
 #[test]
 fn type_checker_rejects_unknown_bound_type_arguments_on_gpu() {
-    assert_gpu_type_check_rejects(
+    assert_gpu_type_check_diagnostic(
         r#"
 trait Rel<T, U> {
     fn check(left: T, right: U) -> bool;
@@ -2110,7 +3539,95 @@ fn main() {
     return 0;
 }
 "#,
+        "LNC0007",
+        &[
+            "error[LNC0007]: unknown type",
+            "fn keep<T>(value: T) -> T where T: Rel<T, Missing> {",
+            "type not found",
+        ],
     );
+}
+
+#[test]
+fn type_checker_rejects_trait_bounds_on_const_generic_subjects_on_gpu() {
+    let src = r#"
+trait Marker {
+}
+
+fn keep<const N: usize>(value: i32) -> i32 where N: Marker {
+    return value;
+}
+
+fn main() {
+    return 0;
+}
+"#;
+
+    let err = common::type_check_source_with_timeout(src)
+        .expect_err("const generic trait-bound subjects should fail GPU type checking");
+
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0008");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("diagnostic should identify the const generic subject");
+            assert_eq!(
+                label.source_line.as_deref(),
+                Some("fn keep<const N: usize>(value: i32) -> i32 where N: Marker {")
+            );
+            assert_eq!(label.column, 50);
+            assert_eq!(label.length, 1);
+
+            let rendered = diagnostic.render();
+            assert!(rendered.contains("error[LNC0008]: unsatisfied trait bound"));
+            assert!(rendered.contains("trait bound subject must be a type generic parameter"));
+            assert!(rendered.contains("use a declared type parameter as the bound subject"));
+            assert!(rendered.contains("const generic parameters"));
+        }
+        other => panic!("expected const generic trait-bound diagnostic, got {other:?}"),
+    }
+}
+
+#[test]
+fn type_checker_rejects_trait_bounds_on_non_callable_generic_declarations_on_gpu() {
+    let err = common::type_check_source_with_timeout(
+        r#"
+trait Marker {
+}
+
+struct Boxed<T: Marker> {
+    value: T,
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    )
+    .expect_err("declaration-level trait bounds should fail until instantiation obligations exist");
+
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0008");
+            let label = diagnostic
+                .primary_label
+                .as_ref()
+                .expect("diagnostic should identify the unsupported bound");
+            assert_eq!(
+                label.source_line.as_deref(),
+                Some("struct Boxed<T: Marker> {")
+            );
+            assert_eq!(label.column, 17);
+            assert_eq!(label.length, 6);
+            assert_eq!(
+                label.message,
+                "trait bounds on this generic declaration are not enforced by the current GPU predicate solver"
+            );
+        }
+        other => panic!("expected declaration-level trait-bound diagnostic, got {other:?}"),
+    }
 }
 
 #[test]
@@ -2263,6 +3780,36 @@ fn main() {
     return choose(value);
 }
 "#]);
+}
+
+#[test]
+fn type_checker_rejects_enum_match_pattern_payload_arity_mismatch_on_gpu() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+enum Pairish {
+    Pair(i32, bool),
+    Empty,
+}
+
+fn choose(value: Pairish) -> i32 {
+    return match (value) {
+        Pair(left) -> left,
+        Empty -> 0,
+    };
+}
+
+fn main() {
+    let value: Pairish = Pair(7, true);
+    return choose(value);
+}
+"#,
+        "LNC0006",
+        &[
+            "error[LNC0006]: type mismatch",
+            "Pair(left) -> left",
+            "value type does not match this context",
+        ],
+    );
 }
 
 #[test]
@@ -2521,7 +4068,7 @@ fn main() {
 "#,
     );
 
-    assert_gpu_type_check_rejects(
+    assert_gpu_type_check_diagnostic(
         r#"
 enum Either<LeftValue, RightValue> {
     Left(LeftValue),
@@ -2542,6 +4089,8 @@ fn main() {
     return 0;
 }
 "#,
+        "LNC0006",
+        &["error[LNC0006]: type mismatch", "Right(right) -> right,"],
     );
 }
 

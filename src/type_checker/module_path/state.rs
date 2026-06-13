@@ -20,7 +20,6 @@ pub(in crate::type_checker) struct BindGroups {
     pub(in crate::type_checker) clear_decl_lookup: wgpu::BindGroup,
     pub(in crate::type_checker) scatter_decl_span_records: wgpu::BindGroup,
     pub(in crate::type_checker) build_module_keys: wgpu::BindGroup,
-    pub(in crate::type_checker) module_key_segment_dispatch: wgpu::BindGroup,
     pub(in crate::type_checker) module_key_radix_dispatch: wgpu::BindGroup,
     pub(in crate::type_checker) sort_module_key_histogram: Vec<wgpu::BindGroup>,
     pub(in crate::type_checker) sort_module_key_bucket_prefix: Vec<wgpu::BindGroup>,
@@ -119,6 +118,7 @@ pub(in crate::type_checker) struct State {
     pub(in crate::type_checker) record_scan_prefix_a: wgpu::Buffer,
     pub(in crate::type_checker) record_scan_prefix_b: wgpu::Buffer,
     pub(in crate::type_checker) module_count_out: wgpu::Buffer,
+    pub(in crate::type_checker) module_table_count_out: wgpu::Buffer,
     pub(in crate::type_checker) import_count_out: wgpu::Buffer,
     pub(in crate::type_checker) decl_count_out: wgpu::Buffer,
     pub(in crate::type_checker) module_file_id: wgpu::Buffer,
@@ -249,8 +249,6 @@ pub(in crate::type_checker) struct State {
     pub(in crate::type_checker) _import_dispatch_params: LaniusBuffer<CountDispatchParams>,
     pub(in crate::type_checker) _import_visible_validate_dispatch_params:
         LaniusBuffer<CountPairMaxDispatchParams>,
-    pub(in crate::type_checker) _module_key_segment_dispatch_params:
-        LaniusBuffer<CountDispatchParams>,
     pub(in crate::type_checker) _module_key_radix_dispatch_params:
         LaniusBuffer<ModuleKeyRadixParams>,
     pub(in crate::type_checker) _decl_key_radix_dispatch_params: LaniusBuffer<ModuleKeyRadixParams>,

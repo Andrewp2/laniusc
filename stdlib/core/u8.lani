@@ -2,6 +2,8 @@
 
 module core::u8;
 
+import core::option;
+
 pub const MIN: u8 = 0;
 pub const MAX: u8 = 255;
 pub const BITS: u32 = 8;
@@ -57,6 +59,22 @@ pub fn wrapping_mul(left: u8, right: u8) -> u8 {
     return left * right % 256;
 }
 
+pub fn checked_add(left: u8, right: u8) -> core::option::Option<u8> {
+    if (left > MAX - right) {
+        return core::option::None;
+    } else {
+        return core::option::Some(left + right);
+    }
+}
+
+pub fn checked_sub(left: u8, right: u8) -> core::option::Option<u8> {
+    if (left < right) {
+        return core::option::None;
+    } else {
+        return core::option::Some(left - right);
+    }
+}
+
 pub fn saturating_add(left: u8, right: u8) -> u8 {
     if (left > MAX - right) {
         return MAX;
@@ -73,6 +91,14 @@ pub fn saturating_sub(left: u8, right: u8) -> u8 {
     }
 }
 
+pub fn abs_diff(left: u8, right: u8) -> u8 {
+    if (left >= right) {
+        return left - right;
+    } else {
+        return right - left;
+    }
+}
+
 pub fn saturating_mul(left: u8, right: u8) -> u8 {
     if (left * right > MAX) {
         return MAX;
@@ -83,6 +109,26 @@ pub fn saturating_mul(left: u8, right: u8) -> u8 {
 
 pub fn is_zero(value: u8) -> bool {
     return value == 0;
+}
+
+pub fn is_nonzero(value: u8) -> bool {
+    return value != 0;
+}
+
+pub fn is_even(value: u8) -> bool {
+    return value % 2 == 0;
+}
+
+pub fn is_odd(value: u8) -> bool {
+    return value % 2 != 0;
+}
+
+pub fn is_multiple_of(value: u8, divisor: u8) -> bool {
+    if (divisor == 0) {
+        return false;
+    } else {
+        return value % divisor == 0;
+    }
 }
 
 pub fn is_power_of_two(value: u8) -> bool {
@@ -113,6 +159,14 @@ pub fn between_inclusive(value: u8, low: u8, high: u8) -> bool {
     return value >= low && value <= high;
 }
 
+pub fn between_exclusive(value: u8, low: u8, high: u8) -> bool {
+    return value > low && value < high;
+}
+
+pub fn is_ascii(value: u8) -> bool {
+    return value <= 127;
+}
+
 pub fn is_ascii_digit(value: u8) -> bool {
     return value >= 48 && value <= 57;
 }
@@ -133,10 +187,78 @@ pub fn is_ascii_alphanumeric(value: u8) -> bool {
     return value >= 97 && value <= 122 || value >= 65 && value <= 90 || value >= 48 && value <= 57;
 }
 
+pub fn to_ascii_lowercase(value: u8) -> u8 {
+    if (is_ascii_uppercase(value)) {
+        return value + 32;
+    } else {
+        return value;
+    }
+}
+
+pub fn to_ascii_uppercase(value: u8) -> u8 {
+    if (is_ascii_lowercase(value)) {
+        return value - 32;
+    } else {
+        return value;
+    }
+}
+
+pub fn eq_ignore_ascii_case(left: u8, right: u8) -> bool {
+    return to_ascii_lowercase(left) == to_ascii_lowercase(right);
+}
+
 pub fn is_ascii_hexdigit(value: u8) -> bool {
     return value >= 48 && value <= 57 || value >= 65 && value <= 70 || value >= 97 && value <= 102;
 }
 
+pub fn ascii_hexdigit_value_or(value: u8, fallback: u8) -> u8 {
+    if (value >= 48 && value <= 57) {
+        return value - 48;
+    } else {
+        if (value >= 65 && value <= 70) {
+            return value - 55;
+        } else {
+            if (value >= 97 && value <= 102) {
+                return value - 87;
+            } else {
+                return fallback;
+            }
+        }
+    }
+}
+
 pub fn is_ascii_whitespace(value: u8) -> bool {
     return value == 32 || value == 9 || value == 10 || value == 13;
+}
+
+pub fn is_ascii_control(value: u8) -> bool {
+    if (value <= 31) {
+        return true;
+    } else {
+        return value == 127;
+    }
+}
+
+pub fn is_ascii_punctuation(value: u8) -> bool {
+    if (value >= 33 && value <= 47) {
+        return true;
+    } else {
+        if (value >= 58 && value <= 64) {
+            return true;
+        } else {
+            if (value >= 91 && value <= 96) {
+                return true;
+            } else {
+                return value >= 123 && value <= 126;
+            }
+        }
+    }
+}
+
+pub fn is_ascii_graphic(value: u8) -> bool {
+    return value >= 33 && value <= 126;
+}
+
+pub fn is_ascii_printable(value: u8) -> bool {
+    return value >= 32 && value <= 126;
 }
