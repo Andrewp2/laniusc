@@ -1,8 +1,8 @@
 use laniusc::parser::{
     hir_records::INVALID,
-    passes::{
-        hir_expr_fields::{HIR_EXPR_FORM_INDEX, HIR_EXPR_FORM_INT, HIR_EXPR_FORM_NAME},
-        hir_nodes::{HIR_NODE_INDEX_EXPR, HIR_NODE_LITERAL_EXPR, HIR_NODE_NAME_EXPR},
+    passes::hir::{
+        expr::fields::{HIR_EXPR_FORM_INDEX, HIR_EXPR_FORM_INT, HIR_EXPR_FORM_NAME},
+        nodes::{HIR_NODE_INDEX_EXPR, HIR_NODE_LITERAL_EXPR, HIR_NODE_NAME_EXPR},
     },
     readback::validate_hir_expression_records,
 };

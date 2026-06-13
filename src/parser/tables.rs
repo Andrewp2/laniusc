@@ -620,7 +620,7 @@ pub fn build_mvp_precomputed_tables(n_kinds: u32, prod_arity: Vec<u32>) -> Preco
         );
 
         // Closes = typed pops by physical delimiter. Retagged closes are the normal path;
-        // raw closes are compatibility recovery entries for malformed token streams.
+        // raw closes recover malformed token streams.
         t.set_sc_for_pair(prev, TokenKind::RParen as u32, &[encode_pop(SYM_PAREN)]);
         t.set_sc_for_pair(
             prev,

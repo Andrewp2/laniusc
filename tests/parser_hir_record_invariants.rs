@@ -1,7 +1,7 @@
 use laniusc::parser::{
     hir_records::INVALID,
-    passes::{
-        hir_item_fields::{
+    passes::hir::{
+        item::fields::{
             HIR_ITEM_IMPORT_TARGET_NONE,
             HIR_ITEM_IMPORT_TARGET_PATH,
             HIR_ITEM_KIND_ENUM,
@@ -12,7 +12,7 @@ use laniusc::parser::{
             HIR_ITEM_KIND_NONE,
             HIR_ITEM_KIND_STRUCT,
         },
-        hir_nodes::{
+        nodes::{
             HIR_NODE_ARRAY_EXPR,
             HIR_NODE_ENUM_ITEM,
             HIR_NODE_EXPR,
@@ -30,7 +30,7 @@ use laniusc::parser::{
             HIR_NODE_STRUCT_LITERAL_EXPR,
             HIR_NODE_TYPE,
         },
-        hir_type_fields::{HIR_TYPE_FORM_NONE, HIR_TYPE_FORM_PATH},
+        types::fields::{HIR_TYPE_FORM_NONE, HIR_TYPE_FORM_PATH},
     },
     readback::{
         validate_hir_array_literal_records,

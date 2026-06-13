@@ -6,8 +6,6 @@ use std::{
 use laniusc::compiler::{
     FilesystemArtifactStore,
     FilesystemWorkQueueWorkerRunExecutionResult,
-    compile_legacy_pack_paths_to_wasm,
-    compile_legacy_pack_paths_to_x86_64,
     run_prepared_descriptor_worker_for_target,
 };
 
@@ -33,20 +31,6 @@ pub(crate) fn compile_from_metadata(emit: &str, source_pack: &Options) -> Result
     )?;
     let worker_id = format!("laniusc-{}", std::process::id());
     compile_prepared_root(emit, artifact_root, source_pack, worker_id)
-}
-
-pub(crate) fn compile_legacy(
-    emit: &str,
-    stdlib_paths: &[PathBuf],
-    inputs: &[PathBuf],
-) -> Result<Vec<u8>, String> {
-    if emit == "wasm" {
-        pollster::block_on(compile_legacy_pack_paths_to_wasm(stdlib_paths, inputs))
-            .map_err(|err| err.to_string())
-    } else {
-        pollster::block_on(compile_legacy_pack_paths_to_x86_64(stdlib_paths, inputs))
-            .map_err(|err| err.to_string())
-    }
 }
 
 pub(crate) fn compile_direct(emit: &str, source_pack: &Options) -> Result<PathBuf, String> {
@@ -133,7 +117,7 @@ fn linked_output_path(
 ) -> Result<PathBuf, String> {
     if !run.progress.complete {
         return Err(format!(
-            "source-pack descriptor build stopped before completion at {}; executed_items={} completed_items={} work_items={} ready_items={}; rerun with --source-pack-artifact-root {} to continue the bounded work queue, or pass --source-pack-legacy-in-memory for the old whole-pack path",
+            "source-pack descriptor build stopped before completion at {}; executed_items={} completed_items={} work_items={} ready_items={}; rerun with --source-pack-artifact-root {} to continue the bounded work queue",
             artifact_root.display(),
             run.executed_item_count,
             run.progress.completed_item_count,

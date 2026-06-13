@@ -42,9 +42,8 @@ These are produced by:
 * `llp_pairs.slang`  → headers per adjacent token pair
 * `pack_varlen.slang` → densely packs `out_sc` and `out_emit`
 
-The removed block-local LL(1) replay path is no longer part of production
-dispatch. The resident compiler keeps `tree_stream_uses_ll1` false for the live
-path and fails closed if that legacy stream is selected.
+The block-local LL(1) replay path is no longer part of production dispatch.
+The resident compiler builds tree/HIR from the adjacent-pair production stream.
 
 ---
 
@@ -479,8 +478,7 @@ Tree:
 
 * Active pair stream: adjacent token-pair extraction, prefix packing, and
   `pack_varlen.slang`.
-* Legacy LL(1) replay: removed from production dispatch; the live parser gate
-  keeps `tree_stream_uses_ll1` false and fails closed if that path is selected.
+* LL(1) replay: removed from production dispatch.
 * Parent recovery: `tree_parent_parallel.slang`
 * HIR relation materialization: `hir_semantic_*`,
   `hir_context_relations_*`, and the `hir_*_fields`/`hir_*_scatter` passes

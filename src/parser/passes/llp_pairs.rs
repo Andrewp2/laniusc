@@ -21,7 +21,7 @@ pub struct LLPPairsPass {
 crate::gpu::passes_core::impl_static_shader_pass!(
     LLPPairsPass,
     label: "llp_pairs",
-    shader: "llp_pairs"
+    shader: "parser/llp_pairs"
 );
 
 impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for LLPPairsPass {

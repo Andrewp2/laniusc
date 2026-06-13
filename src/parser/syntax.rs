@@ -640,18 +640,10 @@ impl std::fmt::Display for GpuSyntaxError {
                 token,
                 code,
                 detail,
-            } => {
-                let compatibility = if matches!(code, GpuSyntaxCode::ExpectedToken) && *detail == 80
-                {
-                    " (LL(1) parser compatibility)"
-                } else {
-                    ""
-                };
-                write!(
-                    f,
-                    "GPU syntax parser rejected token {token}: {code:?} ({detail}){compatibility}"
-                )
-            }
+            } => write!(
+                f,
+                "GPU syntax parser rejected token {token}: {code:?} ({detail})"
+            ),
             GpuSyntaxError::Gpu(err) => write!(f, "GPU syntax parser failed: {err}"),
         }
     }
@@ -1678,7 +1670,7 @@ fn syntax_tokens_pass(device: &wgpu::Device) -> Result<&'static PassData> {
         crate::gpu::passes_core::make_main_pass!(
             device,
             "parser_syntax_tokens",
-            shader: "syntax_tokens"
+            shader: "parser/syntax/tokens"
         )
         .map_err(|err| err.to_string())
     })
@@ -1692,7 +1684,7 @@ fn syntax_delimiters_01_pass(device: &wgpu::Device) -> Result<&'static PassData>
         crate::gpu::passes_core::make_main_pass!(
             device,
             "parser_syntax_delimiters_01_local",
-            shader: "syntax_delimiters_01_local"
+            shader: "parser/syntax/delimiters/01_local"
         )
         .map_err(|err| err.to_string())
     })
@@ -1706,7 +1698,7 @@ fn syntax_delimiters_02_pass(device: &wgpu::Device) -> Result<&'static PassData>
         crate::gpu::passes_core::make_main_pass!(
             device,
             "parser_syntax_delimiters_02_scan_blocks",
-            shader: "syntax_delimiters_02_scan_blocks"
+            shader: "parser/syntax/delimiters/02_scan_blocks"
         )
         .map_err(|err| err.to_string())
     })
@@ -1720,7 +1712,7 @@ fn syntax_statement_context_01_pass(device: &wgpu::Device) -> Result<&'static Pa
         crate::gpu::passes_core::make_main_pass!(
             device,
             "parser_syntax_statement_context_01_local",
-            shader: "tokens_statement_phase_01_local"
+            shader: "parser/tokens/statement/phase/01_local"
         )
         .map_err(|err| err.to_string())
     })
@@ -1734,7 +1726,7 @@ fn syntax_statement_context_02_pass(device: &wgpu::Device) -> Result<&'static Pa
         crate::gpu::passes_core::make_main_pass!(
             device,
             "parser_syntax_statement_context_02_scan",
-            shader: "tokens_trait_context_02_scan"
+            shader: "parser/tokens/trait/context/02_scan"
         )
         .map_err(|err| err.to_string())
     })
@@ -1748,7 +1740,7 @@ fn syntax_statement_context_03_pass(device: &wgpu::Device) -> Result<&'static Pa
         crate::gpu::passes_core::make_main_pass!(
             device,
             "parser_syntax_statement_context_03_apply",
-            shader: "tokens_statement_phase_02_apply"
+            shader: "parser/tokens/statement/phase/02_apply"
         )
         .map_err(|err| err.to_string())
     })
@@ -1762,7 +1754,7 @@ fn syntax_impl_context_01_pass(device: &wgpu::Device) -> Result<&'static PassDat
         crate::gpu::passes_core::make_main_pass!(
             device,
             "parser_syntax_impl_context_01_local",
-            shader: "tokens_impl_header_01_local"
+            shader: "parser/tokens/impl/header/01_local"
         )
         .map_err(|err| err.to_string())
     })
@@ -1776,7 +1768,7 @@ fn syntax_impl_context_02_pass(device: &wgpu::Device) -> Result<&'static PassDat
         crate::gpu::passes_core::make_main_pass!(
             device,
             "parser_syntax_impl_context_02_scan",
-            shader: "tokens_trait_context_02_scan"
+            shader: "parser/tokens/trait/context/02_scan"
         )
         .map_err(|err| err.to_string())
     })
@@ -1790,7 +1782,7 @@ fn syntax_impl_context_03_pass(device: &wgpu::Device) -> Result<&'static PassDat
         crate::gpu::passes_core::make_main_pass!(
             device,
             "parser_syntax_impl_context_03_apply",
-            shader: "tokens_impl_header_02_apply"
+            shader: "parser/tokens/impl/header/02_apply"
         )
         .map_err(|err| err.to_string())
     })
@@ -1804,7 +1796,7 @@ fn syntax_trait_context_01_pass(device: &wgpu::Device) -> Result<&'static PassDa
         crate::gpu::passes_core::make_main_pass!(
             device,
             "parser_syntax_trait_context_01_local",
-            shader: "tokens_trait_context_01_local"
+            shader: "parser/tokens/trait/context/01_local"
         )
         .map_err(|err| err.to_string())
     })
@@ -1818,7 +1810,7 @@ fn syntax_trait_context_02_pass(device: &wgpu::Device) -> Result<&'static PassDa
         crate::gpu::passes_core::make_main_pass!(
             device,
             "parser_syntax_trait_context_02_scan",
-            shader: "tokens_trait_context_02_scan"
+            shader: "parser/tokens/trait/context/02_scan"
         )
         .map_err(|err| err.to_string())
     })
@@ -1832,7 +1824,7 @@ fn syntax_trait_context_03_pass(device: &wgpu::Device) -> Result<&'static PassDa
         crate::gpu::passes_core::make_main_pass!(
             device,
             "parser_syntax_trait_context_03_apply",
-            shader: "tokens_trait_context_03_apply"
+            shader: "parser/tokens/trait/context/03_apply"
         )
         .map_err(|err| err.to_string())
     })
@@ -1846,7 +1838,7 @@ fn syntax_paren_match_01_pass(device: &wgpu::Device) -> Result<&'static PassData
         crate::gpu::passes_core::make_main_pass!(
             device,
             "parser_syntax_paren_match_01_depth_blocks",
-            shader: "tokens_paren_match_01_depth_blocks"
+            shader: "parser/tokens/paren_match_01_depth_blocks"
         )
         .map_err(|err| err.to_string())
     })
@@ -1860,7 +1852,7 @@ fn syntax_angle_match_01_pass(device: &wgpu::Device) -> Result<&'static PassData
         crate::gpu::passes_core::make_main_pass!(
             device,
             "parser_syntax_angle_match_01_depth_blocks",
-            shader: "tokens_angle_match_01_depth_blocks"
+            shader: "parser/tokens/angle_match_01_depth_blocks"
         )
         .map_err(|err| err.to_string())
     })
@@ -1874,7 +1866,7 @@ fn syntax_match_min_tree_pass(device: &wgpu::Device) -> Result<&'static PassData
         crate::gpu::passes_core::make_main_pass!(
             device,
             "parser_syntax_paren_match_02_build_min_tree",
-            shader: "tokens_brace_match_02_build_min_tree"
+            shader: "parser/tokens/brace/match/02_build_min_tree"
         )
         .map_err(|err| err.to_string())
     })

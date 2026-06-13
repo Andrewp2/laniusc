@@ -16,7 +16,6 @@ impl ParserBuffers {
             action_table_bytes,
             tables,
             false,
-            false,
             true,
             None,
         )
@@ -76,7 +75,6 @@ impl ParserBuffers {
             action_table_bytes,
             tables,
             true,
-            false,
             retain_debug_hir_buffers,
             tree_capacity_override,
         )

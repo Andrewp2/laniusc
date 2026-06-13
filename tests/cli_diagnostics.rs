@@ -1698,15 +1698,17 @@ fn cli_diagnostics_source_pack_progress_reports_artifact_record_counts_without_s
     );
     assert_eq!(document["progress"]["page_count"], 1);
     assert_eq!(document["progress"]["complete"], false);
-    assert_eq!(document["no_run_guards"], document["guards"]);
     assert_eq!(document["no_run_guards"]["source_compilation"], false);
     assert_eq!(document["no_run_guards"]["source_scanning"], false);
     assert_eq!(document["no_run_guards"]["gpu_device_creation"], false);
     assert_eq!(document["no_run_guards"]["target_codegen"], false);
-    assert_eq!(document["guards"]["source_compilation"], false);
-    assert_eq!(document["guards"]["source_scanning"], false);
-    assert_eq!(document["guards"]["gpu_device_creation"], false);
-    assert_eq!(document["guards"]["target_codegen"], false);
+    assert_eq!(
+        document
+            .as_object()
+            .expect("source-pack progress diagnostics should be an object")
+            .len(),
+        9
+    );
 }
 
 #[test]
@@ -5898,28 +5900,6 @@ fn cli_source_pack_manifest_conflict_can_render_json_incompatible_options_withou
 fn cli_source_pack_mode_conflicts_can_render_json_without_loading_inputs() {
     for (label, args, option, incompatible, remediation) in [
         (
-            "descriptor legacy",
-            vec![
-                "--diagnostic-format=json",
-                "--source-pack-descriptors",
-                "--source-pack-legacy-in-memory",
-            ],
-            "--source-pack-descriptors",
-            "--source-pack-legacy-in-memory",
-            "choose descriptor mode",
-        ),
-        (
-            "emit contract legacy",
-            vec![
-                "--diagnostic-format=json",
-                "--emit-contract",
-                "--source-pack-legacy-in-memory",
-            ],
-            "--emit-contract",
-            "--source-pack-legacy-in-memory",
-            "only applies to source-pack descriptor mode",
-        ),
-        (
             "metadata build-from-metadata",
             vec![
                 "--diagnostic-format=json",
@@ -5931,17 +5911,6 @@ fn cli_source_pack_mode_conflicts_can_render_json_without_loading_inputs() {
             "choose either metadata preparation",
         ),
         (
-            "metadata legacy",
-            vec![
-                "--diagnostic-format=json",
-                "--source-pack-metadata-only",
-                "--source-pack-legacy-in-memory",
-            ],
-            "--source-pack-metadata-only",
-            "--source-pack-legacy-in-memory",
-            "requires descriptor mode",
-        ),
-        (
             "metadata prepare",
             vec![
                 "--diagnostic-format=json",
@@ -5951,17 +5920,6 @@ fn cli_source_pack_mode_conflicts_can_render_json_without_loading_inputs() {
             "--source-pack-prepare-only",
             "--source-pack-metadata-only",
             "choose one bounded preparation stage",
-        ),
-        (
-            "prepare legacy",
-            vec![
-                "--diagnostic-format=json",
-                "--source-pack-prepare-only",
-                "--source-pack-legacy-in-memory",
-            ],
-            "--source-pack-prepare-only",
-            "--source-pack-legacy-in-memory",
-            "requires descriptor mode",
         ),
         (
             "prepare stage",
@@ -5984,17 +5942,6 @@ fn cli_source_pack_mode_conflicts_can_render_json_without_loading_inputs() {
             "--source-pack-prepare-only",
             "--source-pack-build-from-metadata",
             "use --source-pack-build-from-metadata --source-pack-build-prepare-only",
-        ),
-        (
-            "build-from-metadata legacy",
-            vec![
-                "--diagnostic-format=json",
-                "--source-pack-build-from-metadata",
-                "--source-pack-legacy-in-memory",
-            ],
-            "--source-pack-build-from-metadata",
-            "--source-pack-legacy-in-memory",
-            "requires descriptor mode",
         ),
         (
             "metadata output",
@@ -6183,13 +6130,6 @@ fn cli_source_pack_descriptor_output_mode_can_render_json_without_loading_inputs
             .expect("diagnostic note should be a string")
             .contains("--emit-contract")),
         "diagnostic notes should describe the contract-output remediation\nstderr:\n{stderr}"
-    );
-    assert!(
-        notes.iter().any(|note| note
-            .as_str()
-            .expect("diagnostic note should be a string")
-            .contains("--source-pack-legacy-in-memory")),
-        "diagnostic notes should describe the target-byte remediation\nstderr:\n{stderr}"
     );
 }
 

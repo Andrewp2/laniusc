@@ -1,7 +1,7 @@
 use laniusc::parser::{
     hir_records::INVALID,
-    passes::{
-        hir_nodes::{
+    passes::hir::{
+        nodes::{
             HIR_NODE_ARRAY_EXPR,
             HIR_NODE_BLOCK,
             HIR_NODE_BREAK_STMT,
@@ -13,7 +13,7 @@ use laniusc::parser::{
             HIR_NODE_STRUCT_LITERAL_EXPR,
             HIR_NODE_WHILE_STMT,
         },
-        hir_stmt_fields::{
+        stmt_fields::{
             HIR_STMT_RECORD_KIND_BREAK as STMT_RECORD_KIND_BREAK,
             HIR_STMT_RECORD_KIND_IF as STMT_RECORD_KIND_IF,
             HIR_STMT_RECORD_KIND_LET as STMT_RECORD_KIND_LET,

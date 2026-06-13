@@ -2433,6 +2433,49 @@ fn main() {
 }
 
 #[test]
+fn type_checker_resolves_qualified_generic_call_arguments_by_ordinal() {
+    assert_gpu_type_check_pack_accepts(&[
+        r#"
+module math::generic;
+
+pub fn same<T>(left: T, right: T) -> T {
+    return left;
+}
+"#,
+        r#"
+module app::main;
+
+import math::generic;
+
+fn main() {
+    let value: i32 = math::generic::same(1, 2);
+    return value;
+}
+"#,
+    ]);
+
+    assert_gpu_type_check_pack_rejects(&[
+        r#"
+module math::generic;
+
+pub fn same<T>(left: T, right: T) -> T {
+    return left;
+}
+"#,
+        r#"
+module app::main;
+
+import math::generic;
+
+fn main() {
+    let value: i32 = math::generic::same(1, false);
+    return value;
+}
+"#,
+    ]);
+}
+
+#[test]
 fn type_checker_accepts_stdlib_host_module_calls() {
     let cases = [
         (

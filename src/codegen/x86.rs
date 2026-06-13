@@ -912,481 +912,495 @@ impl GpuX86CodeGenerator {
             }};
         }
 
-        let fill_u32_pass =
-            load_x86_pass!("fill_u32", "x86_fill_u32.spv", "x86_fill_u32.reflect.json");
+        let fill_u32_pass = load_x86_pass!(
+            "fill_u32",
+            "codegen/x86/fill_u32.spv",
+            "codegen/x86/fill_u32.reflect.json"
+        );
         let active_clear_u32_pass = load_x86_pass!(
             "active_clear_u32",
-            "x86_active_clear_u32.spv",
-            "x86_active_clear_u32.reflect.json"
+            "codegen/x86/active/clear_u32.spv",
+            "codegen/x86/active/clear_u32.reflect.json"
         );
         let active_scan_dispatch_args_pass = load_x86_pass!(
             "active_scan_dispatch_args",
-            "x86_active_scan_dispatch_args.spv",
-            "x86_active_scan_dispatch_args.reflect.json"
+            "codegen/x86/active/scan_dispatch_args.spv",
+            "codegen/x86/active/scan_dispatch_args.reflect.json"
         );
         let virtual_dispatch_args_pass = load_x86_pass!(
             "virtual_dispatch_args",
-            "x86_virtual_dispatch_args.spv",
-            "x86_virtual_dispatch_args.reflect.json"
+            "codegen/x86/virtual/dispatch_args.spv",
+            "codegen/x86/virtual/dispatch_args.reflect.json"
         );
         let output_dispatch_args_pass = load_x86_pass!(
             "output_dispatch_args",
-            "x86_output_dispatch_args.spv",
-            "x86_output_dispatch_args.reflect.json"
+            "codegen/x86/output_dispatch_args.spv",
+            "codegen/x86/output_dispatch_args.reflect.json"
         );
         let feature_counts_pass = load_x86_pass!(
             "feature_counts",
-            "x86_feature_counts.spv",
-            "x86_feature_counts.reflect.json"
+            "codegen/x86/feature_counts.spv",
+            "codegen/x86/feature_counts.reflect.json"
         );
         let node_tree_info_pass = load_x86_pass!(
             "node_tree_info",
-            "x86_node_tree_info.spv",
-            "x86_node_tree_info.reflect.json"
+            "codegen/x86/node/tree_info.spv",
+            "codegen/x86/node/tree_info.reflect.json"
         );
         let func_discover_pass = load_x86_pass!(
             "func_discover",
-            "x86_func_discover.spv",
-            "x86_func_discover.reflect.json"
+            "codegen/x86/func/discover.spv",
+            "codegen/x86/func/discover.reflect.json"
         );
         let func_slot_flags_pass = load_x86_pass!(
             "func_slot_flags",
-            "x86_func_slot_flags.spv",
-            "x86_func_slot_flags.reflect.json"
+            "codegen/x86/func/slot/flags.spv",
+            "codegen/x86/func/slot/flags.reflect.json"
         );
         let func_slot_scatter_pass = load_x86_pass!(
             "func_slot_scatter",
-            "x86_func_slot_scatter.spv",
-            "x86_func_slot_scatter.reflect.json"
+            "codegen/x86/func/slot/scatter.spv",
+            "codegen/x86/func/slot/scatter.reflect.json"
         );
         let func_owner_scan_local_pass = load_x86_pass!(
             "func_owner_scan_local",
-            "x86_func_owner_scan_local.spv",
-            "x86_func_owner_scan_local.reflect.json"
+            "codegen/x86/func/owner/scan/local.spv",
+            "codegen/x86/func/owner/scan/local.reflect.json"
         );
         let func_owner_scan_blocks_pass = load_x86_pass!(
             "func_owner_scan_blocks",
-            "x86_func_owner_scan_blocks.spv",
-            "x86_func_owner_scan_blocks.reflect.json"
+            "codegen/x86/func/owner/scan/blocks.spv",
+            "codegen/x86/func/owner/scan/blocks.reflect.json"
         );
         let func_assign_nodes_pass = load_x86_pass!(
             "func_assign_nodes",
-            "x86_func_assign_nodes.spv",
-            "x86_func_assign_nodes.reflect.json"
+            "codegen/x86/func/assign/nodes.spv",
+            "codegen/x86/func/assign/nodes.reflect.json"
         );
         let func_assign_nodes_step_pass = load_x86_pass!(
             "func_assign_nodes_step",
-            "x86_func_assign_nodes_step.spv",
-            "x86_func_assign_nodes_step.reflect.json"
+            "codegen/x86/func/assign/nodes/step.spv",
+            "codegen/x86/func/assign/nodes/step.reflect.json"
         );
         let expr_resolve_init_pass = load_x86_pass!(
             "expr_resolve_init",
-            "x86_expr_resolve_init.spv",
-            "x86_expr_resolve_init.reflect.json"
+            "codegen/x86/expr/resolve/init.spv",
+            "codegen/x86/expr/resolve/init.reflect.json"
         );
         let expr_resolve_step_pass = load_x86_pass!(
             "expr_resolve_step",
-            "x86_expr_resolve_step.spv",
-            "x86_expr_resolve_step.reflect.json"
+            "codegen/x86/expr/resolve/step.spv",
+            "codegen/x86/expr/resolve/step.reflect.json"
         );
         let expr_semantic_type_init_pass = load_x86_pass!(
             "expr_semantic_type_init",
-            "x86_expr_semantic_type_init.spv",
-            "x86_expr_semantic_type_init.reflect.json"
+            "codegen/x86/expr/semantic/type/init.spv",
+            "codegen/x86/expr/semantic/type/init.reflect.json"
         );
         let expr_semantic_type_step_pass = load_x86_pass!(
             "expr_semantic_type_step",
-            "x86_expr_semantic_type_step.spv",
-            "x86_expr_semantic_type_step.reflect.json"
+            "codegen/x86/expr/semantic/type/step.spv",
+            "codegen/x86/expr/semantic/type/step.reflect.json"
         );
         let enum_records_pass = load_x86_pass!(
             "enum_records",
-            "x86_enum_records.spv",
-            "x86_enum_records.reflect.json"
+            "codegen/x86/enum_records.spv",
+            "codegen/x86/enum_records.reflect.json"
         );
         let struct_records_pass = load_x86_pass!(
             "struct_records",
-            "x86_struct_records.spv",
-            "x86_struct_records.reflect.json"
+            "codegen/x86/struct_records.spv",
+            "codegen/x86/struct_records.reflect.json"
         );
         let array_records_pass = load_x86_pass!(
             "array_records",
-            "x86_array_records.spv",
-            "x86_array_records.reflect.json"
+            "codegen/x86/array_records.spv",
+            "codegen/x86/array_records.reflect.json"
         );
         let match_records_pass = load_x86_pass!(
             "match_records",
-            "x86_match_records.spv",
-            "x86_match_records.reflect.json"
+            "codegen/x86/match/records.spv",
+            "codegen/x86/match/records.reflect.json"
         );
         let match_result_owner_init_pass = load_x86_pass!(
             "match_result_owner_init",
-            "x86_match_result_owner_init.spv",
-            "x86_match_result_owner_init.reflect.json"
+            "codegen/x86/match/result/owner/init.spv",
+            "codegen/x86/match/result/owner/init.reflect.json"
         );
         let match_result_owner_step_pass = load_x86_pass!(
             "match_result_owner_step",
-            "x86_match_result_owner_step.spv",
-            "x86_match_result_owner_step.reflect.json"
+            "codegen/x86/match/result/owner/step.spv",
+            "codegen/x86/match/result/owner/step.reflect.json"
         );
         let match_pattern_owner_init_pass = load_x86_pass!(
             "match_pattern_owner_init",
-            "x86_match_pattern_owner_init.spv",
-            "x86_match_pattern_owner_init.reflect.json"
+            "codegen/x86/match/pattern/owner/init.spv",
+            "codegen/x86/match/pattern/owner/init.reflect.json"
         );
         let match_pattern_owner_step_pass = load_x86_pass!(
             "match_pattern_owner_step",
-            "x86_match_pattern_owner_step.spv",
-            "x86_match_pattern_owner_step.reflect.json"
+            "codegen/x86/match/pattern/owner/step.spv",
+            "codegen/x86/match/pattern/owner/step.reflect.json"
         );
         let match_pattern_records_pass = load_x86_pass!(
             "match_pattern_records",
-            "x86_match_pattern_records.spv",
-            "x86_match_pattern_records.reflect.json"
+            "codegen/x86/match/pattern/records.spv",
+            "codegen/x86/match/pattern/records.reflect.json"
         );
         let match_pattern_finalize_pass = load_x86_pass!(
             "match_pattern_finalize",
-            "x86_match_pattern_finalize.spv",
-            "x86_match_pattern_finalize.reflect.json"
+            "codegen/x86/match/pattern/finalize.spv",
+            "codegen/x86/match/pattern/finalize.reflect.json"
         );
         let return_match_records_pass = load_x86_pass!(
             "return_match_records",
-            "x86_return_match_records.spv",
-            "x86_return_match_records.reflect.json"
+            "codegen/x86/return_match_records.spv",
+            "codegen/x86/return_match_records.reflect.json"
         );
         let match_ownership_pass = load_x86_pass!(
             "match_ownership",
-            "x86_match_ownership.spv",
-            "x86_match_ownership.reflect.json"
+            "codegen/x86/match/ownership.spv",
+            "codegen/x86/match/ownership.reflect.json"
         );
         let enclosing_return_init_pass = load_x86_pass!(
             "enclosing_return_init",
-            "x86_enclosing_return_init.spv",
-            "x86_enclosing_return_init.reflect.json"
+            "codegen/x86/enclosing/return/init.spv",
+            "codegen/x86/enclosing/return/init.reflect.json"
         );
         let enclosing_return_step_pass = load_x86_pass!(
             "enclosing_return_step",
-            "x86_enclosing_return_step.spv",
-            "x86_enclosing_return_step.reflect.json"
+            "codegen/x86/enclosing/return/step.spv",
+            "codegen/x86/enclosing/return/step.reflect.json"
         );
         let enclosing_let_init_pass = load_x86_pass!(
             "enclosing_let_init",
-            "x86_enclosing_let_init.spv",
-            "x86_enclosing_let_init.reflect.json"
+            "codegen/x86/enclosing/let/init.spv",
+            "codegen/x86/enclosing/let/init.reflect.json"
         );
         let enclosing_let_step_pass = load_x86_pass!(
             "enclosing_let_step",
-            "x86_enclosing_let_step.spv",
-            "x86_enclosing_let_step.reflect.json"
+            "codegen/x86/enclosing/let/step.spv",
+            "codegen/x86/enclosing/let/step.reflect.json"
         );
         let enclosing_stmt_init_pass = load_x86_pass!(
             "enclosing_stmt_init",
-            "x86_enclosing_stmt_init.spv",
-            "x86_enclosing_stmt_init.reflect.json"
+            "codegen/x86/enclosing/stmt/init.spv",
+            "codegen/x86/enclosing/stmt/init.reflect.json"
         );
         let enclosing_stmt_step_pass = load_x86_pass!(
             "enclosing_stmt_step",
-            "x86_enclosing_stmt_step.spv",
-            "x86_enclosing_stmt_step.reflect.json"
+            "codegen/x86/enclosing/stmt/step.spv",
+            "codegen/x86/enclosing/stmt/step.reflect.json"
         );
         let decl_widths_pass = load_x86_pass!(
             "decl_widths",
-            "x86_decl_widths.spv",
-            "x86_decl_widths.reflect.json"
+            "codegen/x86/decl/widths.spv",
+            "codegen/x86/decl/widths.reflect.json"
         );
         let decl_layout_pass = load_x86_pass!(
             "decl_layout",
-            "x86_decl_layout.spv",
-            "x86_decl_layout.reflect.json"
+            "codegen/x86/decl/layout.spv",
+            "codegen/x86/decl/layout.reflect.json"
         );
         let call_records_pass = load_x86_pass!(
             "call_records",
-            "x86_call_records.spv",
-            "x86_call_records.reflect.json"
+            "codegen/x86/call/records.spv",
+            "codegen/x86/call/records.reflect.json"
         );
         let call_callee_owner_init_pass = load_x86_pass!(
             "call_callee_owner_init",
-            "x86_call_callee_owner_init.spv",
-            "x86_call_callee_owner_init.reflect.json"
+            "codegen/x86/call/callee/owner/init.spv",
+            "codegen/x86/call/callee/owner/init.reflect.json"
         );
         let call_callee_owner_step_pass = load_x86_pass!(
             "call_callee_owner_step",
-            "x86_call_callee_owner_step.spv",
-            "x86_call_callee_owner_step.reflect.json"
+            "codegen/x86/call/callee/owner/step.spv",
+            "codegen/x86/call/callee/owner/step.reflect.json"
         );
         let const_values_pass = load_x86_pass!(
             "const_values",
-            "x86_const_values.spv",
-            "x86_const_values.reflect.json"
+            "codegen/x86/const_values.spv",
+            "codegen/x86/const_values.reflect.json"
         );
         let param_regs_pass = load_x86_pass!(
             "param_regs",
-            "x86_param_regs.spv",
-            "x86_param_regs.reflect.json"
+            "codegen/x86/param_regs.spv",
+            "codegen/x86/param_regs.reflect.json"
         );
         let local_literals_pass = load_x86_pass!(
             "local_literals",
-            "x86_local_literals.spv",
-            "x86_local_literals.reflect.json"
+            "codegen/x86/local_literals.spv",
+            "codegen/x86/local_literals.reflect.json"
         );
         let call_arg_values_pass = load_x86_pass!(
             "call_arg_values",
-            "x86_call_arg_values.spv",
-            "x86_call_arg_values.reflect.json"
+            "codegen/x86/call/arg_values.spv",
+            "codegen/x86/call/arg_values.reflect.json"
         );
         let intrinsic_calls_pass = load_x86_pass!(
             "intrinsic_calls",
-            "x86_intrinsic_calls.spv",
-            "x86_intrinsic_calls.reflect.json"
+            "codegen/x86/intrinsic_calls.spv",
+            "codegen/x86/intrinsic_calls.reflect.json"
         );
-        let call_abi_pass =
-            load_x86_pass!("call_abi", "x86_call_abi.spv", "x86_call_abi.reflect.json");
+        let call_abi_pass = load_x86_pass!(
+            "call_abi",
+            "codegen/x86/call/abi.spv",
+            "codegen/x86/call/abi.reflect.json"
+        );
         let for_iterable_nodes_pass = load_x86_pass!(
             "for_iterable_nodes",
-            "x86_for_iterable_nodes.spv",
-            "x86_for_iterable_nodes.reflect.json"
+            "codegen/x86/for_iterable_nodes.spv",
+            "codegen/x86/for_iterable_nodes.reflect.json"
         );
         let node_control_padding_pass = load_x86_pass!(
             "node_control_padding",
-            "x86_node_control_padding.spv",
-            "x86_node_control_padding.reflect.json"
+            "codegen/x86/node/control_padding.spv",
+            "codegen/x86/node/control_padding.reflect.json"
         );
         let postfix_operand_owner_pass = load_x86_pass!(
             "postfix_operand_owner",
-            "x86_postfix_operand_owner.spv",
-            "x86_postfix_operand_owner.reflect.json"
+            "codegen/x86/postfix_operand_owner.spv",
+            "codegen/x86/postfix_operand_owner.reflect.json"
         );
         let node_inst_counts_pass = load_x86_pass!(
             "node_inst_counts",
-            "x86_node_inst_counts.spv",
-            "x86_node_inst_counts.reflect.json"
+            "codegen/x86/node/inst/counts.spv",
+            "codegen/x86/node/inst/counts.reflect.json"
         );
         let node_inst_same_end_rank_init_pass = load_x86_pass!(
             "node_inst_same_end_rank_init",
-            "x86_node_inst_same_end_rank_init.spv",
-            "x86_node_inst_same_end_rank_init.reflect.json"
+            "codegen/x86/node/inst/same/end/rank/init.spv",
+            "codegen/x86/node/inst/same/end/rank/init.reflect.json"
         );
         let node_inst_same_end_rank_step_pass = load_x86_pass!(
             "node_inst_same_end_rank_step",
-            "x86_node_inst_same_end_rank_step.spv",
-            "x86_node_inst_same_end_rank_step.reflect.json"
+            "codegen/x86/node/inst/same/end/rank/step.spv",
+            "codegen/x86/node/inst/same/end/rank/step.reflect.json"
         );
         let node_inst_end_counts_pass = load_x86_pass!(
             "node_inst_end_counts",
-            "x86_node_inst_end_counts.spv",
-            "x86_node_inst_end_counts.reflect.json"
+            "codegen/x86/node/inst/end_counts.spv",
+            "codegen/x86/node/inst/end_counts.reflect.json"
         );
         let node_inst_order_pass = load_x86_pass!(
             "node_inst_order",
-            "x86_node_inst_order.spv",
-            "x86_node_inst_order.reflect.json"
+            "codegen/x86/node/inst/order.spv",
+            "codegen/x86/node/inst/order.reflect.json"
         );
         let node_order_dispatch_args_pass = load_x86_pass!(
             "node_order_dispatch_args",
-            "x86_node_order_dispatch_args.spv",
-            "x86_node_order_dispatch_args.reflect.json"
+            "codegen/x86/node/order_dispatch_args.spv",
+            "codegen/x86/node/order_dispatch_args.reflect.json"
         );
         let node_inst_scan_local_pass = load_x86_pass!(
             "node_inst_scan_local",
-            "x86_node_inst_scan_local.spv",
-            "x86_node_inst_scan_local.reflect.json"
+            "codegen/x86/node/inst/scan/local.spv",
+            "codegen/x86/node/inst/scan/local.reflect.json"
         );
         let node_inst_scan_blocks_pass = load_x86_pass!(
             "node_inst_scan_blocks",
-            "x86_node_inst_scan_blocks.spv",
-            "x86_node_inst_scan_blocks.reflect.json"
+            "codegen/x86/node/inst/scan/blocks.spv",
+            "codegen/x86/node/inst/scan/blocks.reflect.json"
         );
         let node_inst_prefix_scan_pass = load_x86_pass!(
             "node_inst_prefix_scan",
-            "x86_node_inst_prefix_scan.spv",
-            "x86_node_inst_prefix_scan.reflect.json"
+            "codegen/x86/node/inst/prefix_scan_pass.spv",
+            "codegen/x86/node/inst/prefix_scan_pass.reflect.json"
         );
         let node_inst_subtree_bounds_pass = load_x86_pass!(
             "node_inst_subtree_bounds",
-            "x86_node_inst_subtree_bounds.spv",
-            "x86_node_inst_subtree_bounds.reflect.json"
+            "codegen/x86/node/inst/subtree_bounds.spv",
+            "codegen/x86/node/inst/subtree_bounds.reflect.json"
         );
         let node_inst_locations_pass = load_x86_pass!(
             "node_inst_locations",
-            "x86_node_inst_locations.spv",
-            "x86_node_inst_locations.reflect.json"
+            "codegen/x86/node/inst/locations.spv",
+            "codegen/x86/node/inst/locations.reflect.json"
         );
         let node_inst_gen_worklist_scatter_pass = load_x86_pass!(
             "node_inst_gen_worklist_scatter",
-            "x86_node_inst_gen_worklist_scatter.spv",
-            "x86_node_inst_gen_worklist_scatter.reflect.json"
+            "codegen/x86/node/inst/gen/worklist/scatter.spv",
+            "codegen/x86/node/inst/gen/worklist/scatter.reflect.json"
         );
         let node_inst_gen_worklist_dispatch_args_pass = load_x86_pass!(
             "node_inst_gen_worklist_dispatch_args",
-            "x86_node_inst_gen_worklist_dispatch_args.spv",
-            "x86_node_inst_gen_worklist_dispatch_args.reflect.json"
+            "codegen/x86/node/inst/gen/worklist/dispatch_args.spv",
+            "codegen/x86/node/inst/gen/worklist/dispatch_args.reflect.json"
         );
         let enclosing_loop_init_pass = load_x86_pass!(
             "enclosing_loop_init",
-            "x86_enclosing_loop_init.spv",
-            "x86_enclosing_loop_init.reflect.json"
+            "codegen/x86/enclosing/loop/init.spv",
+            "codegen/x86/enclosing/loop/init.reflect.json"
         );
         let enclosing_loop_step_pass = load_x86_pass!(
             "enclosing_loop_step",
-            "x86_enclosing_loop_step.spv",
-            "x86_enclosing_loop_step.reflect.json"
+            "codegen/x86/enclosing/loop/step.spv",
+            "codegen/x86/enclosing/loop/step.reflect.json"
         );
         let short_circuit_rhs_init_pass = load_x86_pass!(
             "short_circuit_rhs_init",
-            "x86_short_circuit_rhs_init.spv",
-            "x86_short_circuit_rhs_init.reflect.json"
+            "codegen/x86/short/circuit/rhs/init.spv",
+            "codegen/x86/short/circuit/rhs/init.reflect.json"
         );
         let short_circuit_rhs_step_pass = load_x86_pass!(
             "short_circuit_rhs_step",
-            "x86_short_circuit_rhs_step.spv",
-            "x86_short_circuit_rhs_step.reflect.json"
+            "codegen/x86/short/circuit/rhs/step.spv",
+            "codegen/x86/short/circuit/rhs/step.reflect.json"
         );
         let index_source_owner_init_pass = load_x86_pass!(
             "index_source_owner_init",
-            "x86_index_source_owner_init.spv",
-            "x86_index_source_owner_init.reflect.json"
+            "codegen/x86/index/source/owner/init.spv",
+            "codegen/x86/index/source/owner/init.reflect.json"
         );
         let index_source_owner_step_pass = load_x86_pass!(
             "index_source_owner_step",
-            "x86_index_source_owner_step.spv",
-            "x86_index_source_owner_step.reflect.json"
+            "codegen/x86/index/source/owner/step.spv",
+            "codegen/x86/index/source/owner/step.reflect.json"
         );
         let node_inst_gen_inputs_pass = load_x86_pass!(
             "node_inst_gen_inputs",
-            "x86_node_inst_gen_inputs.spv",
-            "x86_node_inst_gen_inputs.reflect.json"
+            "codegen/x86/node/inst/gen/inputs.spv",
+            "codegen/x86/node/inst/gen/inputs.reflect.json"
         );
         let virtual_inst_clear_dispatch_args_pass = load_x86_pass!(
             "virtual_inst_clear_dispatch_args",
-            "x86_virtual_inst_clear_dispatch_args.spv",
-            "x86_virtual_inst_clear_dispatch_args.reflect.json"
+            "codegen/x86/virtual/inst/clear/dispatch_args.spv",
+            "codegen/x86/virtual/inst/clear/dispatch_args.reflect.json"
         );
         let virtual_inst_clear_pass = load_x86_pass!(
             "virtual_inst_clear",
-            "x86_virtual_inst_clear.spv",
-            "x86_virtual_inst_clear.reflect.json"
+            "codegen/x86/virtual/inst/clear.spv",
+            "codegen/x86/virtual/inst/clear.reflect.json"
         );
         let node_inst_gen_pass = load_x86_pass!(
             "node_inst_gen",
-            "x86_node_inst_gen.spv",
-            "x86_node_inst_gen.reflect.json"
+            "codegen/x86/node/inst/gen.spv",
+            "codegen/x86/node/inst/gen.reflect.json"
         );
         let aggregate_literal_return_copy_flags_pass = load_x86_pass!(
             "aggregate_literal_return_copy_flags",
-            "x86_aggregate_literal_return_copy_flags.spv",
-            "x86_aggregate_literal_return_copy_flags.reflect.json"
+            "codegen/x86/aggregate/literal/return/copy/flags.spv",
+            "codegen/x86/aggregate/literal/return/copy/flags.reflect.json"
         );
         let aggregate_literal_return_copy_pass = load_x86_pass!(
             "aggregate_literal_return_copy",
-            "x86_aggregate_literal_return_copy.spv",
-            "x86_aggregate_literal_return_copy.reflect.json"
+            "codegen/x86/aggregate/literal/return/copy.spv",
+            "codegen/x86/aggregate/literal/return/copy.reflect.json"
         );
         let node_inst_gen_aggregate_copy_pass = load_x86_pass!(
             "node_inst_gen_aggregate_copy",
-            "x86_node_inst_gen_aggregate_copy.spv",
-            "x86_node_inst_gen_aggregate_copy.reflect.json"
+            "codegen/x86/node/inst/gen/aggregate_copy.spv",
+            "codegen/x86/node/inst/gen/aggregate_copy.reflect.json"
         );
         let virtual_liveness_init_pass = load_x86_pass!(
             "virtual_liveness_init",
-            "x86_virtual_liveness_init.spv",
-            "x86_virtual_liveness_init.reflect.json"
+            "codegen/x86/virtual/liveness/init.spv",
+            "codegen/x86/virtual/liveness/init.reflect.json"
         );
         let virtual_liveness_pass = load_x86_pass!(
             "virtual_liveness",
-            "x86_virtual_liveness.spv",
-            "x86_virtual_liveness.reflect.json"
+            "codegen/x86/virtual/liveness.spv",
+            "codegen/x86/virtual/liveness.reflect.json"
         );
         let virtual_next_calls_pass = load_x86_pass!(
             "virtual_next_calls",
-            "x86_virtual_next_calls.spv",
-            "x86_virtual_next_calls.reflect.json"
+            "codegen/x86/virtual/next_calls.spv",
+            "codegen/x86/virtual/next_calls.reflect.json"
         );
         let virtual_spans_fixed_barrier_pass = load_x86_pass!(
             "virtual_spans_fixed_barrier",
-            "x86_virtual_spans_fixed_barrier.spv",
-            "x86_virtual_spans_fixed_barrier.reflect.json"
+            "codegen/x86/virtual/spans_fixed_barrier.spv",
+            "codegen/x86/virtual/spans_fixed_barrier.reflect.json"
         );
         let virtual_value_def_flags_pass = load_x86_pass!(
             "virtual_value_def_flags",
-            "x86_virtual_value_def_flags.spv",
-            "x86_virtual_value_def_flags.reflect.json"
+            "codegen/x86/virtual/value/def/flags.spv",
+            "codegen/x86/virtual/value/def/flags.reflect.json"
         );
         let virtual_value_def_compact_pass = load_x86_pass!(
             "virtual_value_def_compact",
-            "x86_virtual_value_def_compact.spv",
-            "x86_virtual_value_def_compact.reflect.json"
+            "codegen/x86/virtual/value/def/compact.spv",
+            "codegen/x86/virtual/value/def/compact.reflect.json"
         );
         let virtual_param_masks_pass = load_x86_pass!(
             "virtual_param_masks",
-            "x86_virtual_param_masks.spv",
-            "x86_virtual_param_masks.reflect.json"
+            "codegen/x86/virtual/param_masks.spv",
+            "codegen/x86/virtual/param_masks.reflect.json"
         );
         let virtual_regalloc_pass = load_x86_pass!(
             "virtual_regalloc",
-            "x86_virtual_regalloc.spv",
-            "x86_virtual_regalloc.reflect.json"
+            "codegen/x86/virtual/regalloc.spv",
+            "codegen/x86/virtual/regalloc.reflect.json"
         );
         let virtual_func_rows_init_pass = load_x86_pass!(
             "virtual_func_rows_init",
-            "x86_virtual_func_rows_init.spv",
-            "x86_virtual_func_rows_init.reflect.json"
+            "codegen/x86/virtual/func/rows_init.spv",
+            "codegen/x86/virtual/func/rows_init.reflect.json"
         );
         let virtual_func_first_row_pass = load_x86_pass!(
             "virtual_func_first_row",
-            "x86_virtual_func_first_row.spv",
-            "x86_virtual_func_first_row.reflect.json"
+            "codegen/x86/virtual/func/first_row.spv",
+            "codegen/x86/virtual/func/first_row.reflect.json"
         );
         let virtual_func_span_max_pass = load_x86_pass!(
             "virtual_func_span_max",
-            "x86_virtual_func_span_max.spv",
-            "x86_virtual_func_span_max.reflect.json"
+            "codegen/x86/virtual/func/span_max.spv",
+            "codegen/x86/virtual/func/span_max.reflect.json"
         );
         let virtual_regalloc_dispatch_args_pass = load_x86_pass!(
             "virtual_regalloc_dispatch_args",
-            "x86_virtual_regalloc_dispatch_args.spv",
-            "x86_virtual_regalloc_dispatch_args.reflect.json"
+            "codegen/x86/virtual/regalloc/dispatch_args.spv",
+            "codegen/x86/virtual/regalloc/dispatch_args.reflect.json"
         );
-        let select_pass = load_x86_pass!("select", "x86_select.spv", "x86_select.reflect.json");
+        let select_pass = load_x86_pass!(
+            "select",
+            "codegen/x86/select.spv",
+            "codegen/x86/select.reflect.json"
+        );
         let inst_size_pass = load_x86_pass!(
             "inst_size",
-            "x86_inst_size.spv",
-            "x86_inst_size.reflect.json"
+            "codegen/x86/inst_size.spv",
+            "codegen/x86/inst_size.reflect.json"
         );
         let text_scan_local_pass = load_x86_pass!(
             "text_scan_local",
-            "x86_text_scan_local.spv",
-            "x86_text_scan_local.reflect.json"
+            "codegen/x86/text/scan_local.spv",
+            "codegen/x86/text/scan_local.reflect.json"
         );
         let text_offsets_pass = load_x86_pass!(
             "text_offsets",
-            "x86_text_offsets.spv",
-            "x86_text_offsets.reflect.json"
+            "codegen/x86/text/offsets.spv",
+            "codegen/x86/text/offsets.reflect.json"
         );
         let reloc_scan_local_pass = load_x86_pass!(
             "reloc_scan_local",
-            "x86_reloc_scan_local.spv",
-            "x86_reloc_scan_local.reflect.json"
+            "codegen/x86/reloc/scan_local.spv",
+            "codegen/x86/reloc/scan_local.reflect.json"
         );
         let reloc_records_pass = load_x86_pass!(
             "reloc_records",
-            "x86_reloc_records.spv",
-            "x86_reloc_records.reflect.json"
+            "codegen/x86/reloc/records.spv",
+            "codegen/x86/reloc/records.reflect.json"
         );
         let reloc_patch_pass = load_x86_pass!(
             "reloc_patch",
-            "x86_reloc_patch.spv",
-            "x86_reloc_patch.reflect.json"
+            "codegen/x86/reloc/patch.spv",
+            "codegen/x86/reloc/patch.reflect.json"
         );
-        let encode_pass = load_x86_pass!("encode", "x86_encode.spv", "x86_encode.reflect.json");
+        let encode_pass = load_x86_pass!(
+            "encode",
+            "codegen/x86/encode.spv",
+            "codegen/x86/encode.reflect.json"
+        );
         let elf_layout_pass = load_x86_pass!(
             "elf_layout",
-            "x86_elf_layout.spv",
-            "x86_elf_layout.reflect.json"
+            "codegen/x86/elf/layout.spv",
+            "codegen/x86/elf/layout.reflect.json"
         );
         let elf_write_pass = load_x86_pass!(
             "elf_write",
-            "x86_elf_write.spv",
-            "x86_elf_write.reflect.json"
+            "codegen/x86/elf/write.spv",
+            "codegen/x86/elf/write.reflect.json"
         );
         Ok(Self {
             fill_u32_pass,
@@ -1523,10 +1537,10 @@ mod tests {
         let hir_words = 18_260_036;
         let inst_capacity = 1_048_576;
         let worklist_words = x86_node_inst_gen_node_record_words(hir_words, inst_capacity);
-        let legacy_words = hir_words.saturating_add(1).saturating_mul(2);
+        let prior_words = hir_words.saturating_add(1).saturating_mul(2);
 
         assert_eq!(worklist_words, inst_capacity.saturating_mul(2));
-        assert!(worklist_words < legacy_words);
+        assert!(worklist_words < prior_words);
     }
 
     #[test]
@@ -1534,9 +1548,9 @@ mod tests {
         let hir_words = 512;
         let inst_capacity = 8_000;
         let worklist_words = x86_node_inst_gen_node_record_words(hir_words, inst_capacity);
-        let legacy_words = hir_words.saturating_add(1).saturating_mul(2);
+        let prior_words = hir_words.saturating_add(1).saturating_mul(2);
 
-        assert!(worklist_words <= legacy_words);
+        assert!(worklist_words <= prior_words);
     }
 
     #[test]

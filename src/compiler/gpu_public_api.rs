@@ -366,32 +366,6 @@ where
         .await
 }
 
-pub async fn compile_legacy_pack_paths_to_wasm<SP, UP>(
-    stdlib_paths: &[SP],
-    user_paths: &[UP],
-) -> Result<Vec<u8>, CompileError>
-where
-    SP: AsRef<Path>,
-    UP: AsRef<Path>,
-{
-    let source_pack = load_explicit_source_pack_manifest_from_paths(stdlib_paths, user_paths)?;
-    global_wasm_gpu_compiler()?
-        .compile_source_pack_manifest_to_wasm(&source_pack)
-        .await
-}
-
-pub async fn compile_legacy_libraries_to_wasm<P>(
-    libraries: Vec<ExplicitSourceLibraryPaths<P>>,
-) -> Result<Vec<u8>, CompileError>
-where
-    P: AsRef<Path>,
-{
-    let source_pack = load_explicit_source_libraries_from_paths(libraries)?;
-    global_wasm_gpu_compiler()?
-        .compile_source_pack_manifest_to_wasm(&source_pack)
-        .await
-}
-
 pub async fn compile_source_to_wasm_with_gpu_codegen_from_path(
     path: impl AsRef<Path>,
 ) -> Result<Vec<u8>, CompileError> {
@@ -467,32 +441,6 @@ where
     EP: AsRef<Path>,
 {
     let source_pack = load_entry_with_source_roots(entry_path, roots)?;
-    global_x86_gpu_compiler()?
-        .compile_source_pack_manifest_to_x86_64(&source_pack)
-        .await
-}
-
-pub async fn compile_legacy_pack_paths_to_x86_64<SP, UP>(
-    stdlib_paths: &[SP],
-    user_paths: &[UP],
-) -> Result<Vec<u8>, CompileError>
-where
-    SP: AsRef<Path>,
-    UP: AsRef<Path>,
-{
-    let source_pack = load_explicit_source_pack_manifest_from_paths(stdlib_paths, user_paths)?;
-    global_x86_gpu_compiler()?
-        .compile_source_pack_manifest_to_x86_64(&source_pack)
-        .await
-}
-
-pub async fn compile_legacy_libraries_to_x86_64<P>(
-    libraries: Vec<ExplicitSourceLibraryPaths<P>>,
-) -> Result<Vec<u8>, CompileError>
-where
-    P: AsRef<Path>,
-{
-    let source_pack = load_explicit_source_libraries_from_paths(libraries)?;
     global_x86_gpu_compiler()?
         .compile_source_pack_manifest_to_x86_64(&source_pack)
         .await

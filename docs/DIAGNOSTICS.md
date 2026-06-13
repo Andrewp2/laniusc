@@ -135,8 +135,7 @@ to print persisted source-pack work-queue progress from the artifact record for
 the selected emit target, without compiling source or scanning host source text.
 The source-pack progress payload publishes
 `schema_name: "laniusc.diagnostics.source-pack-progress"` and the standard
-`no_run_guards` object; the older `guards` object remains as a compatibility
-alias for existing wrappers.
+`no_run_guards` object.
 Use `laniusc doctor` when an editor, CI wrapper, or installer wants the local
 toolchain check and the accepted diagnostic renderer contract in one no-run JSON
 document. The `diagnostics` object reports `--diagnostic-format`, the default
@@ -902,10 +901,9 @@ formatter multi-input validation use `LNC0031`, through the same renderer.
 Incompatible public option
 combinations, such as `laniusc check -o`, `laniusc fmt --stdin input.lani`, and
 mutually exclusive source-pack manifest or preparation-stage selectors, plus
-source-pack metadata/preparation selectors combined with
-`--source-pack-legacy-in-memory`, source-pack metadata/preparation-only modes
-combined with `-o`/`--out`, and `--source-pack-build-prepare-only` without
-`--source-pack-build-from-metadata`, use `LNC0032` before source loading.
+source-pack metadata/preparation-only modes combined with `-o`/`--out`, and
+`--source-pack-build-prepare-only` without `--source-pack-build-from-metadata`,
+use `LNC0032` before source loading.
 `--package-manifest` mixed input modes, such as combining the manifest selector
 with positional input files, also use `LNC0032` before manifest or source
 loading. `--package-lockfile` mixed input modes use the same diagnostic before
@@ -1251,12 +1249,6 @@ ARTIFACT_DIR --emit wasm` returns a compact artifact-record status document:
     "source_scanning": false,
     "gpu_device_creation": false,
     "target_codegen": false
-  },
-  "guards": {
-    "source_compilation": false,
-    "source_scanning": false,
-    "gpu_device_creation": false,
-    "target_codegen": false
   }
 }
 ```
@@ -1265,8 +1257,7 @@ The progress command reads the persisted work-queue progress index artifact and
 uses the artifact record schema version as the contract. It is intentionally
 separate from `laniusc check`: it reports source-pack scheduling state, not
 source diagnostics. `schema_name` is the stable payload identity for dashboards
-and editor task integrations; `no_run_guards` is the canonical no-run guard
-field, and `guards` is retained only as a compatibility alias.
+and editor task integrations; `no_run_guards` is the no-run guard field.
 
 ## Unsupported Feature Boundaries
 

@@ -81,38 +81,6 @@ pub(super) fn validate_language_edition(language_edition: &str) -> Result<(), Cl
 pub(super) fn validate_source_pack_options(
     source_pack: &source_pack::Options,
 ) -> Result<(), CliError> {
-    if source_pack.descriptors && source_pack.legacy_in_memory {
-        return Err(incompatible_cli_options_error(
-            "laniusc",
-            "--source-pack-descriptors",
-            "--source-pack-legacy-in-memory",
-            "choose descriptor mode or the legacy in-memory source-pack path, not both",
-        ));
-    }
-    if source_pack.emit_contract && source_pack.legacy_in_memory {
-        return Err(incompatible_cli_options_error(
-            "laniusc",
-            "--emit-contract",
-            "--source-pack-legacy-in-memory",
-            "--emit-contract only applies to source-pack descriptor mode; omit --source-pack-legacy-in-memory",
-        ));
-    }
-    if source_pack.manifest.is_some() && source_pack.legacy_in_memory {
-        return Err(incompatible_cli_options_error(
-            "laniusc",
-            "--source-pack-manifest",
-            "--source-pack-legacy-in-memory",
-            "--source-pack-manifest requires descriptor mode; omit --source-pack-legacy-in-memory",
-        ));
-    }
-    if source_pack.library_manifest.is_some() && source_pack.legacy_in_memory {
-        return Err(incompatible_cli_options_error(
-            "laniusc",
-            "--source-pack-library-manifest",
-            "--source-pack-legacy-in-memory",
-            "--source-pack-library-manifest requires descriptor mode; omit --source-pack-legacy-in-memory",
-        ));
-    }
     if source_pack.manifest.is_some() && source_pack.library_manifest.is_some() {
         return Err(incompatible_cli_options_error(
             "laniusc",
@@ -219,30 +187,6 @@ pub(super) fn validate_source_pack_prepare_options(
             "--source-pack-prepare-only",
             "--source-pack-build-from-metadata",
             "--source-pack-prepare-only prepares from source-pack inputs; use --source-pack-build-from-metadata --source-pack-build-prepare-only for persisted metadata",
-        ));
-    }
-    if source_pack.metadata_only && source_pack.legacy_in_memory {
-        return Err(incompatible_cli_options_error(
-            "laniusc",
-            "--source-pack-metadata-only",
-            "--source-pack-legacy-in-memory",
-            "--source-pack-metadata-only requires descriptor mode; omit --source-pack-legacy-in-memory",
-        ));
-    }
-    if source_pack.prepare_only && source_pack.legacy_in_memory {
-        return Err(incompatible_cli_options_error(
-            "laniusc",
-            "--source-pack-prepare-only",
-            "--source-pack-legacy-in-memory",
-            "--source-pack-prepare-only requires descriptor mode; omit --source-pack-legacy-in-memory",
-        ));
-    }
-    if source_pack.build_from_metadata && source_pack.legacy_in_memory {
-        return Err(incompatible_cli_options_error(
-            "laniusc",
-            "--source-pack-build-from-metadata",
-            "--source-pack-legacy-in-memory",
-            "--source-pack-build-from-metadata requires descriptor mode; omit --source-pack-legacy-in-memory",
         ));
     }
     if source_pack.build_from_metadata
@@ -354,7 +298,7 @@ pub(super) fn validate_check_mode(
             || inputs.len() > 1)
     {
         return Err(
-            "check mode currently supports single-entry in-memory, source-root, stdlib-root, package-manifest, and package-lockfile compile paths; omit explicit source-pack descriptor, metadata, prepare, legacy, contract, artifact-root, --stdlib, or multi-input flags"
+            "check mode currently supports single-entry in-memory, source-root, stdlib-root, package-manifest, and package-lockfile compile paths; omit explicit source-pack descriptor, metadata, prepare, contract, artifact-root, --stdlib, or multi-input flags"
                 .into(),
         );
     }
@@ -378,7 +322,7 @@ pub(super) fn validate_descriptor_output(
             "laniusc",
             "source-pack descriptor mode",
             "implicit target-byte output",
-            "pass --emit-contract to write linked-output contract descriptors, or pass --source-pack-legacy-in-memory when executable target bytes are required",
+            "pass --emit-contract to write linked-output contract descriptors",
         ));
     }
     Ok(())

@@ -76,10 +76,6 @@ pub(super) fn json_pretty(skip_slangc_probe: bool) -> Result<String, CliError> {
                 "status": known_or_unknown_status(option_env!("LANIUS_BUILD_PROFILE")),
                 "value": option_env!("LANIUS_BUILD_PROFILE").unwrap_or("unknown"),
             },
-            "shader_artifact_digest": {
-                "status": known_or_unknown_status(option_env!("LANIUS_SHADER_ARTIFACT_DIGEST")),
-                "value": option_env!("LANIUS_SHADER_ARTIFACT_DIGEST").unwrap_or("unknown"),
-            },
             "shader_artifacts": {
                 "digest": {
                     "status": known_or_unknown_status(option_env!("LANIUS_SHADER_ARTIFACT_DIGEST")),

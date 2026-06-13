@@ -8,7 +8,10 @@ impl GpuParser {
     ) -> Result<()> {
         let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
             ("gTree".into(), bufs.tree_prefix_params.as_entire_binding()),
-            ("ll1_status".into(), bufs.ll1_status.as_entire_binding()),
+            (
+                "tree_count_status".into(),
+                bufs.ll1_status.as_entire_binding(),
+            ),
             (
                 "tree_active_dispatch_args".into(),
                 bufs.tree_active_dispatch_args.as_entire_binding(),
@@ -38,7 +41,10 @@ impl GpuParser {
     ) -> Result<()> {
         let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
             ("gTree".into(), bufs.tree_prefix_params.as_entire_binding()),
-            ("ll1_status".into(), bufs.ll1_status.as_entire_binding()),
+            (
+                "tree_count_status".into(),
+                bufs.ll1_status.as_entire_binding(),
+            ),
             (
                 "token_feature_flags".into(),
                 bufs.token_feature_flags.as_entire_binding(),
@@ -112,12 +118,6 @@ impl GpuParser {
         encoder: &mut wgpu::CommandEncoder,
         bufs: &ParserBuffers,
     ) -> Result<()> {
-        if bufs.tree_stream_uses_ll1 {
-            anyhow::bail!(
-                "projected tree capacity readback is only implemented for pair-stream parser buffers"
-            );
-        }
-
         let mut no_timer: Option<&mut GpuTimer> = None;
         let mut dbg_ref: Option<&mut DebugOutput> = None;
         let mut cache_guard = self.bg_cache.lock().expect("parser.bg_cache poisoned");

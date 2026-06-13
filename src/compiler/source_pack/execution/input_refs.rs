@@ -14,7 +14,7 @@ where
         || !job_manifest.input_interface_artifact_ranges.is_empty()
     {
         return Err(artifact_shard_contract_error(format!(
-            "legacy source-pack execution for job {} requires bounded inline interface inputs; paged or ranged interface inputs must use paged execution",
+            "inline source-pack execution for job {} requires bounded inline interface inputs; paged or ranged interface inputs must use paged execution",
             job_manifest.job_index
         )));
     }

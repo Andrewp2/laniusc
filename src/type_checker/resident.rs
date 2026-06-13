@@ -1123,9 +1123,8 @@ impl GpuTypeChecker {
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.conditions_hir.done");
             }
-            // Do not run the legacy token validator in the resident compiler
-            // path. Type checking needs to be rebuilt over HIR/fact tables
-            // rather than whole-token syntax scans.
+            // Resident validation consumes HIR/fact tables rather than
+            // whole-token syntax scans.
             record_compute_indirect(
                 encoder,
                 control_pass,

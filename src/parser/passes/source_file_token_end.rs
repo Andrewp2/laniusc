@@ -20,7 +20,7 @@ pub struct SourceFileTokenEndPass {
 crate::gpu::passes_core::impl_static_shader_pass!(
     SourceFileTokenEndPass,
     label: "source_file_token_end",
-    shader: "source_file_token_end"
+    shader: "parser/source_file_token_end"
 );
 
 impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for SourceFileTokenEndPass {

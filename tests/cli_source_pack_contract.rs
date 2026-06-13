@@ -77,25 +77,6 @@ fn cli_emit_contract_single_input_uses_descriptor_path_instead_of_plain_compile(
 }
 
 #[test]
-fn cli_explicit_legacy_source_pack_requires_an_input_instead_of_demo_compile() {
-    let mut command = Command::new(laniusc_bin());
-    command.arg("--source-pack-legacy-in-memory");
-
-    let output = common::command_output_with_timeout(
-        "laniusc legacy source-pack explicit input requirement",
-        &mut command,
-    );
-    assert!(
-        !output.status.success(),
-        "explicit legacy source-pack mode must not compile the default demo\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("explicit source-pack compilation requires at least one input file"));
-}
-
-#[test]
 fn cli_descriptor_source_root_preparation_is_explicitly_unsupported() {
     let root = common::temp_artifact_path("laniusc_cli_source_pack_contract", "source_root", None);
     let source_root = root.join("missing_source_root");

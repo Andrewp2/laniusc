@@ -25,8 +25,6 @@ use results::ResidentParserBufferCache;
 pub use results::{
     BracketsMatchResult,
     Ll1AcceptResult,
-    Ll1BlockSummary,
-    Ll1SeedPlanResult,
     ParseResult,
     RecordedHirSemanticCount,
     RecordedResidentLl1HirCheck,
@@ -37,7 +35,6 @@ use support::*;
 use token_frontend::ResidentTokenKindBindGroups;
 use wgpu;
 
-use super::passes::ll1_blocks_01::LL1_BLOCK_STATUS_WORDS;
 use crate::{
     gpu::{
         device,
@@ -741,21 +738,6 @@ impl GpuParser {
                 },
                 ll1_emit_stream: Vec::new(),
                 ll1_emit_token_pos: Vec::new(),
-                ll1_block_size: 0,
-                ll1_block_emit_stride: 0,
-                ll1_block_seed_len: Vec::new(),
-                ll1_seed_plan: Ll1SeedPlanResult {
-                    accepted: true,
-                    pos: 0,
-                    error_code: 0,
-                    detail: 0,
-                    steps: 0,
-                    seed_count: 0,
-                    max_depth: 0,
-                    emit_len: 0,
-                },
-                ll1_seeded_blocks: Vec::new(),
-                ll1_seeded_emit: Vec::new(),
                 headers: Vec::new(),
                 sc_stream: Vec::new(),
                 emit_stream: Vec::new(),
@@ -902,12 +884,6 @@ impl GpuParser {
             },
             ll1_emit_stream: decoded.ll1_emit_stream,
             ll1_emit_token_pos: decoded.ll1_emit_token_pos,
-            ll1_block_size: bufs.ll1_block_size,
-            ll1_block_emit_stride: bufs.ll1_block_emit_stride,
-            ll1_block_seed_len: decoded.ll1_block_seed_len,
-            ll1_seed_plan: decode_ll1_seed_plan(decoded.ll1_seed_plan_status),
-            ll1_seeded_blocks: decode_ll1_block_summaries(&decoded.ll1_seeded_status),
-            ll1_seeded_emit: decoded.ll1_seeded_emit,
             headers: decoded.headers,
             sc_stream: decoded.sc_stream,
             emit_stream: decoded.emit_stream,

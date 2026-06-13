@@ -1183,11 +1183,6 @@ impl ResidentTreeReadbacks {
 
     fn decode(&self, bufs: &ParserBuffers) -> Result<ResidentParseResult> {
         let ll1_words = self.status.read_words(6)?;
-        let ll1_emit_len = if bufs.tree_stream_uses_ll1 {
-            (ll1_words[5] as usize).min(bufs.ll1_emit.count)
-        } else {
-            0
-        };
         let tree_len = if bufs.tree_count_uses_status {
             (ll1_words[5] as usize).min(bufs.node_kind.count)
         } else {
@@ -1232,8 +1227,8 @@ impl ResidentTreeReadbacks {
                 steps: ll1_words[4],
                 emit_len: ll1_words[5],
             },
-            ll1_emit_stream: self.emit.read_words(ll1_emit_len)?,
-            ll1_emit_token_pos: self.emit_pos.read_words(ll1_emit_len)?,
+            ll1_emit_stream: Vec::new(),
+            ll1_emit_token_pos: Vec::new(),
             node_kind: self.node_kind.read_words(tree_len)?,
             parent: self.parent.read_words(tree_len)?,
             first_child: self.first_child.read_words(tree_len)?,

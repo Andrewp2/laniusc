@@ -4,23 +4,16 @@ use encase::ShaderType;
 use crate::{
     gpu::passes_core::{
         ComputePassBatch,
-        DispatchDim,
         InputElements,
-        PassData,
         compute_pass_batching_enabled,
         validation_scopes_enabled,
     },
     lexer::{Pass, buffers::GpuBuffers},
 };
 
-pub mod compact_boundaries_all;
-pub mod compact_boundaries_kept;
-pub mod dfa_01_scan_inblock;
-pub mod dfa_02_scan_block_summaries;
-pub mod dfa_03_apply_block_prefix;
-pub mod pair_01_sum_inblock;
-pub mod pair_02_scan_block_totals;
-pub mod pair_03_apply_block_prefix;
+pub mod compact;
+pub mod dfa;
+pub mod pair;
 pub mod source_file_boundaries;
 pub mod tokens_build;
 
@@ -31,32 +24,32 @@ pub(super) struct ScanParams {
 }
 
 pub struct LexerPasses {
-    pub dfa_01: dfa_01_scan_inblock::Dfa01ScanInblockPass,
-    pub dfa_02: dfa_02_scan_block_summaries::Dfa02ScanBlockSummariesPass,
-    pub dfa_03: dfa_03_apply_block_prefix::Dfa03ApplyBlockPrefixPass,
+    pub dfa_01: dfa::scan_inblock::Dfa01ScanInblockPass,
+    pub dfa_02: dfa::scan_block_summaries::Dfa02ScanBlockSummariesPass,
+    pub dfa_03: dfa::apply_block_prefix::Dfa03ApplyBlockPrefixPass,
     pub source_file_boundaries: source_file_boundaries::SourceFileBoundariesPass,
 
-    pub pair_01: pair_01_sum_inblock::Pair01SumInblockPass,
-    pub pair_02: pair_02_scan_block_totals::Pair02ScanBlockTotalsPass,
-    pub pair_03: pair_03_apply_block_prefix::Pair03ApplyBlockPrefixPass,
+    pub pair_01: pair::sum_inblock::Pair01SumInblockPass,
+    pub pair_02: pair::scan_block_totals::Pair02ScanBlockTotalsPass,
+    pub pair_03: pair::apply_block_prefix::Pair03ApplyBlockPrefixPass,
 
-    pub compact_all: compact_boundaries_all::CompactBoundariesAllPass,
-    pub compact_kept: compact_boundaries_kept::CompactBoundariesKeptPass,
+    pub compact_all: compact::boundaries::all::CompactBoundariesAllPass,
+    pub compact_kept: compact::boundaries::kept::CompactBoundariesKeptPass,
     pub tokens_build: tokens_build::TokensBuildPass,
 }
 
 impl LexerPasses {
     pub fn new(device: &wgpu::Device) -> Result<Self> {
         Ok(Self {
-            dfa_01: dfa_01_scan_inblock::Dfa01ScanInblockPass::new(&device)?,
-            dfa_02: dfa_02_scan_block_summaries::Dfa02ScanBlockSummariesPass::new(&device)?,
-            dfa_03: dfa_03_apply_block_prefix::Dfa03ApplyBlockPrefixPass::new(&device)?,
+            dfa_01: dfa::scan_inblock::Dfa01ScanInblockPass::new(&device)?,
+            dfa_02: dfa::scan_block_summaries::Dfa02ScanBlockSummariesPass::new(&device)?,
+            dfa_03: dfa::apply_block_prefix::Dfa03ApplyBlockPrefixPass::new(&device)?,
             source_file_boundaries: source_file_boundaries::SourceFileBoundariesPass::new(&device)?,
-            pair_01: pair_01_sum_inblock::Pair01SumInblockPass::new(&device)?,
-            pair_02: pair_02_scan_block_totals::Pair02ScanBlockTotalsPass::new(&device)?,
-            pair_03: pair_03_apply_block_prefix::Pair03ApplyBlockPrefixPass::new(&device)?,
-            compact_all: compact_boundaries_all::CompactBoundariesAllPass::new(&device)?,
-            compact_kept: compact_boundaries_kept::CompactBoundariesKeptPass::new(&device)?,
+            pair_01: pair::sum_inblock::Pair01SumInblockPass::new(&device)?,
+            pair_02: pair::scan_block_totals::Pair02ScanBlockTotalsPass::new(&device)?,
+            pair_03: pair::apply_block_prefix::Pair03ApplyBlockPrefixPass::new(&device)?,
+            compact_all: compact::boundaries::all::CompactBoundariesAllPass::new(&device)?,
+            compact_kept: compact::boundaries::kept::CompactBoundariesKeptPass::new(&device)?,
             tokens_build: tokens_build::TokensBuildPass::new(&device)?,
         })
     }

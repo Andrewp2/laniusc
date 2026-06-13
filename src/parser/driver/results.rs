@@ -17,42 +17,10 @@ pub struct Ll1AcceptResult {
     pub emit_len: u32,
 }
 
-#[derive(Clone, Debug)]
-pub struct Ll1SeedPlanResult {
-    pub accepted: bool,
-    pub pos: u32,
-    pub error_code: u32,
-    pub detail: u32,
-    pub steps: u32,
-    pub seed_count: u32,
-    pub max_depth: u32,
-    pub emit_len: u32,
-}
-
-#[derive(Clone, Debug)]
-pub struct Ll1BlockSummary {
-    pub status: u32,
-    pub begin: u32,
-    pub end: u32,
-    pub pos: u32,
-    pub steps: u32,
-    pub emit_len: u32,
-    pub stack_depth: u32,
-    pub error_code: u32,
-    pub detail: u32,
-    pub first_production: u32,
-}
-
 pub struct ParseResult {
     pub ll1: Ll1AcceptResult,
     pub ll1_emit_stream: Vec<u32>,
     pub ll1_emit_token_pos: Vec<u32>,
-    pub ll1_block_size: u32,
-    pub ll1_block_emit_stride: u32,
-    pub ll1_block_seed_len: Vec<u32>,
-    pub ll1_seed_plan: Ll1SeedPlanResult,
-    pub ll1_seeded_blocks: Vec<Ll1BlockSummary>,
-    pub ll1_seeded_emit: Vec<u32>,
     pub headers: Vec<ActionHeader>,
     pub sc_stream: Vec<u32>,
     pub emit_stream: Vec<u32>,

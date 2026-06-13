@@ -1,11 +1,11 @@
 use super::*;
 
-mod fallback_hir;
+mod empty_hir_bindings;
 mod visible_scratch;
 
-use fallback_hir::{
-    FallbackHirBuffers,
-    register_fallback_hir_resources,
+use empty_hir_bindings::{
+    EmptyHirBindings,
+    register_empty_hir_resources,
     register_hir_item_resources,
 };
 use visible_scratch::ResidentVisibleScratch;
@@ -756,6 +756,92 @@ impl GpuTypeChecker {
             (hir_node_capacity as usize).max(1) * CALL_PARAM_CACHE_STRIDE,
             wgpu::BufferUsages::empty(),
         );
+        let call_arg_row_capacity = hir_node_capacity.max(1);
+        let call_arg_row_scan_n_blocks = call_arg_row_capacity.div_ceil(256).max(1);
+        let call_arg_row_scan_steps = make_name_scan_steps(
+            device,
+            NameScanParams {
+                n_items: call_arg_row_capacity,
+                n_blocks: call_arg_row_scan_n_blocks,
+                scan_step: 0,
+            },
+        );
+        let call_arg_row_count_out = storage_u32_rw(
+            device,
+            "type_check.resident.call_arg_row_count_out",
+            1,
+            wgpu::BufferUsages::empty(),
+        );
+        let call_arg_row_flag = storage_u32_rw(
+            device,
+            "type_check.resident.call_arg_row_flag",
+            call_arg_row_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let call_arg_row_prefix = storage_u32_rw(
+            device,
+            "type_check.resident.call_arg_row_prefix",
+            call_arg_row_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let call_arg_row_node = storage_u32_fill_rw(
+            device,
+            "type_check.resident.call_arg_row_node",
+            call_arg_row_capacity as usize,
+            u32::MAX,
+            wgpu::BufferUsages::empty(),
+        );
+        let call_arg_row_call_node = storage_u32_fill_rw(
+            device,
+            "type_check.resident.call_arg_row_call_node",
+            call_arg_row_capacity as usize,
+            u32::MAX,
+            wgpu::BufferUsages::empty(),
+        );
+        let call_arg_row_ordinal = storage_u32_fill_rw(
+            device,
+            "type_check.resident.call_arg_row_ordinal",
+            call_arg_row_capacity as usize,
+            u32::MAX,
+            wgpu::BufferUsages::empty(),
+        );
+        let call_arg_row_start = storage_u32_fill_rw(
+            device,
+            "type_check.resident.call_arg_row_start",
+            call_arg_row_capacity as usize,
+            u32::MAX,
+            wgpu::BufferUsages::empty(),
+        );
+        let call_arg_row_count = storage_u32_rw(
+            device,
+            "type_check.resident.call_arg_row_count",
+            call_arg_row_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let call_arg_row_scan_local_prefix = storage_u32_rw(
+            device,
+            "type_check.resident.call_arg_row_scan_local_prefix",
+            call_arg_row_capacity as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let call_arg_row_scan_block_sum = storage_u32_rw(
+            device,
+            "type_check.resident.call_arg_row_scan_block_sum",
+            call_arg_row_scan_n_blocks as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let call_arg_row_scan_prefix_a = storage_u32_rw(
+            device,
+            "type_check.resident.call_arg_row_scan_prefix_a",
+            call_arg_row_scan_n_blocks as usize,
+            wgpu::BufferUsages::empty(),
+        );
+        let call_arg_row_scan_prefix_b = storage_u32_rw(
+            device,
+            "type_check.resident.call_arg_row_scan_prefix_b",
+            call_arg_row_scan_n_blocks as usize,
+            wgpu::BufferUsages::empty(),
+        );
         let function_lookup_capacity = token_capacity.saturating_mul(2).max(1) as usize;
         let function_lookup_key = reuse_storage_u32(
             device,
@@ -1440,7 +1526,7 @@ impl GpuTypeChecker {
             1,
             wgpu::BufferUsages::empty(),
         );
-        let fallback_hir = FallbackHirBuffers::new(device, uses_hir_items, hir_node_capacity);
+        let empty_hir = EmptyHirBindings::new(device, uses_hir_items, hir_node_capacity);
         let mut resources = ResourceMap::new();
         resources.buffer("gParams", &self.params_buf);
         resources.buffer("token_words", &token_buf);
@@ -1462,7 +1548,7 @@ impl GpuTypeChecker {
         if let Some(hir_items) = hir_items {
             register_hir_item_resources(&mut resources, hir_items);
         } else {
-            register_fallback_hir_resources(&mut resources, &fallback_hir, &hir_active_count);
+            register_empty_hir_resources(&mut resources, &empty_hir, &hir_active_count);
         }
         resources.buffer("status", &self.status_buf);
         resources.buffer("visible_decl", &visible_decl);
@@ -1501,6 +1587,21 @@ impl GpuTypeChecker {
         resources.buffer("call_param_ref_payload", &call_param_ref_payload);
         resources.buffer("call_arg_record", &call_arg_record);
         resources.buffer("call_arg_node", &call_arg_node);
+        resources.buffer("call_arg_row_count_out", &call_arg_row_count_out);
+        resources.buffer("call_arg_row_flag", &call_arg_row_flag);
+        resources.buffer("call_arg_row_prefix", &call_arg_row_prefix);
+        resources.buffer("call_arg_row_node", &call_arg_row_node);
+        resources.buffer("call_arg_row_call_node", &call_arg_row_call_node);
+        resources.buffer("call_arg_row_ordinal", &call_arg_row_ordinal);
+        resources.buffer("call_arg_row_start", &call_arg_row_start);
+        resources.buffer("call_arg_row_count", &call_arg_row_count);
+        resources.buffer(
+            "call_arg_row_scan_local_prefix",
+            &call_arg_row_scan_local_prefix,
+        );
+        resources.buffer("call_arg_row_scan_block_sum", &call_arg_row_scan_block_sum);
+        resources.buffer("call_arg_row_scan_prefix_a", &call_arg_row_scan_prefix_a);
+        resources.buffer("call_arg_row_scan_prefix_b", &call_arg_row_scan_prefix_b);
         resources.buffer("function_lookup_key", &function_lookup_key);
         resources.buffer("function_lookup_fn", &function_lookup_fn);
         resources.buffer(
@@ -1860,6 +1961,9 @@ impl GpuTypeChecker {
                     call_param_ref_payload: &call_param_ref_payload,
                     call_arg_record: &call_arg_record,
                     call_arg_node: &call_arg_node,
+                    call_arg_row_node: &call_arg_row_node,
+                    call_arg_row_start: &call_arg_row_start,
+                    call_arg_row_count: &call_arg_row_count,
                     type_expr_ref_tag: &type_expr_ref_tag,
                     type_expr_ref_payload: &type_expr_ref_payload,
                     type_instance_kind: &type_instance_kind,
@@ -1899,7 +2003,23 @@ impl GpuTypeChecker {
             resources.add("resolved_value_status", resources["visible_decl"].clone());
             resources.add("decl_token_start", resources["visible_decl"].clone());
         }
-        let calls = create_call_bind_groups(device, passes, &resources)?;
+        let calls = create_call_bind_groups(
+            device,
+            passes,
+            &resources,
+            CompactCallArgScanInput {
+                scan_steps: &call_arg_row_scan_steps,
+                scan_count: &hir_active_count,
+                scan_input: &call_arg_row_flag,
+                scan_output_prefix: &call_arg_row_prefix,
+                scan_total: &call_arg_row_count_out,
+                scan_local_prefix: &call_arg_row_scan_local_prefix,
+                scan_block_sum: &call_arg_row_scan_block_sum,
+                scan_prefix_a: &call_arg_row_scan_prefix_a,
+                scan_prefix_b: &call_arg_row_scan_prefix_b,
+                n_blocks: call_arg_row_scan_n_blocks,
+            },
+        )?;
         let visible_scratch = ResidentVisibleScratch::new(
             device,
             module_path.as_ref(),
@@ -2370,6 +2490,18 @@ impl GpuTypeChecker {
             call_param_ref_payload,
             call_arg_record,
             call_arg_node,
+            call_arg_row_count_out,
+            call_arg_row_flag,
+            call_arg_row_prefix,
+            call_arg_row_node,
+            call_arg_row_call_node,
+            call_arg_row_ordinal,
+            call_arg_row_start,
+            call_arg_row_count,
+            call_arg_row_scan_local_prefix,
+            call_arg_row_scan_block_sum,
+            call_arg_row_scan_prefix_a,
+            call_arg_row_scan_prefix_b,
             function_lookup_key,
             function_lookup_fn,
             method_decl_receiver_ref_tag,

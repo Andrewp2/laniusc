@@ -68,8 +68,7 @@ pub(super) fn diagnostic_source_pack_progress_json_pretty(
             "page_count": progress.page_count,
             "complete": complete
         },
-        "no_run_guards": no_run_guards.clone(),
-        "guards": no_run_guards
+        "no_run_guards": no_run_guards
     });
     serde_json::to_string_pretty(&document)
         .map_err(|err| format!("serialize source-pack progress diagnostics: {err}").into())

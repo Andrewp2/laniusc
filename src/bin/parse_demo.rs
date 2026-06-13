@@ -188,37 +188,6 @@ async fn main() -> Result<()> {
         res.ll1.steps,
         res.ll1.emit_len
     );
-    println!(
-        "ll1_seeded_blocks: n={} block_size={} emit_stride={}",
-        res.ll1_seeded_blocks.len(),
-        res.ll1_block_size,
-        res.ll1_block_emit_stride
-    );
-    println!(
-        "ll1_seed_plan: accepted={} pos={} error_code={} detail={} steps={} seeds={} max_depth={} emits={}",
-        res.ll1_seed_plan.accepted,
-        res.ll1_seed_plan.pos,
-        res.ll1_seed_plan.error_code,
-        res.ll1_seed_plan.detail,
-        res.ll1_seed_plan.steps,
-        res.ll1_seed_plan.seed_count,
-        res.ll1_seed_plan.max_depth,
-        res.ll1_seed_plan.emit_len
-    );
-    for (i, block) in res.ll1_seeded_blocks.iter().take(4).enumerate() {
-        println!(
-            "  seeded_block[{i}] status={} begin={} end={} pos={} steps={} emits={} stack={} err={} first_prod={}",
-            block.status,
-            block.begin,
-            block.end,
-            block.pos,
-            block.steps,
-            block.emit_len,
-            block.stack_depth,
-            block.error_code,
-            block.first_production
-        );
-    }
     let ll1_to_show = res.ll1_emit_stream.len().min(32);
     print!("ll1_emit_stream[0..{}] = [", ll1_to_show);
     for i in 0..ll1_to_show {

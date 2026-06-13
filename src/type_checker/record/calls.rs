@@ -71,6 +71,28 @@ pub(in crate::type_checker) fn record_call_bind_groups_with_passes(
         &groups.pack_hir_call_args,
         "type_check.calls.pack_hir_call_args",
         n_work,
+    )?;
+    record_compute_indirect(
+        encoder,
+        &passes.calls_mark_compact_hir_call_args,
+        &groups.mark_compact_hir_call_args,
+        "type_check.calls.mark_compact_hir_call_args",
+        hir_active_dispatch_args,
+    )?;
+    record_hir_counted_u32_scan_bind_groups_with_passes(
+        passes,
+        encoder,
+        groups.compact_hir_call_arg_scan_n_blocks,
+        hir_active_dispatch_args,
+        &groups.compact_hir_call_arg_scan,
+        "type_check.calls.compact_hir_call_arg_scan",
+    )?;
+    record_compute_indirect(
+        encoder,
+        &passes.calls_scatter_compact_hir_call_args,
+        &groups.scatter_compact_hir_call_args,
+        "type_check.calls.scatter_compact_hir_call_args",
+        hir_active_dispatch_args,
     )
 }
 

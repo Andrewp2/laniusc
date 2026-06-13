@@ -42,11 +42,10 @@ pub struct ParserBuffers {
     pub n_kinds: u32,
     pub total_sc: u32,
     pub total_emit: u32,
-    pub tree_stream_uses_ll1: bool,
     pub tree_count_uses_status: bool,
     pub tree_capacity: u32,
 
-    // canonical LL(1) outputs flattened from seeded block parsing
+    // canonical LL(1) parser tables and outputs
     pub ll1_predict: LaniusBuffer<u32>,
     pub ll1_prod_rhs_off: LaniusBuffer<u32>,
     pub ll1_prod_rhs_len: LaniusBuffer<u32>,
@@ -54,15 +53,6 @@ pub struct ParserBuffers {
     pub ll1_emit: LaniusBuffer<u32>,
     pub ll1_emit_pos: LaniusBuffer<u32>,
     pub ll1_status: LaniusBuffer<u32>,
-
-    // Disabled legacy LL(1) compatibility/readback summaries.
-    pub ll1_block_size: u32,
-    pub ll1_n_blocks: u32,
-    pub ll1_block_emit_stride: u32,
-    pub ll1_block_seed_len: LaniusBuffer<u32>,
-    pub ll1_seed_plan_status: LaniusBuffer<u32>,
-    pub ll1_seeded_status: LaniusBuffer<u32>,
-    pub ll1_seeded_emit: LaniusBuffer<u32>,
 
     // pair→header
     pub params_llp: LaniusBuffer<super::super::passes::llp_pairs::LLPParams>,
@@ -135,7 +125,7 @@ pub struct ParserBuffers {
     pub out_headers: LaniusBuffer<ActionHeader>,
 
     // pack varlen
-    pub params_pack: LaniusBuffer<super::super::passes::pack_varlen::PackParams>,
+    pub params_pack: LaniusBuffer<super::super::passes::pack::varlen::PackParams>,
     pub sc_offsets: LaniusBuffer<u32>,
     pub emit_offsets: LaniusBuffer<u32>,
     pub pack_sc_prefix_a: LaniusBuffer<u32>,
@@ -151,14 +141,14 @@ pub struct ParserBuffers {
     pub out_emit_pos: LaniusBuffer<u32>,
 
     // -------- Brackets (parallel) --------
-    pub b01_params: LaniusBuffer<super::super::passes::brackets_01::Params>,
-    pub b02_params: LaniusBuffer<super::super::passes::brackets_02::Params>,
+    pub b01_params: LaniusBuffer<super::super::passes::brackets::scan_inblock::Params>,
+    pub b02_params: LaniusBuffer<super::super::passes::brackets::scan_block_prefix::Params>,
     pub b02_scan_steps: Vec<BracketsBlockPrefixScanStep>,
-    pub b03_params: LaniusBuffer<super::super::passes::brackets_03::Params>,
-    pub b04_params: LaniusBuffer<super::super::passes::brackets_04::Params>,
-    pub b05_params: LaniusBuffer<super::super::passes::brackets_05::Params>,
-    pub b06_params: LaniusBuffer<super::super::passes::brackets_06::Params>,
-    pub b07_params: LaniusBuffer<super::super::passes::brackets_pse_04::Params>, // PSE-style pair-by-layer
+    pub b03_params: LaniusBuffer<super::super::passes::brackets::apply_prefix::Params>,
+    pub b04_params: LaniusBuffer<super::super::passes::brackets::histogram_layers::Params>,
+    pub b05_params: LaniusBuffer<super::super::passes::brackets::scan_histograms::Params>,
+    pub b06_params: LaniusBuffer<super::super::passes::brackets::scatter_by_layer::Params>,
+    pub b07_params: LaniusBuffer<super::super::passes::brackets::pse_pair::Params>, // PSE-style pair-by-layer
     pub b05_scan_steps: Vec<BracketsHistogramScanStep>,
 
     pub b_exscan_inblock: LaniusBuffer<i32>,
@@ -193,7 +183,7 @@ pub struct ParserBuffers {
     pub b_n_layers: u32,
 
     // -------- Tree parent recovery --------
-    pub tree_prefix_params: LaniusBuffer<super::super::passes::tree_prefix_01::Params>,
+    pub tree_prefix_params: LaniusBuffer<super::super::passes::tree::prefix::local::Params>,
     pub tree_prefix_scan_steps: Vec<TreePrefixScanStep>,
     pub tree_n_node_blocks: u32,
     pub tree_n_prefix_blocks: u32,
@@ -212,10 +202,10 @@ pub struct ParserBuffers {
     pub tree_prefix_block_max_tree_base: u32,
     pub tree_prefix_block_max_tree: LaniusBuffer<i32>,
     pub tree_prefix_max_build_steps: Vec<TreePrefixMaxBuildStep>,
-    pub tree_params: LaniusBuffer<super::super::passes::tree_parent::Params>,
-    pub tree_span_params: LaniusBuffer<super::super::passes::tree_spans::Params>,
+    pub tree_params: LaniusBuffer<super::super::passes::tree::parent::Params>,
+    pub tree_span_params: LaniusBuffer<super::super::passes::tree::spans::Params>,
     pub tree_prev_sibling_params:
-        LaniusBuffer<super::super::passes::tree_prev_sibling_clear::Params>,
+        LaniusBuffer<super::super::passes::tree::prev::sibling::clear::Params>,
     pub prod_arity: LaniusBuffer<u32>,
     pub node_kind: LaniusBuffer<u32>,
     pub parent: LaniusBuffer<u32>,
@@ -225,20 +215,20 @@ pub struct ParserBuffers {
     pub subtree_end: LaniusBuffer<u32>,
 
     // -------- HIR-facing classification --------
-    pub hir_params: LaniusBuffer<super::super::passes::hir_nodes::Params>,
-    pub hir_span_params: LaniusBuffer<super::super::passes::hir_spans::Params>,
-    pub hir_type_fields_params: LaniusBuffer<super::super::passes::hir_type_fields::Params>,
-    pub hir_item_fields_params: LaniusBuffer<super::super::passes::hir_item_fields::Params>,
-    pub hir_param_fields_params: LaniusBuffer<super::super::passes::hir_param_fields::Params>,
-    pub hir_method_fields_params: LaniusBuffer<super::super::passes::hir_method_fields::Params>,
-    pub hir_expr_fields_params: LaniusBuffer<super::super::passes::hir_expr_fields::Params>,
-    pub hir_member_fields_params: LaniusBuffer<super::super::passes::hir_member_fields::Params>,
-    pub hir_stmt_fields_params: LaniusBuffer<super::super::passes::hir_stmt_fields::Params>,
-    pub hir_call_fields_params: LaniusBuffer<super::super::passes::hir_call_fields::Params>,
-    pub hir_array_fields_params: LaniusBuffer<super::super::passes::hir_array_fields::Params>,
+    pub hir_params: LaniusBuffer<super::super::passes::hir::nodes::Params>,
+    pub hir_span_params: LaniusBuffer<super::super::passes::hir::spans::Params>,
+    pub hir_type_fields_params: LaniusBuffer<super::super::passes::hir::types::fields::Params>,
+    pub hir_item_fields_params: LaniusBuffer<super::super::passes::hir::item::fields::Params>,
+    pub hir_param_fields_params: LaniusBuffer<super::super::passes::hir::param::fields::Params>,
+    pub hir_method_fields_params: LaniusBuffer<super::super::passes::hir::method::fields::Params>,
+    pub hir_expr_fields_params: LaniusBuffer<super::super::passes::hir::expr::fields::Params>,
+    pub hir_member_fields_params: LaniusBuffer<super::super::passes::hir::member::fields::Params>,
+    pub hir_stmt_fields_params: LaniusBuffer<super::super::passes::hir::stmt_fields::Params>,
+    pub hir_call_fields_params: LaniusBuffer<super::super::passes::hir::call::fields::Params>,
+    pub hir_array_fields_params: LaniusBuffer<super::super::passes::hir::array::fields::Params>,
     pub hir_enum_match_fields_params:
-        LaniusBuffer<super::super::passes::hir_enum_match_fields::Params>,
-    pub hir_struct_fields_params: LaniusBuffer<super::super::passes::hir_struct_fields::Params>,
+        LaniusBuffer<super::super::passes::hir::enums::match_fields::Params>,
+    pub hir_struct_fields_params: LaniusBuffer<super::super::passes::hir::structs::fields::Params>,
     pub hir_kind: LaniusBuffer<u32>,
     pub hir_semantic_block_count: LaniusBuffer<u32>,
     pub hir_semantic_prefix_scan_steps: Vec<HirSemanticPrefixScanStep>,
@@ -402,9 +392,8 @@ pub struct ParserBuffers {
     pub hir_call_arg_end: LaniusBuffer<u32>,
     pub hir_call_arg_count: LaniusBuffer<u32>,
     // Packed `parent_call_node | ordinal << 28` call-argument record. The
-    // legacy `hir_call_arg_ordinal` view aliases this storage so older host
-    // readback APIs can decode parent and ordinal separately without keeping a
-    // second tree-capacity GPU buffer.
+    // ordinal view shares this storage so consumers can read the split ordinal
+    // record without keeping a second tree-capacity GPU buffer.
     pub hir_call_arg_parent_call: LaniusBuffer<u32>,
     pub hir_call_arg_ordinal: LaniusBuffer<u32>,
     pub hir_call_arg_owner_a: LaniusBuffer<u32>,

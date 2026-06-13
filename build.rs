@@ -81,24 +81,24 @@ fn main() -> Result<()> {
             continue;
         }
 
-        let file_stem = ep
-            .file_stem()
-            .and_then(|n| n.to_str())
-            .ok_or_else(|| anyhow!("invalid shader filename: {ep:?}"))?;
-
-        let spv_out = shader_out_dir.join(format!("{file_stem}.spv"));
-        let refl_out = shader_out_dir.join(format!("{file_stem}.reflect.json"));
+        let artifact_key = shader_artifact_key(&ep)?;
+        let spv_out = shader_out_dir.join(format!("{artifact_key}.spv"));
+        let refl_out = shader_out_dir.join(format!("{artifact_key}.reflect.json"));
+        let stamp_out = shader_out_dir.join(format!("{artifact_key}.stamp"));
+        if let Some(parent) = spv_out.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("create shader artifact dir {}", parent.display()))?;
+        }
         let extra = env::var("SLANGC_EXTRA_FLAGS").unwrap_or_default();
         let extra_args: Vec<&str> = extra.split_whitespace().filter(|s| !s.is_empty()).collect();
         let opt_level = shader_opt_level();
-        let stamp_out = shader_out_dir.join(format!("{file_stem}.stamp"));
         let compile_stamp = format!(
             "slangc={}\nslangc_version={slangc_version}\nopt={opt_level}\nextra={extra}\n",
             slangc.display(),
         );
         if shader_outputs_fresh(&ep, &spv_out, &refl_out, &stamp_out, &compile_stamp)? {
             validate_shader_artifact_size(&ep, &spv_out, max_shader_spv_bytes)?;
-            shader_artifacts.push((file_stem.to_string(), spv_out, refl_out));
+            shader_artifacts.push((artifact_key, spv_out, refl_out));
             continue;
         }
 
@@ -121,6 +121,8 @@ fn main() -> Result<()> {
             .arg("shaders/parser")
             .arg("-I")
             .arg("shaders/type_checker")
+            .arg("-I")
+            .arg("shaders/codegen")
             .arg("-o")
             .arg(&spv_out);
 
@@ -157,7 +159,7 @@ fn main() -> Result<()> {
         validate_shader_artifact_size(&ep, &spv_out, max_shader_spv_bytes)?;
         fs::write(&stamp_out, compile_stamp)
             .with_context(|| format!("write shader stamp {}", stamp_out.display()))?;
-        shader_artifacts.push((file_stem.to_string(), spv_out, refl_out));
+        shader_artifacts.push((artifact_key, spv_out, refl_out));
     }
     let shader_digest = shader_artifact_digest(&shader_artifacts)?;
     let shader_size_summary = shader_artifact_size_summary(&shader_artifacts)?;
@@ -459,7 +461,35 @@ fn is_unwired_shader_entrypoint(path: &Path) -> bool {
             | Some("shaders/codegen/x86_virtual_use_edges.slang")
             | Some("shaders/codegen/x86_virtual_use_scan_blocks.slang")
             | Some("shaders/codegen/x86_virtual_use_scan_local.slang")
+            | Some("shaders/codegen/x86/virtual/liveness/dispatch_args.slang")
+            | Some("shaders/codegen/x86/virtual/use/counts.slang")
+            | Some("shaders/codegen/x86/virtual/use/edges.slang")
+            | Some("shaders/codegen/x86/virtual/use/scan/blocks.slang")
+            | Some("shaders/codegen/x86/virtual/use/scan/local.slang")
     )
+}
+
+fn shader_artifact_key(path: &Path) -> Result<String> {
+    let rel = path
+        .strip_prefix("shaders")
+        .with_context(|| format!("shader path {} is outside shaders/", path.display()))?;
+    let no_ext = rel.with_extension("");
+    let mut key = String::new();
+    for component in no_ext.components() {
+        if !key.is_empty() {
+            key.push('/');
+        }
+        key.push_str(
+            component
+                .as_os_str()
+                .to_str()
+                .ok_or_else(|| anyhow!("non-utf8 shader artifact path {}", path.display()))?,
+        );
+    }
+    if key.is_empty() {
+        return Err(anyhow!("empty shader artifact key for {}", path.display()));
+    }
+    Ok(key)
 }
 
 fn shader_outputs_fresh(
@@ -539,7 +569,10 @@ fn shader_imports(text: &str) -> impl Iterator<Item = &str> {
 }
 
 fn resolve_shader_import(importer: &Path, import: &str) -> Option<PathBuf> {
-    let rel = PathBuf::from(format!("{}.slang", import.replace("::", "/")));
+    let rel = PathBuf::from(format!(
+        "{}.slang",
+        import.replace("::", "/").replace('.', "/")
+    ));
     let mut candidates = Vec::new();
     if let Some(parent) = importer.parent() {
         candidates.push(parent.join(&rel));

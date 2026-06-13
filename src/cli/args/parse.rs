@@ -142,7 +142,7 @@ pub(crate) fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Comma
                 return Err(unknown_cli_option_error(
                     "laniusc",
                     flag,
-                    "--version, --edition, --emit, --target, --diagnostic-format, --package-manifest, --package-lockfile, --stdlib, --stdlib-root, --source-root, --source-pack-descriptors, --source-pack-manifest, --source-pack-library-manifest, --source-pack-artifact-root, --source-pack-metadata-only, --source-pack-prepare-only, --source-pack-build-from-metadata, --source-pack-build-prepare-only, --source-pack-legacy-in-memory, --emit-contract, -o/--out",
+                    "--version, --edition, --emit, --target, --diagnostic-format, --package-manifest, --package-lockfile, --stdlib, --stdlib-root, --source-root, --source-pack-descriptors, --source-pack-manifest, --source-pack-library-manifest, --source-pack-artifact-root, --source-pack-metadata-only, --source-pack-prepare-only, --source-pack-build-from-metadata, --source-pack-build-prepare-only, --emit-contract, -o/--out",
                 ));
             }
             path => {

@@ -8,15 +8,8 @@ mod storage;
 pub use model::{ActionHeader, ParserBuffers, TokenBraceMatchParams, TokenDelimiterParams};
 pub use scan_steps::*;
 use scans::*;
+use sizing::resident_projected_tree_capacity;
 pub(crate) use sizing::resident_projected_tree_capacity_for_tables;
-use sizing::{
-    LL1_BLOCK_EMIT_STRIDE,
-    LL1_BLOCK_SIZE,
-    LL1_SEED_PLAN_STATUS_WORDS,
-    pair_capacity_for_tree_stream,
-    parser_table_uses_ll1_tree_stream,
-    resident_projected_tree_capacity,
-};
 use storage::{alias_storage_buffer, dispatch_args_buffer};
 
 use crate::gpu::buffers::{
@@ -36,22 +29,14 @@ impl ParserBuffers {
         action_table_bytes: &[u8],
         tables: &crate::parser::tables::PrecomputedParseTables,
         resident_projected_capacity: bool,
-        prefer_ll1_tree_stream: bool,
         retain_debug_hir_buffers: bool,
         tree_capacity_override: Option<u32>,
     ) -> Self {
         let n_pairs = n_tokens.saturating_sub(1) as usize;
         let token_input_capacity = n_tokens.saturating_sub(2).max(1);
         let token_delimiter_n_blocks = token_input_capacity.div_ceil(256).max(1);
-        let tree_stream_uses_ll1 =
-            prefer_ll1_tree_stream && parser_table_uses_ll1_tree_stream(tables);
-        let legacy_pair_capacity = pair_capacity_for_tree_stream(tree_stream_uses_ll1, n_pairs);
-
-        let ll1_stack_capacity = if tree_stream_uses_ll1 {
-            n_tokens.saturating_mul(8).saturating_add(1024).max(1)
-        } else {
-            1
-        };
+        let pair_capacity = n_pairs.max(1);
+        let ll1_stack_capacity = 1;
         let empty = [0u32];
         let ll1_predict_src = if tables.ll1_predict.is_empty() {
             &empty[..]
@@ -98,34 +83,6 @@ impl ParserBuffers {
             dispatch_args_buffer(device, "parser.active_pair_thread_dispatch_args");
         let active_pair_group_dispatch_args =
             dispatch_args_buffer(device, "parser.active_pair_group_dispatch_args");
-        let ll1_n_blocks = if tree_stream_uses_ll1 {
-            n_input_tokens.div_ceil(LL1_BLOCK_SIZE).max(1)
-        } else {
-            1
-        };
-        let ll1_block_emit_stride = if tree_stream_uses_ll1 {
-            LL1_BLOCK_EMIT_STRIDE
-        } else {
-            1
-        };
-        let ll1_block_seed_len =
-            storage_rw_for_array::<u32>(device, "parser.ll1_block_seed_len", ll1_n_blocks as usize);
-        let ll1_seed_plan_status = storage_rw_for_array::<u32>(
-            device,
-            "parser.ll1_seed_plan_status",
-            LL1_SEED_PLAN_STATUS_WORDS,
-        );
-        let ll1_seeded_status = storage_rw_for_array::<u32>(
-            device,
-            "parser.ll1_seeded_status",
-            ll1_n_blocks as usize * super::passes::ll1_blocks_01::LL1_BLOCK_STATUS_WORDS,
-        );
-        let ll1_seeded_emit = storage_rw_for_array::<u32>(
-            device,
-            "parser.ll1_seeded_emit",
-            ll1_n_blocks as usize * ll1_block_emit_stride as usize,
-        );
-
         // ---------- Pair→Header ----------
         let semantic_token_kinds = if let Some(kinds) = token_kinds_u32 {
             // Test/debug one-shot parsing receives already-classified parser
@@ -431,17 +388,13 @@ impl ParserBuffers {
         let out_headers: LaniusBuffer<ActionHeader> = storage_rw_for_array::<ActionHeader>(
             device,
             "parser.out_headers",
-            legacy_pair_capacity.saturating_add(1),
+            pair_capacity.saturating_add(1),
         );
 
         // ---------- Pack varlen ----------
         let (mut acc_sc, mut acc_emit) = (0u32, 0u32);
 
-        if tree_stream_uses_ll1 {
-            // LL(1) mode does not record the older pair/pack/bracket passes. Keep
-            // their fields as one-word compatibility buffers instead of scaling
-            // dead scratch allocations with token capacity.
-        } else if resident_projected_capacity {
+        if resident_projected_capacity {
             let max_sc_len = tables.sc_len.iter().copied().max().unwrap_or(0);
             let max_emit_len = tables.pp_len.iter().copied().max().unwrap_or(0);
             acc_sc = (n_pairs as u32).saturating_mul(max_sc_len);
@@ -459,15 +412,11 @@ impl ParserBuffers {
         }
         let total_sc = acc_sc;
         let total_emit = acc_emit;
-        let tree_count_uses_status = tree_stream_uses_ll1 || resident_projected_capacity;
+        let tree_count_uses_status = resident_projected_capacity;
         let tree_capacity = tree_capacity_override
             .unwrap_or_else(|| {
                 if tree_count_uses_status {
-                    if tree_stream_uses_ll1 {
-                        ll1_stack_capacity
-                    } else {
-                        resident_projected_tree_capacity(total_emit)
-                    }
+                    resident_projected_tree_capacity(total_emit)
                 } else {
                     total_emit
                 }
@@ -509,7 +458,7 @@ impl ParserBuffers {
         let params_pack = uniform_from_val(
             device,
             "pack.params",
-            &super::passes::pack_varlen::PackParams {
+            &super::passes::pack::varlen::PackParams {
                 n_tokens,
                 n_kinds,
                 total_sc,
@@ -529,7 +478,7 @@ impl ParserBuffers {
             },
         );
 
-        let n_pack_pairs = legacy_pair_capacity;
+        let n_pack_pairs = pair_capacity;
         let sc_offsets = storage_rw_for_array::<u32>(device, "pack.sc_offsets", n_pack_pairs);
         let emit_offsets = storage_rw_for_array::<u32>(device, "pack.emit_offsets", n_pack_pairs);
         let pack_sc_prefix_a =
@@ -562,10 +511,8 @@ impl ParserBuffers {
 
         // ---------- Brackets (parallel) ----------
         //
-        // The resident LLP pipeline builds tree/HIR from the packed production
-        // stream and never records the older bracket passes. Keep these buffers
-        // compatibility-sized in that path; otherwise long inputs allocate GiB
-        // of scratch that no recorded pass can read.
+        // Resident parsing records tree/HIR from projected counts, so bracket
+        // scratch stays one word unless the debug one-shot parser records it.
         const WG: u32 = 256;
         let bracket_capacity = if resident_projected_capacity {
             1
@@ -581,7 +528,7 @@ impl ParserBuffers {
         let b01_params = uniform_from_val(
             device,
             "brackets.b01.params",
-            &super::passes::brackets_01::Params {
+            &super::passes::brackets::scan_inblock::Params {
                 n_sc: total_sc,
                 wg_size: WG,
             },
@@ -589,7 +536,7 @@ impl ParserBuffers {
         let b02_params = uniform_from_val(
             device,
             "brackets.b02.params",
-            &super::passes::brackets_02::Params {
+            &super::passes::brackets::scan_block_prefix::Params {
                 n_blocks,
                 scan_step: 0,
             },
@@ -598,16 +545,15 @@ impl ParserBuffers {
         let b03_params = uniform_from_val(
             device,
             "brackets.b03.params",
-            &super::passes::brackets_03::Params {
+            &super::passes::brackets::apply_prefix::Params {
                 n_sc: total_sc,
                 wg_size: WG,
             },
         );
 
-        // layers upper bound = #pushes ≤ total_sc; +2 for safety. Resident and
-        // LL(1) modes never record bracket passes, so one layer is enough for
-        // bindings.
-        let n_layers = if resident_projected_capacity || tree_stream_uses_ll1 {
+        // layers upper bound = #pushes ≤ total_sc; +2 for safety. Resident mode
+        // does not record bracket passes, so one layer is enough for bindings.
+        let n_layers = if resident_projected_capacity {
             1
         } else {
             total_sc.saturating_add(2).max(1)
@@ -616,7 +562,7 @@ impl ParserBuffers {
         let b04_params = uniform_from_val(
             device,
             "brackets.b04.params",
-            &super::passes::brackets_04::Params {
+            &super::passes::brackets::histogram_layers::Params {
                 n_sc: total_sc,
                 n_layers,
             },
@@ -624,7 +570,7 @@ impl ParserBuffers {
         let b05_params = uniform_from_val(
             device,
             "brackets.b05.params",
-            &super::passes::brackets_05::Params {
+            &super::passes::brackets::scan_histograms::Params {
                 n_layers,
                 scan_step: 0,
             },
@@ -633,7 +579,7 @@ impl ParserBuffers {
         let b06_params = uniform_from_val(
             device,
             "brackets.b06.params",
-            &super::passes::brackets_06::Params {
+            &super::passes::brackets::scatter_by_layer::Params {
                 n_sc: total_sc,
                 n_layers,
             },
@@ -641,7 +587,7 @@ impl ParserBuffers {
         let b07_params = uniform_from_val(
             device,
             "brackets.b07.params",
-            &super::passes::brackets_pse_04::Params {
+            &super::passes::brackets::pse_pair::Params {
                 n_sc: total_sc,
                 n_layers,
                 typed_check: 1,
@@ -712,9 +658,9 @@ impl ParserBuffers {
         // ---------- Tree parent recovery ----------
         let tree_n_node_blocks = tree_capacity.div_ceil(WG).max(1);
         let tree_n_prefix_blocks = tree_capacity.saturating_add(1).div_ceil(WG).max(1);
-        let tree_prefix_params_base = super::passes::tree_prefix_01::Params {
+        let tree_prefix_params_base = super::passes::tree::prefix::local::Params {
             n: tree_capacity,
-            uses_ll1: u32::from(tree_count_uses_status),
+            uses_status_count: u32::from(tree_count_uses_status),
             n_node_blocks: tree_n_node_blocks,
             n_prefix_blocks: tree_n_prefix_blocks,
             scan_step: 0,
@@ -788,9 +734,9 @@ impl ParserBuffers {
         let tree_params = uniform_from_val(
             device,
             "parser.tree_parent.params",
-            &super::passes::tree_parent::Params {
+            &super::passes::tree::parent::Params {
                 n: tree_capacity,
-                uses_ll1: u32::from(tree_count_uses_status),
+                uses_status_count: u32::from(tree_count_uses_status),
                 n_prefix_blocks: tree_n_prefix_blocks,
                 max_tree_leaf_base: tree_prefix_block_max_tree_base,
             },
@@ -798,9 +744,9 @@ impl ParserBuffers {
         let tree_span_params = uniform_from_val(
             device,
             "parser.tree_spans.params",
-            &super::passes::tree_spans::Params {
+            &super::passes::tree::spans::Params {
                 n: tree_capacity,
-                uses_ll1: u32::from(tree_count_uses_status),
+                uses_status_count: u32::from(tree_count_uses_status),
                 n_prefix_blocks: tree_n_prefix_blocks,
                 max_tree_leaf_base: tree_prefix_block_max_tree_base,
             },
@@ -808,9 +754,9 @@ impl ParserBuffers {
         let tree_prev_sibling_params = uniform_from_val(
             device,
             "parser.tree_prev_sibling.params",
-            &super::passes::tree_prev_sibling_clear::Params {
+            &super::passes::tree::prev::sibling::clear::Params {
                 n: tree_capacity,
-                uses_ll1: u32::from(tree_count_uses_status),
+                uses_status_count: u32::from(tree_count_uses_status),
             },
         );
         let first_child =
@@ -824,106 +770,106 @@ impl ParserBuffers {
         let hir_params = uniform_from_val(
             device,
             "parser.hir_nodes.params",
-            &super::passes::hir_nodes::Params {
+            &super::passes::hir::nodes::Params {
                 n: tree_capacity,
-                uses_ll1: u32::from(tree_count_uses_status),
+                uses_status_count: u32::from(tree_count_uses_status),
             },
         );
         let hir_span_params = uniform_from_val(
             device,
             "parser.hir_spans.params",
-            &super::passes::hir_spans::Params {
+            &super::passes::hir::spans::Params {
                 n: tree_capacity,
-                uses_ll1: u32::from(tree_count_uses_status),
+                uses_status_count: u32::from(tree_count_uses_status),
                 token_capacity: token_input_capacity,
             },
         );
         let hir_type_fields_params = uniform_from_val(
             device,
             "parser.hir_type_fields.params",
-            &super::passes::hir_type_fields::Params {
+            &super::passes::hir::types::fields::Params {
                 n: tree_capacity,
-                uses_ll1: u32::from(tree_count_uses_status),
+                uses_status_count: u32::from(tree_count_uses_status),
             },
         );
         let hir_item_fields_params = uniform_from_val(
             device,
             "parser.hir_item_fields.params",
-            &super::passes::hir_item_fields::Params {
+            &super::passes::hir::item::fields::Params {
                 n: tree_capacity,
-                uses_ll1: u32::from(tree_count_uses_status),
+                uses_status_count: u32::from(tree_count_uses_status),
             },
         );
         let hir_param_fields_params = uniform_from_val(
             device,
             "parser.hir_param_fields.params",
-            &super::passes::hir_param_fields::Params {
+            &super::passes::hir::param::fields::Params {
                 n: tree_capacity,
-                uses_ll1: u32::from(tree_count_uses_status),
+                uses_status_count: u32::from(tree_count_uses_status),
             },
         );
         let hir_method_fields_params = uniform_from_val(
             device,
             "parser.hir_method_fields.params",
-            &super::passes::hir_method_fields::Params {
+            &super::passes::hir::method::fields::Params {
                 n: tree_capacity,
-                uses_ll1: u32::from(tree_count_uses_status),
+                uses_status_count: u32::from(tree_count_uses_status),
             },
         );
         let hir_expr_fields_params = uniform_from_val(
             device,
             "parser.hir_expr_fields.params",
-            &super::passes::hir_expr_fields::Params {
+            &super::passes::hir::expr::fields::Params {
                 n: tree_capacity,
-                uses_ll1: u32::from(tree_count_uses_status),
+                uses_status_count: u32::from(tree_count_uses_status),
             },
         );
         let hir_member_fields_params = uniform_from_val(
             device,
             "parser.hir_member_fields.params",
-            &super::passes::hir_member_fields::Params {
+            &super::passes::hir::member::fields::Params {
                 n: tree_capacity,
-                uses_ll1: u32::from(tree_count_uses_status),
+                uses_status_count: u32::from(tree_count_uses_status),
             },
         );
         let hir_stmt_fields_params = uniform_from_val(
             device,
             "parser.hir_stmt_fields.params",
-            &super::passes::hir_stmt_fields::Params {
+            &super::passes::hir::stmt_fields::Params {
                 n: tree_capacity,
-                uses_ll1: u32::from(tree_count_uses_status),
+                uses_status_count: u32::from(tree_count_uses_status),
             },
         );
         let hir_call_fields_params = uniform_from_val(
             device,
             "parser.hir_call_fields.params",
-            &super::passes::hir_call_fields::Params {
+            &super::passes::hir::call::fields::Params {
                 n: tree_capacity,
-                uses_ll1: u32::from(tree_count_uses_status),
+                uses_status_count: u32::from(tree_count_uses_status),
             },
         );
         let hir_array_fields_params = uniform_from_val(
             device,
             "parser.hir_array_fields.params",
-            &super::passes::hir_array_fields::Params {
+            &super::passes::hir::array::fields::Params {
                 n: tree_capacity,
-                uses_ll1: u32::from(tree_count_uses_status),
+                uses_status_count: u32::from(tree_count_uses_status),
             },
         );
         let hir_enum_match_fields_params = uniform_from_val(
             device,
             "parser.hir_enum_match_fields.params",
-            &super::passes::hir_enum_match_fields::Params {
+            &super::passes::hir::enums::match_fields::Params {
                 n: tree_capacity,
-                uses_ll1: u32::from(tree_count_uses_status),
+                uses_status_count: u32::from(tree_count_uses_status),
             },
         );
         let hir_struct_fields_params = uniform_from_val(
             device,
             "parser.hir_struct_fields.params",
-            &super::passes::hir_struct_fields::Params {
+            &super::passes::hir::structs::fields::Params {
                 n: tree_capacity,
-                uses_ll1: u32::from(tree_count_uses_status),
+                uses_status_count: u32::from(tree_count_uses_status),
             },
         );
         let hir_kind =
@@ -1824,7 +1770,6 @@ impl ParserBuffers {
             n_kinds,
             total_sc,
             total_emit,
-            tree_stream_uses_ll1,
             tree_count_uses_status,
             tree_capacity,
 
@@ -1835,14 +1780,6 @@ impl ParserBuffers {
             ll1_emit,
             ll1_emit_pos,
             ll1_status,
-            ll1_block_size: LL1_BLOCK_SIZE,
-            ll1_n_blocks,
-            ll1_block_emit_stride,
-            ll1_block_seed_len,
-            ll1_seed_plan_status,
-            ll1_seeded_status,
-            ll1_seeded_emit,
-
             params_llp,
             semantic_token_kinds,
             token_delimiter_params,

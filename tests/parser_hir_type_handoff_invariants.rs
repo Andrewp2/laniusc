@@ -1,14 +1,14 @@
 use laniusc::parser::{
     hir_records::INVALID,
-    passes::{
-        hir_nodes::{
+    passes::hir::{
+        nodes::{
             HIR_NODE_CALL_EXPR,
             HIR_NODE_EXPR,
             HIR_NODE_NONE,
             HIR_NODE_PATH_EXPR,
             HIR_NODE_TYPE,
         },
-        hir_type_fields::{HIR_TYPE_FORM_NONE, HIR_TYPE_FORM_PATH},
+        types::fields::{HIR_TYPE_FORM_NONE, HIR_TYPE_FORM_PATH},
     },
     readback::{
         validate_hir_expression_result_root_records,

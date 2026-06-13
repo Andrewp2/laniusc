@@ -20,7 +20,6 @@ use laniusc::{
     parser::{
         buffers::ActionHeader,
         driver::{GpuParser, ParseResult},
-        passes::ll1_blocks_01::{LL1_BLOCK_STATUS_ACCEPTED, LL1_BLOCK_STATUS_BOUNDARY},
         tables::PrecomputedParseTables,
     },
 };
@@ -571,68 +570,6 @@ async fn run_source(
             _ => {}
         }
     }
-    if tables.n_nonterminals > 0 && res.ll1_block_size > 0 {
-        let real_tokens = kinds.len().saturating_sub(2);
-        let expected_blocks = real_tokens.div_ceil(res.ll1_block_size as usize).max(1);
-        if res.ll1.accepted {
-            if !res.ll1_seed_plan.accepted
-                || res.ll1_seed_plan.emit_len as usize != res.ll1_emit_stream.len()
-                || res.ll1_seed_plan.seed_count as usize != expected_blocks
-            {
-                anyhow::bail!(
-                    "LL(1) seed plan mismatch for {}: accepted={} seeds={} emits={} full_emits={}",
-                    label,
-                    res.ll1_seed_plan.accepted,
-                    res.ll1_seed_plan.seed_count,
-                    res.ll1_seed_plan.emit_len,
-                    res.ll1_emit_stream.len()
-                );
-            }
-            if res.ll1_seeded_blocks.len() != expected_blocks {
-                anyhow::bail!(
-                    "LL(1) seeded block count mismatch for {}: got {} want {}",
-                    label,
-                    res.ll1_seeded_blocks.len(),
-                    expected_blocks
-                );
-            }
-
-            let mut seeded_emit = Vec::with_capacity(res.ll1_emit_stream.len());
-            for (i, block) in res.ll1_seeded_blocks.iter().enumerate() {
-                let expected_status = if i + 1 == expected_blocks {
-                    LL1_BLOCK_STATUS_ACCEPTED
-                } else {
-                    LL1_BLOCK_STATUS_BOUNDARY
-                };
-                if block.status != expected_status || block.pos != block.end {
-                    anyhow::bail!(
-                        "LL(1) seeded block mismatch for {} block {}: status={} want={} pos={} end={}",
-                        label,
-                        i,
-                        block.status,
-                        expected_status,
-                        block.pos,
-                        block.end
-                    );
-                }
-                let base = i * res.ll1_block_emit_stride as usize;
-                let len = block.emit_len as usize;
-                let Some(chunk) = res.ll1_seeded_emit.get(base..base + len) else {
-                    anyhow::bail!("LL(1) seeded emit slice out of range for {}", label);
-                };
-                seeded_emit.extend_from_slice(chunk);
-            }
-            if seeded_emit != res.ll1_emit_stream {
-                anyhow::bail!(
-                    "LL(1) seeded emit mismatch for {}: seeded_len={} full_len={}",
-                    label,
-                    seeded_emit.len(),
-                    res.ll1_emit_stream.len()
-                );
-            }
-        }
-    }
-
     // core invariants on the GPU output itself
     if res.headers.len() != expected_pairs {
         anyhow::bail!(

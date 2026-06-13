@@ -12,7 +12,6 @@ pub(crate) const DEFAULT_SOURCE_PACK_BUILD_MAX_ITEMS: usize = 64;
 #[derive(Clone, Debug)]
 pub(crate) struct Options {
     pub(crate) descriptors: bool,
-    pub(crate) legacy_in_memory: bool,
     pub(crate) emit_contract: bool,
     pub(crate) manifest: Option<PathBuf>,
     pub(crate) library_manifest: Option<PathBuf>,
@@ -32,7 +31,6 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             descriptors: false,
-            legacy_in_memory: false,
             emit_contract: false,
             manifest: None,
             library_manifest: None,
@@ -60,7 +58,6 @@ impl Options {
             || self.prepare_only
             || self.build_from_metadata
             || self.build_prepare_only
-            || self.legacy_in_memory
             || self.emit_contract
     }
 
@@ -83,7 +80,6 @@ impl Options {
     pub(crate) fn uses_package_metadata_prepare_path(&self) -> bool {
         self.metadata_only
             && !self.descriptors
-            && !self.legacy_in_memory
             && !self.emit_contract
             && self.manifest.is_none()
             && self.library_manifest.is_none()
@@ -93,11 +89,7 @@ impl Options {
     }
 
     pub(crate) fn requests_contract_descriptor_output(&self, uses_source_pack: bool) -> bool {
-        uses_source_pack
-            && !self.legacy_in_memory
-            && !self.metadata_only
-            && !self.prepare_only
-            && !self.build_prepare_only
+        uses_source_pack && !self.metadata_only && !self.prepare_only && !self.build_prepare_only
     }
 }
 

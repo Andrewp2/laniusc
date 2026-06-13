@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
-use super::PassData;
 use crate::{
-    gpu::passes_core::DispatchDim,
+    gpu::passes_core::{DispatchDim, PassData},
     lexer::{buffers::GpuBuffers, debug::DebugOutput},
 };
 
@@ -13,7 +12,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
     TokensBuildPass,
     label: "tokens_build",
     entry: "tokens_build",
-    shader: "tokens_build"
+    shader: "lexer/tokens_build"
 );
 
 impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for TokensBuildPass {

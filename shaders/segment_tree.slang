@@ -1,4 +1,4 @@
-import fixed_stack;
+import fixed.stack;
 
 public interface IRangeSearchTree<T>
 {

@@ -24,10 +24,6 @@ impl GpuParser {
             bg_cache: Some(&mut *cache_guard),
         };
 
-        if bufs.tree_stream_uses_ll1 {
-            anyhow::bail!("legacy LL(1) tree stream replay is disabled");
-        }
-
         self.record_active_pair_dispatch_args(ctx.encoder, bufs)?;
         stamp_timer(timer_ref, ctx.encoder, "parser.active_pair_dispatch_args");
         self.passes

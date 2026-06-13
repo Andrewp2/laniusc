@@ -74,10 +74,10 @@ pub(super) fn read_wasm_output(
         if error_code != 0 {
             let error_name = match error_code {
                 2 => "unsupported for loop",
-                3 => "legacy WASM body HIR-node budget",
-                830 => "legacy array-helper body token budget",
-                831 => "legacy array-helper body HIR-node budget",
-                800..=899 => "unsupported legacy array-helper body shape",
+                3 => "unsupported WASM body HIR-node budget",
+                830 => "unsupported array-helper body token budget",
+                831 => "unsupported array-helper body HIR-node budget",
+                800..=899 => "unsupported array-helper body shape",
                 902 => "retired enum-match module token budget",
                 903 => "retired enum-match module HIR-node budget",
                 900..=999 => "unsupported retired enum-match module shape",

@@ -24,39 +24,6 @@ pub(super) fn readback_enabled() -> bool {
     bool_from_env("LANIUS_READBACK", true)
 }
 
-// ---------------------------------------------------------------------
-
-pub(super) fn decode_ll1_seed_plan(words: [u32; 8]) -> Ll1SeedPlanResult {
-    Ll1SeedPlanResult {
-        accepted: words[0] != 0,
-        pos: words[1],
-        error_code: words[2],
-        detail: words[3],
-        steps: words[4],
-        seed_count: words[5],
-        max_depth: words[6],
-        emit_len: words[7],
-    }
-}
-
-pub(super) fn decode_ll1_block_summaries(words: &[u32]) -> Vec<Ll1BlockSummary> {
-    words
-        .chunks_exact(LL1_BLOCK_STATUS_WORDS)
-        .map(|chunk| Ll1BlockSummary {
-            status: chunk[0],
-            begin: chunk[1],
-            end: chunk[2],
-            pos: chunk[3],
-            steps: chunk[4],
-            emit_len: chunk[5],
-            stack_depth: chunk[6],
-            error_code: chunk[7],
-            detail: chunk[8],
-            first_production: chunk[9],
-        })
-        .collect()
-}
-
 pub(super) fn table_fingerprint(tables: &PrecomputedParseTables) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     tables.n_kinds.hash(&mut hasher);
@@ -106,7 +73,7 @@ pub(super) fn make_tokens_to_kinds_pass(device: &wgpu::Device) -> Result<PassDat
     crate::gpu::passes_core::make_main_pass!(
         device,
         "parser_tokens_to_kinds",
-        shader: "tokens_to_kinds"
+        shader: "parser/tokens/to/kinds"
     )
 }
 
@@ -114,7 +81,7 @@ pub(super) fn make_tokens_to_identifier_kinds_pass(device: &wgpu::Device) -> Res
     crate::gpu::passes_core::make_main_pass!(
         device,
         "parser_tokens_to_identifier_kinds",
-        shader: "tokens_to_identifier_kinds"
+        shader: "parser/tokens/to/identifier_kinds"
     )
 }
 
@@ -124,7 +91,7 @@ pub(super) fn make_tokens_type_path_context_01_local_pass(
     crate::gpu::passes_core::make_main_pass!(
         device,
         "parser_tokens_type_path_context_01_local",
-        shader: "tokens_type_path_context_01_local"
+        shader: "parser/tokens/type/path/context/01_local"
     )
 }
 
@@ -134,7 +101,7 @@ pub(super) fn make_tokens_type_path_context_02_apply_pass(
     crate::gpu::passes_core::make_main_pass!(
         device,
         "parser_tokens_type_path_context_02_apply",
-        shader: "tokens_type_path_context_02_apply"
+        shader: "parser/tokens/type/path/context/02_apply"
     )
 }
 
@@ -142,7 +109,7 @@ pub(super) fn make_token_delimiters_01_pass(device: &wgpu::Device) -> Result<Pas
     crate::gpu::passes_core::make_main_pass!(
         device,
         "parser_tokens_delimiters_01_local",
-        shader: "tokens_delimiters_01_local"
+        shader: "parser/tokens/delimiters/01_local"
     )
 }
 
@@ -150,7 +117,7 @@ pub(super) fn make_token_delimiters_02_pass(device: &wgpu::Device) -> Result<Pas
     crate::gpu::passes_core::make_main_pass!(
         device,
         "parser_tokens_delimiters_02_scan",
-        shader: "tokens_delimiters_02_scan"
+        shader: "parser/tokens/delimiters/02_scan"
     )
 }
 
@@ -158,7 +125,7 @@ pub(super) fn make_token_delimiters_03_owner_local_pass(device: &wgpu::Device) -
     crate::gpu::passes_core::make_main_pass!(
         device,
         "parser_tokens_delimiters_03_owner_local",
-        shader: "tokens_delimiters_03_owner_local"
+        shader: "parser/tokens/delimiters/03_owner_local"
     )
 }
 
@@ -166,7 +133,7 @@ pub(super) fn make_token_delimiters_04_owner_apply_pass(device: &wgpu::Device) -
     crate::gpu::passes_core::make_main_pass!(
         device,
         "parser_tokens_delimiters_04_owner_apply",
-        shader: "tokens_delimiters_04_owner_apply"
+        shader: "parser/tokens/delimiters/04_owner_apply"
     )
 }
 
@@ -174,7 +141,7 @@ pub(super) fn make_tokens_brace_context_pass(device: &wgpu::Device) -> Result<Pa
     crate::gpu::passes_core::make_main_pass!(
         device,
         "parser_tokens_brace_context",
-        shader: "tokens_brace_context"
+        shader: "parser/tokens/brace/context"
     )
 }
 
@@ -182,7 +149,7 @@ pub(super) fn make_tokens_statement_phase_01_local_pass(device: &wgpu::Device) -
     crate::gpu::passes_core::make_main_pass!(
         device,
         "parser_tokens_statement_phase_01_local",
-        shader: "tokens_statement_phase_01_local"
+        shader: "parser/tokens/statement/phase/01_local"
     )
 }
 
@@ -190,7 +157,7 @@ pub(super) fn make_tokens_statement_phase_02_apply_pass(device: &wgpu::Device) -
     crate::gpu::passes_core::make_main_pass!(
         device,
         "parser_tokens_statement_phase_02_apply",
-        shader: "tokens_statement_phase_02_apply"
+        shader: "parser/tokens/statement/phase/02_apply"
     )
 }
 
@@ -198,7 +165,7 @@ pub(super) fn make_tokens_impl_header_01_local_pass(device: &wgpu::Device) -> Re
     crate::gpu::passes_core::make_main_pass!(
         device,
         "parser_tokens_impl_header_01_local",
-        shader: "tokens_impl_header_01_local"
+        shader: "parser/tokens/impl/header/01_local"
     )
 }
 
@@ -206,7 +173,7 @@ pub(super) fn make_tokens_impl_header_02_apply_pass(device: &wgpu::Device) -> Re
     crate::gpu::passes_core::make_main_pass!(
         device,
         "parser_tokens_impl_header_02_apply",
-        shader: "tokens_impl_header_02_apply"
+        shader: "parser/tokens/impl/header/02_apply"
     )
 }
 
@@ -214,7 +181,7 @@ pub(super) fn make_tokens_where_clause_01_local_pass(device: &wgpu::Device) -> R
     crate::gpu::passes_core::make_main_pass!(
         device,
         "parser_tokens_where_clause_01_local",
-        shader: "tokens_where_clause_01_local"
+        shader: "parser/tokens/where/clause/01_local"
     )
 }
 
@@ -222,7 +189,7 @@ pub(super) fn make_tokens_where_clause_02_apply_pass(device: &wgpu::Device) -> R
     crate::gpu::passes_core::make_main_pass!(
         device,
         "parser_tokens_where_clause_02_apply",
-        shader: "tokens_where_clause_02_apply"
+        shader: "parser/tokens/where/clause/02_apply"
     )
 }
 
@@ -230,7 +197,7 @@ pub(super) fn make_tokens_match_pattern_01_local_pass(device: &wgpu::Device) -> 
     crate::gpu::passes_core::make_main_pass!(
         device,
         "parser_tokens_match_pattern_01_local",
-        shader: "tokens_match_pattern_01_local"
+        shader: "parser/tokens/match/pattern/01_local"
     )
 }
 
@@ -238,7 +205,7 @@ pub(super) fn make_tokens_match_pattern_02_apply_pass(device: &wgpu::Device) -> 
     crate::gpu::passes_core::make_main_pass!(
         device,
         "parser_tokens_match_pattern_02_apply",
-        shader: "tokens_match_pattern_02_apply"
+        shader: "parser/tokens/match/pattern/02_apply"
     )
 }
 
@@ -248,7 +215,7 @@ pub(super) fn make_tokens_paren_match_01_depth_blocks_pass(
     crate::gpu::passes_core::make_main_pass!(
         device,
         "parser_tokens_paren_match_01_depth_blocks",
-        shader: "tokens_paren_match_01_depth_blocks"
+        shader: "parser/tokens/paren_match_01_depth_blocks"
     )
 }
 
@@ -258,7 +225,7 @@ pub(super) fn make_tokens_brace_match_01_depth_blocks_pass(
     crate::gpu::passes_core::make_main_pass!(
         device,
         "parser_tokens_brace_match_01_depth_blocks",
-        shader: "tokens_brace_match_01_depth_blocks"
+        shader: "parser/tokens/brace/match/01_depth_blocks"
     )
 }
 
@@ -268,7 +235,7 @@ pub(super) fn make_tokens_bracket_match_01_depth_blocks_pass(
     crate::gpu::passes_core::make_main_pass!(
         device,
         "parser_tokens_bracket_match_01_depth_blocks",
-        shader: "tokens_bracket_match_01_depth_blocks"
+        shader: "parser/tokens/bracket/match/01_depth_blocks"
     )
 }
 
@@ -278,7 +245,7 @@ pub(super) fn make_tokens_angle_match_01_depth_blocks_pass(
     crate::gpu::passes_core::make_main_pass!(
         device,
         "parser_tokens_angle_match_01_depth_blocks",
-        shader: "tokens_angle_match_01_depth_blocks"
+        shader: "parser/tokens/angle_match_01_depth_blocks"
     )
 }
 
@@ -288,7 +255,7 @@ pub(super) fn make_tokens_brace_match_02_build_min_tree_pass(
     crate::gpu::passes_core::make_main_pass!(
         device,
         "parser_tokens_brace_match_02_build_min_tree",
-        shader: "tokens_brace_match_02_build_min_tree"
+        shader: "parser/tokens/brace/match/02_build_min_tree"
     )
 }
 
@@ -298,7 +265,7 @@ pub(super) fn make_tokens_bracket_match_03_pair_pse_pass(
     crate::gpu::passes_core::make_main_pass!(
         device,
         "parser_tokens_bracket_match_03_pair_pse",
-        shader: "tokens_bracket_match_03_pair_pse"
+        shader: "parser/tokens/bracket/match/03_pair_pse"
     )
 }
 
@@ -306,7 +273,7 @@ pub(super) fn make_tokens_brace_match_03_pair_pse_pass(device: &wgpu::Device) ->
     crate::gpu::passes_core::make_main_pass!(
         device,
         "parser_tokens_brace_match_03_pair_pse",
-        shader: "tokens_brace_match_03_pair_pse"
+        shader: "parser/tokens/brace/match/03_pair_pse"
     )
 }
 
@@ -314,7 +281,7 @@ pub(super) fn make_tree_active_dispatch_args_pass(device: &wgpu::Device) -> Resu
     crate::gpu::passes_core::make_main_pass!(
         device,
         "parser_tree_active_dispatch_args",
-        shader: "tree_active_dispatch_args"
+        shader: "parser/tree/active_dispatch_args"
     )
 }
 
@@ -322,7 +289,7 @@ pub(super) fn make_tree_feature_dispatch_args_pass(device: &wgpu::Device) -> Res
     crate::gpu::passes_core::make_main_pass!(
         device,
         "parser_tree_feature_dispatch_args",
-        shader: "tree_feature_dispatch_args"
+        shader: "parser/tree/feature_dispatch_args"
     )
 }
 
@@ -330,7 +297,7 @@ pub(super) fn make_active_pair_dispatch_args_pass(device: &wgpu::Device) -> Resu
     crate::gpu::passes_core::make_main_pass!(
         device,
         "parser_active_pair_dispatch_args",
-        shader: "active_pair_dispatch_args"
+        shader: "parser/active_pair_dispatch_args"
     )
 }
 

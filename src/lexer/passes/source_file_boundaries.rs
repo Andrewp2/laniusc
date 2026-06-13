@@ -13,7 +13,7 @@ crate::gpu::passes_core::impl_static_shader_pass!(
     SourceFileBoundariesPass,
     label: "source_file_boundaries",
     entry: "source_file_boundaries",
-    shader: "source_file_boundaries"
+    shader: "lexer/source_file_boundaries"
 );
 
 impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for SourceFileBoundariesPass {

@@ -19,10 +19,6 @@ where
             request.source_pack.descriptors = true;
             Ok(true)
         }
-        "--source-pack-legacy-in-memory" => {
-            request.source_pack.legacy_in_memory = true;
-            Ok(true)
-        }
         "--emit-contract" => {
             request.source_pack.emit_contract = true;
             Ok(true)

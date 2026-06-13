@@ -214,11 +214,11 @@ fn x86_func_owner_scan_local_ignores_non_executable_fn_records() {
             "main",
             include_bytes!(concat!(
                 env!("OUT_DIR"),
-                "/shaders/x86_func_owner_scan_local.spv"
+                "/shaders/codegen/x86/func/owner/scan/local.spv"
             )),
             include_bytes!(concat!(
                 env!("OUT_DIR"),
-                "/shaders/x86_func_owner_scan_local.reflect.json"
+                "/shaders/codegen/x86/func/owner/scan/local.reflect.json"
             )),
         )
         .expect("create x86_func_owner_scan_local pass");
@@ -352,10 +352,13 @@ fn x86_node_tree_info_rejects_malformed_preorder_records() {
             device,
             "test.x86_node_tree_info",
             "main",
-            include_bytes!(concat!(env!("OUT_DIR"), "/shaders/x86_node_tree_info.spv")),
             include_bytes!(concat!(
                 env!("OUT_DIR"),
-                "/shaders/x86_node_tree_info.reflect.json"
+                "/shaders/codegen/x86/node/tree_info.spv"
+            )),
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/codegen/x86/node/tree_info.reflect.json"
             )),
         )
         .expect("create x86_node_tree_info pass");
@@ -536,10 +539,13 @@ fn x86_call_abi_clears_stale_rows_for_unsupported_arg_count() {
             device,
             "test.x86_call_abi",
             "main",
-            include_bytes!(concat!(env!("OUT_DIR"), "/shaders/x86_call_abi.spv")),
             include_bytes!(concat!(
                 env!("OUT_DIR"),
-                "/shaders/x86_call_abi.reflect.json"
+                "/shaders/codegen/x86/call/abi.spv"
+            )),
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/codegen/x86/call/abi.reflect.json"
             )),
         )
         .expect("create x86_call_abi pass");
@@ -889,8 +895,11 @@ fn x86_select_clears_stale_selected_rows_for_unsupported_virtual_ops() {
             device,
             "test.x86_select",
             "main",
-            include_bytes!(concat!(env!("OUT_DIR"), "/shaders/x86_select.spv")),
-            include_bytes!(concat!(env!("OUT_DIR"), "/shaders/x86_select.reflect.json")),
+            include_bytes!(concat!(env!("OUT_DIR"), "/shaders/codegen/x86/select.spv")),
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/codegen/x86/select.reflect.json"
+            )),
         )
         .expect("create x86_select pass");
 
@@ -1154,10 +1163,13 @@ fn x86_reloc_patch_rejects_non_compact_reloc_rows() {
             device,
             "test.x86_reloc_patch",
             "main",
-            include_bytes!(concat!(env!("OUT_DIR"), "/shaders/x86_reloc_patch.spv")),
             include_bytes!(concat!(
                 env!("OUT_DIR"),
-                "/shaders/x86_reloc_patch.reflect.json"
+                "/shaders/codegen/x86/reloc/patch.spv"
+            )),
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/codegen/x86/reloc/patch.reflect.json"
             )),
         )
         .expect("create x86_reloc_patch pass");
@@ -1378,11 +1390,11 @@ fn x86_virtual_liveness_rejects_cross_function_operands() {
             "main",
             include_bytes!(concat!(
                 env!("OUT_DIR"),
-                "/shaders/x86_virtual_liveness.spv"
+                "/shaders/codegen/x86/virtual/liveness.spv"
             )),
             include_bytes!(concat!(
                 env!("OUT_DIR"),
-                "/shaders/x86_virtual_liveness.reflect.json"
+                "/shaders/codegen/x86/virtual/liveness.reflect.json"
             )),
         )
         .expect("create x86_virtual_liveness pass");
@@ -1537,11 +1549,11 @@ fn x86_virtual_liveness_preserves_row_local_error_status() {
             "main",
             include_bytes!(concat!(
                 env!("OUT_DIR"),
-                "/shaders/x86_virtual_liveness.spv"
+                "/shaders/codegen/x86/virtual/liveness.spv"
             )),
             include_bytes!(concat!(
                 env!("OUT_DIR"),
-                "/shaders/x86_virtual_liveness.reflect.json"
+                "/shaders/codegen/x86/virtual/liveness.reflect.json"
             )),
         )
         .expect("create x86_virtual_liveness pass");
@@ -1758,11 +1770,11 @@ fn x86_virtual_regalloc_rejects_non_monotonic_value_def_rows() {
             "main",
             include_bytes!(concat!(
                 env!("OUT_DIR"),
-                "/shaders/x86_virtual_regalloc.spv"
+                "/shaders/codegen/x86/virtual/regalloc.spv"
             )),
             include_bytes!(concat!(
                 env!("OUT_DIR"),
-                "/shaders/x86_virtual_regalloc.reflect.json"
+                "/shaders/codegen/x86/virtual/regalloc.reflect.json"
             )),
         )
         .expect("create x86_virtual_regalloc pass");

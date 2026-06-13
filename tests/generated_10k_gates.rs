@@ -42,7 +42,6 @@ fn generated_frontend_suite_passes_supported_phases() {
                 "--iters",
                 "1",
                 "--allow-large",
-                "--source-pack-legacy-in-memory",
             ],
         );
     }
@@ -199,7 +198,7 @@ fn generated_reused_parse_matches_independent_varied() {
 
 #[test]
 #[ignore = "parameterized generated compiler gate; run explicitly for x86 backend validation"]
-fn generated_reused_x86_suite_validates() {
+fn generated_reused_x86_single_source_suite_validates() {
     let bin = gpu_compile_bench_bin();
     let lines = generated_lines();
     run_success(
@@ -210,7 +209,7 @@ fn generated_reused_x86_suite_validates() {
             "--emit",
             "x86_64-elf",
             "--source",
-            "all",
+            "simple-lets",
             "--lines",
             lines.as_str(),
             "--warmups",
@@ -219,7 +218,6 @@ fn generated_reused_x86_suite_validates() {
             "1",
             "--allow-large",
             "--validate-output",
-            "--source-pack-legacy-in-memory",
         ],
     );
 }

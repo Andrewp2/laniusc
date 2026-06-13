@@ -4,8 +4,8 @@ use wgpu;
 use super::{
     buffers::{ActionHeader, ParserBuffers},
     hir_records::INVALID,
-    passes::{
-        hir_expr_fields::{
+    passes::hir::{
+        expr::fields::{
             HIR_EXPR_FORM_ADD,
             HIR_EXPR_FORM_AND,
             HIR_EXPR_FORM_BIT_AND,
@@ -43,7 +43,7 @@ use super::{
             HIR_EXPR_FORM_SUB,
             HIR_EXPR_FORM_TRUE,
         },
-        hir_item_fields::{
+        item::fields::{
             HIR_ITEM_IMPORT_TARGET_NONE,
             HIR_ITEM_IMPORT_TARGET_PATH,
             HIR_ITEM_IMPORT_TARGET_STRING,
@@ -65,19 +65,18 @@ use super::{
             HIR_ITEM_VIS_PRIVATE,
             HIR_ITEM_VIS_PUBLIC,
         },
-        hir_method_fields::{
-            HIR_METHOD_RECEIVER_EXPLICIT,
-            HIR_METHOD_RECEIVER_NONE,
-            HIR_METHOD_RECEIVER_REF_SELF,
-            HIR_METHOD_RECEIVER_SELF,
-            HIR_METHOD_VIS_PRIVATE,
-            HIR_METHOD_VIS_PUBLIC,
+        method::{
+            fields::{
+                HIR_METHOD_RECEIVER_EXPLICIT,
+                HIR_METHOD_RECEIVER_NONE,
+                HIR_METHOD_RECEIVER_REF_SELF,
+                HIR_METHOD_RECEIVER_SELF,
+                HIR_METHOD_VIS_PRIVATE,
+                HIR_METHOD_VIS_PUBLIC,
+            },
+            signature_status::{HIR_METHOD_SIGNATURE_HAS_GENERICS, HIR_METHOD_SIGNATURE_HAS_WHERE},
         },
-        hir_method_signature_status::{
-            HIR_METHOD_SIGNATURE_HAS_GENERICS,
-            HIR_METHOD_SIGNATURE_HAS_WHERE,
-        },
-        hir_nodes::{
+        nodes::{
             HIR_NODE_ARRAY_EXPR,
             HIR_NODE_ASSIGN_EXPR,
             HIR_NODE_BINARY_EXPR,
@@ -114,7 +113,7 @@ use super::{
             HIR_NODE_UNARY_EXPR,
             HIR_NODE_WHILE_STMT,
         },
-        hir_stmt_fields::{
+        stmt_fields::{
             HIR_ASSIGN_OP_BOR,
             HIR_ASSIGN_OP_SET,
             HIR_STMT_RECORD_KIND_ASSIGN,
@@ -128,7 +127,7 @@ use super::{
             HIR_STMT_RECORD_KIND_RETURN,
             HIR_STMT_RECORD_KIND_WHILE,
         },
-        hir_type_fields::{
+        types::fields::{
             HIR_TYPE_FORM_ARRAY,
             HIR_TYPE_FORM_NONE,
             HIR_TYPE_FORM_PATH,
@@ -147,10 +146,6 @@ pub struct ParserReadbacks {
     pub ll1_status: wgpu::Buffer,
     pub ll1_emit: wgpu::Buffer,
     pub ll1_emit_pos: wgpu::Buffer,
-    pub ll1_block_seed_len: wgpu::Buffer,
-    pub ll1_seed_plan_status: wgpu::Buffer,
-    pub ll1_seeded_status: wgpu::Buffer,
-    pub ll1_seeded_emit: wgpu::Buffer,
     pub headers: wgpu::Buffer,
     pub sc: wgpu::Buffer,
     pub emit: wgpu::Buffer,
@@ -255,22 +250,6 @@ impl ParserReadbacks {
         let ll1_status = mk("rb.parser.ll1_status", bufs.ll1_status.byte_size as u64);
         let ll1_emit = mk("rb.parser.ll1_emit", bufs.ll1_emit.byte_size as u64);
         let ll1_emit_pos = mk("rb.parser.ll1_emit_pos", bufs.ll1_emit_pos.byte_size as u64);
-        let ll1_block_seed_len = mk(
-            "rb.parser.ll1_block_seed_len",
-            bufs.ll1_block_seed_len.byte_size as u64,
-        );
-        let ll1_seed_plan_status = mk(
-            "rb.parser.ll1_seed_plan_status",
-            bufs.ll1_seed_plan_status.byte_size as u64,
-        );
-        let ll1_seeded_status = mk(
-            "rb.parser.ll1_seeded_status",
-            bufs.ll1_seeded_status.byte_size as u64,
-        );
-        let ll1_seeded_emit = mk(
-            "rb.parser.ll1_seeded_emit",
-            bufs.ll1_seeded_emit.byte_size as u64,
-        );
         let headers = mk("rb.parser.out_headers", bufs.out_headers.byte_size as u64);
         let sc_bytes = (bufs.total_sc.max(1) * 4) as u64;
         let emit_bytes = (bufs.total_emit.max(1) * 4) as u64;
@@ -591,10 +570,6 @@ impl ParserReadbacks {
             ll1_status,
             ll1_emit,
             ll1_emit_pos,
-            ll1_block_seed_len,
-            ll1_seed_plan_status,
-            ll1_seeded_status,
-            ll1_seeded_emit,
             headers,
             sc,
             emit,
@@ -707,34 +682,6 @@ impl ParserReadbacks {
             &self.ll1_emit_pos,
             0,
             bufs.ll1_emit_pos.byte_size as u64,
-        );
-        encoder.copy_buffer_to_buffer(
-            &bufs.ll1_block_seed_len,
-            0,
-            &self.ll1_block_seed_len,
-            0,
-            bufs.ll1_block_seed_len.byte_size as u64,
-        );
-        encoder.copy_buffer_to_buffer(
-            &bufs.ll1_seed_plan_status,
-            0,
-            &self.ll1_seed_plan_status,
-            0,
-            bufs.ll1_seed_plan_status.byte_size as u64,
-        );
-        encoder.copy_buffer_to_buffer(
-            &bufs.ll1_seeded_status,
-            0,
-            &self.ll1_seeded_status,
-            0,
-            bufs.ll1_seeded_status.byte_size as u64,
-        );
-        encoder.copy_buffer_to_buffer(
-            &bufs.ll1_seeded_emit,
-            0,
-            &self.ll1_seeded_emit,
-            0,
-            bufs.ll1_seeded_emit.byte_size as u64,
         );
 
         // out_headers
@@ -3533,10 +3480,6 @@ pub struct DecodedParserReadbacks {
     pub ll1_status: [u32; 6],
     pub ll1_emit_stream: Vec<u32>,
     pub ll1_emit_token_pos: Vec<u32>,
-    pub ll1_block_seed_len: Vec<u32>,
-    pub ll1_seed_plan_status: [u32; 8],
-    pub ll1_seeded_status: Vec<u32>,
-    pub ll1_seeded_emit: Vec<u32>,
     pub headers: Vec<ActionHeader>,
     pub sc_stream: Vec<u32>,
     pub emit_stream: Vec<u32>,
@@ -3648,10 +3591,6 @@ impl DecodedParserReadbacks {
         map("ll1_status", &rb.ll1_status);
         map("ll1_emit", &rb.ll1_emit);
         map("ll1_emit_pos", &rb.ll1_emit_pos);
-        map("ll1_block_seed_len", &rb.ll1_block_seed_len);
-        map("ll1_seed_plan_status", &rb.ll1_seed_plan_status);
-        map("ll1_seeded_status", &rb.ll1_seeded_status);
-        map("ll1_seeded_emit", &rb.ll1_seeded_emit);
         map("sc", &rb.sc);
         map("emit", &rb.emit);
         map("match_idx", &rb.match_idx);
@@ -3788,30 +3727,8 @@ impl DecodedParserReadbacks {
         );
 
         let ll1_status = read_u32_array::<6>(&rb.ll1_status, "ll1_status")?;
-        let ll1_emit_stream = read_u32_vec(
-            &rb.ll1_emit,
-            ll1_emit_readback_len(
-                "readback.ll1_emit",
-                bufs.tree_stream_uses_ll1,
-                ll1_status[5],
-                bufs.ll1_emit.count,
-            )?,
-        );
-        let ll1_emit_token_pos = read_u32_vec(
-            &rb.ll1_emit_pos,
-            ll1_emit_readback_len(
-                "readback.ll1_emit_pos",
-                bufs.tree_stream_uses_ll1,
-                ll1_status[5],
-                bufs.ll1_emit_pos.count,
-            )?,
-        );
-        let ll1_block_seed_len =
-            read_u32_vec(&rb.ll1_block_seed_len, bufs.ll1_block_seed_len.count);
-        let ll1_seed_plan_status =
-            read_u32_array::<8>(&rb.ll1_seed_plan_status, "ll1_seed_plan_status")?;
-        let ll1_seeded_status = read_u32_vec(&rb.ll1_seeded_status, bufs.ll1_seeded_status.count);
-        let ll1_seeded_emit = read_u32_vec(&rb.ll1_seeded_emit, bufs.ll1_seeded_emit.count);
+        let ll1_emit_stream = Vec::new();
+        let ll1_emit_token_pos = Vec::new();
         let tree_len = active_tree_readback_len(
             "readback.tree",
             bufs.tree_count_uses_status,
@@ -3822,37 +3739,21 @@ impl DecodedParserReadbacks {
 
         let headers = {
             let data = rb.headers.slice(..).get_mapped_range();
-            let count = if bufs.tree_stream_uses_ll1 {
-                0
-            } else {
-                bufs.n_tokens.saturating_sub(1) as usize
-            };
+            let count = bufs.n_tokens.saturating_sub(1) as usize;
             let out = decode_action_headers(&data, count)?;
             drop(data);
             rb.headers.unmap();
             out
         };
 
-        let legacy_stream_len = if bufs.tree_stream_uses_ll1 {
-            0
-        } else {
-            bufs.total_sc as usize
-        };
-        let legacy_emit_len = if bufs.tree_stream_uses_ll1 {
-            0
-        } else {
-            bufs.total_emit as usize
-        };
-        let sc_stream = read_u32_vec(&rb.sc, legacy_stream_len);
-        let emit_stream = read_u32_vec(&rb.emit, legacy_emit_len);
-        let match_for_index = read_u32_vec(&rb.match_idx, legacy_stream_len);
+        let stream_len = bufs.total_sc as usize;
+        let emit_len = bufs.total_emit as usize;
+        let sc_stream = read_u32_vec(&rb.sc, stream_len);
+        let emit_stream = read_u32_vec(&rb.emit, emit_len);
+        let match_for_index = read_u32_vec(&rb.match_idx, stream_len);
         let [read_final_depth, read_min_depth] = read_i32_array::<2>(&rb.depths, "depths")?;
         let read_valid = read_u32_array::<1>(&rb.valid, "valid")?[0] != 0;
-        let (final_depth, min_depth, valid) = if bufs.tree_stream_uses_ll1 {
-            (0, 0, false)
-        } else {
-            (read_final_depth, read_min_depth, read_valid)
-        };
+        let (final_depth, min_depth, valid) = (read_final_depth, read_min_depth, read_valid);
 
         let node_kind = read_u32_vec(&rb.node_kind, tree_len);
         let parent = read_u32_vec(&rb.parent, tree_len);
@@ -3968,10 +3869,6 @@ impl DecodedParserReadbacks {
             ll1_status,
             ll1_emit_stream,
             ll1_emit_token_pos,
-            ll1_block_seed_len,
-            ll1_seed_plan_status,
-            ll1_seeded_status,
-            ll1_seeded_emit,
             headers,
             sc_stream,
             emit_stream,
@@ -4125,19 +4022,6 @@ fn active_tree_readback_len(
         fallback_count as usize
     };
     bounded_readback_len(label, requested, capacity)
-}
-
-fn ll1_emit_readback_len(
-    label: &str,
-    uses_ll1_stream: bool,
-    status_count: u32,
-    capacity: usize,
-) -> Result<usize> {
-    if uses_ll1_stream {
-        bounded_readback_len(label, status_count as usize, capacity)
-    } else {
-        Ok(0)
-    }
 }
 
 fn bounded_readback_len(label: &str, requested: usize, capacity: usize) -> Result<usize> {
@@ -9188,7 +9072,7 @@ fn decode_action_headers(bytes: &[u8], count: usize) -> Result<Vec<ActionHeader>
 #[cfg(test)]
 mod tests {
     use super::{
-        super::passes::{hir_nodes::HIR_NODE_NONE, hir_type_fields::HIR_TYPE_FORM_ARRAY},
+        super::passes::hir::{nodes::HIR_NODE_NONE, types::fields::HIR_TYPE_FORM_ARRAY},
         *,
     };
 
@@ -9213,15 +9097,6 @@ mod tests {
         assert!(
             err.to_string().contains("exceeding readback capacity"),
             "error should describe the violated live tree readback bound"
-        );
-    }
-
-    #[test]
-    fn ll1_emit_readback_len_is_empty_for_non_ll1_streams() {
-        assert_eq!(
-            ll1_emit_readback_len("test.ll1_emit", false, 10, 1)
-                .expect("non-LL1 streams should not read LL(1) emit buffers"),
-            0
         );
     }
 

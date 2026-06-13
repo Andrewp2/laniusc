@@ -249,56 +249,56 @@ impl GpuWasmCodeGenerator {
         let agg_layout_clear_pass = wasm_pass!(
             "agg_layout_clear",
             "codegen_wasm_agg_layout_clear",
-            "wasm_agg_layout_clear.spv",
-            "wasm_agg_layout_clear.reflect.json"
+            "codegen/wasm/agg/layout/clear.spv",
+            "codegen/wasm/agg/layout/clear.reflect.json"
         );
         let agg_layout_pass = wasm_pass!(
             "agg_layout",
             "codegen_wasm_agg_layout",
-            "wasm_agg_layout.spv",
-            "wasm_agg_layout.reflect.json"
+            "codegen/wasm/agg/layout.spv",
+            "codegen/wasm/agg/layout.reflect.json"
         );
         let hir_body_pass = wasm_pass!(
             "hir_body",
             "codegen_wasm_hir_body",
-            "wasm_hir_body.spv",
-            "wasm_hir_body.reflect.json"
+            "codegen/wasm/hir/body.spv",
+            "codegen/wasm/hir/body.reflect.json"
         );
         let hir_agg_body_pass = wasm_pass!(
             "hir_agg_body",
             "codegen_wasm_hir_agg_body",
-            "wasm_hir_agg_body.spv",
-            "wasm_hir_agg_body.reflect.json"
+            "codegen/wasm/hir/agg_body.spv",
+            "codegen/wasm/hir/agg_body.reflect.json"
         );
         let hir_assert_module_pass = wasm_pass!(
             "hir_assert_module",
             "codegen_wasm_hir_assert_module",
-            "wasm_hir_assert_module.spv",
-            "wasm_hir_assert_module.reflect.json"
+            "codegen/wasm/hir/assert_module.spv",
+            "codegen/wasm/hir/assert_module.reflect.json"
         );
         let hir_enum_match_records_pass = wasm_pass!(
             "hir_enum_match_records",
             "codegen_wasm_hir_enum_match_records",
-            "wasm_hir_enum_match_records.spv",
-            "wasm_hir_enum_match_records.reflect.json"
+            "codegen/wasm/hir/enum_match_records.spv",
+            "codegen/wasm/hir/enum_match_records.reflect.json"
         );
         let wasm_const_values_pass = wasm_pass!(
             "const_values",
             "codegen_wasm_const_values",
-            "wasm_const_values.spv",
-            "wasm_const_values.reflect.json"
+            "codegen/wasm/const_values.spv",
+            "codegen/wasm/const_values.reflect.json"
         );
         let pass = wasm_pass!(
             "module",
             "codegen_wasm_module",
-            "wasm_module.spv",
-            "wasm_module.reflect.json"
+            "codegen/wasm/module.spv",
+            "codegen/wasm/module.reflect.json"
         );
         let pack_pass = wasm_pass!(
             "pack",
             "codegen_pack_output",
-            "pack_output.spv",
-            "pack_output.reflect.json"
+            "codegen/pack_output.spv",
+            "codegen/pack_output.reflect.json"
         );
         Ok(Self {
             agg_layout_clear_pass,
@@ -576,8 +576,6 @@ impl GpuWasmCodeGenerator {
         compute.dispatch_workgroups(agg_layout_groups_x, agg_layout_groups_y, 1);
         drop(compute);
         trace_wasm_codegen("record.dispatch.const_values.done");
-
-        trace_wasm_codegen("record.dispatch.legacy_source_shape.skipped");
 
         trace_wasm_codegen("record.dispatch.hir_body.start");
         let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {

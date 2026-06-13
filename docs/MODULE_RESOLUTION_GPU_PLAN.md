@@ -164,11 +164,9 @@ What GPU type checking accepts and rejects today:
   deduplicating lexemes into stable name ids, validating duplicates, resolving
   imports by lookup, or producing declaration visibility. Keeping them made the
   type checker look more complete than it was.
-- Existing value visibility is token-local: `type_check_visible_02_scatter.slang`
-  walks earlier tokens in scope, compares identifier text, encodes
-  `visible_decl`, and later passes decode `visible_type`. Struct/enum/function
-  lookup helpers scan all tokens by unqualified text. This is useful evidence for
-  current semantics, but it is not an acceptable module implementation shape.
+- The token-local visibility scatter stage has been removed. Struct/enum/function
+  lookup helpers must consume HIR name, declaration, and scope records instead of
+  reviving unqualified-text scans over earlier tokens.
 
 ## Production-Readiness Audit: May 2026
 
@@ -181,13 +179,9 @@ records end to end.
 
 Current pass-architecture violations and risks:
 
-- `type_check_visible_02_scatter.slang` still walks earlier tokens and compares
-  identifier text for unqualified visibility in the standalone legacy
-  token-buffer path. The resident compiler path skips that scatter/decode stage
-  and resolves HIR names through sorted declaration and scope records. Gate:
-  delete or quarantine the standalone legacy path once equivalent behavior is
-  covered by name-id/declaration/scope records, so no compiler-facing path can
-  silently fall back to token-neighborhood visibility.
+- Do not reintroduce token-neighborhood visibility. Compiler-facing visibility
+  paths must resolve HIR names through sorted declaration and scope records
+  rather than scanning earlier tokens by unqualified text.
 - `src/compiler/source_pack/package_manifest.rs` and
   `src/compiler/source_pack/package_lock.rs` may discover files, validate path
   metadata, and persist replay metadata on CPU, but the lockfile import graph

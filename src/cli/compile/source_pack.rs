@@ -8,7 +8,6 @@ use crate::cli::{
         Options,
         compile_direct,
         compile_from_metadata,
-        compile_legacy,
         compile_library_manifest,
         compile_manifest,
         prepare_build_from_metadata_chunk_only,
@@ -71,15 +70,8 @@ pub(super) fn dispatch(
     if !requested {
         return Ok(Action::NotRequested);
     }
-    if options.legacy_in_memory {
-        Ok(Action::Emit(CliEmission::Bytes(compile_legacy(
-            emit,
-            stdlib_paths,
-            inputs,
-        )?)))
-    } else {
-        Ok(Action::Emit(CliEmission::ContractDescriptorFile(
-            compile_direct(emit, options)?,
-        )))
-    }
+    let _ = (stdlib_paths, inputs);
+    Ok(Action::Emit(CliEmission::ContractDescriptorFile(
+        compile_direct(emit, options)?,
+    )))
 }

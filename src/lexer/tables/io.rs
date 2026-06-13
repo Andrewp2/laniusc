@@ -60,9 +60,7 @@ pub fn load_tables_json_bytes(data: &[u8]) -> Result<Tables, String> {
 
 // -------------------- Compact binary (u16 packing) --------------------
 
-// Bump magic to reflect format change (emit bits removed).
 const BIN_MAGIC_V2: &[u8; 8] = b"LXTBLE02";
-const BIN_MAGIC_V1: &[u8; 8] = b"LXTBLE01"; // tolerated on load for backward-compat
 const INVALID_TOKEN_U16: u16 = 0xFFFF;
 
 pub fn save_tables_bin(path: &std::path::Path, t: &Tables) -> std::io::Result<()> {
@@ -166,7 +164,7 @@ pub fn load_tables_bin_bytes(mut data: &[u8]) -> Result<Tables, String> {
     }
     let mut magic = [0u8; 8];
     magic.copy_from_slice(&data[..8]);
-    if &magic != BIN_MAGIC_V2 && &magic != BIN_MAGIC_V1 {
+    if &magic != BIN_MAGIC_V2 {
         return Err("bad magic in tables .bin".into());
     }
     data = &data[8..];

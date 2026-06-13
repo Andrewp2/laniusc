@@ -129,8 +129,7 @@ pub(in crate::type_checker) fn record_visible_bind_groups_with_passes(
         "typecheck.visible.hir_decl_scope_tree.done",
     );
     // The resident path has compact HIR declaration records, so visible uses
-    // are resolved below by sorted declaration tables instead of the legacy
-    // token-neighborhood scatter/decode fallback.
+    // are resolved below by sorted declaration tables.
     record_compute_indirect(
         encoder,
         &passes.visible_hir_names,

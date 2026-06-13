@@ -6,8 +6,8 @@ use laniusc::{
     parser::{
         driver::{GpuParser, ResidentParseResult},
         hir_records::INVALID,
-        passes::{
-            hir_expr_fields::{
+        passes::hir::{
+            expr::fields::{
                 HIR_EXPR_FORM_ADD,
                 HIR_EXPR_FORM_AND,
                 HIR_EXPR_FORM_CHAR,
@@ -24,7 +24,7 @@ use laniusc::{
                 HIR_EXPR_FORM_STRING,
                 HIR_EXPR_FORM_TRUE,
             },
-            hir_item_fields::{
+            item::fields::{
                 HIR_ITEM_IMPORT_TARGET_NONE,
                 HIR_ITEM_IMPORT_TARGET_PATH,
                 HIR_ITEM_KIND_CONST,
@@ -45,19 +45,21 @@ use laniusc::{
                 HIR_ITEM_VIS_PRIVATE,
                 HIR_ITEM_VIS_PUBLIC,
             },
-            hir_method_fields::{
-                HIR_METHOD_RECEIVER_EXPLICIT,
-                HIR_METHOD_RECEIVER_NONE,
-                HIR_METHOD_RECEIVER_REF_SELF,
-                HIR_METHOD_RECEIVER_SELF,
-                HIR_METHOD_VIS_PRIVATE,
-                HIR_METHOD_VIS_PUBLIC,
+            method::{
+                fields::{
+                    HIR_METHOD_RECEIVER_EXPLICIT,
+                    HIR_METHOD_RECEIVER_NONE,
+                    HIR_METHOD_RECEIVER_REF_SELF,
+                    HIR_METHOD_RECEIVER_SELF,
+                    HIR_METHOD_VIS_PRIVATE,
+                    HIR_METHOD_VIS_PUBLIC,
+                },
+                signature_status::{
+                    HIR_METHOD_SIGNATURE_HAS_GENERICS,
+                    HIR_METHOD_SIGNATURE_HAS_WHERE,
+                },
             },
-            hir_method_signature_status::{
-                HIR_METHOD_SIGNATURE_HAS_GENERICS,
-                HIR_METHOD_SIGNATURE_HAS_WHERE,
-            },
-            hir_nodes::{
+            nodes::{
                 HIR_NODE_ARRAY_EXPR,
                 HIR_NODE_ASSIGN_EXPR,
                 HIR_NODE_BINARY_EXPR,
@@ -94,7 +96,7 @@ use laniusc::{
                 HIR_NODE_UNARY_EXPR,
                 HIR_NODE_WHILE_STMT,
             },
-            hir_stmt_fields::{
+            stmt_fields::{
                 HIR_ASSIGN_OP_SET as ASSIGN_OP_SET,
                 HIR_STMT_RECORD_KIND_ASSIGN as STMT_RECORD_KIND_ASSIGN,
                 HIR_STMT_RECORD_KIND_BREAK as STMT_RECORD_KIND_BREAK,
@@ -107,7 +109,7 @@ use laniusc::{
                 HIR_STMT_RECORD_KIND_RETURN as STMT_RECORD_KIND_RETURN,
                 HIR_STMT_RECORD_KIND_WHILE as STMT_RECORD_KIND_WHILE,
             },
-            hir_type_fields::{
+            types::fields::{
                 HIR_TYPE_FORM_ARRAY,
                 HIR_TYPE_FORM_NONE,
                 HIR_TYPE_FORM_PATH,

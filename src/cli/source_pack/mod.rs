@@ -7,7 +7,6 @@ mod prepare;
 pub(crate) use descriptor::{
     compile_direct,
     compile_from_metadata,
-    compile_legacy,
     compile_library_manifest,
     compile_manifest,
 };

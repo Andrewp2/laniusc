@@ -302,12 +302,6 @@ fn cli_doctor_reports_no_run_toolchain_contract_without_compiling_source() {
             "doctor should use Slang's supported -version probe for the configured compiler\nstdout:\n{stdout}"
         );
     }
-    assert!(
-        document["toolchain"]["shader_artifact_digest"]["value"]
-            .as_str()
-            .is_some_and(|digest| digest != "unknown" && !digest.trim().is_empty()),
-        "doctor should keep the legacy shader digest field populated\nstdout:\n{stdout}"
-    );
     let shader_artifacts = &document["toolchain"]["shader_artifacts"];
     assert!(
         shader_artifacts["digest"]["value"]

@@ -27,6 +27,7 @@ use super::Phase;
 
 pub(super) const RESIDENT_TREE_PRODUCTION_CAPACITY_PER_TOKEN: usize = 10;
 pub(super) const TYPECHECK_TYPE_INSTANCE_ARG_REF_STRIDE: usize = 4;
+pub(super) const TYPECHECK_CALL_ARG_SLOT_STRIDE: usize = 4;
 pub(super) const TYPECHECK_NAME_RADIX_BUCKETS: usize = 257;
 pub(super) const TYPECHECK_LANGUAGE_SYMBOL_COUNT: usize = 19;
 pub(super) const TYPECHECK_HIR_VISIBLE_DECL_ROW_BLOCK_SIZE: usize = 64;
@@ -806,10 +807,10 @@ pub(super) fn x86_allocation_floor_bytes(
     let function_slot_words =
         x86_function_slot_capacity(capacity.inst_basis_words, hir_words, token_words);
     let virtual_regalloc_active_end_words = function_slot_words.saturating_mul(14);
-    let legacy_node_inst_order_reuse_words = node_inst_scan_words.saturating_mul(3);
+    let prior_node_inst_order_reuse_words = node_inst_scan_words.saturating_mul(3);
     let node_inst_order_reuse_words =
         x86_node_inst_order_record_words(hir_words, inst, function_slot_words);
-    let legacy_node_inst_subtree_bounds_words = hir_words.saturating_add(1).saturating_mul(4);
+    let prior_node_inst_subtree_bounds_words = hir_words.saturating_add(1).saturating_mul(4);
     let call_type_record_words = x86_call_type_record_words(hir_words, true);
     let node_inst_count_words = x86_node_inst_count_record_words(hir_words);
     let node_inst_subtree_bounds_words = hir_words.saturating_mul(2);
@@ -820,9 +821,9 @@ pub(super) fn x86_allocation_floor_bytes(
         .saturating_add(node_inst_gen_node_record_words);
     let hir_scaled_words = hir_scaled_words
         .saturating_sub(
-            legacy_node_inst_order_reuse_words.saturating_sub(node_inst_order_reuse_words),
+            prior_node_inst_order_reuse_words.saturating_sub(node_inst_order_reuse_words),
         )
-        .saturating_sub(legacy_node_inst_subtree_bounds_words)
+        .saturating_sub(prior_node_inst_subtree_bounds_words)
         .saturating_add(split_node_inst_planning_words)
         .saturating_add(function_slot_words);
     let active_end_extra_words =
@@ -955,14 +956,16 @@ pub(super) fn typecheck_allocation_floor_bytes(
     } else {
         4usize.saturating_mul(token_capacity)
     };
-    let call_arg_node_u32 = typecheck_call_arg_node_words();
+    let call_arg_node_u32 = typecheck_call_arg_node_words(hir_node_capacity);
+    let compact_call_arg_row_u32 = typecheck_compact_call_arg_row_words(hir_node_capacity);
     let calls_u32 = 4usize
         .saturating_mul(token_capacity)
         .saturating_add(call_param_count_u32)
         .saturating_add(function_lookup_u32)
         .saturating_add(call_param_cache_u32)
         .saturating_add(call_arg_record_u32)
-        .saturating_add(call_arg_node_u32);
+        .saturating_add(call_arg_node_u32)
+        .saturating_add(compact_call_arg_row_u32);
     let method_key_radix_scratch_u32 = if hir_node_capacity >= name_radix_histogram_len {
         0
     } else {
@@ -1052,8 +1055,18 @@ pub(super) fn typecheck_allocation_floor_bytes(
     }
 }
 
-pub(super) fn typecheck_call_arg_node_words() -> usize {
-    1
+pub(super) fn typecheck_call_arg_node_words(hir_node_capacity: usize) -> usize {
+    hir_node_capacity
+        .max(1)
+        .saturating_mul(TYPECHECK_CALL_ARG_SLOT_STRIDE)
+}
+
+pub(super) fn typecheck_compact_call_arg_row_words(hir_node_capacity: usize) -> usize {
+    let row_capacity = hir_node_capacity.max(1);
+    let scan_blocks = row_capacity.div_ceil(256).max(1);
+    1usize
+        .saturating_add(8usize.saturating_mul(row_capacity))
+        .saturating_add(3usize.saturating_mul(scan_blocks))
 }
 
 pub(super) fn typecheck_import_record_capacity(
@@ -1111,16 +1124,15 @@ pub(super) fn parser_tree_floor_bytes(tree_capacity: usize) -> usize {
 pub(super) fn parser_bracket_floor_bytes(total_sc: usize) -> usize {
     const U32_SIZE: usize = 4;
     let _ = total_sc;
-    // `gpu_compile_bench` uses the resident LLP path. That path never records
-    // the legacy bracket passes, so their buffers stay compatibility-sized.
-    const RESIDENT_COMPAT_U32S: usize = 7 + 7 + 6 + 3;
-    RESIDENT_COMPAT_U32S.saturating_mul(U32_SIZE)
+    // `gpu_compile_bench` uses the resident LLP path, so the bracket scratch
+    // estimate only reserves the fixed placeholder buffers still allocated there.
+    const RESIDENT_BRACKET_PLACEHOLDER_U32S: usize = 7 + 7 + 6 + 3;
+    RESIDENT_BRACKET_PLACEHOLDER_U32S.saturating_mul(U32_SIZE)
 }
 
 pub(super) fn parser_pack_stream_floor_bytes(estimate: &ParserCapacityEstimate) -> usize {
     const U32_SIZE: usize = 4;
-    // Resident parsing consumes the production stream for tree/HIR recovery but
-    // does not consume the legacy stack-change stream.
+    // Resident parsing consumes the production stream for tree/HIR recovery.
     1usize
         .saturating_add(estimate.tree_capacity.saturating_mul(2))
         .saturating_mul(U32_SIZE)

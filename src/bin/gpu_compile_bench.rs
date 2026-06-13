@@ -97,7 +97,6 @@ async fn run() -> Result<(), String> {
     let mut source_pack_artifact_root: Option<PathBuf> = None;
     let mut source_pack_max_items = DEFAULT_SOURCE_PACK_DESCRIPTOR_MAX_ITEMS;
     let mut source_pack_max_ready_items = DEFAULT_SOURCE_PACK_DESCRIPTOR_MAX_READY_ITEMS;
-    let mut source_pack_legacy_in_memory = false;
 
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -149,9 +148,6 @@ async fn run() -> Result<(), String> {
             }
             "--source-pack-descriptors" => {
                 source_pack_descriptors = true;
-            }
-            "--source-pack-legacy-in-memory" => {
-                source_pack_legacy_in_memory = true;
             }
             "--source-pack-artifact-root" => {
                 source_pack_descriptors = true;
@@ -224,12 +220,6 @@ async fn run() -> Result<(), String> {
     if estimate_only && estimate_live {
         return Err("--estimate-only and --estimate-live are mutually exclusive".into());
     }
-    if source_pack_descriptors && source_pack_legacy_in_memory {
-        return Err(
-            "--source-pack-descriptors and --source-pack-legacy-in-memory are mutually exclusive"
-                .into(),
-        );
-    }
     if source_pack_descriptors && source_pack_max_ready_items == 0 {
         return Err("--source-pack-max-ready-items must be greater than zero".into());
     }
@@ -250,7 +240,6 @@ async fn run() -> Result<(), String> {
         && !estimate_only
         && !estimate_live
         && source_pack_descriptor_config.is_none()
-        && !source_pack_legacy_in_memory
     {
         return Err(source_pack_execution_mode_required_error("--source all"));
     }
@@ -271,7 +260,6 @@ async fn run() -> Result<(), String> {
             estimate_only,
             estimate_live,
             source_pack_descriptor_config.as_ref(),
-            source_pack_legacy_in_memory,
             parse_tables.as_ref(),
         )
         .await;
@@ -324,10 +312,7 @@ async fn run() -> Result<(), String> {
         print_live_capacity_estimate(source_lines, src.len(), live, parse_tables.as_ref());
         return Ok(());
     }
-    if generated.sources.len() > 1
-        && source_pack_descriptor_config.is_none()
-        && !source_pack_legacy_in_memory
-    {
+    if generated.sources.len() > 1 && source_pack_descriptor_config.is_none() {
         return Err(source_pack_execution_mode_required_error(
             "--source module-pack",
         ));
@@ -359,7 +344,6 @@ async fn run() -> Result<(), String> {
             generated.expected_stdout.as_deref(),
             "warmup",
             source_pack_descriptor_config.as_ref(),
-            source_pack_legacy_in_memory,
         )
         .await;
         trace::record_host_span(
@@ -385,7 +369,6 @@ async fn run() -> Result<(), String> {
             generated.expected_stdout.as_deref(),
             "measured",
             source_pack_descriptor_config.as_ref(),
-            source_pack_legacy_in_memory,
         )
         .await;
         let end = Instant::now();
@@ -432,7 +415,6 @@ async fn run_source_suite(
     estimate_only: bool,
     estimate_live: bool,
     source_pack_descriptor_config: Option<&SourcePackDescriptorRunConfig>,
-    source_pack_legacy_in_memory: bool,
     parse_tables: Option<&PrecomputedParseTables>,
 ) -> Result<(), String> {
     let mut compiler = None;
@@ -499,10 +481,7 @@ async fn run_source_suite(
             continue;
         }
 
-        if generated.sources.len() > 1
-            && source_pack_descriptor_config.is_none()
-            && !source_pack_legacy_in_memory
-        {
+        if generated.sources.len() > 1 && source_pack_descriptor_config.is_none() {
             return Err(source_pack_execution_mode_required_error(
                 source_mode.name(),
             ));
@@ -539,7 +518,6 @@ async fn run_source_suite(
                 generated.expected_stdout.as_deref(),
                 "warmup",
                 source_pack_descriptor_config,
-                source_pack_legacy_in_memory,
             )
             .await;
             trace::record_host_span(
@@ -565,7 +543,6 @@ async fn run_source_suite(
                 generated.expected_stdout.as_deref(),
                 "measured",
                 source_pack_descriptor_config,
-                source_pack_legacy_in_memory,
             )
             .await;
             let end = Instant::now();
@@ -709,7 +686,6 @@ async fn run_phase(
     expected_stdout: Option<&str>,
     phase_name: &str,
     source_pack_descriptor_config: Option<&SourcePackDescriptorRunConfig>,
-    source_pack_legacy_in_memory: bool,
 ) -> Result<Vec<u8>, String> {
     let src = generated.source.as_str();
     let sources = generated.sources.as_slice();
@@ -726,21 +702,9 @@ async fn run_phase(
             )
             .await;
         }
-        if !source_pack_legacy_in_memory {
-            return Err(source_pack_execution_mode_required_error(
-                "--source module-pack",
-            ));
-        }
-        return run_source_pack_phase(
-            phase,
-            sources,
-            compiler,
-            validate_output,
-            run_x86_output,
-            expected_stdout,
-            phase_name,
-        )
-        .await;
+        return Err(source_pack_execution_mode_required_error(
+            "--source module-pack",
+        ));
     }
     match phase {
         Phase::Lex => {
@@ -793,49 +757,6 @@ async fn run_phase(
     }
 }
 
-async fn run_source_pack_phase(
-    phase: Phase,
-    sources: &[String],
-    compiler: &GpuCompiler<'_>,
-    validate_output: bool,
-    run_x86_output: bool,
-    expected_stdout: Option<&str>,
-    phase_name: &str,
-) -> Result<Vec<u8>, String> {
-    match phase {
-        Phase::Lex | Phase::Parse => Err(format!(
-            "--source {} is a source-pack generator; use --phase typecheck, wasm, or x86",
-            SourceMode::ModulePack.name()
-        )),
-        Phase::TypeCheck => {
-            compiler
-                .type_check_source_pack(sources)
-                .await
-                .map_err(|err| err.to_string())?;
-            Ok(Vec::new())
-        }
-        Phase::Wasm => {
-            let wasm = compiler
-                .compile_source_pack_to_wasm(sources)
-                .await
-                .map_err(|err| err.to_string())?;
-            validate_wasm_output(validate_output, &wasm, phase_name)?;
-            Ok(wasm)
-        }
-        Phase::X86 => {
-            let elf = compiler
-                .compile_source_pack_to_x86_64(sources)
-                .await
-                .map_err(|err| err.to_string())?;
-            validate_x86_output(validate_output, &elf, phase_name)?;
-            if run_x86_output {
-                run_x86_output_zero_exit(&elf, phase_name, expected_stdout)?;
-            }
-            Ok(elf)
-        }
-    }
-}
-
 async fn run_source_pack_descriptor_phase(
     phase: Phase,
     generated: &SourceArtifact,
@@ -847,7 +768,7 @@ async fn run_source_pack_descriptor_phase(
 ) -> Result<Vec<u8>, String> {
     if validate_output || run_x86_output {
         return Err(
-            "--source-pack-descriptors writes persisted descriptor artifacts; output validation requires the legacy in-memory source-pack path"
+            "--source-pack-descriptors writes persisted descriptor artifacts; output validation is only supported for single-source target-byte runs"
                 .to_string(),
         );
     }
@@ -987,7 +908,7 @@ fn source_pack_artifact_target_for_phase(phase: Phase) -> Result<SourcePackArtif
 
 fn source_pack_execution_mode_required_error(source_name: &str) -> String {
     format!(
-        "{source_name} uses source-pack inputs; pass --source-pack-descriptors for the persisted bounded work queue or --source-pack-legacy-in-memory for the old whole-pack path"
+        "{source_name} uses source-pack inputs; pass --source-pack-descriptors for the persisted bounded work queue"
     )
 }
 
@@ -1285,10 +1206,10 @@ fn unique_x86_output_path(phase: &str) -> PathBuf {
 
 fn print_help() {
     eprintln!(
-        "Usage: gpu_compile_bench [--emit wasm|x86_64-elf] [--source simple-lets|mixed|call-graph|expr-dense|abi-calls|varied|long-function|module-pack|all] [--lines N] [--target-bytes N] [--seed N] [--warmups N] [--iters N] [--validate-output] [--run-x86-output] [--allow-large] [--estimate-only|--estimate-live] [--dump-source] [--source-pack-descriptors] [--source-pack-max-items N] [--source-pack-max-ready-items N] [--source-pack-artifact-root PATH] [--source-pack-legacy-in-memory]\n\
+        "Usage: gpu_compile_bench [--emit wasm|x86_64-elf] [--source simple-lets|mixed|call-graph|expr-dense|abi-calls|varied|long-function|module-pack|all] [--lines N] [--target-bytes N] [--seed N] [--warmups N] [--iters N] [--validate-output] [--run-x86-output] [--allow-large] [--estimate-only|--estimate-live] [--dump-source] [--source-pack-descriptors] [--source-pack-max-items N] [--source-pack-max-ready-items N] [--source-pack-artifact-root PATH]\n\
          Optional phases: --phase lex|parse|typecheck|wasm|x86.\n\
          Defaults to --lines 5000; use --allow-large for intentional large live runs.\n\
-         --source-pack-descriptors prepares module-pack filesystem artifacts and advances the persisted queue with bounded one-item submits; --source-pack-legacy-in-memory is required for the old whole-pack module-pack path.\n\
+         --source-pack-descriptors prepares module-pack filesystem artifacts and advances the persisted queue with bounded one-item submits.\n\
          Set LANIUS_PERFETTO_TRACE=path.json to write Perfetto-compatible trace-event JSON.\n\
          Measures reused GpuCompiler runtime after construction."
     );
